@@ -37,9 +37,11 @@ function statusVariant(status: string): "warning" | "danger" | "info" | "success
   return "outline"
 }
 
+const DATE_TIME_FORMAT = new Intl.DateTimeFormat("es-CL", { dateStyle: "medium", timeStyle: "short", timeZone: "America/Santiago" })
+
 function dateTime(value: string | null) {
   if (!value) return "Sin plazo"
-  return new Intl.DateTimeFormat("es-CL", { dateStyle: "medium", timeStyle: "short", timeZone: "America/Santiago" }).format(new Date(value))
+  return DATE_TIME_FORMAT.format(new Date(value))
 }
 
 function clientRequestId() {

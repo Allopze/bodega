@@ -9,6 +9,9 @@ import { IncidentReportForm } from "./incident-report-form"
 
 export const metadata: Metadata = { title: "Reportar incidente" }
 
+const CHILE_DATE_FORMAT = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Santiago", year: "numeric", month: "2-digit", day: "2-digit" })
+const CHILE_TIME_FORMAT = new Intl.DateTimeFormat("es-CL", { timeZone: "America/Santiago", hour: "2-digit", minute: "2-digit", hour12: false })
+
 export default async function ReportIncidentPage() {
   let session
   try { session = await requirePermission("prevention:incidents:report") }
@@ -19,8 +22,8 @@ export default async function ReportIncidentPage() {
     permissions: session.user.permissions,
   }, "prevention:incidents:report")
   const now = new Date()
-  const defaultDate = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Santiago", year: "numeric", month: "2-digit", day: "2-digit" }).format(now)
-  const defaultTime = new Intl.DateTimeFormat("es-CL", { timeZone: "America/Santiago", hour: "2-digit", minute: "2-digit", hour12: false }).format(now)
+  const defaultDate = CHILE_DATE_FORMAT.format(now)
+  const defaultTime = CHILE_TIME_FORMAT.format(now)
 
   return (
     <PageContainer width="form">

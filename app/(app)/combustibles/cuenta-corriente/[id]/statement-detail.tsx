@@ -12,6 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Plus } from "@phosphor-icons/react"
 import { toast } from "@/lib/toast"
+import { formatCLP } from "@/lib/utils"
 
 interface StatementData {
   id: string
@@ -45,8 +46,8 @@ interface StatementData {
   }>
 }
 
-const formatCLP = (n: number) => new Intl.NumberFormat("es-CL", { style: "currency", currency: "CLP", maximumFractionDigits: 0 }).format(n)
-const formatLiters = (n: number) => new Intl.NumberFormat("es-CL", { maximumFractionDigits: 0 }).format(n)
+const LITERS_FORMAT = new Intl.NumberFormat("es-CL", { maximumFractionDigits: 0 })
+const formatLiters = (n: number) => LITERS_FORMAT.format(n)
 
 export function StatementDetail({ statement }: { statement: StatementData }) {
   const pending = statement.totalAmount - statement.paidAmount

@@ -17,6 +17,8 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { toast } from "@/lib/toast"
 
+const CLP_FORMAT = new Intl.NumberFormat("es-CL", { style: "currency", currency: "CLP" })
+
 export interface QuotationRow {
   id:               string
   supplierId:       string | null
@@ -181,7 +183,7 @@ export function QuotationPanel({
                 <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-[var(--color-text-muted)]">
                   <span className="flex items-center gap-1">
                     <CurrencyCircleDollar size={12} />
-                    {new Intl.NumberFormat("es-CL", { style: "currency", currency: "CLP" }).format(q.totalAmount)}
+                    {CLP_FORMAT.format(q.totalAmount)}
                   </span>
                   <a
                     href={`${downloadEndpointPrefix}/${q.id}`}

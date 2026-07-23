@@ -6,19 +6,23 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
+const CLP_FORMAT = new Intl.NumberFormat("es-CL", {
+  style: "currency",
+  currency: "CLP",
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 0,
+})
+
+const QTY_FORMAT = new Intl.NumberFormat("es-CL")
+
 /** Format currency in CLP (Chilean Pesos) */
 export function formatCLP(amount: number): string {
-  return new Intl.NumberFormat("es-CL", {
-    style: "currency",
-    currency: "CLP",
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(amount)
+  return CLP_FORMAT.format(amount)
 }
 
 /** Format a number with thousands separators (for quantities) */
 export function formatQty(n: number, unit?: string): string {
-  const formatted = new Intl.NumberFormat("es-CL").format(n)
+  const formatted = QTY_FORMAT.format(n)
   return unit ? `${formatted} ${unit}` : formatted
 }
 

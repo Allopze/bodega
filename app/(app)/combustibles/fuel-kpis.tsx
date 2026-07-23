@@ -3,6 +3,7 @@
 import { Card, CardContent } from "@/components/ui/card"
 import { GasPump, CurrencyCircleDollar, Hash, Gauge } from "@phosphor-icons/react"
 import type { ComponentType } from "react"
+import { formatCLP } from "@/lib/utils"
 
 interface FuelDashboardKpisProps {
   totalLiters: number
@@ -12,10 +13,8 @@ interface FuelDashboardKpisProps {
   periodLabel: string
 }
 
-const formatCLP = (n: number) =>
-  new Intl.NumberFormat("es-CL", { style: "currency", currency: "CLP", maximumFractionDigits: 0 }).format(n)
-const formatNum = (n: number, max = 0) =>
-  new Intl.NumberFormat("es-CL", { maximumFractionDigits: max }).format(n)
+const NUM_FORMAT = new Intl.NumberFormat("es-CL", { maximumFractionDigits: 0 })
+const formatNum = (n: number) => NUM_FORMAT.format(n)
 
 export function FuelDashboardKpis({ totalLiters, totalAmount, loadCount, periodLabel }: FuelDashboardKpisProps) {
   const avgPricePerLiter = totalLiters > 0 ? totalAmount / totalLiters : 0

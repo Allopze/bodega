@@ -12,6 +12,7 @@ import { getMaintenancePageData, getUpcomingMaintenance, getUsageMaintenanceAler
 import { MaintenanceCreateButton } from "./maintenance-create-button"
 import { MaintenanceRowActions } from "./maintenance-row-actions"
 import { MaintenanceFilters } from "./maintenance-filters"
+import { formatCLP } from "@/lib/utils"
 
 export const metadata: Metadata = { title: "Mantenciones" }
 
@@ -22,11 +23,10 @@ const statusLabels: Record<string, { label: string; variant: "default" | "warnin
   cancelled: { label: "Cancelada", variant: "danger" },
 }
 
-const formatCLP = (value: number) =>
-  new Intl.NumberFormat("es-CL", { style: "currency", currency: "CLP", maximumFractionDigits: 0 }).format(value)
+const NUMBER_FORMAT = new Intl.NumberFormat("es-CL", { maximumFractionDigits: 1 })
 
 const formatNumber = (value: number | null) =>
-  value == null ? "—" : new Intl.NumberFormat("es-CL", { maximumFractionDigits: 1 }).format(value)
+  value == null ? "—" : NUMBER_FORMAT.format(value)
 
 export default async function MantencionesPage({
   searchParams,

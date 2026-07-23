@@ -2,6 +2,8 @@ import Link from "next/link"
 import { ArrowRight } from "@phosphor-icons/react/dist/ssr"
 import { Button } from "@/components/ui/button"
 
+const QUANTITY_FORMAT = new Intl.NumberFormat("es-CL", { maximumFractionDigits: 2 })
+
 export function OcReceptionCta({
   orderId,
   pendingFaenaQuantity,
@@ -15,9 +17,7 @@ export function OcReceptionCta({
 }) {
   if (!canRegisterFaena || pendingFaenaQuantity <= 0) return null
 
-  const pendingLabel = new Intl.NumberFormat("es-CL", {
-    maximumFractionDigits: 2,
-  }).format(pendingFaenaQuantity)
+  const pendingLabel = QUANTITY_FORMAT.format(pendingFaenaQuantity)
 
   return (
     <div className="mt-4 border-t border-[var(--color-border)] pt-4">

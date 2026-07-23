@@ -4,6 +4,7 @@ import Link from "next/link"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { formatCLP } from "@/lib/utils"
 
 interface StatementRow {
   id: string
@@ -25,8 +26,8 @@ const statusLabels: Record<string, { label: string; variant: "primary" | "defaul
   cancelled: { label: "Anulado", variant: "danger" as const },
 }
 
-const formatCLP = (n: number) => new Intl.NumberFormat("es-CL", { style: "currency", currency: "CLP", maximumFractionDigits: 0 }).format(n)
-const formatLiters = (n: number) => new Intl.NumberFormat("es-CL", { maximumFractionDigits: 0 }).format(n)
+const LITERS_FORMAT = new Intl.NumberFormat("es-CL", { maximumFractionDigits: 0 })
+const formatLiters = (n: number) => LITERS_FORMAT.format(n)
 
 export function StatementsTable({ statements }: { statements: StatementRow[] }) {
   return (

@@ -24,8 +24,10 @@ function ComplianceBar({ value, target }: { value: number | null; target: number
   )
 }
 
+const DATE_TIME_FORMAT = new Intl.DateTimeFormat("es-CL", { dateStyle: "medium", timeStyle: "short", timeZone: "America/Santiago" })
+
 function fmtDateTime(iso: string): string {
-  return new Intl.DateTimeFormat("es-CL", { dateStyle: "medium", timeStyle: "short", timeZone: "America/Santiago" }).format(new Date(iso))
+  return DATE_TIME_FORMAT.format(new Date(iso))
 }
 
 export function PdtpIndicatorsPanel({ data, integral, asOf }: { data: PdtpComplianceIndicators; integral?: PdtpIntegralCompliance | null; asOf?: string }) {
