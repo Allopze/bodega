@@ -63,6 +63,7 @@ next-env.d.ts
 /audit
 /ui-audit
 .env.local
+.mimocode/
 
 /releases
 /Registros SG-SST

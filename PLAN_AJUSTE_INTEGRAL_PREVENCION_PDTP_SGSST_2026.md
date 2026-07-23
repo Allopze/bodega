@@ -6,7 +6,7 @@
 
 **Documento de referencia inicial:** `PROGRAMA DE TRABAJO PREVENTIVO SG-SST 2026.xlsx` (linea base historica)
 
-**Fuente de verdad vigente (desde 2026-07-22):** `PROGRAMA ACTIVIDADES PREVENTIVAS DEL SG-SST (87 actividades).xlsx`, congelada en `PDTP_2026_PROGRAM_SOURCE` (SHA-256 `55b780b9…`) — ver §2.0
+**Fuente de verdad vigente (desde 2026-07-22):** `PROGRAMA ACTIVIDADES PREVENTIVAS DEL SG-SST (86 actividades).xlsx`, congelada en `PDTP_2026_PROGRAM_SOURCE` (SHA-256 `54c6695e…`) — ver §2.0. *(La 21, duplicada de la 76, se retiró además de la 4 y la 8 tras las respuestas del cuestionario.)*
 
 **Alcance principal:** constructor general de programas preventivos, integraciones operacionales y migracion del PDTP 2026
 
@@ -84,7 +84,7 @@ Ante una contradiccion, prevalecen en este orden: intencion preventiva y decisio
 
 ### 2.0 Actualizacion de fuente (2026-07-22)
 
-La fuente de verdad del programa fue reemplazada. El archivo entregado por el usuario, `PROGRAMA ACTIVIDADES PREVENTIVAS DEL SG-SST.xlsx`, resulto estar degradado y **no se adopto** (ver "Defecto estructural" mas abajo). La fuente canonica vigente es `PROGRAMA ACTIVIDADES PREVENTIVAS DEL SG-SST (87 actividades).xlsx`, construida a partir de `PROGRAMA DE TRABAJO PREVENTIVO SG-SST 2026.xlsx`, que permanece en el repo como fixture de fidelidad del parser.
+La fuente de verdad del programa fue reemplazada. El archivo entregado por el usuario, `PROGRAMA ACTIVIDADES PREVENTIVAS DEL SG-SST.xlsx`, resulto estar degradado y **no se adopto** (ver "Defecto estructural" mas abajo). La fuente canonica vigente es `PROGRAMA ACTIVIDADES PREVENTIVAS DEL SG-SST (86 actividades).xlsx`, construida a partir de `PROGRAMA DE TRABAJO PREVENTIVO SG-SST 2026.xlsx`, que permanece en el repo como fixture de fidelidad del parser.
 
 **Contraste comprobado (celda por celda, archivo contra archivo):** el nuevo libro es identico al anterior salvo por una diferencia de contenido: se quitaron de la hoja consolidada `PDTP GENERAL` las actividades **N°4** ("Difundir los resultados de las actividades preventivas de cada faena", JDPR, plan Feb-Dic) y **N°8** ("Reunion revision gestion preventiva SG-SST", version online; casi duplicada de la N°9, que si permanece). Sus 11+11 celdas explican exactamente la baja de planificacion. Todo lo demas es igual: 8 hojas con los mismos nombres, las 6 ejecuciones historicas (M14, O15, G19, I19, K19, M19), las 22 actividades sin plan numerico, el indicador RE-36 (Proceso, Mensual, meta 90%), los metadatos (Lorena Alvarado 27-01-2026 / Paulette Recart 04-02-2026 / control de cambio 2026-02-12) y el titulo interno del libro ("PROGRAMA DE TRABAJO PREVENTIVO SG-SST 2026"; solo cambio el nombre de archivo). Texto, metodo, responsable y calendario de las 87 actividades compartidas: sin un solo cambio.
 
@@ -109,28 +109,29 @@ La fuente de verdad del programa fue reemplazada. El archivo entregado por el us
 - Validado con el parser real del proyecto: 87 actividades (1-89 sin 4 y 8), 8 objetivos con sus nombres (objetivo 1 = 1,2,3,5,6,7,9), 821 celdas, total 1.013, membresias 87/4/74/18/41/2/1/12, seis E, metadatos y leyenda de roles intactos.
 - **El seed es reproducible**: `tsx scripts/generate-pdtp-catalog.ts` desde esa fuente regenera `db/seed/pdtp-catalog-2026.json` **identico** al comprometido. `bootstrap-pdtp-2026.ts` valida el SHA contra esta fuente.
 - El archivo entregado degradado se conserva sin adoptar; el historico (89) permanece como fixture de fidelidad del parser.
+- **Actualización 2026-07-22 (tarde):** tras las respuestas del cuestionario se retiró además la actividad **21** (duplicada de la 76), con la misma cirugía (vaciar+ocultar su fila en `PDTP GENERAL`). Fuente canónica vigente: `…(86 actividades).xlsx`, 3.821.187 bytes, SHA-256 `54c6695e…`; 86 actividades, 8 objetivos, 821 celdas, total 1.013, 6 E, 23/23 imágenes intactas. El seed sigue siendo reproducible desde ella. Ver `PLAN_IMPLEMENTACION_RESPUESTAS_Y_RE20_2026.md`.
 
 Los siguientes valores describen el **caso real que la plataforma debe poder representar e importar sin perdida**. Son un contrato de regresion del adaptador 2026, no limites del constructor ni valores obligatorios para nuevos programas:
 
 | Elemento | Valor comprobado |
 |---|---:|
 | Objetivos | 8 |
-| Actividades | 87 |
+| Actividades | 86 |
 | Hojas/vistas de la referencia | 8 |
 | Semanas del horizonte | 48 |
 | Celdas semanales planificadas con cantidad | 821 |
 | Cantidad planificada anual total | 1.013 |
 | Mayor cantidad planificada en una celda | 5 |
-| Actividades sin plan numerico semanal | 22 |
+| Actividades sin plan numerico semanal | 21 |
 | Cantidad ejecutada ya presente en el archivo | 6 |
 | Meta del indicador | 90 % |
 | Periodicidad del indicador | Mensual |
 | Tipo de indicador | Proceso |
 | Codigo documental | RE-36 |
 | Responsable declarado | Cada faena |
-| Fuente canonica del programa vigente | `PROGRAMA ACTIVIDADES PREVENTIVAS DEL SG-SST (87 actividades).xlsx` |
-| Tamaño del archivo | 3.821.479 bytes |
-| SHA-256 | `55b780b91102696946ab38dfa02a02aff89130ff9a42df209b5713ef367263c1` |
+| Fuente canonica del programa vigente | `PROGRAMA ACTIVIDADES PREVENTIVAS DEL SG-SST (86 actividades).xlsx` |
+| Tamaño del archivo | 3.821.187 bytes |
+| SHA-256 | `54c6695e2d07a1bc651f5a46222ed6a8dad41112db225cdda8ad1246a1d51baa` |
 | Archivo entregado por el usuario (degradado, no adoptado) | `PROGRAMA ACTIVIDADES PREVENTIVAS DEL SG-SST.xlsx`, 4.509.309 bytes, SHA-256 `8ad52fe1…` |
 
 ### 2.1 Hojas del archivo y membresias
@@ -496,7 +497,7 @@ El perfil RE-36 es un adaptador versionado y opcional. Puede conservar ocho hoja
 
 - [x] Separar permisos y acciones para enviar a revision, aprobar como JDPR, decidir como Legal, activar y administrar reapertura/archivo en la configuracion inicial 2026.
 - [x] Desacoplar el motor de los campos fijos JDPR/Legal mediante pasos ordenados configurables por programa/plantilla; los campos anteriores quedan solo como espejos de compatibilidad para la configuracion 2026.
-- [ ] Incorporar un permiso dedicado de sobrepaso de segregacion, si el negocio decide admitirlo, con justificacion y reautenticacion obligatorias.
+- [~] Incorporar un permiso dedicado de sobrepaso de segregacion, si el negocio decide admitirlo, con justificacion y reautenticacion obligatorias. **DESCARTADO 2026-07-22 (R6):** Prevención respondió (cuestionario 5.4) "no, una persona por rol; sin sobrepaso ni en emergencia". La segregación estricta se mantiene y el permiso de sobrepaso no se implementa.
 - [x] Impedir en servicio, no solo en UI, las combinaciones de actor prohibidas por la plantilla; para 2026, elaborador = JDPR o JDPR = Legal.
 - [x] Revisar y probar las asignaciones de `prevencionista`, `jefa_chome` y `administrador` en el manifest para envio, activacion y gobierno del ciclo.
 - [x] Exigir motivo y auditoria para rechazo, reapertura y archivo.
