@@ -56,7 +56,7 @@ export type PdtpActivityUpdateInput = {
   triggerDescription?: string | null
   dueDays?: number | null
   evidenceRequirement?: string | null
-  indicatorMode?: "planned_vs_completed" | "closed_on_time" | "completed_count" | "not_applicable"
+  indicatorMode?: "planned_vs_completed" | "closed_on_time" | "completed_count" | "not_applicable" | "coverage"
   targetValue?: number | null
   targetUnit?: string | null
   scheduleOverrides?: Array<{ month: number; week: number; plannedQuantity: number }>
@@ -78,7 +78,7 @@ export type PdtpActivityAddInput = {
   triggerDescription?: string | null
   dueDays?: number | null
   evidenceRequirement?: string | null
-  indicatorMode?: "planned_vs_completed" | "closed_on_time" | "completed_count" | "not_applicable"
+  indicatorMode?: "planned_vs_completed" | "closed_on_time" | "completed_count" | "not_applicable" | "coverage"
   targetValue?: number | null
   targetUnit?: string | null
   notes?: string

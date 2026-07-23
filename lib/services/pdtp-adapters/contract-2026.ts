@@ -6,8 +6,8 @@
  *    (`PROGRAMA DE TRABAJO PREVENTIVO SG-SST 2026.xlsx`, 89 actividades). Se
  *    conserva como fixture de fidelidad del parser; NO es el programa vigente.
  *  - INVARIANTS / VIEW_MEMBERSHIPS: el PROGRAMA VIGENTE tras la quita total de
- *    las actividades 4 y 8 (decisión 2026-07-22): 87 actividades. Es lo que el
- *    seed (`db/seed/pdtp-catalog-2026.json`) sirve y lo que se bootstrapea.
+ *    las actividades 4, 8 y 21 (decisión 2026-07-22): 86 actividades. Es lo que
+ *    el seed (`db/seed/pdtp-catalog-2026.json`) sirve y lo que se bootstrapea.
  *
  * No son límites del constructor general ni defaults obligatorios para nuevos
  * programas.
@@ -31,33 +31,39 @@ export const PDTP_2026_SOURCE_INVARIANTS = {
   executedQuantityTotal: 6,
 } as const
 
-/** Actividades retiradas del programa vigente por decisión 2026-07-22 (quita total). */
-export const PDTP_2026_REMOVED_ACTIVITIES = [4, 8] as const
+/**
+ * Actividades retiradas del programa vigente:
+ *  - 4 y 8 por decisión 2026-07-22 (quita total).
+ *  - 21 el 2026-07-22 por ser duplicada de la 76 ("informes, cierres y
+ *    seguimiento de accidentes" = "seguimiento de medidas correctivas de la
+ *    investigación"), confirmado por Prevención al responder el cuestionario.
+ */
+export const PDTP_2026_REMOVED_ACTIVITIES = [4, 8, 21] as const
 
 /**
- * Fuente física congelada del PROGRAMA VIGENTE (87 actividades): el documento
- * histórico con las filas de las actividades 4 y 8 vaciadas y ocultas en
- * `PDTP GENERAL` y `PRF Y Adm. de contrato`. Conserva la columna OBJETIVO,
- * imágenes, fusiones y metadatos del original (solo cambian esas dos hojas), y
- * las filas no se desplazaron: las seis celdas E siguen en M14/O15/G19/I19/K19/M19.
+ * Fuente física congelada del PROGRAMA VIGENTE (86 actividades): el documento
+ * histórico con las filas de las actividades 4, 8 y 21 vaciadas y ocultas
+ * (`PDTP GENERAL` para las tres; `PRF Y Adm. de contrato` para 4 y 8). Conserva
+ * la columna OBJETIVO, imágenes, fusiones y metadatos del original, y las filas
+ * no se desplazaron: las seis celdas E siguen en M14/O15/G19/I19/K19/M19.
  * Es la fuente que se importa y bootstrapea.
  */
 export const PDTP_2026_PROGRAM_SOURCE = {
-  filename: "PROGRAMA ACTIVIDADES PREVENTIVAS DEL SG-SST (87 actividades).xlsx",
-  sha256: "55b780b91102696946ab38dfa02a02aff89130ff9a42df209b5713ef367263c1",
-  sizeBytes: 3_821_479,
+  filename: "PROGRAMA ACTIVIDADES PREVENTIVAS DEL SG-SST (86 actividades).xlsx",
+  sha256: "54c6695e2d07a1bc651f5a46222ed6a8dad41112db225cdda8ad1246a1d51baa",
+  sizeBytes: 3_821_187,
 } as const
 
-/** Métricas del PROGRAMA VIGENTE (documento histórico menos las actividades 4 y 8). */
+/** Métricas del PROGRAMA VIGENTE (documento histórico menos las actividades 4, 8 y 21). */
 export const PDTP_2026_INVARIANTS = {
   objectiveCount: 8,
-  activityCount: 87,
+  activityCount: 86,
   viewCount: 8,
   horizonWeeks: 48,
   plannedCellCount: 821,
   plannedQuantityTotal: 1_013,
   maxPlannedCellQuantity: 5,
-  noNumericPlanCount: 22,
+  noNumericPlanCount: 21,
   executedQuantityTotal: 6,
 } as const
 
@@ -71,13 +77,13 @@ export const PDTP_2026_EXECUTED_CELLS = [
 ] as const
 
 export const PDTP_2026_NO_NUMERIC_PLAN_ACTIVITY_IDS = [
-  11, 12, 14, 15, 16, 18, 21, 52, 57, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78,
+  11, 12, 14, 15, 16, 18, 52, 57, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78,
 ] as const
 
 export const PDTP_2026_LONG_TEXT_ACTIVITY_IDS = [37, 38, 43, 51, 52] as const
 
 export const PDTP_2026_VIEW_MEMBERSHIPS = {
-  pdtp_general: Array.from({ length: 89 }, (_, index) => index + 1).filter((n) => n !== 4 && n !== 8),
+  pdtp_general: Array.from({ length: 89 }, (_, index) => index + 1).filter((n) => n !== 4 && n !== 8 && n !== 21),
   cphs: [11, 12, 13, 14],
   prf_adm_contrato: [
     1, 2, 3, 5, 6, 7, 9, 10, 13, 15, 16, 17, 18, 19, 20, 22, 23, 24, 25, 26, 27, 28,
@@ -120,7 +126,7 @@ export const PDTP_2026_COLUMN_DICTIONARY = {
 
 export const PDTP_2026_ELEMENT_CLASSIFICATION = {
   domainConcepts: ["objetivo", "actividad preventiva", "responsables", "programación", "ejecución", "evidencia", "indicador", "aprobación", "control de cambios"],
-  templateData: ["87 actividades", "8 objetivos", "roles declarados", "meta 90 %", "periodicidad mensual", "código RE-36"],
+  templateData: ["86 actividades", "8 objetivos", "roles declarados", "meta 90 %", "periodicidad mensual", "código RE-36"],
   derivedViews: ["PDTP GENERAL", "CPHS", "PRF y Administración de contrato", "Supervisión y Jefatura de turno", "PRF", "Administración de contrato", "Subgerencia", "Capacitación y campañas"],
   documentDecoration: ["logos", "colores", "anchos de columna", "celdas fusionadas", "bordes", "alturas de fila", "maquetación de firmas"],
 } as const

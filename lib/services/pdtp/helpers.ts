@@ -4,6 +4,7 @@ import {
   pdtpActionPlan,
   pdtpActivities,
   pdtpActivitySchedule,
+  pdtpActivityWorksiteExclusions,
   pdtpChangeLog,
   pdtpExecutionChecklists,
   pdtpExecutions,
@@ -162,7 +163,7 @@ export async function addPdtpChangeLogEntry(
 }
 
 export async function loadProgramScheduleAndExecutions(activityIds: string[], year: number, worksiteId?: string) {
-  const [scheduleRows, executionRows, overrideRows] = await Promise.all([
+  const [scheduleRows, executionRows, overrideRows, exclusionRows] = await Promise.all([
     db.select().from(pdtpActivitySchedule).where(inArray(pdtpActivitySchedule.activityId, activityIds)),
     worksiteId
       ? db.select().from(pdtpExecutions).where(and(inArray(pdtpExecutions.activityId, activityIds), eq(pdtpExecutions.worksiteId, worksiteId), eq(pdtpExecutions.year, year), isNull(pdtpExecutions.obligationId)))
@@ -170,9 +171,20 @@ export async function loadProgramScheduleAndExecutions(activityIds: string[], ye
     worksiteId
       ? loadPdtpOverrides(activityIds, year, worksiteId)
       : Promise.resolve([] as Awaited<ReturnType<typeof loadPdtpOverrides>>),
+    worksiteId
+      ? db.select({ activityId: pdtpActivityWorksiteExclusions.activityId }).from(pdtpActivityWorksiteExclusions)
+          .where(and(inArray(pdtpActivityWorksiteExclusions.activityId, activityIds), eq(pdtpActivityWorksiteExclusions.worksiteId, worksiteId)))
+      : Promise.resolve([] as Array<{ activityId: string }>),
   ])
+  // Aplicabilidad por faena (regla R4): una actividad excluida de la faena
+  // (p. ej. CPHS en faenas con <25 trabajadores) no aporta al denominador ni al
+  // ejecutado de esa faena. Antes las exclusiones se firmaban (content-digest)
+  // pero no se aplicaban al cómputo.
+  const excluded = new Set(exclusionRows.map((row) => row.activityId))
+  const withoutExcluded = <T extends { activityId: string }>(rows: T[]) =>
+    excluded.size === 0 ? rows : rows.filter((row) => !excluded.has(row.activityId))
   const effectiveSchedule = worksiteId
-    ? applyOverridesToSchedule(scheduleRows, overrideRows)
+    ? withoutExcluded(applyOverridesToSchedule(scheduleRows, overrideRows))
     : scheduleRows
-  return { scheduleRows: effectiveSchedule, executionRows }
+  return { scheduleRows: effectiveSchedule, executionRows: withoutExcluded(executionRows) }
 }

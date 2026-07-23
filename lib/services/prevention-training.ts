@@ -24,8 +24,7 @@ import {
   type CompetencyGap,
 } from "@/lib/prevention/training"
 import { createCapaActionWithClient } from "@/lib/services/prevention-capa"
-import {
-  competencyConvalidationSchema,
+import { competencyConvalidationSchema,
   competencyRequirementSchema,
   competencyRevocationSchema,
   trainingAcknowledgementSchema,
@@ -37,6 +36,7 @@ import {
   trainingSessionSchema,
   trainingVersionTransitionSchema,
 } from "@/lib/validation/prevention-module/training"
+import { onTrainingSessionCancelled, onTrainingSessionClosed } from "@/lib/services/pdtp-adapters/pdtp-accreditation-connectors"
 
 type Client = DB | Tx
 
@@ -362,7 +362,8 @@ export async function recordTrainingAttendance(input: unknown, access: TrainingA
  */
 export async function closeTrainingSession(input: unknown, access: TrainingAccess) {
   const data = trainingSessionCloseSchema.parse(input)
-  return db.transaction(async (tx) => {
+  let accreditation: Parameters<typeof onTrainingSessionClosed>[0] | null = null
+  const result = await db.transaction(async (tx) => {
     const [session] = await tx.select().from(preventionTrainingSessions)
       .where(eq(preventionTrainingSessions.id, data.sessionId)).limit(1)
     if (!session) throw new Error(NOT_FOUND)
@@ -445,13 +446,33 @@ export async function closeTrainingSession(input: unknown, access: TrainingAcces
       afterState: updated,
       actorUserId: access.userId,
     })
+
+    // Se prepara aquí y se dispara DESPUÉS del commit (ver abajo): así una
+    // reversión de la transacción no deja una ejecución PDTP huérfana.
+    const pdtpActivityNumbers = Array.isArray(course.pdtpActivityNumbers) ? course.pdtpActivityNumbers : []
+    if (pdtpActivityNumbers.length > 0) {
+      accreditation = {
+        sessionId: session.id,
+        worksiteId: session.worksiteId,
+        closedAt: updated.closedAt ?? now,
+        attendedCount: granted.length,
+        activityNumbers: pdtpActivityNumbers,
+      }
+    }
+
     return { session: updated, grantedCount: granted.length, convenedCount: attendance.length }
   })
+
+  // Auto-acreditación PDTP fuera de la transacción; safeAccredit absorbe errores
+  // (programa inactivo, curso no vinculado) sin afectar el cierre ya confirmado.
+  if (accreditation) await onTrainingSessionClosed(accreditation)
+
+  return result
 }
 
 export async function cancelTrainingSession(input: unknown, access: TrainingAccess) {
   const data = trainingSessionCancelSchema.parse(input)
-  return db.transaction(async (tx) => {
+  const updated = await db.transaction(async (tx) => {
     const [session] = await tx.select().from(preventionTrainingSessions)
       .where(eq(preventionTrainingSessions.id, data.sessionId)).limit(1)
     if (!session) throw new Error(NOT_FOUND)
@@ -470,8 +491,18 @@ export async function cancelTrainingSession(input: unknown, access: TrainingAcce
     }).where(and(eq(preventionTrainingSessions.id, session.id), eq(preventionTrainingSessions.version, data.expectedVersion))).returning()
     if (!updated) throw new Error("La sesión cambió mientras editabas. Recarga y reintenta.")
     await history(tx, { entityType: "session", entityId: session.id, worksiteId: session.worksiteId, changeType: "cancelled", reason: data.reason, beforeState: session, afterState: updated, actorUserId: access.userId })
+
     return updated
   })
+
+  // Revertir la auto-acreditación PDTP si existía, fuera de la transacción.
+  await onTrainingSessionCancelled({
+    sessionId: updated.id,
+    worksiteId: updated.worksiteId,
+    cancelledBy: access.userId,
+  })
+
+  return updated
 }
 
 /**

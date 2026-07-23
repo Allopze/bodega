@@ -88,8 +88,13 @@ export {
   listPdtpActivityWorksiteExclusions,
   excludeActivityForWorksite,
   includeActivityForWorksite,
+  syncPdtpCphsHeadcountExclusion,
+  PDTP_CPHS_ACTIVITY_NUMBERS,
+  PDTP_CPHS_MIN_HEADCOUNT,
   resolvePdtpEffectiveActivitiesForWorksite,
   assertPdtpWorksiteCanOperateProgram,
+  setPdtpActivityWorksiteParams,
+  listPdtpActivityWorksiteParams,
 } from "./worksites"
 export { cleanupPdtpEvidenceOrphans } from "./evidence-gc"
 export type { CleanupPdtpEvidenceOrphansOptions, CleanupPdtpEvidenceOrphansResult } from "./evidence-gc"
@@ -148,3 +153,7 @@ export { getPdtpManagementReport, resolveActivePdtpProgramId } from "./managemen
 
 export type { PdtpAuditDossier } from "./audit-dossier"
 export { getPdtpAuditDossier } from "./audit-dossier"
+
+// ── Auto-acreditación (Fase 2) ────────────────────────────────────────────────
+export { accreditPdtpFromEvent, revokePdtpAccreditation } from "./accreditation"
+export type { PdtpAccreditationSourceType, AccreditationInput, AccreditationResult, RevocationResult } from "./accreditation"

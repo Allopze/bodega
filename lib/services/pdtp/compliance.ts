@@ -1,6 +1,6 @@
-import { desc, eq, inArray } from "drizzle-orm"
+import { and, desc, eq, inArray, sql } from "drizzle-orm"
 import { db } from "@/db"
-import { pdtpActivities, pdtpActionPlan, pdtpPrograms } from "@/db/schema"
+import { pdtpActivities, pdtpActionPlan, pdtpActivityWorksiteParams, pdtpPrograms, workers } from "@/db/schema"
 import { PDTP_ESTADOS_CERRADOS } from "./checklist-domain"
 import { loadProgramScheduleAndExecutions } from "./helpers"
 
@@ -42,7 +42,7 @@ export async function getPdtpComplianceIndicators(yearOrProgramId: number | stri
   if (!program) return null
   const year = program.year
 
-  const activityRows = await db.select({ id: pdtpActivities.id }).from(pdtpActivities)
+  const activityRows = await db.select({ id: pdtpActivities.id, indicatorMode: pdtpActivities.indicatorMode }).from(pdtpActivities)
     .where(eq(pdtpActivities.programId, program.id))
 
   if (activityRows.length === 0) {
@@ -61,29 +61,79 @@ export async function getPdtpComplianceIndicators(yearOrProgramId: number | stri
   // submitted siguen visibles en el tablero operativo y en aprobaciones.
   const approvedExecutionRows = executionRows.filter((row) => row.status === "approved")
 
-  // El cumplimiento se mide por cantidad comprometida, no por el mero hecho
-  // de que una actividad tenga al menos una ejecución durante el mes.
-  const plannedByMonth = Array.from({ length: 12 }, () => 0)
-  for (const row of scheduleRows) {
-    plannedByMonth[row.month - 1]! += row.plannedQuantity
+  // Modo de indicador por actividad: 'coverage' se calcula todo-o-nada; el resto
+  // se capa en lo planificado (R3). El cómputo es por actividad-mes para poder
+  // aplicar reglas distintas por actividad y no dejar que una compense a otra.
+  const modeByActivity = new Map(activityRows.map((a) => [a.id, a.indicatorMode]))
+
+  // Padrón por actividad (R1/R2, respuesta 1 del cuestionario 2026-07): meta de
+  // cobertura = trabajadores esperados de la faena. Solo se conoce con faena
+  // explícita. Prioridad: parámetro cargado a mano → dotación activa de la faena
+  // (inferida) → cantidad planificada del mes.
+  const expectedByActivity = new Map<string, number>()
+  let activeWorkerCount = 0
+  if (worksiteId) {
+    const hasCoverage = activityRows.some((a) => a.indicatorMode === "coverage")
+    const [paramRows, workerCountRow] = await Promise.all([
+      db.select({ activityId: pdtpActivityWorksiteParams.activityId, expectedSubjectCount: pdtpActivityWorksiteParams.expectedSubjectCount })
+        .from(pdtpActivityWorksiteParams)
+        .where(and(inArray(pdtpActivityWorksiteParams.activityId, allActivityIds), eq(pdtpActivityWorksiteParams.worksiteId, worksiteId))),
+      // Solo se cuenta la dotación si hay actividades de cobertura (evita el query de más).
+      hasCoverage
+        ? db.select({ count: sql<number>`count(*)::int` }).from(workers).where(and(eq(workers.worksiteId, worksiteId), eq(workers.isActive, true)))
+        : Promise.resolve([{ count: 0 }]),
+    ])
+    for (const row of paramRows) {
+      if (row.expectedSubjectCount != null) expectedByActivity.set(row.activityId, row.expectedSubjectCount)
+    }
+    activeWorkerCount = workerCountRow[0]?.count ?? 0
   }
 
-  const executedByMonth = Array.from({ length: 12 }, () => 0)
+  const plannedByActivityMonth = new Map<string, number>()
+  for (const row of scheduleRows) {
+    const key = `${row.activityId}:${row.month}`
+    plannedByActivityMonth.set(key, (plannedByActivityMonth.get(key) ?? 0) + row.plannedQuantity)
+  }
+  const executedByActivityMonth = new Map<string, number>()
   for (const row of approvedExecutionRows) {
-    executedByMonth[row.month - 1]! += row.executedQuantity
+    const key = `${row.activityId}:${row.month}`
+    executedByActivityMonth.set(key, (executedByActivityMonth.get(key) ?? 0) + row.executedQuantity)
   }
 
   const monthly: PdtpComplianceMonth[] = Array.from({ length: 12 }, (_, i) => {
-    const planned = plannedByMonth[i]!
-    // Sobreejecutar es real y se muestra completo (principio 5.2: "conservar
-    // el real y marcar sobrecumplimiento sin caparlo silenciosamente"); antes
-    // se recortaba `executed` a `planned` aquí, ocultando el dato agregado
-    // (el crudo en pdtpExecutions nunca se tocó). `percent` puede superar 1 —
-    // los consumidores (ComplianceBar, fmtPct) ya clampan solo la barra
-    // visual, no el texto ni el número.
-    const executed = executedByMonth[i]!
+    const month = i + 1
+    // Actividades de cobertura: todo o nada por actividad (respuesta 2.2).
+    let coveragePlanned = 0
+    let coverageExecuted = 0
+    // Resto de actividades: el techo de sobrecumplimiento se aplica al TOTAL del
+    // mes (respuesta 2.4 = "por mes"), permitiendo que una actividad compense a
+    // otra dentro del mismo mes.
+    let restPlanned = 0
+    let restRawExecuted = 0
+    for (const activityId of allActivityIds) {
+      const p = plannedByActivityMonth.get(`${activityId}:${month}`) ?? 0
+      const rawExecuted = executedByActivityMonth.get(`${activityId}:${month}`) ?? 0
+      if (modeByActivity.get(activityId) === "coverage") {
+        // Cobertura solo cuenta en los meses en que está programada. Meta = padrón
+        // esperado de la faena (o lo planificado si no hay padrón cargado); solo
+        // cuenta si se alcanza al 100 %, sin crédito parcial.
+        if (p === 0) continue
+        // Padrón manual → dotación activa inferida (si hay) → planificado.
+        const target = expectedByActivity.get(activityId) ?? (activeWorkerCount > 0 ? activeWorkerCount : p)
+        coveragePlanned += target
+        coverageExecuted += rawExecuted >= target && target > 0 ? target : 0
+      } else {
+        // Resto: se agrupa por total del mes (respuesta 2.4 = "por mes"), sin
+        // condicionar el ejecutado a que la misma actividad tuviera planificado
+        // ese mes — así una actividad puede compensar a otra dentro del mes.
+        restPlanned += p
+        restRawExecuted += rawExecuted
+      }
+    }
+    const planned = coveragePlanned + restPlanned
+    const executed = coverageExecuted + Math.min(restRawExecuted, restPlanned)
     const percent = planned > 0 ? Math.round((executed / planned) * 100) / 100 : null
-    return { month: i + 1, planned, executed, percent }
+    return { month, planned, executed, percent }
   })
 
   const quarterly = Array.from({ length: 4 }, (_, q) => {

@@ -19,6 +19,7 @@ import type { WorksiteScope } from "@/lib/auth/scope"
 import { nanoid } from "@/lib/id"
 import { assessDrillCompletion, assessPlanReadiness } from "@/lib/prevention/emergency"
 import { createCapaActionWithClient } from "@/lib/services/prevention-capa"
+import { onEmergencyDrillCompleted } from "@/lib/services/pdtp-adapters/pdtp-accreditation-connectors"
 import { getUserIdsWithPermission } from "@/lib/services/notification-targeting"
 
 type Client = DB | Tx
@@ -336,7 +337,8 @@ const completeDrillSchema = z.object({
  */
 export async function completeEmergencyDrill(input: unknown, access: EmergencyAccess) {
   const data = completeDrillSchema.parse(input)
-  return db.transaction(async (tx) => {
+  let accreditation: Parameters<typeof onEmergencyDrillCompleted>[0] | null = null
+  const result = await db.transaction(async (tx) => {
     const [drill] = await tx.select().from(preventionEmergencyDrills).where(eq(preventionEmergencyDrills.id, data.drillId)).limit(1)
     if (!drill) throw new Error(NOT_FOUND)
     requireAccess(access, "prevention:emergency:drill_execute", drill.worksiteId)
@@ -393,8 +395,29 @@ export async function completeEmergencyDrill(input: unknown, access: EmergencyAc
     )).returning()
     if (!updated) throw new Error("El simulacro cambió mientras lo editabas. Recarga y reintenta.")
     await history(tx, { entityType: "drill", entityId: drill.id, worksiteId: drill.worksiteId, changeType: "completed", reason: `Resultado: ${data.outcome}`, beforeState: drill, afterState: updated, actorUserId: access.userId })
+
+    // Auto-acreditación PDTP: actividades del plan de emergencia. Se dispara
+    // DESPUÉS del commit (ver abajo) para no dejar ejecuciones huérfanas si la
+    // transacción se revierte.
+    const [plan] = await tx.select({ pdtpActivityNumbers: preventionEmergencyPlans.pdtpActivityNumbers })
+      .from(preventionEmergencyPlans).where(eq(preventionEmergencyPlans.id, drill.planId)).limit(1)
+    const activityNumbers = Array.isArray(plan?.pdtpActivityNumbers) ? plan.pdtpActivityNumbers : []
+    if (activityNumbers.length > 0) {
+      accreditation = {
+        drillId: drill.id,
+        worksiteId: drill.worksiteId,
+        executedAt: data.executedAt,
+        participantCount: data.participants.length,
+        activityNumbers,
+      }
+    }
+
     return updated
   })
+
+  if (accreditation) await onEmergencyDrillCompleted(accreditation)
+
+  return result
 }
 
 /* ── Consultas ────────────────────────────────────────────────────────────── */

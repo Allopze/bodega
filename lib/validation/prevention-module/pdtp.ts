@@ -56,7 +56,7 @@ export const pdtpRecurrenceRuleSchema = z.object({
 
 const pdtpScheduleModeSchema = z.enum(["scheduled", "on_demand", "triggered"])
 const pdtpScheduleClassificationStatusSchema = z.enum(["confirmed", "needs_review"])
-const pdtpIndicatorModeSchema = z.enum(["planned_vs_completed", "closed_on_time", "completed_count", "not_applicable"])
+const pdtpIndicatorModeSchema = z.enum(["planned_vs_completed", "closed_on_time", "completed_count", "not_applicable", "coverage"])
 
 export const pdtpActivityUpdateSchema = z.object({
   activityId: z.string().min(1, "Actividad requerida"),

@@ -11,13 +11,15 @@
  * misma definición.
  */
 
-import { and, eq, inArray } from "drizzle-orm"
+import { and, eq, inArray, sql } from "drizzle-orm"
 import { db } from "@/db"
 import {
   pdtpActivities,
   pdtpActivityWorksiteExclusions,
+  pdtpActivityWorksiteParams,
   pdtpPrograms,
   pdtpProgramWorksites,
+  workers,
   worksites,
   type PdtpActivity,
   type PdtpActivityWorksiteExclusion,
@@ -123,6 +125,11 @@ export async function excludeActivityForWorksite(
   const { activity, program } = await loadActivityAndProgram(activityId)
   assertPdtpProgramEditableState(program)
   if (scope !== undefined) assertWorksiteAccess(worksiteId, scope)
+  // El motivo es parte del contenido firmado del programa (content-digest) y de
+  // la bitácora de auditoría; exige ≥10 caracteres. Antes lo garantizaba un CHECK
+  // en la tabla (removido en 0110); ahora se valida en el servicio, único punto
+  // por el que pasan la acción y `syncPdtpCphsHeadcountExclusion`.
+  if (reason.trim().length < 10) throw new Error("El motivo de la exclusión debe tener al menos 10 caracteres.")
 
   const now = new Date().toISOString()
   const [row] = await db.insert(pdtpActivityWorksiteExclusions).values({
@@ -169,6 +176,51 @@ export async function includeActivityForWorksite(
 }
 
 /**
+ * Regla de aplicabilidad por dotación (R4, respuesta 4.1 del cuestionario 2026):
+ * el Comité Paritario (DS 44) solo aplica en faenas con ≥25 trabajadores. Esta
+ * función cuenta los trabajadores activos de la faena y excluye (o vuelve a
+ * incluir) las actividades CPHS del programa según el umbral, dejando registro
+ * en la bitácora. Corre durante la autoría (programa `draft`), porque las
+ * exclusiones forman parte del contenido firmado; `excludeActivityForWorksite`
+ * ya rechaza mutar un programa que salió de borrador.
+ */
+export const PDTP_CPHS_ACTIVITY_NUMBERS = [11, 12, 13, 14] as const
+export const PDTP_CPHS_MIN_HEADCOUNT = 25
+
+export async function syncPdtpCphsHeadcountExclusion(
+  programId: string,
+  worksiteId: string,
+  userId: string,
+  scope?: WorksiteScope,
+): Promise<{ headcount: number; cphsApplies: boolean; changed: number }> {
+  if (scope !== undefined) assertWorksiteAccess(worksiteId, scope)
+  const [countRow] = await db.select({ count: sql<number>`count(*)::int` })
+    .from(workers).where(and(eq(workers.worksiteId, worksiteId), eq(workers.isActive, true)))
+  const headcount = countRow?.count ?? 0
+  const cphsApplies = headcount >= PDTP_CPHS_MIN_HEADCOUNT
+
+  const cphsActivities = await db.select().from(pdtpActivities).where(and(
+    eq(pdtpActivities.programId, programId),
+    inArray(pdtpActivities.n, [...PDTP_CPHS_ACTIVITY_NUMBERS]),
+  ))
+  let changed = 0
+  for (const activity of cphsActivities) {
+    const [existing] = await db.select({ id: pdtpActivityWorksiteExclusions.id })
+      .from(pdtpActivityWorksiteExclusions)
+      .where(and(eq(pdtpActivityWorksiteExclusions.activityId, activity.id), eq(pdtpActivityWorksiteExclusions.worksiteId, worksiteId)))
+      .limit(1)
+    if (!cphsApplies && !existing) {
+      await excludeActivityForWorksite(activity.id, worksiteId, `CPHS no aplica: faena con ${headcount} trabajadores (menos de ${PDTP_CPHS_MIN_HEADCOUNT}, DS 44).`, userId, scope)
+      changed++
+    } else if (cphsApplies && existing) {
+      await includeActivityForWorksite(activity.id, worksiteId, `CPHS aplica: faena con ${headcount} trabajadores (${PDTP_CPHS_MIN_HEADCOUNT} o más).`, userId, scope)
+      changed++
+    }
+  }
+  return { headcount, cphsApplies, changed }
+}
+
+/**
  * Actividades efectivas de un programa para una faena concreta: todas menos
  * sus exclusiones puntuales. No resuelve si la faena puede ver el programa
  * en absoluto — eso es `resolveProgramWorksiteIds`, a nivel de membresía.
@@ -198,4 +250,54 @@ export async function assertPdtpWorksiteCanOperateProgram(programId: string, wor
   if (!members.some((m) => m.worksiteId === worksiteId)) {
     throw new Error("Esta faena no está habilitada para operar este programa PDTP.")
   }
+}
+
+/** Parámetros específicos de actividad por faena (R1 sujetos esperados, R2 % meta cobertura). */
+export async function setPdtpActivityWorksiteParams(
+  activityId: string,
+  worksiteId: string,
+  params: { expectedSubjectCount?: number | null; targetCoveragePercent?: number | null },
+  userId: string,
+) {
+  const now = new Date().toISOString()
+  const [existing] = await db.select().from(pdtpActivityWorksiteParams)
+    .where(and(eq(pdtpActivityWorksiteParams.activityId, activityId), eq(pdtpActivityWorksiteParams.worksiteId, worksiteId)))
+    .limit(1)
+
+  if (existing) {
+    const [updated] = await db.update(pdtpActivityWorksiteParams)
+      .set({
+        expectedSubjectCount: params.expectedSubjectCount !== undefined ? params.expectedSubjectCount : existing.expectedSubjectCount,
+        targetCoveragePercent: params.targetCoveragePercent !== undefined ? params.targetCoveragePercent : existing.targetCoveragePercent,
+        updatedByUserId: userId,
+        updatedAt: now,
+      })
+      .where(eq(pdtpActivityWorksiteParams.id, existing.id))
+      .returning()
+    return updated
+  } else {
+    const [created] = await db.insert(pdtpActivityWorksiteParams)
+      .values({
+        id: `pdtp-param-${nanoid()}`,
+        activityId,
+        worksiteId,
+        expectedSubjectCount: params.expectedSubjectCount ?? null,
+        targetCoveragePercent: params.targetCoveragePercent ?? null,
+        updatedByUserId: userId,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .returning()
+    return created
+  }
+}
+
+export async function listPdtpActivityWorksiteParams(activityIds: string[], worksiteId?: string) {
+  if (activityIds.length === 0) return []
+  if (worksiteId) {
+    return db.select().from(pdtpActivityWorksiteParams)
+      .where(and(inArray(pdtpActivityWorksiteParams.activityId, activityIds), eq(pdtpActivityWorksiteParams.worksiteId, worksiteId)))
+  }
+  return db.select().from(pdtpActivityWorksiteParams)
+    .where(inArray(pdtpActivityWorksiteParams.activityId, activityIds))
 }

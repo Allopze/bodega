@@ -34,7 +34,6 @@ import {
   users,
   worksites,
 } from "@/db/schema"
-import { assertPdtpProgramEditableState } from "./pdtp/helpers"
 import type { WorksiteScope } from "@/lib/auth/scope"
 import { nanoid } from "@/lib/id"
 import { createCapaActionWithClient } from "@/lib/services/prevention-capa"
@@ -698,7 +697,14 @@ export async function linkPdtpActivitySource(input: unknown, access: RiskLegalAc
   return db.transaction(async (tx) => {
     const [activity] = await tx.select({ activity: pdtpActivities, program: pdtpPrograms }).from(pdtpActivities).innerJoin(pdtpPrograms, eq(pdtpPrograms.id, pdtpActivities.programId)).where(eq(pdtpActivities.id, data.activityId)).limit(1)
     if (!activity) throw new Error("Actividad PDTP no encontrada.")
-    assertPdtpProgramEditableState(activity.program)
+    // La cobertura de fuentes es trazabilidad operacional: se vincula tanto en
+    // borrador (planificación) como en un programa activo (demostrar cobertura y
+    // cerrar el reloj MIPER de 30 días — ver resolvePdtpUpdateObligation). Solo
+    // se bloquea durante la revisión: alterar el contenido ahí invalidaría el
+    // digest firmado que se re-verifica al activar (ver pdtp/lifecycle.ts).
+    if (activity.program.status === "in_review") {
+      throw new Error("El programa está en revisión: no se pueden modificar sus vínculos de cobertura hasta que se apruebe o se reabra.")
+    }
     let sourceVersionSnapshot = "Fuente manual"
     let sourceEntityId = data.sourceId
     if (data.sourceType === "risk_control") {

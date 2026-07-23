@@ -31,6 +31,7 @@ import {
 import { createCapaActionWithClient } from "@/lib/services/prevention-capa"
 import { CHECKLIST_DEFINITIONS, isPersonEvaluationDefinition } from "@/lib/sst/definitions"
 import type { ChecklistDefinition } from "@/lib/sst/types"
+import { onInspectionCompleted } from "@/lib/services/pdtp-adapters/pdtp-accreditation-connectors"
 
 type Client = DB | Tx
 
@@ -368,7 +369,8 @@ export async function saveInspectionAnswers(input: unknown, access: InspectionAc
 export async function completeInspectionRun(input: unknown, access: InspectionAccess) {
   const data = z.object({ runId: z.string().min(1), expectedVersion: z.number().int().positive() }).parse(input)
 
-  return db.transaction(async (tx) => {
+  let accreditation: Parameters<typeof onInspectionCompleted>[0] | null = null
+  const result = await db.transaction(async (tx) => {
     const [run] = await tx.select().from(preventionInspectionRuns)
       .where(eq(preventionInspectionRuns.id, data.runId)).limit(1)
     if (!run) throw new Error(NOT_FOUND)
@@ -444,8 +446,28 @@ export async function completeInspectionRun(input: unknown, access: InspectionAc
     }
 
     await history(tx, { entityType: "run", entityId: run.id, worksiteId: run.worksiteId, changeType: "completed", reason: `Ejecutada con ${summary.nonConforming} incumplimiento(s) y ${derived.length} hallazgo(s)`, beforeState: run, afterState: updated, actorUserId: access.userId })
+
+    // Auto-acreditación PDTP: actividades declaradas en la plantilla. Se dispara
+    // DESPUÉS del commit (ver abajo) para no dejar ejecuciones huérfanas si la
+    // transacción se revierte.
+    const pdtpActivityNumbers = Array.isArray((template as { pdtpActivityNumbers?: number[] }).pdtpActivityNumbers)
+      ? (template as { pdtpActivityNumbers?: number[] }).pdtpActivityNumbers!
+      : []
+    if (pdtpActivityNumbers.length > 0) {
+      accreditation = {
+        runId: run.id,
+        worksiteId: run.worksiteId,
+        completedAt: updated.executedAt ?? now,
+        activityNumbers: pdtpActivityNumbers,
+      }
+    }
+
     return { run: updated, findings: derived.length, compliancePercent: summary.compliancePercent }
   })
+
+  if (accreditation) await onInspectionCompleted(accreditation)
+
+  return result
 }
 
 /** Deriva un hallazgo a CAPA común con prioridad y plazo según su criticidad. */

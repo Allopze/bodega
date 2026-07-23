@@ -10,6 +10,11 @@ import {
   preventionIncidentPeople,
   preventionIncidentPersonSensitivePayloads,
   preventionIncidents,
+  preventionIncidentClassificationCatalog,
+  preventionIncidentStatements,
+  preventionIncidentDiffusion,
+  preventionIncidentShiftDiffusions,
+  preventionIncidentFollowups,
   preventionRiskReviewTriggers,
   preventionSensitiveAccessAudit,
   safetyIndicatorHistory,
@@ -17,6 +22,18 @@ import {
   workers,
   worksites,
 } from "@/db/schema"
+import {
+  onIncidentClosed,
+  onIncidentDiatIssued,
+  onIncidentFollowupRecorded,
+  onIncidentInvestigationCompleted,
+  onIncidentMeasuresDiffused,
+  onIncidentOnePageDiffused,
+  onIncidentPreliminaryReported,
+  onIncidentReported,
+  onIncidentShiftDiffused,
+  onIncidentStatementRecorded,
+} from "@/lib/services/pdtp-adapters/incident-accreditation-connector"
 import type { WorksiteScope } from "@/lib/auth/scope"
 import { nanoid } from "@/lib/id"
 import {
@@ -405,7 +422,7 @@ export async function reportPreventionIncident(args: {
   requireAccess(args.access, "prevention:incidents:report", input.worksiteId)
   const fatalOrSerious = input.isFatalOrSerious || input.actualSeverity === "serious" || input.actualSeverity === "fatal"
 
-  return db.transaction(async (tx) => {
+  const result = await db.transaction(async (tx) => {
     for (const person of input.people) {
       if (person.workerId) await assertWorkerScope(tx, person.workerId, input.worksiteId)
     }
@@ -507,8 +524,14 @@ export async function reportPreventionIncident(args: {
       },
       createdAt: now,
     })
+
     return { incident: created, idempotentReplay: false }
   })
+
+  // Auto-acreditación PDTP: Actividades 66, 67 (fuera de la transacción)
+  await onIncidentReported({ incidentId: result.incident.id, worksiteId: result.incident.worksiteId, reportedAt: result.incident.createdAt })
+
+  return result
 }
 
 /**
@@ -889,7 +912,7 @@ export async function transitionPreventionIncident(args: {
   access: IncidentAccess
 }) {
   const input = transitionSchema.parse(args.input)
-  return db.transaction(async (tx) => {
+  const updated = await db.transaction(async (tx) => {
     const incident = await findIncidentForMutation(tx, input.incidentId)
     requireAccess(args.access, TRANSITION_PERMISSION[input.toStatus], incident.worksiteId)
     const facts = await getClosureFacts(tx, incident.id)
@@ -924,6 +947,14 @@ export async function transitionPreventionIncident(args: {
     })
     return updated
   })
+
+  // Auto-acreditación PDTP (Actividad 77: expediente cerrado/archivado), fuera
+  // de la transacción para no dejar una ejecución huérfana ante un rollback.
+  if (updated.status === "closed" && updated.closedAt) {
+    await onIncidentClosed({ incidentId: updated.id, worksiteId: updated.worksiteId, closedAt: updated.closedAt })
+  }
+
+  return updated
 }
 
 export async function savePreventionIncidentInvestigation(args: {
@@ -932,7 +963,7 @@ export async function savePreventionIncidentInvestigation(args: {
 }) {
   requireAccess(args.access, "prevention:incidents:investigate")
   const input = investigationSchema.parse(args.input)
-  return db.transaction(async (tx) => {
+  const result = await db.transaction(async (tx) => {
     const incident = await findIncidentForMutation(tx, input.incidentId)
     requireAccess(args.access, "prevention:incidents:investigate", incident.worksiteId)
     if (!["immediate_measures", "under_investigation", "pending_capa"].includes(incident.status)) {
@@ -1042,8 +1073,20 @@ export async function savePreventionIncidentInvestigation(args: {
       },
       createdAt: now,
     })
-    return { incident: updatedIncident, investigationId }
+    return { incident: updatedIncident, investigationId, completed: input.complete }
   })
+
+  // Auto-acreditación PDTP (Actividades 73/74: investigación definitiva completada
+  // e informe enviado), fuera de la transacción.
+  if (result.completed) {
+    await onIncidentInvestigationCompleted({
+      incidentId: result.incident.id,
+      worksiteId: result.incident.worksiteId,
+      completedAt: result.incident.updatedAt,
+    })
+  }
+
+  return { incident: result.incident, investigationId: result.investigationId }
 }
 
 export async function addPreventionIncidentEvidence(args: {
@@ -1100,7 +1143,7 @@ export async function recordPreventionIncidentNotification(args: {
 }) {
   requireAccess(args.access, "prevention:incidents:notify")
   const input = notificationSchema.parse(args.input)
-  return db.transaction(async (tx) => {
+  const updated = await db.transaction(async (tx) => {
     const incident = await findIncidentForMutation(tx, input.incidentId)
     requireAccess(args.access, "prevention:incidents:notify", incident.worksiteId)
     const [lane] = await tx.select().from(preventionIncidentNotifications).where(and(
@@ -1134,6 +1177,13 @@ export async function recordPreventionIncidentNotification(args: {
     })
     return updated
   })
+
+  // Auto-acreditación PDTP (Actividad 72: DIAT emitida), fuera de la transacción.
+  if (input.notificationType === "diat") {
+    await onIncidentDiatIssued({ incidentId: updated.id, worksiteId: updated.worksiteId, issuedAt: input.sentAt })
+  }
+
+  return updated
 }
 
 export async function authorizePreventionIncidentRestart(args: {
@@ -1194,24 +1244,26 @@ export async function createPreventionIncidentCapa(args: {
     const incident = await findIncidentForMutation(tx, input.incidentId)
     requireAccess(args.access, "prevention:incidents:investigate", incident.worksiteId)
     const now = nowIso()
-    const capa = await createCapaActionWithClient(tx, {
-      sourceType: "incident",
-      sourceId: incident.id,
-      worksiteId: incident.worksiteId,
-      finding: input.finding,
-      immediateMeasure: input.immediateMeasure ?? null,
-      rootCause: input.rootCause ?? null,
-      actionDescription: input.actionDescription,
-      responsibleUserId: input.responsibleUserId ?? null,
-      responsibleSnapshot: input.responsibleSnapshot ?? null,
-      responsibleRole: input.responsibleRole ?? null,
-      priority: input.priority,
-      targetDate: input.targetDate,
-      evidenceRequired: input.evidenceRequired,
-    }, args.access.ctx.userId)
-    const [updated] = await tx.update(preventionIncidents).set({
-      version: sql`${preventionIncidents.version} + 1`, updatedAt: now,
-    }).where(and(eq(preventionIncidents.id, incident.id), eq(preventionIncidents.version, input.expectedVersion))).returning()
+    const [capa, [updated]] = await Promise.all([
+      createCapaActionWithClient(tx, {
+        sourceType: "incident",
+        sourceId: incident.id,
+        worksiteId: incident.worksiteId,
+        finding: input.finding,
+        immediateMeasure: input.immediateMeasure ?? null,
+        rootCause: input.rootCause ?? null,
+        actionDescription: input.actionDescription,
+        responsibleUserId: input.responsibleUserId ?? null,
+        responsibleSnapshot: input.responsibleSnapshot ?? null,
+        responsibleRole: input.responsibleRole ?? null,
+        priority: input.priority,
+        targetDate: input.targetDate,
+        evidenceRequired: input.evidenceRequired,
+      }, args.access.ctx.userId),
+      tx.update(preventionIncidents).set({
+        version: sql`${preventionIncidents.version} + 1`, updatedAt: now,
+      }).where(and(eq(preventionIncidents.id, incident.id), eq(preventionIncidents.version, input.expectedVersion))).returning(),
+    ])
     if (!updated) throw new Error("El incidente cambió; recarga e intenta nuevamente.")
     await appendHistory(tx, {
       incidentId: incident.id,
@@ -1278,6 +1330,224 @@ export async function listIncidentNotificationResponsibles(access: IncidentAcces
   if (ids.length === 0) return []
   return db.select({ id: users.id, name: users.name, email: users.email }).from(users)
     .where(and(inArray(users.id, ids), eq(users.isActive, true))).orderBy(asc(users.name))
+}
+
+/* ── RE-20: Módulo de Investigación y Auto-acreditación PDTP ─────────────── */
+
+export async function createPreliminaryReport(args: {
+  incidentId: string
+  preliminaryReportText: string
+  access: IncidentAccess
+}) {
+  const [incident] = await db.select().from(preventionIncidents).where(eq(preventionIncidents.id, args.incidentId)).limit(1)
+  if (!incident) throw new Error("Incidente no encontrado.")
+  requireAccess(args.access, "prevention:incidents:investigate", incident.worksiteId)
+
+  const now = new Date().toISOString()
+  const [investigation] = await db.select().from(preventionIncidentInvestigations)
+    .where(eq(preventionIncidentInvestigations.incidentId, incident.id)).limit(1)
+
+  if (investigation) {
+    await db.update(preventionIncidentInvestigations).set({
+      preliminaryReportText: args.preliminaryReportText,
+      preliminaryReportAt: now,
+      updatedAt: now,
+    }).where(eq(preventionIncidentInvestigations.id, investigation.id))
+  } else {
+    await db.insert(preventionIncidentInvestigations).values({
+      id: `incinv-${nanoid()}`,
+      incidentId: incident.id,
+      status: "in_progress",
+      methodology: "5_whys",
+      preliminaryReportText: args.preliminaryReportText,
+      preliminaryReportAt: now,
+      startedByUserId: args.access.ctx.userId,
+      startedAt: now,
+      updatedAt: now,
+    })
+  }
+
+  // Auto-acreditación PDTP: Actividades 68, 70 (preliminar ≤3h)
+  await onIncidentPreliminaryReported({ incidentId: incident.id, worksiteId: incident.worksiteId, reportedAt: now })
+
+  return { incidentId: incident.id, preliminaryReportAt: now }
+}
+
+export async function recordIncidentStatement(args: {
+  incidentId: string
+  kind: "involved" | "witness" | "cphs"
+  deponentName: string
+  deponentRole?: string
+  statementText: string
+  access: IncidentAccess
+}) {
+  const [incident] = await db.select().from(preventionIncidents).where(eq(preventionIncidents.id, args.incidentId)).limit(1)
+  if (!incident) throw new Error("Incidente no encontrado.")
+  requireAccess(args.access, "prevention:incidents:investigate", incident.worksiteId)
+
+  const now = new Date().toISOString()
+  const [created] = await db.insert(preventionIncidentStatements).values({
+    id: `incstmt-${nanoid()}`,
+    incidentId: incident.id,
+    kind: args.kind,
+    deponentName: args.deponentName,
+    deponentRole: args.deponentRole ?? null,
+    statementText: args.statementText,
+    signedAt: now,
+    createdByUserId: args.access.ctx.userId,
+    createdAt: now,
+  }).returning()
+
+  // Auto-acreditación PDTP: Actividad 69 (declaración ≤24h)
+  await onIncidentStatementRecorded({ incidentId: incident.id, worksiteId: incident.worksiteId, recordedAt: now })
+
+  return created
+}
+
+export async function publishOnePageDiffusion(args: {
+  incidentId: string
+  onePageSummary: string
+  rootCauseText: string
+  actionPlanSummary: string
+  evidenceRef?: string
+  access: IncidentAccess
+}) {
+  const [incident] = await db.select().from(preventionIncidents).where(eq(preventionIncidents.id, args.incidentId)).limit(1)
+  if (!incident) throw new Error("Incidente no encontrado.")
+  requireAccess(args.access, "prevention:incidents:investigate", incident.worksiteId)
+
+  const now = new Date().toISOString()
+  const [created] = await db.insert(preventionIncidentDiffusion).values({
+    id: `incdif-${nanoid()}`,
+    incidentId: incident.id,
+    onePageSummary: args.onePageSummary,
+    rootCauseText: args.rootCauseText,
+    actionPlanSummary: args.actionPlanSummary,
+    evidenceRef: args.evidenceRef ?? null,
+    diffusedAt: now,
+    createdByUserId: args.access.ctx.userId,
+    createdAt: now,
+  }).returning()
+
+  // Auto-acreditación PDTP: Actividad 78 (ONE PAGE ≤24h)
+  await onIncidentOnePageDiffused({ incidentId: incident.id, worksiteId: incident.worksiteId, diffusedAt: now })
+
+  return created
+}
+
+export async function recordBiweeklyFollowup(args: {
+  incidentId: string
+  followupDate: string
+  note: string
+  evidenceRef?: string
+  access: IncidentAccess
+}) {
+  const [incident] = await db.select().from(preventionIncidents).where(eq(preventionIncidents.id, args.incidentId)).limit(1)
+  if (!incident) throw new Error("Incidente no encontrado.")
+  requireAccess(args.access, "prevention:incidents:investigate", incident.worksiteId)
+
+  const now = new Date().toISOString()
+  const [created] = await db.insert(preventionIncidentFollowups).values({
+    id: `incflw-${nanoid()}`,
+    incidentId: incident.id,
+    followupDate: args.followupDate,
+    note: args.note,
+    evidenceRef: args.evidenceRef ?? null,
+    status: "completed",
+    createdByUserId: args.access.ctx.userId,
+    createdAt: now,
+  }).returning()
+
+  if (!created) throw new Error("No se pudo registrar el seguimiento quincenal.")
+
+  // Auto-acreditación PDTP: Actividad 76 (seguimiento quincenal)
+  await onIncidentFollowupRecorded({
+    incidentId: incident.id,
+    worksiteId: incident.worksiteId,
+    followupId: created.id,
+    recordedAt: now,
+  })
+
+  return created
+}
+
+export async function listIncidentClassificationCatalog(category?: string) {
+  if (category) {
+    return db.select().from(preventionIncidentClassificationCatalog)
+      .where(and(eq(preventionIncidentClassificationCatalog.category, category), eq(preventionIncidentClassificationCatalog.isActive, true)))
+      .orderBy(asc(preventionIncidentClassificationCatalog.name))
+  }
+  return db.select().from(preventionIncidentClassificationCatalog)
+    .where(eq(preventionIncidentClassificationCatalog.isActive, true))
+    .orderBy(asc(preventionIncidentClassificationCatalog.category), asc(preventionIncidentClassificationCatalog.name))
+}
+
+/* ── RE-20: Difusiones en turnos (71) y de medidas correctivas (75) ──────────
+ * Doble confirmación: la prevencionista de faena marca la difusión y el
+ * supervisor de faena la confirma. La acreditación PDTP ocurre al confirmar. */
+
+export async function markIncidentDiffusion(args: {
+  incidentId: string
+  kind: "shift" | "corrective_measures"
+  summary: string
+  evidenceRef?: string
+  access: IncidentAccess
+}) {
+  if (args.summary.trim().length < 3) throw new Error("La difusión requiere un resumen de lo comunicado.")
+  const [incident] = await db.select().from(preventionIncidents).where(eq(preventionIncidents.id, args.incidentId)).limit(1)
+  if (!incident) throw new Error("Incidente no encontrado.")
+  requireAccess(args.access, "prevention:incidents:investigate", incident.worksiteId)
+
+  const now = new Date().toISOString()
+  const [created] = await db.insert(preventionIncidentShiftDiffusions).values({
+    id: `incsdif-${nanoid()}`,
+    incidentId: incident.id,
+    kind: args.kind,
+    summary: args.summary.trim(),
+    evidenceRef: args.evidenceRef ?? null,
+    status: "pending_confirmation",
+    markedByUserId: args.access.ctx.userId,
+    markedAt: now,
+    createdAt: now,
+  }).returning()
+  if (!created) throw new Error("No se pudo registrar la difusión.")
+  return created
+}
+
+export async function confirmIncidentDiffusion(args: {
+  diffusionId: string
+  access: IncidentAccess
+}) {
+  const [row] = await db.select({ diffusion: preventionIncidentShiftDiffusions, worksiteId: preventionIncidents.worksiteId })
+    .from(preventionIncidentShiftDiffusions)
+    .innerJoin(preventionIncidents, eq(preventionIncidentShiftDiffusions.incidentId, preventionIncidents.id))
+    .where(eq(preventionIncidentShiftDiffusions.id, args.diffusionId)).limit(1)
+  if (!row) throw new Error("Difusión no encontrada.")
+  // El supervisor de faena confirma (permiso de cierre, distinto de quien la marcó).
+  requireAccess(args.access, "prevention:incidents:close", row.worksiteId)
+  if (row.diffusion.status === "confirmed") return row.diffusion // idempotente
+
+  const now = new Date().toISOString()
+  const [updated] = await db.update(preventionIncidentShiftDiffusions).set({
+    status: "confirmed",
+    confirmedByUserId: args.access.ctx.userId,
+    confirmedAt: now,
+  }).where(and(eq(preventionIncidentShiftDiffusions.id, args.diffusionId), eq(preventionIncidentShiftDiffusions.status, "pending_confirmation"))).returning()
+  if (!updated) throw new Error("La difusión ya fue confirmada por otra persona. Recarga y reintenta.")
+
+  // Auto-acreditación PDTP al confirmar: Act. 71 (turnos) o 75 (medidas).
+  if (updated.kind === "shift") {
+    await onIncidentShiftDiffused({ incidentId: updated.incidentId, worksiteId: row.worksiteId, diffusedAt: now })
+  } else {
+    await onIncidentMeasuresDiffused({ incidentId: updated.incidentId, worksiteId: row.worksiteId, diffusedAt: now })
+  }
+  return updated
+}
+
+export async function listIncidentDiffusions(incidentId: string) {
+  return db.select().from(preventionIncidentShiftDiffusions)
+    .where(eq(preventionIncidentShiftDiffusions.incidentId, incidentId))
+    .orderBy(desc(preventionIncidentShiftDiffusions.markedAt))
 }
 
 export const __incidentSchemas = {

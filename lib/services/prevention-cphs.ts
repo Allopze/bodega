@@ -24,6 +24,7 @@ import {
 } from "@/lib/prevention/cphs"
 import { createCapaActionWithClient } from "@/lib/services/prevention-capa"
 import { getUserIdsWithPermission } from "@/lib/services/notification-targeting"
+import { onCphsMeetingClosed, onManagementReviewClosed } from "@/lib/services/pdtp-adapters/pdtp-accreditation-connectors"
 
 type Client = DB | Tx
 
@@ -279,7 +280,8 @@ const closeMeetingSchema = z.object({
  */
 export async function closeCommitteeMeeting(input: unknown, access: CphsAccess) {
   const data = closeMeetingSchema.parse(input)
-  return db.transaction(async (tx) => {
+  let accreditation: Parameters<typeof onCphsMeetingClosed>[0] | null = null
+  const result = await db.transaction(async (tx) => {
     const [row] = await tx.select({ meeting: preventionCommitteeMeetings, committee: preventionCommittees })
       .from(preventionCommitteeMeetings)
       .innerJoin(preventionCommittees, eq(preventionCommitteeMeetings.committeeId, preventionCommittees.id))
@@ -358,8 +360,20 @@ export async function closeCommitteeMeeting(input: unknown, access: CphsAccess) 
     )).returning()
     if (!updated) throw new Error("La sesión cambió mientras la editabas. Recarga y reintenta.")
     await history(tx, { entityType: "meeting", entityId: row.meeting.id, worksiteId: row.committee.worksiteId, changeType: "closed", reason: `Acta cerrada con ${data.agreements.length} acuerdo(s)`, beforeState: row.meeting, afterState: updated, actorUserId: access.userId })
+
+    // Auto-acreditación PDTP (CPHS 11/12/13/14): se dispara DESPUÉS del commit.
+    accreditation = {
+      meetingId: row.meeting.id,
+      worksiteId: row.committee.worksiteId,
+      heldAt: data.heldAt,
+    }
+
     return { meeting: updated, agreementsCreated: data.agreements.length, quorum }
   })
+
+  if (accreditation) await onCphsMeetingClosed(accreditation)
+
+  return result
 }
 
 /* ── Revisión por la dirección ────────────────────────────────────────────── */
@@ -413,7 +427,8 @@ export async function closeManagementReview(input: unknown, access: CphsAccess) 
   const data = closeReviewSchema.parse(input)
   requireAccess(access, "prevention:governance:review")
 
-  return db.transaction(async (tx) => {
+  let accreditation: Parameters<typeof onManagementReviewClosed>[0] | null = null
+  const result = await db.transaction(async (tx) => {
     const [review] = await tx.select().from(preventionManagementReviews)
       .where(eq(preventionManagementReviews.id, data.reviewId)).limit(1)
     if (!review) throw new Error(NOT_FOUND)
@@ -450,8 +465,23 @@ export async function closeManagementReview(input: unknown, access: CphsAccess) 
     )).returning()
     if (!updated) throw new Error("La revisión cambió mientras la editabas. Recarga y reintenta.")
     await history(tx, { entityType: "management_review", entityId: review.id, worksiteId: review.worksiteId, changeType: "closed", reason: `Cerrada con ${data.commitments.length} compromiso(s)`, beforeState: review, afterState: updated, actorUserId: access.userId })
+
+    // Auto-acreditación PDTP (revisión por la dirección → actividad 14): se
+    // dispara DESPUÉS del commit.
+    if (review.worksiteId) {
+      accreditation = {
+        reviewId: review.id,
+        worksiteId: review.worksiteId,
+        heldAt: review.heldAt,
+      }
+    }
+
     return { review: updated, commitmentsCreated: data.commitments.length }
   })
+
+  if (accreditation) await onManagementReviewClosed(accreditation)
+
+  return result
 }
 
 /** Marca vencidos los comités cuyo mandato ya pasó. Idempotente. */
