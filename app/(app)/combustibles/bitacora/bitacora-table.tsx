@@ -6,9 +6,11 @@ import { useSearchParams } from "next/navigation"
 import { ArrowSquareOut, Camera, ClockCounterClockwise, Flag, GearSix } from "@phosphor-icons/react"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
+import { StateBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { CrossFilterCell } from "@/components/ui/cross-filter-cell"
 import { FUEL_LOG_SOURCE_LABEL, type FuelLogRow, type FuelLogSource } from "@/lib/combustibles/fuel-log-shared"
 import { formatDateTime } from "@/lib/utils"
 import { toast } from "@/lib/toast"
@@ -23,27 +25,12 @@ const SOURCE_BADGE: Record<FuelLogSource, "primary" | "info" | "default"> = {
   operation_manual: "default",
 }
 
-const STATUS_LABEL: Record<string, string> = {
-  submitted: "Recibida", observed: "Observada", validated: "Validada", voided: "Anulada",
-  draft: "Borrador", registered: "Registrada", reconciled: "Conciliada", cancelled: "Anulada",
-  importado: "Importado (lote)", revertido: "Revertido (lote)",
-}
-
-/** Construye el href de la misma bitácora con un filtro adicional aplicado, preservando los demás. */
-type FilterHref = (params: Record<string, string>) => string
-
 interface ColumnDef {
   key: string
   label: string
   defaultVisible: boolean
-  render: (row: EnrichedRow, filterHref: FilterHref) => React.ReactNode
+  render: (row: EnrichedRow) => React.ReactNode
   numeric?: boolean
-}
-
-/** Celda de valor con selección cruzada: clic aplica ese valor como filtro sin perder los demás (mismo mecanismo que la selección cruzada desde barras en /combustibles). */
-function CrossFilterCell({ value, filterHref, params }: { value: string | null; filterHref: FilterHref; params: Record<string, string> }) {
-  if (!value) return "—"
-  return <Link href={filterHref(params)} className="hover:underline" title="Filtrar por este valor">{value}</Link>
 }
 
 const COLUMNS: ColumnDef[] = [
@@ -52,36 +39,36 @@ const COLUMNS: ColumnDef[] = [
   { key: "worksiteName", label: "Faena", defaultVisible: true, render: (r) => r.worksiteName ?? "—" },
   {
     key: "equipment", label: "Equipo", defaultVisible: true,
-    render: (r, filterHref) => r.plate
-      ? <CrossFilterCell value={`${r.equipmentCode ?? "—"} · ${r.plate}`} filterHref={filterHref} params={{ q: r.plate }} />
+    render: (r) => r.plate
+      ? <CrossFilterCell value={`${r.equipmentCode ?? "—"} · ${r.plate}`} paramKey="q" paramValue={r.plate} />
       : <span>{r.equipmentCode ?? "—"}</span>,
   },
   {
     key: "equipmentTypeName", label: "Tipo de equipo", defaultVisible: false,
-    render: (r, filterHref) => r.equipmentTypeId
-      ? <CrossFilterCell value={r.equipmentTypeName} filterHref={filterHref} params={{ tipo: r.equipmentTypeId }} />
+    render: (r) => r.equipmentTypeId
+      ? <CrossFilterCell value={r.equipmentTypeName} paramKey="tipo" paramValue={r.equipmentTypeId} />
       : (r.equipmentTypeName ?? "—"),
   },
   { key: "driverName", label: "Conductor", defaultVisible: true, render: (r) => r.driverName ?? "—" },
   { key: "supervisorName", label: "Supervisor", defaultVisible: true, render: (r) => r.supervisorName ?? "—" },
   {
     key: "supplierName", label: "Proveedor", defaultVisible: false,
-    render: (r, filterHref) => r.supplierId
-      ? <CrossFilterCell value={r.supplierName} filterHref={filterHref} params={{ proveedor: r.supplierId }} />
+    render: (r) => r.supplierId
+      ? <CrossFilterCell value={r.supplierName} paramKey="proveedor" paramValue={r.supplierId} />
       : (r.supplierName ?? "—"),
   },
   { key: "loadingPointName", label: "Lugar de carga", defaultVisible: false, render: (r) => r.loadingPointName ?? "—" },
   { key: "productName", label: "Producto", defaultVisible: true, render: (r) => r.productName ?? "—" },
   { key: "liters", label: "Litros", defaultVisible: true, numeric: true, render: (r) => `${Number(r.liters).toLocaleString("es-CL")} L` },
-  { key: "meterReading", label: "Medidor", defaultVisible: false, render: (r) => r.meterReading == null ? "—" : <span>{Number(r.meterReading).toLocaleString("es-CL")}<span className="ml-1 text-(--color-text-muted)">{r.meterLabel ?? ""}</span></span> },
-  { key: "performance", label: "Rendimiento", defaultVisible: false, render: (r) => r.performanceValue == null ? "—" : <span>{Number(r.performanceValue).toLocaleString("es-CL")}<span className="ml-1 text-(--color-text-muted)">{r.performanceUnit === "km_lt" ? "km/L" : r.performanceUnit === "lt_hr" ? "L/h" : ""}</span></span> },
+  { key: "meterReading", label: "Medidor", defaultVisible: false, render: (r) => r.meterReading == null ? "—" : <span>{Number(r.meterReading).toLocaleString("es-CL")}<span className="ml-1 text-[var(--color-text-muted)]">{r.meterLabel ?? ""}</span></span> },
+  { key: "performance", label: "Rendimiento", defaultVisible: false, render: (r) => r.performanceValue == null ? "—" : <span>{Number(r.performanceValue).toLocaleString("es-CL")}<span className="ml-1 text-[var(--color-text-muted)]">{r.performanceUnit === "km_lt" ? "km/L" : r.performanceUnit === "lt_hr" ? "L/h" : ""}</span></span> },
   { key: "seals", label: "Sellos", defaultVisible: false, render: (r) => (r.sealRemoved || r.sealInstalled) ? `${r.sealRemoved ?? "—"} → ${r.sealInstalled ?? "—"}` : "—" },
   { key: "evidenceCount", label: "Evidencias", defaultVisible: false, render: (r) => r.evidenceCount == null ? "—" : `${r.evidenceCount}/4` },
   { key: "notes", label: "Observaciones", defaultVisible: false, render: (r) => <span className="line-clamp-2 max-w-[220px]">{r.notes ?? "—"}</span> },
-  { key: "statusLabel", label: "Estado", defaultVisible: true, render: (r) => r.statusLabel ? STATUS_LABEL[r.statusLabel] ?? r.statusLabel : "—" },
+  { key: "statusLabel", label: "Estado", defaultVisible: true, render: (r) => r.statusLabel ? <StateBadge state={r.statusLabel} entity="fuel_log" size="sm" /> : "—" },
   { key: "createdByName", label: "Creado por", defaultVisible: false, render: (r) => r.createdByName ?? "—" },
   { key: "updatedByName", label: "Modificado por", defaultVisible: false, render: (r) => r.updatedByName ?? "—" },
-  { key: "anomalyCount", label: "Anomalías", defaultVisible: true, render: (r) => r.anomalyCount != null && r.anomalyCount > 0 ? <Link href={`/combustibles/anomalias?ref=${r.source}:${r.id}`}><Badge variant="danger" size="sm">{r.anomalyCount}</Badge></Link> : <span className="text-(--color-text-muted)">—</span> },
+  { key: "anomalyCount", label: "Anomalías", defaultVisible: true, render: (r) => r.anomalyCount != null && r.anomalyCount > 0 ? <Link href={`/combustibles/anomalias?ref=${r.source}:${r.id}`}><Badge variant="danger" size="sm">{r.anomalyCount}</Badge></Link> : <span className="text-[var(--color-text-muted)]">—</span> },
   { key: "reviewMark", label: "Revisión", defaultVisible: true, render: (r) => r.reviewMark ? <span className="inline-flex items-center gap-1 text-amber-600 dark:text-amber-400" title={r.reviewMarkNotes ?? "Marcado para revisión"}><Flag size={14} weight="fill" />{r.reviewMarkNotes ? <span className="text-xs max-w-[120px] truncate">{r.reviewMarkNotes}</span> : null}</span> : null },
   { key: "createdAt", label: "Creado", defaultVisible: false, render: (r) => r.createdAt ? formatDateTime(r.createdAt) : "—" },
   { key: "updatedAt", label: "Modificado", defaultVisible: false, render: (r) => r.updatedAt ? formatDateTime(r.updatedAt) : "—" },
@@ -114,7 +101,7 @@ function ReviewToggle({ row }: { row: EnrichedRow }) {
       type="button"
       onClick={handleClick}
       disabled={busy}
-      className={`inline-flex items-center gap-1 text-xs transition-colors hover:opacity-80 ${marked ? "text-amber-600 dark:text-amber-400" : "text-(--color-text-muted) hover:text-amber-600 dark:hover:text-amber-400"}`}
+      className={`inline-flex items-center gap-1 text-xs transition-colors hover:opacity-80 ${marked ? "text-amber-600 dark:text-amber-400" : "text-[var(--color-text-muted)] hover:text-amber-600 dark:hover:text-amber-400"}`}
       title={marked ? "Quitar marca de revisión" : "Marcar para revisión"}
     >
       <Flag size={14} weight={marked ? "fill" : "regular"} />
@@ -125,18 +112,9 @@ function ReviewToggle({ row }: { row: EnrichedRow }) {
 export function BitacoraTable({ rows }: { rows: EnrichedRow[] }) {
   const [visible, setVisible] = React.useState<Set<string>>(() => new Set(COLUMNS.filter((c) => c.defaultVisible).map((c) => c.key)))
   const [selected, setSelected] = React.useState<Set<string>>(new Set())
-  const searchParams = useSearchParams()
   const rowKey = (row: EnrichedRow) => `${row.source}:${row.id}`
   const columns = COLUMNS.filter((c) => visible.has(c.key))
   const allSelected = rows.length > 0 && rows.every((row) => selected.has(rowKey(row)))
-
-  const filterHref: FilterHref = (params) => {
-    const next = new URLSearchParams(searchParams.toString())
-    for (const [key, value] of Object.entries(params)) next.set(key, value)
-    next.delete("page")
-    const query = next.toString()
-    return query ? `/combustibles/bitacora?${query}` : "/combustibles/bitacora"
-  }
 
   function toggleColumn(key: string) {
     setVisible((prev) => {
@@ -176,14 +154,14 @@ export function BitacoraTable({ rows }: { rows: EnrichedRow[] }) {
           </DropdownMenuContent>
         </DropdownMenu>
         {selection.length > 0 && (
-          <div className="flex items-center gap-2 text-xs text-(--color-text-muted)">
+          <div className="flex items-center gap-2 text-xs text-[var(--color-text-muted)]">
             <span>{selection.length} seleccionadas</span>
             <BitacoraSelectionExport selection={selection} />
           </div>
         )}
       </div>
 
-      <div className="overflow-x-auto border border-(--color-border)">
+      <div className="overflow-x-auto border border-[var(--color-border)]">
         <Table className="min-w-[1100px] text-sm">
           <TableHeader>
             <TableRow>
@@ -193,22 +171,22 @@ export function BitacoraTable({ rows }: { rows: EnrichedRow[] }) {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {rows.length === 0 && <TableRow><TableCell colSpan={columns.length + 2} className="py-10 text-center text-(--color-text-muted)">Sin registros para este filtro.</TableCell></TableRow>}
+            {rows.length === 0 && <TableRow><TableCell colSpan={columns.length + 2} className="py-10 text-center text-[var(--color-text-muted)]">Sin registros para este filtro.</TableCell></TableRow>}
             {rows.map((row) => {
               const key = rowKey(row)
               return (
                 <TableRow key={key} className={row.reviewMark ? "bg-amber-50/40 dark:bg-amber-900/10" : ""}>
                   <TableCell><Checkbox id={`select-${key}`} label="" checked={selected.has(key)} onChange={() => toggleRow(key)} aria-label={`Seleccionar fila ${key}`} /></TableCell>
-                  {columns.map((column) => <TableCell key={column.key} className={column.numeric ? "text-right font-mono" : ""}>{column.render(row, filterHref)}</TableCell>)}
+                  {columns.map((column) => <TableCell key={column.key} className={column.numeric ? "text-right font-mono" : ""}>{column.render(row)}</TableCell>)}
                   <TableCell>
                     <div className="flex items-center gap-1">
                       <ReviewToggle row={row} />
-                      <Link href={row.detailHref} className="inline-flex items-center gap-1 text-xs text-(--color-primary-ink) hover:underline" title="Abrir detalle"><ArrowSquareOut size={14} /></Link>
+                      <Link href={row.detailHref} className="inline-flex items-center gap-1 text-xs text-[var(--color-primary-ink)] hover:underline" title="Abrir detalle"><ArrowSquareOut size={14} /></Link>
                       {row.source === "tae_pwa" && (row.evidenceCount ?? 0) > 0 && (
-                        <Link href={`${row.detailHref}#evidencia`} className="inline-flex items-center gap-1 text-xs text-(--color-primary-ink) hover:underline" title="Ver evidencias"><Camera size={14} /></Link>
+                        <Link href={`${row.detailHref}#evidencia`} className="inline-flex items-center gap-1 text-xs text-[var(--color-primary-ink)] hover:underline" title="Ver evidencias"><Camera size={14} /></Link>
                       )}
                       {row.auditEntity && (
-                        <Link href={`/combustibles/bitacora/historial/${row.auditEntity.entityType}/${row.auditEntity.entityId}`} className="inline-flex items-center gap-1 text-xs text-(--color-primary-ink) hover:underline" title="Historial de cambios"><ClockCounterClockwise size={14} /></Link>
+                        <Link href={`/combustibles/bitacora/historial/${row.auditEntity.entityType}/${row.auditEntity.entityId}`} className="inline-flex items-center gap-1 text-xs text-[var(--color-primary-ink)] hover:underline" title="Historial de cambios"><ClockCounterClockwise size={14} /></Link>
                       )}
                     </div>
                   </TableCell>
