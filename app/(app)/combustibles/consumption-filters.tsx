@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState, useTransition } from "react"
+import { useMemo, useState, useTransition } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { ArrowCounterClockwise, FunnelSimple, SpinnerGap, X } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
@@ -57,9 +57,14 @@ export function ConsumptionFiltersBar({
     [currentFilters, hasExplicitDateRange, proveedor, worksites],
   )
 
-  useEffect(() => {
+  // Resincroniza el input cuando la patente cambia en la URL (p. ej. al quitar
+  // un chip). Ajustar durante el render en vez de en un efecto evita que el
+  // valor viejo alcance a pintarse.
+  const [lastSyncedPatente, setLastSyncedPatente] = useState(currentFilters.patente ?? "")
+  if (lastSyncedPatente !== (currentFilters.patente ?? "")) {
+    setLastSyncedPatente(currentFilters.patente ?? "")
     setPatenteDraft(currentFilters.patente ?? "")
-  }, [currentFilters.patente])
+  }
 
   function setFilter(key: string, value: string) {
     const href = buildConsumptionHref(searchParams.toString(), { [key]: value })

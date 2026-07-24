@@ -15,6 +15,7 @@ import { Badge } from "@/components/ui/badge"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { toast } from "@/lib/toast"
 import { deleteFuelLoadAction, registerFuelLoadAction } from "../actions"
+import { formatCLP } from "@/lib/utils"
 
 interface LoadData {
   id: string
@@ -52,20 +53,15 @@ export function EditFuelLoadForm({ load, vehicles, suppliers, worksites }: EditF
 
   const [liters, setLiters] = useState(load.liters)
   const [baseAmount, setBaseAmount] = useState(load.baseAmount)
-  const [iecFixed, _setIecFixed] = useState(load.iecFixed)
-  const [iecVariable, _setIecVariable] = useState(load.iecVariable)
-  const [iecTotal, _setIecTotal] = useState(load.iecTotal)
-  const [ivaAmount, setIvaAmount] = useState(load.ivaAmount)
-  const [totalAmount, setTotalAmount] = useState(load.totalAmount)
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false)
 
-  useEffect(() => {
-    // IEC components are preserved from the existing load (rates aren't available client-side).
-    // Only IVA (always 19%) and total are recalculated when baseAmount changes.
-    const iva = Math.round(baseAmount * 0.19 * 100) / 100
-    setIvaAmount(iva)
-    setTotalAmount(Math.round((baseAmount + iecTotal + iva) * 100) / 100)
-  }, [baseAmount, iecTotal])
+  // IEC components are preserved from the existing load (rates aren't available client-side).
+  // Only IVA (always 19%) and total are recalculated when baseAmount changes — both are
+  // pure functions of the inputs, so they're derived during render rather than mirrored
+  // into state via an effect.
+  const { iecFixed, iecVariable, iecTotal } = load
+  const ivaAmount = Math.round(baseAmount * 0.19 * 100) / 100
+  const totalAmount = Math.round((baseAmount + iecTotal + ivaAmount) * 100) / 100
 
   useEffect(() => {
     if (state.ok) {
@@ -77,7 +73,6 @@ export function EditFuelLoadForm({ load, vehicles, suppliers, worksites }: EditF
   }, [state, router])
 
   const isEditable = load.status === "draft"
-  const formatCLP = (n: number) => new Intl.NumberFormat("es-CL", { style: "currency", currency: "CLP", maximumFractionDigits: 0 }).format(n)
 
   async function handleDelete() {
     setConfirmDeleteOpen(false)

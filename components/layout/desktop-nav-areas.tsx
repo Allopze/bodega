@@ -21,9 +21,14 @@ export function AccordionAreas({
   routeArea:     string | null
 }) {
   const [openId, setOpenId] = React.useState<string | null>(routeArea)
-  React.useEffect(() => {
+
+  // Al navegar a otra área, abrir su sección. Se ajusta durante el render en
+  // vez de en un efecto para que el menú no se pinte cerrado un frame.
+  const [lastRouteArea, setLastRouteArea] = React.useState(routeArea)
+  if (lastRouteArea !== routeArea) {
+    setLastRouteArea(routeArea)
     if (routeArea) setOpenId(routeArea)
-  }, [routeArea])
+  }
 
   const handleToggle = React.useCallback((id: string) => {
     setOpenId((prev) => (prev === id ? null : id))

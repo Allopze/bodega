@@ -66,7 +66,13 @@ const ListFiltersInner = React.memo(function ListFiltersInner({
   const [q, setQ] = React.useState(currentQ)
 
   // Keep local input in sync if the URL changes externally (e.g. "Limpiar").
-  React.useEffect(() => { setQ(currentQ) }, [currentQ])
+  // Adjusting during render (rather than in an effect) means React re-runs this
+  // component before committing, so the stale query never reaches the screen.
+  const [lastSyncedQ, setLastSyncedQ] = React.useState(currentQ)
+  if (lastSyncedQ !== currentQ) {
+    setLastSyncedQ(currentQ)
+    setQ(currentQ)
+  }
 
   const setParam = React.useCallback(
     (key: string, value: string) => {

@@ -1,9 +1,10 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useState } from "react"
 import { PencilSimple, ToggleLeft, ToggleRight } from "@phosphor-icons/react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { CatalogFormSheet } from "@/components/admin/catalog-form-sheet"
+import { formatQty } from "@/lib/utils"
 import { setFuelStorageLocationStatusAction, createFuelStorageLocationAction, updateFuelStorageLocationAction } from "./actions"
 
 type Row = { id: string; name: string; worksiteId: string; productId: string; capacityLiters: number | null; taeCardNumber: string | null; notes: string | null; isActive: boolean; worksite: { name: string }; product: { name: string } }
@@ -12,15 +13,18 @@ type Option = { id: string; name: string }
 export function StorageCatalog({ rows, worksites, products, initialOpen = false }: { rows: Row[]; worksites: Option[]; products: Option[]; initialOpen?: boolean }) {
   const [selected, setSelected] = useState<Row | null>(null)
   const [open, setOpen] = useState(initialOpen)
-  const [worksiteId, setWorksiteId] = useState(selected?.worksiteId ?? "")
-  const [productId, setProductId] = useState(selected?.productId ?? "")
+  const [worksiteId, setWorksiteId] = useState("")
+  const [productId, setProductId] = useState("")
 
-  useEffect(() => {
-    setWorksiteId(selected?.worksiteId ?? "")
-    setProductId(selected?.productId ?? "")
-  }, [selected])
-
-  const edit = (row: Row | null) => { setSelected(row); setOpen(true) }
+  // Los selects se siembran al abrir la ficha, no vía efecto: sincronizarlos
+  // después del render dejaba un frame con la faena/producto de la fila
+  // anterior visible en el formulario.
+  const edit = (row: Row | null) => {
+    setSelected(row)
+    setWorksiteId(row?.worksiteId ?? "")
+    setProductId(row?.productId ?? "")
+    setOpen(true)
+  }
 
   return <>
     <div className="overflow-x-auto border border-[var(--color-border)]">
@@ -40,7 +44,7 @@ export function StorageCatalog({ rows, worksites, products, initialOpen = false 
             <td className="p-3 font-medium">{row.name}{row.notes && <span className="mt-0.5 block text-xs font-normal text-[var(--color-text-muted)]">{row.notes}</span>}</td>
             <td>{row.worksite.name}</td>
             <td>{row.product.name}</td>
-            <td className="font-mono">{row.capacityLiters ? `${new Intl.NumberFormat("es-CL").format(row.capacityLiters)} L` : "—"}</td>
+            <td className="font-mono">{row.capacityLiters ? formatQty(row.capacityLiters, "L") : "—"}</td>
             <td>{row.isActive ? "Activo" : "Inactivo"}</td>
             <td>
               <div className="flex gap-1">

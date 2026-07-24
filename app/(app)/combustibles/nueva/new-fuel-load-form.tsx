@@ -13,6 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { toast } from "@/lib/toast"
+import { formatCLP } from "@/lib/utils"
 
 interface NewFuelLoadData {
   vehicles: Array<{ id: string; plate: string; type: string }>
@@ -26,21 +27,11 @@ export function NewFuelLoadForm({ data }: { data: NewFuelLoadData }) {
 
   const [liters, setLiters] = useState(0)
   const [baseAmount, setBaseAmount] = useState(0)
-  const [iecFixed, setIecFixed] = useState(0)
-  const [iecVariable, setIecVariable] = useState(0)
-  const [iecTotal, setIecTotal] = useState(0)
-  const [ivaAmount, setIvaAmount] = useState(0)
-  const [totalAmount, setTotalAmount] = useState(0)
-
-  // Auto-calculate on liters/baseAmount change
-  useEffect(() => {
-    const calc = calculateFuelAmounts({ liters, baseAmount, iecFixedRate: null, iecVariableRate: null })
-    setIecFixed(calc.iecFixed)
-    setIecVariable(calc.iecVariable)
-    setIecTotal(calc.iecTotal)
-    setIvaAmount(calc.ivaAmount)
-    setTotalAmount(calc.totalAmount)
-  }, [liters, baseAmount])
+  // Derivado en render: los montos son función pura de litros/base, así que
+  // los inputs ocultos que se envían al servidor ya salen correctos en el
+  // primer render en vez de quedar en 0 hasta que corra un efecto.
+  const { iecFixed, iecVariable, iecTotal, ivaAmount, totalAmount } =
+    calculateFuelAmounts({ liters, baseAmount, iecFixedRate: null, iecVariableRate: null })
 
   // En éxito, createFuelLoadAction redirige server-side a /combustibles
   // (ver actions-module/loads.ts) — este efecto solo necesita mostrar
@@ -50,8 +41,6 @@ export function NewFuelLoadForm({ data }: { data: NewFuelLoadData }) {
       toast.error(state.message)
     }
   }, [state])
-
-  const formatCLP = (n: number) => new Intl.NumberFormat("es-CL", { style: "currency", currency: "CLP", maximumFractionDigits: 0 }).format(n)
 
   return (
     <form action={formAction} className="space-y-6">

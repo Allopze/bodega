@@ -56,24 +56,16 @@ export function PdtpCreateProgramForm({
   const [copyFrom, setCopyFrom] = React.useState("")
   const [templateFrom, setTemplateFrom] = React.useState("")
   const [year, setYear] = React.useState(suggestedYear)
-  const [title, setTitle] = React.useState("")
-  const [titleManuallyEdited, setTitleManuallyEdited] = React.useState(false)
   const [customYear, setCustomYear] = React.useState(false)
+  // `null` = el usuario no ha tocado el título, así que se deriva del año.
+  // Vaciar el campo vuelve a ese modo automático.
+  const [titleOverride, setTitleOverride] = React.useState<string | null>(null)
 
-  // ── Auto-generar título cuando cambia el año ─────────────────────────────
-  React.useEffect(() => {
-    if (!titleManuallyEdited) {
-      setTitle(`Programa de Trabajo Preventivo SG-SST ${year}`)
-    }
-  }, [year, titleManuallyEdited])
+  // ── Título auto-generado a partir del año ────────────────────────────────
+  const title = titleOverride ?? `Programa de Trabajo Preventivo SG-SST ${year}`
 
   const handleTitleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.value === "") {
-      setTitleManuallyEdited(false)
-    } else {
-      setTitleManuallyEdited(true)
-    }
-    setTitle(e.target.value)
+    setTitleOverride(e.target.value === "" ? null : e.target.value)
   }
 
   const handleYearSelect = (y: number) => {

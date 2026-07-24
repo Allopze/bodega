@@ -298,12 +298,15 @@ function AddSubjectButton({
     return []
   }, [subjectType, vehicles, worksiteWorkers])
 
-  // Resetea la selección al cambiar de tipo de sujeto.
-  React.useEffect(() => {
+  // Resetea la selección al cambiar de tipo de sujeto. Se hace en el handler y
+  // no en un efecto: si no, queda un frame con el id del sujeto anterior
+  // seleccionado mientras ya se listan las opciones del tipo nuevo.
+  function changeSubjectType(next: string) {
+    setSubjectType(next)
     setSelectedId("")
     setFreeLabel("")
     setError(null)
-  }, [subjectType])
+  }
 
   async function handleAdd() {
     let subjectId: string
@@ -370,7 +373,7 @@ function AddSubjectButton({
               <label className="text-[11px] font-semibold uppercase tracking-wide text-text-subtle">
                 Tipo de sujeto
               </label>
-              <Select value={subjectType} onValueChange={setSubjectType}>
+              <Select value={subjectType} onValueChange={changeSubjectType}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {SUBJECT_TYPES.map((t) => (

@@ -88,8 +88,6 @@ export function CommandPalette({ session, enabledModuleIds }: { session: Session
     if (open) { setQuery(""); setActive(0) }
   }, [open])
 
-  React.useEffect(() => { setActive(0) }, [query])
-
   function go(target: NavTarget | undefined) {
     if (!target) return
     setOpen(false)
@@ -122,7 +120,9 @@ export function CommandPalette({ session, enabledModuleIds }: { session: Session
             <input
               autoFocus
               value={query}
-              onChange={(e) => setQuery(e.target.value)}
+              // Reiniciar el resaltado aquí (y no en un efecto sobre `query`)
+              // evita un frame en que la fila resaltada apunta a otro resultado.
+              onChange={(e) => { setQuery(e.target.value); setActive(0) }}
               onKeyDown={onInputKey}
               placeholder="Ir a... o escribe SOL-/OC- para buscar registros"
               aria-label="Buscar páginas"

@@ -75,11 +75,10 @@ interface RoleFormProps {
 
 export function RoleForm({ open, onClose, editRole, groupedPermissions }: RoleFormProps) {
   const isEdit = !!editRole
+  // Ambos call sites montan el form con `key={editRole?.id ?? "nuevo"}`, así que
+  // cambiar de rol remonta el componente y el initializer ya trae los permisos
+  // correctos — no hace falta resincronizar por efecto.
   const [selected, setSelected] = React.useState<Set<string>>(() => new Set(editRole?.permissionIds ?? []))
-
-  React.useEffect(() => {
-    setSelected(new Set(editRole?.permissionIds ?? []))
-  }, [editRole])
 
   function togglePermission(id: string) {
     setSelected((prev) => {
