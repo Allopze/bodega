@@ -77,6 +77,7 @@ export function FileDropzone({
         accept={accept}
         disabled={disabled}
         onChange={handleChange}
+        aria-label={title || "Subir archivo"}
         className="sr-only"
         tabIndex={-1}
       />

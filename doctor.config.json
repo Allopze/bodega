@@ -4,5 +4,8 @@
     "files": [
       ".venv/**"
     ]
+  },
+  "rules": {
+    "react-doctor/jsx-no-jsx-as-prop": "off"
   }
 }

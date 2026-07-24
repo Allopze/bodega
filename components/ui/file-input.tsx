@@ -82,6 +82,7 @@ export const FileInput = React.forwardRef<HTMLInputElement, FileInputProps>(
           disabled={disabled}
           multiple={multiple}
           onChange={handleChange}
+          aria-label="Seleccionar archivo"
           className="sr-only"
           tabIndex={-1}
         />
