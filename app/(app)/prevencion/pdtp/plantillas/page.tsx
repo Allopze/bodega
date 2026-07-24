@@ -8,6 +8,8 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
 import { PageContainer } from "@/components/ui/page-container"
+
+const PUBLISHED_DATE_FORMAT = new Intl.DateTimeFormat("es-CL", { dateStyle: "medium", timeZone: "America/Santiago" })
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 
 export const metadata: Metadata = { title: "Plantillas de programas preventivos" }
@@ -63,7 +65,7 @@ export default async function PdtpTemplatesPage() {
                         Huella {version.contentDigest.slice(0, 12)}…
                       </p>
                       <p className="mt-1 text-xs text-[var(--color-text-muted)]">
-                        Publicada {new Intl.DateTimeFormat("es-CL", { dateStyle: "medium" }).format(new Date(version.publishedAt))}
+                        Publicada {PUBLISHED_DATE_FORMAT.format(new Date(version.publishedAt))}
                       </p>
                     </div>
                     <div>

@@ -22,8 +22,10 @@ interface ActivityEntry {
   href:         string
 }
 
+const SHORT_DATE_FORMAT = new Intl.DateTimeFormat("es-CL", { day: "2-digit", month: "short", timeZone: "America/Santiago" })
+
 function formatShortDate(value: string) {
-  return new Intl.DateTimeFormat("es-CL", { day: "2-digit", month: "short" }).format(new Date(value))
+  return SHORT_DATE_FORMAT.format(new Date(value))
 }
 
 function buildEntries({ requests, orders, viewerId, canViewAll, limit }: Required<RecentActivityProps>): ActivityEntry[] {

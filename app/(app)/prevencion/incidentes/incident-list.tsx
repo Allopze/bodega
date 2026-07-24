@@ -17,6 +17,8 @@ import {
 } from "@/lib/prevention/incidents"
 import type { IncidentStatus } from "@/lib/services/prevention-incidents"
 
+const OCCURRED_AT_FORMAT = new Intl.DateTimeFormat("es-CL", { dateStyle: "medium", timeStyle: "short", timeZone: "America/Santiago" })
+
 interface IncidentListItem {
   id: string
   code: string
@@ -125,7 +127,7 @@ export function IncidentList({ incidents, worksites, counts, canReport, indicato
               <TableRow key={incident.id}>
                 <TableCell><Link href={`/prevencion/incidentes/${incident.id}`} className="font-mono text-xs font-semibold text-[var(--color-primary-ink)] hover:underline">{incident.code}</Link><p className="mt-1 text-xs text-[var(--color-text-subtle)]">{INCIDENT_EVENT_LABELS[incident.eventType] ?? incident.eventType}</p></TableCell>
                 <TableCell><p className="font-medium">{incident.worksiteName}</p><p className="text-xs text-[var(--color-text-subtle)]">{incident.companyName}</p></TableCell>
-                <TableCell><p className="tabular-nums">{new Intl.DateTimeFormat("es-CL", { dateStyle: "medium", timeStyle: "short" }).format(new Date(incident.occurredAt))}</p><p className="max-w-56 truncate text-xs text-[var(--color-text-subtle)]">{incident.location}</p></TableCell>
+                <TableCell><p className="tabular-nums">{OCCURRED_AT_FORMAT.format(new Date(incident.occurredAt))}</p><p className="max-w-56 truncate text-xs text-[var(--color-text-subtle)]">{incident.location}</p></TableCell>
                 <TableCell><Badge variant={incident.isFatalOrSerious ? "danger" : "default"}>{INCIDENT_SEVERITY_LABELS[incident.actualSeverity] ?? incident.actualSeverity}</Badge><p className="mt-1 text-xs text-[var(--color-text-subtle)]">Potencial {INCIDENT_SEVERITY_LABELS[incident.potentialSeverity] ?? incident.potentialSeverity}</p></TableCell>
                 <TableCell><Badge variant={incidentStatusBadgeVariant(incident.status)}>{INCIDENT_STATUS_LABELS[incident.status as IncidentStatus] ?? incident.status}</Badge></TableCell>
               </TableRow>
