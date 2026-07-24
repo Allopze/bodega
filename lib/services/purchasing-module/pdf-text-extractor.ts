@@ -3,7 +3,11 @@
  * Works for digitally-generated PDFs (not scanned images).
  */
 
-import { getDocument } from "pdfjs-dist"
+// El build por defecto de pdfjs-dist asume APIs de navegador y revienta con
+// "DOMMatrix is not defined" al cargarse bajo Node — la propia librería avisa
+// "Please use the `legacy` build in Node.js environments". Esto corre en el
+// servidor, así que va el build legacy.
+import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs"
 
 export interface PdfExtractionResult {
   text: string
