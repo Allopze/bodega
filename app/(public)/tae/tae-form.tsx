@@ -82,12 +82,18 @@ async function sendQueued(item: { id: string; accessToken: string; payload: Reco
   for (const evidence of item.evidence) form.set(evidence.kind, new File([evidence.blob], evidence.fileName, { type: evidence.blob.type }))
   try {
     const response = await fetch("/api/tae/submit", { method: "POST", body: form })
-    const body = await response.json() as { ok: boolean; message?: string; data?: { publicResultToken: string } }
-    if (!response.ok || !body.ok || !body.data?.publicResultToken) {
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({})) as { message?: string }
       const retryable = response.status === 408 || response.status === 429 || response.status >= 500
       const message = body.message ?? "No se pudo sincronizar"
       await updateTaeSubmission(item.id, { status: retryable ? "pending" : "failed", lastError: message })
       throw new TaeSubmissionError(message, retryable)
+    }
+    const body = await response.json() as { ok: boolean; message?: string; data?: { publicResultToken: string } }
+    if (!body.ok || !body.data?.publicResultToken) {
+      const message = body.message ?? "No se pudo sincronizar"
+      await updateTaeSubmission(item.id, { status: "failed", lastError: message })
+      throw new TaeSubmissionError(message, false)
     }
     await updateTaeSubmission(item.id, { status: "synced", publicResultToken: body.data.publicResultToken, syncedAt: new Date().toISOString() })
     return body.data.publicResultToken
@@ -162,8 +168,12 @@ export function TaeForm() {
       let rejectedByServer = false
       try {
         const response = await fetch("/api/tae/access", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ accessToken: token }), signal: controller.signal })
+        if (!response.ok) {
+          rejectedByServer = true
+          throw new Error()
+        }
         const body = await response.json() as { ok: boolean; data?: AccessConfig }
-        if (!response.ok || !body.ok || !body.data) {
+        if (!body.ok || !body.data) {
           rejectedByServer = true
           throw new Error()
         }

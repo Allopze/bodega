@@ -19,8 +19,9 @@ export function TaeAccessActivation({ accessToken }: { accessToken: string }) {
       signal: controller.signal,
     })
       .then(async (response) => {
+        if (!response.ok) throw new Error("Este enlace TAE no está disponible")
         const body = await response.json() as { ok: boolean; data?: Record<string, unknown>; message?: string }
-        if (!response.ok || !body.ok || !body.data) throw new Error(body.message ?? "Este enlace TAE no está disponible")
+        if (!body.ok || !body.data) throw new Error(body.message ?? "Este enlace TAE no está disponible")
         await Promise.all([saveTaeAccessToken(accessToken), saveTaeAccessConfig(body.data)])
         if (active) router.replace("/tae")
       })

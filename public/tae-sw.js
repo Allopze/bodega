@@ -105,11 +105,14 @@ async function syncPendingSubmissions() {
 
     try {
       const response = await fetch("/api/tae/submit", { method: "POST", body: form })
-      const body = await response.json()
-      if (response.ok && body.ok && body.data?.publicResultToken) {
-        await updateSubmission(db, item.id, { status: "synced", publicResultToken: body.data.publicResultToken, syncedAt: new Date().toISOString(), lastError: undefined })
-        continue
+      if (response.ok) {
+        const body = await response.json()
+        if (body.ok && body.data?.publicResultToken) {
+          await updateSubmission(db, item.id, { status: "synced", publicResultToken: body.data.publicResultToken, syncedAt: new Date().toISOString(), lastError: undefined })
+          continue
+        }
       }
+      const body = await response.json().catch(() => ({}))
       const retryable = response.status === 408 || response.status === 429 || response.status >= 500
       await updateSubmission(db, item.id, { status: retryable ? "pending" : "failed", lastError: body.message || "La plataforma rechazó la carga" })
       if (retryable) throw new Error(body.message || "Reintento pendiente")

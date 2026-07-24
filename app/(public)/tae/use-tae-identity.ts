@@ -33,6 +33,12 @@ export function useTaeIdentity(role: TaeIdentityRole, accessToken: string | null
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ accessToken, rut }),
       })
+      if (!response.ok) {
+        const errBody = await response.json().catch(() => ({})) as { message?: string }
+        setMatched(null)
+        toast.error(errBody.message ?? "No se pudo verificar el RUT")
+        return
+      }
       const body = await response.json() as { ok: boolean; data?: TaeMatchedWorker; message?: string }
       if (body.ok && body.data) {
         setMatched(body.data)
