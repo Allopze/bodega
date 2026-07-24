@@ -261,8 +261,17 @@ const routeTargets: RouteTarget[] = [
   { slug: "compras", path: "/compras", auth: true },
   { slug: "compras-nueva", path: "/compras/nueva", auth: true },
   { slug: "compras-detalle", path: "/compras/po-audit-1", auth: true },
+  { slug: "compras-detalle-facturacion", path: "/compras/po-audit-1?tab=facturacion", auth: true, notes: "Detalle OC — pestaña Facturación" },
+  { slug: "compras-detalle-avance", path: "/compras/po-audit-1?tab=avance", auth: true, notes: "Detalle OC — pestaña Avance por ítem" },
   { slug: "compras-print", path: "/compras/po-audit-1/print", auth: true },
-  { slug: "recepcion", path: "/recepcion", auth: true },
+  {
+    slug: "recepcion",
+    path: "/recepcion",
+    auth: true,
+    modals: [
+      { slug: "leyenda", triggerSelector: 'summary:has-text("Qué significa cada estado")', waitForSelector: 'text=llegaron a oficina Chome', notes: "Leyenda de estados de recepción expandida" },
+    ],
+  },
   { slug: "recepcion-nueva", path: "/recepcion/nueva?oc=po-audit-1", auth: true },
   { slug: "recepcion-detalle", path: "/recepcion/rec-audit-1", auth: true },
   {

@@ -165,6 +165,68 @@ export function buildRequestProgress(requestStatus: string, items: RequestProgre
   }
 }
 
+export interface OcProgressItem {
+  id:               string
+  productName:      string
+  quantity:         number
+  unitOfMeasure:    string
+  quantityReceived: number
+}
+
+/**
+ * Progreso de ciclo de una OC, alimentado al mismo RequestProgressPanel que las
+ * solicitudes. La OC arranca post-aprobación: Solicitado y Aprobación siempre
+ * completas. La etapa Entrega (al trabajador) es de otro módulo, así que la OC
+ * tope en Recepción. Devuelve null en OC anulada (sin stepper).
+ */
+export function buildOcProgress(orderStatus: string, items: OcProgressItem[]): RequestProgress | null {
+  if (orderStatus === "cancelled") return null
+
+  const currentStage = ocCurrentStage(orderStatus)
+  const currentIndex = Math.max(0, STAGES.indexOf(currentStage))
+
+  return {
+    currentStage,
+    completedStages: STAGES.slice(0, currentIndex),
+    nextAction: ocNextAction(orderStatus),
+    items: items.map((item) => ({
+      id:            item.id,
+      productName:   item.productName,
+      quantityLabel: formatQuantity(item.quantity, item.unitOfMeasure),
+      statusLabel:   ocItemStatusLabel(item),
+      stageLabel:    currentStage,
+    })),
+  }
+}
+
+function ocCurrentStage(orderStatus: string): string {
+  if (["partially_office_received", "office_received", "partially_received"].includes(orderStatus)) return "Recepción"
+  if (["received", "closed"].includes(orderStatus)) return "Recepción"
+  // draft / issued / sent / supplier_confirmed
+  return "Compra"
+}
+
+function ocNextAction(orderStatus: string): string {
+  switch (orderStatus) {
+    case "draft":              return "Emite la orden para poder enviarla al proveedor."
+    case "issued":             return "Marca la orden como enviada al proveedor."
+    case "sent":               return "Confirma la recepción del proveedor o registra la llegada a oficina."
+    case "supplier_confirmed": return "Registra la recepción cuando lleguen los ítems."
+    case "partially_office_received":
+    case "office_received":    return "Despacha los ítems a faena para completar la recepción."
+    case "partially_received": return "Registra la recepción del saldo pendiente en faena."
+    case "received":           return "Orden recibida completamente."
+    case "closed":             return "Orden cerrada."
+    default:                   return "Revisa el detalle para ver el siguiente paso."
+  }
+}
+
+function ocItemStatusLabel(item: OcProgressItem): string {
+  if (item.quantityReceived <= 0) return "Pendiente recepción"
+  if (item.quantityReceived >= item.quantity) return "Recibido"
+  return "Recepción parcial"
+}
+
 // ── Private helpers ──────────────────────────────────────────────────────────
 
 function orderTask(order: WorkOrderRow, statusLabel: string, ctaLabel: string): WorkTask {

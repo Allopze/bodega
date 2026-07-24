@@ -16,9 +16,12 @@ export type {
   RequestProgress,
 } from "./work-queue.types"
 
+export type { OcProgressItem } from "./work-queue-builders"
+
 export {
   buildWorkTasks,
   buildRequestProgress,
+  buildOcProgress,
 } from "./work-queue-builders"
 
 export {

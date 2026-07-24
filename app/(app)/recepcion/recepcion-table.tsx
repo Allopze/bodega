@@ -7,6 +7,7 @@ import { ListFilters, type FilterOption } from "@/components/adquisiciones/list-
 import { OnboardingHint } from "@/components/ui/onboarding-hint"
 import { TableRow, TableCell } from "@/components/ui/table"
 import { StateBadge } from "@/components/states/state-badge"
+import { StateLegend } from "@/components/states/state-legend"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { formatDate } from "@/lib/utils"
@@ -50,6 +51,7 @@ export function RecepcionTable({ orders, wsMap, supMap, gapMap, canRegister, wor
       title="Recepción de repuestos, servicios y otros"
       body="Registra la llegada de repuestos, servicios y otros en dos pasos: primero en oficina Chome (botón 'Recibir'), luego el despacho a la faena. El badge 'pend. faena' indica ítems que ya llegaron a oficina pero aún no se enviaron."
     />
+    <StateLegend />
     <ListFilters
       searchPlaceholder="Buscar por código o proveedor..."
       worksiteOptions={worksiteOptions}

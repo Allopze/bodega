@@ -7,12 +7,13 @@ import { describe, it, expect } from "vitest"
 import {
   buildWorkTasks,
   buildRequestProgress,
+  buildOcProgress,
   requestStatusLabel,
   itemStatusLabel,
   itemStageLabel,
   requestNextAction,
 } from "@/lib/work-queue"
-import type { WorkActor, WorkQueueSnapshot } from "@/lib/work-queue"
+import type { WorkActor, WorkQueueSnapshot, OcProgressItem } from "@/lib/work-queue"
 
 // Estas etiquetas ahora leen del vocabulario canónico de StateBadge
 // (components/states/state-badge.tsx) — deben coincidir siempre con el badge.
@@ -107,6 +108,36 @@ describe("requestNextAction", () => {
   it("fallback for unknown status", () => {
     // Use a status that doesn't match any specific branch to reach the fallback
     expect(requestNextAction("in_review", [])).toContain("Agrega")
+  })
+})
+
+describe("buildOcProgress", () => {
+  const item = (quantityReceived: number): OcProgressItem => ({
+    id: "i-1", productName: "Guante", quantity: 12, unitOfMeasure: "par", quantityReceived,
+  })
+
+  it("returns null for cancelled orders (no stepper)", () => {
+    expect(buildOcProgress("cancelled", [item(0)])).toBeNull()
+  })
+
+  it("maps purchase-phase statuses to Compra with Solicitado+Aprobación done", () => {
+    for (const status of ["draft", "issued", "sent", "supplier_confirmed"]) {
+      const progress = buildOcProgress(status, [item(0)])
+      expect(progress?.currentStage).toBe("Compra")
+      expect(progress?.completedStages).toEqual(["Solicitado", "Aprobación"])
+    }
+  })
+
+  it("maps reception statuses to Recepción", () => {
+    for (const status of ["partially_office_received", "office_received", "partially_received", "received", "closed"]) {
+      expect(buildOcProgress(status, [item(0)])?.currentStage).toBe("Recepción")
+    }
+  })
+
+  it("labels item status by received vs ordered quantity", () => {
+    expect(buildOcProgress("sent", [item(0)])?.items[0]?.statusLabel).toBe("Pendiente recepción")
+    expect(buildOcProgress("partially_received", [item(6)])?.items[0]?.statusLabel).toBe("Recepción parcial")
+    expect(buildOcProgress("received", [item(12)])?.items[0]?.statusLabel).toBe("Recibido")
   })
 })
 

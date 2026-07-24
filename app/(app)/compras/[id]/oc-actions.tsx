@@ -8,7 +8,10 @@ import { SubmitButton } from "@/components/admin/submit-button"
 import { INITIAL_STATE } from "@/components/admin/form-state"
 import { issueOrderAction, sendOrderAction, cancelOrderAction, confirmOrderAction, closeOrderAction, deleteOrderAction } from "../actions"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
-import { Trash } from "@phosphor-icons/react"
+import {
+  DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
+} from "@/components/ui/dropdown-menu"
+import { Trash, DotsThree } from "@phosphor-icons/react"
 import { useTransition } from "react"
 import { DELETABLE_ORDER_STATUSES } from "@/lib/services/purchasing.constants"
 import { useRouter } from "next/navigation"
@@ -197,66 +200,77 @@ export function OcActions({
   }
 
   // ── Main action bar ───────────────────────────────────────────────────────
+  const canCancel = CANCELLABLE_STATUSES.has(status) && canManage
+  const canEliminar = canDelete && (DELETABLE_ORDER_STATUSES as readonly string[]).includes(status)
+  const hasDestructive = canCancel || canEliminar
+
   return (
-    <div className="flex items-center justify-end gap-3 pt-2 flex-wrap">
-      {/* draft → issued */}
-      {status === "draft" && canManage && (
-        <form action={issueAction}>
-          <input type="hidden" name="orderId" value={orderId} />
-          <SubmitButton label="Emitir orden" loadingLabel="Emitiendo..." variant="primary" />
-        </form>
-      )}
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center justify-end gap-2 flex-wrap">
+        {/* ── Acción primaria ──────────────────────────────────────────────── */}
+        {status === "draft" && canManage && (
+          <form action={issueAction} className="w-full">
+            <input type="hidden" name="orderId" value={orderId} />
+            <SubmitButton label="Emitir orden" loadingLabel="Emitiendo..." variant="primary" className="w-full" />
+          </form>
+        )}
 
-      {/* issued → sent */}
-      {status === "issued" && canSend && (
-        <form action={sendAction}>
-          <input type="hidden" name="orderId" value={orderId} />
-          <SubmitButton label="Marcar como enviada" loadingLabel="Guardando..." variant="primary" />
-        </form>
-      )}
+        {status === "issued" && canSend && (
+          <form action={sendAction} className="w-full">
+            <input type="hidden" name="orderId" value={orderId} />
+            <SubmitButton label="Marcar como enviada" loadingLabel="Guardando..." variant="primary" className="w-full" />
+          </form>
+        )}
 
-      {/* sent → supplier_confirmed */}
-      {status === "sent" && canManage && (
-        <form action={confirmAction}>
-          <input type="hidden" name="orderId" value={orderId} />
-          <SubmitButton label="Confirmar proveedor" loadingLabel="Confirmando..." variant="secondary" />
-        </form>
-      )}
+        {status === "sent" && canManage && (
+          <form action={confirmAction} className="w-full">
+            <input type="hidden" name="orderId" value={orderId} />
+            <SubmitButton label="Confirmar proveedor" loadingLabel="Confirmando..." variant="primary" className="w-full" />
+          </form>
+        )}
 
-      {/* supplier_confirmed / partially_received / received → closed */}
-      {CLOSEABLE_STATUSES.has(status) && canManage && (
-        <button
-          type="button"
-          onClick={() => setShowCloseForm(true)}
-          className="text-xs font-medium text-(--color-text) border border-(--color-border) hover:bg-surface-2 px-3.5 py-2 rounded-(--radius) transition-colors cursor-pointer"
-        >
-          Cerrar orden
-        </button>
-      )}
-
-      {/* Anular — solo draft/issued/sent */}
-      {CANCELLABLE_STATUSES.has(status) && canManage && (
-        <button
-          type="button"
-          onClick={() => setShowCancelForm(true)}
-          className="text-xs font-medium text-danger border border-danger hover:bg-danger-tint px-3.5 py-2 rounded-(--radius) transition-colors cursor-pointer"
-        >
-          Anular orden
-        </button>
-      )}
-
-      {/* Eliminar — solo estados deletables */}
-      {canDelete && (DELETABLE_ORDER_STATUSES as readonly string[]).includes(status) && (
-        <>
+        {CLOSEABLE_STATUSES.has(status) && canManage && (
           <button
             type="button"
-            disabled={deletePending}
-            onClick={() => setDeleteOpen(true)}
-            className="inline-flex items-center gap-1.5 text-xs font-medium text-danger hover:bg-danger-tint px-3 py-1.5 rounded-(--radius) transition-colors disabled:opacity-40"
+            onClick={() => setShowCloseForm(true)}
+            className="flex-1 text-xs font-medium text-(--color-text) border border-(--color-border) hover:bg-surface-2 px-3.5 py-2 rounded-(--radius) transition-colors cursor-pointer"
           >
-            <Trash size={13} />
-            Eliminar orden
+            Cerrar orden
           </button>
+        )}
+
+        {/* ── Destructivas: menú overflow, separadas de la primaria ─────────── */}
+        {hasDestructive && (
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              aria-label="Más acciones"
+              className="inline-flex items-center justify-center rounded-(--radius) border border-(--color-border) p-2 text-(--color-text-muted) hover:bg-surface-2 transition-colors cursor-pointer"
+            >
+              <DotsThree size={16} weight="bold" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              {canCancel && (
+                <DropdownMenuItem
+                  onSelect={() => setShowCancelForm(true)}
+                  className="gap-2 text-danger"
+                >
+                  <Warning size={14} /> Anular orden
+                </DropdownMenuItem>
+              )}
+              {canEliminar && (
+                <DropdownMenuItem
+                  disabled={deletePending}
+                  onSelect={() => setDeleteOpen(true)}
+                  className="gap-2 text-danger"
+                >
+                  <Trash size={14} /> Eliminar orden
+                </DropdownMenuItem>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
+
+        {canEliminar && (
           <ConfirmDialog
             open={deleteOpen}
             onOpenChange={setDeleteOpen}
@@ -272,22 +286,22 @@ export function OcActions({
               setDeleteOpen(false)
             }}
           />
-        </>
-      )}
+        )}
+      </div>
 
       {/* Error inline */}
       {!issueState.ok && issueState.message && issueState !== INITIAL_STATE && (
-        <p className="text-sm text-danger flex items-center gap-1.5 w-full justify-end">
+        <p className="text-sm text-danger flex items-center gap-1.5 justify-end">
           <Warning size={14} /> {issueState.message}
         </p>
       )}
       {!sendState.ok && sendState.message && sendState !== INITIAL_STATE && (
-        <p className="text-sm text-danger flex items-center gap-1.5 w-full justify-end">
+        <p className="text-sm text-danger flex items-center gap-1.5 justify-end">
           <Warning size={14} /> {sendState.message}
         </p>
       )}
       {!confirmState.ok && confirmState.message && confirmState !== INITIAL_STATE && (
-        <p className="text-sm text-danger flex items-center gap-1.5 w-full justify-end">
+        <p className="text-sm text-danger flex items-center gap-1.5 justify-end">
           <Warning size={14} /> {confirmState.message}
         </p>
       )}

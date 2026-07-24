@@ -9,6 +9,8 @@ import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { Badge } from "@/components/ui/badge"
 import { StateBadge } from "@/components/states/state-badge"
+import { RequestProgressPanel } from "@/components/states/request-progress-panel"
+import { buildOcProgress } from "@/lib/work-queue"
 import {
   TableRoot, Table, TableHeader, TableBody,
   TableRow, TableHead, TableCell, TableCellNum,
@@ -67,6 +69,21 @@ export default async function RecepcionDetallePage({
   const totalDamaged  = receipt.items.reduce((sum, item) => sum + (item.quantityDamaged ?? 0), 0)
   const lineCount = receipt.items.length
 
+  const progress = buildOcProgress(
+    receipt.purchaseOrder.status,
+    receipt.items.map((item) => {
+      const ocItem = item.purchaseOrderItem
+      const product = ocItem.productId ? productMap[ocItem.productId] : null
+      return {
+        id:               item.id,
+        productName:      product?.name ?? ocItem.productNameFree ?? "(sin nombre)",
+        quantity:         ocItem.quantity,
+        unitOfMeasure:    ocItem.unitOfMeasure,
+        quantityReceived: ocItem.quantityReceived ?? 0,
+      }
+    }),
+  )
+
   return (
     <PageContainer width="workbench">
       <PageHeader
@@ -80,6 +97,12 @@ export default async function RecepcionDetallePage({
           ]} />
         }
       />
+
+      {progress && (
+        <div className="mb-6">
+          <RequestProgressPanel progress={progress} />
+        </div>
+      )}
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start">
         {/* ── Main: received items ─────────────────────────────────────────── */}

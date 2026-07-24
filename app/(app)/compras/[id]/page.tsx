@@ -8,8 +8,12 @@ import { canAccessWorksite }  from "@/lib/auth/can"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { StateBadge } from "@/components/states/state-badge"
+import { RequestProgressPanel } from "@/components/states/request-progress-panel"
+import { buildOcProgress } from "@/lib/work-queue"
 import { OcActions } from "./oc-actions"
 import { InvoicesSection } from "./invoices-section"
+import { OcDetailTabs } from "./oc-detail-tabs"
+import { OcProgressTable } from "./oc-progress-table"
 import { formatCLP, formatDate } from "@/lib/utils"
 import { EntityTimeline } from "@/components/states/entity-timeline"
 import { Button } from "@/components/ui/button"
@@ -20,12 +24,19 @@ import { getOcReconciliation } from "@/lib/services/oc-reconciliation"
 
 export const metadata: Metadata = { title: "Orden de compra" }
 
-export default async function OcDetailPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function OcDetailPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>
+  searchParams: Promise<{ tab?: string }>
+}) {
   let session
   try { session = await requirePermission("purchasing:view") }
   catch { redirect("/forbidden") }
 
   const { id } = await params
+  const { tab } = await searchParams
 
   const order = await db.query.purchaseOrders.findFirst({
     where: eq(purchaseOrders.id, id),
@@ -113,6 +124,14 @@ export default async function OcDetailPage({ params }: { params: Promise<{ id: s
     items: invoiceItemRows.filter((item) => item.invoiceId === inv.id),
   }))
 
+  // Cantidad facturada por ítem de OC (reutilizado por close-warnings y tabla de avance)
+  const invoicedByItem = new Map<string, number>()
+  for (const item of invoiceItemRows) {
+    if (item.purchaseOrderItemId) {
+      invoicedByItem.set(item.purchaseOrderItemId, (invoicedByItem.get(item.purchaseOrderItemId) ?? 0) + item.quantity)
+    }
+  }
+
   // Build maps
   const reqItemMap = Object.fromEntries(requestItemRows.map((ri) => [ri.id, ri]))
   const productMap = Object.fromEntries(productRows.map((p) => [p.id, p]))
@@ -135,7 +154,7 @@ export default async function OcDetailPage({ params }: { params: Promise<{ id: s
     (order.status === "received" && canManage)
 
   const orderItemIds = order.items.map((i) => i.id)
-  const { totalReceived } = await getOcReconciliation(order.id, orderItemIds)
+  const { receivedByItem } = await getOcReconciliation(order.id, orderItemIds)
 
   // Calculate invoice reconciliation warnings for the close form
   const hasLineItems = invoiceItemRows.length > 0
@@ -147,15 +166,8 @@ export default async function OcDetailPage({ params }: { params: Promise<{ id: s
       closeWarnings.push("Las facturas no tienen ítems detallados.")
     } else {
       // Check per-item reconciliation
-      const invoicedQtyMap = new Map<string, number>()
-      for (const item of invoiceItemRows) {
-        if (item.purchaseOrderItemId) {
-          const current = invoicedQtyMap.get(item.purchaseOrderItemId) ?? 0
-          invoicedQtyMap.set(item.purchaseOrderItemId, current + item.quantity)
-        }
-      }
       for (const ocItem of order.items) {
-        const invoicedQty = invoicedQtyMap.get(ocItem.id) ?? 0
+        const invoicedQty = invoicedByItem.get(ocItem.id) ?? 0
         if (invoicedQty === 0) {
           const name = ocItem.productNameFree ?? (ocItem.productId ? productMap[ocItem.productId]?.name : null) ?? "Ítem"
           closeWarnings.push(`"${name}" sin factura asociada.`)
@@ -169,6 +181,34 @@ export default async function OcDetailPage({ params }: { params: Promise<{ id: s
       }
     }
   }
+
+  // Stepper de ciclo (reutiliza el panel de solicitudes)
+  const progress = buildOcProgress(
+    order.status,
+    order.items.map((i) => ({
+      id:               i.id,
+      productName:      i.productNameFree ?? (i.productId ? productMap[i.productId]?.name : null) ?? "Ítem",
+      quantity:         i.quantity,
+      unitOfMeasure:    i.unitOfMeasure,
+      quantityReceived: receivedByItem.get(i.id) ?? i.quantityReceived ?? 0,
+    })),
+  )
+
+  // Filas de la tabla de avance (pedido / recibido / facturado por ítem)
+  const progressRows = order.items.map((i) => ({
+    id:            i.id,
+    productName:   i.productNameFree ?? (i.productId ? productMap[i.productId]?.name : null) ?? "Ítem",
+    unitOfMeasure: i.unitOfMeasure,
+    ordered:       i.quantity,
+    received:      receivedByItem.get(i.id) ?? i.quantityReceived ?? 0,
+    invoiced:      invoicedByItem.get(i.id) ?? 0,
+  }))
+
+  const showInvoicing = !["draft", "cancelled"].includes(order.status)
+
+  // Pestaña inicial desde ?tab= (validada contra las disponibles) para deep-link
+  const availableTabs = ["items", ...(showInvoicing ? ["facturacion", "avance"] : []), "historial"]
+  const initialTab = tab && availableTabs.includes(tab) ? tab : "items"
 
   return (
     <PageContainer width="workbench">
@@ -184,47 +224,77 @@ export default async function OcDetailPage({ params }: { params: Promise<{ id: s
         }
       />
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start">
-        <div className="min-w-0 flex flex-col gap-6">
-        <OcDetailItems
-          order={{
-            code: order.code,
-            status: order.status,
-            netAmount: order.netAmount,
-            taxAmount: order.taxAmount,
-            totalAmount: order.totalAmount,
-            paymentTerms: order.paymentTerms,
-            estimatedDelivery: order.estimatedDelivery,
-            notes: order.notes,
-            items: order.items.map((i) => ({
-              id: i.id,
-              requestItemId: i.requestItemId,
-              productId: i.productId,
-              productNameFree: i.productNameFree,
-              quantity: i.quantity,
-              unitOfMeasure: i.unitOfMeasure,
-              unitPrice: i.unitPrice,
-              subtotal: i.subtotal,
-              notes: i.notes,
-            })),
-            worksite: order.worksite ? { name: order.worksite.name } : null,
-            supplier: order.supplier ? { name: order.supplier.name } : null,
-          }}
-          reqItemMap={reqItemMap as unknown as Record<string, { request: { code: string } }>}
-          productMap={productMap as unknown as Record<string, { name: string; sku: string | null }>}
-        />
+      {progress && (
+        <div className="mb-6">
+          <RequestProgressPanel progress={progress} />
+        </div>
+      )}
 
-        {/* Notes */}
-        {order.notes && (
-          <div className="p-4 rounded-[var(--radius-xl)] bg-[var(--color-surface-2)]">
-            <p className="text-xs text-[var(--color-text-subtle)] mb-1">Notas</p>
-            <p className="text-sm text-[var(--color-text-muted)]">{order.notes}</p>
-          </div>
-        )}
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start">
+        <div className="min-w-0">
+          <OcDetailTabs
+            defaultTab={initialTab}
+            itemsCount={order.items.length}
+            invoicesCount={orderInvoices.length}
+            items={
+              <div className="flex flex-col gap-6">
+                <OcDetailItems
+                  order={{
+                    code: order.code,
+                    status: order.status,
+                    netAmount: order.netAmount,
+                    taxAmount: order.taxAmount,
+                    totalAmount: order.totalAmount,
+                    paymentTerms: order.paymentTerms,
+                    estimatedDelivery: order.estimatedDelivery,
+                    notes: order.notes,
+                    items: order.items.map((i) => ({
+                      id: i.id,
+                      requestItemId: i.requestItemId,
+                      productId: i.productId,
+                      productNameFree: i.productNameFree,
+                      quantity: i.quantity,
+                      unitOfMeasure: i.unitOfMeasure,
+                      unitPrice: i.unitPrice,
+                      subtotal: i.subtotal,
+                      notes: i.notes,
+                    })),
+                    worksite: order.worksite ? { name: order.worksite.name } : null,
+                    supplier: order.supplier ? { name: order.supplier.name } : null,
+                  }}
+                  reqItemMap={reqItemMap as unknown as Record<string, { request: { code: string } }>}
+                  productMap={productMap as unknown as Record<string, { name: string; sku: string | null }>}
+                />
+                {order.notes && (
+                  <div className="p-4 rounded-(--radius-xl) bg-(--color-surface-2)">
+                    <p className="text-xs text-text-subtle mb-1">Notas</p>
+                    <p className="text-sm text-(--color-text-muted)">{order.notes}</p>
+                  </div>
+                )}
+              </div>
+            }
+            facturacion={showInvoicing ? (
+              <InvoicesSection
+                purchaseOrderId={order.id}
+                invoices={invoicesWithItems as unknown as React.ComponentProps<typeof InvoicesSection>["invoices"]}
+                ocItems={order.items.map((i) => ({
+                  id: i.id,
+                  productName: i.productNameFree ?? (i.productId ? productMap[i.productId]?.name : null) ?? i.id,
+                  quantity: i.quantity,
+                  unitPrice: i.unitPrice,
+                  subtotal: i.subtotal,
+                }))}
+                totalAmount={order.totalAmount}
+                canManage={canInvoice}
+              />
+            ) : undefined}
+            avance={showInvoicing ? <OcProgressTable rows={progressRows} /> : undefined}
+            historial={<EntityTimeline entityType="oc" events={timelineEvents} />}
+          />
         </div>
 
         <aside className="space-y-6 lg:sticky lg:top-6">
-          <section className="rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] p-4">
+          <section className="rounded-(--radius-2xl) bg-(--color-surface) shadow-(--shadow-card) p-4">
             <div className="flex items-center justify-between gap-3">
               <StateBadge state={order.status} entity="oc" />
               <Button asChild variant="secondary" size="sm">
@@ -238,7 +308,7 @@ export default async function OcDetailPage({ params }: { params: Promise<{ id: s
               </Button>
             </div>
 
-            <dl className="mt-4 divide-y divide-[var(--color-border)]">
+            <dl className="mt-4 divide-y divide-(--color-border)">
               <DetailLine label="Proveedor" value={order.supplier?.name ?? "—"} />
               <DetailLine label="Faena" value={order.worksite?.name ?? "—"} />
               <DetailLine label="Condición de pago" value={order.paymentTerms ?? "—"} />
@@ -252,21 +322,21 @@ export default async function OcDetailPage({ params }: { params: Promise<{ id: s
             />
           </section>
 
-          <section className="rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] p-4">
-            <h2 className="text-sm font-semibold text-[var(--color-text)]">Totales</h2>
+          <section className="rounded-(--radius-2xl) bg-(--color-surface) shadow-(--shadow-card) p-4">
+            <h2 className="text-sm font-semibold text-(--color-text)">Totales</h2>
             <dl className="mt-3 space-y-2 text-sm">
               <AmountLine label="Neto" value={formatCLP(order.netAmount)} />
               <AmountLine label="IVA (19%)" value={formatCLP(order.taxAmount)} muted />
-              <div className="flex items-center justify-between gap-3 border-t border-[var(--color-border)] pt-3">
-                <dt className="font-semibold text-[var(--color-text)]">Total</dt>
-                <dd className="font-mono font-bold tabular-nums text-[var(--color-text)]">{formatCLP(order.totalAmount)}</dd>
+              <div className="flex items-center justify-between gap-3 border-t border-(--color-border) pt-3">
+                <dt className="font-semibold text-(--color-text)">Total</dt>
+                <dd className="font-mono font-bold tabular-nums text-(--color-text)">{formatCLP(order.totalAmount)}</dd>
               </div>
             </dl>
           </section>
 
           {canShowOrderActions && (
-            <section className="rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] p-4">
-              <h2 className="mb-3 text-sm font-semibold text-[var(--color-text)]">Acciones</h2>
+            <section className="rounded-(--radius-2xl) bg-(--color-surface) shadow-(--shadow-card) p-4">
+              <h2 className="mb-3 text-sm font-semibold text-(--color-text)">Acciones</h2>
               <OcActions
                 orderId={order.id}
                 orderCode={order.code}
@@ -278,48 +348,6 @@ export default async function OcDetailPage({ params }: { params: Promise<{ id: s
               />
             </section>
           )}
-
-          {!["draft", "cancelled"].includes(order.status) && (
-            <InvoicesSection
-              purchaseOrderId={order.id}
-              invoices={invoicesWithItems as unknown as React.ComponentProps<typeof InvoicesSection>["invoices"]}
-              ocItems={order.items.map((i) => ({
-                id: i.id,
-                productName: i.productNameFree ?? (i.productId ? productMap[i.productId]?.name : null) ?? i.id,
-                quantity: i.quantity,
-                unitPrice: i.unitPrice,
-                subtotal: i.subtotal,
-              }))}
-              totalAmount={order.totalAmount}
-              canManage={canInvoice}
-            />
-          )}
-
-          {order.items.some((item) => (item.quantityOfficeReceived ?? 0) > 0 || (item.quantityReceived ?? 0) > 0) && (
-            <section className="rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] p-4">
-              <h2 className="text-sm font-semibold text-[var(--color-text)] mb-2">Conciliación OC-factura-recepción</h2>
-              <div className="rounded-[var(--radius-lg)] bg-[var(--color-surface-2)] px-3 py-2 text-xs text-[var(--color-text-muted)]">
-                <div className="flex justify-between gap-2">
-                  <span>Cantidad total pedida</span>
-                  <span className="font-mono tabular-nums">{order.items.reduce((sum, i) => sum + i.quantity, 0)}</span>
-                </div>
-                <div className="flex justify-between gap-2 mt-1 pt-1 border-t border-[var(--color-border)]">
-                  <span>Cantidad recibida en faena</span>
-                  <span className="font-mono tabular-nums">{totalReceived}</span>
-                </div>
-                <div className="flex justify-between gap-2 mt-1 pt-1 border-t border-[var(--color-border)]">
-                  <span>Facturas adjuntadas</span>
-                  <span className="font-mono tabular-nums">{orderInvoices.length}</span>
-                </div>
-                <div className="flex justify-between gap-2 mt-1 pt-1 border-t border-[var(--color-border)]">
-                  <span>Total facturado</span>
-                  <span className="font-mono tabular-nums">{formatCLP(orderInvoices.reduce((sum, inv) => sum + (inv.amount ?? 0), 0))}</span>
-                </div>
-              </div>
-            </section>
-          )}
-
-          <EntityTimeline entityType="oc" events={timelineEvents} />
         </aside>
       </div>
     </PageContainer>
