@@ -239,10 +239,10 @@ exports[`PdtpCreateProgramForm > F: Snapshot > coincide con el snapshot con año
         type="button"
       >
         <div
-          class="flex items-center gap-3"
+          class="flex items-start gap-3"
         >
           <span
-            class="flex h-7 w-7 items-center justify-center rounded-full border-2 text-xs font-bold border-[var(--color-primary)] bg-[var(--color-primary)] text-white"
+            class="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 text-xs font-bold transition-colors border-[var(--color-primary)] bg-[var(--color-primary)] text-white"
           >
             <svg
               fill="currentColor"
@@ -256,9 +256,11 @@ exports[`PdtpCreateProgramForm > F: Snapshot > coincide con el snapshot con año
               />
             </svg>
           </span>
-          <div>
+          <div
+            class="min-w-0 flex-1"
+          >
             <p
-              class="text-sm font-medium text-[var(--color-text)]"
+              class="truncate text-sm font-medium text-[var(--color-text)]"
             >
               Programa vacío
             </p>
@@ -282,57 +284,61 @@ exports[`PdtpCreateProgramForm > F: Snapshot > coincide con el snapshot con año
         </p>
         <button
           aria-checked="false"
-          class="w-full rounded-[var(--radius)] border p-3 text-left transition-all hover:shadow-sm border-[var(--color-border)] bg-[var(--color-surface)] hover:border-[var(--color-border-strong)]"
+          class="w-full rounded-[var(--radius)] border p-3 text-left transition-all border-[var(--color-border)] bg-[var(--color-surface)] hover:border-[var(--color-border-strong)] hover:bg-[var(--color-surface-2)] hover:shadow-sm"
           role="radio"
           type="button"
         >
           <div
-            class="flex items-start justify-between gap-3"
+            class="flex items-start gap-3"
           >
-            <div
-              class="flex items-start gap-3 min-w-0"
+            <span
+              class="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 text-xs font-bold transition-colors border-[var(--color-border)] text-[var(--color-text-faint)]"
             >
-              <span
-                class="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 text-xs font-bold transition-colors border-[var(--color-border)] text-[var(--color-text-faint)]"
-              >
-                26
-              </span>
+              26
+            </span>
+            <div
+              class="min-w-0 flex-1"
+            >
               <div
-                class="min-w-0"
+                class="flex items-start justify-between gap-3"
               >
                 <div
-                  class="flex items-center gap-2"
+                  class="min-w-0"
                 >
-                  <p
-                    class="truncate text-sm font-medium text-[var(--color-text)]"
+                  <div
+                    class="flex items-center gap-2"
                   >
-                    Programa General 2026
-                  </p>
-                  <span
-                    class="inline-flex items-center gap-1.5 rounded-[var(--radius-full)] px-2 py-0.5 whitespace-nowrap font-mono font-semibold uppercase tracking-wider text-[var(--color-success-ink)] bg-[var(--color-success-tint)] text-[9px]"
+                    <p
+                      class="truncate text-sm font-medium text-[var(--color-text)]"
+                    >
+                      Programa General 2026
+                    </p>
+                    <span
+                      class="inline-flex items-center gap-1.5 rounded-[var(--radius-full)] px-2 py-0.5 whitespace-nowrap font-mono font-semibold uppercase tracking-wider text-[var(--color-success-ink)] bg-[var(--color-success-tint)] text-[9px]"
+                    >
+                      Activo
+                    </span>
+                  </div>
+                  <div
+                    class="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[var(--color-text-muted)]"
                   >
-                    Activo
-                  </span>
-                </div>
-                <div
-                  class="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[var(--color-text-muted)]"
-                >
-                  <span>
-                    Año 
-                    2026
-                     · v
-                    1
-                  </span>
-                  <span>
-                    89
-                     actividades
-                  </span>
-                  <span
-                    class="font-medium text-[var(--color-signal)]"
-                  >
-                    75
-                    % cumplimiento
-                  </span>
+                    <span>
+                      Año 
+                      2026
+                       · v
+                      1
+                    </span>
+                    <span>
+                      89
+                       actividades
+                    </span>
+                    <span
+                      class="font-medium text-[var(--color-signal)]"
+                    >
+                      75
+                      % cumplimiento
+                    </span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -340,57 +346,61 @@ exports[`PdtpCreateProgramForm > F: Snapshot > coincide con el snapshot con año
         </button>
         <button
           aria-checked="false"
-          class="w-full rounded-[var(--radius)] border p-3 text-left transition-all hover:shadow-sm border-[var(--color-border)] bg-[var(--color-surface)] hover:border-[var(--color-border-strong)]"
+          class="w-full rounded-[var(--radius)] border p-3 text-left transition-all border-[var(--color-border)] bg-[var(--color-surface)] hover:border-[var(--color-border-strong)] hover:bg-[var(--color-surface-2)] hover:shadow-sm"
           role="radio"
           type="button"
         >
           <div
-            class="flex items-start justify-between gap-3"
+            class="flex items-start gap-3"
           >
-            <div
-              class="flex items-start gap-3 min-w-0"
+            <span
+              class="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 text-xs font-bold transition-colors border-[var(--color-border)] text-[var(--color-text-faint)]"
             >
-              <span
-                class="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 text-xs font-bold transition-colors border-[var(--color-border)] text-[var(--color-text-faint)]"
-              >
-                25
-              </span>
+              25
+            </span>
+            <div
+              class="min-w-0 flex-1"
+            >
               <div
-                class="min-w-0"
+                class="flex items-start justify-between gap-3"
               >
                 <div
-                  class="flex items-center gap-2"
+                  class="min-w-0"
                 >
-                  <p
-                    class="truncate text-sm font-medium text-[var(--color-text)]"
+                  <div
+                    class="flex items-center gap-2"
                   >
-                    Programa Faenas 2025
-                  </p>
-                  <span
-                    class="inline-flex items-center gap-1.5 rounded-[var(--radius-full)] px-2 py-0.5 whitespace-nowrap font-sans font-medium normal-case tracking-normal text-[var(--color-text-muted)] bg-[var(--color-surface-2)] text-[10px]"
+                    <p
+                      class="truncate text-sm font-medium text-[var(--color-text)]"
+                    >
+                      Programa Faenas 2025
+                    </p>
+                    <span
+                      class="inline-flex items-center gap-1.5 rounded-[var(--radius-full)] px-2 py-0.5 whitespace-nowrap font-sans font-medium normal-case tracking-normal text-[var(--color-text-muted)] bg-[var(--color-surface-2)] text-[10px]"
+                    >
+                      Cerrado
+                    </span>
+                  </div>
+                  <div
+                    class="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[var(--color-text-muted)]"
                   >
-                    Cerrado
-                  </span>
-                </div>
-                <div
-                  class="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[var(--color-text-muted)]"
-                >
-                  <span>
-                    Año 
-                    2025
-                     · v
-                    3
-                  </span>
-                  <span>
-                    120
-                     actividades
-                  </span>
-                  <span
-                    class="font-medium text-[var(--color-success)]"
-                  >
-                    92
-                    % cumplimiento
-                  </span>
+                    <span>
+                      Año 
+                      2025
+                       · v
+                      3
+                    </span>
+                    <span>
+                      120
+                       actividades
+                    </span>
+                    <span
+                      class="font-medium text-[var(--color-success)]"
+                    >
+                      92
+                      % cumplimiento
+                    </span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -676,10 +686,10 @@ exports[`PdtpCreateProgramForm > F: Snapshot > coincide con el snapshot con sugg
         type="button"
       >
         <div
-          class="flex items-center gap-3"
+          class="flex items-start gap-3"
         >
           <span
-            class="flex h-7 w-7 items-center justify-center rounded-full border-2 text-xs font-bold border-[var(--color-primary)] bg-[var(--color-primary)] text-white"
+            class="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 text-xs font-bold transition-colors border-[var(--color-primary)] bg-[var(--color-primary)] text-white"
           >
             <svg
               fill="currentColor"
@@ -693,9 +703,11 @@ exports[`PdtpCreateProgramForm > F: Snapshot > coincide con el snapshot con sugg
               />
             </svg>
           </span>
-          <div>
+          <div
+            class="min-w-0 flex-1"
+          >
             <p
-              class="text-sm font-medium text-[var(--color-text)]"
+              class="truncate text-sm font-medium text-[var(--color-text)]"
             >
               Programa vacío
             </p>
@@ -719,57 +731,61 @@ exports[`PdtpCreateProgramForm > F: Snapshot > coincide con el snapshot con sugg
         </p>
         <button
           aria-checked="false"
-          class="w-full rounded-[var(--radius)] border p-3 text-left transition-all hover:shadow-sm border-[var(--color-border)] bg-[var(--color-surface)] hover:border-[var(--color-border-strong)]"
+          class="w-full rounded-[var(--radius)] border p-3 text-left transition-all border-[var(--color-border)] bg-[var(--color-surface)] hover:border-[var(--color-border-strong)] hover:bg-[var(--color-surface-2)] hover:shadow-sm"
           role="radio"
           type="button"
         >
           <div
-            class="flex items-start justify-between gap-3"
+            class="flex items-start gap-3"
           >
-            <div
-              class="flex items-start gap-3 min-w-0"
+            <span
+              class="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 text-xs font-bold transition-colors border-[var(--color-border)] text-[var(--color-text-faint)]"
             >
-              <span
-                class="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 text-xs font-bold transition-colors border-[var(--color-border)] text-[var(--color-text-faint)]"
-              >
-                25
-              </span>
+              25
+            </span>
+            <div
+              class="min-w-0 flex-1"
+            >
               <div
-                class="min-w-0"
+                class="flex items-start justify-between gap-3"
               >
                 <div
-                  class="flex items-center gap-2"
+                  class="min-w-0"
                 >
-                  <p
-                    class="truncate text-sm font-medium text-[var(--color-text)]"
+                  <div
+                    class="flex items-center gap-2"
                   >
-                    Programa Faenas 2025
-                  </p>
-                  <span
-                    class="inline-flex items-center gap-1.5 rounded-[var(--radius-full)] px-2 py-0.5 whitespace-nowrap font-sans font-medium normal-case tracking-normal text-[var(--color-text-muted)] bg-[var(--color-surface-2)] text-[10px]"
+                    <p
+                      class="truncate text-sm font-medium text-[var(--color-text)]"
+                    >
+                      Programa Faenas 2025
+                    </p>
+                    <span
+                      class="inline-flex items-center gap-1.5 rounded-[var(--radius-full)] px-2 py-0.5 whitespace-nowrap font-sans font-medium normal-case tracking-normal text-[var(--color-text-muted)] bg-[var(--color-surface-2)] text-[10px]"
+                    >
+                      Cerrado
+                    </span>
+                  </div>
+                  <div
+                    class="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[var(--color-text-muted)]"
                   >
-                    Cerrado
-                  </span>
-                </div>
-                <div
-                  class="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[var(--color-text-muted)]"
-                >
-                  <span>
-                    Año 
-                    2025
-                     · v
-                    3
-                  </span>
-                  <span>
-                    120
-                     actividades
-                  </span>
-                  <span
-                    class="font-medium text-[var(--color-success)]"
-                  >
-                    92
-                    % cumplimiento
-                  </span>
+                    <span>
+                      Año 
+                      2025
+                       · v
+                      3
+                    </span>
+                    <span>
+                      120
+                       actividades
+                    </span>
+                    <span
+                      class="font-medium text-[var(--color-success)]"
+                    >
+                      92
+                      % cumplimiento
+                    </span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -777,57 +793,61 @@ exports[`PdtpCreateProgramForm > F: Snapshot > coincide con el snapshot con sugg
         </button>
         <button
           aria-checked="false"
-          class="w-full rounded-[var(--radius)] border p-3 text-left transition-all hover:shadow-sm border-[var(--color-border)] bg-[var(--color-surface)] hover:border-[var(--color-border-strong)]"
+          class="w-full rounded-[var(--radius)] border p-3 text-left transition-all border-[var(--color-border)] bg-[var(--color-surface)] hover:border-[var(--color-border-strong)] hover:bg-[var(--color-surface-2)] hover:shadow-sm"
           role="radio"
           type="button"
         >
           <div
-            class="flex items-start justify-between gap-3"
+            class="flex items-start gap-3"
           >
-            <div
-              class="flex items-start gap-3 min-w-0"
+            <span
+              class="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 text-xs font-bold transition-colors border-[var(--color-border)] text-[var(--color-text-faint)]"
             >
-              <span
-                class="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 text-xs font-bold transition-colors border-[var(--color-border)] text-[var(--color-text-faint)]"
-              >
-                26
-              </span>
+              26
+            </span>
+            <div
+              class="min-w-0 flex-1"
+            >
               <div
-                class="min-w-0"
+                class="flex items-start justify-between gap-3"
               >
                 <div
-                  class="flex items-center gap-2"
+                  class="min-w-0"
                 >
-                  <p
-                    class="truncate text-sm font-medium text-[var(--color-text)]"
+                  <div
+                    class="flex items-center gap-2"
                   >
-                    Programa General 2026
-                  </p>
-                  <span
-                    class="inline-flex items-center gap-1.5 rounded-[var(--radius-full)] px-2 py-0.5 whitespace-nowrap font-mono font-semibold uppercase tracking-wider text-[var(--color-success-ink)] bg-[var(--color-success-tint)] text-[9px]"
+                    <p
+                      class="truncate text-sm font-medium text-[var(--color-text)]"
+                    >
+                      Programa General 2026
+                    </p>
+                    <span
+                      class="inline-flex items-center gap-1.5 rounded-[var(--radius-full)] px-2 py-0.5 whitespace-nowrap font-mono font-semibold uppercase tracking-wider text-[var(--color-success-ink)] bg-[var(--color-success-tint)] text-[9px]"
+                    >
+                      Activo
+                    </span>
+                  </div>
+                  <div
+                    class="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[var(--color-text-muted)]"
                   >
-                    Activo
-                  </span>
-                </div>
-                <div
-                  class="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[var(--color-text-muted)]"
-                >
-                  <span>
-                    Año 
-                    2026
-                     · v
-                    1
-                  </span>
-                  <span>
-                    89
-                     actividades
-                  </span>
-                  <span
-                    class="font-medium text-[var(--color-signal)]"
-                  >
-                    75
-                    % cumplimiento
-                  </span>
+                    <span>
+                      Año 
+                      2026
+                       · v
+                      1
+                    </span>
+                    <span>
+                      89
+                       actividades
+                    </span>
+                    <span
+                      class="font-medium text-[var(--color-signal)]"
+                    >
+                      75
+                      % cumplimiento
+                    </span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1103,10 +1123,10 @@ exports[`PdtpCreateProgramForm > F: Snapshot > coincide con el snapshot del esta
         type="button"
       >
         <div
-          class="flex items-center gap-3"
+          class="flex items-start gap-3"
         >
           <span
-            class="flex h-7 w-7 items-center justify-center rounded-full border-2 text-xs font-bold border-[var(--color-primary)] bg-[var(--color-primary)] text-white"
+            class="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 text-xs font-bold transition-colors border-[var(--color-primary)] bg-[var(--color-primary)] text-white"
           >
             <svg
               fill="currentColor"
@@ -1120,9 +1140,11 @@ exports[`PdtpCreateProgramForm > F: Snapshot > coincide con el snapshot del esta
               />
             </svg>
           </span>
-          <div>
+          <div
+            class="min-w-0 flex-1"
+          >
             <p
-              class="text-sm font-medium text-[var(--color-text)]"
+              class="truncate text-sm font-medium text-[var(--color-text)]"
             >
               Programa vacío
             </p>
@@ -1146,57 +1168,61 @@ exports[`PdtpCreateProgramForm > F: Snapshot > coincide con el snapshot del esta
         </p>
         <button
           aria-checked="false"
-          class="w-full rounded-[var(--radius)] border p-3 text-left transition-all hover:shadow-sm border-[var(--color-border)] bg-[var(--color-surface)] hover:border-[var(--color-border-strong)]"
+          class="w-full rounded-[var(--radius)] border p-3 text-left transition-all border-[var(--color-border)] bg-[var(--color-surface)] hover:border-[var(--color-border-strong)] hover:bg-[var(--color-surface-2)] hover:shadow-sm"
           role="radio"
           type="button"
         >
           <div
-            class="flex items-start justify-between gap-3"
+            class="flex items-start gap-3"
           >
-            <div
-              class="flex items-start gap-3 min-w-0"
+            <span
+              class="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 text-xs font-bold transition-colors border-[var(--color-border)] text-[var(--color-text-faint)]"
             >
-              <span
-                class="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 text-xs font-bold transition-colors border-[var(--color-border)] text-[var(--color-text-faint)]"
-              >
-                26
-              </span>
+              26
+            </span>
+            <div
+              class="min-w-0 flex-1"
+            >
               <div
-                class="min-w-0"
+                class="flex items-start justify-between gap-3"
               >
                 <div
-                  class="flex items-center gap-2"
+                  class="min-w-0"
                 >
-                  <p
-                    class="truncate text-sm font-medium text-[var(--color-text)]"
+                  <div
+                    class="flex items-center gap-2"
                   >
-                    Programa General 2026
-                  </p>
-                  <span
-                    class="inline-flex items-center gap-1.5 rounded-[var(--radius-full)] px-2 py-0.5 whitespace-nowrap font-mono font-semibold uppercase tracking-wider text-[var(--color-success-ink)] bg-[var(--color-success-tint)] text-[9px]"
+                    <p
+                      class="truncate text-sm font-medium text-[var(--color-text)]"
+                    >
+                      Programa General 2026
+                    </p>
+                    <span
+                      class="inline-flex items-center gap-1.5 rounded-[var(--radius-full)] px-2 py-0.5 whitespace-nowrap font-mono font-semibold uppercase tracking-wider text-[var(--color-success-ink)] bg-[var(--color-success-tint)] text-[9px]"
+                    >
+                      Activo
+                    </span>
+                  </div>
+                  <div
+                    class="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[var(--color-text-muted)]"
                   >
-                    Activo
-                  </span>
-                </div>
-                <div
-                  class="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[var(--color-text-muted)]"
-                >
-                  <span>
-                    Año 
-                    2026
-                     · v
-                    1
-                  </span>
-                  <span>
-                    89
-                     actividades
-                  </span>
-                  <span
-                    class="font-medium text-[var(--color-signal)]"
-                  >
-                    75
-                    % cumplimiento
-                  </span>
+                    <span>
+                      Año 
+                      2026
+                       · v
+                      1
+                    </span>
+                    <span>
+                      89
+                       actividades
+                    </span>
+                    <span
+                      class="font-medium text-[var(--color-signal)]"
+                    >
+                      75
+                      % cumplimiento
+                    </span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1204,57 +1230,61 @@ exports[`PdtpCreateProgramForm > F: Snapshot > coincide con el snapshot del esta
         </button>
         <button
           aria-checked="false"
-          class="w-full rounded-[var(--radius)] border p-3 text-left transition-all hover:shadow-sm border-[var(--color-border)] bg-[var(--color-surface)] hover:border-[var(--color-border-strong)]"
+          class="w-full rounded-[var(--radius)] border p-3 text-left transition-all border-[var(--color-border)] bg-[var(--color-surface)] hover:border-[var(--color-border-strong)] hover:bg-[var(--color-surface-2)] hover:shadow-sm"
           role="radio"
           type="button"
         >
           <div
-            class="flex items-start justify-between gap-3"
+            class="flex items-start gap-3"
           >
-            <div
-              class="flex items-start gap-3 min-w-0"
+            <span
+              class="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 text-xs font-bold transition-colors border-[var(--color-border)] text-[var(--color-text-faint)]"
             >
-              <span
-                class="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 text-xs font-bold transition-colors border-[var(--color-border)] text-[var(--color-text-faint)]"
-              >
-                25
-              </span>
+              25
+            </span>
+            <div
+              class="min-w-0 flex-1"
+            >
               <div
-                class="min-w-0"
+                class="flex items-start justify-between gap-3"
               >
                 <div
-                  class="flex items-center gap-2"
+                  class="min-w-0"
                 >
-                  <p
-                    class="truncate text-sm font-medium text-[var(--color-text)]"
+                  <div
+                    class="flex items-center gap-2"
                   >
-                    Programa Faenas 2025
-                  </p>
-                  <span
-                    class="inline-flex items-center gap-1.5 rounded-[var(--radius-full)] px-2 py-0.5 whitespace-nowrap font-sans font-medium normal-case tracking-normal text-[var(--color-text-muted)] bg-[var(--color-surface-2)] text-[10px]"
+                    <p
+                      class="truncate text-sm font-medium text-[var(--color-text)]"
+                    >
+                      Programa Faenas 2025
+                    </p>
+                    <span
+                      class="inline-flex items-center gap-1.5 rounded-[var(--radius-full)] px-2 py-0.5 whitespace-nowrap font-sans font-medium normal-case tracking-normal text-[var(--color-text-muted)] bg-[var(--color-surface-2)] text-[10px]"
+                    >
+                      Cerrado
+                    </span>
+                  </div>
+                  <div
+                    class="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[var(--color-text-muted)]"
                   >
-                    Cerrado
-                  </span>
-                </div>
-                <div
-                  class="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[var(--color-text-muted)]"
-                >
-                  <span>
-                    Año 
-                    2025
-                     · v
-                    3
-                  </span>
-                  <span>
-                    120
-                     actividades
-                  </span>
-                  <span
-                    class="font-medium text-[var(--color-success)]"
-                  >
-                    92
-                    % cumplimiento
-                  </span>
+                    <span>
+                      Año 
+                      2025
+                       · v
+                      3
+                    </span>
+                    <span>
+                      120
+                       actividades
+                    </span>
+                    <span
+                      class="font-medium text-[var(--color-success)]"
+                    >
+                      92
+                      % cumplimiento
+                    </span>
+                  </div>
                 </div>
               </div>
             </div>
