@@ -106,6 +106,7 @@ export function ProductUnitForm({ open, onClose, editUnit }: ProductUnitFormProp
                   step={1}
                   defaultValue={String(editUnit?.sortOrder ?? 0)}
                   error={!!state.fieldErrors?.sortOrder}
+                  className="w-24"
                 />
               </Field>
               <Checkbox

@@ -28,6 +28,7 @@
     "db:studio": "drizzle-kit studio",
     "e2e:setup": "tsx e2e/setup-db.ts",
     "screenshots": "tsx --env-file=.env.local scripts/capture-all-routes.ts",
+    "ss": "tsx --env-file=.env.local scripts/capture-all-routes.ts",
     "test": "vitest run",
     "test:e2e": "bash scripts/run-e2e.sh",
     "test:e2e:ui": "playwright test --ui",

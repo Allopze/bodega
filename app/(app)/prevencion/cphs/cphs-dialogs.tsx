@@ -52,7 +52,7 @@ export function NewCommitteeDialog({ worksites }: { worksites: { id: string; nam
             <Field label="Mandato hasta" hint="Debe ser posterior a la constitución."><Input name="mandateEndsOn" type="date" required /></Field>
           </div>
           <Field label="Día de sesión mensual" hint="Opcional. Día del mes (1-28) en que suele convocarse.">
-            <Input name="meetingDayOfMonth" type="number" min={1} max={28} />
+            <Input name="meetingDayOfMonth" type="number" min={1} max={28} className="w-24" />
           </Field>
           {operation.message && <p role="status" className="text-sm">{operation.message}</p>}
           <DialogFooter><Button type="submit" disabled={operation.pending}>Constituir</Button></DialogFooter>

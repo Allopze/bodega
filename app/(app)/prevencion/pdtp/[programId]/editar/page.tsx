@@ -49,7 +49,7 @@ export default async function PdtpEditProgramPage({ params }: Props) {
     <PageContainer>
       <PageHeader
         title={`Editar: ${program.title}`}
-        description={`Configura las hojas, objetivos, actividades y planificación del programa.`}
+        description={`Define los objetivos, actividades, su frecuencia y las evidencias del programa.`}
         breadcrumb={
           <Breadcrumbs items={[
             { label: "Dashboard", href: "/dashboard" },

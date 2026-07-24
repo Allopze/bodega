@@ -19,15 +19,114 @@ import {
   quotePostgresIdentifier,
 } from "../lib/testing/destructive-database-guard"
 
+/**
+ * capture-all-routes.ts  —  Auditoría visual automatizada de Chome
+ * =====================================================================
+ *
+ * Genera capturas de pantalla (desktop 1920×1080 + mobile 390×844) de todas
+ * las rutas del sistema usando Playwright. Prepara una base de datos
+ * temporal con datos de prueba, inicia un servidor Next.js embebido y
+ * navega por cada ruta para tomar la captura.
+ *
+ * ── USO ───────────────────────────────────────────────────────────────────
+ *
+ *   npm run ss                             Todas las rutas, ambos viewports
+ *   npm run ss prevencion                  Solo módulo prevención
+ *   npm run ss prevencion desktop           Solo módulo prevención en desktop
+ *   npm run ss desktop                     Todos los módulos solo en desktop
+ *   npm run ss mobile                      Todos los módulos solo en mobile
+ *
+ * ── VARIABLES DE ENTORNO ──────────────────────────────────────────────────
+ *
+ *   Variable obligatoria:
+ *     CAPTURE_DATABASE_URL              URL de BD Postgres para datos de prueba
+ *                                        (p. ej. postgres://.../bodega_capture)
+ *
+ *   Variables opcionales:
+ *     CAPTURE_PORT                      Puerto del servidor Next.js (def. 3127)
+ *     CAPTURE_OUTPUT_DIR                Directorio de salida (def. audit/screenshots/{fecha})
+ *     CAPTURE_CONCURRENCY               Workers en paralelo (def. 4)
+ *     CAPTURE_ALLOW_DESTRUCTIVE_RESET   "true" para permitir reset de BD
+ *
+ * ── FILTRO POR MÓDULO ─────────────────────────────────────────────────────
+ *
+ *   Primer argumento (salvo que sea "desktop" o "mobile") es el prefijo del
+ *   slug para capturar solo un submódulo. Prefijos disponibles:
+ *     combustibles, prevencion, admin, solicitudes, compras, recepcion,
+ *     bodega, entregas, trazabilidad, reportes, analitica, flota,
+ *     mantenciones, repuestos, servicios, soporte
+ *
+ *   Las rutas públicas (login, etc.) siempre se incluyen para permitir
+ *   la autenticación.
+ *
+ * ── FILTRO POR VIEWPORT ───────────────────────────────────────────────────
+ *
+ *   Cualquier argumento que sea "desktop" o "mobile" filtra las capturas
+ *   a solo ese viewport. Puede ir como primer o segundo argumento:
+ *
+ *     npm run ss desktop                  Solo desktop 1920×1080
+ *     npm run ss admin mobile             Solo admin en mobile 390×844
+ *
+ * ── SALIDA ────────────────────────────────────────────────────────────────
+ *
+ *   audit/screenshots/{fecha}-playwright/      Captura completa (nueva cada vez)
+ *   audit/screenshots/{modulo}/                Captura filtrada (se sobrescribe)
+ *   ├── desktop-{slug}.png              Captura desktop (1920×1080)
+ *   ├── mobile-{slug}.png               Captura mobile (390×844)
+ *   └── manifest.json                   Metadatos de la ejecución
+ *
+ *   Cuando se filtra por módulo, el directorio de salida es fijo y se
+ *   sobrescribe en cada ejecución (se eliminan los .png y manifest.json
+ *   anteriores antes de empezar).
+ *
+ * ── ARQUITECTURA ──────────────────────────────────────────────────────────
+ *
+ *   1. Prepara BD:   resetea esquema → migraciones → inserta fixtures
+ *   2. Inicia server Next.js embebido en CAPTURE_PORT
+ *   3. Abre Chromium y captura en 1 o 2 viewports según filtro:
+ *       a) Rutas públicas (sin auth)
+ *       b) Login como admin.audit@chome.cl
+ *       c) Rutas autenticadas
+ *   4. Barra de progreso en vivo con spinner, ⏱ tiempo transcurrido y ETA
+ *   5. Genera manifest.json con resultados y metadatos
+ *   6. Cierra servidor y navegador
+ */
+
 loadEnvConfig(process.cwd())
+
+function parseCliArgs(): { moduleFilter: string | undefined; viewportFilter: string | undefined } {
+  const viewportNames = new Set(["desktop", "mobile"])
+  const raw = process.argv.slice(2).map((a) => a.trim().toLowerCase()).filter(Boolean)
+  let moduleFilter: string | undefined
+  let viewportFilter: string | undefined
+  for (const arg of raw) {
+    if (viewportNames.has(arg)) {
+      viewportFilter = arg
+    } else {
+      moduleFilter = arg
+    }
+  }
+  return { moduleFilter, viewportFilter }
+}
+
+const { moduleFilter, viewportFilter } = parseCliArgs()
 
 const root = process.cwd()
 const port = Number(process.env.CAPTURE_PORT ?? 3127)
 const baseUrl = `http://127.0.0.1:${port}`
 const outputDir = process.env.CAPTURE_OUTPUT_DIR
   ? path.resolve(root, process.env.CAPTURE_OUTPUT_DIR)
-  : path.join(root, "audit", "screenshots", `${new Date().toISOString().slice(0, 10)}-playwright`)
+  : moduleFilter
+    ? path.join(root, "audit", "screenshots", moduleFilter)
+    : path.join(root, "audit", "screenshots", `${new Date().toISOString().slice(0, 10)}-playwright`)
 const authSecret = "route-screenshot-audit-secret"
+
+export type ModalTarget = {
+  slug: string
+  triggerSelector: string
+  waitForSelector?: string
+  notes?: string
+}
 
 export type RouteTarget = {
   slug: string
@@ -35,6 +134,7 @@ export type RouteTarget = {
   auth: boolean
   expectedStatus?: number
   notes?: string
+  modals?: ModalTarget[]
 }
 
 export type CaptureSeedArea = {
@@ -53,6 +153,86 @@ type CaptureResult = {
   screenshot: string
   error?: string
   notes?: string
+}
+
+// ── Progress bar helpers ─────────────────────────────────────────────────
+const spinnerFrames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+let spinnerIndex = 0
+
+function formatDuration(ms: number): string {
+  const totalSec = Math.floor(ms / 1000)
+  const h = Math.floor(totalSec / 3600)
+  const m = Math.floor((totalSec % 3600) / 60)
+  const s = totalSec % 60
+  if (h > 0) return `${h}h ${m}m ${s}s`
+  if (m > 0) return `${m}m ${s}s`
+  return `${s}s`
+}
+
+function formatProgress(current: number, total: number, slug: string, ok: boolean, status: number | null, startTime: number, routeMs?: number) {
+  const pct = total > 0 ? Math.round((current / total) * 100) : 0
+  const spin = spinnerFrames[spinnerIndex++ % spinnerFrames.length]!
+  const icon = ok ? "✓" : "✗"
+  const code = status ?? "—"
+  const elapsed = Date.now() - startTime
+  const eta = current > 0
+    ? Math.round((elapsed / current) * (total - current))
+    : 0
+  const elapsedStr = formatDuration(elapsed)
+  const etaStr = eta > 0 ? formatDuration(eta) : "—"
+  const barWidth = 16
+  const filled = Math.round((current / total) * barWidth)
+  const bar = "█".repeat(filled) + "░".repeat(barWidth - filled)
+  const individual = routeMs !== undefined ? `  +${(routeMs / 1000).toFixed(1)}s` : ""
+  return `${spin} ${bar} ${current}/${total} (${pct}%) ${slug} ${icon} ${code}  ⏱ ${elapsedStr}  ETA ${etaStr}${individual}`
+}
+
+function clearLine() {
+  process.stdout.write("\r\x1b[K")
+}
+
+function writeProgress(current: number, total: number, slug: string, ok: boolean, status: number | null, startTime: number, routeMs?: number) {
+  clearLine()
+  process.stdout.write(formatProgress(current, total, slug, ok, status, startTime, routeMs))
+}
+
+function finalizeProgress(total: number, errors: number) {
+  clearLine()
+  const ok = total - errors
+  if (errors === 0) {
+    console.log(`✅ ${total}/${total} capturadas correctamente`)
+  } else {
+    console.log(`⚠️  ${ok}/${total} ok, ${errors} con errores`)
+  }
+}
+
+/**
+ * Ejecuta una función asíncrona mostrando un spinner animado en la
+ * terminal con la etiqueta dada. Al finalizar imprime ✅ o ❌ según
+ * el resultado, junto con el tiempo transcurrido.
+ */
+async function runWithSpinner<T>(label: string, fn: () => Promise<T>): Promise<T> {
+  const startTime = Date.now()
+  let frameIndex = 0
+  const interval = setInterval(() => {
+    const spin = spinnerFrames[frameIndex++ % spinnerFrames.length]!
+    const elapsed = formatDuration(Date.now() - startTime)
+    clearLine()
+    process.stdout.write(`${spin} ${label}  ⏱ ${elapsed}`)
+  }, 120)
+
+  try {
+    const result = await fn()
+    clearInterval(interval)
+    clearLine()
+    console.log(`✅ ${label}  ⏱ ${formatDuration(Date.now() - startTime)}`)
+    return result
+  } catch (error) {
+    clearInterval(interval)
+    clearLine()
+    console.log(`❌ ${label}`)
+    throw error
+  }
 }
 
 function requireCaptureDatabaseUrl() {
@@ -85,11 +265,19 @@ const routeTargets: RouteTarget[] = [
   { slug: "recepcion", path: "/recepcion", auth: true },
   { slug: "recepcion-nueva", path: "/recepcion/nueva?oc=po-audit-1", auth: true },
   { slug: "recepcion-detalle", path: "/recepcion/rec-audit-1", auth: true },
-  { slug: "bodega", path: "/bodega", auth: true },
+  {
+    slug: "bodega",
+    path: "/bodega",
+    auth: true,
+    modals: [
+      { slug: "movimiento", triggerSelector: 'button:has-text("Movimiento"), button:has-text("Registrar")', notes: "Sheet de movimiento de bodega" },
+    ],
+  },
   { slug: "entregas", path: "/entregas", auth: true },
   { slug: "entregas-print", path: "/entregas/del-audit-1/print", auth: true },
   { slug: "trazabilidad", path: "/trazabilidad", auth: true },
   { slug: "trazabilidad-detalle", path: "/trazabilidad/req-item-audit-1", auth: true },
+  { slug: "trazabilidad-trabajador", path: "/trazabilidad/trabajador/worker-audit-1", auth: true },
   { slug: "reportes", path: "/reportes", auth: true },
   { slug: "analitica", path: "/analitica", auth: true },
   { slug: "flota", path: "/flota", auth: true },
@@ -102,7 +290,14 @@ const routeTargets: RouteTarget[] = [
   { slug: "combustibles-reportes", path: "/combustibles/reportes", auth: true },
   { slug: "combustibles-vehiculos-legacy", path: "/combustibles/vehiculos", auth: true, notes: "Compatibilidad: redirige al catálogo administrativo canónico." },
   { slug: "combustibles-proveedores-legacy", path: "/combustibles/proveedores-combustible", auth: true, notes: "Compatibilidad: redirige al catálogo administrativo canónico." },
-  { slug: "combustibles-cuenta-corriente", path: "/combustibles/cuenta-corriente", auth: true },
+  {
+    slug: "combustibles-cuenta-corriente",
+    path: "/combustibles/cuenta-corriente",
+    auth: true,
+    modals: [
+      { slug: "nuevo-estado", triggerSelector: 'button:has-text("Nuevo")', notes: "Diálogo de nuevo estado de cuenta" },
+    ],
+  },
   { slug: "combustibles-cc-detalle", path: "/combustibles/cuenta-corriente/cc-audit-1", auth: true },
   { slug: "combustibles-facturas", path: "/combustibles/facturas", auth: true },
   { slug: "combustibles-importar", path: "/combustibles/importar", auth: true },
@@ -130,6 +325,7 @@ const routeTargets: RouteTarget[] = [
   { slug: "prevencion", path: "/prevencion", auth: true },
   { slug: "prevencion-nueva", path: "/prevencion/nueva", auth: true },
   { slug: "prevencion-detalle", path: "/prevencion/sst-audit-1", auth: true },
+  { slug: "prevencion-campanas", path: "/prevencion/campanas", auth: true },
   { slug: "prevencion-evaluaciones", path: "/prevencion/evaluaciones", auth: true },
   { slug: "prevencion-indicadores", path: "/prevencion/indicadores", auth: true },
   { slug: "prevencion-indicadores-material-ambiental", path: "/prevencion/indicadores-material-ambiental", auth: true },
@@ -138,7 +334,11 @@ const routeTargets: RouteTarget[] = [
   { slug: "prevencion-pdtp-detalle", path: "/prevencion/pdtp/prog-audit-1", auth: true },
   { slug: "prevencion-pdtp-editar", path: "/prevencion/pdtp/prog-audit-1/editar", auth: true },
   { slug: "prevencion-pdtp-ejecucion", path: "/prevencion/pdtp/prog-audit-1/ejecucion/exec-audit-1", auth: true },
+  { slug: "prevencion-pdtp-reporte", path: "/prevencion/pdtp/prog-audit-1/reporte", auth: true },
   { slug: "prevencion-pdtp-acciones", path: "/prevencion/pdtp/acciones", auth: true },
+  { slug: "prevencion-pdtp-aplicabilidad", path: "/prevencion/pdtp/aplicabilidad", auth: true },
+  { slug: "prevencion-pdtp-obligaciones", path: "/prevencion/pdtp/obligaciones", auth: true },
+  { slug: "prevencion-pdtp-plantillas", path: "/prevencion/pdtp/plantillas", auth: true },
   { slug: "prevencion-pdtp-nuevo", path: "/prevencion/pdtp/nuevo", auth: true },
   { slug: "prevencion-pdtp-aprobaciones", path: "/prevencion/pdtp/aprobaciones", auth: true },
   { slug: "prevencion-pdtp-cobertura", path: "/prevencion/pdtp/cobertura", auth: true },
@@ -148,6 +348,7 @@ const routeTargets: RouteTarget[] = [
   { slug: "prevencion-incidentes-reportar", path: "/prevencion/incidentes/reportar", auth: true },
   { slug: "prevencion-incidentes-importar", path: "/prevencion/incidentes/importar", auth: true },
   { slug: "prevencion-incidentes-detalle", path: "/prevencion/incidentes/inc-audit-1", auth: true, expectedStatus: 404, notes: "Inventario de ruta; la base de captura no crea aún un incidente de detalle." },
+  { slug: "prevencion-incidentes-procedimiento", path: "/prevencion/incidentes/inc-audit-1/procedimiento", auth: true, expectedStatus: 404, notes: "Inventario de ruta; procedimiento del incidente." },
   { slug: "prevencion-miper", path: "/prevencion/miper", auth: true },
   { slug: "prevencion-miper-control", path: "/prevencion/miper/controles/risk-control-audit-1", auth: true, expectedStatus: 404, notes: "Inventario de ruta; la base de captura no crea aún un control MIPER de detalle." },
   { slug: "prevencion-requisitos-legales", path: "/prevencion/requisitos-legales", auth: true },
@@ -176,13 +377,6 @@ const routeTargets: RouteTarget[] = [
   { slug: "prevencion-gestion-cambio", path: "/prevencion/gestion-cambio", auth: true },
   { slug: "prevencion-gestion-cambio-detalle", path: "/prevencion/gestion-cambio/cambio-audit-1", auth: true, expectedStatus: 404, notes: "Inventario de ruta; la base de captura no crea aún un cambio de detalle." },
   { slug: "prevencion-epp-preventivo", path: "/prevencion/epp-preventivo", auth: true },
-  // ── Prevención: submódulos P3 sin page.tsx (omitidos intencionalmente) ──
-  //   /prevencion/equipos/reportes y /checklists
-  //   /prevencion/epp/matriz y /stock
-  //   /prevencion/salud/protocolos
-  // Re-agregar cuando los módulos P3 estén implementados.
-  // `/prevencion/contratistas` salió el 19-07-2026 con el módulo DS 76: Chome
-  // es empresa contratista, no empresa principal.
   { slug: "prevencion-documentacion", path: "/prevencion/documentacion", auth: true },
   { slug: "prevencion-documentacion-detalle", path: "/prevencion/documentacion/doc-audit-1", auth: true },
   { slug: "prevencion-documentacion-nuevo", path: "/prevencion/documentacion/nuevo", auth: true },
@@ -217,21 +411,32 @@ const routeTargets: RouteTarget[] = [
   { slug: "admin-pdtp-catalogos", path: "/admin/pdtp-catalogos", auth: true },
   { slug: "admin-plantillas", path: "/admin/plantillas", auth: true },
   { slug: "admin-productos", path: "/admin/productos", auth: true },
-  // Agregada al inventario el 20-07-2026 para dejar el gate verde; la feature
-  // de catálogo EPP se desarrolla en paralelo y esta línea no toca su lógica.
   { slug: "admin-epps", path: "/admin/epps", auth: true },
   { slug: "admin-productos-nuevo", path: "/admin/productos/nuevo", auth: true },
   { slug: "admin-productos-detalle", path: "/admin/productos/prod-audit-1", auth: true, notes: "Esta ruta redirige a /admin/productos." },
   { slug: "admin-productos-importar", path: "/admin/productos/importar/batch-audit-1", auth: true, notes: "Vista de revisión de lotes EPP importados." },
   { slug: "admin-proveedores", path: "/admin/proveedores", auth: true },
-  { slug: "admin-roles", path: "/admin/roles", auth: true },
+  {
+    slug: "admin-roles",
+    path: "/admin/roles",
+    auth: true,
+    modals: [
+      { slug: "nuevo-rol", triggerSelector: 'button:has-text("Nuevo")', notes: "Modal de creación de rol" },
+    ],
+  },
   { slug: "admin-modulos", path: "/admin/modulos", auth: true },
   { slug: "admin-seguridad", path: "/admin/seguridad", auth: true },
+  { slug: "admin-suplencias", path: "/admin/suplencias", auth: true },
   { slug: "admin-taxonomia-sst", path: "/admin/taxonomia-sst", auth: true },
   { slug: "admin-trabajadores", path: "/admin/trabajadores", auth: true },
-  { slug: "admin-usuarios", path: "/admin/usuarios", auth: true },
-  // Agregada al inventario el 19-07-2026 para dejar el gate verde; la feature
-  // de respaldos se desarrolla en paralelo y esta línea no toca su lógica.
+  {
+    slug: "admin-usuarios",
+    path: "/admin/usuarios",
+    auth: true,
+    modals: [
+      { slug: "invitar-usuario", triggerSelector: 'button:has-text("Invitar")', notes: "Diálogo de invitación de usuario" },
+    ],
+  },
   { slug: "admin-backups", path: "/admin/backups", auth: true },
   { slug: "forbidden", path: "/forbidden", auth: true },
   { slug: "soporte", path: "/soporte", auth: true },
@@ -268,8 +473,23 @@ const seedCoverage: CaptureSeedArea[] = [
   { section: "soporte", fixtures: ["reporte de soporte abierto", "reporte resuelto"] },
 ]
 
-export function getCaptureRoutes() {
-  return routeTargets.map((route) => ({ ...route }))
+const moduleAliases: Record<string, string[]> = {
+  adquisiciones: ["solicitudes", "compras", "recepcion"],
+  compras: ["solicitudes", "compras", "recepcion"],
+  sst: ["prevencion"],
+  prevencion: ["prevencion"],
+  combustible: ["combustibles"],
+  combustibles: ["combustibles"],
+  inventario: ["bodega", "entregas", "trazabilidad"],
+}
+
+export function getCaptureRoutes(filter?: string) {
+  const routes = routeTargets.map((route) => ({ ...route }))
+  if (!filter) return routes
+  const allowedPrefixes = moduleAliases[filter] ?? [filter]
+  return routes.filter(
+    (r) => allowedPrefixes.some((prefix) => r.slug.startsWith(prefix)),
+  )
 }
 
 export function getCaptureSeedCoverage() {
@@ -292,34 +512,73 @@ async function captureRouteBatch(
 ): Promise<CaptureResult[]> {
   if (routes.length === 0) return []
 
+  const total = routes.length
   const results: CaptureResult[] = []
   let nextIndex = 0
+  let completedCount = 0
+  let errorCount = 0
+  const startTime = Date.now()
 
   async function worker() {
     while (nextIndex < routes.length) {
       const idx = nextIndex++
-      const result = await captureRoute(context, viewport, routes[idx]!)
-      results[idx] = result
+      const routeStart = Date.now()
+      const routeResults = await captureRoute(context, viewport, routes[idx]!)
+      const routeMs = Date.now() - routeStart
+      results.push(...routeResults)
+      completedCount++
+      const hasError = routeResults.some((r) => !r.ok)
+      if (hasError) errorCount++
+      const mainResult = routeResults[0] ?? { slug: routes[idx]!.slug, ok: false, status: null }
+      writeProgress(completedCount, total, `${viewport}-${mainResult.slug}`, !hasError, mainResult.status, startTime, routeMs)
     }
   }
 
   const poolSize = Math.min(concurrency, routes.length)
   await Promise.all(Array.from({ length: poolSize }, () => worker()))
+  finalizeProgress(total, errorCount)
   return results
 }
 
 async function main() {
   const captureDbUrl = requireCaptureDatabaseUrl()
-  const routes = getCaptureRoutes()
+  const routes = getCaptureRoutes(moduleFilter)
+
+  if (moduleFilter) {
+    console.log(`📷 Módulo filtrado: "${moduleFilter}" → ${routes.length} rutas específicas`)
+  } else {
+    console.log(`📷 Capturando todas las rutas (${routes.length} total)`)
+  }
+  if (viewportFilter) {
+    console.log(`📐 Viewport filtrado: "${viewportFilter}"`)
+  }
+
+  // ── Preparar directorio de salida ──
+  // Cuando hay filtro de módulo, la carpeta es fija y se limpia al empezar
+  // para que cada ejecución sobrescriba las capturas anteriores.
+  if (moduleFilter && fs.existsSync(outputDir)) {
+    const entries = fs.readdirSync(outputDir)
+    for (const entry of entries) {
+      if (entry.endsWith(".png") || entry === "manifest.json") {
+        fs.rmSync(path.join(outputDir, entry), { force: true })
+      }
+    }
+  }
   fs.mkdirSync(outputDir, { recursive: true })
 
-  await prepareDatabase(captureDbUrl)
+  await runWithSpinner("Preparando base de datos (reset → migraciones → fixtures)", () => prepareDatabase(captureDbUrl))
   const server = await startServer(captureDbUrl)
   const browser = await chromium.launch()
   const results: CaptureResult[] = []
 
+  const viewports = (
+    viewportFilter === "desktop" ? [desktop]
+    : viewportFilter === "mobile" ? [mobile]
+    : [desktop, mobile]
+  )
+
   try {
-    for (const viewport of [desktop, mobile]) {
+    for (const viewport of viewports) {
       const context = await browser.newContext({
         viewport: { width: viewport.width, height: viewport.height },
         deviceScaleFactor: 1,
@@ -327,14 +586,17 @@ async function main() {
       })
 
       const nonAuthRoutes = routes.filter((r) => !r.auth)
-      const nonAuthResults = await captureRouteBatch(context, viewport.name, nonAuthRoutes)
-      results.push(...nonAuthResults)
-
-      await login(context)
+      if (nonAuthRoutes.length > 0) {
+        const nonAuthResults = await captureRouteBatch(context, viewport.name, nonAuthRoutes)
+        results.push(...nonAuthResults)
+      }
 
       const authRoutes = routes.filter((r) => r.auth)
-      const authResults = await captureRouteBatch(context, viewport.name, authRoutes)
-      results.push(...authResults)
+      if (authRoutes.length > 0) {
+        await login(context)
+        const authResults = await captureRouteBatch(context, viewport.name, authRoutes)
+        results.push(...authResults)
+      }
 
       await context.close()
     }
@@ -345,6 +607,8 @@ async function main() {
 
   const manifest = {
     generatedAt: new Date().toISOString(),
+    moduleFilter: moduleFilter ?? null,
+    viewportFilter: viewportFilter ?? null,
     baseUrl,
     database: getRedactedDatabaseIdentifier(captureDbUrl),
     outputDir,
@@ -1802,6 +2066,7 @@ async function startServer(captureDbUrl: string) {
     SMTP_TIMEOUT_MS: "1000",
   }
   const standaloneServer = path.join(root, ".next", "standalone", "server.js")
+  const hasProductionBuild = fs.existsSync(path.join(root, ".next", "BUILD_ID"))
   const useStandalone = fs.existsSync(standaloneServer)
   if (useStandalone) {
     const standaloneStatic = path.join(root, ".next", "standalone", ".next", "static")
@@ -1814,7 +2079,9 @@ async function startServer(captureDbUrl: string) {
   const command = useStandalone ? process.execPath : path.join(root, "node_modules", ".bin", "next")
   const args = useStandalone
     ? [standaloneServer]
-    : ["start", "--hostname", "127.0.0.1", "--port", String(port)]
+    : hasProductionBuild
+      ? ["start", "--hostname", "127.0.0.1", "--port", String(port)]
+      : ["dev", "--hostname", "127.0.0.1", "--port", String(port)]
   const server = spawn(command, args, {
     cwd: root,
     env,
@@ -1872,10 +2139,11 @@ async function login(context: BrowserContext) {
   await page.close()
 }
 
-async function captureRoute(context: BrowserContext, viewport: string, route: RouteTarget): Promise<CaptureResult> {
+async function captureRoute(context: BrowserContext, viewport: string, route: RouteTarget): Promise<CaptureResult[]> {
   const requestedUrl = `${baseUrl}${route.path}`
   const screenshot = path.join(outputDir, `${viewport}-${route.slug}.png`)
   const relativeScreenshot = path.relative(root, screenshot)
+  const results: CaptureResult[] = []
 
   const maxRetries = 2
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
@@ -1887,18 +2155,56 @@ async function captureRoute(context: BrowserContext, viewport: string, route: Ro
       await page.screenshot({ path: screenshot, fullPage: true })
       const status = response?.status() ?? null
       const finalUrl = page.url()
-      await page.close()
-      return {
+      const mainOk = isExpectedStatus(status, route)
+
+      results.push({
         viewport,
         slug: route.slug,
         path: route.path,
         requestedUrl,
         finalUrl,
         status,
-        ok: isExpectedStatus(status, route),
+        ok: mainOk,
         screenshot: relativeScreenshot,
         notes: route.notes,
+      })
+
+      if (mainOk && route.modals && route.modals.length > 0) {
+        for (const modal of route.modals) {
+          try {
+            const trigger = page.locator(modal.triggerSelector).first()
+            if (await trigger.isVisible({ timeout: 2000 }).catch(() => false)) {
+              await trigger.click({ force: true })
+              const modalSelector = modal.waitForSelector ?? '[role="dialog"], [role="alertdialog"], [data-state="open"], [data-radix-portal]'
+              await page.waitForSelector(modalSelector, { state: "visible", timeout: 4000 }).catch(() => undefined)
+              await page.waitForTimeout(400)
+
+              const modalScreenshot = path.join(outputDir, `${viewport}-${route.slug}-modal-${modal.slug}.png`)
+              await page.screenshot({ path: modalScreenshot, fullPage: true })
+
+              results.push({
+                viewport,
+                slug: `${route.slug}-modal-${modal.slug}`,
+                path: route.path,
+                requestedUrl,
+                finalUrl: page.url(),
+                status,
+                ok: true,
+                screenshot: path.relative(root, modalScreenshot),
+                notes: modal.notes ?? `Modal/Sheet: ${modal.slug}`,
+              })
+
+              await page.keyboard.press("Escape").catch(() => undefined)
+              await page.waitForTimeout(300)
+            }
+          } catch (modalErr) {
+            // Non-fatal warning
+          }
+        }
       }
+
+      await page.close()
+      return results
     } catch (error) {
       await page.close().catch(() => undefined)
 
@@ -1911,7 +2217,7 @@ async function captureRoute(context: BrowserContext, viewport: string, route: Ro
         continue
       }
 
-      return {
+      return [{
         viewport,
         slug: route.slug,
         path: route.path,
@@ -1922,11 +2228,10 @@ async function captureRoute(context: BrowserContext, viewport: string, route: Ro
         screenshot: relativeScreenshot,
         error: errorMsg,
         notes: route.notes,
-      }
+      }]
     }
   }
 
-  // Unreachable, but TypeScript needs a return.
   throw new Error("Unexpected exit from retry loop")
 }
 

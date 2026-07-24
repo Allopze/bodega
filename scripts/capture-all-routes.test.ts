@@ -49,8 +49,8 @@ const dynamicSamples: Record<string, string> = {
   "/prevencion/pdtp/[programId]/ejecucion/[executionId]": "/prevencion/pdtp/prog-audit-1/ejecucion/exec-audit-1",
   "/prevencion/pdtp/nuevo": "/prevencion/pdtp/nuevo",
   "/prevencion/miper/controles/[id]": "/prevencion/miper/controles/risk-control-audit-1",
-  "/prevencion/privacidad/solicitudes/[id]": "/prevencion/privacidad/solicitudes/privacy-request-audit-1",
-  "/prevencion/requisitos-legales/[id]": "/prevencion/requisitos-legales/legal-requirement-audit-1",
+  "/prevencion/pdtp/[programId]/reporte": "/prevencion/pdtp/prog-audit-1/reporte",
+  "/trazabilidad/trabajador/[workerId]": "/trazabilidad/trabajador/worker-audit-1",
   "/combustibles/bitacora/historial/[entityType]/[entityId]": "/combustibles/bitacora/historial/sst/entity-audit-1",
 }
 

@@ -126,7 +126,7 @@ export function AttributeTemplateForm({ open, onClose, editTemplate, categories 
                 </Field>
               )}
               <Field label="Orden" htmlFor="attr-order" error={state.fieldErrors?.sortOrder?.[0]} helper="Entero ascendente.">
-                <Input id="attr-order" name="sortOrder" type="number" min={0} step={1} defaultValue={String(editTemplate?.sortOrder ?? 0)} error={!!state.fieldErrors?.sortOrder} />
+                <Input id="attr-order" name="sortOrder" type="number" min={0} step={1} defaultValue={String(editTemplate?.sortOrder ?? 0)} error={!!state.fieldErrors?.sortOrder} className="w-24" />
               </Field>
               <Checkbox id="attr-required" name="isRequired" value="on" defaultChecked={editTemplate?.isRequired ?? false} label="Requerido" />
               <Checkbox id="attr-active" name="isActive" value="on" defaultChecked={editTemplate?.isActive ?? true} label="Plantilla activa" />

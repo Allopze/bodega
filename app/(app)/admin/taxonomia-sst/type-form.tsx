@@ -148,6 +148,7 @@ export function TypeForm({ open, onClose, editType, categorySlug }: TypeFormProp
                   type="number"
                   defaultValue={editType?.defaultValidityMonths?.toString() ?? ""}
                   error={!!state.fieldErrors?.defaultValidityMonths}
+                  className="w-32"
                 />
               </Field>
               <Checkbox

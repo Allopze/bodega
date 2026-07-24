@@ -66,7 +66,7 @@ export function EquipmentTypeForm({ open, onClose, editRow }: { open: boolean; o
           </Field>
         </div>
         <Field label="Orden" htmlFor="equipment-type-order">
-          <Input id="equipment-type-order" name="sortOrder" type="number" min="0" max="10000" defaultValue={editRow?.sortOrder ?? 0} />
+          <Input id="equipment-type-order" name="sortOrder" type="number" min="0" max="10000" defaultValue={editRow?.sortOrder ?? 0} className="w-24" />
         </Field>
         <Field label="Descripción" htmlFor="equipment-type-description">
           <Textarea id="equipment-type-description" name="description" rows={3} defaultValue={editRow?.description ?? ""} />

@@ -98,6 +98,7 @@ export function CategoryForm({ open, onClose, editCategory }: CategoryFormProps)
                   type="number"
                   defaultValue={String(editCategory?.sortOrder ?? 0)}
                   error={!!state.fieldErrors?.sortOrder}
+                  className="w-24"
                 />
               </Field>
               <Checkbox

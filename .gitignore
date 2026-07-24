@@ -74,3 +74,5 @@ next-env.d.ts
 
 # Planillas y documentos de calibración/auditoría
 /docs/planillas/
+
+.agents

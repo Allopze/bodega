@@ -59,7 +59,7 @@ export function ResponsibleForm({ open, onClose, editResponsible }: ResponsibleF
           <SheetHeader>
             <div>
               <SheetTitle>{isEdit ? "Editar responsable" : "Nuevo responsable"}</SheetTitle>
-              <SheetDescription>Slug, nombre visible y tipo de responsable.</SheetDescription>
+              <SheetDescription>Identificador, nombre visible y tipo de responsable.</SheetDescription>
             </div>
             <SheetCloseButton />
           </SheetHeader>
@@ -68,7 +68,7 @@ export function ResponsibleForm({ open, onClose, editResponsible }: ResponsibleF
               <p className="mb-4 text-sm text-[var(--color-danger)]">{state.message}</p>
             )}
             <FieldGroup className="gap-4">
-              <Field label="Slug" htmlFor="resp-slug" required error={state.fieldErrors?.slug?.[0]} helper="Identificador interno (snake_case). Inmutable.">
+              <Field label="Identificador interno" htmlFor="resp-slug" required error={state.fieldErrors?.slug?.[0]} helper="Sin espacios ni tildes (ej: jefe_terreno). No se puede modificar después.">
                 <Input
                   id="resp-slug"
                   name="slug"
@@ -85,7 +85,7 @@ export function ResponsibleForm({ open, onClose, editResponsible }: ResponsibleF
                   error={!!state.fieldErrors?.displayName}
                 />
               </Field>
-              <Field label="Tipo (kind)" htmlFor="resp-kind" required error={state.fieldErrors?.kind?.[0]} helper="rol_rbac | grupo | persona | otro">
+              <Field label="Tipo" htmlFor="resp-kind" required error={state.fieldErrors?.kind?.[0]} helper="Valores posibles: rol_rbac, grupo, persona u otro">
                 <Input
                   id="resp-kind"
                   name="kind"
@@ -93,7 +93,7 @@ export function ResponsibleForm({ open, onClose, editResponsible }: ResponsibleF
                   error={!!state.fieldErrors?.kind}
                 />
               </Field>
-              <Field label="Rol RBAC relacionado (opcional)" htmlFor="resp-role" error={state.fieldErrors?.roleName?.[0]}>
+              <Field label="Rol del sistema relacionado (opcional)" htmlFor="resp-role" error={state.fieldErrors?.roleName?.[0]}>
                 <Input
                   id="resp-role"
                   name="roleName"

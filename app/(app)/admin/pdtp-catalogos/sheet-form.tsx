@@ -82,7 +82,7 @@ export function SheetForm({ open, onClose, editSheet, programs, roleOptions }: S
           <SheetHeader>
             <div>
               <SheetTitle>{isEdit ? "Editar hoja" : "Nueva hoja"}</SheetTitle>
-              <SheetDescription>Código, etiqueta, área y alcance predeterminado por rol RBAC.</SheetDescription>
+              <SheetDescription>Código, etiqueta, área y roles con acceso predeterminado.</SheetDescription>
             </div>
             <SheetCloseButton />
           </SheetHeader>
@@ -132,7 +132,7 @@ export function SheetForm({ open, onClose, editSheet, programs, roleOptions }: S
                 <input type="hidden" name="programId" value={programId} />
               </Field>
               <div>
-                <p className="text-eyebrow mb-2">Alcance RBAC predeterminado</p>
+                <p className="text-eyebrow mb-2">Roles con acceso predeterminado</p>
                 <div className="space-y-1 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3">
                   {roleOptions.map((r) => (
                     <label key={r} className="flex cursor-pointer items-center gap-2 rounded px-1 py-0.5 hover:bg-[var(--color-surface)]">

@@ -136,7 +136,7 @@ export function PdtpCreateProgramForm({
           ))}
         </div>
         <p className="mt-3 text-xs text-[var(--color-text-muted)]">
-          Paso 1: Definir año y título. Después podrás editar actividades, hojas y planificación.
+          Paso 1: Definir año y título. Después podrás definir objetivos, actividades y su frecuencia.
         </p>
       </div>
 

@@ -41,8 +41,12 @@ export function PdtpAddActivityForm({
   responsibleCatalog?: ResponsibleOption[]
   sheetOptions?: SheetOption[]
 }) {
-  const [responsibleSlugs, setResponsibleSlugs] = React.useState<{ id: string; value: string }[]>([{ id: crypto.randomUUID(), value: responsibleCatalog[0]?.slug ?? "prf" }])
-  const [sheetCodes, setSheetCodes] = React.useState<{ id: string; value: string }[]>([{ id: crypto.randomUUID(), value: sheetOptions[0]?.code ?? "pdtp_general" }])
+  const [responsibleSlugs, setResponsibleSlugs] = React.useState<{ id: string; value: string }[]>([{ id: crypto.randomUUID(), value: responsibleCatalog[0]?.slug ?? "" }])
+  // La actividad se agrega, por defecto, a la vista que el usuario ya está
+  // mirando (`hoja`). Elegir otras vistas es una opción avanzada, no el flujo
+  // principal: no debe leerse como "asignar a hojas de Excel".
+  const defaultSheetCode = hoja || sheetOptions[0]?.code || ""
+  const [sheetCodes, setSheetCodes] = React.useState<{ id: string; value: string }[]>([{ id: crypto.randomUUID(), value: defaultSheetCode }])
 
   const addResp = () => setResponsibleSlugs((s) => [...s, { id: crypto.randomUUID(), value: responsibleCatalog[0]?.slug ?? "" }])
   const removeResp = (i: number) =>
@@ -55,6 +59,15 @@ export function PdtpAddActivityForm({
     setSheetCodes((s) => s.filter((_, idx) => idx !== i))
   const updateSheet = (i: number, v: string) =>
     setSheetCodes((s) => s.map((x, idx) => (idx === i ? { ...x, value: v } : x)))
+
+  // El nombre visible del responsable se deriva del primero seleccionado en la
+  // lista de abajo. Antes era un campo aparte ("Responsable (nombre)") que
+  // obligaba a teclear el responsable dos veces. El schema exige
+  // `responsibleDisplay`, así que lo enviamos por un hidden input.
+  const primaryResponsibleDisplay = React.useMemo(() => {
+    const first = responsibleSlugs[0]?.value ?? ""
+    return responsibleCatalog.find((r) => r.slug === first)?.displayName ?? first
+  }, [responsibleSlugs, responsibleCatalog])
 
   return (
     <div className="overflow-hidden rounded-[var(--radius-2xl)] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-card)]">
@@ -77,6 +90,7 @@ export function PdtpAddActivityForm({
         <input type="hidden" name="programId" value={programId} />
         <input type="hidden" name="hoja" value={hoja} />
         <input type="hidden" name="faena" value={faena} />
+        <input type="hidden" name="responsibleDisplay" value={primaryResponsibleDisplay} />
 
         <FieldGroup className="gap-5 p-5 sm:p-6">
           {errorMessage && (
@@ -102,8 +116,8 @@ export function PdtpAddActivityForm({
               </div>
             </div>
 
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="Orden del objetivo" htmlFor="pdtp-ao" required>
+            <div className="grid gap-4 sm:grid-cols-[6rem_1fr]">
+              <Field label="Orden" htmlFor="pdtp-ao" required>
                 <Input
                   id="pdtp-ao"
                   name="objectiveOrder"
@@ -125,26 +139,24 @@ export function PdtpAddActivityForm({
                 </Field>
               </div>
 
-              <Field label="Guía de ejecución" htmlFor="pdtp-act-prog" required>
-                <Textarea id="pdtp-act-prog" name="program" required rows={3} maxLength={2000} placeholder="Ej.: inspeccionar, registrar hallazgos y definir acciones" />
-              </Field>
-
-              <Field label="Responsable (nombre)" htmlFor="pdtp-act-rname" required>
-                <Input id="pdtp-act-rname" name="responsibleDisplay" required placeholder="PRF" />
-              </Field>
+              <div className="sm:col-span-2">
+                <Field label="Guía de ejecución" htmlFor="pdtp-act-prog" required helper="Cómo realizar la actividad y qué evidencia conservar.">
+                  <Textarea id="pdtp-act-prog" name="program" required rows={3} maxLength={2000} placeholder="Ej.: inspeccionar, registrar hallazgos y definir acciones" />
+                </Field>
+              </div>
             </div>
           </div>
 
-          {/* ── Section: Responsables y hojas ── */}
+          {/* ── Section: Responsables (vistas del programa como opción avanzada) ── */}
           <div className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-bg)] p-3 sm:p-4">
             <div className="mb-3 flex items-start gap-3">
               <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--radius)] bg-[var(--color-primary-tint)] text-[var(--color-primary)]">
                 <Users size={18} weight="bold" aria-hidden="true" />
               </span>
               <div>
-                <p className="text-sm font-semibold text-[var(--color-text)]">Responsables y hojas</p>
+                <p className="text-sm font-semibold text-[var(--color-text)]">Responsables</p>
                 <p className="mt-0.5 text-xs leading-5 text-text-subtle">
-                  Asigna roles RBAC y hojas oficiales del catálogo PDTP.
+                  ¿Quién ejecuta esta actividad? Puedes asignar más de uno.
                 </p>
               </div>
             </div>
@@ -153,7 +165,7 @@ export function PdtpAddActivityForm({
               {/* ── Responsables ── */}
               <div>
                 <div className="mb-1.5 flex items-center justify-between">
-                  <p className="text-sm font-medium text-[var(--color-text)]">Responsables (slugs RBAC)</p>
+                  <p className="text-sm font-medium text-[var(--color-text)]">Responsables</p>
                   <Button
                     type="button"
                     variant="ghost"
@@ -184,7 +196,7 @@ export function PdtpAddActivityForm({
                           name="responsibleSlugs[]"
                           value={slug.value}
                           onChange={(e) => updateResp(i, e.target.value)}
-                          placeholder="prf, jt, jdpr, ..."
+                          placeholder="Ej: Jefe de terreno"
                           required
                           className="h-8 flex-1"
                         />
@@ -205,28 +217,35 @@ export function PdtpAddActivityForm({
                 </div>
               </div>
 
-              {/* ── Hojas ── */}
-              <div>
-                <div className="mb-1.5 flex items-center justify-between">
-                  <p className="text-sm font-medium text-[var(--color-text)]">Hojas oficiales</p>
+              {/* ── Vistas del programa (avanzado) ──
+                  La actividad ya se agrega a la vista que el usuario está
+                  mirando (default arriba). Mostrarla en otras vistas es
+                  opcional y poco común, por eso vive colapsada: el flujo
+                  principal no debe leerse como "asignar a hojas de Excel". */}
+              <details className="rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-2">
+                <summary className="cursor-pointer text-sm font-medium text-[var(--color-text)]">
+                  Mostrar también en otras vistas del programa (opcional)
+                </summary>
+                <div className="mt-3 flex items-center justify-between">
+                  <p className="text-xs leading-5 text-text-subtle">Ya aparece en la vista actual. Agrega otras solo si corresponde.</p>
                   <Button
                     type="button"
                     variant="ghost"
                     size="sm"
                     onClick={addSheet}
-                    aria-label="Agregar hoja"
+                    aria-label="Agregar vista"
                   >
                     <Plus size={12} className="mr-1" />
                     Agregar
                   </Button>
                 </div>
-                <div className="space-y-1.5">
+                <div className="mt-2 space-y-1.5">
                   {sheetCodes.map((code, i) => (
                     <div key={code.id} className="flex items-center gap-1.5">
                       {sheetOptions.length > 0 ? (
                         <Select name="sheetCodes[]" value={code.value} onValueChange={(v) => updateSheet(i, v)}>
                           <SelectTrigger className="h-8 flex-1 text-sm">
-                            <SelectValue placeholder="Hoja" />
+                            <SelectValue placeholder="Vista" />
                           </SelectTrigger>
                           <SelectContent>
                             {sheetOptions.map((s) => (
@@ -239,7 +258,7 @@ export function PdtpAddActivityForm({
                           name="sheetCodes[]"
                           value={code.value}
                           onChange={(e) => updateSheet(i, e.target.value)}
-                          placeholder="pdtp_general, cphs, ..."
+                          placeholder="Ej: Vista general"
                           required
                           className="h-8 flex-1"
                         />
@@ -250,7 +269,7 @@ export function PdtpAddActivityForm({
                           variant="ghost"
                           size="sm"
                           onClick={() => removeSheet(i)}
-                          aria-label={`Quitar hoja ${i + 1}`}
+                          aria-label={`Quitar vista ${i + 1}`}
                         >
                           <Trash size={12} />
                         </Button>
@@ -258,7 +277,7 @@ export function PdtpAddActivityForm({
                     </div>
                   ))}
                 </div>
-              </div>
+              </details>
             </FieldGroup>
           </div>
 
