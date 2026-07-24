@@ -30,6 +30,7 @@ export function useOcForm({
   const [selectedItems, setSelectedItems] = React.useState<Set<string>>(new Set())
   const [unitPrices,   setUnitPrices]   = React.useState<Record<string, number>>({})
   const [discounts,    setDiscounts]    = React.useState<Record<string, number>>({})
+  const [quantities,   setQuantities]   = React.useState<Record<string, number>>({})
   const [itemSuppliers, setItemSuppliers] = React.useState<Record<string, string>>({})
   const [search,       setSearch]       = React.useState("")
 
@@ -101,12 +102,24 @@ export function useOcForm({
     return discounts[itemId] ?? 0
   }
 
+  // Cantidad a comprar por línea — por defecto la cantidad aprobada completa.
+  // El remanente (si se compra menos) vuelve al consolidado de ítems sin OC.
+  function itemQuantity(item: PendingItemOption) {
+    return quantities[item.id] ?? item.quantity
+  }
+
   function setItemPrice(itemId: string, value: string) {
     setUnitPrices((p) => ({ ...p, [itemId]: parseFloat(value) || 0 }))
   }
 
   function setItemDiscount(itemId: string, value: string) {
     setDiscounts((p) => ({ ...p, [itemId]: parseFloat(value) || 0 }))
+  }
+
+  function setItemQuantity(item: PendingItemOption, value: string) {
+    const parsed = parseFloat(value)
+    const clamped = Number.isFinite(parsed) ? Math.min(Math.max(parsed, 0), item.quantity) : item.quantity
+    setQuantities((p) => ({ ...p, [item.id]: clamped }))
   }
 
   // Filter items by selected worksite
@@ -204,6 +217,7 @@ export function useOcForm({
     .filter((i) => selectedItems.has(i.id))
     .map((i) => ({
       ...i,
+      quantity:                itemQuantity(i),
       unitPrice:               itemPrice(i),
       discount:                itemDiscount(i.id),
       targetSupplierId:        resolveItemSupplierId(i),
@@ -231,7 +245,7 @@ export function useOcForm({
   return {
     // State
     supplierId, worksiteId, paymentTerms, estDelivery, address, notes,
-    selectedItems, unitPrices, discounts, itemSuppliers, search, state, modeFilter,
+    selectedItems, unitPrices, discounts, quantities, itemSuppliers, search, state, modeFilter,
     // Setters
     setPaymentTerms, setEstDelivery, setAddress, setNotes,
     setWorksiteId, setSearch, setSupplierId, setItemSupplier,
@@ -241,6 +255,7 @@ export function useOcForm({
     handleSupplierChange, onSupplierValueChange,
     setDefaultPriceForItem, resolveItemSupplierId,
     itemPrice, itemDiscount, setItemPrice, setItemDiscount,
+    itemQuantity, setItemQuantity,
     toggleItem, toggleAll, handleModeChange,
     // Props passthrough
     action, suppliers, worksites, pendingItems,

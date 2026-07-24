@@ -4,7 +4,7 @@
 
 import { eq } from "drizzle-orm"
 import { db } from "@/db"
-import { purchaseOrders, purchaseOrderItems, purchaseRequestItems } from "@/db/schema"
+import { purchaseOrders, purchaseOrderItems, purchaseRequestItems, requestItemAttributes } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { nextCodeTx } from "@/lib/code-sequences"
 import { recordAudit } from "@/lib/audit"
@@ -80,8 +80,63 @@ export async function createOrdersBySupplier(input: CreateOrdersBySupplierInput)
           where: eq(purchaseRequestItems.id, item.requestItemId),
         })
         if (!requestItem) throw new Error(`Item ${item.requestItemId} not found`)
-        if (item.quantity !== requestItem.quantity) {
-          throw new Error("La OC debe comprar la cantidad completa aprobada del ítem; divide el ítem antes de comprar una cantidad parcial")
+        if (item.quantity > requestItem.quantity) {
+          throw new Error("La cantidad a comprar no puede superar la cantidad aprobada del ítem")
+        }
+
+        // Compra parcial: el remanente se separa en un ítem hermano que conserva
+        // el estado original (approved/pending_purchase), para que vuelva al
+        // consolidado de "ítems sin OC" en vez de perderse silenciosamente.
+        if (item.quantity < requestItem.quantity) {
+          const siblingId = nanoid()
+          const remainder = requestItem.quantity - item.quantity
+
+          await tx.insert(purchaseRequestItems).values({
+            id:                  siblingId,
+            requestId:           requestItem.requestId,
+            productId:           requestItem.productId,
+            productNameFree:     requestItem.productNameFree,
+            quantity:            remainder,
+            unitOfMeasure:       requestItem.unitOfMeasure,
+            status:              requestItem.status,
+            urgency:             requestItem.urgency,
+            requiredDate:        requestItem.requiredDate,
+            workerId:            requestItem.workerId,
+            suggestedSupplierId: requestItem.suggestedSupplierId,
+            supplierHint:        requestItem.supplierHint,
+            sortOrder:           requestItem.sortOrder,
+            notes:               requestItem.notes,
+          })
+
+          const attrs = await tx.query.requestItemAttributes.findMany({
+            where: eq(requestItemAttributes.requestItemId, requestItem.id),
+          })
+          if (attrs.length > 0) {
+            await tx.insert(requestItemAttributes).values(
+              attrs.map((a) => ({
+                id:            nanoid(),
+                requestItemId: siblingId,
+                attributeId:   a.attributeId,
+                attributeName: a.attributeName,
+                value:         a.value,
+              })),
+            )
+          }
+
+          await tx
+            .update(purchaseRequestItems)
+            .set({ quantity: item.quantity, updatedAt: new Date().toISOString() })
+            .where(eq(purchaseRequestItems.id, requestItem.id))
+
+          await recordAudit({
+            userId:     input.createdBy,
+            userEmail:  input.userEmail,
+            action:     "update",
+            entityType: "request_item",
+            entityId:   requestItem.id,
+            oldState:   { quantity: requestItem.quantity },
+            newState:   { quantity: item.quantity, splitIntoItemId: siblingId, splitRemainder: remainder },
+          }, tx)
         }
       }
 

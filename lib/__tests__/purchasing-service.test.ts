@@ -90,11 +90,11 @@ describe("Purchasing service — edge cases", () => {
       ).rejects.toThrow("sin ítems")
     })
 
-    it("rejects partial purchase quantities instead of orphaning the approved balance", async () => {
-      const requestId = "req-partial-purchase-block"
-      const requestItemId = "item-partial-purchase-block"
+    it("rejects buying more than the approved quantity", async () => {
+      const requestId = "req-over-purchase-block"
+      const requestItemId = "item-over-purchase-block"
       await inMemoryDb.insert(schema.purchaseRequests).values({
-        id: requestId, code: "SOL-PARTIAL-PURCHASE", worksiteId: "ws-purch",
+        id: requestId, code: "SOL-OVER-PURCHASE", worksiteId: "ws-purch",
         requesterId: userId, requestType: "epp", urgency: "normal",
         status: "approved", createdAt: now, updatedAt: now,
       })
@@ -112,11 +112,57 @@ describe("Purchasing service — edge cases", () => {
           requestItemId,
           productId: "prod-purch",
           productNameFree: null,
+          quantity: 11,
+          unitOfMeasure: "unidad",
+          unitPrice: 1000,
+        }],
+      })).rejects.toThrow("no puede superar")
+    })
+
+    it("buying less than approved splits the remainder into a sibling item that stays pending", async () => {
+      const requestId = "req-partial-purchase-split"
+      const requestItemId = "item-partial-purchase-split"
+      await inMemoryDb.insert(schema.purchaseRequests).values({
+        id: requestId, code: "SOL-PARTIAL-SPLIT", worksiteId: "ws-purch",
+        requesterId: userId, requestType: "epp", urgency: "normal",
+        status: "approved", createdAt: now, updatedAt: now,
+      })
+      await inMemoryDb.insert(schema.purchaseRequestItems).values({
+        id: requestItemId, requestId, productId: "prod-purch",
+        quantity: 10, unitOfMeasure: "unidad", status: "pending_purchase",
+        createdAt: now, updatedAt: now,
+      })
+
+      await createOrder({
+        worksiteId: "ws-purch",
+        supplierId: "sup-purch",
+        createdBy: userId,
+        items: [{
+          requestItemId,
+          productId: "prod-purch",
+          productNameFree: null,
           quantity: 6,
           unitOfMeasure: "unidad",
           unitPrice: 1000,
         }],
-      })).rejects.toThrow("cantidad completa")
+      })
+
+      const purchasedItem = await inMemoryDb.query.purchaseRequestItems.findFirst({
+        where: eq(schema.purchaseRequestItems.id, requestItemId),
+      })
+      expect(purchasedItem?.quantity).toBe(6)
+      expect(purchasedItem?.status).toBe("in_purchase_order")
+
+      const siblings = await inMemoryDb.query.purchaseRequestItems.findMany({
+        where: eq(schema.purchaseRequestItems.requestId, requestId),
+      })
+      expect(siblings.length).toBe(2)
+      const remainderItem = siblings.find((i) => i.id !== requestItemId)
+      expect(remainderItem?.quantity).toBe(4)
+      expect(remainderItem?.status).toBe("pending_purchase")
+
+      // La suma comprada + remanente debe cuadrar con la cantidad aprobada original.
+      expect((purchasedItem?.quantity ?? 0) + (remainderItem?.quantity ?? 0)).toBe(10)
     })
   })
 

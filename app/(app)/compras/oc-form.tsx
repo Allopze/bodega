@@ -122,6 +122,8 @@ export function OcForm({
           itemDiscount={f.itemDiscount}
           setItemPrice={f.setItemPrice}
           setItemDiscount={f.setItemDiscount}
+          itemQuantity={f.itemQuantity}
+          setItemQuantity={f.setItemQuantity}
           resolveItemSupplierId={f.resolveItemSupplierId}
           setItemSupplier={f.setItemSupplier}
         />

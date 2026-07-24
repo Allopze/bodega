@@ -25,13 +25,16 @@ vi.mock("./actions", () => ({
 }))
 
 vi.mock("@/components/admin/submit-button", () => ({
-  SubmitButton: ({ label }: { label: string }) => <button type="submit">{label}</button>,
+  SubmitButton: ({ label, disabled }: { label: string; disabled?: boolean }) => (
+    <button type="submit" disabled={disabled}>{label}</button>
+  ),
 }))
 
 afterEach(() => cleanup())
 
 // ── Test data ───────────────────────────────────────────────────────────────
 
+import { fireEvent } from "@testing-library/react"
 import { ReceiptForm, type ReceiptOcItem } from "./receipt-form"
 
 function makeItem(overrides: Partial<ReceiptOcItem> = {}): ReceiptOcItem {
@@ -310,6 +313,46 @@ describe("ReceiptForm", () => {
       expect(poInput?.value).toBe("po-hidden")
       const stageInput = container.querySelector('input[name="stage"]') as HTMLInputElement
       expect(stageInput?.value).toBe("office")
+    })
+  })
+
+  describe("over-booked validation", () => {
+    it("disables submit and flags the line when received+rejected+damaged exceeds pending", () => {
+      render(
+        <ReceiptForm
+          purchaseOrderId="po-1"
+          orderCode="OC-001"
+          orderWorksiteName="Faena Norte"
+          items={[makeItem({ quantity: 5 })]}
+          canOffice={true}
+          canFaena={false}
+        />,
+      )
+      const dmgInput = screen.getByLabelText("Cantidad dañada de Casco Seguridad")
+      fireEvent.change(dmgInput, { target: { value: "3" } }) // recibido(5) + dañado(3) > 5
+      expect(screen.getByText(/supera lo pendiente/)).toBeDefined()
+      const submitButton = screen.getByText("Marcar como recibido").closest("button")
+      expect(submitButton).toHaveAttribute("disabled")
+    })
+
+    it("re-enables submit once the line is corrected", () => {
+      render(
+        <ReceiptForm
+          purchaseOrderId="po-1"
+          orderCode="OC-001"
+          orderWorksiteName="Faena Norte"
+          items={[makeItem({ quantity: 5 })]}
+          canOffice={true}
+          canFaena={false}
+        />,
+      )
+      const qtyInput = screen.getByLabelText("Cantidad a recibir de Casco Seguridad")
+      const dmgInput = screen.getByLabelText("Cantidad dañada de Casco Seguridad")
+      fireEvent.change(qtyInput, { target: { value: "2" } })
+      fireEvent.change(dmgInput, { target: { value: "3" } }) // 2 + 3 = 5, exacto
+      expect(screen.queryByText(/supera lo pendiente/)).toBeNull()
+      const submitButton = screen.getByText("Marcar como recibido").closest("button")
+      expect(submitButton).not.toHaveAttribute("disabled")
     })
   })
 

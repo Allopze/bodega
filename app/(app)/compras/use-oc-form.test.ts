@@ -84,3 +84,34 @@ describe("useOcForm — delivery-mode grouping", () => {
     expect(result.current.selectedItems.size).toBe(0)
   })
 })
+
+describe("useOcForm — partial purchase quantity", () => {
+  it("defaults the included item's quantity to the full approved quantity", () => {
+    const items = [makeItem({ id: "i1", quantity: 10 })]
+    const { result } = renderHook(() =>
+      useOcForm({ suppliers: [], worksites: [WORKSITE], pendingItems: items, initialWorksiteId: "ws-1" }),
+    )
+    act(() => result.current.toggleItem("i1"))
+    expect(result.current.includedItems[0]!.quantity).toBe(10)
+  })
+
+  it("overrides the included item's quantity when the user buys less than approved", () => {
+    const items = [makeItem({ id: "i1", quantity: 10 })]
+    const { result } = renderHook(() =>
+      useOcForm({ suppliers: [], worksites: [WORKSITE], pendingItems: items, initialWorksiteId: "ws-1" }),
+    )
+    act(() => result.current.toggleItem("i1"))
+    act(() => result.current.setItemQuantity(items[0]!, "4"))
+    expect(result.current.includedItems[0]!.quantity).toBe(4)
+  })
+
+  it("clamps the quantity to the approved amount", () => {
+    const items = [makeItem({ id: "i1", quantity: 10 })]
+    const { result } = renderHook(() =>
+      useOcForm({ suppliers: [], worksites: [WORKSITE], pendingItems: items, initialWorksiteId: "ws-1" }),
+    )
+    act(() => result.current.toggleItem("i1"))
+    act(() => result.current.setItemQuantity(items[0]!, "999"))
+    expect(result.current.includedItems[0]!.quantity).toBe(10)
+  })
+})

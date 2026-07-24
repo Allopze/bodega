@@ -33,6 +33,8 @@ interface OcFormItemsProps {
   itemDiscount:       (itemId: string) => number
   setItemPrice:       (itemId: string, value: string) => void
   setItemDiscount:    (itemId: string, value: string) => void
+  itemQuantity:       (item: PendingItemOption) => number
+  setItemQuantity:    (item: PendingItemOption, value: string) => void
   resolveItemSupplierId: (item: PendingItemOption) => string
   setItemSupplier:    (itemId: string, supplierId: string) => void
 }
@@ -40,7 +42,7 @@ interface OcFormItemsProps {
 export function OcFormItems({
   filteredItems, filteredByWorksite, selectedItems, suppliers,
   worksiteId, search, worksiteModes, modeFilter, onModeChange, onToggle, onToggleAll, onSearchChange,
-  itemPrice, itemDiscount, setItemPrice, setItemDiscount,
+  itemPrice, itemDiscount, setItemPrice, setItemDiscount, itemQuantity, setItemQuantity,
   resolveItemSupplierId, setItemSupplier,
 }: OcFormItemsProps) {
   return (
@@ -102,7 +104,9 @@ export function OcFormItems({
             const isSelected   = selectedItems.has(item.id)
             const price        = itemPrice(item)
             const disc         = itemDiscount(item.id)
-            const subtotal     = item.quantity * price * (1 - disc / 100)
+            const qty          = itemQuantity(item)
+            const isPartial    = qty < item.quantity
+            const subtotal     = qty * price * (1 - disc / 100)
             const supplierForItem = resolveItemSupplierId(item)
             const hint         = priceHint(item, supplierForItem)
             const supLabel     = suggestedSupplierLabel(item, suppliers)
@@ -142,13 +146,30 @@ export function OcFormItems({
                     )}
                   </div>
                   <div className="mt-1 text-xs text-[var(--color-text-muted)]">
-                    {formatQty(item.quantity, item.unitOfMeasure)}
+                    Aprobado: {formatQty(item.quantity, item.unitOfMeasure)}
                     {item.notes && ` · ${item.notes}`}
+                    {isSelected && isPartial && (
+                      <span className="text-[var(--color-warning-ink)]">
+                        {" "}· El remanente ({formatQty(item.quantity - qty, item.unitOfMeasure)}) vuelve pendiente de OC
+                      </span>
+                    )}
                   </div>
                 </div>
 
                 {isSelected && (
                   <div className="flex items-start gap-2 shrink-0">
+                    <div className="flex flex-col gap-1">
+                      <label htmlFor={`qty-${item.id}`} className="text-[10px] text-[var(--color-text-subtle)]">
+                        Cantidad
+                      </label>
+                      <Input
+                        id={`qty-${item.id}`}
+                        type="number" step="0.01" min="0.01" max={item.quantity}
+                        value={qty}
+                        onChange={(e) => setItemQuantity(item, e.target.value)}
+                        className="h-7 w-20 text-sm tabular-nums"
+                      />
+                    </div>
                     <div className="flex flex-col gap-1">
                       <label htmlFor={`supplier-${item.id}`} className="text-[10px] text-[var(--color-text-subtle)]">
                         Proveedor

@@ -1,6 +1,7 @@
 import type { ItemRow, AttrRow, ProductOption } from "./request-form.types"
 import { REPUESTO_ATTRIBUTE_NAMES } from "@/lib/validation/repuestos"
 import { SERVICE_ATTRIBUTE_NAMES } from "@/lib/validation/servicios"
+import { REQUEST_STATE_META } from "@/components/states/state-badge"
 
 export function equipmentFromAttributes(
   requestType: string,
@@ -59,20 +60,10 @@ export function buildAttrsFromProduct(prod: ProductOption): AttrRow[] {
   })
 }
 
+// Lee del vocabulario canónico de StateBadge — evita un cuarto diccionario de
+// estados divergente del badge y de lib/work-queue-labels.ts.
 export function requestStatusLabel(status: string): string {
-  const labels: Record<string, string> = {
-    draft:             "Borrador",
-    submitted:         "Enviada",
-    in_review:         "En revisión",
-    partially_approved: "Aprobada parcial",
-    approved:          "Aprobada",
-    rejected:          "Rechazada",
-    returned:          "Devuelta",
-    in_purchasing:     "En compra",
-    closed:            "Cerrada",
-    cancelled:         "Cancelada",
-  }
-  return labels[status] ?? status
+  return REQUEST_STATE_META[status as keyof typeof REQUEST_STATE_META]?.label ?? status
 }
 
 export function buildRequestSummaryIssues({

@@ -2,6 +2,7 @@
  * Label functions and status constants for the work-queue module.
  */
 import type { WorkPriority } from "./work-queue.types"
+import { REQUEST_STATE_META, ITEM_STATE_META } from "@/components/states/state-badge"
 
 export const STAGES = ["Solicitado", "Aprobación", "Compra", "Recepción", "Entrega"]
 export const CLOSED_REQUEST_STATUSES = new Set(["closed", "cancelled", "rejected"])
@@ -23,39 +24,15 @@ export const PRIORITY_RANK: Record<WorkPriority, number> = {
   low:      3,
 }
 
+// Etiquetas leídas del vocabulario canónico de StateBadge — antes este archivo
+// mantenía su propio diccionario y divergía del badge (mismo estado, dos textos
+// distintos en pantalla). Una sola fuente de verdad.
 export function requestStatusLabel(status: string): string {
-  const labels: Record<string, string> = {
-    draft:              "Borrador",
-    submitted:          "Esperando revisión",
-    in_review:          "En aprobación",
-    partially_approved: "Aprobación parcial",
-    approved:           "Aprobada para compra",
-    rejected:           "Rechazada",
-    returned:           "Requiere corrección",
-    in_purchasing:      "En proceso",
-    closed:             "Cerrada",
-    cancelled:          "Cancelada",
-  }
-  return labels[status] ?? status
+  return REQUEST_STATE_META[status as keyof typeof REQUEST_STATE_META]?.label ?? status
 }
 
 export function itemStatusLabel(status: string): string {
-  const labels: Record<string, string> = {
-    draft:               "Borrador",
-    requested:           "Esperando aprobación",
-    approved:            "Aprobado para compra",
-    rejected:            "Rechazado",
-    returned:            "Devuelto para corregir",
-    postponed:           "Postergado",
-    pending_purchase:    "Aprobado para compra",
-    in_purchase_order:   "Incluido en OC",
-    purchased:           "Comprado",
-    partially_received:  "Recepción parcial",
-    received:            "Recibido",
-    partially_delivered: "Entrega parcial",
-    delivered:           "Entregado",
-  }
-  return labels[status] ?? status
+  return ITEM_STATE_META[status as keyof typeof ITEM_STATE_META]?.label ?? status
 }
 
 export function itemStageLabel(status: string): string {

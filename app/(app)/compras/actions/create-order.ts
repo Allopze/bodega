@@ -79,8 +79,8 @@ export async function createOrderAction(
     if (dbItem.request.worksiteId !== worksiteId || !canAccessWorksite(session, dbItem.request.worksiteId)) {
       return { ok: false, message: "La orden contiene ítems de una faena no autorizada" }
     }
-    if (item.quantity !== dbItem.quantity) {
-      return { ok: false, message: `La orden debe comprar la cantidad aprobada completa (${dbItem.quantity})` }
+    if (item.quantity > dbItem.quantity) {
+      return { ok: false, message: `La cantidad a comprar no puede superar la cantidad aprobada (${dbItem.quantity})` }
     }
     if (item.quantity <= 0) {
       return { ok: false, message: "La cantidad de compra debe ser mayor a 0" }

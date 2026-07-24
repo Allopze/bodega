@@ -14,11 +14,13 @@ import {
 } from "@/lib/work-queue"
 import type { WorkActor, WorkQueueSnapshot } from "@/lib/work-queue"
 
+// Estas etiquetas ahora leen del vocabulario canónico de StateBadge
+// (components/states/state-badge.tsx) — deben coincidir siempre con el badge.
 describe("requestStatusLabel", () => {
   it("returns correct labels", () => {
     expect(requestStatusLabel("draft")).toBe("Borrador")
-    expect(requestStatusLabel("submitted")).toBe("Esperando revisión")
-    expect(requestStatusLabel("approved")).toBe("Aprobada para compra")
+    expect(requestStatusLabel("submitted")).toBe("Enviada")
+    expect(requestStatusLabel("approved")).toBe("Aprobada")
     expect(requestStatusLabel("cancelled")).toBe("Cancelada")
     expect(requestStatusLabel("unknown")).toBe("unknown")
   })
@@ -27,7 +29,7 @@ describe("requestStatusLabel", () => {
 describe("itemStatusLabel", () => {
   it("returns correct labels", () => {
     expect(itemStatusLabel("draft")).toBe("Borrador")
-    expect(itemStatusLabel("requested")).toBe("Esperando aprobación")
+    expect(itemStatusLabel("requested")).toBe("Solicitado")
     expect(itemStatusLabel("received")).toBe("Recibido")
     expect(itemStatusLabel("delivered")).toBe("Entregado")
     expect(itemStatusLabel("unknown")).toBe("unknown")
@@ -373,6 +375,6 @@ describe("buildRequestProgress", () => {
     ])
     const item = result.items[0]!
     expect(item.quantityLabel).toContain("10")
-    expect(item.statusLabel).toBe("Esperando aprobación")
+    expect(item.statusLabel).toBe("Solicitado")
   })
 })

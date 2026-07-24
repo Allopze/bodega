@@ -88,6 +88,15 @@ export function ReceiptForm({
   const receivingLineCount = items.filter(
     (item) => ((qtys[item.id] ?? getRemaining(item, stage)) + (rejs[item.id] ?? 0) + (dmgs[item.id] ?? 0)) > 0,
   ).length
+  // Una línea está sobre-cargada si recibido+rechazado+dañado excede lo pendiente —
+  // antes esto solo se detectaba en el servidor, después de enviar.
+  const overBookedItemIds = items
+    .filter((item) => {
+      const total = (qtys[item.id] ?? getRemaining(item, stage)) + (rejs[item.id] ?? 0) + (dmgs[item.id] ?? 0)
+      return total > getRemaining(item, stage)
+    })
+    .map((item) => item.id)
+  const hasOverBooked = overBookedItemIds.length > 0
 
   return (
     <form action={action} className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_20rem]">
@@ -164,6 +173,7 @@ export function ReceiptForm({
           {items.map((item) => {
             const remaining = getRemaining(item, stage)
             const pending   = remaining > 0
+            const overBooked = overBookedItemIds.includes(item.id)
 
             return (
               <div key={item.id} className={`grid min-w-[440px] grid-cols-[minmax(0,1fr)_84px_84px_84px] gap-3 px-4 py-3 ${!pending ? "opacity-50" : ""}`}>
@@ -182,6 +192,11 @@ export function ReceiptForm({
                     {item.quantityReceived > 0 && ` · Ya recibido: ${formatQty(item.quantityReceived, item.unitOfMeasure)}`}
                     {!pending && " · Completamente recibido"}
                   </div>
+                  {overBooked && (
+                    <p className="text-xs text-[var(--color-danger)] mt-0.5">
+                      Recibido + rechazado + dañado supera lo pendiente ({formatQty(remaining, item.unitOfMeasure)}).
+                    </p>
+                  )}
                 </div>
 
                 <Input
@@ -194,6 +209,7 @@ export function ReceiptForm({
                   onChange={(e) => setQtys((p) => ({ ...p, [item.id]: parseFloat(e.target.value) || 0 }))}
                   className="h-7 text-sm tabular-nums text-right"
                   disabled={!pending}
+                  error={overBooked}
                   aria-label={`Cantidad a recibir de ${item.productName}`}
                 />
 
@@ -202,10 +218,12 @@ export function ReceiptForm({
                   type="number"
                   step="0.01"
                   min="0"
+                  max={remaining}
                   value={rejs[item.id] ?? 0}
                   onChange={(e) => setRejs((p) => ({ ...p, [item.id]: parseFloat(e.target.value) || 0 }))}
                   className="h-7 text-sm tabular-nums text-right"
                   disabled={!pending}
+                  error={overBooked}
                   aria-label={`Cantidad rechazada de ${item.productName}`}
                 />
 
@@ -214,10 +232,12 @@ export function ReceiptForm({
                   type="number"
                   step="0.01"
                   min="0"
+                  max={remaining}
                   value={dmgs[item.id] ?? 0}
                   onChange={(e) => setDmgs((p) => ({ ...p, [item.id]: parseFloat(e.target.value) || 0 }))}
                   className="h-7 text-sm tabular-nums text-right"
                   disabled={!pending}
+                  error={overBooked}
                   aria-label={`Cantidad dañada de ${item.productName}`}
                 />
               </div>
@@ -261,6 +281,7 @@ export function ReceiptForm({
             label="Marcar como recibido"
             loadingLabel="Guardando..."
             variant="primary"
+            disabled={hasOverBooked}
           />
         </div>
       </div>
@@ -284,6 +305,12 @@ export function ReceiptForm({
             <span className="text-[var(--color-text-muted)]">Con cantidad</span>
             <span className="tabular-nums text-[var(--color-text)]">{receivingLineCount}</span>
           </div>
+          {hasOverBooked && (
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-[var(--color-danger)]">Líneas con error</span>
+              <span className="tabular-nums text-[var(--color-danger)]">{overBookedItemIds.length}</span>
+            </div>
+          )}
         </div>
         <p className="mt-4 rounded-[var(--radius)] bg-[var(--color-primary-tint)] px-3 py-2 text-xs leading-relaxed text-[var(--color-primary-ink)]">
           {guideNo.trim() ? "La guía queda asociada a esta recepción." : "Puedes registrar la recepción sin guía si la operación aún no la entrega."}
