@@ -70,9 +70,9 @@ export function ItemRow({ item, canApprove = true }: { item: ApprovalItem; canAp
 
           {item.attributes.length > 0 && (
             <div className="mt-1 flex gap-1.5 flex-wrap">
-              {item.attributes.map((a, i) => (
+              {item.attributes.map((a) => (
                 <span
-                  key={i}
+                  key={a.attributeName}
                   className="text-[11px] bg-[var(--color-surface-2)] text-[var(--color-text-muted)] px-1.5 py-0.5 rounded"
                 >
                   {a.attributeName}: {a.value}

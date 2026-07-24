@@ -76,8 +76,8 @@ export function ModuleSpendChart({ data }: { data: SpendByModuleRow[] }) {
           <YAxis type="category" dataKey="module" width={92} tick={{ fill: "var(--color-text-muted)", fontSize: 11 }} />
           <Tooltip contentStyle={tooltipStyle()} formatter={(value) => [formatCLP(Number(value)), "Monto"]} />
           <Bar dataKey="totalAmount" name="Monto" radius={[0, 5, 5, 0]}>
-            {data.slice(0, 8).map((_, index) => (
-              <Cell key={index} fill={COLORS[index % COLORS.length]} />
+            {data.slice(0, 8).map((row, index) => (
+              <Cell key={row.module} fill={COLORS[index % COLORS.length]} />
             ))}
           </Bar>
         </BarChart>

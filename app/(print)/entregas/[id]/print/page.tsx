@@ -122,8 +122,8 @@ export default async function DeliveryPrintPage({ params }: PageProps) {
               </tr>
             </thead>
             <tbody>
-              {delivery.items.map((item, i) => (
-                <tr key={item.id ?? i}>
+              {delivery.items.map((item) => (
+                <tr key={item.id}>
                   <td>{productMap.get(item.productId ?? "") ?? item.productNameFree ?? "EPP"}</td>
                   <td style={{ textAlign: "right" }} className="total">{item.quantity}</td>
                   <td>{item.unitOfMeasure}</td>
@@ -150,8 +150,8 @@ export default async function DeliveryPrintPage({ params }: PageProps) {
                 </tr>
               </thead>
               <tbody>
-                {delivery.items.filter((i) => i.returnQuantity).map((item, i) => (
-                  <tr key={`return-${i}`}>
+                {delivery.items.filter((i) => i.returnQuantity).map((item) => (
+                  <tr key={`return-${item.id}`}>
                     <td>{item.returnProductNameFree ?? "—"}</td>
                     <td style={{ textAlign: "right" }}>{item.returnQuantity}</td>
                     <td>{item.returnReason ?? "—"}</td>
