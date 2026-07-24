@@ -69,9 +69,9 @@ export function NuevaEvaluacionForm({ workers, worksites, definiciones, cargoOpt
   function toggleCargo(value: string) {
     setCargos((prev) => {
       const next = prev.includes(value) ? prev.filter((c) => c !== value) : [...prev, value]
-      if (next.length > 0) setErrors((e) => ({ ...e, cargos: "" }))
       return next
     })
+    setErrors((e) => (selectedCargos.includes(value) && selectedCargos.length === 1 ? e : { ...e, cargos: "" }))
   }
 
   function validate(): boolean {

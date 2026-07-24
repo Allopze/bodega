@@ -172,17 +172,19 @@ function EnrollGroupDialog({ programId, eligibleGroups }: { programId: string; e
 
 /* ── Registro de resultado ────────────────────────────────────────────────── */
 
+type SurveillanceOutcomeStatus = "summoned" | "attended" | "absent" | "exempt"
+
+const OUTCOME_OPTIONS: { value: SurveillanceOutcomeStatus; label: string }[] = [
+  { value: "summoned", label: "Citado" },
+  { value: "attended", label: "Asistió" },
+  { value: "absent", label: "Ausente" },
+  { value: "exempt", label: "Exento" },
+]
+
 function OutcomeDialog({ enrollment }: { enrollment: EnrollmentInfo }) {
   const [open, setOpen] = React.useState(false)
-  const [status, setStatus] = React.useState<"summoned" | "attended" | "absent" | "exempt">("summoned")
+  const [status, setStatus] = React.useState<SurveillanceOutcomeStatus>("summoned")
   const operation = useOperation()
-
-  const OUTCOME_OPTIONS: { value: typeof status; label: string }[] = [
-    { value: "summoned", label: "Citado" },
-    { value: "attended", label: "Asistió" },
-    { value: "absent", label: "Ausente" },
-    { value: "exempt", label: "Exento" },
-  ]
 
   function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()

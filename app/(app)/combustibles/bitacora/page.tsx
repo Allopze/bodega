@@ -28,6 +28,14 @@ export const metadata: Metadata = { title: "Bitácora general de combustible" }
 const PAGE_SIZE = 50
 const SOURCE_OPTIONS: FuelLogSource[] = ["tae_pwa", "invoiced", "operation_manual"]
 
+// Filtros secundarios: viven plegados en "Más filtros". Contamos los activos para
+// rotular el disclosure y abrirlo por defecto cuando alguno viene aplicado.
+const ADVANCED_FILTER_KEYS: Array<keyof BitacoraSearchParams> = [
+  "proveedor", "producto", "tipo", "observaciones", "marca", "modelo", "conductor", "supervisor",
+  "punto_carga", "unidad_rendimiento", "estado_operativo", "sello_retirado", "sello_instalado",
+  "evidencia_tipo", "anomalia", "revision", "anomalia_tipo", "anomalia_severidad", "anomalia_responsable",
+]
+
 type BitacoraSearchParams = {
   q?: string; desde?: string; hasta?: string; faena?: string; fuente?: string
   proveedor?: string; producto?: string; tipo?: string; observaciones?: string
@@ -154,13 +162,6 @@ export default async function FuelLogPage({ searchParams }: { searchParams: Prom
     filters.anomalyAssigneeId ? { key: "anomalia_responsable", label: `Responsable: ${anomalyAssigneesList.find((u) => u.id === filters.anomalyAssigneeId)?.name ?? filters.anomalyAssigneeId}` } : null,
   ].filter((chip): chip is { key: keyof BitacoraSearchParams; label: string } => chip !== null)
 
-  // Filtros secundarios: viven plegados en "Más filtros". Contamos los activos para
-  // rotular el disclosure y abrirlo por defecto cuando alguno viene aplicado.
-  const ADVANCED_FILTER_KEYS: Array<keyof BitacoraSearchParams> = [
-    "proveedor", "producto", "tipo", "observaciones", "marca", "modelo", "conductor", "supervisor",
-    "punto_carga", "unidad_rendimiento", "estado_operativo", "sello_retirado", "sello_instalado",
-    "evidencia_tipo", "anomalia", "revision", "anomalia_tipo", "anomalia_severidad", "anomalia_responsable",
-  ]
   const advancedActiveCount = ADVANCED_FILTER_KEYS.filter((key) => Boolean(sp[key])).length
 
   return (

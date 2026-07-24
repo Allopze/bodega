@@ -22,6 +22,14 @@ import path from "node:path"
 
 const execFileAsync = promisify(execFile)
 
+const BACKUP_SCRIPT_NAMES = [
+  "backup-orchestrator.sh",
+  "backup-pg.sh",
+  "backup-storage.sh",
+  "restore-all.sh",
+  "backup-verify.sh",
+]
+
 // En Docker standalone (output: "standalone"), process.cwd() es .next/standalone/.
 // Los scripts no están ahí, así que intentamos varias rutas.
 function findScriptsDir(): string | null {
@@ -95,15 +103,7 @@ export async function GET() {
   }
 
   // 1. Check script existence
-  const scriptNames = [
-    "backup-orchestrator.sh",
-    "backup-pg.sh",
-    "backup-storage.sh",
-    "restore-all.sh",
-    "backup-verify.sh",
-  ]
-
-  for (const name of scriptNames) {
+  for (const name of BACKUP_SCRIPT_NAMES) {
     if (SCRIPTS_DIR) {
       try {
         result.scripts[name] = existsSync(path.join(SCRIPTS_DIR, name))

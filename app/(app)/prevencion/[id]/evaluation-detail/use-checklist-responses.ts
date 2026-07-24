@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useCallback, useRef } from "react"
+import { useState, useCallback, useRef, useEffect } from "react"
 import { toast } from "@/lib/toast"
 import { saveResponsesAction } from "@/app/(app)/prevencion/actions"
 import type { ChecklistSection, StatusValue } from "@/lib/sst/types"
@@ -33,6 +33,7 @@ export function useChecklistResponses({
   )
   const [saveState, setSaveState] = useState<null | "saving" | { ts: string } | "error">(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const isFirstRender = useRef(true)
 
   function scheduleAutoSave(newMap: ResponseMap) {
     if (!canEditAnyVisible) return
@@ -68,24 +69,28 @@ export function useChecklistResponses({
 
   const handleResponseChange = useCallback(
     (seccionId: string, itemId: string, patch: Partial<ItemResponse>) => {
-      setResponseMap((prev) => {
-        const next = {
-          ...prev,
-          [seccionId]: {
-            ...(prev[seccionId] ?? {}),
-            [itemId]: {
-              ...(prev[seccionId]?.[itemId] ?? { estado: null, observacion: "", accionCorrectiva: "" }),
-              ...patch,
-            },
+      setResponseMap((prev) => ({
+        ...prev,
+        [seccionId]: {
+          ...(prev[seccionId] ?? {}),
+          [itemId]: {
+            ...(prev[seccionId]?.[itemId] ?? { estado: null, observacion: "", accionCorrectiva: "" }),
+            ...patch,
           },
-        }
-        scheduleAutoSave(next)
-        return next
-      })
+        },
+      }))
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [evaluationId, canEditAnyVisible]
+    []
   )
+
+  useEffect(() => {
+    if (isFirstRender.current) {
+      isFirstRender.current = false
+      return
+    }
+    scheduleAutoSave(responseMap)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [responseMap])
 
   return { responseMap, saveState, handleResponseChange }
 }

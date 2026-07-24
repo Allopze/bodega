@@ -13,6 +13,11 @@ interface Props {
   className?: string
 }
 
+const VIEW_MODE_ITEMS: { mode: DocumentViewMode; label: string; icon: React.ReactNode }[] = [
+  { mode: "list", label: "Cambiar a vista de lista", icon: <ListBullets size={16} weight="regular" /> },
+  { mode: "grid", label: "Cambiar a vista de cuadrícula", icon: <SquaresFour size={16} weight="regular" /> },
+]
+
 /**
  * Two-button segmented toggle that switches between list and grid
  * representations of the document library. The choice is persisted in
@@ -20,11 +25,6 @@ interface Props {
  * independent preferences.
  */
 const ViewModeToggleInner = React.memo(function ViewModeToggleInner({ userId, value, onChange, className }: Props) {
-  const items: { mode: DocumentViewMode; label: string; icon: React.ReactNode }[] = [
-    { mode: "list", label: "Cambiar a vista de lista", icon: <ListBullets size={16} weight="regular" /> },
-    { mode: "grid", label: "Cambiar a vista de cuadrícula", icon: <SquaresFour size={16} weight="regular" /> },
-  ]
-
   const handleSelect = React.useCallback(
     (mode: DocumentViewMode) => {
       if (mode === value) return
@@ -43,7 +43,7 @@ const ViewModeToggleInner = React.memo(function ViewModeToggleInner({ userId, va
         className,
       )}
     >
-      {items.map((item) => {
+      {VIEW_MODE_ITEMS.map((item) => {
         const active = item.mode === value
         return (
           <Tooltip key={item.mode} content={item.label}>

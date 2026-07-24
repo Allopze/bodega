@@ -13,6 +13,14 @@ import type { PdtpActivityStatus } from "@/lib/services/pdtp/period"
 // PdtpStatusBadge
 // ---------------------------------------------------------------------------
 
+type StatusConfig = { label: string; variant: "default" | "success" | "danger" | "outline" | "warning" }
+const STATUS_BADGE: Record<PdtpActivityStatus, StatusConfig> = {
+  executed: { label: "Ejecutado", variant: "success" },
+  pending: { label: "Pendiente", variant: "default" },
+  overdue: { label: "Atrasado", variant: "danger" },
+  not_scheduled: { label: "—", variant: "outline" },
+}
+
 export function PdtpStatusBadge({
   status,
   overdueMonths = 0,
@@ -20,13 +28,6 @@ export function PdtpStatusBadge({
   status: PdtpActivityStatus
   overdueMonths?: number
 }) {
-  type StatusConfig = { label: string; variant: "default" | "success" | "danger" | "outline" | "warning" }
-  const STATUS_BADGE: Record<PdtpActivityStatus, StatusConfig> = {
-    executed: { label: "Ejecutado", variant: "success" },
-    pending: { label: "Pendiente", variant: "default" },
-    overdue: { label: "Atrasado", variant: "danger" },
-    not_scheduled: { label: "—", variant: "outline" },
-  }
   const { label, variant } = STATUS_BADGE[status]
 
   let displayLabel = label
@@ -384,6 +385,11 @@ export function PdtpWorksitePicker({
   )
 }
 
+const PDTP_VIEW_TOGGLE_OPTIONS: Array<{ value: "semana" | "anual"; label: string }> = [
+  { value: "semana", label: "Esta semana" },
+  { value: "anual", label: "Vista anual" },
+]
+
 export function PdtpViewToggle({
   current,
   sheetCode,
@@ -395,16 +401,12 @@ export function PdtpViewToggle({
   worksiteId?: string
   programId?: string
 }) {
-  const options: Array<{ value: "semana" | "anual"; label: string }> = [
-    { value: "semana", label: "Esta semana" },
-    { value: "anual", label: "Vista anual" },
-  ]
   return (
     <SegmentedControl
       eyebrow="Vista"
       ariaLabel="Cambiar vista"
       variant="segmented"
-      items={options.map((option) => ({
+      items={PDTP_VIEW_TOGGLE_OPTIONS.map((option) => ({
         key: option.value,
         label: option.label,
         href: programId

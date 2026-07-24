@@ -22,6 +22,8 @@ const dateTime = new Intl.DateTimeFormat("es-CL", { dateStyle: "short", timeStyl
 
 type TraceStage = "received" | "delivered"
 
+const CYCLE_FALLBACK = { received: null, registered: null, delivered: null, consumed: null, differences: { receivedVsRegistered: { status: "unavailable" as const, absolute: null, percent: null }, receivedVsDelivered: { status: "unavailable" as const, absolute: null, percent: null } } }
+
 const sourceHref = (type: string | null, id: string | null) =>
   type === "fuel_load" && id
     ? `/combustibles/${id}`
@@ -68,8 +70,6 @@ export default async function FuelCyclePage({ searchParams }: { searchParams: Pr
       ? ["tank_delivery", "direct_delivery"]
       : undefined
   const scope = worksiteScopeSql(session, worksites.id)
-
-  const CYCLE_FALLBACK = { received: null, registered: null, delivered: null, consumed: null, differences: { receivedVsRegistered: { status: "unavailable" as const, absolute: null, percent: null }, receivedVsDelivered: { status: "unavailable" as const, absolute: null, percent: null } } }
 
   const [comparison, balances, worksitesList, products, suppliers, locations, vehicles, movements] = await Promise.all([
     settle(getFuelCycleComparison(session, { from: fromTimestamp, to: toTimestamp, worksiteId, productId }), CYCLE_FALLBACK, "cycle-comparison"),

@@ -17,13 +17,15 @@ const OnboardingHintInner = React.memo(function OnboardingHintInner({
   body,
   className,
 }: OnboardingHintProps) {
-  const [visible, setVisible] = React.useState(() => {
+  const [visible, setVisible] = React.useState(false)
+
+  React.useEffect(() => {
     try {
-      return localStorage.getItem(storageKey) ? false : true
+      setVisible(!localStorage.getItem(storageKey))
     } catch {
-      return false
+      setVisible(false)
     }
-  })
+  }, [storageKey])
 
   function dismiss() {
     try {

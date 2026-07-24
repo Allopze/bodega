@@ -244,7 +244,7 @@ export default function SaHealthSection({ initialHealth, initialSummary }: SaHea
             type="button"
             onClick={handleManualRefresh}
             disabled={refreshing}
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[var(--radius)] text-sm text-[var(--color-text-muted)] transition-all duration-200 hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text-primary)] active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[var(--radius)] text-sm text-[var(--color-text-muted)] transition-[background-color,color,transform,opacity] duration-200 hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text-primary)] active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
             title="Re-verificar ahora"
             aria-label="Re-verificar ahora"
           >

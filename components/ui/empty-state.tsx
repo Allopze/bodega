@@ -16,6 +16,13 @@ interface EmptyStateProps {
   as?:          "h1" | "h2" | "p"
 }
 
+const EMPTY_STATE_TONE_CLASSES = {
+  neutral: "bg-[var(--color-surface-2)] text-[var(--color-text-subtle)]",
+  warning: "bg-[var(--color-warning-tint)] text-[var(--color-warning-ink)]",
+  danger: "bg-[var(--color-danger-tint)] text-[var(--color-danger-ink)]",
+  success: "bg-[var(--color-success-tint)] text-[var(--color-success-ink)]",
+}
+
 /**
  * Teaching empty states — not just "nothing here."
  * Explains the context and provides a clear path forward.
@@ -32,13 +39,6 @@ export function EmptyState({
   tone = "neutral",
   as: TitleTag = "h2",
 }: EmptyStateProps) {
-  const toneClasses = {
-    neutral: "bg-[var(--color-surface-2)] text-[var(--color-text-subtle)]",
-    warning: "bg-[var(--color-warning-tint)] text-[var(--color-warning-ink)]",
-    danger: "bg-[var(--color-danger-tint)] text-[var(--color-danger-ink)]",
-    success: "bg-[var(--color-success-tint)] text-[var(--color-success-ink)]",
-  }
-
   return (
     <div
       className={cn(
@@ -52,7 +52,7 @@ export function EmptyState({
       {icon && (
         <div className={cn(
           "flex items-center justify-center rounded-xl",
-          toneClasses[tone],
+          EMPTY_STATE_TONE_CLASSES[tone],
           compact ? "h-10 w-10 mb-3" : "h-14 w-14 mb-4",
         )}>
           {icon}

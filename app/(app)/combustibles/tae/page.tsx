@@ -29,6 +29,8 @@ const STATUS: Record<string, { label: string; variant: "primary" | "warning" | "
   voided: { label: "Anulada", variant: "danger" },
 }
 
+const TAEGROUP_FALLBACK: Array<{ name: string; liters: number; group: string; count: number }> = []
+
 const PAGE_SIZE = 50
 
 type TaeSearchParams = { q?: string; from?: string; to?: string; faena?: string; punto?: string; estado?: string; sello?: string; evidencia?: string; page?: string }
@@ -74,8 +76,6 @@ export default async function TaeControlPage({ searchParams }: { searchParams: P
     to: filters.to || now.toISOString().slice(0, 10),
   }
   const bitacoraGroupBaseHref = `/combustibles/bitacora?${new URLSearchParams({ desde: chartRange.from, hasta: chartRange.to, fuente: "tae_pwa" }).toString()}`
-
-  const TAEGROUP_FALLBACK: Array<{ name: string; liters: number; group: string; count: number }> = []
 
   const [worksitesList, loadingPoints, storageLocations, publicLinks, submissions, metricsRows, cargasPorSupervisor, cargasPorConductor, cargasPorPunto] = await Promise.all([
     settle(

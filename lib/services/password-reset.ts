@@ -1,7 +1,7 @@
 "use server"
 
 import crypto from "node:crypto"
-import { eq, and, isNull, lt } from "drizzle-orm"
+import { eq, and, isNull } from "drizzle-orm"
 import { db } from "@/db"
 import { users, passwordResetTokens } from "@/db/schema"
 import { nanoid } from "@/lib/id"
@@ -125,12 +125,4 @@ export async function applyPasswordReset(rawToken: string, newPassword: string):
     const message = err instanceof Error ? err.message : "Error al restablecer la contraseña."
     return { ok: false, error: message }
   }
-}
-
-/** Cleanup: delete expired or used tokens older than 7 days. */
-export async function pruneResetTokens(): Promise<void> {
-  const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
-  await db
-    .delete(passwordResetTokens)
-    .where(lt(passwordResetTokens.createdAt, cutoff))
 }

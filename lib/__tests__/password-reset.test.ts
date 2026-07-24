@@ -40,8 +40,8 @@ import {
   requestPasswordReset,
   validateResetToken,
   applyPasswordReset,
-  pruneResetTokens,
 } from "@/lib/services/password-reset"
+import { pruneResetTokens } from "@/lib/services/password-reset-cleanup"
 
 describe("requestPasswordReset", () => {
   beforeEach(() => vi.clearAllMocks())

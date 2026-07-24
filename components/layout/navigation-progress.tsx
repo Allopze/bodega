@@ -61,7 +61,7 @@ export function NavigationProgress() {
       className="fixed top-0 left-0 z-60 h-[2.5px] w-full pointer-events-none"
     >
       <div
-        className="h-full rounded-r-sm bg-[var(--color-primary)] transition-all duration-[var(--duration-default)] ease-[var(--ease-out)] shadow-[0_0_6px_var(--color-primary)]"
+        className="h-full rounded-r-sm bg-[var(--color-primary)] transition-[width] duration-[var(--duration-default)] ease-[var(--ease-out)] shadow-[0_0_6px_var(--color-primary)]"
         style={{ width, transitionDuration: "400ms" }}
       />
     </div>

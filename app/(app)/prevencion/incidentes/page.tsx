@@ -12,6 +12,13 @@ import { IncidentList } from "./incident-list"
 
 export const metadata: Metadata = { title: "Incidentes y denuncias" }
 
+const INDICATOR_LABELS: Record<string, string> = {
+  accidentability: "accidentabilidad",
+  frequency: "frecuencia",
+  severity: "gravedad",
+  pending: "pendientes",
+}
+
 export default async function IncidentsPage({ searchParams }: { searchParams: Promise<{ worksiteId?: string; year?: string; monthFrom?: string; monthTo?: string; indicator?: string }> }) {
   let session
   try { session = await requirePermission("prevention:incidents:view") }
@@ -21,12 +28,6 @@ export default async function IncidentsPage({ searchParams }: { searchParams: Pr
   const indicator = ["accidentability", "frequency", "severity", "pending"].includes(query.indicator ?? "")
     ? query.indicator as "accidentability" | "frequency" | "severity" | "pending"
     : undefined
-  const INDICATOR_LABELS: Record<string, string> = {
-    accidentability: "accidentabilidad",
-    frequency: "frecuencia",
-    severity: "gravedad",
-    pending: "pendientes",
-  }
   const indicatorLabel = indicator ? INDICATOR_LABELS[indicator] ?? indicator : undefined
   const year = Number(query.year)
   const monthFromRaw = Number(query.monthFrom)
