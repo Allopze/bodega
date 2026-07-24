@@ -85,32 +85,46 @@ describe("toCode()", () => {
   })
 })
 
+// Los instantes se escriben en UTC a propósito: el resultado esperado es el
+// mismo corra el proceso en UTC (contenedor de producción), en Santiago (la
+// máquina del desarrollador) o en cualquier otra zona.
 describe("formatDate()", () => {
-  it("formats a Date object to DD-MM-YYYY", () => {
-    const d = new Date(2026, 0, 15) // Jan 15, 2026
-    expect(formatDate(d)).toBe("15-01-2026")
+  it("formats a Date object to DD-MM-YYYY in Chilean time", () => {
+    // 17:30Z = 14:30 en Santiago (verano, UTC-3)
+    expect(formatDate(new Date("2026-01-15T17:30:00Z"))).toBe("15-01-2026")
   })
 
   it("formats a plain YYYY-MM-DD string without timezone shift", () => {
-    // Plain date strings are parsed as local date (midnight local)
+    // Una fecha de calendario no es un instante: no se convierte de zona.
     expect(formatDate("2026-03-01")).toBe("01-03-2026")
   })
 
   it("formats a timestamp number", () => {
-    const ts = new Date(2026, 11, 25).getTime()
-    expect(formatDate(ts)).toBe("25-12-2026")
+    expect(formatDate(Date.parse("2026-12-25T15:00:00Z"))).toBe("25-12-2026")
   })
 })
 
 describe("formatDateTime()", () => {
   it("includes hours and minutes", () => {
-    const d = new Date(2026, 0, 15, 14, 30)
-    expect(formatDateTime(d)).toBe("15-01-2026 14:30")
+    expect(formatDateTime(new Date("2026-01-15T17:30:00Z"))).toBe("15-01-2026 14:30")
   })
 
   it("pads single-digit hours and minutes", () => {
-    const d = new Date(2026, 0, 1, 9, 5)
-    expect(formatDateTime(d)).toBe("01-01-2026 09:05")
+    expect(formatDateTime(new Date("2026-01-01T12:05:00Z"))).toBe("01-01-2026 09:05")
+  })
+
+  it("renders midnight as 00:00, not 24:00", () => {
+    // es-CL con hour12:false rinde "24:00"; por eso se fija hourCycle h23.
+    expect(formatDateTime(new Date("2026-07-23T04:00:00Z"))).toBe("23-07-2026 00:00")
+  })
+
+  it("uses the Chilean day, not the UTC day, across the date boundary", () => {
+    // 02:00Z del 23 son todavía las 22:00 del 22 en Santiago (invierno, UTC-4).
+    expect(formatDateTime(new Date("2026-07-23T02:00:00Z"))).toBe("22-07-2026 22:00")
+  })
+
+  it("gives a plain date a midnight time component", () => {
+    expect(formatDateTime("2026-03-01")).toBe("01-03-2026 00:00")
   })
 })
 

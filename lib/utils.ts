@@ -50,34 +50,51 @@ export function toCode(str: string): string {
 
 /** Format a date in es-CL locale */
 export function formatDate(date: Date | string | number): string {
-  const d = coerceDate(date)
-  return [
-    pad2(d.getDate()),
-    pad2(d.getMonth() + 1),
-    d.getFullYear(),
-  ].join("-")
+  const plain = plainDateParts(date)
+  if (plain) return `${plain[2]}-${plain[1]}-${plain[0]}`
+  const [year, month, day] = CHILE_DATE_FORMAT.format(new Date(date)).split("-")
+  return `${day}-${month}-${year}`
 }
 
 /** Format datetime in es-CL locale */
 export function formatDateTime(date: Date | string | number): string {
-  const d = coerceDate(date)
-  return `${formatDate(d)} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`
+  // Una fecha calendario ("2026-06-11") no tiene hora que convertir.
+  if (plainDateParts(date)) return `${formatDate(date)} 00:00`
+  const d = new Date(date)
+  return `${formatDate(d)} ${CHILE_TIME_FORMAT.format(d)}`
 }
 
-function coerceDate(date: Date | string | number): Date {
-  if (date instanceof Date) return date
-  if (typeof date === "string") {
-    const plainDate = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date)
-    if (plainDate) {
-      const [, year, month, day] = plainDate
-      return new Date(Number(year), Number(month) - 1, Number(day))
-    }
-  }
-  return new Date(date)
-}
+// Todo lo que se muestra va en hora de Chile continental, no en la zona del
+// proceso: el contenedor de producción corre en UTC, así que leer los
+// componentes locales de la fecha (getHours/getDate) hacía que el servidor
+// pintara UTC y el navegador la hora del usuario — desajuste de hidratación en
+// los componentes cliente, y hora simplemente equivocada en los de servidor.
+const CHILE_DATE_FORMAT = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "America/Santiago",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+})
 
-function pad2(value: number): string {
-  return String(value).padStart(2, "0")
+// hourCycle h23 y no hour12:false — con es-CL este último rinde "24:00" a
+// medianoche en vez de "00:00".
+const CHILE_TIME_FORMAT = new Intl.DateTimeFormat("es-CL", {
+  timeZone: "America/Santiago",
+  hour: "2-digit",
+  minute: "2-digit",
+  hourCycle: "h23",
+})
+
+const PLAIN_DATE_RE = /^(\d{4})-(\d{2})-(\d{2})$/
+
+/**
+ * Una cadena "YYYY-MM-DD" es una fecha de calendario, no un instante: pasarla
+ * por Date y luego convertirla de zona la corre un día. Se reformatea tal cual.
+ */
+function plainDateParts(date: Date | string | number): [string, string, string] | null {
+  if (typeof date !== "string") return null
+  const match = PLAIN_DATE_RE.exec(date)
+  return match ? [match[1]!, match[2]!, match[3]!] : null
 }
 
 /** Convert a string to title-case (each word capitalized). */
