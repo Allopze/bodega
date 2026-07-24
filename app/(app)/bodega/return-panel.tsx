@@ -42,16 +42,21 @@ export function ReturnPanel({
 
   const [state, action, pending] = useActionState<ActionState, FormData>(returnStockAction, INITIAL_STATE)
 
+  const worksitesRef = React.useRef(worksites)
+  React.useEffect(() => {
+    worksitesRef.current = worksites
+  })
+
   React.useEffect(() => {
     if (state.ok && state.message) {
       toast.success(state.message)
       formRef.current?.reset()
-      setWorksiteId(worksites[0]?.id ?? "")
+      setWorksiteId(worksitesRef.current[0]?.id ?? "")
       setProductId("")
     } else if (state.ok === false && state.message && state !== INITIAL_STATE) {
       toast.error(state.message)
     }
-  }, [state, worksites])
+  }, [state])
 
   const availableProducts = worksiteId
     ? products.filter((p) => p.worksiteId === worksiteId)
