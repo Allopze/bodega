@@ -16,9 +16,15 @@ export interface ExportActionResult {
   message?: string
 }
 
-export interface ExportButtonProps {
-  action: (filters?: unknown) => Promise<ExportActionResult>
-  filters?: unknown
+/**
+ * `TFilters` ata la acción a los filtros que se le pasan. Antes ambos eran
+ * `unknown`, lo que no compilaba: una acción que espera un tipo concreto no es
+ * asignable a una que acepta `unknown` (los parámetros son contravariantes).
+ * Se omite `filters` cuando la acción ya viene cerrada sobre sus argumentos.
+ */
+export interface ExportButtonProps<TFilters = undefined> {
+  action: (filters: TFilters) => Promise<ExportActionResult>
+  filters?: TFilters
   label?: string
   variant?: ButtonProps["variant"]
   size?: ButtonProps["size"]
@@ -32,20 +38,20 @@ export function downloadBase64Xlsx(base64: string, filename: string) {
   link.click()
 }
 
-export function ExportButton({
+export function ExportButton<TFilters = undefined>({
   action,
   filters,
   label = "Exportar Excel",
   variant = "secondary",
   size = "sm",
   className,
-}: ExportButtonProps) {
+}: ExportButtonProps<TFilters>) {
   const [loading, setLoading] = React.useState(false)
 
   async function handleExport() {
     setLoading(true)
     try {
-      const result = await action(filters)
+      const result = await action(filters as TFilters)
       if (result.ok && result.data) {
         downloadBase64Xlsx(result.data.base64, result.data.filename)
         if (result.data.truncated) {
