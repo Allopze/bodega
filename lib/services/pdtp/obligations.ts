@@ -32,10 +32,12 @@ function dueDate(occurredAt: Date, days: number | null) {
   return result.toISOString()
 }
 
+const CHILE_MONTH_DAY_FORMAT = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "America/Santiago", month: "numeric", day: "numeric",
+})
+
 function periodSlot(at: Date) {
-  const parts = Object.fromEntries(new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/Santiago", month: "numeric", day: "numeric",
-  }).formatToParts(at).filter((part) => part.type !== "literal").map((part) => [part.type, Number(part.value)]))
+  const parts = Object.fromEntries(CHILE_MONTH_DAY_FORMAT.formatToParts(at).filter((part) => part.type !== "literal").map((part) => [part.type, Number(part.value)]))
   return { month: parts.month!, week: Math.min(4, Math.ceil(parts.day! / 7)) }
 }
 

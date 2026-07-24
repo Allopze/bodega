@@ -12,18 +12,22 @@ export function formatRequestReference(code: string): string {
   return String(Number(match[1])).padStart(2, "0")
 }
 
+const PLAIN_CLP_FORMAT = new Intl.NumberFormat("es-CL", {
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 0,
+})
+
+const DECIMAL_FORMAT = new Intl.NumberFormat("es-CL", {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+})
+
 export function formatPlainCLP(amount: number): string {
-  return new Intl.NumberFormat("es-CL", {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(amount)
+  return PLAIN_CLP_FORMAT.format(amount)
 }
 
 export function formatDecimal(value: number): string {
-  return new Intl.NumberFormat("es-CL", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(value)
+  return DECIMAL_FORMAT.format(value)
 }
 
 export function formatDiscount(discount?: number | null): string {

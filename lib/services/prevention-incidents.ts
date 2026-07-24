@@ -46,6 +46,9 @@ import { getUserIdsWithPermissionForWorksite } from "@/lib/services/notification
 import { invalidateClosedIndicatorPeriodWithClient } from "@/lib/services/prevention-indicadores"
 import { createRiskReviewTriggerWithClient } from "@/lib/services/prevention-risk-legal"
 
+const CHILE_YEAR_FORMAT = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Santiago", year: "numeric" })
+const CHILE_MONTH_FORMAT = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Santiago", month: "numeric" })
+
 export const INCIDENT_EVENT_TYPES = [
   "dangerous_incident",
   "work_accident",
@@ -621,8 +624,8 @@ export async function classifyIncidentPersonForIndicators(args: {
     await tx.insert(safetyIndicatorHistory).values({
       id: `sih-${nanoid()}`,
       worksiteId: incident.worksiteId,
-      year: Number(new Intl.DateTimeFormat("en-CA", { timeZone: "America/Santiago", year: "numeric" }).format(new Date(incident.occurredAt))),
-      month: Number(new Intl.DateTimeFormat("en-CA", { timeZone: "America/Santiago", month: "numeric" }).format(new Date(incident.occurredAt))),
+      year: Number(CHILE_YEAR_FORMAT.format(new Date(incident.occurredAt))),
+      month: Number(CHILE_MONTH_FORMAT.format(new Date(incident.occurredAt))),
       changeType: "corrected",
       entityType: "incident_person",
       entityId: person.id,

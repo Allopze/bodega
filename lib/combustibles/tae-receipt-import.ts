@@ -41,12 +41,14 @@ export interface TaeReceiptImportResult {
 const TZ = "America/Santiago"
 
 /** Desfase real de la zona en un instante UTC dado (Chile alterna -03/-04). */
+const ZONE_PARTS_FORMAT = new Intl.DateTimeFormat("en-US", {
+  timeZone: TZ, hour12: false,
+  year: "numeric", month: "2-digit", day: "2-digit",
+  hour: "2-digit", minute: "2-digit", second: "2-digit",
+})
+
 function zoneOffsetMs(instant: Date): number {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: TZ, hour12: false,
-    year: "numeric", month: "2-digit", day: "2-digit",
-    hour: "2-digit", minute: "2-digit", second: "2-digit",
-  }).formatToParts(instant)
+  const parts = ZONE_PARTS_FORMAT.formatToParts(instant)
   const at = (type: string) => Number(parts.find((part) => part.type === type)?.value)
   const asUtc = Date.UTC(at("year"), at("month") - 1, at("day"), at("hour") % 24, at("minute"), at("second"))
   return asUtc - instant.getTime()

@@ -70,14 +70,21 @@ export type AccreditationInput = {
 
 // ── Helpers internos ──────────────────────────────────────────────────────────
 
+const CHILE_MONTH_DAY_FORMAT = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "America/Santiago",
+  month: "numeric",
+  day: "numeric",
+})
+
+const CHILE_YEAR_FORMAT = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "America/Santiago",
+  year: "numeric",
+})
+
 function periodSlot(occurredAt: string): { month: number; week: number } {
   const at = new Date(occurredAt)
   const parts = Object.fromEntries(
-    new Intl.DateTimeFormat("en-CA", {
-      timeZone: "America/Santiago",
-      month: "numeric",
-      day: "numeric",
-    })
+    CHILE_MONTH_DAY_FORMAT
       .formatToParts(at)
       .filter((p) => p.type !== "literal")
       .map((p) => [p.type, Number(p.value)]),
@@ -88,10 +95,7 @@ function periodSlot(occurredAt: string): { month: number; week: number } {
 function yearOfOccurrence(occurredAt: string): number {
   const at = new Date(occurredAt)
   const parts = Object.fromEntries(
-    new Intl.DateTimeFormat("en-CA", {
-      timeZone: "America/Santiago",
-      year: "numeric",
-    })
+    CHILE_YEAR_FORMAT
       .formatToParts(at)
       .filter((p) => p.type !== "literal")
       .map((p) => [p.type, Number(p.value)]),
