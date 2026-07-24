@@ -123,7 +123,7 @@ export function CommitteeDetail({
         <div className="rounded-md border border-[var(--color-warning-line)] bg-[var(--color-surface-2)] p-4 text-sm">
           <p className="font-medium">El comité no cumple los requisitos de validez:</p>
           <ul className="mt-2 list-disc space-y-1 pl-4">
-            {parity.issues.map((issue, index) => <li key={index}>{issue.detail}</li>)}
+            {parity.issues.map((issue) => <li key={issue.detail}>{issue.detail}</li>)}
           </ul>
         </div>
       )}
@@ -353,6 +353,7 @@ function ScheduleMeetingDialog({ committeeId }: { committeeId: string }) {
 /* ── Cierre de acta ───────────────────────────────────────────────────────── */
 
 interface AgreementDraft {
+  id: string
   description: string
   actionDescription: string
   responsibleUserId: string
@@ -463,13 +464,13 @@ function CloseMeetingDialog({ meeting, members, assignees }: {
               <span className="text-sm font-medium">Acuerdos</span>
               <Button
                 type="button" variant="secondary" size="sm"
-                onClick={() => setAgreements((current) => [...current, { description: "", actionDescription: "", responsibleUserId: "", priority: "medium", targetDate: "" }])}
+                onClick={() => setAgreements((current) => [...current, { id: crypto.randomUUID(), description: "", actionDescription: "", responsibleUserId: "", priority: "medium", targetDate: "" }])}
               >
                 Agregar acuerdo
               </Button>
             </div>
             {agreements.map((item, index) => (
-              <div key={index} className="space-y-2 rounded-lg border border-[var(--color-border)] p-3">
+              <div key={item.id} className="space-y-2 rounded-lg border border-[var(--color-border)] p-3">
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-medium">Acuerdo {index + 1}</span>
                   <Button type="button" variant="ghost" size="sm" onClick={() => setAgreements((current) => current.filter((_, i) => i !== index))}>Quitar</Button>

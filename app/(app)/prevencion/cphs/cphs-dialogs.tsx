@@ -109,6 +109,7 @@ export function NewReviewDialog({ worksites }: { worksites: { id: string; name: 
 /* ── Cierre de revisión por la dirección ──────────────────────────────────── */
 
 interface Commitment {
+  id: string
   description: string
   actionDescription: string
   responsibleUserId: string
@@ -128,7 +129,7 @@ export function CloseReviewDialog({ review, worksites, assignees }: {
 
   function addCommitment() {
     setCommitments((current) => [...current, {
-      description: "", actionDescription: "", responsibleUserId: "",
+      id: crypto.randomUUID(), description: "", actionDescription: "", responsibleUserId: "",
       worksiteId: worksites[0]?.id ?? "", priority: "medium", targetDate: "",
     }])
   }
@@ -177,7 +178,7 @@ export function CloseReviewDialog({ review, worksites, assignees }: {
               <Button type="button" variant="secondary" size="sm" onClick={addCommitment}>Agregar compromiso</Button>
             </div>
             {commitments.map((item, index) => (
-              <div key={index} className="space-y-2 rounded-lg border border-[var(--color-border)] p-3">
+              <div key={item.id} className="space-y-2 rounded-lg border border-[var(--color-border)] p-3">
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-medium">Compromiso {index + 1}</span>
                   <Button type="button" variant="ghost" size="sm" onClick={() => setCommitments((current) => current.filter((_, i) => i !== index))}>

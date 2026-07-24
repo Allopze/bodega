@@ -331,7 +331,7 @@ function CourseDialog() {
 
 function VersionDialog({ courses }: { courses: CourseItem[] }) {
   const [open, setOpen] = React.useState(false)
-  const [modules, setModules] = React.useState([{ title: "", minutes: 60 }])
+  const [modules, setModules] = React.useState([{ id: crypto.randomUUID(), title: "", minutes: 60 }])
   const [courseId, setCourseId] = React.useState(courses[0]?.id ?? "")
   const [modality, setModality] = React.useState("presencial")
   const [assessmentType, setAssessmentType] = React.useState("theoretical")
@@ -349,7 +349,7 @@ function VersionDialog({ courses }: { courses: CourseItem[] }) {
       modality: form.get("modality"),
       assessmentType: form.get("assessmentType"),
       passingScore: Number(form.get("passingScore")),
-    }), () => { setOpen(false); setModules([{ title: "", minutes: 60 }]) })
+    }), () => { setOpen(false); setModules([{ id: crypto.randomUUID(), title: "", minutes: 60 }]) })
   }
 
   return (
@@ -386,7 +386,7 @@ function VersionDialog({ courses }: { courses: CourseItem[] }) {
               <span className="text-xs text-[var(--color-text-subtle)]">{declaredMinutes} min declarados</span>
             </div>
             {modules.map((item, index) => (
-              <div key={index} className="flex gap-2">
+              <div key={item.id} className="flex gap-2">
                 <Input
                   value={item.title}
                   onChange={(event) => setModules((current) => current.map((m, i) => i === index ? { ...m, title: event.target.value } : m))}
@@ -405,7 +405,7 @@ function VersionDialog({ courses }: { courses: CourseItem[] }) {
                 )}
               </div>
             ))}
-            <Button type="button" variant="secondary" size="sm" onClick={() => setModules((current) => [...current, { title: "", minutes: 60 }])}>
+            <Button type="button" variant="secondary" size="sm" onClick={() => setModules((current) => [...current, { id: crypto.randomUUID(), title: "", minutes: 60 }])}>
               Agregar módulo
             </Button>
           </div>

@@ -60,16 +60,13 @@ export function CreateEvaluationDialog({ worker, open, onOpenChange, initialRole
 
   const isSeguimiento = definicionCode === "trabajador_antiguo"
 
-  // Reset state when dialog opens
-  React.useEffect(() => {
+  const [prevOpen, setPrevOpen] = React.useState(open)
+  if (open !== prevOpen) {
+    setPrevOpen(open)
     if (open) {
       setCreateRole(initialRole)
       setSelectedVisitId(defaultVisitId ?? "__new")
-      if (initialRole === 'conductor_lider') {
-        setDefinicion("trabajador_nuevo")
-      } else {
-        setDefinicion("trabajador_nuevo")
-      }
+      setDefinicion("trabajador_nuevo")
       setFecha(todayStr)
       setMotivo("")
       setMotivoOtro("")
@@ -81,7 +78,7 @@ export function CreateEvaluationDialog({ worker, open, onOpenChange, initialRole
         : []
       setSelectedCargos(defaultCargo)
     }
-  }, [open, worker.position, initialRole, defaultVisitId])
+  }
 
   const validate = (): boolean => {
     const errors: Record<string, string> = {}
@@ -143,6 +140,7 @@ export function CreateEvaluationDialog({ worker, open, onOpenChange, initialRole
               id="dialog-worker"
               type="text"
               disabled
+              aria-label="Trabajador"
               className="flex h-9 w-full rounded-(--radius-lg) border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3.5 py-1.5 text-sm opacity-70"
               value={`${worker.firstName} ${worker.lastName}`}
             />
@@ -153,6 +151,7 @@ export function CreateEvaluationDialog({ worker, open, onOpenChange, initialRole
               id="dialog-worksite"
               type="text"
               disabled
+              aria-label="Faena"
               className="flex h-9 w-full rounded-(--radius-lg) border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3.5 py-1.5 text-sm opacity-70"
               value={worker.worksiteName ?? ""}
             />
@@ -246,6 +245,7 @@ export function CreateEvaluationDialog({ worker, open, onOpenChange, initialRole
                   <input
                     id={uid + "-motivo-otro"}
                     type="text"
+                    aria-label="Especificar Motivo"
                     className="flex h-9 w-full rounded-(--radius-lg) border border-[var(--color-border)] bg-[var(--color-surface)] px-3.5 py-1.5 text-sm text-[var(--color-text)] focus-visible:outline-none focus-visible:border-[var(--color-primary)] focus-visible:ring-2 focus-visible:ring-[var(--color-primary-line)]"
                     value={motivoOtro}
                     onChange={(e) => setMotivoOtro(e.target.value)}
@@ -259,6 +259,7 @@ export function CreateEvaluationDialog({ worker, open, onOpenChange, initialRole
                   <input
                     id={uid + "-patente"}
                     type="text"
+                    aria-label="Patente Equipo"
                     className="flex h-9 w-full rounded-(--radius-lg) border border-[var(--color-border)] bg-[var(--color-surface)] px-3.5 py-1.5 text-sm text-[var(--color-text)] focus-visible:outline-none focus-visible:border-[var(--color-primary)] focus-visible:ring-2 focus-visible:ring-[var(--color-primary-line)]"
                     value={equipoPatente}
                     onChange={(e) => setEquipoPatente(e.target.value)}

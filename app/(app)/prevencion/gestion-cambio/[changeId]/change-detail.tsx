@@ -96,7 +96,7 @@ export function ChangeDetail({
         <div className="rounded-md border border-[var(--color-warning-line)] bg-[var(--color-surface-2)] p-4 text-sm">
           <p className="font-medium">El cambio no puede aprobarse todavía:</p>
           <ul className="mt-2 list-disc space-y-1 pl-4">
-            {readiness.blockers.map((blocker, index) => <li key={index}>{blocker}</li>)}
+            {readiness.blockers.map((blocker) => <li key={blocker}>{blocker}</li>)}
           </ul>
         </div>
       )}

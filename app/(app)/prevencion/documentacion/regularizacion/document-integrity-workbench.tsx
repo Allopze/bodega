@@ -108,8 +108,10 @@ export function DocumentIntegrityWorkbench({ findings }: { findings: DocumentInt
           reason,
         }),
       })
-      const body = await response.json() as { error?: string }
-      if (!response.ok) throw new Error(body.error ?? "No se pudo reubicar el expediente.")
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({})) as { error?: string }
+        throw new Error(body.error ?? "No se pudo reubicar el expediente.")
+      }
       toast.success("Copia cifrada verificada y fuente general restringida.")
       router.refresh()
     } catch (error) {

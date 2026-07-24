@@ -285,11 +285,12 @@ function ActionFollowupTimeline({ itemId, estado, worksiteId, followups, canMana
         uploadData.set("file", file)
         uploadData.set("worksiteId", worksiteId)
         const res = await fetch("/api/prevencion/pdtp/evidence", { method: "POST", body: uploadData })
-        const json = await res.json()
         if (!res.ok) {
+          const json = await res.json().catch(() => ({}))
           setError(json.error ?? "Error al subir la evidencia.")
           return
         }
+        const json = await res.json()
         evidenciaPhotos.push(json.path)
       }
 

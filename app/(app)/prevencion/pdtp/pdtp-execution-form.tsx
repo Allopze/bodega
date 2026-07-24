@@ -42,11 +42,12 @@ export function PdtpExecutionForm({ activityId, worksiteId, year, defaultMonth, 
         uploadData.set("worksiteId", worksiteId)
         try {
           const res = await fetch("/api/prevencion/pdtp/evidence", { method: "POST", body: uploadData })
-          const json = await res.json()
           if (!res.ok) {
+            const json = await res.json().catch(() => ({}))
             toast.error(json.error ?? "Error al subir la evidencia.")
             return { ok: false, message: json.error ?? "Error al subir la evidencia." }
           }
+          const json = await res.json()
           formData.set("evidenceUrl", json.path)
         } catch {
           toast.error("Error al subir la evidencia.")
@@ -133,6 +134,7 @@ export function PdtpExecutionForm({ activityId, worksiteId, year, defaultMonth, 
                 min="0"
                 step="0.25"
                 defaultValue="1"
+                aria-label="Cantidad"
                 className="h-9 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 text-sm text-[var(--color-text)]"
                 aria-invalid={!!state?.fieldErrors?.executedQuantity}
               />
@@ -145,6 +147,7 @@ export function PdtpExecutionForm({ activityId, worksiteId, year, defaultMonth, 
               name="evidenceText"
               type="text"
               placeholder="Opcional"
+              aria-label="Observación"
               className="h-9 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 text-sm text-[var(--color-text)]"
             />
           </Field>

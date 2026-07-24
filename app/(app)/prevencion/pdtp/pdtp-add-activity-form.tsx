@@ -41,20 +41,20 @@ export function PdtpAddActivityForm({
   responsibleCatalog?: ResponsibleOption[]
   sheetOptions?: SheetOption[]
 }) {
-  const [responsibleSlugs, setResponsibleSlugs] = React.useState<string[]>([responsibleCatalog[0]?.slug ?? "prf"])
-  const [sheetCodes, setSheetCodes] = React.useState<string[]>([sheetOptions[0]?.code ?? "pdtp_general"])
+  const [responsibleSlugs, setResponsibleSlugs] = React.useState<{ id: string; value: string }[]>([{ id: crypto.randomUUID(), value: responsibleCatalog[0]?.slug ?? "prf" }])
+  const [sheetCodes, setSheetCodes] = React.useState<{ id: string; value: string }[]>([{ id: crypto.randomUUID(), value: sheetOptions[0]?.code ?? "pdtp_general" }])
 
-  const addResp = () => setResponsibleSlugs((s) => [...s, responsibleCatalog[0]?.slug ?? ""])
+  const addResp = () => setResponsibleSlugs((s) => [...s, { id: crypto.randomUUID(), value: responsibleCatalog[0]?.slug ?? "" }])
   const removeResp = (i: number) =>
     setResponsibleSlugs((s) => s.filter((_, idx) => idx !== i))
   const updateResp = (i: number, v: string) =>
-    setResponsibleSlugs((s) => s.map((x, idx) => (idx === i ? v : x)))
+    setResponsibleSlugs((s) => s.map((x, idx) => (idx === i ? { ...x, value: v } : x)))
 
-  const addSheet = () => setSheetCodes((s) => [...s, sheetOptions[0]?.code ?? ""])
+  const addSheet = () => setSheetCodes((s) => [...s, { id: crypto.randomUUID(), value: sheetOptions[0]?.code ?? "" }])
   const removeSheet = (i: number) =>
     setSheetCodes((s) => s.filter((_, idx) => idx !== i))
   const updateSheet = (i: number, v: string) =>
-    setSheetCodes((s) => s.map((x, idx) => (idx === i ? v : x)))
+    setSheetCodes((s) => s.map((x, idx) => (idx === i ? { ...x, value: v } : x)))
 
   return (
     <div className="overflow-hidden rounded-[var(--radius-2xl)] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-card)]">
@@ -167,9 +167,9 @@ export function PdtpAddActivityForm({
                 </div>
                 <div className="space-y-1.5">
                   {responsibleSlugs.map((slug, i) => (
-                    <div key={i} className="flex items-center gap-1.5">
+                    <div key={slug.id} className="flex items-center gap-1.5">
                       {responsibleCatalog.length > 0 ? (
-                        <Select name="responsibleSlugs[]" value={slug} onValueChange={(v) => updateResp(i, v)}>
+                        <Select name="responsibleSlugs[]" value={slug.value} onValueChange={(v) => updateResp(i, v)}>
                           <SelectTrigger className="h-8 flex-1 text-sm">
                             <SelectValue placeholder="Responsable" />
                           </SelectTrigger>
@@ -182,7 +182,7 @@ export function PdtpAddActivityForm({
                       ) : (
                         <Input
                           name="responsibleSlugs[]"
-                          value={slug}
+                          value={slug.value}
                           onChange={(e) => updateResp(i, e.target.value)}
                           placeholder="prf, jt, jdpr, ..."
                           required
@@ -222,9 +222,9 @@ export function PdtpAddActivityForm({
                 </div>
                 <div className="space-y-1.5">
                   {sheetCodes.map((code, i) => (
-                    <div key={i} className="flex items-center gap-1.5">
+                    <div key={code.id} className="flex items-center gap-1.5">
                       {sheetOptions.length > 0 ? (
-                        <Select name="sheetCodes[]" value={code} onValueChange={(v) => updateSheet(i, v)}>
+                        <Select name="sheetCodes[]" value={code.value} onValueChange={(v) => updateSheet(i, v)}>
                           <SelectTrigger className="h-8 flex-1 text-sm">
                             <SelectValue placeholder="Hoja" />
                           </SelectTrigger>
@@ -237,7 +237,7 @@ export function PdtpAddActivityForm({
                       ) : (
                         <Input
                           name="sheetCodes[]"
-                          value={code}
+                          value={code.value}
                           onChange={(e) => updateSheet(i, e.target.value)}
                           placeholder="pdtp_general, cphs, ..."
                           required

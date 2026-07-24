@@ -129,8 +129,10 @@ export function PrivacyRequestsWorkbench({ rows, canExport, canExportClinical, p
           releaseLegalHold: pendingAction.releaseLegalHold,
         }),
       })
-      const body = await response.json() as { error?: string }
-      if (!response.ok) throw new Error(body.error ?? "No se pudo actualizar la solicitud.")
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({})) as { error?: string }
+        throw new Error(body.error ?? "No se pudo actualizar la solicitud.")
+      }
       setPendingAction(null)
       setReason("")
       router.refresh()

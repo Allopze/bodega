@@ -48,8 +48,10 @@ export function PrivacyRequestCreateButton({ workers }: Props) {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ subjectWorkerId: workerId, rightType, requestScope }),
       })
-      const body = await response.json() as { error?: string }
-      if (!response.ok) throw new Error(body.error ?? "No se pudo crear la solicitud.")
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({})) as { error?: string }
+        throw new Error(body.error ?? "No se pudo crear la solicitud.")
+      }
       setOpen(false)
       setWorkerId("")
       setRightType("")

@@ -129,7 +129,7 @@ export function NewPermitDialog({ types, worksites, workers, supervisors }: {
   const [worksiteId, setWorksiteId] = React.useState(worksites[0]?.id ?? "")
   const [crew, setCrew] = React.useState<Record<string, string>>({})
   const [workerQuery, setWorkerQuery] = React.useState("")
-  const [controls, setControls] = React.useState<{ description: string; isMandatory: boolean }[]>([])
+  const [controls, setControls] = React.useState<{ id: string; description: string; isMandatory: boolean }[]>([])
   const [supervisorUserId, setSupervisorUserId] = React.useState(supervisors[0]?.id ?? "")
   const [defaultStart, setDefaultStart] = React.useState("")
   const [defaultEnd, setDefaultEnd] = React.useState("")
@@ -260,7 +260,7 @@ export function NewPermitDialog({ types, worksites, workers, supervisors }: {
                     const selected = worker.id in crew
                     return (
                       <div key={worker.id} className="flex items-center gap-2 border-b border-[var(--color-border)] px-3 py-2 text-sm last:border-b-0">
-                        <input type="checkbox" checked={selected} onChange={(event) => toggleWorker(worker.id, event.target.checked)} />
+                        <input type="checkbox" checked={selected} onChange={(event) => toggleWorker(worker.id, event.target.checked)} aria-label={`Seleccionar a ${worker.name}`} />
                         <span className="flex-1">
                           {worker.name}
                           {worker.position && <span className="ml-2 text-xs text-[var(--color-text-subtle)]">{worker.position}</span>}
@@ -289,7 +289,7 @@ export function NewPermitDialog({ types, worksites, workers, supervisors }: {
               <span className="text-sm font-medium">Controles a verificar antes de habilitar</span>
             </div>
             {controls.map((item, index) => (
-              <div key={index} className="flex items-center gap-2">
+              <div key={item.id} className="flex items-center gap-2">
                 <Input
                   value={item.description}
                   onChange={(event) => setControls((current) => current.map((c, i) => i === index ? { ...c, description: event.target.value } : c))}
@@ -307,7 +307,7 @@ export function NewPermitDialog({ types, worksites, workers, supervisors }: {
                 </Button>
               </div>
             ))}
-            <Button type="button" variant="secondary" size="sm" onClick={() => setControls((current) => [...current, { description: "", isMandatory: true }])}>
+            <Button type="button" variant="secondary" size="sm" onClick={() => setControls((current) => [...current, { id: crypto.randomUUID(), description: "", isMandatory: true }])}>
               Agregar control
             </Button>
           </div>

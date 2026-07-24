@@ -73,8 +73,10 @@ export function PrivacyRightExecutionWorkbench({ bundle }: { bundle: Bundle }) {
           changes,
         }),
       })
-      const body = await response.json() as { error?: string }
-      if (!response.ok) throw new Error(body.error ?? "No se pudo ejecutar el derecho.")
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({})) as { error?: string }
+        throw new Error(body.error ?? "No se pudo ejecutar el derecho.")
+      }
       toast.success("Ejecución aplicada; se guardaron hashes antes/después y actor.")
       setSelected(null)
       router.refresh()

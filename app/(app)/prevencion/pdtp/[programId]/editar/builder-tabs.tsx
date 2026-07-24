@@ -637,10 +637,11 @@ function ImportExcelSection({ programId, visibleWorksites }: {
       fd.set("programId", programId)
       fd.set("file", file)
       const res = await fetch("/api/prevencion/pdtp/import", { method: "POST", body: fd })
-      const json = await res.json()
       if (!res.ok) {
+        const json = await res.json().catch(() => ({}))
         setState({ ok: false, message: json.error ?? "Error al importar el Excel." })
       } else {
+        const json = await res.json()
         setState({ ok: true, message: json.message })
         setPreview(json.preview as ImportPreview)
         formRef.current?.reset()
@@ -664,9 +665,11 @@ function ImportExcelSection({ programId, visibleWorksites }: {
       fd.set("acceptMissingEvidence", String(acceptMissingEvidence))
       fd.set("acceptanceReason", acceptanceReason)
       const res = await fetch("/api/prevencion/pdtp/import", { method: "POST", body: fd })
-      const json = await res.json()
-      if (!res.ok) setState({ ok: false, message: json.error ?? "No se pudo aplicar el lote." })
-      else {
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}))
+        setState({ ok: false, message: json.error ?? "No se pudo aplicar el lote." })
+      } else {
+        const json = await res.json()
         setState({ ok: true, message: json.message })
         setPreview(null)
         router.refresh()
@@ -691,9 +694,11 @@ function ImportExcelSection({ programId, visibleWorksites }: {
       fd.set("batchId", preview.batchId)
       fd.set("reason", cancelReason)
       const res = await fetch("/api/prevencion/pdtp/import", { method: "POST", body: fd })
-      const json = await res.json()
-      if (!res.ok) setState({ ok: false, message: json.error ?? "No se pudo cancelar el lote." })
-      else {
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}))
+        setState({ ok: false, message: json.error ?? "No se pudo cancelar el lote." })
+      } else {
+        const json = await res.json()
         setState({ ok: true, message: json.message })
         setPreview(null)
         setConfirmCancel(false)
@@ -1061,7 +1066,9 @@ function EditActivityDialog({ activity, activities, onClose, onSaved }: {
   const [pending, setPending] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
 
-  React.useEffect(() => {
+  const [prevActivity, setPrevActivity] = React.useState(activity)
+  if (activity !== prevActivity) {
+    setPrevActivity(activity)
     if (activity) {
       setActivityText(activity.activity)
       setExecutionGuidance(activity.program)
@@ -1077,7 +1084,7 @@ function EditActivityDialog({ activity, activities, onClose, onSaved }: {
       setDueDays(activity.dueDays ?? 5)
       setError(null)
     }
-  }, [activity])
+  }
 
   async function handleSave() {
     if (!activity) return
@@ -1722,6 +1729,7 @@ function PlanificacionRow({ activity, initial, horizon }: { activity: PdtpActivi
                 value={values[scheduleKey(month, week)] || ""}
                 onChange={(e) => setCell(month, week, e.target.value)}
                 title={`${PLAN_MONTH_LABELS[month - 1]} · Semana ${week}`}
+                aria-label={`${PLAN_MONTH_LABELS[month - 1]} · Semana ${week}`}
                 className="h-6 w-11 rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-1 text-center text-[11px] text-[var(--color-text)]"
               />
             ))}
@@ -1737,6 +1745,7 @@ function PlanificacionRow({ activity, initial, horizon }: { activity: PdtpActivi
             placeholder="cant."
             value={fillValue}
             onChange={(e) => setFillValue(e.target.value)}
+            aria-label="Cantidad a llenar"
             className="h-7 w-14 rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-1 text-xs text-[var(--color-text)]"
           />
           <Button type="button" variant="ghost" size="sm" onClick={fillAll} disabled={fillValue === ""}>Rellenar</Button>

@@ -196,7 +196,7 @@ export function InspectionRunDetail({
         <div className="rounded-md border border-[var(--color-warning-line)] bg-[var(--color-surface-2)] p-4 text-sm">
           <p className="font-medium">Aún no puede declararse ejecutada:</p>
           <ul className="mt-2 list-disc space-y-1 pl-4">
-            {completion.blockers.slice(0, 8).map((item, index) => <li key={index}>{item.detail}</li>)}
+            {completion.blockers.slice(0, 8).map((item) => <li key={item.detail}>{item.detail}</li>)}
             {completion.blockers.length > 8 && <li>y {completion.blockers.length - 8} más…</li>}
           </ul>
         </div>
@@ -343,7 +343,7 @@ function CompleteDialog({ run, completion }: {
             <div className="space-y-1 rounded-md border border-[var(--color-danger-line)] p-3 text-sm">
               <p className="font-medium">No se puede completar:</p>
               <ul className="list-disc space-y-1 pl-4">
-                {completion.blockers.slice(0, 10).map((item, index) => <li key={index}>{item.detail}</li>)}
+                {completion.blockers.slice(0, 10).map((item) => <li key={item.detail}>{item.detail}</li>)}
                 {completion.blockers.length > 10 && <li>y {completion.blockers.length - 10} más…</li>}
               </ul>
             </div>
@@ -436,7 +436,7 @@ function ReviewDialog({ run, findings, currentUserId }: { run: RunInfo; findings
           {!review.allowed && (
             <div className="space-y-1 rounded-md border border-[var(--color-danger-line)] p-3 text-sm">
               <p className="font-medium">No se puede cerrar:</p>
-              <ul className="list-disc space-y-1 pl-4">{review.blockers.map((item, index) => <li key={index}>{item.detail}</li>)}</ul>
+              <ul className="list-disc space-y-1 pl-4">{review.blockers.map((item) => <li key={item.detail}>{item.detail}</li>)}</ul>
             </div>
           )}
           <Field label="Comentario de revisión" hint="Mínimo 10 caracteres.">

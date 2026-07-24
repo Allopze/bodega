@@ -240,7 +240,7 @@ export function PermitDetail({
         <div className="rounded-md border border-[var(--color-warning-line)] bg-[var(--color-surface-2)] p-4 text-sm">
           <p className="font-medium">Aún no puede habilitarse:</p>
           <ul className="mt-2 list-disc space-y-1 pl-4">
-            {readiness.blockers.map((item, index) => <li key={index}>{item.detail}</li>)}
+            {readiness.blockers.map((item) => <li key={item.detail}>{item.detail}</li>)}
           </ul>
         </div>
       )}
@@ -267,11 +267,11 @@ export function PermitDetail({
                 <div className="mt-2 grid gap-2 md:grid-cols-2">
                   <div>
                     <span className="text-xs font-medium text-[var(--color-text-subtle)]">Peligros</span>
-                    <ul className="list-disc pl-4">{step.hazards.map((item, index) => <li key={index}>{item}</li>)}</ul>
+                    <ul className="list-disc pl-4">{step.hazards.map((item) => <li key={item}>{item}</li>)}</ul>
                   </div>
                   <div>
                     <span className="text-xs font-medium text-[var(--color-text-subtle)]">Controles</span>
-                    <ul className="list-disc pl-4">{step.controls.map((item, index) => <li key={index}>{item}</li>)}</ul>
+                    <ul className="list-disc pl-4">{step.controls.map((item) => <li key={item}>{item}</li>)}</ul>
                   </div>
                 </div>
               </div>
@@ -492,7 +492,7 @@ function TransitionDialog({ permit, toStatus, label, description, blockers }: {
           {hasBlockers && (
             <div className="space-y-1 rounded-md border border-[var(--color-danger-line)] p-3 text-sm">
               <p className="font-medium">No se puede completar:</p>
-              <ul className="list-disc space-y-1 pl-4">{blockers!.map((item, index) => <li key={index}>{item}</li>)}</ul>
+              <ul className="list-disc space-y-1 pl-4">{blockers!.map((item) => <li key={item}>{item}</li>)}</ul>
             </div>
           )}
           <Field label="Motivo" hint="Mínimo 10 caracteres.">
@@ -560,13 +560,13 @@ function ExtendDialog({ permit }: { permit: PermitInfo }) {
 
 function JsaDialog({ permitId, steps }: { permitId: string; steps: JsaStepItem[] }) {
   const [open, setOpen] = React.useState(false)
-  const [draft, setDraft] = React.useState<{ stepDescription: string; hazards: string; controls: string; residualRisk: string }[]>([])
+  const [draft, setDraft] = React.useState<{ id: string; stepDescription: string; hazards: string; controls: string; residualRisk: string }[]>([])
   const operation = useOperation()
 
   function openWith(existing: JsaStepItem[]) {
     setDraft(existing.length > 0
-      ? existing.map((item) => ({ stepDescription: item.stepDescription, hazards: item.hazards.join("\n"), controls: item.controls.join("\n"), residualRisk: item.residualRisk }))
-      : [{ stepDescription: "", hazards: "", controls: "", residualRisk: "medium" }])
+      ? existing.map((item) => ({ id: crypto.randomUUID(), stepDescription: item.stepDescription, hazards: item.hazards.join("\n"), controls: item.controls.join("\n"), residualRisk: item.residualRisk }))
+      : [{ id: crypto.randomUUID(), stepDescription: "", hazards: "", controls: "", residualRisk: "medium" }])
   }
 
   function submit(event: React.FormEvent<HTMLFormElement>) {
@@ -595,7 +595,7 @@ function JsaDialog({ permitId, steps }: { permitId: string; steps: JsaStepItem[]
             </DialogDescription>
           </DialogHeader>
           {draft.map((step, index) => (
-            <div key={index} className="space-y-2 rounded-lg border border-[var(--color-border)] p-3">
+            <div key={step.id} className="space-y-2 rounded-lg border border-[var(--color-border)] p-3">
               <div className="flex items-center justify-between">
                 <span className="text-sm font-medium">Paso {index + 1}</span>
                 {draft.length > 1 && (
@@ -629,7 +629,7 @@ function JsaDialog({ permitId, steps }: { permitId: string; steps: JsaStepItem[]
               </Field>
             </div>
           ))}
-          <Button type="button" variant="secondary" size="sm" onClick={() => setDraft((current) => [...current, { stepDescription: "", hazards: "", controls: "", residualRisk: "medium" }])}>
+          <Button type="button" variant="secondary" size="sm" onClick={() => setDraft((current) => [...current, { id: crypto.randomUUID(), stepDescription: "", hazards: "", controls: "", residualRisk: "medium" }])}>
             Agregar paso
           </Button>
           {operation.message && <p role="status" className="text-sm">{operation.message}</p>}

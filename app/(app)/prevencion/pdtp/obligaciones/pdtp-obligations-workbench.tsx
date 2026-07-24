@@ -249,9 +249,11 @@ function CreateObligationDialog({ open, onOpenChange, activities, worksites, onS
   const [error, setError] = React.useState<string | null>(null)
   const activity = activities.find((item) => item.id === activityId)
 
-  React.useEffect(() => {
+  const [prevOpen, setPrevOpen] = React.useState(open)
+  if (open !== prevOpen) {
+    setPrevOpen(open)
     if (open) { setRequestId(clientRequestId()); setError(null) }
-  }, [open])
+  }
 
   async function save() {
     setPending(true); setError(null)
@@ -285,7 +287,11 @@ function ReportObligationDialog({ row, onClose, onSaved }: { row: ObligationRow 
   const [evidence, setEvidence] = React.useState("")
   const [pending, setPending] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
-  React.useEffect(() => { if (row) { setQuantity(row.obligation.plannedQuantity); setEvidence(""); setError(null) } }, [row])
+  const [prevRow, setPrevRow] = React.useState(row)
+  if (row !== prevRow) {
+    setPrevRow(row)
+    if (row) { setQuantity(row.obligation.plannedQuantity); setEvidence(""); setError(null) }
+  }
   async function save() {
     if (!row) return
     setPending(true); setError(null)
@@ -305,7 +311,11 @@ function CancelObligationDialog({ row, onClose, onSaved }: { row: ObligationRow 
   const [reason, setReason] = React.useState("")
   const [pending, setPending] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
-  React.useEffect(() => { if (row) { setReason(""); setError(null) } }, [row])
+  const [prevRow, setPrevRow] = React.useState(row)
+  if (row !== prevRow) {
+    setPrevRow(row)
+    if (row) { setReason(""); setError(null) }
+  }
   async function save() {
     if (!row) return
     setPending(true); setError(null)

@@ -116,11 +116,9 @@ export function GuidedActivityForm({
     try { window.localStorage.setItem(storageKey, JSON.stringify(draft)) } catch { /* almacenamiento opcional */ }
   }, [draft, hydrated, storageKey])
 
-  React.useEffect(() => {
-    if (!draft.responsibleSlug && responsibleCatalog[0]) {
-      setDraft((current) => ({ ...current, responsibleSlug: responsibleCatalog[0]!.slug }))
-    }
-  }, [draft.responsibleSlug, responsibleCatalog])
+  if (!draft.responsibleSlug && responsibleCatalog[0]) {
+    setDraft((current) => current.responsibleSlug ? current : ({ ...current, responsibleSlug: responsibleCatalog[0]!.slug }))
+  }
 
   function patch<K extends keyof Draft>(key: K, value: Draft[K]) {
     setDraft((current) => ({ ...current, [key]: value }))

@@ -20,6 +20,7 @@ import {
   recordBiweeklyFollowupAction,
   recordIncidentStatementAction,
 } from "../actions"
+import { formatDateTime } from "@/lib/utils"
 
 interface IncidentDiffusion {
   id: string
@@ -246,7 +247,7 @@ export function RE20Panel({
         <div className="space-y-3 pt-1">
           {initialPrelimAt && (
             <div className="text-xs text-[var(--color-success-ink)] font-medium">
-              ✓ Informe preliminar emitido el {new Date(initialPrelimAt).toLocaleString("es-CL")} (Acredita Act. 68, 70)
+              ✓ Informe preliminar emitido el {formatDateTime(initialPrelimAt)} (Acredita Act. 68, 70)
             </div>
           )}
           <div className="space-y-1">
@@ -258,6 +259,7 @@ export function RE20Panel({
               placeholder="Describa brevemente los hechos observados, medidas de emergencia tomadas y estado de personas..."
               value={prelimText}
               onChange={(e) => setPrelimText(e.target.value)}
+              aria-label="Resumen del Informe Preliminar (RE-20-02)"
             />
           </div>
           {canInvestigate && (
@@ -310,6 +312,7 @@ export function RE20Panel({
               placeholder="Transcripción de la declaración o testimonio firmado..."
               value={stmtText}
               onChange={(e) => setStmtText(e.target.value)}
+              aria-label="Texto de la Declaración / Entrevista"
             />
           </div>
           {canInvestigate && (
@@ -347,6 +350,7 @@ export function RE20Panel({
               placeholder="Medidas inmediatas y permanentes para evitar recurrencia..."
               value={onePageActionPlan}
               onChange={(e) => setOnePageActionPlan(e.target.value)}
+              aria-label="Resumen del Plan de Acción y Lección Aprendida"
             />
           </div>
           {canInvestigate && (
@@ -381,6 +385,7 @@ export function RE20Panel({
                 placeholder="Estado del avance quincenal de los compromisos..."
                 value={followupNote}
                 onChange={(e) => setFollowupNote(e.target.value)}
+                aria-label="Estado de Implementación de Medidas"
               />
             </div>
           </div>
@@ -422,6 +427,7 @@ export function RE20Panel({
                   placeholder="Qué se comunicó, a qué turnos/personal, y cómo..."
                   value={diffSummary}
                   onChange={(e) => setDiffSummary(e.target.value)}
+                  aria-label="Resumen de lo comunicado"
                 />
               </div>
               <Button size="sm" onClick={handleMarkDiffusion} disabled={isPending || !diffSummary.trim()}>
@@ -441,7 +447,7 @@ export function RE20Panel({
                     <p className="text-xs text-[var(--color-text-muted)]">{d.summary}</p>
                     <Badge variant={d.status === "confirmed" ? "success" : "warning"}>
                       {d.status === "confirmed"
-                        ? `Confirmada${d.confirmedAt ? ` el ${new Date(d.confirmedAt).toLocaleString("es-CL")}` : ""}`
+                        ? `Confirmada${d.confirmedAt ? ` el ${formatDateTime(d.confirmedAt)}` : ""}`
                         : "Pendiente de confirmación"}
                     </Badge>
                   </div>

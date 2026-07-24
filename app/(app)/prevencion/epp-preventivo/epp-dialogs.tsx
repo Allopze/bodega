@@ -96,7 +96,7 @@ export function NewRequirementDialog({ eppTypes, families, worksites }: {
             </Field>
           )}
           {scopeType === "position" && (
-            <Field label="Cargo" hint="Debe coincidir con el cargo registrado del trabajador."><input name="scopeValue" required className="h-10 rounded-md border border-[var(--color-border)] bg-transparent px-3 text-sm" /></Field>
+            <Field label="Cargo" hint="Debe coincidir con el cargo registrado del trabajador."><input name="scopeValue" required aria-label="Cargo" className="h-10 rounded-md border border-[var(--color-border)] bg-transparent px-3 text-sm" /></Field>
           )}
           {eligibleFamilies.length > 0 && (
             <Field label="Familia de producto sugerida" hint="Opcional. Ayuda a Bodega a saber qué entregar.">

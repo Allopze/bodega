@@ -119,6 +119,7 @@ export function PdtpOverrideForm(props: Props) {
                 min="0"
                 step="0.25"
                 defaultValue={initial}
+                aria-label="Cantidad"
                 className="h-9 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 text-sm text-[var(--color-text)]"
               />
             </Field>
@@ -135,6 +136,7 @@ export function PdtpOverrideForm(props: Props) {
               maxLength={1000}
               rows={3}
               placeholder="Explica por qué esta faena necesita una meta diferente"
+              aria-label="Motivo de la excepción"
               className="w-full resize-y rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
             />
           </Field>
