@@ -124,21 +124,17 @@ export function EppImportReview({ batch }: { batch: { id: string; status: string
   const [confirmState, confirmAction] = useActionState(confirmEppImportBatchAction, INITIAL_STATE)
   const [cancelState, cancelAction] = useActionState(cancelEppImportBatchAction, INITIAL_STATE)
 
-  const [edits, setEdits] = useState<Record<string, EditableNormalized>>({})
-  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set())
-
-  useEffect(() => {
-    const next: Record<string, EditableNormalized> = {}
+  const [edits, setEdits] = useState<Record<string, EditableNormalized>>(() => {
+    const initial: Record<string, EditableNormalized> = {}
     for (const row of batch.rows) {
-      if (!edits[row.id]) {
-        try {
-          const normalized = JSON.parse(row.normalizedJson) as NormalizedEppRow
-          next[row.id] = toEditable(normalized)
-        } catch { /* skip */ }
-      }
+      try {
+        const normalized = JSON.parse(row.normalizedJson) as NormalizedEppRow
+        initial[row.id] = toEditable(normalized)
+      } catch { /* skip */ }
     }
-    if (Object.keys(next).length > 0) setEdits((prev) => ({ ...prev, ...next }))
-  }, [batch.rows, edits])
+    return initial
+  })
+  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set())
 
   // Compute counters using local decisions that override batch decisions
   const blocked = useMemo(() => {
@@ -341,6 +337,7 @@ function DecisionRow({
             type="text"
             value={edit.name}
             onChange={(e) => onUpdate("name", e.target.value)}
+            aria-label="Nombre del producto"
             className={`w-full rounded-(--radius) border border-(--color-border) px-2 py-1 text-xs ${fieldTone("name")}`}
           />
         </td>
@@ -379,6 +376,7 @@ function DecisionRow({
               value={edit.talla ?? ""}
               onChange={(e) => onUpdate("talla", e.target.value)}
               placeholder="Talla"
+              aria-label="Talla"
               className="w-14 rounded-(--radius) border border-(--color-border) px-1 py-1 text-xs"
             />
           </div>
@@ -389,6 +387,7 @@ function DecisionRow({
             value={edit.supplierName ?? ""}
             onChange={(e) => onUpdate("supplierName", e.target.value)}
             placeholder="—"
+            aria-label="Proveedor"
             className="w-full rounded-(--radius) border border-(--color-border) px-2 py-1 text-xs"
           />
         </td>
@@ -400,6 +399,7 @@ function DecisionRow({
             placeholder="$"
             min={0}
             step={1}
+            aria-label="Precio"
             className={`w-20 rounded-(--radius) border border-(--color-border) px-2 py-1 text-xs ${fieldTone("price")}`}
           />
         </td>
@@ -465,6 +465,7 @@ function DetailPanel({
   reviewReason: string | null
 }) {
   const [showRules, setShowRules] = useState(false)
+  const warnings = normalized.issues.filter((issue) => issue.severity === "warning")
 
   return (
     <div className="grid gap-4 md:grid-cols-3">
@@ -547,10 +548,10 @@ function DetailPanel({
             )}
           </div>
         )}
-        {normalized.issues.filter((i) => i.severity === "warning").length > 0 && (
+        {warnings.length > 0 && (
           <div className="mt-2 space-y-1">
-            {normalized.issues.filter((i) => i.severity === "warning").map((issue, i) => (
-              <p key={i} className="flex items-center gap-1 text-xs text-(--color-warning-ink)">
+            {warnings.map((issue) => (
+              <p key={issue.message} className="flex items-center gap-1 text-xs text-(--color-warning-ink)">
                 <WarningCircle size={12} /> {issue.message}
               </p>
             ))}
