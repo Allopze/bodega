@@ -56,11 +56,13 @@ export function ItemEditor({
   const [statusInfo, setStatusInfo] = React.useState<WorkerEppStatusResult | null>(null)
 
   React.useEffect(() => {
+    let active = true
     if (requestType === "epp" && item.workerId && item.productId) {
-      getWorkerEppStatusAction(item.workerId, item.productId).then(setStatusInfo)
-    } else {
-      setStatusInfo(null)
+      getWorkerEppStatusAction(item.workerId, item.productId).then((res) => {
+        if (active) setStatusInfo(res)
+      })
     }
+    return () => { active = false }
   }, [requestType, item.workerId, item.productId])
 
   return (

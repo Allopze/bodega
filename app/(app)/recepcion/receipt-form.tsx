@@ -58,11 +58,15 @@ export function ReceiptForm({
 
   const [state, action] = useActionState<ActionState, FormData>(registerReceiptAction, INITIAL_STATE)
 
-  React.useEffect(() => {
+  const [prevItems, setPrevItems] = React.useState(items)
+  const [prevStage, setPrevStage] = React.useState(stage)
+  if (items !== prevItems || stage !== prevStage) {
+    setPrevItems(items)
+    setPrevStage(stage)
     setQtys(Object.fromEntries(items.map((i) => [i.id, getRemaining(i, stage)])))
     setRejs({})
     setDmgs({})
-  }, [items, stage, getRemaining])
+  }
 
   React.useEffect(() => {
     if (state.ok === false && state.message && state !== INITIAL_STATE) {

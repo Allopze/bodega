@@ -315,6 +315,11 @@ function AddInvoiceForm({ purchaseOrderId, ocItems }: { purchaseOrderId: string;
         body: formData,
       })
 
+      if (!response.ok) {
+        toast.error("No se pudo extraer datos del archivo")
+        return
+      }
+
       const result = await response.json()
 
       if (!result.ok || !result.data) {

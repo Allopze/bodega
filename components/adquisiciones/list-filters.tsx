@@ -87,11 +87,15 @@ const ListFiltersInner = React.memo(function ListFiltersInner({
   )
 
   // Debounce the free-text query into the URL.
+  const onDebouncedQChange = React.useEffectEvent((value: string) => {
+    setParam("q", value.trim())
+  })
+
   React.useEffect(() => {
     if (q === currentQ) return
-    const id = setTimeout(() => setParam("q", q.trim()), DEBOUNCE_MS)
+    const id = setTimeout(() => onDebouncedQChange(q), DEBOUNCE_MS)
     return () => clearTimeout(id)
-  }, [q, currentQ, setParam])
+  }, [q, currentQ])
 
   const handleEstadoChange = React.useMemo(() => createSelectHandler(setParam, "estado"), [setParam])
   const handleUrgenciaChange = React.useMemo(() => createSelectHandler(setParam, "urgencia"), [setParam])

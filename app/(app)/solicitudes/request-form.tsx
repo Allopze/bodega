@@ -18,7 +18,7 @@ import {
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { ItemEditor } from "./item-editor"
 import { URGENCY_OPTS } from "./request-form.constants"
-import { formatDate } from "@/lib/utils"
+import { formatDate, formatDateTime } from "@/lib/utils"
 import { QUOTATION_TYPES } from "@/lib/request-types"
 import type { ItemRow, ProductOption, WorksiteOption, SupplierOption, WorkerOption, EditRequest } from "./request-form.types"
 import { useRequestForm } from "./use-request-form"
@@ -248,7 +248,7 @@ export function RequestForm({ worksites, products, suppliers, workers, editReque
                 <span aria-live="polite" className="text-[11px] text-[var(--color-text-subtle)]">
                   {(form.isSaving || form.isSubmitting || form.draftPending) ? "Guardando..."
                     : form.dirty ? "Cambios sin guardar"
-                    : form.lastSavedAt ? `Guardado ${form.lastSavedAt.toLocaleTimeString("es-CL", { hour: "2-digit", minute: "2-digit" })}`
+                    : form.lastSavedAt ? `Guardado ${formatDateTime(form.lastSavedAt).slice(11, 16)}`
                     : null}
                 </span>
                 <SubmitButton label="Guardar borrador" loadingLabel="Guardando..." variant="secondary" size="sm" />
