@@ -76,7 +76,6 @@ export function moduleLabel(value: unknown) {
   return REQUEST_TYPE_LABELS[String(value ?? "otro")] ?? String(value ?? "otro")
 }
 
-export function monthStart(date: Date) { return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-01` }
 export function dateOnly(date: Date) { return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}` }
 /** ISO date `days` before `date` — used as a wider default range than "mes en curso" so a
  * dashboard opened early in the month (or for a faena with sparse recent activity) doesn't

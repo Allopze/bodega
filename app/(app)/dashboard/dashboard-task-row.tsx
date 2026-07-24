@@ -90,7 +90,7 @@ export function TaskRow({ task, index }: { task: WorkTask; index: number }) {
   )
 }
 
-export function PriorityTag({ priority }: { priority: WorkPriority }) {
+function PriorityTag({ priority }: { priority: WorkPriority }) {
   if (priority === "critical") {
     return (
       <Badge variant="signal" size="sm" dot>

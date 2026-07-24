@@ -1,11 +1,10 @@
 "use client"
 
 import type { FilterOption } from "@/components/adquisiciones/list-filters"
-import { URGENCY_OPTIONS as CANONICAL_URGENCY_OPTIONS, URGENCY_LABELS, urgencyLabel } from "@/lib/urgency-labels"
+import { URGENCY_OPTIONS as CANONICAL_URGENCY_OPTIONS, URGENCY_LABELS } from "@/lib/urgency-labels"
 
 export const URGENCY_OPTIONS: FilterOption[] = CANONICAL_URGENCY_OPTIONS.map((o) => ({ value: o.value, label: o.label }))
 
-export { URGENCY_LABELS, urgencyLabel }
 
 export const REQUEST_TYPE_LABELS: Record<string, string> = {
   epp:  "EPP",

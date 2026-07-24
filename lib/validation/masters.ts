@@ -169,23 +169,6 @@ export const workerSchema = z.object({
   sizeHelmet:  z.string().max(10).optional().or(z.literal("")),
 })
 
-// ── Role ─────────────────────────────────────────────────────────────────────
-export const roleCreateSchema = z.object({
-  name:        z.string().min(2, "Nombre requerido").max(40).regex(/^[a-z0-9_-]+$/, "Solo minúsculas, números, guiones y guiones bajos"),
-  label:       z.string().min(2, "Etiqueta requerida").max(60),
-  description: z.string().max(200).optional().or(z.literal("")),
-  isGlobal:    z.coerce.boolean().default(false),
-  permissionIds: z.array(z.string()).default([]),
-})
-
-export const roleUpdateSchema = z.object({
-  id:          z.string().min(1),
-  name:        z.string().min(2, "Nombre requerido").max(40).regex(/^[a-z0-9_-]+$/, "Solo minúsculas, números, guiones y guiones bajos"),
-  label:       z.string().min(2, "Etiqueta requerida").max(60),
-  description: z.string().max(200).optional().or(z.literal("")),
-  isGlobal:    z.coerce.boolean().default(false),
-  permissionIds: z.array(z.string()).default([]),
-})
 
 // ── Shared ActionState returned by all Server Actions ────────────────────────
 export type ActionState = {

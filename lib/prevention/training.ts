@@ -66,9 +66,6 @@ export const COMPETENCY_SCOPE_LABELS: Record<string, string> = {
   task: "Tarea",
 }
 
-export function trainingKindLabel(kind: string) {
-  return TRAINING_KIND_LABELS[kind] ?? kind
-}
 
 export function competencyStatusLabel(status: string) {
   return COMPETENCY_STATUS_LABELS[status] ?? status

@@ -43,6 +43,3 @@ export const NAV_ICONS: Record<string, IconCmp> = {
   Wrench, Toolbox, HardHat, Lifebuoy, ChatCircleText, GasPump, Car, Upload, QrCode,
 }
 
-export function navIcon(name: string): IconCmp | undefined {
-  return NAV_ICONS[name]
-}

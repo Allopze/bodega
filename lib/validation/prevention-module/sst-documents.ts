@@ -101,11 +101,6 @@ export const sstDocumentVersionCreateSchema = z.object({
   supersedesId:  z.string().optional().or(z.literal("")),
 })
 
-export const sstDocumentVersionStatusChangeSchema = z.object({
-  versionId: z.string().min(1, "Versión requerida"),
-  toStatus:  z.enum(SST_DOCUMENT_VERSION_STATUSES),
-  comment:   z.string().max(2000).optional().or(z.literal("")),
-})
 
 export const sstDocumentArchiveSchema = z.object({
   documentId: z.string().min(1),

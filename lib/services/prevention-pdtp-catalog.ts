@@ -18,21 +18,6 @@ const OFFICIAL_SHEETS = [
   ["Capacitación y Campañas ", "capacitacion"],
 ] as const
 
-const MONTHS = [
-  "Enero",
-  "Febrero",
-  "Marzo",
-  "Abril",
-  "Mayo",
-  "Junio",
-  "Julio",
-  "Agosto",
-  "Septiembre",
-  "Octubre",
-  "Noviembre",
-  "Diciembre",
-] as const
-
 export type PdtpSheetCode = typeof OFFICIAL_SHEETS[number][1]
 
 export type PdtpWorkbook = ExcelJS.Workbook
@@ -471,4 +456,3 @@ function encodeColumn(colIndex: number): string {
   return result
 }
 
-export const pdtpMonthNames = MONTHS
