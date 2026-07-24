@@ -76,8 +76,10 @@ function scopeCondition(scope: WorksiteScope, column: AnyPgColumn) {
   return inArray(column, scope.ids)
 }
 
+const CHILE_DATE_FORMAT = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Santiago", year: "numeric", month: "2-digit", day: "2-digit" })
+
 function todayInChile() {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Santiago", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date())
+  return CHILE_DATE_FORMAT.format(new Date())
 }
 
 function addDays(date: string, days: number) {
@@ -703,7 +705,7 @@ export async function linkPdtpActivitySource(input: unknown, access: RiskLegalAc
     // se bloquea durante la revisión: alterar el contenido ahí invalidaría el
     // digest firmado que se re-verifica al activar (ver pdtp/lifecycle.ts).
     if (activity.program.status === "in_review") {
-      throw new Error("El programa está en revisión: no se pueden modificar sus vínculos de cobertura hasta que se apruebe o se reabra.")
+      throw new Error("El programa está en revisión y su contenido está bloqueado: no se pueden modificar sus vínculos de cobertura hasta que se apruebe o se reabra.")
     }
     let sourceVersionSnapshot = "Fuente manual"
     let sourceEntityId = data.sourceId
