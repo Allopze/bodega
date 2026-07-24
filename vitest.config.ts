@@ -15,7 +15,7 @@ export default defineConfig({
   test: {
     environment: "node",
     include:     ["**/*.test.ts", "**/*.test.tsx"],
-    exclude:     [...pgliteTestFiles, "node_modules", ".next", ".tmp"],
+    exclude:     [...pgliteTestFiles, "**/node_modules/**", ".next", ".tmp"],
     setupFiles:  ["./components/__tests__/setup.ts"],
     env: {
       DATABASE_URL: "postgres:///bodega_test",
