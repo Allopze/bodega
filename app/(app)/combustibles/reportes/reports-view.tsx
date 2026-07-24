@@ -144,8 +144,8 @@ function ReportCard({ title, icon, rows }: { title: string; icon: React.ReactNod
             {rows.length === 0 ? (
               <TableRow><TableCell colSpan={4} className="text-center py-4 text-muted-foreground text-sm">Sin datos</TableCell></TableRow>
             ) : (
-              rows.map((r, i) => (
-                <TableRow key={i}>
+              rows.map((r) => (
+                <TableRow key={r.group ?? "sin-grupo"}>
                   <TableCell className="font-medium">{r.group ?? "—"}</TableCell>
                   <TableCell className="text-right font-mono text-sm">{formatLiters(r.totalLiters)}</TableCell>
                   <TableCell className="text-right font-mono text-sm">{formatCLP(r.totalAmount)}</TableCell>

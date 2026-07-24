@@ -116,6 +116,11 @@ export function ImportFuelLoadsModal({ worksites }: { worksites: Worksite[] }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ loads, createMissing, faenaMapping: faenaMap }),
       })
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}))
+        toast.error(errData.message ?? "Error al importar")
+        return
+      }
       const data = await response.json()
       if (data.ok) {
         setResult({ imported: data.imported, errors: data.errors ?? [], created: data.created ?? [] })

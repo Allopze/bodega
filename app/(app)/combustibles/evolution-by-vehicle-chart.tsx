@@ -80,8 +80,8 @@ export function EvolutionByVehicleChart({ points, maxSeries = 8 }: { points: Veh
               return (
                 <div className="min-w-36 border border-[var(--color-border-strong)] bg-[var(--color-surface)] px-3 py-2 shadow-[var(--shadow-md)] text-xs">
                   <p className="mb-1.5 font-semibold text-[var(--color-text)]">{formatPeriod(label ?? "")}</p>
-                  {payload.filter((e) => e.value != null).map((entry, i) => (
-                    <div key={i} className="flex justify-between gap-4">
+                  {payload.filter((e) => e.value != null).map((entry) => (
+                    <div key={entry.dataKey ? String(entry.dataKey) : entry.name} className="flex justify-between gap-4">
                       <span className="text-[var(--color-text-muted)]">{entry.name}</span>
                       <span className="font-mono">{Number(entry.value).toLocaleString("es-CL")} L</span>
                     </div>

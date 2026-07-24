@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { toast } from "@/lib/toast"
+import { formatDateTime } from "@/lib/utils"
 import { updateAnomalyStatusAction, commentAnomalyAction } from "./actions"
 import type { AnomalyCaseRow, AnomalyCaseStatus } from "@/lib/combustibles/anomaly-cases"
 
@@ -70,8 +71,8 @@ export function AnomalyCaseCard({ anomalyCase, canReview, canResolve }: { anomal
             {anomalyCase.resolvedByName && <span>Resuelto por: {anomalyCase.resolvedByName}</span>}
           </div>
           <p className="mt-1 text-xs text-(--color-text-muted)">
-            Detectado: {new Date(anomalyCase.detectedAt).toLocaleString("es-CL")}
-            {anomalyCase.resolvedAt && <> · Resuelto: {new Date(anomalyCase.resolvedAt).toLocaleString("es-CL")}</>}
+            Detectado: {formatDateTime(anomalyCase.detectedAt)}
+            {anomalyCase.resolvedAt && <> · Resuelto: {formatDateTime(anomalyCase.resolvedAt)}</>}
           </p>
         </div>
       </div>
@@ -82,7 +83,7 @@ export function AnomalyCaseCard({ anomalyCase, canReview, canResolve }: { anomal
           {anomalyCase.comments.map((c) => (
             <div key={c.id} className="text-xs">
               <span className="font-medium text-(--color-text)">{c.userName ?? "Sistema"}</span>
-              <span className="mx-1 text-(--color-text-muted)">· {new Date(c.createdAt).toLocaleString("es-CL")}</span>
+              <span className="mx-1 text-(--color-text-muted)">· {formatDateTime(c.createdAt)}</span>
               <p className="mt-0.5 text-(--color-text-muted)">{c.body}</p>
             </div>
           ))}

@@ -109,7 +109,7 @@ export function AnomalyDistributionChart({ distribution }: { distribution: Distr
               <YAxis className="text-xs" tick={{ fill: "var(--color-text-muted)" }} width={30} />
               <Tooltip contentStyle={tooltipStyle()} formatter={(value) => [value, "Casos"]} />
               <Bar dataKey="value" radius={[3, 3, 0, 0]} name="Casos">
-                {statusData.map((entry, i) => <Cell key={i} fill={entry.fill} />)}
+                {statusData.map((entry) => <Cell key={entry.name} fill={entry.fill} />)}
               </Bar>
             </BarChart>
           </ResponsiveContainer>
@@ -133,7 +133,7 @@ export function AnomalyDistributionChart({ distribution }: { distribution: Distr
                 label={({ percent }) => (percent != null && percent >= 0.08 ? `${(percent * 100).toFixed(0)}%` : "")}
                 labelLine={false}
               >
-                {severityData.map((_, i) => <Cell key={i} fill={SEVERITY_COLORS[i % SEVERITY_COLORS.length]} stroke="var(--color-surface)" strokeWidth={2} />)}
+                {severityData.map((entry, i) => <Cell key={entry.name} fill={SEVERITY_COLORS[i % SEVERITY_COLORS.length]} stroke="var(--color-surface)" strokeWidth={2} />)}
               </Pie>
               <Tooltip contentStyle={tooltipStyle()} formatter={(value, name) => [value, String(name)]} />
               <Legend
@@ -158,7 +158,7 @@ export function AnomalyDistributionChart({ distribution }: { distribution: Distr
               <YAxis type="category" dataKey="name" width={100} className="text-xs" tick={{ fill: "var(--color-text-muted)", fontSize: 10 }} />
               <Tooltip contentStyle={tooltipStyle()} formatter={(value) => [value, "Casos"]} />
               <Bar dataKey="value" radius={[0, 3, 3, 0]} name="Casos">
-                {ruleData.map((entry, i) => <Cell key={i} fill={entry.fill ?? RULE_COLORS[i % RULE_COLORS.length]} />)}
+                {ruleData.map((entry, i) => <Cell key={entry.name} fill={entry.fill ?? RULE_COLORS[i % RULE_COLORS.length]} />)}
               </Bar>
             </BarChart>
           </ResponsiveContainer>

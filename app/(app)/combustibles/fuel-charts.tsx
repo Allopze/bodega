@@ -183,7 +183,7 @@ export function ProductPieChart({ data }: { data: ChartDataPoint[] }) {
             label={({ percent }) => (percent != null && percent >= 0.06 ? `${(percent * 100).toFixed(0)}%` : "")}
             labelLine={false}
           >
-            {chartData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} stroke="var(--color-surface)" strokeWidth={2} />)}
+            {chartData.map((entry, i) => <Cell key={entry.name} fill={COLORS[i % COLORS.length]} stroke="var(--color-surface)" strokeWidth={2} />)}
           </Pie>
           <Tooltip
             contentStyle={tooltipStyle()}

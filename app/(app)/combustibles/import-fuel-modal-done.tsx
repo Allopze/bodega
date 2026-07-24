@@ -22,8 +22,8 @@ export function DoneStep({ result, onImportAnother, onClose }: DoneStepProps) {
       {result.created.length > 0 && (
         <div className="text-sm text-left p-3 bg-[var(--color-surface-2)] rounded-md">
           <p className="font-medium mb-1">Entidades creadas automáticamente:</p>
-          {result.created.map((c, i) => (
-            <p key={i} className="text-muted-foreground">
+          {result.created.map((c) => (
+            <p key={`${c.type}:${c.name}`} className="text-muted-foreground">
               • {c.type}: {c.name}
             </p>
           ))}

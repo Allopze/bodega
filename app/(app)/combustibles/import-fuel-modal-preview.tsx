@@ -177,8 +177,8 @@ export function PreviewStep({
           </CardHeader>
           <CardContent>
             <div className="max-h-32 overflow-y-auto space-y-1 text-sm">
-              {errors.map((err, i) => (
-                <p key={i} className="text-[var(--color-danger)]">
+              {errors.map((err) => (
+                <p key={`${err.rowIndex}-${err.field}`} className="text-[var(--color-danger)]">
                   Fila {err.rowIndex} — {err.field}: {err.message}
                 </p>
               ))}
