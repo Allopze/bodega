@@ -349,9 +349,18 @@ export function WorksiteScopePanel({ programId, activities, visibleWorksites, me
   const [pending, setPending] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
 
-  React.useEffect(() => setSelected(memberWorksiteIds), [memberWorksiteIds])
+  // `memberWorksiteIds` es un array: trae identidad nueva en cada render del
+  // padre, así que un efecto con esa dep re-adoptaba el valor del servidor y
+  // borraba la selección sin guardar cada vez que otra fila hacía router.refresh().
+  // Se compara por contenido y se ajusta durante el render.
+  const savedMembers = JSON.stringify([...memberWorksiteIds].sort())
+  const [lastSavedMembers, setLastSavedMembers] = React.useState(savedMembers)
+  if (lastSavedMembers !== savedMembers) {
+    setLastSavedMembers(savedMembers)
+    setSelected(memberWorksiteIds)
+  }
 
-  const isDirty = JSON.stringify([...selected].sort()) !== JSON.stringify([...memberWorksiteIds].sort())
+  const isDirty = JSON.stringify([...selected].sort()) !== savedMembers
 
   function toggle(worksiteId: string) {
     setSelected((current) => current.includes(worksiteId) ? current.filter((id) => id !== worksiteId) : [...current, worksiteId])
@@ -823,7 +832,14 @@ function ActividadesTab({ programId, activities, responsibleCatalog }: { program
   const [selectedIds, setSelectedIds] = React.useState<string[]>([])
   const [batchOpen, setBatchOpen] = React.useState(false)
 
-  React.useEffect(() => { setItems(activities) }, [activities])
+  // Ver nota en WorksiteScopePanel: `activities` cambia de identidad en cada
+  // render, así que el efecto descartaba el reordenamiento optimista en curso.
+  const savedActivities = JSON.stringify(activities)
+  const [lastSavedActivities, setLastSavedActivities] = React.useState(savedActivities)
+  if (lastSavedActivities !== savedActivities) {
+    setLastSavedActivities(savedActivities)
+    setItems(activities)
+  }
 
   async function move(index: number, dir: -1 | 1) {
     const target = index + dir
@@ -1241,7 +1257,11 @@ function ObjectiveRow({ programId, group }: {
   const [value, setValue] = React.useState(group.objective)
   const isDirty = value.trim() !== "" && value !== group.objective
 
-  React.useEffect(() => setValue(group.objective), [group.objective])
+  const [lastSavedObjective, setLastSavedObjective] = React.useState(group.objective)
+  if (lastSavedObjective !== group.objective) {
+    setLastSavedObjective(group.objective)
+    setValue(group.objective)
+  }
 
   const { status, error, saveNow } = useDebouncedAutosave({
     watchKey: value,
@@ -1641,7 +1661,13 @@ function PlanificacionRow({ activity, initial, horizon }: { activity: PdtpActivi
   const currentFingerprint = React.useMemo(() => scheduleFingerprint(values), [values])
   const isDirty = currentFingerprint !== savedFingerprint
 
-  React.useEffect(() => setValues(initial), [initial])
+  // savedFingerprint ya resume el contenido de `initial`; comparar contra él
+  // evita re-adoptar (y perder lo tecleado) por el mero cambio de identidad.
+  const [lastSavedSchedule, setLastSavedSchedule] = React.useState(savedFingerprint)
+  if (lastSavedSchedule !== savedFingerprint) {
+    setLastSavedSchedule(savedFingerprint)
+    setValues(initial)
+  }
 
   function setCell(month: number, week: number, raw: string) {
     const n = raw === "" ? 0 : Number(raw)
