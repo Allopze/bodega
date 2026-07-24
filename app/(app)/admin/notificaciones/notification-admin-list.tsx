@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { TableRow, TableCell } from "@/components/ui/table"
 import { toast } from "@/lib/toast"
+import { formatDateTime } from "@/lib/utils"
 import { INITIAL_STATE } from "@/components/admin/form-state"
 import { cleanupReadNotificationsAction } from "./actions"
 import * as React from "react"
@@ -55,7 +56,7 @@ export function NotificationAdminList({ rows, oldestReadDate, retentionDays }: N
           <Calendar size={14} />
           <span>
             Notificación leída más antigua:{" "}
-            {oldestReadDate ? new Date(oldestReadDate).toLocaleString() : "—"}
+            {oldestReadDate ? formatDateTime(oldestReadDate) : "—"}
           </span>
           <span>· Retención configurada: {retentionDays} días</span>
         </div>

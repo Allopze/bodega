@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useCallback, useEffect, useRef } from "react"
+import { useState, useCallback, useEffect, useEffectEvent, useRef } from "react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import type { DriveHealth } from "@/lib/services/backups"
 
@@ -96,6 +96,7 @@ export default function SaHealthSection({ initialHealth, initialSummary }: SaHea
     setRefreshing(true)
     try {
       const res = await fetch("/api/backups/drive-health")
+      if (!res.ok) return
       const data = await res.json()
       if (data.driveHealth) {
         setHealth(data.driveHealth)
@@ -120,20 +121,20 @@ export default function SaHealthSection({ initialHealth, initialSummary }: SaHea
     if (countdownRef.current) { clearInterval(countdownRef.current); countdownRef.current = null }
   }, [])
 
+  const onRefreshTick = useEffectEvent(() => {
+    refresh()
+  })
+
   useEffect(() => {
     clearTimers()
 
     if (!isAuto) {
-      setSecondsRemaining(0)
       return
     }
 
-    // Reset countdown
-    setSecondsRemaining(Math.floor(intervalMs / 1000))
-
     // Auto-refresh interval
     intervalRef.current = setInterval(() => {
-      refresh()
+      onRefreshTick()
       setSecondsRemaining(Math.floor(intervalMs / 1000))
     }, intervalMs)
 
@@ -143,7 +144,7 @@ export default function SaHealthSection({ initialHealth, initialSummary }: SaHea
     }, 1000)
 
     return clearTimers
-  }, [intervalMs, isAuto, refresh, clearTimers])
+  }, [intervalMs, isAuto, clearTimers])
 
   // ── Interval change handler ──────────────────────────────────────────────
 
@@ -270,8 +271,8 @@ export default function SaHealthSection({ initialHealth, initialSummary }: SaHea
       {summary.details.length > 0 && (
         <div className="border-t border-[var(--color-border)] px-4 py-2.5">
           <ul className="space-y-1">
-            {summary.details.map((detail, i) => (
-              <li key={i} className="flex items-start gap-2 text-xs text-[var(--color-text-secondary)]">
+            {summary.details.map((detail) => (
+              <li key={detail} className="flex items-start gap-2 text-xs text-[var(--color-text-secondary)]">
                 <span className="mt-0.5 shrink-0 text-[var(--color-text-muted)]">·</span>
                 <span>{detail}</span>
               </li>

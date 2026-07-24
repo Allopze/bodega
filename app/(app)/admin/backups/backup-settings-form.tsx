@@ -134,7 +134,13 @@ export function BackupSettingsForm() {
                     min={field.min}
                     max={field.max}
                     value={value}
-                    onChange={(e) => handleChange(field.key, Number(e.target.value))}
+                    onChange={(e) => {
+                      const val = e.target.value
+                      if (val !== "" && !Number.isNaN(Number(val))) {
+                        handleChange(field.key, Number(val))
+                      }
+                    }}
+                    aria-label={field.label}
                     className="h-8 w-16 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 text-center text-sm font-mono tabular-nums text-[var(--color-text)] transition-colors focus:border-[var(--color-focus-ring)] focus:outline-none focus:ring-1 focus:ring-[var(--color-focus-ring)]"
                   />
                   <span className="text-xs text-[var(--color-text-muted)]">{field.unit}</span>

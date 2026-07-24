@@ -1,12 +1,16 @@
 import { SkeletonPage } from "@/components/ui/skeleton"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 
+const BREADCRUMBS = (
+  <Breadcrumbs items={[{ label: "Dashboard", href: "/dashboard" }, { label: "Administración", href: "/admin" }, { label: "Configuración" }]} />
+)
+
 export default function Loading() {
   return (
     <>
       <PageHeader
         title="Configuración del Sistema"
-        breadcrumb={<Breadcrumbs items={[{ label: "Dashboard", href: "/dashboard" }, { label: "Administración", href: "/admin" }, { label: "Configuración" }]} />}
+        breadcrumb={BREADCRUMBS}
       />
       <SkeletonPage rows={6} />
     </>

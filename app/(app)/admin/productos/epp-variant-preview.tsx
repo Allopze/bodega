@@ -40,7 +40,7 @@ export function VariantPreview({ variants, onRemove, onMarkDirty }: VariantPrevi
             </thead>
             <tbody>
               {variants.map((v, i) => (
-                <tr key={i} className="border-t border-[var(--color-border)] even:bg-[var(--color-surface-1)] hover:bg-[var(--color-surface-2)] transition-colors">
+                <tr key={v.sku || v.name} className="border-t border-[var(--color-border)] even:bg-[var(--color-surface-1)] hover:bg-[var(--color-surface-2)] transition-colors">
                   <td className="px-3 py-2 tabular-nums text-[var(--color-text-muted)]">{i + 1}</td>
                   <td className="px-3 py-2 font-medium text-[var(--color-text)]">{v.name}</td>
                   <td className="px-3 py-2 font-mono text-[11px] text-[var(--color-text-subtle)]">

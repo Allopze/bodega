@@ -2,6 +2,7 @@
 
 import { Clock, CheckCircle, XCircle, Cloud, HardDrives, WarningCircle } from "@phosphor-icons/react/dist/ssr"
 import { formatBytes } from "@/lib/format-bytes"
+import { formatDateTime } from "@/lib/utils"
 
 interface BackupRow {
   id: string
@@ -78,7 +79,7 @@ export function BackupsList({ backups }: Props) {
                   <td className="whitespace-nowrap px-4 py-2.5 font-medium text-[var(--color-text)]">
                     {b.date}
                     <span className="ml-1.5 text-xs text-[var(--color-text-muted)]">
-                      {new Date(b.startedAt).toLocaleTimeString("es-CL", { hour: "2-digit", minute: "2-digit" })}
+                      {formatDateTime(b.startedAt).slice(11, 16)}
                     </span>
                   </td>
                   <td className="whitespace-nowrap px-4 py-2.5">

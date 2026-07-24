@@ -24,6 +24,16 @@ function timeAgo(dateStr: string | null): string {
   return `Hace ${days}d`
 }
 
+const BACKUPS_BREADCRUMBS = (
+  <Breadcrumbs items={[
+    { label: "Dashboard", href: "/dashboard" },
+    { label: "Administración", href: "/admin" },
+    { label: "Respaldos" },
+  ]} />
+)
+
+const BACKUPS_ACTIONS = <BackupsActions />
+
 export default async function BackupsPage() {
   try { await requirePermission("admin:backups") }
   catch { redirect("/forbidden") }
@@ -102,14 +112,8 @@ export default async function BackupsPage() {
       <PageHeader
         title="Respaldos del sistema"
         description="Monitorea, ejecuta y verifica los respaldos automáticos de la plataforma."
-        breadcrumb={
-          <Breadcrumbs items={[
-            { label: "Dashboard", href: "/dashboard" },
-            { label: "Administración", href: "/admin" },
-            { label: "Respaldos" },
-          ]} />
-        }
-        actions={<BackupsActions />}
+        breadcrumb={BACKUPS_BREADCRUMBS}
+        actions={BACKUPS_ACTIONS}
       />
       <BackupsStatusCards cards={statusCards} />
 

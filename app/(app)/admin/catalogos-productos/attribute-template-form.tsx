@@ -120,6 +120,7 @@ export function AttributeTemplateForm({ open, onClose, editTemplate, categories 
                     name="optionsText"
                     rows={5}
                     defaultValue={optionsAsLines(editTemplate?.options)}
+                    aria-label="Opciones (una por línea)"
                     className="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm"
                   />
                 </Field>
