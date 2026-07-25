@@ -11,6 +11,7 @@ import { drizzle } from "drizzle-orm/postgres-js"
 import { migrate } from "drizzle-orm/postgres-js/migrator"
 import { sql } from "drizzle-orm"
 import * as schema from "../db/schema"
+import { SYSTEM_PERMISSIONS } from "@/lib/auth/system-rbac"
 import {
   assertSafeDestructiveDatabase,
   getDatabaseNameFromUrl,
@@ -120,6 +121,25 @@ const outputDir = process.env.CAPTURE_OUTPUT_DIR
     ? path.join(root, "audit", "screenshots", moduleFilter)
     : path.join(root, "audit", "screenshots", `${new Date().toISOString().slice(0, 10)}-playwright`)
 const authSecret = "route-screenshot-audit-secret"
+
+/** A-7: rutas que producen scroll horizontal. Se reporta al final y va al manifest. */
+interface HorizontalOverflow {
+  viewport: string
+  slug: string
+  scrollWidth: number
+  viewportWidth: number
+  culprits: string[]
+}
+const horizontalOverflows: HorizontalOverflow[] = []
+
+/**
+ * Errores de JavaScript en el navegador. Existe porque `/combustibles/bitacora`
+ * renderizaba su error boundary con status 200 y el servidor no registraba nada:
+ * el fallo era de cliente y el manifest lo reportaba como `ok: true`. Un 200 no
+ * significa que la página funcione.
+ */
+interface ClientError { viewport: string; slug: string; messages: string[] }
+const clientErrors: ClientError[] = []
 
 export type ModalTarget = {
   slug: string
@@ -626,12 +646,38 @@ async function main() {
       password: "chome2026",
     },
     seedCoverage,
+    horizontalOverflows,
+    clientErrors,
     routes,
     results,
   }
   fs.writeFileSync(path.join(outputDir, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`)
   console.log(`Screenshots written to ${outputDir}`)
   console.log(`Manifest written to ${path.join(outputDir, "manifest.json")}`)
+
+  if (clientErrors.length > 0) {
+    console.error(`\n✖ ${clientErrors.length} ruta(s) con errores de JavaScript en el navegador:`)
+    for (const e of clientErrors) {
+      console.error(`   ${e.viewport} ${e.slug}`)
+      for (const m of e.messages) console.error(`      ${m}`)
+    }
+    console.error("")
+    process.exitCode = 1
+  } else {
+    console.log("Sin errores de cliente en ninguna ruta ✓")
+  }
+
+  if (horizontalOverflows.length > 0) {
+    console.error(`\n✖ ${horizontalOverflows.length} ruta(s) con scroll horizontal (WCAG 1.4.10 Reflow):`)
+    for (const o of horizontalOverflows) {
+      console.error(`   ${o.viewport} ${o.slug}: ${o.scrollWidth}px > ${o.viewportWidth}px`)
+      for (const c of o.culprits) console.error(`      ${c}`)
+    }
+    console.error("")
+    process.exitCode = 1
+  } else {
+    console.log("Sin scroll horizontal en ninguna ruta ✓")
+  }
 }
 
 async function prepareDatabase(captureDbUrl: string) {
@@ -685,112 +731,14 @@ async function prepareDatabase(captureDbUrl: string) {
   const resetToken = "capture-reset-token"
   const resetTokenHash = crypto.createHash("sha256").update(resetToken).digest("hex")
 
-  const permissions: (typeof schema.permissions.$inferInsert)[] = [
-    { id: "p-req-create", name: "requests:create", module: "requests", description: "Crear solicitudes" },
-    { id: "p-req-own", name: "requests:view_own", module: "requests", description: "Ver propias" },
-    { id: "p-req-all", name: "requests:view_all", module: "requests", description: "Ver todas" },
-    { id: "p-req-submit", name: "requests:submit", module: "requests", description: "Enviar solicitudes" },
-    { id: "p-apr", name: "approvals:approve", module: "approvals", description: "Aprobar solicitudes" },
-    { id: "p-pur-view", name: "purchasing:view", module: "purchasing", description: "Ver órdenes de compra" },
-    { id: "p-pur-create", name: "purchasing:create_order", module: "purchasing", description: "Crear OC" },
-    { id: "p-pur-send", name: "purchasing:send_order", module: "purchasing", description: "Enviar OC" },
-    { id: "p-pur-sup", name: "purchasing:manage_suppliers", module: "purchasing", description: "Gestionar proveedores" },
-    { id: "p-rec-reg", name: "receiving:register", module: "receiving", description: "Registrar recepción" },
-    { id: "p-rec-office", name: "receiving:register_office", module: "receiving", description: "Registrar recepción en oficina" },
-    { id: "p-rec-faena", name: "receiving:register_faena", module: "receiving", description: "Registrar recepción en faena" },
-    { id: "p-rec-view", name: "receiving:view", module: "receiving", description: "Ver recepción" },
-    { id: "p-wh-stock", name: "warehouse:view_stock", module: "warehouse", description: "Ver stock" },
-    { id: "p-wh-mov", name: "warehouse:register_movement", module: "warehouse", description: "Registrar movimientos" },
-    { id: "p-wh-adj", name: "warehouse:adjust_stock", module: "warehouse", description: "Ajustar stock" },
-    { id: "p-rep-view", name: "reports:view", module: "reports", description: "Ver reportes" },
-    { id: "p-ana-view", name: "analytics:view", module: "analytics", description: "Ver analítica transversal" },
-    { id: "p-ana-export", name: "analytics:export", module: "analytics", description: "Exportar analítica transversal" },
-    { id: "p-flot-view", name: "flota:view", module: "flota", description: "Ver flota de vehículos" },
-    { id: "p-mant-view", name: "mantenciones:view", module: "mantenciones", description: "Ver mantenciones de vehículos" },
-    { id: "p-mant-create", name: "mantenciones:create", module: "mantenciones", description: "Registrar mantenciones de vehículos" },
-    { id: "p-mant-edit", name: "mantenciones:edit", module: "mantenciones", description: "Editar mantenciones" },
-    // ── Combustibles ───────────────────────────────────────────────────
-    { id: "p-fuel-view", name: "combustibles:view", module: "combustibles", description: "Ver registros de combustible" },
-    { id: "p-fuel-create", name: "combustibles:create", module: "combustibles", description: "Crear registros de combustible" },
-    { id: "p-fuel-delete", name: "combustibles:delete", module: "combustibles", description: "Eliminar registros de combustible" },
-    { id: "p-fuel-import", name: "combustibles:import", module: "combustibles", description: "Importar datos de combustible" },
-    { id: "p-fuel-export", name: "combustibles:export", module: "combustibles", description: "Exportar datos de combustible" },
-    { id: "p-fuel-veh", name: "combustibles:manage_vehicles", module: "combustibles", description: "Gestionar vehículos de combustible" },
-    { id: "p-fuel-sup", name: "combustibles:manage_suppliers", module: "combustibles", description: "Gestionar proveedores de combustible" },
-    // ── PPA ────────────────────────────────────────────────────────────
-    { id: "p-ppa-view", name: "ppa:view", module: "ppa", description: "Ver PPA Digital" },
-    { id: "p-ppa-review", name: "ppa:review", module: "ppa", description: "Revisar PPA" },
-    { id: "p-ppa-manage", name: "ppa:manage", module: "ppa", description: "Gestionar PPA" },
-    // ── Feedback / Soporte ────────────────────────────────────────────
-    { id: "p-fb-create", name: "feedback:create", module: "feedback", description: "Crear reportes de soporte" },
-    { id: "p-fb-own", name: "feedback:view_own", module: "feedback", description: "Ver reportes propios" },
-    { id: "p-fb-all", name: "feedback:view_all", module: "feedback", description: "Ver todos los reportes" },
-    { id: "p-fb-manage", name: "feedback:manage", module: "feedback", description: "Gestionar reportes de soporte" },
-    { id: "p-adm-usr", name: "admin:users", module: "admin", description: "Gestionar usuarios" },
-    { id: "p-adm-ws", name: "admin:worksites", module: "admin", description: "Gestionar faenas" },
-    { id: "p-adm-wrk", name: "admin:workers", module: "admin", description: "Gestionar trabajadores" },
-    { id: "p-adm-prod", name: "admin:products", module: "admin", description: "Gestionar catálogo" },
-    { id: "p-adm-pcat", name: "admin:product_catalogs", module: "admin", description: "Gestionar catálogos auxiliares de productos" },
-    { id: "p-adm-sup", name: "admin:suppliers", module: "admin", description: "Gestionar proveedores" },
-    { id: "p-adm-cfg", name: "admin:config", module: "admin", description: "Configurar sistema" },
-    { id: "p-adm-audit", name: "admin:audit_log", module: "admin", description: "Ver auditoría" },
-    { id: "p-adm-smtp", name: "admin:smtp", module: "admin", description: "Configurar SMTP" },
-    { id: "p-adm-tpl", name: "admin:email_templates", module: "admin", description: "Gestionar plantillas de correo" },
-    { id: "p-adm-roles", name: "admin:roles", module: "admin", description: "Gestionar roles y permisos" },
-    { id: "p-adm-security", name: "admin:security", module: "admin", description: "Configurar seguridad" },
-    { id: "p-adm-folios", name: "admin:folios", module: "admin", description: "Gestionar folios" },
-    { id: "p-adm-notif", name: "admin:notifications", module: "admin", description: "Gestionar notificaciones" },
-    { id: "p-adm-cost", name: "admin:cost_centers", module: "admin", description: "Gestionar centros de costo" },
-    { id: "p-adm-doctax", name: "admin:document_taxonomy", module: "admin", description: "Gestionar taxonomía documental" },
-    { id: "p-adm-fleet", name: "admin:fleet_catalog", module: "admin", description: "Gestionar catálogos de flota" },
-    { id: "p-adm-ops", name: "admin:ops_settings", module: "admin", description: "Gestionar parámetros operativos" },
-    { id: "p-adm-pdtp", name: "admin:pdtp_catalog", module: "admin", description: "Gestionar catálogos PDTP" },
-    { id: "p-adm-epp-up", name: "admin:epp_import_upload", module: "admin", description: "Cargar lotes EPP" },
-    { id: "p-adm-epp-rev", name: "admin:epp_import_review", module: "admin", description: "Revisar lotes EPP" },
-    { id: "p-adm-epp-conf", name: "admin:epp_import_confirm", module: "admin", description: "Confirmar importación EPP" },
-    { id: "p-adm-mngadm", name: "admin:manage_admins", module: "admin", description: "Administrar otros administradores" },
-    // ── Prevención / PDTP / Documentación ──────────────────────────────
-    { id: "p-prev-pdtp-view", name: "prevention:pdtp:view", module: "prevention", description: "Ver PDTP" },
-    { id: "p-prev-pdtp-exec", name: "prevention:pdtp:execute", module: "prevention", description: "Registrar ejecuciones y evidencias PDTP" },
-    { id: "p-prev-pdtp-program-mng", name: "prevention:pdtp:program:manage", module: "prevention", description: "Gestionar programa y cronograma PDTP" },
-    { id: "p-prev-pdtp-apr", name: "prevention:pdtp:approve", module: "prevention", description: "Aprobar PDTP" },
-    { id: "p-prev-pdtp-sgn", name: "prevention:pdtp:sign_legal", module: "prevention", description: "Firma legal PDTP" },
-    { id: "p-prev-docs-view", name: "prevention:docs:view", module: "prevention", description: "Ver documentación SST" },
-    { id: "p-prev-docs-mng", name: "prevention:docs:manage", module: "prevention", description: "Gestionar documentación SST" },
-    { id: "p-prev-docs-arch", name: "prevention:docs:archive", module: "prevention", description: "Archivar documentación SST" },
-    { id: "p-prev-docs-publish", name: "prevention:docs:publish", module: "prevention", description: "Publicar y regularizar documentación SST" },
-    { id: "p-prev-capa-view", name: "prevention:capa:view", module: "prevention", description: "Ver acciones CAPA" },
-    { id: "p-prev-inc-view", name: "prevention:incidents:view", module: "prevention", description: "Ver incidentes" },
-    { id: "p-prev-inc-report", name: "prevention:incidents:report", module: "prevention", description: "Reportar incidentes" },
-    { id: "p-prev-inc-triage", name: "prevention:incidents:triage", module: "prevention", description: "Conciliar e importar incidentes" },
-    { id: "p-prev-risk-view", name: "prevention:risk:view", module: "prevention", description: "Ver MIPER" },
-    { id: "p-prev-legal-view", name: "prevention:legal:view", module: "prevention", description: "Ver requisitos legales" },
-    { id: "p-prev-privacy-audit", name: "prevention:privacy:audit", module: "prevention", description: "Auditar privacidad" },
-    { id: "p-prev-privacy-manage", name: "prevention:privacy:manage_requests", module: "prevention", description: "Gestionar solicitudes de privacidad" },
-    { id: "p-prev-ind-view", name: "prevention:indicadores:view", module: "prevention", description: "Ver indicadores de accidentabilidad" },
-    { id: "p-prev-ind-manage", name: "prevention:indicadores:manage", module: "prevention", description: "Registrar indicadores de accidentabilidad" },
-    { id: "p-prev-ind-close", name: "prevention:indicadores:close", module: "prevention", description: "Cerrar períodos de indicadores" },
-    { id: "p-pur-del", name: "purchasing:delete_order", module: "purchasing", description: "Eliminar OC" },
-    { id: "p-req-del", name: "requests:delete", module: "requests", description: "Eliminar solicitudes" },
-    { id: "p-sst-acomp", name: "sst:evaluate_acompanamiento", module: "sst", description: "Evaluar acompañamiento" },
-    { id: "p-del-view", name: "deliveries:view", module: "deliveries", description: "Ver entregas" },
-    { id: "p-trz-view", name: "traceability:view", module: "traceability", description: "Ver trazabilidad" },
-    { id: "p-rep-create", name: "repuestos:create", module: "repuestos", description: "Crear solicitudes de repuestos" },
-    { id: "p-rep-own", name: "repuestos:view_own", module: "repuestos", description: "Ver repuestos propios" },
-    { id: "p-rep-all", name: "repuestos:view_all", module: "repuestos", description: "Ver todos los repuestos" },
-    { id: "p-rep-submit", name: "repuestos:submit", module: "repuestos", description: "Enviar repuestos" },
-    { id: "p-rep-approve", name: "repuestos:approve", module: "repuestos", description: "Aprobar cotizaciones de repuestos" },
-    { id: "p-srv-create", name: "servicios:create", module: "servicios", description: "Crear solicitudes de servicios" },
-    { id: "p-srv-own", name: "servicios:view_own", module: "servicios", description: "Ver servicios propios" },
-    { id: "p-srv-all", name: "servicios:view_all", module: "servicios", description: "Ver todos los servicios" },
-    { id: "p-srv-submit", name: "servicios:submit", module: "servicios", description: "Enviar servicios" },
-    { id: "p-srv-approve", name: "servicios:approve", module: "servicios", description: "Aprobar cotizaciones de servicios" },
-    { id: "p-sst-view", name: "sst:view", module: "sst", description: "Ver evaluaciones SST" },
-    { id: "p-sst-create", name: "sst:create", module: "sst", description: "Crear evaluaciones SST" },
-    { id: "p-sst-close", name: "sst:close", module: "sst", description: "Cerrar evaluaciones SST" },
-    { id: "p-sst-manage", name: "sst:manage", module: "sst", description: "Gestionar plan de acción SST" },
-  ]
-
+  // Antes había aquí un catálogo de 99 permisos escrito a mano, y **derivó** de la
+  // fuente real: le faltaban todos los `prevention:epp*`, así que el entorno de
+  // capturas no representaba el RBAC de producción. Eso hizo que
+  // /trazabilidad/trabajador pareciera roto para todo usuario cuando en realidad
+  // sólo lo está para roles sin ese permiso. `SYSTEM_PERMISSIONS` se deriva de
+  // los manifests de módulo (lib/auth/system-rbac.ts), igual que el bootstrap
+  // real, así que ya no puede desincronizarse.
+  const permissions = SYSTEM_PERMISSIONS
   // isGlobal debe alinearse con GLOBAL_ROLES en lib/auth/scope.ts para que
   // requirePermission + isGlobalRole no redirijan al admin a /forbidden
   // durante la captura (bug histórico: sin isGlobal el admin veía páginas vacías).
@@ -809,8 +757,20 @@ async function prepareDatabase(captureDbUrl: string) {
     "rol-admin": permissions.map((permission) => permission.name),
     "rol-jefa": ["requests:view_all", "approvals:approve", "purchasing:view", "purchasing:create_order", "purchasing:send_order", "receiving:view", "reports:view", "analytics:view", "analytics:export", "flota:view", "mantenciones:view", "mantenciones:create", "repuestos:view_all", "repuestos:approve", "servicios:view_all", "servicios:approve"],
     "rol-prevencion": ["requests:create", "requests:view_own", "requests:submit", "repuestos:create", "repuestos:view_own", "repuestos:submit", "servicios:create", "servicios:view_own", "servicios:submit", "sst:view", "sst:create", "sst:close", "sst:manage"],
-    "rol-bodega": ["receiving:view", "receiving:register", "receiving:register_office", "receiving:register_faena", "warehouse:view_stock", "warehouse:register_movement", "warehouse:adjust_stock", "reports:view"],
+    // `receiving:register` no existe en el catálogo real (sólo register_office y
+    // register_faena): el seed lo concedía y la captura mostraba a bodega con un
+    // permiso que producción no tiene. Lo detectó la guardia de paridad.
+    "rol-bodega": ["receiving:view", "receiving:register_office", "receiving:register_faena", "warehouse:view_stock", "warehouse:register_movement", "warehouse:adjust_stock", "reports:view"],
     "rol-secretaria": ["purchasing:view", "purchasing:create_order", "purchasing:send_order", "purchasing:manage_suppliers", "reports:view", "analytics:view", "analytics:export"],
+  }
+
+  const unknownPermissionNames = Object.entries(rolePermissionNames)
+    .flatMap(([roleId, names]) => names.filter((n) => !permissionIdByName[n]).map((n) => `${roleId} → ${n}`))
+  if (unknownPermissionNames.length > 0) {
+    throw new Error(
+      `El seed de capturas concede permisos que no existen en SYSTEM_PERMISSIONS:\n  ${unknownPermissionNames.join("\n  ")}\n` +
+      "Corrige el nombre o declara el permiso en el manifest del módulo.",
+    )
   }
 
   await db.insert(schema.rolePermissions).values(Object.entries(rolePermissionNames).flatMap(([roleId, names]) =>
@@ -2169,6 +2129,17 @@ async function captureRoute(context: BrowserContext, viewport: string, route: Ro
   const maxRetries = 2
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     const page = await context.newPage()
+    const pageErrors: string[] = []
+    page.on("pageerror", (err) => pageErrors.push(`[pageerror] ${err.message}`))
+    page.on("console", (msg) => {
+      if (msg.type() !== "error") return
+      const text = msg.text()
+      // Ruido conocido que no indica un fallo de la página: la CSP del entorno
+      // de capturas bloquea la telemetría de Sentry, que es lo esperado.
+      if (/favicon|Failed to load resource|net::ERR_/i.test(text)) return
+      if (/sentry\.io|Content Security Policy/i.test(text)) return
+      pageErrors.push(`[console] ${text}`)
+    })
 
     try {
       const response = await page.goto(requestedUrl, { waitUntil: "domcontentloaded", timeout: 45_000 })
@@ -2177,6 +2148,60 @@ async function captureRoute(context: BrowserContext, viewport: string, route: Ro
       const status = response?.status() ?? null
       const finalUrl = page.url()
       const mainOk = isExpectedStatus(status, route, finalUrl)
+
+      // A-7: detección de scroll horizontal (WCAG 1.4.10 Reflow). La auditoría
+      // 2026-07-24 encontró /prevencion/evaluaciones a 676px en un viewport de
+      // 390px comparando anchos de PNG a mano; esto lo automatiza y además
+      // nombra al elemento culpable, que fue justo lo que no se pudo identificar.
+      // Las rutas de (print) son documentos A4: son anchas por diseño.
+      const skipOverflowCheck = route.slug.endsWith("-print")
+      const overflow = skipOverflowCheck ? null : await page.evaluate(() => {
+        const vw = document.documentElement.clientWidth
+        if (document.documentElement.scrollWidth <= vw + 1) return null
+        const CONTAINED = ["clip", "hidden", "auto", "scroll"]
+        /**
+         * Un elemento sólo arrastra el ancho del documento si NADA entre él y el
+         * <body> lo recorta. La sutileza que costó encontrar la causa de A-7: un
+         * descendiente `absolute` sólo lo recorta un ancestro que además sea su
+         * BLOQUE CONTENEDOR (`position` distinto de `static`). Si no lo hay, su
+         * bloque contenedor es el <html> y escapa a todos los `overflow` del
+         * camino — así un `.sr-only` de 1px dentro de una tabla ancha llevó el
+         * documento a 676px en un viewport de 390px.
+         */
+        const culprits = [...document.querySelectorAll<HTMLElement>("body *")]
+          .filter((el) => {
+            const r = el.getBoundingClientRect()
+            if (r.width === 0 || r.right <= vw + 1) return false
+            const style = getComputedStyle(el)
+            if (CONTAINED.includes(style.overflowX)) return false
+            const escapesStaticClips = style.position === "absolute" || style.position === "fixed"
+            for (let a = el.parentElement; a && a !== document.body; a = a.parentElement) {
+              const as = getComputedStyle(a)
+              // Para un absolute/fixed, un ancestro `static` no recorta nada.
+              if (escapesStaticClips && as.position === "static") continue
+              if (CONTAINED.includes(as.overflowX)) return false
+            }
+            return true
+          })
+          .slice(0, 5)
+          .map((el) => `${el.tagName.toLowerCase()}${el.className ? "." + String(el.className).trim().split(/\s+/).slice(0, 3).join(".") : ""} (right=${Math.round(el.getBoundingClientRect().right)}px)`)
+        return { scrollWidth: document.documentElement.scrollWidth, viewportWidth: vw, culprits }
+      }).catch(() => null)
+
+      if (overflow) {
+        console.warn(
+          `  ⚠ scroll horizontal en ${viewport} ${route.slug}: ${overflow.scrollWidth}px > ${overflow.viewportWidth}px` +
+          (overflow.culprits.length ? `\n      culpables: ${overflow.culprits.join(" · ")}` : ""),
+        )
+        horizontalOverflows.push({ viewport, slug: route.slug, ...overflow })
+      }
+
+      if (pageErrors.length > 0) {
+        const messages = [...new Set(pageErrors)].slice(0, 5)
+        console.warn(`  ⚠ error de cliente en ${viewport} ${route.slug}:`)
+        for (const m of messages) console.warn(`      ${m}`)
+        clientErrors.push({ viewport, slug: route.slug, messages })
+      }
 
       results.push({
         viewport,
@@ -2219,7 +2244,10 @@ async function captureRoute(context: BrowserContext, viewport: string, route: Ro
               await page.waitForTimeout(300)
             }
           } catch (modalErr) {
-            // Non-fatal warning
+            // No es fatal —la captura principal ya salió—, pero tragárselo en
+            // silencio hacía que un disparador de modal roto pareciera éxito.
+            const reason = modalErr instanceof Error ? modalErr.message : String(modalErr)
+            console.warn(`  ⚠ modal "${modal.slug}" en ${viewport} ${route.slug}: ${reason}`)
           }
         }
       }
