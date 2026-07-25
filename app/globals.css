@@ -83,7 +83,8 @@
      y --color-border (1.27:1) no alcanza. Estos dos tokens son sólo para el
      contorno de controles (input, textarea, select, date-picker, botón secundario,
      track del switch). Las hairlines decorativas —divisores de tabla, bordes de
-     card, separadores— siguen con --color-border: están exentas por decorativas. */
+     card, separadores— siguen con --color-border: están exentas por decorativas.
+
      El fondo vinculante es --color-surface-2 (= --color-chrome), no el blanco:
      un control sobre panel gris exige un borde más oscuro que sobre lienzo blanco. */
   --color-border-control:       oklch(0.640 0.005 90);  /* #8d8c89 · 3.36:1 blanco / 3.12:1 surface-2 */
@@ -261,6 +262,41 @@ body {
     transition: background-color var(--duration-fast) var(--ease-out);
   }
 }
+
+/* ─── E-4 · Primera columna congelada ───────────────────────────────────────
+   En tablas de 8+ columnas el scroll horizontal deja al usuario mirando cifras
+   sin saber de qué fila son. Fijar la primera celda mantiene el identificador
+   a la vista (`enterprise-software.md`). Se activa por atributo para no imponerlo
+   a todas las tablas: en una de 4 columnas no hay scroll que compensar. */
+[data-sticky-col="true"] :is(thead, tbody) > tr > :first-child {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background-color: var(--color-surface);
+}
+/* El sticky rompe el `border-collapse`, así que el divisor derecho se dibuja
+   con un box-shadow, que sí sobrevive al posicionamiento. */
+[data-sticky-col="true"] :is(thead, tbody) > tr > :first-child::after {
+  content: "";
+  position: absolute;
+  inset: 0 -1px 0 auto;
+  width: 1px;
+  background-color: var(--color-border);
+}
+/* La cabecera necesita ganar al cuerpo en ambos ejes a la vez. */
+[data-sticky-col="true"] thead > tr > :first-child { z-index: 11; }
+
+/* ─── E-1 · Densidad de tabla ───────────────────────────────────────────────
+   El padding lo aplica cada `td`/`th`, y las filas las renderiza el consumidor
+   de `DataTable`, así que no se puede parametrizar por props sin tocar las 37
+   llamadas. Con un atributo en el contenedor basta una regla para todas.
+   `visual-design/density.md`: el modo compacto es para operadores expertos en
+   monitores grandes, no un default. */
+[data-density="compact"] :is(td, th) {
+  padding-top: 0.25rem;
+  padding-bottom: 0.25rem;
+}
+[data-density="compact"] td { font-size: var(--text-xs); }
 
 /* ─── Movimiento reducido (WCAG 2.3.3) ─────────────────────────────────────
    Cubre de una vez las animaciones que no pasan por utilidades de Tailwind:

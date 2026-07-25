@@ -48,14 +48,20 @@ const buttonVariants = cva(
           "p-0 h-auto",
         ],
       },
+      // A-2: la escala responde al medio de entrada, no al tamaño visual.
+      // Bajo `sm` (móvil, dedo) todo control mide 44px de alto — el mínimo de
+      // Apple HIG / Material y de responsive-design/touch-targets.md. Desde
+      // `sm:` en adelante (puntero) vuelve a la altura compacta de escritorio,
+      // que es la que da la densidad que un backoffice necesita.
+      // Antes: `sm` = 28px también en móvil, con 541 usos en la aplicación.
       size: {
-        sm:        "h-7 px-3 text-xs",
-        default:   "h-8 px-4",
-        lg:        "h-9 px-5 text-[13px]",
-        icon:      "h-8 w-8 p-0",
-        "icon-sm": "h-7 w-7 p-0",
-        // Meets the 44x44px minimum touch target on mobile (DESIGN.md) while
-        // keeping the compact visual size on desktop pointer input.
+        sm:        "h-11 px-3 text-xs sm:h-7",
+        default:   "h-11 px-4 sm:h-8",
+        lg:        "h-11 px-5 text-[13px] sm:h-9",
+        icon:      "h-11 w-11 p-0 sm:h-8 sm:w-8",
+        "icon-sm": "h-11 w-11 p-0 sm:h-7 sm:w-7",
+        // Ya cumplían 44px en móvil antes de A-2; se mantienen como alias
+        // para no tocar los 12 sitios que los usan explícitamente.
         "icon-mobile":    "h-11 w-11 sm:h-8 sm:w-8 p-0",
         "icon-mobile-sm": "h-11 w-11 sm:h-7 sm:w-7 p-0",
       },
