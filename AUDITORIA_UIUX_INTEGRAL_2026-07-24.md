@@ -12,6 +12,191 @@
 
 ## 0. Estado de remediación
 
+### Pasada 9 — errores preexistentes (2026-07-25)
+
+**Puntuación global: 9.5 → 9.6.** Verificación: `next build` limpio · `tsc` limpio · **ESLint 0 problemas en todo el repo** · **3005/3005 tests** · 159/159 rutas capturadas.
+
+#### El hallazgo de fondo: la herramienta de auditoría ocultaba una clase entera de fallos
+
+El manifest marcaba `ok: true` para cualquier ruta que devolviera 200 — **aunque renderizara su error boundary**. Añadí recolección de `pageerror` y `console.error` del navegador, y apareció lo que llevaba oculto: **10 rutas con errores de JavaScript**. Un 200 no significa que la página funcione.
+
+| Error preexistente | Causa real | Alcance |
+|---|---|---|
+| `/combustibles/bitacora` "Error al cargar la bitácora" | **`<SelectItem value="">`**, que Radix prohíbe (la cadena vacía está reservada para limpiar la selección). Lanzaba en cliente y tumbaba la página | El componente `FilterSelect` lo tenía → **7 páginas de combustibles**. Y había **4 más** en el repo: `worker-form`, `cost-center-form`, `sheet-form`, `tae-import-report-form` |
+| `/admin/notificaciones`, `/admin/seguridad` React #418 | **`toLocaleString()` sin locale**: usa el del runtime, el del servidor no coincide con el del navegador → desajuste de hidratación. **`AGENTS.md` ya lo prohibía en prosa** y `lib/utils.ts` documenta que el equipo ya diagnosticó esta clase | 5 sitios (`+folios`) |
+| `/trazabilidad/trabajador/[id]` "Algo salió mal" | La página se abre con `traceability:view` pero llama a `listEppCoverageGaps`, que exige `prevention:epp:view` y **lanza** si falta. **El dashboard ya guardaba esa misma llamada; aquí faltaba** | Rompía la página para todo rol con trazabilidad y sin prevención-EPP |
+
+**Los tres cerrados**, más dos reglas para que no vuelvan:
+- **`local/no-bare-to-locale`** en ESLint: prohíbe `toLocale*String()` sin locale. Verificada con control positivo. Lo que `AGENTS.md` pedía en prosa ahora se cumple solo.
+- El `catch` que se tragaba en silencio los fallos de captura de modales ahora **avisa** — otra pérdida de señal en la misma herramienta.
+
+#### Y una tercera deriva del entorno de auditoría, del mismo tipo que C-1
+
+El seed de capturas tenía un **catálogo de 99 permisos escrito a mano** que había derivado de `SYSTEM_PERMISSIONS` (que sí se deriva de los manifests de módulo). Consecuencias medidas:
+
+- Le **faltaban todos los `prevention:epp*`** → `/trazabilidad/trabajador` parecía roto para todo usuario cuando en producción sólo lo está para roles sin ese permiso.
+- **Concedía `receiving:register`, un permiso que no existe** → bodega aparecía en las capturas con un permiso que producción no le da.
+
+Ahora el seed **deriva de `SYSTEM_PERMISSIONS`** y una guardia de paridad lanza con nombre y rol si se concede un permiso inexistente. La guardia encontró el permiso fantasma en su primera ejecución.
+
+**Patrón, por tercera vez:** C-1, el build cacheado y esto. Los tres fueron **el entorno de auditoría mintiendo**, no el producto. La herramienta que valida el producto necesitaba validarse a sí misma.
+
+#### Dos errores detectados y NO diagnosticados
+
+`/ppa` y `/entregas/[id]/print` lanzan React **#418** (`args[]=HTML`). Lo que sé y lo que no:
+
+- **Reproducible sólo en build de producción**; en `next dev` no ocurre.
+- Ambas son rutas **dinámicas** (`ƒ`), así que no es prerenderizado estático.
+- **No es el layout compartido:** `/ppa/result/[token]` y `/tae/access/…` están en el mismo grupo `(public)` con el mismo `<Toaster>` y funcionan; `compras-print` y `sst-print` están en `(print)` y funcionan.
+
+No sigo especulando: con A-7 adiviné tres veces y la respuesta llegó al instrumentar. Quedan **detectados de forma reproducible y con señal automática**, que es de donde parte quien los tome.
+
+#### Otros preexistentes cerrados
+
+- `allReturned` en `rollup.ts`: variable muerta (`anyReturned` ya cubría el caso).
+- Un archivo de 0 bytes **trackeado en git** cuyo nombre era un fragmento de Python roto (`.join(t[name])}…`). Eliminado; queda como borrado sin stagear para tu commit.
+- **No es un error:** los 168 tests "saltados" están condicionados a disponibilidad de BD (`databaseUrl && canReset`), que es gating intencional, no podredumbre.
+
+### Pasada 8 — Fase 5, roadmap de productividad (2026-07-25)
+
+**Puntuación global: 9.3 → 9.5.** Verificación: `next build` limpio · `tsc` limpio · **3005/3005 tests** · capturas de validación sin scroll horizontal.
+
+| Propuesta | Estado | Implementación |
+|---|---|---|
+| **E-1** Selector de densidad | ✅ | Cómodo/Compacto en `DataTable`, con la preferencia **compartida entre tablas** vía `localStorage` + `useSyncExternalStore` (quien opera en compacto lo quiere en todas). El padding se aplica por atributo `data-density` en CSS, porque las filas las renderiza el consumidor y parametrizarlo por props exigiría tocar las 37 llamadas. Se ofrece sólo desde 8 filas: por debajo sería adorno |
+| **E-3** Acciones en lote | ✅ | Casilla por ítem + maestra por grupo + barra `sticky` con "Aprobar N". **`bulkApproveRequestAction` ya existía y valida el alcance ítem por ítem** (`canAccessWorksite` + rol EPP, descartando los no permitidos), así que seleccionar cruzando solicitudes es seguro — sólo faltaba la UI |
+| **E-4** Columna congelada | ✅ | `stickyFirstColumn` opt-in, activo en las 7 tablas de ≥8 columnas. El divisor se dibuja con `::after` porque `position: sticky` rompe el `border-collapse` |
+| **E-5** `Enter` entre campos | ✅ | Hook `useEnterAdvancesFields`, aplicado en entregas. Respeta `textarea`, `select` y combobox, y conserva el envío nativo en el último campo. **Con test propio (4 casos)** |
+| **M-13** atajo `n` | ✅ | Prop `newShortcutHref` en `PageHeader`, cableada en solicitudes, compras y recepción |
+| **E-2** Vistas guardadas | ⏳ **Pendiente por decisión** | Se puede hacer con `localStorage` hoy; si se quiere por usuario y compartible hay que llevarlo a esquema. Es una decisión de producto, no de implementación |
+
+#### Dos decisiones de diseño que conviene registrar
+
+**`n` es opt-in a propósito.** Un atajo global que buscara "el botón primario del header" sería una heurística peligrosa: en Aprobaciones habría disparado *"Aprobar todos"*. La página declara su destino o no hay atajo.
+
+**La barra de lote es `sticky`, no `fixed`.** `fixed` se posiciona respecto al viewport y se metía debajo del sidebar en desktop; hacía falta conocer su ancho, que no está tokenizado. `sticky` dentro del contenedor de scroll respeta ese ancho sin saberlo, y al estar en flujo no tapa la última fila.
+
+#### Un bug que el test destapó
+
+`useEnterAdvancesFields` filtraba campos con `el.offsetParent !== null`, lo obvio para "¿está visible?". Pero `offsetParent` es `null` **también para `position: fixed`** — es decir, el hook habría ignorado todo formulario dentro de un `Dialog` o un `Sheet`. Cambiado a `checkVisibility()`, que sí distingue oculto de posicionado. Sin el test en jsdom no lo habría visto.
+
+### Pasada 7 — validación visual real (2026-07-25)
+
+**Puntuación global: 9.1 → 9.3.** Verificación: `next build` limpio · `tsc` limpio · **3001/3001 tests** · **159/159 rutas capturadas, 0 errores** · **"Sin scroll horizontal en ninguna ruta ✓"**.
+
+#### Dos fallos míos que esta pasada destapó
+
+**1. `app/globals.css` estaba roto sintácticamente desde la Pasada 1 — y la aplicación no compilaba.** Mi edición del token `--color-border-control` dejó dos líneas de comentario huérfanas tras el `*/`. `tsc`, los 3001 tests y ESLint **no parsean CSS**, así que durante cinco pasadas declaré "verificado" sobre una base que no construía. La única forma de detectarlo era correr `next build`, y no lo hice ni una vez.
+
+**Lección de método:** "tests verdes + tsc limpio" no equivale a "compila". Un cambio en CSS exige un build; ninguna de las verificaciones que usé lo cubría.
+
+**2. La recaptura previa no probaba nada.** El script de capturas sirve `.next/standalone`, **no compila**. El build servido era del 07-24 14:22 y mi primer cambio del 07-24 18:11, así que las capturas de las 00:45 renderizaron el código anterior a la Pasada 1. Por eso A-7 seguía mostrando 676px: mi arreglo no estaba en el bundle. **Recapturar sin `npm run build` previo es un no-op.**
+
+#### A-7: causa raíz encontrada, y no era la que supuse
+
+El detector que escribí en la Pasada 6 falló en su primera versión porque **excluía los elementos `absolute`/`fixed`** — precisamente donde estaba el culpable. Instrumentándolo apareció:
+
+```
+span.sr-only  pos=absolute  left=675  right=676  w=1
+```
+
+Es el `<span className="sr-only">Ver</span>` de la última cabecera de `evaluation-list.tsx`. `sr-only` usa `position: absolute`, y **ni `TableRoot` ni `<main>` eran `position: relative`**, así que su bloque contenedor era el `<html>`: escapaba al `overflow` de ambos y arrastraba el ancho del documento a 676px. Un elemento de **1px** producía 286px de desbordamiento.
+
+Eso explica por qué mi `overflow-x-clip` de la Pasada 6 no sirvió de nada: sin un ancestro posicionado, no hay recorte que aplicar.
+
+**Arreglo real:** `relative` en `TableRoot` (systémico: cubre cualquier `sr-only` en cualquier tabla) y `relative overflow-x-hidden` en el `<main>`. **Verificado empíricamente:** la captura pasó de 676×844 a **390×844**, y las 159 rutas reportan cero desbordamiento. El detector ahora modela correctamente el bloque contenedor y salta las rutas de `(print)`, que son A4 y anchas por diseño.
+
+#### Lo que la validación visual confirmó
+
+| Hallazgo | Evidencia en captura |
+|---|---|
+| **C-2** bordes de control | Los campos de `desktop-solicitudes-nueva` se leen como un sistema; antes los bordes eran casi invisibles |
+| **A-8** contadores | El badge del rail marca **1**, ya no 2 — coincide con la página |
+| **C-1** (retractado) | El kardex muestra **`−2`** con saldo 3: la invariante del seed funcionó y confirma que no había defecto de producción |
+| **M-1** `th-type` | Cabeceras del kardex en MAYÚSCULAS, igual que `DataTable` |
+| **M-3** (retractado en kardex) | `SALDO` ya estaba a la derecha, como sostuve al retractar |
+| **A-1** tarjetas móviles | Recepción: tarjetas con estado y **"Recibir" como primario a ancho completo**; antes quedaba fuera de pantalla |
+| **A-2** objetivos táctiles | Controles y botones visiblemente a ~44px en móvil |
+| **A-4** aviso único | Banner con qué falta, cuánto y CTA; celdas con `—` |
+| **B-2 / B-3 / B-4** | Export blanco (no gris), sin "TABLERO" duplicado, filtros a ancho completo |
+
+#### Dos defectos nuevos encontrados al mirar, y corregidos
+
+- El **buscador de `ListFilters`** seguía estrecho en móvil aunque el `Input` era `w-full`: su wrapper no crecía. Los selects sí crecían por ser hijos directos del flex. Corregido.
+- La **cabecera PDTP del dashboard** comprimía el título a dos líneas y encajaba "Meta anual 90%" en ~40px. Ahora apila bajo `sm`.
+
+### Pasada 6 — Fase 2, paridad móvil (2026-07-25)
+
+Verificación: `tsc --noEmit` limpio · **3001/3001 tests** · ESLint sin errores nuevos.
+
+| Estado | Hallazgos |
+|---|---|
+| ✅ **Resueltos en Pasada 6** | A-1, A-2, A-7, B-2, B-3, B-4 |
+| 🔎 **Atribución corregida** | B-2 — no era `ExportButton` sino un `<a>` crudo en `ListFilters` |
+
+**Puntuación global: 8.8 → 9.1.** **Se cierran los 3 últimos hallazgos Altos de toda la auditoría.**
+
+**A-2 — la escala táctil pasa al design system.** `buttonVariants` y los controles de entrada ahora responden al medio de entrada, no al tamaño visual: bajo `sm` todo mide **44px** (mínimo de Apple HIG / Material), desde `sm:` vuelve a la altura compacta que da la densidad de un backoffice. Un cambio por variante resuelve los **541** `size="sm"`. Además se corrigieron los 3 controles con altura fija en `className` que habrían anulado la escala (`data-table`, `epp-import-review`) y los 5 de `ListFilters`.
+
+**A-1 — resuelto distinguiendo qué tabla se usa en terreno y cuál no.**
+
+| Tabla | Decisión | Por qué |
+|---|---|---|
+| Recepción | ✅ Tarjeta móvil | El botón "Recibir" quedaba fuera de pantalla; se usa en faena |
+| Compras (OC) | ✅ Tarjeta móvil | Sin total ni estado no se reconoce una OC (Heurística #6) |
+| Acciones PDTP | ✅ Tarjeta móvil | Un prevencionista revisa CAPA pendientes en faena |
+| 7 tablas de `/admin` + 2 historiales de importación | ✅ **Marcadas desktop-only** | Nadie administra permisos ni importa una planilla desde el teléfono. Portarlas sería trabajo sin usuario; **dejarlas cortadas sin explicación es peor**, porque el usuario cree que la app está rota |
+
+Nuevo [components/ui/desktop-only-table.tsx](components/ui/desktop-only-table.tsx): aviso visible sólo bajo `md` que explica la decisión. La tabla sigue accesible por scroll horizontal.
+
+**A-7 — no pude identificar el elemento culpable, así que endurecí el sistema y automaticé la detección.** Sin navegador no hay forma de señalar el descendiente que desborda (lo declaré como Confianza Media desde el principio y sigue sin confirmarse). Lo aplicado:
+
+1. `overflow-x-clip` en el `<main>` de `app-shell.tsx` — impide que **cualquier** descendiente ancho arrastre el documento, en todas las rutas, no sólo en la que detecté. No afecta a las tablas anchas: viven en `TableRoot`, que tiene su propio `overflow-x-auto`.
+2. **Detección automática en el script de capturas**: cada ruta evalúa `scrollWidth` contra el viewport y, si desborda, **nombra los elementos culpables** con su `right` en px, los acumula en el `manifest.json` y termina con `exitCode 1`. Esto automatiza el hallazgo que encontré comparando anchos de PNG a mano, y además aporta lo que me faltó: el nombre del culpable.
+
+**B-2 — el hallazgo era correcto, mi atribución no.** Escribí que había que dar a `ExportButton` el tratamiento `secondary`; su variante por defecto **ya era** `secondary`. El botón gris era un `<a>` crudo dentro de `ListFilters` con `bg-surface-2` + `text-muted` — relleno gris y texto tenue, que junto a selects blancos se lee como deshabilitado. Corregido al mismo tratamiento visual que `Button variant="secondary"`.
+
+### Pasada 5 — desktop agotado (2026-07-25)
+
+Verificación: `tsc --noEmit` limpio · **3001/3001 tests** · ESLint sin errores nuevos.
+
+| Estado | Hallazgos |
+|---|---|
+| ✅ **Resueltos en Pasada 5** | M-9 (núcleo real), A-4 (últimos casos de página) |
+| ❌ **Retractado en Pasada 5** | **B-5** — el "2 de ~15" era una cifra heredada, no medida |
+| ⏳ **Abiertos — desktop** | Sólo residuos de severidad Baja y el roadmap: A-4 (61 CTA por caso), M-9 (73 truncados no identificadores), M-13 (`n`, `Enter`), E-1…E-5 · Fase 4 |
+| ⏸️ **Abiertos — móvil (diferidos a propósito)** | A-1, A-2, A-7, B-2, B-3, B-4 |
+
+**Puntuación global: 8.7 → 8.8.** **El desktop queda agotado de defectos accionables.** Lo que resta en desktop son mejoras de roadmap y residuos que requieren criterio caso a caso.
+
+**B-5 retractado — heredé una cifra sin medirla.** Filé "`FilterToolbar` existe y se usa en 2 módulos de ~15". El número venía de `AUDITORIA_REUTILIZACION_Y_CONSISTENCIA_VISUAL.md` (2026-07-23) y **lo repetí sin verificarlo**. La medición real:
+
+| Componente | Arquitectura | Adopción |
+|---|---|---|
+| `FilterToolbar` | Cliente, con hoja "Más filtros" y chips | **9 archivos** en combustibles, flota y prevención |
+| `ListFilters` | Server-side sincronizado con URL | Toda el área de adquisiciones |
+
+No es sub-adopción: son **dos componentes compartidos para dos arquitecturas distintas**. Y `ListFilters` acepta como máximo 4 dimensiones de filtro más la búsqueda = 5 controles, **dentro** del presupuesto de 4–6 de la regla A2 — así que adquisiciones no necesita hoja de desbordamiento. El único hueco real sería los chips removibles, cuyo valor con ≤5 filtros y un botón "Limpiar" es marginal.
+
+**M-9 cerrado en lo que importaba.** De los 113 truncados sin `title`, aislé los **40 cuyo contenido es el identificador del registro** (nombre, código, email, `productName`, `fileName`) — ahí truncar es perder la identidad de la fila. 39 corregidos; uno se dejó a propósito (`prevencion/ppa/page.tsx`: su `label` es `ReactNode`, y `String()` sobre JSX daría `[object Object]`). Los 73 restantes truncan texto secundario que ya aparece completo en otro punto de la fila; ponerles `title` sería ruido para lector de pantalla.
+
+### Pasada 4 — desktop (2026-07-24)
+
+Verificación: `tsc --noEmit` limpio · **3001/3001 tests** · ESLint sin errores nuevos.
+
+| Estado | Hallazgos |
+|---|---|
+| ✅ **Resueltos en Pasada 4** | M-7, M-15 |
+| ⚠️ **Reencuadrado** | A-4 (la clasificación cambió el diagnóstico — ver ficha) |
+| ⏳ **Abiertos — desktop** | B-5, M-9 (113 truncados), A-4 (64 CTA por caso), E-1…E-5 · Fase 4 |
+| ⏸️ **Abiertos — móvil (diferidos a propósito)** | A-1, A-2, A-7, B-2, B-3, B-4 |
+
+**Puntuación global: 8.5 → 8.7.** *No queda ningún hallazgo Medio de desktop abierto.*
+
+**M-15: cobertura de `loading.tsx` de 87/145 a 144/145.** 57 skeletons generados tomando el título del `metadata` de cada página. **No declaran breadcrumb a propósito**: el TopBar ya lo deriva de `NAV_ITEMS` + `usePathname()`, y duplicarlo abriría una segunda fuente de verdad que puede quedar desfasada. La única ruta sin skeleton es el catch-all `[...not-found]`, que resuelve a 404 y no tiene estado de carga.
+
+**M-7 resuelto con el arreglo mínimo, no con el ideal.** La causa era `space-y-8` (32px) en el contenedor de los dos `<form>`. Fusionarlos en una barra única exigiría sacar los botones con el atributo `form=` y cablear a mano los flags de pending, porque `SubmitButton` lee `useFormStatus` —que sólo funciona dentro del form que envía—. Es un refactor real sobre el formulario del flujo core de compras para un hallazgo Medio, así que se aplicó `-mt-6` para que las dos filas se lean como una sola barra de acciones. **La estructura de dos forms se mantiene, deliberadamente.**
+
 ### Pasada 3 — desktop (2026-07-24)
 
 Verificación: `tsc --noEmit` limpio · **3001/3001 tests** · ESLint sin errores nuevos.
@@ -58,9 +243,9 @@ Ejecutadas **Fase 0 y Fase 1**. Global 7.1 → 7.8; *Preparación para Producci�
 
 - **Superficie:** Software empresarial / backoffice B2B multi-módulo (adquisiciones, bodega, combustibles, flota, prevención SG-SST). Uso diario intensivo, densidad media-alta, tolerancia cero al error en registros de inventario y cumplimiento legal.
 - **Perfil de usuario:** operadores expertos recurrentes (encargado de bodega, prevencionista, jefatura) + usuarios ocasionales en terreno vía móvil (aprobaciones, reportes de incidente).
-- **Puntuación Global:** **7.1** inicial → **7.8** (P1) → **8.2** (P2) → **8.5 / 10** (P3) — ver §0
+- **Puntuación Global:** **7.1** inicial → 7.8 → 8.2 → 8.5 → 8.7 → 8.8 → 9.1 → 9.3 → 9.5 → **9.6 / 10** (P9) — ver §0
 - **Veredicto inicial:** *Requiere correcciones críticas.*
-- **Veredicto actual:** **Sin hallazgos Críticos abiertos.** La base de diseño es sólida y está por encima del promedio del sector. El trabajo restante se concentra en **paridad móvil** (Fase 2), que es el único techo real de la nota.
+- **Veredicto actual:** **Sin hallazgos Críticos, Altos ni Medios abiertos, ni en escritorio ni en móvil.** Lo que resta es el roadmap de productividad (E-1…E-5), residuos de criterio caso a caso, y la **Fase 4** de verificación interactiva — que exige la aplicación en ejecución y sigue siendo el riesgo abierto más importante.
 
 ### Lo que está bien resuelto (y debe protegerse)
 
@@ -82,21 +267,21 @@ El patrón dominante de los defectos es **el escritorio recibió el cuidado, el 
 
 ## 2. Puntuación por Dimensiones
 
-| # | Dimensión | Inicial | P1 | P2 | **P3** | Sustento |
-|---|---|---|---|---|---|---|
-| 1 | **Usabilidad** (Nielsen) | 7.0 | 7.5 | 8.0 | **8.5** | Contadores de aprobación cuadrados; empty states con CTA contextual |
-| 2 | **Jerarquía Visual** | 6.5 | 8.0 | 8.0 | **8.5** | Badge `SUGERIDO` deja de pesar más que el nombre del producto. Queda M-7 |
-| 3 | **Claridad de Contenido** | 7.5 | 7.5 | 8.0 | 8.0 | Sin cambios |
-| 4 | **Consistencia Visual** | 7.5 | 8.0 | 8.5 | **9.0** | 0 `type="date"` nativos; regla A6 de `AGENTS.md` cumplida por fin |
-| 5 | **Accesibilidad (WCAG 2.2 AA)** | 5.5 | 8.0 | 8.5 | **9.0** | Cerrada la fuga de 1.4.11 en 24 controles crudos; `required` visible en la etiqueta. Falta Fase 4 |
-| 6 | **Navegación e IA** | 8.5 | 8.5 | 8.5 | 8.5 | Sin cambios |
-| 7 | **Responsividad** | 5.5 | 5.5 | 5.5 | 5.5 | **Diferida a propósito: prioridad desktop.** Único techo real |
-| 8 | **Feedback de Estado** | 7.5 | 7.5 | 7.5 | 7.5 | Sin cambios — `loading.tsx` (M-15) pendiente |
-| 9 | **Calidad de Componentes** | 8.0 | 8.5 | 9.0 | 9.0 | Sin cambios |
-| 10 | **Estética y Refinamiento** | 8.5 | 8.5 | 8.5 | 8.5 | Sin cambios |
-| 11 | **Transparencia y Confianza** | 9.0 | 9.0 | 9.0 | 9.0 | Sin cambios |
-| 12 | **Preparación para Producción** | **4.0** | 7.0 | 7.5 | **8.0** | Sin Críticos; limitada por los 3 Altos de móvil |
-| | **Global** | **7.1** | **7.8** | **8.2** | **8.5** | |
+| # | Dimensión | Inicial | P1–P5 | **P6** | Sustento |
+|---|---|---|---|---|---|
+| 1 | **Usabilidad** (Nielsen) | 7.0 | 9.0 | 9.0 | — |
+| 2 | **Jerarquía Visual** | 6.5 | 9.0 | 9.0 | — |
+| 3 | **Claridad de Contenido** | 7.5 | 8.5 | **9.0** | El export deja de leerse como deshabilitado; sin triple título en móvil |
+| 4 | **Consistencia Visual** | 7.5 | 9.0 | 9.0 | — |
+| 5 | **Accesibilidad (WCAG 2.2 AA)** | 5.5 | 9.0 | **9.5** | 1.4.10 Reflow con salvaguarda de sistema + detección automática. Falta Fase 4 |
+| 6 | **Navegación e IA** | 8.5 | 8.5 | 8.5 | — |
+| 7 | **Responsividad** | 5.5 | 5.5 | **9.0** | Escala táctil de 44px en el design system; tablas core con tarjeta; el resto marcado desktop-only |
+| 8 | **Feedback de Estado** | 7.5 | 9.0 | 9.0 | — |
+| 9 | **Calidad de Componentes** | 8.0 | 9.0 | 9.0 | — |
+| 10 | **Estética y Refinamiento** | 8.5 | 8.5 | 8.5 | — |
+| 11 | **Transparencia y Confianza** | 9.0 | 9.0 | 9.0 | — |
+| 12 | **Preparación para Producción** | **4.0** | 8.5 | **9.0** | Sin hallazgos Críticos, Altos ni Medios abiertos |
+| | **Global** | **7.1** | **8.8** | **9.1** | |
 
 **Regla de ponderación no-promediada — ya no aplica.** El sistema de puntuación topa *Preparación para Producción* en 4/10 mientras exista un hallazgo Crítico. Tras la Pasada 1 no queda ninguno: C-2 y C-3 están resueltos y C-1 se retractó por falso positivo. La nota sube a 7.0, limitada ahora por los 5 Altos abiertos —casi todos de paridad móvil— y por las cuatro verificaciones interactivas que siguen sin hacerse (§5).
 
@@ -209,7 +394,7 @@ y sustituir `border-[var(--color-border)]` → `border-[var(--color-border-contr
 
 ---
 
-#### A-1 · 13 tablas operativas no tienen variante móvil: columnas y acciones quedan cortadas
+#### ✅ A-1 · RESUELTO · 13 tablas operativas no tenían variante móvil
 
 - **Problema:** `DataTable` soporta `renderMobileCard` (oculta la tabla y apila tarjetas bajo `md`), pero **13 de 37 instancias no lo pasan**. Esas tablas se renderizan en 390px mostrando 2–3 de sus 7–8 columnas, con el resto accesible sólo por scroll horizontal sin ninguna afordancia visible.
 - **Evidencia:**
@@ -218,11 +403,19 @@ y sustituir `border-[var(--color-border)]` → `border-[var(--color-border-contr
   - Archivos sin `renderMobileCard`: [compras/oc-list.tsx](app/(app)/compras/oc-list.tsx), [recepcion/recepcion-table.tsx](app/(app)/recepcion/recepcion-table.tsx), [prevencion/pdtp/acciones/acciones-table.tsx](app/(app)/prevencion/pdtp/acciones/acciones-table.tsx), [admin/roles/role-list.tsx](app/(app)/admin/roles/role-list.tsx), [admin/folios/sequence-list.tsx](app/(app)/admin/folios/sequence-list.tsx), [admin/epps/epp-family-list.tsx](app/(app)/admin/epps/epp-family-list.tsx), [admin/taxonomia-sst/taxonomy-list.tsx](app/(app)/admin/taxonomia-sst/taxonomy-list.tsx), [admin/catalogos-productos/catalog-list.tsx](app/(app)/admin/catalogos-productos/catalog-list.tsx), [admin/notificaciones/notification-admin-list.tsx](app/(app)/admin/notificaciones/notification-admin-list.tsx), [admin/pdtp-catalogos/catalog-tabs.tsx](app/(app)/admin/pdtp-catalogos/catalog-tabs.tsx), [admin/seguridad/rate-limit-list.tsx](app/(app)/admin/seguridad/rate-limit-list.tsx), [combustibles/importar/import-batch-history.tsx](app/(app)/combustibles/importar/import-batch-history.tsx), [combustibles/importar/operations-batch-history.tsx](app/(app)/combustibles/importar/operations-batch-history.tsx).
 - **Principio afectado:** `components/tables.md` — "en pantallas móviles las tablas se transforman en lista de tarjetas apiladas". Heurística #6 (reconocimiento antes que recuerdo): el usuario no puede reconocer una OC sin ver su total ni su estado.
 - **Severidad:** **Alto** (no es falla WCAG 1.4.10 Reflow —las tablas de datos están exentas— pero sí impide la tarea en terreno)
-- **Recomendación:** priorizar **Compras** y **Recepción** (flujo core, uso real en faena). Las 5 tablas de `/admin` son de configuración de escritorio: aceptable diferirlas o marcarlas explícitamente como desktop-only con un aviso. Extraer un `renderMobileCard` genérico reutilizable a partir del patrón ya existente en [bodega/kardex-table.tsx:90-120](app/(app)/bodega/kardex-table.tsx#L90-L120).
+- **Recomendación:** priorizar Compras y Recepción; marcar las de `/admin` como desktop-only.
+
+> **✅ Aplicado (Pasada 6)**, distinguiendo qué tabla se usa en terreno:
+>
+> **Con tarjeta móvil** — Recepción (el botón "Recibir" quedaba fuera de pantalla), Compras/OC (sin total ni estado no se reconoce una orden) y Acciones PDTP (un prevencionista revisa CAPA en faena). Cada tarjeta prioriza el identificador, el estado y los 3–4 datos que permiten decidir.
+>
+> **Marcadas desktop-only** — las 7 de `/admin` y los 2 historiales de importación. Portarlas sería trabajo sin usuario: nadie administra permisos ni importa una planilla desde el teléfono. Pero **dejarlas cortadas sin explicación es peor que decirlo**, porque el usuario concluye que la app está rota. Nuevo [components/ui/desktop-only-table.tsx](components/ui/desktop-only-table.tsx) con un aviso visible sólo bajo `md`; la tabla sigue accesible por scroll horizontal.
+>
+> **No se extrajo el `renderMobileCard` genérico** que proponía el plan: las tres tarjetas muestran campos distintos y con acciones distintas, así que un componente común habría necesitado tantos props como campos. Comparten el patrón visual, no la estructura.
 
 ---
 
-#### A-2 · Objetivos táctiles de 28–36px en móvil, contra un mínimo recomendado de 44×44px
+#### ✅ A-2 · RESUELTO · Objetivos táctiles de 28–36px en móvil
 
 - **Problema:** la escala de tamaños de `Button` está calibrada para puntero (`sm`=28px, `default`=32px, `lg`=36px) y no escala en móvil. Existe una solución (`icon-mobile`: `h-11 w-11 sm:h-8 sm:w-8`) pero sólo se aplica a 12 botones de icono en toda la aplicación.
 - **Evidencia:**
@@ -243,6 +436,14 @@ lg:      "h-11 px-5 text-[13px] sm:h-9",
 ```
 
 y `Input`/`Select`/`Textarea` a `h-11 sm:h-9`. Es un cambio de una línea por variante que resuelve los 541 casos de golpe.
+
+> **✅ Aplicado (Pasada 6) tal como se planeó** — el único ítem del plan que no necesitó corrección al implementarlo.
+>
+> Las 5 variantes de tamaño de `buttonVariants` más `Input`, `Select` y `DatePicker` pasan a `h-11 sm:h-<compacto>`. Bajo `sm` (dedo) todo mide 44px; desde `sm:` (puntero) vuelve la altura compacta que da la densidad del backoffice.
+>
+> **Además**, lo que el plan no anticipaba: había **8 controles con altura fija en `className`** (`h-7`/`h-8` sin prefijo responsive) que habrían anulado la escala en móvil — en `data-table.tsx` (buscador interno y botón de columnas), `epp-import-review.tsx` y los 5 de `ListFilters`. Todos migrados a `h-11 sm:h-N`. Sin esto, la escala del design system se habría aplicado y los controles seguirían midiendo 28px justo en las tablas más usadas.
+>
+> Los 12 `icon-mobile*` se mantienen como alias: ya cumplían 44px y no vale la pena tocar sus 12 llamadas.
 
 ---
 
@@ -279,19 +480,37 @@ y `Input`/`Select`/`Textarea` a `h-11 sm:h-9`. Es un cambio de una línea por va
 >
 > - Un único aviso sobre la tabla que dice **qué falta** (denominadores de HH), **cuánto falta** ("en N de 12 meses") y **por qué importa** ("el mes no puede cerrarse").
 > - **CTA real y funcional:** "Cargar dotación y HH" abre `IndicatorDenominatorDialog` en el primer mes sin datos — el mismo diálogo que ya existía, pero enterrado en un botón por fila. Cuando la vista es "Total de faenas" el CTA se sustituye por la instrucción correcta ("Selecciona una faena"), porque los denominadores se cargan por faena.
-> - Nuevo helper `rateCell()`: las celdas muestran `—` con `title` explicativo en vez de repetir "No calculable". **De 39 apariciones de la cadena se pasa a 1.**
+> - Nuevo helper `rateCell()`: las celdas muestran `—` con `title` explicativo en vez de repetir "No calculable".
+>
+> **⚠️ Corrección (verificado en captura del 2026-07-25):** escribí *"de 39 apariciones se pasa a 1"* y **era falso**. Sólo cambié las celdas de tasa; en pantalla quedan **15**: los 3 tiles de KPI y los 12 badges de estado mensual. Las 24 celdas repetidas sí desaparecieron.
+>
+> Los 15 restantes son defendibles y se dejan a propósito: los 3 tiles son la métrica titular —ahí ser explícito es correcto— y los 12 badges son el *estado de conciliación* de cada período, o sea el dato de una columna de estado, no relleno. El defecto que A-4 describía (39 repeticiones sin salida) está cerrado; el número que publiqué, no lo estaba.
 >
 > **✅ También (Pasada 3):** el empty state de invitaciones en `admin/usuarios` — el otro caso citado — pasa de texto plano a `EmptyState` con **CTA condicionado al tipo de vacío**.
 >
-> **⏳ Pendiente, con el alcance ya medido y corregido:** el conteo real es de **77 `EmptyState` sin `action`**, no 45 (mi primer conteo era impreciso). Pero **barrerlos a ciegas sería un error**, porque no son el mismo problema:
+> ### ⚠️ Reencuadre (Pasada 4) — el hallazgo era más pequeño de lo que lo filé
 >
-> | Tipo de vacío | Qué necesita | ¿Falta CTA? |
-> |---|---|---|
-> | **Vacío real** (no existe ningún registro) | "Crea el primero" | Sí, es el defecto A-4 |
-> | **Vacío por filtro** (hay datos, el filtro no los alcanza) | "Limpiar filtros" / "Ver todas" | Sí, pero **otro** CTA |
-> | **Vacío que es buena noticia** ("Sin brechas", "Sin revisiones pendientes", "Papelera vacía") | Nada | **No** — un CTA aquí sería ruido |
+> El conteo real es de **77 `EmptyState` sin `action`**, no 45 (mi primer conteo era impreciso). Al clasificarlos, el diagnóstico cambia:
 >
-> El patrón aplicado en invitaciones es el modelo: el CTA depende de por qué está vacío. Requiere leer cada uno de los 77 contextos, no un `sed`.
+> | Tipo de vacío | Cuántos | Qué necesita | Estado |
+> |---|---|---|---|
+> | **Buena noticia** ("Sin brechas", "Sin revisiones pendientes", "Papelera vacía") | 5 | **Nada** — un CTA aquí sería ruido | ✅ Correctos como están |
+> | **Vacío por filtro** (hay datos, el filtro no los alcanza) | 2 | Salida del filtro, no "crea el primero" | ✅ Ambos corregidos |
+> | **Vacío real** (no existe ningún registro) | 64 | Un CTA clicable | ⏳ Ver abajo |
+>
+> **Lo que cambia el diagnóstico:** de los 64 de "vacío real", la mayoría **ya cumple dos de las tres partes de la regla A4** — su `description` explica qué hacer en lenguaje de usuario ("Agrega actividades antes de evaluar su cobertura", "Crea y activa el programa del período", "Crea requisitos por artículo o cláusula"). Lo que falta es el **botón**, no la orientación. Yo lo filé como "estados vacíos que informan pero no ofrecen salida"; la salida está escrita, sólo no es clicable.
+>
+> Además, muchos son **paneles dentro de un workbench cuya acción ya vive en el `PageHeader`**. Añadir ahí un CTA duplicaría la acción de página e infringiría la regla 5 de layout de `AGENTS.md` (las acciones de página van en `PageHeader.actions`, no en toolbars inline). En esos casos **el arreglo correcto es no añadir nada**.
+>
+> Por eso los 64 restantes requieren criterio caso a caso, no un barrido. La severidad efectiva del residuo es **Baja**, no Alta.
+>
+> **Corregidos en Pasada 4:** el reporte PDTP (`Sin objetivos para estos filtros` decía "ajusta los filtros" sin dar forma de hacerlo → CTA "Quitar filtros") y el vacío por filtro de invitaciones (Pasada 3).
+>
+> **Corregidos en Pasada 5** — los últimos vacíos de **nivel página** cuyo `PageHeader` no declara `actions`, donde un CTA no puede duplicar nada:
+> - `trazabilidad/page.tsx`: un solo `EmptyState` servía a los dos vacíos. Separado — sin datos → "Nueva solicitud"; por filtro → "Quitar filtros" (el texto pedía "intenta con otros filtros" sin dar forma de hacerlo).
+> - `pdtp/cobertura/page.tsx`: la descripción ya decía "Crea y activa el programa"; ahora es un botón.
+>
+> **Residuo: 61 CTA.** Todos son paneles internos de workbench cuya acción vive en el `PageHeader`; añadirla ahí infringiría la regla 5 de layout. Severidad efectiva **Baja**.
 
 ---
 
@@ -329,7 +548,7 @@ y `Input`/`Select`/`Textarea` a `h-11 sm:h-9`. Es un cambio de una línea por va
 
 ---
 
-#### A-7 · Scroll horizontal en `/prevencion/evaluaciones` en viewport móvil
+#### ✅ A-7 · RESUELTO (por endurecimiento, no por diagnóstico) · Scroll horizontal en viewport móvil
 
 - **Problema:** la página produce un documento de **676px de ancho en un viewport de 390px** (73% de desbordamiento), con ~286px de lienzo blanco vacío a la derecha.
 - **Evidencia:** `mobile-prevencion-evaluaciones.png` mide 676×844 px; las 169 capturas móviles restantes miden 390px de ancho. El contenido visible (título, tabla) se mantiene dentro de los 390px, por lo que el elemento que desborda es no visible.
@@ -339,6 +558,24 @@ y `Input`/`Select`/`Textarea` a `h-11 sm:h-9`. Es un cambio de una línea por va
 - **Recomendación:** diagnóstico exacto en 30 segundos con DevTools a 390px —
   `[...document.querySelectorAll('*')].filter(e => e.getBoundingClientRect().right > 390)`—
   y corregir el elemento identificado. Añadir además una salvaguarda de sistema: `overflow-x-clip` en `<main>` más un test de regresión que falle si `document.scrollWidth > viewport.width` en cualquier ruta capturada.
+
+> **✅ CAUSA RAÍZ ENCONTRADA (Pasada 7) — y no era la que supuse.**
+>
+> Durante tres pasadas dije que no podía identificar el elemento. El detector que escribí para eso falló en su primera versión porque **excluía los `absolute`/`fixed`**, que es justo donde estaba. Instrumentándolo sin filtros apareció:
+>
+> ```
+> span.sr-only  pos=absolute  left=675  right=676  w=1
+> ```
+>
+> Es el `<span className="sr-only">Ver</span>` de la última cabecera de [evaluation-list.tsx](app/(app)/prevencion/evaluation-list.tsx). El mecanismo exacto: `sr-only` usa `position: absolute`; **ni `TableRoot` ni `<main>` eran `position: relative`**, así que su bloque contenedor era el `<html>`. Un `absolute` sólo lo recorta un ancestro que además sea su bloque contenedor, así que **escapaba al `overflow` de los dos** y arrastraba el ancho del documento. Un elemento de **1px** causaba 286px de desbordamiento.
+>
+> Eso explica por qué el `overflow-x-clip` que apliqué en la Pasada 6 no hizo nada: sin ancestro posicionado no hay recorte posible.
+>
+> **Arreglo:** `relative` en `TableRoot` —systémico, cubre cualquier `sr-only` de cualquier tabla— y `relative overflow-x-hidden` en el `<main>`.
+>
+> **Verificado empíricamente:** `mobile-prevencion-evaluaciones.png` pasó de **676×844 a 390×844**, y las 159 rutas × 2 viewports reportan **"Sin scroll horizontal en ninguna ruta ✓"**.
+>
+> El detector quedó corregido para modelar el bloque contenedor (un `absolute` ignora los ancestros `static`) y para saltar las rutas de `(print)`, que son A4 y anchas por diseño.
 
 ---
 
@@ -375,15 +612,15 @@ y `Input`/`Select`/`Textarea` a `h-11 sm:h-9`. Es un cambio de una línea por va
 | ✅ **M-4** | **RESUELTO** — Jerarquía espacial invertida: ~25px entre la tabla y el título de la sección siguiente, contra ~60px entre filas de la misma tabla | `desktop-admin-usuarios.png`, banda y≈372→411 | `visual-design/spacing.md`: el espacio externo debe superar al interno | **✅ `mt-12` (48px) en [user-invitations-panel.tsx](app/(app)/admin/usuarios/user-invitations-panel.tsx).** Aplicado sólo a la instancia citada: un componente `Section` genérico sería abstracción no pedida |
 | ✅ **M-5** | **RESUELTO** — 574 de 579 `<TableHead>` sin `scope="col"` | `grep 'scope="col"'` → 5 coincidencias | WCAG 1.3.1 (técnica H63) | **✅ `scope = "col"` como valor por defecto del prop en [table.tsx](components/ui/table.tsx), sobrescribible con `scope="row"`.** Un cambio, 579 cabeceras conformes |
 | ✅ **M-6** | **RESUELTO** — `enableColumnToggle` implementado con **0 adopciones**; no existe selector de densidad ni vistas guardadas | [data-table.tsx:143-167](components/admin/data-table.tsx#L143-L167) | `product-surfaces/enterprise-software.md` (vistas personalizadas, densidad) | **✅ Adoptado, no retirado.** Activado en las 7 tablas de ≥8 columnas (catálogos de producto 13, importaciones 11 y 10, solicitudes 9, taxonomía SST 9, acciones PDTP 8, OC 8). En un backoffice de esa anchura, ocultar columnas secundarias es densidad real. `admin/pdtp-catalogos` (20 columnas) se dejó fuera: son varias tablas en pestañas y merece revisión aparte |
-| **M-7** | El CTA primario del formulario de solicitud queda huérfano: "Volver \| Guardar borrador" en una fila y "Enviar a aprobación" ~60px más abajo, fuera de la tarjeta | `desktop-solicitudes-nueva.png`, y≈932 vs y≈994 | `visual-design/composition.md` (alineación) | Agrupar las tres acciones en una barra única alineada a la derecha |
+| ✅ **M-7** | **RESUELTO** — El CTA primario del formulario de solicitud quedaba huérfano: "Volver \| Guardar borrador" en una fila y "Enviar a aprobación" ~60px más abajo, fuera de la tarjeta | `desktop-solicitudes-nueva.png`, y≈932 vs y≈994 | `visual-design/composition.md` (alineación) | **✅ Causa: `space-y-8` (32px) en el contenedor de los dos `<form>`.** Aplicado `-mt-6` para que las dos filas se lean como una sola barra. **La barra única literal no se hizo a propósito:** exigiría sacar los botones con el atributo `form=` y cablear a mano los flags de pending, porque `SubmitButton` lee `useFormStatus` (sólo válido dentro del form que envía) — refactor real en el formulario del flujo core de compras para un hallazgo Medio |
 | ✅ **M-8** | **RESUELTO** — Dos CTA primarios verdes compitiendo en el mismo viewport: "Ver tareas" y "Nueva solicitud" | `desktop-dashboard.png` | `visual-design/hierarchy.md` (un solo Nivel 1) | **✅ "Ver tareas" pasa de relleno verde a enlace** con hover en `primary-tint` ([dashboard/page.tsx](app/(app)/dashboard/page.tsx)). "Nueva solicitud" queda como único Nivel 1 |
-| ⚠️ **M-9** | **PARCIAL** — Truncamiento sin `title`/tooltip | `desktop-dashboard.png` ("Aprobación · Necesita a…"); `desktop-prevencion-indicadores.png` (item de nav "Indicadores de seguridad y…") | Heurística #6 · regla A6 de `AGENTS.md` | **✅ Cerradas las instancias citadas**: título y subtítulo de la cola de trabajo, el texto "Aprobación · Necesita a…", y las etiquetas de navegación en `nav-rows`, `desktop-nav-areas` y `mobile-nav`. **⏳ Quedan 113 truncados sin `title`**: no se barrieron a ciegas porque muchos truncan texto que ya aparece completo en otro punto de la fila, y añadir `title` ahí genera ruido en lector de pantalla |
+| ✅ **M-9** | **RESUELTO** — Truncamiento sin `title`/tooltip | `desktop-dashboard.png` ("Aprobación · Necesita a…"); `desktop-prevencion-indicadores.png` (item de nav "Indicadores de seguridad y…") | Heurística #6 · regla A6 de `AGENTS.md` | **✅ Cerradas las instancias citadas**: título y subtítulo de la cola de trabajo, el texto "Aprobación · Necesita a…", y las etiquetas de navegación en `nav-rows`, `desktop-nav-areas` y `mobile-nav`. **✅ Pasada 5: aislados los 40 truncados cuyo contenido es el identificador del registro** (nombre, código, email, `productName`, `fileName`) — ahí truncar es perder la identidad de la fila. 39 corregidos; 1 se dejó a propósito (`prevencion/ppa/page.tsx`: su `label` es `ReactNode` y `String()` sobre JSX daría `[object Object]`). Los 73 restantes truncan texto secundario que ya aparece completo en otro punto de la fila: ponerles `title` sería ruido de lector de pantalla, no una mejora |
 | ✅ **M-10** | **RESUELTO** — Jerga interna expuesta al usuario | Pestaña "Conciliación legado"; badge `SUGERIDO: APRO SUMINISTROS` en mono-mayúsculas amber con peso visual superior al nombre del producto | Heurística #2 (coincidencia con el mundo real) | **✅ "Conciliación legado" → "Datos del sistema anterior"**, y con ella las cabeceras ("HH anterior → actual") y el estado "Sin legado" → "Sin datos anteriores". **✅ El badge `SUGERIDO: …` pasa de `warning` (ámbar mono-mayúsculas, con más peso visual que el nombre del producto) a `default` (prose, neutro).** Es un metadato informativo, no una advertencia |
 | ✅ **M-11** | **RESUELTO** — 4 archivos importaban `toast`/`Toaster` directamente de `sonner`, saltando el wrapper `@/lib/toast` (donde vive la persistencia de errores hasta cierre manual) | [incidentes/reportar/incident-report-form.tsx:6](app/(app)/prevencion/incidentes/reportar/incident-report-form.tsx#L6), [incidentes/[id]/incident-workflow-panel.tsx:5](app/(app)/prevencion/incidentes/[id]/incident-workflow-panel.tsx#L5) | Consistencia de feedback | **✅ Los 2 imports de `toast` migrados; regla `no-restricted-imports` en [eslint.config.mjs](eslint.config.mjs) con excepción para `lib/toast.ts` y los dos `layout.tsx` que montan `<Toaster>`.** Verificada con control positivo: dispara en un archivo sonda y respeta las excepciones |
 | ✅ **M-12** | **RESUELTO** — 21 `<input type="date">` nativos en 11 archivos | Regla **A6** de `AGENTS.md` prohíbe el date nativo (su formato depende del locale del navegador) | Consistencia + prevención de errores | **✅ 0 `type="date"` nativos en la aplicación.** Los 21 migrados a `DatePicker`. En `invoices-section.tsx` se convirtió además el `ref` imperativo del autorrelleno OCR a estado controlado, porque `form.reset()` no limpiaría un `DatePicker`. **`required` NO se puso en `DatePicker`**: el valor viaja en un `<input type="hidden">`, excluido de la validación de restricciones del navegador, y `aria-required` es inválido en `role="button"`. Se movió a `<Field required>`, que ya lo soporta y **hace visible el asterisco que antes no se mostraba**. La frontera de confianza real son los esquemas Zod del servidor, verificada |
 | ⚠️ **M-13** | **PARCIAL** — Un solo atajo de teclado en toda la aplicación (⌘K) | [command-palette.tsx:73](components/layout/command-palette.tsx#L73) | `product-surfaces/enterprise-software.md` ("operación total por teclado") · Heurística #7 | **✅ `/` enfoca el filtro de la página** (con guarda: no dispara si el foco está en otro control ni con modificadores) y **`Esc` lo limpia y devuelve el foco**. Pista del atajo en el `title` del campo. **⏳ Faltan** `n` para nueva entidad y `Enter` entre campos (E-5) |
 | ✅ **M-14** | **RESUELTO** — `DESIGN.md` documentaba una paleta que el código ya no usaba: dice `--color-primary` = #218649 `oklch(0.546 0.118 156)`; `globals.css` define #065F46 `oklch(0.415 0.098 166)` | [DESIGN.md](DESIGN.md) tabla de tokens vs [globals.css:31](app/globals.css#L31) | Gobernanza del design system | **✅ Tabla de 50 tokens regenerada programáticamente desde `globals.css`, con hex derivado y aviso de no editar a mano.** También corregidos los 3 hex de la sección "Filosofía" |
-| **M-15** | Cobertura de `loading.tsx` en 87 de 145 páginas (60%) | `find app -name loading.tsx` | Rendimiento percibido (skeleton screens) | Completar en las rutas con consulta a BD; priorizar Prevención |
+| ✅ **M-15** | **RESUELTO** — Cobertura de `loading.tsx` en 87 de 145 páginas (60%) | `find app -name loading.tsx` | Rendimiento percibido (skeleton screens) | **✅ 144/145 rutas (99%).** 57 skeletons generados con el título tomado del `metadata` de cada página y `SkeletonPage` con densidad según tipo (4 filas en detalle, 6 en listado). **Sin breadcrumb a propósito:** el TopBar ya lo deriva de `NAV_ITEMS` + `usePathname()`. La única ruta sin skeleton es el catch-all `[...not-found]` |
 
 ---
 
@@ -392,23 +629,23 @@ y `Input`/`Select`/`Textarea` a `h-11 sm:h-9`. Es un cambio de una línea por va
 | ID | Hallazgo | Recomendación |
 |---|---|---|
 | ✅ **B-1** | **RESUELTO** — `Badge size="sm"` = **9px** y `default` = 10px en las variantes de severidad ([badge.tsx:37-40](components/ui/badge.tsx#L37-L40)) — por debajo del piso práctico de legibilidad | **✅ Piso de 11px en [badge.tsx](components/ui/badge.tsx).** Escala resultante: severidad 11/11/12px, prose 11/12/13px |
-| **B-2** | "Exportar Excel" en móvil se lee como deshabilitado (relleno gris + texto tenue) junto a selects blancos | `desktop`/`mobile-recepcion.png` · dar a `ExportButton` el mismo tratamiento `secondary` blanco que sus vecinos |
-| **B-3** | Triple encabezamiento en móvil: "Dashboard" (PageHeader) + "TABLERO" (eyebrow) + "Hola, Admin" en 130px verticales | `mobile-dashboard.png` · suprimir el eyebrow cuando el `PageHeader` móvil ya es visible |
-| **B-4** | El buscador y los filtros no ocupan el ancho disponible en móvil (input de ~200px en una fila de 358px) | `mobile-compras.png` · `w-full` bajo `sm:` |
-| **B-5** | `FilterToolbar` existe y se usa en 2 módulos de ~15 con filtros | Adoptarlo progresivamente; habilita el patrón "Más filtros (N)" de la regla A2 |
+| ✅ **B-2** | **RESUELTO, con atribución corregida** — "Exportar Excel" se leía como deshabilitado (relleno gris + texto tenue) junto a selects blancos | **Escribí que había que arreglar `ExportButton`; su variante por defecto YA era `secondary`.** El botón gris era un `<a>` crudo en [list-filters.tsx](components/adquisiciones/list-filters.tsx) con `bg-surface-2` + `text-muted`. ✅ Migrado al mismo tratamiento visual que `Button variant="secondary"` (blanco, `border-control`, texto normal) y a `h-11 sm:h-8` |
+| ✅ **B-3** | **RESUELTO** — Triple encabezamiento en móvil: "Dashboard" + "TABLERO" + "Hola, Admin" en 130px | **✅ El eyebrow "Tablero" pasa a `hidden lg:block`.** En móvil el `PageHeader` ya rotula "Dashboard" visiblemente; en desktop es `sr-only` (empuja al TopBar), así que ahí el eyebrow sí aporta el contexto de sección |
+| ✅ **B-4** | **RESUELTO** — El buscador y los filtros no ocupaban el ancho disponible en móvil (input de ~200px en una fila de 358px) | **✅ En `ListFilters`, buscador y los 4 selects pasan a `w-full sm:w-auto`** y de paso a `h-11 sm:h-8`, que era el otro defecto del mismo control (A-2) |
+| ❌ **B-5** | **RETRACTADO** — Filé "`FilterToolbar` se usa en 2 módulos de ~15". La cifra venía de `AUDITORIA_REUTILIZACION_Y_CONSISTENCIA_VISUAL.md` y **la repetí sin medirla**. Real: **9 archivos** en 3 áreas; adquisiciones usa `ListFilters` (server-side, arquitectura distinta) y con ≤5 controles está dentro del presupuesto de 4–6 de la regla A2, así que no necesita hoja de desbordamiento | **Sin acción.** Dos componentes compartidos para dos arquitecturas no es sub-adopción |
 | ✅ **B-6** | **RESUELTO** — Movimiento no condicionado a `prefers-reduced-motion`: `active:scale-[0.97]` en `Button`, slide del drawer, animaciones de toast (sólo `[data-pressable]` está protegido) | **✅ `motion-safe:` en el `active:scale` de `Button` + bloque `@media (prefers-reduced-motion: reduce)` en `globals.css`** que neutraliza drawer, toasts y `animate-in/out`. Los cambios de color y opacidad se conservan: no producen movimiento y son los que transmiten el estado |
 
 ---
 
-### 3.5 Oportunidades de Mejora (no son defectos)
+### 3.5 Oportunidades de Mejora — implementadas en la Pasada 8
 
-| ID | Propuesta | Fundamento |
+| ID | Propuesta | Estado |
 |---|---|---|
-| **E-1** | Selector de densidad Compacto/Cómodo en las tablas principales | `visual-design/density.md` · un encargado de bodega ve 12 filas por pantalla donde cabrían 20 |
-| **E-2** | Vistas guardadas (filtros + columnas) por usuario | `enterprise-software.md` · elimina la reconfiguración diaria de filtros |
-| **E-3** | Acciones en lote con casilla maestra ("Aprobar 12 ítems") | `enterprise-software.md` · la bandeja de aprobaciones es el candidato natural |
-| **E-4** | Columna congelada (sticky first column) en tablas de ≥8 columnas | `enterprise-software.md` · complementa A-5 |
-| **E-5** | Navegación por `Enter` entre campos en formularios de captura repetitiva (entregas, recepción) | Ley de Fitts eliminada: cero viajes al ratón |
+| ✅ **E-1** | Selector de densidad Compacto/Cómodo | Preferencia compartida entre tablas, vía `data-density` + `localStorage`. Se ofrece desde 8 filas |
+| ⏳ **E-2** | Vistas guardadas (filtros + columnas) por usuario | **Pendiente por decisión:** `localStorage` es inmediato; por usuario y compartible requiere esquema |
+| ✅ **E-3** | Acciones en lote con casilla maestra | Selección cruzando solicitudes; la acción del servidor ya validaba por ítem |
+| ✅ **E-4** | Columna congelada en tablas de ≥8 columnas | `stickyFirstColumn` opt-in, activo en 7 tablas |
+| ✅ **E-5** | `Enter` entre campos en captura repetitiva | Hook con test; corregido un bug que lo habría inutilizado dentro de diálogos |
 
 **Fuera de alcance por decisión de producto:** `data-dense-interfaces.md` recomienda tema oscuro por defecto para operadores de jornada larga. `DESIGN.md` declara explícitamente `color-scheme: light` sin modo oscuro. Se registra como preferencia contextual, **no como defecto** — el perfil de uso (oficina + faena diurna) respalda la decisión actual.
 
@@ -416,20 +653,31 @@ y `Input`/`Select`/`Textarea` a `h-11 sm:h-9`. Es un cambio de una línea por va
 
 ## 4. Resumen de Hallazgos
 
-| Severidad | Inicial | Resueltos | Retractados | Abiertos desktop | Abiertos móvil |
-|---|---|---|---|---|---|
-| Crítico | 2 (+1 nuevo) | 2 (C-2, C-3) | 1 (C-1) | **0** | 0 |
-| Alto | 8 | 5 (A-3, A-4\*, A-5, A-6, A-8) | — | **0** | **3** (A-1, A-2, A-7) |
-| Medio | 15 | 12 (M-1, M-2, M-4, M-5, M-6, M-8, M-9\*, M-10, M-11, M-12, M-13\*, M-14) | 1 parcial (M-3) | **2** (M-7, M-15) | 0 |
-| Bajo | 6 | 2 (B-1, B-6) | — | **1** (B-5) | **3** (B-2, B-3, B-4) |
-| Mejora | 5 | — | — | **5** | 0 |
-| **Total** | **37** | **21** | **1 + 1 parcial** | **8** | **6** |
+| Severidad | Inicial | Resueltos | Retractados | **Abiertos** |
+|---|---|---|---|---|
+| Crítico | 2 (+1 nuevo) | 2 (C-2, C-3) | 1 (C-1) | **0** |
+| Alto | 8 | 8 | — | **0** |
+| Medio | 15 | 14 | 1 parcial (M-3) | **0** |
+| Bajo | 6 | 5 | 1 (B-5) | **0** |
+| Mejora | 5 | 4 (E-1, E-3, E-4, E-5) | — | **1** (E-2, por decisión) |
+| **Total** | **37** | **33** | **2 + 1 parcial** | **1** |
 
-\* A-4, M-9 y M-13 resueltos en sus casos citados; el resto está medido y clasificado en su ficha.
+**Queda un solo ítem abierto en toda la auditoría: E-2**, y está abierto porque requiere una decisión de producto (persistencia en `localStorage` vs esquema), no porque falte trabajo.
 
-**No queda ningún hallazgo Alto de desktop abierto.** Los 3 Altos restantes son de paridad móvil, diferidos por prioridad.
+### Estado de la verificación
 
-**Ningún hallazgo Crítico permanece abierto.** El detalle de lo pendiente, con orden de ejecución, está en el plan.
+**Validado visualmente (Pasada 7 y 8):** 159/159 rutas capturadas contra un build fresco, cero errores, cero scroll horizontal. Confirmados sobre pixel real: bordes de control, contadores de aprobación, `th-type`, tarjetas móviles, objetivos táctiles, aviso de Indicadores, signo del kardex, y los controles de E-1/E-3/E-4.
+
+**Lo que sigue sin verificar — y sólo se puede hacer con tecnología asistiva real:**
+
+| Prueba | Por qué no está hecha |
+|---|---|
+| **Lector de pantalla** (NVDA/VoiceOver) | No es simulable; requiere AT real sobre la app en ejecución |
+| Recorrido completo por teclado | Automatizable con Playwright, no ejecutado |
+| Zoom al 200% (WCAG 1.4.4) | Automatizable, no ejecutado |
+| Latencia percibida (<100ms) | Medible, no ejecutado |
+
+Las tres últimas son la **Fase 4** del plan y sí son accionables sin intervención humana; la primera no.
 
 El plan de acción priorizado, con matriz impacto/esfuerzo y fases ejecutables, está en
 **[PLAN_MEJORA_UIUX_2026-07-24.md](PLAN_MEJORA_UIUX_2026-07-24.md)**.

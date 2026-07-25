@@ -4,29 +4,27 @@
 **Fecha:** 2026-07-24
 **Meta:** cerrar los 2 hallazgos Críticos y los 8 Altos para llevar *Preparación para Producción* de 4.0 a ≥8.0 y la puntuación global de 7.1 a ≈8.6.
 
-> ## Estado: Fases 0, 1, 3-desktop y 3-desktop-II ✅ · Fase 2 (móvil) diferida · Fases 4–5 pendientes
-> **Pasada 3 completada el 2026-07-24.** Global **8.2 → 8.5** · Producción **7.5 → 8.0**.
-> Verificación: `tsc` limpio · **3001/3001 tests** · ESLint sin errores nuevos.
->
-> **Sin hallazgos Altos de desktop abiertos.** Los 3 Altos restantes son de paridad móvil.
+> ## Estado: auditoría cerrada · quedan E-2 (decisión), Fase 4 y 2 errores detectados sin diagnosticar
+> **Pasada 9 completada el 2026-07-25.** Global **9.5 → 9.6**.
+> `next build` limpio · `tsc` limpio · **ESLint 0 problemas en todo el repo** · **3005/3005 tests** · 159/159 rutas.
 >
 > | Pasada | Global | Qué cerró |
 > |---|---|---|
-> | 1 | 7.1 → 7.8 | Fase 0 + Fase 1 · 0 Críticos abiertos |
-> | 2 | 7.8 → 8.2 | Fase 3-desktop · A-4, A-5, M-1, M-2, M-6 |
-> | 3 | 8.2 → 8.5 | A-8, M-10, M-12, M-13 · fuga de C-2 |
+> | 1–5 | 7.1 → 8.8 | Fases 0, 1 y 3-desktop (I–IV) · desktop agotado |
+> | 6 | 8.8 → 9.1 | Fase 2 móvil |
+> | 7 | 9.1 → 9.3 | Validación visual real · causa raíz de A-7 · **build roto desde P1** |
+> | 8 | 9.3 → 9.5 | Fase 5: E-1, E-3, E-4, E-5, M-13 |
+> | 9 | 9.5 → 9.6 | **Errores preexistentes:** 3 páginas rotas + 3 derivas del entorno de auditoría |
 >
-> ### Desviaciones acumuladas
-> 1. **C-1 era un falso positivo.** El defecto estaba en el seed de capturas, no en producción.
-> 2. **M-3 era falso en el kardex** y real en Indicadores.
-> 3. **A-8 no requería decisión de producto:** era un bug de una línea (filtro de tipo divergente entre badge y página).
-> 4. **El sticky header planificado habría sido un no-op.** `overflow-x-auto` ya crea contenedor de scroll.
-> 5. **El token de borde tuvo que ser más oscuro** que el propuesto: el fondo vinculante era `surface-2`.
-> 6. **M-6 se adoptó en vez de retirarse.**
-> 7. **C-2 no estaba realmente cerrado tras la Pasada 1**: 24 controles crudos seguían con el token viejo.
-> 8. **`required` no podía ir en `DatePicker`**: `aria-required` es inválido en `role="button"` y los `<input type="hidden">` no validan. Se movió a `<Field required>`.
+> ### El patrón que domina este trabajo: el entorno de auditoría mintió tres veces
+> 1. **C-1** — el seed insertaba un movimiento de inventario contradictorio → un falso Crítico.
+> 2. **Pasada 6** — las capturas servían un build de antes de todos los cambios → validación falsa.
+> 3. **Pasada 9** — el seed de capturas tenía un catálogo RBAC escrito a mano, desincronizado de `SYSTEM_PERMISSIONS`: le faltaban permisos y concedía uno inexistente.
 >
-> **Un hallazgo nuevo (C-3)** lo encontró la guarda de contraste. **Dos retractados de 37**, ambos por inferir de una captura sin abrir el archivo.
+> Y en los tres casos la herramienta **no avisaba**: el manifest marcaba `ok: true` con la página renderizando su error boundary, y un `catch` vacío se tragaba los fallos de modal. Ahora hay detección de errores de cliente, de scroll horizontal, guardia de paridad RBAC, invariante de seed y dos reglas ESLint. **La herramienta que valida el producto necesitaba validarse a sí misma.**
+>
+> ### Reglas añadidas para que lo corregido no vuelva
+> `local/no-bare-to-locale` (hidratación) · `no-restricted-imports` para `sonner` · guardia de paridad RBAC en el seed · invariante `stockAfter = stockBefore + quantity` · detección de scroll horizontal · detección de errores de cliente · aviso en fallos de modal.
 
 ---
 
@@ -179,9 +177,41 @@ Ejecutada **antes** que la Fase 2 por prioridad de desktop.
 
 ---
 
-### ⏸️ Fase 2 — Paridad móvil · DIFERIDA AL FINAL (prioridad desktop)
+### ✅ Fase 3-desktop-III — COMPLETADA (Pasada 4)
 
-El bloque de mayor impacto pendiente: el móvil está declarado como canal para aprobaciones y reportes en terreno y hoy no lo sostiene.
+| # | Acción | Estado | Resultado |
+|---|---|---|---|
+| a | Completar `loading.tsx` `[M-15]` | ✅ | **87/145 → 144/145 (99%).** 57 skeletons generados desde el `metadata` de cada página, densidad según tipo (4 filas detalle / 6 listado). Sin breadcrumb a propósito: el TopBar lo deriva de `NAV_ITEMS` |
+| b | Barra de acciones del formulario de solicitud `[M-7]` | ✅ | Causa: `space-y-8` (32px) entre los dos `<form>`. `-mt-6` une las filas. Barra única literal descartada a propósito (ver desviación 9) |
+| c | Barrer `EmptyState` sin CTA `[A-4]` | ⚠️ **Reencuadrado** | Clasificados los 77: **5 correctos como están** (vacío = buena noticia), **2 de filtro corregidos**, **64 requieren criterio caso a caso** y su severidad efectiva es Baja (ver desviación 10) |
+
+---
+
+### ✅ Fase 3-desktop-IV — COMPLETADA (Pasada 5) · desktop agotado
+
+| # | Acción | Estado | Resultado |
+|---|---|---|---|
+| a | `title` en truncados `[M-9]` | ✅ | Aislados los **40 que son identificador de fila**; 39 corregidos, 1 descartado con motivo (`label` es `ReactNode`). Los otros 73 truncan texto secundario ya visible en la fila |
+| b | CTA en vacíos de nivel página `[A-4]` | ✅ | `trazabilidad` (un solo `EmptyState` servía a dos vacíos → separado) y `pdtp/cobertura` (la descripción ya decía "crea el programa"; ahora es botón) |
+| c | Adoptar `FilterToolbar` `[B-5]` | ❌ **Retractado** | La cifra "2 de ~15" era heredada, no medida. Real: 9 archivos; adquisiciones usa `ListFilters` por arquitectura y con ≤5 controles no necesita hoja de desbordamiento. **Sin acción** |
+
+**Con esto el desktop no tiene defectos abiertos en ninguna severidad.**
+
+---
+
+### ✅ Fase 2 — Paridad móvil · COMPLETADA (Pasada 6)
+
+> **✅ Cerrada.** Resultado por ítem:
+>
+> | Ítem | Estado | Nota |
+> |---|---|---|
+> | 2.1 Escala táctil `[A-2]` | ✅ | **El único ítem del plan que no necesitó corrección.** Además había 8 controles con altura fija en `className` que habrían anulado la escala |
+> | 2.2 Tarjetas móviles `[A-1]` | ✅ | 3 tablas de terreno con tarjeta; 9 de configuración marcadas desktop-only. **No** se extrajo el `renderMobileCard` genérico: las 3 tarjetas comparten patrón visual, no estructura |
+> | 2.3 Desbordamiento horizontal `[A-7]` | ✅ | Por endurecimiento: `overflow-x-clip` en `<main>` + detección automática que nombra al culpable y falla con `exitCode 1` |
+> | 2.4 Filtros y export `[B-4, B-2]` | ✅ | `w-full sm:w-auto`; el export era un `<a>` crudo, no `ExportButton` |
+> | + `[B-3]` | ✅ | Eyebrow "Tablero" a `hidden lg:block` |
+
+El bloque original: el móvil está declarado como canal para aprobaciones y reportes en terreno y no lo sostenía.
 
 #### 2.1 · Escala táctil responsiva `[A-2]` — *hacer esto primero, es una línea por variante*
 
@@ -223,18 +253,43 @@ Las 6 tablas de `/admin` (roles, folios, EPP, taxonomía, catálogos, rate-limit
 
 ---
 
-### Fase 3 — Consistencia y densidad
+### Fase 3 — Consistencia y densidad · ✅ CERRADA
 
-Su estado real está en **Fase 3-desktop** más arriba. Lo que queda de esta fase:
+Ejecutada en cuatro tandas (Fase 3-desktop I–IV). Residuos que quedan **por criterio, no por falta de tiempo**:
 
-| # | Acción | Hallazgo |
+| Residuo | Por qué no se cierra mecánicamente | Severidad efectiva |
 |---|---|---|
-| 3.5 | Auditar los 45 `EmptyState` sin `action` y añadir CTA o justificar | A-4 |
-| 3.6 | Migrar los 21 `<input type="date">` a `DatePicker` (11 archivos) | M-12 |
-| 3.7 | Completar `loading.tsx` en las 58 rutas con consulta a BD | M-15 |
-| 3.10 | Adoptar `FilterToolbar` + patrón "Más filtros (N)" | B-5 |
-| + | Barrer los 113 truncados sin `title` | M-9 |
-| + | Badge `SUGERIDO: APRO SUMINISTROS` a peso visual neutro | M-10 |
+| 61 `EmptyState` sin CTA | Son paneles de workbench cuya acción vive en el `PageHeader`; añadirla ahí infringe la regla 5 de layout | Baja |
+| 73 truncados sin `title` | Truncan texto secundario que ya aparece completo en la fila; `title` sería ruido de lector de pantalla | Baja |
+| `n` y `Enter` de M-13 | `n` necesita saber "qué crear" por ruta; `Enter` entre campos es E-5 | Mejora |
+
+---
+
+### ✅ Fase 5 — Roadmap de productividad · COMPLETADA (Pasada 8), salvo E-2
+
+| Propuesta | Estado | Nota |
+|---|---|---|
+| **E-1** Densidad Compacto/Cómodo | ✅ | Preferencia compartida entre tablas; `data-density` en CSS porque las filas las renderiza el consumidor. Visible desde 8 filas |
+| **E-3** Acciones en lote | ✅ | Selección cruzando solicitudes; `bulkApproveRequestAction` **ya validaba por ítem**, sólo faltaba UI. Barra `sticky`, no `fixed` (ver nota) |
+| **E-4** Columna congelada | ✅ | Opt-in en las 7 tablas de ≥8 columnas; divisor con `::after` porque el sticky rompe `border-collapse` |
+| **E-5** `Enter` entre campos | ✅ | Hook con 4 tests. El test destapó que `offsetParent` habría inutilizado el hook dentro de diálogos |
+| **M-13** atajo `n` | ✅ | Opt-in por página. Un `n` global que adivinara el botón primario habría disparado "Aprobar todos" en Aprobaciones |
+| **E-2** Vistas guardadas | ⏳ | **Requiere decisión:** `localStorage` hoy, o esquema si se quiere por usuario y compartible |
+
+---
+
+### ✅ Pasada 9 — Errores preexistentes
+
+| Error | Estado | Nota |
+|---|---|---|
+| `<SelectItem value="">` (Radix lanza) | ✅ | 5 sitios; el de `FilterSelect` rompía **7 páginas de combustibles** |
+| `toLocaleString()` sin locale → React #418 | ✅ | 5 sitios + **regla ESLint** que lo impide |
+| Permiso cruzado sin guardar en `/trazabilidad/trabajador` | ✅ | El dashboard ya lo guardaba; la página no |
+| Seed de capturas con RBAC a mano y desincronizado | ✅ | Derivado de `SYSTEM_PERMISSIONS` + guardia de paridad |
+| `catch` que se tragaba fallos de modal | ✅ | Ahora avisa |
+| Variable muerta `allReturned` | ✅ | — |
+| Archivo de 0 bytes trackeado con nombre roto | ✅ | Eliminado, sin stagear |
+| React #418 en `/ppa` y `/entregas/[id]/print` | ⏳ **Detectado, no diagnosticado** | Sólo en build de producción; no es prerender (rutas dinámicas) ni el layout compartido (rutas hermanas funcionan). Con señal automática desde ahora |
 
 ---
 
@@ -251,7 +306,7 @@ Estas pruebas suelen aportar hallazgos que ni el código ni las capturas revelan
 
 ---
 
-### Fase 5 — Roadmap de productividad experta
+### Fase 5 — Roadmap · tabla original (estado real arriba)
 
 Ninguna es un defecto; todas elevan la velocidad operativa del usuario diario.
 
@@ -268,18 +323,19 @@ Ninguna es un defecto; todas elevan la velocidad operativa del usuario diario.
 
 ## 3. Impacto proyectado
 
-| Dimensión | Inicial | P1 | P2 | **P3 (real)** | Proy. tras Fase 2 (móvil) |
-|---|---|---|---|---|---|
-| Accesibilidad (WCAG) | 5.5 | 8.0 | 8.5 | **9.0** ✅ | 9.0 |
-| Responsividad | 5.5 | 5.5 | 5.5 | 5.5 — | **8.5** |
-| Jerarquía Visual | 6.5 | 8.0 | 8.0 | **8.5** ✅ | 8.5 |
-| Usabilidad | 7.0 | 7.5 | 8.0 | **8.5** ✅ | 8.5 |
-| Consistencia Visual | 7.5 | 8.0 | 8.5 | **9.0** ✅ | 9.0 |
-| Calidad de Componentes | 8.0 | 8.5 | 9.0 | 9.0 ✅ | 9.0 |
-| **Preparación para Producción** | **4.0** | 7.0 | 7.5 | **8.0** | 9.0 |
-| **Global** | **7.1** | **7.8** | **8.2** | **8.5** | **8.9** |
+| Dimensión | Inicial | P1 | P2 | P3 | **P4 (real)** | Proy. tras Fase 2 (móvil) |
+|---|---|---|---|---|---|---|
+| Accesibilidad (WCAG) | 5.5 | 8.0 | 8.5 | 9.0 | **9.0** ✅ | 9.0 |
+| Responsividad | 5.5 | 5.5 | 5.5 | 5.5 | 5.5 — | **8.5** |
+| Jerarquía Visual | 6.5 | 8.0 | 8.0 | 8.5 | **9.0** ✅ | 9.0 |
+| Usabilidad | 7.0 | 7.5 | 8.0 | 8.5 | **8.5** ✅ | 8.5 |
+| Consistencia Visual | 7.5 | 8.0 | 8.5 | 9.0 | **9.0** ✅ | 9.0 |
+| Feedback de Estado | 7.5 | 7.5 | 7.5 | 7.5 | **9.0** ✅ | 9.0 |
+| Calidad de Componentes | 8.0 | 8.5 | 9.0 | 9.0 | **9.0** ✅ | 9.0 |
+| **Preparación para Producción** | **4.0** | 7.0 | 7.5 | 8.0 | **8.0** | 9.0 |
+| **Global** | **7.1** | **7.8** | **8.2** | **8.5** | **8.7** | **9.0** |
 
-Cinco de las seis dimensiones de desktop ya alcanzaron su proyección de fin de plan, porque se cerraron en el design system y no caso por caso. **Responsividad sigue clavada en 5.5**: es el único techo real de la nota global, y por decisión explícita se aborda al final.
+**Las siete dimensiones de desktop alcanzaron su proyección de fin de plan**, porque se cerraron en el design system y no caso por caso. **Responsividad sigue clavada en 5.5**: es el único techo real de la nota global, y por decisión explícita se aborda al final.
 
 ---
 
@@ -312,10 +368,25 @@ Cinco de las seis dimensiones de desktop ya alcanzaron su proyección de fin de 
 - [x] 3001/3001 tests
 - [ ] **Pendiente de verificación visual:** tres pasadas sin recapturar
 
-**Fase 2 (móvil, diferida) cerrada cuando:**
-- [ ] Ninguna captura móvil excede 390px de ancho de documento (validado por el script de capturas)
-- [ ] Todo control interactivo mide ≥44px de alto bajo el breakpoint `sm`
-- [ ] Recepción y Compras son operables íntegramente en 390px, incluida la acción principal
+**Fase 3-desktop-III — ✅ CERRADA (Pasada 4):**
+- [x] `loading.tsx` en 144/145 rutas
+- [x] El CTA del formulario de solicitud deja de flotar fuera de la tarjeta
+- [x] Los `EmptyState` clasificados; los que estaban mal, corregidos
+- [x] 3001/3001 tests
+- [ ] **Pendiente de verificación visual:** cuatro pasadas sin recapturar
+
+**Fase 3-desktop-IV — ✅ CERRADA (Pasada 5):**
+- [x] Todo truncado que sea identificador de registro es recuperable con `title`
+- [x] Todo `EmptyState` de nivel página tiene salida clicable
+- [x] B-5 medido y retractado
+- [x] 3001/3001 tests
+- [ ] **Pendiente de verificación visual:** cinco pasadas sin recapturar
+
+**Fase 2 (móvil) — ✅ CERRADA (Pasada 6):**
+- [x] El script de capturas **detecta y reporta** el scroll horizontal, nombrando al culpable, y falla con `exitCode 1`
+- [x] Todo control interactivo mide ≥44px de alto bajo el breakpoint `sm`
+- [x] Recepción y Compras son operables íntegramente en 390px, incluida la acción principal
+- [ ] **Pendiente de verificación visual:** seis pasadas sin recapturar — ver §"riesgo abierto" en la auditoría
 
 **Fase 3 cerrada cuando:**
 - [ ] Un solo estilo de cabecera de tabla en toda la aplicación
