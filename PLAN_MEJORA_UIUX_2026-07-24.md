@@ -4,9 +4,9 @@
 **Fecha:** 2026-07-24
 **Meta:** cerrar los 2 hallazgos Críticos y los 8 Altos para llevar *Preparación para Producción* de 4.0 a ≥8.0 y la puntuación global de 7.1 a ≈8.6.
 
-> ## Estado: auditoría cerrada · quedan E-2 (decisión), Fase 4 y 2 errores detectados sin diagnosticar
-> **Pasada 9 completada el 2026-07-25.** Global **9.5 → 9.6**.
-> `next build` limpio · `tsc` limpio · **ESLint 0 problemas en todo el repo** · **3005/3005 tests** · 159/159 rutas.
+> ## Estado: auditoría cerrada · queda 1 error sin diagnosticar (`/ppa` #418) y Fase 4
+> **Pasada 10 completada el 2026-07-25.** Global **9.6 → 9.7**.
+> `next build` limpio · `tsc` limpio · **ESLint 0 problemas en todo el repo** · **3012/3012 tests** · 159/159 rutas.
 >
 > | Pasada | Global | Qué cerró |
 > |---|---|---|
@@ -15,6 +15,7 @@
 > | 7 | 9.1 → 9.3 | Validación visual real · causa raíz de A-7 · **build roto desde P1** |
 > | 8 | 9.3 → 9.5 | Fase 5: E-1, E-3, E-4, E-5, M-13 |
 > | 9 | 9.5 → 9.6 | **Errores preexistentes:** 3 páginas rotas + 3 derivas del entorno de auditoría |
+> | 10 | 9.6 → 9.7 | **E-2** (`localStorage`, decisión del usuario) · `/entregas/[id]/print` #418 resuelto · `/ppa` #418 investigado a fondo, sigue sin causa raíz |
 >
 > ### El patrón que domina este trabajo: el entorno de auditoría mintió tres veces
 > 1. **C-1** — el seed insertaba un movimiento de inventario contradictorio → un falso Crítico.
@@ -265,7 +266,7 @@ Ejecutada en cuatro tandas (Fase 3-desktop I–IV). Residuos que quedan **por cr
 
 ---
 
-### ✅ Fase 5 — Roadmap de productividad · COMPLETADA (Pasada 8), salvo E-2
+### ✅ Fase 5 — Roadmap de productividad · COMPLETADA (Pasada 8 + E-2 en Pasada 10)
 
 | Propuesta | Estado | Nota |
 |---|---|---|
@@ -274,7 +275,7 @@ Ejecutada en cuatro tandas (Fase 3-desktop I–IV). Residuos que quedan **por cr
 | **E-4** Columna congelada | ✅ | Opt-in en las 7 tablas de ≥8 columnas; divisor con `::after` porque el sticky rompe `border-collapse` |
 | **E-5** `Enter` entre campos | ✅ | Hook con 4 tests. El test destapó que `offsetParent` habría inutilizado el hook dentro de diálogos |
 | **M-13** atajo `n` | ✅ | Opt-in por página. Un `n` global que adivinara el botón primario habría disparado "Aprobar todos" en Aprobaciones |
-| **E-2** Vistas guardadas | ⏳ | **Requiere decisión:** `localStorage` hoy, o esquema si se quiere por usuario y compartible |
+| **E-2** Vistas guardadas | ✅ | **Pasada 10 — decisión: `localStorage`**, por dispositivo. Hook + `Popover` UI + 7 tests, integrado en `ListFilters` (Solicitudes/Compras/Aprobaciones/Recepción) |
 
 ---
 
@@ -289,7 +290,19 @@ Ejecutada en cuatro tandas (Fase 3-desktop I–IV). Residuos que quedan **por cr
 | `catch` que se tragaba fallos de modal | ✅ | Ahora avisa |
 | Variable muerta `allReturned` | ✅ | — |
 | Archivo de 0 bytes trackeado con nombre roto | ✅ | Eliminado, sin stagear |
-| React #418 en `/ppa` y `/entregas/[id]/print` | ⏳ **Detectado, no diagnosticado** | Sólo en build de producción; no es prerender (rutas dinámicas) ni el layout compartido (rutas hermanas funcionan). Con señal automática desde ahora |
+| React #418 en `/entregas/[id]/print` | ✅ **Resuelto en Pasada 10** | Causa: `<html>` propio duplicando el del root layout. Fragment + `generateMetadata`, igual que las rutas print hermanas |
+| React #418 en `/ppa` | ⏳ **Investigado a fondo en Pasada 10, sigue sin causa raíz** | HTML anidado, `navigator.onLine` y `notifPermission` descartados con evidencia; producción no calcula diagnóstico de hidratación (confirmado por `grep` en el bundle); stack resuelto con sourcemaps cae íntegro en React interno. Siguiente paso: bisección del JSX de `PpaForm`, no ejecutada |
+
+---
+
+### ✅ Pasada 10 — E-2 y uno de los dos #418
+
+| Ítem | Estado | Nota |
+|---|---|---|
+| E-2 vistas guardadas | ✅ | `localStorage`, decisión del usuario. Ver Fase 5 arriba |
+| `/entregas/[id]/print` #418 | ✅ | Causa raíz confirmada y arreglada. Ver fila arriba |
+| `/ppa` #418 | ⏳ | Sigue abierto; techo técnico documentado, no falta de esfuerzo |
+| Verificación | ✅ | `tsc` limpio · ESLint 0 · 3012/3012 tests (+7) · 159/159 rutas recapturadas contra build fresco · confirmado por recaptura que `/entregas/[id]/print` ya no aparece en la lista de errores |
 
 ---
 

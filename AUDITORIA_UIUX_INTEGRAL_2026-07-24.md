@@ -12,6 +12,37 @@
 
 ## 0. Estado de remediación
 
+### Pasada 10 — cierre de E-2 y uno de los dos #418 pendientes (2026-07-25)
+
+**Puntuación global: 9.6 → 9.7.** Verificación: `next build` limpio · `tsc` limpio · **ESLint 0 problemas** · **3012/3012 tests** (+7 sobre Pasada 9) · 159/159 rutas recapturadas contra build fresco.
+
+#### `/entregas/[id]/print` — RESUELTO, causa raíz confirmada
+
+De los dos #418 que la Pasada 9 dejó "detectados, no diagnosticados", éste sí cedió. La página renderizaba su propio `<html lang="es-CL"><head>…</head><body>…</body></html>` **encima** del `<html>/<body>` que ya pone el root layout — dos etiquetas que el navegador no puede tener y React tampoco. Confirmado con un diff byte a byte del HTML crudo de la respuesta contra el HTML ya parseado por el navegador, sobre la misma petición (no dos peticiones separadas, que habría introducido el nonce de CSP como falso positivo).
+
+**Arreglo:** se retiró el wrapper `<html>/<head>/<body>` y se reemplazó por un Fragment (`<>...</>`), igual que las dos rutas hermanas que ya funcionaban (`compras/[id]/print`, `sst/[id]/print`). El `<title>` de la página, que vivía en una etiqueta `<title>` cruda dentro del `<head>` que se retiró, pasó a `generateMetadata({ params })` (API de Metadata de Next). Verificado dos veces: `tsc --noEmit` limpio, y su ausencia de la lista de errores en la recaptura completa de 159 rutas (estaba presente antes del fix, no después).
+
+#### `/ppa` — sigue sin diagnosticar; techo técnico documentado, no abandono
+
+El segundo #418 no cedió pese a una investigación exhaustiva. Descartado con evidencia, no por descarte:
+
+- **HTML anidado inválido:** descartado. El mismo diff byte-a-byte usado en `entregas-print` (misma petición, sin comparar nonces entre requests distintos) mostró identidad estructural total.
+- **`navigator.onLine` (usado por `useOnlineStatus`):** descartado. Medido `true` en el navegador de captura, coincide con el default de SSR.
+- **`notifPermission`:** descartado. Su rama de código es inalcanzable en una carga fresca de `/ppa`.
+- **Diagnóstico de React en el bundle de producción:** confirmado por `grep -c` que **react-dom de producción elimina por completo** el código que calcula `describeDiff`/`hydrationDiffRootDEV` (0 coincidencias) — el árbol de errores de producción **no puede** señalar el nodo culpable, con o sin sourcemaps.
+- **Stack trace resuelto con sourcemaps:** confirmado que el stack cae íntegramente dentro del reconciliador de React (`beginWork`/`performUnitOfWork`/`throwOnHydrationMismatch`), sin un solo frame de código de aplicación.
+
+**Siguiente paso concreto, no ejecutado:** bisección del JSX de `PpaForm` (comentar ~mitad del árbol, reconstruir, recapturar, repetir por bisección binaria — ~3 iteraciones) para aislar el subárbol responsable. Se decidió no ejecutarlo en esta pasada por costo/beneficio frente a lo ya evidenciado; queda como el punto de entrada si se retoma.
+
+#### E-2 — resuelto por decisión del usuario: `localStorage`
+
+Ante el trade-off que dejó pendiente la Pasada 8 (persistencia por dispositivo vs. esquema compartible entre usuarios), la decisión fue `localStorage`. Implementado:
+
+- **[lib/hooks/use-saved-views.ts](lib/hooks/use-saved-views.ts):** hook `useSavedViews(scopeKey)` — persiste cada vista como su querystring completo bajo `saved-views:${scopeKey}`, tope FIFO de 20 por scope, sync entre pestañas vía `storage` + evento custom. Bug real atrapado por su propio test: `getSnapshot` debe devolver la misma referencia si el contenido no cambió, o `useSyncExternalStore` entra en loop infinito — resuelto con una caché de snapshot por scope.
+- **[components/ui/saved-views.tsx](components/ui/saved-views.tsx):** UI en `Popover` (no `DropdownMenu`, que auto-cierra al click y no puede hospedar un formulario de nombre inline). Guardar/aplicar/quitar.
+- **[components/adquisiciones/list-filters.tsx](components/adquisiciones/list-filters.tsx):** integrado en `ListFilters`, el filtro compartido de Solicitudes/Compras/Aprobaciones/Recepción. `scopeKey = pathname` (esas rutas no tienen segmento dinámico, así que alcanza sin una prop nueva).
+- **7 tests nuevos** en [components/__tests__/use-saved-views.test.tsx](components/__tests__/use-saved-views.test.tsx): guardar+listar, aplicar navega con `router.replace(..., { scroll: false })`, quitar una sin tocar las demás, aislamiento entre scopes, nombre vacío/espacios rechazado, tope FIFO en 20, `localStorage` corrupto degrada a lista vacía en vez de romper.
+
 ### Pasada 9 — errores preexistentes (2026-07-25)
 
 **Puntuación global: 9.5 → 9.6.** Verificación: `next build` limpio · `tsc` limpio · **ESLint 0 problemas en todo el repo** · **3005/3005 tests** · 159/159 rutas capturadas.
@@ -50,6 +81,8 @@ Ahora el seed **deriva de `SYSTEM_PERMISSIONS`** y una guardia de paridad lanza 
 - **No es el layout compartido:** `/ppa/result/[token]` y `/tae/access/…` están en el mismo grupo `(public)` con el mismo `<Toaster>` y funcionan; `compras-print` y `sst-print` están en `(print)` y funcionan.
 
 No sigo especulando: con A-7 adiviné tres veces y la respuesta llegó al instrumentar. Quedan **detectados de forma reproducible y con señal automática**, que es de donde parte quien los tome.
+
+**Actualización Pasada 10:** `/entregas/[id]/print` **resuelto** (causa: `<html>` duplicado sobre el del root layout). `/ppa` **sigue abierto** pese a una investigación exhaustiva — ver Pasada 10 para el rastro de evidencia y el techo técnico encontrado.
 
 #### Otros preexistentes cerrados
 
@@ -642,7 +675,7 @@ y `Input`/`Select`/`Textarea` a `h-11 sm:h-9`. Es un cambio de una línea por va
 | ID | Propuesta | Estado |
 |---|---|---|
 | ✅ **E-1** | Selector de densidad Compacto/Cómodo | Preferencia compartida entre tablas, vía `data-density` + `localStorage`. Se ofrece desde 8 filas |
-| ⏳ **E-2** | Vistas guardadas (filtros + columnas) por usuario | **Pendiente por decisión:** `localStorage` es inmediato; por usuario y compartible requiere esquema |
+| ✅ **E-2** | Vistas guardadas (filtros + columnas) por usuario | **Resuelto en Pasada 10, decisión del usuario: `localStorage`** — por dispositivo, no compartible entre personas. Hook + UI + 7 tests, integrado en `ListFilters` |
 | ✅ **E-3** | Acciones en lote con casilla maestra | Selección cruzando solicitudes; la acción del servidor ya validaba por ítem |
 | ✅ **E-4** | Columna congelada en tablas de ≥8 columnas | `stickyFirstColumn` opt-in, activo en 7 tablas |
 | ✅ **E-5** | `Enter` entre campos en captura repetitiva | Hook con test; corregido un bug que lo habría inutilizado dentro de diálogos |
@@ -659,10 +692,10 @@ y `Input`/`Select`/`Textarea` a `h-11 sm:h-9`. Es un cambio de una línea por va
 | Alto | 8 | 8 | — | **0** |
 | Medio | 15 | 14 | 1 parcial (M-3) | **0** |
 | Bajo | 6 | 5 | 1 (B-5) | **0** |
-| Mejora | 5 | 4 (E-1, E-3, E-4, E-5) | — | **1** (E-2, por decisión) |
-| **Total** | **37** | **33** | **2 + 1 parcial** | **1** |
+| Mejora | 5 | 5 (E-1, E-2, E-3, E-4, E-5) | — | **0** |
+| **Total** | **37** | **34** | **2 + 1 parcial** | **0** |
 
-**Queda un solo ítem abierto en toda la auditoría: E-2**, y está abierto porque requiere una decisión de producto (persistencia en `localStorage` vs esquema), no porque falte trabajo.
+**Cero ítems abiertos en la tabla formal de hallazgos** (E-2 cerrado en la Pasada 10). Lo que sigue abierto vive fuera de esta tabla: el #418 de `/ppa` (detectado en Pasada 9, investigado a fondo en Pasada 10, sin causa raíz confirmada) y los tres ítems de Fase 4 que requieren sesión interactiva (ver más abajo).
 
 ### Estado de la verificación
 
