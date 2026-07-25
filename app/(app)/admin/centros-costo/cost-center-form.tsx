@@ -32,6 +32,11 @@ interface CostCenterFormProps {
   worksites: WorksiteOption[]
 }
 
+// Radix Select prohíbe `value=""` en un SelectItem (la cadena vacía está
+// reservada para limpiar la selección). Usarla lanza en cliente y tumba la
+// pantalla. El centinela es sólo para Radix: el valor enviado sigue siendo "".
+const NONE = "_none"
+
 export function CostCenterForm({ open, onClose, editCostCenter, worksites }: CostCenterFormProps) {
   const isEdit = !!editCostCenter
   const [worksiteId, setWorksiteId] = React.useState(editCostCenter?.worksiteId ?? "")
@@ -69,12 +74,12 @@ export function CostCenterForm({ open, onClose, editCostCenter, worksites }: Cos
                 />
               </Field>
               <Field label="Faena (opcional)" htmlFor="cc-worksite" error={state.fieldErrors?.worksiteId?.[0]}>
-                <Select value={worksiteId} onValueChange={setWorksiteId}>
+                <Select value={worksiteId || NONE} onValueChange={(v) => setWorksiteId(v === NONE ? "" : v)}>
                   <SelectTrigger id="cc-worksite" className="h-9 w-full">
                     <SelectValue placeholder="Sin faena asociada" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Sin faena asociada</SelectItem>
+                    <SelectItem value={NONE}>Sin faena asociada</SelectItem>
                     {worksites.map((w) => (
                       <SelectItem key={w.id} value={w.id}>{w.name} ({w.code})</SelectItem>
                     ))}

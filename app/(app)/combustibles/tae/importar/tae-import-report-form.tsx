@@ -140,10 +140,11 @@ export function TaeImportReportForm() {
                 <label className="sr-only" htmlFor={`mapping-${item.key}`}>Destino de {item.legacyValue}</label>
                 <Select value={currentValue} onValueChange={(v) => updateDecision(item.key, v)}>
                   <SelectTrigger id={`mapping-${item.key}`} className="h-9 min-w-64">
-                    <SelectValue />
+                    {/* El placeholder lo pinta Radix cuando el valor es "": no
+                        hace falta (ni se permite) un SelectItem con value="". */}
+                    <SelectValue placeholder="Selecciona una decisión…" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Selecciona una decisión…</SelectItem>
                     <SelectItem value="__none__">Sin equivalente</SelectItem>
                     {item.options.map((option) => <SelectItem key={option.id} value={option.id}>{option.label}</SelectItem>)}
                   </SelectContent>

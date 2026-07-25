@@ -46,6 +46,11 @@ interface SheetFormProps {
   roleOptions: string[]
 }
 
+// Radix Select prohíbe `value=""` en un SelectItem (la cadena vacía está
+// reservada para limpiar la selección). Usarla lanza en cliente y tumba la
+// pantalla. El centinela es sólo para Radix: el valor enviado sigue siendo "".
+const NONE = "_none"
+
 export function SheetForm({ open, onClose, editSheet, programs, roleOptions }: SheetFormProps) {
   const isEdit = !!editSheet
 
@@ -118,12 +123,12 @@ export function SheetForm({ open, onClose, editSheet, programs, roleOptions }: S
                 />
               </Field>
               <Field label="Programa (opcional)" htmlFor="sht-prog" error={state.fieldErrors?.programId?.[0]} helper="Vacío para hoja plantilla global.">
-                <Select value={programId} onValueChange={setProgramId}>
+                <Select value={programId || NONE} onValueChange={(v) => setProgramId(v === NONE ? "" : v)}>
                   <SelectTrigger id="sht-prog" className="h-9 w-full">
                     <SelectValue placeholder="— Hoja plantilla global —" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">— Hoja plantilla global —</SelectItem>
+                    <SelectItem value={NONE}>— Hoja plantilla global —</SelectItem>
                     {programs.map((p) => (
                       <SelectItem key={p.id} value={p.id}>{p.title} · {p.year} v{p.version} ({p.status})</SelectItem>
                     ))}
