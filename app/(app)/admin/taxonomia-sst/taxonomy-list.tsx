@@ -119,6 +119,7 @@ export function TaxonomyView({ categories, activeSlug, types }: TaxonomyViewProp
         <DesktopOnlyTableNotice />
         <DataTable
         enableColumnToggle
+        viewKey="tax"
         stickyFirstColumn
           columns={CATEGORY_COLUMNS}
           rows={catRows}

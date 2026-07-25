@@ -104,6 +104,7 @@ export function CatalogList({ units, templates, categories, legacyUnits }: Catal
           <DesktopOnlyTableNotice />
           <DataTable
         enableColumnToggle
+        viewKey="cat"
         stickyFirstColumn
             columns={UNIT_COLUMNS}
             rows={unitRows}

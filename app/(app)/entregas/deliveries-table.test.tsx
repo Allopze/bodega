@@ -1,6 +1,12 @@
 // @vitest-environment jsdom
 import { render, screen } from "@testing-library/react"
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
+
+vi.mock("next/navigation", () => ({
+  useSearchParams: () => new URLSearchParams(),
+  useRouter: () => ({ replace: vi.fn() }),
+}))
+
 import { DeliveriesTable, type DeliveryRow } from "./deliveries-table"
 
 const row: DeliveryRow = {

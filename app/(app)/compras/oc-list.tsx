@@ -111,6 +111,7 @@ export function OcList({
       {/* OC table */}
       <DataTable
         enableColumnToggle
+        viewKey="oc"
         stickyFirstColumn
         columns={COLUMNS}
         rows={orders as unknown as Record<string, unknown>[]}

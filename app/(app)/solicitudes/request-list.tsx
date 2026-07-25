@@ -140,6 +140,7 @@ export function RequestList({
       />
       <DataTable
         enableColumnToggle
+        viewKey="sol"
         stickyFirstColumn
         columns={COLUMNS}
         rows={requests as unknown as Record<string, unknown>[]}

@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { useSearchParams, useRouter } from "next/navigation"
 import { CaretUp, CaretDown, CaretUpDown, GearSix } from "@phosphor-icons/react"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
@@ -74,12 +75,33 @@ const DataTableInner = <T extends Record<string, unknown>>({
   disableInternalSearch = false,
   enableColumnToggle = false,
   stickyFirstColumn = false,
+  viewKey,
 }: DataTableProps<T>) => {
   const { searchQuery } = useSafeShellHeader()
   const density = React.useSyncExternalStore(subscribeDensity, getDensitySnapshot, () => "comfortable" as Density)
+  const searchParams = useSearchParams()
+  const router = useRouter()
 
-  // Column visibility state
+  // ── E-2 · Vistas guardadas ────────────────────────────────────────────────
+  // Cuando viewKey está definido, la visibilidad de columnas y el sort se
+  // persisten en URL search params, sobreviviendo la navegación y siendo
+  // compartibles via URL. Params: ${viewKey}_cols, ${viewKey}_sort, ${viewKey}_dir.
+  const setViewParam = React.useCallback((key: string, value: string | null) => {
+    const params = new URLSearchParams(searchParams.toString())
+    if (value === null) params.delete(key)
+    else params.set(key, value)
+    router.replace(`?${params.toString()}`, { scroll: false })
+  }, [searchParams, router])
+
+  // Column visibility state — from URL or defaults
   const [visibleKeys, setVisibleKeys] = React.useState<Set<string>>(() => {
+    if (viewKey) {
+      const colsParam = searchParams.get(`${viewKey}_cols`)
+      if (colsParam) {
+        const keys = colsParam.split(",").filter(Boolean)
+        if (keys.length > 0) return new Set(keys)
+      }
+    }
     return new Set(
       columns
         .filter((col) => col.defaultVisible !== false)
@@ -101,15 +123,35 @@ const DataTableInner = <T extends Record<string, unknown>>({
     })
   }
 
+  // Persist column visibility to URL when viewKey is set
+  React.useEffect(() => {
+    if (!viewKey) return
+    const allDefault = columns.filter((c) => c.defaultVisible !== false).map((c) => c.key)
+    const current = Array.from(visibleKeys)
+    const isDefault = current.length === allDefault.length && allDefault.every((k) => visibleKeys.has(k))
+    setViewParam(`${viewKey}_cols`, isDefault ? null : current.join(","))
+  }, [visibleKeys, viewKey, columns, setViewParam])
+
   // If explicit search prop is given, use it. Otherwise, fall back to header context search.
   // When server-side filtering is in effect, the in-memory filter is a no-op.
   const currentSearch = disableInternalSearch
     ? ""
     : search !== undefined ? search : searchQuery
   const hasExplicitSearch = !disableInternalSearch && search !== undefined
-  const [sortKey, setSortKey] = React.useState<string | null>(null)
-  const [sortDir, setSortDir] = React.useState<SortDir>(null)
+  const [sortKey, setSortKey] = React.useState<string | null>(() => viewKey ? searchParams.get(`${viewKey}_sort`) : null)
+  const [sortDir, setSortDir] = React.useState<SortDir>(() => {
+    if (!viewKey) return null
+    const d = searchParams.get(`${viewKey}_dir`)
+    return d === "asc" || d === "desc" ? d : null
+  })
   const [page,    setPage]    = React.useState(1)
+
+  // Persist sort state to URL when viewKey is set
+  React.useEffect(() => {
+    if (!viewKey) return
+    setViewParam(`${viewKey}_sort`, sortKey)
+    setViewParam(`${viewKey}_dir`, sortDir)
+  }, [sortKey, sortDir, viewKey, setViewParam])
 
   // ── Filter ──────────────────────────────────────────────────────────────────
   const filtered = React.useMemo(() => {
@@ -225,6 +267,19 @@ const DataTableInner = <T extends Record<string, unknown>>({
                       />
                     ))}
                   </div>
+                  {viewKey && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setVisibleKeys(new Set(columns.filter((c) => c.defaultVisible !== false).map((c) => c.key)))
+                        setSortKey(null)
+                        setSortDir(null)
+                      }}
+                      className="mt-2 w-full rounded-[var(--radius)] px-2 py-1.5 text-xs text-[var(--color-text-subtle)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)] transition-colors"
+                    >
+                      Restablecer vista
+                    </button>
+                  )}
                 </DropdownMenuContent>
               </DropdownMenu>
             )}

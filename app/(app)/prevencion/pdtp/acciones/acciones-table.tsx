@@ -114,6 +114,7 @@ export function AccionesTable({ items, activityLabelById, worksiteNameById, work
 
       <DataTable
         enableColumnToggle
+        viewKey="pdtp"
         stickyFirstColumn
         columns={COLUMNS}
         rows={rows}

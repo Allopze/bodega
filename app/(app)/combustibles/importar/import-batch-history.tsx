@@ -157,6 +157,7 @@ export function ImportBatchHistory({ batches }: { batches: BatchRow[] }) {
   <DesktopOnlyTableNotice>El historial de importaciones tiene 11 columnas. La importación de planillas se hace desde un computador; aquí puedes desplazar en horizontal para consultarlo.</DesktopOnlyTableNotice>
       <DataTable
           enableColumnToggle
+          viewKey="imp"
         stickyFirstColumn
         columns={COLUMNS}
         rows={preFiltered as unknown as Record<string, unknown>[]}
