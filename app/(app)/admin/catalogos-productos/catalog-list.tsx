@@ -101,6 +101,7 @@ export function CatalogList({ units, templates, categories, legacyUnits }: Catal
             </div>
           )}
           <DataTable
+        enableColumnToggle
             columns={UNIT_COLUMNS}
             rows={unitRows}
             searchKeys={["code", "label", "description"]}

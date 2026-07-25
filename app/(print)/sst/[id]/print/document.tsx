@@ -111,9 +111,9 @@ export function ActaDocument({ data, logoSrc }: { data: ActaData; logoSrc: strin
             <table>
               <thead>
                 <tr>
-                  <th style={{ width: 18 }}>N°</th>
+                  <th scope="col" style={{ width: 18 }}>N°</th>
                   <th>Ítem</th>
-                  <th style={{ width: 80, textAlign: "center" }}>Estado</th>
+                  <th scope="col" style={{ width: 80, textAlign: "center" }}>Estado</th>
                   <th>Observación</th>
                   {hasAccion && <th>Acción Correctiva</th>}
                 </tr>
@@ -183,7 +183,7 @@ export function ActaDocument({ data, logoSrc }: { data: ActaData; logoSrc: strin
           <table>
             <thead>
               <tr>
-                <th style={{ width: 24 }}>N°</th>
+                <th scope="col" style={{ width: 24 }}>N°</th>
                 <th>Hallazgo</th>
                 <th>Acción</th>
                 <th>Responsable</th>
@@ -218,8 +218,8 @@ export function ActaDocument({ data, logoSrc }: { data: ActaData; logoSrc: strin
               <tr>
                 <th>Instancia</th>
                 <th>Fecha Programada</th>
-                <th style={{ textAlign: "center" }}>Realizado</th>
-                <th style={{ textAlign: "center" }}>Cumple</th>
+                <th scope="col" style={{ textAlign: "center" }}>Realizado</th>
+                <th scope="col" style={{ textAlign: "center" }}>Cumple</th>
                 <th>Observaciones</th>
               </tr>
             </thead>

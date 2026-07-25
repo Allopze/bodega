@@ -2,13 +2,11 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { ShieldCheck } from "@phosphor-icons/react"
-import { useSafeShellHeader } from "@/components/layout/header-context"
+import { DataTable } from "@/components/admin/data-table"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { EmptyState } from "@/components/ui/empty-state"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { TableCell, TableRow } from "@/components/ui/table"
 import type { CompetencyGap } from "@/lib/prevention/training"
 import { escalateBlockingGapsAction } from "../actions"
 
@@ -29,21 +27,28 @@ function defaultTargetDate() {
   return value.toISOString().slice(0, 10)
 }
 
+const COLUMNS = [
+  { key: "workerName", label: "Trabajador", sortable: true },
+  { key: "courseName", label: "Curso exigido", sortable: true },
+  { key: "gapType", label: "Tipo de brecha", sortable: true },
+  { key: "enforcement", label: "Exigibilidad", sortable: true },
+  { key: "expiredAt", label: "Venció", sortable: true },
+  { key: "reason", label: "Fundamento" },
+]
+
 export function CompetencyGapList({ gaps, canEscalate }: Props) {
-  const { searchQuery } = useSafeShellHeader()
   const [enforcement, setEnforcement] = React.useState("all")
   const [gapType, setGapType] = React.useState("all")
   const [pending, startTransition] = React.useTransition()
   const [message, setMessage] = React.useState<string | null>(null)
 
-  const query = searchQuery.trim().toLocaleLowerCase("es-CL")
   const filtered = gaps.filter((gap) => {
     if (enforcement !== "all" && gap.enforcement !== enforcement) return false
     if (gapType !== "all" && gap.gapType !== gapType) return false
-    if (!query) return true
-    return `${gap.workerName} ${gap.courseName} ${gap.position ?? ""}`.toLocaleLowerCase("es-CL").includes(query)
+    return true
   })
 
+  const rows = filtered as unknown as Record<string, unknown>[]
   const blockingCount = gaps.filter((gap) => gap.enforcement === "blocking").length
 
   function escalate() {
@@ -97,54 +102,36 @@ export function CompetencyGapList({ gaps, canEscalate }: Props) {
         )}
       </div>
 
-      {filtered.length === 0 ? (
-        <EmptyState
-          icon={<ShieldCheck size={20} />}
-          title={gaps.length === 0 ? "Sin brechas de competencia" : "No hay brechas con estos filtros"}
-          description={gaps.length === 0
-            ? "Toda la dotación activa alcanzada por un requisito vigente tiene su habilitación al día. Si esperabas ver brechas, revisa que existan requisitos de competencia declarados."
-            : "Ajusta los filtros o el texto del buscador superior."}
-          action={gaps.length === 0
-            ? <Button asChild variant="secondary"><Link href="/prevencion/capacitacion/competencias">Ver requisitos</Link></Button>
-            : <Button type="button" variant="secondary" onClick={() => { setEnforcement("all"); setGapType("all") }}>Ver todas</Button>}
-        />
-      ) : (
-        <div className="overflow-x-auto rounded-lg border border-[var(--color-border)]">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Trabajador</TableHead>
-                <TableHead>Curso exigido</TableHead>
-                <TableHead>Tipo de brecha</TableHead>
-                <TableHead>Exigibilidad</TableHead>
-                <TableHead>Venció</TableHead>
-                <TableHead>Fundamento</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filtered.map((gap) => (
-                <TableRow key={`${gap.workerId}-${gap.requirementId}`}>
-                  <TableCell>
-                    <Link href={`/prevencion/capacitacion/competencias?workerId=${gap.workerId}`} className="text-sm font-medium underline-offset-2 hover:underline">
-                      {gap.workerName}
-                    </Link>
-                    <span className="block text-xs text-[var(--color-text-subtle)]">{gap.position ?? "Sin cargo"}</span>
-                  </TableCell>
-                  <TableCell className="text-sm">{gap.courseName}</TableCell>
-                  <TableCell className="text-sm">{GAP_TYPE_LABELS[gap.gapType]}</TableCell>
-                  <TableCell>
-                    <Badge variant={gap.enforcement === "blocking" ? "danger" : "warning"}>
-                      {gap.enforcement === "blocking" ? "Bloqueante" : "Advertencia"}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-sm tabular-nums">{gap.expiredAt ?? "—"}</TableCell>
-                  <TableCell className="max-w-md text-xs text-[var(--color-text-subtle)]">{gap.reason}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-      )}
+      <DataTable
+        columns={COLUMNS}
+        rows={rows}
+        searchKeys={["workerName", "courseName", "position"]}
+        emptyTitle={gaps.length === 0 ? "Sin brechas de competencia" : "No hay brechas con estos filtros"}
+        emptyDescription={gaps.length === 0 ? "Toda la dotación activa alcanzada por un requisito vigente tiene su habilitación al día. Si esperabas ver brechas, revisa que existan requisitos de competencia declarados." : "Ajusta los filtros o el texto del buscador superior."}
+        emptyAction={gaps.length === 0 ? <Button asChild variant="secondary"><Link href="/prevencion/capacitacion/competencias">Ver requisitos</Link></Button> : <Button type="button" variant="secondary" onClick={() => { setEnforcement("all"); setGapType("all") }}>Ver todas</Button>}
+        renderRow={(row) => {
+          const gap = row as unknown as CompetencyGap
+          return (
+            <TableRow key={`${gap.workerId}-${gap.requirementId}`}>
+              <TableCell>
+                <Link href={`/prevencion/capacitacion/competencias?workerId=${gap.workerId}`} className="text-sm font-medium underline-offset-2 hover:underline">
+                  {gap.workerName}
+                </Link>
+                <span className="block text-xs text-[var(--color-text-subtle)]">{gap.position ?? "Sin cargo"}</span>
+              </TableCell>
+              <TableCell className="text-sm">{gap.courseName}</TableCell>
+              <TableCell className="text-sm">{GAP_TYPE_LABELS[gap.gapType]}</TableCell>
+              <TableCell>
+                <Badge variant={gap.enforcement === "blocking" ? "danger" : "warning"}>
+                  {gap.enforcement === "blocking" ? "Bloqueante" : "Advertencia"}
+                </Badge>
+              </TableCell>
+              <TableCell className="text-sm tabular-nums">{gap.expiredAt ?? "—"}</TableCell>
+              <TableCell className="max-w-md text-xs text-[var(--color-text-subtle)]">{gap.reason}</TableCell>
+            </TableRow>
+          )
+        }}
+      />
     </div>
   )
 }

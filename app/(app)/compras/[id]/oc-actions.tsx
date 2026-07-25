@@ -121,7 +121,7 @@ export function OcActions({
           placeholder="Ej: ítems dañados no serán repuestos, acuerdo con proveedor..."
           required
           aria-label="Motivo del cierre"
-          className="w-full text-xs p-2 rounded border border-(--color-border) bg-(--color-surface) resize-none"
+          className="w-full text-xs p-2 rounded border border-(--color-border-control) bg-(--color-surface) resize-none"
           rows={3}
         />
         {!closeState.ok && closeState.message && closeState !== INITIAL_STATE && (
@@ -172,7 +172,7 @@ export function OcActions({
           placeholder="Explique el motivo por el cual se anula esta orden de compra..."
           required
           aria-label="Motivo de anulación"
-          className="w-full text-xs p-2 rounded border border-(--color-border) bg-(--color-surface) resize-none"
+          className="w-full text-xs p-2 rounded border border-(--color-border-control) bg-(--color-surface) resize-none"
           rows={3}
         />
         {!cancelState.ok && cancelState.message && cancelState !== INITIAL_STATE && (

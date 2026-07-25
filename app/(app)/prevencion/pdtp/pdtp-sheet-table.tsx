@@ -182,7 +182,7 @@ export function PdtpSheetTable({
             </p>
           </div>
         ) : (
-          <TableRoot>
+          <TableRoot stickyHeader>
             <Table>
               <TableHeader>
                 <TableRow>

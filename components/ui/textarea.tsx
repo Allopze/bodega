@@ -12,14 +12,14 @@ const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
         ref={ref}
         className={cn(
           "flex min-h-[80px] w-full rounded-(--radius-lg)",
-          "border border-[var(--color-border)]",
+          "border border-[var(--color-border-control)]",
           "bg-[var(--color-surface)] px-3.5 py-2.5",
           "font-sans text-sm text-[var(--color-text)]",
           "placeholder:text-[var(--color-text-subtle)]",
           "resize-y",
           "transition-[border-color,box-shadow] duration-[var(--duration-fast)] ease-[var(--ease-out)]",
-          "hover:border-[var(--color-border-strong)]",        "active:border-[var(--color-border-strong)]",          "focus:outline-none focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary-line)]",
-          "disabled:cursor-not-allowed disabled:opacity-50 disabled:bg-[var(--color-surface-2)] disabled:hover:border-[var(--color-border)]",
+          "hover:border-[var(--color-border-control-hover)]",        "active:border-[var(--color-border-control-hover)]",          "focus:outline-none focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary-line)]",
+          "disabled:cursor-not-allowed disabled:opacity-50 disabled:bg-[var(--color-surface-2)] disabled:hover:border-[var(--color-border-control)]",
           error && "border-[var(--color-danger)] focus:border-[var(--color-danger)] focus:ring-[var(--color-danger-line)]",
           className,
         )}

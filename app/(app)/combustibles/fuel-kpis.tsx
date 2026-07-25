@@ -1,8 +1,7 @@
 "use client"
 
-import { Card, CardContent } from "@/components/ui/card"
+import { KpiCard } from "@/components/ui/kpi-card"
 import { GasPump, CurrencyCircleDollar, Hash, Gauge } from "@phosphor-icons/react"
-import type { ComponentType } from "react"
 import { formatCLP } from "@/lib/utils"
 
 interface FuelDashboardKpisProps {
@@ -29,55 +28,31 @@ export function FuelDashboardKpis({ totalLiters, totalAmount, loadCount, periodL
       </div>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 sm:gap-4">
-        <Kpi
-          icon={Hash}
+        <KpiCard
+          icon={<Hash size={18} weight="bold" />}
           label="Cargas"
           value={formatNum(loadCount)}
+          detail="Cargas registradas"
         />
-        <Kpi
-          icon={GasPump}
+        <KpiCard
+          icon={<GasPump size={18} weight="bold" />}
           label="Litros totales"
-          value={formatNum(totalLiters)}
-          unit="L"
+          value={`${formatNum(totalLiters)} L`}
+          detail="Combustible cargado"
         />
-        <Kpi
-          icon={CurrencyCircleDollar}
+        <KpiCard
+          icon={<CurrencyCircleDollar size={18} weight="bold" />}
           label="Total gastado"
           value={formatCLP(totalAmount)}
+          detail="Gasto del período"
         />
-        <Kpi
-          icon={Gauge}
+        <KpiCard
+          icon={<Gauge size={18} weight="bold" />}
           label="Precio promedio"
-          value={formatCLP(avgPricePerLiter)}
-          unit="/L"
+          value={`${formatCLP(avgPricePerLiter)}/L`}
+          detail="Por litro"
         />
       </div>
     </section>
-  )
-}
-
-function Kpi({
-  icon: Icon, label, value, unit,
-}: {
-  icon: ComponentType<{ className?: string; weight?: "bold" }>
-  label: string
-  value: string
-  unit?: string
-}) {
-  return (
-    <Card>
-      <CardContent className="flex items-center gap-3 p-4">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[var(--radius-lg)] bg-[var(--color-surface-2)] text-[var(--color-primary)]">
-          <Icon className="h-5 w-5" weight="bold" />
-        </div>
-        <div className="min-w-0">
-          <p className="truncate text-xs text-[var(--color-text-muted)]">{label}</p>
-          <p className="text-xl font-semibold leading-tight tracking-tight text-[var(--color-text)]">
-            {value}
-            {unit && <span className="ml-0.5 text-sm font-normal text-[var(--color-text-muted)]">{unit}</span>}
-          </p>
-        </div>
-      </CardContent>
-    </Card>
   )
 }

@@ -8,7 +8,7 @@ import { StateBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { formatQty, formatDate } from "@/lib/utils"
-import { URGENCY_LABEL, URGENCY_CLASS } from "./types"
+import { PriorityBadge } from "@/components/ui/priority-badge"
 import type { ApprovalItem } from "./types"
 import { ApproveForm } from "./approve-form"
 import { ReasonForm } from "./reason-form"
@@ -81,13 +81,14 @@ export function ItemRow({ item, canApprove = true }: { item: ApprovalItem; canAp
             </div>
           )}
 
+          {/* Metadato informativo, no una advertencia: `warning` lo pintaba en
+              ámbar mono-mayúsculas, con más peso visual que el propio nombre del
+              producto. `default` es prose y neutro. */}
           {(item.suggestedSupplierName || item.supplierHint) && (
             <div className="mt-1 flex gap-1.5 flex-wrap items-center">
-              {(item.suggestedSupplierName || item.supplierHint) && (
-                <Badge variant="warning" size="sm" className="font-normal shrink-0">
-                  Sugerido: {item.suggestedSupplierName || item.supplierHint}
-                </Badge>
-              )}
+              <Badge variant="default" size="sm" className="shrink-0">
+                Sugerido: {item.suggestedSupplierName || item.supplierHint}
+              </Badge>
             </div>
           )}
 
@@ -95,9 +96,7 @@ export function ItemRow({ item, canApprove = true }: { item: ApprovalItem; canAp
             <span className="font-medium text-[var(--color-text)]">
               {formatQty(item.quantity, item.unitOfMeasure)}
             </span>
-            <span className={URGENCY_CLASS[item.urgency] ?? URGENCY_CLASS.normal}>
-              {URGENCY_LABEL[item.urgency] ?? item.urgency}
-            </span>
+            <PriorityBadge priority={item.urgency} size="sm" />
             {item.requiredDate && (
               <span>Para: {formatDate(item.requiredDate)}</span>
             )}
@@ -111,9 +110,12 @@ export function ItemRow({ item, canApprove = true }: { item: ApprovalItem; canAp
         </div>
 
         {action === "idle" && !showLoading && canApprove && (
-          <div className="flex items-center gap-1.5 shrink-0">
+          <div className="flex items-center gap-2.5 shrink-0">
+            {/* Aprobar es la acción esperada de esta pantalla: debe ser el único
+                punto focal Nivel 1 de la fila. Antes era `secondary`, con lo que
+                la bandeja de aprobación no tenía ninguna acción primaria. */}
             <Button
-              variant="secondary"
+              variant="primary"
               size="sm"
               onClick={() => setAction("approving")}
               className="gap-1"

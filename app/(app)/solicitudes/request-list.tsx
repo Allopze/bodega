@@ -139,6 +139,7 @@ export function RequestList({
         exportTipo="solicitudes"
       />
       <DataTable
+        enableColumnToggle
         columns={COLUMNS}
         rows={requests as unknown as Record<string, unknown>[]}
         searchKeys={["code", "worksiteName", "requesterName", "status", "requestType"]}

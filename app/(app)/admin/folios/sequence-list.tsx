@@ -149,7 +149,7 @@ export function SequenceList({ rows }: SequenceListProps) {
                   min={1}
                   step={1}
                   defaultValue={editSeq.nextValue}
-                  className="h-9 w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-sm"
+                  className="h-9 w-full rounded-[var(--radius)] border border-[var(--color-border-control)] bg-[var(--color-surface)] px-3 text-sm"
                 />
               </div>
               <div>

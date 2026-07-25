@@ -137,7 +137,7 @@ function AreaAccordion({
           aria-expanded={open}
           className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-eyebrow transition-colors duration-(--duration-fast) hover:text-(--color-text-muted)"
         >
-          <span className="flex-1 truncate">{area.label}</span>
+          <span title={area.label} className="flex-1 truncate">{area.label}</span>
           <CaretDown size={12} className={cn("shrink-0 text-text-faint transition-transform duration-(--duration-fast)", open && "rotate-180")} />
         </button>
       </Collapsible.Trigger>

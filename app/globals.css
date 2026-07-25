@@ -77,6 +77,18 @@
   --color-border-strong:  oklch(0.848 0.005 90);   /* divider            */
   --color-rule:           oklch(0.225 0.005 90);   /* strong rule        */
 
+  /* ── Límite de controles interactivos ──
+     WCAG 2.2 §1.4.11 exige ≥3:1 para lo que identifica un componente de UI.
+     Los campos son blancos sobre lienzo blanco: el borde es su ÚNICO identificador,
+     y --color-border (1.27:1) no alcanza. Estos dos tokens son sólo para el
+     contorno de controles (input, textarea, select, date-picker, botón secundario,
+     track del switch). Las hairlines decorativas —divisores de tabla, bordes de
+     card, separadores— siguen con --color-border: están exentas por decorativas. */
+     El fondo vinculante es --color-surface-2 (= --color-chrome), no el blanco:
+     un control sobre panel gris exige un borde más oscuro que sobre lienzo blanco. */
+  --color-border-control:       oklch(0.640 0.005 90);  /* #8d8c89 · 3.36:1 blanco / 3.12:1 surface-2 */
+  --color-border-control-hover: oklch(0.545 0.004 90);  /* #727170 · 4.85:1 blanco */
+
   /* ── Chrome — sidebar + header background (edge-to-edge shell) ── */
   --color-chrome:         oklch(0.974 0.004 90);   /* L-shaped shell fill      */
   --color-chrome-hover:   oklch(0.955 0.005 90);   /* hover inside the chrome  */
@@ -84,7 +96,9 @@
   --color-text:           oklch(0.180 0.004 90);   /* near black         */
   --color-text-muted:     oklch(0.430 0.005 90);
   --color-text-subtle:    oklch(0.500 0.005 90);   /* WCAG AA >= 4.5:1    */
-  --color-text-faint:     oklch(0.560 0.004 90);   /* WCAG AA >= 4.5:1    */
+  /* 0.560 rendía 4.32:1 sobre --color-chrome, donde sí se usa (etiquetas de
+     sección del rail, nav-rows.tsx). 0.545 cumple 4.5:1 sobre chrome y blanco. */
+  --color-text-faint:     oklch(0.545 0.004 90);   /* WCAG AA >= 4.5:1    */
 
   /* ── Brand surface ── */
   --color-brand-surface:       oklch(1.000 0 0);
@@ -185,6 +199,18 @@ body {
   text-transform: uppercase;
   color: var(--color-text-muted);
 }
+/* Tratamiento tipográfico único de cabecera de tabla.
+   Existía en dos versiones: `text-eyebrow` MAYÚSCULAS en DataTable (579 usos)
+   y sentence-case 12px en las tablas crudas (~75). Esta utilidad es la fuente
+   única; el padding y la alineación los sigue decidiendo cada tabla. */
+@utility th-type {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--color-text-subtle);
+  text-transform: uppercase;
+  letter-spacing: 0.025em;
+}
+
 @utility text-sub {
   font-family: var(--font-sans);
   font-size: var(--text-sm);
@@ -234,6 +260,25 @@ body {
   [data-pressable] {
     transition: background-color var(--duration-fast) var(--ease-out);
   }
+}
+
+/* ─── Movimiento reducido (WCAG 2.3.3) ─────────────────────────────────────
+   Cubre de una vez las animaciones que no pasan por utilidades de Tailwind:
+   entrada/salida del drawer, toasts de Sonner y los `animate-in`/`animate-out`
+   de tw-animate-css. Los cambios de color y opacidad se conservan: no producen
+   movimiento y son los que transmiten el estado. */
+@media (prefers-reduced-motion: reduce) {
+  [data-sonner-toast],
+  [data-sonner-toast][data-mounted="true"],
+  [data-sonner-toast][data-removed="true"],
+  .animate-in,
+  .animate-out {
+    animation: none !important;
+    transition-duration: 1ms !important;
+    translate: none !important;
+    transform: none !important;
+  }
+  [data-sonner-toast]::after { animation: none !important; }
 }
 
 /* ─── Keyframes ── */

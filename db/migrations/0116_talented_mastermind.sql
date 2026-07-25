@@ -1,0 +1,2 @@
+ALTER TABLE "purchase_request_items" ADD COLUMN "split_from_item_id" text;--> statement-breakpoint
+ALTER TABLE "purchase_request_items" ADD CONSTRAINT "purchase_request_items_split_from_item_id_purchase_request_items_id_fk" FOREIGN KEY ("split_from_item_id") REFERENCES "public"."purchase_request_items"("id") ON DELETE set null ON UPDATE no action;

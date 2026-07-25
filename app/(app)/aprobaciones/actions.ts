@@ -270,10 +270,18 @@ export async function updateDeliveryModeAction(
   const request = await db.query.purchaseRequests.findFirst({
     where: eq(purchaseRequests.id, requestId),
     columns: { id: true, worksiteId: true },
+    with: { items: { columns: { status: true } } },
   })
   if (!request) return { ok: false, message: "Solicitud no encontrada" }
   if (!canAccessWorksite(session, request.worksiteId)) {
     return { ok: false, message: "No tienes acceso a la faena de esta solicitud" }
+  }
+
+  const hasPurchasedItems = (request.items ?? []).some((i) =>
+    ["in_purchase_order", "purchased", "partially_received", "received"].includes(i.status),
+  )
+  if (hasPurchasedItems) {
+    return { ok: false, message: "No se puede cambiar el modo de despacho porque esta solicitud ya posee ítems en Orden de Compra" }
   }
 
   await db.update(purchaseRequests).set({ deliveryMode: mode }).where(eq(purchaseRequests.id, requestId))

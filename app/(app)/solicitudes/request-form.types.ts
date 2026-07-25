@@ -43,6 +43,7 @@ export interface EditRequest {
   worksiteId:  string
   requestType: string
   urgency:     string
+  deliveryMode?: string | null
   requiredDate: string | null
   status:      string
   notes:       string | null

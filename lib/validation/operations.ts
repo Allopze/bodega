@@ -45,6 +45,7 @@ export const requestSchema = z.object({
   worksiteId:   z.string().min(1, "Selecciona una faena"),
   requestType:  z.enum(["epp", "otro", "repuestos", "servicios"]).default("epp"),
   urgency:      z.enum(["normal", "high", "critical"]).default("normal"),
+  deliveryMode: z.enum(["via_oficina", "directo_faena"]).optional().default("via_oficina"),
   requiredDate: z.string().min(1, "Indica la fecha requerida"),
   notes:        z.string().max(500).optional().or(z.literal("")),
   items:        z.array(requestItemSchema).min(1, "Agrega al menos un ítem").max(50, "Máximo 50 ítems por solicitud"),
@@ -53,7 +54,9 @@ export const requestSchema = z.object({
   { message: "Ubicación requerida para cada servicio", path: ["items"] },
 )
 
-export type RequestFormData = z.infer<typeof requestSchema>
+export type RequestFormData = Omit<z.infer<typeof requestSchema>, "deliveryMode"> & {
+  deliveryMode?: "via_oficina" | "directo_faena"
+}
 export type RequestItemFormData = z.infer<typeof requestItemSchema>
 
 // ── Purchase order ───────────────────────────────────────────────────────────

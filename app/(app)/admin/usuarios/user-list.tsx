@@ -137,7 +137,7 @@ export function UserList({ users, invitations, allRoles, allPermissions, allWork
               {/* Status */}
               <TableCell>
                 <Badge
-                  variant={u.passwordSetupPending ? "warning" : u.isActive ? "success" : "default"}
+                  variant={u.passwordSetupPending ? "warning" : u.isActive ? "success" : "neutral"}
                   dot
                   className="w-24 justify-center"
                 >
@@ -201,7 +201,7 @@ export function UserList({ users, invitations, allRoles, allPermissions, allWork
                     <p className="truncate text-xs text-[var(--color-text-subtle)]">{u.email}</p>
                   </div>
                 </div>
-                <Badge variant={u.passwordSetupPending ? "warning" : u.isActive ? "success" : "default"} dot>
+                <Badge variant={u.passwordSetupPending ? "warning" : u.isActive ? "success" : "neutral"} dot>
                   {u.passwordSetupPending ? "Pendiente" : u.isActive ? "Activo" : "Inactivo"}
                 </Badge>
               </div>

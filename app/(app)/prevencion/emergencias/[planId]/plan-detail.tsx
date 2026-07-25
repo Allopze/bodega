@@ -2,6 +2,7 @@
 
 import * as React from "react"
 import { Badge } from "@/components/ui/badge"
+import { DatePicker } from "@/components/ui/date-picker"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -433,8 +434,8 @@ function AddResourceDialog({ planId }: { planId: string }) {
             <Field label="Ubicación"><Input name="location" required minLength={2} maxLength={300} /></Field>
           </div>
           <div className="grid gap-3 md:grid-cols-2">
-            <Field label="Última inspección" hint="Opcional."><Input name="lastInspectedAt" type="date" /></Field>
-            <Field label="Próxima inspección" hint="Opcional."><Input name="nextInspectionAt" type="date" /></Field>
+            <Field label="Última inspección" hint="Opcional."><DatePicker name="lastInspectedAt" /></Field>
+            <Field label="Próxima inspección" hint="Opcional."><DatePicker name="nextInspectionAt" /></Field>
           </div>
           {operation.message && <p role="status" className="text-sm">{operation.message}</p>}
           <DialogFooter><Button type="submit" disabled={operation.pending}>Agregar</Button></DialogFooter>
@@ -623,7 +624,7 @@ function CompleteDrillDialog({ drill, eligibleWorkers, assignees }: {
                 <Field label="Responsable" hint="Opcional.">
                   <Select value={responsibleUserId} onValueChange={setResponsibleUserId}><SelectTrigger><SelectValue placeholder="Sin asignar" /></SelectTrigger><SelectContent><SelectItem value="_none">Sin asignar</SelectItem>{assignees.map((a) => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}</SelectContent></Select><input type="hidden" name="responsibleUserId" value={responsibleUserId === "_none" ? "" : responsibleUserId} />
                 </Field>
-                <Field label="Plazo"><Input name="targetDate" type="date" required /></Field>
+                <Field label="Plazo" required><DatePicker name="targetDate" /></Field>
               </div>
             </div>
           )}

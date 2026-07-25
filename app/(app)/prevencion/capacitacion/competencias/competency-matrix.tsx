@@ -3,12 +3,13 @@
 import * as React from "react"
 import Link from "next/link"
 import { Certificate } from "@phosphor-icons/react"
-import { useSafeShellHeader } from "@/components/layout/header-context"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
+import { FilterToolbar } from "@/components/ui/filter-toolbar"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { useUrlFilters } from "@/lib/hooks/use-url-filters"
 import {
   COMPETENCY_SCOPE_LABELS,
   COMPETENCY_STATUS_LABELS,
@@ -60,17 +61,15 @@ const SOURCE_LABELS: Record<string, string> = {
 }
 
 export function CompetencyMatrix({ competencies, requirements, courseCount, canRevoke, filteredWorkerId }: Props) {
-  const { searchQuery } = useSafeShellHeader()
-  const [status, setStatus] = React.useState("all")
+  const { getFilter, setFilters, clearFilters: clearUrlFilters } = useUrlFilters()
+  const status = getFilter("status") || "all"
   const [tab, setTab] = React.useState<"competencies" | "requirements">("competencies")
   const [pending, startTransition] = React.useTransition()
   const [message, setMessage] = React.useState<string | null>(null)
 
-  const query = searchQuery.trim().toLocaleLowerCase("es-CL")
   const filtered = competencies.filter((item) => {
     if (status !== "all" && item.status !== status) return false
-    if (!query) return true
-    return `${item.workerName} ${item.courseName} ${item.workerPosition ?? ""} ${item.worksiteName}`.toLocaleLowerCase("es-CL").includes(query)
+    return true
   })
 
   function revoke(id: string) {
@@ -94,7 +93,7 @@ export function CompetencyMatrix({ competencies, requirements, courseCount, canR
         </div>
       )}
 
-      <div className="flex flex-wrap items-end gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex gap-1 rounded-md border border-[var(--color-border)] p-1">
           <button
             type="button"
@@ -113,16 +112,24 @@ export function CompetencyMatrix({ competencies, requirements, courseCount, canR
             Requisitos ({requirements.length})
           </button>
         </div>
-        {tab === "competencies" && (
-          <Select value={status} onValueChange={setStatus}>
+      </div>
+
+      {tab === "competencies" && (
+        <FilterToolbar
+          activeChips={status !== "all" ? [{ key: "status", label: "Estado", value: status, displayValue: (COMPETENCY_STATUS_LABELS as Record<string, string>)[status] ?? status }] : []}
+          onRemoveChip={(key) => setFilters({ [key]: null })}
+          onClearAll={clearUrlFilters}
+          hasActiveFilters={status !== "all"}
+        >
+          <Select value={status} onValueChange={(value) => setFilters({ status: value === "all" ? null : value })}>
             <SelectTrigger className="w-48" aria-label="Estado de la competencia"><SelectValue placeholder="Estado" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Todos los estados</SelectItem>
               {Object.entries(COMPETENCY_STATUS_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}
             </SelectContent>
           </Select>
-        )}
-      </div>
+        </FilterToolbar>
+      )}
 
       {message && <p role="status" className="text-sm">{message}</p>}
 
@@ -136,7 +143,7 @@ export function CompetencyMatrix({ competencies, requirements, courseCount, canR
               : "Ajusta el estado o el texto del buscador superior."}
             action={competencies.length === 0
               ? <Button asChild><Link href="/prevencion/capacitacion">Ver sesiones</Link></Button>
-              : <Button type="button" variant="secondary" onClick={() => setStatus("all")}>Ver todas</Button>}
+              : <Button type="button" variant="secondary" onClick={() => clearUrlFilters()}>Ver todas</Button>}
           />
         ) : (
           <div className="overflow-x-auto rounded-lg border border-[var(--color-border)]">

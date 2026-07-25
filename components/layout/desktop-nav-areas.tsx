@@ -81,7 +81,7 @@ function AreaSection({
             weight={open ? "fill" : "regular"}
             className={cn("shrink-0", open ? "text-(--color-text-muted)" : "text-(--color-text-faint)")}
           />
-          <span className="flex-1 truncate text-xs font-semibold uppercase tracking-wide">{area.label}</span>
+          <span title={area.label} className="flex-1 truncate text-xs font-semibold uppercase tracking-wide">{area.label}</span>
           <CaretDown
             size={13}
             className={cn("shrink-0 text-text-faint transition-transform duration-(--duration-fast)", open && "rotate-180")}

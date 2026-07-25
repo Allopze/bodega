@@ -76,10 +76,10 @@ export function OcDetailItems({
         <table className="w-full text-sm">
           <thead className="bg-[var(--color-surface-2)] border-b border-[var(--color-border)]">
             <tr>
-              <th className="px-4 py-2.5 text-left text-xs font-medium text-[var(--color-text-muted)]">Producto</th>
-              <th className="px-4 py-2.5 text-right text-xs font-medium text-[var(--color-text-muted)] w-24">Cant.</th>
-              <th className="px-4 py-2.5 text-right text-xs font-medium text-[var(--color-text-muted)] w-28">Precio unit.</th>
-              <th className="px-4 py-2.5 text-right text-xs font-medium text-[var(--color-text-muted)] w-28">Subtotal</th>
+              <th scope="col" className="px-4 py-2.5 text-left th-type">Producto</th>
+              <th scope="col" className="px-4 py-2.5 text-right th-type w-24">Cant.</th>
+              <th scope="col" className="px-4 py-2.5 text-right th-type w-28">Precio unit.</th>
+              <th scope="col" className="px-4 py-2.5 text-right th-type w-28">Subtotal</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-[var(--color-border)]">

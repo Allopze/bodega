@@ -139,6 +139,9 @@ export function OcFormItems({
                     <span className="text-xs text-[var(--color-text-subtle)]">
                       · SOL {item.requestCode}
                     </span>
+                    <Badge variant="outline" size="sm" className="font-normal shrink-0 text-[11px]">
+                      {MODE_LABELS[item.deliveryMode] ?? item.deliveryMode}
+                    </Badge>
                     {supLabel && (
                       <Badge variant="warning" size="sm" className="font-normal shrink-0">
                         Sugerido: {supLabel}

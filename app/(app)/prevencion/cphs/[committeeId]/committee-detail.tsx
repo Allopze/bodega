@@ -2,6 +2,7 @@
 
 import * as React from "react"
 import { Badge } from "@/components/ui/badge"
+import { DatePicker } from "@/components/ui/date-picker"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -294,8 +295,8 @@ function AddMemberDialog({ committeeId, eligibleWorkers, existingMemberNames }: 
                 </label>
               </div>
               <div className="grid gap-3 md:grid-cols-2">
-                <Field label="Electo el" hint="Opcional."><Input name="electedOn" type="date" /></Field>
-                <Field label="Término del período" hint="Opcional."><Input name="termEndsOn" type="date" /></Field>
+                <Field label="Electo el" hint="Opcional."><DatePicker name="electedOn" /></Field>
+                <Field label="Término del período" hint="Opcional."><DatePicker name="termEndsOn" /></Field>
               </div>
             </>
           )}
@@ -490,9 +491,9 @@ function CloseMeetingDialog({ meeting, members, assignees }: {
                   <Field label="Prioridad">
                     <Select value={item.priority} onValueChange={(v) => setAgreements((current) => current.map((a, i) => i === index ? { ...a, priority: v as AgreementDraft["priority"] } : a))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="low">Baja</SelectItem><SelectItem value="medium">Media</SelectItem><SelectItem value="high">Alta</SelectItem><SelectItem value="critical">Crítica</SelectItem></SelectContent></Select>
                   </Field>
-                  <Field label="Plazo">
-                    <Input type="date" required value={item.targetDate}
-                      onChange={(event) => setAgreements((current) => current.map((a, i) => i === index ? { ...a, targetDate: event.target.value } : a))} />
+                  <Field label="Plazo" required>
+                    <DatePicker value={item.targetDate}
+                      onChange={(iso) => setAgreements((current) => current.map((a, i) => i === index ? { ...a, targetDate: iso } : a))} />
                   </Field>
                 </div>
               </div>

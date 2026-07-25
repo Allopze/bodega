@@ -35,6 +35,7 @@ export async function updateRequestWithDiff(
     requestType:  data.requestType,
     urgency:      data.urgency,
     requiredDate: data.requiredDate,
+    deliveryMode: data.deliveryMode ?? existing.deliveryMode,
     status:       "draft",
     notes:        data.notes || null,
     updatedAt:    new Date().toISOString(),

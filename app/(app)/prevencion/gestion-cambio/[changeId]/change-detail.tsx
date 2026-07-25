@@ -3,9 +3,9 @@
 import * as React from "react"
 import Link from "next/link"
 import { Badge } from "@/components/ui/badge"
+import { DatePicker } from "@/components/ui/date-picker"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
-import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import {
@@ -233,7 +233,7 @@ function EvaluateDialog({ changeRequestId, assessment, assignees }: {
                   <input type="hidden" name="priority" value={priority} />
                 </Field>
               </div>
-              <Field label="Plazo"><Input name="targetDate" type="date" required /></Field>
+              <Field label="Plazo" required><DatePicker name="targetDate" /></Field>
             </div>
           )}
           {operation.message && <p role="status" className="text-sm">{operation.message}</p>}
@@ -267,7 +267,7 @@ function ApproveDialog({ changeRequestId, version, ready }: { changeRequestId: s
             <DialogTitle>Aprobar cambio</DialogTitle>
             <DialogDescription>Declara cuándo se revisará si la evaluación siguió siendo válida.</DialogDescription>
           </DialogHeader>
-          <Field label="Fecha de revisión posterior"><Input name="plannedReviewDate" type="date" required /></Field>
+          <Field label="Fecha de revisión posterior" required><DatePicker name="plannedReviewDate" /></Field>
           {operation.message && <p role="status" className="text-sm">{operation.message}</p>}
           <DialogFooter><Button type="submit" disabled={operation.pending}>Aprobar</Button></DialogFooter>
         </form>

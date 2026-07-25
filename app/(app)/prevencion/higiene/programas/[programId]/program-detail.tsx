@@ -2,6 +2,7 @@
 
 import * as React from "react"
 import { Badge } from "@/components/ui/badge"
+import { DatePicker } from "@/components/ui/date-picker"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
@@ -161,7 +162,7 @@ function EnrollGroupDialog({ programId, eligibleGroups }: { programId: string; e
           <Field label="Grupo de exposición">
             <Select value={groupId} onValueChange={setGroupId}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{eligibleGroups.map((item) => <SelectItem key={item.id} value={item.id}>{item.name} ({item.memberCount} personas)</SelectItem>)}</SelectContent></Select><input type="hidden" name="groupId" value={groupId} />
           </Field>
-          <Field label="Desde" hint="Opcional. Por defecto, hoy."><Input name="startingOn" type="date" defaultValue={defaultValue} /></Field>
+          <Field label="Desde" hint="Opcional. Por defecto, hoy."><DatePicker name="startingOn" defaultValue={defaultValue} /></Field>
           {operation.message && <p role="status" className="text-sm">{operation.message}</p>}
           <DialogFooter><Button type="submit" disabled={operation.pending}>Matricular</Button></DialogFooter>
         </form>
@@ -215,7 +216,7 @@ function OutcomeDialog({ enrollment }: { enrollment: EnrollmentInfo }) {
           </Field>
           {status === "attended" && (
             <>
-              <Field label="Fecha del control"><Input name="attendedOn" type="date" required defaultValue={new Date().toISOString().slice(0, 10)} /></Field>
+              <Field label="Fecha del control" required><DatePicker name="attendedOn" defaultValue={new Date().toISOString().slice(0, 10)} /></Field>
               <Field label="ID del registro de salud" hint="Opcional. El resultado clínico vive en el dominio cifrado, no aquí.">
                 <Input name="healthRecordId" />
               </Field>

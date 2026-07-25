@@ -228,18 +228,18 @@ export function EppImportReview({ batch }: { batch: { id: string; status: string
 
       <div className="overflow-x-auto rounded-(--radius-lg) border border-(--color-border)">
         <table className="w-full text-xs">
-          <thead className="bg-(--color-surface-2) text-(--color-text-muted)">
+          <thead className="bg-(--color-surface-2) th-type">
             <tr>
-              <th className="px-2 py-2 text-left font-medium">#</th>
-              <th className="px-2 py-2 text-left font-medium">Nombre</th>
-              <th className="px-2 py-2 text-left font-medium">Unidad</th>
-              <th className="px-2 py-2 text-left font-medium">Tipo EPP</th>
-              <th className="px-2 py-2 text-left font-medium">Color / Talla</th>
-              <th className="px-2 py-2 text-left font-medium">Proveedor</th>
-              <th className="px-2 py-2 text-left font-medium">Precio</th>
-              <th className="px-2 py-2 text-left font-medium">Estado</th>
-              <th className="px-2 py-2 text-left font-medium">Decision</th>
-              <th className="px-2 py-2 text-center font-medium"></th>
+              <th scope="col" className="px-2 py-2 text-left font-medium">#</th>
+              <th scope="col" className="px-2 py-2 text-left font-medium">Nombre</th>
+              <th scope="col" className="px-2 py-2 text-left font-medium">Unidad</th>
+              <th scope="col" className="px-2 py-2 text-left font-medium">Tipo EPP</th>
+              <th scope="col" className="px-2 py-2 text-left font-medium">Color / Talla</th>
+              <th scope="col" className="px-2 py-2 text-left font-medium">Proveedor</th>
+              <th scope="col" className="px-2 py-2 text-left font-medium">Precio</th>
+              <th scope="col" className="px-2 py-2 text-left font-medium">Estado</th>
+              <th scope="col" className="px-2 py-2 text-left font-medium">Decision</th>
+              <th scope="col" className="px-2 py-2 text-center font-medium"></th>
             </tr>
           </thead>
           <tbody>

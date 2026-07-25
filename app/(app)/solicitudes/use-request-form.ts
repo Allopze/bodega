@@ -34,13 +34,13 @@ function suggestSize(attributeName: string, worker: WorkerOption | undefined): s
 
 interface AutosaveSnapshot {
   savedId: string | undefined; itemsJson: string; worksiteId: string
-  requestType: string; urgency: string; requiredDate: string; notes: string; canSave: boolean
+  requestType: string; urgency: string; deliveryMode: string; requiredDate: string; notes: string; canSave: boolean
 }
 
 function useDraftPersistence({
   isDraft, dirty, hasRealContent,
   savedId, setSavedId, setDirty, setLastSavedAt,
-  itemsJson, worksiteId, requestType, urgency, requiredDate, notes,
+  itemsJson, worksiteId, requestType, urgency, deliveryMode, requiredDate, notes,
   items, setItems,
   draftState, draftAction, draftPending,
 }: {
@@ -48,7 +48,7 @@ function useDraftPersistence({
   savedId: string | undefined; setSavedId: React.Dispatch<React.SetStateAction<string | undefined>>
   setDirty: React.Dispatch<React.SetStateAction<boolean>>
   setLastSavedAt: React.Dispatch<React.SetStateAction<Date | null>>
-  itemsJson: string; worksiteId: string; requestType: string; urgency: string; requiredDate: string; notes: string
+  itemsJson: string; worksiteId: string; requestType: string; urgency: string; deliveryMode: string; requiredDate: string; notes: string
   items: ItemRow[]; setItems: React.Dispatch<React.SetStateAction<ItemRow[]>>
   draftState: ActionState & { requestId?: string }; draftAction: (fd: FormData) => void; draftPending: boolean
 }): { buildDraftFormData: (overrides?: { id?: string }) => FormData } {
@@ -83,7 +83,7 @@ function useDraftPersistence({
     if (id) fd.set("id", id)
     fd.set("itemsJson", itemsJson)
     fd.set("worksiteId", worksiteId); fd.set("requestType", requestType)
-    fd.set("urgency", urgency); fd.set("requiredDate", requiredDate); fd.set("notes", notes)
+    fd.set("urgency", urgency); fd.set("deliveryMode", deliveryMode); fd.set("requiredDate", requiredDate); fd.set("notes", notes)
     if (QUOTATION_TYPES.has(requestType)) {
       for (const item of itemsDataRef.current) {
         const cots = item.cotizaciones
@@ -91,24 +91,24 @@ function useDraftPersistence({
       }
     }
     return fd
-  }, [savedId, itemsJson, worksiteId, requestType, urgency, requiredDate, notes])
+  }, [savedId, itemsJson, worksiteId, requestType, urgency, deliveryMode, requiredDate, notes])
 
   // ── Dirty tracking — compare snapshot with previous to detect changes ──
   const prevSnapshotRef = useRef<string | null>(null)
   useEffect(() => {
-    const snapshot = JSON.stringify([itemsJson, worksiteId, requestType, urgency, requiredDate, notes])
+    const snapshot = JSON.stringify([itemsJson, worksiteId, requestType, urgency, deliveryMode, requiredDate, notes])
     if (prevSnapshotRef.current === null) { prevSnapshotRef.current = snapshot; return }
     if (prevSnapshotRef.current !== snapshot) { prevSnapshotRef.current = snapshot; setDirty(true) }
   // eslint-disable-next-line react-hooks/exhaustive-deps -- setDirty is a stable setState function
-  }, [itemsJson, worksiteId, requestType, urgency, requiredDate, notes])
+  }, [itemsJson, worksiteId, requestType, urgency, deliveryMode, requiredDate, notes])
 
   // ── Ref for stable timer callback (avoids resetting autosave timer) ──
   const buildDraftRef = useRef(buildDraftFormData)
   useEffect(() => { buildDraftRef.current = buildDraftFormData })
 
   // ── Snapshot ref for autosave — captures latest form values ──
-  const snapshotRef = useRef<AutosaveSnapshot>({ savedId, itemsJson, worksiteId, requestType, urgency, requiredDate, notes, canSave: false })
-  useEffect(() => { snapshotRef.current = { savedId, itemsJson, worksiteId, requestType, urgency, requiredDate, notes, canSave: Boolean(worksiteId && requiredDate && hasRealContent) } })
+  const snapshotRef = useRef<AutosaveSnapshot>({ savedId, itemsJson, worksiteId, requestType, urgency, deliveryMode, requiredDate, notes, canSave: false })
+  useEffect(() => { snapshotRef.current = { savedId, itemsJson, worksiteId, requestType, urgency, deliveryMode, requiredDate, notes, canSave: Boolean(worksiteId && requiredDate && hasRealContent) } })
 
   // ── Autosave timer (60s) ──
   useEffect(() => {
@@ -156,6 +156,7 @@ export function useRequestForm({
   const [worksiteId, setWorksiteId] = useState(editRequest?.worksiteId ?? (worksites[0]?.id ?? ""))
   const [requestType, setRequestType] = useState(editRequest?.requestType ?? requestTypeOpts[0]?.value ?? "epp")
   const [urgency, setUrgency] = useState(editRequest?.urgency ?? "normal")
+  const [deliveryMode, setDeliveryMode] = useState<string>(editRequest?.deliveryMode ?? "via_oficina")
   const [requiredDate, setRequiredDate] = useState(editRequest?.requiredDate ?? "")
   const [notes, setNotes] = useState(editRequest?.notes ?? "")
 
@@ -292,7 +293,7 @@ export function useRequestForm({
   const { buildDraftFormData } = useDraftPersistence({
     isDraft, dirty, hasRealContent,
     savedId, setSavedId, setDirty, setLastSavedAt,
-    itemsJson, worksiteId, requestType, urgency, requiredDate, notes,
+    itemsJson, worksiteId, requestType, urgency, deliveryMode, requiredDate, notes,
     items, setItems,
     draftState, draftAction, draftPending,
   })
@@ -335,7 +336,7 @@ export function useRequestForm({
   const submitOk = submitState.ok
 
   return {
-    worksiteId, setWorksiteId, requestType, setRequestType, urgency, setUrgency,
+    worksiteId, setWorksiteId, requestType, setRequestType, urgency, setUrgency, deliveryMode, setDeliveryMode,
     requiredDate, setRequiredDate, notes, setNotes, items, requestTypeOpts,
     isEdit, isDraft, readOnly, savedId, dirty, lastSavedAt, hasRealContent,
     requestTypeLabel, urgencyLabel, worksiteLabel, missingItems, statusLabel,

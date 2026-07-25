@@ -141,7 +141,7 @@ export function CreateEvaluationDialog({ worker, open, onOpenChange, initialRole
               type="text"
               disabled
               aria-label="Trabajador"
-              className="flex h-9 w-full rounded-(--radius-lg) border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3.5 py-1.5 text-sm opacity-70"
+              className="flex h-9 w-full rounded-(--radius-lg) border border-[var(--color-border-control)] bg-[var(--color-surface-2)] px-3.5 py-1.5 text-sm opacity-70"
               value={`${worker.firstName} ${worker.lastName}`}
             />
           </Field>
@@ -152,7 +152,7 @@ export function CreateEvaluationDialog({ worker, open, onOpenChange, initialRole
               type="text"
               disabled
               aria-label="Faena"
-              className="flex h-9 w-full rounded-(--radius-lg) border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3.5 py-1.5 text-sm opacity-70"
+              className="flex h-9 w-full rounded-(--radius-lg) border border-[var(--color-border-control)] bg-[var(--color-surface-2)] px-3.5 py-1.5 text-sm opacity-70"
               value={worker.worksiteName ?? ""}
             />
           </Field>
@@ -246,7 +246,7 @@ export function CreateEvaluationDialog({ worker, open, onOpenChange, initialRole
                     id={uid + "-motivo-otro"}
                     type="text"
                     aria-label="Especificar Motivo"
-                    className="flex h-9 w-full rounded-(--radius-lg) border border-[var(--color-border)] bg-[var(--color-surface)] px-3.5 py-1.5 text-sm text-[var(--color-text)] focus-visible:outline-none focus-visible:border-[var(--color-primary)] focus-visible:ring-2 focus-visible:ring-[var(--color-primary-line)]"
+                    className="flex h-9 w-full rounded-(--radius-lg) border border-[var(--color-border-control)] bg-[var(--color-surface)] px-3.5 py-1.5 text-sm text-[var(--color-text)] focus-visible:outline-none focus-visible:border-[var(--color-primary)] focus-visible:ring-2 focus-visible:ring-[var(--color-primary-line)]"
                     value={motivoOtro}
                     onChange={(e) => setMotivoOtro(e.target.value)}
                     placeholder="Especifica el motivo..."
@@ -260,7 +260,7 @@ export function CreateEvaluationDialog({ worker, open, onOpenChange, initialRole
                     id={uid + "-patente"}
                     type="text"
                     aria-label="Patente Equipo"
-                    className="flex h-9 w-full rounded-(--radius-lg) border border-[var(--color-border)] bg-[var(--color-surface)] px-3.5 py-1.5 text-sm text-[var(--color-text)] focus-visible:outline-none focus-visible:border-[var(--color-primary)] focus-visible:ring-2 focus-visible:ring-[var(--color-primary-line)]"
+                    className="flex h-9 w-full rounded-(--radius-lg) border border-[var(--color-border-control)] bg-[var(--color-surface)] px-3.5 py-1.5 text-sm text-[var(--color-text)] focus-visible:outline-none focus-visible:border-[var(--color-primary)] focus-visible:ring-2 focus-visible:ring-[var(--color-primary-line)]"
                     value={equipoPatente}
                     onChange={(e) => setEquipoPatente(e.target.value)}
                     placeholder="ABCD12..."

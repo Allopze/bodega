@@ -1,5 +1,5 @@
 import { relations, sql } from "drizzle-orm"
-import { pgTable, text, integer, real, timestamp, index, uniqueIndex, check } from "drizzle-orm/pg-core"
+import { pgTable, text, integer, real, timestamp, index, uniqueIndex, check, type AnyPgColumn } from "drizzle-orm/pg-core"
 import { users } from "./users"
 import { worksites, workers, suppliers } from "./worksites"
 import { products, productAttributes } from "./products"
@@ -68,6 +68,7 @@ export const purchaseRequestItems = pgTable("purchase_request_items", {
   supplierHint:    text("supplier_hint"),                           // free-text fallback
   sortOrder:       integer("sort_order").notNull().default(0),
   notes:           text("notes"),
+  splitFromItemId: text("split_from_item_id").references((): AnyPgColumn => purchaseRequestItems.id, { onDelete: "set null" }),
   createdAt:       timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   updatedAt:       timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [

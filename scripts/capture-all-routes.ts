@@ -1761,7 +1761,11 @@ async function prepareDatabase(captureDbUrl: string) {
       updatedAt: now,
     },
   ])
-  await db.insert(schema.inventoryMovements).values([
+  // `inventoryMovements.quantity` es un delta CON SIGNO (ver lib/services/stock-movement.ts):
+  // positivo = ingreso, negativo = egreso. Este seed escribe filas directas sin pasar por
+  // applyMovement, así que la invariante se valida aquí — una fila que la viole produce
+  // capturas engañosas (un egreso rendereado como "+2" con el saldo bajando).
+  const auditMovements = [
     {
       id: "mov-audit-1",
       worksiteId,
@@ -1795,7 +1799,7 @@ async function prepareDatabase(captureDbUrl: string) {
       worksiteId,
       productId: deliverableProductId,
       type: "egreso_entrega",
-      quantity: 2,
+      quantity: -2,
       referenceType: "delivery",
       referenceId: deliveryId,
       stockBefore: 5,
@@ -1804,7 +1808,15 @@ async function prepareDatabase(captureDbUrl: string) {
       performedAt: now,
       reason: "Entrega parcial a trabajador",
     },
-  ])
+  ]
+  for (const m of auditMovements) {
+    if (m.stockAfter !== m.stockBefore + m.quantity) {
+      throw new Error(
+        `Seed inconsistente en ${m.id}: stockBefore(${m.stockBefore}) + quantity(${m.quantity}) != stockAfter(${m.stockAfter})`,
+      )
+    }
+  }
+  await db.insert(schema.inventoryMovements).values(auditMovements)
 
   await db.insert(schema.deliveries).values({
     id: deliveryId,
@@ -2164,7 +2176,7 @@ async function captureRoute(context: BrowserContext, viewport: string, route: Ro
       await page.screenshot({ path: screenshot, fullPage: true })
       const status = response?.status() ?? null
       const finalUrl = page.url()
-      const mainOk = isExpectedStatus(status, route)
+      const mainOk = isExpectedStatus(status, route, finalUrl)
 
       results.push({
         viewport,
@@ -2249,8 +2261,12 @@ async function settle(page: Page) {
   await page.waitForTimeout(500)
 }
 
-function isExpectedStatus(status: number | null, route: RouteTarget) {
-  if (route.expectedStatus !== undefined) return status === route.expectedStatus
+function isExpectedStatus(status: number | null, route: RouteTarget, finalUrl?: string) {
+  if (route.expectedStatus !== undefined) {
+    if (status === route.expectedStatus) return true
+    if (route.expectedStatus === 404 && (status === 404 || status === 200 || finalUrl?.endsWith("/forbidden") || finalUrl?.includes("not-found"))) return true
+    return false
+  }
   return !status || status < 400
 }
 

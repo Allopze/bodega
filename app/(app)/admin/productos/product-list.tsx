@@ -374,7 +374,7 @@ export function ProductList({ products, categories, allSuppliers, units, templat
               type="checkbox"
               checked={allSelected}
               onChange={toggleSelectAll}
-              className="h-4 w-4 rounded border-[var(--color-border)] text-[var(--color-primary)] focus:ring-[var(--color-primary)]"
+              className="h-4 w-4 rounded border-[var(--color-border-control)] text-[var(--color-primary)] focus:ring-[var(--color-primary)]"
               aria-label="Seleccionar o deseleccionar todos"
             />
             {allSelected

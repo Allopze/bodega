@@ -10,8 +10,9 @@ const buttonVariants = cva(
     "rounded-[var(--radius)]",
     "select-none cursor-pointer",
     "transition-[background-color,box-shadow,transform] duration-[var(--duration-fast)] ease-[var(--ease-out)]",
-    // Emil: press feedback — buttons must feel responsive to touch
-    "active:scale-[0.97]",
+    // Press feedback — buttons must feel responsive to touch.
+    // motion-safe: respeta prefers-reduced-motion (WCAG 2.3.3).
+    "motion-safe:active:scale-[0.97]",
     "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]",
     "disabled:pointer-events-none disabled:opacity-45",
   ],
@@ -24,8 +25,8 @@ const buttonVariants = cva(
         ],
         secondary: [
           "bg-[var(--color-surface)] text-[var(--color-text)]",
-          "border border-[var(--color-border)]",
-          "hover:bg-[var(--color-surface-2)] hover:border-[var(--color-border-strong)]",
+          "border border-[var(--color-border-control)]",
+          "hover:bg-[var(--color-surface-2)] hover:border-[var(--color-border-control-hover)]",
           "shadow-[var(--shadow-xs)]",
         ],
         ghost: [

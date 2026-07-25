@@ -117,7 +117,7 @@ export default async function DeliveryPrintPage({ params }: PageProps) {
             <thead>
               <tr>
                 <th>Producto</th>
-                <th style={{ textAlign: "right" }}>Cantidad</th>
+                <th scope="col" style={{ textAlign: "right" }}>Cantidad</th>
                 <th>Unidad</th>
               </tr>
             </thead>
@@ -145,7 +145,7 @@ export default async function DeliveryPrintPage({ params }: PageProps) {
               <thead>
                 <tr>
                   <th>Producto</th>
-                  <th style={{ textAlign: "right" }}>Cantidad</th>
+                  <th scope="col" style={{ textAlign: "right" }}>Cantidad</th>
                   <th>Motivo</th>
                 </tr>
               </thead>
@@ -177,7 +177,7 @@ export default async function DeliveryPrintPage({ params }: PageProps) {
         </div>
 
         <div className="footer">
-          Documento generado por Plataforma Chome — {new Date().toLocaleDateString("es-CL")}
+          Documento generado por Plataforma Chome — {formatDate(new Date().toISOString())}
         </div>
       </body>
     </html>

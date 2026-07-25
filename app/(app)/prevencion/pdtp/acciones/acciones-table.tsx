@@ -113,6 +113,7 @@ export function AccionesTable({ items, activityLabelById, worksiteNameById, work
       </div>
 
       <DataTable
+        enableColumnToggle
         columns={COLUMNS}
         rows={rows}
         searchKeys={["hallazgo", "accion", "responsable", "activity", "worksite"]}

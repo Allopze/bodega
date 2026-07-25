@@ -47,7 +47,7 @@ export function ReportList({ reports, canCreate, canViewAll }: Props) {
   }
 
   return (
-    <TableRoot>
+    <TableRoot stickyHeader>
       <Table>
         <TableHeader>
           <TableRow>

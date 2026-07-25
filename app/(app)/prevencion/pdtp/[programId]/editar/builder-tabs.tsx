@@ -916,13 +916,13 @@ function ActividadesTab({ programId, activities, responsibleCatalog }: { program
       ) : (
         <div className="overflow-x-auto rounded-lg border border-[var(--color-border)]">
           <table className="w-full text-sm">
-            <thead className="bg-[var(--color-surface-2)] text-xs text-[var(--color-text-subtle)]">
+            <thead className="bg-[var(--color-surface-2)] th-type">
               <tr>
-                <th className="w-10 px-3 py-2 text-left"><span className="sr-only">Seleccionar</span></th>
-                <th className="w-12 px-3 py-2 text-left">N°</th>
-                <th className="px-3 py-2 text-left">Actividad</th>
-                <th className="px-3 py-2 text-left">Guía de ejecución</th>
-                <th className="w-56 px-3 py-2 text-right">Acciones</th>
+                <th scope="col" className="w-10 px-3 py-2 text-left"><span className="sr-only">Seleccionar</span></th>
+                <th scope="col" className="w-12 px-3 py-2 text-left">N°</th>
+                <th scope="col" className="px-3 py-2 text-left">Actividad</th>
+                <th scope="col" className="px-3 py-2 text-left">Guía de ejecución</th>
+                <th scope="col" className="w-56 px-3 py-2 text-right">Acciones</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[var(--color-border)]">
@@ -1631,13 +1631,13 @@ export function PlanificacionTab({ programId: _programId, year, periodStart, per
       </p>
       <div className="overflow-x-auto rounded-lg border border-[var(--color-border)]">
         <table className="w-full border-collapse text-sm">
-          <thead className="bg-[var(--color-surface-2)] text-xs text-[var(--color-text-subtle)]">
+          <thead className="bg-[var(--color-surface-2)] th-type">
             <tr>
-              <th className="sticky left-0 z-10 min-w-[16rem] border-b border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2 text-left">Actividad</th>
+              <th scope="col" className="sticky left-0 z-10 min-w-[16rem] border-b border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2 text-left">Actividad</th>
               {visibleMonthLabels.map((m) => (
-                <th key={m} className="min-w-[5.5rem] border-b border-[var(--color-border)] px-1 py-2 text-center">{m}</th>
+                <th scope="col" key={m} className="min-w-[5.5rem] border-b border-[var(--color-border)] px-1 py-2 text-center">{m}</th>
               ))}
-              <th className="min-w-[13rem] border-b border-[var(--color-border)] px-2 py-2 text-left">Rellenar / Guardar</th>
+              <th scope="col" className="min-w-[13rem] border-b border-[var(--color-border)] px-2 py-2 text-left">Rellenar / Guardar</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-[var(--color-border)]">

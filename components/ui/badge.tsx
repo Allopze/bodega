@@ -19,6 +19,11 @@ const badgeVariants = cva(
     variants: {
       variant: {
         default:  `${proseType} text-[var(--color-text-muted)] bg-[var(--color-surface-2)]`,
+        // Mismo tratamiento tipográfico que las severidades, pero cromáticamente
+        // neutro. Para el valor "apagado" de una dimensión de estado (Inactivo,
+        // Sin registro): antes caía en `default` (sans, caja normal) y la misma
+        // columna mezclaba dos sistemas tipográficos — ACTIVO junto a Inactivo.
+        neutral:  `${severityType} text-[var(--color-text-muted)] bg-[var(--color-surface-2)]`,
         primary:  `${severityType} text-[var(--color-primary-ink)] bg-[var(--color-primary-tint)]`,
         success:  `${severityType} text-[var(--color-success-ink)] bg-[var(--color-success-tint)]`,
         warning:  `${severityType} text-[var(--color-warning-ink)] bg-[var(--color-warning-tint)]`,
@@ -27,17 +32,19 @@ const badgeVariants = cva(
         danger:   `${severityType} text-[var(--color-danger-ink)] bg-[var(--color-danger-tint)]`,
         outline:  `${proseType} text-[var(--color-text-muted)] border border-[var(--color-border)] bg-transparent`,
       },
+      // Piso de 11px: por debajo el badge deja de ser legible de un vistazo, que
+      // es justo su función. `sm` rendía 9px y `default` 10px.
       size: {
-        sm:      "text-[9px]",
-        default: "text-[10px]",
-        lg:      "text-[11px]",
+        sm:      "text-[11px]",
+        default: "text-[11px]",
+        lg:      "text-xs",
       },
     },
     // Sin uppercase la caja óptica se achica: las variantes prose suben 1px.
     compoundVariants: [
-      { variant: ["default", "info", "outline"], size: "sm",      className: "text-[10px]" },
-      { variant: ["default", "info", "outline"], size: "default", className: "text-[11px]" },
-      { variant: ["default", "info", "outline"], size: "lg",      className: "text-xs" },
+      { variant: ["default", "info", "outline"], size: "sm",      className: "text-[11px]" },
+      { variant: ["default", "info", "outline"], size: "default", className: "text-xs" },
+      { variant: ["default", "info", "outline"], size: "lg",      className: "text-[13px]" },
     ],
     defaultVariants: {
       variant: "default",

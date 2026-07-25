@@ -18,12 +18,6 @@ export const REQUEST_TYPE_VARIANTS: Record<string, "info" | "success" | "warning
 
 export const URGENCY_LABEL: Record<string, string> = URGENCY_LABELS
 
-export const URGENCY_CLASS: Record<string, string> = {
-  normal:   "text-[var(--color-text-muted)]",
-  high:     "text-[var(--color-signal-ink)] font-medium",
-  critical: "text-[var(--color-danger)] font-semibold",
-}
-
 export interface ApprovalAttribute {
   attributeName: string
   value:         string

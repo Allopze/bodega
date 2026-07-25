@@ -93,14 +93,20 @@ export default async function DashboardPage() {
               </div>
             )}
           </div>
+          {/* Enlace, no botón relleno: "Nueva solicitud" (abajo) es el único CTA
+              primario de la vista. Dos rellenos verdes compitiendo anulaban el
+              punto focal, y la cola de tareas ya está inmediatamente debajo —
+              esto es un salto de conveniencia, no la acción principal. */}
           {tasks.length > 0 && (
             <Link
               href="/aprobaciones"
               data-pressable
               className={cn(
-                "inline-flex h-9 shrink-0 items-center gap-2 self-start rounded-[var(--radius)] px-4 sm:self-end",
-                "bg-[var(--color-primary)] text-[13px] font-semibold text-white",
-                "transition-[background-color] duration-[var(--duration-fast)] ease-[var(--ease-out)] hover:bg-[var(--color-primary-strong)]",
+                "inline-flex h-9 shrink-0 items-center gap-1.5 self-start rounded-[var(--radius)] px-3 sm:self-end",
+                "text-[13px] font-semibold text-[var(--color-primary-ink)] underline-offset-4",
+                "transition-[background-color] duration-[var(--duration-fast)] ease-[var(--ease-out)]",
+                "hover:bg-[var(--color-primary-tint)] hover:underline",
+                "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]",
               )}
             >
               Ver tareas
@@ -212,11 +218,11 @@ export default async function DashboardPage() {
               <table className="w-full border-collapse text-left text-[13px]" aria-label="Actividad y costos por faena">
                 <thead>
                   <tr className="border-b border-[var(--color-border)] text-[var(--color-text-muted)]">
-                    <th scope="col" className="px-5 py-3 font-semibold text-xs uppercase tracking-wider">Faena</th>
-                    <th scope="col" className="px-5 py-3 text-right font-semibold text-xs uppercase tracking-wider">Solicitudes</th>
-                    <th scope="col" className="px-5 py-3 text-right font-semibold text-xs uppercase tracking-wider">Pendientes</th>
-                    <th scope="col" className="px-5 py-3 text-right font-semibold text-xs uppercase tracking-wider">Aprobadas</th>
-                    <th scope="col" className="px-5 py-3 text-right font-semibold text-xs uppercase tracking-wider">Total OC</th>
+                    <th scope="col" className="px-5 py-3 th-type">Faena</th>
+                    <th scope="col" className="px-5 py-3 text-right th-type">Solicitudes</th>
+                    <th scope="col" className="px-5 py-3 text-right th-type">Pendientes</th>
+                    <th scope="col" className="px-5 py-3 text-right th-type">Aprobadas</th>
+                    <th scope="col" className="px-5 py-3 text-right th-type">Total OC</th>
                   </tr>
                 </thead>
                 <tbody>

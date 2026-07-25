@@ -76,14 +76,14 @@ export default async function PrintOcPage({ params }: { params: Promise<{ id: st
           <table>
             <thead>
               <tr>
-                <th style={{ width: 18 }}>N°</th>
-                <th style={{ width: 68 }}>Cod. Articulo</th>
+                <th scope="col" style={{ width: 18 }}>N°</th>
+                <th scope="col" style={{ width: 68 }}>Cod. Articulo</th>
                 <th>Detalle</th>
-                <th className="text-right" style={{ width: 38 }}>Cant.</th>
-                <th className="text-center" style={{ width: 32 }}>U.M.</th>
-                <th className="text-right" style={{ width: 58 }}>P. Unitario</th>
-                <th className="text-right" style={{ width: 52 }}>Descuento</th>
-                <th className="text-right" style={{ width: 46 }}>Total</th>
+                <th scope="col" className="text-right" style={{ width: 38 }}>Cant.</th>
+                <th scope="col" className="text-center" style={{ width: 32 }}>U.M.</th>
+                <th scope="col" className="text-right" style={{ width: 58 }}>P. Unitario</th>
+                <th scope="col" className="text-right" style={{ width: 52 }}>Descuento</th>
+                <th scope="col" className="text-right" style={{ width: 46 }}>Total</th>
               </tr>
             </thead>
             <tbody>

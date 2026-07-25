@@ -3,6 +3,7 @@ export const dynamic = "force-dynamic"
 import { redirect } from "next/navigation"
 import { unstable_cache } from "next/cache"
 import { auth } from "@/lib/auth/auth"
+import { approvalQueueFilter } from "@/lib/approvals-queue"
 import { db } from "@/db"
 import { worksites, purchaseRequests, purchaseOrders } from "@/db/schema"
 import { eq, inArray, count, and, sql } from "drizzle-orm"
@@ -20,26 +21,11 @@ import { getEnabledModuleIds } from "@/lib/services/module-toggles"
 // from server actions that mutate relevant state (submit request, issue OC, …).
 const getCachedBadgeCounts = unstable_cache(
   async (userId: string, isGlobal: boolean, wsIds: string[]) => {
-    // Must mirror the /aprobaciones page query (app/(app)/aprobaciones/page.tsx)
-    // exactly, or the badge outruns the list: repuestos are approved via their own
-    // quotation flow (not this per-item queue), and a request only belongs in the
-    // queue while it still has an item in 'requested' status. Without these two
-    // filters the badge shows (1) while the page reports "Sin ítems pendientes".
-    const approvalFilter = and(
-      inArray(purchaseRequests.status, ["submitted", "in_review", "partially_approved"]),
-      sql`${purchaseRequests.requestType} != 'repuestos'`,
-      sql`exists (
-        select 1
-        from purchase_request_items pending_items
-        where pending_items.request_id = ${purchaseRequests.id}
-          and pending_items.status = 'requested'
-      )`,
-      isGlobal
-        ? undefined
-        : wsIds.length > 0
-          ? inArray(purchaseRequests.worksiteId, wsIds)
-          : sql`false`,
-    )
+    // Predicado compartido con /aprobaciones (lib/approvals-queue.ts). Antes
+    // estaba duplicado aquí y derivó: excluía sólo 'repuestos', mientras la
+    // página excluía también 'servicios', así que el badge contaba solicitudes
+    // que nunca aparecían en la lista.
+    const approvalFilter = approvalQueueFilter({ isGlobal, worksiteIds: wsIds })
 
     const purchaseFilter = isGlobal
       ? inArray(purchaseOrders.status, ["issued"])

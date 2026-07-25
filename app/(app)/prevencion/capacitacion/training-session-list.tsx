@@ -11,6 +11,8 @@ import { EmptyState } from "@/components/ui/empty-state"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { FilterToolbar, type ActiveFilterChip } from "@/components/ui/filter-toolbar"
+import { useUrlFilters } from "@/lib/hooks/use-url-filters"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import {
   TRAINING_KIND_LABELS,
@@ -92,10 +94,12 @@ export function TrainingSessionList({
   canManage, publishedVersions, worksites, workers,
 }: Props) {
   const { searchQuery } = useSafeShellHeader()
-  const [status, setStatus] = React.useState("all")
-  const [worksite, setWorksite] = React.useState("all")
-  const [kind, setKind] = React.useState("all")
-  const [quickFilter, setQuickFilter] = React.useState<QuickFilter>("all")
+  // Los filtros viven en la URL (shareables + sobreviven refresh) vía useUrlFilters.
+  const { getFilter, setFilters, clearFilters: clearUrlFilters } = useUrlFilters()
+  const status = getFilter("estado") || "all"
+  const worksite = getFilter("faena") || "all"
+  const kind = getFilter("tipo") || "all"
+  const quickFilter = (getFilter("vista") || "all") as QuickFilter
   const [ackPending, startAck] = React.useTransition()
   const [ackMessage, setAckMessage] = React.useState<string | null>(null)
 
@@ -126,8 +130,21 @@ export function TrainingSessionList({
     { key: "all" as const, label: "Cursos en catálogo", value: courseCount, detail: "Contenidos versionados", href: "/prevencion/capacitacion/competencias" },
   ]
 
+  const STATUS_LABELS = TRAINING_SESSION_STATUS_LABELS as Record<string, string>
+  const KIND_LABELS = TRAINING_KIND_LABELS as Record<string, string>
+  const activeChips: ActiveFilterChip[] = []
+  if (status !== "all") activeChips.push({ key: "estado", label: "Estado", value: status, displayValue: STATUS_LABELS[status] ?? status })
+  if (kind !== "all") activeChips.push({ key: "tipo", label: "Tipo", value: kind, displayValue: KIND_LABELS[kind] ?? kind })
+  if (worksite !== "all") {
+    const ws = sessionWorksites.find((w) => w.id === worksite)
+    if (ws) activeChips.push({ key: "faena", label: "Faena", value: worksite, displayValue: ws.name })
+  }
   function clearFilters() {
-    setStatus("all"); setWorksite("all"); setKind("all"); setQuickFilter("all")
+    clearUrlFilters()
+  }
+
+  function handleRemoveChip(key: string) {
+    setFilters({ [key]: null })
   }
 
   function submitAck(attendanceId: string) {
@@ -155,7 +172,7 @@ export function TrainingSessionList({
           <button
             key={metric.label}
             type="button"
-            onClick={() => setQuickFilter((current) => current === metric.key ? "all" : metric.key)}
+            onClick={() => setFilters({ vista: quickFilter === metric.key ? null : metric.key })}
             aria-pressed={quickFilter === metric.key}
             className="border-r border-[var(--color-border)] px-4 py-3 text-left hover:bg-[var(--color-surface-2)] aria-pressed:bg-[var(--color-primary-tint)]"
           >
@@ -189,37 +206,37 @@ export function TrainingSessionList({
         </div>
       )}
 
-      <div className="flex flex-wrap items-end gap-2">
-        <Select value={status} onValueChange={(value) => { setStatus(value); setQuickFilter("all") }}>
+      <FilterToolbar
+        activeChips={activeChips}
+        onRemoveChip={handleRemoveChip}
+        onClearAll={clearUrlFilters}
+        hasActiveFilters={status !== "all" || worksite !== "all" || kind !== "all" || quickFilter !== "all"}
+        actions={canManage && publishedVersions.length > 0 ? (
+          <SessionDialog versions={publishedVersions} worksites={worksites} workers={workers} />
+        ) : undefined}
+      >
+        <Select value={status} onValueChange={(value) => setFilters({ estado: value === "all" ? null : value, vista: null })}>
           <SelectTrigger className="w-48" aria-label="Estado de la sesión"><SelectValue placeholder="Estado" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Todos los estados</SelectItem>
             {Object.entries(TRAINING_SESSION_STATUS_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}
           </SelectContent>
         </Select>
-        <Select value={kind} onValueChange={setKind}>
+        <Select value={kind} onValueChange={(value) => setFilters({ tipo: value === "all" ? null : value })}>
           <SelectTrigger className="w-56" aria-label="Tipo de capacitación"><SelectValue placeholder="Tipo" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Todos los tipos</SelectItem>
             {Object.entries(TRAINING_KIND_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}
           </SelectContent>
         </Select>
-        <Select value={worksite} onValueChange={setWorksite}>
+        <Select value={worksite} onValueChange={(value) => setFilters({ faena: value === "all" ? null : value })}>
           <SelectTrigger className="w-52" aria-label="Faena"><SelectValue placeholder="Faena" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Todas las faenas</SelectItem>
             {sessionWorksites.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}
           </SelectContent>
         </Select>
-        {(status !== "all" || worksite !== "all" || kind !== "all" || quickFilter !== "all") && (
-          <Button type="button" variant="ghost" size="sm" onClick={clearFilters}>Limpiar filtros</Button>
-        )}
-        {canManage && publishedVersions.length > 0 && (
-          <div className="ml-auto">
-            <SessionDialog versions={publishedVersions} worksites={worksites} workers={workers} />
-          </div>
-        )}
-      </div>
+      </FilterToolbar>
 
       {filtered.length === 0 ? (
         <EmptyState

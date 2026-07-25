@@ -116,6 +116,7 @@ export function TaxonomyView({ categories, activeSlug, types }: TaxonomyViewProp
           </p>
         )}
         <DataTable
+        enableColumnToggle
           columns={CATEGORY_COLUMNS}
           rows={catRows}
           searchKeys={["name", "description"]}

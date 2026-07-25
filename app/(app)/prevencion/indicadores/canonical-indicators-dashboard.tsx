@@ -21,6 +21,17 @@ function rate(value: number | null) {
   return value === null ? "No calculable" : value.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
+/**
+ * Variante para celdas de tabla. La leyenda "No calculable" se explica UNA vez
+ * en el aviso sobre la tabla; repetirla en 36 celdas es tinta sin información
+ * (Tufte) y no le dice al usuario qué hacer. En la celda basta un guión tenue.
+ */
+function rateCell(value: number | null) {
+  return value === null
+    ? <span className="text-[var(--color-text-subtle)]" title="No calculable: falta el denominador del período">—</span>
+    : value.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
 function statusVariant(status: string): "success" | "warning" | "danger" | "default" {
   if (status === "reconciled" || status === "approved") return "success"
   if (status === "error" || status === "rejected") return "danger"
@@ -58,6 +69,9 @@ export function CanonicalIndicatorsDashboard({ view, currentYear, canManage, can
   if (!yearOptions.includes(view.year)) yearOptions.push(view.year)
   const pendingCount = group.monthly.reduce((total, item) => total + item.pendingCaseCount, 0)
   const hasCriticalReconciliation = group.monthly.some((item) => item.status === "error")
+  // Un indicador es no-calculable cuando falta el denominador (HH) del período.
+  const monthsWithoutHours = group.monthly.filter((item) => !item.workedHours)
+  const firstMonthWithoutHours = group.monthly.findIndex((item) => !item.workedHours) + 1
 
   function incidentHref(result: CanonicalIndicatorResult, indicator: string) {
     const params = new URLSearchParams({ year: String(view.year), monthFrom: String(result.startMonth), monthTo: String(result.endMonth), indicator })
@@ -85,15 +99,47 @@ export function CanonicalIndicatorsDashboard({ view, currentYear, canManage, can
       </div>
 
       <Tabs defaultValue="monthly">
-        <TabsList><TabsTrigger value="monthly">Cálculo mensual</TabsTrigger><TabsTrigger value="denominators">Denominadores</TabsTrigger><TabsTrigger value="reconciliation">Conciliación legado</TabsTrigger></TabsList>
+        <TabsList><TabsTrigger value="monthly">Cálculo mensual</TabsTrigger><TabsTrigger value="denominators">Denominadores</TabsTrigger><TabsTrigger value="reconciliation">Datos del sistema anterior</TabsTrigger></TabsList>
         <TabsContent value="monthly" className="space-y-4">
+          {/* A-4: una sola explicación accionable en vez de repetir "No calculable"
+              en 36 celdas. Dice QUÉ falta, CUÁNTO falta y ofrece el CTA que lo
+              resuelve — el mismo diálogo que ya existía enterrado por fila. */}
+          {monthsWithoutHours.length > 0 && (
+            <div
+              role="status"
+              className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-[var(--color-warning-line)] bg-[var(--color-warning-tint)] px-4 py-3 text-sm"
+            >
+              <div>
+                <p className="font-medium text-[var(--color-warning-ink)]">
+                  {monthsWithoutHours.length === 12
+                    ? `Sin denominadores cargados para ${view.year}`
+                    : `Faltan denominadores en ${monthsWithoutHours.length} de 12 meses`}
+                </p>
+                <p className="mt-0.5 text-[var(--color-text-muted)]">
+                  Las tasas de frecuencia, gravedad y accidentabilidad se calculan sobre las horas-hombre
+                  del período. Sin ese dato el mes aparece como «—» y no puede cerrarse.
+                </p>
+              </div>
+              {selectedIsTotal ? (
+                <p className="text-xs text-[var(--color-text-muted)]">
+                  Selecciona una faena para cargarlos.
+                </p>
+              ) : (
+                canManage && (
+                  <Button type="button" size="sm" onClick={() => setEditingMonth(firstMonthWithoutHours)}>
+                    Cargar dotación y HH
+                  </Button>
+                )
+              )}
+            </div>
+          )}
           <div className="overflow-x-auto rounded-lg border border-[var(--color-border)]">
-            <Table><TableHeader><TableRow><TableHead>Mes / estado</TableHead><TableHead>Lesionados</TableHead><TableHead>HH</TableHead><TableHead>Frecuencia</TableHead><TableHead>Ausencia + cargo</TableHead><TableHead>Accidentabilidad</TableHead>{!selectedIsTotal && (canManage || canClose) && <TableHead className="text-right">Acción</TableHead>}</TableRow></TableHeader>
+            <Table><TableHeader><TableRow><TableHead>Mes / estado</TableHead><TableHead className="text-right">Lesionados</TableHead><TableHead className="text-right">HH</TableHead><TableHead className="text-right">Frecuencia</TableHead><TableHead className="text-right">Ausencia + cargo</TableHead><TableHead className="text-right">Accidentabilidad</TableHead>{!selectedIsTotal && (canManage || canClose) && <TableHead className="text-right">Acción</TableHead>}</TableRow></TableHeader>
               <TableBody>{group.monthly.map((item, index) => {
                 const denominator = selectedIsTotal ? null : denominatorByPeriod.get(`${group.worksiteId}:${index + 1}`) ?? null
                 const closed = !selectedIsTotal && closedKeys.has(`${group.worksiteId}:${index + 1}`)
                 const metrics = item.status === "provisional" ? item.provisional : item.confirmed
-                return <TableRow key={MONTHS[index]}><TableCell><p className="font-medium">{MONTHS[index]}</p><Badge className="mt-1" variant={statusVariant(item.status)}>{STATUS_LABELS[item.status] ?? item.status}</Badge>{item.pendingCaseCount > 0 && <p className="mt-1 text-xs text-[var(--color-warning-ink)]">{item.pendingCaseCount} pendiente(s)</p>}</TableCell><TableCell><Link href={incidentHref(item, "frequency")} className="font-medium text-[var(--color-primary-ink)] hover:underline">{metrics.injuredPeople}</Link></TableCell><TableCell>{item.workedHours.toLocaleString("es-CL")}</TableCell><TableCell className="font-medium">{rate(metricValue(item, "frequencyRate"))}</TableCell><TableCell>{metrics.absenceDays} + {metrics.chargeDays}</TableCell><TableCell>{rate(metricValue(item, "accidentabilityRate"))}</TableCell>{!selectedIsTotal && (canManage || canClose) && <TableCell className="text-right"><div className="flex justify-end gap-1"><Button type="button" size="sm" variant="ghost" onClick={() => setEditingMonth(index + 1)}>{denominatorDialogLabel(denominator ?? null)}</Button>{closed ? <Badge variant="success">Cerrado</Badge> : canClose && item.status === "reconciled" && <IndicatorPeriodCloseButton worksiteId={String(group.worksiteId)} year={view.year} month={index + 1} />}</div></TableCell>}</TableRow>
+                return <TableRow key={MONTHS[index]}><TableCell><p className="font-medium">{MONTHS[index]}</p><Badge className="mt-1" variant={statusVariant(item.status)}>{STATUS_LABELS[item.status] ?? item.status}</Badge>{item.pendingCaseCount > 0 && <p className="mt-1 text-xs text-[var(--color-warning-ink)]">{item.pendingCaseCount} pendiente(s)</p>}</TableCell><TableCell className="text-right font-mono tabular-nums"><Link href={incidentHref(item, "frequency")} className="font-medium text-[var(--color-primary-ink)] hover:underline">{metrics.injuredPeople}</Link></TableCell><TableCell className="text-right font-mono tabular-nums">{item.workedHours ? item.workedHours.toLocaleString("es-CL") : <span className="text-[var(--color-text-subtle)]" title="Sin denominador cargado para este mes">—</span>}</TableCell><TableCell className="text-right font-mono tabular-nums font-medium">{rateCell(metricValue(item, "frequencyRate"))}</TableCell><TableCell className="text-right font-mono tabular-nums">{metrics.absenceDays} + {metrics.chargeDays}</TableCell><TableCell className="text-right font-mono tabular-nums">{rateCell(metricValue(item, "accidentabilityRate"))}</TableCell>{!selectedIsTotal && (canManage || canClose) && <TableCell className="text-right"><div className="flex justify-end gap-1"><Button type="button" size="sm" variant="ghost" onClick={() => setEditingMonth(index + 1)}>{denominatorDialogLabel(denominator ?? null)}</Button>{closed ? <Badge variant="success">Cerrado</Badge> : canClose && item.status === "reconciled" && <IndicatorPeriodCloseButton worksiteId={String(group.worksiteId)} year={view.year} month={index + 1} />}</div></TableCell>}</TableRow>
               })}</TableBody></Table>
           </div>
           <div className="grid gap-3 md:grid-cols-2">{group.semesters.map((semester, index) => <div key={`semester-${index + 1}`} className="rounded-lg border border-[var(--color-border)] p-4"><div className="flex justify-between"><h3 className="font-medium">Semestre {index + 1}</h3><Badge variant={statusVariant(semester.status)}>{STATUS_LABELS[semester.status]}</Badge></div><p className="mt-3 font-mono text-2xl font-semibold">{rate(metricValue(semester, "severityRate"))}</p><p className="text-xs text-[var(--color-text-subtle)]">Calculada desde los seis meses brutos, no desde un promedio de tasas.</p></div>)}</div>
@@ -101,11 +147,11 @@ export function CanonicalIndicatorsDashboard({ view, currentYear, canManage, can
         </TabsContent>
 
         <TabsContent value="denominators">
-          {selectedIsTotal ? <EmptyState title="Selecciona una faena" description="La fuente y aprobación se gestionan por faena y mes; la vista total sólo agrega resultados autorizados." /> : <div className="overflow-x-auto rounded-lg border border-[var(--color-border)]"><Table><TableHeader><TableRow><TableHead>Mes</TableHead><TableHead>Dotación</TableHead><TableHead>HH</TableHead><TableHead>Fuente</TableHead><TableHead>Conciliación</TableHead><TableHead>Estado</TableHead><TableHead className="text-right">Acción</TableHead></TableRow></TableHeader><TableBody>{MONTHS.map((month, index) => { const item = denominatorByPeriod.get(`${group.worksiteId}:${index + 1}`) ?? null; return <TableRow key={month}><TableCell>{month}</TableCell><TableCell>{item?.workerCount ?? "—"}</TableCell><TableCell>{item?.workedHours?.toLocaleString("es-CL") ?? "—"}</TableCell><TableCell>{item?.sourceReference ?? "Sin fuente"}</TableCell><TableCell><Badge variant={statusVariant(item?.reconciliationStatus ?? "pending")}>{item?.reconciliationStatus ?? "Pendiente"}</Badge></TableCell><TableCell><Badge variant={statusVariant(item?.status ?? "draft")}>{item?.status ?? "Sin registro"}</Badge></TableCell><TableCell className="text-right"><Button type="button" size="sm" variant="ghost" onClick={() => setEditingMonth(index + 1)}>{denominatorDialogLabel(item)}</Button></TableCell></TableRow> })}</TableBody></Table></div>}
+          {selectedIsTotal ? <EmptyState title="Selecciona una faena" description="La fuente y aprobación se gestionan por faena y mes; la vista total sólo agrega resultados autorizados." /> : <div className="overflow-x-auto rounded-lg border border-[var(--color-border)]"><Table><TableHeader><TableRow><TableHead>Mes</TableHead><TableHead className="text-right">Dotación</TableHead><TableHead className="text-right">HH</TableHead><TableHead>Fuente</TableHead><TableHead>Conciliación</TableHead><TableHead>Estado</TableHead><TableHead className="text-right">Acción</TableHead></TableRow></TableHeader><TableBody>{MONTHS.map((month, index) => { const item = denominatorByPeriod.get(`${group.worksiteId}:${index + 1}`) ?? null; return <TableRow key={month}><TableCell>{month}</TableCell><TableCell className="text-right font-mono tabular-nums">{item?.workerCount ?? "—"}</TableCell><TableCell className="text-right font-mono tabular-nums">{item?.workedHours?.toLocaleString("es-CL") ?? "—"}</TableCell><TableCell>{item?.sourceReference ?? "Sin fuente"}</TableCell><TableCell><Badge variant={statusVariant(item?.reconciliationStatus ?? "pending")}>{item?.reconciliationStatus ?? "Pendiente"}</Badge></TableCell><TableCell><Badge variant={statusVariant(item?.status ?? "draft")}>{item?.status ?? "Sin registro"}</Badge></TableCell><TableCell className="text-right"><Button type="button" size="sm" variant="ghost" onClick={() => setEditingMonth(index + 1)}>{denominatorDialogLabel(item)}</Button></TableCell></TableRow> })}</TableBody></Table></div>}
         </TabsContent>
 
         <TabsContent value="reconciliation">
-          <div className="overflow-x-auto rounded-lg border border-[var(--color-border)]"><Table><TableHeader><TableRow><TableHead>Mes</TableHead><TableHead>Estado</TableHead><TableHead>HH legado → canónico</TableHead><TableHead>Accidentes legado → fuente</TableHead>                        <TableHead>Días legado → ausencia+cargo</TableHead></TableRow></TableHeader><TableBody>{group.monthly.map((item, index) => { const comparison = item.legacyComparison; return <TableRow key={MONTHS[index]}><TableCell>{MONTHS[index]}</TableCell><TableCell><Badge variant={comparison.status === "match" ? "success" : comparison.status === "difference" ? "warning" : "default"}>{comparison.status === "match" ? "Cuadra" : comparison.status === "difference" ? "Diferencia" : "Sin legado"}</Badge></TableCell><TableCell>{comparison.legacy?.horasHombre ?? "—"} → {comparison.derived.horasHombre}</TableCell><TableCell>{comparison.legacy?.accConTiempoPerdido ?? "—"} → {comparison.derived.accConTiempoPerdido}</TableCell><TableCell>{comparison.legacy?.diasPerdidos ?? "—"} → {comparison.derived.diasPerdidos}</TableCell></TableRow> })}</TableBody></Table></div>
+          <div className="overflow-x-auto rounded-lg border border-[var(--color-border)]"><Table><TableHeader><TableRow><TableHead>Mes</TableHead><TableHead>Estado</TableHead><TableHead className="text-right">HH anterior → actual</TableHead><TableHead className="text-right">Accidentes anterior → actual</TableHead><TableHead className="text-right">Días anterior → ausencia+cargo</TableHead></TableRow></TableHeader><TableBody>{group.monthly.map((item, index) => { const comparison = item.legacyComparison; return <TableRow key={MONTHS[index]}><TableCell>{MONTHS[index]}</TableCell><TableCell><Badge variant={comparison.status === "match" ? "success" : comparison.status === "difference" ? "warning" : "default"}>{comparison.status === "match" ? "Cuadra" : comparison.status === "difference" ? "Diferencia" : "Sin datos anteriores"}</Badge></TableCell><TableCell className="text-right font-mono tabular-nums">{comparison.legacy?.horasHombre ?? "—"} → {comparison.derived.horasHombre}</TableCell><TableCell className="text-right font-mono tabular-nums">{comparison.legacy?.accConTiempoPerdido ?? "—"} → {comparison.derived.accConTiempoPerdido}</TableCell><TableCell className="text-right font-mono tabular-nums">{comparison.legacy?.diasPerdidos ?? "—"} → {comparison.derived.diasPerdidos}</TableCell></TableRow> })}</TableBody></Table></div>
         </TabsContent>
       </Tabs>
       {editingMonth !== null && !selectedIsTotal && (

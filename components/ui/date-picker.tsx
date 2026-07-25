@@ -83,10 +83,10 @@ export function DatePicker({
             className={cn(
               // Match Input / SelectTrigger exactly
               "flex h-9 w-full items-center justify-between gap-2 rounded-(--radius-lg)",
-              "border border-[var(--color-border)] bg-[var(--color-surface)]",
+              "border border-[var(--color-border-control)] bg-[var(--color-surface)]",
               "px-3.5 py-1.5 text-sm text-[var(--color-text)]",
               "transition-[border-color,box-shadow,transform] duration-[var(--duration-fast)] ease-[var(--ease-out)]",
-              "hover:border-[var(--color-border-strong)]",
+              "hover:border-[var(--color-border-control-hover)]",
               "focus-visible:outline-none focus-visible:border-[var(--color-primary)] focus-visible:ring-2 focus-visible:ring-[var(--color-primary-line)]",
               "disabled:cursor-not-allowed disabled:opacity-50",
               // Emil: press feedback

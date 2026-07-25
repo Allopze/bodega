@@ -106,7 +106,7 @@ export default async function PdtpManagementReportPage({ params, searchParams }:
       ) : !report || report.objectives.length === 0 ? (
         <EmptyState compact title="Sin objetivos para estos filtros" description="Ajusta los filtros o revisa que el programa tenga actividades calendarizadas." />
       ) : (
-        <TableRoot className="mt-4">
+        <TableRoot stickyHeader className="mt-4">
           <Table>
             <TableHeader>
               <TableRow>

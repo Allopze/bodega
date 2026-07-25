@@ -161,6 +161,24 @@ export async function registerReceipt(
             : { quantityReceived: totalNowReceived })
           .where(eq(purchaseOrderItems.id, ri.purchaseOrderItemId))
 
+        if (input.stage === "office" && lockedOcItem.requestItemId) {
+          const reqItem = await tx.query.purchaseRequestItems.findFirst({
+            where: eq(purchaseRequestItems.id, lockedOcItem.requestItemId),
+            with: { request: { columns: { requesterId: true, code: true, id: true } } },
+          })
+          const requesterId = reqItem?.request?.requesterId
+          if (requesterId) {
+            notifyAfterCommit(() => notifyManyUser([requesterId], {
+              type: "receipt_done",
+              title: `Pedido recibido en Oficina Chome`,
+              body: `El ítem de tu solicitud ${reqItem?.request?.code ?? ""} llegó al checkpoint de Oficina Chome y se prepara su traslado a faena.`,
+              entityType: "purchase_request",
+              entityId: reqItem?.request?.id ?? "",
+              entityHref: `/solicitudes/${reqItem?.request?.id ?? ""}`,
+            }))
+          }
+        }
+
         if (input.stage === "faena" && lockedOcItem.requestItemId) {
           const fullReceived = totalNowReceived >= lockedOcItem.quantity
           await receiveItemTx(tx, lockedOcItem.requestItemId, input.receivedBy, {

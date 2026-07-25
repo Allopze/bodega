@@ -153,6 +153,7 @@ export function ImportBatchHistory({ batches }: { batches: BatchRow[] }) {
 
   return (
     <DataTable
+        enableColumnToggle
       columns={COLUMNS}
       rows={preFiltered as unknown as Record<string, unknown>[]}
       searchKeys={SEARCH_KEYS}

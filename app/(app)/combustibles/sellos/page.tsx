@@ -68,9 +68,9 @@ export default async function SealHistoryPage({ searchParams }: { searchParams: 
 
       <div className="overflow-x-auto border border-(--color-border)">
         <table className="w-full min-w-[900px] text-sm">
-          <thead className="bg-(--color-surface-2) text-left text-xs text-(--color-text-muted)">
+          <thead className="bg-(--color-surface-2) text-left th-type">
             <tr>
-              <th className="p-3">Fecha</th>
+              <th scope="col" className="p-3">Fecha</th>
               <th>Faena</th>
               <th>Punto de carga</th>
               <th>Equipo</th>

@@ -9,6 +9,8 @@ import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Pagination } from "@/components/ui/pagination"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { FilterToolbar, type ActiveFilterChip } from "@/components/ui/filter-toolbar"
+import { useUrlFilters } from "@/lib/hooks/use-url-filters"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { ClipboardText } from "@phosphor-icons/react"
 import { CAPA_SOURCE_LABELS, CAPA_STATUS_LABELS, capaStatusBadgeVariant } from "@/lib/prevention/capa"
@@ -50,9 +52,14 @@ export function CapaList({ actions, worksites, counts, pagination }: Props) {
   const router = useRouter()
   const sp = useSearchParams()
   const { searchQuery } = useSafeShellHeader()
-  const [status, setStatus] = React.useState(sp.get("status") ?? "all")
-  const [source, setSource] = React.useState(sp.get("source") ?? "all")
-  const [worksite, setWorksite] = React.useState(sp.get("worksite") ?? "all")
+  // status/source/worksite son filtros SERVER-SIDE (la página re-query por URL);
+  // por eso se conservan las claves exactas y se lee directo de la URL sin useState
+  // (evita el drift previo entre useState y searchParams). quickFilter es un toggle
+  // local de las métricas (no viaja al server).
+  const { getFilter, setFilters, clearFilters: clearUrlFilters } = useUrlFilters()
+  const status = getFilter("status") || "all"
+  const source = getFilter("source") || "all"
+  const worksite = getFilter("worksite") || "all"
   const [quickFilter, setQuickFilter] = React.useState<QuickFilter>("all")
   const worksiteName = React.useMemo(() => new Map(worksites.map((item) => [item.id, item.name])), [worksites])
   const query = searchQuery.trim().toLocaleLowerCase("es-CL")
@@ -63,14 +70,6 @@ export function CapaList({ actions, worksites, counts, pagination }: Props) {
     else params.delete("page")
     const qs = params.toString()
     router.push(qs ? `?${qs}` : "")
-  }
-
-  function applyFilter(key: string, value: string) {
-    const params = new URLSearchParams(sp.toString())
-    if (value && value !== "all") params.set(key, value)
-    else params.delete(key)
-    params.delete("page")
-    router.push(params.toString() ? `?${params.toString()}` : "")
   }
 
   const filtered = actions.filter((item) => {
@@ -87,8 +86,20 @@ export function CapaList({ actions, worksites, counts, pagination }: Props) {
     { key: "unreconciled", label: "Por conciliar", value: counts.unreconciled, detail: "Histórico incompleto" },
   ]
 
+  const STATUS_LABELS = CAPA_STATUS_LABELS as Record<string, string>
+  const SOURCE_LABELS = CAPA_SOURCE_LABELS as Record<string, string>
+  const activeChips: ActiveFilterChip[] = []
+  if (status !== "all") activeChips.push({ key: "status", label: "Estado", value: status, displayValue: STATUS_LABELS[status] ?? status })
+  if (source !== "all") activeChips.push({ key: "source", label: "Fuente", value: source, displayValue: SOURCE_LABELS[source] ?? source })
+  if (worksite !== "all") {
+    const ws = worksites.find((w) => w.id === worksite)
+    if (ws) activeChips.push({ key: "worksite", label: "Faena", value: worksite, displayValue: ws.name })
+  }
+  function handleRemoveChip(key: string) {
+    setFilters({ [key]: null })
+  }
   function clearFilters() {
-    router.push("")
+    clearUrlFilters()
   }
 
   return (
@@ -109,32 +120,34 @@ export function CapaList({ actions, worksites, counts, pagination }: Props) {
         ))}
       </div>
 
-      <div className="flex flex-wrap items-end gap-2">
-        <Select value={status} onValueChange={(value) => { setStatus(value); applyFilter("status", value); setQuickFilter("all") }}>
+      <FilterToolbar
+        activeChips={activeChips}
+        onRemoveChip={handleRemoveChip}
+        onClearAll={clearUrlFilters}
+        hasActiveFilters={status !== "all" || source !== "all" || worksite !== "all" || quickFilter !== "all"}
+      >
+        <Select value={status} onValueChange={(value) => setFilters({ status: value === "all" ? null : value })}>
           <SelectTrigger className="w-48" aria-label="Estado CAPA"><SelectValue placeholder="Estado" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Todos los estados</SelectItem>
             {Object.entries(CAPA_STATUS_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}
           </SelectContent>
         </Select>
-        <Select value={source} onValueChange={(value) => { setSource(value); applyFilter("source", value) }}>
+        <Select value={source} onValueChange={(value) => setFilters({ source: value === "all" ? null : value })}>
           <SelectTrigger className="w-44" aria-label="Fuente CAPA"><SelectValue placeholder="Fuente" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Todas las fuentes</SelectItem>
             {Object.entries(CAPA_SOURCE_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}
           </SelectContent>
         </Select>
-        <Select value={worksite} onValueChange={(value) => { setWorksite(value); applyFilter("worksite", value) }}>
+        <Select value={worksite} onValueChange={(value) => setFilters({ worksite: value === "all" ? null : value })}>
           <SelectTrigger className="w-52" aria-label="Faena CAPA"><SelectValue placeholder="Faena" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Todas las faenas</SelectItem>
             {worksites.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}
           </SelectContent>
         </Select>
-        {(status !== "all" || source !== "all" || worksite !== "all" || quickFilter !== "all") && (
-          <Button type="button" variant="ghost" size="sm" onClick={clearFilters}>Limpiar filtros</Button>
-        )}
-      </div>
+      </FilterToolbar>
 
       {filtered.length === 0 ? (
         <EmptyState

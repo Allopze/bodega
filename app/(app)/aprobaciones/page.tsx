@@ -7,6 +7,7 @@ import {
 } from "@/db/schema"
 import { eq, and, inArray, asc, sql, count } from "drizzle-orm"
 import { requirePermission } from "@/lib/auth/can"
+import { approvalQueueFilter } from "@/lib/approvals-queue"
 import { isGlobalRole, visibleWorksiteIds } from "@/lib/auth/scope"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
@@ -34,24 +35,10 @@ export default async function AprobacionesPage({
   const listParams = parseListParams(sp)
   const selectedRequestId = typeof sp.solicitud === "string" ? sp.solicitud : ""
   const visibleWsIds = visibleWorksiteIds(session)
-  const worksiteScope = isGlobalRole(session)
-    ? undefined
-    : visibleWsIds.length > 0
-      ? inArray(purchaseRequests.worksiteId, visibleWsIds)
-      : sql`false`
   const requestFilter = and(
-    inArray(purchaseRequests.status, ["submitted", "in_review", "partially_approved"]),
-    // Repuestos y servicios se aprueban por su propio flujo de cotizaciones
-    // (selectQuotation aprueba los ítems), no por esta cola ítem-a-ítem.
-    sql`${purchaseRequests.requestType} NOT IN ('repuestos', 'servicios')`,
-    worksiteScope,
+    // Predicado base compartido con el badge del rail (lib/approvals-queue.ts).
+    approvalQueueFilter({ isGlobal: isGlobalRole(session), worksiteIds: visibleWsIds }),
     selectedRequestId ? eq(purchaseRequests.id, selectedRequestId) : undefined,
-    sql`exists (
-      select 1
-      from purchase_request_items pending_items
-      where pending_items.request_id = ${purchaseRequests.id}
-        and pending_items.status = 'requested'
-    )`,
     // URL-synced filters
     textSearchSql(listParams.q, [purchaseRequests.code]),
     worksiteEqSql(purchaseRequests.worksiteId, listParams.faena),

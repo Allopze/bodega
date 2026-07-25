@@ -193,7 +193,7 @@ export default async function FuelCyclePage({ searchParams }: { searchParams: Pr
         ) : (
           <div className="overflow-x-auto border border-[var(--color-border)]">
             <table className="w-full min-w-[700px] text-sm">
-              <thead className="bg-[var(--color-surface-2)] text-left text-xs text-[var(--color-text-muted)]"><tr><th className="p-3">Vasija</th><th>Recibido</th><th>Entregado</th><th>Saldo</th><th>Capacidad</th></tr></thead>
+              <thead className="bg-[var(--color-surface-2)] text-left th-type"><tr><th scope="col" className="p-3">Vasija</th><th>Recibido</th><th>Entregado</th><th>Saldo</th><th>Capacidad</th></tr></thead>
               <tbody className="divide-y divide-[var(--color-border)]">
                 {balances.map((balance) => {
                   const overCapacity = balance.capacityLiters != null && balance.balanceLiters > balance.capacityLiters
@@ -230,7 +230,7 @@ export default async function FuelCyclePage({ searchParams }: { searchParams: Pr
         ) : (
           <div className="overflow-x-auto border border-[var(--color-border)]">
             <table className="w-full min-w-[850px] text-sm">
-              <thead className="bg-[var(--color-surface-2)] text-left text-xs text-[var(--color-text-muted)]"><tr><th className="p-3">Momento</th><th>Evento</th><th>Faena / producto</th><th>Ruta</th><th>Litros</th><th>Origen documental</th></tr></thead>
+              <thead className="bg-[var(--color-surface-2)] text-left th-type"><tr><th scope="col" className="p-3">Momento</th><th>Evento</th><th>Faena / producto</th><th>Ruta</th><th>Litros</th><th>Origen documental</th></tr></thead>
               <tbody className="divide-y divide-[var(--color-border)]">
                 {movements.map((movement) => {
                   const href = sourceHref(movement.sourceType, movement.sourceId)

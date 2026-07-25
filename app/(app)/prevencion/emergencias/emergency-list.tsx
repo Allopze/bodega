@@ -2,13 +2,12 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { useRouter, useSearchParams } from "next/navigation"
-import { Siren } from "@phosphor-icons/react"
-import { useSafeShellHeader } from "@/components/layout/header-context"
+import { useSearchParams } from "next/navigation"
+import { useUrlFilters } from "@/lib/hooks/use-url-filters"
+import { DataTable } from "@/components/admin/data-table"
 import { Badge } from "@/components/ui/badge"
-import { EmptyState } from "@/components/ui/empty-state"
 import { Pagination } from "@/components/ui/pagination"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { TableCell, TableRow } from "@/components/ui/table"
 import type { PaginationState } from "@/lib/pagination"
 import {
   EMERGENCY_DRILL_OUTCOME_LABELS,
@@ -48,22 +47,40 @@ interface Props {
   plansPagination: PaginationState
 }
 
+const PLAN_COLUMNS = [
+  { key: "plan", label: "Plan / faena" },
+  { key: "status", label: "Estado", sortable: true },
+  { key: "scenarios", label: "Escenarios", sortable: true, numeric: true },
+  { key: "roles", label: "Organigrama", sortable: true, numeric: true },
+  { key: "drills", label: "Simulacros", sortable: true, numeric: true },
+]
+
+const DRILL_COLUMNS = [
+  { key: "plan", label: "Plan / faena" },
+  { key: "scenarioType", label: "Escenario" },
+  { key: "scheduledFor", label: "Programado" },
+  { key: "status", label: "Estado" },
+  { key: "outcome", label: "Resultado" },
+]
+
 export function EmergencyList({ plans, drills, worksites, canManage, plansPagination }: Props) {
-  const router = useRouter()
   const searchParams = useSearchParams()
+  const { getFilter, setFilter } = useUrlFilters()
+  const tab = (getFilter("tab") || "plans") as "plans" | "drills"
   const navigatePlansPage = React.useCallback((page: number) => {
     const params = new URLSearchParams(searchParams.toString())
     params.set("page", String(page))
-    router.push(`?${params.toString()}`)
-  }, [router, searchParams])
-  const { searchQuery } = useSafeShellHeader()
-  const [tab, setTab] = React.useState<"plans" | "drills">("plans")
+    window.location.search = params.toString()
+  }, [searchParams])
 
-  const query = searchQuery.trim().toLocaleLowerCase("es-CL")
-  const filteredPlans = plans.filter((item) =>
-    !query || `${item.code} ${item.title} ${item.worksiteName}`.toLocaleLowerCase("es-CL").includes(query))
-  const filteredDrills = drills.filter((item) =>
-    !query || `${item.planTitle} ${item.worksiteName}`.toLocaleLowerCase("es-CL").includes(query))
+  const planRows = plans.map((item) => ({
+    ...item,
+    plan: item.code,
+  })) as unknown as Record<string, unknown>[]
+
+  const drillRows = drills.map((item) => ({
+    ...item,
+  })) as unknown as Record<string, unknown>[]
 
   const metrics = [
     { id: "approved", label: "Planes aprobados", value: plans.filter((item) => item.status === "approved").length, detail: "Vigentes" },
@@ -86,11 +103,11 @@ export function EmergencyList({ plans, drills, worksites, canManage, plansPagina
 
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex gap-1 rounded-md border border-[var(--color-border)] p-1 w-fit">
-          <button type="button" onClick={() => setTab("plans")} aria-pressed={tab === "plans"}
+          <button type="button" onClick={() => setFilter("tab", "plans")} aria-pressed={tab === "plans"}
             className="rounded px-3 py-1 text-sm aria-pressed:bg-[var(--color-primary-tint)]">
             Planes ({plans.length})
           </button>
-          <button type="button" onClick={() => setTab("drills")} aria-pressed={tab === "drills"}
+          <button type="button" onClick={() => setFilter("tab", "drills")} aria-pressed={tab === "drills"}
             className="rounded px-3 py-1 text-sm aria-pressed:bg-[var(--color-primary-tint)]">
             Simulacros ({drills.length})
           </button>
@@ -100,53 +117,42 @@ export function EmergencyList({ plans, drills, worksites, canManage, plansPagina
         </div>
       </div>
 
-      {tab === "plans" && filteredPlans.length === 0 && (
-        <EmptyState
-          icon={<Siren size={20} />}
-          title={plans.length === 0 ? "Aún no hay planes de emergencia" : "Ningún plan coincide con la búsqueda"}
-          description={plans.length === 0
+      {tab === "plans" && (
+        <>
+        <DataTable
+          disableInternalSearch
+          columns={PLAN_COLUMNS}
+          rows={planRows}
+          searchKeys={[]}
+          pageSize={Infinity}
+          emptyTitle={plans.length === 0 ? "Aún no hay planes de emergencia" : "Ningún plan coincide con la búsqueda"}
+          emptyDescription={plans.length === 0
             ? "Un plan de emergencia declara escenarios, organigrama de respuesta, recursos y contactos por faena. Aprobarlo exige al menos un escenario y un rol."
             : "Ajusta el texto del buscador superior."}
-          action={canManage && worksites.length > 0 ? <NewPlanDialog worksites={worksites} /> : undefined}
-        />
-      )}
-
-      {tab === "plans" && filteredPlans.length > 0 && (
-        <>
-        <div className="overflow-x-auto rounded-lg border border-[var(--color-border)]">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Plan / faena</TableHead>
-                <TableHead>Estado</TableHead>
-                <TableHead className="text-right">Escenarios</TableHead>
-                <TableHead className="text-right">Organigrama</TableHead>
-                <TableHead className="text-right">Simulacros</TableHead>
+          emptyAction={canManage && worksites.length > 0 ? <NewPlanDialog worksites={worksites} /> : undefined}
+          renderRow={(row) => {
+            const item = row as unknown as PlanItem
+            return (
+              <TableRow key={item.id}>
+                <TableCell>
+                  <Link href={`/prevencion/emergencias/${item.id}`} className="hover:underline">
+                    <span className="font-mono text-xs">{item.code}</span>
+                    <span className="block text-sm font-medium">{item.title}</span>
+                  </Link>
+                  <span className="block text-xs text-[var(--color-text-subtle)]">{item.worksiteName}</span>
+                </TableCell>
+                <TableCell>
+                  <Badge variant={emergencyPlanStatusBadgeVariant(item.status)}>
+                    {EMERGENCY_PLAN_STATUS_LABELS[item.status] ?? item.status}
+                  </Badge>
+                </TableCell>
+                <TableCell className="text-right font-mono text-sm tabular-nums">{item.scenarios}</TableCell>
+                <TableCell className="text-right font-mono text-sm tabular-nums">{item.roles}</TableCell>
+                <TableCell className="text-right font-mono text-sm tabular-nums">{item.drills}</TableCell>
               </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filteredPlans.map((item) => (
-                <TableRow key={item.id}>
-                  <TableCell>
-                    <Link href={`/prevencion/emergencias/${item.id}`} className="hover:underline">
-                      <span className="font-mono text-xs">{item.code}</span>
-                      <span className="block text-sm font-medium">{item.title}</span>
-                    </Link>
-                    <span className="block text-xs text-[var(--color-text-subtle)]">{item.worksiteName}</span>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant={emergencyPlanStatusBadgeVariant(item.status)}>
-                      {EMERGENCY_PLAN_STATUS_LABELS[item.status] ?? item.status}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-right font-mono text-sm tabular-nums">{item.scenarios}</TableCell>
-                  <TableCell className="text-right font-mono text-sm tabular-nums">{item.roles}</TableCell>
-                  <TableCell className="text-right font-mono text-sm tabular-nums">{item.drills}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+            )
+          }}
+        />
         {plansPagination.totalPages > 1 && (
           <div className="flex justify-center pt-2">
             <Pagination page={plansPagination.page} total={plansPagination.totalItems} perPage={plansPagination.limit} onPage={navigatePlansPage} />
@@ -155,52 +161,39 @@ export function EmergencyList({ plans, drills, worksites, canManage, plansPagina
         </>
       )}
 
-      {tab === "drills" && filteredDrills.length === 0 && (
-        <EmptyState
-          icon={<Siren size={20} />}
-          title={drills.length === 0 ? "Aún no hay simulacros programados" : "Ningún simulacro coincide con la búsqueda"}
-          description={drills.length === 0
+      {tab === "drills" && (
+        <DataTable
+          columns={DRILL_COLUMNS}
+          rows={drillRows}
+          searchKeys={["planTitle", "worksiteName", "scenarioType"]}
+          emptyTitle={drills.length === 0 ? "Aún no hay simulacros programados" : "Ningún simulacro coincide con la búsqueda"}
+          emptyDescription={drills.length === 0
             ? "Sólo un plan aprobado puede programar simulacros. Prográmalos desde el detalle del plan."
             : "Ajusta el texto del buscador superior."}
-        />
-      )}
-
-      {tab === "drills" && filteredDrills.length > 0 && (
-        <div className="overflow-x-auto rounded-lg border border-[var(--color-border)]">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Plan / faena</TableHead>
-                <TableHead>Escenario</TableHead>
-                <TableHead>Programado</TableHead>
-                <TableHead>Estado</TableHead>
-                <TableHead>Resultado</TableHead>
+          renderRow={(row) => {
+            const item = row as unknown as DrillItem
+            return (
+              <TableRow key={item.id}>
+                <TableCell>
+                  <span className="block text-sm">{item.planTitle}</span>
+                  <span className="text-xs text-[var(--color-text-subtle)]">{item.worksiteName}</span>
+                </TableCell>
+                <TableCell className="text-sm">{item.scenarioType}</TableCell>
+                <TableCell className="text-sm tabular-nums">{formatDateTime(item.scheduledFor)}</TableCell>
+                <TableCell>
+                  <Badge variant={item.status === "completed" ? "success" : item.status === "cancelled" ? "outline" : "default"}>
+                    {EMERGENCY_DRILL_STATUS_LABELS[item.status] ?? item.status}
+                  </Badge>
+                </TableCell>
+                <TableCell>
+                  {item.outcome
+                    ? <Badge variant={item.outcome === "satisfactory" ? "success" : "warning"}>{EMERGENCY_DRILL_OUTCOME_LABELS[item.outcome] ?? item.outcome}</Badge>
+                    : <span className="text-sm text-[var(--color-text-subtle)]">—</span>}
+                </TableCell>
               </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filteredDrills.map((item) => (
-                <TableRow key={item.id}>
-                  <TableCell>
-                    <span className="block text-sm">{item.planTitle}</span>
-                    <span className="text-xs text-[var(--color-text-subtle)]">{item.worksiteName}</span>
-                  </TableCell>
-                  <TableCell className="text-sm">{item.scenarioType}</TableCell>
-                  <TableCell className="text-sm tabular-nums">{formatDateTime(item.scheduledFor)}</TableCell>
-                  <TableCell>
-                    <Badge variant={item.status === "completed" ? "success" : item.status === "cancelled" ? "outline" : "default"}>
-                      {EMERGENCY_DRILL_STATUS_LABELS[item.status] ?? item.status}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    {item.outcome
-                      ? <Badge variant={item.outcome === "satisfactory" ? "success" : "warning"}>{EMERGENCY_DRILL_OUTCOME_LABELS[item.outcome] ?? item.outcome}</Badge>
-                      : <span className="text-sm text-[var(--color-text-subtle)]">—</span>}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+            )
+          }}
+        />
       )}
     </div>
   )

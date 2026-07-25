@@ -76,9 +76,11 @@ export async function createOrdersBySupplier(input: CreateOrdersBySupplierInput)
   await db.transaction(async (tx) => {
     for (const orderInput of input.orders) {
       for (const item of orderInput.items) {
-        const requestItem = await tx.query.purchaseRequestItems.findFirst({
-          where: eq(purchaseRequestItems.id, item.requestItemId),
-        })
+        const [requestItem] = await tx
+          .select()
+          .from(purchaseRequestItems)
+          .where(eq(purchaseRequestItems.id, item.requestItemId))
+          .for("update")
         if (!requestItem) throw new Error(`Item ${item.requestItemId} not found`)
         if (item.quantity > requestItem.quantity) {
           throw new Error("La cantidad a comprar no puede superar la cantidad aprobada del ítem")
@@ -106,6 +108,7 @@ export async function createOrdersBySupplier(input: CreateOrdersBySupplierInput)
             supplierHint:        requestItem.supplierHint,
             sortOrder:           requestItem.sortOrder,
             notes:               requestItem.notes,
+            splitFromItemId:     requestItem.id,
           })
 
           const attrs = await tx.query.requestItemAttributes.findMany({

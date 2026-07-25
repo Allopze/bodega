@@ -5,6 +5,7 @@ import { useActionState, useEffect, useMemo, useState } from "react"
 import { ArrowClockwise, Check, Copy, Prohibit, X } from "@phosphor-icons/react"
 import { toast } from "@/lib/toast"
 import { Badge } from "@/components/ui/badge"
+import { EmptyState } from "@/components/ui/empty-state"
 import { Button } from "@/components/ui/button"
 import { Field } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
@@ -93,7 +94,10 @@ export function UserInvitationsPanel({ invitations }: { invitations: InvitationR
   }
 
   return (
-    <section className="space-y-3">
+    // mt-12 (48px): la separación ENTRE secciones debe superar a la separación
+    // interna de la sección anterior (filas de tabla a ~60px). Sin esto el título
+    // quedaba a ~25px de la última fila y se leía como parte de la tabla.
+    <section className="mt-12 space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <h2 className="text-sm font-semibold text-[var(--color-text)]">Invitaciones enviadas</h2>
@@ -132,7 +136,22 @@ export function UserInvitationsPanel({ invitations }: { invitations: InvitationR
 
       <div className="overflow-hidden rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)]">
         {rows.length === 0 ? (
-          <p className="p-4 text-sm text-[var(--color-text-subtle)]">No hay invitaciones para este filtro.</p>
+          // A-4: un vacío POR FILTRO no pide "crear el primero", pide volver a
+          // ver todo. El vacío real (sin ninguna invitación) sí explica el flujo.
+          <EmptyState
+            compact
+            title={status === "pending" ? "Sin invitaciones pendientes" : "Aún no has invitado a nadie"}
+            description={
+              status === "pending"
+                ? "Todas las invitaciones enviadas ya fueron aceptadas o canceladas."
+                : "Usa «Invitar» para enviar un enlace de acceso; aparecerá aquí hasta que la persona lo use."
+            }
+            action={
+              status === "pending" && invitations.length > 0
+                ? <Button type="button" size="sm" variant="secondary" onClick={() => setStatus("all")}>Ver todas</Button>
+                : undefined
+            }
+          />
         ) : rows.map((invitation) => (
           <article key={invitation.id} className="grid gap-3 border-b border-[var(--color-border)] p-4 last:border-b-0 lg:grid-cols-[minmax(0,1fr)_auto]">
             <div className="min-w-0 space-y-2">

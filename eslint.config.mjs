@@ -116,6 +116,51 @@ const eslintConfig = defineConfig([
       ],
     },
   },
+  // ── Design system: el feedback pasa siempre por el wrapper de toast ────────
+  // lib/toast.ts añade barra de progreso y duración de error consistentes.
+  // Importar `toast` de "sonner" directamente se salta ese comportamiento.
+  // Excepciones: el propio wrapper y los dos layouts que montan <Toaster>.
+  {
+    files: ["app/**/*.{ts,tsx}", "components/**/*.{ts,tsx}", "lib/**/*.{ts,tsx}"],
+    ignores: ["lib/toast.ts", "app/(app)/layout.tsx", "app/(public)/layout.tsx"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: [
+                "@/modules/*/services/*",
+                "@/modules/*/actions/*",
+                "@/modules/*/schema",
+                "@/modules/*/validation",
+              ],
+              message:
+                "[freeze] No importes las copias stale de modules/*. Fuente de verdad: lib/ + app/ (ver modules/README.md).",
+            },
+            {
+              group: ["@/core/*", "@/core"],
+              message:
+                "[freeze] core/ fue removido; usa las primitivas equivalentes en lib/.",
+            },
+            {
+              group: ["**/*-form-kit*", "**/form-kit*"],
+              message:
+                "[design-system] No crees ni importes archivos form-kit locales. Usa useOperation de @/lib/hooks/use-operation y Field de @/components/ui/field (ver AGENTS.md).",
+            },
+          ],
+          paths: [
+            {
+              name: "sonner",
+              importNames: ["toast"],
+              message:
+                "[design-system] Importa `toast` desde @/lib/toast, no de sonner: el wrapper fija la duración y la barra de progreso de los errores.",
+            },
+          ],
+        },
+      ],
+    },
+  },
 ]);
 
 export default eslintConfig;

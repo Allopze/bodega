@@ -110,6 +110,7 @@ export function OcList({
 
       {/* OC table */}
       <DataTable
+        enableColumnToggle
         columns={COLUMNS}
         rows={orders as unknown as Record<string, unknown>[]}
         searchKeys={["code", "worksiteName", "supplierName", "status"]}

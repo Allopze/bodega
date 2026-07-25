@@ -74,7 +74,7 @@ export function RequestGroup({ request, canApproveEpp, canSetDispatch }: { reque
             {request.pendingCount} pendiente{request.pendingCount !== 1 ? "s" : ""}
           </span>
 
-          {canSetDispatch && (
+          {canSetDispatch ? (
             <form ref={modeFormRef} action={modeAction} className="flex items-center gap-1">
               <input type="hidden" name="requestId" value={request.id} />
               <Select
@@ -98,6 +98,10 @@ export function RequestGroup({ request, canApproveEpp, canSetDispatch }: { reque
                 </SelectContent>
               </Select>
             </form>
+          ) : (
+            <Badge variant="outline" size="sm" className="shrink-0 text-xs">
+              {mode === "directo_faena" ? "Directo a faena" : "Vía oficina"}
+            </Badge>
           )}
 
           {!allApproved && canApproveThisRequest && (
