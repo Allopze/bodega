@@ -114,6 +114,7 @@ export function AccionesTable({ items, activityLabelById, worksiteNameById, work
 
       <DataTable
         enableColumnToggle
+        stickyFirstColumn
         columns={COLUMNS}
         rows={rows}
         searchKeys={["hallazgo", "accion", "responsable", "activity", "worksite"]}
@@ -143,6 +144,37 @@ export function AccionesTable({ items, activityLabelById, worksiteNameById, work
                 </Badge>
               </TableCell>
             </TableRow>
+          )
+        }}
+        /* A-1: un prevencionista revisa las CAPA pendientes en faena, no en
+           escritorio. En 390px la tabla de 8 columnas ocultaba plazo, prioridad
+           y estado — justo lo que hace falta para priorizar. */
+        renderMobileCard={(row) => {
+          const item = row as unknown as ActionRow & { activity: string; worksite: string }
+          return (
+            <Link
+              href={`/prevencion/pdtp/${programId}/ejecucion/${item.executionId}`}
+              className="block rounded-[var(--radius-lg)] border border-(--color-border) bg-(--color-surface) p-4 transition-colors duration-(--duration-fast) hover:bg-(--color-primary-tint)"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <p title={item.hallazgo} className="min-w-0 flex-1 truncate text-sm font-medium text-(--color-text)">{item.hallazgo}</p>
+                <Badge variant={estadoVariant(item.estado, item.vencida)} size="sm">
+                  {item.vencida ? "Vencida" : ESTADO_LABELS[item.estado] ?? item.estado}
+                </Badge>
+              </div>
+              <p title={item.activity} className="mt-0.5 truncate text-xs text-(--color-text-muted)">{item.activity}</p>
+              <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
+                <dt className="text-(--color-text-subtle)">Plazo</dt>
+                <dd className="text-right font-mono tabular-nums text-(--color-text)">{item.plazo}</dd>
+                <dt className="text-(--color-text-subtle)">Responsable</dt>
+                <dd className="truncate text-right text-(--color-text)">{item.responsable}</dd>
+                <dt className="text-(--color-text-subtle)">Faena</dt>
+                <dd className="truncate text-right text-(--color-text)">{item.worksite}</dd>
+              </dl>
+              <div className="mt-2">
+                <Badge variant="outline" size="sm">{item.prioridad}</Badge>
+              </div>
+            </Link>
           )
         }}
       />

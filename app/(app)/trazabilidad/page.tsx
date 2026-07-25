@@ -3,6 +3,7 @@ import { redirect } from "next/navigation"
 import Link from "next/link"
 import { requirePermission } from "@/lib/auth/can"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
+import { Button } from "@/components/ui/button"
 import { PageContainer } from "@/components/ui/page-container"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Warning, DownloadSimple } from "@phosphor-icons/react/dist/ssr"
@@ -105,12 +106,24 @@ export default async function TrazabilidadPage({
 
       {/* ── Matrix table ──────────────────────────────────────────────── */}
       {paginated.length === 0 ? (
+        // A-4: los dos vacíos no piden lo mismo. Sin datos → ir a crear una
+        // solicitud. Vacío por filtro → quitar los filtros, que antes se pedía
+        // en el texto ("intenta con otros filtros") sin dar forma de hacerlo.
         <EmptyState
-          title="Sin ítems"
-          description={rows.length === 0
-            ? "Aún no hay solicitudes con ítems en el sistema."
-            : "No hay ítems que coincidan con los filtros seleccionados. Intenta con otros filtros."}
           compact
+          title={rows.length === 0 ? "Aún no hay ítems que trazar" : "Sin ítems para estos filtros"}
+          description={rows.length === 0
+            ? "La trazabilidad se construye desde los ítems de las solicitudes; en cuanto exista la primera, aparecerá aquí."
+            : "Ningún ítem coincide con los filtros aplicados."}
+          action={rows.length === 0 ? (
+            <Button asChild size="sm">
+              <Link href="/solicitudes/nueva">Nueva solicitud</Link>
+            </Button>
+          ) : (
+            <Button asChild size="sm" variant="secondary">
+              <Link href="/trazabilidad">Quitar filtros</Link>
+            </Button>
+          )}
         />
       ) : (
         <>

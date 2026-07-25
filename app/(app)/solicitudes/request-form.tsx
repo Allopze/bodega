@@ -272,7 +272,14 @@ export function RequestForm({ worksites, products, suppliers, workers, editReque
             const fd = form.buildDraftFormData()
             fd.set("requestId", form.savedId ?? "")
             form.startSubmitTransition(() => form.submitAction(fd))
-          }} className="pt-0">
+          }}
+          /* M-7: el contenedor padre aplica `space-y-8` (32px), que dejaba
+             "Enviar a aprobación" flotando lejos de "Volver / Guardar borrador"
+             y visualmente fuera de la tarjeta. `-mt-6` cancela casi todo ese
+             hueco para que las dos filas se lean como una sola barra de acciones.
+             Siguen siendo dos <form> porque `SubmitButton` lee `useFormStatus`,
+             que sólo funciona dentro del form que envía. */
+          className="-mt-6">
             {form.submitMessage && !form.submitOk && (
               <p className="mb-3 text-xs text-[var(--color-danger)] flex items-center gap-1.5"><Warning size={14} />{form.submitMessage}</p>
             )}

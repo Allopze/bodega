@@ -43,7 +43,7 @@ export function BreakdownPanel({
           <p className="py-2 text-sm text-[var(--color-text-muted)]">{emptyLabel}</p>
         ) : rows.map((row) => (
           <div key={row.label} className="flex items-center justify-between gap-3 py-2">
-            <span className="text-sm text-[var(--color-text-muted)] truncate">{row.label}</span>
+            <span title={row.label} className="text-sm text-[var(--color-text-muted)] truncate">{row.label}</span>
             <span className="font-mono text-sm tabular-nums text-[var(--color-text)]">{row.value}</span>
           </div>
         ))}

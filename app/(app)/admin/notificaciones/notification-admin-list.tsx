@@ -4,6 +4,7 @@ import { useActionState, useEffect } from "react"
 import { Trash, Calendar } from "@phosphor-icons/react"
 import { DataTable } from "@/components/admin/data-table"
 import { Badge } from "@/components/ui/badge"
+import { DesktopOnlyTableNotice } from "@/components/ui/desktop-only-table"
 import { Button } from "@/components/ui/button"
 import { TableRow, TableCell } from "@/components/ui/table"
 import { toast } from "@/lib/toast"
@@ -66,6 +67,7 @@ export function NotificationAdminList({ rows, oldestReadDate, retentionDays }: N
           </Button>
         </form>
       </div>
+      <DesktopOnlyTableNotice />
       <DataTable
         columns={COLUMNS}
         rows={dataRows}
@@ -95,7 +97,7 @@ export function NotificationAdminList({ rows, oldestReadDate, retentionDays }: N
                   {r.isRead ? <Badge variant="success">Leída</Badge> : <Badge variant="warning">Sin leer</Badge>}
                 </TableCell>
                 <TableCell className="text-xs text-[var(--color-text-muted)]">
-                  {new Date(r.createdAt).toLocaleString()}
+                  {formatDateTime(r.createdAt)}
                 </TableCell>
               </TableRow>
             </React.Fragment>

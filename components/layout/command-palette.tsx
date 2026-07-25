@@ -151,7 +151,7 @@ export function CommandPalette({ session, enabledModuleIds }: { session: Session
                       )}
                     >
                       {Icon && <Icon size={18} className={cn("shrink-0", isActive ? "text-(--color-primary)" : "text-(--color-text-muted)")} />}
-                      <span className="flex-1 truncate text-sm font-medium text-(--color-text)">{t.label}</span>
+                      <span title={t.label} className="flex-1 truncate text-sm font-medium text-(--color-text)">{t.label}</span>
                       <span className="shrink-0 text-xs text-(--color-text-subtle)">{t.areaLabel}</span>
                       {isActive && <ArrowElbowDownLeft size={14} className="shrink-0 text-(--color-text-faint)" />}
                     </button>

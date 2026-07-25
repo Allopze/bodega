@@ -89,7 +89,7 @@ export function ItemEditorCotizaciones({ item, requestType, maxFileSizeMb, readO
               className="flex items-center gap-2 rounded-(--radius) border border-(--color-border) bg-(--color-surface) px-3 py-2"
             >
               <FilePdf size={14} className="shrink-0 text-(--color-text-subtle)" />
-              <span className="flex-1 truncate text-xs text-(--color-text)">{cot.fileName}</span>
+              <span title={cot.fileName} className="flex-1 truncate text-xs text-(--color-text)">{cot.fileName}</span>
               <span className="text-[10px] text-(--color-text-muted)">
                 {(cot.fileSize / 1024).toFixed(0)} KB
               </span>

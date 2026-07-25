@@ -73,7 +73,11 @@ export default async function DashboardPage() {
 
       {/* ── Cabecera: saludo + estado ── */}
       <header>
-        <p className="text-eyebrow">Tablero</p>
+        {/* B-3: en móvil el PageHeader ya rotula "Dashboard" visiblemente, así
+            que el eyebrow "Tablero" era un tercer título en 130px verticales.
+            En desktop el PageHeader es sr-only (empuja al TopBar), así que ahí
+            el eyebrow sí aporta el contexto de sección. */}
+        <p className="text-eyebrow hidden lg:block">Tablero</p>
         <div className="mt-1 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div className="min-w-0">
             <h2 className="text-xl font-semibold text-[var(--color-text)]">Hola, {firstName}</h2>
@@ -141,9 +145,12 @@ export default async function DashboardPage() {
       {/* ── Cumplimiento PDTP (gated por permiso) ── */}
       {canViewPdtp && (
         <section className="mt-6">
-          <div className="mb-3 flex items-baseline justify-between">
+          {/* En móvil esta fila comprimía el título a dos líneas y encajaba
+              "Meta anual 90%" en una columna de ~40px. Apila en vertical bajo
+              `sm` y sólo entonces alinea a la línea base. */}
+          <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-baseline sm:justify-between">
             <h2 className="text-h2 text-[var(--color-text)]">Programa de Trabajo Preventivo</h2>
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-3">
               {pdtpSummary && (
                 <p className="text-xs text-[var(--color-text-muted)]">
                   Meta anual {Math.round(pdtpSummary.target * 100)}%

@@ -39,7 +39,7 @@ export function CostCenterList({ costCenters, worksites, canCreate }: CostCenter
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <p className="font-mono text-xs text-[var(--color-text-subtle)]">{cc.code}</p>
-                  <h2 className="mt-0.5 truncate text-sm font-medium text-[var(--color-text)]">{cc.name}</h2>
+                  <h2 title={cc.name} className="mt-0.5 truncate text-sm font-medium text-[var(--color-text)]">{cc.name}</h2>
                 </div>
                 <Badge variant={cc.isActive ? "success" : "default"} dot>
                   {cc.isActive ? "Activo" : "Inactivo"}

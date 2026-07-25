@@ -93,7 +93,7 @@ export function PhysicalInventoryPanel({
                   <input type="hidden" name="expectedQuantity" value={product.quantity} />
                   <input type="hidden" name="itemNotes" value="" />
                   <div className="min-w-0">
-                    <p className="truncate text-sm font-medium text-(--color-text)">{product.productName}</p>
+                    <p title={product.productName} className="truncate text-sm font-medium text-(--color-text)">{product.productName}</p>
                     <p className="text-xs text-(--color-text-muted)">
                       {product.productSku ? `${product.productSku} · ` : ""}Sistema: {product.quantity} {product.unitOfMeasure}
                     </p>

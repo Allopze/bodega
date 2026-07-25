@@ -172,7 +172,7 @@ export function NuevaEvaluacionForm({ workers, worksites, definiciones, cargoOpt
                 {workers.map((w) => (
                   <SelectItem key={w.id} value={w.id} textValue={w.name}>
                     <span className="flex min-w-0 flex-1 items-center justify-between gap-3">
-                      <span className="truncate">{w.name}</span>
+                      <span title={w.name} className="truncate">{w.name}</span>
                       {w.rut && (
                         <span className="shrink-0 rounded-(--radius) border border-(--color-border) bg-(--color-surface-2) px-2 py-0.5 font-mono text-[11px] text-text-subtle">
                           {w.rut}

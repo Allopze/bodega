@@ -52,7 +52,7 @@ const RequestProgressPanelInner = React.memo(function RequestProgressPanelInner(
           {progress.items.map((item) => (
             <div key={item.id} className="grid grid-cols-1 gap-2 px-3 py-3 sm:grid-cols-[1fr_auto] sm:items-center">
               <div className="min-w-0">
-                <p className="truncate text-sm font-medium text-[var(--color-text)]">{item.productName}</p>
+                <p title={item.productName} className="truncate text-sm font-medium text-[var(--color-text)]">{item.productName}</p>
                 <p className="mt-0.5 text-xs text-[var(--color-text-subtle)]">
                   {item.quantityLabel} · {item.stageLabel}
                 </p>

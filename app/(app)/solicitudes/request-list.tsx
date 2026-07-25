@@ -140,6 +140,7 @@ export function RequestList({
       />
       <DataTable
         enableColumnToggle
+        stickyFirstColumn
         columns={COLUMNS}
         rows={requests as unknown as Record<string, unknown>[]}
         searchKeys={["code", "worksiteName", "requesterName", "status", "requestType"]}

@@ -130,7 +130,7 @@ export function PapeleraView({ folders, documents, canRestore, userId }: Props) 
                       <div className="flex min-w-0 items-center gap-2">
                         <span aria-hidden className="text-(--color-text-subtle)"><meta.Icon size={18} /></span>
                         <div className="min-w-0">
-                          <p className="truncate text-sm font-medium text-(--color-text)">{folder.name}</p>
+                          <p title={folder.name} className="truncate text-sm font-medium text-(--color-text)">{folder.name}</p>
                           <p className="truncate text-xs text-(--color-text-subtle)">{folder.worksiteName ?? "Global"}</p>
                         </div>
                       </div>
@@ -165,7 +165,7 @@ export function PapeleraView({ folders, documents, canRestore, userId }: Props) 
                       <div className="flex min-w-0 items-center gap-2">
                         <span aria-hidden style={{ color: meta.color }}><DocIcon size={18} weight="duotone" /></span>
                         <div className="min-w-0">
-                          <p className="truncate text-sm font-medium text-(--color-text)">{d.title}</p>
+                          <p title={d.title} className="truncate text-sm font-medium text-(--color-text)">{d.title}</p>
                           {d.internalCode && <p className="truncate text-xs text-(--color-text-subtle)">{d.internalCode}</p>}
                         </div>
                       </div>

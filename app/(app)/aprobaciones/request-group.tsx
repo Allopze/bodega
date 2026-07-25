@@ -4,6 +4,7 @@ import * as React from "react"
 import { useActionState } from "react"
 import { CaretDown } from "@phosphor-icons/react"
 import { Badge } from "@/components/ui/badge"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select"
 import { SubmitButton } from "@/components/admin/submit-button"
 import { formatDate } from "@/lib/utils"
@@ -15,7 +16,18 @@ import { useBulkApproveAction } from "./use-approval-actions"
 import { updateDeliveryModeAction } from "./actions"
 import { INITIAL_STATE } from "@/components/admin/form-state"
 
-export function RequestGroup({ request, canApproveEpp, canSetDispatch }: { request: ApprovalRequest; canApproveEpp: boolean; canSetDispatch: boolean }) {
+export function RequestGroup({
+  request, canApproveEpp, canSetDispatch,
+  selectedIds = [], onToggleItem, onToggleMany,
+}: {
+  request: ApprovalRequest
+  canApproveEpp: boolean
+  canSetDispatch: boolean
+  /** E-3 · selección en lote, gestionada por ApprovalPanel. */
+  selectedIds?: string[]
+  onToggleItem?: (id: string) => void
+  onToggleMany?: (ids: string[], select: boolean) => void
+}) {
   const [collapsed, setCollapsed] = React.useState(false)
   const { bulkState, bulkAction, bulkPending } = useBulkApproveAction()
   const [modeState, modeAction] = useActionState(updateDeliveryModeAction, INITIAL_STATE)
@@ -33,6 +45,10 @@ export function RequestGroup({ request, canApproveEpp, canSetDispatch }: { reque
   }, [modeState, request.deliveryMode])
 
   const pendingIds = request.pendingItems.map((i) => i.id).join(",")
+  // E-3 · estado de la casilla maestra de este grupo
+  const groupItemIds = request.pendingItems.map((i) => i.id)
+  const selectedInGroup = groupItemIds.filter((id) => selectedIds.includes(id)).length
+  const allSelected = groupItemIds.length > 0 && selectedInGroup === groupItemIds.length
   const allApproved = bulkState.ok === true
   const canApproveThisRequest = request.requestType !== "epp" || canApproveEpp
 
@@ -104,6 +120,14 @@ export function RequestGroup({ request, canApproveEpp, canSetDispatch }: { reque
             </Badge>
           )}
 
+          {!allApproved && canApproveThisRequest && onToggleMany && (
+            <Checkbox
+              id={`select-all-${request.id}`}
+              label={allSelected ? "Quitar todos" : "Seleccionar todos"}
+              checked={allSelected}
+              onChange={() => onToggleMany(groupItemIds, !allSelected)}
+            />
+          )}
           {!allApproved && canApproveThisRequest && (
             <form action={bulkAction}>
               <input type="hidden" name="itemIds" value={pendingIds} />
@@ -124,7 +148,13 @@ export function RequestGroup({ request, canApproveEpp, canSetDispatch }: { reque
       {!collapsed && (
         <ul className="p-3 flex flex-col gap-2">
           {request.pendingItems.map((item) => (
-            <ItemRow key={item.id} item={item} canApprove={canApproveThisRequest} />
+            <ItemRow
+              key={item.id}
+              item={item}
+              canApprove={canApproveThisRequest}
+              selected={selectedIds.includes(item.id)}
+              onToggleSelect={canApproveThisRequest && onToggleItem ? onToggleItem : undefined}
+            />
           ))}
         </ul>
       )}

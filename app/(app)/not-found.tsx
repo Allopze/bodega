@@ -41,7 +41,7 @@ export default function NotFound() {
               </span>
               <span className="min-w-0 flex-1">
                 <span className="block text-sm font-medium text-[var(--color-text)]">{link.label}</span>
-                <span className="block truncate text-xs text-[var(--color-text-subtle)]">{link.description}</span>
+                <span title={link.description} className="block truncate text-xs text-[var(--color-text-subtle)]">{link.description}</span>
               </span>
               <ArrowRight size={15} className="shrink-0 text-[var(--color-text-faint)] transition-colors duration-[var(--duration-fast)] group-hover:text-[var(--color-primary)]" />
             </Link>

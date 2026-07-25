@@ -4,6 +4,7 @@ import * as React from "react"
 import { PencilSimple } from "@phosphor-icons/react"
 import { DataTable } from "@/components/admin/data-table"
 import { Badge } from "@/components/ui/badge"
+import { DesktopOnlyTableNotice } from "@/components/ui/desktop-only-table"
 import { TableRow, TableCell } from "@/components/ui/table"
 import { RoleForm, type RoleRow, type PermissionOption } from "./role-form"
 
@@ -39,6 +40,7 @@ export function RoleList({ roles, groupedPermissions, permissions }: RoleListPro
 
   return (
     <>
+      <DesktopOnlyTableNotice />
       <DataTable
         columns={ROLE_COLUMNS}
         rows={rows}

@@ -104,7 +104,18 @@ export default async function PdtpManagementReportPage({ params, searchParams }:
           action={<div className="flex flex-wrap gap-2">{worksites.map((worksite) => <Button key={worksite.id} asChild size="sm"><Link href={`/prevencion/pdtp/${programId}/reporte?faena=${worksite.id}`}>{worksite.name}</Link></Button>)}</div>}
         />
       ) : !report || report.objectives.length === 0 ? (
-        <EmptyState compact title="Sin objetivos para estos filtros" description="Ajusta los filtros o revisa que el programa tenga actividades calendarizadas." />
+        // A-4: vacío POR FILTRO. La descripción decía "ajusta los filtros" pero
+        // no daba forma de hacerlo; el CTA quita los filtros y deja sólo la faena.
+        <EmptyState
+          compact
+          title="Sin objetivos para estos filtros"
+          description="Ningún objetivo del programa coincide con los filtros aplicados. Quítalos para ver el reporte completo de la faena."
+          action={
+            <Button asChild size="sm" variant="secondary">
+              <Link href={`/prevencion/pdtp/${programId}/reporte?faena=${selectedWorksiteId}`}>Quitar filtros</Link>
+            </Button>
+          }
+        />
       ) : (
         <TableRoot stickyHeader className="mt-4">
           <Table>

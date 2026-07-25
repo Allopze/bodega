@@ -7,6 +7,8 @@ import { PageHeader } from "./page-header"
 
 vi.mock("next/navigation", () => ({
   usePathname: () => "/prevencion/documentacion",
+  // PageHeader usa useRouter para el atajo `n` (M-13).
+  useRouter: () => ({ push: vi.fn() }),
 }))
 
 describe("PageHeader", () => {

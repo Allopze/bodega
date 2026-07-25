@@ -128,6 +128,7 @@ export default async function SolicitudesPage({
     return (
       <PageContainer>
         <PageHeader
+        newShortcutHref="/solicitudes/nueva"
           title="Solicitudes de compra"
           description="Historial de solicitudes de compra por faena."
           breadcrumb={

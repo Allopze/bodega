@@ -114,6 +114,42 @@ export function RecepcionTable({ orders, wsMap, supMap, gapMap, canRegister, wor
           </TableRow>
         )
       }}
+      /* A-1: sin esto, en 390px se veían 3 de 6 columnas y "Recibir" —la acción
+         principal del módulo, que se usa en faena— quedaba fuera de pantalla. */
+      renderMobileCard={(row) => {
+        const o = row as unknown as OrderRow
+        const href = `/compras/${o.id}`
+        const gap = gapMap[o.id] ?? 0
+        return (
+          <article className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+            <div className="flex items-start justify-between gap-3">
+              <Link href={href} className="min-w-0">
+                <p className="font-mono text-sm font-semibold text-[var(--color-text)]">{o.code}</p>
+                <p title={supMap[o.supplierId] ?? o.supplierId} className="mt-0.5 truncate text-xs text-[var(--color-text-muted)]">
+                  {supMap[o.supplierId] ?? o.supplierId}
+                </p>
+              </Link>
+              <StateBadge state={o.status} entity="oc" size="sm" />
+            </div>
+            <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
+              <dt className="text-[var(--color-text-subtle)]">Faena</dt>
+              <dd className="text-right text-[var(--color-text)]">{wsMap[o.worksiteId] ?? o.worksiteId}</dd>
+              <dt className="text-[var(--color-text-subtle)]">Enviada</dt>
+              <dd className="text-right font-mono tabular-nums text-[var(--color-text)]">{o.sentAt ? formatDate(o.sentAt) : "—"}</dd>
+            </dl>
+            {gap > 0 && (
+              <div className="mt-2">
+                <Badge variant="warning" size="sm">{gap} pend. faena</Badge>
+              </div>
+            )}
+            {canRegister && (
+              <Button variant="primary" size="sm" asChild className="mt-3 w-full">
+                <Link href={`/recepcion/nueva?oc=${o.id}`}>Recibir</Link>
+              </Button>
+            )}
+          </article>
+        )
+      }}
     />
     </div>
   )

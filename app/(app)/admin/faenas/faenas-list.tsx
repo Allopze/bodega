@@ -52,7 +52,7 @@ export function FaenasList({
             <article className="rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] p-4">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <h2 className="text-sm font-medium text-[var(--color-text)] truncate">{ws.name}</h2>
+                  <h2 title={ws.name} className="text-sm font-medium text-[var(--color-text)] truncate">{ws.name}</h2>
                   <p className="mt-0.5 font-mono text-xs text-[var(--color-text-subtle)]">{ws.code}</p>
                 </div>
                 <Badge variant={ws.isActive ? "success" : "default"} dot>
@@ -85,7 +85,7 @@ export function FaenasList({
             <React.Fragment key={ws.id}>
               <TableRow>
                 <TableCell>
-                  <span className="text-sm font-medium text-text truncate">{ws.name}</span>
+                  <span title={ws.name} className="text-sm font-medium text-text truncate">{ws.name}</span>
                 </TableCell>
                 <TableCell><span className="font-mono text-xs">{ws.code}</span></TableCell>
                 <TableCell className="text-sm text-text-muted">{ws.region ?? "—"}</TableCell>

@@ -207,7 +207,7 @@ export function ProductPicker({
               <span className="font-mono text-[11px] text-[var(--color-text-subtle)] shrink-0">
                 {group.variants.length === 1 ? group.variants[0]?.sku : `${group.variants.length} variantes`}
               </span>
-              <span className="text-sm truncate">{group.name}</span>
+              <span title={group.name} className="text-sm truncate">{group.name}</span>
             </li>
           ))}
           {hasFreeTextOption && (

@@ -56,7 +56,7 @@ export function EvaluationSectionNav({
             <SelectContent>
               {navigationItems.map((item) => (
                 <SelectItem key={item.value} value={item.value} textValue={item.label}>
-                  <span className="truncate">{item.label}</span>
+                  <span title={item.label} className="truncate">{item.label}</span>
                 </SelectItem>
               ))}
             </SelectContent>

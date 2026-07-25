@@ -87,7 +87,7 @@ export function PermissionSection({
                         className="flex h-9 items-center gap-3 rounded-md px-2 opacity-50"
                       >
                         <Lock size={14} weight="bold" className="shrink-0 text-[var(--color-text-faint)]" aria-hidden />
-                        <span className="flex-1 truncate text-sm text-[var(--color-text-muted)]">
+                        <span title={permission.description ?? permission.name} className="flex-1 truncate text-sm text-[var(--color-text-muted)]">
                           {permission.description ?? permission.name}
                         </span>
                         <span className="shrink-0 text-[10px] text-[var(--color-text-subtle)]">vía rol</span>

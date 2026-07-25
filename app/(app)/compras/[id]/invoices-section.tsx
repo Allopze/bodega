@@ -117,7 +117,7 @@ export function InvoicesSection({
               const isMatched = Math.abs(diff) < 0.01
               return (
                 <li key={ocItem.id} className="flex items-center justify-between gap-2">
-                  <span className="truncate min-w-0 text-text-subtle">{ocItem.productName}</span>
+                  <span title={ocItem.productName} className="truncate min-w-0 text-text-subtle">{ocItem.productName}</span>
                   <span className={`font-mono tabular-nums shrink-0 ${isMatched ? "text-[var(--color-success)]" : "text-[var(--color-warning)]"}`}>
                     {invoicedQty}/{ocItem.quantity}
                   </span>
@@ -206,7 +206,7 @@ function InvoiceItem({
             <ul className="mt-1 space-y-0.5">
               {invoice.items.map((item) => (
                 <li key={item.id} className="text-[10px] text-text-subtle flex justify-between gap-2">
-                  <span className="truncate">{item.productName}</span>
+                  <span title={item.productName} className="truncate">{item.productName}</span>
                   <span className="font-mono tabular-nums shrink-0">{item.quantity} × {formatCLP(item.unitPrice)}</span>
                 </li>
               ))}
@@ -473,7 +473,7 @@ function AddInvoiceForm({ purchaseOrderId, ocItems }: { purchaseOrderId: string;
             return (
               <div key={li.ocItemId} className="flex items-end gap-1.5 rounded border border-(--color-border) p-2 bg-surface-2">
                 <div className="flex-1 min-w-0">
-                  <p className="text-[10px] text-text-subtle truncate mb-1">{ocItem?.productName ?? "Ítem"}</p>
+                  <p title={ocItem?.productName ?? "Ítem"} className="text-[10px] text-text-subtle truncate mb-1">{ocItem?.productName ?? "Ítem"}</p>
                   <div className="grid grid-cols-2 gap-1.5">
                     <Input
                       name={`item_qty_${index}`}

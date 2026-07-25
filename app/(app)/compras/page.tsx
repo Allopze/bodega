@@ -152,6 +152,7 @@ export default async function ComprasPage({
     return (
       <PageContainer>
         <PageHeader
+        newShortcutHref="/compras/nueva"
           title="Órdenes de compra"
           description="Órdenes de compra y bandeja de ítems aprobados."
           breadcrumb={

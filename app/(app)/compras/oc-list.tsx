@@ -7,7 +7,7 @@ import { OC_STATE_META } from "@/components/states/state-badge"
 import { ListFilters, type FilterOption } from "@/components/adquisiciones/list-filters"
 import { OnboardingHint } from "@/components/ui/onboarding-hint"
 import { Button } from "@/components/ui/button"
-import { OcTableRow, PostponedItemRow } from "./oc-list-rows"
+import { OcTableRow, OcMobileCard, PostponedItemRow } from "./oc-list-rows"
 import type { OcRow, PendingItem } from "./oc-list.types"
 
 export type { OcRow, PendingItem } from "./oc-list.types"
@@ -111,6 +111,7 @@ export function OcList({
       {/* OC table */}
       <DataTable
         enableColumnToggle
+        stickyFirstColumn
         columns={COLUMNS}
         rows={orders as unknown as Record<string, unknown>[]}
         searchKeys={["code", "worksiteName", "supplierName", "status"]}
@@ -119,6 +120,7 @@ export function OcList({
         emptyTitle="Sin órdenes de compra"
         emptyDescription="No hay órdenes que coincidan con los filtros."
         renderRow={(row) => <OcTableRow key={(row as unknown as OcRow).id} row={row as unknown as OcRow} canDelete={canDelete} />}
+        renderMobileCard={(row) => <OcMobileCard key={(row as unknown as OcRow).id} row={row as unknown as OcRow} />}
       />
     </div>
   )

@@ -16,7 +16,15 @@ import { useItemActions } from "./use-approval-actions"
 
 type ItemAction = "idle" | "approving" | "rejecting"
 
-export function ItemRow({ item, canApprove = true }: { item: ApprovalItem; canApprove?: boolean }) {
+export function ItemRow({
+  item, canApprove = true, selected = false, onToggleSelect,
+}: {
+  item: ApprovalItem
+  canApprove?: boolean
+  /** E-3 · selección en lote. Sin `onToggleSelect` no se renderiza la casilla. */
+  selected?: boolean
+  onToggleSelect?: (id: string) => void
+}) {
   const [action, setAction] = React.useState<ItemAction>("idle")
   const { approveState, approveAction, approvePending, rejectState, rejectAction, rejectPending, decided } = useItemActions()
   const prevDecidedRef = React.useRef(decided)
@@ -51,8 +59,20 @@ export function ItemRow({ item, canApprove = true }: { item: ApprovalItem; canAp
   const showLoading = approvePending || rejectPending
 
   return (
-    <li className="rounded-[var(--radius-xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] overflow-hidden">
+    <li
+      data-selected={selected || undefined}
+      className="rounded-[var(--radius-xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] overflow-hidden data-[selected]:ring-2 data-[selected]:ring-[var(--color-primary-line)]"
+    >
       <div className="flex items-start gap-3 p-3">
+        {onToggleSelect && (
+          <input
+            type="checkbox"
+            checked={selected}
+            onChange={() => onToggleSelect(item.id)}
+            aria-label={`Seleccionar ${item.productName}`}
+            className="mt-1 h-4 w-4 shrink-0 rounded border-[var(--color-border-control)] accent-[var(--color-primary)]"
+          />
+        )}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             {item.productSku && (

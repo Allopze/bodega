@@ -1,10 +1,12 @@
 "use client"
 
 import * as React from "react"
+import { formatDateTime } from "@/lib/utils"
 import { useActionState, useEffect } from "react"
 import { PencilSimple, Warning } from "@phosphor-icons/react"
 import { DataTable } from "@/components/admin/data-table"
 import { Badge } from "@/components/ui/badge"
+import { DesktopOnlyTableNotice } from "@/components/ui/desktop-only-table"
 import { TableRow, TableCell } from "@/components/ui/table"
 import { toast } from "@/lib/toast"
 import { INITIAL_STATE } from "@/components/admin/form-state"
@@ -75,6 +77,8 @@ export function SequenceList({ rows }: SequenceListProps) {
           No hay secuencias persistidas. Las secuencias se administran vía la función nativa <code>next_document_code</code>; esta tabla es solo referencia.
         </p>
       ) : (
+        <>
+        <DesktopOnlyTableNotice />
         <DataTable
           columns={COLUMNS}
           rows={dataRows}
@@ -93,7 +97,7 @@ export function SequenceList({ rows }: SequenceListProps) {
                     <Badge variant="default">{r.nextValue}</Badge>
                   </TableCell>
                   <TableCell className="text-xs text-[var(--color-text-muted)]">
-                    {r.updatedAt ? new Date(r.updatedAt).toLocaleString() : "—"}
+                    {r.updatedAt ? formatDateTime(r.updatedAt) : "—"}
                   </TableCell>
                   <TableCell className="font-mono text-xs">
                     {formatCode(r.prefix, r.year, r.nextValue)}
@@ -113,6 +117,7 @@ export function SequenceList({ rows }: SequenceListProps) {
             )
           }}
         />
+        </>
       )}
       {editSeq && (
         <div

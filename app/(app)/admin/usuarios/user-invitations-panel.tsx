@@ -161,7 +161,7 @@ export function UserInvitationsPanel({ invitations }: { invitations: InvitationR
                   {STATUS_LABEL[invitation.status]}
                 </Badge>
               </div>
-              <p className="truncate text-xs text-[var(--color-text-subtle)]">{invitation.email}</p>
+              <p title={invitation.email} className="truncate text-xs text-[var(--color-text-subtle)]">{invitation.email}</p>
               <div className="flex flex-wrap items-center gap-1">
                 {invitation.roleLabels.slice(0, 3).map((label) => <Badge key={label} size="sm">{label}</Badge>)}
                 {invitation.roleLabels.length > 3 && (

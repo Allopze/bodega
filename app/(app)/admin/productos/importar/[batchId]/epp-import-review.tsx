@@ -425,7 +425,7 @@ function DecisionRow({
                 <SelectItem value="skip">Omitir fila</SelectItem>
               </SelectContent>
             </Select>
-            <Button type="submit" size="sm" variant={recommendedAction === localDecision ? "primary" : "secondary"} className="h-7 px-2 text-xs">
+            <Button type="submit" size="sm" variant={recommendedAction === localDecision ? "primary" : "secondary"} className="h-11 px-2 text-xs sm:h-7">
               Guardar
             </Button>
           </form>
