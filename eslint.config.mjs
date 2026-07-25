@@ -48,6 +48,45 @@ const noSqlAliasOrderBy = {
   },
 };
 
+/** Regla ESLint custom: prohíbe `toLocaleString`/`toLocaleDateString`/
+ *  `toLocaleTimeString` sin locale explícito en componentes .tsx.
+ *
+ *  Sin locale usan el del runtime: el del servidor (contenedor en UTC/en-US) no
+ *  coincide con el del navegador, así que el texto renderizado difiere y React
+ *  lanza el error #418 de hidratación. Pasó de verdad en 4 rutas
+ *  (admin/notificaciones, admin/seguridad, admin/folios) y `AGENTS.md` ya lo
+ *  prohibía en prosa sin nada que lo hiciera cumplir.
+ *  Usa formatDate/formatDateTime de @/lib/utils, que fijan la zona de Chile. */
+const noBareToLocale = {
+  meta: {
+    type: "problem",
+    docs: {
+      description:
+        "Usa formatDate/formatDateTime de @/lib/utils en vez de toLocale*String() sin locale: el locale del runtime difiere entre servidor y navegador y rompe la hidratación.",
+    },
+    schema: [],
+  },
+  create(context) {
+    const BANNED = new Set(["toLocaleString", "toLocaleDateString", "toLocaleTimeString"]);
+    return {
+      CallExpression(node) {
+        const callee = node.callee;
+        if (callee.type !== "MemberExpression") return;
+        if (callee.property.type !== "Identifier") return;
+        if (!BANNED.has(callee.property.name)) return;
+        // Con locale explícito es determinista y está permitido.
+        if (node.arguments.length > 0) return;
+        context.report({
+          node,
+          message:
+            "{{ name }}() sin locale usa el del runtime y rompe la hidratación (React #418). Usa formatDate/formatDateTime de @/lib/utils.",
+          data: { name: callee.property.name },
+        });
+      },
+    };
+  },
+};
+
 const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
@@ -64,11 +103,13 @@ const eslintConfig = defineConfig([
       local: {
         rules: {
           "no-sql-alias-order-by": noSqlAliasOrderBy,
+          "no-bare-to-locale": noBareToLocale,
         },
       },
     },
     rules: {
       "local/no-sql-alias-order-by": "error",
+      "local/no-bare-to-locale": "error",
       "@typescript-eslint/no-unused-vars": [
         "warn",
         {
