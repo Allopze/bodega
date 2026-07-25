@@ -267,6 +267,11 @@ export default async function Page({
           icon={<User size={24} />}
           title="Sin faenas asignadas"
           description="No tienes faenas activas disponibles para registrar entregas."
+          action={
+            <Button asChild variant="secondary" size="sm">
+              <Link href="/admin/usuarios">Solicitar acceso a faenas</Link>
+            </Button>
+          }
         />
       </PageContainer>
     )

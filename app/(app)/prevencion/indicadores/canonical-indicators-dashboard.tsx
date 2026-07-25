@@ -61,7 +61,7 @@ export function CanonicalIndicatorsDashboard({ view, currentYear, canManage, can
     for (let month = 12; month >= 1; month--) if (group.monthly[month - 1]?.denominatorSlots) return month
     return Math.min(new Date().getMonth() + 1, 12)
   }, [group])
-  if (!group) return <EmptyState title="Sin faenas visibles" description="Asigna una faena al usuario para calcular indicadores dentro de su alcance." />
+  if (!group) return <EmptyState title="Sin faenas visibles" description="Asigna una faena al usuario para calcular indicadores dentro de su alcance." action={<Button asChild variant="secondary" size="sm"><Link href="/admin/usuarios">Gestionar asignaciones</Link></Button>} />
   const currentMonth = group.monthly[latestMonth - 1]!
   const currentSemester = group.semesters[latestMonth <= 6 ? 0 : 1]!
   const selectedIsTotal = group.worksiteId === "total"
