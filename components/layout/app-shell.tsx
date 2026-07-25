@@ -120,9 +120,16 @@ const AppShellInner = React.memo(function AppShellInner({ session, worksiteName,
 
             {/* Pozo blanco: contenido al ras, esquina sup-izq redondeada en desktop.
                 overflow-y-auto crea el scroll container y el clip del radio. */}
+            {/* A-7: salvaguarda contra scroll horizontal (WCAG 1.4.10 Reflow).
+                `relative` es imprescindible: sin él, un descendiente `absolute`
+                toma el <html> como bloque contenedor y escapa al recorte —fue
+                exactamente lo que pasó con un `.sr-only` dentro de una tabla
+                ancha—. `overflow-x-hidden` (no `clip`, que aquí no generaba CSS)
+                contiene el resto. Las tablas anchas no se ven afectadas: siguen
+                desplazándose dentro de su propio `TableRoot`. */}
             <main
               ref={mainRef}
-              className="flex-1 min-w-0 overflow-y-auto bg-(--color-surface) lg:rounded-tl-(--radius-xl)"
+              className="relative flex-1 min-w-0 overflow-y-auto overflow-x-hidden bg-(--color-surface) lg:rounded-tl-(--radius-xl)"
               id="main-content"
               tabIndex={-1}
             >
