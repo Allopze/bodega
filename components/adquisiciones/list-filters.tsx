@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input"
 import {
   Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
 } from "@/components/ui/select"
+import { SavedViews } from "@/components/ui/saved-views"
 
 export interface FilterOption {
   value: string
@@ -223,6 +224,12 @@ const ListFiltersInner = React.memo(function ListFiltersInner({
             Limpiar
           </button>
         )}
+
+        {/* E-2: scopeKey = pathname. Estas rutas son listados sin segmento
+            dinámico (/compras, /solicitudes, ...), así que el pathname ya es
+            un identificador estable por pantalla — no hace falta una prop
+            nueva que cada llamador tendría que declarar. */}
+        <SavedViews scopeKey={pathname} />
       </div>
 
       {(exportHref || actions) && (
