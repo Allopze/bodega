@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { usePathname } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
 import { useShellHeader } from "@/components/layout/header-context"
 import { cn } from "@/lib/utils"
 
@@ -20,11 +20,37 @@ interface PageHeaderProps {
   className?:  string
   /** Optional eyebrow text rendered above the title (e.g., section number). */
   eyebrow?:    string
+  /**
+   * M-13: ruta de creación para el atajo `n`.
+   *
+   * Es explícito a propósito. Un `n` global que buscara "el botón primario" del
+   * header sería una heurística peligrosa: en Aprobaciones habría disparado
+   * "Aprobar todos". La página declara su destino o no hay atajo.
+   */
+  newShortcutHref?: string
 }
 
-export function PageHeader({ title, description, actions, headerActions, breadcrumb, className, eyebrow }: PageHeaderProps) {
+export function PageHeader({ title, description, actions, headerActions, breadcrumb, className, eyebrow, newShortcutHref }: PageHeaderProps) {
   const pathname = usePathname()
+  const router = useRouter()
   const { setHeader } = useShellHeader()
+
+  // M-13: `n` crea una entidad nueva. Mismas guardas que `/` en el TopBar — no
+  // dispara si el foco está en un control ni con modificadores.
+  React.useEffect(() => {
+    const href = newShortcutHref
+    if (!href) return
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "n" || event.metaKey || event.ctrlKey || event.altKey) return
+      const target = event.target as HTMLElement | null
+      if (target?.isContentEditable) return
+      if (target && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return
+      event.preventDefault()
+      router.push(href)
+    }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  }, [newShortcutHref, router])
   const desktopActions = headerActions ?? actions
   const breadcrumbNode = React.useMemo(
     () => Array.isArray(breadcrumb) ? <Breadcrumbs items={breadcrumb} /> : breadcrumb,

@@ -25,6 +25,12 @@ export interface DataTableProps<T extends Record<string, unknown>> {
   renderRow:    (row: T, index: number) => React.ReactNode
   /** Optional compact rendering for narrow screens. */
   renderMobileCard?: (row: T, index: number) => React.ReactNode
+  /**
+   * E-4: congela la primera columna al hacer scroll horizontal, para que el
+   * identificador de la fila no se pierda. Sólo tiene sentido en tablas anchas
+   * (8+ columnas); en las estrechas no hay scroll que compensar.
+   */
+  stickyFirstColumn?: boolean
   emptyTitle?:  string
   emptyDescription?: string
   emptyAction?: React.ReactNode

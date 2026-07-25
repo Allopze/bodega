@@ -120,11 +120,11 @@ const TopBarInner = React.memo(function TopBarInner({
           {header.title && (
             <div className="flex min-w-0 items-baseline gap-2">
               {/* No es h1: el heading semántico vive en PageHeader dentro del contenido */}
-              <p className="truncate text-sm font-semibold text-(--color-text)">
+              <p title={header.title} className="truncate text-sm font-semibold text-(--color-text)">
                 {header.title}
               </p>
               {header.description && (
-                <p className="hidden min-w-0 truncate text-xs text-(--color-text-muted) 2xl:block">
+                <p title={header.description} className="hidden min-w-0 truncate text-xs text-(--color-text-muted) 2xl:block">
                   {header.description}
                 </p>
               )}

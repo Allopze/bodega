@@ -20,7 +20,13 @@ const TableRoot = React.forwardRef<HTMLDivElement, TableRootProps>(
     <div
       ref={ref}
       className={cn(
-        "w-full overflow-x-auto overscroll-x-contain",
+        // `relative` es lo que hace que el recorte funcione de verdad: sin un
+        // ancestro posicionado, los descendientes `absolute` —como el
+        // `.sr-only` de una cabecera de acciones— toman el <html> como bloque
+        // contenedor, ESCAPAN a este overflow y arrastran el ancho del
+        // documento. Eso producía 676px de scroll horizontal en un viewport de
+        // 390px (auditoría 2026-07-24, A-7).
+        "relative w-full overflow-x-auto overscroll-x-contain",
         stickyHeader && "max-h-[70vh] overflow-y-auto overscroll-y-contain",
         "rounded-[var(--radius-2xl)] shadow-[var(--shadow-card)] bg-[var(--color-surface)]",
         className,
