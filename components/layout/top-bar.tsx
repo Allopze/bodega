@@ -25,7 +25,7 @@ interface TopBarProps {
   hidden?:       boolean
 }
 
-const ROUTES_WITH_OWN_SEARCH = ["/solicitudes", "/aprobaciones", "/compras", "/recepcion", "/prevencion/ppa", "/combustibles"]
+const ROUTES_WITH_OWN_SEARCH = ["/solicitudes", "/aprobaciones", "/compras", "/recepcion", "/pendientes", "/prevencion/ppa", "/combustibles"]
 
 const TopBarInner = React.memo(function TopBarInner({
   session,
@@ -38,6 +38,24 @@ const TopBarInner = React.memo(function TopBarInner({
   const pathname = usePathname()
   const { header } = useShellHeader()
   const { searchQuery, setSearchQuery } = useSafeShellHeader()
+  const searchRef = React.useRef<HTMLInputElement>(null)
+
+  // M-13: "/" enfoca el filtro de la página, el atajo estándar de los backoffice.
+  // No dispara mientras se escribe en otro control, ni con modificadores (para no
+  // pisar los atajos del navegador).
+  React.useEffect(() => {
+    function onKey(event: KeyboardEvent) {
+      if (event.key !== "/" || event.metaKey || event.ctrlKey || event.altKey) return
+      const target = event.target as HTMLElement | null
+      if (target?.isContentEditable) return
+      if (target && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return
+      if (!searchRef.current) return
+      event.preventDefault()
+      searchRef.current.focus()
+    }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  }, [])
 
   // Clear search on navigation
   React.useEffect(() => {
@@ -102,11 +120,11 @@ const TopBarInner = React.memo(function TopBarInner({
           {header.title && (
             <div className="flex min-w-0 items-baseline gap-2">
               {/* No es h1: el heading semántico vive en PageHeader dentro del contenido */}
-              <p className="truncate text-sm font-semibold text-(--color-text)">
+              <p title={header.title} className="truncate text-sm font-semibold text-(--color-text)">
                 {header.title}
               </p>
               {header.description && (
-                <p className="hidden min-w-0 truncate text-xs text-(--color-text-muted) 2xl:block">
+                <p title={header.description} className="hidden min-w-0 truncate text-xs text-(--color-text-muted) 2xl:block">
                   {header.description}
                 </p>
               )}
@@ -135,15 +153,21 @@ const TopBarInner = React.memo(function TopBarInner({
           <div className="relative hidden sm:flex items-center">
             <MagnifyingGlass size={14} className="absolute left-2.5 text-(--color-text-subtle) pointer-events-none shrink-0" />
             <input
+              ref={searchRef}
               type="search"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={(e) => {
+                // Esc limpia y devuelve el foco al contenido.
+                if (e.key === "Escape") { setSearchQuery(""); e.currentTarget.blur() }
+              }}
               placeholder="Filtrar en esta página..."
+              title="Filtrar en esta página (atajo: /)"
               className={cn(
                 "h-7 w-36 lg:w-52 rounded-(--radius-lg) border bg-(--color-surface) pl-8 text-xs text-(--color-text) placeholder:text-(--color-text-subtle) outline-none focus:border-(--color-primary) focus:ring-2 focus:ring-(--color-primary-line) transition-[border-color,box-shadow] duration-(--duration-fast)",
                 searchQuery
                   ? "border-(--color-primary-line) pr-7"
-                  : "border-(--color-border) pr-3",
+                  : "border-(--color-border-control) pr-3",
               )}
               aria-label="Filtrar en esta página"
             />

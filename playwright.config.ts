@@ -4,6 +4,11 @@ const port = 3100
 // En CI el workflow expone DATABASE_URL con credenciales del contenedor postgres.
 // En local caemos a la conexión por socket (peer auth) contra bodega_e2e.
 const databaseUrl = process.env.E2E_DATABASE_URL ?? process.env.DATABASE_URL ?? "postgres:///bodega_e2e"
+if (databaseUrl.startsWith("postgres:///")) {
+  // postgres-js uses TCP for a hostless URL unless PGHOST is explicit; psql
+  // and the E2E server use the local socket in this development setup.
+  process.env.PGHOST ??= "/var/run/postgresql"
+}
 
 export default defineConfig({
   testDir: "./e2e",

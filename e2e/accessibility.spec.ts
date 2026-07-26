@@ -4,6 +4,7 @@ import { login } from "./helpers"
 
 const CRITICAL_PAGES = [
   { path: "/dashboard",        name: "Dashboard" },
+  { path: "/pendientes",       name: "Mis pendientes" },
   { path: "/solicitudes",      name: "Solicitudes" },
   { path: "/solicitudes/nueva", name: "Nueva solicitud" },
   { path: "/aprobaciones",     name: "Aprobaciones" },

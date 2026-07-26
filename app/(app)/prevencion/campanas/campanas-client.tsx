@@ -185,14 +185,14 @@ export function CampanasClient({
         <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-sm text-left">
-              <thead className="bg-[var(--color-surface-2)] text-[var(--color-text-muted)] font-medium border-b border-[var(--color-border)]">
+              <thead className="bg-[var(--color-surface-2)] th-type border-b border-[var(--color-border)]">
                 <tr>
-                  <th className="px-4 py-3">Código</th>
-                  <th className="px-4 py-3">Título / Descripción</th>
-                  <th className="px-4 py-3">Faena</th>
-                  <th className="px-4 py-3">Asistentes</th>
-                  <th className="px-4 py-3">Estado</th>
-                  <th className="px-4 py-3 text-right">Acciones</th>
+                  <th scope="col" className="px-4 py-3">Código</th>
+                  <th scope="col" className="px-4 py-3">Título / Descripción</th>
+                  <th scope="col" className="px-4 py-3">Faena</th>
+                  <th scope="col" className="px-4 py-3">Asistentes</th>
+                  <th scope="col" className="px-4 py-3">Estado</th>
+                  <th scope="col" className="px-4 py-3 text-right">Acciones</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[var(--color-border)]">

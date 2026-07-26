@@ -1,6 +1,5 @@
 "use server"
 
-import { revalidatePath, revalidateTag }    from "next/cache"
 import { db } from "@/db"
 import { deliveryItems, inventoryMovements, purchaseRequestItems, purchaseRequests, worksiteStock } from "@/db/schema"
 import { and, eq, inArray } from "drizzle-orm"
@@ -11,6 +10,7 @@ import { closePhysicalInventoryCount } from "@/lib/services/physical-inventory"
 import { applyMovement } from "@/lib/services/stock"
 import { dispatchSchema, setMinStockSchema, returnStockSchema, adjustStockSchema, type ActionState }  from "@/lib/validation/operations"
 import { logger } from "@/lib/logger"
+import { revalidateOperationalViews } from "@/lib/services/operational-cache"
 
 const REVALIDATE = "/bodega"
 
@@ -105,10 +105,7 @@ export async function dispatchAction(
       notes: notes || null,
     }, serviceWorksiteScope(session))
 
-    revalidatePath(REVALIDATE)
-  revalidateTag("badge-counts", { expire: 0 })
-    revalidatePath("/entregas")
-    revalidatePath("/trazabilidad")
+    revalidateOperationalViews([REVALIDATE, "/entregas", "/trazabilidad", "/solicitudes"])
     return { ok: true, message: `Entrega registrada: ${qty} unidades` }
   } catch (e) {
     logger.error("[dispatchAction]", e)
@@ -145,8 +142,7 @@ export async function setMinStockAction(
     }
 
     await db.update(worksiteStock).set({ minStock }).where(eq(worksiteStock.id, stockId))
-    revalidatePath(REVALIDATE)
-  revalidateTag("badge-counts", { expire: 0 })
+    revalidateOperationalViews([REVALIDATE])
     return { ok: true, message: `Stock mínimo actualizado a ${minStock}` }
   } catch (e) {
     logger.error("[setMinStockAction]", e)
@@ -202,8 +198,7 @@ export async function adjustStockAction(
       notes: notes || undefined,
     })
 
-    revalidatePath(REVALIDATE)
-  revalidateTag("badge-counts", { expire: 0 })
+    revalidateOperationalViews([REVALIDATE])
     const sign = direction === "ingreso" ? "+" : "-"
     return { ok: true, message: `Ajuste registrado: ${sign}${quantity} unidades` }
   } catch (e) {
@@ -280,8 +275,7 @@ export async function returnStockAction(
       notes: notes || undefined,
     })
 
-    revalidatePath(REVALIDATE)
-  revalidateTag("badge-counts", { expire: 0 })
+    revalidateOperationalViews([REVALIDATE])
     return { ok: true, message: `Devolución registrada: ${quantity} unidades` }
   } catch (e) {
     logger.error("[returnStockAction]", e)
@@ -332,9 +326,7 @@ export async function closePhysicalInventoryCountAction(
       serviceWorksiteScope(session),
     )
 
-    revalidatePath(REVALIDATE)
-  revalidateTag("badge-counts", { expire: 0 })
-    revalidatePath("/trazabilidad")
+    revalidateOperationalViews([REVALIDATE, "/trazabilidad"])
     return {
       ok: true,
       message: `Conteo ${result.code} cerrado con ${result.adjustmentCount} ajuste${result.adjustmentCount === 1 ? "" : "s"}`,

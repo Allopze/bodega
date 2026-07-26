@@ -5,11 +5,14 @@ import Link from "next/link"
 import { MagnifyingGlass } from "@phosphor-icons/react"
 import { useSafeShellHeader } from "@/components/layout/header-context"
 import { Badge } from "@/components/ui/badge"
+import { DatePicker } from "@/components/ui/date-picker"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { FilterToolbar, type ActiveFilterChip } from "@/components/ui/filter-toolbar"
+import { useUrlFilters } from "@/lib/hooks/use-url-filters"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import {
   INSPECTION_KIND_LABELS,
@@ -56,9 +59,11 @@ interface Props {
 
 export function InspectionRunList({ runs, overdueProgramCount, canExecute, templates, worksites, assignees }: Props) {
   const { searchQuery } = useSafeShellHeader()
-  const [status, setStatus] = React.useState("all")
-  const [worksite, setWorksite] = React.useState("all")
-  const [quickFilter, setQuickFilter] = React.useState<QuickFilter>("all")
+  // Filtros client-side en la URL (shareables + sobreviven refresh) vía useUrlFilters.
+  const { getFilter, setFilters, clearFilters: clearUrlFilters } = useUrlFilters()
+  const status = getFilter("estado") || "all"
+  const worksite = getFilter("faena") || "all"
+  const quickFilter = (getFilter("vista") || "all") as QuickFilter
 
   // Faenas presentes en las inspecciones listadas: el filtro sólo debe
   // ofrecer valores que puedan devolver alguna fila, no todo el alcance.
@@ -85,8 +90,18 @@ export function InspectionRunList({ runs, overdueProgramCount, canExecute, templ
     { id: "overdue", key: "all" as const, label: "Programaciones vencidas", value: overdueProgramCount, detail: "Inspección no ejecutada a tiempo" },
   ]
 
+  const STATUS_LABELS = INSPECTION_RUN_STATUS_LABELS as Record<string, string>
+  const activeChips: ActiveFilterChip[] = []
+  if (status !== "all") activeChips.push({ key: "estado", label: "Estado", value: status, displayValue: STATUS_LABELS[status] ?? status })
+  if (worksite !== "all") {
+    const ws = runWorksites.find((w) => w.id === worksite)
+    if (ws) activeChips.push({ key: "faena", label: "Faena", value: worksite, displayValue: ws.name })
+  }
+  function handleRemoveChip(key: string) {
+    setFilters({ [key]: null })
+  }
   function clearFilters() {
-    setStatus("all"); setWorksite("all"); setQuickFilter("all")
+    clearUrlFilters()
   }
 
   return (
@@ -96,7 +111,7 @@ export function InspectionRunList({ runs, overdueProgramCount, canExecute, templ
           <button
             key={metric.id}
             type="button"
-            onClick={() => setQuickFilter((current) => current === metric.key ? "all" : metric.key)}
+            onClick={() => setFilters({ vista: quickFilter === metric.key ? null : metric.key })}
             aria-pressed={quickFilter === metric.key}
             className="border-r border-[var(--color-border)] px-4 py-3 text-left hover:bg-[var(--color-surface-2)] aria-pressed:bg-[var(--color-primary-tint)]"
           >
@@ -107,30 +122,30 @@ export function InspectionRunList({ runs, overdueProgramCount, canExecute, templ
         ))}
       </div>
 
-      <div className="flex flex-wrap items-end gap-2">
-        <Select value={status} onValueChange={(value) => { setStatus(value); setQuickFilter("all") }}>
+      <FilterToolbar
+        activeChips={activeChips}
+        onRemoveChip={handleRemoveChip}
+        onClearAll={clearUrlFilters}
+        hasActiveFilters={status !== "all" || worksite !== "all" || quickFilter !== "all"}
+        actions={canExecute && templates.length > 0 && worksites.length > 0 ? (
+          <NewRunDialog templates={templates} worksites={worksites} assignees={assignees} />
+        ) : undefined}
+      >
+        <Select value={status} onValueChange={(value) => setFilters({ estado: value === "all" ? null : value, vista: null })}>
           <SelectTrigger className="w-56" aria-label="Estado de la inspección"><SelectValue placeholder="Estado" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Todos los estados</SelectItem>
             {Object.entries(INSPECTION_RUN_STATUS_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}
           </SelectContent>
         </Select>
-        <Select value={worksite} onValueChange={setWorksite}>
+        <Select value={worksite} onValueChange={(value) => setFilters({ faena: value === "all" ? null : value })}>
           <SelectTrigger className="w-52" aria-label="Faena"><SelectValue placeholder="Faena" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Todas las faenas</SelectItem>
             {runWorksites.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}
           </SelectContent>
         </Select>
-        {(status !== "all" || worksite !== "all" || quickFilter !== "all") && (
-          <Button type="button" variant="ghost" size="sm" onClick={clearFilters}>Limpiar filtros</Button>
-        )}
-        {canExecute && templates.length > 0 && worksites.length > 0 && (
-          <div className="ml-auto">
-            <NewRunDialog templates={templates} worksites={worksites} assignees={assignees} />
-          </div>
-        )}
-      </div>
+      </FilterToolbar>
 
       {filtered.length === 0 ? (
         <EmptyState
@@ -245,7 +260,7 @@ function NewRunDialog({ templates, worksites, assignees }: {
             <Field label="Identificación del sujeto" hint="Opcional. Ej: TAG o patente."><Input name="subjectLabel" maxLength={300} /></Field>
           </div>
           <div className="grid gap-3 md:grid-cols-2">
-            <Field label="Programada para" hint="Opcional."><Input name="scheduledFor" type="date" /></Field>
+            <Field label="Programada para" hint="Opcional."><DatePicker name="scheduledFor" /></Field>
             <Field label="Asignada a" hint="Vacío = quien la crea.">
               <Select value={assignedToUserId} onValueChange={setAssignedToUserId}><SelectTrigger><SelectValue placeholder="Quien la crea" /></SelectTrigger><SelectContent><SelectItem value="_none">Quien la crea</SelectItem>{assignees.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select><input type="hidden" name="assignedToUserId" value={assignedToUserId === "_none" ? "" : assignedToUserId} />
             </Field>

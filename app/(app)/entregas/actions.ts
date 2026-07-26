@@ -1,12 +1,12 @@
 "use server"
 
-import { revalidatePath } from "next/cache"
 import { promises as fs } from "node:fs"
 import path from "node:path"
 import { canAccessWorksite, requirePermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { nanoid } from "@/lib/id"
 import { logger } from "@/lib/logger"
+import { revalidateOperationalViews } from "@/lib/services/operational-cache"
 import { getPdfMaxSizeMb } from "@/lib/services/system-settings"
 import { registerWorkerEppDelivery, type DeliveryAttachmentInput } from "@/lib/services/deliveries"
 import { workerDeliverySchema, type ActionState } from "@/lib/validation/operations"
@@ -82,10 +82,7 @@ export async function registerWorkerDeliveryAction(
       returnNotes: returnNotes || null,
     }, serviceWorksiteScope(session))
 
-    revalidatePath("/entregas")
-    revalidatePath("/bodega")
-    revalidatePath("/trazabilidad")
-    revalidatePath("/solicitudes")
+    revalidateOperationalViews(["/entregas", "/bodega", "/trazabilidad", "/solicitudes"])
     return { ok: true, message: `Entrega registrada: ${quantity} unidades` }
   } catch (e) {
     if (proofResult.absolutePath) {

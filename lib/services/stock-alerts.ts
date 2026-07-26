@@ -6,7 +6,7 @@
  */
 import { db } from "@/db"
 import { worksiteStock, worksites, products } from "@/db/schema"
-import { eq, sql } from "drizzle-orm"
+import { and, eq, inArray, sql } from "drizzle-orm"
 
 export interface StockAlert {
   worksiteId:    string
@@ -59,14 +59,26 @@ export async function getStockAlerts(): Promise<StockAlert[]> {
     })
 }
 
-export async function getCriticalStockAlertCount(): Promise<number> {
+/**
+ * Cuenta alertas críticas sólo dentro del alcance ya resuelto por el caller.
+ * El default conserva el uso administrativo histórico; las vistas de usuario
+ * deben entregar sus faenas autorizadas para no exponer un total global.
+ */
+export async function getCriticalStockAlertCount(worksiteIds: string[] | "all" = "all"): Promise<number> {
+  const scopeFilter = worksiteIds === "all"
+    ? undefined
+    : worksiteIds.length > 0
+      ? inArray(worksiteStock.worksiteId, worksiteIds)
+      : sql`false`
+
   const [row] = await db
     .select({ n: sql<number>`count(*)` })
     .from(worksiteStock)
-    .where(
+    .where(and(
+      scopeFilter,
       sql`${worksiteStock.minStock} > 0
           AND ${worksiteStock.quantity} < ${worksiteStock.minStock}`,
-    )
+    ))
 
   return row?.n ?? 0
 }

@@ -7,6 +7,7 @@ import { guardAuth, guardPermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { unexpectedActionError } from "@/lib/actions/safe-server-action"
 import { parseZ } from "@/lib/actions/parse-z"
+import { revalidateOperationalViews } from "@/lib/services/operational-cache"
 import {
   markPdtpExecution,
   submitPdtpProgramForReview,
@@ -113,7 +114,7 @@ export async function markPdtpExecutionAction(formData: FormData): Promise<Actio
 
   try {
     await markPdtpExecution(parsed.data, session.user.id, scopeToIds(resolveWorksiteScope(session)))
-    revalidatePath(REVALIDATE)
+    revalidateOperationalViews([REVALIDATE])
     return { ok: true }
   } catch (e) {
     // pdtp-execution-form.tsx usa fieldErrors para señalar cada control.
@@ -290,8 +291,7 @@ export async function approvePdtpExecutionAction(executionId: string): Promise<A
   try {
     const parsed = pdtpExecutionApprovalSchema.parse({ executionId })
     await approvePdtpExecution(parsed.executionId, session.user.id, scopeToIds(resolveWorksiteScope(session)))
-    revalidatePath(REVALIDATE)
-    revalidatePath("/prevencion/pdtp/aprobaciones")
+    revalidateOperationalViews([REVALIDATE, "/prevencion/pdtp/aprobaciones"])
     return { ok: true }
   } catch (e) {
     return fail(e)
@@ -308,8 +308,7 @@ export async function rejectPdtpExecutionAction(
   try {
     const parsed = pdtpExecutionRejectionSchema.parse({ executionId, reason })
     await rejectPdtpExecution(parsed.executionId, session.user.id, parsed.reason, scopeToIds(resolveWorksiteScope(session)))
-    revalidatePath(REVALIDATE)
-    revalidatePath("/prevencion/pdtp/aprobaciones")
+    revalidateOperationalViews([REVALIDATE, "/prevencion/pdtp/aprobaciones"])
     return { ok: true }
   } catch (e) {
     return fail(e)

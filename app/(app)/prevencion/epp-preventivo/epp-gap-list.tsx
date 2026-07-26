@@ -8,9 +8,13 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { FilterToolbar, type ActiveFilterChip } from "@/components/ui/filter-toolbar"
+import { useUrlFilters } from "@/lib/hooks/use-url-filters"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { EPP_GAP_TYPE_LABELS, type EppCoverageGap } from "@/lib/prevention/epp"
 import { escalateBlockingEppGapsAction, generateReplenishmentAction } from "./actions"
+
+const ENFORCEMENT_LABELS: Record<string, string> = { blocking: "Bloqueante", warning: "Advertencia" }
 
 interface Props {
   gaps: EppCoverageGap[]
@@ -25,8 +29,10 @@ function defaultTargetDate() {
 
 export function EppGapList({ gaps, canEscalate }: Props) {
   const { searchQuery } = useSafeShellHeader()
-  const [enforcement, setEnforcement] = React.useState("all")
-  const [gapType, setGapType] = React.useState("all")
+  // Filtros client-side en la URL (shareables + sobreviven refresh) vía useUrlFilters.
+  const { getFilter, setFilters, clearFilters: clearUrlFilters } = useUrlFilters()
+  const enforcement = getFilter("exigibilidad") || "all"
+  const gapType = getFilter("tipo") || "all"
   const [pending, startTransition] = React.useTransition()
   const [message, setMessage] = React.useState<string | null>(null)
 
@@ -39,6 +45,17 @@ export function EppGapList({ gaps, canEscalate }: Props) {
   })
 
   const blockingCount = gaps.filter((gap) => gap.enforcement === "blocking").length
+
+  const GAP_TYPE_LABELS = EPP_GAP_TYPE_LABELS as Record<string, string>
+  const activeChips: ActiveFilterChip[] = []
+  if (enforcement !== "all") activeChips.push({ key: "exigibilidad", label: "Exigibilidad", value: enforcement, displayValue: ENFORCEMENT_LABELS[enforcement] ?? enforcement })
+  if (gapType !== "all") activeChips.push({ key: "tipo", label: "Tipo", value: gapType, displayValue: GAP_TYPE_LABELS[gapType] ?? gapType })
+  function handleRemoveChip(key: string) {
+    setFilters({ [key]: null })
+  }
+  function clearFilters() {
+    clearUrlFilters()
+  }
 
   function escalate() {
     setMessage(null)
@@ -78,8 +95,13 @@ export function EppGapList({ gaps, canEscalate }: Props) {
         </div>
       )}
 
-      <div className="flex flex-wrap items-end gap-2">
-        <Select value={enforcement} onValueChange={setEnforcement}>
+      <FilterToolbar
+        activeChips={activeChips}
+        onRemoveChip={handleRemoveChip}
+        onClearAll={clearUrlFilters}
+        hasActiveFilters={enforcement !== "all" || gapType !== "all"}
+      >
+        <Select value={enforcement} onValueChange={(value) => setFilters({ exigibilidad: value === "all" ? null : value })}>
           <SelectTrigger className="w-52" aria-label="Exigibilidad"><SelectValue placeholder="Exigibilidad" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Toda exigibilidad</SelectItem>
@@ -87,19 +109,14 @@ export function EppGapList({ gaps, canEscalate }: Props) {
             <SelectItem value="warning">Advertencia</SelectItem>
           </SelectContent>
         </Select>
-        <Select value={gapType} onValueChange={setGapType}>
+        <Select value={gapType} onValueChange={(value) => setFilters({ tipo: value === "all" ? null : value })}>
           <SelectTrigger className="w-52" aria-label="Tipo de brecha"><SelectValue placeholder="Tipo de brecha" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Todo tipo</SelectItem>
             {Object.entries(EPP_GAP_TYPE_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}
           </SelectContent>
         </Select>
-        {(enforcement !== "all" || gapType !== "all") && (
-          <Button type="button" variant="ghost" size="sm" onClick={() => { setEnforcement("all"); setGapType("all") }}>
-            Limpiar filtros
-          </Button>
-        )}
-      </div>
+      </FilterToolbar>
 
       {filtered.length === 0 ? (
         <EmptyState
@@ -110,7 +127,7 @@ export function EppGapList({ gaps, canEscalate }: Props) {
             : "Ajusta los filtros o el texto del buscador superior."}
           action={gaps.length === 0
             ? undefined
-            : <Button type="button" variant="secondary" onClick={() => { setEnforcement("all"); setGapType("all") }}>Ver todas</Button>}
+            : <Button type="button" variant="secondary" onClick={clearFilters}>Ver todas</Button>}
         />
       ) : (
         <div className="overflow-x-auto rounded-lg border border-[var(--color-border)]">

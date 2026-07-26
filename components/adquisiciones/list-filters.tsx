@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input"
 import {
   Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
 } from "@/components/ui/select"
+import { SavedViews } from "@/components/ui/saved-views"
 
 export interface FilterOption {
   value: string
@@ -130,7 +131,7 @@ const ListFiltersInner = React.memo(function ListFiltersInner({
   return (
     <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
       <div className="flex flex-wrap items-center gap-2">
-        <div className="relative flex items-center">
+        <div className="relative flex w-full items-center sm:w-auto">
           <MagnifyingGlass
             size={14}
             className="pointer-events-none absolute left-2.5 shrink-0 text-[var(--color-text-subtle)]"
@@ -141,7 +142,7 @@ const ListFiltersInner = React.memo(function ListFiltersInner({
             onChange={(e) => setQ(e.target.value)}
             placeholder={searchPlaceholder}
             aria-label="Buscar"
-            className="h-8 w-48 pl-8 text-xs sm:w-64"
+            className="h-11 sm:h-8 w-full sm:w-64 pl-8 text-xs"
           />
         </div>
 
@@ -150,7 +151,7 @@ const ListFiltersInner = React.memo(function ListFiltersInner({
             value={currentEstado || ALL}
             onValueChange={handleEstadoChange}
           >
-            <SelectTrigger className="h-8 w-auto min-w-[10rem] text-xs" aria-label="Filtrar por estado">
+            <SelectTrigger className="h-11 sm:h-8 w-full sm:w-auto sm:min-w-[10rem] text-xs" aria-label="Filtrar por estado">
               <SelectValue placeholder="Todos los estados" />
             </SelectTrigger>
             <SelectContent>
@@ -167,7 +168,7 @@ const ListFiltersInner = React.memo(function ListFiltersInner({
             value={currentUrgencia || ALL}
             onValueChange={handleUrgenciaChange}
           >
-            <SelectTrigger className="h-8 w-auto min-w-[9rem] text-xs" aria-label="Filtrar por urgencia">
+            <SelectTrigger className="h-11 sm:h-8 w-full sm:w-auto sm:min-w-[9rem] text-xs" aria-label="Filtrar por urgencia">
               <SelectValue placeholder="Toda urgencia" />
             </SelectTrigger>
             <SelectContent>
@@ -184,7 +185,7 @@ const ListFiltersInner = React.memo(function ListFiltersInner({
             value={currentFaena || ALL}
             onValueChange={handleFaenaChange}
           >
-            <SelectTrigger className="h-8 w-auto min-w-[10rem] text-xs" aria-label="Filtrar por faena">
+            <SelectTrigger className="h-11 sm:h-8 w-full sm:w-auto sm:min-w-[10rem] text-xs" aria-label="Filtrar por faena">
               <SelectValue placeholder="Todas las faenas" />
             </SelectTrigger>
             <SelectContent>
@@ -201,7 +202,7 @@ const ListFiltersInner = React.memo(function ListFiltersInner({
             value={currentProveedor || ALL}
             onValueChange={handleProveedorChange}
           >
-            <SelectTrigger className="h-8 w-auto min-w-[10rem] text-xs" aria-label="Filtrar por proveedor">
+            <SelectTrigger className="h-11 sm:h-8 w-full sm:w-auto sm:min-w-[10rem] text-xs" aria-label="Filtrar por proveedor">
               <SelectValue placeholder="Todos los proveedores" />
             </SelectTrigger>
             <SelectContent>
@@ -223,6 +224,12 @@ const ListFiltersInner = React.memo(function ListFiltersInner({
             Limpiar
           </button>
         )}
+
+        {/* E-2: scopeKey = pathname. Estas rutas son listados sin segmento
+            dinámico (/compras, /solicitudes, ...), así que el pathname ya es
+            un identificador estable por pantalla — no hace falta una prop
+            nueva que cada llamador tendría que declarar. */}
+        <SavedViews scopeKey={pathname} />
       </div>
 
       {(exportHref || actions) && (
@@ -231,7 +238,7 @@ const ListFiltersInner = React.memo(function ListFiltersInner({
             <a
               href={exportHref}
               download
-              className="inline-flex h-8 items-center gap-1.5 whitespace-nowrap rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 text-xs font-medium text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-surface)] hover:text-[var(--color-text)]"
+              className="inline-flex h-11 sm:h-8 items-center gap-1.5 whitespace-nowrap rounded-[var(--radius)] border border-[var(--color-border-control)] bg-[var(--color-surface)] px-3 text-xs font-medium text-[var(--color-text)] shadow-[var(--shadow-xs)] transition-colors hover:bg-[var(--color-surface-2)] hover:border-[var(--color-border-control-hover)]"
             >
               <DownloadSimple size={13} />
               Exportar Excel

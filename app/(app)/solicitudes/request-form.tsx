@@ -46,15 +46,15 @@ interface RequestFormProps {
 }
 
 function RequestFormHeader({
-  worksiteId, requestType, urgency, requiredDate, notes, readOnly,
+  worksiteId, requestType, urgency, deliveryMode, requiredDate, notes, readOnly,
   worksites, requestTypeOpts, requiredDateError,
-  onWorksiteChange, onRequestTypeChange, onUrgencyChange, onRequiredDateChange, onNotesChange,
+  onWorksiteChange, onRequestTypeChange, onUrgencyChange, onDeliveryModeChange, onRequiredDateChange, onNotesChange,
 }: {
-  worksiteId: string; requestType: string; urgency: string; requiredDate: string; notes: string; readOnly: boolean
+  worksiteId: string; requestType: string; urgency: string; deliveryMode: string; requiredDate: string; notes: string; readOnly: boolean
   worksites: WorksiteOption[]; requestTypeOpts: { value: string; label: string }[]
   requiredDateError?: string
   onWorksiteChange: (v: string) => void; onRequestTypeChange: (v: string) => void
-  onUrgencyChange: (v: string) => void; onRequiredDateChange: (v: string) => void; onNotesChange: (v: string) => void
+  onUrgencyChange: (v: string) => void; onDeliveryModeChange: (v: string) => void; onRequiredDateChange: (v: string) => void; onNotesChange: (v: string) => void
 }) {
   return (
     <section className="rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] p-5 space-y-4">
@@ -76,6 +76,15 @@ function RequestFormHeader({
           <Select value={urgency} onValueChange={onUrgencyChange} disabled={readOnly}>
             <SelectTrigger id="urgency"><SelectValue /></SelectTrigger>
             <SelectContent>{URGENCY_OPTS.map((o) => (<SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>))}</SelectContent>
+          </Select>
+        </Field>
+        <Field label="Despacho sugerido" htmlFor="deliveryMode" helper="Vía oficina (estándar) o Directo a faena (urgencia/volumen). La jefatura confirma al aprobar.">
+          <Select value={deliveryMode} onValueChange={onDeliveryModeChange} disabled={readOnly}>
+            <SelectTrigger id="deliveryMode"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="via_oficina">Vía oficina (Estándar)</SelectItem>
+              <SelectItem value="directo_faena">Directo a faena (Urgencia/Directo)</SelectItem>
+            </SelectContent>
           </Select>
         </Field>
         <Field label="Fecha requerida" required htmlFor="requiredDate"
@@ -210,10 +219,10 @@ export function RequestForm({ worksites, products, suppliers, workers, editReque
         <form onSubmit={(e) => { e.preventDefault(); form.startSaveTransition(() => form.draftAction(form.buildDraftFormData())) }} className="space-y-6">
           <RequestFormHeader
             worksiteId={form.worksiteId} requestType={form.requestType} urgency={form.urgency}
-            requiredDate={form.requiredDate} notes={form.notes} readOnly={form.readOnly}
+            deliveryMode={form.deliveryMode} requiredDate={form.requiredDate} notes={form.notes} readOnly={form.readOnly}
             worksites={worksites} requestTypeOpts={form.requestTypeOpts}
             onWorksiteChange={form.setWorksiteId} onRequestTypeChange={form.setRequestType}
-            onUrgencyChange={form.setUrgency} onRequiredDateChange={form.setRequiredDate}
+            onUrgencyChange={form.setUrgency} onDeliveryModeChange={form.setDeliveryMode} onRequiredDateChange={form.setRequiredDate}
             onNotesChange={form.setNotes}
             requiredDateError={form.requiredDateError}
           />
@@ -263,7 +272,14 @@ export function RequestForm({ worksites, products, suppliers, workers, editReque
             const fd = form.buildDraftFormData()
             fd.set("requestId", form.savedId ?? "")
             form.startSubmitTransition(() => form.submitAction(fd))
-          }} className="pt-0">
+          }}
+          /* M-7: el contenedor padre aplica `space-y-8` (32px), que dejaba
+             "Enviar a aprobación" flotando lejos de "Volver / Guardar borrador"
+             y visualmente fuera de la tarjeta. `-mt-6` cancela casi todo ese
+             hueco para que las dos filas se lean como una sola barra de acciones.
+             Siguen siendo dos <form> porque `SubmitButton` lee `useFormStatus`,
+             que sólo funciona dentro del form que envía. */
+          className="-mt-6">
             {form.submitMessage && !form.submitOk && (
               <p className="mb-3 text-xs text-[var(--color-danger)] flex items-center gap-1.5"><Warning size={14} />{form.submitMessage}</p>
             )}

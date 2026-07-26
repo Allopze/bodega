@@ -39,7 +39,7 @@ export function UserMenu({ session }: { session: AuthSession }) {
         <DropdownMenuLabel>
           <div className="flex flex-col gap-0.5">
             <span className="text-sm font-semibold text-(--color-text)">{session.user.name}</span>
-            <span className="text-xs text-(--color-text-subtle) font-normal truncate max-w-[12rem]">{session.user.email}</span>
+            <span title={session.user.email ?? undefined} className="text-xs text-(--color-text-subtle) font-normal truncate max-w-[12rem]">{session.user.email}</span>
           </div>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />

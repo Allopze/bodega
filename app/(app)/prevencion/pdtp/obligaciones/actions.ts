@@ -1,6 +1,5 @@
 "use server"
 
-import { revalidatePath } from "next/cache"
 import { ZodError } from "zod"
 import { unexpectedActionError } from "@/lib/actions/safe-server-action"
 import { guardPermission } from "@/lib/auth/can"
@@ -17,6 +16,7 @@ import {
   pdtpObligationReportSchema,
   type ActionState,
 } from "@/lib/validation/prevention"
+import { revalidateOperationalViews } from "@/lib/services/operational-cache"
 
 function scopeFromSession(session: NonNullable<Awaited<ReturnType<typeof guardPermission>>["session"]>): WorksiteScope {
   const scope = resolveWorksiteScope(session)
@@ -28,8 +28,7 @@ async function run(operation: (context: { userId: string; scope: WorksiteScope }
   if (guard.error) return guard.error
   try {
     await operation({ userId: guard.session!.user.id, scope: scopeFromSession(guard.session!) })
-    revalidatePath("/prevencion/pdtp/obligaciones")
-    revalidatePath("/prevencion/pdtp/aprobaciones")
+    revalidateOperationalViews(["/prevencion/pdtp/obligaciones", "/prevencion/pdtp/aprobaciones"])
     return { ok: true }
   } catch (error) {
     if (error instanceof ZodError) {

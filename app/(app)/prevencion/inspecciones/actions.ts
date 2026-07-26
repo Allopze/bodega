@@ -15,6 +15,7 @@ import {
   type InspectionAccess,
 } from "@/lib/services/prevention-inspections"
 import type { ActionState } from "@/lib/validation/prevention"
+import { revalidateOperationalViews } from "@/lib/services/operational-cache"
 
 const BASE = "/prevencion/inspecciones"
 
@@ -27,11 +28,12 @@ function accessFromSession(session: Awaited<ReturnType<typeof guardPermission>>[
 async function run(access: InspectionAccess, operation: (access: InspectionAccess) => Promise<unknown>): Promise<ActionState> {
   try {
     await operation(access)
-    revalidatePath(BASE)
-    revalidatePath(`${BASE}/catalogo`)
+    revalidateOperationalViews([BASE, `${BASE}/catalogo`])
     // Sin esto una respuesta, un cierre o una revisión recién guardada sigue
     // mostrando el valor anterior al volver al detalle, porque la ruta
     // dinámica no la cubre `BASE`.
+    // La ruta dinámica conserva su propia invalidación explícita; los
+    // detalles no comparten un identificador estable en este helper.
     revalidatePath(`${BASE}/[runId]`, "page")
     return { ok: true }
   } catch (error) {

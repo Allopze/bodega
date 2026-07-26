@@ -56,14 +56,14 @@ export function BackupsList({ backups }: Props) {
         <table className="w-full text-left text-sm">
           <thead>
             <tr className="border-b border-[var(--color-border)] bg-[var(--color-surface-2)]">
-              <th className="px-4 py-2.5 font-semibold text-[var(--color-text)]">Fecha</th>
-              <th className="px-4 py-2.5 font-semibold text-[var(--color-text)]">Estado</th>
-              <th className="px-4 py-2.5 font-semibold text-[var(--color-text)]">Origen</th>
-              <th className="px-4 py-2.5 font-semibold text-[var(--color-text)]">PostgreSQL</th>
-              <th className="px-4 py-2.5 font-semibold text-[var(--color-text)]">Storage</th>
-              <th className="px-4 py-2.5 font-semibold text-[var(--color-text)]">Total</th>
-              <th className="px-4 py-2.5 font-semibold text-[var(--color-text)]">Drive</th>
-              <th className="px-4 py-2.5 font-semibold text-[var(--color-text)]">Manifiesto</th>
+              <th scope="col" className="px-4 py-2.5 th-type">Fecha</th>
+              <th scope="col" className="px-4 py-2.5 th-type">Estado</th>
+              <th scope="col" className="px-4 py-2.5 th-type">Origen</th>
+              <th scope="col" className="px-4 py-2.5 th-type">PostgreSQL</th>
+              <th scope="col" className="px-4 py-2.5 th-type">Storage</th>
+              <th scope="col" className="px-4 py-2.5 th-type">Total</th>
+              <th scope="col" className="px-4 py-2.5 th-type">Drive</th>
+              <th scope="col" className="px-4 py-2.5 th-type">Manifiesto</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-[var(--color-border)]">

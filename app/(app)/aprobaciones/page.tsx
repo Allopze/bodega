@@ -7,6 +7,7 @@ import {
 } from "@/db/schema"
 import { eq, and, inArray, asc, sql, count } from "drizzle-orm"
 import { requirePermission } from "@/lib/auth/can"
+import { approvalQueueFilter } from "@/lib/approvals-queue"
 import { isGlobalRole, visibleWorksiteIds } from "@/lib/auth/scope"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
@@ -17,6 +18,8 @@ import type { FilterOption } from "@/components/adquisiciones/list-filters"
 import { ApprovalPanel } from "./approval-panel"
 import { canApproveEpp, canSetDispatch } from "./roles"
 import type { ApprovalItem, ApprovalRequest } from "./types"
+import { getOperationalAssignmentRecords } from "@/lib/services/operational-assignments"
+import { buildOperationalWorkItem, operationalAssignmentKey } from "@/lib/services/operational-work-queue"
 
 export const metadata: Metadata = { title: "Aprobaciones" }
 
@@ -30,28 +33,15 @@ export default async function AprobacionesPage({
   let session
   try { session = await requirePermission("approvals:approve") }
   catch { redirect("/forbidden") }
+  const canAssignWork = session.user.permissions.includes("operations:assign_work")
   const sp = await searchParams
   const listParams = parseListParams(sp)
   const selectedRequestId = typeof sp.solicitud === "string" ? sp.solicitud : ""
   const visibleWsIds = visibleWorksiteIds(session)
-  const worksiteScope = isGlobalRole(session)
-    ? undefined
-    : visibleWsIds.length > 0
-      ? inArray(purchaseRequests.worksiteId, visibleWsIds)
-      : sql`false`
   const requestFilter = and(
-    inArray(purchaseRequests.status, ["submitted", "in_review", "partially_approved"]),
-    // Repuestos y servicios se aprueban por su propio flujo de cotizaciones
-    // (selectQuotation aprueba los ítems), no por esta cola ítem-a-ítem.
-    sql`${purchaseRequests.requestType} NOT IN ('repuestos', 'servicios')`,
-    worksiteScope,
+    // Predicado base compartido con el badge del rail (lib/approvals-queue.ts).
+    approvalQueueFilter({ isGlobal: isGlobalRole(session), worksiteIds: visibleWsIds }),
     selectedRequestId ? eq(purchaseRequests.id, selectedRequestId) : undefined,
-    sql`exists (
-      select 1
-      from purchase_request_items pending_items
-      where pending_items.request_id = ${purchaseRequests.id}
-        and pending_items.status = 'requested'
-    )`,
     // URL-synced filters
     textSearchSql(listParams.q, [purchaseRequests.code]),
     worksiteEqSql(purchaseRequests.worksiteId, listParams.faena),
@@ -114,7 +104,7 @@ export default async function AprobacionesPage({
             ]} />
           }
         />
-        <ApprovalPanel requests={[]} canApproveEpp={false} canSetDispatch={false} worksiteOptions={worksiteOptions} />
+        <ApprovalPanel requests={[]} canApproveEpp={false} canSetDispatch={false} canAssignWork={canAssignWork} worksiteOptions={worksiteOptions} />
         <ServerPagination pagination={pagination} hrefForPage={pageHref} />
       </PageContainer>
     )
@@ -137,6 +127,7 @@ export default async function AprobacionesPage({
       requiredDate:        purchaseRequestItems.requiredDate,
       notes:               purchaseRequestItems.notes,
       status:              purchaseRequestItems.status,
+      createdAt:           purchaseRequestItems.createdAt,
       sortOrder:           purchaseRequestItems.sortOrder,
       suggestedSupplierId: purchaseRequestItems.suggestedSupplierId,
       supplierHint:        purchaseRequestItems.supplierHint,
@@ -155,7 +146,8 @@ export default async function AprobacionesPage({
   const supplierIds = [...new Set(pendingItems.flatMap((i) => i.suggestedSupplierId ? [i.suggestedSupplierId] : []))]
 
   // Batch load everything else in parallel
-  const [allAttrs, wsRows, requesterRows, productRows, supplierRows] = await Promise.all([
+  const worksiteByRequestId = new Map(visible.map((request) => [request.id, request.worksiteId]))
+  const [allAttrs, wsRows, requesterRows, productRows, supplierRows, assignmentRecords] = await Promise.all([
     pendingItemIds.length > 0
       ? db
           .select({
@@ -192,6 +184,21 @@ export default async function AprobacionesPage({
           .from(suppliers)
           .where(inArray(suppliers.id, supplierIds))
       : Promise.resolve([]),
+
+    canAssignWork
+      ? getOperationalAssignmentRecords(
+          pendingItems.flatMap((item) => {
+            const worksiteId = worksiteByRequestId.get(item.requestId)
+            return worksiteId ? [{
+              sourceType: "purchase_request_item" as const,
+              sourceId: item.id,
+              actionKey: "approve" as const,
+              worksiteId,
+            }] : []
+          }),
+          session,
+        )
+      : Promise.resolve(new Map()),
   ])
 
   // Build lookup maps
@@ -211,10 +218,9 @@ export default async function AprobacionesPage({
   }
 
   // Build typed request rows — only requests with at least one pending item
-  const rows: ApprovalRequest[] = visible
-    .filter((r) => (itemsByRequest[r.id]?.length ?? 0) > 0)
-    .map((r): ApprovalRequest => {
+  const rows: ApprovalRequest[] = visible.reduce<ApprovalRequest[]>((result, r) => {
       const items = itemsByRequest[r.id] ?? []
+      if (items.length === 0) return result
       const mappedItems: ApprovalItem[] = items.map((item): ApprovalItem => {
         const product = item.productId ? productMap[item.productId] : null
         return {
@@ -230,12 +236,35 @@ export default async function AprobacionesPage({
           attributes:            attrsMap[item.id] ?? [],
           suggestedSupplierName: item.suggestedSupplierId ? supplierMap[item.suggestedSupplierId] : null,
           supplierHint:          item.supplierHint,
+          operationalItem: canAssignWork
+            ? buildOperationalWorkItem({
+                sourceType: "purchase_request_item",
+                sourceId: item.id,
+                actionKey: "approve",
+                module: "aprobaciones",
+                code: r.code,
+                title: `Aprobar ${product?.name ?? item.productNameFree ?? "ítem solicitado"}`,
+                subtitle: `${r.code} · ${wsMap[r.worksiteId] ?? r.worksiteId}`,
+                worksiteId: r.worksiteId,
+                worksiteName: wsMap[r.worksiteId] ?? r.worksiteId,
+                status: item.status,
+                statusLabel: "Necesita aprobación",
+                priority: item.urgency === "critical" ? "critical" : item.urgency === "high" ? "high" : "normal",
+                blocked: false,
+                createdAt: item.createdAt,
+                sourceDueAt: item.requiredDate,
+                href: `/aprobaciones?solicitud=${r.id}`,
+                ctaLabel: "Aprobar o devolver",
+                assignable: true,
+              }, assignmentRecords.get(operationalAssignmentKey("purchase_request_item", item.id, "approve")))
+            : undefined,
         }
       })
-      return {
+      result.push({
         id:             r.id,
         code:           r.code,
         requestType:    r.requestType,
+        worksiteId:     r.worksiteId,
         worksiteName:   wsMap[r.worksiteId]   ?? r.worksiteId,
         requesterName:  userMap[r.requesterId] ?? r.requesterId,
         requestUrgency: r.urgency,
@@ -243,8 +272,9 @@ export default async function AprobacionesPage({
         deliveryMode:   r.deliveryMode as "via_oficina" | "directo_faena",
         pendingItems:   mappedItems,
         pendingCount:   mappedItems.length,
-      }
-    })
+      })
+      return result
+    }, [])
 
   const displayedRows = rows
   const totalPending = displayedRows.reduce((n, r) => n + r.pendingCount, 0)
@@ -275,6 +305,7 @@ export default async function AprobacionesPage({
         // Fuente única de verdad compartida con el backend (./roles) — evita H-1.
         canApproveEpp={canApproveEpp(session.user.roles)}
         canSetDispatch={canSetDispatch(session.user.roles)}
+        canAssignWork={canAssignWork}
         worksiteOptions={worksiteOptions}
       />
       <ServerPagination pagination={pagination} hrefForPage={pageHref} />

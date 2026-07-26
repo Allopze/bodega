@@ -135,7 +135,7 @@ export function PdtpExecutionForm({ activityId, worksiteId, year, defaultMonth, 
                 step="0.25"
                 defaultValue="1"
                 aria-label="Cantidad"
-                className="h-9 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 text-sm text-[var(--color-text)]"
+                className="h-9 rounded-md border border-[var(--color-border-control)] bg-[var(--color-surface)] px-2 text-sm text-[var(--color-text)]"
                 aria-invalid={!!state?.fieldErrors?.executedQuantity}
               />
             </Field>
@@ -148,7 +148,7 @@ export function PdtpExecutionForm({ activityId, worksiteId, year, defaultMonth, 
               type="text"
               placeholder="Opcional"
               aria-label="Observación"
-              className="h-9 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 text-sm text-[var(--color-text)]"
+              className="h-9 w-full rounded-md border border-[var(--color-border-control)] bg-[var(--color-surface)] px-2 text-sm text-[var(--color-text)]"
             />
           </Field>
 

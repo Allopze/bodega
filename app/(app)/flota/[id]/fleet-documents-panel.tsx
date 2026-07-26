@@ -72,7 +72,7 @@ export function FleetDocumentsPanel({
               <div className="min-w-0">
                 <div className="flex items-center gap-1.5">
                   <FileText size={14} className="shrink-0 text-[var(--color-text-subtle)]" />
-                  <span className="truncate font-medium">{document.fileName}</span>
+                  <span title={document.fileName} className="truncate font-medium">{document.fileName}</span>
                 </div>
                 <div className="flex items-center gap-2 text-xs text-[var(--color-text-muted)]">
                   <span>{document.documentType}</span>

@@ -1,6 +1,12 @@
 // @vitest-environment jsdom
-import { describe, it, expect, afterEach } from "vitest"
+import { describe, it, expect, afterEach, vi } from "vitest"
 import { render, screen, cleanup } from "@testing-library/react"
+
+vi.mock("next/navigation", () => ({
+  useSearchParams: () => new URLSearchParams(),
+  useRouter: () => ({ replace: vi.fn() }),
+}))
+
 import { DataTable } from "@/components/admin/data-table"
 import { ShellHeaderProvider } from "@/components/layout/header-context"
 import { TableRow, TableCell } from "@/components/ui/table"

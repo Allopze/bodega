@@ -25,6 +25,12 @@ export interface DataTableProps<T extends Record<string, unknown>> {
   renderRow:    (row: T, index: number) => React.ReactNode
   /** Optional compact rendering for narrow screens. */
   renderMobileCard?: (row: T, index: number) => React.ReactNode
+  /**
+   * E-4: congela la primera columna al hacer scroll horizontal, para que el
+   * identificador de la fila no se pierda. Sólo tiene sentido en tablas anchas
+   * (8+ columnas); en las estrechas no hay scroll que compensar.
+   */
+  stickyFirstColumn?: boolean
   emptyTitle?:  string
   emptyDescription?: string
   emptyAction?: React.ReactNode
@@ -41,6 +47,12 @@ export interface DataTableProps<T extends Record<string, unknown>> {
   disableInternalSearch?: boolean
   /** When true, adds a "Columnas" dropdown menu allowing users to toggle column visibility */
   enableColumnToggle?: boolean
+  /**
+   * E-2: key to persist column visibility and sort state in URL search params.
+   * When provided, visible columns and sort direction survive navigation and
+   * are shareable via URL. Params: `${viewKey}_cols`, `${viewKey}_sort`, `${viewKey}_dir`.
+   */
+  viewKey?: string
   /** When true, enables checkbox row selection */
   enableRowSelection?: boolean
   /** Function to extract unique key for a row (defaults to row.id) */

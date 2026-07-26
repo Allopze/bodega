@@ -139,6 +139,7 @@ export default async function RecepcionPage({
   return (
     <PageContainer>
       <PageHeader
+        newShortcutHref="/recepcion/nueva"
         title="Recepción"
         description="Registra llegada a oficina Chome y posterior recepción en faena."
         breadcrumb={

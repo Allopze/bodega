@@ -4,6 +4,7 @@ import * as React from "react"
 import { useActionState } from "react"
 import { CaretDown } from "@phosphor-icons/react"
 import { Badge } from "@/components/ui/badge"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select"
 import { SubmitButton } from "@/components/admin/submit-button"
 import { formatDate } from "@/lib/utils"
@@ -15,7 +16,21 @@ import { useBulkApproveAction } from "./use-approval-actions"
 import { updateDeliveryModeAction } from "./actions"
 import { INITIAL_STATE } from "@/components/admin/form-state"
 
-export function RequestGroup({ request, canApproveEpp, canSetDispatch }: { request: ApprovalRequest; canApproveEpp: boolean; canSetDispatch: boolean }) {
+const EMPTY_SELECTED_IDS: string[] = []
+
+export function RequestGroup({
+  request, canApproveEpp, canSetDispatch, canAssignWork,
+  selectedIds = EMPTY_SELECTED_IDS, onToggleItem, onToggleMany,
+}: {
+  request: ApprovalRequest
+  canApproveEpp: boolean
+  canSetDispatch: boolean
+  canAssignWork: boolean
+  /** E-3 · selección en lote, gestionada por ApprovalPanel. */
+  selectedIds?: string[]
+  onToggleItem?: (id: string) => void
+  onToggleMany?: (ids: string[], select: boolean) => void
+}) {
   const [collapsed, setCollapsed] = React.useState(false)
   const { bulkState, bulkAction, bulkPending } = useBulkApproveAction()
   const [modeState, modeAction] = useActionState(updateDeliveryModeAction, INITIAL_STATE)
@@ -33,6 +48,11 @@ export function RequestGroup({ request, canApproveEpp, canSetDispatch }: { reque
   }, [modeState, request.deliveryMode])
 
   const pendingIds = request.pendingItems.map((i) => i.id).join(",")
+  // E-3 · estado de la casilla maestra de este grupo
+  const groupItemIds = request.pendingItems.map((i) => i.id)
+  const selectedSet = React.useMemo(() => new Set(selectedIds), [selectedIds])
+  const selectedInGroup = groupItemIds.filter((id) => selectedSet.has(id)).length
+  const allSelected = groupItemIds.length > 0 && selectedInGroup === groupItemIds.length
   const allApproved = bulkState.ok === true
   const canApproveThisRequest = request.requestType !== "epp" || canApproveEpp
 
@@ -74,7 +94,7 @@ export function RequestGroup({ request, canApproveEpp, canSetDispatch }: { reque
             {request.pendingCount} pendiente{request.pendingCount !== 1 ? "s" : ""}
           </span>
 
-          {canSetDispatch && (
+          {canSetDispatch ? (
             <form ref={modeFormRef} action={modeAction} className="flex items-center gap-1">
               <input type="hidden" name="requestId" value={request.id} />
               <Select
@@ -98,8 +118,20 @@ export function RequestGroup({ request, canApproveEpp, canSetDispatch }: { reque
                 </SelectContent>
               </Select>
             </form>
+          ) : (
+            <Badge variant="outline" size="sm" className="shrink-0 text-xs">
+              {mode === "directo_faena" ? "Directo a faena" : "Vía oficina"}
+            </Badge>
           )}
 
+          {!allApproved && canApproveThisRequest && onToggleMany && (
+            <Checkbox
+              id={`select-all-${request.id}`}
+              label={allSelected ? "Quitar todos" : "Seleccionar todos"}
+              checked={allSelected}
+              onChange={() => onToggleMany(groupItemIds, !allSelected)}
+            />
+          )}
           {!allApproved && canApproveThisRequest && (
             <form action={bulkAction}>
               <input type="hidden" name="itemIds" value={pendingIds} />
@@ -120,7 +152,14 @@ export function RequestGroup({ request, canApproveEpp, canSetDispatch }: { reque
       {!collapsed && (
         <ul className="p-3 flex flex-col gap-2">
           {request.pendingItems.map((item) => (
-            <ItemRow key={item.id} item={item} canApprove={canApproveThisRequest} />
+            <ItemRow
+              key={item.id}
+              item={item}
+              canApprove={canApproveThisRequest}
+              canAssignWork={canAssignWork}
+              selected={selectedSet.has(item.id)}
+              onToggleSelect={canApproveThisRequest && onToggleItem ? onToggleItem : undefined}
+            />
           ))}
         </ul>
       )}

@@ -1,8 +1,8 @@
 "use server"
 
-import { revalidatePath } from "next/cache"
 import { guardPermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
+import { revalidateOperationalViews } from "@/lib/services/operational-cache"
 import { saveActionPlanItem, deleteActionPlanItem } from "@/lib/services/sst"
 import type { ActionState } from "@/lib/validation/sst"
 import type { sstActionPlanItemSchema } from "@/lib/validation/sst"
@@ -21,7 +21,7 @@ export async function saveActionPlanItemAction(
 
   try {
     const saved = await saveActionPlanItem(input, worksiteIds, session.user.id)
-    revalidatePath(`${REVALIDATE}/${input.evaluationId}`)
+    revalidateOperationalViews([REVALIDATE, `${REVALIDATE}/${input.evaluationId}`])
     return { ok: true, message: "Ítem del plan guardado", data: { id: saved.id, capaActionId: saved.capaActionId } }
   } catch (e) {
     return { ok: false, message: e instanceof Error ? e.message : "Error al guardar el ítem del plan" }
@@ -37,7 +37,7 @@ export async function deleteActionPlanItemAction(id: string): Promise<ActionStat
 
   try {
     await deleteActionPlanItem(id, worksiteIds, session.user.id)
-    revalidatePath(REVALIDATE)
+    revalidateOperationalViews([REVALIDATE])
     return { ok: true, message: "Ítem eliminado" }
   } catch (e) {
     return { ok: false, message: e instanceof Error ? e.message : "Error al eliminar el ítem" }

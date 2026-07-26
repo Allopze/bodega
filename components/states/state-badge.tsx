@@ -10,6 +10,8 @@ interface StateMeta {
   label:   string
   variant: BadgeVariant
   family:  "neutral" | "success" | "warning" | "signal" | "info" | "danger"
+  /** Explicación en lenguaje llano para tooltip/leyenda (jerga de recepción). */
+  description?: string
 }
 
 /** Unified state vocabulary — every state in the system maps here. */
@@ -55,16 +57,16 @@ export type OcStatus =
   | "partially_received" | "received" | "closed" | "cancelled"
 
 const OC_STATE_META: Record<OcStatus, StateMeta> = {
-  draft:              { label: "Borrador",             variant: "default",  family: "neutral"  },
-  issued:             { label: "Emitida",              variant: "info",     family: "info"     },
-  sent:               { label: "Enviada",              variant: "info",     family: "info"     },
-  supplier_confirmed: { label: "Confirmada",           variant: "primary",  family: "success"  },
-  partially_office_received: { label: "Oficina parcial", variant: "warning", family: "warning" },
-  office_received:    { label: "En oficina",           variant: "info",     family: "info"     },
-  partially_received: { label: "Rec. parcial",         variant: "warning",  family: "warning"  },
-  received:           { label: "Recibida",             variant: "success",  family: "success"  },
-  closed:             { label: "Cerrada",              variant: "default",  family: "neutral"  },
-  cancelled:          { label: "Anulada",              variant: "danger",   family: "danger"   },
+  draft:              { label: "Borrador",             variant: "default",  family: "neutral", description: "OC en preparación, aún no emitida al proveedor." },
+  issued:             { label: "Emitida",              variant: "info",     family: "info",    description: "OC emitida internamente; falta marcarla como enviada al proveedor." },
+  sent:               { label: "Enviada",              variant: "info",     family: "info",    description: "OC enviada al proveedor; a la espera de recepción." },
+  supplier_confirmed: { label: "Confirmada",           variant: "primary",  family: "success", description: "El proveedor confirmó la orden." },
+  partially_office_received: { label: "Oficina parcial", variant: "warning", family: "warning", description: "Parte de los ítems llegó a oficina Chome; falta el saldo." },
+  office_received:    { label: "En oficina",           variant: "info",     family: "info",    description: "Los ítems llegaron a oficina Chome, aún no despachados a faena." },
+  partially_received: { label: "Rec. parcial",         variant: "warning",  family: "warning", description: "Parte de los ítems se recibió en faena; falta el saldo." },
+  received:           { label: "Recibida",             variant: "success",  family: "success", description: "Todos los ítems recibidos en faena." },
+  closed:             { label: "Cerrada",              variant: "default",  family: "neutral", description: "OC cerrada formalmente; sin acciones pendientes." },
+  cancelled:          { label: "Anulada",              variant: "danger",   family: "danger",  description: "OC anulada." },
 }
 
 /* ── Feedback (Soporte) states ───────────────────────────────────────────── */
@@ -142,6 +144,7 @@ export function StateBadge({
       variant={meta.variant}
       size={size}
       dot={dot}
+      title={meta.description}
       className={cn(
         meta.family === "signal" && "border-[1.5px]",
         className,

@@ -37,7 +37,7 @@ export function EvidenceThumbnail({ evidence }: Props) {
         )}
         <span className="block p-3">
           <span className="block text-xs text-[var(--color-text-muted)]">{EVIDENCE_LABELS[evidence.kind] ?? evidence.kind}</span>
-          <span className="mt-1 block truncate">{evidence.fileName}</span>
+          <span title={evidence.fileName ?? undefined} className="mt-1 block truncate">{evidence.fileName}</span>
           {evidence.fileSize != null && <span className="block text-xs text-[var(--color-text-muted)]">{Math.round(evidence.fileSize / 1024)} KB</span>}
         </span>
       </button>

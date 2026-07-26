@@ -54,7 +54,7 @@ export function DeliveriesTable({ deliveries }: { deliveries: DeliveryRow[] }) {
                       {delivery.workerName}
                     </a>
                   ) : (
-                    <p className="mt-0.5 truncate text-sm font-medium text-[var(--color-text)]">{delivery.workerName}</p>
+                    <p title={delivery.workerName} className="mt-0.5 truncate text-sm font-medium text-[var(--color-text)]">{delivery.workerName}</p>
                   )}
                   {delivery.receiverName && delivery.receiverName !== delivery.workerName && (
                     <p className="text-[11px] text-[var(--color-text-subtle)]">Recibido por: {delivery.receiverName}</p>
@@ -113,7 +113,7 @@ export function DeliveriesTable({ deliveries }: { deliveries: DeliveryRow[] }) {
             </TableCell>
             <TableCell>
               <div className="min-w-0">
-                <p className="truncate text-sm font-medium text-[var(--color-text)]">{delivery.workerName}</p>
+                <p title={delivery.workerName} className="truncate text-sm font-medium text-[var(--color-text)]">{delivery.workerName}</p>
                 {delivery.receiverName && delivery.receiverName !== delivery.workerName && (
                   <p className="text-[11px] text-[var(--color-text-subtle)]">Recibido por: {delivery.receiverName}</p>
                 )}

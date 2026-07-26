@@ -43,7 +43,7 @@ export function RoleSelector({ roles, selectedIds, onToggle, error }: RoleSelect
               >
                 {checked && <Check size={11} weight="bold" />}
               </span>
-              <span className="truncate">{role.label}</span>
+              <span title={role.label} className="truncate">{role.label}</span>
             </button>
           )
         })}

@@ -45,7 +45,7 @@ export function EvaluationList({ workerGroups, canCreate }: Props) {
   }
 
   return (
-    <TableRoot>
+    <TableRoot stickyHeader>
       <Table>
         <TableHeader>
           <TableRow>

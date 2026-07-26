@@ -1,6 +1,6 @@
 import Link from "next/link"
 import type { ComponentType } from "react"
-import { Badge } from "@/components/ui/badge"
+import { PriorityBadge } from "@/components/ui/priority-badge"
 import { cn } from "@/lib/utils"
 import { ArrowRight } from "@phosphor-icons/react/dist/ssr"
 import {
@@ -9,6 +9,8 @@ import {
   ShoppingCart,
   Truck,
   Warehouse,
+  WarningCircle,
+  FileText,
 } from "@phosphor-icons/react/dist/ssr"
 import type { WorkPriority, WorkTask, WorkTaskType } from "@/lib/work-queue"
 
@@ -21,13 +23,12 @@ export const TASK_ICON: Record<WorkTaskType, IconComponent> = {
   purchase_order:    ShoppingCart,
   receipt:           Truck,
   warehouse_delivery: Warehouse,
-}
-
-export const PRIORITY_LABEL: Record<WorkPriority, string> = {
-  critical: "Crítico",
-  high:     "Alta",
-  normal:   "Normal",
-  low:      "Baja",
+  pdtp:              ClipboardText,
+  capa:              WarningCircle,
+  inspection:        ClipboardText,
+  documentation:     FileText,
+  ppa:               WarningCircle,
+  sst:               CheckSquare,
 }
 
 export const TASK_TYPE_LABEL: Record<WorkTaskType, string> = {
@@ -37,6 +38,12 @@ export const TASK_TYPE_LABEL: Record<WorkTaskType, string> = {
   purchase_order:     "OC",
   receipt:            "Recepción",
   warehouse_delivery: "Entrega",
+  pdtp:               "PDTP",
+  capa:               "CAPA",
+  inspection:         "Inspección",
+  documentation:      "Documentación",
+  ppa:                "PPA",
+  sst:                "SST",
 }
 
 const SHORT_DATE_FORMAT = new Intl.DateTimeFormat("es-CL", {
@@ -68,16 +75,20 @@ export function TaskRow({ task, index }: { task: WorkTask; index: number }) {
       </span>
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-2">
-          <h3 className="truncate text-[13.5px] font-semibold text-[var(--color-text)]">{task.title}</h3>
+          <h3 title={task.title} className="truncate text-[13.5px] font-semibold text-[var(--color-text)]">{task.title}</h3>
           <span className="sm:hidden"><PriorityTag priority={task.priority} /></span>
         </div>
-        <p className="mt-0.5 truncate text-[12px] text-[var(--color-text-muted)]">{task.subtitle}</p>
+        <p title={task.subtitle} className="mt-0.5 truncate text-[12px] text-[var(--color-text-muted)]">{task.subtitle}</p>
       </div>
       <div className="hidden sm:block">
         <PriorityTag priority={task.priority} />
       </div>
       <div className="hidden min-w-0 sm:block">
-        <p className="truncate text-xs font-medium text-[var(--color-text)]">
+        {/* Este es el texto que la auditoría vio cortado como "Aprobación · Necesita a…" */}
+        <p
+          title={`${TASK_TYPE_LABEL[task.type]} · ${task.statusLabel}`}
+          className="truncate text-xs font-medium text-[var(--color-text)]"
+        >
           {TASK_TYPE_LABEL[task.type]} · {task.statusLabel}
         </p>
         <p className="mt-0.5 font-mono text-[11px] text-[var(--color-text-subtle)]">{formatShortDate(task.createdAt)}</p>
@@ -91,23 +102,5 @@ export function TaskRow({ task, index }: { task: WorkTask; index: number }) {
 }
 
 function PriorityTag({ priority }: { priority: WorkPriority }) {
-  if (priority === "critical") {
-    return (
-      <Badge variant="signal" size="sm" dot>
-        {PRIORITY_LABEL[priority]}
-      </Badge>
-    )
-  }
-  if (priority === "high") {
-    return (
-      <Badge variant="warning" size="sm" dot>
-        {PRIORITY_LABEL[priority]}
-      </Badge>
-    )
-  }
-  return (
-    <Badge variant="default" size="sm">
-      {PRIORITY_LABEL[priority]}
-    </Badge>
-  )
+  return <PriorityBadge priority={priority} size="sm" />
 }

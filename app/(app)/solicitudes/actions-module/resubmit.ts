@@ -1,6 +1,5 @@
 "use server"
 
-import { revalidatePath, revalidateTag } from "next/cache"
 import { eq } from "drizzle-orm"
 import { db } from "@/db"
 import { purchaseRequests, purchaseRequestItems } from "@/db/schema"
@@ -8,6 +7,7 @@ import { can, canAccessWorksite, requireAuth } from "@/lib/auth/can"
 import { submitItem } from "@/lib/services/item-state"
 import { type ActionState } from "@/lib/validation/operations"
 import { logger } from "@/lib/logger"
+import { revalidateOperationalViews } from "@/lib/services/operational-cache"
 
 const REVALIDATE = "/solicitudes"
 
@@ -51,10 +51,7 @@ export async function resubmitReturnedItemAction(
 
   try {
     await submitItem(itemId, session.user.id, { userEmail: session.user.email ?? undefined })
-    revalidatePath(REVALIDATE)
-  revalidateTag("badge-counts", { expire: 0 })
-    revalidatePath(`${REVALIDATE}/${row.requestId}`)
-  revalidateTag("badge-counts", { expire: 0 })
+    revalidateOperationalViews([REVALIDATE, `${REVALIDATE}/${row.requestId}`])
     return { ok: true, message: "Ítem re-enviado a aprobación" }
   } catch (e) {
     logger.error("[resubmitReturnedItemAction]", e)

@@ -10,6 +10,7 @@ import {
   worksites,
 } from "@/db/schema"
 import { nanoid } from "@/lib/id"
+import { recordOperationalActivity } from "@/lib/services/operational-activity"
 import { resolvePdtpEvidenceFile } from "@/lib/storage/config"
 import { addPdtpChangeLogEntry, assertWorksiteAccess, isActivePdtpWorksite, type WorksiteScope } from "./helpers"
 import { assertPdtpWorksiteCanOperateProgram } from "./worksites"
@@ -251,6 +252,15 @@ export async function reportPdtpObligation(input: {
       { status: obligation.status }, { status: "reported", executionId: execution.id, completedQuantity: input.executedQuantity },
       "Trabajo reportado; queda pendiente la aprobación formal de su ejecución.", tx,
     )
+    await recordOperationalActivity({
+      eventType: "pdtp.obligation_reported",
+      module: "pdtp",
+      entityType: "pdtp_obligation",
+      entityId: updated.id,
+      worksiteId: updated.worksiteId,
+      actorUserId: input.userId,
+      payload: { status: updated.status, completedQuantity: updated.completedQuantity },
+    }, tx)
     return { obligation: updated, execution, created: !existing }
   })
 }
@@ -297,6 +307,15 @@ export async function cancelPdtpObligation(input: {
       "Obligación preventiva cancelada con motivo trazable.",
       tx,
     )
+    await recordOperationalActivity({
+      eventType: "pdtp.obligation_cancelled",
+      module: "pdtp",
+      entityType: "pdtp_obligation",
+      entityId: updated.id,
+      worksiteId: updated.worksiteId,
+      actorUserId: input.userId,
+      payload: { status: updated.status },
+    }, tx)
     return updated
   })
 }

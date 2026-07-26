@@ -14,7 +14,7 @@ interface Props {
 
 export function TrazabilidadMatrixTable({ rows }: Props) {
   return (
-    <TableRoot className="hidden md:block">
+    <TableRoot stickyHeader className="hidden md:block">
       <Table>
         <TableCaption className="sr-only">
           Matriz de trazabilidad de ítems por producto, faena, solicitud, cantidades y estado.

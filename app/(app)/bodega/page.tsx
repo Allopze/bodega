@@ -8,7 +8,9 @@ import { isGlobalRole, visibleWorksiteIds } from "@/lib/auth/scope"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { resolvePagination } from "@/lib/pagination"
+import Link from "next/link"
 import { EmptyState } from "@/components/ui/empty-state"
+import { Button } from "@/components/ui/button"
 import { Warehouse } from "@phosphor-icons/react/dist/ssr"
 import { WarehouseHeaderMetrics } from "./bodega-header-metrics"
 import { StockSection, KardexSection } from "./bodega-sections"
@@ -93,6 +95,11 @@ export default async function BodegaPage({
         />
         <EmptyState icon={<Warehouse size={24} />} title="Sin faenas configuradas"
           description="Configura las faenas en el módulo de administración para ver el stock aquí."
+          action={
+            <Button asChild variant="secondary" size="sm">
+              <Link href="/admin/faenas">Configurar faenas</Link>
+            </Button>
+          }
         />
       </PageContainer>
     )

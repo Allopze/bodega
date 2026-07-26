@@ -48,13 +48,13 @@ export function KardexTable({ movements, worksites = [], canExport = false }: Ka
           <caption className="sr-only">Últimos {movements.length} movimientos de inventario registrados en todas las faenas</caption>
           <thead className="bg-[var(--color-surface-2)] border-b border-[var(--color-border)]">
             <tr>
-              <th className="px-5 py-2.5 text-left text-xs font-medium text-[var(--color-text-subtle)]">Fecha</th>
-              <th className="px-5 py-2.5 text-left text-xs font-medium text-[var(--color-text-subtle)]">Tipo</th>
-              <th className="px-5 py-2.5 text-left text-xs font-medium text-[var(--color-text-subtle)]">Producto</th>
-              <th className="px-5 py-2.5 text-left text-xs font-medium text-[var(--color-text-subtle)]">Faena</th>
-              <th className="px-5 py-2.5 text-right text-xs font-medium text-[var(--color-text-subtle)] w-28">Cantidad</th>
-              <th className="px-5 py-2.5 text-right text-xs font-medium text-[var(--color-text-subtle)] w-24">Saldo</th>
-              <th className="px-5 py-2.5 text-left text-xs font-medium text-[var(--color-text-subtle)]">Observación</th>
+              <th scope="col" className="px-5 py-2.5 text-left th-type">Fecha</th>
+              <th scope="col" className="px-5 py-2.5 text-left th-type">Tipo</th>
+              <th scope="col" className="px-5 py-2.5 text-left th-type">Producto</th>
+              <th scope="col" className="px-5 py-2.5 text-left th-type">Faena</th>
+              <th scope="col" className="px-5 py-2.5 text-right th-type w-28">Cantidad</th>
+              <th scope="col" className="px-5 py-2.5 text-right th-type w-24">Saldo</th>
+              <th scope="col" className="px-5 py-2.5 text-left th-type">Observación</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-[var(--color-border)]">

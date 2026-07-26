@@ -7,6 +7,7 @@ import { toast } from "@/lib/toast"
 import { INITIAL_STATE } from "@/components/admin/form-state"
 import { SubmitButton } from "@/components/admin/submit-button"
 import { Field } from "@/components/ui/field"
+import { DatePicker } from "@/components/ui/date-picker"
 import { Input } from "@/components/ui/input"
 import { FileInput } from "@/components/ui/file-input"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
@@ -116,7 +117,7 @@ export function InvoicesSection({
               const isMatched = Math.abs(diff) < 0.01
               return (
                 <li key={ocItem.id} className="flex items-center justify-between gap-2">
-                  <span className="truncate min-w-0 text-text-subtle">{ocItem.productName}</span>
+                  <span title={ocItem.productName} className="truncate min-w-0 text-text-subtle">{ocItem.productName}</span>
                   <span className={`font-mono tabular-nums shrink-0 ${isMatched ? "text-[var(--color-success)]" : "text-[var(--color-warning)]"}`}>
                     {invoicedQty}/{ocItem.quantity}
                   </span>
@@ -205,7 +206,7 @@ function InvoiceItem({
             <ul className="mt-1 space-y-0.5">
               {invoice.items.map((item) => (
                 <li key={item.id} className="text-[10px] text-text-subtle flex justify-between gap-2">
-                  <span className="truncate">{item.productName}</span>
+                  <span title={item.productName} className="truncate">{item.productName}</span>
                   <span className="font-mono tabular-nums shrink-0">{item.quantity} × {formatCLP(item.unitPrice)}</span>
                 </li>
               ))}
@@ -255,12 +256,15 @@ function AddInvoiceForm({ purchaseOrderId, ocItems }: { purchaseOrderId: string;
   const [dteParsed, setDteParsed] = React.useState(false)
   const invoiceNumberRef = React.useRef<HTMLInputElement>(null)
   const amountRef = React.useRef<HTMLInputElement>(null)
-  const issueDateRef = React.useRef<HTMLInputElement>(null)
+  // Estado controlado en vez de ref imperativo: DatePicker guarda el valor en
+  // React, así que form.reset() del navegador no lo limpiaría solo.
+  const [issueDate, setIssueDate] = React.useState("")
 
   React.useEffect(() => {
     if (state.ok && state.message) {
       toast.success(state.message)
       formRef.current?.reset()
+      setIssueDate("")
       setLineItems([])
       setDteParsed(false)
     } else if (!state.ok && state.message && "fieldErrors" in state) {
@@ -336,8 +340,8 @@ function AddInvoiceForm({ purchaseOrderId, ocItems }: { purchaseOrderId: string;
       if (data.totalAmount && amountRef.current) {
         amountRef.current.value = String(data.totalAmount)
       }
-      if (data.issueDate && issueDateRef.current) {
-        issueDateRef.current.value = data.issueDate
+      if (data.issueDate) {
+        setIssueDate(data.issueDate)
       }
 
       // Auto-match items to OC items
@@ -438,13 +442,12 @@ function AddInvoiceForm({ purchaseOrderId, ocItems }: { purchaseOrderId: string;
           htmlFor="invoice-issue-date"
           error={state.fieldErrors?.issueDate?.[0]}
         >
-          <input
-            ref={issueDateRef}
-            type="date"
+          <DatePicker
             id="invoice-issue-date"
             name="issueDate"
-            aria-label="Fecha de emisión"
-            className="w-full text-xs p-2 rounded border border-(--color-border) bg-(--color-surface)"
+            value={issueDate}
+            onChange={setIssueDate}
+            error={Boolean(state.fieldErrors?.issueDate?.[0])}
           />
         </Field>
       </div>
@@ -470,7 +473,7 @@ function AddInvoiceForm({ purchaseOrderId, ocItems }: { purchaseOrderId: string;
             return (
               <div key={li.ocItemId} className="flex items-end gap-1.5 rounded border border-(--color-border) p-2 bg-surface-2">
                 <div className="flex-1 min-w-0">
-                  <p className="text-[10px] text-text-subtle truncate mb-1">{ocItem?.productName ?? "Ítem"}</p>
+                  <p title={ocItem?.productName ?? "Ítem"} className="text-[10px] text-text-subtle truncate mb-1">{ocItem?.productName ?? "Ítem"}</p>
                   <div className="grid grid-cols-2 gap-1.5">
                     <Input
                       name={`item_qty_${index}`}

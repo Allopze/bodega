@@ -42,7 +42,7 @@ function MinStockCell({ stockId, currentMin }: { stockId: string; currentMin: nu
       <button
         type="button"
         onClick={() => setEditing(true)}
-        className="min-h-11 min-w-11 sm:min-h-0 sm:min-w-0 flex items-center gap-1 text-xs text-[var(--color-text-subtle)] hover:text-[var(--color-text)] transition-colors"
+        className="flex min-h-11 min-w-11 items-center gap-1 text-xs text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)] sm:min-h-6 sm:min-w-6"
         title="Configurar stock mínimo"
         aria-label="Configurar stock mínimo"
       >

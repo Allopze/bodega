@@ -1,3 +1,4 @@
+import type { Metadata } from "next"
 import { notFound, redirect } from "next/navigation"
 import { db } from "@/db"
 import { deliveries, products } from "@/db/schema"
@@ -7,6 +8,12 @@ import { canAccessWorksite } from "@/lib/auth/scope"
 import { formatDate } from "@/lib/utils"
 
 interface PageProps { params: Promise<{ id: string }> }
+
+export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
+  const { id } = await params
+  const delivery = await db.query.deliveries.findFirst({ where: eq(deliveries.id, id), columns: { code: true } })
+  return { title: delivery ? `Comprobante ${delivery.code}` : "Comprobante" }
+}
 
 export default async function DeliveryPrintPage({ params }: PageProps) {
   let session
@@ -33,13 +40,20 @@ export default async function DeliveryPrintPage({ params }: PageProps) {
     ? `${delivery.worker.firstName} ${delivery.worker.lastName}`.trim()
     : delivery.receiverName ?? "—"
   const workerRut = delivery.worker?.rut ?? delivery.receiverRut ?? "—"
+  const generatedAt = new Date().toISOString()
 
   return (
-    <html lang="es-CL">
-      <head>
-        <meta charSet="utf-8" />
-        <title>Comprobante {delivery.code}</title>
-        <style>{`
+    // Antes esto renderizaba su propio <html><head><body> además del que ya
+    // pone app/layout.tsx (raíz, única fuente válida de <html> en el App
+    // Router). El HTML llegaba con dos <html> anidados; el navegador los
+    // fusiona al parsear (por spec no puede haber dos), pero React esperaba
+    // ver el árbol tal cual lo mandó el servidor → mismatch de hidratación
+    // (#418), reproducible sólo en build de producción porque en dev React
+    // muestra el aviso pero no lo trata como fatal de la misma forma.
+    // Mismo patrón que las rutas hermanas compras/print y sst/print: sólo
+    // <style> + contenido, sin envoltorio de documento propio.
+    <>
+      <style>{`
           *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
           body {
             font-family: "Inter", system-ui, -apple-system, sans-serif;
@@ -69,8 +83,7 @@ export default async function DeliveryPrintPage({ params }: PageProps) {
           .sig-label { font-size: 10px; color: #6b7280; }
           .footer { margin-top: 40px; padding-top: 12px; border-top: 1px solid #e5e7eb; font-size: 9px; color: #9ca3af; text-align: center; }
         `}</style>
-      </head>
-      <body>
+
         <div className="header">
           <div>
             <h1>Comprobante de Entrega EPP</h1>
@@ -117,7 +130,7 @@ export default async function DeliveryPrintPage({ params }: PageProps) {
             <thead>
               <tr>
                 <th>Producto</th>
-                <th style={{ textAlign: "right" }}>Cantidad</th>
+                <th scope="col" style={{ textAlign: "right" }}>Cantidad</th>
                 <th>Unidad</th>
               </tr>
             </thead>
@@ -145,7 +158,7 @@ export default async function DeliveryPrintPage({ params }: PageProps) {
               <thead>
                 <tr>
                   <th>Producto</th>
-                  <th style={{ textAlign: "right" }}>Cantidad</th>
+                  <th scope="col" style={{ textAlign: "right" }}>Cantidad</th>
                   <th>Motivo</th>
                 </tr>
               </thead>
@@ -177,9 +190,8 @@ export default async function DeliveryPrintPage({ params }: PageProps) {
         </div>
 
         <div className="footer">
-          Documento generado por Plataforma Chome — {new Date().toLocaleDateString("es-CL")}
+          Documento generado por Plataforma Chome — {formatDate(generatedAt)}
         </div>
-      </body>
-    </html>
+      </>
   )
 }

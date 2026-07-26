@@ -3,6 +3,7 @@
 import * as React from "react"
 import { ClipboardText } from "@phosphor-icons/react"
 import { Badge } from "@/components/ui/badge"
+import { DatePicker } from "@/components/ui/date-picker"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { EmptyState } from "@/components/ui/empty-state"
@@ -329,8 +330,8 @@ function ProgramDialog({ templates, worksites, assignees }: {
             </Field>
           </div>
           <div className="grid gap-3 md:grid-cols-2">
-            <Field label="Primera fecha">
-              <Input name="startsOn" type="date" required defaultValue={defaultStart} />
+            <Field label="Primera fecha" required>
+              <DatePicker name="startsOn" defaultValue={defaultStart} />
             </Field>
             <Field label="Asignada a" hint="Opcional.">
               <Select value={assignedToUserId} onValueChange={setAssignedToUserId}><SelectTrigger><SelectValue placeholder="Sin asignar" /></SelectTrigger><SelectContent><SelectItem value="_none">Sin asignar</SelectItem>{assignees.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select><input type="hidden" name="assignedToUserId" value={assignedToUserId === "_none" ? "" : assignedToUserId} />

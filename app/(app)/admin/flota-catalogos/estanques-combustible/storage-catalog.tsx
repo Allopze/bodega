@@ -29,14 +29,14 @@ export function StorageCatalog({ rows, worksites, products, initialOpen = false 
   return <>
     <div className="overflow-x-auto border border-[var(--color-border)]">
       <table className="w-full min-w-[760px] text-sm">
-        <thead className="bg-[var(--color-surface-2)] text-left text-xs text-[var(--color-text-muted)]">
+        <thead className="bg-[var(--color-surface-2)] text-left th-type">
           <tr>
-            <th className="p-3">Estanque</th>
+            <th scope="col" className="p-3">Estanque</th>
             <th>Faena</th>
             <th>Producto</th>
             <th>Capacidad</th>
             <th>Estado</th>
-            <th className="w-24">Acciones</th>
+            <th scope="col" className="w-24">Acciones</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-[var(--color-border)]">

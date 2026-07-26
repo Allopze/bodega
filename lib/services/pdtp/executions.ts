@@ -9,6 +9,7 @@ import { pdtpExecutionSchema } from "@/lib/validation/prevention"
 import { resolvePdtpEvidenceFile } from "@/lib/storage/config"
 import { existsSync } from "node:fs"
 import { logger } from "@/lib/logger"
+import { recordOperationalActivity } from "@/lib/services/operational-activity"
 
 export async function markPdtpExecution(input: unknown, userId: string, scope: WorksiteScope) {
   const data = pdtpExecutionSchema.parse(input)
@@ -108,31 +109,42 @@ export async function markPdtpExecution(input: unknown, userId: string, scope: W
   // null en DB. Es la convención del módulo: "sin texto de evidencia"
   // ≡ NULL (semánticamente equivalente y simplifica queries). Lo mismo
   // aplica a `evidenceUrl` cuando se preserva el previo inexistente.
-  const [row] = await db.insert(pdtpExecutions).values({
-    id, activityId: data.activityId, worksiteId: data.worksiteId, year: data.year, month: data.month,
-    week: data.week, executedQuantity: data.executedQuantity, status: "submitted",
-    evidenceText: data.evidenceText || null, evidenceUrl: nextEvidenceUrl,
-    evidencePhotos: dedupedPhotos, executedByUserId: userId, executedAt: now, createdAt: now, updatedAt: now,
-  }).onConflictDoUpdate({
-    target: [pdtpExecutions.activityId, pdtpExecutions.worksiteId, pdtpExecutions.year, pdtpExecutions.month, pdtpExecutions.week],
-    targetWhere: sql`${pdtpExecutions.obligationId} IS NULL`,
-    set: {
-      executedQuantity: data.executedQuantity, status: "submitted",
+  return db.transaction(async (tx) => {
+    const [row] = await tx.insert(pdtpExecutions).values({
+      id, activityId: data.activityId, worksiteId: data.worksiteId, year: data.year, month: data.month,
+      week: data.week, executedQuantity: data.executedQuantity, status: "submitted",
       evidenceText: data.evidenceText || null, evidenceUrl: nextEvidenceUrl,
-      evidencePhotos: dedupedPhotos, executedByUserId: userId, executedAt: now,
-      // Limpia rechazo previo: cuando el prevencionista reenvía, la
-      // ejecución vuelve a 'submitted' con un nuevo intento.
-      rejectedByUserId: null, rejectedAt: null, rejectionReason: null,
-      updatedAt: now,
-    },
-    // El SELECT previo permite preservar las evidencias; esta condición es
-    // la garantía de escritura: una aprobación concurrente nunca puede ser
-    // degradada de approved a submitted por este upsert.
-    setWhere: ne(pdtpExecutions.status, "approved"),
-  }).returning()
+      evidencePhotos: dedupedPhotos, executedByUserId: userId, executedAt: now, createdAt: now, updatedAt: now,
+    }).onConflictDoUpdate({
+      target: [pdtpExecutions.activityId, pdtpExecutions.worksiteId, pdtpExecutions.year, pdtpExecutions.month, pdtpExecutions.week],
+      targetWhere: sql`${pdtpExecutions.obligationId} IS NULL`,
+      set: {
+        executedQuantity: data.executedQuantity, status: "submitted",
+        evidenceText: data.evidenceText || null, evidenceUrl: nextEvidenceUrl,
+        evidencePhotos: dedupedPhotos, executedByUserId: userId, executedAt: now,
+        // Limpia rechazo previo: cuando el prevencionista reenvía, la
+        // ejecución vuelve a 'submitted' con un nuevo intento.
+        rejectedByUserId: null, rejectedAt: null, rejectionReason: null,
+        updatedAt: now,
+      },
+      // El SELECT previo permite preservar las evidencias; esta condición es
+      // la garantía de escritura: una aprobación concurrente nunca puede ser
+      // degradada de approved a submitted por este upsert.
+      setWhere: ne(pdtpExecutions.status, "approved"),
+    }).returning()
 
-  if (!row) throw new Error("La ejecución ya fue aprobada y no se puede modificar.")
-  return row
+    if (!row) throw new Error("La ejecución ya fue aprobada y no se puede modificar.")
+    await recordOperationalActivity({
+      eventType: existing ? "pdtp.execution_resubmitted" : "pdtp.execution_submitted",
+      module: "pdtp",
+      entityType: "pdtp_execution",
+      entityId: row.id,
+      worksiteId: data.worksiteId,
+      actorUserId: userId,
+      payload: { year: data.year, month: data.month, week: data.week, status: "submitted" },
+    }, tx)
+    return row
+  })
 }
 
 export async function approvePdtpExecution(executionId: string, userId: string, scope: WorksiteScope) {
@@ -174,6 +186,15 @@ export async function approvePdtpExecution(executionId: string, userId: string, 
       )).returning({ id: pdtpObligations.id })
       if (!closed) throw new Error("La obligación asociada cambió antes de completar su aprobación.")
     }
+    await recordOperationalActivity({
+      eventType: "pdtp.execution_approved",
+      module: "pdtp",
+      entityType: "pdtp_execution",
+      entityId: updated.id,
+      worksiteId: execution.worksiteId,
+      actorUserId: userId,
+      payload: { status: "approved", obligationCompleted: Boolean(execution.obligationId) },
+    }, tx)
     return updated
   })
 }
@@ -221,6 +242,15 @@ export async function rejectPdtpExecution(
         updatedAt: now,
       }).where(and(eq(pdtpObligations.id, execution.obligationId), eq(pdtpObligations.status, "reported")))
     }
+    await recordOperationalActivity({
+      eventType: "pdtp.execution_rejected",
+      module: "pdtp",
+      entityType: "pdtp_execution",
+      entityId: updated.id,
+      worksiteId: execution.worksiteId,
+      actorUserId: userId,
+      payload: { status: "rejected", hasObligation: Boolean(execution.obligationId) },
+    }, tx)
     return updated
   })
 }

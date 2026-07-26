@@ -112,8 +112,8 @@ export function UserList({ users, invitations, allRoles, allPermissions, allWork
                 <div className="flex items-center gap-2.5 min-w-0">
                   <Avatar name={u.name} size="sm" />
                   <div className="min-w-0">
-                    <p className="text-sm font-medium text-[var(--color-text)] truncate">{u.name}</p>
-                    <p className="text-xs text-[var(--color-text-subtle)] truncate">{u.email}</p>
+                    <p title={u.name} className="text-sm font-medium text-[var(--color-text)] truncate">{u.name}</p>
+                    <p title={u.email} className="text-xs text-[var(--color-text-subtle)] truncate">{u.email}</p>
                   </div>
                 </div>
               </TableCell>
@@ -137,7 +137,7 @@ export function UserList({ users, invitations, allRoles, allPermissions, allWork
               {/* Status */}
               <TableCell>
                 <Badge
-                  variant={u.passwordSetupPending ? "warning" : u.isActive ? "success" : "default"}
+                  variant={u.passwordSetupPending ? "warning" : u.isActive ? "success" : "neutral"}
                   dot
                   className="w-24 justify-center"
                 >
@@ -198,10 +198,10 @@ export function UserList({ users, invitations, allRoles, allPermissions, allWork
                   <Avatar name={u.name} size="sm" />
                   <div className="min-w-0">
                     <h2 className="text-sm font-medium text-[var(--color-text)]">{u.name}</h2>
-                    <p className="truncate text-xs text-[var(--color-text-subtle)]">{u.email}</p>
+                    <p title={u.email} className="truncate text-xs text-[var(--color-text-subtle)]">{u.email}</p>
                   </div>
                 </div>
-                <Badge variant={u.passwordSetupPending ? "warning" : u.isActive ? "success" : "default"} dot>
+                <Badge variant={u.passwordSetupPending ? "warning" : u.isActive ? "success" : "neutral"} dot>
                   {u.passwordSetupPending ? "Pendiente" : u.isActive ? "Activo" : "Inactivo"}
                 </Badge>
               </div>

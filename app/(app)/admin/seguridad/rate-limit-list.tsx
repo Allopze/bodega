@@ -1,10 +1,12 @@
 "use client"
 
 import * as React from "react"
+import { formatDateTime } from "@/lib/utils"
 import { useActionState, useEffect } from "react"
 import { LockOpen, Trash } from "@phosphor-icons/react"
 import { DataTable } from "@/components/admin/data-table"
 import { Badge } from "@/components/ui/badge"
+import { DesktopOnlyTableNotice } from "@/components/ui/desktop-only-table"
 import { Button } from "@/components/ui/button"
 import { TableRow, TableCell } from "@/components/ui/table"
 import { toast } from "@/lib/toast"
@@ -42,8 +44,8 @@ function lockStatus(lockUntil: number): { label: string; variant: "default" | "s
 function formatLockUntil(lockUntil: number): string {
   if (!lockUntil || lockUntil <= 0) return "—"
   const d = new Date(lockUntil)
-  if (d.getTime() <= Date.now()) return `Expirado · ${d.toLocaleString()}`
-  return d.toLocaleString()
+  if (d.getTime() <= Date.now()) return `Expirado · ${formatDateTime(d)}`
+  return formatDateTime(d)
 }
 
 export function RateLimitList({ rows, total }: RateLimitListProps) {
@@ -77,6 +79,7 @@ export function RateLimitList({ rows, total }: RateLimitListProps) {
           </Button>
         </form>
       </div>
+      <DesktopOnlyTableNotice />
       <DataTable
         columns={COLUMNS}
         rows={dataRows}
@@ -98,7 +101,7 @@ export function RateLimitList({ rows, total }: RateLimitListProps) {
                 </TableCell>
                 <TableCell className="text-xs text-[var(--color-text-muted)]">
                   {formatLockUntil(r.lockUntil)}
-                  <div>{r.updatedAt ? new Date(r.updatedAt).toLocaleString() : "—"}</div>
+                  <div>{r.updatedAt ? formatDateTime(r.updatedAt) : "—"}</div>
                 </TableCell>
                 <TableCell>
                   <form action={clearAction}>

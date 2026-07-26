@@ -70,4 +70,9 @@ describe("stock alerts", () => {
     expect(typeof count).toBe("number")
     expect(count).toBeGreaterThanOrEqual(1)
   })
+
+  it("scopes critical counts to the supplied worksites", async () => {
+    await expect(getCriticalStockAlertCount([worksiteId])).resolves.toBe(1)
+    await expect(getCriticalStockAlertCount([])).resolves.toBe(0)
+  })
 })

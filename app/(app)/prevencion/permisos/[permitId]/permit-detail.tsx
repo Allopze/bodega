@@ -2,6 +2,7 @@
 
 import * as React from "react"
 import { Badge } from "@/components/ui/badge"
+import { DatePicker } from "@/components/ui/date-picker"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -832,7 +833,7 @@ function AddMeasurementDialog({ permitId }: { permitId: string }) {
           <div className="grid gap-3 md:grid-cols-3">
             <Field label="Valor"><Input name="value" type="number" step="any" required /></Field>
             <Field label="Unidad"><Input name="unit" required maxLength={40} placeholder="%" /></Field>
-            <Field label="Fecha de calibración" hint="Opcional."><Input name="calibrationDate" type="date" /></Field>
+            <Field label="Fecha de calibración" hint="Opcional."><DatePicker name="calibrationDate" /></Field>
           </div>
           <div className="grid gap-3 md:grid-cols-2">
             <Field label="Mínimo aceptable"><Input name="acceptableMin" type="number" step="any" /></Field>

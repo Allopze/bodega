@@ -6,7 +6,7 @@ import {
   workers, deliveries, deliveryItems,
   products,
 } from "@/db/schema"
-import { requirePermission } from "@/lib/auth/can"
+import { can, requirePermission } from "@/lib/auth/can"
 import { resolveWorksiteScope, worksiteScopeSql } from "@/lib/auth/scope"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
@@ -68,8 +68,14 @@ export default async function WorkerEppTraceabilityPage({
     scope: resolveWorksiteScope(session),
     permissions: session.user.permissions,
   }
-  const allGaps = await listEppCoverageGaps(access)
-  const workerGaps = allGaps.filter((g) => g.workerId === workerId)
+  // La página se abre con `traceability:view`, pero `listEppCoverageGaps` exige
+  // `prevention:epp:view` y LANZA si falta — así que un rol con trazabilidad y
+  // sin prevención-EPP tumbaba la página entera con "Algo salió mal". El
+  // dashboard ya guardaba esta misma llamada; aquí faltaba.
+  const canViewEppGaps = can(session, "prevention:epp:view")
+  const workerGaps = canViewEppGaps
+    ? (await listEppCoverageGaps(access)).filter((g) => g.workerId === workerId)
+    : []
 
   return (
     <PageContainer>
@@ -128,7 +134,13 @@ export default async function WorkerEppTraceabilityPage({
             )}
             <span>Estado de Cobertura EPP</span>
           </div>
-          {workerGaps.length === 0 ? (
+          {!canViewEppGaps ? (
+            /* Sin el permiso no se puede afirmar que cumple: decirlo es más
+               honesto que mostrar un visto bueno que no se ha verificado. */
+            <p className="text-xs text-[var(--color-text-subtle)]">
+              Requiere permiso de EPP preventivo para ver el estado de cobertura.
+            </p>
+          ) : workerGaps.length === 0 ? (
             <p className="text-xs text-[var(--color-success)] font-medium">Cumple con todos los requisitos EPP vigentes.</p>
           ) : (
             <div className="space-y-1">

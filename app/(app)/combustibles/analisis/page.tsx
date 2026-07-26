@@ -148,9 +148,9 @@ export default async function EquipmentPerformancePage({ searchParams }: { searc
         )}
         <div className="overflow-x-auto border border-(--color-border)">
           <table className="w-full min-w-[1200px] text-sm">
-            <thead className="bg-(--color-surface-2) text-left text-xs text-(--color-text-muted)">
+            <thead className="bg-(--color-surface-2) text-left th-type">
               <tr>
-                <th className="p-3">{AGGREGATIONS.find((a) => a.value === aggregateBy)?.label}</th>
+                <th scope="col" className="p-3">{AGGREGATIONS.find((a) => a.value === aggregateBy)?.label}</th>
                 <th>Unidad</th>
                 <th>Muestra</th>
                 <th>Promedio</th>

@@ -23,7 +23,9 @@ export function Switch({ checked, onCheckedChange, disabled, id, label }: Switch
         "relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full transition-colors duration-[var(--duration-fast)] ease-out",
         checked
           ? "bg-[var(--color-primary)]"
-          : "bg-[var(--color-border-strong)]",
+          // WCAG 1.4.11: el track apagado es el único identificador del control.
+          // --color-border-strong rendía 1.59:1; border-control rinde 3.11:1.
+          : "bg-[var(--color-border-control)]",
         disabled && "cursor-not-allowed opacity-50",
       )}
     >

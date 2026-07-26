@@ -40,7 +40,7 @@ export function SupplierList({ suppliers }: { suppliers: SupplierRow[] }) {
             <article className="rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] p-4">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <h2 className="text-sm font-medium text-[var(--color-text)] truncate">{s.name}</h2>
+                  <h2 title={s.name} className="text-sm font-medium text-[var(--color-text)] truncate">{s.name}</h2>
                   <p className="mt-0.5 font-mono text-xs text-[var(--color-text-subtle)]">{s.rut ?? "—"}</p>
                 </div>
                 <Badge variant={s.isActive ? "success" : "default"} dot>

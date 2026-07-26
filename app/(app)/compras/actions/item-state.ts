@@ -1,6 +1,5 @@
 "use server"
 
-import { revalidatePath } from "next/cache"
 import { db } from "@/db"
 import { purchaseOrderItems, purchaseRequestItems, purchaseRequests } from "@/db/schema"
 import { eq } from "drizzle-orm"
@@ -10,6 +9,7 @@ import { logger } from "@/lib/logger"
 import type { ActionState } from "@/lib/validation/operations"
 import { dbErrMsg } from "./helpers"
 import { REVALIDATE } from "./revalidate"
+import { revalidateOperationalViews } from "@/lib/services/operational-cache"
 
 // ── Postpone item ─────────────────────────────────────────────────────────────
 
@@ -60,7 +60,7 @@ export async function postponeItemAction(
     await postponeItem(itemId, session.user.id, reason, {
       userEmail: session.user.email ?? undefined,
     })
-    revalidatePath(REVALIDATE)
+    revalidateOperationalViews([REVALIDATE])
     return { ok: true, message: "Ítem postergado" }
   } catch (e) {
     logger.error("[postponeItemAction]", e)
@@ -107,9 +107,7 @@ export async function resumeItemAction(
     await markItemPendingPurchase(itemId, session.user.id, {
       userEmail: session.user.email ?? undefined,
     })
-    revalidatePath(REVALIDATE)
-    revalidatePath("/compras/nueva")
-    revalidatePath("/trazabilidad")
+    revalidateOperationalViews([REVALIDATE, "/compras/nueva", "/trazabilidad"])
     return { ok: true, message: "Ítem reanudado para compra" }
   } catch (e) {
     logger.error("[resumeItemAction]", e)

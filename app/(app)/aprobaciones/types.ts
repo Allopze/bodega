@@ -2,6 +2,7 @@
 
 import type { FilterOption } from "@/components/adquisiciones/list-filters"
 import { URGENCY_OPTIONS as CANONICAL_URGENCY_OPTIONS, URGENCY_LABELS } from "@/lib/urgency-labels"
+import type { OperationalWorkItem } from "@/lib/services/operational-work-queue"
 
 export const URGENCY_OPTIONS: FilterOption[] = CANONICAL_URGENCY_OPTIONS.map((o) => ({ value: o.value, label: o.label }))
 
@@ -17,12 +18,6 @@ export const REQUEST_TYPE_VARIANTS: Record<string, "info" | "success" | "warning
 }
 
 export const URGENCY_LABEL: Record<string, string> = URGENCY_LABELS
-
-export const URGENCY_CLASS: Record<string, string> = {
-  normal:   "text-[var(--color-text-muted)]",
-  high:     "text-[var(--color-signal-ink)] font-medium",
-  critical: "text-[var(--color-danger)] font-semibold",
-}
 
 export interface ApprovalAttribute {
   attributeName: string
@@ -42,12 +37,15 @@ export interface ApprovalItem {
   attributes:            ApprovalAttribute[]
   suggestedSupplierName?: string | null
   supplierHint?:         string | null
+  /** Proyección de la misma etapa para asignarla sin perder contexto. */
+  operationalItem?:      OperationalWorkItem
 }
 
 export interface ApprovalRequest {
   id:              string
   code:            string
   requestType:     string
+  worksiteId:      string
   worksiteName:    string
   requesterName:   string
   requestUrgency:  string

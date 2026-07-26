@@ -1,6 +1,5 @@
 "use server"
 
-import { revalidatePath } from "next/cache"
 import { guardPermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { parseZ } from "@/lib/actions/parse-z"
@@ -15,12 +14,12 @@ import {
   updateCapaAction,
   type CapaStatus,
 } from "@/lib/services/prevention-capa"
+import { revalidateOperationalViews } from "@/lib/services/operational-cache"
 
 const REVALIDATE = "/prevencion/capa"
 
 function refresh(actionId: string) {
-  revalidatePath(REVALIDATE)
-  revalidatePath(`${REVALIDATE}/${actionId}`)
+  revalidateOperationalViews([REVALIDATE, `${REVALIDATE}/${actionId}`])
 }
 
 function fail(error: unknown, fallback: string): ActionState {
@@ -161,4 +160,3 @@ export async function reconcileCapaActionAction(input: {
     return fail(error, "No se pudo conciliar la CAPA")
   }
 }
-

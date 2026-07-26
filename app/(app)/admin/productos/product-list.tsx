@@ -374,7 +374,7 @@ export function ProductList({ products, categories, allSuppliers, units, templat
               type="checkbox"
               checked={allSelected}
               onChange={toggleSelectAll}
-              className="h-4 w-4 rounded border-[var(--color-border)] text-[var(--color-primary)] focus:ring-[var(--color-primary)]"
+              className="h-4 w-4 rounded border-[var(--color-border-control)] text-[var(--color-primary)] focus:ring-[var(--color-primary)]"
               aria-label="Seleccionar o deseleccionar todos"
             />
             {allSelected
@@ -484,7 +484,7 @@ export function ProductList({ products, categories, allSuppliers, units, templat
               return (
                 <div key={batch.id} className="group flex items-center justify-between w-full gap-2 px-4 py-3 text-sm rounded-[var(--radius-md)] bg-[var(--color-surface-2)] hover:bg-[var(--color-primary-tint)] transition-colors duration-[var(--duration-fast)]">
                   <div className="min-w-0 flex-1">
-                    <p className="text-[var(--color-text)] truncate font-medium">{batch.fileName}</p>
+                    <p title={batch.fileName} className="text-[var(--color-text)] truncate font-medium">{batch.fileName}</p>
                     <div className="mt-1 flex items-center gap-2 text-xs text-[var(--color-text-muted)]">
                       <Badge variant={statusInfo.variant} size="sm">{statusInfo.label}</Badge>
                       {batch.rowCount != null && <span>{batch.rowCount} filas</span>}
@@ -525,7 +525,7 @@ export function ProductList({ products, categories, allSuppliers, units, templat
                 onClick={() => openEditCat(c)}
                 className="group flex items-center justify-between w-full text-left gap-2 px-4 py-3 text-sm rounded-[var(--radius-md)] bg-[var(--color-surface-2)] hover:bg-[var(--color-primary-tint)] hover:text-[var(--color-primary-ink)] transition-colors duration-[var(--duration-fast)]"
               >
-                <span className="text-[var(--color-text)] truncate">{c.name}</span>
+                <span title={c.name} className="text-[var(--color-text)] truncate">{c.name}</span>
                 <div className="flex items-center gap-1.5 shrink-0">
                   {c.isEpp && <Badge variant="info" size="sm">EPP</Badge>}
                   <PencilSimple size={14} className="text-[var(--color-text-subtle)] group-hover:text-[var(--color-primary)] transition-colors" />

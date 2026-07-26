@@ -7,6 +7,7 @@ import { useSafeShellHeader } from "@/components/layout/header-context"
 import { Badge } from "@/components/ui/badge"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { useUrlFilters } from "@/lib/hooks/use-url-filters"
 import {
   COMMITTEE_MEETING_STATUS_LABELS,
   COMMITTEE_STATUS_LABELS,
@@ -67,7 +68,8 @@ interface Props {
 
 export function CommitteeList({ committees, meetings, reviews, worksites, assignees, canManage, canReview }: Props) {
   const { searchQuery } = useSafeShellHeader()
-  const [tab, setTab] = React.useState<"committees" | "meetings" | "reviews">("committees")
+  const { getFilter, setFilter } = useUrlFilters()
+  const tab = (getFilter("tab") || "committees") as "committees" | "meetings" | "reviews"
 
   const query = searchQuery.trim().toLocaleLowerCase("es-CL")
   const filteredCommittees = committees.filter((item) =>
@@ -98,15 +100,15 @@ export function CommitteeList({ committees, meetings, reviews, worksites, assign
 
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex gap-1 rounded-md border border-[var(--color-border)] p-1 w-fit">
-          <button type="button" onClick={() => setTab("committees")} aria-pressed={tab === "committees"}
+          <button type="button" onClick={() => setFilter("tab", "committees")} aria-pressed={tab === "committees"}
             className="rounded px-3 py-1 text-sm aria-pressed:bg-[var(--color-primary-tint)]">
             Comités ({committees.length})
           </button>
-          <button type="button" onClick={() => setTab("meetings")} aria-pressed={tab === "meetings"}
+          <button type="button" onClick={() => setFilter("tab", "meetings")} aria-pressed={tab === "meetings"}
             className="rounded px-3 py-1 text-sm aria-pressed:bg-[var(--color-primary-tint)]">
             Sesiones ({meetings.length})
           </button>
-          <button type="button" onClick={() => setTab("reviews")} aria-pressed={tab === "reviews"}
+          <button type="button" onClick={() => setFilter("tab", "reviews")} aria-pressed={tab === "reviews"}
             className="rounded px-3 py-1 text-sm aria-pressed:bg-[var(--color-primary-tint)]">
             Revisión por la dirección ({reviews.length})
           </button>

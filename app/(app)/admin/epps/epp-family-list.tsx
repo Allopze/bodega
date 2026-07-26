@@ -3,6 +3,7 @@
 import * as React from "react"
 import { DataTable } from "@/components/admin/data-table"
 import { Badge } from "@/components/ui/badge"
+import { DesktopOnlyTableNotice } from "@/components/ui/desktop-only-table"
 
 import type { ColumnDef } from "@/components/admin/data-table"
 
@@ -50,34 +51,37 @@ export function EppFamilyList({ families, eppTypes }: Props) {
   }))
 
   return (
-    <DataTable
-      columns={COLUMNS}
-      rows={rows}
-      searchKeys={["canonicalName", "brand", "model", "certification"]}
-      renderRow={(row) => (
-        <tr key={row.id} className="border-b border-(--color-border) hover:bg-(--color-surface-2) transition-colors">
-          <td className="px-4 py-3">
-            <span className="text-sm font-medium text-(--color-text)">{row.canonicalName}</span>
-            <span className="ml-2 inline-flex flex-wrap gap-1 align-middle">
-              {row.variants.slice(0, 4).map((v) => (
-                <Badge key={v.id} variant="default" size="sm">
-                  {v.sku}
-                </Badge>
-              ))}
-              {row.variants.length > 4 && (
-                <Badge variant="default" size="sm">+{row.variants.length - 4}</Badge>
-              )}
-            </span>
-          </td>
-          <td className="px-4 py-3">
-            <Badge variant="info" size="sm">{row.eppTypeLabel}</Badge>
-          </td>
-          <td className="px-4 py-3 text-sm text-(--color-text)">{row.brand}</td>
-          <td className="px-4 py-3 text-sm text-(--color-text)">{row.model}</td>
-          <td className="px-4 py-3 text-sm text-(--color-text-muted)">{row.certification}</td>
-          <td className="px-4 py-3 text-sm tabular-nums text-(--color-text-muted)">{row.totalVariants}</td>
-        </tr>
-      )}
-    />
+    <>
+  <DesktopOnlyTableNotice />
+      <DataTable
+        columns={COLUMNS}
+        rows={rows}
+        searchKeys={["canonicalName", "brand", "model", "certification"]}
+        renderRow={(row) => (
+          <tr key={row.id} className="border-b border-(--color-border) hover:bg-(--color-surface-2) transition-colors">
+            <td className="px-4 py-3">
+              <span className="text-sm font-medium text-(--color-text)">{row.canonicalName}</span>
+              <span className="ml-2 inline-flex flex-wrap gap-1 align-middle">
+                {row.variants.slice(0, 4).map((v) => (
+                  <Badge key={v.id} variant="default" size="sm">
+                    {v.sku}
+                  </Badge>
+                ))}
+                {row.variants.length > 4 && (
+                  <Badge variant="default" size="sm">+{row.variants.length - 4}</Badge>
+                )}
+              </span>
+            </td>
+            <td className="px-4 py-3">
+              <Badge variant="info" size="sm">{row.eppTypeLabel}</Badge>
+            </td>
+            <td className="px-4 py-3 text-sm text-(--color-text)">{row.brand}</td>
+            <td className="px-4 py-3 text-sm text-(--color-text)">{row.model}</td>
+            <td className="px-4 py-3 text-sm text-(--color-text-muted)">{row.certification}</td>
+            <td className="px-4 py-3 text-sm tabular-nums text-(--color-text-muted)">{row.totalVariants}</td>
+          </tr>
+        )}
+      />
+    </>
   )
 }

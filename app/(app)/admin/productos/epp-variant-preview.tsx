@@ -29,13 +29,13 @@ export function VariantPreview({ variants, onRemove, onMarkDirty }: VariantPrevi
           <table className="w-full text-xs">
             <thead>
               <tr className="bg-[var(--color-surface-2)]">
-                <th className="sticky top-0 z-10 bg-[var(--color-surface-2)] px-3 py-2.5 text-left font-medium text-[var(--color-text-subtle)] w-8">#</th>
-                <th className="sticky top-0 z-10 bg-[var(--color-surface-2)] px-3 py-2.5 text-left font-medium text-[var(--color-text-subtle)]">Nombre</th>
-                <th className="sticky top-0 z-10 bg-[var(--color-surface-2)] px-3 py-2.5 text-left font-medium text-[var(--color-text-subtle)] w-24">SKU</th>
+                <th scope="col" className="sticky top-0 z-10 bg-[var(--color-surface-2)] px-3 py-2.5 text-left th-type w-8">#</th>
+                <th scope="col" className="sticky top-0 z-10 bg-[var(--color-surface-2)] px-3 py-2.5 text-left th-type">Nombre</th>
+                <th scope="col" className="sticky top-0 z-10 bg-[var(--color-surface-2)] px-3 py-2.5 text-left th-type w-24">SKU</th>
                 {variants[0]!.attributes.map((attr) => (
-                  <th key={attr.name} className="sticky top-0 z-10 bg-[var(--color-surface-2)] px-3 py-2.5 text-left font-medium text-[var(--color-text-subtle)]">{attr.name}</th>
+                  <th scope="col" key={attr.name} className="sticky top-0 z-10 bg-[var(--color-surface-2)] px-3 py-2.5 text-left th-type">{attr.name}</th>
                 ))}
-                <th className="sticky top-0 z-10 bg-[var(--color-surface-2)] px-2 py-2.5 text-center font-medium text-[var(--color-text-subtle)] w-10">Acción</th>
+                <th scope="col" className="sticky top-0 z-10 bg-[var(--color-surface-2)] px-2 py-2.5 text-center th-type w-10">Acción</th>
               </tr>
             </thead>
             <tbody>

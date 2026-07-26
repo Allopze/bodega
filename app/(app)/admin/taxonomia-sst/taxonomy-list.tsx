@@ -12,6 +12,7 @@ import {
 } from "@phosphor-icons/react"
 import { DataTable } from "@/components/admin/data-table"
 import { Badge } from "@/components/ui/badge"
+import { DesktopOnlyTableNotice } from "@/components/ui/desktop-only-table"
 import { Button } from "@/components/ui/button"
 import { TableRow, TableCell } from "@/components/ui/table"
 import { toast } from "@/lib/toast"
@@ -115,7 +116,11 @@ export function TaxonomyView({ categories, activeSlug, types }: TaxonomyViewProp
             <Link href="/admin/taxonomia-sst" className="underline">cambiar</Link>)
           </p>
         )}
+        <DesktopOnlyTableNotice />
         <DataTable
+        enableColumnToggle
+        viewKey="tax"
+        stickyFirstColumn
           columns={CATEGORY_COLUMNS}
           rows={catRows}
           searchKeys={["name", "description"]}

@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { useSearchParams, useRouter } from "next/navigation"
 import { CaretUp, CaretDown, CaretUpDown, GearSix } from "@phosphor-icons/react"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
@@ -19,6 +20,45 @@ import { useSafeShellHeader } from "@/components/layout/header-context"
 import type { DataTableProps, SortDir } from "./data-table.types"
 
 export type { ColumnDef, DataTableProps } from "./data-table.types"
+
+/* ── E-1 · Densidad ───────────────────────────────────────────────────────────
+ * Preferencia del usuario, compartida por todas las tablas: quien opera en
+ * compacto lo quiere en todas. Se persiste en localStorage y se lee con
+ * useSyncExternalStore para que dos tablas en la misma pantalla no se
+ * desincronicen. `visual-design/density.md`: cómodo es el default; compacto
+ * existe para operadores expertos en monitores grandes.
+ */
+const DENSITY_KEY = "table-density"
+const DENSITY_EVENT = "table-density-change"
+type Density = "comfortable" | "compact"
+
+function defaultColumnKeys<T extends { key: string; defaultVisible?: boolean }>(columns: T[]) {
+  return columns.reduce<string[]>((keys, column) => {
+    if (column.defaultVisible !== false) keys.push(column.key)
+    return keys
+  }, [])
+}
+
+function getDensitySnapshot(): Density {
+  if (typeof window === "undefined") return "comfortable"
+  return localStorage.getItem(DENSITY_KEY) === "compact" ? "compact" : "comfortable"
+}
+function subscribeDensity(onChange: () => void) {
+  window.addEventListener("storage", onChange)
+  window.addEventListener(DENSITY_EVENT, onChange)
+  return () => {
+    window.removeEventListener("storage", onChange)
+    window.removeEventListener(DENSITY_EVENT, onChange)
+  }
+}
+function setDensity(value: Density) {
+  localStorage.setItem(DENSITY_KEY, value)
+  window.dispatchEvent(new Event(DENSITY_EVENT))
+}
+
+/** Umbral desde el que la densidad cambia algo perceptible. Por debajo, el
+ *  control sería adorno: la tabla entra completa en pantalla igual. */
+const DENSITY_MIN_ROWS = 8
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
@@ -41,11 +81,34 @@ const DataTableInner = <T extends Record<string, unknown>>({
   loading = false,
   disableInternalSearch = false,
   enableColumnToggle = false,
+  stickyFirstColumn = false,
+  viewKey,
 }: DataTableProps<T>) => {
   const { searchQuery } = useSafeShellHeader()
+  const density = React.useSyncExternalStore(subscribeDensity, getDensitySnapshot, () => "comfortable" as Density)
+  const searchParams = useSearchParams()
+  const router = useRouter()
 
-  // Column visibility state
+  // ── E-2 · Vistas guardadas ────────────────────────────────────────────────
+  // Cuando viewKey está definido, la visibilidad de columnas y el sort se
+  // persisten en URL search params, sobreviviendo la navegación y siendo
+  // compartibles via URL. Params: ${viewKey}_cols, ${viewKey}_sort, ${viewKey}_dir.
+  const setViewParam = React.useCallback((key: string, value: string | null) => {
+    const params = new URLSearchParams(searchParams.toString())
+    if (value === null) params.delete(key)
+    else params.set(key, value)
+    router.replace(`?${params.toString()}`, { scroll: false })
+  }, [searchParams, router])
+
+  // Column visibility state — from URL or defaults
   const [visibleKeys, setVisibleKeys] = React.useState<Set<string>>(() => {
+    if (viewKey) {
+      const colsParam = searchParams.get(`${viewKey}_cols`)
+      if (colsParam) {
+        const keys = colsParam.split(",").filter(Boolean)
+        if (keys.length > 0) return new Set(keys)
+      }
+    }
     return new Set(
       columns
         .filter((col) => col.defaultVisible !== false)
@@ -67,15 +130,35 @@ const DataTableInner = <T extends Record<string, unknown>>({
     })
   }
 
+  // Persist column visibility to URL when viewKey is set
+  React.useEffect(() => {
+    if (!viewKey) return
+    const allDefault = defaultColumnKeys(columns)
+    const current = Array.from(visibleKeys)
+    const isDefault = current.length === allDefault.length && allDefault.every((k) => visibleKeys.has(k))
+    setViewParam(`${viewKey}_cols`, isDefault ? null : current.join(","))
+  }, [visibleKeys, viewKey, columns, setViewParam])
+
   // If explicit search prop is given, use it. Otherwise, fall back to header context search.
   // When server-side filtering is in effect, the in-memory filter is a no-op.
   const currentSearch = disableInternalSearch
     ? ""
     : search !== undefined ? search : searchQuery
   const hasExplicitSearch = !disableInternalSearch && search !== undefined
-  const [sortKey, setSortKey] = React.useState<string | null>(null)
-  const [sortDir, setSortDir] = React.useState<SortDir>(null)
+  const [sortKey, setSortKey] = React.useState<string | null>(() => viewKey ? searchParams.get(`${viewKey}_sort`) : null)
+  const [sortDir, setSortDir] = React.useState<SortDir>(() => {
+    if (!viewKey) return null
+    const d = searchParams.get(`${viewKey}_dir`)
+    return d === "asc" || d === "desc" ? d : null
+  })
   const [page,    setPage]    = React.useState(1)
+
+  // Persist sort state to URL when viewKey is set
+  React.useEffect(() => {
+    if (!viewKey) return
+    setViewParam(`${viewKey}_sort`, sortKey)
+    setViewParam(`${viewKey}_dir`, sortDir)
+  }, [sortKey, sortDir, viewKey, setViewParam])
 
   // ── Filter ──────────────────────────────────────────────────────────────────
   const filtered = React.useMemo(() => {
@@ -107,6 +190,8 @@ const DataTableInner = <T extends Record<string, unknown>>({
 
   // ── Paginate ─────────────────────────────────────────────────────────────────
   const totalFiltered = sorted.length
+  // Sólo se ofrece donde cambia algo: en una tabla de 3 filas es adorno.
+  const showDensityToggle = totalFiltered >= DENSITY_MIN_ROWS
   const paginated = React.useMemo(
     () => sorted.slice((page - 1) * pageSize, page * pageSize),
     [sorted, page, pageSize],
@@ -129,7 +214,7 @@ const DataTableInner = <T extends Record<string, unknown>>({
   return (
     <div className={cn("flex flex-col", className)}>
       {/* Toolbar — shown when there's an explicit search input, actions, or column toggle */}
-      {(hasExplicitSearch || actions || enableColumnToggle) && (
+      {(hasExplicitSearch || actions || enableColumnToggle || showDensityToggle) && (
         <div className="flex flex-col gap-3 mb-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-2">
             {hasExplicitSearch && (
@@ -141,14 +226,38 @@ const DataTableInner = <T extends Record<string, unknown>>({
                   onSearchChange?.(e.target.value)
                   setPage(1)
                 }}
-                className="h-8 text-xs sm:max-w-xs"
+                className="h-11 text-xs sm:h-8 sm:max-w-xs"
                 aria-label="Buscar en la tabla"
               />
+            )}
+            {showDensityToggle && (
+              <div
+                role="group"
+                aria-label="Densidad de la tabla"
+                className="hidden sm:inline-flex rounded-(--radius) border border-[var(--color-border-control)] bg-[var(--color-surface)] p-0.5"
+              >
+                {([["comfortable", "Cómodo"], ["compact", "Compacto"]] as const).map(([value, label]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setDensity(value)}
+                    aria-pressed={density === value}
+                    className={cn(
+                      "rounded-[calc(var(--radius)-2px)] px-2 py-1 text-xs font-medium transition-colors duration-(--duration-fast)",
+                      density === value
+                        ? "bg-[var(--color-surface-2)] text-[var(--color-text)]"
+                        : "text-[var(--color-text-subtle)] hover:text-[var(--color-text)]",
+                    )}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
             )}
             {enableColumnToggle && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button type="button" variant="ghost" size="sm" className="h-8 text-xs">
+                  <Button type="button" variant="ghost" size="sm" className="h-11 text-xs sm:h-8">
                     <GearSix size={14} className="mr-1" />
                     Columnas
                   </Button>
@@ -165,6 +274,19 @@ const DataTableInner = <T extends Record<string, unknown>>({
                       />
                     ))}
                   </div>
+                  {viewKey && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setVisibleKeys(new Set(defaultColumnKeys(columns)))
+                        setSortKey(null)
+                        setSortDir(null)
+                      }}
+                      className="mt-2 w-full rounded-[var(--radius)] px-2 py-1.5 text-xs text-[var(--color-text-subtle)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)] transition-colors"
+                    >
+                      Restablecer vista
+                    </button>
+                  )}
                 </DropdownMenuContent>
               </DropdownMenu>
             )}
@@ -174,7 +296,7 @@ const DataTableInner = <T extends Record<string, unknown>>({
       )}
 
       {/* Table */}
-      <TableRoot className={renderMobileCard ? "hidden md:block" : undefined}>
+      <TableRoot data-density={density} data-sticky-col={stickyFirstColumn || undefined} className={renderMobileCard ? "hidden md:block" : undefined}>
         <Table className={tableClassName}>
           <TableHeader>
             <TableRow>
@@ -190,7 +312,7 @@ const DataTableInner = <T extends Record<string, unknown>>({
                       type="button"
                       onClick={() => toggleSort(col.key)}
                       className={cn(
-                        "inline-flex items-center gap-1",
+                        "inline-flex min-h-6 min-w-6 items-center gap-1",
                         "text-eyebrow hover:text-[var(--color-text)]",
                         "transition-[color,transform] duration-[var(--duration-fast)] ease-[var(--ease-out)]",
                         "select-none",

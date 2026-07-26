@@ -2,6 +2,7 @@
 
 import * as React from "react"
 import { Badge } from "@/components/ui/badge"
+import { DatePicker } from "@/components/ui/date-picker"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
@@ -223,7 +224,7 @@ function AddMemberDialog({ groupId, eligibleWorkers, existingNames }: {
               <Field label="Persona">
                 <Select value={workerId} onValueChange={setWorkerId}><SelectTrigger><SelectValue placeholder="Selecciona persona" /></SelectTrigger><SelectContent>{available.map((worker) => <SelectItem key={worker.id} value={worker.id}>{worker.name}{worker.position ? ` · ${worker.position}` : ""}</SelectItem>)}</SelectContent></Select><input type="hidden" name="workerId" value={workerId} />
               </Field>
-              <Field label="Incorporado el"><Input name="joinedOn" type="date" required defaultValue={defaultValue} /></Field>
+              <Field label="Incorporado el" required><DatePicker name="joinedOn" defaultValue={defaultValue} /></Field>
             </>
           )}
           {operation.message && <p role="status" className="text-sm">{operation.message}</p>}
@@ -279,7 +280,7 @@ function AddMeasurementDialog({ groupId, agent }: { groupId: string; agent: Agen
             <DialogDescription>El límite y el nivel de acción vigentes quedan congelados en esta fila.</DialogDescription>
           </DialogHeader>
           <div className="grid gap-3 md:grid-cols-2">
-            <Field label="Fecha"><Input name="measuredOn" type="date" required defaultValue={defaultValue} /></Field>
+            <Field label="Fecha" required><DatePicker name="measuredOn" defaultValue={defaultValue} /></Field>
             <Field label={`Valor (${agent.unit})`}>
               <Input name="value" type="number" step="any" min={0} required value={value} onChange={(event) => setValue(event.target.value)} />
             </Field>
@@ -296,7 +297,7 @@ function AddMeasurementDialog({ groupId, agent }: { groupId: string; agent: Agen
           </div>
           <div className="grid gap-3 md:grid-cols-2">
             <Field label="Laboratorio" hint="Opcional."><Input name="laboratoryName" maxLength={200} /></Field>
-            <Field label="Fecha de calibración" hint="Opcional."><Input name="calibrationDate" type="date" /></Field>
+            <Field label="Fecha de calibración" hint="Opcional."><DatePicker name="calibrationDate" /></Field>
           </div>
           <div className="grid gap-3 md:grid-cols-2">
             <Field label="Duración de muestra (min)" hint="Opcional."><Input name="sampleDurationMinutes" type="number" min={1} /></Field>

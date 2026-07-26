@@ -3,7 +3,7 @@
  * Provides a lightweight view of active requests, items, and orders.
  */
 
-import { and, desc, eq, inArray, sql } from "drizzle-orm"
+import { and, asc, desc, eq, inArray, sql } from "drizzle-orm"
 import { db } from "@/db"
 import {
   products,
@@ -39,8 +39,19 @@ const ACTIVE_ORDER_STATUSES_SNAPSHOT = [
   "partially_office_received", "office_received", "partially_received",
 ]
 const SNAPSHOT_LIMIT = 200
+// La cola transversal usa este límite sólo en servidor. Se mantiene acotado
+// para proteger las consultas, pero evita truncar una operación mediana antes
+// de aplicar filtros, prioridad y cursor global.
+const MAX_QUEUE_SOURCE_LIMIT = 5000
 
-export async function getWorkQueueSnapshot(session: Session): Promise<WorkQueueSnapshot> {
+/**
+ * Carga acotada de entidades activas para los consumidores operacionales.
+ * El dashboard conserva su lectura liviana por defecto; la cola transversal
+ * pide un límite mayor y pagina sólo después de aplicar permisos y prioridad
+ * en servidor.
+ */
+export async function getWorkQueueSnapshot(session: Session, requestedLimit = SNAPSHOT_LIMIT): Promise<WorkQueueSnapshot> {
+  const sourceLimit = Math.max(1, Math.min(requestedLimit, MAX_QUEUE_SOURCE_LIMIT))
   const isGlobal = isGlobalRole(session)
   const wsIds = visibleWorksiteIds(session)
   const requestWorksiteFilter = isGlobal ? undefined : (wsIds.length > 0 ? inArray(purchaseRequests.worksiteId, wsIds) : sql`false`)
@@ -51,7 +62,6 @@ export async function getWorkQueueSnapshot(session: Session): Promise<WorkQueueS
     requestRows,
     itemRows,
     orderRows,
-    stockRows,
   ] = await Promise.all([
     db
       .select({
@@ -62,6 +72,8 @@ export async function getWorkQueueSnapshot(session: Session): Promise<WorkQueueS
         requesterId:  purchaseRequests.requesterId,
         status:       purchaseRequests.status,
         urgency:      purchaseRequests.urgency,
+        requiredDate: purchaseRequests.requiredDate,
+        itemCount:    sql<number>`(SELECT COUNT(*)::int FROM ${purchaseRequestItems} WHERE ${purchaseRequestItems.requestId} = ${purchaseRequests.id})`,
         createdAt:    purchaseRequests.createdAt,
         submittedAt:  purchaseRequests.submittedAt,
       })
@@ -71,8 +83,14 @@ export async function getWorkQueueSnapshot(session: Session): Promise<WorkQueueS
         requestWorksiteFilter,
         inArray(purchaseRequests.status, ACTIVE_REQUEST_STATUSES_SNAPSHOT),
       ))
-      .orderBy(desc(purchaseRequests.createdAt))
-      .limit(SNAPSHOT_LIMIT),
+      // Si una fuente supera el límite defensivo, conservamos primero lo que
+      // requiere atención; no una porción arbitraria por fecha de creación.
+      .orderBy(
+        sql`CASE ${purchaseRequests.urgency} WHEN 'critical' THEN 0 WHEN 'high' THEN 1 ELSE 2 END`,
+        asc(purchaseRequests.requiredDate),
+        desc(purchaseRequests.createdAt),
+      )
+      .limit(sourceLimit),
 
     db
       .select({
@@ -87,6 +105,8 @@ export async function getWorkQueueSnapshot(session: Session): Promise<WorkQueueS
         productId:       purchaseRequestItems.productId,
         status:          purchaseRequestItems.status,
         urgency:         purchaseRequestItems.urgency,
+        requiredDate:    purchaseRequestItems.requiredDate,
+        requestRequiredDate: purchaseRequests.requiredDate,
         createdAt:       purchaseRequestItems.createdAt,
         quantity:        purchaseRequestItems.quantity,
         unitOfMeasure:   purchaseRequestItems.unitOfMeasure,
@@ -99,7 +119,12 @@ export async function getWorkQueueSnapshot(session: Session): Promise<WorkQueueS
         itemWorksiteFilter,
         inArray(purchaseRequestItems.status, ACTIVE_ITEM_STATUSES_SNAPSHOT),
       ))
-      .limit(SNAPSHOT_LIMIT),
+      .orderBy(
+        sql`CASE COALESCE(${purchaseRequestItems.urgency}, ${purchaseRequests.urgency}) WHEN 'critical' THEN 0 WHEN 'high' THEN 1 ELSE 2 END`,
+        asc(purchaseRequestItems.requiredDate),
+        desc(purchaseRequestItems.createdAt),
+      )
+      .limit(sourceLimit),
 
     db
       .select({
@@ -114,6 +139,7 @@ export async function getWorkQueueSnapshot(session: Session): Promise<WorkQueueS
         sentAt:       purchaseOrders.sentAt,
         totalAmount:  purchaseOrders.totalAmount,
         deliveryMode: purchaseOrders.deliveryMode,
+        estimatedDelivery: purchaseOrders.estimatedDelivery,
       })
       .from(purchaseOrders)
       .innerJoin(worksites, eq(purchaseOrders.worksiteId, worksites.id))
@@ -122,29 +148,42 @@ export async function getWorkQueueSnapshot(session: Session): Promise<WorkQueueS
         orderWorksiteFilter,
         inArray(purchaseOrders.status, ACTIVE_ORDER_STATUSES_SNAPSHOT),
       ))
-      .orderBy(desc(purchaseOrders.createdAt))
-      .limit(SNAPSHOT_LIMIT),
+      .orderBy(asc(purchaseOrders.estimatedDelivery), desc(purchaseOrders.createdAt))
+      .limit(sourceLimit),
 
-    db
-      .select({
-        productId: worksiteStock.productId,
-      })
-      .from(worksiteStock)
-      .where(sql`${worksiteStock.quantity} > 0`),
   ])
 
-  // Fetch item counts in bulk instead of per-row subquery
+  // Cargamos sólo el stock necesario para los ítems operacionales que ya
+  // pasaron el alcance de faena; consultar toda la bodega penalizaba la cola
+  // incluso cuando el usuario sólo tenía unos pocos pendientes.
   const orderIds = orderRows.map((r) => r.id)
-  const itemCountRows = orderIds.length > 0
-    ? await db
-        .select({
-          orderId: purchaseOrderItems.purchaseOrderId,
-          count: sql<number>`COUNT(*)::int`,
-        })
-        .from(purchaseOrderItems)
-        .where(inArray(purchaseOrderItems.purchaseOrderId, orderIds))
-        .groupBy(purchaseOrderItems.purchaseOrderId)
-    : []
+  const itemProductIds = [...new Set(itemRows.flatMap((item) => item.productId ? [item.productId] : []))]
+  const itemWorksiteIds = [...new Set(itemRows.map((item) => item.worksiteId))]
+  const [itemCountRows, stockRows] = await Promise.all([
+    orderIds.length > 0
+      ? db
+          .select({
+            orderId: purchaseOrderItems.purchaseOrderId,
+            count: sql<number>`COUNT(*)::int`,
+          })
+          .from(purchaseOrderItems)
+          .where(inArray(purchaseOrderItems.purchaseOrderId, orderIds))
+          .groupBy(purchaseOrderItems.purchaseOrderId)
+      : Promise.resolve([]),
+    itemProductIds.length > 0 && itemWorksiteIds.length > 0
+      ? db
+          .select({
+            productId: worksiteStock.productId,
+            worksiteId: worksiteStock.worksiteId,
+          })
+          .from(worksiteStock)
+          .where(and(
+            inArray(worksiteStock.productId, itemProductIds),
+            inArray(worksiteStock.worksiteId, itemWorksiteIds),
+            sql`${worksiteStock.quantity} > 0`,
+          ))
+      : Promise.resolve([]),
+  ])
   const itemCountByOrder = new Map(itemCountRows.map((r) => [r.orderId, r.count]))
 
   const itemStatusesByRequest = new Map<string, string[]>()
@@ -159,11 +198,13 @@ export async function getWorkQueueSnapshot(session: Session): Promise<WorkQueueS
     itemCountByRequest.set(item.requestId, (itemCountByRequest.get(item.requestId) ?? 0) + 1)
   }
 
-  const stockProductIds = new Set(stockRows.map((row) => row.productId))
+  // El stock habilita la entrega sólo en la misma faena del ítem. Un producto
+  // disponible en otra faena no puede convertir esta etapa en entregable.
+  const stockByWorksiteProduct = new Set(stockRows.map((row) => `${row.worksiteId}:${row.productId}`))
 
   const requests: WorkRequestRow[] = requestRows.map((request) => ({
     ...request,
-    itemCount:    itemCountByRequest.get(request.id) ?? 0,
+    itemCount:    request.itemCount ?? itemCountByRequest.get(request.id) ?? 0,
     itemStatuses: itemStatusesByRequest.get(request.id) ?? [],
   }))
 
@@ -177,10 +218,11 @@ export async function getWorkQueueSnapshot(session: Session): Promise<WorkQueueS
     productName:   item.productName ?? item.productNameFree ?? "Ítem solicitado",
     status:        item.status,
     urgency:       item.urgency,
+    requiredDate:  item.requiredDate ?? item.requestRequiredDate,
     createdAt:     item.createdAt,
     quantity:      item.quantity,
     unitOfMeasure: item.unitOfMeasure,
-    hasStock:      item.productId ? stockProductIds.has(item.productId) : false,
+    hasStock:      item.productId ? stockByWorksiteProduct.has(`${item.worksiteId}:${item.productId}`) : false,
   }))
 
   const orders: WorkOrderRow[] = orderRows.map((order) => ({

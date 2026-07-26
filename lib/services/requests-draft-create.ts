@@ -29,6 +29,7 @@ export async function createRequestWithDiff(
     requiredDate: data.requiredDate,
     status:       "draft",
     notes:        data.notes || null,
+    deliveryMode: data.deliveryMode ?? "via_oficina",
   })
 
   await recordAudit({

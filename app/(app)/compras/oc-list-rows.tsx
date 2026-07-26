@@ -11,7 +11,9 @@ import { SubmitButton } from "@/components/admin/submit-button"
 import { TableRow, TableCell } from "@/components/ui/table"
 import { INITIAL_STATE } from "@/components/admin/form-state"
 import { formatCLP, formatDate } from "@/lib/utils"
-import { issueOrderAction, sendOrderAction, deleteOrderAction, resumeItemAction } from "./actions"
+import { issueOrderAction, sendOrderAction } from "./actions/order-status"
+import { deleteOrderAction } from "./actions/order-cancel"
+import { resumeItemAction } from "./actions/item-state"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { DELETABLE_ORDER_STATUSES } from "@/lib/services/purchasing.constants"
 import type { ActionState } from "@/lib/validation/operations"
@@ -175,7 +177,7 @@ export function PostponedItemRow({ item }: { item: PendingItem }) {
           </Link>
           <span className="text-xs text-[var(--color-text-subtle)]">{item.worksiteName}</span>
         </div>
-        <p className="mt-1 truncate text-sm font-medium text-[var(--color-text)]">{item.productName}</p>
+        <p title={item.productName} className="mt-1 truncate text-sm font-medium text-[var(--color-text)]">{item.productName}</p>
         <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">
           {item.quantity} {item.unitOfMeasure}{item.notes ? ` · ${item.notes}` : ""}
         </p>
@@ -190,5 +192,43 @@ export function PostponedItemRow({ item }: { item: PendingItem }) {
         />
       </form>
     </div>
+  )
+}
+
+/**
+ * A-1: variante móvil de `OcTableRow`. En 390px la tabla mostraba 3 de sus 8
+ * columnas, y ni el total ni el estado eran visibles — no se puede reconocer
+ * una OC sin ellos (Heurística #6). La tarjeta prioriza código, proveedor,
+ * estado y total; las acciones de emisión/envío se resuelven en el detalle.
+ */
+export function OcMobileCard({ row }: { row: OcRow }) {
+  return (
+    <Link
+      href={`/compras/${row.id}`}
+      className="block rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition-colors duration-[var(--duration-fast)] hover:bg-[var(--color-primary-tint)]"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="font-mono text-sm font-semibold text-[var(--color-text)]">{row.code}</p>
+          <p title={row.supplierName} className="mt-0.5 truncate text-xs text-[var(--color-text-muted)]">{row.supplierName}</p>
+        </div>
+        <StateBadge state={row.status} entity="oc" size="sm" />
+      </div>
+      <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
+        <dt className="text-[var(--color-text-subtle)]">Total</dt>
+        <dd className="text-right font-mono font-semibold tabular-nums text-[var(--color-text)]">{formatCLP(row.totalAmount)}</dd>
+        <dt className="text-[var(--color-text-subtle)]">Ítems</dt>
+        <dd className="text-right font-mono tabular-nums text-[var(--color-text)]">{row.itemCount}</dd>
+        <dt className="text-[var(--color-text-subtle)]">Faena</dt>
+        <dd className="truncate text-right text-[var(--color-text)]">{row.worksiteName}</dd>
+        <dt className="text-[var(--color-text-subtle)]">Fecha</dt>
+        <dd className="text-right font-mono tabular-nums text-[var(--color-text)]">{formatDate(row.createdAt)}</dd>
+      </dl>
+      {row.invoiceCount > 0 && (
+        <p className="mt-2 text-xs text-[var(--color-text-muted)]">
+          {row.invoiceCount} factura{row.invoiceCount === 1 ? "" : "s"} asociada{row.invoiceCount === 1 ? "" : "s"}
+        </p>
+      )}
+    </Link>
   )
 }

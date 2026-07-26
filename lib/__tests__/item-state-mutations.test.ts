@@ -109,6 +109,14 @@ describe("Item State Machine — DB integration", () => {
       const decision = await inMemoryDb.query.approvalDecisions
         .findFirst({ where: eq(schema.approvalDecisions.requestItemId, itemId) })
       expect(decision?.type).toBe("approve")
+      const [activity] = await inMemoryDb.select().from(schema.operationalActivityEvents)
+        .where(eq(schema.operationalActivityEvents.entityId, itemId))
+      expect(activity).toMatchObject({
+        eventType: "request_item.approved",
+        module: "solicitudes",
+        worksiteId,
+        actorUserId: userId,
+      })
     })
 
     it("allows modifiedQty override", async () => {

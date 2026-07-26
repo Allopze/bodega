@@ -16,6 +16,7 @@ import {
   pdtpExecutions,
 } from "@/db/schema"
 import { nanoid } from "@/lib/id"
+import { recordOperationalActivity } from "@/lib/services/operational-activity"
 import {
   getNonCompliantItems,
   completeExecutionChecklist,
@@ -233,6 +234,15 @@ export async function generateActionPlanFromChecklist(
         createdAt: now,
         updatedAt: now,
       })
+      await recordOperationalActivity({
+        eventType: "pdtp.action_created",
+        module: "pdtp",
+        entityType: "pdtp_action",
+        entityId: id,
+        worksiteId: execution.worksiteId,
+        actorUserId: userId,
+        payload: { status: "pendiente", priority: prioridad },
+      }, tx)
     })
     nextN++
     generadas++
@@ -295,6 +305,15 @@ export async function createActionPlanItem(input: PdtpActionPlanItemInput, userI
       createdAt: now,
       updatedAt: now,
     }).returning()
+    await recordOperationalActivity({
+      eventType: "pdtp.action_created",
+      module: "pdtp",
+      entityType: "pdtp_action",
+      entityId: row!.id,
+      worksiteId: execution.worksiteId,
+      actorUserId: userId,
+      payload: { status: row!.estado, priority: row!.prioridad },
+    }, tx)
     return row!
   })
 }
@@ -333,6 +352,15 @@ export async function updateActionPlanItem(itemId: string, update: PdtpActionPla
     if (update.plazo !== undefined) set.plazo = update.plazo
     if (update.prioridad !== undefined) set.prioridad = update.prioridad
     const [row] = await tx.update(pdtpActionPlan).set(set).where(eq(pdtpActionPlan.id, itemId)).returning()
+    await recordOperationalActivity({
+      eventType: "pdtp.action_updated",
+      module: "pdtp",
+      entityType: "pdtp_action",
+      entityId: row!.id,
+      worksiteId: capa.worksiteId,
+      actorUserId: userId,
+      payload: { status: row!.estado, priority: row!.prioridad },
+    }, tx)
     return row!
   })
 }
@@ -356,6 +384,15 @@ export async function deleteActionPlanItem(itemId: string, userId: string) {
     }
     const [updated] = await tx.update(pdtpActionPlan).set({ estado: "cancelado", updatedAt: new Date().toISOString() })
       .where(eq(pdtpActionPlan.id, itemId)).returning()
+    await recordOperationalActivity({
+      eventType: "pdtp.action_cancelled",
+      module: "pdtp",
+      entityType: "pdtp_action",
+      entityId: updated!.id,
+      worksiteId: capa.worksiteId,
+      actorUserId: userId,
+      payload: { status: updated!.estado },
+    }, tx)
     return updated!
   })
 }

@@ -4,6 +4,7 @@ import * as React from "react"
 import { useActionState, useEffect } from "react"
 import { PencilSimple, ToggleLeft, ToggleRight } from "@phosphor-icons/react"
 import { Badge } from "@/components/ui/badge"
+import { DesktopOnlyTableNotice } from "@/components/ui/desktop-only-table"
 import { DataTable } from "@/components/admin/data-table"
 import { TableRow, TableCell } from "@/components/ui/table"
 import { toast } from "@/lib/toast"
@@ -100,7 +101,11 @@ export function CatalogList({ units, templates, categories, legacyUnits }: Catal
               </p>
             </div>
           )}
+          <DesktopOnlyTableNotice />
           <DataTable
+        enableColumnToggle
+        viewKey="cat"
+        stickyFirstColumn
             columns={UNIT_COLUMNS}
             rows={unitRows}
             searchKeys={["code", "label", "description"]}

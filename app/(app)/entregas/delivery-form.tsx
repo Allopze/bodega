@@ -4,6 +4,7 @@ import * as React from "react"
 import { useActionState } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "@/lib/toast"
+import { useEnterAdvancesFields } from "@/lib/hooks/use-enter-advances-fields"
 import { Warning, CaretDown, CaretUp } from "@phosphor-icons/react"
 import { INITIAL_STATE } from "@/components/admin/form-state"
 import { SubmitButton } from "@/components/admin/submit-button"
@@ -64,6 +65,9 @@ export function DeliveryForm({
   const [returnProductId, setReturnProductId] = React.useState("")
   const formRef = React.useRef<HTMLFormElement>(null)
   const returnSectionRef = React.useRef<HTMLDivElement>(null)
+  // E-5: entregas es una estación de captura repetitiva — Enter avanza de campo
+  // en vez de enviar, y el envío queda para el último campo o el botón.
+  useEnterAdvancesFields(formRef)
   const notesRef = React.useRef<HTMLTextAreaElement>(null)
 
   React.useEffect(() => {

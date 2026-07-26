@@ -132,15 +132,20 @@ export function WorkerForm({ open, onClose, editWorker, worksites }: WorkerFormP
   )
 }
 
+// Radix Select prohíbe `value=""` en un SelectItem (la cadena vacía está
+// reservada para limpiar la selección). Usarla lanza en cliente y tumba la
+// pantalla. El centinela es sólo para Radix: el valor enviado sigue siendo "".
+const NONE = "_none"
+
 function SizeSelect({ label, value, onChange, presets, id }: { label: string; value: string; onChange: (v: string) => void; presets: string[]; id: string }) {
   return (
     <Field label={label} htmlFor={id}>
-      <Select value={value || ""} onValueChange={onChange}>
+      <Select value={value || NONE} onValueChange={(v) => onChange(v === NONE ? "" : v)}>
         <SelectTrigger id={id} className="h-8 text-xs">
           <SelectValue placeholder="—" />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value="">—</SelectItem>
+          <SelectItem value={NONE}>—</SelectItem>
           {presets.map((size) => (
             <SelectItem key={size} value={size}>{size}</SelectItem>
           ))}

@@ -36,7 +36,7 @@ export function FuelSupplierList({ suppliers, generalSuppliers }: { suppliers: F
             <article key={supplier.id} className="rounded-[var(--radius-2xl)] bg-[var(--color-surface)] p-4 shadow-[var(--shadow-card)]">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <h2 className="truncate text-sm font-medium text-[var(--color-text)]">{supplier.name}</h2>
+                  <h2 title={supplier.name} className="truncate text-sm font-medium text-[var(--color-text)]">{supplier.name}</h2>
                   <p className="mt-0.5 font-mono text-xs text-[var(--color-text-subtle)]">{supplier.rut ?? "—"}</p>
                 </div>
                 <Badge variant={supplier.isActive ? "success" : "default"} dot>{supplier.isActive ? "Activo" : "Inactivo"}</Badge>

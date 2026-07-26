@@ -140,7 +140,7 @@ describe("getWorkQueueSnapshot", () => {
       // select 2: order rows
       { data: [] },
       // select 3: stock rows
-      { data: [{ productId: "prod-1" }] },
+      { data: [{ productId: "prod-1", worksiteId: "ws-1" }] },
     )
 
     const result = await getWorkQueueSnapshot(session)
@@ -220,7 +220,7 @@ describe("getWorkQueueSnapshot", () => {
         quantity: 1, unitOfMeasure: "un",
       }]},
       { data: [] },
-      { data: [{ productId: "prod-1" }] },
+      { data: [{ productId: "prod-1", worksiteId: "ws-1" }] },
     )
 
     const result = await getWorkQueueSnapshot(session)
@@ -247,7 +247,6 @@ describe("getWorkQueueSnapshot", () => {
         supplierName: "Proveedor X", status: "issued", createdAt: "2024-01-01",
         issuedAt: "2024-01-02", sentAt: null, totalAmount: 150000, itemCount: 3,
       }]},
-      { data: [] },
       { data: [{ orderId: "oc-1", count: 3 }] },
     )
 
@@ -284,7 +283,7 @@ describe("getWorkQueueSnapshot", () => {
         },
       ]},
       { data: [] },
-      { data: [{ productId: "p1" }] },
+      { data: [{ productId: "p1", worksiteId: "ws-1" }] },
     )
 
     const result = await getWorkQueueSnapshot(session)

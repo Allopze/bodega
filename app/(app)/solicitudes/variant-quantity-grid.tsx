@@ -62,9 +62,9 @@ export function VariantQuantityGrid({ variants, quantities, readOnly, onChange }
           <table className="w-full text-xs text-left border-collapse">
             <thead>
               <tr className="border-b border-[var(--color-border)]">
-                <th className="py-1.5 px-2 text-[var(--color-text-subtle)] font-medium">Color \ Talla</th>
+                <th scope="col" className="py-1.5 px-2 th-type">Color \ Talla</th>
                 {sizes.map((s) => (
-                  <th key={s} className="py-1.5 px-2 text-center text-[var(--color-text)] font-semibold">{s}</th>
+                  <th scope="col" key={s} className="py-1.5 px-2 text-center text-[var(--color-text)] font-semibold">{s}</th>
                 ))}
               </tr>
             </thead>

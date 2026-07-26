@@ -72,6 +72,8 @@ async function main() {
     { id: "p-trace-view", name: "traceability:view", module: "traceability", description: "Ver trazabilidad" },
     { id: "p-del-view", name: "deliveries:view", module: "deliveries", description: "Ver entregas" },
     { id: "p-del-create", name: "deliveries:create", module: "deliveries", description: "Registrar entregas" },
+    { id: "p-ops-view-work", name: "operations:view_work", module: "operations", description: "Ver cola operacional" },
+    { id: "p-ops-assign-work", name: "operations:assign_work", module: "operations", description: "Asignar pendientes operacionales" },
     { id: "p-wh-stock", name: "warehouse:view_stock", module: "warehouse", description: "Ver stock" },
     { id: "p-wh-mov", name: "warehouse:register_movement", module: "warehouse", description: "Movimientos" },
     { id: "p-wh-adj", name: "warehouse:adjust_stock", module: "warehouse", description: "Ajuste stock" },
@@ -178,6 +180,22 @@ async function main() {
     worksiteId: "ws-e2e",
     isPrimary: true,
   })
+  await db.insert(schema.users).values({
+    id: "user-ops-e2e",
+    name: "Comprador E2E",
+    email: "comprador@e2e.chome.cl",
+    hashedPassword: password,
+    avatarColor: "180",
+    isActive: true,
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.userRoles).values({ userId: "user-ops-e2e", roleId: "rol-admin" })
+  await db.insert(schema.worksiteUsers).values({
+    userId: "user-ops-e2e",
+    worksiteId: "ws-e2e",
+    isPrimary: true,
+  })
   await db.insert(schema.fuelSuppliers).values({
     id: "fuel-sup-e2e",
     name: "Proveedor Combustible E2E",
@@ -235,6 +253,7 @@ async function main() {
     { roleId: "rol-sol-faena", permissionId: "p-rec-view" },
     { roleId: "rol-sol-faena", permissionId: "p-wh-stock" },
     { roleId: "rol-sol-faena", permissionId: "p-wh-mov" },
+    { roleId: "rol-sol-faena", permissionId: "p-ops-view-work" },
   ]
   await db.insert(schema.rolePermissions).values(solFaenaPermissions)
   await db.insert(schema.users).values({

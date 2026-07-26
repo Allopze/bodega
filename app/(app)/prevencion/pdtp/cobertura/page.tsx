@@ -1,3 +1,4 @@
+import Link from "next/link"
 import type { Metadata } from "next"
 import { redirect } from "next/navigation"
 import { can, requireAuth } from "@/lib/auth/can"
@@ -6,6 +7,7 @@ import { getActivePdtpProgram } from "@/lib/services/prevention-pdtp"
 import { getPdtpCoverage } from "@/lib/services/prevention-risk-legal"
 import { currentPdtpPeriod } from "@/lib/services/pdtp/period"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
+import { Button } from "@/components/ui/button"
 import { PageContainer } from "@/components/ui/page-container"
 import { EmptyState } from "@/components/ui/empty-state"
 import { PdtpCoverageWorkbench } from "./pdtp-coverage-workbench"
@@ -28,7 +30,16 @@ export default async function PdtpCoveragePage() {
         breadcrumb={<Breadcrumbs items={[{ label: "Dashboard", href: "/dashboard" }, { label: "Programa preventivo", href: "/prevencion/pdtp" }, { label: "Cobertura" }]} />}
       />
       {!coverage ? (
-        <EmptyState title="Sin programa preventivo activo" description="Crea y activa el programa del período para conciliarlo con MIPER y requisitos legales." />
+        // A-4: la descripción ya decía qué hacer; faltaba que fuera clicable.
+        <EmptyState
+          title="Sin programa preventivo activo"
+          description="Crea y activa el programa del período para conciliarlo con MIPER y requisitos legales."
+          action={
+            <Button asChild size="sm">
+              <Link href="/prevencion/pdtp/nuevo">Crear programa</Link>
+            </Button>
+          }
+        />
       ) : (
         <PdtpCoverageWorkbench
           coverage={coverage}

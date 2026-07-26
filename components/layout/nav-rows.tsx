@@ -58,7 +58,7 @@ function LeafRow({
           className={cn("shrink-0", active ? "text-(--color-primary)" : "text-(--color-text-muted) group-hover:text-(--color-text)")}
         />
       )}
-      <span className="flex-1 truncate">{item.label}</span>
+      <span title={item.label} className="flex-1 truncate">{item.label}</span>
       {count > 0 && <CountBadge count={count} />}
     </Link>
   )
@@ -109,7 +109,7 @@ function BranchRow({
               className={cn("shrink-0", active ? "text-(--color-primary)" : childActive ? "text-(--color-text-muted)" : "text-(--color-text-muted) group-hover:text-(--color-text)")}
             />
           )}
-          <span className="flex-1 truncate">{item.label}</span>
+          <span title={item.label} className="flex-1 truncate">{item.label}</span>
           {count > 0 && <CountBadge count={count} />}
         </Link>
         <Collapsible.Trigger asChild>
@@ -136,7 +136,7 @@ function BranchRow({
                       : "text-text-subtle hover:bg-(--color-chrome-hover) hover:text-(--color-text)",
                   )}
                 >
-                  <span className="truncate">{child.label}</span>
+                  <span title={child.label} className="truncate">{child.label}</span>
                 </Link>
               </li>
             )

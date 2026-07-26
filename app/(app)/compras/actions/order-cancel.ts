@@ -1,6 +1,5 @@
 "use server"
 
-import { revalidatePath } from "next/cache"
 import { db } from "@/db"
 import { purchaseOrders } from "@/db/schema"
 import { eq } from "drizzle-orm"
@@ -11,6 +10,7 @@ import type { ActionState } from "@/lib/validation/operations"
 import { assertOrderAccess } from "../actions.helpers"
 import { dbErrMsg, serviceWorksiteScope } from "./helpers"
 import { REVALIDATE } from "./revalidate"
+import { revalidateOperationalViews } from "@/lib/services/operational-cache"
 
 // ── Close order (supplier_confirmed/partially_received/received → closed) ─────
 
@@ -53,8 +53,7 @@ export async function closeOrderAction(
       })
     }
 
-    revalidatePath(REVALIDATE)
-    revalidatePath(`/compras/${orderId}`)
+    revalidateOperationalViews([REVALIDATE, `/compras/${orderId}`])
     return { ok: true, message: "Orden de compra cerrada" }
   } catch (e) {
     logger.error("[closeOrderAction]", e)
@@ -88,8 +87,7 @@ export async function cancelOrderAction(
     await cancelOrder(orderId, session.user.id, reason, serviceWorksiteScope(session), {
       userEmail: session.user.email ?? undefined,
     })
-    revalidatePath(REVALIDATE)
-    revalidatePath(`/compras/${orderId}`)
+    revalidateOperationalViews([REVALIDATE, `/compras/${orderId}`])
     return { ok: true, message: "Orden de compra anulada correctamente" }
   } catch (e) {
     logger.error("[cancelOrderAction]", e)
@@ -129,7 +127,7 @@ export async function deleteOrderAction(
     await deleteOrder(orderId, session.user.id, serviceWorksiteScope(session), {
       userEmail: session.user.email ?? undefined,
     })
-    revalidatePath(REVALIDATE)
+    revalidateOperationalViews([REVALIDATE])
     return { ok: true, message: "Orden de compra eliminada correctamente" }
   } catch (e) {
     logger.error("[deleteOrderAction]", e)

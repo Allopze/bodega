@@ -4,6 +4,7 @@ import { useState, useMemo } from "react"
 import Link from "next/link"
 import { DataTable, type ColumnDef } from "@/components/admin/data-table"
 import { TableCell, TableRow } from "@/components/ui/table"
+import { DesktopOnlyTableNotice } from "@/components/ui/desktop-only-table"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -123,15 +124,21 @@ export function OperationsBatchHistory({ batches }: { batches: OperationBatchRow
   )
 
   return (
-    <DataTable
-      columns={COLUMNS}
-      rows={preFiltered as unknown as Record<string, unknown>[]}
-      searchKeys={SEARCH_KEYS}
-      searchPlaceholder="Filtrar lotes..."
-      renderRow={renderRow}
-      emptyTitle="Sin lotes de log operacional"
-      emptyDescription="Aún no se han importado lotes de log operacional."
-      actions={actions}
-    />
+    <>
+  <DesktopOnlyTableNotice>El historial de importaciones tiene 10 columnas. La importación de planillas se hace desde un computador; aquí puedes desplazar en horizontal para consultarlo.</DesktopOnlyTableNotice>
+      <DataTable
+          enableColumnToggle
+          viewKey="ops"
+        stickyFirstColumn
+        columns={COLUMNS}
+        rows={preFiltered as unknown as Record<string, unknown>[]}
+        searchKeys={SEARCH_KEYS}
+        searchPlaceholder="Filtrar lotes..."
+        renderRow={renderRow}
+        emptyTitle="Sin lotes de log operacional"
+        emptyDescription="Aún no se han importado lotes de log operacional."
+        actions={actions}
+      />
+    </>
   )
 }

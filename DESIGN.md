@@ -20,45 +20,72 @@ perceptual preciso de luminosidad.
 Paleta desaturada sobre lienzo blanco. La marca Chome aporta tres acentos con
 roles estrictos:
 
-- **Verde `#218649`** (`--color-primary`) — acciones principales, foco, éxito.
-- **Naranja `#f39200`** (`--color-signal`) — **reservado a estados pendientes** y
+- **Verde esmeralda `#005c3f`** (`--color-primary`) — acciones principales, foco, éxito.
+- **Naranja `#e78400`** (`--color-signal`) — **reservado a estados pendientes** y
   sus badges/alertas. Nunca para acciones ni decoración.
-- **Amber `#ffd51e`** (`--color-accent`) — realces puntuales.
+- **Amber `#ffd53f`** (`--color-accent`) — realces puntuales.
 
 Cada color semántico tiene 4 variantes: base, `-tint` (superficie), `-line`
 (borde), `-ink` (texto sobre tint).
 
 ### Tokens de color
 
-| Token | Valor OKLCH | Uso |
-|---|---|---|
-| `--color-primary` | `oklch(0.546 0.118 156)` | Verde Chome — acciones, foco |
-| `--color-primary-tint` | `oklch(0.962 0.018 156)` | Superficie de realce |
-| `--color-primary-line` | `oklch(0.880 0.045 156)` | Borde / hover |
-| `--color-primary-ink` | `oklch(0.270 0.095 156)` | Texto sobre tint |
-| `--color-primary-strong` | `oklch(0.440 0.118 156)` | Estado hover |
-| `--color-primary-deep` | `oklch(0.270 0.110 156)` | Fondo hero card |
-| `--color-signal` | `oklch(0.705 0.165 62)` | Naranja Chome — solo pendientes |
-| `--color-signal-tint/line/ink` | — | Fondo / borde / texto de alerta |
-| `--color-accent` | `oklch(0.893 0.165 89)` | Amber Chome — realces puntuales |
-| `--color-success` | `oklch(0.546 0.118 156)` | Completado, aprobado (= verde) |
-| `--color-warning` | `oklch(0.720 0.140 78)` | Parcial, en progreso |
-| `--color-danger` | `oklch(0.520 0.155 27)` | Rechazado, error |
-| `--color-info` | `oklch(0.520 0.080 240)` | Informativo |
-| `--color-bg` | `oklch(1.000 0 0)` | Lienzo blanco |
-| `--color-surface` | `oklch(1.000 0 0)` | Superficie de contenido (pozo) |
-| `--color-surface-2` | `oklch(0.974 0.004 90)` | Hover, panel secundario |
-| `--color-surface-3` | `oklch(0.955 0.005 90)` | Terciario, inset |
-| `--color-chrome` | `oklch(0.974 0.004 90)` | Relleno del shell (sidebar + header) |
-| `--color-chrome-hover` | `oklch(0.955 0.005 90)` | Hover dentro del chrome |
-| `--color-border` | `oklch(0.918 0.004 90)` | Borde hairline |
-| `--color-border-strong` | `oklch(0.848 0.005 90)` | Divisor |
-| `--color-rule` | `oklch(0.225 0.005 90)` | Regla tipográfica fuerte |
-| `--color-text` | `oklch(0.180 0.004 90)` | Texto principal |
-| `--color-text-muted` | `oklch(0.430 0.005 90)` | Secundario |
-| `--color-text-subtle` | `oklch(0.500 0.005 90)` | Placeholder (WCAG AA) |
-| `--color-text-faint` | `oklch(0.560 0.004 90)` | Sutil (WCAG AA) |
-| `--color-overlay` | `oklch(0.180 0.004 90 / 0.24)` | Overlay de modales |
+<!-- Generada desde app/globals.css. No editar a mano: el test
+     components/__tests__/design-tokens-contrast.test.ts valida los
+     mínimos de contraste sobre los valores reales del CSS. -->
+
+| Token | Valor OKLCH | Hex aprox. | Uso |
+|---|---|---|---|
+| `--color-primary` | `oklch(0.415 0.098 166)` | `#005c3f` | Verde esmeralda Chome — acciones, foco |
+| `--color-primary-tint` | `oklch(0.945 0.035 166)` | `#d8f5e7` | Superficie de realce |
+| `--color-primary-line` | `oklch(0.850 0.060 166)` | `#a9dbc5` | Borde / hover |
+| `--color-primary-ink` | `oklch(0.230 0.090 166)` | `#002912` | Texto sobre tint |
+| `--color-primary-strong` | `oklch(0.330 0.098 166)` | `#004429` | Estado hover |
+| `--color-primary-deep` | `oklch(0.220 0.090 166)` | `#002610` | Fondo hero card |
+| `--color-signal` | `oklch(0.705 0.165 62)` | `#e78400` | Naranja Chome — **solo** pendientes |
+| `--color-signal-tint` | `oklch(0.965 0.022 62)` | `#fff1e5` | Fondo de alerta pendiente |
+| `--color-signal-line` | `oklch(0.892 0.052 62)` | `#f5d4b9` | Borde de alerta pendiente |
+| `--color-signal-ink` | `oklch(0.402 0.130 62)` | `#773100` | Texto sobre signal-tint |
+| `--color-accent` | `oklch(0.893 0.165 89)` | `#ffd53f` | Amber Chome — realces puntuales |
+| `--color-accent-tint` | `oklch(0.975 0.030 89)` | `#fff6e1` | Fondo de realce |
+| `--color-accent-line` | `oklch(0.920 0.065 89)` | `#f6e3b4` | Borde de realce |
+| `--color-accent-ink` | `oklch(0.450 0.120 89)` | `#705000` | Texto sobre accent-tint |
+| `--color-success` | `oklch(0.415 0.098 166)` | `#005c3f` | Completado, aprobado (= verde primary) |
+| `--color-success-tint` | `oklch(0.945 0.035 166)` | `#d8f5e7` | Fondo de éxito |
+| `--color-success-line` | `oklch(0.850 0.060 166)` | `#a9dbc5` | Borde de éxito |
+| `--color-success-ink` | `oklch(0.230 0.090 166)` | `#002912` | Texto sobre success-tint |
+| `--color-warning` | `oklch(0.720 0.140 78)` | `#d49824` | Parcial, en progreso |
+| `--color-warning-tint` | `oklch(0.970 0.030 85)` | `#fef4df` | Fondo de advertencia |
+| `--color-warning-line` | `oklch(0.900 0.060 82)` | `#f2dbb1` | Borde de advertencia |
+| `--color-warning-ink` | `oklch(0.395 0.110 75)` | `#683b00` | Texto sobre warning-tint |
+| `--color-danger` | `oklch(0.520 0.155 27)` | `#b13a34` | Rechazado, error |
+| `--color-danger-tint` | `oklch(0.965 0.012 27)` | `#fcf1ef` | Fondo de error |
+| `--color-danger-line` | `oklch(0.890 0.030 27)` | `#eed4d0` | Borde de error |
+| `--color-danger-ink` | `oklch(0.355 0.135 27)` | `#720c0e` | Texto sobre danger-tint |
+| `--color-info` | `oklch(0.520 0.080 240)` | `#3a6f92` | Informativo |
+| `--color-info-tint` | `oklch(0.965 0.008 240)` | `#eff4f8` | Fondo informativo |
+| `--color-info-line` | `oklch(0.892 0.020 240)` | `#d0dee8` | Borde informativo |
+| `--color-info-ink` | `oklch(0.330 0.075 240)` | `#013958` | Texto sobre info-tint |
+| `--color-bg` | `oklch(1.000 0     0)` | `#ffffff` | Lienzo blanco |
+| `--color-surface` | `oklch(1.000 0     0)` | `#ffffff` | Superficie de contenido (pozo) |
+| `--color-surface-2` | `oklch(0.974 0.004 90)` | `#f7f6f3` | Hover, panel secundario |
+| `--color-surface-3` | `oklch(0.955 0.005 90)` | `#f1f0ec` | Terciario, inset |
+| `--color-chrome` | `oklch(0.974 0.004 90)` | `#f7f6f3` | Relleno del shell (sidebar + header) |
+| `--color-chrome-hover` | `oklch(0.955 0.005 90)` | `#f1f0ec` | Hover dentro del chrome |
+| `--color-border` | `oklch(0.918 0.004 90)` | `#e5e4e1` | Hairline decorativa, divisores |
+| `--color-border-strong` | `oklch(0.848 0.005 90)` | `#cecdc9` | Divisor fuerte |
+| `--color-border-control` | `oklch(0.640 0.005 90)` | `#8d8c89` | **Contorno de controles** — WCAG 1.4.11 ≥3:1 |
+| `--color-border-control-hover` | `oklch(0.545 0.004 90)` | `#71706d` | Hover del contorno de controles |
+| `--color-rule` | `oklch(0.225 0.005 90)` | `#1d1c19` | Regla tipográfica fuerte |
+| `--color-text` | `oklch(0.180 0.004 90)` | `#121210` | Texto principal |
+| `--color-text-muted` | `oklch(0.430 0.005 90)` | `#51504d` | Secundario |
+| `--color-text-subtle` | `oklch(0.500 0.005 90)` | `#646360` | Placeholder (WCAG AA) |
+| `--color-text-faint` | `oklch(0.545 0.004 90)` | `#71706d` | Sutil — cumple AA también sobre chrome |
+| `--color-overlay` | `oklch(0.180 0.004 90 / 0.24)` | `—` | Overlay de modales |
+| `--color-brand-surface` | `oklch(1.000 0 0)` | `#ffffff` | Superficie de marca |
+| `--color-brand-text` | `oklch(0.180 0.004 90)` | `#121210` | Texto de marca |
+| `--color-brand-text-muted` | `oklch(0.430 0.005 90)` | `#51504d` | Texto de marca secundario |
+| `--color-brand-border` | `oklch(0.918 0.004 90)` | `#e5e4e1` | Borde de marca |
 
 ### Reglas de uso
 

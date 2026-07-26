@@ -1,6 +1,5 @@
 "use server"
 
-import { revalidatePath, revalidateTag } from "next/cache"
 import { eq, inArray } from "drizzle-orm"
 import { db } from "@/db"
 import { purchaseRequestItems, purchaseRequests } from "@/db/schema"
@@ -8,6 +7,7 @@ import { canAccessWorksite, requirePermission } from "@/lib/auth/can"
 import { approveItem, bulkApproveItems, rejectItem, returnItem } from "@/lib/services/item-state"
 import { notifySafe, notifyAfterCommit } from "@/lib/services/notifications"
 import { logger } from "@/lib/logger"
+import { revalidateOperationalViews } from "@/lib/services/operational-cache"
 import type { ActionState } from "@/lib/validation/operations"
 import { canApproveEpp, DISPATCH_DECIDER_ROLES } from "./roles"
 
@@ -65,8 +65,7 @@ export async function approveItemAction(
       userEmail:   session.user.email ?? undefined,
       roleContext: getRoleContext(session.user.roles),
     })
-    revalidatePath(REVALIDATE)
-    revalidateTag("badge-counts", { expire: 0 })
+    revalidateOperationalViews([REVALIDATE, `/solicitudes/${itemBefore.request.id}`])
 
     // S-05: notify only after the approveItem transaction has committed.
     if (itemBefore?.request?.requesterId) {
@@ -127,8 +126,7 @@ export async function rejectItemAction(
       userEmail:   session.user.email ?? undefined,
       roleContext: getRoleContext(session.user.roles),
     })
-    revalidatePath(REVALIDATE)
-    revalidateTag("badge-counts", { expire: 0 })
+    revalidateOperationalViews([REVALIDATE, `/solicitudes/${itemBefore.request.id}`])
 
     // S-05: notify only after the rejectItem transaction has committed.
     if (itemBefore?.request?.requesterId) {
@@ -186,8 +184,7 @@ export async function returnItemAction(
       userEmail:   session.user.email ?? undefined,
       roleContext: getRoleContext(session.user.roles),
     })
-    revalidatePath(REVALIDATE)
-    revalidateTag("badge-counts", { expire: 0 })
+    revalidateOperationalViews([REVALIDATE])
     return { ok: true, message: "Ítem devuelto al solicitante" }
   } catch (e) {
     logger.error("[returnItemAction]", e)
@@ -233,8 +230,7 @@ export async function bulkApproveRequestAction(
     roleContext,
   })
 
-  revalidatePath(REVALIDATE)
-  revalidateTag("badge-counts", { expire: 0 })
+  revalidateOperationalViews([REVALIDATE])
 
   const totalErrors = skipped.length + approveErrors.length
   if (totalErrors > 0) {
@@ -270,15 +266,22 @@ export async function updateDeliveryModeAction(
   const request = await db.query.purchaseRequests.findFirst({
     where: eq(purchaseRequests.id, requestId),
     columns: { id: true, worksiteId: true },
+    with: { items: { columns: { status: true } } },
   })
   if (!request) return { ok: false, message: "Solicitud no encontrada" }
   if (!canAccessWorksite(session, request.worksiteId)) {
     return { ok: false, message: "No tienes acceso a la faena de esta solicitud" }
   }
 
+  const hasPurchasedItems = (request.items ?? []).some((i) =>
+    ["in_purchase_order", "purchased", "partially_received", "received"].includes(i.status),
+  )
+  if (hasPurchasedItems) {
+    return { ok: false, message: "No se puede cambiar el modo de despacho porque esta solicitud ya posee ítems en Orden de Compra" }
+  }
+
   await db.update(purchaseRequests).set({ deliveryMode: mode }).where(eq(purchaseRequests.id, requestId))
-  revalidatePath(REVALIDATE)
-  revalidateTag("badge-counts", { expire: 0 })
+  revalidateOperationalViews([REVALIDATE, `/solicitudes/${requestId}`])
   return {
     ok: true,
     message: mode === "directo_faena" ? "Despacho directo a faena" : "Despacho vía oficina",

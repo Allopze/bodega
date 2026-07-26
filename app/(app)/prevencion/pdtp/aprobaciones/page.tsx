@@ -117,7 +117,7 @@ export default async function PdtpApprovalsPage({ searchParams }: PdtpApprovalsP
           </p>
         </div>
       ) : (
-        <TableRoot>
+        <TableRoot stickyHeader>
           <Table>
             <TableHeader>
               <TableRow>

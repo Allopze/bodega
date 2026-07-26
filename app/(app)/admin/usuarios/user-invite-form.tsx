@@ -205,7 +205,7 @@ export function UserInviteForm({ open, onClose, allRoles, allWorksites, allWorke
                         <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center" aria-hidden="true">
                           {checked && <Check size={11} weight="bold" />}
                         </span>
-                        <span className="truncate">{role.label}</span>
+                        <span title={role.label} className="truncate">{role.label}</span>
                       </button>
                     )
                   })}

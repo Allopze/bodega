@@ -1,6 +1,5 @@
 "use server"
 
-import { revalidatePath } from "next/cache"
 import { guardPermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { markFollowup, getFollowups } from "@/lib/services/sst"
@@ -10,6 +9,7 @@ import { sstScheduledFollowups } from "@/db/schema/sst"
 import type { z } from "zod"
 import { scopeToIds } from "./helpers"
 import { REVALIDATE } from "./revalidate"
+import { revalidateOperationalViews } from "@/lib/services/operational-cache"
 
 export async function markFollowupAction(
   followupId: string,
@@ -22,8 +22,8 @@ export async function markFollowupAction(
   const worksiteIds = scopeToIds(scope)
 
   try {
-    await markFollowup(followupId, input, worksiteIds)
-    revalidatePath(REVALIDATE)
+    await markFollowup(followupId, input, worksiteIds, session.user.id)
+    revalidateOperationalViews([REVALIDATE])
     return { ok: true, message: "Seguimiento actualizado" }
   } catch (e) {
     return { ok: false, message: e instanceof Error ? e.message : "Error al actualizar el seguimiento" }

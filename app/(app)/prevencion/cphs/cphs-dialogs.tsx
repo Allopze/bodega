@@ -2,6 +2,7 @@
 
 import * as React from "react"
 import { Button } from "@/components/ui/button"
+import { DatePicker } from "@/components/ui/date-picker"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Input } from "@/components/ui/input"
@@ -48,8 +49,8 @@ export function NewCommitteeDialog({ worksites }: { worksites: { id: string; nam
           </Field>
           <Field label="Nombre"><Input name="name" required minLength={3} maxLength={200} placeholder="CPHS Faena Central" /></Field>
           <div className="grid gap-3 md:grid-cols-2">
-            <Field label="Constituido el"><Input name="constitutedOn" type="date" required /></Field>
-            <Field label="Mandato hasta" hint="Debe ser posterior a la constitución."><Input name="mandateEndsOn" type="date" required /></Field>
+            <Field label="Constituido el" required><DatePicker name="constitutedOn" /></Field>
+            <Field label="Mandato hasta" hint="Debe ser posterior a la constitución." required><DatePicker name="mandateEndsOn" /></Field>
           </div>
           <Field label="Día de sesión mensual" hint="Opcional. Día del mes (1-28) en que suele convocarse.">
             <Input name="meetingDayOfMonth" type="number" min={1} max={28} className="w-24" />
@@ -205,8 +206,8 @@ export function CloseReviewDialog({ review, worksites, assignees }: {
                   <Field label="Prioridad">
                     <Select value={item.priority} onValueChange={(v) => update(index, { priority: v as Commitment["priority"] })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="low">Baja</SelectItem><SelectItem value="medium">Media</SelectItem><SelectItem value="high">Alta</SelectItem><SelectItem value="critical">Crítica</SelectItem></SelectContent></Select>
                   </Field>
-                  <Field label="Plazo">
-                    <Input type="date" value={item.targetDate} required onChange={(event) => update(index, { targetDate: event.target.value })} />
+                  <Field label="Plazo" required>
+                    <DatePicker value={item.targetDate} onChange={(iso) => update(index, { targetDate: iso })} />
                   </Field>
                 </div>
               </div>

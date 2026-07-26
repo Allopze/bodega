@@ -34,6 +34,8 @@ export function buildWorkTasks(actor: WorkActor, snapshot: WorkQueueSnapshot): W
         type:        "request_followup",
         title:       request.code,
         subtitle:    `${request.worksiteName} · ${formatCount(request.itemCount, "ítem", "ítems")}`,
+        worksiteId:  request.worksiteId,
+        worksiteName: request.worksiteName,
         statusLabel: requestStatusLabel(request.status),
         priority:    normalizePriority(request.urgency),
         createdAt:   request.submittedAt ?? request.createdAt,
@@ -50,6 +52,8 @@ export function buildWorkTasks(actor: WorkActor, snapshot: WorkQueueSnapshot): W
         type:        "approval",
         title:       `Revisar ${group.requestCode}`,
         subtitle:    `${group.worksiteName} · ${formatCount(group.items.length, "ítem pendiente", "ítems pendientes")}`,
+        worksiteId:  group.worksiteId,
+        worksiteName: group.worksiteName,
         statusLabel: "Necesita aprobación",
         priority:    highestPriority(group.items.map((item) => normalizePriority(item.urgency))),
         createdAt:   oldestDate(group.items.map((item) => item.createdAt)),
@@ -66,6 +70,8 @@ export function buildWorkTasks(actor: WorkActor, snapshot: WorkQueueSnapshot): W
         type:        "purchase",
         title:       "Generar orden de compra",
         subtitle:    `${group.worksiteName} · ${formatCount(group.items.length, "ítem aprobado", "ítems aprobados")}`,
+        worksiteId:  group.worksiteId,
+        worksiteName: group.worksiteName,
         statusLabel: "Listo para comprar",
         priority:    highestPriority(group.items.map((item) => normalizePriority(item.urgency))),
         createdAt:   oldestDate(group.items.map((item) => item.createdAt)),
@@ -92,6 +98,8 @@ export function buildWorkTasks(actor: WorkActor, snapshot: WorkQueueSnapshot): W
         type:        "receipt",
         title:       `Llegada a oficina ${order.code}`,
         subtitle:    `${order.worksiteName} · ${order.supplierName} · ${formatCount(order.itemCount, "ítem", "ítems")}`,
+        worksiteId:  order.worksiteId,
+        worksiteName: order.worksiteName,
         statusLabel: order.status === "partially_office_received" ? "Oficina parcial" : "Esperando llegada",
         priority:    "normal",
         createdAt:   order.sentAt ?? order.createdAt,
@@ -113,6 +121,8 @@ export function buildWorkTasks(actor: WorkActor, snapshot: WorkQueueSnapshot): W
         type:        "receipt",
         title:       `Recibir en faena ${order.code}`,
         subtitle:    `${order.worksiteName} · ${order.supplierName} · ${formatCount(order.itemCount, "ítem", "ítems")}`,
+        worksiteId:  order.worksiteId,
+        worksiteName: order.worksiteName,
         statusLabel: order.status === "partially_received" ? "Recepción parcial" : "Pendiente de faena",
         priority:    "normal",
         createdAt:   order.sentAt ?? order.createdAt,
@@ -132,6 +142,8 @@ export function buildWorkTasks(actor: WorkActor, snapshot: WorkQueueSnapshot): W
         type:        "warehouse_delivery",
         title:       `Entregar ${item.productName}`,
         subtitle:    `${item.requestCode} · ${item.worksiteName} · ${formatQuantity(item.quantity, item.unitOfMeasure)}`,
+        worksiteId:  item.worksiteId,
+        worksiteName: item.worksiteName,
         statusLabel: item.status === "partially_delivered" ? "Entrega parcial" : "Recibido en bodega",
         priority:    normalizePriority(item.urgency),
         createdAt:   item.createdAt,
@@ -165,6 +177,68 @@ export function buildRequestProgress(requestStatus: string, items: RequestProgre
   }
 }
 
+export interface OcProgressItem {
+  id:               string
+  productName:      string
+  quantity:         number
+  unitOfMeasure:    string
+  quantityReceived: number
+}
+
+/**
+ * Progreso de ciclo de una OC, alimentado al mismo RequestProgressPanel que las
+ * solicitudes. La OC arranca post-aprobación: Solicitado y Aprobación siempre
+ * completas. La etapa Entrega (al trabajador) es de otro módulo, así que la OC
+ * tope en Recepción. Devuelve null en OC anulada (sin stepper).
+ */
+export function buildOcProgress(orderStatus: string, items: OcProgressItem[]): RequestProgress | null {
+  if (orderStatus === "cancelled") return null
+
+  const currentStage = ocCurrentStage(orderStatus)
+  const currentIndex = Math.max(0, STAGES.indexOf(currentStage))
+
+  return {
+    currentStage,
+    completedStages: STAGES.slice(0, currentIndex),
+    nextAction: ocNextAction(orderStatus),
+    items: items.map((item) => ({
+      id:            item.id,
+      productName:   item.productName,
+      quantityLabel: formatQuantity(item.quantity, item.unitOfMeasure),
+      statusLabel:   ocItemStatusLabel(item),
+      stageLabel:    currentStage,
+    })),
+  }
+}
+
+function ocCurrentStage(orderStatus: string): string {
+  if (["partially_office_received", "office_received", "partially_received"].includes(orderStatus)) return "Recepción"
+  if (["received", "closed"].includes(orderStatus)) return "Recepción"
+  // draft / issued / sent / supplier_confirmed
+  return "Compra"
+}
+
+function ocNextAction(orderStatus: string): string {
+  switch (orderStatus) {
+    case "draft":              return "Emite la orden para poder enviarla al proveedor."
+    case "issued":             return "Marca la orden como enviada al proveedor."
+    case "sent":               return "Confirma la recepción del proveedor o registra la llegada a oficina."
+    case "supplier_confirmed": return "Registra la recepción cuando lleguen los ítems."
+    case "partially_office_received":
+    case "office_received":    return "Despacha los ítems a faena para completar la recepción."
+    case "partially_received": return "Registra la recepción del saldo pendiente en faena."
+    case "received":           return "Orden recibida completamente."
+    case "closed":             return "Orden cerrada."
+    default:                   return "Revisa el detalle para ver el siguiente paso."
+  }
+}
+
+function ocItemStatusLabel(item: OcProgressItem): string {
+  if (item.quantityReceived <= 0) return "Pendiente recepción"
+  if (item.quantityReceived >= item.quantity) return "Recibido"
+  return "Recepción parcial"
+}
+
 // ── Private helpers ──────────────────────────────────────────────────────────
 
 function orderTask(order: WorkOrderRow, statusLabel: string, ctaLabel: string): WorkTask {
@@ -173,6 +247,8 @@ function orderTask(order: WorkOrderRow, statusLabel: string, ctaLabel: string): 
     type:        "purchase_order",
     title:       `${order.code}`,
     subtitle:    `${order.worksiteName} · ${order.supplierName} · ${formatCount(order.itemCount, "ítem", "ítems")}`,
+    worksiteId:  order.worksiteId,
+    worksiteName: order.worksiteName,
     statusLabel,
     priority:    "normal",
     createdAt:   order.issuedAt ?? order.createdAt,
@@ -217,6 +293,7 @@ function groupItemsByRequest(items: WorkItemRow[]) {
   const groups = new Map<string, {
     requestId: string
     requestCode: string
+    worksiteId: string
     worksiteName: string
     items: WorkItemRow[]
   }>()
@@ -225,6 +302,7 @@ function groupItemsByRequest(items: WorkItemRow[]) {
     const group = groups.get(item.requestId) ?? {
       requestId: item.requestId,
       requestCode: item.requestCode,
+      worksiteId: item.worksiteId,
       worksiteName: item.worksiteName,
       items: [],
     }

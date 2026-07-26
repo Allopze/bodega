@@ -10,6 +10,12 @@ export type WorkTaskType =
   | "purchase_order"
   | "receipt"
   | "warehouse_delivery"
+  | "pdtp"
+  | "capa"
+  | "inspection"
+  | "documentation"
+  | "ppa"
+  | "sst"
 
 export type WorkPriority = "critical" | "high" | "normal" | "low"
 
@@ -18,6 +24,10 @@ export interface WorkTask {
   type:        WorkTaskType
   title:       string
   subtitle:    string
+  /** Faena ya autorizada desde la que se originó la tarea. Permite filtrar la
+   * cola sin volver a inferirla desde texto de presentación. */
+  worksiteId:  string
+  worksiteName: string
   statusLabel: string
   priority:    WorkPriority
   createdAt:   string
@@ -40,6 +50,8 @@ export interface WorkRequestRow {
   requesterId:   string
   status:        string
   urgency:       string | null
+  /** Fecha requerida nativa de la solicitud; nunca se deriva de la UI. */
+  requiredDate?: string | null
   createdAt:     string
   submittedAt:   string | null
   itemCount:     number
@@ -56,6 +68,8 @@ export interface WorkItemRow {
   productName:   string
   status:        string
   urgency:       string | null
+  /** Fecha requerida del ítem o, como respaldo, de su solicitud. */
+  requiredDate?: string | null
   createdAt:     string
   quantity:      number
   unitOfMeasure: string
@@ -75,6 +89,8 @@ export interface WorkOrderRow {
   itemCount:       number
   totalAmount:     number
   deliveryMode?:   string
+  /** Compromiso de proveedor registrado en la orden de compra. */
+  estimatedDelivery?: string | null
 }
 
 export interface WorkQueueSnapshot {

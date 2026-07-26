@@ -18,7 +18,6 @@ import { getBackupStats, getLatestBackup, getDriveHealth, getBackupConfig } from
 import { execFile } from "node:child_process"
 import { promisify } from "node:util"
 import { existsSync } from "node:fs"
-import path from "node:path"
 
 const execFileAsync = promisify(execFile)
 
@@ -30,22 +29,11 @@ const BACKUP_SCRIPT_NAMES = [
   "backup-verify.sh",
 ]
 
-// En Docker standalone (output: "standalone"), process.cwd() es .next/standalone/.
-// Los scripts no están ahí, así que intentamos varias rutas.
-function findScriptsDir(): string | null {
-  const candidates = [
-    path.resolve(process.cwd(), "scripts"),
-    path.resolve(process.cwd(), "..", "scripts"),          // standalone -> raíz
-    path.resolve(process.cwd(), "..", "..", "scripts"),   // un paso más arriba
-    process.env.BACKUP_SCRIPTS_PATH ?? "",
-  ]
-  for (const dir of candidates) {
-    if (dir && existsSync(dir)) return dir
-  }
-  return null
-}
-
-const SCRIPTS_DIR = findScriptsDir()
+// Keep the runtime path explicit so Next's standalone tracer does not follow
+// the whole filesystem through process.cwd()/path.resolve. Deploy images copy
+// backup scripts to /app/scripts; local runs keep the repository-relative path.
+const SCRIPTS_DIR = process.env.BACKUP_SCRIPTS_PATH
+  ?? (process.env.NODE_ENV === "production" ? "/app/scripts" : "scripts")
 
 interface BackupApiStatus {
   status: "ok" | "degraded" | "error"
@@ -104,13 +92,9 @@ export async function GET() {
 
   // 1. Check script existence
   for (const name of BACKUP_SCRIPT_NAMES) {
-    if (SCRIPTS_DIR) {
-      try {
-        result.scripts[name] = existsSync(path.join(SCRIPTS_DIR, name))
-      } catch {
-        result.scripts[name] = false
-      }
-    } else {
+    try {
+      result.scripts[name] = existsSync(`${SCRIPTS_DIR}/${name}`)
+    } catch {
       result.scripts[name] = false
     }
     if (!result.scripts[name]) {
@@ -188,24 +172,22 @@ export async function GET() {
   }
 
   // 4. Quick check: try running backup-verify with --json (non-blocking, best-effort)
-  if (SCRIPTS_DIR) {
-    try {
-      const { stdout } = await execFileAsync(
-        path.join(SCRIPTS_DIR, "backup-verify.sh"),
-        ["--json"],
-        { timeout: 15000 },
-      )
-      const parsed = JSON.parse(stdout)
-      if (parsed && typeof parsed === "object" && typeof parsed.exit_code === "number") {
-        if (parsed.exit_code === 2) {
-          result.status = "error"
-        } else if (parsed.exit_code === 1 && result.status === "ok") {
-          result.status = "degraded"
-        }
+  try {
+    const { stdout } = await execFileAsync(
+      `${SCRIPTS_DIR}/backup-verify.sh`,
+      ["--json"],
+      { timeout: 15000 },
+    )
+    const parsed = JSON.parse(stdout)
+    if (parsed && typeof parsed === "object" && typeof parsed.exit_code === "number") {
+      if (parsed.exit_code === 2) {
+        result.status = "error"
+      } else if (parsed.exit_code === 1 && result.status === "ok") {
+        result.status = "degraded"
       }
-    } catch {
-      // Script verification is best-effort; don't fail the endpoint
     }
+  } catch {
+    // Script verification is best-effort; don't fail the endpoint
   }
 
   const httpStatus = result.status === "error" ? 503 : 200
