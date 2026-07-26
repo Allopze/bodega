@@ -25,7 +25,7 @@ interface TopBarProps {
   hidden?:       boolean
 }
 
-const ROUTES_WITH_OWN_SEARCH = ["/solicitudes", "/aprobaciones", "/compras", "/recepcion", "/prevencion/ppa", "/combustibles"]
+const ROUTES_WITH_OWN_SEARCH = ["/solicitudes", "/aprobaciones", "/compras", "/recepcion", "/pendientes", "/prevencion/ppa", "/combustibles"]
 
 const TopBarInner = React.memo(function TopBarInner({
   session,

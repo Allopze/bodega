@@ -7,6 +7,7 @@ import {
 } from "@/db/schema"
 import type { WorksiteScope } from "@/lib/auth/scope"
 import { nanoid } from "@/lib/id"
+import { recordOperationalActivity } from "@/lib/services/operational-activity"
 import {
   assertConfidentialityAllowed,
   assertScopeAccess,
@@ -160,6 +161,18 @@ async function transitionVersion(args: WorkflowInput, options: TransitionOptions
       comment,
       now,
     }))
+    if (doc.worksiteId && doc.confidentiality === "publico_interno" && doc.dataClass === "operational") {
+      await recordOperationalActivity({
+        eventType: "document.workflow_updated",
+        module: "documentacion",
+        entityType: "sst_document",
+        entityId: doc.id,
+        entityCode: doc.internalCode,
+        worksiteId: doc.worksiteId,
+        actorUserId: args.ctx.userId,
+        payload: { fromStatus: options.expected, toStatus: options.next },
+      }, tx)
+    }
     return updated
   })
 }
@@ -296,6 +309,18 @@ export async function publishDocumentVersion(args: WorkflowInput) {
       metadata: { previousVersionId },
       now,
     }))
+    if (doc.worksiteId && doc.confidentiality === "publico_interno" && doc.dataClass === "operational") {
+      await recordOperationalActivity({
+        eventType: "document.workflow_updated",
+        module: "documentacion",
+        entityType: "sst_document",
+        entityId: doc.id,
+        entityCode: doc.internalCode,
+        worksiteId: doc.worksiteId,
+        actorUserId: args.ctx.userId,
+        payload: { fromStatus: version.status, toStatus: "vigente" },
+      }, tx)
+    }
     return published
   })
 }

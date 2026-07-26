@@ -206,6 +206,14 @@ describe("Purchasing service — edge cases", () => {
       expect(order?.netAmount).toBe(50000)
       expect(order?.taxAmount).toBe(9500)
       expect(order?.totalAmount).toBe(59500)
+      const [createdEvent] = await inMemoryDb.select().from(schema.operationalActivityEvents)
+        .where(eq(schema.operationalActivityEvents.entityId, lifecycleOrderId))
+      expect(createdEvent).toMatchObject({
+        eventType: "purchase_order.created",
+        module: "compras",
+        worksiteId: "ws-purch",
+        actorUserId: userId,
+      })
 
       // Request item should be in_purchase_order
       const item = await inMemoryDb.query.purchaseRequestItems.findFirst({
@@ -223,6 +231,12 @@ describe("Purchasing service — edge cases", () => {
       })
       expect(order?.status).toBe("issued")
       expect(order?.issuedAt).toBeTruthy()
+      const events = await inMemoryDb.select().from(schema.operationalActivityEvents)
+        .where(eq(schema.operationalActivityEvents.entityId, lifecycleOrderId))
+      expect(events.map((event) => event.eventType)).toEqual([
+        "purchase_order.created",
+        "purchase_order.issued",
+      ])
     })
 
     it("issueOrder throws if order is not in draft", async () => {

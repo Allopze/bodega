@@ -14,6 +14,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { EPP_GAP_TYPE_LABELS, type EppCoverageGap } from "@/lib/prevention/epp"
 import { escalateBlockingEppGapsAction, generateReplenishmentAction } from "./actions"
 
+const ENFORCEMENT_LABELS: Record<string, string> = { blocking: "Bloqueante", warning: "Advertencia" }
+
 interface Props {
   gaps: EppCoverageGap[]
   canEscalate: boolean
@@ -44,7 +46,6 @@ export function EppGapList({ gaps, canEscalate }: Props) {
 
   const blockingCount = gaps.filter((gap) => gap.enforcement === "blocking").length
 
-  const ENFORCEMENT_LABELS: Record<string, string> = { blocking: "Bloqueante", warning: "Advertencia" }
   const GAP_TYPE_LABELS = EPP_GAP_TYPE_LABELS as Record<string, string>
   const activeChips: ActiveFilterChip[] = []
   if (enforcement !== "all") activeChips.push({ key: "exigibilidad", label: "Exigibilidad", value: enforcement, displayValue: ENFORCEMENT_LABELS[enforcement] ?? enforcement })

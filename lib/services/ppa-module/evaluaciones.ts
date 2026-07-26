@@ -18,6 +18,7 @@ import {
   notifyAfterCommit,
 } from "@/lib/services/notifications"
 import { logger } from "@/lib/logger"
+import { recordOperationalActivity } from "@/lib/services/operational-activity"
 import { hashPpaPublicToken } from "./public-token"
 
 export type PpaRow = Omit<PpaSubmission, "publicToken"> & { worksiteName: string | null }
@@ -136,6 +137,17 @@ export async function createPpaSubmission(
       actorUserId: null,
       createdAt: now,
     })
+    // Hecho transversal seguro: no incluye trabajador, RUT, respuestas ni
+    // motivos de detención. El detalle continúa protegido en el módulo PPA.
+    await recordOperationalActivity({
+      eventType: "ppa.evaluated",
+      module: "ppa",
+      entityType: "ppa",
+      entityId: id,
+      worksiteId: data.worksiteId,
+      actorSnapshot: null,
+      payload: { status: estado, critical: isTareaCritica(data.tipoTrabajo) },
+    }, tx)
   })
 
   if (evaluation.stop) {

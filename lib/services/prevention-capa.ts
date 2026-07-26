@@ -12,6 +12,7 @@ import {
 } from "@/db/schema"
 import type { WorksiteScope } from "@/lib/auth/scope"
 import { nanoid } from "@/lib/id"
+import { recordOperationalActivity } from "@/lib/services/operational-activity"
 import type { RequestContext } from "@/lib/services/prevention-documents/utils"
 import type { ReportData } from "@/lib/reports/export"
 
@@ -242,6 +243,16 @@ export async function createCapaActionWithClient(
     actorUserId,
     createdAt: now,
   })
+  await recordOperationalActivity({
+    eventType: "capa.created",
+    module: "capa",
+    entityType: "capa_action",
+    entityId: created.id,
+    entityCode: created.code,
+    worksiteId: created.worksiteId,
+    actorUserId,
+    payload: { status: created.status, priority: created.priority },
+  }, client)
   return created
 }
 
@@ -338,6 +349,16 @@ export async function updateCapaActionWithClient(
     actorUserId: access.ctx.userId,
     createdAt: now,
   })))
+  await recordOperationalActivity({
+    eventType: "capa.updated",
+    module: "capa",
+    entityType: "capa_action",
+    entityId: updated.id,
+    entityCode: updated.code,
+    worksiteId: updated.worksiteId,
+    actorUserId: access.ctx.userId,
+    payload: { status: updated.status, priority: updated.priority },
+  }, client)
   return updated
 }
 
@@ -448,6 +469,16 @@ export async function transitionCapaActionWithClient(
       actorUserId: access.ctx.userId,
       createdAt: now,
     })
+    await recordOperationalActivity({
+      eventType: "capa.transitioned",
+      module: "capa",
+      entityType: "capa_action",
+      entityId: updated.id,
+      entityCode: updated.code,
+      worksiteId: updated.worksiteId,
+      actorUserId: access.ctx.userId,
+      payload: { fromStatus: current.status, toStatus: updated.status, priority: updated.priority },
+    }, client)
     return updated
 }
 
@@ -716,6 +747,16 @@ export async function reconcileCapaAction(args: {
       actorUserId: args.ctx.userId,
       createdAt: now,
     })
+    await recordOperationalActivity({
+      eventType: "capa.updated",
+      module: "capa",
+      entityType: "capa_action",
+      entityId: updated.id,
+      entityCode: updated.code,
+      worksiteId: updated.worksiteId,
+      actorUserId: args.ctx.userId,
+      payload: { status: updated.status, reconciliationStatus: updated.reconciliationStatus },
+    }, tx)
     return updated
   })
 }

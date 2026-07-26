@@ -7,6 +7,12 @@ PORT="${E2E_PORT:-3100}"
 AUTH_SECRET_VALUE="e2e-auth-secret-for-playwright"
 APP_URL_VALUE="http://localhost:$PORT"
 
+# postgres-js treats a URL without a host as TCP localhost unless PGHOST is
+# explicit, while psql resolves the same URL through the local socket. Keep
+# both clients on the same disposable database in local E2E runs. A host in a
+# full TCP URL still wins over this default.
+export PGHOST="${PGHOST:-/var/run/postgresql}"
+
 MAINTENANCE_DB_URL="$(node -e 'const u = new URL(process.argv[1]); u.pathname = "/postgres"; console.log(u.toString())' "$DB_URL")"
 
 # Detect common local setup problems early so the E2E run fails fast with a

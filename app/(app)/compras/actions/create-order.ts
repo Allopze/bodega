@@ -1,12 +1,12 @@
 "use server"
 
 import { redirect } from "next/navigation"
-import { revalidatePath } from "next/cache"
 import { db } from "@/db"
 import { canAccessWorksite, requirePermission } from "@/lib/auth/can"
 import { createOrdersBySupplier } from "@/lib/services/purchasing"
 import { logger } from "@/lib/logger"
 import { createOrderSchema, type ActionState } from "@/lib/validation/operations"
+import { revalidateOperationalViews } from "@/lib/services/operational-cache"
 import { dbErrMsg } from "./helpers"
 import { REVALIDATE } from "./revalidate"
 
@@ -175,7 +175,7 @@ ${supplierMismatches.map((m) => `  • ${m}`).join("\n")}`,
       })),
     })
 
-    revalidatePath(REVALIDATE)
+    revalidateOperationalViews([REVALIDATE, "/compras/nueva"])
     if (orderIds.length === 1) redirect(`/compras/${orderIds[0]}`)
     redirect(`${REVALIDATE}?creadas=${orderIds.length}`)
   } catch (e) {

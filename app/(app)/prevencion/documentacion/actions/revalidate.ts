@@ -1,9 +1,8 @@
 "use server"
 
-import { revalidatePath } from "next/cache"
 import { REVALIDATE } from "./shared"
+import { revalidateOperationalViews } from "@/lib/services/operational-cache"
 
 export async function revalidateBiblioteca(documentId?: string) {
-  revalidatePath(REVALIDATE)
-  if (documentId) revalidatePath(`${REVALIDATE}/${documentId}`)
+  revalidateOperationalViews([REVALIDATE, ...(documentId ? [`${REVALIDATE}/${documentId}`] : [])])
 }

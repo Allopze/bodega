@@ -3,7 +3,7 @@ import type { Session } from "next-auth"
 import Link from "next/link"
 import { can } from "@/lib/auth/can"
 import type { Permission } from "@/modules/permissions"
-import { cn } from "@/lib/utils"
+import { Button } from "@/components/ui/button"
 import {
   ChartBar,
   CheckSquare,
@@ -13,6 +13,7 @@ import {
   Truck,
   Warehouse,
 } from "@phosphor-icons/react/dist/ssr"
+import { DashboardActionMenu } from "./dashboard-action-menu"
 
 type IconComponent = ComponentType<{ size: number; className?: string }>
 
@@ -24,8 +25,8 @@ interface ActionDef {
   Icon:       IconComponent
 }
 
-// Order doubles as priority: the first action the user can do becomes the
-// filled primary pill; the rest render as ghost pills.
+// El orden es también la jerarquía: la primera acción disponible se vuelve
+// primaria. El resto se conserva en el menú contextual, sin perder accesos.
 const ACTIONS: ActionDef[] = [
   { key: "new-request", label: "Nueva solicitud",      href: "/solicitudes/nueva", permission: "requests:create",             Icon: ClipboardText },
   { key: "approvals",   label: "Revisar aprobaciones", href: "/aprobaciones",      permission: "approvals:approve",           Icon: CheckSquare },
@@ -36,47 +37,37 @@ const ACTIONS: ActionDef[] = [
   { key: "reports",     label: "Reportes",             href: "/reportes",          permission: "reports:view",                Icon: ChartBar },
 ]
 
-const pillBase =
-  "group inline-flex h-9 items-center gap-2 rounded-[var(--radius)] px-3.5 text-[13px] font-medium transition-[background-color,border-color,color,transform] duration-[var(--duration-fast)] ease-[var(--ease-out)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]"
-
 /**
- * Toolbar de accesos rápidos, adaptada al rol. La acción principal va como pill
- * llena verde; el resto como pills ghost. Sin tarjetas: una sola fila que envuelve.
+ * El filtrado de permisos se ejecuta en el servidor. Sólo el popover de
+ * acciones secundarias cruza a cliente, con una lista ya autorizada.
  */
 export function QuickActions({ session }: { session: Session }) {
   const actions = ACTIONS.filter((action) => can(session, action.permission))
-  const [primary, ...rest] = actions
+  const [primary, secondary, ...overflow] = actions
   if (!primary) return null
 
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      <Link
-        key={primary.key}
-        href={primary.href}
-        data-pressable
-        className={cn(pillBase, "bg-[var(--color-primary)] text-white hover:bg-[var(--color-primary-strong)]")}
-      >
-        <primary.Icon size={15} />
-        {primary.label}
-      </Link>
-
-      {rest.map((action) => (
-        <Link
-          key={action.key}
-          href={action.href}
-          data-pressable
-          className={cn(
-            pillBase,
-            "border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] hover:border-[var(--color-primary-line)] hover:bg-[var(--color-primary-tint)] hover:text-[var(--color-primary-ink)]",
-          )}
-        >
-          <action.Icon
-            size={15}
-            className="text-[var(--color-text-muted)] transition-colors duration-[var(--duration-fast)] group-hover:text-[var(--color-primary)]"
-          />
-          {action.label}
+    <div className="flex items-center gap-2">
+      <Button asChild size="sm">
+        <Link href={primary.href}>
+          <primary.Icon size={15} />
+          {primary.label}
         </Link>
-      ))}
+      </Button>
+      {secondary && (
+        <Button asChild size="sm" variant="secondary" className="hidden sm:inline-flex">
+          <Link href={secondary.href}>
+            <secondary.Icon size={15} />
+            {secondary.label}
+          </Link>
+        </Button>
+      )}
+      {(overflow.length > 0 || secondary) && (
+        <DashboardActionMenu
+          secondary={secondary ? { key: secondary.key, label: secondary.label, href: secondary.href } : undefined}
+          actions={overflow.map(({ key, label, href }) => ({ key, label, href }))}
+        />
+      )}
     </div>
   )
 }

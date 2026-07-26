@@ -1,6 +1,5 @@
 "use server"
 
-import { revalidatePath, revalidateTag } from "next/cache"
 import { redirect } from "next/navigation"
 import { eq } from "drizzle-orm"
 import { db } from "@/db"
@@ -10,6 +9,7 @@ import { nextCodeTx } from "@/lib/code-sequences"
 import { recordAudit } from "@/lib/audit"
 import { canAccessWorksite, requirePermission } from "@/lib/auth/can"
 import { type ActionState } from "@/lib/validation/operations"
+import { revalidateOperationalViews } from "@/lib/services/operational-cache"
 
 const REVALIDATE = "/solicitudes"
 
@@ -96,7 +96,6 @@ export async function duplicateRequest(_prev: ActionState, formData: FormData): 
     }
   })
 
-  revalidatePath(REVALIDATE)
-  revalidateTag("badge-counts", { expire: 0 })
+  revalidateOperationalViews([REVALIDATE, `${REVALIDATE}/${newId!}`])
   redirect(`${REVALIDATE}/${newId!}`)
 }

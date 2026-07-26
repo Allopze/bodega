@@ -1,8 +1,8 @@
 "use server"
 
-import { revalidatePath } from "next/cache"
 import { guardPermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
+import { revalidateOperationalViews } from "@/lib/services/operational-cache"
 import {
   listPpa,
   countPpa,
@@ -45,8 +45,7 @@ function operationAccess(session: {
 }
 
 function refreshPpa(id: string) {
-  revalidatePath(REVALIDATE)
-  revalidatePath(`${REVALIDATE}/${id}`)
+  revalidateOperationalViews([REVALIDATE, `${REVALIDATE}/${id}`])
 }
 
 function failure(error: unknown, fallback: string): ActionState {
@@ -111,8 +110,7 @@ export async function reviewPpaAction(
   const worksiteIds = scopeToIds(resolveWorksiteScope(session))
   try {
     const updated = await reviewPpa(parsed.data, session.user.id, worksiteIds)
-    revalidatePath(REVALIDATE)
-    revalidatePath(`${REVALIDATE}/${updated.id}`)
+    refreshPpa(updated.id)
 
     // El trabajador ve la decisión en su página pública de resultado
     // (`/ppa/result/[token]`), que refleja el estado actual del caso. No se
@@ -249,8 +247,7 @@ export async function revokePpaTokenAction(
   const worksiteIds = scopeToIds(resolveWorksiteScope(session))
   try {
     await revokePpaToken(id, session.user.id, worksiteIds)
-    revalidatePath(REVALIDATE)
-    revalidatePath(`${REVALIDATE}/${id}`)
+    refreshPpa(id)
     return { ok: true, message: "Acceso público revocado. El enlace ya no muestra el resultado." }
   } catch (e) {
     return { ok: false, message: e instanceof Error ? e.message : "Error al revocar el acceso público" }

@@ -186,6 +186,7 @@ function OutcomeDialog({ enrollment }: { enrollment: EnrollmentInfo }) {
   const [open, setOpen] = React.useState(false)
   const [status, setStatus] = React.useState<SurveillanceOutcomeStatus>("summoned")
   const operation = useOperation()
+  const defaultAttendedOn = React.useMemo(() => new Date().toISOString().slice(0, 10), [])
 
   function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -216,7 +217,7 @@ function OutcomeDialog({ enrollment }: { enrollment: EnrollmentInfo }) {
           </Field>
           {status === "attended" && (
             <>
-              <Field label="Fecha del control" required><DatePicker name="attendedOn" defaultValue={new Date().toISOString().slice(0, 10)} /></Field>
+              <Field label="Fecha del control" required><DatePicker name="attendedOn" defaultValue={defaultAttendedOn} /></Field>
               <Field label="ID del registro de salud" hint="Opcional. El resultado clínico vive en el dominio cifrado, no aquí.">
                 <Input name="healthRecordId" />
               </Field>

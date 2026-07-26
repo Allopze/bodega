@@ -16,13 +16,16 @@ import { useBulkApproveAction } from "./use-approval-actions"
 import { updateDeliveryModeAction } from "./actions"
 import { INITIAL_STATE } from "@/components/admin/form-state"
 
+const EMPTY_SELECTED_IDS: string[] = []
+
 export function RequestGroup({
-  request, canApproveEpp, canSetDispatch,
-  selectedIds = [], onToggleItem, onToggleMany,
+  request, canApproveEpp, canSetDispatch, canAssignWork,
+  selectedIds = EMPTY_SELECTED_IDS, onToggleItem, onToggleMany,
 }: {
   request: ApprovalRequest
   canApproveEpp: boolean
   canSetDispatch: boolean
+  canAssignWork: boolean
   /** E-3 · selección en lote, gestionada por ApprovalPanel. */
   selectedIds?: string[]
   onToggleItem?: (id: string) => void
@@ -47,7 +50,8 @@ export function RequestGroup({
   const pendingIds = request.pendingItems.map((i) => i.id).join(",")
   // E-3 · estado de la casilla maestra de este grupo
   const groupItemIds = request.pendingItems.map((i) => i.id)
-  const selectedInGroup = groupItemIds.filter((id) => selectedIds.includes(id)).length
+  const selectedSet = React.useMemo(() => new Set(selectedIds), [selectedIds])
+  const selectedInGroup = groupItemIds.filter((id) => selectedSet.has(id)).length
   const allSelected = groupItemIds.length > 0 && selectedInGroup === groupItemIds.length
   const allApproved = bulkState.ok === true
   const canApproveThisRequest = request.requestType !== "epp" || canApproveEpp
@@ -152,7 +156,8 @@ export function RequestGroup({
               key={item.id}
               item={item}
               canApprove={canApproveThisRequest}
-              selected={selectedIds.includes(item.id)}
+              canAssignWork={canAssignWork}
+              selected={selectedSet.has(item.id)}
               onToggleSelect={canApproveThisRequest && onToggleItem ? onToggleItem : undefined}
             />
           ))}

@@ -2,6 +2,7 @@
 
 import type { FilterOption } from "@/components/adquisiciones/list-filters"
 import { URGENCY_OPTIONS as CANONICAL_URGENCY_OPTIONS, URGENCY_LABELS } from "@/lib/urgency-labels"
+import type { OperationalWorkItem } from "@/lib/services/operational-work-queue"
 
 export const URGENCY_OPTIONS: FilterOption[] = CANONICAL_URGENCY_OPTIONS.map((o) => ({ value: o.value, label: o.label }))
 
@@ -36,12 +37,15 @@ export interface ApprovalItem {
   attributes:            ApprovalAttribute[]
   suggestedSupplierName?: string | null
   supplierHint?:         string | null
+  /** Proyección de la misma etapa para asignarla sin perder contexto. */
+  operationalItem?:      OperationalWorkItem
 }
 
 export interface ApprovalRequest {
   id:              string
   code:            string
   requestType:     string
+  worksiteId:      string
   worksiteName:    string
   requesterName:   string
   requestUrgency:  string

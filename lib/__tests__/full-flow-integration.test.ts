@@ -295,6 +295,14 @@ describe("Full procurement workflow integration", () => {
     expect(receipt).toBeDefined()
     expect(receipt?.status).toBe("closed")
     expect(receipt?.items[0]?.quantityReceived).toBe(10)
+    const [receiptActivity] = await inMemoryDb.select().from(schema.operationalActivityEvents)
+      .where(eq(schema.operationalActivityEvents.entityId, receiptId))
+    expect(receiptActivity).toMatchObject({
+      eventType: "receipt.registered",
+      module: "recepciones",
+      worksiteId,
+      actorUserId: userId,
+    })
 
     // Verify Purchase Order rolled up to "received"
     const finalOrder = await inMemoryDb.query.purchaseOrders.findFirst({
@@ -336,6 +344,14 @@ describe("Full procurement workflow integration", () => {
     expect(delivery?.destinationType).toBe("worker")
     expect(delivery?.workerId).toBe(workerId)
     expect(delivery?.items[0]?.requestItemId).toBe(requestItemId)
+    const [deliveryActivity] = await inMemoryDb.select().from(schema.operationalActivityEvents)
+      .where(eq(schema.operationalActivityEvents.entityId, deliveryId))
+    expect(deliveryActivity).toMatchObject({
+      eventType: "delivery.registered",
+      module: "entregas",
+      worksiteId,
+      actorUserId: userId,
+    })
 
     const stockAfterDelivery = await inMemoryDb.query.worksiteStock.findFirst({
       where: eq(schema.worksiteStock.worksiteId, worksiteId),

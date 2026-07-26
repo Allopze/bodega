@@ -1,7 +1,6 @@
 "use server"
 
 import { redirect } from "next/navigation"
-import { revalidatePath } from "next/cache"
 import { db } from "@/db"
 import { purchaseOrderItems, purchaseOrders, suppliers, worksites } from "@/db/schema"
 import { count, eq } from "drizzle-orm"
@@ -13,6 +12,7 @@ import type { ActionState } from "@/lib/validation/operations"
 import { assertOrderAccess } from "../actions.helpers"
 import { dbErrMsg, serviceWorksiteScope } from "./helpers"
 import { REVALIDATE } from "./revalidate"
+import { revalidateOperationalViews } from "@/lib/services/operational-cache"
 
 // ── Issue OC (draft → issued) ─────────────────────────────────────────────────
 
@@ -40,6 +40,7 @@ export async function issueOrderAction(
     logger.error("[issueOrderAction]", e)
     return { ok: false, message: dbErrMsg(e, "Error al emitir orden") }
   }
+  revalidateOperationalViews([REVALIDATE, `/compras/${orderId}`])
   redirect(`/compras/${orderId}?actualizada=emitida`)
 }
 
@@ -108,6 +109,7 @@ export async function sendOrderAction(
     )
   })
 
+  revalidateOperationalViews([REVALIDATE, `/compras/${orderId}`, "/recepcion"])
   redirect(`/compras/${orderId}?actualizada=enviada`)
 }
 
@@ -133,8 +135,7 @@ export async function confirmOrderAction(
     await confirmOrder(orderId, session.user.id, serviceWorksiteScope(session), {
       userEmail: session.user.email ?? undefined,
     })
-    revalidatePath(REVALIDATE)
-    revalidatePath(`/compras/${orderId}`)
+    revalidateOperationalViews([REVALIDATE, `/compras/${orderId}`])
     return { ok: true, message: "Orden confirmada por proveedor" }
   } catch (e) {
     logger.error("[confirmOrderAction]", e)

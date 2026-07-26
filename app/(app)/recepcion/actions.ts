@@ -1,7 +1,6 @@
 "use server"
 
 import { redirect }      from "next/navigation"
-import { revalidatePath } from "next/cache"
 import { db } from "@/db"
 import { purchaseOrders } from "@/db/schema"
 import { eq } from "drizzle-orm"
@@ -10,6 +9,7 @@ import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { registerReceipt } from "@/lib/services/receiving"
 import { receiptSchema, type ActionState } from "@/lib/validation/operations"
 import { logger } from "@/lib/logger"
+import { revalidateOperationalViews } from "@/lib/services/operational-cache"
 
 const REVALIDATE = "/recepcion"
 
@@ -99,9 +99,7 @@ export async function registerReceiptAction(
       items:           nonZeroItems,
     }, serviceWorksiteScope(session))
 
-    revalidatePath(REVALIDATE)
-    revalidatePath("/compras")
-    revalidatePath("/bodega")
+    revalidateOperationalViews([REVALIDATE, "/compras", `/compras/${purchaseOrderId}`, "/bodega"])
   } catch (e) {
     logger.error("[registerReceiptAction]", e)
     return { ok: false, message: e instanceof Error ? e.message : "Error al registrar recepción" }

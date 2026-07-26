@@ -40,6 +40,7 @@ export default async function DeliveryPrintPage({ params }: PageProps) {
     ? `${delivery.worker.firstName} ${delivery.worker.lastName}`.trim()
     : delivery.receiverName ?? "—"
   const workerRut = delivery.worker?.rut ?? delivery.receiverRut ?? "—"
+  const generatedAt = new Date().toISOString()
 
   return (
     // Antes esto renderizaba su propio <html><head><body> además del que ya
@@ -189,7 +190,7 @@ export default async function DeliveryPrintPage({ params }: PageProps) {
         </div>
 
         <div className="footer">
-          Documento generado por Plataforma Chome — {formatDate(new Date().toISOString())}
+          Documento generado por Plataforma Chome — {formatDate(generatedAt)}
         </div>
       </>
   )

@@ -9,6 +9,8 @@ import {
   ShoppingCart,
   Truck,
   Warehouse,
+  WarningCircle,
+  FileText,
 } from "@phosphor-icons/react/dist/ssr"
 import type { WorkPriority, WorkTask, WorkTaskType } from "@/lib/work-queue"
 
@@ -21,6 +23,12 @@ export const TASK_ICON: Record<WorkTaskType, IconComponent> = {
   purchase_order:    ShoppingCart,
   receipt:           Truck,
   warehouse_delivery: Warehouse,
+  pdtp:              ClipboardText,
+  capa:              WarningCircle,
+  inspection:        ClipboardText,
+  documentation:     FileText,
+  ppa:               WarningCircle,
+  sst:               CheckSquare,
 }
 
 export const TASK_TYPE_LABEL: Record<WorkTaskType, string> = {
@@ -30,6 +38,12 @@ export const TASK_TYPE_LABEL: Record<WorkTaskType, string> = {
   purchase_order:     "OC",
   receipt:            "Recepción",
   warehouse_delivery: "Entrega",
+  pdtp:               "PDTP",
+  capa:               "CAPA",
+  inspection:         "Inspección",
+  documentation:      "Documentación",
+  ppa:                "PPA",
+  sst:                "SST",
 }
 
 const SHORT_DATE_FORMAT = new Intl.DateTimeFormat("es-CL", {

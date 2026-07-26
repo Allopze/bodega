@@ -13,11 +13,13 @@ export function ApprovalPanel({
   requests,
   canApproveEpp,
   canSetDispatch,
+  canAssignWork,
   worksiteOptions = [],
 }: {
   requests:        ApprovalRequest[]
   canApproveEpp:   boolean
   canSetDispatch:  boolean
+  canAssignWork:   boolean
   worksiteOptions?: FilterOption[]
 }) {
   // E-3: la selección vive aquí, no en cada grupo, para poder aprobar ítems de
@@ -33,7 +35,7 @@ export function ApprovalPanel({
   const toggleMany = React.useCallback((ids: string[], select: boolean) => {
     setSelectedIds((prev) => select
       ? [...new Set([...prev, ...ids])]
-      : prev.filter((id) => !ids.includes(id)))
+      : prev.filter((id) => !new Set(ids).has(id)))
   }, [])
 
   // Si la lista cambia tras aprobar, se descartan los ids que ya no existen.
@@ -76,6 +78,7 @@ export function ApprovalPanel({
             request={req}
             canApproveEpp={canApproveEpp}
             canSetDispatch={canSetDispatch}
+            canAssignWork={canAssignWork}
             selectedIds={selectedIds}
             onToggleItem={toggleItem}
             onToggleMany={toggleMany}

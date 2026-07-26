@@ -1,6 +1,5 @@
 "use server"
 
-import { revalidatePath, revalidateTag } from "next/cache"
 import { redirect } from "next/navigation"
 import { and, eq, inArray } from "drizzle-orm"
 import { db } from "@/db"
@@ -15,6 +14,7 @@ import { isRequestType, permissionForRequestType, QUOTATION_TYPES } from "@/lib/
 import { submitRepuestoRequest } from "@/lib/services/repuestos"
 import { submitServiceRequest } from "@/lib/services/servicios"
 import { persistDraft } from "./draft"
+import { revalidateOperationalViews } from "@/lib/services/operational-cache"
 
 const REVALIDATE = "/solicitudes"
 
@@ -88,8 +88,7 @@ export async function submitRequest(_prev: ActionState, formData: FormData): Pro
       }),
     ))
 
-    revalidatePath(REVALIDATE)
-    revalidateTag("badge-counts", { expire: 0 })
+    revalidateOperationalViews([REVALIDATE, `${REVALIDATE}/${requestId}`])
     redirect(`${REVALIDATE}/${requestId}`)
   }
 
@@ -120,7 +119,6 @@ export async function submitRequest(_prev: ActionState, formData: FormData): Pro
         oldState:   { status: "draft" },
         newState:   { status: "submitted" },
       }, tx)
-
       for (const item of request.items) {
         await submitItemTx(tx, item.id, session.user.id, { userEmail: session.user.email ?? undefined })
       }
@@ -141,7 +139,6 @@ export async function submitRequest(_prev: ActionState, formData: FormData): Pro
     }),
   ))
 
-  revalidatePath(REVALIDATE)
-  revalidateTag("badge-counts", { expire: 0 })
+  revalidateOperationalViews([REVALIDATE, `${REVALIDATE}/${requestId}`])
   redirect(`${REVALIDATE}/${requestId}`)
 }

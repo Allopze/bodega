@@ -15,6 +15,7 @@ import { login } from "./helpers"
 
 const CRITICAL_ROUTES = [
   { path: "/dashboard",        name: "Dashboard" },
+  { path: "/pendientes",       name: "Mis pendientes" },
   { path: "/solicitudes",      name: "Solicitudes" },
   { path: "/aprobaciones",     name: "Aprobaciones" },
   { path: "/compras",          name: "Compras" },

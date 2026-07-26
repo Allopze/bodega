@@ -44,6 +44,7 @@ afterAll(async () => {
 })
 
 beforeEach(async () => {
+  await inMemoryDb.delete(schema.operationalActivityEvents)
   await inMemoryDb.delete(schema.preventionRiskLegalHistory)
   await inMemoryDb.delete(schema.pdtpObligationReminders)
   await inMemoryDb.delete(schema.pdtpObligations)
@@ -1210,6 +1211,14 @@ describe("prevention PDTP service", () => {
     const approved = await approvePdtpExecution(exec.id, "user-1", ["ws-1"])
     expect(approved.status).toBe("approved")
     expect(approved.approvedByUserId).toBe("user-1")
+
+    const events = await inMemoryDb.select().from(schema.operationalActivityEvents)
+      .where(eq(schema.operationalActivityEvents.entityId, exec.id))
+    expect(events.map((event) => event.eventType)).toEqual([
+      "pdtp.execution_submitted",
+      "pdtp.execution_approved",
+    ])
+    expect(events.every((event) => event.worksiteId === "ws-1" && event.actorUserId === "user-1")).toBe(true)
 
     // Already approved → throws
     await expect(approvePdtpExecution(exec.id, "user-1", ["ws-1"])).rejects.toThrow(/ya fue aprobada/i)

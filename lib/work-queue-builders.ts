@@ -34,6 +34,8 @@ export function buildWorkTasks(actor: WorkActor, snapshot: WorkQueueSnapshot): W
         type:        "request_followup",
         title:       request.code,
         subtitle:    `${request.worksiteName} · ${formatCount(request.itemCount, "ítem", "ítems")}`,
+        worksiteId:  request.worksiteId,
+        worksiteName: request.worksiteName,
         statusLabel: requestStatusLabel(request.status),
         priority:    normalizePriority(request.urgency),
         createdAt:   request.submittedAt ?? request.createdAt,
@@ -50,6 +52,8 @@ export function buildWorkTasks(actor: WorkActor, snapshot: WorkQueueSnapshot): W
         type:        "approval",
         title:       `Revisar ${group.requestCode}`,
         subtitle:    `${group.worksiteName} · ${formatCount(group.items.length, "ítem pendiente", "ítems pendientes")}`,
+        worksiteId:  group.worksiteId,
+        worksiteName: group.worksiteName,
         statusLabel: "Necesita aprobación",
         priority:    highestPriority(group.items.map((item) => normalizePriority(item.urgency))),
         createdAt:   oldestDate(group.items.map((item) => item.createdAt)),
@@ -66,6 +70,8 @@ export function buildWorkTasks(actor: WorkActor, snapshot: WorkQueueSnapshot): W
         type:        "purchase",
         title:       "Generar orden de compra",
         subtitle:    `${group.worksiteName} · ${formatCount(group.items.length, "ítem aprobado", "ítems aprobados")}`,
+        worksiteId:  group.worksiteId,
+        worksiteName: group.worksiteName,
         statusLabel: "Listo para comprar",
         priority:    highestPriority(group.items.map((item) => normalizePriority(item.urgency))),
         createdAt:   oldestDate(group.items.map((item) => item.createdAt)),
@@ -92,6 +98,8 @@ export function buildWorkTasks(actor: WorkActor, snapshot: WorkQueueSnapshot): W
         type:        "receipt",
         title:       `Llegada a oficina ${order.code}`,
         subtitle:    `${order.worksiteName} · ${order.supplierName} · ${formatCount(order.itemCount, "ítem", "ítems")}`,
+        worksiteId:  order.worksiteId,
+        worksiteName: order.worksiteName,
         statusLabel: order.status === "partially_office_received" ? "Oficina parcial" : "Esperando llegada",
         priority:    "normal",
         createdAt:   order.sentAt ?? order.createdAt,
@@ -113,6 +121,8 @@ export function buildWorkTasks(actor: WorkActor, snapshot: WorkQueueSnapshot): W
         type:        "receipt",
         title:       `Recibir en faena ${order.code}`,
         subtitle:    `${order.worksiteName} · ${order.supplierName} · ${formatCount(order.itemCount, "ítem", "ítems")}`,
+        worksiteId:  order.worksiteId,
+        worksiteName: order.worksiteName,
         statusLabel: order.status === "partially_received" ? "Recepción parcial" : "Pendiente de faena",
         priority:    "normal",
         createdAt:   order.sentAt ?? order.createdAt,
@@ -132,6 +142,8 @@ export function buildWorkTasks(actor: WorkActor, snapshot: WorkQueueSnapshot): W
         type:        "warehouse_delivery",
         title:       `Entregar ${item.productName}`,
         subtitle:    `${item.requestCode} · ${item.worksiteName} · ${formatQuantity(item.quantity, item.unitOfMeasure)}`,
+        worksiteId:  item.worksiteId,
+        worksiteName: item.worksiteName,
         statusLabel: item.status === "partially_delivered" ? "Entrega parcial" : "Recibido en bodega",
         priority:    normalizePriority(item.urgency),
         createdAt:   item.createdAt,
@@ -235,6 +247,8 @@ function orderTask(order: WorkOrderRow, statusLabel: string, ctaLabel: string): 
     type:        "purchase_order",
     title:       `${order.code}`,
     subtitle:    `${order.worksiteName} · ${order.supplierName} · ${formatCount(order.itemCount, "ítem", "ítems")}`,
+    worksiteId:  order.worksiteId,
+    worksiteName: order.worksiteName,
     statusLabel,
     priority:    "normal",
     createdAt:   order.issuedAt ?? order.createdAt,
@@ -279,6 +293,7 @@ function groupItemsByRequest(items: WorkItemRow[]) {
   const groups = new Map<string, {
     requestId: string
     requestCode: string
+    worksiteId: string
     worksiteName: string
     items: WorkItemRow[]
   }>()
@@ -287,6 +302,7 @@ function groupItemsByRequest(items: WorkItemRow[]) {
     const group = groups.get(item.requestId) ?? {
       requestId: item.requestId,
       requestCode: item.requestCode,
+      worksiteId: item.worksiteId,
       worksiteName: item.worksiteName,
       items: [],
     }

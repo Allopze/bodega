@@ -197,6 +197,7 @@ storage/
 |---|---|---|
 | `backup-scheduler` | Orquesta backup completo (PG + storage + config) + subida a Google Drive | Servicio Docker (`docker compose --profile backup up -d`) |
 | `/api/cron/backup-health` | Verifica edad del último backup (<36h) | Cron externo (UptimeRobot, healthchecks.io, o Vercel Cron) |
+| `/api/cron/operational-metric-snapshots` | Captura el backlog diario autorizado para comparativos reales | GitHub Actions `Operational metric snapshots` (diario, requiere `PRODUCTION_APP_URL` y `CRON_SECRET`) |
 | `cleanupOldNotifications(90)` | Limpia notificaciones leídas > 90 días | TBD — endpoint `/api/cron/*` o servicio Docker |
 | `cleanupRateLimits()` | Limpia locks expirados y contadores stale | TBD — endpoint `/api/cron/*` o servicio Docker |
 

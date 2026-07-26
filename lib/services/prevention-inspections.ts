@@ -15,6 +15,7 @@ import {
 } from "@/db/schema"
 import type { WorksiteScope } from "@/lib/auth/scope"
 import { nanoid } from "@/lib/id"
+import { recordOperationalActivity } from "@/lib/services/operational-activity"
 import { getUserIdsWithPermission } from "@/lib/services/notification-targeting"
 import {
   addDays,
@@ -446,6 +447,16 @@ export async function completeInspectionRun(input: unknown, access: InspectionAc
     }
 
     await history(tx, { entityType: "run", entityId: run.id, worksiteId: run.worksiteId, changeType: "completed", reason: `Ejecutada con ${summary.nonConforming} incumplimiento(s) y ${derived.length} hallazgo(s)`, beforeState: run, afterState: updated, actorUserId: access.userId })
+    await recordOperationalActivity({
+      eventType: "inspection.completed",
+      module: "inspecciones",
+      entityType: "inspection_run",
+      entityId: updated.id,
+      entityCode: updated.code,
+      worksiteId: updated.worksiteId,
+      actorUserId: access.userId,
+      payload: { nonConforming: summary.nonConforming, findings: derived.length },
+    }, tx)
 
     // Auto-acreditación PDTP: actividades declaradas en la plantilla. Se dispara
     // DESPUÉS del commit (ver abajo) para no dejar ejecuciones huérfanas si la
@@ -559,6 +570,16 @@ export async function reviewInspectionRun(input: unknown, access: InspectionAcce
     }).where(and(eq(preventionInspectionRuns.id, run.id), eq(preventionInspectionRuns.version, data.expectedVersion))).returning()
     if (!updated) throw new Error("La inspección cambió mientras la revisabas. Recarga y reintenta.")
     await history(tx, { entityType: "run", entityId: run.id, worksiteId: run.worksiteId, changeType: "reviewed", reason: data.reviewComment, beforeState: run, afterState: updated, actorUserId: access.userId })
+    await recordOperationalActivity({
+      eventType: "inspection.reviewed",
+      module: "inspecciones",
+      entityType: "inspection_run",
+      entityId: updated.id,
+      entityCode: updated.code,
+      worksiteId: updated.worksiteId,
+      actorUserId: access.userId,
+      payload: { status: updated.status },
+    }, tx)
     return updated
   })
 }

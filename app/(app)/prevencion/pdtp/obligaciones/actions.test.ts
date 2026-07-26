@@ -8,7 +8,7 @@ const cancelPdtpObligation = vi.hoisted(() => vi.fn())
 
 vi.mock("@/lib/auth/can", () => ({ guardPermission }))
 vi.mock("@/lib/auth/scope", () => ({ resolveWorksiteScope }))
-vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }))
+vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), revalidateTag: vi.fn() }))
 vi.mock("@/lib/services/prevention-pdtp", () => ({ createPdtpObligation, reportPdtpObligation, cancelPdtpObligation }))
 
 import { cancelPdtpObligationAction, createPdtpObligationAction, reportPdtpObligationAction } from "./actions"

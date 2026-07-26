@@ -1,6 +1,5 @@
 "use server"
 
-import { revalidatePath, revalidateTag } from "next/cache"
 import { eq } from "drizzle-orm"
 import { db } from "@/db"
 import { purchaseRequests } from "@/db/schema"
@@ -9,6 +8,7 @@ import { deleteRequest } from "@/lib/services/requests-delete"
 import { isOwnerDeletable } from "@/lib/services/requests-delete.constants"
 import { type ActionState } from "@/lib/validation/operations"
 import { logger } from "@/lib/logger"
+import { revalidateOperationalViews } from "@/lib/services/operational-cache"
 
 const REVALIDATE = "/solicitudes"
 
@@ -49,7 +49,6 @@ export async function deleteRequestAction(_prev: ActionState, formData: FormData
     return { ok: false, message: "Error al eliminar la solicitud" }
   }
 
-  revalidatePath(REVALIDATE)
-  revalidateTag("badge-counts", { expire: 0 })
+  revalidateOperationalViews([REVALIDATE])
   return { ok: true, message: "Solicitud eliminada correctamente" }
 }

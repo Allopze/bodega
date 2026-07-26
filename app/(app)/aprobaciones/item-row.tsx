@@ -13,14 +13,16 @@ import type { ApprovalItem } from "./types"
 import { ApproveForm } from "./approve-form"
 import { ReasonForm } from "./reason-form"
 import { useItemActions } from "./use-approval-actions"
+import { WorkAssignmentControl } from "../pendientes/work-assignment-control"
 
 type ItemAction = "idle" | "approving" | "rejecting"
 
 export function ItemRow({
-  item, canApprove = true, selected = false, onToggleSelect,
+  item, canApprove = true, canAssignWork = false, selected = false, onToggleSelect,
 }: {
   item: ApprovalItem
   canApprove?: boolean
+  canAssignWork?: boolean
   /** E-3 · selección en lote. Sin `onToggleSelect` no se renderiza la casilla. */
   selected?: boolean
   onToggleSelect?: (id: string) => void
@@ -158,6 +160,11 @@ export function ItemRow({
           <span className="text-[11px] text-[var(--color-text-subtle)] italic shrink-0 max-w-[140px] text-right leading-tight">
             Requiere Jefatura, Secretaría o Prevención
           </span>
+        )}
+        {canAssignWork && item.operationalItem && (
+          <div className="shrink-0">
+            <WorkAssignmentControl item={item.operationalItem} showAssignee />
+          </div>
         )}
       </div>
 

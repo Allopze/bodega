@@ -6,7 +6,8 @@ import { toast } from "@/lib/toast"
 import { Warning } from "@phosphor-icons/react"
 import { SubmitButton } from "@/components/admin/submit-button"
 import { INITIAL_STATE } from "@/components/admin/form-state"
-import { issueOrderAction, sendOrderAction, cancelOrderAction, confirmOrderAction, closeOrderAction, deleteOrderAction } from "../actions"
+import { issueOrderAction, sendOrderAction, confirmOrderAction } from "../actions/order-status"
+import { cancelOrderAction, closeOrderAction, deleteOrderAction } from "../actions/order-cancel"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,

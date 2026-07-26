@@ -61,9 +61,13 @@ export function MetricBar({
     { key: "rate",       label: "Tasa aprob.",   value: `${approvalRate}%`,   icon: <ChartLineUp size={13} />, permissions: ["approvals:approve", "reports:view"], progress: approvalRate },
   ]
 
-  const stats: SummaryStat[] = allStats
-    .filter((stat) => !stat.permissions || stat.permissions.length === 0 || canAny(session, ...stat.permissions))
-    .map(({ permissions: _permissions, ...rest }) => rest)
+  const stats = allStats.reduce<SummaryStat[]>((visible, stat) => {
+    if (!stat.permissions || stat.permissions.length === 0 || canAny(session, ...stat.permissions)) {
+      const { permissions: _permissions, ...rest } = stat
+      visible.push(rest)
+    }
+    return visible
+  }, [])
 
   return <SummaryBar stats={stats} />
 }

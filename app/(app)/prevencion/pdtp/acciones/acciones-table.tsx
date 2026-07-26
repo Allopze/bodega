@@ -74,7 +74,7 @@ export function AccionesTable({ items, activityLabelById, worksiteNameById, work
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
         <Select value={filters.estado ?? "__all"} onValueChange={(v) => updateFilter("estado", v === "__all" ? null : v)}>
-          <SelectTrigger className="w-40"><SelectValue placeholder="Estado" /></SelectTrigger>
+          <SelectTrigger aria-label="Filtrar por estado" className="w-40"><SelectValue placeholder="Estado" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="__all">Todos los estados</SelectItem>
             {Object.entries(ESTADO_LABELS).map(([value, label]) => (
@@ -84,7 +84,7 @@ export function AccionesTable({ items, activityLabelById, worksiteNameById, work
         </Select>
 
         <Select value={filters.prioridad ?? "__all"} onValueChange={(v) => updateFilter("prioridad", v === "__all" ? null : v)}>
-          <SelectTrigger className="w-36"><SelectValue placeholder="Prioridad" /></SelectTrigger>
+          <SelectTrigger aria-label="Filtrar por prioridad" className="w-36"><SelectValue placeholder="Prioridad" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="__all">Toda prioridad</SelectItem>
             <SelectItem value="alta">Alta</SelectItem>
@@ -94,7 +94,7 @@ export function AccionesTable({ items, activityLabelById, worksiteNameById, work
         </Select>
 
         <Select value={filters.worksiteId ?? "__all"} onValueChange={(v) => updateFilter("faena", v === "__all" ? null : v)}>
-          <SelectTrigger className="w-48"><SelectValue placeholder="Faena" /></SelectTrigger>
+          <SelectTrigger aria-label="Filtrar por faena" className="w-48"><SelectValue placeholder="Faena" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="__all">Todas las faenas</SelectItem>
             {worksites.map((w) => (
@@ -104,7 +104,7 @@ export function AccionesTable({ items, activityLabelById, worksiteNameById, work
         </Select>
 
         <Select value={filters.soloVencidas ? "1" : "0"} onValueChange={(v) => updateFilter("vencidas", v === "1" ? "1" : null)}>
-          <SelectTrigger className="w-48"><SelectValue placeholder="Vencimiento" /></SelectTrigger>
+          <SelectTrigger aria-label="Filtrar por vencimiento" className="w-48"><SelectValue placeholder="Vencimiento" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="0">Cualquier vencimiento</SelectItem>
             <SelectItem value="1">Solo vencidas</SelectItem>

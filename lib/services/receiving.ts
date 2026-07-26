@@ -166,15 +166,16 @@ export async function registerReceipt(
             where: eq(purchaseRequestItems.id, lockedOcItem.requestItemId),
             with: { request: { columns: { requesterId: true, code: true, id: true } } },
           })
-          const requesterId = reqItem?.request?.requesterId
+          const request = reqItem?.request
+          const requesterId = request?.requesterId
           if (requesterId) {
             notifyAfterCommit(() => notifyManyUser([requesterId], {
               type: "receipt_done",
-              title: `Pedido recibido en Oficina Chome`,
-              body: `El ítem de tu solicitud ${reqItem?.request?.code ?? ""} llegó al checkpoint de Oficina Chome y se prepara su traslado a faena.`,
+              title: "Pedido recibido en Oficina Chome",
+              body: `El ítem de tu solicitud ${request?.code ?? ""} llegó al checkpoint de Oficina Chome y se prepara su traslado a faena.`,
               entityType: "purchase_request",
-              entityId: reqItem?.request?.id ?? "",
-              entityHref: `/solicitudes/${reqItem?.request?.id ?? ""}`,
+              entityId: request?.id ?? "",
+              entityHref: `/solicitudes/${request?.id ?? ""}`,
             }))
           }
         }
@@ -238,7 +239,6 @@ export async function registerReceipt(
         itemCount:       input.items.length,
       },
     }, tx)
-
     return txCode
   })
 

@@ -5,7 +5,7 @@ const mockAuth = vi.hoisted(() => vi.fn())
 const mockTransition = vi.hoisted(() => vi.fn())
 
 vi.mock("@/lib/auth/auth", () => ({ auth: mockAuth }))
-vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }))
+vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), revalidateTag: vi.fn() }))
 // Mockea solo las funciones de servicio; deja pasar capaTransitionSchema y
 // CAPA_STATUSES reales para que el boundary parseZ de la action se valide
 // contra el schema de producción real, no un doble de prueba.

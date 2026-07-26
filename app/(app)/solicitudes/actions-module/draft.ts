@@ -1,6 +1,5 @@
 "use server"
 
-import { revalidatePath, revalidateTag } from "next/cache"
 import type { Session } from "next-auth"
 import { can, canAccessWorksite, requireAuth } from "@/lib/auth/can"
 import { requestSchema, type ActionState } from "@/lib/validation/operations"
@@ -10,6 +9,7 @@ import { addQuotation, persistRepuestoDraft } from "@/lib/services/repuestos"
 import { addServiceQuotation, persistServiceDraft } from "@/lib/services/servicios"
 import { getPdfMaxSizeMb } from "@/lib/services/system-settings"
 import { persistRequestWithDiff } from "@/lib/services/requests-draft"
+import { revalidateOperationalViews } from "@/lib/services/operational-cache"
 
 const REVALIDATE = "/solicitudes"
 
@@ -24,8 +24,7 @@ export async function saveDraft(
   const result = await persistDraft(session, formData)
   if (!result.ok) return result
 
-  revalidatePath(REVALIDATE)
-  revalidateTag("badge-counts", { expire: 0 })
+  revalidateOperationalViews([REVALIDATE, `${REVALIDATE}/${result.requestId}`])
   return { ok: true, message: "Borrador guardado", requestId: result.requestId, lastSavedAt: new Date().toISOString() }
 }
 

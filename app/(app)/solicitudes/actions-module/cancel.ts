@@ -1,6 +1,5 @@
 "use server"
 
-import { revalidatePath, revalidateTag } from "next/cache"
 import { redirect } from "next/navigation"
 import { and, eq, inArray } from "drizzle-orm"
 import { db } from "@/db"
@@ -8,6 +7,7 @@ import { purchaseRequestItems, purchaseRequests } from "@/db/schema"
 import { recordAudit, recordStatusChange } from "@/lib/audit"
 import { can, canAccessWorksite, requireAuth } from "@/lib/auth/can"
 import { type ActionState } from "@/lib/validation/operations"
+import { revalidateOperationalViews } from "@/lib/services/operational-cache"
 
 const REVALIDATE = "/solicitudes"
 
@@ -100,7 +100,6 @@ export async function cancelRequest(_prev: ActionState, formData: FormData): Pro
     }, tx)
   })
 
-  revalidatePath(REVALIDATE)
-  revalidateTag("badge-counts", { expire: 0 })
+  revalidateOperationalViews([REVALIDATE, `${REVALIDATE}/${requestId}`])
   redirect(REVALIDATE)
 }

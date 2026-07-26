@@ -27,6 +27,9 @@ import { DeliveriesTable, type DeliveryRow } from "./deliveries-table"
 import { DeliveryForm, type DeliverableEppOption } from "./delivery-form"
 import { DeliveryFormPanel } from "./delivery-form-panel"
 import { DeliveryFormTrigger } from "./delivery-form-trigger"
+import { WorkAssignmentControl } from "../pendientes/work-assignment-control"
+import { getOperationalAssignmentRecords } from "@/lib/services/operational-assignments"
+import { buildOperationalWorkItem, operationalAssignmentKey } from "@/lib/services/operational-work-queue"
 
 export const metadata: Metadata = { title: "Entregas" }
 
@@ -40,6 +43,7 @@ export default async function Page({
   let session
   try { session = await requirePermission("deliveries:view") }
   catch { redirect("/forbidden") }
+  const canAssignWork = session.user.permissions.includes("operations:assign_work")
 
   const sp = await searchParams
   const requestedWorksiteId = typeof sp.faena === "string" ? sp.faena : ""
@@ -93,6 +97,10 @@ export default async function Page({
         productNameFree: purchaseRequestItems.productNameFree,
         quantity:        purchaseRequestItems.quantity,
         unitOfMeasure:   purchaseRequestItems.unitOfMeasure,
+        urgency:         purchaseRequestItems.urgency,
+        requiredDate:    purchaseRequestItems.requiredDate,
+        status:          purchaseRequestItems.status,
+        createdAt:       purchaseRequestItems.createdAt,
         requestCode:     purchaseRequests.code,
         requestWorksiteId: purchaseRequests.worksiteId,
         productName:     products.name,
@@ -135,6 +143,7 @@ export default async function Page({
 
   const worksiteOptions = allWorksites.map((worksite) => ({ id: worksite.id, name: worksite.name }))
   const visibleWorksiteIds = new Set(worksiteOptions.map((worksite) => worksite.id))
+  const worksiteNameById = new Map(worksiteOptions.map((worksite) => [worksite.id, worksite.name]))
 
   const workerOptions = allWorkers
     .map((worker) => ({
@@ -191,6 +200,39 @@ export default async function Page({
     ?? (requestedWorksiteId && visibleWorksiteIds.has(requestedWorksiteId) ? requestedWorksiteId : undefined)
     ?? deliverableItems[0]?.worksiteId
     ?? worksiteOptions[0]?.id
+  const initialDeliverySource = initialDeliverable
+    ? receivedItems.find((item) => item.id === initialDeliverable.requestItemId)
+    : undefined
+  const deliveryAssignmentRecords = canAssignWork && initialDeliverySource
+    ? await getOperationalAssignmentRecords([{
+        sourceType: "purchase_request_item",
+        sourceId: initialDeliverySource.id,
+        actionKey: "deliver",
+        worksiteId: initialDeliverySource.requestWorksiteId,
+      }], session)
+    : new Map()
+  const deliveryAssignmentItem = canAssignWork && initialDeliverySource && initialDeliverable
+    ? buildOperationalWorkItem({
+        sourceType: "purchase_request_item",
+        sourceId: initialDeliverySource.id,
+        actionKey: "deliver",
+        module: "entregas",
+        code: initialDeliverySource.requestCode,
+        title: `Entregar ${initialDeliverable.productName}`,
+        subtitle: `${initialDeliverySource.requestCode} · ${worksiteNameById.get(initialDeliverySource.requestWorksiteId) ?? "Faena"}`,
+        worksiteId: initialDeliverySource.requestWorksiteId,
+        worksiteName: worksiteNameById.get(initialDeliverySource.requestWorksiteId) ?? "Faena",
+        status: initialDeliverySource.status,
+        statusLabel: "Lista para entrega",
+        priority: initialDeliverySource.urgency === "critical" ? "critical" : initialDeliverySource.urgency === "high" ? "high" : "normal",
+        blocked: false,
+        createdAt: initialDeliverySource.createdAt,
+        sourceDueAt: initialDeliverySource.requiredDate,
+        href: `/entregas?faena=${initialDeliverySource.requestWorksiteId}&item=${initialDeliverySource.id}`,
+        ctaLabel: "Registrar entrega",
+        assignable: true,
+      }, deliveryAssignmentRecords.get(operationalAssignmentKey("purchase_request_item", initialDeliverySource.id, "deliver")))
+    : null
 
   const visibleHistory = historyRows
   const historyDeliveryIds = visibleHistory.map((delivery) => delivery.id)
@@ -232,7 +274,6 @@ export default async function Page({
     historyItemsByDelivery.set(item.deliveryId, list)
   }
   const attachmentByDeliveryId = new Map(attachmentRows.map((row) => [row.entityId, row.id]))
-  const worksiteNameById = new Map(worksiteOptions.map((worksite) => [worksite.id, worksite.name]))
   const workerNameById = new Map(workerOptions.map((worker) => [worker.id, worker.name]))
 
   const deliveriesForTable: DeliveryRow[] = visibleHistory.map((delivery) => {
@@ -334,6 +375,18 @@ export default async function Page({
               initialRequestItemId={initialDeliverable?.requestItemId}
             />
           </DeliveryFormPanel>
+        )}
+
+        {deliveryAssignmentItem && (
+          <section className="border-t border-[var(--color-border)] pt-4" aria-labelledby="delivery-assignment-title">
+            <div className="flex flex-col gap-3 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0">
+                <h2 id="delivery-assignment-title" className="text-base font-semibold text-[var(--color-text)]">Responsable de esta entrega</h2>
+                <p className="mt-0.5 text-sm text-[var(--color-text-muted)]">{deliveryAssignmentItem.title}. La fecha del ítem sigue siendo la prioridad operativa.</p>
+              </div>
+              <WorkAssignmentControl item={deliveryAssignmentItem} showAssignee />
+            </div>
+          </section>
         )}
 
         {/* ── Historial de entregas ── */}
