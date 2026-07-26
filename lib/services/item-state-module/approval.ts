@@ -29,7 +29,9 @@ export async function bulkApproveItems(
     for (const itemId of itemIds) {
       try {
         const [locked] = await tx
-          .select({ id: purchaseRequestItems.id, status: purchaseRequestItems.status, requestId: purchaseRequestItems.requestId })
+          .select({
+          id: purchaseRequestItems.id, status: purchaseRequestItems.status, requestId: purchaseRequestItems.requestId,
+          })
           .from(purchaseRequestItems)
           .where(eq(purchaseRequestItems.id, itemId))
           .for("update")
@@ -75,7 +77,6 @@ export async function bulkApproveItems(
           oldState:   { status: locked.status },
           newState:   { status: "approved" },
         }, tx)
-
         approved.push(itemId)
       } catch {
         errors.push(itemId)
@@ -106,7 +107,9 @@ export async function approveItem(
 ): Promise<void> {
   await db.transaction(async (tx) => {
     const [locked] = await tx
-      .select({ id: purchaseRequestItems.id, status: purchaseRequestItems.status, requestId: purchaseRequestItems.requestId })
+      .select({
+        id: purchaseRequestItems.id, status: purchaseRequestItems.status, requestId: purchaseRequestItems.requestId,
+      })
       .from(purchaseRequestItems)
       .where(eq(purchaseRequestItems.id, itemId))
       .for("update")
@@ -171,7 +174,6 @@ export async function approveItem(
       oldState:   { status: locked.status },
       newState:   { status: "approved", modifiedQty: opts?.modifiedQty },
     }, tx)
-
     await rollupRequestStatus(locked.requestId, tx)
   })
 }
@@ -231,7 +233,6 @@ export async function rejectItem(
       newState:   { status: "rejected" },
       reason,
     }, tx)
-
     await rollupRequestStatus(item.requestId, tx)
   })
 }
@@ -292,7 +293,6 @@ export async function returnItem(
       newState:   { status: "returned" },
       reason,
     }, tx)
-
     await rollupRequestStatus(item.requestId, tx)
   })
 }

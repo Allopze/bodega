@@ -43,7 +43,9 @@ jobs:
       - name: Apply Drizzle migrations
         env:
           DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
-        run: npm run db:migrate
+        run: |
+          npm run db:verify-migrations
+          npm run db:migrate
 
   # Permissions are derived from the registered module manifests rather than
   # from schema migrations. Keep the populated production database in sync

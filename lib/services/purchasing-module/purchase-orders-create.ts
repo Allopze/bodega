@@ -203,7 +203,6 @@ export async function createOrdersBySupplier(input: CreateOrdersBySupplierInput)
           itemCount:   orderInput.items.length,
         },
       }, tx)
-
       for (const item of orderInput.items) {
         await addItemToPurchaseOrderTx(tx, item.requestItemId, orderId, input.createdBy, {
           userEmail: input.userEmail,

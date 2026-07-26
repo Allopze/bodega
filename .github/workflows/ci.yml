@@ -56,7 +56,9 @@ jobs:
         run: npm audit --omit=dev --omit=peer --audit-level=high
 
       - name: Verify Drizzle migrations
-        run: npm run db:migrate
+        run: |
+          npm run db:verify-migrations
+          npm run db:migrate
 
       - name: Typecheck
         run: npm run typecheck

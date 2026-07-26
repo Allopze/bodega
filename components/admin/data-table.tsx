@@ -32,6 +32,13 @@ const DENSITY_KEY = "table-density"
 const DENSITY_EVENT = "table-density-change"
 type Density = "comfortable" | "compact"
 
+function defaultColumnKeys<T extends { key: string; defaultVisible?: boolean }>(columns: T[]) {
+  return columns.reduce<string[]>((keys, column) => {
+    if (column.defaultVisible !== false) keys.push(column.key)
+    return keys
+  }, [])
+}
+
 function getDensitySnapshot(): Density {
   if (typeof window === "undefined") return "comfortable"
   return localStorage.getItem(DENSITY_KEY) === "compact" ? "compact" : "comfortable"
@@ -126,7 +133,7 @@ const DataTableInner = <T extends Record<string, unknown>>({
   // Persist column visibility to URL when viewKey is set
   React.useEffect(() => {
     if (!viewKey) return
-    const allDefault = columns.filter((c) => c.defaultVisible !== false).map((c) => c.key)
+    const allDefault = defaultColumnKeys(columns)
     const current = Array.from(visibleKeys)
     const isDefault = current.length === allDefault.length && allDefault.every((k) => visibleKeys.has(k))
     setViewParam(`${viewKey}_cols`, isDefault ? null : current.join(","))
@@ -271,7 +278,7 @@ const DataTableInner = <T extends Record<string, unknown>>({
                     <button
                       type="button"
                       onClick={() => {
-                        setVisibleKeys(new Set(columns.filter((c) => c.defaultVisible !== false).map((c) => c.key)))
+                        setVisibleKeys(new Set(defaultColumnKeys(columns)))
                         setSortKey(null)
                         setSortDir(null)
                       }}
@@ -305,7 +312,7 @@ const DataTableInner = <T extends Record<string, unknown>>({
                       type="button"
                       onClick={() => toggleSort(col.key)}
                       className={cn(
-                        "inline-flex items-center gap-1",
+                        "inline-flex min-h-6 min-w-6 items-center gap-1",
                         "text-eyebrow hover:text-[var(--color-text)]",
                         "transition-[color,transform] duration-[var(--duration-fast)] ease-[var(--ease-out)]",
                         "select-none",

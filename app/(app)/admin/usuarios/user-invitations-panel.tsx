@@ -11,7 +11,7 @@ import { Field } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { formatDate } from "@/lib/utils"
 import { INITIAL_STATE } from "@/components/admin/form-state"
-import { cancelInvitation, resendInvitation } from "./actions"
+import { cancelInvitation, resendInvitation } from "./actions/invitations"
 
 export interface InvitationRow {
   id: string
