@@ -6,8 +6,7 @@ import { requirePermission } from "@/lib/auth/can"
 import { resolveWorksiteScope, worksiteScopeSql } from "@/lib/auth/scope"
 import { PageHeader } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
-import { SummaryBar, type SummaryStat } from "@/components/ui/summary-bar"
-import { Buildings, CheckCircle, PauseCircle, MapPin } from "@phosphor-icons/react/dist/ssr"
+import { HeaderSignals, type HeaderSignal } from "@/components/ui/header-signals"
 import { FaenasList } from "./faenas-list"
 import { FaenasActions } from "./faenas-actions"
 
@@ -25,27 +24,29 @@ export default async function FaenasPage() {
   const canCreateWorksites = resolveWorksiteScope(session).mode === "all"
 
   const activeCount = allWorksites.filter((w) => w.isActive).length
+  const inactiveCount = allWorksites.length - activeCount
   const regionCount = new Set(allWorksites.flatMap((w) => w.region ? [w.region] : [])).size
-  const summaryStats: SummaryStat[] = [
-    { key: "total",    label: "Faenas",    value: allWorksites.length,             icon: <Buildings size={13} /> },
-    { key: "active",   label: "Activas",   value: activeCount,                     icon: <CheckCircle size={13} /> },
-    { key: "inactive", label: "Inactivas", value: allWorksites.length - activeCount, icon: <PauseCircle size={13} /> },
-    { key: "regions",  label: "Regiones",  value: regionCount,                     icon: <MapPin size={13} /> },
+  // Solo "Inactivas" es accionable (reactivar/limpiar); total/regiones van en descripción.
+  const headerSignals: HeaderSignal[] = [
+    { key: "inactive", label: "Inactivas", value: inactiveCount, tone: "signal" },
   ]
+  const description = allWorksites.length > 0
+    ? `${allWorksites.length} faenas · ${activeCount} activas · ${regionCount} regiones`
+    : "Configura las faenas activas de la organización."
 
   return (
     <PageContainer>
       <PageHeader
         title="Faenas"
-        description="Configura las faenas activas de la organización."
+        description={description}
         breadcrumb={[
           { label: "Dashboard", href: "/dashboard" },
           { label: "Administración", href: "/admin" },
           { label: "Faenas" },
         ]}
+        headerActions={<HeaderSignals signals={headerSignals} />}
         actions={canCreateWorksites ? <FaenasActions /> : undefined}
       />
-      {allWorksites.length > 0 && <SummaryBar className="mb-4" stats={summaryStats} />}
       <FaenasList
         worksites={allWorksites.map((w) => ({
           id: w.id, name: w.name, code: w.code,

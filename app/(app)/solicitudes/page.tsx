@@ -6,6 +6,7 @@ import { desc, count, inArray, eq, and, or, ilike, sql } from "drizzle-orm"
 import { requireAuth, can, canAccessWorksite, isGlobalRole } from "@/lib/auth/can"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
+import { HeaderSignals, type HeaderSignal } from "@/components/ui/header-signals"
 import { ServerPagination } from "@/components/ui/server-pagination"
 import { buildPaginationHref, resolvePagination } from "@/lib/pagination"
 import { parseListParams, statusSql, worksiteEqSql } from "@/lib/adquisiciones/list-query"
@@ -78,11 +79,39 @@ export default async function SolicitudesPage({
     worksiteEqSql(purchaseRequests.worksiteId, listParams.faena),
   )
 
-  // Count total matching requests for pagination
-  const [totalRow] = await db
-    .select({ total: count() })
-    .from(purchaseRequests)
-    .where(where)
+  // Count total matching requests and overall summary metrics.
+  // Only draft + critical are tracked: they are the actionable signals
+  // (finish/submit a draft; pay attention to critical urgency). Other states
+  // (submitted, approved, total) are visible in the table itself and in the
+  // pagination, so they don't need a TopBar chip — that would just duplicate
+  // the estado filter (screen-density rule A5).
+  const [totalRow, metricsRow] = await Promise.all([
+    db
+      .select({ total: count() })
+      .from(purchaseRequests)
+      .where(where)
+      .then((res) => res[0]),
+
+    db
+      .select({
+        draft: count(sql`CASE WHEN ${purchaseRequests.status} = 'draft' THEN 1 END`),
+        critical: count(sql`CASE WHEN ${purchaseRequests.urgency} = 'critical' THEN 1 END`),
+      })
+      .from(purchaseRequests)
+      .where(filterConditions)
+      .then((res) => res[0]),
+  ])
+
+  const headerSignals: HeaderSignal[] = [
+    { key: "draft",    label: "Borradores",      value: metricsRow?.draft ?? 0,    href: "/solicitudes?estado=draft" },
+    { key: "critical", label: "Urgencia crítica", value: metricsRow?.critical ?? 0, href: "/solicitudes?urgencia=critical", tone: "signal" },
+  ]
+
+  const exportParams = new URLSearchParams({ tipo: "solicitudes" })
+  if (listParams.q) exportParams.set("q", listParams.q)
+  if (listParams.estados) exportParams.set("status", listParams.estados.join(","))
+  if (listParams.faena) exportParams.set("faena", listParams.faena)
+  const exportHref = `/api/reportes/export?${exportParams.toString()}`
 
   const pagination = resolvePagination({
     pageParam: sp.page,
@@ -128,7 +157,7 @@ export default async function SolicitudesPage({
     return (
       <PageContainer>
         <PageHeader
-        newShortcutHref="/solicitudes/nueva"
+          newShortcutHref="/solicitudes/nueva"
           title="Solicitudes de compra"
           description="Historial de solicitudes de compra por faena."
           breadcrumb={
@@ -137,7 +166,8 @@ export default async function SolicitudesPage({
               { label: "Solicitudes" },
             ]} />
           }
-          actions={<SolicitudesActions canCreate={can(session, "requests:create")} hasWorksites={hasWorksites} />}
+          headerActions={<HeaderSignals signals={headerSignals} />}
+          actions={<SolicitudesActions canCreate={can(session, "requests:create")} hasWorksites={hasWorksites} exportHref={exportHref} />}
         />
         <RequestList requests={[]} currentUserId={session.user.id} canDeleteAny={can(session, "requests:delete")} worksiteOptions={worksiteOptions} />
         <ServerPagination pagination={pagination} hrefForPage={pageHref} />
@@ -196,7 +226,8 @@ export default async function SolicitudesPage({
             { label: "Solicitudes" },
           ]} />
         }
-        actions={<SolicitudesActions canCreate={can(session, "requests:create")} hasWorksites={hasWorksites} />}
+        headerActions={<HeaderSignals signals={headerSignals} />}
+        actions={<SolicitudesActions canCreate={can(session, "requests:create")} hasWorksites={hasWorksites} exportHref={exportHref} />}
       />
       <RequestList
         requests={rows}

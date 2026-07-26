@@ -8,7 +8,7 @@ import {
 import { getOperationalSettings } from "@/lib/services/system-settings"
 import { PageHeader } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
-import { SummaryBar, type SummaryStat } from "@/components/ui/summary-bar"
+import { HeaderSignals, type HeaderSignal } from "@/components/ui/header-signals"
 import { NotificationAdminList } from "./notification-admin-list"
 
 export const metadata: Metadata = { title: "Notificaciones" }
@@ -26,24 +26,25 @@ export default async function AdminNotificationsPage() {
     getOperationalSettings(),
   ])
 
-  const summaryStats: SummaryStat[] = [
-    { key: "unread", label: "Sin leer", value: stats.unreadCount, tone: stats.unreadCount > 0 ? "signal" : undefined },
-    { key: "total", label: "Recientes (≤1000)", value: stats.totalRecent },
-    { key: "retention", label: "Retención (días)", value: ops.notificationRetentionDays },
+  // "Sin leer" es la señal accionable (revisar). El total reciente y la
+  // retención son config/info: van en la descripción del título.
+  const headerSignals: HeaderSignal[] = [
+    { key: "unread", label: "Sin leer", value: stats.unreadCount, tone: "signal" },
   ]
+  const description = `${stats.totalRecent} recientes · retención ${ops.notificationRetentionDays} días · las leídas se eliminan al superar la retención.`
 
   return (
     <PageContainer>
       <PageHeader
         title="Notificaciones"
-        description="Audita y limpia las notificaciones internas del sistema. Solo se eliminan notificaciones leídas que superen la retención configurada."
+        description={description}
         breadcrumb={[
           { label: "Dashboard", href: "/dashboard" },
           { label: "Administración", href: "/admin" },
           { label: "Notificaciones" },
         ]}
+        headerActions={<HeaderSignals signals={headerSignals} />}
       />
-      <SummaryBar className="mb-4" stats={summaryStats} />
       <NotificationAdminList
         rows={rows.map((r) => ({
           id: r.id,

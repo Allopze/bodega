@@ -105,7 +105,6 @@ export function OcList({
         statusOptions={OC_STATUS_OPTIONS}
         worksiteOptions={worksiteOptions}
         supplierOptions={supplierOptions}
-        exportTipo="compras"
       />
 
       {/* OC table */}

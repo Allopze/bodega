@@ -81,6 +81,7 @@ const DataTableInner = <T extends Record<string, unknown>>({
   loading = false,
   disableInternalSearch = false,
   enableColumnToggle = false,
+  hideDensityToggle = false,
   stickyFirstColumn = false,
   viewKey,
 }: DataTableProps<T>) => {
@@ -94,10 +95,13 @@ const DataTableInner = <T extends Record<string, unknown>>({
   // persisten en URL search params, sobreviviendo la navegación y siendo
   // compartibles via URL. Params: ${viewKey}_cols, ${viewKey}_sort, ${viewKey}_dir.
   const setViewParam = React.useCallback((key: string, value: string | null) => {
+    const currentVal = searchParams.get(key)
+    if ((currentVal ?? null) === (value ?? null)) return
     const params = new URLSearchParams(searchParams.toString())
     if (value === null) params.delete(key)
     else params.set(key, value)
-    router.replace(`?${params.toString()}`, { scroll: false })
+    const queryString = params.toString()
+    router.replace(queryString ? `?${queryString}` : window.location.pathname, { scroll: false })
   }, [searchParams, router])
 
   // Column visibility state — from URL or defaults
@@ -214,8 +218,11 @@ const DataTableInner = <T extends Record<string, unknown>>({
   return (
     <div className={cn("flex flex-col", className)}>
       {/* Toolbar — shown when there's an explicit search input, actions, or column toggle */}
-      {(hasExplicitSearch || actions || enableColumnToggle || showDensityToggle) && (
-        <div className="flex flex-col gap-3 mb-3 sm:flex-row sm:items-center sm:justify-between">
+      {(hasExplicitSearch || actions || enableColumnToggle || (showDensityToggle && !hideDensityToggle)) && (
+        <div className={cn(
+          "flex flex-col gap-3 mb-3 sm:flex-row sm:items-center",
+          hasExplicitSearch || showDensityToggle ? "sm:justify-between" : "sm:justify-end gap-2"
+        )}>
           <div className="flex items-center gap-2">
             {hasExplicitSearch && (
               <Input
@@ -230,7 +237,7 @@ const DataTableInner = <T extends Record<string, unknown>>({
                 aria-label="Buscar en la tabla"
               />
             )}
-            {showDensityToggle && (
+            {showDensityToggle && !hideDensityToggle && (
               <div
                 role="group"
                 aria-label="Densidad de la tabla"

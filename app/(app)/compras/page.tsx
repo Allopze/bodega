@@ -73,6 +73,14 @@ export default async function ComprasPage({
   // URL-synced search & filters (server-side, so search finds records on any page)
   const listParams = parseListParams(sp)
 
+  // Export URL respects the active filters (estado→status, q/faena/proveedor passthrough).
+  const exportParams = new URLSearchParams({ tipo: "compras" })
+  if (listParams.q) exportParams.set("q", listParams.q)
+  if (listParams.estados) exportParams.set("status", listParams.estados.join(","))
+  if (listParams.faena) exportParams.set("faena", listParams.faena)
+  if (listParams.proveedor) exportParams.set("proveedor", listParams.proveedor)
+  const exportHref = `/api/reportes/export?${exportParams.toString()}`
+
   // Extended text search: match OC code OR supplier name via EXISTS subquery.
   function escapeLikeLocal(v: string) { return v.replace(/[\\%_]/g, (c) => `\\${c}`) }
   const q = listParams.q.trim()
@@ -162,7 +170,7 @@ export default async function ComprasPage({
             ]} />
           }
           headerActions={<HeaderSignals signals={headerSignals} />}
-          actions={<ComprasActions canCreate={canCreateOrder} />}
+          actions={<ComprasActions canCreate={canCreateOrder} exportHref={exportHref} />}
         />
         <OcList orders={[]} pendingCount={0} postponedItems={[]} canCreate={canCreateOrder} canDelete={canDeleteOrder} createdCount={createdCount} worksiteOptions={worksiteOptions} supplierOptions={supplierOptions} />
 
@@ -277,7 +285,7 @@ export default async function ComprasPage({
           ]} />
         }
         headerActions={<HeaderSignals signals={headerSignals} />}
-        actions={<ComprasActions canCreate={canCreateOrder} />}
+        actions={<ComprasActions canCreate={canCreateOrder} exportHref={exportHref} />}
       />
       <OcList
         orders={rows}

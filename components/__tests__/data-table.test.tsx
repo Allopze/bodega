@@ -2,9 +2,10 @@
 import { describe, it, expect, afterEach, vi } from "vitest"
 import { render, screen, cleanup } from "@testing-library/react"
 
+const mockReplace = vi.fn()
 vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(),
-  useRouter: () => ({ replace: vi.fn() }),
+  useRouter: () => ({ replace: mockReplace }),
 }))
 
 import { DataTable } from "@/components/admin/data-table"
@@ -164,5 +165,22 @@ describe("DataTable", () => {
     )
 
     expect(container.querySelector("table")).toHaveClass("table-fixed", "min-w-0")
+  })
+
+  it("does not call router.replace on mount when viewKey is set and parameters match defaults", () => {
+    mockReplace.mockClear()
+    render(
+      withProvider(
+        <DataTable
+          columns={COLUMNS}
+          rows={ROWS}
+          searchKeys={["name"]}
+          viewKey="test_view"
+          renderRow={() => null}
+        />,
+      ),
+    )
+
+    expect(mockReplace).not.toHaveBeenCalled()
   })
 })

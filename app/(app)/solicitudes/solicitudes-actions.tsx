@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import Link from "next/link"
-import { Plus, Warning } from "@phosphor-icons/react"
+import { DownloadSimple, Plus, Warning } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose,
@@ -11,14 +11,26 @@ import {
 interface SolicitudesActionsProps {
   canCreate: boolean
   hasWorksites: boolean
+  exportHref?: string | null
 }
 
-export function SolicitudesActions({ canCreate, hasWorksites }: SolicitudesActionsProps) {
+export function SolicitudesActions({ canCreate, hasWorksites, exportHref }: SolicitudesActionsProps) {
   const [showWarningModal, setShowWarningModal] = useState(false)
 
-  if (!canCreate) return null
+  const exportButton = exportHref ? (
+    <Button variant="secondary" size="sm" asChild>
+      <a href={exportHref} download>
+        <DownloadSimple size={15} />
+        Exportar Excel
+      </a>
+    </Button>
+  ) : null
 
-  const button = hasWorksites ? (
+  if (!canCreate) {
+    return exportButton
+  }
+
+  const createButton = hasWorksites ? (
     <Button variant="primary" size="sm" asChild>
       <Link href="/solicitudes/nueva">
         <Plus weight="bold" size={16} />
@@ -33,8 +45,9 @@ export function SolicitudesActions({ canCreate, hasWorksites }: SolicitudesActio
   )
 
   return (
-    <>
-      {button}
+    <div className="flex items-center gap-2">
+      {exportButton}
+      {createButton}
       <Dialog open={showWarningModal} onOpenChange={setShowWarningModal}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader className="flex flex-col items-center text-center">
@@ -55,6 +68,6 @@ export function SolicitudesActions({ canCreate, hasWorksites }: SolicitudesActio
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </>
+    </div>
   )
 }

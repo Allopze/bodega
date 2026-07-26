@@ -2,14 +2,15 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { useRouter } from "next/navigation"
-import { Trash } from "@phosphor-icons/react"
+import { useRouter, useSearchParams } from "next/navigation"
+import { Plus, Trash } from "@phosphor-icons/react"
 import { DataTable } from "@/components/admin/data-table"
 import { StateBadge, REQUEST_STATE_META } from "@/components/states/state-badge"
 import { ListFilters, type FilterOption } from "@/components/adquisiciones/list-filters"
 import { OnboardingHint } from "@/components/ui/onboarding-hint"
 import { TableRow, TableCell } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { formatDate } from "@/lib/utils"
 import { toast } from "@/lib/toast"
@@ -88,11 +89,11 @@ function DeleteRequestButton({ requestId, code }: { requestId: string; code: str
         type="button"
         disabled={pending}
         onClick={(e) => { e.stopPropagation(); setOpen(true) }}
-        className="inline-flex items-center justify-center rounded p-1 text-text-subtle hover:text-danger hover:bg-danger-tint transition-colors disabled:opacity-40"
+        className="rounded p-1 text-[var(--color-text-subtle)] transition-colors hover:bg-[var(--color-surface-2)] hover:text-[var(--color-danger)] disabled:opacity-50"
         title="Eliminar solicitud"
         aria-label={`Eliminar solicitud ${code}`}
       >
-        <Trash size={15} />
+        <Trash size={16} />
       </button>
       <ConfirmDialog
         open={open}
@@ -124,6 +125,13 @@ export function RequestList({
   worksiteOptions?: FilterOption[]
 }) {
   const router = useRouter()
+  const searchParams = useSearchParams()
+
+  const currentQ = searchParams.get("q")
+  const currentEstado = searchParams.get("estado")
+  const currentFaena = searchParams.get("faena")
+  const currentUrgencia = searchParams.get("urgencia")
+  const hasActiveFilters = Boolean(currentQ || currentEstado || currentFaena || currentUrgencia)
 
   return (
     <div className="flex flex-col gap-4">
@@ -136,10 +144,10 @@ export function RequestList({
         searchPlaceholder="Buscar por código o producto..."
         statusOptions={STATUS_OPTIONS}
         worksiteOptions={worksiteOptions}
-        exportTipo="solicitudes"
       />
       <DataTable
         enableColumnToggle
+        hideDensityToggle
         viewKey="sol"
         stickyFirstColumn
         columns={COLUMNS}
@@ -148,7 +156,26 @@ export function RequestList({
         disableInternalSearch
         pageSize={25}
         emptyTitle="Sin solicitudes"
-        emptyDescription="No hay solicitudes que coincidan con los filtros."
+        emptyDescription={hasActiveFilters ? "No hay solicitudes que coincidan con los filtros aplicados." : "No hay solicitudes registradas aún."}
+        emptyAction={
+          hasActiveFilters ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              onClick={() => router.replace("/solicitudes", { scroll: false })}
+            >
+              Limpiar filtros
+            </Button>
+          ) : (
+            <Button size="sm" variant="primary" asChild>
+              <Link href="/solicitudes/nueva">
+                <Plus weight="bold" size={16} />
+                Nueva solicitud
+              </Link>
+            </Button>
+          )
+        }
         renderMobileCard={(row) => {
           const r = row as unknown as RequestRow
           return (

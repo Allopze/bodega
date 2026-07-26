@@ -4,8 +4,7 @@ import { db } from "@/db"
 import { requirePermission } from "@/lib/auth/can"
 import { PageHeader } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
-import { SummaryBar, type SummaryStat } from "@/components/ui/summary-bar"
-import { Storefront, CheckCircle, PauseCircle, Receipt } from "@phosphor-icons/react/dist/ssr"
+import { HeaderSignals, type HeaderSignal } from "@/components/ui/header-signals"
 import { SupplierList } from "./supplier-list"
 import { SupplierActions } from "./supplier-actions"
 
@@ -18,27 +17,29 @@ export default async function ProveedoresPage() {
   const allSuppliers = await db.query.suppliers.findMany({ orderBy: (s, { asc }) => [asc(s.name)] })
 
   const activeCount = allSuppliers.filter((s) => s.isActive).length
+  const inactiveCount = allSuppliers.length - activeCount
   const paymentTermsCount = new Set(allSuppliers.flatMap((s) => s.paymentTerms ? [s.paymentTerms] : [])).size
-  const summaryStats: SummaryStat[] = [
-    { key: "total",    label: "Proveedores",   value: allSuppliers.length,             icon: <Storefront size={13} /> },
-    { key: "active",   label: "Activos",       value: activeCount,                     icon: <CheckCircle size={13} /> },
-    { key: "inactive", label: "Inactivos",     value: allSuppliers.length - activeCount, icon: <PauseCircle size={13} /> },
-    { key: "terms",    label: "Cond. de pago", value: paymentTermsCount,               icon: <Receipt size={13} /> },
+  // Solo "Inactivos" es accionable; total/condiciones de pago van en descripción.
+  const headerSignals: HeaderSignal[] = [
+    { key: "inactive", label: "Inactivos", value: inactiveCount, tone: "signal" },
   ]
+  const description = allSuppliers.length > 0
+    ? `${allSuppliers.length} proveedores · ${activeCount} activos · ${paymentTermsCount} condiciones de pago`
+    : "Gestión de proveedores y precios referenciales."
 
   return (
     <PageContainer>
       <PageHeader
         title="Proveedores"
-        description="Gestión de proveedores y precios referenciales."
+        description={description}
         breadcrumb={[
           { label: "Dashboard", href: "/dashboard" },
           { label: "Administración", href: "/admin" },
           { label: "Proveedores" },
         ]}
+        headerActions={<HeaderSignals signals={headerSignals} />}
         actions={<SupplierActions />}
       />
-      {allSuppliers.length > 0 && <SummaryBar className="mb-4" stats={summaryStats} />}
       <SupplierList suppliers={allSuppliers.map((s) => ({
         id: s.id, name: s.name, rut: s.rut, contactName: s.contactName,
         businessActivity: s.businessActivity,

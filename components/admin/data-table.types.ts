@@ -48,6 +48,13 @@ export interface DataTableProps<T extends Record<string, unknown>> {
   /** When true, adds a "Columnas" dropdown menu allowing users to toggle column visibility */
   enableColumnToggle?: boolean
   /**
+   * When true, hides the "Cómodo / Compacto" density toggle in the toolbar.
+   * The global `data-density` attribute still applies if the user already
+   * chose compact elsewhere — only the control disappears. Use on lists where
+   * density is irrelevant (e.g. request lists that aren't operated row-by-row).
+   */
+  hideDensityToggle?: boolean
+  /**
    * E-2: key to persist column visibility and sort state in URL search params.
    * When provided, visible columns and sort direction survive navigation and
    * are shareable via URL. Params: `${viewKey}_cols`, `${viewKey}_sort`, `${viewKey}_dir`.

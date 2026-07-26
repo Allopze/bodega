@@ -91,7 +91,7 @@ export function useSavedViews(scopeKey: string) {
   const views = React.useSyncExternalStore(
     (onChange) => subscribe(scopeKey, onChange),
     () => readViews(scopeKey),
-    () => [] as SavedView[],
+    () => EMPTY,
   )
 
   const saveCurrent = React.useCallback((name: string) => {
