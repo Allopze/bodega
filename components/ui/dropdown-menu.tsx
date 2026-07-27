@@ -5,7 +5,22 @@ import * as DropdownMenuPrimitive from "@radix-ui/react-dropdown-menu"
 import { cn } from "@/lib/utils"
 
 const DropdownMenu = DropdownMenuPrimitive.Root
-const DropdownMenuTrigger = DropdownMenuPrimitive.Trigger
+
+/**
+ * Wrapper around Radix Trigger that adds suppressHydrationWarning.
+ * Needed because DropdownMenuTrigger asChild + Button creates a Slot/SlotClone
+ * chain that produces slightly different HTML during SSR vs CSR (Radix merges
+ * child attrs at runtime). Without this, Next.js reports a hydration mismatch
+ * on every DropdownMenu whose trigger wraps a <Button>.
+ */
+const DropdownMenuTrigger = React.forwardRef<
+  React.ElementRef<typeof DropdownMenuPrimitive.Trigger>,
+  React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.Trigger>
+>(({ ...props }, ref) => (
+  <DropdownMenuPrimitive.Trigger ref={ref} suppressHydrationWarning {...props} />
+))
+DropdownMenuTrigger.displayName = DropdownMenuPrimitive.Trigger.displayName
+
 const DropdownMenuPortal = DropdownMenuPrimitive.Portal
 const DropdownMenuSub = DropdownMenuPrimitive.Sub
 const DropdownMenuRadioGroup = DropdownMenuPrimitive.RadioGroup
