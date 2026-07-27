@@ -1,7 +1,6 @@
 import type { Metadata } from "next"
 import Link from "next/link"
 import { redirect, notFound } from "next/navigation"
-import { and, desc, eq, inArray } from "drizzle-orm"
 import { requireAuth, can } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import {
@@ -16,7 +15,9 @@ import {
   listPdtpProgramSheets,
 } from "@/lib/services/prevention-pdtp"
 import { listScopedWorksites } from "@/lib/services/ppa"
+import { worksites as worksitesTable } from "@/db/schema"
 import { currentPdtpPeriod } from "@/lib/services/pdtp/period"
+import { getPendingPdtpApprovalsForView, getPdtpChangeLog } from "@/lib/services/pdtp"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { Button } from "@/components/ui/button"
@@ -35,7 +36,7 @@ import { PdtpIndicatorsPanel } from "../pdtp-indicators-panel"
 import { PdtpAddActivityForm } from "../pdtp-add-activity-form"
 import { PdtpImportExcelDialog } from "../pdtp-import-excel-dialog"
 import { db } from "@/db"
-import { pdtpExecutions, pdtpChangeLog } from "@/db/schema"
+import { eq } from "drizzle-orm"
 import { resolveSelectedWorksiteId } from "../pdtp-context"
 import { ProgramLifecycleControls } from "./program-lifecycle-controls"
 import { ReconcileDeclaredActorButton } from "./reconcile-declared-actor-button"
@@ -85,6 +86,13 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
   const worksiteIds: string[] | "all" =
     scope.mode === "all" ? "all" : scope.mode === "some" ? scope.ids : []
   const worksites = await listScopedWorksites(worksiteIds)
+  // Todas las faenas activas para el selector de importación Excel
+  const allWorksites = worksiteIds === "all"
+    ? worksites
+    : await db.select({ id: worksitesTable.id, name: worksitesTable.name, code: worksitesTable.code })
+        .from(worksitesTable)
+        .where(eq(worksitesTable.isActive, true))
+        .orderBy(worksitesTable.name)
   const selectedWorksiteId = resolveSelectedWorksiteId(requestedWorksite, worksites)
   const [[view, indicators, integral], approvalProgress] = await Promise.all([
     selectedWorksiteId
@@ -99,19 +107,14 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
 
   const canApprove = can(session, "prevention:pdtp:approve")
 
-  let pendingApprovals: Array<{ id: string; activityId: string; month: number; week: number }> = []
-  if (canApprove && selectedWorksiteId && view && view.activities.length > 0) {
-    const activityIds = view.activities.map((a) => a.id)
-    pendingApprovals = await db
-      .select({ id: pdtpExecutions.id, activityId: pdtpExecutions.activityId, month: pdtpExecutions.month, week: pdtpExecutions.week })
-      .from(pdtpExecutions)
-      .where(and(
-        eq(pdtpExecutions.worksiteId, selectedWorksiteId),
-        eq(pdtpExecutions.status, "submitted"),
-        eq(pdtpExecutions.year, program.year),
-        inArray(pdtpExecutions.activityId, activityIds),
-      ))
-  }
+  const pendingApprovals: Array<{ id: string; activityId: string; month: number; week: number }> =
+    canApprove && selectedWorksiteId && view && view.activities.length > 0
+      ? await getPendingPdtpApprovalsForView({
+          worksiteId: selectedWorksiteId,
+          year: program.year,
+          activityIds: view.activities.map((a) => a.id),
+        })
+      : []
 
   const canSignLegal = can(session, "prevention:pdtp:sign_legal")
   const canSubmitReview = can(session, "prevention:pdtp:submit_review")
@@ -144,7 +147,7 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
                 gestión. Antes este flujo estaba escondido tras Editar → Revisión
                 → "Vistas avanzadas", y el usuario no lo encontraba. */}
             {canManageProgram && program.status === "draft" && (
-              <PdtpImportExcelDialog programId={programId} visibleWorksites={worksites} />
+              <PdtpImportExcelDialog programId={programId} visibleWorksites={worksites} allWorksites={allWorksites} />
             )}
             {canApprove && (
               <Button asChild variant="secondary" size="sm">
@@ -356,12 +359,7 @@ async function PdtpDocumentMetadataSection({ programId, canReconcile }: { progra
 }
 
 async function PdtpChangeLogSection({ programId }: { programId: string }) {
-  const entries = await db
-    .select()
-    .from(pdtpChangeLog)
-    .where(eq(pdtpChangeLog.programId, programId))
-    .orderBy(desc(pdtpChangeLog.changedAt))
-    .limit(20)
+  const entries = await getPdtpChangeLog(programId)
 
   if (entries.length === 0) return null
 

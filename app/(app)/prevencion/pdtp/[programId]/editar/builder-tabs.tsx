@@ -56,6 +56,8 @@ type PdtpBuilderTabsProps = {
   canDelete: boolean
   responsibleCatalog: Array<{ slug: string; displayName: string }>
   visibleWorksites: Array<{ id: string; name: string; code: string }>
+  /** Todas las faenas activas del sistema (para el selector de importación Excel). */
+  allWorksites: Array<{ id: string; name: string; code: string }>
   memberWorksiteIds: string[]
   activityWorksiteExclusions: Array<{ activityId: string; worksiteId: string; reason: string }>
 }
@@ -69,9 +71,8 @@ const BUILDER_STEPS = [
   { value: "revision", label: "Revisión" },
 ] as const
 
-export function PdtpBuilderTabs({ program, sheets, activities, schedule, checklists, userId, canDelete, responsibleCatalog, visibleWorksites, memberWorksiteIds, activityWorksiteExclusions }: PdtpBuilderTabsProps) {
+export function PdtpBuilderTabs({ program, sheets, activities, schedule, checklists, userId, canDelete, responsibleCatalog, visibleWorksites, allWorksites, memberWorksiteIds, activityWorksiteExclusions }: PdtpBuilderTabsProps) {
   const [activeStep, setActiveStep] = React.useState<(typeof BUILDER_STEPS)[number]["value"]>("datos")
-  const stepIndex = BUILDER_STEPS.findIndex((step) => step.value === activeStep)
   const objectiveCount = new Set(activities.map((activity) => activity.objectiveOrder)).size
   const generalViewCode = sheets.find((sheet) => sheet.programId === program.id && sheet.code === "pdtp_general")?.code
     ?? sheets.find((sheet) => sheet.programId === program.id)?.code
@@ -82,14 +83,16 @@ export function PdtpBuilderTabs({ program, sheets, activities, schedule, checkli
       <section className="mb-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3" aria-label="Progreso del constructor">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
-            <p className="text-sm font-semibold text-[var(--color-text)]">Construye el programa paso a paso</p>
+            <p className="text-sm font-semibold text-[var(--color-text)]">Editor del programa</p>
             <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">{objectiveCount} objetivo(s) · {activities.length} actividad(es) · los cambios guardados permanecen en borrador.</p>
           </div>
-          <span className="text-xs font-medium text-[var(--color-text-subtle)]">Paso {stepIndex + 1} de {BUILDER_STEPS.length}</span>
+          <Button asChild size="sm">
+            <Link href={`/prevencion/pdtp/${program.id}`}>Ver resumen y enviar a revisión</Link>
+          </Button>
         </div>
       </section>
 
-      <TabsList className="w-full justify-start overflow-x-auto" aria-label="Pasos para crear el programa">
+      <TabsList className="w-full justify-start overflow-x-auto" aria-label="Secciones del editor">
         {BUILDER_STEPS.map((step, index) => (
           <TabsTrigger key={step.value} value={step.value}>{index + 1}. {step.label}</TabsTrigger>
         ))}
@@ -122,11 +125,11 @@ export function PdtpBuilderTabs({ program, sheets, activities, schedule, checkli
       </TabsContent>
       <TabsContent value="planificacion">
         <ScheduleOverview activities={activities} schedule={schedule} />
-        <details className="mt-4 rounded-lg border border-[var(--color-border)] px-3 py-2">
-          <summary className="cursor-pointer text-sm font-medium text-[var(--color-text)]">Abrir matriz semanal avanzada</summary>
-          <p className="mt-2 text-xs text-[var(--color-text-muted)]">Esta proyección existe para compatibilidad y ajustes excepcionales; no es el editor principal del programa.</p>
+        <div className="mt-4 rounded-lg border border-[var(--color-border)] px-3 py-2">
+          <p className="text-sm font-medium text-[var(--color-text)]">Matriz semanal avanzada</p>
+          <p className="mt-1 text-xs text-[var(--color-text-muted)]">Ajustes finos de planificación por semana.</p>
           <div className="mt-3"><PlanificacionTab programId={program.id} year={program.year} periodStart={program.periodStart} periodEnd={program.periodEnd} activities={activities} schedule={schedule} /></div>
-        </details>
+        </div>
       </TabsContent>
       <TabsContent value="requisitos">
         <ChecklistTab programId={program.id} activities={activities} checklists={checklists} />
@@ -141,23 +144,11 @@ export function PdtpBuilderTabs({ program, sheets, activities, schedule, checkli
           memberWorksiteIds={memberWorksiteIds}
           activityWorksiteExclusions={activityWorksiteExclusions}
         />
-        <details className="mt-4 rounded-lg border border-[var(--color-border)] px-3 py-2">
-          <summary className="cursor-pointer text-sm font-medium text-[var(--color-text)]">Vistas avanzadas y migración desde Excel</summary>
-          <div className="mt-4 space-y-6">
-            <SheetsTab programId={program.id} sheets={sheets} userId={userId} />
-            <ImportExcelSection programId={program.id} visibleWorksites={visibleWorksites} />
-          </div>
-        </details>
+        <div className="mt-4 space-y-6">
+          <SheetsTab programId={program.id} sheets={sheets} userId={userId} />
+          <ImportExcelSection programId={program.id} visibleWorksites={visibleWorksites} allWorksites={allWorksites} />
+        </div>
       </TabsContent>
-
-      <div className="mt-5 flex items-center justify-between border-t border-[var(--color-border)] pt-4">
-        <Button type="button" variant="ghost" disabled={stepIndex === 0} onClick={() => setActiveStep(BUILDER_STEPS[stepIndex - 1]!.value)}>Anterior</Button>
-        {stepIndex < BUILDER_STEPS.length - 1 ? (
-          <Button type="button" onClick={() => setActiveStep(BUILDER_STEPS[stepIndex + 1]!.value)}>Siguiente: {BUILDER_STEPS[stepIndex + 1]!.label}</Button>
-        ) : (
-          <Button asChild><Link href={`/prevencion/pdtp/${program.id}`}>Ver resumen y enviar a revisión</Link></Button>
-        )}
-      </div>
     </Tabs>
   )
 }

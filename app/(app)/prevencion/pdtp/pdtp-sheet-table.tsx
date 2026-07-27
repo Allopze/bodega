@@ -28,6 +28,7 @@ import {
   PdtpDensityToggle,
   usePdtpDensity,
   formatQuantity,
+  usePdtpMonthWindow,
   type PdtpStatusCounts,
 } from "./pdtp-sheet-table-ui"
 
@@ -87,6 +88,8 @@ export function PdtpSheetTable({
   const canOperate = canExecute || canManageProgram
   const [statusFilter, setStatusFilter] = React.useState<PdtpActivityStatus | "all">("all")
   const [density, toggleDensity] = usePdtpDensity()
+  const [visibleMonths, monthsExpanded, toggleMonthsExpanded] = usePdtpMonthWindow(currentPeriod.month)
+  const _hasHiddenMonths = !monthsExpanded && visibleMonths.length < 12
 
   const plannedQuantityForCurrentWeek = (activity: PdtpSheetView["activities"][number]) =>
     activity.schedule
@@ -108,6 +111,11 @@ export function PdtpSheetTable({
   const sourceActivities = objectiveOrder !== undefined
     ? viewActivities.filter((activity) => activity.objectiveOrder === objectiveOrder)
     : viewActivities
+
+  const INITIAL_ROW_LIMIT = 30
+  const [showAll, setShowAll] = React.useState(false)
+  const totalActivityCount = sourceActivities.length
+  const needsPagination = totalActivityCount > INITIAL_ROW_LIMIT && !showAll
   // Reconstruido desde las props ya conocidas (mismo patron que PdtpViewToggle/
   // PdtpWorksitePicker en pdtp-sheet-table-ui.tsx), no leyendo el search params
   // ambiente: evita depender del contexto de App Router en este componente.
@@ -123,17 +131,21 @@ export function PdtpSheetTable({
     return counts
   }, [sourceActivities, currentPeriod])
 
-  // Apply filter
+  // Apply filter, then pagination for large tables
   const filteredActivities = statusFilter === "all"
     ? sourceActivities
     : sourceActivities.filter((activity) =>
         deriveActivityStatus(activity.monthlyPlanned, activity.monthlyExecuted, currentPeriod) === statusFilter,
       )
 
+  const displayActivities = needsPagination
+    ? filteredActivities.slice(0, INITIAL_ROW_LIMIT)
+    : filteredActivities
+
   // Group by objective
   const groupedActivities = React.useMemo(() => {
-    const groups: Array<{ objective: string; activities: typeof filteredActivities }> = []
-    for (const activity of filteredActivities) {
+    const groups: Array<{ objective: string; activities: typeof displayActivities }> = []
+    for (const activity of displayActivities) {
       const last = groups[groups.length - 1]
       if (last && last.objective === activity.objective) {
         last.activities.push(activity)
@@ -142,7 +154,7 @@ export function PdtpSheetTable({
       }
     }
     return groups
-  }, [filteredActivities])
+  }, [displayActivities])
 
   const rowPy = density === "compact" ? "py-1.5" : "py-3"
 
@@ -163,6 +175,15 @@ export function PdtpSheetTable({
             onFilter={setStatusFilter}
           />
           <PdtpDensityToggle density={density} onToggle={toggleDensity} />
+          {viewMode === "anual" && (
+            <button
+              type="button"
+              onClick={toggleMonthsExpanded}
+              className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-1 text-xs text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)]"
+            >
+              {monthsExpanded ? "Colapsar meses" : `Ver todos los meses (${visibleMonths.length}/12)`}
+            </button>
+          )}
         </div>
       )}
 
@@ -304,15 +325,16 @@ export function PdtpSheetTable({
             </p>
           </div>
         ) : (
-          <TableRoot>
+          <>
+            <TableRoot>
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead className="sticky left-0 z-20 w-12 bg-[var(--color-surface-2)] shadow-[1px_0_0_var(--color-border)]">N°</TableHead>
                   <TableHead className="sticky left-12 z-20 min-w-[22rem] bg-[var(--color-surface-2)] shadow-[1px_0_0_var(--color-border)]">Actividad</TableHead>
                   <TableHead>Estado</TableHead>
-                  {MONTH_LABELS.map((month) => (
-                    <TableHead key={month} className="text-right">{month}</TableHead>
+                  {visibleMonths.map((mi) => (
+                    <TableHead key={mi} className="text-right">{MONTH_LABELS[mi]}</TableHead>
                   ))}
                   <TableHead className="min-w-[7.5rem] text-right">Plan / ejecutado</TableHead>
                   {canOperate && worksiteId && <TableHead className="w-48">Registrar</TableHead>}
@@ -325,11 +347,11 @@ export function PdtpSheetTable({
                     {/* Section header row */}
                     <TableRow className="bg-[var(--color-surface-2)] hover:bg-[var(--color-surface-2)]">
                       <TableCell
-                        colSpan={
-                          3 + 12 + 1
-                          + (canOperate && worksiteId ? 1 : 0)
-                          + (canApprove && worksiteId && pendingApprovals.length > 0 ? 1 : 0)
-                        }
+                          colSpan={
+                            3 + visibleMonths.length + 1
+                            + (canOperate && worksiteId ? 1 : 0)
+                            + (canApprove && worksiteId && pendingApprovals.length > 0 ? 1 : 0)
+                          }
                         className="py-1.5 pl-4 text-[10px] font-semibold uppercase tracking-widest text-[var(--color-text-faint)]"
                       >
                         {group.objective}
@@ -391,22 +413,26 @@ export function PdtpSheetTable({
                           <TableCell className={rowPy}>
                             <PdtpStatusBadge status={status} overdueMonths={overdueMonths} />
                           </TableCell>
-                          {activity.monthlyPlanned.map((planned, index) => (
-                            <TableCellNum
-                              key={MONTH_LABELS[index]}
-                              className={[
-                                rowPy,
-                                planned > 0 ? "text-[var(--color-text)]" : "text-[var(--color-text-faint)]",
-                              ].join(" ")}
-                            >
-                              <div className="whitespace-nowrap">
-                                <span>{formatQuantity(planned)}</span>
-                                {worksiteId && (
-                                  <span className="text-[11px] text-[var(--color-success)]"> / {formatQuantity(activity.monthlyExecuted[index] ?? 0)}</span>
-                                )}
-                              </div>
-                            </TableCellNum>
-                          ))}
+                          {visibleMonths.map((mi) => {
+                            const planned = activity.monthlyPlanned[mi] ?? 0
+                            const executed = activity.monthlyExecuted[mi] ?? 0
+                            return (
+                              <TableCellNum
+                                key={mi}
+                                className={[
+                                  rowPy,
+                                  planned > 0 ? "text-[var(--color-text)]" : "text-[var(--color-text-faint)]",
+                                ].join(" ")}
+                              >
+                                <div className="whitespace-nowrap">
+                                  <span>{formatQuantity(planned)}</span>
+                                  {worksiteId && (
+                                    <span className="text-[11px] text-[var(--color-success)]"> / {formatQuantity(executed)}</span>
+                                  )}
+                                </div>
+                              </TableCellNum>
+                            )
+                          })}
                           <TableCellNum className={`font-semibold whitespace-nowrap ${rowPy}`}>
                             {formatQuantity(activity.totalPlanned)}{worksiteId && <span className="text-[var(--color-success)]"> / {formatQuantity(activity.totalExecuted)}</span>}
                           </TableCellNum>
@@ -442,6 +468,18 @@ export function PdtpSheetTable({
               </TableBody>
             </Table>
           </TableRoot>
+          {needsPagination && (
+            <div className="mt-3 text-center">
+              <button
+                type="button"
+                onClick={() => setShowAll(true)}
+                className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-2 text-sm text-[var(--color-primary)] transition-colors hover:bg-[var(--color-surface-2)]"
+              >
+                Mostrar las {totalActivityCount} actividades ({totalActivityCount - INITIAL_ROW_LIMIT} más)
+              </button>
+            </div>
+          )}
+          </>
         )
       )}
     </div>

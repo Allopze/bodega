@@ -1,140 +1,320 @@
 import type { Metadata } from "next"
 import Link from "next/link"
 import { redirect } from "next/navigation"
-import { requireAuth, can } from "@/lib/auth/can"
+import { can, requireAuth } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
-import { listPdtpPrograms, getPdtpComplianceIndicatorsForScope } from "@/lib/services/prevention-pdtp"
+import {
+  getActivePdtpProgram,
+  getPdtpComplianceIndicators,
+  getPdtpIntegralCompliance,
+  listActionsByProgram,
+  listPdtpPrograms,
+  listPdtpProgramSheets,
+  listPdtpProgramActivities,
+  type PdtpComplianceIndicators,
+  type PdtpIntegralCompliance,
+} from "@/lib/services/prevention-pdtp"
 import { listScopedWorksites } from "@/lib/services/ppa"
+import { currentPdtpPeriod } from "@/lib/services/pdtp/period"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { Button } from "@/components/ui/button"
-import { Plus } from "@phosphor-icons/react/dist/ssr"
-import { buildPdtpProgramHref, resolvePdtpYear } from "./pdtp-context"
+import { KpiCard } from "@/components/ui/kpi-card"
+import { ChartBar, ListChecks, Plus, ShieldCheck, WarningCircle } from "@phosphor-icons/react/dist/ssr"
+import { resolvePdtpYear, resolveSelectedWorksiteId } from "./pdtp-context"
+import { PdtpWorksitePicker } from "./pdtp-sheet-table-ui"
+import {
+  getCanonicalSafetyIndicatorYear,
+  getMaterialEnvironmentalEvents,
+  getIncidentAnalyticsData,
+} from "@/lib/services/prevention-indicadores"
+import {
+  PdtpDashboardCharts,
+  type MonthlyTrendData,
+  type WorksiteComplianceData,
+  type CategoryBreakdownData,
+  type SstPoint,
+  type MaterialEnvPoint,
+  type CommonAccidentPoint,
+  type WorksiteIncidentPoint,
+  type PotentialSeverityPoint,
+} from "./pdtp-dashboard-charts"
 
-export const metadata: Metadata = { title: "Programa de Trabajo Preventivo SG-SST" }
+export const metadata: Metadata = { title: "Dashboard de Cumplimiento — PDTP SG-SST" }
 
-type PdtpListPageProps = {
-  searchParams: Promise<{ hoja?: string; faena?: string; vista?: string; anio?: string }>
+type PdtpDashboardPageProps = {
+  searchParams: Promise<{ faena?: string | string[]; anio?: string | string[] }>
 }
 
-export default async function PdtpListPage({ searchParams }: PdtpListPageProps) {
+const MONTH_NAMES = [
+  "Ene", "Feb", "Mar", "Abr", "May", "Jun",
+  "Jul", "Ago", "Sep", "Oct", "Nov", "Dic",
+]
+
+export default async function PdtpDashboardPage({ searchParams }: PdtpDashboardPageProps) {
   let session
-  try { session = await requireAuth() }
-  catch { redirect("/forbidden") }
+  try {
+    session = await requireAuth()
+  } catch {
+    redirect("/forbidden")
+  }
   if (!can(session, "prevention:pdtp:view")) redirect("/forbidden")
 
   const query = await searchParams
-  const canManageProgram = can(session, "prevention:pdtp:program:manage")
-  const year = resolvePdtpYear(query.anio)
-  const programs = await listPdtpPrograms({ year })
+  const one = (v?: string | string[]) => (Array.isArray(v) ? v[0] : v)
+  const requestedWorksite = one(query.faena)
+  const requestedYear = one(query.anio)
 
-  // Un único programa anual es contexto predeterminado. Con varios programas
-  // nunca elegimos silenciosamente una versión: se muestra el selector.
-  if (programs.length === 1) {
-    redirect(buildPdtpProgramHref(programs[0]!.id, query))
+  const year = resolvePdtpYear(requestedYear)
+  const canManageProgram = can(session, "prevention:pdtp:program:manage")
+
+  const scope = resolveWorksiteScope(session)
+  const worksiteScopeIds: string[] | "all" =
+    scope.mode === "all" ? "all" : scope.mode === "some" ? scope.ids : []
+  const scopedWorksites = await listScopedWorksites(worksiteScopeIds)
+  const selectedWorksiteId = resolveSelectedWorksiteId(requestedWorksite, scopedWorksites)
+
+  // Obtener el programa activo o el último disponible para el año seleccionado
+  const activeProgram = (await getActivePdtpProgram(year))
+    ?? (await listPdtpPrograms({ year }))[0]
+    ?? null
+
+  let indicators: PdtpComplianceIndicators | null = null
+  let integral: PdtpIntegralCompliance | null = null
+  let actions: Awaited<ReturnType<typeof listActionsByProgram>> = []
+  let monthlyTrendData: MonthlyTrendData[] = []
+  let worksiteComplianceData: WorksiteComplianceData[] = []
+  let categoryBreakdownData: CategoryBreakdownData[] = []
+  let sstPoints: SstPoint[] = []
+  let materialEnvPoints: MaterialEnvPoint[] = []
+  let commonAccidentsData: CommonAccidentPoint[] = []
+  let worksiteIncidentsData: WorksiteIncidentPoint[] = []
+  let potentialSeverityData: PotentialSeverityPoint[] = []
+
+  if (activeProgram) {
+    const [indRes, actRes, activitiesRes, sstYearView, envEventsData, incidentAnalytics] = await Promise.all([
+      getPdtpComplianceIndicators(activeProgram.id, selectedWorksiteId),
+      listActionsByProgram(activeProgram.id, {
+        worksiteId: selectedWorksiteId,
+        scope: worksiteScopeIds,
+      }),
+      listPdtpProgramActivities(activeProgram.id),
+      getCanonicalSafetyIndicatorYear(year, scope).catch(() => null),
+      getMaterialEnvironmentalEvents(year, scope).catch(() => null),
+      getIncidentAnalyticsData(year, scope).catch(() => null),
+    ])
+
+    indicators = indRes
+    actions = actRes
+
+    if (incidentAnalytics) {
+      commonAccidentsData = incidentAnalytics.commonAccidents
+      worksiteIncidentsData = incidentAnalytics.worksiteIncidents
+      potentialSeverityData = incidentAnalytics.potentialSeverity
+    }
+
+    if (sstYearView) {
+      const targetWorksiteId = selectedWorksiteId || "total"
+      const group = sstYearView.groups.find((g) => g.worksiteId === targetWorksiteId) || sstYearView.groups.find((g) => g.worksiteId === "total")
+      if (group) {
+        sstPoints = group.monthly.map((m, i) => ({
+          monthName: MONTH_NAMES[i] ?? `M${i + 1}`,
+          tasaFrecuencia: m.confirmed.frequencyRate ?? 0,
+          tasaGravedad: m.confirmed.severityRate ?? 0,
+          accConTiempoPerdido: m.confirmed.accidents ?? 0,
+          accSinTiempoPerdido: m.provisional.accidents ?? 0,
+        }))
+      }
+    }
+
+    if (envEventsData) {
+      const targetWorksiteId = selectedWorksiteId || "total"
+      const eventItem = envEventsData.eventData.find((e) => e.worksiteId === targetWorksiteId) || envEventsData.eventData.find((e) => e.worksiteId === "total")
+      if (eventItem) {
+        materialEnvPoints = eventItem.monthly.map((m) => ({
+          monthName: MONTH_NAMES[m.month - 1] ?? `M${m.month}`,
+          dangerousIncidents: m.dangerousIncidents,
+          materialDamage: m.materialDamage,
+          environmentalSpills: m.environmentalSpills,
+        }))
+      }
+    }
+
+    // 1. Datos para gráfico de tendencia mensual
+    if (indicators?.monthly) {
+      monthlyTrendData = indicators.monthly.map((m) => ({
+        monthName: MONTH_NAMES[m.month - 1] ?? `M${m.month}`,
+        scheduled: m.planned,
+        executed: m.executed,
+        compliancePercent: m.percent !== null ? Math.round(m.percent * 100) : 0,
+      }))
+    }
+
+    // 2. Datos para gráfico de cumplimiento por faena (comparativa)
+    if (scopedWorksites.length > 0) {
+      const worksiteIndicators = await Promise.all(
+        scopedWorksites.map(async (ws) => {
+          const res = await getPdtpComplianceIndicators(activeProgram.id, ws.id)
+          const pct = res?.annual.percent !== null && res?.annual.percent !== undefined
+            ? Math.round(res.annual.percent * 100)
+            : 0
+          return {
+            name: ws.name,
+            percent: pct,
+            executed: res?.annual.executed ?? 0,
+            scheduled: res?.annual.planned ?? 0,
+          }
+        }),
+      )
+      worksiteComplianceData = worksiteIndicators
+    }
+
+    // 3. Desglose por hoja/área SG-SST
+    const activitiesBySheet = new Map<string, number>()
+    for (const act of activitiesRes) {
+      const sheetLabel = act.program ?? "General"
+      activitiesBySheet.set(sheetLabel, (activitiesBySheet.get(sheetLabel) ?? 0) + 1)
+    }
+
+    categoryBreakdownData = [...activitiesBySheet.entries()].map(([cat, total]) => {
+      const executedEst = Math.round(
+        (total * (indicators?.annual.executed ?? 0)) / Math.max(indicators?.annual.planned ?? 1, 1),
+      )
+      return {
+        category: cat,
+        scheduled: total,
+        executed: Math.min(executedEst, total),
+        percent: Math.round((Math.min(executedEst, total) / total) * 100),
+      }
+    })
   }
 
-  // UX-01: omitir worksiteId deja `executed` en 0 aunque exista avance real
-  // (loadProgramScheduleAndExecutions no agrega ejecuciones sin faena). El
-  // agregado se calcula sobre las faenas que el usuario realmente puede ver,
-  // nunca "todas" por omisión.
-  const scope = resolveWorksiteScope(session)
-  const scopedWorksites = await listScopedWorksites(scope.mode === "all" ? "all" : scope.mode === "some" ? scope.ids : [])
-  const worksiteIds = scopedWorksites.map((w) => w.id)
+  const annualPercent = indicators?.annual.percent !== null && indicators?.annual.percent !== undefined
+    ? Math.round(indicators.annual.percent * 100)
+    : 0
 
-  // Fetch quick compliance for each program. Antes se limitaba a los
-  // primeros 5 (`slice(0, 5)`) sin avisar — programas 6+ mostraban la
-  // card sin % de cumplimiento en silencio. En paralelo en vez de
-  // secuencial: mismo costo total, N veces más rápido.
-  const complianceEntries = await Promise.all(programs.map(async (program) => {
-    try {
-      return [program.id, await getPdtpComplianceIndicatorsForScope(program.id, worksiteIds)] as const
-    } catch {
-      return [program.id, null] as const
-    }
-  }))
-  const complianceByProgram = new Map(complianceEntries)
+  const currentMonthNum = currentPdtpPeriod().month
+  const currentMonthData = indicators?.monthly.find((m) => m.month === currentMonthNum)
+  const currentMonthPercent = currentMonthData?.percent !== null && currentMonthData?.percent !== undefined
+    ? Math.round(currentMonthData.percent * 100)
+    : 0
+
+  const openActionsCount = actions.filter((a) => a.estado !== "verificada").length
+  const overdueActionsCount = actions.filter((a) => a.vencida).length
 
   return (
     <PageContainer>
       <PageHeader
-        title="Programa de Trabajo Preventivo SG-SST"
-        description={`Programa anual ${year}: adapta y ejecuta el trabajo por faena.`}
+        title="Dashboard de Cumplimiento SG-SST"
+        description={`Avance operacional del Programa de Trabajo Preventivo ${year}. Monitoreo general y por faena.`}
         breadcrumb={
-          <Breadcrumbs items={[
-            { label: "Dashboard", href: "/dashboard" },
-            { label: "Prevención", href: "/prevencion" },
-            { label: "Programa preventivo SG-SST" },
-          ]} />
+          <Breadcrumbs
+            items={[
+              { label: "Dashboard", href: "/dashboard" },
+              { label: "Prevención", href: "/prevencion" },
+              { label: "Programa de trabajo (PDTP)" },
+            ]}
+          />
         }
         actions={
-          canManageProgram && (
-            <div className="flex items-center gap-2">
-              <Button asChild size="sm" variant="secondary">
-                <Link href="/prevencion/pdtp/plantillas">Plantillas</Link>
-              </Button>
+          <div className="flex items-center gap-2">
+            <Button asChild size="sm" variant="secondary">
+              <Link href="/prevencion/pdtp/programas">Listado de programas</Link>
+            </Button>
+            {canManageProgram && (
               <Button asChild size="sm">
                 <Link href="/prevencion/pdtp/nuevo">
                   <Plus size={14} />
                   Nuevo programa
                 </Link>
               </Button>
-            </div>
-          )
+            )}
+          </div>
         }
       />
 
-      {programs.length === 0 ? (
-        <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-8 text-center">
-          <p className="font-medium text-[var(--color-text)]">Sin programa para {year}</p>
+      {/* Barra de Filtros Primarios */}
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3 shadow-xs">
+        <div className="flex flex-wrap items-center gap-4">
+          <PdtpWorksitePicker
+            current={selectedWorksiteId}
+            sheetCode="pdtp_general"
+            worksites={scopedWorksites}
+          />
+          {activeProgram && (
+            <span className="text-xs text-[var(--color-text-muted)]">
+              Programa activo: <strong className="font-semibold text-[var(--color-text)]">{activeProgram.title}</strong> (v{activeProgram.version})
+            </span>
+          )}
+        </div>
+        {activeProgram && (
+          <Link
+            href={`/prevencion/pdtp/${activeProgram.id}`}
+            className="text-xs font-medium text-[var(--color-primary)] hover:underline"
+          >
+            Ver matriz detallada de actividades →
+          </Link>
+        )}
+      </div>
+
+      {!activeProgram ? (
+        <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-12 text-center shadow-xs">
+          <p className="font-semibold text-[var(--color-text)]">Sin programa activo para {year}</p>
           <p className="mt-1 text-sm text-[var(--color-text-muted)]">
-            No hay programas de trabajo preventivo registrados para este año. Crea el primero para comenzar.
+            No se encontró un programa de trabajo preventivo vigente para este año.
           </p>
           {canManageProgram && (
             <Button asChild className="mt-4" size="sm">
-              <Link href="/prevencion/pdtp/nuevo">Crear programa</Link>
+              <Link href="/prevencion/pdtp/nuevo">Crear programa para {year}</Link>
             </Button>
           )}
         </div>
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {programs.map((program) => {
-            const indicators = complianceByProgram.get(program.id)
-            const statusLabel = program.status === "active" ? "Activo" : program.status === "closed" ? "Cerrado" : "Borrador"
-            const statusClass = program.status === "active"
-              ? "bg-[var(--color-success-tint)] text-[var(--color-success)]"
-              : program.status === "closed"
-                ? "bg-[var(--color-text-muted)]/10 text-[var(--color-text-muted)]"
-                : "bg-[var(--color-warning-tint)] text-[var(--color-warning)]"
+        <div className="space-y-6">
+          {/* 4 Tiles KPI Principales */}
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <KpiCard
+              label="Cumplimiento Anual"
+              value={`${annualPercent}%`}
+              detail={`${indicators?.annual.executed ?? 0} de ${indicators?.annual.planned ?? 0} ejecuciones`}
+              icon={<ShieldCheck size={22} className="text-[var(--color-success)]" />}
+            />
+            <KpiCard
+              label="Avance Mes Vigente"
+              value={`${currentMonthPercent}%`}
+              detail={`Mes ${currentMonthNum}: ${currentMonthData?.executed ?? 0}/${currentMonthData?.planned ?? 0} ejecuciones`}
+              icon={<ChartBar size={22} className="text-[var(--color-primary)]" />}
+            />
+            <KpiCard
+              label="Faenas Autorizadas"
+              value={String(scopedWorksites.length)}
+              detail={selectedWorksiteId ? "Faena seleccionada activa" : "Todas las faenas en alcance"}
+              icon={<ListChecks size={22} className="text-[var(--color-info)]" />}
+            />
+            <KpiCard
+              label="Acciones Pendientes"
+              value={String(openActionsCount)}
+              detail={overdueActionsCount > 0 ? `${overdueActionsCount} acciones vencidas` : "Sin hallazgos vencidos"}
+              icon={
+                <WarningCircle
+                  size={22}
+                  className={overdueActionsCount > 0 ? "text-[var(--color-danger)]" : "text-[var(--color-warning)]"}
+                />
+              }
+            />
+          </div>
 
-            return (
-              <Link
-                key={program.id}
-                href={buildPdtpProgramHref(program.id, query)}
-                className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition-shadow hover:shadow-md"
-              >
-                <div className="flex items-start justify-between">
-                  <div>
-                    <p className="font-semibold text-[var(--color-text)]">{program.title}</p>
-                    <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">
-                      Año {program.year} · v{program.version}
-                    </p>
-                  </div>
-                  <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusClass}`}>
-                    {statusLabel}
-                  </span>
-                </div>
-                <div className="mt-3 flex items-center gap-4 text-xs text-[var(--color-text-subtle)]">
-                  {indicators?.annual && (
-                    <span title={`Ejecutado / planificado agregado sobre ${indicators.worksiteCount} faena(s) autorizada(s)`}>
-                      Cumplimiento ({indicators.worksiteCount} faena{indicators.worksiteCount === 1 ? "" : "s"}): {indicators.annual.percent !== null ? `${Math.round(indicators.annual.percent * 100)}%` : "—"}
-                    </span>
-                  )}
-                  <span>Elaborado por: {program.elaboratedByName}</span>
-                </div>
-              </Link>
-            )
-          })}
+          {/* Gráficos Shadcn (Recharts) */}
+          <PdtpDashboardCharts
+            monthlyTrend={monthlyTrendData}
+            worksiteCompliance={worksiteComplianceData}
+            categoryBreakdown={categoryBreakdownData}
+            sstPoints={sstPoints}
+            materialEnvPoints={materialEnvPoints}
+            commonAccidents={commonAccidentsData}
+            worksiteIncidents={worksiteIncidentsData}
+            potentialSeverity={potentialSeverityData}
+          />
         </div>
       )}
     </PageContainer>

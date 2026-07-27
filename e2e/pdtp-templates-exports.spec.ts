@@ -2,16 +2,37 @@ import { test, expect } from "@playwright/test"
 import { login } from "./helpers"
 
 /**
- * E2E: PDTP — Plantillas de programa y utilidades de importación/exportación.
+ * E2E: PDTP — Dashboard de cumplimiento, plantillas e importación/exportación.
  *
  * Covers:
+ *   • Dashboard ejecutivo de cumplimiento (/prevencion/pdtp)
+ *   • Listado de programas anuales (/prevencion/pdtp/programas)
  *   • Navegación a /prevencion/pdtp/plantillas
  *   • Botón de crear programa desde la página de plantillas
- *   • Diálogo de importación Excel en detalle del programa
  */
-test.describe("PDTP — Plantillas e importación/exportación", () => {
+test.describe("PDTP — Dashboard, plantillas e importación/exportación", () => {
   test.beforeEach(async ({ page }) => {
     await login(page)
+  })
+
+  test("el dashboard de cumplimiento en /prevencion/pdtp carga los encabezados y KPIs", async ({ page }) => {
+    await page.goto("/prevencion/pdtp")
+
+    // Page header
+    await expect(page.getByRole("heading", { name: "Dashboard de Cumplimiento SG-SST" })).toBeVisible()
+
+    // Enlace al listado de programas
+    await expect(page.getByRole("link", { name: "Listado de programas" })).toBeVisible()
+  })
+
+  test("la página reubicada del listado de programas (/prevencion/pdtp/programas) carga correctamente", async ({ page }) => {
+    await page.goto("/prevencion/pdtp/programas")
+
+    // Page header del listado o redirección si hay único programa
+    const hasHeading = await page.getByRole("heading", { name: /Listado de programas preventivos/ }).isVisible().catch(() => false)
+    const hasProgramDetail = await page.getByRole("heading", { name: /Programa/ }).isVisible().catch(() => false)
+
+    expect(hasHeading || hasProgramDetail).toBeTruthy()
   })
 
   test("la página de plantillas carga correctamente", async ({ page }) => {

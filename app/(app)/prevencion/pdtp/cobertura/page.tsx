@@ -27,12 +27,12 @@ export default async function PdtpCoveragePage() {
       <PageHeader
         title="Cobertura MIPER y legal"
         description="Demuestra de dónde nace cada medida del programa y qué brechas siguen abiertas."
-        breadcrumb={<Breadcrumbs items={[{ label: "Dashboard", href: "/dashboard" }, { label: "Programa preventivo", href: "/prevencion/pdtp" }, { label: "Cobertura" }]} />}
+        breadcrumb={<Breadcrumbs items={[{ label: "Dashboard", href: "/dashboard" }, { label: "Programa de trabajo (PDTP)", href: "/prevencion/pdtp" }, { label: "Cobertura" }]} />}
       />
       {!coverage ? (
         // A-4: la descripción ya decía qué hacer; faltaba que fuera clicable.
         <EmptyState
-          title="Sin programa preventivo activo"
+          title="Sin programa de trabajo (PDTP) activo"
           description="Crea y activa el programa del período para conciliarlo con MIPER y requisitos legales."
           action={
             <Button asChild size="sm">

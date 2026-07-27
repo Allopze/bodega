@@ -228,14 +228,19 @@ export const preventionModule = {
           permissions: ["prevention:legal:view"],
         },
         {
-          label: "Programa preventivo SG-SST",
+          label: "Programa de trabajo (PDTP)",
           href: "/prevencion/pdtp",
           iconName: "ClipboardText",
           permissions: ["prevention:pdtp:view"],
           children: [
             {
-              label: "Trabajo por eventos",
-              href: "/prevencion/pdtp/obligaciones",
+              label: "Dashboard",
+              href: "/prevencion/pdtp",
+              permissions: ["prevention:pdtp:view"],
+            },
+            {
+              label: "Programas",
+              href: "/prevencion/pdtp/programas",
               permissions: ["prevention:pdtp:view"],
             },
             {
@@ -244,13 +249,8 @@ export const preventionModule = {
               permissions: ["prevention:pdtp:approve"],
             },
             {
-              label: "Acciones correctivas",
+              label: "Acciones y seguimiento",
               href: "/prevencion/pdtp/acciones",
-              permissions: ["prevention:pdtp:view"],
-            },
-            {
-              label: "Cobertura MIPER y legal",
-              href: "/prevencion/pdtp/cobertura",
               permissions: ["prevention:pdtp:view"],
             },
           ],

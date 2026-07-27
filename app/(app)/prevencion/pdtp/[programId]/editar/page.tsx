@@ -40,7 +40,14 @@ export default async function PdtpEditProgramPage({ params }: Props) {
           .orderBy(worksites.name),
     listPdtpProgramWorksites(programId),
   ])
-  const activityWorksiteExclusions = await listPdtpActivityWorksiteExclusions(programId)
+  const [activityWorksiteExclusions, allWorksites] = await Promise.all([
+    listPdtpActivityWorksiteExclusions(programId),
+    // Todas las faenas activas para el selector de importación Excel
+    db.select({ id: worksites.id, name: worksites.name, code: worksites.code })
+      .from(worksites)
+      .where(eq(worksites.isActive, true))
+      .orderBy(worksites.name),
+  ])
   const schedule = activities.length > 0
     ? await db.select().from(pdtpActivitySchedule).where(inArray(pdtpActivitySchedule.activityId, activities.map((a) => a.id)))
     : []
@@ -67,6 +74,7 @@ export default async function PdtpEditProgramPage({ params }: Props) {
         checklists={checklists}
         responsibleCatalog={responsibleCatalog.filter((responsible) => responsible.isActive)}
         visibleWorksites={visibleWorksites}
+        allWorksites={allWorksites}
         memberWorksiteIds={programWorksites.map((w) => w.worksiteId)}
         activityWorksiteExclusions={activityWorksiteExclusions}
         userId={session.user.id}

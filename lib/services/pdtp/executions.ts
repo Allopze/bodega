@@ -1,6 +1,6 @@
-import { and, asc, eq, inArray, isNull, ne, sql } from "drizzle-orm"
+import { and, asc, desc, eq, inArray, isNull, ne, sql } from "drizzle-orm"
 import { db } from "@/db"
-import { pdtpActivities, pdtpExecutions, pdtpObligations, pdtpPrograms, worksites } from "@/db/schema"
+import { pdtpActivities, pdtpExecutions, pdtpChangeLog, pdtpObligations, pdtpPrograms, worksites } from "@/db/schema"
 import { pdtpExecutionId } from "./helpers"
 import { assertWorksiteAccess } from "./helpers"
 import type { WorksiteScope } from "./helpers"
@@ -316,4 +316,35 @@ export async function listPendingPdtpExecutions(
     ...r,
     evidencePhotos: Array.isArray(r.evidencePhotos) ? r.evidencePhotos : [],
   }))
+}
+
+export async function getPendingPdtpApprovalsForView(params: {
+  worksiteId: string
+  year: number
+  activityIds: string[]
+}): Promise<Array<{ id: string; activityId: string; month: number; week: number }>> {
+  if (params.activityIds.length === 0) return []
+  return db
+    .select({
+      id: pdtpExecutions.id,
+      activityId: pdtpExecutions.activityId,
+      month: pdtpExecutions.month,
+      week: pdtpExecutions.week,
+    })
+    .from(pdtpExecutions)
+    .where(and(
+      eq(pdtpExecutions.worksiteId, params.worksiteId),
+      eq(pdtpExecutions.status, "submitted"),
+      eq(pdtpExecutions.year, params.year),
+      inArray(pdtpExecutions.activityId, params.activityIds),
+    ))
+}
+
+export async function getPdtpChangeLog(programId: string) {
+  return db
+    .select()
+    .from(pdtpChangeLog)
+    .where(eq(pdtpChangeLog.programId, programId))
+    .orderBy(desc(pdtpChangeLog.changedAt))
+    .limit(20)
 }

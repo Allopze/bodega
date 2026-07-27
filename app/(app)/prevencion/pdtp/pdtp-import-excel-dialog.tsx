@@ -31,6 +31,8 @@ import { ImportExcelSection } from "./[programId]/editar/import-excel-section"
 export type PdtpImportExcelDialogProps = {
   programId: string
   visibleWorksites: Array<{ id: string; name: string; code: string }>
+  /** Todas las faenas activas del sistema (para el selector de importación). */
+  allWorksites: Array<{ id: string; name: string; code: string }>
   /** Tamaño del botón disparador; por defecto "sm" para encajar en el header. */
   size?: "sm" | "default" | "lg" | "icon"
 }
@@ -38,6 +40,7 @@ export type PdtpImportExcelDialogProps = {
 export function PdtpImportExcelDialog({
   programId,
   visibleWorksites,
+  allWorksites,
   size = "sm",
 }: PdtpImportExcelDialogProps) {
   const [open, setOpen] = React.useState(false)
@@ -58,7 +61,7 @@ export function PdtpImportExcelDialog({
             (hojas <em>PDTP GENERAL</em>, <em>CPHS</em>, <em>PRF y Adm. de contrato</em>, etc.). El programa no se modifica hasta que confirmes el preview.
           </DialogDescription>
         </DialogHeader>
-        <ImportExcelSection programId={programId} visibleWorksites={visibleWorksites} />
+        <ImportExcelSection programId={programId} visibleWorksites={visibleWorksites} allWorksites={allWorksites} />
       </DialogContent>
     </Dialog>
   )

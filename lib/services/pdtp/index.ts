@@ -73,7 +73,7 @@ export {
 } from "./approval-flow"
 export type { PdtpApprovalStepInput, PdtpApprovalSegregationRule } from "./approval-flow"
 export { getPdtpSheetView, getPdtpSheetViewByProgram, buildPdtpExport } from "./sheets"
-export { markPdtpExecution, approvePdtpExecution, rejectPdtpExecution, listPendingPdtpExecutions } from "./executions"
+export { markPdtpExecution, approvePdtpExecution, rejectPdtpExecution, listPendingPdtpExecutions, getPendingPdtpApprovalsForView, getPdtpChangeLog } from "./executions"
 export { getPdtpComplianceIndicators, getPdtpComplianceIndicatorsForScope } from "./compliance"
 export { updatePdtpActivity, addPdtpActivity, batchUpdatePdtpActivities, duplicatePdtpActivity, deletePdtpActivity, reorderPdtpActivities, listPdtpProgramActivities, renamePdtpObjective } from "./activities"
 export type { PdtpObjectiveRenameInput, PdtpActivityBatchUpdateInput } from "./activities"

@@ -92,7 +92,7 @@ export function PdtpObligationsWorkbench({
       <PageHeader
         title="Trabajo por necesidad y eventos"
         description="Gestiona casos reales, plazos y evidencias sin inventar cuotas para actividades que no son calendarizadas."
-        breadcrumb={<Breadcrumbs items={[{ label: "Dashboard", href: "/dashboard" }, { label: "Programa preventivo", href: "/prevencion/pdtp" }, { label: "Trabajo por eventos" }]} />}
+        breadcrumb={<Breadcrumbs items={[{ label: "Dashboard", href: "/dashboard" }, { label: "Programa de trabajo (PDTP)", href: "/prevencion/pdtp" }, { label: "Trabajo por eventos" }]} />}
         actions={canExecute ? <Button type="button" onClick={openCreate} disabled={activities.length === 0 || worksites.length === 0}>Registrar necesidad o evento</Button> : undefined}
       />
 

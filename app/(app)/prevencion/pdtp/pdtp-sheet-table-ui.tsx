@@ -347,6 +347,44 @@ export function PdtpDensityToggle({
 }
 
 // ---------------------------------------------------------------------------
+// PdtpMonthWindow — colapsar meses en vista anual
+// ---------------------------------------------------------------------------
+
+const MONTH_WINDOW_KEY = "pdtp-month-window"
+
+/**
+ * Vista anual: por defecto muestra solo el mes actual ±1 mes alrededor.
+ * El usuario puede expandir para ver los 12 meses. La preferencia se
+ * persiste en localStorage.
+ */
+export function usePdtpMonthWindow(
+  currentMonth: number,
+): [number[], boolean, () => void] {
+  const [expanded, setExpanded] = React.useState<boolean>(() => {
+    if (typeof window === "undefined") return false
+    return localStorage.getItem(MONTH_WINDOW_KEY) === "1"
+  })
+
+  const toggle = React.useCallback(() => {
+    const next = !expanded
+    setExpanded(next)
+    localStorage.setItem(MONTH_WINDOW_KEY, next ? "1" : "0")
+  }, [expanded])
+
+  const visibleMonths = React.useMemo(() => {
+    if (expanded) return MONTH_INDICES
+    const start = Math.max(0, currentMonth - 2) // mes actual ±1
+    const end = Math.min(11, currentMonth)
+    return MONTH_INDICES.slice(start, end + 1)
+  }, [expanded, currentMonth])
+
+  return [visibleMonths, expanded, toggle]
+}
+
+const MONTH_INDICES = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+export { MONTH_INDICES as PDT_SHEET_MONTH_INDICES }
+
+// ---------------------------------------------------------------------------
 // Navigation pickers
 // ---------------------------------------------------------------------------
 

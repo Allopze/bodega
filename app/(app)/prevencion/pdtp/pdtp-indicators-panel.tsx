@@ -1,6 +1,7 @@
 import { CheckCircle, Target, ChartBar } from "@phosphor-icons/react/dist/ssr"
 import { cn } from "@/lib/utils"
 import { Table, TableBody, TableCell, TableCellNum, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
+import { PersistedDetails } from "./persisted-details"
 import type { PdtpComplianceIndicators, PdtpIntegralCompliance } from "@/lib/services/prevention-pdtp"
 
 const MONTH_LABELS = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
@@ -88,9 +89,9 @@ export function PdtpIndicatorsPanel({ data, integral, asOf }: { data: PdtpCompli
         </div>
       </div>
 
-      {/* Desglose mensual + trimestral — colapsable */}
-      <details className="group">
-        <summary className="flex cursor-pointer list-none items-center gap-1.5 text-xs text-[var(--color-text-muted)] hover:text-[var(--color-text)] transition-colors">
+      {/* Desglose mensual + trimestral — colapsable con estado persistido */}
+      <PersistedDetails storageKey="indicators-monthly"
+        summary={<>
           <svg
             width="12"
             height="12"
@@ -101,7 +102,8 @@ export function PdtpIndicatorsPanel({ data, integral, asOf }: { data: PdtpCompli
             <path d="M4 2.5L8.5 6L4 9.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none" />
           </svg>
           Ver desglose mensual y trimestral
-        </summary>
+        </>}
+      >
 
         {/* Resumen trimestral */}
         <div className="mt-3 flex flex-wrap gap-2">
@@ -156,7 +158,7 @@ export function PdtpIndicatorsPanel({ data, integral, asOf }: { data: PdtpCompli
             </Table>
           </TableRoot>
         </div>
-      </details>
+      </PersistedDetails>
     </div>
   )
 }

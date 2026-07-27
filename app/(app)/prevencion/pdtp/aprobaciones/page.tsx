@@ -95,7 +95,7 @@ export default async function PdtpApprovalsPage({ searchParams }: PdtpApprovalsP
           <Breadcrumbs items={[
             { label: "Dashboard", href: "/dashboard" },
             { label: "Prevención", href: "/prevencion" },
-            { label: "Programa preventivo SG-SST", href: "/prevencion/pdtp" },
+            { label: "Programa de trabajo (PDTP)", href: "/prevencion/pdtp" },
             ...(program ? [{ label: program.title, href: `/prevencion/pdtp/${program.id}` }] : []),
             { label: "Aprobaciones" },
           ]} />
