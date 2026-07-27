@@ -11,7 +11,6 @@ import { PriorityBadge } from "@/components/ui/priority-badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { cn, formatDate, formatDateTime } from "@/lib/utils"
 import type { OperationalModule, OperationalQueueResult } from "@/lib/services/operational-work-queue"
-import { WorkAssignmentControl } from "./work-assignment-control"
 
 const MODULE_LABELS: Record<OperationalModule, string> = {
   solicitudes: "Solicitudes", aprobaciones: "Aprobaciones", compras: "Compras", recepciones: "Recepciones", entregas: "Entregas",
@@ -19,15 +18,14 @@ const MODULE_LABELS: Record<OperationalModule, string> = {
 }
 
 const QUICK_FILTERS = [
-  ["all", "Todas"], ["critical", "Críticas"], ["overdue", "Vencidas"], ["today", "Hoy"], ["blocked", "Bloqueadas"], ["unassigned", "Sin responsable"], ["mine", "Mis tareas"],
+  ["all", "Todas"], ["critical", "Críticas"], ["overdue", "Vencidas"], ["today", "Hoy"], ["blocked", "Bloqueadas"], ["mine", "Mis tareas"],
 ] as const
 
 interface WorkQueueWorkbenchProps {
   result: OperationalQueueResult
-  canAssign: boolean
 }
 
-export function WorkQueueWorkbench({ result, canAssign }: WorkQueueWorkbenchProps) {
+export function WorkQueueWorkbench({ result }: WorkQueueWorkbenchProps) {
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
@@ -59,11 +57,11 @@ export function WorkQueueWorkbench({ result, canAssign }: WorkQueueWorkbenchProp
   }
 
   const activeQuick = searchParams.get("quick") ?? "all"
-  const activeFilters = ["q", "module", "faena", "estado", "priority", "responsable", "quick"].filter((key) => {
+  const activeFilters = ["q", "module", "faena", "estado", "priority", "quick"].filter((key) => {
     const value = searchParams.get(key)
     return value && value !== "all"
   }).length
-  const { modules, worksites, statuses, responsible } = result.filterOptions
+  const { modules, worksites, statuses } = result.filterOptions
 
   return (
     <section aria-labelledby="cola-operacional" className="space-y-4">
@@ -82,7 +80,7 @@ export function WorkQueueWorkbench({ result, canAssign }: WorkQueueWorkbenchProp
           type="search"
           value={term}
           onChange={(event) => setTerm(event.target.value)}
-          placeholder="Buscar código, tarea, faena o responsable"
+          placeholder="Buscar código, tarea o faena"
           className="h-11 min-w-0 flex-1 rounded-[var(--radius)] border border-[var(--color-border-control)] bg-[var(--color-surface)] px-3 text-xs text-[var(--color-text)] outline-none placeholder:text-[var(--color-text-subtle)] focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary-line)] sm:h-8"
         />
         <Button type="submit" variant="secondary" size="sm"><FunnelSimple size={14} />Buscar</Button>
@@ -129,10 +127,6 @@ export function WorkQueueWorkbench({ result, canAssign }: WorkQueueWorkbenchProp
             <SelectTrigger aria-label="Filtrar por estado"><SelectValue placeholder="Estado" /></SelectTrigger>
             <SelectContent><SelectItem value="all">Todos los estados</SelectItem>{statuses.map((status) => <SelectItem key={status.value} value={status.value}>{status.label}</SelectItem>)}</SelectContent>
           </Select>
-          <Select value={searchParams.get("responsable") ?? "all"} onValueChange={(value) => update({ responsable: value })}>
-            <SelectTrigger aria-label="Filtrar por responsable"><SelectValue placeholder="Responsable" /></SelectTrigger>
-            <SelectContent><SelectItem value="all">Cualquier responsable</SelectItem>{responsible.map((person) => <SelectItem key={person.id} value={person.id}>{person.name}</SelectItem>)}</SelectContent>
-          </Select>
         </div>
       </details>
 
@@ -150,8 +144,8 @@ export function WorkQueueWorkbench({ result, canAssign }: WorkQueueWorkbenchProp
       ) : (
         <div className="overflow-x-auto rounded-[var(--radius)] border border-[var(--color-border)]">
           <table className="w-full min-w-[980px] border-collapse text-left text-xs" aria-label="Pendientes operacionales">
-            <thead className="bg-[var(--color-surface-2)] text-[var(--color-text-muted)]"><tr><th className="px-3 py-2.5 th-type">Prioridad</th><th className="px-3 py-2.5 th-type">Tarea</th><th className="px-3 py-2.5 th-type">Módulo</th><th className="px-3 py-2.5 th-type">Faena</th><th className="px-3 py-2.5 th-type">Responsable</th><th className="px-3 py-2.5 th-type">Estado</th><th className="px-3 py-2.5 th-type">Antigüedad</th><th className="px-3 py-2.5 th-type">Vencimiento</th><th className="px-3 py-2.5"><span className="sr-only">Acciones</span></th></tr></thead>
-            <tbody>{result.items.map((item) => <tr key={item.id} className="border-t border-[var(--color-border)] align-middle hover:bg-[var(--color-surface-2)]"><td className="px-3 py-2.5"><PriorityBadge priority={item.priority} /></td><td className="px-3 py-2.5"><Link href={item.href} className="font-medium text-[var(--color-text)] hover:text-[var(--color-primary-ink)] hover:underline">{item.title}</Link><p className="mt-0.5 text-[11px] text-[var(--color-text-muted)]">{item.code && <span>{item.code} · </span>}{item.subtitle}</p></td><td className="px-3 py-2.5 text-[var(--color-text-muted)]">{MODULE_LABELS[item.module]}</td><td className="px-3 py-2.5 text-[var(--color-text-muted)]">{item.worksiteName}</td><td className="px-3 py-2.5 text-[var(--color-text-muted)]">{item.assignee ? <span>{item.assignee.name}{item.assignee.source === "assignment" && <span className="block text-[11px] text-[var(--color-text-subtle)]">Asignación</span>}</span> : "Sin responsable"}</td><td className="px-3 py-2.5"><Badge variant={item.blocked ? "danger" : item.status === "overdue" ? "warning" : "info"} size="sm">{item.blocked ? "Bloqueada · " : ""}{item.statusLabel}</Badge></td><td className="px-3 py-2.5 text-[var(--color-text-muted)]">{relativeAge(item.createdAt)}</td><td className="px-3 py-2.5 text-[var(--color-text-muted)]">{item.effectiveDueAt ? <><time dateTime={item.effectiveDueAt}>{formatDate(item.effectiveDueAt)}</time><span className="block text-[11px] text-[var(--color-text-subtle)]">{item.dueSource === "commitment" ? "Compromiso" : "Fecha origen"}</span></> : "Sin fecha"}</td><td className="px-3 py-2.5"><div className="flex items-center justify-end gap-1"><Button asChild size="sm" variant="ghost"><Link href={item.href}>{item.ctaLabel}<ArrowRight size={14} /></Link></Button>{canAssign && item.assignable && <WorkAssignmentControl item={item} />}</div></td></tr>)}</tbody>
+            <thead className="bg-[var(--color-surface-2)] text-[var(--color-text-muted)]"><tr><th className="px-3 py-2.5 th-type">Prioridad</th><th className="px-3 py-2.5 th-type">Tarea</th><th className="px-3 py-2.5 th-type">Módulo</th><th className="px-3 py-2.5 th-type">Faena</th><th className="px-3 py-2.5 th-type">Estado</th><th className="px-3 py-2.5 th-type">Antigüedad</th><th className="px-3 py-2.5 th-type">Vencimiento</th><th className="px-3 py-2.5"><span className="sr-only">Acciones</span></th></tr></thead>
+            <tbody>{result.items.map((item) => <tr key={item.id} className="border-t border-[var(--color-border)] align-middle hover:bg-[var(--color-surface-2)]"><td className="px-3 py-2.5"><PriorityBadge priority={item.priority} /></td><td className="px-3 py-2.5"><Link href={item.href} className="font-medium text-[var(--color-text)] hover:text-[var(--color-primary-ink)] hover:underline">{item.title}</Link><p className="mt-0.5 text-[11px] text-[var(--color-text-muted)]">{item.code && <span>{item.code} · </span>}{item.subtitle}</p></td><td className="px-3 py-2.5 text-[var(--color-text-muted)]">{MODULE_LABELS[item.module]}</td><td className="px-3 py-2.5 text-[var(--color-text-muted)]">{item.worksiteName}</td><td className="px-3 py-2.5"><Badge variant={item.blocked ? "danger" : item.status === "overdue" ? "warning" : "info"} size="sm">{item.blocked ? "Bloqueada · " : ""}{item.statusLabel}</Badge></td><td className="px-3 py-2.5 text-[var(--color-text-muted)]">{relativeAge(item.createdAt)}</td><td className="px-3 py-2.5 text-[var(--color-text-muted)]">{item.effectiveDueAt ? <><time dateTime={item.effectiveDueAt}>{formatDate(item.effectiveDueAt)}</time><span className="block text-[11px] text-[var(--color-text-subtle)]">{item.dueSource === "commitment" ? "Compromiso" : "Fecha origen"}</span></> : "Sin fecha"}</td><td className="px-3 py-2.5"><div className="flex items-center justify-end gap-1"><Button asChild size="sm" variant="ghost"><Link href={item.href}>{item.ctaLabel}<ArrowRight size={14} /></Link></Button></div></td></tr>)}</tbody>
           </table>
         </div>
       )}

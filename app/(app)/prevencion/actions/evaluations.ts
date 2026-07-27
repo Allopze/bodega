@@ -37,7 +37,7 @@ export async function createEvaluationAction(
   if (!isPersonEvaluationDefinition(input.definicionCode)) {
     return {
       ok: false,
-      message: "Esta definición corresponde a una inspección y debe ejecutarse desde el Programa preventivo.",
+      message: "Esta definición corresponde a una inspección y debe ejecutarse desde el Programa de trabajo (PDTP).",
     }
   }
 

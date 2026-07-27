@@ -21,8 +21,7 @@ import { OcReceptionCta } from "./oc-reception-cta"
 import { OcDetailItems } from "./oc-detail-items"
 import { DetailLine, AmountLine } from "./oc-detail-page.helpers"
 import { getOcReconciliation } from "@/lib/services/oc-reconciliation"
-import { getOperationalDetailWorkItem } from "@/lib/services/operational-work-queue"
-import { WorkAssignmentControl } from "../../pendientes/work-assignment-control"
+
 
 export const metadata: Metadata = { title: "Orden de compra" }
 
@@ -51,9 +50,7 @@ export default async function OcDetailPage({
   if (!order) notFound()
   if (!canAccessWorksite(session, order.worksiteId)) notFound()
 
-  const assignmentTask = can(session, "operations:assign_work") && can(session, "operations:view_work")
-    ? await getOperationalDetailWorkItem(session, { sourceType: "purchase_order", sourceId: order.id })
-    : null
+
 
   // Load linked request items + request codes for traceability
   const requestItemIds = order.items
@@ -302,7 +299,6 @@ export default async function OcDetailPage({
           <section className="rounded-(--radius-2xl) bg-(--color-surface) shadow-(--shadow-card) p-4">
             <div className="flex items-center justify-between gap-3">
               <StateBadge state={order.status} entity="oc" />
-              {assignmentTask && <WorkAssignmentControl item={assignmentTask} />}
               <Button asChild variant="secondary" size="sm">
                 <a
                   href={`/compras/${order.id}/print`}

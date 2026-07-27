@@ -24,8 +24,7 @@ import { EntityTimeline } from "@/components/states/entity-timeline"
 import { RequestProgressPanel } from "@/components/states/request-progress-panel"
 import { buildRequestProgress } from "@/lib/work-queue"
 import { RequestPeoplePanel } from "../request-people-panel"
-import { getOperationalDetailWorkItem } from "@/lib/services/operational-work-queue"
-import { WorkAssignmentControl } from "../../pendientes/work-assignment-control"
+
 
 export const metadata: Metadata = { title: "Solicitud de compra" }
 
@@ -52,9 +51,7 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
 
   const isQuotation = QUOTATION_TYPES.has(request.requestType)
 
-  const assignmentTask = can(session, "operations:assign_work") && can(session, "operations:view_work")
-    ? await getOperationalDetailWorkItem(session, { sourceType: "purchase_request", sourceId: request.id })
-    : null
+
 
   // View permission is per request type: repuestos/servicios carry their own
   // namespaces, epp/otro use requests:*. All quotation-type viewers also hold
@@ -256,7 +253,6 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
         actions={
           <div className="flex items-center gap-2">
             <StateBadge state={request.status} entity="request" />
-            {assignmentTask && <WorkAssignmentControl item={assignmentTask} />}
             {can(session, "requests:create") && (
               <DuplicateButton requestId={request.id} />
             )}
