@@ -16,11 +16,14 @@ import {
 import { useSafeShellHeader } from "@/components/layout/header-context"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { DashboardGrid } from "@/components/ui/dashboard-grid"
 import { EmptyState } from "@/components/ui/empty-state"
 import { PriorityBadge } from "@/components/ui/priority-badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { cn, formatDateTime } from "@/lib/utils"
 import { OperationalMetricsStrip } from "./operational-metrics-strip"
+import { DashboardAnalyticsSection } from "./dashboard-charts"
+import type { OperationalPeriodMetrics } from "@/lib/services/operational-period-metrics"
 import type { WorkPriority, WorkTask, WorkTaskType } from "@/lib/work-queue"
 import type { OperationalWorkItem } from "@/lib/services/operational-work-queue"
 import { WorkAssignmentControl } from "../pendientes/work-assignment-control"
@@ -36,6 +39,7 @@ export interface DashboardMetric {
   tone?: "neutral" | "signal" | "danger"
   href?: string
   preset?: DashboardQueuePreset
+  sparkline?: number[]
 }
 
 export interface DashboardAlert {
@@ -76,7 +80,11 @@ interface DashboardControlCenterProps {
   backlogSummary: OperationalPeriodSummaryEntry[]
   metrics: DashboardMetric[]
   alerts: DashboardAlert[]
-  children?: React.ReactNode
+  periodMetrics?: OperationalPeriodMetrics
+  /** Contenido extra de la columna principal, bajo la cola (actividad). */
+  mainSlot?: React.ReactNode
+  /** Contenido extra del lateral, entre alertas y métricas mensuales (PDTP). */
+  asideSlot?: React.ReactNode
 }
 
 type ModuleFilter = "all" | WorkTaskType
@@ -121,7 +129,9 @@ export function DashboardControlCenter({
   backlogSummary,
   metrics,
   alerts,
-  children,
+  periodMetrics,
+  mainSlot,
+  asideSlot,
 }: DashboardControlCenterProps) {
   const { searchQuery } = useSafeShellHeader()
   const [preset, setPreset] = React.useState<DashboardQueuePreset>("all")
@@ -200,11 +210,10 @@ export function DashboardControlCenter({
   return (
     <>
       {/* ── Greeting header — full width ── */}
-      <header className="border-b border-[var(--color-border)] pb-5">
-        <p className="text-eyebrow hidden lg:block">Centro de control</p>
-        <div className="mt-1 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+      <header className="border-b border-[var(--color-border)] pb-4">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
           <div className="min-w-0">
-            <h2 className="text-h1 text-[var(--color-text)]">Hola, {firstName}</h2>
+            <h1 className="text-3xl font-bold tracking-tight text-[var(--color-text)]">Hola, {firstName}</h1>
             <p className="mt-1.5 max-w-[70ch] text-sm text-[var(--color-text-muted)]">
               {buildOperationalSummary(queueSummary)}
             </p>
@@ -217,178 +226,192 @@ export function DashboardControlCenter({
         </div>
       </header>
 
-      {/* ── Metrics strip — full width ── */}
-      {metrics.length > 0 && (
-        <div className="mt-5">
-          <OperationalMetricsStrip metrics={metrics} onSelect={applyPreset} />
-        </div>
-      )}
+      {/* ── Grid principal + lateral (C1 — Fase 2.3) ── */}
+      <div className="mt-6">
+        <DashboardGrid
+          main={
+            <>
+              {/* ── KPIs accionables (tira editorial, máx. 4) ── */}
+              {metrics.length > 0 && <OperationalMetricsStrip metrics={metrics} onSelect={applyPreset} />}
 
-      {/* ── Period + Backlog strips — full width ── */}
-      {periodSummary.length > 0 && (
-        <section className="mt-3" aria-labelledby="flujo-mensual">
-          <div className="flex flex-col gap-2 border-y border-[var(--color-border)] py-3 sm:flex-row sm:items-baseline sm:gap-5">
-            <h2 id="flujo-mensual" className="shrink-0 text-xs font-semibold uppercase tracking-[0.08em] text-[var(--color-text-muted)]">Flujo del mes</h2>
-            <div className="flex min-w-0 flex-wrap gap-x-5 gap-y-2">
-              {periodSummary.map((entry) => (
-                <Link key={entry.key} href={entry.href} className="group text-sm text-[var(--color-text-muted)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]">
-                  <span className="font-medium text-[var(--color-text)] group-hover:text-[var(--color-primary-ink)]">{entry.label}: {entry.value}</span>
-                  <span className="ml-1 text-xs text-[var(--color-text-subtle)]">{entry.comparison}</span>
-                </Link>
-              ))}
-            </div>
-          </div>
-        </section>
-      )}
+              {/* ── Gráficos de Analítica Operacional (Shadcn Charts) ── */}
+              {periodMetrics && <DashboardAnalyticsSection periodMetrics={periodMetrics} tasks={tasks} />}
 
-      {backlogSummary.length > 0 && (
-        <section className="mt-3" aria-labelledby="backlog-comparado">
-          <div className="flex flex-col gap-2 border-b border-[var(--color-border)] pb-3 sm:flex-row sm:items-baseline sm:gap-5">
-            <h2 id="backlog-comparado" className="shrink-0 text-xs font-semibold uppercase tracking-[0.08em] text-[var(--color-text-muted)]">Backlog comparado</h2>
-            <div className="flex min-w-0 flex-wrap gap-x-5 gap-y-2">
-              {backlogSummary.map((entry) => (
-                <Link key={entry.key} href={entry.href} className="group text-sm text-[var(--color-text-muted)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]">
-                  <span className="font-medium text-[var(--color-text)] group-hover:text-[var(--color-primary-ink)]">{entry.label}: {entry.value}</span>
-                  <span className="ml-1 text-xs text-[var(--color-text-subtle)]">{entry.comparison}</span>
-                </Link>
-              ))}
-            </div>
-          </div>
-        </section>
-      )}
-
-      {/* ── Main grid: cola de trabajo (8 col) + sidebar alertas/PDTP (4 col) ── */}
-      <div className="mt-6 grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,2fr)_minmax(18rem,1fr)]">
-
-        {/* ── Main: cola de trabajo ── */}
-        <section id="cola-de-trabajo" className="scroll-mt-4 min-w-0" aria-labelledby="titulo-cola-trabajo">
-          <div className="flex flex-col gap-3 border-b border-[var(--color-border)] pb-3 lg:flex-row lg:items-end lg:justify-between">
-            <div>
-              <h2 id="titulo-cola-trabajo" className="text-h2 text-[var(--color-text)]">Cola de trabajo</h2>
-              <p className="mt-1 text-sm text-[var(--color-text-muted)]">
-                Acciones disponibles en tus faenas autorizadas. El texto se filtra desde la búsqueda de la cabecera.
-              </p>
-            </div>
-            <p aria-live="polite" className="text-sm text-[var(--color-text-subtle)]">
-              {filteredTasks.length} de {tasks.length} tarea{tasks.length === 1 ? "" : "s"}
-            </p>
-          </div>
-
-          <div className="mt-3 flex gap-1 overflow-x-auto pb-1" aria-label="Filtros rápidos de la cola">
-            {quickFilters.map((filter) => (
-              <button
-                key={filter.value}
-                type="button"
-                aria-pressed={preset === filter.value}
-                onClick={() => setPreset(filter.value)}
-                className={cn(
-                  "inline-flex h-9 shrink-0 items-center gap-2 rounded-[var(--radius)] px-3 text-sm font-semibold",
-                  "transition-[background-color,color,transform] duration-[var(--duration-fast)] ease-[var(--ease-out)] motion-safe:active:scale-[0.97]",
-                  "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]",
-                  preset === filter.value
-                    ? "bg-[var(--color-primary)] text-white"
-                    : "bg-[var(--color-surface-2)] text-[var(--color-text-muted)] hover:bg-[var(--color-primary-tint)] hover:text-[var(--color-primary-ink)]",
-                )}
-              >
-                {filter.label}
-                <span className="font-mono text-xs tabular-nums opacity-80">{filter.count}</span>
-              </button>
-            ))}
-          </div>
-
-          <div className="mt-3 grid gap-2 border-y border-[var(--color-border)] py-3 sm:grid-cols-2 xl:grid-cols-5">
-            <FilterSelect label="Módulo" value={module} onValueChange={(value) => setModule(value as ModuleFilter)}>
-              <SelectItem value="all">Todos los módulos</SelectItem>
-              {Object.entries(MODULE_META).map(([value, item]) => <SelectItem key={value} value={value}>{item.label}</SelectItem>)}
-            </FilterSelect>
-            <FilterSelect label="Faena" value={worksiteId} onValueChange={setWorksiteId}>
-              <SelectItem value="all">Todas las faenas</SelectItem>
-              {worksites.map((worksite) => <SelectItem key={worksite.id} value={worksite.id}>{worksite.name}</SelectItem>)}
-            </FilterSelect>
-            <FilterSelect label="Prioridad" value={priority} onValueChange={(value) => setPriority(value as "all" | WorkPriority)}>
-              <SelectItem value="all">Todas las prioridades</SelectItem>
-              <SelectItem value="critical">Crítico</SelectItem>
-              <SelectItem value="high">Alta</SelectItem>
-              <SelectItem value="normal">Normal</SelectItem>
-            </FilterSelect>
-            <FilterSelect label="Estado" value={status} onValueChange={setStatus}>
-              <SelectItem value="all">Todos los estados</SelectItem>
-              {statuses.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}
-            </FilterSelect>
-            <FilterSelect label="Ordenar por" value={sort} onValueChange={(value) => setSort(value as SortOption)}>
-              <SelectItem value="priority">Prioridad</SelectItem>
-              <SelectItem value="oldest">Más antigua</SelectItem>
-              <SelectItem value="newest">Más reciente</SelectItem>
-            </FilterSelect>
-            {activeFilterCount > 0 && (
-              <Button type="button" variant="ghost" size="sm" onClick={clearFilters} className="justify-self-start xl:col-span-5">
-                Limpiar filtros ({activeFilterCount})
-              </Button>
-            )}
-          </div>
-
-          {filteredTasks.length > 0 ? (
-            <div className="mt-3 overflow-x-auto border-y border-[var(--color-border)]" data-sticky-col="true">
-              <div className="min-w-[760px]">
-                <div className="grid grid-cols-[7rem_minmax(15rem,1.6fr)_9rem_10rem_9rem_8rem_10rem] gap-3 border-b border-[var(--color-border)] px-4 py-2.5 text-left th-type">
-                  <span>Prioridad</span>
-                  <span>Tarea</span>
-                  <span>Módulo</span>
-                  <span>Faena</span>
-                  <span>Estado</span>
-                  <span>Antigüedad</span>
-                  <span className="text-right">Acción</span>
+              {/* ── Cola de trabajo ── */}
+              <section id="cola-de-trabajo" className="scroll-mt-4 min-w-0 rounded-2xl border border-slate-200/80 bg-white p-5 sm:p-6 shadow-xs" aria-labelledby="titulo-cola-trabajo">
+                <div className="flex flex-col gap-3 border-b border-slate-100 pb-4 lg:flex-row lg:items-end lg:justify-between">
+                  <div>
+                    <h2 id="titulo-cola-trabajo" className="text-base font-bold text-slate-900">Cola de trabajo</h2>
+                    <p className="mt-0.5 text-xs text-slate-500">
+                      Acciones disponibles en tus faenas autorizadas. El texto se filtra desde la búsqueda de la cabecera.
+                    </p>
+                  </div>
+                  <p aria-live="polite" className="font-mono text-xs font-medium text-slate-500">
+                    {filteredTasks.length} de {tasks.length} tarea{tasks.length === 1 ? "" : "s"}
+                  </p>
                 </div>
-                <ul className="divide-y divide-[var(--color-border)]">
-                  {filteredTasks.map((task) => <WorkQueueRow key={task.id} task={task} refreshedAt={refreshedAt} canAssign={canAssign} />)}
-                </ul>
-              </div>
-            </div>
-          ) : (
-            <div className="mt-3 border-y border-[var(--color-border)]">
-              <EmptyState
-                compact
-                icon={<ClockCounterClockwise size={20} />}
-                title="No hay tareas con estos filtros"
-                description={normalizedSearch ? "Prueba otra búsqueda desde la cabecera o ajusta los filtros estructurados." : "Quita uno o más filtros para volver a ver las acciones disponibles."}
-                action={activeFilterCount > 0 ? <Button type="button" size="sm" variant="secondary" onClick={clearFilters}>Limpiar filtros</Button> : undefined}
-              />
-            </div>
-          )}
-        </section>
 
-        {/* ── Sidebar: alertas + PDTP + actividad ── */}
-        <aside className="flex flex-col gap-6 min-w-0">
-          <section aria-labelledby="alertas-operacionales">
-            <div className="mb-2 flex items-center justify-between gap-3">
-              <h2 id="alertas-operacionales" className="text-h2 text-[var(--color-text)]">Requiere atención</h2>
-              {alerts.length > 0 && <span className="text-xs text-[var(--color-text-subtle)]">{alerts.length} situación{alerts.length === 1 ? "" : "es"} activa{alerts.length === 1 ? "" : "s"}</span>}
-            </div>
-            {alerts.length > 0 ? (
-              <div className="flex flex-col gap-2">
-                {alerts.map((alert) => <OperationalAlert key={alert.key} alert={alert} onSelect={applyPreset} />)}
-              </div>
-            ) : (
-              <div className="border-y border-[var(--color-border)]">
-                <EmptyState
-                  compact
-                  align="start"
-                  icon={<CheckCircle size={20} weight="fill" />}
-                  tone="success"
-                  title="No hay alertas operacionales activas"
-                  description="No se detectaron pendientes críticos en los módulos que puedes revisar desde este dashboard."
-                />
-              </div>
-            )}
-            <div className="mt-3 flex justify-end">
-              <Button asChild size="sm" variant="secondary"><Link href="/pendientes">Abrir cola completa</Link></Button>
-            </div>
-          </section>
+                <div className="mt-4 flex gap-1.5 overflow-x-auto pb-1" aria-label="Filtros rápidos de la cola">
+                  {quickFilters.map((filter) => (
+                    <button
+                      key={filter.value}
+                      type="button"
+                      aria-pressed={preset === filter.value}
+                      onClick={() => setPreset(filter.value)}
+                      className={cn(
+                        "inline-flex h-8 shrink-0 items-center gap-2 rounded-xl px-3 text-xs font-semibold",
+                        "transition-all duration-150 ease-out motion-safe:active:scale-[0.97]",
+                        "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600",
+                        preset === filter.value
+                          ? "bg-slate-900 text-white shadow-xs"
+                          : "bg-slate-100 text-slate-700 hover:bg-slate-200",
+                      )}
+                    >
+                      {filter.label}
+                      <span className="font-mono text-xs tabular-nums opacity-80">{filter.count}</span>
+                    </button>
+                  ))}
+                </div>
 
-          {children}
-        </aside>
+                <div className="mt-4 grid gap-2.5 border-y border-slate-100 py-3.5 sm:grid-cols-2 xl:grid-cols-5">
+                  <FilterSelect label="Módulo" value={module} onValueChange={(value) => setModule(value as ModuleFilter)}>
+                    <SelectItem value="all">Todos los módulos</SelectItem>
+                    {Object.entries(MODULE_META).map(([value, item]) => <SelectItem key={value} value={value}>{item.label}</SelectItem>)}
+                  </FilterSelect>
+                  <FilterSelect label="Faena" value={worksiteId} onValueChange={setWorksiteId}>
+                    <SelectItem value="all">Todas las faenas</SelectItem>
+                    {worksites.map((worksite) => <SelectItem key={worksite.id} value={worksite.id}>{worksite.name}</SelectItem>)}
+                  </FilterSelect>
+                  <FilterSelect label="Prioridad" value={priority} onValueChange={(value) => setPriority(value as "all" | WorkPriority)}>
+                    <SelectItem value="all">Todas las prioridades</SelectItem>
+                    <SelectItem value="critical">Crítico</SelectItem>
+                    <SelectItem value="high">Alta</SelectItem>
+                    <SelectItem value="normal">Normal</SelectItem>
+                  </FilterSelect>
+                  <FilterSelect label="Estado" value={status} onValueChange={setStatus}>
+                    <SelectItem value="all">Todos los estados</SelectItem>
+                    {statuses.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}
+                  </FilterSelect>
+                  <FilterSelect label="Ordenar por" value={sort} onValueChange={(value) => setSort(value as SortOption)}>
+                    <SelectItem value="priority">Prioridad</SelectItem>
+                    <SelectItem value="oldest">Más antigua</SelectItem>
+                    <SelectItem value="newest">Más reciente</SelectItem>
+                  </FilterSelect>
+                  {activeFilterCount > 0 && (
+                    <Button type="button" variant="ghost" size="sm" onClick={clearFilters} className="justify-self-start xl:col-span-5">
+                      Limpiar filtros ({activeFilterCount})
+                    </Button>
+                  )}
+                </div>
+
+                {filteredTasks.length > 0 ? (
+                  <div className="mt-4 overflow-x-auto rounded-xl border border-slate-200/80 bg-white" data-sticky-col="true">
+                    <div className="min-w-[760px]">
+                      <div className="grid grid-cols-[7rem_minmax(15rem,1.6fr)_9rem_10rem_9rem_8rem_10rem] gap-3 border-b border-slate-100 bg-slate-50/50 px-4 py-2.5 text-left text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                        <span>Prioridad</span>
+                        <span>Tarea</span>
+                        <span>Módulo</span>
+                        <span>Faena</span>
+                        <span>Estado</span>
+                        <span>Antigüedad</span>
+                        <span className="text-right">Acción</span>
+                      </div>
+                      <ul className="divide-y divide-slate-100">
+                        {filteredTasks.map((task) => <WorkQueueRow key={task.id} task={task} refreshedAt={refreshedAt} canAssign={canAssign} />)}
+                      </ul>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="mt-4 rounded-xl border border-slate-100 bg-slate-50/50 py-6">
+                    <EmptyState
+                      compact
+                      icon={<ClockCounterClockwise size={20} />}
+                      title="No hay tareas con estos filtros"
+                      description={normalizedSearch ? "Prueba otra búsqueda desde la cabecera o ajusta los filtros estructurados." : "Quita uno o más filtros para volver a ver las acciones disponibles."}
+                      action={activeFilterCount > 0 ? <Button type="button" size="sm" variant="secondary" onClick={clearFilters}>Limpiar filtros</Button> : undefined}
+                    />
+                  </div>
+                )}
+              </section>
+
+              {/* ── Actividad (reciente + por faena) — inyectada por la página ── */}
+              {mainSlot}
+            </>
+          }
+          aside={
+            <>
+              {/* ── Requiere atención ── */}
+              <section aria-labelledby="alertas-operacionales" className="min-w-0 rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs">
+                <div className="mb-3 flex items-center justify-between gap-3 border-b border-slate-100 pb-3">
+                  <h2 id="alertas-operacionales" className="text-sm font-bold text-slate-900">Requiere atención</h2>
+                  {alerts.length > 0 && <span className="font-mono text-xs font-semibold text-slate-500">{alerts.length} activa{alerts.length === 1 ? "" : "s"}</span>}
+                </div>
+                {alerts.length > 0 ? (
+                  <div className="flex flex-col gap-2.5">
+                    {alerts.map((alert) => <OperationalAlert key={alert.key} alert={alert} onSelect={applyPreset} />)}
+                  </div>
+                ) : (
+                  <div className="py-2">
+                    <EmptyState
+                      compact
+                      align="start"
+                      icon={<CheckCircle size={20} weight="fill" />}
+                      tone="success"
+                      title="No hay alertas operacionales activas"
+                      description="No se detectaron pendientes críticos en los módulos que puedes revisar desde este dashboard."
+                    />
+                  </div>
+                )}
+                <div className="mt-4 flex justify-end border-t border-slate-100 pt-3">
+                  <Button asChild size="sm" variant="secondary"><Link href="/pendientes">Abrir cola completa</Link></Button>
+                </div>
+              </section>
+
+              {/* ── PDTP — inyectado por la página ── */}
+              {asideSlot}
+
+              {/* ── Métricas mensuales (lectura de apoyo) ── */}
+              {periodSummary.length > 0 && (
+                <CompactMetricList id="flujo-mensual" title="Flujo del mes" entries={periodSummary} />
+              )}
+              {backlogSummary.length > 0 && (
+                <CompactMetricList id="backlog-comparado" title="Backlog comparado" entries={backlogSummary} />
+              )}
+            </>
+          }
+        />
       </div>
     </>
+  )
+}
+
+/**
+ * Lista compacta de métricas mensuales para el lateral del dashboard.
+ */
+function CompactMetricList({ id, title, entries }: {
+  id: string
+  title: string
+  entries: OperationalPeriodSummaryEntry[]
+}) {
+  return (
+    <section aria-labelledby={id} className="min-w-0 rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs">
+      <h2 id={id} className="text-sm font-bold text-slate-900 border-b border-slate-100 pb-3">{title}</h2>
+      <ul className="mt-2 divide-y divide-slate-100">
+        {entries.map((entry) => (
+          <li key={entry.key}>
+            <Link
+              href={entry.href}
+              className="group block py-2.5 transition-colors hover:bg-slate-50/80 rounded-lg px-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
+            >
+              <span className="text-xs font-semibold text-slate-800 group-hover:text-blue-600">
+                {entry.label}: <span className="font-mono tabular-nums">{entry.value}</span>
+              </span>
+              <span className="mt-0.5 block text-[11px] text-slate-500">{entry.comparison}</span>
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </section>
   )
 }
 

@@ -3,7 +3,7 @@
 import * as React from "react"
 import Link from "next/link"
 import type { Session } from "next-auth"
-import { SignOut } from "@phosphor-icons/react"
+import { CaretUpDown, SignOut } from "@phosphor-icons/react"
 import { signOut } from "next-auth/react"
 import { Avatar } from "@/components/ui/avatar"
 import { Tooltip } from "@/components/ui/tooltip"
@@ -68,19 +68,20 @@ const SidebarUserProfileInner = React.memo(function SidebarUserProfileInner({
   }
 
   return (
-    <div className="border-t border-(--color-border) px-3 py-3">
+    <div className="border-t border-slate-200/80 px-2.5 py-2.5">
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button
             type="button"
-            className="flex w-full items-center gap-2.5 rounded-(--radius) px-1 py-1.5 text-left transition-colors duration-(--duration-fast) hover:bg-(--color-chrome-hover) focus:outline-none focus-visible:ring-2 focus-visible:ring-(--color-primary) cursor-pointer"
+            className="flex w-full items-center gap-2.5 rounded-xl p-1.5 text-left transition-colors duration-(--duration-fast) hover:bg-slate-200/60 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 cursor-pointer"
             aria-label="Abrir menú de usuario"
           >
-            <Avatar name={name} size="sm" />
+            <Avatar name={name} size="default" />
             <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-medium text-(--color-text) leading-tight">{name}</p>
-              <p className="truncate text-xs text-(--color-text-subtle) leading-tight">{email}</p>
+              <p className="truncate text-sm font-semibold text-slate-900 leading-tight">{name}</p>
+              <p className="truncate text-xs text-slate-500 leading-tight mt-0.5">{email}</p>
             </div>
+            <CaretUpDown size={16} className="text-slate-400 shrink-0" />
           </button>
         </DropdownMenuTrigger>
         <UserDropdownContent

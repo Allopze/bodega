@@ -97,6 +97,8 @@ const eslintConfig = defineConfig([
     "coverage/**",
     "next-env.d.ts",
     "app_cumplimiento/**",
+    // Muestra estática de composición visual (no es código de la app).
+    "referencia/**",
   ]),
   {
     plugins: {

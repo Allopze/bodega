@@ -156,6 +156,12 @@ export default function MyNewPage() {
   )
 }
 ```
+
+## 8. Estándar Visual SaaS (Sidebar 1:1, TopBar Transparente y Tarjetas Flotantes)
+
+- **Sidebar 1:1:** Fondo blanco puro (`bg-white`), encabezado de sección micro-uppercase (`PLATAFORMA`), ítems con pills redondeados suaves (`rounded-xl bg-slate-100 font-semibold text-slate-900`) y perfil de usuario fijado al fondo del panel.
+- **TopBar integrado en Desktop:** En escritorio el `TopBar` se mantiene transparente (`bg-transparent border-b-0`), proyectando el título de página y la barra de controles directamente sobre el lienzo sin franjas ni bordes rígidos.
+- **Mainzone / Tarjetas flotantes:** Las vistas (tablas, gráficos, listas) flotan sobre el lienzo tenue (`bg-[#f8fafc]`) como contenedores blancos redondeados (`bg-white border border-slate-200/70 rounded-2xl p-6 shadow-xs`).
 <!-- END:page-layout -->
 
 <!-- BEGIN:search-architecture -->

@@ -68,36 +68,24 @@
   --color-danger-line:    oklch(0.890 0.030 27);
   --color-danger-ink:     oklch(0.355 0.135 27);
 
-  /* ── Neutrals — white canvas, cards float above ── */
-  --color-bg:             oklch(1.000 0     0);    /* white canvas       */
-  --color-surface:        oklch(1.000 0     0);    /* card surface       */
+  /* ── Neutrals — white surface cards float over soft off-white canvas ── */
+  --color-bg:             oklch(0.965 0.003 90);   /* soft slate-100 canvas (#f3f3f5) */
+  --color-surface:        oklch(1.000 0     0);    /* card surface (pure white) */
   --color-surface-2:      oklch(0.974 0.004 90);   /* hover, secondary   */
   --color-surface-3:      oklch(0.955 0.005 90);   /* tertiary, inset    */
-  --color-border:         oklch(0.918 0.004 90);   /* hairline border    */
+  --color-border:         oklch(0.925 0.003 90);   /* hairline border    */
   --color-border-strong:  oklch(0.848 0.005 90);   /* divider            */
   --color-rule:           oklch(0.225 0.005 90);   /* strong rule        */
 
-  /* ── Límite de controles interactivos ──
-     WCAG 2.2 §1.4.11 exige ≥3:1 para lo que identifica un componente de UI.
-     Los campos son blancos sobre lienzo blanco: el borde es su ÚNICO identificador,
-     y --color-border (1.27:1) no alcanza. Estos dos tokens son sólo para el
-     contorno de controles (input, textarea, select, date-picker, botón secundario,
-     track del switch). Las hairlines decorativas —divisores de tabla, bordes de
-     card, separadores— siguen con --color-border: están exentas por decorativas.
+  /* ── Límite de controles interactivos ── */
+  --color-border-control:       oklch(0.640 0.005 90);
+  --color-border-control-hover: oklch(0.545 0.004 90);
 
-     El fondo vinculante es --color-surface-2 (= --color-chrome), no el blanco:
-     un control sobre panel gris exige un borde más oscuro que sobre lienzo blanco. */
-  --color-border-control:       oklch(0.640 0.005 90);  /* #8d8c89 · 3.36:1 blanco / 3.12:1 surface-2 */
-  --color-border-control-hover: oklch(0.545 0.004 90);  /* #727170 · 4.85:1 blanco */
-
-  /* ── Chrome — sidebar background (TopBar ahora usa surface blanco) ── */
-  --color-chrome:         oklch(0.985 0.003 90);   /* sidebar fill — casi blanco, sutil tint */
-  --color-chrome-hover:   oklch(0.955 0.005 90);   /* hover inside the chrome  */
+  /* ── Chrome — sidebar background ── */
+  --color-chrome:         oklch(0.965 0.003 90);   /* sidebar outer fill */
+  --color-chrome-hover:   oklch(0.940 0.004 90);   /* hover inside chrome */
 
   /* ── Layout dimensions ── */
-  /* A7 (PLAN_MIGRACION_VISUAL_SIDEBAR_HEADER): 248px alinea el panel con la
-     densidad de la referencia sin llegar a los 16rem del demo. El rail
-     colapsado mantiene 56px. */
   --sidebar-width:        15.5rem;  /* 248px — panel expandido                   */
   --sidebar-rail-width:   3.5rem;    /* 56px  — rail colapsado                   */
   --right-panel-width:    24rem;     /* 384px — panel contextual 3ª columna      */
@@ -106,10 +94,8 @@
 
   --color-text:           oklch(0.180 0.004 90);   /* near black         */
   --color-text-muted:     oklch(0.430 0.005 90);
-  --color-text-subtle:    oklch(0.500 0.005 90);   /* WCAG AA >= 4.5:1    */
-  /* 0.560 rendía 4.32:1 sobre --color-chrome, donde sí se usa (etiquetas de
-     sección del rail, nav-rows.tsx). 0.545 cumple 4.5:1 sobre chrome y blanco. */
-  --color-text-faint:     oklch(0.545 0.004 90);   /* WCAG AA >= 4.5:1    */
+  --color-text-subtle:    oklch(0.500 0.005 90);
+  --color-text-faint:     oklch(0.535 0.004 90);
 
   /* ── Brand surface ── */
   --color-brand-surface:       oklch(1.000 0 0);
@@ -135,7 +121,7 @@
   --radius-lg:   0.75rem;   /* 12px — contenedores secundarios, modales  */
   --radius-xl:   1rem;      /* 16px — hero cards, dialogs                */
   --radius-2xl:  1.25rem;   /* 20px — majortables                        */
-  --radius-shell: 2.25rem;  /* 36px — esquina pozo principal SaaS        */
+  --radius-shell: 2.5rem;   /* 40px — esquina pozo principal curvado     */
   --radius-full: 9999px;    /* pills                                     */
 
   /* ── Shadows — soft elevation, cards float over canvas ── */

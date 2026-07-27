@@ -73,8 +73,8 @@ const TopBarInner = React.memo(function TopBarInner({
 
   return (
     <header className={cn(
-      "flex items-center h-[3.25rem] px-4 md:px-5 gap-3",
-      "bg-(--color-surface) border-b border-(--color-border)",
+      "flex items-center h-[3.5rem] px-4 md:px-6 gap-3",
+      "bg-(--color-surface) border-b border-(--color-border) lg:bg-transparent lg:border-b-0",
       // Auto-hide on mobile: slide out above the sticky clip, fade to 0.
       // Desktop: always visible (lg: overrides hide regardless of scroll).
       "transition-[transform,opacity] duration-(--duration-default) ease-(--ease-out)",
@@ -100,26 +100,16 @@ const TopBarInner = React.memo(function TopBarInner({
           <List size={18} weight="bold" />
         </button>
 
-        <BrandMark variant="light" size={26} subtitle titleSize="sm" />
+        <BrandMark variant="light" size={32} subtitle titleSize="base" />
       </div>
 
       {/* Desktop: contexto de página + chip de faena (si aplica) */}
       <div className="flex-1 min-w-0 hidden lg:flex items-center gap-3">
         <div className="min-w-0 flex-1">
-          {header.breadcrumb ? (
-            <div className="mb-0.5">{header.breadcrumb}</div>
-          ) : activeSection && activeLabel ? (
-            <Breadcrumbs
-              items={[
-                { label: activeSection },
-                { label: activeLabel },
-              ]}
-            />
-          ) : null}
           {header.title && (
             <div className="flex min-w-0 items-baseline gap-2">
-              {/* No es h1: el heading semántico vive en PageHeader dentro del contenido */}
-              <p title={header.title} className="truncate text-sm font-semibold text-(--color-text)">
+              {/* Heading destacado al inicio de la vista */}
+              <p title={header.title} className="truncate text-lg font-bold tracking-tight text-(--color-text)">
                 {header.title}
               </p>
               {header.description && (

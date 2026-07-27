@@ -1,4 +1,4 @@
-const CACHE_NAME = "tae-v2"
+const CACHE_NAME = "tae-v3"
 const SHELL_URLS = [
   "/tae",
   "/tae-manifest.json",

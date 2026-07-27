@@ -17,14 +17,14 @@ function CountBadge({ count }: { count: number }) {
 }
 
 const rowBase =
-  "group relative flex h-[var(--nav-item-height)] items-center gap-[9px] px-[10px] rounded-[var(--radius)] text-xs font-medium transition-[color,background-color] duration-(--duration-fast) ease-out"
+  "group relative flex h-[40px] items-center gap-3 px-3 rounded-xl text-[15px] font-medium transition-colors duration-(--duration-fast) ease-out"
 
 function itemRowClass(active: boolean) {
   return cn(
     rowBase,
     active
-      ? "bg-(--color-surface-3) font-semibold text-(--color-text)"
-      : "text-(--color-text-muted) hover:bg-(--color-surface-2) hover:text-(--color-text)",
+      ? "bg-slate-200/80 font-semibold text-slate-900"
+      : "text-slate-600 hover:bg-slate-200/50 hover:text-slate-900",
   )
 }
 
@@ -52,12 +52,9 @@ function LeafRow({
     >
       {Icon && (
         <Icon
-          size={16}
-          /* A4 (PLAN_MIGRACION_VISUAL): peso uniforme para un look más sereno,
-             alineado con la referencia. El activo se distingue por fondo +
-             font-semibold + color del ícono, no por weight. */
+          size={20}
           weight="regular"
-          className={cn("shrink-0", active ? "text-(--color-primary)" : "text-(--color-text-muted) group-hover:text-(--color-text)")}
+          className={cn("shrink-0", active ? "text-slate-900" : "text-slate-500 group-hover:text-slate-900")}
         />
       )}
       <span title={item.label} className="flex-1 truncate">{item.label}</span>
@@ -81,14 +78,10 @@ function BranchRow({
   const Icon = NAV_ICONS[item.iconName]
   const selfActive  = isHrefActive(item.href, pathname)
   const childActive = (item.children ?? []).some((c) => isHrefActive(c.href, pathname))
-  // El padre sólo toma el tint si él mismo es la ruta activa; si solo un hijo
-  // está activo, se mantiene en text para no eclipsar al hijo resaltado.
   const active = selfActive
   const shouldOpen = selfActive || childActive
   const [open, setOpen] = React.useState(shouldOpen)
   const [wasShouldOpen, setWasShouldOpen] = React.useState(shouldOpen)
-  // Auto-expandir cuando la navegación mete la ruta activa dentro de esta rama,
-  // sin pisar un colapso manual (derivado en render, sin useEffect).
   if (shouldOpen !== wasShouldOpen) {
     setWasShouldOpen(shouldOpen)
     if (shouldOpen) setOpen(true)
@@ -96,21 +89,19 @@ function BranchRow({
 
   return (
     <Collapsible.Root open={open} onOpenChange={setOpen}>
-      <div className={cn(itemRowClass(active), "w-full", !active && childActive && "text-(--color-text)")}>
+      <div className={cn(itemRowClass(active), "w-full", !active && childActive && "text-slate-900")}>
         <Link
           href={item.href}
           onClick={onNavigate}
           aria-current={active ? "page" : undefined}
           data-pressable
-          className="flex h-full min-w-0 flex-1 items-center gap-2.5 text-left"
+          className="flex h-full min-w-0 flex-1 items-center gap-3 text-left"
         >
           {Icon && (
             <Icon
-              size={16}
-              /* A4: peso uniforme. El padre activo se distingue por fondo +
-                 font-semibold + color del ícono. */
+              size={20}
               weight="regular"
-              className={cn("shrink-0", active ? "text-(--color-primary)" : childActive ? "text-(--color-text-muted)" : "text-(--color-text-muted) group-hover:text-(--color-text)")}
+              className={cn("shrink-0", active ? "text-slate-900" : childActive ? "text-slate-700" : "text-slate-500 group-hover:text-slate-900")}
             />
           )}
           <span title={item.label} className="flex-1 truncate">{item.label}</span>
@@ -118,12 +109,12 @@ function BranchRow({
         </Link>
         <Collapsible.Trigger asChild>
           <button type="button" aria-label={`Mostrar destinos de ${item.label}`} aria-expanded={open} className="flex h-full shrink-0 items-center px-2 text-text-faint hover:text-(--color-text)">
-          <CaretDown size={13} className={cn("shrink-0 text-text-faint transition-transform duration-(--duration-fast)", open && "rotate-180")} />
+          <CaretDown size={15} className={cn("shrink-0 text-text-faint transition-transform duration-(--duration-fast)", open && "rotate-180")} />
           </button>
         </Collapsible.Trigger>
       </div>
       <Collapsible.Content className="overflow-hidden data-[state=open]:animate-collapsible-down data-[state=closed]:animate-collapsible-up">
-        <ul className="mb-1 ml-[1.5rem] space-y-0.5 border-l border-(--color-border) pl-2 pt-0.5">
+        <ul className="my-1 ml-3 space-y-1 border-l border-slate-200/80 pl-2.5 py-0.5">
           {(item.children ?? []).map((child) => {
             const ca = isHrefActive(child.href, pathname)
             return (
@@ -134,10 +125,10 @@ function BranchRow({
                   aria-current={ca ? "page" : undefined}
                   data-pressable
                   className={cn(
-                    "flex h-8 items-center rounded-md px-2.5 text-xs transition-[color,background-color] duration-(--duration-fast) ease-out",
+                    "flex min-h-[36px] items-center rounded-xl px-2.5 text-sm font-medium transition-colors duration-(--duration-fast) ease-out",
                     ca
-                      ? "font-medium text-(--color-primary-ink)"
-                      : "text-text-subtle hover:bg-(--color-chrome-hover) hover:text-(--color-text)",
+                      ? "bg-slate-200/80 font-semibold text-slate-900"
+                      : "text-slate-600 hover:bg-slate-200/50 hover:text-slate-900",
                   )}
                 >
                   <span title={child.label} className="truncate">{child.label}</span>

@@ -5,7 +5,7 @@ interface BrandMarkProps {
   variant?: "dark" | "light"
   size?: number
   subtitle?: boolean | string
-  titleSize?: "sm" | "base" | "lg"
+  titleSize?: "sm" | "base" | "lg" | "xl"
   hideText?: boolean
 }
 
@@ -15,9 +15,10 @@ const LOGO_SRC = {
 } as const
 
 const TITLE_CLASSES = {
-  sm:   "text-sm",
-  base: "text-base",
-  lg:   "text-lg",
+  sm:   "text-base",
+  base: "text-lg",
+  lg:   "text-xl",
+  xl:   "text-2xl",
 } as const
 
 /** Single source of truth for the product name/tagline — reuse instead of hardcoding copies. */
@@ -26,9 +27,9 @@ export const BRAND_SUBTITLE = "Gestión operacional"
 
 const BrandMarkInner = React.memo(function BrandMarkInner({
   variant    = "dark",
-  size       = 32,
+  size       = 36,
   subtitle   = false,
-  titleSize  = "sm",
+  titleSize  = "base",
   hideText   = false,
 }: BrandMarkProps) {
   const isDark        = variant === "dark"
@@ -37,7 +38,7 @@ const BrandMarkInner = React.memo(function BrandMarkInner({
   const inlineSubtitle = typeof subtitle === "string"
 
   return (
-    <div className="flex items-center gap-2.5">
+    <div className="flex items-center gap-3">
       <Image
         src={LOGO_SRC[variant]}
         alt={BRAND_TITLE}
@@ -50,16 +51,16 @@ const BrandMarkInner = React.memo(function BrandMarkInner({
       {!hideText && (
         <div>
           {inlineSubtitle ? (
-            <p className={`font-sans font-semibold ${titleColor} ${TITLE_CLASSES[titleSize]} leading-tight tracking-tight`}>
+            <p className={`font-sans font-bold ${titleColor} ${TITLE_CLASSES[titleSize]} leading-tight tracking-tight`}>
               {subtitle}
             </p>
           ) : (
             <>
-              <p className={`font-sans font-semibold ${titleColor} ${TITLE_CLASSES[titleSize]} leading-tight tracking-tight`}>
+              <p className={`font-sans font-bold ${titleColor} ${TITLE_CLASSES[titleSize]} leading-tight tracking-tight`}>
                 {BRAND_TITLE}
               </p>
               {subtitle === true && (
-                <p className={`text-[10px] font-mono uppercase tracking-wider ${subtitleColor} leading-tight mt-0.5`}>
+                <p className={`text-[11px] font-mono uppercase tracking-wider ${subtitleColor} leading-tight mt-0.5`}>
                   {BRAND_SUBTITLE}
                 </p>
               )}

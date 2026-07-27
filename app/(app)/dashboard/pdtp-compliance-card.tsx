@@ -62,10 +62,9 @@ export function PdtpComplianceCard(props: PdtpComplianceCardProps) {
       href="/prevencion/pdtp"
       data-pressable
       className={cn(
-        "group block rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)]",
-        "p-4 transition-colors duration-[var(--duration-fast)] ease-[var(--ease-out)]",
-        "hover:border-[var(--color-primary)] hover:bg-[var(--color-primary-tint)]",
-        "focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--color-primary)]",
+        "group block rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs transition-all duration-150 ease-out",
+        "hover:border-blue-300 hover:bg-slate-50/80",
+        "focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-blue-600",
       )}
     >
       <div className="flex items-center justify-between gap-3">

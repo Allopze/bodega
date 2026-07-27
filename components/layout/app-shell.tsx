@@ -129,7 +129,7 @@ const AppShellInner = React.memo(function AppShellInner({ session, worksiteName,
                 desplazándose dentro de su propio `TableRoot`. */}
             <main
               ref={mainRef}
-              className="relative flex-1 min-w-0 overflow-y-auto overflow-x-hidden bg-(--color-surface) lg:rounded-tl-(--radius-shell)"
+              className="relative flex-1 min-w-0 overflow-y-auto overflow-x-hidden bg-[var(--color-surface)] lg:rounded-tl-[36px] shadow-xs"
               id="main-content"
               tabIndex={-1}
             >

@@ -3,7 +3,7 @@ import Link from "next/link"
 import { auth } from "@/lib/auth/auth"
 import { can } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
-import { cn, formatCLP, formatDate } from "@/lib/utils"
+import { formatCLP, formatDate } from "@/lib/utils"
 import { PageContainer } from "@/components/ui/page-container"
 import { PageHeader } from "@/components/ui/page-header"
 import { Button } from "@/components/ui/button"
@@ -21,6 +21,7 @@ import { RecentActivity } from "./recent-activity"
 import { loadPdtpComplianceSummary, PdtpComplianceCard } from "./pdtp-compliance-card"
 import { getActivePdtpProgram, listPdtpPrograms } from "@/lib/services/prevention-pdtp"
 import { scopeToWorksiteIds } from "./dashboard-helpers"
+import { WorksiteActivityChart } from "./dashboard-charts"
 import { listEppCoverageGaps } from "@/lib/services/prevention-epp"
 import {
   DashboardControlCenter,
@@ -176,83 +177,89 @@ export default async function DashboardPage() {
           backlogSummary={buildOperationalBacklogSummary({ backlogComparisons, canViewRequests, canViewPurchasing, canViewCapa, canViewPdtp })}
           metrics={metrics}
           alerts={alerts}
-        >
-          {canViewPdtp && (
-            <section>
-              <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-baseline sm:justify-between">
-                <h2 className="text-h2 text-[var(--color-text)]">Programa de Trabajo Preventivo</h2>
-                <div className="flex flex-wrap items-center gap-2">
-                  {shouldSuggestNextYear && (
-                    <Button asChild size="sm" variant="secondary">
-                      <Link href="/prevencion/pdtp/nuevo"><Plus size={13} />Preparar {currentYear + 1}</Link>
-                    </Button>
-                  )}
-                  {!activeProgram && allPrograms.length === 0 && canManagePdtp && (
-                    <Button asChild size="sm"><Link href="/prevencion/pdtp/nuevo"><Plus size={13} />Crear programa</Link></Button>
-                  )}
-                </div>
-              </div>
-              {pdtpSummary ? <PdtpComplianceCard {...pdtpSummary} /> : (
-                <EmptyState
-                  compact
-                  align="start"
-                  title={`No hay un programa activo para ${currentYear}`}
-                  description="Crea o activa un programa para visualizar avance preventivo desde este centro de control."
-                  action={canManagePdtp ? <Button asChild size="sm"><Link href="/prevencion/pdtp/nuevo">Crear programa</Link></Button> : undefined}
-                />
-              )}
-            </section>
-          )}
-          <RecentActivity entries={activity} />
-        </DashboardControlCenter>
+          periodMetrics={periodMetrics}
+          mainSlot={
+            <>
+              <RecentActivity entries={activity} />
 
-      {/* ── Actividad por faena ── */}
-      {data.worksitesBreakdown.length > 0 && (
-        <section className="mt-8">
-          <h2 className="text-h2 text-[var(--color-text)] mb-3">Actividad por faena</h2>
-          <div className="overflow-x-auto border-y border-[var(--color-border)]">
-              <table className="w-full border-collapse text-left text-[13px]" aria-label="Actividad y costos por faena">
-                <thead>
-                  <tr className="border-b border-[var(--color-border)] text-[var(--color-text-muted)]">
-                    <th scope="col" className="px-5 py-3 th-type">Faena</th>
-                    <th scope="col" className="px-5 py-3 text-right th-type">Solicitudes</th>
-                    <th scope="col" className="px-5 py-3 text-right th-type">Pendientes</th>
-                    <th scope="col" className="px-5 py-3 text-right th-type">Aprobadas</th>
-                    <th scope="col" className="px-5 py-3 text-right th-type">Total OC</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.worksitesBreakdown.map((row, i) => (
-                    <tr key={row.id} className={cn(
-                      "transition-colors hover:bg-[var(--color-surface-2)]",
-                      i > 0 && "border-t border-[var(--color-border)]",
-                    )}>
-                      <td className="px-5 py-3 font-medium text-[var(--color-text)]">{row.name}</td>
-                      <td className="px-5 py-3 text-right font-mono tabular-nums text-[var(--color-text-muted)]">{row.requestsCount}</td>
-                      <td className="px-5 py-3 text-right font-mono tabular-nums">
-                        {row.pendingCount > 0
-                          ? <span className="font-semibold text-[var(--color-signal-ink)]">{row.pendingCount}</span>
-                          : <span className="text-[var(--color-text-faint)]">0</span>}
-                      </td>
-                      <td className="px-5 py-3 text-right font-mono tabular-nums text-[var(--color-text-muted)]">{row.approvedCount}</td>
-                      <td className="px-5 py-3 text-right">
-                        <div className="ml-auto flex max-w-[15rem] flex-col items-end gap-1.5">
-                          <span className="font-mono font-medium tabular-nums text-[var(--color-text)]">{formatCLP(row.totalCost)}</span>
-                          <span className="h-1 w-full overflow-hidden rounded-full bg-[var(--color-surface-2)]" aria-hidden>
-                            <span
-                              className="block h-full rounded-full bg-[var(--color-primary)]"
-                              style={{ width: `${Math.max(4, Math.round((row.totalCost / maxWorksiteCost) * 100))}%` }}
-                            />
-                          </span>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-          </div>
-        </section>
-      )}
+              {/* ── Actividad por faena (Gráfico + Tabla) ── */}
+              {data.worksitesBreakdown.length > 0 && (
+                <div className="space-y-6">
+                  <WorksiteActivityChart worksites={data.worksitesBreakdown} />
+                  <section className="rounded-2xl border border-slate-200/80 bg-white p-5 sm:p-6 shadow-xs" aria-labelledby="actividad-por-faena">
+                    <h2 id="actividad-por-faena" className="text-base font-bold text-slate-900 border-b border-slate-100 pb-3 mb-4">Detalle por faena</h2>
+                    <div className="overflow-x-auto rounded-xl border border-slate-200/80 bg-white">
+                      <table className="w-full border-collapse text-left text-[13px]" aria-label="Actividad y costos por faena">
+                        <thead>
+                          <tr className="border-b border-slate-100 bg-slate-50/50 text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                            <th scope="col" className="px-5 py-3">Faena</th>
+                            <th scope="col" className="px-5 py-3 text-right">Solicitudes</th>
+                            <th scope="col" className="px-5 py-3 text-right">Pendientes</th>
+                            <th scope="col" className="px-5 py-3 text-right">Aprobadas</th>
+                            <th scope="col" className="px-5 py-3 text-right">Total OC</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {data.worksitesBreakdown.map((row) => (
+                            <tr key={row.id} className="transition-colors hover:bg-slate-50/80">
+                              <td className="px-5 py-3.5 font-semibold text-slate-800">{row.name}</td>
+                              <td className="px-5 py-3.5 text-right font-mono tabular-nums text-slate-600">{row.requestsCount}</td>
+                              <td className="px-5 py-3.5 text-right font-mono tabular-nums">
+                                {row.pendingCount > 0
+                                  ? <span className="font-semibold text-blue-600">{row.pendingCount}</span>
+                                  : <span className="text-slate-400">0</span>}
+                              </td>
+                              <td className="px-5 py-3.5 text-right font-mono tabular-nums text-slate-600">{row.approvedCount}</td>
+                              <td className="px-5 py-3.5 text-right">
+                                <div className="ml-auto flex max-w-[15rem] flex-col items-end gap-1.5">
+                                  <span className="font-mono font-bold tabular-nums text-slate-900">{formatCLP(row.totalCost)}</span>
+                                  <span className="h-1.5 w-full overflow-hidden rounded-full bg-slate-100" aria-hidden>
+                                    <span
+                                      className="block h-full rounded-full bg-blue-600"
+                                      style={{ width: `${Math.max(4, Math.round((row.totalCost / maxWorksiteCost) * 100))}%` }}
+                                    />
+                                  </span>
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </section>
+                </div>
+              )}
+            </>
+          }
+          asideSlot={
+            canViewPdtp ? (
+              <section>
+                <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-baseline sm:justify-between">
+                  <h2 className="text-h2 text-[var(--color-text)]">Programa de Trabajo Preventivo</h2>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {shouldSuggestNextYear && (
+                      <Button asChild size="sm" variant="secondary">
+                        <Link href="/prevencion/pdtp/nuevo"><Plus size={13} />Preparar {currentYear + 1}</Link>
+                      </Button>
+                    )}
+                    {!activeProgram && allPrograms.length === 0 && canManagePdtp && (
+                      <Button asChild size="sm"><Link href="/prevencion/pdtp/nuevo"><Plus size={13} />Crear programa</Link></Button>
+                    )}
+                  </div>
+                </div>
+                {pdtpSummary ? <PdtpComplianceCard {...pdtpSummary} /> : (
+                  <EmptyState
+                    compact
+                    align="start"
+                    title={`No hay un programa activo para ${currentYear}`}
+                    description="Crea o activa un programa para visualizar avance preventivo desde este centro de control."
+                    action={canManagePdtp ? <Button asChild size="sm"><Link href="/prevencion/pdtp/nuevo">Crear programa</Link></Button> : undefined}
+                  />
+                )}
+              </section>
+            ) : undefined
+          }
+        />
       </div>
     </PageContainer>
   )

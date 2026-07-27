@@ -33,7 +33,7 @@ const MobileNavInner = React.memo(function MobileNavInner({ session, worksiteNam
   return (
     <div className="flex h-full flex-col">
       <div className="border-b border-(--color-border) px-4 py-4">
-        <BrandMark variant="light" size={30} subtitle titleSize="base" />
+        <BrandMark variant="light" size={36} subtitle titleSize="base" />
       </div>
 
       {worksiteName && (
@@ -52,13 +52,13 @@ const MobileNavInner = React.memo(function MobileNavInner({ session, worksiteNam
           onClick={onNavigate}
           aria-current={dashActive ? "page" : undefined}
           className={cn(
-            "mb-1 flex h-[var(--nav-item-height)] items-center gap-2.5 rounded-md px-3 text-sm transition-[color,background-color] duration-(--duration-fast) ease-out",
+            "mb-1 flex h-[40px] items-center gap-3 rounded-xl px-3 text-[15px] transition-[color,background-color] duration-(--duration-fast) ease-out",
             dashActive
               ? "font-semibold text-(--color-primary-ink)"
               : "text-(--color-text-muted) hover:bg-(--color-chrome-hover) hover:text-(--color-text)",
           )}
         >
-          {DashIcon && <DashIcon size={17} weight="regular" className={cn("shrink-0", dashActive && "text-(--color-primary)")} />}
+          {DashIcon && <DashIcon size={20} weight="regular" className={cn("shrink-0", dashActive && "text-(--color-primary)")} />}
           Inicio
         </Link>
 
@@ -85,14 +85,14 @@ const MobileNavInner = React.memo(function MobileNavInner({ session, worksiteNam
             onClick={onNavigate}
             data-pressable
             className={cn(
-              "flex h-[var(--nav-item-height)] items-center gap-2.5 rounded-md px-3 text-sm transition-[color,background-color] duration-(--duration-fast) ease-out",
+              "flex h-[40px] items-center gap-3 rounded-xl px-3 text-[15px] transition-[color,background-color] duration-(--duration-fast) ease-out",
               isHrefActive("/soporte", pathname)
                 ? "font-semibold text-(--color-primary-ink)"
                 : "text-(--color-text-muted) hover:bg-(--color-chrome-hover) hover:text-(--color-text)",
             )}
           >
             <Lifebuoy
-              size={17}
+              size={20}
               weight="regular"
               className={cn("shrink-0", isHrefActive("/soporte", pathname) && "text-(--color-primary)")}
             />
@@ -139,10 +139,10 @@ function AreaAccordion({
           type="button"
           aria-expanded={open}
           /* A2: eyebrow aplanado para consistencia con el desktop. */
-          className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs font-medium text-(--color-text-muted) transition-colors duration-(--duration-fast) hover:text-(--color-text)"
+          className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm font-semibold text-(--color-text-muted) transition-colors duration-(--duration-fast) hover:text-(--color-text)"
         >
           <span title={area.label} className="flex-1 truncate">{area.label}</span>
-          <CaretDown size={11} className={cn("shrink-0 text-text-faint transition-transform duration-(--duration-fast)", open && "rotate-180")} />
+          <CaretDown size={14} className={cn("shrink-0 text-text-faint transition-transform duration-(--duration-fast)", open && "rotate-180")} />
         </button>
       </Collapsible.Trigger>
       <Collapsible.Content className="overflow-hidden data-[state=open]:animate-collapsible-down data-[state=closed]:animate-collapsible-up">

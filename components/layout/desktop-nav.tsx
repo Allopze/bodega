@@ -34,13 +34,13 @@ const DesktopNavInner = React.memo(function DesktopNavInner({ session, badgeCoun
   if (collapsed) {
     return (      <nav
       aria-label="Áreas"
-      className="hidden lg:flex lg:w-[var(--sidebar-rail-width)] lg:shrink-0 lg:flex-col overflow-hidden bg-(--color-chrome) border-r border-(--color-border)"
+      className="hidden lg:flex lg:w-[var(--sidebar-rail-width)] lg:shrink-0 lg:flex-col overflow-hidden bg-(--color-chrome) border-r border-slate-200/80"
     >
-      <div className="flex items-center justify-center border-b border-(--color-border) py-3">
-        <BrandMark variant="light" size={26} hideText />
+      <div className="flex items-center justify-center border-b border-slate-200/80 py-3 shrink-0">
+        <BrandMark variant="light" size={32} hideText />
       </div>
 
-      <div className="flex flex-1 flex-col gap-0.5 overflow-y-auto px-2 py-2">
+      <div className="flex flex-1 min-h-0 flex-col gap-0.5 overflow-y-auto px-2 py-2">
         <Tooltip content="Inicio" side="right" delayDuration={250}>
           <Link
             href={DASHBOARD_ITEM.href}
@@ -54,11 +54,11 @@ const DesktopNavInner = React.memo(function DesktopNavInner({ session, badgeCoun
                 : "text-(--color-text-muted) hover:bg-(--color-chrome-hover) hover:text-(--color-text)",
             )}
           >
-            <SquaresFour size={17} weight="regular" className={cn("shrink-0", dashActive && "text-(--color-primary)")} />
+            <SquaresFour size={21} weight="regular" className={cn("shrink-0", dashActive && "text-(--color-primary)")} />
           </Link>
         </Tooltip>
 
-        <div className="mx-2 my-1 border-t border-(--color-border)" aria-hidden />
+        <div className="mx-2 my-1 border-t border-slate-200/80" aria-hidden />
 
         {areas.filter((a) => a.id !== "soporte").map((area) => (
           <RailFlyout
@@ -71,7 +71,7 @@ const DesktopNavInner = React.memo(function DesktopNavInner({ session, badgeCoun
         ))}
       </div>
 
-      <div className="flex flex-col items-center gap-1 border-t border-(--color-border) py-2">
+      <div className="flex flex-col items-center gap-1 border-t border-slate-200/80 py-2">
         {areas.filter((a) => a.id === "soporte").length > 0 && (
           <Tooltip content="Soporte" side="right" delayDuration={250}>
             <Link
@@ -82,7 +82,7 @@ const DesktopNavInner = React.memo(function DesktopNavInner({ session, badgeCoun
                 "flex h-8 w-8 items-center justify-center rounded-(--radius) text-(--color-text-muted) transition-[background-color,color] duration-(--duration-fast) ease-out hover:bg-(--color-chrome-hover) hover:text-(--color-text)",
               )}
             >
-              <Lifebuoy size={16} />
+              <Lifebuoy size={19} />
             </Link>
           </Tooltip>
         )}
@@ -106,39 +106,43 @@ const DesktopNavInner = React.memo(function DesktopNavInner({ session, badgeCoun
   return (
     <nav
       aria-label="Navegación"
-      className="hidden lg:flex lg:w-[var(--sidebar-width)] lg:shrink-0 lg:flex-col overflow-hidden bg-(--color-chrome) border-r border-(--color-border)"
+      className="hidden lg:flex lg:w-[var(--sidebar-width)] lg:shrink-0 lg:flex-col overflow-hidden bg-[#f3f3f5] p-3.5"
     >
-      <div className="flex items-center justify-between border-b border-(--color-border) px-4 py-3">
-        <BrandMark variant="light" size={28} subtitle titleSize="sm" />
+      {/* Header de la marca */}
+      <div className="mb-4 flex shrink-0 items-center justify-between px-1">
+        <BrandMark variant="light" size={36} subtitle titleSize="base" />
         <Tooltip content="Ocultar panel" side="right" delayDuration={250}>
           <button
             type="button"
             onClick={hidePanel}
             aria-label="Ocultar panel"
-            className="flex h-7 w-7 items-center justify-center rounded-(--radius) text-(--color-text-muted) transition-[background-color,color] duration-(--duration-fast) ease-out hover:bg-(--color-chrome-hover) hover:text-(--color-text)"
+            className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-slate-200/60 hover:text-slate-900"
           >
             <CaretRight size={14} weight="bold" className="rotate-180" />
           </button>
         </Tooltip>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-2 py-2.5">
+      {/* Links Navigation (con scroll independiente) */}
+      <div className="flex-1 min-h-0 overflow-y-auto space-y-1 py-1 pr-1">
+        <p className="px-2 pb-1.5 text-xs font-bold uppercase tracking-wider text-slate-400">Plataforma</p>
+
         <Link
           href={DASHBOARD_ITEM.href}
           aria-current={dashActive ? "page" : undefined}
           data-pressable
           className={cn(
-            "relative mb-1 flex h-[var(--nav-item-height)] items-center gap-[9px] rounded-[var(--radius)] px-[10px] text-xs font-medium transition-[color,background-color] duration-(--duration-fast) ease-out",
+            "relative mb-1 flex h-[40px] items-center gap-3 rounded-xl px-3 text-[15px] font-medium transition-colors",
             dashActive
-              ? "bg-(--color-surface-3) font-semibold text-(--color-text)"
-              : "text-(--color-text-muted) hover:bg-(--color-surface-2) hover:text-(--color-text)",
+              ? "bg-slate-200/80 font-semibold text-slate-900"
+              : "text-slate-600 hover:bg-slate-200/50 hover:text-slate-900",
           )}
         >
           {DashIcon && (
             <DashIcon
-              size={17}
+              size={20}
               weight="regular"
-              className={cn("shrink-0", dashActive ? "text-(--color-primary)" : "text-(--color-text-muted)")}
+              className={cn("shrink-0", dashActive ? "text-slate-900" : "text-slate-500")}
             />
           )}
           <span>Inicio</span>
@@ -147,29 +151,29 @@ const DesktopNavInner = React.memo(function DesktopNavInner({ session, badgeCoun
         <AccordionAreas areas={areas.filter((a) => a.id !== "soporte")} pathname={pathname} badgeCounts={badgeCounts} routeArea={routeArea} />
       </div>
 
-      {areas.filter((a) => a.id === "soporte").length > 0 && (
-        <div className="border-t border-(--color-border) px-2 pt-2 pb-1">
+      {/* Footer fijado al pie (Soporte + Perfil de Usuario) */}
+      <div className="mt-auto shrink-0 pt-2 space-y-1 border-t border-slate-200/60">
+        {areas.filter((a) => a.id === "soporte").length > 0 && (
           <Link
             href="/soporte"
             data-pressable
             className={cn(
-              "relative flex h-[var(--nav-item-height)] items-center gap-[9px] rounded-[var(--radius)] px-[10px] text-xs font-medium transition-[color,background-color] duration-(--duration-fast) ease-out",
+              "relative flex h-[40px] items-center gap-3 rounded-xl px-3 text-[15px] font-medium transition-colors",
               isHrefActive("/soporte", pathname)
-                ? "bg-(--color-surface-3) font-semibold text-(--color-text)"
-                : "text-(--color-text-muted) hover:bg-(--color-surface-2) hover:text-(--color-text)",
+                ? "bg-slate-200/80 font-semibold text-slate-900"
+                : "text-slate-600 hover:bg-slate-200/50 hover:text-slate-900",
             )}
           >
             <Lifebuoy
-              size={17}
+              size={20}
               weight="regular"
-              className={cn("shrink-0", isHrefActive("/soporte", pathname) && "text-(--color-primary)")}
+              className={cn("shrink-0", isHrefActive("/soporte", pathname) ? "text-slate-900" : "text-slate-500")}
             />
             <span>Soporte</span>
           </Link>
-        </div>
-      )}
-
-      <SidebarUserProfile session={session} />
+        )}
+        <SidebarUserProfile session={session} />
+      </div>
     </nav>
   )
 })

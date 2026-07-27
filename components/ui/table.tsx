@@ -41,7 +41,7 @@ const Table = React.forwardRef<HTMLTableElement, React.HTMLAttributes<HTMLTableE
   ({ className, ...props }, ref) => (
     <table
       ref={ref}
-      className={cn("w-full min-w-max caption-bottom text-sm border-collapse", className)}
+      className={cn("w-full caption-bottom text-sm border-collapse", className)}
       {...props}
     />
   )
@@ -107,16 +107,12 @@ const TableHead = React.forwardRef<HTMLTableCellElement, React.ThHTMLAttributes<
   ({ className, children, scope = "col", ...props }, ref) => (
     <th
       ref={ref}
-      // scope="col" por defecto (WCAG 1.3.1 / técnica H63): los lectores de
-      // pantalla necesitan la asociación celda↔cabecera. Sobrescribible con
-      // scope="row" en las tablas que rotulan filas.
       scope={scope}
       className={cn(
-        "px-4 py-2.5 text-left text-xs font-semibold",
-        "text-[var(--color-text-subtle)] uppercase tracking-wide",
+        "px-4 py-3 text-left text-xs font-semibold",
+        "text-slate-500 uppercase tracking-wider",
         "whitespace-nowrap",
-        // Opaco: con cabecera sticky, las filas no deben transparentarse debajo.
-        "bg-[var(--color-surface)]",
+        "bg-slate-50/70 border-b border-slate-200/80",
         className,
       )}
       {...props}

@@ -74,20 +74,17 @@ function AreaSection({
         <button
           type="button"
           aria-expanded={open}
-          /* A2 (PLAN_MIGRACION_VISUAL): eyebrow aplanado — de uppercase + tracking
-             ancho + tenue a tipografía normal, más cercano a la referencia.
-             Se mantiene el caret para distinguir la jerarquía colapsable. */
-          className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs font-medium text-(--color-text-muted) transition-colors duration-(--duration-fast) hover:text-(--color-text)"
+          className="flex w-full items-center gap-3 px-3 py-2 text-left text-base font-semibold text-slate-700 hover:text-slate-900 rounded-xl transition-colors cursor-pointer"
         >
           <Icon
-            size={13}
+            size={20}
             weight="regular"
-            className={cn("shrink-0", open ? "text-(--color-text-muted)" : "text-(--color-text-faint)")}
+            className={cn("shrink-0", open ? "text-slate-900 font-semibold" : "text-slate-500")}
           />
           <span title={area.label} className="flex-1 truncate">{area.label}</span>
           <CaretDown
-            size={11}
-            className={cn("shrink-0 text-text-faint transition-transform duration-(--duration-fast)", open && "rotate-180")}
+            size={15}
+            className={cn("shrink-0 text-slate-400 transition-transform duration-(--duration-fast)", open && "rotate-180")}
           />
         </button>
       </Collapsible.Trigger>
@@ -126,7 +123,7 @@ export function RailFlyout({
               : "text-(--color-text-muted) hover:bg-(--color-chrome-hover) hover:text-(--color-text)",
           )}
         >
-          <Icon size={19} weight="regular" className={cn("shrink-0", inRoute && "text-(--color-primary)")} />
+          <Icon size={21} weight="regular" className={cn("shrink-0", inRoute && "text-(--color-primary)")} />
         </button>
       </PopoverTrigger>
       <PopoverContent
