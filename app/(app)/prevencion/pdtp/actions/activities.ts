@@ -1,0 +1,331 @@
+"use server"
+
+import { revalidatePath } from "next/cache"
+import { redirect } from "next/navigation"
+import { ZodError } from "zod"
+import { guardPermission } from "@/lib/auth/can"
+import { resolveWorksiteScope } from "@/lib/auth/scope"
+import { unexpectedActionError } from "@/lib/actions/safe-server-action"
+import {
+  updatePdtpActivity,
+  addPdtpActivity,
+  duplicatePdtpActivity,
+  batchUpdatePdtpActivities,
+  deletePdtpActivity,
+  reorderPdtpActivities,
+  setPdtpActivityOverride,
+  deletePdtpActivityOverride,
+  renamePdtpObjective,
+  reconcilePdtpDeclaredActor,
+  excludeActivityForWorksite,
+  includeActivityForWorksite,
+  setPdtpActivityWorksiteParams,
+} from "@/lib/services/prevention-pdtp"
+import type { ActionState } from "@/lib/validation/prevention"
+import {
+  pdtpActivityUpdateSchema,
+  pdtpActivityAddSchema,
+  pdtpActivityOverrideSchema,
+  pdtpActivityDeleteSchema,
+  pdtpActivityDuplicateSchema,
+  pdtpActivityBatchUpdateSchema,
+  pdtpActivityReorderSchema,
+  pdtpObjectiveRenameSchema,
+  pdtpReconcileDeclaredActorSchema,
+} from "@/lib/validation/prevention"
+
+const REVALIDATE = "/prevencion/pdtp"
+
+function scopeToIds(scope: ReturnType<typeof resolveWorksiteScope>): string[] | "all" {
+  if (scope.mode === "all") return "all"
+  if (scope.mode === "none") return []
+  return scope.ids
+}
+
+function fail(error: unknown): ActionState {
+  if (error instanceof ZodError) {
+    return {
+      ok: false,
+      message: "Revisa los campos marcados.",
+      fieldErrors: error.flatten().fieldErrors as Record<string, string[]>,
+    }
+  }
+  return unexpectedActionError(error, "prevencion/pdtp/actions/activities")
+}
+
+// ── Activity CRUD ────────────────────────────────────────────────────────────
+
+export async function updatePdtpActivityAction(input: unknown): Promise<ActionState> {
+  const guard = await guardPermission("prevention:pdtp:program:manage")
+  if (guard.error) return guard.error
+  const session = guard.session
+  try {
+    const parsed = pdtpActivityUpdateSchema.parse(input)
+    await updatePdtpActivity(parsed, session.user.id)
+    revalidatePath(REVALIDATE)
+    return { ok: true }
+  } catch (e) {
+    return fail(e)
+  }
+}
+
+export async function addPdtpActivityAction(input: unknown): Promise<ActionState> {
+  const guard = await guardPermission("prevention:pdtp:program:manage")
+  if (guard.error) return guard.error
+  const session = guard.session
+  try {
+    const parsed = pdtpActivityAddSchema.parse(input)
+    await addPdtpActivity(parsed, session.user.id)
+    revalidatePath(REVALIDATE)
+    revalidatePath(`${REVALIDATE}/${parsed.programId}`)
+    return { ok: true }
+  } catch (e) {
+    return fail(e)
+  }
+}
+
+export async function duplicatePdtpActivityAction(input: unknown): Promise<ActionState> {
+  const guard = await guardPermission("prevention:pdtp:program:manage")
+  if (guard.error) return guard.error
+  try {
+    const parsed = pdtpActivityDuplicateSchema.parse(input)
+    const created = await duplicatePdtpActivity(parsed.activityId, guard.session.user.id)
+    revalidatePath(REVALIDATE)
+    revalidatePath(`${REVALIDATE}/${created.programId}/editar`)
+    return { ok: true }
+  } catch (e) {
+    return fail(e)
+  }
+}
+
+export async function batchUpdatePdtpActivitiesAction(input: unknown): Promise<ActionState> {
+  const guard = await guardPermission("prevention:pdtp:program:manage")
+  if (guard.error) return guard.error
+  try {
+    const parsed = pdtpActivityBatchUpdateSchema.parse(input)
+    await batchUpdatePdtpActivities(parsed, guard.session.user.id)
+    revalidatePath(REVALIDATE)
+    revalidatePath(`${REVALIDATE}/${parsed.programId}/editar`)
+    return { ok: true }
+  } catch (e) {
+    return fail(e)
+  }
+}
+
+export async function deletePdtpActivityAction(input: unknown): Promise<ActionState> {
+  const guard = await guardPermission("prevention:pdtp:program:manage")
+  if (guard.error) return guard.error
+  const session = guard.session
+  try {
+    const parsed = pdtpActivityDeleteSchema.parse(input)
+    await deletePdtpActivity(parsed.activityId, session.user.id)
+    revalidatePath(REVALIDATE)
+    return { ok: true }
+  } catch (e) {
+    return fail(e)
+  }
+}
+
+export async function reorderPdtpActivitiesAction(input: unknown): Promise<ActionState> {
+  const guard = await guardPermission("prevention:pdtp:program:manage")
+  if (guard.error) return guard.error
+  const session = guard.session
+  try {
+    const parsed = pdtpActivityReorderSchema.parse(input)
+    await reorderPdtpActivities(parsed.programId, parsed.orderedIds, session.user.id)
+    revalidatePath(REVALIDATE)
+    revalidatePath(`${REVALIDATE}/${parsed.programId}`)
+    revalidatePath(`${REVALIDATE}/${parsed.programId}/editar`)
+    return { ok: true }
+  } catch (e) {
+    return fail(e)
+  }
+}
+
+// ── Program ← add activity (server-only, no JS) ─────────────────────────────
+
+export async function addPdtpActivityFormAction(fd: FormData): Promise<void> {
+  const hoja = String(fd.get("hoja") ?? "")
+  const faena = String(fd.get("faena") ?? "")
+  const programId = String(fd.get("programId") ?? "")
+  const detailPath = programId ? `${REVALIDATE}/${programId}` : REVALIDATE
+  const backTo = (errorMessage?: string): never => {
+    const params = new URLSearchParams()
+    if (hoja) params.set("hoja", hoja)
+    if (faena) params.set("faena", faena)
+    if (errorMessage) params.set("actividadError", errorMessage)
+    const qs = params.toString()
+    redirect(qs ? `${detailPath}?${qs}` : detailPath)
+  }
+
+  const guard = await guardPermission("prevention:pdtp:program:manage")
+  if (guard.error) return backTo(guard.error.message)
+  const session = guard.session
+
+  const responsibleSlugs = fd.getAll("responsibleSlugs[]").map(String).filter(Boolean)
+  const sheetCodes = fd.getAll("sheetCodes[]").map(String).filter(Boolean)
+  if (responsibleSlugs.length === 0) return backTo("Debes indicar al menos un responsable.")
+  if (sheetCodes.length === 0) return backTo("Debes indicar al menos una hoja.")
+
+  try {
+    const parsed = pdtpActivityAddSchema.parse({
+      programId: fd.get("programId"),
+      objectiveOrder: fd.get("objectiveOrder"),
+      objective: fd.get("objective"),
+      activity: fd.get("activity"),
+      program: fd.get("program"),
+      responsibleDisplay: fd.get("responsibleDisplay"),
+      responsibleSlugs,
+      sheetCodes,
+      scheduleMode: "on_demand",
+      indicatorMode: "completed_count",
+      notes: fd.get("notes") ?? undefined,
+    })
+    await addPdtpActivity(parsed, session.user.id)
+  } catch (e) {
+    return backTo(fail(e).message)
+  }
+  revalidatePath(REVALIDATE)
+  if (programId) revalidatePath(detailPath)
+  return backTo()
+}
+
+// ── Activity overrides ───────────────────────────────────────────────────────
+
+export async function setPdtpActivityOverrideFormAction(fd: FormData): Promise<void> {
+  const hoja = String(fd.get("hoja") ?? "")
+  const faena = String(fd.get("faena") ?? "")
+  const programId = String(fd.get("programId") ?? "")
+  const detailPath = programId ? `${REVALIDATE}/${programId}` : REVALIDATE
+  const backTo = (errorMessage?: string): never => {
+    const params = new URLSearchParams()
+    if (hoja) params.set("hoja", hoja)
+    if (faena) params.set("faena", faena)
+    if (errorMessage) params.set("overrideError", errorMessage)
+    const qs = params.toString()
+    redirect(qs ? `${detailPath}?${qs}` : detailPath)
+  }
+
+  const guard = await guardPermission("prevention:pdtp:override:manage")
+  if (guard.error) return backTo(guard.error.message)
+  const session = guard.session
+
+  const mode = String(fd.get("mode") ?? "set")
+  try {
+    const parsed = pdtpActivityOverrideSchema.parse({
+      activityId: fd.get("activityId"),
+      worksiteId: fd.get("worksiteId"),
+      year: fd.get("year"),
+      month: fd.get("month"),
+      week: fd.get("week"),
+      plannedQuantity: fd.get("plannedQuantity"),
+      reason: fd.get("reason"),
+    })
+    if (mode === "delete" || parsed.plannedQuantity === 0) {
+      await deletePdtpActivityOverride(parsed, session.user.id, scopeToIds(resolveWorksiteScope(session)))
+    } else {
+      await setPdtpActivityOverride(parsed, session.user.id, scopeToIds(resolveWorksiteScope(session)))
+    }
+  } catch (e) {
+    return backTo(fail(e).message)
+  }
+  revalidatePath(REVALIDATE)
+  if (programId) revalidatePath(detailPath)
+  return backTo()
+}
+
+// ── Objective rename ─────────────────────────────────────────────────────────
+
+export async function renamePdtpObjectiveAction(input: unknown): Promise<ActionState> {
+  const guard = await guardPermission("prevention:pdtp:program:manage")
+  if (guard.error) return guard.error
+  const session = guard.session
+  try {
+    const parsed = pdtpObjectiveRenameSchema.parse(input)
+    await renamePdtpObjective(parsed, session.user.id)
+    revalidatePath(REVALIDATE)
+    revalidatePath(`${REVALIDATE}/${parsed.programId}`)
+    revalidatePath(`${REVALIDATE}/${parsed.programId}/editar`)
+    return { ok: true }
+  } catch (e) {
+    return fail(e)
+  }
+}
+
+// ── Document reconciliation ──────────────────────────────────────────────────
+
+export async function reconcilePdtpDeclaredActorAction(input: unknown): Promise<ActionState> {
+  const guard = await guardPermission("prevention:pdtp:program:manage")
+  if (guard.error) return guard.error
+  const session = guard.session
+  try {
+    const parsed = pdtpReconcileDeclaredActorSchema.parse(input)
+    await reconcilePdtpDeclaredActor({
+      historyEntryId: parsed.historyEntryId,
+      linkedUserId: parsed.linkedUserId,
+      actorUserId: session.user.id,
+      reason: parsed.reason,
+    })
+    revalidatePath(`${REVALIDATE}/${parsed.programId}`)
+    return { ok: true }
+  } catch (e) {
+    return fail(e)
+  }
+}
+
+// ── Worksite exclusions and params ───────────────────────────────────────────
+
+export async function excludeActivityForWorksiteAction(input: {
+  activityId: string
+  worksiteId: string
+  reason: string
+}): Promise<ActionState> {
+  const guard = await guardPermission("prevention:pdtp:program:manage")
+  if (guard.error) return guard.error
+  const session = guard.session
+  try {
+    await excludeActivityForWorksite(input.activityId, input.worksiteId, input.reason, session.user.id, scopeToIds(resolveWorksiteScope(session)))
+    revalidatePath(REVALIDATE)
+    return { ok: true }
+  } catch (e) {
+    return fail(e)
+  }
+}
+
+export async function includeActivityForWorksiteAction(input: {
+  activityId: string
+  worksiteId: string
+  reason: string
+}): Promise<ActionState> {
+  const guard = await guardPermission("prevention:pdtp:program:manage")
+  if (guard.error) return guard.error
+  const session = guard.session
+  try {
+    await includeActivityForWorksite(input.activityId, input.worksiteId, input.reason, session.user.id, scopeToIds(resolveWorksiteScope(session)))
+    revalidatePath(REVALIDATE)
+    return { ok: true }
+  } catch (e) {
+    return fail(e)
+  }
+}
+
+export async function setPdtpActivityWorksiteParamsAction(input: {
+  activityId: string
+  worksiteId: string
+  expectedSubjectCount?: number | null
+  targetCoveragePercent?: number | null
+}): Promise<ActionState> {
+  const guard = await guardPermission("prevention:pdtp:program:manage")
+  if (guard.error) return guard.error
+  const session = guard.session
+  try {
+    await setPdtpActivityWorksiteParams(input.activityId, input.worksiteId, {
+      expectedSubjectCount: input.expectedSubjectCount,
+      targetCoveragePercent: input.targetCoveragePercent,
+    }, session.user.id)
+    revalidatePath(REVALIDATE)
+    return { ok: true }
+  } catch (e) {
+    return fail(e)
+  }
+}
