@@ -74,16 +74,19 @@ function AreaSection({
         <button
           type="button"
           aria-expanded={open}
-          className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-eyebrow transition-colors duration-(--duration-fast) hover:text-(--color-text-muted)"
+          /* A2 (PLAN_MIGRACION_VISUAL): eyebrow aplanado — de uppercase + tracking
+             ancho + tenue a tipografía normal, más cercano a la referencia.
+             Se mantiene el caret para distinguir la jerarquía colapsable. */
+          className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs font-medium text-(--color-text-muted) transition-colors duration-(--duration-fast) hover:text-(--color-text)"
         >
           <Icon
-            size={16}
-            weight={open ? "fill" : "regular"}
+            size={13}
+            weight="regular"
             className={cn("shrink-0", open ? "text-(--color-text-muted)" : "text-(--color-text-faint)")}
           />
-          <span title={area.label} className="flex-1 truncate text-xs font-semibold uppercase tracking-wide">{area.label}</span>
+          <span title={area.label} className="flex-1 truncate">{area.label}</span>
           <CaretDown
-            size={13}
+            size={11}
             className={cn("shrink-0 text-text-faint transition-transform duration-(--duration-fast)", open && "rotate-180")}
           />
         </button>
@@ -123,7 +126,7 @@ export function RailFlyout({
               : "text-(--color-text-muted) hover:bg-(--color-chrome-hover) hover:text-(--color-text)",
           )}
         >
-          <Icon size={19} weight={inRoute ? "bold" : "regular"} className={cn("shrink-0", inRoute && "text-(--color-primary)")} />
+          <Icon size={19} weight="regular" className={cn("shrink-0", inRoute && "text-(--color-primary)")} />
         </button>
       </PopoverTrigger>
       <PopoverContent

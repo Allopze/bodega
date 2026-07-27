@@ -9,7 +9,6 @@ import { Breadcrumbs } from "@/components/ui/page-header"
 import { BrandMark } from "./brand-mark"
 import { findActiveBreadcrumb } from "./nav-items"
 import { useSafeShellHeader, useShellHeader } from "./header-context"
-import { UserMenu } from "./top-bar-user-menu"
 
 const NotificationBell = React.lazy(() =>
   import("./notification-bell").then((m) => ({ default: m.NotificationBell }))
@@ -74,8 +73,8 @@ const TopBarInner = React.memo(function TopBarInner({
 
   return (
     <header className={cn(
-      "flex items-center h-14 px-4 md:px-5 gap-3",
-      "bg-(--color-chrome) border-b border-(--color-border)",
+      "flex items-center h-[3.25rem] px-4 md:px-5 gap-3",
+      "bg-(--color-surface) border-b border-(--color-border)",
       // Auto-hide on mobile: slide out above the sticky clip, fade to 0.
       // Desktop: always visible (lg: overrides hide regardless of scroll).
       "transition-[transform,opacity] duration-(--duration-default) ease-(--ease-out)",
@@ -92,7 +91,7 @@ const TopBarInner = React.memo(function TopBarInner({
             "lg:hidden flex items-center justify-center",
             "min-h-[44px] min-w-[44px] rounded-(--radius-lg)",
             "text-(--color-text-muted) hover:text-(--color-text)",
-            "hover:bg-(--color-chrome-hover)",
+            "hover:bg-(--color-surface-2)",
             "transition-[color,background-color] duration-(--duration-fast)",
           )}
           aria-label={isMenuOpen ? "Cerrar menú" : "Abrir menú"}
@@ -132,7 +131,7 @@ const TopBarInner = React.memo(function TopBarInner({
           )}
         </div>
         {worksiteName && (
-          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-(--radius) bg-(--color-surface) border border-(--color-border)">
+          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-(--radius) bg-(--color-surface-2) border border-(--color-border)">
             <MapPin size={13} weight="bold" className="text-(--color-primary) shrink-0" />
             <span className="text-xs font-medium text-(--color-text-muted) truncate max-w-[16rem] 2xl:max-w-[20rem]">
               {worksiteName}
@@ -164,7 +163,7 @@ const TopBarInner = React.memo(function TopBarInner({
               placeholder="Filtrar en esta página..."
               title="Filtrar en esta página (atajo: /)"
               className={cn(
-                "h-7 w-36 lg:w-52 rounded-(--radius-lg) border bg-(--color-surface) pl-8 text-xs text-(--color-text) placeholder:text-(--color-text-subtle) outline-none focus:border-(--color-primary) focus:ring-2 focus:ring-(--color-primary-line) transition-[border-color,box-shadow] duration-(--duration-fast)",
+                "h-[34px] w-36 lg:w-56 rounded-[var(--radius-md)] border bg-(--color-surface) pl-8 text-xs font-medium text-(--color-text) placeholder:text-(--color-text-subtle) outline-none focus:border-(--color-primary) focus:ring-2 focus:ring-[color-mix(in_srgb,var(--color-primary)_35%,transparent)] transition-[border-color,box-shadow] duration-(--duration-fast)",
                 searchQuery
                   ? "border-(--color-primary-line) pr-7"
                   : "border-(--color-border-control) pr-3",
@@ -184,7 +183,6 @@ const TopBarInner = React.memo(function TopBarInner({
           </div>
         )}
         <NotificationBell />
-        <UserMenu session={session} />
       </div>
     </header>
   )

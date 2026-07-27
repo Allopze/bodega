@@ -17,15 +17,14 @@ function CountBadge({ count }: { count: number }) {
 }
 
 const rowBase =
-  "group relative flex h-9 items-center gap-2.5 text-sm font-medium transition-[color,background-color] duration-(--duration-fast) ease-out"
+  "group relative flex h-[var(--nav-item-height)] items-center gap-[9px] px-[10px] rounded-[var(--radius)] text-xs font-medium transition-[color,background-color] duration-(--duration-fast) ease-out"
 
 function itemRowClass(active: boolean) {
   return cn(
     rowBase,
-    "rounded-md px-3",
     active
-      ? "bg-(--color-primary-tint) font-semibold text-(--color-primary-ink)"
-      : "text-(--color-text-muted) hover:bg-(--color-chrome-hover) hover:text-(--color-text)",
+      ? "bg-(--color-surface-3) font-semibold text-(--color-text)"
+      : "text-(--color-text-muted) hover:bg-(--color-surface-2) hover:text-(--color-text)",
   )
 }
 
@@ -53,8 +52,11 @@ function LeafRow({
     >
       {Icon && (
         <Icon
-          size={18}
-          weight={active ? "bold" : "regular"}
+          size={16}
+          /* A4 (PLAN_MIGRACION_VISUAL): peso uniforme para un look más sereno,
+             alineado con la referencia. El activo se distingue por fondo +
+             font-semibold + color del ícono, no por weight. */
+          weight="regular"
           className={cn("shrink-0", active ? "text-(--color-primary)" : "text-(--color-text-muted) group-hover:text-(--color-text)")}
         />
       )}
@@ -104,8 +106,10 @@ function BranchRow({
         >
           {Icon && (
             <Icon
-              size={18}
-              weight={active || childActive ? "bold" : "regular"}
+              size={16}
+              /* A4: peso uniforme. El padre activo se distingue por fondo +
+                 font-semibold + color del ícono. */
+              weight="regular"
               className={cn("shrink-0", active ? "text-(--color-primary)" : childActive ? "text-(--color-text-muted)" : "text-(--color-text-muted) group-hover:text-(--color-text)")}
             />
           )}
@@ -119,7 +123,7 @@ function BranchRow({
         </Collapsible.Trigger>
       </div>
       <Collapsible.Content className="overflow-hidden data-[state=open]:animate-collapsible-down data-[state=closed]:animate-collapsible-up">
-        <ul className="mb-1 ml-[1.6rem] space-y-0.5 border-l border-(--color-border) pl-2 pt-0.5">
+        <ul className="mb-1 ml-[1.5rem] space-y-0.5 border-l border-(--color-border) pl-2 pt-0.5">
           {(item.children ?? []).map((child) => {
             const ca = isHrefActive(child.href, pathname)
             return (

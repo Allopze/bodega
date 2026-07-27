@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { fireEvent, render, screen } from "@testing-library/react"
+import { render, screen } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import type { Session } from "next-auth"
 import { readFileSync } from "node:fs"
@@ -45,34 +45,9 @@ describe("TopBar", () => {
   })
 
   it("does not group dropdown menu items in an anonymous fragment", () => {
-    const source = readFileSync("components/layout/top-bar.tsx", "utf8")
+    const source = readFileSync("components/layout/sidebar-user-profile.tsx", "utf8")
 
     expect(source).not.toMatch(/session\.user\.permissions\?\.[\s\S]*?&&\s*\(\s*<>/)
-  })
-
-  it("opens the admin user menu without React key warnings", async () => {
-    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {})
-
-    try {
-      render(
-        <ShellHeaderProvider>
-          <TopBar session={makeSession(["admin:users"])} onMenuToggle={vi.fn()} />
-        </ShellHeaderProvider>,
-      )
-
-      fireEvent.pointerDown(await screen.findByRole("button", { name: "Abrir menú de usuario" }), {
-        button: 0,
-        ctrlKey: false,
-      })
-
-      expect(screen.getByRole("menuitem", { name: /Administración/i })).toBeInTheDocument()
-      expect(consoleError).not.toHaveBeenCalledWith(
-        expect.stringContaining('Each child in a list should have a unique "key" prop.'),
-        expect.anything(),
-      )
-    } finally {
-      consoleError.mockRestore()
-    }
   })
 
   it("keeps the generic header search on Documentación because its loaded list consumes the shared query", async () => {
@@ -84,7 +59,6 @@ describe("TopBar", () => {
       </ShellHeaderProvider>,
     )
 
-    await screen.findByRole("button", { name: "Abrir menú de usuario" })
-    expect(screen.getByRole("searchbox", { name: "Filtrar en esta página" })).toBeInTheDocument()
+    expect(await screen.findByRole("searchbox", { name: "Filtrar en esta página" })).toBeInTheDocument()
   })
 })

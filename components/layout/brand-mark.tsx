@@ -59,7 +59,7 @@ const BrandMarkInner = React.memo(function BrandMarkInner({
                 {BRAND_TITLE}
               </p>
               {subtitle === true && (
-                <p className={`text-[11px] font-mono uppercase tracking-wider ${subtitleColor} leading-tight mt-0.5`}>
+                <p className={`text-[10px] font-mono uppercase tracking-wider ${subtitleColor} leading-tight mt-0.5`}>
                   {BRAND_SUBTITLE}
                 </p>
               )}

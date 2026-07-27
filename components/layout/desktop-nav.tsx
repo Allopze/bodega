@@ -11,6 +11,7 @@ import { BrandMark } from "./brand-mark"
 import { NAV_ICONS } from "./nav-icons"
 import { getVisibleAreas, findActiveArea, isHrefActive, DASHBOARD_ITEM } from "./nav-items"
 import { AccordionAreas, RailFlyout } from "./desktop-nav-areas"
+import { SidebarUserProfile } from "./sidebar-user-profile"
 
 interface DesktopNavProps {
   session:           Session
@@ -31,81 +32,84 @@ const DesktopNavInner = React.memo(function DesktopNavInner({ session, badgeCoun
   const hidePanel = React.useCallback(() => onCollapsedChange(true), [onCollapsedChange])
 
   if (collapsed) {
-    return (
-      <nav
-        aria-label="Áreas"
-        className="hidden lg:flex lg:w-16 lg:shrink-0 lg:flex-col overflow-hidden bg-(--color-chrome) border-r border-(--color-border)"
-      >
-        <div className="flex items-center justify-center py-3">
-          <BrandMark variant="light" size={30} hideText />
-        </div>
+    return (      <nav
+      aria-label="Áreas"
+      className="hidden lg:flex lg:w-[var(--sidebar-rail-width)] lg:shrink-0 lg:flex-col overflow-hidden bg-(--color-chrome) border-r border-(--color-border)"
+    >
+      <div className="flex items-center justify-center border-b border-(--color-border) py-3">
+        <BrandMark variant="light" size={26} hideText />
+      </div>
 
-        <div className="flex flex-1 flex-col gap-1 overflow-y-auto px-2 py-1">
-          <Tooltip content="Inicio" side="right" delayDuration={250}>
+      <div className="flex flex-1 flex-col gap-0.5 overflow-y-auto px-2 py-2">
+        <Tooltip content="Inicio" side="right" delayDuration={250}>
+          <Link
+            href={DASHBOARD_ITEM.href}
+            aria-current={dashActive ? "page" : undefined}
+            aria-label="Inicio"
+            data-pressable
+            className={cn(
+              "relative flex items-center justify-center rounded-lg px-1 py-2 transition-[background-color,color] duration-(--duration-fast) ease-out",
+              dashActive
+                ? "bg-(--color-primary-tint) text-(--color-primary-ink)"
+                : "text-(--color-text-muted) hover:bg-(--color-chrome-hover) hover:text-(--color-text)",
+            )}
+          >
+            <SquaresFour size={17} weight="regular" className={cn("shrink-0", dashActive && "text-(--color-primary)")} />
+          </Link>
+        </Tooltip>
+
+        <div className="mx-2 my-1 border-t border-(--color-border)" aria-hidden />
+
+        {areas.filter((a) => a.id !== "soporte").map((area) => (
+          <RailFlyout
+            key={area.id}
+            area={area}
+            pathname={pathname}
+            badgeCounts={badgeCounts}
+            inRoute={routeArea === area.id}
+          />
+        ))}
+      </div>
+
+      <div className="flex flex-col items-center gap-1 border-t border-(--color-border) py-2">
+        {areas.filter((a) => a.id === "soporte").length > 0 && (
+          <Tooltip content="Soporte" side="right" delayDuration={250}>
             <Link
-              href={DASHBOARD_ITEM.href}
-              aria-current={dashActive ? "page" : undefined}
-              aria-label="Inicio"
+              href="/soporte"
+              aria-label="Soporte"
               data-pressable
               className={cn(
-                "flex items-center justify-center rounded-lg px-1 py-2 transition-[background-color,color] duration-(--duration-fast) ease-out",
-                dashActive
-                  ? "bg-(--color-primary-tint) text-(--color-primary-ink)"
-                  : "text-(--color-text-muted) hover:bg-(--color-chrome-hover) hover:text-(--color-text)",
+                "flex h-8 w-8 items-center justify-center rounded-(--radius) text-(--color-text-muted) transition-[background-color,color] duration-(--duration-fast) ease-out hover:bg-(--color-chrome-hover) hover:text-(--color-text)",
               )}
             >
-              <SquaresFour size={19} weight={dashActive ? "bold" : "regular"} className={cn("shrink-0", dashActive && "text-(--color-primary)")} />
+              <Lifebuoy size={16} />
             </Link>
           </Tooltip>
+        )}
+        <Tooltip content="Mostrar panel" side="right" delayDuration={250}>
+          <button
+            type="button"
+            onClick={showPanel}
+            aria-label="Mostrar panel"
+            className="flex h-8 w-8 items-center justify-center rounded-(--radius) text-(--color-text-muted) transition-[background-color,color] duration-(--duration-fast) ease-out hover:bg-(--color-chrome-hover) hover:text-(--color-text)"
+          >
+            <CaretRight size={14} weight="bold" />
+          </button>
+        </Tooltip>
+      </div>
 
-          {areas.filter((a) => a.id !== "soporte").map((area) => (
-            <RailFlyout
-              key={area.id}
-              area={area}
-              pathname={pathname}
-              badgeCounts={badgeCounts}
-              inRoute={routeArea === area.id}
-            />
-          ))}
-        </div>
-
-        <div className="flex flex-col items-center gap-1 border-t border-(--color-border) py-2">
-          {areas.filter((a) => a.id === "soporte").length > 0 && (
-            <Tooltip content="Soporte" side="right" delayDuration={250}>
-              <Link
-                href="/soporte"
-                aria-label="Soporte"
-                data-pressable
-                className={cn(
-                  "flex h-8 w-8 items-center justify-center rounded-(--radius) text-(--color-text-muted) transition-[background-color,color] duration-(--duration-fast) ease-out hover:bg-(--color-chrome-hover) hover:text-(--color-text)",
-                )}
-              >
-                <Lifebuoy size={17} />
-              </Link>
-            </Tooltip>
-          )}
-          <Tooltip content="Mostrar panel" side="right" delayDuration={250}>
-            <button
-              type="button"
-              onClick={showPanel}
-              aria-label="Mostrar panel"
-              className="flex h-8 w-8 items-center justify-center rounded-(--radius) text-(--color-text-muted) transition-[background-color,color] duration-(--duration-fast) ease-out hover:bg-(--color-chrome-hover) hover:text-(--color-text)"
-            >
-              <CaretRight size={16} weight="bold" />
-            </button>
-          </Tooltip>
-        </div>
-      </nav>
+      <SidebarUserProfile session={session} collapsed />
+    </nav>
     )
   }
 
   return (
     <nav
       aria-label="Navegación"
-      className="hidden lg:flex lg:w-60 lg:shrink-0 lg:flex-col overflow-hidden bg-(--color-chrome) border-r border-(--color-border)"
+      className="hidden lg:flex lg:w-[var(--sidebar-width)] lg:shrink-0 lg:flex-col overflow-hidden bg-(--color-chrome) border-r border-(--color-border)"
     >
-      <div className="flex items-center justify-between px-4 pt-4 pb-3">
-        <BrandMark variant="light" size={36} subtitle titleSize="sm" />
+      <div className="flex items-center justify-between border-b border-(--color-border) px-4 py-3">
+        <BrandMark variant="light" size={28} subtitle titleSize="sm" />
         <Tooltip content="Ocultar panel" side="right" delayDuration={250}>
           <button
             type="button"
@@ -118,22 +122,22 @@ const DesktopNavInner = React.memo(function DesktopNavInner({ session, badgeCoun
         </Tooltip>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-2 py-3">
+      <div className="flex-1 overflow-y-auto px-2 py-2.5">
         <Link
           href={DASHBOARD_ITEM.href}
           aria-current={dashActive ? "page" : undefined}
           data-pressable
           className={cn(
-            "mb-1 flex h-10 items-center gap-3 rounded-md px-3 text-sm transition-[color,background-color] duration-(--duration-fast) ease-out",
+            "relative mb-1 flex h-[var(--nav-item-height)] items-center gap-[9px] rounded-[var(--radius)] px-[10px] text-xs font-medium transition-[color,background-color] duration-(--duration-fast) ease-out",
             dashActive
-              ? "bg-(--color-primary-tint) font-semibold text-(--color-primary-ink)"
-              : "text-(--color-text-muted) hover:bg-(--color-chrome-hover) hover:text-(--color-text)",
+              ? "bg-(--color-surface-3) font-semibold text-(--color-text)"
+              : "text-(--color-text-muted) hover:bg-(--color-surface-2) hover:text-(--color-text)",
           )}
         >
           {DashIcon && (
             <DashIcon
-              size={19}
-              weight={dashActive ? "bold" : "regular"}
+              size={17}
+              weight="regular"
               className={cn("shrink-0", dashActive ? "text-(--color-primary)" : "text-(--color-text-muted)")}
             />
           )}
@@ -143,32 +147,31 @@ const DesktopNavInner = React.memo(function DesktopNavInner({ session, badgeCoun
         <AccordionAreas areas={areas.filter((a) => a.id !== "soporte")} pathname={pathname} badgeCounts={badgeCounts} routeArea={routeArea} />
       </div>
 
-      {/* Soporte: botón fijo al final del panel, justo sobre el toggle de colapso */}
       {areas.filter((a) => a.id === "soporte").length > 0 && (
         <div className="border-t border-(--color-border) px-2 pt-2 pb-1">
           <Link
             href="/soporte"
             data-pressable
             className={cn(
-              "flex h-10 items-center gap-3 rounded-md px-3 text-sm transition-[color,background-color] duration-(--duration-fast) ease-out",
+              "relative flex h-[var(--nav-item-height)] items-center gap-[9px] rounded-[var(--radius)] px-[10px] text-xs font-medium transition-[color,background-color] duration-(--duration-fast) ease-out",
               isHrefActive("/soporte", pathname)
-                ? "bg-(--color-primary-tint) font-semibold text-(--color-primary-ink)"
-                : "text-(--color-text-muted) hover:bg-(--color-chrome-hover) hover:text-(--color-text)",
+                ? "bg-(--color-surface-3) font-semibold text-(--color-text)"
+                : "text-(--color-text-muted) hover:bg-(--color-surface-2) hover:text-(--color-text)",
             )}
           >
             <Lifebuoy
-              size={19}
-              weight={isHrefActive("/soporte", pathname) ? "bold" : "regular"}
+              size={17}
+              weight="regular"
               className={cn("shrink-0", isHrefActive("/soporte", pathname) && "text-(--color-primary)")}
             />
             <span>Soporte</span>
           </Link>
         </div>
       )}
+
+      <SidebarUserProfile session={session} />
     </nav>
   )
 })
 
 export const DesktopNav = DesktopNavInner
-
-
