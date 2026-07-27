@@ -43,6 +43,10 @@ export async function submitRequest(_prev: ActionState, formData: FormData): Pro
   }
   if (request.status !== "draft") return { ok: false, message: "Solo se pueden enviar solicitudes en borrador" }
   if (request.items.length === 0) return { ok: false, message: "La solicitud debe tener al menos un ítem" }
+  const itemsWithoutDate = request.items.filter((i) => !i.requiredDate)
+  if (itemsWithoutDate.length > 0 && !request.requiredDate) {
+    return { ok: false, message: "Falta la fecha requerida en ítems y en la solicitud. Define una fecha estimada de necesidad." }
+  }
   if (request.requesterId !== session.user.id && !session.user.permissions.includes("requests:view_all")) {
     return { ok: false, message: "Solo puedes enviar tus propias solicitudes" }
   }
@@ -76,56 +80,42 @@ export async function submitRequest(_prev: ActionState, formData: FormData): Pro
       logger.error("[submitRequest:quotation]", e)
       return { ok: false, message: e instanceof Error ? e.message : "Error al enviar la solicitud" }
     }
+  } else {
+    const now = new Date().toISOString()
 
-    notifyAfterCommit(() => getUserIdsWithPermission("approvals:approve").then((approverIds) =>
-      notifyManyUser(approverIds, {
-        type:       "request_submitted",
-        title:      `Nueva solicitud: ${request.code}`,
-        body:       `${session.user.name ?? session.user.email} envió una solicitud con ${request.items.length} ítem${request.items.length !== 1 ? "s" : ""}`,
-        entityType: "purchase_request",
-        entityId:   requestId,
-        entityHref: `/solicitudes/${requestId}`,
-      }),
-    ))
+    try {
+      await db.transaction(async (tx) => {
+        await tx.update(purchaseRequests).set({
+          status:      "submitted",
+          submittedAt: now,
+          updatedAt:   now,
+        }).where(eq(purchaseRequests.id, requestId))
 
-    revalidateOperationalViews([REVALIDATE, `${REVALIDATE}/${requestId}`])
-    redirect(`${REVALIDATE}/${requestId}`)
-  }
-
-  const now = new Date().toISOString()
-
-  try {
-    await db.transaction(async (tx) => {
-      await tx.update(purchaseRequests).set({
-        status:      "submitted",
-        submittedAt: now,
-        updatedAt:   now,
-      }).where(eq(purchaseRequests.id, requestId))
-
-      await recordStatusChange({
-        entityType: "purchase_request",
-        entityId:   requestId,
-        fromStatus: "draft",
-        toStatus:   "submitted",
-        changedBy:  session.user.id,
-      }, tx)
-      await recordAudit({
-        userId:     session.user.id,
-        userEmail:  session.user.email ?? undefined,
-        action:     "status_change",
-        entityType: "purchase_request",
-        entityId:   requestId,
-        entityCode: request.code,
-        oldState:   { status: "draft" },
-        newState:   { status: "submitted" },
-      }, tx)
-      for (const item of request.items) {
-        await submitItemTx(tx, item.id, session.user.id, { userEmail: session.user.email ?? undefined })
-      }
-    })
-  } catch (e) {
-    logger.error("[submitRequest]", e)
-    return { ok: false, message: e instanceof Error ? e.message : "Error al enviar la solicitud" }
+        await recordStatusChange({
+          entityType: "purchase_request",
+          entityId:   requestId,
+          fromStatus: "draft",
+          toStatus:   "submitted",
+          changedBy:  session.user.id,
+        }, tx)
+        await recordAudit({
+          userId:     session.user.id,
+          userEmail:  session.user.email ?? undefined,
+          action:     "status_change",
+          entityType: "purchase_request",
+          entityId:   requestId,
+          entityCode: request.code,
+          oldState:   { status: "draft" },
+          newState:   { status: "submitted" },
+        }, tx)
+        for (const item of request.items) {
+          await submitItemTx(tx, item.id, session.user.id, { userEmail: session.user.email ?? undefined })
+        }
+      })
+    } catch (e) {
+      logger.error("[submitRequest]", e)
+      return { ok: false, message: e instanceof Error ? e.message : "Error al enviar la solicitud" }
+    }
   }
 
   notifyAfterCommit(() => getUserIdsWithPermission("approvals:approve").then((approverIds) =>

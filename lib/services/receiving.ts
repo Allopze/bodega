@@ -4,7 +4,7 @@
  * + worksite stock ingress.
  */
 
-import { eq, and, notInArray } from "drizzle-orm"
+import { eq, and, notInArray, ne } from "drizzle-orm"
 import { db } from "@/db"
 import {
   receipts, receiptItems,
@@ -197,7 +197,7 @@ export async function registerReceipt(
             if (requesterId) {
               notifyAfterCommit(() => notifyManyUser([requesterId], {
                 type: "receipt_done",
-                title: `Tu EPP llegó a faena`,
+                title: `Tu pedido llegó a faena`,
                 body: `El ítem de tu solicitud ${reqItem?.request?.code ?? ""} fue recepcionado en faena y está disponible para entrega.`,
                 entityType: "purchase_request",
                 entityId: reqItem?.request?.id ?? "",
@@ -261,7 +261,10 @@ async function rollupOrderReceiptStatus(
       quantityReceived:       purchaseOrderItems.quantityReceived,
     })
     .from(purchaseOrderItems)
-    .where(eq(purchaseOrderItems.purchaseOrderId, orderId))
+    .where(and(
+      eq(purchaseOrderItems.purchaseOrderId, orderId),
+      ne(purchaseOrderItems.status, "cancelled"),
+    ))
 
   if (ocItems.length === 0) return
 

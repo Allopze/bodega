@@ -7,6 +7,7 @@ import { eq, and, inArray } from "drizzle-orm"
 import { db } from "@/db"
 import { purchaseOrders, purchaseOrderItems, purchaseRequestItems } from "@/db/schema"
 import { recordAudit, recordStatusChange, recordStatusChanges } from "@/lib/audit"
+import { rollupRequestStatus } from "@/lib/services/item-state-module/rollup"
 
 /* ── Issue OC (draft → issued) ───────────────────────────────────────────────── */
 
@@ -165,7 +166,7 @@ export async function cancelOrder(
 
     // Move associated request items back to "pending_purchase" status
     const ocItems = await tx
-      .select({ id: purchaseOrderItems.id, requestItemId: purchaseOrderItems.requestItemId, currentStatus: purchaseRequestItems.status })
+      .select({ id: purchaseOrderItems.id, requestItemId: purchaseOrderItems.requestItemId, currentStatus: purchaseRequestItems.status, requestId: purchaseRequestItems.requestId })
       .from(purchaseOrderItems)
       .leftJoin(purchaseRequestItems, eq(purchaseOrderItems.requestItemId, purchaseRequestItems.id))
       .where(eq(purchaseOrderItems.purchaseOrderId, orderId))
@@ -197,6 +198,15 @@ export async function cancelOrder(
         })),
         tx,
       )
+    }
+
+    const affectedRequestIds = [...new Set(
+      ocItems
+        .filter((i): i is typeof i & { requestId: string } => Boolean(i.requestId))
+        .map((i) => i.requestId),
+    )]
+    for (const rid of affectedRequestIds) {
+      await rollupRequestStatus(rid, tx)
     }
 
     // Update purchaseOrderItems status to cancelled

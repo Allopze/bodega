@@ -116,10 +116,10 @@ export async function deleteOrderAction(
 
   const order = await db.query.purchaseOrders.findFirst({
     where: eq(purchaseOrders.id, orderId),
-    columns: { status: true },
+    columns: { status: true, deletedAt: true },
   })
   if (!order) return { ok: false, message: "Orden no encontrada" }
-  if (!isOrderDeletable(order.status)) {
+  if (!isOrderDeletable(order.status, order.deletedAt)) {
     return { ok: false, message: `No se puede eliminar una orden en estado '${order.status}'` }
   }
 

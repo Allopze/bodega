@@ -106,6 +106,8 @@ const ListFiltersInner = React.memo(function ListFiltersInner({
   const hasActiveFilters = Boolean(currentQ || currentEstado || currentUrgencia || currentFaena || currentProveedor)
 
   // Export URL respects the active filters (estado→status, q/faena/proveedor passthrough).
+  // Note: the URL param is "estado" for page-level filtering but "status" for the export
+  // API — the export endpoint uses its own parameter naming convention.
   const exportHref = React.useMemo(() => {
     if (!exportTipo) return null
     const params = new URLSearchParams({ tipo: exportTipo })

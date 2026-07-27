@@ -4,7 +4,7 @@
 
 import { eq } from "drizzle-orm"
 import { db } from "@/db"
-import { purchaseOrders, purchaseOrderItems, purchaseRequestItems, requestItemAttributes } from "@/db/schema"
+import { purchaseOrders, purchaseOrderItems, purchaseRequestItems, purchaseRequests, requestItemAttributes } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { nextCodeTx } from "@/lib/code-sequences"
 import { recordAudit } from "@/lib/audit"
@@ -148,10 +148,19 @@ export async function createOrdersBySupplier(input: CreateOrdersBySupplierInput)
       const totals  = computeOrderTotals(orderInput.items)
       orderIds.push(orderId)
 
+      const firstItem = orderInput.items[0]!
+      const [sourceRequest] = await tx
+        .select({ costCenterId: purchaseRequests.costCenterId })
+        .from(purchaseRequestItems)
+        .innerJoin(purchaseRequests, eq(purchaseRequestItems.requestId, purchaseRequests.id))
+        .where(eq(purchaseRequestItems.id, firstItem.requestItemId))
+      const costCenterId = sourceRequest?.costCenterId ?? null
+
       await tx.insert(purchaseOrders).values({
         id:                orderId,
         code,
         worksiteId:        input.worksiteId,
+        costCenterId,
         supplierId:        orderInput.supplierId,
         createdBy:         input.createdBy,
         status:            "draft",

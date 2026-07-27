@@ -11,6 +11,7 @@ import { nanoid } from "@/lib/id"
 import { recordAudit } from "@/lib/audit"
 import { computeOrderTotals } from "@/lib/order-totals"
 import { isOrderItemsEditable } from "@/lib/services/purchasing.constants"
+import { rollupRequestStatus } from "@/lib/services/item-state-module/rollup"
 
 export interface EditableOrderItemInput {
   id?:             string
@@ -48,8 +49,10 @@ export async function updateSentOrderItems(
         requestItemId:          purchaseOrderItems.requestItemId,
         quantityReceived:       purchaseOrderItems.quantityReceived,
         quantityOfficeReceived: purchaseOrderItems.quantityOfficeReceived,
+        requestId:              purchaseRequestItems.requestId,
       })
       .from(purchaseOrderItems)
+      .leftJoin(purchaseRequestItems, eq(purchaseOrderItems.requestItemId, purchaseRequestItems.id))
       .where(eq(purchaseOrderItems.purchaseOrderId, orderId))
 
     const totalReceived = currentItems.reduce(
@@ -88,6 +91,17 @@ export async function updateSentOrderItems(
     }
     for (const removed of removedItems) {
       await tx.delete(purchaseOrderItems).where(eq(purchaseOrderItems.id, removed.id))
+    }
+
+    if (removedRequestItemIds.length > 0) {
+      const affectedRequestIds = [...new Set(
+        removedItems
+          .filter((i): i is typeof i & { requestId: string } => Boolean(i.requestId))
+          .map((i) => i.requestId),
+      )]
+      for (const rid of affectedRequestIds) {
+        await rollupRequestStatus(rid, tx)
+      }
     }
 
     for (const [i, item] of items.entries()) {

@@ -71,22 +71,6 @@ export async function createOrderAction(
 
   const dbItemMap = new Map(dbItems.map((item) => [item.id, item]))
 
-  for (const item of items) {
-    const dbItem = dbItemMap.get(item.requestItemId)
-    if (!dbItem || !["approved", "pending_purchase"].includes(dbItem.status)) {
-      return { ok: false, message: "Solo se pueden comprar ítems aprobados pendientes" }
-    }
-    if (dbItem.request.worksiteId !== worksiteId || !canAccessWorksite(session, dbItem.request.worksiteId)) {
-      return { ok: false, message: "La orden contiene ítems de una faena no autorizada" }
-    }
-    if (item.quantity > dbItem.quantity) {
-      return { ok: false, message: `La cantidad a comprar no puede superar la cantidad aprobada (${dbItem.quantity})` }
-    }
-    if (item.quantity <= 0) {
-      return { ok: false, message: "La cantidad de compra debe ser mayor a 0" }
-    }
-  }
-
   const deliveryModes = new Set(dbItems.map((i) => i.request.deliveryMode))
   if (deliveryModes.size > 1) {
     return {
@@ -111,9 +95,6 @@ export async function createOrderAction(
   const activeSuppliers = await db.query.suppliers.findMany({
     where: (supplier, { and, eq, inArray }) => and(inArray(supplier.id, targetSupplierIds), eq(supplier.isActive, true)),
   })
-  if (activeSuppliers.length !== targetSupplierIds.length) {
-    return { ok: false, message: "Uno o más proveedores no están activos o no existen" }
-  }
   const supplierNameMap = new Map(activeSuppliers.map((s) => [s.id, s.name]))
 
   // Warn if an item's resolved supplier differs from its suggested supplier

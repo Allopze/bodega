@@ -263,24 +263,40 @@ export async function updateDeliveryModeAction(
     return { ok: false, message: "Modo de despacho inválido" }
   }
 
-  const request = await db.query.purchaseRequests.findFirst({
-    where: eq(purchaseRequests.id, requestId),
-    columns: { id: true, worksiteId: true },
-    with: { items: { columns: { status: true } } },
-  })
-  if (!request) return { ok: false, message: "Solicitud no encontrada" }
-  if (!canAccessWorksite(session, request.worksiteId)) {
-    return { ok: false, message: "No tienes acceso a la faena de esta solicitud" }
+  try {
+    await db.transaction(async (tx) => {
+      const [request] = await tx
+        .select({ id: purchaseRequests.id, worksiteId: purchaseRequests.worksiteId })
+        .from(purchaseRequests)
+        .where(eq(purchaseRequests.id, requestId))
+        .for("update")
+
+      if (!request) throw new Error("Solicitud no encontrada")
+      if (!canAccessWorksite(session, request.worksiteId)) {
+        throw new Error("No tienes acceso a la faena de esta solicitud")
+      }
+
+      const items = await tx
+        .select({ status: purchaseRequestItems.status })
+        .from(purchaseRequestItems)
+        .where(eq(purchaseRequestItems.requestId, requestId))
+
+      const hasPurchasedItems = items.some((i) =>
+        ["in_purchase_order", "purchased", "partially_received", "received"].includes(i.status),
+      )
+      if (hasPurchasedItems) {
+        throw new Error("No se puede cambiar el modo de despacho porque esta solicitud ya posee ítems en Orden de Compra")
+      }
+
+      await tx
+        .update(purchaseRequests)
+        .set({ deliveryMode: mode })
+        .where(eq(purchaseRequests.id, requestId))
+    })
+  } catch (e) {
+    return { ok: false, message: e instanceof Error ? e.message : "Error al cambiar el modo de despacho" }
   }
 
-  const hasPurchasedItems = (request.items ?? []).some((i) =>
-    ["in_purchase_order", "purchased", "partially_received", "received"].includes(i.status),
-  )
-  if (hasPurchasedItems) {
-    return { ok: false, message: "No se puede cambiar el modo de despacho porque esta solicitud ya posee ítems en Orden de Compra" }
-  }
-
-  await db.update(purchaseRequests).set({ deliveryMode: mode }).where(eq(purchaseRequests.id, requestId))
   revalidateOperationalViews([REVALIDATE, `/solicitudes/${requestId}`])
   return {
     ok: true,

@@ -25,6 +25,7 @@ export const purchaseOrders = pgTable("purchase_orders", {
   sentAt:            text("sent_at"),
   confirmedAt:       text("confirmed_at"),
   closedAt:          timestamp("closed_at", { withTimezone: true, mode: "string" }),
+  deletedAt:         timestamp("deleted_at", { withTimezone: true, mode: "string" }),
   estimatedDelivery: text("estimated_delivery"),
   deliveryAddress:   text("delivery_address"),
   paymentTerms:      text("payment_terms"),

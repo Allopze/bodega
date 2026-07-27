@@ -2,7 +2,7 @@
  * Receiving-related order operations — close orders after receipt.
  */
 
-import { and, eq, inArray } from "drizzle-orm"
+import { and, eq, inArray, sql } from "drizzle-orm"
 import { db } from "@/db"
 import { purchaseOrderItems, purchaseOrders, purchaseRequestItems, requestItemAttributes } from "@/db/schema"
 import { recordAudit, recordStatusChange } from "@/lib/audit"
@@ -97,14 +97,22 @@ export async function closeOrder(
     )
 
     for (const item of partiallyReceivedItems) {
-      const remaining = item.currentQuantity - item.received
+      const remaining = item.ordered - item.received
       if (remaining <= 0) continue
 
       const splitItemId = nanoid()
       await tx
         .update(purchaseRequestItems)
-        .set({ quantity: item.received, updatedAt: now })
+        .set({ quantity: item.received })
         .where(eq(purchaseRequestItems.id, item.requestItemId!))
+
+      await tx
+        .update(purchaseOrderItems)
+        .set({
+          quantity: item.received,
+          quantityOfficeReceived: sql`LEAST(${purchaseOrderItems.quantityOfficeReceived}, ${item.received})`,
+        })
+        .where(eq(purchaseOrderItems.id, item.orderItemId))
 
       await tx.insert(purchaseRequestItems).values({
         id: splitItemId,
@@ -121,6 +129,7 @@ export async function closeOrder(
         supplierHint: item.supplierHint,
         sortOrder: item.sortOrder + 1,
         notes: item.notes,
+        splitFromItemId: item.requestItemId,
         createdAt: now,
         updatedAt: now,
       })

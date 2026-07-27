@@ -58,7 +58,7 @@ export async function rollupRequestStatus(
     .where(
       and(
         eq(purchaseRequests.id, requestId),
-        inArray(purchaseRequests.status, ["submitted", "in_review", "partially_approved", "approved", "rejected", "returned", "in_purchasing", "closed"]),
+        inArray(purchaseRequests.status, ["submitted", "in_review", "partially_approved", "approved", "rejected", "returned", "in_purchasing", "closed", "cancelled"]),
       ),
     )
 }

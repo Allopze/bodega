@@ -1,48 +1,42 @@
 /**
- * Purchase order hard-delete (permanent removal).
- * Reverts associated request items, cleans up files, audit trail.
+ * Purchase order soft-delete.
+ * Revierte los request items vinculados, renombra el código para liberar
+ * la restricción UNIQUE, y marca deletedAt. No elimina archivos del disco
+ * (se conservan para auditoría fiscal).
  */
 
-import fs from "node:fs/promises"
-import { eq, and, inArray } from "drizzle-orm"
+import { eq, and, inArray, isNull } from "drizzle-orm"
 import { db } from "@/db"
-import { purchaseOrders, purchaseOrderItems, purchaseRequestItems, quotations, purchaseOrderInvoices } from "@/db/schema"
+import { purchaseOrders, purchaseOrderItems, purchaseRequestItems } from "@/db/schema"
+import { nanoid } from "@/lib/id"
 import { recordAudit, recordStatusChange } from "@/lib/audit"
-import { resolveInvoiceAttachmentFile } from "@/lib/storage/config"
 import { isOrderDeletable } from "@/lib/services/purchasing.constants"
+import { rollupRequestStatus } from "@/lib/services/item-state-module/rollup"
 
-/**
- * Elimina permanentemente una OC y su data dependiente.
- * Revierte los request items vinculados a pending_purchase, limpia archivos de disco.
- */
 export async function deleteOrder(
   orderId: string,
   userId: string,
   worksiteIds: string[] | "all" = "all",
   opts?: { userEmail?: string },
 ): Promise<void> {
-  // Pre-fetch invoice file paths antes de la transacción
-  const invoiceFiles = await db
-    .select({ filePath: purchaseOrderInvoices.filePath })
-    .from(purchaseOrderInvoices)
-    .where(eq(purchaseOrderInvoices.purchaseOrderId, orderId))
-
   await db.transaction(async (tx) => {
-    const [order] = await tx.select().from(purchaseOrders)
-      .where(eq(purchaseOrders.id, orderId)).for("update")
+    const [order] = await tx
+      .select()
+      .from(purchaseOrders)
+      .where(and(eq(purchaseOrders.id, orderId), isNull(purchaseOrders.deletedAt)))
+      .for("update")
     if (!order) throw new Error(`Orden ${orderId} no encontrada`)
     if (worksiteIds !== "all" && !worksiteIds.includes(order.worksiteId)) {
       throw new Error("No tienes acceso a la faena de esta orden")
     }
-    if (!isOrderDeletable(order.status)) {
+    if (!isOrderDeletable(order.status, order.deletedAt)) {
       throw new Error(`No se puede eliminar una orden en estado '${order.status}'`)
     }
 
     const now = new Date().toISOString()
 
-    // 1. Revertir request items vinculados a pending_purchase
     const ocItems = await tx
-      .select({ id: purchaseOrderItems.id, requestItemId: purchaseOrderItems.requestItemId, currentStatus: purchaseRequestItems.status })
+      .select({ id: purchaseOrderItems.id, requestItemId: purchaseOrderItems.requestItemId, currentStatus: purchaseRequestItems.status, requestId: purchaseRequestItems.requestId })
       .from(purchaseOrderItems)
       .leftJoin(purchaseRequestItems, eq(purchaseOrderItems.requestItemId, purchaseRequestItems.id))
       .where(eq(purchaseOrderItems.purchaseOrderId, orderId))
@@ -77,13 +71,33 @@ export async function deleteOrder(
       }
     }
 
-    // 2. Desligar cotizaciones con referencia nullable a esta OC
-    await tx
-      .update(quotations)
-      .set({ purchaseOrderId: null })
-      .where(eq(quotations.purchaseOrderId, orderId))
+    const affectedRequestIds = [...new Set(
+      ocItems
+        .filter((i): i is typeof i & { requestId: string } => Boolean(i.requestId))
+        .map((i) => i.requestId),
+    )]
+    for (const rid of affectedRequestIds) {
+      await rollupRequestStatus(rid, tx)
+    }
 
-    // 3. Auditoría antes del delete (entityId string sobrevive)
+    await tx
+      .update(purchaseOrderItems)
+      .set({ status: "cancelled" })
+      .where(eq(purchaseOrderItems.purchaseOrderId, orderId))
+
+    const deletedCode = `${order.code}-DELETED-${nanoid().slice(0, 8)}`
+    await tx
+      .update(purchaseOrders)
+      .set({ status: "cancelled", code: deletedCode, deletedAt: now, updatedAt: now })
+      .where(eq(purchaseOrders.id, orderId))
+
+    await recordStatusChange({
+      entityType: "purchase_order",
+      entityId:   orderId,
+      fromStatus: order.status,
+      toStatus:   "cancelled",
+      changedBy:  userId,
+    }, tx)
     await recordAudit(
       {
         userId,
@@ -93,19 +107,9 @@ export async function deleteOrder(
         entityId:   orderId,
         entityCode: order.code,
         oldState:   { status: order.status },
+        newState:   { status: "cancelled", deletedAt: now },
       },
       tx,
     )
-
-    // 4. Eliminar la OC — cascade borra purchaseOrderItems e invoices
-    await tx.delete(purchaseOrders).where(eq(purchaseOrders.id, orderId))
   })
-
-  // 5. Limpiar archivos de facturas del disco (best-effort)
-  await Promise.all(
-    invoiceFiles.map((f) => {
-      const absPath = resolveInvoiceAttachmentFile(f.filePath)
-      return absPath ? fs.unlink(absPath).catch(() => undefined) : Promise.resolve()
-    }),
-  )
 }
