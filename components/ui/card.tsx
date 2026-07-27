@@ -1,12 +1,36 @@
 import * as React from "react"
 import { cn } from "@/lib/utils"
 
-const Card = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
-  ({ className, ...props }, ref) => (
+/**
+ * Card — superficie contenedora base del design system.
+ *
+ * Variantes:
+ * - `default` (sin prop): borde + radius-2xl, sin sombra. Para tablas, listas,
+ *   paneles donde el borde basta como separador (regla screen-density A1).
+ * - `feature` (C2 PLAN_MIGRACION_VISUAL): borde + radius-xl + p-6 + sombra suave.
+ *   Para tarjetas editoriales del dashboard (KPIs agrupados, gráficos, bloques
+ *   de lectura) que necesitan "flotar" sobre el lienzo como en la referencia.
+ *
+ * La variante se elige con la prop `variant`. Para retrocompatibilidad, omitir
+ * la prop equivale a `default` y permite seguir pasando `className` ad-hoc.
+ */
+interface CardProps extends React.HTMLAttributes<HTMLDivElement> {
+  variant?: "default" | "feature"
+}
+
+const CARD_VARIANT = {
+  default: "rounded-[var(--radius-2xl)]",
+  feature:
+    "rounded-[var(--radius-xl)] p-6 shadow-[var(--shadow-card)]",
+} as const
+
+const Card = React.forwardRef<HTMLDivElement, CardProps>(
+  ({ className, variant = "default", ...props }, ref) => (
     <div
       ref={ref}
       className={cn(
-        "bg-[var(--color-surface)] rounded-[var(--radius-2xl)] shadow-[var(--shadow-card)]",
+        "bg-[var(--color-surface)] border border-[var(--color-border)]",
+        CARD_VARIANT[variant],
         className,
       )}
       {...props}

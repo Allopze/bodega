@@ -28,7 +28,7 @@ const TableRoot = React.forwardRef<HTMLDivElement, TableRootProps>(
         // 390px (auditoría 2026-07-24, A-7).
         "relative w-full overflow-x-auto overscroll-x-contain",
         stickyHeader && "max-h-[70vh] overflow-y-auto overscroll-y-contain",
-        "rounded-[var(--radius-2xl)] shadow-[var(--shadow-card)] bg-[var(--color-surface)]",
+        "rounded-[var(--radius-2xl)] border border-[var(--color-border)] bg-[var(--color-surface)]",
         className,
       )}
       {...props}

@@ -12,10 +12,10 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
         type={type}
         ref={ref}
         className={cn(
-          "flex h-11 sm:h-9 w-full rounded-(--radius-lg)",
+          "flex h-11 sm:h-[34px] w-full rounded-[var(--radius-md)]",
           "border border-[var(--color-border-control)]",
-          "bg-[var(--color-surface)] px-3.5 py-1.5",
-          "font-sans text-sm text-[var(--color-text)]",
+          "bg-[var(--color-surface)] px-[10px] py-1.5",
+          "font-sans text-xs text-[var(--color-text)] font-medium",
           "placeholder:text-[var(--color-text-subtle)]",
           "transition-[border-color,box-shadow] duration-[var(--duration-fast)] ease-[var(--ease-out)]",
           "hover:border-[var(--color-border-control-hover)]",
