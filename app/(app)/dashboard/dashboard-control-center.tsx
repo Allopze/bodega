@@ -7,7 +7,6 @@ import {
   CheckSquare,
   ClipboardText,
   ClockCounterClockwise,
-  Package,
   FileText,
   ShoppingCart,
   Truck,
@@ -21,6 +20,7 @@ import { EmptyState } from "@/components/ui/empty-state"
 import { PriorityBadge } from "@/components/ui/priority-badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { cn, formatDateTime } from "@/lib/utils"
+import { OperationalMetricsStrip } from "./operational-metrics-strip"
 import type { WorkPriority, WorkTask, WorkTaskType } from "@/lib/work-queue"
 import type { OperationalWorkItem } from "@/lib/services/operational-work-queue"
 import { WorkAssignmentControl } from "../pendientes/work-assignment-control"
@@ -65,7 +65,6 @@ interface DashboardControlCenterProps {
   contextLabel: string
   refreshedAt: string
   tasks: DashboardTask[]
-  /** Resumen de toda la cola autorizada; tasks sólo contiene la vista previa. */
   queueSummary: {
     total: number
     critical: number
@@ -98,17 +97,6 @@ const MODULE_META: Record<WorkTaskType, { label: string; Icon: typeof ClipboardT
   sst:                { label: "SST",          Icon: CheckSquare },
 }
 
-const METRIC_ICON = {
-  tasks:      CheckCircle,
-  critical:   WarningCircle,
-  approvals:  CheckSquare,
-  receipts:   Truck,
-  deliveries: Warehouse,
-  stock:      Package,
-  investment: ShoppingCart,
-  rate:       CheckCircle,
-} as const
-
 const PRIORITY_RANK: Record<WorkPriority, number> = {
   critical: 0,
   high:     1,
@@ -122,11 +110,6 @@ const SEVERITY_META = {
   info:     { label: "Pendiente", variant: "info" as const },
 }
 
-/**
- * Capa interactiva deliberadamente pequeña: recibe únicamente tareas y
- * métricas ya autorizadas por el Server Component. Los filtros no realizan
- * nuevas consultas ni amplían el alcance de faenas del usuario.
- */
 export function DashboardControlCenter({
   firstName,
   contextLabel,
@@ -216,6 +199,7 @@ export function DashboardControlCenter({
 
   return (
     <>
+      {/* ── Greeting header — full width ── */}
       <header className="border-b border-[var(--color-border)] pb-5">
         <p className="text-eyebrow hidden lg:block">Centro de control</p>
         <div className="mt-1 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
@@ -233,20 +217,14 @@ export function DashboardControlCenter({
         </div>
       </header>
 
+      {/* ── Metrics strip — full width ── */}
       {metrics.length > 0 && (
-        <section className="mt-5" aria-labelledby="indicadores-operacionales">
-          <div className="mb-2 flex items-center justify-between gap-3">
-            <h2 id="indicadores-operacionales" className="text-h2 text-[var(--color-text)]">Indicadores operacionales</h2>
-            <span className="text-xs text-[var(--color-text-subtle)]">Selecciona un indicador para actuar</span>
-          </div>
-          <div className="grid gap-px overflow-hidden rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-border)] sm:grid-cols-2 xl:grid-cols-4">
-            {metrics.map((metric) => (
-              <OperationalMetric key={metric.key} metric={metric} onSelect={applyPreset} />
-            ))}
-          </div>
-        </section>
+        <div className="mt-5">
+          <OperationalMetricsStrip metrics={metrics} onSelect={applyPreset} />
+        </div>
       )}
 
+      {/* ── Period + Backlog strips — full width ── */}
       {periodSummary.length > 0 && (
         <section className="mt-3" aria-labelledby="flujo-mensual">
           <div className="flex flex-col gap-2 border-y border-[var(--color-border)] py-3 sm:flex-row sm:items-baseline sm:gap-5">
@@ -279,155 +257,139 @@ export function DashboardControlCenter({
         </section>
       )}
 
-      <section className="mt-6" aria-labelledby="alertas-operacionales">
-        <div className="mb-2 flex items-center justify-between gap-3">
-          <h2 id="alertas-operacionales" className="text-h2 text-[var(--color-text)]">Requiere atención</h2>
-          {alerts.length > 0 && <span className="text-xs text-[var(--color-text-subtle)]">{alerts.length} situación{alerts.length === 1 ? "" : "es"} activa{alerts.length === 1 ? "" : "s"}</span>}
-        </div>
-        {alerts.length > 0 ? (
-          <div className="grid gap-2 xl:grid-cols-2">
-            {alerts.map((alert) => <OperationalAlert key={alert.key} alert={alert} onSelect={applyPreset} />)}
-          </div>
-        ) : (
-          <div className="border-y border-[var(--color-border)]">
-            <EmptyState
-              compact
-              align="start"
-              icon={<CheckCircle size={20} weight="fill" />}
-              tone="success"
-              title="No hay alertas operacionales activas"
-              description="No se detectaron pendientes críticos en los módulos que puedes revisar desde este dashboard."
-            />
-          </div>
-        )}
-        <div className="mt-3 flex justify-end">
-          <Button asChild size="sm" variant="secondary"><Link href="/pendientes">Abrir cola completa</Link></Button>
-        </div>
-      </section>
+      {/* ── Main grid: cola de trabajo (8 col) + sidebar alertas/PDTP (4 col) ── */}
+      <div className="mt-6 grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,2fr)_minmax(18rem,1fr)]">
 
-      {children && <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(20rem,0.8fr)]">{children}</div>}
-
-      <section id="cola-de-trabajo" className="mt-8 scroll-mt-4" aria-labelledby="titulo-cola-trabajo">
-        <div className="flex flex-col gap-3 border-b border-[var(--color-border)] pb-3 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <h2 id="titulo-cola-trabajo" className="text-h2 text-[var(--color-text)]">Cola de trabajo</h2>
-            <p className="mt-1 text-sm text-[var(--color-text-muted)]">
-              Acciones disponibles en tus faenas autorizadas. El texto se filtra desde la búsqueda de la cabecera.
+        {/* ── Main: cola de trabajo ── */}
+        <section id="cola-de-trabajo" className="scroll-mt-4 min-w-0" aria-labelledby="titulo-cola-trabajo">
+          <div className="flex flex-col gap-3 border-b border-[var(--color-border)] pb-3 lg:flex-row lg:items-end lg:justify-between">
+            <div>
+              <h2 id="titulo-cola-trabajo" className="text-h2 text-[var(--color-text)]">Cola de trabajo</h2>
+              <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+                Acciones disponibles en tus faenas autorizadas. El texto se filtra desde la búsqueda de la cabecera.
+              </p>
+            </div>
+            <p aria-live="polite" className="text-sm text-[var(--color-text-subtle)]">
+              {filteredTasks.length} de {tasks.length} tarea{tasks.length === 1 ? "" : "s"}
             </p>
           </div>
-          <p aria-live="polite" className="text-sm text-[var(--color-text-subtle)]">
-            {filteredTasks.length} de {tasks.length} tarea{tasks.length === 1 ? "" : "s"}
-          </p>
-        </div>
 
-        <div className="mt-3 flex gap-1 overflow-x-auto pb-1" aria-label="Filtros rápidos de la cola">
-          {quickFilters.map((filter) => (
-            <button
-              key={filter.value}
-              type="button"
-              aria-pressed={preset === filter.value}
-              onClick={() => setPreset(filter.value)}
-              className={cn(
-                "inline-flex h-9 shrink-0 items-center gap-2 rounded-[var(--radius)] px-3 text-sm font-semibold",
-                "transition-[background-color,color,transform] duration-[var(--duration-fast)] ease-[var(--ease-out)] motion-safe:active:scale-[0.97]",
-                "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]",
-                preset === filter.value
-                  ? "bg-[var(--color-primary)] text-white"
-                  : "bg-[var(--color-surface-2)] text-[var(--color-text-muted)] hover:bg-[var(--color-primary-tint)] hover:text-[var(--color-primary-ink)]",
-              )}
-            >
-              {filter.label}
-              <span className="font-mono text-xs tabular-nums opacity-80">{filter.count}</span>
-            </button>
-          ))}
-        </div>
+          <div className="mt-3 flex gap-1 overflow-x-auto pb-1" aria-label="Filtros rápidos de la cola">
+            {quickFilters.map((filter) => (
+              <button
+                key={filter.value}
+                type="button"
+                aria-pressed={preset === filter.value}
+                onClick={() => setPreset(filter.value)}
+                className={cn(
+                  "inline-flex h-9 shrink-0 items-center gap-2 rounded-[var(--radius)] px-3 text-sm font-semibold",
+                  "transition-[background-color,color,transform] duration-[var(--duration-fast)] ease-[var(--ease-out)] motion-safe:active:scale-[0.97]",
+                  "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]",
+                  preset === filter.value
+                    ? "bg-[var(--color-primary)] text-white"
+                    : "bg-[var(--color-surface-2)] text-[var(--color-text-muted)] hover:bg-[var(--color-primary-tint)] hover:text-[var(--color-primary-ink)]",
+                )}
+              >
+                {filter.label}
+                <span className="font-mono text-xs tabular-nums opacity-80">{filter.count}</span>
+              </button>
+            ))}
+          </div>
 
-        <div className="mt-3 grid gap-2 border-y border-[var(--color-border)] py-3 sm:grid-cols-2 xl:grid-cols-5">
-          <FilterSelect label="Módulo" value={module} onValueChange={(value) => setModule(value as ModuleFilter)}>
-            <SelectItem value="all">Todos los módulos</SelectItem>
-            {Object.entries(MODULE_META).map(([value, item]) => <SelectItem key={value} value={value}>{item.label}</SelectItem>)}
-          </FilterSelect>
-          <FilterSelect label="Faena" value={worksiteId} onValueChange={setWorksiteId}>
-            <SelectItem value="all">Todas las faenas</SelectItem>
-            {worksites.map((worksite) => <SelectItem key={worksite.id} value={worksite.id}>{worksite.name}</SelectItem>)}
-          </FilterSelect>
-          <FilterSelect label="Prioridad" value={priority} onValueChange={(value) => setPriority(value as "all" | WorkPriority)}>
-            <SelectItem value="all">Todas las prioridades</SelectItem>
-            <SelectItem value="critical">Crítico</SelectItem>
-            <SelectItem value="high">Alta</SelectItem>
-            <SelectItem value="normal">Normal</SelectItem>
-          </FilterSelect>
-          <FilterSelect label="Estado" value={status} onValueChange={setStatus}>
-            <SelectItem value="all">Todos los estados</SelectItem>
-            {statuses.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}
-          </FilterSelect>
-          <FilterSelect label="Ordenar por" value={sort} onValueChange={(value) => setSort(value as SortOption)}>
-            <SelectItem value="priority">Prioridad</SelectItem>
-            <SelectItem value="oldest">Más antigua</SelectItem>
-            <SelectItem value="newest">Más reciente</SelectItem>
-          </FilterSelect>
-          {activeFilterCount > 0 && (
-            <Button type="button" variant="ghost" size="sm" onClick={clearFilters} className="justify-self-start xl:col-span-5">
-              Limpiar filtros ({activeFilterCount})
-            </Button>
-          )}
-        </div>
+          <div className="mt-3 grid gap-2 border-y border-[var(--color-border)] py-3 sm:grid-cols-2 xl:grid-cols-5">
+            <FilterSelect label="Módulo" value={module} onValueChange={(value) => setModule(value as ModuleFilter)}>
+              <SelectItem value="all">Todos los módulos</SelectItem>
+              {Object.entries(MODULE_META).map(([value, item]) => <SelectItem key={value} value={value}>{item.label}</SelectItem>)}
+            </FilterSelect>
+            <FilterSelect label="Faena" value={worksiteId} onValueChange={setWorksiteId}>
+              <SelectItem value="all">Todas las faenas</SelectItem>
+              {worksites.map((worksite) => <SelectItem key={worksite.id} value={worksite.id}>{worksite.name}</SelectItem>)}
+            </FilterSelect>
+            <FilterSelect label="Prioridad" value={priority} onValueChange={(value) => setPriority(value as "all" | WorkPriority)}>
+              <SelectItem value="all">Todas las prioridades</SelectItem>
+              <SelectItem value="critical">Crítico</SelectItem>
+              <SelectItem value="high">Alta</SelectItem>
+              <SelectItem value="normal">Normal</SelectItem>
+            </FilterSelect>
+            <FilterSelect label="Estado" value={status} onValueChange={setStatus}>
+              <SelectItem value="all">Todos los estados</SelectItem>
+              {statuses.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}
+            </FilterSelect>
+            <FilterSelect label="Ordenar por" value={sort} onValueChange={(value) => setSort(value as SortOption)}>
+              <SelectItem value="priority">Prioridad</SelectItem>
+              <SelectItem value="oldest">Más antigua</SelectItem>
+              <SelectItem value="newest">Más reciente</SelectItem>
+            </FilterSelect>
+            {activeFilterCount > 0 && (
+              <Button type="button" variant="ghost" size="sm" onClick={clearFilters} className="justify-self-start xl:col-span-5">
+                Limpiar filtros ({activeFilterCount})
+              </Button>
+            )}
+          </div>
 
-        {filteredTasks.length > 0 ? (
-          <div className="mt-3 overflow-x-auto border-y border-[var(--color-border)]" data-sticky-col="true">
-            <div className="min-w-[760px]">
-              <div className="grid grid-cols-[7rem_minmax(15rem,1.6fr)_9rem_10rem_9rem_8rem_10rem] gap-3 border-b border-[var(--color-border)] px-4 py-2.5 text-left th-type">
-                <span>Prioridad</span>
-                <span>Tarea</span>
-                <span>Módulo</span>
-                <span>Faena</span>
-                <span>Estado</span>
-                <span>Antigüedad</span>
-                <span className="text-right">Acción</span>
+          {filteredTasks.length > 0 ? (
+            <div className="mt-3 overflow-x-auto border-y border-[var(--color-border)]" data-sticky-col="true">
+              <div className="min-w-[760px]">
+                <div className="grid grid-cols-[7rem_minmax(15rem,1.6fr)_9rem_10rem_9rem_8rem_10rem] gap-3 border-b border-[var(--color-border)] px-4 py-2.5 text-left th-type">
+                  <span>Prioridad</span>
+                  <span>Tarea</span>
+                  <span>Módulo</span>
+                  <span>Faena</span>
+                  <span>Estado</span>
+                  <span>Antigüedad</span>
+                  <span className="text-right">Acción</span>
+                </div>
+                <ul className="divide-y divide-[var(--color-border)]">
+                  {filteredTasks.map((task) => <WorkQueueRow key={task.id} task={task} refreshedAt={refreshedAt} canAssign={canAssign} />)}
+                </ul>
               </div>
-              <ul className="divide-y divide-[var(--color-border)]">
-                {filteredTasks.map((task) => <WorkQueueRow key={task.id} task={task} refreshedAt={refreshedAt} canAssign={canAssign} />)}
-              </ul>
             </div>
-          </div>
-        ) : (
-          <div className="mt-3 border-y border-[var(--color-border)]">
-            <EmptyState
-              compact
-              icon={<ClockCounterClockwise size={20} />}
-              title="No hay tareas con estos filtros"
-              description={normalizedSearch ? "Prueba otra búsqueda desde la cabecera o ajusta los filtros estructurados." : "Quita uno o más filtros para volver a ver las acciones disponibles."}
-              action={activeFilterCount > 0 ? <Button type="button" size="sm" variant="secondary" onClick={clearFilters}>Limpiar filtros</Button> : undefined}
-            />
-          </div>
-        )}
-      </section>
-    </>
-  )
-}
+          ) : (
+            <div className="mt-3 border-y border-[var(--color-border)]">
+              <EmptyState
+                compact
+                icon={<ClockCounterClockwise size={20} />}
+                title="No hay tareas con estos filtros"
+                description={normalizedSearch ? "Prueba otra búsqueda desde la cabecera o ajusta los filtros estructurados." : "Quita uno o más filtros para volver a ver las acciones disponibles."}
+                action={activeFilterCount > 0 ? <Button type="button" size="sm" variant="secondary" onClick={clearFilters}>Limpiar filtros</Button> : undefined}
+              />
+            </div>
+          )}
+        </section>
 
-function OperationalMetric({ metric, onSelect }: { metric: DashboardMetric; onSelect: (preset: DashboardQueuePreset) => void }) {
-  const Icon = METRIC_ICON[metric.icon]
-  const toneClass = metric.tone === "danger"
-    ? "text-[var(--color-danger-ink)]"
-    : metric.tone === "signal"
-      ? "text-[var(--color-signal-ink)]"
-      : "text-[var(--color-text)]"
-  const content = (
-    <>
-      <div className="flex items-start justify-between gap-3">
-        <span className="text-eyebrow text-[var(--color-text-muted)]">{metric.label}</span>
-        <Icon size={17} className="text-[var(--color-text-faint)]" aria-hidden />
+        {/* ── Sidebar: alertas + PDTP + actividad ── */}
+        <aside className="flex flex-col gap-6 min-w-0">
+          <section aria-labelledby="alertas-operacionales">
+            <div className="mb-2 flex items-center justify-between gap-3">
+              <h2 id="alertas-operacionales" className="text-h2 text-[var(--color-text)]">Requiere atención</h2>
+              {alerts.length > 0 && <span className="text-xs text-[var(--color-text-subtle)]">{alerts.length} situación{alerts.length === 1 ? "" : "es"} activa{alerts.length === 1 ? "" : "s"}</span>}
+            </div>
+            {alerts.length > 0 ? (
+              <div className="flex flex-col gap-2">
+                {alerts.map((alert) => <OperationalAlert key={alert.key} alert={alert} onSelect={applyPreset} />)}
+              </div>
+            ) : (
+              <div className="border-y border-[var(--color-border)]">
+                <EmptyState
+                  compact
+                  align="start"
+                  icon={<CheckCircle size={20} weight="fill" />}
+                  tone="success"
+                  title="No hay alertas operacionales activas"
+                  description="No se detectaron pendientes críticos en los módulos que puedes revisar desde este dashboard."
+                />
+              </div>
+            )}
+            <div className="mt-3 flex justify-end">
+              <Button asChild size="sm" variant="secondary"><Link href="/pendientes">Abrir cola completa</Link></Button>
+            </div>
+          </section>
+
+          {children}
+        </aside>
       </div>
-      <span className={cn("mt-4 block font-mono text-2xl font-semibold leading-none tabular-nums tracking-tight", toneClass)}>{metric.value}</span>
-      <span className="mt-2 block text-xs leading-5 text-[var(--color-text-muted)]">{metric.description}</span>
     </>
   )
-  const className = "group min-h-32 bg-[var(--color-surface)] p-4 text-left transition-[background-color,transform] duration-[var(--duration-fast)] ease-[var(--ease-out)] hover:bg-[var(--color-surface-2)] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--color-primary)] motion-safe:active:scale-[0.99]"
-
-  if (metric.href) return <Link href={metric.href} data-pressable className={className}>{content}</Link>
-  if (metric.preset) return <button type="button" onClick={() => onSelect(metric.preset!)} className={className}>{content}</button>
-  return <div className={cn(className, "cursor-default hover:bg-[var(--color-surface)]")}>{content}</div>
 }
 
 function OperationalAlert({ alert, onSelect }: { alert: DashboardAlert; onSelect: (preset: DashboardQueuePreset) => void }) {
