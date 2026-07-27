@@ -12,6 +12,7 @@ export interface ProductOption {
   unitOfMeasure:   string
   categoryName:    string
   referencePrice:  number | null
+  isInactive?:     boolean
   preferredSupplierId: string | null
   attributes:      { id: string; name: string; type: string; isRequired: boolean; options: string | null }[]
 }

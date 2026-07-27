@@ -518,13 +518,13 @@ export async function buildPpaExport(
 
 export async function listScopedWorksites(
   worksiteIds: string[] | "all",
-): Promise<{ id: string; name: string }[]> {
+): Promise<{ id: string; name: string; code: string }[]> {
   if (worksiteIds !== "all" && worksiteIds.length === 0) return []
   const cond = worksiteIds !== "all"
     ? and(eq(worksites.isActive, true), inArray(worksites.id, worksiteIds))
     : eq(worksites.isActive, true)
   return db
-    .select({ id: worksites.id, name: worksites.name })
+    .select({ id: worksites.id, name: worksites.name, code: worksites.code })
     .from(worksites)
     .where(cond)
     .orderBy(worksites.name)

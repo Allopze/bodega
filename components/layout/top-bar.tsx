@@ -5,9 +5,7 @@ import { usePathname } from "next/navigation"
 import { List, MagnifyingGlass, MapPin, X } from "@phosphor-icons/react"
 import type { Session as AuthSession } from "next-auth"
 import { cn } from "@/lib/utils"
-import { Breadcrumbs } from "@/components/ui/page-header"
 import { BrandMark } from "./brand-mark"
-import { findActiveBreadcrumb } from "./nav-items"
 import { useSafeShellHeader, useShellHeader } from "./header-context"
 
 const NotificationBell = React.lazy(() =>
@@ -27,7 +25,6 @@ interface TopBarProps {
 const ROUTES_WITH_OWN_SEARCH = ["/solicitudes", "/aprobaciones", "/compras", "/recepcion", "/pendientes", "/prevencion/ppa", "/combustibles"]
 
 const TopBarInner = React.memo(function TopBarInner({
-  session,
   onMenuToggle,
   className,
   isMenuOpen = false,
@@ -60,11 +57,6 @@ const TopBarInner = React.memo(function TopBarInner({
   React.useEffect(() => {
     setSearchQuery("")
   }, [pathname, setSearchQuery])
-
-  // Derive active area + label from the nav tree — no extra plumbing needed
-  const activeNav = React.useMemo(() => findActiveBreadcrumb(pathname), [pathname])
-  const activeSection = activeNav?.areaLabel ?? null
-  const activeLabel   = activeNav?.itemLabel ?? null
 
   // These routes have their own per-screen search bar (URL-synced,
   // server-side). The top-bar in-memory search is inert there — hide it so

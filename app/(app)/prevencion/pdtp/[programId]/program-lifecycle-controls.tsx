@@ -263,7 +263,7 @@ function ConfirmAction({
         <DialogHeader><DialogTitle>{title}</DialogTitle><DialogDescription>{description}</DialogDescription></DialogHeader>
         <DialogFooter>
           <DialogClose asChild><Button type="button" variant="ghost">Cancelar</Button></DialogClose>
-          <DialogClose asChild><Button type="button" loading={pending} onClick={onConfirm}>{confirmLabel}</Button></DialogClose>
+          <Button type="button" loading={pending} onClick={onConfirm}>{confirmLabel}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

@@ -8,7 +8,7 @@ import {
   approvalDecisions, purchaseRequestItems,
   repuestoQuotations, serviceQuotations,
 } from "@/db/schema"
-import { and, asc, desc, eq, sql } from "drizzle-orm"
+import { and, asc, desc, eq, inArray, or, sql } from "drizzle-orm"
 import { can, requireAuth } from "@/lib/auth/can"
 import { canAccessWorksite } from "@/lib/auth/can"
 import { QUOTATION_TYPES } from "@/lib/request-types"
@@ -102,9 +102,19 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
     createdAt:        q.createdAt,
   }))
 
+  // Collect productIds referenced by items so we can load them even if
+  // they were deactivated (e.g. after a bulk EPP deactivation from admin).
+  const referencedProductIds = request.items
+    .map((i) => i.productId)
+    .filter((id): id is string => id != null)
+
   const [allWorksites, allProducts, allAttrs, productSupplierRows, timelineEvents, approvalDecisionRows, allSuppliers, maxFileSizeMb] = await Promise.all([
     db.select().from(worksites).where(eq(worksites.isActive, true)).orderBy(asc(worksites.name)),
-    db.select().from(products).where(eq(products.isActive, true)).orderBy(asc(products.name)),
+    db.select().from(products).where(
+      referencedProductIds.length > 0
+        ? or(eq(products.isActive, true), inArray(products.id, referencedProductIds))
+        : eq(products.isActive, true)
+    ).orderBy(asc(products.name)),
     db.select().from(productAttributes).orderBy(asc(productAttributes.sortOrder)),
     db
       .select({
@@ -186,6 +196,7 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
     unitOfMeasure:  p.unitOfMeasure,
     categoryName:   p.categoryId,
     referencePrice: p.referencePrice,
+    isInactive:     !p.isActive,
     preferredSupplierId: preferredSupplierByProduct.get(p.id) ?? null,
     attributes:     allAttrs
       .filter((a) => a.productId === p.id)

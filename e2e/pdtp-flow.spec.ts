@@ -86,15 +86,15 @@ test.describe("PDTP — Creación y edición de programas", () => {
     await page.getByRole("button", { name: "Crear programa" }).click()
     await expect(page).toHaveURL(/\/prevencion\/pdtp\/[^/]+\/editar/, { timeout: 15_000 })
 
-    // Verify all builder tabs are present
-    await expect(page.getByRole("tab", { name: "Metadatos" })).toBeVisible()
-    await expect(page.getByRole("tab", { name: "Hojas" })).toBeVisible()
-    await expect(page.getByRole("tab", { name: "Objetivos" })).toBeVisible()
-    await expect(page.getByRole("tab", { name: "Actividades" })).toBeVisible()
-    await expect(page.getByRole("tab", { name: "Planificación" })).toBeVisible()
+    // Verify builder tabs are present
+    await expect(page.getByRole("tab", { name: /Datos básicos/ })).toBeVisible()
+    await expect(page.getByRole("tab", { name: /Objetivos/ })).toBeVisible()
+    await expect(page.getByRole("tab", { name: /Actividades/ })).toBeVisible()
+    await expect(page.getByRole("tab", { name: /Cuándo se realiza/ })).toBeVisible()
+    await expect(page.getByRole("tab", { name: /Evidencias/ })).toBeVisible()
 
-    // Click on Metadatos tab and verify the form fields
-    await page.getByRole("tab", { name: "Metadatos" }).click()
+    // Click on Datos básicos tab and verify the form fields
+    await page.getByRole("tab", { name: /Datos básicos/ }).click()
     await expect(page.getByLabel("Título del programa")).toBeVisible()
     await expect(page.getByLabel("Meta de cumplimiento")).toBeVisible()
   })

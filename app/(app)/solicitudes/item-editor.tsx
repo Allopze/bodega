@@ -89,7 +89,14 @@ export function ItemEditor({
           ) : item.productId ? (
             <div className="flex items-center gap-2">
               <Package size={14} className="text-(--color-text-subtle) shrink-0" />
-              <span className="flex-1 text-sm font-medium text-(--color-text)">{item.productName}</span>
+              <span className="flex-1 text-sm font-medium text-(--color-text)">
+                {item.productName}
+                {selectedProduct?.isInactive && (
+                  <span className="ml-1.5 inline-flex items-center rounded-full bg-(--color-warning-tint) border border-(--color-warning-line) px-1.5 py-px text-[10px] font-medium text-(--color-warning-ink)" title="Este producto fue desactivado del catálogo">
+                    inactivo
+                  </span>
+                )}
+              </span>
               {!readOnly && (
                 <button
                   type="button"

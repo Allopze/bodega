@@ -33,6 +33,7 @@ import { PdtpSheetTable } from "../pdtp-sheet-table"
 import { PdtpSheetPicker, PdtpViewToggle, PdtpWorksitePicker } from "../pdtp-sheet-table-ui"
 import { PdtpIndicatorsPanel } from "../pdtp-indicators-panel"
 import { PdtpAddActivityForm } from "../pdtp-add-activity-form"
+import { PdtpImportExcelDialog } from "../pdtp-import-excel-dialog"
 import { db } from "@/db"
 import { pdtpExecutions, pdtpChangeLog } from "@/db/schema"
 import { resolveSelectedWorksiteId } from "../pdtp-context"
@@ -139,6 +140,12 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
         }
         actions={
           <>
+            {/* Botón visible de importación: solo en borrador y con permiso de
+                gestión. Antes este flujo estaba escondido tras Editar → Revisión
+                → "Vistas avanzadas", y el usuario no lo encontraba. */}
+            {canManageProgram && program.status === "draft" && (
+              <PdtpImportExcelDialog programId={programId} visibleWorksites={worksites} />
+            )}
             {canApprove && (
               <Button asChild variant="secondary" size="sm">
                 <Link href={`/prevencion/pdtp/aprobaciones?programId=${programId}`}>Aprobaciones</Link>
