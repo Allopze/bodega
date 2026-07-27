@@ -86,17 +86,17 @@ export function StockSection({ worksites, stockByWorksite, initialWorksiteId, re
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <StockTable worksites={worksitesWithStock} canExport={canExportStock} />
 
       {worksitesWithoutStock.length > 0 && (
-        <section className="border-t border-[var(--color-border)] pt-4">
-          <div className="flex items-center gap-2 text-xs text-[var(--color-text-subtle)]">
-            <WarningCircle size={14} />
+        <div className="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2">
+          <div className="flex items-center gap-2 text-[11px] text-[var(--color-text-subtle)]">
+            <WarningCircle size={13} />
             <span className="font-medium">Sin stock:</span>
             <span>{worksitesWithoutStock.map((ws) => ws.name).join(", ")}</span>
           </div>
-        </section>
+        </div>
       )}
     </div>
   )
