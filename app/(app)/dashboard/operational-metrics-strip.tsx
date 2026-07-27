@@ -5,36 +5,47 @@ import Link from "next/link"
 import {
   CheckCircle,
   CheckSquare,
+  Drop,
   Package,
+  Pulse,
   ShoppingCart,
   Truck,
   WarningCircle,
   Warehouse,
+  Wrench,
 } from "@phosphor-icons/react"
 import { cn } from "@/lib/utils"
 import type { DashboardMetric, DashboardQueuePreset } from "./dashboard-control-center"
 import { MiniSparkline } from "./dashboard-charts"
 
 const METRIC_ICON = {
-  tasks:      CheckCircle,
-  critical:   WarningCircle,
-  approvals:  CheckSquare,
-  receipts:   Truck,
-  deliveries: Warehouse,
-  stock:      Package,
-  investment: ShoppingCart,
-  rate:       CheckCircle,
+  tasks:           CheckCircle,
+  critical:        WarningCircle,
+  approvals:       CheckSquare,
+  receipts:        Truck,
+  deliveries:      Warehouse,
+  stock:           Package,
+  investment:      ShoppingCart,
+  rate:            CheckCircle,
+  sst_tf:          Pulse,
+  sst_tg:          WarningCircle,
+  env_events:      Drop,
+  material_damage: Wrench,
 } as const
 
 const SPARKLINE_COLOR: Record<string, string> = {
-  tasks:      "#2563eb",
-  critical:   "#dc2626",
-  approvals:  "#7c3aed",
-  receipts:   "#0891b2",
-  deliveries: "#16a34a",
-  stock:      "#d97706",
-  investment: "#0f172a",
-  rate:       "#16a34a",
+  tasks:           "#2563eb",
+  critical:        "#dc2626",
+  approvals:       "#7c3aed",
+  receipts:        "#0891b2",
+  deliveries:      "#16a34a",
+  stock:           "#d97706",
+  investment:      "#0f172a",
+  rate:            "#16a34a",
+  sst_tf:          "#2563eb",
+  sst_tg:          "#dc2626",
+  env_events:      "#0891b2",
+  material_damage: "#d97706",
 }
 
 /**
@@ -75,7 +86,7 @@ function MetricCell({ metric, index, total, onSelect }: {
   total: number
   onSelect: (preset: DashboardQueuePreset) => void
 }) {
-  const Icon = METRIC_ICON[metric.icon]
+  const Icon = METRIC_ICON[metric.icon] || CheckCircle
   const toneClass = metric.tone === "danger"
     ? "text-red-600"
     : metric.tone === "signal"

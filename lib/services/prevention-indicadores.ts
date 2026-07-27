@@ -878,3 +878,92 @@ export async function getMaterialEnvironmentalEvents(
     eventData,
   }
 }
+
+export interface IncidentAnalyticsData {
+  commonAccidents: Array<{ type: string; label: string; count: number }>
+  worksiteIncidents: Array<{ id: string; name: string; minor: number; medical: number; lostTime: number; serious: number; total: number }>
+  potentialSeverity: Array<{ severity: string; label: string; count: number }>
+}
+
+export async function getIncidentAnalyticsData(
+  year: number,
+  scope: WorksiteScope,
+): Promise<IncidentAnalyticsData> {
+  const worksitesVisible = await listVisibleWorksites(scope)
+  const ids = worksitesVisible.map((item) => item.id)
+  if (ids.length === 0) {
+    return { commonAccidents: [], worksiteIncidents: [], potentialSeverity: [] }
+  }
+
+  const effectiveScope: WorksiteScope = { mode: "some", ids }
+  const period = periodExpressions()
+  const incidentScope = scopeCondition(effectiveScope, preventionIncidents.worksiteId)
+
+  const rows = await db.select({
+    id: preventionIncidents.id,
+    worksiteId: preventionIncidents.worksiteId,
+    eventType: preventionIncidents.eventType,
+    actualSeverity: preventionIncidents.actualSeverity,
+    potentialSeverity: preventionIncidents.potentialSeverity,
+  }).from(preventionIncidents).where(and(
+    sql`${period.year} = ${year}`,
+    incidentScope,
+  ))
+
+  const EVENT_TYPE_LABELS: Record<string, string> = {
+    work_accident: "Accidente del trabajo",
+    commute_accident: "Accidente de trayecto",
+    dangerous_incident: "Incidente peligroso",
+    material_damage: "Daño material",
+    environmental_spill: "Daño/Derrame ambiental",
+    vehicle_event: "Evento vehicular",
+    suspected_occupational_disease: "Sospecha enf. profesional",
+    contractor_or_third_party: "Contratista / Tercero",
+  }
+
+  const POTENTIAL_SEVERITY_LABELS: Record<string, string> = {
+    low: "Bajo",
+    medium: "Medio",
+    high: "Alto",
+    critical: "Crítico",
+    fatal: "Fatal",
+  }
+
+  const typeCounts = new Map<string, number>()
+  const potentialCounts = new Map<string, number>()
+  const worksiteMap = new Map<string, { minor: number; medical: number; lostTime: number; serious: number; total: number }>()
+
+  for (const row of rows) {
+    typeCounts.set(row.eventType, (typeCounts.get(row.eventType) || 0) + 1)
+    potentialCounts.set(row.potentialSeverity, (potentialCounts.get(row.potentialSeverity) || 0) + 1)
+
+    if (!worksiteMap.has(row.worksiteId)) {
+      worksiteMap.set(row.worksiteId, { minor: 0, medical: 0, lostTime: 0, serious: 0, total: 0 })
+    }
+    const wsAcc = worksiteMap.get(row.worksiteId)!
+    wsAcc.total++
+    if (row.actualSeverity === "minor") wsAcc.minor++
+    else if (row.actualSeverity === "medical_treatment") wsAcc.medical++
+    else if (row.actualSeverity === "lost_time") wsAcc.lostTime++
+    else if (row.actualSeverity === "serious" || row.actualSeverity === "fatal") wsAcc.serious++
+  }
+
+  const commonAccidents = Array.from(typeCounts.entries()).map(([type, count]) => ({
+    type,
+    label: EVENT_TYPE_LABELS[type] || type,
+    count,
+  })).sort((a, b) => b.count - a.count)
+
+  const potentialSeverity = Array.from(potentialCounts.entries()).map(([severity, count]) => ({
+    severity,
+    label: POTENTIAL_SEVERITY_LABELS[severity] || severity,
+    count,
+  })).sort((a, b) => b.count - a.count)
+
+  const worksiteIncidents = worksitesVisible.map((ws) => {
+    const acc = worksiteMap.get(ws.id) || { minor: 0, medical: 0, lostTime: 0, serious: 0, total: 0 }
+    return { id: ws.id, name: ws.name, ...acc }
+  }).sort((a, b) => b.total - a.total)
+
+  return { commonAccidents, worksiteIncidents, potentialSeverity }
+}

@@ -8,6 +8,8 @@ import {
   BarChart,
   CartesianGrid,
   Cell,
+  Line,
+  LineChart,
   XAxis,
   YAxis,
 } from "recharts"
@@ -19,6 +21,7 @@ import {
   ChartTooltip,
   ChartTooltipContent,
 } from "@/components/ui/chart"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { formatCLP } from "@/lib/utils"
 import type { OperationalPeriodMetrics } from "@/lib/services/operational-period-metrics"
 import type { DashboardTask } from "./dashboard-control-center"
@@ -28,40 +31,96 @@ import type { DashboardTask } from "./dashboard-control-center"
 const trendChartConfig = {
   requests: {
     label: "Solicitudes",
-    color: "#2563eb", // blue-600
+    color: "#2563eb",
   },
   orders: {
     label: "OC Emitidas",
-    color: "#0891b2", // cyan-600
+    color: "#0891b2",
   },
   receipts: {
     label: "Recepciones",
-    color: "#16a34a", // green-600
+    color: "#16a34a",
   },
 } satisfies ChartConfig
 
 const workloadChartConfig = {
   count: {
     label: "Tareas Pendientes",
-    color: "#4f46e5", // indigo-600
+    color: "#4f46e5",
   },
 } satisfies ChartConfig
 
 const worksiteChartConfig = {
   totalCost: {
     label: "Inversión Acumulada",
-    color: "#0f172a", // slate-900
+    color: "#0f172a",
   },
 } satisfies ChartConfig
+
+const sstChartConfig = {
+  tasaFrecuencia: {
+    label: "Tasa de Frecuencia (TF)",
+    color: "#2563eb",
+  },
+  tasaGravedad: {
+    label: "Tasa de Gravedad (TG)",
+    color: "#dc2626",
+  },
+} satisfies ChartConfig
+
+const sstAccidentConfig = {
+  accConTiempoPerdido: {
+    label: "Accidentes CTP",
+    color: "#dc2626",
+  },
+  accSinTiempoPerdido: {
+    label: "Accidentes STP",
+    color: "#d97706",
+  },
+} satisfies ChartConfig
+
+const materialEnvConfig = {
+  dangerousIncidents: {
+    label: "Inc. Peligrosos",
+    color: "#7c3aed",
+  },
+  materialDamage: {
+    label: "Daño Material",
+    color: "#d97706",
+  },
+  environmentalSpills: {
+    label: "Daño Ambiental",
+    color: "#0891b2",
+  },
+} satisfies ChartConfig
+
+export interface SstMonthlyPoint {
+  month: string
+  tasaFrecuencia: number
+  tasaGravedad: number
+  accConTiempoPerdido: number
+  accSinTiempoPerdido: number
+}
+
+export interface MaterialEnvironmentalPoint {
+  month: string
+  dangerousIncidents: number
+  materialDamage: number
+  environmentalSpills: number
+}
 
 // ── Unified Analytics Section ─────────────────────────────────────────────────
 
 export function DashboardAnalyticsSection({
   periodMetrics,
   tasks,
+  sstPoints = [],
+  materialEnvPoints = [],
 }: {
   periodMetrics: OperationalPeriodMetrics
   tasks: DashboardTask[]
+  sstPoints?: SstMonthlyPoint[]
+  materialEnvPoints?: MaterialEnvironmentalPoint[]
 }) {
   const trendData = [
     {
@@ -80,34 +139,60 @@ export function DashboardAnalyticsSection({
 
   const hasTrendData = trendData.some((d) => d.requests > 0 || d.orders > 0 || d.receipts > 0)
   const hasWorkloadData = tasks.length > 0
+  const hasSstData = sstPoints.length > 0
+  const hasMaterialEnvData = materialEnvPoints.length > 0
 
-  // Evita renderizar contenedores vacíos gigantes que desbalanceen la simetría del lienzo.
-  if (!hasTrendData && !hasWorkloadData) {
+  if (!hasTrendData && !hasWorkloadData && !hasSstData && !hasMaterialEnvData) {
     return null
   }
 
-  return (
-    <div className="mt-6 grid gap-6 grid-cols-1 xl:grid-cols-2">
-      {hasTrendData ? (
+  const showTabs = hasSstData || hasMaterialEnvData
+
+  if (!showTabs) {
+    return (
+      <div className="mt-6 grid gap-6 grid-cols-1 xl:grid-cols-2">
         <OperationalTrendChart data={trendData} />
-      ) : (
-        <EmptyAnalyticsCard title="Tendencia Operativa Mensual" description="Se mostrará al registrar solicitudes u órdenes." />
-      )}
-
-      {hasWorkloadData ? (
         <ModuleWorkloadChart tasks={tasks} />
-      ) : (
-        <EmptyAnalyticsCard title="Distribución por Módulo" description="Sin tareas pendientes activas en la cola." />
-      )}
-    </div>
-  )
-}
+      </div>
+    )
+  }
 
-function EmptyAnalyticsCard({ title, description }: { title: string; description: string }) {
   return (
-    <div className="flex h-56 flex-col items-center justify-center rounded-2xl border border-slate-200/70 bg-white p-5 text-center shadow-xs">
-      <p className="text-xs font-bold text-slate-700 uppercase tracking-wider">{title}</p>
-      <p className="mt-1 text-xs text-slate-400 max-w-[28ch]">{description}</p>
+    <div className="mt-6 space-y-4">
+      <Tabs defaultValue="operativa" className="w-full">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-slate-100 pb-3">
+          <h2 className="text-sm font-bold text-slate-900">Analítica y Tendencias Operacionales</h2>
+          <TabsList className="bg-slate-100 p-1 rounded-xl">
+            <TabsTrigger value="operativa" className="text-xs">Flujo Operativo</TabsTrigger>
+            {hasSstData && <TabsTrigger value="sst" className="text-xs">Salud y Seguridad (SST)</TabsTrigger>}
+            {hasMaterialEnvData && <TabsTrigger value="ambiental" className="text-xs">Material y Ambiental</TabsTrigger>}
+          </TabsList>
+        </div>
+
+        <TabsContent value="operativa" className="mt-4">
+          <div className="grid gap-6 grid-cols-1 xl:grid-cols-2">
+            <OperationalTrendChart data={trendData} />
+            <ModuleWorkloadChart tasks={tasks} />
+          </div>
+        </TabsContent>
+
+        {hasSstData && (
+          <TabsContent value="sst" className="mt-4">
+            <div className="grid gap-6 grid-cols-1 xl:grid-cols-2">
+              <SstTrendChart data={sstPoints} />
+              <SstAccidentChart data={sstPoints} />
+            </div>
+          </TabsContent>
+        )}
+
+        {hasMaterialEnvData && (
+          <TabsContent value="ambiental" className="mt-4">
+            <div className="grid gap-6 grid-cols-1">
+              <MaterialEnvironmentalChart data={materialEnvPoints} />
+            </div>
+          </TabsContent>
+        )}
+      </Tabs>
     </div>
   )
 }
@@ -148,30 +233,9 @@ export function OperationalTrendChart({ data }: { data: Array<{ period: string; 
           <YAxis tickLine={false} axisLine={false} tickMargin={8} />
           <ChartTooltip content={<ChartTooltipContent indicator="dot" />} />
           <ChartLegend content={<ChartLegendContent />} />
-          <Area
-            type="monotone"
-            dataKey="requests"
-            stroke="#2563eb"
-            strokeWidth={2}
-            fillOpacity={1}
-            fill="url(#fillRequests)"
-          />
-          <Area
-            type="monotone"
-            dataKey="orders"
-            stroke="#0891b2"
-            strokeWidth={2}
-            fillOpacity={1}
-            fill="url(#fillOrders)"
-          />
-          <Area
-            type="monotone"
-            dataKey="receipts"
-            stroke="#16a34a"
-            strokeWidth={2}
-            fillOpacity={1}
-            fill="url(#fillReceipts)"
-          />
+          <Area type="monotone" dataKey="requests" stroke="#2563eb" strokeWidth={2} fillOpacity={1} fill="url(#fillRequests)" />
+          <Area type="monotone" dataKey="orders" stroke="#0891b2" strokeWidth={2} fillOpacity={1} fill="url(#fillOrders)" />
+          <Area type="monotone" dataKey="receipts" stroke="#16a34a" strokeWidth={2} fillOpacity={1} fill="url(#fillReceipts)" />
         </AreaChart>
       </ChartContainer>
     </div>
@@ -246,7 +310,95 @@ export function ModuleWorkloadChart({ tasks }: { tasks: DashboardTask[] }) {
   )
 }
 
-// ── 3. Worksite Activity Horizontal Bar Chart ─────────────────────────────────
+// ── 3. SST Trend Chart (Tasa Frecuencia y Tasa Gravedad) ─────────────────────
+
+export function SstTrendChart({ data }: { data: SstMonthlyPoint[] }) {
+  return (
+    <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs">
+      <div className="mb-3 flex items-center justify-between">
+        <div>
+          <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700">Tasas de Siniestralidad SST</h3>
+          <p className="text-xs text-slate-500">Tasa de Frecuencia (TF) y Tasa de Gravedad (TG) mensual</p>
+        </div>
+        <span className="inline-flex items-center rounded-md bg-blue-50 px-2 py-0.5 text-[10px] font-semibold text-blue-700">
+          Canónico SST
+        </span>
+      </div>
+
+      <ChartContainer config={sstChartConfig} className="h-48 w-full">
+        <LineChart data={data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+          <CartesianGrid strokeDasharray="3 3" vertical={false} />
+          <XAxis dataKey="month" tickLine={false} axisLine={false} tickMargin={8} />
+          <YAxis tickLine={false} axisLine={false} tickMargin={8} />
+          <ChartTooltip content={<ChartTooltipContent indicator="dot" />} />
+          <ChartLegend content={<ChartLegendContent />} />
+          <Line type="monotone" dataKey="tasaFrecuencia" stroke="#2563eb" strokeWidth={2} dot={{ r: 3 }} />
+          <Line type="monotone" dataKey="tasaGravedad" stroke="#dc2626" strokeWidth={2} dot={{ r: 3 }} />
+        </LineChart>
+      </ChartContainer>
+    </div>
+  )
+}
+
+// ── 4. SST Accident Breakdown Chart ──────────────────────────────────────────
+
+export function SstAccidentChart({ data }: { data: SstMonthlyPoint[] }) {
+  return (
+    <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs">
+      <div className="mb-3 flex items-center justify-between">
+        <div>
+          <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700">Accidentes CTP vs. STP</h3>
+          <p className="text-xs text-slate-500">Eventos con y sin tiempo perdido por mes</p>
+        </div>
+      </div>
+
+      <ChartContainer config={sstAccidentConfig} className="h-48 w-full">
+        <BarChart data={data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+          <CartesianGrid strokeDasharray="3 3" vertical={false} />
+          <XAxis dataKey="month" tickLine={false} axisLine={false} tickMargin={8} />
+          <YAxis tickLine={false} axisLine={false} tickMargin={8} allowDecimals={false} />
+          <ChartTooltip content={<ChartTooltipContent indicator="dot" />} />
+          <ChartLegend content={<ChartLegendContent />} />
+          <Bar dataKey="accConTiempoPerdido" fill="#dc2626" radius={[4, 4, 0, 0]} />
+          <Bar dataKey="accSinTiempoPerdido" fill="#d97706" radius={[4, 4, 0, 0]} />
+        </BarChart>
+      </ChartContainer>
+    </div>
+  )
+}
+
+// ── 5. Material & Environmental Chart ───────────────────────────────────────
+
+export function MaterialEnvironmentalChart({ data }: { data: MaterialEnvironmentalPoint[] }) {
+  return (
+    <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs">
+      <div className="mb-3 flex items-center justify-between">
+        <div>
+          <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700">Impacto Material y Ambiental</h3>
+          <p className="text-xs text-slate-500">Incidentes peligrosos, daños materiales y derrames ambientales</p>
+        </div>
+        <span className="inline-flex items-center rounded-md bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
+          Medio Ambiente & Operación
+        </span>
+      </div>
+
+      <ChartContainer config={materialEnvConfig} className="h-56 w-full">
+        <BarChart data={data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+          <CartesianGrid strokeDasharray="3 3" vertical={false} />
+          <XAxis dataKey="month" tickLine={false} axisLine={false} tickMargin={8} />
+          <YAxis tickLine={false} axisLine={false} tickMargin={8} allowDecimals={false} />
+          <ChartTooltip content={<ChartTooltipContent indicator="dot" />} />
+          <ChartLegend content={<ChartLegendContent />} />
+          <Bar dataKey="dangerousIncidents" fill="#7c3aed" radius={[4, 4, 0, 0]} />
+          <Bar dataKey="materialDamage" fill="#d97706" radius={[4, 4, 0, 0]} />
+          <Bar dataKey="environmentalSpills" fill="#0891b2" radius={[4, 4, 0, 0]} />
+        </BarChart>
+      </ChartContainer>
+    </div>
+  )
+}
+
+// ── 6. Worksite Activity Horizontal Bar Chart ─────────────────────────────────
 
 export function WorksiteActivityChart({
   worksites,
@@ -312,7 +464,7 @@ export function WorksiteActivityChart({
   )
 }
 
-// ── 4. Mini Sparkline Chart for KPI Indicators ─────────────────────────────────
+// ── 7. Mini Sparkline Chart for KPI Indicators ─────────────────────────────────
 
 export function MiniSparkline({
   data,

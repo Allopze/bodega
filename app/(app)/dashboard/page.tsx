@@ -23,6 +23,7 @@ import { getActivePdtpProgram, listPdtpPrograms } from "@/lib/services/preventio
 import { scopeToWorksiteIds } from "./dashboard-helpers"
 import { WorksiteActivityChart } from "./dashboard-charts"
 import { listEppCoverageGaps } from "@/lib/services/prevention-epp"
+import { getCanonicalSafetyIndicatorYear, getMaterialEnvironmentalEvents } from "@/lib/services/prevention-indicadores"
 import {
   DashboardControlCenter,
   type DashboardAlert,
@@ -109,16 +110,42 @@ export default async function DashboardPage() {
   // hora durante la hidratación.
   const refreshedAt = new Date().toISOString()
 
-  const [pdtpSummary, activeProgram, allPrograms] = await Promise.all([
+  const canViewIndicators = can(session, "prevention:indicadores:view")
+  const currentYear = new Date().getFullYear()
+
+  const [pdtpSummary, activeProgram, allPrograms, sstYearView, envEventsData] = await Promise.all([
     canViewPdtp
       ? loadPdtpComplianceSummary(pdtpScope)
       : Promise.resolve(null),
-    canViewPdtp ? getActivePdtpProgram(new Date().getFullYear()) : Promise.resolve(null),
+    canViewPdtp ? getActivePdtpProgram(currentYear) : Promise.resolve(null),
     canViewPdtp ? listPdtpPrograms() : Promise.resolve([]),
+    canViewIndicators
+      ? getCanonicalSafetyIndicatorYear(currentYear, worksiteScope).catch(() => null)
+      : Promise.resolve(null),
+    canViewIndicators
+      ? getMaterialEnvironmentalEvents(currentYear, worksiteScope).catch(() => null)
+      : Promise.resolve(null),
   ])
-  const currentYear = new Date().getFullYear()
   const hasNextYearProgram = allPrograms.some((p) => p.year === currentYear + 1)
   const shouldSuggestNextYear = activeProgram && !hasNextYearProgram && canManagePdtp
+
+  const MONTH_LABELS = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
+  const sstPoints = sstYearView?.groups.find((g) => g.worksiteId === "total")?.monthly.map((m, i) => {
+    return {
+      month: MONTH_LABELS[i] ?? `M${i + 1}`,
+      tasaFrecuencia: m.confirmed.frequencyRate ?? 0,
+      tasaGravedad: m.confirmed.severityRate ?? 0,
+      accConTiempoPerdido: m.confirmed.accidents ?? 0,
+      accSinTiempoPerdido: m.provisional.accidents ?? 0,
+    }
+  }) || []
+
+  const materialEnvPoints = envEventsData?.eventData.find((e) => e.worksiteId === "total")?.monthly.map((m) => ({
+    month: MONTH_LABELS[m.month - 1] ?? `M${m.month}`,
+    dangerousIncidents: m.dangerousIncidents,
+    materialDamage: m.materialDamage,
+    environmentalSpills: m.environmentalSpills,
+  })) || []
 
   const metrics = buildOperationalMetrics({
     tasks: queue.total,
@@ -178,6 +205,8 @@ export default async function DashboardPage() {
           metrics={metrics}
           alerts={alerts}
           periodMetrics={periodMetrics}
+          sstPoints={sstPoints}
+          materialEnvPoints={materialEnvPoints}
           mainSlot={
             <>
               <RecentActivity entries={activity} />
