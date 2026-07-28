@@ -99,18 +99,30 @@ describe("sidebar navigation", () => {
     expect(prevention?.items.map((item) => item.label)).toEqual([
       "Evaluaciones SST",
       "Para, Piensa y Actúa",
-      "Programa preventivo SG-SST",
+      "Programa de trabajo (PDTP)",
       "Documentación",
       "Indicadores de seguridad y salud en el trabajo",
       "Indicadores material y ambiental",
     ])
     expect(prevention?.items.map((item) => item.href)).not.toContain("/prevencion")
-    expect(prevention?.items.find((item) => item.href === "/prevencion/pdtp")?.children?.map((item) => item.label)).toEqual([
-      "Trabajo por eventos",
+
+    const pdtp = prevention?.items.find((item) => item.href === "/prevencion/pdtp")
+    expect(pdtp?.children?.map((item) => item.label)).toEqual([
+      "Programas",
       "Aprobaciones",
-      "Acciones correctivas",
+      "Acciones y seguimiento",
+      "Trabajo por eventos",
       "Cobertura MIPER y legal",
     ])
+    // El item padre ya lleva al dashboard: ningún hijo debe repetir su href, o el
+    // sidebar pinta la fila dos veces y resalta padre e hijo a la vez.
+    expect(pdtp?.children?.map((item) => item.href)).not.toContain("/prevencion/pdtp")
+    // Estas dos vistas quedaron sin entrada de navegación al consolidar el
+    // sidebar y no había ningún otro enlace hacia ellas en la aplicación.
+    expect(pdtp?.children?.map((item) => item.href)).toEqual(expect.arrayContaining([
+      "/prevencion/pdtp/obligaciones",
+      "/prevencion/pdtp/cobertura",
+    ]))
   })
 
   it("hides the Prevención area when no prevention module is visible", () => {

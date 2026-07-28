@@ -172,6 +172,39 @@ describe("prevention module RBAC", () => {
     ])
   })
 
+  it("gives campaigns and obligation cancellation their own permissions", () => {
+    const rolesFor = (permission: string) => preventionModule.defaultGrants
+      .filter((grant) => grant.permission === permission)
+      .map((grant) => grant.roleSlug)
+      .sort()
+
+    // Las campañas se autorizaban con `prevention:pdtp:program:manage`, el
+    // permiso para editar el programa anual: quien corre una campaña en faena no
+    // debería poder reescribir el PDTP para conseguirlo.
+    for (const permission of ["prevention:campaign:view", "prevention:campaign:manage"]) {
+      expect(preventionModule.permissions).toContain(permission)
+      expect(Object.keys(preventionModule.permissionMeta)).toContain(permission)
+      expect(ALL_MODULE_PERMISSIONS).toContain(permission)
+    }
+    expect(rolesFor("prevention:campaign:manage")).toEqual([
+      "administrador",
+      "prevencionista",
+      "prevencionista_faena",
+    ])
+
+    // Cancelar una necesidad compartía `prevention:pdtp:execute` con reportarla:
+    // reportar es trabajo de terreno, anular el compromiso es gestión.
+    expect(preventionModule.permissions).toContain("prevention:pdtp:obligation:cancel")
+    expect(Object.keys(preventionModule.permissionMeta)).toContain("prevention:pdtp:obligation:cancel")
+    expect(ALL_MODULE_PERMISSIONS).toContain("prevention:pdtp:obligation:cancel")
+    expect(rolesFor("prevention:pdtp:obligation:cancel")).toEqual([
+      "administrador",
+      "prevencionista",
+    ])
+    expect(rolesFor("prevention:pdtp:obligation:cancel"))
+      .not.toEqual(rolesFor("prevention:pdtp:execute"))
+  })
+
   it("separates document preparation from approval/publication and restricts sensitive files", () => {
     const rolesFor = (permission: string) => preventionModule.defaultGrants
       .filter((grant) => grant.permission === permission)

@@ -12,12 +12,12 @@ export async function clearRateLimits() {
   }
 }
 
-/** Log in as the E2E admin user and verify we land on dashboard. */
-export async function login(page: Page) {
+/** Log in as an E2E user (admin by default) and verify we land on dashboard. */
+export async function login(page: Page, email = "admin@e2e.chome.cl", password = "chome2026") {
   await clearRateLimits()
   await page.goto("/login")
-  await page.getByLabel("Correo electrónico").fill("admin@e2e.chome.cl")
-  await page.getByLabel("Contraseña").fill("chome2026")
+  await page.getByLabel("Correo electrónico").fill(email)
+  await page.getByLabel("Contraseña").fill(password)
   await page.getByRole("button", { name: "Ingresar" }).click()
   await expect(page).toHaveURL(/\/dashboard/)
 }

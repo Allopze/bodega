@@ -136,12 +136,17 @@ async function main() {
     { id: "p-prev-pdtp-view", name: "prevention:pdtp:view", module: "prevention", description: "Ver Programa de Trabajo Preventivo SG-SST" },
     { id: "p-prev-pdtp-execute", name: "prevention:pdtp:execute", module: "prevention", description: "Registrar ejecuciones y evidencias PDTP en faenas autorizadas" },
     { id: "p-prev-pdtp-program-manage", name: "prevention:pdtp:program:manage", module: "prevention", description: "Gestionar catálogo, cronograma y metas por faena del PDTP" },
+    { id: "p-prev-pdtp-submit-review", name: "prevention:pdtp:submit_review", module: "prevention", description: "Enviar el PDTP a revisión" },
     { id: "p-prev-pdtp-approve", name: "prevention:pdtp:approve", module: "prevention", description: "Aprobar el PDTP como jefatura de prevención" },
     { id: "p-prev-pdtp-sign-legal", name: "prevention:pdtp:sign_legal", module: "prevention", description: "Firmar el PDTP como Gerencia Legal" },
+    { id: "p-prev-pdtp-activate", name: "prevention:pdtp:activate", module: "prevention", description: "Activar una versión revisada del PDTP" },
+    { id: "p-prev-pdtp-lifecycle-manage", name: "prevention:pdtp:lifecycle:manage", module: "prevention", description: "Reabrir o archivar versiones del PDTP" },
     { id: "p-prev-pdtp-cl-manage", name: "prevention:pdtp:checklist:manage", module: "prevention", description: "Crear/editar plantillas de checklist del PDTP" },
     { id: "p-prev-pdtp-cl-fill", name: "prevention:pdtp:checklist:fill", module: "prevention", description: "Llenar checklist en una ejecución del PDTP" },
     { id: "p-prev-pdtp-ap-manage", name: "prevention:pdtp:action:manage", module: "prevention", description: "Crear/editar acciones y seguimiento del plan de acción PDTP" },
     { id: "p-prev-pdtp-ap-verify", name: "prevention:pdtp:action:verify", module: "prevention", description: "Verificar cierre de acciones del plan de acción PDTP" },
+    { id: "p-prev-pdtp-obligation-cancel", name: "prevention:pdtp:obligation:cancel", module: "prevention", description: "Cancelar obligaciones PDTP por necesidad o evento" },
+    { id: "p-prev-pdtp-override-manage", name: "prevention:pdtp:override:manage", module: "prevention", description: "Gestionar excepciones/overrides de actividades PDTP" },
     { id: "p-adm-epp-up", name: "admin:epp_import_upload", module: "admin", description: "Cargar archivos de importación EPP" },
     { id: "p-adm-epp-rv", name: "admin:epp_import_review", module: "admin", description: "Revisar y resolver importaciones EPP" },
     { id: "p-adm-epp-cf", name: "admin:epp_import_confirm", module: "admin", description: "Confirmar importaciones EPP" },
@@ -783,6 +788,61 @@ async function main() {
     week: 1,
     executedQuantity: 1,
     status: "submitted",
+    createdAt: now,
+    updatedAt: now,
+  })
+  // Ejecuciones dedicadas para e2e/pdtp-lifecycle-approvals.spec.ts: no
+  // reutilizan pdtp-exec-e2e porque ese fixture lo consume el flujo de
+  // checklist de e2e/pdtp-flow.spec.ts y aprobar/rechazar lo dejaría en un
+  // estado que podría romper ese otro test según el orden de ejecución.
+  await db.insert(schema.pdtpExecutions).values([
+    {
+      id: "pdtp-exec-approve-e2e",
+      activityId: "pdtp-act-e2e",
+      worksiteId: "ws-e2e",
+      year: 2026,
+      month: 7,
+      week: 2,
+      executedQuantity: 1,
+      status: "submitted",
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: "pdtp-exec-reject-e2e",
+      activityId: "pdtp-act-e2e",
+      worksiteId: "ws-e2e",
+      year: 2026,
+      month: 7,
+      week: 3,
+      executedQuantity: 1,
+      status: "submitted",
+      createdAt: now,
+      updatedAt: now,
+    },
+  ])
+  // Actividad "por evento" confirmada para e2e/pdtp-obligaciones.spec.ts:
+  // la actividad pdtp-act-e2e es "scheduled", así que sin esta segunda
+  // actividad el botón "Registrar necesidad o evento" queda siempre
+  // deshabilitado (listPdtpDemandActivities exige scheduleMode
+  // on_demand/triggered + scheduleClassificationStatus confirmed).
+  await db.insert(schema.pdtpActivities).values({
+    id: "pdtp-act-event-e2e",
+    programId: "pdtp-prog-e2e",
+    n: 2,
+    objectiveOrder: 2,
+    objective: "Objetivo Eventos E2E",
+    activity: "Inducción a trabajador nuevo E2E",
+    program: "Programa E2E",
+    responsibleSlugs: [],
+    responsibleDisplay: "Prevencionista",
+    scheduleMode: "triggered",
+    triggerType: "evento_operacional",
+    triggerDescription: "Ingreso de un trabajador nuevo",
+    dueDays: 5,
+    evidenceRequirement: "Registro de inducción firmado",
+    indicatorMode: "closed_on_time",
+    sourceSheetRow: 2,
     createdAt: now,
     updatedAt: now,
   })

@@ -23,6 +23,15 @@ const mockDbUpdate = vi.hoisted(() => vi.fn(() => ({ set: vi.fn(() => ({ where: 
 const mockNotifyAfterCommit = vi.hoisted(() => vi.fn((fn: () => Promise<unknown>) => fn()))
 const mockNotifySafe = vi.hoisted(() => vi.fn())
 
+/**
+ * `updateDeliveryModeAction` corre dentro de `db.transaction` con
+ * `SELECT … FOR UPDATE`. Cada `tx.select()` consume el siguiente lote de esta
+ * cola: primero la solicitud, después sus ítems. La cadena es un thenable, así
+ * que sirve tanto para `.where().for("update")` como para `.where()` a secas.
+ */
+const mockTxSelectQueue = vi.hoisted(() => [] as unknown[][])
+const mockTransaction = vi.hoisted(() => vi.fn())
+
 vi.mock("@/lib/auth/can", () => ({
   requirePermission: mockRequirePermission,
   canAccessWorksite: mockCanAccessWorksite,
@@ -34,6 +43,7 @@ vi.mock("@/db", () => ({
       purchaseRequests: { findFirst: mockFindFirstRequest },
     },
     update: mockDbUpdate,
+    transaction: mockTransaction,
   },
 }))
 vi.mock("@/lib/services/item-state", () => ({
@@ -49,6 +59,24 @@ vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), revalidateTag: vi.fn() }
 
 import { approveItemAction, rejectItemAction, returnItemAction, updateDeliveryModeAction } from "@/app/(app)/aprobaciones/actions"
 import type { ActionState } from "@/lib/validation/operations"
+
+function txSelectChain(rows: unknown[]) {
+  const chain = {
+    from: () => chain,
+    where: () => chain,
+    for: () => Promise.resolve(rows),
+    then: (onOk: (value: unknown) => unknown, onErr?: (reason: unknown) => unknown) =>
+      Promise.resolve(rows).then(onOk, onErr),
+  }
+  return chain
+}
+
+mockTransaction.mockImplementation(async (run: (tx: unknown) => Promise<unknown>) =>
+  run({
+    select: () => txSelectChain(mockTxSelectQueue.shift() ?? []),
+    update: mockDbUpdate,
+  }),
+)
 
 const prevState: ActionState = { ok: false, message: "" }
 
@@ -337,6 +365,10 @@ describe("updateDeliveryModeAction", () => {
     mockCanAccessWorksite.mockReturnValue(true)
     mockFindFirstRequest.mockResolvedValue({ id: "req-1", worksiteId: "ws-1" })
     mockDbUpdate.mockClear()
+    // La solicitud primero, sus ítems después: el orden en que la acción llama a
+    // `tx.select()`. Ningún ítem está en OC, así que el cambio de modo procede.
+    mockTxSelectQueue.length = 0
+    mockTxSelectQueue.push([{ id: "req-1", worksiteId: "ws-1" }], [{ status: "pending" }])
   })
 
   it("persists directo_faena for an approver role", async () => {
@@ -362,6 +394,31 @@ describe("updateDeliveryModeAction", () => {
     const fd = new FormData()
     fd.set("requestId", "req-1")
     fd.set("mode", "directo_faena")
+    const res = await updateDeliveryModeAction(prevState, fd)
+    expect(res.ok).toBe(false)
+    expect(mockDbUpdate).not.toHaveBeenCalled()
+  })
+
+  // Es la regla por la que la acción pasó a correr en transacción con
+  // SELECT … FOR UPDATE: cambiar el modo de despacho cuando la compra ya salió
+  // dejaría la OC apuntando a un destino distinto del comprometido.
+  it("rejects the change when an item is already in a purchase order", async () => {
+    mockTxSelectQueue.length = 0
+    mockTxSelectQueue.push([{ id: "req-1", worksiteId: "ws-1" }], [{ status: "in_purchase_order" }])
+    const fd = new FormData()
+    fd.set("requestId", "req-1")
+    fd.set("mode", "directo_faena")
+    const res = await updateDeliveryModeAction(prevState, fd)
+    expect(res.ok).toBe(false)
+    expect(res.message).toMatch(/Orden de Compra/i)
+    expect(mockDbUpdate).not.toHaveBeenCalled()
+  })
+
+  it("rejects the change when the request is outside the user's worksite scope", async () => {
+    mockCanAccessWorksite.mockReturnValue(false)
+    const fd = new FormData()
+    fd.set("requestId", "req-1")
+    fd.set("mode", "via_oficina")
     const res = await updateDeliveryModeAction(prevState, fd)
     expect(res.ok).toBe(false)
     expect(mockDbUpdate).not.toHaveBeenCalled()

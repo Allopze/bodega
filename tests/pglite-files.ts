@@ -28,6 +28,7 @@ export const pgliteTestFiles = [
   "lib/__tests__/notification-permission-targeting.test.ts",
   "lib/__tests__/notification-service.test.ts",
   "lib/__tests__/operational-assignments.test.ts",
+  "lib/__tests__/pdtp-coverage-r2.test.ts",
   "lib/__tests__/pdtp-coverage-sources.test.ts",
   "lib/__tests__/pdtp-evidence-gc.test.ts",
   "lib/__tests__/pdtp-reminders-dedup.test.ts",

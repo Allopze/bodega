@@ -100,6 +100,9 @@ describe("submitRequest (solicitudes)", () => {
       requesterId: "user-1",
       requestType: "epp",
       code: "SOL-2026-0001",
+      // submit.ts exige fecha requerida en los ítems o en la solicitud, y esa
+      // comprobación corre antes que las de propiedad y acceso a faena.
+      requiredDate: "2026-08-15",
       items: [{ id: "item-1", status: "draft" }],
     })
     mockSubmitItemTx.mockResolvedValue(undefined)
@@ -168,11 +171,44 @@ describe("submitRequest (solicitudes)", () => {
       requesterId: "other-user",
       requestType: "epp",
       code: "SOL-2026-0001",
+      requiredDate: "2026-08-15",
       items: [{ id: "item-1", status: "draft" }],
     })
     const res = await submitRequest(prevState, makeFormData())
     expect(res.ok).toBe(false)
     expect(res.message).toMatch(/propia/i)
+  })
+
+  it("returns error if neither the items nor the request carry a required date", async () => {
+    mockAuthFn.mockResolvedValueOnce(makeSession())
+    mockFindFirst.mockResolvedValueOnce({
+      id: "req-1",
+      status: "draft",
+      worksiteId: "ws-1",
+      requesterId: "user-1",
+      requestType: "epp",
+      code: "SOL-2026-0001",
+      requiredDate: null,
+      items: [{ id: "item-1", status: "draft", requiredDate: null }],
+    })
+    const res = await submitRequest(prevState, makeFormData())
+    expect(res.ok).toBe(false)
+    expect(res.message).toMatch(/fecha requerida/i)
+  })
+
+  it("accepts the request when only the items carry a required date", async () => {
+    mockAuthFn.mockResolvedValueOnce(makeSession())
+    mockFindFirst.mockResolvedValueOnce({
+      id: "req-1",
+      status: "draft",
+      worksiteId: "ws-1",
+      requesterId: "user-1",
+      requestType: "epp",
+      code: "SOL-2026-0001",
+      requiredDate: null,
+      items: [{ id: "item-1", status: "draft", requiredDate: "2026-08-15" }],
+    })
+    await expect(submitRequest(prevState, makeFormData())).rejects.toThrow("NEXT_REDIRECT")
   })
 
   it("returns error if request type is not supported", async () => {

@@ -131,6 +131,13 @@ describe("operational work assignments", () => {
   })
 
   it("returns only permitted activity before limiting and keeps the actor snapshot", async () => {
+    // `recordOperationalActivity` no setea `occurredAt`: lo pone el default de la
+    // columna, o sea la hora real. Los tests de arriba dejan eventos con fecha de
+    // hoy, y como este ordena por occurredAt desc con limit 1, esos eventos le
+    // ganaban a los fixtures de fecha fija y el test empezó a fallar solo al
+    // cruzarse la fecha. Se parte de la tabla vacía para no depender del reloj.
+    await inMemoryDb.delete(schema.operationalActivityEvents)
+
     await inMemoryDb.insert(schema.operationalActivityEvents).values([
       {
         id: nanoid(), eventType: "ppa.evaluated", module: "ppa", entityType: "ppa", entityId: nanoid(),
