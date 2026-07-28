@@ -1,52 +1,53 @@
-# Flota y mantenciones
+# Control Operacional: Flota y Mantenciones
 
-## Flota
+Las pantallas `Flota` y `Mantenciones` (ubicadas dentro del menú *Control Operacional*) permiten gestionar el parque de vehículos y maquinarias de la empresa, su ficha técnica, historial de costos y mantenimiento preventivo/correctivo.
 
-La pantalla `Flota` muestra el catalogo operativo de vehiculos, costos,
-combustible, mantenciones e imputaciones.
+## 1. Módulo de Flota (`/flota`)
 
-- Usa `Gestionar vehiculos` para ir a la administracion de vehiculos de
-  combustibles.
-- Haz clic en cualquier fila de vehiculo para ver el detalle. Las columnas de
-  kilometraje, costo por distancia y ultima mantencion solo aparecen cuando hay
-  datos para mostrarlas.
-- En el detalle puedes revisar documentos y antecedentes del vehiculo.
+La pantalla `Flota` muestra el catálogo maestro de vehículos, camionetas, maquinaria pesada y equipos menores.
 
-### Como registrar un vehiculo
+### Información del vehículo
 
-1. Entra a `Flota`.
-2. Pulsa `Gestionar vehiculos`.
-3. En `Combustibles > Vehiculos`, pulsa `Nuevo vehículo`.
-4. Completa patente y datos del vehiculo.
-5. Guarda.
+- **Datos generales**: Patente/Identificador, marca, modelo, año, número de chasis/VIN y tipo de equipo.
+- **Asignación operacional**: Faena asignada, centro de costo e imputación.
+- **Indicadores de uso**: Último kilometraje u horómetro registrado, costo operacional acumulado y consumo medio de combustible.
+- **Documentación del vehículo**: Revisión técnica, permiso de circulación, seguro obligatorio (SOAP) y padrón.
 
-## Mantenciones
+### Cómo registrar un nuevo vehículo
 
-La pantalla `Mantenciones` se usa para planificar y registrar mantenciones de
-vehiculos.
+1. Abre el menú lateral y selecciona `Control Operacional > Flota`.
+2. Presiona el botón `Nuevo vehículo` o `Gestionar vehículos`.
+3. Completa los datos requeridos (Patente, tipo de equipo, faena, capacidad de estanque y rendimiento esperado).
+4. Presiona `Guardar vehículo`.
 
-- Al entrar ves primero el historial y los filtros; la creacion esta en el
-  boton `Nueva mantención` de la barra superior.
-- Filtra por estado o por vehiculo.
-- En la tabla puedes editar o cancelar una mantencion si tu rol lo permite.
+---
 
-### Como registrar una mantencion
+## 2. Módulo de Mantenciones (`/mantenciones`)
 
-1. Abre `Mantenciones`.
-2. Pulsa `Nueva mantención` (barra superior). Se abre un panel de registro.
-3. Elige vehiculo, proveedor, faena y centro de costo cuando corresponda.
-4. Completa fecha, tipo de servicio, kilometraje, horometro y observaciones.
-5. Guarda el registro. El panel queda abierto con los valores para registrar
-   otra mantencion si corresponde.
+La pantalla `Mantenciones` se utiliza para planificar, registrar y hacer seguimiento a los trabajos de mantenimiento preventivo, correctivo y pautas de servicio de la flota.
 
-## Como trabajar entre ambas pantallas
+### Tipos de mantenciones
 
-- Si agregas un vehiculo nuevo en `Combustibles > Vehiculos`, luego podras
-  verlo en `Flota`, usarlo en cargas y registrarle mantenciones.
-- Si un vehiculo cambia de estado, actualiza primero su ficha y despues la
-  mantencion correspondiente.
+- **Preventiva**: Revisiones periódicas por pauta de kilometraje u horas de motor (ej. *10.000 km*, *250 hrs*).
+- **Correctiva**: Reparación de fallas mecánicas, eléctricas o estructurales detectadas en terreno.
+- **Emergencia**: Intervenciones no programadas ante detención del equipo.
 
-## Consejo practico
+### Cómo registrar una mantención
 
-Usa `Flota` para la ficha del vehiculo y `Mantenciones` para lo que le pasa al
-vehiculo en el tiempo. Son pantallas distintas, pero se complementan.
+1. Ingresa a `Control Operacional > Mantenciones`.
+2. En la barra de acciones superior, presiona `Nueva mantención`.
+3. Se desplegará el panel de registro:
+   - Selecciona el **Vehículo** por patente o número interno.
+   - Indica el **Taller / Proveedor de servicio** responsable.
+   - Asigna la **Faena** y el **Centro de Costo** al que se imputará el gasto.
+   - Especifica fecha, tipo de mantención, kilometraje u horómetro al momento del ingreso.
+   - Escribe el detalle de las labores realizadas o repuestos sustituidos.
+   - Indica el valor total de la prestación si aplica.
+4. Presiona `Guardar mantención`.
+
+---
+
+## Coordinación entre Flota, Mantenciones y Combustibles
+
+- **Historial consolidado**: Al ingresar a la ficha de un vehículo en `Flota`, podrás revisar el historial completo de mantenciones efectuadas y las cargas de combustible registradas en `Combustibles`.
+- **Actualización de lectura**: Cada vez que se registra una mantención o una carga de combustible, la lectura de odómetro o horómetro del vehículo en `Flota` se actualiza automáticamente.

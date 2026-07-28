@@ -1,25 +1,23 @@
-# Combustibles
+# Control Operacional: Combustibles
 
-Indice de la seccion:
+El módulo de `Combustibles` (ubicado dentro de la sección *Control Operacional*) gestiona el registro de cargas, control de consumo, conciliación bancaria/operativa, auditoría de anomalías y costos por vehículo y faena.
 
-- [Cargas](./combustibles/cargas.md)
-- [Vehiculos](./combustibles/vehiculos.md)
-- [Proveedores de combustible](./combustibles/proveedores.md)
-- [Cuenta corriente](./combustibles/cuenta-corriente.md)
-- [Reportes](./combustibles/reportes.md)
+## Sub-módulos y funcionalidades
 
-La seccion de combustibles registra cargas, consumos, importaciones y reportes.
+- [Bitácora e Importación de cargas](./combustibles/cargas.md): Registro individual e importación masiva de vouchers de combustible.
+- [Vehículos y rendimiento](./combustibles/vehiculos.md): Ficha de equipos, capacidad de estanque y rendimiento esperado (km/l u hora/l).
+- [Conciliación TAE](./combustibles/tae.md): Conciliación de cartolas electrónicas de proveedores (Copec, Shell, Enex).
+- [Detección de anomalías](./combustibles/anomalias.md): Reglas de alerta ante exceso de estanque, odómetro inconsistente o cargas sospechosas.
+- [Facturas de combustible](./combustibles/facturas.md): Asociación de documentos tributarios con vales y guías recibidas.
+- [Control de sellos](./combustibles/sellos.md): Custodia y trazabilidad de precintos numerados de seguridad en estanques.
+- [Proveedores de combustible](./combustibles/proveedores.md): Catálogo de distribuidores y precios pactados.
+- [Cuenta corriente](./combustibles/cuenta-corriente.md): Control de saldos y créditos por estación de servicio.
+- [Reportes de combustible](./combustibles/reportes.md): Consolidado de consumo, costos por centro de costo y exportación a Excel.
 
-## La pantalla principal tiene tres pestañas
+## Organización de la pantalla principal
 
-Al entrar a `Combustibles` ves el estado del combustible y los filtros de
-periodo/faena, y debajo tres pestañas:
+Al entrar a `Combustibles` verás los filtros superiores de **Periodo**, **Faena** y **Tipo de vehículo**, junto a tres pestañas de navegación:
 
-- **Resumen**: el uso diario. Indicadores del periodo, tendencia y precio, y
-  alertas. Incluye un enlace directo `Ver registros del periodo`.
-- **Análisis**: los graficos profundos (consumo por tipo de equipo,
-  dispersion, evolucion por equipo, matriz faena x equipo, anomalias y
-  rankings de patentes).
-- **Registros**: la tabla detallada de cargas, con paginacion.
-
-Los filtros de arriba se comparten entre las tres pestañas.
+1. **Resumen**: Indicadores clave de rendimiento (KPIs), gasto total en litros/pesos, tendencia diaria y alertas activas.
+2. **Análisis**: Gráficos interactivos de consumo por faena, dispersión de eficiencia, evolución por equipo y ranking de rendimiento por patente.
+3. **Registros**: Bitácora paginada con el detalle completo de cargas.

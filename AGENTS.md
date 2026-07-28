@@ -296,7 +296,17 @@ repitas la misma cifra en dos controles.
 # Form, export and date formatting standards
 
 ## 1. Form Operation Pattern (`useOperation` & `Field`)
-- Use `useOperation` from `@/lib/hooks/use-operation` for form submissions with `useTransition` and user feedback.
+
+**Elige el hook por el mecanismo de envío, no por "es un formulario":**
+
+| Caso | Hook | Por qué |
+|------|------|---------|
+| `<form action={serverAction}>` | `useActionState` | Es el idioma de React 19 y conserva la mejora progresiva (el form funciona sin JS). |
+| Handler imperativo (`onClick`, confirmación en un `ConfirmDialog`, envío desde un `onChange`) | `useOperation` | No hay `<form>` que envíe; el hook aporta `pending` + `message` sin cablear `useTransition` a mano. |
+
+- `useOperation` viene de `@/lib/hooks/use-operation` y expone `{ pending, message, setMessage, run }`.
+- No conviertas un `<form action={...}>` a `useOperation`: pierde mejora progresiva y no gana nada.
+- Al revés sí importa: si usas `useActionState` fuera de un `<form>` y descartas el resultado (`const [, action] = …`), los errores quedan invisibles para el usuario.
 - ALWAYS use `Field` from `@/components/ui/field` for input wrappers (with accessible `Label`, `error`, `helper`/`hint` support). Never create local `form-kit.tsx` files or unaccessible `<label>` wrappers.
 - Use `toLocalInputValue` from `@/lib/utils` for formatting local Date objects in `<input type="datetime-local">`.
 

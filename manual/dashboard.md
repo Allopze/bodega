@@ -1,33 +1,32 @@
-# Dashboard
+# Dashboard y Mis Pendientes
 
-El Dashboard es la pantalla de inicio. Resume el trabajo pendiente y te da
-accesos rapidos a las tareas mas frecuentes.
+El `Dashboard` es la pantalla de inicio principal de la plataforma. Resume el trabajo pendiente y entrega accesos directos a las tareas más frecuentes según tu rol.
 
-## Que puedes hacer aqui
+## Qué puedes hacer aquí
 
-- Ver las tareas pendientes del dia.
-- Abrir accesos rapidos a aprobaciones, compras, recepcion y bodega.
-- Revisar el estado general de tu trabajo.
-- Ver un resumen del programa preventivo, si tu rol tiene acceso.
+- Ver las tareas pendientes del día.
+- Abrir accesos rápidos a Solicitudes, Aprobaciones, Compras, Recepción y Bodega.
+- Revisar el estado general de tu trabajo y faenas asignadas.
+- Ver un resumen del programa preventivo, si tu rol tiene permisos de Prevención.
 
-## Como usarlo
+---
 
-1. Entra a la plataforma y revisa el saludo inicial.
-2. Mira la barra de indicadores en la parte superior.
-3. Si tienes pendientes, usa el boton `Ver tareas` para ir a la cola de trabajo.
-4. Usa los accesos rapidos para saltar a la pantalla que necesites.
-5. Si quieres retomar algo urgente, abre primero `Aprobaciones`, `Compras` o
-   `Recepcion`.
+## Mis Pendientes (`/pendientes`)
 
-## Que significan los bloques principales
+La pantalla `Mis Pendientes` (accesible desde el Dashboard o la barra superior) es la **bandeja de entrada unificada de tareas operacionales** de tu cuenta.
 
-- **Cola de trabajo**: lista de tareas que requieren una accion.
-- **Actividad por faena**: resumen de solicitudes, aprobaciones y compras por
-  faena.
-- **Programa de Trabajo Preventivo**: aparece solo para usuarios con permiso
-  de prevencion.
+### Para qué sirve
 
-## Consejo practico
+- Concentra en un solo lugar todas las acciones que requieren tu intervención o firma, filtradas por tus faenas y permisos asignados:
+  - **Aprobaciones pendientes** de solicitudes de compra.
+  - **Recepciones pendientes** de órdenes de compra llegadas a bodega.
+  - **Entregas pendientes** de EPP o materiales a trabajadores.
+  - **Actividades vencidas o por vencer** del Programa Preventivo SG-SST.
+  - **Acciones CAPA** o incidentes asignados para investigación/cierre.
 
-Si no sabes por donde empezar, entra al Dashboard y abre la tarea con el
-indicador mas alto. Ese suele ser el siguiente paso que espera el sistema.
+### Cómo usarla
+
+1. Presiona el botón `Mis pendientes` en la cabecera o el banner de tareas.
+2. Revisa la lista priorizada de compromisos.
+3. Haz clic sobre cualquier tarea para ir directamente a la pantalla de resolución.
+4. Una vez procesada la acción, la tarea se removerá automáticamente de tu bandeja de pendientes.
