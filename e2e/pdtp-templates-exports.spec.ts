@@ -28,11 +28,13 @@ test.describe("PDTP — Dashboard, plantillas e importación/exportación", () =
   test("la página reubicada del listado de programas (/prevencion/pdtp/programas) carga correctamente", async ({ page }) => {
     await page.goto("/prevencion/pdtp/programas")
 
-    // Page header del listado o redirección si hay único programa
-    const hasHeading = await page.getByRole("heading", { name: /Listado de programas preventivos/ }).isVisible().catch(() => false)
-    const hasProgramDetail = await page.getByRole("heading", { name: /Programa/ }).isVisible().catch(() => false)
-
-    expect(hasHeading || hasProgramDetail).toBeTruthy()
+    // Page header del listado o redirección si hay único programa. Antes se
+    // comprobaba con isVisible().catch() sin esperar — un chequeo puntual,
+    // no reintentado — lo que flaqueaba bajo carga (workers concurrentes)
+    // porque corría antes de que el encabezado terminara de renderizar.
+    const listHeading = page.getByRole("heading", { name: /Listado de programas preventivos/ })
+    const programHeading = page.getByRole("heading", { name: /Programa/ })
+    await expect(listHeading.or(programHeading)).toBeVisible()
   })
 
   test("la página de plantillas carga correctamente", async ({ page }) => {

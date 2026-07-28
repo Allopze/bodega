@@ -377,7 +377,10 @@ describe("prevention PDTP service", () => {
       acceptMissingEvidence: true,
       acceptanceReason: "Intento desde alcance ajeno de prueba",
       scope: ["ws-other"],
-    })).rejects.toThrow(/sin acceso/i)
+      // La importación tiene mensaje propio (el genérico de assertWorksiteAccess
+      // es ambiguo a propósito para no filtrar existencia, pero acá el usuario
+      // eligió de su propia lista de faenas).
+    })).rejects.toThrow(/no tienes esa faena autorizada/i)
     const applied = await applyPdtpImportBatch({
       batchId: staged.batch.id,
       userId: "user-1",
@@ -768,6 +771,13 @@ describe("prevention PDTP service", () => {
 
     // Falla cerrado: sin faenas explícitas no hay agregado.
     expect(await getPdtpComplianceIndicatorsForScope(2026, [])).toBeNull()
+
+    // El desglose por faena viaja junto al agregado: el tablero necesita las dos
+    // cosas y antes recalculaba el indicador una vez por faena en un segundo
+    // round-trip, además de mostrar 0 % al no elegir faena.
+    expect(scoped!.perWorksite.map((entry) => entry.worksiteId)).toEqual(["ws-1", "ws-2"])
+    expect(scoped!.perWorksite[0]!.indicators!.annual.executed).toBe(3)
+    expect(scoped!.perWorksite[1]!.indicators!.annual.executed).toBe(2)
   })
 
   it("aplica la regla de dotación CPHS (<25 excluye 11-14) y el cumplimiento respeta la exclusión (R4)", async () => {
@@ -2133,7 +2143,7 @@ describe("prevention PDTP service", () => {
       acceptMissingEvidence: true,
       acceptanceReason: "Intento controlado con una faena ajena",
       scope: ["ws-1"],
-    })).rejects.toThrow(/sin acceso/i)
+    })).rejects.toThrow(/no tienes esa faena autorizada/i)
     expect(await inMemoryDb.select().from(schema.pdtpActivities).where(eq(schema.pdtpActivities.programId, program.id))).toHaveLength(1)
 
     const applied = await applyPdtpImportBatch({

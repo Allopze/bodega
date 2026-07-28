@@ -21,7 +21,7 @@ test.describe("PDTP — Ciclo de vida y aprobaciones", () => {
     await expect(page.getByRole("heading", { name: "Aprobaciones PDTP" })).toBeVisible()
 
     // Breadcrumbs
-    await expect(page.getByRole("link", { name: "Programa preventivo SG-SST" })).toBeVisible()
+    await expect(page.getByRole("link", { name: "Programa de trabajo (PDTP)" })).toBeVisible()
   })
 
   test("la página de aprobaciones muestra la tabla o el estado sin pendientes", async ({ page }) => {
@@ -43,5 +43,38 @@ test.describe("PDTP — Ciclo de vida y aprobaciones", () => {
     // Steps indicator
     await expect(page.getByText("Elaboración")).toBeVisible()
     await expect(page.getByText("Versión congelada")).toBeVisible()
+  })
+
+  // Usan pdtp-exec-approve-e2e (M7S2) / pdtp-exec-reject-e2e (M7S3), no
+  // pdtp-exec-e2e (M7S1): ese lo consume el flujo de checklist de
+  // e2e/pdtp-flow.spec.ts y aprobar/rechazarlo aquí lo dejaría en un estado
+  // que rompería ese otro test según el orden de ejecución.
+  test("aprobar una ejecución pendiente la remueve de la lista", async ({ page }) => {
+    await page.goto("/prevencion/pdtp/aprobaciones")
+
+    const approveButton = page.getByRole("button", { name: "Aprobar ejecución M7S2" })
+    await expect(approveButton).toBeVisible()
+    await approveButton.click()
+    await expect(page.locator("[data-sonner-toast]").getByText(/aprobada/)).toBeVisible()
+
+    // La aprobación es un form action (auto-refresca); recargar además
+    // confirma que el cambio quedó persistido en el servidor.
+    await page.reload()
+    await expect(page.getByRole("button", { name: "Aprobar ejecución M7S2" })).toHaveCount(0)
+  })
+
+  test("rechazar una ejecución pendiente con motivo la remueve de la lista", async ({ page }) => {
+    await page.goto("/prevencion/pdtp/aprobaciones")
+
+    await page.getByRole("button", { name: "Rechazar ejecución M7S3" }).click()
+    await expect(page.getByRole("dialog", { name: "Rechazar ejecución" })).toBeVisible()
+    await page.getByPlaceholder("Motivo del rechazo (mín. 3 caracteres)").fill("Evidencia insuficiente E2E")
+    await page.getByRole("button", { name: "Rechazar y devolver" }).click()
+    await expect(page.locator("[data-sonner-toast]").getByText(/rechazada/)).toBeVisible()
+
+    // El rechazo se dispara desde un onClick (no un form action), por lo que
+    // no auto-refresca la lista SSR — recargar confirma el estado persistido.
+    await page.reload()
+    await expect(page.getByRole("button", { name: "Rechazar ejecución M7S3" })).toHaveCount(0)
   })
 })

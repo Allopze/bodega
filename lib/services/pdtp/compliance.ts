@@ -2,7 +2,7 @@ import { and, desc, eq, inArray, sql } from "drizzle-orm"
 import { db } from "@/db"
 import { pdtpActivities, pdtpActionPlan, pdtpActivityWorksiteParams, pdtpPrograms, workers } from "@/db/schema"
 import { PDTP_ESTADOS_CERRADOS } from "./checklist-domain"
-import { loadProgramScheduleAndExecutions } from "./helpers"
+import { loadApprovedExecutionsForWorksites, loadProgramScheduleAndExecutions } from "./helpers"
 
 export type PdtpComplianceMonth = {
   month: number
@@ -71,11 +71,18 @@ export async function getPdtpComplianceIndicators(yearOrProgramId: number | stri
   // explícita. Prioridad: parámetro cargado a mano → dotación activa de la faena
   // (inferida) → cantidad planificada del mes.
   const expectedByActivity = new Map<string, number>()
+  // Meta de cobertura por faena (R2). Mueve el umbral de acreditación; el
+  // denominador sigue siendo el padrón completo.
+  const coverageTargetPctByActivity = new Map<string, number>()
   let activeWorkerCount = 0
   if (worksiteId) {
     const hasCoverage = activityRows.some((a) => a.indicatorMode === "coverage")
     const [paramRows, workerCountRow] = await Promise.all([
-      db.select({ activityId: pdtpActivityWorksiteParams.activityId, expectedSubjectCount: pdtpActivityWorksiteParams.expectedSubjectCount })
+      db.select({
+        activityId: pdtpActivityWorksiteParams.activityId,
+        expectedSubjectCount: pdtpActivityWorksiteParams.expectedSubjectCount,
+        targetCoveragePercent: pdtpActivityWorksiteParams.targetCoveragePercent,
+      })
         .from(pdtpActivityWorksiteParams)
         .where(and(inArray(pdtpActivityWorksiteParams.activityId, allActivityIds), eq(pdtpActivityWorksiteParams.worksiteId, worksiteId))),
       // Solo se cuenta la dotación si hay actividades de cobertura (evita el query de más).
@@ -85,6 +92,7 @@ export async function getPdtpComplianceIndicators(yearOrProgramId: number | stri
     ])
     for (const row of paramRows) {
       if (row.expectedSubjectCount != null) expectedByActivity.set(row.activityId, row.expectedSubjectCount)
+      if (row.targetCoveragePercent != null) coverageTargetPctByActivity.set(row.activityId, Number(row.targetCoveragePercent))
     }
     activeWorkerCount = workerCountRow[0]?.count ?? 0
   }
@@ -115,13 +123,19 @@ export async function getPdtpComplianceIndicators(yearOrProgramId: number | stri
       const rawExecuted = executedByActivityMonth.get(`${activityId}:${month}`) ?? 0
       if (modeByActivity.get(activityId) === "coverage") {
         // Cobertura solo cuenta en los meses en que está programada. Meta = padrón
-        // esperado de la faena (o lo planificado si no hay padrón cargado); solo
-        // cuenta si se alcanza al 100 %, sin crédito parcial.
+        // esperado de la faena (o lo planificado si no hay padrón cargado); sin
+        // crédito parcial: o se alcanza el umbral o no cuenta.
         if (p === 0) continue
         // Padrón manual → dotación activa inferida (si hay) → planificado.
         const target = expectedByActivity.get(activityId) ?? (activeWorkerCount > 0 ? activeWorkerCount : p)
+        // R2: `targetCoveragePercent` baja el umbral de acreditación sin tocar el
+        // denominador — con meta 90 % y padrón 50, acreditan 45 ejecuciones y el
+        // aporte sigue siendo 50/50. Sin meta configurada se exige el padrón
+        // completo, que es el comportamiento histórico.
+        const targetPct = coverageTargetPctByActivity.get(activityId)
+        const threshold = targetPct != null ? Math.ceil((target * targetPct) / 100) : target
         coveragePlanned += target
-        coverageExecuted += rawExecuted >= target && target > 0 ? target : 0
+        coverageExecuted += threshold > 0 && rawExecuted >= threshold ? target : 0
       } else {
         // Resto: se agrupa por total del mes (respuesta 2.4 = "por mes"), sin
         // condicionar el ejecutado a que la misma actividad tuviera planificado
@@ -168,10 +182,17 @@ export async function getPdtpComplianceIndicators(yearOrProgramId: number | stri
 export async function getPdtpComplianceIndicatorsForScope(
   yearOrProgramId: number | string,
   worksiteIds: string[],
-): Promise<(PdtpComplianceIndicators & { worksiteCount: number }) | null> {
+): Promise<(PdtpComplianceIndicators & {
+  worksiteCount: number
+  /** Desglose por faena, en el mismo orden que `worksiteIds`. Se expone para que
+   * un consumidor que necesita el agregado *y* la comparativa por faena (el
+   * tablero) no tenga que volver a calcular lo mismo N veces. */
+  perWorksite: Array<{ worksiteId: string; indicators: PdtpComplianceIndicators | null }>
+}) | null> {
   if (worksiteIds.length === 0) return null
-  const perWorksite = await Promise.all(worksiteIds.map((id) => getPdtpComplianceIndicators(yearOrProgramId, id)))
-  const resolved = perWorksite.filter((x): x is PdtpComplianceIndicators => x !== null)
+  const perWorksiteResults = await Promise.all(worksiteIds.map((id) => getPdtpComplianceIndicators(yearOrProgramId, id)))
+  const perWorksite = worksiteIds.map((worksiteId, index) => ({ worksiteId, indicators: perWorksiteResults[index] ?? null }))
+  const resolved = perWorksiteResults.filter((x): x is PdtpComplianceIndicators => x !== null)
   if (resolved.length === 0) return null
 
   const monthly: PdtpComplianceMonth[] = Array.from({ length: 12 }, (_, i) => {
@@ -200,7 +221,74 @@ export async function getPdtpComplianceIndicatorsForScope(
     annual: { planned: annualPlanned, executed: annualExecuted, percent: annualPlanned > 0 ? Math.round((annualExecuted / annualPlanned) * 100) / 100 : null },
     lastExecutionUpdatedAt,
     worksiteCount: worksiteIds.length,
+    perWorksite,
   }
+}
+
+export type PdtpCategoryCompliance = {
+  /** Eje del sistema de gestión: `pdtpActivities.program`. */
+  category: string
+  planned: number
+  executed: number
+  percent: number | null
+}
+
+/**
+ * Avance por eje SG-SST sobre las faenas autorizadas. Se calcula con las mismas
+ * reglas que el indicador mensual —solo ejecuciones aprobadas y techo de
+ * sobrecumplimiento— pero agrupando por `program` en vez de por mes.
+ *
+ * Las actividades de cobertura quedan **fuera**: se puntúan todo-o-nada contra
+ * un padrón, así que sumarlas aquí mezclaría dos unidades. La regla vive en
+ * `getPdtpComplianceIndicators` y duplicarla en dos sitios es pedir que diverjan.
+ */
+export async function getPdtpComplianceByCategoryForScope(
+  programId: string,
+  worksiteIds: string[],
+): Promise<PdtpCategoryCompliance[] | null> {
+  if (worksiteIds.length === 0) return null
+  const [program] = await db.select().from(pdtpPrograms).where(eq(pdtpPrograms.id, programId)).limit(1)
+  if (!program) return null
+
+  const activityRows = await db.select({
+    id: pdtpActivities.id,
+    program: pdtpActivities.program,
+    indicatorMode: pdtpActivities.indicatorMode,
+  }).from(pdtpActivities).where(eq(pdtpActivities.programId, program.id))
+
+  const scorable = activityRows.filter((row) => row.indicatorMode !== "coverage")
+  if (scorable.length === 0) return []
+  const categoryByActivity = new Map(scorable.map((row) => [row.id, row.program || "General"]))
+
+  const { scheduleRows, executionRows } = await loadApprovedExecutionsForWorksites(
+    scorable.map((row) => row.id),
+    program.year,
+    worksiteIds,
+  )
+
+  const totals = new Map<string, { planned: number; executed: number }>()
+  const bump = (activityId: string, field: "planned" | "executed", amount: number) => {
+    const category = categoryByActivity.get(activityId)
+    if (!category) return
+    const entry = totals.get(category) ?? { planned: 0, executed: 0 }
+    entry[field] += amount
+    totals.set(category, entry)
+  }
+  for (const row of scheduleRows) bump(row.activityId, "planned", row.plannedQuantity)
+  for (const row of executionRows) bump(row.activityId, "executed", row.executedQuantity)
+
+  return [...totals.entries()]
+    .map(([category, { planned, executed }]) => {
+      // Mismo techo que el cálculo mensual: sobrecumplir no sube del 100 %.
+      const capped = Math.min(executed, planned)
+      return {
+        category,
+        planned,
+        executed: capped,
+        percent: planned > 0 ? Math.round((capped / planned) * 100) / 100 : null,
+      }
+    })
+    .sort((a, b) => b.planned - a.planned)
 }
 
 /* ── Cumplimiento integral (3 ejes: ejecución + verificación + cierre) ────── */
@@ -216,6 +304,88 @@ export type PdtpIntegralCompliance = PdtpIntegralComplianceAxes & {
   year: number
   integral: number | null     // 0-100: ponderado
   pesos: { ejecucion: number; verificacion: number; cierre: number }
+}
+
+/**
+ * Ejes 2 y 3 sobre un conjunto de ejecuciones aprobadas. Vive aparte porque
+ * tanto la versión por faena como la agregada tienen que calcularlos **sobre las
+ * filas crudas**: `verificacion` es un promedio y `cierre` un ratio, así que
+ * promediar los resultados por faena daría un número distinto (y equivocado)
+ * cuando las faenas tienen distinto número de checklists o de acciones.
+ */
+async function computeVerificacionYCierre(approvedExecutionIds: string[]): Promise<{
+  verificacion: number | null
+  cierre: number | null
+}> {
+  if (approvedExecutionIds.length === 0) return { verificacion: null, cierre: null }
+
+  const [instances, actions] = await Promise.all([
+    db.query.pdtpExecutionChecklists.findMany({
+      where: (t, { inArray: ia }) => ia(t.executionId, approvedExecutionIds),
+    }),
+    db.select({ estado: pdtpActionPlan.estado })
+      .from(pdtpActionPlan).where(inArray(pdtpActionPlan.executionId, approvedExecutionIds)),
+  ])
+
+  const validPct = instances
+    .map((instance) => instance.porcentajeCumplimiento)
+    .filter((pct): pct is number => pct !== null)
+  const verificacion = validPct.length > 0
+    ? Math.round((validPct.reduce((sum, pct) => sum + pct, 0) / validPct.length) * 100) / 100
+    : null
+
+  const cierre = actions.length > 0
+    ? Math.round((actions.filter((a) => PDTP_ESTADOS_CERRADOS.has(a.estado)).length / actions.length) * 10000) / 100
+    : null
+
+  return { verificacion, cierre }
+}
+
+function weightIntegral(
+  program: typeof pdtpPrograms.$inferSelect,
+  axes: PdtpIntegralComplianceAxes,
+): PdtpIntegralCompliance {
+  const pesos = {
+    ejecucion: program.pesoEjecucion,
+    verificacion: program.pesoVerificacion,
+    cierre: program.pesoCierre,
+  }
+  let integral: number | null = null
+  if (axes.ejecucion !== null || axes.verificacion !== null || axes.cierre !== null) {
+    const e = (axes.ejecucion ?? 0) * 100
+    const v = axes.verificacion ?? 0
+    const c = axes.cierre ?? 0
+    integral = Math.round((pesos.ejecucion * e + pesos.verificacion * v + pesos.cierre * c) * 100) / 100
+  }
+  return { programId: program.id, year: program.year, ...axes, integral, pesos }
+}
+
+/**
+ * Cumplimiento integral agregado sobre las faenas autorizadas del usuario, para
+ * el tablero cuando no hay una faena elegida. No es el promedio de los
+ * integrales por faena: los tres ejes se agregan a nivel de filas.
+ */
+export async function getPdtpIntegralComplianceForScope(
+  programId: string,
+  worksiteIds: string[],
+): Promise<PdtpIntegralCompliance | null> {
+  if (worksiteIds.length === 0) return null
+  const [program] = await db.select().from(pdtpPrograms).where(eq(pdtpPrograms.id, programId)).limit(1)
+  if (!program) return null
+
+  const scoped = await getPdtpComplianceIndicatorsForScope(program.id, worksiteIds)
+  const ejecucion = scoped?.annual.percent ?? null
+
+  const activityRows = await db.select({ id: pdtpActivities.id }).from(pdtpActivities)
+    .where(eq(pdtpActivities.programId, program.id))
+  const { executionRows } = await loadApprovedExecutionsForWorksites(
+    activityRows.map((row) => row.id),
+    program.year,
+    worksiteIds,
+  )
+  const { verificacion, cierre } = await computeVerificacionYCierre(executionRows.map((row) => row.id))
+
+  return weightIntegral(program, { ejecucion, verificacion, cierre })
 }
 
 /**
@@ -247,59 +417,17 @@ export async function getPdtpIntegralCompliance(
     .where(eq(pdtpActivities.programId, program.id))
   const activityIds = activityRows.map((r) => r.id)
 
-  let verificacion: number | null = null
-  let cierre: number | null = null
-
+  let approvedExecutionIds: string[] = []
   if (activityIds.length > 0) {
     const { executionRows } = await loadProgramScheduleAndExecutions(activityIds, program.year, worksiteId)
     // El indicador integral es formal: checklist y acciones también requieren
     // que la ejecución base haya sido aprobada.
-    const approvedExecutionIds = executionRows.reduce<string[]>((ids, execution) => {
+    approvedExecutionIds = executionRows.reduce<string[]>((ids, execution) => {
       if (execution.status === "approved") ids.push(execution.id)
       return ids
     }, [])
-
-    if (approvedExecutionIds.length > 0) {
-      // Eje 2: verificación — promedio de porcentajeCumplimiento de las instancias
-      const instances = await db.query.pdtpExecutionChecklists.findMany({
-        where: (t, { inArray: ia }) => ia(t.executionId, approvedExecutionIds),
-      })
-      const validPct = instances
-        .map((i) => i.porcentajeCumplimiento)
-        .filter((p): p is number => p !== null)
-      if (validPct.length > 0) {
-        verificacion = Math.round((validPct.reduce((s, p) => s + p, 0) / validPct.length) * 100) / 100
-      }
-
-      // Eje 3: cierre — acciones cerradas / total
-      const actions = await db.select({ estado: pdtpActionPlan.estado, plazo: pdtpActionPlan.plazo })
-        .from(pdtpActionPlan).where(inArray(pdtpActionPlan.executionId, approvedExecutionIds))
-      if (actions.length > 0) {
-        const cerradas = actions.filter((a) => PDTP_ESTADOS_CERRADOS.has(a.estado)).length
-        cierre = Math.round((cerradas / actions.length) * 10000) / 100
-      }
-    }
   }
+  const { verificacion, cierre } = await computeVerificacionYCierre(approvedExecutionIds)
 
-  // Integral ponderado
-  const pesos = {
-    ejecucion: program.pesoEjecucion,
-    verificacion: program.pesoVerificacion,
-    cierre: program.pesoCierre,
-  }
-  let integral: number | null = null
-  if (ejecucion !== null || verificacion !== null || cierre !== null) {
-    const e = (ejecucion ?? 0) * 100
-    const v = verificacion ?? 0
-    const c = cierre ?? 0
-    integral = Math.round((pesos.ejecucion * e + pesos.verificacion * v + pesos.cierre * c) * 100) / 100
-  }
-
-  return {
-    programId: program.id,
-    year: program.year,
-    ejecucion, verificacion, cierre,
-    integral,
-    pesos,
-  }
+  return weightIntegral(program, { ejecucion, verificacion, cierre })
 }

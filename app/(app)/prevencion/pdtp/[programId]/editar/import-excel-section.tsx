@@ -46,19 +46,23 @@ export type ImportPreview = {
 
 export type ImportExcelSectionProps = {
   programId: string
+  /**
+   * Faenas autorizadas del usuario. El selector NO debe ofrecer faenas fuera del
+   * alcance: `applyPdtpImportBatch` las rechaza con `assertWorksiteAccess`, así
+   * que ofrecerlas solo produce un callejón sin salida tras subir el archivo y
+   * revisar el preview — y filtra el padrón completo de faenas al cliente.
+   */
   visibleWorksites: Array<{ id: string; name: string; code: string }>
-  /** Todas las faenas activas del sistema (para el selector de importación). */
-  allWorksites: Array<{ id: string; name: string; code: string }>
 }
 
-export function ImportExcelSection({ programId, visibleWorksites: _visibleWorksites, allWorksites }: ImportExcelSectionProps) {
+export function ImportExcelSection({ programId, visibleWorksites }: ImportExcelSectionProps) {
   const router = useRouter()
   const formRef = React.useRef<HTMLFormElement>(null)
   const fileRef = React.useRef<HTMLInputElement>(null)
   const [pending, setPending] = React.useState(false)
   const [state, setState] = React.useState<{ ok: boolean; message: string } | null>(null)
   const [preview, setPreview] = React.useState<ImportPreview | null>(null)
-  const [worksiteId, setWorksiteId] = React.useState(allWorksites.length === 1 ? allWorksites[0]!.id : "")
+  const [worksiteId, setWorksiteId] = React.useState(visibleWorksites.length === 1 ? visibleWorksites[0]!.id : "")
   const [acceptMissingEvidence, setAcceptMissingEvidence] = React.useState(false)
   const [acceptanceReason, setAcceptanceReason] = React.useState("")
   const [confirmCancel, setConfirmCancel] = React.useState(false)
@@ -213,8 +217,8 @@ export function ImportExcelSection({ programId, visibleWorksites: _visibleWorksi
             <div className="grid gap-3 rounded-lg border border-[var(--color-border)] p-3 md:grid-cols-2">
               <Field label="Faena de las cantidades ejecutadas" htmlFor="pdtp-import-worksite" required>
                 <Select value={worksiteId} onValueChange={setWorksiteId}>
-                  <SelectTrigger id="pdtp-import-worksite"><SelectValue placeholder="Selecciona una faena" /></SelectTrigger>
-                  <SelectContent>{allWorksites.map((worksite) => <SelectItem key={worksite.id} value={worksite.id}>{worksite.name} · {worksite.code}</SelectItem>)}</SelectContent>
+                  <SelectTrigger id="pdtp-import-worksite"><SelectValue placeholder="Selecciona una faena autorizada" /></SelectTrigger>
+                  <SelectContent>{visibleWorksites.map((worksite) => <SelectItem key={worksite.id} value={worksite.id}>{worksite.name} · {worksite.code}</SelectItem>)}</SelectContent>
                 </Select>
               </Field>
               <Field label="Motivo de aceptación" htmlFor="pdtp-import-reason" helper="Se conservará junto al lote y las celdas de origen.">

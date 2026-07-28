@@ -23,8 +23,16 @@ function scopeFromSession(session: NonNullable<Awaited<ReturnType<typeof guardPe
   return scope.mode === "all" ? "all" : scope.mode === "some" ? scope.ids : []
 }
 
-async function run(operation: (context: { userId: string; scope: WorksiteScope }) => Promise<unknown>): Promise<ActionState> {
-  const guard = await guardPermission("prevention:pdtp:execute")
+/**
+ * El permiso es un parámetro y no una constante del wrapper: reportar el
+ * cumplimiento es trabajo de terreno (`execute`), pero anular el compromiso es
+ * gestión y tiene su propio permiso.
+ */
+async function run(
+  permission: "prevention:pdtp:execute" | "prevention:pdtp:obligation:cancel",
+  operation: (context: { userId: string; scope: WorksiteScope }) => Promise<unknown>,
+): Promise<ActionState> {
+  const guard = await guardPermission(permission)
   if (guard.error) return guard.error
   try {
     await operation({ userId: guard.session!.user.id, scope: scopeFromSession(guard.session!) })
@@ -39,7 +47,7 @@ async function run(operation: (context: { userId: string; scope: WorksiteScope }
 }
 
 export async function createPdtpObligationAction(input: unknown): Promise<ActionState> {
-  return run(({ userId, scope }) => {
+  return run("prevention:pdtp:execute", ({ userId, scope }) => {
     const parsed = pdtpObligationCreateSchema.parse(input)
     return createPdtpObligation({
       ...parsed,
@@ -54,7 +62,7 @@ export async function createPdtpObligationAction(input: unknown): Promise<Action
 }
 
 export async function reportPdtpObligationAction(input: unknown): Promise<ActionState> {
-  return run(({ userId, scope }) => {
+  return run("prevention:pdtp:execute", ({ userId, scope }) => {
     const parsed = pdtpObligationReportSchema.parse(input)
     return reportPdtpObligation({
       ...parsed,
@@ -67,5 +75,6 @@ export async function reportPdtpObligationAction(input: unknown): Promise<Action
 }
 
 export async function cancelPdtpObligationAction(input: unknown): Promise<ActionState> {
-  return run(({ userId, scope }) => cancelPdtpObligation({ ...pdtpObligationCancelSchema.parse(input), userId, scope }))
+  return run("prevention:pdtp:obligation:cancel", ({ userId, scope }) =>
+    cancelPdtpObligation({ ...pdtpObligationCancelSchema.parse(input), userId, scope }))
 }

@@ -89,7 +89,6 @@ export function PdtpSheetTable({
   const [statusFilter, setStatusFilter] = React.useState<PdtpActivityStatus | "all">("all")
   const [density, toggleDensity] = usePdtpDensity()
   const [visibleMonths, monthsExpanded, toggleMonthsExpanded] = usePdtpMonthWindow(currentPeriod.month)
-  const _hasHiddenMonths = !monthsExpanded && visibleMonths.length < 12
 
   const plannedQuantityForCurrentWeek = (activity: PdtpSheetView["activities"][number]) =>
     activity.schedule
@@ -114,8 +113,6 @@ export function PdtpSheetTable({
 
   const INITIAL_ROW_LIMIT = 30
   const [showAll, setShowAll] = React.useState(false)
-  const totalActivityCount = sourceActivities.length
-  const needsPagination = totalActivityCount > INITIAL_ROW_LIMIT && !showAll
   // Reconstruido desde las props ya conocidas (mismo patron que PdtpViewToggle/
   // PdtpWorksitePicker en pdtp-sheet-table-ui.tsx), no leyendo el search params
   // ambiente: evita depender del contexto de App Router en este componente.
@@ -138,23 +135,28 @@ export function PdtpSheetTable({
         deriveActivityStatus(activity.monthlyPlanned, activity.monthlyExecuted, currentPeriod) === statusFilter,
       )
 
+  // La paginación se mide sobre lo que realmente se ve: si el filtro de estado
+  // deja pocas filas no hay nada que paginar, y el contador del botón tiene que
+  // hablar de esas filas y no del total sin filtrar.
+  const totalActivityCount = filteredActivities.length
+  const needsPagination = totalActivityCount > INITIAL_ROW_LIMIT && !showAll
   const displayActivities = needsPagination
     ? filteredActivities.slice(0, INITIAL_ROW_LIMIT)
     : filteredActivities
 
-  // Group by objective
-  const groupedActivities = React.useMemo(() => {
-    const groups: Array<{ objective: string; activities: typeof displayActivities }> = []
-    for (const activity of displayActivities) {
-      const last = groups[groups.length - 1]
-      if (last && last.objective === activity.objective) {
-        last.activities.push(activity)
-      } else {
-        groups.push({ objective: activity.objective, activities: [activity] })
-      }
+  // Agrupación por objetivo, sin useMemo: `displayActivities` cambia de identidad
+  // en cada render mientras hay paginación, así que memoizar no ahorraba nada y
+  // sí abría la puerta a servir grupos obsoletos — con `filteredActivities` como
+  // dependencia, "Mostrar todas" no reagrupaba y la tabla seguía en 30 filas.
+  const groupedActivities: Array<{ objective: string; activities: typeof displayActivities }> = []
+  for (const activity of displayActivities) {
+    const last = groupedActivities[groupedActivities.length - 1]
+    if (last && last.objective === activity.objective) {
+      last.activities.push(activity)
+    } else {
+      groupedActivities.push({ objective: activity.objective, activities: [activity] })
     }
-    return groups
-  }, [displayActivities])
+  }
 
   const rowPy = density === "compact" ? "py-1.5" : "py-3"
 

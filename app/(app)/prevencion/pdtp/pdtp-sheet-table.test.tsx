@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, within } from "@testing-library/react"
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { PdtpSheetTable } from "./pdtp-sheet-table"
 import type { PdtpSheetView } from "@/lib/services/prevention-pdtp"
@@ -213,5 +213,62 @@ describe("PdtpSheetTable — weekly filter", () => {
     const noteEl = container.querySelector(`p[title="Esta es una nota de prueba sobre la actividad"]`)
     expect(noteEl).toBeTruthy()
     expect(noteEl?.textContent).toContain("Esta es una nota de prueba")
+  })
+})
+
+describe("PdtpSheetTable — paginación de la vista anual", () => {
+  const ANNUAL_PLAN = withPlanned(7, 1)
+
+  function makeMany(count: number) {
+    return Array.from({ length: count }, (_, i) =>
+      makeActivity(`act-${i}`, String(i + 1), `Actividad número ${i + 1}`, ANNUAL_PLAN, ZERO12),
+    ) as unknown as PdtpSheetView["activities"]
+  }
+
+  it("corta en 30 filas y expande al pulsar el botón", () => {
+    const view = makeView(makeMany(35))
+    render(<PdtpSheetTable view={view} viewMode="anual" currentPeriod={CURRENT_PERIOD} sheetCode="pdtp_general" />)
+
+    expect(screen.getByText("Actividad número 30")).toBeDefined()
+    expect(screen.queryByText("Actividad número 31")).toBeNull()
+
+    const button = screen.getByRole("button", { name: /Mostrar las 35 actividades/ })
+    fireEvent.click(button)
+
+    // Regresión: la agrupación estaba memoizada con `filteredActivities` como
+    // dependencia, así que al expandir el botón desaparecía pero la tabla seguía
+    // mostrando 30 filas, sin forma de reintentar.
+    expect(screen.getByText("Actividad número 31")).toBeDefined()
+    expect(screen.getByText("Actividad número 35")).toBeDefined()
+    expect(screen.queryByRole("button", { name: /Mostrar las 35 actividades/ })).toBeNull()
+  })
+
+  it("no pagina cuando el total no supera el límite", () => {
+    const view = makeView(makeMany(30))
+    render(<PdtpSheetTable view={view} viewMode="anual" currentPeriod={CURRENT_PERIOD} sheetCode="pdtp_general" />)
+
+    expect(screen.getByText("Actividad número 30")).toBeDefined()
+    expect(screen.queryByRole("button", { name: /Mostrar las/ })).toBeNull()
+  })
+
+  it("el contador del botón habla de las filas filtradas, no del total sin filtrar", () => {
+    // 40 actividades: 35 pendientes en julio + 5 ejecutadas. Al filtrar por
+    // "Ejecutadas" quedan 5 filas, así que no debe ofrecerse paginación —antes
+    // `needsPagination` miraba el total sin filtrar y el botón prometía 40.
+    const pending = Array.from({ length: 35 }, (_, i) =>
+      makeActivity(`p-${i}`, String(i + 1), `Pendiente ${i + 1}`, ANNUAL_PLAN, ZERO12),
+    )
+    const executed = Array.from({ length: 5 }, (_, i) =>
+      makeActivity(`e-${i}`, String(100 + i), `Ejecutada ${i + 1}`, ANNUAL_PLAN, withPlanned(7, 1)),
+    )
+    const view = makeView([...pending, ...executed] as unknown as PdtpSheetView["activities"])
+    render(<PdtpSheetTable view={view} viewMode="anual" currentPeriod={CURRENT_PERIOD} sheetCode="pdtp_general" />)
+
+    expect(screen.getByRole("button", { name: /Mostrar las 40 actividades/ })).toBeDefined()
+
+    fireEvent.click(screen.getByRole("button", { name: /Ejecutadas/ }))
+
+    expect(screen.queryByRole("button", { name: /Mostrar las/ })).toBeNull()
+    expect(screen.getByText("Ejecutada 1")).toBeDefined()
   })
 })

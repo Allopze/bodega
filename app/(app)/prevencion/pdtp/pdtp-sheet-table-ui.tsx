@@ -306,17 +306,29 @@ export function PdtpActivitySummary({
 
 const DENSITY_KEY = "pdtp-table-density"
 
+/**
+ * La preferencia se lee en un efecto, no en el initializer de `useState`: leerla
+ * durante el primer render hace que el servidor emita el default y el cliente
+ * hidrate con otro valor (mismatch de hidratación). Mismo patrón que
+ * `PersistedDetails`.
+ */
 export function usePdtpDensity(): ["compact" | "comfortable", () => void] {
-  const [density, setDensity] = React.useState<"compact" | "comfortable">(() => {
-    if (typeof window === "undefined") return "comfortable"
-    return (localStorage.getItem(DENSITY_KEY) as "compact" | "comfortable") ?? "comfortable"
-  })
+  const [density, setDensity] = React.useState<"compact" | "comfortable">("comfortable")
+
+  React.useEffect(() => {
+    try {
+      const stored = localStorage.getItem(DENSITY_KEY)
+      if (stored === "compact" || stored === "comfortable") setDensity(stored)
+    } catch {}
+  }, [])
 
   const toggle = React.useCallback(() => {
-    const next = density === "compact" ? "comfortable" : "compact"
-    setDensity(next)
-    localStorage.setItem(DENSITY_KEY, next)
-  }, [density])
+    setDensity((current) => {
+      const next = current === "compact" ? "comfortable" : "compact"
+      try { localStorage.setItem(DENSITY_KEY, next) } catch {}
+      return next
+    })
+  }, [])
 
   return [density, toggle]
 }
@@ -360,16 +372,22 @@ const MONTH_WINDOW_KEY = "pdtp-month-window"
 export function usePdtpMonthWindow(
   currentMonth: number,
 ): [number[], boolean, () => void] {
-  const [expanded, setExpanded] = React.useState<boolean>(() => {
-    if (typeof window === "undefined") return false
-    return localStorage.getItem(MONTH_WINDOW_KEY) === "1"
-  })
+  // Preferencia leída en efecto, no en el initializer: ver nota en usePdtpDensity.
+  const [expanded, setExpanded] = React.useState(false)
+
+  React.useEffect(() => {
+    try {
+      if (localStorage.getItem(MONTH_WINDOW_KEY) === "1") setExpanded(true)
+    } catch {}
+  }, [])
 
   const toggle = React.useCallback(() => {
-    const next = !expanded
-    setExpanded(next)
-    localStorage.setItem(MONTH_WINDOW_KEY, next ? "1" : "0")
-  }, [expanded])
+    setExpanded((current) => {
+      const next = !current
+      try { localStorage.setItem(MONTH_WINDOW_KEY, next ? "1" : "0") } catch {}
+      return next
+    })
+  }, [])
 
   const visibleMonths = React.useMemo(() => {
     if (expanded) return MONTH_INDICES

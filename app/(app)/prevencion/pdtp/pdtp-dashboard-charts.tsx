@@ -48,8 +48,6 @@ export type SstPoint = {
   monthName: string
   tasaFrecuencia: number
   tasaGravedad: number
-  accConTiempoPerdido: number
-  accSinTiempoPerdido: number
 }
 
 export type MaterialEnvPoint = {
@@ -121,6 +119,13 @@ const categoryConfig = {
   },
 } satisfies ChartConfig
 
+const potentialSeverityConfig = {
+  count: {
+    label: "Eventos Registrados",
+    color: "#7c3aed",
+  },
+} satisfies ChartConfig
+
 const sstConfig = {
   tasaFrecuencia: {
     label: "Tasa Frecuencia (TF)",
@@ -169,7 +174,7 @@ export function PdtpDashboardCharts({
   materialEnvPoints = [],
   commonAccidents = [],
   worksiteIncidents = [],
-  potentialSeverity: _potentialSeverity = [],
+  potentialSeverity = [],
 }: PdtpDashboardChartsProps) {
   const hasMaterialEnvData = materialEnvPoints.some((p) => p.dangerousIncidents > 0 || p.materialDamage > 0 || p.environmentalSpills > 0)
 
@@ -246,11 +251,11 @@ export function PdtpDashboardCharts({
           </section>
         </div>
 
-        {/* ── Fila 4: Avance por Eje / Categoría SG-SST ── */}
+        {/* ── Fila 4: Distribución de actividades por eje SG-SST ── */}
         <section className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs">
           <div className="mb-4">
             <h2 className="text-sm font-bold text-slate-900">Avance por Eje del Sistema de Gestión (SG-SST)</h2>
-            <p className="text-xs text-slate-500">Distribución del nivel de cumplimiento según categoría operacional (Seguridad, Salud Ocupacional, Medio Ambiente, Capacitación).</p>
+            <p className="text-xs text-slate-500">Programado contra ejecuciones aprobadas, agrupado por eje operacional. Las actividades de cobertura se puntúan contra un padrón y quedan fuera de este desglose.</p>
           </div>
           {categoryBreakdown.length === 0 ? (
             <div className="flex h-36 flex-col items-center justify-center rounded-xl bg-slate-50/50 p-6 text-center border border-dashed border-slate-200">
@@ -262,7 +267,7 @@ export function PdtpDashboardCharts({
               <BarChart data={categoryBreakdown} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} />
                 <XAxis dataKey="category" tickLine={false} axisLine={false} tick={{ fontSize: 11 }} />
-                <YAxis tickLine={false} axisLine={false} tick={{ fontSize: 11 }} />
+                <YAxis tickLine={false} axisLine={false} allowDecimals={false} tick={{ fontSize: 11 }} />
                 <ChartTooltip content={<ChartTooltipContent indicator="dashed" />} />
                 <ChartLegend content={<ChartLegendContent />} />
                 <Bar dataKey="scheduled" fill="#cbd5e1" radius={[4, 4, 0, 0]} barSize={24} />
@@ -348,6 +353,42 @@ export function PdtpDashboardCharts({
             )}
           </section>
         </div>
+
+        {/* ── Severidad potencial ── */}
+        <section className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs">
+          <div className="mb-4">
+            <h2 className="text-sm font-bold text-slate-900">Severidad Potencial de los Eventos Registrados</h2>
+            <p className="text-xs text-slate-500">Qué podría haber pasado, no qué pasó. Los eventos de alto potencial son la señal temprana: se cuentan todos los eventos registrados del año, en cualquier etapa del flujo.</p>
+          </div>
+          {potentialSeverity.length === 0 ? (
+            <div className="flex h-48 items-center justify-center text-xs text-slate-400">Sin eventos registrados para el año.</div>
+          ) : (
+            <ChartContainer config={potentialSeverityConfig} className="h-56 w-full">
+              <BarChart data={potentialSeverity} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                <XAxis dataKey="label" tickLine={false} axisLine={false} tickMargin={8} tick={{ fontSize: 10 }} />
+                <YAxis tickLine={false} axisLine={false} tickMargin={8} allowDecimals={false} tick={{ fontSize: 11 }} />
+                <ChartTooltip content={<ChartTooltipContent indicator="line" />} />
+                <Bar dataKey="count" radius={[6, 6, 0, 0]} barSize={40}>
+                  {potentialSeverity.map((entry) => (
+                    <Cell
+                      key={`cell-sev-${entry.severity}`}
+                      fill={
+                        entry.severity === "fatal" || entry.severity === "critical"
+                          ? "#dc2626"
+                          : entry.severity === "high"
+                            ? "#d97706"
+                            : entry.severity === "medium"
+                              ? "#0891b2"
+                              : "#64748b"
+                      }
+                    />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ChartContainer>
+          )}
+        </section>
       </TabsContent>
 
       <TabsContent value="ambiental" className="space-y-6">

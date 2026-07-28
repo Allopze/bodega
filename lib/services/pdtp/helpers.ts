@@ -188,3 +188,32 @@ export async function loadProgramScheduleAndExecutions(activityIds: string[], ye
     : scheduleRows
   return { scheduleRows: effectiveSchedule, executionRows: withoutExcluded(executionRows) }
 }
+
+/**
+ * Schedule efectivo y ejecuciones **aprobadas** de un programa sobre varias
+ * faenas, resueltas faena por faena para que overrides y exclusiones (R4) se
+ * apliquen con el contexto de cada una — omitir la faena devuelve cero
+ * ejecuciones (UX-01), así que agregar no es lo mismo que consultar sin filtro.
+ *
+ * Devuelve las filas crudas: quien llama decide cómo agruparlas. Los indicadores
+ * formales solo cuentan ejecuciones aprobadas.
+ */
+export async function loadApprovedExecutionsForWorksites(
+  activityIds: string[],
+  year: number,
+  worksiteIds: string[],
+) {
+  if (activityIds.length === 0 || worksiteIds.length === 0) {
+    return { scheduleRows: [], executionRows: [] } as {
+      scheduleRows: Awaited<ReturnType<typeof loadProgramScheduleAndExecutions>>["scheduleRows"]
+      executionRows: Awaited<ReturnType<typeof loadProgramScheduleAndExecutions>>["executionRows"]
+    }
+  }
+  const perWorksite = await Promise.all(
+    worksiteIds.map((worksiteId) => loadProgramScheduleAndExecutions(activityIds, year, worksiteId)),
+  )
+  return {
+    scheduleRows: perWorksite.flatMap((entry) => entry.scheduleRows),
+    executionRows: perWorksite.flatMap((entry) => entry.executionRows.filter((row) => row.status === "approved")),
+  }
+}

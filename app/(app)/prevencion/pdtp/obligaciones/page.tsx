@@ -40,6 +40,7 @@ export default async function PdtpObligationsPage() {
       weeklyPending={weeklyPending}
       pendingApproval={submittedExecutions}
       canExecute={can(session, "prevention:pdtp:execute")}
+      canCancel={can(session, "prevention:pdtp:obligation:cancel")}
     />
   )
 }

@@ -22,6 +22,16 @@ export const PDTP_PLAZO_DIAS_POR_PRIORIDAD: Record<string, number> = {
 export const PDTP_ESTADOS_CERRADOS = new Set(["completado", "verificado", "cancelado"])
 
 /**
+ * Una acción está abierta si su estado no es de cierre. Existe como función y no
+ * como comparación suelta porque el tablero filtraba por `"verificada"` —que no
+ * es un valor del enum (es `verificado`, y vocabulario de PPA además)—, así que
+ * el filtro no excluía nada y el KPI contaba el 100 % de las acciones.
+ */
+export function isPdtpActionOpen(estado: string): boolean {
+  return !PDTP_ESTADOS_CERRADOS.has(estado)
+}
+
+/**
  * Daño potencial de un hallazgo (módulo 04 — Evidencia Objetiva No Planeada).
  * Determina la prioridad y el plazo de cierre automáticos:
  *   leve     → baja   (15 días)  — sin lesión o lesión menor sin tiempo perdido

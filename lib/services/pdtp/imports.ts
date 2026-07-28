@@ -389,6 +389,13 @@ export async function applyPdtpImportBatch(input: {
   const executions = stored.catalog.importedExecutions ?? []
   if (executions.length > 0) {
     if (!input.worksiteId) throw new Error("Selecciona la faena a la que corresponden las cantidades ejecutadas del archivo.")
+    // Mensaje propio: el genérico de `assertWorksiteAccess` ("Actividad PDTP no
+    // encontrada o sin acceso a la faena") es deliberadamente ambiguo para no
+    // filtrar existencia, pero acá el usuario eligió de su propia lista de
+    // faenas y no explicar que el problema es de alcance solo desconcierta.
+    if (input.scope !== "all" && !input.scope.includes(input.worksiteId)) {
+      throw new Error("No tienes esa faena autorizada. Elige una de tus faenas asignadas.")
+    }
     assertWorksiteAccess(input.worksiteId, input.scope)
     if (!await isActivePdtpWorksite(input.worksiteId)) throw new Error("La faena seleccionada no existe o está inactiva.")
     if (!input.acceptMissingEvidence || (input.acceptanceReason?.trim().length ?? 0) < 10) {

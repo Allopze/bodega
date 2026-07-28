@@ -49,7 +49,7 @@ function clientRequestId() {
 }
 
 export function PdtpObligationsWorkbench({
-  worksites, activities, initialObligations, weeklyPending, pendingApproval, canExecute,
+  worksites, activities, initialObligations, weeklyPending, pendingApproval, canExecute, canCancel,
 }: {
   worksites: Worksite[]
   activities: DemandActivity[]
@@ -57,6 +57,8 @@ export function PdtpObligationsWorkbench({
   weeklyPending: PdtpPendingTarget[]
   pendingApproval: PendingPdtpExecution[]
   canExecute: boolean
+  /** Cancelar es gestión, no trabajo de terreno: permiso propio. */
+  canCancel: boolean
 }) {
   const router = useRouter()
   const { searchQuery } = useSafeShellHeader()
@@ -161,11 +163,11 @@ export function PdtpObligationsWorkbench({
                 <p className={row.effectiveStatus === "overdue" ? "mt-1 text-sm font-semibold text-[var(--color-danger)]" : "mt-1 text-sm text-[var(--color-text)]"}>{dateTime(row.obligation.dueAt)}</p>
                 <p className="mt-1 text-xs text-[var(--color-text-subtle)]">Cantidad esperada: {row.obligation.plannedQuantity}</p>
               </div>
-              {canExecute && (
+              {(canExecute || canCancel) && (
                 <div className="flex flex-wrap justify-end gap-2">
-                  {(row.effectiveStatus === "pending" || row.effectiveStatus === "overdue") && <Button type="button" size="sm" onClick={() => setReporting(row)}>Reportar trabajo</Button>}
-                  {(row.effectiveStatus === "pending" || row.effectiveStatus === "overdue") && <Button type="button" size="sm" variant="ghost" onClick={() => setCancelling(row)}>Cancelar</Button>}
-                  {row.effectiveStatus === "reported" && <Button type="button" size="sm" variant="secondary" onClick={() => router.push("/prevencion/pdtp/aprobaciones")}>Ir a aprobación</Button>}
+                  {canExecute && (row.effectiveStatus === "pending" || row.effectiveStatus === "overdue") && <Button type="button" size="sm" onClick={() => setReporting(row)}>Reportar trabajo</Button>}
+                  {canCancel && (row.effectiveStatus === "pending" || row.effectiveStatus === "overdue") && <Button type="button" size="sm" variant="ghost" onClick={() => setCancelling(row)}>Cancelar</Button>}
+                  {canExecute && row.effectiveStatus === "reported" && <Button type="button" size="sm" variant="secondary" onClick={() => router.push("/prevencion/pdtp/aprobaciones")}>Ir a aprobación</Button>}
                 </div>
               )}
             </article>

@@ -15,7 +15,6 @@ import {
   listPdtpProgramSheets,
 } from "@/lib/services/prevention-pdtp"
 import { listScopedWorksites } from "@/lib/services/ppa"
-import { worksites as worksitesTable } from "@/db/schema"
 import { currentPdtpPeriod } from "@/lib/services/pdtp/period"
 import { getPendingPdtpApprovalsForView, getPdtpChangeLog } from "@/lib/services/pdtp"
 import { PageContainer } from "@/components/ui/page-container"
@@ -29,14 +28,12 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { ChartBar, DotsThree, DownloadSimple, PencilSimple } from "@phosphor-icons/react/dist/ssr"
+import { ChartBar, DotsThree, DownloadSimple, ListChecks, PencilSimple } from "@phosphor-icons/react/dist/ssr"
 import { PdtpSheetTable } from "../pdtp-sheet-table"
 import { PdtpSheetPicker, PdtpViewToggle, PdtpWorksitePicker } from "../pdtp-sheet-table-ui"
 import { PdtpIndicatorsPanel } from "../pdtp-indicators-panel"
 import { PdtpAddActivityForm } from "../pdtp-add-activity-form"
 import { PdtpImportExcelDialog } from "../pdtp-import-excel-dialog"
-import { db } from "@/db"
-import { eq } from "drizzle-orm"
 import { resolveSelectedWorksiteId } from "../pdtp-context"
 import { ProgramLifecycleControls } from "./program-lifecycle-controls"
 import { ReconcileDeclaredActorButton } from "./reconcile-declared-actor-button"
@@ -86,13 +83,6 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
   const worksiteIds: string[] | "all" =
     scope.mode === "all" ? "all" : scope.mode === "some" ? scope.ids : []
   const worksites = await listScopedWorksites(worksiteIds)
-  // Todas las faenas activas para el selector de importación Excel
-  const allWorksites = worksiteIds === "all"
-    ? worksites
-    : await db.select({ id: worksitesTable.id, name: worksitesTable.name, code: worksitesTable.code })
-        .from(worksitesTable)
-        .where(eq(worksitesTable.isActive, true))
-        .orderBy(worksitesTable.name)
   const selectedWorksiteId = resolveSelectedWorksiteId(requestedWorksite, worksites)
   const [[view, indicators, integral], approvalProgress] = await Promise.all([
     selectedWorksiteId
@@ -147,7 +137,7 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
                 gestión. Antes este flujo estaba escondido tras Editar → Revisión
                 → "Vistas avanzadas", y el usuario no lo encontraba. */}
             {canManageProgram && program.status === "draft" && (
-              <PdtpImportExcelDialog programId={programId} visibleWorksites={worksites} allWorksites={allWorksites} />
+              <PdtpImportExcelDialog programId={programId} visibleWorksites={worksites} />
             )}
             {canApprove && (
               <Button asChild variant="secondary" size="sm">
@@ -186,6 +176,18 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
                     <Link href={`/prevencion/pdtp/${programId}/editar`} className="flex items-center gap-2">
                       <PencilSimple size={14} />
                       Editar programa
+                    </Link>
+                  </DropdownMenuItem>
+                )}
+                {/* La matriz de aplicabilidad (exclusiones por faena, regla R4) no
+                    tenía ningún punto de entrada en la aplicación: no estaba en el
+                    sidebar ni enlazada desde ninguna vista, pese a que sus
+                    exclusiones sí afectan el cumplimiento calculado. */}
+                {canManageProgram && (
+                  <DropdownMenuItem asChild>
+                    <Link href="/prevencion/pdtp/aplicabilidad" className="flex items-center gap-2">
+                      <ListChecks size={14} />
+                      Aplicabilidad por faena
                     </Link>
                   </DropdownMenuItem>
                 )}

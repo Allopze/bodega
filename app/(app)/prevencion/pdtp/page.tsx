@@ -5,15 +5,16 @@ import { can, requireAuth } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import {
   getActivePdtpProgram,
-  getPdtpComplianceIndicators,
+  getPdtpComplianceByCategoryForScope,
+  getPdtpComplianceIndicatorsForScope,
   getPdtpIntegralCompliance,
+  getPdtpIntegralComplianceForScope,
   listActionsByProgram,
   listPdtpPrograms,
-  listPdtpProgramSheets,
-  listPdtpProgramActivities,
   type PdtpComplianceIndicators,
   type PdtpIntegralCompliance,
 } from "@/lib/services/prevention-pdtp"
+import { isPdtpActionOpen } from "@/lib/services/pdtp/checklist-domain"
 import { listScopedWorksites } from "@/lib/services/ppa"
 import { currentPdtpPeriod } from "@/lib/services/pdtp/period"
 import { PageContainer } from "@/components/ui/page-container"
@@ -74,10 +75,16 @@ export default async function PdtpDashboardPage({ searchParams }: PdtpDashboardP
   const scopedWorksites = await listScopedWorksites(worksiteScopeIds)
   const selectedWorksiteId = resolveSelectedWorksiteId(requestedWorksite, scopedWorksites)
 
-  // Obtener el programa activo o el último disponible para el año seleccionado
-  const activeProgram = (await getActivePdtpProgram(year))
-    ?? (await listPdtpPrograms({ year }))[0]
-    ?? null
+  // Programa del período. Con varios programas y ninguno activo NO se elige
+  // silenciosamente una versión: se pide elegir (la portada anterior mostraba
+  // el selector por la misma razón, y mostrar los números de un borrador
+  // arbitrario rotulado "Programa activo" es peor que no mostrar nada).
+  const [activeProgram, programsForYear] = await Promise.all([
+    getActivePdtpProgram(year),
+    listPdtpPrograms({ year }),
+  ])
+  const focusProgram = activeProgram ?? (programsForYear.length === 1 ? programsForYear[0]! : null)
+  const mustChooseProgram = !focusProgram && programsForYear.length > 1
 
   let indicators: PdtpComplianceIndicators | null = null
   let integral: PdtpIntegralCompliance | null = null
@@ -91,20 +98,41 @@ export default async function PdtpDashboardPage({ searchParams }: PdtpDashboardP
   let worksiteIncidentsData: WorksiteIncidentPoint[] = []
   let potentialSeverityData: PotentialSeverityPoint[] = []
 
-  if (activeProgram) {
-    const [indRes, actRes, activitiesRes, sstYearView, envEventsData, incidentAnalytics] = await Promise.all([
-      getPdtpComplianceIndicators(activeProgram.id, selectedWorksiteId),
-      listActionsByProgram(activeProgram.id, {
+  if (focusProgram) {
+    // UX-01: `getPdtpComplianceIndicators` sin faena deja `executed` en 0 aunque
+    // exista avance real (loadProgramScheduleAndExecutions no agrega ejecuciones
+    // sin faena). El agregado se pide sobre las faenas autorizadas del usuario,
+    // y el mismo fan-out alimenta la comparativa por faena — antes se recalculaba
+    // una vez por faena en un segundo round-trip.
+    const [scopeIndicators, integralRes, categoryRes, actRes, sstYearView, envEventsData, incidentAnalytics] = await Promise.all([
+      getPdtpComplianceIndicatorsForScope(focusProgram.id, scopedWorksites.map((w) => w.id)),
+      // Sin faena elegida el integral se agrega sobre el alcance del usuario.
+      // No es el promedio de los integrales por faena: verificación es un
+      // promedio de checklists y cierre un ratio de acciones, así que ambos ejes
+      // se recalculan sobre las filas crudas de todas las faenas.
+      selectedWorksiteId
+        ? getPdtpIntegralCompliance(focusProgram.id, selectedWorksiteId)
+        : getPdtpIntegralComplianceForScope(focusProgram.id, scopedWorksites.map((w) => w.id)),
+      // Sigue a la faena elegida, como el resto de los KPI. La comparativa por
+      // faena es el único gráfico que mira siempre todo el alcance.
+      getPdtpComplianceByCategoryForScope(
+        focusProgram.id,
+        selectedWorksiteId ? [selectedWorksiteId] : scopedWorksites.map((w) => w.id),
+      ),
+      listActionsByProgram(focusProgram.id, {
         worksiteId: selectedWorksiteId,
         scope: worksiteScopeIds,
       }),
-      listPdtpProgramActivities(activeProgram.id),
       getCanonicalSafetyIndicatorYear(year, scope).catch(() => null),
       getMaterialEnvironmentalEvents(year, scope).catch(() => null),
       getIncidentAnalyticsData(year, scope).catch(() => null),
     ])
 
-    indicators = indRes
+    // Con faena elegida se usa su desglose; sin faena, el agregado del alcance.
+    indicators = selectedWorksiteId
+      ? scopeIndicators?.perWorksite.find((entry) => entry.worksiteId === selectedWorksiteId)?.indicators ?? null
+      : scopeIndicators
+    integral = integralRes
     actions = actRes
 
     if (incidentAnalytics) {
@@ -117,12 +145,15 @@ export default async function PdtpDashboardPage({ searchParams }: PdtpDashboardP
       const targetWorksiteId = selectedWorksiteId || "total"
       const group = sstYearView.groups.find((g) => g.worksiteId === targetWorksiteId) || sstYearView.groups.find((g) => g.worksiteId === "total")
       if (group) {
+        // Solo TF y TG, que es lo que el gráfico grafica. No se derivan series
+        // de "accidentes con/sin tiempo perdido" del eje confirmed/provisional:
+        // ese eje es certeza de clasificación, no tiempo perdido — todos los
+        // casos del motor canónico ya son con tiempo perdido
+        // (`absenceAtLeastNormalShift`) y `provisional` contiene a `confirmed`.
         sstPoints = group.monthly.map((m, i) => ({
           monthName: MONTH_NAMES[i] ?? `M${i + 1}`,
           tasaFrecuencia: m.confirmed.frequencyRate ?? 0,
           tasaGravedad: m.confirmed.severityRate ?? 0,
-          accConTiempoPerdido: m.confirmed.accidents ?? 0,
-          accSinTiempoPerdido: m.provisional.accidents ?? 0,
         }))
       }
     }
@@ -150,43 +181,27 @@ export default async function PdtpDashboardPage({ searchParams }: PdtpDashboardP
       }))
     }
 
-    // 2. Datos para gráfico de cumplimiento por faena (comparativa)
-    if (scopedWorksites.length > 0) {
-      const worksiteIndicators = await Promise.all(
-        scopedWorksites.map(async (ws) => {
-          const res = await getPdtpComplianceIndicators(activeProgram.id, ws.id)
-          const pct = res?.annual.percent !== null && res?.annual.percent !== undefined
-            ? Math.round(res.annual.percent * 100)
-            : 0
-          return {
-            name: ws.name,
-            percent: pct,
-            executed: res?.annual.executed ?? 0,
-            scheduled: res?.annual.planned ?? 0,
-          }
-        }),
-      )
-      worksiteComplianceData = worksiteIndicators
-    }
-
-    // 3. Desglose por hoja/área SG-SST
-    const activitiesBySheet = new Map<string, number>()
-    for (const act of activitiesRes) {
-      const sheetLabel = act.program ?? "General"
-      activitiesBySheet.set(sheetLabel, (activitiesBySheet.get(sheetLabel) ?? 0) + 1)
-    }
-
-    categoryBreakdownData = [...activitiesBySheet.entries()].map(([cat, total]) => {
-      const executedEst = Math.round(
-        (total * (indicators?.annual.executed ?? 0)) / Math.max(indicators?.annual.planned ?? 1, 1),
-      )
+    // 2. Comparativa por faena — reusa el desglose que ya trajo el agregado.
+    worksiteComplianceData = (scopeIndicators?.perWorksite ?? []).map((entry) => {
+      const worksite = scopedWorksites.find((w) => w.id === entry.worksiteId)
+      const percent = entry.indicators?.annual.percent
       return {
-        category: cat,
-        scheduled: total,
-        executed: Math.min(executedEst, total),
-        percent: Math.round((Math.min(executedEst, total) / total) * 100),
+        name: worksite?.name ?? entry.worksiteId,
+        percent: percent != null ? Math.round(percent * 100) : 0,
+        executed: entry.indicators?.annual.executed ?? 0,
+        scheduled: entry.indicators?.annual.planned ?? 0,
       }
     })
+
+    // 3. Avance por eje SG-SST, con ejecuciones aprobadas reales agrupadas por
+    // hoja. La versión anterior prorrateaba el ratio global entre categorías, lo
+    // que mezclaba nº de actividades con cantidades e inventaba el ejecutado.
+    categoryBreakdownData = (categoryRes ?? []).map((entry) => ({
+      category: entry.category,
+      scheduled: entry.planned,
+      executed: entry.executed,
+      percent: entry.percent !== null ? Math.round(entry.percent * 100) : 0,
+    }))
   }
 
   const annualPercent = indicators?.annual.percent !== null && indicators?.annual.percent !== undefined
@@ -199,8 +214,13 @@ export default async function PdtpDashboardPage({ searchParams }: PdtpDashboardP
     ? Math.round(currentMonthData.percent * 100)
     : 0
 
-  const openActionsCount = actions.filter((a) => a.estado !== "verificada").length
+  // `PDTP_ESTADOS_CERRADOS` es la constante del dominio (completado/verificado/
+  // cancelado) que ya usan el cumplimiento integral y el cálculo de vencidas.
+  // Antes esto filtraba por "verificada", que no es un valor del enum —el filtro
+  // no excluía nada y el tile contaba el 100 % de las acciones.
+  const openActionsCount = actions.filter((a) => isPdtpActionOpen(a.estado)).length
   const overdueActionsCount = actions.filter((a) => a.vencida).length
+  const integralPercent = integral?.integral != null ? Math.round(integral.integral) : null
 
   return (
     <PageContainer>
@@ -241,15 +261,16 @@ export default async function PdtpDashboardPage({ searchParams }: PdtpDashboardP
             sheetCode="pdtp_general"
             worksites={scopedWorksites}
           />
-          {activeProgram && (
+          {focusProgram && (
             <span className="text-xs text-[var(--color-text-muted)]">
-              Programa activo: <strong className="font-semibold text-[var(--color-text)]">{activeProgram.title}</strong> (v{activeProgram.version})
+              {activeProgram ? "Programa activo" : "Programa en borrador"}:{" "}
+              <strong className="font-semibold text-[var(--color-text)]">{focusProgram.title}</strong> (v{focusProgram.version})
             </span>
           )}
         </div>
-        {activeProgram && (
+        {focusProgram && (
           <Link
-            href={`/prevencion/pdtp/${activeProgram.id}`}
+            href={`/prevencion/pdtp/${focusProgram.id}`}
             className="text-xs font-medium text-[var(--color-primary)] hover:underline"
           >
             Ver matriz detallada de actividades →
@@ -257,17 +278,46 @@ export default async function PdtpDashboardPage({ searchParams }: PdtpDashboardP
         )}
       </div>
 
-      {!activeProgram ? (
+      {mustChooseProgram ? (
+        <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-8 shadow-xs">
+          <p className="text-center font-semibold text-[var(--color-text)]">Hay {programsForYear.length} programas para {year} y ninguno activo</p>
+          <p className="mx-auto mt-1 max-w-prose text-center text-sm text-[var(--color-text-muted)]">
+            Elige cuál quieres revisar. No se muestra un tablero agregado porque las
+            cifras de un borrador no representan el cumplimiento del período.
+          </p>
+          <ul className="mx-auto mt-4 grid max-w-2xl gap-2">
+            {programsForYear.map((program) => (
+              <li key={program.id}>
+                <Link
+                  href={`/prevencion/pdtp/${program.id}`}
+                  className="flex items-center justify-between rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm transition-colors hover:bg-[var(--color-surface-2)]"
+                >
+                  <span className="font-medium text-[var(--color-text)]">{program.title}</span>
+                  <span className="text-xs text-[var(--color-text-muted)]">v{program.version} · {program.status}</span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : !focusProgram ? (
         <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-12 text-center shadow-xs">
-          <p className="font-semibold text-[var(--color-text)]">Sin programa activo para {year}</p>
+          <p className="font-semibold text-[var(--color-text)]">Sin programa para {year}</p>
           <p className="mt-1 text-sm text-[var(--color-text-muted)]">
-            No se encontró un programa de trabajo preventivo vigente para este año.
+            No hay programas de trabajo preventivo registrados para este año.
           </p>
           {canManageProgram && (
             <Button asChild className="mt-4" size="sm">
               <Link href="/prevencion/pdtp/nuevo">Crear programa para {year}</Link>
             </Button>
           )}
+        </div>
+      ) : scopedWorksites.length === 0 ? (
+        <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-12 text-center shadow-xs">
+          <p className="font-semibold text-[var(--color-text)]">Sin faenas asignadas a tu usuario</p>
+          <p className="mx-auto mt-1 max-w-prose text-sm text-[var(--color-text-muted)]">
+            El cumplimiento se calcula sobre las faenas que tienes autorizadas y hoy no
+            tienes ninguna. Pide a un administrador que te asigne al menos una faena.
+          </p>
         </div>
       ) : (
         <div className="space-y-6">
@@ -276,7 +326,11 @@ export default async function PdtpDashboardPage({ searchParams }: PdtpDashboardP
             <KpiCard
               label="Cumplimiento Anual"
               value={`${annualPercent}%`}
-              detail={`${indicators?.annual.executed ?? 0} de ${indicators?.annual.planned ?? 0} ejecuciones`}
+              detail={
+                selectedWorksiteId
+                  ? `${indicators?.annual.executed ?? 0} de ${indicators?.annual.planned ?? 0} ejecuciones`
+                  : `${indicators?.annual.executed ?? 0} de ${indicators?.annual.planned ?? 0} ejecuciones · ${scopedWorksites.length} faena${scopedWorksites.length === 1 ? "" : "s"}`
+              }
               icon={<ShieldCheck size={22} className="text-[var(--color-success)]" />}
             />
             <KpiCard
@@ -285,10 +339,17 @@ export default async function PdtpDashboardPage({ searchParams }: PdtpDashboardP
               detail={`Mes ${currentMonthNum}: ${currentMonthData?.executed ?? 0}/${currentMonthData?.planned ?? 0} ejecuciones`}
               icon={<ChartBar size={22} className="text-[var(--color-primary)]" />}
             />
+            {/* Reemplaza el conteo de faenas, que no cambiaba ninguna decisión
+                (regla A1). El integral pondera ejecución + verificación de
+                checklist + cierre de acciones, y solo está definido por faena. */}
             <KpiCard
-              label="Faenas Autorizadas"
-              value={String(scopedWorksites.length)}
-              detail={selectedWorksiteId ? "Faena seleccionada activa" : "Todas las faenas en alcance"}
+              label="Cumplimiento Integral"
+              value={integralPercent !== null ? `${integralPercent}%` : "—"}
+              detail={
+                integralPercent !== null
+                  ? `Ejec. ${Math.round((integral?.ejecucion ?? 0) * 100)}% · Verif. ${Math.round(integral?.verificacion ?? 0)}% · Cierre ${Math.round(integral?.cierre ?? 0)}%`
+                  : "Sin ejecuciones aprobadas todavía"
+              }
               icon={<ListChecks size={22} className="text-[var(--color-info)]" />}
             />
             <KpiCard
