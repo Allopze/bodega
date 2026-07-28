@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test"
-import { login } from "./helpers"
+import { login, expectPageTitle } from "./helpers"
 
 /**
  * E2E Spec: Dashboard de Indicadores SST y Exportación Ejecutiva.
@@ -18,6 +18,6 @@ test.describe("Prevención — Dashboard de Indicadores SST", () => {
     await expect(page).toHaveURL(/\/prevencion\/indicadores/)
 
     // Título de la página
-    await expect(page.getByRole("heading", { name: /Indicadores|Estadísticas/i })).toBeVisible()
+    await expectPageTitle(page, /Indicadores|Estadísticas/i)
   })
 })

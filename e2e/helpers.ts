@@ -14,12 +14,44 @@ export async function clearRateLimits() {
 
 /** Log in as an E2E user (admin by default) and verify we land on dashboard. */
 export async function login(page: Page, email = "admin@e2e.chome.cl", password = "chome2026") {
-  await clearRateLimits()
-  await page.goto("/login")
-  await page.getByLabel("Correo electrónico").fill(email)
-  await page.getByLabel("Contraseña").fill(password)
-  await page.getByRole("button", { name: "Ingresar" }).click()
-  await expect(page).toHaveURL(/\/dashboard/)
+  // Todos los workers comparten la misma IP y la misma tabla `rate_limits`, así
+  // que mientras `negative-flows.spec.ts` acumula fallos a propósito para
+  // verificar el bloqueo, el login de otro worker en paralelo puede quedar
+  // bloqueado por IP y terminar en /login. Limpiar antes no alcanza: es una
+  // carrera, el otro spec vuelve a llenar la tabla. Se reintenta una vez.
+  for (const attempt of [1, 2]) {
+    await clearRateLimits()
+    await page.goto("/login")
+    await page.getByLabel("Correo electrónico").fill(email)
+    await page.getByLabel("Contraseña").fill(password)
+    await page.getByRole("button", { name: "Ingresar" }).click()
+    try {
+      await expect(page).toHaveURL(/\/dashboard/, { timeout: 15_000 })
+      return
+    } catch (error) {
+      if (attempt === 2) throw error
+    }
+  }
+}
+
+/**
+ * Asserts the page title, siempre acotado al `h1`.
+ *
+ * `getByRole("heading", { name })` a secas es ambiguo en cualquier pantalla del
+ * shell, por dos motivos independientes:
+ *
+ * 1. El título se renderiza dos veces — la copia `lg:sr-only` de `PageHeader` y
+ *    la del TopBar (que además es un `<p>`, no un heading).
+ * 2. El nombre del módulo suele ser substring del `h2` de su estado vacío
+ *    ("Recepción" ⊂ "Sin OCs pendientes de recepción"), así que la pantalla
+ *    empieza a fallar por strict mode justo cuando se queda sin datos.
+ *
+ * El subtítulo NO se asserta: en el TopBar es `display:none` bajo 1536px y en la
+ * página es `sr-only` en desktop, así que afirmar que "está visible" no dice
+ * nada del usuario real.
+ */
+export async function expectPageTitle(page: Page, name: string | RegExp) {
+  await expect(page.getByRole("heading", { level: 1, name })).toBeVisible()
 }
 
 /** Select an option inside a Radix Select identified by `id`. */

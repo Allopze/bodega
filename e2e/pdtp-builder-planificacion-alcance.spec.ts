@@ -52,30 +52,52 @@ test.describe("PDTP — Builder: Cuándo se realiza", () => {
   })
 })
 
-test.describe("PDTP — Builder: Datos básicos, alcance por faena", () => {
+test.describe("PDTP — Builder: alcance por faena", () => {
   test.beforeEach(async ({ page }) => {
     await login(page)
   })
 
   test("restringir el programa a una faena y excluir una actividad", async ({ page }) => {
     await createDraftProgramWithActivity(page, "Programa Builder Alcance E2E")
-    await page.getByRole("tab", { name: /Datos básicos/ }).click()
+    // El alcance es su propio paso: depende de que ya existan actividades.
+    await page.getByRole("tab", { name: /Alcance/ }).click()
 
     await page.getByRole("checkbox", { name: /Faena E2E/ }).check()
     const saveWorksitesButton = page.getByRole("button", { name: "Guardar faenas" })
     await saveWorksitesButton.click()
-    // "1 faena(s) seleccionada(s)" es estado local que cambia apenas se
-    // marca el checkbox, antes de guardar — no sirve como señal de que el
-    // guardado ya terminó. El botón sí: vuelve a deshabilitarse solo
-    // cuando el servidor confirma y ya no hay cambios sin guardar.
+    // "1 de N faenas marcadas" es estado local que cambia apenas se marca el
+    // checkbox, antes de guardar — no sirve como señal de que el guardado ya
+    // terminó. El botón sí: vuelve a deshabilitarse solo cuando el servidor
+    // confirma y ya no hay cambios sin guardar.
     await expect(saveWorksitesButton).toBeDisabled({ timeout: 15_000 })
 
     await page.reload()
-    await page.getByRole("tab", { name: /Datos básicos/ }).click()
+    await page.getByRole("tab", { name: /Alcance/ }).click()
     await expect(page.getByRole("checkbox", { name: /Faena E2E/ })).toBeChecked()
 
-    await page.getByRole("combobox", { name: "Actividad a excluir" }).click()
+    const activityTrigger = page.getByRole("combobox", { name: "Actividad a excluir" })
+    await activityTrigger.click()
     await page.getByRole("option", { name: /^N°1/ }).click()
+    // Regresión del truncado del Select: con una opción larga seleccionada el
+    // trigger conserva su altura de control. Sin truncado, el texto se partía
+    // en varias líneas y se dibujaba fuera del borde, encima del encabezado.
+    const triggerBox = await activityTrigger.boundingBox()
+    expect(triggerBox!.height).toBeLessThanOrEqual(44)
+    const valueStyle = await activityTrigger.evaluate((el) => {
+      const span = el.querySelector(":scope > span")!
+      const style = getComputedStyle(span)
+      return {
+        whiteSpace: style.whiteSpace,
+        textOverflow: style.textOverflow,
+        // El nombre del fixture es más largo que la columna: si esto es false,
+        // la precondición del test se rompió (columna más ancha), no el fix.
+        clipped: span.scrollWidth > span.clientWidth,
+      }
+    })
+    expect(valueStyle.whiteSpace).toBe("nowrap")
+    expect(valueStyle.textOverflow).toBe("ellipsis")
+    expect(valueStyle.clipped).toBe(true)
+
     await page.getByRole("combobox", { name: "Faena a excluir" }).click()
     await page.getByRole("option", { name: "Faena E2E" }).click()
     await page.getByPlaceholder("Motivo (mín. 10 caracteres)").fill("Esta faena no ejecuta esta actividad puntual.")

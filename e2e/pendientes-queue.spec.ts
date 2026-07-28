@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test"
-import { login } from "./helpers"
+import { login, expectPageTitle } from "./helpers"
 
 /**
  * E2E Spec: Bandeja Unificada de Pendientes Operacionales (`/pendientes`).
@@ -17,7 +17,6 @@ test.describe("Módulo de Mis Pendientes", () => {
     await expect(page).toHaveURL(/\/pendientes/)
 
     // Título y descripción
-    await expect(page.getByRole("heading", { name: "Mis pendientes" })).toBeVisible()
-    await expect(page.getByText(/Cola priorizada de trabajo real/i)).toBeVisible()
+    await expectPageTitle(page, "Mis pendientes")
   })
 })

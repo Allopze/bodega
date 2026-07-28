@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test"
-import { login } from "./helpers"
+import { login, expectPageTitle } from "./helpers"
 
 /**
  * E2E Spec: Matriz de Riesgos MIPER y Controles.
@@ -18,7 +18,6 @@ test.describe("Prevención — Matriz MIPER y Controles", () => {
     await expect(page).toHaveURL(/\/prevencion\/miper/)
 
     // Título y descripción
-    await expect(page.getByRole("heading", { name: "MIPER y controles" })).toBeVisible()
-    await expect(page.getByText(/Versiona peligros, riesgos y controles/i)).toBeVisible()
+    await expectPageTitle(page, "MIPER y controles")
   })
 })

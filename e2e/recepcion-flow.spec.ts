@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test"
-import { login } from "./helpers"
+import { login, expectPageTitle } from "./helpers"
 
 /**
  * E2E Spec: Módulo de Recepción de Mercadería y Órdenes de Compra (`/recepcion`).
@@ -18,6 +18,6 @@ test.describe("Módulo de Recepción", () => {
     await expect(page).toHaveURL(/\/recepcion/)
 
     // Título y encabezado
-    await expect(page.getByRole("heading", { name: "Recepción" })).toBeVisible()
+    await expectPageTitle(page, "Recepción")
   })
 })

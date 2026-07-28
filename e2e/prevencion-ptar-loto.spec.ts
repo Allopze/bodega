@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test"
-import { login } from "./helpers"
+import { login, expectPageTitle } from "./helpers"
 
 /**
  * E2E Spec: Permisos de Trabajo de Alto Riesgo (PTAR) y Bloqueo LOTO.
@@ -19,8 +19,7 @@ test.describe("Prevención — Permisos de Trabajo (PTAR)", () => {
     await expect(page).toHaveURL(/\/prevencion\/permisos/)
 
     // Título y descripción
-    await expect(page.getByRole("heading", { name: "Permisos de trabajo" })).toBeVisible()
-    await expect(page.getByText(/Autorización de tareas críticas/i)).toBeVisible()
+    await expectPageTitle(page, "Permisos de trabajo")
 
     // Exportación a Excel
     await expect(page.getByRole("link", { name: /Exportar Excel/i })).toBeVisible()

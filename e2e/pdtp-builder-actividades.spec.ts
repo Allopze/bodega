@@ -99,7 +99,13 @@ test.describe("PDTP — Builder: Actividades", () => {
     const objectiveInput = page.getByRole("tabpanel").getByRole("textbox")
     await expect(objectiveInput).toHaveValue("Objetivo Original E2E")
     await objectiveInput.fill("Objetivo Renombrado E2E")
-    await page.getByRole("button", { name: "Guardar" }).click()
+    const saveButton = page.getByRole("button", { name: "Guardar" })
+    await saveButton.click()
+    // Recargar apenas se hace clic abortaba el guardado en vuelo: pasaba en
+    // isolation y fallaba bajo carga. El botón vuelve a deshabilitarse sólo
+    // cuando el servidor confirma y ya no hay cambios sin guardar.
+    await expect(saveButton).toBeDisabled({ timeout: 15_000 })
+    await expect(page.getByText("Guardado").first()).toBeVisible()
 
     await page.reload()
     await page.getByRole("tab", { name: /Objetivos/ }).click()

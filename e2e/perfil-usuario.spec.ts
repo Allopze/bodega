@@ -21,7 +21,10 @@ test.describe("Módulo de Mi Perfil", () => {
     await expect(page.getByRole("heading", { name: "Mi perfil" })).toBeVisible()
     await expect(page.getByRole("heading", { name: "Cuenta" })).toBeVisible()
 
-    // Formularios de seguridad y preferencias
-    await expect(page.getByRole("heading", { name: /Cambiar contraseña/i })).toBeVisible()
+    // Formularios de seguridad y preferencias. "Cambiar contraseña" es el botón
+    // de envío del formulario, no un encabezado: la sección se titula
+    // "Seguridad" (ver app/(app)/perfil/page.tsx).
+    await expect(page.getByRole("heading", { name: "Seguridad" })).toBeVisible()
+    await expect(page.getByRole("button", { name: /Cambiar contraseña/i })).toBeVisible()
   })
 })

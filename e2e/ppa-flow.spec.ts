@@ -86,25 +86,76 @@ async function goToStoppedPpaDetail(page: Page) {
   await login(page)
   await gotoWithRetry(page, "/prevencion/ppa")
   await page.getByRole("button", { name: "Detenidos" }).click()
-  await page.getByRole("link", { name: /Trabajador E2E/ }).first().click()
+  // El clic en la pestaña cambia la URL y re-renderiza la lista. Sin esperar a
+  // que se asiente, el clic siguiente cae sobre el DOM viejo y se pierde: la
+  // URL quedaba en la lista filtrada y el test fallaba mucho más abajo.
+  await expect(page).toHaveURL(/estado=detenido/)
+  const detailLink = page.getByRole("link", { name: /Trabajador E2E/ }).first()
+  await expect(detailLink).toBeVisible()
+  await detailLink.click()
   await expect(page).toHaveURL(/\/prevencion\/ppa\/[^/]+$/)
 }
 
+/**
+ * Define la corrección de un PPA detenido: es la única decisión que deja el caso
+ * en curso. Prioridad "Baja" a propósito — la segregación de funciones de CAPA
+ * sólo exige que verifique otra persona cuando la acción es alta o crítica
+ * (`lib/services/prevention-capa.ts`), y este spec corre con un solo usuario.
+ */
+async function defineCorrection(page: Page) {
+  await page.getByLabel("Acción correctiva").fill("Se aisló el cable y se delimitó la zona")
+  await page.locator("#responsible").fill("Supervisor E2E")
+  await selectRadixById(page, "responsible-role", "Supervisor de faena")
+  await selectRadixById(page, "priority", "Baja")
+  await pickCurrentMonthDate(page, "Seleccionar fecha")
+  await page.getByRole("button", { name: /Definir corrección/ }).click()
+  await page.getByRole("button", { name: "Registrar revisión" }).click()
+  await expect(page.getByText("Solicitó corrección", { exact: true })).toBeVisible({ timeout: 15_000 })
+}
+
+/**
+ * Recorre el control de reinicio completo: evidencia → declaración de
+ * implementación → verificación → autorización. El producto ya no permite
+ * autorizar directamente desde la revisión; exige este camino.
+ */
+async function authorizeRestart(page: Page) {
+  // Cada paso hace router.refresh() y el panel cambia de rama según el estado,
+  // así que se espera el control del paso siguiente antes de seguir: sin eso un
+  // fallo intermedio sólo se ve al final, como un botón que nunca aparece.
+  await page.locator("#ppa-evidence-reference").fill("FOT-2026-0042")
+  await page.getByRole("button", { name: "Vincular evidencia" }).click()
+
+  const declareButton = page.getByRole("button", { name: "Declarar controles implementados" })
+  await expect(declareButton).toBeEnabled({ timeout: 15_000 })
+  await declareButton.click()
+
+  await expect(page.locator("#ppa-verification-comment")).toBeVisible({ timeout: 15_000 })
+  await page.locator("#ppa-verification-comment").fill("Inspección en terreno: cable retirado y zona despejada")
+  await page.locator("#ppa-effectiveness").fill("El riesgo eléctrico ya no está presente en la tarea")
+  await page.getByRole("button", { name: "Verificar controles" }).click()
+
+  await expect(page.locator("#ppa-restart-comment")).toBeVisible({ timeout: 15_000 })
+  await page.locator("#ppa-restart-comment").fill("Autorizado con cuadrilla habilitada")
+  await page.getByRole("button", { name: /Autorizar reinicio/ }).click()
+
+  // Con el PPA autorizado el panel pasa a ofrecer el cierre administrativo.
+  await expect(page.getByRole("button", { name: "Cerrar administrativamente" })).toBeVisible({ timeout: 15_000 })
+}
+
 test.describe("PPA Digital — revisión del responsable", () => {
-  test("autorizar un PPA detenido actualiza el estado", async ({ page }) => {
+  // El reinicio de un PPA detenido ya no se autoriza desde la revisión: exige
+  // corrección con CAPA, evidencia, verificación independiente y autorización
+  // expresa. Este test recorre ese control completo.
+  test("autorizar el reinicio exige corrección, evidencia y verificación", async ({ page }) => {
     await submitStoppedPpa(page)
     await goToStoppedPpaDetail(page)
 
-    await page.getByLabel("Acción correctiva").fill("Se aisló el cable y se delimitó la zona")
-    await page.locator("#responsible").fill("Supervisor E2E")
-    await selectRadixById(page, "responsible-role", "Supervisor de faena")
-    await pickCurrentMonthDate(page, "Seleccionar fecha")
-    await page.getByText("Autorizar inicio").click()
-    await page.getByRole("button", { name: "Registrar revisión" }).click()
-    await page.getByRole("button", { name: "Sí, autorizar" }).click()
+    // La revisión sólo ofrece corregir o rechazar — no autorizar directamente.
+    await expect(page.getByRole("button", { name: /Definir corrección/ })).toBeVisible()
+    await expect(page.getByRole("button", { name: /Autorizar inicio/ })).toHaveCount(0)
 
-    await expect(page.getByText("Autorizó el inicio", { exact: true })).toBeVisible()
-    await expect(page.getByRole("button", { name: "Cerrar caso" })).toBeVisible()
+    await defineCorrection(page)
+    await authorizeRestart(page)
   })
 
   test("rechazar un PPA detenido muestra estado rechazado", async ({ page }) => {
@@ -117,36 +168,29 @@ test.describe("PPA Digital — revisión del responsable", () => {
     await expect(page.getByText("Rechazó el inicio", { exact: true })).toBeVisible()
   })
 
-  test("solicitar corrección cambia estado a en corrección", async ({ page }) => {
+  test("definir corrección cambia estado a en corrección", async ({ page }) => {
     await submitStoppedPpa(page)
     await goToStoppedPpaDetail(page)
 
-    await page.getByRole("button", { name: "Solicitar corrección" }).click()
-    await page.getByRole("button", { name: "Registrar revisión" }).click()
-
-    await expect(page.getByText("Solicitó corrección", { exact: true })).toBeVisible()
+    // El botón se llama "Definir corrección" y sólo se habilita con los datos
+    // de la acción completos; la etiqueta de trazabilidad sigue siendo
+    // "Solicitó corrección" (lib/ppa/badges.ts).
+    await defineCorrection(page)
   })
 
   test("cerrar un caso autorizado muestra estado cerrado", async ({ page }) => {
     await submitStoppedPpa(page)
     await goToStoppedPpaDetail(page)
 
-    // Autorizar
-    await page.getByLabel("Acción correctiva").fill("Se aisló el cable y se delimitó la zona")
-    await page.locator("#responsible").fill("Supervisor E2E")
-    await selectRadixById(page, "responsible-role", "Supervisor de faena")
-    await pickCurrentMonthDate(page, "Seleccionar fecha")
-    await page.getByText("Autorizar inicio").click()
-    await page.getByRole("button", { name: "Registrar revisión" }).click()
-    await page.getByRole("button", { name: "Sí, autorizar" }).click()
-    await expect(page.getByText("Autorizó el inicio", { exact: true })).toBeVisible()
+    await defineCorrection(page)
+    await authorizeRestart(page)
 
-    // Cerrar
-    await page.getByRole("button", { name: "Cerrar caso" }).click()
-    await expect(page.getByRole("dialog").getByRole("button", { name: "Cerrar caso" })).toBeVisible()
-    await page.getByRole("dialog").getByRole("button", { name: "Cerrar caso" }).click()
+    // El cierre de un PPA autorizado es "Cerrar administrativamente", con su
+    // observación, en el panel de control — no el "Cerrar caso" de otro camino.
+    await page.locator("#ppa-close-comment").fill("Tarea reiniciada y ejecutada sin incidentes")
+    await page.getByRole("button", { name: "Cerrar administrativamente" }).click()
 
-    await expect(page.getByText("Caso cerrado")).toBeVisible()
+    await expect(page.getByText(/Caso cerrado|Cerrado/).first()).toBeVisible({ timeout: 15_000 })
   })
 })
 
@@ -161,7 +205,9 @@ test.describe("PPA Digital — exportación Excel", () => {
     await expect(page.getByText("Exportar PPA Digital")).toBeVisible()
 
     // Seleccionar filtro de estado.
-    await selectRadixById(page, "ppa-export-estado", "Trabajo detenido")
+    // `status-export` es el id del ExportDialog compartido que reemplazó al
+    // diálogo propio; `ppa-export-estado` ya no existe.
+    await selectRadixById(page, "status-export", "Trabajo detenido")
 
     // Descargar y verificar que devuelve un Excel.
     const [download] = await Promise.all([

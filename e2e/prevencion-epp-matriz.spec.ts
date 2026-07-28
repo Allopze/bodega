@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test"
-import { login } from "./helpers"
+import { login, expectPageTitle } from "./helpers"
 
 /**
  * E2E Spec: Matriz y Entrega Técnica de EPP Preventivo.
@@ -17,6 +17,6 @@ test.describe("Prevención — Matriz de EPP Preventivo", () => {
     await expect(page).toHaveURL(/\/prevencion\/epp-preventivo/)
 
     // Título de la página
-    await expect(page.getByRole("heading", { name: /EPP|Elementos de protección/i })).toBeVisible()
+    await expectPageTitle(page, /EPP|Elementos de protección/i)
   })
 })

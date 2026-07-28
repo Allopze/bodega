@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test"
-import { login } from "./helpers"
+import { login, expectPageTitle } from "./helpers"
 
 /**
  * E2E Spec: Capacitación, Competencias e Inducción (ODI/DAS - DS 40 / DS 44).
@@ -19,8 +19,7 @@ test.describe("Prevención — Capacitación e Inducciones ODI/DAS", () => {
     await expect(page).toHaveURL(/\/prevencion\/capacitacion/)
 
     // Título de la página
-    await expect(page.getByRole("heading", { name: "Capacitación y competencias" })).toBeVisible()
-    await expect(page.getByText(/Sesiones, asistencia, evaluación y habilitación/i)).toBeVisible()
+    await expectPageTitle(page, "Capacitación y competencias")
 
     // Exportación a Excel
     await expect(page.getByRole("link", { name: /Exportar Excel/i })).toBeVisible()

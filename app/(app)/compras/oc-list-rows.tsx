@@ -120,11 +120,15 @@ export function OcTableRow({ row, canDelete = false }: { row: OcRow; canDelete?:
           )}
           {canDelete && (DELETABLE_ORDER_STATUSES as readonly string[]).includes(row.status) && (
             <>
+              {/* `size-6` y no `p-1`: con 4px de padding alrededor de un icono de
+                  15px el objetivo medía 23×23, un pixel por debajo del mínimo de
+                  WCAG 2.5.8. Lo detectó zoom-200.spec.ts en cuanto el admin de
+                  e2e tuvo el permiso que revela este botón. */}
               <button
                 type="button"
                 disabled={deletePending}
                 onClick={(e) => { e.stopPropagation(); setDeleteOpen(true) }}
-                className="inline-flex items-center justify-center rounded p-1 text-text-subtle hover:text-danger hover:bg-danger-tint transition-colors disabled:opacity-40"
+                className="inline-flex size-6 items-center justify-center rounded text-text-subtle hover:text-danger hover:bg-danger-tint transition-colors disabled:opacity-40"
                 title="Eliminar OC"
                 aria-label={`Eliminar OC ${row.code}`}
               >

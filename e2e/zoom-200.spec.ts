@@ -78,10 +78,12 @@ test.describe("Zoom 200% — controls are clickable", () => {
         })
       })
 
-      // Every button should be at least 24px (WCAG 2.5.8 AA minimum)
+      // Every button should be at least 24px (WCAG 2.5.8 AA minimum).
+      // El mensaje identifica al control: un "23" pelado no dice cuál corregir.
       for (const btn of buttonSizes) {
-        expect(btn.height).toBeGreaterThanOrEqual(24)
-        expect(btn.width).toBeGreaterThanOrEqual(24)
+        const label = `${btn.tag} "${btn.text}" mide ${btn.width}×${btn.height}px en ${path}`
+        expect(btn.height, label).toBeGreaterThanOrEqual(24)
+        expect(btn.width, label).toBeGreaterThanOrEqual(24)
       }
     })
   }

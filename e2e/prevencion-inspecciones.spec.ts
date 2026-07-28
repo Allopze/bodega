@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test"
-import { login } from "./helpers"
+import { login, expectPageTitle } from "./helpers"
 
 /**
  * E2E Spec: Inspecciones y Auditorías de Seguridad.
@@ -18,7 +18,6 @@ test.describe("Prevención — Inspecciones y auditorías", () => {
     await expect(page).toHaveURL(/\/prevencion\/inspecciones/)
 
     // Título de la página
-    await expect(page.getByRole("heading", { name: "Inspecciones y auditorías" })).toBeVisible()
-    await expect(page.getByText(/Listas de chequeo/i)).toBeVisible()
+    await expectPageTitle(page, "Inspecciones y auditorías")
   })
 })

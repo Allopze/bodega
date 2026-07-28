@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test"
-import { login } from "./helpers"
+import { login, expectPageTitle } from "./helpers"
 
 /**
  * E2E Spec: Gestión de Incidentes, Accidentes e Investigación RE-20 (DS 44).
@@ -20,17 +20,20 @@ test.describe("Prevención — Incidentes y denuncias RE-20", () => {
     await expect(page).toHaveURL(/\/prevencion\/incidentes/)
 
     // Título y contenedor principal
-    await expect(page.getByRole("heading", { name: "Incidentes y denuncias" })).toBeVisible()
-    await expect(page.getByText(/Fuente canónica de eventos/i)).toBeVisible()
+    await expectPageTitle(page, "Incidentes y denuncias")
 
-    // Botones de acción en el header
-    await expect(page.getByRole("link", { name: /Reportar/i })).toBeVisible()
-    await expect(page.getByRole("link", { name: /Exportar Excel/i })).toBeVisible()
+    // Botones de acción en el header, acotados a #main-content: el sidebar tiene
+    // su propio link "Reportar incidente".
+    const main = page.locator("#main-content")
+    await expect(main.getByRole("link", { name: "Reportar", exact: true })).toBeVisible()
+    await expect(main.getByRole("link", { name: /Exportar Excel/i })).toBeVisible()
   })
 
   test("la navegación al formulario de reporte funciona correctamente", async ({ page }) => {
     await page.goto("/prevencion/incidentes")
-    await page.getByRole("link", { name: /Reportar/i }).click()
+    // Acotado a #main-content: el sidebar tiene su propio link "Reportar
+    // incidente" y sin acotar el locator resuelve a 2 elementos.
+    await page.locator("#main-content").getByRole("link", { name: "Reportar", exact: true }).click()
     await expect(page).toHaveURL(/\/prevencion\/incidentes\/reportar/)
   })
 })

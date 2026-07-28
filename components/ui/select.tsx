@@ -83,7 +83,11 @@ const SelectTrigger = React.forwardRef<
     <SelectPrimitive.Trigger
       ref={ref}
       className={cn(
-        "flex h-11 sm:h-9 w-full min-w-0 items-center justify-between gap-2 rounded-(--radius-lg)",
+        // Sin `min-w-0` en el trigger a propósito: dejarlo encoger por debajo de
+        // su contenido lo llevaba a ~23px de ancho en layouts apretados (lo
+        // detectó zoom-200.spec.ts a 960px; el mínimo de WCAG 2.5.8 es 24px).
+        // El truncado no lo necesita: lo resuelve el `min-w-0` del span.
+        "flex h-11 sm:h-9 w-full items-center justify-between gap-2 rounded-(--radius-lg)",
         "border border-[var(--color-border-control)] bg-[var(--color-surface)]",
         "px-3.5 py-1.5 text-sm text-[var(--color-text)]",
         // El trigger tiene altura fija: sin truncado, una opción larga (nombre

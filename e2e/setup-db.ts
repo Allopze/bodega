@@ -6,6 +6,7 @@ import bcrypt from "bcryptjs"
 import { loadEnvConfig } from "@next/env"
 import { eq, sql } from "drizzle-orm"
 import * as schema from "../db/schema"
+import { SYSTEM_PERMISSIONS } from "../lib/auth/system-rbac"
 import {
   assertSafeDestructiveDatabase,
   getDatabaseNameFromUrl,
@@ -57,105 +58,15 @@ async function main() {
     isGlobal: true,
   })
 
-  const permissions: (typeof schema.permissions.$inferInsert)[] = [
-    { id: "p-req-create", name: "requests:create", module: "requests", description: "Crear solicitudes" },
-    { id: "p-req-own", name: "requests:view_own", module: "requests", description: "Ver propias" },
-    { id: "p-req-all", name: "requests:view_all", module: "requests", description: "Ver todas" },
-    { id: "p-req-submit", name: "requests:submit", module: "requests", description: "Enviar solicitudes" },
-    { id: "p-apr", name: "approvals:approve", module: "approvals", description: "Aprobar" },
-    { id: "p-pur-view", name: "purchasing:view", module: "purchasing", description: "Ver órdenes de compra" },
-    { id: "p-pur-create", name: "purchasing:create_order", module: "purchasing", description: "Crear OC" },
-    { id: "p-pur-send", name: "purchasing:send_order", module: "purchasing", description: "Enviar OC" },
-    { id: "p-rec-reg-office", name: "receiving:register_office", module: "receiving", description: "Registrar llegada a oficina" },
-    { id: "p-rec-reg-faena", name: "receiving:register_faena", module: "receiving", description: "Registrar recepción en faena" },
-    { id: "p-rec-view", name: "receiving:view", module: "receiving", description: "Ver recepción" },
-    { id: "p-trace-view", name: "traceability:view", module: "traceability", description: "Ver trazabilidad" },
-    { id: "p-del-view", name: "deliveries:view", module: "deliveries", description: "Ver entregas" },
-    { id: "p-del-create", name: "deliveries:create", module: "deliveries", description: "Registrar entregas" },
-    { id: "p-ops-view-work", name: "operations:view_work", module: "operations", description: "Ver cola operacional" },
-    { id: "p-ops-assign-work", name: "operations:assign_work", module: "operations", description: "Asignar pendientes operacionales" },
-    { id: "p-wh-stock", name: "warehouse:view_stock", module: "warehouse", description: "Ver stock" },
-    { id: "p-wh-mov", name: "warehouse:register_movement", module: "warehouse", description: "Movimientos" },
-    { id: "p-wh-adj", name: "warehouse:adjust_stock", module: "warehouse", description: "Ajuste stock" },
-    { id: "p-repuestos-create", name: "repuestos:create", module: "repuestos", description: "Crear solicitudes de repuestos" },
-    { id: "p-repuestos-own", name: "repuestos:view_own", module: "repuestos", description: "Ver solicitudes de repuestos propias" },
-    { id: "p-repuestos-all", name: "repuestos:view_all", module: "repuestos", description: "Ver todas las solicitudes de repuestos" },
-    { id: "p-repuestos-submit", name: "repuestos:submit", module: "repuestos", description: "Enviar solicitudes de repuestos" },
-    { id: "p-repuestos-approve", name: "repuestos:approve", module: "repuestos", description: "Aprobar cotizaciones de repuestos" },
-    { id: "p-servicios-create", name: "servicios:create", module: "servicios", description: "Crear solicitudes de servicios" },
-    { id: "p-servicios-own", name: "servicios:view_own", module: "servicios", description: "Ver solicitudes de servicios propias" },
-    { id: "p-servicios-all", name: "servicios:view_all", module: "servicios", description: "Ver todas las solicitudes de servicios" },
-    { id: "p-servicios-submit", name: "servicios:submit", module: "servicios", description: "Enviar solicitudes de servicios" },
-    { id: "p-servicios-approve", name: "servicios:approve", module: "servicios", description: "Aprobar cotizaciones de servicios" },
-    { id: "p-rep-view", name: "reports:view", module: "reports", description: "Reportes" },
-    { id: "p-adm-usr", name: "admin:users", module: "admin", description: "Usuarios" },
-    { id: "p-adm-ws", name: "admin:worksites", module: "admin", description: "Faenas" },
-    { id: "p-adm-wrk", name: "admin:workers", module: "admin", description: "Trabajadores" },
-    { id: "p-adm-prod", name: "admin:products", module: "admin", description: "Productos" },
-    { id: "p-adm-sup", name: "admin:suppliers", module: "admin", description: "Proveedores" },
-    { id: "p-adm-cfg", name: "admin:config", module: "admin", description: "Config" },
-    { id: "p-adm-audit", name: "admin:audit_log", module: "admin", description: "Auditoría" },
-    { id: "p-adm-fleet", name: "admin:fleet_catalog", module: "admin", description: "Catálogos de flota" },
-    { id: "p-ppa-view", name: "ppa:view", module: "ppa", description: "Ver PPA Digital" },
-    { id: "p-ppa-review", name: "ppa:review", module: "ppa", description: "Revisar PPA" },
-    { id: "p-ppa-manage", name: "ppa:manage", module: "ppa", description: "Gestionar PPA" },
-    { id: "p-sst-view", name: "sst:view", module: "sst", description: "Ver evaluaciones SST" },
-    { id: "p-sst-create", name: "sst:create", module: "sst", description: "Crear evaluaciones SST" },
-    { id: "p-sst-close", name: "sst:close", module: "sst", description: "Cerrar evaluaciones SST" },
-    { id: "p-sst-manage", name: "sst:manage", module: "sst", description: "Gestionar evaluaciones SST" },
-    { id: "p-fuel-view", name: "combustibles:view", module: "combustibles", description: "Ver registros de combustible" },
-    { id: "p-fuel-create", name: "combustibles:create", module: "combustibles", description: "Crear registros de combustible" },
-    { id: "p-fuel-delete", name: "combustibles:delete", module: "combustibles", description: "Eliminar registros de combustible" },
-    { id: "p-fuel-import", name: "combustibles:import", module: "combustibles", description: "Importar datos de combustible" },
-    { id: "p-fuel-export", name: "combustibles:export", module: "combustibles", description: "Exportar datos de combustible" },
-    { id: "p-fuel-view-costs", name: "combustibles:view_costs", module: "combustibles", description: "Ver costos de combustible" },
-    { id: "p-fuel-veh", name: "combustibles:manage_vehicles", module: "combustibles", description: "Gestionar vehículos de combustible" },
-    { id: "p-fuel-sup", name: "combustibles:manage_suppliers", module: "combustibles", description: "Gestionar proveedores de combustible" },
-    { id: "p-fuel-tae-view", name: "combustibles:tae_view", module: "combustibles", description: "Ver control TAE" },
-    { id: "p-fuel-tae-review", name: "combustibles:tae_review", module: "combustibles", description: "Revisar control TAE" },
-    { id: "p-fuel-tae-config", name: "combustibles:tae_manage_config", module: "combustibles", description: "Configurar control TAE" },
-    { id: "p-fuel-tae-import", name: "combustibles:tae_import", module: "combustibles", description: "Importar histórico TAE" },
-    { id: "p-fuel-tae-export", name: "combustibles:tae_export", module: "combustibles", description: "Exportar control TAE" },
-    { id: "p-flot-view", name: "flota:view", module: "flota", description: "Ver flota de vehículos" },
-    { id: "p-mant-view", name: "mantenciones:view", module: "mantenciones", description: "Ver mantenciones de vehículos" },
-    { id: "p-mant-create", name: "mantenciones:create", module: "mantenciones", description: "Registrar mantenciones de vehículos" },
-    { id: "p-mant-edit", name: "mantenciones:edit", module: "mantenciones", description: "Editar y cancelar mantenciones de vehículos" },
-    { id: "p-feedback-create", name: "feedback:create", module: "feedback", description: "Crear reportes de soporte" },
-    { id: "p-feedback-own", name: "feedback:view_own", module: "feedback", description: "Ver reportes propios" },
-    { id: "p-feedback-all", name: "feedback:view_all", module: "feedback", description: "Ver todos los reportes" },
-    { id: "p-feedback-manage", name: "feedback:manage", module: "feedback", description: "Gestionar reportes" },
-    { id: "p-prev-docs-v", name: "prevention:docs:view", module: "prevention", description: "Ver documentación preventiva" },
-    { id: "p-prev-docs-m", name: "prevention:docs:manage", module: "prevention", description: "Gestionar documentos" },
-    { id: "p-prev-docs-a", name: "prevention:docs:approve", module: "prevention", description: "Aprobar/observar/archivar documentos" },
-    { id: "p-prev-docs-arch", name: "prevention:docs:archive", module: "prevention", description: "Archivar documentos" },
-    { id: "p-prev-docs-ack", name: "prevention:docs:ack", module: "prevention", description: "Acuse de lectura de documentos" },
-    { id: "p-prev-docs-link", name: "prevention:docs:link", module: "prevention", description: "Asociar documentos con entidades" },
-    { id: "p-prev-docs-e", name: "prevention:docs:export", module: "prevention", description: "Exportar documentación (Excel)" },
-    { id: "p-prev-docs-sens", name: "prevention:docs:manage_sensitive", module: "prevention", description: "Gestionar documentos sensibles" },
-    { id: "p-prev-docs-rest", name: "prevention:docs:manage_restricted", module: "prevention", description: "Gestionar documentos restringidos" },
-    { id: "p-prev-pdtp-view", name: "prevention:pdtp:view", module: "prevention", description: "Ver Programa de Trabajo Preventivo SG-SST" },
-    { id: "p-prev-pdtp-execute", name: "prevention:pdtp:execute", module: "prevention", description: "Registrar ejecuciones y evidencias PDTP en faenas autorizadas" },
-    { id: "p-prev-pdtp-program-manage", name: "prevention:pdtp:program:manage", module: "prevention", description: "Gestionar catálogo, cronograma y metas por faena del PDTP" },
-    { id: "p-prev-pdtp-submit-review", name: "prevention:pdtp:submit_review", module: "prevention", description: "Enviar el PDTP a revisión" },
-    { id: "p-prev-pdtp-approve", name: "prevention:pdtp:approve", module: "prevention", description: "Aprobar el PDTP como jefatura de prevención" },
-    { id: "p-prev-pdtp-sign-legal", name: "prevention:pdtp:sign_legal", module: "prevention", description: "Firmar el PDTP como Gerencia Legal" },
-    { id: "p-prev-pdtp-activate", name: "prevention:pdtp:activate", module: "prevention", description: "Activar una versión revisada del PDTP" },
-    { id: "p-prev-pdtp-lifecycle-manage", name: "prevention:pdtp:lifecycle:manage", module: "prevention", description: "Reabrir o archivar versiones del PDTP" },
-    { id: "p-prev-pdtp-cl-manage", name: "prevention:pdtp:checklist:manage", module: "prevention", description: "Crear/editar plantillas de checklist del PDTP" },
-    { id: "p-prev-pdtp-cl-fill", name: "prevention:pdtp:checklist:fill", module: "prevention", description: "Llenar checklist en una ejecución del PDTP" },
-    { id: "p-prev-pdtp-ap-manage", name: "prevention:pdtp:action:manage", module: "prevention", description: "Crear/editar acciones y seguimiento del plan de acción PDTP" },
-    { id: "p-prev-pdtp-ap-verify", name: "prevention:pdtp:action:verify", module: "prevention", description: "Verificar cierre de acciones del plan de acción PDTP" },
-    { id: "p-prev-pdtp-obligation-cancel", name: "prevention:pdtp:obligation:cancel", module: "prevention", description: "Cancelar obligaciones PDTP por necesidad o evento" },
-    { id: "p-prev-pdtp-override-manage", name: "prevention:pdtp:override:manage", module: "prevention", description: "Gestionar excepciones/overrides de actividades PDTP" },
-    { id: "p-adm-epp-up", name: "admin:epp_import_upload", module: "admin", description: "Cargar archivos de importación EPP" },
-    { id: "p-adm-epp-rv", name: "admin:epp_import_review", module: "admin", description: "Revisar y resolver importaciones EPP" },
-    { id: "p-adm-epp-cf", name: "admin:epp_import_confirm", module: "admin", description: "Confirmar importaciones EPP" },
-    { id: "p-adm-modules", name: "admin:module_management", module: "admin", description: "Activar/desactivar módulos del sistema" },
-  ]
-
-  await db.insert(schema.permissions).values(permissions)
+  // Los permisos se derivan del registry de módulos (`SYSTEM_PERMISSIONS`), no
+  // de una copia a mano. Antes eran 93 hardcodeados contra los 204 que declaran
+  // los manifests, así que al admin de e2e le faltaban los `*:view` de 12
+  // módulos de prevención y ~13 specs de humo morían en /forbidden sin que la
+  // causa se pareciera en nada a un problema de permisos. Derivarlos hace que
+  // un permiso nuevo en cualquier manifest quede sembrado solo.
+  await db.insert(schema.permissions).values(SYSTEM_PERMISSIONS)
   await db.insert(schema.rolePermissions).values(
-    permissions.map((permission) => ({ roleId: "rol-admin", permissionId: permission.id })),
+    SYSTEM_PERMISSIONS.map((permission) => ({ roleId: "rol-admin", permissionId: permission.id })),
   )
 
   await db.insert(schema.users).values({

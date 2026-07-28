@@ -49,8 +49,14 @@ async function ensureWorksiteE2E(page: Page) {
   const code = "FAE-E2E"
   await page.goto("/admin/faenas")
 
-  const exists = page.getByRole("cell", { name: code })
-  if (await exists.isVisible().catch(() => false)) return
+  // Se comprueba por FILA y por nombre, no por la celda del código: el seed ya
+  // crea "Faena E2E" (código E2E-001), así que buscar "FAE-E2E" nunca acertaba
+  // y este helper creaba una segunda faena con el mismo nombre. Después,
+  // cualquier spec que buscara /Faena E2E/ —el selector de faenas del invite,
+  // el alcance del PDTP— fallaba por strict mode con 2 elementos. La celda no
+  // sirve para comprobarlo porque concatena nombre y código ("Faena E2EE2E-001").
+  const exists = page.getByRole("row", { name: /Faena E2E/ })
+  if (await exists.first().isVisible().catch(() => false)) return
 
   await page.getByRole("button", { name: /nueva faena/i }).click()
   const dialog = page.getByRole("dialog", { name: "Nueva faena" })

@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test"
-import { login } from "./helpers"
+import { login, expectPageTitle } from "./helpers"
 
 /**
  * E2E Spec: Ciclo de Vida Completo de Acciones CAPA.
@@ -19,6 +19,6 @@ test.describe("Prevención — Ciclo de vida CAPA", () => {
     await expect(page).toHaveURL(/\/prevencion\/capa/)
 
     // Título de la página
-    await expect(page.getByRole("heading", { name: /Acciones CAPA|Gestión CAPA/i })).toBeVisible()
+    await expectPageTitle(page, /Acciones CAPA|Gestión CAPA/i)
   })
 })
