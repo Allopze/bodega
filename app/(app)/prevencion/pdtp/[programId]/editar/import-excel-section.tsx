@@ -156,7 +156,7 @@ export function ImportExcelSection({ programId, visibleWorksites }: ImportExcelS
 
   return (
     <div>
-      <h3 className="mb-2 text-sm font-semibold text-[var(--color-text)]">Migrar un programa desde Excel</h3>
+      <h3 className="mb-2 text-h3 text-[var(--color-text)]">Migrar un programa desde Excel</h3>
       <p className="mb-3 max-w-2xl text-xs leading-5 text-[var(--color-text-muted)]">
         El archivo se analiza primero y no cambia el programa hasta que confirmes el preview. El adaptador traduce su contenido al modelo general; no convierte la planilla en la interfaz de trabajo.
       </p>

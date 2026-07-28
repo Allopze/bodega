@@ -63,7 +63,33 @@ describe("MetadataTab autosave", () => {
   it("does not mark saved values as dirty once the field is untouched", () => {
     render(<MetadataTab program={PROGRAM} canDelete={false} />)
 
-    fireEvent.change(screen.getByLabelText(/Meta de cumplimiento/), { target: { value: "0.9" } })
+    // La meta se edita en porcentaje entero: 0.9 en el modelo es 90 en la UI.
+    expect(screen.getByLabelText(/Meta de cumplimiento/)).toHaveValue(90)
+    fireEvent.change(screen.getByLabelText(/Meta de cumplimiento/), { target: { value: "90" } })
     expect(screen.getAllByText("Guardado").length).toBeGreaterThan(0)
+  })
+
+  it("autosaves the compliance target as an integer percentage", async () => {
+    render(<MetadataTab program={PROGRAM} canDelete={false} />)
+
+    fireEvent.change(screen.getByLabelText(/Meta de cumplimiento/), { target: { value: "85" } })
+    await vi.advanceTimersByTimeAsync(1500)
+
+    const [, formData] = mockUpdate.mock.calls[0]!
+    expect(formData.get("complianceTargetPercent")).toBe("85")
+  })
+})
+
+describe("MetadataTab delete", () => {
+  it("does not delete the program until the confirmation is accepted", async () => {
+    render(<MetadataTab program={PROGRAM} canDelete />)
+
+    fireEvent.click(screen.getByRole("button", { name: "Eliminar programa" }))
+    expect(mockDelete).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole("button", { name: "Eliminar definitivamente" }))
+    expect(mockDelete).toHaveBeenCalledTimes(1)
+    const [, formData] = mockDelete.mock.calls[0]!
+    expect(formData.get("programId")).toBe("program-1")
   })
 })

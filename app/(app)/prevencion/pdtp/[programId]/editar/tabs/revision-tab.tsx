@@ -129,7 +129,7 @@ export function AudiencePreviewPanel({
 
   return (
     <div className="border-t border-[var(--color-border)] px-4 py-4">
-      <h4 className="text-sm font-semibold text-[var(--color-text)]">Previsualizar por responsable, audiencia o faena</h4>
+      <h4 className="text-h3 text-[var(--color-text)]">Previsualizar por responsable, audiencia o faena</h4>
       <p className="mt-1 text-xs text-[var(--color-text-muted)]">Muestra exactamente qué actividades vería esa combinación, sin crear una copia del programa.</p>
       <div className="mt-3 flex flex-wrap gap-2">
         <Select value={responsableSlug} onValueChange={setResponsableSlug}>

@@ -4,8 +4,13 @@ import * as React from "react"
 import { useRouter } from "next/navigation"
 import { useActionState } from "react"
 import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Checkbox } from "@/components/ui/checkbox"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { EmptyState } from "@/components/ui/empty-state"
 import { Input } from "@/components/ui/input"
-import { Field, FieldGroup } from "@/components/ui/field"
+import { Field, FieldGroup, Label } from "@/components/ui/field"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { SubmitButton } from "@/components/admin/submit-button"
 import { updatePdtpProgramAction, deletePdtpProgramAction } from "../../../actions"
@@ -16,31 +21,40 @@ import type { pdtpPrograms } from "@/db/schema"
 import type { PdtpActivityRow } from "./types"
 
 const AUTOSAVE_DEBOUNCE_MS = 1500
+const MIN_REASON_LENGTH = 10
 
-export function MetadataTab({ program, canDelete, activities = [], visibleWorksites = [], memberWorksiteIds = [], exclusions = [] }: {
+/**
+ * La UI habla en porcentaje entero (90) porque es como el usuario expresa la
+ * meta; el modelo guarda la fracción 0-1 (0.90) que exige el CHECK de
+ * `pdtp_programs` y consume `compliance.ts`. La conversión de vuelta ocurre en
+ * `updatePdtpProgramAction`, que acepta `complianceTargetPercent`.
+ */
+const toPercent = (fraction: number) => String(Math.round(fraction * 100))
+
+export function MetadataTab({ program, canDelete, activities = [] }: {
   program: typeof pdtpPrograms.$inferSelect
   canDelete: boolean
+  /** Solo para decir cuántas actividades se llevaría el borrado. */
   activities?: PdtpActivityRow[]
-  visibleWorksites?: Array<{ id: string; name: string; code: string }>
-  memberWorksiteIds?: string[]
-  exclusions?: Array<{ activityId: string; worksiteId: string; reason: string }>
 }) {
   const router = useRouter()
   const [updateState, updateAction, updatePending] = useActionState(updatePdtpProgramAction, null)
   const [deleteState, deleteAction, deletePending] = useActionState(deletePdtpProgramAction, null)
 
   const [title, setTitle] = React.useState(program.title)
-  const [complianceTarget, setComplianceTarget] = React.useState(String(program.complianceTarget))
+  const [compliancePercent, setCompliancePercent] = React.useState(toPercent(program.complianceTarget))
   // Último valor confirmado por el servidor; state (no ref) porque isDirty
   // se lee durante el render.
-  const [savedValues, setSavedValues] = React.useState({ title: program.title, complianceTarget: String(program.complianceTarget) })
+  const [savedValues, setSavedValues] = React.useState({ title: program.title, compliancePercent: toPercent(program.complianceTarget) })
   // Snapshot exacto de lo último enviado al servidor. Es un ref (no dispara
   // render) y solo se lee/escribe en efectos/handlers, nunca durante el
   // render: evita que, si el usuario sigue tecleando mientras el envío en
   // vuelo todavía no responde, se marque como "guardado" un valor que en
   // realidad nunca se envió.
   const submittedRef = React.useRef(savedValues)
-  const isDirty = title !== savedValues.title || complianceTarget !== savedValues.complianceTarget
+  const isDirty = title !== savedValues.title || compliancePercent !== savedValues.compliancePercent
+
+  const [confirmDelete, setConfirmDelete] = React.useState(false)
 
   // Bug A: llamar router.refresh()/push() en el cuerpo del componente los
   // dispara en cada render (useActionState no limpia su estado solo), lo
@@ -55,6 +69,9 @@ export function MetadataTab({ program, canDelete, activities = [], visibleWorksi
 
   React.useEffect(() => {
     if (deleteState?.ok) router.push("/prevencion/pdtp")
+    // El error se muestra en la tarjeta, no en el diálogo: hay que cerrarlo
+    // para que no lo tape.
+    else if (deleteState) setConfirmDelete(false)
   }, [deleteState, router])
 
   // Autoguardado: reenvía la misma acción de servidor ya usada por el botón
@@ -66,18 +83,18 @@ export function MetadataTab({ program, canDelete, activities = [], visibleWorksi
     // cuando el autoguardado previo todavía no responde.
     if (!isDirty || updatePending) return
     const timeout = setTimeout(() => {
-      const snapshot = { title, complianceTarget }
+      const snapshot = { title, compliancePercent }
       submittedRef.current = snapshot
       const formData = new FormData()
       formData.set("programId", program.id)
       formData.set("title", snapshot.title)
-      formData.set("complianceTarget", snapshot.complianceTarget)
+      formData.set("complianceTargetPercent", snapshot.compliancePercent)
       // El dispatch de useActionState debe invocarse dentro de una transición
       // fuera de un submit nativo; si no, isPending no se actualiza.
       React.startTransition(() => updateAction(formData))
     }, AUTOSAVE_DEBOUNCE_MS)
     return () => clearTimeout(timeout)
-  }, [title, complianceTarget, isDirty, updatePending, program.id, updateAction])
+  }, [title, compliancePercent, isDirty, updatePending, program.id, updateAction])
 
   React.useEffect(() => {
     function warnBeforeUnload(event: BeforeUnloadEvent) {
@@ -92,91 +109,121 @@ export function MetadataTab({ program, canDelete, activities = [], visibleWorksi
   const autosaveStatus = updatePending ? "Guardando…" : isDirty ? "Cambios sin guardar" : "Guardado"
 
   return (
-    <div className="space-y-6">
-      <form
-        action={updateAction}
-        className="max-w-md space-y-4"
-        onSubmit={() => { submittedRef.current = { title, complianceTarget } }}
-      >
-        <input type="hidden" name="programId" value={program.id} />
-
-        <div className="flex items-center justify-between">
-          <span className="sr-only" aria-live="polite">{autosaveStatus}</span>
-          <span
-            aria-hidden
-            className={
-              updatePending
-                ? "text-xs text-[var(--color-text-subtle)]"
-                : isDirty
-                  ? "text-xs font-medium text-[var(--color-warning)]"
-                  : "text-xs text-[var(--color-text-subtle)]"
-            }
+    // Dos columnas en pantallas anchas: el formulario en columna única de
+    // ~28rem es la forma correcta para 3 campos, pero apilar la zona de
+    // peligro debajo dejaba la pantalla entera en el 20% izquierdo.
+    <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,28rem)_minmax(0,24rem)]">
+      <Card>
+        <CardHeader>
+          <CardTitle>Datos del programa</CardTitle>
+          <CardDescription className="text-xs">
+            Se guardan solos al dejar de escribir. El botón está para forzar el guardado.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form
+            action={updateAction}
+            className="space-y-4"
+            onSubmit={() => { submittedRef.current = { title, compliancePercent } }}
           >
-            {autosaveStatus}
-          </span>
-        </div>
+            <input type="hidden" name="programId" value={program.id} />
 
-        <FieldGroup className="gap-4">
-          <Field label="Título del programa" htmlFor="meta-title" required>
-            <Input id="meta-title" name="title" value={title} onChange={(e) => setTitle(e.target.value)} required />
-          </Field>
+            <FieldGroup className="gap-4">
+              <Field label="Título del programa" htmlFor="meta-title" required>
+                <Input id="meta-title" name="title" value={title} onChange={(e) => setTitle(e.target.value)} required />
+              </Field>
 
-          <Field label="Año" htmlFor="meta-year">
-            <Input id="meta-year" name="year" value={program.year} disabled className="bg-[var(--color-surface-2)]" />
-          </Field>
+              {/* readOnly, no disabled: `disabled` lo saca del orden de
+                  tabulación y lo pinta como campo vacío con placeholder. */}
+              <Field label="Año" htmlFor="meta-year" helper="El año se fija al crear el programa y no se puede cambiar.">
+                <Input id="meta-year" value={program.year} readOnly />
+              </Field>
 
-          <Field
-            label="Meta de cumplimiento"
-            htmlFor="meta-compliance"
-            required
-            helper="Valor entre 0 y 1. Ej: 0.90 = 90% de cumplimiento esperado."
-            error={updateState?.message && !updateState.ok ? updateState.message : undefined}
-          >
-            <Input
-              id="meta-compliance"
-              name="complianceTarget"
-              type="number"
-              step="0.01"
-              min="0"
-              max="1"
-              value={complianceTarget}
-              onChange={(e) => setComplianceTarget(e.target.value)}
-              required
-            />
-          </Field>
-        </FieldGroup>
+              <Field
+                label="Meta de cumplimiento (%)"
+                htmlFor="meta-compliance"
+                required
+                helper="Porcentaje de actividades ejecutadas que se considera cumplido. Ej: 90."
+                error={updateState?.message && !updateState.ok ? updateState.message : undefined}
+              >
+                <Input
+                  id="meta-compliance"
+                  name="complianceTargetPercent"
+                  type="number"
+                  step="1"
+                  min="0"
+                  max="100"
+                  value={compliancePercent}
+                  onChange={(e) => setCompliancePercent(e.target.value)}
+                  required
+                  // Las flechas nativas miden ~7px: un objetivo imposible
+                  // (Ley de Fitts) para un valor que se escribe una vez al año.
+                  className="[appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                />
+              </Field>
+            </FieldGroup>
 
-        <SubmitButton label="Guardar cambios" loadingLabel="Guardando..." size="sm" />
-      </form>
-
-      {visibleWorksites.length > 0 && (
-        <WorksiteScopePanel
-          programId={program.id}
-          activities={activities}
-          visibleWorksites={visibleWorksites}
-          memberWorksiteIds={memberWorksiteIds}
-          exclusions={exclusions}
-        />
-      )}
+            {/* El estado del autoguardado va junto al botón que hace lo mismo:
+                separados, parecían dos mecanismos sin relación. */}
+            <div className="flex items-center gap-3">
+              <SubmitButton label="Guardar cambios" loadingLabel="Guardando..." size="sm" />
+              <span className="sr-only" aria-live="polite">{autosaveStatus}</span>
+              <span
+                aria-hidden
+                className={
+                  isDirty && !updatePending
+                    ? "text-xs font-medium text-[var(--color-warning)]"
+                    : "text-xs text-[var(--color-text-muted)]"
+                }
+              >
+                {autosaveStatus}
+              </span>
+            </div>
+          </form>
+        </CardContent>
+      </Card>
 
       {canDelete && (
-        <div className="max-w-md border-t border-[var(--color-border)] pt-6">
-          <h3 className="mb-2 text-sm font-semibold text-[var(--color-danger)]">Zona de peligro</h3>
-          <p className="mb-3 text-xs text-[var(--color-text-muted)]">
-            Eliminar este programa borrará todas sus actividades y hojas asociadas. Esta acción no se puede deshacer.
-          </p>
-          <form action={deleteAction}>
-            <input type="hidden" name="programId" value={program.id} />
-            <Button type="submit" variant="destructive" size="sm" disabled={deletePending}>
+        <Card className="border-[var(--color-danger-line)]">
+          <CardHeader>
+            <CardTitle className="text-[var(--color-danger)]">Zona de peligro</CardTitle>
+            <CardDescription className="text-xs">
+              Eliminar este programa borrará todas sus actividades y hojas asociadas. Esta acción no se puede deshacer.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button
+              type="button"
+              variant="destructive"
+              size="sm"
+              disabled={deletePending}
+              onClick={() => setConfirmDelete(true)}
+            >
               {deletePending ? "Eliminando..." : "Eliminar programa"}
             </Button>
-          </form>
-          {deleteState?.message && !deleteState.ok && (
-            <p className="mt-2 rounded-[var(--radius)] border border-[var(--color-danger-line)] bg-[var(--color-danger-tint)] px-3 py-2 text-sm text-[var(--color-danger)]">
-              {deleteState.message}
-            </p>
-          )}
-        </div>
+            {deleteState?.message && !deleteState.ok && (
+              <p className="mt-2 rounded-[var(--radius)] border border-[var(--color-danger-line)] bg-[var(--color-danger-tint)] px-3 py-2 text-sm text-[var(--color-danger)]">
+                {deleteState.message}
+              </p>
+            )}
+          </CardContent>
+          {/* Antes era un submit directo: un clic borraba el programa entero
+              sin confirmar, mientras borrar UNA actividad sí la pedía. */}
+          <ConfirmDialog
+            open={confirmDelete}
+            onOpenChange={setConfirmDelete}
+            title="Eliminar el programa completo"
+            description={`Se borrarán «${program.title}», sus ${activities.length} actividad(es) y todas las hojas asociadas. Esta acción no se puede deshacer.`}
+            confirmLabel="Eliminar definitivamente"
+            variant="destructive"
+            loading={deletePending}
+            onConfirm={() => {
+              const formData = new FormData()
+              formData.set("programId", program.id)
+              React.startTransition(() => deleteAction(formData))
+            }}
+          />
+        </Card>
       )}
     </div>
   )
@@ -188,12 +235,13 @@ export function MetadataTab({ program, canDelete, activities = [], visibleWorksi
  * defecto, retrocompatible con todo programa existente) — seleccionar
  * faenas aquí las restringe a esas, no crea copias del programa.
  */
-export function WorksiteScopePanel({ programId, activities, visibleWorksites, memberWorksiteIds, exclusions }: {
+export function WorksiteScopePanel({ programId, activities, visibleWorksites, memberWorksiteIds, exclusions, onGoToActivities }: {
   programId: string
   activities: PdtpActivityRow[]
   visibleWorksites: Array<{ id: string; name: string; code: string }>
   memberWorksiteIds: string[]
   exclusions: Array<{ activityId: string; worksiteId: string; reason: string }>
+  onGoToActivities?: () => void
 }) {
   const router = useRouter()
   const [selected, setSelected] = React.useState<string[]>(memberWorksiteIds)
@@ -230,31 +278,51 @@ export function WorksiteScopePanel({ programId, activities, visibleWorksites, me
   }
 
   return (
-    <div className="max-w-md border-t border-[var(--color-border)] pt-6">
-      <h3 className="mb-2 text-sm font-semibold text-[var(--color-text)]">Faenas que cubre este programa</h3>
-      <p className="mb-3 text-xs text-[var(--color-text-muted)]">
-        Sin ninguna faena marcada, el programa aplica a todas tus faenas autorizadas. Marca faenas solo si este programa no debe cubrirlas todas.
-      </p>
-      <ul className="space-y-1">
-        {visibleWorksites.map((worksite) => (
-          <li key={worksite.id}>
-            <label className="flex items-center gap-2 text-sm text-[var(--color-text)]">
-              <input type="checkbox" checked={selected.includes(worksite.id)} onChange={() => toggle(worksite.id)} />
-              {worksite.name} <span className="text-xs text-[var(--color-text-subtle)]">({worksite.code})</span>
-            </label>
-          </li>
-        ))}
-      </ul>
-      <div className="mt-3 flex items-center gap-2">
+    <Card className="max-w-2xl">
+      <CardHeader>
+        <CardTitle>Faenas que cubre este programa</CardTitle>
+        <CardDescription className="text-xs">
+          Sin ninguna faena marcada, el programa aplica a todas tus faenas autorizadas. Marca faenas solo si este programa no debe cubrirlas todas.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {/* space-y-2 y no -1: con casillas de 16px, 8px de separación deja el
+            objetivo táctil de cada fila por sobre el mínimo de WCAG 2.5.8. */}
+        <ul className="space-y-2">
+          {visibleWorksites.map((worksite) => (
+            <li key={worksite.id}>
+              <Checkbox
+                id={`ws-${worksite.id}`}
+                checked={selected.includes(worksite.id)}
+                onChange={() => toggle(worksite.id)}
+                label={<>{worksite.name} <span className="text-xs text-[var(--color-text-subtle)]">({worksite.code})</span></>}
+              />
+            </li>
+          ))}
+        </ul>
+        {/* El resumen es una línea propia y no un texto al lado del botón:
+            ahí se leía como hint del botón en vez de como estado del programa.
+            Cuando hay cambios pendientes, explica por qué el botón se habilita
+            (y, al revés, por qué está deshabilitado el resto del tiempo). */}
+        <p className={isDirty ? "text-xs font-medium text-[var(--color-warning)]" : "text-xs text-[var(--color-text-muted)]"}>
+          {isDirty
+            ? "Cambios sin guardar."
+            : selected.length === 0
+              ? `Aplica a todas las faenas autorizadas (${visibleWorksites.length}).`
+              : `${selected.length} de ${visibleWorksites.length} faenas marcadas.`}
+        </p>
         <Button type="button" size="sm" disabled={pending || !isDirty} onClick={save}>{pending ? "Guardando..." : "Guardar faenas"}</Button>
-        <span className="text-xs text-[var(--color-text-subtle)]">
-          {selected.length === 0 ? "Aplica a todas las faenas autorizadas" : `${selected.length} faena(s) seleccionada(s)`}
-        </span>
-      </div>
-      {error && <p className="mt-2 text-xs text-[var(--color-danger)]">{error}</p>}
+        {error && <p className="text-xs text-[var(--color-danger)]">{error}</p>}
 
-      <ActivityExclusionsEditor programId={programId} activities={activities} visibleWorksites={visibleWorksites} exclusions={exclusions} />
-    </div>
+        <ActivityExclusionsEditor
+          programId={programId}
+          activities={activities}
+          visibleWorksites={visibleWorksites}
+          exclusions={exclusions}
+          onGoToActivities={onGoToActivities}
+        />
+      </CardContent>
+    </Card>
   )
 }
 
@@ -263,11 +331,12 @@ export function WorksiteScopePanel({ programId, activities, visibleWorksites, me
  * No cambia la cantidad planificada (eso es `pdtpActivityScheduleOverrides`,
  * ver overrides.ts) — excluye la actividad completa para esa faena.
  */
-function ActivityExclusionsEditor({ programId, activities, visibleWorksites, exclusions }: {
+function ActivityExclusionsEditor({ programId, activities, visibleWorksites, exclusions, onGoToActivities }: {
   programId: string
   activities: PdtpActivityRow[]
   visibleWorksites: Array<{ id: string; name: string; code: string }>
   exclusions: Array<{ activityId: string; worksiteId: string; reason: string }>
+  onGoToActivities?: () => void
 }) {
   const router = useRouter()
   const [activityId, setActivityId] = React.useState(activities[0]?.id ?? "")
@@ -275,9 +344,16 @@ function ActivityExclusionsEditor({ programId, activities, visibleWorksites, exc
   const [reason, setReason] = React.useState("")
   const [pending, setPending] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
+  // Volver a incluir pide su motivo en el diálogo. Antes reutilizaba el campo
+  // del formulario de exclusión, que está más abajo en la pantalla: el botón
+  // aparecía deshabilitado por un campo que el usuario todavía no había visto.
+  const [reincluding, setReincluding] = React.useState<{ activityId: string; worksiteId: string } | null>(null)
+  const [reincludeReason, setReincludeReason] = React.useState("")
+
   const worksiteById = new Map(visibleWorksites.map((w) => [w.id, w]))
   const activityById = new Map(activities.map((a) => [a.id, a]))
-  const reasonReady = reason.trim().length >= 10
+  const reasonReady = reason.trim().length >= MIN_REASON_LENGTH
+  const reincludeReasonReady = reincludeReason.trim().length >= MIN_REASON_LENGTH
 
   async function add() {
     if (!activityId || !worksiteId || !reasonReady) {
@@ -295,53 +371,114 @@ function ActivityExclusionsEditor({ programId, activities, visibleWorksites, exc
     }
   }
 
-  async function remove(exclusion: { activityId: string; worksiteId: string }) {
-    if (!reasonReady) {
-      setError("Escribe un motivo de al menos 10 caracteres para volver a incluir la actividad.")
-      return
-    }
+  async function confirmReinclude() {
+    if (!reincluding || !reincludeReasonReady) return
     setPending(true)
     setError(null)
     try {
-      const result = await includeActivityForWorksiteAction({ programId, activityId: exclusion.activityId, worksiteId: exclusion.worksiteId, reason })
+      const result = await includeActivityForWorksiteAction({
+        programId,
+        activityId: reincluding.activityId,
+        worksiteId: reincluding.worksiteId,
+        reason: reincludeReason,
+      })
       if (!result.ok) setError(result.message ?? "Error al incluir la actividad.")
-      else { setReason(""); router.refresh() }
+      else router.refresh()
+      setReincluding(null)
+      setReincludeReason("")
     } finally {
       setPending(false)
     }
   }
 
-  if (activities.length === 0 || visibleWorksites.length === 0) return null
+  if (visibleWorksites.length === 0) return null
 
   return (
-    <div className="mt-5 border-t border-[var(--color-border)] pt-4">
-      <h4 className="mb-2 text-sm font-semibold text-[var(--color-text)]">Excluir una actividad de una faena</h4>
-      <p className="mb-3 text-xs text-[var(--color-text-muted)]">
-        Escribe el motivo abajo antes de excluir o de volver a incluir una actividad.
+    <div className="border-t border-[var(--color-border)] pt-4">
+      <h4 className="text-h3 text-[var(--color-text)]">Excluir una actividad de una faena</h4>
+      <p className="mt-1 mb-3 text-xs text-[var(--color-text-muted)]">
+        Una actividad excluida no aparece en las hojas de esa faena. Tanto excluir como volver a incluir exigen un motivo, que queda en el historial.
       </p>
-      {exclusions.length > 0 && (
-        <ul className="mb-3 space-y-1">
-          {exclusions.map((exclusion) => (
-            <li key={`${exclusion.activityId}-${exclusion.worksiteId}`} className="flex items-center justify-between gap-2 rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-xs">
-              <span>N°{activityById.get(exclusion.activityId)?.n ?? "?"} — {worksiteById.get(exclusion.worksiteId)?.name ?? exclusion.worksiteId}</span>
-              <Button type="button" variant="ghost" size="sm" disabled={pending || !reasonReady} onClick={() => remove(exclusion)}>Quitar</Button>
-            </li>
-          ))}
-        </ul>
+
+      {activities.length === 0 ? (
+        <EmptyState
+          compact
+          align="start"
+          title="Todavía no hay actividades que excluir"
+          description="Las exclusiones se aplican sobre actividades ya definidas. Crea al menos una en el paso «Actividades» y vuelve aquí."
+          action={onGoToActivities
+            ? <Button type="button" size="sm" onClick={onGoToActivities}>Ir a Actividades</Button>
+            : undefined}
+        />
+      ) : (
+        <>
+          {exclusions.length > 0 && (
+            <ul className="mb-3 space-y-1">
+              {exclusions.map((exclusion) => (
+                <li key={`${exclusion.activityId}-${exclusion.worksiteId}`} className="flex items-center justify-between gap-2 rounded border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs">
+                  <span className="min-w-0 truncate">N°{activityById.get(exclusion.activityId)?.n ?? "?"} — {worksiteById.get(exclusion.worksiteId)?.name ?? exclusion.worksiteId}</span>
+                  <Button type="button" variant="ghost" size="sm" disabled={pending} onClick={() => { setReincludeReason(""); setReincluding(exclusion) }}>Quitar</Button>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div>
+              <Label htmlFor="excl-activity">Actividad</Label>
+              <Select value={activityId} onValueChange={setActivityId}>
+                <SelectTrigger id="excl-activity" aria-label="Actividad a excluir"><SelectValue placeholder="Actividad" /></SelectTrigger>
+                <SelectContent>{activities.map((a) => <SelectItem key={a.id} value={a.id}>N°{a.n} — {a.activity}</SelectItem>)}</SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label htmlFor="excl-worksite">Faena</Label>
+              <Select value={worksiteId} onValueChange={setWorksiteId}>
+                <SelectTrigger id="excl-worksite" aria-label="Faena a excluir"><SelectValue placeholder="Faena" /></SelectTrigger>
+                <SelectContent>{visibleWorksites.map((w) => <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>)}</SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <Field
+            className="mt-3"
+            label="Motivo de la exclusión"
+            htmlFor="excl-reason"
+            helper="Mínimo 10 caracteres."
+          >
+            <Input id="excl-reason" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Motivo (mín. 10 caracteres)" />
+          </Field>
+
+          <Button type="button" size="sm" className="mt-3" disabled={pending || !activityId || !worksiteId || !reasonReady} onClick={add}>{pending ? "Guardando..." : "Excluir"}</Button>
+        </>
       )}
-      <div className="grid gap-2 sm:grid-cols-3">
-        <Select value={activityId} onValueChange={setActivityId}>
-          <SelectTrigger aria-label="Actividad a excluir"><SelectValue placeholder="Actividad" /></SelectTrigger>
-          <SelectContent>{activities.map((a) => <SelectItem key={a.id} value={a.id}>N°{a.n} — {a.activity.slice(0, 40)}</SelectItem>)}</SelectContent>
-        </Select>
-        <Select value={worksiteId} onValueChange={setWorksiteId}>
-          <SelectTrigger aria-label="Faena a excluir"><SelectValue placeholder="Faena" /></SelectTrigger>
-          <SelectContent>{visibleWorksites.map((w) => <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>)}</SelectContent>
-        </Select>
-        <Input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Motivo (mín. 10 caracteres)" />
-      </div>
-      <Button type="button" size="sm" className="mt-2" disabled={pending || !activityId || !worksiteId || !reasonReady} onClick={add}>{pending ? "Guardando..." : "Excluir"}</Button>
+
       {error && <p className="mt-2 text-xs text-[var(--color-danger)]">{error}</p>}
+
+      <Dialog open={reincluding !== null} onOpenChange={(open) => { if (!open) setReincluding(null) }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Volver a incluir la actividad</DialogTitle>
+            <DialogDescription>
+              {reincluding
+                ? `N°${activityById.get(reincluding.activityId)?.n ?? "?"} volverá a aparecer en las hojas de ${worksiteById.get(reincluding.worksiteId)?.name ?? "la faena"}.`
+                : null}
+            </DialogDescription>
+          </DialogHeader>
+          <Field label="Motivo" htmlFor="reinclude-reason" helper="Mínimo 10 caracteres. Queda en el historial del programa.">
+            <Input
+              id="reinclude-reason"
+              value={reincludeReason}
+              onChange={(e) => setReincludeReason(e.target.value)}
+              placeholder="Por qué vuelve a aplicar"
+            />
+          </Field>
+          <DialogFooter>
+            <Button type="button" variant="secondary" onClick={() => setReincluding(null)} disabled={pending}>Cancelar</Button>
+            <Button type="button" onClick={confirmReinclude} disabled={pending || !reincludeReasonReady} loading={pending}>Volver a incluir</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

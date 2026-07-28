@@ -74,6 +74,52 @@ export function ExecutionChecklistPanel({
     return map
   })
 
+  // Los borradores sin guardar sobreviven a un remonte.
+  //
+  // Cualquier guardado de este panel llama router.refresh(), que al re-suspender
+  // el render del servidor cruza el boundary de `loading.tsx` y hace que React
+  // descarte y vuelva a montar este árbol (ver el comentario largo en
+  // `editar/builder-tabs.tsx`). Como el estado inicial se siembra SÓLO de las
+  // respuestas ya guardadas, guardar el sujeto A borraba en silencio las
+  // respuestas sin guardar de los sujetos B..N — y multi-sujeto es el caso
+  // normal: una instancia por extintor, equipo o trabajador inspeccionado.
+  const storageKey = `pdtp-checklist-drafts:${executionId}`
+  const [hydrated, setHydrated] = React.useState(false)
+
+  React.useEffect(() => {
+    try {
+      const raw = window.sessionStorage.getItem(storageKey)
+      if (raw) {
+        const saved = JSON.parse(raw) as Record<string, Record<string, ItemResponse>>
+        setDraftsByInstance((current) => {
+          const merged = { ...current }
+          for (const [instanceId, draft] of Object.entries(saved)) {
+            // Una instancia que ya no existe (borrada en otra pestaña) se ignora.
+            if (!(instanceId in merged)) continue
+            merged[instanceId] = { ...merged[instanceId], ...draft }
+          }
+          return merged
+        })
+      }
+    } catch {
+      // Storage deshabilitado (modo privado, cuota, iframe sandboxeado) o JSON
+      // corrupto: se sigue con lo que haya en el servidor.
+    }
+    setHydrated(true)
+  }, [storageKey])
+
+  React.useEffect(() => {
+    // `hydrated` es state y no ref a propósito: mientras sea false este efecto
+    // no escribe, así que el primer commit no pisa lo guardado con el mapa
+    // recién sembrado del servidor.
+    if (!hydrated) return
+    try {
+      window.sessionStorage.setItem(storageKey, JSON.stringify(draftsByInstance))
+    } catch {
+      // Sin persistencia se pierde el borrador ante un remonte, como antes.
+    }
+  }, [hydrated, draftsByInstance, storageKey])
+
   async function handleStart() {
     setPending(true)
     setError(null)

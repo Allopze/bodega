@@ -122,7 +122,7 @@ export function ActividadesTab({ programId, activities, responsibleCatalog }: { 
             <tbody className="divide-y divide-[var(--color-border)]">
               {items.map((activity, index) => (
                 <tr key={activity.id} className="bg-[var(--color-surface)]">
-                  <td className="px-3 py-2"><input type="checkbox" aria-label={`Seleccionar actividad ${activity.n}`} checked={selectedIds.includes(activity.id)} onChange={(event) => setSelectedIds((current) => event.target.checked ? [...current, activity.id] : current.filter((id) => id !== activity.id))} /></td>
+                  <td className="px-3 py-2"><input type="checkbox" className="h-4 w-4 accent-[var(--color-primary)]" aria-label={`Seleccionar actividad ${activity.n}`} checked={selectedIds.includes(activity.id)} onChange={(event) => setSelectedIds((current) => event.target.checked ? [...current, activity.id] : current.filter((id) => id !== activity.id))} /></td>
                   <td className="px-3 py-2 font-mono text-xs text-[var(--color-text-subtle)]">{activity.n}</td>
                   <td className="px-3 py-2">
                     <p className="font-medium text-[var(--color-text)]">{activity.activity}</p>

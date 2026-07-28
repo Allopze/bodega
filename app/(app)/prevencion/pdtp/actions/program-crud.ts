@@ -78,10 +78,17 @@ export async function updatePdtpProgramAction(
   const session = guard.session
 
   try {
+    // La UI envía la meta en porcentaje entero (90) porque es como el usuario
+    // la expresa; el modelo la guarda como fracción 0-1 (0.90), que es lo que
+    // valida el CHECK de la tabla y compara `compliance.ts`. `Math.round`
+    // evita que un 90.5 termine redondeado en silencio por numeric(5,2).
+    const percent = formData.get("complianceTargetPercent")
     const parsed = pdtpProgramUpdateSchema.parse({
       programId: formData.get("programId"),
       title: formData.get("title") || undefined,
-      complianceTarget: formData.get("complianceTarget") || undefined,
+      complianceTarget: percent
+        ? Math.round(Number(percent)) / 100
+        : formData.get("complianceTarget") || undefined,
     })
     await updatePdtpProgram(parsed.programId!, parsed, session.user.id)
     revalidatePath(REVALIDATE)

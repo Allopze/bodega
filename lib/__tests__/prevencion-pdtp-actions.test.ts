@@ -485,6 +485,26 @@ describe("Program CRUD actions", () => {
     expect(mockUpdatePdtpProgram).toHaveBeenCalled()
   })
 
+  it("updatePdtpProgramAction convierte la meta de porcentaje entero a fracción 0-1", async () => {
+    const fd = makeFormData({ programId: "prog-1", complianceTargetPercent: "85" })
+    const res = await updatePdtpProgramAction(null, fd)
+    expect(res.ok).toBe(true)
+    expect(mockUpdatePdtpProgram).toHaveBeenCalledWith("prog-1", expect.objectContaining({ complianceTarget: 0.85 }), expect.anything())
+  })
+
+  it("updatePdtpProgramAction sigue aceptando la meta como fracción 0-1", async () => {
+    const fd = makeFormData({ programId: "prog-1", complianceTarget: "0.75" })
+    const res = await updatePdtpProgramAction(null, fd)
+    expect(res.ok).toBe(true)
+    expect(mockUpdatePdtpProgram).toHaveBeenCalledWith("prog-1", expect.objectContaining({ complianceTarget: 0.75 }), expect.anything())
+  })
+
+  it("updatePdtpProgramAction rechaza una meta fuera de rango", async () => {
+    const fd = makeFormData({ programId: "prog-1", complianceTargetPercent: "150" })
+    const res = await updatePdtpProgramAction(null, fd)
+    expect(res.ok).toBe(false)
+  })
+
   it("deletePdtpProgramAction elimina programa válido", async () => {
     const fd = makeFormData({ programId: "prog-1" })
     const res = await deletePdtpProgramAction(null, fd)

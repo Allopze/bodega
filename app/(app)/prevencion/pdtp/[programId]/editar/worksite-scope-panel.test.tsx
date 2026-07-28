@@ -40,7 +40,7 @@ describe("WorksiteScopePanel", () => {
   it("saves the toggled worksite selection as the new program membership", async () => {
     render(<WorksiteScopePanel programId="program-1" activities={ACTIVITIES} visibleWorksites={WORKSITES} memberWorksiteIds={[]} exclusions={[]} />)
 
-    expect(screen.getByText("Aplica a todas las faenas autorizadas")).toBeDefined()
+    expect(screen.getByText("Aplica a todas las faenas autorizadas (2).")).toBeDefined()
     fireEvent.click(screen.getByRole("checkbox", { name: /Faena Uno/ }))
     fireEvent.click(screen.getByRole("button", { name: "Guardar faenas" }))
 

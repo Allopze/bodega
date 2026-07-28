@@ -21,7 +21,7 @@ export function SheetsTab({ programId, sheets, userId: _userId }: {
   return (
     <div className="space-y-6">
       <div>
-        <h3 className="mb-3 text-sm font-semibold text-[var(--color-text)]">Hojas del programa ({programSheets.length})</h3>
+        <h3 className="mb-3 text-h3 text-[var(--color-text)]">Hojas del programa ({programSheets.length})</h3>
         {programSheets.length === 0 ? (
           <p className="text-sm text-[var(--color-text-muted)]">
             No hay hojas custom en este programa. Las hojas plantilla están disponibles automáticamente.
@@ -42,7 +42,7 @@ export function SheetsTab({ programId, sheets, userId: _userId }: {
       </div>
 
       <div>
-        <h3 className="mb-3 text-sm font-semibold text-[var(--color-text)]">Hojas plantilla disponibles ({templateSheets.length})</h3>
+        <h3 className="mb-3 text-h3 text-[var(--color-text)]">Hojas plantilla disponibles ({templateSheets.length})</h3>
         <ul className="space-y-1">
           {templateSheets.map((sheet) => (
             <li key={sheet.id} className="flex items-center rounded border border-[var(--color-border)]/50 bg-[var(--color-surface)]/50 px-3 py-2 text-sm">
@@ -54,7 +54,7 @@ export function SheetsTab({ programId, sheets, userId: _userId }: {
       </div>
 
       <div className="max-w-md border-t border-[var(--color-border)] pt-6">
-        <h3 className="mb-3 text-sm font-semibold text-[var(--color-text)]">Crear hoja custom</h3>
+        <h3 className="mb-3 text-h3 text-[var(--color-text)]">Crear hoja custom</h3>
         <CreateSheetForm programId={programId} />
       </div>
     </div>

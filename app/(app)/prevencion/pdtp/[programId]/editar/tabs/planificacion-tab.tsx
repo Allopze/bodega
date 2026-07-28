@@ -25,7 +25,7 @@ export function ScheduleOverview({ activities, schedule }: { activities: PdtpAct
   return (
     <div className="overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]">
       <div className="border-b border-[var(--color-border)] px-4 py-3">
-        <h3 className="text-sm font-semibold text-[var(--color-text)]">Programación comprensible</h3>
+        <h3 className="text-h3 text-[var(--color-text)]">Programación comprensible</h3>
         <p className="mt-1 text-xs text-[var(--color-text-muted)]">La frecuencia o el evento son la fuente de verdad; la matriz semanal queda como proyección avanzada.</p>
       </div>
       <ul className="divide-y divide-[var(--color-border)]">
