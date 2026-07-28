@@ -8,6 +8,11 @@ import { login } from "./helpers"
  * e2e. Usa el fixture pdtp-prog-e2e (activo, año 2026, 2 faenas visibles) —
  * al haber más de una faena, la selección no se autoselecciona y hay que
  * pasar ?faena= explícito.
+ *
+ * pdtp-act-e2e tiene una fila de planificación (mes 1, semana 1, 1
+ * planificado) y una ejecución aprobada que la iguala (e2e/setup-db.ts:
+ * pdtp-sched-e2e / pdtp-exec-approved-e2e), así que su único objetivo
+ * cumple la meta por defecto del programa (90%).
  */
 test.describe("PDTP — Reporte de gestión", () => {
   test.beforeEach(async ({ page }) => {
@@ -30,13 +35,13 @@ test.describe("PDTP — Reporte de gestión", () => {
     await expect(page.getByRole("columnheader", { name: "Planificado" })).toBeVisible()
     const row = page.getByRole("row").filter({ hasText: "Objetivo E2E" })
     await expect(row).toBeVisible()
-    await expect(row.getByText("En desviación")).toBeVisible()
+    await expect(row.getByText("Cumple meta")).toBeVisible()
 
-    // Filtrar por "Cumple meta" no matchea la única actividad seed (que no
-    // tiene planificación cargada) → EmptyState por filtro, no por faena.
+    // Filtrar por "En desviación" no matchea el único objetivo seed (que
+    // cumple la meta) → EmptyState por filtro, no por faena.
     await page.getByRole("combobox", { name: "Estado" }).click()
-    await page.getByRole("option", { name: "Cumple meta" }).click()
-    await expect(page).toHaveURL(/estado=meets/)
+    await page.getByRole("option", { name: "En desviación" }).click()
+    await expect(page).toHaveURL(/estado=deviates/)
     await expect(page.getByText("Sin objetivos para estos filtros")).toBeVisible()
 
     await page.getByRole("link", { name: "Quitar filtros" }).click()

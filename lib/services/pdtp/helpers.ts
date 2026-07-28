@@ -17,9 +17,20 @@ import { applyOverridesToSchedule, loadPdtpOverrides } from "./overrides"
 
 export type WorksiteScope = string[] | "all"
 
-/** Código de error Postgres 23505 = unique_violation (driver `postgres`). */
-export function isUniqueViolation(e: unknown): boolean {
+function hasUniqueViolationCode(e: unknown): boolean {
   return typeof e === "object" && e !== null && "code" in e && (e as { code?: string }).code === "23505"
+}
+
+/**
+ * Código de error Postgres 23505 = unique_violation (driver `postgres`).
+ * Drizzle envuelve el error del driver en un `DrizzleQueryError` cuyo
+ * `.code` propio no existe — el código real queda en `.cause` — así que
+ * hay que revisar ambos niveles para no dejar pasar la violación real.
+ */
+export function isUniqueViolation(e: unknown): boolean {
+  if (hasUniqueViolationCode(e)) return true
+  const cause = e instanceof Error ? e.cause : undefined
+  return hasUniqueViolationCode(cause)
 }
 
 export function assertWorksiteAccess(worksiteId: string, scope: WorksiteScope): void {

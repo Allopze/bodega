@@ -22,9 +22,34 @@ export type PdtpProgramCreateInput = {
 
 export async function createPdtpProgram(input: PdtpProgramCreateInput) {
   const now = new Date().toISOString()
+  const MAX_ATTEMPTS = 8
 
-  try {
-    return await db.transaction(async (tx) => {
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      return await createPdtpProgramAttempt(input, now)
+    } catch (e) {
+      // Violación de unique(year, version): otra creación concurrente para
+      // el mismo año ganó la carrera del número de versión (el SELECT
+      // MAX(version)+1 no es atómico entre transacciones). Reintentar
+      // recalcula la versión contra lo que la otra transacción ya
+      // committeó, en vez de rendirse a la primera colisión. El jitter
+      // evita que varios competidores reintenten en el mismo instante y
+      // vuelvan a pisarse entre sí (thundering herd).
+      if (isUniqueViolation(e) && attempt < MAX_ATTEMPTS) {
+        await new Promise((resolve) => setTimeout(resolve, attempt * (20 + Math.floor(Math.random() * 60))))
+        continue
+      }
+      if (isUniqueViolation(e)) {
+        throw new Error(`Ya se creó otra versión del programa ${input.year} al mismo tiempo. Intenta de nuevo.`)
+      }
+      throw e
+    }
+  }
+  throw new Error("No se pudo crear el programa PDTP tras varios intentos concurrentes.")
+}
+
+async function createPdtpProgramAttempt(input: PdtpProgramCreateInput, now: string) {
+  return db.transaction(async (tx) => {
       if (input.copySheetsFromProgramId && input.templateVersionId) {
         throw new Error("Selecciona un solo origen: plantilla o programa anterior.")
       }
@@ -211,16 +236,7 @@ export async function createPdtpProgram(input: PdtpProgramCreateInput) {
 
       await addPdtpChangeLogEntry(programId, version, input.userId, "lifecycle", null, { status: "draft" }, "Programa creado.", tx)
       return program
-    })
-  } catch (e) {
-    // Violación de unique(year, version): otra creación concurrente para
-    // el mismo año ganó la carrera del número de versión. Mensaje
-    // amistoso en vez del error crudo de Postgres.
-    if (isUniqueViolation(e)) {
-      throw new Error(`Ya se creó otra versión del programa ${input.year} al mismo tiempo. Intenta de nuevo.`)
-    }
-    throw e
-  }
+  })
 }
 
 export async function updatePdtpProgram(programId: string, input: { title?: string; complianceTarget?: number }, userId: string) {

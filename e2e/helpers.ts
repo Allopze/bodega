@@ -36,6 +36,27 @@ export async function pickCurrentMonthDate(page: Page, triggerName: string | Reg
 }
 
 /**
+ * Set the "Responsable principal" field of the PDTP guided activity form
+ * (`guided-activity-form.tsx`). It renders a plain text Input while
+ * `pdtpResponsibleCatalog` is empty, but becomes a Select once any row
+ * exists there — which other PDTP e2e specs populate as a side effect
+ * (e.g. applying an Excel import writes to that shared catalog table), so
+ * which one renders depends on suite-wide execution order, not on this
+ * test alone. When it's a Select, the specific option doesn't matter to
+ * these tests, so just pick the first one.
+ */
+export async function setPdtpResponsable(page: Page, name = "Prevencionista E2E") {
+  const field = page.getByLabel("Responsable principal")
+  const tagName = await field.evaluate((el) => el.tagName)
+  if (tagName === "INPUT") {
+    await field.fill(name)
+  } else {
+    await field.click()
+    await page.getByRole("option").first().click()
+  }
+}
+
+/**
  * Fill the PPA form using manual identification (no RUT verification).
  * This is the only reliable path for offline tests since the server
  * worker lookup requires network. Shared by e2e/ppa-offline.spec.ts and

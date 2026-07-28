@@ -847,6 +847,76 @@ async function main() {
     updatedAt: now,
   })
 
+  // Planificación + ejecución aprobada para pdtp-act-e2e: sin esto el único
+  // objetivo del reporte de gestión siempre cae en "En desviación" (no hay
+  // nada planificado). e2e/pdtp-reporte-gestion.spec.ts espera "Cumple meta".
+  await db.insert(schema.pdtpActivitySchedule).values({
+    id: "pdtp-sched-e2e",
+    activityId: "pdtp-act-e2e",
+    year: 2026,
+    month: 1,
+    week: 1,
+    plannedQuantity: 1,
+    sourceColumn: "manual-e2e",
+  })
+  await db.insert(schema.pdtpExecutions).values({
+    id: "pdtp-exec-approved-e2e",
+    activityId: "pdtp-act-e2e",
+    worksiteId: "ws-e2e",
+    year: 2026,
+    month: 1,
+    week: 1,
+    executedQuantity: 1,
+    status: "approved",
+    createdAt: now,
+    updatedAt: now,
+  })
+
+  // Requisito legal publicado + aplicabilidad + reloj de actualización para
+  // e2e/pdtp-cobertura.spec.ts ("Declarar incorporada"): resolvePdtpUpdateObligation
+  // exige que exista un preventionPdtpSourceLinks activo con el mismo
+  // sourceType/sourceId, que solo se puede crear vinculando una fuente real
+  // (no "internal_objective") desde el picker de Cobertura.
+  await db.insert(schema.preventionLegalRequirements).values({
+    id: "legalreq-e2e",
+    code: "RE-99-E2E",
+    requirementVersion: 1,
+    sourceType: "legal",
+    authority: "SEREMI E2E",
+    sourceTitle: "Ley E2E de prevención",
+    sourceReference: "Art. 1",
+    article: "Art. 1",
+    requirement: "Requisito legal de prueba E2E.",
+    versionLabel: "v1",
+    validFrom: "2026-01-01",
+    topic: "seguridad",
+    chomeRole: "prevencionista",
+    evidenceRequired: "Registro de cumplimiento",
+    frequency: "anual",
+    status: "published",
+    createdByUserId: "user-admin-e2e",
+    reviewedByUserId: "user-admin-e2e",
+    approvedByUserId: "user-admin-e2e",
+  })
+  await db.insert(schema.preventionLegalApplicabilities).values({
+    id: "legalapp-e2e",
+    requirementId: "legalreq-e2e",
+    worksiteId: "ws-e2e",
+    applicabilityStatus: "applicable",
+    rationale: "Aplica a la faena E2E.",
+    responsibleSnapshot: "Prevencionista E2E",
+  })
+  await db.insert(schema.preventionPdtpUpdateObligations).values({
+    id: "pdtpobl-e2e",
+    idempotencyKey: "pdtpobl-e2e-key",
+    worksiteId: "ws-e2e",
+    sourceType: "legal_requirement",
+    sourceId: "legalreq-e2e",
+    sourceVersionSnapshot: "RE-99-E2E v1",
+    dueAt: "2026-08-15T00:00:00.000Z",
+    status: "pending",
+  })
+
   // EPP family + variant products to test the variant-quantity-grid feature.
   await db.insert(schema.eppProductFamilies).values({
     id: "family-epp-e2e",

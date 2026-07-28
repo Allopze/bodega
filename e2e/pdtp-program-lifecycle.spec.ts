@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test"
-import { login } from "./helpers"
+import { login, setPdtpResponsable } from "./helpers"
 
 /**
  * E2E: PDTP — Ciclo de vida de aprobación del programa (borrador → en
@@ -31,7 +31,7 @@ async function createDraftProgramWithActivity(page: Page, title: string): Promis
   await page.getByRole("tab", { name: /Actividades/ }).click()
   await page.getByLabel("Nombre del nuevo objetivo").fill(`Objetivo ${title}`)
   await page.getByLabel("¿Qué actividad preventiva se realizará?").fill(`Actividad preventiva de ${title}`)
-  await page.getByLabel("Responsable principal").fill("Prevencionista E2E")
+  await setPdtpResponsable(page)
   await page.getByRole("button", { name: "Guardar actividad" }).click()
   // No se espera el toast "Actividad guardada.": el submit exitoso dispara
   // router.refresh(), que a veces remonta las tabs antes de que Playwright
