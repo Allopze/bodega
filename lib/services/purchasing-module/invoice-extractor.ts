@@ -26,7 +26,7 @@ export async function extractInvoiceData(
 ): Promise<ExtractionResult> {
   // ── 1. DTE XML ────────────────────────────────────────────────────────────
   if (mimeType === "application/xml" || mimeType === "text/xml" || fileName.endsWith(".xml")) {
-    const xmlString = fileBuffer.toString("utf-8")
+    const xmlString = decodeXmlBuffer(fileBuffer)
     const dteData = parseDteXml(xmlString)
     if (dteData) {
       return {
@@ -97,6 +97,18 @@ export async function extractInvoiceData(
   }
 
   return { data: null, method: "manual", confidence: 0 }
+}
+
+function decodeXmlBuffer(buffer: Buffer): string {
+  // XML declarations are ASCII-compatible, so inspect them as latin1 first.
+  // Chilean DTEs frequently declare ISO-8859-1; UTF-8 decoding them corrupts
+  // supplier/product names before the parser sees them.
+  const declaration = buffer.toString("latin1", 0, Math.min(buffer.length, 1024))
+  const encoding = declaration.match(/<\?xml[^>]*encoding=["']([^"']+)["']/i)?.[1]?.toLowerCase()
+  if (encoding && /^(iso-8859-1|iso8859-1|latin-?1|windows-1252)$/i.test(encoding)) {
+    return buffer.toString("latin1")
+  }
+  return buffer.toString("utf8")
 }
 
 /**

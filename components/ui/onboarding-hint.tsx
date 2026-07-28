@@ -54,7 +54,7 @@ const OnboardingHintInner = React.memo(function OnboardingHintInner({
         type="button"
         onClick={dismiss}
         aria-label="Cerrar ayuda"
-        className="flex min-h-6 min-w-6 shrink-0 items-center justify-center rounded p-0.5 text-[var(--color-info-ink)] opacity-50 transition-opacity hover:opacity-100"
+        className="flex min-h-11 min-w-11 sm:min-h-6 sm:min-w-6 shrink-0 items-center justify-center rounded p-0.5 text-[var(--color-info-ink)] opacity-50 transition-opacity hover:opacity-100"
       >
         <X size={14} />
       </button>

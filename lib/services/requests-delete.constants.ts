@@ -1,12 +1,6 @@
-/** Estados eliminables: nunca ingresaron a compra/recepción */
+/** Sólo un borrador sin decisiones puede borrarse físicamente. */
 export const DELETABLE_REQUEST_STATUSES = [
   "draft",
-  "submitted",
-  "in_review",
-  "partially_approved",
-  "rejected",
-  "returned",
-  "cancelled",
 ] as const
 
 export type DeletableRequestStatus = typeof DELETABLE_REQUEST_STATUSES[number]
@@ -16,16 +10,11 @@ export function isRequestDeletable(status: string): status is DeletableRequestSt
 }
 
 /**
- * Estados que el propio solicitante puede eliminar SIN el permiso `requests:delete`
- * (B-1): solicitudes que no están en el pipeline activo de aprobación. Borrar una
- * solicitud `submitted`/`in_review`/`partially_approved` (que un aprobador está
- * revisando) requiere el permiso privilegiado.
+ * El solicitante y quien tiene `requests:delete` comparten el mismo límite:
+ * sólo borradores. El permiso elevado no autoriza destruir evidencia de aprobación.
  */
 export const OWNER_DELETABLE_REQUEST_STATUSES = [
   "draft",
-  "returned",
-  "rejected",
-  "cancelled",
 ] as const
 
 export function isOwnerDeletable(status: string): boolean {

@@ -79,9 +79,9 @@ const SidebarUserProfileInner = React.memo(function SidebarUserProfileInner({
             <Avatar name={name} size="default" />
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-semibold text-slate-900 leading-tight">{name}</p>
-              <p className="truncate text-xs text-slate-500 leading-tight mt-0.5">{email}</p>
+              <p className="truncate text-xs text-(--color-text-subtle) leading-tight mt-0.5">{email}</p>
             </div>
-            <CaretUpDown size={16} className="text-slate-400 shrink-0" />
+            <CaretUpDown size={16} aria-hidden className="text-slate-400 shrink-0" />
           </button>
         </DropdownMenuTrigger>
         <UserDropdownContent

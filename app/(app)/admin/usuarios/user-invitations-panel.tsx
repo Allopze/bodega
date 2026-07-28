@@ -107,14 +107,14 @@ export function UserInvitationsPanel({ invitations }: { invitations: InvitationR
           <button
             type="button"
             onClick={() => setStatus("pending")}
-            className={`h-8 px-3 text-xs font-medium ${status === "pending" ? "bg-[var(--color-surface-2)] text-[var(--color-text)]" : "text-[var(--color-text-subtle)]"}`}
+            className={`h-11 sm:h-8 px-3 text-xs font-medium ${status === "pending" ? "bg-[var(--color-surface-2)] text-[var(--color-text)]" : "text-[var(--color-text-subtle)]"}`}
           >
             Pendientes
           </button>
           <button
             type="button"
             onClick={() => setStatus("all")}
-            className={`h-8 px-3 text-xs font-medium ${status === "all" ? "bg-[var(--color-surface-2)] text-[var(--color-text)]" : "text-[var(--color-text-subtle)]"}`}
+            className={`h-11 sm:h-8 px-3 text-xs font-medium ${status === "all" ? "bg-[var(--color-surface-2)] text-[var(--color-text)]" : "text-[var(--color-text-subtle)]"}`}
           >
             Todas
           </button>

@@ -166,6 +166,7 @@ export function VehicleCatalogTable({ vehicles, worksites, users, equipmentTypes
 
         <TabsContent value="active">
           <DataTable
+            caption="Vehículos activos"
             columns={COLUMNS_WITH_CHECKBOX}
             rows={activeVehicles as unknown as Record<string, unknown>[]}
             searchKeys={CONTRACT.searchKeys}
@@ -180,6 +181,7 @@ export function VehicleCatalogTable({ vehicles, worksites, users, equipmentTypes
 
         <TabsContent value="inactive">
           <DataTable
+            caption="Vehículos inactivos"
             columns={COLUMNS_WITH_CHECKBOX}
             rows={inactiveVehicles as unknown as Record<string, unknown>[]}
             searchKeys={CONTRACT.searchKeys}

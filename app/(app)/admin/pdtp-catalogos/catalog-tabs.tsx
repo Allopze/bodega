@@ -105,6 +105,7 @@ export function CatalogTabs({ roleOptions, responsibles, sheets, programs }: Cat
             </h2>
           </div>
           <DataTable
+            caption="Responsables del Programa Preventivo"
             columns={RESP_COLUMNS}
             rows={respRows}
             searchKeys={["displayName", "roleName", "kind", "notes"]}
@@ -172,6 +173,7 @@ export function CatalogTabs({ roleOptions, responsibles, sheets, programs }: Cat
             </h2>
           </div>
           <DataTable
+            caption="Hojas del Programa Preventivo"
             columns={SHEET_COLUMNS}
             rows={sheetRows}
             searchKeys={["code", "label", "area", "programId"]}
@@ -263,6 +265,7 @@ export function CatalogTabs({ roleOptions, responsibles, sheets, programs }: Cat
   function ProgramTable({ programs }: { programs: ProgramSummary[] }) {
     return (
       <DataTable
+        caption="Programas Activos y Recientes"
         columns={[
           { key: "title", label: "Título", sortable: true },
           { key: "year", label: "Año", sortable: true, numeric: true, width: "w-20" },

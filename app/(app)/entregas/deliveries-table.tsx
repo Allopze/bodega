@@ -30,6 +30,7 @@ const COLUMNS = [
 export function DeliveriesTable({ deliveries }: { deliveries: DeliveryRow[] }) {
   return (
     <DataTable
+      caption="Entregas"
       columns={COLUMNS}
       rows={deliveries as unknown as Record<string, unknown>[]}
       searchKeys={["code", "workerName", "worksiteName", "itemSummary"]}

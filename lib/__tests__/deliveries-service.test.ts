@@ -276,11 +276,13 @@ describe("registerWorksiteDelivery — database transactions", () => {
 
     const mockTxSelect = vi.fn()
     const mockTxInsert = vi.fn().mockReturnValue({ values: vi.fn().mockResolvedValue(undefined) })
+    const mockTxUpdate = vi.fn().mockReturnValue({ set: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }) })
 
     mockTransaction.mockImplementation(async (fn) => fn({
       query: mockTxQuery,
       select: mockTxSelect,
       insert: mockTxInsert,
+      update: mockTxUpdate,
     }))
 
     // 1st select inside tx: locks the request item row -> returns request item details
@@ -328,17 +330,20 @@ describe("registerWorkerEppDelivery — database transactions", () => {
 
     const mockTxSelect = vi.fn()
     const mockTxInsert = vi.fn().mockReturnValue({ values: vi.fn().mockResolvedValue(undefined) })
+    const mockTxUpdate = vi.fn().mockReturnValue({ set: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }) })
 
     mockTransaction.mockImplementation(async (fn) => fn({
       query: mockTxQuery,
       select: mockTxSelect,
       insert: mockTxInsert,
+      update: mockTxUpdate,
     }))
 
     // locks the request item row
     mockTxSelect.mockReturnValueOnce(chainResult([{ id: "item-1", status: "received", productId: "prod-1", quantity: 2, unitOfMeasure: "unidad" }]))
     // previous deliveries -> returns 0
     mockTxSelect.mockReturnValueOnce(chainResult([]))
+    mockTxSelect.mockReturnValueOnce(chainResult([{ id: "lot-1", expiresAt: "2099-01-01", quantityAvailable: 2 }]))
 
     const result = await registerWorkerEppDelivery({
       worksiteId: "ws-1",
@@ -382,15 +387,18 @@ describe("registerWorkerEppDelivery — database transactions", () => {
 
     const mockTxSelect = vi.fn()
     const mockTxInsert = vi.fn().mockReturnValue({ values: vi.fn().mockResolvedValue(undefined) })
+    const mockTxUpdate = vi.fn().mockReturnValue({ set: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }) })
 
     mockTransaction.mockImplementation(async (fn) => fn({
       query: mockTxQuery,
       select: mockTxSelect,
       insert: mockTxInsert,
+      update: mockTxUpdate,
     }))
 
     mockTxSelect.mockReturnValueOnce(chainResult([{ id: "item-1", status: "partially_received", productId: "prod-1", requestId: "req-1", quantity: 10, unitOfMeasure: "unidad" }]))
     mockTxSelect.mockReturnValueOnce(chainResult([]))
+    mockTxSelect.mockReturnValueOnce(chainResult([{ id: "lot-1", expiresAt: "2099-01-01", quantityAvailable: 4 }]))
 
     const result = await registerWorkerEppDelivery({
       worksiteId: "ws-1",
@@ -527,6 +535,21 @@ describe("registerWorkerEppDelivery — database transactions", () => {
       quantity: 1,
       deliveredBy: "u-1",
     })).rejects.toThrow("El ítem no pertenece a la faena")
+  })
+
+  it("rejects delivery of EPP requested for a different worker", async () => {
+    const mockTxQuery = {
+      worksites: { findFirst: vi.fn().mockResolvedValue({ id: "ws-1", isActive: true }) },
+      workers: { findFirst: vi.fn().mockResolvedValue({ id: "w-2", isActive: true, worksiteId: "ws-1" }) },
+    }
+    const mockTxSelect = vi.fn().mockReturnValue(chainResult([{
+      id: "item-1", status: "received", productId: "prod-1", requestId: "req-1", workerId: "w-1",
+    }]))
+    mockTransaction.mockImplementation(async (fn) => fn({ query: mockTxQuery, select: mockTxSelect }))
+
+    await expect(registerWorkerEppDelivery({
+      worksiteId: "ws-1", workerId: "w-2", requestItemId: "item-1", quantity: 1, deliveredBy: "u-1",
+    })).rejects.toThrow("solicitado para otro trabajador")
   })
 
   it("throws if EPP product is not EPP", async () => {

@@ -49,6 +49,7 @@ const COLUMNS = [
 export function AuditLog({ entries }: { entries: AuditRow[] }) {
   return (
     <DataTable
+      caption="Log de Auditoría"
       columns={COLUMNS}
       rows={entries as unknown as Record<string, unknown>[]}
       searchKeys={["userEmail", "entityType", "entityCode", "action"]}

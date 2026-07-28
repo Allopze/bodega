@@ -366,6 +366,15 @@ describe("productSchema", () => {
       expect(result.error.flatten().fieldErrors.suppliers?.[0]).toMatch(/preferido/i)
     }
   })
+
+  it("rejects product-attribute options larger than the storage contract", () => {
+    const result = productSchema.safeParse({
+      name: "Casco",
+      categoryId: "cat-1",
+      attributes: [{ name: "Talla", type: "select", options: "x".repeat(4001) }],
+    })
+    expect(result.success).toBe(false)
+  })
 })
 
 // ═══════════════════════════════════════════════════════════════════════════════

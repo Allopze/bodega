@@ -47,6 +47,9 @@ beforeAll(async () => {
   await inMemoryDb.insert(schema.worksites).values({
     id: WS_ID, name: "Faena Test", code: "FN-TEST", isActive: true, createdAt: now, updatedAt: now,
   })
+  await inMemoryDb.insert(schema.worksites).values({
+    id: "ws-other", name: "Faena Ajena", code: "FN-OTHER", isActive: true, createdAt: now, updatedAt: now,
+  })
   await inMemoryDb.insert(schema.suppliers).values({
     id: SUP_ID, name: "Proveedor Test", isActive: true, createdAt: now, updatedAt: now,
   })
@@ -110,6 +113,16 @@ describe("two-stage receiving rollup", () => {
       purchaseOrderId: orderId, receivedBy: USER_ID, stage: "faena", worksiteId: WS_ID,
       items: [{ purchaseOrderItemId: itemIds[0]!, quantityReceived: 5 }],
     })).rejects.toThrow(/oficina/i)
+  })
+
+  it("rejects a client-provided worksite different from the purchase order", async () => {
+    const { orderId, itemIds } = await makeOrder([10])
+    await expect(registerReceipt({
+      purchaseOrderId: orderId, receivedBy: USER_ID, stage: "office", worksiteId: "ws-other",
+      items: [{ purchaseOrderItemId: itemIds[0]!, quantityReceived: 5 }],
+    })).rejects.toThrow(/debe coincidir/i)
+
+    expect(await status(orderId)).toBe("sent")
   })
 
   it("partial faena (after full office) → partially_received", async () => {
@@ -177,6 +190,18 @@ describe("two-stage receiving gating", () => {
     await expect(registerReceipt({
       purchaseOrderId: orderId, receivedBy: USER_ID, stage: "office",
       items: [{ purchaseOrderItemId: itemIds[0]!, quantityReceived: 11 }],
+    })).rejects.toThrow(/exceeds pending/i)
+  })
+
+  it("caps rejected and damaged quantities against the same stage balance", async () => {
+    const { orderId, itemIds } = await makeOrder([10])
+    await registerReceipt({
+      purchaseOrderId: orderId, receivedBy: USER_ID, stage: "office",
+      items: [{ purchaseOrderItemId: itemIds[0]!, quantityReceived: 0, quantityRejected: 8 }],
+    })
+    await expect(registerReceipt({
+      purchaseOrderId: orderId, receivedBy: USER_ID, stage: "office",
+      items: [{ purchaseOrderItemId: itemIds[0]!, quantityReceived: 0, quantityDamaged: 3 }],
     })).rejects.toThrow(/exceeds pending/i)
   })
 })

@@ -69,6 +69,7 @@ export function NotificationAdminList({ rows, oldestReadDate, retentionDays }: N
       </div>
       <DesktopOnlyTableNotice />
       <DataTable
+        caption="Notificaciones de la Plataforma"
         columns={COLUMNS}
         rows={dataRows}
         searchKeys={["title", "body", "userEmail", "type"]}

@@ -113,6 +113,7 @@ export function AccionesTable({ items, activityLabelById, worksiteNameById, work
       </div>
 
       <DataTable
+        caption="Acciones correctivas PDTP"
         enableColumnToggle
         viewKey="pdtp"
         stickyFirstColumn

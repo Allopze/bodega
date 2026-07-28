@@ -204,41 +204,40 @@ export async function bulkApproveRequestAction(
 
   const itemIds = (formData.get("itemIds") as string | null)?.split(",").filter(Boolean)
   if (!itemIds?.length) return { ok: false, message: "No hay ítems para aprobar" }
+  const uniqueItemIds = [...new Set(itemIds)]
+  if (uniqueItemIds.length !== itemIds.length) {
+    return { ok: false, message: "La selección contiene ítems duplicados" }
+  }
 
   const roleContext = getRoleContext(session.user.roles)
   const userCanApproveEpp = canApproveEpp(session.user.roles)
 
   const scopedItems = await db.query.purchaseRequestItems.findMany({
-    where: inArray(purchaseRequestItems.id, itemIds),
+    where: inArray(purchaseRequestItems.id, uniqueItemIds),
     with: { request: { columns: { worksiteId: true, requestType: true } } },
   })
-  const allowedItemIds = new Set(
-    scopedItems
-      .filter((item) => {
-        if (!canAccessWorksite(session, item.request.worksiteId)) return false
-        if (item.request.requestType === "epp" && !userCanApproveEpp) return false
-        return true
-      })
-      .map((item) => item.id),
-  )
+  if (scopedItems.length !== uniqueItemIds.length) {
+    return { ok: false, message: "Uno o más ítems ya no están disponibles para aprobar" }
+  }
+  if (scopedItems.some((item) =>
+    !canAccessWorksite(session, item.request.worksiteId)
+    || (item.request.requestType === "epp" && !userCanApproveEpp),
+  )) {
+    return { ok: false, message: "No tienes permiso para aprobar todos los ítems seleccionados" }
+  }
 
-  const filtered = itemIds.filter((id) => allowedItemIds.has(id))
-  const skipped = itemIds.filter((id) => !allowedItemIds.has(id))
-
-  const { approved, errors: approveErrors } = await bulkApproveItems(filtered, session.user.id, {
-    userEmail: session.user.email ?? undefined,
-    roleContext,
-  })
+  let approved: number
+  try {
+    ({ approved } = await bulkApproveItems(uniqueItemIds, session.user.id, {
+      userEmail: session.user.email ?? undefined,
+      roleContext,
+    }))
+  } catch (error) {
+    logger.error("[bulkApproveRequestAction]", error)
+    return { ok: false, message: error instanceof Error ? error.message : "No se pudieron aprobar los ítems" }
+  }
 
   revalidateOperationalViews([REVALIDATE])
-
-  const totalErrors = skipped.length + approveErrors.length
-  if (totalErrors > 0) {
-    return {
-      ok:      false,
-      message: `${approved} ítem(s) aprobado(s), ${totalErrors} con error`,
-    }
-  }
   return { ok: true, message: `${approved} ítem(s) aprobado(s)` }
 }
 

@@ -27,6 +27,7 @@ export function SupplierList({ suppliers }: { suppliers: SupplierRow[] }) {
   return (
     <>
       <DataTable
+        caption="Proveedores"
         columns={COLUMNS}
         rows={suppliers as unknown as Record<string, unknown>[]}
         searchKeys={CONTRACT.searchKeys}

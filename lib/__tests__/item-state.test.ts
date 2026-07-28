@@ -33,6 +33,10 @@ describe("Item State Machine", () => {
       expect(canTransition("approved", "pending_purchase")).toBe(true)
     })
 
+    it("allows approved → postponed", () => {
+      expect(canTransition("approved", "postponed")).toBe(true)
+    })
+
     it("allows returned → requested (re-submit)", () => {
       expect(canTransition("returned", "requested")).toBe(true)
     })

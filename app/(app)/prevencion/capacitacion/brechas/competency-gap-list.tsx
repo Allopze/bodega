@@ -103,6 +103,7 @@ export function CompetencyGapList({ gaps, canEscalate }: Props) {
       </div>
 
       <DataTable
+        caption="Brechas de competencia"
         columns={COLUMNS}
         rows={rows}
         searchKeys={["workerName", "courseName", "position"]}

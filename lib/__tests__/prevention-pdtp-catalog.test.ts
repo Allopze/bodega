@@ -1,16 +1,22 @@
 import path from "node:path"
-import { describe, expect, it } from "vitest"
+import { beforeAll, describe, expect, it } from "vitest"
 import {
   extractPdtpCatalogFromWorkbook,
   readPdtpWorkbook,
 } from "@/lib/services/prevention-pdtp-catalog"
 
 const workbookPath = path.resolve(process.cwd(), "PROGRAMA DE TRABAJO PREVENTIVO SG-SST 2026.xlsx")
+let baseWorkbook: Awaited<ReturnType<typeof readPdtpWorkbook>>
 
 describe("prevention PDTP catalog extraction", () => {
+  beforeAll(async () => {
+    // Leer el XLSX pesado una sola vez. La única prueba que lo muta se declara
+    // al final del archivo, después de todas las aserciones de lectura.
+    baseWorkbook = await readPdtpWorkbook(workbookPath)
+  })
+
   it("extracts the 2026 PDTP catalog with exact objectives and official sheet membership", async () => {
-    const workbook = await readPdtpWorkbook(workbookPath)
-    const catalog = extractPdtpCatalogFromWorkbook(workbook)
+    const catalog = extractPdtpCatalogFromWorkbook(baseWorkbook)
 
     expect(catalog.activities).toHaveLength(89)
     expect(catalog.activities.map((activity) => activity.n)).toEqual(
@@ -43,8 +49,7 @@ describe("prevention PDTP catalog extraction", () => {
   })
 
   it("preserves responsible display text and numeric weekly planned quantities", async () => {
-    const workbook = await readPdtpWorkbook(workbookPath)
-    const catalog = extractPdtpCatalogFromWorkbook(workbook)
+    const catalog = extractPdtpCatalogFromWorkbook(baseWorkbook)
 
     const dailyTalk = catalog.activities.find((activity) => activity.n === 38)
     expect(dailyTalk?.responsibleDisplay).toBe("Sup, JT")
@@ -56,8 +61,7 @@ describe("prevention PDTP catalog extraction", () => {
   })
 
   it("extracts historical E cells with coordinates and auditable workbook metadata", async () => {
-    const workbook = await readPdtpWorkbook(workbookPath)
-    const catalog = extractPdtpCatalogFromWorkbook(workbook)
+    const catalog = extractPdtpCatalogFromWorkbook(baseWorkbook)
 
     expect(catalog.importedExecutions).toEqual([
       expect.objectContaining({ activityNumber: 1, month: 1, week: 4, executedQuantity: 1, sourceCell: "M14" }),
@@ -90,21 +94,13 @@ describe("prevention PDTP catalog extraction", () => {
     expect(catalog.warnings).toEqual([expect.stringContaining("fórmula")])
   })
 
-  it("rejects missing official sheets and altered P/E structure explicitly", async () => {
-    const missingSheetWorkbook = await readPdtpWorkbook(workbookPath)
-    const cphs = missingSheetWorkbook.getWorksheet("CPHS")
-    expect(cphs).toBeDefined()
-    missingSheetWorkbook.removeWorksheet(cphs!.id)
-    expect(() => extractPdtpCatalogFromWorkbook(missingSheetWorkbook)).toThrow(/no se encontro la hoja CPHS/i)
-
-    const alteredWorkbook = await readPdtpWorkbook(workbookPath)
-    alteredWorkbook.getWorksheet("PDTP GENERAL")!.getCell("F12").value = "E"
-    expect(() => extractPdtpCatalogFromWorkbook(alteredWorkbook)).toThrow(/estructura PDTP alterada.*par P\/E/i)
-  })
-
-  it("reports unknown schedule values and formulas without a cached result", async () => {
-    const workbook = await readPdtpWorkbook(workbookPath)
+  it("rejects structure changes and reports unknown schedule values without rereading the workbook", async () => {
+    const workbook = baseWorkbook
     const general = workbook.getWorksheet("PDTP GENERAL")!
+    general.getCell("F12").value = "E"
+    expect(() => extractPdtpCatalogFromWorkbook(workbook)).toThrow(/estructura PDTP alterada.*par P\/E/i)
+
+    general.getCell("F12").value = "P"
     general.getCell("F14").value = "pendiente"
     general.getCell("H14").value = { formula: "1+1" }
     const catalog = extractPdtpCatalogFromWorkbook(workbook)
@@ -112,5 +108,10 @@ describe("prevention PDTP catalog extraction", () => {
       expect.stringMatching(/F14.*valor P\/E desconocido/i),
       expect.stringMatching(/H14.*no tiene resultado evaluable/i),
     ]))
+
+    const cphs = workbook.getWorksheet("CPHS")
+    expect(cphs).toBeDefined()
+    workbook.removeWorksheet(cphs!.id)
+    expect(() => extractPdtpCatalogFromWorkbook(workbook)).toThrow(/no se encontro la hoja CPHS/i)
   })
 })

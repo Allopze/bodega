@@ -9,6 +9,8 @@ const mockUpdateSet = vi.fn(() => ({ where: mockUpdateWhere }))
 const mockInsertValues = vi.fn(async () => undefined)
 const mockRecordAudit = vi.fn()
 const mockRedirect = vi.fn()
+const mockReevaluateFuelLoadAnomalies = vi.fn()
+const mockNotifyAfterCommit = vi.fn((thunk: () => unknown) => thunk())
 
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }))
 vi.mock("next/navigation", () => ({ redirect: (...args: unknown[]) => mockRedirect(...args) }))
@@ -37,6 +39,12 @@ vi.mock("@/db", () => ({
 vi.mock("@/lib/audit", () => ({ recordAudit: (...args: unknown[]) => mockRecordAudit(...args) }))
 vi.mock("@/lib/id", () => ({ nanoid: () => "id-new" }))
 vi.mock("@/lib/logger", () => ({ logger: { error: vi.fn() } }))
+vi.mock("@/lib/combustibles/fuel-load-anomaly-reevaluation", () => ({
+  reevaluateFuelLoadAnomalies: (...args: unknown[]) => mockReevaluateFuelLoadAnomalies(...args),
+}))
+vi.mock("@/lib/services/notifications", () => ({
+  notifyAfterCommit: (thunk: () => unknown) => mockNotifyAfterCommit(thunk),
+}))
 
 import {
   createFuelLoadAction,
@@ -137,6 +145,29 @@ describe("updateFuelLoadAction — statement guard (H5)", () => {
     expect(result.ok).toBe(false)
     expect(result.message).toMatch(/cuenta corriente|resumen/i)
     expect(mockUpdateWhere).not.toHaveBeenCalled()
+  })
+
+  it("programa la reevaluación de anomalías después de editar una carga", async () => {
+    mockFindLoad.mockResolvedValue({
+      id: "load-1", worksiteId: "ws-1", statementId: null, status: "registered",
+      loadDate: "2026-01-15", month: "2026-01", serviceType: "TCT",
+      vehicleId: "v-1", fuelSupplierId: "s-1", product: "PETROLEO DIESEL",
+      receiptNumber: null, odometerReading: null, hourMeterReading: null,
+      liters: 100, iecFixed: 0, iecVariable: 0, baseAmount: 1000, iecTotal: 0, ivaAmount: 190, totalAmount: 1190,
+      notes: null,
+    })
+    mockReevaluateFuelLoadAnomalies.mockResolvedValue({ created: 0, reopened: 0, resolved: 1 })
+
+    const fd = new FormData()
+    for (const [key, value] of Object.entries({
+      id: "load-1", loadDate: "2026-01-15", serviceType: "TCT", vehicleId: "v-1", fuelSupplierId: "s-1", worksiteId: "ws-1", product: "PETROLEO DIESEL",
+      receiptNumber: "", notes: "", liters: "100", baseAmount: "1000", iecFixed: "0", iecVariable: "0", iecTotal: "0", ivaAmount: "190", totalAmount: "1190",
+    })) fd.set(key, value)
+
+    const result = await updateFuelLoadAction({ ok: false, message: "" }, fd)
+    expect(result.message).toBe("Carga actualizada")
+    expect(mockNotifyAfterCommit).toHaveBeenCalled()
+    expect(mockReevaluateFuelLoadAnomalies).toHaveBeenCalledWith("load-1", "user-1")
   })
 })
 

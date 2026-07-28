@@ -3,12 +3,35 @@ import { z } from "zod"
 // ── Re-export shared ActionState ──────────────────────────────────────────────
 export type { ActionState } from "./masters"
 
+const CHILE_DATE_FORMATTER = new Intl.DateTimeFormat("en-US", {
+  timeZone: "America/Santiago",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+})
+
+function todayInChile(): string {
+  const parts = CHILE_DATE_FORMATTER.formatToParts(new Date())
+  const value = (part: Intl.DateTimeFormatPartTypes) => parts.find((item) => item.type === part)?.value
+  return `${value("year")}-${value("month")}-${value("day")}`
+}
+
+function isRealIsoDate(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false
+  const date = new Date(`${value}T00:00:00.000Z`)
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value
+}
+
+const requiredOperationalDate = z.string()
+  .refine(isRealIsoDate, "Fecha requerida inválida")
+  .refine((value) => value >= todayInChile(), "La fecha requerida no puede estar en el pasado")
+
 // ── Request item attribute ────────────────────────────────────────────────────
 export const requestItemAttributeSchema = z.object({
   id:            z.string().optional(),
   attributeId:   z.string().optional().nullable(),
-  attributeName: z.string().min(1),
-  value:         z.string().min(1, "Valor requerido"),
+  attributeName: z.string().trim().min(1, "Nombre requerido").max(60, "Nombre demasiado largo"),
+  value:         z.string().trim().min(1, "Valor requerido").max(64, "Valor demasiado largo"),
 })
 
 // ── Request item ──────────────────────────────────────────────────────────────
@@ -19,7 +42,7 @@ export const requestItemSchema = z.object({
   quantity:            z.coerce.number().positive("Cantidad debe ser mayor a 0"),
   unitOfMeasure:       z.string().min(1, "Unidad requerida").max(20).default("unidad"),
   urgency:             z.enum(["normal", "high", "critical"]).default("normal"),
-  requiredDate:        z.string().optional().nullable(),
+  requiredDate:        requiredOperationalDate.optional().nullable(),
   workerId:            z.string().optional().nullable(),
   suggestedSupplierId: z.string().nullable().optional(),
   supplierHint:        z.string().max(100).nullable().optional().or(z.literal("")),
@@ -46,7 +69,7 @@ export const requestSchema = z.object({
   requestType:  z.enum(["epp", "otro", "repuestos", "servicios"]).default("epp"),
   urgency:      z.enum(["normal", "high", "critical"]).default("normal"),
   deliveryMode: z.enum(["via_oficina", "directo_faena"]).optional().default("via_oficina"),
-  requiredDate: z.string().min(1, "Indica la fecha requerida"),
+  requiredDate: requiredOperationalDate.min(1, "Indica la fecha requerida"),
   notes:        z.string().max(500).optional().or(z.literal("")),
   items:        z.array(requestItemSchema).min(1, "Agrega al menos un ítem").max(50, "Máximo 50 ítems por solicitud"),
 }).refine(
@@ -109,6 +132,9 @@ export const receiptItemSchema = z.object({
   quantityRejected:    nonNegativeQuantitySchema.default(0),
   quantityDamaged:     nonNegativeQuantitySchema.default(0),
   notes:               z.string().max(300).nullable().optional().or(z.literal("")),
+  lotNumber:           z.string().trim().max(120).nullable().optional().or(z.literal("")),
+  manufacturedAt:      z.string().trim().max(10).nullable().optional().or(z.literal("")),
+  expiresAt:           z.string().trim().max(10).nullable().optional().or(z.literal("")),
 }).refine(
   (d) => d.quantityReceived + d.quantityRejected + d.quantityDamaged > 0,
   { message: "Registra al menos una cantidad (recibida, rechazada o dañada)", path: ["quantityReceived"] },
@@ -167,8 +193,7 @@ export const adjustStockSchema = z.object({
 
 // ── Stock return ────────────────────────────────────────────────────────────
 export const returnStockSchema = z.object({
-  worksiteId:   z.string().min(1, "Selecciona una faena"),
-  productId:    z.string().min(1, "Selecciona un producto"),
+  deliveryItemId: z.string().min(1, "Selecciona una entrega para devolver"),
   quantity:     positiveQuantitySchema,
   reason:       z.string().trim().min(1, "Indica el motivo de la devolución").max(300),
   notes:        z.string().trim().max(500).nullable().optional().or(z.literal("")),

@@ -1,15 +1,16 @@
 "use server"
 
 import { db } from "@/db"
-import { deliveryItems, inventoryMovements, purchaseRequestItems, purchaseRequests, worksiteStock } from "@/db/schema"
-import { and, eq, inArray } from "drizzle-orm"
+import { deliveryItems, purchaseRequestItems, purchaseRequests, worksiteStock } from "@/db/schema"
+import { eq } from "drizzle-orm"
 import { canAccessWorksite, requirePermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { registerWorksiteDelivery } from "@/lib/services/deliveries"
 import { closePhysicalInventoryCount } from "@/lib/services/physical-inventory"
-import { applyMovement } from "@/lib/services/stock"
+import { registerStockAdjustment, registerStockReturn } from "@/lib/services/stock"
 import { dispatchSchema, setMinStockSchema, returnStockSchema, adjustStockSchema, type ActionState }  from "@/lib/validation/operations"
 import { logger } from "@/lib/logger"
+import { recordAudit } from "@/lib/audit"
 import { revalidateOperationalViews } from "@/lib/services/operational-cache"
 
 const REVALIDATE = "/bodega"
@@ -141,7 +142,30 @@ export async function setMinStockAction(
       return { ok: false, message: "No tienes acceso a esta faena" }
     }
 
-    await db.update(worksiteStock).set({ minStock }).where(eq(worksiteStock.id, stockId))
+    await db.transaction(async (tx) => {
+      const [lockedStock] = await tx
+        .select()
+        .from(worksiteStock)
+        .where(eq(worksiteStock.id, stockId))
+        .for("update")
+      if (!lockedStock) throw new Error("Stock no encontrado")
+      if (!canAccessWorksite(session, lockedStock.worksiteId)) {
+        throw new Error("No tienes acceso a esta faena")
+      }
+
+      await tx.update(worksiteStock)
+        .set({ minStock, updatedAt: new Date().toISOString() })
+        .where(eq(worksiteStock.id, stockId))
+      await recordAudit({
+        userId: session.user.id,
+        userEmail: session.user.email ?? undefined,
+        action: "update",
+        entityType: "worksite_stock",
+        entityId: lockedStock.id,
+        oldState: { minStock: lockedStock.minStock },
+        newState: { minStock },
+      }, tx)
+    })
     revalidateOperationalViews([REVALIDATE])
     return { ok: true, message: `Stock mínimo actualizado a ${minStock}` }
   } catch (e) {
@@ -186,12 +210,11 @@ export async function adjustStockAction(
   const delta = direction === "ingreso" ? quantity : -quantity
 
   try {
-    await applyMovement({
+    const adjustment = await registerStockAdjustment({
       worksiteId,
       productId,
       type: "ajuste",
       quantity: delta,
-      referenceType: "adjustment",
       performedBy: session.user.id,
       userEmail: session.user.email ?? undefined,
       reason,
@@ -200,7 +223,7 @@ export async function adjustStockAction(
 
     revalidateOperationalViews([REVALIDATE])
     const sign = direction === "ingreso" ? "+" : "-"
-    return { ok: true, message: `Ajuste registrado: ${sign}${quantity} unidades` }
+    return { ok: true, message: `Ajuste ${adjustment.code} registrado: ${sign}${quantity} unidades` }
   } catch (e) {
     logger.error("[adjustStockAction]", e)
     return { ok: false, message: e instanceof Error ? e.message : "Error al registrar ajuste" }
@@ -218,8 +241,7 @@ export async function returnStockAction(
   catch { return { ok: false, message: "Sin permisos para registrar movimientos" } }
 
   const parsed = returnStockSchema.safeParse({
-    worksiteId: formData.get("worksiteId"),
-    productId:  formData.get("productId"),
+    deliveryItemId: formData.get("deliveryItemId"),
     quantity:   formData.get("quantity"),
     reason:     formData.get("reason"),
     notes:      formData.get("notes"),
@@ -233,50 +255,20 @@ export async function returnStockAction(
     }
   }
 
-  const { worksiteId, productId, quantity, reason, notes } = parsed.data
-
-  if (!canAccessWorksite(session, worksiteId)) {
-    return { ok: false, message: "No tienes acceso a esta faena" }
-  }
-
-  // MISS-05: cap return to net delivered (egreso_entrega − ingreso_devolucion)
-  const priorMovements = await db
-    .select({ type: inventoryMovements.type, quantity: inventoryMovements.quantity })
-    .from(inventoryMovements)
-    .where(and(
-      eq(inventoryMovements.worksiteId, worksiteId),
-      eq(inventoryMovements.productId, productId),
-      inArray(inventoryMovements.type, ["egreso_entrega", "ingreso_devolucion"]),
-    ))
-  const totalDelivered = priorMovements
-    .filter((m) => m.type === "egreso_entrega")
-    .reduce((sum, m) => sum + Math.abs(m.quantity), 0)
-  const totalReturned = priorMovements
-    .filter((m) => m.type === "ingreso_devolucion")
-    .reduce((sum, m) => sum + Math.abs(m.quantity), 0)
-  const maxReturnable = totalDelivered - totalReturned
-  if (maxReturnable <= 0) {
-    return { ok: false, message: "No hay entregas previas registradas para devolver en esta faena" }
-  }
-  if (quantity > maxReturnable) {
-    return { ok: false, message: `La cantidad excede lo entregado neto. Máximo devolvible: ${maxReturnable}` }
-  }
+  const { deliveryItemId, quantity, reason, notes } = parsed.data
 
   try {
-    await applyMovement({
-      worksiteId,
-      productId,
-      type: "ingreso_devolucion",
+    const stockReturn = await registerStockReturn({
+      deliveryItemId,
       quantity,
-      referenceType: "return",
       performedBy: session.user.id,
       userEmail: session.user.email ?? undefined,
       reason,
       notes: notes || undefined,
-    })
+    }, serviceWorksiteScope(session))
 
     revalidateOperationalViews([REVALIDATE])
-    return { ok: true, message: `Devolución registrada: ${quantity} unidades` }
+    return { ok: true, message: `Devolución ${stockReturn.code} registrada: ${quantity} unidades` }
   } catch (e) {
     logger.error("[returnStockAction]", e)
     return { ok: false, message: e instanceof Error ? e.message : "Error al registrar devolución" }
@@ -296,14 +288,12 @@ export async function closePhysicalInventoryCountAction(
   const worksiteId = String(formData.get("worksiteId") ?? "")
   const notes = String(formData.get("notes") ?? "")
   const productIds = formValues(formData, "countProductId")
-  const expectedQuantities = formValues(formData, "expectedQuantity")
   const countedQuantities = formValues(formData, "countedQuantity")
   const itemNotes = formValues(formData, "itemNotes")
 
   const items = productIds
     .map((productId, index) => ({
       productId,
-      expectedQuantity: Number(expectedQuantities[index] ?? "0"),
       countedQuantity: Number(countedQuantities[index] ?? ""),
       notes: itemNotes[index] ?? "",
     }))
@@ -315,7 +305,7 @@ export async function closePhysicalInventoryCountAction(
   if (items.length === 0) {
     return { ok: false, message: "Agrega al menos un producto al conteo" }
   }
-  if (items.some((item) => !Number.isFinite(item.expectedQuantity) || !Number.isFinite(item.countedQuantity) || item.countedQuantity < 0)) {
+  if (items.some((item) => !Number.isFinite(item.countedQuantity) || item.countedQuantity < 0)) {
     return { ok: false, message: "Revisa las cantidades contadas" }
   }
 

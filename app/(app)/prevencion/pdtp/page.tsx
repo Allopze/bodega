@@ -271,7 +271,7 @@ export default async function PdtpDashboardPage({ searchParams }: PdtpDashboardP
         {focusProgram && (
           <Link
             href={`/prevencion/pdtp/${focusProgram.id}`}
-            className="text-xs font-medium text-[var(--color-primary)] hover:underline"
+            className="inline-flex min-h-11 sm:min-h-0 items-center text-xs font-medium text-[var(--color-primary)] hover:underline"
           >
             Ver matriz detallada de actividades →
           </Link>
@@ -332,12 +332,14 @@ export default async function PdtpDashboardPage({ searchParams }: PdtpDashboardP
                   : `${indicators?.annual.executed ?? 0} de ${indicators?.annual.planned ?? 0} ejecuciones · ${scopedWorksites.length} faena${scopedWorksites.length === 1 ? "" : "s"}`
               }
               icon={<ShieldCheck size={22} className="text-[var(--color-success)]" />}
+              href={focusProgram ? `/prevencion/pdtp/${focusProgram.id}` : undefined}
             />
             <KpiCard
               label="Avance Mes Vigente"
               value={`${currentMonthPercent}%`}
               detail={`Mes ${currentMonthNum}: ${currentMonthData?.executed ?? 0}/${currentMonthData?.planned ?? 0} ejecuciones`}
               icon={<ChartBar size={22} className="text-[var(--color-primary)]" />}
+              href={focusProgram ? `/prevencion/pdtp/${focusProgram.id}` : undefined}
             />
             {/* Reemplaza el conteo de faenas, que no cambiaba ninguna decisión
                 (regla A1). El integral pondera ejecución + verificación de
@@ -348,9 +350,10 @@ export default async function PdtpDashboardPage({ searchParams }: PdtpDashboardP
               detail={
                 integralPercent !== null
                   ? `Ejec. ${Math.round((integral?.ejecucion ?? 0) * 100)}% · Verif. ${Math.round(integral?.verificacion ?? 0)}% · Cierre ${Math.round(integral?.cierre ?? 0)}%`
-                  : "Sin ejecuciones aprobadas todavía"
+                  : "Sin ejecuciones aprobadas todavía — abre el programa para registrar la primera"
               }
               icon={<ListChecks size={22} className="text-[var(--color-info)]" />}
+              href={focusProgram ? `/prevencion/pdtp/${focusProgram.id}` : undefined}
             />
             <KpiCard
               label="Acciones Pendientes"
@@ -362,6 +365,7 @@ export default async function PdtpDashboardPage({ searchParams }: PdtpDashboardP
                   className={overdueActionsCount > 0 ? "text-[var(--color-danger)]" : "text-[var(--color-warning)]"}
                 />
               }
+              href={overdueActionsCount > 0 ? "/prevencion/pdtp/acciones?vencidas=1" : "/prevencion/pdtp/acciones"}
             />
           </div>
 

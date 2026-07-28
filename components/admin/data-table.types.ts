@@ -13,6 +13,8 @@ export interface ColumnDef {
 }
 
 export interface DataTableProps<T extends Record<string, unknown>> {
+  /** Nombre accesible de la tabla, expuesto como `<caption>` visualmente oculto. */
+  caption:      string
   columns:      ColumnDef[]
   rows:         T[]
   /** Keys to include in full-text search */

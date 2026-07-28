@@ -19,6 +19,8 @@ import { isNetworkError } from "@/lib/network-error"
 import type { ActionState } from "@/lib/validation/masters"
 import { optionalNumber } from "./export"
 import { fuelProductIdForLegacy } from "@/lib/combustibles/fuel-products"
+import { reevaluateFuelLoadAnomalies } from "@/lib/combustibles/fuel-load-anomaly-reevaluation"
+import { notifyAfterCommit } from "@/lib/services/notifications"
 
 const REVALIDATE = "/combustibles"
 
@@ -240,6 +242,8 @@ export async function updateFuelLoadAction(
     })
 
     revalidatePath(REVALIDATE)
+    revalidatePath("/combustibles/anomalias")
+    notifyAfterCommit(() => reevaluateFuelLoadAnomalies(id, session.user.id))
     return { ok: true, message: "Carga actualizada" }
   } catch (e) {
     return { ok: false, message: await dbErrMsg(e, "Error al actualizar") }

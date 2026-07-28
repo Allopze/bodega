@@ -86,6 +86,20 @@ describeIf("EPP preventivo on real PostgreSQL", () => {
     expect(gaps.some((gap) => gap.workerId === "wk-a1")).toBe(false)
   })
 
+  it("creates one replenishment draft per live gap even when executed twice", async () => {
+    const service = await import("@/lib/services/epp-replenishment")
+
+    const first = await service.generateReplenishmentDrafts(MANAGER)
+    const second = await service.generateReplenishmentDrafts(MANAGER)
+
+    expect(first.createdCount).toBe(1)
+    expect(second).toEqual({ createdCount: 0, requestCodes: [] })
+    const links = await getDb().select().from(schema.eppReplenishmentLinks)
+    expect(links).toHaveLength(1)
+    const requestItems = await getDb().select().from(schema.purchaseRequestItems)
+    expect(requestItems.filter((item) => item.workerId === "wk-a2")).toHaveLength(1)
+  })
+
   it("does not count a delivery to another worksite towards this worker's coverage", async () => {
     const service = await import("@/lib/services/prevention-epp")
     const gaps = await service.listEppCoverageGaps(MANAGER)

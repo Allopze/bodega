@@ -11,7 +11,7 @@ import { drizzle } from "drizzle-orm/pglite"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
 import { describe, it, expect, vi, afterAll, beforeAll } from "vitest"
 import path from "node:path"
-import { eq } from "drizzle-orm"
+import { eq, ne } from "drizzle-orm"
 import * as schema from "@/db/schema"
 import type { DB } from "@/db"
 
@@ -51,6 +51,10 @@ describe("Purchasing service — edge cases", () => {
     })
     await inMemoryDb.insert(schema.worksites).values({
       id: "ws-purch", name: "Faena Purch", code: "F-PURCH",
+      isActive: true, createdAt: now, updatedAt: now,
+    })
+    await inMemoryDb.insert(schema.worksites).values({
+      id: "ws-purch-other", name: "Faena Ajena", code: "F-OTHER",
       isActive: true, createdAt: now, updatedAt: now,
     })
     await inMemoryDb.insert(schema.suppliers).values({
@@ -117,6 +121,60 @@ describe("Purchasing service — edge cases", () => {
           unitPrice: 1000,
         }],
       })).rejects.toThrow("no puede superar")
+    })
+
+    it("rejects an item from another worksite inside the creation transaction", async () => {
+      const requestId = "req-cross-worksite"
+      const requestItemId = "item-cross-worksite"
+      await inMemoryDb.insert(schema.purchaseRequests).values({
+        id: requestId, code: "SOL-CROSS-WS", worksiteId: "ws-purch-other",
+        requesterId: userId, requestType: "epp", urgency: "normal",
+        status: "approved", createdAt: now, updatedAt: now,
+      })
+      await inMemoryDb.insert(schema.purchaseRequestItems).values({
+        id: requestItemId, requestId, productId: "prod-purch",
+        quantity: 1, unitOfMeasure: "unidad", status: "pending_purchase",
+        createdAt: now, updatedAt: now,
+      })
+
+      await expect(createOrdersBySupplier({
+        worksiteId: "ws-purch", worksiteScope: ["ws-purch"], createdBy: userId,
+        orders: [{ supplierId: "sup-purch", items: [{
+          requestItemId, productId: null, productNameFree: "Manipulado", quantity: 1,
+          unitOfMeasure: "caja", unitPrice: 1000,
+        }] }],
+      })).rejects.toThrow(/otra faena/i)
+
+      const item = await inMemoryDb.query.purchaseRequestItems.findFirst({
+        where: eq(schema.purchaseRequestItems.id, requestItemId),
+      })
+      expect(item?.status).toBe("pending_purchase")
+    })
+
+    it("derives product identity and unit from the locked request item", async () => {
+      const requestId = "req-immutable-purchase-item"
+      const requestItemId = "item-immutable-purchase-item"
+      await inMemoryDb.insert(schema.purchaseRequests).values({
+        id: requestId, code: "SOL-IMMUTABLE-ITEM", worksiteId: "ws-purch",
+        requesterId: userId, requestType: "epp", urgency: "normal",
+        status: "approved", createdAt: now, updatedAt: now,
+      })
+      await inMemoryDb.insert(schema.purchaseRequestItems).values({
+        id: requestItemId, requestId, productId: "prod-purch",
+        quantity: 1, unitOfMeasure: "unidad", status: "pending_purchase",
+        createdAt: now, updatedAt: now,
+      })
+
+      const orderId = await createOrder({
+        worksiteId: "ws-purch", supplierId: "sup-purch", createdBy: userId,
+        items: [{
+          requestItemId, productId: null, productNameFree: "Producto manipulado", quantity: 1,
+          unitOfMeasure: "caja", unitPrice: 1000,
+        }],
+      })
+      const [orderItem] = await inMemoryDb.select().from(schema.purchaseOrderItems)
+        .where(eq(schema.purchaseOrderItems.purchaseOrderId, orderId))
+      expect(orderItem).toMatchObject({ productId: "prod-purch", productNameFree: null, unitOfMeasure: "unidad" })
     })
 
     it("buying less than approved splits the remainder into a sibling item that stays pending", async () => {
@@ -672,6 +730,42 @@ describe("Purchasing service — edge cases", () => {
       expect(invoice).toBeDefined()
       expect(invoice?.invoiceNumber).toBe("FAC-001")
       expect(invoice?.amount).toBe(59500)
+
+      await expect(createPurchaseOrderInvoice({
+        purchaseOrderId: orderId,
+        invoiceNumber: "FAC-001",
+        amount: 59500,
+        fileName: "fac-duplicate.pdf",
+        filePath: "/uploads/fac-duplicate.pdf",
+        uploadedBy: userId,
+      })).rejects.toThrow("Ya existe una factura con ese folio")
+    })
+
+    it("rejects invoice lines that belong to another purchase order", async () => {
+      const targetOrder = await inMemoryDb.query.purchaseOrders.findFirst({
+        where: eq(schema.purchaseOrders.status, "sent"),
+      })
+      expect(targetOrder).toBeDefined()
+      const foreignItem = await inMemoryDb.query.purchaseOrderItems.findFirst({
+        where: ne(schema.purchaseOrderItems.purchaseOrderId, targetOrder!.id),
+      })
+      expect(foreignItem).toBeDefined()
+
+      await expect(createPurchaseOrderInvoice({
+        purchaseOrderId: targetOrder!.id,
+        invoiceNumber: "FAC-CROSS-OC",
+        amount: 1000,
+        fileName: "cross.pdf",
+        filePath: "/uploads/cross.pdf",
+        uploadedBy: userId,
+        items: [{
+          purchaseOrderItemId: foreignItem!.id,
+          productName: "Línea ajena",
+          quantity: 1,
+          unitPrice: 1000,
+          subtotal: 1000,
+        }],
+      })).rejects.toThrow("no pertenece a esta OC")
     })
 
     it("throws if order does not exist", async () => {

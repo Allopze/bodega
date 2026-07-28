@@ -1,7 +1,9 @@
-import { and, desc, eq, lte, sql } from "drizzle-orm"
+import { and, desc, eq, isNull, lte, sql } from "drizzle-orm"
 import { z } from "zod"
 import { db } from "@/db"
-import { userRoles, users, worksiteUsers } from "@/db/schema"
+import { userInvitations, userRoles, users, worksiteUsers } from "@/db/schema"
+import { generateInvitationToken, hashInvitationToken } from "@/lib/auth/bootstrap"
+import { createPendingPasswordMarker } from "@/lib/auth/password-setup"
 import { nanoid } from "@/lib/id"
 import { logger } from "@/lib/logger"
 
@@ -14,54 +16,82 @@ const createSubstituteSchema = z.object({
 
 export async function createTemporarySubstituteUser(input: unknown, createdByUserId: string) {
   const data = createSubstituteSchema.parse(input)
-
-  // Obtener el usuario original a reemplazar
-  const [originalUser] = await db.select().from(users).where(eq(users.id, data.substituteForUserId)).limit(1)
-  if (!originalUser) throw new Error("Usuario a reemplazar no encontrado.")
-
-  // Copiar sus roles y faenas
-  const roles = await db.select({ roleId: userRoles.roleId }).from(userRoles).where(eq(userRoles.userId, originalUser.id))
-  const worksites = await db.select({ worksiteId: worksiteUsers.worksiteId }).from(worksiteUsers).where(eq(worksiteUsers.userId, originalUser.id))
-
   const now = new Date()
+  const nowIso = now.toISOString()
   const validUntilDate = new Date(now.getTime() + data.validUntilDays * 24 * 60 * 60 * 1000)
+  const id = `sub-${nanoid()}`
+  const invitationId = nanoid()
+  const invitationToken = generateInvitationToken()
 
-  const [created] = await db.insert(users).values({
-    id: `sub-${nanoid()}`,
-    name: data.name,
-    email: data.email,
-    hashedPassword: "TEMPORARY_ACCOUNT_PENDING_SETUP",
-    isActive: true,
-    isTemporary: true,
-    validUntil: validUntilDate.toISOString(),
-    substituteForUserId: originalUser.id,
-    createdAt: now.toISOString(),
-    updatedAt: now.toISOString(),
-  }).returning()
-  if (!created) throw new Error("No se pudo crear el usuario temporal.")
+  const created = await db.transaction(async (tx) => {
+    const [originalUser] = await tx.select().from(users).where(eq(users.id, data.substituteForUserId)).limit(1)
+    if (!originalUser || !originalUser.isActive) throw new Error("Usuario a reemplazar no encontrado o inactivo.")
 
-  // Clonar roles
-  for (const r of roles) {
-    await db.insert(userRoles).values({
-      userId: created.id,
-      roleId: r.roleId,
-    }).onConflictDoNothing()
-  }
+    const [existingUser] = await tx.select({ id: users.id }).from(users).where(eq(users.email, data.email)).limit(1)
+    if (existingUser) throw new Error("Este correo ya está registrado.")
 
-  // Clonar faenas
-  for (const w of worksites) {
-    await db.insert(worksiteUsers).values({
-      userId: created.id,
-      worksiteId: w.worksiteId,
-    }).onConflictDoNothing()
-  }
+    const [newUser] = await tx.insert(users).values({
+      id,
+      name: data.name,
+      email: data.email,
+      hashedPassword: createPendingPasswordMarker(),
+      isActive: true,
+      isTemporary: true,
+      validUntil: validUntilDate.toISOString(),
+      substituteForUserId: originalUser.id,
+      createdAt: nowIso,
+      updatedAt: nowIso,
+    }).returning()
+    if (!newUser) throw new Error("No se pudo crear el usuario temporal.")
+
+    const [roleRows, worksiteRows] = await Promise.all([
+      tx.select({ roleId: userRoles.roleId }).from(userRoles).where(eq(userRoles.userId, originalUser.id)),
+      tx.select({ worksiteId: worksiteUsers.worksiteId, isPrimary: worksiteUsers.isPrimary }).from(worksiteUsers).where(eq(worksiteUsers.userId, originalUser.id)),
+    ])
+    if (roleRows.length > 0) {
+      await tx.insert(userRoles).values(roleRows.map((role) => ({ userId: id, roleId: role.roleId })))
+    }
+    if (worksiteRows.length > 0) {
+      await tx.insert(worksiteUsers).values(worksiteRows.map((worksite) => ({
+        userId: id,
+        worksiteId: worksite.worksiteId,
+        isPrimary: worksite.isPrimary,
+      })))
+    }
+
+    await tx.update(userInvitations)
+      .set({ replacedAt: nowIso, replacedByInvitationId: invitationId })
+      .where(and(
+        eq(userInvitations.email, data.email),
+        isNull(userInvitations.acceptedAt),
+        isNull(userInvitations.cancelledAt),
+        isNull(userInvitations.replacedAt),
+      ))
+    await tx.insert(userInvitations).values({
+      id: invitationId,
+      email: data.email,
+      name: data.name,
+      tokenHash: hashInvitationToken(invitationToken),
+      roleIdsJson: JSON.stringify(roleRows.map((role) => role.roleId)),
+      worksiteAssignmentsJson: JSON.stringify(worksiteRows.map((worksite) => ({
+        worksiteId: worksite.worksiteId,
+        isPrimary: worksite.isPrimary,
+      }))),
+      invitedByUserId: createdByUserId,
+      expiresAt: validUntilDate.toISOString(),
+      lastSentAt: nowIso,
+      sendCount: 1,
+    })
+
+    return newUser
+  })
 
   logger.info(
-    { temporaryUserId: created.id, substituteForUserId: originalUser.id, createdByUserId, validUntil: validUntilDate.toISOString() },
+    { temporaryUserId: created.id, substituteForUserId: data.substituteForUserId, createdByUserId, validUntil: validUntilDate.toISOString() },
     "[Substitutions] Cuenta temporal de reemplazo creada.",
   )
 
-  return created
+  return { ...created, invitationToken, invitationExpiresAt: validUntilDate.toISOString() }
 }
 
 export async function extendTemporarySubstituteValidity(userId: string, additionalDays: number, updatedByUserId: string) {

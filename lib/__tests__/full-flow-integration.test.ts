@@ -284,6 +284,9 @@ describe("Full procurement workflow integration", () => {
         {
           purchaseOrderItemId: ocItemId,
           quantityReceived: 10,
+          lotNumber: "CASCO-2026-01",
+          manufacturedAt: "2026-01-01",
+          expiresAt: "2028-01-01",
         },
       ],
     })
@@ -412,6 +415,25 @@ describe("Full procurement workflow integration", () => {
       id: "stock-return", worksiteId, productId, quantity: 10, minStock: 0,
       lastMovementAt: now, updatedAt: now,
     })
+    const [priorReceiptItem] = await inMemoryDb.select({ id: schema.receiptItems.id }).from(schema.receiptItems).limit(1)
+    const [priorReceipt] = await inMemoryDb.select({ id: schema.receipts.id }).from(schema.receipts).limit(1)
+    const [priorPurchaseOrderItem] = await inMemoryDb.select({ id: schema.purchaseOrderItems.id }).from(schema.purchaseOrderItems).limit(1)
+    if (!priorReceiptItem || !priorReceipt || !priorPurchaseOrderItem) throw new Error("Se requiere una recepción previa para los lotes de prueba")
+    await inMemoryDb.insert(schema.inventoryLots).values({
+      id: "lot-return", worksiteId, productId, receiptItemId: priorReceiptItem.id,
+      lotNumber: "RET-2026-01", manufacturedAt: "2026-01-01", expiresAt: "2028-01-01",
+      quantityReceived: 2, quantityAvailable: 2,
+    })
+    await inMemoryDb.insert(schema.receiptItems).values({
+      id: "receipt-item-expired-lot", receiptId: priorReceipt.id,
+      purchaseOrderItemId: priorPurchaseOrderItem.id,
+      quantityReceived: 1, quantityRejected: 0, quantityDamaged: 0, status: "received",
+    })
+    await inMemoryDb.insert(schema.inventoryLots).values({
+      id: "lot-expired", worksiteId, productId, receiptItemId: "receipt-item-expired-lot",
+      lotNumber: "RET-EXP-2020", manufacturedAt: "2019-01-01", expiresAt: "2020-01-01",
+      quantityReceived: 8, quantityAvailable: 8,
+    })
 
     // Seed a request item in "received" status
     const requestId = "req-return"
@@ -445,13 +467,25 @@ describe("Full procurement workflow integration", () => {
     expect(item.returnProductId).toBe(returnProductId)
     expect(item.returnReason).toBe("desgastado")
     expect(item.returnNotes).toBe("Casco con golpes")
+    const allocations = await inMemoryDb.query.deliveryItemLots.findMany({
+      where: eq(schema.deliveryItemLots.deliveryItemId, item.id),
+    })
+    expect(allocations).toEqual([expect.objectContaining({ inventoryLotId: "lot-return", quantity: 2 })])
 
-    // Verify egreso_desecho movement was created
-    // Note: prod-old was never in worksite stock, so this is record-only (quantity=0 deducted)
+    await inMemoryDb.insert(schema.purchaseRequestItems).values({
+      id: "item-expired-only", requestId, productId, quantity: 1,
+      unitOfMeasure: "unidad", status: "received", createdAt: now, updatedAt: now,
+    })
+    await expect(registerWorkerEppDelivery({
+      worksiteId, workerId, requestItemId: "item-expired-only", quantity: 1,
+      deliveredBy: userId,
+    })).rejects.toThrow("lotes EPP vigentes")
+
+    // Verify worker-EPP retirement was recorded without deducting warehouse stock.
     const movements = await inMemoryDb
       .select()
       .from(schema.inventoryMovements)
-      .where(eq(schema.inventoryMovements.type, "egreso_desecho"))
+      .where(eq(schema.inventoryMovements.type, "retiro_epp_trabajador"))
     expect(movements.length).toBeGreaterThanOrEqual(1)
     const retireMovement = movements.find((m: typeof schema.inventoryMovements.$inferSelect) => m.referenceId === deliveryId)
     expect(retireMovement).toBeDefined()

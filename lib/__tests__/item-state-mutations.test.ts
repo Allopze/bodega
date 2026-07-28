@@ -25,7 +25,7 @@ vi.mock("@/db", () => ({
 
 const migrationsFolder = path.resolve(process.cwd(), "db/migrations")
 
-import { submitItem, approveItem, rejectItem, returnItem, markItemPendingPurchase, postponeItem } from "@/lib/services/item-state"
+import { submitItem, approveItem, bulkApproveItems, rejectItem, returnItem, markItemPendingPurchase, postponeItem } from "@/lib/services/item-state"
 
 describe("Item State Machine — DB integration", () => {
   const now = new Date().toISOString()
@@ -145,6 +145,34 @@ describe("Item State Machine — DB integration", () => {
     })
   })
 
+  describe("bulkApproveItems", () => {
+    it("rolls back the complete batch when one selected item cannot transition", async () => {
+      const approvableId = "item-bulk-approvable"
+      const blockedId = "item-bulk-blocked"
+      await inMemoryDb.insert(schema.purchaseRequestItems).values([
+        {
+          id: approvableId, requestId, productNameFree: "Bulk approvable", quantity: 1,
+          unitOfMeasure: "unidad", status: "requested", createdAt: now, updatedAt: now,
+        },
+        {
+          id: blockedId, requestId, productNameFree: "Bulk blocked", quantity: 1,
+          unitOfMeasure: "unidad", status: "draft", createdAt: now, updatedAt: now,
+        },
+      ])
+
+      await expect(bulkApproveItems([approvableId, blockedId], userId)).rejects.toThrow(/No se puede aprobar/i)
+
+      const rows = await inMemoryDb.query.purchaseRequestItems.findMany({
+        where: (item, { inArray }) => inArray(item.id, [approvableId, blockedId]),
+      })
+      expect(rows.map((item) => item.status).sort()).toEqual(["draft", "requested"])
+      const decisions = await inMemoryDb.query.approvalDecisions.findMany({
+        where: (decision, { inArray }) => inArray(decision.requestItemId, [approvableId, blockedId]),
+      })
+      expect(decisions).toHaveLength(0)
+    })
+  })
+
   // ── rejectItem ──────────────────────────────────────────────────────────
   describe("rejectItem", () => {
     const rejectItemId = "item-reject"
@@ -218,6 +246,17 @@ describe("Item State Machine — DB integration", () => {
         .set({ status: "pending_purchase" })
         .where(eq(schema.purchaseRequestItems.id, postponeItemId))
       await postponeItem(postponeItemId, userId, "Esperar presupuesto")
+
+      const item = await inMemoryDb.query.purchaseRequestItems
+        .findFirst({ where: eq(schema.purchaseRequestItems.id, postponeItemId) })
+      expect(item?.status).toBe("postponed")
+    })
+
+    it("transitions approved → postponed", async () => {
+      await inMemoryDb.update(schema.purchaseRequestItems)
+        .set({ status: "approved" })
+        .where(eq(schema.purchaseRequestItems.id, postponeItemId))
+      await postponeItem(postponeItemId, userId, "Repriorización aprobada")
 
       const item = await inMemoryDb.query.purchaseRequestItems
         .findFirst({ where: eq(schema.purchaseRequestItems.id, postponeItemId) })

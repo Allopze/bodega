@@ -80,6 +80,7 @@ export function SequenceList({ rows }: SequenceListProps) {
         <>
         <DesktopOnlyTableNotice />
         <DataTable
+          caption="Secuencias de Folios"
           columns={COLUMNS}
           rows={dataRows}
           searchKeys={["prefix", "year"]}

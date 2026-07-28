@@ -125,7 +125,7 @@ const DesktopNavInner = React.memo(function DesktopNavInner({ session, badgeCoun
 
       {/* Links Navigation (con scroll independiente) */}
       <div className="flex-1 min-h-0 overflow-y-auto space-y-1 py-1 pr-1">
-        <p className="px-2 pb-1.5 text-xs font-bold uppercase tracking-wider text-slate-400">Plataforma</p>
+        <p className="px-2 pb-1.5 text-xs font-bold uppercase tracking-wider text-(--color-text-muted)">Plataforma</p>
 
         <Link
           href={DASHBOARD_ITEM.href}

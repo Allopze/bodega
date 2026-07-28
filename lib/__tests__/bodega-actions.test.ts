@@ -13,24 +13,31 @@ import { describe, it, expect, vi, beforeEach } from "vitest"
 import type { Session } from "next-auth"
 
 const mockAuthFn = vi.hoisted(() => vi.fn())
-const mockApplyMovement = vi.hoisted(() => vi.fn())
+const mockRegisterStockAdjustment = vi.hoisted(() => vi.fn())
+const mockRegisterStockReturn = vi.hoisted(() => vi.fn())
 const mockRegisterWorksiteDelivery = vi.hoisted(() => vi.fn())
 const mockClosePhysicalInventoryCount = vi.hoisted(() => vi.fn())
+const mockRecordAudit = vi.hoisted(() => vi.fn())
 
 vi.mock("@/lib/auth/auth", () => ({ auth: mockAuthFn }))
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), revalidateTag: vi.fn() }))
-vi.mock("@/lib/services/stock", () => ({ applyMovement: mockApplyMovement }))
+vi.mock("@/lib/services/stock", () => ({
+  registerStockAdjustment: mockRegisterStockAdjustment,
+  registerStockReturn: mockRegisterStockReturn,
+}))
 vi.mock("@/lib/services/deliveries", () => ({
   registerWorksiteDelivery: mockRegisterWorksiteDelivery,
 }))
 vi.mock("@/lib/services/physical-inventory", () => ({
   closePhysicalInventoryCount: mockClosePhysicalInventoryCount,
 }))
+vi.mock("@/lib/audit", () => ({ recordAudit: mockRecordAudit }))
 
 const mockDb = {
   query: { worksiteStock: { findFirst: vi.fn() } },
   select: vi.fn(),
   update: vi.fn(() => ({ set: vi.fn(() => ({ where: vi.fn().mockResolvedValue(undefined) })) })),
+  transaction: vi.fn(),
 }
 
 vi.mock("@/db", () => ({ db: mockDb }))
@@ -53,10 +60,21 @@ function makeSession(perm: string, worksiteIds: string[] = ["ws-1"]): Session {
 describe("bodega actions", () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mockApplyMovement.mockResolvedValue(undefined)
+    mockRegisterStockAdjustment.mockResolvedValue({ id: "adjustment-1", code: "AJU-2026-0001" })
+    mockRegisterStockReturn.mockResolvedValue({ id: "return-1", code: "DEV-2026-0001" })
     mockRegisterWorksiteDelivery.mockResolvedValue(undefined)
     mockClosePhysicalInventoryCount.mockResolvedValue({ id: "count-1", code: "CON-2026-0001", adjustmentCount: 2 })
     mockDb.query.worksiteStock.findFirst.mockResolvedValue(null)
+    mockDb.transaction.mockImplementation(async (fn) => fn({
+      select: vi.fn(() => ({
+        from: vi.fn(() => ({
+          where: vi.fn(() => ({
+            for: vi.fn().mockResolvedValue([{ id: "stock-1", worksiteId: "ws-1", minStock: 2 }]),
+          })),
+        })),
+      })),
+      update: mockDb.update,
+    }))
 
     // Default select chain for returnStock prior movements
     const selectChain = {
@@ -196,6 +214,11 @@ describe("bodega actions", () => {
       const result = await setMinStockAction({ ok: false }, fd)
       expect(result.ok).toBe(true)
       expect(result.message).toContain("Stock mínimo actualizado")
+      expect(mockRecordAudit).toHaveBeenCalledWith(expect.objectContaining({
+        entityType: "worksite_stock",
+        oldState: { minStock: 2 },
+        newState: { minStock: 10 },
+      }), expect.anything())
     })
   })
 
@@ -242,7 +265,7 @@ describe("bodega actions", () => {
       const result = await adjustStockAction({ ok: false }, fd)
       expect(result.ok).toBe(true)
       expect(result.message).toContain("+3")
-      expect(mockApplyMovement).toHaveBeenCalledWith(expect.objectContaining({
+      expect(mockRegisterStockAdjustment).toHaveBeenCalledWith(expect.objectContaining({
         type: "ajuste",
         quantity: 3,
       }))
@@ -260,7 +283,7 @@ describe("bodega actions", () => {
       const result = await adjustStockAction({ ok: false }, fd)
       expect(result.ok).toBe(true)
       expect(result.message).toContain("-2")
-      expect(mockApplyMovement).toHaveBeenCalledWith(expect.objectContaining({
+      expect(mockRegisterStockAdjustment).toHaveBeenCalledWith(expect.objectContaining({
         type: "ajuste",
         quantity: -2,
       }))
@@ -268,7 +291,7 @@ describe("bodega actions", () => {
 
     it("propagates service error", async () => {
       mockAuthFn.mockResolvedValue(makeSession("warehouse:adjust_stock", ["ws-1"]))
-      mockApplyMovement.mockRejectedValue(new Error("Stock insuficiente"))
+      mockRegisterStockAdjustment.mockRejectedValue(new Error("Stock insuficiente"))
       const { adjustStockAction } = await import("@/app/(app)/bodega/actions")
       const fd = new FormData()
       fd.set("worksiteId", "ws-1")
@@ -279,6 +302,47 @@ describe("bodega actions", () => {
       const result = await adjustStockAction({ ok: false }, fd)
       expect(result.ok).toBe(false)
       expect(result.message).toContain("Stock insuficiente")
+    })
+  })
+
+  // ── returnStockAction ──────────────────────────────────────────────────
+
+  describe("returnStockAction", () => {
+    it("uses only the selected delivery item; the service derives product and worksite under lock", async () => {
+      mockAuthFn.mockResolvedValue(makeSession("warehouse:register_movement", ["ws-1"]))
+      const { returnStockAction } = await import("@/app/(app)/bodega/actions")
+      const fd = new FormData()
+      fd.set("deliveryItemId", "delivery-item-1")
+      fd.set("worksiteId", "ws-forged")
+      fd.set("productId", "prod-forged")
+      fd.set("quantity", "2")
+      fd.set("reason", "Sobrante")
+
+      const result = await returnStockAction({ ok: false }, fd)
+
+      expect(result.ok).toBe(true)
+      expect(mockRegisterStockReturn).toHaveBeenCalledWith({
+        deliveryItemId: "delivery-item-1",
+        quantity: 2,
+        performedBy: "user-1",
+        userEmail: "bodega@chome.cl",
+        reason: "Sobrante",
+        notes: undefined,
+      }, ["ws-1"])
+    })
+
+    it("rejects a return without a delivery source", async () => {
+      mockAuthFn.mockResolvedValue(makeSession("warehouse:register_movement"))
+      const { returnStockAction } = await import("@/app/(app)/bodega/actions")
+      const fd = new FormData()
+      fd.set("quantity", "2")
+      fd.set("reason", "Sobrante")
+
+      const result = await returnStockAction({ ok: false }, fd)
+
+      expect(result.ok).toBe(false)
+      expect(result.fieldErrors?.deliveryItemId).toBeDefined()
+      expect(mockRegisterStockReturn).not.toHaveBeenCalled()
     })
   })
 
@@ -312,11 +376,11 @@ describe("bodega actions", () => {
       fd.set("worksiteId", "ws-1")
       fd.set("notes", "Conteo mensual")
       fd.append("countProductId", "prod-1")
-      fd.append("expectedQuantity", "10")
+      fd.append("expectedQuantity", "999999") // El cliente no es fuente de saldo.
       fd.append("countedQuantity", "8")
       fd.append("itemNotes", "Faltan 2")
       fd.append("countProductId", "prod-2")
-      fd.append("expectedQuantity", "3")
+      fd.append("expectedQuantity", "999999")
       fd.append("countedQuantity", "5")
       fd.append("itemNotes", "")
 
@@ -330,8 +394,8 @@ describe("bodega actions", () => {
           worksiteId: "ws-1",
           notes: "Conteo mensual",
           items: [
-            { productId: "prod-1", expectedQuantity: 10, countedQuantity: 8, notes: "Faltan 2" },
-            { productId: "prod-2", expectedQuantity: 3, countedQuantity: 5, notes: "" },
+            { productId: "prod-1", countedQuantity: 8, notes: "Faltan 2" },
+            { productId: "prod-2", countedQuantity: 5, notes: "" },
           ],
         },
         ["ws-1"],

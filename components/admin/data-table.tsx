@@ -10,7 +10,7 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import {
-  TableRoot, Table, TableHeader, TableBody, TableRow, TableHead,
+  TableRoot, Table, TableCaption, TableHeader, TableBody, TableRow, TableHead,
 } from "@/components/ui/table"
 import { Pagination } from "@/components/ui/pagination"
 import { EmptyState } from "@/components/ui/empty-state"
@@ -63,6 +63,7 @@ const DENSITY_MIN_ROWS = 8
 // ── Component ─────────────────────────────────────────────────────────────────
 
 const DataTableInner = <T extends Record<string, unknown>>({
+  caption,
   columns,
   rows,
   searchKeys,
@@ -196,9 +197,16 @@ const DataTableInner = <T extends Record<string, unknown>>({
   const totalFiltered = sorted.length
   // Sólo se ofrece donde cambia algo: en una tabla de 3 filas es adorno.
   const showDensityToggle = totalFiltered >= DENSITY_MIN_ROWS
+  // `page` puede quedar más allá del rango real si el buscador del TopBar o el
+  // dataset (`rows`) cambian sin pasar por `toggleSort`/`onSearchChange`. Se
+  // acota contra `totalFiltered` en vez de resetear en un efecto: así no hay
+  // riesgo de volver a la página 1 sólo porque el padre re-renderiza `rows`
+  // con una referencia nueva (auditoría UIUX-009).
+  const totalPages = Math.max(1, Math.ceil(totalFiltered / pageSize))
+  const safePage = Math.min(page, totalPages)
   const paginated = React.useMemo(
-    () => sorted.slice((page - 1) * pageSize, page * pageSize),
-    [sorted, page, pageSize],
+    () => sorted.slice((safePage - 1) * pageSize, safePage * pageSize),
+    [sorted, safePage, pageSize],
   )
 
   // ── Sort toggle ──────────────────────────────────────────────────────────────
@@ -305,6 +313,7 @@ const DataTableInner = <T extends Record<string, unknown>>({
       {/* Table */}
       <TableRoot data-density={density} data-sticky-col={stickyFirstColumn || undefined} className={renderMobileCard ? "hidden md:block" : undefined}>
         <Table className={tableClassName}>
+          {caption && <TableCaption className="sr-only">{caption}</TableCaption>}
           <TableHeader>
             <TableRow>
               {visibleColumns.map((col) => (
@@ -392,7 +401,7 @@ const DataTableInner = <T extends Record<string, unknown>>({
 
       {/* Pagination */}
       <Pagination
-        page={page}
+        page={safePage}
         total={totalFiltered}
         perPage={pageSize}
         onPage={setPage}

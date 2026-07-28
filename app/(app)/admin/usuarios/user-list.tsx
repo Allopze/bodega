@@ -96,6 +96,7 @@ export function UserList({ users, invitations, allRoles, allPermissions, allWork
   return (
     <>
       <DataTable
+        caption="Usuarios de la plataforma"
         columns={COLUMNS}
         rows={users as unknown as Record<string, unknown>[]}
         searchKeys={["name", "email"]}

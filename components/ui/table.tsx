@@ -110,9 +110,9 @@ const TableHead = React.forwardRef<HTMLTableCellElement, React.ThHTMLAttributes<
       scope={scope}
       className={cn(
         "px-4 py-3 text-left text-xs font-semibold",
-        "text-slate-500 uppercase tracking-wider",
+        "text-(--color-text-subtle) uppercase tracking-wider",
         "whitespace-nowrap",
-        "bg-slate-50/70 border-b border-slate-200/80",
+        "bg-(--color-surface-2) border-b border-(--color-border)",
         className,
       )}
       {...props}

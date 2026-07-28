@@ -109,6 +109,7 @@ export function OcList({
 
       {/* OC table */}
       <DataTable
+        caption="Órdenes de Compra"
         enableColumnToggle
         viewKey="oc"
         stickyFirstColumn

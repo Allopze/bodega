@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, afterEach, vi } from "vitest"
-import { render, screen, cleanup } from "@testing-library/react"
+import { render, screen, cleanup, fireEvent } from "@testing-library/react"
 
 const mockReplace = vi.fn()
 vi.mock("next/navigation", () => ({
@@ -35,6 +35,7 @@ describe("DataTable", () => {
     render(
       withProvider(
         <DataTable
+          caption="Usuarios de prueba"
           columns={COLUMNS}
           rows={ROWS}
           searchKeys={["name", "email"]}
@@ -57,10 +58,56 @@ describe("DataTable", () => {
     expect(screen.getByText("María García")).toBeDefined()
   })
 
+  it("keeps showing real rows if the dataset shrinks while on a later page (UIUX-009)", () => {
+    const renderRow = (row: (typeof ROWS)[number]) => (
+      <TableRow key={row.id}>
+        <TableCell>{row.name}</TableCell>
+      </TableRow>
+    )
+
+    const { rerender } = render(
+      withProvider(
+        <DataTable
+          caption="Usuarios de prueba"
+          columns={COLUMNS}
+          rows={ROWS}
+          searchKeys={["name", "email"]}
+          pageSize={1}
+          renderRow={renderRow}
+          emptyTitle="Sin resultados"
+        />,
+      ),
+    )
+
+    // Cada fila ocupa su propia página (pageSize=1): ir a la página 3.
+    fireEvent.click(screen.getByLabelText("Ir a página 3"))
+    expect(screen.getByText("María García")).toBeDefined()
+
+    // El dataset se reduce (p. ej. el buscador del TopBar filtra) mientras el
+    // usuario sigue en la página 3, que ya no existe.
+    rerender(
+      withProvider(
+        <DataTable
+          caption="Usuarios de prueba"
+          columns={COLUMNS}
+          rows={ROWS.slice(0, 1)}
+          searchKeys={["name", "email"]}
+          pageSize={1}
+          renderRow={renderRow}
+          emptyTitle="Sin resultados"
+        />,
+      ),
+    )
+
+    expect(screen.getByText("Ana López")).toBeDefined()
+    expect(screen.queryByText("Sin resultados")).toBeNull()
+  })
+
   it("shows empty state when no rows", () => {
     render(
       withProvider(
         <DataTable
+          caption="Usuarios de prueba"
           columns={COLUMNS}
           rows={[]}
           searchKeys={["name"]}
@@ -79,6 +126,7 @@ describe("DataTable", () => {
     const { container } = render(
       withProvider(
         <DataTable
+          caption="Usuarios de prueba"
           columns={COLUMNS}
           rows={[]}
           searchKeys={["name"]}
@@ -96,6 +144,7 @@ describe("DataTable", () => {
     const { container } = render(
       withProvider(
         <DataTable
+          caption="Usuarios de prueba"
           columns={COLUMNS}
           rows={ROWS}
           searchKeys={["name"]}
@@ -121,6 +170,7 @@ describe("DataTable", () => {
     render(
       withProvider(
         <DataTable
+          caption="Usuarios de prueba"
           columns={COLUMNS}
           rows={ROWS}
           searchKeys={["name"]}
@@ -139,6 +189,7 @@ describe("DataTable", () => {
     render(
       withProvider(
         <DataTable
+          caption="Usuarios de prueba"
           columns={COLUMNS}
           rows={ROWS}
           searchKeys={["name"]}
@@ -155,6 +206,7 @@ describe("DataTable", () => {
     const { container } = render(
       withProvider(
         <DataTable
+          caption="Usuarios de prueba"
           columns={COLUMNS}
           rows={ROWS}
           searchKeys={["name"]}
@@ -172,6 +224,7 @@ describe("DataTable", () => {
     render(
       withProvider(
         <DataTable
+          caption="Usuarios de prueba"
           columns={COLUMNS}
           rows={ROWS}
           searchKeys={["name"]}

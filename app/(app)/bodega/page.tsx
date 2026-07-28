@@ -1,7 +1,7 @@
 import type { Metadata } from "next"
 import { redirect } from "next/navigation"
 import { db } from "@/db"
-import { inventoryMovements, worksites } from "@/db/schema"
+import { deliveries, deliveryItems, inventoryMovements, products, stockReturns, worksites, worksiteStock } from "@/db/schema"
 import { and, eq, asc, inArray, sql, count } from "drizzle-orm"
 import { requirePermission, can } from "@/lib/auth/can"
 import { isGlobalRole, visibleWorksiteIds } from "@/lib/auth/scope"
@@ -51,6 +51,12 @@ export default async function BodegaPage({
       ? inArray(inventoryMovements.worksiteId, visibleWsIds)
       : sql`false`
 
+  const deliveryScope = isGlobalRole(session)
+    ? undefined
+    : visibleWsIds.length > 0
+      ? inArray(deliveries.worksiteId, visibleWsIds)
+      : sql`false`
+
   // Kardex pagination
   const [movementTotalRow] = await db
     .select({ total: count() })
@@ -63,7 +69,7 @@ export default async function BodegaPage({
     pageSize: KARDEX_PAGE_SIZE,
   })
 
-  const [allWorksites, stockRows, recentMovements] = await Promise.all([
+  const [allWorksites, stockRows, recentMovements, physicalInventoryRows, returnDeliveryRows] = await Promise.all([
     db
       .select({ id: worksites.id, name: worksites.name })
       .from(worksites)
@@ -85,6 +91,57 @@ export default async function BodegaPage({
       limit: kardexPagination.limit,
       offset: kardexPagination.offset,
     }),
+    db
+      .select({
+        worksiteId: worksites.id,
+        worksiteName: worksites.name,
+        productId: products.id,
+        productName: products.name,
+        productSku: products.sku,
+        quantity: sql<number>`coalesce(${worksiteStock.quantity}, 0)`,
+        unitOfMeasure: products.unitOfMeasure,
+      })
+      .from(worksites)
+      .innerJoin(products, eq(products.isActive, true))
+      .leftJoin(worksiteStock, and(
+        eq(worksiteStock.worksiteId, worksites.id),
+        eq(worksiteStock.productId, products.id),
+      ))
+      .where(and(eq(worksites.isActive, true), worksiteScope))
+      .orderBy(asc(worksites.name), asc(products.name)),
+    db
+      .select({
+        deliveryItemId: deliveryItems.id,
+        worksiteId: worksites.id,
+        worksiteName: worksites.name,
+        deliveryCode: deliveries.code,
+        productName: products.name,
+        productSku: products.sku,
+        unitOfMeasure: products.unitOfMeasure,
+        remainingQuantity: sql<number>`(${deliveryItems.quantity} - coalesce(sum(${stockReturns.quantity}), 0))`,
+      })
+      .from(deliveryItems)
+      .innerJoin(deliveries, eq(deliveryItems.deliveryId, deliveries.id))
+      .innerJoin(worksites, eq(deliveries.worksiteId, worksites.id))
+      .innerJoin(products, eq(deliveryItems.productId, products.id))
+      .leftJoin(stockReturns, eq(stockReturns.deliveryItemId, deliveryItems.id))
+      .where(and(
+        eq(deliveries.destinationType, "faena"),
+        eq(worksites.isActive, true),
+        deliveryScope,
+      ))
+      .groupBy(
+        deliveryItems.id,
+        deliveryItems.quantity,
+        worksites.id,
+        worksites.name,
+        deliveries.code,
+        products.name,
+        products.sku,
+        products.unitOfMeasure,
+      )
+      .having(sql`${deliveryItems.quantity} > coalesce(sum(${stockReturns.quantity}), 0)`)
+      .orderBy(asc(worksites.name), asc(deliveries.code), asc(products.name)),
   ])
 
   if (allWorksites.length === 0) {
@@ -113,34 +170,27 @@ export default async function BodegaPage({
   const productsWithStock = new Set(stockWithQuantity.map((item) => item.productId))
   const lowStockRows = visibleStockRows.filter((item) => item.minStock > 0 && item.quantity <= item.minStock)
 
-  const returnProducts: ReturnPanelStockOption[] = visibleStockRows
-    .map((s) => ({
-      worksiteId: s.worksiteId,
-      worksiteName: s.worksite?.name ?? s.worksiteId,
-      productId: s.productId,
-      productName: s.product?.name ?? s.productId,
-      productSku: s.product?.sku ?? null,
-      unitOfMeasure: s.product?.unitOfMeasure ?? "unidad",
-    }))
+  const returnProducts: ReturnPanelStockOption[] = returnDeliveryRows.map((item) => ({
+    ...item,
+    remainingQuantity: Number(item.remainingQuantity),
+  }))
 
   const firstStockWorksiteId = visibleStockRows.find((item) => item.quantity > 0)?.worksiteId
   const initialWorksiteId = (requestedWorksiteId && worksiteOptions.some((w) => w.id === requestedWorksiteId) ? requestedWorksiteId : undefined)
     ?? firstStockWorksiteId
     ?? worksiteOptions[0]?.id
-  const adjustProducts: AdjustPanelStockOption[] = returnProducts
-  const physicalInventoryProducts: PhysicalInventoryStockOption[] = visibleStockRows
-    .map((s) => ({
-      worksiteId: s.worksiteId,
-      worksiteName: s.worksite?.name ?? s.worksiteId,
-      productId: s.productId,
-      productName: s.product?.name ?? s.productId,
-      productSku: s.product?.sku ?? null,
-      quantity: s.quantity,
-      unitOfMeasure: s.product?.unitOfMeasure ?? "unidad",
-    }))
+  const adjustProducts: AdjustPanelStockOption[] = visibleStockRows.map((item) => ({
+    worksiteId: item.worksiteId,
+    worksiteName: item.worksite?.name ?? item.worksiteId,
+    productId: item.productId,
+    productName: item.product?.name ?? item.productId,
+    productSku: item.product?.sku ?? null,
+    unitOfMeasure: item.product?.unitOfMeasure ?? "unidad",
+  }))
+  const physicalInventoryProducts: PhysicalInventoryStockOption[] = physicalInventoryRows
   const showReturnPanel  = canRegisterMovements && returnProducts.length > 0 && worksiteOptions.length > 0
   const showAdjustPanel  = canAdjustStock && worksiteOptions.length > 0
-  const showPhysicalInventoryPanel = canAdjustStock && physicalInventoryProducts.some((item) => item.quantity > 0) && worksiteOptions.length > 0
+  const showPhysicalInventoryPanel = canAdjustStock && physicalInventoryProducts.length > 0 && worksiteOptions.length > 0
 
   const stockByWorksite: Record<string, WorksiteStockWithProduct[]> = {}
   for (const s of visibleStockRows) {
@@ -192,5 +242,3 @@ export default async function BodegaPage({
     </PageContainer>
   )
 }
-
-

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { deriveScheduleHorizon, describePdtpRecurrence, describePdtpRecurrenceImpact, projectRecurrenceToLegacySchedule } from "@/lib/services/pdtp/recurrence"
+import { pdtpRecurrenceRuleSchema } from "@/lib/validation/prevention-module/pdtp"
 
 describe("PDTP recurrence rules", () => {
   it("projects a monthly rule without exposing the matrix as authoring input", () => {
@@ -24,6 +25,12 @@ describe("PDTP recurrence rules", () => {
       .toEqual([{ month: 1, week: 3, plannedQuantity: 1 }])
     expect(projectRecurrenceToLegacySchedule({ frequency: "custom", interval: 1, plannedQuantity: 1, months: [12, 3, 3, 8], weekOfMonth: 4 }).map((cell) => cell.month))
       .toEqual([3, 8, 12])
+  })
+
+  it("rejects a custom recurrence without selected months", () => {
+    expect(pdtpRecurrenceRuleSchema.safeParse({ frequency: "custom" }).success).toBe(false)
+    expect(pdtpRecurrenceRuleSchema.safeParse({ frequency: "custom", months: [] }).success).toBe(false)
+    expect(pdtpRecurrenceRuleSchema.safeParse({ frequency: "custom", months: [3] }).success).toBe(true)
   })
 
   it("applies an interval to weekly compatibility projections", () => {

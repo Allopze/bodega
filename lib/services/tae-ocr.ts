@@ -8,6 +8,8 @@ export interface OcrMeterResult {
 }
 
 const MAX_METER_VALUE = 9_999_999
+/** Bajo este umbral el resultado sólo es una sugerencia y requiere confirmación humana. */
+export const MIN_ACCEPTED_OCR_CONFIDENCE = 0.7
 const MAX_CONCURRENT_OCR = Math.max(1, Number(process.env.TAE_OCR_MAX_CONCURRENT ?? "1") || 1)
 let activeOcr = 0
 const ocrWaiters: Array<() => void> = []
@@ -89,7 +91,7 @@ async function extractMeterReadingInSlot(buffer: Buffer): Promise<OcrMeterResult
 
     const result = await recognizeWithPsm(worker, preprocessed, PSM.SINGLE_LINE)
 
-    if (result.value != null && result.confidence >= 0.7) {
+    if (result.value != null && result.confidence >= MIN_ACCEPTED_OCR_CONFIDENCE) {
       return result
     }
 

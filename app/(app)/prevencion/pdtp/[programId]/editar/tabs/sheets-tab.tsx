@@ -86,15 +86,20 @@ function CreateSheetForm({ programId }: { programId: string }) {
 }
 
 function DeleteSheetButton({ sheetId, programId }: { sheetId: string; programId: string }) {
-  const [_state, formAction, pending] = useActionState(deletePdtpSheetAction, null)
+  const [state, formAction, pending] = useActionState(deletePdtpSheetAction, null)
 
   return (
-    <form action={formAction}>
+    <form action={formAction} className="flex flex-col items-end gap-1">
       <input type="hidden" name="sheetId" value={sheetId} />
       <input type="hidden" name="programId" value={programId} />
       <Button type="submit" variant="ghost" size="sm" disabled={pending}>
         Eliminar
       </Button>
+      {state?.message && !state.ok && (
+        <p role="status" className="max-w-56 text-right text-xs text-[var(--color-danger)]">
+          {state.message}
+        </p>
+      )}
     </form>
   )
 }

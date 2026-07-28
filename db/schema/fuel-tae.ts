@@ -91,7 +91,10 @@ export const fuelTaeSubmissions = pgTable("fuel_tae_submissions", {
   meterType:             text("meter_type").notNull(),
   meterReading:          numeric("meter_reading", { precision: 14, scale: 2, mode: "number" }),
   meterReadingSource:    text("meter_reading_source"),
+  /** Resultado OCR conservado como sugerencia; nunca sustituye una lectura humana de baja confianza. */
+  ocrSuggestedReading:   numeric("ocr_suggested_reading", { precision: 14, scale: 2, mode: "number" }),
   ocrConfidence:         numeric("ocr_confidence", { precision: 5, scale: 4, mode: "number" }),
+  ocrRawText:            text("ocr_raw_text"),
   ocrProcessedAt:        timestamp("ocr_processed_at", { withTimezone: true, mode: "string" }),
   meterUnavailableReason:text("meter_unavailable_reason"),
   liters:                numeric("liters", { precision: 12, scale: 4, mode: "number" }).notNull(),

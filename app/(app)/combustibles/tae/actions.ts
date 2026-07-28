@@ -124,8 +124,6 @@ export async function updateTaeMeterReadingAction(input: {
         meterReading: parsed.data.meterReading,
         meterReadingSource: "manual",
         meterType: parsed.data.meterType,
-        ocrConfidence: null,
-        ocrProcessedAt: null,
         status: nextStatus,
         reviewNote: submission.status === "validated" ? `Lectura corregida: ${parsed.data.reason}` : submission.reviewNote,
         reviewedBy: submission.status === "validated" ? guard.session.user.id : submission.reviewedBy,
@@ -138,7 +136,7 @@ export async function updateTaeMeterReadingAction(input: {
         action: "update",
         entityType: "fuel_tae_submission",
         entityId: parsed.data.id,
-        oldState: { meterReading: submission.meterReading, meterType: submission.meterType, meterReadingSource: submission.meterReadingSource, status: submission.status },
+        oldState: { meterReading: submission.meterReading, meterType: submission.meterType, meterReadingSource: submission.meterReadingSource, ocrSuggestedReading: submission.ocrSuggestedReading, status: submission.status },
         newState: { meterReading: parsed.data.meterReading, meterType: parsed.data.meterType, meterReadingSource: "manual", status: nextStatus },
         reason: parsed.data.reason,
       }, tx)

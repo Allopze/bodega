@@ -22,18 +22,20 @@ export function MeterCorrectionDialog({
   submissionId,
   currentMeterType,
   currentMeterReading,
+  suggestedMeterReading,
   currentStatus,
 }: {
   submissionId: string
   currentMeterType: string
   currentMeterReading: number | null
+  suggestedMeterReading: number | null
   currentStatus: "submitted" | "observed" | "validated" | "voided"
 }) {
   const router = useRouter()
   const [open, setOpen] = React.useState(false)
   const [pending, startTransition] = React.useTransition()
   const [meterType, setMeterType] = React.useState(() => currentMeterType)
-  const [meterReading, setMeterReading] = React.useState(() => currentMeterReading == null ? "" : String(currentMeterReading))
+  const [meterReading, setMeterReading] = React.useState(() => currentMeterReading != null ? String(currentMeterReading) : suggestedMeterReading != null ? String(suggestedMeterReading) : "")
   const [reason, setReason] = React.useState("")
 
   function handleSubmit() {
@@ -73,7 +75,7 @@ export function MeterCorrectionDialog({
         <DialogHeader>
           <DialogTitle>Corregir lectura del medidor</DialogTitle>
           <DialogDescription>
-            Ingresa la lectura correcta y el motivo del cambio.
+            Confirma o corrige la lectura y deja el motivo. Si existe una sugerencia OCR, no se aplica hasta guardar esta confirmación.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4">

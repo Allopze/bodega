@@ -22,6 +22,7 @@ export function FuelSupplierList({ suppliers, generalSuppliers }: { suppliers: F
   return (
     <>
       <DataTable
+        caption="Proveedores de combustible"
         columns={COLUMNS}
         rows={suppliers as unknown as Record<string, unknown>[]}
         searchKeys={CONTRACT.searchKeys}

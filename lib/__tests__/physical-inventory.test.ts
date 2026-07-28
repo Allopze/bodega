@@ -10,14 +10,14 @@ describe("Physical Inventory Count Service (physical-inventory.ts)", () => {
   it("rejects inventory count without worksiteId", async () => {
     await expect(closePhysicalInventoryCount(dummySession, {
       worksiteId: "",
-      items: [{ productId: "p-1", expectedQuantity: 10, countedQuantity: 10 }],
+      items: [{ productId: "p-1", countedQuantity: 10 }],
     }, "all")).rejects.toThrow("Faena requerida")
   })
 
   it("checks worksite scope permissions", async () => {
     await expect(closePhysicalInventoryCount(dummySession, {
       worksiteId: "ws-restringida",
-      items: [{ productId: "p-1", expectedQuantity: 10, countedQuantity: 10 }],
+      items: [{ productId: "p-1", countedQuantity: 10 }],
     }, ["ws-permitida"])).rejects.toThrow("No tienes acceso a esta faena")
   })
 
@@ -32,18 +32,18 @@ describe("Physical Inventory Count Service (physical-inventory.ts)", () => {
     await expect(closePhysicalInventoryCount(dummySession, {
       worksiteId: "ws-1",
       items: [
-        { productId: "p-100", expectedQuantity: 5, countedQuantity: 5 },
-        { productId: "p-100", expectedQuantity: 2, countedQuantity: 2 }, // Duplicado
+        { productId: "p-100", countedQuantity: 5 },
+        { productId: "p-100", countedQuantity: 2 }, // Duplicado
       ],
     }, "all")).rejects.toThrow("El conteo no puede repetir productos")
   })
 
-  it("rejects negative expected or counted quantities", async () => {
+  it("rejects negative counted quantities", async () => {
     await expect(closePhysicalInventoryCount(dummySession, {
       worksiteId: "ws-1",
       items: [
-        { productId: "p-1", expectedQuantity: -5, countedQuantity: 10 },
+        { productId: "p-1", countedQuantity: -5 },
       ],
-    }, "all")).rejects.toThrow("Stock esperado debe ser un numero no negativo")
+    }, "all")).rejects.toThrow("Stock contado debe ser un numero no negativo")
   })
 })

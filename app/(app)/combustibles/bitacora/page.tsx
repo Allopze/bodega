@@ -176,7 +176,7 @@ export default async function FuelLogPage({ searchParams }: { searchParams: Prom
       <form className="mb-4 flex flex-col gap-3 border-y border-(--color-border) py-4">
         {/* Filtros primarios: lo que se usa a diario. La tabla arranca justo debajo. */}
         <div className="grid gap-3 md:grid-cols-4">
-          <Input name="q" defaultValue={sp.q} placeholder="Equipo, patente, conductor, supervisor, proveedor…" className="md:col-span-2" />
+          <Input name="q" defaultValue={sp.q} aria-label="Buscar por equipo, patente, conductor, supervisor o proveedor" placeholder="Equipo, patente, conductor, supervisor, proveedor…" className="md:col-span-2" />
           <DatePicker name="desde" defaultValue={sp.desde} placeholder="Desde" />
           <DatePicker name="hasta" defaultValue={sp.hasta} placeholder="Hasta" />
           <FilterSelect name="faena" defaultValue={sp.faena} options={worksitesList.map((item) => ({ value: item.id, label: item.name }))} placeholder="Todas las faenas autorizadas" />
@@ -200,11 +200,11 @@ export default async function FuelLogPage({ searchParams }: { searchParams: Prom
           <div className="mt-4 flex flex-col gap-5">
             <fieldset className="grid gap-3 md:grid-cols-4">
               <legend className="text-eyebrow mb-2 md:col-span-4">Vehículo</legend>
-              <Input name="marca" defaultValue={sp.marca} placeholder="Marca del vehículo" className="control" />
-              <Input name="modelo" defaultValue={sp.modelo} placeholder="Modelo del vehículo" className="control" />
+              <Input name="marca" defaultValue={sp.marca} aria-label="Marca del vehículo" placeholder="Marca del vehículo" className="control" />
+              <Input name="modelo" defaultValue={sp.modelo} aria-label="Modelo del vehículo" placeholder="Modelo del vehículo" className="control" />
               <FilterSelect name="tipo" defaultValue={sp.tipo} options={equipmentTypesList.map((item) => ({ value: item.id, label: item.name }))} placeholder="Todos los tipos de equipo" />
-              <Input name="conductor" defaultValue={sp.conductor} placeholder="Nombre del conductor" className="control" />
-              <Input name="supervisor" defaultValue={sp.supervisor} placeholder="Nombre del supervisor" className="control" />
+              <Input name="conductor" defaultValue={sp.conductor} aria-label="Nombre del conductor" placeholder="Nombre del conductor" className="control" />
+              <Input name="supervisor" defaultValue={sp.supervisor} aria-label="Nombre del supervisor" placeholder="Nombre del supervisor" className="control" />
             </fieldset>
             <fieldset className="grid gap-3 md:grid-cols-4">
               <legend className="text-eyebrow mb-2 md:col-span-4">Operación</legend>
@@ -213,8 +213,8 @@ export default async function FuelLogPage({ searchParams }: { searchParams: Prom
               <FilterSelect name="punto_carga" defaultValue={sp.punto_carga} options={loadingPointsList.map((item) => ({ value: item.id, label: item.name }))} placeholder="Todos los puntos de carga" />
               <FilterSelect name="unidad_rendimiento" defaultValue={sp.unidad_rendimiento} options={[{ value: "km_per_liter", label: "km/L" }, { value: "liters_per_hour", label: "L/h" }]} placeholder="Cualquier unidad" />
               <FilterSelect name="estado_operativo" defaultValue={sp.estado_operativo} options={[{ value: "operativo", label: "Operativo" }, { value: "inactivo_mantencion", label: "Inactivo — mantención" }, { value: "inactivo_fuera_servicio", label: "Inactivo — fuera de servicio" }, { value: "inactivo_revision", label: "Inactivo — revisión" }]} placeholder="Cualquier estado" />
-              <Input name="sello_retirado" defaultValue={sp.sello_retirado} placeholder="Número de sello retirado" className="control" />
-              <Input name="sello_instalado" defaultValue={sp.sello_instalado} placeholder="Número de sello instalado" className="control" />
+              <Input name="sello_retirado" defaultValue={sp.sello_retirado} aria-label="Número de sello retirado" placeholder="Número de sello retirado" className="control" />
+              <Input name="sello_instalado" defaultValue={sp.sello_instalado} aria-label="Número de sello instalado" placeholder="Número de sello instalado" className="control" />
               <FilterSelect name="evidencia_tipo" defaultValue={sp.evidencia_tipo} options={[{ value: "odometer", label: "Odómetro / horómetro" }, { value: "liter_meter", label: "Medidor de litros" }, { value: "removed_seal", label: "Sello retirado" }, { value: "installed_seal", label: "Sello instalado" }]} placeholder="Cualquier tipo de evidencia" />
               <label className="flex items-center gap-2 text-xs text-(--color-text-muted)"><input type="checkbox" name="observaciones" value="si" defaultChecked={sp.observaciones === "si"} />Sólo con observaciones</label>
             </fieldset>

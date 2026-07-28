@@ -59,6 +59,7 @@ export function RecepcionTable({ orders, wsMap, supMap, gapMap, canRegister, wor
       exportTipo="recepcion"
     />
     <DataTable
+      caption="Órdenes de Compra Pendientes de Recepción"
       columns={COLUMNS}
       rows={orders as unknown as Record<string, unknown>[]}
       searchKeys={["code"]}

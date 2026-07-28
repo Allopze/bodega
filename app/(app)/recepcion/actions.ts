@@ -93,7 +93,7 @@ export async function registerReceiptAction(
       receivedBy:      session.user.id,
       userEmail:       session.user.email ?? undefined,
       stage,
-      worksiteId:      worksiteId || order.worksiteId,
+      worksiteId:      worksiteId || null,
       dispatchGuideNo: dispatchGuideNo || null,
       notes:           notes || null,
       items:           nonZeroItems,

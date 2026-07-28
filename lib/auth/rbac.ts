@@ -1,6 +1,7 @@
 import { eq, inArray } from "drizzle-orm"
 import { db } from "@/db"
 import { users, userRoles, roles, rolePermissions, permissions, userPermissions, worksiteUsers } from "@/db/schema"
+import { isTemporaryAccountExpired } from "@/lib/auth/temporary-account"
 
 export interface UserRbacSnapshot {
   id: string
@@ -63,7 +64,7 @@ export async function getUserRbacById(
   const user = await db.query.users.findFirst({
     where: eq(users.id, userId),
   })
-  if (!user) return null
+  if (!user || !user.isActive || isTemporaryAccountExpired(user)) return null
 
   // Security audit A-05: fire all four independent reads in parallel.
   // The role→permissions query depends on user_roles' roleIds, but we

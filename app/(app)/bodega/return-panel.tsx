@@ -16,12 +16,14 @@ import { returnStockAction } from "./actions"
 import type { ActionState } from "@/lib/validation/operations"
 
 export interface ReturnPanelStockOption {
+  deliveryItemId: string
   worksiteId:    string
   worksiteName:  string
-  productId:     string
+  deliveryCode:  string
   productName:   string
   productSku:    string | null
   unitOfMeasure: string
+  remainingQuantity: number
 }
 
 interface WorksiteOption {
@@ -37,7 +39,7 @@ export function ReturnPanel({
   worksites: WorksiteOption[]
 }) {
   const [worksiteId, setWorksiteId] = React.useState<string>(worksites[0]?.id ?? "")
-  const [productId,  setProductId]  = React.useState<string>("")
+  const [deliveryItemId, setDeliveryItemId] = React.useState<string>("")
   const formRef = React.useRef<HTMLFormElement>(null)
 
   const [state, action, pending] = useActionState<ActionState, FormData>(returnStockAction, INITIAL_STATE)
@@ -52,13 +54,13 @@ export function ReturnPanel({
       toast.success(state.message)
       formRef.current?.reset()
       setWorksiteId(worksitesRef.current[0]?.id ?? "")
-      setProductId("")
+      setDeliveryItemId("")
     } else if (state.ok === false && state.message && state !== INITIAL_STATE) {
       toast.error(state.message)
     }
   }, [state])
 
-  const availableProducts = worksiteId
+  const availableDeliveries = worksiteId
     ? products.filter((p) => p.worksiteId === worksiteId)
     : []
 
@@ -75,11 +77,10 @@ export function ReturnPanel({
       </div>
 
       <form ref={formRef} action={action} className="flex flex-col gap-4 p-5">
-        <input type="hidden" name="worksiteId" value={worksiteId} />
-        <input type="hidden" name="productId"  value={productId} />
+        <input type="hidden" name="deliveryItemId" value={deliveryItemId} />
 
         <Field label="Faena" htmlFor="returnWorksiteId" required error={state.fieldErrors?.worksiteId?.[0]}>
-          <Select value={worksiteId} onValueChange={(v) => { setWorksiteId(v); setProductId("") }}>
+          <Select value={worksiteId} onValueChange={(v) => { setWorksiteId(v); setDeliveryItemId("") }}>
             <SelectTrigger id="returnWorksiteId" error={!!state.fieldErrors?.worksiteId}>
               <SelectValue placeholder="Selecciona faena" />
             </SelectTrigger>
@@ -91,19 +92,19 @@ export function ReturnPanel({
           </Select>
         </Field>
 
-        <Field label="Producto" htmlFor="returnProductId" required error={state.fieldErrors?.productId?.[0]}>
-          <Select searchable value={productId} onValueChange={setProductId} disabled={!worksiteId}>
-            <SelectTrigger id="returnProductId" error={!!state.fieldErrors?.productId}>
-              <SelectValue placeholder={worksiteId ? "Selecciona producto" : "Elige faena primero"} />
+        <Field label="Entrega a devolver" htmlFor="returnDeliveryItemId" required error={state.fieldErrors?.deliveryItemId?.[0]}>
+          <Select searchable value={deliveryItemId} onValueChange={setDeliveryItemId} disabled={!worksiteId}>
+            <SelectTrigger id="returnDeliveryItemId" error={!!state.fieldErrors?.deliveryItemId}>
+              <SelectValue placeholder={worksiteId ? "Selecciona entrega pendiente" : "Elige faena primero"} />
             </SelectTrigger>
             <SelectContent>
-              {availableProducts.map((p) => (
-                <SelectItem key={p.productId} value={p.productId}>
-                  {p.productName}
+              {availableDeliveries.map((p) => (
+                <SelectItem key={p.deliveryItemId} value={p.deliveryItemId}>
+                  {p.productName} · {p.deliveryCode} · saldo {p.remainingQuantity} {p.unitOfMeasure}
                 </SelectItem>
               ))}
-              {availableProducts.length === 0 && worksiteId && (
-                <SelectItem value="__none__" disabled>Sin productos en esta faena</SelectItem>
+              {availableDeliveries.length === 0 && worksiteId && (
+                <SelectItem value="__none__" disabled>Sin entregas pendientes en esta faena</SelectItem>
               )}
             </SelectContent>
           </Select>
@@ -122,7 +123,7 @@ export function ReturnPanel({
             step="0.01"
             min="0.01"
             placeholder="0"
-            disabled={!productId}
+            disabled={!deliveryItemId}
             required
             error={!!state.fieldErrors?.quantity}
             className="tabular-nums"
@@ -134,7 +135,7 @@ export function ReturnPanel({
             id="returnReason"
             name="reason"
             placeholder="Ej: sobrante de entrega, no utilizado..."
-            disabled={!productId}
+            disabled={!deliveryItemId}
             required
             error={!!state.fieldErrors?.reason}
           />
@@ -146,7 +147,7 @@ export function ReturnPanel({
             name="notes"
             rows={2}
             placeholder="Información adicional..."
-            disabled={!productId}
+            disabled={!deliveryItemId}
             error={!!state.fieldErrors?.notes}
           />
         </Field>
@@ -162,7 +163,7 @@ export function ReturnPanel({
             label="Registrar devolución"
             loadingLabel="Guardando..."
             variant="primary"
-            disabled={!worksiteId || !productId || pending}
+            disabled={!worksiteId || !deliveryItemId || pending}
           />
         </div>
       </form>

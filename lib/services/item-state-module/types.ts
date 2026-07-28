@@ -31,7 +31,7 @@ export const TERMINAL_STATES: ItemStatus[] = [
 export const ALLOWED_TRANSITIONS: Record<ItemStatus, ItemStatus[]> = {
   draft:              ["requested"],
   requested:          ["approved", "rejected", "returned"],
-  approved:           ["rejected", "pending_purchase"],
+  approved:           ["rejected", "pending_purchase", "postponed"],
   rejected:           [],
   returned:           ["requested"],
   postponed:          ["pending_purchase"],

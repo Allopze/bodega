@@ -1,4 +1,4 @@
-import { eq, and, inArray } from "drizzle-orm"
+import { eq, and } from "drizzle-orm"
 import { db } from "@/db"
 import {
   purchaseRequestItems, approvalDecisions,
@@ -20,83 +20,78 @@ export async function bulkApproveItems(
 ): Promise<{ approved: number; errors: string[] }> {
   if (itemIds.length === 0) return { approved: 0, errors: [] }
 
-  const approved: string[] = []
-  const errors: string[] = []
+  const stableItemIds = [...new Set(itemIds)].sort()
+  if (stableItemIds.length !== itemIds.length) {
+    throw new Error("La aprobación masiva contiene ítems duplicados")
+  }
 
   await db.transaction(async (tx) => {
     const now = new Date().toISOString()
+    const lockedItems: Array<{ id: string; status: ItemStatus; requestId: string }> = []
 
-    for (const itemId of itemIds) {
-      try {
-        const [locked] = await tx
-          .select({
+    // Lock and validate the whole batch first, always in the same order. No
+    // mutation is issued unless every requested item can be approved.
+    for (const itemId of stableItemIds) {
+      const [locked] = await tx
+        .select({
           id: purchaseRequestItems.id, status: purchaseRequestItems.status, requestId: purchaseRequestItems.requestId,
-          })
-          .from(purchaseRequestItems)
-          .where(eq(purchaseRequestItems.id, itemId))
-          .for("update")
-
-        if (!locked) { errors.push(itemId); continue }
-        if (!canTransition(locked.status as ItemStatus, "approved")) {
-          errors.push(itemId); continue
-        }
-
-        const [updated] = await tx
-          .update(purchaseRequestItems)
-          .set({ status: "approved", updatedAt: now })
-          .where(and(
-            eq(purchaseRequestItems.id, itemId),
-            eq(purchaseRequestItems.status, locked.status),
-          ))
-          .returning({ id: purchaseRequestItems.id })
-
-        if (!updated) { errors.push(itemId); continue }
-
-        await tx.insert(approvalDecisions).values({
-          id:            nanoid(),
-          requestItemId: itemId,
-          requestId:     locked.requestId,
-          type:          "approve",
-          decidedBy:     userId,
-          roleContext:   opts?.roleContext ?? null,
         })
+        .from(purchaseRequestItems)
+        .where(eq(purchaseRequestItems.id, itemId))
+        .for("update")
 
-        await recordStatusChange({
-          entityType: "request_item",
-          entityId:   itemId,
-          fromStatus: locked.status,
-          toStatus:   "approved",
-          changedBy:  userId,
-        }, tx)
-        await recordAudit({
-          userId,
-          userEmail:  opts?.userEmail,
-          action:     "status_change",
-          entityType: "request_item",
-          entityId:   itemId,
-          oldState:   { status: locked.status },
-          newState:   { status: "approved" },
-        }, tx)
-        approved.push(itemId)
-      } catch {
-        errors.push(itemId)
+      if (!locked) throw new Error(`Ítem ${itemId} no encontrado`)
+      if (!canTransition(locked.status as ItemStatus, "approved")) {
+        throw new Error(`No se puede aprobar el ítem ${itemId} en estado '${locked.status}'`)
       }
+      lockedItems.push({ ...locked, status: locked.status as ItemStatus })
     }
 
-    // Roll up only affected requests (those with at least one successful approval)
-    if (approved.length > 0) {
-      const allItems = await tx
-        .select({ requestId: purchaseRequestItems.requestId })
-        .from(purchaseRequestItems)
-        .where(inArray(purchaseRequestItems.id, approved))
-      const uniqueRequestIds = [...new Set(allItems.map((i) => i.requestId))]
-      for (const rid of uniqueRequestIds) {
-        await rollupRequestStatus(rid, tx)
-      }
+    for (const locked of lockedItems) {
+      const [updated] = await tx
+        .update(purchaseRequestItems)
+        .set({ status: "approved", updatedAt: now })
+        .where(and(
+          eq(purchaseRequestItems.id, locked.id),
+          eq(purchaseRequestItems.status, locked.status),
+        ))
+        .returning({ id: purchaseRequestItems.id })
+
+      if (!updated) throw new Error(`El ítem ${locked.id} fue modificado concurrentemente`)
+
+      await tx.insert(approvalDecisions).values({
+        id:            nanoid(),
+        requestItemId: locked.id,
+        requestId:     locked.requestId,
+        type:          "approve",
+        decidedBy:     userId,
+        roleContext:   opts?.roleContext ?? null,
+      })
+
+      await recordStatusChange({
+        entityType: "request_item",
+        entityId:   locked.id,
+        fromStatus: locked.status,
+        toStatus:   "approved",
+        changedBy:  userId,
+      }, tx)
+      await recordAudit({
+        userId,
+        userEmail:  opts?.userEmail,
+        action:     "status_change",
+        entityType: "request_item",
+        entityId:   locked.id,
+        oldState:   { status: locked.status },
+        newState:   { status: "approved" },
+      }, tx)
+    }
+
+    for (const requestId of new Set(lockedItems.map((item) => item.requestId))) {
+      await rollupRequestStatus(requestId, tx)
     }
   })
 
-  return { approved: approved.length, errors }
+  return { approved: stableItemIds.length, errors: [] }
 }
 
 /** @see approveItem */
@@ -191,19 +186,23 @@ export async function rejectItem(
   if (!reason?.trim()) throw new Error("Reason is required to reject an item")
 
   await db.transaction(async (tx) => {
-    const item = await tx.query.purchaseRequestItems.findFirst({
-      where: eq(purchaseRequestItems.id, itemId),
-    })
+    const [item] = await tx
+      .select({ id: purchaseRequestItems.id, status: purchaseRequestItems.status, requestId: purchaseRequestItems.requestId })
+      .from(purchaseRequestItems)
+      .where(eq(purchaseRequestItems.id, itemId))
+      .for("update")
     if (!item) throw new Error(`Item ${itemId} not found`)
     if (!canTransition(item.status as ItemStatus, "rejected")) {
       throw new Error(`Cannot reject item in state '${item.status}'`)
     }
 
     const now = new Date().toISOString()
-    await tx
+    const [updated] = await tx
       .update(purchaseRequestItems)
       .set({ status: "rejected", updatedAt: now })
-      .where(eq(purchaseRequestItems.id, itemId))
+      .where(and(eq(purchaseRequestItems.id, itemId), eq(purchaseRequestItems.status, item.status)))
+      .returning({ id: purchaseRequestItems.id })
+    if (!updated) throw new Error("El ítem ya no está disponible — posible concurrencia")
 
     await tx.insert(approvalDecisions).values({
       id:            nanoid(),
@@ -251,19 +250,23 @@ export async function returnItem(
   if (!reason?.trim()) throw new Error("Reason is required to return an item")
 
   await db.transaction(async (tx) => {
-    const item = await tx.query.purchaseRequestItems.findFirst({
-      where: eq(purchaseRequestItems.id, itemId),
-    })
+    const [item] = await tx
+      .select({ id: purchaseRequestItems.id, status: purchaseRequestItems.status, requestId: purchaseRequestItems.requestId })
+      .from(purchaseRequestItems)
+      .where(eq(purchaseRequestItems.id, itemId))
+      .for("update")
     if (!item) throw new Error(`Item ${itemId} not found`)
     if (!canTransition(item.status as ItemStatus, "returned")) {
       throw new Error(`Cannot return item in state '${item.status}'`)
     }
 
     const now = new Date().toISOString()
-    await tx
+    const [updated] = await tx
       .update(purchaseRequestItems)
       .set({ status: "returned", updatedAt: now })
-      .where(eq(purchaseRequestItems.id, itemId))
+      .where(and(eq(purchaseRequestItems.id, itemId), eq(purchaseRequestItems.status, item.status)))
+      .returning({ id: purchaseRequestItems.id })
+    if (!updated) throw new Error("El ítem ya no está disponible — posible concurrencia")
 
     await tx.insert(approvalDecisions).values({
       id:            nanoid(),

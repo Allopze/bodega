@@ -123,6 +123,27 @@ describe("soporte actions", () => {
       expect(r.message).toContain("filesystem rename failure")
       expect(mockFs.writeFile).toHaveBeenCalledWith(expect.stringContaining(".tmp"), expect.anything())
       expect(mockFs.unlink).toHaveBeenCalledWith(expect.stringContaining(".tmp"))
+      expect(mockCreateReport).not.toHaveBeenCalled()
+    })
+
+    it("removes the finalized upload when report persistence fails", async () => {
+      mockAuthFn.mockResolvedValue(makeSession("feedback:create"))
+      mockCreateReport.mockRejectedValue(new Error("DB error"))
+      const { createReportAction } = await import("@/app/(app)/soporte/actions")
+      const file = new File([new Uint8Array([1, 2, 3])], "captura.png", { type: "image/png" })
+
+      const r = await createReportAction({
+        tipo: "bug",
+        titulo: "Fallo al guardar reporte",
+        descripcion: "Debe compensar el archivo final",
+        attachment: file,
+      })
+
+      expect(mockFs.rename).toHaveBeenCalledBefore(mockCreateReport)
+      expect(r.ok).toBe(false)
+      expect(r.message).toContain("DB error")
+      expect(mockFs.unlink).toHaveBeenCalledTimes(1)
+      expect(String(mockFs.unlink.mock.calls[0]?.[0])).not.toMatch(/\.tmp$/)
     })
   })
 

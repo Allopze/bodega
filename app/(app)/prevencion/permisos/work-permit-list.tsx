@@ -160,6 +160,7 @@ export function WorkPermitList({ permits, canManage, canRequest, types, worksite
       </FilterToolbar>
 
       <DataTable
+        caption="Permisos de trabajo"
         columns={COLUMNS}
         rows={rows}
         searchKeys={["code", "typeName", "taskDescription", "location", "worksiteName"]}

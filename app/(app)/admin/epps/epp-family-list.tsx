@@ -54,6 +54,7 @@ export function EppFamilyList({ families, eppTypes }: Props) {
     <>
   <DesktopOnlyTableNotice />
       <DataTable
+        caption="Catálogo de EPP"
         columns={COLUMNS}
         rows={rows}
         searchKeys={["canonicalName", "brand", "model", "certification"]}

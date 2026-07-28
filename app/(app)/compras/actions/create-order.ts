@@ -2,7 +2,8 @@
 
 import { redirect } from "next/navigation"
 import { db } from "@/db"
-import { canAccessWorksite, requirePermission } from "@/lib/auth/can"
+import { canAccessWorksite, requirePermission, visibleWorksiteIds } from "@/lib/auth/can"
+import { isGlobalRole } from "@/lib/auth/scope"
 import { createOrdersBySupplier } from "@/lib/services/purchasing"
 import { logger } from "@/lib/logger"
 import { createOrderSchema, type ActionState } from "@/lib/validation/operations"
@@ -133,6 +134,7 @@ ${supplierMismatches.map((m) => `  • ${m}`).join("\n")}`,
   try {
     const orderIds = await createOrdersBySupplier({
       worksiteId,
+      worksiteScope: isGlobalRole(session) ? "all" : visibleWorksiteIds(session),
       createdBy: session.user.id,
       userEmail: session.user.email ?? undefined,
       paymentTerms: paymentTerms || null,

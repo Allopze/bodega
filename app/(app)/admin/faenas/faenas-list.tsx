@@ -39,6 +39,7 @@ export function FaenasList({
   return (
     <>
       <DataTable
+        caption="Faenas"
         columns={WS_COLUMNS}
         rows={rows}
         searchKeys={CONTRACT.searchKeys}

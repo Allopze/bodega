@@ -1,5 +1,5 @@
 import { relations, sql } from "drizzle-orm"
-import { pgTable, text, integer, real, numeric, timestamp, check, index } from "drizzle-orm/pg-core"
+import { pgTable, text, integer, real, numeric, timestamp, check, index, uniqueIndex } from "drizzle-orm/pg-core"
 import { users } from "./users"
 import { worksites, suppliers } from "./worksites"
 import { products } from "./products"
@@ -129,6 +129,9 @@ export const purchaseOrderInvoices = pgTable("purchase_order_invoices", {
   uploadedAt:      timestamp("uploaded_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [
   check("purchase_order_invoices_amount_non_negative", sql`${table.amount} >= 0`),
+  // A folio is unique at least within its OC. The service also checks this
+  // before insert for an operator-friendly error; this index closes races.
+  uniqueIndex("purchase_order_invoices_order_number_unique").on(table.purchaseOrderId, table.invoiceNumber),
 ])
 
 /* ── Purchase Order Invoice Items ─────────────────────────────────────────── */

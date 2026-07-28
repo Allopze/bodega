@@ -39,6 +39,7 @@ const ORIGINAL_USER = "u-orig-1"
 beforeEach(async () => {
   await inMemoryDb.delete(schema.worksiteUsers)
   await inMemoryDb.delete(schema.userRoles)
+  await inMemoryDb.delete(schema.userInvitations)
   await inMemoryDb.delete(schema.roles)
   await inMemoryDb.delete(schema.worksites)
   await inMemoryDb.delete(schema.users)
@@ -72,6 +73,8 @@ beforeEach(async () => {
 describe("Substitutions Service (R7)", () => {
   it("crea una cuenta temporal de reemplazo heredando roles del titular", async () => {
     const { createTemporarySubstituteUser, listActiveSubstitutions } = await import("@/lib/services/substitutions")
+    const { hashInvitationToken } = await import("@/lib/auth/bootstrap")
+    const { isPasswordSetupPending } = await import("@/lib/auth/password-setup")
 
     const tempUser = await createTemporarySubstituteUser({
       name: "Reemplazo Temporal",
@@ -83,6 +86,7 @@ describe("Substitutions Service (R7)", () => {
     expect(tempUser!.isTemporary).toBe(true)
     expect(tempUser!.substituteForUserId).toBe(ORIGINAL_USER)
     expect(tempUser!.validUntil).toBeDefined()
+    expect(isPasswordSetupPending(tempUser!.hashedPassword)).toBe(true)
 
     const activeList = await listActiveSubstitutions()
     expect(activeList).toHaveLength(1)
@@ -92,6 +96,15 @@ describe("Substitutions Service (R7)", () => {
     const roles = await inMemoryDb.select().from(schema.userRoles).where(eq(schema.userRoles.userId, tempUser!.id))
     expect(roles).toHaveLength(1)
     expect(roles[0]!.roleId).toBe("r-prevencionista")
+
+    const [invitation] = await inMemoryDb.select().from(schema.userInvitations).where(eq(schema.userInvitations.email, tempUser!.email))
+    expect(invitation).toMatchObject({
+      name: tempUser!.name,
+      invitedByUserId: ADMIN_ID,
+      roleIdsJson: JSON.stringify(["r-prevencionista"]),
+    })
+    expect(Date.parse(invitation!.expiresAt)).toBe(Date.parse(tempUser!.validUntil!))
+    expect(invitation!.tokenHash).toBe(hashInvitationToken(tempUser!.invitationToken))
   })
 
   it("permite extender vigencia y revocar la cuenta", async () => {
@@ -132,5 +145,21 @@ describe("Substitutions Service (R7)", () => {
 
     const [user] = await inMemoryDb.select().from(schema.users).where(eq(schema.users.id, "u-expired-1"))
     expect(user!.isActive).toBe(false)
+  })
+
+  it("niega el snapshot RBAC de una suplencia vencida aunque el cron no haya corrido", async () => {
+    const { getUserRbacById } = await import("@/lib/auth/rbac")
+    await inMemoryDb.insert(schema.users).values({
+      id: "u-expired-auth",
+      name: "Suplente vencido",
+      email: "vencido-auth@example.test",
+      hashedPassword: "x",
+      isActive: true,
+      isTemporary: true,
+      validUntil: new Date(Date.now() - 1_000).toISOString(),
+    })
+    await inMemoryDb.insert(schema.userRoles).values({ userId: "u-expired-auth", roleId: "r-prevencionista" })
+
+    await expect(getUserRbacById("u-expired-auth", true)).resolves.toBeNull()
   })
 })

@@ -87,11 +87,11 @@ export async function createReportAction(
   }
 
   try {
-    const report = await createReport(parsed.data, session.user.id, proofAttachment)
     if (pendingAttachmentPath && finalAttachmentPath) {
       await fs.rename(pendingAttachmentPath, finalAttachmentPath)
       attachmentFinalized = true
     }
+    const report = await createReport(parsed.data, session.user.id, proofAttachment)
 
     notifyAfterCommit(() =>
       getUserIdsWithPermission("feedback:manage").then((ids) =>
@@ -111,6 +111,9 @@ export async function createReportAction(
   } catch (e) {
     if (!attachmentFinalized && pendingAttachmentPath) {
       await fs.unlink(pendingAttachmentPath).catch(() => undefined)
+    }
+    if (attachmentFinalized && finalAttachmentPath) {
+      await fs.unlink(finalAttachmentPath).catch(() => undefined)
     }
     return { ok: false, message: e instanceof Error ? e.message : "Error al enviar el reporte" }
   }

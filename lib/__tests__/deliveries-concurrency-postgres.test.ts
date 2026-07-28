@@ -164,6 +164,13 @@ async function seedDeliveryFixture(db: ReturnType<typeof drizzle<typeof schema>>
     createdAt: now,
     updatedAt: now,
   })
+  await db.insert(schema.suppliers).values({
+    id: "supplier-dc-test",
+    name: "Proveedor concurrencia entregas",
+    isActive: true,
+    createdAt: now,
+    updatedAt: now,
+  })
   await db.insert(schema.purchaseRequests).values({
     id: "pr-dc-test",
     code: "SOL-DC-TEST",
@@ -188,6 +195,57 @@ async function seedDeliveryFixture(db: ReturnType<typeof drizzle<typeof schema>>
     quantity: 10,
     minStock: 0,
     updatedAt: now,
+  })
+  await db.insert(schema.purchaseOrders).values({
+    id: "po-dc-test",
+    code: "OC-DC-TEST",
+    worksiteId: "ws-dc-test",
+    supplierId: "supplier-dc-test",
+    createdBy: "user-dc-test",
+    status: "received",
+    deliveryMode: "directo_faena",
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.purchaseOrderItems).values({
+    id: "poi-dc-test",
+    purchaseOrderId: "po-dc-test",
+    requestItemId: "pri-dc-test",
+    productId: "prod-dc-test",
+    quantity: 10,
+    unitOfMeasure: "unidad",
+    quantityReceived: 10,
+    status: "received",
+  })
+  await db.insert(schema.receipts).values({
+    id: "receipt-dc-test",
+    code: "REC-DC-TEST",
+    purchaseOrderId: "po-dc-test",
+    receivedBy: "user-dc-test",
+    receivedAt: now,
+    locationType: "faena",
+    worksiteId: "ws-dc-test",
+    status: "closed",
+    createdAt: now,
+  })
+  await db.insert(schema.receiptItems).values({
+    id: "receipt-item-dc-test",
+    receiptId: "receipt-dc-test",
+    purchaseOrderItemId: "poi-dc-test",
+    quantityReceived: 10,
+    status: "received",
+  })
+  await db.insert(schema.inventoryLots).values({
+    id: "lot-dc-test",
+    worksiteId: "ws-dc-test",
+    productId: "prod-dc-test",
+    receiptItemId: "receipt-item-dc-test",
+    lotNumber: "LOTE-DC-TEST",
+    manufacturedAt: "2026-01-01",
+    expiresAt: "2030-01-01",
+    quantityReceived: 10,
+    quantityAvailable: 10,
+    createdAt: now,
   })
 }
 

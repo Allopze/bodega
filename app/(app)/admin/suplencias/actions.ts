@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache"
 import { guardPermission } from "@/lib/auth/can"
+import { getAppBaseUrl, sendInvitationEmail } from "@/lib/email/smtp"
 import type { ActionState } from "@/lib/validation/masters"
 import {
   createTemporarySubstituteUser,
@@ -16,8 +17,30 @@ export async function createTemporarySubstituteAction(input: unknown): Promise<A
   if (guard.error) return guard.error
   try {
     const created = await createTemporarySubstituteUser(input, guard.session.user.id)
+    const inviteUrl = `${getAppBaseUrl()}/registro?token=${encodeURIComponent(created.invitationToken)}`
+    let message = `Cuenta temporal de reemplazo creada para ${created.name}. Invitación enviada para definir contraseña.`
+    let pendingInviteUrl: string | undefined
+    try {
+      const delivery = await sendInvitationEmail({
+        to: created.email,
+        inviteUrl,
+        invitedByName: guard.session.user.name,
+      })
+      if (!delivery.sent) {
+        message = `Cuenta temporal creada para ${created.name}. SMTP no está configurado; comparte el enlace de registro antes de su vencimiento.`
+        pendingInviteUrl = inviteUrl
+      }
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : "error desconocido"
+      message = `Cuenta temporal creada para ${created.name}, pero no se pudo enviar la invitación (${reason}).`
+      pendingInviteUrl = inviteUrl
+    }
     revalidatePath(ROOT)
-    return { ok: true, message: `Cuenta temporal de reemplazo creada para ${created.name}` }
+    return {
+      ok: true,
+      message,
+      data: pendingInviteUrl ? { email: created.email, inviteUrl: pendingInviteUrl } : undefined,
+    }
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : "No se pudo crear la cuenta temporal"
     return { ok: false, message: msg }

@@ -420,6 +420,7 @@ export function ProductList({ products, categories, allSuppliers, units, templat
 
         <TabsContent value="active">
           <DataTable
+            caption="Productos Activos"
             columns={COLUMNS_WITH_CHECKBOX}
             rows={activeFamilies as unknown as Record<string, unknown>[]}
             searchKeys={CONTRACT.searchKeys}
@@ -434,6 +435,7 @@ export function ProductList({ products, categories, allSuppliers, units, templat
 
         <TabsContent value="inactive">
           <DataTable
+            caption="Productos Inactivos"
             columns={COLUMNS_WITH_CHECKBOX}
             rows={inactiveFamilies as unknown as Record<string, unknown>[]}
             searchKeys={CONTRACT.searchKeys}

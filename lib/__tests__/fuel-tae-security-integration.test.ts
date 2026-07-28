@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto"
 import { PGlite } from "@electric-sql/pglite"
 import { drizzle } from "drizzle-orm/pglite"
+import { and, eq } from "drizzle-orm"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
 import { describe, it, expect, beforeAll, vi } from "vitest"
 import path from "node:path"
@@ -22,7 +23,7 @@ vi.mock("@/db", () => ({
 
 await migratePGlite(pg, path.resolve(process.cwd(), "db/migrations"))
 
-const { getTaeLinkWorksiteId, createTaeSubmission } = await import("@/lib/services/fuel-tae")
+const { getTaeLinkWorksiteId, createTaeSubmission, reviewTaeSubmission } = await import("@/lib/services/fuel-tae")
 
 function hashToken(value: string) {
   return createHash("sha256").update(value).digest("hex")
@@ -133,5 +134,132 @@ describe("seguridad de la PWA pública TAE (PostgreSQL integration)", () => {
       input: baseInput({ vehicleId: vehicleInB }),
       evidence: fourEvidences,
     })).rejects.toThrow("El equipo no pertenece a la faena o está inactivo")
+  })
+
+  it("resuelve reintentos simultáneos por clientSubmissionId sin duplicar la carga ni sus evidencias", async () => {
+    const input = baseInput({ clientSubmissionId: nanoid(20) })
+    const [first, second] = await Promise.all([
+      createTaeSubmission({ accessToken: validToken, input, evidence: fourEvidences }),
+      createTaeSubmission({ accessToken: validToken, input, evidence: fourEvidences }),
+    ])
+
+    expect(new Set([first.id, second.id])).toHaveLength(1)
+    expect([first.duplicate, second.duplicate].sort()).toEqual([false, true])
+
+    const submissions = await inMemoryDb.select().from(schema.fuelTaeSubmissions)
+      .where(eq(schema.fuelTaeSubmissions.clientSubmissionId, input.clientSubmissionId))
+    const evidences = await inMemoryDb.select().from(schema.fuelTaeEvidence)
+      .where(eq(schema.fuelTaeEvidence.submissionId, first.id))
+    expect(submissions).toHaveLength(1)
+    expect(evidences).toHaveLength(4)
+  })
+
+  it("conserva OCR de baja confianza como sugerencia y exige confirmación humana para validar", async () => {
+    const result = await createTaeSubmission({
+      accessToken: validToken,
+      input: baseInput({ meterReading: null }),
+      evidence: fourEvidences,
+      ocrResult: { value: 987_654, confidence: 0.42, rawText: "987654" },
+    })
+    const [submission] = await inMemoryDb.select().from(schema.fuelTaeSubmissions)
+      .where(eq(schema.fuelTaeSubmissions.id, result.id))
+
+    expect(submission).toMatchObject({
+      meterReading: null,
+      meterReadingSource: null,
+      ocrSuggestedReading: 987_654,
+      ocrConfidence: 0.42,
+      ocrRawText: "987654",
+    })
+    await expect(reviewTaeSubmission({
+      id: result.id,
+      expectedStatus: "submitted",
+      status: "validated",
+      reviewNote: "Revisión de prueba.",
+      userId,
+    })).rejects.toThrow("Confirma o corrige manualmente")
+  })
+
+  it("prioriza la lectura manual y conserva la sugerencia OCR para trazabilidad", async () => {
+    const result = await createTaeSubmission({
+      accessToken: validToken,
+      input: baseInput({ meterReading: 123_456 }),
+      evidence: fourEvidences,
+      ocrResult: { value: 987_654, confidence: 0.42, rawText: "987654" },
+    })
+    const [submission] = await inMemoryDb.select().from(schema.fuelTaeSubmissions)
+      .where(eq(schema.fuelTaeSubmissions.id, result.id))
+
+    expect(submission).toMatchObject({
+      meterReading: 123_456,
+      meterReadingSource: "manual",
+      ocrSuggestedReading: 987_654,
+      ocrConfidence: 0.42,
+    })
+  })
+
+  it("aplica OCR sólo cuando no hay lectura manual y supera el umbral de confianza", async () => {
+    const result = await createTaeSubmission({
+      accessToken: validToken,
+      input: baseInput({ meterReading: null }),
+      evidence: fourEvidences,
+      ocrResult: { value: 654_321, confidence: 0.91, rawText: "654321" },
+    })
+    const [submission] = await inMemoryDb.select().from(schema.fuelTaeSubmissions)
+      .where(eq(schema.fuelTaeSubmissions.id, result.id))
+
+    expect(submission).toMatchObject({
+      meterReading: 654_321,
+      meterReadingSource: "ocr",
+      ocrSuggestedReading: 654_321,
+      ocrConfidence: 0.91,
+    })
+  })
+
+  it("revierte la carga completa cuando falla la auditoría y permite reintentar con la misma clave", async () => {
+    const input = baseInput({ clientSubmissionId: nanoid(20) })
+    const evidenceBefore = await inMemoryDb.select().from(schema.fuelTaeEvidence)
+    const auditBefore = await inMemoryDb.select().from(schema.auditLog)
+    const historyBefore = await inMemoryDb.select().from(schema.statusHistory)
+
+    await pg.exec(`
+      CREATE OR REPLACE FUNCTION test_fail_tae_audit() RETURNS trigger
+      LANGUAGE plpgsql AS $$
+      BEGIN
+        RAISE EXCEPTION 'injected TAE audit failure';
+      END;
+      $$;
+      CREATE TRIGGER test_fail_tae_audit_trigger
+      BEFORE INSERT ON audit_log
+      FOR EACH ROW
+      WHEN (NEW.entity_type = 'fuel_tae_submission')
+      EXECUTE FUNCTION test_fail_tae_audit();
+    `)
+    try {
+      await expect(createTaeSubmission({ accessToken: validToken, input, evidence: fourEvidences }))
+        .rejects.toThrow()
+    } finally {
+      await pg.exec(`
+        DROP TRIGGER test_fail_tae_audit_trigger ON audit_log;
+        DROP FUNCTION test_fail_tae_audit();
+      `)
+    }
+
+    expect(await inMemoryDb.select().from(schema.fuelTaeSubmissions)
+      .where(eq(schema.fuelTaeSubmissions.clientSubmissionId, input.clientSubmissionId))).toHaveLength(0)
+    expect(await inMemoryDb.select().from(schema.fuelTaeEvidence)).toHaveLength(evidenceBefore.length)
+    expect(await inMemoryDb.select().from(schema.auditLog)).toHaveLength(auditBefore.length)
+    expect(await inMemoryDb.select().from(schema.statusHistory)).toHaveLength(historyBefore.length)
+
+    const retried = await createTaeSubmission({ accessToken: validToken, input, evidence: fourEvidences })
+    expect(retried.duplicate).toBe(false)
+    expect(await inMemoryDb.select().from(schema.fuelTaeSubmissions)
+      .where(eq(schema.fuelTaeSubmissions.clientSubmissionId, input.clientSubmissionId))).toHaveLength(1)
+    expect(await inMemoryDb.select().from(schema.fuelTaeEvidence)
+      .where(eq(schema.fuelTaeEvidence.submissionId, retried.id))).toHaveLength(4)
+    expect(await inMemoryDb.select().from(schema.auditLog)
+      .where(eq(schema.auditLog.entityId, retried.id))).toHaveLength(1)
+    expect(await inMemoryDb.select().from(schema.statusHistory)
+      .where(and(eq(schema.statusHistory.entityType, "fuel_tae_submission"), eq(schema.statusHistory.entityId, retried.id)))).toHaveLength(1)
   })
 })

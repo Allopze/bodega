@@ -43,6 +43,7 @@ export function WorkerList({
   return (
     <>
       <DataTable
+        caption="Trabajadores"
         columns={COLUMNS}
         rows={workers as unknown as Record<string, unknown>[]}
         searchKeys={CONTRACT.searchKeys}

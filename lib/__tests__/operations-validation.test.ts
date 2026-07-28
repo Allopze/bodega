@@ -5,7 +5,7 @@ const validRequest = {
   worksiteId: "worksite-1",
   requestType: "epp",
   urgency: "normal",
-  requiredDate: "2026-07-15",
+  requiredDate: "2099-07-15",
   notes: "",
   items: [
     {
@@ -14,7 +14,7 @@ const validRequest = {
       quantity: 2,
       unitOfMeasure: "unidad",
       urgency: "normal",
-      requiredDate: "2026-07-15",
+      requiredDate: "2099-07-15",
       workerId: null,
       suggestedSupplierId: null,
       supplierHint: "",
@@ -34,6 +34,27 @@ describe("requestSchema", () => {
   it("rejects a request without a required date", () => {
     const result = requestSchema.safeParse({ ...validRequest, requiredDate: "" })
     expect(result.success).toBe(false)
+  })
+
+  it("rejects an invalid or past operational required date", () => {
+    expect(requestSchema.safeParse({ ...validRequest, requiredDate: "2026-02-30" }).success).toBe(false)
+    expect(requestSchema.safeParse({ ...validRequest, requiredDate: "2020-01-01" }).success).toBe(false)
+    expect(requestSchema.safeParse({
+      ...validRequest,
+      items: [{ ...validRequest.items[0], requiredDate: "2020-01-01" }],
+    }).success).toBe(false)
+  })
+
+  it("rejects oversized or blank request-item attributes before persistence", () => {
+    const attribute = { attributeName: " ", value: "x" }
+    expect(requestSchema.safeParse({
+      ...validRequest,
+      items: [{ ...validRequest.items[0], attributes: [attribute] }],
+    }).success).toBe(false)
+    expect(requestSchema.safeParse({
+      ...validRequest,
+      items: [{ ...validRequest.items[0], attributes: [{ attributeName: "a".repeat(61), value: "v".repeat(65) }] }],
+    }).success).toBe(false)
   })
 })
 

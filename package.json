@@ -12,6 +12,7 @@
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "check:secrets": "tsx scripts/check-env-files.ts",
+    "verify:epp-lots": "tsx scripts/verify-epp-lot-reconciliation.ts",
     "check:drizzle-aliases": "bash scripts/check-drizzle-aliases.sh",
     "check:bundle-budget": "tsx scripts/check-bundle-budget.ts",
     "db:verify-migrations": "node scripts/verify-migration-chain.mjs",
@@ -65,8 +66,8 @@
     "fast-xml-parser": "^5.10.1",
     "geist": "^1.7.2",
     "jspdf": "^4.2.1",
-    "next": "^16.2.9",
-    "next-auth": "5.0.0-beta.31",
+    "next": "^16.2.12",
+    "next-auth": "5.0.0-beta.32",
     "pdfjs-dist": "^6.1.200",
     "playwright": "^1.60.0",
     "postgres": "^3.4.9",
@@ -86,7 +87,7 @@
   "devDependencies": {
     "@axe-core/playwright": "^4.11.3",
     "@electric-sql/pglite": "^0.5.2",
-    "@next/env": "^16.2.9",
+    "@next/env": "^16.2.12",
     "@playwright/test": "^1.60.0",
     "@tailwindcss/postcss": "^4",
     "@testing-library/dom": "^10.4.1",
@@ -100,7 +101,7 @@
     "@vitest/coverage-v8": "^4.1.8",
     "drizzle-kit": "^0.31.10",
     "eslint": "^9",
-    "eslint-config-next": "^16.2.9",
+    "eslint-config-next": "^16.2.12",
     "fake-indexeddb": "^6.2.5",
     "husky": "^9.1.7",
     "jsdom": "^29.1.1",
@@ -114,7 +115,7 @@
     "@esbuild-kit/core-utils": {
       "esbuild": "0.25.12"
     },
-    "postcss": "8.5.15",
+    "postcss": "8.5.24",
     "uuid": "11.1.1"
   },
   "pnpm": {

@@ -51,7 +51,7 @@ export function PhysicalInventoryPanel({
   }, [state])
 
   const visibleProducts = worksiteId
-    ? products.filter((product) => product.worksiteId === worksiteId && product.quantity > 0)
+    ? products.filter((product) => product.worksiteId === worksiteId)
     : []
 
   return (
@@ -84,13 +84,12 @@ export function PhysicalInventoryPanel({
 
         <div className="max-h-[360px] overflow-y-auto rounded-lg border border-(--color-border)">
           {visibleProducts.length === 0 ? (
-            <p className="px-3 py-4 text-sm text-(--color-text-muted)">No hay stock positivo para contar en esta faena.</p>
+            <p className="px-3 py-4 text-sm text-(--color-text-muted)">No hay productos activos disponibles para contar en esta faena.</p>
           ) : (
             <div className="divide-y divide-(--color-border)">
               {visibleProducts.map((product) => (
                 <div key={product.productId} className="grid grid-cols-[minmax(0,1fr)_92px] gap-3 px-3 py-3">
                   <input type="hidden" name="countProductId" value={product.productId} />
-                  <input type="hidden" name="expectedQuantity" value={product.quantity} />
                   <input type="hidden" name="itemNotes" value="" />
                   <div className="min-w-0">
                     <p title={product.productName} className="truncate text-sm font-medium text-(--color-text)">{product.productName}</p>

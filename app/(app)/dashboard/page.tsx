@@ -23,16 +23,7 @@ import { RecentActivity } from "./recent-activity"
 import { loadPdtpComplianceSummary, PdtpComplianceCard } from "./pdtp-compliance-card"
 import { getActivePdtpProgram, listPdtpPrograms } from "@/lib/services/prevention-pdtp"
 import { scopeToWorksiteIds } from "./dashboard-helpers"
-import {
-  OperationalTrendChart,
-  ModuleWorkloadChart,
-  WorksiteActivityChart,
-  SstTrendChart,
-  SstAccidentChart,
-  MaterialEnvironmentalChart,
-  FuelConsumptionChart,
-  MaintenanceTrendChart,
-} from "./dashboard-charts"
+import { DashboardAnalyticsSection } from "./dashboard-analytics-section"
 import { listEppCoverageGaps } from "@/lib/services/prevention-epp"
 import { getCanonicalSafetyIndicatorYear, getMaterialEnvironmentalEvents } from "@/lib/services/prevention-indicadores"
 import {
@@ -204,41 +195,12 @@ export default async function DashboardPage() {
     orders: point.orders,
     receipts: point.receipts,
   }))
-  const hasTrendData = trendData.some((d) => d.requests > 0 || d.orders > 0 || d.receipts > 0)
-  const hasSstData = sstPoints.length > 0
-  const hasMaterialEnvData = materialEnvPoints.length > 0
-  const hasFuelData = fuelTrend.some((d) => d.liters > 0 || d.loads > 0)
-  const hasMaintenanceData = maintenanceTrend.some((d) => d.completed > 0 || d.scheduled > 0)
-  const hasWorkloadData = tasks.length > 0
-  const hasWorksiteData = data.worksitesBreakdown.length > 0
-  const hasAnyChart = hasTrendData || hasWorkloadData || hasWorksiteData || hasSstData || hasMaterialEnvData || hasFuelData || hasMaintenanceData
-
   return (
     <PageContainer>
       <PageHeader title="Dashboard" actions={<QuickActions session={session} />} />
       <div className="animate-in fade-in duration-[var(--duration-default)]">
 
-        {/* ── Gráficos de Analítica (Grid 2×N, above-the-fold) ── */}
-        {hasAnyChart && (
-          <section className="mb-6" aria-labelledby="analitica-dashboard">
-            <div className="mb-4 flex items-center justify-between">
-              <h2 id="analitica-dashboard" className="text-sm font-bold text-slate-900">Analítica y Tendencias</h2>
-              <span className="text-[11px] font-medium text-slate-400">Datos del año en curso</span>
-            </div>
-            <div className="grid gap-6 grid-cols-1 xl:grid-cols-2">
-              {hasTrendData && <OperationalTrendChart data={trendData} />}
-              {hasWorkloadData && <ModuleWorkloadChart tasks={tasks} />}
-              {hasWorksiteData && <WorksiteActivityChart worksites={data.worksitesBreakdown} />}
-              {hasFuelData && <FuelConsumptionChart data={fuelTrend} />}
-              {hasMaintenanceData && <MaintenanceTrendChart data={maintenanceTrend} />}
-              {hasSstData && <SstTrendChart data={sstPoints} />}
-              {hasSstData && <SstAccidentChart data={sstPoints} />}
-              {hasMaterialEnvData && <MaterialEnvironmentalChart data={materialEnvPoints} />}
-            </div>
-          </section>
-        )}
-
-        {/* ── Control Center: KPIs + Cola de trabajo + Aside ── */}
+        {/* ── Control Center: KPIs + Cola de trabajo + Aside (prioridad de carga) ── */}
         <DashboardControlCenter
           firstName={firstName}
           contextLabel={contextLabel}
@@ -288,6 +250,17 @@ export default async function DashboardPage() {
               </section>
             ) : undefined
           }
+        />
+
+        {/* ── Analítica y Tendencias: diferida, bajo el Centro de Control ── */}
+        <DashboardAnalyticsSection
+          trendData={trendData}
+          tasks={tasks}
+          worksitesBreakdown={data.worksitesBreakdown}
+          fuelTrend={fuelTrend}
+          maintenanceTrend={maintenanceTrend}
+          sstPoints={sstPoints}
+          materialEnvPoints={materialEnvPoints}
         />
       </div>
     </PageContainer>

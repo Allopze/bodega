@@ -16,8 +16,23 @@
  *     interpolates user input into a style prop can lead to CSS
  *     exfiltration; tracked in AUDITORIA_COMPLETA.md.
  */
+// La telemetría cliente de Sentry se envía a su propio origen de ingest,
+// derivado del DSN de configuración en vez de un wildcard *.sentry.io — así
+// `connect-src` no se abre más de lo que el proyecto realmente usa
+// (auditoría UIUX-018: sin esto, el navegador bloquea el `beforeSend` real).
+function sentryConnectSrcOrigin(): string | null {
+  const dsn = process.env.NEXT_PUBLIC_SENTRY_DSN
+  if (!dsn) return null
+  try {
+    return new URL(dsn).origin
+  } catch {
+    return null
+  }
+}
+
 export function createCspHeader(nonce: string, options: { isDev?: boolean } = {}): string {
   const isDev = options.isDev ?? process.env.NODE_ENV === "development"
+  const sentryOrigin = sentryConnectSrcOrigin()
   return [
     "default-src 'self'",
     `script-src 'self' 'nonce-${nonce}'${
@@ -27,7 +42,7 @@ export function createCspHeader(nonce: string, options: { isDev?: boolean } = {}
     "style-src-attr 'unsafe-inline'",
     "img-src 'self' data: blob: https://api.dicebear.com",
     "font-src 'self' data:",
-    `connect-src 'self'${isDev ? " ws: wss:" : ""}`,
+    `connect-src 'self'${sentryOrigin ? ` ${sentryOrigin}` : ""}${isDev ? " ws: wss:" : ""}`,
     "object-src 'none'",
     "base-uri 'self'",
     "form-action 'self'",

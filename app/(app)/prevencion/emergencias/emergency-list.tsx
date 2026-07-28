@@ -120,6 +120,7 @@ export function EmergencyList({ plans, drills, worksites, canManage, plansPagina
       {tab === "plans" && (
         <>
         <DataTable
+          caption="Planes de emergencia"
           disableInternalSearch
           columns={PLAN_COLUMNS}
           rows={planRows}
@@ -163,6 +164,7 @@ export function EmergencyList({ plans, drills, worksites, canManage, plansPagina
 
       {tab === "drills" && (
         <DataTable
+          caption="Simulacros de emergencia"
           columns={DRILL_COLUMNS}
           rows={drillRows}
           searchKeys={["planTitle", "worksiteName", "scenarioType"]}

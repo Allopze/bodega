@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import { createCspHeader } from "@/lib/security/csp"
 
 describe("createCspHeader (audit S-09)", () => {
@@ -56,5 +56,31 @@ describe("createCspHeader (audit S-09)", () => {
     expect(csp).toContain("connect-src 'self'")
     expect(csp).not.toContain("ws:")
     expect(csp).not.toContain("wss:")
+  })
+
+  describe("connect-src y el DSN de Sentry (UIUX-018)", () => {
+    afterEach(() => {
+      vi.unstubAllEnvs()
+    })
+
+    it("no añade ningún origen extra si NEXT_PUBLIC_SENTRY_DSN no está definido", () => {
+      vi.stubEnv("NEXT_PUBLIC_SENTRY_DSN", "")
+      const csp = createCspHeader("nonce", { isDev: false })
+      const connectSrc = csp.split(";").find((p) => p.trim().startsWith("connect-src"))
+      expect(connectSrc?.trim()).toBe("connect-src 'self'")
+    })
+
+    it("permite el origen de ingest derivado del DSN cuando está configurado", () => {
+      vi.stubEnv("NEXT_PUBLIC_SENTRY_DSN", "https://publickey@o123456.ingest.sentry.io/789")
+      const csp = createCspHeader("nonce", { isDev: false })
+      expect(csp).toContain("connect-src 'self' https://o123456.ingest.sentry.io")
+    })
+
+    it("ignora un DSN mal formado en vez de romper la CSP", () => {
+      vi.stubEnv("NEXT_PUBLIC_SENTRY_DSN", "not-a-url")
+      const csp = createCspHeader("nonce", { isDev: false })
+      const connectSrc = csp.split(";").find((p) => p.trim().startsWith("connect-src"))
+      expect(connectSrc?.trim()).toBe("connect-src 'self'")
+    })
   })
 })

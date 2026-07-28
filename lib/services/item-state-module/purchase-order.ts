@@ -95,19 +95,23 @@ export async function markItemPendingPurchase(
   opts?: { userEmail?: string },
 ): Promise<void> {
   await db.transaction(async (tx) => {
-    const item = await tx.query.purchaseRequestItems.findFirst({
-      where: eq(purchaseRequestItems.id, itemId),
-    })
+    const [item] = await tx
+      .select({ id: purchaseRequestItems.id, status: purchaseRequestItems.status, requestId: purchaseRequestItems.requestId })
+      .from(purchaseRequestItems)
+      .where(eq(purchaseRequestItems.id, itemId))
+      .for("update")
     if (!item) throw new Error(`Item ${itemId} not found`)
     if (!canTransition(item.status as ItemStatus, "pending_purchase")) {
       throw new Error(`Cannot move item from '${item.status}' to 'pending_purchase'`)
     }
 
     const now = new Date().toISOString()
-    await tx
+    const [updated] = await tx
       .update(purchaseRequestItems)
       .set({ status: "pending_purchase", updatedAt: now })
-      .where(eq(purchaseRequestItems.id, itemId))
+      .where(and(eq(purchaseRequestItems.id, itemId), eq(purchaseRequestItems.status, item.status)))
+      .returning({ id: purchaseRequestItems.id })
+    if (!updated) throw new Error("El ítem ya no está disponible — posible concurrencia")
 
     await recordStatusChange({
       entityType: "request_item",
@@ -143,19 +147,23 @@ export async function postponeItem(
   if (!reason?.trim()) throw new Error("Reason is required to postpone an item")
 
   await db.transaction(async (tx) => {
-    const item = await tx.query.purchaseRequestItems.findFirst({
-      where: eq(purchaseRequestItems.id, itemId),
-    })
+    const [item] = await tx
+      .select({ id: purchaseRequestItems.id, status: purchaseRequestItems.status, requestId: purchaseRequestItems.requestId })
+      .from(purchaseRequestItems)
+      .where(eq(purchaseRequestItems.id, itemId))
+      .for("update")
     if (!item) throw new Error(`Item ${itemId} not found`)
     if (!canTransition(item.status as ItemStatus, "postponed")) {
       throw new Error(`Cannot postpone item in state '${item.status}'`)
     }
 
     const now = new Date().toISOString()
-    await tx
+    const [updated] = await tx
       .update(purchaseRequestItems)
       .set({ status: "postponed", updatedAt: now })
-      .where(eq(purchaseRequestItems.id, itemId))
+      .where(and(eq(purchaseRequestItems.id, itemId), eq(purchaseRequestItems.status, item.status)))
+      .returning({ id: purchaseRequestItems.id })
+    if (!updated) throw new Error("El ítem ya no está disponible — posible concurrencia")
 
     await recordStatusChange({
       entityType: "request_item",

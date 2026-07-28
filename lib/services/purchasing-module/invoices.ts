@@ -2,7 +2,7 @@
  * Invoice management for purchase orders.
  */
 
-import { eq } from "drizzle-orm"
+import { and, eq, inArray } from "drizzle-orm"
 import { db } from "@/db"
 import { purchaseOrders, purchaseOrderInvoices, purchaseOrderInvoiceItems, purchaseOrderItems } from "@/db/schema"
 import { nanoid } from "@/lib/id"
@@ -63,6 +63,37 @@ export async function createPurchaseOrderInvoice(
       )
     }
 
+    const invoiceNumber = input.invoiceNumber.trim()
+    const existingInvoice = await tx.query.purchaseOrderInvoices.findFirst({
+      where: and(
+        eq(purchaseOrderInvoices.purchaseOrderId, input.purchaseOrderId),
+        eq(purchaseOrderInvoices.invoiceNumber, invoiceNumber),
+      ),
+      columns: { id: true },
+    })
+    if (existingInvoice) {
+      throw new Error("Ya existe una factura con ese folio para esta OC")
+    }
+
+    const linkedItemIds = (input.items ?? [])
+      .map((item) => item.purchaseOrderItemId)
+      .filter((id): id is string => Boolean(id))
+    if (new Set(linkedItemIds).size !== linkedItemIds.length) {
+      throw new Error("La factura no puede repetir líneas de la OC")
+    }
+    if (linkedItemIds.length > 0) {
+      const validItems = await tx
+        .select({ id: purchaseOrderItems.id })
+        .from(purchaseOrderItems)
+        .where(and(
+          eq(purchaseOrderItems.purchaseOrderId, input.purchaseOrderId),
+          inArray(purchaseOrderItems.id, linkedItemIds),
+        ))
+      if (validItems.length !== linkedItemIds.length) {
+        throw new Error("La factura contiene una línea que no pertenece a esta OC")
+      }
+    }
+
     const invoiceId = nanoid()
 
     // Calculate total from items if provided, otherwise use the provided amount
@@ -73,7 +104,7 @@ export async function createPurchaseOrderInvoice(
     await tx.insert(purchaseOrderInvoices).values({
       id:              invoiceId,
       purchaseOrderId: input.purchaseOrderId,
-      invoiceNumber:   input.invoiceNumber,
+      invoiceNumber,
       amount:          totalAmount,
       issueDate:       input.issueDate ?? null,
       fileName:        input.fileName,

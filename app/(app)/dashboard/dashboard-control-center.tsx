@@ -252,7 +252,7 @@ export function DashboardControlCenter({
                       aria-pressed={preset === filter.value}
                       onClick={() => setPreset(filter.value)}
                       className={cn(
-                        "inline-flex h-8 shrink-0 items-center gap-2 rounded-xl px-3 text-xs font-semibold",
+                        "inline-flex h-11 sm:h-8 shrink-0 items-center gap-2 rounded-xl px-3 text-xs font-semibold",
                         "transition-all duration-150 ease-out motion-safe:active:scale-[0.97]",
                         "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600",
                         preset === filter.value
@@ -442,7 +442,7 @@ function FilterSelect({ label, value, onValueChange, children }: {
     <label className="grid min-w-0 gap-1.5 text-xs font-semibold text-[var(--color-text-muted)]">
       <span>{label}</span>
       <Select value={value} onValueChange={onValueChange}>
-        <SelectTrigger aria-label={label} className="h-9 text-[13px]"><SelectValue /></SelectTrigger>
+        <SelectTrigger aria-label={label} className="h-11 sm:h-9 text-[13px]"><SelectValue /></SelectTrigger>
         <SelectContent>{children}</SelectContent>
       </Select>
     </label>

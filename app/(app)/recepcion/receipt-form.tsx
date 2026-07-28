@@ -7,6 +7,7 @@ import { Warning } from "@phosphor-icons/react"
 import { SubmitButton } from "@/components/admin/submit-button"
 import { Field } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
+import { DatePicker } from "@/components/ui/date-picker"
 import { Textarea } from "@/components/ui/textarea"
 import { INITIAL_STATE } from "@/components/admin/form-state"
 import { registerReceiptAction } from "./actions"
@@ -55,6 +56,9 @@ export function ReceiptForm({
   const [qtys,    setQtys]    = React.useState<Record<string, number>>({})
   const [rejs,    setRejs]    = React.useState<Record<string, number>>({})
   const [dmgs,    setDmgs]    = React.useState<Record<string, number>>({})
+  const [lotNumbers, setLotNumbers] = React.useState<Record<string, string>>({})
+  const [manufacturedAts, setManufacturedAts] = React.useState<Record<string, string>>({})
+  const [expiresAts, setExpiresAts] = React.useState<Record<string, string>>({})
 
   const [state, action] = useActionState<ActionState, FormData>(registerReceiptAction, INITIAL_STATE)
 
@@ -66,6 +70,9 @@ export function ReceiptForm({
     setQtys(Object.fromEntries(items.map((i) => [i.id, getRemaining(i, stage)])))
     setRejs({})
     setDmgs({})
+    setLotNumbers({})
+    setManufacturedAts({})
+    setExpiresAts({})
   }
 
   React.useEffect(() => {
@@ -81,6 +88,9 @@ export function ReceiptForm({
       quantityRejected:    rejs[i.id]     ?? 0,
       quantityDamaged:     dmgs[i.id]     ?? 0,
       notes:               null,
+      lotNumber:           lotNumbers[i.id] ?? "",
+      manufacturedAt:      manufacturedAts[i.id] ?? "",
+      expiresAt:           expiresAts[i.id] ?? "",
     }))
   )
   const stageLabel = stage === "office" ? "Oficina" : "Faena"
@@ -97,6 +107,11 @@ export function ReceiptForm({
     })
     .map((item) => item.id)
   const hasOverBooked = overBookedItemIds.length > 0
+  const missingEppLotItemIds = items
+    .filter((item) => item.isEpp && stage === "faena" && (qtys[item.id] ?? getRemaining(item, stage)) > 0)
+    .filter((item) => !lotNumbers[item.id]?.trim() || !manufacturedAts[item.id] || !expiresAts[item.id])
+    .map((item) => item.id)
+  const hasMissingEppLot = missingEppLotItemIds.length > 0
 
   return (
     <form action={action} className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_20rem]">
@@ -197,6 +212,38 @@ export function ReceiptForm({
                       Recibido + rechazado + dañado supera lo pendiente ({formatQty(remaining, item.unitOfMeasure)}).
                     </p>
                   )}
+                  {item.isEpp && stage === "faena" && pending && (
+                    <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
+                      <Field label="Lote" htmlFor={`receiptLot-${item.id}`} required>
+                        <Input
+                          id={`receiptLot-${item.id}`}
+                          value={lotNumbers[item.id] ?? ""}
+                          onChange={(e) => setLotNumbers((current) => ({ ...current, [item.id]: e.target.value }))}
+                          placeholder="N° de lote"
+                          error={missingEppLotItemIds.includes(item.id)}
+                        />
+                      </Field>
+                      <Field label="Fabricación" htmlFor={`receiptManufactured-${item.id}`} required>
+                        <DatePicker
+                          id={`receiptManufactured-${item.id}`}
+                          value={manufacturedAts[item.id] ?? ""}
+                          onChange={(value) => setManufacturedAts((current) => ({ ...current, [item.id]: value }))}
+                          placeholder="Selecciona fecha"
+                          error={missingEppLotItemIds.includes(item.id)}
+                        />
+                      </Field>
+                      <Field label="Vencimiento" htmlFor={`receiptExpires-${item.id}`} required>
+                        <DatePicker
+                          id={`receiptExpires-${item.id}`}
+                          value={expiresAts[item.id] ?? ""}
+                          onChange={(value) => setExpiresAts((current) => ({ ...current, [item.id]: value }))}
+                          placeholder="Selecciona fecha"
+                          min={manufacturedAts[item.id] || undefined}
+                          error={missingEppLotItemIds.includes(item.id)}
+                        />
+                      </Field>
+                    </div>
+                  )}
                 </div>
 
                 <Input
@@ -281,7 +328,7 @@ export function ReceiptForm({
             label="Marcar como recibido"
             loadingLabel="Guardando..."
             variant="primary"
-            disabled={hasOverBooked}
+            disabled={hasOverBooked || hasMissingEppLot}
           />
         </div>
       </div>
@@ -309,6 +356,12 @@ export function ReceiptForm({
             <div className="flex items-center justify-between gap-3">
               <span className="text-[var(--color-danger)]">Líneas con error</span>
               <span className="tabular-nums text-[var(--color-danger)]">{overBookedItemIds.length}</span>
+            </div>
+          )}
+          {hasMissingEppLot && (
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-[var(--color-danger)]">Lotes EPP incompletos</span>
+              <span className="tabular-nums text-[var(--color-danger)]">{missingEppLotItemIds.length}</span>
             </div>
           )}
         </div>

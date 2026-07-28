@@ -4,6 +4,7 @@ import { users } from "./users"
 import { worksites, workers, suppliers } from "./worksites"
 import { products, productAttributes } from "./products"
 import { costCenters } from "./cost-centers"
+import { eppTypes } from "./epp-types"
 
 /* ── Purchase Request States ─────────────────────────────────────────────── */
 // draft | submitted | in_review | partially_approved | approved
@@ -98,6 +99,27 @@ export const requestItemAttributes = pgTable("request_item_attributes", {
   check("request_item_attributes_value_length", sql`char_length(${table.value}) > 0 AND char_length(${table.value}) <= 64`),
 ])
 
+/* ── Automatic EPP replenishment idempotency ─────────────────────────────── */
+// A link stays open while a concrete coverage gap is being replenished. The
+// partial unique index is the concurrency boundary: two repeated clicks (or
+// workers) cannot create two request items for the same live gap.
+export const eppReplenishmentLinks = pgTable("epp_replenishment_links", {
+  id:                text("id").primaryKey(),
+  worksiteId:        text("worksite_id").notNull().references(() => worksites.id, { onDelete: "cascade" }),
+  workerId:          text("worker_id").notNull().references(() => workers.id, { onDelete: "cascade" }),
+  eppTypeId:         text("epp_type_id").notNull().references(() => eppTypes.id),
+  requirementId:     text("requirement_id").notNull(),
+  gapVersion:        text("gap_version").notNull(),
+  requestItemId:     text("request_item_id").references(() => purchaseRequestItems.id, { onDelete: "set null" }),
+  resolvedAt:        timestamp("resolved_at", { withTimezone: true, mode: "string" }),
+  createdAt:         timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex("epp_replenishment_links_open_gap_unique")
+    .on(table.worksiteId, table.workerId, table.eppTypeId, table.requirementId, table.gapVersion)
+    .where(sql`${table.resolvedAt} IS NULL`),
+  index("epp_replenishment_links_request_item_idx").on(table.requestItemId),
+])
+
 /* ── Approval Decisions ───────────────────────────────────────────────────── */
 export const approvalDecisions = pgTable("approval_decisions", {
   id:             text("id").primaryKey(),
@@ -130,6 +152,13 @@ export const purchaseRequestItemsRelations = relations(purchaseRequestItems, ({ 
   suggestedSupplier: one(suppliers, { fields: [purchaseRequestItems.suggestedSupplierId], references: [suppliers.id] }),
   attributes:        many(requestItemAttributes),
   approvalDecisions: many(approvalDecisions),
+}))
+
+export const eppReplenishmentLinksRelations = relations(eppReplenishmentLinks, ({ one }) => ({
+  worksite:    one(worksites, { fields: [eppReplenishmentLinks.worksiteId], references: [worksites.id] }),
+  worker:      one(workers, { fields: [eppReplenishmentLinks.workerId], references: [workers.id] }),
+  eppType:     one(eppTypes, { fields: [eppReplenishmentLinks.eppTypeId], references: [eppTypes.id] }),
+  requestItem: one(purchaseRequestItems, { fields: [eppReplenishmentLinks.requestItemId], references: [purchaseRequestItems.id] }),
 }))
 
 export const requestItemAttributesRelations = relations(requestItemAttributes, ({ one }) => ({

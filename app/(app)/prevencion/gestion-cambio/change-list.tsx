@@ -67,6 +67,7 @@ export function ChangeList({ changes, worksites, canManage }: Props) {
       </div>
 
       <DataTable
+        caption="Solicitudes de gestión del cambio"
         columns={COLUMNS}
         rows={rows}
         searchKeys={["code", "title", "worksiteName"]}

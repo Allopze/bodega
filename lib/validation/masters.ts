@@ -115,7 +115,7 @@ export const productAttributeSchema = z.object({
   name:       z.string().min(1, "Nombre requerido").max(60),
   type:       z.enum(["text", "select", "number"]),
   isRequired: z.coerce.boolean().default(false),
-  options:    z.string().optional().nullable(),   // JSON array string for "select"
+  options:    z.string().max(4000, "Opciones demasiado largas").optional().nullable(),   // JSON array string for "select"
   sizeFamily: z.string().max(20).optional().or(z.literal("")).or(z.literal("undefined")),
   sortOrder:  z.coerce.number().int().default(0),
 })

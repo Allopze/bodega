@@ -1,6 +1,5 @@
 /**
- * Borrado permanente de solicitudes de compra.
- * Solo aplica a solicitudes que nunca ingresaron al flujo de compra/recepción.
+ * Borrado permanente de borradores de solicitud sin decisiones de aprobación.
  *
  * NOTE: las constantes/tipos puros viven en requests-delete.constants.ts para
  * que los Client Components puedan importarlos sin arrastrar node:fs al bundle.
@@ -37,7 +36,7 @@ interface DeleteRequestOpts {
 }
 
 /**
- * Elimina permanentemente una solicitud y toda su data dependiente.
+ * Elimina permanentemente un borrador que no tiene evidencia de aprobación.
  * Limpia además los archivos PDF de cotizaciones del disco (best-effort).
  */
 export async function deleteRequest(
@@ -68,7 +67,8 @@ export async function deleteRequest(
       throw new Error(`No se puede eliminar una solicitud en estado '${request.status}'`)
     }
 
-    // 2. Obtener todos los request item IDs para limpiar approvalDecisions
+    // 2. Obtener los ítems y comprobar que no haya decisiones asociadas por
+    // solicitud o por ítem. No se eliminan decisiones: son evidencia.
     const items = await tx
       .select({ id: purchaseRequestItems.id })
       .from(purchaseRequestItems)
@@ -76,22 +76,30 @@ export async function deleteRequest(
 
     const itemIds = items.map((i) => i.id)
 
-    // 3. Eliminar approvalDecisions (FK sin cascade referencia requestId e itemId)
-    if (itemIds.length > 0) {
-      await tx.delete(approvalDecisions).where(inArray(approvalDecisions.requestItemId, itemIds))
+    const requestDecision = await tx.query.approvalDecisions.findFirst({
+      where: eq(approvalDecisions.requestId, requestId),
+      columns: { id: true },
+    })
+    const itemDecision = itemIds.length > 0
+      ? await tx.query.approvalDecisions.findFirst({
+        where: inArray(approvalDecisions.requestItemId, itemIds),
+        columns: { id: true },
+      })
+      : undefined
+    if (requestDecision || itemDecision) {
+      throw new Error("No se puede eliminar una solicitud con decisiones de aprobación")
     }
-    await tx.delete(approvalDecisions).where(eq(approvalDecisions.requestId, requestId))
 
-    // 4. Eliminar la solicitud — cascade borra items, attributes, quotations
+    // 3. Eliminar la solicitud — cascade borra sólo dependencias no auditables.
     const deletedRows = await tx
       .delete(purchaseRequests)
       .where(eq(purchaseRequests.id, requestId))
       .returning({ id: purchaseRequests.id })
 
-    // 5. Verify deletion occurred (paranoid check)
+    // 4. Verify deletion occurred (paranoid check)
     if (deletedRows.length === 0) throw new Error("La solicitud fue modificada concurrentemente")
 
-    // 6. Auditoría (entityId string sobrevive al borrado)
+    // 5. Auditoría (entityId string sobrevive al borrado)
     await recordAudit(
       {
         userId,

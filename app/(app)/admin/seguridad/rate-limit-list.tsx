@@ -81,6 +81,7 @@ export function RateLimitList({ rows, total }: RateLimitListProps) {
       </div>
       <DesktopOnlyTableNotice />
       <DataTable
+        caption="Claves con Bloqueo por Rate Limit"
         columns={COLUMNS}
         rows={dataRows}
         searchKeys={["key"]}

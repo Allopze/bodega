@@ -34,6 +34,7 @@ describe("requests-delete service", () => {
 
     // Clean database
     await inMemoryDb.delete(schema.auditLog)
+    await inMemoryDb.delete(schema.approvalDecisions)
     await inMemoryDb.delete(schema.purchaseRequests)
     await inMemoryDb.delete(schema.worksites)
     await inMemoryDb.delete(schema.users)
@@ -74,7 +75,7 @@ describe("requests-delete service", () => {
     await expect(deleteRequest("req-1", "u-1")).rejects.toThrow("No se puede eliminar una solicitud en estado 'approved'")
   })
 
-  it("successfully deletes a draft repuestos request and cleans up database and files", async () => {
+  it("rechaza borrar un borrador que ya tiene una decisión y conserva toda la evidencia", async () => {
     // 1. Insert deletable request
     await inMemoryDb.insert(schema.purchaseRequests).values({
       id: "req-rep",
@@ -118,26 +119,22 @@ describe("requests-delete service", () => {
       uploadedBy: "u-1",
     })
 
-    // 5. Delete request
-    await deleteRequest("req-rep", "u-1", { userEmail: "user@test.cl" })
+    await expect(deleteRequest("req-rep", "u-1", { userEmail: "user@test.cl" }))
+      .rejects.toThrow("No se puede eliminar una solicitud con decisiones de aprobación")
 
-    // Verify DB records are gone
+    // La solicitud y su decisión sobreviven para mantener trazabilidad.
     const reqs = await inMemoryDb.select().from(schema.purchaseRequests).where(eq(schema.purchaseRequests.id, "req-rep"))
-    expect(reqs).toHaveLength(0)
+    expect(reqs).toHaveLength(1)
 
     const items = await inMemoryDb.select().from(schema.purchaseRequestItems).where(eq(schema.purchaseRequestItems.id, "item-rep-1"))
-    expect(items).toHaveLength(0)
+    expect(items).toHaveLength(1)
 
     const decs = await inMemoryDb.select().from(schema.approvalDecisions).where(eq(schema.approvalDecisions.requestId, "req-rep"))
-    expect(decs).toHaveLength(0)
+    expect(decs).toHaveLength(1)
 
     const quots = await inMemoryDb.select().from(schema.repuestoQuotations).where(eq(schema.repuestoQuotations.id, "q-rep-1"))
-    expect(quots).toHaveLength(0)
-
-    // Verify filesystem unlink was called (file path contains the mocked storage filename)
-    expect(mockUnlink).toHaveBeenCalled()
-    const calledPath = mockUnlink.mock.calls[0]![0] as string
-    expect(calledPath).toContain("q-rep-1.pdf")
+    expect(quots).toHaveLength(1)
+    expect(mockUnlink).not.toHaveBeenCalled()
   })
 
   it("successfully deletes a draft servicios request and cleans up database and files", async () => {

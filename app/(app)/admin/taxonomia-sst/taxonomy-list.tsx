@@ -118,6 +118,7 @@ export function TaxonomyView({ categories, activeSlug, types }: TaxonomyViewProp
         )}
         <DesktopOnlyTableNotice />
         <DataTable
+        caption="Categorías Documentales SST"
         enableColumnToggle
         viewKey="tax"
         stickyFirstColumn
@@ -196,6 +197,7 @@ export function TaxonomyView({ categories, activeSlug, types }: TaxonomyViewProp
           </p>
         ) : (
           <DataTable
+            caption={`Tipos de Documento · ${activeCategory?.name ?? ""}`}
             columns={TYPE_COLUMNS}
             rows={typeRows}
             searchKeys={["code", "name", "description"]}

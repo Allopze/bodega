@@ -42,6 +42,7 @@ export function RoleList({ roles, groupedPermissions, permissions }: RoleListPro
     <>
       <DesktopOnlyTableNotice />
       <DataTable
+        caption="Roles"
         columns={ROLE_COLUMNS}
         rows={rows}
         searchKeys={["label", "name", "description"]}

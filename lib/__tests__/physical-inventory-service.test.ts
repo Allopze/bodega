@@ -93,6 +93,16 @@ describe("physical inventory service", () => {
         createdAt: now,
         updatedAt: now,
       },
+      {
+        id: "prod-count-zero",
+        sku: "COUNT-ZERO",
+        name: "Producto Conteo Saldo Cero",
+        categoryId: "cat-count",
+        unitOfMeasure: "unidad",
+        isActive: true,
+        createdAt: now,
+        updatedAt: now,
+      },
     ])
     await inMemoryDb.insert(schema.worksiteStock).values([
       {
@@ -127,8 +137,8 @@ describe("physical inventory service", () => {
         worksiteId: "ws-count",
         notes: "Conteo de cierre mensual",
         items: [
-          { productId: "prod-count-a", expectedQuantity: 10, countedQuantity: 8, notes: "Faltan 2" },
-          { productId: "prod-count-b", expectedQuantity: 3, countedQuantity: 5, notes: "Sobran 2" },
+          { productId: "prod-count-a", countedQuantity: 8, notes: "Faltan 2" },
+          { productId: "prod-count-b", countedQuantity: 5, notes: "Sobran 2" },
         ],
       },
       ["ws-count"],
@@ -184,10 +194,39 @@ describe("physical inventory service", () => {
         session,
         {
           worksiteId: "ws-other-count",
-          items: [{ productId: "prod-count-a", expectedQuantity: 0, countedQuantity: 1 }],
+          items: [{ productId: "prod-count-a", countedQuantity: 1 }],
         },
         ["ws-count"],
       ),
     ).rejects.toThrow("No tienes acceso")
+  })
+
+  it("uses the locked database balance and creates stock from a zero balance", async () => {
+    const { closePhysicalInventoryCount } = await import("@/lib/services/physical-inventory")
+
+    const result = await closePhysicalInventoryCount(
+      session,
+      {
+        worksiteId: "ws-count",
+        items: [{ productId: "prod-count-zero", countedQuantity: 4 }],
+      },
+      ["ws-count"],
+    )
+
+    expect(result.adjustmentCount).toBe(1)
+    const item = await inMemoryDb.query.physicalInventoryCountItems.findFirst({
+      where: and(
+        eq(schema.physicalInventoryCountItems.countId, result.id),
+        eq(schema.physicalInventoryCountItems.productId, "prod-count-zero"),
+      ),
+    })
+    expect(item).toMatchObject({ expectedQuantity: 0, countedQuantity: 4, difference: 4 })
+    const stock = await inMemoryDb.query.worksiteStock.findFirst({
+      where: and(
+        eq(schema.worksiteStock.worksiteId, "ws-count"),
+        eq(schema.worksiteStock.productId, "prod-count-zero"),
+      ),
+    })
+    expect(stock?.quantity).toBe(4)
   })
 })

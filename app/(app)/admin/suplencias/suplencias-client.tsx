@@ -58,6 +58,8 @@ export function SuplenciasClient({ activeUsers, substitutions }: SuplenciasClien
   const [subName, setSubName] = useState("")
   const [subEmail, setSubEmail] = useState("")
   const [validDays, setValidDays] = useState(30)
+  const [activationInviteUrl, setActivationInviteUrl] = useState<string | null>(null)
+  const [inviteCopied, setInviteCopied] = useState(false)
 
   const handleCreate = () => {
     if (!selectedTitularId || !subName.trim() || !subEmail.trim()) {
@@ -73,6 +75,9 @@ export function SuplenciasClient({ activeUsers, substitutions }: SuplenciasClien
         validUntilDays: Number(validDays),
       })
       if (res.ok) {
+        const inviteUrl = typeof res.data?.inviteUrl === "string" ? res.data.inviteUrl : null
+        setActivationInviteUrl(inviteUrl)
+        setInviteCopied(false)
         setIsCreateOpen(false)
         setSelectedTitularId("")
         setSubName("")
@@ -82,6 +87,12 @@ export function SuplenciasClient({ activeUsers, substitutions }: SuplenciasClien
         setError(res.message || "Error al crear la suplencia.")
       }
     })
+  }
+
+  const copyActivationInvite = async () => {
+    if (!activationInviteUrl) return
+    await navigator.clipboard.writeText(activationInviteUrl)
+    setInviteCopied(true)
   }
 
   const handleExtend = (userId: string, days: number) => {
@@ -135,6 +146,20 @@ export function SuplenciasClient({ activeUsers, substitutions }: SuplenciasClien
       {error && (
         <div className="p-3 text-sm text-[var(--color-danger-ink)] bg-[var(--color-danger-tint)] rounded-md border border-[var(--color-danger-border)]">
           {error}
+        </div>
+      )}
+
+      {activationInviteUrl && (
+        <div className="rounded-md border border-[var(--color-warning-border)] bg-[var(--color-warning-tint)] p-3 text-sm text-[var(--color-warning-ink)]">
+          <p className="font-medium">Invitación pendiente de entrega</p>
+          <p className="mt-1">El correo no se pudo enviar. Comparte este enlace de activación de forma segura antes de que venza la suplencia.</p>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <code className="max-w-full overflow-x-auto rounded bg-white/70 px-2 py-1 text-xs">{activationInviteUrl}</code>
+            <Button size="sm" variant="secondary" onClick={copyActivationInvite}>
+              {inviteCopied ? "Enlace copiado" : "Copiar enlace"}
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setActivationInviteUrl(null)}>Ocultar</Button>
+          </div>
         </div>
       )}
 
@@ -212,7 +237,7 @@ export function SuplenciasClient({ activeUsers, substitutions }: SuplenciasClien
           <DialogHeader>
             <DialogTitle>Crear Cuenta Temporal de Suplencia</DialogTitle>
             <DialogDescription>
-              La cuenta temporal heredará automáticamente todos los roles y faenas del usuario titular a reemplazar (R7).
+              La cuenta heredará los roles y faenas del titular. El suplente recibirá una invitación para definir su contraseña y sólo podrá usarla hasta el vencimiento indicado.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">

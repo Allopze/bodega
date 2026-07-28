@@ -3,6 +3,7 @@ export interface ReceiptOcItem {
   requestItemId:        string | null
   productName:          string
   productSku:           string | null
+  isEpp?:                boolean
   quantity:             number
   quantityOfficeReceived: number
   quantityReceived:     number   // already received in previous receipts

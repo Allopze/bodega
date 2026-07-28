@@ -154,8 +154,7 @@ describe("Stock validation schemas", () => {
   describe("returnStockSchema", () => {
     it("accepts valid input", () => {
       expect(() => returnStockSchema.parse({
-        worksiteId: "ws-1",
-        productId: "prod-1",
+        deliveryItemId: "delivery-item-1",
         quantity: 3,
         reason: "Devolución por error",
       })).not.toThrow()
@@ -163,8 +162,7 @@ describe("Stock validation schemas", () => {
 
     it("rejects empty reason", () => {
       expect(() => returnStockSchema.parse({
-        worksiteId: "ws-1",
-        productId: "prod-1",
+        deliveryItemId: "delivery-item-1",
         quantity: 3,
         reason: "",
       })).toThrow()
@@ -172,8 +170,7 @@ describe("Stock validation schemas", () => {
 
     it("rejects negative quantity", () => {
       expect(() => returnStockSchema.parse({
-        worksiteId: "ws-1",
-        productId: "prod-1",
+        deliveryItemId: "delivery-item-1",
         quantity: -1,
         reason: "test",
       })).toThrow()

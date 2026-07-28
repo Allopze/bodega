@@ -7,6 +7,7 @@ import { eq } from "drizzle-orm"
 import { z } from "zod"
 import { applyRbacToToken, getUserRbacById } from "@/lib/auth/rbac"
 import { isPasswordSetupPending } from "@/lib/auth/password-setup"
+import { isTemporaryAccountExpired } from "@/lib/auth/temporary-account"
 
 import { headers } from "next/headers"
 import {
@@ -57,7 +58,7 @@ async function getUserWithAuth(email: string) {
   const user = await db.query.users.findFirst({
     where: eq(users.email, email.toLowerCase()),
   })
-  if (!user || !user.isActive) return null
+  if (!user || !user.isActive || isTemporaryAccountExpired(user)) return null
   const rbac = await getUserRbacById(user.id)
   if (!rbac || !rbac.isActive) return null
 

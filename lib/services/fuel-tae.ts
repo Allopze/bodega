@@ -26,7 +26,7 @@ import {
   resolveFuelTaeEvidenceDir,
 } from "@/lib/storage/config"
 import { isTaeReviewTransitionAllowed, type TaePublicSubmissionInput } from "@/lib/validation/fuel-tae"
-import type { OcrMeterResult } from "@/lib/services/tae-ocr"
+import { MIN_ACCEPTED_OCR_CONFIDENCE, type OcrMeterResult } from "@/lib/services/tae-ocr"
 import { getUserIdsWithPermissionForWorksite, notifyAfterCommit, notifyManyUser } from "@/lib/services/notifications"
 
 export type TaeEvidenceKind = "odometer" | "liter_meter" | "removed_seal" | "installed_seal"
@@ -196,12 +196,6 @@ export async function createTaeSubmission({
     throw new Error("Debes adjuntar las cuatro evidencias requeridas")
   }
 
-  const existing = await db.query.fuelTaeSubmissions.findFirst({
-    where: eq(fuelTaeSubmissions.clientSubmissionId, input.clientSubmissionId),
-    columns: { id: true, publicResultToken: true },
-  })
-  if (existing) return { ...existing, duplicate: true }
-
   const [vehicle, productCompatibility, driver, supervisor] = await Promise.all([
     db.query.fuelVehicles.findFirst({ where: and(eq(fuelVehicles.id, input.vehicleId), eq(fuelVehicles.isActive, true)) }),
     db.query.fuelVehicleProducts.findFirst({
@@ -236,8 +230,8 @@ export async function createTaeSubmission({
       })
     }
 
-    await db.transaction(async (tx) => {
-      await tx.insert(fuelTaeSubmissions).values({
+    const submission = await db.transaction(async (tx) => {
+      const [inserted] = await tx.insert(fuelTaeSubmissions).values({
         id,
         clientSubmissionId: input.clientSubmissionId,
         source: "public_pwa",
@@ -256,10 +250,12 @@ export async function createTaeSubmission({
         supervisorNameSnapshot: supervisor ? `${supervisor.firstName} ${supervisor.lastName}`.trim() : input.supervisorName,
         manualIdentity: !driver || !supervisor,
         meterType: input.meterType,
-        meterReading: ocrResult?.value ?? input.meterReading ?? null,
-        meterReadingSource: ocrResult?.value != null ? "ocr" : null,
+        meterReading: input.meterReading ?? (ocrResult?.value != null && ocrResult.confidence >= MIN_ACCEPTED_OCR_CONFIDENCE ? ocrResult.value : null),
+        meterReadingSource: input.meterReading != null ? "manual" : ocrResult?.value != null && ocrResult.confidence >= MIN_ACCEPTED_OCR_CONFIDENCE ? "ocr" : null,
+        ocrSuggestedReading: ocrResult?.value ?? null,
         ocrConfidence: ocrResult?.value != null ? ocrResult.confidence : null,
-        ocrProcessedAt: ocrResult?.value != null ? now : null,
+        ocrRawText: ocrResult?.rawText || null,
+        ocrProcessedAt: ocrResult ? now : null,
         meterUnavailableReason: input.meterUnavailableReason || null,
         liters: input.liters,
         removedSealNumber: input.removedSealNumber || null,
@@ -267,10 +263,26 @@ export async function createTaeSubmission({
         noSealReason: input.noSealReason || null,
         notes: input.notes || null,
         status: "submitted",
+      }).onConflictDoNothing({ target: fuelTaeSubmissions.clientSubmissionId }).returning({
+        id: fuelTaeSubmissions.id,
+        publicResultToken: fuelTaeSubmissions.publicResultToken,
       })
+
+      if (!inserted) {
+        const [existing] = await tx.select({
+          id: fuelTaeSubmissions.id,
+          publicResultToken: fuelTaeSubmissions.publicResultToken,
+        })
+          .from(fuelTaeSubmissions)
+          .where(eq(fuelTaeSubmissions.clientSubmissionId, input.clientSubmissionId))
+
+        if (!existing) throw new Error("No se pudo recuperar la carga TAE idempotente")
+        return { ...existing, duplicate: true }
+      }
+
       await tx.insert(fuelTaeEvidence).values(storedFiles.map((file) => ({
         id: nanoid(),
-        submissionId: id,
+        submissionId: inserted.id,
         kind: file.upload.kind,
         fileName: path.basename(file.upload.fileName).replace(/[\u0000-\u001f\u007f]/g, "").slice(0, 180) || `${file.upload.kind}.jpg`,
         filePath: file.filePath,
@@ -278,21 +290,33 @@ export async function createTaeSubmission({
         mimeType: file.upload.mimeType,
         sha256: file.sha256,
       })))
+      await recordAudit({
+        userId: null,
+        action: "create",
+        entityType: "fuel_tae_submission",
+        entityId: inserted.id,
+        newState: { source: "public_pwa", worksiteId: link.worksiteId, liters: input.liters },
+        ipAddress,
+      }, tx)
+      await recordStatusChange({
+        entityType: "fuel_tae_submission",
+        entityId: inserted.id,
+        fromStatus: null,
+        toStatus: "submitted",
+        changedBy: null,
+      }, tx)
+      return { ...inserted, duplicate: false }
     })
+
+    if (submission.duplicate) {
+      await Promise.allSettled(storedFiles.map((file) => removeFile(file.absolutePath)))
+      return submission
+    }
   } catch (error) {
     await Promise.allSettled(storedFiles.map((file) => removeFile(file.absolutePath)))
     throw error
   }
 
-  await recordAudit({
-    userId: null,
-    action: "create",
-    entityType: "fuel_tae_submission",
-    entityId: id,
-    newState: { source: "public_pwa", worksiteId: link.worksiteId, liters: input.liters },
-    ipAddress,
-  })
-  await recordStatusChange({ entityType: "fuel_tae_submission", entityId: id, fromStatus: null, toStatus: "submitted", changedBy: null })
   const saved = await db.query.fuelTaeSubmissions.findFirst({ where: eq(fuelTaeSubmissions.id, id) })
   if (saved) {
     const { alerts } = await getTaeSubmissionContext(saved)
@@ -548,6 +572,13 @@ export async function reviewTaeSubmission({ id, expectedStatus, status, reviewNo
   if (!current) throw new Error("Carga TAE no encontrada")
   if (current.status !== expectedStatus) throw new Error("La carga cambió mientras la revisabas. Actualiza la página e inténtalo nuevamente.")
   if (!isTaeReviewTransitionAllowed(current.status as "submitted" | "observed" | "validated" | "voided", status)) throw new Error("La transición de estado solicitada no está permitida")
+  const requiresMeterConfirmation = current.ocrSuggestedReading != null
+    && current.ocrConfidence != null
+    && Number(current.ocrConfidence) < MIN_ACCEPTED_OCR_CONFIDENCE
+    && current.meterReadingSource !== "manual"
+  if (status === "validated" && requiresMeterConfirmation) {
+    throw new Error("Confirma o corrige manualmente la lectura sugerida por OCR antes de validar la carga")
+  }
   const now = new Date().toISOString()
   await db.transaction(async (tx) => {
     const updated = await tx.update(fuelTaeSubmissions)

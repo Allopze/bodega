@@ -2,9 +2,9 @@
  * Purchase order creation service.
  */
 
-import { eq } from "drizzle-orm"
+import { and, eq } from "drizzle-orm"
 import { db } from "@/db"
-import { purchaseOrders, purchaseOrderItems, purchaseRequestItems, purchaseRequests, requestItemAttributes } from "@/db/schema"
+import { purchaseOrders, purchaseOrderItems, purchaseRequestItems, purchaseRequests, requestItemAttributes, suppliers } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { nextCodeTx } from "@/lib/code-sequences"
 import { recordAudit } from "@/lib/audit"
@@ -33,6 +33,8 @@ export interface CreateOrderInput {
   deliveryAddress?:   string | null
   notes?:             string | null
   deliveryMode?:      "via_oficina" | "directo_faena"
+  /** Effective worksite scope of the authenticated actor. */
+  worksiteScope?:     string[] | "all"
   items:              CreateOrderItemInput[]
 }
 
@@ -55,6 +57,7 @@ export async function createOrder(input: CreateOrderInput): Promise<string> {
     deliveryAddress:    input.deliveryAddress,
     notes:              input.notes,
     deliveryMode:       input.deliveryMode,
+    worksiteScope:      input.worksiteScope,
     orders: [{
       supplierId: input.supplierId,
       items:      input.items,
@@ -72,19 +75,58 @@ export async function createOrdersBySupplier(input: CreateOrdersBySupplierInput)
   const now       = new Date().toISOString()
   const year      = new Date().getFullYear()
   const orderIds: string[] = []
+  const scopedWorksiteIds = input.worksiteScope && input.worksiteScope !== "all"
+    ? new Set(input.worksiteScope)
+    : null
 
   await db.transaction(async (tx) => {
+    const seenRequestItemIds = new Set<string>()
+
     for (const orderInput of input.orders) {
+      const [activeSupplier] = await tx
+        .select({ id: suppliers.id })
+        .from(suppliers)
+        .where(and(eq(suppliers.id, orderInput.supplierId), eq(suppliers.isActive, true)))
+      if (!activeSupplier) throw new Error("El proveedor seleccionado no está activo")
+
+      const sourceItems: Array<{
+        inputItem: CreateOrderItemInput
+        requestItem: typeof purchaseRequestItems.$inferSelect
+        costCenterId: string | null
+      }> = []
+
       for (const item of orderInput.items) {
-        const [requestItem] = await tx
-          .select()
+        if (seenRequestItemIds.has(item.requestItemId)) {
+          throw new Error("No se puede incluir el mismo ítem de solicitud más de una vez")
+        }
+        seenRequestItemIds.add(item.requestItemId)
+
+        // The request and its parent are locked and resolved inside this transaction:
+        // client data may choose an item, never its worksite, product, unit or cost centre.
+        const [source] = await tx
+          .select({
+            requestItem: purchaseRequestItems,
+            worksiteId: purchaseRequests.worksiteId,
+            costCenterId: purchaseRequests.costCenterId,
+          })
           .from(purchaseRequestItems)
+          .innerJoin(purchaseRequests, eq(purchaseRequestItems.requestId, purchaseRequests.id))
           .where(eq(purchaseRequestItems.id, item.requestItemId))
           .for("update")
-        if (!requestItem) throw new Error(`Item ${item.requestItemId} not found`)
+        if (!source) throw new Error(`Item ${item.requestItemId} not found`)
+        if (source.worksiteId !== input.worksiteId) {
+          throw new Error("El ítem de solicitud pertenece a otra faena")
+        }
+        if (scopedWorksiteIds && !scopedWorksiteIds.has(source.worksiteId)) {
+          throw new Error("No tienes acceso a la faena de este ítem")
+        }
+
+        const requestItem = source.requestItem
         if (item.quantity > requestItem.quantity) {
           throw new Error("La cantidad a comprar no puede superar la cantidad aprobada del ítem")
         }
+
+        sourceItems.push({ inputItem: item, requestItem, costCenterId: source.costCenterId })
 
         // Compra parcial: el remanente se separa en un ítem hermano que conserva
         // el estado original (approved/pending_purchase), para que vuelva al
@@ -143,18 +185,16 @@ export async function createOrdersBySupplier(input: CreateOrdersBySupplierInput)
         }
       }
 
+      if (new Set(sourceItems.map((item) => item.costCenterId)).size > 1) {
+        throw new Error("Los ítems de la OC pertenecen a centros de costo distintos; crea órdenes separadas")
+      }
+
       const orderId = nanoid()
       const code    = await nextCodeTx(tx, "OC", year)
       const totals  = computeOrderTotals(orderInput.items)
       orderIds.push(orderId)
 
-      const firstItem = orderInput.items[0]!
-      const [sourceRequest] = await tx
-        .select({ costCenterId: purchaseRequests.costCenterId })
-        .from(purchaseRequestItems)
-        .innerJoin(purchaseRequests, eq(purchaseRequestItems.requestId, purchaseRequests.id))
-        .where(eq(purchaseRequestItems.id, firstItem.requestItemId))
-      const costCenterId = sourceRequest?.costCenterId ?? null
+      const costCenterId = sourceItems[0]!.costCenterId
 
       await tx.insert(purchaseOrders).values({
         id:                orderId,
@@ -176,7 +216,8 @@ export async function createOrdersBySupplier(input: CreateOrdersBySupplierInput)
         updatedAt:         now,
       })
 
-      for (const [i, item] of orderInput.items.entries()) {
+      for (const [i, source] of sourceItems.entries()) {
+        const { inputItem: item, requestItem } = source
         const subtotal = Math.round(
           item.quantity * item.unitPrice * (1 - (item.discount ?? 0) / 100)
         )
@@ -184,10 +225,10 @@ export async function createOrdersBySupplier(input: CreateOrdersBySupplierInput)
           id:              nanoid(),
           purchaseOrderId: orderId,
           requestItemId:   item.requestItemId,
-          productId:       item.productId,
-          productNameFree: item.productNameFree,
+          productId:       requestItem.productId,
+          productNameFree: requestItem.productNameFree,
           quantity:        item.quantity,
-          unitOfMeasure:   item.unitOfMeasure,
+          unitOfMeasure:   requestItem.unitOfMeasure,
           unitPrice:       item.unitPrice,
           discount:        item.discount ?? 0,
           subtotal,
@@ -212,8 +253,8 @@ export async function createOrdersBySupplier(input: CreateOrdersBySupplierInput)
           itemCount:   orderInput.items.length,
         },
       }, tx)
-      for (const item of orderInput.items) {
-        await addItemToPurchaseOrderTx(tx, item.requestItemId, orderId, input.createdBy, {
+      for (const { requestItem } of sourceItems) {
+        await addItemToPurchaseOrderTx(tx, requestItem.id, orderId, input.createdBy, {
           userEmail: input.userEmail,
         })
       }

@@ -10,6 +10,7 @@ import {
   receipts, receiptItems,
   purchaseOrders, purchaseOrderItems,
   purchaseRequestItems,
+  inventoryLots, products,
 } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { nextCodeTx } from "@/lib/code-sequences"
@@ -26,6 +27,9 @@ export interface ReceiptItemInput {
   quantityRejected?:   number
   quantityDamaged?:    number
   notes?:              string | null
+  lotNumber?:          string | null
+  manufacturedAt?:     string | null
+  expiresAt?:          string | null
 }
 
 export interface RegisterReceiptInput {
@@ -76,7 +80,10 @@ export async function registerReceipt(
       throw new Error("Debes registrar primero la llegada a oficina antes de recibir en faena")
     }
 
-    const worksiteId = input.worksiteId ?? order.worksiteId
+    const worksiteId = order.worksiteId
+    if (input.worksiteId && input.worksiteId !== worksiteId) {
+      throw new Error("La faena de recepción debe coincidir con la OC")
+    }
     const txCode = await nextCodeTx(tx, "REC", year)
 
     await tx.insert(receipts).values({
@@ -114,11 +121,11 @@ export async function registerReceipt(
       const currentReceived = input.stage === "office"
         ? (lockedOcItem.quantityOfficeReceived ?? 0)
         : (lockedOcItem.quantityReceived ?? 0)
-      const remaining = input.stage === "office"
-        ? lockedOcItem.quantity - (lockedOcItem.quantityOfficeReceived ?? 0)
+      const dispositionCapacity = input.stage === "office"
+        ? lockedOcItem.quantity
         : directFaena
-          ? lockedOcItem.quantity - (lockedOcItem.quantityReceived ?? 0)
-          : (lockedOcItem.quantityOfficeReceived ?? 0) - (lockedOcItem.quantityReceived ?? 0)
+          ? lockedOcItem.quantity
+          : (lockedOcItem.quantityOfficeReceived ?? 0)
 
       if (!Number.isFinite(qtyRec) || qtyRec < 0) {
         throw new Error("Received quantity cannot be negative")
@@ -132,16 +139,37 @@ export async function registerReceipt(
       if (qtyRec + qtyRej + qtyDmg <= 0) {
         throw new Error("Registra al menos una cantidad (recibida, rechazada o dañada)")
       }
-      if (qtyRec > remaining) {
-        throw new Error(`Received quantity exceeds pending quantity for item ${ri.purchaseOrderItemId}`)
+      const dispositions = await tx
+        .select({
+          quantityReceived: receiptItems.quantityReceived,
+          quantityRejected: receiptItems.quantityRejected,
+          quantityDamaged: receiptItems.quantityDamaged,
+        })
+        .from(receiptItems)
+        .innerJoin(receipts, eq(receiptItems.receiptId, receipts.id))
+        .where(and(
+          eq(receiptItems.purchaseOrderItemId, ri.purchaseOrderItemId),
+          eq(receipts.locationType, input.stage),
+        ))
+      const alreadyDisposed = dispositions.reduce(
+        (total, disposition) => total
+          + disposition.quantityReceived
+          + disposition.quantityRejected
+          + disposition.quantityDamaged,
+        0,
+      )
+      const requestedDisposition = qtyRec + qtyRej + qtyDmg
+      if (requestedDisposition > dispositionCapacity - alreadyDisposed) {
+        throw new Error(`La disposición excede el saldo pendiente del ítem ${ri.purchaseOrderItemId} (disposition exceeds pending quantity)`)
       }
 
       const totalNowReceived = currentReceived + qtyRec
       const lineStatus = qtyRec === 0
         ? (qtyDmg > qtyRej ? "damaged" : "rejected")
         : (totalNowReceived >= lockedOcItem.quantity ? "received" : "partially_received")
+      const receiptItemId = nanoid()
       await tx.insert(receiptItems).values({
-        id:                  nanoid(),
+        id:                  receiptItemId,
         receiptId,
         purchaseOrderItemId: ri.purchaseOrderItemId,
         quantityReceived:    qtyRec,
@@ -204,7 +232,34 @@ export async function registerReceipt(
                 entityHref: `/solicitudes/${reqItem?.request?.id ?? ""}`,
               }))
             }
+        }
+
+        if (input.stage === "faena" && lockedOcItem.productId) {
+          const product = await tx.query.products.findFirst({
+            where: eq(products.id, lockedOcItem.productId),
+          })
+          if (product?.isEpp) {
+            const lotNumber = ri.lotNumber?.trim()
+            const manufacturedAt = ri.manufacturedAt?.trim()
+            const expiresAt = ri.expiresAt?.trim()
+            if (!lotNumber || !manufacturedAt || !expiresAt) {
+              throw new Error("Cada recepción de EPP en faena requiere lote, fabricación y vencimiento")
+            }
+            const manufactured = new Date(`${manufacturedAt}T00:00:00.000Z`)
+            const expires = new Date(`${expiresAt}T00:00:00.000Z`)
+            if (Number.isNaN(manufactured.valueOf()) || Number.isNaN(expires.valueOf()) || manufactured >= expires) {
+              throw new Error("Las fechas de fabricación y vencimiento del lote EPP no son válidas")
+            }
+            if (expires.valueOf() <= Date.now()) {
+              throw new Error("No puedes ingresar a stock un lote EPP vencido")
+            }
+            await tx.insert(inventoryLots).values({
+              id: nanoid(), worksiteId, productId: product.id, receiptItemId,
+              lotNumber, manufacturedAt, expiresAt,
+              quantityReceived: qtyRec, quantityAvailable: qtyRec,
+            })
           }
+        }
 
           if (worksiteId && lockedOcItem.productId) {
             await applyMovementTx(tx, {

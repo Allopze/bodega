@@ -1,5 +1,6 @@
 import { db } from "@/db"
-import { physicalInventoryCountItems, physicalInventoryCounts } from "@/db/schema"
+import { physicalInventoryCountItems, physicalInventoryCounts, products, worksiteStock } from "@/db/schema"
+import { and, eq } from "drizzle-orm"
 import { nanoid } from "@/lib/id"
 import { nextCodeTx } from "@/lib/code-sequences"
 import { recordAudit } from "@/lib/audit"
@@ -8,7 +9,6 @@ import type { Session } from "next-auth"
 
 export interface PhysicalInventoryCountItemInput {
   productId: string
-  expectedQuantity: number
   countedQuantity: number
   notes?: string | null
 }
@@ -47,11 +47,11 @@ export async function closePhysicalInventoryCount(
   if (input.items.length === 0) throw new Error("Agrega al menos un producto al conteo")
 
   const seen = new Set<string>()
-  for (const item of input.items) {
+  const items = [...input.items].sort((a, b) => a.productId.localeCompare(b.productId))
+  for (const item of items) {
     if (!item.productId) throw new Error("Producto requerido")
     if (seen.has(item.productId)) throw new Error("El conteo no puede repetir productos")
     seen.add(item.productId)
-    ensureQuantity(item.expectedQuantity, "Stock esperado")
     ensureQuantity(item.countedQuantity, "Stock contado")
   }
 
@@ -76,17 +76,38 @@ export async function closePhysicalInventoryCount(
       updatedAt: now,
     })
 
-    await tx.insert(physicalInventoryCountItems).values(
-      input.items.map((item) => ({
+    const canonicalItems: Array<typeof physicalInventoryCountItems.$inferInsert> = []
+    for (const item of items) {
+      // Lock the product first so a zero/no-row balance also has a stable
+      // serialization point. Then lock its actual worksite balance.
+      const [product] = await tx
+        .select({ id: products.id })
+        .from(products)
+        .where(eq(products.id, item.productId))
+        .for("update")
+      if (!product) throw new Error("Producto no encontrado")
+
+      const [stock] = await tx
+        .select({ quantity: worksiteStock.quantity })
+        .from(worksiteStock)
+        .where(and(
+          eq(worksiteStock.worksiteId, input.worksiteId),
+          eq(worksiteStock.productId, item.productId),
+        ))
+        .for("update")
+      const expectedQuantity = stock?.quantity ?? 0
+      canonicalItems.push({
         id: nanoid(),
         countId: id,
         productId: item.productId,
-        expectedQuantity: item.expectedQuantity,
+        expectedQuantity,
         countedQuantity: item.countedQuantity,
-        difference: item.countedQuantity - item.expectedQuantity,
+        difference: item.countedQuantity - expectedQuantity,
         notes: item.notes?.trim() || null,
-      })),
-    )
+      })
+    }
+
+    await tx.insert(physicalInventoryCountItems).values(canonicalItems)
 
     await recordAudit({
       userId: session.user.id,
@@ -98,12 +119,12 @@ export async function closePhysicalInventoryCount(
       newState: {
         worksiteId: input.worksiteId,
         status: "closed",
-        itemCount: input.items.length,
+        itemCount: items.length,
       },
     }, tx)
 
-    for (const item of input.items) {
-      const difference = item.countedQuantity - item.expectedQuantity
+    for (const item of canonicalItems) {
+      const difference = item.difference ?? 0
       if (difference === 0) continue
       adjustmentCount += 1
       await applyMovementTx(tx, {

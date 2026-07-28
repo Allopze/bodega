@@ -29,7 +29,7 @@ const TabsTrigger = React.forwardRef<
   <TabsPrimitive.Trigger
     ref={ref}
     className={cn(
-      "relative px-4 py-1.5",
+      "relative inline-flex min-h-11 sm:min-h-0 items-center justify-center px-4 py-1.5",
       "text-sm font-semibold text-[var(--color-text-muted)]",
       "rounded-[var(--radius)]",
       "transition-[color,background-color,transform] duration-[var(--duration-fast)] ease-[var(--ease-out)]",

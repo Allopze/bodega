@@ -52,6 +52,14 @@ export const pdtpRecurrenceRuleSchema = z.object({
   plannedQuantity: z.coerce.number().positive().max(100000).default(1),
   months: z.array(z.coerce.number().int().min(1).max(12)).max(12).optional(),
   weekOfMonth: z.coerce.number().int().min(1).max(4).default(1),
+}).superRefine((rule, ctx) => {
+  if (rule.frequency === "custom" && !rule.months?.length) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["months"],
+      message: "Selecciona al menos un mes para la recurrencia personalizada",
+    })
+  }
 })
 
 const pdtpScheduleModeSchema = z.enum(["scheduled", "on_demand", "triggered"])

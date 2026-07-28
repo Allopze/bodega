@@ -1,7 +1,7 @@
-import { eq } from "drizzle-orm"
+import { and, eq, sql } from "drizzle-orm"
 import { db } from "@/db"
 import {
-  deliveries, deliveryItems,
+  deliveries, deliveryItemLots, deliveryItems, inventoryLots,
   products, purchaseRequestItems, worksites,
 } from "@/db/schema"
 import { nanoid } from "@/lib/id"
@@ -82,8 +82,9 @@ export async function registerWorksiteDelivery(
       createdAt: now,
     })
 
+    const deliveryItemId = nanoid()
     await tx.insert(deliveryItems).values({
-      id: nanoid(),
+      id: deliveryItemId,
       deliveryId,
       requestItemId: input.requestItemId ?? null,
       productId: input.productId,
@@ -92,6 +93,37 @@ export async function registerWorksiteDelivery(
       unitOfMeasure: input.unitOfMeasure,
       notes: null,
     })
+
+    if (product.isEpp) {
+      const lots = await tx
+        .select()
+        .from(inventoryLots)
+        .where(and(
+          eq(inventoryLots.worksiteId, input.worksiteId),
+          eq(inventoryLots.productId, input.productId),
+        ))
+        .orderBy(inventoryLots.expiresAt)
+        .for("update")
+      const today = new Date().toISOString().slice(0, 10)
+      let remainingLotQuantity = input.quantity
+      const allocations = lots.flatMap((lot) => {
+        if (lot.expiresAt <= today || lot.quantityAvailable <= 0 || remainingLotQuantity <= 0) return []
+        const quantity = Math.min(lot.quantityAvailable, remainingLotQuantity)
+        remainingLotQuantity -= quantity
+        return [{ inventoryLotId: lot.id, quantity }]
+      })
+      if (remainingLotQuantity > 0) {
+        throw new Error("No existe saldo suficiente de lotes EPP vigentes para la entrega")
+      }
+      for (const allocation of allocations) {
+        await tx.update(inventoryLots)
+          .set({ quantityAvailable: sql`${inventoryLots.quantityAvailable} - ${allocation.quantity}` })
+          .where(eq(inventoryLots.id, allocation.inventoryLotId))
+        await tx.insert(deliveryItemLots).values({
+          id: nanoid(), deliveryItemId, inventoryLotId: allocation.inventoryLotId, quantity: allocation.quantity,
+        })
+      }
+    }
 
     await applyMovementTx(tx, {
       worksiteId: input.worksiteId,

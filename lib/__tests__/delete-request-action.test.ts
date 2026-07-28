@@ -197,29 +197,30 @@ describe("deleteRequestAction — permission & authorization", () => {
       expect(result.message).toBe("Solo puedes eliminar tus propias solicitudes")
     })
 
-    it("rejects owner (without requests:delete) deleting a request in approval pipeline (B-1)", async () => {
-      mockAuthFn.mockResolvedValue(makeSession({
-        permissions: ["requests:view_own"],
-        worksiteIds: ["ws-1"],
-      }))
-      // submitted no es owner-deletable: requiere el permiso privilegiado.
-      mockState.requestResult = makeRequest({ requesterId: "u-test", status: "submitted" })
-      const result = await deleteRequestAction({ ok: false, message: "" }, makeFormData())
-      expect(result.ok).toBe(false)
-      expect(result.message).toContain("requiere permiso")
-      expect(mockDeleteRequest).not.toHaveBeenCalled()
-    })
-
-    it("allows privileged deleter (requests:delete) to delete a submitted request", async () => {
+    it("rechaza incluso a un eliminador privilegiado una solicitud que entró a aprobación", async () => {
       mockAuthFn.mockResolvedValue(makeSession({
         roles: ["secretaria"],
         permissions: ["requests:delete", "requests:view_all"],
         worksiteIds: [],
       }))
       mockState.requestResult = makeRequest({ requesterId: "u-other", status: "submitted" })
-      mockDeleteRequest.mockResolvedValue(undefined)
       const result = await deleteRequestAction({ ok: false, message: "" }, makeFormData())
-      expect(result.ok).toBe(true)
+      expect(result.ok).toBe(false)
+      expect(result.message).toBe("Sólo se pueden eliminar borradores sin decisiones de aprobación")
+      expect(mockDeleteRequest).not.toHaveBeenCalled()
+    })
+
+    it("rechaza un eliminador privilegiado sobre una solicitud submitted", async () => {
+      mockAuthFn.mockResolvedValue(makeSession({
+        roles: ["secretaria"],
+        permissions: ["requests:delete", "requests:view_all"],
+        worksiteIds: [],
+      }))
+      mockState.requestResult = makeRequest({ requesterId: "u-other", status: "submitted" })
+      const result = await deleteRequestAction({ ok: false, message: "" }, makeFormData())
+      expect(result.ok).toBe(false)
+      expect(result.message).toBe("Sólo se pueden eliminar borradores sin decisiones de aprobación")
+      expect(mockDeleteRequest).not.toHaveBeenCalled()
     })
 
     it("allows jefa_chome (requests:delete) to delete another user's request", async () => {

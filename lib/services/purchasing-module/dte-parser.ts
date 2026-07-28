@@ -42,44 +42,50 @@ export function parseDteXml(xmlString: string): DteData | null {
     const parsed = xmlParser.parse(xmlString)
     if (!parsed) return null
 
-    // Try both <DTE><Documento> and direct <Documento>
-    const documento = parsed.DTE?.Documento ?? parsed.Documento
+    // SII files commonly wrap Documento in EnvDTE/SetDTE/DTE and may use a
+    // namespace prefix. Locate it structurally instead of assuming one shape.
+    const documento = findDescendant(parsed, "Documento")
     if (!documento) return null
 
     // ── Header ──────────────────────────────────────────────────────────────
-    const encabezado = documento.Encabezado
+    const encabezado = childRecord(documento, "Encabezado")
     if (!encabezado) return null
 
-    const idDoc = encabezado.IdDoc ?? {}
-    const emisor = encabezado.Emisor ?? {}
-    const totales = encabezado.Totales ?? {}
+    const idDoc = childRecord(encabezado, "IdDoc") ?? {}
+    const emisor = childRecord(encabezado, "Emisor") ?? {}
+    const totales = childRecord(encabezado, "Totales") ?? {}
 
-    const folio = str(idDoc.Folio)
-    const fechaEmision = str(idDoc.FechaEmision)
-    const rutEmisor = str(emisor.RUTEmisor)
-    const rznSocEmisor = str(emisor.RznSocEmisor)
+    const folio = field(idDoc, "Folio")
+    const fechaEmision = field(idDoc, "FchEmis", "FechaEmision")
+    const rutEmisor = field(emisor, "RUTEmisor")
+    const rznSocEmisor = field(emisor, "RznSoc", "RznSocEmisor")
 
-    const mntNeto = num(totales.MntNeto)
-    const iva = num(totales.IVA)
-    const mntTotal = num(totales.MntTotal)
+    const mntNeto = num(child(totales, "MntNeto"))
+    const iva = num(child(totales, "IVA"))
+    const rawMntTotal = child(totales, "MntTotal")
+    const mntTotal = num(rawMntTotal)
 
     // ── Line items ──────────────────────────────────────────────────────────
-    const detalle = documento.Detalle
-    const rawItems: Record<string, unknown>[] = detalle?.Item
-      ? Array.isArray(detalle.Item) ? detalle.Item : [detalle.Item]
-      : []
+    const rawItems: Record<string, unknown>[] = []
+    for (const detail of asArray(child(documento, "Detalle"))) {
+      const nestedItems = asArray(child(asRecord(detail), "Item"))
+      for (const item of nestedItems.length > 0 ? nestedItems : [detail]) {
+        const record = asRecord(item)
+        if (record) rawItems.push(record)
+      }
+    }
 
     const items: DteItem[] = rawItems.map((itemNode, index) => {
-      const nroLinea = num(itemNode.NroLinea) || index + 1
-      const cdgItem = itemNode.CdgItem as Record<string, unknown> | undefined
-      const productCode = cdgItem ? str(cdgItem.VlrCod) : null
-      const nmItem = str(itemNode.NmItem) ?? ""
-      const dscItem = str(itemNode.DscItem)
-      const qtyItem = num(itemNode.QtyItem)
-      const unmdItem = str(itemNode.UnmdItem) ?? "UN"
-      const prcItem = num(itemNode.PrcItem)
-      const montoItem = num(itemNode.MontoItem)
-      const descuentoMonto = num(itemNode.DescuentoMonto)
+      const nroLinea = num(child(itemNode, "NroLinDet", "NroLinea")) || index + 1
+      const cdgItem = childRecord(itemNode, "CdgItem")
+      const productCode = cdgItem ? field(cdgItem, "VlrCod", "VlrCodigo") : null
+      const nmItem = field(itemNode, "NmbItem", "NmItem") ?? ""
+      const dscItem = field(itemNode, "DscItem")
+      const qtyItem = num(child(itemNode, "QtyItem"))
+      const unmdItem = field(itemNode, "UnmdItem") ?? "UN"
+      const prcItem = num(child(itemNode, "PrcItem"))
+      const montoItem = num(child(itemNode, "MontoItem"))
+      const descuentoMonto = num(child(itemNode, "DescuentoMonto"))
 
       return {
         lineNumber:   nroLinea,
@@ -96,6 +102,11 @@ export function parseDteXml(xmlString: string): DteData | null {
 
     // ── Build result ────────────────────────────────────────────────────────
     const totalAmount = mntTotal || (mntNeto + iva)
+    // Do not turn an XML fragment into a highly trusted invoice. These fields
+    // are the minimum contractual identity and monetary payload of a DTE.
+    if (!folio || !fechaEmision || rawMntTotal === undefined || totalAmount <= 0 || items.length === 0 || items.some((item) => !item.productName || item.quantity <= 0 || item.amount <= 0)) {
+      return null
+    }
 
     return {
       invoiceNumber: folio ?? "",
@@ -147,6 +158,53 @@ export function matchDteItemsToOcItems(
 function str(value: unknown): string | null {
   if (typeof value === "string") return value.trim()
   if (typeof value === "number") return String(value)
+  return null
+}
+
+function localName(key: string) {
+  return key.includes(":") ? key.slice(key.lastIndexOf(":") + 1) : key
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null
+}
+
+function asArray(value: unknown): unknown[] {
+  return value === undefined || value === null ? [] : Array.isArray(value) ? value : [value]
+}
+
+function child(node: Record<string, unknown> | null, ...names: string[]): unknown {
+  if (!node) return undefined
+  const wanted = new Set(names)
+  return Object.entries(node).find(([key]) => wanted.has(localName(key)))?.[1]
+}
+
+function childRecord(node: Record<string, unknown> | null, ...names: string[]): Record<string, unknown> | null {
+  return asRecord(child(node, ...names))
+}
+
+function field(node: Record<string, unknown>, ...names: string[]) {
+  return str(child(node, ...names))
+}
+
+function findDescendant(value: unknown, name: string): Record<string, unknown> | null {
+  const record = asRecord(value)
+  if (!record) {
+    if (Array.isArray(value)) {
+      for (const entry of value) {
+        const found = findDescendant(entry, name)
+        if (found) return found
+      }
+    }
+    return null
+  }
+  for (const [key, entry] of Object.entries(record)) {
+    if (localName(key) === name) return asRecord(entry)
+    const found = findDescendant(entry, name)
+    if (found) return found
+  }
   return null
 }
 

@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm"
+import { and, eq } from "drizzle-orm"
 import { db, type Tx } from "@/db"
 import { purchaseRequestItems } from "@/db/schema"
 import { recordAudit, recordStatusChange } from "@/lib/audit"
@@ -21,19 +21,23 @@ export async function submitItemTx(
   userId: string,
   opts?: { userEmail?: string },
 ): Promise<void> {
-    const item = await tx.query.purchaseRequestItems.findFirst({
-      where: eq(purchaseRequestItems.id, itemId),
-    })
+    const [item] = await tx
+      .select({ id: purchaseRequestItems.id, status: purchaseRequestItems.status, requestId: purchaseRequestItems.requestId })
+      .from(purchaseRequestItems)
+      .where(eq(purchaseRequestItems.id, itemId))
+      .for("update")
     if (!item) throw new Error(`Item ${itemId} not found`)
     if (!canTransition(item.status as ItemStatus, "requested")) {
       throw new Error(`Cannot transition item from '${item.status}' to 'requested'`)
     }
 
     const now = new Date().toISOString()
-    await tx
+    const [updated] = await tx
       .update(purchaseRequestItems)
       .set({ status: "requested", updatedAt: now })
-      .where(eq(purchaseRequestItems.id, itemId))
+      .where(and(eq(purchaseRequestItems.id, itemId), eq(purchaseRequestItems.status, item.status)))
+      .returning({ id: purchaseRequestItems.id })
+    if (!updated) throw new Error("El ítem ya no está disponible — posible concurrencia")
 
     await recordStatusChange({
       entityType: "request_item",

@@ -132,6 +132,7 @@ export function IncidentList({ incidents, worksites, counts, canReport, indicato
       </FilterToolbar>
 
       <DataTable
+        caption="Incidentes y denuncias"
         columns={COLUMNS}
         rows={rows}
         searchKeys={["code", "companyName", "worksiteName", "location", "eventTypeLabel"]}

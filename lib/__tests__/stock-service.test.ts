@@ -30,7 +30,7 @@ vi.mock("@/lib/auth/auth", () => ({
 
 const migrationsFolder = path.resolve(process.cwd(), "db/migrations")
 
-import { applyMovement } from "@/lib/services/stock"
+import { applyMovement, registerStockReturn } from "@/lib/services/stock"
 
 const now = new Date().toISOString()
 const userId = "u-stock"
@@ -66,6 +66,11 @@ describe("Stock service — applyMovement", () => {
     })
     await inMemoryDb.insert(schema.products).values({
       id: "prod-stock-3", sku: "S-003", name: "Producto Stock 3",
+      categoryId: "cat-stock", unitOfMeasure: "unidad", isActive: true,
+      createdAt: now, updatedAt: now,
+    })
+    await inMemoryDb.insert(schema.products).values({
+      id: "prod-stock-return", sku: "S-004", name: "Producto devolución",
       categoryId: "cat-stock", unitOfMeasure: "unidad", isActive: true,
       createdAt: now, updatedAt: now,
     })
@@ -156,6 +161,67 @@ describe("Stock service — applyMovement", () => {
           performedBy: userId,
         })
       ).rejects.toThrow("Stock insuficiente")
+    })
+  })
+
+  describe("delivery-linked returns", () => {
+    it("links the return to one delivery item and caps it atomically at that item balance", async () => {
+      await inMemoryDb.insert(schema.deliveries).values({
+        id: "del-return-source",
+        code: "ENT-RET-0001",
+        deliveredBy: userId,
+        deliveredAt: now,
+        destinationType: "faena",
+        worksiteId: "ws-stock",
+        receiverName: "Encargado de faena",
+        createdAt: now,
+      })
+      await inMemoryDb.insert(schema.deliveryItems).values({
+        id: "del-item-return-source",
+        deliveryId: "del-return-source",
+        productId: "prod-stock-return",
+        quantity: 5,
+        unitOfMeasure: "unidad",
+      })
+
+      const result = await registerStockReturn({
+        deliveryItemId: "del-item-return-source",
+        quantity: 3,
+        performedBy: userId,
+        reason: "Sobrante sin utilizar",
+      }, ["ws-stock"])
+
+      const stockReturn = await inMemoryDb.query.stockReturns.findFirst({
+        where: eq(schema.stockReturns.id, result.id),
+      })
+      expect(stockReturn).toMatchObject({
+        deliveryItemId: "del-item-return-source",
+        worksiteId: "ws-stock",
+        productId: "prod-stock-return",
+        quantity: 3,
+      })
+
+      const movement = await inMemoryDb.query.inventoryMovements.findFirst({
+        where: eq(schema.inventoryMovements.referenceId, result.id),
+      })
+      expect(movement).toMatchObject({
+        type: "ingreso_devolucion",
+        referenceType: "delivery_return",
+        quantity: 3,
+      })
+
+      await expect(registerStockReturn({
+        deliveryItemId: "del-item-return-source",
+        quantity: 3,
+        performedBy: userId,
+        reason: "Segundo intento",
+      }, ["ws-stock"])).rejects.toThrow("Máximo devolvible: 2")
+
+      const returns = await inMemoryDb
+        .select()
+        .from(schema.stockReturns)
+        .where(eq(schema.stockReturns.deliveryItemId, "del-item-return-source"))
+      expect(returns).toHaveLength(1)
     })
   })
 

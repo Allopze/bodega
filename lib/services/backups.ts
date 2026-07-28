@@ -242,10 +242,16 @@ export async function getDriveHealth(): Promise<DriveHealth> {
   }
 
   try {
-    const { execFile } = await import(/* turbopackIgnore: true */ "node:child_process")
-    const { promisify } = await import(/* turbopackIgnore: true */ "node:util")
+    // `turbopackIgnore` applies only when the import target is dynamic. These
+    // modules are runtime-only healthcheck dependencies and are present in the
+    // Node standalone image, so the tracer must leave them out of the bundle.
+    const childProcessModule = "node:child_process"
+    const utilModule = "node:util"
+    const fsModule = "node:fs"
+    const { execFile } = await import(/* turbopackIgnore: true */ childProcessModule)
+    const { promisify } = await import(/* turbopackIgnore: true */ utilModule)
     const execFileAsync = promisify(execFile)
-    const { existsSync, readFileSync } = await import(/* turbopackIgnore: true */ "node:fs")
+    const { existsSync, readFileSync } = await import(/* turbopackIgnore: true */ fsModule)
 
     // 1. Verificar archivo rclone.conf
     const home = process.env.HOME || "/root"
@@ -253,7 +259,9 @@ export async function getDriveHealth(): Promise<DriveHealth> {
       process.env.RCLONE_CONFIG || `${home}/.config/rclone/rclone.conf`,
     ]
     for (const p of rcloneConfCandidates) {
-      if (existsSync(p)) {
+      // El path procede del host operativo, no del árbol de la aplicación.
+      // Evita que NFT intente trazar el proyecto completo durante `next build`.
+      if (existsSync(/* turbopackIgnore: true */ p)) {
         result.rcloneConfPath = p
         break
       }
@@ -265,13 +273,13 @@ export async function getDriveHealth(): Promise<DriveHealth> {
       `${home}/.config/rclone/gdrive-service-account.json`,
     ]
     for (const p of saPaths) {
-      if (existsSync(p)) {
+      if (existsSync(/* turbopackIgnore: true */ p)) {
         result.saPath = p
         result.saJsonPresent = true
 
         // Validar contenido del JSON
         try {
-          const raw = readFileSync(p, "utf-8")
+          const raw = readFileSync(/* turbopackIgnore: true */ p, "utf-8")
           const parsed = JSON.parse(raw)
 
           const hasPrivateKey = typeof parsed.private_key === "string"

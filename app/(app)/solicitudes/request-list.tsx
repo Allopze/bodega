@@ -146,6 +146,7 @@ export function RequestList({
         worksiteOptions={worksiteOptions}
       />
       <DataTable
+        caption="Solicitudes"
         enableColumnToggle
         hideDensityToggle
         viewKey="sol"
