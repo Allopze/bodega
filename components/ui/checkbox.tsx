@@ -2,8 +2,10 @@ import * as React from "react"
 import { cn } from "@/lib/utils"
 
 interface CheckboxProps extends Omit<React.InputHTMLAttributes<HTMLInputElement>, "type"> {
-  /** Label text rendered next to the checkbox. */
-  label: string
+  /** Label rendered next to the checkbox. Acepta nodos para poder anotar el
+   *  texto principal (código, unidad, badge) sin perder el nombre accesible,
+   *  que se calcula del contenido renderizado del `<label>`. */
+  label: React.ReactNode
 }
 
 /**
@@ -15,7 +17,10 @@ export function Checkbox({ label, id, className, ...props }: CheckboxProps) {
   return (
     <label
       htmlFor={id}
-      className="flex items-center gap-2 cursor-pointer select-none"
+      // `min-h-6` lleva el objetivo pulsable —la fila entera, no solo la
+      // casilla— al mínimo de 24px que exige WCAG 2.5.8, sin agrandar la
+      // casilla (16px) ni romper la densidad de las filas existentes.
+      className="flex min-h-6 items-center gap-2 cursor-pointer select-none"
     >
       <input
         {...props}

@@ -21,9 +21,7 @@ import {
   ChartTooltip,
   ChartTooltipContent,
 } from "@/components/ui/chart"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { formatCLP } from "@/lib/utils"
-import type { OperationalPeriodMetrics } from "@/lib/services/operational-period-metrics"
 import type { DashboardTask } from "./dashboard-control-center"
 
 // ── Configuration for Charts ──────────────────────────────────────────────────
@@ -94,6 +92,28 @@ const materialEnvConfig = {
   },
 } satisfies ChartConfig
 
+const fuelChartConfig = {
+  liters: {
+    label: "Litros",
+    color: "#d97706",
+  },
+  loads: {
+    label: "Cargas",
+    color: "#0891b2",
+  },
+} satisfies ChartConfig
+
+const maintenanceChartConfig = {
+  completed: {
+    label: "Completadas",
+    color: "#16a34a",
+  },
+  scheduled: {
+    label: "Programadas",
+    color: "#2563eb",
+  },
+} satisfies ChartConfig
+
 export interface SstMonthlyPoint {
   month: string
   tasaFrecuencia: number
@@ -109,107 +129,16 @@ export interface MaterialEnvironmentalPoint {
   environmentalSpills: number
 }
 
-// ── Unified Analytics Section ─────────────────────────────────────────────────
+// ── 1. Operational Trend Area Chart (supports 6+ data points) ───────────────
 
-export function DashboardAnalyticsSection({
-  periodMetrics,
-  tasks,
-  sstPoints = [],
-  materialEnvPoints = [],
-}: {
-  periodMetrics: OperationalPeriodMetrics
-  tasks: DashboardTask[]
-  sstPoints?: SstMonthlyPoint[]
-  materialEnvPoints?: MaterialEnvironmentalPoint[]
-}) {
-  const trendData = [
-    {
-      period: "Mes Anterior",
-      requests: periodMetrics.requests.previous ?? 0,
-      orders: periodMetrics.ordersIssued.previous ?? 0,
-      receipts: periodMetrics.receipts.previous ?? 0,
-    },
-    {
-      period: "Mes Actual",
-      requests: periodMetrics.requests.current,
-      orders: periodMetrics.ordersIssued.current,
-      receipts: periodMetrics.receipts.current,
-    },
-  ]
+export function OperationalTrendChart({ data }: { data: Array<{ month: string; requests: number; orders: number; receipts: number }> }) {
+  if (data.length === 0) return null
 
-  const hasTrendData = trendData.some((d) => d.requests > 0 || d.orders > 0 || d.receipts > 0)
-  const hasWorkloadData = tasks.length > 0
-  const hasSstData = sstPoints.length > 0
-  const hasMaterialEnvData = materialEnvPoints.length > 0
-
-  if (!hasTrendData && !hasWorkloadData && !hasSstData && !hasMaterialEnvData) {
-    return null
-  }
-
-  const showTabs = hasSstData || hasMaterialEnvData
-
-  if (!showTabs) {
-    return (
-      <div className="mt-6 grid gap-6 grid-cols-1 xl:grid-cols-2">
-        <OperationalTrendChart data={trendData} />
-        <ModuleWorkloadChart tasks={tasks} />
-      </div>
-    )
-  }
-
-  return (
-    <div className="mt-6 space-y-4">
-      <Tabs defaultValue="operativa" className="w-full">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-slate-100 pb-3">
-          <h2 className="text-sm font-bold text-slate-900">Analítica y Tendencias Operacionales</h2>
-          <TabsList className="bg-slate-100 p-1 rounded-xl">
-            <TabsTrigger value="operativa" className="text-xs">Flujo Operativo</TabsTrigger>
-            {hasSstData && <TabsTrigger value="sst" className="text-xs">Salud y Seguridad (SST)</TabsTrigger>}
-            {hasMaterialEnvData && <TabsTrigger value="ambiental" className="text-xs">Material y Ambiental</TabsTrigger>}
-          </TabsList>
-        </div>
-
-        <TabsContent value="operativa" className="mt-4">
-          <div className="grid gap-6 grid-cols-1 xl:grid-cols-2">
-            <OperationalTrendChart data={trendData} />
-            <ModuleWorkloadChart tasks={tasks} />
-          </div>
-        </TabsContent>
-
-        {hasSstData && (
-          <TabsContent value="sst" className="mt-4">
-            <div className="grid gap-6 grid-cols-1 xl:grid-cols-2">
-              <SstTrendChart data={sstPoints} />
-              <SstAccidentChart data={sstPoints} />
-            </div>
-          </TabsContent>
-        )}
-
-        {hasMaterialEnvData && (
-          <TabsContent value="ambiental" className="mt-4">
-            <div className="grid gap-6 grid-cols-1">
-              <MaterialEnvironmentalChart data={materialEnvPoints} />
-            </div>
-          </TabsContent>
-        )}
-      </Tabs>
-    </div>
-  )
-}
-
-// ── 1. Operational Trend Area Chart ─────────────────────────────────────────
-
-export function OperationalTrendChart({ data }: { data: Array<{ period: string; requests: number; orders: number; receipts: number }> }) {
   return (
     <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs flex flex-col justify-between">
-      <div className="mb-3 flex items-center justify-between">
-        <div>
-          <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700">Tendencia Operativa</h3>
-          <p className="text-xs text-slate-500">Flujo de solicitudes, órdenes y recepciones</p>
-        </div>
-        <span className="inline-flex items-center rounded-md bg-blue-50 px-2 py-0.5 text-[10px] font-semibold text-blue-700">
-          Shadcn Chart
-        </span>
+      <div className="mb-3">
+        <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700">Tendencia Operativa</h3>
+        <p className="text-xs text-slate-500">Solicitudes, órdenes y recepciones — últimos 6 meses</p>
       </div>
 
       <ChartContainer config={trendChartConfig} className="h-48 w-full">
@@ -229,7 +158,7 @@ export function OperationalTrendChart({ data }: { data: Array<{ period: string; 
             </linearGradient>
           </defs>
           <CartesianGrid strokeDasharray="3 3" vertical={false} />
-          <XAxis dataKey="period" tickLine={false} axisLine={false} tickMargin={8} />
+          <XAxis dataKey="month" tickLine={false} axisLine={false} tickMargin={8} />
           <YAxis tickLine={false} axisLine={false} tickMargin={8} />
           <ChartTooltip content={<ChartTooltipContent indicator="dot" />} />
           <ChartLegend content={<ChartLegendContent />} />
@@ -313,16 +242,13 @@ export function ModuleWorkloadChart({ tasks }: { tasks: DashboardTask[] }) {
 // ── 3. SST Trend Chart (Tasa Frecuencia y Tasa Gravedad) ─────────────────────
 
 export function SstTrendChart({ data }: { data: SstMonthlyPoint[] }) {
+  if (data.length === 0) return null
+
   return (
     <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs">
-      <div className="mb-3 flex items-center justify-between">
-        <div>
-          <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700">Tasas de Siniestralidad SST</h3>
-          <p className="text-xs text-slate-500">Tasa de Frecuencia (TF) y Tasa de Gravedad (TG) mensual</p>
-        </div>
-        <span className="inline-flex items-center rounded-md bg-blue-50 px-2 py-0.5 text-[10px] font-semibold text-blue-700">
-          Canónico SST
-        </span>
+      <div className="mb-3">
+        <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700">Tasas de Siniestralidad SST</h3>
+        <p className="text-xs text-slate-500">Tasa de Frecuencia (TF) y Tasa de Gravedad (TG) mensual</p>
       </div>
 
       <ChartContainer config={sstChartConfig} className="h-48 w-full">
@@ -343,13 +269,13 @@ export function SstTrendChart({ data }: { data: SstMonthlyPoint[] }) {
 // ── 4. SST Accident Breakdown Chart ──────────────────────────────────────────
 
 export function SstAccidentChart({ data }: { data: SstMonthlyPoint[] }) {
+  if (data.length === 0) return null
+
   return (
     <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs">
-      <div className="mb-3 flex items-center justify-between">
-        <div>
-          <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700">Accidentes CTP vs. STP</h3>
-          <p className="text-xs text-slate-500">Eventos con y sin tiempo perdido por mes</p>
-        </div>
+      <div className="mb-3">
+        <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700">Accidentes CTP vs. STP</h3>
+        <p className="text-xs text-slate-500">Eventos con y sin tiempo perdido por mes</p>
       </div>
 
       <ChartContainer config={sstAccidentConfig} className="h-48 w-full">
@@ -370,19 +296,16 @@ export function SstAccidentChart({ data }: { data: SstMonthlyPoint[] }) {
 // ── 5. Material & Environmental Chart ───────────────────────────────────────
 
 export function MaterialEnvironmentalChart({ data }: { data: MaterialEnvironmentalPoint[] }) {
+  if (data.length === 0) return null
+
   return (
     <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs">
-      <div className="mb-3 flex items-center justify-between">
-        <div>
-          <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700">Impacto Material y Ambiental</h3>
-          <p className="text-xs text-slate-500">Incidentes peligrosos, daños materiales y derrames ambientales</p>
-        </div>
-        <span className="inline-flex items-center rounded-md bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
-          Medio Ambiente & Operación
-        </span>
+      <div className="mb-3">
+        <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700">Impacto Material y Ambiental</h3>
+        <p className="text-xs text-slate-500">Incidentes peligrosos, daños materiales y derrames ambientales</p>
       </div>
 
-      <ChartContainer config={materialEnvConfig} className="h-56 w-full">
+      <ChartContainer config={materialEnvConfig} className="h-48 w-full">
         <BarChart data={data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
           <CartesianGrid strokeDasharray="3 3" vertical={false} />
           <XAxis dataKey="month" tickLine={false} axisLine={false} tickMargin={8} />
@@ -426,11 +349,9 @@ export function WorksiteActivityChart({
 
   return (
     <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs">
-      <div className="mb-4 flex items-center justify-between">
-        <div>
-          <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700">Inversión y Actividad por Faena</h3>
-          <p className="text-xs text-slate-500">Monto total comprometido por centro de costos</p>
-        </div>
+      <div className="mb-4">
+        <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700">Inversión por Faena</h3>
+        <p className="text-xs text-slate-500">Monto total comprometido por centro de costos</p>
       </div>
 
       <ChartContainer config={worksiteChartConfig} className="h-56 w-full">
@@ -498,3 +419,76 @@ export function MiniSparkline({
     </div>
   )
 }
+
+// ── 8. Fuel Consumption Chart ────────────────────────────────────────────────
+
+export interface FuelMonthlyChartPoint {
+  month: string
+  liters: number
+  amount: number
+  loads: number
+}
+
+export function FuelConsumptionChart({ data }: { data: FuelMonthlyChartPoint[] }) {
+  if (!data.length || !data.some((d) => d.liters > 0 || d.loads > 0)) return null
+
+  return (
+    <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs flex flex-col justify-between">
+      <div className="mb-3 flex items-center justify-between">
+        <div>
+          <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700">Consumo de Combustibles</h3>
+          <p className="text-xs text-slate-500">Litros cargados y número de cargas por mes</p>
+        </div>
+      </div>
+
+      <ChartContainer config={fuelChartConfig} className="h-48 w-full">
+        <BarChart data={data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+          <CartesianGrid strokeDasharray="3 3" vertical={false} />
+          <XAxis dataKey="month" tickLine={false} axisLine={false} tickMargin={8} />
+          <YAxis tickLine={false} axisLine={false} tickMargin={8} />
+          <ChartTooltip content={<ChartTooltipContent indicator="dot" />} />
+          <ChartLegend content={<ChartLegendContent />} />
+          <Bar dataKey="liters" fill="#d97706" radius={[4, 4, 0, 0]} />
+          <Bar dataKey="loads" fill="#0891b2" radius={[4, 4, 0, 0]} />
+        </BarChart>
+      </ChartContainer>
+    </div>
+  )
+}
+
+// ── 9. Maintenance Activity Chart ─────────────────────────────────────────────
+
+export interface MaintenanceMonthlyChartPoint {
+  month: string
+  completed: number
+  scheduled: number
+  amount: number
+}
+
+export function MaintenanceTrendChart({ data }: { data: MaintenanceMonthlyChartPoint[] }) {
+  if (!data.length || !data.some((d) => d.completed > 0 || d.scheduled > 0 || d.amount > 0)) return null
+
+  return (
+    <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs flex flex-col justify-between">
+      <div className="mb-3 flex items-center justify-between">
+        <div>
+          <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700">Mantención de Flota</h3>
+          <p className="text-xs text-slate-500">Mantenciones completadas vs. programadas por mes</p>
+        </div>
+      </div>
+
+      <ChartContainer config={maintenanceChartConfig} className="h-48 w-full">
+        <BarChart data={data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+          <CartesianGrid strokeDasharray="3 3" vertical={false} />
+          <XAxis dataKey="month" tickLine={false} axisLine={false} tickMargin={8} />
+          <YAxis tickLine={false} axisLine={false} tickMargin={8} allowDecimals={false} />
+          <ChartTooltip content={<ChartTooltipContent indicator="dot" />} />
+          <ChartLegend content={<ChartLegendContent />} />
+          <Bar dataKey="completed" fill="#16a34a" radius={[4, 4, 0, 0]} />
+          <Bar dataKey="scheduled" fill="#2563eb" radius={[4, 4, 0, 0]} />
+        </BarChart>
+      </ChartContainer>
+    </div>
+  )
+}
+

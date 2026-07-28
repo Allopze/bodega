@@ -24,6 +24,11 @@ interface TopBarProps {
 
 const ROUTES_WITH_OWN_SEARCH = ["/solicitudes", "/aprobaciones", "/compras", "/recepcion", "/pendientes", "/prevencion/ppa", "/combustibles"]
 
+/** Formularios de alta/edición: no hay lista que filtrar, así que el input de
+ *  la shell prometería un filtrado inexistente. Ninguna ruta bajo estos
+ *  segmentos consume `useSafeShellHeader` ni renderiza un `DataTable`. */
+const FORM_ROUTE = /\/(editar|nuevo|crear)(\/|$)/
+
 const TopBarInner = React.memo(function TopBarInner({
   onMenuToggle,
   className,
@@ -62,11 +67,16 @@ const TopBarInner = React.memo(function TopBarInner({
   // server-side). The top-bar in-memory search is inert there — hide it so
   // users don't see two search inputs with different behaviours.
   const hideSearch = ROUTES_WITH_OWN_SEARCH.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`))
+    || FORM_ROUTE.test(pathname)
 
   return (
     <header className={cn(
       "flex items-center h-[3.5rem] px-4 md:px-6 gap-3",
-      "bg-(--color-surface) border-b border-(--color-border) lg:bg-transparent lg:border-b-0",
+      // Opaca también en desktop: la barra es `sticky` dentro del pozo de
+      // scroll, así que con fondo transparente el contenido se veía POR DEBAJO
+      // del título y las migas al scrollear (texto sobre texto). El color es el
+      // mismo del `<main>`, así que al tope del scroll se ve idéntica.
+      "bg-(--color-surface) border-b border-(--color-border) lg:border-b-0",
       // Auto-hide on mobile: slide out above the sticky clip, fade to 0.
       // Desktop: always visible (lg: overrides hide regardless of scroll).
       "transition-[transform,opacity] duration-(--duration-default) ease-(--ease-out)",

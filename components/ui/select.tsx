@@ -83,9 +83,14 @@ const SelectTrigger = React.forwardRef<
     <SelectPrimitive.Trigger
       ref={ref}
       className={cn(
-        "flex h-11 sm:h-9 w-full items-center justify-between gap-2 rounded-(--radius-lg)",
+        "flex h-11 sm:h-9 w-full min-w-0 items-center justify-between gap-2 rounded-(--radius-lg)",
         "border border-[var(--color-border-control)] bg-[var(--color-surface)]",
         "px-3.5 py-1.5 text-sm text-[var(--color-text)]",
+        // El trigger tiene altura fija: sin truncado, una opción larga (nombre
+        // de actividad, razón social) se parte en varias líneas y el texto se
+        // dibuja FUERA del borde, encima del contenido vecino. El span es el
+        // que renderiza SelectValue; el icono es un svg y no lo alcanza.
+        "[&>span]:block [&>span]:min-w-0 [&>span]:flex-1 [&>span]:truncate [&>span]:text-left",
         "transition-[border-color,box-shadow,transform] duration-[var(--duration-fast)] ease-[var(--ease-out)]",
         "active:scale-[0.99]",
         "hover:border-[var(--color-border-control-hover)]",

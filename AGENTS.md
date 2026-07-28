@@ -20,7 +20,7 @@ Rules until the migration is properly resumed:
 - Make every business-logic change in `lib/` + `app/`.
 - `modules/registry.ts`, `modules/permissions.ts`, `modules/manifest-types.ts` and the `modules/*/manifest.ts` files are the only live module-scaffolding parts; touch those only for nav/permissions/seed/bootstrap parity.
 - Do not recreate `modules/*/{services,actions,schema,validation}` or `core/*` unless the modular migration is explicitly resumed with a reconciliation plan and parity tests.
-- See `modules/README.md` and the audit at `.claude/plans/shiny-scribbling-lynx.md` (finding A1) for the reconciliation plan.
+- See `modules/README.md` for the reconciliation plan.
 <!-- END:source-of-truth -->
 
 <!-- BEGIN:db-migrations -->

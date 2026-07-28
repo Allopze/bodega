@@ -16,12 +16,23 @@ import { getOperationalWorkQueue, type OperationalModule } from "@/lib/services/
 import { listOperationalActivity } from "@/lib/services/operational-activity"
 import { getOperationalPeriodMetrics, type OperationalPeriodMetric, type OperationalPeriodMetrics } from "@/lib/services/operational-period-metrics"
 import { getOperationalBacklogComparisons, type OperationalBacklogComparison } from "@/lib/services/operational-metric-snapshots"
+import { getOperationalTrendHistory } from "@/lib/services/operational-trend-history"
+import { getFuelMonthlyTrend, getMaintenanceMonthlyTrend } from "@/lib/services/dashboard-fleet-maintenance"
 import { QuickActions } from "./quick-actions"
 import { RecentActivity } from "./recent-activity"
 import { loadPdtpComplianceSummary, PdtpComplianceCard } from "./pdtp-compliance-card"
 import { getActivePdtpProgram, listPdtpPrograms } from "@/lib/services/prevention-pdtp"
 import { scopeToWorksiteIds } from "./dashboard-helpers"
-import { WorksiteActivityChart } from "./dashboard-charts"
+import {
+  OperationalTrendChart,
+  ModuleWorkloadChart,
+  WorksiteActivityChart,
+  SstTrendChart,
+  SstAccidentChart,
+  MaterialEnvironmentalChart,
+  FuelConsumptionChart,
+  MaintenanceTrendChart,
+} from "./dashboard-charts"
 import { listEppCoverageGaps } from "@/lib/services/prevention-epp"
 import { getCanonicalSafetyIndicatorYear, getMaterialEnvironmentalEvents } from "@/lib/services/prevention-indicadores"
 import {
@@ -82,7 +93,7 @@ export default async function DashboardPage() {
   const canViewCapa = can(session, "prevention:capa:view")
   const canManagePdtp = can(session, "prevention:pdtp:program:manage")
 
-  const [data, queue, activity, stockAlertCount, eppGapsCount, periodMetrics, backlogComparisons] = await Promise.all([
+  const [data, queue, activity, stockAlertCount, eppGapsCount, periodMetrics, backlogComparisons, trendHistory, fuelTrend, maintenanceTrend] = await Promise.all([
     getDashboardData(session),
     getOperationalWorkQueue(session, { limit: 25 }),
     listOperationalActivity(session, 6),
@@ -95,11 +106,13 @@ export default async function DashboardPage() {
       : Promise.resolve(0),
     getOperationalPeriodMetrics(session),
     getOperationalBacklogComparisons(session),
+    getOperationalTrendHistory(session, 6),
+    getFuelMonthlyTrend(session, 6),
+    getMaintenanceMonthlyTrend(session, 6),
   ])
   const tasks = queue.items.map(toDashboardTask)
   const criticalTaskCount = queue.summary.critical
   const deliveryTaskCount = queue.summary.moduleCounts.entregas ?? 0
-  const maxWorksiteCost = Math.max(...data.worksitesBreakdown.map((row) => row.totalCost), 1)
 
   const approvalRate = data.summary.totalRequests > 0
     ? Math.round((data.summary.approvedRequests / data.summary.totalRequests) * 100)
@@ -184,10 +197,48 @@ export default async function DashboardPage() {
       ? "Todas las faenas autorizadas"
       : "Faenas autorizadas"
 
+  // ── Datos de tendencia para charts ──
+  const trendData = trendHistory.map((point) => ({
+    month: point.month,
+    requests: point.requests,
+    orders: point.orders,
+    receipts: point.receipts,
+  }))
+  const hasTrendData = trendData.some((d) => d.requests > 0 || d.orders > 0 || d.receipts > 0)
+  const hasSstData = sstPoints.length > 0
+  const hasMaterialEnvData = materialEnvPoints.length > 0
+  const hasFuelData = fuelTrend.some((d) => d.liters > 0 || d.loads > 0)
+  const hasMaintenanceData = maintenanceTrend.some((d) => d.completed > 0 || d.scheduled > 0)
+  const hasWorkloadData = tasks.length > 0
+  const hasWorksiteData = data.worksitesBreakdown.length > 0
+  const hasAnyChart = hasTrendData || hasWorkloadData || hasWorksiteData || hasSstData || hasMaterialEnvData || hasFuelData || hasMaintenanceData
+
   return (
     <PageContainer>
       <PageHeader title="Dashboard" actions={<QuickActions session={session} />} />
       <div className="animate-in fade-in duration-[var(--duration-default)]">
+
+        {/* ── Gráficos de Analítica (Grid 2×N, above-the-fold) ── */}
+        {hasAnyChart && (
+          <section className="mb-6" aria-labelledby="analitica-dashboard">
+            <div className="mb-4 flex items-center justify-between">
+              <h2 id="analitica-dashboard" className="text-sm font-bold text-slate-900">Analítica y Tendencias</h2>
+              <span className="text-[11px] font-medium text-slate-400">Datos del año en curso</span>
+            </div>
+            <div className="grid gap-6 grid-cols-1 xl:grid-cols-2">
+              {hasTrendData && <OperationalTrendChart data={trendData} />}
+              {hasWorkloadData && <ModuleWorkloadChart tasks={tasks} />}
+              {hasWorksiteData && <WorksiteActivityChart worksites={data.worksitesBreakdown} />}
+              {hasFuelData && <FuelConsumptionChart data={fuelTrend} />}
+              {hasMaintenanceData && <MaintenanceTrendChart data={maintenanceTrend} />}
+              {hasSstData && <SstTrendChart data={sstPoints} />}
+              {hasSstData && <SstAccidentChart data={sstPoints} />}
+              {hasMaterialEnvData && <MaterialEnvironmentalChart data={materialEnvPoints} />}
+            </div>
+          </section>
+        )}
+
+        {/* ── Control Center: KPIs + Cola de trabajo + Aside ── */}
         <DashboardControlCenter
           firstName={firstName}
           contextLabel={contextLabel}
@@ -204,60 +255,9 @@ export default async function DashboardPage() {
           backlogSummary={buildOperationalBacklogSummary({ backlogComparisons, canViewRequests, canViewPurchasing, canViewCapa, canViewPdtp })}
           metrics={metrics}
           alerts={alerts}
-          periodMetrics={periodMetrics}
-          sstPoints={sstPoints}
-          materialEnvPoints={materialEnvPoints}
           mainSlot={
             <>
               <RecentActivity entries={activity} />
-
-              {/* ── Actividad por faena (Gráfico + Tabla) ── */}
-              {data.worksitesBreakdown.length > 0 && (
-                <div className="space-y-6">
-                  <WorksiteActivityChart worksites={data.worksitesBreakdown} />
-                  <section className="rounded-2xl border border-slate-200/80 bg-white p-5 sm:p-6 shadow-xs" aria-labelledby="actividad-por-faena">
-                    <h2 id="actividad-por-faena" className="text-base font-bold text-slate-900 border-b border-slate-100 pb-3 mb-4">Detalle por faena</h2>
-                    <div className="overflow-x-auto rounded-xl border border-slate-200/80 bg-white">
-                      <table className="w-full border-collapse text-left text-[13px]" aria-label="Actividad y costos por faena">
-                        <thead>
-                          <tr className="border-b border-slate-100 bg-slate-50/50 text-[11px] font-bold uppercase tracking-wider text-slate-500">
-                            <th scope="col" className="px-5 py-3">Faena</th>
-                            <th scope="col" className="px-5 py-3 text-right">Solicitudes</th>
-                            <th scope="col" className="px-5 py-3 text-right">Pendientes</th>
-                            <th scope="col" className="px-5 py-3 text-right">Aprobadas</th>
-                            <th scope="col" className="px-5 py-3 text-right">Total OC</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100">
-                          {data.worksitesBreakdown.map((row) => (
-                            <tr key={row.id} className="transition-colors hover:bg-slate-50/80">
-                              <td className="px-5 py-3.5 font-semibold text-slate-800">{row.name}</td>
-                              <td className="px-5 py-3.5 text-right font-mono tabular-nums text-slate-600">{row.requestsCount}</td>
-                              <td className="px-5 py-3.5 text-right font-mono tabular-nums">
-                                {row.pendingCount > 0
-                                  ? <span className="font-semibold text-blue-600">{row.pendingCount}</span>
-                                  : <span className="text-slate-400">0</span>}
-                              </td>
-                              <td className="px-5 py-3.5 text-right font-mono tabular-nums text-slate-600">{row.approvedCount}</td>
-                              <td className="px-5 py-3.5 text-right">
-                                <div className="ml-auto flex max-w-[15rem] flex-col items-end gap-1.5">
-                                  <span className="font-mono font-bold tabular-nums text-slate-900">{formatCLP(row.totalCost)}</span>
-                                  <span className="h-1.5 w-full overflow-hidden rounded-full bg-slate-100" aria-hidden>
-                                    <span
-                                      className="block h-full rounded-full bg-blue-600"
-                                      style={{ width: `${Math.max(4, Math.round((row.totalCost / maxWorksiteCost) * 100))}%` }}
-                                    />
-                                  </span>
-                                </div>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </section>
-                </div>
-              )}
             </>
           }
           asideSlot={

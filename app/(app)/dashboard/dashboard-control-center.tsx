@@ -22,8 +22,6 @@ import { PriorityBadge } from "@/components/ui/priority-badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { cn, formatDateTime } from "@/lib/utils"
 import { OperationalMetricsStrip } from "./operational-metrics-strip"
-import { DashboardAnalyticsSection, type MaterialEnvironmentalPoint, type SstMonthlyPoint } from "./dashboard-charts"
-import type { OperationalPeriodMetrics } from "@/lib/services/operational-period-metrics"
 import type { WorkPriority, WorkTask, WorkTaskType } from "@/lib/work-queue"
 import type { OperationalWorkItem } from "@/lib/services/operational-work-queue"
 import { WorkAssignmentControl } from "../pendientes/work-assignment-control"
@@ -80,9 +78,6 @@ interface DashboardControlCenterProps {
   backlogSummary: OperationalPeriodSummaryEntry[]
   metrics: DashboardMetric[]
   alerts: DashboardAlert[]
-  periodMetrics?: OperationalPeriodMetrics
-  sstPoints?: SstMonthlyPoint[]
-  materialEnvPoints?: MaterialEnvironmentalPoint[]
   /** Contenido extra de la columna principal, bajo la cola (actividad). */
   mainSlot?: React.ReactNode
   /** Contenido extra del lateral, entre alertas y métricas mensuales (PDTP). */
@@ -131,9 +126,6 @@ export function DashboardControlCenter({
   backlogSummary,
   metrics,
   alerts,
-  periodMetrics,
-  sstPoints,
-  materialEnvPoints,
   mainSlot,
   asideSlot,
 }: DashboardControlCenterProps) {
@@ -237,16 +229,6 @@ export function DashboardControlCenter({
             <>
               {/* ── KPIs accionables (tira editorial, máx. 4) ── */}
               {metrics.length > 0 && <OperationalMetricsStrip metrics={metrics} onSelect={applyPreset} />}
-
-              {/* ── Gráficos de Analítica Operacional (Shadcn Charts) ── */}
-              {periodMetrics && (
-                <DashboardAnalyticsSection
-                  periodMetrics={periodMetrics}
-                  tasks={tasks}
-                  sstPoints={sstPoints}
-                  materialEnvPoints={materialEnvPoints}
-                />
-              )}
 
               {/* ── Cola de trabajo ── */}
               <section id="cola-de-trabajo" className="scroll-mt-4 min-w-0 rounded-2xl border border-slate-200/80 bg-white p-5 sm:p-6 shadow-xs" aria-labelledby="titulo-cola-trabajo">

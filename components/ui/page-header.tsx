@@ -51,7 +51,19 @@ export function PageHeader({ title, description, actions, headerActions, breadcr
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
   }, [newShortcutHref, router])
-  const desktopActions = headerActions ?? actions
+  // `headerActions ?? actions` dejaba sin acción principal, en desktop, a toda
+  // página que pasara AMBOS props: el shell mostraba sólo `headerActions` y la
+  // copia local de `actions` es `lg:hidden`, así que el CTA no existía en
+  // ninguna parte a ≥1024px. Afectaba a compras, bodega, solicitudes y tres
+  // catálogos de admin (lo detectó admin-flow.spec.ts esperando 150s por un
+  // botón "Nuevo proveedor" inexistente). Con ambos presentes van los dos, las
+  // señales primero y el CTA al final, que es el orden del resto del header.
+  const desktopActions = React.useMemo(
+    () => (headerActions && actions
+      ? <>{headerActions}{actions}</>
+      : headerActions ?? actions),
+    [headerActions, actions],
+  )
   const breadcrumbNode = React.useMemo(
     () => Array.isArray(breadcrumb) ? <Breadcrumbs items={breadcrumb} /> : breadcrumb,
     [breadcrumb],

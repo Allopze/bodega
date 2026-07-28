@@ -6,11 +6,19 @@ export interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> 
 }
 
 const Input = React.forwardRef<HTMLInputElement, InputProps>(
-  ({ className, type, error, ...props }, ref) => {
+  ({ className, type, error, onWheel, ...props }, ref) => {
     return (
       <input
         type={type}
         ref={ref}
+        // Un scroll con el cursor encima de un `type="number"` cambia su valor
+        // sin que el usuario lo advierta — y donde hay autoguardado, lo
+        // persiste. Quitar el foco desactiva ese comportamiento del navegador;
+        // si el input no estaba enfocado, `blur()` es un no-op.
+        onWheel={(event) => {
+          if (type === "number") event.currentTarget.blur()
+          onWheel?.(event)
+        }}
         className={cn(
           "flex h-11 sm:h-[34px] w-full rounded-[var(--radius-md)]",
           "border border-[var(--color-border-control)]",

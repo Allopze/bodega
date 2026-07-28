@@ -63,6 +63,18 @@ describe("contraste de tokens de diseño", () => {
     it.each(TEXT_TOKENS)("%s cumple 4.5:1 sobre --color-chrome (sidebar/topbar)", (token) => {
       expect(contrast(token, "color-chrome")).toBeGreaterThanOrEqual(4.5)
     })
+
+    // El texto no vive sólo sobre `surface`: `surface-2` es hover y secundario,
+    // `surface-3` es inset y `bg` es el lienzo. El par más ajustado de la paleta
+    // es text-faint sobre surface-3 (4.53:1): 0.03 de margen, así que oscurecer
+    // ese fondo o aclarar ese texto rompe AA sin que nada más lo note.
+    const SURFACES = ["color-surface-2", "color-surface-3", "color-bg"]
+    it.each(TEXT_TOKENS.flatMap((token) => SURFACES.map((surface) => [token, surface])))(
+      "%s cumple 4.5:1 sobre --%s",
+      (token, surface) => {
+        expect(contrast(token, surface)).toBeGreaterThanOrEqual(4.5)
+      },
+    )
   })
 
   describe("texto de badge sobre su propio tint — WCAG 1.4.3", () => {
