@@ -19,6 +19,18 @@ export interface CampaignAccess {
   permissions: readonly string[]
 }
 
+/**
+ * Error de dominio con mensaje pensado para el usuario. Existe para que la capa
+ * de acciones pueda distinguirlo de un fallo inesperado (driver, SQL) y no
+ * devolver detalles de infraestructura al navegador.
+ */
+export class CampaignDomainError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = "CampaignDomainError"
+  }
+}
+
 const NOT_FOUND = "Campaña preventiva no encontrada o fuera de alcance."
 
 function scopeAllows(scope: WorksiteScope, worksiteId: string) {
@@ -27,7 +39,7 @@ function scopeAllows(scope: WorksiteScope, worksiteId: string) {
 
 function requireAccess(access: CampaignAccess, permission: string, worksiteId?: string) {
   if (!access.permissions.includes(permission) || (worksiteId && !scopeAllows(access.scope, worksiteId))) {
-    throw new Error(NOT_FOUND)
+    throw new CampaignDomainError(NOT_FOUND)
   }
 }
 
@@ -40,7 +52,7 @@ const campaignCreateSchema = z.object({
 
 export async function createCampaign(input: unknown, access: CampaignAccess) {
   const data = campaignCreateSchema.parse(input)
-  requireAccess(access, "prevention:pdtp:program:manage", data.worksiteId)
+  requireAccess(access, "prevention:campaign:manage", data.worksiteId)
 
   const code = `CMP-${nanoid(6).toUpperCase()}`
   const now = new Date().toISOString()
@@ -71,8 +83,8 @@ const attendanceRecordSchema = z.object({
 export async function recordCampaignAttendance(input: unknown, access: CampaignAccess) {
   const data = attendanceRecordSchema.parse(input)
   const [campaign] = await db.select().from(preventionCampaigns).where(eq(preventionCampaigns.id, data.campaignId)).limit(1)
-  if (!campaign) throw new Error(NOT_FOUND)
-  requireAccess(access, "prevention:pdtp:program:manage", campaign.worksiteId)
+  if (!campaign) throw new CampaignDomainError(NOT_FOUND)
+  requireAccess(access, "prevention:campaign:manage", campaign.worksiteId)
 
   const now = new Date().toISOString()
   const rows = data.workerIds.map((workerId) => ({
@@ -105,11 +117,11 @@ const campaignCloseSchema = z.object({
 export async function closeCampaign(input: unknown, access: CampaignAccess) {
   const data = campaignCloseSchema.parse(input)
   const [campaign] = await db.select().from(preventionCampaigns).where(eq(preventionCampaigns.id, data.campaignId)).limit(1)
-  if (!campaign) throw new Error(NOT_FOUND)
-  requireAccess(access, "prevention:pdtp:program:manage", campaign.worksiteId)
+  if (!campaign) throw new CampaignDomainError(NOT_FOUND)
+  requireAccess(access, "prevention:campaign:manage", campaign.worksiteId)
 
-  if (campaign.status === "completed") throw new Error("La campaña ya fue completada.")
-  if (campaign.status === "cancelled") throw new Error("Una campaña cancelada no puede cerrarse.")
+  if (campaign.status === "completed") throw new CampaignDomainError("La campaña ya fue completada.")
+  if (campaign.status === "cancelled") throw new CampaignDomainError("Una campaña cancelada no puede cerrarse.")
 
   const attendance = await db.select().from(preventionCampaignAttendance)
     .where(eq(preventionCampaignAttendance.campaignId, campaign.id))
@@ -151,7 +163,7 @@ export async function closeCampaign(input: unknown, access: CampaignAccess) {
 }
 
 export async function listCampaigns(access: CampaignAccess, worksiteId?: string) {
-  requireAccess(access, "prevention:pdtp:view")
+  requireAccess(access, "prevention:campaign:view")
   const targetWorksiteId = worksiteId ?? (access.scope.mode === "some" ? access.scope.ids[0] : undefined)
 
   const query = db.select({
@@ -172,7 +184,7 @@ export async function listCampaigns(access: CampaignAccess, worksiteId?: string)
 }
 
 export async function getCampaignDetail(campaignId: string, access: CampaignAccess) {
-  requireAccess(access, "prevention:pdtp:view")
+  requireAccess(access, "prevention:campaign:view")
   const [campaign] = await db.select({
     campaign: preventionCampaigns,
     worksiteName: worksites.name,
@@ -184,7 +196,7 @@ export async function getCampaignDetail(campaignId: string, access: CampaignAcce
     .where(eq(preventionCampaigns.id, campaignId))
     .limit(1)
 
-  if (!campaign) throw new Error(NOT_FOUND)
+  if (!campaign) throw new CampaignDomainError(NOT_FOUND)
 
   const attendance = await db.select({
     record: preventionCampaignAttendance,

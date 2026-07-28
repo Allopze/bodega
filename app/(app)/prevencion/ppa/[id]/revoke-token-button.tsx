@@ -1,17 +1,18 @@
 "use client"
 
 import * as React from "react"
-import { useActionState, useTransition } from "react"
 import { Prohibit } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
+import { useOperation } from "@/lib/hooks/use-operation"
 import { revokePpaTokenAction } from "../actions"
-import type { ActionState } from "@/lib/validation/ppa"
 
 export function RevokeTokenButton({ ppaId, revoked }: { ppaId: string; revoked: boolean }) {
   const [open, setOpen] = React.useState(false)
-  const [, action] = useActionState<ActionState, FormData>(revokePpaTokenAction, { ok: false, message: "" })
-  const [pending, startTransition] = useTransition()
+  // Invocación imperativa desde un diálogo de confirmación, no un `<form action>`:
+  // corresponde `useOperation`. Antes usaba `useActionState` con el resultado
+  // descartado (`const [, action]`), así que un fallo al revocar era silencioso.
+  const { pending, message, run } = useOperation()
 
   if (revoked) {
     return (
@@ -22,12 +23,12 @@ export function RevokeTokenButton({ ppaId, revoked }: { ppaId: string; revoked: 
   }
 
   function handleConfirm() {
-    const fd = new FormData()
-    fd.set("id", ppaId)
-    startTransition(() => {
-      action(fd)
-      setOpen(false)
-    })
+    const formData = new FormData()
+    formData.set("id", ppaId)
+    run(
+      () => revokePpaTokenAction({ ok: false, message: "" }, formData),
+      () => setOpen(false),
+    )
   }
 
   return (
@@ -36,6 +37,10 @@ export function RevokeTokenButton({ ppaId, revoked }: { ppaId: string; revoked: 
         <Prohibit size={14} className="mr-1" />
         Revocar acceso público
       </Button>
+
+      {message && (
+        <p className="mt-2 text-xs text-[var(--color-text-muted)]" role="status">{message}</p>
+      )}
 
       <ConfirmDialog
         open={open}

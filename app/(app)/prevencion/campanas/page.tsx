@@ -15,7 +15,7 @@ export const metadata: Metadata = {
 
 export default async function CampanasPage() {
   const session = await requireAuth()
-  if (!can(session, "prevention:pdtp:view")) {
+  if (!can(session, "prevention:campaign:view")) {
     redirect("/prevencion")
   }
 
@@ -85,7 +85,7 @@ export default async function CampanasPage() {
     worksiteId: w.worksiteId,
   }))
 
-  const canManage = can(session, "prevention:pdtp:program:manage")
+  const canManage = can(session, "prevention:campaign:manage")
 
   return (
     <PageContainer width="wide">

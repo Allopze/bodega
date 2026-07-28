@@ -122,7 +122,7 @@ describe("Prevention Campaigns Service (R9)", () => {
   const access: CampaignAccess = {
     userId: USER_ID,
     scope: { mode: "all", ids: [] },
-    permissions: ["prevention:pdtp:view", "prevention:pdtp:program:manage"],
+    permissions: ["prevention:campaign:view", "prevention:campaign:manage"],
   }
 
   it("crea una campaña preventiva activa", async () => {

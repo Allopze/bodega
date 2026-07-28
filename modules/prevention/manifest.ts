@@ -17,6 +17,9 @@ export const preventionModule = {
     "prevention:pdtp:checklist:fill",
     "prevention:pdtp:action:manage",
     "prevention:pdtp:action:verify",
+    "prevention:pdtp:obligation:cancel",
+    "prevention:campaign:view",
+    "prevention:campaign:manage",
     "prevention:docs:view",
     "prevention:docs:manage",
     "prevention:docs:submit_review",
@@ -121,6 +124,9 @@ export const preventionModule = {
     "prevention:pdtp:checklist:fill":   { id: "p-prev-pdtp-cl-fill",   description: "Llenar el checklist de verificación en una ejecución del PDTP" },
     "prevention:pdtp:action:manage":    { id: "p-prev-pdtp-act-manage", description: "Crear/editar acciones correctivas y su seguimiento en el PDTP" },
     "prevention:pdtp:action:verify":    { id: "p-prev-pdtp-act-verify", description: "Verificar el cierre de acciones correctivas del PDTP" },
+    "prevention:pdtp:obligation:cancel": { id: "p-prev-pdtp-obl-cancel", description: "Cancelar necesidades y eventos del PDTP" },
+    "prevention:campaign:view":         { id: "p-prev-camp-v",    description: "Ver campañas preventivas" },
+    "prevention:campaign:manage":       { id: "p-prev-camp-m",    description: "Crear, registrar asistencia y cerrar campañas preventivas" },
     "prevention:docs:view":               { id: "p-prev-docs-v",    description: "Ver la documentación preventiva" },
     "prevention:docs:manage":             { id: "p-prev-docs-m",    description: "Subir archivos, crear carpetas y crear versiones de documentos" },
     "prevention:docs:submit_review":      { id: "p-prev-docs-submit", description: "Enviar versiones documentales a revisión" },
@@ -232,12 +238,9 @@ export const preventionModule = {
           href: "/prevencion/pdtp",
           iconName: "ClipboardText",
           permissions: ["prevention:pdtp:view"],
+          // El item padre ya lleva al dashboard: un hijo "Dashboard" con la misma
+          // href duplicaba la fila y dejaba padre e hijo resaltados a la vez.
           children: [
-            {
-              label: "Dashboard",
-              href: "/prevencion/pdtp",
-              permissions: ["prevention:pdtp:view"],
-            },
             {
               label: "Programas",
               href: "/prevencion/pdtp/programas",
@@ -251,6 +254,16 @@ export const preventionModule = {
             {
               label: "Acciones y seguimiento",
               href: "/prevencion/pdtp/acciones",
+              permissions: ["prevention:pdtp:view"],
+            },
+            {
+              label: "Trabajo por eventos",
+              href: "/prevencion/pdtp/obligaciones",
+              permissions: ["prevention:pdtp:view"],
+            },
+            {
+              label: "Cobertura MIPER y legal",
+              href: "/prevencion/pdtp/cobertura",
               permissions: ["prevention:pdtp:view"],
             },
           ],
@@ -409,6 +422,18 @@ export const preventionModule = {
     { roleSlug: "administrador",       permission: "prevention:pdtp:checklist:manage" },
     { roleSlug: "administrador",       permission: "prevention:pdtp:action:manage" },
     { roleSlug: "administrador",       permission: "prevention:pdtp:action:verify" },
+    // PDTP — Cancelación de necesidades/eventos. Separado de `execute`: reportar
+    // el cumplimiento es trabajo de terreno, anular el compromiso es gestión.
+    { roleSlug: "prevencionista",      permission: "prevention:pdtp:obligation:cancel" },
+    { roleSlug: "administrador",       permission: "prevention:pdtp:obligation:cancel" },
+    // Campañas preventivas — antes reusaban `prevention:pdtp:program:manage`,
+    // que es el permiso para editar el programa anual, no para correr campañas.
+    { roleSlug: "prevencionista",      permission: "prevention:campaign:view" },
+    { roleSlug: "prevencionista",      permission: "prevention:campaign:manage" },
+    { roleSlug: "prevencionista_faena", permission: "prevention:campaign:view" },
+    { roleSlug: "prevencionista_faena", permission: "prevention:campaign:manage" },
+    { roleSlug: "administrador",       permission: "prevention:campaign:view" },
+    { roleSlug: "administrador",       permission: "prevention:campaign:manage" },
     // Documentación
     { roleSlug: "prevencionista",      permission: "prevention:docs:view" },
     { roleSlug: "prevencionista",      permission: "prevention:docs:manage" },

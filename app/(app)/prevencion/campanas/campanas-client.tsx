@@ -97,14 +97,14 @@ export function CampanasClient({
         description: newDescription,
         pdtpActivityNumbers: [85],
       })
-      if (res.success) {
+      if (res.ok) {
         setIsCreateOpen(false)
         setNewTitle("")
         setNewDescription("")
         setNewWorksiteId("")
         router.refresh()
       } else {
-        setError(res.error ?? "Ocurrió un error")
+        setError(res.message ?? "Ocurrió un error")
       }
     })
   }
@@ -117,12 +117,12 @@ export function CampanasClient({
         campaignId: attendanceCampaign.id,
         workerIds: selectedWorkerIds,
       })
-      if (res.success) {
+      if (res.ok) {
         setAttendanceCampaign(null)
         setSelectedWorkerIds([])
         router.refresh()
       } else {
-        setError(res.error ?? "Ocurrió un error")
+        setError(res.message ?? "Ocurrió un error")
       }
     })
   }
@@ -135,12 +135,12 @@ export function CampanasClient({
         campaignId: closeCampaignItem.id,
         evidenceUrl: evidenceUrl.trim() || undefined,
       })
-      if (res.success) {
+      if (res.ok) {
         setCloseCampaignItem(null)
         setEvidenceUrl("")
         router.refresh()
       } else {
-        setError(res.error ?? "Ocurrió un error")
+        setError(res.message ?? "Ocurrió un error")
       }
     })
   }

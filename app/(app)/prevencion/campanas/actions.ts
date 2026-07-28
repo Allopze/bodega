@@ -1,11 +1,13 @@
-"use me"
 "use server"
 
 import { revalidatePath } from "next/cache"
-import { z } from "zod"
+import { z, ZodError } from "zod"
 import { requireAuth } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
+import { unexpectedActionError } from "@/lib/actions/safe-server-action"
+import type { ActionState } from "@/lib/validation/prevention"
 import {
+  CampaignDomainError,
   closeCampaign,
   createCampaign,
   recordCampaignAttendance,
@@ -39,41 +41,57 @@ async function getAccess(): Promise<CampaignAccess> {
   }
 }
 
-export async function createCampaignAction(formData: unknown) {
+/**
+ * Los errores de dominio llevan mensaje pensado para el usuario y se devuelven
+ * tal cual; cualquier otro pasa por `unexpectedActionError`, que loguea y
+ * responde genérico para no filtrar detalles de driver o SQL al navegador.
+ */
+function campaignFailure(error: unknown, action: string): ActionState {
+  if (error instanceof ZodError) {
+    return {
+      ok: false,
+      message: "Revisa los campos marcados.",
+      fieldErrors: error.flatten().fieldErrors as Record<string, string[]>,
+    }
+  }
+  if (error instanceof CampaignDomainError) {
+    return { ok: false, message: error.message }
+  }
+  return unexpectedActionError(error, `prevencion/campanas/${action}`)
+}
+
+export async function createCampaignAction(formData: unknown): Promise<ActionState> {
   try {
     const access = await getAccess()
     const parsed = createCampaignSchema.parse(formData)
-    const created = await createCampaign(parsed, access)
+    await createCampaign(parsed, access)
     revalidatePath("/prevencion/campanas")
-    return { success: true, campaign: created }
+    return { ok: true }
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Error al crear la campaña."
-    return { success: false, error: message }
+    return campaignFailure(err, "createCampaign")
   }
 }
 
-export async function recordCampaignAttendanceAction(formData: unknown) {
+export async function recordCampaignAttendanceAction(formData: unknown): Promise<ActionState> {
   try {
     const access = await getAccess()
     const parsed = attendanceSchema.parse(formData)
     const result = await recordCampaignAttendance(parsed, access)
     revalidatePath("/prevencion/campanas")
-    return { success: true, count: result.recordedCount }
+    return { ok: true, message: `${result.recordedCount} asistencia(s) registrada(s).` }
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Error al registrar la asistencia."
-    return { success: false, error: message }
+    return campaignFailure(err, "recordCampaignAttendance")
   }
 }
 
-export async function closeCampaignAction(formData: unknown) {
+export async function closeCampaignAction(formData: unknown): Promise<ActionState> {
   try {
     const access = await getAccess()
     const parsed = closeCampaignSchema.parse(formData)
     const result = await closeCampaign(parsed, access)
     revalidatePath("/prevencion/campanas")
-    return { success: true, result }
+    return { ok: true, message: `Campaña cerrada con ${result.reachedWorkers} trabajador(es) alcanzado(s).` }
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Error al cerrar la campaña."
-    return { success: false, error: message }
+    return campaignFailure(err, "closeCampaign")
   }
 }

@@ -12,6 +12,7 @@ import {
   worksites,
 } from "@/db/schema"
 import { nanoid } from "@/lib/id"
+import { INCIDENT_EVENT_LABELS, INCIDENT_SEVERITY_LABELS } from "@/lib/prevention/incidents"
 import type { WorksiteScope } from "@/lib/auth/scope"
 import {
   calculateCanonicalIndicatorPeriod,
@@ -910,25 +911,6 @@ export async function getIncidentAnalyticsData(
     incidentScope,
   ))
 
-  const EVENT_TYPE_LABELS: Record<string, string> = {
-    work_accident: "Accidente del trabajo",
-    commute_accident: "Accidente de trayecto",
-    dangerous_incident: "Incidente peligroso",
-    material_damage: "Daño material",
-    environmental_spill: "Daño/Derrame ambiental",
-    vehicle_event: "Evento vehicular",
-    suspected_occupational_disease: "Sospecha enf. profesional",
-    contractor_or_third_party: "Contratista / Tercero",
-  }
-
-  const POTENTIAL_SEVERITY_LABELS: Record<string, string> = {
-    low: "Bajo",
-    medium: "Medio",
-    high: "Alto",
-    critical: "Crítico",
-    fatal: "Fatal",
-  }
-
   const typeCounts = new Map<string, number>()
   const potentialCounts = new Map<string, number>()
   const worksiteMap = new Map<string, { minor: number; medical: number; lostTime: number; serious: number; total: number }>()
@@ -948,15 +930,19 @@ export async function getIncidentAnalyticsData(
     else if (row.actualSeverity === "serious" || row.actualSeverity === "fatal") wsAcc.serious++
   }
 
+  // Etiquetas canónicas de `lib/prevention/incidents`: las mismas que usa el
+  // listado de incidentes. Antes estaban duplicadas acá con otra redacción
+  // ("Incidente peligroso" vs "Incidente o suceso peligroso", "Bajo" vs "Baja"),
+  // así que el mismo tipo de evento se leía distinto según la pantalla (regla A6).
   const commonAccidents = Array.from(typeCounts.entries()).map(([type, count]) => ({
     type,
-    label: EVENT_TYPE_LABELS[type] || type,
+    label: INCIDENT_EVENT_LABELS[type] || type,
     count,
   })).sort((a, b) => b.count - a.count)
 
   const potentialSeverity = Array.from(potentialCounts.entries()).map(([severity, count]) => ({
     severity,
-    label: POTENTIAL_SEVERITY_LABELS[severity] || severity,
+    label: INCIDENT_SEVERITY_LABELS[severity] || severity,
     count,
   })).sort((a, b) => b.count - a.count)
 
