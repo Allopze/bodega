@@ -58,21 +58,29 @@ test.describe("Catálogos administrativos migrados", () => {
   })
 
   test("proveedores de combustible mantienen crear y ciclo de estado", async ({ page }) => {
+    // fuel_suppliers.rut es unique: si un retry reintenta con el mismo RUT
+    // tras un intento previo que sí alcanzó a crear el proveedor, la segunda
+    // creación falla por duplicado y el diálogo queda abierto con un error
+    // que nada tiene que ver con la causa original. Un sufijo único por
+    // intento evita ese falso negativo en retries.
+    const unique = Date.now().toString().slice(-6)
+    const supplierName = `Proveedor Catálogo E2E ${unique}`
+
     await page.goto("/admin/flota-catalogos/proveedores-combustible")
     await page.getByRole("button", { name: "Nuevo proveedor" }).first().click()
     const dialog = page.getByRole("dialog")
     await expect(dialog).toBeVisible()
-    await dialog.getByLabel("Razón social").fill("Proveedor Catálogo E2E")
-    await dialog.getByLabel("RUT").fill("76.444.555-6")
-    await dialog.getByLabel("Email").fill("catalogo-e2e@chome.cl")
+    await dialog.getByLabel("Razón social").fill(supplierName)
+    await dialog.getByLabel("RUT").fill(`76.444.${unique}-6`)
+    await dialog.getByLabel("Email").fill(`catalogo-e2e-${unique}@chome.cl`)
     await dialog.getByRole("button", { name: "Crear proveedor" }).click()
     await expect(dialog).toBeHidden()
-    await expect(page.getByRole("cell", { name: "Proveedor Catálogo E2E", exact: true })).toBeVisible()
+    await expect(page.getByRole("cell", { name: supplierName, exact: true })).toBeVisible()
 
-    await page.getByRole("button", { name: "Desactivar proveedor de combustible Proveedor Catálogo E2E" }).click()
+    await page.getByRole("button", { name: `Desactivar proveedor de combustible ${supplierName}` }).click()
     await page.getByRole("dialog").getByRole("button", { name: "Desactivar" }).click()
-    await expect(page.getByRole("button", { name: "Activar proveedor de combustible Proveedor Catálogo E2E" })).toBeVisible()
-    await page.getByRole("button", { name: "Activar proveedor de combustible Proveedor Catálogo E2E" }).click()
-    await expect(page.getByRole("button", { name: "Desactivar proveedor de combustible Proveedor Catálogo E2E" })).toBeVisible()
+    await expect(page.getByRole("button", { name: `Activar proveedor de combustible ${supplierName}` })).toBeVisible()
+    await page.getByRole("button", { name: `Activar proveedor de combustible ${supplierName}` }).click()
+    await expect(page.getByRole("button", { name: `Desactivar proveedor de combustible ${supplierName}` })).toBeVisible()
   })
 })
