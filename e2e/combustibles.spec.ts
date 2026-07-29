@@ -36,7 +36,7 @@ test.describe("Combustibles module", () => {
     await page.goto("/combustibles/importar")
     await expect(page.locator("h1").first()).toContainText("Importar consumos")
     await expect(page.getByText("Carga manual de reportes")).toBeVisible()
-    await expect(page.getByText("Historial de importaciones")).toBeVisible()
+    await expect(page.getByRole("heading", { name: "Historial de importaciones" })).toBeVisible()
   })
 
   test("create a new fuel load", async ({ page }) => {

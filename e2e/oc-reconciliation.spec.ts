@@ -12,8 +12,9 @@ test.describe("Conciliación OC-factura-recepción", () => {
     await page.goto(`/compras/${OC_FIXTURE_ID}`)
     await expect(page.getByRole("heading", { name: /OC-2026/ })).toBeVisible({ timeout: 10_000 })
 
-    // The conciliación panel should be visible (fixture now has received quantities)
-    const conciliacion = page.getByText("Conciliación OC-factura-recepción")
+    // The reconciliation panel only renders once the OC has an invoice attached.
+    const conciliacion = page.getByText("Conciliación por ítem")
     await expect(conciliacion).toBeVisible({ timeout: 10_000 })
+    await expect(page.getByText("Total facturado")).toBeVisible()
   })
 })

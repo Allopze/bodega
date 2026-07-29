@@ -616,10 +616,34 @@ async function main() {
     createdAt: now,
   })
 
-  // Add received quantities to the OC items so reconciliation panel has data
+  // Add received quantities to the OC items so the receiving flow has data
   await db.update(schema.purchaseOrderItems)
     .set({ quantityOfficeReceived: 10, quantityReceived: 5 })
     .where(eq(schema.purchaseOrderItems.id, "oc-item-e2e-01"))
+
+  // The "Conciliación por ítem" panel on the OC detail page only renders when
+  // the OC has at least one invoice attached (see invoices-section.tsx) — it
+  // reconciles invoiced quantity vs. OC quantity, not received quantity.
+  await db.insert(schema.purchaseOrderInvoices).values({
+    id: "oc-invoice-e2e",
+    purchaseOrderId: "oc-e2e",
+    invoiceNumber: "FAC-E2E-0001",
+    amount: 10000,
+    issueDate: "2026-07-15",
+    fileName: "factura-e2e.pdf",
+    filePath: "storage/purchase-orders/factura-e2e-fixture.pdf",
+    uploadedBy: "user-admin-e2e",
+    uploadedAt: now,
+  })
+  await db.insert(schema.purchaseOrderInvoiceItems).values({
+    id: "oc-invoice-item-e2e",
+    invoiceId: "oc-invoice-e2e",
+    purchaseOrderItemId: "oc-item-e2e-01",
+    productName: "Guante E2E",
+    quantity: 10,
+    unitPrice: 1000,
+    subtotal: 10000,
+  })
 
   // Advance the OC sequence past the fixture code (OC-2026-0001) so the
   // first real app call gets OC-2026-0002 and doesn't collide.

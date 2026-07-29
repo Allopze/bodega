@@ -629,7 +629,7 @@ test.describe("PPA Digital — SW cache eviction", () => {
 
     // Step 3: Check cache size via the Cache API from the page context
     const cacheSize = await page.evaluate(async () => {
-      const cache = await caches.open("ppa-v3")
+      const cache = await caches.open("ppa-v4")
       const keys = await cache.keys()
       return keys.length
     })
@@ -652,7 +652,7 @@ test.describe("PPA Digital — SW cache eviction", () => {
 
     // Step 2: Add synthetic cache entries to push close to MAX_CACHE_ENTRIES
     await page.evaluate(async (count) => {
-      const cache = await caches.open("ppa-v3")
+      const cache = await caches.open("ppa-v4")
       for (let i = 0; i < count; i++) {
         const syntheticUrl = `https://example.com/test-${i}.html`
         await cache.put(syntheticUrl, new Response(`test ${i}`))
@@ -668,7 +668,7 @@ test.describe("PPA Digital — SW cache eviction", () => {
 
     // Step 5: Check that the cache was evicted to stay under the limit
     const finalSize = await page.evaluate(async () => {
-      const cache = await caches.open("ppa-v3")
+      const cache = await caches.open("ppa-v4")
       const keys = await cache.keys()
       return keys.length
     })
@@ -691,7 +691,7 @@ test.describe("PPA Digital — SW cache eviction", () => {
     // /ppa/result/[token] is a dynamic route with no content at that exact
     // path, so only /ppa is expected to precache on install.
     await expect.poll(async () => page.evaluate(async () => {
-      const cache = await caches.open("ppa-v3")
+      const cache = await caches.open("ppa-v4")
       const keys = await cache.keys()
       const urls = keys.map((req) => new URL(req.url).pathname)
       return {

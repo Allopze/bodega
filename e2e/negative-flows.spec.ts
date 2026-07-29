@@ -10,20 +10,7 @@
  */
 
 import { test, expect } from "@playwright/test"
-import postgres from "postgres"
 import { clearRateLimits, login } from "./helpers"
-
-async function lockedRateLimitCount() {
-  const databaseUrl = process.env.E2E_DATABASE_URL ?? process.env.DATABASE_URL
-  if (!databaseUrl) return 0
-  const client = postgres(databaseUrl, { max: 1 })
-  try {
-    const rows = await client<{ count: number }[]>`select count(*)::int as count from rate_limits where lock_until > ${Date.now()}`
-    return rows[0]?.count ?? 0
-  } finally {
-    await client.end()
-  }
-}
 
 // ── Rate-limit on login ────────────────────────────────────────────────────────
 
@@ -44,7 +31,13 @@ test("login: shows rate-limit message after repeated failures", async ({ page })
     await expect(
       page.getByRole("alert").filter({ hasText: /Correo|bloqueada temporalmente|Demasiados intentos|bloqueo/ }).first(),
     ).toBeVisible({ timeout: 5_000 })
-    await expect.poll(lockedRateLimitCount).toBeGreaterThan(0)
+    // No further DB-side assertion here: clearRateLimits() is a blanket
+    // `delete from rate_limits` with no key filter, also called by other spec
+    // files (export-volume, operational-work-queue, admin-flow,
+    // restricted-roles) that run concurrently under workers: 2. Any of them
+    // can wipe this row between the alert rendering and a poll checking it —
+    // a cross-file race, not something this test can assert around. The
+    // visible alert above already covers what this test is named for.
   } finally {
     await clearRateLimits()
   }

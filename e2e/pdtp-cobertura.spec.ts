@@ -60,6 +60,12 @@ test.describe("PDTP — Cobertura MIPER y legal", () => {
     await activityCard.getByRole("button", { name: "Vincular fuente" }).click()
 
     const linkDialog = page.getByRole("dialog")
+    // El diálogo por defecto muestra la primera faena en orden alfabético, no
+    // necesariamente "Faena E2E" (hay más faenas fixture que RE-99-E2E). El
+    // picker de "Fuente" filtra por la faena seleccionada aquí, así que hay
+    // que fijarla explícitamente antes de elegir el tipo de fuente.
+    await linkDialog.getByLabel("Faena").click()
+    await page.getByRole("option", { name: "Faena E2E", exact: true }).click()
     await linkDialog.getByLabel("Tipo").click()
     await page.getByRole("option", { name: "Requisito legal" }).click()
     // Con una fuente real publicada y aplicable a la faena, "Fuente" pasa de
