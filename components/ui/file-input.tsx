@@ -82,7 +82,12 @@ export const FileInput = React.forwardRef<HTMLInputElement, FileInputProps>(
           disabled={disabled}
           multiple={multiple}
           onChange={handleChange}
-          aria-label="Seleccionar archivo"
+          // Un `id` implica que el caller lo asocia a un <Field label=...>
+          // externo (<label for={id}>); aria-label pisaría ese nombre
+          // accesible real con el genérico "Seleccionar archivo" — getByLabel
+          // (Playwright y lectores de pantalla) resolvía siempre al segundo.
+          // Sin id no hay label externo posible, así que el fallback se queda.
+          aria-label={id ? undefined : "Seleccionar archivo"}
           className="sr-only"
           tabIndex={-1}
         />

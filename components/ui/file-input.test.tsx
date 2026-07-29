@@ -40,4 +40,14 @@ describe("FileInput", () => {
 
     expect(clickSpy).toHaveBeenCalledTimes(1)
   })
+
+  it("has a fallback aria-label only when there's no id for an external <Field label> to target", () => {
+    const withoutId = render(<FileInput name="file" />)
+    const inputWithoutId = withoutId.container.querySelector('input[type="file"]') as HTMLInputElement
+    expect(inputWithoutId).toHaveAttribute("aria-label", "Seleccionar archivo")
+
+    const withId = render(<FileInput id="product-import-file" name="file" />)
+    const inputWithId = withId.container.querySelector('input[type="file"]') as HTMLInputElement
+    expect(inputWithId).not.toHaveAttribute("aria-label")
+  })
 })
