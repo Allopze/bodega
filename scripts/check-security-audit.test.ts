@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import {
   AUDIT_ALLOWLIST,
   findExpiredAllowlistEntries,
+  findStreamingWorkbookWriterUsage,
   findUncoveredFindings,
   hasRemoteImagePatterns,
   resolveGhsaIds,
@@ -91,6 +92,14 @@ describe("hasRemoteImagePatterns", () => {
 
   it("does not flag configs without remote image sources", () => {
     expect(hasRemoteImagePatterns("images: { formats: ['image/webp'] }")).toBe(false)
+  })
+})
+
+describe("findStreamingWorkbookWriterUsage", () => {
+  it("does not flag its own source file, which documents WorkbookWriter by name", () => {
+    // Regresión: una vez trackeado por git, este archivo aparecía en su propio
+    // git grep porque su justificación menciona "WorkbookWriter" y "exceljs/lib/stream".
+    expect(findStreamingWorkbookWriterUsage()).not.toContain("scripts/check-security-audit.ts")
   })
 })
 

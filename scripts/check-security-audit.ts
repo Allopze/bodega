@@ -95,7 +95,16 @@ export function findStreamingWorkbookWriterUsage(): string[] {
   try {
     const matches = execFileSync(
       "git",
-      ["grep", "-lIE", "WorkbookWriter|exceljs/lib/stream", "--", "*.ts", "*.tsx"],
+      [
+        "grep",
+        "-lIE",
+        "WorkbookWriter|exceljs/lib/stream",
+        "--",
+        "*.ts",
+        "*.tsx",
+        ":!scripts/check-security-audit.ts",
+        ":!scripts/check-security-audit.test.ts",
+      ],
       { encoding: "utf8" },
     )
     return matches.split("\n").filter(Boolean)
