@@ -1,9 +1,11 @@
+import fs from "node:fs"
 import path from "node:path"
 import { expect, test } from "@playwright/test"
 import postgres from "postgres"
 import { login } from "./helpers"
 
 const workbookPath = path.resolve(process.cwd(), "CONTROL_MANUAL_COMBUSTIBLES_UNIFICADO.xlsx")
+const hasRealWorkbook = fs.existsSync(workbookPath)
 
 async function resolvePendingMappings(page: import("@playwright/test").Page) {
   const mappings = page.getByRole("combobox", { name: /Destino de/ })
@@ -32,6 +34,7 @@ test.describe("TAE — importación histórica real", () => {
   })
 
   test("importa 971 filas, conserva evidencias y bloquea el mismo archivo", async ({ page }) => {
+    test.skip(!hasRealWorkbook, "Requiere CONTROL_MANUAL_COMBUSTIBLES_UNIFICADO.xlsx real en la raíz del repo (dato operacional, no se commitea)")
     test.setTimeout(180_000)
     await login(page)
     await page.goto("/combustibles/tae/importar")

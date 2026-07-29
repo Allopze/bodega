@@ -194,6 +194,7 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
     categoryName:   p.categoryId,
     referencePrice: p.referencePrice,
     isInactive:     !p.isActive,
+    familyId:       p.familyId,
     preferredSupplierId: preferredSupplierByProduct.get(p.id) ?? null,
     attributes:     allAttrs
       .filter((a) => a.productId === p.id)

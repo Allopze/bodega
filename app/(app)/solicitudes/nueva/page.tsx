@@ -88,6 +88,7 @@ export default async function NuevaSolicitudPage() {
     unitOfMeasure:  p.unitOfMeasure,
     categoryName:   p.categoryId,
     referencePrice: p.referencePrice,
+    familyId:       p.familyId,
     preferredSupplierId: preferredSupplierByProduct.get(p.id) ?? null,
     attributes:     allAttrs
       .filter((a) => a.productId === p.id)

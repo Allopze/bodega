@@ -13,6 +13,7 @@ export interface ProductOption {
   categoryName:    string
   referencePrice:  number | null
   isInactive?:     boolean
+  familyId:        string | null
   preferredSupplierId: string | null
   attributes:      { id: string; name: string; type: string; isRequired: boolean; options: string | null }[]
 }

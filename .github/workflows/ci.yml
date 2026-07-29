@@ -13,8 +13,10 @@ permissions:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    # Full E2E suite (~10-16 min) added after build; prior steps run ~10-12 min.
-    timeout-minutes: 45
+    # Full pipeline needs ~25-30 min end to end once Postgres suites, build
+    # and the full E2E run (workers: 2, 1 retry on failure) actually execute;
+    # 45 min left no margin and let the job get force-cancelled mid-report.
+    timeout-minutes: 75
     strategy:
       matrix:
         node-version: [20]

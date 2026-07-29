@@ -42,6 +42,15 @@ DATABASE_URL="$DB_URL" \
 E2E_ALLOW_DESTRUCTIVE_RESET="${E2E_ALLOW_DESTRUCTIVE_RESET:-}" \
 npm run e2e:setup
 
+# El job de CI ya corrió su propio `npm run build` en este mismo workspace
+# (paso "Build", para validar que compila). Si esta build reutiliza ese
+# `.next/cache` de Turbopack, algunos chunks del cliente pueden quedar
+# desincronizados del manifest de Server Actions que genera esta segunda
+# build, y el navegador falla con "Failed to find Server Action" al enviar
+# cualquier formulario — la página nunca navega, como si el submit no hiciera
+# nada. rm -rf antes de reconstruir garantiza una build autoconsistente.
+rm -rf .next
+
 DATABASE_URL="$DB_URL" \
 AUTH_SECRET="$AUTH_SECRET_VALUE" \
 NEXTAUTH_SECRET="$AUTH_SECRET_VALUE" \
