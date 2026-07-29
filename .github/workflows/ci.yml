@@ -157,6 +157,11 @@ jobs:
         run: npm run perf:queries
 
       - name: Build
+        env:
+          # next build corre su propia verificación de TypeScript en un worker
+          # aparte del paso "Typecheck"; el mismo límite de heap por defecto
+          # de V8 se agota ahí también en este runner.
+          NODE_OPTIONS: --max-old-space-size=4096
         run: npm run build
 
       - name: Bundle size budget
