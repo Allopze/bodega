@@ -171,4 +171,10 @@ jobs:
         run: npx playwright install --with-deps chromium
 
       - name: E2E full suite
+        env:
+          # e2e/start-server.sh corre su propio `npm run build` para levantar
+          # el standalone que sirve Playwright; mismo OOM de heap por defecto
+          # que los pasos Typecheck/Build. NODE_OPTIONS se hereda hasta el
+          # subproceso `bash e2e/start-server.sh` que arranca webServer.
+          NODE_OPTIONS: --max-old-space-size=4096
         run: npx playwright test
