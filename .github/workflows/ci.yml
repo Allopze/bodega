@@ -76,6 +76,11 @@ jobs:
           npm run db:migrate
 
       - name: Typecheck
+        env:
+          # El runner hosted (7 GB, compartido con el contenedor de Postgres)
+          # hace que tsc agote el heap por defecto de V8 (~2 GB) en este
+          # repo; no ocurre en desarrollo local con más memoria disponible.
+          NODE_OPTIONS: --max-old-space-size=4096
         run: npm run typecheck
 
       - name: Lint
