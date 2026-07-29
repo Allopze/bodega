@@ -12,6 +12,7 @@
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "check:secrets": "tsx scripts/check-env-files.ts",
+    "check:security-audit": "tsx scripts/check-security-audit.ts",
     "verify:epp-lots": "tsx scripts/verify-epp-lot-reconciliation.ts",
     "check:drizzle-aliases": "bash scripts/check-drizzle-aliases.sh",
     "check:bundle-budget": "tsx scripts/check-bundle-budget.ts",

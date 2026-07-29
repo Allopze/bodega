@@ -58,14 +58,17 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Audit dependencies
-        run: npm audit --audit-level=high
-
       - name: Check env files
         run: npm run check:secrets
 
-      - name: Security audit — npm audit
-        run: npm audit --omit=dev --omit=peer --audit-level=high
+      # npm audit --audit-level=high es todo-o-nada; los hallazgos altos actuales
+      # (brace-expansion vía ExcelJS/archiver, sharp vía next) están documentados
+      # como no alcanzables en esta app (ver AUDITORIA_BUGS_2026-07-28.md, P1-22,
+      # pasada 46). Este script permite explícitamente solo esos GHSA con su
+      # justificación y guardrails, y falla ante cualquier hallazgo nuevo o ante
+      # el vencimiento de su fecha de re-revisión.
+      - name: Audit dependencies (allowlist documentado)
+        run: npm run check:security-audit
 
       - name: Verify Drizzle migrations
         run: |

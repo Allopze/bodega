@@ -705,6 +705,24 @@ La ejecución remota no puede quedar verde hasta publicar los cambios locales y 
 
 **Estado de salida:** no GO productivo mientras P1-22, CI remoto, migración/conciliación EPP y respaldo operativo sigan abiertos.
 
+### Pasada 46 — 2026-07-28
+
+| Hallazgo / gate | Estado | Implementación y evidencia |
+|---|---|---|
+| P1-22 | Cerrado con allowlist documentado, evidencia de no-alcanzabilidad | Se rastreó el código fuente en vez de solo `npm audit`: (1) el vector de `brace-expansion` (GHSA-mh99-v99m-4gvg) dentro de `archiver` solo se activa desde `Archiver.prototype.directory()`/`.glob()` (`readdir-glob`); ExcelJS solo requiere `archiver` desde su `WorkbookWriter` de streaming (`lib/stream/xlsx/workbook-writer.js`), que únicamente llama `.append()`/`.file()`, y **ningún archivo de esta app importa esa API de streaming** — los ~43 archivos que usan ExcelJS llaman `.xlsx.writeBuffer()`/`.load()`, que usa `jszip`. El resto de la cadena (`minimatch`, `glob`, `archiver-utils`, `rimraf`, `zip-stream`, `readdir-glob`, `archiver`, `exceljs`, y los 7 paquetes de la rama ESLint, dev-only) son propagación de la misma vulnerabilidad, no hallazgos independientes. (2) El `sharp` vulnerable (GHSA-f88m-g3jw-g9cj) solo vive anidado en `next`, usado por `/_next/image`; los únicos usos de `next/image` sobre contenido de usuario (`evidence-thumbnail.tsx`, `tae-form.tsx`) fijan `unoptimized`, `next.config.ts` no define `remotePatterns`/`domains` externos, y el `sharp` que sí procesa fotos reales (OCR de TAE/facturas) usa la copia raíz 0.35.3, no vulnerable. Se agregó `scripts/check-security-audit.ts` (+ `npm run check:security-audit`): permite explícitamente solo esos 2 GHSA con su justificación, falla ante cualquier hallazgo alto/crítico nuevo, ante cualquier uso futuro de `WorkbookWriter`/`exceljs/lib/stream`, ante `remotePatterns`/`domains` en `next.config.ts`, y ante el vencimiento de su fecha de re-revisión (2026-10-28). El CI reemplaza los dos pasos previos de `npm audit --audit-level=high` por este gate único. Se probaron y descartaron antes las otras dos opciones: migrar ExcelJS (costo alto para riesgo ya ~cero) y un fork/alias local vía `overrides` (funcionalmente correcto en el diseño, pero `npm@9` no soporta de forma confiable un override `file:` acotado sin romper la copia de ESLint; se revirtió sin dejar cambios). |
+
+Verificación de la pasada: `npx vitest run scripts/check-security-audit.test.ts` (12 pruebas verdes, incluida la resolución de cadenas de advisories y el rechazo de severidad crítica), `npm run check:security-audit` (verde contra el `npm audit` real), verificación manual del guardrail de `WorkbookWriter` (se plantó la cadena en un archivo trackeado, el gate la detectó, se revirtió sin dejar rastro), `npx tsc --noEmit`, `npm run lint` y `git diff --check` (verdes).
+
+### Pendiente después de pasada 46
+
+| Prioridad | Pendiente real | Condición de cierre |
+|---|---|---|
+| Evidencia | CI remoto sin ejecución verde de estos cambios. | Publicar el commit con el gate nuevo, ejecutar CI y adjuntar la ejecución verde. |
+| Release y datos | La base configurada aún no tiene `inventory_lots`; el preflight EPP falla correctamente hasta aplicar la release completa. | Publicar la release compatible, ejecutar `db:migrate` ordenado y ejecutar `npm run verify:epp-lots` contra datos productivos con evidencia de conciliación. |
+| Backups | La detección local confirma que no hay remoto rclone ni cuenta de servicio configurados. | Configurar y probar backup/restauración operacional en el entorno autorizado. |
+
+**Estado de salida:** no GO productivo mientras la evidencia de CI remoto, la migración/conciliación EPP y el respaldo operativo sigan abiertos. P1-22 ya no bloquea el gate de CI.
+
 ## Alcance y método
 
 - Fuentes vivas auditadas: `app/(app)/**`, `app/api/**`, `lib/**`, `db/schema/**`
