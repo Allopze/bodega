@@ -29,7 +29,10 @@ export default defineConfig({
     command: `E2E_DATABASE_URL=${databaseUrl} E2E_ALLOW_DESTRUCTIVE_RESET=true E2E_PORT=${port} bash e2e/start-server.sh`,
     url: `http://localhost:${port}/login`,
     reuseExistingServer: true,
-    timeout: 180_000,
+    // start-server.sh runs db setup THEN a full `npm run build` THEN starts
+    // the server; the plain CI "Build" step alone (no cache) already takes
+    // ~170s, leaving no margin at 180s and causing intermittent CI timeouts.
+    timeout: 300_000,
   },
   projects: [
     {
