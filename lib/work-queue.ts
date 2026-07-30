@@ -4,6 +4,7 @@
  * @module work-queue
  */
 export type {
+  OperationalModule,
   WorkTaskType,
   WorkPriority,
   WorkTask,
@@ -25,6 +26,7 @@ export {
 } from "./work-queue-builders"
 
 export {
+  OPERATIONAL_MODULE_LABELS,
   requestStatusLabel,
   itemStatusLabel,
   itemStageLabel,

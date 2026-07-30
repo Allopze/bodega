@@ -7,16 +7,12 @@ import { ArrowRight, FunnelSimple, WarningCircle } from "@phosphor-icons/react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
+import { OPERATIONAL_MODULE_LABELS } from "@/lib/work-queue"
 import { PriorityBadge } from "@/components/ui/priority-badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { cn, formatDate, formatDateTime } from "@/lib/utils"
-import type { OperationalModule, OperationalQueueResult, OperationalWorkItem } from "@/lib/services/operational-work-queue"
+import type { OperationalQueueResult, OperationalWorkItem } from "@/lib/services/operational-work-queue"
 import { WorkAssignmentControl } from "./work-assignment-control"
-
-const MODULE_LABELS: Record<OperationalModule, string> = {
-  solicitudes: "Solicitudes", aprobaciones: "Aprobaciones", compras: "Compras", recepciones: "Recepciones", entregas: "Entregas",
-  pdtp: "PDTP", capa: "CAPA", inspecciones: "Inspecciones", documentacion: "Documentación", ppa: "PPA", sst: "SST",
-}
 
 const QUICK_FILTERS = [
   ["all", "Todas"], ["critical", "Críticas"], ["overdue", "Vencidas"], ["today", "Hoy"],
@@ -157,7 +153,7 @@ export function WorkQueueWorkbench({ result }: WorkQueueWorkbenchProps) {
       <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
         <Select value={searchParams.get("module") ?? "all"} onValueChange={(value) => update({ module: value })}>
           <SelectTrigger aria-label="Filtrar por módulo" className="h-11 sm:h-8 text-xs"><SelectValue placeholder="Módulo" /></SelectTrigger>
-          <SelectContent><SelectItem value="all">Todos los módulos</SelectItem>{modules.map((module) => <SelectItem key={module} value={module}>{MODULE_LABELS[module]}</SelectItem>)}</SelectContent>
+          <SelectContent><SelectItem value="all">Todos los módulos</SelectItem>{modules.map((module) => <SelectItem key={module} value={module}>{OPERATIONAL_MODULE_LABELS[module]}</SelectItem>)}</SelectContent>
         </Select>
         <Select value={searchParams.get("faena") ?? "all"} onValueChange={(value) => update({ faena: value })}>
           <SelectTrigger aria-label="Filtrar por faena" className="h-11 sm:h-8 text-xs"><SelectValue placeholder="Faena" /></SelectTrigger>
@@ -251,7 +247,7 @@ function QueueCard({ item, today }: { item: OperationalWorkItem; today: string }
         <PriorityBadge priority={item.priority} />
       </div>
       <p className="mt-1 text-[11px] text-[var(--color-text-muted)]">
-        {item.code && <span>{item.code} · </span>}{MODULE_LABELS[item.module]} · {item.worksiteName}
+        {item.code && <span>{item.code} · </span>}{OPERATIONAL_MODULE_LABELS[item.module]} · {item.worksiteName}
       </p>
       <div className="mt-2 flex flex-wrap items-center gap-2">
         <Badge variant={item.blocked ? "danger" : overdue ? "warning" : "info"} size="sm">
@@ -285,7 +281,7 @@ function QueueRow({ item, today }: { item: OperationalWorkItem; today: string })
         <Link href={item.href} className="font-medium text-[var(--color-text)] hover:text-[var(--color-primary-ink)] hover:underline">{item.title}</Link>
         <p className="mt-0.5 text-[11px] text-[var(--color-text-muted)]">{item.code && <span>{item.code} · </span>}{item.subtitle}</p>
       </td>
-      <td className="px-3 py-2.5 text-[var(--color-text-muted)]">{MODULE_LABELS[item.module]}</td>
+      <td className="px-3 py-2.5 text-[var(--color-text-muted)]">{OPERATIONAL_MODULE_LABELS[item.module]}</td>
       <td className="px-3 py-2.5 text-[var(--color-text-muted)]">{item.worksiteName}</td>
       <td className="px-3 py-2.5">
         <Badge variant={item.blocked ? "danger" : overdue ? "warning" : "info"} size="sm">

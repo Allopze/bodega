@@ -9,8 +9,7 @@
  *
  * Esta es la única fuente de verdad. Reemplaza los maps locales en
  * solicitudes/request-list.tsx, solicitudes/request-form.constants.ts,
- * aprobaciones/types.ts, dashboard/dashboard-task-row.tsx y
- * reports/export-module/labels.ts.
+ * aprobaciones/types.ts y reports/export-module/labels.ts.
  */
 export const URGENCY_LABELS = {
   normal:   "Normal",

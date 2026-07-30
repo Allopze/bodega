@@ -42,22 +42,12 @@ import {
   requestStatusLabel,
   type WorkPriority,
 } from "@/lib/work-queue"
+import type { OperationalModule } from "@/lib/work-queue.types"
 
 const DEFAULT_PAGE_SIZE = 50
 const MAX_PAGE_SIZE = 100
 
-export type OperationalModule =
-  | "solicitudes"
-  | "aprobaciones"
-  | "compras"
-  | "recepciones"
-  | "entregas"
-  | "pdtp"
-  | "capa"
-  | "inspecciones"
-  | "documentacion"
-  | "ppa"
-  | "sst"
+export type { OperationalModule } from "@/lib/work-queue.types"
 
 export type OperationalQuickFilter = "all" | "critical" | "overdue" | "today" | "blocked" | "unassigned" | "mine"
 export type OperationalSort = "priority" | "due" | "oldest" | "newest"

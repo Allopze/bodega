@@ -1,8 +1,23 @@
 /**
  * Label functions and status constants for the work-queue module.
  */
-import type { WorkPriority } from "./work-queue.types"
+import type { OperationalModule, WorkPriority } from "./work-queue.types"
 import { REQUEST_STATE_META, ITEM_STATE_META } from "@/components/states/state-badge"
+
+/** Rótulo visible de cada módulo de la cola operacional. */
+export const OPERATIONAL_MODULE_LABELS: Record<OperationalModule, string> = {
+  solicitudes:   "Solicitudes",
+  aprobaciones:  "Aprobaciones",
+  compras:       "Compras",
+  recepciones:   "Recepciones",
+  entregas:      "Entregas",
+  pdtp:          "PDTP",
+  capa:          "CAPA",
+  inspecciones:  "Inspecciones",
+  documentacion: "Documentación",
+  ppa:           "PPA",
+  sst:           "SST",
+}
 
 export const STAGES = ["Solicitado", "Aprobación", "Compra", "Recepción", "Entrega"]
 export const CLOSED_REQUEST_STATUSES = new Set(["closed", "cancelled", "rejected"])
