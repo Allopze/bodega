@@ -38,7 +38,7 @@ function PdtpCreateProgramFields({
 
   return (
     <form action={formAction} className="space-y-6 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-xs sm:p-6">
-      <div className="grid gap-5 sm:grid-cols-[10rem_1fr] sm:items-end">
+      <div className={`grid gap-5 sm:grid-cols-[10rem_1fr] sm:items-end ${!baseRevision && !alreadyExists ? "opacity-50" : ""}`}>
         <Field
           label="Año del programa"
           htmlFor="pdtp-year"
@@ -52,6 +52,7 @@ function PdtpCreateProgramFields({
             max={2100}
             value={year}
             onChange={(event) => setYear(Number(event.target.value))}
+            disabled={!baseRevision && !alreadyExists}
             required
           />
         </Field>
@@ -90,7 +91,11 @@ function PdtpCreateProgramFields({
       ) : (
         <div role="alert" className="rounded-xl border border-[var(--color-warning-line)] bg-[var(--color-warning-tint)] px-4 py-3 text-sm text-[var(--color-warning-ink)]">
           <p className="font-semibold">Base {year} no instalada</p>
-          <p className="mt-1">Un administrador debe publicar la Base preventiva para {year} antes de crear programas anuales.</p>
+          <p className="mt-1">
+            Quien administre el catálogo PDTP (Jefatura de Prevención u otro con el permiso correspondiente) debe
+            publicar la Base preventiva para {year} antes de crear programas anuales. Esta publicación se hace por
+            fuera de esta pantalla; contacta a esa persona para coordinarla.
+          </p>
         </div>
       )}
 
