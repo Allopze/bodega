@@ -14,6 +14,7 @@ import { HeaderSignals, type HeaderSignal } from "@/components/ui/header-signals
 import { ServerPagination } from "@/components/ui/server-pagination"
 import { buildPaginationHref, resolvePagination } from "@/lib/pagination"
 import { parseListParams, eqFilter, worksiteEqSql } from "@/lib/adquisiciones/list-query"
+import { RECEIVABLE_ORDER_STATUSES } from "@/lib/work-queue"
 import { RecepcionTable } from "./recepcion-table"
 
 export const metadata: Metadata = { title: "Recepción" }
@@ -31,7 +32,7 @@ export default async function RecepcionPage({
 
   const sp = await searchParams
   const scopeFilter = and(
-    inArray(purchaseOrders.status, ["sent", "partially_office_received", "office_received", "partially_received"]),
+    inArray(purchaseOrders.status, RECEIVABLE_ORDER_STATUSES),
     worksiteScopeSql(session, purchaseOrders.worksiteId),
   )
 

@@ -12,10 +12,21 @@ export const ACTIVE_REQUEST_STATUSES = new Set([
 ])
 export const APPROVAL_ITEM_STATUSES = new Set(["requested"])
 export const PURCHASE_ITEM_STATUSES = new Set(["approved", "pending_purchase"])
+/** Ítem ya comprado que espera llegada — el par de item de una OC recibible. */
+export const RECEIVE_ITEM_STATUSES = new Set(["purchased", "partially_received"])
 export const DELIVERY_ITEM_STATUSES = new Set(["partially_received", "received", "partially_delivered"])
 export const OFFICE_RECEIVABLE_STATUSES = new Set(["sent", "partially_office_received"])
 export const FAENA_RECEIVABLE_STATUSES = new Set(["partially_office_received", "office_received", "partially_received"])
 export const DIRECT_FAENA_RECEIVABLE_STATUSES = new Set(["sent", "partially_received"])
+/**
+ * Unión de las tres anteriores: los estados de OC en que `/recepcion` acepta
+ * registrar algo. Estaba escrita a mano en la lista, en el formulario y ahora
+ * también en el CTA de la solicitud; una sola definición evita que un cuarto
+ * consumidor ofrezca un enlace que el destino rechaza.
+ */
+export const RECEIVABLE_ORDER_STATUSES = [
+  "sent", "partially_office_received", "office_received", "partially_received",
+]
 
 export const PRIORITY_RANK: Record<WorkPriority, number> = {
   critical: 0,

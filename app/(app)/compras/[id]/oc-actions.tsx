@@ -226,7 +226,7 @@ export function OcActions({
         {status === "sent" && canManage && (
           <form action={confirmAction} className="w-full">
             <input type="hidden" name="orderId" value={orderId} />
-            <SubmitButton label="Confirmar proveedor" loadingLabel="Confirmando..." variant="primary" className="w-full" />
+            <SubmitButton label="Confirmada por proveedor" loadingLabel="Confirmando..." variant="primary" className="w-full" />
           </form>
         )}
 

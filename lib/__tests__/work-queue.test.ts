@@ -12,6 +12,12 @@ import {
   itemStatusLabel,
   itemStageLabel,
   requestNextAction,
+  PURCHASE_ITEM_STATUSES,
+  RECEIVE_ITEM_STATUSES,
+  OFFICE_RECEIVABLE_STATUSES,
+  FAENA_RECEIVABLE_STATUSES,
+  DIRECT_FAENA_RECEIVABLE_STATUSES,
+  RECEIVABLE_ORDER_STATUSES,
 } from "@/lib/work-queue"
 import type { WorkActor, WorkQueueSnapshot, OcProgressItem } from "@/lib/work-queue"
 
@@ -407,5 +413,41 @@ describe("buildRequestProgress", () => {
     const item = result.items[0]!
     expect(item.quantityLabel).toContain("10")
     expect(item.statusLabel).toBe("Solicitado")
+  })
+})
+
+// El CTA de la solicitud enlaza a /recepcion/nueva sólo si la OC está en esta
+// unión; si divergiera de los sets por etapa, ofrecería un enlace que el
+// destino rechaza (o la lista escondería una OC que sí es recibible).
+describe("RECEIVABLE_ORDER_STATUSES", () => {
+  it("es exactamente la unión de los estados recibibles por etapa", () => {
+    const union = new Set([
+      ...OFFICE_RECEIVABLE_STATUSES,
+      ...FAENA_RECEIVABLE_STATUSES,
+      ...DIRECT_FAENA_RECEIVABLE_STATUSES,
+    ])
+    expect(new Set(RECEIVABLE_ORDER_STATUSES)).toEqual(union)
+  })
+
+  it("no se solapa con los estados de OC ya cerrados para recepción", () => {
+    for (const closed of ["draft", "issued", "received", "closed", "cancelled"]) {
+      expect(RECEIVABLE_ORDER_STATUSES).not.toContain(closed)
+    }
+  })
+})
+
+// Un ítem en estos estados espera llegada: es el par de item de una OC
+// recibible, y lo que dispara el CTA "Registrar recepción".
+describe("RECEIVE_ITEM_STATUSES", () => {
+  it("cubre los estados de ítem cuya etapa es Recepción o previa a ella", () => {
+    for (const status of RECEIVE_ITEM_STATUSES) {
+      expect(["Compra", "Recepción"]).toContain(itemStageLabel(status))
+    }
+  })
+
+  it("no se solapa con los estados que ya sólo admiten compra", () => {
+    for (const status of RECEIVE_ITEM_STATUSES) {
+      expect(PURCHASE_ITEM_STATUSES.has(status)).toBe(false)
+    }
   })
 })

@@ -13,6 +13,7 @@ import type { ReceiptOcItem } from "../receipt-form"
 import { WorkAssignmentControl } from "../../pendientes/work-assignment-control"
 import { getOperationalAssignmentRecords } from "@/lib/services/operational-assignments"
 import { buildOperationalWorkItem, operationalAssignmentKey } from "@/lib/services/operational-work-queue"
+import { RECEIVABLE_ORDER_STATUSES } from "@/lib/work-queue"
 
 export const dynamic = "force-dynamic"
 export const metadata: Metadata = { title: "Registrar recepción" }
@@ -44,7 +45,7 @@ export default async function NuevaRecepcionPage({
 
   if (!order) notFound()
   if (!canAccessWorksite(session, order.worksiteId)) notFound()
-  if (!["sent", "partially_office_received", "office_received", "partially_received"].includes(order.status)) {
+  if (!RECEIVABLE_ORDER_STATUSES.includes(order.status)) {
     redirect("/recepcion")
   }
   // Si la OC es directo_faena, la etapa oficina se deshabilita; un receptor que

@@ -7,6 +7,7 @@ import {
   statusHistory, users, suppliers, productSuppliers,
   approvalDecisions, purchaseRequestItems,
   repuestoQuotations, serviceQuotations,
+  purchaseOrders, purchaseOrderItems,
 } from "@/db/schema"
 import { and, asc, desc, eq, inArray, or, sql } from "drizzle-orm"
 import { can, requireAuth } from "@/lib/auth/can"
@@ -24,7 +25,13 @@ import { EntityTimeline } from "@/components/states/entity-timeline"
 import { RequestProgressPanel } from "@/components/states/request-progress-panel"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
-import { buildRequestProgress, PURCHASE_ITEM_STATUSES } from "@/lib/work-queue"
+import {
+  buildRequestProgress,
+  PURCHASE_ITEM_STATUSES,
+  RECEIVE_ITEM_STATUSES,
+  DELIVERY_ITEM_STATUSES,
+  RECEIVABLE_ORDER_STATUSES,
+} from "@/lib/work-queue"
 import { RequestPeoplePanel } from "../request-people-panel"
 
 
@@ -223,15 +230,67 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
   // A-17: la solicitud enunciaba el siguiente paso ("el módulo de órdenes de
   // compra debe generar la orden") sin ofrecerlo. Con A-06 el destino ya acepta
   // el ítem, así que el CTA lleva directo a la OC con ese ítem preseleccionado.
+  //
+  // El CTA cubría sólo la etapa Compra: una vez emitida la OC el panel quedaba
+  // sin acción y la solicitud no enlazaba ni siquiera a su propia OC, así que el
+  // siguiente paso sólo se alcanzaba entrando a /recepcion a buscar la OC a
+  // mano. Ahora las tres etapas accionables ofrecen su destino.
   const purchasableItem = request.items.find((item) => PURCHASE_ITEM_STATUSES.has(item.status))
-  const purchaseCta = purchasableItem && can(session, "purchasing:create_order")
-    ? (
-      <Button size="sm" variant="primary" asChild>
-        <Link href={`/compras/nueva?faena=${request.worksiteId}&item=${purchasableItem.id}`}>
-          Crear orden de compra
-        </Link>
-      </Button>
-    )
+  const receivableItem  = request.items.find((item) => RECEIVE_ITEM_STATUSES.has(item.status))
+  const deliverableItem = request.items.find((item) => DELIVERY_ITEM_STATUSES.has(item.status))
+
+  // La OC sólo hace falta para el CTA de recepción, y se filtra por los mismos
+  // estados que acepta /recepcion/nueva: un ítem puede seguir en `purchased`
+  // con la OC ya cerrada, y el enlace rebotaría.
+  const [pendingOrder] = receivableItem
+    ? await db
+        .select({
+          id:           purchaseOrders.id,
+          deliveryMode: purchaseOrders.deliveryMode,
+        })
+        .from(purchaseOrderItems)
+        .innerJoin(purchaseOrders, eq(purchaseOrders.id, purchaseOrderItems.purchaseOrderId))
+        .where(and(
+          eq(purchaseOrderItems.requestItemId, receivableItem.id),
+          inArray(purchaseOrders.status, RECEIVABLE_ORDER_STATUSES),
+        ))
+        .limit(1)
+    : []
+
+  // Mismo gate que /recepcion/nueva: en una OC directo_faena la etapa oficina
+  // está deshabilitada, así que register_office por sí solo no habilita nada.
+  const canReceiveOrder = pendingOrder != null && (
+    (can(session, "receiving:register_office") && pendingOrder.deliveryMode !== "directo_faena")
+    || can(session, "receiving:register_faena")
+  )
+
+  const purchaseCta =
+    purchasableItem && can(session, "purchasing:create_order")
+      ? (
+        <Button size="sm" variant="primary" asChild>
+          <Link href={`/compras/nueva?faena=${request.worksiteId}&item=${purchasableItem.id}`}>
+            Crear orden de compra
+          </Link>
+        </Button>
+      )
+    // Recepción antes que entrega: un ítem parcialmente recibido admite ambas,
+    // y la etapa que muestra el stepper es Recepción mientras quede por llegar.
+    : pendingOrder && canReceiveOrder
+      ? (
+        <Button size="sm" variant="primary" asChild>
+          <Link href={`/recepcion/nueva?oc=${pendingOrder.id}`}>
+            Registrar recepción
+          </Link>
+        </Button>
+      )
+    : deliverableItem && can(session, "deliveries:create")
+      ? (
+        <Button size="sm" variant="primary" asChild>
+          <Link href={`/entregas?faena=${request.worksiteId}&item=${deliverableItem.id}`}>
+            Registrar entrega
+          </Link>
+        </Button>
+      )
     : undefined
 
   const editRequest = {
