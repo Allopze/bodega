@@ -1556,7 +1556,14 @@ async function prepareDatabase(captureDbUrl: string) {
       worksiteId,
       supplierId,
       createdBy: userId,
-      status: "sent",
+      // El ítem de esta OC va con 6 de 12 recibidas en oficina y en faena, así
+      // que `recalcOrderStatus` (lib/services/receiving.ts) la dejaría en
+      // `partially_received`: hay `anyFaena` y no `allFaena`. Estaba en `sent`,
+      // un estado que el servicio nunca habría producido con esas cantidades, y
+      // eso hizo que la auditoría UI/UX 2026-07-29 reportara como bug del
+      // stepper (A-10) lo que era incoherencia del fixture. El seed escribe
+      // filas sin pasar por el servicio: le toca a él mantener el invariante.
+      status: "partially_received",
       issuedAt: now,
       sentAt: now,
       estimatedDelivery: "2026-06-18",

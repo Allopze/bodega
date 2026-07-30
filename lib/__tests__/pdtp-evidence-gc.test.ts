@@ -71,8 +71,7 @@ describe("cleanupPdtpEvidenceOrphans", () => {
       createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
     })
     await inMemoryDb.insert(schema.pdtpActivities).values({
-      id: "act-1", programId: "prog-1", n: 1, objectiveOrder: 1, objective: "O",
-      activity: "A", program: "P", responsibleSlugs: [], responsibleDisplay: "R",
+      id: "act-1", programId: "prog-1", n: 1, activity: "A", program: "P", responsibleSlugs: [], responsibleDisplay: "R",
       sourceSheetRow: 1,
       createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
     })

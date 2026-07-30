@@ -104,8 +104,6 @@ beforeEach(async () => {
     programId: PROGRAM_ID,
     n: 85,
     activity: "Campaña Uso de EPP",
-    objective: "Difusión masiva",
-    objectiveOrder: 1,
     program: "Prevención",
     responsibleSlugs: ["prevencionista"],
     responsibleDisplay: "Prevencionista",

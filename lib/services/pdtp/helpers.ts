@@ -14,6 +14,7 @@ import {
 } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { applyOverridesToSchedule, loadPdtpOverrides } from "./overrides"
+import { isPdtpActivityEffectiveForPeriod } from "./retirement"
 
 export type WorksiteScope = string[] | "all"
 
@@ -119,7 +120,7 @@ export function pdtpProgramId(year: number, version: number) {
  * Resuelve la hoja PDTP (template o program-scoped) para un código dado.
  * Un código puede tener dos filas: una plantilla global (`program_id
  * NULL`, del seed) y una program-scoped (`program_id = programId`, creada
- * por `createPdtpProgram`/el adaptador de importación por lotes). Sin este orden explícito,
+ * por el materializador anual/el adaptador de importación por lotes). Sin este orden explícito,
  * `.limit(1)` sobre ambas filas elige de forma arbitraria y puede devolver
  * la plantilla — cuyas membresías (`pdtp_sheet_activities`) no incluyen las
  * actividades de este programa — dando una vista vacía en silencio.
@@ -174,7 +175,7 @@ export async function addPdtpChangeLogEntry(
 }
 
 export async function loadProgramScheduleAndExecutions(activityIds: string[], year: number, worksiteId?: string) {
-  const [scheduleRows, executionRows, overrideRows, exclusionRows] = await Promise.all([
+  const [scheduleRows, executionRows, overrideRows, exclusionRows, activityRows] = await Promise.all([
     db.select().from(pdtpActivitySchedule).where(inArray(pdtpActivitySchedule.activityId, activityIds)),
     worksiteId
       ? db.select().from(pdtpExecutions).where(and(inArray(pdtpExecutions.activityId, activityIds), eq(pdtpExecutions.worksiteId, worksiteId), eq(pdtpExecutions.year, year), isNull(pdtpExecutions.obligationId)))
@@ -186,18 +187,35 @@ export async function loadProgramScheduleAndExecutions(activityIds: string[], ye
       ? db.select({ activityId: pdtpActivityWorksiteExclusions.activityId }).from(pdtpActivityWorksiteExclusions)
           .where(and(inArray(pdtpActivityWorksiteExclusions.activityId, activityIds), eq(pdtpActivityWorksiteExclusions.worksiteId, worksiteId)))
       : Promise.resolve([] as Array<{ activityId: string }>),
+    db.select({
+      id: pdtpActivities.id,
+      status: pdtpActivities.status,
+      retiredEffectiveFrom: pdtpActivities.retiredEffectiveFrom,
+    }).from(pdtpActivities).where(inArray(pdtpActivities.id, activityIds)),
   ])
   // Aplicabilidad por faena (regla R4): una actividad excluida de la faena
   // (p. ej. CPHS en faenas con <25 trabajadores) no aporta al denominador ni al
   // ejecutado de esa faena. Antes las exclusiones se firmaban (content-digest)
   // pero no se aplicaban al cómputo.
   const excluded = new Set(exclusionRows.map((row) => row.activityId))
+  const retirementByActivity = new Map(activityRows.map((row) => [row.id, row]))
   const withoutExcluded = <T extends { activityId: string }>(rows: T[]) =>
     excluded.size === 0 ? rows : rows.filter((row) => !excluded.has(row.activityId))
+  const effectiveForPeriod = <
+    T extends { activityId: string; year: number; month: number; week: number },
+  >(rows: T[]) => rows.filter((row) => {
+    const activity = retirementByActivity.get(row.activityId)
+    return activity
+      ? isPdtpActivityEffectiveForPeriod(activity, row.year, row.month, row.week)
+      : false
+  })
   const effectiveSchedule = worksiteId
     ? withoutExcluded(applyOverridesToSchedule(scheduleRows, overrideRows))
     : scheduleRows
-  return { scheduleRows: effectiveSchedule, executionRows: withoutExcluded(executionRows) }
+  return {
+    scheduleRows: effectiveForPeriod(effectiveSchedule),
+    executionRows: effectiveForPeriod(withoutExcluded(executionRows)),
+  }
 }
 
 /**

@@ -41,8 +41,7 @@ async function seedBaseFixtures() {
     createdAt: NOW(), updatedAt: NOW(),
   })
   await inMemoryDb.insert(schema.pdtpActivities).values({
-    id: "act-1", programId: "prog-1", n: 1, objectiveOrder: 1, objective: "O",
-    activity: "Charla de seguridad", program: "P", responsibleSlugs: [], responsibleDisplay: "R",
+    id: "act-1", programId: "prog-1", n: 1, activity: "Charla de seguridad", program: "P", responsibleSlugs: [], responsibleDisplay: "R",
     sourceSheetRow: 1,
     createdAt: NOW(), updatedAt: NOW(),
   })

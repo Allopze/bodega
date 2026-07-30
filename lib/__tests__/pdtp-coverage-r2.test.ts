@@ -72,8 +72,6 @@ beforeEach(async () => {
     programId: PROGRAM_ID,
     n: 54,
     activity: "Capacitación Masiva Conductores",
-    objective: "Cobertura de personas",
-    objectiveOrder: 1,
     program: "Prevención",
     responsibleSlugs: ["prevencionista"],
     responsibleDisplay: "Prevencionista",
@@ -206,7 +204,7 @@ describe("Cumplimiento integral agregado sobre varias faenas", () => {
     // Segunda actividad, sin modo cobertura, para no arrastrar la regla R2.
     await inMemoryDb.insert(schema.pdtpActivities).values({
       id: ACT_B, programId: PROGRAM_ID, n: 55, activity: "Inspección planificada",
-      objective: "Inspecciones", objectiveOrder: 2, program: "Prevención",
+      program: "Prevención",
       responsibleSlugs: ["prevencionista"], responsibleDisplay: "Prevencionista",
       scheduleMode: "scheduled", scheduleClassificationStatus: "confirmed",
       indicatorMode: "completed_count", sourceSheetRow: 2,
@@ -293,7 +291,7 @@ describe("Avance por eje SG-SST", () => {
     for (const activity of activities) {
       await inMemoryDb.insert(schema.pdtpActivities).values({
         id: activity.id, programId: PROGRAM_ID, n: activity.n, activity: `Actividad ${activity.n}`,
-        objective: "Objetivo", objectiveOrder: 3, program: activity.program,
+        program: activity.program,
         responsibleSlugs: ["prevencionista"], responsibleDisplay: "Prevencionista",
         scheduleMode: "scheduled", scheduleClassificationStatus: "confirmed",
         indicatorMode: "completed_count", sourceSheetRow: activity.n,

@@ -3,7 +3,9 @@ import { and, asc, eq, inArray } from "drizzle-orm"
 import { db, type Tx } from "@/db"
 import {
   pdtpActivities,
+  pdtpActivityScheduleOverrides,
   pdtpActivityWorksiteExclusions,
+  pdtpActivityWorksiteParams,
   pdtpApprovalSteps,
   pdtpActivityChecklists,
   pdtpActivitySchedule,
@@ -82,8 +84,12 @@ export async function buildPdtpProgramContentSnapshot(
   const activities = await client.select({
     id: pdtpActivities.id,
     n: pdtpActivities.n,
-    objectiveOrder: pdtpActivities.objectiveOrder,
-    objective: pdtpActivities.objective,
+    displayOrder: pdtpActivities.displayOrder,
+    status: pdtpActivities.status,
+    retiredReason: pdtpActivities.retiredReason,
+    retiredEffectiveFrom: pdtpActivities.retiredEffectiveFrom,
+    retiredByUserId: pdtpActivities.retiredByUserId,
+    retiredAt: pdtpActivities.retiredAt,
     activity: pdtpActivities.activity,
     program: pdtpActivities.program,
     responsibleSlugs: pdtpActivities.responsibleSlugs,
@@ -221,6 +227,39 @@ export async function buildPdtpProgramContentSnapshot(
         .orderBy(asc(pdtpActivityWorksiteExclusions.activityId), asc(pdtpActivityWorksiteExclusions.worksiteId))
     : []
 
+  const activityWorksiteAdjustments = activityIds.length > 0
+    ? await client.select({
+        activityId: pdtpActivityWorksiteParams.activityId,
+        worksiteId: pdtpActivityWorksiteParams.worksiteId,
+        expectedSubjectCount: pdtpActivityWorksiteParams.expectedSubjectCount,
+        targetCoveragePercent: pdtpActivityWorksiteParams.targetCoveragePercent,
+        responsibleSlugs: pdtpActivityWorksiteParams.responsibleSlugs,
+        responsibleDisplay: pdtpActivityWorksiteParams.responsibleDisplay,
+        responsibleReason: pdtpActivityWorksiteParams.responsibleReason,
+      }).from(pdtpActivityWorksiteParams)
+        .where(inArray(pdtpActivityWorksiteParams.activityId, activityIds))
+        .orderBy(asc(pdtpActivityWorksiteParams.activityId), asc(pdtpActivityWorksiteParams.worksiteId))
+    : []
+
+  const activityScheduleOverrides = activityIds.length > 0
+    ? await client.select({
+        activityId: pdtpActivityScheduleOverrides.activityId,
+        worksiteId: pdtpActivityScheduleOverrides.worksiteId,
+        year: pdtpActivityScheduleOverrides.year,
+        month: pdtpActivityScheduleOverrides.month,
+        week: pdtpActivityScheduleOverrides.week,
+        plannedQuantity: pdtpActivityScheduleOverrides.plannedQuantity,
+      }).from(pdtpActivityScheduleOverrides)
+        .where(inArray(pdtpActivityScheduleOverrides.activityId, activityIds))
+        .orderBy(
+          asc(pdtpActivityScheduleOverrides.activityId),
+          asc(pdtpActivityScheduleOverrides.worksiteId),
+          asc(pdtpActivityScheduleOverrides.year),
+          asc(pdtpActivityScheduleOverrides.month),
+          asc(pdtpActivityScheduleOverrides.week),
+        )
+    : []
+
   const roleLegend = await client.select({
     code: pdtpRoleLegendEntries.code,
     label: pdtpRoleLegendEntries.label,
@@ -232,7 +271,7 @@ export async function buildPdtpProgramContentSnapshot(
     .orderBy(asc(pdtpRoleLegendEntries.code))
 
   return stableJson({
-    schemaVersion: 6,
+    schemaVersion: 8,
     program,
     approvalSteps,
     activities: activities.map(({ id: _id, ...activity }) => activity),
@@ -257,6 +296,14 @@ export async function buildPdtpProgramContentSnapshot(
     activityWorksiteExclusions: activityWorksiteExclusions.map(({ activityId, ...exclusion }) => ({
       activityNumber: activityNumberById.get(activityId),
       ...exclusion,
+    })),
+    activityWorksiteAdjustments: activityWorksiteAdjustments.map(({ activityId, ...adjustment }) => ({
+      activityNumber: activityNumberById.get(activityId),
+      ...adjustment,
+    })),
+    activityScheduleOverrides: activityScheduleOverrides.map(({ activityId, ...override }) => ({
+      activityNumber: activityNumberById.get(activityId),
+      ...override,
     })),
   })
 }

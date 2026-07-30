@@ -100,8 +100,6 @@ beforeEach(async () => {
     programId: PROGRAM_ID,
     n: ACT_N,
     activity: "Inspección de extintores",
-    objective: "Verificar estado",
-    objectiveOrder: 1,
     program: "Prevención PDTP 2026",
     responsibleSlugs: ["prevencionista"],
     responsibleDisplay: "Prevencionista",

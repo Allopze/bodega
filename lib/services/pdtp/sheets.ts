@@ -164,12 +164,12 @@ export async function buildPdtpExport({ programId, year, sheetCode, worksiteId, 
   }
 
   const monthHeaders = MONTH_LABELS.flatMap((month) => [`${month} P`, `${month} E`])
-  const headers = ["N°", "Objetivo", "Actividad preventiva", "Guía de ejecución", "Responsables", ...monthHeaders, "Plan anual", "Ejecutado anual", "%"]
+  const headers = ["N°", "Actividad preventiva", "Guía de ejecución", "Responsables", ...monthHeaders, "Plan anual", "Ejecutado anual", "%"]
   const rows: ReportCell[][] = view.activities.map((activity) => {
     const content = readPdtpActivityContent(activity)
     const monthly = MONTH_LABELS.flatMap((_, index) => [activity.monthlyPlanned[index] ?? 0, activity.monthlyExecuted[index] ?? 0])
     const percent = activity.totalPlanned > 0 ? Math.round((activity.totalExecuted / activity.totalPlanned) * 100) : null
-    return [activity.n, activity.objective, content.activityDescription, content.executionGuidance, activity.responsibleDisplay, ...monthly, activity.totalPlanned, activity.totalExecuted, percent]
+    return [activity.n, content.activityDescription, content.executionGuidance, activity.responsibleDisplay, ...monthly, activity.totalPlanned, activity.totalExecuted, percent]
   })
 
   const actionItems = await listActionsByProgram(view.program.id, { worksiteId, scope })

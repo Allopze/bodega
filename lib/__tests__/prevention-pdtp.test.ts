@@ -99,7 +99,7 @@ describe("prevention PDTP service", () => {
 
   const loadCatalog = async () => {
     const { loadPdtpCatalog } = await import("@/lib/services/prevention-pdtp")
-    const workbook = await readPdtpWorkbook(path.resolve(process.cwd(), "PROGRAMA DE TRABAJO PREVENTIVO SG-SST 2026.xlsx"))
+    const workbook = await readPdtpWorkbook(path.resolve(process.cwd(), "PROGRAMA_ACTIVIDADES_DEFINITIVO.xlsx"))
     const catalog = extractPdtpCatalogFromWorkbook(workbook)
     return loadPdtpCatalog({
       year: 2026,
@@ -130,7 +130,7 @@ describe("prevention PDTP service", () => {
 
   it("loads the Excel catalog idempotently into the PDTP program tables", async () => {
     const { loadPdtpCatalog } = await import("@/lib/services/prevention-pdtp")
-    const workbook = await readPdtpWorkbook(path.resolve(process.cwd(), "PROGRAMA DE TRABAJO PREVENTIVO SG-SST 2026.xlsx"))
+    const workbook = await readPdtpWorkbook(path.resolve(process.cwd(), "PROGRAMA_ACTIVIDADES_DEFINITIVO.xlsx"))
     const catalog = extractPdtpCatalogFromWorkbook(workbook)
 
     const first = await loadPdtpCatalog({
@@ -155,31 +155,218 @@ describe("prevention PDTP service", () => {
     const memberships = await inMemoryDb.select().from(schema.pdtpSheetActivities)
     const schedule = await inMemoryDb.select().from(schema.pdtpActivitySchedule)
 
-    expect(activities).toHaveLength(89)
+    expect(activities).toHaveLength(87)
     expect(sheets).toHaveLength(8)
     const expectedMemberships = Object.values(catalog.sheetActivities).reduce((sum, items) => sum + items.length, 0)
     expect(memberships).toHaveLength(expectedMemberships)
     expect(schedule.some((cell) => cell.plannedQuantity === 5)).toBe(true)
   })
 
+  it("creates one annual program concurrently, pins its base revision and remaps the calendar", async () => {
+    const {
+      createAnnualPdtpProgram,
+      createPdtpTemplateVersion,
+      updatePdtpActivity,
+    } = await import("@/lib/services/prevention-pdtp")
+    const { program: baseProgram } = await loadCatalog()
+    const baseV1 = await createPdtpTemplateVersion({
+      sourceProgramId: baseProgram.id,
+      name: "Base preventiva 2026",
+      description: "Base anual oficial de prueba",
+      userId: "user-1",
+      allowUnclassifiedBaseActivities: true,
+    })
+
+    const createdTogether = await Promise.all([
+      createAnnualPdtpProgram({ year: 2027, userId: "user-1" }),
+      createAnnualPdtpProgram({ year: 2027, userId: "user-1" }),
+    ])
+    expect(new Set(createdTogether.map((result) => result.programId))).toEqual(new Set(["pdtp-2027-v1"]))
+    expect(createdTogether.filter((result) => result.created)).toHaveLength(1)
+
+    const [program2027] = await inMemoryDb.select().from(schema.pdtpPrograms)
+      .where(eq(schema.pdtpPrograms.year, 2027))
+    expect(program2027?.version).toBe(1)
+    expect(program2027?.sourceTemplateVersionId).toBe(baseV1.version.id)
+    const activities2027 = await inMemoryDb.select().from(schema.pdtpActivities)
+      .where(eq(schema.pdtpActivities.programId, program2027!.id))
+    const schedules2027 = await inMemoryDb.select().from(schema.pdtpActivitySchedule)
+      .where(inArray(schema.pdtpActivitySchedule.activityId, activities2027.map((activity) => activity.id)))
+    expect(activities2027).toHaveLength(87)
+    expect(schedules2027).toHaveLength(821)
+    expect(new Set(schedules2027.map((cell) => cell.year))).toEqual(new Set([2027]))
+    expect(await inMemoryDb.select().from(schema.pdtpExecutions)).toHaveLength(0)
+
+    const [baseActivity] = await inMemoryDb.select().from(schema.pdtpActivities)
+      .where(eq(schema.pdtpActivities.programId, baseProgram.id))
+      .limit(1)
+    await updatePdtpActivity({
+      activityId: baseActivity!.id,
+      notes: "Corrección publicada después de crear el programa 2027.",
+    }, "user-1")
+    const baseV2 = await createPdtpTemplateVersion({
+      sourceProgramId: baseProgram.id,
+      name: "Base preventiva 2026",
+      description: "Segunda revisión oficial de prueba",
+      userId: "user-1",
+      allowUnclassifiedBaseActivities: true,
+    })
+    expect(baseV2.version.version).toBe(2)
+
+    const created2028 = await createAnnualPdtpProgram({ year: 2028, userId: "user-1" })
+    expect(created2028.baseVersionId).toBe(baseV2.version.id)
+    const [program2027After] = await inMemoryDb.select().from(schema.pdtpPrograms)
+      .where(eq(schema.pdtpPrograms.year, 2027))
+    expect(program2027After?.sourceTemplateVersionId).toBe(baseV1.version.id)
+  })
+
+  it("inherits and overrides scope, planning, targets and responsible by worksite", async () => {
+    const {
+      computePdtpProgramContentDigest,
+      resolvePdtpEffectiveActivitiesForWorksite,
+      setPdtpActivityWorksiteAdjustment,
+    } = await import("@/lib/services/prevention-pdtp")
+    const { program } = await loadCatalog()
+    const [activity] = await inMemoryDb.select().from(schema.pdtpActivities)
+      .where(eq(schema.pdtpActivities.programId, program.id))
+      .limit(1)
+    const globalResponsible = activity!.responsibleDisplay
+    const beforeDigest = await computePdtpProgramContentDigest(program.id)
+
+    await setPdtpActivityWorksiteAdjustment({
+      activityId: activity!.id,
+      worksiteId: "ws-1",
+      excluded: false,
+      reason: "Ajuste específico requerido por la faena A.",
+      expectedSubjectCount: 25,
+      targetCoveragePercent: 90,
+      responsibleSlugs: ["jdpr"],
+      responsibleDisplay: "Jefatura DPR de Faena A",
+      schedule: [{ month: 1, week: 1, plannedQuantity: 3 }],
+    }, "user-1", ["ws-1"])
+
+    const [params] = await inMemoryDb.select().from(schema.pdtpActivityWorksiteParams)
+      .where(and(
+        eq(schema.pdtpActivityWorksiteParams.activityId, activity!.id),
+        eq(schema.pdtpActivityWorksiteParams.worksiteId, "ws-1"),
+      ))
+    const overrides = await inMemoryDb.select().from(schema.pdtpActivityScheduleOverrides)
+      .where(and(
+        eq(schema.pdtpActivityScheduleOverrides.activityId, activity!.id),
+        eq(schema.pdtpActivityScheduleOverrides.worksiteId, "ws-1"),
+      ))
+    expect(params).toEqual(expect.objectContaining({
+      expectedSubjectCount: 25,
+      targetCoveragePercent: 90,
+      responsibleSlugs: ["jdpr"],
+      responsibleDisplay: "Jefatura DPR de Faena A",
+    }))
+    expect(overrides).toEqual([expect.objectContaining({ month: 1, week: 1, plannedQuantity: 3 })])
+    expect((await computePdtpProgramContentDigest(program.id)).digest).not.toBe(beforeDigest.digest)
+
+    await setPdtpActivityWorksiteAdjustment({
+      activityId: activity!.id,
+      worksiteId: "ws-1",
+      excluded: true,
+      reason: "La actividad no resulta aplicable en esta faena.",
+    }, "user-1", ["ws-1"])
+    expect((await resolvePdtpEffectiveActivitiesForWorksite(program.id, "ws-1")).some((item) => item.id === activity!.id)).toBe(false)
+
+    await setPdtpActivityWorksiteAdjustment({
+      activityId: activity!.id,
+      worksiteId: "ws-1",
+      excluded: false,
+      reason: "Se restablece la herencia desde la definición global.",
+      expectedSubjectCount: null,
+      targetCoveragePercent: null,
+      responsibleSlugs: null,
+      responsibleDisplay: null,
+      schedule: null,
+    }, "user-1", ["ws-1"])
+    const [inheritedParams] = await inMemoryDb.select().from(schema.pdtpActivityWorksiteParams)
+      .where(eq(schema.pdtpActivityWorksiteParams.id, params!.id))
+    expect(inheritedParams).toEqual(expect.objectContaining({
+      expectedSubjectCount: null,
+      targetCoveragePercent: null,
+      responsibleSlugs: null,
+      responsibleDisplay: null,
+    }))
+    expect(await inMemoryDb.select().from(schema.pdtpActivityScheduleOverrides)
+      .where(eq(schema.pdtpActivityScheduleOverrides.activityId, activity!.id))).toHaveLength(0)
+    const [inheritedActivity] = (await resolvePdtpEffectiveActivitiesForWorksite(program.id, "ws-1"))
+      .filter((item) => item.id === activity!.id)
+    expect(inheritedActivity?.responsibleDisplay).toBe(globalResponsible)
+  })
+
+  it("retires without renumbering, preserves prior executions and starts new activities at 90", async () => {
+    const {
+      addPdtpActivity,
+      computePdtpProgramContentDigest,
+      retirePdtpActivity,
+      resolvePdtpEffectiveActivitiesForWorksite,
+    } = await import("@/lib/services/prevention-pdtp")
+    const { program } = await loadCatalog()
+    const [activity] = await inMemoryDb.select().from(schema.pdtpActivities)
+      .where(and(eq(schema.pdtpActivities.programId, program.id), eq(schema.pdtpActivities.n, 1)))
+    const now = new Date().toISOString()
+    await inMemoryDb.insert(schema.pdtpExecutions).values({
+      id: "execution-before-retirement",
+      activityId: activity!.id,
+      worksiteId: "ws-1",
+      year: 2026,
+      month: 1,
+      week: 4,
+      executedQuantity: 1,
+      status: "approved",
+      createdAt: now,
+      updatedAt: now,
+    })
+
+    await retirePdtpActivity({
+      activityId: activity!.id,
+      reason: "La actividad se reemplaza por un control corporativo equivalente.",
+      effectiveFrom: "2026-08-01",
+    }, "user-1")
+    const [retired] = await inMemoryDb.select().from(schema.pdtpActivities)
+      .where(eq(schema.pdtpActivities.id, activity!.id))
+    expect(retired).toEqual(expect.objectContaining({ n: 1, status: "retired", retiredEffectiveFrom: "2026-08-01" }))
+    expect(await inMemoryDb.select().from(schema.pdtpExecutions)
+      .where(eq(schema.pdtpExecutions.activityId, activity!.id))).toHaveLength(1)
+    expect((await resolvePdtpEffectiveActivitiesForWorksite(program.id, "ws-1")).some((item) => item.id === activity!.id)).toBe(false)
+
+    const added = await addPdtpActivity({
+      programId: program.id,
+      activity: "Nueva actividad posterior a la Base 2026",
+      program: "Control preventivo complementario",
+      responsibleSlugs: ["jdpr"],
+      responsibleDisplay: "Jefatura DPR",
+      scheduleMode: "scheduled",
+      recurrenceRule: { frequency: "annual", interval: 1, plannedQuantity: 1, weekOfMonth: 1 },
+      evidenceRequirement: "Registro verificable",
+      sheetCodes: ["pdtp_general"],
+    }, "user-1")
+    expect(added.n).toBe(90)
+    const digest = await computePdtpProgramContentDigest(program.id)
+    expect(JSON.stringify(digest.snapshot)).toContain("\"status\":\"retired\"")
+    expect(JSON.stringify(digest.snapshot)).toContain("\"retiredEffectiveFrom\":\"2026-08-01\"")
+  })
+
   it("creates a general program without the eight Excel views and copies its reusable structure", async () => {
     const {
       addPdtpActivity,
       batchUpdatePdtpActivities,
-      createPdtpProgram,
+      createLegacyPdtpProgramForTests,
       duplicatePdtpActivity,
       savePdtpActivityChecklist,
       updatePdtpActivity,
     } = await import("@/lib/services/prevention-pdtp")
-    const source = await createPdtpProgram({ year: 2027, title: "Programa preventivo de controles críticos", userId: "user-1" })
+    const source = await createLegacyPdtpProgramForTests({ year: 2027, title: "Programa preventivo de controles críticos", userId: "user-1" })
     const sourceSheets = await inMemoryDb.select().from(schema.pdtpSheets).where(eq(schema.pdtpSheets.programId, source.id))
     expect(source.creationMode).toBe("blank")
     expect(sourceSheets.map((sheet) => sheet.code)).toEqual(["pdtp_general"])
 
     const activity = await addPdtpActivity({
       programId: source.id,
-      objectiveOrder: 9,
-      objective: "Asegurar controles críticos",
       activity: "Verificar controles antes de iniciar cada mes",
       program: "Gestión de controles críticos",
       responsibleSlugs: ["prf"],
@@ -210,7 +397,7 @@ describe("prevention PDTP service", () => {
     const sourceSchedule = await inMemoryDb.select().from(schema.pdtpActivitySchedule).where(eq(schema.pdtpActivitySchedule.activityId, activity.id))
     expect(sourceSchedule).toHaveLength(12)
 
-    const copy = await createPdtpProgram({
+    const copy = await createLegacyPdtpProgramForTests({
       year: 2028,
       title: "Programa preventivo de controles críticos 2028",
       userId: "user-1",
@@ -220,7 +407,7 @@ describe("prevention PDTP service", () => {
     const copiedSchedule = await inMemoryDb.select().from(schema.pdtpActivitySchedule).where(eq(schema.pdtpActivitySchedule.activityId, copiedActivity!.id))
     const copiedChecklists = await inMemoryDb.select().from(schema.pdtpActivityChecklists).where(eq(schema.pdtpActivityChecklists.programId, copy.id))
     expect(copy).toMatchObject({ creationMode: "program_copy", sourceProgramId: source.id, sourceContentVersion: source.contentVersion })
-    expect(copiedActivity).toMatchObject({ objectiveOrder: 9, scheduleMode: "scheduled", audienceRoles: ["supervision"] })
+    expect(copiedActivity).toMatchObject({ scheduleMode: "scheduled", audienceRoles: ["supervision"] })
     expect(copiedActivity!.recurrenceRule).toMatchObject({ frequency: "monthly" })
     expect(copiedSchedule).toHaveLength(12)
     expect(new Set(copiedSchedule.map((cell) => cell.year))).toEqual(new Set([2028]))
@@ -242,10 +429,9 @@ describe("prevention PDTP service", () => {
 
     const moved = await updatePdtpActivity({
       activityId: duplicated.id,
-      objectiveOrder: 10,
-      objective: "Extender controles a nuevas operaciones",
+      notes: "Extender controles a nuevas operaciones",
     }, "user-1")
-    expect(moved).toMatchObject({ objectiveOrder: 10, objective: "Extender controles a nuevas operaciones" })
+    expect(moved).toMatchObject({ notes: "Extender controles a nuevas operaciones" })
     await batchUpdatePdtpActivities({
       programId: copy.id,
       activityIds: [copiedActivity!.id, duplicated.id],
@@ -273,17 +459,15 @@ describe("prevention PDTP service", () => {
   it("publishes immutable template versions and creates programs from the selected snapshot", async () => {
     const {
       addPdtpActivity,
-      createPdtpProgram,
+      createLegacyPdtpProgramForTests,
       createPdtpTemplateVersion,
       listActivePdtpTemplates,
       listPdtpTemplatesWithVersions,
       updatePdtpActivity,
     } = await import("@/lib/services/prevention-pdtp")
-    const source = await createPdtpProgram({ year: 2030, title: "Base corporativa de terreno", userId: "user-1" })
+    const source = await createLegacyPdtpProgramForTests({ year: 2030, title: "Base corporativa de terreno", userId: "user-1" })
     const sourceActivity = await addPdtpActivity({
       programId: source.id,
-      objectiveOrder: 1,
-      objective: "Controlar trabajos críticos",
       activity: "Inspección mensual de controles críticos",
       program: "Controles críticos",
       responsibleSlugs: ["prf"],
@@ -310,7 +494,7 @@ describe("prevention PDTP service", () => {
       recurrenceRule: { frequency: "quarterly", interval: 1, plannedQuantity: 1, weekOfMonth: 1 },
     }, "user-1")
 
-    const fromV1 = await createPdtpProgram({
+    const fromV1 = await createLegacyPdtpProgramForTests({
       year: 2031,
       title: "Programa contractual 2031",
       userId: "user-1",
@@ -354,45 +538,30 @@ describe("prevention PDTP service", () => {
     expect(await inMemoryDb.select().from(schema.pdtpApprovalDecisions)).toHaveLength(0)
   })
 
-  it("stages, applies idempotently and rolls back the 2026 workbook with its six historical E cells", async () => {
+  it("stages, applies only planning idempotently and rolls back the 2026 workbook", async () => {
     const { readFile } = await import("node:fs/promises")
-    const { applyPdtpImportBatch, createPdtpProgram, rollbackPdtpImportBatch, stagePdtpXlsxImport } = await import("@/lib/services/prevention-pdtp")
-    const program = await createPdtpProgram({ year: 2026, title: "Migración controlada 2026", userId: "user-1" })
-    const bytes = await readFile(path.resolve(process.cwd(), "PROGRAMA DE TRABAJO PREVENTIVO SG-SST 2026.xlsx"))
+    const { applyPdtpImportBatch, createLegacyPdtpProgramForTests, rollbackPdtpImportBatch, stagePdtpXlsxImport } = await import("@/lib/services/prevention-pdtp")
+    const program = await createLegacyPdtpProgramForTests({ year: 2026, title: "Migración controlada 2026", userId: "user-1" })
+    const bytes = await readFile(path.resolve(process.cwd(), "PROGRAMA_ACTIVIDADES_DEFINITIVO.xlsx"))
     const staged = await stagePdtpXlsxImport({
       programId: program.id,
       bytes,
-      fileName: "PROGRAMA DE TRABAJO PREVENTIVO SG-SST 2026.xlsx",
+      fileName: "PROGRAMA_ACTIVIDADES_DEFINITIVO.xlsx",
       mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       userId: "user-1",
     })
-    expect(staged.preview.counts).toMatchObject({ activities: 89, views: 8, plannedCells: 843, plannedQuantity: 1035, executedCells: 6, executedQuantity: 6 })
+    expect(staged.preview.counts).toMatchObject({ activities: 87, views: 8, plannedCells: 821, plannedQuantity: 1013, executedCells: 0, executedQuantity: 0 })
     expect(await inMemoryDb.select().from(schema.pdtpActivities).where(eq(schema.pdtpActivities.programId, program.id))).toHaveLength(0)
 
-    await expect(applyPdtpImportBatch({ batchId: staged.batch.id, userId: "user-1", scope: ["ws-1"] })).rejects.toThrow(/selecciona la faena/i)
-    await expect(applyPdtpImportBatch({
-      batchId: staged.batch.id,
-      userId: "user-1",
-      worksiteId: "ws-1",
-      acceptMissingEvidence: true,
-      acceptanceReason: "Intento desde alcance ajeno de prueba",
-      scope: ["ws-other"],
-      // La importación tiene mensaje propio (el genérico de assertWorksiteAccess
-      // es ambiguo a propósito para no filtrar existencia, pero acá el usuario
-      // eligió de su propia lista de faenas).
-    })).rejects.toThrow(/no tienes esa faena autorizada/i)
     const applied = await applyPdtpImportBatch({
       batchId: staged.batch.id,
       userId: "user-1",
-      worksiteId: "ws-1",
-      acceptMissingEvidence: true,
-      acceptanceReason: "Migración histórica aprobada para prueba",
       scope: ["ws-1"],
     })
-    expect(applied).toMatchObject({ activityCount: 89, importedExecutionCount: 6 })
-    expect(await inMemoryDb.select().from(schema.pdtpExecutions)).toHaveLength(6)
+    expect(applied).toMatchObject({ activityCount: 87, importedExecutionCount: 0 })
+    expect(await inMemoryDb.select().from(schema.pdtpExecutions)).toHaveLength(0)
     await applyPdtpImportBatch({ batchId: staged.batch.id, userId: "user-1", scope: ["ws-1"] })
-    expect(await inMemoryDb.select().from(schema.pdtpExecutions)).toHaveLength(6)
+    expect(await inMemoryDb.select().from(schema.pdtpExecutions)).toHaveLength(0)
 
     await rollbackPdtpImportBatch({ batchId: staged.batch.id, userId: "user-1", reason: "Reversión controlada de prueba", scope: ["ws-1"] })
     expect(await inMemoryDb.select().from(schema.pdtpExecutions)).toHaveLength(0)
@@ -403,7 +572,7 @@ describe("prevention PDTP service", () => {
 
   it("returns a read-only sheet view with monthly planned totals", async () => {
     const { loadPdtpCatalog, getPdtpSheetView } = await import("@/lib/services/prevention-pdtp")
-    const workbook = await readPdtpWorkbook(path.resolve(process.cwd(), "PROGRAMA DE TRABAJO PREVENTIVO SG-SST 2026.xlsx"))
+    const workbook = await readPdtpWorkbook(path.resolve(process.cwd(), "PROGRAMA_ACTIVIDADES_DEFINITIVO.xlsx"))
     const catalog = extractPdtpCatalogFromWorkbook(workbook)
 
     await loadPdtpCatalog({
@@ -515,7 +684,7 @@ describe("prevention PDTP service", () => {
 
   it("builds an Excel report payload for the selected sheet and worksite", async () => {
     const { loadPdtpCatalog, buildPdtpExport } = await import("@/lib/services/prevention-pdtp")
-    const workbook = await readPdtpWorkbook(path.resolve(process.cwd(), "PROGRAMA DE TRABAJO PREVENTIVO SG-SST 2026.xlsx"))
+    const workbook = await readPdtpWorkbook(path.resolve(process.cwd(), "PROGRAMA_ACTIVIDADES_DEFINITIVO.xlsx"))
     const catalog = extractPdtpCatalogFromWorkbook(workbook)
 
     await loadPdtpCatalog({
@@ -644,16 +813,14 @@ describe("prevention PDTP service", () => {
 
   it("caps overcompliance at the planned quantity per cell in the indicator (regla R3, respuesta 2.4)", async () => {
     const {
-      createPdtpProgram, addPdtpActivity, submitPdtpProgramForReview, approvePdtpProgramJdpr,
+      createLegacyPdtpProgramForTests, addPdtpActivity, submitPdtpProgramForReview, approvePdtpProgramJdpr,
       signPdtpProgramLegal, activatePdtpProgram, markPdtpExecution, approvePdtpExecution,
       getPdtpComplianceIndicators,
     } = await import("@/lib/services/prevention-pdtp")
 
-    const program = await createPdtpProgram({ year: 2029, title: "Programa con sobrecumplimiento", userId: "user-1" })
+    const program = await createLegacyPdtpProgramForTests({ year: 2029, title: "Programa con sobrecumplimiento", userId: "user-1" })
     const activity = await addPdtpActivity({
       programId: program.id,
-      objectiveOrder: 1,
-      objective: "Objetivo 1",
       activity: "Actividad con meta baja y ejecución real mayor",
       program: "Guía de ejecución",
       responsibleSlugs: ["prf"],
@@ -690,7 +857,7 @@ describe("prevention PDTP service", () => {
 
   it("coverage activities are all-or-nothing per month (R1/R2, respuesta 2.2)", async () => {
     const {
-      createPdtpProgram, addPdtpActivity, submitPdtpProgramForReview, approvePdtpProgramJdpr,
+      createLegacyPdtpProgramForTests, addPdtpActivity, submitPdtpProgramForReview, approvePdtpProgramJdpr,
       signPdtpProgramLegal, activatePdtpProgram, markPdtpExecution, approvePdtpExecution,
       getPdtpComplianceIndicators,
     } = await import("@/lib/services/prevention-pdtp")
@@ -702,9 +869,9 @@ describe("prevention PDTP service", () => {
         .concat([{ id: "wk-cov-inactivo", rut: "9.000.009-9", firstName: "Ex", lastName: "Trabajador", position: "Operador", worksiteId: "ws-1", isActive: false, createdAt: now0 }]),
     )
 
-    const program = await createPdtpProgram({ year: 2031, title: "Programa cobertura", userId: "user-1" })
+    const program = await createLegacyPdtpProgramForTests({ year: 2031, title: "Programa cobertura", userId: "user-1" })
     const mkCoverage = (order: number, name: string) => addPdtpActivity({
-      programId: program.id, objectiveOrder: order, objective: `Obj ${order}`, activity: name,
+      programId: program.id, activity: name,
       program: "Guía", responsibleSlugs: ["prf"], responsibleDisplay: "Prevencionista",
       scheduleMode: "scheduled",
       recurrenceRule: { frequency: "monthly", interval: 1, plannedQuantity: 3, weekOfMonth: 1 },
@@ -839,13 +1006,11 @@ describe("prevention PDTP service", () => {
   })
 
   it("blocks review while an imported schedule classification remains unresolved", async () => {
-    const { addPdtpActivity, createPdtpProgram, submitPdtpProgramForReview, updatePdtpActivity } =
+    const { addPdtpActivity, createLegacyPdtpProgramForTests, submitPdtpProgramForReview, updatePdtpActivity } =
       await import("@/lib/services/prevention-pdtp")
-    const program = await createPdtpProgram({ year: 2032, title: "Programa con clasificación pendiente", userId: "user-1" })
+    const program = await createLegacyPdtpProgramForTests({ year: 2032, title: "Programa con clasificación pendiente", userId: "user-1" })
     const activity = await addPdtpActivity({
       programId: program.id,
-      objectiveOrder: 1,
-      objective: "Definir cuándo aplicar el control",
       activity: "Evaluar una condición preventiva heredada",
       program: "Guía por confirmar",
       responsibleSlugs: ["prf"],
@@ -1051,9 +1216,9 @@ describe("prevention PDTP service", () => {
     await linkPdtpActivitySource({
       activityId: activity!.id,
       worksiteId: "ws-1",
-      sourceType: "internal_objective",
-      sourceId: "objetivo-interno-1",
-      justification: "Objetivo preventivo definido para la faena.",
+      sourceType: "audit",
+      sourceId: "auditoria-interna-1",
+      justification: "Auditoría preventiva definida para la faena.",
     }, access)
 
     await submitForReview(program.id)
@@ -1066,8 +1231,8 @@ describe("prevention PDTP service", () => {
     await expect(linkPdtpActivitySource({
       activityId: activity!.id,
       worksiteId: "ws-1",
-      sourceType: "internal_objective",
-      sourceId: "objetivo-interno-2",
+      sourceType: "audit",
+      sourceId: "auditoria-interna-2",
       justification: "Cambio posterior al inicio de la revisión.",
     }, access)).rejects.toThrow(/bloqueado/i)
     await expect(deletePdtpProgram(program.id)).rejects.toThrow(/bloqueado/i)
@@ -1140,34 +1305,6 @@ describe("prevention PDTP service", () => {
     expect(lifecycleEntries.some((entry) => entry.note?.includes("rechazado"))).toBe(true)
     expect(lifecycleEntries.some((entry) => entry.note?.includes("reabierto"))).toBe(true)
     expect(lifecycleEntries.some((entry) => entry.note?.includes("archivado"))).toBe(true)
-  })
-
-  it("activating a new version deactivates the old one", async () => {
-    const { approvePdtpProgramJdpr, signPdtpProgramLegal, activatePdtpProgram, getActivePdtpProgram } = await import("@/lib/services/prevention-pdtp")
-    const { loadPdtpCatalog } = await import("@/lib/services/prevention-pdtp")
-    const workbook = await readPdtpWorkbook(path.resolve(process.cwd(), "PROGRAMA DE TRABAJO PREVENTIVO SG-SST 2026.xlsx"))
-    const catalog = extractPdtpCatalogFromWorkbook(workbook)
-
-    // v1 → active
-    const { program: v1 } = await loadPdtpCatalog({ year: 2026, version: 1, title: "v1", catalog, userId: "user-1" })
-    await submitForReview(v1.id)
-    await approvePdtpProgramJdpr(v1.id, "user-jdpr")
-    await signPdtpProgramLegal(v1.id, "user-legal")
-    await activatePdtpProgram(v1.id, "user-jdpr")
-
-    // v2 → also activated → v1 should be closed (it was executed, not
-    // reopened as draft — see activatePdtpProgram in lib/services/pdtp/lifecycle.ts)
-    const { program: v2 } = await loadPdtpCatalog({ year: 2026, version: 2, title: "v2", catalog, userId: "user-1" })
-    await submitForReview(v2.id)
-    await approvePdtpProgramJdpr(v2.id, "user-jdpr")
-    await signPdtpProgramLegal(v2.id, "user-legal")
-    await activatePdtpProgram(v2.id, "user-jdpr")
-
-    const active = await getActivePdtpProgram(2026)
-    expect(active?.id).toBe(v2.id)
-
-    const [v1Row] = await inMemoryDb.select().from(schema.pdtpPrograms).where(eq(schema.pdtpPrograms.id, v1.id))
-    expect(v1Row?.status).toBe("closed")
   })
 
   it("does not reactivate a closed program", async () => {
@@ -1339,8 +1476,6 @@ describe("prevention PDTP service", () => {
 
     const created = await addPdtpActivity({
       programId: program.id,
-      objectiveOrder: 1,
-      objective: "FORTALECER EL LIDERAZGO DE SEGURIDAD Y SALUD EN EL TRABAJO",
       activity: "Nueva actividad de prueba",
       program: "Reunión online",
       responsibleSlugs: ["prf"],
@@ -1368,8 +1503,6 @@ describe("prevention PDTP service", () => {
     // debe quedar con displayOrder = 5, no con displayOrder = 90.
     const a1 = await addPdtpActivity({
       programId: program.id,
-      objectiveOrder: 6,
-      objective: "CONTROLAR LA APLICACIÓN DEL PROCEDIMIENTO DE ACCIDENTES E INCIDENTES",
       activity: "A1",
       program: "X",
       responsibleSlugs: ["cphs"],
@@ -1383,8 +1516,6 @@ describe("prevention PDTP service", () => {
 
     const a2 = await addPdtpActivity({
       programId: program.id,
-      objectiveOrder: 6,
-      objective: "CONTROLAR LA APLICACIÓN DEL PROCEDIMIENTO DE ACCIDENTES E INCIDENTES",
       activity: "A2",
       program: "X",
       responsibleSlugs: ["cphs"],
@@ -1493,7 +1624,7 @@ describe("prevention PDTP service", () => {
 
   it("getPdtpSheetView prefiere el programa activo sobre el más reciente por versión", async () => {
     const { loadPdtpCatalog, getPdtpSheetView, approvePdtpProgramJdpr, signPdtpProgramLegal, activatePdtpProgram } = await import("@/lib/services/prevention-pdtp")
-    const workbook = await readPdtpWorkbook(path.resolve(process.cwd(), "PROGRAMA DE TRABAJO PREVENTIVO SG-SST 2026.xlsx"))
+    const workbook = await readPdtpWorkbook(path.resolve(process.cwd(), "PROGRAMA_ACTIVIDADES_DEFINITIVO.xlsx"))
     const catalog = extractPdtpCatalogFromWorkbook(workbook)
 
     // v1 → activar
@@ -1560,8 +1691,6 @@ describe("prevention PDTP service", () => {
 
     const created = await addPdtpActivity({
       programId: program.id,
-      objectiveOrder: 6,
-      objective: "CONTROLAR LA APLICACIÓN DEL PROCEDIMIENTO DE ACCIDENTES E INCIDENTES",
       activity: "Actividad con múltiples responsables y hojas",
       program: "X",
       responsibleSlugs: ["prf", "jt", "jdpr"],
@@ -1677,11 +1806,11 @@ describe("prevention PDTP service", () => {
   it("creates and copies a non-2026 program without inheriting the workbook as product structure", async () => {
     const {
       addPdtpActivity,
-      createPdtpProgram,
+      createLegacyPdtpProgramForTests,
       ensureDefaultChecklist,
     } = await import("@/lib/services/prevention-pdtp")
 
-    const source = await createPdtpProgram({
+    const source = await createLegacyPdtpProgramForTests({
       year: 2027,
       title: "Programa de controles críticos 2027",
       userId: "user-1",
@@ -1694,8 +1823,6 @@ describe("prevention PDTP service", () => {
     const longDescription = `Verificar controles críticos antes del inicio. ${"Detalle operacional verificable. ".repeat(12)}`
     const activity = await addPdtpActivity({
       programId: source.id,
-      objectiveOrder: 9,
-      objective: "Evitar eventos de alto potencial",
       activity: longDescription,
       program: "Controles críticos",
       responsibleSlugs: ["prevencionista"],
@@ -1714,10 +1841,9 @@ describe("prevention PDTP service", () => {
     const projected = await inMemoryDb.select().from(schema.pdtpActivitySchedule)
       .where(eq(schema.pdtpActivitySchedule.activityId, activity.id))
     expect(projected).toHaveLength(12)
-    expect(activity.objectiveOrder).toBe(9)
     expect(activity.activity).toBe(longDescription)
 
-    const copied = await createPdtpProgram({
+    const copied = await createLegacyPdtpProgramForTests({
       year: 2028,
       title: "Programa de controles críticos 2028",
       userId: "user-1",
@@ -1736,7 +1862,6 @@ describe("prevention PDTP service", () => {
     expect(copied.sourceProgramId).toBe(source.id)
     expect(copied.sourceContentVersion).toBe(source.contentVersion)
     expect(copiedActivity).toMatchObject({
-      objectiveOrder: 9,
       scheduleMode: "scheduled",
       evidenceRequirement: "Registro firmado con hallazgos y acciones",
       audienceRoles: ["jefe_terreno"],
@@ -1750,22 +1875,20 @@ describe("prevention PDTP service", () => {
   it("publishes immutable template versions and materializes each program from the selected snapshot", async () => {
     const {
       addPdtpActivity,
-      createPdtpProgram,
+      createLegacyPdtpProgramForTests,
       createPdtpTemplateVersion,
       ensureDefaultChecklist,
       listActivePdtpTemplates,
       updatePdtpActivity,
     } = await import("@/lib/services/prevention-pdtp")
 
-    const source = await createPdtpProgram({
+    const source = await createLegacyPdtpProgramForTests({
       year: 2027,
       title: "Programa base de controles críticos",
       userId: "user-1",
     })
     const sourceActivity = await addPdtpActivity({
       programId: source.id,
-      objectiveOrder: 1,
-      objective: "Prevenir eventos de alto potencial",
       activity: "Verificar controles críticos antes de iniciar el turno",
       program: "Controles críticos",
       responsibleSlugs: ["prevencionista"],
@@ -1798,13 +1921,13 @@ describe("prevention PDTP service", () => {
       userId: "user-1",
     })
 
-    const fromV1 = await createPdtpProgram({
+    const fromV1 = await createLegacyPdtpProgramForTests({
       year: 2028,
       title: "Programa 2028 desde plantilla v1",
       userId: "user-1",
       templateVersionId: publishedV1.version.id,
     })
-    const fromV2 = await createPdtpProgram({
+    const fromV2 = await createLegacyPdtpProgramForTests({
       year: 2029,
       title: "Programa 2029 desde plantilla v2",
       userId: "user-1",
@@ -1846,7 +1969,7 @@ describe("prevention PDTP service", () => {
   it("round-trips the five long 2026 activities without swapping or truncating their meaning", async () => {
     const { buildPdtpExport, readPdtpActivityContent, updatePdtpActivity } = await import("@/lib/services/prevention-pdtp")
     const { PDTP_2026_LONG_TEXT_ACTIVITY_IDS } = await import("@/lib/services/pdtp-adapters/contract-2026")
-    const workbook = await readPdtpWorkbook(path.resolve(process.cwd(), "PROGRAMA DE TRABAJO PREVENTIVO SG-SST 2026.xlsx"))
+    const workbook = await readPdtpWorkbook(path.resolve(process.cwd(), "PROGRAMA_ACTIVIDADES_DEFINITIVO.xlsx"))
     const catalog = extractPdtpCatalogFromWorkbook(workbook)
     const { program } = await loadCatalog()
     const longTextIds = new Set<number>(PDTP_2026_LONG_TEXT_ACTIVITY_IDS)
@@ -1876,10 +1999,10 @@ describe("prevention PDTP service", () => {
       worksiteId: "ws-1",
       scope: ["ws-1"],
     })
-    expect(report.headers.slice(0, 5)).toEqual(["N°", "Objetivo", "Actividad preventiva", "Guía de ejecución", "Responsables"])
+    expect(report.headers.slice(0, 4)).toEqual(["N°", "Actividad preventiva", "Guía de ejecución", "Responsables"])
     for (const number of PDTP_2026_LONG_TEXT_ACTIVITY_IDS) {
       const row = report.rows.find((candidate) => candidate[0] === number)!
-      expect({ activityDescription: row[2], executionGuidance: row[3] }).toEqual(expected.get(number))
+      expect({ activityDescription: row[1], executionGuidance: row[2] }).toEqual(expected.get(number))
     }
   })
 
@@ -1889,7 +2012,7 @@ describe("prevention PDTP service", () => {
 
     const before = await getActivePdtpProgram(2026)
     const activities = await inMemoryDb.select().from(schema.pdtpActivities)
-      .where(and(eq(schema.pdtpActivities.programId, program.id), eq(schema.pdtpActivities.objectiveOrder, 1), eq(schema.pdtpActivities.scheduleMode, "scheduled")))
+      .where(and(eq(schema.pdtpActivities.programId, program.id), eq(schema.pdtpActivities.scheduleMode, "scheduled")))
     const target = activities[0]!
     const scheduleBefore = await inMemoryDb.select().from(schema.pdtpActivitySchedule)
       .where(eq(schema.pdtpActivitySchedule.activityId, target.id))
@@ -1912,12 +2035,12 @@ describe("prevention PDTP service", () => {
     expect(after?.version).toBe(before?.version)
   })
 
-  it("audiences (sheet memberships) reuse the same 89 activities instead of duplicating rows per view", async () => {
+  it("audiences (sheet memberships) reuse the same 87 activities instead of duplicating rows per view", async () => {
     const { program } = await loadCatalog()
 
     const activities = await inMemoryDb.select().from(schema.pdtpActivities)
       .where(eq(schema.pdtpActivities.programId, program.id))
-    expect(activities).toHaveLength(89)
+    expect(activities).toHaveLength(87)
 
     // pdtpSheetActivities no tiene programId propio: las membresías se leen
     // por los activityId de este programa, contra las ocho vistas globales
@@ -1930,7 +2053,7 @@ describe("prevention PDTP service", () => {
     // a varias audiencias) suman más filas de membresía que actividades...
     expect(memberships.length).toBeGreaterThan(activities.length)
     // ...pero ninguna vista crea una copia de la actividad: el conjunto de
-    // activityId referenciados por las membresías nunca excede las 89 filas
+    // activityId referenciados por las membresías nunca excede las 87 filas
     // reales, y cada fila de pdtpActivities sigue siendo única por n.
     const referencedActivityIds = new Set(memberships.map((m) => m.activityId))
     expect(referencedActivityIds.size).toBeLessThanOrEqual(activities.length)
@@ -1939,7 +2062,7 @@ describe("prevention PDTP service", () => {
 
   it("keeps the 22 no-P activities visible without contaminating the calendarized denominator", async () => {
     const { listPdtpProgramActivities, getPdtpComplianceIndicators } = await import("@/lib/services/prevention-pdtp")
-    // Fixture = documento histórico (archivo viejo, 89); usa las invariantes de la fuente, no las del programa vigente (86).
+    // Base definitiva: 87 actividades, incluidas las que no tienen P numérica.
     const { PDTP_2026_SOURCE_INVARIANTS, PDTP_2026_NO_NUMERIC_PLAN_ACTIVITY_IDS } = await import("@/lib/services/pdtp-adapters/contract-2026")
     const { program } = await loadCatalog()
 
@@ -1951,16 +2074,16 @@ describe("prevention PDTP service", () => {
     }
 
     // ...pero no aportan ninguna celda al denominador calendarizado: el total
-    // planificado anual coincide exactamente con las 843 celdas/1.035
-    // unidades de las 67 actividades que sí tienen P, sin inflar ni recortar
+    // planificado anual coincide exactamente con las 821 celdas/1.013
+    // unidades de las 65 actividades que sí tienen P, sin inflar ni recortar
     // por la presencia de las 22 sin plan numérico.
     const indicators = await getPdtpComplianceIndicators(program.id, "ws-1")
     expect(indicators?.annual.planned).toBe(PDTP_2026_SOURCE_INVARIANTS.plannedQuantityTotal)
   })
 
-  it("getPdtpManagementReport groups avance/desviaciones/responsables by objetivo, filters, and fails closed outside scope", async () => {
+  it("getPdtpManagementReport reports avance/desviaciones by actividad and fails closed outside scope", async () => {
     const { getPdtpManagementReport, markPdtpExecution, approvePdtpExecution } = await import("@/lib/services/prevention-pdtp")
-    // Fixture = documento histórico (archivo viejo, 89); usa las invariantes de la fuente, no las del programa vigente (86).
+    // Base definitiva normalizada.
     const { PDTP_2026_SOURCE_INVARIANTS } = await import("@/lib/services/pdtp-adapters/contract-2026")
     const program = await loadActiveCatalog()
 
@@ -1972,15 +2095,13 @@ describe("prevention PDTP service", () => {
     expect(report).not.toBeNull()
     expect(report!.indicatorDefinitions.length).toBeGreaterThan(0)
 
-    // Solo actividades scheduled aportan al reporte: 89 - 22 sin P = 67 (fixture histórico).
-    const scheduledCount = report!.objectives.reduce((sum, o) => sum + o.activityCount, 0)
+    const scheduledCount = report!.activities.length
     expect(scheduledCount).toBe(PDTP_2026_SOURCE_INVARIANTS.activityCount - PDTP_2026_SOURCE_INVARIANTS.noNumericPlanCount)
-    expect(report!.objectives.every((o) => o.executed === 0)).toBe(true)
-    expect(report!.objectives.every((o) => o.responsibles.length > 0)).toBe(true)
+    expect(report!.activities.every((activity) => activity.executed === 0)).toBe(true)
+    expect(report!.activities.every((activity) => activity.responsibles.length > 0)).toBe(true)
 
-    // Ejecutar y aprobar una actividad del objetivo 1 mueve su avance, no el de otros objetivos.
     const activities = await inMemoryDb.select().from(schema.pdtpActivities)
-      .where(and(eq(schema.pdtpActivities.programId, program.id), eq(schema.pdtpActivities.objectiveOrder, 1), eq(schema.pdtpActivities.scheduleMode, "scheduled")))
+      .where(and(eq(schema.pdtpActivities.programId, program.id), eq(schema.pdtpActivities.scheduleMode, "scheduled")))
     const target = activities[0]!
     const execution = await markPdtpExecution({
       activityId: target.id, worksiteId: "ws-1", year: program.year, month: 1, week: 1, executedQuantity: 1,
@@ -1988,24 +2109,15 @@ describe("prevention PDTP service", () => {
     await approvePdtpExecution(execution.id, "user-1", ["ws-1"])
 
     const updated = await getPdtpManagementReport({ programId: program.id, worksiteId: "ws-1", scope: ["ws-1"] })
-    const objective1 = updated!.objectives.find((o) => o.objectiveOrder === 1)!
-    expect(objective1.executed).toBeGreaterThan(0)
-    const otherObjectives = updated!.objectives.filter((o) => o.objectiveOrder !== 1)
-    expect(otherObjectives.every((o) => o.executed === 0)).toBe(true)
+    const updatedTarget = updated!.activities.find((row) => row.activityNumber === target.n)!
+    expect(updatedTarget.executed).toBeGreaterThan(0)
+    expect(updated!.activities.filter((row) => row.activityNumber !== target.n).every((row) => row.executed === 0)).toBe(true)
 
-    // Corte por objetivo.
-    const onlyObjective2 = await getPdtpManagementReport({
-      programId: program.id, worksiteId: "ws-1", scope: ["ws-1"], filters: { objectiveOrder: 2 },
-    })
-    expect(onlyObjective2!.objectives).toHaveLength(1)
-    expect(onlyObjective2!.objectives[0]!.objectiveOrder).toBe(2)
-
-    // Corte por estado: "deviates" excluye el objetivo con avance parcial si aún no alcanza la meta.
     const deviating = await getPdtpManagementReport({
       programId: program.id, worksiteId: "ws-1", scope: ["ws-1"], filters: { status: "deviates" },
     })
-    expect(deviating!.objectives.every((o) => !o.meetsTarget)).toBe(true)
-    expect(deviating!.objectives.some((o) => o.objectiveOrder === 1)).toBe(true)
+    expect(deviating!.activities.every((row) => !row.meetsTarget)).toBe(true)
+    expect(deviating!.activities.some((row) => row.activityNumber === target.n)).toBe(true)
   })
 
   it("getPdtpAuditDossier assembles executions, sources, obligations, actions, approvals and changes scoped to one faena, and fails closed outside scope", async () => {
@@ -2077,23 +2189,21 @@ describe("prevention PDTP service", () => {
     expect(otherFaena!.changes.length).toBe(dossier!.changes.length)
   })
 
-  it("stages the Excel without mutations, applies P and E atomically, preserves checklist bindings and rolls back", async () => {
+  it("stages without mutations, blocks activities outside General, applies P authoritatively and rolls back", async () => {
     const { readFile } = await import("node:fs/promises")
     const {
       addPdtpActivity,
       applyPdtpImportBatch,
       cancelPdtpImportBatch,
-      createPdtpProgram,
+      createLegacyPdtpProgramForTests,
       ensureDefaultChecklist,
       getPdtpComplianceIndicators,
       rollbackPdtpImportBatch,
       stagePdtpXlsxImport,
     } = await import("@/lib/services/prevention-pdtp")
-    const program = await createPdtpProgram({ year: 2026, title: "Programa destino de migración", userId: "user-1" })
+    const program = await createLegacyPdtpProgramForTests({ year: 2026, title: "Programa destino de migración", userId: "user-1" })
     const priorActivity = await addPdtpActivity({
       programId: program.id,
-      objectiveOrder: 1,
-      objective: "Objetivo previo",
       activity: "Actividad previa que debe poder restaurarse",
       program: "Guía previa",
       responsibleSlugs: ["prf"],
@@ -2107,18 +2217,18 @@ describe("prevention PDTP service", () => {
       id: "source-link-before-import",
       activityId: priorActivity.id,
       worksiteId: "ws-1",
-      sourceType: "internal_objective",
-      sourceId: "objective-before-import",
+      sourceType: "audit",
+      sourceId: "audit-before-import",
       sourceVersionSnapshot: "v1",
       justification: "Vínculo previo que debe conservarse",
       createdByUserId: "user-1",
     })
-    const bytes = await readFile(path.resolve(process.cwd(), "PROGRAMA DE TRABAJO PREVENTIVO SG-SST 2026.xlsx"))
+    const bytes = await readFile(path.resolve(process.cwd(), "PROGRAMA_ACTIVIDADES_DEFINITIVO.xlsx"))
 
     const staged = await stagePdtpXlsxImport({
       programId: program.id,
       bytes,
-      fileName: "PROGRAMA DE TRABAJO PREVENTIVO SG-SST 2026.xlsx",
+      fileName: "PROGRAMA_ACTIVIDADES_DEFINITIVO.xlsx",
       mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       userId: "user-1",
     })
@@ -2126,15 +2236,18 @@ describe("prevention PDTP service", () => {
       .where(eq(schema.pdtpActivities.programId, program.id))
     expect(afterStageActivities).toHaveLength(1)
     expect(afterStageActivities[0]?.activity).toBe("Actividad previa que debe poder restaurarse")
-    expect(staged.preview.counts).toMatchObject({ activities: 89, plannedCells: 843, plannedQuantity: 1035, executedCells: 6, executedQuantity: 6 })
+    expect(staged.preview.counts).toMatchObject({ activities: 87, plannedCells: 821, plannedQuantity: 1013, executedCells: 0, executedQuantity: 0 })
     expect(staged.preview.counts).toMatchObject({
-      scheduleRowsReplaced: 1,
-      checklistBindingsPreserved: 1,
-      sourceLinksPreserved: 1,
+      scheduleRowsReplaced: 0,
+      checklistBindingsPreserved: 0,
+      sourceLinksPreserved: 0,
       checklistBindingsLost: 0,
       sourceLinksLost: 0,
     })
-    expect(staged.preview.calendarChanges.some((change) => change.activityNumber === priorActivity.n)).toBe(true)
+    expect(staged.preview.calendarChanges.some((change) => change.activityNumber === priorActivity.n)).toBe(false)
+    expect(staged.preview.blockingErrors).toEqual([
+      expect.stringContaining("General es autoritativa"),
+    ])
 
     await expect(applyPdtpImportBatch({
       batchId: staged.batch.id,
@@ -2146,53 +2259,70 @@ describe("prevention PDTP service", () => {
     })).rejects.toThrow(/no tienes esa faena autorizada/i)
     expect(await inMemoryDb.select().from(schema.pdtpActivities).where(eq(schema.pdtpActivities.programId, program.id))).toHaveLength(1)
 
-    const applied = await applyPdtpImportBatch({
+    await expect(applyPdtpImportBatch({
       batchId: staged.batch.id,
       userId: "user-1",
       worksiteId: "ws-1",
       acceptMissingEvidence: true,
       acceptanceReason: "Histórico validado por Jefatura de Prevención",
       scope: ["ws-1"],
+    })).rejects.toThrow(/General es autoritativa/)
+    await cancelPdtpImportBatch({
+      batchId: staged.batch.id,
+      userId: "user-1",
+      reason: "Se revisará y retirará la actividad ajena antes de reimportar.",
     })
-    expect(applied).toMatchObject({ activityCount: 89, sheetCount: 8, plannedCellCount: 843, importedExecutionCount: 6 })
-    const [importedActivities, importedExecutions, preservedChecklist, preservedSourceLink, appliedProgram, documentHistory, roleLegend] = await Promise.all([
+    await inMemoryDb.delete(schema.pdtpActivities).where(eq(schema.pdtpActivities.id, priorActivity.id))
+
+    const cleanStaged = await stagePdtpXlsxImport({
+      programId: program.id,
+      bytes,
+      fileName: "PROGRAMA_ACTIVIDADES_DEFINITIVO.xlsx",
+      mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      userId: "user-1",
+    })
+    expect(cleanStaged.preview.blockingErrors).toEqual([])
+    const applied = await applyPdtpImportBatch({
+      batchId: cleanStaged.batch.id,
+      userId: "user-1",
+      worksiteId: "ws-1",
+      acceptMissingEvidence: true,
+      acceptanceReason: "Base autoritativa validada por Jefatura de Prevención",
+      scope: ["ws-1"],
+    })
+    expect(applied).toMatchObject({ activityCount: 87, sheetCount: 8, plannedCellCount: 821, importedExecutionCount: 0, preservedExtraActivities: 0 })
+    const [importedActivities, importedExecutions, appliedProgram, documentHistory, roleLegend] = await Promise.all([
       inMemoryDb.select().from(schema.pdtpActivities).where(eq(schema.pdtpActivities.programId, program.id)),
       inMemoryDb.select().from(schema.pdtpExecutions),
-      inMemoryDb.select().from(schema.pdtpActivityChecklists).where(eq(schema.pdtpActivityChecklists.activityId, priorActivity.id)),
-      inMemoryDb.select().from(schema.preventionPdtpSourceLinks).where(eq(schema.preventionPdtpSourceLinks.activityId, priorActivity.id)),
       inMemoryDb.select().from(schema.pdtpPrograms).where(eq(schema.pdtpPrograms.id, program.id)),
       inMemoryDb.select().from(schema.pdtpDocumentHistory).where(eq(schema.pdtpDocumentHistory.programId, program.id)),
       inMemoryDb.select().from(schema.pdtpRoleLegendEntries).where(eq(schema.pdtpRoleLegendEntries.programId, program.id)),
     ])
-    expect(importedActivities).toHaveLength(89)
+    expect(importedActivities).toHaveLength(87)
     expect(importedActivities.filter((activity) => activity.scheduleClassificationStatus === "needs_review")).toHaveLength(22)
-    expect(importedActivities.filter((activity) => activity.scheduleClassificationStatus === "confirmed")).toHaveLength(67)
-    expect(importedExecutions).toHaveLength(6)
-    expect(importedExecutions.every((execution) => execution.origin === "xlsx_import" && execution.evidenceStatus === "migrated_without_attachment")).toBe(true)
-    expect(importedExecutions.map((execution) => (execution.sourceMetadataJson as { sourceCell: string }).sourceCell).sort()).toEqual(["G19", "I19", "K19", "M14", "M19", "O15"])
-    expect(preservedChecklist).toHaveLength(1)
-    expect(preservedSourceLink).toHaveLength(1)
+    expect(importedActivities.filter((activity) => activity.scheduleClassificationStatus === "confirmed")).toHaveLength(65)
+    expect(importedExecutions).toHaveLength(0)
     expect(appliedProgram[0]).toMatchObject({ documentCode: "RE-36", indicatorPeriodicity: "Mensual", measurementOwner: "Cada faena" })
     expect(documentHistory.map((entry) => entry.entryKind).sort()).toEqual(["approval", "change_control", "elaboration"])
     expect(documentHistory.find((entry) => entry.entryKind === "approval")?.linkedUserId).toBeNull()
     expect(roleLegend).toHaveLength(5)
-    expect((await getPdtpComplianceIndicators(program.id, "ws-1"))?.annual).toEqual({ planned: 1035, executed: 0, percent: 0 })
+    expect((await getPdtpComplianceIndicators(program.id, "ws-1"))?.annual).toEqual({ planned: 1013, executed: 0, percent: 0 })
 
     const { submitPdtpProgramForReview } = await import("@/lib/services/prevention-pdtp")
     await expect(submitPdtpProgramForReview(program.id, "user-1")).rejects.toThrow(/22 actividad\(es\).*requieren confirmar/i)
 
     await applyPdtpImportBatch({
-      batchId: staged.batch.id,
+      batchId: cleanStaged.batch.id,
       userId: "user-1",
       worksiteId: "ws-1",
       acceptMissingEvidence: true,
       acceptanceReason: "Reintento idempotente del lote validado",
       scope: ["ws-1"],
     })
-    expect(await inMemoryDb.select().from(schema.pdtpExecutions)).toHaveLength(6)
+    expect(await inMemoryDb.select().from(schema.pdtpExecutions)).toHaveLength(0)
 
     await rollbackPdtpImportBatch({
-      batchId: staged.batch.id,
+      batchId: cleanStaged.batch.id,
       userId: "user-1",
       reason: "Restaurar el estado anterior de la prueba",
       scope: ["ws-1"],
@@ -2205,19 +2335,18 @@ describe("prevention PDTP service", () => {
       inMemoryDb.select().from(schema.pdtpDocumentHistory).where(eq(schema.pdtpDocumentHistory.programId, program.id)),
       inMemoryDb.select().from(schema.pdtpRoleLegendEntries).where(eq(schema.pdtpRoleLegendEntries.programId, program.id)),
     ])
-    expect(rolledBackActivities).toHaveLength(1)
-    expect(rolledBackActivities[0]?.activity).toBe("Actividad previa que debe poder restaurarse")
+    expect(rolledBackActivities).toHaveLength(0)
     expect(rolledBackExecutions).toHaveLength(0)
-    expect(rolledBackChecklist).toHaveLength(1)
-    expect(rolledBackSourceLink).toHaveLength(1)
+    expect(rolledBackChecklist).toHaveLength(0)
+    expect(rolledBackSourceLink).toHaveLength(0)
     expect(rolledBackHistory).toHaveLength(0)
     expect(rolledBackRoleLegend).toHaveLength(0)
 
-    const cancellationProgram = await createPdtpProgram({ year: 2027, title: "Prueba de cancelación persistente", userId: "user-1" })
+    const cancellationProgram = await createLegacyPdtpProgramForTests({ year: 2027, title: "Prueba de cancelación persistente", userId: "user-1" })
     const cancelled = await stagePdtpXlsxImport({
       programId: cancellationProgram.id,
       bytes,
-      fileName: "PROGRAMA DE TRABAJO PREVENTIVO SG-SST 2026.xlsx",
+      fileName: "PROGRAMA_ACTIVIDADES_DEFINITIVO.xlsx",
       mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       userId: "user-1",
     })
@@ -2236,7 +2365,7 @@ describe("prevention PDTP service", () => {
     const restaged = await stagePdtpXlsxImport({
       programId: cancellationProgram.id,
       bytes,
-      fileName: "PROGRAMA DE TRABAJO PREVENTIVO SG-SST 2026.xlsx",
+      fileName: "PROGRAMA_ACTIVIDADES_DEFINITIVO.xlsx",
       mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       userId: "user-1",
     })
@@ -2244,17 +2373,15 @@ describe("prevention PDTP service", () => {
     expect(restaged.batch.status).toBe("staged")
   })
 
-  it("rolls back every staged mutation when a late historical execution conflicts", async () => {
+  it("preserves a historical execution while applying a planning-only base", async () => {
     const { readFile } = await import("node:fs/promises")
-    const { applyPdtpImportBatch, createPdtpProgram, stagePdtpXlsxImport } = await import("@/lib/services/prevention-pdtp")
-    const program = await createPdtpProgram({ year: 2026, title: "Prueba de atomicidad tardía", userId: "user-1" })
+    const { applyPdtpImportBatch, createLegacyPdtpProgramForTests, stagePdtpXlsxImport } = await import("@/lib/services/prevention-pdtp")
+    const program = await createLegacyPdtpProgramForTests({ year: 2026, title: "Prueba de atomicidad tardía", userId: "user-1" })
     const now = new Date().toISOString()
     await inMemoryDb.insert(schema.pdtpActivities).values({
       id: `${program.id}-activity-6-existing`,
       programId: program.id,
       n: 6,
-      objectiveOrder: 1,
-      objective: "Objetivo anterior",
       activity: "Actividad seis anterior",
       program: "Programa anterior",
       responsibleSlugs: ["prf"],
@@ -2276,11 +2403,11 @@ describe("prevention PDTP service", () => {
       createdAt: now,
       updatedAt: now,
     })
-    const bytes = await readFile(path.resolve(process.cwd(), "PROGRAMA DE TRABAJO PREVENTIVO SG-SST 2026.xlsx"))
+    const bytes = await readFile(path.resolve(process.cwd(), "PROGRAMA_ACTIVIDADES_DEFINITIVO.xlsx"))
     const staged = await stagePdtpXlsxImport({
       programId: program.id,
       bytes,
-      fileName: "PROGRAMA DE TRABAJO PREVENTIVO SG-SST 2026.xlsx",
+      fileName: "PROGRAMA_ACTIVIDADES_DEFINITIVO.xlsx",
       mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       userId: "user-1",
     })
@@ -2289,10 +2416,8 @@ describe("prevention PDTP service", () => {
       batchId: staged.batch.id,
       userId: "user-1",
       worksiteId: "ws-1",
-      acceptMissingEvidence: true,
-      acceptanceReason: "Forzar conflicto tardío para probar atomicidad",
       scope: ["ws-1"],
-    })).rejects.toThrow(/entra en conflicto/i)
+    })).resolves.toMatchObject({ importedExecutionCount: 0 })
 
     const [activitiesAfterFailure, executionsAfterFailure, scheduleAfterFailure, batchAfterFailure] = await Promise.all([
       inMemoryDb.select().from(schema.pdtpActivities).where(eq(schema.pdtpActivities.programId, program.id)),
@@ -2300,17 +2425,17 @@ describe("prevention PDTP service", () => {
       inMemoryDb.select().from(schema.pdtpActivitySchedule),
       inMemoryDb.select().from(schema.pdtpImportBatches).where(eq(schema.pdtpImportBatches.id, staged.batch.id)),
     ])
-    expect(activitiesAfterFailure).toHaveLength(1)
-    expect(activitiesAfterFailure[0]?.activity).toBe("Actividad seis anterior")
+    expect(activitiesAfterFailure).toHaveLength(87)
+    expect(activitiesAfterFailure.find((activity) => activity.n === 6)?.activity).not.toBe("Actividad seis anterior")
     expect(executionsAfterFailure).toHaveLength(1)
-    expect(scheduleAfterFailure).toHaveLength(0)
-    expect(batchAfterFailure[0]?.status).toBe("staged")
+    expect(scheduleAfterFailure).toHaveLength(821)
+    expect(batchAfterFailure[0]?.status).toBe("applied")
   })
 
   it("preserves declared document identities and links them only through explicit reconciliation", async () => {
-    const { createPdtpProgram, getPdtpDocumentMetadata, reconcilePdtpDeclaredActor } = await import("@/lib/services/prevention-pdtp")
+    const { createLegacyPdtpProgramForTests, getPdtpDocumentMetadata, reconcilePdtpDeclaredActor } = await import("@/lib/services/prevention-pdtp")
     const { computePdtpProgramContentDigest } = await import("@/lib/services/pdtp/content-digest")
-    const program = await createPdtpProgram({ year: 2032, title: "Programa con historia documental", userId: "user-1" })
+    const program = await createLegacyPdtpProgramForTests({ year: 2032, title: "Programa con historia documental", userId: "user-1" })
     const now = new Date().toISOString()
     await inMemoryDb.insert(schema.pdtpImportBatches).values({
       id: "batch-document-history",
@@ -2380,19 +2505,20 @@ describe("prevention PDTP service", () => {
     const { readFile } = await import("node:fs/promises")
     const {
       applyPdtpImportBatch,
-      createPdtpProgram,
+      createLegacyPdtpProgramForTests,
       createPdtpTemplateVersion,
       ensurePdtp2026ChecklistTemplates,
       finalizePdtpImportBootstrap,
       rollbackPdtpImportBatch,
       stagePdtpXlsxImport,
+      publishPdtpBase2026Revision,
     } = await import("@/lib/services/prevention-pdtp")
-    const program = await createPdtpProgram({ year: 2026, title: "Bootstrap repetible 2026", userId: "user-1" })
-    const bytes = await readFile(path.resolve(process.cwd(), "PROGRAMA DE TRABAJO PREVENTIVO SG-SST 2026.xlsx"))
+    const program = await createLegacyPdtpProgramForTests({ year: 2026, title: "Bootstrap repetible 2026", userId: "user-1" })
+    const bytes = await readFile(path.resolve(process.cwd(), "PROGRAMA_ACTIVIDADES_DEFINITIVO.xlsx"))
     const staged = await stagePdtpXlsxImport({
       programId: program.id,
       bytes,
-      fileName: "PROGRAMA DE TRABAJO PREVENTIVO SG-SST 2026.xlsx",
+      fileName: "PROGRAMA_ACTIVIDADES_DEFINITIVO.xlsx",
       mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       userId: "user-1",
     })
@@ -2415,11 +2541,10 @@ describe("prevention PDTP service", () => {
     })).rejects.toThrow(/modalidad confirmada/i)
     await inMemoryDb.update(schema.pdtpActivities).set({ scheduleClassificationStatus: "confirmed" })
       .where(eq(schema.pdtpActivities.programId, program.id))
-    const firstTemplate = await createPdtpTemplateVersion({
+    const firstTemplate = await publishPdtpBase2026Revision({
       sourceProgramId: program.id,
-      name: "Referencia preventiva 2026",
+      sourceChecksumSha256: staged.batch.sourceChecksumSha256,
       userId: "user-1",
-      skipIfUnchanged: true,
     })
     await finalizePdtpImportBootstrap({
       batchId: staged.batch.id,
@@ -2428,11 +2553,10 @@ describe("prevention PDTP service", () => {
       templateIdCreated: firstTemplate.template.id,
       templateVersionIdCreated: firstTemplate.version.id,
     })
-    const secondTemplate = await createPdtpTemplateVersion({
+    const secondTemplate = await publishPdtpBase2026Revision({
       sourceProgramId: program.id,
-      name: "Referencia preventiva 2026",
+      sourceChecksumSha256: staged.batch.sourceChecksumSha256,
       userId: "user-1",
-      skipIfUnchanged: true,
     })
     const artifactsAfterRetry = await finalizePdtpImportBootstrap({
       batchId: staged.batch.id,
@@ -2451,7 +2575,7 @@ describe("prevention PDTP service", () => {
     })
     expect(await inMemoryDb.select().from(schema.pdtpActivityChecklists)).toHaveLength(9)
     expect(await inMemoryDb.select().from(schema.pdtpProgramTemplateVersions)).toHaveLength(1)
-    expect(await inMemoryDb.select().from(schema.pdtpExecutions)).toHaveLength(6)
+    expect(await inMemoryDb.select().from(schema.pdtpExecutions)).toHaveLength(0)
 
     await rollbackPdtpImportBatch({
       batchId: staged.batch.id,
@@ -2461,8 +2585,8 @@ describe("prevention PDTP service", () => {
     })
     expect(await inMemoryDb.select().from(schema.pdtpActivities)).toHaveLength(0)
     expect(await inMemoryDb.select().from(schema.pdtpActivityChecklists)).toHaveLength(0)
-    expect(await inMemoryDb.select().from(schema.pdtpProgramTemplateVersions)).toHaveLength(0)
-    expect(await inMemoryDb.select().from(schema.pdtpProgramTemplates)).toHaveLength(0)
+    expect(await inMemoryDb.select().from(schema.pdtpProgramTemplateVersions)).toHaveLength(1)
+    expect(await inMemoryDb.select().from(schema.pdtpProgramTemplates)).toHaveLength(1)
     expect(await inMemoryDb.select().from(schema.pdtpExecutions)).toHaveLength(0)
   })
 
@@ -2473,7 +2597,7 @@ describe("prevention PDTP service", () => {
       approvePdtpProgramJdpr,
       cancelPdtpObligation,
       createPdtpObligation,
-      createPdtpProgram,
+      createLegacyPdtpProgramForTests,
       getPdtpDemandIndicator,
       listPdtpDemandActivities,
       listPdtpObligationReminderCandidates,
@@ -2486,11 +2610,9 @@ describe("prevention PDTP service", () => {
       submitPdtpProgramForReview,
       activatePdtpProgram,
     } = await import("@/lib/services/prevention-pdtp")
-    const program = await createPdtpProgram({ year: 2026, title: "Programa operacional por eventos", userId: "user-1" })
+    const program = await createLegacyPdtpProgramForTests({ year: 2026, title: "Programa operacional por eventos", userId: "user-1" })
     const activity = await addPdtpActivity({
       programId: program.id,
-      objectiveOrder: 1,
-      objective: "Responder desviaciones reales",
       activity: "Investigar y cerrar una desviación crítica",
       program: "Abrir el caso, investigar y documentar el cierre",
       responsibleSlugs: ["prf"],

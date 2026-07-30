@@ -1,7 +1,7 @@
 /**
  * GET /api/prevencion/pdtp/reporte-gestion
  * Reporte de gestión del Programa de Trabajo Preventivo: avance, desviaciones
- * y responsables por objetivo. No es el perfil de compatibilidad 2026 (§6.6,
+ * y responsables por actividad. No es el perfil de compatibilidad 2026 (§6.6,
  * no construido); usa la estructura que mejor comunica gestión.
  */
 
@@ -27,8 +27,8 @@ function parseFilters(url: URL): PdtpManagementReportFilters {
   const filters: PdtpManagementReportFilters = {}
   const responsibleSlug = url.searchParams.get("responsable")
   if (responsibleSlug) filters.responsibleSlug = responsibleSlug
-  const objectiveOrder = Number.parseInt(url.searchParams.get("objetivo") ?? "", 10)
-  if (Number.isFinite(objectiveOrder)) filters.objectiveOrder = objectiveOrder
+  const activityNumber = Number.parseInt(url.searchParams.get("actividad") ?? "", 10)
+  if (Number.isFinite(activityNumber) && activityNumber >= 1) filters.activityNumber = activityNumber
   const status = url.searchParams.get("estado")
   if (status === "meets" || status === "deviates") filters.status = status
   const monthFrom = Number.parseInt(url.searchParams.get("desde") ?? "", 10)
@@ -120,11 +120,10 @@ export async function GET(request: NextRequest) {
     workbook.creator = "Plataforma Chome"
     workbook.created = new Date()
 
-    const summary = workbook.addWorksheet("Resumen por objetivo")
+    const summary = workbook.addWorksheet("Resumen por actividad")
     summary.columns = [
       { header: "N°", key: "order", width: 6 },
-      { header: "Objetivo", key: "objective", width: 50 },
-      { header: "Actividades", key: "count", width: 12 },
+      { header: "Actividad", key: "activity", width: 60 },
       { header: "Planificado", key: "planned", width: 14 },
       { header: "Ejecutado", key: "executed", width: 14 },
       { header: "Avance", key: "percent", width: 12 },
@@ -132,11 +131,10 @@ export async function GET(request: NextRequest) {
       { header: "Responsables", key: "responsibles", width: 40 },
       { header: "Ver registros", key: "href", width: 60 },
     ]
-    for (const row of report.objectives) {
+    for (const row of report.activities) {
       summary.addRow({
-        order: row.objectiveOrder,
-        objective: safe(row.objective),
-        count: row.activityCount,
+        order: row.activityNumber,
+        activity: safe(row.activity),
         planned: row.planned,
         executed: row.executed,
         percent: row.percent !== null ? `${Math.round(row.percent * 100)}%` : "Sin datos",
@@ -147,7 +145,7 @@ export async function GET(request: NextRequest) {
     }
     summary.getRow(1).font = { bold: true, color: { argb: "FFFFFFFF" } }
     summary.getRow(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF2563EB" } }
-    summary.autoFilter = { from: "A1", to: "I1" }
+    summary.autoFilter = { from: "A1", to: "H1" }
 
     const indicators = workbook.addWorksheet("Indicadores")
     indicators.columns = [
@@ -162,11 +160,11 @@ export async function GET(request: NextRequest) {
     indicators.addRow({ code: "Meta del programa", label: `${Math.round(report.target * 100)}%`, formula: "" })
 
     addExportMetadataSheet(workbook, session, {
-      rowCount: report.objectives.length,
+      rowCount: report.activities.length,
       filters: { ...filters, programId, worksiteId },
     })
 
-    await auditOutcome("success", `Reporte de gestión PDTP generado (${report.objectives.length} objetivo(s))`, worksiteId)
+    await auditOutcome("success", `Reporte de gestión PDTP generado (${report.activities.length} actividad(es))`, worksiteId)
     const xlsx = await workbook.xlsx.writeBuffer()
 
     return new NextResponse(xlsx, {

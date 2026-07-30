@@ -42,10 +42,10 @@ function request(query = "") {
 
 const BASE_REPORT = {
   programId: "p1", programTitle: "Programa 2026", year: 2026, worksiteId: "w1", target: 0.9,
-  objectives: [
-    { objectiveOrder: 1, objective: "Liderazgo", activityCount: 5, planned: 10, executed: 8, percent: 0.8, meetsTarget: false, responsibles: ["PRF"] },
+  activities: [
+    { activityNumber: 1, activity: "Liderazgo preventivo", planned: 10, executed: 8, percent: 0.8, meetsTarget: false, responsibles: ["PRF"] },
   ],
-  indicatorDefinitions: [{ code: "avance_objetivo", label: "Avance por objetivo", formula: "ejecutado/planificado" }],
+  indicatorDefinitions: [{ code: "avance_actividad", label: "Avance por actividad", formula: "ejecutado/planificado" }],
 }
 
 beforeEach(() => {
@@ -101,36 +101,36 @@ describe("GET PDTP reporte de gestión", () => {
     // El Excel real generado por la ruta (no mockeado) debe reabrir sin errores.
     const reopened = new ExcelJS.Workbook()
     await reopened.xlsx.load(await response.arrayBuffer())
-    expect(reopened.worksheets.map((ws) => ws.name)).toEqual(expect.arrayContaining(["Resumen por objetivo", "Indicadores"]))
+    expect(reopened.worksheets.map((ws) => ws.name)).toEqual(expect.arrayContaining(["Resumen por actividad", "Indicadores"]))
   })
 
-  it("escapes objective/responsible text that looks like a formula so Excel never evaluates it", async () => {
+  it("escapes activity/responsible text that looks like a formula so Excel never evaluates it", async () => {
     mockAuth.mockResolvedValue(session())
     mockReport.mockResolvedValue({
       ...BASE_REPORT,
-      objectives: [{ ...BASE_REPORT.objectives[0], objective: "=SUM(A1:A10)", responsibles: ["+2+5"] }],
+      activities: [{ ...BASE_REPORT.activities[0], activity: "=SUM(A1:A10)", responsibles: ["+2+5"] }],
     })
 
     const response = await GET(request("?year=2026"))
     const reopened = new ExcelJS.Workbook()
     await reopened.xlsx.load(await response.arrayBuffer())
-    const summary = reopened.getWorksheet("Resumen por objetivo")!
+    const summary = reopened.getWorksheet("Resumen por actividad")!
 
-    const objectiveCell = summary.getRow(2).getCell(2)
-    const responsiblesCell = summary.getRow(2).getCell(8)
-    expect(objectiveCell.type).not.toBe(ExcelJS.ValueType.Formula)
-    expect(objectiveCell.value).toBe("'=SUM(A1:A10)")
+    const activityCell = summary.getRow(2).getCell(2)
+    const responsiblesCell = summary.getRow(2).getCell(7)
+    expect(activityCell.type).not.toBe(ExcelJS.ValueType.Formula)
+    expect(activityCell.value).toBe("'=SUM(A1:A10)")
     expect(responsiblesCell.type).not.toBe(ExcelJS.ValueType.Formula)
     expect(responsiblesCell.value).toBe("'+2+5")
   })
 
   it("parses cut filters from the query string", async () => {
     mockAuth.mockResolvedValue(session())
-    await GET(request("?programId=p1&responsable=prf&objetivo=2&estado=deviates&desde=1&hasta=6"))
+    await GET(request("?programId=p1&responsable=prf&estado=deviates&desde=1&hasta=6"))
 
     expect(mockReport).toHaveBeenCalledWith({
       programId: "p1", worksiteId: "w1", scope: ["w1"],
-      filters: { responsibleSlug: "prf", objectiveOrder: 2, status: "deviates", monthFrom: 1, monthTo: 6 },
+      filters: { responsibleSlug: "prf", status: "deviates", monthFrom: 1, monthTo: 6 },
     })
   })
 

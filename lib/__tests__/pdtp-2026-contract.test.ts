@@ -15,11 +15,11 @@ describe("contrato del adaptador PDTP 2026", () => {
   it("fija identidad, plan, actividades sin P, textos límite y membresías exactas", () => {
     const cells = catalog.activities.flatMap((activity) => activity.schedule)
     expect(PDTP_2026_SOURCE).toEqual(expect.objectContaining({
-      filename: "PROGRAMA DE TRABAJO PREVENTIVO SG-SST 2026.xlsx",
+      filename: "PROGRAMA_ACTIVIDADES_DEFINITIVO.xlsx",
       sha256: expect.stringMatching(/^[a-f0-9]{64}$/),
-      sizeBytes: 4_513_110,
+      sizeBytes: 4_509_309,
     }))
-    expect(catalog.objectives).toHaveLength(PDTP_2026_INVARIANTS.objectiveCount)
+    expect("objectives" in catalog).toBe(false)
     expect(catalog.activities).toHaveLength(PDTP_2026_INVARIANTS.activityCount)
     expect(Object.keys(catalog.sheetActivities)).toHaveLength(PDTP_2026_INVARIANTS.viewCount)
     expect(cells).toHaveLength(PDTP_2026_INVARIANTS.plannedCellCount)
@@ -33,19 +33,17 @@ describe("contrato del adaptador PDTP 2026", () => {
     }
   })
 
-  it("fija las seis celdas E conocidas del libro fuente", async () => {
+  it("conserva las seis celdas E como evidencia, pero no las importa", async () => {
     const workbook = await readPdtpWorkbook(path.resolve(process.cwd(), PDTP_2026_SOURCE.filename))
     const sheet = workbook.getWorksheet("PDTP GENERAL")
     const extracted = extractPdtpCatalogFromWorkbook(workbook)
     expect(sheet).toBeDefined()
-    expect(PDTP_2026_EXECUTED_CELLS).toHaveLength(PDTP_2026_INVARIANTS.executedQuantityTotal)
+    expect(PDTP_2026_EXECUTED_CELLS).toHaveLength(6)
     for (const execution of PDTP_2026_EXECUTED_CELLS) {
       expect(Number(sheet!.getCell(execution.sourceCell).value)).toBe(execution.quantity)
     }
-    expect(extracted.importedExecutions).toHaveLength(PDTP_2026_INVARIANTS.executedQuantityTotal)
-    expect(extracted.importedExecutions?.map((execution) => execution.sourceCell)).toEqual(
-      PDTP_2026_EXECUTED_CELLS.map((execution) => execution.sourceCell),
-    )
+    expect(extracted.importedExecutions).toHaveLength(0)
+    expect(PDTP_2026_INVARIANTS.executedQuantityTotal).toBe(0)
   })
 
   it("mantiene una fixture generable compatible con el parser del adaptador", async () => {

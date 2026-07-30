@@ -91,8 +91,6 @@ beforeEach(async () => {
       programId: PROGRAM_ID,
       n,
       activity: `Actividad RE-20 N° ${n}`,
-      objective: "Investigación de accidentes",
-      objectiveOrder: 1,
       program: "Prevención",
       responsibleSlugs: ["prevencionista"],
       responsibleDisplay: "Prevencionista",

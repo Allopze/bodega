@@ -30,9 +30,9 @@ function usage() {
     "  npm run pdtp:bootstrap-2026 -- --file <programa.xlsx> --year 2026 --user-id <id> --strategy <dry-run|stage|apply> --worksite-strategy <none|single>",
     "  npm run pdtp:bootstrap-2026 -- --year 2026 --user-id <id> --strategy rollback --worksite-strategy none --batch-id <id> --reason <motivo>",
     "", 
-    "Para stage/apply: --program-id <id>. Para apply: --worksite-strategy single --worksite-id <id> --accept-missing-evidence --reason <motivo>.",
+    "Para stage/apply: --program-id <id>. La Base 2026 normalizada no importa ejecuciones y admite --worksite-strategy none.",
     "Use --allow-compatible-source sólo para una fixture compatible cuyo SHA-256 no sea el oficial congelado.",
-    "Use --publish-reference sólo después de confirmar la modalidad de las 22 actividades sin P.",
+    "Use --publish-reference para publicar la revisión inmutable de Base 2026.",
   ].join("\n")
 }
 
@@ -79,11 +79,8 @@ function parseOptions(argv: string[]): CliOptions {
   if (strategy === "rollback" && (!batchId || (reason?.length ?? 0) < 10)) {
     throw new Error("Rollback exige --batch-id y --reason de al menos 10 caracteres.")
   }
-  if (strategy === "apply") {
-    if (worksiteStrategy !== "single" || !worksiteId) throw new Error("Apply exige --worksite-strategy single y --worksite-id.")
-    if (!flags.has("accept-missing-evidence") || (reason?.length ?? 0) < 10) {
-      throw new Error("Apply exige --accept-missing-evidence y --reason de al menos 10 caracteres para las E históricas.")
-    }
+  if (strategy === "apply" && worksiteStrategy === "single" && !worksiteId) {
+    throw new Error("La estrategia de faena single exige --worksite-id.")
   }
   return {
     file: values.get("file")?.trim() || undefined,
@@ -105,7 +102,6 @@ function assertReferenceCounts(catalog: ReturnType<typeof extractPdtpCatalogFrom
   const schedule = catalog.activities.flatMap((activity) => activity.schedule)
   const executions = catalog.importedExecutions ?? []
   const actual = {
-    objectives: catalog.objectives.length,
     activities: catalog.activities.length,
     views: Object.keys(catalog.sheetActivities).length,
     plannedCells: schedule.length,
@@ -114,12 +110,11 @@ function assertReferenceCounts(catalog: ReturnType<typeof extractPdtpCatalogFrom
     executedQuantity: executions.reduce((sum, cell) => sum + cell.executedQuantity, 0),
   }
   const expected = {
-    objectives: PDTP_2026_INVARIANTS.objectiveCount,
     activities: PDTP_2026_INVARIANTS.activityCount,
     views: PDTP_2026_INVARIANTS.viewCount,
     plannedCells: PDTP_2026_INVARIANTS.plannedCellCount,
     plannedQuantity: PDTP_2026_INVARIANTS.plannedQuantityTotal,
-    executedCells: PDTP_2026_INVARIANTS.executedQuantityTotal,
+    executedCells: 0,
     executedQuantity: PDTP_2026_INVARIANTS.executedQuantityTotal,
   }
   if (JSON.stringify(actual) !== JSON.stringify(expected)) {
@@ -234,13 +229,12 @@ async function main() {
   const checklists = await service.ensurePdtp2026ChecklistTemplates({ programId: program.id })
   const activities = await service.listPdtpProgramActivities(program.id)
   const pendingClassifications = activities.filter((activity) => activity.scheduleClassificationStatus === "needs_review").length
-  const template = options.publishReference && pendingClassifications === 0
-    ? await service.createPdtpTemplateVersion({
+  const template = options.publishReference
+    ? await service.publishPdtpBase2026Revision({
         sourceProgramId: program.id,
-        name: "Referencia preventiva 2026",
-        description: "Base editable derivada del programa 2026; no replica la planilla como interfaz.",
+        sourceChecksumSha256: inspected.checksumSha256,
         userId: actor.id,
-        skipIfUnchanged: true,
+        allowNonOfficialRevision: options.allowCompatibleSource,
       })
     : null
   const bootstrapArtifacts = await service.finalizePdtpImportBootstrap({

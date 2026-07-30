@@ -20,14 +20,23 @@ afterAll(async () => {
 })
 
 beforeEach(async () => {
+  await inMemoryDb.delete(schema.pdtpActivityScheduleOverrides)
+  await inMemoryDb.delete(schema.pdtpActivityWorksiteParams)
   await inMemoryDb.delete(schema.pdtpActivityWorksiteExclusions)
   await inMemoryDb.delete(schema.pdtpProgramWorksites)
+  await inMemoryDb.delete(schema.pdtpExecutions)
+  await inMemoryDb.delete(schema.pdtpActivitySchedule)
   await inMemoryDb.delete(schema.pdtpActivities)
   await inMemoryDb.delete(schema.pdtpPrograms)
+  await inMemoryDb.delete(schema.pdtpResponsibleCatalog)
   await inMemoryDb.delete(schema.worksites)
   await inMemoryDb.delete(schema.users)
 
   await inMemoryDb.insert(schema.users).values({ id: "user-1", name: "U1", email: "u1@test", hashedPassword: "x", isActive: true })
+  await inMemoryDb.insert(schema.pdtpResponsibleCatalog).values([
+    { slug: "prf", displayName: "Prevencionista global", kind: "role" },
+    { slug: "jdpr", displayName: "Jefatura DPR local", kind: "role" },
+  ])
   await inMemoryDb.insert(schema.worksites).values([
     { id: "ws-1", name: "Faena 1", code: "F1", isActive: true },
     { id: "ws-2", name: "Faena 2", code: "F2", isActive: true },
@@ -38,12 +47,10 @@ beforeEach(async () => {
 afterEach(() => {})
 
 async function createDraftProgramWithActivity(year: number) {
-  const { createPdtpProgram, addPdtpActivity } = await import("@/lib/services/prevention-pdtp")
-  const program = await createPdtpProgram({ year, title: `Programa ${year}`, userId: "user-1" })
+  const { createLegacyPdtpProgramForTests, addPdtpActivity } = await import("@/lib/services/prevention-pdtp")
+  const program = await createLegacyPdtpProgramForTests({ year, title: `Programa ${year}`, userId: "user-1" })
   const activity = await addPdtpActivity({
     programId: program.id,
-    objectiveOrder: 1,
-    objective: "Objetivo 1",
     activity: "Actividad de prueba",
     program: "Guía de ejecución",
     responsibleSlugs: ["prevencionista"],
@@ -83,6 +90,18 @@ describe("PDTP multifaena: membresía y exclusiones", () => {
     await expect(assertPdtpWorksiteCanOperateProgram(program.id, "ws-3")).resolves.toBeUndefined()
   })
 
+  it("solo un usuario con alcance global puede reemplazar la membresía del programa", async () => {
+    const { setPdtpProgramWorksites } = await import("@/lib/services/pdtp/worksites")
+    const { program } = await createDraftProgramWithActivity(2048)
+
+    await expect(
+      setPdtpProgramWorksites(program.id, ["ws-1"], "user-1", ["ws-1"]),
+    ).rejects.toThrow(/alcance global/)
+    await expect(
+      setPdtpProgramWorksites(program.id, ["ws-1"], "user-1", "all"),
+    ).resolves.toEqual([expect.objectContaining({ worksiteId: "ws-1" })])
+  })
+
   it("una exclusión puntual saca la actividad solo de la faena excluida, no de las demás", async () => {
     const { excludeActivityForWorksite, includeActivityForWorksite, resolvePdtpEffectiveActivitiesForWorksite } = await import("@/lib/services/pdtp/worksites")
     const { program, activity } = await createDraftProgramWithActivity(2041)
@@ -104,13 +123,13 @@ describe("PDTP multifaena: membresía y exclusiones", () => {
     expect(ws1Activities.map((a) => a.id)).toContain(activity.id)
   })
 
-  it("agregar membresía o una exclusión cambia el digest firmable (schemaVersion 6)", async () => {
+  it("agregar membresía o una exclusión cambia el digest firmable (schemaVersion 8)", async () => {
     const { setPdtpProgramWorksites, excludeActivityForWorksite } = await import("@/lib/services/pdtp/worksites")
     const { computePdtpProgramContentDigest } = await import("@/lib/services/pdtp/content-digest")
     const { program, activity } = await createDraftProgramWithActivity(2042)
 
     const baseline = await computePdtpProgramContentDigest(program.id)
-    expect(baseline.snapshot).toMatchObject({ schemaVersion: 6 })
+    expect(baseline.snapshot).toMatchObject({ schemaVersion: 8 })
 
     await setPdtpProgramWorksites(program.id, ["ws-1"], "user-1")
     const afterMembership = await computePdtpProgramContentDigest(program.id)
@@ -129,5 +148,126 @@ describe("PDTP multifaena: membresía y exclusiones", () => {
 
     await expect(setPdtpProgramWorksites(program.id, ["ws-1"], "user-1")).rejects.toThrow(/revisión/)
     await expect(excludeActivityForWorksite(activity.id, "ws-1", "Motivo de exclusión suficientemente largo", "user-1")).rejects.toThrow(/revisión/)
+  })
+
+  it("el ajuste unificado falla cerrado fuera del alcance de faena", async () => {
+    const { setPdtpActivityWorksiteAdjustment } = await import("@/lib/services/pdtp/worksites")
+    const { activity } = await createDraftProgramWithActivity(2044)
+
+    await expect(setPdtpActivityWorksiteAdjustment({
+      activityId: activity.id,
+      worksiteId: "ws-2",
+      excluded: false,
+      reason: "Ajuste solicitado por una faena fuera del alcance.",
+      expectedSubjectCount: 10,
+    }, "user-1", ["ws-1"])).rejects.toThrow(/sin acceso/)
+  })
+
+  it("bloquea ejecuciones excluidas para la faena", async () => {
+    const { setPdtpActivityWorksiteAdjustment } = await import("@/lib/services/pdtp/worksites")
+    const { markPdtpExecution } = await import("@/lib/services/prevention-pdtp")
+    const { program, activity } = await createDraftProgramWithActivity(2045)
+    await setPdtpActivityWorksiteAdjustment({
+      activityId: activity.id,
+      worksiteId: "ws-1",
+      excluded: true,
+      reason: "La actividad no corresponde al alcance operativo local.",
+    }, "user-1", ["ws-1"])
+    await inMemoryDb.update(schema.pdtpPrograms).set({ status: "active" }).where(eq(schema.pdtpPrograms.id, program.id))
+
+    await expect(markPdtpExecution({
+      activityId: activity.id,
+      worksiteId: "ws-1",
+      year: 2045,
+      month: 1,
+      week: 1,
+      executedQuantity: 1,
+    }, "user-1", ["ws-1"])).rejects.toThrow(/excluida/)
+  })
+
+  it("aplica el retiro por período y conserva planificación y ejecución previas", async () => {
+    const { retirePdtpActivity } = await import("@/lib/services/pdtp/activities")
+    const { loadProgramScheduleAndExecutions } = await import("@/lib/services/pdtp/helpers")
+    const { markPdtpExecution } = await import("@/lib/services/prevention-pdtp")
+    const { program, activity } = await createDraftProgramWithActivity(2046)
+    await inMemoryDb.insert(schema.pdtpActivitySchedule).values([
+      { id: "retire-before", activityId: activity.id, year: 2046, month: 7, week: 4, plannedQuantity: 1, sourceColumn: "test" },
+      { id: "retire-after", activityId: activity.id, year: 2046, month: 8, week: 1, plannedQuantity: 1, sourceColumn: "test" },
+    ])
+    await retirePdtpActivity({
+      activityId: activity.id,
+      reason: "La actividad será reemplazada por un control equivalente.",
+      effectiveFrom: "2046-08-01",
+    }, "user-1")
+    await inMemoryDb.update(schema.pdtpPrograms).set({ status: "active" }).where(eq(schema.pdtpPrograms.id, program.id))
+
+    await expect(markPdtpExecution({
+      activityId: activity.id,
+      worksiteId: "ws-1",
+      year: 2046,
+      month: 7,
+      week: 4,
+      executedQuantity: 1,
+    }, "user-1", ["ws-1"])).resolves.toEqual(expect.objectContaining({ month: 7, week: 4 }))
+    await expect(markPdtpExecution({
+      activityId: activity.id,
+      worksiteId: "ws-1",
+      year: 2046,
+      month: 8,
+      week: 1,
+      executedQuantity: 1,
+    }, "user-1", ["ws-1"])).rejects.toThrow(/retirada/)
+
+    const effective = await loadProgramScheduleAndExecutions([activity.id], 2046, "ws-1")
+    expect(effective.scheduleRows.map((row) => [row.month, row.week])).toEqual([[7, 4]])
+    expect(effective.executionRows).toEqual([expect.objectContaining({ month: 7, week: 4 })])
+  })
+
+  it("el reporte filtra por clave estable y usa el responsable efectivo de la faena", async () => {
+    const { setPdtpActivityWorksiteAdjustment } = await import("@/lib/services/pdtp/worksites")
+    const { getPdtpManagementReport } = await import("@/lib/services/prevention-pdtp")
+    const { program, activity } = await createDraftProgramWithActivity(2047)
+    await inMemoryDb.update(schema.pdtpActivities).set({
+      scheduleMode: "scheduled",
+      responsibleSlugs: ["prf"],
+      responsibleDisplay: "Prevencionista global",
+    }).where(eq(schema.pdtpActivities.id, activity.id))
+    await inMemoryDb.insert(schema.pdtpActivitySchedule).values({
+      id: "report-plan",
+      activityId: activity.id,
+      year: 2047,
+      month: 1,
+      week: 1,
+      plannedQuantity: 1,
+      sourceColumn: "test",
+    })
+    await setPdtpActivityWorksiteAdjustment({
+      activityId: activity.id,
+      worksiteId: "ws-1",
+      excluded: false,
+      reason: "La faena asigna una jefatura responsable específica.",
+      responsibleSlugs: ["jdpr"],
+      responsibleDisplay: "Jefatura DPR local",
+    }, "user-1", ["ws-1"])
+    await inMemoryDb.update(schema.pdtpPrograms).set({ status: "active" }).where(eq(schema.pdtpPrograms.id, program.id))
+
+    const byOverride = await getPdtpManagementReport({
+      programId: program.id,
+      worksiteId: "ws-1",
+      scope: ["ws-1"],
+      filters: { responsibleSlug: "jdpr", activityNumber: activity.n },
+    })
+    expect(byOverride?.activities).toEqual([
+      expect.objectContaining({ activityNumber: activity.n, responsibles: ["Jefatura DPR local"], planned: 1 }),
+    ])
+    expect(byOverride?.responsibleOptions).toContainEqual({ value: "jdpr", label: "Jefatura DPR local" })
+
+    const byGlobal = await getPdtpManagementReport({
+      programId: program.id,
+      worksiteId: "ws-1",
+      scope: ["ws-1"],
+      filters: { responsibleSlug: "prf" },
+    })
+    expect(byGlobal?.activities).toHaveLength(0)
   })
 })

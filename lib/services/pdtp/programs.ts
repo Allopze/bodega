@@ -14,13 +14,94 @@ import {
 import { addPdtpChangeLogEntry, assertPdtpProgramEditableState, isUniqueViolation, pdtpActivityId, pdtpProgramId, pdtpScheduleId, pdtpSheetActivityId } from "./helpers"
 import { copyPdtpApprovalSteps, ensureDefaultPdtpApprovalSteps } from "./approval-flow"
 import { pdtpActivityChecklistId } from "./checklist-domain"
-import { getPdtpTemplateVersion, instantiatePdtpTemplateVersion } from "./templates"
+import { getCurrentPdtpBase2026Version, getPdtpTemplateVersion, instantiatePdtpTemplateVersion } from "./templates"
 
-export type PdtpProgramCreateInput = {
+type LegacyPdtpProgramCreateInput = {
   year: number; title: string; userId: string; copySheetsFromProgramId?: string; templateVersionId?: string
 }
 
-export async function createPdtpProgram(input: PdtpProgramCreateInput) {
+export async function createAnnualPdtpProgram(input: { year: number; userId: string }) {
+  if (!Number.isInteger(input.year) || input.year < 2024 || input.year > 2100) {
+    throw new Error("El año del programa debe estar entre 2024 y 2100.")
+  }
+
+  const create = async () => db.transaction(async (tx) => {
+    const [existing] = await tx.select().from(pdtpPrograms)
+      .where(eq(pdtpPrograms.year, input.year))
+      .limit(1)
+    if (existing) return { programId: existing.id, program: existing, created: false, baseVersionId: existing.sourceTemplateVersionId }
+
+    const base = await getCurrentPdtpBase2026Version(tx)
+    if (!base) {
+      throw new Error("La Base preventiva 2026 aún no está publicada. Instálala antes de crear programas anuales.")
+    }
+
+    const [elaborator] = await tx.select({ name: schemaUsers.name }).from(schemaUsers)
+      .where(eq(schemaUsers.id, input.userId))
+      .limit(1)
+    const now = new Date().toISOString()
+    const programId = pdtpProgramId(input.year, 1)
+    const [program] = await tx.insert(pdtpPrograms).values({
+      id: programId,
+      year: input.year,
+      version: 1,
+      status: "draft",
+      title: `Programa de Trabajo Preventivo SG-SST ${input.year}`,
+      periodStart: `${input.year}-01-01`,
+      periodEnd: `${input.year}-12-31`,
+      creationMode: "base_2026",
+      sourceProgramId: base.version.sourceProgramId,
+      sourceContentVersion: base.version.sourceContentVersion,
+      sourceTemplateVersionId: base.version.id,
+      sourceMetadataJson: {
+        baseCode: base.template.code,
+        baseRevision: base.version.version,
+        baseContentDigest: base.version.contentDigest,
+      },
+      elaboratedByUserId: input.userId,
+      elaboratedByName: elaborator?.name?.trim() || "Equipo de Prevención",
+      elaboratedByTitle: elaborator?.name?.trim() ? "Prevencionista" : "Sistema",
+      createdAt: now,
+      updatedAt: now,
+    }).returning()
+    if (!program) throw new Error("No se pudo crear el programa anual.")
+
+    await instantiatePdtpTemplateVersion({
+      templateVersionId: base.version.id,
+      targetProgramId: program.id,
+      targetYear: input.year,
+      client: tx,
+    })
+    await ensureDefaultPdtpApprovalSteps(program.id, tx)
+    await addPdtpChangeLogEntry(
+      program.id,
+      1,
+      input.userId,
+      "lifecycle",
+      null,
+      { status: "draft", baseTemplateVersionId: base.version.id },
+      `Programa anual creado desde Base preventiva 2026, revisión ${base.version.version}.`,
+      tx,
+    )
+    return { programId: program.id, program, created: true, baseVersionId: base.version.id }
+  })
+
+  try {
+    return await create()
+  } catch (error) {
+    if (!isUniqueViolation(error)) throw error
+    const [existing] = await db.select().from(pdtpPrograms).where(eq(pdtpPrograms.year, input.year)).limit(1)
+    if (!existing) throw error
+    return { programId: existing.id, program: existing, created: false, baseVersionId: existing.sourceTemplateVersionId }
+  }
+}
+
+/**
+ * Constructor legado conservado exclusivamente para fixtures de regresión.
+ * No se exporta por la interfaz productiva: la creación real siempre usa
+ * `createAnnualPdtpProgram`.
+ */
+export async function createLegacyPdtpProgramForTests(input: LegacyPdtpProgramCreateInput) {
   const now = new Date().toISOString()
   const MAX_ATTEMPTS = 8
 
@@ -48,7 +129,7 @@ export async function createPdtpProgram(input: PdtpProgramCreateInput) {
   throw new Error("No se pudo crear el programa PDTP tras varios intentos concurrentes.")
 }
 
-async function createPdtpProgramAttempt(input: PdtpProgramCreateInput, now: string) {
+async function createPdtpProgramAttempt(input: LegacyPdtpProgramCreateInput, now: string) {
   return db.transaction(async (tx) => {
       if (input.copySheetsFromProgramId && input.templateVersionId) {
         throw new Error("Selecciona un solo origen: plantilla o programa anterior.")
@@ -149,8 +230,10 @@ async function createPdtpProgramAttempt(input: PdtpProgramCreateInput, now: stri
           activityIdMap.set(activity.id, newActivityId)
           activityNMap.set(activity.id, activity.n)
           copiedActivities.push({
-            id: newActivityId, programId, n: activity.n, objectiveOrder: activity.objectiveOrder,
-            objective: activity.objective, activity: activity.activity, program: activity.program,
+            id: newActivityId, programId, n: activity.n, displayOrder: activity.displayOrder,
+            status: activity.status, retiredReason: activity.retiredReason,
+            retiredEffectiveFrom: activity.retiredEffectiveFrom,
+            activity: activity.activity, program: activity.program,
             responsibleSlugs: activity.responsibleSlugs, responsibleDisplay: activity.responsibleDisplay,
             audienceRoles: activity.audienceRoles, scheduleMode: activity.scheduleMode,
             scheduleClassificationStatus: activity.scheduleClassificationStatus,

@@ -43,14 +43,16 @@ export async function loadPdtpCatalog(input: LoadPdtpCatalogInput, database: DB 
 
   const [program] = await database.insert(pdtpPrograms).values({
     id: programId, year: input.year, version: input.version, status: "draft", title: input.title,
-    creationMode: "xlsx_import",
+    creationMode: input.year === 2026 ? "base_2026" : "xlsx_import",
+    periodStart: `${input.year}-01-01`,
+    periodEnd: `${input.year}-12-31`,
     elaboratedByUserId: input.userId, elaboratedByName,
     elaboratedByTitle, createdAt: now, updatedAt: now,
   }).onConflictDoUpdate({
-    target: [pdtpPrograms.year, pdtpPrograms.version],
+    target: pdtpPrograms.year,
     set: {
       title: input.title,
-      creationMode: "xlsx_import",
+      creationMode: input.year === 2026 ? "base_2026" : "xlsx_import",
       elaboratedByUserId: input.userId,
       elaboratedByName,
       elaboratedByTitle,
@@ -68,9 +70,10 @@ export async function loadPdtpCatalog(input: LoadPdtpCatalogInput, database: DB 
   }
 
   for (const [code, meta] of Object.entries(SHEET_META) as Array<[PdtpSheetCode, typeof SHEET_META[PdtpSheetCode]]>) {
-    await database.insert(pdtpSheets).values({ id: code, code, label: meta.label, area: meta.area, defaultScopeRoles: meta.defaultScopeRoles }).onConflictDoUpdate({
+    const sheetId = `${program.id}-${code}`
+    await database.insert(pdtpSheets).values({ id: sheetId, programId: program.id, code, label: meta.label, area: meta.area, defaultScopeRoles: meta.defaultScopeRoles }).onConflictDoUpdate({
       target: [pdtpSheets.id],
-      set: { code, label: meta.label, area: meta.area, defaultScopeRoles: meta.defaultScopeRoles },
+      set: { programId: program.id, code, label: meta.label, area: meta.area, defaultScopeRoles: meta.defaultScopeRoles },
     })
   }
 
@@ -81,8 +84,8 @@ export async function loadPdtpCatalog(input: LoadPdtpCatalogInput, database: DB 
     activityIdByNumber.set(activity.n, activityId)
 
     await database.insert(pdtpActivities).values({
-      id: activityId, programId: program.id, n: activity.n, objectiveOrder: activity.objectiveOrder,
-      objective: activity.objective, activity: activity.activity, program: activity.program,
+      id: activityId, programId: program.id, n: activity.n, displayOrder: activity.n,
+      activity: activity.activity, program: activity.program,
       responsibleSlugs: activity.responsibleSlugs,
       responsibleDisplay: displayNameForActivity(activity.responsibleSlugs, activity.responsibleDisplay),
       scheduleMode: activity.schedule.length > 0 ? "scheduled" : "on_demand",
@@ -91,8 +94,8 @@ export async function loadPdtpCatalog(input: LoadPdtpCatalogInput, database: DB 
     }).onConflictDoUpdate({
       target: [pdtpActivities.programId, pdtpActivities.n],
       set: {
-        objectiveOrder: activity.objectiveOrder, objective: activity.objective,
-        activity: activity.activity, program: activity.program, responsibleSlugs: activity.responsibleSlugs,
+        displayOrder: activity.n, status: "active", retiredReason: null, retiredEffectiveFrom: null,
+        retiredByUserId: null, retiredAt: null, activity: activity.activity, program: activity.program, responsibleSlugs: activity.responsibleSlugs,
         responsibleDisplay: displayNameForActivity(activity.responsibleSlugs, activity.responsibleDisplay),
         scheduleMode: activity.schedule.length > 0 ? "scheduled" : "on_demand",
         scheduleClassificationStatus: activity.schedule.length > 0 ? "confirmed" : "needs_review",
@@ -116,8 +119,9 @@ export async function loadPdtpCatalog(input: LoadPdtpCatalogInput, database: DB 
     for (const [index, activityNumber] of activityNumbers.entries()) {
       const activityId = activityIdByNumber.get(activityNumber)
       if (!activityId) throw new Error(`La hoja ${sheetCode} referencia actividad PDTP inexistente: ${activityNumber}.`)
+      const sheetId = `${program.id}-${sheetCode}`
       await database.insert(pdtpSheetActivities).values({
-        id: pdtpSheetActivityId(program.id, sheetCode, activityNumber), sheetId: sheetCode, sheetCode, activityId,
+        id: pdtpSheetActivityId(program.id, sheetCode, activityNumber), sheetId, sheetCode, activityId,
         sheetRow: index + 1, displayOrder: index + 1,
       }).onConflictDoUpdate({
         target: [pdtpSheetActivities.sheetId, pdtpSheetActivities.activityId],

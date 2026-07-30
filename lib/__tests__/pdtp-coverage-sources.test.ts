@@ -36,12 +36,10 @@ beforeEach(async () => {
 })
 
 async function createDraftProgramWithActivity(year: number) {
-  const { createPdtpProgram, addPdtpActivity } = await import("@/lib/services/prevention-pdtp")
-  const program = await createPdtpProgram({ year, title: `Programa ${year}`, userId: "user-1" })
+  const { createLegacyPdtpProgramForTests, addPdtpActivity } = await import("@/lib/services/prevention-pdtp")
+  const program = await createLegacyPdtpProgramForTests({ year, title: `Programa ${year}`, userId: "user-1" })
   const activity = await addPdtpActivity({
     programId: program.id,
-    objectiveOrder: 1,
-    objective: "Objetivo 1",
     activity: "Actividad de prueba",
     program: "Guía de ejecución",
     responsibleSlugs: ["prevencionista"],

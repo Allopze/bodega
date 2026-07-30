@@ -9,40 +9,13 @@ import { pdtpActivityChecklistId } from "./checklist-domain"
  * "Actividades" del builder — no está scoped a una hoja como
  * getPdtpSheetViewByProgram. */
 export async function listPdtpProgramActivities(programId: string) {
-  return db.select().from(pdtpActivities).where(eq(pdtpActivities.programId, programId)).orderBy(pdtpActivities.n)
-}
-
-export type PdtpObjectiveRenameInput = { programId: string; objectiveOrder: number; objective: string }
-
-/** El objetivo (texto) es compartido por todas las actividades de un mismo
- * `objectiveOrder` (1-8) — no hay tabla `pdtp_objectives` separada. "Editar
- * el objetivo N" es entonces una actualización masiva sobre ese grupo, no
- * un campo de `updatePdtpActivity` (que edita una sola actividad). */
-export async function renamePdtpObjective(input: PdtpObjectiveRenameInput, userId: string) {
-  const [program] = await db.select().from(pdtpPrograms).where(eq(pdtpPrograms.id, input.programId)).limit(1)
-  if (!program) throw new Error("Programa PDTP no encontrado.")
-  assertPdtpProgramEditableState(program)
-
-  const now = new Date().toISOString()
-  const updated = await db.update(pdtpActivities)
-    .set({ objective: input.objective, updatedAt: now })
-    .where(and(eq(pdtpActivities.programId, input.programId), eq(pdtpActivities.objectiveOrder, input.objectiveOrder)))
-    .returning({ id: pdtpActivities.id })
-
-  if (updated.length > 0) {
-    await addPdtpChangeLogEntry(
-      input.programId, program.version, userId, `objective:${input.objectiveOrder}`,
-      null, { objective: input.objective },
-      `Objetivo ${input.objectiveOrder} renombrado (${updated.length} actividad(es) afectadas).`,
-    )
-  }
-  return { updatedCount: updated.length }
+  return db.select().from(pdtpActivities)
+    .where(eq(pdtpActivities.programId, programId))
+    .orderBy(pdtpActivities.displayOrder, pdtpActivities.n)
 }
 
 export type PdtpActivityUpdateInput = {
   activityId: string
-  objectiveOrder?: number
-  objective?: string
   activity?: string
   program?: string
   notes?: string
@@ -64,8 +37,6 @@ export type PdtpActivityUpdateInput = {
 
 export type PdtpActivityAddInput = {
   programId: string
-  objectiveOrder: number
-  objective: string
   activity: string
   program: string
   responsibleSlugs: string[]
@@ -89,8 +60,6 @@ export type PdtpActivityAddInput = {
 export type PdtpActivityBatchUpdateInput = {
   programId: string
   activityIds: string[]
-  objectiveOrder?: number
-  objective?: string
   responsibleSlugs?: string[]
   responsibleDisplay?: string
   evidenceRequirement?: string | null
@@ -106,13 +75,10 @@ export async function batchUpdatePdtpActivities(input: PdtpActivityBatchUpdateIn
   if (activities.length !== uniqueIds.length || activities.some((activity) => activity.programId !== input.programId)) {
     throw new Error("La selección contiene actividades ajenas al programa.")
   }
-  if (input.objectiveOrder !== undefined && !input.objective?.trim()) throw new Error("Indica el objetivo de destino.")
-
-  const updates: Partial<typeof pdtpActivities.$inferInsert> = { updatedAt: new Date().toISOString() }
-  if (input.objectiveOrder !== undefined) {
-    updates.objectiveOrder = input.objectiveOrder
-    updates.objective = input.objective!.trim()
+  if (activities.some((activity) => activity.status === "retired")) {
+    throw new Error("Las actividades retiradas no admiten cambios.")
   }
+  const updates: Partial<typeof pdtpActivities.$inferInsert> = { updatedAt: new Date().toISOString() }
   if (input.responsibleSlugs !== undefined) updates.responsibleSlugs = input.responsibleSlugs
   if (input.responsibleDisplay !== undefined) updates.responsibleDisplay = input.responsibleDisplay
   if (input.evidenceRequirement !== undefined) updates.evidenceRequirement = input.evidenceRequirement
@@ -136,6 +102,7 @@ export async function batchUpdatePdtpActivities(input: PdtpActivityBatchUpdateIn
 export async function updatePdtpActivity(input: PdtpActivityUpdateInput, userId: string) {
   const [activity] = await db.select().from(pdtpActivities).where(eq(pdtpActivities.id, input.activityId)).limit(1)
   if (!activity) throw new Error("Actividad PDTP no encontrada.")
+  if (activity.status === "retired") throw new Error("Una actividad retirada no admite cambios.")
 
   const [program] = await db.select().from(pdtpPrograms).where(eq(pdtpPrograms.id, activity.programId)).limit(1)
   if (!program) throw new Error("Programa PDTP no encontrado.")
@@ -145,16 +112,6 @@ export async function updatePdtpActivity(input: PdtpActivityUpdateInput, userId:
   const before: Record<string, unknown> = {}
   const after: Record<string, unknown> = {}
   const updates: Partial<typeof pdtpActivities.$inferInsert> = { updatedAt: now }
-
-  if (input.objectiveOrder !== undefined && input.objectiveOrder !== activity.objectiveOrder) {
-    if (!input.objective?.trim()) throw new Error("Indica el objetivo de destino.")
-    before.objectiveOrder = activity.objectiveOrder; after.objectiveOrder = input.objectiveOrder
-    before.objective = activity.objective; after.objective = input.objective.trim()
-    updates.objectiveOrder = input.objectiveOrder
-    updates.objective = input.objective.trim()
-  } else if (input.objective !== undefined && input.objective !== activity.objective) {
-    before.objective = activity.objective; after.objective = input.objective; updates.objective = input.objective
-  }
 
   if (input.activity !== undefined && input.activity !== activity.activity) {
     before.activity = activity.activity; after.activity = input.activity; updates.activity = input.activity
@@ -233,15 +190,18 @@ export async function addPdtpActivity(input: PdtpActivityAddInput, userId: strin
   if (!program) throw new Error("Programa PDTP no encontrado.")
   assertPdtpProgramEditableState(program)
 
-  const existingActivities = await db.select({ n: pdtpActivities.n }).from(pdtpActivities).where(eq(pdtpActivities.programId, input.programId))
+  const existingActivities = await db.select({ n: pdtpActivities.n, displayOrder: pdtpActivities.displayOrder })
+    .from(pdtpActivities)
+    .where(eq(pdtpActivities.programId, input.programId))
   const maxN = existingActivities.reduce((m, row) => Math.max(m, row.n), 0)
-  const newN = maxN + 1
+  const maxDisplayOrder = existingActivities.reduce((m, row) => Math.max(m, row.displayOrder), 0)
+  const newN = Math.max(90, maxN + 1)
   const now = new Date().toISOString()
   const activityId = pdtpActivityId(input.programId, newN)
 
   const [created] = await db.insert(pdtpActivities).values({
-    id: activityId, programId: input.programId, n: newN, objectiveOrder: input.objectiveOrder,
-    objective: input.objective, activity: input.activity, program: input.program,
+    id: activityId, programId: input.programId, n: newN, displayOrder: maxDisplayOrder + 1,
+    activity: input.activity, program: input.program,
     responsibleSlugs: input.responsibleSlugs, responsibleDisplay: input.responsibleDisplay,
     audienceRoles: input.audienceRoles ?? [], scheduleMode: input.scheduleMode ?? "scheduled",
     scheduleClassificationStatus: input.scheduleClassificationStatus ?? "confirmed",
@@ -284,16 +244,50 @@ export async function addPdtpActivity(input: PdtpActivityAddInput, userId: strin
   return created
 }
 
-export async function deletePdtpActivity(activityId: string, userId: string) {
-  const [activity] = await db.select().from(pdtpActivities).where(eq(pdtpActivities.id, activityId)).limit(1)
-  if (!activity) throw new Error("Actividad PDTP no encontrada.")
+export async function retirePdtpActivity(input: {
+  activityId: string
+  reason: string
+  effectiveFrom: string
+}, userId: string) {
+  const reason = input.reason.trim()
+  if (reason.length < 10) throw new Error("Indica un motivo de retiro de al menos 10 caracteres.")
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(input.effectiveFrom)) throw new Error("La fecha efectiva de retiro no es válida.")
 
-  const [program] = await db.select().from(pdtpPrograms).where(eq(pdtpPrograms.id, activity.programId)).limit(1)
-  if (!program) throw new Error("Programa PDTP no encontrado.")
-  assertPdtpProgramEditableState(program)
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`SELECT id FROM ${pdtpActivities} WHERE id = ${input.activityId} FOR UPDATE`)
+    const [activity] = await tx.select().from(pdtpActivities).where(eq(pdtpActivities.id, input.activityId)).limit(1)
+    if (!activity) throw new Error("Actividad PDTP no encontrada.")
+    if (activity.status === "retired") return activity
 
-  await db.delete(pdtpActivities).where(eq(pdtpActivities.id, activityId))
-  await addPdtpChangeLogEntry(activity.programId, program.version, userId, `activity:${activity.n}`, { n: activity.n, activity: activity.activity }, null, `Actividad ${activity.n} eliminada.`)
+    const [program] = await tx.select().from(pdtpPrograms).where(eq(pdtpPrograms.id, activity.programId)).limit(1)
+    if (!program) throw new Error("Programa PDTP no encontrado.")
+    assertPdtpProgramEditableState(program)
+    if (input.effectiveFrom < (program.periodStart ?? `${program.year}-01-01`) || input.effectiveFrom > (program.periodEnd ?? `${program.year}-12-31`)) {
+      throw new Error("La fecha efectiva debe estar dentro del período del programa.")
+    }
+
+    const now = new Date().toISOString()
+    const [retired] = await tx.update(pdtpActivities).set({
+      status: "retired",
+      retiredReason: reason,
+      retiredEffectiveFrom: input.effectiveFrom,
+      retiredByUserId: userId,
+      retiredAt: now,
+      updatedAt: now,
+    }).where(eq(pdtpActivities.id, input.activityId)).returning()
+    if (!retired) throw new Error("No se pudo retirar la actividad.")
+    await addPdtpChangeLogEntry(
+      activity.programId,
+      program.version,
+      userId,
+      `activity:${activity.n}`,
+      { status: activity.status },
+      { status: "retired", reason, effectiveFrom: input.effectiveFrom, retiredAt: now, retiredByUserId: userId },
+      `Actividad ${activity.n} retirada desde ${input.effectiveFrom}. Motivo: ${reason}`,
+      tx,
+    )
+    return retired
+  })
 }
 
 /** Duplica la definición reusable de una actividad dentro del mismo programa.
@@ -301,22 +295,25 @@ export async function deletePdtpActivity(activityId: string, userId: string) {
 export async function duplicatePdtpActivity(activityId: string, userId: string) {
   const [source] = await db.select().from(pdtpActivities).where(eq(pdtpActivities.id, activityId)).limit(1)
   if (!source) throw new Error("Actividad PDTP no encontrada.")
+  if (source.status === "retired") throw new Error("No se puede duplicar una actividad retirada.")
   const [program] = await db.select().from(pdtpPrograms).where(eq(pdtpPrograms.id, source.programId)).limit(1)
   if (!program) throw new Error("Programa PDTP no encontrado.")
   assertPdtpProgramEditableState(program)
 
   const now = new Date().toISOString()
   const created = await db.transaction(async (tx) => {
-    const [{ maxN } = { maxN: 0 }] = await tx.select({ maxN: sql<number>`COALESCE(MAX(${pdtpActivities.n}), 0)` })
+    const [{ maxN, maxDisplayOrder } = { maxN: 0, maxDisplayOrder: 0 }] = await tx.select({
+      maxN: sql<number>`COALESCE(MAX(${pdtpActivities.n}), 0)`,
+      maxDisplayOrder: sql<number>`COALESCE(MAX(${pdtpActivities.displayOrder}), 0)`,
+    })
       .from(pdtpActivities).where(eq(pdtpActivities.programId, source.programId))
-    const n = Number(maxN) + 1
+    const n = Math.max(90, Number(maxN) + 1)
     const id = pdtpActivityId(source.programId, n)
     const [copy] = await tx.insert(pdtpActivities).values({
       id,
       programId: source.programId,
       n,
-      objectiveOrder: source.objectiveOrder,
-      objective: source.objective,
+      displayOrder: Number(maxDisplayOrder) + 1,
       activity: `${source.activity} (copia)`,
       program: source.program,
       responsibleSlugs: source.responsibleSlugs,
@@ -404,22 +401,13 @@ export async function reorderPdtpActivities(programId: string, orderedIds: strin
   }
 
   const now = new Date().toISOString()
-  // `n` está bajo unique(programId, n) y check(n >= 1): renumerar en el
-  // sitio puede chocar a mitad de camino (ej. swap 1<->2 pone n=1 en dos
-  // filas) y un offset negativo violaría el check. Pasada 1 corre todo a
-  // un rango alto que ningún programa real alcanza (fuera del unique
-  // vigente), pasada 2 fija el n final — ambas en una transacción para que
-  // un fallo a mitad no deje el programa parcialmente renumerado.
-  const TEMP_N_OFFSET = 1_000_000
+  // El número de actividad es una identidad histórica y nunca cambia. El
+  // orden visual vive en `displayOrder`, así los huecos 4 y 8 y cualquier
+  // retiro futuro permanecen trazables.
   await db.transaction(async (tx) => {
     for (let i = 0; i < orderedIds.length; i++) {
       await tx.update(pdtpActivities)
-        .set({ n: TEMP_N_OFFSET + i })
-        .where(eq(pdtpActivities.id, orderedIds[i]!))
-    }
-    for (let i = 0; i < orderedIds.length; i++) {
-      await tx.update(pdtpActivities)
-        .set({ n: i + 1, updatedAt: now })
+        .set({ displayOrder: i + 1, updatedAt: now })
         .where(eq(pdtpActivities.id, orderedIds[i]!))
     }
   })

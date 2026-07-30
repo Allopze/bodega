@@ -233,7 +233,7 @@ describeIf("P0-05 MIPER/legal on real PostgreSQL", () => {
     expect(coverage.activities.find((item) => item.id === "pdtp-risk-activity")?.sources[0]?.sourceId).toBe(currentControlId)
     await expect(service.linkPdtpActivitySource({ activityId: "pdtp-risk-activity", worksiteId: "ws-risk-a", sourceType: "risk_control", sourceId: currentControlId, justification: "Intento duplicado del mismo vínculo de cobertura." }, access("risk-outsider", ["prevention:pdtp:program:manage"], ["ws-risk-b"]))).rejects.toThrow(/fuera de alcance/i)
 
-    const copiedProgram = await pdtpProgramsService.createPdtpProgram({
+    const copiedProgram = await pdtpProgramsService.createLegacyPdtpProgramForTests({
       year: 2026,
       title: "PDTP pruebas P0-05 copiado",
       userId: "risk-author",
@@ -333,9 +333,9 @@ async function seedFixture(database: ReturnType<typeof drizzle<typeof schema>>) 
   ])
   await database.insert(schema.pdtpPrograms).values({ id: "pdtp-risk-program", year: 2026, version: 1, status: "active", title: "PDTP pruebas P0-05", elaboratedByUserId: "risk-author", elaboratedByName: "Autor", elaboratedByTitle: "Prevencionista", createdAt: now, updatedAt: now })
   await database.insert(schema.pdtpActivities).values([
-    { id: "pdtp-risk-activity", programId: "pdtp-risk-program", n: 1, objectiveOrder: 1, objective: "Controlar riesgos críticos", activity: "Verificar control de ingeniería", program: "MIPER", responsibleSlugs: ["prevencion"], responsibleDisplay: "Prevención", sourceSheetRow: 1, createdAt: now, updatedAt: now },
-    { id: "pdtp-legal-activity", programId: "pdtp-risk-program", n: 2, objectiveOrder: 1, objective: "Cumplir requisitos", activity: "Revisar evidencia legal", program: "Legal", responsibleSlugs: ["prevencion"], responsibleDisplay: "Prevención", sourceSheetRow: 2, createdAt: now, updatedAt: now },
-    { id: "pdtp-unsourced-activity", programId: "pdtp-risk-program", n: 3, objectiveOrder: 1, objective: "Objetivo interno", activity: "Actividad aún no conciliada", program: "Interno", responsibleSlugs: ["prevencion"], responsibleDisplay: "Prevención", sourceSheetRow: 3, createdAt: now, updatedAt: now },
+    { id: "pdtp-risk-activity", programId: "pdtp-risk-program", n: 1, activity: "Verificar control de ingeniería", program: "MIPER", responsibleSlugs: ["prevencion"], responsibleDisplay: "Prevención", sourceSheetRow: 1, createdAt: now, updatedAt: now },
+    { id: "pdtp-legal-activity", programId: "pdtp-risk-program", n: 2, activity: "Revisar evidencia legal", program: "Legal", responsibleSlugs: ["prevencion"], responsibleDisplay: "Prevención", sourceSheetRow: 2, createdAt: now, updatedAt: now },
+    { id: "pdtp-unsourced-activity", programId: "pdtp-risk-program", n: 3, activity: "Actividad aún no conciliada", program: "Interno", responsibleSlugs: ["prevencion"], responsibleDisplay: "Prevención", sourceSheetRow: 3, createdAt: now, updatedAt: now },
   ])
 }
 

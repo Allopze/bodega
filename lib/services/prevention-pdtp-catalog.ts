@@ -22,12 +22,6 @@ export type PdtpSheetCode = typeof OFFICIAL_SHEETS[number][1]
 
 export type PdtpWorkbook = ExcelJS.Workbook
 
-export type PdtpObjective = {
-  order: number
-  name: string
-  activityNumbers: number[]
-}
-
 export type PdtpScheduleCell = {
   month: number
   week: number
@@ -68,8 +62,6 @@ export type PdtpWorkbookMetadata = {
 
 export type PdtpCatalogActivity = {
   n: number
-  objectiveOrder: number
-  objective: string
   program: string
   activity: string
   responsibleDisplay: string
@@ -79,7 +71,6 @@ export type PdtpCatalogActivity = {
 }
 
 export type PdtpCatalog = {
-  objectives: PdtpObjective[]
   activities: PdtpCatalogActivity[]
   sheetActivities: Record<PdtpSheetCode, number[]>
   importedExecutions?: PdtpImportedExecutionCell[]
@@ -108,40 +99,17 @@ export function extractPdtpCatalogFromWorkbook(workbook: PdtpWorkbook): PdtpCata
   validateGeneralScheduleStructure(general)
 
   const generalRows = sheetRows(general)
-  const objectives: PdtpObjective[] = []
   const activities: PdtpCatalogActivity[] = []
-  const importedExecutions: PdtpImportedExecutionCell[] = []
+  let ignoredExecutionCells = 0
   const scheduleWarnings: string[] = []
-  let currentObjective: PdtpObjective | null = null
 
   for (let index = 0; index < generalRows.length; index++) {
     const row = generalRows[index] ?? []
     const candidate = parseActivityRow(row, index + 1)
     if (!candidate) continue
 
-    const objectiveCell = normalizeWhitespace(normalizeCell(row[0]))
-    // Las celdas fusionadas (merged cells) en Excel hacen que SheetJS y
-    // ExcelJS se comporten distinto: SheetJS solo reporta el valor en la
-    // primera fila de la fusion; ExcelJS lo reporta en todas. Evitamos
-    // objetivos duplicados comparando con el ultimo objetivo conocido.
-    if (objectiveCell && !isNumericText(objectiveCell) && (!currentObjective || objectiveCell !== currentObjective.name)) {
-      currentObjective = {
-        order: objectives.length + 1,
-        name: objectiveCell,
-        activityNumbers: [],
-      }
-      objectives.push(currentObjective)
-    }
-
-    if (!currentObjective) {
-      throw new Error(`Actividad PDTP ${candidate.n} no tiene objetivo asociado.`)
-    }
-
-    currentObjective.activityNumbers.push(candidate.n)
     activities.push({
       n: candidate.n,
-      objectiveOrder: currentObjective.order,
-      objective: currentObjective.name,
       activity: candidate.activity,
       program: candidate.program,
       responsibleDisplay: candidate.responsibleDisplay,
@@ -149,7 +117,7 @@ export function extractPdtpCatalogFromWorkbook(workbook: PdtpWorkbook): PdtpCata
       sourceSheetRow: candidate.sourceSheetRow,
       schedule: extractSchedule(row, candidate.plannedStartIndex),
     })
-    importedExecutions.push(...extractExecutedCells(row, candidate, general.name))
+    ignoredExecutionCells += extractExecutedCells(row, candidate, general.name).length
     scheduleWarnings.push(...inspectScheduleCells(row, candidate, general.name))
   }
 
@@ -165,13 +133,26 @@ export function extractPdtpCatalogFromWorkbook(workbook: PdtpWorkbook): PdtpCata
     throw new Error(`Catalogo PDTP invalido: se esperaba numeracion de actividades estrictamente creciente y unica, y se obtuvo ${actual.join(",")}.`)
   }
 
+  const canonicalNumbers = new Set(actual)
+  if (canonicalNumbers.has(4) || canonicalNumbers.has(8)) {
+    throw new Error("La Base 2026 no puede contener las actividades retiradas 4 u 8.")
+  }
+
   return {
-    objectives,
     activities,
-    sheetActivities: extractSheetMembership(workbook),
-    importedExecutions,
+    sheetActivities: extractSheetMembership(workbook, canonicalNumbers),
+    // La Base 2026 es una definición reutilizable. Las columnas E del libro
+    // son evidencia operacional del año de origen y nunca se materializan en
+    // un programa nuevo.
+    importedExecutions: [],
     metadata: extractWorkbookMetadata(general),
-    warnings: [...extractWorkbookWarnings(general), ...scheduleWarnings],
+    warnings: [
+      ...extractWorkbookWarnings(general),
+      ...scheduleWarnings,
+      ...(ignoredExecutionCells > 0
+        ? [`Se ignoraron ${ignoredExecutionCells} celdas de ejecución; la base anual solo conserva planificación.`]
+        : []),
+    ],
   }
 }
 
@@ -206,7 +187,7 @@ export function parseResponsibleSlugs(display: string): string[] {
     })
 }
 
-function extractSheetMembership(workbook: PdtpWorkbook): Record<PdtpSheetCode, number[]> {
+function extractSheetMembership(workbook: PdtpWorkbook, canonicalNumbers: Set<number>): Record<PdtpSheetCode, number[]> {
   const membership = {} as Record<PdtpSheetCode, number[]>
 
   for (const [sheetName, code] of OFFICIAL_SHEETS) {
@@ -216,7 +197,7 @@ function extractSheetMembership(workbook: PdtpWorkbook): Record<PdtpSheetCode, n
     const numbers: number[] = []
     for (const [index, row] of sheetRows(worksheet).entries()) {
       const candidate = parseActivityRow(row, index + 1)
-      if (candidate) numbers.push(candidate.n)
+      if (candidate && canonicalNumbers.has(candidate.n)) numbers.push(candidate.n)
     }
     membership[code] = numbers
   }
@@ -273,11 +254,13 @@ function extractWorkbookMetadata(sheet: ExcelJS.Worksheet): PdtpWorkbookMetadata
   const afterLabel = (address: string, label: RegExp) => text(address)?.replace(label, "").trim() || null
   const dateFromLabel = (address: string) => afterLabel(address, /^fecha\s*:\s*/i)
   const indicatorTarget = numericValue(sheet.getCell("AP7").value)
-  const changeDate = text("C119")
-  const changeDescription = text("D119")
-  const roleLegend = [123, 124, 125, 126, 127].flatMap((row) => {
-    const code = normalizeWhitespace(normalizeCell(sheet.getCell(`B${row}`).value))
-    const label = normalizeWhitespace(normalizeCell(sheet.getCell(`C${row}`).value))
+  const definitiveLayout = Boolean(text("B111"))
+  const changeDate = text(definitiveLayout ? "B117" : "C119")
+  const changeDescription = text(definitiveLayout ? "C117" : "D119")
+  const roleRows = definitiveLayout ? [121, 122, 123, 124, 125] : [123, 124, 125, 126, 127]
+  const roleLegend = roleRows.flatMap((row) => {
+    const code = normalizeWhitespace(normalizeCell(sheet.getCell(`${definitiveLayout ? "A" : "B"}${row}`).value))
+    const label = normalizeWhitespace(normalizeCell(sheet.getCell(`${definitiveLayout ? "B" : "C"}${row}`).value))
     return code && label ? [{ code, label }] : []
   })
 
@@ -290,20 +273,22 @@ function extractWorkbookMetadata(sheet: ExcelJS.Worksheet): PdtpWorkbookMetadata
     indicatorTarget,
     indicatorPeriodicity: text("BD7"),
     measurementOwner: text("BT7"),
-    elaboratedByName: text("C113"),
-    elaboratedByTitle: afterLabel("C116", /^cargo\s*:\s*/i),
-    elaboratedAt: dateFromLabel("C115"),
-    approvedByName: text("E113"),
-    approvedByTitle: afterLabel("E116", /^cargo\s*:\s*/i),
-    approvedAt: dateFromLabel("E115"),
+    elaboratedByName: text(definitiveLayout ? "B111" : "C113"),
+    elaboratedByTitle: afterLabel(definitiveLayout ? "B114" : "C116", /^cargo\s*:\s*/i),
+    elaboratedAt: dateFromLabel(definitiveLayout ? "B113" : "C115"),
+    approvedByName: text(definitiveLayout ? "D111" : "E113"),
+    approvedByTitle: afterLabel(definitiveLayout ? "D114" : "E116", /^cargo\s*:\s*/i),
+    approvedAt: dateFromLabel(definitiveLayout ? "D113" : "E115"),
     changeControl: changeDescription ? [{ date: changeDate, description: changeDescription }] : [],
     roleLegend,
-    scheduleLegend: text("C129"),
+    scheduleLegend: text(definitiveLayout ? "B127" : "C129"),
   }
 }
 
 function validateGeneralScheduleStructure(sheet: ExcelJS.Worksheet) {
-  const firstColumn = 6 // F
+  const firstColumn = normalizeWhitespace(normalizeCell(sheet.getCell("E12").value)).toLocaleUpperCase("es-CL") === "P"
+    ? 5 // E, Base 2026 definitiva sin objetivos
+    : 6 // F, compatibilidad de lectura con el libro histórico
   const pairs = 48
   for (let sequence = 0; sequence < pairs; sequence++) {
     const plannedColumn = firstColumn + sequence * 2
@@ -455,4 +440,3 @@ function encodeColumn(colIndex: number): string {
   }
   return result
 }
-

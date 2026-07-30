@@ -159,7 +159,7 @@ export const pdtpSourceLinkSchema = z.object({
   activityId: z.string().min(1),
   worksiteId: z.string().min(1),
   sourceType: z.enum([
-    "risk_control", "legal_requirement", "incident_capa", "audit", "internal_objective", "contractual_obligation",
+    "risk_control", "legal_requirement", "incident_capa", "audit", "contractual_obligation",
     "capacitacion", "inspeccion", "cphs", "epp", "emergencia", "campana",
   ]),
   sourceId: z.string().trim().min(1).max(300),
@@ -171,4 +171,3 @@ export const pdtpObligationResolutionSchema = z.object({
   programId: z.string().min(1),
   resolution: reason,
 })
-

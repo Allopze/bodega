@@ -33,20 +33,15 @@ const mockApprovePdtpExecution = vi.hoisted(() => vi.fn(async () => undefined))
 const mockRejectPdtpExecution = vi.hoisted(() => vi.fn(async () => undefined))
 const mockUpdatePdtpActivity = vi.hoisted(() => vi.fn(async () => undefined))
 const mockAddPdtpActivity = vi.hoisted(() => vi.fn(async () => undefined))
-const mockDeletePdtpActivity = vi.hoisted(() => vi.fn(async () => undefined))
+const mockRetirePdtpActivity = vi.hoisted(() => vi.fn(async () => undefined))
 const mockReorderPdtpActivities = vi.hoisted(() => vi.fn(async () => undefined))
 const mockSetPdtpActivityOverride = vi.hoisted(() => vi.fn(async () => undefined))
 const mockDeletePdtpActivityOverride = vi.hoisted(() => vi.fn(async () => undefined))
-const mockCreatePdtpProgram = vi.hoisted(() => vi.fn(async () => ({ id: "prog-1" })))
+const mockCreateAnnualPdtpProgram = vi.hoisted(() => vi.fn(async () => ({ programId: "prog-1", created: true })))
 const mockUpdatePdtpProgram = vi.hoisted(() => vi.fn(async () => undefined))
 const mockDeletePdtpProgram = vi.hoisted(() => vi.fn(async () => undefined))
 const mockCreatePdtpSheet = vi.hoisted(() => vi.fn(async () => undefined))
 const mockDeletePdtpSheet = vi.hoisted(() => vi.fn(async () => undefined))
-const mockRenamePdtpObjective = vi.hoisted(() => vi.fn(async () => undefined))
-const mockCreatePdtpTemplateVersion = vi.hoisted(() => vi.fn(async () => ({
-  template: { id: "template-1", name: "Base operacional" },
-  version: { id: "template-version-1", version: 1 },
-})))
 const mockReconcilePdtpDeclaredActor = vi.hoisted(() => vi.fn(async () => undefined))
 
 vi.mock("@/lib/auth/can", () => ({
@@ -73,17 +68,15 @@ vi.mock("@/lib/services/prevention-pdtp", () => ({
   rejectPdtpExecution: mockRejectPdtpExecution,
   updatePdtpActivity: mockUpdatePdtpActivity,
   addPdtpActivity: mockAddPdtpActivity,
-  deletePdtpActivity: mockDeletePdtpActivity,
+  retirePdtpActivity: mockRetirePdtpActivity,
   reorderPdtpActivities: mockReorderPdtpActivities,
   setPdtpActivityOverride: mockSetPdtpActivityOverride,
   deletePdtpActivityOverride: mockDeletePdtpActivityOverride,
-  createPdtpProgram: mockCreatePdtpProgram,
+  createAnnualPdtpProgram: mockCreateAnnualPdtpProgram,
   updatePdtpProgram: mockUpdatePdtpProgram,
   deletePdtpProgram: mockDeletePdtpProgram,
   createPdtpSheet: mockCreatePdtpSheet,
   deletePdtpSheet: mockDeletePdtpSheet,
-  renamePdtpObjective: mockRenamePdtpObjective,
-  createPdtpTemplateVersion: mockCreatePdtpTemplateVersion,
   reconcilePdtpDeclaredActor: mockReconcilePdtpDeclaredActor,
 }))
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), revalidateTag: vi.fn() }))
@@ -112,8 +105,6 @@ import {
   deletePdtpActivityAction,
   reorderPdtpActivitiesAction,
   addPdtpActivityFormAction,
-  renamePdtpObjectiveAction,
-  publishPdtpTemplateAction,
   reconcilePdtpDeclaredActorAction,
 } from "@/app/(app)/prevencion/pdtp/actions"
 
@@ -291,8 +282,6 @@ describe("Activity edit/add actions", () => {
   it("addPdtpActivityAction agrega actividad válida", async () => {
     const res = await addPdtpActivityAction({
       programId: "prog-1",
-      objectiveOrder: 1,
-      objective: "Objetivo 1",
       activity: "Actividad 1",
       program: "Programa X",
       responsibleSlugs: ["resp-1"],
@@ -303,23 +292,17 @@ describe("Activity edit/add actions", () => {
     expect(mockAddPdtpActivity).toHaveBeenCalled()
   })
 
-  it("deletePdtpActivityAction elimina actividad válida", async () => {
-    const res = await deletePdtpActivityAction({ activityId: "act-1" })
+  it("deletePdtpActivityAction retira actividad sin borrarla", async () => {
+    const input = { activityId: "act-1", reason: "Actividad reemplazada por un control nuevo", effectiveFrom: "2026-08-01" }
+    const res = await deletePdtpActivityAction(input)
     expect(res.ok).toBe(true)
-    expect(mockDeletePdtpActivity).toHaveBeenCalledWith("act-1", "user-1")
+    expect(mockRetirePdtpActivity).toHaveBeenCalledWith(input, "user-1")
   })
 
   it("reorderPdtpActivitiesAction reordena actividades", async () => {
     const res = await reorderPdtpActivitiesAction({ programId: "prog-1", orderedIds: ["act-1", "act-2"] })
     expect(res.ok).toBe(true)
     expect(mockReorderPdtpActivities).toHaveBeenCalledWith("prog-1", ["act-1", "act-2"], "user-1")
-  })
-
-  it("renamePdtpObjectiveAction renombra objetivo", async () => {
-    const res = await renamePdtpObjectiveAction({ programId: "prog-1", objectiveOrder: 1, objective: "Nuevo objetivo" })
-    expect(res.ok).toBe(true)
-    expect(mockGuardPermission).toHaveBeenCalledWith("prevention:pdtp:program:manage")
-    expect(mockRenamePdtpObjective).toHaveBeenCalled()
   })
 
   it("reconcilePdtpDeclaredActorAction exige permiso y vincula la identidad declarada con el actor de la sesión", async () => {
@@ -401,7 +384,7 @@ describe("setPdtpActivityOverrideFormAction (redirect-based)", () => {
 
 describe("addPdtpActivityFormAction (redirect-based)", () => {
   it("redirige una sola vez con error si falta responsable", async () => {
-    const fd = makeFormData({ programId: "prog-1", objectiveOrder: "1", objective: "Obj 1", activity: "Act 1", program: "Prog X", responsibleDisplay: "R1" })
+    const fd = makeFormData({ programId: "prog-1", activity: "Act 1", program: "Prog X", responsibleDisplay: "R1" })
     fd.append("sheetCodes[]", "hoja-1")
     await expect(addPdtpActivityFormAction(fd)).rejects.toThrow("REDIRECT:")
     expect(mockRedirect).toHaveBeenCalledTimes(1)
@@ -409,7 +392,7 @@ describe("addPdtpActivityFormAction (redirect-based)", () => {
   })
 
   it("redirige una sola vez con error si falta hoja", async () => {
-    const fd = makeFormData({ programId: "prog-1", objectiveOrder: "1", objective: "Obj 1", activity: "Act 1", program: "Prog X", responsibleDisplay: "R1" })
+    const fd = makeFormData({ programId: "prog-1", activity: "Act 1", program: "Prog X", responsibleDisplay: "R1" })
     fd.append("responsibleSlugs[]", "resp-1")
     await expect(addPdtpActivityFormAction(fd)).rejects.toThrow("REDIRECT:")
     expect(mockRedirect).toHaveBeenCalledTimes(1)
@@ -417,7 +400,7 @@ describe("addPdtpActivityFormAction (redirect-based)", () => {
   })
 
   it("agrega actividad y redirige al detalle sin error", async () => {
-    const fd = makeFormData({ programId: "prog-1", objectiveOrder: "1", objective: "Obj 1", activity: "Act 1", program: "Prog X", responsibleDisplay: "R1" })
+    const fd = makeFormData({ programId: "prog-1", activity: "Act 1", program: "Prog X", responsibleDisplay: "R1" })
     fd.append("responsibleSlugs[]", "resp-1")
     fd.append("sheetCodes[]", "hoja-1")
     await expect(addPdtpActivityFormAction(fd)).rejects.toThrow("REDIRECT:")
@@ -431,7 +414,7 @@ describe("addPdtpActivityFormAction (redirect-based)", () => {
 describe("Program CRUD actions", () => {
   it("createPdtpProgramAction rechaza sin permiso", async () => {
     mockGuardPermission.mockResolvedValueOnce({ session: null, error: { ok: false, message: "No tienes permisos" } })
-    const fd = makeFormData({ year: "2026", title: "Programa 2026" })
+    const fd = makeFormData({ year: "2026" })
     const res = await createPdtpProgramAction(null, fd)
     expect(res.ok).toBe(false)
   })
@@ -440,36 +423,18 @@ describe("Program CRUD actions", () => {
     // redirect() server-side en éxito, no un router.push cliente — evita la
     // carrera con revalidatePath que dejaba el form varado en /nuevo (ver
     // AUDITORIA_INTEGRAL_CHOME.md Pasada 9).
-    const fd = makeFormData({ year: "2026", title: "Programa 2026" })
+    const fd = makeFormData({ year: "2026" })
     await expect(createPdtpProgramAction(null, fd)).rejects.toThrow("REDIRECT:")
     expect(mockGuardPermission).toHaveBeenCalledWith("prevention:pdtp:program:manage")
+    expect(mockCreateAnnualPdtpProgram).toHaveBeenCalledWith({ year: 2026, userId: "user-1" })
     expect(mockRedirect).toHaveBeenCalledWith("/prevencion/pdtp/prog-1/editar")
   })
 
-  it("crea desde una versión de plantilla sin combinar orígenes", async () => {
-    const fd = makeFormData({
-      year: "2027",
-      title: "Programa desde plantilla",
-      templateVersionId: "template-version-1",
-    })
+  it("abre el programa existente cuando el servicio anual indica que no creó uno nuevo", async () => {
+    mockCreateAnnualPdtpProgram.mockResolvedValueOnce({ programId: "prog-existing", created: false })
+    const fd = makeFormData({ year: "2027" })
     await expect(createPdtpProgramAction(null, fd)).rejects.toThrow("REDIRECT:")
-    expect(mockCreatePdtpProgram).toHaveBeenCalledWith(expect.objectContaining({
-      year: 2027,
-      templateVersionId: "template-version-1",
-      copySheetsFromProgramId: undefined,
-    }))
-  })
-
-  it("rechaza combinar plantilla con copia de otro programa", async () => {
-    const fd = makeFormData({
-      year: "2027",
-      title: "Programa ambiguo",
-      templateVersionId: "template-version-1",
-      copySheetsFromProgramId: "program-source-1",
-    })
-    const res = await createPdtpProgramAction(null, fd)
-    expect(res.ok).toBe(false)
-    expect(mockCreatePdtpProgram).not.toHaveBeenCalled()
+    expect(mockRedirect).toHaveBeenCalledWith("/prevencion/pdtp/prog-existing/editar")
   })
 
   it("createPdtpProgramAction retorna error con año inválido", async () => {
@@ -512,22 +477,6 @@ describe("Program CRUD actions", () => {
     expect(mockDeletePdtpProgram).toHaveBeenCalledWith("prog-1")
   })
 
-  it("publica una versión inmutable como plantilla reutilizable", async () => {
-    const fd = makeFormData({
-      sourceProgramId: "prog-1",
-      name: "Base operacional",
-      description: "Para faenas operativas",
-    })
-    const res = await publishPdtpTemplateAction(null, fd)
-    expect(res).toEqual(expect.objectContaining({ ok: true, message: expect.stringContaining("v1") }))
-    expect(mockGuardPermission).toHaveBeenCalledWith("prevention:pdtp:program:manage")
-    expect(mockCreatePdtpTemplateVersion).toHaveBeenCalledWith({
-      sourceProgramId: "prog-1",
-      name: "Base operacional",
-      description: "Para faenas operativas",
-      userId: "user-1",
-    })
-  })
 })
 
 describe("Sheet CRUD actions", () => {

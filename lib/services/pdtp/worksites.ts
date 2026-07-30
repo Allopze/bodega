@@ -15,10 +15,12 @@ import { and, eq, inArray, sql } from "drizzle-orm"
 import { db } from "@/db"
 import {
   pdtpActivities,
+  pdtpActivityScheduleOverrides,
   pdtpActivityWorksiteExclusions,
   pdtpActivityWorksiteParams,
   pdtpPrograms,
   pdtpProgramWorksites,
+  pdtpResponsibleCatalog,
   workers,
   worksites,
   type PdtpActivity,
@@ -44,21 +46,30 @@ export async function setPdtpProgramWorksites(
   programId: string,
   worksiteIds: string[],
   userId: string,
+  scope?: WorksiteScope,
 ): Promise<PdtpProgramWorksite[]> {
-  const [program] = await db.select().from(pdtpPrograms).where(eq(pdtpPrograms.id, programId)).limit(1)
-  if (!program) throw new Error("Programa PDTP no encontrado.")
-  assertPdtpProgramEditableState(program)
-
   const uniqueIds = [...new Set(worksiteIds)]
-  if (uniqueIds.length > 0) {
-    const found = await db.select({ id: worksites.id }).from(worksites).where(inArray(worksites.id, uniqueIds))
-    if (found.length !== uniqueIds.length) throw new Error("Una o más faenas seleccionadas no existen.")
+  if (scope !== undefined && scope !== "all") {
+    throw new Error("Se requiere alcance global de faenas para modificar la cobertura del programa.")
   }
-
-  const before = await listPdtpProgramWorksites(programId)
   const now = new Date().toISOString()
 
   return db.transaction(async (tx) => {
+    await tx.execute(sql`SELECT id FROM ${pdtpPrograms} WHERE id = ${programId} FOR UPDATE`)
+    const [program] = await tx.select().from(pdtpPrograms).where(eq(pdtpPrograms.id, programId)).limit(1)
+    if (!program) throw new Error("Programa PDTP no encontrado.")
+    assertPdtpProgramEditableState(program)
+
+    if (uniqueIds.length > 0) {
+      const found = await tx.select({ id: worksites.id }).from(worksites).where(and(
+        inArray(worksites.id, uniqueIds),
+        eq(worksites.isActive, true),
+      ))
+      if (found.length !== uniqueIds.length) throw new Error("Una o más faenas seleccionadas no existen o están inactivas.")
+    }
+
+    const before = await tx.select().from(pdtpProgramWorksites)
+      .where(and(eq(pdtpProgramWorksites.programId, programId), eq(pdtpProgramWorksites.isActive, true)))
     await tx.delete(pdtpProgramWorksites).where(eq(pdtpProgramWorksites.programId, programId))
     const rows: PdtpProgramWorksite[] = []
     for (const worksiteId of uniqueIds) {
@@ -226,7 +237,9 @@ export async function syncPdtpCphsHeadcountExclusion(
  * en absoluto — eso es `resolveProgramWorksiteIds`, a nivel de membresía.
  */
 export async function resolvePdtpEffectiveActivitiesForWorksite(programId: string, worksiteId: string): Promise<PdtpActivity[]> {
-  const activities = await db.select().from(pdtpActivities).where(eq(pdtpActivities.programId, programId)).orderBy(pdtpActivities.n)
+  const activities = await db.select().from(pdtpActivities)
+    .where(and(eq(pdtpActivities.programId, programId), eq(pdtpActivities.status, "active")))
+    .orderBy(pdtpActivities.displayOrder, pdtpActivities.n)
   if (activities.length === 0) return activities
   const excluded = await db.select({ activityId: pdtpActivityWorksiteExclusions.activityId })
     .from(pdtpActivityWorksiteExclusions)
@@ -256,7 +269,13 @@ export async function assertPdtpWorksiteCanOperateProgram(programId: string, wor
 export async function setPdtpActivityWorksiteParams(
   activityId: string,
   worksiteId: string,
-  params: { expectedSubjectCount?: number | null; targetCoveragePercent?: number | null },
+  params: {
+    expectedSubjectCount?: number | null
+    targetCoveragePercent?: number | null
+    responsibleSlugs?: string[] | null
+    responsibleDisplay?: string | null
+    responsibleReason?: string | null
+  },
   userId: string,
 ) {
   const now = new Date().toISOString()
@@ -269,6 +288,9 @@ export async function setPdtpActivityWorksiteParams(
       .set({
         expectedSubjectCount: params.expectedSubjectCount !== undefined ? params.expectedSubjectCount : existing.expectedSubjectCount,
         targetCoveragePercent: params.targetCoveragePercent !== undefined ? params.targetCoveragePercent : existing.targetCoveragePercent,
+        responsibleSlugs: params.responsibleSlugs !== undefined ? params.responsibleSlugs : existing.responsibleSlugs,
+        responsibleDisplay: params.responsibleDisplay !== undefined ? params.responsibleDisplay : existing.responsibleDisplay,
+        responsibleReason: params.responsibleReason !== undefined ? params.responsibleReason : existing.responsibleReason,
         updatedByUserId: userId,
         updatedAt: now,
       })
@@ -283,6 +305,9 @@ export async function setPdtpActivityWorksiteParams(
         worksiteId,
         expectedSubjectCount: params.expectedSubjectCount ?? null,
         targetCoveragePercent: params.targetCoveragePercent ?? null,
+        responsibleSlugs: params.responsibleSlugs ?? null,
+        responsibleDisplay: params.responsibleDisplay ?? null,
+        responsibleReason: params.responsibleReason ?? null,
         updatedByUserId: userId,
         createdAt: now,
         updatedAt: now,
@@ -300,4 +325,207 @@ export async function listPdtpActivityWorksiteParams(activityIds: string[], work
   }
   return db.select().from(pdtpActivityWorksiteParams)
     .where(inArray(pdtpActivityWorksiteParams.activityId, activityIds))
+}
+
+export type PdtpActivityWorksiteAdjustmentInput = {
+  activityId: string
+  worksiteId: string
+  excluded: boolean
+  reason: string
+  expectedSubjectCount?: number | null
+  targetCoveragePercent?: number | null
+  responsibleSlugs?: string[] | null
+  responsibleDisplay?: string | null
+  /** `undefined` conserva el estado actual; `null` vuelve a heredar el calendario global. */
+  schedule?: Array<{ month: number; week: number; plannedQuantity: number }> | null
+}
+
+/**
+ * Guarda una proyección completa actividad/faena sin duplicar el programa.
+ * Los valores nulos heredan la definición global. El calendario entrante es
+ * autoritativo para esa faena y año.
+ */
+export async function setPdtpActivityWorksiteAdjustment(
+  input: PdtpActivityWorksiteAdjustmentInput,
+  userId: string,
+  scope?: WorksiteScope,
+) {
+  const reason = input.reason.trim()
+  if (reason.length < 10) throw new Error("Indica un motivo de ajuste de al menos 10 caracteres.")
+  if (scope !== undefined) assertWorksiteAccess(input.worksiteId, scope)
+
+  // Solo se usa para determinar el orden de locks. La existencia, el estado,
+  // la membresía y la editabilidad se vuelven a comprobar dentro de la misma
+  // transacción que escribe el ajuste.
+  const [activityRef] = await db.select({ programId: pdtpActivities.programId })
+    .from(pdtpActivities)
+    .where(eq(pdtpActivities.id, input.activityId))
+    .limit(1)
+  if (!activityRef) throw new Error("Actividad PDTP no encontrada.")
+
+  const responsibleSlugs = input.responsibleSlugs === undefined
+    ? undefined
+    : input.responsibleSlugs === null
+      ? null
+      : [...new Set(input.responsibleSlugs.map((slug) => slug.trim()).filter(Boolean))]
+  if (Array.isArray(responsibleSlugs)) {
+    if (responsibleSlugs.length === 0) throw new Error("Selecciona al menos un responsable o usa la herencia global.")
+    if (!input.responsibleDisplay?.trim()) throw new Error("Indica el nombre visible del responsable por faena.")
+  }
+
+  for (const cell of input.schedule ?? []) {
+    if (!Number.isInteger(cell.month) || cell.month < 1 || cell.month > 12) throw new Error("Mes de planificación inválido.")
+    if (!Number.isInteger(cell.week) || cell.week < 1 || cell.week > 4) throw new Error("Semana de planificación inválida.")
+    if (!Number.isFinite(cell.plannedQuantity) || cell.plannedQuantity < 0) throw new Error("Cantidad planificada inválida.")
+  }
+
+  const now = new Date().toISOString()
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`SELECT id FROM ${pdtpPrograms} WHERE id = ${activityRef.programId} FOR UPDATE`)
+    await tx.execute(sql`SELECT id FROM ${pdtpActivities} WHERE id = ${input.activityId} FOR UPDATE`)
+
+    const [[program], [activity], [worksite], members] = await Promise.all([
+      tx.select().from(pdtpPrograms).where(eq(pdtpPrograms.id, activityRef.programId)).limit(1),
+      tx.select().from(pdtpActivities).where(eq(pdtpActivities.id, input.activityId)).limit(1),
+      tx.select({ id: worksites.id }).from(worksites).where(and(
+        eq(worksites.id, input.worksiteId),
+        eq(worksites.isActive, true),
+      )).limit(1),
+      tx.select({ worksiteId: pdtpProgramWorksites.worksiteId }).from(pdtpProgramWorksites).where(and(
+        eq(pdtpProgramWorksites.programId, activityRef.programId),
+        eq(pdtpProgramWorksites.isActive, true),
+      )),
+    ])
+    if (!program) throw new Error("Programa PDTP no encontrado.")
+    if (!activity || activity.programId !== program.id) throw new Error("Actividad PDTP no encontrada.")
+    if (!worksite) throw new Error("La faena seleccionada no existe o está inactiva.")
+    if (activity.status === "retired") throw new Error("Una actividad retirada no admite ajustes por faena.")
+    assertPdtpProgramEditableState(program)
+    if (members.length > 0 && !members.some((member) => member.worksiteId === input.worksiteId)) {
+      throw new Error("Esta faena no está habilitada para operar este programa PDTP.")
+    }
+
+    if (Array.isArray(responsibleSlugs)) {
+      const catalog = await tx.select({ slug: pdtpResponsibleCatalog.slug }).from(pdtpResponsibleCatalog)
+        .where(inArray(pdtpResponsibleCatalog.slug, responsibleSlugs))
+      if (catalog.length !== responsibleSlugs.length) throw new Error("Uno o más responsables no existen en el catálogo PDTP.")
+    }
+
+    const [beforeExclusion, beforeParams, beforeSchedule] = await Promise.all([
+      tx.select().from(pdtpActivityWorksiteExclusions).where(and(
+        eq(pdtpActivityWorksiteExclusions.activityId, input.activityId),
+        eq(pdtpActivityWorksiteExclusions.worksiteId, input.worksiteId),
+      )).limit(1),
+      tx.select().from(pdtpActivityWorksiteParams).where(and(
+        eq(pdtpActivityWorksiteParams.activityId, input.activityId),
+        eq(pdtpActivityWorksiteParams.worksiteId, input.worksiteId),
+      )).limit(1),
+      tx.select().from(pdtpActivityScheduleOverrides).where(and(
+        eq(pdtpActivityScheduleOverrides.activityId, input.activityId),
+        eq(pdtpActivityScheduleOverrides.worksiteId, input.worksiteId),
+        eq(pdtpActivityScheduleOverrides.year, program.year),
+      )),
+    ])
+
+    if (input.excluded) {
+      await tx.insert(pdtpActivityWorksiteExclusions).values({
+        id: nanoid(),
+        activityId: input.activityId,
+        worksiteId: input.worksiteId,
+        reason,
+        createdByUserId: userId,
+        createdAt: now,
+      }).onConflictDoUpdate({
+        target: [pdtpActivityWorksiteExclusions.activityId, pdtpActivityWorksiteExclusions.worksiteId],
+        set: { reason, createdByUserId: userId, createdAt: now },
+      })
+    } else {
+      await tx.delete(pdtpActivityWorksiteExclusions).where(and(
+        eq(pdtpActivityWorksiteExclusions.activityId, input.activityId),
+        eq(pdtpActivityWorksiteExclusions.worksiteId, input.worksiteId),
+      ))
+    }
+
+    const previousParams = beforeParams[0]
+    const paramsValues = {
+      expectedSubjectCount: input.expectedSubjectCount !== undefined
+        ? input.expectedSubjectCount
+        : previousParams?.expectedSubjectCount ?? null,
+      targetCoveragePercent: input.targetCoveragePercent !== undefined
+        ? input.targetCoveragePercent
+        : previousParams?.targetCoveragePercent ?? null,
+      responsibleSlugs: input.responsibleSlugs === undefined
+        ? previousParams?.responsibleSlugs ?? null
+        : responsibleSlugs,
+      responsibleDisplay: input.responsibleSlugs === undefined
+        ? previousParams?.responsibleDisplay ?? null
+        : responsibleSlugs
+          ? input.responsibleDisplay!.trim()
+          : null,
+      responsibleReason: input.responsibleSlugs === undefined
+        ? previousParams?.responsibleReason ?? null
+        : responsibleSlugs
+          ? reason
+          : null,
+      updatedByUserId: userId,
+      updatedAt: now,
+    }
+    await tx.insert(pdtpActivityWorksiteParams).values({
+      id: `pdtp-param-${nanoid()}`,
+      activityId: input.activityId,
+      worksiteId: input.worksiteId,
+      ...paramsValues,
+      createdAt: now,
+    }).onConflictDoUpdate({
+      target: [pdtpActivityWorksiteParams.activityId, pdtpActivityWorksiteParams.worksiteId],
+      set: paramsValues,
+    })
+
+    if (input.schedule !== undefined) {
+      await tx.delete(pdtpActivityScheduleOverrides).where(and(
+        eq(pdtpActivityScheduleOverrides.activityId, input.activityId),
+        eq(pdtpActivityScheduleOverrides.worksiteId, input.worksiteId),
+        eq(pdtpActivityScheduleOverrides.year, program.year),
+      ))
+      // Un ajuste autoritativo conserva también ceros: un cero explícito debe
+      // poder apagar una celda planificada global para esta faena. `null`, en
+      // cambio, elimina todos los overrides y vuelve a heredar.
+      const cells = input.schedule ?? []
+      if (cells.length > 0) {
+        await tx.insert(pdtpActivityScheduleOverrides).values(cells.map((cell) => ({
+          id: `pdtp-ov-${input.activityId}-${input.worksiteId}-${program.year}-${String(cell.month).padStart(2, "0")}-${cell.week}`,
+          activityId: input.activityId,
+          worksiteId: input.worksiteId,
+          year: program.year,
+          month: cell.month,
+          week: cell.week,
+          plannedQuantity: cell.plannedQuantity,
+          updatedByUserId: userId,
+          createdAt: now,
+          updatedAt: now,
+        })))
+      }
+    }
+
+    const after = {
+      excluded: input.excluded,
+      reason,
+      expectedSubjectCount: paramsValues.expectedSubjectCount,
+      targetCoveragePercent: paramsValues.targetCoveragePercent,
+      responsibleSlugs: paramsValues.responsibleSlugs,
+      responsibleDisplay: paramsValues.responsibleDisplay,
+      schedule: input.schedule === undefined ? beforeSchedule : input.schedule,
+    }
+    await addPdtpChangeLogEntry(
+      program.id,
+      program.version,
+      userId,
+      `worksite_adjustment:${activity.n}:${input.worksiteId}`,
+      { exclusion: beforeExclusion[0] ?? null, params: beforeParams[0] ?? null, schedule: beforeSchedule },
+      after,
+      `Ajuste por faena actualizado para actividad ${activity.n}. Motivo: ${reason}`,
+      tx,
+    )
+    return after
+  })
 }

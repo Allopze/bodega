@@ -44,10 +44,10 @@ describe("findPdtpWeeklyPending", () => {
       elaboratedByName: "Prevención", elaboratedByTitle: "PR", createdAt: now, updatedAt: now,
     })
     await inMemoryDb.insert(schema.pdtpActivities).values([
-      { id: "act-pending", programId: "program-2026", n: 1, objectiveOrder: 1, objective: "O", activity: "Pendiente", program: "P", responsibleSlugs: [], responsibleDisplay: "PR", sourceSheetRow: 1, createdAt: now, updatedAt: now },
-      { id: "act-executed", programId: "program-2026", n: 2, objectiveOrder: 1, objective: "O", activity: "Ejecutada", program: "P", responsibleSlugs: [], responsibleDisplay: "PR", sourceSheetRow: 2, createdAt: now, updatedAt: now },
-      { id: "act-overridden", programId: "program-2026", n: 3, objectiveOrder: 1, objective: "O", activity: "Override cero", program: "P", responsibleSlugs: [], responsibleDisplay: "PR", sourceSheetRow: 3, createdAt: now, updatedAt: now },
-      { id: "act-prior-week", programId: "program-2026", n: 4, objectiveOrder: 1, objective: "O", activity: "Semana anterior", program: "P", responsibleSlugs: [], responsibleDisplay: "PR", sourceSheetRow: 4, createdAt: now, updatedAt: now },
+      { id: "act-pending", programId: "program-2026", n: 1, activity: "Pendiente", program: "P", responsibleSlugs: [], responsibleDisplay: "PR", sourceSheetRow: 1, createdAt: now, updatedAt: now },
+      { id: "act-executed", programId: "program-2026", n: 2, activity: "Ejecutada", program: "P", responsibleSlugs: [], responsibleDisplay: "PR", sourceSheetRow: 2, createdAt: now, updatedAt: now },
+      { id: "act-overridden", programId: "program-2026", n: 3, activity: "Override cero", program: "P", responsibleSlugs: [], responsibleDisplay: "PR", sourceSheetRow: 3, createdAt: now, updatedAt: now },
+      { id: "act-prior-week", programId: "program-2026", n: 4, activity: "Semana anterior", program: "P", responsibleSlugs: [], responsibleDisplay: "PR", sourceSheetRow: 4, createdAt: now, updatedAt: now },
     ])
     await inMemoryDb.insert(schema.pdtpActivitySchedule).values([
       { id: "schedule-pending", activityId: "act-pending", year: 2026, month: 7, week: 2, plannedQuantity: 1, sourceColumn: "xlsx" },

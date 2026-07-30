@@ -13,8 +13,6 @@ import {
   pdtpImportBatches,
   pdtpImportRows,
   pdtpPrograms,
-  pdtpProgramTemplates,
-  pdtpProgramTemplateVersions,
   pdtpResponsibleCatalog,
   pdtpRoleLegendEntries,
   pdtpSheetActivities,
@@ -29,6 +27,7 @@ import {
 } from "@/lib/services/prevention-pdtp-catalog"
 import { SHEET_META } from "@/lib/services/pdtp-adapters/sheet-meta-2026"
 import { PDTP_2026_GENERAL_SHEET_NAME } from "@/lib/services/prevention-pdtp-catalog"
+import { PDTP_2026_PROGRAM_SOURCE } from "@/lib/services/pdtp-adapters/contract-2026"
 import { collectResponsibleCatalog } from "@/lib/services/pdtp-adapters/responsible-catalog-2026"
 import { writePdtpActivityContent } from "./activity-content"
 import {
@@ -59,7 +58,6 @@ export type PdtpImportPreview = {
   status: string
   source: { fileName: string; checksumSha256: string; sizeBytes: number }
   counts: {
-    objectives: number
     activities: number
     plannedCells: number
     plannedQuantity: number
@@ -134,11 +132,9 @@ type BootstrapArtifacts = {
 }
 
 function activityComparable(activity: Pick<typeof pdtpActivities.$inferSelect,
-  "objectiveOrder" | "objective" | "activity" | "program" | "responsibleSlugs" | "sourceSheetRow"
+  "activity" | "program" | "responsibleSlugs" | "sourceSheetRow"
 >) {
   return {
-    objectiveOrder: activity.objectiveOrder,
-    objective: activity.objective,
     activity: activity.activity,
     program: activity.program,
     responsibleSlugs: activity.responsibleSlugs,
@@ -240,6 +236,22 @@ export async function stagePdtpXlsxImport(input: {
   const executions = catalog.importedExecutions ?? []
   const scheduleClassificationsPending = catalog.activities.filter((activity) => activity.schedule.length === 0).length
   const warnings = [...(catalog.warnings ?? [])]
+  const blockingErrors: string[] = []
+  const extraActivities = existingActivities.filter((activity) => !catalog.activities.some((candidate) => candidate.n === activity.n))
+  if (extraActivities.length > 0) {
+    blockingErrors.push(
+      `General es autoritativa: el programa contiene actividades ajenas al archivo (${extraActivities.map((activity) => activity.n).join(", ")}). ` +
+      "La importación se bloqueó para no conservarlas ni borrarlas sin revisar su historial.",
+    )
+  }
+  const retiredActivities = existingActivities.filter((activity) =>
+    activity.status === "retired" && catalog.activities.some((candidate) => candidate.n === activity.n))
+  if (retiredActivities.length > 0) {
+    blockingErrors.push(
+      `La importación no puede reactivar actividades retiradas (${retiredActivities.map((activity) => activity.n).join(", ")}). ` +
+      "Publica la corrección como una nueva revisión controlada.",
+    )
+  }
   if (scheduleClassificationsPending > 0) {
     warnings.push(
       `${scheduleClassificationsPending} actividad(es) no tienen planificación P. ` +
@@ -253,7 +265,6 @@ export async function stagePdtpXlsxImport(input: {
     status: "staged",
     source: { fileName: input.fileName, checksumSha256, sizeBytes: input.bytes.byteLength },
     counts: {
-      objectives: catalog.objectives.length,
       activities: catalog.activities.length,
       plannedCells: plannedCells.length,
       plannedQuantity: plannedCells.reduce((sum, cell) => sum + cell.plannedQuantity, 0),
@@ -281,7 +292,7 @@ export async function stagePdtpXlsxImport(input: {
     executions,
     metadata: catalog.metadata,
     warnings,
-    blockingErrors: [],
+    blockingErrors,
   }
   const now = new Date().toISOString()
   const [batch] = await db.transaction(async (tx) => {
@@ -387,20 +398,25 @@ export async function applyPdtpImportBatch(input: {
   if (batch.status !== "staged" && batch.status !== "rolled_back") throw new Error("El lote no está disponible para aplicar.")
   const stored = storedPreview(batch)
   const executions = stored.catalog.importedExecutions ?? []
+  if (input.worksiteId) {
+    if (input.scope !== "all" && !input.scope.includes(input.worksiteId)) {
+      throw new Error("No tienes esa faena autorizada. Elige una de tus faenas asignadas.")
+    }
+    assertWorksiteAccess(input.worksiteId, input.scope)
+    if (!await isActivePdtpWorksite(input.worksiteId)) throw new Error("La faena seleccionada no existe o está inactiva.")
+  }
   if (executions.length > 0) {
     if (!input.worksiteId) throw new Error("Selecciona la faena a la que corresponden las cantidades ejecutadas del archivo.")
     // Mensaje propio: el genérico de `assertWorksiteAccess` ("Actividad PDTP no
     // encontrada o sin acceso a la faena") es deliberadamente ambiguo para no
     // filtrar existencia, pero acá el usuario eligió de su propia lista de
     // faenas y no explicar que el problema es de alcance solo desconcierta.
-    if (input.scope !== "all" && !input.scope.includes(input.worksiteId)) {
-      throw new Error("No tienes esa faena autorizada. Elige una de tus faenas asignadas.")
-    }
-    assertWorksiteAccess(input.worksiteId, input.scope)
-    if (!await isActivePdtpWorksite(input.worksiteId)) throw new Error("La faena seleccionada no existe o está inactiva.")
     if (!input.acceptMissingEvidence || (input.acceptanceReason?.trim().length ?? 0) < 10) {
       throw new Error("Acepta explícitamente la migración sin evidencia adjunta e indica un motivo de al menos 10 caracteres.")
     }
+  }
+  if (stored.summary.blockingErrors.length > 0) {
+    throw new Error(`El lote tiene errores bloqueantes: ${stored.summary.blockingErrors.join(" ")}`)
   }
 
   const now = new Date().toISOString()
@@ -413,6 +429,9 @@ export async function applyPdtpImportBatch(input: {
     if (lockedBatch.status !== "staged" && lockedBatch.status !== "rolled_back") throw new Error("El lote no está disponible para aplicar.")
     const batch = lockedBatch
     const stored = storedPreview(batch)
+    if (stored.summary.blockingErrors.length > 0) {
+      throw new Error(`El lote tiene errores bloqueantes: ${stored.summary.blockingErrors.join(" ")}`)
+    }
 
     await tx.execute(sql`SELECT id FROM ${pdtpPrograms} WHERE id = ${batch.programId} FOR UPDATE`)
     const [program] = await tx.select().from(pdtpPrograms).where(eq(pdtpPrograms.id, batch.programId)).limit(1)
@@ -421,8 +440,21 @@ export async function applyPdtpImportBatch(input: {
     const activityNumbers = stored.catalog.activities.map((activity) => activity.n)
     const snapshot = await captureImportSnapshot(tx, batch.programId, activityNumbers)
     const existingByNumber = new Map(snapshot.activities.map((activity) => [activity.n, activity]))
-    const allProgramIds = new Set((await tx.select({ id: pdtpActivities.id }).from(pdtpActivities)
-      .where(eq(pdtpActivities.programId, batch.programId))).map((row) => row.id))
+    const allProgramActivities = await tx.select({
+      id: pdtpActivities.id,
+      n: pdtpActivities.n,
+      status: pdtpActivities.status,
+    }).from(pdtpActivities).where(eq(pdtpActivities.programId, batch.programId))
+    const incomingNumbers = new Set(activityNumbers)
+    const unexpected = allProgramActivities.filter((activity) => !incomingNumbers.has(activity.n))
+    if (unexpected.length > 0) {
+      throw new Error(`General es autoritativa y el programa contiene actividades ajenas (${unexpected.map((activity) => activity.n).join(", ")}).`)
+    }
+    const retired = allProgramActivities.filter((activity) => activity.status === "retired" && incomingNumbers.has(activity.n))
+    if (retired.length > 0) {
+      throw new Error(`La importación no puede reactivar actividades retiradas (${retired.map((activity) => activity.n).join(", ")}).`)
+    }
+    const allProgramIds = new Set(allProgramActivities.map((row) => row.id))
     const activityIdByNumber = new Map<number, string>()
     const createdIds: string[] = []
     const responsibleRows = collectResponsibleCatalog(stored.catalog)
@@ -451,8 +483,12 @@ export async function applyPdtpImportBatch(input: {
       if (!existing && allProgramIds.has(activityId)) activityId = `${pdtpActivityId(batch.programId, activity.n)}-${nanoid(6)}`
       activityIdByNumber.set(activity.n, activityId)
       const values = {
-        objectiveOrder: activity.objectiveOrder,
-        objective: activity.objective,
+        displayOrder: activity.n,
+        status: "active",
+        retiredReason: null,
+        retiredEffectiveFrom: null,
+        retiredByUserId: null,
+        retiredAt: null,
         ...writePdtpActivityContent({
           activityDescription: activity.activity,
           executionGuidance: activity.program,
@@ -545,8 +581,10 @@ export async function applyPdtpImportBatch(input: {
         }))).onConflictDoNothing()
       }
     }
+    const isOfficialBase2026 = program.year === 2026
+      && batch.sourceChecksumSha256 === PDTP_2026_PROGRAM_SOURCE.sha256
     await tx.update(pdtpPrograms).set({
-      creationMode: "xlsx_import",
+      creationMode: isOfficialBase2026 ? "base_2026" : "xlsx_import",
       sourceProgramId: null,
       sourceContentVersion: null,
       sourceTemplateVersionId: null,
@@ -557,7 +595,15 @@ export async function applyPdtpImportBatch(input: {
       complianceTarget: metadata?.indicatorTarget ?? program.complianceTarget,
       indicatorPeriodicity: metadata?.indicatorPeriodicity ?? null,
       measurementOwner: metadata?.measurementOwner ?? null,
-      sourceMetadataJson: metadata ?? {},
+      sourceMetadataJson: {
+        ...(metadata ?? {}),
+        source: {
+          fileName: batch.sourceFileName,
+          sizeBytes: batch.sourceSizeBytes,
+          checksumSha256: batch.sourceChecksumSha256,
+          adapterCode: batch.adapterCode,
+        },
+      },
       updatedAt: now,
     }).where(eq(pdtpPrograms.id, batch.programId))
 
@@ -647,23 +693,12 @@ export async function rollbackPdtpImportBatch(input: { batchId: string; userId: 
   const snapshot = batch.preApplySnapshotJson as ImportSnapshot
   const now = new Date().toISOString()
   await db.transaction(async (tx) => {
-    if (artifacts.templateVersionIdCreated) {
-      const consumers = await tx.select({ id: pdtpPrograms.id }).from(pdtpPrograms)
-        .where(eq(pdtpPrograms.sourceTemplateVersionId, artifacts.templateVersionIdCreated))
-      if (consumers.length > 0) throw new Error("No se puede revertir: la plantilla publicada por el lote ya fue usada por otro programa.")
-      await tx.delete(pdtpProgramTemplateVersions).where(eq(pdtpProgramTemplateVersions.id, artifacts.templateVersionIdCreated))
-    }
     const checklistIds = artifacts.checklistIdsCreated ?? []
     if (checklistIds.length > 0) {
       const instances = await tx.select({ id: pdtpExecutionChecklists.id }).from(pdtpExecutionChecklists)
         .where(inArray(pdtpExecutionChecklists.checklistId, checklistIds))
       if (instances.length > 0) throw new Error("No se puede revertir: un checklist creado por el lote ya tiene respuestas operacionales.")
       await tx.delete(pdtpActivityChecklists).where(inArray(pdtpActivityChecklists.id, checklistIds))
-    }
-    if (artifacts.templateIdCreated) {
-      const remainingVersions = await tx.select({ id: pdtpProgramTemplateVersions.id }).from(pdtpProgramTemplateVersions)
-        .where(eq(pdtpProgramTemplateVersions.templateId, artifacts.templateIdCreated))
-      if (remainingVersions.length === 0) await tx.delete(pdtpProgramTemplates).where(eq(pdtpProgramTemplates.id, artifacts.templateIdCreated))
     }
     await tx.delete(pdtpDocumentHistory).where(eq(pdtpDocumentHistory.sourceImportBatchId, batch.id))
     await tx.delete(pdtpRoleLegendEntries).where(eq(pdtpRoleLegendEntries.sourceImportBatchId, batch.id))
@@ -688,7 +723,16 @@ export async function rollbackPdtpImportBatch(input: { batchId: string; userId: 
     for (const sheet of snapshot.sheets) await tx.insert(pdtpSheets).values(sheet).onConflictDoUpdate({ target: pdtpSheets.id, set: sheet })
     await tx.update(pdtpPrograms).set({ ...(snapshot.program as Partial<typeof pdtpPrograms.$inferInsert>), updatedAt: now }).where(eq(pdtpPrograms.id, batch.programId))
     await tx.update(pdtpImportBatches).set({ status: "rolled_back", rolledBackByUserId: input.userId, rolledBackAt: now, updatedAt: now }).where(eq(pdtpImportBatches.id, batch.id))
-    await addPdtpChangeLogEntry(batch.programId, Number(snapshot.program.version ?? 1), input.userId, "import:rollback", batch.applyResultJson as Record<string, unknown>, { reason: input.reason }, "Lote Excel revertido desde su snapshot previo.", tx)
+    await addPdtpChangeLogEntry(
+      batch.programId,
+      Number(snapshot.program.version ?? 1),
+      input.userId,
+      "import:rollback",
+      batch.applyResultJson as Record<string, unknown>,
+      { reason: input.reason, immutableTemplateVersionRetained: artifacts.templateVersionIdCreated ?? null },
+      "Lote Excel revertido desde su snapshot previo; las revisiones de Base ya publicadas permanecen inmutables.",
+      tx,
+    )
   })
   return { rolledBack: true }
 }

@@ -5,7 +5,6 @@ export { readPdtpActivityContent, writePdtpActivityContent } from "./activity-co
 export type { PdtpActivityContent } from "./activity-content"
 export type { WorksiteScope } from "./helpers"
 export type { PendingPdtpExecution } from "./executions"
-export type { PdtpProgramCreateInput } from "./programs"
 export type { PdtpSheetCreateInput } from "./sheet-management"
 
 // Re-export schema types para el dominio Checklist → Plan de Acción
@@ -45,8 +44,17 @@ export {
 export { loadPdtpCatalog, listPdtpResponsibleCatalog } from "./catalog"
 export { projectRecurrenceToLegacySchedule, describePdtpRecurrence, describePdtpRecurrenceImpact } from "./recurrence"
 export type { PdtpRecurrenceRule, PdtpRecurrenceFrequency, PdtpScheduleMode } from "./recurrence"
-export { createPdtpTemplateVersion, listActivePdtpTemplates, listPdtpTemplatesWithVersions, getPdtpTemplateVersion } from "./templates"
+export {
+  createPdtpTemplateVersion,
+  publishPdtpBase2026Revision,
+  listActivePdtpTemplates,
+  listPdtpTemplatesWithVersions,
+  getPdtpTemplateVersion,
+  getCurrentPdtpBase2026Version,
+  PDTP_BASE_2026_TEMPLATE_CODE,
+} from "./templates"
 export { getActivePdtpProgram } from "./lifecycle"
+export { buildPdtpProgramContentSnapshot, computePdtpProgramContentDigest } from "./content-digest"
 export {
   submitPdtpProgramForReview,
   approvePdtpProgramJdpr,
@@ -75,8 +83,8 @@ export type { PdtpApprovalStepInput, PdtpApprovalSegregationRule } from "./appro
 export { getPdtpSheetView, getPdtpSheetViewByProgram, buildPdtpExport } from "./sheets"
 export { markPdtpExecution, approvePdtpExecution, rejectPdtpExecution, listPendingPdtpExecutions, getPendingPdtpApprovalsForView, getPdtpChangeLog } from "./executions"
 export { getPdtpComplianceIndicators, getPdtpComplianceIndicatorsForScope, getPdtpComplianceByCategoryForScope } from "./compliance"
-export { updatePdtpActivity, addPdtpActivity, batchUpdatePdtpActivities, duplicatePdtpActivity, deletePdtpActivity, reorderPdtpActivities, listPdtpProgramActivities, renamePdtpObjective } from "./activities"
-export type { PdtpObjectiveRenameInput, PdtpActivityBatchUpdateInput } from "./activities"
+export { updatePdtpActivity, addPdtpActivity, batchUpdatePdtpActivities, duplicatePdtpActivity, retirePdtpActivity, reorderPdtpActivities, listPdtpProgramActivities } from "./activities"
+export type { PdtpActivityBatchUpdateInput } from "./activities"
 export { findPdtpWeeklyPending, runPdtpWeeklyReminders, runPdtpActionPlanVencidasReminders, runPdtpObligationReminders } from "./reminders"
 export type { PdtpPendingTarget, PdtpWeeklyPendingResult, PdtpActionVencidasReminderResult, PdtpObligationReminderResult } from "./reminders"
 export { setPdtpActivityOverride, deletePdtpActivityOverride, loadPdtpOverrides, applyOverridesToSchedule } from "./overrides"
@@ -86,19 +94,20 @@ export {
   setPdtpProgramWorksites,
   resolveProgramWorksiteIds,
   listPdtpActivityWorksiteExclusions,
-  excludeActivityForWorksite,
-  includeActivityForWorksite,
   syncPdtpCphsHeadcountExclusion,
   PDTP_CPHS_ACTIVITY_NUMBERS,
   PDTP_CPHS_MIN_HEADCOUNT,
   resolvePdtpEffectiveActivitiesForWorksite,
   assertPdtpWorksiteCanOperateProgram,
-  setPdtpActivityWorksiteParams,
+  setPdtpActivityWorksiteAdjustment,
   listPdtpActivityWorksiteParams,
 } from "./worksites"
+export type { PdtpActivityWorksiteAdjustmentInput } from "./worksites"
 export { cleanupPdtpEvidenceOrphans } from "./evidence-gc"
 export type { CleanupPdtpEvidenceOrphansOptions, CleanupPdtpEvidenceOrphansResult } from "./evidence-gc"
-export { createPdtpProgram, updatePdtpProgram, listPdtpPrograms, getPdtpProgram, deletePdtpProgram } from "./programs"
+export { createAnnualPdtpProgram, updatePdtpProgram, listPdtpPrograms, getPdtpProgram, deletePdtpProgram } from "./programs"
+/** @internal Fixture helper; product code must use createAnnualPdtpProgram. */
+export { createLegacyPdtpProgramForTests } from "./programs"
 export { stagePdtpXlsxImport, applyPdtpImportBatch, cancelPdtpImportBatch, finalizePdtpImportBootstrap, rollbackPdtpImportBatch, getPdtpImportBatch } from "./imports"
 export type { PdtpImportPreview } from "./imports"
 export { getPdtpDocumentMetadata, listPdtpReconciliationCandidates, reconcilePdtpDeclaredActor } from "./document-metadata"
@@ -148,8 +157,10 @@ export { addFollowup, listFollowups, listVencidas } from "./followups"
 export type { PdtpIntegralCompliance, PdtpIntegralComplianceAxes } from "./compliance"
 export { getPdtpIntegralCompliance, getPdtpIntegralComplianceForScope } from "./compliance"
 
-export type { PdtpManagementReport, PdtpManagementReportFilters, PdtpManagementReportObjectiveRow } from "./management-report"
+export type { PdtpManagementReport, PdtpManagementReportFilters, PdtpManagementReportActivityRow } from "./management-report"
 export { getPdtpManagementReport, resolveActivePdtpProgramId } from "./management-report"
+export type { PdtpBaseComparison } from "./base-comparison"
+export { comparePdtpProgramToSourceBase } from "./base-comparison"
 
 export type { PdtpAuditDossier } from "./audit-dossier"
 export { getPdtpAuditDossier } from "./audit-dossier"

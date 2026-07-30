@@ -10,13 +10,14 @@
 
 import { and, eq, inArray } from "drizzle-orm"
 import { db } from "@/db"
-import { pdtpActivities, pdtpExecutions, pdtpObligationReminders, pdtpPrograms, worksites } from "@/db/schema"
+import { pdtpActivities, pdtpExecutions, pdtpObligationReminders, pdtpPrograms, pdtpProgramWorksites, worksites } from "@/db/schema"
 import { currentPdtpPeriod, type PdtpPeriod } from "./period"
 import { logger } from "@/lib/logger"
 import { createNotifications, getUserIdsWithPermissionForWorksite } from "@/lib/services/notifications"
 import { listVencidas } from "./followups"
 import { loadProgramScheduleAndExecutions } from "./helpers"
 import { listPdtpObligationReminderCandidates, recordPdtpObligationReminder, type PdtpReminderWindow } from "./obligations"
+import { isPdtpActivityEffectiveForPeriod } from "./retirement"
 
 export type PdtpPendingTarget = {
   worksiteId: string
@@ -53,17 +54,35 @@ export async function findPdtpWeeklyPending(period: PdtpPeriod = currentPdtpPeri
   if (!program) return []
 
   const activityRows = await db
-    .select({ id: pdtpActivities.id })
+    .select({
+      id: pdtpActivities.id,
+      status: pdtpActivities.status,
+      retiredEffectiveFrom: pdtpActivities.retiredEffectiveFrom,
+    })
     .from(pdtpActivities)
     .where(eq(pdtpActivities.programId, program.id))
 
   if (activityRows.length === 0) return []
 
-  const activityIds = activityRows.map((row) => row.id)
-  const allWorksites = await db
-    .select({ id: worksites.id, name: worksites.name })
-    .from(worksites)
-    .where(eq(worksites.isActive, true))
+  const activityIds = activityRows
+    .filter((row) => isPdtpActivityEffectiveForPeriod(row, period.year, period.month, period.week))
+    .map((row) => row.id)
+  if (activityIds.length === 0) return []
+  const [visibleWorksites, memberRows] = await Promise.all([
+    db.select({ id: worksites.id, name: worksites.name })
+      .from(worksites)
+      .where(eq(worksites.isActive, true)),
+    db.select({ worksiteId: pdtpProgramWorksites.worksiteId })
+      .from(pdtpProgramWorksites)
+      .where(and(
+        eq(pdtpProgramWorksites.programId, program.id),
+        eq(pdtpProgramWorksites.isActive, true),
+      )),
+  ])
+  const memberIds = new Set(memberRows.map((row) => row.worksiteId))
+  const allWorksites = memberIds.size > 0
+    ? visibleWorksites.filter((worksite) => memberIds.has(worksite.id))
+    : visibleWorksites
   if (allWorksites.length === 0) return []
 
   const targetResults = await Promise.all(allWorksites.map(async (ws) => {

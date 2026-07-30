@@ -1,18 +1,18 @@
 /**
- * Reporte de gestión (Fase 6.4): resumen por objetivo — avance, desviaciones
+ * Reporte de gestión: avance y desviaciones por actividad
  * y responsables — con la estructura que mejor comunica la gestión, no la
  * distribución del archivo de origen (esa es responsabilidad del perfil de
  * compatibilidad 2026 opcional, §6.6, todavía no construido).
  */
-import { desc, eq } from "drizzle-orm"
+import { and, desc, eq, inArray } from "drizzle-orm"
 import { db } from "@/db"
-import { pdtpActivities, pdtpPrograms } from "@/db/schema"
+import { pdtpActivities, pdtpActivityWorksiteParams, pdtpPrograms } from "@/db/schema"
 import { assertWorksiteAccess, loadProgramScheduleAndExecutions, type WorksiteScope } from "./helpers"
+import { assertPdtpWorksiteCanOperateProgram } from "./worksites"
 
-export type PdtpManagementReportObjectiveRow = {
-  objectiveOrder: number
-  objective: string
-  activityCount: number
+export type PdtpManagementReportActivityRow = {
+  activityNumber: number
+  activity: string
   planned: number
   executed: number
   percent: number | null
@@ -22,7 +22,7 @@ export type PdtpManagementReportObjectiveRow = {
 
 export type PdtpManagementReportFilters = {
   responsibleSlug?: string
-  objectiveOrder?: number
+  activityNumber?: number
   /** "meets" = cumple la meta del programa; "deviates" = por debajo. */
   status?: "meets" | "deviates"
   monthFrom?: number
@@ -35,25 +35,27 @@ export type PdtpManagementReport = {
   year: number
   worksiteId: string
   target: number
-  objectives: PdtpManagementReportObjectiveRow[]
+  activities: PdtpManagementReportActivityRow[]
+  responsibleOptions: Array<{ value: string; label: string }>
+  activityOptions: Array<{ value: number; label: string }>
   indicatorDefinitions: Array<{ code: string; label: string; formula: string }>
 }
 
 const INDICATOR_DEFINITIONS = [
   {
-    code: "avance_objetivo",
-    label: "Avance por objetivo",
-    formula: "Suma de cantidades ejecutadas y aprobadas de las actividades calendarizadas del objetivo / suma de cantidades planificadas (con excepciones vigentes aplicadas), en el período filtrado.",
+    code: "avance_actividad",
+    label: "Avance por actividad",
+    formula: "Cantidad ejecutada y aprobada / cantidad planificada de la actividad, con ajustes de faena aplicados, en el período filtrado.",
   },
   {
     code: "desviacion",
     label: "Desviación",
-    formula: "Un objetivo se marca en desviación cuando su avance es menor a la meta de cumplimiento configurada en el programa.",
+    formula: "Una actividad se marca en desviación cuando su avance es menor a la meta de cumplimiento configurada en el programa.",
   },
 ]
 
 /**
- * Agrupa el avance calendarizado por objetivo para una faena autorizada.
+ * Calcula el avance calendarizado por actividad para una faena autorizada.
  * Reusa `loadProgramScheduleAndExecutions` (ya correcto por-faena); no
  * incluye trabajo a demanda/disparado (ese indicador vive aparte, §4.3/6.1).
  */
@@ -67,19 +69,59 @@ export async function getPdtpManagementReport(input: {
 
   const [program] = await db.select().from(pdtpPrograms).where(eq(pdtpPrograms.id, input.programId)).limit(1)
   if (!program) return null
+  await assertPdtpWorksiteCanOperateProgram(program.id, input.worksiteId)
 
   const activities = await db.select().from(pdtpActivities)
     .where(eq(pdtpActivities.programId, program.id))
-    .orderBy(pdtpActivities.objectiveOrder, pdtpActivities.n)
+    .orderBy(pdtpActivities.displayOrder, pdtpActivities.n)
   if (activities.length === 0) {
-    return { programId: program.id, programTitle: program.title, year: program.year, worksiteId: input.worksiteId, target: program.complianceTarget, objectives: [], indicatorDefinitions: INDICATOR_DEFINITIONS }
+    return {
+      programId: program.id,
+      programTitle: program.title,
+      year: program.year,
+      worksiteId: input.worksiteId,
+      target: program.complianceTarget,
+      activities: [],
+      responsibleOptions: [],
+      activityOptions: [],
+      indicatorDefinitions: INDICATOR_DEFINITIONS,
+    }
   }
 
   const filters = input.filters ?? {}
-  const scheduledActivities = activities.filter((activity) => {
-    if (activity.scheduleMode !== "scheduled") return false
-    if (filters.responsibleSlug && !(activity.responsibleSlugs as string[]).includes(filters.responsibleSlug)) return false
-    if (filters.objectiveOrder !== undefined && activity.objectiveOrder !== filters.objectiveOrder) return false
+  const allScheduledActivities = activities.filter((activity) => activity.scheduleMode === "scheduled")
+  const paramsRows = allScheduledActivities.length > 0
+    ? await db.select().from(pdtpActivityWorksiteParams).where(and(
+        inArray(pdtpActivityWorksiteParams.activityId, allScheduledActivities.map((activity) => activity.id)),
+        eq(pdtpActivityWorksiteParams.worksiteId, input.worksiteId),
+      ))
+    : []
+  const paramsByActivity = new Map(paramsRows.map((row) => [row.activityId, row]))
+  const effectiveResponsibleByActivity = new Map(allScheduledActivities.map((activity) => {
+    const params = paramsByActivity.get(activity.id)
+    const overrideSlugs = Array.isArray(params?.responsibleSlugs)
+      ? params.responsibleSlugs.filter((value): value is string => typeof value === "string")
+      : null
+    return [activity.id, {
+      slugs: overrideSlugs ?? (activity.responsibleSlugs as string[]),
+      display: overrideSlugs ? params?.responsibleDisplay ?? activity.responsibleDisplay : activity.responsibleDisplay,
+    }] as const
+  }))
+  const responsibleOptionMap = new Map<string, string>()
+  for (const activity of allScheduledActivities) {
+    const responsible = effectiveResponsibleByActivity.get(activity.id)!
+    for (const slug of responsible.slugs) responsibleOptionMap.set(slug, responsible.display)
+  }
+  const responsibleOptions = [...responsibleOptionMap]
+    .map(([value, label]) => ({ value, label }))
+    .sort((a, b) => a.label.localeCompare(b.label, "es"))
+  const activityOptions = allScheduledActivities.map((activity) => ({
+    value: activity.n,
+    label: `${activity.n}. ${activity.activity}`,
+  }))
+  const scheduledActivities = allScheduledActivities.filter((activity) => {
+    if (filters.activityNumber !== undefined && activity.n !== filters.activityNumber) return false
+    if (filters.responsibleSlug && !effectiveResponsibleByActivity.get(activity.id)!.slugs.includes(filters.responsibleSlug)) return false
     return true
   })
 
@@ -102,25 +144,22 @@ export async function getPdtpManagementReport(input: {
     executedByActivity.set(row.activityId, (executedByActivity.get(row.activityId) ?? 0) + row.executedQuantity)
   }
 
-  const byObjective = new Map<number, { objective: string; activities: typeof scheduledActivities }>()
-  for (const activity of scheduledActivities) {
-    const entry = byObjective.get(activity.objectiveOrder) ?? { objective: activity.objective, activities: [] }
-    entry.activities.push(activity)
-    byObjective.set(activity.objectiveOrder, entry)
-  }
-
-  const objectives: PdtpManagementReportObjectiveRow[] = [...byObjective.entries()]
-    .sort(([a], [b]) => a - b)
-    .map(([objectiveOrder, { objective, activities: objectiveActivities }]) => {
-      const planned = objectiveActivities.reduce((sum, a) => sum + (plannedByActivity.get(a.id) ?? 0), 0)
-      const executed = Math.min(
-        objectiveActivities.reduce((sum, a) => sum + (executedByActivity.get(a.id) ?? 0), 0),
-        planned,
-      )
+  const reportActivities: PdtpManagementReportActivityRow[] = scheduledActivities
+    .map((activity) => {
+      const planned = plannedByActivity.get(activity.id) ?? 0
+      const executed = Math.min(executedByActivity.get(activity.id) ?? 0, planned)
       const percent = planned > 0 ? Math.round((executed / planned) * 100) / 100 : null
       const meetsTarget = percent !== null && percent >= program.complianceTarget
-      const responsibles = [...new Set(objectiveActivities.map((a) => a.responsibleDisplay).filter(Boolean))]
-      return { objectiveOrder, objective, activityCount: objectiveActivities.length, planned, executed, percent, meetsTarget, responsibles }
+      const responsible = effectiveResponsibleByActivity.get(activity.id)!
+      return {
+        activityNumber: activity.n,
+        activity: activity.activity,
+        planned,
+        executed,
+        percent,
+        meetsTarget,
+        responsibles: responsible.display ? [responsible.display] : [],
+      }
     })
     .filter((row) => {
       if (filters.status === "meets") return row.meetsTarget
@@ -134,7 +173,9 @@ export async function getPdtpManagementReport(input: {
     year: program.year,
     worksiteId: input.worksiteId,
     target: program.complianceTarget,
-    objectives,
+    activities: reportActivities,
+    responsibleOptions,
+    activityOptions,
     indicatorDefinitions: INDICATOR_DEFINITIONS,
   }
 }

@@ -111,7 +111,7 @@ describe("GET PDTP expediente auditor", () => {
     mockDossier.mockResolvedValue({
       ...BASE_DOSSIER,
       sourceLinks: [{
-        activityN: 1, activityName: "Actividad", sourceType: "internal_objective", sourceId: "obj-1",
+        activityN: 1, activityName: "Actividad", sourceType: "audit", sourceId: "audit-1",
         isActive: true, justification: "=SUM(A1:A10)", createdByUserId: "user-1", createdAt: "2026-01-01",
         retiredByUserId: null, retiredAt: null, retirementReason: null,
       }],

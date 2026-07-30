@@ -3,6 +3,7 @@ import { and, asc, eq, inArray, isNotNull, lte, ne, sql } from "drizzle-orm"
 import { db } from "@/db"
 import {
   pdtpActivities,
+  pdtpActivityWorksiteExclusions,
   pdtpExecutions,
   pdtpObligationReminders,
   pdtpObligations,
@@ -14,6 +15,7 @@ import { recordOperationalActivity } from "@/lib/services/operational-activity"
 import { resolvePdtpEvidenceFile } from "@/lib/storage/config"
 import { addPdtpChangeLogEntry, assertWorksiteAccess, isActivePdtpWorksite, type WorksiteScope } from "./helpers"
 import { assertPdtpWorksiteCanOperateProgram } from "./worksites"
+import { isPdtpActivityEffectiveAt } from "./retirement"
 
 export type PdtpObligationOrigin = "manual" | "integration"
 export type PdtpObligationStatus = "pending" | "overdue" | "reported" | "completed" | "cancelled"
@@ -65,6 +67,10 @@ export async function createPdtpObligation(input: {
   if (!await isActivePdtpWorksite(input.worksiteId)) throw new Error("La faena no existe o está inactiva.")
   const [activity] = await db.select().from(pdtpActivities).where(eq(pdtpActivities.id, input.activityId)).limit(1)
   if (!activity) throw new Error("Actividad PDTP no encontrada.")
+  const occurredAt = validIso(input.sourceOccurredAt, new Date())
+  if (!isPdtpActivityEffectiveAt(activity, occurredAt.toISOString())) {
+    throw new Error("La actividad está retirada para la fecha del evento y no admite nuevas obligaciones.")
+  }
   if (activity.scheduleClassificationStatus !== "confirmed") throw new Error("Confirma la modalidad de la actividad antes de crear obligaciones.")
   if (activity.scheduleMode !== "on_demand" && activity.scheduleMode !== "triggered") {
     throw new Error("Las obligaciones sólo corresponden a actividades a demanda o disparadas.")
@@ -77,6 +83,14 @@ export async function createPdtpObligation(input: {
   // puede generar obligaciones — el alcance del programa nunca se amplía
   // por omisión (ver lib/services/pdtp/worksites.ts).
   await assertPdtpWorksiteCanOperateProgram(activity.programId, input.worksiteId)
+  const [exclusion] = await db.select({ id: pdtpActivityWorksiteExclusions.id })
+    .from(pdtpActivityWorksiteExclusions)
+    .where(and(
+      eq(pdtpActivityWorksiteExclusions.activityId, activity.id),
+      eq(pdtpActivityWorksiteExclusions.worksiteId, input.worksiteId),
+    ))
+    .limit(1)
+  if (exclusion) throw new Error("La actividad está excluida para esta faena.")
   const plannedQuantity = input.plannedQuantity ?? 1
   if (!Number.isFinite(plannedQuantity) || plannedQuantity <= 0) throw new Error("La cantidad planificada debe ser mayor que cero.")
 
@@ -104,7 +118,6 @@ export async function createPdtpObligation(input: {
     return { obligation: existing, created: false }
   }
 
-  const occurredAt = validIso(input.sourceOccurredAt, new Date())
   const now = new Date().toISOString()
   const [created] = await db.insert(pdtpObligations).values({
     id: `pdtp-obligation-${nanoid()}`,
@@ -363,6 +376,7 @@ export async function listPdtpDemandActivities() {
     .innerJoin(pdtpPrograms, eq(pdtpActivities.programId, pdtpPrograms.id))
     .where(and(
       eq(pdtpPrograms.status, "active"),
+      eq(pdtpActivities.status, "active"),
       eq(pdtpActivities.scheduleClassificationStatus, "confirmed"),
       inArray(pdtpActivities.scheduleMode, ["on_demand", "triggered"]),
     ))

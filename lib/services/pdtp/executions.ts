@@ -1,6 +1,6 @@
 import { and, asc, desc, eq, inArray, isNull, ne, sql } from "drizzle-orm"
 import { db } from "@/db"
-import { pdtpActivities, pdtpExecutions, pdtpChangeLog, pdtpObligations, pdtpPrograms, worksites } from "@/db/schema"
+import { pdtpActivities, pdtpActivityWorksiteExclusions, pdtpExecutions, pdtpChangeLog, pdtpObligations, pdtpPrograms, worksites } from "@/db/schema"
 import { pdtpExecutionId } from "./helpers"
 import { assertWorksiteAccess } from "./helpers"
 import type { WorksiteScope } from "./helpers"
@@ -10,12 +10,17 @@ import { resolvePdtpEvidenceFile } from "@/lib/storage/config"
 import { existsSync } from "node:fs"
 import { logger } from "@/lib/logger"
 import { recordOperationalActivity } from "@/lib/services/operational-activity"
+import { isPdtpActivityEffectiveForPeriod } from "./retirement"
 
 export async function markPdtpExecution(input: unknown, userId: string, scope: WorksiteScope) {
   const data = pdtpExecutionSchema.parse(input)
   assertWorksiteAccess(data.worksiteId, scope)
 
-  const [activity] = await db.select({ programId: pdtpActivities.programId }).from(pdtpActivities).where(eq(pdtpActivities.id, data.activityId)).limit(1)
+  const [activity] = await db.select({
+    programId: pdtpActivities.programId,
+    status: pdtpActivities.status,
+    retiredEffectiveFrom: pdtpActivities.retiredEffectiveFrom,
+  }).from(pdtpActivities).where(eq(pdtpActivities.id, data.activityId)).limit(1)
   if (!activity) throw new Error("Actividad PDTP no encontrada.")
 
   const [program] = await db.select({ status: pdtpPrograms.status, year: pdtpPrograms.year }).from(pdtpPrograms).where(eq(pdtpPrograms.id, activity.programId)).limit(1)
@@ -29,6 +34,19 @@ export async function markPdtpExecution(input: unknown, userId: string, scope: W
   // /aprobaciones consultan por `program.year`, así que nunca aparecería.
   if (program.year !== data.year) {
     throw new Error(`La ejecución debe corresponder al año del programa (${program.year}).`)
+  }
+  if (!isPdtpActivityEffectiveForPeriod(activity, data.year, data.month, data.week)) {
+    throw new Error("La actividad está retirada para el período seleccionado y no admite nuevas ejecuciones.")
+  }
+  const [exclusion] = await db.select({ id: pdtpActivityWorksiteExclusions.id })
+    .from(pdtpActivityWorksiteExclusions)
+    .where(and(
+      eq(pdtpActivityWorksiteExclusions.activityId, data.activityId),
+      eq(pdtpActivityWorksiteExclusions.worksiteId, data.worksiteId),
+    ))
+    .limit(1)
+  if (exclusion) {
+    throw new Error("La actividad está excluida para esta faena y no admite ejecuciones.")
   }
 
   // Si la ejecución ya está aprobada, no se permite reescribir. Sólo

@@ -1,10 +1,12 @@
-import { and, asc, desc, eq, isNotNull } from "drizzle-orm"
+import { and, asc, desc, eq, inArray, isNotNull, sql } from "drizzle-orm"
 import { db, type Tx } from "@/db"
 import {
   pdtpActivities,
   pdtpActivityChecklists,
   pdtpActivitySchedule,
   pdtpApprovalSteps,
+  pdtpExecutions,
+  pdtpImportBatches,
   pdtpProgramTemplates,
   pdtpProgramTemplateVersions,
   pdtpPrograms,
@@ -15,9 +17,12 @@ import { nanoid } from "@/lib/id"
 import { pdtpActivityChecklistId } from "./checklist-domain"
 import { computePdtpProgramContentDigest } from "./content-digest"
 import { addPdtpChangeLogEntry, pdtpActivityId, pdtpScheduleId, pdtpSheetActivityId } from "./helpers"
+import { PDTP_2026_INVARIANTS, PDTP_2026_REMOVED_ACTIVITIES, PDTP_2026_PROGRAM_SOURCE } from "@/lib/services/pdtp-adapters/contract-2026"
+import { remapPdtpDateToYear } from "./retirement"
 
 type QueryClient = Tx | typeof db
 type SnapshotRecord = Record<string, unknown>
+export const PDTP_BASE_2026_TEMPLATE_CODE = "base_preventiva_2026"
 
 function slugify(value: string) {
   return value.trim().toLocaleLowerCase("es-CL").normalize("NFD").replace(/[\u0300-\u036f]/g, "")
@@ -46,6 +51,8 @@ export async function createPdtpTemplateVersion(input: {
   description?: string
   userId: string
   skipIfUnchanged?: boolean
+  /** Solo para publicar la Base 2026 normalizada sin inventar calendario para actividades sin P. */
+  allowUnclassifiedBaseActivities?: boolean
 }) {
   const name = input.name.trim()
   if (name.length < 3 || name.length > 200) throw new Error("El nombre de la plantilla debe tener entre 3 y 200 caracteres.")
@@ -60,7 +67,9 @@ export async function createPdtpTemplateVersion(input: {
         eq(pdtpActivities.programId, program.id),
         eq(pdtpActivities.scheduleClassificationStatus, "needs_review"),
       )).limit(1)
-    if (unclassified) throw new Error("No se puede publicar la plantilla mientras existan actividades sin modalidad confirmada.")
+    if (unclassified && !input.allowUnclassifiedBaseActivities) {
+      throw new Error("No se puede publicar la plantilla mientras existan actividades sin modalidad confirmada.")
+    }
     const { digest, snapshot } = await computePdtpProgramContentDigest(program.id, tx)
     const now = new Date().toISOString()
     let [template] = await tx.select().from(pdtpProgramTemplates).where(eq(pdtpProgramTemplates.code, code)).limit(1)
@@ -120,6 +129,84 @@ export async function createPdtpTemplateVersion(input: {
   })
 }
 
+/**
+ * Única puerta de publicación de la Base preventiva 2026. La revisión queda
+ * vinculada a un lote XLSX aplicado y se rechaza si la normalización difiere
+ * del contrato autoritativo.
+ */
+export async function publishPdtpBase2026Revision(input: {
+  sourceProgramId: string
+  sourceChecksumSha256: string
+  userId: string
+  allowNonOfficialRevision?: boolean
+}) {
+  const checksum = input.sourceChecksumSha256.trim().toLowerCase()
+  if (!/^[a-f0-9]{64}$/.test(checksum)) throw new Error("El checksum SHA-256 de la Base 2026 no es válido.")
+  if (!input.allowNonOfficialRevision && checksum !== PDTP_2026_PROGRAM_SOURCE.sha256) {
+    throw new Error("El checksum no corresponde a la fuente oficial congelada de la Base 2026.")
+  }
+
+  const [program] = await db.select({ id: pdtpPrograms.id, year: pdtpPrograms.year })
+    .from(pdtpPrograms).where(eq(pdtpPrograms.id, input.sourceProgramId)).limit(1)
+  if (!program || program.year !== 2026) throw new Error("La Base preventiva debe publicarse desde el programa 2026.")
+
+  const activities = await db.select({ id: pdtpActivities.id, n: pdtpActivities.n, status: pdtpActivities.status })
+    .from(pdtpActivities).where(eq(pdtpActivities.programId, program.id))
+  const activityIds = activities.map((activity) => activity.id)
+  const [scheduleCount, viewCount, executionCount, appliedBatch] = await Promise.all([
+    activityIds.length > 0
+      ? db.select({
+          cells: sql<number>`count(*)::int`,
+          quantity: sql<number>`COALESCE(sum(${pdtpActivitySchedule.plannedQuantity}), 0)::float`,
+        }).from(pdtpActivitySchedule).where(inArray(pdtpActivitySchedule.activityId, activityIds))
+      : Promise.resolve([{ cells: 0, quantity: 0 }]),
+    db.select({ count: sql<number>`count(*)::int` }).from(pdtpSheets).where(eq(pdtpSheets.programId, program.id)),
+    activityIds.length > 0
+      ? db.select({ count: sql<number>`count(*)::int` }).from(pdtpExecutions).where(inArray(pdtpExecutions.activityId, activityIds))
+      : Promise.resolve([{ count: 0 }]),
+    db.select({ id: pdtpImportBatches.id }).from(pdtpImportBatches).where(and(
+      eq(pdtpImportBatches.programId, program.id),
+      eq(pdtpImportBatches.sourceChecksumSha256, checksum),
+      eq(pdtpImportBatches.status, "applied"),
+    )).limit(1),
+  ])
+  const expectedNumbers = Array.from({ length: 89 }, (_, index) => index + 1)
+    .filter((n) => !PDTP_2026_REMOVED_ACTIVITIES.includes(n as 4 | 8))
+  const actualNumbers = activities.map((activity) => activity.n).sort((a, b) => a - b)
+  const actual = {
+    activities: activities.length,
+    activeActivities: activities.filter((activity) => activity.status === "active").length,
+    activityNumbers: actualNumbers,
+    views: viewCount[0]?.count ?? 0,
+    plannedCells: scheduleCount[0]?.cells ?? 0,
+    plannedQuantity: scheduleCount[0]?.quantity ?? 0,
+    executions: executionCount[0]?.count ?? 0,
+  }
+  if (
+    actual.activities !== PDTP_2026_INVARIANTS.activityCount
+    || actual.activeActivities !== PDTP_2026_INVARIANTS.activityCount
+    || JSON.stringify(actual.activityNumbers) !== JSON.stringify(expectedNumbers)
+    || actual.views !== PDTP_2026_INVARIANTS.viewCount
+    || actual.plannedCells !== PDTP_2026_INVARIANTS.plannedCellCount
+    || actual.plannedQuantity !== PDTP_2026_INVARIANTS.plannedQuantityTotal
+    || actual.executions !== 0
+  ) {
+    throw new Error(`La revisión no cumple el contrato de Base 2026: ${JSON.stringify(actual)}.`)
+  }
+  if (!appliedBatch[0]) {
+    throw new Error("No existe un lote XLSX aplicado que respalde el checksum indicado.")
+  }
+
+  return createPdtpTemplateVersion({
+    sourceProgramId: program.id,
+    name: "Base preventiva 2026",
+    description: `Revisión inmutable normalizada desde PROGRAMA_ACTIVIDADES_DEFINITIVO.xlsx. SHA-256: ${checksum}. Contiene solo planificación P y cero ejecuciones.`,
+    userId: input.userId,
+    skipIfUnchanged: true,
+    allowUnclassifiedBaseActivities: true,
+  })
+}
+
 export async function listActivePdtpTemplates() {
   const templates = await db.select().from(pdtpProgramTemplates)
     .where(eq(pdtpProgramTemplates.isActive, true))
@@ -133,6 +220,21 @@ export async function listActivePdtpTemplates() {
     if (version) result.push({ ...template, currentVersion: version })
   }
   return result
+}
+
+export async function getCurrentPdtpBase2026Version(client: QueryClient = db) {
+  const [template] = await client.select().from(pdtpProgramTemplates)
+    .where(and(
+      eq(pdtpProgramTemplates.code, PDTP_BASE_2026_TEMPLATE_CODE),
+      eq(pdtpProgramTemplates.isActive, true),
+    ))
+    .limit(1)
+  if (!template) return null
+  const [version] = await client.select().from(pdtpProgramTemplateVersions)
+    .where(eq(pdtpProgramTemplateVersions.templateId, template.id))
+    .orderBy(desc(pdtpProgramTemplateVersions.version))
+    .limit(1)
+  return version ? { template, version } : null
 }
 
 /** Inventario auditable: todas las versiones publicadas y los programas que
@@ -227,8 +329,14 @@ export async function instantiatePdtpTemplateVersion(input: {
         id,
         programId: input.targetProgramId,
         n,
-        objectiveOrder: numberValue(activity.objectiveOrder, 1),
-        objective: stringValue(activity.objective, "Objetivo"),
+        displayOrder: numberValue(activity.displayOrder, n),
+        status: stringValue(activity.status, "active"),
+        retiredReason: typeof activity.retiredReason === "string" ? activity.retiredReason : null,
+        retiredEffectiveFrom: typeof activity.retiredEffectiveFrom === "string"
+          ? remapPdtpDateToYear(activity.retiredEffectiveFrom, input.targetYear)
+          : null,
+        retiredByUserId: typeof activity.retiredByUserId === "string" ? activity.retiredByUserId : null,
+        retiredAt: typeof activity.retiredAt === "string" ? activity.retiredAt : null,
         activity: stringValue(activity.activity, "Actividad"),
         program: stringValue(activity.program, "Gestión preventiva"),
         responsibleSlugs: strings(activity.responsibleSlugs),
