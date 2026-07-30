@@ -27,7 +27,7 @@ describe("PdtpCreateProgramForm", () => {
 
     expect(screen.getByLabelText("Año del programa")).toHaveValue(2027)
     expect(screen.getByText("Base preventiva para 2027")).toBeDefined()
-    expect(screen.getByText("87 actividades")).toBeDefined()
+    expect(screen.getByText(/Revisión 1 · 87 actividades/)).toBeDefined()
     expect(screen.getByRole("button", { name: "Crear programa anual" })).toBeEnabled()
     expect(screen.queryByText(/plantilla/i)).toBeNull()
     expect(screen.queryByText(/programa vacío/i)).toBeNull()
@@ -41,11 +41,11 @@ describe("PdtpCreateProgramForm", () => {
     expect(screen.getByText(/se abrirá el existente/i)).toBeDefined()
   })
 
-  it("actualiza el nombre y la decisión al cambiar el año", () => {
+  it("actualiza el año mostrado y la decisión al cambiar el año", () => {
     render(<PdtpCreateProgramForm suggestedYear={2027} existingYears={[2028]} baseRevision={BASE} />)
 
     fireEvent.change(screen.getByLabelText("Año del programa"), { target: { value: "2028" } })
-    expect(screen.getByText("Programa preventivo SG-SST (PDTP) 2028")).toBeDefined()
+    expect(screen.getByText("Base preventiva para 2028")).toBeDefined()
     expect(screen.getByRole("button", { name: "Abrir programa anual" })).toBeEnabled()
   })
 
