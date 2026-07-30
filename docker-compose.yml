@@ -147,6 +147,33 @@ services:
       - DATABASE_URL=${DATABASE_URL:-postgres://${POSTGRES_USER:-bodega}:${POSTGRES_PASSWORD:?err}@db:5432/${POSTGRES_DB:-bodega}}
     command: ["node", "scripts/sync-rbac.mjs"]
 
+  # One-shot, MANUAL: Bootstrap Base Preventiva 2026 (PDTP).
+  # Corre solo cuando se necesita publicar o actualizar la base normativa.
+  #   docker compose run --rm bootstrap-pdtp
+  #
+  # Variables de entorno opcionales:
+  #   PUBLISH_REFERENCE=true  — publica la revisión inmutable (necesaria la primera vez)
+  #   BOOTSTRAP_USER_ID=<id>  — UUID del usuario admin global
+  #   BOOTSTRAP_XLSX_PATH=/app/PROGRAMA_ACTIVIDADES_DEFINITIVO.xlsx  — ruta al XLSX
+  #
+  # Usa `target: build` para tener tsx, exceljs y todo el source disponible.
+  bootstrap-pdtp:
+    profiles: ["bootstrap"]
+    build:
+      context: .
+      target: build
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=${DATABASE_URL:-postgres://${POSTGRES_USER:-bodega}:${POSTGRES_PASSWORD:?err}@db:5432/${POSTGRES_DB:-bodega}}
+      - BOOTSTRAP_XLSX_PATH=${BOOTSTRAP_XLSX_PATH:-/app/PROGRAMA_ACTIVIDADES_DEFINITIVO.xlsx}
+      - BOOTSTRAP_USER_ID=${BOOTSTRAP_USER_ID:?err}
+      - PUBLISH_REFERENCE=${PUBLISH_REFERENCE:-true}
+    command: ["npx", "tsx", "scripts/pdtp-bootstrap-prod.ts"]
+
   # One-shot, MANUAL: bootstrap seed (worksites/workers and EPP catalog).
   # Not part of the default `up` (guarded by the `seed` profile). Run explicitly:
   #   docker compose run --rm seed
