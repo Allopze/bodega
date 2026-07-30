@@ -356,6 +356,51 @@ describe("ReceiptForm", () => {
     })
   })
 
+  describe("payload enviado", () => {
+    /**
+     * Regresión de A-37 (auditoría UI/UX 2026-07-29). El input muestra
+     * `qtys[id] ?? remaining` y el payload enviaba `qtys[id] ?? 0`: aceptar la
+     * cantidad precargada sin tocar el campo mandaba 0 y el servidor rechazaba
+     * la recepción con "Revisa los datos de recepción". Lo que se ve y lo que se
+     * envía tienen que ser el mismo número.
+     */
+    it("envía la cantidad precargada cuando el usuario no toca el campo", () => {
+      const { container } = render(
+        <ReceiptForm
+          purchaseOrderId="po-1"
+          orderCode="OC-001"
+          orderWorksiteName="Faena Norte"
+          items={[makeItem({ quantity: 10, quantityOfficeReceived: 0 })]}
+          canOffice={true}
+          canFaena={false}
+        />,
+      )
+      const shown = (screen.getByLabelText(/Cantidad a recibir/) as HTMLInputElement).value
+      expect(shown).toBe("10")
+
+      const itemsJson = container.querySelector('input[name="itemsJson"]') as HTMLInputElement
+      const sent = JSON.parse(itemsJson.value) as Array<{ quantityReceived: number }>
+      expect(sent[0]!.quantityReceived).toBe(Number(shown))
+    })
+
+    it("respeta la cantidad que el usuario escribe", () => {
+      const { container } = render(
+        <ReceiptForm
+          purchaseOrderId="po-1"
+          orderCode="OC-001"
+          orderWorksiteName="Faena Norte"
+          items={[makeItem({ quantity: 10, quantityOfficeReceived: 0 })]}
+          canOffice={true}
+          canFaena={false}
+        />,
+      )
+      fireEvent.change(screen.getByLabelText(/Cantidad a recibir/), { target: { value: "4" } })
+      const itemsJson = container.querySelector('input[name="itemsJson"]') as HTMLInputElement
+      const sent = JSON.parse(itemsJson.value) as Array<{ quantityReceived: number }>
+      expect(sent[0]!.quantityReceived).toBe(4)
+    })
+  })
+
   describe("multiple items", () => {
     it("renders all items in the list", () => {
       render(

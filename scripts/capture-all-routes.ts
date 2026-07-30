@@ -294,6 +294,13 @@ const routeTargets: RouteTarget[] = [
   },
   { slug: "recepcion-nueva", path: "/recepcion/nueva?oc=po-audit-1", auth: true },
   { slug: "recepcion-detalle", path: "/recepcion/rec-audit-1", auth: true },
+  // La cola operacional faltaba en esta lista, así que era el único módulo del
+  // flujo sin línea base con la que comparar entre auditorías (auditoría UI/UX
+  // 2026-07-29). Se capturan también dos estados de filtro, que es donde vive lo
+  // que la pantalla tiene de particular: el resaltado de vencidas y el vacío.
+  { slug: "pendientes", path: "/pendientes", auth: true },
+  { slug: "pendientes-vencidas", path: "/pendientes?quick=overdue", auth: true, notes: "Cola filtrada por vencidas" },
+  { slug: "pendientes-vacio", path: "/pendientes?q=sin-resultado-auditoria", auth: true, notes: "Estado vacío de la cola" },
   {
     slug: "bodega",
     path: "/bodega",
@@ -1919,6 +1926,60 @@ async function prepareDatabase(captureDbUrl: string) {
       toStatus: "submitted",
       changedBy: "user-audit-prevencion",
       reason: "Servicio externo enviado a evaluación.",
+      changedAt: now,
+    },
+    // El seed sólo sembraba historial de solicitudes, así que la pestaña
+    // "Historial" del detalle de OC salía vacía en TODA captura y nadie la había
+    // revisado nunca (auditoría UI/UX 2026-07-29). El rastro reproduce el camino
+    // que el servicio habría escrito para llegar a `partially_received`.
+    {
+      id: "status-audit-oc-1",
+      entityType: "purchase_order",
+      entityId: orderId,
+      fromStatus: null,
+      toStatus: "draft",
+      changedBy: userId,
+      reason: "Orden creada a partir de ítems aprobados.",
+      changedAt: now,
+    },
+    {
+      id: "status-audit-oc-2",
+      entityType: "purchase_order",
+      entityId: orderId,
+      fromStatus: "draft",
+      toStatus: "issued",
+      changedBy: "user-audit-jefa",
+      reason: "Orden emitida para envío al proveedor.",
+      changedAt: now,
+    },
+    {
+      id: "status-audit-oc-3",
+      entityType: "purchase_order",
+      entityId: orderId,
+      fromStatus: "issued",
+      toStatus: "sent",
+      changedBy: "user-audit-jefa",
+      reason: "Enviada a TRECK Seguridad Industrial.",
+      changedAt: now,
+    },
+    {
+      id: "status-audit-oc-4",
+      entityType: "purchase_order",
+      entityId: orderId,
+      fromStatus: "sent",
+      toStatus: "partially_received",
+      changedBy: "user-audit-bodega",
+      reason: "Llegada parcial: 6 de 12 pares.",
+      changedAt: now,
+    },
+    {
+      id: "status-audit-oc-office-1",
+      entityType: "purchase_order",
+      entityId: officeOrderId,
+      fromStatus: "sent",
+      toStatus: "office_received",
+      changedBy: "user-audit-bodega",
+      reason: "Recibida completa en oficina Chome, pendiente de despacho.",
       changedAt: now,
     },
   ])

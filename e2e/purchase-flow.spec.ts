@@ -5,17 +5,34 @@ import { login, selectRadixById, pickCurrentMonthDate } from "./helpers"
 test("flujo solicitud, aprobación, OC, recepción y trazabilidad", async ({ page }) => {
   await login(page)
 
-  await createCatalogRequest(page, "Guante E2E", "5")
+  const requestCode = await createCatalogRequest(page, "Guante E2E", "5")
 
   await page.goto("/aprobaciones")
-  await page.getByRole("button", { name: "Aprobar", exact: true }).click()
+  // Acotado a SU solicitud: la bandeja puede tener pendientes de otros specs
+  // (`epp-variant-request-flow` deja dos ítems sin aprobar), y un "Aprobar"
+  // suelto caía en strict mode. El grupo es el div cuyo hijo directo es la
+  // lista de ítems; se filtra por el código de esta solicitud.
+  const ownGroup = page.locator("div:has(> ul)").filter({ hasText: requestCode })
+  await expect(ownGroup).toHaveCount(1)
+  await ownGroup.getByRole("button", { name: "Aprobar", exact: true }).click()
   await page.getByRole("button", { name: "Confirmar aprobación" }).click()
-  await expect(page.getByText("Sin ítems pendientes")).toBeVisible({ timeout: 30_000 })
+  // Su grupo desaparece de la cola; el resto de la bandeja puede seguir con
+  // pendientes ajenos, así que no se puede afirmar "Sin ítems pendientes".
+  await expect(ownGroup).toHaveCount(0, { timeout: 30_000 })
 
   await page.goto("/compras/nueva")
   await selectRadixById(page, "ocWorksiteId", "Faena E2E")
   await selectRadixById(page, "supplierId", "Proveedor E2E")
-  await page.getByLabel(/Incluir Guante E2E/).first().check()
+  // Acotado a SU solicitud: el seed también deja un ítem `approved` de "Guante
+  // E2E" (el fixture de OC de `pdf-exports`, con cantidad 10), así que
+  // seleccionar por nombre con `.first()` incluía el del seed y la OC quedaba
+  // con la cantidad equivocada. La fila es el div cuyo hijo directo es el
+  // checkbox; se filtra por el código de la solicitud que este test creó.
+  const ownItemRow = page
+    .locator('div:has(> input[type="checkbox"])')
+    .filter({ hasText: `SOL ${requestCode}` })
+  await expect(ownItemRow).toHaveCount(1)
+  await ownItemRow.getByLabel(/Incluir Guante E2E/).check()
   await page.getByRole("button", { name: /Crear OC \(1 ítem\)/ }).click()
   await expect(page).toHaveURL(/\/compras\/(?!nueva$)[^/]+$/, { timeout: 15_000 })
   const orderId = page.url().split("/").pop()
@@ -36,7 +53,15 @@ test("flujo solicitud, aprobación, OC, recepción y trazabilidad", async ({ pag
   await expect(sendButton).toBeHidden({ timeout: 30_000 })
 
   // Stage 1 — arrival at Chome office from the receiving queue.
-  await page.goto("/recepcion")
+  // La bandeja se renderiza en el servidor, así que si se pide antes de que el
+  // commit de "Marcar como enviada" sea visible, llega vacía y ninguna espera de
+  // Playwright la rellena: hay que volver a pedirla. `expect.poll` recarga hasta
+  // que la OC aparece, en vez de depender de que la revalidación haya ganado la
+  // carrera (falla intermitente vista en las rondas 3 y 5).
+  await expect.poll(async () => {
+    await page.goto("/recepcion")
+    return page.locator("tbody tr").filter({ hasText: "Proveedor E2E" }).count()
+  }, { timeout: 30_000 }).toBeGreaterThan(0)
   const pendingReceptionRow = page.locator("tbody tr").filter({ hasText: "Proveedor E2E" }).first()
   await expect(pendingReceptionRow).toContainText("Faena E2E")
   await pendingReceptionRow.getByRole("link", { name: "Recibir" }).click()
@@ -48,16 +73,26 @@ test("flujo solicitud, aprobación, OC, recepción y trazabilidad", async ({ pag
   await submitReceiptForm(page, "5")
 
   // Stage 2 — receipt at the worksite from the transit queue (generates stock + traceability).
-  await page.goto("/recepcion")
+  await expect.poll(async () => {
+    await page.goto("/recepcion")
+    return page.locator("tbody tr").filter({ hasText: "Proveedor E2E" }).count()
+  }, { timeout: 30_000 }).toBeGreaterThan(0)
   const transitReceptionRow = page.locator("tbody tr").filter({ hasText: "Proveedor E2E" }).first()
-  await expect(transitReceptionRow.getByText(/pend\. faena/)).toBeVisible()
+  // El badge de la columna "Pend. de faena" cuenta LÍNEAS pendientes de despacho
+  // (una acá), y dice sólo el número: antes repetía el nombre de la columna
+  // ("N pend. faena"), jerga duplicada (auditoría UI/UX 2026-07-29, A-35).
+  await expect(transitReceptionRow.getByText(/^1 ítem$/)).toBeVisible()
   await transitReceptionRow.getByRole("link", { name: "Recibir" }).click()
-  await expect(page.getByText(/En oficina: 5/)).toBeVisible()
+  // A-35 reescribió "En oficina: N" como "Llegó antes a oficina: N", porque bajo
+  // un título "Ítems recibidos en faena" se leía como contradicción.
+  await expect(page.getByText(/(En oficina|Llegó antes a oficina): 5/)).toBeVisible()
   const worksiteReceiptButton = page.getByRole("button", { name: /Recepción en faena/ })
   await expect(worksiteReceiptButton).toBeEnabled()
   await worksiteReceiptButton.click()
   await submitReceiptForm(page, "5")
-  await expect(page.getByText("Guante E2E")).toBeVisible()
+  // Acotado a la tabla: el nombre del producto también aparece en el panel de
+  // seguimiento de la misma página, así que un `getByText` suelto era ambiguo.
+  await expect(page.getByRole("table").getByText("Guante E2E").first()).toBeVisible()
 
   await page.goto("/trazabilidad?estado=received")
   await expect(page.getByRole("row", { name: /Guante E2E.*5 unidad.*Recibido/ }).first()).toBeVisible()
@@ -124,12 +159,13 @@ test("cierra sesión y bloquea el acceso al dashboard", async ({ page }) => {
   await expect(page).toHaveURL(/\/login/)
 })
 
+/** Crea una solicitud y devuelve su código, para poder identificar luego SU ítem. */
 async function createCatalogRequest(
   page: Page,
   productName: string,
   quantity: string,
   options: { freeText?: boolean } = {},
-) {
+): Promise<string> {
   await page.goto("/solicitudes/nueva")
   await selectRadixById(page, "worksiteId", "Faena E2E")
   await pickCurrentMonthDate(page, "Seleccionar fecha")
@@ -144,6 +180,11 @@ async function createCatalogRequest(
   await page.getByRole("button", { name: "Enviar a aprobación" }).click()
   await expect(page).toHaveURL(/\/solicitudes\/(?!nueva$)[^/]+$/, { timeout: 15_000 })
   await expect(page.getByText(productName).first()).toBeVisible()
+  // El código es el título de la página de detalle. Se lee con `textContent`
+  // y no `innerText` porque el h1 del PageHeader es `lg:sr-only` en desktop.
+  const code = await page.getByRole("heading", { level: 1 }).first().textContent()
+  expect(code?.trim()).toMatch(/^SOL-/)
+  return code!.trim()
 }
 
 async function submitReceiptForm(page: Page, expectedQuantity: string) {

@@ -68,9 +68,11 @@ const OnboardingHintInner = React.memo(function OnboardingHintInner({
         type="button"
         onClick={dismiss}
         aria-label="Cerrar ayuda"
-        /* Altura acotada a la del `summary`: con `min-h-11` el botón se metía
-           dentro del cuerpo al expandirse. Ancho 44px para el objetivo táctil. */
-        className="absolute right-1 top-0 flex h-9 w-11 items-center justify-center rounded text-[var(--color-info-ink)] opacity-50 transition-opacity hover:opacity-100"
+        /* Altura por debajo de la del `summary` (34px): con `min-h-11` primero y
+           `h-9` después el botón se metía 3px dentro del cuerpo al expandirse.
+           `h-8` deja holgura aunque el título crezca una línea. Ancho 44px para
+           conservar el objetivo táctil. */
+        className="absolute right-1 top-px flex h-8 w-11 items-center justify-center rounded text-[var(--color-info-ink)] opacity-50 transition-opacity hover:opacity-100"
       >
         <X size={14} />
       </button>

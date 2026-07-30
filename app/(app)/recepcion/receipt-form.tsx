@@ -84,7 +84,15 @@ export function ReceiptForm({
   const itemsJson = JSON.stringify(
     items.map((i) => ({
       purchaseOrderItemId: i.id,
-      quantityReceived:    qtys[i.id]     ?? 0,
+      // El mismo fallback que muestra el input (`qtys[id] ?? remaining`). Antes
+      // enviaba `?? 0`: el campo mostraba la cantidad pendiente precargada pero,
+      // si el usuario no lo tocaba, `qtys` seguía vacío y el payload iba en 0.
+      // Con recibido/rechazado/dañado en 0 el schema rechaza la línea, así que
+      // aceptar la cantidad sugerida —el camino feliz del formulario que más se
+      // usa en faena— fallaba siempre con "Revisa los datos de recepción".
+      // Lo que se ve y lo que se envía tienen que ser el mismo número
+      // (auditoría UI/UX 2026-07-29, A-37).
+      quantityReceived:    qtys[i.id]     ?? getRemaining(i, stage),
       quantityRejected:    rejs[i.id]     ?? 0,
       quantityDamaged:     dmgs[i.id]     ?? 0,
       notes:               null,

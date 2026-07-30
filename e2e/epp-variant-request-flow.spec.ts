@@ -1,52 +1,77 @@
 import { expect, test } from "@playwright/test"
-import { login, selectRadixById } from "./helpers"
+import { login, selectRadixById, pickCurrentMonthDate } from "./helpers"
 
-test("crear solicitud EPP con variantes: grid de tallas + cantidad por variante", async ({ page }) => {
+/**
+ * Solicitud de EPP con variantes de talla.
+ *
+ * Reescrito para el modelo actual: `variant-quantity-grid.tsx` fue reemplazado
+ * por `VariantSelector`, y con él cambió la semántica, no sólo la interfaz.
+ *
+ * - Antes: un ítem con una grilla de tallas y una cantidad **por talla**.
+ * - Ahora: cada fila del catálogo es una talla, el ítem elige **una** con un
+ *   `Select`, y la cantidad es la del propio ítem. Para pedir dos tallas se
+ *   agregan dos ítems.
+ *
+ * El spec anterior buscaba el texto "cantidad por variante" y unos inputs de la
+ * grilla; ninguno de los dos existe ya en el código.
+ */
+test("crear solicitud EPP con variantes: una talla por ítem", async ({ page }) => {
   await login(page)
 
-  // Navigate to new request
   await page.goto("/solicitudes")
   await page.getByRole("link", { name: /nueva/i }).click()
   await expect(page.getByRole("heading", { name: /nueva solicitud/i })).toBeVisible()
 
-  // Fill header
   await selectRadixById(page, "worksiteId", "Faena E2E")
   await selectRadixById(page, "requestType", "EPP")
   await selectRadixById(page, "urgency", "Normal")
+  // Obligatoria: sin ella el envío queda en "Fecha requerida inválida".
+  await pickCurrentMonthDate(page, "Seleccionar fecha")
 
-  // Pick the product from the combobox
-  const combobox = page.getByRole("combobox", { name: /buscar producto/i })
-  await combobox.fill("Casco E2E")
-  // Wait for dropdown to appear and click the grouped product entry
+  // ── Ítem 1: elegir el producto y su talla ────────────────────────────────
+  const picker = page.getByPlaceholder(/Buscar en catálogo o escribir producto/i)
+  await picker.fill("Casco E2E")
   const listbox = page.getByRole("listbox")
-  await expect(listbox.getByRole("option").first()).toBeVisible({ timeout: 5000 })
+  await expect(listbox.getByRole("option").first()).toBeVisible({ timeout: 10_000 })
   await listbox.getByRole("option").first().click()
 
-  // Verify variant grid is visible
-  await expect(page.getByText(/cantidad por variante/i)).toBeVisible({ timeout: 5000 })
+  // El selector de talla aparece porque la familia tiene una fila por talla.
+  const sizeSelect = page.locator('button[id^="size-"]').first()
+  await expect(sizeSelect).toBeVisible({ timeout: 10_000 })
+  await sizeSelect.click()
+  const sizeOption = page.getByRole("option", { name: "M", exact: true })
+  await expect(sizeOption).toBeVisible({ timeout: 5000 })
+  await sizeOption.click()
+  await expect(sizeSelect).toContainText("M")
 
-  // Fill quantities per variant in the grid inputs
-  const variantInputs = page.locator("[class*='variant'] input[type='number']")
-  const inputCount = await variantInputs.count()
-  expect(inputCount).toBeGreaterThanOrEqual(2)
+  const firstQty = page.locator('input[id^="qty-"]').first()
+  await firstQty.fill("2")
 
-  // Fill 2 for first variant and 3 for second
-  await variantInputs.nth(0).fill("2")
-  await variantInputs.nth(1).fill("3")
+  // ── Ítem 2: la otra talla va en su propio ítem ──────────────────────────
+  await page.getByRole("button", { name: /Agregar ítem/i }).click()
+  const secondPicker = page.getByPlaceholder(/Buscar en catálogo o escribir producto/i).last()
+  await secondPicker.fill("Casco E2E")
+  await expect(listbox.getByRole("option").first()).toBeVisible({ timeout: 10_000 })
+  await listbox.getByRole("option").first().click()
 
-  // The total quantity field should auto-update to 5
-  const qtyInput = page.locator("#qty-new-0")
-  await expect(qtyInput).toHaveValue("5")
+  const secondSize = page.locator('button[id^="size-"]').last()
+  await expect(secondSize).toBeVisible({ timeout: 10_000 })
+  await secondSize.click()
+  const otherSize = page.getByRole("option", { name: "L", exact: true })
+  await expect(otherSize).toBeVisible({ timeout: 5000 })
+  await otherSize.click()
+  await expect(secondSize).toContainText("L")
 
-  // Save draft
-  await page.getByRole("button", { name: /guardar borrador/i }).click()
-  await expect(page.getByText(/guardado/i)).toBeVisible({ timeout: 10000 })
+  await page.locator('input[id^="qty-"]').last().fill("3")
 
-  // Submit
+  // Dos ítems, cada uno con su talla y su cantidad.
+  await expect(page.locator('input[id^="qty-"]')).toHaveCount(2)
+  await expect(page.getByRole("heading", { name: /Ítems solicitados/ })).toContainText("2 ítems")
+
   await page.getByRole("button", { name: /enviar a aprobación/i }).click()
-  await expect(page.getByText(/enviada/i)).toBeVisible({ timeout: 10000 })
+  await expect(page).toHaveURL(/\/solicitudes\/(?!nueva$)[^/]+$/, { timeout: 20_000 })
 
-  // Verify it appears in the request list with correct items
-  await page.goto("/solicitudes")
-  await expect(page.getByRole("row", { name: /Casco E2E/ }).first()).toBeVisible({ timeout: 10000 })
+  // El detalle muestra las dos tallas pedidas.
+  await expect(page.getByText(/Casco E2E M/).first()).toBeVisible({ timeout: 10_000 })
+  await expect(page.getByText(/Casco E2E L/).first()).toBeVisible()
 })

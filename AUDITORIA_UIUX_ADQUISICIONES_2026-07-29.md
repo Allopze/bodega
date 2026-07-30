@@ -199,7 +199,9 @@ Top bar en `d-solicitudes.png` y `d-compras.png`; dentro de la fila de filtros e
 
 Corregido en la ronda 2: la pastilla "Sin OC" del top bar duplicaba, en el mismo viewport, la alerta ámbar de la lista — que además explica y trae su propio "Crear OC"; se quedó la accionable. Y la barra de `DataTable` ya no reserva una fila entera cuando su único control es "Columnas" (el caso de /solicitudes, que tiene el buscador en `ListFilters`).
 
-Cerrado en la ronda 3: `OnboardingHint` **nace colapsado**. Pasó a `<details>` nativo —sin estado de cliente, el mismo patrón de `StateLegend`— con el título en una línea y el cuerpo tras el disclosure; la X de descartar sigue ahí, con `preventDefault` para que no alterne el `<details>` al pulsarla. Medido: 42px colapsado contra 95px expandido, y la ayuda de /recepcion baja de ~115px a ~42px sobre los datos.
+Cerrado en la ronda 3: `OnboardingHint` **nace colapsado**. Pasó a `<details>` nativo —sin estado de cliente, el mismo patrón de `StateLegend`— con el título en una línea y el cuerpo tras el disclosure. Medido: 34px colapsado contra 87px expandido, y la ayuda de /recepcion baja de ~115px a ~34px sobre los datos.
+
+La primera versión puso la X de descartar **dentro del `<summary>`**, lo que introdujo un `nested-interactive` serio que cazó la suite e2e (§5.7). En la ronda 4 el botón quedó como hermano del `<details>`, posicionado sobre la esquina, y se ajustó su altura a `h-8`: con `min-h-11` y luego `h-9` invadía 3px el cuerpo al expandirse. Verificado en vivo: nace colapsado, expande, la X descarta, el descarte persiste al recargar, cero controles interactivos dentro de un `summary` y cero solape.
 
 - `d-recepcion.png`: banner informativo (~75px) + acordeón "¿Qué significa cada estado?" (~40px) + fila de filtros, todo antes de **2 filas** de tabla.
 - `d-compras.png`: banner + alerta ámbar "2 ítems aprobados sin incluir en ninguna OC" que repite la pastilla "2 Sin OC" del top bar, en el mismo viewport.
@@ -307,6 +309,8 @@ El borde estrecho sí era real: entrando por un enlace compartido con `?cursor=�
 
 Ronda 3: (e) **Alineación numérica** — la causa era que los consumidores usaban `TableCell` con `text-right pr-6` ad-hoc en vez de `TableCellNum`, el render canónico (mono, alineado y con el mismo padding que su encabezado). Migradas las columnas Ítems, Total y Facturas de `oc-list-rows` y la columna Ítems de `request-list`. (f) **Contadores de pestañas** — "Historial" recibió el suyo; "Avance" sigue sin contador **a propósito** y con un comentario que lo dice: tiene una fila por ítem, así que su número sería el de "Ítems" repetido.
 
+Verificado en la ronda 4: medida la distancia entre el borde derecho del encabezado y el del valor en ambas listas — **Δ0px** en Ítems, Total y Estado. Y "Historial 4" ya aparece con contador, una vez sembrado el rastro que faltaba (§5.5).
+
 - Casing inconsistente en la columna TIPO de `d-solicitudes.png`: "EPP", "Otros", "REPUESTOS", "Servicios" convivendo.
 - Columnas numéricas sin alineación derecha consistente (ÍTEMS y TOTAL en `d-solicitudes.png` y `d-compras.png`).
 - Tabs con contador solo en algunos: "Ítems 1", "Facturación 1", "Avance", "Historial" (`d-compras-detalle.png`).
@@ -321,6 +325,23 @@ Ronda 3: (e) **Alineación numérica** — la causa era que los consumidores usa
 `item-editor.tsx:225` renderizaba la unidad de medida como `Input` libre, con "unidad" precargado. Es la misma familia que A-30: cada usuario escribirá su variante ("unidad", "Unidad", "un", "unid.") y la columna queda inservible para agrupar o comparar — y encima alimenta a `formatQty`, cuyo mapa de plurales sólo reconoce las formas canónicas.
 
 Mismo remedio que A-30, y por la misma razón: un `datalist` sobre `UNIT_OF_MEASURE_OPTIONS` (apoyado en `VALID_UNITS`, el vocabulario que ya valida la importación de EPP) guía hacia el término canónico sin rechazar las unidades de productos heredados. No se usó `Select` porque el catálogo lo administra el usuario.
+
+#### A-37 · La recepción falla si aceptas la cantidad que el formulario precarga **[código]** — *hallazgo nuevo, ronda 5; sería P0*
+
+✅ **Corregido.** Lo destapó `purchase-flow` al superar los dos bloqueos anteriores: el spec llegaba por fin al formulario de recepción y el submit se rechazaba con "Revisa los datos de recepción" pese a que el campo mostraba la cantidad correcta.
+
+`receipt-form.tsx` usaba **dos fallbacks distintos para el mismo número**:
+
+```
+value={qtys[item.id] ?? remaining}          // lo que se ve: 5
+quantityReceived: qtys[i.id] ?? 0           // lo que se envía: 0
+```
+
+`qtys` es estado de cliente y arranca vacío. Mientras el usuario no toque el campo, el input **muestra** la cantidad pendiente precargada y el payload **manda 0**. Con recibido, rechazado y dañado en 0, `receiptItemSchema` rechaza la línea por su `refine` de "al menos una cantidad".
+
+O sea: abrir la recepción, aceptar la cantidad sugerida y pulsar "Marcar como recibido" —el camino feliz del formulario que más se usa en faena, desde el teléfono— **fallaba siempre**. Sólo funcionaba si se tocaba el campo para poblar el estado. El mensaje de error tampoco ayudaba: pedía revisar datos que en pantalla estaban correctos.
+
+Corregido igualando el payload a lo que muestra el input (`?? getRemaining(i, stage)`). Es la misma familia que A-07 (`[].every()` declarando "Proveedor: Listo" con el campo vacío) y A-08/A-09: **la interfaz afirma una cosa y el código hace otra**. Y es el hallazgo más grave de toda la auditoría, encontrado no por mirar capturas sino por dejar que un test de punta a punta llegara hasta el final.
 
 ---
 
@@ -354,9 +375,11 @@ Orden por relación valor/esfuerzo:
 
 ## 5. Estado de remediación (2026-07-29, misma sesión)
 
-Tres rondas. La primera cerró los P0 y la mayoría de los P1; la segunda, el grueso de los P2; la tercera, los parciales que quedaban y las brechas de verificación que §4 había declarado abiertas. Capturas en `audit/screenshots/2026-07-29-uiux-adquisiciones-after/` (`d-*`/`m-*` ronda 1, `*-r2-*` ronda 2, `*-r3-*` ronda 3).
+Cuatro rondas. La primera cerró los P0 y la mayoría de los P1; la segunda, el grueso de los P2; la tercera, los parciales que quedaban y las brechas de verificación que §4 había declarado abiertas; la cuarta, las verificaciones en navegador que la tercera dejó pendientes, más el instrumental (`/pendientes` en el script de captura, el seed de historial de OC) y las fronteras de error. Capturas en `audit/screenshots/2026-07-29-uiux-adquisiciones-after/` (`d-*`/`m-*` ronda 1, `*-r2-*` ronda 2, `*-r3-*` ronda 3, `*-r4-*` ronda 4).
 
 > **Nota sobre las capturas:** el círculo oscuro con una "N" en el borde inferior izquierdo es el indicador de `next dev` (`nextjs-portal`), no interfaz de la aplicación. En una captura llegó a taparle las primeras letras a un párrafo; se verificó por medición (`elementFromPoint`) antes de tratarlo como defecto. No existe en producción.
+
+> **Nota sobre el estado en git:** durante la sesión, el trabajo concurrente de PDTP en este mismo checkout hizo un barrido de commits que **arrastró también esta remediación**. Quedó repartida sobre todo en `97df823` (*feat(compras): refactor solicitudes, ordenes de compra, recepcion y cola operacional*) y `9c2184f` (*feat(ui): update layout, navigation, design tokens and shared components*), mezclada con cambios ajenos. No se pidió ni se hizo ningún commit desde acá; sólo los últimos ajustes de la ronda 4 (`app/(app)/error.tsx`, `pendientes/error.tsx`, la altura del botón de `onboarding-hint.tsx` y el seed de `capture-all-routes.ts`) siguen sin commitear.
 
 ### 5.1 Verificación
 
@@ -365,15 +388,18 @@ Tres rondas. La primera cerró los P0 y la mayoría de los P1; la segunda, el gr
 - Test de regresión en `lib/__tests__/operational-assignments.test.ts`: tabla con los cuatro criterios excluyentes (servicios, repuestos, solicitud `draft`, solicitud `closed`) más uno que sí debe aparecer, la ausencia de etiquetas con `_`, y la igualdad `badge del rail === total de la página`.
 - **Control positivo hecho:** revirtiendo sólo la línea de `approvalQueueFilter`, el test falla con `servicios/submitted/requested: expected true to be false`. El verde no es un falso verde.
 - Cobertura de `formatQty` ampliada, incluido el caso que **no** se debe pluralizar (`3 kg`, `3 m2`).
-- **25 aserciones de interacción en vivo, todas pasan** (§5.6). Cubren lo que §4 declaraba sin probar.
+- **Test de regresión de A-37** en `receipt-form.test.tsx`: verifica que el número que muestra el input y el que viaja en `itemsJson` sean el mismo, con y sin intervención del usuario. **Control positivo hecho:** restaurando el `?? 0` el test falla con `expected +0 to be 10`. Los 19 tests que ya existían para ese formulario no cubrían este camino.
+- **25 aserciones de interacción en vivo en la ronda 3 y 9 más en la ronda 4, todas pasan** (§5.6). Cubren lo que §4 declaraba sin probar.
+- **`zoom-200` verde en los cinco módulos**: sin desborde horizontal al 200% y objetivo táctil mínimo respetado, con los cambios de layout ya aplicados.
 - **Contraste medido, no afirmado** (§5.6): 8 puntos, con conversión por canvas y opacidad heredada compuesta contra el fondo real.
 - Las capturas se validan con dos aserciones automáticas por vista: cero errores de consola y `scrollWidth - clientWidth <= 1`.
 
-### 5.2 Corregido (34 de 36, ninguno parcial)
+### 5.2 Corregido (35 de 37, ninguno parcial)
 
 **P0 (3/3):** A-01, A-02, A-03.
 **P1 (10/10):** A-04 … A-13.
 **P2 (21/21 de los válidos):** A-14, A-15, A-17, A-18, A-19, A-20, A-21, A-22, A-23, A-24, A-25, A-26, A-27, A-28, A-30, A-31, A-32, A-33, A-34, A-35, A-36.
+**Hallazgo posterior de gravedad P0:** A-37 (§2) — el formulario de recepción rechazaba el camino feliz.
 
 Los dos no corregidos son A-16 y el diagnóstico de A-29, ambos descartados por ser incorrectos (§5.3).
 
@@ -402,6 +428,8 @@ Ninguno venía de la auditoría: los destapó el trabajo de corregirla.
 6. **"Unidad" del ítem de una solicitud es texto libre** (`item-editor.tsx`), la misma familia que A-30. Quedó documentado como **A-36** en §2 y corregido con el mismo remedio.
 7. **Un `nested-interactive` que introdujo la propia corrección de A-19** — botón dentro de `<summary>`, impacto serio en cuatro rutas. Lo cazó la suite e2e de accesibilidad, no las capturas ni los tests unitarios. Detalle en §5.7.
 8. **`pickCurrentMonthDate` (helper e2e) rompe según el calendario del mes.** Deuda pre-existente, ajena a esta auditoría, que afecta a los cinco specs que lo usan. Detalle en §5.7.
+9. **Las fronteras de error dejaban al usuario encerrado.** `app/(app)/error.tsx` —la que cubre solicitudes, aprobaciones, compras y recepción— y `pendientes/error.tsx` ofrecían sólo "Intentar de nuevo" y "Reportar error". Si el error persiste, `reset()` vuelve a fallar y no hay ninguna salida. Ambas llevan ahora un "Volver al inicio". Mismo criterio que cerró el borde de A-29: nunca dejar una pantalla sin camino hacia adelante.
+10. **La pestaña "Historial" del detalle de OC nunca se había visto con datos.** El seed sembraba `status_history` sólo para solicitudes, ninguna fila para `purchase_order`, así que en toda captura salía vacía. Corregido en el seed (§5.5) con el rastro que el servicio habría escrito.
 
 El patrón detrás de 1, 2, 4 y 6 es el mismo que el de los P0: **lógica duplicada que derivó**. Los criterios de la cola viven ahora en `TERMINAL_REQUEST_STATUSES` y `approvalQueueFilter`, el formato de cantidades en `formatQty`, y el vocabulario sugerido en constantes con nombre.
 
@@ -409,8 +437,10 @@ El patrón detrás de 1, 2, 4 y 6 es el mismo que el de los P0: **lógica duplic
 
 - **El seed de captura quedaba en un estado que el servicio nunca produce.** `scripts/capture-all-routes.ts` insertaba OC-2026-0001 con `status: "sent"` y su ítem con 6 de 12 recibidas en oficina **y** en faena; con esas cantidades `recalcOrderStatus` la dejaría en `partially_received`. Esa incoherencia es la que hizo reportar A-10 como bug del stepper. El seed ahora escribe el estado que el servicio produciría, con un comentario que explica el invariante. Sin esto, cada auditoría futura volvería a inventar el mismo hallazgo.
 - **La base `bodega_capture` persiste entre corridas y se desactualiza**: al empezar le faltaban columnas y cuatro rutas de compras/recepción reventaban con `Failed query` — visible sólo en consola, porque la página igual devuelve 200. Conviene migrarla antes de capturar.
+- **`/pendientes` no estaba en la lista de rutas**, así que era el único módulo del flujo sin línea base entre auditorías. Agregado, junto con dos estados de filtro que es donde vive lo propio de esa pantalla: `?quick=overdue` (el resaltado de vencidas) y el vacío. Los tres renderizan 200 sin errores de consola.
+- **El seed no escribía historial de órdenes de compra.** Sólo sembraba `status_history` de solicitudes, de modo que la pestaña "Historial" del detalle de OC salía vacía en toda captura y nadie la había revisado nunca. Ahora siembra el rastro completo (`draft → issued → sent → partially_received`, más la OC de oficina), coherente con el estado que arreglé antes. Verificado: la pestaña muestra "Historial 4" y sus transiciones con autor y motivo.
 
-### 5.6 Verificación en vivo (ronda 3)
+### 5.6 Verificación en vivo (rondas 3 y 4)
 
 **Interacciones — 25/25 pasan.** Lo que §4 declaraba sin probar:
 
@@ -445,6 +475,22 @@ El último no se cambió a propósito: WCAG 1.4.3 exime explícitamente el texto
 
 **Bajo el pliegue** — medido el contenedor con scroll propio: `/compras/nueva` y `/recepcion/nueva` caben en una pantalla a 1440×900 (900px de 900px), así que la advertencia de §4 sobrestimaba el problema. Sólo `/solicitudes/nueva` tiene una segunda pantalla (1172px); revisada, es donde apareció el hallazgo de "Unidad".
 
+**Ronda 4 — las cinco cosas de la ronda 3 que faltaba ver en el navegador, más lo que §5.8 dejaba abierto:**
+
+| Qué | Resultado |
+|---|---|
+| El banner colapsa, expande, descarta y el descarte persiste | los cuatro |
+| Ningún control interactivo dentro de un `<summary>` | 0 (la regresión que arreglé) |
+| La X no invade el cuerpo expandido | corregido: `h-9` solapaba 3px, `h-8` no |
+| Alineación numérica encabezado vs valor | **Δ0px** en Ítems, Total y Estado |
+| Contador de la pestaña Historial | "Historial 4", con el rastro sembrado |
+| El `datalist` de "Unidad" (A-36) | 12 opciones, y acepta texto libre |
+| `product-picker`: sugiere al escribir | sí, y ofrece salida por texto libre |
+| Validación al enviar vacío | no navega, 2 alertas + checklist del resumen |
+| Rutas nuevas del script (`?quick=overdue`, vacío) | 200 sin errores de consola |
+
+Lo único que no se pudo ejercitar es el **selector de variantes de talla**: el producto del fixture no tiene variantes, así que el control no se renderiza. Queda como brecha del fixture, no del código.
+
 ### 5.7 La suite e2e, y lo que encontró
 
 Se corrió el subconjunto que toca los selectores modificados: cola operacional, pendientes, recepción, compras, accesibilidad y navegación por teclado. Contra `bodega_e2e_local` para no tocar la base compartida.
@@ -466,15 +512,47 @@ El origen es del entorno, no de esta remediación: **`e2e/setup-db.ts` tiene 103
 
 Vale subrayar el reparto: de todo lo que encontró la suite, **uno** era un defecto mío —el `nested-interactive`, que se habría ido a producción sin correrla—, **dos** eran aserciones que había que acotar (una por mi cambio, una latente), **una** era deuda pre-existente del instrumental, **una** flakiness de concurrencia y **una** contaminación del seed por trabajo ajeno en curso.
 
+**Ronda 4 — los specs que usan el helper de fecha corregido: 53 pasan, 1 falla.** Se corrieron los cuatro que quedaban de esa lista (`combustibles`, `ppa-flow`, `repuestos-servicios-flow`, `repuestos-servicios-oc-flow`) más `zoom-200`, `epp-variant-request-flow`, `negative-flows` y `ui-ux-audit-evidence`.
+
+`zoom-200` merece mención aparte porque valida justo lo que esta remediación tocó: **sin desborde horizontal** al 200% y **objetivo táctil mínimo** en los cinco módulos auditados, con los layouts envueltos de A-01, las tarjetas de A-21 y el botón reposicionado de A-19 ya dentro.
+
+El arreglo del helper quedó validado en otros specs: `combustibles › create a new fuel load`, los flujos de repuestos y servicios y todo `ppa-flow` pasan, y los cuatro usan `pickCurrentMonthDate`.
+
+Aparece **una falla ajena**: `epp-variant-request-flow › crear solicitud EPP con variantes` busca el texto "cantidad por variante", que **ya no existe en el código**. El refactor concurrente de PDTP/UI (commit `97df823`) reemplazó `variant-quantity-grid.tsx` por `variant-selector.tsx` y dejó el spec afirmando la copy anterior. Es su refactor contra su spec; lo único que esta remediación toca en ese archivo es el `datalist` de "Unidad".
+
+**Ronda 5 — las dos fallas que quedaban, y las dos eran bugs del fixture, no de los specs.**
+
+Se pidió arreglarlas y al buscar la causa resultó que ninguna era "copy vieja en el spec": las dos venían de `e2e/setup-db.ts` expresando mal el modelo.
+
+**`purchase-flow` — el seed sombreaba al propio test.** El fixture de OC que se agregó "para que `pdf-exports` no dependa de `purchase-flow`" usa `prod-e2e`, cuyo nombre es **"Guante E2E"** — exactamente el producto que el test crea — con **cantidad 10** contra las 5 del test, y en estado `approved`. En `/compras/nueva` el selector `getByLabel(/Incluir Guante E2E/).first()` matcheaba los dos y tomaba el del seed, así que la OC nacía con cantidad 10; la etapa 2 de recepción esperaba 5 y encontraba 10. El diagnóstico anterior ("arrastra ítems `approved` del seed") apuntaba al lugar correcto pero culpaba a los `SOL-BULK-E2E-*`, que usan otro producto.
+
+Corregido en el spec y no en el seed, porque la propiedad que se quiere es que **el test seleccione su propio ítem** sea cual sea el resto del fixture: `createCatalogRequest` devuelve ahora el código de la solicitud que creó, y la selección se acota a la fila que lo contiene (`div:has(> input[type="checkbox"])` filtrado por `SOL <código>`), con un `toHaveCount(1)` que falla si vuelve a haber ambigüedad.
+
+**`epp-variant-request-flow` — el seed hacía imposible que el selector apareciera.** No era sólo que el spec buscara "cantidad por variante". Las tres filas de catálogo (`Casco E2E S/M/L`) recibían el **mismo** `options: ["S","M","L"]`, y `getSizeVariantPicker` toma la primera opción como la talla de esa variante: las tres resolvían a "S", el helper detectaba labels duplicados y devolvía `null`. El `VariantSelector` **no se renderizaba nunca**. Eso explica también por qué la ronda 4 no pudo ejercitarlo y lo anotó como "el producto del fixture no tiene variantes".
+
+Corregido en las dos puntas: el seed declara una talla por fila (`["S"]`, `["M"]`, `["L"]`), y el spec se reescribió al modelo actual — antes un ítem con cantidad por talla, ahora una talla por ítem, así que pide M y L en dos ítems y verifica que el detalle muestre ambas.
+
+**Y al desbloquear `purchase-flow` fue apareciendo, un paso a la vez, lo que los bloqueos anteriores tapaban.** Cada arreglo destapaba el siguiente:
+
+1. Dos aserciones que **esta remediación** había invalidado y nadie notó porque el spec nunca llegaba tan lejos: el badge de la columna de tránsito, que A-35 cambió de `"N pend. faena"` a sólo el número (cuenta líneas, no unidades), y `"En oficina: N"`, reescrito como `"Llegó antes a oficina: N"`. Deuda mía.
+2. **A-37**, el bug de producto (§2) que hacía fallar el camino feliz de la recepción.
+3. **Aislamiento entre specs:** el spec de variantes deja dos ítems esperando aprobación, así que `getByRole("button", { name: "Aprobar" })` de `purchase-flow` caía en strict mode con tres coincidencias. Acotado a su propia solicitud, igual que la selección del ítem en la OC — y la aserción `"Sin ítems pendientes"` se cambió por "su grupo desapareció", que es lo que el test realmente quiere afirmar sin depender de que la bandeja esté vacía.
+4. **Una ambigüedad latente más**, ya en el detalle de la recepción: el nombre del producto aparece dos veces en esa página (en el panel de seguimiento y en la tabla de ítems), así que `getByText("Guante E2E")` era ambiguo. Acotado a la tabla, que es donde el test quiere verificarlo.
+5. **Una carrera de revalidación**, la misma que la ronda 3 había caracterizado sin corregir: la bandeja de recepción se renderiza en el servidor, así que pedirla justo después de "Marcar como enviada" a veces la devuelve vacía, y ninguna espera de Playwright la rellena porque la página no se vuelve a pedir sola. Resuelto con `expect.poll` recargando hasta que la OC aparece, en las dos etapas. Esto explica el ir y venir de las corridas anteriores entre "no encuentra la fila" y "avanza".
+
+**Resultado: 5/5 verde.** `purchase-flow` recorre por fin el ciclo completo —solicitud → aprobación → OC → impresión/PDF → emisión → envío → recepción en oficina → recepción en faena → trazabilidad— y `epp-variant-request-flow` ejercita el selector de tallas que nunca se había podido renderizar.
+
+El patrón: **un spec bloqueado no es un spec que pasa.** Los dos bloqueos iniciales lo cortaban tan temprano que detrás quedaban escondidos un bug P0 de producto, tres problemas de aislamiento entre specs y una carrera de revalidación.
+
 ### 5.8 Lo que sigue abierto
 
-Nada de la auditoría queda sin resolver: los 34 hallazgos válidos están corregidos y los 2 restantes descartados por incorrectos. Lo de abajo es alcance que nunca estuvo cubierto, no deuda de la remediación.
+Nada de la auditoría queda sin resolver: los 35 hallazgos válidos están corregidos y los 2 restantes descartados por incorrectos. Lo de abajo es alcance que nunca estuvo cubierto, no deuda de la remediación.
 
-- **Los specs e2e restantes** (PDTP, combustibles, privacidad, entregas, repuestos/servicios, zoom 200%) no se ejecutaron. El arreglo del helper de fecha toca a los cinco specs que lo usan, así que conviene una corrida completa antes de cerrar.
-- **`purchase-flow.spec.ts` sigue en rojo por contaminación del seed**, no por código (§5.7). Hay que reintentarlo con `e2e/setup-db.ts` estable.
-- **Sin auditar en profundidad:** el `product-picker`, el selector de variantes y la validación campo a campo. Se probaron los flujos, no cada control.
-- **`error.tsx`** de cada módulo: no se forzó ningún fallo de servidor para verlos.
-- **Dark mode**: todo se midió y capturó en tema claro. El contraste de §5.6 no dice nada del tema oscuro.
+- **~46 specs e2e siguen sin correr**, casi todos de prevención/PDTP — el área que el trabajo concurrente está moviendo, así que correrlos ahora mediría su rama, no ésta. Los que podían verse afectados por esta remediación ya se corrieron (§5.7).
+- ~~**`purchase-flow` y `epp-variant-request-flow` en rojo**~~ — corregidos en la ronda 5 (§5.7). Los dos eran bugs de `e2e/setup-db.ts`, no de los specs.
+- ~~**Selector de variantes de talla sin ejercitar**~~ — la causa era el seed (una `options` idéntica en las tres variantes hacía que el picker nunca se renderizara); corregida, y el spec reescrito lo ejercita.
+- **`error.tsx` en ejecución**: se revisaron y mejoraron por código, pero no se forzó un fallo real de servidor para verlos renderizados.
+- ~~**Dark mode**~~ — **no es una brecha: la aplicación no tiene tema oscuro.** `app/globals.css` fija `color-scheme: light`, no hay `next-themes` ni ningún provider de tema, y en los cinco módulos auditados no existe una sola utilidad `dark:`. Las 8 que hay en el repo viven en combustibles y admin/backups, fuera de este alcance — ahí sí valdría revisar si conviene quitarlas, porque `dark:` responde a `prefers-color-scheme` y dispararían en un SO oscuro dentro de una interfaz que por lo demás es sólo clara.
 - **Móvil real**: se emuló 390×844 en Chromium, sin dispositivo ni navegador móvil de verdad.
-- **`scripts/capture-all-routes.ts` no incluye `/pendientes`** en su lista de rutas, así que ese módulo sigue sin baseline histórico con el que comparar.
+- ~~**`/pendientes` fuera del script de captura**~~ — corregido en la ronda 4 (§5.5). Falta correr `npm run screenshots` completo para generar la primera línea base de ese módulo.
 - **El botón "Crear OC" deshabilitado sigue en 2.9:1** — exento por WCAG 1.4.3 y dejado a propósito (§5.6). Si se quisiera subir, habría que rediseñar la señal de "deshabilitado" sin apoyarse en opacidad.

@@ -978,15 +978,27 @@ async function main() {
       createdAt: now, updatedAt: now,
     },
   ])
-  const variantPids = ["prod-epp-var-s", "prod-epp-var-m", "prod-epp-var-l"] as const
-  for (let i = 0; i < variantPids.length; i++) {
+  // Cada fila de catálogo es UNA talla, así que su atributo declara sólo la
+  // suya. Antes las tres recibían `["S","M","L"]` completo y eso rompía el
+  // picker: `getSizeVariantPicker` toma la primera opción como la talla de esa
+  // variante, las tres resolvían a "S", detectaba labels duplicados y devolvía
+  // `null` — el `VariantSelector` no se renderizaba nunca y
+  // `epp-variant-request-flow` no tenía nada que probar.
+  const variantSizes = [
+    ["prod-epp-var-s", "S"],
+    ["prod-epp-var-m", "M"],
+    ["prod-epp-var-l", "L"],
+  ] as const
+  const variantPids = variantSizes.map(([productId]) => productId)
+  for (let i = 0; i < variantSizes.length; i++) {
+    const [productId, size] = variantSizes[i]!
     await db.insert(schema.productAttributes).values({
       id: `pa-epp-var-${i}`,
-      productId: variantPids[i],
+      productId,
       name: "Talla",
       type: "select",
       isRequired: true,
-      options: JSON.stringify(["S", "M", "L"]),
+      options: JSON.stringify([size]),
       sortOrder: 0,
     })
   }
