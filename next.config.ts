@@ -26,7 +26,13 @@ const nextConfig: NextConfig = {
   // Si Turbopack lo integra al bundle, ese dirname queda congelado como
   // /ROOT/node_modules y el standalone no puede iniciar OCR. Mantener ambos
   // paquetes externos conserva sus rutas reales en runtime.
-  serverExternalPackages: ["postgres", "tesseract.js", "tesseract.js-core"],
+  // pdfjs-dist resuelve su propio worker (`pdf.worker.mjs`) con una ruta
+  // relativa al módulo en runtime. Si el bundler lo integra al chunk del route
+  // handler, ese import apunta a .next/server/chunks/pdf.worker.mjs —
+  // inexistente— y `getDocument()` falla con "Setting up fake worker failed",
+  // dejando la extracción de facturas siempre en `manual`. Externo conserva la
+  // ruta real dentro de node_modules (ya trazado en outputFileTracingIncludes).
+  serverExternalPackages: ["postgres", "tesseract.js", "tesseract.js-core", "pdfjs-dist"],
   images: {
     formats: ["image/avif", "image/webp"],
     deviceSizes: [360, 480, 640, 750, 828, 1080, 1200, 1920],

@@ -270,7 +270,10 @@ function AddInvoiceForm({ purchaseOrderId, ocItems }: { purchaseOrderId: string;
   const [dteParsed, setDteParsed] = React.useState(false)
   const [extractionWarnings, setExtractionWarnings] = React.useState<string[]>([])
   const invoiceNumberRef = React.useRef<HTMLInputElement>(null)
-  const amountRef = React.useRef<HTMLInputElement>(null)
+  // El total declarado en el documento incluye IVA, la suma de líneas es el
+  // neto. Si el documento lo declara, manda ese total; sólo cuando no existe se
+  // deriva de las líneas.
+  const [extractedTotal, setExtractedTotal] = React.useState<number | null>(null)
   // Estado controlado en vez de ref imperativo: DatePicker guarda el valor en
   // React, así que form.reset() del navegador no lo limpiaría solo.
   const [issueDate, setIssueDate] = React.useState("")
@@ -281,6 +284,7 @@ function AddInvoiceForm({ purchaseOrderId, ocItems }: { purchaseOrderId: string;
       formRef.current?.reset()
       setIssueDate("")
       setLineItems([])
+      setExtractedTotal(null)
       setDteParsed(false)
       setExtractionWarnings([])
     } else if (!state.ok && state.message && "fieldErrors" in state) {
@@ -333,6 +337,7 @@ function AddInvoiceForm({ purchaseOrderId, ocItems }: { purchaseOrderId: string;
   async function handleFileChange(file: File | null) {
     if (!file) {
       setDteParsed(false)
+      setExtractedTotal(null)
       setExtractionWarnings([])
       return
     }
@@ -377,9 +382,7 @@ function AddInvoiceForm({ purchaseOrderId, ocItems }: { purchaseOrderId: string;
       if (data.invoiceNumber && invoiceNumberRef.current) {
         invoiceNumberRef.current.value = data.invoiceNumber
       }
-      if (data.totalAmount && amountRef.current) {
-        amountRef.current.value = String(data.totalAmount)
-      }
+      setExtractedTotal(typeof data.totalAmount === "number" ? data.totalAmount : null)
       if (data.issueDate) {
         setIssueDate(data.issueDate)
       }
@@ -453,16 +456,15 @@ function AddInvoiceForm({ purchaseOrderId, ocItems }: { purchaseOrderId: string;
           error={state.fieldErrors?.amount?.[0]}
         >
           <Input
-            ref={amountRef}
             id="invoice-amount"
             name="amount"
             type="number"
             min="0"
             step="1"
             placeholder="0"
-            value={totalItems > 0 ? String(Math.round(totalItems)) : undefined}
-            readOnly={lineItems.length > 0}
-            className={lineItems.length > 0 ? "bg-surface-2" : ""}
+            value={extractedTotal != null ? String(extractedTotal) : totalItems > 0 ? String(Math.round(totalItems)) : undefined}
+            readOnly={extractedTotal == null && lineItems.length > 0}
+            className={extractedTotal == null && lineItems.length > 0 ? "bg-surface-2" : ""}
           />
         </Field>
 
