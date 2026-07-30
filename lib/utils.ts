@@ -83,6 +83,19 @@ export function formatDateTime(date: Date | string | number): string {
   return `${formatDate(d)} ${CHILE_TIME_FORMAT.format(d)}`
 }
 
+/**
+ * Año/mes/día en hora de Chile continental.
+ *
+ * `getFullYear()`/`getMonth()`/`getDate()` leen la zona del proceso, que en
+ * producción es UTC: durante las últimas 3–4 horas de cada día chileno
+ * devuelven el día —y el 31 de diciembre, el año— equivocado. Todo lo que
+ * decida "qué período es hoy" debe pasar por aquí.
+ */
+export function chileDateParts(date: Date | string | number = new Date()): { year: number; month: number; day: number } {
+  const [year, month, day] = CHILE_DATE_FORMAT.format(new Date(date)).split("-")
+  return { year: Number(year), month: Number(month), day: Number(day) }
+}
+
 // Todo lo que se muestra va en hora de Chile continental, no en la zona del
 // proceso: el contenedor de producción corre en UTC, así que leer los
 // componentes locales de la fecha (getHours/getDate) hacía que el servidor

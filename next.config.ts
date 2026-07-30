@@ -73,6 +73,9 @@ const nextConfig: NextConfig = {
       "./node_modules/playwright/**/*",
       "./node_modules/tesseract.js/**/*",
       "./node_modules/tesseract.js-core/**/*",
+      // El OCR de facturas importa el renderer PDF de forma diferida. Mantener
+      // sus assets completos evita que el standalone omita pdfjs-dist.
+      "./node_modules/pdfjs-dist/**/*",
       // pdfjs-dist carga este binding como dependencia opcional durante la
       // evaluación. El trazado standalone no la detecta, por lo que se debe
       // conservar el wrapper y el binario resuelto para Linux/musl.

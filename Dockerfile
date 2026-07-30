@@ -1,5 +1,5 @@
 # ── Development stage: provides a full dev environment with hot reload ──
-FROM node:20-alpine AS dev
+FROM node:22.13-alpine AS dev
 
 WORKDIR /app
 
@@ -13,6 +13,13 @@ COPY package*.json ./
 RUN npm ci --include=dev
 
 COPY . .
+
+# The invoice OCR must never download language data during a user request.
+# Keep the small fast models installed as direct npm dependencies and place both
+# languages in one directory, which is what Tesseract expects for "spa+eng".
+RUN mkdir -p /app/tessdata && \
+    cp node_modules/@tesseract.js-data/spa/4.0.0_best_int/spa.traineddata.gz /app/tessdata/spa.traineddata.gz && \
+    cp node_modules/@tesseract.js-data/eng/4.0.0_best_int/eng.traineddata.gz /app/tessdata/eng.traineddata.gz
 
 # Expose dev server port
 EXPOSE 3001
@@ -40,7 +47,7 @@ RUN ./node_modules/.bin/esbuild scripts/sync-rbac.ts \
 
 
 # ── Production stage: standalone build, minimal runtime ──
-FROM node:20-alpine AS prod
+FROM node:22.13-alpine AS prod
 
 # DO-02 (security audit): tools needed for HEALTHCHECK wget probe.
 RUN apk add --no-cache wget
@@ -49,6 +56,7 @@ WORKDIR /app
 
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
+ENV INVOICE_OCR_TESSDATA_PATH=/app/tessdata
 
 RUN addgroup -g 1001 -S nodejs && \
     adduser -S nextjs -u 1001
@@ -78,6 +86,20 @@ ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 COPY --from=build /app/.next/standalone ./
 COPY --from=build /app/.next/static ./.next/static
 COPY --from=build /app/public ./public
+COPY --from=build /app/tessdata ./tessdata
+# Tesseract launches a child Node worker. Its runtime-only image decoders and
+# fetch helpers are not statically visible to Next's file tracer, so copy the
+# worker's dependency closure explicitly into the standalone image.
+COPY --from=build /app/node_modules/bmp-js ./node_modules/bmp-js
+COPY --from=build /app/node_modules/is-electron ./node_modules/is-electron
+COPY --from=build /app/node_modules/is-url ./node_modules/is-url
+COPY --from=build /app/node_modules/node-fetch ./node_modules/node-fetch
+COPY --from=build /app/node_modules/regenerator-runtime ./node_modules/regenerator-runtime
+COPY --from=build /app/node_modules/wasm-feature-detect ./node_modules/wasm-feature-detect
+COPY --from=build /app/node_modules/zlibjs ./node_modules/zlibjs
+COPY --from=build /app/node_modules/whatwg-url ./node_modules/whatwg-url
+COPY --from=build /app/node_modules/tr46 ./node_modules/tr46
+COPY --from=build /app/node_modules/webidl-conversions ./node_modules/webidl-conversions
 COPY --from=build /app/db/migrations ./db/migrations
 COPY --from=build /app/db/seed ./db/seed
 # Standalone migration runner (uses runtime deps only; see scripts/migrate.mjs).
@@ -111,7 +133,8 @@ RUN chmod +x ./scripts/backup-*.sh ./scripts/restore-all.sh ./scripts/catastroph
 # Otherwise the volume defaults to root and `mkdir /data/storage/<repuestos|...>`
 # at runtime fails with EACCES.
 RUN mkdir -p /app/storage /app/.next/cache /data/storage && \
-    chown -R nextjs:nodejs /app/storage /app/.next /data/storage
+    chown nextjs:nodejs /app/storage /data/storage && \
+    chown -R nextjs:nodejs /app/.next/cache
 
 USER nextjs
 
