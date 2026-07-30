@@ -193,8 +193,7 @@ export default async function Page() {
                 { value: "draft", label: "Borrador" },
                 { value: "issued", label: "Emitida" },
                 { value: "sent", label: "Enviada" },
-                { value: "supplier_confirmed", label: "Confirmada proveedor" },
-                { value: "office_received", label: "Recibida oficina" },
+                              { value: "office_received", label: "Recibida oficina" },
                 { value: "received", label: "Recibida" },
                 { value: "cancelled", label: "Cancelada" },
               ]}

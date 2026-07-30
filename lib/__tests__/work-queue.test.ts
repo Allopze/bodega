@@ -127,7 +127,7 @@ describe("buildOcProgress", () => {
   })
 
   it("maps purchase-phase statuses to Compra with Solicitado+Aprobación done", () => {
-    for (const status of ["draft", "issued", "sent", "supplier_confirmed"]) {
+    for (const status of ["draft", "issued", "sent"]) {
       const progress = buildOcProgress(status, [item(0)])
       expect(progress?.currentStage).toBe("Compra")
       expect(progress?.completedStages).toEqual(["Solicitado", "Aprobación"])

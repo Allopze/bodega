@@ -60,7 +60,9 @@ const OC_STATE_META: Record<OcStatus, StateMeta> = {
   draft:              { label: "Borrador",             variant: "default",  family: "neutral", description: "OC en preparación, aún no emitida al proveedor." },
   issued:             { label: "Emitida",              variant: "info",     family: "info",    description: "OC emitida internamente; falta marcarla como enviada al proveedor." },
   sent:               { label: "Enviada",              variant: "info",     family: "info",    description: "OC enviada al proveedor; a la espera de recepción." },
-  supplier_confirmed: { label: "Confirmada",           variant: "primary",  family: "success", description: "El proveedor confirmó la orden." },
+  // Estado retirado del flujo (2026-07-30): ninguna OC nueva lo alcanza, pero el
+  // historial de estados conserva transiciones antiguas y debe seguir legible.
+  supplier_confirmed: { label: "Confirmada",           variant: "primary",  family: "success", description: "El proveedor confirmó la orden (estado retirado)." },
   partially_office_received: { label: "Oficina parcial", variant: "warning", family: "warning", description: "Parte de los ítems llegó a oficina Chome; falta el saldo." },
   office_received:    { label: "En oficina",           variant: "info",     family: "info",    description: "Los ítems llegaron a oficina Chome, aún no despachados a faena." },
   partially_received: { label: "Rec. parcial",         variant: "warning",  family: "warning", description: "Parte de los ítems se recibió en faena; falta el saldo." },

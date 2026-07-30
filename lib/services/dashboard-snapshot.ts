@@ -35,7 +35,7 @@ const ACTIVE_ITEM_STATUSES_SNAPSHOT = [
   "received", "partially_delivered",
 ]
 const ACTIVE_ORDER_STATUSES_SNAPSHOT = [
-  "draft", "issued", "sent", "supplier_confirmed",
+  "draft", "issued", "sent",
   "partially_office_received", "office_received", "partially_received",
 ]
 const SNAPSHOT_LIMIT = 200

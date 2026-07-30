@@ -6,7 +6,7 @@ import { db } from "@/db"
 import { isGlobalRole, visibleWorksiteIds } from "@/lib/auth/scope"
 import type { AnalyticsFilters, SpendByMonthRow, WorksiteSpendRow, VehicleCostRow } from "./types"
 
-export const ACTIVE_ORDER_STATUSES = ["issued", "sent", "supplier_confirmed", "partially_office_received", "office_received", "partially_received", "received", "closed"]
+export const ACTIVE_ORDER_STATUSES = ["issued", "sent", "partially_office_received", "office_received", "partially_received", "received", "closed"]
 
 export const REQUEST_TYPE_LABELS: Record<string, string> = { epp: "EPP", stock: "Stock", mantencion: "Mantención", otro: "Otros", repuestos: "Repuestos", servicios: "Servicios" }
 

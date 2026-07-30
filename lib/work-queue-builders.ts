@@ -231,7 +231,7 @@ function ocCurrentStage(orderStatus: string, items: OcProgressItem[]): string {
   if (["partially_office_received", "office_received", "partially_received"].includes(orderStatus)) return "Recepción"
   if (["received", "closed"].includes(orderStatus)) return "Recepción"
   if (items.some((item) => item.quantityReceived > 0)) return "Recepción"
-  // draft / issued / sent / supplier_confirmed
+  // draft / issued / sent
   return "Compra"
 }
 
@@ -249,7 +249,6 @@ function ocNextAction(orderStatus: string, audience: OcProgressAudience, items: 
       case "draft":
       case "issued":             return "La orden aún no ha sido enviada al proveedor."
       case "sent":
-      case "supplier_confirmed":
         return items.some((item) => item.quantityReceived > 0)
           ? "Recepción parcial registrada. Queda saldo por recibir."
           : "Pendiente de que lleguen los ítems."
@@ -264,12 +263,11 @@ function ocNextAction(orderStatus: string, audience: OcProgressAudience, items: 
   switch (orderStatus) {
     case "draft":              return "Emite la orden para poder enviarla al proveedor."
     case "issued":             return "Marca la orden como enviada al proveedor."
-    case "sent":               return "Confirma la recepción del proveedor o registra la llegada a oficina."
-    case "supplier_confirmed": return "Registra la recepción cuando lleguen los ítems."
-    case "partially_office_received":
+    case "sent":               return "Registra la recepción cuando lleguen los ítems."
+    case "partially_office_received": return "Completa la llegada a oficina del saldo pendiente."
     case "office_received":    return "Despacha los ítems a faena para completar la recepción."
     case "partially_received": return "Registra la recepción del saldo pendiente en faena."
-    case "received":           return "Orden recibida completamente."
+    case "received":           return "Orden recibida completamente. Ciérrala para archivarla."
     case "closed":             return "Orden cerrada."
     default:                   return "Revisa el detalle para ver el siguiente paso."
   }
