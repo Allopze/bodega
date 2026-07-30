@@ -228,8 +228,12 @@ const DataTableInner = <T extends Record<string, unknown>>({
       {/* Toolbar — shown when there's an explicit search input, actions, or column toggle */}
       {(hasExplicitSearch || actions || enableColumnToggle || (showDensityToggle && !hideDensityToggle)) && (
         <div className={cn(
-          "flex flex-col gap-3 mb-3 sm:flex-row sm:items-center",
-          hasExplicitSearch || showDensityToggle ? "sm:justify-between" : "sm:justify-end gap-2"
+          "flex flex-col gap-3 sm:flex-row sm:items-center",
+          hasExplicitSearch || showDensityToggle ? "sm:justify-between" : "sm:justify-end gap-2",
+          // A-19: cuando el único control es "Columnas" (el caso de /solicitudes,
+          // que tiene su buscador en `ListFilters`), esta barra se quedaba con una
+          // fila entera para un botón y dejaba ~60px de banda vacía sobre la tabla.
+          hasExplicitSearch || actions || (showDensityToggle && !hideDensityToggle) ? "mb-3" : "mb-1",
         )}>
           <div className="flex items-center gap-2">
             {hasExplicitSearch && (

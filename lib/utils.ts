@@ -20,10 +20,29 @@ export function formatCLP(amount: number): string {
   return CLP_FORMAT.format(amount)
 }
 
+/**
+ * Plural de las unidades de medida del catálogo. Es un mapa explícito y no una
+ * regla morfológica porque las unidades las administra el usuario y pueden ser
+ * abreviaturas ("kg", "m2") que no se pluralizan: lo que no esté acá pasa tal
+ * cual, que es el comportamiento anterior (auditoría UI/UX 2026-07-29, A-25).
+ */
+const UNIT_PLURALS: Record<string, string> = {
+  unidad: "unidades", par: "pares", caja: "cajas", paquete: "paquetes",
+  set: "sets", juego: "juegos", rollo: "rollos", servicio: "servicios",
+  litro: "litros", metro: "metros", bolsa: "bolsas", tarro: "tarros",
+  bidon: "bidones", bidón: "bidones", kit: "kits", pack: "packs",
+}
+
+/** Concuerda la unidad con la cantidad: "1 par", "8 rollos", "12 unidades". */
+export function pluralizeUnit(n: number, unit: string): string {
+  if (n === 1) return unit
+  return UNIT_PLURALS[unit.trim().toLowerCase()] ?? unit
+}
+
 /** Format a number with thousands separators (for quantities) */
 export function formatQty(n: number, unit?: string): string {
   const formatted = QTY_FORMAT.format(n)
-  return unit ? `${formatted} ${unit}` : formatted
+  return unit ? `${formatted} ${pluralizeUnit(n, unit)}` : formatted
 }
 
 /** Lowercase (es-CL) and strip diacritics, so accented and unaccented text compare equal. */

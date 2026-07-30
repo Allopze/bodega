@@ -68,6 +68,18 @@ function AreaSection({
 }) {
   const Icon = NAV_ICONS[area.iconName] ?? SquaresFour
 
+  // Un área con un solo destino no necesita disclosure: el acordeón agrega un
+  // nivel de anidamiento por nada y, colapsado, esconde el badge de conteo del
+  // ítem. Se renderiza plana, igual que "Inicio" (auditoría UI/UX 2026-07-29,
+  // A-26: hizo falta al sacar "Mis pendientes" de Adquisiciones).
+  if (area.items.length === 1) {
+    return (
+      <div className={cn(!first && "mt-4")}>
+        <AreaItems area={area} pathname={pathname} badgeCounts={badgeCounts} />
+      </div>
+    )
+  }
+
   return (
     <Collapsible.Root open={open} onOpenChange={onToggle} className={cn(!first && "mt-4")}>
       <Collapsible.Trigger asChild>

@@ -35,8 +35,12 @@ export function createCspHeader(nonce: string, options: { isDev?: boolean } = {}
   const sentryOrigin = sentryConnectSrcOrigin()
   return [
     "default-src 'self'",
+    // Next App Router inserta algunos chunks dinámicamente sin propagar el
+    // nonce. `strict-dynamic` hace que Chromium ignore `'self'` y bloquea esas
+    // transiciones legítimas. Se conserva el nonce para scripts inline y se
+    // permite exclusivamente el mismo origen para los assets versionados.
     `script-src 'self' 'nonce-${nonce}'${
-      isDev ? " 'unsafe-inline' 'unsafe-eval'" : " 'strict-dynamic'"
+      isDev ? " 'unsafe-inline' 'unsafe-eval'" : ""
     }`,
     "style-src-elem 'self' 'unsafe-inline'",
     "style-src-attr 'unsafe-inline'",

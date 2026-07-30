@@ -66,21 +66,21 @@ Cada color semántico tiene 4 variantes: base, `-tint` (superficie), `-line`
 | `--color-info-tint` | `oklch(0.965 0.008 240)` | `#eff4f8` | Fondo informativo |
 | `--color-info-line` | `oklch(0.892 0.020 240)` | `#d0dee8` | Borde informativo |
 | `--color-info-ink` | `oklch(0.330 0.075 240)` | `#013958` | Texto sobre info-tint |
-| `--color-bg` | `oklch(1.000 0     0)` | `#ffffff` | Lienzo blanco |
+| `--color-bg` | `oklch(0.965 0.002 0)` | `#f3f3f3` aprox. | Lienzo gris suave |
 | `--color-surface` | `oklch(1.000 0     0)` | `#ffffff` | Superficie de contenido (pozo) |
-| `--color-surface-2` | `oklch(0.974 0.004 90)` | `#f7f6f3` | Hover, panel secundario |
-| `--color-surface-3` | `oklch(0.955 0.005 90)` | `#f1f0ec` | Terciario, inset |
-| `--color-chrome` | `oklch(0.974 0.004 90)` | `#f7f6f3` | Relleno del shell (sidebar + header) |
-| `--color-chrome-hover` | `oklch(0.955 0.005 90)` | `#f1f0ec` | Hover dentro del chrome |
-| `--color-border` | `oklch(0.918 0.004 90)` | `#e5e4e1` | Hairline decorativa, divisores |
-| `--color-border-strong` | `oklch(0.848 0.005 90)` | `#cecdc9` | Divisor fuerte |
-| `--color-border-control` | `oklch(0.640 0.005 90)` | `#8d8c89` | **Contorno de controles** — WCAG 1.4.11 ≥3:1 |
-| `--color-border-control-hover` | `oklch(0.545 0.004 90)` | `#71706d` | Hover del contorno de controles |
-| `--color-rule` | `oklch(0.225 0.005 90)` | `#1d1c19` | Regla tipográfica fuerte |
-| `--color-text` | `oklch(0.180 0.004 90)` | `#121210` | Texto principal |
-| `--color-text-muted` | `oklch(0.430 0.005 90)` | `#51504d` | Secundario |
-| `--color-text-subtle` | `oklch(0.500 0.005 90)` | `#646360` | Placeholder (WCAG AA) |
-| `--color-text-faint` | `oklch(0.545 0.004 90)` | `#71706d` | Sutil — cumple AA también sobre chrome |
+| `--color-surface-2` | `oklch(0.974 0.002 0)` | `#f6f6f6` aprox. | Hover, panel secundario |
+| `--color-surface-3` | `oklch(0.955 0.002 0)` | `#eeeeee` aprox. | Terciario, inset |
+| `--color-chrome` | `oklch(0.965 0.002 0)` | `#f3f3f3` aprox. | Relleno del shell (sidebar + header) |
+| `--color-chrome-hover` | `oklch(0.940 0.002 0)` | `#e9e9e9` aprox. | Hover dentro del chrome |
+| `--color-border` | `oklch(0.925 0.002 0)` | `#e5e5e5` aprox. | Hairline decorativa, divisores |
+| `--color-border-strong` | `oklch(0.848 0.002 0)` | `#cecece` aprox. | Divisor fuerte |
+| `--color-border-control` | `oklch(0.640 0.002 0)` | `#8d8d8d` aprox. | **Contorno de controles** — WCAG 1.4.11 ≥3:1 |
+| `--color-border-control-hover` | `oklch(0.545 0.002 0)` | `#717171` aprox. | Hover del contorno de controles |
+| `--color-rule` | `oklch(0.225 0.002 0)` | `#1d1d1d` aprox. | Regla tipográfica fuerte |
+| `--color-text` | `oklch(0.180 0.002 0)` | `#121212` aprox. | Texto principal |
+| `--color-text-muted` | `oklch(0.430 0.002 0)` | `#515151` aprox. | Secundario |
+| `--color-text-subtle` | `oklch(0.500 0.002 0)` | `#646464` aprox. | Placeholder (WCAG AA) |
+| `--color-text-faint` | `oklch(0.535 0.002 0)` | `#717171` aprox. | Sutil — cumple AA también sobre chrome |
 | `--color-overlay` | `oklch(0.180 0.004 90 / 0.24)` | `—` | Overlay de modales |
 | `--color-brand-surface` | `oklch(1.000 0 0)` | `#ffffff` | Superficie de marca |
 | `--color-brand-text` | `oklch(0.180 0.004 90)` | `#121210` | Texto de marca |

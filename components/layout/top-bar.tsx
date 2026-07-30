@@ -109,16 +109,27 @@ const TopBarInner = React.memo(function TopBarInner({
       <div className="flex-1 min-w-0 hidden lg:flex items-center gap-3">
         <div className="min-w-0 flex-1">
           {header.title && (
-            <div className="flex min-w-0 items-baseline gap-2">
-              {/* Heading destacado al inicio de la vista */}
-              <p title={header.title} className="truncate text-lg font-bold tracking-tight text-(--color-text)">
-                {header.title}
-              </p>
-              {header.description && (
-                <p title={header.description} className="hidden min-w-0 truncate text-xs text-(--color-text-muted) 2xl:block">
-                  {header.description}
-                </p>
+            <div className="flex min-w-0 flex-col">
+              {/* El breadcrumb sólo existía en el bloque local del `PageHeader`,
+                  que es `lg:sr-only`: las páginas lo construían y en desktop no se
+                  dibujaba en ninguna parte (auditoría UI/UX 2026-07-29, A-12). */}
+              {header.breadcrumb && (
+                <div className="hidden min-w-0 truncate xl:block">{header.breadcrumb}</div>
               )}
+              <div className="flex min-w-0 items-baseline gap-2">
+                {/* Heading destacado al inicio de la vista */}
+                <p title={header.title} className="truncate text-lg font-bold tracking-tight text-(--color-text)">
+                  {header.title}
+                </p>
+                {/* Estaba en `2xl:block`, así que en un laptop de 1440 se perdían
+                    los conteos de contexto ("N ítems en M solicitudes") y pistas
+                    como "…y fija los precios" en compras/nueva (A-11). */}
+                {header.description && (
+                  <p title={header.description} className="hidden min-w-0 truncate text-xs text-(--color-text-muted) lg:block">
+                    {header.description}
+                  </p>
+                )}
+              </div>
             </div>
           )}
         </div>

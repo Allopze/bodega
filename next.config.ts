@@ -73,6 +73,11 @@ const nextConfig: NextConfig = {
       "./node_modules/playwright/**/*",
       "./node_modules/tesseract.js/**/*",
       "./node_modules/tesseract.js-core/**/*",
+      // pdfjs-dist carga este binding como dependencia opcional durante la
+      // evaluación. El trazado standalone no la detecta, por lo que se debe
+      // conservar el wrapper y el binario resuelto para Linux/musl.
+      "./node_modules/@napi-rs/canvas/**/*",
+      "./node_modules/@napi-rs/canvas-*/**/*",
     ],
   },
   outputFileTracingExcludes: {

@@ -5,7 +5,18 @@ import type { RequestProgress } from "@/lib/work-queue"
 
 const STAGES = ["Solicitado", "Aprobación", "Compra", "Recepción", "Entrega"]
 
-const RequestProgressPanelInner = React.memo(function RequestProgressPanelInner({ progress }: { progress: RequestProgress }) {
+const RequestProgressPanelInner = React.memo(function RequestProgressPanelInner({
+  progress,
+  action,
+}: {
+  progress: RequestProgress
+  /**
+   * CTA del siguiente paso. `nextAction` nombraba el paso sin ofrecerlo ("El
+   * módulo de órdenes de compra debe generar la orden de compra") y la página no
+   * tenía por dónde continuar (auditoría UI/UX 2026-07-29, A-17).
+   */
+  action?: React.ReactNode
+}) {
   const currentIndex = Math.max(0, STAGES.indexOf(progress.currentStage))
   const completed = new Set(progress.completedStages)
 
@@ -17,10 +28,13 @@ const RequestProgressPanelInner = React.memo(function RequestProgressPanelInner(
             <h2 className="text-h2 text-[var(--color-text)]">Seguimiento del pedido</h2>
             <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">{progress.nextAction}</p>
           </div>
-          <span className="inline-flex w-fit items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2.5 py-1 text-xs font-medium text-[var(--color-text-muted)]">
-            <Clock size={13} />
-            {progress.currentStage}
-          </span>
+          <div className="flex w-fit items-center gap-2">
+            <span className="inline-flex w-fit items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2.5 py-1 text-xs font-medium text-[var(--color-text-muted)]">
+              <Clock size={13} />
+              {progress.currentStage}
+            </span>
+            {action}
+          </div>
         </div>
       </div>
 

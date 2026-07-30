@@ -54,8 +54,17 @@ describe("formatQty()", () => {
     expect(formatQty(1250)).toBe("1.250")
   })
 
-  it("appends unit when provided", () => {
-    expect(formatQty(5, "unidad")).toBe("5 unidad")
+  it("appends unit when provided, agreeing in number", () => {
+    expect(formatQty(1, "unidad")).toBe("1 unidad")
+    expect(formatQty(5, "unidad")).toBe("5 unidades")
+    expect(formatQty(1, "par")).toBe("1 par")
+    expect(formatQty(8, "rollo")).toBe("8 rollos")
+  })
+
+  it("leaves an unknown unit untouched instead of inventing a plural", () => {
+    // Las unidades las administra el usuario: una abreviatura no se pluraliza.
+    expect(formatQty(3, "kg")).toBe("3 kg")
+    expect(formatQty(3, "m2")).toBe("3 m2")
   })
 
   it("formats zero without unit", () => {

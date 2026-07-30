@@ -34,9 +34,9 @@ const DesktopNavInner = React.memo(function DesktopNavInner({ session, badgeCoun
   if (collapsed) {
     return (      <nav
       aria-label="Áreas"
-      className="hidden lg:flex lg:w-[var(--sidebar-rail-width)] lg:shrink-0 lg:flex-col overflow-hidden bg-(--color-chrome) border-r border-slate-200/80"
+      className="hidden lg:flex lg:w-[var(--sidebar-rail-width)] lg:shrink-0 lg:flex-col overflow-hidden bg-(--color-chrome) border-r border-(--color-border)"
     >
-      <div className="flex items-center justify-center border-b border-slate-200/80 py-3 shrink-0">
+      <div className="flex items-center justify-center border-b border-(--color-border) py-3 shrink-0">
         <BrandMark variant="light" size={32} hideText />
       </div>
 
@@ -58,7 +58,7 @@ const DesktopNavInner = React.memo(function DesktopNavInner({ session, badgeCoun
           </Link>
         </Tooltip>
 
-        <div className="mx-2 my-1 border-t border-slate-200/80" aria-hidden />
+        <div className="mx-2 my-1 border-t border-(--color-border)" aria-hidden />
 
         {areas.filter((a) => a.id !== "soporte").map((area) => (
           <RailFlyout
@@ -71,7 +71,7 @@ const DesktopNavInner = React.memo(function DesktopNavInner({ session, badgeCoun
         ))}
       </div>
 
-      <div className="flex flex-col items-center gap-1 border-t border-slate-200/80 py-2">
+      <div className="flex flex-col items-center gap-1 border-t border-(--color-border) py-2">
         {areas.filter((a) => a.id === "soporte").length > 0 && (
           <Tooltip content="Soporte" side="right" delayDuration={250}>
             <Link
@@ -106,7 +106,7 @@ const DesktopNavInner = React.memo(function DesktopNavInner({ session, badgeCoun
   return (
     <nav
       aria-label="Navegación"
-      className="hidden lg:flex lg:w-[var(--sidebar-width)] lg:shrink-0 lg:flex-col overflow-hidden bg-[#f3f3f5] p-3.5"
+      className="hidden lg:flex lg:w-[var(--sidebar-width)] lg:shrink-0 lg:flex-col overflow-hidden bg-(--color-chrome) p-3.5"
     >
       {/* Header de la marca */}
       <div className="mb-4 flex shrink-0 items-center justify-between px-1">
@@ -116,7 +116,7 @@ const DesktopNavInner = React.memo(function DesktopNavInner({ session, badgeCoun
             type="button"
             onClick={hidePanel}
             aria-label="Ocultar panel"
-            className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-slate-200/60 hover:text-slate-900"
+            className="flex h-7 w-7 items-center justify-center rounded-lg text-(--color-text-muted) transition-colors hover:bg-(--color-chrome-hover) hover:text-(--color-text)"
           >
             <CaretRight size={14} weight="bold" className="rotate-180" />
           </button>
@@ -134,15 +134,15 @@ const DesktopNavInner = React.memo(function DesktopNavInner({ session, badgeCoun
           className={cn(
             "relative mb-1 flex h-[40px] items-center gap-3 rounded-xl px-3 text-[15px] font-medium transition-colors",
             dashActive
-              ? "bg-slate-200/80 font-semibold text-slate-900"
-              : "text-slate-600 hover:bg-slate-200/50 hover:text-slate-900",
+              ? "bg-(--color-primary-tint) font-semibold text-(--color-primary-ink)"
+              : "text-(--color-text-muted) hover:bg-(--color-chrome-hover) hover:text-(--color-text)",
           )}
         >
           {DashIcon && (
             <DashIcon
               size={20}
               weight="regular"
-              className={cn("shrink-0", dashActive ? "text-slate-900" : "text-slate-500")}
+              className={cn("shrink-0", dashActive ? "text-(--color-primary)" : "text-(--color-text-muted)")}
             />
           )}
           <span>Inicio</span>
@@ -152,7 +152,7 @@ const DesktopNavInner = React.memo(function DesktopNavInner({ session, badgeCoun
       </div>
 
       {/* Footer fijado al pie (Soporte + Perfil de Usuario) */}
-      <div className="mt-auto shrink-0 pt-2 space-y-1 border-t border-slate-200/60">
+      <div className="mt-auto shrink-0 pt-2 space-y-1 border-t border-(--color-border)">
         {areas.filter((a) => a.id === "soporte").length > 0 && (
           <Link
             href="/soporte"
@@ -160,14 +160,14 @@ const DesktopNavInner = React.memo(function DesktopNavInner({ session, badgeCoun
             className={cn(
               "relative flex h-[40px] items-center gap-3 rounded-xl px-3 text-[15px] font-medium transition-colors",
               isHrefActive("/soporte", pathname)
-                ? "bg-slate-200/80 font-semibold text-slate-900"
-                : "text-slate-600 hover:bg-slate-200/50 hover:text-slate-900",
+                ? "bg-(--color-primary-tint) font-semibold text-(--color-primary-ink)"
+                : "text-(--color-text-muted) hover:bg-(--color-chrome-hover) hover:text-(--color-text)",
             )}
           >
             <Lifebuoy
               size={20}
               weight="regular"
-              className={cn("shrink-0", isHrefActive("/soporte", pathname) ? "text-slate-900" : "text-slate-500")}
+              className={cn("shrink-0", isHrefActive("/soporte", pathname) ? "text-(--color-primary)" : "text-(--color-text-muted)")}
             />
             <span>Soporte</span>
           </Link>

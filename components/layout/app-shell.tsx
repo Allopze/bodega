@@ -87,7 +87,8 @@ const AppShellInner = React.memo(function AppShellInner({ session, worksiteName,
         />
 
         <ShellHeaderProvider>
-          <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+          <div className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
+
             {/* Mobile drawer — acordeón de columna única */}
             {showDrawer && (
               <>
@@ -129,7 +130,7 @@ const AppShellInner = React.memo(function AppShellInner({ session, worksiteName,
                 desplazándose dentro de su propio `TableRoot`. */}
             <main
               ref={mainRef}
-              className="relative flex-1 min-w-0 overflow-y-auto overflow-x-hidden bg-[var(--color-surface)] lg:rounded-tl-[36px] shadow-xs"
+              className="relative flex-1 min-w-0 overflow-y-auto overflow-x-hidden bg-[var(--color-surface)] lg:rounded-tl-[36px] lg:shadow-well"
               id="main-content"
               tabIndex={-1}
             >

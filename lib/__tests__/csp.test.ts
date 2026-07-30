@@ -2,13 +2,15 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 import { createCspHeader } from "@/lib/security/csp"
 
 describe("createCspHeader (audit S-09)", () => {
-  it("includes the nonce and 'strict-dynamic' in production (no 'unsafe-inline' in script-src)", () => {
+  it("includes the nonce and same-origin scripts in production without unsafe script sources", () => {
     const csp = createCspHeader("abc123nonce", { isDev: false })
-    expect(csp).toContain("script-src 'self' 'nonce-abc123nonce' 'strict-dynamic'")
+    expect(csp).toContain("script-src 'self' 'nonce-abc123nonce'")
     // 'unsafe-inline' still appears in style-src-* directives, so scope the
     // check to the script-src portion only.
     const scriptSrc = csp.split(";").find((p) => p.trim().startsWith("script-src"))
     expect(scriptSrc).not.toContain("'unsafe-inline'")
+    expect(scriptSrc).not.toContain("'unsafe-eval'")
+    expect(scriptSrc).not.toContain("'strict-dynamic'")
   })
 
   it("uses 'unsafe-inline' + 'unsafe-eval' in development (not 'strict-dynamic')", () => {

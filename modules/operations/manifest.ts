@@ -12,7 +12,8 @@ export const operationsModule = {
   },
   nav: [
     {
-      areaId: "adquisiciones",
+      // A-26: área propia; la cola agrega módulos de todo el sistema.
+      areaId: "pendientes",
       items: [{
         label: "Mis pendientes",
         href: "/pendientes",

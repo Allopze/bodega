@@ -20,11 +20,13 @@
     "perf:queries": "tsx scripts/measure-operational-queries.ts",
     "prepare": "husky",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "drizzle-kit migrate",
+    "db:migrate": "npm run db:preflight-pdtp-annual && drizzle-kit migrate",
     "db:push": "drizzle-kit push",
     "db:seed": "tsx --env-file=.env.local db/seed.ts",
     "db:seed-pdtp-checklists": "tsx --env-file=.env.local scripts/seed-pdtp-checklists-2026.ts",
     "pdtp:bootstrap-2026": "tsx --env-file=.env.local scripts/bootstrap-pdtp-2026.ts",
+    "pdtp:reconcile-annual": "tsx --env-file=.env.local scripts/reconcile-pdtp-annual-programs.ts",
+    "db:preflight-pdtp-annual": "tsx --env-file=.env.local scripts/reconcile-pdtp-annual-programs.ts --apply",
     "db:normalize-epp-families": "tsx --env-file=.env.local scripts/normalize-epp-families.ts",
     "db:normalize-fuel-suppliers": "tsx --env-file=.env.local scripts/normalize-fuel-suppliers.ts",
     "db:sync-rbac": "tsx --env-file=.env.local scripts/sync-rbac.ts",
@@ -45,6 +47,7 @@
     "doctor": "npx react-doctor@latest"
   },
   "dependencies": {
+    "@napi-rs/canvas": "^1.0.2",
     "@phosphor-icons/react": "^2.1.10",
     "@radix-ui/react-avatar": "^1.1.11",
     "@radix-ui/react-collapsible": "^1.1.12",

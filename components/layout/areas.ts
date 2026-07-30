@@ -21,6 +21,11 @@ export interface AreaDef {
 }
 
 export const AREAS: AreaDef[] = [
+  // "Mis pendientes" colgaba de Adquisiciones, pero su cola agrega PDTP, CAPA,
+  // inspecciones, documentación, PPA y SST: es una bandeja transversal, no un
+  // submódulo de compras (auditoría UI/UX 2026-07-29, A-26). Va primero porque
+  // es el punto de entrada al trabajo del día.
+  { id: "pendientes",    label: "Mis pendientes", iconName: "CheckSquare", order: 5 },
   { id: "adquisiciones", label: "Adquisiciones", iconName: "Stack",     order: 10 },
   { id: "control-operacional", label: "Control operacional", iconName: "Car", order: 15 },
   { id: "bodega",      label: "Bodega",      iconName: "Warehouse", order: 20 },

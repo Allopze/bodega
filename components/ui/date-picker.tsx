@@ -29,6 +29,8 @@ export interface DatePickerProps {
   /** ISO 'YYYY-MM-DD' — latest selectable date. */
   max?:         string
   className?:   string
+  /** Nombre accesible del campo; cuando hay valor se anuncia junto a la fecha. */
+  ariaLabel?:   string
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -45,6 +47,7 @@ export function DatePicker({
   min,
   max,
   className,
+  ariaLabel,
 }: DatePickerProps) {
   // When uncontrolled (FormData usage), keep internal state
   const [internalValue, setInternalValue] = React.useState(defaultValue ?? "")
@@ -79,7 +82,9 @@ export function DatePicker({
             disabled={disabled}
             aria-haspopup="dialog"
             aria-expanded={open}
-            aria-label={displayLabel || placeholder}
+            aria-label={ariaLabel
+              ? `${ariaLabel}${displayLabel ? `: ${displayLabel}` : ""}`
+              : displayLabel || placeholder}
             className={cn(
               // Match Input / SelectTrigger exactly
               "flex h-11 sm:h-9 w-full items-center justify-between gap-2 rounded-(--radius-lg)",
