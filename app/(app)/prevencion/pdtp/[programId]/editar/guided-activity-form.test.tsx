@@ -22,7 +22,7 @@ afterEach(() => {
 
 describe("GuidedActivityForm", () => {
   it("starts from prevention intent and previews a recurrence instead of a 48-cell editor", async () => {
-    render(<GuidedActivityForm programId="program-2027" activities={[]} responsibleCatalog={RESPONSIBLES} />)
+    render(<GuidedActivityForm programId="program-2027" responsibleCatalog={RESPONSIBLES} />)
 
     expect(screen.getByText("Con frecuencia")).toBeDefined()
     expect(screen.getByText("Cuando se necesite")).toBeDefined()
@@ -30,14 +30,11 @@ describe("GuidedActivityForm", () => {
     expect(screen.getByText(/Genera 12 obligación\(es\)/)).toBeDefined()
     expect(screen.queryByText("Ene")).toBeNull()
 
-    fireEvent.change(screen.getByLabelText(/Nombre del nuevo objetivo/), { target: { value: "Fortalecer controles críticos" } })
     fireEvent.change(screen.getByLabelText(/¿Qué actividad preventiva se realizará\?/), { target: { value: "Verificar controles antes de iniciar la tarea" } })
     fireEvent.click(screen.getByRole("button", { name: "Guardar actividad" }))
 
     await waitFor(() => expect(mockAdd).toHaveBeenCalledWith(expect.objectContaining({
       programId: "program-2027",
-      objectiveOrder: 1,
-      objective: "Fortalecer controles críticos",
       scheduleMode: "scheduled",
       recurrenceRule: expect.objectContaining({ frequency: "monthly", plannedQuantity: 1 }),
       sheetCodes: ["pdtp_general"],
@@ -46,10 +43,9 @@ describe("GuidedActivityForm", () => {
   })
 
   it("models event-triggered work with a deadline and no fabricated weekly quota", async () => {
-    render(<GuidedActivityForm programId="program-2028" activities={[]} responsibleCatalog={RESPONSIBLES} />)
+    render(<GuidedActivityForm programId="program-2028" responsibleCatalog={RESPONSIBLES} />)
 
     fireEvent.click(screen.getByText("Cuando ocurra un evento"))
-    fireEvent.change(screen.getByLabelText(/Nombre del nuevo objetivo/), { target: { value: "Responder a cambios" } })
     fireEvent.change(screen.getByLabelText(/¿Qué actividad preventiva se realizará\?/), { target: { value: "Actualizar la inducción" } })
     fireEvent.change(screen.getByLabelText(/Evento que genera la obligación/), { target: { value: "Ingreso de un trabajador nuevo" } })
     fireEvent.change(screen.getByLabelText("Plazo en días"), { target: { value: "2" } })

@@ -26,17 +26,13 @@ export {
   reorderPdtpActivitiesAction,
   addPdtpActivityFormAction,
   setPdtpActivityOverrideFormAction,
-  renamePdtpObjectiveAction,
   reconcilePdtpDeclaredActorAction,
-  excludeActivityForWorksiteAction,
-  includeActivityForWorksiteAction,
-  setPdtpActivityWorksiteParamsAction,
+  setPdtpActivityWorksiteAdjustmentAction,
 } from "./actions/activities"
 
 export {
   createPdtpProgramAction,
   updatePdtpProgramAction,
-  publishPdtpTemplateAction,
   deletePdtpProgramAction,
   createPdtpSheetAction,
   deletePdtpSheetAction,

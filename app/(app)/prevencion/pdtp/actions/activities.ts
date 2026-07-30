@@ -11,15 +11,12 @@ import {
   addPdtpActivity,
   duplicatePdtpActivity,
   batchUpdatePdtpActivities,
-  deletePdtpActivity,
+  retirePdtpActivity,
   reorderPdtpActivities,
   setPdtpActivityOverride,
   deletePdtpActivityOverride,
-  renamePdtpObjective,
   reconcilePdtpDeclaredActor,
-  excludeActivityForWorksite,
-  includeActivityForWorksite,
-  setPdtpActivityWorksiteParams,
+  setPdtpActivityWorksiteAdjustment,
 } from "@/lib/services/prevention-pdtp"
 import type { ActionState } from "@/lib/validation/prevention"
 import {
@@ -30,7 +27,7 @@ import {
   pdtpActivityDuplicateSchema,
   pdtpActivityBatchUpdateSchema,
   pdtpActivityReorderSchema,
-  pdtpObjectiveRenameSchema,
+  pdtpActivityWorksiteAdjustmentSchema,
   pdtpReconcileDeclaredActorSchema,
 } from "@/lib/validation/prevention"
 
@@ -118,7 +115,7 @@ export async function deletePdtpActivityAction(input: unknown): Promise<ActionSt
   const session = guard.session
   try {
     const parsed = pdtpActivityDeleteSchema.parse(input)
-    await deletePdtpActivity(parsed.activityId, session.user.id)
+    await retirePdtpActivity(parsed, session.user.id)
     revalidatePath(REVALIDATE)
     return { ok: true }
   } catch (e) {
@@ -170,8 +167,6 @@ export async function addPdtpActivityFormAction(fd: FormData): Promise<void> {
   try {
     const parsed = pdtpActivityAddSchema.parse({
       programId: fd.get("programId"),
-      objectiveOrder: fd.get("objectiveOrder"),
-      objective: fd.get("objective"),
       activity: fd.get("activity"),
       program: fd.get("program"),
       responsibleDisplay: fd.get("responsibleDisplay"),
@@ -234,24 +229,6 @@ export async function setPdtpActivityOverrideFormAction(fd: FormData): Promise<v
   return backTo()
 }
 
-// ── Objective rename ─────────────────────────────────────────────────────────
-
-export async function renamePdtpObjectiveAction(input: unknown): Promise<ActionState> {
-  const guard = await guardPermission("prevention:pdtp:program:manage")
-  if (guard.error) return guard.error
-  const session = guard.session
-  try {
-    const parsed = pdtpObjectiveRenameSchema.parse(input)
-    await renamePdtpObjective(parsed, session.user.id)
-    revalidatePath(REVALIDATE)
-    revalidatePath(`${REVALIDATE}/${parsed.programId}`)
-    revalidatePath(`${REVALIDATE}/${parsed.programId}/editar`)
-    return { ok: true }
-  } catch (e) {
-    return fail(e)
-  }
-}
-
 // ── Document reconciliation ──────────────────────────────────────────────────
 
 export async function reconcilePdtpDeclaredActorAction(input: unknown): Promise<ActionState> {
@@ -275,54 +252,16 @@ export async function reconcilePdtpDeclaredActorAction(input: unknown): Promise<
 
 // ── Worksite exclusions and params ───────────────────────────────────────────
 
-export async function excludeActivityForWorksiteAction(input: {
-  activityId: string
-  worksiteId: string
-  reason: string
-}): Promise<ActionState> {
+export async function setPdtpActivityWorksiteAdjustmentAction(input: unknown): Promise<ActionState> {
   const guard = await guardPermission("prevention:pdtp:program:manage")
   if (guard.error) return guard.error
-  const session = guard.session
   try {
-    await excludeActivityForWorksite(input.activityId, input.worksiteId, input.reason, session.user.id, scopeToIds(resolveWorksiteScope(session)))
-    revalidatePath(REVALIDATE)
-    return { ok: true }
-  } catch (e) {
-    return fail(e)
-  }
-}
-
-export async function includeActivityForWorksiteAction(input: {
-  activityId: string
-  worksiteId: string
-  reason: string
-}): Promise<ActionState> {
-  const guard = await guardPermission("prevention:pdtp:program:manage")
-  if (guard.error) return guard.error
-  const session = guard.session
-  try {
-    await includeActivityForWorksite(input.activityId, input.worksiteId, input.reason, session.user.id, scopeToIds(resolveWorksiteScope(session)))
-    revalidatePath(REVALIDATE)
-    return { ok: true }
-  } catch (e) {
-    return fail(e)
-  }
-}
-
-export async function setPdtpActivityWorksiteParamsAction(input: {
-  activityId: string
-  worksiteId: string
-  expectedSubjectCount?: number | null
-  targetCoveragePercent?: number | null
-}): Promise<ActionState> {
-  const guard = await guardPermission("prevention:pdtp:program:manage")
-  if (guard.error) return guard.error
-  const session = guard.session
-  try {
-    await setPdtpActivityWorksiteParams(input.activityId, input.worksiteId, {
-      expectedSubjectCount: input.expectedSubjectCount,
-      targetCoveragePercent: input.targetCoveragePercent,
-    }, session.user.id)
+    const parsed = pdtpActivityWorksiteAdjustmentSchema.parse(input)
+    await setPdtpActivityWorksiteAdjustment(
+      parsed,
+      guard.session.user.id,
+      scopeToIds(resolveWorksiteScope(guard.session)),
+    )
     revalidatePath(REVALIDATE)
     return { ok: true }
   } catch (e) {

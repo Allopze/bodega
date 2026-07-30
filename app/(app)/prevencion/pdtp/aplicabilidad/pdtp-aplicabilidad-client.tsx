@@ -1,20 +1,22 @@
 "use client"
 
-import { useState, useTransition } from "react"
+import { useState } from "react"
+import { useRouter } from "next/navigation"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
+import { Field } from "@/components/ui/field"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Check, SlidersHorizontal, X } from "@phosphor-icons/react"
-import { excludeActivityForWorksiteAction, includeActivityForWorksiteAction, setPdtpActivityWorksiteParamsAction } from "../actions"
+import { useOperation } from "@/lib/hooks/use-operation"
+import { setPdtpActivityWorksiteAdjustmentAction } from "../actions"
 
 export type AplicabilidadActivity = {
   id: string
   n: number
   activity: string
-  objective: string
   scheduleMode: string
   indicatorMode: string
 }
@@ -38,13 +40,15 @@ type Props = {
 }
 
 export function PdtpAplicabilidadClient({ activities, worksites, exclusions, params, canManage }: Props) {
+  const router = useRouter()
   const [selectedWorksiteId, setSelectedWorksiteId] = useState<string>(worksites[0]?.id ?? "")
-  const [isPending, startTransition] = useTransition()
+  const { pending, message, setMessage, run } = useOperation()
 
   // Diálogo para excluir/incluir actividad
   const [editingActivity, setEditingActivity] = useState<AplicabilidadActivity | null>(null)
   const [subjectCountInput, setSubjectCountInput] = useState<string>("")
   const [coveragePercentInput, setCoveragePercentInput] = useState<string>("")
+  const [reasonInput, setReasonInput] = useState<string>("")
   const [dialogOpen, setDialogOpen] = useState(false)
 
   const currentWorksite = worksites.find((w) => w.id === selectedWorksiteId)
@@ -54,58 +58,64 @@ export function PdtpAplicabilidadClient({ activities, worksites, exclusions, par
     const key = `${act.id}:${selectedWorksiteId}`
     setSubjectCountInput(params[key]?.expectedSubjectCount ? String(params[key].expectedSubjectCount) : "")
     setCoveragePercentInput(params[key]?.targetCoveragePercent ? String(params[key].targetCoveragePercent) : "")
+    setReasonInput("")
+    setMessage("")
     setDialogOpen(true)
   }
 
   const handleToggleExclusion = (act: AplicabilidadActivity, isExcluded: boolean) => {
     if (!canManage || !selectedWorksiteId) return
-    startTransition(async () => {
-      if (isExcluded) {
-        // Re-incluir
-        await includeActivityForWorksiteAction({
-          activityId: act.id,
-          worksiteId: selectedWorksiteId,
-          reason: "Inclusión manual por Jefatura",
-        })
-      } else {
-        // Excluir
-        const promptReason = prompt(`Motivo de exclusión para N° ${act.n} en ${currentWorksite?.name} (mínimo 10 caracteres):`)
-        if (!promptReason || promptReason.trim().length < 10) {
-          alert("Debe ingresar una justificación válida de al menos 10 caracteres.")
-          return
-        }
-        await excludeActivityForWorksiteAction({
-          activityId: act.id,
-          worksiteId: selectedWorksiteId,
-          reason: promptReason.trim(),
-        })
-      }
-    })
+    const promptReason = isExcluded
+      ? "Inclusión manual autorizada por Jefatura"
+      : prompt(`Motivo de exclusión para N° ${act.n} en ${currentWorksite?.name} (mínimo 10 caracteres):`)
+    if (!promptReason || promptReason.trim().length < 10) {
+      setMessage("Debe ingresar una justificación válida de al menos 10 caracteres.")
+      return
+    }
+    run(
+      () => setPdtpActivityWorksiteAdjustmentAction({
+        activityId: act.id,
+        worksiteId: selectedWorksiteId,
+        excluded: !isExcluded,
+        reason: promptReason.trim(),
+      }),
+      () => router.refresh(),
+    )
   }
 
   const handleSaveParams = () => {
     if (!editingActivity || !selectedWorksiteId) return
-    startTransition(async () => {
-      const subjectCount = subjectCountInput ? parseInt(subjectCountInput, 10) : null
-      const coveragePercent = coveragePercentInput ? parseFloat(coveragePercentInput) : null
-      await setPdtpActivityWorksiteParamsAction({
+    if (reasonInput.trim().length < 10) {
+      setMessage("Indica un motivo de ajuste de al menos 10 caracteres.")
+      return
+    }
+    const subjectCount = subjectCountInput ? parseInt(subjectCountInput, 10) : null
+    const coveragePercent = coveragePercentInput ? parseFloat(coveragePercentInput) : null
+    const key = `${editingActivity.id}:${selectedWorksiteId}`
+    run(
+      () => setPdtpActivityWorksiteAdjustmentAction({
         activityId: editingActivity.id,
         worksiteId: selectedWorksiteId,
+        excluded: Boolean(exclusions[key]),
+        reason: reasonInput.trim(),
         expectedSubjectCount: Number.isNaN(subjectCount) ? null : subjectCount,
         targetCoveragePercent: Number.isNaN(coveragePercent) ? null : coveragePercent,
-      })
-      setDialogOpen(false)
-    })
+      }),
+      () => {
+        setDialogOpen(false)
+        router.refresh()
+      },
+    )
   }
 
   return (
     <div className="space-y-4">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
         <div>
-          <label className="text-xs font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">Faena a gestionar</label>
+          <label htmlFor="pdtp-applicability-worksite" className="text-xs font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">Faena a gestionar</label>
           <div className="mt-1 flex items-center gap-3">
             <Select value={selectedWorksiteId} onValueChange={setSelectedWorksiteId}>
-              <SelectTrigger className="w-[260px]">
+              <SelectTrigger id="pdtp-applicability-worksite" className="w-[260px]">
                 <SelectValue placeholder="Seleccionar faena..." />
               </SelectTrigger>
               <SelectContent>
@@ -124,13 +134,16 @@ export function PdtpAplicabilidadClient({ activities, worksites, exclusions, par
           </div>
         </div>
       </div>
+      {message && !dialogOpen && (
+        <p role="status" className="text-sm text-[var(--color-text-muted)]">{message}</p>
+      )}
 
       <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] overflow-hidden">
         <Table>
           <TableHeader>
             <TableRow>
               <TableHead className="w-[60px]">N°</TableHead>
-              <TableHead>Actividad / Objetivo</TableHead>
+              <TableHead>Actividad</TableHead>
               <TableHead className="w-[140px]">Modo / Indicador</TableHead>
               <TableHead className="w-[140px]">Estado Faena</TableHead>
               <TableHead className="w-[180px]">Parámetros (R1/R2)</TableHead>
@@ -153,7 +166,6 @@ export function PdtpAplicabilidadClient({ activities, worksites, exclusions, par
                   <TableCell className="font-mono font-bold text-sm">{act.n}</TableCell>
                   <TableCell>
                     <div className="font-medium text-[var(--color-text)]">{act.activity}</div>
-                    <div className="text-xs text-[var(--color-text-muted)]">{act.objective}</div>
                   </TableCell>
                   <TableCell>
                     <div className="flex flex-col gap-1">
@@ -197,7 +209,7 @@ export function PdtpAplicabilidadClient({ activities, worksites, exclusions, par
                           variant="ghost"
                           onClick={() => handleOpenDialog(act)}
                           title="Configurar parámetros R1/R2"
-                          disabled={isPending}
+                          disabled={pending}
                         >
                           <SlidersHorizontal size={14} />
                         </Button>
@@ -205,7 +217,7 @@ export function PdtpAplicabilidadClient({ activities, worksites, exclusions, par
                           size="sm"
                           variant={isExcluded ? "secondary" : "ghost"}
                           onClick={() => handleToggleExclusion(act, isExcluded)}
-                          disabled={isPending || isAutoExcludedCphs}
+                          disabled={pending || isAutoExcludedCphs}
                           title={isExcluded ? "Incluir actividad" : "Excluir de faena"}
                         >
                           {isExcluded ? <Check size={14} /> : <X size={14} />}
@@ -231,27 +243,25 @@ export function PdtpAplicabilidadClient({ activities, worksites, exclusions, par
           </DialogHeader>
 
           <div className="space-y-4 py-2">
-            <div>
-              <label htmlFor="subjectCount" className="block text-sm font-medium text-[var(--color-text)]">
-                Sujetos esperados en la faena (R1 - Todo o Nada)
-              </label>
+            <Field
+              label="Sujetos esperados en la faena (R1 - Todo o Nada)"
+              htmlFor="subjectCount"
+              helper="Si la inspección no alcanza este total de sujetos en la faena, la actividad cuenta 0."
+            >
               <Input
                 id="subjectCount"
                 type="number"
                 placeholder="Ej. 10 extintores o equipos..."
                 value={subjectCountInput}
                 onChange={(e) => setSubjectCountInput(e.target.value)}
-                className="mt-1"
               />
-              <p className="mt-1 text-xs text-[var(--color-text-muted)]">
-                Si la inspección no alcanza este total de sujetos en la faena, la actividad cuenta 0.
-              </p>
-            </div>
+            </Field>
 
-            <div>
-              <label htmlFor="coveragePercent" className="block text-sm font-medium text-[var(--color-text)]">
-                Meta de cobertura de personas % (R2)
-              </label>
+            <Field
+              label="Meta de cobertura de personas % (R2)"
+              htmlFor="coveragePercent"
+              helper="Porcentaje objetivo de personas alcanzadas sobre el padrón de la faena."
+            >
               <Input
                 id="coveragePercent"
                 type="number"
@@ -259,19 +269,30 @@ export function PdtpAplicabilidadClient({ activities, worksites, exclusions, par
                 placeholder="Ej. 90.0"
                 value={coveragePercentInput}
                 onChange={(e) => setCoveragePercentInput(e.target.value)}
-                className="mt-1"
               />
-              <p className="mt-1 text-xs text-[var(--color-text-muted)]">
-                Porcentaje objetivo de personas alcanzadas sobre el padrón de la faena.
-              </p>
-            </div>
+            </Field>
+
+            <Field
+              label="Motivo del ajuste"
+              htmlFor="adjustmentReason"
+              required
+              helper="Quedará incorporado en la bitácora y en la revisión firmada."
+              error={message && !message.startsWith("Guardado") ? message : undefined}
+            >
+              <Input
+                id="adjustmentReason"
+                value={reasonInput}
+                onChange={(event) => setReasonInput(event.target.value)}
+                placeholder="Explica por qué se ajustan estos parámetros..."
+              />
+            </Field>
           </div>
 
           <DialogFooter>
             <Button variant="secondary" onClick={() => setDialogOpen(false)}>
               Cancelar
             </Button>
-            <Button onClick={handleSaveParams} disabled={isPending}>
+            <Button onClick={handleSaveParams} disabled={pending}>
               Guardar Parámetros
             </Button>
           </DialogFooter>

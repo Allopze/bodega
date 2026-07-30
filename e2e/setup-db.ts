@@ -650,8 +650,8 @@ async function main() {
   await db.execute(sql`SELECT next_document_code('OC', EXTRACT(YEAR FROM NOW())::int)`)
 
   // ── PDTP fixture: programa + actividad + hoja + checklist activo + ejecución ──
-  // Da a e2e/pdtp-flow.spec.ts un flujo completo navegable sin pasar por la UI
-  // de creación (que hoy no redirige, ver test.skip en ese spec).
+  // Da a e2e/pdtp-flow.spec.ts un flujo completo y un borrador anual para
+  // comprobar que el creador idempotente abre el programa existente.
   await db.insert(schema.pdtpPrograms).values({
     id: "pdtp-prog-e2e",
     year: 2026,
@@ -663,12 +663,109 @@ async function main() {
     createdAt: now,
     updatedAt: now,
   })
+  await db.insert(schema.pdtpPrograms).values({
+    id: "pdtp-draft-e2e",
+    year: 2027,
+    version: 1,
+    status: "draft",
+    title: "Programa anual PDTP 2027 E2E",
+    periodStart: "2027-01-01",
+    periodEnd: "2027-12-31",
+    creationMode: "base_2026",
+    elaboratedByUserId: "user-admin-e2e",
+    elaboratedByName: "Admin E2E",
+    elaboratedByTitle: "Prevencionista",
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.pdtpActivities).values({
+    id: "pdtp-draft-act-e2e",
+    programId: "pdtp-draft-e2e",
+    n: 90,
+    displayOrder: 1,
+    activity: "Actividad ajustable anual E2E",
+    program: "Guía preventiva E2E",
+    responsibleSlugs: [],
+    responsibleDisplay: "Prevencionista",
+    sourceSheetRow: 0,
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.pdtpSheets).values({
+    id: "pdtp-draft-sheet-e2e",
+    code: "pdtp_general",
+    programId: "pdtp-draft-e2e",
+    label: "General",
+    area: "SG-SST",
+    defaultScopeRoles: [],
+    isActive: true,
+  })
+  await db.insert(schema.pdtpSheetActivities).values({
+    id: "pdtp-draft-sheet-act-e2e",
+    sheetId: "pdtp-draft-sheet-e2e",
+    sheetCode: "pdtp_general",
+    activityId: "pdtp-draft-act-e2e",
+    sheetRow: 1,
+    displayOrder: 1,
+  })
+  await db.insert(schema.pdtpProgramTemplates).values({
+    id: "pdtp-base-template-e2e",
+    code: "base_preventiva_2026",
+    name: "Base preventiva 2026",
+    description: "Base anual E2E",
+    isActive: true,
+    createdByUserId: "user-admin-e2e",
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.pdtpProgramTemplateVersions).values({
+    id: "pdtp-base-template-e2e-v1",
+    templateId: "pdtp-base-template-e2e",
+    version: 1,
+    sourceProgramId: "pdtp-draft-e2e",
+    sourceContentVersion: 1,
+    contentDigest: "e".repeat(64),
+    snapshotJson: {
+      approvalSteps: [],
+      views: [{
+        code: "pdtp_general",
+        label: "General",
+        area: "SG-SST",
+        defaultScopeRoles: [],
+        isActive: true,
+      }],
+      activities: [{
+        n: 90,
+        displayOrder: 1,
+        status: "active",
+        activity: "Actividad ajustable anual E2E",
+        program: "Guía preventiva E2E",
+        responsibleSlugs: [],
+        responsibleDisplay: "Prevencionista",
+        audienceRoles: [],
+        scheduleMode: "scheduled",
+        scheduleClassificationStatus: "confirmed",
+      }],
+      schedules: [],
+      memberships: [{
+        viewCode: "pdtp_general",
+        activityNumber: 90,
+        sheetRow: 1,
+        displayOrder: 1,
+      }],
+      checklists: [],
+    },
+    publishedByUserId: "user-admin-e2e",
+    publishedAt: now,
+    createdAt: now,
+  })
+  await db.update(schema.pdtpPrograms)
+    .set({ sourceTemplateVersionId: "pdtp-base-template-e2e-v1" })
+    .where(eq(schema.pdtpPrograms.id, "pdtp-draft-e2e"))
   await db.insert(schema.pdtpActivities).values({
     id: "pdtp-act-e2e",
     programId: "pdtp-prog-e2e",
     n: 1,
-    objectiveOrder: 1,
-    objective: "Objetivo E2E",
     activity: "Charla de seguridad E2E",
     program: "Programa E2E",
     responsibleSlugs: [],
@@ -765,8 +862,6 @@ async function main() {
     id: "pdtp-act-event-e2e",
     programId: "pdtp-prog-e2e",
     n: 2,
-    objectiveOrder: 2,
-    objective: "Objetivo Eventos E2E",
     activity: "Inducción a trabajador nuevo E2E",
     program: "Programa E2E",
     responsibleSlugs: [],
@@ -783,7 +878,7 @@ async function main() {
   })
 
   // Planificación + ejecución aprobada para pdtp-act-e2e: sin esto el único
-  // objetivo del reporte de gestión siempre cae en "En desviación" (no hay
+  // actividad del reporte de gestión siempre cae en "En desviación" (no hay
   // nada planificado). e2e/pdtp-reporte-gestion.spec.ts espera "Cumple meta".
   await db.insert(schema.pdtpActivitySchedule).values({
     id: "pdtp-sched-e2e",
@@ -811,7 +906,7 @@ async function main() {
   // e2e/pdtp-cobertura.spec.ts ("Declarar incorporada"): resolvePdtpUpdateObligation
   // exige que exista un preventionPdtpSourceLinks activo con el mismo
   // sourceType/sourceId, que solo se puede crear vinculando una fuente real
-  // (no "internal_objective") desde el picker de Cobertura.
+  // desde el picker de Cobertura.
   await db.insert(schema.preventionLegalRequirements).values({
     id: "legalreq-e2e",
     code: "RE-99-E2E",

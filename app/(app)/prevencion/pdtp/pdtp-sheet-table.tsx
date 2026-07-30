@@ -67,9 +67,6 @@ type PdtpSheetTableProps = {
   viewMode: "semana" | "anual"
   currentPeriod: PdtpPeriod
   sheetCode: string
-  /** Objetivo (`objectiveOrder`) al que llega un KPI del reporte de gestión — el numerador/denominador visible coincide exactamente con esa fila. */
-  objectiveOrder?: number
-  programId?: string
 }
 
 export function PdtpSheetTable({
@@ -82,8 +79,6 @@ export function PdtpSheetTable({
   viewMode,
   currentPeriod,
   sheetCode,
-  objectiveOrder,
-  programId,
 }: PdtpSheetTableProps) {
   const canOperate = canExecute || canManageProgram
   const [statusFilter, setStatusFilter] = React.useState<PdtpActivityStatus | "all">("all")
@@ -101,23 +96,10 @@ export function PdtpSheetTable({
 
   // Derive status for all activities in the current view
   const viewActivities = viewMode === "semana" ? weeklyActivities : view.activities
-  // Un objetivo llegado por URL (KPI del reporte de gestión) acota todo lo
-  // demas (contadores de estado, agrupacion) para que lo visible coincida
-  // exactamente con el numerador/denominador de esa fila del reporte.
-  const objectiveLabel = objectiveOrder !== undefined
-    ? viewActivities.find((activity) => activity.objectiveOrder === objectiveOrder)?.objective ?? null
-    : null
-  const sourceActivities = objectiveOrder !== undefined
-    ? viewActivities.filter((activity) => activity.objectiveOrder === objectiveOrder)
-    : viewActivities
+  const sourceActivities = viewActivities
 
   const INITIAL_ROW_LIMIT = 30
   const [showAll, setShowAll] = React.useState(false)
-  // Reconstruido desde las props ya conocidas (mismo patron que PdtpViewToggle/
-  // PdtpWorksitePicker en pdtp-sheet-table-ui.tsx), no leyendo el search params
-  // ambiente: evita depender del contexto de App Router en este componente.
-  const clearObjectiveHref = `${programId ? `/prevencion/pdtp/${programId}` : ""}?hoja=${sheetCode}${worksiteId ? `&faena=${worksiteId}` : ""}&vista=${viewMode}`
-
   // Compute status counts for the summary
   const statusCounts: PdtpStatusCounts = React.useMemo(() => {
     const counts = { executed: 0, pending: 0, overdue: 0, not_scheduled: 0 }
@@ -144,30 +126,12 @@ export function PdtpSheetTable({
     ? filteredActivities.slice(0, INITIAL_ROW_LIMIT)
     : filteredActivities
 
-  // Agrupación por objetivo, sin useMemo: `displayActivities` cambia de identidad
-  // en cada render mientras hay paginación, así que memoizar no ahorraba nada y
-  // sí abría la puerta a servir grupos obsoletos — con `filteredActivities` como
-  // dependencia, "Mostrar todas" no reagrupaba y la tabla seguía en 30 filas.
-  const groupedActivities: Array<{ objective: string; activities: typeof displayActivities }> = []
-  for (const activity of displayActivities) {
-    const last = groupedActivities[groupedActivities.length - 1]
-    if (last && last.objective === activity.objective) {
-      last.activities.push(activity)
-    } else {
-      groupedActivities.push({ objective: activity.objective, activities: [activity] })
-    }
-  }
+  const groupedActivities = [{ label: "Actividades", activities: displayActivities }]
 
   const rowPy = density === "compact" ? "py-1.5" : "py-3"
 
   return (
     <div className="space-y-4">
-      {objectiveOrder !== undefined && (
-        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[var(--color-info-line)] bg-[var(--color-info-tint)] px-3 py-2 text-sm text-[var(--color-info-ink)]">
-          <span>Mostrando solo el objetivo {objectiveOrder}{objectiveLabel ? `: ${objectiveLabel}` : ""}.</span>
-          <Link href={clearObjectiveHref} className="font-medium underline hover:no-underline">Quitar filtro</Link>
-        </div>
-      )}
       {/* Activity status summary + density toggle */}
       {sourceActivities.length > 0 && (
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -218,14 +182,14 @@ export function PdtpSheetTable({
               </TableHeader>
               <TableBody>
                 {groupedActivities.map((group) => (
-                  <React.Fragment key={group.objective}>
+                  <React.Fragment key={group.label}>
                     {/* Section header row */}
                     <TableRow className="bg-[var(--color-surface-2)] hover:bg-[var(--color-surface-2)]">
                       <TableCell
                         colSpan={canOperate && worksiteId ? 5 : 4}
                         className="py-1.5 pl-4 text-[10px] font-semibold uppercase tracking-widest text-[var(--color-text-faint)]"
                       >
-                        {group.objective}
+                        {group.label}
                       </TableCell>
                     </TableRow>
                     {group.activities.map((activity) => {
@@ -345,7 +309,7 @@ export function PdtpSheetTable({
               </TableHeader>
               <TableBody>
                 {groupedActivities.map((group) => (
-                  <React.Fragment key={group.objective}>
+                  <React.Fragment key={group.label}>
                     {/* Section header row */}
                     <TableRow className="bg-[var(--color-surface-2)] hover:bg-[var(--color-surface-2)]">
                       <TableCell
@@ -356,7 +320,7 @@ export function PdtpSheetTable({
                           }
                         className="py-1.5 pl-4 text-[10px] font-semibold uppercase tracking-widest text-[var(--color-text-faint)]"
                       >
-                        {group.objective}
+                        {group.label}
                       </TableCell>
                     </TableRow>
                     {group.activities.map((activity) => {

@@ -11,7 +11,7 @@ import { login } from "./helpers"
  *
  * pdtp-act-e2e tiene una fila de planificación (mes 1, semana 1, 1
  * planificado) y una ejecución aprobada que la iguala (e2e/setup-db.ts:
- * pdtp-sched-e2e / pdtp-exec-approved-e2e), así que su único objetivo
+ * pdtp-sched-e2e / pdtp-exec-approved-e2e), así que su actividad
  * cumple la meta por defecto del programa (90%).
  */
 test.describe("PDTP — Reporte de gestión", () => {
@@ -28,24 +28,24 @@ test.describe("PDTP — Reporte de gestión", () => {
     await expect(page).toHaveURL(/faena=ws-e2e/)
   })
 
-  test("con faena seleccionada muestra la tabla de objetivos y permite filtrar", async ({ page }) => {
+  test("con faena seleccionada muestra la tabla de actividades y permite filtrar", async ({ page }) => {
     await page.goto("/prevencion/pdtp/pdtp-prog-e2e/reporte?faena=ws-e2e")
 
-    await expect(page.getByRole("columnheader", { name: "Objetivo" })).toBeVisible()
+    await expect(page.getByRole("columnheader", { name: "Actividad" })).toBeVisible()
     await expect(page.getByRole("columnheader", { name: "Planificado" })).toBeVisible()
-    const row = page.getByRole("row").filter({ hasText: "Objetivo E2E" })
+    const row = page.getByRole("row").filter({ hasText: "Charla de seguridad E2E" })
     await expect(row).toBeVisible()
     await expect(row.getByText("Cumple meta")).toBeVisible()
 
-    // Filtrar por "En desviación" no matchea el único objetivo seed (que
+    // Filtrar por "En desviación" no matchea la única actividad seed (que
     // cumple la meta) → EmptyState por filtro, no por faena.
     await page.getByRole("combobox", { name: "Estado" }).click()
     await page.getByRole("option", { name: "En desviación" }).click()
     await expect(page).toHaveURL(/estado=deviates/)
-    await expect(page.getByText("Sin objetivos para estos filtros")).toBeVisible()
+    await expect(page.getByText("Sin actividades para estos filtros")).toBeVisible()
 
     await page.getByRole("link", { name: "Quitar filtros" }).click()
-    await expect(page.getByRole("row").filter({ hasText: "Objetivo E2E" })).toBeVisible()
+    await expect(page.getByRole("row").filter({ hasText: "Charla de seguridad E2E" })).toBeVisible()
   })
 
   test("el botón Descargar Excel solo aparece con faena seleccionada y dispara la descarga", async ({ page }) => {

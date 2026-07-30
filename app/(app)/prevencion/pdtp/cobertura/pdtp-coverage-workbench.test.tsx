@@ -26,14 +26,14 @@ describe("PdtpCoverageWorkbench", () => {
       obligations: [],
       activities: [
         {
-          id: "activity-1", n: "1", activity: "Verificar control crítico", objective: "Reducir exposición",
+          id: "activity-1", n: "1", activity: "Verificar control crítico",
           sources: [
             { id: "link-risk", sourceType: "risk_control", sourceId: "control-1", sourceVersionSnapshot: "MIPER v2" },
             { id: "link-legal", sourceType: "legal_requirement", sourceId: "requirement-1", sourceVersionSnapshot: "DS44 v1" },
             { id: "link-capa", sourceType: "incident_capa", sourceId: "capa-1", sourceVersionSnapshot: "CAPA v4" },
           ],
         },
-        { id: "activity-2", n: "2", activity: "Actividad huérfana", objective: "Debe conciliarse", sources: [] },
+        { id: "activity-2", n: "2", activity: "Actividad huérfana", sources: [] },
       ],
     } as unknown as Coverage
 
@@ -51,7 +51,7 @@ describe("PdtpCoverageWorkbench", () => {
       program: { id: "program-1", year: 2026, version: 3 },
       coverage: { sourcedActivities: 0, totalActivities: 1, unsourcedActivities: 1, pendingUpdates: 0 },
       obligations: [],
-      activities: [{ id: "activity-1", n: "1", activity: "Actividad", objective: "Objetivo", sources: [] }],
+      activities: [{ id: "activity-1", n: "1", activity: "Actividad", sources: [] }],
     } as unknown as Coverage
     const capaActions = [
       { id: "capa-1", worksiteId: "ws-1", label: "CAPA-001 · Hallazgo en faena 1" },
@@ -74,7 +74,7 @@ describe("PdtpCoverageWorkbench", () => {
 
     expect(screen.getByRole("option", { name: "CAPA-001 · Hallazgo en faena 1" })).toBeDefined()
     expect(screen.queryByRole("option", { name: "CAPA-002 · Hallazgo en faena 2" })).toBeNull()
-    expect(screen.queryByPlaceholderText("ID CAPA, auditoría, contrato u objetivo")).toBeNull()
+    expect(screen.queryByPlaceholderText("ID CAPA, auditoría o contrato")).toBeNull()
   })
 
   it("offers a populated picker for the newer source domains (capacitación) scoped by faena", () => {
@@ -82,7 +82,7 @@ describe("PdtpCoverageWorkbench", () => {
       program: { id: "program-1", year: 2026, version: 3 },
       coverage: { sourcedActivities: 0, totalActivities: 1, unsourcedActivities: 1, pendingUpdates: 0 },
       obligations: [],
-      activities: [{ id: "activity-1", n: "1", activity: "Actividad", objective: "Objetivo", sources: [] }],
+      activities: [{ id: "activity-1", n: "1", activity: "Actividad", sources: [] }],
     } as unknown as Coverage
     const trainingSessions = [
       { id: "train-1", worksiteId: "ws-1", label: "SES-001 · Trabajo en altura" },
@@ -112,7 +112,7 @@ describe("PdtpCoverageWorkbench", () => {
       program: { id: "program-1", year: 2026, version: 3 },
       coverage: { sourcedActivities: 0, totalActivities: 1, unsourcedActivities: 1, pendingUpdates: 0 },
       obligations: [],
-      activities: [{ id: "activity-1", n: "1", activity: "Actividad", objective: "Objetivo", sources: [] }],
+      activities: [{ id: "activity-1", n: "1", activity: "Actividad", sources: [] }],
     } as unknown as Coverage
 
     render(<PdtpCoverageWorkbench coverage={coverage} worksites={[{ id: "ws-1", name: "Faena Uno" }]} canManage />)
@@ -121,6 +121,6 @@ describe("PdtpCoverageWorkbench", () => {
     fireEvent.click(screen.getByRole("combobox", { name: "Tipo" }))
     fireEvent.click(screen.getByRole("option", { name: "Auditoría" }))
 
-    expect(screen.getByPlaceholderText("ID CAPA, auditoría, contrato u objetivo")).toBeDefined()
+    expect(screen.getByPlaceholderText("ID CAPA, auditoría o contrato")).toBeDefined()
   })
 })

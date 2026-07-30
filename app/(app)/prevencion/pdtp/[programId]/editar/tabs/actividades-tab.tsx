@@ -4,11 +4,12 @@ import * as React from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { DatePicker } from "@/components/ui/date-picker"
 import { Textarea } from "@/components/ui/textarea"
 import { Field, FieldGroup } from "@/components/ui/field"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { ConfirmDialog } from "@/components/ui/confirm-dialog"
+import { Badge } from "@/components/ui/badge"
 import {
   updatePdtpActivityAction,
   duplicatePdtpActivityAction,
@@ -17,15 +18,39 @@ import {
   reorderPdtpActivitiesAction,
 } from "../../../actions"
 import { describePdtpRecurrenceImpact, type PdtpRecurrenceFrequency, type PdtpRecurrenceRule } from "@/lib/services/pdtp/recurrence"
+import { todayLocalISO } from "@/lib/sst/date"
+import { formatDate } from "@/lib/utils"
 
 
 import type { PdtpActivityRow } from "./types"
 
-export function ActividadesTab({ programId, activities, responsibleCatalog }: { programId: string; activities: PdtpActivityRow[]; responsibleCatalog: Array<{ slug: string; displayName: string }> }) {
+export function ActividadesTab({
+  programId,
+  programYear,
+  periodStart,
+  periodEnd,
+  activities,
+  responsibleCatalog,
+}: {
+  programId: string
+  programYear: number
+  periodStart: string | null
+  periodEnd: string | null
+  activities: PdtpActivityRow[]
+  responsibleCatalog: Array<{ slug: string; displayName: string }>
+}) {
   const router = useRouter()
+  const effectivePeriodStart = periodStart ?? `${programYear}-01-01`
+  const effectivePeriodEnd = periodEnd ?? `${programYear}-12-31`
+  const defaultRetirementDate = (() => {
+    const today = todayLocalISO()
+    return today >= effectivePeriodStart && today <= effectivePeriodEnd ? today : effectivePeriodStart
+  })()
   const [items, setItems] = React.useState(activities)
   const [editing, setEditing] = React.useState<PdtpActivityRow | null>(null)
-  const [confirmDeleteId, setConfirmDeleteId] = React.useState<string | null>(null)
+  const [retiring, setRetiring] = React.useState<PdtpActivityRow | null>(null)
+  const [retirementReason, setRetirementReason] = React.useState("")
+  const [retirementDate, setRetirementDate] = React.useState(defaultRetirementDate)
   const [busyId, setBusyId] = React.useState<string | null>(null)
   const [error, setError] = React.useState<string | null>(null)
   const [selectedIds, setSelectedIds] = React.useState<string[]>([])
@@ -61,16 +86,21 @@ export function ActividadesTab({ programId, activities, responsibleCatalog }: { 
     }
   }
 
-  async function handleDelete(activityId: string) {
-    setConfirmDeleteId(null)
+  async function handleRetire(activityId: string) {
     setBusyId(activityId)
     setError(null)
     try {
-      const result = await deletePdtpActivityAction({ activityId })
+      const result = await deletePdtpActivityAction({
+        activityId,
+        reason: retirementReason,
+        effectiveFrom: retirementDate,
+      })
       if (!result.ok) {
-        setError(result.message ?? "Error al eliminar la actividad.")
+        setError(result.message ?? "No se pudo retirar la actividad.")
       } else {
-        setItems((s) => s.filter((a) => a.id !== activityId))
+        setRetiring(null)
+        setRetirementReason("")
+        setRetirementDate(defaultRetirementDate)
         router.refresh()
       }
     } finally {
@@ -90,6 +120,8 @@ export function ActividadesTab({ programId, activities, responsibleCatalog }: { 
     }
   }
 
+  const selectedIdSet = new Set(selectedIds)
+
   return (
     <div className="space-y-3">
       {error && (
@@ -105,7 +137,7 @@ export function ActividadesTab({ programId, activities, responsibleCatalog }: { 
       )}
       {items.length === 0 ? (
         <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-6 text-center text-sm text-[var(--color-text-muted)]">
-          Sin actividades. Usa &ldquo;Agregar actividad&rdquo; en la vista del programa o importa un Excel desde Metadatos.
+          Sin actividades. Agrega una actividad para comenzar a ajustar este programa anual.
         </div>
       ) : (
         <div className="overflow-x-auto rounded-lg border border-[var(--color-border)]">
@@ -121,21 +153,39 @@ export function ActividadesTab({ programId, activities, responsibleCatalog }: { 
             </thead>
             <tbody className="divide-y divide-[var(--color-border)]">
               {items.map((activity, index) => (
-                <tr key={activity.id} className="bg-[var(--color-surface)]">
-                  <td className="px-3 py-2"><input type="checkbox" className="h-4 w-4 accent-[var(--color-primary)]" aria-label={`Seleccionar actividad ${activity.n}`} checked={selectedIds.includes(activity.id)} onChange={(event) => setSelectedIds((current) => event.target.checked ? [...current, activity.id] : current.filter((id) => id !== activity.id))} /></td>
+                <tr key={activity.id} className={activity.status === "retired" ? "bg-[var(--color-surface-2)] opacity-70" : "bg-[var(--color-surface)]"}>
+                  <td className="px-3 py-2"><input type="checkbox" className="h-4 w-4 accent-[var(--color-primary)]" aria-label={`Seleccionar actividad ${activity.n}`} disabled={activity.status === "retired"} checked={selectedIdSet.has(activity.id)} onChange={(event) => setSelectedIds((current) => event.target.checked ? [...current, activity.id] : current.filter((id) => id !== activity.id))} /></td>
                   <td className="px-3 py-2 font-mono text-xs text-[var(--color-text-subtle)]">{activity.n}</td>
                   <td className="px-3 py-2">
-                    <p className="font-medium text-[var(--color-text)]">{activity.activity}</p>
-                    <p className="text-xs text-[var(--color-text-subtle)]">{activity.objective}</p>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="font-medium text-[var(--color-text)]">{activity.activity}</p>
+                      {activity.status === "retired" && <Badge variant="outline">Retirada</Badge>}
+                    </div>
+                    {activity.status === "retired" && activity.retiredReason && (
+                      <p className="mt-1 text-xs text-[var(--color-text-subtle)]">
+                        Desde {activity.retiredEffectiveFrom ? formatDate(activity.retiredEffectiveFrom) : "fecha no disponible"} · {activity.retiredReason}
+                      </p>
+                    )}
                   </td>
                   <td className="px-3 py-2 text-[var(--color-text-muted)]">{activity.program}</td>
                   <td className="px-3 py-2">
                     <div className="flex items-center justify-end gap-1">
-                      <Button type="button" variant="ghost" size="sm" disabled={busyId !== null || index === 0} onClick={() => move(index, -1)} aria-label="Subir">↑</Button>
-                      <Button type="button" variant="ghost" size="sm" disabled={busyId !== null || index === items.length - 1} onClick={() => move(index, 1)} aria-label="Bajar">↓</Button>
-                      <Button type="button" variant="ghost" size="sm" disabled={busyId !== null} onClick={() => handleDuplicate(activity.id)}>Duplicar</Button>
-                      <Button type="button" variant="ghost" size="sm" disabled={busyId !== null} onClick={() => setEditing(activity)}>Editar</Button>
-                      <Button type="button" variant="ghost" size="sm" disabled={busyId !== null} onClick={() => setConfirmDeleteId(activity.id)}>Eliminar</Button>
+                      <Button type="button" variant="ghost" size="sm" disabled={busyId !== null || activity.status === "retired" || index === 0} onClick={() => move(index, -1)} aria-label="Subir">↑</Button>
+                      <Button type="button" variant="ghost" size="sm" disabled={busyId !== null || activity.status === "retired" || index === items.length - 1} onClick={() => move(index, 1)} aria-label="Bajar">↓</Button>
+                      <Button type="button" variant="ghost" size="sm" disabled={busyId !== null || activity.status === "retired"} onClick={() => handleDuplicate(activity.id)}>Duplicar</Button>
+                      <Button type="button" variant="ghost" size="sm" disabled={busyId !== null || activity.status === "retired"} onClick={() => setEditing(activity)}>Editar</Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        disabled={busyId !== null || activity.status === "retired"}
+                        onClick={() => {
+                          setRetirementDate(defaultRetirementDate)
+                          setRetiring(activity)
+                        }}
+                      >
+                        Retirar
+                      </Button>
                     </div>
                   </td>
                 </tr>
@@ -145,50 +195,65 @@ export function ActividadesTab({ programId, activities, responsibleCatalog }: { 
         </div>
       )}
 
-      <EditActivityDialog activity={editing} activities={activities} onClose={() => setEditing(null)} onSaved={() => router.refresh()} />
+      <EditActivityDialog activity={editing} onClose={() => setEditing(null)} onSaved={() => router.refresh()} />
       <BatchEditActivitiesDialog
         open={batchOpen}
         onOpenChange={setBatchOpen}
         programId={programId}
         activityIds={selectedIds}
-        activities={activities}
         responsibleCatalog={responsibleCatalog}
         onSaved={() => { setSelectedIds([]); router.refresh() }}
       />
 
-      <ConfirmDialog
-        open={confirmDeleteId !== null}
-        onOpenChange={(open) => { if (!open) setConfirmDeleteId(null) }}
-        title="¿Eliminar actividad?"
-        description="Se perderá su planificación y ejecuciones registradas. Esta acción no se puede deshacer."
-        confirmLabel="Eliminar"
-        variant="destructive"
-        loading={busyId !== null}
-        onConfirm={() => confirmDeleteId && handleDelete(confirmDeleteId)}
-      />
+      <Dialog open={retiring !== null} onOpenChange={(open) => { if (!open) setRetiring(null) }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Retirar actividad N°{retiring?.n}</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-[var(--color-text-muted)]">
+            El retiro detiene obligaciones futuras, pero conserva el número, la planificación histórica y todas las ejecuciones registradas.
+          </p>
+          <FieldGroup className="gap-3">
+            <Field label="Fecha efectiva" htmlFor="retirement-date" required>
+              <DatePicker
+                id="retirement-date"
+                value={retirementDate}
+                onChange={setRetirementDate}
+                min={effectivePeriodStart}
+                max={effectivePeriodEnd}
+                ariaLabel="Fecha efectiva"
+              />
+            </Field>
+            <Field label="Motivo del retiro" htmlFor="retirement-reason" required>
+              <Textarea id="retirement-reason" value={retirementReason} onChange={(event) => setRetirementReason(event.target.value)} minLength={10} maxLength={3000} required />
+            </Field>
+          </FieldGroup>
+          <DialogFooter>
+            <Button type="button" variant="ghost" onClick={() => setRetiring(null)} disabled={busyId !== null}>Cancelar</Button>
+            <Button type="button" variant="destructive" onClick={() => retiring && handleRetire(retiring.id)} disabled={busyId !== null || retirementReason.trim().length < 10 || !retirementDate}>
+              {busyId !== null ? "Retirando..." : "Retirar actividad"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
 
-function BatchEditActivitiesDialog({ open, onOpenChange, programId, activityIds, activities, responsibleCatalog, onSaved }: {
+function BatchEditActivitiesDialog({ open, onOpenChange, programId, activityIds, responsibleCatalog, onSaved }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   programId: string
   activityIds: string[]
-  activities: PdtpActivityRow[]
   responsibleCatalog: Array<{ slug: string; displayName: string }>
   onSaved: () => void
 }) {
-  const [objective, setObjective] = React.useState("keep")
   const [responsible, setResponsible] = React.useState("keep")
   const [replaceEvidence, setReplaceEvidence] = React.useState(false)
   const [evidence, setEvidence] = React.useState("")
   const [pending, setPending] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
-  const objectives = [...new Map(activities.map((activity) => [activity.objectiveOrder, activity.objective])).entries()].sort(([left], [right]) => left - right)
-
   async function save() {
-    const targetObjective = objective === "keep" ? undefined : objectives.find(([order]) => order === Number(objective))
     const targetResponsible = responsible === "keep" ? undefined : responsibleCatalog.find((item) => item.slug === responsible)
     setPending(true)
     setError(null)
@@ -196,8 +261,6 @@ function BatchEditActivitiesDialog({ open, onOpenChange, programId, activityIds,
       const result = await batchUpdatePdtpActivitiesAction({
         programId,
         activityIds,
-        objectiveOrder: targetObjective?.[0],
-        objective: targetObjective?.[1],
         responsibleSlugs: targetResponsible ? [targetResponsible.slug] : undefined,
         responsibleDisplay: targetResponsible?.displayName,
         evidenceRequirement: replaceEvidence ? evidence : undefined,
@@ -214,12 +277,6 @@ function BatchEditActivitiesDialog({ open, onOpenChange, programId, activityIds,
       <DialogContent>
         <DialogHeader><DialogTitle>Editar {activityIds.length} actividades</DialogTitle></DialogHeader>
         <FieldGroup className="gap-4">
-          <Field label="Mover al objetivo" htmlFor="batch-objective">
-            <Select value={objective} onValueChange={setObjective}>
-              <SelectTrigger id="batch-objective"><SelectValue /></SelectTrigger>
-              <SelectContent><SelectItem value="keep">Sin cambio</SelectItem>{objectives.map(([order, label]) => <SelectItem key={order} value={String(order)}>{order}. {label}</SelectItem>)}</SelectContent>
-            </Select>
-          </Field>
           <Field label="Cambiar responsable" htmlFor="batch-responsible">
             <Select value={responsible} onValueChange={setResponsible}>
               <SelectTrigger id="batch-responsible"><SelectValue /></SelectTrigger>
@@ -240,19 +297,17 @@ function BatchEditActivitiesDialog({ open, onOpenChange, programId, activityIds,
   )
 }
 
-function EditActivityDialog({ activity, activities, onClose, onSaved }: {
+function EditActivityDialog({ activity, onClose, onSaved }: {
   activity: PdtpActivityRow | null
-  activities: PdtpActivityRow[]
   onClose: () => void
   onSaved: () => void
 }) {
   const [activityText, setActivityText] = React.useState("")
   const [executionGuidance, setExecutionGuidance] = React.useState("")
   const [notes, setNotes] = React.useState("")
-  const [objectiveOrder, setObjectiveOrder] = React.useState("")
   const [scheduleMode, setScheduleMode] = React.useState<"scheduled" | "on_demand" | "triggered">("scheduled")
   const [frequency, setFrequency] = React.useState<PdtpRecurrenceFrequency>("monthly")
-  const [interval, setInterval] = React.useState(1)
+  const [interval, setRecurrenceInterval] = React.useState(1)
   const [plannedQuantity, setPlannedQuantity] = React.useState(1)
   const [weekOfMonth, setWeekOfMonth] = React.useState(1)
   const [triggerDescription, setTriggerDescription] = React.useState("")
@@ -267,11 +322,10 @@ function EditActivityDialog({ activity, activities, onClose, onSaved }: {
       setActivityText(activity.activity)
       setExecutionGuidance(activity.program)
       setNotes(activity.notes ?? "")
-      setObjectiveOrder(String(activity.objectiveOrder))
       setScheduleMode((activity.scheduleMode ?? "scheduled") as "scheduled" | "on_demand" | "triggered")
       const rule = activity.recurrenceRule as PdtpRecurrenceRule | null
       setFrequency(rule?.frequency ?? "monthly")
-      setInterval(rule?.interval ?? 1)
+      setRecurrenceInterval(rule?.interval ?? 1)
       setPlannedQuantity(rule?.plannedQuantity ?? 1)
       setWeekOfMonth(rule?.weekOfMonth ?? 1)
       setTriggerDescription(activity.triggerDescription ?? "")
@@ -285,7 +339,6 @@ function EditActivityDialog({ activity, activities, onClose, onSaved }: {
     setPending(true)
     setError(null)
     try {
-      const targetObjective = activities.find((candidate) => candidate.objectiveOrder === Number(objectiveOrder))
       const recurrenceRule: PdtpRecurrenceRule | null = scheduleMode === "scheduled"
         ? { frequency, interval, plannedQuantity, weekOfMonth }
         : null
@@ -294,8 +347,6 @@ function EditActivityDialog({ activity, activities, onClose, onSaved }: {
         activity: activityText,
         program: executionGuidance,
         notes,
-        objectiveOrder: Number(objectiveOrder),
-        objective: targetObjective?.objective ?? activity.objective,
         scheduleMode,
         scheduleClassificationStatus: "confirmed",
         recurrenceRule,
@@ -322,16 +373,6 @@ function EditActivityDialog({ activity, activities, onClose, onSaved }: {
         <FieldGroup className="gap-3">
           <Field label="Actividad preventiva" htmlFor="edit-activity">
             <Textarea id="edit-activity" value={activityText} onChange={(e) => setActivityText(e.target.value)} rows={4} maxLength={4000} />
-          </Field>
-          <Field label="Objetivo" htmlFor="edit-objective">
-            <Select value={objectiveOrder} onValueChange={setObjectiveOrder}>
-              <SelectTrigger id="edit-objective"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {[...new Map(activities.map((candidate) => [candidate.objectiveOrder, candidate.objective])).entries()]
-                  .sort(([left], [right]) => left - right)
-                  .map(([order, objective]) => <SelectItem key={order} value={String(order)}>{order}. {objective}</SelectItem>)}
-              </SelectContent>
-            </Select>
           </Field>
           <Field label="Guía de ejecución" htmlFor="edit-execution-guidance">
             <Textarea id="edit-execution-guidance" value={executionGuidance} onChange={(e) => setExecutionGuidance(e.target.value)} rows={3} maxLength={2000} />
@@ -360,7 +401,7 @@ function EditActivityDialog({ activity, activities, onClose, onSaved }: {
                   </SelectContent>
                 </Select>
               </Field>
-              <Field label="Cada" htmlFor="edit-interval"><Input id="edit-interval" type="number" min={1} max={52} value={interval} onChange={(event) => setInterval(Number(event.target.value))} /></Field>
+              <Field label="Cada" htmlFor="edit-interval"><Input id="edit-interval" type="number" min={1} max={52} value={interval} onChange={(event) => setRecurrenceInterval(Number(event.target.value))} /></Field>
               <Field label="Cantidad" htmlFor="edit-planned-quantity"><Input id="edit-planned-quantity" type="number" min={0.01} step={0.25} value={plannedQuantity} onChange={(event) => setPlannedQuantity(Number(event.target.value))} /></Field>
               <Field label="Semana" htmlFor="edit-week"><Input id="edit-week" type="number" min={1} max={4} value={weekOfMonth} onChange={(event) => setWeekOfMonth(Number(event.target.value))} /></Field>
             </div>
@@ -419,5 +460,3 @@ function RecurrenceImpactPreview({
     </p>
   )
 }
-
-// ── Tab Objetivos: renombrar el objetivo compartido por cada grupo (1-8) ───

@@ -12,13 +12,10 @@ import { cn } from "@/lib/utils"
 import { describePdtpRecurrence, type PdtpRecurrenceFrequency, type PdtpRecurrenceRule } from "@/lib/services/pdtp/recurrence"
 import { addPdtpActivityAction } from "../../actions"
 
-type ActivitySummary = { objectiveOrder: number; objective: string }
 type ResponsibleOption = { slug: string; displayName: string }
 type ScheduleMode = "scheduled" | "on_demand" | "triggered"
 
 type Draft = {
-  objectiveChoice: string
-  objective: string
   activityDescription: string
   executionGuidance: string
   responsibleSlug: string
@@ -36,8 +33,6 @@ type Draft = {
 }
 
 const EMPTY_DRAFT: Draft = {
-  objectiveChoice: "new",
-  objective: "",
   activityDescription: "",
   executionGuidance: "Registrar cómo se realizó y conservar evidencia verificable",
   responsibleSlug: "",
@@ -70,28 +65,23 @@ const FREQUENCY_OPTIONS: Array<{ value: PdtpRecurrenceFrequency; label: string }
 
 export function GuidedActivityForm({
   programId,
-  activities,
   responsibleCatalog,
   generalViewCode = "pdtp_general",
 }: {
   programId: string
-  activities: ActivitySummary[]
   responsibleCatalog: ResponsibleOption[]
   generalViewCode?: string
 }) {
   const router = useRouter()
   const storageKey = `pdtp-builder:${programId}:activity-draft`
-  const [draft, setDraft] = React.useState<Draft>(EMPTY_DRAFT)
+  const defaultResponsibleSlug = responsibleCatalog[0]?.slug ?? ""
+  const [draft, setDraft] = React.useState<Draft>(() => ({
+    ...EMPTY_DRAFT,
+    responsibleSlug: defaultResponsibleSlug,
+  }))
   const [hydrated, setHydrated] = React.useState(false)
   const [pending, setPending] = React.useState(false)
   const [message, setMessage] = React.useState<{ ok: boolean; text: string } | null>(null)
-
-  const objectives = React.useMemo(() => {
-    const map = new Map<number, string>()
-    for (const activity of activities) if (!map.has(activity.objectiveOrder)) map.set(activity.objectiveOrder, activity.objective)
-    return [...map.entries()].sort(([left], [right]) => left - right)
-  }, [activities])
-  const nextObjectiveOrder = Math.max(0, ...objectives.map(([order]) => order)) + 1
 
   React.useEffect(() => {
     try {
@@ -101,6 +91,7 @@ export function GuidedActivityForm({
         setDraft({
           ...EMPTY_DRAFT,
           ...parsed,
+          responsibleSlug: parsed.responsibleSlug || defaultResponsibleSlug,
           activityDescription: parsed.activityDescription ?? parsed.activity ?? EMPTY_DRAFT.activityDescription,
           executionGuidance: parsed.executionGuidance ?? parsed.programName ?? EMPTY_DRAFT.executionGuidance,
         })
@@ -109,29 +100,15 @@ export function GuidedActivityForm({
       // Un borrador local corrupto o storage deshabilitado no bloquea el formulario.
     }
     setHydrated(true)
-  }, [storageKey])
+  }, [defaultResponsibleSlug, storageKey])
 
   React.useEffect(() => {
     if (!hydrated) return
     try { window.localStorage.setItem(storageKey, JSON.stringify(draft)) } catch { /* almacenamiento opcional */ }
   }, [draft, hydrated, storageKey])
 
-  if (!draft.responsibleSlug && responsibleCatalog[0]) {
-    setDraft((current) => current.responsibleSlug ? current : ({ ...current, responsibleSlug: responsibleCatalog[0]!.slug }))
-  }
-
   function patch<K extends keyof Draft>(key: K, value: Draft[K]) {
     setDraft((current) => ({ ...current, [key]: value }))
-    setMessage(null)
-  }
-
-  function chooseObjective(value: string) {
-    const existing = objectives.find(([order]) => String(order) === value)
-    setDraft((current) => ({
-      ...current,
-      objectiveChoice: value,
-      objective: existing?.[1] ?? "",
-    }))
     setMessage(null)
   }
 
@@ -149,8 +126,8 @@ export function GuidedActivityForm({
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (!draft.objective.trim() || !draft.activityDescription.trim() || !draft.responsibleSlug) {
-      setMessage({ ok: false, text: "Completa objetivo, actividad y responsable antes de guardar." })
+    if (!draft.activityDescription.trim() || !draft.responsibleSlug) {
+      setMessage({ ok: false, text: "Completa la actividad y el responsable antes de guardar." })
       return
     }
     if (draft.scheduleMode === "triggered" && !draft.triggerDescription.trim()) {
@@ -161,37 +138,40 @@ export function GuidedActivityForm({
     const responsible = responsibleCatalog.find((option) => option.slug === draft.responsibleSlug)
     setPending(true)
     setMessage(null)
-    const result = await addPdtpActivityAction({
-      programId,
-      objectiveOrder: draft.objectiveChoice === "new" ? nextObjectiveOrder : Number(draft.objectiveChoice),
-      objective: draft.objective,
-      activity: draft.activityDescription,
-      program: draft.executionGuidance,
-      responsibleSlugs: [draft.responsibleSlug],
-      responsibleDisplay: responsible?.displayName ?? draft.responsibleSlug,
-      audienceRoles: draft.audienceRoles.split(",").map((role) => role.trim()).filter(Boolean),
-      scheduleMode: draft.scheduleMode,
-      recurrenceRule: draft.scheduleMode === "scheduled" ? recurrenceRule : null,
-      triggerType: draft.scheduleMode === "triggered" ? draft.triggerType || "evento_operacional" : null,
-      triggerDescription: draft.scheduleMode === "triggered" ? draft.triggerDescription : null,
-      dueDays: draft.scheduleMode === "scheduled" ? null : draft.dueDays,
-      evidenceRequirement: draft.evidenceRequirement || null,
-      indicatorMode: draft.scheduleMode === "scheduled" ? "planned_vs_completed" : "closed_on_time",
-      targetValue: 100,
-      targetUnit: "%",
-      notes: draft.notes,
-      sheetCodes: [generalViewCode],
-    })
-    setPending(false)
-    if (!result.ok) {
-      setMessage({ ok: false, text: result.message ?? "No se pudo guardar la actividad." })
-      return
-    }
+    try {
+      const result = await addPdtpActivityAction({
+        programId,
+        activity: draft.activityDescription,
+        program: draft.executionGuidance,
+        responsibleSlugs: [draft.responsibleSlug],
+        responsibleDisplay: responsible?.displayName ?? draft.responsibleSlug,
+        audienceRoles: draft.audienceRoles.split(",").map((role) => role.trim()).filter(Boolean),
+        scheduleMode: draft.scheduleMode,
+        recurrenceRule: draft.scheduleMode === "scheduled" ? recurrenceRule : null,
+        triggerType: draft.scheduleMode === "triggered" ? draft.triggerType || "evento_operacional" : null,
+        triggerDescription: draft.scheduleMode === "triggered" ? draft.triggerDescription : null,
+        dueDays: draft.scheduleMode === "scheduled" ? null : draft.dueDays,
+        evidenceRequirement: draft.evidenceRequirement || null,
+        indicatorMode: draft.scheduleMode === "scheduled" ? "planned_vs_completed" : "closed_on_time",
+        targetValue: 100,
+        targetUnit: "%",
+        notes: draft.notes,
+        sheetCodes: [generalViewCode],
+      })
+      if (!result.ok) {
+        setMessage({ ok: false, text: result.message ?? "No se pudo guardar la actividad." })
+        return
+      }
 
-    try { window.localStorage.removeItem(storageKey) } catch { /* almacenamiento opcional */ }
-    setDraft({ ...EMPTY_DRAFT, responsibleSlug: responsibleCatalog[0]?.slug ?? "" })
-    setMessage({ ok: true, text: "Actividad guardada. Puedes agregar otra o continuar a la programación." })
-    router.refresh()
+      try { window.localStorage.removeItem(storageKey) } catch { /* almacenamiento opcional */ }
+      setDraft({ ...EMPTY_DRAFT, responsibleSlug: defaultResponsibleSlug })
+      setMessage({ ok: true, text: "Actividad guardada. Puedes agregar otra o continuar a la programación." })
+      router.refresh()
+    } catch {
+      setMessage({ ok: false, text: "No se pudo guardar la actividad." })
+    } finally {
+      setPending(false)
+    }
   }
 
   return (
@@ -205,21 +185,6 @@ export function GuidedActivityForm({
       </div>
 
       <FieldGroup className="gap-4">
-        <div className="grid gap-4 md:grid-cols-[15rem_1fr]">
-          <Field label="Objetivo" htmlFor="guided-objective-choice" required>
-            <Select value={draft.objectiveChoice} onValueChange={chooseObjective}>
-              <SelectTrigger id="guided-objective-choice"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="new">Crear un objetivo nuevo</SelectItem>
-                {objectives.map(([order, objective]) => <SelectItem key={order} value={String(order)}>{order}. {objective}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          </Field>
-          <Field label={draft.objectiveChoice === "new" ? "Nombre del nuevo objetivo" : "Objetivo seleccionado"} htmlFor="guided-objective" required>
-            <Input id="guided-objective" value={draft.objective} onChange={(event) => patch("objective", event.target.value)} readOnly={draft.objectiveChoice !== "new"} required />
-          </Field>
-        </div>
-
         <Field label="¿Qué actividad preventiva se realizará?" htmlFor="guided-activity" required>
           <Textarea id="guided-activity" value={draft.activityDescription} onChange={(event) => patch("activityDescription", event.target.value)} rows={3} maxLength={4000} placeholder="Ej.: revisar condiciones de almacenamiento y registrar hallazgos" required />
         </Field>

@@ -8,8 +8,8 @@ const MONTHS = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "
 
 type Filters = {
   faena?: string
+  actividad?: number
   responsable?: string
-  objetivo?: number
   estado?: string
   desde?: number
   hasta?: number
@@ -19,11 +19,13 @@ export function ReporteGestionFilters({
   programId,
   worksites,
   responsibleOptions,
+  activityOptions,
   current,
 }: {
   programId: string
   worksites: Array<{ id: string; name: string }>
-  responsibleOptions: string[]
+  responsibleOptions: Array<{ value: string; label: string }>
+  activityOptions: Array<{ value: number; label: string }>
   current: Filters
 }) {
   const router = useRouter()
@@ -32,8 +34,8 @@ export function ReporteGestionFilters({
     const merged = { ...current, ...next }
     const params = new URLSearchParams()
     if (merged.faena) params.set("faena", merged.faena)
+    if (merged.actividad !== undefined) params.set("actividad", String(merged.actividad))
     if (merged.responsable) params.set("responsable", merged.responsable)
-    if (merged.objetivo !== undefined) params.set("objetivo", String(merged.objetivo))
     if (merged.estado) params.set("estado", merged.estado)
     if (merged.desde !== undefined) params.set("desde", String(merged.desde))
     if (merged.hasta !== undefined) params.set("hasta", String(merged.hasta))
@@ -51,12 +53,21 @@ export function ReporteGestionFilters({
           </SelectContent>
         </Select>
       )}
+      {activityOptions.length > 0 && (
+        <Select value={current.actividad !== undefined ? String(current.actividad) : ALL} onValueChange={(value) => navigate({ actividad: value === ALL ? undefined : Number(value) })}>
+          <SelectTrigger className="w-64" aria-label="Actividad"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value={ALL}>Todas las actividades</SelectItem>
+            {activityOptions.map((activity) => <SelectItem key={activity.value} value={String(activity.value)}>{activity.label}</SelectItem>)}
+          </SelectContent>
+        </Select>
+      )}
       {responsibleOptions.length > 0 && (
         <Select value={current.responsable ?? ALL} onValueChange={(value) => navigate({ responsable: value === ALL ? undefined : value })}>
           <SelectTrigger className="w-56" aria-label="Responsable"><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value={ALL}>Todos los responsables</SelectItem>
-            {responsibleOptions.map((r) => <SelectItem key={r} value={r}>{r}</SelectItem>)}
+            {responsibleOptions.map((responsible) => <SelectItem key={responsible.value} value={responsible.value}>{responsible.label}</SelectItem>)}
           </SelectContent>
         </Select>
       )}

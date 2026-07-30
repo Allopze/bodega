@@ -19,15 +19,16 @@ describe("ReporteGestionFilters", () => {
       <ReporteGestionFilters
         programId="prog-1"
         worksites={WORKSITES}
-        responsibleOptions={["PRF"]}
-        current={{ faena: "ws-1", responsable: "PRF" }}
+        responsibleOptions={[{ value: "prf", label: "PRF" }]}
+        activityOptions={[]}
+        current={{ faena: "ws-1", responsable: "prf" }}
       />,
     )
 
     fireEvent.click(screen.getByLabelText("Faena"))
     fireEvent.click(screen.getByText("Faena B"))
 
-    expect(mockPush).toHaveBeenCalledWith("/prevencion/pdtp/prog-1/reporte?faena=ws-2&responsable=PRF")
+    expect(mockPush).toHaveBeenCalledWith("/prevencion/pdtp/prog-1/reporte?faena=ws-2&responsable=prf")
   })
 
   it("navigates with the estado filter set", () => {
@@ -36,6 +37,7 @@ describe("ReporteGestionFilters", () => {
         programId="prog-1"
         worksites={WORKSITES}
         responsibleOptions={[]}
+        activityOptions={[]}
         current={{ faena: "ws-1" }}
       />,
     )
@@ -52,6 +54,7 @@ describe("ReporteGestionFilters", () => {
         programId="prog-1"
         worksites={WORKSITES}
         responsibleOptions={[]}
+        activityOptions={[]}
         current={{ faena: "ws-1", estado: "deviates" }}
       />,
     )

@@ -264,7 +264,7 @@ export default async function PdtpDashboardPage({ searchParams }: PdtpDashboardP
           {focusProgram && (
             <span className="text-xs text-[var(--color-text-muted)]">
               {activeProgram ? "Programa activo" : "Programa en borrador"}:{" "}
-              <strong className="font-semibold text-[var(--color-text)]">{focusProgram.title}</strong> (v{focusProgram.version})
+              <strong className="font-semibold text-[var(--color-text)]">{focusProgram.title}</strong>
             </span>
           )}
         </div>
@@ -293,7 +293,7 @@ export default async function PdtpDashboardPage({ searchParams }: PdtpDashboardP
                   className="flex items-center justify-between rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm transition-colors hover:bg-[var(--color-surface-2)]"
                 >
                   <span className="font-medium text-[var(--color-text)]">{program.title}</span>
-                  <span className="text-xs text-[var(--color-text-muted)]">v{program.version} · {program.status}</span>
+                  <span className="text-xs text-[var(--color-text-muted)]">{program.status}</span>
                 </Link>
               </li>
             ))}

@@ -1,15 +1,12 @@
 import type { Metadata } from "next"
 import { redirect } from "next/navigation"
 import { requireAuth, can } from "@/lib/auth/can"
-import { listPdtpPrograms, getPdtpComplianceIndicators, getPdtpProgramActivityCount, listActivePdtpTemplates } from "@/lib/services/prevention-pdtp"
-import { getActivePdtpProgram } from "@/lib/services/prevention-pdtp"
+import { getCurrentPdtpBase2026Version, listPdtpPrograms } from "@/lib/services/prevention-pdtp"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { PdtpCreateProgramForm } from "./create-form"
 
 export const metadata: Metadata = { title: "Nuevo programa PDTP" }
-
-const CURRENT_YEAR = new Date().getFullYear()
 
 export default async function PdtpCreateProgramPage() {
   let session
@@ -17,34 +14,21 @@ export default async function PdtpCreateProgramPage() {
   catch { redirect("/forbidden") }
   if (!can(session, "prevention:pdtp:program:manage")) redirect("/forbidden")
 
-  const [existingPrograms, templateRows] = await Promise.all([listPdtpPrograms(), listActivePdtpTemplates()])
-
-  // Enriquecer con compliance + conteo de actividades para las mini-cards
-  const [activeProgram, enrichedEntries] = await Promise.all([
-    getActivePdtpProgram(CURRENT_YEAR),
-    Promise.all(existingPrograms.map(async (p) => {
-      const [indicators, activityCount] = await Promise.all([
-        getPdtpComplianceIndicators(p.id).catch(() => null),
-        getPdtpProgramActivityCount(p.id),
-      ])
-      return {
-        id: p.id, title: p.title, year: p.year, version: p.version, status: p.status,
-        compliancePercent: indicators?.annual?.percent !== null
-          ? Math.round((indicators?.annual?.percent ?? 0) * 100)
-          : null,
-        activityCount,
-      }
-    })),
+  const [existingPrograms, base] = await Promise.all([
+    listPdtpPrograms(),
+    getCurrentPdtpBase2026Version(),
   ])
-
-  // Si hay un programa activo este año, sugerir el año siguiente
-  const suggestedYear = activeProgram ? CURRENT_YEAR + 1 : CURRENT_YEAR
+  const existingYears = existingPrograms.map((program) => program.year)
+  const existingYearSet = new Set(existingYears)
+  let suggestedYear = new Date().getFullYear()
+  while (existingYearSet.has(suggestedYear)) suggestedYear++
+  const snapshot = base?.version.snapshotJson as { activities?: unknown[] } | undefined
 
   return (
     <PageContainer width="form">
       <PageHeader
         title="Nuevo programa preventivo"
-        description="Crea un nuevo programa de trabajo preventivo para un año específico."
+        description="Crea el programa anual desde la Base preventiva 2026."
         breadcrumb={
           <Breadcrumbs items={[
             { label: "Dashboard", href: "/dashboard" },
@@ -54,17 +38,13 @@ export default async function PdtpCreateProgramPage() {
         }
       />
       <PdtpCreateProgramForm
-        userId={session.user.id}
-        existingPrograms={enrichedEntries}
-        templates={templateRows.map((template) => ({
-          id: template.id,
-          name: template.name,
-          description: template.description,
-          versionId: template.currentVersion.id,
-          version: template.currentVersion.version,
-        }))}
         suggestedYear={suggestedYear}
-        hasActiveProgram={!!activeProgram}
+        existingYears={existingYears}
+        baseRevision={base ? {
+          version: base.version.version,
+          activityCount: Array.isArray(snapshot?.activities) ? snapshot.activities.length : 0,
+          contentDigest: base.version.contentDigest,
+        } : null}
       />
     </PageContainer>
   )

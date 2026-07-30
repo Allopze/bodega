@@ -7,21 +7,17 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { EmptyState } from "@/components/ui/empty-state"
 import { Input } from "@/components/ui/input"
-import { Field, FieldGroup, Label } from "@/components/ui/field"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Field, FieldGroup } from "@/components/ui/field"
 import { SubmitButton } from "@/components/admin/submit-button"
 import { updatePdtpProgramAction, deletePdtpProgramAction } from "../../../actions"
-import { setPdtpProgramWorksitesAction, excludeActivityForWorksiteAction, includeActivityForWorksiteAction } from "../../../actions/worksites-actions"
+import { setPdtpProgramWorksitesAction } from "../../../actions/worksites-actions"
 
 import type { pdtpPrograms } from "@/db/schema"
 
 import type { PdtpActivityRow } from "./types"
 
 const AUTOSAVE_DEBOUNCE_MS = 1500
-const MIN_REASON_LENGTH = 10
 
 /**
  * La UI habla en porcentaje entero (90) porque es como el usuario expresa la
@@ -235,13 +231,10 @@ export function MetadataTab({ program, canDelete, activities = [] }: {
  * defecto, retrocompatible con todo programa existente) — seleccionar
  * faenas aquí las restringe a esas, no crea copias del programa.
  */
-export function WorksiteScopePanel({ programId, activities, visibleWorksites, memberWorksiteIds, exclusions, onGoToActivities }: {
+export function WorksiteScopePanel({ programId, visibleWorksites, memberWorksiteIds }: {
   programId: string
-  activities: PdtpActivityRow[]
   visibleWorksites: Array<{ id: string; name: string; code: string }>
   memberWorksiteIds: string[]
-  exclusions: Array<{ activityId: string; worksiteId: string; reason: string }>
-  onGoToActivities?: () => void
 }) {
   const router = useRouter()
   const [selected, setSelected] = React.useState<string[]>(memberWorksiteIds)
@@ -314,171 +307,7 @@ export function WorksiteScopePanel({ programId, activities, visibleWorksites, me
         <Button type="button" size="sm" disabled={pending || !isDirty} onClick={save}>{pending ? "Guardando..." : "Guardar faenas"}</Button>
         {error && <p className="text-xs text-[var(--color-danger)]">{error}</p>}
 
-        <ActivityExclusionsEditor
-          programId={programId}
-          activities={activities}
-          visibleWorksites={visibleWorksites}
-          exclusions={exclusions}
-          onGoToActivities={onGoToActivities}
-        />
       </CardContent>
     </Card>
-  )
-}
-
-/**
- * Excepción puntual de herencia: una faena no ve una actividad concreta.
- * No cambia la cantidad planificada (eso es `pdtpActivityScheduleOverrides`,
- * ver overrides.ts) — excluye la actividad completa para esa faena.
- */
-function ActivityExclusionsEditor({ programId, activities, visibleWorksites, exclusions, onGoToActivities }: {
-  programId: string
-  activities: PdtpActivityRow[]
-  visibleWorksites: Array<{ id: string; name: string; code: string }>
-  exclusions: Array<{ activityId: string; worksiteId: string; reason: string }>
-  onGoToActivities?: () => void
-}) {
-  const router = useRouter()
-  const [activityId, setActivityId] = React.useState(activities[0]?.id ?? "")
-  const [worksiteId, setWorksiteId] = React.useState("")
-  const [reason, setReason] = React.useState("")
-  const [pending, setPending] = React.useState(false)
-  const [error, setError] = React.useState<string | null>(null)
-  // Volver a incluir pide su motivo en el diálogo. Antes reutilizaba el campo
-  // del formulario de exclusión, que está más abajo en la pantalla: el botón
-  // aparecía deshabilitado por un campo que el usuario todavía no había visto.
-  const [reincluding, setReincluding] = React.useState<{ activityId: string; worksiteId: string } | null>(null)
-  const [reincludeReason, setReincludeReason] = React.useState("")
-
-  const worksiteById = new Map(visibleWorksites.map((w) => [w.id, w]))
-  const activityById = new Map(activities.map((a) => [a.id, a]))
-  const reasonReady = reason.trim().length >= MIN_REASON_LENGTH
-  const reincludeReasonReady = reincludeReason.trim().length >= MIN_REASON_LENGTH
-
-  async function add() {
-    if (!activityId || !worksiteId || !reasonReady) {
-      setError("Selecciona actividad, faena e indica un motivo de al menos 10 caracteres.")
-      return
-    }
-    setPending(true)
-    setError(null)
-    try {
-      const result = await excludeActivityForWorksiteAction({ programId, activityId, worksiteId, reason })
-      if (!result.ok) setError(result.message ?? "Error al excluir la actividad.")
-      else { setReason(""); router.refresh() }
-    } finally {
-      setPending(false)
-    }
-  }
-
-  async function confirmReinclude() {
-    if (!reincluding || !reincludeReasonReady) return
-    setPending(true)
-    setError(null)
-    try {
-      const result = await includeActivityForWorksiteAction({
-        programId,
-        activityId: reincluding.activityId,
-        worksiteId: reincluding.worksiteId,
-        reason: reincludeReason,
-      })
-      if (!result.ok) setError(result.message ?? "Error al incluir la actividad.")
-      else router.refresh()
-      setReincluding(null)
-      setReincludeReason("")
-    } finally {
-      setPending(false)
-    }
-  }
-
-  if (visibleWorksites.length === 0) return null
-
-  return (
-    <div className="border-t border-[var(--color-border)] pt-4">
-      <h4 className="text-h3 text-[var(--color-text)]">Excluir una actividad de una faena</h4>
-      <p className="mt-1 mb-3 text-xs text-[var(--color-text-muted)]">
-        Una actividad excluida no aparece en las hojas de esa faena. Tanto excluir como volver a incluir exigen un motivo, que queda en el historial.
-      </p>
-
-      {activities.length === 0 ? (
-        <EmptyState
-          compact
-          align="start"
-          title="Todavía no hay actividades que excluir"
-          description="Las exclusiones se aplican sobre actividades ya definidas. Crea al menos una en el paso «Actividades» y vuelve aquí."
-          action={onGoToActivities
-            ? <Button type="button" size="sm" onClick={onGoToActivities}>Ir a Actividades</Button>
-            : undefined}
-        />
-      ) : (
-        <>
-          {exclusions.length > 0 && (
-            <ul className="mb-3 space-y-1">
-              {exclusions.map((exclusion) => (
-                <li key={`${exclusion.activityId}-${exclusion.worksiteId}`} className="flex items-center justify-between gap-2 rounded border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs">
-                  <span className="min-w-0 truncate">N°{activityById.get(exclusion.activityId)?.n ?? "?"} — {worksiteById.get(exclusion.worksiteId)?.name ?? exclusion.worksiteId}</span>
-                  <Button type="button" variant="ghost" size="sm" disabled={pending} onClick={() => { setReincludeReason(""); setReincluding(exclusion) }}>Quitar</Button>
-                </li>
-              ))}
-            </ul>
-          )}
-
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div>
-              <Label htmlFor="excl-activity">Actividad</Label>
-              <Select value={activityId} onValueChange={setActivityId}>
-                <SelectTrigger id="excl-activity" aria-label="Actividad a excluir"><SelectValue placeholder="Actividad" /></SelectTrigger>
-                <SelectContent>{activities.map((a) => <SelectItem key={a.id} value={a.id}>N°{a.n} — {a.activity}</SelectItem>)}</SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label htmlFor="excl-worksite">Faena</Label>
-              <Select value={worksiteId} onValueChange={setWorksiteId}>
-                <SelectTrigger id="excl-worksite" aria-label="Faena a excluir"><SelectValue placeholder="Faena" /></SelectTrigger>
-                <SelectContent>{visibleWorksites.map((w) => <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>)}</SelectContent>
-              </Select>
-            </div>
-          </div>
-
-          <Field
-            className="mt-3"
-            label="Motivo de la exclusión"
-            htmlFor="excl-reason"
-            helper="Mínimo 10 caracteres."
-          >
-            <Input id="excl-reason" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Motivo (mín. 10 caracteres)" />
-          </Field>
-
-          <Button type="button" size="sm" className="mt-3" disabled={pending || !activityId || !worksiteId || !reasonReady} onClick={add}>{pending ? "Guardando..." : "Excluir"}</Button>
-        </>
-      )}
-
-      {error && <p className="mt-2 text-xs text-[var(--color-danger)]">{error}</p>}
-
-      <Dialog open={reincluding !== null} onOpenChange={(open) => { if (!open) setReincluding(null) }}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Volver a incluir la actividad</DialogTitle>
-            <DialogDescription>
-              {reincluding
-                ? `N°${activityById.get(reincluding.activityId)?.n ?? "?"} volverá a aparecer en las hojas de ${worksiteById.get(reincluding.worksiteId)?.name ?? "la faena"}.`
-                : null}
-            </DialogDescription>
-          </DialogHeader>
-          <Field label="Motivo" htmlFor="reinclude-reason" helper="Mínimo 10 caracteres. Queda en el historial del programa.">
-            <Input
-              id="reinclude-reason"
-              value={reincludeReason}
-              onChange={(e) => setReincludeReason(e.target.value)}
-              placeholder="Por qué vuelve a aplicar"
-            />
-          </Field>
-          <DialogFooter>
-            <Button type="button" variant="secondary" onClick={() => setReincluding(null)} disabled={pending}>Cancelar</Button>
-            <Button type="button" onClick={confirmReinclude} disabled={pending || !reincludeReasonReady} loading={pending}>Volver a incluir</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </div>
   )
 }

@@ -29,7 +29,6 @@ function makeActivity(
     id,
     n,
     activity,
-    objective: `Objetivo ${n}`,
     program: "Programa X",
     responsibleDisplay: "Responsable X",
     schedule: monthlyPlanned.flatMap((plannedQuantity, index) => plannedQuantity > 0
@@ -168,40 +167,6 @@ describe("PdtpSheetTable — weekly filter", () => {
     expect(screen.getByText("Enviada")).toBeDefined()
     expect(screen.queryByText("M7/S2")).toBeNull()
     expect(screen.queryByText("submitted")).toBeNull()
-  })
-
-  it("filters to a single objective when objectiveOrder is set, with a link back to the unfiltered view", () => {
-    const activityObj1 = makeActivity("act-obj-1", "10", "Actividad del objetivo 1", withPlanned(7, 1), ZERO12)
-    activityObj1.objectiveOrder = 1
-    const activityObj2 = makeActivity("act-obj-2", "11", "Actividad del objetivo 2", withPlanned(7, 1), ZERO12)
-    activityObj2.objectiveOrder = 2
-    const view = makeView([activityObj1, activityObj2])
-
-    render(
-      <PdtpSheetTable
-        view={view}
-        viewMode="semana"
-        currentPeriod={CURRENT_PERIOD}
-        sheetCode="pdtp_general"
-        worksiteId="ws-1"
-        programId="program-1"
-        objectiveOrder={1}
-      />,
-    )
-
-    expect(screen.getByText("Actividad del objetivo 1")).toBeDefined()
-    expect(screen.queryByText("Actividad del objetivo 2")).toBeNull()
-    expect(screen.getByText(/Mostrando solo el objetivo 1/)).toBeDefined()
-    expect(screen.getByRole("link", { name: "Quitar filtro" })).toHaveAttribute(
-      "href",
-      "/prevencion/pdtp/program-1?hoja=pdtp_general&faena=ws-1&vista=semana",
-    )
-  })
-
-  it("does not show the objective banner when objectiveOrder is not set", () => {
-    const view = makeView([executedActivity])
-    render(<PdtpSheetTable view={view} viewMode="semana" currentPeriod={CURRENT_PERIOD} sheetCode="pdtp_general" />)
-    expect(screen.queryByText(/Mostrando solo el objetivo/)).toBeNull()
   })
 
   it("muestra la nota de la actividad (H-M7)", () => {

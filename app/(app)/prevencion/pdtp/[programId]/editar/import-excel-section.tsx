@@ -29,7 +29,7 @@ export type ImportPreview = {
   status: string
   source: { fileName: string; checksumSha256: string; sizeBytes: number }
   counts: {
-    objectives: number; activities: number; plannedCells: number; plannedQuantity: number
+    activities: number; plannedCells: number; plannedQuantity: number
     executedCells: number; executedQuantity: number; views: number
     creates: number; updates: number; unchanged: number; existingExtraActivitiesPreserved: number
     calendarCellsAdded: number; calendarCellsUpdated: number; calendarCellsRemoved: number
@@ -178,7 +178,7 @@ export function ImportExcelSection({ programId, visibleWorksites }: ImportExcelS
           </div>
           <dl className="grid gap-3 text-sm sm:grid-cols-3 lg:grid-cols-6">
             {[
-              ["Objetivos", preview.counts.objectives], ["Actividades", preview.counts.activities],
+              ["Actividades", preview.counts.activities],
               ["Vistas", preview.counts.views], ["Celdas P", preview.counts.plannedCells],
               ["Total P", preview.counts.plannedQuantity], ["Por clasificar", preview.counts.scheduleClassificationsPending],
             ].map(([label, value]) => <div key={label} className="rounded-lg bg-[var(--color-surface-2)] px-3 py-2"><dt className="text-xs text-[var(--color-text-muted)]">{label}</dt><dd className="mt-0.5 font-semibold text-[var(--color-text)]">{value}</dd></div>)}

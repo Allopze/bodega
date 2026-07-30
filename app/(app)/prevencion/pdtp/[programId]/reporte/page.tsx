@@ -19,7 +19,7 @@ export const metadata: Metadata = { title: "Reporte de gestión PDTP" }
 
 type PageProps = {
   params: Promise<{ programId: string }>
-  searchParams: Promise<{ faena?: string; responsable?: string; objetivo?: string; estado?: string; desde?: string; hasta?: string }>
+  searchParams: Promise<{ faena?: string; actividad?: string; responsable?: string; estado?: string; desde?: string; hasta?: string }>
 }
 
 export default async function PdtpManagementReportPage({ params, searchParams }: PageProps) {
@@ -28,8 +28,7 @@ export default async function PdtpManagementReportPage({ params, searchParams }:
   catch { redirect("/forbidden") }
   if (!can(session, "prevention:pdtp:view")) redirect("/forbidden")
 
-  const { programId } = await params
-  const query = await searchParams
+  const [{ programId }, query] = await Promise.all([params, searchParams])
   const program = await getPdtpProgram(programId)
   if (!program) notFound()
 
@@ -38,13 +37,13 @@ export default async function PdtpManagementReportPage({ params, searchParams }:
   const worksites = await listScopedWorksites(worksiteIds)
   const selectedWorksiteId = resolveSelectedWorksiteId(query.faena, worksites)
 
-  const objectiveOrder = Number.parseInt(query.objetivo ?? "", 10)
   const monthFrom = Number.parseInt(query.desde ?? "", 10)
   const monthTo = Number.parseInt(query.hasta ?? "", 10)
+  const activityNumber = Number.parseInt(query.actividad ?? "", 10)
   const status: "meets" | "deviates" | undefined = query.estado === "meets" || query.estado === "deviates" ? query.estado : undefined
   const filters = {
     responsibleSlug: query.responsable || undefined,
-    objectiveOrder: Number.isFinite(objectiveOrder) ? objectiveOrder : undefined,
+    activityNumber: Number.isFinite(activityNumber) ? activityNumber : undefined,
     status,
     monthFrom: Number.isFinite(monthFrom) ? monthFrom : undefined,
     monthTo: Number.isFinite(monthTo) ? monthTo : undefined,
@@ -56,18 +55,16 @@ export default async function PdtpManagementReportPage({ params, searchParams }:
 
   const downloadParams = new URLSearchParams({ programId, ...(selectedWorksiteId ? { faena: selectedWorksiteId } : {}) })
   if (filters.responsibleSlug) downloadParams.set("responsable", filters.responsibleSlug)
-  if (filters.objectiveOrder !== undefined) downloadParams.set("objetivo", String(filters.objectiveOrder))
+  if (filters.activityNumber !== undefined) downloadParams.set("actividad", String(filters.activityNumber))
   if (filters.status) downloadParams.set("estado", filters.status)
   if (filters.monthFrom !== undefined) downloadParams.set("desde", String(filters.monthFrom))
   if (filters.monthTo !== undefined) downloadParams.set("hasta", String(filters.monthTo))
-
-  const responsibleOptions = report ? [...new Set(report.objectives.flatMap((o) => o.responsibles))].sort() : []
 
   return (
     <PageContainer>
       <PageHeader
         title="Reporte de gestión"
-        description="Avance, desviaciones y responsables por objetivo — la misma vista que se descarga en Excel."
+        description="Avance, desviaciones y responsables por actividad, igual que en la descarga Excel."
         breadcrumb={
           <Breadcrumbs items={[
             { label: "Dashboard", href: "/dashboard" },
@@ -90,8 +87,9 @@ export default async function PdtpManagementReportPage({ params, searchParams }:
       <ReporteGestionFilters
         programId={programId}
         worksites={worksites}
-        responsibleOptions={responsibleOptions}
-        current={{ faena: selectedWorksiteId, responsable: filters.responsibleSlug, objetivo: filters.objectiveOrder, estado: filters.status, desde: filters.monthFrom, hasta: filters.monthTo }}
+        responsibleOptions={report?.responsibleOptions ?? []}
+        activityOptions={report?.activityOptions ?? []}
+        current={{ faena: selectedWorksiteId, actividad: filters.activityNumber, responsable: filters.responsibleSlug, estado: filters.status, desde: filters.monthFrom, hasta: filters.monthTo }}
       />
 
       {!selectedWorksiteId ? (
@@ -103,13 +101,13 @@ export default async function PdtpManagementReportPage({ params, searchParams }:
           description="El reporte de gestión se calcula por faena, igual que el resto del programa."
           action={<div className="flex flex-wrap gap-2">{worksites.map((worksite) => <Button key={worksite.id} asChild size="sm"><Link href={`/prevencion/pdtp/${programId}/reporte?faena=${worksite.id}`}>{worksite.name}</Link></Button>)}</div>}
         />
-      ) : !report || report.objectives.length === 0 ? (
+      ) : !report || report.activities.length === 0 ? (
         // A-4: vacío POR FILTRO. La descripción decía "ajusta los filtros" pero
         // no daba forma de hacerlo; el CTA quita los filtros y deja sólo la faena.
         <EmptyState
           compact
-          title="Sin objetivos para estos filtros"
-          description="Ningún objetivo del programa coincide con los filtros aplicados. Quítalos para ver el reporte completo de la faena."
+          title="Sin actividades para estos filtros"
+          description="Ninguna actividad del programa coincide con los filtros aplicados. Quítalos para ver el reporte completo de la faena."
           action={
             <Button asChild size="sm" variant="secondary">
               <Link href={`/prevencion/pdtp/${programId}/reporte?faena=${selectedWorksiteId}`}>Quitar filtros</Link>
@@ -122,8 +120,7 @@ export default async function PdtpManagementReportPage({ params, searchParams }:
             <TableHeader>
               <TableRow>
                 <TableHead>N°</TableHead>
-                <TableHead>Objetivo</TableHead>
-                <TableHead className="text-right">Actividades</TableHead>
+                <TableHead>Actividad</TableHead>
                 <TableHead className="text-right">Planificado</TableHead>
                 <TableHead className="text-right">Ejecutado</TableHead>
                 <TableHead className="text-right">Avance</TableHead>
@@ -133,11 +130,10 @@ export default async function PdtpManagementReportPage({ params, searchParams }:
               </TableRow>
             </TableHeader>
             <TableBody>
-              {report.objectives.map((row) => (
-                <TableRow key={row.objectiveOrder}>
-                  <TableCell className="font-mono text-xs text-[var(--color-text-faint)]">{row.objectiveOrder}</TableCell>
-                  <TableCell className="max-w-md font-medium text-[var(--color-text)]">{row.objective}</TableCell>
-                  <TableCellNum>{row.activityCount}</TableCellNum>
+              {report.activities.map((row) => (
+                <TableRow key={row.activityNumber}>
+                  <TableCell className="font-mono text-xs text-[var(--color-text-faint)]">{row.activityNumber}</TableCell>
+                  <TableCell className="max-w-md font-medium text-[var(--color-text)]">{row.activity}</TableCell>
                   <TableCellNum>{row.planned}</TableCellNum>
                   <TableCellNum>{row.executed}</TableCellNum>
                   <TableCellNum className="font-semibold">{row.percent !== null ? `${Math.round(row.percent * 100)}%` : "—"}</TableCellNum>
@@ -147,7 +143,7 @@ export default async function PdtpManagementReportPage({ params, searchParams }:
                   <TableCell className="max-w-xs text-xs text-[var(--color-text-muted)]">{row.responsibles.join(", ") || "Sin responsable"}</TableCell>
                   <TableCell>
                     <Button asChild size="sm" variant="ghost">
-                      <Link href={`/prevencion/pdtp/${programId}?faena=${selectedWorksiteId}&objetivo=${row.objectiveOrder}#registros-pdtp`}>Ver registros</Link>
+                      <Link href={`/prevencion/pdtp/${programId}?faena=${selectedWorksiteId}#registros-pdtp`}>Ver registros</Link>
                     </Button>
                   </TableCell>
                 </TableRow>

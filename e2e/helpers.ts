@@ -61,10 +61,24 @@ export async function selectRadixById(page: Page, id: string, option: string | R
 }
 
 /** Pick the current visible-month day in the shared DatePicker component. */
+/**
+ * Elige HOY en un `DatePicker`.
+ *
+ * Antes buscaba el primer botón cuyo texto fuera el día del mes, y eso rompe en
+ * cuanto la grilla del mes arranca con días del mes anterior: en julio de 2026
+ * (el 1 cae miércoles) la primera fila muestra 28, 29 y 30 de **junio**, así que
+ * con `.first()` el 29 seleccionado era el 29-06 y el servidor lo rechazaba con
+ * "La fecha requerida no puede estar en el pasado". Falla dependiente del
+ * calendario, no del código de la aplicación (detectado el 2026-07-29).
+ *
+ * `react-day-picker` expone la fecha ISO de cada celda en `data-day`, así que se
+ * selecciona por valor exacto en vez de por texto. La fecha se calcula en la
+ * zona de operación, que es contra la que valida el servidor (`todayInChile`).
+ */
 export async function pickCurrentMonthDate(page: Page, triggerName: string | RegExp) {
-  const day = String(new Date().getDate())
+  const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Santiago" })
   await page.getByRole("button", { name: triggerName }).click()
-  await page.locator("button").filter({ hasText: new RegExp(`^${day}$`) }).first().click()
+  await page.locator(`[data-day="${today}"]:not([data-outside]) button`).click()
 }
 
 /**

@@ -32,9 +32,9 @@ test.describe("PDTP — Cobertura MIPER y legal", () => {
     const dialog = page.getByRole("dialog")
     await expect(dialog.getByRole("heading", { name: "Vincular origen de la medida" })).toBeVisible()
     await dialog.getByLabel("Tipo").click()
-    await page.getByRole("option", { name: "Objetivo interno" }).click()
-    await dialog.getByLabel("Identificador de fuente").fill("obj-interno-e2e-1")
-    await dialog.getByLabel("Justificación").fill("Cubre la charla de seguridad como objetivo interno declarado del programa.")
+    await page.getByRole("option", { name: "Auditoría" }).click()
+    await dialog.getByLabel("Identificador de fuente").fill("audit-e2e-1")
+    await dialog.getByLabel("Justificación").fill("Cubre la charla de seguridad mediante la auditoría preventiva E2E.")
     await dialog.getByRole("button", { name: "Crear vínculo" }).click()
 
     await expect(dialog).not.toBeVisible()
@@ -43,7 +43,7 @@ test.describe("PDTP — Cobertura MIPER y legal", () => {
     // form action) — recargar confirma que el vínculo quedó persistido.
     await page.reload()
     await expect(activityCard.getByText("Sin fuente")).not.toBeVisible()
-    await expect(activityCard.getByText(/Objetivo interno/)).toBeVisible()
+    await expect(activityCard.getByText(/Auditoría/)).toBeVisible()
   })
 
   // Usa el fixture legalreq-e2e/legalapp-e2e/pdtpobl-e2e (e2e/setup-db.ts):

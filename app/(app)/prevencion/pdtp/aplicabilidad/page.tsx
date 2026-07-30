@@ -42,7 +42,6 @@ export default async function PdtpAplicabilidadPage() {
     id: pdtpActivities.id,
     n: pdtpActivities.n,
     activity: pdtpActivities.activity,
-    objective: pdtpActivities.objective,
     scheduleMode: pdtpActivities.scheduleMode,
     indicatorMode: pdtpActivities.indicatorMode,
   })
@@ -94,7 +93,7 @@ export default async function PdtpAplicabilidadPage() {
     <PageContainer>
       <PageHeader
         title="Aplicabilidad y Reglas por Faena (PDTP)"
-        description={`Programa ${program.year} (v${program.version}): Gestiona exclusiones de aplicabilidad (R4), sujetos de inspección (R1) y metas de cobertura (R2).`}
+        description={`Programa anual ${program.year}: gestiona exclusiones, sujetos esperados y metas de cobertura por faena.`}
         breadcrumb={
           <Breadcrumbs items={[
             { label: "Dashboard", href: "/dashboard" },

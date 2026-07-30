@@ -1,19 +1,12 @@
 "use client"
 
 import * as React from "react"
-import { useRouter } from "next/navigation"
-import { useActionState } from "react"
-import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Input } from "@/components/ui/input"
-import { Textarea } from "@/components/ui/textarea"
-import { Field } from "@/components/ui/field"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { publishPdtpTemplateAction } from "../../../actions"
 
 import type { pdtpPrograms } from "@/db/schema"
 import type { PdtpChecklistTemplate } from "@/lib/services/prevention-pdtp"
+import type { PdtpBaseComparison } from "@/lib/services/prevention-pdtp"
 
 import type { PdtpActivityRow } from "./types"
 
@@ -25,6 +18,7 @@ export function ReviewTab({
   visibleWorksites,
   memberWorksiteIds,
   activityWorksiteExclusions,
+  baseComparison,
 }: {
   program: typeof pdtpPrograms.$inferSelect
   activities: PdtpActivityRow[]
@@ -33,16 +27,16 @@ export function ReviewTab({
   visibleWorksites: Array<{ id: string; name: string; code: string }>
   memberWorksiteIds: string[]
   activityWorksiteExclusions: Array<{ activityId: string; worksiteId: string; reason: string }>
+  baseComparison: PdtpBaseComparison | null
 }) {
-  const objectiveCount = new Set(activities.map((activity) => activity.objectiveOrder)).size
-  const missingSchedule = activities.filter((activity) => (activity.scheduleMode ?? "scheduled") === "scheduled" && !activity.recurrenceRule && activity.sourceSheetRow === 0).length
-  const missingTrigger = activities.filter((activity) => activity.scheduleMode === "triggered" && !activity.triggerDescription).length
-  const unresolvedScheduleClassification = activities.filter((activity) => activity.scheduleClassificationStatus === "needs_review").length
-  const missingEvidence = activities.filter((activity) => !activity.evidenceRequirement && !checklists.some((checklist) => checklist.activityId === activity.id)).length
+  const activeActivities = activities.filter((activity) => activity.status === "active")
+  const missingSchedule = activeActivities.filter((activity) => (activity.scheduleMode ?? "scheduled") === "scheduled" && !activity.recurrenceRule && activity.sourceSheetRow === 0).length
+  const missingTrigger = activeActivities.filter((activity) => activity.scheduleMode === "triggered" && !activity.triggerDescription).length
+  const unresolvedScheduleClassification = activeActivities.filter((activity) => activity.scheduleClassificationStatus === "needs_review").length
+  const missingEvidence = activeActivities.filter((activity) => !activity.evidenceRequirement && !checklists.some((checklist) => checklist.activityId === activity.id)).length
   const checks = [
     { label: "Datos básicos", ok: !!program.title.trim(), detail: program.title },
-    { label: "Objetivos", ok: objectiveCount > 0, detail: objectiveCount > 0 ? `${objectiveCount} definido(s)` : "Agrega al menos un objetivo" },
-    { label: "Actividades", ok: activities.length > 0, detail: activities.length > 0 ? `${activities.length} definida(s)` : "Agrega al menos una actividad" },
+    { label: "Actividades", ok: activeActivities.length > 0, detail: activeActivities.length > 0 ? `${activeActivities.length} activa(s)` : "Agrega al menos una actividad activa" },
     { label: "Clasificación temporal", ok: unresolvedScheduleClassification === 0, detail: unresolvedScheduleClassification === 0 ? "Todas tienen una modalidad confirmada" : `${unresolvedScheduleClassification} requieren decidir cuándo se realizan` },
     { label: "Programación", ok: missingSchedule === 0 && missingTrigger === 0, detail: missingSchedule + missingTrigger === 0 ? "Todas explican cuándo se realizan" : `${missingSchedule + missingTrigger} requieren completar su regla` },
     { label: "Evidencia", ok: missingEvidence === 0, detail: missingEvidence === 0 ? "Requisitos definidos" : `${missingEvidence} sin requisito explícito o checklist` },
@@ -76,8 +70,42 @@ export function ReviewTab({
         memberWorksiteIds={memberWorksiteIds}
         exclusions={activityWorksiteExclusions}
       />
-      <TemplatePublishPanel program={program} ready={ready} />
+      {baseComparison && <BaseComparisonPanel comparison={baseComparison} />}
     </section>
+  )
+}
+
+function BaseComparisonPanel({ comparison }: { comparison: PdtpBaseComparison }) {
+  const metrics = [
+    ["Agregadas", comparison.addedActivities],
+    ["Retiradas", comparison.retiredActivities],
+    ["Modificadas", comparison.modifiedActivities],
+    ["Celdas cambiadas", comparison.scheduleCellsChanged],
+    ["Ajustes por faena", comparison.worksiteAdjustments],
+    ["Exclusiones", comparison.worksiteExclusions],
+  ] as const
+  return (
+    <div className="border-t border-[var(--color-border)] px-4 py-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h4 className="text-h3 text-[var(--color-text)]">Cambios frente a la Base 2026</h4>
+          <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+            Revisión {comparison.sourceRevision} · digest {comparison.sourceDigest.slice(0, 12)}…
+          </p>
+        </div>
+        {comparison.missingActivities > 0 && (
+          <Badge variant="danger">{comparison.missingActivities} eliminada(s) físicamente</Badge>
+        )}
+      </div>
+      <dl className="mt-3 grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-border)] sm:grid-cols-3">
+        {metrics.map(([label, value]) => (
+          <div key={label} className="bg-[var(--color-surface)] px-3 py-2">
+            <dt className="text-xs text-[var(--color-text-muted)]">{label}</dt>
+            <dd className="mt-0.5 font-mono text-sm font-semibold text-[var(--color-text)]">{value}</dd>
+          </div>
+        ))}
+      </dl>
+    </div>
   )
 }
 
@@ -177,75 +205,6 @@ export function AudiencePreviewPanel({
           ))}
         </ul>
       )}
-    </div>
-  )
-}
-
-function TemplatePublishPanel({
-  program,
-  ready,
-}: {
-  program: typeof pdtpPrograms.$inferSelect
-  ready: boolean
-}) {
-  const router = useRouter()
-  const [open, setOpen] = React.useState(false)
-  const [state, action, pending] = useActionState(publishPdtpTemplateAction, null)
-
-  React.useEffect(() => {
-    if (state?.ok) {
-      setOpen(false)
-      router.refresh()
-    }
-  }, [state, router])
-
-  return (
-    <div className="border-t border-[var(--color-border)] px-4 py-4">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <p className="text-sm font-medium text-[var(--color-text)]">Reutilizar esta estructura</p>
-          <p className="mt-1 text-xs text-[var(--color-text-muted)]">
-            Publica objetivos, actividades, frecuencias, evidencias, vistas y aprobaciones como una versión inmutable. No incluye ejecuciones ni firmas.
-          </p>
-        </div>
-        <Button type="button" variant="secondary" disabled={!ready} onClick={() => setOpen(true)}>
-          Publicar como plantilla
-        </Button>
-      </div>
-      {!ready && (
-        <p className="mt-2 text-xs text-[var(--color-signal)]">Completa la revisión antes de publicar una base reutilizable.</p>
-      )}
-      {state?.ok && <p role="status" className="mt-2 text-xs text-[var(--color-success)]">{state.message}</p>}
-
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Publicar versión de plantilla</DialogTitle>
-          </DialogHeader>
-          <form action={action} className="space-y-4">
-            <input type="hidden" name="sourceProgramId" value={program.id} />
-            <Field label="Nombre de la plantilla" htmlFor="pdtp-template-name" required>
-              <Input id="pdtp-template-name" name="name" required minLength={3} maxLength={200} defaultValue={program.title} />
-            </Field>
-            <Field label="Descripción" htmlFor="pdtp-template-description">
-              <Textarea
-                id="pdtp-template-description"
-                name="description"
-                maxLength={1000}
-                placeholder="Explica para qué tipos de operación o faena sirve esta base."
-              />
-            </Field>
-            <p className="text-xs leading-5 text-[var(--color-text-muted)]">
-              Si ya existe una plantilla con este nombre se publicará una versión nueva. Los programas creados con versiones anteriores no cambiarán.
-            </p>
-            {state?.message && !state.ok && <p role="alert" className="text-sm text-[var(--color-danger)]">{state.message}</p>}
-            <DialogFooter>
-              <Button type="button" variant="ghost" onClick={() => setOpen(false)}>Cancelar</Button>
-              <Button type="submit" disabled={pending}>{pending ? "Publicando..." : "Publicar versión"}</Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
     </div>
   )
 }

@@ -104,7 +104,7 @@ export default async function PdtpProgramasListPage({ searchParams }: PdtpProgra
                   <div>
                     <p className="font-semibold text-[var(--color-text)]">{program.title}</p>
                     <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">
-                      Año {program.year} · v{program.version}
+                      Año {program.year}
                     </p>
                   </div>
                   <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusClass}`}>

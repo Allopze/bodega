@@ -28,7 +28,6 @@ export function PdtpAddActivityForm({
   programId,
   hoja,
   faena,
-  defaultObjectiveOrder = 1,
   errorMessage,
   responsibleCatalog = [],
   sheetOptions = [],
@@ -36,7 +35,6 @@ export function PdtpAddActivityForm({
   programId: string
   hoja: string
   faena: string
-  defaultObjectiveOrder?: number
   errorMessage?: string
   responsibleCatalog?: ResponsibleOption[]
   sheetOptions?: SheetOption[]
@@ -80,7 +78,7 @@ export function PdtpAddActivityForm({
           <div>
             <p className="text-xs font-semibold uppercase tracking-wide text-text-subtle">Agregar actividad</p>
             <p className="mt-0.5 text-sm text-[var(--color-text-muted)]">
-              Define la actividad, su objetivo y los responsables asignados.
+              Define la actividad y los responsables asignados.
             </p>
           </div>
         </div>
@@ -111,35 +109,19 @@ export function PdtpAddActivityForm({
               <div>
                 <p className="text-sm font-semibold text-[var(--color-text)]">Definición de la actividad</p>
                 <p className="mt-0.5 text-xs leading-5 text-text-subtle">
-                  Describe la actividad preventiva y asígnala a un objetivo del programa.
+                  Describe la actividad preventiva y cómo debe ejecutarse.
                 </p>
               </div>
             </div>
 
-            <div className="grid gap-4 sm:grid-cols-[6rem_1fr]">
-              <Field label="Orden" htmlFor="pdtp-ao" required>
-                <Input
-                  id="pdtp-ao"
-                  name="objectiveOrder"
-                  type="number"
-                  min="1"
-                  max="999"
-                  defaultValue={defaultObjectiveOrder}
-                  required
-                />
-              </Field>
-
-              <Field label="Objetivo" htmlFor="pdtp-act-obj" required>
-                <Input id="pdtp-act-obj" name="objective" required placeholder="Ej: Reducir riesgos laborales" />
-              </Field>
-
-              <div className="sm:col-span-2">
+            <div className="grid gap-4">
+              <div>
                 <Field label="Actividad preventiva" htmlFor="pdtp-act-desc" required>
                   <Textarea id="pdtp-act-desc" name="activity" required rows={4} maxLength={4000} placeholder="Describe la actividad preventiva a realizar" />
                 </Field>
               </div>
 
-              <div className="sm:col-span-2">
+              <div>
                 <Field label="Guía de ejecución" htmlFor="pdtp-act-prog" required helper="Cómo realizar la actividad y qué evidencia conservar.">
                   <Textarea id="pdtp-act-prog" name="program" required rows={3} maxLength={2000} placeholder="Ej.: inspeccionar, registrar hallazgos y definir acciones" />
                 </Field>

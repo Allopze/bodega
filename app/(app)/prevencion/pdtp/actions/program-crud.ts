@@ -6,12 +6,11 @@ import { ZodError } from "zod"
 import { guardPermission } from "@/lib/auth/can"
 import { unexpectedActionError } from "@/lib/actions/safe-server-action"
 import {
-  createPdtpProgram,
+  createAnnualPdtpProgram,
   updatePdtpProgram,
   deletePdtpProgram as deletePdtpProgramService,
   createPdtpSheet,
   deletePdtpSheet as deletePdtpSheetService,
-  createPdtpTemplateVersion,
 } from "@/lib/services/prevention-pdtp"
 import type { ActionState } from "@/lib/validation/prevention"
 import {
@@ -20,7 +19,6 @@ import {
   pdtpProgramDeleteSchema,
   pdtpSheetCreateSchema,
   pdtpSheetDeleteSchema,
-  pdtpTemplatePublishSchema,
 } from "@/lib/validation/prevention"
 
 const REVALIDATE = "/prevencion/pdtp"
@@ -48,20 +46,12 @@ export async function createPdtpProgramAction(
 
   let programId: string
   try {
-    const parsed = pdtpProgramCreateSchema.parse({
-      year: formData.get("year"),
-      title: formData.get("title"),
-      copySheetsFromProgramId: formData.get("copySheetsFromProgramId") || undefined,
-      templateVersionId: formData.get("templateVersionId") || undefined,
-    })
-    const program = await createPdtpProgram({
+    const parsed = pdtpProgramCreateSchema.parse({ year: formData.get("year") })
+    const result = await createAnnualPdtpProgram({
       year: parsed.year,
-      title: parsed.title,
       userId: session.user.id,
-      copySheetsFromProgramId: parsed.copySheetsFromProgramId,
-      templateVersionId: parsed.templateVersionId,
     })
-    programId = program.id
+    programId = result.programId
   } catch (e) {
     return fail(e)
   }
@@ -95,35 +85,6 @@ export async function updatePdtpProgramAction(
     revalidatePath(`${REVALIDATE}/${parsed.programId}`)
     revalidatePath(`${REVALIDATE}/${parsed.programId}/editar`)
     return { ok: true }
-  } catch (e) {
-    return fail(e)
-  }
-}
-
-export async function publishPdtpTemplateAction(
-  _prev: ActionState | null,
-  formData: FormData,
-): Promise<ActionState> {
-  const guard = await guardPermission("prevention:pdtp:program:manage")
-  if (guard.error) return guard.error
-  const session = guard.session
-
-  try {
-    const parsed = pdtpTemplatePublishSchema.parse({
-      sourceProgramId: formData.get("sourceProgramId"),
-      name: formData.get("name"),
-      description: formData.get("description") ?? "",
-    })
-    const published = await createPdtpTemplateVersion({
-      sourceProgramId: parsed.sourceProgramId,
-      name: parsed.name,
-      description: parsed.description || undefined,
-      userId: session.user.id,
-    })
-    revalidatePath(REVALIDATE)
-    revalidatePath(`${REVALIDATE}/nuevo`)
-    revalidatePath(`${REVALIDATE}/${parsed.sourceProgramId}/editar`)
-    return { ok: true, message: `Plantilla ${published.template.name} v${published.version.version} publicada.` }
   } catch (e) {
     return fail(e)
   }
