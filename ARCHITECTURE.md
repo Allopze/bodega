@@ -238,8 +238,12 @@ draft → requested ─┬─ approved → in_purchase_order → purchased
 **Solicitud:** `draft → submitted → in_review → partially_approved → approved →
 in_purchasing → closed` (con `cancelled` / `returned` / `rejected` según flujo).
 
-**Orden de compra:** `draft → issued → sent → supplier_confirmed →
-partially_received → received → closed` (con `cancelled`).
+**Orden de compra:** `draft → issued → sent → partially_office_received →
+office_received → partially_received → received → closed` (con `cancelled`).
+Las etapas de oficina sólo aplican a las OC `via_oficina`; una OC
+`directo_faena` va de `sent` a `partially_received`/`received`. El estado
+`supplier_confirmed` se retiró en 2026-07-30: dejaba la OC fuera del conjunto
+recibible y era imposible avanzarla (migración `0132`).
 
 ---
 
