@@ -15,6 +15,13 @@ interface OcFormSummaryProps {
 export function OcFormSummary({
   includedItems, worksiteId, supplierId, supplierGroupCount, totals,
 }: OcFormSummaryProps) {
+  // `includedItems.every(...)` sobre una lista vacía es `true`, así que sin ítems
+  // ni proveedor el checklist anunciaba "Proveedor: Listo" — justo cuando se lo
+  // consulta para saber qué falta (auditoría UI/UX 2026-07-29, A-07). Sin ítems
+  // no hay proveedor resuelto que declarar.
+  const supplierReady = includedItems.length > 0
+    && (Boolean(supplierId) || includedItems.every((i) => i.targetSupplierId))
+
   return (
     <aside className="h-fit rounded-[var(--radius-2xl)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-[var(--shadow-card)] xl:sticky xl:top-6">
       <div className="flex items-start justify-between gap-3">
@@ -55,8 +62,8 @@ export function OcFormSummary({
         </div>
         <div className="flex items-center justify-between gap-3">
           <span className="text-[var(--color-text-muted)]">Proveedor</span>
-          <span className={(supplierId || includedItems.every((i) => i.targetSupplierId)) ? "text-[var(--color-success-ink)]" : "text-[var(--color-warning-ink)]"}>
-            {supplierId || includedItems.every((i) => i.targetSupplierId) ? "Listo" : "Falta"}
+          <span className={supplierReady ? "text-[var(--color-success-ink)]" : "text-[var(--color-warning-ink)]"}>
+            {supplierReady ? "Listo" : "Falta"}
           </span>
         </div>
         <div className="flex items-center justify-between gap-3">

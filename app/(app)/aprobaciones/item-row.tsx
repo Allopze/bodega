@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import {
-  CheckCircle, XCircle,
+  ArrowUUpLeft, CheckCircle, XCircle,
 } from "@phosphor-icons/react"
 import { StateBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
@@ -15,7 +15,7 @@ import { ReasonForm } from "./reason-form"
 import { useItemActions } from "./use-approval-actions"
 import { WorkAssignmentControl } from "../pendientes/work-assignment-control"
 
-type ItemAction = "idle" | "approving" | "rejecting"
+type ItemAction = "idle" | "approving" | "rejecting" | "returning"
 
 export function ItemRow({
   item, canApprove = true, canAssignWork = false, selected = false, onToggleSelect,
@@ -28,7 +28,12 @@ export function ItemRow({
   onToggleSelect?: (id: string) => void
 }) {
   const [action, setAction] = React.useState<ItemAction>("idle")
-  const { approveState, approveAction, approvePending, rejectState, rejectAction, rejectPending, decided } = useItemActions()
+  const {
+    approveState, approveAction, approvePending,
+    rejectState, rejectAction, rejectPending,
+    returnState, returnAction, returnPending,
+    decided,
+  } = useItemActions()
   const prevDecidedRef = React.useRef(decided)
 
   React.useEffect(() => {
@@ -41,7 +46,7 @@ export function ItemRow({
   }, [decided])
 
   if (decided) {
-    const label = decided === "approved" ? "Aprobado" : "Rechazado"
+    const label = decided === "approved" ? "Aprobado" : decided === "returned" ? "Devuelto" : "Rechazado"
     return (
       <li className="flex items-center gap-3 py-2.5 px-3 rounded-[var(--radius)] bg-[var(--color-surface-2)] opacity-60">
         <StateBadge state={decided} entity="item" size="sm" />
@@ -58,14 +63,18 @@ export function ItemRow({
     )
   }
 
-  const showLoading = approvePending || rejectPending
+  const showLoading = approvePending || rejectPending || returnPending
 
   return (
     <li
       data-selected={selected || undefined}
       className="rounded-[var(--radius-xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] overflow-hidden data-[selected]:ring-2 data-[selected]:ring-[var(--color-primary-line)]"
     >
-      <div className="flex items-start gap-3 p-3">
+      {/* Mismo problema que el header del grupo: los grupos de acción son
+          `shrink-0` y en móvil dejaban al contenido ~90px, con el nombre del
+          producto y el código superpuestos a los botones. Envolviendo, las
+          acciones bajan a su línea (A-01). */}
+      <div className="flex flex-wrap items-start gap-x-3 gap-y-2 p-3">
         {onToggleSelect && (
           <input
             type="checkbox"
@@ -75,7 +84,7 @@ export function ItemRow({
             className="mt-1 h-4 w-4 shrink-0 rounded border-[var(--color-border-control)] accent-[var(--color-primary)]"
           />
         )}
-        <div className="flex-1 min-w-0">
+        <div className="flex-1 basis-[min(100%,18rem)] min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             {item.productSku && (
               <span className="font-mono text-[11px] text-[var(--color-text-subtle)] bg-[var(--color-surface-2)] px-1.5 py-0.5 rounded">
@@ -132,7 +141,7 @@ export function ItemRow({
         </div>
 
         {action === "idle" && !showLoading && canApprove && (
-          <div className="flex items-center gap-2.5 shrink-0">
+          <div className="flex items-center gap-2.5 shrink-0 ms-auto">
             {/* Aprobar es la acción esperada de esta pantalla: debe ser el único
                 punto focal Nivel 1 de la fila. Antes era `secondary`, con lo que
                 la bandeja de aprobación no tenía ninguna acción primaria. */}
@@ -145,11 +154,25 @@ export function ItemRow({
               <CheckCircle size={13} weight="bold" />
               Aprobar
             </Button>
+            {/* Devolver ≠ rechazar: devuelve al solicitante para que corrija y
+                deja la solicitud en `returned`, que la cola marca "Bloqueada".
+                Rechazar es terminal. Ambas piden motivo (A-24). */}
             <Button
-              variant="ghost"
+              variant="secondary"
+              size="sm"
+              onClick={() => setAction("returning")}
+              className="gap-1"
+            >
+              <ArrowUUpLeft size={13} weight="bold" />
+              Devolver
+            </Button>
+            {/* `ghost` con sólo texto rojo dejaba a la decisión negativa sin
+                afordancia de botón frente al verde sólido de Aprobar. */}
+            <Button
+              variant="secondary"
               size="sm"
               onClick={() => setAction("rejecting")}
-              className="gap-1 text-[var(--color-danger)] hover:text-[var(--color-danger)]"
+              className="gap-1 border-[var(--color-danger-line)] text-[var(--color-danger)] hover:bg-[var(--color-danger-tint)] hover:text-[var(--color-danger)]"
             >
               <XCircle size={13} weight="bold" />
               Rechazar
@@ -189,6 +212,21 @@ export function ItemRow({
           submitLabel="Confirmar rechazo"
           submitLoadingLabel="Rechazando..."
           colorClass="text-[var(--color-danger)]"
+        />
+      )}
+
+      {action === "returning" && canApprove && (
+        <ReasonForm
+          itemId={item.id}
+          actionFn={returnAction}
+          state={returnState}
+          onCancel={() => setAction("idle")}
+          label="Observaciones para el solicitante"
+          placeholder="Indica qué debe corregir para volver a enviarlo..."
+          note="El solicitante podrá corregir el ítem y enviarlo de nuevo."
+          submitLabel="Devolver al solicitante"
+          submitLoadingLabel="Devolviendo..."
+          colorClass="text-[var(--color-warning-ink)]"
         />
       )}
     </li>

@@ -62,9 +62,17 @@ export const REQUEST_TYPE_LABELS: Record<string, string> = {
   otro:       "Otros",
 }
 
-export const REQUEST_TYPE_VARIANTS: Record<string, "info" | "success" | "warning" | "default"> = {
+/**
+ * El tipo de solicitud es una **categoría**, no una severidad.
+ *
+ * `repuestos` estaba en `warning`, que en el design system lleva el tratamiento
+ * mono-mayúsculas reservado a severidades (ver `badge.tsx`): en la misma columna
+ * convivían "REPUESTOS" a gritos con "Servicios" y "Otros" en caja normal
+ * (auditoría UI/UX 2026-07-29, A-35). Todas las variantes de acá son neutras.
+ */
+export const REQUEST_TYPE_VARIANTS: Record<string, "info" | "outline" | "default"> = {
   epp:        "info",
-  repuestos:  "warning",
+  repuestos:  "outline",
   servicios:  "info",
   otro:       "default",
 }

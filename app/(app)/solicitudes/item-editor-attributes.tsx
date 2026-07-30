@@ -15,6 +15,7 @@ interface Props {
   readOnly: boolean
   onUpdate: (patch: Partial<ItemRow>) => void
   onUpdateAttr: (i: number, v: string) => void
+  hiddenAttributeNames?: string[]
 }
 
 function AttrInput({
@@ -57,8 +58,11 @@ function AttrInput({
   )
 }
 
-export function ItemEditorAttributes({ item, readOnly, onUpdate, onUpdateAttr }: Props) {
-  const editableAttributes = getEditableItemAttributes(item.attributes)
+export function ItemEditorAttributes({ item, readOnly, onUpdate, onUpdateAttr, hiddenAttributeNames = [] }: Props) {
+  const hiddenNames = new Set(hiddenAttributeNames.map((name) => name.toLocaleLowerCase("es-CL")))
+  const editableAttributes = getEditableItemAttributes(item.attributes).filter(
+    ({ attribute }) => !hiddenNames.has(attribute.attributeName.toLocaleLowerCase("es-CL")),
+  )
   if (editableAttributes.length === 0) return null
 
   const requiredAttrs = editableAttributes.filter(

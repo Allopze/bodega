@@ -15,6 +15,7 @@ import {
 import { useOcForm } from "./use-oc-form"
 import { OcFormItems } from "./oc-form-items"
 import { OcFormSummary } from "./oc-form-summary"
+import { PAYMENT_TERMS_OPTIONS } from "./oc-form.types"
 import type { SupplierOption, WorksiteOption, PendingItemOption } from "./oc-form.types"
 
 export type { SupplierOption, WorksiteOption, PendingItemOption }
@@ -24,13 +25,15 @@ export function OcForm({
   worksites,
   pendingItems,
   initialWorksiteId,
+  initialItemId,
 }: {
   suppliers:    SupplierOption[]
   worksites:    WorksiteOption[]
   pendingItems: PendingItemOption[]
   initialWorksiteId?: string
+  initialItemId?: string
 }) {
-  const f = useOcForm({ suppliers, worksites, pendingItems, initialWorksiteId })
+  const f = useOcForm({ suppliers, worksites, pendingItems, initialWorksiteId, initialItemId })
 
   return (
     <form action={f.action} className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_21rem]">
@@ -63,14 +66,23 @@ export function OcForm({
           </Select>
         </Field>
 
-        <Field label="Condición de pago" htmlFor="paymentTerms">
+        {/* A-30: era texto libre y los datos ya divergen ("30 días", "Contado",
+            "CREDITO"). No se convirtió en `Select` a propósito: rechazaría los
+            valores que ya existen en proveedores y OC históricas. Un `datalist`
+            nativo guía hacia el vocabulario canónico sin bloquear lo demás, y el
+            valor que trae el proveedor sigue autocompletándose. */}
+        <Field label="Condición de pago" htmlFor="paymentTerms" helper="Elige una opción o escribe la condición acordada.">
           <Input
             id="paymentTerms"
             name="paymentTerms"
+            list="payment-terms-options"
             value={f.paymentTerms}
             onChange={(e) => f.setPaymentTerms(e.target.value)}
             placeholder="30 días, contado, etc."
           />
+          <datalist id="payment-terms-options">
+            {PAYMENT_TERMS_OPTIONS.map((term) => <option key={term} value={term} />)}
+          </datalist>
         </Field>
 
         <Field label="Entrega estimada" htmlFor="estimatedDelivery">

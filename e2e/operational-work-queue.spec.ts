@@ -17,7 +17,12 @@ test.describe("Centro de control operacional", () => {
 
     await expect(page.getByRole("heading", { name: "Mis pendientes" })).toBeVisible()
     await expect(page.getByRole("heading", { name: "Cola de trabajo" })).toBeVisible()
-    await expect(page.getByText("SOL-BULK-E2E-001")).toBeVisible()
+    // `.first()`: la cola renderiza la tabla (desde `md`) y una lista de tarjetas
+    // (bajo `md`) para el mismo dato, así que el código aparece dos veces en el
+    // DOM. Sólo una rama es visible por viewport — la otra va con `display:none`,
+    // fuera del árbol de accesibilidad — pero un `getByText` sin acotar cae en
+    // strict mode. Mismo patrón que ya usan las líneas de abajo con `tr`.
+    await expect(page.getByText("SOL-BULK-E2E-001").first()).toBeVisible()
 
     await page.getByRole("button", { name: "Críticas" }).click()
     await expect(page).toHaveURL(/quick=critical/)

@@ -22,7 +22,9 @@ import { ServiceQuotationPanel } from "../../servicios/quotation-panel"
 import { DuplicateButton } from "./duplicate-button"
 import { EntityTimeline } from "@/components/states/entity-timeline"
 import { RequestProgressPanel } from "@/components/states/request-progress-panel"
-import { buildRequestProgress } from "@/lib/work-queue"
+import Link from "next/link"
+import { Button } from "@/components/ui/button"
+import { buildRequestProgress, PURCHASE_ITEM_STATUSES } from "@/lib/work-queue"
 import { RequestPeoplePanel } from "../request-people-panel"
 
 
@@ -218,6 +220,20 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
     })),
   )
 
+  // A-17: la solicitud enunciaba el siguiente paso ("el módulo de órdenes de
+  // compra debe generar la orden") sin ofrecerlo. Con A-06 el destino ya acepta
+  // el ítem, así que el CTA lleva directo a la OC con ese ítem preseleccionado.
+  const purchasableItem = request.items.find((item) => PURCHASE_ITEM_STATUSES.has(item.status))
+  const purchaseCta = purchasableItem && can(session, "purchasing:create_order")
+    ? (
+      <Button size="sm" variant="primary" asChild>
+        <Link href={`/compras/nueva?faena=${request.worksiteId}&item=${purchasableItem.id}`}>
+          Crear orden de compra
+        </Link>
+      </Button>
+    )
+    : undefined
+
   const editRequest = {
     id:           request.id,
     code:         request.code,
@@ -268,7 +284,7 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
         }
       />
       <div className="space-y-6">
-        <RequestProgressPanel progress={progress} />
+        <RequestProgressPanel progress={progress} action={purchaseCta} />
         <RequestPeoplePanel
           requesterName={request.requester?.name}
           requesterEmail={request.requester?.email}

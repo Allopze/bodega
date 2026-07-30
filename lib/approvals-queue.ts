@@ -2,6 +2,17 @@ import { and, inArray, sql, type SQL } from "drizzle-orm"
 import { purchaseRequests } from "@/db/schema"
 
 /**
+ * Estados en los que una solicitud ya no genera trabajo pendiente, por más que a
+ * alguno de sus ítems le haya quedado un estado intermedio.
+ *
+ * Es una constante compartida y no una condición escrita en cada consulta porque
+ * la cola de `/pendientes` y el badge del rail son dos consultas distintas sobre
+ * el mismo criterio: la auditoría UI/UX 2026-07-29 (A-03, A-13) las encontró
+ * derivadas, ofreciendo tareas que la página de destino descartaba.
+ */
+export const TERMINAL_REQUEST_STATUSES = ["rejected", "closed", "cancelled"] as const
+
+/**
  * Predicado base de la cola de aprobaciones.
  *
  * Existe porque el badge del rail y la página `/aprobaciones` tenían la misma

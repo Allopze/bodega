@@ -30,6 +30,10 @@ function itemState(row: OcProgressRow): { label: string; variant: "success" | "w
  * facturación que antes obligaba a saltar entre 3 pantallas.
  */
 export function OcProgressTable({ rows }: { rows: OcProgressRow[] }) {
+  // A-31: la pestaña dice "Facturación 1" y esta columna puede decir "0" para la
+  // misma OC, porque una factura registrada no asigna cantidades a los ítems
+  // hasta que se concilia. Sin decirlo, se lee como dos datos en conflicto.
+  const hasUninvoicedLines = rows.some((row) => row.invoiced === 0)
   return (
     <TableRoot>
       <Table>
@@ -66,6 +70,12 @@ export function OcProgressTable({ rows }: { rows: OcProgressRow[] }) {
           })}
         </TableBody>
       </Table>
+      {hasUninvoicedLines && (
+        <p className="mt-2 px-1 text-xs text-[var(--color-text-subtle)]">
+          <strong className="font-medium">Facturado</strong> cuenta cantidades ya conciliadas contra líneas de la OC.
+          Una factura puede estar registrada en la pestaña Facturación y aún no tener cantidades asignadas.
+        </p>
+      )}
     </TableRoot>
   )
 }

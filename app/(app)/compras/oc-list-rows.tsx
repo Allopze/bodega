@@ -8,7 +8,7 @@ import { toast } from "@/lib/toast"
 import { Trash } from "@phosphor-icons/react"
 import { StateBadge } from "@/components/states/state-badge"
 import { SubmitButton } from "@/components/admin/submit-button"
-import { TableRow, TableCell } from "@/components/ui/table"
+import { TableRow, TableCell, TableCellNum } from "@/components/ui/table"
 import { INITIAL_STATE } from "@/components/admin/form-state"
 import { formatCLP, formatDate } from "@/lib/utils"
 import { issueOrderAction, sendOrderAction } from "./actions/order-status"
@@ -78,13 +78,16 @@ export function OcTableRow({ row, canDelete = false }: { row: OcRow; canDelete?:
       <TableCell className="text-sm text-[var(--color-text-muted)]">
         {row.supplierName}
       </TableCell>
-      <TableCell className="tabular-nums text-sm text-[var(--color-text-muted)] text-right pr-6">
+      {/* A-35: `TableCellNum` es el render canónico de columna numérica (mono,
+          alineada a la derecha, con el mismo padding que su encabezado). Con
+          `TableCell` + `text-right pr-6` ad-hoc, valor y encabezado no coincidían. */}
+      <TableCellNum className="text-[var(--color-text-muted)]">
         {row.itemCount}
-      </TableCell>
-      <TableCell className="tabular-nums text-sm text-right pr-6 font-medium">
+      </TableCellNum>
+      <TableCellNum className="font-medium">
         {formatCLP(row.totalAmount)}
-      </TableCell>
-      <TableCell className="text-right pr-6">
+      </TableCellNum>
+      <TableCellNum>
         {row.invoiceCount > 0 ? (
           <span className="inline-flex items-center justify-center rounded-full bg-[var(--color-surface-2)] text-[var(--color-text-muted)] text-xs font-medium px-2 py-0.5 tabular-nums">
             {row.invoiceCount}
@@ -92,7 +95,7 @@ export function OcTableRow({ row, canDelete = false }: { row: OcRow; canDelete?:
         ) : (
           <span className="text-xs text-[var(--color-text-subtle)]">—</span>
         )}
-      </TableCell>
+      </TableCellNum>
       <TableCell onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center gap-2">
           <StateBadge state={row.status} entity="oc" size="sm" />

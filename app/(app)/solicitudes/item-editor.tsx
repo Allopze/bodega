@@ -13,10 +13,11 @@ import { QUOTATION_TYPES } from "@/lib/request-types"
 import { ItemEditorEquipment } from "./item-editor-equipment"
 import { ItemEditorSupplier } from "./item-editor-supplier"
 import { ItemEditorCotizaciones } from "./item-editor-cotizaciones"
-import { VariantQuantityGrid } from "./variant-quantity-grid"
+import { VariantSelector } from "./variant-selector"
+import { getSizeVariantPicker } from "./variant-selector.helpers"
 import { ItemEditorAttributes } from "./item-editor-attributes"
 import { groupProductVariants } from "@/lib/products/variant-grouping"
-import { URGENCY_OPTS } from "./request-form.constants"
+import { URGENCY_OPTS, UNIT_OF_MEASURE_OPTIONS } from "./request-form.constants"
 import { getWorkerEppStatusAction, type WorkerEppStatusResult } from "./actions"
 import { formatDate } from "@/lib/utils"
 
@@ -52,6 +53,7 @@ export function ItemEditor({
   const variants = selectedProduct
     ? groupProductVariants(products).find((group) => group.variants.some((variant) => variant.id === selectedProduct.id))?.variants ?? []
     : []
+  const sizeVariantPicker = getSizeVariantPicker(variants)
 
   const [statusInfo, setStatusInfo] = React.useState<WorkerEppStatusResult | null>(null)
 
@@ -148,19 +150,14 @@ export function ItemEditor({
         )}
       </div>
 
-      {selectedProduct && variants.length > 1 && (
-        <div className="ml-8 space-y-3">
-          <VariantQuantityGrid
+      {selectedProduct && sizeVariantPicker && (
+        <div className="ml-8 max-w-sm">
+          <VariantSelector
             variants={variants}
-            quantities={item.variantQuantities ?? {}}
+            selectedVariantId={selectedProduct.id}
             readOnly={readOnly}
-            onChange={(variantId, qty) => {
-              onUpdate({ variantQuantities: { ...(item.variantQuantities ?? {}), [variantId]: qty } })
-              // Also update the aggregated quantity field to match the sum
-              const updated = { ...(item.variantQuantities ?? {}), [variantId]: qty }
-              const total = Object.values(updated).reduce((s, q) => s + (q || 0), 0)
-              if (total > 0) onUpdate({ quantity: String(total) })
-            }}
+            onSelect={onSelectProduct}
+            id={`size-${item._key}`}
           />
         </div>
       )}
@@ -225,14 +222,23 @@ export function ItemEditor({
           />
         </Field>
 
+        {/* Texto libre para una unidad de medida produce los mismos datos sucios
+            que la condición de pago (A-30): "unidad"/"Unidad"/"un". Mismo remedio
+            —`datalist` nativo— porque el catálogo de unidades lo administra el
+            usuario y un `Select` rechazaría las que ya existen en productos
+            heredados (hallazgo nuevo, auditoría UI/UX 2026-07-29 §5.7). */}
         <Field label="Unidad" htmlFor={`uom-${item._key}`}>
           <Input
             id={`uom-${item._key}`}
             className="h-8 text-sm"
+            list="unit-of-measure-options"
             value={item.unitOfMeasure}
             onChange={(e) => onUpdate({ unitOfMeasure: e.target.value })}
             disabled={readOnly}
           />
+          <datalist id="unit-of-measure-options">
+            {UNIT_OF_MEASURE_OPTIONS.map((unit) => <option key={unit} value={unit} />)}
+          </datalist>
         </Field>
 
         {!isQuotationType && (
@@ -309,6 +315,7 @@ export function ItemEditor({
           readOnly={readOnly}
           onUpdate={onUpdate}
           onUpdateAttr={onUpdateAttr}
+          hiddenAttributeNames={sizeVariantPicker ? [sizeVariantPicker.attributeName] : []}
         />
       )}
     </div>

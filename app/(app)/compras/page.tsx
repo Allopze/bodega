@@ -151,8 +151,10 @@ export default async function ComprasPage({
 
   const canCreateOrder = can(session, "purchasing:create_order")
   const canDeleteOrder = can(session, "purchasing:delete_order")
+  // A-19: la pastilla "Sin OC" del top bar repetía, en el mismo viewport, la
+  // alerta ámbar de la lista — que además explica y trae su propio "Crear OC".
+  // Se queda la accionable. "Postergados" no tiene equivalente en la lista.
   const headerSignals: HeaderSignal[] = [
-    { key: "no-oc", label: "Sin OC", value: pendingCount, href: canCreateOrder ? "/compras/nueva" : undefined, tone: "signal" },
     { key: "postponed", label: "Postergados", value: postponedCount, tone: "signal" },
   ]
 

@@ -143,17 +143,11 @@ export default async function NuevaRecepcionPage({
           ]} />
         }
       />
-      <ReceiptForm
-        purchaseOrderId={order.id}
-        orderCode={order.code}
-        orderWorksiteName={order.worksite?.name ?? "faena de la OC"}
-        items={items}
-        canOffice={canOfficeForOrder}
-        canFaena={canFaena}
-        deliveryMode={order.deliveryMode as "via_oficina" | "directo_faena"}
-      />
+      {/* A-32: iba **después** del submit primario ("Marcar como recibido"), así
+          que quien quisiera asignar ya había enviado. Asignar es un paso previo
+          al registro, y con esto el submit vuelve a ser lo último de la página. */}
       {receiptAssignmentItems.length > 0 && (
-        <section className="mt-5 border-t border-[var(--color-border)] pt-4" aria-labelledby="receipt-assignment-title">
+        <section className="mb-5 border-b border-[var(--color-border)] pb-4" aria-labelledby="receipt-assignment-title">
           <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h2 id="receipt-assignment-title" className="text-base font-semibold text-[var(--color-text)]">Responsables de la recepción</h2>
@@ -173,6 +167,15 @@ export default async function NuevaRecepcionPage({
           </div>
         </section>
       )}
+      <ReceiptForm
+        purchaseOrderId={order.id}
+        orderCode={order.code}
+        orderWorksiteName={order.worksite?.name ?? "faena de la OC"}
+        items={items}
+        canOffice={canOfficeForOrder}
+        canFaena={canFaena}
+        deliveryMode={order.deliveryMode as "via_oficina" | "directo_faena"}
+      />
     </PageContainer>
   )
 }

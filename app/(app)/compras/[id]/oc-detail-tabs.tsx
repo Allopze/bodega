@@ -15,6 +15,7 @@ export function OcDetailTabs({
   defaultTab = "items",
   itemsCount,
   invoicesCount,
+  historyCount,
   items,
   facturacion,
   avance,
@@ -23,6 +24,8 @@ export function OcDetailTabs({
   defaultTab?:   string
   itemsCount:    number
   invoicesCount: number
+  /** A-35: Historial no tenía contador y las otras pestañas sí. */
+  historyCount:  number
   items:         React.ReactNode
   facturacion?:  React.ReactNode
   avance?:       React.ReactNode
@@ -50,8 +53,13 @@ export function OcDetailTabs({
             {invoicesCount > 0 && <Count>{invoicesCount}</Count>}
           </TabsTrigger>
         )}
+        {/* A-35: "Avance" es la única sin contador a propósito — tiene una fila por
+            ítem, así que su número sería el de "Ítems" repetido. */}
         {avance != null && <TabsTrigger value="avance">Avance</TabsTrigger>}
-        <TabsTrigger value="historial">Historial</TabsTrigger>
+        <TabsTrigger value="historial">
+          Historial
+          {historyCount > 0 && <Count>{historyCount}</Count>}
+        </TabsTrigger>
       </TabsList>
 
       <TabsContent value="items">{items}</TabsContent>

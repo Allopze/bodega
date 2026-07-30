@@ -3,7 +3,7 @@ export const dynamic = "force-dynamic"
 import { NextResponse } from "next/server"
 import { auth } from "@/lib/auth/auth"
 import { can } from "@/lib/auth/can"
-import { extractInvoiceData } from "@/lib/services/purchasing"
+import { extractInvoiceData } from "@/lib/services/purchasing-module/invoice-extractor"
 import { logger } from "@/lib/logger"
 
 /**

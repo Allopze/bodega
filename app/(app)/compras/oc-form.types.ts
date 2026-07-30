@@ -1,3 +1,17 @@
+/**
+ * Vocabulario sugerido para la condición de pago. Sugerencias, no validación:
+ * proveedores y OC históricas traen valores propios que no se deben rechazar
+ * (auditoría UI/UX 2026-07-29, A-30).
+ */
+export const PAYMENT_TERMS_OPTIONS = [
+  "Contado",
+  "15 días",
+  "30 días",
+  "45 días",
+  "60 días",
+  "90 días",
+] as const
+
 export interface SupplierOption {
   id:           string
   name:         string

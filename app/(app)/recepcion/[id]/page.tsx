@@ -82,6 +82,9 @@ export default async function RecepcionDetallePage({
         quantityReceived: ocItem.quantityReceived ?? 0,
       }
     }),
+    // A-10: el panel es compartido con /compras/[id]; sin declarar la audiencia
+    // mostraba aquí instrucciones dirigidas a quien compra.
+    "recepcion",
   )
 
   return (
@@ -154,9 +157,12 @@ export default async function RecepcionDetallePage({
                         </TableCell>
                         <TableCellNum>
                           {formatQty(item.quantityReceived, ocItem.unitOfMeasure)}
+                          {/* A-35: "En oficina" junto a un título "Ítems recibidos
+                              en faena" se leía como contradicción. Son dos hitos
+                              distintos de la misma línea; el texto lo dice. */}
                           <div className="mt-0.5 text-[11px] font-normal text-[var(--color-text-subtle)]">
-                            En oficina: {formatQty(ocItem.quantityOfficeReceived ?? 0, ocItem.unitOfMeasure)}
-                            {pendingToFaena > 0 && ` · pend. faena: ${formatQty(pendingToFaena, ocItem.unitOfMeasure)}`}
+                            Llegó antes a oficina: {formatQty(ocItem.quantityOfficeReceived ?? 0, ocItem.unitOfMeasure)}
+                            {pendingToFaena > 0 && ` · por despachar: ${formatQty(pendingToFaena, ocItem.unitOfMeasure)}`}
                           </div>
                         </TableCellNum>
                         <TableCell className="text-sm text-[var(--color-text-muted)]">{item.notes ?? "—"}</TableCell>
@@ -185,6 +191,14 @@ export default async function RecepcionDetallePage({
                 {receipt.status === "closed" ? "Cerrada" : "Abierta"}
               </Badge>
             </div>
+            {/* A-33: el glosario de estados sólo existía en la bandeja, y aquí
+                "Abierta"/"Cerrada" quedaba sin explicación — que es donde más
+                falta, mirando una recepción concreta. */}
+            <p className="mt-2 text-xs text-[var(--color-text-muted)]">
+              {receipt.status === "closed"
+                ? "Todas las líneas de esta recepción quedaron conciliadas: no admite más cambios."
+                : "Quedan líneas por conciliar en esta recepción; aún admite ajustes."}
+            </p>
             <dl className="mt-3 divide-y divide-[var(--color-border)]">
               <DetailLine label="Destino" value={destinationLabel} />
               <DetailLine label="Guía" value={receipt.dispatchGuideNo ?? "Sin guía"} mono />
@@ -206,7 +220,9 @@ export default async function RecepcionDetallePage({
             </dl>
             <Link
               href={`/compras/${receipt.purchaseOrderId}`}
-              className="mt-3 inline-flex h-8 w-full items-center justify-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-surface-2)] px-3 text-xs font-medium text-[var(--color-text)] transition-transform duration-[var(--duration-fast)]  hover:bg-[var(--color-border)]"
+              // Sin borde y sobre un fondo gris tenue se leía como un botón
+              // deshabilitado, no como el enlace activo que es (A-34).
+              className="mt-3 inline-flex h-8 w-full items-center justify-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border-control)] bg-[var(--color-surface)] px-3 text-xs font-medium text-[var(--color-text)] shadow-[var(--shadow-xs)] transition-colors duration-[var(--duration-fast)] hover:border-[var(--color-border-control-hover)] hover:bg-[var(--color-surface-2)]"
             >
               Ver OC
               <ArrowSquareOut size={13} />

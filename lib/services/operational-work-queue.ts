@@ -6,7 +6,7 @@
  * serializar una fila; no hay una lista completa enviada al navegador.
  */
 import type { Session } from "next-auth"
-import { and, count, eq, inArray, isNotNull, lte, or, sql, type SQL } from "drizzle-orm"
+import { and, count, eq, inArray, isNotNull, lte, notInArray, or, sql, type SQL } from "drizzle-orm"
 import type { AnyPgColumn } from "drizzle-orm/pg-core"
 import { db } from "@/db"
 import {
@@ -30,6 +30,7 @@ import {
   worksiteStock,
   worksites,
 } from "@/db/schema"
+import { approvalQueueFilter, TERMINAL_REQUEST_STATUSES } from "@/lib/approvals-queue"
 import { resolveWorksiteScope, type WorksiteScope } from "@/lib/auth/scope"
 import { logger } from "@/lib/logger"
 import { sentry } from "@/lib/sentry"
@@ -123,7 +124,20 @@ export interface OperationalQueueFilters {
 export interface OperationalQueueResult {
   items: OperationalWorkItem[]
   total: number
-  summary: { critical: number; overdue: number; blocked: number; unassigned: number; moduleCounts: Partial<Record<OperationalModule, number>> }
+  /**
+   * Conteos por filtro rápido, calculados ignorando el chip activo para que cada
+   * chip anuncie lo que entregaría al pulsarlo.
+   */
+  summary: {
+    all: number
+    critical: number
+    overdue: number
+    today: number
+    blocked: number
+    unassigned: number
+    mine: number
+    moduleCounts: Partial<Record<OperationalModule, number>>
+  }
   filterOptions: {
     modules: OperationalModule[]
     worksites: Array<{ id: string; name: string }>
@@ -141,7 +155,7 @@ export type OperationalDetailSource =
   | { sourceType: "purchase_order"; sourceId: string }
 
 function emptySummary(): OperationalQueueResult["summary"] {
-  return { critical: 0, overdue: 0, blocked: 0, unassigned: 0, moduleCounts: {} }
+  return { all: 0, critical: 0, overdue: 0, today: 0, blocked: 0, unassigned: 0, mine: 0, moduleCounts: {} }
 }
 
 function emptyFilterOptions(): OperationalQueueResult["filterOptions"] {
@@ -481,11 +495,14 @@ function operationalSourceBranches(session: Session, scope: WorksiteScope): Oper
     const requesterCondition = hasPermission(session, "requests:view_all")
       ? sql`true`
       : sql`${purchaseRequests.requesterId} = ${session.user.id}`
+    // Un solo fragmento reutilizado: el subtítulo necesita el conteo para el
+    // número y otra vez para concordar el plural ("1 ítem" / "2 ítems").
+    const itemCount = sql`(SELECT COUNT(*) FROM ${purchaseRequestItems} WHERE ${purchaseRequestItems.requestId} = ${purchaseRequests.id})`
     add("solicitudes", sql`
       SELECT 'purchase_request'::text AS source_type, ${purchaseRequests.id} AS source_id,
         CASE WHEN ${purchaseRequests.status} IN ('draft', 'returned') THEN 'complete' ELSE 'follow_up' END AS action_key,
         'solicitudes'::text AS module, ${purchaseRequests.code} AS code, ${purchaseRequests.code} AS title,
-        CONCAT(${worksites.name}, ' · ', (SELECT COUNT(*) FROM ${purchaseRequestItems} WHERE ${purchaseRequestItems.requestId} = ${purchaseRequests.id}), ' ítems') AS subtitle,
+        CONCAT(${worksites.name}, ' · ', ${itemCount}, ' ítem', CASE WHEN ${itemCount} = 1 THEN '' ELSE 's' END) AS subtitle,
         ${purchaseRequests.worksiteId} AS worksite_id, ${worksites.name} AS worksite_name,
         ${purchaseRequests.status} AS status,
         CASE ${purchaseRequests.status}
@@ -511,13 +528,27 @@ function operationalSourceBranches(session: Session, scope: WorksiteScope): Oper
   const itemTitle = sql`COALESCE(${products.name}, ${purchaseRequestItems.productNameFree}, 'Ítem solicitado')`
   const itemPriority = sql`CASE COALESCE(${purchaseRequestItems.urgency}, ${purchaseRequests.urgency}) WHEN 'critical' THEN 'critical' WHEN 'high' THEN 'high' ELSE 'normal' END`
   const itemDue = sql`COALESCE(${purchaseRequestItems.requiredDate}, ${purchaseRequests.requiredDate})`
+  // Una solicitud terminal (rechazada, cerrada o anulada) no genera trabajo
+  // pendiente, por más que a alguno de sus ítems le haya quedado un estado
+  // intermedio. Sin esta guarda la cola pedía "Entregar …" sobre una solicitud
+  // ya cerrada (auditoría UI/UX 2026-07-29, A-13). Va en la base compartida
+  // para que valga por igual en aprobaciones, compras y entregas.
   const itemBase = sql`
     FROM ${purchaseRequestItems}
     INNER JOIN ${purchaseRequests} ON ${purchaseRequests.id} = ${purchaseRequestItems.requestId}
     INNER JOIN ${worksites} ON ${worksites.id} = ${purchaseRequests.worksiteId}
     LEFT JOIN ${products} ON ${products.id} = ${purchaseRequestItems.productId}
     WHERE ${inScope(purchaseRequests.worksiteId)}
+      AND ${notInArray(purchaseRequests.status, [...TERMINAL_REQUEST_STATUSES])}
   `
+
+  // El predicado canónico de la cola de aprobaciones, el mismo que usan el badge
+  // del rail y la página `/aprobaciones`. Sin él esta fuente ofrecía tareas que
+  // la página descarta —repuestos y servicios se aprueban por cotizaciones, y la
+  // solicitud debe estar enviada— y el CTA aterrizaba en una pantalla vacía
+  // (auditoría UI/UX 2026-07-29, A-03). La faena la resuelve `inScope`, así que
+  // el scope va neutro.
+  const approvalScope = { isGlobal: true, worksiteIds: [] as string[] }
 
   if (hasPermission(session, "approvals:approve")) add("aprobaciones", sql`
     SELECT 'purchase_request_item'::text AS source_type, ${purchaseRequestItems.id} AS source_id, 'approve'::text AS action_key,
@@ -528,6 +559,7 @@ function operationalSourceBranches(session: Session, scope: WorksiteScope): Oper
       ${emptyAssignee} AS native_assignee_user_id, ${emptyAssignee} AS native_assignee_name,
       CONCAT('/aprobaciones?solicitud=', ${purchaseRequests.id}) AS href, 'Aprobar o devolver'::text AS cta_label, true AS assignable
     ${itemBase} AND ${purchaseRequestItems.status} = 'requested'
+      AND ${approvalQueueFilter(approvalScope)}
   `)
 
   if (hasPermission(session, "purchasing:create_order")) add("compras", sql`
@@ -537,7 +569,7 @@ function operationalSourceBranches(session: Session, scope: WorksiteScope): Oper
       ${worksites.name} AS worksite_name, ${purchaseRequestItems.status} AS status, 'Listo para comprar'::text AS status_label,
       ${itemPriority} AS priority, false AS blocked, ${purchaseRequestItems.createdAt}::text AS created_at, LEFT((${itemDue})::text, 10) AS source_due_at,
       ${emptyAssignee} AS native_assignee_user_id, ${emptyAssignee} AS native_assignee_name,
-      CONCAT('/compras/nueva?faena=', ${purchaseRequests.worksiteId}) AS href, 'Crear orden de compra'::text AS cta_label, true AS assignable
+      CONCAT('/compras/nueva?faena=', ${purchaseRequests.worksiteId}, '&item=', ${purchaseRequestItems.id}) AS href, 'Crear orden de compra'::text AS cta_label, true AS assignable
     ${itemBase} AND ${purchaseRequestItems.status} IN ('approved', 'pending_purchase')
   `)
 
@@ -546,7 +578,11 @@ function operationalSourceBranches(session: Session, scope: WorksiteScope): Oper
       'entregas'::text AS module, ${purchaseRequests.code} AS code, CONCAT('Entregar ', ${itemTitle}) AS title,
       CONCAT(${purchaseRequests.code}, ' · ', ${worksites.name}) AS subtitle, ${purchaseRequests.worksiteId} AS worksite_id,
       ${worksites.name} AS worksite_name, ${purchaseRequestItems.status} AS status,
-      REPLACE(${purchaseRequestItems.status}, '_', ' ') AS status_label, ${itemPriority} AS priority, false AS blocked,
+      CASE ${purchaseRequestItems.status}
+        WHEN 'partially_received' THEN 'Recibido parcial'
+        WHEN 'received' THEN 'Recibido, por entregar'
+        WHEN 'partially_delivered' THEN 'Entrega parcial'
+        ELSE ${purchaseRequestItems.status} END AS status_label, ${itemPriority} AS priority, false AS blocked,
       ${purchaseRequestItems.createdAt}::text AS created_at, LEFT((${itemDue})::text, 10) AS source_due_at,
       ${emptyAssignee} AS native_assignee_user_id, ${emptyAssignee} AS native_assignee_name,
       CONCAT('/entregas?faena=', ${purchaseRequests.worksiteId}, '&item=', ${purchaseRequestItems.id}) AS href,
@@ -772,22 +808,43 @@ function queueCursorSql(cursor: QueueCursor | null, sort: OperationalSort): SQL 
   `
 }
 
-function queueFilterSql(filters: OperationalQueueFilters, session: Session): SQL {
+/**
+ * Predicado de un filtro rápido. Vive aparte de `queueFilterSql` porque los
+ * contadores de los chips se calculan sobre el conjunto que ignora el chip
+ * activo: si se contaran sobre el resultado final, "Vencidas" mostraría su
+ * propio total al estar activo y un subconjunto al estar activo otro chip
+ * (auditoría UI/UX 2026-07-29, A-05).
+ */
+function quickFilterSql(quick: OperationalQuickFilter, session: Session): SQL | null {
+  switch (quick) {
+    case "mine":       return sql`assignee_user_id = ${session.user.id}`
+    case "unassigned": return sql`assignee_user_id IS NULL`
+    case "critical":   return sql`priority = 'critical'`
+    case "blocked":    return sql`blocked = true`
+    case "overdue":    return sql`effective_due_at IS NOT NULL AND effective_due_at < ${startOfChileDay()}`
+    case "today":      return sql`effective_due_at = ${startOfChileDay()}`
+    default:           return null
+  }
+}
+
+/** Filtros explícitos, sin el chip rápido: la base de los contadores. */
+function queueScopeFilterSql(filters: OperationalQueueFilters): SQL {
   const clauses: SQL[] = [sql`true`]
   if (filters.module && filters.module !== "all") clauses.push(sql`module = ${filters.module}`)
   if (filters.worksiteId && filters.worksiteId !== "all") clauses.push(sql`worksite_id = ${filters.worksiteId}`)
   if (filters.status && filters.status !== "all") clauses.push(sql`status = ${filters.status}`)
   if (filters.priority && filters.priority !== "all") clauses.push(sql`priority = ${filters.priority}`)
   if (filters.responsible && filters.responsible !== "all") clauses.push(sql`assignee_user_id = ${filters.responsible}`)
-  if (filters.quick === "mine") clauses.push(sql`assignee_user_id = ${session.user.id}`)
-  if (filters.quick === "unassigned") clauses.push(sql`assignee_user_id IS NULL`)
-  if (filters.quick === "critical") clauses.push(sql`priority = 'critical'`)
-  if (filters.quick === "blocked") clauses.push(sql`blocked = true`)
-  if (filters.quick === "overdue") clauses.push(sql`effective_due_at IS NOT NULL AND effective_due_at < ${startOfChileDay()}`)
-  if (filters.quick === "today") clauses.push(sql`effective_due_at = ${startOfChileDay()}`)
   const term = filters.q?.trim()
   if (term) clauses.push(sql`CONCAT_WS(' ', code, title, subtitle, worksite_name, status_label, module, assignee_name) ILIKE ${`%${term}%`}`)
   return sql.join(clauses, sql` AND `)
+}
+
+function queueFilterSql(filters: OperationalQueueFilters, session: Session): SQL {
+  const quick = filters.quick ? quickFilterSql(filters.quick, session) : null
+  return quick
+    ? sql.join([queueScopeFilterSql(filters), quick], sql` AND `)
+    : queueScopeFilterSql(filters)
 }
 
 function parseJsonColumn<T>(value: unknown, fallback: T): T {
@@ -800,10 +857,13 @@ function parseJsonColumn<T>(value: unknown, fallback: T): T {
 
 type OperationalQueueSqlRow = {
   total: number | string
+  all_count: number | string
   critical: number | string
   overdue: number | string
+  today: number | string
   blocked: number | string
   unassigned: number | string
+  mine: number | string
   module_counts: unknown
   modules: unknown
   worksites: unknown
@@ -821,6 +881,15 @@ async function getOperationalWorkQueuePage(
 ): Promise<Omit<OperationalQueueResult, "sourceErrors" | "refreshedAt">> {
   const sources = unionOperationalSourceBranches(sourceBranches)
   const filter = queueFilterSql(filters, session)
+  // Los contadores de los chips se cuentan sobre `scoped` (todo menos el chip),
+  // así cada chip anuncia lo que entregaría si se lo pulsara.
+  const scopeFilter = queueScopeFilterSql(filters)
+  const quickCount = (quick: OperationalQuickFilter) => {
+    const predicate = quickFilterSql(quick, session)
+    return predicate
+      ? sql`(SELECT COUNT(*) FILTER (WHERE ${predicate})::int FROM scoped)`
+      : sql`(SELECT COUNT(*)::int FROM scoped)`
+  }
   const cursor = queueCursorSql(decodeCursor(filters.cursor), filters.sort)
   const order = queueOrderSql(filters.sort)
   const result = await db.execute(sql`
@@ -864,6 +933,8 @@ async function getOperationalWorkQueuePage(
         AND ${workItemAssignments.actionKey} = source.action_key
         AND ${workItemAssignments.worksiteId} = source.worksite_id
       LEFT JOIN ${users} AS assigned_user ON assigned_user.id = ${workItemAssignments.assigneeUserId}
+    ), scoped AS (
+      SELECT * FROM enriched WHERE ${scopeFilter}
     ), filtered AS (
       SELECT * FROM enriched WHERE ${filter}
     ), paginated AS (
@@ -871,10 +942,13 @@ async function getOperationalWorkQueuePage(
     )
     SELECT
       (SELECT COUNT(*)::int FROM filtered) AS total,
-      (SELECT COUNT(*) FILTER (WHERE priority = 'critical')::int FROM filtered) AS critical,
-      (SELECT COUNT(*) FILTER (WHERE effective_due_at IS NOT NULL AND effective_due_at < ${startOfChileDay()})::int FROM filtered) AS overdue,
-      (SELECT COUNT(*) FILTER (WHERE blocked)::int FROM filtered) AS blocked,
-      (SELECT COUNT(*) FILTER (WHERE assignee_user_id IS NULL)::int FROM filtered) AS unassigned,
+      ${quickCount("all")} AS all_count,
+      ${quickCount("critical")} AS critical,
+      ${quickCount("overdue")} AS overdue,
+      ${quickCount("today")} AS today,
+      ${quickCount("blocked")} AS blocked,
+      ${quickCount("unassigned")} AS unassigned,
+      ${quickCount("mine")} AS mine,
       COALESCE((SELECT jsonb_object_agg(module, module_count) FROM (SELECT module, COUNT(*)::int AS module_count FROM filtered GROUP BY module) module_summary), '{}'::jsonb) AS module_counts,
       COALESCE((SELECT jsonb_agg(module ORDER BY module) FROM (SELECT DISTINCT module FROM enriched) module_options), '[]'::jsonb) AS modules,
       COALESCE((SELECT jsonb_agg(jsonb_build_object('id', worksite_id, 'name', worksite_name) ORDER BY worksite_name) FROM (SELECT DISTINCT worksite_id, worksite_name FROM enriched) worksite_options), '[]'::jsonb) AS worksites,
@@ -900,10 +974,13 @@ async function getOperationalWorkQueuePage(
     items,
     total: Number(row.total ?? 0),
     summary: {
+      all: Number(row.all_count ?? 0),
       critical: Number(row.critical ?? 0),
       overdue: Number(row.overdue ?? 0),
+      today: Number(row.today ?? 0),
       blocked: Number(row.blocked ?? 0),
       unassigned: Number(row.unassigned ?? 0),
+      mine: Number(row.mine ?? 0),
       moduleCounts: parseJsonColumn<OperationalQueueResult["summary"]["moduleCounts"]>(row.module_counts, {}),
     },
     filterOptions: {
@@ -995,12 +1072,22 @@ export async function getOperationalWorkCount(session: Session) {
     ))
   }
 
+  // Mismos criterios que las fuentes de la cola: el badge contaba ítems de
+  // solicitudes terminales y de tipos que `/aprobaciones` descarta, así que el
+  // rail decía 12 donde la página mostraba 9 (auditoría UI/UX 2026-07-29, A-03).
+  const liveRequest = notInArray(purchaseRequests.status, [...TERMINAL_REQUEST_STATUSES])
+
   if (hasPermission(session, "approvals:approve")) {
     counts.push(countRows(
       db.select({ total: count() })
         .from(purchaseRequestItems)
         .innerJoin(purchaseRequests, eq(purchaseRequestItems.requestId, purchaseRequests.id))
-        .where(and(requestScope, eq(purchaseRequestItems.status, "requested"))),
+        .where(and(
+          requestScope,
+          liveRequest,
+          eq(purchaseRequestItems.status, "requested"),
+          approvalQueueFilter({ isGlobal: true, worksiteIds: [] }),
+        )),
     ))
   }
   if (hasPermission(session, "purchasing:create_order")) {
@@ -1008,7 +1095,7 @@ export async function getOperationalWorkCount(session: Session) {
       db.select({ total: count() })
         .from(purchaseRequestItems)
         .innerJoin(purchaseRequests, eq(purchaseRequestItems.requestId, purchaseRequests.id))
-        .where(and(requestScope, inArray(purchaseRequestItems.status, ["approved", "pending_purchase"]))),
+        .where(and(requestScope, liveRequest, inArray(purchaseRequestItems.status, ["approved", "pending_purchase"]))),
     ))
     counts.push(countRows(
       db.select({ total: count() }).from(purchaseOrders).where(and(orderScope, eq(purchaseOrders.status, "draft"))),
@@ -1021,6 +1108,7 @@ export async function getOperationalWorkCount(session: Session) {
         .innerJoin(purchaseRequests, eq(purchaseRequestItems.requestId, purchaseRequests.id))
         .where(and(
           requestScope,
+          liveRequest,
           inArray(purchaseRequestItems.status, [...DELIVERY_ITEM_STATUSES]),
           isNotNull(purchaseRequestItems.productId),
           sql`EXISTS (

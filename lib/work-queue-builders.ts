@@ -19,6 +19,7 @@ import {
   PRIORITY_RANK,
   requestStatusLabel, itemStatusLabel, itemStageLabel, requestNextAction, requestCurrentStage,
 } from "./work-queue-labels"
+import { formatQty } from "./utils"
 
 export function buildWorkTasks(actor: WorkActor, snapshot: WorkQueueSnapshot): WorkTask[] {
   const tasks: WorkTask[] = []
@@ -191,16 +192,20 @@ export interface OcProgressItem {
  * completas. La etapa Entrega (al trabajador) es de otro módulo, así que la OC
  * tope en Recepción. Devuelve null en OC anulada (sin stepper).
  */
-export function buildOcProgress(orderStatus: string, items: OcProgressItem[]): RequestProgress | null {
+export function buildOcProgress(
+  orderStatus: string,
+  items: OcProgressItem[],
+  audience: OcProgressAudience = "compras",
+): RequestProgress | null {
   if (orderStatus === "cancelled") return null
 
-  const currentStage = ocCurrentStage(orderStatus)
+  const currentStage = ocCurrentStage(orderStatus, items)
   const currentIndex = Math.max(0, STAGES.indexOf(currentStage))
 
   return {
     currentStage,
     completedStages: STAGES.slice(0, currentIndex),
-    nextAction: ocNextAction(orderStatus),
+    nextAction: ocNextAction(orderStatus, audience, items),
     items: items.map((item) => ({
       id:            item.id,
       productName:   item.productName,
@@ -211,14 +216,51 @@ export function buildOcProgress(orderStatus: string, items: OcProgressItem[]): R
   }
 }
 
-function ocCurrentStage(orderStatus: string): string {
+/**
+ * La etapa mira también las cantidades, no sólo el estado de la OC.
+ *
+ * `receiving.ts` avanza el estado al registrar una recepción, así que en la ruta
+ * normal ambos concuerdan. Pero derivar la etapa **sólo** del estado deja al
+ * stepper a merced de cualquier fila escrita fuera del servicio (seeds, cargas,
+ * arreglos manuales): con `sent` y 6 de 12 unidades ya recibidas, marcaba
+ * "Recepción" apagada mientras la propia página mostraba la recepción parcial
+ * (auditoría UI/UX 2026-07-29, A-10). Con los datos a la vista, el stepper no
+ * puede contradecir a la tabla que tiene al lado.
+ */
+function ocCurrentStage(orderStatus: string, items: OcProgressItem[]): string {
   if (["partially_office_received", "office_received", "partially_received"].includes(orderStatus)) return "Recepción"
   if (["received", "closed"].includes(orderStatus)) return "Recepción"
+  if (items.some((item) => item.quantityReceived > 0)) return "Recepción"
   // draft / issued / sent / supplier_confirmed
   return "Compra"
 }
 
-function ocNextAction(orderStatus: string): string {
+/**
+ * El mismo panel lo leen dos audiencias: quien compra (en `/compras/[id]`) y
+ * quien recibe (en `/recepcion/[id]`). Con una sola voz, el detalle de una
+ * recepción ya registrada mostraba "Confirma la recepción del proveedor o
+ * registra la llegada a oficina" — una instrucción de la otra pantalla (A-10).
+ */
+export type OcProgressAudience = "compras" | "recepcion"
+
+function ocNextAction(orderStatus: string, audience: OcProgressAudience, items: OcProgressItem[]): string {
+  if (audience === "recepcion") {
+    switch (orderStatus) {
+      case "draft":
+      case "issued":             return "La orden aún no ha sido enviada al proveedor."
+      case "sent":
+      case "supplier_confirmed":
+        return items.some((item) => item.quantityReceived > 0)
+          ? "Recepción parcial registrada. Queda saldo por recibir."
+          : "Pendiente de que lleguen los ítems."
+      case "partially_office_received":
+      case "office_received":    return "Los ítems están en oficina. Falta despacharlos a faena."
+      case "partially_received": return "Queda saldo pendiente por recibir en faena."
+      case "received":           return "Orden recibida completamente."
+      case "closed":             return "Orden cerrada."
+      default:                   return "Revisa el detalle para ver el siguiente paso."
+    }
+  }
   switch (orderStatus) {
     case "draft":              return "Emite la orden para poder enviarla al proveedor."
     case "issued":             return "Marca la orden como enviada al proveedor."
@@ -337,6 +379,11 @@ function formatCount(count: number, singular: string, plural: string): string {
   return `${count} ${count === 1 ? singular : plural}`
 }
 
+/**
+ * Duplicaba a `formatQty` sin concordar el plural, así que el panel de
+ * seguimiento mostraba "4 rollo" mientras el resto ya decía "4 rollos"
+ * (auditoría UI/UX 2026-07-29, A-25). Delega en el formateador compartido.
+ */
 function formatQuantity(quantity: number, unit: string): string {
-  return `${quantity.toLocaleString("es-CL")} ${unit}`
+  return formatQty(quantity, unit)
 }

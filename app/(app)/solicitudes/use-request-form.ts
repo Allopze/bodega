@@ -13,6 +13,7 @@ import {
   blankItem, blankItemForType, buildAttrsFromProduct, buildRequestSummaryIssues,
   equipmentFromAttributes, parseAttributeOptions, requestStatusLabel,
 } from "./request-form.helpers"
+import { groupProductVariants } from "@/lib/products/variant-grouping"
 
 const AUTOSAVE_INTERVAL_MS = 60_000
 
@@ -239,13 +240,35 @@ export function useRequestForm({
     if (!worker) return
     setItems((prev) => prev.map((i) => {
       if (i._key !== key) return i
-      const attrs = i.attributes.map((a) => {
+      const selectedProduct = i.productId ? products.find((product) => product.id === i.productId) : null
+      const variants = selectedProduct
+        ? groupProductVariants(products).find((group) => group.variants.some((variant) => variant.id === selectedProduct.id))?.variants ?? []
+        : []
+      const matchingVariant = variants.find((variant) => variant.attributes.some((attribute) => {
+        const suggestedSize = suggestSize(attribute.name, worker)
+        const options = new Set(parseAttributeOptions(attribute.options))
+        return suggestedSize != null && options.has(suggestedSize)
+      }))
+      const product = matchingVariant ?? selectedProduct
+      const attrs = (product ? buildAttrsFromProduct(product) : i.attributes).map((a) => {
         const size = suggestSize(a.attributeName, worker)
-        return size ? { ...a, value: size } : a
+        return size && a.options.includes(size) ? { ...a, value: size } : a
       })
-      return { ...i, workerId: worker.id, workerName: `${worker.firstName} ${worker.lastName}`, attributes: attrs }
+      return {
+        ...i,
+        ...(product ? {
+          productId: product.id,
+          productName: product.name,
+          unitOfMeasure: product.unitOfMeasure,
+          isEpp: product.isEpp,
+          suggestedSupplierId: product.preferredSupplierId ?? "",
+        } : {}),
+        workerId: worker.id,
+        workerName: `${worker.firstName} ${worker.lastName}`,
+        attributes: attrs,
+      }
     }))
-  }, [workers])
+  }, [products, workers])
 
   const updateAttr = useCallback((itemKey: string, attrIdx: number, value: string) => {
     setItems((prev) => prev.map((i) => {
@@ -267,18 +290,6 @@ export function useRequestForm({
         equipmentName: item.equipmentName || null, patent: item.patent || null,
         brand: item.brand || null, model: item.model || null,
         attributes: item.attributes.map((a) => ({ attributeId: a.attributeId, attributeName: a.attributeName, value: a.value })),
-      }
-      const variantEntries = Object.entries(item.variantQuantities ?? {}).filter(
-        ([, qty]) => qty > 0,
-      )
-      if (variantEntries.length > 0) {
-        return variantEntries.map(([variantProductId, qty]) => ({
-          ...base,
-          productId: variantProductId,
-          quantity: qty,
-          id: undefined,
-          attributes: item.attributes.map((a) => ({ attributeId: null, attributeName: a.attributeName, value: a.value })),
-        }))
       }
       return [{
         ...base,

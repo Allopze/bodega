@@ -14,5 +14,7 @@ export default async function PendingWorkPage({ searchParams }: { searchParams: 
   catch { redirect("/forbidden") }
   const filters = parseOperationalQueueFilters(await searchParams)
   const result = await getOperationalWorkQueue(session, filters)
-  return <PageContainer><PageHeader title="Mis pendientes" description="Cola priorizada de trabajo real dentro de tus permisos y faenas." /><WorkQueueWorkbench result={result} /></PageContainer>
+  // La descripción no repite la del `<h2>` de la cola: en móvil el `<h1>` no es
+  // `sr-only` y ambas se veían seguidas, casi idénticas (A-27).
+  return <PageContainer><PageHeader title="Mis pendientes" description="Todo lo que requiere tu acción, en un solo lugar." /><WorkQueueWorkbench result={result} /></PageContainer>
 }

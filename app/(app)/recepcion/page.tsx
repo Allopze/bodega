@@ -8,6 +8,7 @@ import { and, or, ilike, eq, inArray, desc, count, sql } from "drizzle-orm"
 import { requirePermission, canAny } from "@/lib/auth/can"
 import { worksiteScopeSql } from "@/lib/auth/scope"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
+import { ExportExcelButton } from "@/components/adquisiciones/export-excel-button"
 import { PageContainer } from "@/components/ui/page-container"
 import { HeaderSignals, type HeaderSignal } from "@/components/ui/header-signals"
 import { ServerPagination } from "@/components/ui/server-pagination"
@@ -149,6 +150,8 @@ export default async function RecepcionPage({
           ]} />
         }
         headerActions={<HeaderSignals signals={headerSignals} />}
+        // A-18: la exportación va en el top bar, igual que en compras y solicitudes.
+        actions={<ExportExcelButton tipo="recepcion" />}
       />
 
       <RecepcionTable

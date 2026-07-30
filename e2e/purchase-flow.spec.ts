@@ -40,7 +40,11 @@ test("flujo solicitud, aprobación, OC, recepción y trazabilidad", async ({ pag
   const pendingReceptionRow = page.locator("tbody tr").filter({ hasText: "Proveedor E2E" }).first()
   await expect(pendingReceptionRow).toContainText("Faena E2E")
   await pendingReceptionRow.getByRole("link", { name: "Recibir" }).click()
-  await expect(page.getByText("Recepción en oficina")).toBeVisible()
+  // Se acota a la tarjeta de etapa: "Recepción en oficina" también aparece como
+  // `statusLabel` en la sección "Responsables de la recepción", así que un
+  // `getByText` suelto cae en strict mode. Nunca se había notado porque el bug de
+  // `pickCurrentMonthDate` cortaba este spec antes de llegar acá.
+  await expect(page.getByRole("button", { name: "Recepción en oficina" })).toBeVisible()
   await submitReceiptForm(page, "5")
 
   // Stage 2 — receipt at the worksite from the transit queue (generates stock + traceability).

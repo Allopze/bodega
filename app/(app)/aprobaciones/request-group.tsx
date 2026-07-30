@@ -58,11 +58,16 @@ export function RequestGroup({
 
   return (
     <div className="rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] overflow-hidden">
-      <div className="flex items-center gap-3 px-4 py-3 bg-[var(--color-surface-2)] border-b border-[var(--color-border)]">
+      {/* `flex-wrap`: el bloque de la derecha es `shrink-0` y mide ~500px, así que
+          a 390px comprimía el botón del código hasta que el texto se solapaba con
+          el del solicitante y el Select se salía de la tarjeta. Envolviendo, los
+          controles bajan a su propia línea en móvil (auditoría UI/UX 2026-07-29,
+          A-01). */}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3 bg-[var(--color-surface-2)] border-b border-[var(--color-border)]">
         <button
           type="button"
           onClick={() => setCollapsed((c) => !c)}
-          className="flex items-center gap-2 text-left flex-1 min-w-0"
+          className="flex flex-1 basis-full items-center gap-2 text-left sm:basis-auto min-w-0"
           aria-expanded={!collapsed}
         >
           <CaretDown
@@ -81,7 +86,7 @@ export function RequestGroup({
           </span>
         </button>
 
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex flex-wrap items-center gap-2">
           <span className="text-xs text-[var(--color-text-subtle)]">
             {request.requesterName}
           </span>
@@ -132,11 +137,16 @@ export function RequestGroup({
               onChange={() => onToggleMany(groupItemIds, !allSelected)}
             />
           )}
-          {!allApproved && canApproveThisRequest && (
+          {/* "Aprobar todos" envía el grupo completo e ignora la selección: con un
+              ítem marcado, pulsarlo aprobaba los demás igual, sobre una acción
+              irreversible. Convive con la barra en lote sólo mientras no haya
+              nada marcado; en cuanto hay selección, manda la barra, que dice
+              exactamente cuántos va a aprobar (auditoría UI/UX 2026-07-29, A-23). */}
+          {!allApproved && canApproveThisRequest && selectedInGroup === 0 && (
             <form action={bulkAction}>
               <input type="hidden" name="itemIds" value={pendingIds} />
               <SubmitButton
-                label="Aprobar todos"
+                label={`Aprobar todos (${groupItemIds.length})`}
                 loadingLabel="Aprobando..."
                 variant="secondary"
                 size="sm"

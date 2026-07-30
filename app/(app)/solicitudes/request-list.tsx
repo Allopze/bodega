@@ -8,13 +8,13 @@ import { DataTable } from "@/components/admin/data-table"
 import { StateBadge, REQUEST_STATE_META } from "@/components/states/state-badge"
 import { ListFilters, type FilterOption } from "@/components/adquisiciones/list-filters"
 import { OnboardingHint } from "@/components/ui/onboarding-hint"
-import { TableRow, TableCell } from "@/components/ui/table"
+import { TableRow, TableCell, TableCellNum } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { formatDate } from "@/lib/utils"
 import { toast } from "@/lib/toast"
-import { urgencyLabel } from "@/lib/urgency-labels"
+import { PriorityBadge } from "@/components/ui/priority-badge"
 import { useActionState, useTransition } from "react"
 import { deleteRequestAction } from "./actions"
 import { DELETABLE_REQUEST_STATUSES, isOwnerDeletable } from "@/lib/services/requests-delete.constants"
@@ -47,12 +47,6 @@ const COLUMNS = [
   { key: "createdAt",     label: "Fecha",      sortable: true,  width: "w-32" },
   { key: "_actions",      label: "",           sortable: false, width: "w-10" },
 ]
-
-const URGENCY_DOT: Record<string, string> = {
-  normal:   "text-[var(--color-text-subtle)]",
-  high:     "text-[var(--color-warning)]",
-  critical: "text-[var(--color-danger)]",
-}
 
 
 /** Tipos con detalle en su propio vertical (no en /solicitudes/[id]) */
@@ -189,10 +183,7 @@ export function RequestList({
                       <Badge variant={REQUEST_TYPE_VARIANTS[r.requestType] ?? "default"} size="sm">
                         {REQUEST_TYPE_LABELS[r.requestType] ?? r.requestType}
                       </Badge>
-                      <span className={`inline-flex items-center gap-1 text-xs font-medium ${URGENCY_DOT[r.urgency] ?? ""}`}>
-                        <span className="h-1.5 w-1.5 rounded-full bg-current" />
-                        {urgencyLabel(r.urgency)}
-                      </span>
+                      <PriorityBadge priority={r.urgency} size="sm" />
                     </div>
                   </div>
                   <StateBadge state={r.status} entity="request" size="sm" />
@@ -258,13 +249,14 @@ export function RequestList({
                 {r.requesterName}
               </TableCell>
               <TableCell>
-                <span className={`text-xs font-medium ${URGENCY_DOT[r.urgency] ?? ""}`}>
-                  {urgencyLabel(r.urgency)}
-                </span>
+                {/* A-14: `PriorityBadge` es el render único de urgencia (existía
+                    para esto; esta lista era la que faltaba migrar). */}
+                <PriorityBadge priority={r.urgency} size="sm" />
               </TableCell>
-              <TableCell className="tabular-nums text-sm text-[var(--color-text-muted)] text-right pr-6">
+              {/* A-35: render canónico de columna numérica, alineado con su encabezado. */}
+              <TableCellNum className="text-[var(--color-text-muted)]">
                 {r.itemCount}
-              </TableCell>
+              </TableCellNum>
               <TableCell>
                 <StateBadge state={r.status} entity="request" size="sm" />
               </TableCell>

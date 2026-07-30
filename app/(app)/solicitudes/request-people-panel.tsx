@@ -52,7 +52,9 @@ export function RequestPeoplePanel({
               {summary.latestDecisionLabel} · {summary.latestDecisionBy}
             </p>
             <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">
-              {decisions.length > 0 ? `${decisions.length} decisión(es) registradas` : "Todavía no hay aprobaciones, rechazos ni devoluciones."}
+              {decisions.length > 0
+                ? `${decisions.length} ${decisions.length === 1 ? "decisión registrada" : "decisiones registradas"}`
+                : "Todavía no hay aprobaciones, rechazos ni devoluciones."}
             </p>
           </div>
         </div>

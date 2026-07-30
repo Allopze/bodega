@@ -238,6 +238,7 @@ export default async function OcDetailPage({
             defaultTab={initialTab}
             itemsCount={order.items.length}
             invoicesCount={orderInvoices.length}
+            historyCount={timelineEvents.length}
             items={
               <div className="flex flex-col gap-6">
                 <OcDetailItems

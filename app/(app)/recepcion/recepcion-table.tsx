@@ -32,13 +32,19 @@ interface RecepcionTableProps {
   supplierOptions?: FilterOption[]
 }
 
+// A-20: "Enviada" era a la vez un valor de la columna Estado y el nombre de una
+// columna de fecha, en la misma fila. Y "En tránsito" contenía "pend. faena",
+// vocabulario distinto del encabezado. Los nombres dicen ahora qué contienen.
 const COLUMNS = [
-  { key: "code",         label: "OC",         sortable: true,  width: "w-36" },
-  { key: "worksiteId",   label: "Faena",      sortable: true  },
-  { key: "supplierId",   label: "Proveedor",  sortable: true  },
-  { key: "status",       label: "Estado",     sortable: true,  width: "w-40" },
-  { key: "transit",      label: "En tránsito", sortable: false, width: "w-32" },
-  { key: "sentAt",       label: "Enviada",    sortable: true,  width: "w-32" },
+  { key: "code",         label: "OC",             sortable: true,  width: "w-36" },
+  { key: "worksiteId",   label: "Faena",          sortable: true  },
+  { key: "supplierId",   label: "Proveedor",      sortable: true  },
+  { key: "status",       label: "Estado",         sortable: true,  width: "w-40" },
+  { key: "transit",      label: "Pend. de faena", sortable: false, width: "w-32" },
+  { key: "sentAt",       label: "Fecha de envío", sortable: true,  width: "w-32" },
+  // A-35: "Recibir" estaba pegado al badge de estado y se leía como parte de él.
+  // Las acciones van al final de la fila, que es donde se las busca.
+  { key: "actions",      label: "",               sortable: false, width: "w-28" },
 ]
 
 export function RecepcionTable({ orders, wsMap, supMap, gapMap, canRegister, worksiteOptions = [], supplierOptions = [] }: RecepcionTableProps) {
@@ -56,7 +62,6 @@ export function RecepcionTable({ orders, wsMap, supMap, gapMap, canRegister, wor
       searchPlaceholder="Buscar por código o proveedor..."
       worksiteOptions={worksiteOptions}
       supplierOptions={supplierOptions}
-      exportTipo="recepcion"
     />
     <DataTable
       caption="Órdenes de Compra Pendientes de Recepción"
@@ -94,23 +99,23 @@ export function RecepcionTable({ orders, wsMap, supMap, gapMap, canRegister, wor
             <TableCell className="text-sm text-[var(--color-text-muted)]">
               {supMap[o.supplierId] ?? o.supplierId}
             </TableCell>
-            <TableCell onClick={(e) => e.stopPropagation()}>
-              <div className="flex items-center gap-2">
-                <StateBadge state={o.status} entity="oc" size="sm" />
-                {canRegister && (
-                  <Button variant="secondary" size="sm" asChild>
-                    <Link href={`/recepcion/nueva?oc=${o.id}`}>Recibir</Link>
-                  </Button>
-                )}
-              </div>
+            <TableCell>
+              <StateBadge state={o.status} entity="oc" size="sm" />
             </TableCell>
             <TableCell>
               {(gapMap[o.id] ?? 0) > 0
-                ? <Badge variant="warning" size="sm">{gapMap[o.id]} pend. faena</Badge>
+                ? <Badge variant="warning" size="sm">{gapMap[o.id]} {gapMap[o.id] === 1 ? "ítem" : "ítems"}</Badge>
                 : <span className="text-xs text-[var(--color-text-subtle)]">—</span>}
             </TableCell>
             <TableCell className="text-xs text-[var(--color-text-subtle)]">
               {o.sentAt ? formatDate(o.sentAt) : "—"}
+            </TableCell>
+            <TableCell onClick={(e) => e.stopPropagation()} className="text-right">
+              {canRegister && (
+                <Button variant="secondary" size="sm" asChild>
+                  <Link href={`/recepcion/nueva?oc=${o.id}`}>Recibir</Link>
+                </Button>
+              )}
             </TableCell>
           </TableRow>
         )

@@ -26,6 +26,8 @@ export default async function NuevaOcPage({
   catch { redirect("/compras") }
   const sp = await searchParams
   const requestedWorksiteId = typeof sp.faena === "string" ? sp.faena : ""
+  // El CTA "Crear orden de compra" de /pendientes trae el ítem que originó la tarea.
+  const requestedItemId = typeof sp.item === "string" ? sp.item : ""
 
   const scopeFilter = worksiteScopeSql(session, purchaseRequests.worksiteId)
   const statusFilter = inArray(purchaseRequestItems.status, ["approved", "pending_purchase"])
@@ -170,6 +172,7 @@ export default async function NuevaOcPage({
         worksites={worksiteOptions}
         pendingItems={pendingItems}
         initialWorksiteId={initialWorksiteId}
+        initialItemId={requestedItemId || undefined}
       />
     </PageContainer>
   )

@@ -15,11 +15,18 @@ export function useOcForm({
   worksites,
   pendingItems,
   initialWorksiteId,
+  initialItemId,
 }: {
   suppliers:    SupplierOption[]
   worksites:    WorksiteOption[]
   pendingItems: PendingItemOption[]
   initialWorksiteId?: string
+  /**
+   * Ítem que traía el CTA de "Mis pendientes" (`/compras/nueva?item=…`). Llegar
+   * con la lista entera sin marcar obligaba a reencontrar a mano el ítem por el
+   * que se hizo clic (auditoría UI/UX 2026-07-29, A-06).
+   */
+  initialItemId?: string
 }) {
   const [supplierId,   setSupplierId]   = React.useState<string>("")
   const [worksiteId,   setWorksiteId]   = React.useState<string>(initialWorksiteId ?? worksites[0]?.id ?? "")
@@ -27,7 +34,9 @@ export function useOcForm({
   const [estDelivery,  setEstDelivery]  = React.useState<string>("")
   const [address,      setAddress]      = React.useState<string>("")
   const [notes,        setNotes]        = React.useState<string>("")
-  const [selectedItems, setSelectedItems] = React.useState<Set<string>>(new Set())
+  const [selectedItems, setSelectedItems] = React.useState<Set<string>>(
+    () => new Set(initialItemId && pendingItems.some((i) => i.id === initialItemId) ? [initialItemId] : []),
+  )
   const [unitPrices,   setUnitPrices]   = React.useState<Record<string, number>>({})
   const [discounts,    setDiscounts]    = React.useState<Record<string, number>>({})
   const [quantities,   setQuantities]   = React.useState<Record<string, number>>({})
@@ -135,7 +144,12 @@ export function useOcForm({
     () => [...new Set(filteredByWorksite.map((i) => i.deliveryMode))],
     [filteredByWorksite],
   )
-  const [modeFilter, setModeFilter] = React.useState<PendingItemOption["deliveryMode"] | null>(null)
+  // Si la faena tiene ítems en ambos modos, arrancar en el modo del ítem que
+  // traía el CTA: si no, el efecto de abajo elegiría `worksiteModes[0]` y el
+  // ítem preseleccionado quedaría filtrado fuera de la vista (A-06).
+  const [modeFilter, setModeFilter] = React.useState<PendingItemOption["deliveryMode"] | null>(
+    () => pendingItems.find((i) => i.id === initialItemId)?.deliveryMode ?? null,
+  )
   React.useEffect(() => {
     if (worksiteModes.length <= 1) { setModeFilter(null); return }
     if (!modeFilter || !worksiteModes.includes(modeFilter)) setModeFilter(worksiteModes[0]!)

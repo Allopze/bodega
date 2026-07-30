@@ -56,31 +56,47 @@ function RequestFormHeader({
   onWorksiteChange: (v: string) => void; onRequestTypeChange: (v: string) => void
   onUrgencyChange: (v: string) => void; onDeliveryModeChange: (v: string) => void; onRequiredDateChange: (v: string) => void; onNotesChange: (v: string) => void
 }) {
+  /**
+   * En modo consulta los controles van `disabled`, y `disabled:opacity-50` dejaba
+   * los **valores** de la solicitud en 3.53:1 — bajo el mínimo AA de 4.5:1 (medido,
+   * auditoría UI/UX 2026-07-29 §5.6). Un dato en una ficha de lectura es contenido,
+   * no un control inactivo: la exención de WCAG 1.4.3 no lo cubre. Sigue siendo
+   * no interactivo; sólo recupera la opacidad.
+   */
+  const readOnlyLook = readOnly ? "disabled:opacity-100 disabled:cursor-default" : undefined
+
   return (
     <section className="rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] p-5 space-y-4">
       <h2 className="text-h2 text-[var(--color-text)]">Datos de la solicitud</h2>
+      {/* A-22: en modo consulta los textos de ayuda son instrucciones para llenar
+          un formulario que ya no se llena ("La jefatura confirma al aprobar"), y
+          sumados a los selects deshabilitados hacían leer la ficha como un
+          formulario averiado. En lectura sólo quedan las etiquetas y los valores. */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <Field label="Faena" required htmlFor="worksiteId">
           <Select value={worksiteId} onValueChange={onWorksiteChange} disabled={readOnly}>
-            <SelectTrigger id="worksiteId"><SelectValue placeholder="Selecciona una faena" /></SelectTrigger>
+            <SelectTrigger id="worksiteId" className={readOnlyLook}><SelectValue placeholder="Selecciona una faena" /></SelectTrigger>
             <SelectContent>{worksites.map((w) => (<SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>))}</SelectContent>
           </Select>
         </Field>
-        <Field label="Tipo de solicitud" htmlFor="requestType" helper="EPP: elementos de protección personal. El tipo clasifica la solicitud para su revisión y compra.">
+        <Field label="Tipo de solicitud" htmlFor="requestType" helper={readOnly ? undefined : "EPP: elementos de protección personal. El tipo clasifica la solicitud para su revisión y compra."}>
           <Select value={requestType} onValueChange={onRequestTypeChange} disabled={readOnly}>
-            <SelectTrigger id="requestType"><SelectValue /></SelectTrigger>
+            <SelectTrigger id="requestType" className={readOnlyLook}><SelectValue /></SelectTrigger>
             <SelectContent>{requestTypeOpts.map((o) => (<SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>))}</SelectContent>
           </Select>
         </Field>
-        <Field label="Urgencia" htmlFor="urgency" helper="Alta y Crítico destacan los ítems en la cola de aprobación.">
+        {/* A-15: decía "Alta y Crítico destacan los ítems en la cola", pero la
+            urgencia del ítem gana sobre la de la solicitud (`COALESCE(item, request)`
+            en la cola operacional). El texto ahora dice cuál manda. */}
+        <Field label="Urgencia" htmlFor="urgency" helper={readOnly ? undefined : "Valor por defecto de los ítems. Cada ítem puede fijar la suya y esa es la que prioriza en la cola."}>
           <Select value={urgency} onValueChange={onUrgencyChange} disabled={readOnly}>
-            <SelectTrigger id="urgency"><SelectValue /></SelectTrigger>
+            <SelectTrigger id="urgency" className={readOnlyLook}><SelectValue /></SelectTrigger>
             <SelectContent>{URGENCY_OPTS.map((o) => (<SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>))}</SelectContent>
           </Select>
         </Field>
-        <Field label="Despacho sugerido" htmlFor="deliveryMode" helper="Vía oficina (estándar) o Directo a faena (urgencia/volumen). La jefatura confirma al aprobar.">
+        <Field label="Despacho sugerido" htmlFor="deliveryMode" helper={readOnly ? undefined : "Vía oficina (estándar) o Directo a faena (urgencia/volumen). La jefatura confirma al aprobar."}>
           <Select value={deliveryMode} onValueChange={onDeliveryModeChange} disabled={readOnly}>
-            <SelectTrigger id="deliveryMode"><SelectValue /></SelectTrigger>
+            <SelectTrigger id="deliveryMode" className={readOnlyLook}><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="via_oficina">Vía oficina (Estándar)</SelectItem>
               <SelectItem value="directo_faena">Directo a faena (Urgencia/Directo)</SelectItem>
@@ -90,11 +106,11 @@ function RequestFormHeader({
         <Field label="Fecha requerida" required htmlFor="requiredDate"
           error={requiredDateError}
         >
-          <DatePicker id="requiredDate" name="requiredDate" value={requiredDate} onChange={onRequiredDateChange} disabled={readOnly} />
+          <DatePicker id="requiredDate" name="requiredDate" value={requiredDate} onChange={onRequiredDateChange} disabled={readOnly} className={readOnlyLook} />
         </Field>
       </div>
       <Field label="Notas generales" htmlFor="notes">
-        <Textarea id="notes" name="notes" placeholder="Observaciones, contexto de la solicitud..." rows={2} disabled={readOnly} value={notes} onChange={(e) => onNotesChange(e.target.value)} />
+        <Textarea id="notes" name="notes" placeholder="Observaciones, contexto de la solicitud..." rows={2} disabled={readOnly} className={readOnlyLook} value={notes} onChange={(e) => onNotesChange(e.target.value)} />
       </Field>
     </section>
   )

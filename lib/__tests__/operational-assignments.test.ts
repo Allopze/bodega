@@ -312,4 +312,68 @@ describe("operational work assignments", () => {
       sourceErrors: [],
     })
   })
+
+  // Regresión de la auditoría UI/UX 2026-07-29 (A-03 y A-13). La fuente
+  // `aprobaciones` de la cola filtraba sólo por el estado del ítem, así que
+  // ofrecía tareas que `/aprobaciones` descarta —repuestos y servicios van por
+  // cotizaciones, y la solicitud debe estar viva— y el CTA aterrizaba en una
+  // pantalla vacía.
+  it("no ofrece aprobar lo que la página de aprobaciones descarta ni trabajo de solicitudes terminales", async () => {
+    const otherWorksiteId = nanoid()
+    await inMemoryDb.insert(schema.worksites).values({
+      id: otherWorksiteId, name: "Faena dead-ends", code: `FD-${nanoid().slice(0, 8)}`,
+      isActive: true, createdAt: now, updatedAt: now,
+    })
+
+    // Un caso por criterio excluyente, más uno que sí debe aparecer.
+    const cases = [
+      { requestType: "servicios", status: "submitted", itemStatus: "requested", visible: false },
+      { requestType: "repuestos", status: "submitted", itemStatus: "requested", visible: false },
+      { requestType: "epp",       status: "draft",     itemStatus: "requested", visible: false },
+      { requestType: "epp",       status: "closed",    itemStatus: "partially_delivered", visible: false },
+      { requestType: "epp",       status: "submitted", itemStatus: "requested", visible: true  },
+    ].map((c) => ({ ...c, requestId: nanoid(), itemId: nanoid() }))
+
+    for (const c of cases) {
+      await inMemoryDb.insert(schema.purchaseRequests).values({
+        id: c.requestId, code: `DE-${nanoid().slice(0, 8)}`, worksiteId: otherWorksiteId,
+        requesterId: assignerId, requestType: c.requestType, status: c.status,
+        createdAt: now, updatedAt: now,
+      })
+      await inMemoryDb.insert(schema.purchaseRequestItems).values({
+        id: c.itemId, requestId: c.requestId, quantity: 1, unitOfMeasure: "unidad",
+        status: c.itemStatus, createdAt: now, updatedAt: now,
+      })
+    }
+
+    const viewer = {
+      user: {
+        ...assignerSession.user,
+        permissions: ["approvals:approve", "deliveries:create"],
+        worksiteIds: [otherWorksiteId],
+        isGlobal: false,
+      },
+    } as Session
+
+    const queue = await getOperationalWorkQueue(viewer, { limit: 50 })
+    const sourceIds = new Set(queue.items.map((i) => i.sourceId))
+
+    for (const c of cases) {
+      expect(sourceIds.has(c.itemId), `${c.requestType}/${c.status}/${c.itemStatus}`).toBe(c.visible)
+    }
+
+    // Y ninguna etiqueta cruda del inglés se filtra a la UI.
+    expect(queue.items.every((i) => !i.statusLabel.includes("_"))).toBe(true)
+
+    // El badge del rail es otra consulta sobre el mismo criterio: si deriva, el
+    // rail anuncia un número que la página no puede mostrar.
+    const approverOnly = {
+      user: { ...viewer.user, permissions: ["approvals:approve"] },
+    } as Session
+    const [badge, page] = await Promise.all([
+      getOperationalWorkCount(approverOnly),
+      getOperationalWorkQueue(approverOnly, { limit: 50 }),
+    ])
+    expect(badge).toBe(page.total)
+  })
 })

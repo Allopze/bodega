@@ -52,8 +52,10 @@ export function requestNextAction(requestStatus: string, statuses: string[]): st
   if (statuses.some((status) => status === "returned")) return "Corrige los ítems devueltos y vuelve a enviar."
   if (statuses.some((status) => status === "draft")) return "Envía la solicitud a aprobación."
   if (statuses.some((status) => status === "requested")) return "Aprobación debe revisar los ítems pendientes."
-  if (statuses.some((status) => ["approved", "pending_purchase", "postponed"].includes(status))) return "El módulo de órdenes de compra debe generar la orden de compra."
-  if (statuses.some((status) => status === "in_purchase_order")) return "El módulo de órdenes de compra debe emitir y enviar la OC al proveedor."
+  // A-17: nombraban un módulo en lugar de un siguiente paso, y la pantalla no
+  // ofrecía cómo continuar. El CTA ya está al lado; el texto dice qué falta.
+  if (statuses.some((status) => ["approved", "pending_purchase", "postponed"].includes(status))) return "Ítems aprobados y a la espera de una orden de compra."
+  if (statuses.some((status) => status === "in_purchase_order")) return "En una orden de compra, pendiente de emitir y enviar al proveedor."
   if (statuses.some((status) => ["purchased", "partially_received"].includes(status))) return "Esperando recepción en oficina o bodega."
   if (statuses.some((status) => ["received", "partially_delivered"].includes(status))) return "Bodega debe registrar la entrega a faena."
   if (CLOSED_REQUEST_STATUSES.has(requestStatus)) return "La solicitud ya no requiere acciones."

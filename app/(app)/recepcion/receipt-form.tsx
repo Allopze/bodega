@@ -119,7 +119,13 @@ export function ReceiptForm({
       <input type="hidden" name="itemsJson"        value={itemsJson} />
       <input type="hidden" name="stage"            value={stage} />
 
-      <div className="space-y-6">
+      {/* `min-w-0` no es cosmético: como grid item hereda `min-width:auto`, así que
+          el `min-w-[440px]` de la tabla de ítems fijaba el mínimo de la columna en
+          442px. El shell (`main`) tiene `overflow-x-hidden`, de modo que a 390px el
+          exceso se recortaba **sin scroll** y la columna "Dañado" quedaba
+          inalcanzable. Con el mínimo en 0 la columna cabe y el scroll horizontal
+          vuelve a vivir dentro de la tabla (auditoría UI/UX 2026-07-29, A-02). */}
+      <div className="min-w-0 space-y-6">
         {/* Two-stage pipeline indicator — shows progress for dual-role users */}
         <TwoStageProgress items={items} canOffice={canOffice} canFaena={canFaena} />
 
@@ -152,14 +158,19 @@ export function ReceiptForm({
               </button>
             )}
             {canFaena && (
+              /* `disabled:opacity-50` dejaba el texto que explica **por qué** no se
+                 puede avanzar en 2.08:1, medido (§5.6). La exención de WCAG 1.4.3
+                 para controles inactivos no aplica a la instrucción que el usuario
+                 necesita leer justamente cuando el control está bloqueado: se
+                 atenúa con color, no con opacidad sobre todo el subárbol. */
               <button
                 type="button"
                 onClick={() => setStage("faena")}
                 disabled={!faenaAvailable}
-                className={`rounded-[var(--radius)] border px-3 py-2 text-left transition-colors disabled:opacity-50 ${stage === "faena" ? "border-[var(--color-primary-line)] bg-[var(--color-primary-tint)]" : "border-[var(--color-border)] bg-[var(--color-surface-2)]"}`}
+                className={`rounded-[var(--radius)] border px-3 py-2 text-left transition-colors disabled:cursor-not-allowed ${stage === "faena" ? "border-[var(--color-primary-line)] bg-[var(--color-primary-tint)]" : "border-[var(--color-border)] bg-[var(--color-surface-2)]"}`}
               >
-                <p className="text-sm font-medium text-[var(--color-text)]">Recepción en faena</p>
-                <p className="mt-0.5 text-xs text-[var(--color-text-subtle)]">
+                <p className={`text-sm font-medium ${faenaAvailable ? "text-[var(--color-text)]" : "text-[var(--color-text-muted)]"}`}>Recepción en faena</p>
+                <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">
                   {faenaAvailable
                     ? `Oficina distribuye a ${orderWorksiteName}. Actualiza stock y trazabilidad.`
                     : "Disponible una vez registrada la llegada a oficina."}
