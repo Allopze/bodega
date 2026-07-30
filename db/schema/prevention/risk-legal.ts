@@ -342,8 +342,7 @@ export const preventionPdtpSourceLinks = pgTable("prevention_pdtp_source_links",
 }, (table) => [
   uniqueIndex("prevention_pdtp_source_links_active_unique").on(table.activityId, table.worksiteId, table.sourceType, table.sourceId).where(sql`${table.isActive} = true`),
   index("prevention_pdtp_source_links_source_idx").on(table.sourceType, table.sourceId),
-  check("prevention_pdtp_source_links_type_valid", sql`${table.sourceType} IN ('risk_control', 'legal_requirement', 'incident', 'incident_capa', 'audit', 'internal_objective', 'contractual_obligation', 'capacitacion', 'inspeccion', 'cphs', 'epp', 'emergencia', 'campana')`),
-  check("prevention_pdtp_source_links_internal_reason", sql`${table.sourceType} <> 'internal_objective' OR length(${table.justification}) >= 10`),
+  check("prevention_pdtp_source_links_type_valid", sql`${table.sourceType} IN ('risk_control', 'legal_requirement', 'incident', 'incident_capa', 'audit', 'contractual_obligation', 'capacitacion', 'inspeccion', 'cphs', 'epp', 'emergencia', 'campana')`),
 ])
 
 export const preventionPdtpUpdateObligations = pgTable("prevention_pdtp_update_obligations", {

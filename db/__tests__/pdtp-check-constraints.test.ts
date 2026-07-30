@@ -61,8 +61,7 @@ describe("PDTP CHECK constraints SQL", () => {
       createdAt: now, updatedAt: now,
     }).onConflictDoNothing()
     await inMemoryDb.insert(schema.pdtpActivities).values({
-      id: "a1", programId: "p1", n: 1, objectiveOrder: 1, objective: "O",
-      activity: "A", program: "P", responsibleSlugs: [], responsibleDisplay: "R",
+      id: "a1", programId: "p1", n: 1, activity: "A", program: "P", responsibleSlugs: [], responsibleDisplay: "R",
       sourceSheetRow: 1, createdAt: now, updatedAt: now,
     }).onConflictDoNothing()
   })
@@ -148,12 +147,11 @@ describe("PDTP CHECK constraints SQL", () => {
     )
   })
 
-  it("pdtp_activities rechaza objective_order fuera de 1-8", async () => {
+  it("pdtp_activities rechaza display_order negativo", async () => {
     const now = new Date().toISOString()
     await expectCheckViolation(
       inMemoryDb.insert(schema.pdtpActivities).values({
-        id: "a-bad-obj", programId: "p1", n: 1, objectiveOrder: 9,
-        objective: "O", activity: "A", program: "P",
+        id: "a-bad-order", programId: "p1", n: 1, displayOrder: -1, activity: "A", program: "P",
         responsibleSlugs: [], responsibleDisplay: "R",
         sourceSheetRow: 1, createdAt: now, updatedAt: now,
       } as never),

@@ -58,10 +58,10 @@ export const pdtpPrograms = pgTable("pdtp_programs", {
   pesoVerificacion:      real("peso_verificacion").notNull().default(0.3),
   pesoCierre:            real("peso_cierre").notNull().default(0.2),
 }, (table) => [
-  uniqueIndex("pdtp_programs_year_version_unique").on(table.year, table.version),
+  uniqueIndex("pdtp_programs_year_unique").on(table.year),
   index("pdtp_programs_status_idx").on(table.status),
   check("pdtp_programs_status_check", sql`${table.status} IN ('draft', 'in_review', 'rejected', 'active', 'closed', 'archived')`),
-  check("pdtp_programs_creation_mode_check", sql`${table.creationMode} IN ('blank', 'program_copy', 'template', 'xlsx_import')`),
+  check("pdtp_programs_creation_mode_check", sql`${table.creationMode} IN ('blank', 'program_copy', 'template', 'xlsx_import', 'base_2026')`),
   check("pdtp_programs_content_version_check", sql`${table.contentVersion} >= 1`),
   check("pdtp_programs_content_digest_check", sql`${table.contentDigest} IS NULL OR length(${table.contentDigest}) = 64`),
   check("pdtp_programs_compliance_target_check", sql`${table.complianceTarget} >= 0 AND ${table.complianceTarget} <= 1`),
@@ -265,8 +265,12 @@ export const pdtpActivities = pgTable("pdtp_activities", {
   id:                 text("id").primaryKey(),
   programId:          text("program_id").notNull().references(() => pdtpPrograms.id, { onDelete: "cascade" }),
   n:                  integer("n").notNull(),
-  objectiveOrder:     integer("objective_order").notNull(),
-  objective:          text("objective").notNull(),
+  displayOrder:       integer("display_order").notNull().default(0),
+  status:             text("status").notNull().default("active"),
+  retiredReason:      text("retired_reason"),
+  retiredEffectiveFrom: date("retired_effective_from", { mode: "string" }),
+  retiredByUserId:    text("retired_by_user_id").references(() => users.id),
+  retiredAt:          timestamp("retired_at", { withTimezone: true, mode: "string" }),
   activity:           text("activity").notNull(),
   program:            text("program").notNull(),
   responsibleSlugs:   jsonb("responsible_slugs").notNull(),
@@ -288,9 +292,15 @@ export const pdtpActivities = pgTable("pdtp_activities", {
   updatedAt:          timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull(),
 }, (table) => [
   uniqueIndex("pdtp_activities_program_n_unique").on(table.programId, table.n),
-  index("pdtp_activities_program_objective_idx").on(table.programId, table.objectiveOrder),
+  index("pdtp_activities_program_display_order_idx").on(table.programId, table.displayOrder),
   check("pdtp_activities_n_check", sql`${table.n} >= 1`),
-  check("pdtp_activities_objective_order_check", sql`${table.objectiveOrder} >= 1`),
+  check("pdtp_activities_display_order_check", sql`${table.displayOrder} >= 0`),
+  check("pdtp_activities_status_check", sql`${table.status} IN ('active', 'retired')`),
+  check("pdtp_activities_retirement_check", sql`${table.status} = 'active' OR (
+    length(trim(COALESCE(${table.retiredReason}, ''))) >= 10
+    AND ${table.retiredEffectiveFrom} IS NOT NULL
+    AND ${table.retiredAt} IS NOT NULL
+  )`),
   check("pdtp_activities_schedule_mode_check", sql`${table.scheduleMode} IN ('scheduled', 'on_demand', 'triggered')`),
   check("pdtp_activities_schedule_classification_check", sql`${table.scheduleClassificationStatus} IN ('confirmed', 'needs_review')`),
   check("pdtp_activities_due_days_check", sql`${table.dueDays} IS NULL OR ${table.dueDays} >= 0`),
@@ -619,6 +629,9 @@ export const pdtpActivityWorksiteParams = pgTable("pdtp_activity_worksite_params
   worksiteId:           text("worksite_id").notNull().references(() => worksites.id, { onDelete: "cascade" }),
   expectedSubjectCount: integer("expected_subject_count"),
   targetCoveragePercent: numeric("target_coverage_percent", { precision: 5, scale: 2, mode: "number" }),
+  responsibleSlugs:     jsonb("responsible_slugs"),
+  responsibleDisplay:   text("responsible_display"),
+  responsibleReason:    text("responsible_reason"),
   updatedByUserId:      text("updated_by_user_id").references(() => users.id),
   createdAt:            timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   updatedAt:            timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
@@ -626,6 +639,12 @@ export const pdtpActivityWorksiteParams = pgTable("pdtp_activity_worksite_params
   uniqueIndex("pdtp_activity_worksite_params_unique").on(table.activityId, table.worksiteId),
   index("pdtp_activity_worksite_params_worksite_idx").on(table.worksiteId),
   check("pdtp_activity_worksite_params_subject_count_check", sql`${table.expectedSubjectCount} IS NULL OR ${table.expectedSubjectCount} >= 0`),
+  check("pdtp_activity_worksite_params_responsible_check", sql`${table.responsibleSlugs} IS NULL OR (
+    jsonb_typeof(${table.responsibleSlugs}) = 'array'
+    AND jsonb_array_length(${table.responsibleSlugs}) > 0
+    AND length(trim(COALESCE(${table.responsibleDisplay}, ''))) > 0
+    AND length(trim(COALESCE(${table.responsibleReason}, ''))) >= 10
+  )`),
 ])
 
 /* ── PDTP Action Plan Followups (bitácora de seguimiento) ────────────────── */

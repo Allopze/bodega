@@ -58,8 +58,7 @@ describe("PDTP — política de cascade en worksite (H-B12)", () => {
       createdAt: now, updatedAt: now,
     })
     await inMemoryDb.insert(schema.pdtpActivities).values({
-      id: "a1", programId: "p1", n: 1, objectiveOrder: 1, objective: "O",
-      activity: "A", program: "P", responsibleSlugs: [], responsibleDisplay: "R",
+      id: "a1", programId: "p1", n: 1, activity: "A", program: "P", responsibleSlugs: [], responsibleDisplay: "R",
       sourceSheetRow: 1, createdAt: now, updatedAt: now,
     })
   }
