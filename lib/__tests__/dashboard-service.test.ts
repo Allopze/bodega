@@ -300,21 +300,17 @@ describe("getDashboardData", () => {
   it("returns zero metrics when no data", async () => {
     const session = makeSession()
 
-    // 8 count/sum queries + 1 worksite breakdown + 3 detail queries = 12 total
-    for (let i = 0; i < 12; i++) {
+    // 2 count queries + 1 worksite breakdown + 3 detail queries = 6 total
+    for (let i = 0; i < 6; i++) {
       selectResults.push({ data: [{ n: 0 }] })
     }
 
     const result = await getDashboardData(session)
 
     expect(result.metrics).toEqual({
-      my_requests: 0,
       pending_approvals: 0,
-      approved_without_oc: 0,
-      orders_in_progress: 0,
       orders_pending_receipt: 0,
     })
-    expect(result.summary).toEqual({ totalCosts: 0, totalRequests: 0, approvedRequests: 0 })
     expect(result.worksitesBreakdown).toEqual([])
   })
 
@@ -322,8 +318,8 @@ describe("getDashboardData", () => {
     const session = makeSession()
     mockIsGlobalRole.mockReturnValue(true)
 
-    // 8 count/sum queries
-    const metricValues = [5, 3, 2, 4, 2, 1000000, 10, 8]
+    // 2 count queries: pending_approvals, orders_pending_receipt
+    const metricValues = [3, 2]
     for (const v of metricValues) {
       selectResults.push({ data: [{ n: v }] })
     }
@@ -351,12 +347,8 @@ describe("getDashboardData", () => {
     )
 
     const result = await getDashboardData(session)
-    expect(result.metrics.my_requests).toBe(5)
     expect(result.metrics.pending_approvals).toBe(3)
-    expect(result.metrics.orders_in_progress).toBe(4)
-    expect(result.summary.totalCosts).toBe(1000000)
-    expect(result.summary.totalRequests).toBe(10)
-    expect(result.summary.approvedRequests).toBe(8)
+    expect(result.metrics.orders_pending_receipt).toBe(2)
     expect(result.worksitesBreakdown).toHaveLength(2)
   })
 
@@ -364,7 +356,7 @@ describe("getDashboardData", () => {
     const session = makeSession()
     mockIsGlobalRole.mockReturnValue(true)
 
-    for (let i = 0; i < 8; i++) {
+    for (let i = 0; i < 2; i++) {
       selectResults.push({ data: [{ n: 0 }] })
     }
     selectResults.push({ data: [
@@ -386,7 +378,7 @@ describe("getDashboardData", () => {
     const session = makeSession()
     mockIsGlobalRole.mockReturnValue(true)
 
-    for (let i = 0; i < 8; i++) {
+    for (let i = 0; i < 2; i++) {
       selectResults.push({ data: [{ n: 1 }] })
     }
     selectResults.push({ data: [
@@ -412,7 +404,7 @@ describe("getDashboardData", () => {
     mockIsGlobalRole.mockReturnValue(false)
     mockVisibleWorksiteIds.mockReturnValue(["ws-1"])
 
-    for (let i = 0; i < 8; i++) {
+    for (let i = 0; i < 2; i++) {
       selectResults.push({ data: [{ n: 1 }] })
     }
     selectResults.push({ data: [
@@ -434,7 +426,7 @@ describe("getDashboardData", () => {
     mockVisibleWorksiteIds.mockReturnValue([])
 
     // All queries return empty because the where clause uses `sql\`false\``
-    for (let i = 0; i < 12; i++) {
+    for (let i = 0; i < 6; i++) {
       selectResults.push({ data: [] })
     }
 

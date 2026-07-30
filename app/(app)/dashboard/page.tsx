@@ -1,40 +1,49 @@
 import type { Metadata } from "next"
+import { Suspense } from "react"
 import Link from "next/link"
 import { auth } from "@/lib/auth/auth"
 import { can } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
-import { formatCLP, formatDate } from "@/lib/utils"
+import { chileDateParts, formatCLP, formatDate } from "@/lib/utils"
 import { PageContainer } from "@/components/ui/page-container"
 import { PageHeader } from "@/components/ui/page-header"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Plus } from "@phosphor-icons/react/dist/ssr"
-import type { WorkTaskType } from "@/lib/work-queue"
+import { OPERATIONAL_MODULE_LABELS, type WorkTaskType } from "@/lib/work-queue"
 import { getCriticalStockAlertCount } from "@/lib/services/stock-alerts"
 import { getDashboardData } from "@/lib/services/dashboard"
 import { getOperationalWorkQueue, type OperationalModule } from "@/lib/services/operational-work-queue"
 import { listOperationalActivity } from "@/lib/services/operational-activity"
 import { getOperationalPeriodMetrics, type OperationalPeriodMetric, type OperationalPeriodMetrics } from "@/lib/services/operational-period-metrics"
-import { getOperationalBacklogComparisons, type OperationalBacklogComparison } from "@/lib/services/operational-metric-snapshots"
-import { getOperationalTrendHistory } from "@/lib/services/operational-trend-history"
-import { getFuelMonthlyTrend, getMaintenanceMonthlyTrend } from "@/lib/services/dashboard-fleet-maintenance"
+import { getOperationalBacklogComparisons, getOperationalSnapshotHistory, type OperationalBacklogComparison, type OperationalSnapshotMetric } from "@/lib/services/operational-metric-snapshots"
 import { QuickActions } from "./quick-actions"
 import { RecentActivity } from "./recent-activity"
 import { loadPdtpComplianceSummary, PdtpComplianceCard } from "./pdtp-compliance-card"
 import { getActivePdtpProgram, listPdtpPrograms } from "@/lib/services/prevention-pdtp"
 import { scopeToWorksiteIds } from "./dashboard-helpers"
-import { DashboardAnalyticsSection } from "./dashboard-analytics-section"
+import { DashboardAnalytics, DashboardAnalyticsFallback } from "./dashboard-analytics"
 import { listEppCoverageGaps } from "@/lib/services/prevention-epp"
-import { getCanonicalSafetyIndicatorYear, getMaterialEnvironmentalEvents } from "@/lib/services/prevention-indicadores"
 import {
   DashboardControlCenter,
   type DashboardAlert,
   type DashboardMetric,
   type DashboardTask,
   type OperationalPeriodSummaryEntry,
+  type QueueShortcut,
 } from "./dashboard-control-center"
 
 export const metadata: Metadata = { title: "Dashboard" }
+
+/**
+ * Tope de filas que baja a la cola del dashboard; el resto vive en /pendientes.
+ *
+ * 12 y no 50: con 50 la cola ocupaba tres pantallas de alto y dejaba la columna
+ * lateral vacía a partir de la fila ~10 (lo destapó la pasada visual). Es un
+ * top-N para decidir qué hacer ahora, no un sustituto de la cola completa —
+ * el pie y el atajo "Todas" declaran el total.
+ */
+const QUEUE_PREVIEW_LIMIT = 12
 
 const MODULE_TO_TASK_TYPE: Record<OperationalModule, WorkTaskType> = {
   solicitudes: "request_followup",
@@ -84,9 +93,19 @@ export default async function DashboardPage() {
   const canViewCapa = can(session, "prevention:capa:view")
   const canManagePdtp = can(session, "prevention:pdtp:program:manage")
 
-  const [data, queue, activity, stockAlertCount, eppGapsCount, periodMetrics, backlogComparisons, trendHistory, fuelTrend, maintenanceTrend] = await Promise.all([
+  const canViewIndicators = can(session, "prevention:indicadores:view")
+  // Hora de Chile: el proceso corre en UTC y el 31 de diciembre por la tarde
+  // este año saltaba al siguiente, consultando PDTP/SST del año equivocado.
+  const currentYear = chileDateParts().year
+
+  // Un solo lote: el bloque de prevención no depende del operacional, y
+  // encadenarlos duplicaba la latencia de red de la página (P-01).
+  const [
+    data, queue, activity, stockAlertCount, eppGapsCount, periodMetrics, backlogComparisons, snapshotHistory,
+    pdtpSummary, activeProgram, allPrograms,
+  ] = await Promise.all([
     getDashboardData(session),
-    getOperationalWorkQueue(session, { limit: 25 }),
+    getOperationalWorkQueue(session, { limit: QUEUE_PREVIEW_LIMIT }),
     listOperationalActivity(session, 6),
     canViewStock
       ? getCriticalStockAlertCount(pdtpScope)
@@ -97,69 +116,35 @@ export default async function DashboardPage() {
       : Promise.resolve(0),
     getOperationalPeriodMetrics(session),
     getOperationalBacklogComparisons(session),
-    getOperationalTrendHistory(session, 6),
-    getFuelMonthlyTrend(session, 6),
-    getMaintenanceMonthlyTrend(session, 6),
+    getOperationalSnapshotHistory(session, 30),
+    canViewPdtp
+      ? loadPdtpComplianceSummary(pdtpScope)
+      : Promise.resolve(null),
+    canViewPdtp ? getActivePdtpProgram(currentYear) : Promise.resolve(null),
+    canViewPdtp ? listPdtpPrograms() : Promise.resolve([]),
   ])
   const tasks = queue.items.map(toDashboardTask)
   const criticalTaskCount = queue.summary.critical
   const deliveryTaskCount = queue.summary.moduleCounts.entregas ?? 0
-
-  const approvalRate = data.summary.totalRequests > 0
-    ? Math.round((data.summary.approvedRequests / data.summary.totalRequests) * 100)
-    : 0
 
   const firstName = session.user.name?.split(" ")[0] ?? "usuario"
   // Se serializa una vez desde el Server Component; el cliente no recalcula la
   // hora durante la hidratación.
   const refreshedAt = new Date().toISOString()
 
-  const canViewIndicators = can(session, "prevention:indicadores:view")
-  const currentYear = new Date().getFullYear()
-
-  const [pdtpSummary, activeProgram, allPrograms, sstYearView, envEventsData] = await Promise.all([
-    canViewPdtp
-      ? loadPdtpComplianceSummary(pdtpScope)
-      : Promise.resolve(null),
-    canViewPdtp ? getActivePdtpProgram(currentYear) : Promise.resolve(null),
-    canViewPdtp ? listPdtpPrograms() : Promise.resolve([]),
-    canViewIndicators
-      ? getCanonicalSafetyIndicatorYear(currentYear, worksiteScope).catch(() => null)
-      : Promise.resolve(null),
-    canViewIndicators
-      ? getMaterialEnvironmentalEvents(currentYear, worksiteScope).catch(() => null)
-      : Promise.resolve(null),
-  ])
   const hasNextYearProgram = allPrograms.some((p) => p.year === currentYear + 1)
   const shouldSuggestNextYear = activeProgram && !hasNextYearProgram && canManagePdtp
-
-  const MONTH_LABELS = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
-  const sstPoints = sstYearView?.groups.find((g) => g.worksiteId === "total")?.monthly.map((m, i) => {
-    return {
-      month: MONTH_LABELS[i] ?? `M${i + 1}`,
-      tasaFrecuencia: m.confirmed.frequencyRate ?? 0,
-      tasaGravedad: m.confirmed.severityRate ?? 0,
-      accConTiempoPerdido: m.confirmed.accidents ?? 0,
-      accSinTiempoPerdido: m.provisional.accidents ?? 0,
-    }
-  }) || []
-
-  const materialEnvPoints = envEventsData?.eventData.find((e) => e.worksiteId === "total")?.monthly.map((m) => ({
-    month: MONTH_LABELS[m.month - 1] ?? `M${m.month}`,
-    dangerousIncidents: m.dangerousIncidents,
-    materialDamage: m.materialDamage,
-    environmentalSpills: m.environmentalSpills,
-  })) || []
 
   const metrics = buildOperationalMetrics({
     tasks: queue.total,
     criticalTasks: criticalTaskCount,
+    overdueTasks: queue.summary.overdue,
     pendingApprovals: data.metrics.pending_approvals,
     ordersPendingReceipt: data.metrics.orders_pending_receipt,
     deliveries: deliveryTaskCount,
     stockAlerts: stockAlertCount,
-    totalCosts: data.summary.totalCosts,
-    approvalRate,
+    stockTrend: snapshotHistory.stock_alerts,
+    monthSpend: periodMetrics.spend.current,
     canApprove,
     canReceive,
     canDeliver,
@@ -188,13 +173,10 @@ export default async function DashboardPage() {
       ? "Todas las faenas autorizadas"
       : "Faenas autorizadas"
 
-  // ── Datos de tendencia para charts ──
-  const trendData = trendHistory.map((point) => ({
-    month: point.month,
-    requests: point.requests,
-    orders: point.orders,
-    receipts: point.receipts,
-  }))
+  // Población completa, no las filas cargadas en la cola (D-02).
+  const moduleWorkload = Object.entries(queue.summary.moduleCounts)
+    .map(([module, count]) => ({ module: OPERATIONAL_MODULE_LABELS[module as OperationalModule] ?? module, count: count ?? 0 }))
+    .filter((entry) => entry.count > 0)
   return (
     <PageContainer>
       <PageHeader title="Dashboard" actions={<QuickActions session={session} />} />
@@ -212,9 +194,11 @@ export default async function DashboardPage() {
             overdue: queue.summary.overdue,
             deliveries: queue.summary.moduleCounts.entregas ?? 0,
           }}
+          queueShortcuts={buildQueueShortcuts({ queue, canApprove, canReceive, canDeliver })}
+          worksiteOptions={queue.filterOptions.worksites}
           canAssign={session.user.permissions.includes("operations:assign_work")}
           periodSummary={buildOperationalPeriodSummary({ periodMetrics, canViewRequests, canViewPurchasing, canReceive, canDeliver })}
-          backlogSummary={buildOperationalBacklogSummary({ backlogComparisons, canViewRequests, canViewPurchasing, canViewCapa, canViewPdtp })}
+          backlogSummary={buildOperationalBacklogSummary({ backlogComparisons, snapshotHistory, canViewRequests, canViewPurchasing, canViewCapa, canViewPdtp })}
           metrics={metrics}
           alerts={alerts}
           mainSlot={
@@ -226,7 +210,8 @@ export default async function DashboardPage() {
             canViewPdtp ? (
               <section>
                 <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-baseline sm:justify-between">
-                  <h2 className="text-h2 text-[var(--color-text)]">Programa de Trabajo Preventivo</h2>
+                  {/* Misma escala que "Requiere atención" y "Flujo del mes": son hermanos en el aside (L-05). */}
+                  <h2 className="text-h3 text-[var(--color-text)]">Programa de Trabajo Preventivo</h2>
                   <div className="flex flex-wrap items-center gap-2">
                     {shouldSuggestNextYear && (
                       <Button asChild size="sm" variant="secondary">
@@ -252,19 +237,53 @@ export default async function DashboardPage() {
           }
         />
 
-        {/* ── Analítica y Tendencias: diferida, bajo el Centro de Control ── */}
-        <DashboardAnalyticsSection
-          trendData={trendData}
-          tasks={tasks}
-          worksitesBreakdown={data.worksitesBreakdown}
-          fuelTrend={fuelTrend}
-          maintenanceTrend={maintenanceTrend}
-          sstPoints={sstPoints}
-          materialEnvPoints={materialEnvPoints}
-        />
+        {/* ── Analítica y tendencias: sus consultas no bloquean al Centro de Control ── */}
+        <Suspense fallback={<DashboardAnalyticsFallback />}>
+          <DashboardAnalytics
+            session={session}
+            worksiteScope={worksiteScope}
+            currentYear={currentYear}
+            canViewIndicators={canViewIndicators}
+            moduleWorkload={moduleWorkload}
+            queueTotal={queue.total}
+            worksitesBreakdown={data.worksitesBreakdown}
+          />
+        </Suspense>
       </div>
     </PageContainer>
   )
+}
+
+/**
+ * Atajos de la cola. Los conteos salen de `queue.summary` — población completa
+ * autorizada — y cada uno navega a `/pendientes` con el filtro equivalente.
+ *
+ * Antes eran chips que filtraban en cliente las 25 filas cargadas: mostraban
+ * "Todas 25" bajo un saludo que decía "Tienes 200 tareas pendientes" (D-01).
+ */
+function buildQueueShortcuts(input: {
+  queue: Awaited<ReturnType<typeof getOperationalWorkQueue>>
+  canApprove: boolean
+  canReceive: boolean
+  canDeliver: boolean
+}): QueueShortcut[] {
+  const { summary, total } = input.queue
+  const moduleShortcut = (module: OperationalModule, allowed: boolean): QueueShortcut | null => {
+    const count = summary.moduleCounts[module] ?? 0
+    return allowed && count > 0
+      ? { key: module, label: OPERATIONAL_MODULE_LABELS[module], count, href: `/pendientes?module=${module}` }
+      : null
+  }
+  const candidates: Array<QueueShortcut | null> = [
+    { key: "all", label: "Todas", count: total, href: "/pendientes" },
+    summary.critical > 0 ? { key: "critical", label: "Críticas", count: summary.critical, href: "/pendientes?quick=critical" } : null,
+    summary.overdue > 0 ? { key: "overdue", label: "Vencidas", count: summary.overdue, href: "/pendientes?quick=overdue" } : null,
+    summary.unassigned > 0 ? { key: "unassigned", label: "Sin responsable", count: summary.unassigned, href: "/pendientes?quick=unassigned" } : null,
+    moduleShortcut("aprobaciones", input.canApprove),
+    moduleShortcut("recepciones", input.canReceive),
+    moduleShortcut("entregas", input.canDeliver),
+  ]
+  return candidates.filter((shortcut): shortcut is QueueShortcut => shortcut !== null).slice(0, 6)
 }
 
 function periodComparison(metric: OperationalPeriodMetric) {
@@ -292,7 +311,11 @@ function buildOperationalPeriodSummary(input: {
 }
 
 function backlogComparison(comparison: OperationalBacklogComparison) {
-  if (comparison.previous === null || !comparison.snapshotDate) return "Sin snapshot completo previo"
+  // "Sin corte mensual" y no "sin snapshot": la comparación mira el último corte
+  // completo **anterior al mes en curso**, mientras el sparkline de la misma fila
+  // muestra los últimos 30 días. Con la copia anterior una fila podía decir "sin
+  // snapshot previo" y dibujar una tendencia al lado — parecía contradicción.
+  if (comparison.previous === null || !comparison.snapshotDate) return "Sin corte mensual comparable"
   const difference = comparison.current - comparison.previous
   if (difference === 0) return `Sin variación vs. ${formatDate(comparison.snapshotDate)}`
   return `${difference > 0 ? "+" : ""}${difference} vs. ${formatDate(comparison.snapshotDate)}`
@@ -300,6 +323,7 @@ function backlogComparison(comparison: OperationalBacklogComparison) {
 
 function buildOperationalBacklogSummary(input: {
   backlogComparisons: OperationalBacklogComparison[]
+  snapshotHistory: Record<OperationalSnapshotMetric, number[]>
   canViewRequests: boolean
   canViewPurchasing: boolean
   canViewCapa: boolean
@@ -308,7 +332,9 @@ function buildOperationalBacklogSummary(input: {
   const byMetric = new Map(input.backlogComparisons.map((comparison) => [comparison.metric, comparison]))
   const entry = (metric: OperationalBacklogComparison["metric"], label: string, href: string): OperationalPeriodSummaryEntry | null => {
     const comparison = byMetric.get(metric)
-    return comparison ? { key: metric, label, value: comparison.current, comparison: backlogComparison(comparison), href } : null
+    return comparison
+      ? { key: metric, label, value: comparison.current, comparison: backlogComparison(comparison), href, sparkline: input.snapshotHistory[metric] }
+      : null
   }
   const entries: Array<OperationalPeriodSummaryEntry | null> = [
     input.canViewRequests ? entry("backlog_requests", "Solicitudes activas", "/pendientes?module=solicitudes") : null,
@@ -319,15 +345,31 @@ function buildOperationalBacklogSummary(input: {
   return entries.filter((entry): entry is OperationalPeriodSummaryEntry => entry !== null)
 }
 
+/**
+ * Máximo 4 tiles accionables (A1). Todos navegan a la vista que los explica.
+ *
+ * "Inversión acumulada" (SUM histórico de OC) y "Tasa de aprobación" (ratio de
+ * toda la historia) ocupaban dos de los cuatro slots con cifras que no cambian
+ * de un día a otro ni informan una decisión operativa (P-03). Las reemplazan
+ * "Tareas vencidas" —que sí exige acción hoy— y la inversión **del mes**, que
+ * ya viene con su comparación contra el mes anterior.
+ *
+ * Cada tile cambia su descripción en 0 (A1). La regla pide "la acción para dejar
+ * de estarlo", pero estos contadores en cero son buenas noticias y no hay acción
+ * que tomar: la copia correcta es confirmarlo, no inventar un CTA. La regla
+ * apunta a tiles vacíos por falta de configuración, no a contadores en cero.
+ */
 function buildOperationalMetrics(input: {
   tasks: number
   criticalTasks: number
+  overdueTasks: number
   pendingApprovals: number
   ordersPendingReceipt: number
   deliveries: number
   stockAlerts: number
-  totalCosts: number
-  approvalRate: number
+  /** Serie diaria real de `stock_alerts`; la única de los tiles que existe. */
+  stockTrend: number[]
+  monthSpend: number
   canApprove: boolean
   canReceive: boolean
   canDeliver: boolean
@@ -335,14 +377,14 @@ function buildOperationalMetrics(input: {
   canViewPurchasing: boolean
 }): DashboardMetric[] {
   const candidates: Array<DashboardMetric | null> = [
-    { key: "tasks", label: "Tareas pendientes", value: input.tasks, description: "Acciones disponibles para tu rol", icon: "tasks", href: "/pendientes", tone: input.tasks > 0 ? "signal" : "neutral" },
+    { key: "tasks", label: "Tareas pendientes", value: input.tasks, description: input.tasks > 0 ? "Acciones disponibles para tu rol" : "Nada pendiente por ahora", icon: "tasks", href: "/pendientes", tone: input.tasks > 0 ? "signal" : "neutral" },
     { key: "critical", label: "Tareas críticas", value: input.criticalTasks, description: input.criticalTasks > 0 ? "Requieren revisión prioritaria" : "Sin prioridad crítica", icon: "critical", href: "/pendientes?quick=critical", tone: input.criticalTasks > 0 ? "danger" : "neutral" },
-    input.canApprove ? { key: "approvals", label: "Por aprobar", value: input.pendingApprovals, description: "Ítems esperando una decisión", icon: "approvals", href: "/pendientes?module=aprobaciones", tone: input.pendingApprovals > 0 ? "signal" : "neutral" } : null,
-    input.canReceive ? { key: "receipts", label: "Por recibir", value: input.ordersPendingReceipt, description: "Órdenes con recepción pendiente", icon: "receipts", href: "/pendientes?module=recepciones", tone: input.ordersPendingReceipt > 0 ? "signal" : "neutral" } : null,
-    input.canDeliver ? { key: "deliveries", label: "Entregas pendientes", value: input.deliveries, description: "Ítems listos para registrar entrega", icon: "deliveries", href: "/pendientes?module=entregas", tone: input.deliveries > 0 ? "signal" : "neutral" } : null,
-    input.canViewStock ? { key: "stock", label: "Stock crítico", value: input.stockAlerts, description: "Productos bajo su mínimo definido", icon: "stock", href: "/bodega", tone: input.stockAlerts > 0 ? "danger" : "neutral" } : null,
-    input.canViewPurchasing ? { key: "investment", label: "Inversión acumulada", value: formatCLP(input.totalCosts), description: "Órdenes vigentes fuera de borrador", icon: "investment" } : null,
-    input.canApprove ? { key: "rate", label: "Tasa de aprobación", value: `${input.approvalRate}%`, description: "Solicitudes aprobadas en el alcance actual", icon: "rate" } : null,
+    { key: "overdue", label: "Tareas vencidas", value: input.overdueTasks, description: input.overdueTasks > 0 ? "Su plazo comprometido ya venció" : "Nada fuera de plazo", icon: "critical", href: "/pendientes?quick=overdue", tone: input.overdueTasks > 0 ? "danger" : "neutral" },
+    input.canApprove ? { key: "approvals", label: "Por aprobar", value: input.pendingApprovals, description: input.pendingApprovals > 0 ? "Ítems esperando una decisión" : "Nada esperando decisión", icon: "approvals", href: "/pendientes?module=aprobaciones", tone: input.pendingApprovals > 0 ? "signal" : "neutral" } : null,
+    input.canReceive ? { key: "receipts", label: "Por recibir", value: input.ordersPendingReceipt, description: input.ordersPendingReceipt > 0 ? "Órdenes con recepción pendiente" : "Sin recepciones pendientes", icon: "receipts", href: "/pendientes?module=recepciones", tone: input.ordersPendingReceipt > 0 ? "signal" : "neutral" } : null,
+    input.canDeliver ? { key: "deliveries", label: "Entregas pendientes", value: input.deliveries, description: input.deliveries > 0 ? "Ítems listos para registrar entrega" : "Sin entregas por registrar", icon: "deliveries", href: "/pendientes?module=entregas", tone: input.deliveries > 0 ? "signal" : "neutral" } : null,
+    input.canViewStock ? { key: "stock", label: "Stock crítico", value: input.stockAlerts, description: input.stockAlerts > 0 ? "Productos bajo su mínimo definido" : "Todo sobre el mínimo definido", icon: "stock", href: "/bodega", tone: input.stockAlerts > 0 ? "danger" : "neutral", sparkline: input.stockTrend } : null,
+    input.canViewPurchasing ? { key: "spend", label: "Inversión del mes", value: formatCLP(input.monthSpend), description: "OC emitidas en el mes en curso", icon: "investment", href: "/compras" } : null,
   ]
 
   return candidates.filter((metric): metric is DashboardMetric => metric !== null).slice(0, 4)

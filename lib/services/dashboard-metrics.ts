@@ -17,22 +17,20 @@ import type { WorkActor } from "@/lib/work-queue"
 
 // ── Metric key type ───────────────────────────────────────────────────────────
 
+/**
+ * Sólo las métricas que el dashboard consume. `my_requests`,
+ * `approved_without_oc` y `orders_in_progress` se calculaban sin lector; se
+ * borraron junto con `summary` (acumulados históricos que dejaron de usarse al
+ * sacar los KPIs sin período — P-03 de la auditoría 2026-07-30).
+ */
 export type MetricKey =
-  | "my_requests"
   | "pending_approvals"
-  | "approved_without_oc"
-  | "orders_in_progress"
   | "orders_pending_receipt"
 
 // ── Dashboard data shape ──────────────────────────────────────────────────────
 
 export interface DashboardData {
   metrics: Record<MetricKey, number>
-  summary: {
-    totalCosts: number
-    totalRequests: number
-    approvedRequests: number
-  }
   worksitesBreakdown: {
     id: string
     name: string
@@ -54,25 +52,10 @@ export async function getDashboardData(session: Session): Promise<DashboardData>
   const worksiteRowsFilter = isGlobal ? eq(worksites.isActive, true) : (wsIds.length > 0 ? and(eq(worksites.isActive, true), inArray(worksites.id, wsIds)) : sql`false`)
 
   const [
-    [myRequestsRow],
     [pendingApprovalsRow],
-    [approvedWithoutOcRow],
-    [ordersInProgressRow],
     [ordersPendingReceiptRow],
-    [totalCostsRow],
-    [totalRequestsRow],
-    [approvedRequestsRow],
     worksiteBreakdownRows,
   ] = await Promise.all([
-    db
-      .select({ n: count() })
-      .from(purchaseRequests)
-      .where(and(
-        requestWorksiteFilter,
-        eq(purchaseRequests.requesterId, session.user.id),
-        sql`${purchaseRequests.status} != 'cancelled'`,
-      )),
-
     db
       .select({ n: count() })
       .from(purchaseRequestItems)
@@ -84,48 +67,10 @@ export async function getDashboardData(session: Session): Promise<DashboardData>
 
     db
       .select({ n: count() })
-      .from(purchaseRequestItems)
-      .innerJoin(purchaseRequests, eq(purchaseRequestItems.requestId, purchaseRequests.id))
-      .where(and(
-        itemWorksiteFilter,
-        sql`${purchaseRequestItems.status} IN ('approved', 'pending_purchase')`,
-      )),
-
-    db
-      .select({ n: count() })
-      .from(purchaseOrders)
-      .where(and(
-        orderWorksiteFilter,
-        sql`${purchaseOrders.status} IN ('issued', 'sent', 'supplier_confirmed', 'partially_office_received', 'office_received', 'partially_received')`,
-      )),
-
-    db
-      .select({ n: count() })
       .from(purchaseOrders)
       .where(and(
         orderWorksiteFilter,
         sql`${purchaseOrders.status} IN ('sent', 'partially_office_received', 'office_received', 'partially_received')`,
-      )),
-
-    db
-      .select({ n: sql<number>`COALESCE(SUM(${purchaseOrders.totalAmount}), 0)` })
-      .from(purchaseOrders)
-      .where(and(
-        orderWorksiteFilter,
-        sql`${purchaseOrders.status} NOT IN ('cancelled', 'draft')`,
-      )),
-
-    db
-      .select({ n: count() })
-      .from(purchaseRequests)
-      .where(requestWorksiteFilter),
-
-    db
-      .select({ n: count() })
-      .from(purchaseRequests)
-      .where(and(
-        requestWorksiteFilter,
-        sql`${purchaseRequests.status} IN ('approved', 'closed', 'in_purchasing')`,
       )),
 
     db
@@ -145,16 +90,9 @@ export async function getDashboardData(session: Session): Promise<DashboardData>
   ])
 
   const metrics: Record<MetricKey, number> = {
-    my_requests:            myRequestsRow?.n ?? 0,
     pending_approvals:      pendingApprovalsRow?.n ?? 0,
-    approved_without_oc:    approvedWithoutOcRow?.n ?? 0,
-    orders_in_progress:     ordersInProgressRow?.n ?? 0,
     orders_pending_receipt: ordersPendingReceiptRow?.n ?? 0,
   }
-
-  const totalCosts = totalCostsRow?.n ?? 0
-  const totalRequests = totalRequestsRow?.n ?? 0
-  const approvedRequests = approvedRequestsRow?.n ?? 0
 
   const worksiteIds = worksiteBreakdownRows.map((w) => w.id)
   const [orderCostRows, pendingItemRows, approvedRequestRows] = await Promise.all([
@@ -220,11 +158,6 @@ export async function getDashboardData(session: Session): Promise<DashboardData>
 
   return {
     metrics,
-    summary: {
-      totalCosts,
-      totalRequests,
-      approvedRequests,
-    },
     worksitesBreakdown,
   }
 }

@@ -1,8 +1,8 @@
 "use client"
 
 import dynamic from "next/dynamic"
-import type { DashboardTask } from "./dashboard-control-center"
-import type { SstMonthlyPoint, MaterialEnvironmentalPoint, FuelMonthlyChartPoint, MaintenanceMonthlyChartPoint } from "./dashboard-charts"
+import type { ReactNode } from "react"
+import type { SstMonthlyPoint, MaterialEnvironmentalPoint, FuelMonthlyChartPoint, MaintenanceMonthlyChartPoint, ModuleWorkloadPoint } from "./dashboard-charts"
 
 // Recharts es ~168kb sin usar en el bundle inicial (auditoría UIUX-002): cada
 // gráfico se difiere a su propio chunk y sólo se ejecuta tras la carga
@@ -10,9 +10,9 @@ import type { SstMonthlyPoint, MaterialEnvironmentalPoint, FuelMonthlyChartPoint
 function chartSkeleton(heightClass: string) {
   return function ChartSkeleton() {
     return (
-      <div className={`rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs animate-pulse ${heightClass}`}>
-        <div className="mb-3 h-3 w-40 rounded bg-slate-100" />
-        <div className="h-[calc(100%-2rem)] w-full rounded bg-slate-50" />
+      <div className={`rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-xs animate-pulse ${heightClass}`}>
+        <div className="mb-3 h-3 w-40 rounded bg-[var(--color-surface-2)]" />
+        <div className="h-[calc(100%-2rem)] w-full rounded bg-[var(--color-surface-2)]" />
       </div>
     )
   }
@@ -31,7 +31,9 @@ const MaintenanceTrendChart = dynamic(() => import("./dashboard-charts").then((m
 
 interface DashboardAnalyticsSectionProps {
   trendData: Array<{ month: string; requests: number; orders: number; receipts: number }>
-  tasks: DashboardTask[]
+  /** Conteos por módulo del backlog completo, no de las filas cargadas. */
+  moduleWorkload: ModuleWorkloadPoint[]
+  queueTotal: number
   worksitesBreakdown: {
     id: string
     name: string
@@ -46,9 +48,32 @@ interface DashboardAnalyticsSectionProps {
   materialEnvPoints: MaterialEnvironmentalPoint[]
 }
 
+/**
+ * Cada bloque rotula su propio período. El encabezado global decía "Datos del
+ * año en curso" sobre gráficos que en su mayoría son de los últimos 6 meses o
+ * acumulados sin período (L-07).
+ */
+function AnalyticsGroup({ id, title, period, children }: {
+  id: string
+  title: string
+  period: string
+  children: ReactNode
+}) {
+  return (
+    <section aria-labelledby={id}>
+      <div className="mb-3 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+        <h3 id={id} className="text-xs font-bold uppercase tracking-wider text-[var(--color-text-muted)]">{title}</h3>
+        <span className="text-[11px] font-medium text-[var(--color-text-muted)]">{period}</span>
+      </div>
+      <div className="grid gap-6 grid-cols-1 xl:grid-cols-2">{children}</div>
+    </section>
+  )
+}
+
 export function DashboardAnalyticsSection({
   trendData,
-  tasks,
+  moduleWorkload,
+  queueTotal,
   worksitesBreakdown,
   fuelTrend,
   maintenanceTrend,
@@ -60,28 +85,40 @@ export function DashboardAnalyticsSection({
   const hasMaterialEnvData = materialEnvPoints.length > 0
   const hasFuelData = fuelTrend.some((d) => d.liters > 0 || d.loads > 0)
   const hasMaintenanceData = maintenanceTrend.some((d) => d.completed > 0 || d.scheduled > 0)
-  const hasWorkloadData = tasks.length > 0
+  const hasWorkloadData = moduleWorkload.length > 0
   const hasWorksiteData = worksitesBreakdown.length > 0
-  const hasAnyChart = hasTrendData || hasWorkloadData || hasWorksiteData || hasSstData || hasMaterialEnvData || hasFuelData || hasMaintenanceData
 
-  if (!hasAnyChart) return null
+  const hasOperation = hasTrendData || hasWorkloadData || hasWorksiteData
+  const hasPrevention = hasSstData || hasMaterialEnvData
+  const hasFleet = hasFuelData || hasMaintenanceData
+  if (!hasOperation && !hasPrevention && !hasFleet) return null
 
   return (
-    <section className="mb-6" aria-labelledby="analitica-dashboard">
-      <div className="mb-4 flex items-center justify-between">
-        <h2 id="analitica-dashboard" className="text-sm font-bold text-slate-900">Analítica y Tendencias</h2>
-        <span className="text-[11px] font-medium text-(--color-text-muted)">Datos del año en curso</span>
-      </div>
-      <div className="grid gap-6 grid-cols-1 xl:grid-cols-2">
-        {hasTrendData && <OperationalTrendChart data={trendData} />}
-        {hasWorkloadData && <ModuleWorkloadChart tasks={tasks} />}
-        {hasWorksiteData && <WorksiteActivityChart worksites={worksitesBreakdown} />}
-        {hasFuelData && <FuelConsumptionChart data={fuelTrend} />}
-        {hasMaintenanceData && <MaintenanceTrendChart data={maintenanceTrend} />}
-        {hasSstData && <SstTrendChart data={sstPoints} />}
-        {hasSstData && <SstAccidentChart data={sstPoints} />}
-        {hasMaterialEnvData && <MaterialEnvironmentalChart data={materialEnvPoints} />}
-      </div>
+    <section className="mb-6 flex flex-col gap-6" aria-labelledby="analitica-dashboard">
+      <h2 id="analitica-dashboard" className="text-h3 text-[var(--color-text)]">Analítica y tendencias</h2>
+
+      {hasOperation && (
+        <AnalyticsGroup id="analitica-operacion" title="Operación" period="Últimos 6 meses">
+          {hasTrendData && <OperationalTrendChart data={trendData} />}
+          {hasWorkloadData && <ModuleWorkloadChart data={moduleWorkload} total={queueTotal} />}
+          {hasWorksiteData && <WorksiteActivityChart worksites={worksitesBreakdown} />}
+        </AnalyticsGroup>
+      )}
+
+      {hasPrevention && (
+        <AnalyticsGroup id="analitica-prevencion" title="Prevención y SST" period="Año en curso">
+          {hasSstData && <SstTrendChart data={sstPoints} />}
+          {hasSstData && <SstAccidentChart data={sstPoints} />}
+          {hasMaterialEnvData && <MaterialEnvironmentalChart data={materialEnvPoints} />}
+        </AnalyticsGroup>
+      )}
+
+      {hasFleet && (
+        <AnalyticsGroup id="analitica-flota" title="Flota y combustible" period="Últimos 6 meses">
+          {hasFuelData && <FuelConsumptionChart data={fuelTrend} />}
+          {hasMaintenanceData && <MaintenanceTrendChart data={maintenanceTrend} />}
+        </AnalyticsGroup>
+      )}
     </section>
   )
 }

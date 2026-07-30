@@ -62,14 +62,14 @@ export function PdtpComplianceCard(props: PdtpComplianceCardProps) {
       href="/prevencion/pdtp"
       data-pressable
       className={cn(
-        "group block rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs transition-all duration-150 ease-out",
-        "hover:border-blue-300 hover:bg-slate-50/80",
-        "focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-blue-600",
+        "group block rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-xs transition-all duration-150 ease-out",
+        "hover:border-[var(--color-primary-line)] hover:bg-[var(--color-surface-2)]",
+        "focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--color-primary)]",
       )}
     >
       <div className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2">
-          <span className="flex h-7 w-7 items-center justify-center rounded-[var(--radius)] bg-[var(--color-surface-2)] text-[var(--color-text-muted)] group-hover:bg-white group-hover:text-[var(--color-primary)]">
+          <span className="flex h-7 w-7 items-center justify-center rounded-[var(--radius)] bg-[var(--color-surface-2)] text-[var(--color-text-muted)] group-hover:bg-[var(--color-surface)] group-hover:text-[var(--color-primary)]">
             <ChartLineUp size={14} weight="bold" />
           </span>
           <p className="text-eyebrow text-[var(--color-text-muted)] group-hover:text-[var(--color-text)]">PDTP {year}</p>
