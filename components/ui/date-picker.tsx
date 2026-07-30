@@ -82,6 +82,7 @@ export function DatePicker({
             disabled={disabled}
             aria-haspopup="dialog"
             aria-expanded={open}
+            aria-invalid={error}
             aria-label={ariaLabel
               ? `${ariaLabel}${displayLabel ? `: ${displayLabel}` : ""}`
               : displayLabel || placeholder}
