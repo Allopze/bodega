@@ -193,6 +193,7 @@ async function bootstrapBase2026(programId: string): Promise<BootstrapResult> {
   }
 
   // Verify user permissions
+  if (!BOOTSTRAP_USER_ID) return fail("auth", "BOOTSTRAP_USER_ID no está definido.")
   const actor = await getUserRbacById(BOOTSTRAP_USER_ID, true)
   if (!actor?.isActive) return fail("auth", "El usuario ejecutor no existe o está inactivo.")
   if (!actor.permissions.includes("prevention:pdtp:program:manage")) {
@@ -248,9 +249,8 @@ async function bootstrapBase2026(programId: string): Promise<BootstrapResult> {
   }
 
   // Finalize
-  let finalizeResult: { sealed: boolean }
   try {
-    finalizeResult = await service.finalizePdtpImportBootstrap({
+    await service.finalizePdtpImportBootstrap({
       batchId: staged.batch.id,
       userId: BOOTSTRAP_USER_ID,
       checklistIdsCreated: [],
