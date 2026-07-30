@@ -142,16 +142,27 @@ export default async function OcDetailPage({
   const canSend        = session.user.permissions.includes("purchasing:send_order")
   const canDeleteOrder = can(session, "purchasing:delete_order")
   const canInvoice     = canSend   // purchasing:send_order gate for invoice management
-  const canRegisterFaenaReception = session.user.permissions.includes("receiving:register_faena")
+  const canRegisterFaenaReception  = session.user.permissions.includes("receiving:register_faena")
+  const canRegisterOfficeReception = session.user.permissions.includes("receiving:register_office")
+  const pendingOfficeQuantity = order.items.reduce(
+    (total, item) => total + Math.max(0, item.quantity - (item.quantityOfficeReceived ?? 0)),
+    0,
+  )
+  // En una OC directo a faena nada pasa por oficina, así que el saldo por
+  // recibir es el total pedido: medirlo contra `quantityOfficeReceived` (siempre
+  // 0 en esa vía) daba 0 y la OC quedaba sin siguiente paso a la vista.
   const pendingFaenaQuantity = order.items.reduce(
-    (total, item) => total + Math.max(0, (item.quantityOfficeReceived ?? 0) - (item.quantityReceived ?? 0)),
+    (total, item) => total + Math.max(
+      0,
+      (order.deliveryMode === "directo_faena" ? item.quantity : (item.quantityOfficeReceived ?? 0))
+        - (item.quantityReceived ?? 0),
+    ),
     0,
   )
   const canShowOrderActions =
     (order.status === "draft" && (canManage || canDeleteOrder)) ||
     (order.status === "issued" && (canManage || canSend || canDeleteOrder)) ||
     (order.status === "sent" && (canManage || canDeleteOrder)) ||
-    (order.status === "supplier_confirmed" && canManage) ||
     (order.status === "partially_received" && canManage) ||
     (order.status === "received" && canManage)
 
@@ -321,8 +332,12 @@ export default async function OcDetailPage({
             </dl>
             <OcReceptionCta
               orderId={order.id}
+              status={order.status}
+              deliveryMode={order.deliveryMode}
+              pendingOfficeQuantity={pendingOfficeQuantity}
               pendingFaenaQuantity={pendingFaenaQuantity}
               worksiteName={order.worksite?.name ?? "la faena"}
+              canRegisterOffice={canRegisterOfficeReception}
               canRegisterFaena={canRegisterFaenaReception}
             />
           </section>

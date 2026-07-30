@@ -1,6 +1,6 @@
 /**
  * Tests for lib/services/purchasing.ts — updateSentOrderItems (correcting the
- * items of a sent/supplier_confirmed OC) and the isOrderItemsEditable guard.
+ * items of a sent OC) and the isOrderItemsEditable guard.
  */
 
 import { PGlite } from "@electric-sql/pglite"
@@ -39,13 +39,10 @@ describe("isOrderItemsEditable", () => {
     expect(isOrderItemsEditable("sent", 0)).toBe(true)
   })
 
-  it("allows supplier_confirmed orders with no reception", () => {
-    expect(isOrderItemsEditable("supplier_confirmed", 0)).toBe(true)
-  })
-
-  it("rejects orders outside sent/supplier_confirmed", () => {
+  it("rejects orders outside sent, including the retired supplier_confirmed", () => {
     expect(isOrderItemsEditable("draft", 0)).toBe(false)
     expect(isOrderItemsEditable("closed", 0)).toBe(false)
+    expect(isOrderItemsEditable("supplier_confirmed", 0)).toBe(false)
   })
 
   it("rejects orders with any reception recorded", () => {
@@ -201,7 +198,7 @@ describe("updateSentOrderItems", () => {
     expect(newItem?.quantityReceived).toBe(0)
   })
 
-  it("throws if the order is not in sent or supplier_confirmed status", async () => {
+  it("throws if the order is not in sent status", async () => {
     const { orderId } = await createSentOrder("bad-status", 1, 1000)
     await inMemoryDb
       .update(schema.purchaseOrders)

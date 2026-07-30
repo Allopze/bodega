@@ -7,7 +7,7 @@ import { purchaseRequestItems } from "./requests"
 import { costCenters } from "./cost-centers"
 
 /* ── Purchase Order States ───────────────────────────────────────────────── */
-// draft | issued | sent | supplier_confirmed
+// draft | issued | sent
 // partially_office_received | office_received
 // partially_received | received | closed | cancelled
 
@@ -41,7 +41,7 @@ export const purchaseOrders = pgTable("purchase_orders", {
   // Invariant: status from canonical PO lifecycle; all monetary amounts non-negative
   check("purchase_orders_status_valid", sql`
     ${table.status} IN (
-      'draft', 'issued', 'sent', 'supplier_confirmed',
+      'draft', 'issued', 'sent',
       'partially_office_received', 'office_received',
       'partially_received', 'received', 'closed', 'cancelled'
     )

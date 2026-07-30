@@ -270,9 +270,10 @@ function AddInvoiceForm({ purchaseOrderId, ocItems }: { purchaseOrderId: string;
   const [dteParsed, setDteParsed] = React.useState(false)
   const [extractionWarnings, setExtractionWarnings] = React.useState<string[]>([])
   const invoiceNumberRef = React.useRef<HTMLInputElement>(null)
-  // El total declarado en el documento incluye IVA, la suma de líneas es el
-  // neto. Si el documento lo declara, manda ese total; sólo cuando no existe se
-  // deriva de las líneas.
+  // `createPurchaseOrderInvoice` recalcula el monto como la suma de las líneas
+  // cuando la factura trae detalle, así que el formulario muestra esa misma
+  // suma. El total declarado en el documento sólo se usa si la extracción no
+  // produjo líneas; si no, el campo mostraría un número que la base no guarda.
   const [extractedTotal, setExtractedTotal] = React.useState<number | null>(null)
   // Estado controlado en vez de ref imperativo: DatePicker guarda el valor en
   // React, así que form.reset() del navegador no lo limpiaría solo.
@@ -462,9 +463,9 @@ function AddInvoiceForm({ purchaseOrderId, ocItems }: { purchaseOrderId: string;
             min="0"
             step="1"
             placeholder="0"
-            value={extractedTotal != null ? String(extractedTotal) : totalItems > 0 ? String(Math.round(totalItems)) : undefined}
-            readOnly={extractedTotal == null && lineItems.length > 0}
-            className={extractedTotal == null && lineItems.length > 0 ? "bg-surface-2" : ""}
+            value={lineItems.length > 0 ? String(Math.round(totalItems)) : extractedTotal != null ? String(extractedTotal) : undefined}
+            readOnly={lineItems.length > 0}
+            className={lineItems.length > 0 ? "bg-surface-2" : ""}
           />
         </Field>
 

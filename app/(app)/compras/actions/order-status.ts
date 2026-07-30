@@ -5,7 +5,7 @@ import { db } from "@/db"
 import { purchaseOrderItems, purchaseOrders, suppliers, worksites } from "@/db/schema"
 import { count, eq } from "drizzle-orm"
 import { requirePermission } from "@/lib/auth/can"
-import { issueOrder, markOrderSent, confirmOrder } from "@/lib/services/purchasing"
+import { issueOrder, markOrderSent } from "@/lib/services/purchasing"
 import { getUserIdsWithPermission, notifyManyUser, notifyAfterCommit } from "@/lib/services/notifications"
 import { logger } from "@/lib/logger"
 import type { ActionState } from "@/lib/validation/operations"
@@ -113,32 +113,3 @@ export async function sendOrderAction(
   redirect(`/compras/${orderId}?actualizada=enviada`)
 }
 
-// ── Confirm order (sent → supplier_confirmed) ─────────────────────────────────
-
-export async function confirmOrderAction(
-  _prev: ActionState,
-  formData: FormData,
-): Promise<ActionState> {
-  let session
-  try {
-    session = await requirePermission("purchasing:create_order")
-  } catch {
-    return { ok: false, message: "Sin permisos" }
-  }
-
-  const orderId = formData.get("orderId") as string | null
-  if (!orderId) return { ok: false, message: "Orden no especificada" }
-  const accessError = await assertOrderAccess(session, orderId)
-  if (accessError) return accessError
-
-  try {
-    await confirmOrder(orderId, session.user.id, serviceWorksiteScope(session), {
-      userEmail: session.user.email ?? undefined,
-    })
-    revalidateOperationalViews([REVALIDATE, `/compras/${orderId}`])
-    return { ok: true, message: "Orden confirmada por proveedor" }
-  } catch (e) {
-    logger.error("[confirmOrderAction]", e)
-    return { ok: false, message: dbErrMsg(e, "Error al confirmar orden") }
-  }
-}

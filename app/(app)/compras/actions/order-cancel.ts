@@ -12,7 +12,7 @@ import { dbErrMsg, serviceWorksiteScope } from "./helpers"
 import { REVALIDATE } from "./revalidate"
 import { revalidateOperationalViews } from "@/lib/services/operational-cache"
 
-// ── Close order (supplier_confirmed/partially_received/received → closed) ─────
+// ── Close order (recepción iniciada/recibida → closed) ───────────────────────
 
 export async function closeOrderAction(
   _prev: ActionState,

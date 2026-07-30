@@ -3,14 +3,38 @@ import { render, screen } from "@testing-library/react"
 import { describe, expect, it } from "vitest"
 import { OcReceptionCta } from "./oc-reception-cta"
 
+const base = {
+  orderId: "oc-123",
+  worksiteName: "Biodiversa",
+  canRegisterOffice: true,
+  canRegisterFaena: true,
+}
+
 describe("OcReceptionCta", () => {
+  it("offers the office stage first on a freshly sent via_oficina order", () => {
+    render(
+      <OcReceptionCta
+        {...base}
+        status="sent"
+        deliveryMode="via_oficina"
+        pendingOfficeQuantity={20}
+        pendingFaenaQuantity={0}
+      />,
+    )
+
+    const link = screen.getByRole("link", { name: /registrar llegada a oficina/i })
+    expect(link).toHaveAttribute("href", "/recepcion/nueva?oc=oc-123")
+    expect(screen.getByText(/20 unidades por llegar a oficina/i)).toBeInTheDocument()
+  })
+
   it("links to faena reception when office stock is pending worksite receipt", () => {
     render(
       <OcReceptionCta
-        orderId="oc-123"
+        {...base}
+        status="office_received"
+        deliveryMode="via_oficina"
+        pendingOfficeQuantity={0}
         pendingFaenaQuantity={20}
-        worksiteName="Biodiversa"
-        canRegisterFaena
       />,
     )
 
@@ -19,29 +43,48 @@ describe("OcReceptionCta", () => {
     expect(screen.getByText(/20 unidades pendientes para Biodiversa/i)).toBeInTheDocument()
   })
 
-  it("does not render when there is no pending worksite receipt", () => {
+  it("skips the office stage entirely for a directo_faena order", () => {
+    render(
+      <OcReceptionCta
+        {...base}
+        status="sent"
+        deliveryMode="directo_faena"
+        pendingOfficeQuantity={20}
+        pendingFaenaQuantity={20}
+      />,
+    )
+
+    expect(screen.getByRole("link", { name: /recepcionar en faena/i })).toBeInTheDocument()
+    expect(screen.queryByText(/oficina/i)).not.toBeInTheDocument()
+  })
+
+  it("does not render when there is nothing left to receive", () => {
     const { container } = render(
       <OcReceptionCta
-        orderId="oc-123"
+        {...base}
+        status="received"
+        deliveryMode="via_oficina"
+        pendingOfficeQuantity={0}
         pendingFaenaQuantity={0}
-        worksiteName="Biodiversa"
-        canRegisterFaena
       />,
     )
 
     expect(container).toBeEmptyDOMElement()
   })
 
-  it("does not render without faena reception permission", () => {
-    const { container } = render(
+  it("names the next step without a link when the stage permission is missing", () => {
+    render(
       <OcReceptionCta
-        orderId="oc-123"
-        pendingFaenaQuantity={20}
-        worksiteName="Biodiversa"
+        {...base}
         canRegisterFaena={false}
+        status="office_received"
+        deliveryMode="via_oficina"
+        pendingOfficeQuantity={0}
+        pendingFaenaQuantity={20}
       />,
     )
 
-    expect(container).toBeEmptyDOMElement()
+    expect(screen.queryByRole("link")).not.toBeInTheDocument()
+    expect(screen.getByText(/siguiente paso: recepcionar en faena/i)).toBeInTheDocument()
   })
 })

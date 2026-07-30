@@ -17,7 +17,9 @@ test.describe("Extracción automática de factura", () => {
 
     await expect(page.getByText("Datos extraídos del archivo")).toBeVisible({ timeout: 60_000 })
     await expect(page.locator("#invoice-number")).toHaveValue("3064428")
-    await expect(page.locator("#invoice-amount")).toHaveValue("68425")
+    // Con líneas extraídas el monto es la suma de sus subtotales — el mismo valor
+    // que persiste createPurchaseOrderInvoice, no el total con IVA del documento.
+    await expect(page.locator("#invoice-amount")).toHaveValue("57500")
     // El DatePicker expone la fecha al form en un input oculto (el #id es el botón).
     await expect(page.locator('input[name="issueDate"]')).toHaveValue("2026-07-14")
   })

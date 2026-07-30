@@ -2,7 +2,7 @@
  * Purchase orders — barrel.
  * Re-exports from the following sub-modules:
  *   - purchase-orders-create    (createOrder, createOrdersBySupplier + types)
- *   - purchase-orders-status    (issueOrder, markOrderSent, cancelOrder, confirmOrder)
+ *   - purchase-orders-status    (issueOrder, markOrderSent, cancelOrder)
  *   - purchase-orders-delete    (deleteOrder)
  *   - purchase-orders-edit      (updateSentOrderItems + types)
  */
@@ -22,7 +22,6 @@ export {
   issueOrder,
   markOrderSent,
   cancelOrder,
-  confirmOrder,
 } from "./purchase-orders-status"
 
 export {

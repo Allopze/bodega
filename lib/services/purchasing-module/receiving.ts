@@ -9,7 +9,7 @@ import { recordAudit, recordStatusChange } from "@/lib/audit"
 import { nanoid } from "@/lib/id"
 import { rollupRequestStatus } from "@/lib/services/item-state-module/rollup"
 
-/* ── Close order (supplier_confirmed/partially_received/received → closed) ────── */
+/* ── Close order (recepción iniciada/recibida → closed) ──────────────────────── */
 
 export async function closeOrder(
   orderId: string,
@@ -27,7 +27,7 @@ export async function closeOrder(
     if (worksiteIds !== 'all' && !worksiteIds.includes(order.worksiteId)) {
       throw new Error("No tienes acceso a esta faena")
     }
-    if (!["supplier_confirmed", "partially_received", "received"].includes(order.status)) {
+    if (!["partially_office_received", "office_received", "partially_received", "received"].includes(order.status)) {
       throw new Error(`No se puede cerrar una orden en estado '${order.status}'`)
     }
 

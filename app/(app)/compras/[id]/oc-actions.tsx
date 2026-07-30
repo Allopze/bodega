@@ -6,7 +6,7 @@ import { toast } from "@/lib/toast"
 import { Warning } from "@phosphor-icons/react"
 import { SubmitButton } from "@/components/admin/submit-button"
 import { INITIAL_STATE } from "@/components/admin/form-state"
-import { issueOrderAction, sendOrderAction, confirmOrderAction } from "../actions/order-status"
+import { issueOrderAction, sendOrderAction } from "../actions/order-status"
 import { cancelOrderAction, closeOrderAction, deleteOrderAction } from "../actions/order-cancel"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import {
@@ -19,7 +19,11 @@ import { useRouter } from "next/navigation"
 import type { ActionState } from "@/lib/validation/operations"
 
 const CANCELLABLE_STATUSES = new Set(["draft", "issued", "sent"])
-const CLOSEABLE_STATUSES   = new Set(["supplier_confirmed", "partially_received", "received"])
+// El cierre está disponible desde que hay algo recibido: antes de eso la salida
+// es anular, no cerrar.
+const CLOSEABLE_STATUSES   = new Set([
+  "partially_office_received", "office_received", "partially_received", "received",
+])
 
 export function OcActions({
   orderId,
@@ -46,7 +50,6 @@ export function OcActions({
   const [issueState,   issueAction]   = useActionState<ActionState, FormData>(issueOrderAction,   INITIAL_STATE)
   const [sendState,    sendAction]    = useActionState<ActionState, FormData>(sendOrderAction,    INITIAL_STATE)
   const [cancelState,  cancelAction]  = useActionState<ActionState, FormData>(cancelOrderAction,  INITIAL_STATE)
-  const [confirmState, confirmAction] = useActionState<ActionState, FormData>(confirmOrderAction, INITIAL_STATE)
   const [closeState,   closeAction]   = useActionState<ActionState, FormData>(closeOrderAction,   INITIAL_STATE)
   const [deleteState,  deleteAction]  = useActionState<ActionState, FormData>(deleteOrderAction,  INITIAL_STATE)
   const [deletePending, startDeleteTransition] = useTransition()
@@ -69,11 +72,6 @@ export function OcActions({
       toast.error(cancelState.message)
     }
   }, [cancelState])
-
-  React.useEffect(() => {
-    if (confirmState.ok && confirmState.message) toast.success(confirmState.message)
-    else if (!confirmState.ok && confirmState.message && confirmState !== INITIAL_STATE) toast.error(confirmState.message)
-  }, [confirmState])
 
   React.useEffect(() => {
     if (closeState.ok && closeState.message) {
@@ -223,13 +221,6 @@ export function OcActions({
           </form>
         )}
 
-        {status === "sent" && canManage && (
-          <form action={confirmAction} className="w-full">
-            <input type="hidden" name="orderId" value={orderId} />
-            <SubmitButton label="Confirmada por proveedor" loadingLabel="Confirmando..." variant="primary" className="w-full" />
-          </form>
-        )}
-
         {CLOSEABLE_STATUSES.has(status) && canManage && (
           <button
             type="button"
@@ -299,11 +290,6 @@ export function OcActions({
       {!sendState.ok && sendState.message && sendState !== INITIAL_STATE && (
         <p className="text-sm text-danger flex items-center gap-1.5 justify-end">
           <Warning size={14} /> {sendState.message}
-        </p>
-      )}
-      {!confirmState.ok && confirmState.message && confirmState !== INITIAL_STATE && (
-        <p className="text-sm text-danger flex items-center gap-1.5 justify-end">
-          <Warning size={14} /> {confirmState.message}
         </p>
       )}
     </div>

@@ -1,5 +1,5 @@
 /**
- * Correct the items of a purchase order that's already sent/supplier_confirmed
+ * Correct the items of a purchase order that's already sent
  * (e.g. the supplier rejected it for a quantity/price error) without going
  * through anular + re-create.
  */

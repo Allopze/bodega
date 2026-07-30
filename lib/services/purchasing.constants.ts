@@ -6,13 +6,13 @@ export function isOrderDeletable(status: string, deletedAt?: string | null): boo
   return (DELETABLE_ORDER_STATUSES as readonly string[]).includes(status)
 }
 
-export const EDITABLE_ITEM_ORDER_STATUSES = ["sent", "supplier_confirmed"] as const
+export const EDITABLE_ITEM_ORDER_STATUSES = ["sent"] as const
 export type EditableItemOrderStatus = typeof EDITABLE_ITEM_ORDER_STATUSES[number]
 
 /**
  * An OC's items can only be corrected while nothing has been received yet.
  * The status check alone is close to sufficient — registerReceipt() rolls the
- * order status forward off "sent"/"supplier_confirmed" the moment any item
+ * order status forward off "sent" the moment any item
  * gets a nonzero quantityOfficeReceived/quantityReceived — but totalReceived
  * is checked explicitly too, matching the "sin recepción" requirement literally.
  */

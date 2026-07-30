@@ -538,6 +538,75 @@ async function main() {
     notes: "Consultoría de implementación",
   })
 
+  // OC dedicada al flujo completo enviada → oficina → faena → recibida → cerrada
+  // (oc-flow.spec.ts). Es propia porque ese spec avanza el estado y no puede
+  // pisar a `oc-e2e`, que otros specs leen esperando una OC recién emitida.
+  await db.insert(schema.purchaseRequests).values({
+    id: "req-oc-flow-e2e",
+    code: "SOL-OC-FLOW-E2E",
+    worksiteId: "ws-e2e",
+    requesterId: "user-admin-e2e",
+    requestType: "otro",
+    urgency: "normal",
+    requiredDate: "2026-07-15",
+    status: "approved",
+    submittedAt: now,
+    notes: "Fixture E2E para el flujo OC → recepción",
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.purchaseRequestItems).values({
+    id: "req-item-oc-flow-e2e",
+    requestId: "req-oc-flow-e2e",
+    productId: "prod-e2e",
+    productNameFree: null,
+    quantity: 10,
+    unitOfMeasure: "unidad",
+    status: "in_purchase_order",
+    urgency: "normal",
+    requiredDate: "2026-07-15",
+    workerId: null,
+    suggestedSupplierId: "sup-e2e",
+    sortOrder: 1,
+    notes: null,
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.purchaseOrders).values({
+    id: "oc-flow-e2e",
+    code: "OC-2026-0090",
+    worksiteId: "ws-e2e",
+    supplierId: "sup-e2e",
+    createdBy: "user-admin-e2e",
+    status: "issued",
+    deliveryMode: "via_oficina",
+    issuedAt: now,
+    estimatedDelivery: "2026-07-20",
+    deliveryAddress: "Ruta E2E",
+    paymentTerms: "30 días",
+    netAmount: 10000,
+    taxAmount: 1900,
+    totalAmount: 11900,
+    notes: "Fixture E2E para el flujo OC → recepción",
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.purchaseOrderItems).values({
+    id: "oc-item-flow-e2e",
+    purchaseOrderId: "oc-flow-e2e",
+    requestItemId: "req-item-oc-flow-e2e",
+    productId: "prod-e2e",
+    productNameFree: null,
+    quantity: 10,
+    unitOfMeasure: "unidad",
+    unitPrice: 1000,
+    discount: 0,
+    subtotal: 10000,
+    status: "issued",
+    sortOrder: 1,
+    notes: null,
+  })
+
   // SST seed — one closed evaluation used by sst-pdf.spec.ts to verify the
   // /sst/[id]/print/pdf route works in standalone without MODULE_NOT_FOUND.
   await db.insert(schema.sstEvaluations).values({

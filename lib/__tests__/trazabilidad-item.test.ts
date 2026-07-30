@@ -312,7 +312,7 @@ describe("getItemDetail", () => {
     it("returns OC items with supplier name and quantities", async () => {
       await inMemoryDb.insert(schema.purchaseOrders).values({
         id: "oc-tz-1", code: "OC-2026-001", worksiteId: WS_1,
-        supplierId: SUP, createdBy: USER_BOD, status: "supplier_confirmed",
+        supplierId: SUP, createdBy: USER_BOD, status: "received",
         createdAt: now, updatedAt: now,
       })
       await inMemoryDb.insert(schema.purchaseOrderItems).values({
@@ -326,7 +326,7 @@ describe("getItemDetail", () => {
       expect(result!.ocItems).toHaveLength(1)
       expect(result!.ocItems[0]).toMatchObject({
           ocCode: "OC-2026-001",
-          ocStatus: "supplier_confirmed",
+          ocStatus: "received",
         supplierName: "Proveedor Test",
         quantity: 8,
         unitPrice: 5000,

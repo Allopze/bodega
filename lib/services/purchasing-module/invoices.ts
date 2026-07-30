@@ -11,7 +11,7 @@ import { recordAudit } from "@/lib/audit"
 /* ── Purchase Order Invoices ─────────────────────────────────────────────────── */
 
 const INVOICE_ALLOWED_STATUSES = new Set([
-  "issued", "sent", "supplier_confirmed",
+  "issued", "sent",
   "partially_office_received", "office_received",
   "partially_received", "received", "closed",
 ])
@@ -147,7 +147,7 @@ export async function createPurchaseOrderInvoice(
       newState:   {
         purchaseOrderId: input.purchaseOrderId,
         purchaseOrderCode: order.code,
-        amount: input.amount,
+        amount: totalAmount,
         issueDate: input.issueDate,
       },
     }, tx)
