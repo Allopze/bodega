@@ -74,3 +74,37 @@ else
   echo "  docker tag $PREV_IMAGE $IMAGE && (cd $PROD_DIR && docker compose up -d --no-deps app)"
   exit 1
 fi
+
+echo
+echo "==> Verificando Base preventiva 2026..."
+
+# Check if the PDTP base 2026 template is published by querying the DB.
+# If not, print instructions for the one-time bootstrap.
+BASE_CHECK=$( (cd "$PROD_DIR" && docker compose exec -T db psql -U bodega -d bodega -tAc \
+  "SELECT pv.version FROM pdtp_program_templates pt \
+   JOIN pdtp_program_template_versions pv ON pv.template_id = pt.id \
+   WHERE pt.code = 'base_preventiva_2026' AND pt.is_active = true \
+   ORDER BY pv.version DESC LIMIT 1" 2>/dev/null) || echo "")
+
+if [ -z "$BASE_CHECK" ]; then
+  echo "  ⚠️  Base preventiva 2026 NO PUBLICADA."
+  echo
+  echo "  Ejecuta el bootstrap UNA SOLA VEZ desde el checkout:"
+  echo
+  echo "    BOOTSTRAP_USER_ID=<admin-uuid> \\"
+  echo "    PUBLISH_REFERENCE=true \\"
+  echo "    DATABASE_URL=postgres://...  \\"
+  echo "    npx tsx scripts/pdtp-bootstrap-prod.ts"
+  echo
+  echo "  O desde docker compose (mismo directorio que este script):"
+  echo
+  echo "    BOOTSTRAP_USER_ID=<admin-uuid> \\"
+  echo "    docker compose --profile bootstrap run --rm bootstrap-pdtp"
+  echo
+  echo "  BOOTSTRAP_USER_ID debe ser el UUID de un admin global."
+  echo "  Después del bootstrap, la UI en /prevencion/pdtp/nuevo"
+  echo "  permitirá crear programas anuales normalmente."
+  echo
+else
+  echo "  ✓ Base preventiva 2026 publicada (v${BASE_CHECK})."
+fi

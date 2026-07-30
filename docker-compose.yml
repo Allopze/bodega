@@ -34,41 +34,6 @@ services:
     image: ghcr.io/${GITHUB_REPOSITORY:-chome/bodega}:${IMAGE_TAG:-latest}
     restart: unless-stopped
     depends_on:
-      # Daily backup scheduler: runs backup-orchestrator.sh every day at BACKUP_HOUR UTC.
-  # Uses the same prod image plus rclone/bash/jq (already bundled in Dockerfile).
-  # Activate with: docker compose --profile backup up -d backup-scheduler
-  #
-  # Backups land in /data/backups/snapshots/<YYYY-MM-DD>/ (shared volume bodega-backups)
-  # and are uploaded to GDRIVE_BACKUPS_DEST via rclone if configured.
-  backup-scheduler:
-    profiles: ["backup"]
-    build:
-      context: .
-      target: prod
-    image: ghcr.io/${GITHUB_REPOSITORY:-chome/bodega}:${IMAGE_TAG:-latest}
-    restart: unless-stopped
-    depends_on:
-      migrate:
-        condition: service_completed_successfully
-      app:
-        condition: service_healthy
-    environment:
-      - DATABASE_URL=${DATABASE_URL:-postgres://${POSTGRES_USER:-bodega}:${POSTGRES_PASSWORD:?err}@db:5432/${POSTGRES_DB:-bodega}}
-      - STORAGE_PATH=${STORAGE_PATH:-/data/storage}
-      - BACKUP_DIR=${BACKUP_DIR:-/data/backups}
-      - GDRIVE_BACKUPS_DEST=${GDRIVE_BACKUPS_DEST:-}
-      - RETENTION_DAYS=${RETENTION_DAYS:-30}
-      - APP_URL=http://app:3000
-      - CRON_SECRET=${CRON_SECRET:-}
-      - APP_VERSION=${APP_VERSION:-}
-      - NODE_ENV=production
-      - HOME=/app
-      - RCLONE_CONFIG=${RCLONE_CONFIG:-/app/.config/rclone/rclone.conf}
-    volumes:
-      - bodega-storage:/data/storage:ro
-      - bodega-backups:/data/backups
-    command: ["bash", "/app/scripts/backup-scheduler.sh"]
-        condition: service_healthy
       migrate:
         condition: service_completed_successfully
     ports:
@@ -112,6 +77,41 @@ services:
       timeout: 10s
       retries: 3
       start_period: 15s
+
+  # Daily backup scheduler: runs backup-orchestrator.sh every day at BACKUP_HOUR UTC.
+  # Uses the same prod image plus rclone/bash/jq (already bundled in Dockerfile).
+  # Activate with: docker compose --profile backup up -d backup-scheduler
+  #
+  # Backups land in /data/backups/snapshots/<YYYY-MM-DD>/ (shared volume bodega-backups)
+  # and are uploaded to GDRIVE_BACKUPS_DEST via rclone if configured.
+  backup-scheduler:
+    profiles: ["backup"]
+    build:
+      context: .
+      target: prod
+    image: ghcr.io/${GITHUB_REPOSITORY:-chome/bodega}:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      app:
+        condition: service_healthy
+    environment:
+      - DATABASE_URL=${DATABASE_URL:-postgres://${POSTGRES_USER:-bodega}:${POSTGRES_PASSWORD:?err}@db:5432/${POSTGRES_DB:-bodega}}
+      - STORAGE_PATH=${STORAGE_PATH:-/data/storage}
+      - BACKUP_DIR=${BACKUP_DIR:-/data/backups}
+      - GDRIVE_BACKUPS_DEST=${GDRIVE_BACKUPS_DEST:-}
+      - RETENTION_DAYS=${RETENTION_DAYS:-30}
+      - APP_URL=http://app:3000
+      - CRON_SECRET=${CRON_SECRET:-}
+      - APP_VERSION=${APP_VERSION:-}
+      - NODE_ENV=production
+      - HOME=/app
+      - RCLONE_CONFIG=${RCLONE_CONFIG:-/app/.config/rclone/rclone.conf}
+    volumes:
+      - bodega-storage:/data/storage:ro
+      - bodega-backups:/data/backups
+    command: ["bash", "/app/scripts/backup-scheduler.sh"]
 
   # One-shot: applies Drizzle migrations, then exits 0. Runs the same image as
   # `app` but with the standalone migrate runner (scripts/migrate.mjs).
@@ -170,7 +170,7 @@ services:
       - NODE_ENV=production
       - DATABASE_URL=${DATABASE_URL:-postgres://${POSTGRES_USER:-bodega}:${POSTGRES_PASSWORD:?err}@db:5432/${POSTGRES_DB:-bodega}}
       - BOOTSTRAP_XLSX_PATH=${BOOTSTRAP_XLSX_PATH:-/app/PROGRAMA_ACTIVIDADES_DEFINITIVO.xlsx}
-      - BOOTSTRAP_USER_ID=${BOOTSTRAP_USER_ID:?err}
+      - BOOTSTRAP_USER_ID=${BOOTSTRAP_USER_ID:-}
       - PUBLISH_REFERENCE=${PUBLISH_REFERENCE:-true}
     command: ["npx", "tsx", "scripts/pdtp-bootstrap-prod.ts"]
 
