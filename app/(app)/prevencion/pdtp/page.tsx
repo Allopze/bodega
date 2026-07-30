@@ -5,41 +5,31 @@ import { can, requireAuth } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import {
   getActivePdtpProgram,
+  getPdtpAggregatedSheetViewByProgram,
   getPdtpComplianceByCategoryForScope,
   getPdtpComplianceIndicatorsForScope,
-  getPdtpIntegralCompliance,
-  getPdtpIntegralComplianceForScope,
   listActionsByProgram,
+  listPdtpProgramWorksites,
   listPdtpPrograms,
+  resolveProgramWorksiteIds,
   type PdtpComplianceIndicators,
-  type PdtpIntegralCompliance,
 } from "@/lib/services/prevention-pdtp"
 import { isPdtpActionOpen } from "@/lib/services/pdtp/checklist-domain"
 import { listScopedWorksites } from "@/lib/services/ppa"
-import { currentPdtpPeriod } from "@/lib/services/pdtp/period"
+import { currentPdtpPeriod, type PdtpPeriod } from "@/lib/services/pdtp/period"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { Button } from "@/components/ui/button"
 import { KpiCard } from "@/components/ui/kpi-card"
 import { ChartBar, ListChecks, Plus, ShieldCheck, WarningCircle } from "@phosphor-icons/react/dist/ssr"
 import { resolvePdtpYear, resolveSelectedWorksiteId } from "./pdtp-context"
-import { PdtpWorksitePicker } from "./pdtp-sheet-table-ui"
+import { PdtpWorksitePicker, PdtpYearPicker } from "./pdtp-sheet-table-ui"
 import {
-  getCanonicalSafetyIndicatorYear,
-  getMaterialEnvironmentalEvents,
-  getIncidentAnalyticsData,
-} from "@/lib/services/prevention-indicadores"
-import {
-  PdtpDashboardCharts,
   type MonthlyTrendData,
   type WorksiteComplianceData,
   type CategoryBreakdownData,
-  type SstPoint,
-  type MaterialEnvPoint,
-  type CommonAccidentPoint,
-  type WorksiteIncidentPoint,
-  type PotentialSeverityPoint,
 } from "./pdtp-dashboard-charts"
+import { PdtpDashboardChartsLazy } from "./pdtp-dashboard-charts-lazy"
 
 export const metadata: Metadata = { title: "Dashboard de Cumplimiento — PDTP SG-SST" }
 
@@ -51,6 +41,17 @@ const MONTH_NAMES = [
   "Ene", "Feb", "Mar", "Abr", "May", "Jun",
   "Jul", "Ago", "Sep", "Oct", "Nov", "Dic",
 ]
+const one = (value?: string | string[]) => Array.isArray(value) ? value[0] : value
+const activitiesHref = (programId: string, year: number, worksiteId: string | undefined, view: "semana" | "anual", status?: string, period?: PdtpPeriod) => {
+  const params = new URLSearchParams({ programa: programId, anio: String(year), vista: view })
+  if (worksiteId) params.set("faena", worksiteId)
+  if (status) params.set("estado", status)
+  if (period) {
+    params.set("mes", String(period.month))
+    params.set("semana", String(period.week))
+  }
+  return `/prevencion/pdtp/actividades?${params}`
+}
 
 export default async function PdtpDashboardPage({ searchParams }: PdtpDashboardPageProps) {
   let session
@@ -62,7 +63,6 @@ export default async function PdtpDashboardPage({ searchParams }: PdtpDashboardP
   if (!can(session, "prevention:pdtp:view")) redirect("/forbidden")
 
   const query = await searchParams
-  const one = (v?: string | string[]) => (Array.isArray(v) ? v[0] : v)
   const requestedWorksite = one(query.faena)
   const requestedYear = one(query.anio)
 
@@ -73,30 +73,37 @@ export default async function PdtpDashboardPage({ searchParams }: PdtpDashboardP
   const worksiteScopeIds: string[] | "all" =
     scope.mode === "all" ? "all" : scope.mode === "some" ? scope.ids : []
   const scopedWorksites = await listScopedWorksites(worksiteScopeIds)
-  const selectedWorksiteId = resolveSelectedWorksiteId(requestedWorksite, scopedWorksites)
+  let selectedWorksiteId = resolveSelectedWorksiteId(requestedWorksite, scopedWorksites)
 
   // Programa del período. Con varios programas y ninguno activo NO se elige
   // silenciosamente una versión: se pide elegir (la portada anterior mostraba
   // el selector por la misma razón, y mostrar los números de un borrador
   // arbitrario rotulado "Programa activo" es peor que no mostrar nada).
-  const [activeProgram, programsForYear] = await Promise.all([
+  const [activeProgram, programsForYear, allPrograms] = await Promise.all([
     getActivePdtpProgram(year),
     listPdtpPrograms({ year }),
+    listPdtpPrograms(),
   ])
   const focusProgram = activeProgram ?? (programsForYear.length === 1 ? programsForYear[0]! : null)
   const mustChooseProgram = !focusProgram && programsForYear.length > 1
+  const currentPeriod = currentPdtpPeriod()
+  let effectiveWorksites = scopedWorksites
+  if (focusProgram) {
+    const members = await listPdtpProgramWorksites(focusProgram.id)
+    const effectiveIds = new Set(resolveProgramWorksiteIds(
+      members.map((member) => member.worksiteId),
+      scope.mode === "all" ? "all" : scope.mode === "some" ? scope.ids : [],
+      scopedWorksites.map((worksite) => worksite.id),
+    ))
+    effectiveWorksites = scopedWorksites.filter((worksite) => effectiveIds.has(worksite.id))
+    selectedWorksiteId = resolveSelectedWorksiteId(requestedWorksite, effectiveWorksites)
+  }
 
   let indicators: PdtpComplianceIndicators | null = null
-  let integral: PdtpIntegralCompliance | null = null
   let actions: Awaited<ReturnType<typeof listActionsByProgram>> = []
   let monthlyTrendData: MonthlyTrendData[] = []
   let worksiteComplianceData: WorksiteComplianceData[] = []
   let categoryBreakdownData: CategoryBreakdownData[] = []
-  let sstPoints: SstPoint[] = []
-  let materialEnvPoints: MaterialEnvPoint[] = []
-  let commonAccidentsData: CommonAccidentPoint[] = []
-  let worksiteIncidentsData: WorksiteIncidentPoint[] = []
-  let potentialSeverityData: PotentialSeverityPoint[] = []
 
   if (focusProgram) {
     // UX-01: `getPdtpComplianceIndicators` sin faena deja `executed` en 0 aunque
@@ -104,72 +111,25 @@ export default async function PdtpDashboardPage({ searchParams }: PdtpDashboardP
     // sin faena). El agregado se pide sobre las faenas autorizadas del usuario,
     // y el mismo fan-out alimenta la comparativa por faena — antes se recalculaba
     // una vez por faena en un segundo round-trip.
-    const [scopeIndicators, integralRes, categoryRes, actRes, sstYearView, envEventsData, incidentAnalytics] = await Promise.all([
-      getPdtpComplianceIndicatorsForScope(focusProgram.id, scopedWorksites.map((w) => w.id)),
-      // Sin faena elegida el integral se agrega sobre el alcance del usuario.
-      // No es el promedio de los integrales por faena: verificación es un
-      // promedio de checklists y cierre un ratio de acciones, así que ambos ejes
-      // se recalculan sobre las filas crudas de todas las faenas.
-      selectedWorksiteId
-        ? getPdtpIntegralCompliance(focusProgram.id, selectedWorksiteId)
-        : getPdtpIntegralComplianceForScope(focusProgram.id, scopedWorksites.map((w) => w.id)),
+    const [scopeIndicators, categoryRes, actRes] = await Promise.all([
+      getPdtpComplianceIndicatorsForScope(focusProgram.id, effectiveWorksites.map((w) => w.id)),
       // Sigue a la faena elegida, como el resto de los KPI. La comparativa por
       // faena es el único gráfico que mira siempre todo el alcance.
       getPdtpComplianceByCategoryForScope(
         focusProgram.id,
-        selectedWorksiteId ? [selectedWorksiteId] : scopedWorksites.map((w) => w.id),
+        selectedWorksiteId ? [selectedWorksiteId] : effectiveWorksites.map((w) => w.id),
       ),
       listActionsByProgram(focusProgram.id, {
         worksiteId: selectedWorksiteId,
-        scope: worksiteScopeIds,
+        scope: effectiveWorksites.map((worksite) => worksite.id),
       }),
-      getCanonicalSafetyIndicatorYear(year, scope).catch(() => null),
-      getMaterialEnvironmentalEvents(year, scope).catch(() => null),
-      getIncidentAnalyticsData(year, scope).catch(() => null),
     ])
 
     // Con faena elegida se usa su desglose; sin faena, el agregado del alcance.
     indicators = selectedWorksiteId
       ? scopeIndicators?.perWorksite.find((entry) => entry.worksiteId === selectedWorksiteId)?.indicators ?? null
       : scopeIndicators
-    integral = integralRes
     actions = actRes
-
-    if (incidentAnalytics) {
-      commonAccidentsData = incidentAnalytics.commonAccidents
-      worksiteIncidentsData = incidentAnalytics.worksiteIncidents
-      potentialSeverityData = incidentAnalytics.potentialSeverity
-    }
-
-    if (sstYearView) {
-      const targetWorksiteId = selectedWorksiteId || "total"
-      const group = sstYearView.groups.find((g) => g.worksiteId === targetWorksiteId) || sstYearView.groups.find((g) => g.worksiteId === "total")
-      if (group) {
-        // Solo TF y TG, que es lo que el gráfico grafica. No se derivan series
-        // de "accidentes con/sin tiempo perdido" del eje confirmed/provisional:
-        // ese eje es certeza de clasificación, no tiempo perdido — todos los
-        // casos del motor canónico ya son con tiempo perdido
-        // (`absenceAtLeastNormalShift`) y `provisional` contiene a `confirmed`.
-        sstPoints = group.monthly.map((m, i) => ({
-          monthName: MONTH_NAMES[i] ?? `M${i + 1}`,
-          tasaFrecuencia: m.confirmed.frequencyRate ?? 0,
-          tasaGravedad: m.confirmed.severityRate ?? 0,
-        }))
-      }
-    }
-
-    if (envEventsData) {
-      const targetWorksiteId = selectedWorksiteId || "total"
-      const eventItem = envEventsData.eventData.find((e) => e.worksiteId === targetWorksiteId) || envEventsData.eventData.find((e) => e.worksiteId === "total")
-      if (eventItem) {
-        materialEnvPoints = eventItem.monthly.map((m) => ({
-          monthName: MONTH_NAMES[m.month - 1] ?? `M${m.month}`,
-          dangerousIncidents: m.dangerousIncidents,
-          materialDamage: m.materialDamage,
-          environmentalSpills: m.environmentalSpills,
-        }))
-      }
-    }
 
     // 1. Datos para gráfico de tendencia mensual
     if (indicators?.monthly) {
@@ -183,7 +143,7 @@ export default async function PdtpDashboardPage({ searchParams }: PdtpDashboardP
 
     // 2. Comparativa por faena — reusa el desglose que ya trajo el agregado.
     worksiteComplianceData = (scopeIndicators?.perWorksite ?? []).map((entry) => {
-      const worksite = scopedWorksites.find((w) => w.id === entry.worksiteId)
+      const worksite = effectiveWorksites.find((w) => w.id === entry.worksiteId)
       const percent = entry.indicators?.annual.percent
       return {
         name: worksite?.name ?? entry.worksiteId,
@@ -204,15 +164,8 @@ export default async function PdtpDashboardPage({ searchParams }: PdtpDashboardP
     }))
   }
 
-  const annualPercent = indicators?.annual.percent !== null && indicators?.annual.percent !== undefined
-    ? Math.round(indicators.annual.percent * 100)
-    : 0
-
-  const currentMonthNum = currentPdtpPeriod().month
+  const currentMonthNum = currentPeriod.month
   const currentMonthData = indicators?.monthly.find((m) => m.month === currentMonthNum)
-  const currentMonthPercent = currentMonthData?.percent !== null && currentMonthData?.percent !== undefined
-    ? Math.round(currentMonthData.percent * 100)
-    : 0
 
   // `PDTP_ESTADOS_CERRADOS` es la constante del dominio (completado/verificado/
   // cancelado) que ya usan el cumplimiento integral y el cálculo de vencidas.
@@ -220,7 +173,12 @@ export default async function PdtpDashboardPage({ searchParams }: PdtpDashboardP
   // no excluía nada y el tile contaba el 100 % de las acciones.
   const openActionsCount = actions.filter((a) => isPdtpActionOpen(a.estado)).length
   const overdueActionsCount = actions.filter((a) => a.vencida).length
-  const integralPercent = integral?.integral != null ? Math.round(integral.integral) : null
+  const executedCount = indicators?.annual.executed ?? 0
+  const pendingCount = Math.max(0, (currentMonthData?.planned ?? 0) - (currentMonthData?.executed ?? 0))
+  const aggregateForKpis = focusProgram
+    ? await getPdtpAggregatedSheetViewByProgram(focusProgram.id, "pdtp_general", effectiveWorksites.map((worksite) => worksite.id), currentPeriod)
+    : null
+  const overdueActivityCount = aggregateForKpis?.activities.filter((activity) => activity.worksiteSummaries.some((summary) => summary.status === "overdue")).length ?? 0
 
   return (
     <PageContainer>
@@ -239,6 +197,9 @@ export default async function PdtpDashboardPage({ searchParams }: PdtpDashboardP
         actions={
           <div className="flex items-center gap-2">
             <Button asChild size="sm" variant="secondary">
+              <Link href={focusProgram ? activitiesHref(focusProgram.id, year, selectedWorksiteId, "anual", undefined, currentPeriod) : `/prevencion/pdtp/actividades?anio=${year}`}>Ver actividades</Link>
+            </Button>
+            <Button asChild size="sm" variant="secondary">
               <Link href="/prevencion/pdtp/programas">Listado de programas</Link>
             </Button>
             {canManageProgram && (
@@ -256,10 +217,11 @@ export default async function PdtpDashboardPage({ searchParams }: PdtpDashboardP
       {/* Barra de Filtros Primarios */}
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3 shadow-xs">
         <div className="flex flex-wrap items-center gap-4">
+          <PdtpYearPicker current={year} years={allPrograms.map((program) => program.year)} hrefBase="/prevencion/pdtp" worksiteId={selectedWorksiteId} />
           <PdtpWorksitePicker
             current={selectedWorksiteId}
             sheetCode="pdtp_general"
-            worksites={scopedWorksites}
+            worksites={effectiveWorksites}
           />
           {focusProgram && (
             <span className="text-xs text-[var(--color-text-muted)]">
@@ -270,10 +232,10 @@ export default async function PdtpDashboardPage({ searchParams }: PdtpDashboardP
         </div>
         {focusProgram && (
           <Link
-            href={`/prevencion/pdtp/${focusProgram.id}`}
+            href={activitiesHref(focusProgram.id, year, selectedWorksiteId, "anual", undefined, currentPeriod)}
             className="inline-flex min-h-11 sm:min-h-0 items-center text-xs font-medium text-[var(--color-primary)] hover:underline"
           >
-            Ver matriz detallada de actividades →
+            Ver actividades del programa →
           </Link>
         )}
       </div>
@@ -311,7 +273,7 @@ export default async function PdtpDashboardPage({ searchParams }: PdtpDashboardP
             </Button>
           )}
         </div>
-      ) : scopedWorksites.length === 0 ? (
+      ) : effectiveWorksites.length === 0 ? (
         <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-12 text-center shadow-xs">
           <p className="font-semibold text-[var(--color-text)]">Sin faenas asignadas a tu usuario</p>
           <p className="mx-auto mt-1 max-w-prose text-sm text-[var(--color-text-muted)]">
@@ -324,36 +286,28 @@ export default async function PdtpDashboardPage({ searchParams }: PdtpDashboardP
           {/* 4 Tiles KPI Principales */}
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <KpiCard
-              label="Cumplimiento Anual"
-              value={`${annualPercent}%`}
-              detail={
-                selectedWorksiteId
-                  ? `${indicators?.annual.executed ?? 0} de ${indicators?.annual.planned ?? 0} ejecuciones`
-                  : `${indicators?.annual.executed ?? 0} de ${indicators?.annual.planned ?? 0} ejecuciones · ${scopedWorksites.length} faena${scopedWorksites.length === 1 ? "" : "s"}`
-              }
+              label="Ejecutadas"
+              value={String(executedCount)}
+              detail={`Ejecuciones registradas en ${year}`}
               icon={<ShieldCheck size={22} className="text-[var(--color-success)]" />}
-              href={focusProgram ? `/prevencion/pdtp/${focusProgram.id}` : undefined}
+              href={focusProgram ? activitiesHref(focusProgram.id, year, selectedWorksiteId, "anual", "executed", currentPeriod) : undefined}
             />
             <KpiCard
-              label="Avance Mes Vigente"
-              value={`${currentMonthPercent}%`}
-              detail={`Mes ${currentMonthNum}: ${currentMonthData?.executed ?? 0}/${currentMonthData?.planned ?? 0} ejecuciones`}
+              label="Pendientes"
+              value={String(pendingCount)}
+              detail="Programadas sin ejecución en el período vigente"
               icon={<ChartBar size={22} className="text-[var(--color-primary)]" />}
-              href={focusProgram ? `/prevencion/pdtp/${focusProgram.id}` : undefined}
+              href={focusProgram ? activitiesHref(focusProgram.id, year, selectedWorksiteId, "semana", "pending", currentPeriod) : undefined}
             />
             {/* Reemplaza el conteo de faenas, que no cambiaba ninguna decisión
                 (regla A1). El integral pondera ejecución + verificación de
                 checklist + cierre de acciones, y solo está definido por faena. */}
             <KpiCard
-              label="Cumplimiento Integral"
-              value={integralPercent !== null ? `${integralPercent}%` : "—"}
-              detail={
-                integralPercent !== null
-                  ? `Ejec. ${Math.round((integral?.ejecucion ?? 0) * 100)}% · Verif. ${Math.round(integral?.verificacion ?? 0)}% · Cierre ${Math.round(integral?.cierre ?? 0)}%`
-                  : "Sin ejecuciones aprobadas todavía — abre el programa para registrar la primera"
-              }
+              label="Atrasadas"
+              value={String(overdueActivityCount)}
+              detail="Actividades que requieren revisión prioritaria"
               icon={<ListChecks size={22} className="text-[var(--color-info)]" />}
-              href={focusProgram ? `/prevencion/pdtp/${focusProgram.id}` : undefined}
+              href={focusProgram ? activitiesHref(focusProgram.id, year, selectedWorksiteId, "semana", "overdue", currentPeriod) : undefined}
             />
             <KpiCard
               label="Acciones Pendientes"
@@ -365,20 +319,15 @@ export default async function PdtpDashboardPage({ searchParams }: PdtpDashboardP
                   className={overdueActionsCount > 0 ? "text-[var(--color-danger)]" : "text-[var(--color-warning)]"}
                 />
               }
-              href={overdueActionsCount > 0 ? "/prevencion/pdtp/acciones?vencidas=1" : "/prevencion/pdtp/acciones"}
+              href={focusProgram ? `/prevencion/pdtp/acciones?programa=${focusProgram.id}&anio=${year}${selectedWorksiteId ? `&faena=${selectedWorksiteId}` : ""}${overdueActionsCount > 0 ? "&vencidas=1" : "&estado=abierta"}` : "/prevencion/pdtp/acciones"}
             />
           </div>
 
           {/* Gráficos Shadcn (Recharts) */}
-          <PdtpDashboardCharts
+          <PdtpDashboardChartsLazy
             monthlyTrend={monthlyTrendData}
             worksiteCompliance={worksiteComplianceData}
             categoryBreakdown={categoryBreakdownData}
-            sstPoints={sstPoints}
-            materialEnvPoints={materialEnvPoints}
-            commonAccidents={commonAccidentsData}
-            worksiteIncidents={worksiteIncidentsData}
-            potentialSeverity={potentialSeverityData}
           />
         </div>
       )}

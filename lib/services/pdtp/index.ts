@@ -1,4 +1,4 @@
-export type { PdtpSheetView } from "./sheets"
+export type { PdtpAggregateActivityWorksite, PdtpAggregatedSheetView, PdtpSheetView } from "./sheets"
 export type { PdtpComplianceMonth, PdtpComplianceIndicators, PdtpCategoryCompliance } from "./compliance"
 export type { PdtpActivityUpdateInput, PdtpActivityAddInput } from "./activities"
 export { readPdtpActivityContent, writePdtpActivityContent } from "./activity-content"
@@ -80,7 +80,7 @@ export {
   assertAllRequiredPdtpApprovalStepsApproved,
 } from "./approval-flow"
 export type { PdtpApprovalStepInput, PdtpApprovalSegregationRule } from "./approval-flow"
-export { getPdtpSheetView, getPdtpSheetViewByProgram, buildPdtpExport } from "./sheets"
+export { getPdtpAggregatedSheetViewByProgram, getPdtpSheetView, getPdtpSheetViewByProgram, buildPdtpExport } from "./sheets"
 export { markPdtpExecution, approvePdtpExecution, rejectPdtpExecution, listPendingPdtpExecutions, getPendingPdtpApprovalsForView, getPdtpChangeLog } from "./executions"
 export { getPdtpComplianceIndicators, getPdtpComplianceIndicatorsForScope, getPdtpComplianceByCategoryForScope } from "./compliance"
 export { updatePdtpActivity, addPdtpActivity, batchUpdatePdtpActivities, duplicatePdtpActivity, retirePdtpActivity, reorderPdtpActivities, listPdtpProgramActivities } from "./activities"

@@ -22,11 +22,11 @@ const BASE = {
 }
 
 describe("PdtpCreateProgramForm", () => {
-  it("muestra solo el año y el resumen de la Base 2026", () => {
+  it("muestra solo el año y el resumen de la Base", () => {
     render(<PdtpCreateProgramForm suggestedYear={2027} existingYears={[2026]} baseRevision={BASE} />)
 
     expect(screen.getByLabelText("Año del programa")).toHaveValue(2027)
-    expect(screen.getByText("Base preventiva 2026")).toBeDefined()
+    expect(screen.getByText("Base preventiva para 2027")).toBeDefined()
     expect(screen.getByText("87 actividades")).toBeDefined()
     expect(screen.getByRole("button", { name: "Crear programa anual" })).toBeEnabled()
     expect(screen.queryByText(/plantilla/i)).toBeNull()
@@ -45,14 +45,14 @@ describe("PdtpCreateProgramForm", () => {
     render(<PdtpCreateProgramForm suggestedYear={2027} existingYears={[2028]} baseRevision={BASE} />)
 
     fireEvent.change(screen.getByLabelText("Año del programa"), { target: { value: "2028" } })
-    expect(screen.getByText("Programa de Trabajo Preventivo SG-SST 2028")).toBeDefined()
+    expect(screen.getByText("Programa preventivo SG-SST (PDTP) 2028")).toBeDefined()
     expect(screen.getByRole("button", { name: "Abrir programa anual" })).toBeEnabled()
   })
 
-  it("bloquea la creación mientras no exista una revisión de Base 2026", () => {
+  it("bloquea la creación mientras no exista una revisión de Base para el año", () => {
     render(<PdtpCreateProgramForm suggestedYear={2027} existingYears={[]} baseRevision={null} />)
 
-    expect(screen.getByRole("alert")).toHaveTextContent("Base 2026 no instalada")
+    expect(screen.getByRole("alert")).toHaveTextContent("Base 2027 no instalada")
     expect(screen.getByRole("button", { name: "Crear programa anual" })).toBeDisabled()
   })
 

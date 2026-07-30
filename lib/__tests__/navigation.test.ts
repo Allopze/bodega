@@ -108,6 +108,7 @@ describe("sidebar navigation", () => {
 
     const pdtp = prevention?.items.find((item) => item.href === "/prevencion/pdtp")
     expect(pdtp?.children?.map((item) => item.label)).toEqual([
+      "Actividades del programa",
       "Programas",
       "Aprobaciones",
       "Acciones y seguimiento",
@@ -120,6 +121,7 @@ describe("sidebar navigation", () => {
     // Estas dos vistas quedaron sin entrada de navegación al consolidar el
     // sidebar y no había ningún otro enlace hacia ellas en la aplicación.
     expect(pdtp?.children?.map((item) => item.href)).toEqual(expect.arrayContaining([
+      "/prevencion/pdtp/actividades",
       "/prevencion/pdtp/obligaciones",
       "/prevencion/pdtp/cobertura",
     ]))

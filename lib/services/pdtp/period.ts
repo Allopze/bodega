@@ -1,3 +1,5 @@
+import { chileDateParts } from "@/lib/utils"
+
 export type PdtpPeriod = {
   year: number
   month: number
@@ -12,9 +14,9 @@ export type PdtpActivityStatus = "pending" | "executed" | "overdue" | "not_sched
  * This matches how pdtpActivitySchedule and pdtpExecutions bucket planned/executed activities.
  */
 export function currentPdtpPeriod(now: Date = new Date()): PdtpPeriod {
-  const year = now.getFullYear()
-  const month = now.getMonth() + 1
-  const day = now.getDate()
+  // Hora de Chile, no la del proceso: en producción corre en UTC y el período
+  // saltaba de mes (y de año) 3–4 horas antes que la faena.
+  const { year, month, day } = chileDateParts(now)
   const week = Math.min(4, Math.ceil(day / 7))
 
   return { year, month, week }

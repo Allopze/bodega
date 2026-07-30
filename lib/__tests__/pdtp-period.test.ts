@@ -1,42 +1,55 @@
 import { describe, expect, it } from "vitest"
 import { currentPdtpPeriod, deriveActivityStatus, type PdtpPeriod } from "@/lib/services/pdtp/period"
 
+// El período se resuelve en hora de Chile, así que los casos se expresan como
+// instantes UTC explícitos (mediodía chileno) y no con `new Date(y, m, d)`, que
+// depende de la zona del proceso.
+const atChile = (day: string) => new Date(`${day}T15:00:00Z`)
+
 describe("currentPdtpPeriod", () => {
   it("computes year from the date", () => {
-    const period = currentPdtpPeriod(new Date(2026, 6, 4))
-    expect(period.year).toBe(2026)
+    expect(currentPdtpPeriod(atChile("2026-07-04")).year).toBe(2026)
   })
 
   it("computes month from the date (1-12)", () => {
-    const period = currentPdtpPeriod(new Date(2026, 6, 4))
-    expect(period.month).toBe(7)
+    expect(currentPdtpPeriod(atChile("2026-07-04")).month).toBe(7)
   })
 
   it("computes week 1 for days 1-7", () => {
-    expect(currentPdtpPeriod(new Date(2026, 6, 1)).week).toBe(1)
-    expect(currentPdtpPeriod(new Date(2026, 6, 7)).week).toBe(1)
+    expect(currentPdtpPeriod(atChile("2026-07-01")).week).toBe(1)
+    expect(currentPdtpPeriod(atChile("2026-07-07")).week).toBe(1)
   })
 
   it("computes week 2 for days 8-14", () => {
-    expect(currentPdtpPeriod(new Date(2026, 6, 8)).week).toBe(2)
-    expect(currentPdtpPeriod(new Date(2026, 6, 14)).week).toBe(2)
+    expect(currentPdtpPeriod(atChile("2026-07-08")).week).toBe(2)
+    expect(currentPdtpPeriod(atChile("2026-07-14")).week).toBe(2)
   })
 
   it("computes week 3 for days 15-21", () => {
-    expect(currentPdtpPeriod(new Date(2026, 6, 15)).week).toBe(3)
-    expect(currentPdtpPeriod(new Date(2026, 6, 21)).week).toBe(3)
+    expect(currentPdtpPeriod(atChile("2026-07-15")).week).toBe(3)
+    expect(currentPdtpPeriod(atChile("2026-07-21")).week).toBe(3)
   })
 
   it("computes week 4 for days 22-31", () => {
-    expect(currentPdtpPeriod(new Date(2026, 6, 22)).week).toBe(4)
-    expect(currentPdtpPeriod(new Date(2026, 6, 28)).week).toBe(4)
-    expect(currentPdtpPeriod(new Date(2026, 6, 31)).week).toBe(4)
+    expect(currentPdtpPeriod(atChile("2026-07-22")).week).toBe(4)
+    expect(currentPdtpPeriod(atChile("2026-07-28")).week).toBe(4)
+    expect(currentPdtpPeriod(atChile("2026-07-31")).week).toBe(4)
+  })
+
+  // Regresión D-06: el proceso corre en UTC en producción. A las 21:00 del 31
+  // de diciembre en Chile ya es 1 de enero en UTC, y el período saltaba de año.
+  it("resolves the period in Chile time, not the process timezone", () => {
+    const period = currentPdtpPeriod(new Date("2027-01-01T02:00:00Z"))
+    expect(period.year).toBe(2026)
+    expect(period.month).toBe(12)
+    expect(period.week).toBe(4)
   })
 
   it("uses current date by default", () => {
     const period = currentPdtpPeriod()
-    expect(period.year).toBe(new Date().getFullYear())
-    expect(period.month).toBe(new Date().getMonth() + 1)
+    const now = currentPdtpPeriod(new Date())
+    expect(period.year).toBe(now.year)
+    expect(period.month).toBe(now.month)
   })
 })
 

@@ -18,7 +18,7 @@ const STATUS_BADGE: Record<PdtpActivityStatus, StatusConfig> = {
   executed: { label: "Ejecutado", variant: "success" },
   pending: { label: "Pendiente", variant: "default" },
   overdue: { label: "Atrasado", variant: "danger" },
-  not_scheduled: { label: "—", variant: "outline" },
+  not_scheduled: { label: "No programada en este período", variant: "outline" },
 }
 
 export function PdtpStatusBadge({
@@ -323,12 +323,10 @@ export function usePdtpDensity(): ["compact" | "comfortable", () => void] {
   }, [])
 
   const toggle = React.useCallback(() => {
-    setDensity((current) => {
-      const next = current === "compact" ? "comfortable" : "compact"
-      try { localStorage.setItem(DENSITY_KEY, next) } catch {}
-      return next
-    })
-  }, [])
+    const next = density === "compact" ? "comfortable" : "compact"
+    setDensity(next)
+    try { localStorage.setItem(DENSITY_KEY, next) } catch {}
+  }, [density])
 
   return [density, toggle]
 }
@@ -345,7 +343,7 @@ export function PdtpDensityToggle({
       <button
         type="button"
         onClick={onToggle}
-        className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] p-1.5 text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)]"
+        className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)]"
         aria-label={density === "compact" ? "Cambiar a vista cómoda" : "Cambiar a vista compacta"}
       >
         {density === "compact" ? (
@@ -382,12 +380,10 @@ export function usePdtpMonthWindow(
   }, [])
 
   const toggle = React.useCallback(() => {
-    setExpanded((current) => {
-      const next = !current
-      try { localStorage.setItem(MONTH_WINDOW_KEY, next ? "1" : "0") } catch {}
-      return next
-    })
-  }, [])
+    const next = !expanded
+    setExpanded(next)
+    try { localStorage.setItem(MONTH_WINDOW_KEY, next ? "1" : "0") } catch {}
+  }, [expanded])
 
   const visibleMonths = React.useMemo(() => {
     if (expanded) return MONTH_INDICES
@@ -407,6 +403,7 @@ export { MONTH_INDICES as PDT_SHEET_MONTH_INDICES }
 // ---------------------------------------------------------------------------
 
 const PDT_BASE = "/prevencion/pdtp"
+const MONTH_LABELS = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
 
 export function PdtpWorksitePicker({
   current,
@@ -414,26 +411,50 @@ export function PdtpWorksitePicker({
   worksites,
   programId,
   viewMode = "semana",
+  hrefBase,
+  year,
+  status,
+  month,
+  week,
+  allHref,
 }: {
   current?: string
   sheetCode: string
   worksites: Array<{ id: string; name: string }>
   programId?: string
   viewMode?: "semana" | "anual"
+  /** Ruta del visor transversal. Sin ella se conserva la ruta de detalle. */
+  hrefBase?: string
+  year?: number
+  status?: string
+  month?: number
+  week?: number
+  allHref?: string
 }) {
   const router = useRouter()
   return (
     <div className="flex items-center gap-1.5">
       <span className="text-eyebrow shrink-0 text-[var(--color-text-faint)]">Faena</span>
       <Select
-        value={current}
+        value={current ?? "all"}
         onValueChange={(worksiteId) => {
-          const params = new URLSearchParams({ hoja: sheetCode, faena: worksiteId, vista: viewMode })
-          router.push(programId ? `${PDT_BASE}/${programId}?${params}` : `${PDT_BASE}?${params}`)
+          if (worksiteId === "all" && allHref) {
+            router.push(allHref)
+            return
+          }
+          const params = new URLSearchParams({ hoja: sheetCode, vista: viewMode })
+          if (year) params.set("anio", String(year))
+          if (status && status !== "all") params.set("estado", status)
+          if (month) params.set("mes", String(month))
+          if (week) params.set("semana", String(week))
+          if (worksiteId !== "all") params.set("faena", worksiteId)
+          if (hrefBase && programId) params.set("programa", programId)
+          router.push(hrefBase ? `${hrefBase}?${params}` : programId ? `${PDT_BASE}/${programId}?${params}` : `${PDT_BASE}?${params}`)
         }}
       >
-        <SelectTrigger className="w-48" aria-label="Seleccionar faena"><SelectValue placeholder="Selecciona faena" /></SelectTrigger>
+        <SelectTrigger className="w-56" aria-label="Seleccionar faena"><SelectValue /></SelectTrigger>
         <SelectContent>
+          <SelectItem value="all">Todas las faenas autorizadas</SelectItem>
           {worksites.map((worksite) => <SelectItem key={worksite.id} value={worksite.id}>{worksite.name}</SelectItem>)}
         </SelectContent>
       </Select>
@@ -451,11 +472,21 @@ export function PdtpViewToggle({
   sheetCode,
   worksiteId,
   programId,
+  hrefBase,
+  year,
+  status,
+  month,
+  week,
 }: {
   current: "semana" | "anual"
   sheetCode: string
   worksiteId?: string
   programId?: string
+  hrefBase?: string
+  year?: number
+  status?: string
+  month?: number
+  week?: number
 }) {
   return (
     <SegmentedControl
@@ -465,7 +496,9 @@ export function PdtpViewToggle({
       items={PDTP_VIEW_TOGGLE_OPTIONS.map((option) => ({
         key: option.value,
         label: option.label,
-        href: programId
+        href: hrefBase && programId
+          ? `${hrefBase}?programa=${programId}&hoja=${sheetCode}${worksiteId ? `&faena=${worksiteId}` : ""}&vista=${option.value}${year ? `&anio=${year}` : ""}${month ? `&mes=${month}` : ""}${week ? `&semana=${week}` : ""}${status && status !== "all" ? `&estado=${status}` : ""}`
+          : programId
           ? `${PDT_BASE}/${programId}?hoja=${sheetCode}${worksiteId ? `&faena=${worksiteId}` : ""}&vista=${option.value}`
           : `${PDT_BASE}?hoja=${sheetCode}${worksiteId ? `&faena=${worksiteId}` : ""}&vista=${option.value}`,
         active: option.value === current,
@@ -480,12 +513,22 @@ export function PdtpSheetPicker({
   programId,
   worksiteId,
   viewMode = "semana",
+  hrefBase,
+  year,
+  status,
+  month,
+  week,
 }: {
   current: string
   options: Array<{ code: string; label: string }>
   programId?: string
   worksiteId?: string
   viewMode?: "semana" | "anual"
+  hrefBase?: string
+  year?: number
+  status?: string
+  month?: number
+  week?: number
 }) {
   const router = useRouter()
   return (
@@ -495,14 +538,155 @@ export function PdtpSheetPicker({
         value={current}
         onValueChange={(sheetCode) => {
           const params = new URLSearchParams({ hoja: sheetCode, vista: viewMode })
+          if (year) params.set("anio", String(year))
+          if (status && status !== "all") params.set("estado", status)
+          if (month) params.set("mes", String(month))
+          if (week) params.set("semana", String(week))
           if (worksiteId) params.set("faena", worksiteId)
-          router.push(programId ? `${PDT_BASE}/${programId}?${params}` : `${PDT_BASE}?${params}`)
+          if (hrefBase && programId) params.set("programa", programId)
+          router.push(hrefBase ? `${hrefBase}?${params}` : programId ? `${PDT_BASE}/${programId}?${params}` : `${PDT_BASE}?${params}`)
         }}
       >
         <SelectTrigger className="w-64" aria-label="Seleccionar hoja"><SelectValue /></SelectTrigger>
         <SelectContent>
           {options.map((option) => <SelectItem key={option.code} value={option.code}>{option.label}</SelectItem>)}
         </SelectContent>
+      </Select>
+    </div>
+  )
+}
+
+export function PdtpProgramPicker({
+  current,
+  programs,
+  hrefBase,
+  sheetCode,
+  worksiteId,
+  viewMode,
+  year,
+  status,
+  month,
+  week,
+}: {
+  current: string
+  programs: Array<{ id: string; title: string; year: number }>
+  hrefBase: string
+  sheetCode: string
+  worksiteId?: string
+  viewMode: "semana" | "anual"
+  year?: number
+  status?: string
+  month?: number
+  week?: number
+}) {
+  const router = useRouter()
+  return (
+    <div className="flex items-center gap-1.5">
+      <span className="text-eyebrow shrink-0 text-[var(--color-text-faint)]">Programa</span>
+      <Select value={current} onValueChange={(programId) => {
+        const params = new URLSearchParams({ programa: programId, hoja: sheetCode, vista: viewMode })
+        if (year) params.set("anio", String(year))
+        if (status && status !== "all") params.set("estado", status)
+        if (month) params.set("mes", String(month))
+        if (week) params.set("semana", String(week))
+        if (worksiteId) params.set("faena", worksiteId)
+        router.push(`${hrefBase}?${params}`)
+      }}>
+        <SelectTrigger className="w-64" aria-label="Seleccionar programa"><SelectValue /></SelectTrigger>
+        <SelectContent>
+          {programs.map((program) => <SelectItem key={program.id} value={program.id}>{program.title} · {program.year}</SelectItem>)}
+        </SelectContent>
+      </Select>
+    </div>
+  )
+}
+
+export function PdtpYearPicker({
+  current,
+  years,
+  hrefBase,
+  programId,
+  sheetCode,
+  worksiteId,
+  viewMode,
+  status,
+  month,
+  week,
+}: {
+  current: number
+  years: number[]
+  hrefBase: string
+  programId?: string
+  sheetCode?: string
+  worksiteId?: string
+  viewMode?: "semana" | "anual"
+  status?: string
+  month?: number
+  week?: number
+}) {
+  const router = useRouter()
+  const options = [...new Set([...years, current])].sort((a, b) => b - a)
+  return (
+    <div className="flex items-center gap-1.5">
+      <span className="text-eyebrow shrink-0 text-[var(--color-text-faint)]">Año</span>
+      <Select value={String(current)} onValueChange={(value) => {
+        const params = new URLSearchParams({ anio: value })
+        if (programId) params.set("programa", programId)
+        if (sheetCode) params.set("hoja", sheetCode)
+        if (worksiteId) params.set("faena", worksiteId)
+        if (viewMode) params.set("vista", viewMode)
+        if (status && status !== "all") params.set("estado", status)
+        if (month) params.set("mes", String(month))
+        if (week) params.set("semana", String(week))
+        router.push(`${hrefBase}?${params}`)
+      }}>
+        <SelectTrigger className="w-28" aria-label="Seleccionar año"><SelectValue /></SelectTrigger>
+        <SelectContent>
+          {options.map((option) => <SelectItem key={option} value={String(option)}>{option}</SelectItem>)}
+        </SelectContent>
+      </Select>
+    </div>
+  )
+}
+
+export function PdtpPeriodPicker({
+  month,
+  week,
+  hrefBase,
+  programId,
+  sheetCode,
+  worksiteId,
+  viewMode,
+  year,
+  status,
+}: {
+  month: number
+  week: number
+  hrefBase: string
+  programId: string
+  sheetCode: string
+  worksiteId?: string
+  viewMode: "semana" | "anual"
+  year: number
+  status?: string
+}) {
+  const router = useRouter()
+  const navigate = (nextMonth: number, nextWeek: number) => {
+    const params = new URLSearchParams({ programa: programId, hoja: sheetCode, vista: viewMode, anio: String(year), mes: String(nextMonth), semana: String(nextWeek) })
+    if (worksiteId) params.set("faena", worksiteId)
+    if (status && status !== "all") params.set("estado", status)
+    router.push(`${hrefBase}?${params}`)
+  }
+  return (
+    <div className="flex items-center gap-1.5">
+      <span className="text-eyebrow shrink-0 text-[var(--color-text-faint)]">Período</span>
+      <Select value={String(month)} onValueChange={(value) => navigate(Number(value), week)}>
+        <SelectTrigger className="w-28" aria-label="Seleccionar mes"><SelectValue /></SelectTrigger>
+        <SelectContent>{MONTH_LABELS.map((label, index) => <SelectItem key={label} value={String(index + 1)}>{label}</SelectItem>)}</SelectContent>
+      </Select>
+      <Select value={String(week)} onValueChange={(value) => navigate(month, Number(value))}>
+        <SelectTrigger className="w-24" aria-label="Seleccionar semana"><SelectValue /></SelectTrigger>
+        <SelectContent>{[1, 2, 3, 4, 5].map((value) => <SelectItem key={value} value={String(value)}>Sem {value}</SelectItem>)}</SelectContent>
       </Select>
     </div>
   )

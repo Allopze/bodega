@@ -2,6 +2,7 @@
 
 import * as React from "react"
 import Link from "next/link"
+import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { NotePencil } from "@phosphor-icons/react"
 import {
   Table,
@@ -14,7 +15,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
-import type { PdtpSheetView } from "@/lib/services/prevention-pdtp"
+import type { PdtpAggregateActivityWorksite, PdtpSheetView } from "@/lib/services/prevention-pdtp"
 import { deriveActivityStatus, countOverdueMonths, type PdtpActivityStatus, type PdtpPeriod } from "@/lib/services/pdtp/period"
 import { PdtpExecutionForm } from "./pdtp-execution-form"
 import { PdtpApprovalButtons } from "./pdtp-approval-buttons"
@@ -57,6 +58,15 @@ function PdtpExecutionBadges({ exec }: { exec: ExecutionForBadges }) {
   )
 }
 
+function PdtpAggregateBreakdown({ summaries, worksiteNames }: { summaries: PdtpAggregateActivityWorksite[]; worksiteNames: Record<string, string> }) {
+  if (summaries.length === 0) return null
+  return <details className="mt-2 text-[11px] text-[var(--color-text-muted)]"><summary className="cursor-pointer">Desglose por faena ({summaries.length})</summary><div className="mt-1 flex flex-wrap gap-1.5">{summaries.map((summary) => <Badge key={summary.worksiteId} variant="outline" size="sm">{worksiteNames[summary.worksiteId] ?? "Faena"}: {summary.executed}/{summary.planned} · {summary.status === "executed" ? "Ejecutada" : summary.status === "overdue" ? "Atrasada" : summary.status === "pending" ? "Pendiente" : "No programada"}</Badge>)}</div></details>
+}
+
+function aggregateSummaries(activity: PdtpSheetView["activities"][number]): PdtpAggregateActivityWorksite[] | null {
+  return "worksiteSummaries" in activity ? activity.worksiteSummaries as PdtpAggregateActivityWorksite[] : null
+}
+
 type PdtpSheetTableProps = {
   view: PdtpSheetView
   worksiteId?: string
@@ -67,6 +77,8 @@ type PdtpSheetTableProps = {
   viewMode: "semana" | "anual"
   currentPeriod: PdtpPeriod
   sheetCode: string
+  initialStatusFilter?: PdtpActivityStatus | "all"
+  aggregateWorksiteNames?: Record<string, string>
 }
 
 export function PdtpSheetTable({
@@ -79,9 +91,16 @@ export function PdtpSheetTable({
   viewMode,
   currentPeriod,
   sheetCode,
+  initialStatusFilter = "all",
+  aggregateWorksiteNames = {},
 }: PdtpSheetTableProps) {
   const canOperate = canExecute || canManageProgram
-  const [statusFilter, setStatusFilter] = React.useState<PdtpActivityStatus | "all">("all")
+  const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
+  const [statusFilter, setStatusFilter] = React.useState<PdtpActivityStatus | "all">(initialStatusFilter)
+
+  React.useEffect(() => setStatusFilter(initialStatusFilter), [initialStatusFilter])
   const [density, toggleDensity] = usePdtpDensity()
   const [visibleMonths, monthsExpanded, toggleMonthsExpanded] = usePdtpMonthWindow(currentPeriod.month)
 
@@ -138,7 +157,13 @@ export function PdtpSheetTable({
           <PdtpActivitySummary
             counts={statusCounts}
             activeFilter={statusFilter}
-            onFilter={setStatusFilter}
+            onFilter={(next) => {
+              setStatusFilter(next)
+              const params = new URLSearchParams(searchParams.toString())
+              if (next === "all") params.delete("estado")
+              else params.set("estado", next)
+              router.replace(`${pathname}${params.size ? `?${params}` : ""}`)
+            }}
           />
           <PdtpDensityToggle density={density} onToggle={toggleDensity} />
           {viewMode === "anual" && (
@@ -212,6 +237,7 @@ export function PdtpSheetTable({
                                   <span>{activity.notes.length > 100 ? `${activity.notes.slice(0, 100)}…` : activity.notes}</span>
                                 </p>
                               )}
+                              {!worksiteId && <PdtpAggregateBreakdown summaries={aggregateSummaries(activity) ?? []} worksiteNames={aggregateWorksiteNames} />}
                               {worksiteId && activity.executions.length > 0 && (
                                 <div className="mt-2 space-y-2">
                                   {activity.executions.map((exec) => (
@@ -292,7 +318,7 @@ export function PdtpSheetTable({
           </div>
         ) : (
           <>
-            <TableRoot>
+            <TableRoot stickyHeader>
             <Table>
               <TableHeader>
                 <TableRow>
@@ -341,6 +367,7 @@ export function PdtpSheetTable({
                                   <PdtpResponsibleChips display={activity.responsibleDisplay} />
                                 </div>
                               </details>
+                              {!worksiteId && <PdtpAggregateBreakdown summaries={aggregateSummaries(activity) ?? []} worksiteNames={aggregateWorksiteNames} />}
                               {worksiteId && activity.executions.length > 0 && (
                                 <details className="mt-2 text-[11px]">
                                   <summary className="cursor-pointer text-[var(--color-text-muted)]">

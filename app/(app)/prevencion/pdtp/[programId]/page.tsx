@@ -11,7 +11,6 @@ import {
   getPdtpApprovalProgress,
   getPdtpDocumentMetadata,
   listPdtpReconciliationCandidates,
-  listPdtpResponsibleCatalog,
   listPdtpProgramSheets,
 } from "@/lib/services/prevention-pdtp"
 import { listScopedWorksites } from "@/lib/services/ppa"
@@ -32,7 +31,6 @@ import { ChartBar, DotsThree, DownloadSimple, ListChecks, PencilSimple } from "@
 import { PdtpSheetTable } from "../pdtp-sheet-table"
 import { PdtpSheetPicker, PdtpViewToggle, PdtpWorksitePicker } from "../pdtp-sheet-table-ui"
 import { PdtpIndicatorsPanel } from "../pdtp-indicators-panel"
-import { PdtpAddActivityForm } from "../pdtp-add-activity-form"
 import { PdtpImportExcelDialog } from "../pdtp-import-excel-dialog"
 import { resolveSelectedWorksiteId } from "../pdtp-context"
 import { ProgramLifecycleControls } from "./program-lifecycle-controls"
@@ -42,7 +40,7 @@ export const metadata: Metadata = { title: "Programa de Trabajo Preventivo SG-SS
 
 type PdtpPageProps = {
   params: Promise<{ programId: string }>
-  searchParams: Promise<{ hoja?: string | string[]; faena?: string | string[]; vista?: string | string[]; anio?: string | string[]; actividadError?: string | string[]; overrideError?: string | string[] }>
+  searchParams: Promise<{ hoja?: string | string[]; faena?: string | string[]; vista?: string | string[]; anio?: string | string[]; overrideError?: string | string[] }>
 }
 
 export default async function PdtpDetailPage({ params, searchParams }: PdtpPageProps) {
@@ -70,7 +68,6 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
   const requestedSheet = Array.isArray(query.hoja) ? query.hoja[0] : query.hoja
   const requestedWorksite = Array.isArray(query.faena) ? query.faena[0] : query.faena
   const requestedView = Array.isArray(query.vista) ? query.vista[0] : query.vista
-  const actividadError = Array.isArray(query.actividadError) ? query.actividadError[0] : query.actividadError
   const overrideError = Array.isArray(query.overrideError) ? query.overrideError[0] : query.overrideError
   const viewMode: "semana" | "anual" = requestedView === "anual" ? "anual" : "semana"
   const renderedAt = new Date().toISOString()
@@ -111,10 +108,6 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
   const canExecute = can(session, "prevention:pdtp:execute")
   const canManageProgram = can(session, "prevention:pdtp:program:manage")
   const exportHref = `/api/prevencion/pdtp/export?programId=${programId}&hoja=${sheetCode}${selectedWorksiteId ? `&faena=${selectedWorksiteId}` : ""}&year=${program.year}`
-
-  const responsibleCatalog = canManageProgram && program.status === "draft"
-    ? await listPdtpResponsibleCatalog()
-    : []
 
   return (
     <PageContainer>
@@ -221,7 +214,7 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
         <div className="flex flex-wrap items-center gap-3 border-y border-[var(--color-border)] py-3">
           <PdtpSheetPicker current={sheetCode} options={sheetOptions} programId={programId} worksiteId={selectedWorksiteId} viewMode={viewMode} />
           {worksites.length > 1 && (
-            <PdtpWorksitePicker current={selectedWorksiteId} sheetCode={sheetCode} worksites={worksites} programId={programId} viewMode={viewMode} />
+            <PdtpWorksitePicker current={selectedWorksiteId} sheetCode={sheetCode} worksites={worksites} programId={programId} viewMode={viewMode} allHref={`/prevencion/pdtp/actividades?programa=${programId}&anio=${program.year}&hoja=${sheetCode}&vista=${viewMode}`} />
           )}
           <div className="ml-auto">
             <PdtpViewToggle current={viewMode} sheetCode={sheetCode} worksiteId={selectedWorksiteId} programId={programId} />
@@ -274,17 +267,6 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
         {/* Change log */}
         <PdtpChangeLogSection programId={programId} />
 
-        {/* Activity add form (draft programs only) */}
-        {canManageProgram && program.status === "draft" && (
-          <PdtpAddActivityForm
-            programId={programId}
-            hoja={sheetCode}
-            faena={selectedWorksiteId ?? ""}
-            errorMessage={actividadError}
-            responsibleCatalog={responsibleCatalog.map((r) => ({ slug: r.slug, displayName: r.displayName }))}
-            sheetOptions={sheetOptions}
-          />
-        )}
       </div>
     </PageContainer>
   )

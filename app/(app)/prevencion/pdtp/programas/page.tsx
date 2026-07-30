@@ -3,13 +3,14 @@ import Link from "next/link"
 import { redirect } from "next/navigation"
 import { requireAuth, can } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
-import { listPdtpPrograms, getPdtpComplianceIndicatorsForScope } from "@/lib/services/prevention-pdtp"
+import { listPdtpPrograms, getPdtpComplianceIndicatorsForScope, listPdtpProgramWorksites, resolveProgramWorksiteIds } from "@/lib/services/prevention-pdtp"
 import { listScopedWorksites } from "@/lib/services/ppa"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { Button } from "@/components/ui/button"
 import { Plus } from "@phosphor-icons/react/dist/ssr"
 import { buildPdtpProgramHref, resolvePdtpYear } from "../pdtp-context"
+import { PdtpYearPicker } from "../pdtp-sheet-table-ui"
 
 export const metadata: Metadata = { title: "Listado de programas preventivos SG-SST" }
 
@@ -26,7 +27,7 @@ export default async function PdtpProgramasListPage({ searchParams }: PdtpProgra
   const query = await searchParams
   const canManageProgram = can(session, "prevention:pdtp:program:manage")
   const year = resolvePdtpYear(query.anio)
-  const programs = await listPdtpPrograms({ year })
+  const [programs, allPrograms] = await Promise.all([listPdtpPrograms({ year }), listPdtpPrograms()])
 
   const scope = resolveWorksiteScope(session)
   const scopedWorksites = await listScopedWorksites(scope.mode === "all" ? "all" : scope.mode === "some" ? scope.ids : [])
@@ -34,7 +35,13 @@ export default async function PdtpProgramasListPage({ searchParams }: PdtpProgra
 
   const complianceEntries = await Promise.all(programs.map(async (program) => {
     try {
-      return [program.id, await getPdtpComplianceIndicatorsForScope(program.id, worksiteIds)] as const
+      const members = await listPdtpProgramWorksites(program.id)
+      const effectiveIds = resolveProgramWorksiteIds(
+        members.map((member) => member.worksiteId),
+        scope.mode === "all" ? "all" : scope.mode === "some" ? scope.ids : [],
+        worksiteIds,
+      )
+      return [program.id, await getPdtpComplianceIndicatorsForScope(program.id, effectiveIds)] as const
     } catch {
       return [program.id, null] as const
     }
@@ -71,6 +78,8 @@ export default async function PdtpProgramasListPage({ searchParams }: PdtpProgra
         }
       />
 
+      <div className="mb-4 flex justify-end"><PdtpYearPicker current={year} years={allPrograms.map((program) => program.year)} hrefBase="/prevencion/pdtp/programas" /></div>
+
       {programs.length === 0 ? (
         <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-8 text-center">
           <p className="font-medium text-[var(--color-text)]">Sin programa para {year}</p>
@@ -95,11 +104,7 @@ export default async function PdtpProgramasListPage({ searchParams }: PdtpProgra
                 : "bg-[var(--color-warning-tint)] text-[var(--color-warning)]"
 
             return (
-              <Link
-                key={program.id}
-                href={buildPdtpProgramHref(program.id, query)}
-                className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition-shadow hover:shadow-md"
-              >
+              <div key={program.id} className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition-shadow hover:shadow-md">
                 <div className="flex items-start justify-between">
                   <div>
                     <p className="font-semibold text-[var(--color-text)]">{program.title}</p>
@@ -119,7 +124,11 @@ export default async function PdtpProgramasListPage({ searchParams }: PdtpProgra
                   )}
                   <span>Elaborado por: {program.elaboratedByName}</span>
                 </div>
-              </Link>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <Button asChild size="sm"><Link href={`/prevencion/pdtp/actividades?programa=${program.id}&anio=${program.year}&vista=anual${query.faena ? `&faena=${query.faena}` : ""}`}>Ver actividades</Link></Button>
+                  {canManageProgram && <Button asChild size="sm" variant="secondary"><Link href={buildPdtpProgramHref(program.id, query)}>Gestionar programa</Link></Button>}
+                </div>
+              </div>
             )
           })}
         </div>

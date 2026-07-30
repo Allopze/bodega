@@ -412,6 +412,22 @@ describe("addPdtpActivityFormAction (redirect-based)", () => {
 })
 
 describe("Program CRUD actions", () => {
+  it("prevencionista_faena no puede mutar el diseño aunque invoque Server Actions directamente", async () => {
+    const denied = { session: null, error: { ok: false, message: "No tienes permisos" } }
+    mockGuardPermission.mockResolvedValue(denied)
+
+    const create = await createPdtpProgramAction(null, makeFormData({ year: "2026" }))
+    const update = await updatePdtpProgramAction(null, makeFormData({ programId: "prog-1", title: "Forjado" }))
+    const activity = await addPdtpActivityAction({ programId: "prog-1", activity: "Forjada" })
+
+    expect(create).toEqual(denied.error)
+    expect(update).toEqual(denied.error)
+    expect(activity).toEqual(denied.error)
+    expect(mockCreateAnnualPdtpProgram).not.toHaveBeenCalled()
+    expect(mockUpdatePdtpProgram).not.toHaveBeenCalled()
+    expect(mockAddPdtpActivity).not.toHaveBeenCalled()
+    expect(mockGuardPermission).toHaveBeenCalledWith("prevention:pdtp:program:manage")
+  })
   it("createPdtpProgramAction rechaza sin permiso", async () => {
     mockGuardPermission.mockResolvedValueOnce({ session: null, error: { ok: false, message: "No tienes permisos" } })
     const fd = makeFormData({ year: "2026" })

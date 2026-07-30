@@ -1,0 +1,132 @@
+import type { Metadata } from "next"
+import Link from "next/link"
+import { redirect } from "next/navigation"
+import { can, requireAuth } from "@/lib/auth/can"
+import { resolveWorksiteScope } from "@/lib/auth/scope"
+import {
+  getActivePdtpProgram,
+  getPdtpAggregatedSheetViewByProgram,
+  getPdtpSheetViewByProgram,
+  listPdtpProgramWorksites,
+  listPdtpProgramSheets,
+  listPdtpPrograms,
+  resolveProgramWorksiteIds,
+  type PdtpAggregatedSheetView,
+} from "@/lib/services/prevention-pdtp"
+import { listScopedWorksites } from "@/lib/services/ppa"
+import { currentPdtpPeriod } from "@/lib/services/pdtp/period"
+import type { PdtpActivityStatus } from "@/lib/services/pdtp/period"
+import { PageContainer } from "@/components/ui/page-container"
+import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
+import { Button } from "@/components/ui/button"
+import { EmptyState } from "@/components/ui/empty-state"
+import { PdtpSheetTable } from "../pdtp-sheet-table"
+import { PdtpPeriodPicker, PdtpProgramPicker, PdtpSheetPicker, PdtpViewToggle, PdtpWorksitePicker, PdtpYearPicker } from "../pdtp-sheet-table-ui"
+import { resolvePdtpYear, resolveSelectedWorksiteId } from "../pdtp-context"
+
+export const metadata: Metadata = { title: "Actividades del programa preventivo" }
+
+type ActivityViewerPageProps = {
+  searchParams: Promise<{ programa?: string | string[]; hoja?: string | string[]; faena?: string | string[]; vista?: string | string[]; anio?: string | string[]; estado?: string | string[]; mes?: string | string[]; semana?: string | string[] }>
+}
+
+const VIEWER_HREF = "/prevencion/pdtp/actividades"
+const one = (value?: string | string[]) => Array.isArray(value) ? value[0] : value
+
+export default async function PdtpActivitiesPage({ searchParams }: ActivityViewerPageProps) {
+  let session
+  try { session = await requireAuth() } catch { redirect("/forbidden") }
+  if (!can(session, "prevention:pdtp:view")) redirect("/forbidden")
+
+  const query = await searchParams
+  const year = resolvePdtpYear(one(query.anio))
+  const allPrograms = await listPdtpPrograms()
+  const programs = allPrograms.filter((item) => item.year === year)
+  const activeProgram = await getActivePdtpProgram(year)
+  const program = programs.find((item) => item.id === one(query.programa))
+    ?? activeProgram
+    ?? (programs.length === 1 ? programs[0] : null)
+  const canManageProgram = can(session, "prevention:pdtp:program:manage")
+
+  const scope = resolveWorksiteScope(session)
+  const scopedWorksites = await listScopedWorksites(scope.mode === "all" ? "all" : scope.mode === "some" ? scope.ids : [])
+  const isGlobalViewer = session.user.roles.includes("prevencionista") || session.user.roles.includes("administrador")
+  const requestedWorksite = one(query.faena)
+  const viewMode: "semana" | "anual" = one(query.vista) === "semana"
+    ? "semana"
+    : one(query.vista) === "anual" || isGlobalViewer ? "anual" : "semana"
+  const requestedStatus = one(query.estado)
+  const statusFilter: PdtpActivityStatus | "all" = ["executed", "pending", "overdue", "not_scheduled"].includes(requestedStatus ?? "")
+    ? requestedStatus as PdtpActivityStatus
+    : "all"
+
+  if (!program) {
+    return (
+      <PageContainer>
+        <PageHeader title="Actividades del programa preventivo" description="Consulta y ejecuta las actividades asignadas por faena." breadcrumb={<Breadcrumbs items={[{ label: "Prevención", href: "/prevencion" }, { label: "Programa preventivo SG-SST (PDTP)", href: "/prevencion/pdtp" }, { label: "Actividades" }]} />} />
+        <EmptyState title={`Sin programa preventivo para ${year}`} description="No hay actividades que consultar todavía." action={canManageProgram ? <Button asChild><Link href="/prevencion/pdtp/nuevo">Crear programa</Link></Button> : undefined} />
+      </PageContainer>
+    )
+  }
+
+  const programMembers = await listPdtpProgramWorksites(program.id)
+  const effectiveWorksiteIds = new Set(resolveProgramWorksiteIds(
+    programMembers.map((member) => member.worksiteId),
+    scope.mode === "all" ? "all" : scope.mode === "some" ? scope.ids : [],
+    scopedWorksites.map((worksite) => worksite.id),
+  ))
+  const worksites = scopedWorksites.filter((worksite) => effectiveWorksiteIds.has(worksite.id))
+  const selectedWorksiteId = requestedWorksite
+    ? resolveSelectedWorksiteId(requestedWorksite, worksites)
+    : (!isGlobalViewer && worksites.length === 1 ? worksites[0]!.id : undefined)
+
+  const sheetsRaw = await listPdtpProgramSheets(program.id)
+  const sheets = [...new Map([...sheetsRaw].sort((a, b) => (a.programId ? 1 : -1) - (b.programId ? 1 : -1)).map((sheet) => [sheet.code, sheet] as const)).values()]
+  const sheetCode = sheets.some((sheet) => sheet.code === one(query.hoja))
+    ? one(query.hoja)!
+    : sheets.find((sheet) => sheet.code === "pdtp_general")?.code ?? sheets[0]?.code ?? "pdtp_general"
+  const basePeriod = currentPdtpPeriod()
+  const requestedMonth = Number(one(query.mes))
+  const requestedWeek = Number(one(query.semana))
+  const currentPeriod = {
+    ...basePeriod,
+    month: Number.isInteger(requestedMonth) && requestedMonth >= 1 && requestedMonth <= 12 ? requestedMonth : basePeriod.month,
+    week: Number.isInteger(requestedWeek) && requestedWeek >= 1 && requestedWeek <= 5 ? requestedWeek : basePeriod.week,
+  }
+  const requiresWorksiteSelection = !isGlobalViewer && !selectedWorksiteId && worksites.length > 1 && viewMode === "semana"
+  const view = requiresWorksiteSelection
+    ? null
+    : selectedWorksiteId
+      ? await getPdtpSheetViewByProgram(program.id, sheetCode, selectedWorksiteId)
+      : await getPdtpAggregatedSheetViewByProgram(program.id, sheetCode, worksites.map((worksite) => worksite.id), currentPeriod)
+  const aggregateView = view && "aggregate" in view ? view as PdtpAggregatedSheetView : null
+
+  return (
+    <PageContainer>
+      <PageHeader
+        title="Actividades del programa preventivo"
+        description={selectedWorksiteId ? "Trabajo programado, evidencia y avance de la faena seleccionada." : "Resumen anual agregado de todas las faenas autorizadas. Selecciona una faena para revisar evidencias y ejecutar."}
+        breadcrumb={<Breadcrumbs items={[{ label: "Dashboard", href: "/dashboard" }, { label: "Prevención", href: "/prevencion" }, { label: "Programa preventivo SG-SST (PDTP)", href: "/prevencion/pdtp" }, { label: "Actividades" }]} />}
+        actions={<><Button asChild size="sm" variant="secondary"><Link href="/prevencion/pdtp/programas">Programas</Link></Button>{canManageProgram && <Button asChild size="sm"><Link href={`/prevencion/pdtp/${program.id}/editar`}>Gestionar programa</Link></Button>}</>}
+      />
+
+      <div className="space-y-4">
+        <div className="flex flex-wrap items-end gap-3 border-y border-[var(--color-border)] py-3">
+          <PdtpYearPicker current={year} years={allPrograms.map((item) => item.year)} hrefBase={VIEWER_HREF} sheetCode={sheetCode} worksiteId={selectedWorksiteId} viewMode={viewMode} status={statusFilter} month={currentPeriod.month} week={currentPeriod.week} />
+          <PdtpPeriodPicker month={currentPeriod.month} week={currentPeriod.week} hrefBase={VIEWER_HREF} programId={program.id} sheetCode={sheetCode} worksiteId={selectedWorksiteId} viewMode={viewMode} year={year} status={statusFilter} />
+          <PdtpProgramPicker current={program.id} programs={programs.map((item) => ({ id: item.id, title: item.title, year: item.year }))} hrefBase={VIEWER_HREF} sheetCode={sheetCode} worksiteId={selectedWorksiteId} viewMode={viewMode} year={year} status={statusFilter} month={currentPeriod.month} week={currentPeriod.week} />
+          <PdtpSheetPicker current={sheetCode} options={sheets.map((sheet) => ({ code: sheet.code, label: sheet.label }))} programId={program.id} worksiteId={selectedWorksiteId} viewMode={viewMode} hrefBase={VIEWER_HREF} year={year} status={statusFilter} month={currentPeriod.month} week={currentPeriod.week} />
+          {worksites.length > 1 && <PdtpWorksitePicker current={selectedWorksiteId} sheetCode={sheetCode} worksites={worksites} programId={program.id} viewMode={viewMode} hrefBase={VIEWER_HREF} year={year} status={statusFilter} month={currentPeriod.month} week={currentPeriod.week} />}
+          <div className="ml-auto"><PdtpViewToggle current={viewMode} sheetCode={sheetCode} worksiteId={selectedWorksiteId} programId={program.id} hrefBase={VIEWER_HREF} year={year} status={statusFilter} month={currentPeriod.month} week={currentPeriod.week} /></div>
+        </div>
+
+        {requiresWorksiteSelection ? <EmptyState compact title="Selecciona una faena para comenzar" description="Puedes consultar la vista anual, pero debes elegir una faena para revisar su evidencia o registrar ejecución." /> : !view ? <EmptyState compact title="No se pudo cargar esta vista" description="El programa no contiene la hoja seleccionada." /> : (
+          <>
+            {aggregateView && <div className="flex flex-wrap gap-2 text-xs text-[var(--color-text-muted)]">{aggregateView.worksiteSummaries.map((summary) => { const worksite = worksites.find((item) => item.id === summary.worksiteId); return <span key={summary.worksiteId} className="rounded-full border border-[var(--color-border)] px-2 py-1">{worksite?.name ?? "Faena"}: {summary.executed}/{summary.planned}</span> })}</div>}
+            <PdtpSheetTable view={view} worksiteId={selectedWorksiteId} canExecute={Boolean(selectedWorksiteId) && can(session, "prevention:pdtp:execute")} viewMode={viewMode} currentPeriod={currentPeriod} sheetCode={sheetCode} initialStatusFilter={statusFilter} aggregateWorksiteNames={Object.fromEntries(worksites.map((worksite) => [worksite.id, worksite.name]))} />
+          </>
+        )}
+      </div>
+    </PageContainer>
+  )
+}

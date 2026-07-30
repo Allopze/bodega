@@ -223,6 +223,84 @@ describe("PDTP multifaena: membresía y exclusiones", () => {
     expect(effective.executionRows).toEqual([expect.objectContaining({ month: 7, week: 4 })])
   })
 
+  it("agrega por faena aplicando overrides y exclusiones, sin filtrar evidencia entre faenas", async () => {
+    const { getPdtpAggregatedSheetViewByProgram } = await import("@/lib/services/prevention-pdtp")
+    const { excludeActivityForWorksite } = await import("@/lib/services/pdtp/worksites")
+    const { program, activity } = await createDraftProgramWithActivity(2049)
+    const now = new Date().toISOString()
+
+    const [sheet] = await inMemoryDb.select().from(schema.pdtpSheets)
+      .where(eq(schema.pdtpSheets.programId, program.id))
+    expect(sheet).toBeDefined()
+    await inMemoryDb.insert(schema.pdtpSheetActivities).values({
+      id: "aggregate-membership",
+      sheetId: sheet!.id,
+      sheetCode: "pdtp_general",
+      activityId: activity.id,
+      sheetRow: 1,
+      displayOrder: 1,
+    }).onConflictDoNothing()
+    await inMemoryDb.insert(schema.pdtpActivitySchedule).values({
+      id: "aggregate-plan",
+      activityId: activity.id,
+      year: 2049,
+      month: 1,
+      week: 1,
+      plannedQuantity: 1,
+      sourceColumn: "test",
+    })
+    await inMemoryDb.insert(schema.pdtpActivityScheduleOverrides).values({
+      id: "aggregate-override",
+      activityId: activity.id,
+      worksiteId: "ws-1",
+      year: 2049,
+      month: 1,
+      week: 1,
+      plannedQuantity: 2,
+      updatedByUserId: "user-1",
+      createdAt: now,
+      updatedAt: now,
+    })
+    await inMemoryDb.insert(schema.pdtpExecutions).values([
+      { id: "aggregate-approved", activityId: activity.id, worksiteId: "ws-1", year: 2049, month: 1, week: 1, executedQuantity: 2, status: "approved", evidenceText: "Evidencia privada A", evidencePhotos: [], sourceMetadataJson: {}, evidenceStatus: "provided", createdAt: now, updatedAt: now },
+      { id: "aggregate-draft", activityId: activity.id, worksiteId: "ws-2", year: 2049, month: 1, week: 1, executedQuantity: 1, status: "draft", evidenceText: "Borrador privado B", evidencePhotos: [], sourceMetadataJson: {}, evidenceStatus: "provided", createdAt: now, updatedAt: now },
+    ])
+    await excludeActivityForWorksite(activity.id, "ws-2", "No aplica a la segunda faena durante este programa.", "user-1")
+
+    const aggregate = await getPdtpAggregatedSheetViewByProgram(program.id, "pdtp_general", ["ws-1", "ws-2"], { year: 2049, month: 1, week: 1 })
+
+    expect(aggregate?.aggregate).toBe(true)
+    expect(aggregate?.monthlyTotals[0]).toMatchObject({ planned: 2, executed: 2 })
+    expect(aggregate?.activities[0]).toMatchObject({ totalPlanned: 2, totalExecuted: 2, executions: [] })
+    expect(aggregate?.activities[0]?.worksiteSummaries).toEqual([
+      expect.objectContaining({ worksiteId: "ws-1", planned: 2, executed: 2, status: "executed" }),
+      expect.objectContaining({ worksiteId: "ws-2", planned: 0, executed: 0, status: "not_scheduled" }),
+    ])
+    expect(JSON.stringify(aggregate)).not.toContain("Evidencia privada")
+    expect(JSON.stringify(aggregate)).not.toContain("Borrador privado")
+  })
+
+  it("el agregado falla cerrado a la membresía declarada del programa", async () => {
+    const { getPdtpAggregatedSheetViewByProgram, setPdtpProgramWorksites } = await import("@/lib/services/prevention-pdtp")
+    const { program, activity } = await createDraftProgramWithActivity(2050)
+    const [sheet] = await inMemoryDb.select().from(schema.pdtpSheets)
+      .where(eq(schema.pdtpSheets.programId, program.id))
+    await inMemoryDb.insert(schema.pdtpSheetActivities).values({
+      id: "membership-aggregate-sheet-activity",
+      sheetId: sheet!.id,
+      sheetCode: "pdtp_general",
+      activityId: activity.id,
+      sheetRow: 1,
+      displayOrder: 1,
+    })
+
+    await setPdtpProgramWorksites(program.id, ["ws-1"], "user-1", "all")
+    const aggregate = await getPdtpAggregatedSheetViewByProgram(program.id, "pdtp_general", ["ws-1", "ws-2"], { year: 2050, month: 1, week: 1 })
+
+    expect(aggregate?.worksiteSummaries.map((summary) => summary.worksiteId)).toEqual(["ws-1"])
+    expect(aggregate?.activities.every((activity) => activity.worksiteSummaries.every((summary) => summary.worksiteId === "ws-1"))).toBe(true)
+  })
+
   it("el reporte filtra por clave estable y usa el responsable efectivo de la faena", async () => {
     const { setPdtpActivityWorksiteAdjustment } = await import("@/lib/services/pdtp/worksites")
     const { getPdtpManagementReport } = await import("@/lib/services/prevention-pdtp")

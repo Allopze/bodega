@@ -4,8 +4,11 @@ import { requireAuth, can } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import {
   getActivePdtpProgram,
+  getPdtpProgram,
   listActionsByProgram,
   listPdtpProgramActivities,
+  listPdtpProgramWorksites,
+  resolveProgramWorksiteIds,
 } from "@/lib/services/prevention-pdtp"
 import { listScopedWorksites } from "@/lib/services/ppa"
 import { currentPdtpPeriod } from "@/lib/services/pdtp/period"
@@ -21,8 +24,12 @@ type Props = {
     prioridad?: string | string[]
     faena?: string | string[]
     vencidas?: string | string[]
+    programa?: string | string[]
+    anio?: string | string[]
   }>
 }
+
+const one = (value?: string | string[]) => Array.isArray(value) ? value[0] : value
 
 export default async function PdtpAccionesPage({ searchParams }: Props) {
   let session
@@ -31,22 +38,33 @@ export default async function PdtpAccionesPage({ searchParams }: Props) {
   if (!can(session, "prevention:pdtp:view")) redirect("/forbidden")
 
   const query = await searchParams
-  const one = (v?: string | string[]) => Array.isArray(v) ? v[0] : v
   const estado = one(query.estado)
   const prioridad = one(query.prioridad)
   const worksiteId = one(query.faena)
   const soloVencidas = one(query.vencidas) === "1"
+  const requestedProgramId = one(query.programa)
 
   const scope = resolveWorksiteScope(session)
   const worksiteIds: string[] | "all" = scope.mode === "all" ? "all" : scope.mode === "some" ? scope.ids : []
   const worksites = await listScopedWorksites(worksiteIds)
 
-  const year = currentPdtpPeriod().year
-  const program = await getActivePdtpProgram(year)
+  const requestedYear = Number(one(query.anio))
+  const year = Number.isInteger(requestedYear) && requestedYear >= 2024 && requestedYear <= 2100 ? requestedYear : currentPdtpPeriod().year
+  const requestedProgram = requestedProgramId ? await getPdtpProgram(requestedProgramId) : null
+  const program = requestedProgram?.year === year ? requestedProgram : await getActivePdtpProgram(year)
+  const effectiveWorksiteIds = program
+    ? resolveProgramWorksiteIds(
+        (await listPdtpProgramWorksites(program.id)).map((member) => member.worksiteId),
+        worksiteIds,
+        worksites.map((worksite) => worksite.id),
+      )
+    : []
+  const effectiveWorksiteId = worksiteId && effectiveWorksiteIds.includes(worksiteId) ? worksiteId : undefined
+  const effectiveWorksites = worksites.filter((worksite) => effectiveWorksiteIds.includes(worksite.id))
 
   const [items, activities] = program
     ? await Promise.all([
-        listActionsByProgram(program.id, { estado, prioridad, worksiteId, soloVencidas, scope: worksiteIds }),
+        listActionsByProgram(program.id, { estado, prioridad, worksiteId: effectiveWorksiteId, soloVencidas, scope: effectiveWorksiteIds }),
         listPdtpProgramActivities(program.id),
       ])
     : [[], []]
@@ -78,8 +96,8 @@ export default async function PdtpAccionesPage({ searchParams }: Props) {
           items={items}
           activityLabelById={Object.fromEntries(activityLabelById)}
           worksiteNameById={Object.fromEntries(worksiteNameById)}
-          worksites={worksites}
-          filters={{ estado, prioridad, worksiteId, soloVencidas }}
+          worksites={effectiveWorksites}
+          filters={{ estado, prioridad, worksiteId: effectiveWorksiteId, soloVencidas }}
           canManage={canManage}
           canVerify={canVerify}
           programId={program.id}

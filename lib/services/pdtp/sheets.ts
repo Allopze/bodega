@@ -1,6 +1,6 @@
 import { and, desc, eq, inArray } from "drizzle-orm"
 import { db } from "@/db"
-import { pdtpActivities, pdtpActivitySchedule, pdtpExecutions, pdtpPrograms, pdtpSheetActivities, pdtpSheets } from "@/db/schema"
+import { pdtpActivities, pdtpActivitySchedule, pdtpExecutions, pdtpPrograms, pdtpProgramWorksites, pdtpSheetActivities, pdtpSheets } from "@/db/schema"
 import { MONTH_LABELS } from "./constants"
 import { SHEET_EXPORT_NAMES } from "@/lib/services/pdtp-adapters/sheet-meta-2026"
 import { assertWorksiteAccess, emptyMonthlyTotals, loadProgramScheduleAndExecutions, resolveSheetForProgram } from "./helpers"
@@ -15,6 +15,7 @@ import { listActionsByProgram, countActionsByExecution } from "./action-plan"
 import { listFollowups } from "./followups"
 import { countNoCumpleByExecution } from "./execution-checklists"
 import { readPdtpActivityContent } from "./activity-content"
+import { deriveActivityStatus, type PdtpActivityStatus, type PdtpPeriod } from "./period"
 
 export type PdtpSheetView = {
   program: typeof pdtpPrograms.$inferSelect
@@ -46,6 +47,105 @@ export type PdtpSheetView = {
    * renderiza en ninguna UI (solo `planned`/`executed`); si se consume, usar
    * este valor tal cual (ya es %, no multiplicar por 100 de nuevo). */
   monthlyTotals: Array<{ month: number; planned: number; executed: number; percent: number | null }>
+}
+
+/**
+ * Lectura agregada por alcance. No lleva ejecuciones ni evidencias individuales:
+ * esas sólo se entregan mediante la vista detallada de una faena concreta.
+ */
+export type PdtpAggregateActivityWorksite = {
+  worksiteId: string
+  planned: number
+  executed: number
+  status: PdtpActivityStatus
+}
+
+export type PdtpAggregatedSheetView = Omit<PdtpSheetView, "activities"> & {
+  aggregate: true
+  activities: Array<PdtpSheetView["activities"][number] & { worksiteSummaries: PdtpAggregateActivityWorksite[] }>
+  worksiteSummaries: Array<{ worksiteId: string; planned: number; executed: number }>
+}
+
+export async function getPdtpAggregatedSheetViewByProgram(
+  programId: string,
+  sheetCode: string,
+  worksiteIds: string[],
+  period: PdtpPeriod,
+): Promise<PdtpAggregatedSheetView | null> {
+  const [program] = await db.select().from(pdtpPrograms).where(eq(pdtpPrograms.id, programId)).limit(1)
+  if (!program) return null
+  const members = await db.select({ worksiteId: pdtpProgramWorksites.worksiteId })
+    .from(pdtpProgramWorksites)
+    .where(and(eq(pdtpProgramWorksites.programId, programId), eq(pdtpProgramWorksites.isActive, true)))
+  const memberIds = new Set(members.map((member) => member.worksiteId))
+  const authorizedWorksiteIds = members.length === 0
+    ? [...new Set(worksiteIds)]
+    : [...new Set(worksiteIds.filter((worksiteId) => memberIds.has(worksiteId)))]
+  const sheet = await resolveSheetForProgram(programId, sheetCode)
+  if (!sheet) return null
+  const memberships = await db.select().from(pdtpSheetActivities)
+    .where(eq(pdtpSheetActivities.sheetId, sheet.id))
+    .orderBy(pdtpSheetActivities.displayOrder)
+  if (memberships.length === 0) return { program, sheet, activities: [], monthlyTotals: emptyMonthlyTotals(), aggregate: true, worksiteSummaries: [] }
+
+  const activityIds = memberships.map((membership) => membership.activityId)
+  const [activityRows, perWorksite] = await Promise.all([
+    db.select().from(pdtpActivities).where(and(inArray(pdtpActivities.id, activityIds), eq(pdtpActivities.programId, programId))),
+    Promise.all(authorizedWorksiteIds.map(async (worksiteId) => ({ worksiteId, ...(await loadProgramScheduleAndExecutions(activityIds, program.year, worksiteId)) }))),
+  ])
+  const activityById = new Map(activityRows.map((activity) => [activity.id, activity]))
+  const schedulesByActivity = new Map<string, Array<typeof pdtpActivitySchedule.$inferSelect>>()
+  const executionsByActivity = new Map<string, Array<typeof pdtpExecutions.$inferSelect>>()
+  const worksiteSummaries = perWorksite.map(({ worksiteId, scheduleRows, executionRows }) => ({
+    worksiteId,
+    planned: scheduleRows.reduce((total, row) => total + row.plannedQuantity, 0),
+    executed: executionRows.filter((row) => row.status === "approved").reduce((total, row) => total + row.executedQuantity, 0),
+  }))
+  for (const { scheduleRows, executionRows } of perWorksite) {
+    for (const row of scheduleRows) {
+      const rows = schedulesByActivity.get(row.activityId) ?? []
+      rows.push(row)
+      schedulesByActivity.set(row.activityId, rows)
+    }
+    for (const row of executionRows) {
+      const rows = executionsByActivity.get(row.activityId) ?? []
+      rows.push(row)
+      executionsByActivity.set(row.activityId, rows)
+    }
+  }
+  const monthlyTotals = emptyMonthlyTotals()
+  const activities: PdtpAggregatedSheetView["activities"] = []
+  for (const membership of memberships) {
+    const activity = activityById.get(membership.activityId)
+    if (!activity) continue
+    const schedule = (schedulesByActivity.get(activity.id) ?? []).sort((a, b) => a.month - b.month || a.week - b.week)
+    const monthlyPlanned = Array.from({ length: 12 }, () => 0)
+    const monthlyExecuted = Array.from({ length: 12 }, () => 0)
+    for (const row of schedule) {
+      monthlyPlanned[row.month - 1]! += row.plannedQuantity
+      monthlyTotals[row.month - 1]!.planned += row.plannedQuantity
+    }
+    for (const row of executionsByActivity.get(activity.id) ?? []) {
+      if (row.status !== "approved") continue
+      monthlyExecuted[row.month - 1]! += row.executedQuantity
+      monthlyTotals[row.month - 1]!.executed += row.executedQuantity
+    }
+    const activityWorksiteSummaries = perWorksite.map(({ worksiteId, scheduleRows, executionRows }) => {
+      const plannedByMonth = Array.from({ length: 12 }, () => 0)
+      const executedByMonth = Array.from({ length: 12 }, () => 0)
+      for (const row of scheduleRows) if (row.activityId === activity.id) plannedByMonth[row.month - 1]! += row.plannedQuantity
+      for (const row of executionRows) if (row.activityId === activity.id && row.status === "approved") executedByMonth[row.month - 1]! += row.executedQuantity
+      return {
+        worksiteId,
+        planned: plannedByMonth.reduce((sum, value) => sum + value, 0),
+        executed: executedByMonth.reduce((sum, value) => sum + value, 0),
+        status: deriveActivityStatus(plannedByMonth, executedByMonth, period),
+      }
+    })
+    activities.push({ ...activity, schedule, monthlyPlanned, monthlyExecuted, totalPlanned: monthlyPlanned.reduce((sum, value) => sum + value, 0), totalExecuted: monthlyExecuted.reduce((sum, value) => sum + value, 0), executions: [], worksiteSummaries: activityWorksiteSummaries })
+  }
+  for (const month of monthlyTotals) month.percent = month.planned > 0 ? Math.round((month.executed / month.planned) * 100) : null
+  return { program, sheet, activities, monthlyTotals, aggregate: true, worksiteSummaries }
 }
 
 /**
@@ -208,13 +308,16 @@ function buildActionPlanSheet(items: Awaited<ReturnType<typeof listActionsByProg
 
 async function buildSeguimientoSheet(items: Awaited<ReturnType<typeof listActionsByProgram>>): Promise<ReportSheet> {
   const headers = ["Acción N°", "Fecha", "Estado anterior", "Estado nuevo", "Observación"]
-  const rows: ReportCell[][] = []
-  for (const item of items) {
+  const rows = (await Promise.all(items.map(async (item) => {
     const followups = await listFollowups(item.id)
-    for (const f of followups) {
-      rows.push([item.n, f.fecha, f.estadoAnterior, f.estadoNuevo, f.observacion])
-    }
-  }
+    return followups.map((followup): ReportCell[] => [
+      item.n,
+      followup.fecha,
+      followup.estadoAnterior,
+      followup.estadoNuevo,
+      followup.observacion,
+    ])
+  }))).flat()
   return { worksheetName: "Seguimiento", headers, rows }
 }
 

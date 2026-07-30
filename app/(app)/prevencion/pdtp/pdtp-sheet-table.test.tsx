@@ -10,6 +10,12 @@ vi.mock("./actions", () => ({
   approvePdtpExecutionAction: vi.fn(),
 }))
 
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ replace: vi.fn() }),
+  usePathname: () => "/prevencion/pdtp/actividades",
+  useSearchParams: () => new URLSearchParams(),
+}))
+
 afterEach(() => cleanup())
 
 const CURRENT_PERIOD: PdtpPeriod = { year: 2026, month: 7, week: 2 }
@@ -95,6 +101,15 @@ describe("PdtpSheetTable — weekly filter", () => {
     expect(within(overdueRow).getByText(/Atrasado/)).toBeDefined()
   })
 
+  it("applies a status filter received from the viewer URL", () => {
+    const view = makeView([executedActivity, pendingActivity, overdueActivity])
+    render(<PdtpSheetTable view={view} viewMode="semana" currentPeriod={CURRENT_PERIOD} sheetCode="pdtp_general" initialStatusFilter="pending" />)
+
+    expect(screen.getByText("Actividad pendiente")).toBeDefined()
+    expect(screen.queryByText("Actividad ejecutada")).toBeNull()
+    expect(screen.queryByText("Actividad atrasada")).toBeNull()
+  })
+
   it("renders a friendly empty state when nothing is planned for the current week", () => {
     const view = makeView([notScheduledActivity])
     render(<PdtpSheetTable view={view} viewMode="semana" currentPeriod={CURRENT_PERIOD} sheetCode="pdtp_general" />)
@@ -140,8 +155,7 @@ describe("PdtpSheetTable — weekly filter", () => {
 
     expect(screen.getByText("Actividad ejecutada")).toBeDefined()
     expect(screen.getByText("Actividad sin plan este mes")).toBeDefined()
-    // "—" appears multiple times (KPI cards, progress ring, etc.); just check it's present
-    expect(screen.getAllByText("—").length).toBeGreaterThan(0)
+    expect(screen.getByText("No programada en este período")).toBeDefined()
   })
 
   it("uses user-facing period and status labels in the annual execution details", () => {

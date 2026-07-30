@@ -242,6 +242,11 @@ export const preventionModule = {
           // href duplicaba la fila y dejaba padre e hijo resaltados a la vez.
           children: [
             {
+              label: "Actividades del programa",
+              href: "/prevencion/pdtp/actividades",
+              permissions: ["prevention:pdtp:view"],
+            },
+            {
               label: "Programas",
               href: "/prevencion/pdtp/programas",
               permissions: ["prevention:pdtp:view"],
