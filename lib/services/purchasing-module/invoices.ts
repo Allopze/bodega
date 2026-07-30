@@ -19,6 +19,8 @@ const INVOICE_ALLOWED_STATUSES = new Set([
 export interface CreateInvoiceItemInput {
   purchaseOrderItemId?: string | null
   productName:          string
+  productCode?:         string | null
+  unitOfMeasure?:       string | null
   quantity:             number
   unitPrice:            number
   subtotal:             number
@@ -47,6 +49,10 @@ export async function createPurchaseOrderInvoice(
   worksiteIds: string[] | 'all' = 'all',
 ): Promise<string> {
   return await db.transaction(async (tx) => {
+    if (!Number.isFinite(input.amount) || input.amount < 0) {
+      throw new Error("Monto de factura inválido")
+    }
+    const invoiceItems = normalizeInvoiceItems(input.items)
     const order = await tx.query.purchaseOrders.findFirst({
       where: eq(purchaseOrders.id, input.purchaseOrderId),
       columns: { id: true, status: true, code: true, worksiteId: true },
@@ -75,7 +81,7 @@ export async function createPurchaseOrderInvoice(
       throw new Error("Ya existe una factura con ese folio para esta OC")
     }
 
-    const linkedItemIds = (input.items ?? [])
+    const linkedItemIds = invoiceItems
       .map((item) => item.purchaseOrderItemId)
       .filter((id): id is string => Boolean(id))
     if (new Set(linkedItemIds).size !== linkedItemIds.length) {
@@ -97,8 +103,8 @@ export async function createPurchaseOrderInvoice(
     const invoiceId = nanoid()
 
     // Calculate total from items if provided, otherwise use the provided amount
-    const totalAmount = input.items && input.items.length > 0
-      ? input.items.reduce((sum, item) => sum + item.subtotal, 0)
+    const totalAmount = invoiceItems.length > 0
+      ? invoiceItems.reduce((sum, item) => sum + item.subtotal, 0)
       : input.amount
 
     await tx.insert(purchaseOrderInvoices).values({
@@ -115,13 +121,15 @@ export async function createPurchaseOrderInvoice(
     })
 
     // Insert invoice items if provided
-    if (input.items && input.items.length > 0) {
+    if (invoiceItems.length > 0) {
       await tx.insert(purchaseOrderInvoiceItems).values(
-        input.items.map((item) => ({
+        invoiceItems.map((item) => ({
           id:                  nanoid(),
           invoiceId,
           purchaseOrderItemId: item.purchaseOrderItemId ?? null,
           productName:         item.productName,
+          productCode:         item.productCode ?? null,
+          unitOfMeasure:       item.unitOfMeasure ?? null,
           quantity:            item.quantity,
           unitPrice:           item.unitPrice,
           subtotal:            item.subtotal,
@@ -146,6 +154,28 @@ export async function createPurchaseOrderInvoice(
 
     return invoiceId
   })
+}
+
+function normalizeInvoiceItems(items: CreateInvoiceItemInput[] | undefined) {
+  return (items ?? []).map((item, index) => {
+    if (!item.productName.trim()) throw new Error(`La línea ${index + 1} no tiene descripción`)
+    if (!Number.isFinite(item.quantity) || item.quantity <= 0) throw new Error(`Cantidad inválida en la línea ${index + 1}`)
+    if (!Number.isFinite(item.unitPrice) || item.unitPrice < 0) throw new Error(`Precio inválido en la línea ${index + 1}`)
+
+    return {
+      ...item,
+      productName: item.productName.trim(),
+      productCode: item.productCode?.trim() || null,
+      unitOfMeasure: item.unitOfMeasure?.trim() || null,
+      // Ignore any browser-provided subtotal. This service is also called by
+      // non-UI flows, so the invariant belongs at the transactional boundary.
+      subtotal: roundMoney(item.quantity * item.unitPrice),
+    }
+  })
+}
+
+function roundMoney(value: number) {
+  return Math.round((value + Number.EPSILON) * 100) / 100
 }
 
 export async function deletePurchaseOrderInvoice(

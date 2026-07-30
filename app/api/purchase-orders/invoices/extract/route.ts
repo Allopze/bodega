@@ -5,6 +5,8 @@ import { auth } from "@/lib/auth/auth"
 import { can } from "@/lib/auth/can"
 import { extractInvoiceData } from "@/lib/services/purchasing-module/invoice-extractor"
 import { logger } from "@/lib/logger"
+import { validateFileBuffer, MimeType } from "@/lib/file-validation"
+import { getPdfMaxSizeMb } from "@/lib/services/system-settings"
 
 /**
  * POST /api/purchase-orders/invoices/extract
@@ -29,33 +31,27 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "No se proporcionó archivo" }, { status: 400 })
     }
 
-    // Validate file type
-    const allowedTypes = [
-      "application/xml",
-      "text/xml",
-      "application/pdf",
-      "image/jpeg",
-      "image/png",
-    ]
-    if (!allowedTypes.includes(file.type)) {
-      return NextResponse.json(
-        { error: "Tipo de archivo no soportado. Use XML, PDF, JPG o PNG." },
-        { status: 400 },
-      )
+    const maxMb = await getPdfMaxSizeMb()
+    if (file.size > maxMb * 1024 * 1024) {
+      return NextResponse.json({ error: `El archivo supera el límite de ${maxMb} MB` }, { status: 400 })
     }
 
-    // Read file into buffer
+    // La preextracción tiene los mismos límites y validación binaria que la
+    // carga definitiva: no confiar en file.type del navegador.
     const arrayBuffer = await file.arrayBuffer()
     const buffer = Buffer.from(arrayBuffer)
+    const validation = validateFileBuffer(new Uint8Array(buffer), file.size, MimeType.INVOICE)
+    if (validation.error) return NextResponse.json({ error: validation.error }, { status: 400 })
 
     // Extract data
-    const result = await extractInvoiceData(buffer, file.type, file.name)
+    const result = await extractInvoiceData(buffer, validation.mimeType, file.name)
 
     return NextResponse.json({
       ok: true,
       data: result.data,
       method: result.method,
       confidence: result.confidence,
+      warnings: result.warnings ?? [],
     })
   } catch (err) {
     logger.error("[invoices/extract] Error extracting invoice data", err)

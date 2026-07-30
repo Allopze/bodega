@@ -283,6 +283,8 @@ export default async function OcDetailPage({
                 ocItems={order.items.map((i) => ({
                   id: i.id,
                   productName: i.productNameFree ?? (i.productId ? productMap[i.productId]?.name : null) ?? i.id,
+                  productCode: i.productId ? productMap[i.productId]?.sku ?? null : null,
+                  unitOfMeasure: i.unitOfMeasure,
                   quantity: i.quantity,
                   unitPrice: i.unitPrice,
                   subtotal: i.subtotal,

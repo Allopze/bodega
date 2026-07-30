@@ -65,4 +65,38 @@ describe("parseInvoiceText", () => {
     expect(result.issueDate).toBeNull()
     expect(result.totalAmount).toBeNull()
   })
+
+  it("extracts a Crystal Reports invoice with reordered visual columns", () => {
+    const text = [
+      "Nº 3064428 R.U.T.: 96.542.490-3 FACTURA ELECTRONICA",
+      "Fecha de Emisión : : Vendedor 14/07/2026",
+      "TRECK S.A GIRO: FABRICA DE CALZADO",
+      "Precio Unitario Valor Total Descripción Código Cantidad",
+      "1.150 57.500 50 Guante Cabritilla Activex con Forro gris T- XL 05-03-008-T-XL",
+      "Total Neto Descuento I.V.A. (19%) Total 57.500 10.925 68.425",
+    ].join("\n")
+
+    expect(parseInvoiceText(text)).toMatchObject({
+      invoiceNumber: "3064428",
+      issueDate: "2026-07-14",
+      supplierName: "TRECK S.A",
+      supplierRut: "96.542.490-3",
+      netAmount: 57500,
+      taxAmount: 10925,
+      totalAmount: 68425,
+      items: [{
+        productName: "Guante Cabritilla Activex con Forro gris T- XL",
+        productCode: "05-03-008-T-XL",
+        unitOfMeasure: null,
+        quantity: 50,
+        unitPrice: 1150,
+        amount: 57500,
+      }],
+    })
+  })
+
+  it("keeps a declared document unit without inventing one", () => {
+    const result = parseInvoiceText("Casco UN 2 5.000 10.000")
+    expect(result.items[0]).toMatchObject({ unitOfMeasure: "UN", quantity: 2 })
+  })
 })

@@ -142,6 +142,10 @@ export const purchaseOrderInvoiceItems = pgTable("purchase_order_invoice_items",
   invoiceId:           text("invoice_id").notNull().references(() => purchaseOrderInvoices.id, { onDelete: "cascade" }),
   purchaseOrderItemId: text("purchase_order_item_id").references(() => purchaseOrderItems.id),
   productName:         text("product_name").notNull(),
+  productCode:         text("product_code"),
+  // Unidad declarada por el documento. Null significa que el comprobante no la
+  // informa; nunca se debe reemplazar silenciosamente por la unidad de la OC.
+  unitOfMeasure:       text("unit_of_measure"),
   quantity:            real("quantity").notNull(),
   unitPrice:           numeric("unit_price", { precision: 12, scale: 2, mode: "number" }).notNull(),
   subtotal:            numeric("subtotal", { precision: 12, scale: 2, mode: "number" }).notNull(),

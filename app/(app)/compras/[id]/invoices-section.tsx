@@ -13,11 +13,14 @@ import { FileInput } from "@/components/ui/file-input"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { formatCLP, formatDate } from "@/lib/utils"
 import type { ActionState } from "@/lib/validation/operations"
+import { matchInvoiceItemsToPurchaseOrderItems } from "@/lib/services/purchasing-module/invoice-item-matching"
 import { addInvoiceAction, deleteInvoiceAction } from "../invoice-actions"
 
 export interface OcItem {
   id: string
   productName: string
+  productCode: string | null
+  unitOfMeasure: string
   quantity: number
   unitPrice: number
   subtotal: number
@@ -35,6 +38,8 @@ export interface InvoiceRow {
     id: string
     purchaseOrderItemId: string | null
     productName: string
+    productCode: string | null
+    unitOfMeasure: string | null
     quantity: number
     unitPrice: number
     subtotal: number
@@ -207,7 +212,7 @@ function InvoiceItem({
               {invoice.items.map((item) => (
                 <li key={item.id} className="text-[10px] text-text-subtle flex justify-between gap-2">
                   <span title={item.productName} className="truncate">{item.productName}</span>
-                  <span className="font-mono tabular-nums shrink-0">{item.quantity} × {formatCLP(item.unitPrice)}</span>
+                  <span className="font-mono tabular-nums shrink-0">{item.quantity} {item.unitOfMeasure ?? "sin unidad"} × {formatCLP(item.unitPrice)}</span>
                 </li>
               ))}
             </ul>
@@ -244,9 +249,18 @@ function InvoiceItem({
 /* ── Add invoice form ───────────────────────────────────────────────────────── */
 
 interface InvoiceLineItem {
+  id: string
   ocItemId: string
+  productName: string
+  productCode: string
+  unitOfMeasure: string
   quantity: string
   unitPrice: string
+  resolution: "matched" | "needs_review" | "unlinked"
+}
+
+function createInvoiceLineId() {
+  return globalThis.crypto?.randomUUID?.() ?? `invoice-line-${Date.now()}-${Math.random().toString(36).slice(2)}`
 }
 
 function AddInvoiceForm({ purchaseOrderId, ocItems }: { purchaseOrderId: string; ocItems: OcItem[] }) {
@@ -254,6 +268,7 @@ function AddInvoiceForm({ purchaseOrderId, ocItems }: { purchaseOrderId: string;
   const formRef = React.useRef<HTMLFormElement>(null)
   const [lineItems, setLineItems] = React.useState<InvoiceLineItem[]>([])
   const [dteParsed, setDteParsed] = React.useState(false)
+  const [extractionWarnings, setExtractionWarnings] = React.useState<string[]>([])
   const invoiceNumberRef = React.useRef<HTMLInputElement>(null)
   const amountRef = React.useRef<HTMLInputElement>(null)
   // Estado controlado en vez de ref imperativo: DatePicker guarda el valor en
@@ -267,6 +282,7 @@ function AddInvoiceForm({ purchaseOrderId, ocItems }: { purchaseOrderId: string;
       setIssueDate("")
       setLineItems([])
       setDteParsed(false)
+      setExtractionWarnings([])
     } else if (!state.ok && state.message && "fieldErrors" in state) {
       toast.error(state.message)
     }
@@ -279,7 +295,16 @@ function AddInvoiceForm({ purchaseOrderId, ocItems }: { purchaseOrderId: string;
     if (nextItem) {
       setLineItems((prev) => [
         ...prev,
-        { ocItemId: nextItem.id, quantity: String(nextItem.quantity), unitPrice: String(nextItem.unitPrice) },
+        {
+          id: createInvoiceLineId(),
+          ocItemId: nextItem.id,
+          productName: nextItem.productName,
+          productCode: nextItem.productCode ?? "",
+          unitOfMeasure: nextItem.unitOfMeasure,
+          quantity: String(nextItem.quantity),
+          unitPrice: String(nextItem.unitPrice),
+          resolution: "matched",
+        },
       ])
     }
   }
@@ -289,7 +314,17 @@ function AddInvoiceForm({ purchaseOrderId, ocItems }: { purchaseOrderId: string;
   }
 
   function updateLineItem(index: number, field: keyof InvoiceLineItem, value: string) {
-    setLineItems((prev) => prev.map((item, i) => (i === index ? { ...item, [field]: value } : item)))
+    setLineItems((prev) => prev.map((item, i) => (i === index ? { ...item, [field]: value } as InvoiceLineItem : item)))
+  }
+
+  function updateLineItemAssociation(index: number, value: string) {
+    const selected = ocItems.find((item) => item.id === value)
+    setLineItems((prev) => prev.map((item, i) => {
+      if (i !== index) return item
+      if (value === "__unlinked") return { ...item, ocItemId: "", resolution: "unlinked" }
+      if (!selected) return { ...item, ocItemId: "", resolution: "needs_review" }
+      return { ...item, ocItemId: selected.id, resolution: "matched" }
+    }))
   }
 
   // ── File auto-detection (XML, PDF, images) ─────────────────────────────────
@@ -298,6 +333,7 @@ function AddInvoiceForm({ purchaseOrderId, ocItems }: { purchaseOrderId: string;
   async function handleFileChange(file: File | null) {
     if (!file) {
       setDteParsed(false)
+      setExtractionWarnings([])
       return
     }
 
@@ -332,6 +368,10 @@ function AddInvoiceForm({ purchaseOrderId, ocItems }: { purchaseOrderId: string;
       }
 
       const { data, method, confidence } = result
+      const warnings = Array.isArray(result.warnings)
+        ? result.warnings.filter((warning: unknown): warning is string => typeof warning === "string")
+        : []
+      setExtractionWarnings(warnings)
 
       // Auto-fill form fields
       if (data.invoiceNumber && invoiceNumberRef.current) {
@@ -345,19 +385,25 @@ function AddInvoiceForm({ purchaseOrderId, ocItems }: { purchaseOrderId: string;
       }
 
       // Auto-match items to OC items
-      if (data.items && data.items.length > 0 && ocItems.length > 0) {
-        const matched = matchItemsToOcItems(data.items, ocItems)
+      if (data.items && data.items.length > 0) {
+        const matched = matchInvoiceItemsToPurchaseOrderItems(data.items, ocItems)
         setLineItems(matched.map((m) => ({
+          id: createInvoiceLineId(),
           ocItemId: m.ocItemId ?? "",
+          productName: m.item.productName,
+          productCode: m.item.productCode ?? "",
+          unitOfMeasure: m.item.unitOfMeasure ?? "",
           quantity: String(m.item.quantity),
           unitPrice: String(m.item.unitPrice),
-          productName: m.item.productName,
+          resolution: m.ocItemId ? "matched" : "needs_review",
         })))
+      } else {
+        setLineItems([])
       }
 
       setDteParsed(true)
 
-      const methodLabel = method === "dte_xml" ? "DTE XML" : method === "pdf_text" ? "PDF" : method === "ocr" ? "OCR" : ""
+      const methodLabel = method === "dte_xml" ? "DTE XML" : method === "pdf_text" ? "PDF" : method === "pdf_text_ocr" ? "PDF + OCR" : method === "ocr" ? "OCR" : ""
       const confidencePct = Math.round(confidence * 100)
       toast.success(`Factura extraída (${methodLabel}, ${confidencePct}% confianza): ${data.items?.length ?? 0} ítem(s)`)
     } catch {
@@ -367,29 +413,12 @@ function AddInvoiceForm({ purchaseOrderId, ocItems }: { purchaseOrderId: string;
     }
   }
 
-  // ── Match extracted items to OC items ──────────────────────────────────────
-  function matchItemsToOcItems(
-    extractedItems: Array<{ productName: string; quantity: number; unitPrice: number }>,
-    ocItemsList: OcItem[],
-  ) {
-    return extractedItems.map((item) => {
-      // Try match by name (case-insensitive, substring)
-      const normalizedName = item.productName.toLowerCase().trim()
-      const byName = ocItemsList.find((oci) => {
-        const ocName = oci.productName.toLowerCase().trim()
-        return ocName && (normalizedName.includes(ocName) || ocName.includes(normalizedName))
-      })
-      if (byName) return { item, ocItemId: byName.id, matchType: "name" as const }
-
-      return { item, ocItemId: null, matchType: "none" as const }
-    })
-  }
-
   const totalItems = lineItems.reduce((sum, li) => {
     const qty = parseFloat(li.quantity) || 0
     const price = parseFloat(li.unitPrice) || 0
     return sum + qty * price
   }, 0)
+  const unresolvedLineCount = lineItems.filter((item) => item.resolution === "needs_review").length
 
   return (
     <form ref={formRef} action={action} className="mt-1 border-t border-(--color-border) pt-3 space-y-2">
@@ -453,7 +482,7 @@ function AddInvoiceForm({ purchaseOrderId, ocItems }: { purchaseOrderId: string;
       </div>
 
       {/* Line items */}
-      {ocItems.length > 0 && (
+      {(ocItems.length > 0 || lineItems.length > 0) && (
         <div className="space-y-1.5">
           <div className="flex items-center justify-between">
             <p className="text-xs font-medium text-(--color-text-muted)">Ítems de factura</p>
@@ -470,10 +499,24 @@ function AddInvoiceForm({ purchaseOrderId, ocItems }: { purchaseOrderId: string;
 
           {lineItems.map((li, index) => {
             const ocItem = ocItems.find((oci) => oci.id === li.ocItemId)
+            const unitMismatch = Boolean(li.unitOfMeasure && ocItem && li.unitOfMeasure.trim().toLowerCase() !== ocItem.unitOfMeasure.trim().toLowerCase())
             return (
-              <div key={li.ocItemId} className="flex items-end gap-1.5 rounded border border-(--color-border) p-2 bg-surface-2">
+              <div key={li.id} className="flex items-end gap-1.5 rounded border border-(--color-border) p-2 bg-surface-2">
                 <div className="flex-1 min-w-0">
-                  <p title={ocItem?.productName ?? "Ítem"} className="text-[10px] text-text-subtle truncate mb-1">{ocItem?.productName ?? "Ítem"}</p>
+                  <p title={li.productName || "Ítem"} className="text-[10px] text-text-subtle truncate mb-1">Documento: {li.productName || "Ítem sin descripción"}</p>
+                  <select
+                    aria-label={`Asociar línea ${index + 1} a un ítem de la orden de compra`}
+                    value={li.ocItemId || (li.resolution === "unlinked" ? "__unlinked" : "")}
+                    onChange={(event) => updateLineItemAssociation(index, event.target.value)}
+                    className={`mb-1 h-7 w-full rounded border bg-(--color-surface) px-1.5 text-[11px] ${li.resolution === "needs_review" ? "border-[var(--color-warning)]" : "border-(--color-border)"}`}
+                  >
+                    <option value="" disabled>Selecciona ítem de OC</option>
+                    {ocItems.map((item) => <option key={item.id} value={item.id}>{item.productName}</option>)}
+                    <option value="__unlinked">Mantener sin asociar a la OC</option>
+                  </select>
+                  {li.resolution === "needs_review" && (
+                    <p className="mb-1 text-[10px] text-[var(--color-warning)]">Esta línea no se asociará hasta que selecciones un ítem de la OC o confirmes que queda sin asociar.</p>
+                  )}
                   <div className="grid grid-cols-2 gap-1.5">
                     <Input
                       name={`item_qty_${index}`}
@@ -496,12 +539,21 @@ function AddInvoiceForm({ purchaseOrderId, ocItems }: { purchaseOrderId: string;
                       className="text-xs h-7"
                     />
                   </div>
+                  <p className="mt-1 text-[10px] text-text-subtle">
+                    Unidad documento: <span className="font-medium text-(--color-text)">{li.unitOfMeasure || "no declarada"}</span>
+                    {ocItem && <> · OC: {ocItem.unitOfMeasure}</>}
+                  </p>
+                  {unitMismatch && <p className="mt-1 text-[10px] text-[var(--color-warning)]">La unidad del documento difiere de la unidad de la OC; confirma cantidad y precio.</p>}
                   <input type="hidden" name={`item_ocItemId_${index}`} value={li.ocItemId} />
-                  <input type="hidden" name={`item_productName_${index}`} value={ocItem?.productName ?? ""} />
+                  <input type="hidden" name={`item_resolution_${index}`} value={li.resolution} />
+                  <input type="hidden" name={`item_productName_${index}`} value={li.productName} />
+                  <input type="hidden" name={`item_productCode_${index}`} value={li.productCode} />
+                  <input type="hidden" name={`item_unitOfMeasure_${index}`} value={li.unitOfMeasure} />
                   <input type="hidden" name={`item_subtotal_${index}`} value={String(Math.round((parseFloat(li.quantity) || 0) * (parseFloat(li.unitPrice) || 0)))} />
                 </div>
                 <button
                   type="button"
+                  aria-label={`Quitar ítem ${ocItem?.productName ?? index + 1}`}
                   onClick={() => removeLineItem(index)}
                   className="shrink-0 p-1 rounded text-text-subtle hover:text-[var(--color-danger)] hover:bg-[var(--color-danger-50)] transition-colors"
                 >
@@ -543,11 +595,25 @@ function AddInvoiceForm({ purchaseOrderId, ocItems }: { purchaseOrderId: string;
         </p>
       )}
 
+      {extractionWarnings.length > 0 && !extracting && (
+        <div role="alert" className="rounded border border-[var(--color-warning)] bg-[var(--color-warning-50)] px-2 py-1.5 text-[11px] text-(--color-text)">
+          <p className="font-medium">Revisión requerida</p>
+          <ul className="mt-0.5 list-disc pl-4">
+            {extractionWarnings.map((warning) => <li key={warning}>{warning}</li>)}
+          </ul>
+        </div>
+      )}
+
+      {unresolvedLineCount > 0 && (
+        <p className="text-[11px] text-[var(--color-warning)]">Resuelve {unresolvedLineCount} línea(s) antes de adjuntar la factura.</p>
+      )}
+
       <SubmitButton
         label="Adjuntar factura"
         loadingLabel="Adjuntando..."
         size="sm"
         className="w-full"
+        disabled={unresolvedLineCount > 0}
       />
     </form>
   )

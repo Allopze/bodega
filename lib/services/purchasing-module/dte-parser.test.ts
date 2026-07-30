@@ -61,6 +61,7 @@ describe("parseDteXml", () => {
       confidence: expect.any(Number),
       data: expect.objectContaining({ supplierName: "Señalética Ñuble SpA" }),
     })
+    expect(result.data?.items[1]).toMatchObject({ productName: "Guante dieléctrico", unitOfMeasure: "PAR" })
 
     const incomplete = await extractInvoiceData(Buffer.from("<DTE><Documento><Encabezado><IdDoc><Folio>1</Folio></IdDoc></Encabezado></Documento></DTE>"), "application/xml", "incompleto.xml")
     expect(incomplete).toEqual({ data: null, method: "manual", confidence: 0 })

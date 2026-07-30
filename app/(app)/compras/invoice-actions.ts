@@ -112,18 +112,19 @@ export async function addInvoiceAction(
   const accessError = await assertOrderAccess(session, purchaseOrderId)
   if (accessError) return accessError
 
-  const fileResult = await persistInvoiceFile(formData.get("file"))
-  if (!fileResult.ok) return { ok: false, message: fileResult.message }
-
-  if (!fileResult.attachment) {
-    return { ok: false, message: "El archivo de la factura es obligatorio" }
+  // Validate every submitted line before persisting the attachment. Never
+  // silently discard a malformed or unresolved OCR line: that breaks the
+  // audit trail and can make an invoice appear reconciled when it is not.
+  const itemCount = Number(formData.get("itemCount") ?? 0)
+  if (!Number.isInteger(itemCount) || itemCount < 0 || itemCount > 100) {
+    return { ok: false, message: "La cantidad de líneas de factura no es válida" }
   }
 
-  // Extract line items from form data
-  const itemCount = parseInt(formData.get("itemCount") as string) || 0
   const items: Array<{
     purchaseOrderItemId?: string | null
     productName: string
+    productCode?: string | null
+    unitOfMeasure?: string | null
     quantity: number
     unitPrice: number
     subtotal: number
@@ -132,19 +133,45 @@ export async function addInvoiceAction(
   for (let i = 0; i < itemCount; i++) {
     const ocItemId = formData.get(`item_ocItemId_${i}`) as string | null
     const productName = formData.get(`item_productName_${i}`) as string | null
-    const quantity = parseFloat(formData.get(`item_qty_${i}`) as string) || 0
-    const unitPrice = parseFloat(formData.get(`item_price_${i}`) as string) || 0
-    const subtotal = parseFloat(formData.get(`item_subtotal_${i}`) as string) || quantity * unitPrice
+    const productCode = formData.get(`item_productCode_${i}`) as string | null
+    const unitOfMeasure = formData.get(`item_unitOfMeasure_${i}`) as string | null
+    const resolution = formData.get(`item_resolution_${i}`)
+    const quantity = Number(formData.get(`item_qty_${i}`))
+    const unitPrice = Number(formData.get(`item_price_${i}`))
 
-    if (productName && quantity > 0) {
-      items.push({
-        purchaseOrderItemId: ocItemId || null,
-        productName,
-        quantity,
-        unitPrice,
-        subtotal,
-      })
+    if (!productName?.trim()) {
+      return { ok: false, message: `La línea ${i + 1} no tiene descripción de documento` }
     }
+    if (resolution !== "matched" && resolution !== "unlinked") {
+      return { ok: false, message: `Resuelve la asociación de la línea ${i + 1} antes de adjuntar la factura` }
+    }
+    if (resolution === "matched" && !ocItemId) {
+      return { ok: false, message: `La línea ${i + 1} debe indicar el ítem de OC asociado` }
+    }
+    if (resolution === "unlinked" && ocItemId) {
+      return { ok: false, message: `La línea ${i + 1} tiene una asociación inconsistente` }
+    }
+    if (!Number.isFinite(quantity) || quantity <= 0 || !Number.isFinite(unitPrice) || unitPrice < 0) {
+      return { ok: false, message: `Cantidad o precio inválido en la línea ${i + 1}` }
+    }
+
+    items.push({
+      purchaseOrderItemId: ocItemId || null,
+      productName: productName.trim(),
+      productCode: productCode?.trim() || null,
+      unitOfMeasure: unitOfMeasure?.trim() || null,
+      quantity,
+      unitPrice,
+      // The client preview is not a financial authority.
+      subtotal: roundMoney(quantity * unitPrice),
+    })
+  }
+
+  const fileResult = await persistInvoiceFile(formData.get("file"))
+  if (!fileResult.ok) return { ok: false, message: fileResult.message }
+
+  if (!fileResult.attachment) {
+    return { ok: false, message: "El archivo de la factura es obligatorio" }
   }
 
   try {
@@ -171,6 +198,10 @@ export async function addInvoiceAction(
     logger.error("[addInvoiceAction]", e)
     return { ok: false, message: dbErrMsg(e, "Error al adjuntar factura") }
   }
+}
+
+function roundMoney(value: number) {
+  return Math.round((value + Number.EPSILON) * 100) / 100
 }
 
 // ── Delete Invoice ─────────────────────────────────────────────────────────────
