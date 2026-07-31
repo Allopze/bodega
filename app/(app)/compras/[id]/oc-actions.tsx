@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import Link from "next/link"
 import { useActionState } from "react"
 import { toast } from "@/lib/toast"
 import { Warning } from "@phosphor-icons/react"
@@ -17,6 +18,34 @@ import { useTransition } from "react"
 import { DELETABLE_ORDER_STATUSES } from "@/lib/services/purchasing.constants"
 import { useRouter } from "next/navigation"
 import type { ActionState } from "@/lib/validation/operations"
+
+/**
+ * Advertencias de conciliación OC↔factura↔recepción, dentro del formulario de
+ * cierre.
+ *
+ * Antes de pulsar "Cerrar orden" el aviso lo da `OcInvoiceCta`, arriba en el
+ * mismo rail y con el botón que lo resuelve. Repetirlo también aquí ponía el
+ * mismo texto dos veces en un viewport (precedente A-19); aquí queda el detalle
+ * completo, que es lo que hace falta al firmar el cierre, más el atajo.
+ */
+function CloseWarnings({ warnings, invoiceHref }: { warnings: string[]; invoiceHref?: string }) {
+  if (warnings.length === 0) return null
+  return (
+    <div className="rounded bg-[var(--color-warning-50)] border border-[var(--color-warning-200)] p-2 text-xs text-[var(--color-warning-700)]">
+      <p className="font-medium mb-1 flex items-center gap-1">
+        <Warning size={12} /> Advertencias de conciliación
+      </p>
+      <ul className="space-y-0.5 list-disc list-inside">
+        {warnings.map((w) => <li key={w}>{w}</li>)}
+      </ul>
+      {invoiceHref && (
+        <Link href={invoiceHref} className="mt-1.5 inline-block font-medium underline underline-offset-2">
+          Ir a Facturación
+        </Link>
+      )}
+    </div>
+  )
+}
 
 const CANCELLABLE_STATUSES = new Set(["draft", "issued", "sent"])
 // El cierre está disponible desde que hay algo recibido: antes de eso la salida
@@ -128,16 +157,7 @@ export function OcActions({
             <Warning size={12} /> {closeState.message}
           </p>
         )}
-        {closeWarnings.length > 0 && (
-          <div className="rounded bg-[var(--color-warning-50)] border border-[var(--color-warning-200)] p-2 text-xs text-[var(--color-warning-700)]">
-            <p className="font-medium mb-1 flex items-center gap-1">
-              <Warning size={12} /> Advertencias de conciliación
-            </p>
-            <ul className="space-y-0.5 list-disc list-inside">
-              {closeWarnings.map((w) => <li key={w}>{w}</li>)}
-            </ul>
-          </div>
-        )}
+        <CloseWarnings warnings={closeWarnings} invoiceHref={`/compras/${orderId}?tab=facturacion`} />
         <div className="flex items-center justify-end gap-2 mt-1">
           <button
             type="button"

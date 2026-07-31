@@ -3,6 +3,8 @@ import { and, count, desc, eq, inArray } from "drizzle-orm"
 import { db } from "@/db"
 import { purchaseOrders, purchaseOrderItems, purchaseOrderInvoices, worksites, suppliers } from "@/db/schema"
 import { textSearchSql } from "@/lib/adquisiciones/list-query"
+import { INVOICE_DUE_ORDER_STATUSES } from "@/lib/work-queue-labels"
+import { orderHasNoInvoice } from "@/lib/services/operational-work-queue"
 import { formatDate } from "@/lib/utils"
 import { ocStatusLabel } from "./labels"
 import { buildWorksiteFilter, buildDateFilter } from "./utils"
@@ -16,6 +18,11 @@ export async function comprasList(session: Session | null, filters: ExportFilter
     filters.worksiteId ? eq(purchaseOrders.worksiteId, filters.worksiteId) : undefined,
     filters.supplierId ? eq(purchaseOrders.supplierId, filters.supplierId) : undefined,
     textSearchSql(filters.q ?? "", [purchaseOrders.code]),
+    // Mismo criterio que el listado y la cola operacional: exportar mientras el
+    // filtro "Sin factura" está activo bajaba las OC completas.
+    filters.invoicePending
+      ? and(inArray(purchaseOrders.status, INVOICE_DUE_ORDER_STATUSES), orderHasNoInvoice)
+      : undefined,
   )
 
   const rows = await db

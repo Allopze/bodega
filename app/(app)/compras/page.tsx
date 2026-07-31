@@ -16,6 +16,8 @@ import { HeaderSignals, type HeaderSignal } from "@/components/ui/header-signals
 import { ServerPagination } from "@/components/ui/server-pagination"
 import { buildPaginationHref, resolvePagination } from "@/lib/pagination"
 import { parseListParams, statusSql, eqFilter, worksiteEqSql } from "@/lib/adquisiciones/list-query"
+import { INVOICE_DUE_ORDER_STATUSES } from "@/lib/work-queue"
+import { orderHasNoInvoice } from "@/lib/services/operational-work-queue"
 import { ComprasActions } from "./compras-actions"
 import { OcList } from "./oc-list"
 import type { OcRow } from "./oc-list"
@@ -79,6 +81,7 @@ export default async function ComprasPage({
   if (listParams.estados) exportParams.set("status", listParams.estados.join(","))
   if (listParams.faena) exportParams.set("faena", listParams.faena)
   if (listParams.proveedor) exportParams.set("proveedor", listParams.proveedor)
+  if (listParams.factura === "pendiente") exportParams.set("factura", "pendiente")
   const exportHref = `/api/reportes/export?${exportParams.toString()}`
 
   // Extended text search: match OC code OR supplier name via EXISTS subquery.
@@ -92,18 +95,30 @@ export default async function ComprasPage({
       )
     : undefined
 
+  // Se aplica en SQL antes de contar y paginar, como el resto de los filtros:
+  // filtrar la página ya traída dejaría el clásico "sin resultados" con la OC
+  // buscada viviendo en otra página.
+  const invoicePendingCondition = and(
+    inArray(purchaseOrders.status, INVOICE_DUE_ORDER_STATUSES),
+    orderHasNoInvoice,
+  )
+
   const ordersWhere = and(
     worksiteScope,
     textCondition,
     statusSql(purchaseOrders.status, listParams.estados),
     worksiteEqSql(purchaseOrders.worksiteId, listParams.faena),
     eqFilter(purchaseOrders.supplierId, listParams.proveedor),
+    listParams.factura === "pendiente" ? invoicePendingCondition : undefined,
   )
 
-  const [totalOrdersRow] = await db
-    .select({ total: count() })
-    .from(purchaseOrders)
-    .where(ordersWhere)
+  const [[totalOrdersRow], [invoicePendingRow]] = await Promise.all([
+    db.select({ total: count() }).from(purchaseOrders).where(ordersWhere),
+    // La señal anuncia el atraso completo de la faena visible, no el de la vista
+    // filtrada: si dependiera de los filtros, se apagaría justo al filtrar.
+    db.select({ total: count() }).from(purchaseOrders).where(and(worksiteScope, invoicePendingCondition)),
+  ])
+  const invoicePendingCount = invoicePendingRow?.total ?? 0
   const pagination = resolvePagination({
     pageParam: sp.page,
     totalItems: totalOrdersRow?.total ?? 0,
@@ -157,6 +172,20 @@ export default async function ComprasPage({
   const headerSignals: HeaderSignal[] = [
     { key: "postponed", label: "Postergados", value: postponedCount, tone: "signal" },
   ]
+  // Una OC con mercadería recibida y sin factura no se veía desde ninguna parte:
+  // la columna "Facturas" mostraba el mismo "—" que en una recién emitida. La
+  // señal va sólo para quien puede adjuntarla —el mismo permiso que exige
+  // `addInvoiceAction`—; a los demás les queda la columna, que es informativa y
+  // vive junto a su OC en vez de pedir una acción que no pueden ejecutar.
+  if (can(session, "purchasing:send_order")) {
+    headerSignals.push({
+      key: "sin-factura",
+      label: "Sin factura",
+      value: invoicePendingCount,
+      tone: "signal",
+      href: "/compras?factura=pendiente",
+    })
+  }
 
   if (visibleOrders.length === 0 && pendingCount === 0 && postponedCount === 0) {
     return (

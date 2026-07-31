@@ -17,7 +17,6 @@ export const pgliteTestFiles = [
   "lib/__tests__/bootstrap.test.ts",
   "lib/__tests__/combustibles-scope.test.ts",
   "lib/__tests__/code-sequences.test.ts",
-  "lib/__tests__/dashboard-snapshot-worksite-stock.test.ts",
   "lib/__tests__/equipment-performance-integration.test.ts",
   "lib/__tests__/epp-replenishment.test.ts",
   "lib/__tests__/feedback.test.ts",

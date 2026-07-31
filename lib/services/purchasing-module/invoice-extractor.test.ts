@@ -45,7 +45,56 @@ describe("extractInvoiceData evidence gates", () => {
 
     const result = await extractInvoiceData(Buffer.from("image"), "image/png", "factura.png")
 
-    expect(result).toMatchObject({ data: null, method: "manual", confidence: 0 })
+    expect(result).toMatchObject({ data: null, method: "manual", quality: { coverage: 0 } })
     expect(result.warnings).toContain("El OCR no identificó folio, fecha y total verificables; completa los datos manualmente.")
+  })
+})
+
+describe("señales de calidad", () => {
+  beforeEach(() => {
+    mocks.extractTextFromPdf.mockReset()
+    mocks.extractInvoiceTextOcr.mockReset()
+  })
+
+  it("separa cobertura de campos, confianza del motor y cuadratura de montos", async () => {
+    // Documento completo en campos pero con aritmética imposible: la cobertura
+    // es total y aun así no está verificado. Con un solo número —el viejo
+    // "confianza"— esto se anunciaba como 100%.
+    mocks.extractInvoiceTextOcr.mockResolvedValue({
+      text: "Factura N° 55 Fecha de Emisión: 14/07/2026\nNeto: 10.000\nIVA 19%: 1.900\nTotal: 99.999",
+      confidence: 0.72,
+      pageCount: 1,
+    })
+
+    const result = await extractInvoiceData(Buffer.from("image"), "image/png", "factura.png")
+
+    expect(result.quality).toEqual({
+      coverage: expect.any(Number),
+      engineConfidence: 0.72,
+      totalsConsistent: false,
+    })
+    expect(result.warnings).toContain("Neto, IVA y total extraídos no cuadran entre sí; confirma los montos.")
+  })
+
+  it("no inventa confianza de motor en un PDF con texto", async () => {
+    mocks.extractTextFromPdf.mockResolvedValue({
+      // El extractor exige texto con sustancia antes de confiar en la capa
+      // textual del PDF, así que la muestra trae emisor y giro como una real.
+      text: [
+        "PROVEEDOR DEMO SPA GIRO: Venta de material industrial",
+        "Factura N°: 1200 Fecha de Emisión: 15/01/2026",
+        "Casco UN 2 5.000 10.000",
+        "Neto: 10.000",
+        "IVA 19%: 1.900",
+        "Total: 11.900",
+      ].join("\n"),
+    })
+
+    const result = await extractInvoiceData(Buffer.from("%PDF"), "application/pdf", "factura.pdf")
+
+    expect(result.method).toBe("pdf_text")
+    expect(result.quality.engineConfidence).toBeNull()
+    expect(result.quality.totalsConsistent).toBe(true)
+    expect(result.quality.coverage).toBe(1)
   })
 })

@@ -25,6 +25,8 @@ export interface ListParams {
   proveedor: string
   /** Selected urgency value (empty = all). Used by Aprobaciones. */
   urgencia:  string
+  /** "pendiente" = sólo OC que ya deberían tener factura y no la tienen. Compras. */
+  factura:   string
 }
 
 function firstStr(value: string | string[] | undefined): string {
@@ -44,7 +46,8 @@ export function parseListParams(
   const faena = firstStr(sp.faena).trim()
   const proveedor = firstStr(sp.proveedor).trim()
   const urgencia = firstStr(sp.urgencia).trim()
-  return { q, estados, faena, proveedor, urgencia }
+  const factura = firstStr(sp.factura).trim()
+  return { q, estados, faena, proveedor, urgencia, factura }
 }
 
 /** Escape LIKE wildcards so user input is matched literally. */

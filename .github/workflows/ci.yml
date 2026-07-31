@@ -19,7 +19,11 @@ jobs:
     timeout-minutes: 75
     strategy:
       matrix:
-        node-version: [20]
+        # El mismo runtime que la imagen de producción (`node:22.13-alpine`) y que
+        # exige `engines`. CI corría en 20: se validaba sobre un runtime que no es
+        # el que se despliega, justo el punto que dejó al fallback OCR de PDF sin
+        # cobertura confiable (auditoría OCR 2026-07-30).
+        node-version: ["22.13"]
     services:
       postgres:
         image: postgres:16

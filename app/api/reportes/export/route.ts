@@ -60,6 +60,7 @@ export async function GET(req: NextRequest) {
   if (vehiculo) filters.vehicleId = vehiculo
   if (status) filters.status = status
   if (q) filters.q = q
+  if (req.nextUrl.searchParams.get("factura") === "pendiente") filters.invoicePending = true
 
   try {
     const report = await getReportData(tipo, session, filters, MAX_EXPORT_ROWS)

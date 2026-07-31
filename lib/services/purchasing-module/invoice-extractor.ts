@@ -9,10 +9,32 @@ import { extractInvoiceTextOcr } from "./invoice-ocr"
 
 export type ExtractionMethod = "dte_xml" | "pdf_text" | "pdf_text_ocr" | "ocr" | "manual"
 
+/**
+ * Tres cosas distintas que antes viajaban como un solo número llamado
+ * "confianza", y que la UI mostraba como "95% confianza" aunque nada estuviera
+ * verificado (P1 de la auditoría de OCR 2026-07-30).
+ *
+ * - `coverage`: cuántos de los campos esperados vinieron. Es presencia, no
+ *   veracidad: un folio mal leído cuenta igual que uno correcto.
+ * - `engineConfidence`: lo que declara Tesseract sobre su propia lectura. Sólo
+ *   existe en las ramas OCR; un DTE XML o un PDF con texto no la tienen.
+ * - `totalsConsistent`: si neto + IVA cuadra con el total extraído. Es la única
+ *   señal aritmética del documento contra sí mismo.
+ *
+ * La confianza de *conciliación* (que el documento corresponda a esta OC) no
+ * vive aquí: la resuelve el operador línea por línea en el formulario, con el
+ * matching de `invoice-item-matching.ts` y el panel de conciliación de la OC.
+ */
+export interface ExtractionQuality {
+  coverage: number
+  engineConfidence: number | null
+  totalsConsistent: boolean | null
+}
+
 export interface ExtractionResult {
   data: ParsedInvoiceData | null
   method: ExtractionMethod
-  confidence: number
+  quality: ExtractionQuality
   /** Non-blocking evidence gaps that the form must show to the operator. */
   warnings?: string[]
 }
@@ -53,7 +75,7 @@ export async function extractInvoiceData(
       return extractionResult({
         data,
         method: "dte_xml",
-        confidence: 0.95,
+        quality: quality(data, null),
         warnings: getDataWarnings(data),
       })
     }
@@ -61,7 +83,6 @@ export async function extractInvoiceData(
 
   // ── 2. PDF text extraction ─────────────────────────────────────────────────
   let pdfTextCandidate: ParsedInvoiceData | null = null
-  let pdfTextConfidence = 0
   if (mimeType === "application/pdf") {
     try {
       const { text } = await extractTextFromPdf(fileBuffer)
@@ -70,19 +91,17 @@ export async function extractInvoiceData(
       const meaningfulText = text.replace(/[\s\d\.\,\-\$\%\(\)]/g, "")
       if (meaningfulText.length > 50) {
         const parsed = parseInvoiceText(text)
-        const confidence = calculateConfidence(parsed)
         if (isUsefulInvoiceData(parsed)) {
           if (parsed.items.length > 0) {
             return extractionResult({
               data: parsed,
               method: "pdf_text",
-              confidence,
+              quality: quality(parsed, null),
               warnings: getDataWarnings(parsed),
             })
           }
           // Keep good header data, but give OCR a chance to recover the lines.
           pdfTextCandidate = parsed
-          pdfTextConfidence = confidence
           warnings.push("El texto del PDF permitió identificar la cabecera, pero no sus líneas; se intentó OCR adicional.")
         } else {
           warnings.push("El texto del PDF no contenía una factura verificable; se intentó OCR.")
@@ -102,14 +121,14 @@ export async function extractInvoiceData(
         return extractionResult({
           data,
           method: "pdf_text_ocr",
-          confidence: Math.min(pdfTextConfidence, ocrCandidate.confidence),
+          quality: quality(data, ocrCandidate.engineConfidence),
           warnings: [...warnings, ...getDataWarnings(data)],
         })
       }
       return extractionResult({
         data: ocrCandidate.data,
         method: "ocr",
-        confidence: ocrCandidate.confidence,
+        quality: quality(ocrCandidate.data, ocrCandidate.engineConfidence),
         warnings: [...warnings, ...getDataWarnings(ocrCandidate.data)],
       })
     }
@@ -118,7 +137,7 @@ export async function extractInvoiceData(
       return extractionResult({
         data: pdfTextCandidate,
         method: "pdf_text",
-        confidence: pdfTextConfidence,
+        quality: quality(pdfTextCandidate, null),
         warnings: [...warnings, ...getDataWarnings(pdfTextCandidate)],
       })
     }
@@ -131,13 +150,13 @@ export async function extractInvoiceData(
       return extractionResult({
         data: ocrCandidate.data,
         method: "ocr",
-        confidence: ocrCandidate.confidence,
+        quality: quality(ocrCandidate.data, ocrCandidate.engineConfidence),
         warnings: [...warnings, ...getDataWarnings(ocrCandidate.data)],
       })
     }
   }
 
-  return extractionResult({ data: null, method: "manual", confidence: 0, warnings })
+  return extractionResult({ data: null, method: "manual", quality: quality(null, null), warnings })
 }
 
 async function extractOcrCandidate(fileBuffer: Buffer, warnings: string[]) {
@@ -155,10 +174,7 @@ async function extractOcrCandidate(fileBuffer: Buffer, warnings: string[]) {
       return null
     }
 
-    return {
-      data,
-      confidence: Math.min(ocrResult.confidence, calculateConfidence(data)),
-    }
+    return { data, engineConfidence: ocrResult.confidence }
   } catch {
     warnings.push("El OCR no pudo procesar el archivo; completa los datos manualmente.")
     return null
@@ -166,11 +182,11 @@ async function extractOcrCandidate(fileBuffer: Buffer, warnings: string[]) {
 }
 
 function extractionResult(result: Required<ExtractionResult>): ExtractionResult {
-  // Keep the legacy, concise manual result when no extraction attempt produced
-  // a diagnostic; callers that need to surface warnings get them explicitly.
+  // Sin diagnósticos se omite el arreglo vacío; `quality` viaja siempre, porque
+  // la UI decide con ella qué pedir que se revise.
   return result.warnings.length > 0
     ? result
-    : { data: result.data, method: result.method, confidence: result.confidence }
+    : { data: result.data, method: result.method, quality: result.quality }
 }
 
 function isUsefulInvoiceData(data: ParsedInvoiceData) {
@@ -198,9 +214,10 @@ function getDataWarnings(data: ParsedInvoiceData) {
     warnings.push("Una o más líneas no declaran unidad en el documento; no se completó con la unidad de la OC.")
   }
 
-  if (data.netAmount != null && data.taxAmount != null && data.totalAmount != null) {
-    const difference = Math.abs(data.netAmount + data.taxAmount - data.totalAmount)
-    if (difference > 1) warnings.push("Neto, IVA y total extraídos no cuadran entre sí; confirma los montos.")
+  // Misma cuenta que `quality.totalsConsistent`: una sola definición de "cuadra"
+  // para el aviso al operador y para la señal que viaja al cliente y al log.
+  if (totalsConsistent(data) === false) {
+    warnings.push("Neto, IVA y total extraídos no cuadran entre sí; confirma los montos.")
   }
   return warnings
 }
@@ -218,9 +235,28 @@ function decodeXmlBuffer(buffer: Buffer): string {
 }
 
 /**
- * Calculate extraction confidence based on how many fields were found.
+ * Reúne las tres señales. `pdfTextConfidence` desapareció con esto: era el mismo
+ * `coverage` recalculado y comparado contra la confianza del motor, que mide
+ * otra cosa.
  */
-function calculateConfidence(data: ParsedInvoiceData): number {
+function quality(data: ParsedInvoiceData | null, engineConfidence: number | null): ExtractionQuality {
+  return {
+    coverage: data ? fieldCoverage(data) : 0,
+    engineConfidence,
+    totalsConsistent: data ? totalsConsistent(data) : null,
+  }
+}
+
+/** null cuando el documento no declara los tres montos: no hay nada que cuadrar. */
+function totalsConsistent(data: ParsedInvoiceData): boolean | null {
+  if (data.netAmount == null || data.taxAmount == null || data.totalAmount == null) return null
+  return Math.abs(data.netAmount + data.taxAmount - data.totalAmount) <= 1
+}
+
+/**
+ * Proporción de campos esperados que vinieron. Presencia, no veracidad.
+ */
+function fieldCoverage(data: ParsedInvoiceData): number {
   let score = 0
   let total = 0
 

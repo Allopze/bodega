@@ -20,7 +20,12 @@ async function registerReception(page: Page, stage: "Oficina" | "Faena", quantit
   const qty = page.getByLabel(ITEM_LABEL)
   await qty.fill(String(quantity))
   await page.getByRole("button", { name: "Marcar como recibido" }).click()
-  await expect(page).toHaveURL(/\/recepcion\/[^/]+$/, { timeout: 30_000 })
+  // `/\/recepcion\/[^/]+$/` también matchea `/recepcion/nueva`, que es la URL en
+  // la que ya estamos: la espera se cumplía sola y el test seguía a la OC antes
+  // de que el server action commiteara, leyendo el estado anterior. Con la
+  // máquina cargada (2 workers) eso fallaba de forma reproducible. Esperar el
+  // código de la recepción creada ancla la espera al efecto real.
+  await expect(page.getByRole("heading", { name: /^REC-/ })).toBeVisible({ timeout: 30_000 })
 }
 
 async function expectOcState(page: Page, state: RegExp) {

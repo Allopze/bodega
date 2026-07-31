@@ -6,6 +6,29 @@
 
 > **Actualización de reauditoría — 2026-07-30 (posterior a los fixes):** el problema concreto del PDF textual de Treck está corregido, pero el OCR de facturas como capacidad general **no está listo para declararse resuelto**. La rama PDF con texto y el contrato DTE mejoraron; el fallback para PDF escaneado falla en el runtime actual y la interfaz aún puede perder líneas no asociadas a la OC. Los hallazgos y evidencia vigentes están en la siguiente sección; el diagnóstico histórico se conserva abajo como línea base.
 
+## Segunda pasada de cierre — 2026-07-31
+
+**Qué la motivó:** los hallazgos que la pasada anterior dejó abiertos eran, casi todos, de cobertura: el módulo se probaba con el motor OCR simulado. Al ejercitarlo de verdad (SVG → PNG → PDF sintético, sharp + Tesseract + parser, sin mocks) aparecieron dos defectos de parser que ninguna prueba con texto fabricado podía ver.
+
+| Hallazgo previo | Estado ahora | Evidencia |
+|---|---|---|
+| **P0** Runtime de PDF/OCR incompatible | **No se reproduce** | Con el código actual (build `legacy` de `pdfjs-dist` + rasterizado por `@napi-rs/canvas`) el PDF escaneado se rasteriza y el OCR recupera folio y total **incluso en Node 20.19**. El test corre sin gating por versión: si un runtime vuelve a romperlo, falla en vez de saltarse. |
+| **P1** Confianza 100% ≠ verificada | **Corregido** | `ExtractionResult.confidence` se reemplazó por `quality: { coverage, engineConfidence, totalsConsistent }`. La UI ya no anuncia un porcentaje de "confianza" sobre un puntaje de presencia y avisa aparte cuando neto + IVA no cuadra con el total. La confianza de *conciliación* queda donde siempre estuvo: la resuelve el operador línea por línea. |
+| **P1** Advertencias sin auditar | **Corregido** | `POST /api/purchase-orders/invoices/extract` registra método, cobertura, confianza del motor, cuadratura, tamaño y número de advertencias. No registra folio, RUT ni montos. |
+| **P2** Cobertura insuficiente | **Corregido** | `lib/services/purchasing-module/invoice-ocr.test.ts` ejercita OCR real sobre imagen y sobre PDF escaneado, más el caso sin `traineddata` local (debe quedar manual, nunca caer a la CDN). Los fixtures se generan en el test: un comprobante tributario real no se versiona. |
+| Matriz de fixtures por proveedor/layout | **Pendiente** | Sigue habiendo un solo layout sintético. Para prometer cobertura por proveedor hace falta una matriz de documentos reales autorizados, que este repo no puede alojar. |
+
+### Defectos de parser que sólo aparecieron con OCR real
+
+| Defecto | Efecto | Corrección |
+|---|---|---|
+| El ordinal `N°` se exigía literal | Tesseract lo rinde como `N*`, `N?`, `No` o `N` según resolución y tipografía. **Toda factura escaneada perdía el folio**, y sin folio el extractor la declara "manual": el operador retipeaba todo aunque el OCR hubiera leído bien el documento. | `ORDINAL` tolera las degradaciones habituales del ordinal. |
+| `Total\s*:?\s*(…)` cruzaba el salto de línea | El encabezado de columna "… PRECIO **TOTAL**" seguido de la fila "**05-03-008** GUANTE …" daba un total de **$5**. No es un caso raro: es el layout normal de una factura con tabla. | Los montos se leen anclados a su línea (`[^\S\n]`), se descarta un número que continúa con `-` o `/` (códigos y fechas) y se prefiere la última aparición, porque los totales van al pie. |
+
+### Runtime
+
+CI y deploy corrían en Node 20 mientras `engines` y la imagen de producción exigen 22.13: se validaba sobre un runtime distinto del que se despliega — precisamente el punto que dejó este fallback sin cobertura confiable. Ambos workflows quedaron en 22.13.
+
 ## Cierre de implementación — 2026-07-30
 
 **Estado final: GO para desplegar los controles de seguridad y trazabilidad; OCR sigue siendo asistido, no una conciliación automática.** La condición anterior de P0 —fallback de PDF no ejecutable en la imagen productiva— quedó cerrada. No se autoriza tratar una extracción OCR como dato conciliado sin la revisión que ahora exige la interfaz.

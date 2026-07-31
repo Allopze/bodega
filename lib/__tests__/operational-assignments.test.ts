@@ -376,4 +376,85 @@ describe("operational work assignments", () => {
     ])
     expect(badge).toBe(page.total)
   })
+
+  // Adjuntar la factura vivía sólo al final de una pestaña que nunca viene
+  // seleccionada: nadie la perseguía. La OC con mercadería recibida y sin
+  // factura ahora es trabajo pendiente explícito.
+  it("persigue la factura de una OC ya recibida y deja de hacerlo al adjuntarla", async () => {
+    const invoiceWorksiteId = nanoid()
+    const supplierId = nanoid()
+    const orderId = nanoid()
+    const orderCode = `OC-${nanoid().slice(0, 8)}`
+    await inMemoryDb.insert(schema.worksites).values({
+      id: invoiceWorksiteId, name: "Faena facturación", code: `FF-${nanoid().slice(0, 8)}`,
+      isActive: true, createdAt: now, updatedAt: now,
+    })
+    await inMemoryDb.insert(schema.suppliers).values({
+      id: supplierId, name: "Proveedor facturación", createdAt: now, updatedAt: now,
+    })
+    await inMemoryDb.insert(schema.purchaseOrders).values({
+      id: orderId, code: orderCode, worksiteId: invoiceWorksiteId, supplierId,
+      createdBy: assignerId, status: "received", deliveryMode: "via_oficina",
+      netAmount: 100, taxAmount: 19, totalAmount: 119, createdAt: now, updatedAt: now,
+    })
+
+    const buyer = {
+      user: {
+        ...assignerSession.user,
+        permissions: ["purchasing:send_order"],
+        worksiteIds: [invoiceWorksiteId],
+        isGlobal: false,
+      },
+    } as Session
+
+    const queue = await getOperationalWorkQueue(buyer, { limit: 50 })
+    expect(queue).toMatchObject({
+      total: 1,
+      items: [{
+        sourceId: orderId,
+        actionKey: "invoice",
+        module: "compras",
+        statusLabel: "Sin factura",
+        ctaLabel: "Adjuntar factura",
+        href: `/compras/${orderId}?tab=facturacion`,
+      }],
+    })
+    // El badge del rail es otra consulta: mismo criterio o el rail miente.
+    await expect(getOperationalWorkCount(buyer)).resolves.toBe(queue.total)
+    await expect(getOperationalDetailWorkItem(buyer, {
+      sourceType: "purchase_order",
+      sourceId: orderId,
+    })).resolves.toMatchObject({
+      actionKey: "invoice",
+      href: `/compras/${orderId}?tab=facturacion`,
+    })
+
+    // Recibir todavía manda: con saldo pendiente el paso es recepcionar, no facturar.
+    await inMemoryDb.update(schema.purchaseOrders)
+      .set({ status: "office_received", updatedAt: now })
+      .where(eq(schema.purchaseOrders.id, orderId))
+    const receiver = {
+      user: { ...buyer.user, permissions: ["purchasing:send_order", "receiving:register_faena"] },
+    } as Session
+    await expect(getOperationalDetailWorkItem(receiver, {
+      sourceType: "purchase_order",
+      sourceId: orderId,
+    })).resolves.toMatchObject({ actionKey: "receive_worksite" })
+
+    await inMemoryDb.update(schema.purchaseOrders)
+      .set({ status: "received", updatedAt: now })
+      .where(eq(schema.purchaseOrders.id, orderId))
+    await inMemoryDb.insert(schema.purchaseOrderInvoices).values({
+      id: nanoid(), purchaseOrderId: orderId, invoiceNumber: "000123", amount: 119,
+      fileName: "factura.pdf", filePath: "storage/purchase-orders/factura.pdf",
+      uploadedBy: assignerId, uploadedAt: now,
+    })
+
+    await expect(getOperationalWorkQueue(buyer, { limit: 50 })).resolves.toMatchObject({ total: 0 })
+    await expect(getOperationalWorkCount(buyer)).resolves.toBe(0)
+    await expect(getOperationalDetailWorkItem(buyer, {
+      sourceType: "purchase_order",
+      sourceId: orderId,
+    })).resolves.toBeNull()
+  })
 })

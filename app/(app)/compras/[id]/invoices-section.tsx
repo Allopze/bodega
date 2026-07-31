@@ -52,12 +52,15 @@ export function InvoicesSection({
   ocItems,
   totalAmount,
   canManage,
+  defaultInvoiceNumber,
 }: {
   purchaseOrderId: string
   invoices: InvoiceRow[]
   ocItems: OcItem[]
   totalAmount: number
   canManage: boolean
+  /** N° de guía/factura traído desde una recepción (`?nro=`) para no retipearlo. */
+  defaultInvoiceNumber?: string
 }) {
   const totalInvoiced = invoices.reduce((sum, inv) => sum + (inv.amount ?? 0), 0)
   const exceeds = totalInvoiced > totalAmount
@@ -135,7 +138,10 @@ export function InvoicesSection({
 
       {/* Invoice list */}
       {invoices.length === 0 ? (
-        <p className="text-xs text-text-subtle py-2">Sin facturas adjuntadas.</p>
+        // A4: sin facturas, la sección *es* el formulario de adjuntar — el texto
+        // plano no ofrecía ninguna acción donde justamente falta hacerla. A quien
+        // no puede adjuntar sí le queda el texto, que es lo único que aplica.
+        !canManage && <p className="text-xs text-text-subtle py-2">Sin facturas adjuntadas.</p>
       ) : (
         <ul className="divide-y divide-(--color-border) mb-3">
           {invoices.map((inv) => (
@@ -151,7 +157,12 @@ export function InvoicesSection({
 
       {/* Add invoice form */}
       {canManage && (
-        <AddInvoiceForm purchaseOrderId={purchaseOrderId} ocItems={ocItems} />
+        <AddInvoiceForm
+          purchaseOrderId={purchaseOrderId}
+          ocItems={ocItems}
+          defaultInvoiceNumber={defaultInvoiceNumber}
+          separated={invoices.length > 0}
+        />
       )}
     </section>
   )
@@ -263,7 +274,18 @@ function createInvoiceLineId() {
   return globalThis.crypto?.randomUUID?.() ?? `invoice-line-${Date.now()}-${Math.random().toString(36).slice(2)}`
 }
 
-function AddInvoiceForm({ purchaseOrderId, ocItems }: { purchaseOrderId: string; ocItems: OcItem[] }) {
+function AddInvoiceForm({
+  purchaseOrderId,
+  ocItems,
+  defaultInvoiceNumber,
+  separated = true,
+}: {
+  purchaseOrderId: string
+  ocItems: OcItem[]
+  defaultInvoiceNumber?: string
+  /** Con facturas arriba el formulario se separa con una línea; sin ellas la línea quedaba colgando. */
+  separated?: boolean
+}) {
   const [state, action] = useActionState<ActionState, FormData>(addInvoiceAction, INITIAL_STATE)
   const formRef = React.useRef<HTMLFormElement>(null)
   const [lineItems, setLineItems] = React.useState<InvoiceLineItem[]>([])
@@ -373,7 +395,7 @@ function AddInvoiceForm({ purchaseOrderId, ocItems }: { purchaseOrderId: string;
         return
       }
 
-      const { data, method, confidence } = result
+      const { data, method, quality } = result
       const warnings = Array.isArray(result.warnings)
         ? result.warnings.filter((warning: unknown): warning is string => typeof warning === "string")
         : []
@@ -408,8 +430,17 @@ function AddInvoiceForm({ purchaseOrderId, ocItems }: { purchaseOrderId: string;
       setDteParsed(true)
 
       const methodLabel = method === "dte_xml" ? "DTE XML" : method === "pdf_text" ? "PDF" : method === "pdf_text_ocr" ? "PDF + OCR" : method === "ocr" ? "OCR" : ""
-      const confidencePct = Math.round(confidence * 100)
-      toast.success(`Factura extraída (${methodLabel}, ${confidencePct}% confianza): ${data.items?.length ?? 0} ítem(s)`)
+      // Antes decía "95% confianza" sobre un puntaje que sólo contaba campos
+      // presentes: un folio mal leído puntuaba igual que uno correcto y el
+      // número invitaba a firmar sin mirar. Ahora se nombra lo que se midió y se
+      // pide revisión explícita cuando el documento no cuadra consigo mismo.
+      const itemCount = data.items?.length ?? 0
+      toast.success(
+        `Datos leídos del documento (${methodLabel}): ${itemCount} ítem(s). Revisa montos y líneas antes de adjuntar.`,
+      )
+      if (quality?.totalsConsistent === false) {
+        toast.error("Neto + IVA no cuadra con el total leído: corrige los montos antes de adjuntar.")
+      }
     } catch {
       toast.error("Error al procesar el archivo")
     } finally {
@@ -425,8 +456,12 @@ function AddInvoiceForm({ purchaseOrderId, ocItems }: { purchaseOrderId: string;
   const unresolvedLineCount = lineItems.filter((item) => item.resolution === "needs_review").length
 
   return (
-    <form ref={formRef} action={action} className="mt-1 border-t border-(--color-border) pt-3 space-y-2">
-      <p className="text-xs font-medium text-(--color-text-muted) mb-2">Agregar factura</p>
+    <form
+      ref={formRef}
+      action={action}
+      className={separated ? "mt-1 border-t border-(--color-border) pt-3 space-y-2" : "space-y-2"}
+    >
+      <h3 className="text-sm font-semibold text-(--color-text)">Adjuntar factura</h3>
       <input type="hidden" name="purchaseOrderId" value={purchaseOrderId} />
 
       {!state.ok && state.message && !("fieldErrors" in state) && (
@@ -434,6 +469,46 @@ function AddInvoiceForm({ purchaseOrderId, ocItems }: { purchaseOrderId: string;
           <Warning size={12} weight="bold" />
           {state.message}
         </p>
+      )}
+
+      {/* El archivo va primero porque es lo que rellena todo lo de abajo (DTE/OCR):
+          pidiéndolo al final, el operador tipeaba a mano datos que el documento
+          traía, y tenía que encontrarlo tras cuatro campos ya llenos. */}
+      <Field
+        label="Archivo"
+        htmlFor="invoice-file"
+        helper="PDF, JPG, PNG o XML (DTE) — se auto-extraen los datos"
+      >
+        <FileInput
+          id="invoice-file"
+          name="file"
+          accept="application/pdf,image/jpeg,image/png,application/xml,text/xml"
+          required
+          onChange={handleFileChange}
+          disabled={extracting}
+        />
+      </Field>
+
+      {extracting && (
+        <p className="text-[11px] text-(--color-text-muted) flex items-center gap-1">
+          <span className="inline-block animate-spin h-3 w-3 border border-current border-t-transparent rounded-full" />
+          Procesando archivo...
+        </p>
+      )}
+
+      {dteParsed && !extracting && (
+        <p className="text-[11px] text-[var(--color-success)] flex items-center gap-1">
+          ✓ Datos extraídos del archivo — campos auto-completados
+        </p>
+      )}
+
+      {extractionWarnings.length > 0 && !extracting && (
+        <div role="alert" className="rounded border border-[var(--color-warning)] bg-[var(--color-warning-50)] px-2 py-1.5 text-[11px] text-(--color-text)">
+          <p className="font-medium">Revisión requerida</p>
+          <ul className="mt-0.5 list-disc pl-4">
+            {extractionWarnings.map((warning) => <li key={warning}>{warning}</li>)}
+          </ul>
+        </div>
       )}
 
       <Field
@@ -447,6 +522,7 @@ function AddInvoiceForm({ purchaseOrderId, ocItems }: { purchaseOrderId: string;
           name="invoiceNumber"
           placeholder="Ej: 000123"
           autoComplete="off"
+          defaultValue={defaultInvoiceNumber}
         />
       </Field>
 
@@ -567,43 +643,6 @@ function AddInvoiceForm({ purchaseOrderId, ocItems }: { purchaseOrderId: string;
           })}
 
           <input type="hidden" name="itemCount" value={String(lineItems.length)} />
-        </div>
-      )}
-
-      <Field
-        label="Archivo"
-        htmlFor="invoice-file"
-        helper="PDF, JPG, PNG o XML (DTE) — se auto-extraen datos"
-      >
-        <FileInput
-          id="invoice-file"
-          name="file"
-          accept="application/pdf,image/jpeg,image/png,application/xml,text/xml"
-          required
-          onChange={handleFileChange}
-          disabled={extracting}
-        />
-      </Field>
-
-      {extracting && (
-        <p className="text-[11px] text-(--color-text-muted) flex items-center gap-1">
-          <span className="inline-block animate-spin h-3 w-3 border border-current border-t-transparent rounded-full" />
-          Procesando archivo...
-        </p>
-      )}
-
-      {dteParsed && !extracting && (
-        <p className="text-[11px] text-[var(--color-success)] flex items-center gap-1">
-          ✓ Datos extraídos del archivo — campos auto-completados
-        </p>
-      )}
-
-      {extractionWarnings.length > 0 && !extracting && (
-        <div role="alert" className="rounded border border-[var(--color-warning)] bg-[var(--color-warning-50)] px-2 py-1.5 text-[11px] text-(--color-text)">
-          <p className="font-medium">Revisión requerida</p>
-          <ul className="mt-0.5 list-disc pl-4">
-            {extractionWarnings.map((warning) => <li key={warning}>{warning}</li>)}
-          </ul>
         </div>
       )}
 
