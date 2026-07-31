@@ -20,6 +20,8 @@ import { DashboardGrid } from "@/components/ui/dashboard-grid"
 import { EmptyState } from "@/components/ui/empty-state"
 import { PriorityBadge } from "@/components/ui/priority-badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { DashboardScopeControls } from "./dashboard-scope-controls"
+import { periodFlowTitle, type DashboardScope } from "./dashboard-scope"
 import { chileDateParts, cn, formatDateTime } from "@/lib/utils"
 import { OperationalMetricsStrip } from "./operational-metrics-strip"
 import { MiniSparkline } from "./mini-sparkline"
@@ -92,7 +94,9 @@ interface DashboardControlCenterProps {
   }
   /** Atajos con conteos de población completa, ya filtrados por permiso. */
   queueShortcuts: QueueShortcut[]
-  /** Faenas del backlog completo (`filterOptions`), no de las filas cargadas. */
+  /** Alcance global vigente: la cola ya viene consultada con él. */
+  scope: DashboardScope
+  /** Faenas activas autorizadas para el selector de alcance. */
   worksiteOptions: Array<{ id: string; name: string }>
   canAssign: boolean
   periodSummary: OperationalPeriodSummaryEntry[]
@@ -110,10 +114,15 @@ type SortOption = "priority" | "oldest" | "newest"
 const SORT_OPTIONS: SortOption[] = ["priority", "oldest", "newest"]
 
 /**
- * Los filtros viven en `sessionStorage` y no en la URL: el dashboard es la raíz
- * y ensuciar el query string compite con los enlaces del aside. Sin esto,
- * cualquier `router.refresh()` —el de `WorkAssignmentControl`, por ejemplo—
- * desmonta el árbol (hay `loading.tsx`) y borra la selección.
+ * **Sólo el orden** de la cola vive en `sessionStorage`. La faena se fue al
+ * alcance global de la URL (ver `dashboard-scope.ts`), y la distinción es la que
+ * importa: el orden es preferencia de UI y se aplica en cliente sobre las filas
+ * ya cargadas; la faena reencuadra consultas de servidor y por eso tiene que
+ * viajar en la URL.
+ *
+ * `sessionStorage` y no la URL para el orden porque cualquier `router.refresh()`
+ * —el de `WorkAssignmentControl`, por ejemplo— desmonta el árbol (hay
+ * `loading.tsx`) y borraría un estado que viviera sólo en React.
  */
 const FILTERS_STORAGE_KEY = "dashboard:queue-filters"
 
@@ -163,6 +172,7 @@ export function DashboardControlCenter({
   tasks,
   queueSummary,
   queueShortcuts,
+  scope,
   worksiteOptions,
   canAssign,
   periodSummary,
@@ -173,14 +183,12 @@ export function DashboardControlCenter({
   asideSlot,
 }: DashboardControlCenterProps) {
   const { searchQuery } = useSafeShellHeader()
-  const [worksiteId, setWorksiteId] = React.useState("all")
   const [sort, setSort] = React.useState<SortOption>("priority")
   const [restored, setRestored] = React.useState(false)
 
   React.useEffect(() => {
     try {
       const saved = JSON.parse(sessionStorage.getItem(FILTERS_STORAGE_KEY) ?? "{}")
-      if (typeof saved.worksiteId === "string") setWorksiteId(saved.worksiteId)
       if (SORT_OPTIONS.includes(saved.sort)) setSort(saved.sort)
     } catch { /* modo privado o valor corrupto: se usan los defaults */ }
     setRestored(true)
@@ -189,20 +197,19 @@ export function DashboardControlCenter({
   React.useEffect(() => {
     // Sin el guard, el primer commit guardaría los defaults encima de lo leído.
     if (!restored) return
-    try { sessionStorage.setItem(FILTERS_STORAGE_KEY, JSON.stringify({ worksiteId, sort })) } catch { /* modo privado */ }
-  }, [restored, worksiteId, sort])
+    try { sessionStorage.setItem(FILTERS_STORAGE_KEY, JSON.stringify({ sort })) } catch { /* modo privado */ }
+  }, [restored, sort])
 
   const normalizedSearch = searchQuery.trim().toLocaleLowerCase("es-CL")
+  // Ya no filtra por faena: la cola llega consultada por el alcance global, así
+  // que hacerlo otra vez acá sobre 12 filas sólo podía contradecir los conteos.
   const filteredTasks = React.useMemo(() => {
-    const result = tasks.filter((task) => {
-      if (worksiteId !== "all" && task.worksiteId !== worksiteId) return false
-      if (!normalizedSearch) return true
-
-      return [task.title, task.subtitle, task.worksiteName, task.statusLabel, moduleMeta(task.type).label]
-        .join(" ")
-        .toLocaleLowerCase("es-CL")
-        .includes(normalizedSearch)
-    })
+    const result = normalizedSearch
+      ? tasks.filter((task) => [task.title, task.subtitle, task.worksiteName, task.statusLabel, moduleMeta(task.type).label]
+          .join(" ")
+          .toLocaleLowerCase("es-CL")
+          .includes(normalizedSearch))
+      : [...tasks]
 
     return result.sort((left, right) => {
       if (sort === "priority") {
@@ -212,10 +219,9 @@ export function DashboardControlCenter({
       const dateDifference = new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime()
       return sort === "newest" ? -dateDifference : dateDifference
     })
-  }, [normalizedSearch, sort, tasks, worksiteId])
+  }, [normalizedSearch, sort, tasks])
 
   const isTruncated = queueSummary.total > tasks.length
-  const hasWorksiteFilter = worksiteId !== "all"
 
   return (
     <>
@@ -227,13 +233,16 @@ export function DashboardControlCenter({
                 y tener dos competía en el árbol de accesibilidad (L-01). */}
             <p className="text-3xl font-bold tracking-tight text-[var(--color-text)]">Hola, {firstName}</p>
             <p className="mt-1.5 max-w-[70ch] text-sm text-[var(--color-text-muted)]">
-              {buildOperationalSummary(queueSummary)}
+              {buildOperationalSummary(queueSummary, scope)}
             </p>
           </div>
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-[var(--color-text-subtle)]">
-            <span className="font-medium text-[var(--color-text-muted)]">{contextLabel}</span>
-            <span aria-hidden>·</span>
-            <time dateTime={refreshedAt}>Actualizado {formatDateTime(refreshedAt)}</time>
+          <div className="flex flex-col items-start gap-2 lg:items-end">
+            <DashboardScopeControls scope={scope} worksites={worksiteOptions} />
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-[var(--color-text-subtle)]">
+              <span className="font-medium text-[var(--color-text-muted)]">{contextLabel}</span>
+              <span aria-hidden>·</span>
+              <time dateTime={refreshedAt}>Actualizado {formatDateTime(refreshedAt)}</time>
+            </div>
           </div>
         </div>
       </header>
@@ -284,21 +293,15 @@ export function DashboardControlCenter({
                   </nav>
                 )}
 
+                {/* Un solo control: el orden. La faena se elige una vez arriba y
+                    reencuadra el tablero completo, así que repetirla acá sería
+                    una segunda representación de la misma dimensión (A5). */}
                 <div className="mt-4 grid gap-2.5 border-y border-[var(--color-border)] py-3.5 sm:grid-cols-2 xl:grid-cols-3">
-                  <FilterSelect label="Faena" value={worksiteId} onValueChange={setWorksiteId}>
-                    <SelectItem value="all">Todas las faenas</SelectItem>
-                    {worksiteOptions.map((worksite) => <SelectItem key={worksite.id} value={worksite.id}>{worksite.name}</SelectItem>)}
-                  </FilterSelect>
                   <FilterSelect label="Ordenar por" value={sort} onValueChange={(value) => setSort(value as SortOption)}>
                     <SelectItem value="priority">Prioridad</SelectItem>
                     <SelectItem value="oldest">Más antigua</SelectItem>
                     <SelectItem value="newest">Más reciente</SelectItem>
                   </FilterSelect>
-                  {hasWorksiteFilter && (
-                    <Button type="button" variant="ghost" size="sm" onClick={() => setWorksiteId("all")} className="justify-self-start self-end">
-                      Quitar filtro de faena
-                    </Button>
-                  )}
                 </div>
 
                 {filteredTasks.length > 0 ? (
@@ -320,9 +323,12 @@ export function DashboardControlCenter({
                     <EmptyState
                       compact
                       icon={<ClockCounterClockwise size={20} />}
-                      title="No hay tareas con estos filtros"
-                      description={normalizedSearch ? "Prueba otra búsqueda desde la cabecera o quita el filtro de faena." : "Quita el filtro de faena para volver a ver las acciones disponibles."}
-                      action={hasWorksiteFilter ? <Button type="button" size="sm" variant="secondary" onClick={() => setWorksiteId("all")}>Quitar filtro de faena</Button> : undefined}
+                      title={normalizedSearch ? "Ninguna tarea coincide con la búsqueda" : "No hay tareas pendientes en este alcance"}
+                      description={normalizedSearch
+                        ? "Prueba otra búsqueda desde la cabecera."
+                        : scope.worksiteName
+                          ? `${scope.worksiteName} no tiene acciones disponibles para tu rol. Cambia de faena arriba para ver otra.`
+                          : "No hay acciones disponibles para tu rol en las faenas autorizadas."}
                     />
                   </div>
                 )}
@@ -373,7 +379,7 @@ export function DashboardControlCenter({
 
               {/* ── Métricas mensuales (lectura de apoyo) ── */}
               {periodSummary.length > 0 && (
-                <CompactMetricList id="flujo-mensual" title="Flujo del mes" entries={periodSummary} />
+                <CompactMetricList id="flujo-mensual" title={periodFlowTitle(scope.period)} entries={periodSummary} />
               )}
               {backlogSummary.length > 0 && (
                 <CompactMetricList id="backlog-comparado" title="Backlog comparado" entries={backlogSummary} />
@@ -497,13 +503,19 @@ function WorkQueueRow({ task, refreshedAt, canAssign }: { task: DashboardTask; r
   )
 }
 
-function buildOperationalSummary(summary: DashboardControlCenterProps["queueSummary"]) {
-  if (summary.total === 0) return "No tienes acciones pendientes en el contexto operativo actual."
-  const fragments = [`Tienes ${summary.total} tarea${summary.total === 1 ? "" : "s"} pendiente${summary.total === 1 ? "" : "s"}`]
-  if (summary.critical > 0) fragments.push(`${summary.critical} crítica${summary.critical === 1 ? "" : "s"}`)
-  if (summary.overdue > 0) fragments.push(`${summary.overdue} vencida${summary.overdue === 1 ? "" : "s"}`)
-  if (summary.deliveries > 0) fragments.push(`${summary.deliveries} entrega${summary.deliveries === 1 ? "" : "s"} por registrar`)
-  return `${fragments.join(", ")}.`
+/**
+ * El saludo declara **una** cifra: el total de la cola.
+ *
+ * Antes enumeraba total, críticas, vencidas y entregas — y cada una de esas tres
+ * ya vivía en su chip de atajo y en su tarjeta de alerta. "Críticas" aparecía
+ * cuatro veces en la misma pantalla contando el tile. La regla A5 lo prohíbe
+ * ("no repitas la misma cifra en dos controles") y el detalle sigue a un clic en
+ * los atajos, que además navegan.
+ */
+function buildOperationalSummary(summary: DashboardControlCenterProps["queueSummary"], scope: DashboardScope) {
+  const where = scope.worksiteName ? ` en ${scope.worksiteName}` : ""
+  if (summary.total === 0) return `No tienes acciones pendientes${where}.`
+  return `Tienes ${summary.total} tarea${summary.total === 1 ? "" : "s"} pendiente${summary.total === 1 ? "" : "s"}${where}.`
 }
 
 /**

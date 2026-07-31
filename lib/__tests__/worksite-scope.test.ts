@@ -81,4 +81,46 @@ describe("worksite scope", () => {
     const someSql = worksiteScopeSql(session(["solicitante_faena"], ["ws-1", "ws-2"]), dummyColumn)
     expect(someSql).toBeDefined()
   })
+
+  /**
+   * El tercer parámetro (`worksiteId`) lo usa el alcance global del dashboard.
+   * Se **intersecta** con el permiso del rol, nunca lo reemplaza: son 104
+   * llamadores, así que la regla se fija acá y no en cada uno.
+   *
+   * Las aserciones comparan contra `worksiteScopeSql(null, col)` —el predicado
+   * canónico de "no ve nada"— en vez de inspeccionar los internos de drizzle.
+   */
+  describe("worksiteScopeSql con faena elegida", () => {
+    const dummyColumn = {} as unknown as AnyColumn
+    const deny = () => worksiteScopeSql(null, dummyColumn)
+
+    it("acota un rol global a la faena pedida", () => {
+      const scoped = worksiteScopeSql(session(["administrador"]), dummyColumn, "ws-9")
+      // Ya no es `undefined` (sin cláusula) ni una denegación: es una igualdad.
+      expect(scoped).toBeDefined()
+      expect(scoped).not.toEqual(deny())
+    })
+
+    it("acota un rol de faena a una que sí tiene autorizada", () => {
+      const scoped = worksiteScopeSql(session(["solicitante_faena"], ["ws-1", "ws-2"]), dummyColumn, "ws-2")
+      expect(scoped).toBeDefined()
+      expect(scoped).not.toEqual(deny())
+    })
+
+    it("niega el acceso a una faena fuera del permiso, igual que no tener acceso", () => {
+      const escalated = worksiteScopeSql(session(["solicitante_faena"], ["ws-1"]), dummyColumn, "ws-2")
+      expect(escalated).toEqual(deny())
+    })
+
+    it("un usuario sin faenas sigue sin ver nada al pedir una", () => {
+      expect(worksiteScopeSql(session(["solicitante_faena"], []), dummyColumn, "ws-1")).toEqual(deny())
+    })
+
+    it("sin faena elegida se comporta igual que antes", () => {
+      const global = session(["administrador"])
+      const scopedUser = session(["solicitante_faena"], ["ws-1"])
+      expect(worksiteScopeSql(global, dummyColumn, undefined)).toBeUndefined()
+      expect(worksiteScopeSql(scopedUser, dummyColumn, undefined)).toEqual(worksiteScopeSql(scopedUser, dummyColumn))
+    })
+  })
 })

@@ -1,5 +1,5 @@
 import type { Session } from "next-auth"
-import { inArray, sql, type AnyColumn, type SQL } from "drizzle-orm"
+import { eq, inArray, sql, type AnyColumn, type SQL } from "drizzle-orm"
 
 /**
  * Roles with global worksite visibility (no faena scoping).
@@ -59,9 +59,24 @@ export function resolveWorksiteScope(session: Session | null): WorksiteScope {
   return ids.length > 0 ? { mode: "some", ids } : { mode: "none", ids: [] }
 }
 
-export function worksiteScopeSql(session: Session | null, column: AnyColumn): SQL | undefined {
+/**
+ * Predicado de faena para una consulta: alcance del rol, opcionalmente acotado a
+ * una sola faena.
+ *
+ * `worksiteId` **se intersecta** con el alcance del rol, nunca lo reemplaza: una
+ * faena fuera del permiso devuelve `false` (cero filas), no las filas de esa
+ * faena. Es el techo de permisos del alcance global del dashboard.
+ *
+ * `undefined` significa "sin cláusula" y sólo lo devuelve un rol global sin
+ * faena elegida.
+ */
+export function worksiteScopeSql(session: Session | null, column: AnyColumn, worksiteId?: string): SQL | undefined {
   const scope = resolveWorksiteScope(session)
-  if (scope.mode === "all") return undefined
   if (scope.mode === "none") return sql`false`
+  if (worksiteId) {
+    if (scope.mode === "some" && !scope.ids.includes(worksiteId)) return sql`false`
+    return eq(column, worksiteId)
+  }
+  if (scope.mode === "all") return undefined
   return inArray(column, scope.ids)
 }

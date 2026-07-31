@@ -8,21 +8,46 @@ import type { ModuleWorkloadPoint } from "./dashboard-charts"
 
 const MONTH_LABELS = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
 
+/** Forma mínima que `toSstMonthlyPoints` necesita de `CanonicalIndicatorResult`. */
+interface CanonicalMonthlySlice {
+  confirmed: { accidents: number; frequencyRate: number | null; severityRate: number | null }
+  provisional: { accidents: number }
+}
+
+/**
+ * Serie mensual de indicadores SST para los gráficos.
+ *
+ * `provisional` es confirmados **más** pendientes
+ * (`safety-indicators-calc.ts:217-219`), así que la resta da los incidentes que
+ * sólo tienen casos por calificar. Es una función exportada y no un `.map()`
+ * inline porque es la única lógica de derivación de la sección y necesitaba un
+ * test: antes esta misma línea alimentaba una serie rotulada "Accidentes STP"
+ * con el superconjunto provisional.
+ *
+ * El `Math.max(0, …)` sostiene el invariante provisional ⊇ confirmed, que
+ * garantiza el motor de cálculo y no el tipo.
+ */
+export function toSstMonthlyPoints(monthly: CanonicalMonthlySlice[]) {
+  return monthly.map((m, index) => ({
+    month: MONTH_LABELS[index] ?? `M${index + 1}`,
+    tasaFrecuencia: m.confirmed.frequencyRate ?? 0,
+    tasaGravedad: m.confirmed.severityRate ?? 0,
+    confirmados: m.confirmed.accidents ?? 0,
+    porCalificar: Math.max(0, (m.provisional.accidents ?? 0) - (m.confirmed.accidents ?? 0)),
+  }))
+}
+
 interface DashboardAnalyticsProps {
   session: Session
+  /** Alcance de permisos ya intersectado con la faena elegida. */
   worksiteScope: WorksiteScope
+  /** La faena elegida, para los servicios que filtran por columna y no por scope. */
+  scopedWorksiteId?: string
   currentYear: number
   canViewIndicators: boolean
   moduleWorkload: ModuleWorkloadPoint[]
   queueTotal: number
-  worksitesBreakdown: {
-    id: string
-    name: string
-    requestsCount: number
-    pendingCount: number
-    approvedCount: number
-    totalCost: number
-  }[]
+  worksitesBreakdown: { name: string; totalCost: number }[]
 }
 
 /**
@@ -36,6 +61,7 @@ interface DashboardAnalyticsProps {
 export async function DashboardAnalytics({
   session,
   worksiteScope,
+  scopedWorksiteId,
   currentYear,
   canViewIndicators,
   moduleWorkload,
@@ -43,9 +69,11 @@ export async function DashboardAnalytics({
   worksitesBreakdown,
 }: DashboardAnalyticsProps) {
   const [trendHistory, fuelTrend, maintenanceTrend, sstYearView, envEventsData] = await Promise.all([
-    getOperationalTrendHistory(session, 6),
-    getFuelMonthlyTrend(session, 6),
-    getMaintenanceMonthlyTrend(session, 6),
+    getOperationalTrendHistory(session, 6, new Date(), scopedWorksiteId),
+    getFuelMonthlyTrend(session, 6, scopedWorksiteId),
+    getMaintenanceMonthlyTrend(session, 6, scopedWorksiteId),
+    // Estas dos ya reciben el alcance intersectado, así que la faena elegida
+    // viaja dentro de `worksiteScope` y no necesitan el id aparte.
     canViewIndicators
       ? getCanonicalSafetyIndicatorYear(currentYear, worksiteScope).catch(() => null)
       : Promise.resolve(null),
@@ -61,13 +89,8 @@ export async function DashboardAnalytics({
     receipts: point.receipts,
   }))
 
-  const sstPoints = sstYearView?.groups.find((g) => g.worksiteId === "total")?.monthly.map((m, i) => ({
-    month: MONTH_LABELS[i] ?? `M${i + 1}`,
-    tasaFrecuencia: m.confirmed.frequencyRate ?? 0,
-    tasaGravedad: m.confirmed.severityRate ?? 0,
-    accConTiempoPerdido: m.confirmed.accidents ?? 0,
-    accSinTiempoPerdido: m.provisional.accidents ?? 0,
-  })) ?? []
+  const totalGroup = sstYearView?.groups.find((g) => g.worksiteId === "total")
+  const sstPoints = totalGroup ? toSstMonthlyPoints(totalGroup.monthly) : []
 
   const materialEnvPoints = envEventsData?.eventData.find((e) => e.worksiteId === "total")?.monthly.map((m) => ({
     month: MONTH_LABELS[m.month - 1] ?? `M${m.month}`,

@@ -8,6 +8,7 @@ import {
   BarChart,
   CartesianGrid,
   Cell,
+  ComposedChart,
   Line,
   LineChart,
   XAxis,
@@ -51,7 +52,7 @@ const workloadChartConfig = {
 const worksiteChartConfig = {
   totalCost: {
     label: "Inversión Acumulada",
-    color: CHART_COLORS.neutral,
+    color: CHART_COLORS.brand,
   },
 } satisfies ChartConfig
 
@@ -66,13 +67,29 @@ const sstChartConfig = {
   },
 } satisfies ChartConfig
 
+/**
+ * Accidentes por estado de calificación, **no** por gravedad.
+ *
+ * Antes rotulaba "Accidentes CTP / STP" dos series que salían de `confirmed` y
+ * `provisional`, y esas no son clases de gravedad: `provisional` es
+ * confirmados **más** pendientes (`safety-indicators-calc.ts:217-219`), o sea un
+ * superconjunto. El gráfico mostraba la barra chica contenida dentro de la
+ * grande como si fueran categorías excluyentes, y ninguna de las dos tenía que
+ * ver con tiempo perdido.
+ *
+ * `IndicatorMetricSet` no expone desglose de tiempo perdido — el dato existe a
+ * nivel de caso (`absenceAtLeastNormalShift`) pero el motor canónico no lo
+ * agrega. Así que el gráfico deja de prometerlo y grafica la partición que sí
+ * es real y sí le sirve a gerencia: cuánto del total ya está confirmado y
+ * cuánto sigue por calificar.
+ */
 const sstAccidentConfig = {
-  accConTiempoPerdido: {
-    label: "Accidentes CTP",
+  confirmados: {
+    label: "Confirmados",
     color: CHART_COLORS.danger,
   },
-  accSinTiempoPerdido: {
-    label: "Accidentes STP",
+  porCalificar: {
+    label: "Por calificar",
     color: CHART_COLORS.signal,
   },
 } satisfies ChartConfig
@@ -92,10 +109,24 @@ const materialEnvConfig = {
   },
 } satisfies ChartConfig
 
+/**
+ * Formato compacto para ejes de dinero: `formatCLP` completo no cabe en un tick
+ * de 52px y obliga a rotarlo. El valor exacto vive en el tooltip.
+ */
+function compactCLPTick(value: number) {
+  if (Math.abs(value) >= 1_000_000) return `$${(value / 1_000_000).toFixed(1)}M`
+  if (Math.abs(value) >= 1_000) return `$${Math.round(value / 1_000)}k`
+  return `$${value}`
+}
+
 const fuelChartConfig = {
   liters: {
     label: "Litros",
     color: CHART_COLORS.signal,
+  },
+  amount: {
+    label: "Costo",
+    color: CHART_COLORS.brand,
   },
   loads: {
     label: "Cargas",
@@ -112,14 +143,20 @@ const maintenanceChartConfig = {
     label: "Programadas",
     color: CHART_COLORS.blue,
   },
+  amount: {
+    label: "Costo",
+    color: CHART_COLORS.violet,
+  },
 } satisfies ChartConfig
 
 export interface SstMonthlyPoint {
   month: string
   tasaFrecuencia: number
   tasaGravedad: number
-  accConTiempoPerdido: number
-  accSinTiempoPerdido: number
+  /** Incidentes con todos sus casos incluidos (`confirmed.accidents`). */
+  confirmados: number
+  /** Incidentes que sólo tienen casos pendientes: `provisional − confirmed`. */
+  porCalificar: number
 }
 
 export interface MaterialEnvironmentalPoint {
@@ -221,6 +258,13 @@ export function ModuleWorkloadChart({ data, total }: { data: ModuleWorkloadPoint
 
 // ── 3. SST Trend Chart (Tasa Frecuencia y Tasa Gravedad) ─────────────────────
 
+/**
+ * Un eje por tasa. Comparten el rótulo "× 1.000.000 / HH" pero no la escala: la
+ * de gravedad cuenta **días** perdidos y de cargo, la de frecuencia cuenta
+ * **personas** lesionadas (`safety-indicators-calc.ts:187-188`). Un accidente
+ * con 30 días de reposo mueve TG dos órdenes de magnitud más que TF, y en un eje
+ * común la línea de frecuencia se aplanaba contra el cero.
+ */
 export function SstTrendChart({ data }: { data: SstMonthlyPoint[] }) {
   if (data.length === 0) return null
 
@@ -228,34 +272,47 @@ export function SstTrendChart({ data }: { data: SstMonthlyPoint[] }) {
     <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-xs">
       <div className="mb-3">
         <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--color-text-muted)]">Tasas de Siniestralidad SST</h3>
-        <p className="text-xs text-[var(--color-text-muted)]">Tasa de Frecuencia (TF) y Tasa de Gravedad (TG) mensual</p>
+        <p className="text-xs text-[var(--color-text-muted)]">Tasa de Frecuencia (izq.) y Tasa de Gravedad (der.), cada una en su escala</p>
       </div>
 
       <ChartContainer config={sstChartConfig} className="h-48 w-full">
-        <LineChart data={data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+        <LineChart data={data} margin={{ top: 10, right: 6, left: -20, bottom: 0 }}>
           <CartesianGrid strokeDasharray="3 3" vertical={false} />
           <XAxis dataKey="month" tickLine={false} axisLine={false} tickMargin={8} />
-          <YAxis tickLine={false} axisLine={false} tickMargin={8} />
+          <YAxis yAxisId="tf" tickLine={false} axisLine={false} tickMargin={8} />
+          <YAxis yAxisId="tg" orientation="right" tickLine={false} axisLine={false} tickMargin={4} width={44} />
           <ChartTooltip content={<ChartTooltipContent indicator="dot" />} />
           <ChartLegend content={<ChartLegendContent />} />
-          <Line type="monotone" dataKey="tasaFrecuencia" stroke={CHART_COLORS.blue} strokeWidth={2} dot={{ r: 3 }} />
-          <Line type="monotone" dataKey="tasaGravedad" stroke={CHART_COLORS.danger} strokeWidth={2} dot={{ r: 3 }} />
+          <Line yAxisId="tf" type="monotone" dataKey="tasaFrecuencia" stroke={CHART_COLORS.blue} strokeWidth={2} dot={{ r: 3 }} />
+          <Line yAxisId="tg" type="monotone" dataKey="tasaGravedad" stroke={CHART_COLORS.danger} strokeWidth={2} dot={{ r: 3 }} />
         </LineChart>
       </ChartContainer>
     </div>
   )
 }
 
-// ── 4. SST Accident Breakdown Chart ──────────────────────────────────────────
+// ── 4. SST Accident Qualification Chart ──────────────────────────────────────
 
+/**
+ * Barra **apilada**: el alto de la columna es el total provisional del mes y los
+ * segmentos lo parten en confirmado y por calificar. Apilado y no agrupado
+ * porque las dos series son partes de un mismo total, no magnitudes a comparar
+ * (ver `sstAccidentConfig`).
+ */
 export function SstAccidentChart({ data }: { data: SstMonthlyPoint[] }) {
   if (data.length === 0) return null
+
+  const hasPending = data.some((point) => point.porCalificar > 0)
 
   return (
     <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-xs">
       <div className="mb-3">
-        <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--color-text-muted)]">Accidentes CTP vs. STP</h3>
-        <p className="text-xs text-[var(--color-text-muted)]">Eventos con y sin tiempo perdido por mes</p>
+        <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--color-text-muted)]">Accidentes por estado de calificación</h3>
+        <p className="text-xs text-[var(--color-text-muted)]">
+          {hasPending
+            ? "Confirmados y pendientes por calificar en cada mes"
+            : "Todos los accidentes del período están confirmados"}
+        </p>
       </div>
 
       <ChartContainer config={sstAccidentConfig} className="h-48 w-full">
@@ -265,8 +322,9 @@ export function SstAccidentChart({ data }: { data: SstMonthlyPoint[] }) {
           <YAxis tickLine={false} axisLine={false} tickMargin={8} allowDecimals={false} />
           <ChartTooltip content={<ChartTooltipContent indicator="dot" />} />
           <ChartLegend content={<ChartLegendContent />} />
-          <Bar dataKey="accConTiempoPerdido" fill={CHART_COLORS.danger} radius={[4, 4, 0, 0]} />
-          <Bar dataKey="accSinTiempoPerdido" fill={CHART_COLORS.signal} radius={[4, 4, 0, 0]} />
+          {/* Un solo `stackId`: el tope de la columna es el total provisional. */}
+          <Bar dataKey="confirmados" stackId="accidentes" fill={CHART_COLORS.danger} radius={hasPending ? [0, 0, 0, 0] : [4, 4, 0, 0]} />
+          <Bar dataKey="porCalificar" stackId="accidentes" fill={CHART_COLORS.signal} radius={[4, 4, 0, 0]} />
         </BarChart>
       </ChartContainer>
     </div>
@@ -303,26 +361,20 @@ export function MaterialEnvironmentalChart({ data }: { data: MaterialEnvironment
 
 // ── 6. Worksite Activity Horizontal Bar Chart ─────────────────────────────────
 
+/**
+ * Sólo pide lo que dibuja. Antes recibía las 6 columnas de `worksitesBreakdown`
+ * y mapeaba `requestsCount`/`pendingCount` a un `data` donde ninguna serie las
+ * leía: campos muertos que hacían creer que la tarjeta comparaba más de una
+ * dimensión.
+ */
 export function WorksiteActivityChart({
   worksites,
 }: {
-  worksites: {
-    id: string
-    name: string
-    requestsCount: number
-    pendingCount: number
-    approvedCount: number
-    totalCost: number
-  }[]
+  worksites: { name: string; totalCost: number }[]
 }) {
   if (worksites.length === 0) return null
 
-  const data = worksites.map((ws) => ({
-    name: ws.name,
-    totalCost: ws.totalCost,
-    requestsCount: ws.requestsCount,
-    pendingCount: ws.pendingCount,
-  })).sort((a, b) => b.totalCost - a.totalCost).slice(0, 6)
+  const data = [...worksites].sort((a, b) => b.totalCost - a.totalCost).slice(0, 6)
 
   const hasCost = data.some((d) => d.totalCost > 0)
   if (!hasCost) return null
@@ -358,7 +410,7 @@ export function WorksiteActivityChart({
               />
             }
           />
-          <Bar dataKey="totalCost" fill={CHART_COLORS.neutral} radius={[0, 6, 6, 0]} />
+          <Bar dataKey="totalCost" fill={CHART_COLORS.brand} radius={[0, 6, 6, 0]} />
         </BarChart>
       </ChartContainer>
     </div>
@@ -374,28 +426,40 @@ export interface FuelMonthlyChartPoint {
   loads: number
 }
 
+/**
+ * Litros (barra, eje izquierdo) y costo (línea, eje derecho).
+ *
+ * Antes eran dos barras —litros y cargas— **en el mismo eje Y**: litros va en
+ * miles y cargas en decenas, así que la serie "Cargas" quedaba pegada al piso e
+ * ilegible. Y el costo, que es lo que gerencia mira, se consultaba en
+ * `getFuelMonthlyTrend` y se descartaba.
+ *
+ * Las cargas siguen disponibles en el tooltip, que es donde una cifra de apoyo
+ * no compite por escala con nada.
+ */
 export function FuelConsumptionChart({ data }: { data: FuelMonthlyChartPoint[] }) {
-  if (!data.length || !data.some((d) => d.liters > 0 || d.loads > 0)) return null
+  if (!data.length || !data.some((d) => d.liters > 0 || d.amount > 0)) return null
 
   return (
     <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-xs flex flex-col justify-between">
       <div className="mb-3 flex items-center justify-between">
         <div>
           <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--color-text-muted)]">Consumo de Combustibles</h3>
-          <p className="text-xs text-[var(--color-text-muted)]">Litros cargados y número de cargas por mes</p>
+          <p className="text-xs text-[var(--color-text-muted)]">Litros cargados y costo por mes</p>
         </div>
       </div>
 
       <ChartContainer config={fuelChartConfig} className="h-48 w-full">
-        <BarChart data={data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+        <ComposedChart data={data} margin={{ top: 10, right: 6, left: -20, bottom: 0 }}>
           <CartesianGrid strokeDasharray="3 3" vertical={false} />
           <XAxis dataKey="month" tickLine={false} axisLine={false} tickMargin={8} />
-          <YAxis tickLine={false} axisLine={false} tickMargin={8} />
+          <YAxis yAxisId="liters" tickLine={false} axisLine={false} tickMargin={8} />
+          <YAxis yAxisId="amount" orientation="right" tickLine={false} axisLine={false} tickMargin={4} tickFormatter={compactCLPTick} width={52} />
           <ChartTooltip content={<ChartTooltipContent indicator="dot" />} />
           <ChartLegend content={<ChartLegendContent />} />
-          <Bar dataKey="liters" fill={CHART_COLORS.signal} radius={[4, 4, 0, 0]} />
-          <Bar dataKey="loads" fill={CHART_COLORS.teal} radius={[4, 4, 0, 0]} />
-        </BarChart>
+          <Bar yAxisId="liters" dataKey="liters" fill={CHART_COLORS.signal} radius={[4, 4, 0, 0]} />
+          <Line yAxisId="amount" type="monotone" dataKey="amount" stroke={CHART_COLORS.brand} strokeWidth={2} dot={{ r: 3 }} />
+        </ComposedChart>
       </ChartContainer>
     </div>
   )
@@ -410,6 +474,11 @@ export interface MaintenanceMonthlyChartPoint {
   amount: number
 }
 
+/**
+ * Conteos en barras (eje izquierdo) y costo en línea (eje derecho). El `amount`
+ * ya lo calculaba `getMaintenanceMonthlyTrend` y se descartaba; sin él la
+ * tarjeta contaba mantenciones sin decir lo que costaron.
+ */
 export function MaintenanceTrendChart({ data }: { data: MaintenanceMonthlyChartPoint[] }) {
   if (!data.length || !data.some((d) => d.completed > 0 || d.scheduled > 0 || d.amount > 0)) return null
 
@@ -418,20 +487,22 @@ export function MaintenanceTrendChart({ data }: { data: MaintenanceMonthlyChartP
       <div className="mb-3 flex items-center justify-between">
         <div>
           <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--color-text-muted)]">Mantención de Flota</h3>
-          <p className="text-xs text-[var(--color-text-muted)]">Mantenciones completadas vs. programadas por mes</p>
+          <p className="text-xs text-[var(--color-text-muted)]">Completadas vs. programadas y costo por mes</p>
         </div>
       </div>
 
       <ChartContainer config={maintenanceChartConfig} className="h-48 w-full">
-        <BarChart data={data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+        <ComposedChart data={data} margin={{ top: 10, right: 6, left: -20, bottom: 0 }}>
           <CartesianGrid strokeDasharray="3 3" vertical={false} />
           <XAxis dataKey="month" tickLine={false} axisLine={false} tickMargin={8} />
-          <YAxis tickLine={false} axisLine={false} tickMargin={8} allowDecimals={false} />
+          <YAxis yAxisId="count" tickLine={false} axisLine={false} tickMargin={8} allowDecimals={false} />
+          <YAxis yAxisId="amount" orientation="right" tickLine={false} axisLine={false} tickMargin={4} tickFormatter={compactCLPTick} width={52} />
           <ChartTooltip content={<ChartTooltipContent indicator="dot" />} />
           <ChartLegend content={<ChartLegendContent />} />
-          <Bar dataKey="completed" fill={CHART_COLORS.brand} radius={[4, 4, 0, 0]} />
-          <Bar dataKey="scheduled" fill={CHART_COLORS.blue} radius={[4, 4, 0, 0]} />
-        </BarChart>
+          <Bar yAxisId="count" dataKey="completed" fill={CHART_COLORS.brand} radius={[4, 4, 0, 0]} />
+          <Bar yAxisId="count" dataKey="scheduled" fill={CHART_COLORS.blue} radius={[4, 4, 0, 0]} />
+          <Line yAxisId="amount" type="monotone" dataKey="amount" stroke={CHART_COLORS.violet} strokeWidth={2} dot={{ r: 3 }} />
+        </ComposedChart>
       </ChartContainer>
     </div>
   )

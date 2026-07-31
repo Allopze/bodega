@@ -4,9 +4,11 @@ import Link from "next/link"
 import {
   CaretDown,
   ChartBar,
+  ChartLine,
   CheckSquare,
   ClipboardText,
   Package,
+  ShieldCheck,
   ShoppingCart,
   Truck,
   Warehouse,
@@ -29,6 +31,8 @@ const ACTION_ICONS = {
   delivery: Warehouse,
   warehouse: Package,
   reports: ChartBar,
+  analytics: ChartLine,
+  prevention: ShieldCheck,
 } as const
 
 /** Menú cliente aislado: recibe sólo destinos ya filtrados por permisos. */

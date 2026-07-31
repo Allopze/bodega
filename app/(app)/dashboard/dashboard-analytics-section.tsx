@@ -34,14 +34,7 @@ interface DashboardAnalyticsSectionProps {
   /** Conteos por módulo del backlog completo, no de las filas cargadas. */
   moduleWorkload: ModuleWorkloadPoint[]
   queueTotal: number
-  worksitesBreakdown: {
-    id: string
-    name: string
-    requestsCount: number
-    pendingCount: number
-    approvedCount: number
-    totalCost: number
-  }[]
+  worksitesBreakdown: { name: string; totalCost: number }[]
   fuelTrend: FuelMonthlyChartPoint[]
   maintenanceTrend: MaintenanceMonthlyChartPoint[]
   sstPoints: SstMonthlyPoint[]
@@ -83,8 +76,10 @@ export function DashboardAnalyticsSection({
   const hasTrendData = trendData.some((d) => d.requests > 0 || d.orders > 0 || d.receipts > 0)
   const hasSstData = sstPoints.length > 0
   const hasMaterialEnvData = materialEnvPoints.length > 0
-  const hasFuelData = fuelTrend.some((d) => d.liters > 0 || d.loads > 0)
-  const hasMaintenanceData = maintenanceTrend.some((d) => d.completed > 0 || d.scheduled > 0)
+  // Mismo criterio que el guard interno de cada gráfico: si difieren, la sección
+  // reserva el hueco y el gráfico devuelve `null` dentro (tarjeta vacía).
+  const hasFuelData = fuelTrend.some((d) => d.liters > 0 || d.amount > 0)
+  const hasMaintenanceData = maintenanceTrend.some((d) => d.completed > 0 || d.scheduled > 0 || d.amount > 0)
   const hasWorkloadData = moduleWorkload.length > 0
   const hasWorksiteData = worksitesBreakdown.length > 0
 
@@ -101,7 +96,17 @@ export function DashboardAnalyticsSection({
         <AnalyticsGroup id="analitica-operacion" title="Operación" period="Últimos 6 meses">
           {hasTrendData && <OperationalTrendChart data={trendData} />}
           {hasWorkloadData && <ModuleWorkloadChart data={moduleWorkload} total={queueTotal} />}
-          {hasWorksiteData && <WorksiteActivityChart worksites={worksitesBreakdown} />}
+        </AnalyticsGroup>
+      )}
+
+      {/* "Inversión por faena" no comparte el período de "Operación": su query no
+          filtra por fecha (`dashboard-metrics.ts`). Vivía bajo el rótulo
+          "Últimos 6 meses" mientras su propio subtítulo decía "acumulado
+          histórico" — el hallazgo L-07 reintroducido a nivel de grupo. Va en su
+          bloque hasta que tenga un período real. */}
+      {hasWorksiteData && (
+        <AnalyticsGroup id="analitica-inversion" title="Inversión" period="Acumulado histórico">
+          <WorksiteActivityChart worksites={worksitesBreakdown} />
         </AnalyticsGroup>
       )}
 

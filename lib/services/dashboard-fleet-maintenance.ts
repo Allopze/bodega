@@ -6,11 +6,11 @@
  * and monthly trends needed by the dashboard charts.
  */
 
-import { and, count, eq, gte, inArray, lt, sql } from "drizzle-orm"
+import { and, count, eq, gte, lt, sql } from "drizzle-orm"
 import type { Session } from "next-auth"
 import { db } from "@/db"
 import { fuelLoads, fuelVehicles, maintenanceRecords } from "@/db/schema"
-import { isGlobalRole, visibleWorksiteIds } from "@/lib/auth/scope"
+import { worksiteScopeSql } from "@/lib/auth/scope"
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -70,23 +70,17 @@ function getMonthBounds(months: number, now = new Date()): Array<{ label: string
   return result
 }
 
-function vehicleScope(session: Session) {
-  if (isGlobalRole(session)) return undefined
-  const wsIds = visibleWorksiteIds(session)
-  return wsIds.length > 0 ? inArray(fuelVehicles.worksiteId, wsIds) : sql`false`
-}
+// Los tres alcances salen de `worksiteScopeSql`, que intersecta el permiso del
+// rol con la faena elegida en el dashboard. Antes eran tres copias locales que
+// sólo se diferenciaban en la columna.
+const vehicleScope = (session: Session, worksiteId?: string) =>
+  worksiteScopeSql(session, fuelVehicles.worksiteId, worksiteId)
 
-function fuelScope(session: Session) {
-  if (isGlobalRole(session)) return undefined
-  const wsIds = visibleWorksiteIds(session)
-  return wsIds.length > 0 ? inArray(fuelLoads.worksiteId, wsIds) : sql`false`
-}
+const fuelScope = (session: Session, worksiteId?: string) =>
+  worksiteScopeSql(session, fuelLoads.worksiteId, worksiteId)
 
-function maintenanceScope(session: Session) {
-  if (isGlobalRole(session)) return undefined
-  const wsIds = visibleWorksiteIds(session)
-  return wsIds.length > 0 ? inArray(maintenanceRecords.worksiteId, wsIds) : sql`false`
-}
+const maintenanceScope = (session: Session, worksiteId?: string) =>
+  worksiteScopeSql(session, maintenanceRecords.worksiteId, worksiteId)
 
 // ── Fleet Summary ─────────────────────────────────────────────────────────────
 
@@ -107,9 +101,9 @@ export async function getFleetDashboardSummary(session: Session): Promise<FleetD
 
 // ── Fuel Monthly Trend ────────────────────────────────────────────────────────
 
-export async function getFuelMonthlyTrend(session: Session, months = 6): Promise<FuelMonthlyPoint[]> {
+export async function getFuelMonthlyTrend(session: Session, months = 6, worksiteId?: string): Promise<FuelMonthlyPoint[]> {
   const bounds = getMonthBounds(months)
-  const scope = fuelScope(session)
+  const scope = fuelScope(session, worksiteId)
   const globalStart = bounds[0]!.start
   const globalEnd = bounds[bounds.length - 1]!.end
 
@@ -144,9 +138,9 @@ export async function getFuelMonthlyTrend(session: Session, months = 6): Promise
 
 // ── Maintenance Monthly Trend ─────────────────────────────────────────────────
 
-export async function getMaintenanceMonthlyTrend(session: Session, months = 6): Promise<MaintenanceMonthlyPoint[]> {
+export async function getMaintenanceMonthlyTrend(session: Session, months = 6, worksiteId?: string): Promise<MaintenanceMonthlyPoint[]> {
   const bounds = getMonthBounds(months)
-  const scope = maintenanceScope(session)
+  const scope = maintenanceScope(session, worksiteId)
   const globalStart = bounds[0]!.start
   const globalEnd = bounds[bounds.length - 1]!.end
 

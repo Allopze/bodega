@@ -4,14 +4,16 @@
  * Cada valor usa la fecha nativa del hecho (creación, emisión, recepción o
  * entrega). No se infiere una decisión histórica desde el estado actual.
  */
-import { and, count, eq, gte, inArray, isNotNull, lt, sql } from "drizzle-orm"
-import type { AnyPgColumn } from "drizzle-orm/pg-core"
+import { and, count, eq, gte, isNotNull, lt, sql } from "drizzle-orm"
 import type { Session } from "next-auth"
 import { db } from "@/db"
 import { deliveries, purchaseOrders, purchaseRequests, receipts } from "@/db/schema"
-import { isGlobalRole, visibleWorksiteIds } from "@/lib/auth/scope"
+import { worksiteScopeSql } from "@/lib/auth/scope"
 
 export type OperationalPeriodMetricKey = "requests" | "ordersIssued" | "receipts" | "deliveries" | "spend"
+
+/** Largo de la ventana que compara el dashboard. Calendario, no rolling. */
+export type OperationalPeriodSpan = "mes" | "trimestre" | "anio"
 
 export interface OperationalPeriodMetric {
   current: number
@@ -35,27 +37,42 @@ function dateKey(iso: string) {
   return iso.slice(0, 10)
 }
 
-export function getOperationalCalendarBounds(now = new Date()): PeriodBounds {
+/**
+ * Ventanas del período en curso y del inmediatamente anterior, en calendario
+ * chileno.
+ *
+ * `isoStartOfMonth` acepta meses fuera de `0..11` porque `Date.UTC` normaliza el
+ * desborde, así que trimestre y año se expresan con la misma primitiva sin
+ * aritmética de fechas propia: enero menos un mes cae en diciembre del año
+ * anterior solo.
+ */
+export function getOperationalCalendarBounds(now = new Date(), period: OperationalPeriodSpan = "mes"): PeriodBounds {
   const dateParts = new Intl.DateTimeFormat("en-CA", {
     timeZone: "America/Santiago", year: "numeric", month: "2-digit",
   }).formatToParts(now)
   const year = Number(dateParts.find((part) => part.type === "year")?.value)
   const month = Number(dateParts.find((part) => part.type === "month")?.value) - 1
-  const currentStart = isoStartOfMonth(year, month)
-  const currentEnd = isoStartOfMonth(year, month + 1)
+
+  // Mes de inicio del período que contiene a `month`, y su largo en meses.
+  const [startMonth, span] = period === "anio"
+    ? [0, 12]
+    : period === "trimestre"
+      ? [Math.floor(month / 3) * 3, 3]
+      : [month, 1]
+
+  const currentStart = isoStartOfMonth(year, startMonth)
   return {
     currentStart,
-    currentEnd,
-    previousStart: isoStartOfMonth(year, month - 1),
+    currentEnd: isoStartOfMonth(year, startMonth + span),
+    previousStart: isoStartOfMonth(year, startMonth - span),
     previousEnd: currentStart,
   }
 }
 
-function scopeFilter(session: Session, column: AnyPgColumn) {
-  if (isGlobalRole(session)) return undefined
-  const worksiteIds = visibleWorksiteIds(session)
-  return worksiteIds.length > 0 ? inArray(column, worksiteIds) : sql`false`
-}
+// El predicado de faena (alcance del rol ∩ faena elegida) vive en
+// `worksiteScopeSql`. Había una copia local de esta función acá, otra en
+// `operational-trend-history.ts` y dos más en `dashboard-fleet-maintenance.ts`;
+// agregar el parámetro de faena a las cuatro era la señal de que sobraban tres.
 
 export function buildOperationalPeriodComparison(current: number, previous: number, hasHistory: number): OperationalPeriodMetric {
   // Un cero del mes anterior es un dato válido si existen registros previos.
@@ -63,12 +80,21 @@ export function buildOperationalPeriodComparison(current: number, previous: numb
   return { current, previous: hasHistory > 0 ? previous : null }
 }
 
-/** Flujos del mes calendario actual frente al mes calendario anterior. */
-export async function getOperationalPeriodMetrics(session: Session, now = new Date()): Promise<OperationalPeriodMetrics> {
-  const bounds = getOperationalCalendarBounds(now)
-  const requestScope = scopeFilter(session, purchaseRequests.worksiteId)
-  const orderScope = scopeFilter(session, purchaseOrders.worksiteId)
-  const deliveryScope = scopeFilter(session, deliveries.worksiteId)
+export interface OperationalPeriodOptions {
+  /** Ventana calendario a comparar. Por defecto el mes. */
+  period?: OperationalPeriodSpan
+  /** Faena única del alcance global del dashboard; sin ella, todas las autorizadas. */
+  worksiteId?: string
+  now?: Date
+}
+
+/** Flujos del período calendario en curso frente al período anterior. */
+export async function getOperationalPeriodMetrics(session: Session, options: OperationalPeriodOptions = {}): Promise<OperationalPeriodMetrics> {
+  const { period = "mes", worksiteId, now = new Date() } = options
+  const bounds = getOperationalCalendarBounds(now, period)
+  const requestScope = worksiteScopeSql(session, purchaseRequests.worksiteId, worksiteId)
+  const orderScope = worksiteScopeSql(session, purchaseOrders.worksiteId, worksiteId)
+  const deliveryScope = worksiteScopeSql(session, deliveries.worksiteId, worksiteId)
   const currentIssuedStart = dateKey(bounds.currentStart)
   const currentIssuedEnd = dateKey(bounds.currentEnd)
   const previousIssuedStart = dateKey(bounds.previousStart)

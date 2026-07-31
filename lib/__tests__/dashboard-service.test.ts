@@ -44,9 +44,13 @@ vi.mock("@/db", () => ({
 
 // ── Mock auth ────────────────────────────────────────────────────────────────
 
+// `worksiteScopeSql` se mockea porque `db` también está mockeado: acá no se
+// inspecciona el SQL generado. La semántica del predicado (incluida la
+// intersección con la faena elegida) se prueba en `worksite-scope.test.ts`.
 vi.mock("@/lib/auth/scope", () => ({
   isGlobalRole: vi.fn(),
   visibleWorksiteIds: vi.fn(),
+  worksiteScopeSql: vi.fn(() => undefined),
 }))
 
 // ── Import after mocks ───────────────────────────────────────────────────────
@@ -113,19 +117,11 @@ describe("getDashboardData", () => {
       { id: "ws-2", name: "Obra Norte", requestsCount: 3 },
     ]})
 
-    // select 10-12: per-worksite detail queries
+    // select 10: inversión por faena (única query de detalle que queda)
     selectResults.push(
       { data: [
         { worksiteId: "ws-1", totalCost: 600000 },
         { worksiteId: "ws-2", totalCost: 400000 },
-      ]},
-      { data: [
-        { worksiteId: "ws-1", n: 2 },
-        { worksiteId: "ws-2", n: 1 },
-      ]},
-      { data: [
-        { worksiteId: "ws-1", n: 4 },
-        { worksiteId: "ws-2", n: 2 },
       ]},
     )
 
@@ -148,8 +144,6 @@ describe("getDashboardData", () => {
     ]})
     selectResults.push(
       { data: [{ worksiteId: "ws-1", totalCost: 500 }] },
-      { data: [] },
-      { data: [] },
     )
 
     const result = await getDashboardData(session)
@@ -173,8 +167,6 @@ describe("getDashboardData", () => {
         { worksiteId: "ws-1", totalCost: 100 },
         { worksiteId: "ws-2", totalCost: 999 },
       ]},
-      { data: [] },
-      { data: [] },
     )
 
     const result = await getDashboardData(session)
@@ -195,8 +187,6 @@ describe("getDashboardData", () => {
     ]})
     selectResults.push(
       { data: [{ worksiteId: "ws-1", totalCost: 500 }] },
-      { data: [{ worksiteId: "ws-1", n: 1 }] },
-      { data: [{ worksiteId: "ws-1", n: 1 }] },
     )
 
     const result = await getDashboardData(session)

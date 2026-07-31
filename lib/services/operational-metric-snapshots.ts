@@ -73,11 +73,22 @@ export async function captureOperationalMetricSnapshots(now = new Date()) {
   return { snapshotDate, written: rows.length }
 }
 
-/** Faenas activas que la sesión puede ver; `[]` si no hay ninguna. */
-async function visibleActiveWorksiteIds(session: Session): Promise<string[]> {
+/**
+ * Faenas activas que la sesión puede ver, opcionalmente acotadas a la elegida en
+ * el dashboard. `[]` si no hay ninguna.
+ *
+ * Acotar a una faena **no debilita** la regla de cobertura completa: la vuelve
+ * "esa faena tiene instantánea ese día", que es más fácil de satisfacer que
+ * "todas la tienen". La comparación sigue siendo entre universos idénticos.
+ */
+async function visibleActiveWorksiteIds(session: Session, worksiteId?: string): Promise<string[]> {
   const scope = resolveWorksiteScope(session)
   if (scope.mode === "none") return []
-  const worksiteFilter = scope.mode === "all" ? eq(worksites.isActive, true) : and(eq(worksites.isActive, true), inArray(worksites.id, scope.ids))
+  if (worksiteId && scope.mode === "some" && !scope.ids.includes(worksiteId)) return []
+  const activeFilter = eq(worksites.isActive, true)
+  const worksiteFilter = worksiteId
+    ? and(activeFilter, eq(worksites.id, worksiteId))
+    : scope.mode === "all" ? activeFilter : and(activeFilter, inArray(worksites.id, scope.ids))
   const activeWorksites = await db.select({ id: worksites.id }).from(worksites).where(worksiteFilter)
   return activeWorksites.map((worksite) => worksite.id)
 }
@@ -87,8 +98,8 @@ async function visibleActiveWorksiteIds(session: Session): Promise<string[]> {
  * Se exige cobertura de todas las faenas visibles para no comparar universos
  * distintos; si falta una instantánea, la UI lo declara explícitamente.
  */
-export async function getOperationalBacklogComparisons(session: Session, now = new Date()): Promise<OperationalBacklogComparison[]> {
-  const worksiteIds = await visibleActiveWorksiteIds(session)
+export async function getOperationalBacklogComparisons(session: Session, now = new Date(), worksiteId?: string): Promise<OperationalBacklogComparison[]> {
+  const worksiteIds = await visibleActiveWorksiteIds(session, worksiteId)
   if (worksiteIds.length === 0) return []
 
   const currentRowsPromise = currentBacklogRows(worksiteIds)
@@ -148,9 +159,10 @@ export async function getOperationalSnapshotHistory(
   session: Session,
   days = 30,
   now = new Date(),
+  worksiteId?: string,
 ): Promise<Record<OperationalSnapshotMetric, number[]>> {
   const empty = Object.fromEntries(SNAPSHOT_METRICS.map((metric) => [metric, [] as number[]])) as Record<OperationalSnapshotMetric, number[]>
-  const worksiteIds = await visibleActiveWorksiteIds(session)
+  const worksiteIds = await visibleActiveWorksiteIds(session, worksiteId)
   if (worksiteIds.length === 0) return empty
 
   const rows = await db

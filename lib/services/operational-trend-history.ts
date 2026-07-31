@@ -10,12 +10,11 @@
  * alimentar gráficos de tendencia con 6+ puntos de datos.
  */
 
-import { and, count, eq, gte, inArray, isNotNull, lt, sql } from "drizzle-orm"
-import type { AnyPgColumn } from "drizzle-orm/pg-core"
+import { and, count, eq, gte, isNotNull, lt, sql } from "drizzle-orm"
 import type { Session } from "next-auth"
 import { db } from "@/db"
 import { deliveries, purchaseOrders, purchaseRequests, receipts } from "@/db/schema"
-import { isGlobalRole, visibleWorksiteIds } from "@/lib/auth/scope"
+import { worksiteScopeSql } from "@/lib/auth/scope"
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -43,12 +42,6 @@ function isoStartOfMonth(year: number, month: number): string {
 
 function dateKey(iso: string): string {
   return iso.slice(0, 10)
-}
-
-function scopeFilter(session: Session, column: AnyPgColumn) {
-  if (isGlobalRole(session)) return undefined
-  const worksiteIds = visibleWorksiteIds(session)
-  return worksiteIds.length > 0 ? inArray(column, worksiteIds) : sql`false`
 }
 
 /** Genera los límites de N meses hacia atrás desde el mes actual en Santiago. */
@@ -86,11 +79,13 @@ export async function getOperationalTrendHistory(
   session: Session,
   months = 6,
   now = new Date(),
+  /** Faena del alcance global del dashboard; sin ella, todas las autorizadas. */
+  worksiteId?: string,
 ): Promise<OperationalTrendPoint[]> {
   const bounds = getMonthBounds(months, now)
-  const requestScope = scopeFilter(session, purchaseRequests.worksiteId)
-  const orderScope = scopeFilter(session, purchaseOrders.worksiteId)
-  const deliveryScope = scopeFilter(session, deliveries.worksiteId)
+  const requestScope = worksiteScopeSql(session, purchaseRequests.worksiteId, worksiteId)
+  const orderScope = worksiteScopeSql(session, purchaseOrders.worksiteId, worksiteId)
+  const deliveryScope = worksiteScopeSql(session, deliveries.worksiteId, worksiteId)
 
   const globalStart = bounds[0]!.start
   const globalEnd = bounds[bounds.length - 1]!.end
