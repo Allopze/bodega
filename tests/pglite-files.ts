@@ -16,6 +16,7 @@ export const pgliteTestFiles = [
   "lib/__tests__/admin-roles-service.test.ts",
   "lib/__tests__/bootstrap.test.ts",
   "lib/__tests__/combustibles-scope.test.ts",
+  "lib/__tests__/compras-export-invoice-filter.test.ts",
   "lib/__tests__/code-sequences.test.ts",
   "lib/__tests__/equipment-performance-integration.test.ts",
   "lib/__tests__/epp-replenishment.test.ts",

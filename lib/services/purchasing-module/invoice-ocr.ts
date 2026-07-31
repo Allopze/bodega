@@ -121,8 +121,29 @@ function isPdf(buffer: Buffer) {
   return buffer.subarray(0, 4).toString("ascii") === "%PDF"
 }
 
+/**
+ * `pdfjs-dist@6` usa `ArrayBuffer.prototype.transferToFixedLength`, que existe
+ * desde Node 21. En Node 20 el fallo ocurre *dentro* de `getOperatorList`, donde
+ * pdfjs lo degrada a un warning por stderr y devuelve una página en blanco: el
+ * OCR entonces lee 9 caracteres de nada y el operador ve "no se pudo leer el
+ * documento", sin pista de que la causa es el runtime.
+ *
+ * Se comprueba antes de rasterizar para convertir eso en un error accionable
+ * (auditoría OCR 2026-07-30: "el warning debe convertirse en error estructurado,
+ * no quedar en stderr"). `engines` y la imagen de producción ya exigen 22.13.
+ */
+export function supportsPdfRasterization(): boolean {
+  return typeof (ArrayBuffer.prototype as { transferToFixedLength?: unknown }).transferToFixedLength === "function"
+}
+
 /** Rasterize bounded PDF pages before OCR. Sharp processes images, not PDF files. */
 async function rasterizePdfPages(buffer: Buffer): Promise<Buffer[]> {
+  if (!supportsPdfRasterization()) {
+    throw new Error(
+      `Este runtime (Node ${process.versions.node}) no puede rasterizar PDF para OCR; se requiere Node 22.13 o superior.`,
+    )
+  }
+
   // Keep native canvas runtime-only. Turbopack cannot place its platform binary
   // in an ESM chunk; standalone tracing is explicitly configured in next.config.
   const canvasModule = "@napi-rs/canvas"

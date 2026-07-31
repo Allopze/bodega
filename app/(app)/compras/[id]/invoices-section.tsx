@@ -157,14 +157,69 @@ export function InvoicesSection({
 
       {/* Add invoice form */}
       {canManage && (
-        <AddInvoiceForm
-          purchaseOrderId={purchaseOrderId}
-          ocItems={ocItems}
-          defaultInvoiceNumber={defaultInvoiceNumber}
-          separated={invoices.length > 0}
-        />
+        invoices.length === 0
+          ? (
+            <AddInvoiceForm
+              purchaseOrderId={purchaseOrderId}
+              ocItems={ocItems}
+              defaultInvoiceNumber={defaultInvoiceNumber}
+              separated={false}
+            />
+          )
+          : (
+            // A3: con facturas arriba, la sección es la lista y el alta se pliega
+            // —excepción de "estación de captura repetitiva"— con la preferencia
+            // recordada. Sin facturas no hay lista que tapar: el formulario *es*
+            // el contenido y queda abierto.
+            <CollapsedInvoiceForm defaultOpen={Boolean(defaultInvoiceNumber)}>
+              <AddInvoiceForm
+                purchaseOrderId={purchaseOrderId}
+                ocItems={ocItems}
+                defaultInvoiceNumber={defaultInvoiceNumber}
+                separated={false}
+                heading={false}
+              />
+            </CollapsedInvoiceForm>
+          )
       )}
     </section>
+  )
+}
+
+/* ── Collapsed add-invoice form ─────────────────────────────────────────────── */
+
+const FORM_OPEN_KEY = "oc_invoice_form_open"
+
+/**
+ * `<details>` nativo en vez de un colapsable propio: el navegador ya resuelve
+ * teclado, foco y semántica. La preferencia se recuerda porque quien carga
+ * varias facturas seguidas no debería reabrirlo en cada OC, y se lee después de
+ * montar para no romper la hidratación.
+ */
+function CollapsedInvoiceForm({ children, defaultOpen }: { children: React.ReactNode; defaultOpen: boolean }) {
+  const [open, setOpen] = React.useState(defaultOpen)
+
+  React.useEffect(() => {
+    if (defaultOpen) return
+    try { setOpen(localStorage.getItem(FORM_OPEN_KEY) === "1") } catch { /* almacenamiento bloqueado */ }
+  }, [defaultOpen])
+
+  return (
+    <details
+      open={open}
+      onToggle={(event) => {
+        const next = event.currentTarget.open
+        setOpen(next)
+        try { localStorage.setItem(FORM_OPEN_KEY, next ? "1" : "0") } catch { /* almacenamiento bloqueado */ }
+      }}
+      className="mt-1 border-t border-(--color-border) pt-3"
+    >
+      <summary className="flex cursor-pointer list-none items-center gap-1.5 text-sm font-semibold text-(--color-text)">
+        <Plus size={14} weight="bold" aria-hidden />
+        Adjuntar factura
+      </summary>
+      <div className="mt-2">{children}</div>
+    </details>
   )
 }
 
@@ -279,12 +334,15 @@ function AddInvoiceForm({
   ocItems,
   defaultInvoiceNumber,
   separated = true,
+  heading = true,
 }: {
   purchaseOrderId: string
   ocItems: OcItem[]
   defaultInvoiceNumber?: string
   /** Con facturas arriba el formulario se separa con una línea; sin ellas la línea quedaba colgando. */
   separated?: boolean
+  /** Plegado, el rótulo lo pone el `<summary>`: repetirlo dejaba dos títulos. */
+  heading?: boolean
 }) {
   const [state, action] = useActionState<ActionState, FormData>(addInvoiceAction, INITIAL_STATE)
   const formRef = React.useRef<HTMLFormElement>(null)
@@ -461,7 +519,7 @@ function AddInvoiceForm({
       action={action}
       className={separated ? "mt-1 border-t border-(--color-border) pt-3 space-y-2" : "space-y-2"}
     >
-      <h3 className="text-sm font-semibold text-(--color-text)">Adjuntar factura</h3>
+      {heading && <h3 className="text-sm font-semibold text-(--color-text)">Adjuntar factura</h3>}
       <input type="hidden" name="purchaseOrderId" value={purchaseOrderId} />
 
       {!state.ok && state.message && !("fieldErrors" in state) && (

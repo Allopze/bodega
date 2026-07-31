@@ -12,11 +12,20 @@
 
 | Hallazgo previo | Estado ahora | Evidencia |
 |---|---|---|
-| **P0** Runtime de PDF/OCR incompatible | **No se reproduce** | Con el código actual (build `legacy` de `pdfjs-dist` + rasterizado por `@napi-rs/canvas`) el PDF escaneado se rasteriza y el OCR recupera folio y total **incluso en Node 20.19**. El test corre sin gating por versión: si un runtime vuelve a romperlo, falla en vez de saltarse. |
+| **P0** Runtime de PDF/OCR incompatible | **Confirmado y contenido** | La auditoría tenía razón y una primera lectura de esta pasada la contradijo por error: un PDF sintético simple *sí* se rasteriza en Node 20, pero la muestra real falla exactamente como decía el hallazgo. Medido sobre `DOC-33-3064428.pdf`: **Node 20.19 → 9 caracteres, confianza 0,35** (pdfjs degrada `transferToFixedLength` a warning por stderr y entrega una página en blanco); **Node 26.5 → 2.597 caracteres, confianza 0,62**. Corregido en dos frentes: CI y deploy pasan a 22.13 —el runtime de la imagen— y `rasterizePdfPages` ahora comprueba la capacidad y lanza un error que nombra el runtime, en vez de leer una página vacía. |
 | **P1** Confianza 100% ≠ verificada | **Corregido** | `ExtractionResult.confidence` se reemplazó por `quality: { coverage, engineConfidence, totalsConsistent }`. La UI ya no anuncia un porcentaje de "confianza" sobre un puntaje de presencia y avisa aparte cuando neto + IVA no cuadra con el total. La confianza de *conciliación* queda donde siempre estuvo: la resuelve el operador línea por línea. |
 | **P1** Advertencias sin auditar | **Corregido** | `POST /api/purchase-orders/invoices/extract` registra método, cobertura, confianza del motor, cuadratura, tamaño y número de advertencias. No registra folio, RUT ni montos. |
 | **P2** Cobertura insuficiente | **Corregido** | `lib/services/purchasing-module/invoice-ocr.test.ts` ejercita OCR real sobre imagen y sobre PDF escaneado, más el caso sin `traineddata` local (debe quedar manual, nunca caer a la CDN). Los fixtures se generan en el test: un comprobante tributario real no se versiona. |
-| Matriz de fixtures por proveedor/layout | **Pendiente** | Sigue habiendo un solo layout sintético. Para prometer cobertura por proveedor hace falta una matriz de documentos reales autorizados, que este repo no puede alojar. |
+| Matriz de fixtures por proveedor/layout | **Pendiente** | Los layouts sintéticos cubren las degradaciones del motor, no los layouts de cada proveedor. Para prometer cobertura por proveedor hace falta una matriz de documentos reales autorizados, que este repo no puede alojar. |
+
+### Qué extrae de verdad la muestra real (`DOC-33-3064428.pdf`)
+
+| Vía | Resultado |
+|---|---|
+| PDF con texto (la que usa el sistema para este archivo) | **Completo y correcto**: folio 3064428, 14-07-2026, neto 57.500, IVA 10.925, total 68.425, la línea con código `05-03-008-T-XL`, cobertura 1 y montos cuadrados. |
+| OCR forzado sobre el mismo PDF, Node 22+ | **Insuficiente, y el sistema lo declara así.** El texto sale (2.597 caracteres) pero la caja de totales es gráfica: no hay línea "Total" que leer, el folio queda suelto entre teléfonos y la cantidad de la línea no sobrevive. Sin folio+fecha+total el extractor devuelve `manual` con advertencias, que es la conducta correcta: no inventa una conciliación. |
+
+Conclusión operativa sin cambios: **el OCR es asistido**. Para un PDF con capa de texto la extracción es fiable; para uno escaneado hay que revisar todo a mano.
 
 ### Defectos de parser que sólo aparecieron con OCR real
 

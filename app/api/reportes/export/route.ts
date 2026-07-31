@@ -25,6 +25,7 @@ const TYPE_PERMISSIONS: Record<string, Permission[]> = {
   oc_por_estado: ["reports:view"],
   solicitudes:   ["requests:view_own", "requests:view_all"],
   compras:       ["purchasing:view", "purchasing:create_order"],
+  oc_cerradas_sin_factura: ["purchasing:view", "purchasing:create_order"],
   recepcion:     ["receiving:view", "receiving:register_office", "receiving:register_faena"],
 }
 

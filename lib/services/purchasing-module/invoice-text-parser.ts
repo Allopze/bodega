@@ -89,8 +89,10 @@ function extractDate(text: string): string | null {
     /Date\s*:?\s*(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/i,
     // Standalone DD/MM/YYYY near "fecha" or "date"
     /(?:fecha|date)\s*[:\s]*(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/i,
-    // Values can be emitted several visual cells after their label.
-    /Fecha\s+de\s+Emisi[óo]n[\s:\p{L}]{0,48}?(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/iu,
+    // Values can be emitted several visual cells after their label. El relleno
+    // incluye guiones y puntos porque el OCR de una factura con celdas rinde la
+    // línea guía entre rótulo y valor como "Fecha de Emisión ——: 14/07/2026".
+    /Fecha\s+de\s+Emisi[óo]n[\s:\p{L}\-—–_.·]{0,48}?(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/iu,
   ]
 
   for (const pattern of patterns) {
@@ -171,8 +173,10 @@ function extractTaxAmount(text: string): number | null {
 
 function extractSupplierName(text: string): string | null {
   const patterns = [
-    /(?:Raz[oó]n\s*Social|Empresa|Proveedor|Supplier|Vendor)\s*:?\s*(.{5,80}?)(?:\s*(?:RUT|NIT|RFC|Date|Fecha|Folio))/i,
-    /(?:Emisor|Issued\s*by|From)\s*:?\s*(.{5,80}?)(?:\s*(?:RUT|NIT|RFC|Date|Fecha))/i,
+    // Los dos puntos son obligatorios: sin ellos, "PROVEEDOR DEMO SPA" —donde
+    // "Proveedor" es parte del nombre— se leía como rótulo y devolvía "DEMO SPA".
+    /(?:Raz[oó]n\s*Social|Empresa|Proveedor|Supplier|Vendor)\s*:\s*(.{5,80}?)(?:\s*(?:RUT|NIT|RFC|Date|Fecha|Folio))/i,
+    /(?:Emisor|Issued\s*by|From)\s*:\s*(.{5,80}?)(?:\s*(?:RUT|NIT|RFC|Date|Fecha))/i,
     /\b([A-Z][A-Z .&-]{2,80}(?:S\.?A\.?|SPA|LTDA\.?))\s+GIRO\s*:/i,
   ]
 

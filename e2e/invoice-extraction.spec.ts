@@ -13,6 +13,10 @@ test.describe("Extracción automática de factura", () => {
     await page.goto(`/compras/${OC_FIXTURE_ID}`)
     await page.getByRole("tab", { name: "Facturación" }).click()
 
+    // Con facturas ya adjuntas el alta viene plegada (A3): la sección es la
+    // lista y el formulario se abre a pedido. Se apunta al `<summary>` y no al
+    // texto: el botón de envío del formulario dice lo mismo.
+    await page.locator("details > summary").filter({ hasText: "Adjuntar factura" }).click()
     await page.locator("#invoice-file").setInputFiles(INVOICE_PDF)
 
     await expect(page.getByText("Datos extraídos del archivo")).toBeVisible({ timeout: 60_000 })

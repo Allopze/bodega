@@ -158,6 +158,24 @@ export function OcActions({
           </p>
         )}
         <CloseWarnings warnings={closeWarnings} invoiceHref={`/compras/${orderId}?tab=facturacion`} />
+        {/* Cerrar sin factura conciliada es legítimo (servicios, notas de
+            crédito, acuerdos), pero deja de ser el camino por defecto: se
+            confirma a mano y la confirmación queda en el motivo y el historial.
+            El servidor lo revalida; esta casilla no es la única defensa. */}
+        {closeWarnings.length > 0 && (
+          <label className="flex items-start gap-2 text-xs text-(--color-text)">
+            <input
+              type="checkbox"
+              name="acknowledgeInvoiceWarnings"
+              value="true"
+              required
+              className="mt-0.5 size-4 shrink-0 accent-[var(--color-danger)]"
+            />
+            <span>
+              Confirmo que la orden se cierra sin la facturación conciliada y que queda registrado en su historial.
+            </span>
+          </label>
+        )}
         <div className="flex items-center justify-end gap-2 mt-1">
           <button
             type="button"

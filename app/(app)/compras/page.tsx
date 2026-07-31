@@ -78,7 +78,9 @@ export default async function ComprasPage({
   // Export URL respects the active filters (estado→status, q/faena/proveedor passthrough).
   const exportParams = new URLSearchParams({ tipo: "compras" })
   if (listParams.q) exportParams.set("q", listParams.q)
-  if (listParams.estados) exportParams.set("status", listParams.estados.join(","))
+  // `estados` es un arreglo: siempre truthy, así que el href llevaba `status=`
+  // vacío incluso sin filtro de estado.
+  if (listParams.estados.length > 0) exportParams.set("status", listParams.estados.join(","))
   if (listParams.faena) exportParams.set("faena", listParams.faena)
   if (listParams.proveedor) exportParams.set("proveedor", listParams.proveedor)
   if (listParams.factura === "pendiente") exportParams.set("factura", "pendiente")

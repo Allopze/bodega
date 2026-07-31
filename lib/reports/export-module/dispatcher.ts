@@ -5,6 +5,7 @@ import { itemsSinOc } from "./items-sin-oc"
 import { ocPorEstado } from "./oc-por-estado"
 import { solicitudesList } from "./solicitudes"
 import { comprasList } from "./compras"
+import { ocCerradasSinFactura } from "./oc-cerradas-sin-factura"
 import { recepcionList } from "./recepcion"
 import { gastoPorFaena } from "./gasto-faena"
 
@@ -20,6 +21,8 @@ export async function getReportData(tipo: string, session: Session | null, filte
       return solicitudesList(session, filters, maxRows)
     case "compras":
       return comprasList(session, filters, maxRows)
+    case "oc_cerradas_sin_factura":
+      return ocCerradasSinFactura(session, filters, maxRows)
     case "recepcion":
       return recepcionList(session, filters, maxRows)
     case "gasto_faena":

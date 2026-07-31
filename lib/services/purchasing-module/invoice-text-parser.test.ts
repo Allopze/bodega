@@ -123,4 +123,18 @@ describe("parseInvoiceText", () => {
     expect(result.netAmount).toBe(57500)
     expect(result.taxAmount).toBe(10925)
   })
+
+  it("lee la fecha aunque la celda traiga guías entre el rótulo y el valor", () => {
+    // Layout real de la muestra escaneada: "Fecha de Emisión ——: 14/07/2026".
+    const result = parseInvoiceText("Señor(es) — : Serv. Industriales Chome Ltda.- Fecha de Emisión ——: 14/07/2026")
+    expect(result.issueDate).toBe("2026-07-14")
+  })
+
+  it("no confunde un nombre que empieza con 'Proveedor' con un rótulo", () => {
+    const conRotulo = parseInvoiceText("Proveedor: ACME S.A. RUT: 96.542.490-3")
+    expect(conRotulo.supplierName).toBe("ACME S.A.")
+
+    const sinRotulo = parseInvoiceText("PROVEEDOR DEMO SPA GIRO: Venta industrial")
+    expect(sinRotulo.supplierName).toBe("PROVEEDOR DEMO SPA")
+  })
 })

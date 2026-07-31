@@ -18,27 +18,57 @@ import sharp from "sharp"
 import { afterEach, describe, expect, it } from "vitest"
 
 import { extractInvoiceData } from "./invoice-extractor"
-import { extractInvoiceTextOcr } from "./invoice-ocr"
+import { extractInvoiceTextOcr, supportsPdfRasterization } from "./invoice-ocr"
+
+/**
+ * Un PDF sintético simple (una imagen embebida por jspdf) se rasteriza aun en
+ * Node 20, así que por sí solo daba verde y escondía el P0 de la auditoría: con
+ * la factura real de la muestra, `pdfjs` cae en `transferToFixedLength`, devuelve
+ * una página en blanco y el OCR lee 9 caracteres. La capacidad se consulta al
+ * módulo —no se deduce de la versión— y cada rama tiene su expectativa.
+ */
+const CAN_RASTERIZE = supportsPdfRasterization()
 
 const FOLIO = "3064428"
 
+/** Renderiza líneas de texto como un documento escaneado en blanco y negro. */
+async function renderPng(lines: string[], options: { rotate?: number; noise?: boolean } = {}): Promise<Buffer> {
+  const body = lines
+    .map((text, index) =>
+      `<text x="60" y="${90 + index * 46}" font-family="DejaVu Sans, Arial, sans-serif" font-size="26" fill="#000">${text}</text>`,
+    )
+    .join("")
+  const height = 140 + lines.length * 46
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1240" height="${height}">
+    <rect width="1240" height="${height}" fill="#fff"/>${body}</svg>`
+
+  let image = sharp(Buffer.from(svg))
+  // Un escaneo real llega torcido y sucio; el preprocesado de `invoice-ocr`
+  // (autoOrient + grises + normalize + sharpen) existe justamente para eso.
+  if (options.rotate) image = image.rotate(options.rotate, { background: "#fff" })
+  if (options.noise) image = image.blur(0.6).modulate({ brightness: 0.95 })
+  return image.png().toBuffer()
+}
+
 /** Factura sintética con los campos que el parser considera evidencia mínima. */
+function canonicalLines(): string[] {
+  return [
+    "PROVEEDOR DEMO SPA",
+    "RUT: 96.542.490-3",
+    `FACTURA ELECTRONICA N° ${FOLIO}`,
+    "Fecha de Emision: 14/07/2026",
+    "",
+    "CODIGO DESCRIPCION CANTIDAD PRECIO TOTAL",
+    "05-03-008 GUANTE CABRITILLA 50 1.150 57.500",
+    "",
+    "Neto: 57.500",
+    "IVA 19%: 10.925",
+    "Total: 68.425",
+  ]
+}
+
 async function invoicePng(): Promise<Buffer> {
-  const line = (y: number, text: string, size = 26) =>
-    `<text x="60" y="${y}" font-family="DejaVu Sans, Arial, sans-serif" font-size="${size}" fill="#000">${text}</text>`
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1240" height="760">
-    <rect width="1240" height="760" fill="#fff"/>
-    ${line(80, "PROVEEDOR DEMO SPA", 32)}
-    ${line(120, "RUT: 96.542.490-3")}
-    ${line(170, "FACTURA ELECTRONICA N° " + FOLIO, 30)}
-    ${line(210, "Fecha de Emision: 14/07/2026")}
-    ${line(300, "CODIGO DESCRIPCION CANTIDAD PRECIO TOTAL", 24)}
-    ${line(340, "05-03-008 GUANTE CABRITILLA 50 1.150 57.500", 24)}
-    ${line(470, "Neto: 57.500")}
-    ${line(510, "IVA 19%: 10.925")}
-    ${line(550, "Total: 68.425", 30)}
-  </svg>`
-  return sharp(Buffer.from(svg)).png().toBuffer()
+  return renderPng(canonicalLines())
 }
 
 /** Mismo documento "escaneado": la imagen embebida en un PDF sin capa de texto. */
@@ -88,19 +118,7 @@ describe("OCR real de una imagen de factura", () => {
   }, 60_000)
 })
 
-describe("OCR real de un PDF escaneado", () => {
-  /**
-   * El fallback de PDF escaneado corre sin gating por versión de Node a
-   * propósito.
-   *
-   * La auditoría 2026-07-30 lo declaró P0 no desplegable porque
-   * `pdfjs-dist@6.1.200` exige Node >=22.13 y en 20 fallaba con
-   * `buffer.transferToFixedLength is not a function`. Con el código actual
-   * —build `legacy` de pdfjs y rasterizado vía `@napi-rs/canvas`— ese error no se
-   * reproduce ni en Node 20.19: la página se rasteriza y el OCR recupera los
-   * campos. Si un runtime futuro vuelve a romperlo, este test lo dice en vez de
-   * saltarse.
-   */
+describe.skipIf(!CAN_RASTERIZE)("OCR real de un PDF escaneado (runtime soportado)", () => {
   it("rasteriza la página y recupera los campos mínimos", async () => {
     const pdf = await scannedInvoicePdf()
     const result = await extractInvoiceData(pdf, "application/pdf", "factura-escaneada.pdf")
@@ -112,3 +130,75 @@ describe("OCR real de un PDF escaneado", () => {
     expect(result.data?.totalAmount).toBe(68425)
   }, 180_000)
 })
+
+describe.skipIf(CAN_RASTERIZE)("OCR de PDF en un runtime sin soporte", () => {
+  it("nombra el runtime como causa en vez de leer una página en blanco", async () => {
+    const result = await extractInvoiceData(await scannedInvoicePdf(), "application/pdf", "factura-escaneada.pdf")
+
+    expect(result).toMatchObject({ data: null, method: "manual" })
+    expect(result.warnings?.join(" ")).toMatch(/no puede rasterizar PDF para OCR.*Node 22\.13/i)
+  }, 120_000)
+})
+
+/**
+ * Matriz de layouts sintéticos.
+ *
+ * No sustituye documentos reales por proveedor —esos no se versionan aquí—, pero
+ * cubre lo que sí es del motor y del parser: cómo degrada el ordinal, dónde
+ * aparece el folio, con qué rótulo viene el total y qué pasa con un escaneo
+ * torcido o sucio. Los dos bugs que este módulo tenía (folio perdido por `N*`,
+ * total tomado del encabezado de columna) eran exactamente de esta clase.
+ */
+const LAYOUTS: Array<{ nombre: string; lineas: string[]; opciones?: { rotate?: number; noise?: boolean } }> = [
+  {
+    nombre: "folio con rótulo FOLIO y total como 'Total a pagar'",
+    lineas: [
+      "COMERCIAL DEMO LIMITADA",
+      "RUT: 76.111.222-3",
+      "FACTURA ELECTRONICA",
+      `FOLIO: ${FOLIO}`,
+      "Fecha de Emision: 14/07/2026",
+      "",
+      "DESCRIPCION CANT PRECIO TOTAL",
+      "GUANTE CABRITILLA 50 1.150 57.500",
+      "",
+      "Neto: 57.500",
+      "IVA 19%: 10.925",
+      "Total a pagar: 68.425",
+    ],
+  },
+  {
+    nombre: "montos sin separador de miles y fecha con guías",
+    lineas: [
+      "PROVEEDOR DEMO SPA",
+      `FACTURA ELECTRONICA N° ${FOLIO}`,
+      "Fecha de Emision ---: 14/07/2026",
+      "",
+      "DESCRIPCION CANT PRECIO TOTAL",
+      "GUANTE CABRITILLA 50 1150 57500",
+      "",
+      "Neto: 57500",
+      "IVA 19%: 10925",
+      "Total: 68425",
+    ],
+  },
+  {
+    nombre: "escaneo torcido y con ruido",
+    lineas: canonicalLines(),
+    opciones: { rotate: 1.2, noise: true },
+  },
+]
+
+describe("matriz de layouts escaneados", () => {
+  it.each(LAYOUTS)("extrae folio, fecha y total: $nombre", async ({ lineas, opciones }) => {
+    const result = await extractInvoiceData(await renderPng(lineas, opciones), "image/png", "factura.png")
+
+    expect(result.method).toBe("ocr")
+    expect(result.data?.invoiceNumber).toBe(FOLIO)
+    expect(result.data?.issueDate).toBe("2026-07-14")
+    expect(result.data?.totalAmount).toBe(68425)
+    // Ningún layout debe colar un total que no cuadre con neto + IVA.
+    expect(result.quality.totalsConsistent).toBe(true)
+  }, 120_000)
+})
+
