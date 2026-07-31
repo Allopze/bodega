@@ -402,47 +402,6 @@ describe("ReceiptForm", () => {
     })
   })
 
-  describe("trazabilidad EPP", () => {
-    const eppProps = {
-      purchaseOrderId: "po-1",
-      orderCode: "OC-001",
-      orderWorksiteName: "Faena Norte",
-      items: [makeItem({ isEpp: true, quantityOfficeReceived: 10 })],
-      canOffice: false,
-      canFaena: true,
-    }
-
-    it("no marca los campos de lote como inválidos en un formulario intacto", () => {
-      render(<ReceiptForm {...eppProps} />)
-
-      expect(screen.getByLabelText(/^Lote/)).not.toHaveAttribute("aria-invalid", "true")
-      expect(screen.getByLabelText(/^Fabricación/)).not.toHaveAttribute("aria-invalid", "true")
-      // El botón queda habilitado: el intento de envío es lo que explica qué falta.
-      expect(screen.getByRole("button", { name: "Marcar como recibido" })).toBeEnabled()
-    })
-
-    it("al intentar enviar con lotes incompletos bloquea y marca los campos que faltan", () => {
-      const { container } = render(<ReceiptForm {...eppProps} />)
-
-      fireEvent.submit(container.querySelector("form")!)
-
-      expect(toast.error).toHaveBeenCalledWith(expect.stringContaining("Completa lote"))
-      expect(screen.getByLabelText(/^Lote/)).toHaveAttribute("aria-invalid", "true")
-      expect(screen.getByLabelText(/^Fabricación/)).toHaveAttribute("aria-invalid", "true")
-      expect(screen.getByLabelText(/^Vencimiento/)).toHaveAttribute("aria-invalid", "true")
-    })
-
-    it("al empezar a llenar el bloque marca solo los campos que siguen vacíos", () => {
-      render(<ReceiptForm {...eppProps} />)
-
-      fireEvent.change(screen.getByLabelText(/^Lote/), { target: { value: "L-1" } })
-
-      expect(screen.getByLabelText(/^Lote/)).not.toHaveAttribute("aria-invalid", "true")
-      expect(screen.getByLabelText(/^Fabricación/)).toHaveAttribute("aria-invalid", "true")
-      expect(screen.getByLabelText(/^Vencimiento/)).toHaveAttribute("aria-invalid", "true")
-    })
-  })
-
   describe("multiple items", () => {
     it("renders all items in the list", () => {
       render(

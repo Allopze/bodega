@@ -235,18 +235,6 @@ async function seedDeliveryFixture(db: ReturnType<typeof drizzle<typeof schema>>
     quantityReceived: 10,
     status: "received",
   })
-  await db.insert(schema.inventoryLots).values({
-    id: "lot-dc-test",
-    worksiteId: "ws-dc-test",
-    productId: "prod-dc-test",
-    receiptItemId: "receipt-item-dc-test",
-    lotNumber: "LOTE-DC-TEST",
-    manufacturedAt: "2026-01-01",
-    expiresAt: "2030-01-01",
-    quantityReceived: 10,
-    quantityAvailable: 10,
-    createdAt: now,
-  })
 }
 
 async function resetPublicSchema(url: string) {

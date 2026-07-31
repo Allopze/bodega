@@ -132,9 +132,6 @@ export const receiptItemSchema = z.object({
   quantityRejected:    nonNegativeQuantitySchema.default(0),
   quantityDamaged:     nonNegativeQuantitySchema.default(0),
   notes:               z.string().max(300).nullable().optional().or(z.literal("")),
-  lotNumber:           z.string().trim().max(120).nullable().optional().or(z.literal("")),
-  manufacturedAt:      z.string().trim().max(10).nullable().optional().or(z.literal("")),
-  expiresAt:           z.string().trim().max(10).nullable().optional().or(z.literal("")),
 }).refine(
   (d) => d.quantityReceived + d.quantityRejected + d.quantityDamaged > 0,
   { message: "Registra al menos una cantidad (recibida, rechazada o dañada)", path: ["quantityReceived"] },

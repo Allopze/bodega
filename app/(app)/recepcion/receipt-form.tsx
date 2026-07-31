@@ -7,7 +7,6 @@ import { Warning } from "@phosphor-icons/react"
 import { SubmitButton } from "@/components/admin/submit-button"
 import { Field } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
-import { DatePicker } from "@/components/ui/date-picker"
 import { Textarea } from "@/components/ui/textarea"
 import { INITIAL_STATE } from "@/components/admin/form-state"
 import { registerReceiptAction } from "./actions"
@@ -56,14 +55,6 @@ export function ReceiptForm({
   const [qtys,    setQtys]    = React.useState<Record<string, number>>({})
   const [rejs,    setRejs]    = React.useState<Record<string, number>>({})
   const [dmgs,    setDmgs]    = React.useState<Record<string, number>>({})
-  const [lotNumbers, setLotNumbers] = React.useState<Record<string, string>>({})
-  const [manufacturedAts, setManufacturedAts] = React.useState<Record<string, string>>({})
-  const [expiresAts, setExpiresAts] = React.useState<Record<string, string>>({})
-  // Un bloque de lote EPP solo se pinta en rojo una vez que el usuario lo empezó a
-  // llenar: antes los tres campos nacían en error state sobre un formulario intacto,
-  // que es una instrucción disfrazada de falla. La obligatoriedad la comunican el
-  // asterisco, la nota del bloque y el contador del resumen.
-  const [eppTouched, setEppTouched] = React.useState<Record<string, boolean>>({})
 
   const [state, action] = useActionState<ActionState, FormData>(registerReceiptAction, INITIAL_STATE)
 
@@ -75,10 +66,6 @@ export function ReceiptForm({
     setQtys(Object.fromEntries(items.map((i) => [i.id, getRemaining(i, stage)])))
     setRejs({})
     setDmgs({})
-    setLotNumbers({})
-    setManufacturedAts({})
-    setExpiresAts({})
-    setEppTouched({})
   }
 
   React.useEffect(() => {
@@ -102,9 +89,6 @@ export function ReceiptForm({
       quantityRejected:    rejs[i.id]     ?? 0,
       quantityDamaged:     dmgs[i.id]     ?? 0,
       notes:               null,
-      lotNumber:           lotNumbers[i.id] ?? "",
-      manufacturedAt:      manufacturedAts[i.id] ?? "",
-      expiresAt:           expiresAts[i.id] ?? "",
     }))
   )
   const stageLabel = stage === "office" ? "Oficina" : "Faena"
@@ -121,29 +105,9 @@ export function ReceiptForm({
     })
     .map((item) => item.id)
   const hasOverBooked = overBookedItemIds.length > 0
-  const missingEppLotItemIds = items
-    .filter((item) => item.isEpp && stage === "faena" && (qtys[item.id] ?? getRemaining(item, stage)) > 0)
-    .filter((item) => !lotNumbers[item.id]?.trim() || !manufacturedAts[item.id] || !expiresAts[item.id])
-    .map((item) => item.id)
-  const hasMissingEppLot = missingEppLotItemIds.length > 0
-
-  // El botón no se deshabilita por lotes EPP incompletos: la única explicación vivía
-  // en el aside, que en móvil queda fuera de pantalla, así que el usuario veía un
-  // botón muerto sin razón visible. Se envía, se bloquea acá y el intento es lo que
-  // revela los campos que faltan (más un toast, que no depende del viewport).
-  function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
-    if (!hasMissingEppLot) return
-    event.preventDefault()
-    setEppTouched((current) => ({
-      ...current,
-      ...Object.fromEntries(missingEppLotItemIds.map((id) => [id, true])),
-    }))
-    toast.error("Completa lote, fabricación y vencimiento de los EPP antes de registrar la recepción.")
-    document.getElementById(`receiptLot-${missingEppLotItemIds[0]}`)?.focus()
-  }
 
   return (
-    <form action={action} onSubmit={handleSubmit} className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_20rem]">
+    <form action={action} className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_20rem]">
       <input type="hidden" name="purchaseOrderId" value={purchaseOrderId} />
       <input type="hidden" name="itemsJson"        value={itemsJson} />
       <input type="hidden" name="stage"            value={stage} />
@@ -251,52 +215,6 @@ export function ReceiptForm({
                     <p className="text-xs text-[var(--color-danger)] mt-0.5">
                       Recibido + rechazado + dañado supera lo pendiente ({formatQty(remaining, item.unitOfMeasure)}).
                     </p>
-                  )}
-                  {item.isEpp && stage === "faena" && pending && (
-                    <div className="mt-3">
-                      <p className="text-xs text-[var(--color-text-subtle)]">
-                        Trazabilidad EPP: lote, fabricación y vencimiento son obligatorios para ingresar a stock.
-                      </p>
-                      <div className="mt-1.5 grid grid-cols-1 gap-2 sm:grid-cols-3">
-                        <Field label="Lote" htmlFor={`receiptLot-${item.id}`} required>
-                          <Input
-                            id={`receiptLot-${item.id}`}
-                            value={lotNumbers[item.id] ?? ""}
-                            onChange={(e) => {
-                              setLotNumbers((current) => ({ ...current, [item.id]: e.target.value }))
-                              setEppTouched((current) => ({ ...current, [item.id]: true }))
-                            }}
-                            placeholder="N° de lote"
-                            error={!!eppTouched[item.id] && !lotNumbers[item.id]?.trim()}
-                          />
-                        </Field>
-                        <Field label="Fabricación" htmlFor={`receiptManufactured-${item.id}`} required>
-                          <DatePicker
-                            id={`receiptManufactured-${item.id}`}
-                            value={manufacturedAts[item.id] ?? ""}
-                            onChange={(value) => {
-                              setManufacturedAts((current) => ({ ...current, [item.id]: value }))
-                              setEppTouched((current) => ({ ...current, [item.id]: true }))
-                            }}
-                            placeholder="Selecciona fecha"
-                            error={!!eppTouched[item.id] && !manufacturedAts[item.id]}
-                          />
-                        </Field>
-                        <Field label="Vencimiento" htmlFor={`receiptExpires-${item.id}`} required>
-                          <DatePicker
-                            id={`receiptExpires-${item.id}`}
-                            value={expiresAts[item.id] ?? ""}
-                            onChange={(value) => {
-                              setExpiresAts((current) => ({ ...current, [item.id]: value }))
-                              setEppTouched((current) => ({ ...current, [item.id]: true }))
-                            }}
-                            placeholder="Selecciona fecha"
-                            min={manufacturedAts[item.id] || undefined}
-                            error={!!eppTouched[item.id] && !expiresAts[item.id]}
-                          />
-                        </Field>
-                      </div>
-                    </div>
                   )}
                 </div>
 
@@ -410,12 +328,6 @@ export function ReceiptForm({
             <div className="flex items-center justify-between gap-3">
               <span className="text-[var(--color-danger)]">Líneas con error</span>
               <span className="tabular-nums text-[var(--color-danger)]">{overBookedItemIds.length}</span>
-            </div>
-          )}
-          {hasMissingEppLot && (
-            <div className="flex items-center justify-between gap-3">
-              <span className="text-[var(--color-danger)]">Lotes EPP incompletos</span>
-              <span className="tabular-nums text-[var(--color-danger)]">{missingEppLotItemIds.length}</span>
             </div>
           )}
         </div>

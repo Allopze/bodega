@@ -4,7 +4,7 @@ import { relations } from "drizzle-orm"
 import { users } from "./users"
 import { worksites } from "./worksites"
 import { products } from "./products"
-import { deliveryItems, receiptItems } from "./receiving"
+import { deliveryItems } from "./receiving"
 
 /* ── Worksite Stock (Stock por Faena) ──────────────────────────────────── */
 export const worksiteStock = pgTable("worksite_stock", {
@@ -120,49 +120,6 @@ export const physicalInventoryCountItems = pgTable("physical_inventory_count_ite
 export const worksiteStockRelations = relations(worksiteStock, ({ one }) => ({
   worksite: one(worksites, { fields: [worksiteStock.worksiteId], references: [worksites.id] }),
   product:  one(products, { fields: [worksiteStock.productId], references: [products.id] }),
-}))
-
-/* ── EPP lot traceability ───────────────────────────────────────────────── */
-// EPP cannot be treated as interchangeable aggregate stock: every ingress at
-// faena records its lot and expiration, and worker deliveries consume lots FEFO.
-export const inventoryLots = pgTable("inventory_lots", {
-  id:                text("id").primaryKey(),
-  worksiteId:        text("worksite_id").notNull().references(() => worksites.id),
-  productId:         text("product_id").notNull().references(() => products.id),
-  receiptItemId:     text("receipt_item_id").notNull().references(() => receiptItems.id),
-  lotNumber:         text("lot_number").notNull(),
-  manufacturedAt:    text("manufactured_at").notNull(),
-  expiresAt:         text("expires_at").notNull(),
-  quantityReceived:  real("quantity_received").notNull(),
-  quantityAvailable: real("quantity_available").notNull(),
-  createdAt:         timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
-}, (table) => [
-  check("inventory_lots_quantities_valid", sql`${table.quantityReceived} > 0 AND ${table.quantityAvailable} >= 0 AND ${table.quantityAvailable} <= ${table.quantityReceived}`),
-  check("inventory_lots_dates_valid", sql`${table.manufacturedAt} <= ${table.expiresAt}`),
-  uniqueIndex("inventory_lots_unique_source").on(table.receiptItemId),
-  index("inventory_lots_fefo_idx").on(table.worksiteId, table.productId, table.expiresAt),
-])
-
-export const deliveryItemLots = pgTable("delivery_item_lots", {
-  id:             text("id").primaryKey(),
-  deliveryItemId: text("delivery_item_id").notNull().references(() => deliveryItems.id, { onDelete: "cascade" }),
-  inventoryLotId: text("inventory_lot_id").notNull().references(() => inventoryLots.id),
-  quantity:       real("quantity").notNull(),
-}, (table) => [
-  check("delivery_item_lots_quantity_positive", sql`${table.quantity} > 0`),
-  uniqueIndex("delivery_item_lots_unique").on(table.deliveryItemId, table.inventoryLotId),
-])
-
-export const inventoryLotsRelations = relations(inventoryLots, ({ one, many }) => ({
-  worksite: one(worksites, { fields: [inventoryLots.worksiteId], references: [worksites.id] }),
-  product: one(products, { fields: [inventoryLots.productId], references: [products.id] }),
-  receiptItem: one(receiptItems, { fields: [inventoryLots.receiptItemId], references: [receiptItems.id] }),
-  deliveryAllocations: many(deliveryItemLots),
-}))
-
-export const deliveryItemLotsRelations = relations(deliveryItemLots, ({ one }) => ({
-  deliveryItem: one(deliveryItems, { fields: [deliveryItemLots.deliveryItemId], references: [deliveryItems.id] }),
-  inventoryLot: one(inventoryLots, { fields: [deliveryItemLots.inventoryLotId], references: [inventoryLots.id] }),
 }))
 
 export const inventoryMovementsRelations = relations(inventoryMovements, ({ one }) => ({

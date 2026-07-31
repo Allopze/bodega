@@ -10,7 +10,6 @@ import {
   receipts, receiptItems,
   purchaseOrders, purchaseOrderItems,
   purchaseRequestItems,
-  inventoryLots, products,
 } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { nextCodeTx } from "@/lib/code-sequences"
@@ -27,9 +26,6 @@ export interface ReceiptItemInput {
   quantityRejected?:   number
   quantityDamaged?:    number
   notes?:              string | null
-  lotNumber?:          string | null
-  manufacturedAt?:     string | null
-  expiresAt?:          string | null
 }
 
 export interface RegisterReceiptInput {
@@ -232,33 +228,6 @@ export async function registerReceipt(
                 entityHref: `/solicitudes/${reqItem?.request?.id ?? ""}`,
               }))
             }
-        }
-
-        if (input.stage === "faena" && lockedOcItem.productId) {
-          const product = await tx.query.products.findFirst({
-            where: eq(products.id, lockedOcItem.productId),
-          })
-          if (product?.isEpp) {
-            const lotNumber = ri.lotNumber?.trim()
-            const manufacturedAt = ri.manufacturedAt?.trim()
-            const expiresAt = ri.expiresAt?.trim()
-            if (!lotNumber || !manufacturedAt || !expiresAt) {
-              throw new Error("Cada recepción de EPP en faena requiere lote, fabricación y vencimiento")
-            }
-            const manufactured = new Date(`${manufacturedAt}T00:00:00.000Z`)
-            const expires = new Date(`${expiresAt}T00:00:00.000Z`)
-            if (Number.isNaN(manufactured.valueOf()) || Number.isNaN(expires.valueOf()) || manufactured >= expires) {
-              throw new Error("Las fechas de fabricación y vencimiento del lote EPP no son válidas")
-            }
-            if (expires.valueOf() <= Date.now()) {
-              throw new Error("No puedes ingresar a stock un lote EPP vencido")
-            }
-            await tx.insert(inventoryLots).values({
-              id: nanoid(), worksiteId, productId: product.id, receiptItemId,
-              lotNumber, manufacturedAt, expiresAt,
-              quantityReceived: qtyRec, quantityAvailable: qtyRec,
-            })
-          }
         }
 
           if (worksiteId && lockedOcItem.productId) {

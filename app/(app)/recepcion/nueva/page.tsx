@@ -62,7 +62,7 @@ export default async function NuevaRecepcionPage({
   const productRows = productIds.length > 0
     ? await db.query.products.findMany({
         where: (p, { inArray }) => inArray(p.id, productIds),
-        columns: { id: true, sku: true, name: true, isEpp: true },
+        columns: { id: true, sku: true, name: true },
       })
     : []
 
@@ -120,7 +120,6 @@ export default async function NuevaRecepcionPage({
       requestItemId:    item.requestItemId,
       productName:      product?.name ?? item.productNameFree ?? "(sin nombre)",
       productSku:       product?.sku ?? null,
-      isEpp:            product?.isEpp ?? false,
       quantity:         item.quantity,
       quantityOfficeReceived: item.quantityOfficeReceived ?? 0,
       quantityReceived: item.quantityReceived ?? 0,
