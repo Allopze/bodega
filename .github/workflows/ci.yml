@@ -9,6 +9,10 @@ on:
 
 permissions:
   contents: read
+  # gitleaks-action lista los commits del PR para acotar el escaneo; sin este
+  # permiso la llamada devuelve 403 y el job entero muere en el primer paso,
+  # antes de compilar o correr una sola prueba.
+  pull-requests: read
 
 jobs:
   verify:
