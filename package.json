@@ -26,7 +26,7 @@
     "db:seed-pdtp-checklists": "tsx --env-file=.env.local scripts/seed-pdtp-checklists-2026.ts",
     "pdtp:bootstrap-2026": "tsx --env-file=.env.local scripts/bootstrap-pdtp-2026.ts",
     "pdtp:reconcile-annual": "tsx --env-file=.env.local scripts/reconcile-pdtp-annual-programs.ts",
-    "db:preflight-pdtp-annual": "tsx --env-file=.env.local scripts/reconcile-pdtp-annual-programs.ts --apply",
+    "db:preflight-pdtp-annual": "tsx --env-file-if-exists=.env.local scripts/reconcile-pdtp-annual-programs.ts --apply",
     "db:normalize-epp-families": "tsx --env-file=.env.local scripts/normalize-epp-families.ts",
     "db:normalize-fuel-suppliers": "tsx --env-file=.env.local scripts/normalize-fuel-suppliers.ts",
     "db:sync-rbac": "tsx --env-file=.env.local scripts/sync-rbac.ts",
