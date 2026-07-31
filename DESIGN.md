@@ -350,7 +350,10 @@ trabajo, qué acción se espera. Resumen (detalle en [AGENTS.md](AGENTS.md)):
   `PageHeader.actions` (Dialog/Sheet), no un formulario permanente.
 - **A4** — Empty states en lenguaje de usuario + CTA real.
 - **A5** — Una dimensión = una representación (no pestañas *y* select *y* tile del
-  mismo estado).
+  mismo estado). Corolario: una cifra no puede ser tile **y** alerta a la vez.
+- **A5b** — Un gráfico = una unidad por eje. Dos magnitudes de escala distinta
+  (litros y cargas, conteos y dinero) exigen eje doble o dos tarjetas. Si
+  consultas un campo, dibújalo o no lo consultes.
 - **A6** — Controles y vocabulario consistentes: `DatePicker` del sistema (no
   `<input type="date">`), enums mapeados a label + `Badge`, siglas con tooltip.
 

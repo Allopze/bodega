@@ -282,6 +282,22 @@ Si hay pestañas por estado, no hay además un `Select` de estado ni un tile
 por estado. Los contadores van sobre las pestañas (ver `prevencion/ppa`). No
 repitas la misma cifra en dos controles.
 
+## A5b — Un gráfico = una unidad por eje
+
+Dos magnitudes de **escala distinta** no comparten eje: la chica queda pegada al
+piso e ilegible. Usa eje doble (`yAxisId` + `<YAxis orientation="right">`) o dos
+tarjetas.
+
+- Litros (miles) + cargas (decenas) → la serie "Cargas" se aplanaba.
+- Tasa de frecuencia (personas) + tasa de gravedad (días) → la de frecuencia se
+  aplanaba, aunque las dos digan "× 1.000.000 / HH".
+- Conteos + dinero → siempre eje doble, con tick compacto (`$1,2M`) para que
+  quepa.
+
+Corolario: **si consultas un campo, dibújalo o no lo consultes.** `amount` se
+calculaba y se descartaba en los dos gráficos de flota. Derivada de la auditoría
+`AUDITORIA_DASHBOARD_COBERTURA_GERENCIA_2026-07-31.md` (G-04).
+
 ## A6 — Consistencia de controles y vocabulario
 
 - **Fechas**: usa el `DatePicker` del design system, no `<input type="date">`
