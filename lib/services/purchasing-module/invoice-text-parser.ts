@@ -47,17 +47,27 @@ export function parseInvoiceText(text: string): ParsedInvoiceData {
 
 // ── Invoice Number ────────────────────────────────────────────────────────────
 
+/**
+ * El ordinal tras la "N" tal como lo devuelve un OCR.
+ *
+ * Tesseract rinde `N°` como `N*`, `N?`, `No` o `N` pelada según la resolución y
+ * la tipografía. Exigiendo sólo `N[°º]`, una factura escaneada perdía el folio
+ * —y sin folio el extractor la declara "manual", así que el operador retipeaba
+ * todo aunque el OCR hubiera leído bien el documento.
+ */
+const ORDINAL = String.raw`(?:N\s*[°ºo0*?·.,;:'"]{0,2}|No\.?|#)`
+
 function extractInvoiceNumber(text: string): string | null {
   const patterns = [
-    /Factura\s*(?:N[°º]|No\.?|#)\s*:?\s*(\d[\d\-\.]*)/i,
-    /Factura\s+Electr[óo]nica\s*(?:N[°º]|No\.?|#)\s*:?\s*(\d[\d\-\.]*)/i,
+    new RegExp(String.raw`Factura\s*${ORDINAL}\s*:?\s*(\d[\d\-\.]*)`, "i"),
+    new RegExp(String.raw`Factura\s+Electr[óo]nica\s*${ORDINAL}\s*:?\s*(\d[\d\-\.]*)`, "i"),
     /Folio\s*:?\s*(\d[\d\-\.]*)/i,
     /Invoice\s*(?:Number|No\.?|#)\s*:?\s*(\d[\d\-\.]*)/i,
-    /Boleta\s*(?:N[°º]|No\.?|#)\s*:?\s*(\d[\d\-\.]*)/i,
-    /N[°º]\s*(?:de\s*)?(?:Factura|Boleta|Documento)\s*:?\s*(\d[\d\-\.]*)/i,
+    new RegExp(String.raw`Boleta\s*${ORDINAL}\s*:?\s*(\d[\d\-\.]*)`, "i"),
+    new RegExp(String.raw`${ORDINAL}\s*(?:de\s*)?(?:Factura|Boleta|Documento)\s*:?\s*(\d[\d\-\.]*)`, "i"),
     // Crystal Reports and similar renderers frequently output the folio before
     // the document title: “Nº 3064428 R.U.T.”.
-    /N[°º]\s*(\d{4,})\s+R\.?U\.?T\.?/i,
+    new RegExp(String.raw`${ORDINAL}\s*(\d{4,})\s+R\.?U\.?T\.?`, "i"),
   ]
 
   for (const pattern of patterns) {
@@ -79,8 +89,10 @@ function extractDate(text: string): string | null {
     /Date\s*:?\s*(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/i,
     // Standalone DD/MM/YYYY near "fecha" or "date"
     /(?:fecha|date)\s*[:\s]*(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/i,
-    // Values can be emitted several visual cells after their label.
-    /Fecha\s+de\s+Emisi[óo]n[\s:\p{L}]{0,48}?(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/iu,
+    // Values can be emitted several visual cells after their label. El relleno
+    // incluye guiones y puntos porque el OCR de una factura con celdas rinde la
+    // línea guía entre rótulo y valor como "Fecha de Emisión ——: 14/07/2026".
+    /Fecha\s+de\s+Emisi[óo]n[\s:\p{L}\-—–_.·]{0,48}?(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/iu,
   ]
 
   for (const pattern of patterns) {
@@ -100,62 +112,71 @@ function extractDate(text: string): string | null {
 
 // ── Amounts ───────────────────────────────────────────────────────────────────
 
+/**
+ * Monto rotulado, leído en la misma línea que su rótulo y tomando la última
+ * aparición.
+ *
+ * `\s*` entre rótulo y número cruza el salto de línea, así que el encabezado de
+ * columna "… PRECIO TOTAL" seguido de la fila "05-03-008 GUANTE …" daba un total
+ * de $5: el rótulo era el título de la columna y el número, el código del
+ * producto de la línea siguiente. Con OCR real eso no es un caso raro, es el
+ * layout normal de una factura. Se acota a la línea (`[^\S\n]`), se descarta un
+ * número que sigue con `-` o `/` (códigos y fechas) y se prefiere la última
+ * coincidencia, porque los totales van al pie del documento.
+ */
+function amountOnSameLine(text: string, labels: string[]): number | null {
+  for (const label of labels) {
+    const pattern = new RegExp(String.raw`${label}[^\S\n]*:?[^\S\n]*\$?[^\S\n]*([\d\.\,]+)(?![\d\.\,]*[\-\/])`, "gi")
+    let value: number | null = null
+    for (const match of text.matchAll(pattern)) {
+      const parsed = parseChileanNumber(match[1]!)
+      if (parsed != null) value = parsed
+    }
+    if (value != null) return value
+  }
+  return null
+}
+
 function extractTotalAmount(text: string): number | null {
   const crystalTotals = extractCrystalTotals(text)
   if (crystalTotals) return crystalTotals.total
-  const patterns = [
-    /Total\s*(?:a\s*pagar|factura|documento)?\s*:?\s*\$?\s*([\d\.\,]+)/i,
-    /Monto\s*Total\s*:?\s*\$?\s*([\d\.\,]+)/i,
-    /Amount\s*Due\s*:?\s*\$?\s*([\d\.\,]+)/i,
-    /Total\s*:?\s*\$?\s*([\d\.\,]+)/i,
-    /Total\s*Amount\s*:?\s*\$?\s*([\d\.\,]+)/i,
-  ]
-
-  for (const pattern of patterns) {
-    const match = text.match(pattern)
-    if (match?.[1]) return parseChileanNumber(match[1])
-  }
-  return null
+  return amountOnSameLine(text, [
+    String.raw`Total\s*(?:a\s*pagar|factura|documento)`,
+    String.raw`Monto\s*Total`,
+    String.raw`Amount\s*Due`,
+    String.raw`Total\s*Amount`,
+    String.raw`Total`,
+  ])
 }
 
 function extractNetAmount(text: string): number | null {
   const crystalTotals = extractCrystalTotals(text)
   if (crystalTotals) return crystalTotals.net
-  const patterns = [
-    /Neto\s*:?\s*\$?\s*([\d\.\,]+)/i,
-    /Monto\s*Neto\s*:?\s*\$?\s*([\d\.\,]+)/i,
-    /Sub\s*Total\s*:?\s*\$?\s*([\d\.\,]+)/i,
-  ]
-
-  for (const pattern of patterns) {
-    const match = text.match(pattern)
-    if (match?.[1]) return parseChileanNumber(match[1])
-  }
-  return null
+  return amountOnSameLine(text, [
+    String.raw`Monto\s*Neto`,
+    String.raw`Neto`,
+    String.raw`Sub\s*Total`,
+  ])
 }
 
 function extractTaxAmount(text: string): number | null {
   const crystalTotals = extractCrystalTotals(text)
   if (crystalTotals) return crystalTotals.tax
-  const patterns = [
-    /IVA\s*(?:\(?\d+\%?\)?)?\s*:?\s*\$?\s*([\d\.\,]+)/i,
-    /Impuesto\s*:?\s*\$?\s*([\d\.\,]+)/i,
-    /Tax\s*:?\s*\$?\s*([\d\.\,]+)/i,
-  ]
-
-  for (const pattern of patterns) {
-    const match = text.match(pattern)
-    if (match?.[1]) return parseChileanNumber(match[1])
-  }
-  return null
+  return amountOnSameLine(text, [
+    String.raw`IVA\s*(?:\(?\d+\s*%?\)?)?`,
+    String.raw`Impuesto`,
+    String.raw`Tax`,
+  ])
 }
 
 // ── Supplier ──────────────────────────────────────────────────────────────────
 
 function extractSupplierName(text: string): string | null {
   const patterns = [
-    /(?:Raz[oó]n\s*Social|Empresa|Proveedor|Supplier|Vendor)\s*:?\s*(.{5,80}?)(?:\s*(?:RUT|NIT|RFC|Date|Fecha|Folio))/i,
-    /(?:Emisor|Issued\s*by|From)\s*:?\s*(.{5,80}?)(?:\s*(?:RUT|NIT|RFC|Date|Fecha))/i,
+    // Los dos puntos son obligatorios: sin ellos, "PROVEEDOR DEMO SPA" —donde
+    // "Proveedor" es parte del nombre— se leía como rótulo y devolvía "DEMO SPA".
+    /(?:Raz[oó]n\s*Social|Empresa|Proveedor|Supplier|Vendor)\s*:\s*(.{5,80}?)(?:\s*(?:RUT|NIT|RFC|Date|Fecha|Folio))/i,
+    /(?:Emisor|Issued\s*by|From)\s*:\s*(.{5,80}?)(?:\s*(?:RUT|NIT|RFC|Date|Fecha))/i,
     /\b([A-Z][A-Z .&-]{2,80}(?:S\.?A\.?|SPA|LTDA\.?))\s+GIRO\s*:/i,
   ]
 

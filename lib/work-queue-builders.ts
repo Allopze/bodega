@@ -1,161 +1,23 @@
 /**
- * Builder functions for the work-queue module — task construction and progress.
+ * Builder functions for the work-queue module — progreso de ciclo de una
+ * solicitud y de una OC, que alimentan `RequestProgressPanel`.
+ *
+ * Aquí vivía además `buildWorkTasks`, un segundo constructor de la cola de
+ * pendientes que ninguna pantalla consumía: `/pendientes`, el dashboard y los
+ * badges leen la proyección SQL de `lib/services/operational-work-queue.ts`.
+ * Mantener las dos era una trampa —al agregar la tarea "Adjuntar factura" sólo
+ * una de las dos la conocía—, así que se eliminó junto con `getWorkQueueSnapshot`
+ * y los tipos de fila que sólo ella usaba.
  */
 import {
-  type WorkActor,
-  type WorkItemRow,
-  type WorkOrderRow,
-  type WorkPriority,
-  type WorkQueueSnapshot,
   type RequestProgressItem,
   type RequestProgress,
-  type WorkTask,
 } from "./work-queue.types"
 import {
-  STAGES, ACTIVE_REQUEST_STATUSES,
-  APPROVAL_ITEM_STATUSES, PURCHASE_ITEM_STATUSES,
-  DELIVERY_ITEM_STATUSES, OFFICE_RECEIVABLE_STATUSES,
-  FAENA_RECEIVABLE_STATUSES, DIRECT_FAENA_RECEIVABLE_STATUSES,
-  PRIORITY_RANK,
-  requestStatusLabel, itemStatusLabel, itemStageLabel, requestNextAction, requestCurrentStage,
+  STAGES,
+  itemStatusLabel, itemStageLabel, requestNextAction, requestCurrentStage,
 } from "./work-queue-labels"
 import { formatQty } from "./utils"
-
-export function buildWorkTasks(actor: WorkActor, snapshot: WorkQueueSnapshot): WorkTask[] {
-  const tasks: WorkTask[] = []
-
-  if (hasAnyPermission(actor, "requests:view_own", "requests:view_all")) {
-    for (const request of snapshot.requests) {
-      if (!canSeeWorksite(actor, request.worksiteId)) continue
-      if (request.requesterId !== actor.userId && !hasPermission(actor, "requests:view_all")) continue
-      if (!ACTIVE_REQUEST_STATUSES.has(request.status)) continue
-
-      tasks.push({
-        id:          `request:${request.id}`,
-        type:        "request_followup",
-        title:       request.code,
-        subtitle:    `${request.worksiteName} · ${formatCount(request.itemCount, "ítem", "ítems")}`,
-        worksiteId:  request.worksiteId,
-        worksiteName: request.worksiteName,
-        statusLabel: requestStatusLabel(request.status),
-        priority:    normalizePriority(request.urgency),
-        createdAt:   request.submittedAt ?? request.createdAt,
-        href:        `/solicitudes/${request.id}`,
-        ctaLabel:    request.status === "draft" || request.status === "returned" ? "Completar" : "Ver avance",
-      })
-    }
-  }
-
-  if (hasPermission(actor, "approvals:approve")) {
-    for (const group of groupItemsByRequest(snapshot.items.filter((item) => APPROVAL_ITEM_STATUSES.has(item.status) && canSeeWorksite(actor, item.worksiteId)))) {
-      tasks.push({
-        id:          `approval:${group.requestId}`,
-        type:        "approval",
-        title:       `Revisar ${group.requestCode}`,
-        subtitle:    `${group.worksiteName} · ${formatCount(group.items.length, "ítem pendiente", "ítems pendientes")}`,
-        worksiteId:  group.worksiteId,
-        worksiteName: group.worksiteName,
-        statusLabel: "Necesita aprobación",
-        priority:    highestPriority(group.items.map((item) => normalizePriority(item.urgency))),
-        createdAt:   oldestDate(group.items.map((item) => item.createdAt)),
-        href:        `/aprobaciones?solicitud=${group.requestId}`,
-        ctaLabel:    "Revisar ítems",
-      })
-    }
-  }
-
-  if (hasPermission(actor, "purchasing:create_order")) {
-    for (const group of groupItemsByWorksite(snapshot.items.filter((item) => PURCHASE_ITEM_STATUSES.has(item.status) && canSeeWorksite(actor, item.worksiteId)))) {
-      tasks.push({
-        id:          `purchase:${group.worksiteId}`,
-        type:        "purchase",
-        title:       "Generar orden de compra",
-        subtitle:    `${group.worksiteName} · ${formatCount(group.items.length, "ítem aprobado", "ítems aprobados")}`,
-        worksiteId:  group.worksiteId,
-        worksiteName: group.worksiteName,
-        statusLabel: "Listo para comprar",
-        priority:    highestPriority(group.items.map((item) => normalizePriority(item.urgency))),
-        createdAt:   oldestDate(group.items.map((item) => item.createdAt)),
-        href:        `/compras/nueva?faena=${group.worksiteId}`,
-        ctaLabel:    "Crear OC",
-      })
-    }
-
-    for (const order of snapshot.orders.filter((order) => order.status === "draft" && canSeeWorksite(actor, order.worksiteId))) {
-      tasks.push(orderTask(order, "OC en borrador", "Emitir OC"))
-    }
-  }
-
-  if (hasPermission(actor, "purchasing:send_order")) {
-    for (const order of snapshot.orders.filter((order) => order.status === "issued" && canSeeWorksite(actor, order.worksiteId))) {
-      tasks.push(orderTask(order, "OC emitida", "Enviar al proveedor"))
-    }
-  }
-
-  if (hasPermission(actor, "receiving:register_office")) {
-    for (const order of snapshot.orders.filter((order) => OFFICE_RECEIVABLE_STATUSES.has(order.status) && order.deliveryMode !== "directo_faena" && canSeeWorksite(actor, order.worksiteId))) {
-      tasks.push({
-        id:          `receipt-office:${order.id}`,
-        type:        "receipt",
-        title:       `Llegada a oficina ${order.code}`,
-        subtitle:    `${order.worksiteName} · ${order.supplierName} · ${formatCount(order.itemCount, "ítem", "ítems")}`,
-        worksiteId:  order.worksiteId,
-        worksiteName: order.worksiteName,
-        statusLabel: order.status === "partially_office_received" ? "Oficina parcial" : "Esperando llegada",
-        priority:    "normal",
-        createdAt:   order.sentAt ?? order.createdAt,
-        href:        `/recepcion/nueva?oc=${order.id}`,
-        ctaLabel:    "Registrar llegada",
-      })
-    }
-  }
-
-  if (hasPermission(actor, "receiving:register_faena")) {
-    for (const order of snapshot.orders.filter((order) => {
-      const receivable = order.deliveryMode === "directo_faena"
-        ? DIRECT_FAENA_RECEIVABLE_STATUSES.has(order.status)
-        : FAENA_RECEIVABLE_STATUSES.has(order.status)
-      return receivable && canSeeWorksite(actor, order.worksiteId)
-    })) {
-      tasks.push({
-        id:          `receipt-faena:${order.id}`,
-        type:        "receipt",
-        title:       `Recibir en faena ${order.code}`,
-        subtitle:    `${order.worksiteName} · ${order.supplierName} · ${formatCount(order.itemCount, "ítem", "ítems")}`,
-        worksiteId:  order.worksiteId,
-        worksiteName: order.worksiteName,
-        statusLabel: order.status === "partially_received" ? "Recepción parcial" : "Pendiente de faena",
-        priority:    "normal",
-        createdAt:   order.sentAt ?? order.createdAt,
-        href:        `/recepcion/nueva?oc=${order.id}`,
-        ctaLabel:    "Recibir en faena",
-      })
-    }
-  }
-
-  // La tarea enruta a /entregas (entrega de EPP a trabajador), que exige
-  // deliveries:create para enviarse. Gatear por warehouse:register_movement
-  // producía tareas que el usuario no podía completar (p. ej. solicitante_faena).
-  if (hasPermission(actor, "deliveries:create")) {
-    for (const item of snapshot.items.filter((item) => DELIVERY_ITEM_STATUSES.has(item.status) && item.hasStock && canSeeWorksite(actor, item.worksiteId))) {
-      tasks.push({
-        id:          `delivery:${item.id}`,
-        type:        "warehouse_delivery",
-        title:       `Entregar ${item.productName}`,
-        subtitle:    `${item.requestCode} · ${item.worksiteName} · ${formatQuantity(item.quantity, item.unitOfMeasure)}`,
-        worksiteId:  item.worksiteId,
-        worksiteName: item.worksiteName,
-        statusLabel: item.status === "partially_delivered" ? "Entrega parcial" : "Recibido en bodega",
-        priority:    normalizePriority(item.urgency),
-        createdAt:   item.createdAt,
-        href:        `/entregas?faena=${item.worksiteId}&item=${item.id}`,
-        ctaLabel:    "Registrar entrega",
-      })
-    }
-  }
-
-  return tasks.sort(compareTasks)
-}
 
 export function buildRequestProgress(requestStatus: string, items: RequestProgressItem[]): RequestProgress {
   const itemSummaries = items.map((item) => ({
@@ -196,16 +58,23 @@ export function buildOcProgress(
   orderStatus: string,
   items: OcProgressItem[],
   audience: OcProgressAudience = "compras",
+  options: OcProgressOptions = {},
 ): RequestProgress | null {
   if (orderStatus === "cancelled") return null
 
   const currentStage = ocCurrentStage(orderStatus, items)
   const currentIndex = Math.max(0, STAGES.indexOf(currentStage))
+  // "received"/"closed" no son "Recepción en curso": ya no queda saldo por
+  // recibir, así que la etapa se marca completada (tilde verde) en vez de
+  // "actual" (borde azul) — aunque el stepper siga topando ahí, sin avanzar
+  // a "Entrega", que pertenece a otro módulo (ver comentario de la función).
+  const isReceptionDone = ["received", "closed"].includes(orderStatus)
+  const completedIndex = isReceptionDone ? currentIndex + 1 : currentIndex
 
   return {
     currentStage,
-    completedStages: STAGES.slice(0, currentIndex),
-    nextAction: ocNextAction(orderStatus, audience, items),
+    completedStages: STAGES.slice(0, completedIndex),
+    nextAction: ocNextAction(orderStatus, audience, items, options),
     items: items.map((item) => ({
       id:            item.id,
       productName:   item.productName,
@@ -243,7 +112,18 @@ function ocCurrentStage(orderStatus: string, items: OcProgressItem[]): string {
  */
 export type OcProgressAudience = "compras" | "recepcion"
 
-function ocNextAction(orderStatus: string, audience: OcProgressAudience, items: OcProgressItem[]): string {
+export interface OcProgressOptions {
+  /** La OC no tiene factura conciliada. Sólo lo sabe la pantalla de compras, que
+   *  es también la única audiencia que puede resolverlo. */
+  invoicePending?: boolean
+}
+
+function ocNextAction(
+  orderStatus: string,
+  audience: OcProgressAudience,
+  items: OcProgressItem[],
+  options: OcProgressOptions = {},
+): string {
   if (audience === "recepcion") {
     switch (orderStatus) {
       case "draft":
@@ -267,7 +147,12 @@ function ocNextAction(orderStatus: string, audience: OcProgressAudience, items: 
     case "partially_office_received": return "Completa la llegada a oficina del saldo pendiente."
     case "office_received":    return "Despacha los ítems a faena para completar la recepción."
     case "partially_received": return "Registra la recepción del saldo pendiente en faena."
-    case "received":           return "Orden recibida completamente. Ciérrala para archivarla."
+    // Recibida y sin factura, el siguiente paso no es cerrar: cerrar sin factura
+    // deja la OC sin respaldo y el aviso aparecía recién dentro del formulario
+    // de cierre. Mientras queda saldo por recibir manda la recepción.
+    case "received":           return options.invoicePending
+      ? "Adjunta la factura y luego cierra la orden."
+      : "Orden recibida completamente. Ciérrala para archivarla."
     case "closed":             return "Orden cerrada."
     default:                   return "Revisa el detalle para ver el siguiente paso."
   }
@@ -281,101 +166,16 @@ function ocItemStatusLabel(item: OcProgressItem): string {
 
 // ── Private helpers ──────────────────────────────────────────────────────────
 
-function orderTask(order: WorkOrderRow, statusLabel: string, ctaLabel: string): WorkTask {
-  return {
-    id:          `order:${order.id}:${order.status}`,
-    type:        "purchase_order",
-    title:       `${order.code}`,
-    subtitle:    `${order.worksiteName} · ${order.supplierName} · ${formatCount(order.itemCount, "ítem", "ítems")}`,
-    worksiteId:  order.worksiteId,
-    worksiteName: order.worksiteName,
-    statusLabel,
-    priority:    "normal",
-    createdAt:   order.issuedAt ?? order.createdAt,
-    href:        `/compras/${order.id}`,
-    ctaLabel,
-  }
-}
 
-function compareTasks(a: WorkTask, b: WorkTask): number {
-  const priority = PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority]
-  if (priority !== 0) return priority
-  return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-}
 
-function hasPermission(actor: WorkActor, permission: string): boolean {
-  return actor.permissions.includes(permission)
-}
 
-function hasAnyPermission(actor: WorkActor, ...permissions: string[]): boolean {
-  return permissions.some((permission) => hasPermission(actor, permission))
-}
 
-function canSeeWorksite(actor: WorkActor, worksiteId: string): boolean {
-  return actor.isGlobal || actor.worksiteIds.includes(worksiteId)
-}
 
-function normalizePriority(urgency: string | null | undefined): WorkPriority {
-  if (urgency === "critical") return "critical"
-  if (urgency === "high") return "high"
-  return "normal"
-}
 
-function highestPriority(priorities: WorkPriority[]): WorkPriority {
-  return priorities.sort((a, b) => PRIORITY_RANK[a] - PRIORITY_RANK[b])[0] ?? "normal"
-}
 
-function oldestDate(dates: string[]): string {
-  return dates.sort((a, b) => new Date(a).getTime() - new Date(b).getTime())[0] ?? new Date().toISOString()
-}
 
-function groupItemsByRequest(items: WorkItemRow[]) {
-  const groups = new Map<string, {
-    requestId: string
-    requestCode: string
-    worksiteId: string
-    worksiteName: string
-    items: WorkItemRow[]
-  }>()
 
-  for (const item of items) {
-    const group = groups.get(item.requestId) ?? {
-      requestId: item.requestId,
-      requestCode: item.requestCode,
-      worksiteId: item.worksiteId,
-      worksiteName: item.worksiteName,
-      items: [],
-    }
-    group.items.push(item)
-    groups.set(item.requestId, group)
-  }
 
-  return [...groups.values()]
-}
-
-function groupItemsByWorksite(items: WorkItemRow[]) {
-  const groups = new Map<string, {
-    worksiteId: string
-    worksiteName: string
-    items: WorkItemRow[]
-  }>()
-
-  for (const item of items) {
-    const group = groups.get(item.worksiteId) ?? {
-      worksiteId: item.worksiteId,
-      worksiteName: item.worksiteName,
-      items: [],
-    }
-    group.items.push(item)
-    groups.set(item.worksiteId, group)
-  }
-
-  return [...groups.values()]
-}
-
-function formatCount(count: number, singular: string, plural: string): string {
-  return `${count} ${count === 1 ? singular : plural}`
-}
 
 /**
  * Duplicaba a `formatQty` sin concordar el plural, así que el panel de

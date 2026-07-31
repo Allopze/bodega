@@ -199,6 +199,28 @@ describe("GET /api/reportes/export", () => {
       )
     })
 
+    // El chip "Sin factura" del listado de compras exporta con el filtro puesto:
+    // sin propagarlo, el Excel bajaba también las OC ya facturadas.
+    it("parses the pending-invoice filter", async () => {
+      const res = await GET(
+        makeRequest("/api/reportes/export?tipo=compras&factura=pendiente"),
+      )
+
+      expect(res.status).toBe(200)
+      expect(mockGetReportData).toHaveBeenCalledWith(
+        "compras",
+        expect.anything(),
+        { invoicePending: true },
+        10_000,
+      )
+    })
+
+    it("ignores an unknown value of the invoice filter", async () => {
+      await GET(makeRequest("/api/reportes/export?tipo=compras&factura=cualquiera"))
+
+      expect(mockGetReportData).toHaveBeenCalledWith("compras", expect.anything(), {}, 10_000)
+    })
+
     it("parses all filters combined", async () => {
       const res = await GET(
         makeRequest(

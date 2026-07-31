@@ -109,7 +109,9 @@ export default async function SolicitudesPage({
 
   const exportParams = new URLSearchParams({ tipo: "solicitudes" })
   if (listParams.q) exportParams.set("q", listParams.q)
-  if (listParams.estados) exportParams.set("status", listParams.estados.join(","))
+  // `estados` es un arreglo: siempre truthy, así que el href llevaba `status=`
+  // vacío incluso sin filtro de estado.
+  if (listParams.estados.length > 0) exportParams.set("status", listParams.estados.join(","))
   if (listParams.faena) exportParams.set("faena", listParams.faena)
   const exportHref = `/api/reportes/export?${exportParams.toString()}`
 

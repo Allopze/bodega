@@ -9,7 +9,7 @@ import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { StateBadge } from "@/components/states/state-badge"
 import { RequestProgressPanel } from "@/components/states/request-progress-panel"
-import { buildOcProgress } from "@/lib/work-queue"
+import { buildOcProgress, INVOICE_DUE_ORDER_STATUSES } from "@/lib/work-queue"
 import { OcActions } from "./oc-actions"
 import { InvoicesSection } from "./invoices-section"
 import { OcDetailTabs } from "./oc-detail-tabs"
@@ -17,7 +17,8 @@ import { OcProgressTable } from "./oc-progress-table"
 import { formatCLP, formatDate } from "@/lib/utils"
 import { EntityTimeline } from "@/components/states/entity-timeline"
 import { Button } from "@/components/ui/button"
-import { OcReceptionCta } from "./oc-reception-cta"
+import { OcReceptionCta, pendingReceptionStage } from "./oc-reception-cta"
+import { OcInvoiceCta } from "./oc-invoice-cta"
 import { OcDetailItems } from "./oc-detail-items"
 import { DetailLine, AmountLine } from "./oc-detail-page.helpers"
 import { getOcReconciliation } from "@/lib/services/oc-reconciliation"
@@ -30,13 +31,13 @@ export default async function OcDetailPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>
-  searchParams: Promise<{ tab?: string }>
+  searchParams: Promise<{ tab?: string; nro?: string }>
 }) {
   let session
   try { session = await requirePermission("purchasing:view") }
   catch { redirect("/forbidden") }
 
-  const [{ id }, { tab }] = await Promise.all([params, searchParams])
+  const [{ id }, { tab, nro }] = await Promise.all([params, searchParams])
 
   const order = await db.query.purchaseOrders.findFirst({
     where: eq(purchaseOrders.id, id),
@@ -205,6 +206,10 @@ export default async function OcDetailPage({
       unitOfMeasure:    i.unitOfMeasure,
       quantityReceived: receivedByItem.get(i.id) ?? i.quantityReceived ?? 0,
     })),
+    "compras",
+    // `closeWarnings` sólo se llena en estados que ya admiten facturación, así
+    // que basta con que tenga contenido.
+    { invoicePending: closeWarnings.length > 0 },
   )
 
   // Filas de la tabla de avance (pedido / recibido / facturado por ítem)
@@ -222,6 +227,23 @@ export default async function OcDetailPage({
   // Pestaña inicial desde ?tab= (validada contra las disponibles) para deep-link
   const availableTabs = ["items", ...(showInvoicing ? ["facturacion", "avance"] : []), "historial"]
   const initialTab = tab && availableTabs.includes(tab) ? tab : "items"
+
+  // `?nro=` llega desde el detalle de una recepción: el número de guía/factura ya
+  // lo tipeó quien recibió, así que no se pide de nuevo. Mismo tope que
+  // `dispatchGuideNo` en la validación de recepciones.
+  const defaultInvoiceNumber = typeof nro === "string" ? nro.trim().slice(0, 80) || undefined : undefined
+  // Mismo criterio que el CTA de recepción, no un "queda saldo" propio: en una
+  // OC directo a faena ya recibida, el saldo de oficina es el total pedido y
+  // degradaba el CTA de factura a secundario sin que hubiera nada que recibir.
+  const receptionPending = pendingReceptionStage({
+    status: order.status,
+    deliveryMode: order.deliveryMode,
+    pendingOfficeQuantity,
+    pendingFaenaQuantity,
+  }) !== null
+  // Misma regla que la cola operacional y el listado: la factura se exige desde
+  // que llegó mercadería, no desde que la OC salió al proveedor.
+  const invoiceDue = INVOICE_DUE_ORDER_STATUSES.includes(order.status)
 
   return (
     <PageContainer width="workbench">
@@ -249,6 +271,7 @@ export default async function OcDetailPage({
             defaultTab={initialTab}
             itemsCount={order.items.length}
             invoicesCount={orderInvoices.length}
+            invoicesPending={invoiceDue}
             historyCount={timelineEvents.length}
             items={
               <div className="flex flex-col gap-6">
@@ -302,6 +325,7 @@ export default async function OcDetailPage({
                 }))}
                 totalAmount={order.totalAmount}
                 canManage={canInvoice}
+                defaultInvoiceNumber={defaultInvoiceNumber}
               />
             ) : undefined}
             avance={showInvoicing ? <OcProgressTable rows={progressRows} /> : undefined}
@@ -340,6 +364,16 @@ export default async function OcDetailPage({
               canRegisterOffice={canRegisterOfficeReception}
               canRegisterFaena={canRegisterFaenaReception}
             />
+            {showInvoicing && (
+              <OcInvoiceCta
+                orderId={order.id}
+                invoiceCount={orderInvoices.length}
+                invoiceDue={invoiceDue}
+                warnings={closeWarnings}
+                canManage={canInvoice}
+                receptionPending={receptionPending}
+              />
+            )}
           </section>
 
           <section className="rounded-(--radius-2xl) bg-(--color-surface) shadow-(--shadow-card) p-4">

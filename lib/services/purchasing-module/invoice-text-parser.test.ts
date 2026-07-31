@@ -99,4 +99,42 @@ describe("parseInvoiceText", () => {
     const result = parseInvoiceText("Casco UN 2 5.000 10.000")
     expect(result.items[0]).toMatchObject({ unitOfMeasure: "UN", quantity: 2 })
   })
+
+  // Regresiones encontradas ejercitando OCR real (ver invoice-ocr.test.ts), no
+  // texto de PDF: el motor degrada el ordinal y la tabla trae encabezados.
+  it("reconoce el folio aunque el OCR degrade el ordinal de N°", () => {
+    for (const ordinal of ["N°", "N*", "No", "N?", "N."]) {
+      const result = parseInvoiceText(`FACTURA ELECTRONICA ${ordinal} 3064428\nFecha de Emision: 14/07/2026\nTotal: 68.425`)
+      expect(result.invoiceNumber, ordinal).toBe("3064428")
+    }
+  })
+
+  it("no toma el encabezado de columna TOTAL como el total del documento", () => {
+    // El rótulo de la columna y el código de la primera línea daban $5.
+    const result = parseInvoiceText([
+      "CODIGO DESCRIPCION CANTIDAD PRECIO TOTAL",
+      "05-03-008 GUANTE CABRITILLA 50 1.150 57.500",
+      "Neto: 57.500",
+      "IVA 19%: 10.925",
+      "Total: 68.425",
+    ].join("\n"))
+
+    expect(result.totalAmount).toBe(68425)
+    expect(result.netAmount).toBe(57500)
+    expect(result.taxAmount).toBe(10925)
+  })
+
+  it("lee la fecha aunque la celda traiga guías entre el rótulo y el valor", () => {
+    // Layout real de la muestra escaneada: "Fecha de Emisión ——: 14/07/2026".
+    const result = parseInvoiceText("Señor(es) — : Serv. Industriales Chome Ltda.- Fecha de Emisión ——: 14/07/2026")
+    expect(result.issueDate).toBe("2026-07-14")
+  })
+
+  it("no confunde un nombre que empieza con 'Proveedor' con un rótulo", () => {
+    const conRotulo = parseInvoiceText("Proveedor: ACME S.A. RUT: 96.542.490-3")
+    expect(conRotulo.supplierName).toBe("ACME S.A.")
+
+    const sinRotulo = parseInvoiceText("PROVEEDOR DEMO SPA GIRO: Venta industrial")
+    expect(sinRotulo.supplierName).toBe("PROVEEDOR DEMO SPA")
+  })
 })

@@ -126,6 +126,34 @@ const DataTableInner = <T extends Record<string, unknown>>({
     return columns.filter((col) => visibleKeys.has(col.key))
   }, [columns, enableColumnToggle, visibleKeys])
 
+  // Las celdas del cuerpo las emite `renderRow`, que es del llamador: la tabla
+  // sólo puede ocultarlas por posición, apoyándose en que siguen el orden de
+  // `columns`. `nth-child` es 1-based.
+  const tableId = React.useId().replace(/[^\w-]/g, "")
+  const tableRef = React.useRef<HTMLTableElement>(null)
+  const hiddenCellRules = React.useMemo(() => {
+    if (!enableColumnToggle) return null
+    const rules = columns
+      .map((col, index) => (visibleKeys.has(col.key) ? null : `[data-dt="${tableId}"] tbody td:nth-child(${index + 1})`))
+      .filter(Boolean)
+    return rules.length > 0 ? `${rules.join(",")}{display:none}` : null
+  }, [columns, enableColumnToggle, visibleKeys, tableId])
+
+  // Invariante del contrato, sólo en desarrollo: si una fila no emite una celda
+  // por columna declarada, ocultar por posición esconde la celda equivocada — y
+  // el encabezado ya estaba desalineado aunque nadie tocara el selector.
+  React.useEffect(() => {
+    if (process.env.NODE_ENV === "production" || !enableColumnToggle) return
+    const firstRow = tableRef.current?.querySelector("tbody tr")
+    if (!firstRow || firstRow.querySelector("td[colspan]")) return
+    if (firstRow.children.length !== columns.length) {
+      console.warn(
+        `[DataTable] "${caption}" declara ${columns.length} columnas pero su fila emite ${firstRow.children.length} celdas: ` +
+        "el orden de las celdas debe seguir a `columns` o los valores quedan bajo el encabezado equivocado.",
+      )
+    }
+  }, [caption, columns.length, enableColumnToggle, rows])
+
   function toggleColumn(key: string) {
     setVisibleKeys((prev) => {
       const next = new Set(prev)
@@ -316,7 +344,14 @@ const DataTableInner = <T extends Record<string, unknown>>({
 
       {/* Table */}
       <TableRoot data-density={density} data-sticky-col={stickyFirstColumn || undefined} className={renderMobileCard ? "hidden md:block" : undefined}>
-        <Table className={tableClassName}>
+        {/* Ocultar una columna quitaba su `<th>` pero no sus `<td>`: `renderRow`
+            es del llamador y la tabla no puede filtrar sus celdas. La fila se
+            corría y los valores quedaban bajo el encabezado equivocado. Como el
+            contrato es que las celdas siguen el orden de `columns`, se ocultan
+            por posición; el invariante de arriba avisa en desarrollo si un
+            llamador rompe ese orden. */}
+        {hiddenCellRules && <style>{hiddenCellRules}</style>}
+        <Table className={tableClassName} data-dt={tableId} ref={tableRef}>
           {caption && <TableCaption className="sr-only">{caption}</TableCaption>}
           <TableHeader>
             <TableRow>

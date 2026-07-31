@@ -33,7 +33,10 @@ export default async function RecepcionDetallePage({
   const receipt = await db.query.receipts.findFirst({
     where: eq(receipts.id, id),
     with: {
-      purchaseOrder: { with: { worksite: true, supplier: true } },
+      // Una sola factura basta: sólo interesa si la OC ya tiene alguna.
+      purchaseOrder: {
+        with: { worksite: true, supplier: true, invoices: { columns: { id: true }, limit: 1 } },
+      },
       worksite: true,
       receivedBy: true,
       items: {
@@ -64,6 +67,10 @@ export default async function RecepcionDetallePage({
   const destinationLabel = receipt.locationType === "office"
     ? "Oficina Chome"
     : formatWorksiteLabel(receipt.worksite?.name ?? receipt.purchaseOrder.worksite?.name ?? "").trim()
+
+  const invoiceMissing = receipt.purchaseOrder.invoices.length === 0
+    && !["draft", "cancelled"].includes(receipt.purchaseOrder.status)
+  const canAttachInvoice = session.user.permissions.includes("purchasing:send_order")
 
   const totalRejected = receipt.items.reduce((sum, item) => sum + (item.quantityRejected ?? 0), 0)
   const totalDamaged  = receipt.items.reduce((sum, item) => sum + (item.quantityDamaged ?? 0), 0)
@@ -227,6 +234,26 @@ export default async function RecepcionDetallePage({
               Ver OC
               <ArrowSquareOut size={13} />
             </Link>
+            {/* El número de guía/factura se tipeó aquí, con el documento en la
+                mano, y ahí moría: adjuntarlo exigía ir a buscar la pestaña de
+                facturación de la OC. Se ofrece el atajo con el número ya puesto. */}
+            {invoiceMissing && (
+              canAttachInvoice ? (
+                <Link
+                  href={`/compras/${receipt.purchaseOrderId}?tab=facturacion${
+                    receipt.dispatchGuideNo ? `&nro=${encodeURIComponent(receipt.dispatchGuideNo)}` : ""
+                  }`}
+                  className="mt-2 inline-flex h-8 w-full items-center justify-center gap-1.5 rounded-[var(--radius)] bg-signal-tint px-3 text-xs font-medium text-signal-ink transition-colors duration-[var(--duration-fast)] hover:bg-[var(--color-signal-line)]"
+                >
+                  Adjuntar factura
+                  <ArrowSquareOut size={13} />
+                </Link>
+              ) : (
+                <p className="mt-2 text-xs text-[var(--color-text-muted)]">
+                  Esta OC todavía no tiene factura. La adjunta quien compra.
+                </p>
+              )
+            )}
           </section>
 
           <section className="rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] p-4">

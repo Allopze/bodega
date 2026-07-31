@@ -18,6 +18,7 @@ import {
   preventionInspectionRuns,
   preventionInspectionTemplates,
   products,
+  purchaseOrderInvoices,
   purchaseOrders,
   purchaseRequestItems,
   purchaseRequests,
@@ -38,6 +39,7 @@ import {
   DELIVERY_ITEM_STATUSES,
   DIRECT_FAENA_RECEIVABLE_STATUSES,
   FAENA_RECEIVABLE_STATUSES,
+  INVOICE_DUE_ORDER_STATUSES,
   OFFICE_RECEIVABLE_STATUSES,
   requestStatusLabel,
   type WorkPriority,
@@ -46,6 +48,18 @@ import type { OperationalModule } from "@/lib/work-queue.types"
 
 const DEFAULT_PAGE_SIZE = 50
 const MAX_PAGE_SIZE = 100
+
+/**
+ * OC sin ninguna factura adjunta.
+ *
+ * Lo usan la fuente de la cola, su contador de badge y el filtro del listado de
+ * compras. Escrito tres veces, la primera divergencia deja al rail y a la página
+ * anunciando cifras distintas — el bug A-03 de la auditoría UI/UX 2026-07-29.
+ */
+export const orderHasNoInvoice = sql`NOT EXISTS (
+  SELECT 1 FROM ${purchaseOrderInvoices}
+  WHERE ${purchaseOrderInvoices.purchaseOrderId} = ${purchaseOrders.id}
+)`
 
 export type { OperationalModule } from "@/lib/work-queue.types"
 
@@ -300,6 +314,19 @@ export async function getOperationalDetailWorkItem(
     .limit(1)
 
   if (!order) return null
+
+  // La factura es el último escalón: mientras quede algo por recibir, recibir
+  // manda. Sólo se consulta cuando el estado y el permiso la hacen posible.
+  const invoicePending =
+    INVOICE_DUE_ORDER_STATUSES.includes(order.status) && hasPermission(session, "purchasing:send_order")
+      ? await db
+          .select({ id: purchaseOrderInvoices.id })
+          .from(purchaseOrderInvoices)
+          .where(eq(purchaseOrderInvoices.purchaseOrderId, order.id))
+          .limit(1)
+          .then((rows) => rows.length === 0)
+      : false
+
   const stage = order.status === "draft" && hasPermission(session, "purchasing:create_order")
     ? { actionKey: "issue" as const, module: "compras" as const, statusLabel: "OC en borrador", title: `Emitir ${order.code}`, ctaLabel: "Emitir orden de compra", createdAt: order.createdAt }
     : order.status === "issued" && hasPermission(session, "purchasing:send_order")
@@ -308,7 +335,9 @@ export async function getOperationalDetailWorkItem(
         ? { actionKey: "receive_office" as const, module: "recepciones" as const, statusLabel: "Recepción en oficina", title: `Registrar llegada de ${order.code}`, ctaLabel: "Registrar llegada", createdAt: order.sentAt ?? order.createdAt }
         : ((order.deliveryMode === "directo_faena" ? DIRECT_FAENA_RECEIVABLE_STATUSES.has(order.status) : FAENA_RECEIVABLE_STATUSES.has(order.status)) && hasPermission(session, "receiving:register_faena"))
           ? { actionKey: "receive_worksite" as const, module: "recepciones" as const, statusLabel: "Pendiente de faena", title: `Recibir ${order.code} en faena`, ctaLabel: "Registrar recepción", createdAt: order.sentAt ?? order.createdAt }
-          : null
+          : invoicePending
+            ? { actionKey: "invoice" as const, module: "compras" as const, statusLabel: "Sin factura", title: `Adjuntar factura de ${order.code}`, ctaLabel: "Adjuntar factura", createdAt: order.sentAt ?? order.createdAt, href: `/compras/${order.id}?tab=facturacion` }
+            : null
 
   if (!stage) return null
   const assignment = await getAssignmentForSource({
@@ -333,7 +362,7 @@ export async function getOperationalDetailWorkItem(
     blocked: false,
     createdAt: stage.createdAt,
     sourceDueAt: order.estimatedDelivery ?? null,
-    href: `/compras/${order.id}`,
+    href: ("href" in stage && stage.href) || `/compras/${order.id}`,
     ctaLabel: stage.ctaLabel,
     assignable: true,
   }, assignment)
@@ -620,6 +649,13 @@ function operationalSourceBranches(session: Session, scope: WorksiteScope): Oper
       (${purchaseOrders.deliveryMode} = 'directo_faena' AND ${purchaseOrders.status} IN ('sent', 'partially_received'))
       OR (${purchaseOrders.deliveryMode} <> 'directo_faena' AND ${purchaseOrders.status} IN ('partially_office_received', 'office_received', 'partially_received'))
     )
+  `)
+  // Llegó mercadería y la OC sigue sin factura. Sin esta fuente nadie perseguía
+  // el adjuntar: había que entrar a la OC y saber que existía la pestaña.
+  if (hasPermission(session, "purchasing:send_order")) add("compras", sql`
+    SELECT ${orderFields('invoice', 'compras', sql`CONCAT('Adjuntar factura de ', ${purchaseOrders.code})`, 'Sin factura', sql`CONCAT('/compras/', ${purchaseOrders.id}, '?tab=facturacion')`, 'Adjuntar factura', sql`COALESCE(${purchaseOrders.sentAt}, ${purchaseOrders.createdAt}::text)`)}
+    ${orderBase} AND ${inArray(purchaseOrders.status, INVOICE_DUE_ORDER_STATUSES)}
+      AND ${orderHasNoInvoice}
   `)
 
   if (hasPermission(session, "prevention:pdtp:view")) {
@@ -1113,6 +1149,14 @@ export async function getOperationalWorkCount(session: Session) {
   if (hasPermission(session, "purchasing:send_order")) {
     counts.push(countRows(
       db.select({ total: count() }).from(purchaseOrders).where(and(orderScope, eq(purchaseOrders.status, "issued"))),
+    ))
+    // Espejo de la fuente `invoice` de la cola: mismo predicado, mismo permiso.
+    counts.push(countRows(
+      db.select({ total: count() }).from(purchaseOrders).where(and(
+        orderScope,
+        inArray(purchaseOrders.status, INVOICE_DUE_ORDER_STATUSES),
+        orderHasNoInvoice,
+      )),
     ))
   }
   if (hasPermission(session, "receiving:register_office")) {

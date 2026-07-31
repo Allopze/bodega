@@ -185,6 +185,15 @@ export default async function Page() {
                 { value: "cancelled", label: "Cancelada" },
               ]}
             />
+            {/* Una OC cerrada sale de la cola operacional —cerrada no admite
+                trabajo pendiente—, así que cerrarla sin respaldo tributario no
+                deja rastro en ninguna pantalla. Esto audita esas decisiones,
+                que el cierre ya obliga a confirmar y justificar. */}
+            <ExportDialog
+              tipo="oc_cerradas_sin_factura"
+              label="OC cerradas sin factura"
+              worksites={activeWorksites}
+            />
             <ExportDialog
               tipo="oc_por_estado"
               label="OC por estado"

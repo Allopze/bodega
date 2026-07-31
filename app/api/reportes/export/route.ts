@@ -25,6 +25,7 @@ const TYPE_PERMISSIONS: Record<string, Permission[]> = {
   oc_por_estado: ["reports:view"],
   solicitudes:   ["requests:view_own", "requests:view_all"],
   compras:       ["purchasing:view", "purchasing:create_order"],
+  oc_cerradas_sin_factura: ["purchasing:view", "purchasing:create_order"],
   recepcion:     ["receiving:view", "receiving:register_office", "receiving:register_faena"],
 }
 
@@ -60,6 +61,7 @@ export async function GET(req: NextRequest) {
   if (vehiculo) filters.vehicleId = vehiculo
   if (status) filters.status = status
   if (q) filters.q = q
+  if (req.nextUrl.searchParams.get("factura") === "pendiente") filters.invoicePending = true
 
   try {
     const report = await getReportData(tipo, session, filters, MAX_EXPORT_ROWS)

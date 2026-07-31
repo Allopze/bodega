@@ -46,11 +46,27 @@ export async function POST(request: Request) {
     // Extract data
     const result = await extractInvoiceData(buffer, validation.mimeType, file.name)
 
+    // Telemetría de la extracción sin contenido tributario: método, señales de
+    // calidad y cuántas advertencias hubo, nunca folio, RUT ni montos. Antes las
+    // advertencias sólo existían en la respuesta, así que una extracción pobre no
+    // dejaba rastro para diagnosticar por proveedor o layout (auditoría de OCR
+    // 2026-07-30, P1).
+    logger.info("[invoices/extract] Extracción de factura", {
+      method: result.method,
+      mimeType: validation.mimeType,
+      fileSizeKb: Math.round(file.size / 1024),
+      coverage: Number(result.quality.coverage.toFixed(2)),
+      engineConfidence: result.quality.engineConfidence,
+      totalsConsistent: result.quality.totalsConsistent,
+      warningCount: result.warnings?.length ?? 0,
+      itemCount: result.data?.items.length ?? 0,
+    })
+
     return NextResponse.json({
       ok: true,
       data: result.data,
       method: result.method,
-      confidence: result.confidence,
+      quality: result.quality,
       warnings: result.warnings ?? [],
     })
   } catch (err) {

@@ -35,10 +35,30 @@ export async function closeOrderAction(
   if (accessError) return accessError
 
   try {
-    // Check invoice reconciliation before closing (for audit log)
     const reconciliation = await reconcileOrderInvoices(orderId)
 
-    await closeOrder(orderId, session.user.id, reason, serviceWorksiteScope(session), {
+    // Cerrar sin factura conciliada deja la OC sin respaldo tributario, así que
+    // deja de ser un cierre normal: exige confirmarlo explícitamente. No se
+    // prohíbe —hay cierres legítimos sin factura: servicios, notas de crédito,
+    // acuerdos con el proveedor— pero la decisión queda firmada en el motivo y
+    // en el historial, en vez de pasar como una advertencia que nadie leyó.
+    const acknowledged = formData.get("acknowledgeInvoiceWarnings") === "true"
+    if (reconciliation.warnings.length > 0 && !acknowledged) {
+      return {
+        ok: false,
+        // La casilla se muestra según lo que la página calculó al renderizar. Si
+        // la facturación cambió después (otra persona borró la factura), el
+        // formulario no la trae y el mensaje tiene que decir cómo salir, en vez
+        // de pedir una confirmación que no está en pantalla.
+        message: "Esta orden no tiene su facturación conciliada. Marca la confirmación para cerrarla igual; si no la ves, recarga la página.",
+      }
+    }
+
+    const closeReason = reconciliation.warnings.length > 0
+      ? `${reason} [Cierre sin conciliación de factura confirmado: ${reconciliation.warnings.join(" ")}]`
+      : reason
+
+    await closeOrder(orderId, session.user.id, closeReason, serviceWorksiteScope(session), {
       userEmail: session.user.email ?? undefined,
     })
 
@@ -50,6 +70,7 @@ export async function closeOrderAction(
         hasInvoices: reconciliation.hasInvoices,
         totalInvoiced: reconciliation.totalInvoiced,
         totalOC: reconciliation.totalOC,
+        acknowledgedBy: session.user.id,
       })
     }
 

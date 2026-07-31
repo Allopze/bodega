@@ -45,13 +45,14 @@ vi.mock("@/lib/services/purchasing", () => ({
   closeOrder: vi.fn(),
   deleteOrder: vi.fn(),
   isOrderDeletable: vi.fn(() => true),
+  reconcileOrderInvoices: vi.fn(),
 }))
 vi.mock("@/lib/services/notifications", () => ({
   getUserIdsWithPermission: vi.fn(() => Promise.resolve([])),
   notifyManyUser: vi.fn(),
   notifyAfterCommit: vi.fn((fn: () => unknown) => fn()),
 }))
-vi.mock("@/lib/logger", () => ({ logger: { error: vi.fn() } }))
+vi.mock("@/lib/logger", () => ({ logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn() } }))
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), revalidateTag: vi.fn() }))
 vi.mock("next/navigation", () => ({ redirect: vi.fn(() => { throw new Error("NEXT_REDIRECT") }) }))
 vi.mock("@/app/(app)/compras/actions.helpers", () => ({
@@ -60,6 +61,7 @@ vi.mock("@/app/(app)/compras/actions.helpers", () => ({
 }))
 
 import { sendOrderAction, cancelOrderAction, closeOrderAction, deleteOrderAction, createOrderAction } from "@/app/(app)/compras/actions"
+import * as purchasing from "@/lib/services/purchasing"
 import type { ActionState } from "@/lib/validation/operations"
 
 const prevState: ActionState = { ok: false, message: "" }
@@ -157,6 +159,63 @@ describe("closeOrderAction", () => {
     const res = await closeOrderAction(prevState, fd)
     expect(res.ok).toBe(false)
     expect(res.message).toContain("obligatorio")
+  })
+
+  // Cerrar sin factura conciliada deja la OC sin respaldo: sigue siendo posible
+  // —hay cierres legítimos sin factura— pero exige confirmarlo, y la
+  // confirmación queda en el motivo que guarda el historial.
+  it("no cierra una orden sin conciliar mientras no se confirme", async () => {
+    vi.mocked(purchasing.reconcileOrderInvoices).mockResolvedValue({
+      warnings: ["No hay facturas adjuntadas a esta orden."],
+      hasInvoices: false, totalInvoiced: 0, totalOC: 11900, items: [], uncoveredItems: [],
+    } as unknown as Awaited<ReturnType<typeof purchasing.reconcileOrderInvoices>>)
+
+    const fd = new FormData()
+    fd.set("orderId", "oc-1")
+    fd.set("reason", "Acuerdo con proveedor")
+    const res = await closeOrderAction(prevState, fd)
+
+    expect(res.ok).toBe(false)
+    expect(res.message).toContain("Marca la confirmación para cerrarla igual")
+    expect(purchasing.closeOrder).not.toHaveBeenCalled()
+  })
+
+  it("cierra con la confirmación y deja rastro en el motivo", async () => {
+    vi.mocked(purchasing.reconcileOrderInvoices).mockResolvedValue({
+      warnings: ["No hay facturas adjuntadas a esta orden."],
+      hasInvoices: false, totalInvoiced: 0, totalOC: 11900, items: [], uncoveredItems: [],
+    } as unknown as Awaited<ReturnType<typeof purchasing.reconcileOrderInvoices>>)
+
+    const fd = new FormData()
+    fd.set("orderId", "oc-1")
+    fd.set("reason", "Acuerdo con proveedor")
+    fd.set("acknowledgeInvoiceWarnings", "true")
+    const res = await closeOrderAction(prevState, fd)
+
+    expect(res.ok).toBe(true)
+    expect(purchasing.closeOrder).toHaveBeenCalledWith(
+      "oc-1",
+      expect.any(String),
+      expect.stringContaining("Cierre sin conciliación de factura confirmado"),
+      expect.anything(),
+      expect.anything(),
+    )
+  })
+
+  it("no pide confirmación cuando la facturación cuadra", async () => {
+    vi.mocked(purchasing.reconcileOrderInvoices).mockResolvedValue({
+      warnings: [], hasInvoices: true, totalInvoiced: 11900, totalOC: 11900, items: [], uncoveredItems: [],
+    } as unknown as Awaited<ReturnType<typeof purchasing.reconcileOrderInvoices>>)
+
+    const fd = new FormData()
+    fd.set("orderId", "oc-1")
+    fd.set("reason", "Recepción completa")
+    const res = await closeOrderAction(prevState, fd)
+
+    expect(res.ok).toBe(true)
+    expect(purchasing.closeOrder).toHaveBeenCalledWith(
+      "oc-1", expect.any(String), "Recepción completa", expect.anything(), expect.anything(),
+    )
   })
 })
 

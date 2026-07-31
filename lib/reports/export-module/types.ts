@@ -9,6 +9,8 @@ export interface ExportFilters {
   status?:    string
   /** Free-text query (matched against code). */
   q?:         string
+  /** Compras: sólo OC que ya deberían tener factura y no la tienen. */
+  invoicePending?: boolean
 }
 
 export interface ReportData {

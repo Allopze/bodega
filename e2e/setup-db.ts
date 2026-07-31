@@ -607,6 +607,69 @@ async function main() {
     notes: null,
   })
 
+  // OC recibida completa y sin factura: el caso que antes no se veía desde
+  // ninguna parte (oc-reconciliation.spec.ts). Propia porque los otros fixtures
+  // de OC ya tienen factura o avanzan de estado.
+  await db.insert(schema.purchaseOrders).values({
+    id: "oc-sin-factura-e2e",
+    code: "OC-2026-0091",
+    worksiteId: "ws-e2e",
+    supplierId: "sup-e2e",
+    createdBy: "user-admin-e2e",
+    status: "received",
+    deliveryMode: "directo_faena",
+    issuedAt: now,
+    sentAt: now,
+    estimatedDelivery: "2026-07-18",
+    netAmount: 5000,
+    taxAmount: 950,
+    totalAmount: 5950,
+    notes: "Fixture E2E para OC recibida sin factura",
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.purchaseOrderItems).values({
+    id: "oc-item-sin-factura-e2e",
+    purchaseOrderId: "oc-sin-factura-e2e",
+    requestItemId: null,
+    productId: null,
+    productNameFree: "Insumo recibido sin factura E2E",
+    quantity: 5,
+    unitOfMeasure: "unidad",
+    unitPrice: 1000,
+    discount: 0,
+    subtotal: 5000,
+    status: "received",
+    quantityReceived: 5,
+    sortOrder: 1,
+    notes: null,
+  })
+  // Su recepción, con el número de guía que el atajo "Adjuntar factura" del
+  // detalle de recepción prellena en el formulario de la OC.
+  await db.insert(schema.receipts).values({
+    id: "rec-sin-factura-e2e",
+    code: "REC-2026-0091",
+    purchaseOrderId: "oc-sin-factura-e2e",
+    receivedBy: "user-admin-e2e",
+    receivedAt: now,
+    locationType: "faena",
+    worksiteId: "ws-e2e",
+    dispatchGuideNo: "GD-77123",
+    status: "closed",
+    notes: "Fixture E2E: recepción sin factura adjunta",
+    createdAt: now,
+  })
+  await db.insert(schema.receiptItems).values({
+    id: "rec-item-sin-factura-e2e",
+    receiptId: "rec-sin-factura-e2e",
+    purchaseOrderItemId: "oc-item-sin-factura-e2e",
+    quantityReceived: 5,
+    quantityRejected: 0,
+    quantityDamaged: 0,
+    status: "received",
+    notes: null,
+  })
+
   // SST seed — one closed evaluation used by sst-pdf.spec.ts to verify the
   // /sst/[id]/print/pdf route works in standalone without MODULE_NOT_FOUND.
   await db.insert(schema.sstEvaluations).values({

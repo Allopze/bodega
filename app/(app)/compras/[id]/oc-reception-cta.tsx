@@ -19,6 +19,31 @@ const QUANTITY_FORMAT = new Intl.NumberFormat("es-CL", { maximumFractionDigits: 
  * muestra el texto sin enlace: quien compra necesita saber qué falta aunque lo
  * ejecute la faena.
  */
+export interface OcReceptionStageInput {
+  status: string
+  deliveryMode: string
+  pendingOfficeQuantity: number
+  pendingFaenaQuantity: number
+}
+
+/**
+ * Etapa de recepción pendiente, o null si no queda ninguna.
+ *
+ * Exportada porque el rail necesita saber si la recepción sigue siendo el paso
+ * dominante para decidir la jerarquía del CTA de factura. Derivarlo aparte
+ * —"queda saldo de oficina o de faena"— daba `true` en una OC `directo_faena`
+ * ya recibida, donde `quantityOfficeReceived` es 0 por diseño y nada pasa por
+ * oficina.
+ */
+export function pendingReceptionStage(input: OcReceptionStageInput): "office" | "faena" | null {
+  const directFaena = input.deliveryMode === "directo_faena"
+  const faenaStatuses = directFaena ? DIRECT_FAENA_RECEIVABLE_STATUSES : FAENA_RECEIVABLE_STATUSES
+
+  if (!directFaena && OFFICE_RECEIVABLE_STATUSES.has(input.status) && input.pendingOfficeQuantity > 0) return "office"
+  if (faenaStatuses.has(input.status) && input.pendingFaenaQuantity > 0) return "faena"
+  return null
+}
+
 export function OcReceptionCta({
   orderId,
   status,
@@ -38,15 +63,10 @@ export function OcReceptionCta({
   canRegisterOffice: boolean
   canRegisterFaena: boolean
 }) {
-  const directFaena = deliveryMode === "directo_faena"
-  const faenaStatuses = directFaena ? DIRECT_FAENA_RECEIVABLE_STATUSES : FAENA_RECEIVABLE_STATUSES
-
-  const officeStage = !directFaena && OFFICE_RECEIVABLE_STATUSES.has(status) && pendingOfficeQuantity > 0
-  const faenaStage = faenaStatuses.has(status) && pendingFaenaQuantity > 0
-  if (!officeStage && !faenaStage) return null
-
   // La oficina va primero: mientras quede saldo por llegar ahí, ése es el paso.
-  const stage = officeStage ? "office" : "faena"
+  const stage = pendingReceptionStage({ status, deliveryMode, pendingOfficeQuantity, pendingFaenaQuantity })
+  if (!stage) return null
+
   const quantity = stage === "office" ? pendingOfficeQuantity : pendingFaenaQuantity
   const allowed = stage === "office" ? canRegisterOffice : canRegisterFaena
 

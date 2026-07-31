@@ -16,7 +16,11 @@ import {
 
 describe("parseListParams", () => {
   it("returns empty defaults when no params are present", () => {
-    expect(parseListParams({})).toEqual({ q: "", estados: [], faena: "", proveedor: "", urgencia: "" })
+    expect(parseListParams({})).toEqual({ q: "", estados: [], faena: "", proveedor: "", urgencia: "", factura: "" })
+  })
+
+  it("reads the pending-invoice filter", () => {
+    expect(parseListParams({ factura: "pendiente" }).factura).toBe("pendiente")
   })
 
   it("trims the free-text query", () => {

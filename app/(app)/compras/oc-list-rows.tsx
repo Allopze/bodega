@@ -16,8 +16,14 @@ import { deleteOrderAction } from "./actions/order-cancel"
 import { resumeItemAction } from "./actions/item-state"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { DELETABLE_ORDER_STATUSES } from "@/lib/services/purchasing.constants"
+import { INVOICE_DUE_ORDER_STATUSES } from "@/lib/work-queue-labels"
 import type { ActionState } from "@/lib/validation/operations"
 import type { OcRow, PendingItem } from "./oc-list.types"
+
+/** La factura ya corresponde: llegó mercadería y la OC sigue abierta. */
+function invoiceDue(status: string) {
+  return INVOICE_DUE_ORDER_STATUSES.includes(status)
+}
 
 export function OcTableRow({ row, canDelete = false }: { row: OcRow; canDelete?: boolean }) {
   const router = useRouter()
@@ -87,15 +93,6 @@ export function OcTableRow({ row, canDelete = false }: { row: OcRow; canDelete?:
       <TableCellNum className="font-medium">
         {formatCLP(row.totalAmount)}
       </TableCellNum>
-      <TableCellNum>
-        {row.invoiceCount > 0 ? (
-          <span className="inline-flex items-center justify-center rounded-full bg-[var(--color-surface-2)] text-[var(--color-text-muted)] text-xs font-medium px-2 py-0.5 tabular-nums">
-            {row.invoiceCount}
-          </span>
-        ) : (
-          <span className="text-xs text-[var(--color-text-subtle)]">—</span>
-        )}
-      </TableCellNum>
       <TableCell onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center gap-2">
           <StateBadge state={row.status} entity="oc" size="sm" />
@@ -156,6 +153,24 @@ export function OcTableRow({ row, canDelete = false }: { row: OcRow; canDelete?:
           )}
         </div>
       </TableCell>
+      {/* El orden de las celdas debe seguir a `COLUMNS` de oc-list.tsx: estaban
+          invertidas respecto a los encabezados, así que el badge de estado caía
+          bajo "Facturas" y el conteo bajo "Estado". */}
+      <TableCellNum>
+        {row.invoiceCount > 0 ? (
+          <span className="inline-flex items-center justify-center rounded-full bg-[var(--color-surface-2)] text-[var(--color-text-muted)] text-xs font-medium px-2 py-0.5 tabular-nums">
+            {row.invoiceCount}
+          </span>
+        ) : invoiceDue(row.status) ? (
+          // Con mercadería recibida el "—" neutro escondía el atraso: se leía
+          // igual que en una OC recién emitida, donde aún no corresponde.
+          <span className="inline-flex items-center rounded-full bg-signal-tint px-2 py-0.5 text-xs font-medium text-signal-ink">
+            Sin factura
+          </span>
+        ) : (
+          <span className="text-xs text-[var(--color-text-subtle)]">—</span>
+        )}
+      </TableCellNum>
       <TableCell className="text-xs text-[var(--color-text-subtle)]">
         {formatDate(row.sentAt ?? row.issuedAt ?? row.createdAt)}
       </TableCell>
@@ -231,10 +246,12 @@ export function OcMobileCard({ row }: { row: OcRow }) {
         <dt className="text-[var(--color-text-subtle)]">Fecha</dt>
         <dd className="text-right font-mono tabular-nums text-[var(--color-text)]">{formatDate(row.createdAt)}</dd>
       </dl>
-      {row.invoiceCount > 0 && (
+      {row.invoiceCount > 0 ? (
         <p className="mt-2 text-xs text-[var(--color-text-muted)]">
           {row.invoiceCount} factura{row.invoiceCount === 1 ? "" : "s"} asociada{row.invoiceCount === 1 ? "" : "s"}
         </p>
+      ) : invoiceDue(row.status) && (
+        <p className="mt-2 text-xs font-medium text-signal-ink">Sin factura</p>
       )}
     </Link>
   )

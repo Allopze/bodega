@@ -53,18 +53,23 @@ describe("parseDteXml", () => {
     ])
   })
 
-  it("decodes a declared ISO-8859-1 DTE without granting confidence to incomplete XML", async () => {
+  it("decodes a declared ISO-8859-1 DTE without granting quality to incomplete XML", async () => {
     const isoBuffer = Buffer.from(SII_DTE, "latin1")
     const result = await extractInvoiceData(isoBuffer, "application/xml", "factura.xml")
     expect(result).toMatchObject({
       method: "dte_xml",
-      confidence: expect.any(Number),
+      // Un DTE no pasa por OCR, así que no hay confianza de motor que declarar.
+      quality: { coverage: 1, engineConfidence: null, totalsConsistent: true },
       data: expect.objectContaining({ supplierName: "Señalética Ñuble SpA" }),
     })
     expect(result.data?.items[1]).toMatchObject({ productName: "Guante dieléctrico", unitOfMeasure: "PAR" })
 
     const incomplete = await extractInvoiceData(Buffer.from("<DTE><Documento><Encabezado><IdDoc><Folio>1</Folio></IdDoc></Encabezado></Documento></DTE>"), "application/xml", "incompleto.xml")
-    expect(incomplete).toEqual({ data: null, method: "manual", confidence: 0 })
+    expect(incomplete).toEqual({
+      data: null,
+      method: "manual",
+      quality: { coverage: 0, engineConfidence: null, totalsConsistent: null },
+    })
   })
 })
 

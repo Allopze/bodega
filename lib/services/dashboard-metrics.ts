@@ -13,7 +13,6 @@ import {
 } from "@/db/schema"
 import { isGlobalRole, visibleWorksiteIds } from "@/lib/auth/scope"
 import type { Session } from "next-auth"
-import type { WorkActor } from "@/lib/work-queue"
 
 // ── Metric key type ───────────────────────────────────────────────────────────
 
@@ -159,16 +158,5 @@ export async function getDashboardData(session: Session): Promise<DashboardData>
   return {
     metrics,
     worksitesBreakdown,
-  }
-}
-
-// ── Actor builder ─────────────────────────────────────────────────────────────
-
-export function buildActor(session: Session): WorkActor {
-  return {
-    userId:      session.user.id,
-    permissions: session.user.permissions,
-    worksiteIds: session.user.worksiteIds,
-    isGlobal:    isGlobalRole(session),
   }
 }

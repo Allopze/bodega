@@ -63,6 +63,11 @@ const ListFiltersInner = React.memo(function ListFiltersInner({
   const currentUrgencia = searchParams.get("urgencia") ?? ""
   const currentFaena = searchParams.get("faena") ?? ""
   const currentProveedor = searchParams.get("proveedor") ?? ""
+  // `factura=pendiente` (Compras) no se activa desde esta barra sino desde el
+  // chip "Sin factura" del header, así que no tiene select propio. Sin contarlo
+  // aquí, la lista quedaba filtrada sin ningún control en pantalla que lo dijera
+  // ni lo apagara: "Limpiar" ni siquiera aparecía.
+  const currentFactura = searchParams.get("factura") ?? ""
 
   const [q, setQ] = React.useState(currentQ)
 
@@ -103,7 +108,7 @@ const ListFiltersInner = React.memo(function ListFiltersInner({
   const handleFaenaChange = React.useMemo(() => createSelectHandler(setParam, "faena"), [setParam])
   const handleProveedorChange = React.useMemo(() => createSelectHandler(setParam, "proveedor"), [setParam])
 
-  const hasActiveFilters = Boolean(currentQ || currentEstado || currentUrgencia || currentFaena || currentProveedor)
+  const hasActiveFilters = Boolean(currentQ || currentEstado || currentUrgencia || currentFaena || currentProveedor || currentFactura)
 
   // Export URL respects the active filters (estado→status, q/faena/proveedor passthrough).
   // Note: the URL param is "estado" for page-level filtering but "status" for the export
@@ -125,6 +130,11 @@ const ListFiltersInner = React.memo(function ListFiltersInner({
     params.delete("urgencia")
     params.delete("faena")
     params.delete("proveedor")
+    // `factura=pendiente` (Compras) se activa desde el chip "Sin factura" del
+    // header, no desde esta barra, así que no tiene control visible que lo
+    // apague: sin borrarlo aquí, "Limpiar" dejaba la lista filtrada sin que
+    // nada en pantalla lo explicara.
+    params.delete("factura")
     params.delete("page")
     const qs = params.toString()
     router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false })
@@ -214,6 +224,20 @@ const ListFiltersInner = React.memo(function ListFiltersInner({
               ))}
             </SelectContent>
           </Select>
+        )}
+
+        {/* A2: chip removible del único filtro sin select propio, para que se lea
+            qué está recortando la lista y se pueda quitar sin borrar el resto. */}
+        {currentFactura === "pendiente" && (
+          <button
+            type="button"
+            onClick={() => setParam("factura", "")}
+            className="inline-flex h-8 items-center gap-1 rounded-full bg-signal-tint px-2.5 text-xs font-medium text-signal-ink transition-colors hover:bg-[var(--color-signal-line)]"
+          >
+            Sólo sin factura
+            <X size={12} weight="bold" aria-hidden />
+            <span className="sr-only">Quitar filtro de facturas pendientes</span>
+          </button>
         )}
 
         {hasActiveFilters && (

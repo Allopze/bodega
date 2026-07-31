@@ -43,6 +43,17 @@ export const RECEIVABLE_ORDER_STATUSES = [
   "sent", "partially_office_received", "office_received", "partially_received",
 ]
 
+/**
+ * Estados de OC en que ya se exige la factura: llegó mercadería, así que el
+ * documento tributario debería existir. Antes de recibir nada, exigirla sería
+ * ruido; una vez cerrada, la OC ya no admite trabajo pendiente. Compartido por
+ * la cola operacional, su badge y el filtro del listado de compras para que las
+ * tres cuenten lo mismo.
+ */
+export const INVOICE_DUE_ORDER_STATUSES = [
+  "partially_office_received", "office_received", "partially_received", "received",
+]
+
 export const PRIORITY_RANK: Record<WorkPriority, number> = {
   critical: 0,
   high:     1,

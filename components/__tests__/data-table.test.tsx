@@ -3,8 +3,9 @@ import { describe, it, expect, afterEach, vi } from "vitest"
 import { render, screen, cleanup, fireEvent } from "@testing-library/react"
 
 const mockReplace = vi.fn()
+let mockSearchParams = new URLSearchParams()
 vi.mock("next/navigation", () => ({
-  useSearchParams: () => new URLSearchParams(),
+  useSearchParams: () => mockSearchParams,
   useRouter: () => ({ replace: mockReplace }),
 }))
 
@@ -29,7 +30,10 @@ function withProvider(ui: React.ReactElement) {
 }
 
 describe("DataTable", () => {
-  afterEach(cleanup)
+  afterEach(() => {
+    cleanup()
+    mockSearchParams = new URLSearchParams()
+  })
 
   it("renders table with headers and rows", () => {
     render(
@@ -235,5 +239,43 @@ describe("DataTable", () => {
     )
 
     expect(mockReplace).not.toHaveBeenCalled()
+  })
+
+  // El cuerpo lo emite `renderRow`, que es del llamador: al ocultar una columna
+  // desaparecía su encabezado pero no sus celdas, y la fila entera se corría un
+  // lugar, dejando cada valor bajo el encabezado equivocado.
+  it("oculta también las celdas de la columna que el usuario apaga", () => {
+    // La visibilidad se restaura desde la URL (`<viewKey>_cols`), que es el mismo
+    // estado que escribe el selector "Columnas"; se entra por ahí porque el menú
+    // de Radix no se despliega en jsdom.
+    mockSearchParams = new URLSearchParams("usuarios_cols=name,role")
+
+    render(withProvider(
+      <DataTable
+        caption="Usuarios"
+        columns={COLUMNS}
+        rows={ROWS}
+        searchKeys={["name"]}
+        enableColumnToggle
+        viewKey="usuarios"
+        renderRow={(row) => (
+          <TableRow>
+            <TableCell>{row.name as string}</TableCell>
+            <TableCell>{row.email as string}</TableCell>
+            <TableCell>{row.role as string}</TableCell>
+          </TableRow>
+        )}
+      />,
+    ))
+
+    expect(screen.queryByRole("columnheader", { name: /email/i })).not.toBeInTheDocument()
+
+    // La regla se aplica por posición y sobre esta tabla, no globalmente.
+    const scope = document.querySelector("table[data-dt]")?.getAttribute("data-dt")
+    const style = document.querySelector("style")?.textContent ?? ""
+    expect(style).toContain(`[data-dt="${scope}"] tbody td:nth-child(2)`)
+    expect(style).toContain("display:none")
+    expect(style).not.toContain("nth-child(1)")
+    expect(style).not.toContain("nth-child(3)")
   })
 })

@@ -8,19 +8,13 @@ export type {
   WorkTaskType,
   WorkPriority,
   WorkTask,
-  WorkActor,
-  WorkRequestRow,
-  WorkItemRow,
-  WorkOrderRow,
-  WorkQueueSnapshot,
   RequestProgressItem,
   RequestProgress,
 } from "./work-queue.types"
 
-export type { OcProgressItem } from "./work-queue-builders"
+export type { OcProgressItem, OcProgressOptions } from "./work-queue-builders"
 
 export {
-  buildWorkTasks,
   buildRequestProgress,
   buildOcProgress,
 } from "./work-queue-builders"
@@ -44,4 +38,5 @@ export {
   FAENA_RECEIVABLE_STATUSES,
   DIRECT_FAENA_RECEIVABLE_STATUSES,
   RECEIVABLE_ORDER_STATUSES,
+  INVOICE_DUE_ORDER_STATUSES,
 } from "./work-queue-labels"

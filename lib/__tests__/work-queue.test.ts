@@ -5,7 +5,6 @@
 import { describe, it, expect } from "vitest"
 
 import {
-  buildWorkTasks,
   buildRequestProgress,
   buildOcProgress,
   requestStatusLabel,
@@ -19,7 +18,7 @@ import {
   DIRECT_FAENA_RECEIVABLE_STATUSES,
   RECEIVABLE_ORDER_STATUSES,
 } from "@/lib/work-queue"
-import type { WorkActor, WorkQueueSnapshot, OcProgressItem } from "@/lib/work-queue"
+import type { OcProgressItem } from "@/lib/work-queue"
 
 // Estas etiquetas ahora leen del vocabulario canónico de StateBadge
 // (components/states/state-badge.tsx) — deben coincidir siempre con el badge.
@@ -140,246 +139,37 @@ describe("buildOcProgress", () => {
     }
   })
 
+  it("marks Recepción as completed once the order has no pending balance", () => {
+    for (const status of ["partially_office_received", "office_received", "partially_received"]) {
+      expect(buildOcProgress(status, [item(0)])?.completedStages).not.toContain("Recepción")
+    }
+    for (const status of ["received", "closed"]) {
+      expect(buildOcProgress(status, [item(12)])?.completedStages).toContain("Recepción")
+    }
+  })
+
   it("labels item status by received vs ordered quantity", () => {
     expect(buildOcProgress("sent", [item(0)])?.items[0]?.statusLabel).toBe("Pendiente recepción")
     expect(buildOcProgress("partially_received", [item(6)])?.items[0]?.statusLabel).toBe("Recepción parcial")
     expect(buildOcProgress("received", [item(12)])?.items[0]?.statusLabel).toBe("Recibido")
   })
-})
 
-describe("buildWorkTasks", () => {
-  const globalActor: WorkActor = {
-    userId: "u-1",
-    permissions: [
-      "requests:view_all",
-      "approvals:approve",
-      "purchasing:create_order",
-      "purchasing:send_order",
-      "receiving:register_office",
-      "receiving:register_faena",
-      "warehouse:register_movement",
-      "deliveries:create",
-    ],
-    worksiteIds: [],
-    isGlobal: true,
-  }
+  it("asks for the invoice before closing a received order that has none", () => {
+    const pending = buildOcProgress("received", [item(12)], "compras", { invoicePending: true })
+    expect(pending?.nextAction).toBe("Adjunta la factura y luego cierra la orden.")
 
-  const emptySnapshot: WorkQueueSnapshot = { requests: [], items: [], orders: [] }
-
-  it("returns empty for empty snapshot", () => {
-    expect(buildWorkTasks(globalActor, emptySnapshot)).toEqual([])
+    const reconciled = buildOcProgress("received", [item(12)], "compras")
+    expect(reconciled?.nextAction).toContain("Ciérrala")
   })
 
-  it("generates request_followup tasks", () => {
-    const snapshot: WorkQueueSnapshot = {
-      requests: [{
-        id: "req-1", code: "SOL-001", worksiteId: "ws-1", worksiteName: "Faena",
-        requesterId: "u-1", status: "submitted", urgency: "high",
-        createdAt: "2026-01-01", submittedAt: "2026-01-02", itemCount: 3, itemStatuses: ["requested"],
-      }],
-      items: [],
-      orders: [],
-    }
-    const tasks = buildWorkTasks(globalActor, snapshot)
-    expect(tasks.some((t) => t.type === "request_followup")).toBe(true)
+  it("keeps reception as the next step while there is a balance to receive", () => {
+    const progress = buildOcProgress("partially_received", [item(6)], "compras", { invoicePending: true })
+    expect(progress?.nextAction).toContain("recepción del saldo pendiente")
   })
 
-  it("filters requests by requester when not view_all", () => {
-    const limitedActor: WorkActor = {
-      userId: "u-2",
-      permissions: ["requests:view_own"],
-      worksiteIds: ["ws-1"],
-      isGlobal: false,
-    }
-    const snapshot: WorkQueueSnapshot = {
-      requests: [{
-        id: "req-1", code: "SOL-001", worksiteId: "ws-1", worksiteName: "Faena",
-        requesterId: "u-other", status: "submitted", urgency: "normal",
-        createdAt: "2026-01-01", submittedAt: "2026-01-02", itemCount: 1, itemStatuses: [],
-      }],
-      items: [],
-      orders: [],
-    }
-    const tasks = buildWorkTasks(limitedActor, snapshot)
-    expect(tasks.some((t) => t.type === "request_followup")).toBe(false)
-  })
-
-  it("generates approval tasks for items with 'requested' status", () => {
-    const snapshot: WorkQueueSnapshot = {
-      requests: [],
-      items: [{
-        id: "item-1", requestId: "req-1", requestCode: "SOL-001",
-        worksiteId: "ws-1", worksiteName: "Faena", requesterId: "u-1",
-        productName: "Casco", status: "requested", urgency: "critical",
-        createdAt: "2026-01-01", quantity: 10, unitOfMeasure: "unidad",
-      }],
-      orders: [],
-    }
-    const tasks = buildWorkTasks(globalActor, snapshot)
-    expect(tasks.some((t) => t.type === "approval")).toBe(true)
-  })
-
-  it("generates purchase tasks for approved/pending_purchase items", () => {
-    const snapshot: WorkQueueSnapshot = {
-      requests: [],
-      items: [{
-        id: "item-1", requestId: "req-1", requestCode: "SOL-001",
-        worksiteId: "ws-1", worksiteName: "Faena", requesterId: "u-1",
-        productName: "Casco", status: "approved", urgency: "normal",
-        createdAt: "2026-01-01", quantity: 5, unitOfMeasure: "unidad",
-      }],
-      orders: [],
-    }
-    const tasks = buildWorkTasks(globalActor, snapshot)
-    expect(tasks.some((t) => t.type === "purchase")).toBe(true)
-  })
-
-  it("generates order tasks for draft OC", () => {
-    const snapshot: WorkQueueSnapshot = {
-      requests: [],
-      items: [],
-      orders: [{
-        id: "oc-1", code: "OC-001", worksiteId: "ws-1", worksiteName: "Faena",
-        supplierName: "Proveedor", status: "draft",
-        createdAt: "2026-01-01", issuedAt: null, sentAt: null,
-        itemCount: 2, totalAmount: 10000,
-      }],
-    }
-    const tasks = buildWorkTasks(globalActor, snapshot)
-    expect(tasks.some((t) => t.type === "purchase_order")).toBe(true)
-  })
-
-  it("generates receipt-office tasks for sent orders", () => {
-    const snapshot: WorkQueueSnapshot = {
-      requests: [],
-      items: [],
-      orders: [{
-        id: "oc-1", code: "OC-001", worksiteId: "ws-1", worksiteName: "Faena",
-        supplierName: "Proveedor", status: "sent",
-        createdAt: "2026-01-01", issuedAt: null, sentAt: "2026-01-03",
-        itemCount: 2, totalAmount: 10000,
-      }],
-    }
-    const tasks = buildWorkTasks(globalActor, snapshot)
-    expect(tasks.some((t) => t.type === "receipt" && t.title.includes("oficina"))).toBe(true)
-  })
-
-  it("regression: via_oficina sent order yields office task and no faena task", () => {
-    const snapshot: WorkQueueSnapshot = {
-      requests: [],
-      items: [],
-      orders: [{
-        id: "oc-1", code: "OC-001", worksiteId: "ws-1", worksiteName: "Faena",
-        supplierName: "Proveedor", status: "sent", deliveryMode: "via_oficina",
-        createdAt: "2026-01-01", issuedAt: null, sentAt: "2026-01-03",
-        itemCount: 2, totalAmount: 10000,
-      }],
-    }
-    const tasks = buildWorkTasks(globalActor, snapshot)
-    expect(tasks.some((t) => t.type === "receipt" && t.title.includes("oficina"))).toBe(true)
-    expect(tasks.some((t) => t.type === "receipt" && t.title.includes("faena"))).toBe(false)
-  })
-
-  it("directo_faena sent order yields faena task and no office task", () => {
-    const snapshot: WorkQueueSnapshot = {
-      requests: [],
-      items: [],
-      orders: [{
-        id: "oc-1", code: "OC-001", worksiteId: "ws-1", worksiteName: "Faena",
-        supplierName: "Proveedor", status: "sent", deliveryMode: "directo_faena",
-        createdAt: "2026-01-01", issuedAt: null, sentAt: "2026-01-03",
-        itemCount: 2, totalAmount: 10000,
-      }],
-    }
-    const tasks = buildWorkTasks(globalActor, snapshot)
-    expect(tasks.some((t) => t.type === "receipt" && t.title.includes("faena"))).toBe(true)
-    expect(tasks.some((t) => t.type === "receipt" && t.title.includes("oficina"))).toBe(false)
-  })
-
-  it("directo_faena partially_received order yields a faena receipt task", () => {
-    const snapshot: WorkQueueSnapshot = {
-      requests: [],
-      items: [],
-      orders: [{
-        id: "oc-1", code: "OC-001", worksiteId: "ws-1", worksiteName: "Faena",
-        supplierName: "Proveedor", status: "partially_received", deliveryMode: "directo_faena",
-        createdAt: "2026-01-01", issuedAt: null, sentAt: "2026-01-03",
-        itemCount: 2, totalAmount: 10000,
-      }],
-    }
-    const tasks = buildWorkTasks(globalActor, snapshot)
-    expect(tasks.some((t) => t.type === "receipt" && t.title.includes("faena"))).toBe(true)
-  })
-
-  it("generates delivery tasks for received items with stock", () => {
-    const snapshot: WorkQueueSnapshot = {
-      requests: [],
-      items: [{
-        id: "item-1", requestId: "req-1", requestCode: "SOL-001",
-        worksiteId: "ws-1", worksiteName: "Faena", requesterId: "u-1",
-        productName: "Casco", status: "received", urgency: "normal",
-        createdAt: "2026-01-01", quantity: 10, unitOfMeasure: "unidad", hasStock: true,
-      }],
-      orders: [],
-    }
-    const tasks = buildWorkTasks(globalActor, snapshot)
-    expect(tasks.some((t) => t.type === "warehouse_delivery")).toBe(true)
-  })
-
-  it("does not generate delivery tasks without deliveries:create (M-2)", () => {
-    // warehouse:register_movement por sí solo no basta: /entregas exige deliveries:create.
-    const warehouseOnlyActor: WorkActor = {
-      userId: "u-2",
-      permissions: ["warehouse:register_movement", "warehouse:view_stock"],
-      worksiteIds: [],
-      isGlobal: true,
-    }
-    const snapshot: WorkQueueSnapshot = {
-      requests: [],
-      items: [{
-        id: "item-1", requestId: "req-1", requestCode: "SOL-001",
-        worksiteId: "ws-1", worksiteName: "Faena", requesterId: "u-1",
-        productName: "Casco", status: "received", urgency: "normal",
-        createdAt: "2026-01-01", quantity: 10, unitOfMeasure: "unidad", hasStock: true,
-      }],
-      orders: [],
-    }
-    const tasks = buildWorkTasks(warehouseOnlyActor, snapshot)
-    expect(tasks.some((t) => t.type === "warehouse_delivery")).toBe(false)
-  })
-
-  it("does not generate tasks for inactive statuses", () => {
-    const snapshot: WorkQueueSnapshot = {
-      requests: [{
-        id: "req-1", code: "SOL-001", worksiteId: "ws-1", worksiteName: "Faena",
-        requesterId: "u-1", status: "closed", urgency: "normal",
-        createdAt: "2026-01-01", submittedAt: null, itemCount: 0, itemStatuses: [],
-      }],
-      items: [],
-      orders: [],
-    }
-    const tasks = buildWorkTasks(globalActor, snapshot)
-    expect(tasks.filter((t) => t.type === "request_followup")).toHaveLength(0)
-  })
-
-  it("restricts by worksite scope", () => {
-    const scopedActor: WorkActor = {
-      userId: "u-1",
-      permissions: ["requests:view_all"],
-      worksiteIds: ["ws-1"],
-      isGlobal: false,
-    }
-    const snapshot: WorkQueueSnapshot = {
-      requests: [{
-        id: "req-1", code: "SOL-001", worksiteId: "ws-2", worksiteName: "Other",
-        requesterId: "u-1", status: "submitted", urgency: "normal",
-        createdAt: "2026-01-01", submittedAt: "2026-01-02", itemCount: 1, itemStatuses: [],
-      }],
-      items: [],
-      orders: [],
-    }
-    const tasks = buildWorkTasks(scopedActor, snapshot)
-    expect(tasks).toHaveLength(0)
+  it("never asks the receiving audience for the invoice", () => {
+    const progress = buildOcProgress("received", [item(12)], "recepcion", { invoicePending: true })
+    expect(progress?.nextAction).toBe("Orden recibida completamente.")
   })
 })
 
