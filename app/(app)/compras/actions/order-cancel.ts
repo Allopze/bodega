@@ -22,14 +22,14 @@ export async function closeOrderAction(
   try {
     session = await requirePermission("purchasing:create_order")
   } catch {
-    return { ok: false, message: "Sin permisos para cerrar la orden" }
+    return { ok: false, message: "Sin permisos para finalizar la orden" }
   }
 
   const orderId = formData.get("orderId") as string | null
   const reason = (formData.get("reason") as string | null)?.trim()
 
   if (!orderId) return { ok: false, message: "Orden no especificada" }
-  if (!reason) return { ok: false, message: "El motivo de cierre es obligatorio" }
+  if (!reason) return { ok: false, message: "El motivo de finalización es obligatorio" }
 
   const accessError = await assertOrderAccess(session, orderId)
   if (accessError) return accessError
@@ -75,10 +75,10 @@ export async function closeOrderAction(
     }
 
     revalidateOperationalViews([REVALIDATE, `/compras/${orderId}`])
-    return { ok: true, message: "Orden de compra cerrada" }
+    return { ok: true, message: "Orden de compra finalizada" }
   } catch (e) {
     logger.error("[closeOrderAction]", e)
-    return { ok: false, message: dbErrMsg(e, "Error al cerrar orden") }
+    return { ok: false, message: dbErrMsg(e, "Error al finalizar orden") }
   }
 }
 

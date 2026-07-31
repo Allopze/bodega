@@ -304,11 +304,11 @@ describe("Full procurement workflow integration", () => {
       actorUserId: userId,
     })
 
-    // Verify Purchase Order rolled up to "received"
+    // Verify Purchase Order rolled up to "received" and auto-closed in the same transaction
     const finalOrder = await inMemoryDb.query.purchaseOrders.findFirst({
       where: eq(schema.purchaseOrders.id, orderId),
     })
-    expect(finalOrder?.status).toBe("received")
+    expect(finalOrder?.status).toBe("closed")
 
     // Verify Request item transitioned to "received" and Request header stays in_purchasing until delivery
     const finalReq = await inMemoryDb.query.purchaseRequests.findFirst({

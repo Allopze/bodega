@@ -48,8 +48,9 @@ function CloseWarnings({ warnings, invoiceHref }: { warnings: string[]; invoiceH
 }
 
 const CANCELLABLE_STATUSES = new Set(["draft", "issued", "sent"])
-// El cierre está disponible desde que hay algo recibido: antes de eso la salida
-// es anular, no cerrar.
+// La finalización manual está disponible desde que hay algo recibido: antes de
+// eso la salida es anular, no finalizar. Recepción 100% completa ya no pasa por
+// acá — se auto-finaliza en registerReceipt (lib/services/receiving.ts).
 const CLOSEABLE_STATUSES   = new Set([
   "partially_office_received", "office_received", "partially_received", "received",
 ])
@@ -137,18 +138,18 @@ export function OcActions({
       >
         <input type="hidden" name="orderId" value={orderId} />
         <label className="text-xs font-semibold text-(--color-text)">
-          Motivo de cierre <span className="text-danger">*</span>
+          Motivo de finalización <span className="text-danger">*</span>
         </label>
         <p className="text-xs text-(--color-text-muted)">
           {status === "received"
-            ? "La orden ya fue recibida completamente. Indica el motivo del cierre formal."
-            : "Indica el motivo por el que se cierra la orden (ítems rechazados, dañados, etc.)."}
+            ? "La orden ya fue recibida completamente. Indica el motivo de la finalización formal."
+            : "Indica el motivo por el que se finaliza la orden (ítems rechazados, dañados, etc.)."}
         </p>
         <textarea
           name="reason"
           placeholder="Ej: ítems dañados no serán repuestos, acuerdo con proveedor..."
           required
-          aria-label="Motivo del cierre"
+          aria-label="Motivo de la finalización"
           className="w-full text-xs p-2 rounded border border-(--color-border-control) bg-(--color-surface) resize-none"
           rows={3}
         />
@@ -185,9 +186,9 @@ export function OcActions({
             Volver
           </button>
           <SubmitButton
-            label="Cerrar OC"
-            loadingLabel="Cerrando..."
-            variant="destructive"
+            label="Finalizar OC"
+            loadingLabel="Finalizando..."
+            variant="secondary"
             size="sm"
           />
         </div>
@@ -265,7 +266,7 @@ export function OcActions({
             onClick={() => setShowCloseForm(true)}
             className="flex-1 text-xs font-medium text-(--color-text) border border-(--color-border) hover:bg-surface-2 px-3.5 py-2 rounded-(--radius) transition-colors cursor-pointer"
           >
-            Cerrar orden
+            Finalizar orden
           </button>
         )}
 

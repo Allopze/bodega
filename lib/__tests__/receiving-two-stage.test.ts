@@ -138,7 +138,7 @@ describe("two-stage receiving rollup", () => {
     expect(await status(orderId)).toBe("partially_received")
   })
 
-  it("full faena → received", async () => {
+  it("full faena → auto-closes the order", async () => {
     const { orderId, itemIds } = await makeOrder([10])
     await registerReceipt({
       purchaseOrderId: orderId, receivedBy: USER_ID, stage: "office",
@@ -148,7 +148,7 @@ describe("two-stage receiving rollup", () => {
       purchaseOrderId: orderId, receivedBy: USER_ID, stage: "faena", worksiteId: WS_ID,
       items: [{ purchaseOrderItemId: itemIds[0]!, quantityReceived: 10 }],
     })
-    expect(await status(orderId)).toBe("received")
+    expect(await status(orderId)).toBe("closed")
   })
 
   it("mixed items (one fully at faena, one only at office) → partially_received (anyFaena wins)", async () => {
@@ -216,13 +216,13 @@ describe("direct-to-faena receiving", () => {
     expect(await status(orderId)).toBe("partially_received")
   })
 
-  it("full faena reception on directo_faena → received", async () => {
+  it("full faena reception on directo_faena → auto-closes the order", async () => {
     const { orderId, itemIds } = await makeOrder([10], "directo_faena")
     await registerReceipt({
       purchaseOrderId: orderId, receivedBy: USER_ID, stage: "faena", worksiteId: WS_ID,
       items: [{ purchaseOrderItemId: itemIds[0]!, quantityReceived: 10 }],
     })
-    expect(await status(orderId)).toBe("received")
+    expect(await status(orderId)).toBe("closed")
   })
 
   it("faena reception caps at ordered quantity (not at office)", async () => {

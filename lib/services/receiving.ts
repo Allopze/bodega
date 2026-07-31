@@ -17,6 +17,7 @@ import { recordAudit } from "@/lib/audit"
 import { receiveItemTx } from "./item-state"
 import { applyMovementTx } from "./stock"
 import { notifyManyUser, notifyAfterCommit } from "./notifications"
+import { closeOrderTx } from "./purchasing-module/receiving"
 
 /* ── Types ──────────────────────────────────────────────────────────────────── */
 
@@ -247,7 +248,19 @@ export async function registerReceipt(
       }
     }
 
-    await rollupOrderReceiptStatus(input.purchaseOrderId, tx, order.deliveryMode)
+    const rolledUpStatus = await rollupOrderReceiptStatus(input.purchaseOrderId, tx, order.deliveryMode)
+
+    // Fully received closes the order in the same transaction: there's no separate
+    // "receiving in progress" state to sit in once every item has arrived.
+    if (rolledUpStatus === "received") {
+      await closeOrderTx(
+        tx,
+        { ...order, status: "received" },
+        input.receivedBy,
+        "Cierre automático: recepción completa",
+        { userEmail: input.userEmail },
+      )
+    }
 
     await recordAudit({
       userId:     input.receivedBy,
@@ -277,7 +290,7 @@ async function rollupOrderReceiptStatus(
   orderId: string,
   tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
   deliveryMode: string,
-): Promise<void> {
+): Promise<string | null> {
   const ocItems = await tx
     .select({
       quantity:               purchaseOrderItems.quantity,
@@ -290,7 +303,7 @@ async function rollupOrderReceiptStatus(
       ne(purchaseOrderItems.status, "cancelled"),
     ))
 
-  if (ocItems.length === 0) return
+  if (ocItems.length === 0) return null
 
   // Deterministic rollup from item quantities. For via_oficina OCs office is always
   // first, so the invariant quantityReceived ≤ quantityOfficeReceived ≤ quantity holds,
@@ -306,7 +319,7 @@ async function rollupOrderReceiptStatus(
     // derived purely from faena-received quantities.
     if (allFaena)      newStatus = "received"
     else if (anyFaena) newStatus = "partially_received"
-    else return
+    else return null
   } else {
     const allOffice = ocItems.every((i) => (i.quantityOfficeReceived ?? 0) >= i.quantity)
     const anyOffice = ocItems.some( (i) => (i.quantityOfficeReceived ?? 0) > 0)
@@ -314,7 +327,7 @@ async function rollupOrderReceiptStatus(
     else if (anyFaena)   newStatus = "partially_received"
     else if (allOffice)  newStatus = "office_received"
     else if (anyOffice)  newStatus = "partially_office_received"
-    else return
+    else return null
   }
 
   const now = new Date().toISOString()
@@ -326,4 +339,6 @@ async function rollupOrderReceiptStatus(
       eq(purchaseOrders.id, orderId),
       notInArray(purchaseOrders.status, ["closed", "cancelled"]),
     ))
+
+  return newStatus
 }
