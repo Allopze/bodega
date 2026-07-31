@@ -222,12 +222,13 @@ export function WorkQueueWorkbench({ result }: WorkQueueWorkbenchProps) {
 }
 
 /**
- * Una fila de la cola. La variante del badge se derivaba de `item.status ===
- * "overdue"`, pero `status` es el estado de dominio ("requested", "sent"…) y
- * sólo las obligaciones PDTP llegan con ese valor: en Adquisiciones la rama
- * `warning` era código muerto y una tarea con 40 días de atraso se pintaba igual
- * que una de hoy. Ahora se compara la fecha efectiva contra hoy, que es la misma
- * regla que usa el chip "Vencidas" (auditoría UI/UX 2026-07-29, A-04).
+ * Una fila de la cola. Compara la fecha efectiva contra hoy — misma regla que
+ * usa el chip "Vencidas" (auditoría UI/UX 2026-07-29, A-04). El atraso se
+ * muestra sólo en el texto de fecha ("Vencida hace N días"); el badge de
+ * `statusLabel` ya no cambia de variante por vencimiento (antes saltaba a
+ * `warning`, y la misma etiqueta de estado se veía en mayúscula monoespaciada
+ * de un momento a otro sólo por estar atrasada — confuso, y redundante con el
+ * texto de fecha que ya lo dice).
  */
 function dueState(item: OperationalWorkItem, today: string) {
   const overdue = item.effectiveDueAt !== null && item.effectiveDueAt < today
@@ -250,7 +251,7 @@ function QueueCard({ item, today }: { item: OperationalWorkItem; today: string }
         {item.code && <span>{item.code} · </span>}{OPERATIONAL_MODULE_LABELS[item.module]} · {item.worksiteName}
       </p>
       <div className="mt-2 flex flex-wrap items-center gap-2">
-        <Badge variant={item.blocked ? "danger" : overdue ? "warning" : "info"} size="sm">
+        <Badge variant={item.blocked ? "danger" : "info"} size="sm">
           {item.blocked ? "Bloqueada · " : ""}{item.statusLabel}
         </Badge>
         <span className="text-[11px] text-[var(--color-text-subtle)]">
@@ -284,7 +285,7 @@ function QueueRow({ item, today }: { item: OperationalWorkItem; today: string })
       <td className="px-3 py-2.5 text-[var(--color-text-muted)]">{OPERATIONAL_MODULE_LABELS[item.module]}</td>
       <td className="px-3 py-2.5 text-[var(--color-text-muted)]">{item.worksiteName}</td>
       <td className="px-3 py-2.5">
-        <Badge variant={item.blocked ? "danger" : overdue ? "warning" : "info"} size="sm">
+        <Badge variant={item.blocked ? "danger" : "info"} size="sm">
           {item.blocked ? "Bloqueada · " : ""}{item.statusLabel}
         </Badge>
       </td>

@@ -136,7 +136,7 @@ function ocNextAction(
       case "office_received":    return "Los ítems están en oficina. Falta despacharlos a faena."
       case "partially_received": return "Queda saldo pendiente por recibir en faena."
       case "received":           return "Orden recibida completamente."
-      case "closed":             return "Orden cerrada."
+      case "closed":             return "Orden completada."
       default:                   return "Revisa el detalle para ver el siguiente paso."
     }
   }
@@ -153,7 +153,7 @@ function ocNextAction(
     case "received":           return options.invoicePending
       ? "Adjunta la factura y luego cierra la orden."
       : "Orden recibida completamente. Ciérrala para archivarla."
-    case "closed":             return "Orden cerrada."
+    case "closed":             return "Orden completada."
     default:                   return "Revisa el detalle para ver el siguiente paso."
   }
 }

@@ -67,7 +67,7 @@ const OC_STATE_META: Record<OcStatus, StateMeta> = {
   office_received:    { label: "En oficina",           variant: "info",     family: "info",    description: "Los ítems llegaron a oficina Chome, aún no despachados a faena." },
   partially_received: { label: "Rec. parcial",         variant: "warning",  family: "warning", description: "Parte de los ítems se recibió en faena; falta el saldo." },
   received:           { label: "Recibida",             variant: "success",  family: "success", description: "Todos los ítems recibidos en faena." },
-  closed:             { label: "Cerrada",              variant: "default",  family: "neutral", description: "OC cerrada formalmente; sin acciones pendientes." },
+  closed:             { label: "Completada",           variant: "success",  family: "success", description: "OC completada: recepción finalizada, sin acciones pendientes." },
   cancelled:          { label: "Anulada",              variant: "danger",   family: "danger",  description: "OC anulada." },
 }
 
