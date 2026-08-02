@@ -1,6 +1,6 @@
 import * as React from "react"
 import { cn } from "@/lib/utils"
-import { CHART_COLORS } from "./chart-palette"
+import { CHART_COLORS } from "@/lib/chart-palette"
 
 /**
  * Sparkline de tendencia, en SVG plano.
