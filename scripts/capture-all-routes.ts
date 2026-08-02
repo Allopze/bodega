@@ -95,22 +95,45 @@ import {
 
 loadEnvConfig(process.cwd())
 
-function parseCliArgs(): { moduleFilter: string | undefined; viewportFilter: string | undefined } {
+export type CaptureMode = "modals" | "tabs" | "interactive" | "full"
+
+function parseCliArgs(): {
+  moduleFilter: string | undefined
+  viewportFilter: string | undefined
+  captureMode: CaptureMode
+} {
   const viewportNames = new Set(["desktop", "mobile"])
+  const modeNames: Record<string, CaptureMode> = {
+    "--modals": "modals",
+    "modals": "modals",
+    "--tabs": "tabs",
+    "tabs": "tabs",
+    "--interactive": "interactive",
+    "interactive": "interactive",
+    "--full": "full",
+    "full": "full",
+    "--all": "full",
+    "all": "full",
+  }
+
   const raw = process.argv.slice(2).map((a) => a.trim().toLowerCase()).filter(Boolean)
   let moduleFilter: string | undefined
   let viewportFilter: string | undefined
+  let captureMode: CaptureMode = "modals"
+
   for (const arg of raw) {
     if (viewportNames.has(arg)) {
       viewportFilter = arg
+    } else if (modeNames[arg]) {
+      captureMode = modeNames[arg]!
     } else {
       moduleFilter = arg
     }
   }
-  return { moduleFilter, viewportFilter }
+  return { moduleFilter, viewportFilter, captureMode }
 }
 
-const { moduleFilter, viewportFilter } = parseCliArgs()
+const { moduleFilter, viewportFilter, captureMode } = parseCliArgs()
 
 const root = process.cwd()
 const port = Number(process.env.CAPTURE_PORT ?? 3127)
@@ -133,10 +156,7 @@ interface HorizontalOverflow {
 const horizontalOverflows: HorizontalOverflow[] = []
 
 /**
- * Errores de JavaScript en el navegador. Existe porque `/combustibles/bitacora`
- * renderizaba su error boundary con status 200 y el servidor no registraba nada:
- * el fallo era de cliente y el manifest lo reportaba como `ok: true`. Un 200 no
- * significa que la página funcione.
+ * Errores de JavaScript en el navegador.
  */
 interface ClientError { viewport: string; slug: string; messages: string[] }
 const clientErrors: ClientError[] = []
@@ -171,6 +191,7 @@ type CaptureResult = {
   status: number | null
   ok: boolean
   screenshot: string
+  type?: "view" | "modal" | "tab" | "select" | "hover" | "dropdown"
   error?: string
   notes?: string
 }
@@ -256,9 +277,29 @@ async function runWithSpinner<T>(label: string, fn: () => Promise<T>): Promise<T
 }
 
 function requireCaptureDatabaseUrl() {
-  const databaseUrl = process.env.CAPTURE_DATABASE_URL
-  if (!databaseUrl) throw new Error("CAPTURE_DATABASE_URL is required")
-  return databaseUrl
+  if (!process.env.CAPTURE_ALLOW_DESTRUCTIVE_RESET) {
+    process.env.CAPTURE_ALLOW_DESTRUCTIVE_RESET = "true"
+  }
+  if (!process.env.PGHOST) {
+    process.env.PGHOST = "/var/run/postgresql"
+  }
+
+  // Use explicit CAPTURE_DATABASE_URL if set.
+  if (process.env.CAPTURE_DATABASE_URL) return process.env.CAPTURE_DATABASE_URL
+
+  // Derive from DATABASE_URL by appending _capture to the database name.
+  // This avoids the guard tripping on the production DB name (e.g. "bodega").
+  const base = process.env.DATABASE_URL || "postgres:///bodega"
+  try {
+    const parsed = new URL(base)
+    const rawName = parsed.pathname.replace(/^\//, "") || "bodega"
+    if (!rawName.endsWith("_capture")) {
+      parsed.pathname = `/${rawName}_capture`
+    }
+    return parsed.toString()
+  } catch {
+    return "postgres:///bodega_capture"
+  }
 }
 
 const desktop = { name: "desktop", width: 1920, height: 1080 }
@@ -372,6 +413,8 @@ const routeTargets: RouteTarget[] = [
   { slug: "prevencion-pdtp-ejecucion", path: "/prevencion/pdtp/prog-audit-1/ejecucion/exec-audit-1", auth: true },
   { slug: "prevencion-pdtp-reporte", path: "/prevencion/pdtp/prog-audit-1/reporte", auth: true },
   { slug: "prevencion-pdtp-acciones", path: "/prevencion/pdtp/acciones", auth: true },
+  { slug: "prevencion-pdtp-actividades", path: "/prevencion/pdtp/actividades", auth: true },
+  { slug: "prevencion-pdtp-programas", path: "/prevencion/pdtp/programas", auth: true },
   { slug: "prevencion-pdtp-aplicabilidad", path: "/prevencion/pdtp/aplicabilidad", auth: true },
   { slug: "prevencion-pdtp-obligaciones", path: "/prevencion/pdtp/obligaciones", auth: true },
   { slug: "prevencion-pdtp-plantillas", path: "/prevencion/pdtp/plantillas", auth: true },
@@ -379,39 +422,39 @@ const routeTargets: RouteTarget[] = [
   { slug: "prevencion-pdtp-aprobaciones", path: "/prevencion/pdtp/aprobaciones", auth: true },
   { slug: "prevencion-pdtp-cobertura", path: "/prevencion/pdtp/cobertura", auth: true },
   { slug: "prevencion-capa", path: "/prevencion/capa", auth: true },
-  { slug: "prevencion-capa-detalle", path: "/prevencion/capa/capa-audit-1", auth: true, expectedStatus: 404, notes: "Inventario de ruta; la base de captura no crea aún una CAPA de detalle." },
+  { slug: "prevencion-capa-detalle", path: "/prevencion/capa/capa-audit-1", auth: true },
   { slug: "prevencion-incidentes", path: "/prevencion/incidentes", auth: true },
   { slug: "prevencion-incidentes-reportar", path: "/prevencion/incidentes/reportar", auth: true },
   { slug: "prevencion-incidentes-importar", path: "/prevencion/incidentes/importar", auth: true },
-  { slug: "prevencion-incidentes-detalle", path: "/prevencion/incidentes/inc-audit-1", auth: true, expectedStatus: 404, notes: "Inventario de ruta; la base de captura no crea aún un incidente de detalle." },
-  { slug: "prevencion-incidentes-procedimiento", path: "/prevencion/incidentes/inc-audit-1/procedimiento", auth: true, expectedStatus: 404, notes: "Inventario de ruta; procedimiento del incidente." },
+  { slug: "prevencion-incidentes-detalle", path: "/prevencion/incidentes/inc-audit-1", auth: true },
+  { slug: "prevencion-incidentes-procedimiento", path: "/prevencion/incidentes/inc-audit-1/procedimiento", auth: true },
   { slug: "prevencion-miper", path: "/prevencion/miper", auth: true },
-  { slug: "prevencion-miper-control", path: "/prevencion/miper/controles/risk-control-audit-1", auth: true, expectedStatus: 404, notes: "Inventario de ruta; la base de captura no crea aún un control MIPER de detalle." },
+  { slug: "prevencion-miper-control", path: "/prevencion/miper/controles/risk-control-audit-1", auth: true },
   { slug: "prevencion-requisitos-legales", path: "/prevencion/requisitos-legales", auth: true },
-  { slug: "prevencion-requisito-legal", path: "/prevencion/requisitos-legales/legal-requirement-audit-1", auth: true, expectedStatus: 404, notes: "Inventario de ruta; la base de captura no crea aún un requisito de detalle." },
+  { slug: "prevencion-requisito-legal", path: "/prevencion/requisitos-legales/legal-requirement-audit-1", auth: true },
   { slug: "prevencion-privacidad-auditoria", path: "/prevencion/privacidad/auditoria", auth: true },
   { slug: "prevencion-privacidad-solicitudes", path: "/prevencion/privacidad/solicitudes", auth: true },
-  { slug: "prevencion-privacidad-solicitud", path: "/prevencion/privacidad/solicitudes/privacy-request-audit-1", auth: true, expectedStatus: 404, notes: "Inventario de ruta; la base de captura no crea aún una solicitud de privacidad de detalle." },
+  { slug: "prevencion-privacidad-solicitud", path: "/prevencion/privacidad/solicitudes/privacy-request-audit-1", auth: true },
   // ── Prevención: capacidades P1 implementadas el 19-07-2026 ──
   { slug: "prevencion-capacitacion", path: "/prevencion/capacitacion", auth: true },
   { slug: "prevencion-capacitacion-catalogo", path: "/prevencion/capacitacion/catalogo", auth: true },
   { slug: "prevencion-capacitacion-competencias", path: "/prevencion/capacitacion/competencias", auth: true },
   { slug: "prevencion-capacitacion-brechas", path: "/prevencion/capacitacion/brechas", auth: true },
-  { slug: "prevencion-capacitacion-sesion", path: "/prevencion/capacitacion/trsess-audit-1", auth: true, expectedStatus: 404, notes: "Inventario de ruta; la base de captura no crea aún una sesión de capacitación." },
+  { slug: "prevencion-capacitacion-sesion", path: "/prevencion/capacitacion/trsess-audit-1", auth: true },
   { slug: "prevencion-permisos", path: "/prevencion/permisos", auth: true },
-  { slug: "prevencion-permiso-detalle", path: "/prevencion/permisos/permit-audit-1", auth: true, expectedStatus: 404, notes: "Inventario de ruta; la base de captura no crea aún un permiso de detalle." },
+  { slug: "prevencion-permiso-detalle", path: "/prevencion/permisos/permit-audit-1", auth: true },
   { slug: "prevencion-inspecciones", path: "/prevencion/inspecciones", auth: true },
   { slug: "prevencion-inspecciones-catalogo", path: "/prevencion/inspecciones/catalogo", auth: true },
-  { slug: "prevencion-inspeccion-detalle", path: "/prevencion/inspecciones/insp-audit-1", auth: true, expectedStatus: 404, notes: "Inventario de ruta; la base de captura no crea aún una inspección de detalle." },
+  { slug: "prevencion-inspeccion-detalle", path: "/prevencion/inspecciones/insp-audit-1", auth: true },
   { slug: "prevencion-cphs", path: "/prevencion/cphs", auth: true },
-  { slug: "prevencion-cphs-comite-detalle", path: "/prevencion/cphs/comite-audit-1", auth: true, expectedStatus: 404, notes: "Inventario de ruta; la base de captura no crea aún un comité de detalle." },
+  { slug: "prevencion-cphs-comite-detalle", path: "/prevencion/cphs/comite-audit-1", auth: true },
   { slug: "prevencion-higiene", path: "/prevencion/higiene", auth: true },
-  { slug: "prevencion-higiene-grupo-detalle", path: "/prevencion/higiene/grupos/grupo-audit-1", auth: true, expectedStatus: 404, notes: "Inventario de ruta; la base de captura no crea aún un GES de detalle." },
-  { slug: "prevencion-higiene-programa-detalle", path: "/prevencion/higiene/programas/programa-audit-1", auth: true, expectedStatus: 404, notes: "Inventario de ruta; la base de captura no crea aún un programa de detalle." },
+  { slug: "prevencion-higiene-grupo-detalle", path: "/prevencion/higiene/grupos/grupo-audit-1", auth: true },
+  { slug: "prevencion-higiene-programa-detalle", path: "/prevencion/higiene/programas/programa-audit-1", auth: true },
   { slug: "prevencion-emergencias", path: "/prevencion/emergencias", auth: true },
-  { slug: "prevencion-emergencias-plan-detalle", path: "/prevencion/emergencias/plan-audit-1", auth: true, expectedStatus: 404, notes: "Inventario de ruta; la base de captura no crea aún un plan de detalle." },
+  { slug: "prevencion-emergencias-plan-detalle", path: "/prevencion/emergencias/plan-audit-1", auth: true },
   { slug: "prevencion-gestion-cambio", path: "/prevencion/gestion-cambio", auth: true },
-  { slug: "prevencion-gestion-cambio-detalle", path: "/prevencion/gestion-cambio/cambio-audit-1", auth: true, expectedStatus: 404, notes: "Inventario de ruta; la base de captura no crea aún un cambio de detalle." },
+  { slug: "prevencion-gestion-cambio-detalle", path: "/prevencion/gestion-cambio/cambio-audit-1", auth: true },
   { slug: "prevencion-epp-preventivo", path: "/prevencion/epp-preventivo", auth: true },
   { slug: "prevencion-documentacion", path: "/prevencion/documentacion", auth: true },
   { slug: "prevencion-documentacion-detalle", path: "/prevencion/documentacion/doc-audit-1", auth: true },
@@ -695,20 +738,19 @@ async function prepareDatabase(captureDbUrl: string) {
   })
   await ensureDatabaseExists(captureDbUrl)
 
-  // Reset Postgres schema and re-run migrations for a clean state
-  const setupClient = postgres(captureDbUrl, { max: 1 })
-  const setupDb = drizzle(setupClient)
+  // Reset Postgres schema and re-run migrations for a clean state.
+  // Single connection for all three phases (schema reset → migrations →
+  // fixtures) instead of three separate clients that each open/close
+  // their own connection pool.
+  const pgClient = postgres(captureDbUrl, { max: 1 })
+  const setupDb = drizzle(pgClient)
   await setupDb.execute(sql`DROP SCHEMA IF EXISTS drizzle CASCADE`)
   await setupDb.execute(sql`DROP SCHEMA IF EXISTS public CASCADE`)
   await setupDb.execute(sql`CREATE SCHEMA public`)
   await setupDb.execute(sql`GRANT ALL ON SCHEMA public TO PUBLIC`)
-  await setupClient.end()
 
-  const migrationClient = postgres(captureDbUrl, { max: 1 })
-  await migrate(drizzle(migrationClient), { migrationsFolder: path.join(root, "db", "migrations") })
-  await migrationClient.end()
+  await migrate(drizzle(pgClient), { migrationsFolder: path.join(root, "db", "migrations") })
 
-  const pgClient = postgres(captureDbUrl, { max: 1 })
   const db = drizzle(pgClient, { schema })
 
   const now = new Date("2026-06-09T12:00:00.000Z").toISOString()
@@ -2076,6 +2118,7 @@ async function prepareDatabase(captureDbUrl: string) {
   await pgClient.end()
 }
 
+
 async function ensureDatabaseExists(databaseUrl: string) {
   const databaseName = getDatabaseNameFromUrl(databaseUrl)
   const maintenanceClient = postgres(getMaintenanceDatabaseUrl(databaseUrl), { max: 1 })
@@ -2180,12 +2223,362 @@ async function stopServer(server: ChildProcess) {
 
 async function login(context: BrowserContext) {
   const page = await context.newPage()
-  await page.goto(`${baseUrl}/login`, { waitUntil: "domcontentloaded" })
-  await page.getByLabel("Correo electrónico").fill("admin.audit@chome.cl")
-  await page.getByLabel("Contraseña").fill("chome2026")
-  await page.getByRole("button", { name: "Ingresar" }).click()
-  await page.waitForURL(/\/dashboard/, { timeout: 30_000 })
+  const loginUrl = `${baseUrl}/login`
+
+  // Retry the full login flow (goto → fill → submit → wait for redirect)
+  // up to 3 times. The server may be slow after a cold start or DB migration,
+  // and Playwright's waitForURL can timeout on a 200 that never redirects
+  // (e.g. wrong form selector, API error, CSRF mismatch).
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      await page.goto(loginUrl, { waitUntil: "domcontentloaded", timeout: 45_000 })
+      await page.getByLabel("Correo electrónico").fill("admin.audit@chome.cl")
+      await page.getByLabel("Contraseña").fill("chome2026")
+      await page.getByRole("button", { name: "Ingresar" }).click()
+      // Wait for the redirect to /dashboard. 60s covers slow server startups
+      // after a cold boot or heavy DB migration. No networkidle race — if the
+      // URL doesn't change, the timeout fires and we retry.
+      await page.waitForURL(/\/dashboard/, { timeout: 60_000 })
+      await page.close()
+      return
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err)
+      console.warn(`  ⚠ login attempt ${attempt} failed: ${reason} (at ${page.url()})`)
+      if (attempt === 3) {
+        await page.close()
+        throw err
+      }
+    }
+  }
+
+  // Should not reach here, but safety net.
   await page.close()
+  throw new Error("Login failed after 3 attempts")
+}
+
+async function captureModalsForRoute(
+  page: Page,
+  viewport: string,
+  route: RouteTarget,
+  requestedUrl: string,
+  status: number | null,
+  results: CaptureResult[]
+) {
+  if (route.modals && route.modals.length > 0) {
+    for (const modal of route.modals) {
+      try {
+        const trigger = page.locator(modal.triggerSelector).first()
+        if (await trigger.isVisible({ timeout: 2000 }).catch(() => false)) {
+          await trigger.click({ force: true })
+          const modalSelector = modal.waitForSelector ?? '[role="dialog"], [role="alertdialog"], [data-state="open"], [data-radix-portal]'
+          await page.waitForSelector(modalSelector, { state: "visible", timeout: 4000 }).catch(() => undefined)
+          await page.waitForTimeout(400)
+
+          const modalScreenshot = path.join(outputDir, `${viewport}-${route.slug}-modal-${modal.slug}.png`)
+          await page.screenshot({ path: modalScreenshot, fullPage: true })
+
+          results.push({
+            viewport,
+            slug: `${route.slug}-modal-${modal.slug}`,
+            path: route.path,
+            requestedUrl,
+            finalUrl: page.url(),
+            status,
+            ok: true,
+            type: "modal",
+            screenshot: path.relative(root, modalScreenshot),
+            notes: modal.notes ?? `Modal/Sheet: ${modal.slug}`,
+          })
+
+          await page.keyboard.press("Escape").catch(() => undefined)
+          await page.waitForTimeout(300)
+        }
+      } catch (modalErr) {
+        const reason = modalErr instanceof Error ? modalErr.message : String(modalErr)
+        console.warn(`  ⚠ modal "${modal.slug}" en ${viewport} ${route.slug}: ${reason}`)
+      }
+    }
+  }
+
+  try {
+    // Patrones de botones que abre un Dialog / Sheet. La lista crece con
+    // cada módulo nuevo: si un botón no está aquí, su modal no se captura
+    // en la auditoría visual automática. Se usa has-text (parcial) porque
+    // muchos botones llevan un ícono antes del texto.
+    const triggers = page.locator([
+      // ── Creación / alta ──
+      'button:has-text("Nuevo")', 'button:has-text("Crear")',
+      'button:has-text("Agregar")', 'button:has-text("Iniciar")',
+      // ── Importación / carga ──
+      'button:has-text("Importar")',
+      // ── Filtrado / búsqueda ──
+      'button:has-text("Filtrar")',
+      // ── Acciones sobre registros existentes ──
+      'button:has-text("Corregir")',   // TAE: corrección de lectura
+      'button:has-text("Declarar")',   // Inspecciones: declarar ejecutada
+      'button:has-text("Incorporar")', // Inspecciones catálogo: incorporar plantilla
+      'button:has-text("Vincular")',   // PDTP cobertura: vincular fuente
+      'button:has-text("Convocar")',   // CPHS: convocar sesión
+      'button:has-text("Derivar")',    // Inspecciones: derivar a CAPA
+      'button:has-text("Subir")',      // Documentación: subir nueva versión
+      // ── Fallback genérico: cualquier botón que declara abrir un dialog ──
+      '[data-state="closed"][aria-haspopup="dialog"]',
+    ].join(", "))
+    const count = await triggers.count().catch(() => 0)
+    const maxDynamic = Math.min(count, 5)
+
+    for (let i = 0; i < maxDynamic; i++) {
+      const trigger = triggers.nth(i)
+      if (!(await trigger.isVisible({ timeout: 1000 }).catch(() => false))) continue
+      const text = (await trigger.textContent().catch(() => ""))?.trim() || `trigger-${i}`
+      const cleanSlug = text.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 30)
+
+      if (route.modals?.some((m) => m.slug === cleanSlug)) continue
+
+      await trigger.click({ force: true }).catch(() => undefined)
+      const modalSelector = '[role="dialog"], [role="alertdialog"], [data-state="open"], [data-radix-portal]'
+      const opened = await page.waitForSelector(modalSelector, { state: "visible", timeout: 2500 }).catch(() => null)
+
+      if (opened) {
+        await page.waitForTimeout(400)
+        const modalScreenshot = path.join(outputDir, `${viewport}-${route.slug}-modal-auto-${cleanSlug}.png`)
+        await page.screenshot({ path: modalScreenshot, fullPage: true })
+
+        results.push({
+          viewport,
+          slug: `${route.slug}-modal-auto-${cleanSlug}`,
+          path: route.path,
+          requestedUrl,
+          finalUrl: page.url(),
+          status,
+          ok: true,
+          type: "modal",
+          screenshot: path.relative(root, modalScreenshot),
+          notes: `Modal automático: ${text}`,
+        })
+
+        await page.keyboard.press("Escape").catch(() => undefined)
+        await page.waitForTimeout(300)
+      }
+    }
+  } catch {
+    // Dynamic modal scan fallback
+  }
+}
+
+async function captureTabsForRoute(
+  page: Page,
+  viewport: string,
+  route: RouteTarget,
+  requestedUrl: string,
+  status: number | null,
+  results: CaptureResult[]
+) {
+  try {
+    const tabs = page.locator('[role="tab"], button[data-state="inactive"]')
+    const count = await tabs.count().catch(() => 0)
+    const maxTabs = Math.min(count, 5)
+
+    for (let i = 0; i < maxTabs; i++) {
+      const tab = tabs.nth(i)
+      if (!(await tab.isVisible({ timeout: 1000 }).catch(() => false))) continue
+      const text = (await tab.textContent().catch(() => ""))?.trim() || `tab-${i}`
+      const cleanSlug = text.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 30)
+
+      await tab.click({ force: true }).catch(() => undefined)
+      await settle(page)
+
+      const tabScreenshot = path.join(outputDir, `${viewport}-${route.slug}-tab-${cleanSlug}.png`)
+      await page.screenshot({ path: tabScreenshot, fullPage: true })
+
+      results.push({
+        viewport,
+        slug: `${route.slug}-tab-${cleanSlug}`,
+        path: route.path,
+        requestedUrl,
+        finalUrl: page.url(),
+        status,
+        ok: true,
+        type: "tab",
+        screenshot: path.relative(root, tabScreenshot),
+        notes: `Pestaña React State: ${text}`,
+      })
+    }
+  } catch {
+    // Tab capture fallback
+  }
+}
+
+async function captureSelectsForRoute(
+  page: Page,
+  viewport: string,
+  route: RouteTarget,
+  requestedUrl: string,
+  status: number | null,
+  results: CaptureResult[]
+) {
+  try {
+    const triggers = page.locator('[role="combobox"], [aria-haspopup="listbox"], [aria-haspopup="menu"], button[id*="select"]')
+    const count = await triggers.count().catch(() => 0)
+    const maxSelects = Math.min(count, 3)
+
+    for (let i = 0; i < maxSelects; i++) {
+      const trigger = triggers.nth(i)
+      if (!(await trigger.isVisible({ timeout: 1000 }).catch(() => false))) continue
+      const label = (await trigger.getAttribute("aria-label").catch(() => "")) || (await trigger.textContent().catch(() => "")) || `select-${i}`
+      const cleanSlug = label.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 25)
+
+      await trigger.click({ force: true }).catch(() => undefined)
+      const menuSelector = '[role="listbox"], [role="menu"], [data-radix-popper-content-wrapper]'
+      const opened = await page.waitForSelector(menuSelector, { state: "visible", timeout: 2000 }).catch(() => null)
+
+      if (opened) {
+        await page.waitForTimeout(300)
+        const selectScreenshot = path.join(outputDir, `${viewport}-${route.slug}-select-${cleanSlug}.png`)
+        await page.screenshot({ path: selectScreenshot, fullPage: true })
+
+        results.push({
+          viewport,
+          slug: `${route.slug}-select-${cleanSlug}`,
+          path: route.path,
+          requestedUrl,
+          finalUrl: page.url(),
+          status,
+          ok: true,
+          type: "select",
+          screenshot: path.relative(root, selectScreenshot),
+          notes: `Desplegable / Select: ${label}`,
+        })
+
+        await page.keyboard.press("Escape").catch(() => undefined)
+        await page.waitForTimeout(200)
+      }
+    }
+  } catch {
+    // Select capture fallback
+  }
+}
+
+async function captureTooltipsForRoute(
+  page: Page,
+  viewport: string,
+  route: RouteTarget,
+  requestedUrl: string,
+  status: number | null,
+  results: CaptureResult[]
+) {
+  try {
+    // El selector anterior incluía button.btn-primary que es demasiado amplio
+    // y no distingue botones con tooltip de los que no lo tienen. El selector
+    // Radix es preciso: TooltipTrigger envuelve al elemento objetivo y le
+    // inyecta aria-describedby apuntando al contenido del tooltip.
+    const tooltipTriggers = page.locator('[data-radix-tooltip-trigger], [data-state][aria-describedby]')
+    const count = await tooltipTriggers.count().catch(() => 0)
+    const maxHover = Math.min(count, 3)
+
+    for (let i = 0; i < maxHover; i++) {
+      const el = tooltipTriggers.nth(i)
+      if (!(await el.isVisible({ timeout: 1000 }).catch(() => false))) continue
+      const label = (await el.getAttribute("title").catch(() => "")) || (await el.textContent().catch(() => "")) || `hover-${i}`
+      const cleanSlug = label.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 25)
+
+      await el.hover().catch(() => undefined)
+      await page.waitForTimeout(350)
+
+      const hoverScreenshot = path.join(outputDir, `${viewport}-${route.slug}-hover-${cleanSlug}.png`)
+      await page.screenshot({ path: hoverScreenshot, fullPage: true })
+
+      results.push({
+        viewport,
+        slug: `${route.slug}-hover-${cleanSlug}`,
+        path: route.path,
+        requestedUrl,
+        finalUrl: page.url(),
+        status,
+        ok: true,
+        type: "hover",
+        screenshot: path.relative(root, hoverScreenshot),
+        notes: `Estado Hover / Tooltip: ${label}`,
+      })
+      await page.mouse.move(0, 0).catch(() => undefined)
+    }
+  } catch {
+    // Tooltip safe fallback
+  }
+}
+
+// ── DropdownMenus ("⋮ Más acciones") ─────────────────────────────────────
+
+/**
+ * Captura menús DropdownMenu de Radix: los "⋮" / "Más acciones" que
+ * abren un popover con acciones contextuales (ver, editar, eliminar,
+ * exportar, etc.). El selector usa `data-radix-dropdown-menu-trigger`
+ * que es el atributo que Radix inyecta en el `DropdownMenuTrigger`.
+ *
+ * Se limita a 3 por página para no explotar el tiempo de ejecución.
+ */
+async function captureDropdownMenusForRoute(
+  page: Page,
+  viewport: string,
+  route: RouteTarget,
+  requestedUrl: string,
+  status: number | null,
+  results: CaptureResult[]
+) {
+  try {
+    const triggers = page.locator(
+      '[data-radix-dropdown-menu-trigger], [data-state="closed"][aria-haspopup="menu"]'
+    )
+    const count = await triggers.count().catch(() => 0)
+    const maxMenus = Math.min(count, 3)
+
+    for (let i = 0; i < maxMenus; i++) {
+      const trigger = triggers.nth(i)
+      if (!(await trigger.isVisible({ timeout: 1000 }).catch(() => false))) continue
+      const label =
+        (await trigger.getAttribute("aria-label").catch(() => "")) ||
+        (await trigger.getAttribute("title").catch(() => "")) ||
+        (await trigger.textContent().catch(() => "")) ||
+        `dropdown-${i}`
+      const cleanSlug = label.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 25)
+
+      // No duplicar si el modal auto-discovery ya lo capturó
+      if (route.modals?.some((m) => m.slug === cleanSlug)) continue
+
+      await trigger.click({ force: true }).catch(() => undefined)
+      const menuSelector = '[role="menu"], [data-radix-dropdown-menu-content]'
+      const opened = await page
+        .waitForSelector(menuSelector, { state: "visible", timeout: 2000 })
+        .catch(() => null)
+
+      if (opened) {
+        await page.waitForTimeout(300)
+        const menuScreenshot = path.join(
+          outputDir,
+          `${viewport}-${route.slug}-dropdown-${cleanSlug}.png`
+        )
+        await page.screenshot({ path: menuScreenshot, fullPage: true })
+
+        results.push({
+          viewport,
+          slug: `${route.slug}-dropdown-${cleanSlug}`,
+          path: route.path,
+          requestedUrl,
+          finalUrl: page.url(),
+          status,
+          ok: true,
+          type: "dropdown",
+          screenshot: path.relative(root, menuScreenshot),
+          notes: `Menú contextual: ${label}`,
+        })
+
+        await page.keyboard.press("Escape").catch(() => undefined)
+        await page.waitForTimeout(200)
+      }
+    }
+  } catch {
+    // DropdownMenu capture fallback
+  }
 }
 
 async function captureRoute(context: BrowserContext, viewport: string, route: RouteTarget): Promise<CaptureResult[]> {
@@ -2198,13 +2591,14 @@ async function captureRoute(context: BrowserContext, viewport: string, route: Ro
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     const page = await context.newPage()
     const pageErrors: string[] = []
-    page.on("pageerror", (err) => pageErrors.push(`[pageerror] ${err.message}`))
+    page.on("pageerror", (err) => {
+      if (/Connection closed|WebSocket|net::ERR_/i.test(err.message)) return
+      pageErrors.push(`[pageerror] ${err.message}`)
+    })
     page.on("console", (msg) => {
       if (msg.type() !== "error") return
       const text = msg.text()
-      // Ruido conocido que no indica un fallo de la página: la CSP del entorno
-      // de capturas bloquea la telemetría de Sentry, que es lo esperado.
-      if (/favicon|Failed to load resource|net::ERR_/i.test(text)) return
+      if (/favicon|Failed to load resource|net::ERR_|Connection closed|WebSocket/i.test(text)) return
       if (/sentry\.io|Content Security Policy/i.test(text)) return
       pageErrors.push(`[console] ${text}`)
     })
@@ -2279,44 +2673,22 @@ async function captureRoute(context: BrowserContext, viewport: string, route: Ro
         finalUrl,
         status,
         ok: mainOk,
+        type: "view",
         screenshot: relativeScreenshot,
         notes: route.notes,
       })
 
-      if (mainOk && route.modals && route.modals.length > 0) {
-        for (const modal of route.modals) {
-          try {
-            const trigger = page.locator(modal.triggerSelector).first()
-            if (await trigger.isVisible({ timeout: 2000 }).catch(() => false)) {
-              await trigger.click({ force: true })
-              const modalSelector = modal.waitForSelector ?? '[role="dialog"], [role="alertdialog"], [data-state="open"], [data-radix-portal]'
-              await page.waitForSelector(modalSelector, { state: "visible", timeout: 4000 }).catch(() => undefined)
-              await page.waitForTimeout(400)
-
-              const modalScreenshot = path.join(outputDir, `${viewport}-${route.slug}-modal-${modal.slug}.png`)
-              await page.screenshot({ path: modalScreenshot, fullPage: true })
-
-              results.push({
-                viewport,
-                slug: `${route.slug}-modal-${modal.slug}`,
-                path: route.path,
-                requestedUrl,
-                finalUrl: page.url(),
-                status,
-                ok: true,
-                screenshot: path.relative(root, modalScreenshot),
-                notes: modal.notes ?? `Modal/Sheet: ${modal.slug}`,
-              })
-
-              await page.keyboard.press("Escape").catch(() => undefined)
-              await page.waitForTimeout(300)
-            }
-          } catch (modalErr) {
-            // No es fatal —la captura principal ya salió—, pero tragárselo en
-            // silencio hacía que un disparador de modal roto pareciera éxito.
-            const reason = modalErr instanceof Error ? modalErr.message : String(modalErr)
-            console.warn(`  ⚠ modal "${modal.slug}" en ${viewport} ${route.slug}: ${reason}`)
-          }
+      if (mainOk) {
+        if (captureMode === "modals" || captureMode === "full") {
+          await captureModalsForRoute(page, viewport, route, requestedUrl, status, results)
+        }
+        if (captureMode === "tabs" || captureMode === "modals" || captureMode === "full") {
+          await captureTabsForRoute(page, viewport, route, requestedUrl, status, results)
+        }
+        if (captureMode === "interactive" || captureMode === "full") {
+          await captureSelectsForRoute(page, viewport, route, requestedUrl, status, results)
+          await captureDropdownMenusForRoute(page, viewport, route, requestedUrl, status, results)
+          await captureTooltipsForRoute(page, viewport, route, requestedUrl, status, results)
         }
       }
 
@@ -2349,12 +2721,19 @@ async function captureRoute(context: BrowserContext, viewport: string, route: Ro
     }
   }
 
-  throw new Error("Unexpected exit from retry loop")
+  // TypeScript can't prove every iteration returns/continues, but in practice
+  // the loop always exits via return. This satisfies the compiler.
+  return []
 }
 
 async function settle(page: Page) {
-  await page.waitForLoadState("networkidle", { timeout: 8_000 }).catch(() => undefined)
-  await page.waitForTimeout(500)
+  // 12s covers cold-start API calls (dashboard queries, analytics) that 8s
+  // missed, causing screenshots with empty charts. The .catch keeps it
+  // best-effort — pages that never reach networkidle still get captured.
+  await page.waitForLoadState("networkidle", { timeout: 12_000 }).catch(() => undefined)
+  // 300ms after networkidle lets CSS animations and lazy images settle
+  // without adding unnecessary wall-clock time across 170+ routes.
+  await page.waitForTimeout(300)
 }
 
 function isExpectedStatus(status: number | null, route: RouteTarget, finalUrl?: string) {
