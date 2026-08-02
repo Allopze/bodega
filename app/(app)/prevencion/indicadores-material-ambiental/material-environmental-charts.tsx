@@ -2,18 +2,9 @@
 
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, ComposedChart } from "recharts"
 import type { MaterialEnvironmentalData } from "./material-environmental-dashboard"
+import { chartTooltipStyle } from "@/lib/chart-palette"
 
 const MONTH_LABELS = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
-
-function tooltipStyle() {
-  return {
-    background: "var(--color-surface)",
-    border: "1px solid var(--color-border)",
-    borderRadius: "var(--radius)",
-    color: "var(--color-text)",
-    fontSize: "13px",
-  }
-}
 
 function ChartCard({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -56,7 +47,7 @@ export default function MaterialEnvironmentalCharts({
           <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
           <XAxis dataKey="month" tick={{ fontSize: 11, fill: "var(--color-text-subtle)" }} />
           <YAxis tick={{ fontSize: 11, fill: "var(--color-text-subtle)" }} allowDecimals={false} />
-          <Tooltip contentStyle={tooltipStyle()} />
+          <Tooltip contentStyle={chartTooltipStyle()} />
           <Legend />
           <Bar dataKey="Inc. peligrosos" name="Inc. peligrosos" fill="var(--color-signal)" radius={[4, 4, 0, 0]} />
           <Bar dataKey="Daño material" name="Daño material" fill="var(--color-warning)" radius={[4, 4, 0, 0]} />
@@ -69,7 +60,7 @@ export default function MaterialEnvironmentalCharts({
           <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
           <XAxis dataKey="month" tick={{ fontSize: 11, fill: "var(--color-text-subtle)" }} />
           <YAxis tick={{ fontSize: 11, fill: "var(--color-text-subtle)" }} allowDecimals={false} />
-          <Tooltip contentStyle={tooltipStyle()} />
+          <Tooltip contentStyle={chartTooltipStyle()} />
           <Legend />
           <Line type="monotone" dataKey="Inc. peligrosos" name="Inc. peligrosos" stroke="var(--color-signal)" strokeWidth={2} dot={{ r: 3 }} />
           <Line type="monotone" dataKey="Daño material" name="Daño material" stroke="var(--color-warning)" strokeWidth={2} dot={{ r: 3 }} />
@@ -82,7 +73,7 @@ export default function MaterialEnvironmentalCharts({
           <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
           <XAxis type="number" tick={{ fontSize: 11, fill: "var(--color-text-subtle)" }} allowDecimals={false} />
           <YAxis type="category" dataKey="name" tick={{ fontSize: 11, fill: "var(--color-text-subtle)" }} width={140} />
-          <Tooltip contentStyle={tooltipStyle()} />
+          <Tooltip contentStyle={chartTooltipStyle()} />
           <Legend />
           <Bar dataKey="Inc. peligrosos" name="Inc. peligrosos" fill="var(--color-signal)" radius={[0, 4, 4, 0]} stackId="a" />
           <Bar dataKey="Daño material" name="Daño material" fill="var(--color-warning)" radius={[0, 4, 4, 0]} stackId="a" />
@@ -95,7 +86,7 @@ export default function MaterialEnvironmentalCharts({
           <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
           <XAxis dataKey="month" tick={{ fontSize: 11, fill: "var(--color-text-subtle)" }} />
           <YAxis tick={{ fontSize: 11, fill: "var(--color-text-subtle)" }} allowDecimals={false} />
-          <Tooltip contentStyle={tooltipStyle()} />
+          <Tooltip contentStyle={chartTooltipStyle()} />
           <Legend />
           <Bar dataKey="Daño material" name="Daño material" fill="var(--color-warning)" radius={[4, 4, 0, 0]} opacity={0.6} />
           <Line type="monotone" dataKey="Daño ambiental" name="Daño ambiental" stroke="var(--color-info)" strokeWidth={2} dot={{ r: 3 }} />

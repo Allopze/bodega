@@ -1,6 +1,7 @@
 "use client"
 
 import { AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts"
+import { chartTooltipStyle } from "@/lib/chart-palette"
 
 interface ChartDataPoint {
   group: string | null
@@ -36,16 +37,6 @@ const formatLiters = (n: number) => {
 
 // Precio por litro: la métrica que explica el gasto (volumen vs. precio).
 const formatPricePerLiter = (n: number) => `$${Math.round(n).toLocaleString("es-CL")}/L`
-
-function tooltipStyle() {
-  return {
-    background: "var(--color-surface)",
-    border: "1px solid var(--color-border)",
-    borderRadius: "var(--radius)",
-    color: "var(--color-text)",
-    fontSize: "13px",
-  }
-}
 
 function groupSmallProductSlices(data: ChartDataPoint[]) {
   const chartData = data
@@ -103,7 +94,7 @@ export function MonthlyEvolutionChart({ data }: { data: ChartDataPoint[] }) {
           <YAxis yAxisId="amount" className="text-xs" tickFormatter={formatCLP} tick={{ fill: AMOUNT_COLOR }} width={60} />
           <YAxis yAxisId="price" orientation="right" className="text-xs" tickFormatter={(v) => formatPricePerLiter(Number(v))} tick={{ fill: PRICE_COLOR }} width={68} domain={[0, "auto"]} />
           <Tooltip
-            contentStyle={tooltipStyle()}
+            contentStyle={chartTooltipStyle()}
             formatter={(value, name) => {
               const n = String(name).toLowerCase()
               if (n === "precio") return [formatPricePerLiter(Number(value)), "Precio prom."]
@@ -141,7 +132,7 @@ export function CategoryBarChart({ data, title, onSelect }: { data: ChartDataPoi
           <XAxis type="number" className="text-xs" tickFormatter={formatCLP} tick={{ fill: "var(--color-text-muted)" }} />
           <YAxis type="category" dataKey="name" width={120} className="text-xs" tick={{ fill: "var(--color-text-muted)", fontSize: 11 }} />
           <Tooltip
-            contentStyle={tooltipStyle()}
+            contentStyle={chartTooltipStyle()}
             formatter={(value, _name, item) => {
               const litros = (item?.payload as { litros?: number } | undefined)?.litros ?? 0
               return [`${formatCLP(Number(value))} · ${formatLiters(litros)} L`, "Gasto"]
@@ -186,7 +177,7 @@ export function ProductPieChart({ data }: { data: ChartDataPoint[] }) {
             {chartData.map((entry, i) => <Cell key={entry.name} fill={COLORS[i % COLORS.length]} stroke="var(--color-surface)" strokeWidth={2} />)}
           </Pie>
           <Tooltip
-            contentStyle={tooltipStyle()}
+            contentStyle={chartTooltipStyle()}
             formatter={(value, name, item) => {
               const litros = (item?.payload as { liters?: number } | undefined)?.liters ?? 0
               return [`${formatCLP(Number(value))} · ${formatLiters(litros)} L`, String(name)]

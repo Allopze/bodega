@@ -1,5 +1,11 @@
 /**
- * Paleta categórica única de los gráficos del dashboard.
+ * Paleta categórica única de **todos** los gráficos del producto.
+ *
+ * Vivía en `app/(app)/dashboard/` y convivía con otras dos: `COLORS[6]` en
+ * `analitica/analytics-charts.tsx` y tokens sueltos en los gráficos de
+ * prevención. Tres paletas sin relación entre sí para el mismo producto (G-07).
+ * Se movió a `lib/` para que cualquier pantalla la consuma sin importar desde
+ * la carpeta de otra ruta.
  *
  * Antes había 58 literales hex repartidos entre `dashboard-charts.tsx` y
  * `operational-metrics-strip.tsx`, sin garantía de que dos series vecinas
@@ -41,3 +47,23 @@ export const CHART_SERIES = [
   CHART_COLORS.danger,
   CHART_COLORS.neutral,
 ] as const
+
+
+/**
+ * Estilo del tooltip de los gráficos que usan recharts directo (sin
+ * `ChartContainer`).
+ *
+ * Había **cuatro copias** de esta función —combustibles, anomalías,
+ * material-ambiental y analítica— y una ya había derivado: `/analitica` usaba
+ * `8px` de radio y 12px de fuente contra `var(--radius)` y 13px de las otras
+ * tres, así que su tooltip se veía distinto sin que nadie lo decidiera.
+ */
+export function chartTooltipStyle() {
+  return {
+    background: "var(--color-surface)",
+    border: "1px solid var(--color-border)",
+    borderRadius: "var(--radius)",
+    color: "var(--color-text)",
+    fontSize: "13px",
+  }
+}

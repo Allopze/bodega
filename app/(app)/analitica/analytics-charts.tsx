@@ -15,30 +15,18 @@ import {
 } from "recharts"
 import type { SpendByModuleRow, SpendByMonthRow, VehicleCostRow, WorksiteSpendRow } from "@/lib/services/analytics"
 import { formatCLP } from "@/lib/utils"
+import { CHART_SERIES, chartTooltipStyle } from "@/lib/chart-palette"
 
-const COLORS = [
-  "var(--color-primary)",
-  "var(--color-signal)",
-  "var(--color-success)",
-  "var(--color-warning)",
-  "var(--color-info)",
-  "var(--color-danger)",
-]
+// Segunda de las tres paletas que coexistían (G-07). Ahora es la única del
+// producto, en `lib/chart-palette.ts`: sus hues están verificados para
+// distinguirse entre sí como categorías contiguas, que es lo que esta lista
+// no garantizaba (primary, success y warning son verde, verde y ámbar).
+const COLORS = CHART_SERIES
 
 function compactCLP(value: number) {
   if (value >= 1_000_000) return `$${(value / 1_000_000).toFixed(1)}M`
   if (value >= 1_000) return `$${Math.round(value / 1_000)}K`
   return `$${Math.round(value)}`
-}
-
-function tooltipStyle() {
-  return {
-    background: "var(--color-surface)",
-    border: "1px solid var(--color-border)",
-    borderRadius: "8px",
-    color: "var(--color-text)",
-    fontSize: "12px",
-  }
 }
 
 export function MonthlySpendChart({ data }: { data: SpendByMonthRow[] }) {
@@ -52,7 +40,7 @@ export function MonthlySpendChart({ data }: { data: SpendByMonthRow[] }) {
           <XAxis dataKey="month" tick={{ fill: "var(--color-text-muted)", fontSize: 11 }} />
           <YAxis tickFormatter={compactCLP} tick={{ fill: "var(--color-text-muted)", fontSize: 11 }} width={58} />
           <Tooltip
-            contentStyle={tooltipStyle()}
+            contentStyle={chartTooltipStyle()}
             formatter={(value, name) => [formatCLP(Number(value)), name === "totalAmount" ? "Total" : String(name)]}
           />
           <Line type="monotone" dataKey="totalAmount" name="Total" stroke="var(--color-primary)" strokeWidth={2.5} dot={false} activeDot={{ r: 4 }} />
@@ -74,7 +62,7 @@ export function ModuleSpendChart({ data }: { data: SpendByModuleRow[] }) {
           <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
           <XAxis type="number" tickFormatter={compactCLP} tick={{ fill: "var(--color-text-muted)", fontSize: 11 }} />
           <YAxis type="category" dataKey="module" width={92} tick={{ fill: "var(--color-text-muted)", fontSize: 11 }} />
-          <Tooltip contentStyle={tooltipStyle()} formatter={(value) => [formatCLP(Number(value)), "Monto"]} />
+          <Tooltip contentStyle={chartTooltipStyle()} formatter={(value) => [formatCLP(Number(value)), "Monto"]} />
           <Bar dataKey="totalAmount" name="Monto" radius={[0, 5, 5, 0]}>
             {data.slice(0, 8).map((row, index) => (
               <Cell key={row.module} fill={COLORS[index % COLORS.length]} />
@@ -115,7 +103,7 @@ export function RankingBarChart({
           <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
           <XAxis type="number" tickFormatter={compactCLP} tick={{ fill: "var(--color-text-muted)", fontSize: 11 }} />
           <YAxis type="category" dataKey="name" width={118} tick={{ fill: "var(--color-text-muted)", fontSize: 11 }} />
-          <Tooltip contentStyle={tooltipStyle()} formatter={(value) => [formatCLP(Number(value)), "Costo"]} />
+          <Tooltip contentStyle={chartTooltipStyle()} formatter={(value) => [formatCLP(Number(value)), "Costo"]} />
           <Bar dataKey="value" radius={[0, 5, 5, 0]} fill="var(--color-primary)" />
         </BarChart>
       </ResponsiveContainer>

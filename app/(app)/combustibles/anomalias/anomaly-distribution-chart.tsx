@@ -1,6 +1,7 @@
 "use client"
 
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts"
+import { chartTooltipStyle } from "@/lib/chart-palette"
 
 const STATUS_LABELS: Record<string, string> = {
   open: "Abierto",
@@ -42,16 +43,6 @@ const RULE_COLORS = [
   "var(--color-primary-strong)",
   "var(--color-signal-ink)",
 ]
-
-function tooltipStyle() {
-  return {
-    background: "var(--color-surface)",
-    border: "1px solid var(--color-border)",
-    borderRadius: "var(--radius)",
-    color: "var(--color-text)",
-    fontSize: "13px",
-  }
-}
 
 function EmptyChart({ label }: { label: string }) {
   return (
@@ -107,7 +98,7 @@ export function AnomalyDistributionChart({ distribution }: { distribution: Distr
               <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
               <XAxis dataKey="name" className="text-xs" tick={{ fill: "var(--color-text-muted)", fontSize: 10 }} />
               <YAxis className="text-xs" tick={{ fill: "var(--color-text-muted)" }} width={30} />
-              <Tooltip contentStyle={tooltipStyle()} formatter={(value) => [value, "Casos"]} />
+              <Tooltip contentStyle={chartTooltipStyle()} formatter={(value) => [value, "Casos"]} />
               <Bar dataKey="value" radius={[3, 3, 0, 0]} name="Casos">
                 {statusData.map((entry) => <Cell key={entry.name} fill={entry.fill} />)}
               </Bar>
@@ -135,7 +126,7 @@ export function AnomalyDistributionChart({ distribution }: { distribution: Distr
               >
                 {severityData.map((entry, i) => <Cell key={entry.name} fill={SEVERITY_COLORS[i % SEVERITY_COLORS.length]} stroke="var(--color-surface)" strokeWidth={2} />)}
               </Pie>
-              <Tooltip contentStyle={tooltipStyle()} formatter={(value, name) => [value, String(name)]} />
+              <Tooltip contentStyle={chartTooltipStyle()} formatter={(value, name) => [value, String(name)]} />
               <Legend
                 verticalAlign="bottom"
                 height={28}
@@ -156,7 +147,7 @@ export function AnomalyDistributionChart({ distribution }: { distribution: Distr
               <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
               <XAxis type="number" className="text-xs" tick={{ fill: "var(--color-text-muted)" }} width={30} />
               <YAxis type="category" dataKey="name" width={100} className="text-xs" tick={{ fill: "var(--color-text-muted)", fontSize: 10 }} />
-              <Tooltip contentStyle={tooltipStyle()} formatter={(value) => [value, "Casos"]} />
+              <Tooltip contentStyle={chartTooltipStyle()} formatter={(value) => [value, "Casos"]} />
               <Bar dataKey="value" radius={[0, 3, 3, 0]} name="Casos">
                 {ruleData.map((entry, i) => <Cell key={entry.name} fill={entry.fill ?? RULE_COLORS[i % RULE_COLORS.length]} />)}
               </Bar>
