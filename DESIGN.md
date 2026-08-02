@@ -145,10 +145,10 @@ Estructura de la app autenticada (`components/layout/app-shell.tsx`):
 │  bg-(--color-chrome) · h-[100dvh]  — shell tintado en "L"      │
 │ ┌──────────┐ ┌───────────────────────────────────────────────┐│
 │ │ DesktopNav│ │  <main> — pozo blanco                          ││
-│ │  (rail +  │ │  bg-(--color-surface) · lg:rounded-tl-xl       ││
+│ │  (rail +  │ │  bg-(--color-surface) · lg:rounded-tl-[36px]   ││
 │ │  panel)   │ │  overflow-y-auto (scroll container)            ││
 │ │  al ras   │ │ ┌───────────────────────────────────────────┐ ││
-│ │           │ │ │ TopBar — sticky top-0, h-[3.25rem]         │ ││
+│ │           │ │ │ TopBar — sticky top-0, h-[3.5rem]          │ ││
 │ │           │ │ ├───────────────────────────────────────────┤ ││
 │ │           │ │ │ <PageContainer> → <PageHeader /> + contenido│ ││
 │ │           │ │ └───────────────────────────────────────────┘ ││
@@ -158,8 +158,12 @@ Estructura de la app autenticada (`components/layout/app-shell.tsx`):
 
 - El **sidebar va al ras** (izquierda de la "L" tintada), no es una tarjeta
   flotante. El panel principal es un **pozo blanco** (`bg-surface`) con la esquina
-  superior izquierda redondeada (`lg:rounded-tl-(--radius-xl)`); su
-  `overflow-y-auto` crea el scroll container y clipea el radio.
+  superior izquierda redondeada (`lg:rounded-tl-[36px]` — valor fijo en
+  `app-shell.tsx`, no deriva de ningún token de radio; existe un
+  `--radius-shell` de 40px pensado para esto en `globals.css` pero no está
+  conectado); su `overflow-y-auto` crea el scroll container y clipea el radio.
+  El pozo también lleva `shadow-well` (sombra interior fija a su borde
+  lateral y esquina), distinta de las sombras de superficies flotantes.
 - El **TopBar es sticky** dentro del pozo. En mobile se auto-oculta al scrollear
   (`useHideOnScroll`); en desktop `lg:` bloquea el auto-hide.
 - **Command palette ⌘K / Ctrl+K** global (lazy), navega a cualquier destino
@@ -213,13 +217,13 @@ con reglas especiales para los submódulos de Prevención.
 - **Activo**: regla izquierda visible (`border-l-2 border-(--color-text)`) sin
   fondo; label en `--color-primary-ink`, icono en `--color-primary`.
 - **Inactivo**: borde izquierdo transparente para no saltar el texto.
-- Hover: `bg-chrome-hover`, transición de color 120ms.
+- Hover: `bg-chrome-hover`, transición de color 140ms (`--duration-fast`).
 - Badge de pendientes: naranja signal, mono, `99+` para >99.
 - Los ítems se filtran por permisos (`canSeeNav`) y toggles de módulo.
 
 ### TopBar
 
-- `h-[3.25rem]`, sticky. **Desktop**: breadcrumb de contexto (área / página)
+- `h-[3.5rem]`, sticky. **Desktop**: breadcrumb de contexto (área / página)
   derivado de `NAV_ITEMS` + `usePathname()`, chip de faena opcional, campana de
   notificaciones (ping animado + badge) y avatar con dropdown.
 - **Mobile**: hamburguesa + marca Chome a la izquierda, campana + avatar a la
@@ -232,33 +236,43 @@ cambios de ruta vía `template.tsx`, que además aplica un fade sutil de página
 
 ---
 
-## Componentes (`components/ui/`, ~32)
+## Componentes (`components/ui/`, 50)
 
 ### Button
 
-6 variantes + 5 tamaños. Sin `active:scale` — solo transición de color.
+6 variantes + 7 tamaños. Lleva `motion-safe:active:scale-[0.98]` en el press —
+la única excepción al principio "sin scale" del resto del sistema (ver Motion).
 
 | Variante | Fondo | Texto | Borde |
 |---|---|---|---|
 | `primary` | `--color-primary` | white | — |
-| `secondary` | `--color-surface` | `--color-text` | `--color-border` |
+| `secondary` | `--color-surface` | `--color-text` | `--color-border-control` |
 | `ghost` | transparente | `--color-text-muted` | — |
 | `destructive` | `--color-danger` | white | — |
 | `signal` | `--color-signal-tint` | `--color-signal-ink` | `--color-signal-line` |
 | `link` | — | `--color-primary-ink` | — |
 
-Tamaños: `sm` (h-7), `default` (h-8), `lg` (h-9), `icon` (h-8 w-8), `icon-sm`
-(h-7 w-7). Estados: loading con spinner + `aria-busy`, disabled con opacidad.
+Tamaños, móvil-first (`h-11` / 44px táctil en mobile → más compacto en
+desktop vía `sm:`): `sm` (`sm:30px`), `default` (`sm:34px`), `lg` (`sm:38px`),
+`icon`/`icon-sm` (30–34px cuadrados), `icon-mobile`/`icon-mobile-sm` (fuerzan
+el tamaño táctil también en desktop). Estados: loading con spinner +
+`aria-busy`, disabled con opacidad.
 
 ### Input / Select / Textarea
 
-- Altura `h-9`, borde `--color-border`, fondo `--color-surface`, placeholder
+- Alturas distintas por control, no una talla única (mismo patrón móvil `h-11`
+  → desktop `sm:` que Button): `Input` `sm:34px` + `radius-md`; `Select`
+  trigger `sm:36px` (`h-9`) + `radius-lg`; `Textarea` sin altura fija
+  (`min-h-[80px]`, `resize-y`) + `radius-lg`. El trigger de `Select` **no** es
+  idéntico al `Input`: difiere en alto, radio y padding horizontal.
+- Borde `--color-border-control` (no `--color-border`, reservado a hairlines
+  decorativas/divisores), fondo `--color-surface`, placeholder
   `--color-text-subtle`.
 - Focus: borde `--color-primary` + ring `--color-primary-line`.
 - Error: borde `--color-danger` + ring + `aria-invalid`.
 - Disabled/read-only: fondo `--color-surface-2`.
-- `Select` (Radix): trigger idéntico al Input; content con animación de escala,
-  check Phosphor, foco en `--color-primary-tint`.
+- `Select` (Radix): content con animación de escala, check Phosphor, foco de
+  ítem en `--color-primary-tint`.
 
 ### Field + Label
 
@@ -277,11 +291,17 @@ mobile (`renderMobileCard`).
 
 ### Otros
 
-- **Badge**: mono uppercase, variantes semánticas + dot opcional.
+- **Badge**: las variantes de severidad (`primary/success/warning/signal/
+  danger/neutral`) van en mono uppercase; `default/info/outline` van en sans
+  normal-case a propósito, para que la información rutinaria no compita
+  visualmente con los estados. Dot opcional en cualquier variante.
 - **Dialog / Sheet**: overlay `bg-overlay` + `backdrop-blur`, content flotante
   (`shadow-lg`), animación fade + zoom. Título en `font-display` (Exo).
-- **Tabs, Collapsible, Popover, DropdownMenu, Tooltip, Checkbox, ScrollArea**:
-  primitives Radix con tokens del tema.
+- **Tabs, Popover, DropdownMenu, Tooltip, Checkbox**: primitives Radix
+  envueltas en `components/ui/` con tokens del tema. `Collapsible` se usa
+  directo desde Radix en la navegación (`components/layout/`), sin wrapper
+  propio. No hay `ScrollArea`: no es una dependencia del proyecto — el scroll
+  nativo se estiliza con `scrollbar-width`/`scrollbar-color` en `globals.css`.
 - **EmptyState / ErrorState**: usados consistentemente; empty en lenguaje de
   usuario + CTA real. **Skeleton**: shimmer en cargas. **Avatar**: iniciales con
   color por hash del nombre (OKLCH). **Pagination**: componente compartido único.
@@ -290,21 +310,44 @@ mobile (`renderMobileCard`).
 
 ## Motion
 
-**"La bitácora es calma."** Transiciones de color, no de escala.
+**"La bitácora es calma."** Transiciones de color, no de escala — con la
+excepción ya señalada de `Button` (`active:scale-[0.98]`).
 
 | Token | Valor | Uso |
 |---|---|---|
 | `--ease-out` | `cubic-bezier(0.20, 0.80, 0.30, 1)` | Entradas, hover |
 | `--ease-in-out` | `cubic-bezier(0.60, 0, 0.20, 1)` | Transiciones simétricas |
 | `--ease-drawer` | `cubic-bezier(0.30, 0.80, 0.10, 1)` | Drawer slide |
-| `--duration-fast` | 120ms | Hover, foco |
+| `--ease-panel` | `cubic-bezier(0.22, 1, 0.36, 1)` | Paneles laterales |
+| `--duration-fast` | 140ms | Hover, foco |
 | `--duration-default` | 180ms | Modales, selects |
-| `--duration-slow` | 280ms | Drawers, layout |
+| `--duration-slow` | 220ms | Drawers, layout |
 
 Animaciones: fade de página (`template.tsx`), modal fade + zoom-95, drawer
 slide, select zoom-95, shimmer de skeleton, entrada/salida de toasts (Sonner con
 barra de progreso). `prefers-reduced-motion: reduce` lleva todas las duraciones a
 0ms.
+
+---
+
+## Radios y sombras
+
+| Token | Valor | Uso |
+|---|---|---|
+| `--radius-xs` | 4px | Micro chips, badges |
+| `--radius-sm` | 6px | Inputs densos, celdas |
+| `--radius` | 8px | Ítems de navegación |
+| `--radius-md` | 10px | `Button`, `Input`, controles |
+| `--radius-lg` | 12px | `Select`, `Textarea`, contenedores secundarios |
+| `--radius-xl` | 16px | Hero cards, `Select` content |
+| `--radius-2xl` | 20px | `Dialog`, `TableRoot` |
+| `--radius-shell` | 40px | Pensado para la esquina del pozo — hoy no conectado (ver AppShell) |
+| `--radius-full` | pills | `Badge`, avatares |
+
+Sombras suaves (`--shadow-xs/sm/card/md/lg`) reservadas a superficies
+flotantes (cards, popovers, modales) + `--shadow-well`: sombra interior fija
+al borde lateral y esquina superior del pozo principal — no es una superficie
+flotante, es el propio `<main>`.
 
 ---
 
@@ -366,7 +409,9 @@ trabajo, qué acción se espera. Resumen (detalle en [AGENTS.md](AGENTS.md)):
    acciones; amber para realces.
 3. **Tipografía**: Exo para títulos (`text-h1/2/3`, `text-display`), Myriad para
    UI/body, mono para datos.
-4. **Sin scale en active**: transiciones de color.
+4. **Transiciones de color, no de escala** — excepción ya existente: `Button`
+   usa `active:scale-[0.98]` (`motion-safe`). No repetir el patrón en
+   componentes nuevos sin justificarlo.
 5. **Estados completos**: loading, empty y error en toda pantalla.
 6. **Accesibilidad primero**: labels, aria, focus rings, reduced motion.
 7. **Layout del shell**: usar `PageHeader` (sin `<h1>` propio) y `PageContainer`

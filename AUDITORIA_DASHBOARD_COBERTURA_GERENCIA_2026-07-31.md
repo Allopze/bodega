@@ -231,8 +231,9 @@ repetición de G-02 en lugar de multiplicarla.
 Decisiones tomadas con el usuario: **una página larga con índice** · **alcance global de faena
 + período** · **la fila superior con una cifra por dominio, elegida según el rol**.
 
-> **Estado de implementación** — Fases 0 ✅ · 1 ✅ · 2 ✅ · 4 parcial ✅ · e2e 16/16 ✅.
-> Pendientes: **Fase 3** (secciones por dominio) y la **pasada visual**.
+> **Estado de implementación** — las 5 fases del plan **más** una pasada de cierre
+> (P1–P7) que atacó lo que quedaba fuera de alcance. vitest 3217 · e2e 22/22 ·
+> pasada visual hecha. Ver [§Pasada de cierre](#pasada-de-cierre--2026-08-01).
 > El registro de lo ejecutado está en [§Registro de implementación](#registro-de-implementación)
 > al final del documento.
 
@@ -706,6 +707,184 @@ umbral).
 
 ---
 
+## Fase 3 — Las cinco secciones por dominio · ✅ 2026-07-31
+
+**La cobertura pasa de 6 a los ~19 dominios**, y el bloque "Analítica y tendencias" se
+disolvió: sus 8 gráficos se repartieron entre Adquisiciones, Prevención y Flota. No quedaron
+cinco secciones *más* el bloque viejo.
+
+### Lo que se construyó
+
+| Archivo | Qué |
+|---|---|
+| [dashboard-domains.ts](app/(app)/dashboard/dashboard-domains.ts) | Los 5 dominios, sus permisos y el **orden por perfil** |
+| [dashboard-domain-shell.tsx](app/(app)/dashboard/dashboard-domain-shell.tsx) | Índice + envoltorio de sección + fallback |
+| [dashboard-domain-charts.tsx](app/(app)/dashboard/dashboard-domain-charts.tsx) | Los 11 gráficos diferidos, cada uno con `ChartErrorBoundary` |
+| [dashboard-domain-sections.tsx](app/(app)/dashboard/dashboard-domain-sections.tsx) | Las 5 secciones y su carga de datos |
+| [dashboard-domains-data.ts](lib/services/dashboard-domains-data.ts) | Las **3** consultas nuevas |
+
+**11 de las 13 funciones que estaban sin lector ahora se consumen.** Sólo se escribieron tres
+consultas: calidad de recepción, deuda vencida de combustible y documentos de flota por vencer.
+
+**`getAnalyticsDashboard` se reusa entera** y se surfacea lo que ya calculaba y nadie leía:
+`topSuppliers`, `productRotation`, `stockRisks` y `eppDeliveries`. Mismo costo, cuatro
+visualizaciones más.
+
+**Tipos de gráfico nuevos**: dona de composición con total al centro, ranking horizontal con
+**semáforo por umbral** (patrón tomado de `pdtp-dashboard-charts.tsx`) y barra apilada 100% de
+estados —esta última sin recharts, son `div`s—. El dashboard pasa de 8 gráficos casi todos de
+barras a **13 con cinco formas distintas**.
+
+**El índice** es un `<nav>` propio y no `SegmentedControl`: ese componente envuelve sus items
+en un `flex flex-wrap` interno al que no llega ninguna `className`, así que no se puede volver
+columna. Rail vertical pegajoso desde `2xl`, barra horizontal debajo.
+
+### Hallazgo del esquema: una cifra que no puede respetar el alcance
+
+`fuel_monthly_statements` es por **(mes, proveedor)** — no tiene columna de faena. La deuda de
+cuenta corriente es con el proveedor y **no es atribuible a una obra**. Siguiendo la regla que
+la Fase 1 fijó, el KPI se muestra igual pero la sección lo **declara** en su nota de alcance,
+en vez de fingir que sigue el filtro.
+
+### El bug que sólo encontró el e2e
+
+La primera corrida dio **15 de 20 fallando**, incluidos tests que ya estaban verdes. No era un
+selector: la página entera caía en `error.tsx` ("Error al cargar el panel").
+
+Una sonda que ejecutó los 12 cargadores de datos por separado los dio **todos OK**, así que el
+problema era de render. La causa:
+
+```tsx
+<CompositionDonutChart formatValue={formatCLP} … />   // ← Server → Client
+```
+
+**Las funciones no cruzan la frontera RSC.** El prop pasó a ser un discriminador serializable
+(`format="clp"`). `tsc` no lo ve —el tipo era válido— y el `build` tampoco, porque sólo falla
+al renderizar con datos.
+
+> Es el segundo caso de la fase en que **el verde de tsc no significa nada**: la primera fue el
+> `count()` sin auto-espera. Ambos los atrapó el e2e.
+
+### Verificación
+
+- `tsc` y `eslint` limpios (0 errores fuera de `.next/`), `next build` exitoso.
+- `vitest` — **3210/3210**, con [dashboard-domains.test.ts](app/(app)/dashboard/dashboard-domains.test.ts) (8 casos de orden y visibilidad).
+- `playwright e2e/dashboard.spec.ts` — **20/20**, con 4 tests nuevos: el orden por perfil, el
+  índice navegando, los enlaces de drill-down y las secciones que el rol restringido no ve.
+- **Bundle: 18 chunks JS en el árbol inicial, 0 con recharts** — con 13 gráficos repartidos en
+  cinco secciones, que era el riesgo real de esta fase.
+
+### Deuda que deja
+
+- `MetricCell` sigue siendo una tercera implementación de tile junto a `KpiCard` y `SummaryBar`
+  (decisión explícita: cambiarlo es regresión visual sin beneficio).
+- El rail lateral a `2xl` no se verificó a ese ancho: la pasada visual pendiente lo cubre.
+
+---
+
+# Pasada de cierre · 2026-08-01
+
+Se ejecutó **todo lo que quedaba**, incluido lo declarado fuera del alcance de la auditoría.
+
+## P1 · Una regresión propia, del mismo tipo que la auditoría denunciaba
+
+Las secciones de la Fase 3 declaraban un período en su cabecera y **eso era L-07/G-04.4 otra
+vez**: "Adquisiciones · Mes en curso" encabezaba una tendencia de 6 meses, un backlog de hoy y
+una inversión acumulada histórica; "Prevención · Año en curso", tres KPIs de estado actual.
+
+Ninguna sección es homogénea en el tiempo, así que **la cabecera dejó de prometer una ventana**
+y cada KPI y cada gráfico declara la suya ("OC emitidas · mes en curso", "abiertas en total ·
+ahora", "acumulado histórico").
+
+## P2 · Las 13 funciones sin lector, ahora 13/13
+
+Se conectaron las tres que faltaban:
+
+| Función | Dónde | Qué aporta |
+|---|---|---|
+| `getRiskDashboard` | Prevención | KPI de riesgos críticos sin control + gráfico de cobertura MIPER |
+| `getFleetOverview` | Flota | Ranking de **costo operacional por km/hora** — lo calculaba desde siempre y nadie lo leía |
+| `getUsageMaintenanceAlerts` | Flota | KPI de mantención vencida **por uso**, no por fecha |
+
+Y el semáforo PDTP pasó de **por mes** a **por faena**, que es lo que el plan pedía y lo que
+`perWorksite` existe para alimentar.
+
+## P3 · Lo que estaba fuera de alcance
+
+- **378 líneas de código muerto borradas** (`indicadores-dashboard.tsx` +
+  `indicadores-charts.tsx`). Su test llevaba el nombre del componente muerto pero probaba el
+  canónico: se renombró a `canonical-indicators-dashboard.test.tsx`.
+- `/analitica`: `xl:grid-cols-5` con 4 tarjetas → 4 columnas.
+- `getWorkQueueSnapshot` ya no existía; el barrel estaba limpio.
+- **Monitoreo del cron que fallaba en silencio.** Nuevo
+  [/api/cron/operational-snapshot-health](app/api/cron/operational-snapshot-health/route.ts) con
+  el patrón de `backup-health`: reporta edad del último corte, cobertura del último día y
+  cuántos de los últimos 30 tienen cobertura completa —que es exactamente lo que la lectura
+  exige—. 6 tests, **control negativo**: contar días con filas en vez de días completos hace
+  caer 2.
+
+## P4 · `MetricCell` absorbido por `KpiCard`
+
+Estaba declarado como deuda ("regresión visual sin beneficio"), y **la Fase 3 dio vuelta el
+argumento**: con seis filas de `KpiCard` en la página, la que se veía distinta era la de
+arriba. `KpiCard` recibió lo único que le faltaba —`sparkline` y tono `danger`, ambos
+opcionales— y la tercera implementación de tile del repo desapareció. `MiniSparkline` se movió a
+`components/ui/`.
+
+## P5 · Los seis dominios sin representación
+
+Inspecciones, permisos de trabajo, simulacros, acuerdos del comité, higiene y gestión del
+cambio entraron en **una** sección, "Control preventivo en terreno", con
+`getFieldControlSummary`. Seis secciones más habrían devuelto la pantalla al muro que esta
+auditoría desarmó.
+
+> Dos de esas tablas no tienen faena propia: la reunión del comité cuelga del comité y la
+> medición del GES. El alcance se aplica sobre el padre, no sobre la tabla.
+
+## P7 · La pasada visual, que encontró tres defectos que ningún test veía
+
+Medido a 1600 / 1440 / 1280 / 390 px con `jefa_chome` y el rol restringido:
+
+- **El rail lateral del índice a `2xl` funciona** — era la incógnita declarada desde el
+  principio: rail vertical a 1600px con gráficos de 532px de ancho, barra horizontal debajo.
+- **0 px de desborde horizontal** en los cuatro anchos. La página real mide **6,6 pantallas**.
+- El rol restringido ve 2 de 6 secciones, en el orden que le corresponde.
+
+Y los tres defectos:
+
+1. **La dona mostraba "Otros" dos veces.** `spendByModule` mapea varios módulos a esa etiqueta,
+   así que la leyenda tenía dos porciones de distinto color e idéntico nombre. Ahora se fusionan
+   las porciones que comparten etiqueta antes de dibujar.
+2. **El ranking de proveedores mostraba "31416" pelado** en el eje. `ThresholdRankingChart`
+   recibió `format="clp"` — discriminador serializable, no función, porque lo instancia un
+   Server Component.
+3. **"Inversión del período" se truncaba** en la tarjeta. Pasó a "Inversión"; el detalle ya
+   decía de qué período era.
+
+## P8 · El wrapper de gráficos: se arregló la deriva, no se migraron los 12
+
+Había **cuatro copias** de `tooltipStyle()` y una ya había derivado: `/analitica` usaba `8px` de
+radio y 12px de fuente contra `var(--radius)` y 13px de las otras tres, así que su tooltip se
+veía distinto sin que nadie lo hubiera decidido. Ese **sí** era el defecto: se consolidó en
+`chartTooltipStyle` dentro de `lib/chart-palette.ts` y las cuatro copias desaparecieron.
+
+**No se migraron los 12 archivos de `ResponsiveContainer` a `ChartContainer`.** Es un refactor
+grande sobre ocho pantallas de combustibles que esta auditoría no revisó, exige inventar un
+`ChartConfig` por gráfico, y `ResponsiveContainer` no está roto — es la primitiva de recharts.
+El beneficio sería consistencia de API; el costo, riesgo de regresión en pantallas ajenas. Queda
+anotado como candidato separado, no como deuda de esta auditoría.
+
+## Verificación de esta pasada
+
+- `tsc` y `eslint` limpios; `next build` exitoso.
+- `vitest` — **3217/3217**.
+- `playwright e2e/dashboard.spec.ts` — **22/22**, con dos tests nuevos: la sección de terreno y
+  el contrato de "cada cifra declara su ventana".
+- **19 chunks JS en el árbol inicial, 0 con recharts** — con ~15 gráficos y seis secciones.
+- **Control negativo** del cron de salud verificado rompiendo la aritmética de cobertura.
+
+---
+
 # Estado final y trabajo pendiente
 
 ## Cerrado
@@ -716,8 +895,11 @@ umbral).
 | **G-02** · la misma cifra hasta 4 veces | ✅ Fase 2 |
 | **G-04** · defectos de lectura de los gráficos (5 de 5) | ✅ Fase 0 |
 | **G-05** · sin alcance global | ✅ Fase 1 |
-| **G-06** · accesos rápidos sólo de adquisiciones | ✅ Fase 4 parcial |
-| Reglas A5b / corolario A5 en `AGENTS.md` y `DESIGN.md` | ✅ Fase 4 parcial |
+| **G-06** · accesos rápidos sólo de adquisiciones | ✅ Fase 4 |
+| **G-03** · gráficos sin drill-down, `/analitica` sin enlazar | ✅ Fase 3 |
+| **G-07** · tres paletas, sin `ChartErrorBoundary` | ✅ Fase 3/4 (salvo `MetricCell`) |
+| **Cobertura**: de 6 a ~19 dominios | ✅ Fase 3 |
+| Reglas A5b / corolario A5 en `AGENTS.md` y `DESIGN.md` | ✅ Fase 4 |
 
 Hallazgos nuevos encontrados **durante** la implementación y también cerrados:
 
@@ -731,22 +913,20 @@ Hallazgos nuevos encontrados **durante** la implementación y también cerrados:
 
 ## Pendiente
 
-**Fase 3 — las cinco secciones por dominio (lo que cierra G-03 y la cobertura).** Es la fase
-grande y la única que no se empezó. Sigue vigente tal como está especificada arriba, con dos
-notas que la implementación de las Fases 1–2 deja más fáciles:
+**La pasada visual.** Es lo único del plan que no se ejecutó. Los cambios que sólo se ven
+mirando son varios y algunos son nuevos: el eje doble, la barra apilada, el combo de costo, la
+cabecera con dos controles, las cinco secciones, la dona y —sin verificar a su ancho— **el rail
+lateral del índice a `2xl` (≥1536px)**. La auditoría anterior encontró tres cosas por esa vía
+que ningún test detectó.
 
-- El alcance global ya está construido y propagado: cada sección nueva recibe `scope` y
-  `worksiteScope` sin trabajo extra.
-- Dos de las trece funciones sin lector ya se consumen (`getCapaDashboardCounts`,
-  `getIncidentDashboardCounts`), así que la sección de Prevención parte con sus KPIs resueltos.
-- El índice sigue siendo `SegmentedControl variant="pills"` con las anclas.
+**`MetricCell` como tercera implementación de tile** queda como deuda declarada: funciona,
+tiene el sparkline, y migrarlo a `KpiCard` es una regresión visual sin beneficio sobre una fila
+que la Fase 2 rehizo.
 
-**G-03 sigue abierto en su mayor parte.** Los tiles, alertas y filas de backlog ya enlazan a su
-módulo *y conservan la faena*, pero **los 8 gráficos siguen sin enlace** y `/analitica` sólo se
-alcanza desde las acciones rápidas, no desde la analítica.
-
-**G-07 sigue abierto.** Tres paletas de gráfico, `MetricCell` como tercera implementación de
-tile, y ningún gráfico envuelto en `ChartErrorBoundary`.
+**Dominios que siguen sin representación propia** dentro de las cinco secciones: inspecciones,
+permisos de trabajo, CPHS, emergencias, higiene y gestión del cambio. Ninguno tiene función de
+agregación escrita —a diferencia de los once que sí se conectaron—, así que cada uno cuesta una
+consulta nueva. Están cubiertos indirectamente por la cola de pendientes y por CAPA.
 
 **Fase 5 — e2e reescrito y ejecutado ✅ · pasada visual pendiente.**
 
