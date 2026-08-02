@@ -85,7 +85,9 @@ export default async function AnaliticaPage({
           vehicles={options.vehicles}
         />
 
-        <section aria-label="KPIs ejecutivos" className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+        {/* 4 columnas y no 5: la sección tiene cuatro tarjetas y `xl:grid-cols-5`
+            dejaba una columna vacía a la derecha en pantallas grandes. */}
+        <section aria-label="KPIs ejecutivos" className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
           <KpiCard
             icon={<ShoppingCart size={18} />}
             label="Gasto total"

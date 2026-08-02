@@ -1,5 +1,4 @@
 import type { Metadata } from "next"
-import { Suspense } from "react"
 import Link from "next/link"
 import { auth } from "@/lib/auth/auth"
 import { can } from "@/lib/auth/can"
@@ -32,7 +31,7 @@ import {
   type DashboardScope,
   type DashboardScopeSearchParams,
 } from "./dashboard-scope"
-import { DashboardAnalytics, DashboardAnalyticsFallback } from "./dashboard-analytics"
+import { DashboardDomainSections } from "./dashboard-domain-sections"
 import { listEppCoverageGaps } from "@/lib/services/prevention-epp"
 import { getCapaDashboardCounts } from "@/lib/services/prevention-capa"
 import { getIncidentDashboardCounts } from "@/lib/services/prevention-incidents"
@@ -105,7 +104,6 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const canViewIncidents = can(session, "prevention:incidents:view")
   const canManagePdtp = can(session, "prevention:pdtp:program:manage")
 
-  const canViewIndicators = can(session, "prevention:indicadores:view")
   // Hora de Chile: el proceso corre en UTC y el 31 de diciembre por la tarde
   // este año saltaba al siguiente, consultando PDTP/SST del año equivocado.
   const currentYear = chileDateParts().year
@@ -290,22 +288,27 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
           }
         />
 
-        {/* ── Analítica y tendencias: sus consultas no bloquean al Centro de Control ──
-            `key` con el alcance: sin él, cambiar de faena reusaba el árbol
-            suspendido y la sección se quedaba con los datos de la anterior
-            mientras las nuevas consultas resolvían. */}
-        <Suspense key={`${scope.worksiteId}:${scope.period}`} fallback={<DashboardAnalyticsFallback />}>
-          <DashboardAnalytics
-            session={session}
-            worksiteScope={worksiteScope}
-            scopedWorksiteId={scopedWorksite}
-            currentYear={currentYear}
-            canViewIndicators={canViewIndicators}
-            moduleWorkload={moduleWorkload}
-            queueTotal={queue.total}
-            worksitesBreakdown={data.worksitesBreakdown}
-          />
-        </Suspense>
+        {/* ── Secciones por dominio ────────────────────────────────────────
+            Reemplazan al bloque "Analítica y tendencias", que agrupaba 8
+            gráficos en tres bloques sin enlace a ningún módulo (G-03) y cubría
+            6 de ~19 dominios. Sus gráficos siguen vivos, repartidos entre
+            Adquisiciones, Prevención y Flota.
+
+            El `key` con el alcance es necesario: sin él, cambiar de faena
+            reusaba el árbol suspendido y las secciones mostraban los datos de
+            la faena anterior mientras las consultas nuevas resolvían. */}
+        <DashboardDomainSections
+          key={`${scope.worksiteId}:${scope.period}`}
+          session={session}
+          scope={scope}
+          worksiteScope={worksiteScope}
+          pdtpScope={pdtpScope}
+          worksiteIds={scopedWorksite ? [scopedWorksite] : authorizedWorksites.map((worksite) => worksite.id)}
+          currentYear={currentYear}
+          moduleWorkload={moduleWorkload}
+          queueTotal={queue.total}
+          worksitesBreakdown={data.worksitesBreakdown}
+        />
       </div>
     </PageContainer>
   )
@@ -479,7 +482,7 @@ export function buildOperationalMetrics(input: {
 
   const money: Array<DashboardMetric | null> = [
     input.canViewPurchasing ? {
-      key: "spend", label: "Inversión del período", value: formatCLP(input.periodSpend),
+      key: "spend", label: "Inversión", value: formatCLP(input.periodSpend),
       description: `OC emitidas · ${periodLabel}`, icon: "investment", href: "/compras",
     } : null,
     input.canViewPurchasing ? {
