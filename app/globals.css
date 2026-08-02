@@ -27,22 +27,22 @@
   --leading-body:    1.55;
   --leading-display: 1.1;
 
-  /* ── Brand primary — Esmeralda #065F46 & Mint #A7F3D0 ── */
-  --color-primary:        oklch(0.415 0.098 166);  /* #065F46 — verde esmeralda */
+  /* ── Brand primary — Esmeralda #005c3f & Mint #d8f5e7 ── */
+  --color-primary:        oklch(0.415 0.098 166);  /* #005c3f — verde esmeralda */
   --color-primary-tint:   oklch(0.945 0.035 166);  /* #A7F3D0 — superficie menta */
   --color-primary-line:   oklch(0.850 0.060 166);  /* borde menta / hover       */
   --color-primary-ink:    oklch(0.230 0.090 166);  /* texto oscuro sobre menta  */
   --color-primary-strong: oklch(0.330 0.098 166);  /* estado hover             */
   --color-primary-deep:   oklch(0.220 0.090 166);  /* hero card bg             */
 
-  /* ── Signal — naranja Chome #f39200. Reservado para "pendiente" ── */
-  --color-signal:         oklch(0.705 0.165 62);   /* #f39200 — naranja Chome */
+  /* ── Signal — naranja Chome #e78400. Reservado para "pendiente" ── */
+  --color-signal:         oklch(0.705 0.165 62);   /* #e78400 — naranja Chome */
   --color-signal-tint:    oklch(0.965 0.022 62);
   --color-signal-line:    oklch(0.892 0.052 62);
   --color-signal-ink:     oklch(0.402 0.130 62);
 
-  /* ── Accent — amber Chome #ffd51e. Para realces puntuales ── */
-  --color-accent:         oklch(0.893 0.165 89);   /* #ffd51e — amber Chome */
+  /* ── Accent — amber Chome #ffd53f. Para realces puntuales ── */
+  --color-accent:         oklch(0.893 0.165 89);   /* #ffd53f — amber Chome */
   --color-accent-tint:    oklch(0.975 0.030 89);
   --color-accent-line:    oklch(0.920 0.065 89);
   --color-accent-ink:     oklch(0.450 0.120 89);

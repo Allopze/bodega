@@ -4,7 +4,16 @@ import { ArrowDown, ArrowUp, Info } from "@phosphor-icons/react/dist/ssr"
 import { cn } from "@/lib/utils"
 import { Card, CardContent } from "@/components/ui/card"
 import { Tooltip } from "@/components/ui/tooltip"
+import { MiniSparkline } from "@/components/ui/mini-sparkline"
+import { CHART_COLORS } from "@/lib/chart-palette"
 
+/**
+ * Tarjeta de KPI del producto.
+ *
+ * `sparkline` y `tone: "danger"` llegaron al absorber `MetricCell`, la tercera
+ * implementación de tile que vivía en el dashboard (G-07). Son **opcionales**:
+ * los consumidores anteriores (`/analitica`, PDTP, combustibles) no cambian.
+ */
 export function KpiCard({
   icon,
   label,
@@ -14,22 +23,31 @@ export function KpiCard({
   tone = "neutral",
   glossary,
   href,
+  sparkline,
 }: {
   icon: ReactNode
   label: string
   value: string
   detail: string
   trend?: number | null
-  tone?: "neutral" | "signal"
+  tone?: "neutral" | "signal" | "danger"
   glossary?: string
   href?: string
+  /** Serie real; se dibuja sólo con ≥2 puntos. Nunca una serie inventada. */
+  sparkline?: number[]
 }) {
+  const hasSparkline = Array.isArray(sparkline) && sparkline.length >= 2
   const card = (
-    <Card className={cn("transition-all duration-(--duration-fast)", tone === "signal" && "ring-1 ring-[var(--color-signal-line)]")}>
+    <Card className={cn(
+      "transition-all duration-(--duration-fast)",
+      tone === "signal" && "ring-1 ring-[var(--color-signal-line)]",
+      tone === "danger" && "ring-1 ring-[var(--color-danger-line)]",
+    )}>
       <CardContent className="p-4 flex flex-col justify-between">
         <div className="flex items-center justify-between gap-2">
           <p className="text-xs font-medium text-[var(--color-text-subtle)] truncate">{label}</p>
           <div className="flex items-center gap-1.5 shrink-0">
+            {hasSparkline && <MiniSparkline data={sparkline!} color={CHART_COLORS.signal} />}
             {icon && (
               <span className="flex h-7 w-7 items-center justify-center rounded-[var(--radius-md)] bg-[var(--color-surface-2)] text-[var(--color-text-muted)]">
                 {icon}
@@ -45,7 +63,10 @@ export function KpiCard({
           </div>
         </div>
 
-        <p className="mt-2 text-2xl font-bold tracking-tight text-[var(--color-text)]">{value}</p>
+        <p className={cn(
+          "mt-2 font-mono text-2xl font-bold tabular-nums tracking-tight",
+          tone === "danger" ? "text-[var(--color-danger-ink)]" : tone === "signal" ? "text-[var(--color-primary)]" : "text-[var(--color-text)]",
+        )}>{value}</p>
 
         {(typeof trend === "number" || detail) && (
           <div className="mt-2.5 flex items-center gap-2 text-xs">
