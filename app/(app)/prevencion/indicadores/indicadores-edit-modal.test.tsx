@@ -7,7 +7,7 @@
  *
  * Nota de contexto (ver reporte de Fase 0): a la fecha de este test,
  * `IndicadoresEditModal` sólo se monta con `onNavigate` desde
- * `IndicadoresDashboard` (`indicadores-dashboard.tsx`), y ese componente no
+ * `CanonicalIndicatorsDashboard` (`canonical-indicators-dashboard.tsx`), y ese componente no
  * está importado por ninguna ruta de la app — es código huérfano. El
  * dashboard realmente montado (`app/(app)/prevencion/indicadores/page.tsx`
  * → `CanonicalIndicatorsDashboard`) no usa este modal en absoluto. Este test
