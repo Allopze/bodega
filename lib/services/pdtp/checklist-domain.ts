@@ -22,6 +22,17 @@ export const PDTP_PLAZO_DIAS_POR_PRIORIDAD: Record<string, number> = {
 export const PDTP_ESTADOS_CERRADOS = new Set(["completado", "verificado", "cancelado"])
 
 /**
+ * Labels en español de los roles que puede restringir una sección del
+ * checklist PDTP (campo `appliesWhen` del builder visual). Regla A6: nunca
+ * mostrar slugs crudos en la UI.
+ */
+export const PDTP_BUILDER_ROLE_LABELS: Record<string, string> = {
+  prevencionista_faena: "Prevencionista de faena",
+  admin_contrato: "Supervisor de faena",
+  jefe_faena: "Jefe de faena",
+}
+
+/**
  * Una acción está abierta si su estado no es de cierre. Existe como función y no
  * como comparación suelta porque el tablero filtraba por `"verificada"` —que no
  * es un valor del enum (es `verificado`, y vocabulario de PPA además)—, así que

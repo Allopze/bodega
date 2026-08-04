@@ -9,14 +9,16 @@
  */
 import * as React from "react"
 import { Button } from "@/components/ui/button"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Field } from "@/components/ui/field"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select"
-import { ArrowUp, ArrowDown, DotsSixVertical, Trash, Plus } from "@phosphor-icons/react"
-import type { ChecklistDefinition, ChecklistItem, ChecklistSection, FieldKind } from "@/lib/sst/types"
+import { ArrowUp, ArrowDown, DotsSixVertical, Trash, Plus, Copy } from "@phosphor-icons/react"
+import type { ChecklistDefinition, ChecklistItem, ChecklistSection, FieldKind, ClosingActDefinition } from "@/lib/sst/types"
 import { nanoid } from "@/lib/id"
+import { PDTP_BUILDER_ROLE_LABELS } from "@/lib/services/pdtp/checklist-domain"
 
 const FIELD_KIND_OPTIONS: Array<{ value: FieldKind; label: string }> = [
   { value: "cumple_nocumple_obs", label: "Cumple / No cumple + observación" },
@@ -42,7 +44,40 @@ const DANO_POTENCIAL_OPTIONS = [
   { value: "fatal", label: "Fatal · alta · inmediato" },
 ] as const
 
-const ROLE_OPTIONS = ["prevencionista_faena", "admin_contrato", "jefe_faena"]
+// F5: labels en español derivados de la fuente única PDTP_BUILDER_ROLE_LABELS
+// (regla A6 — nunca mostrar slugs crudos en la UI). El orden del mapa es el deseado.
+const ROLE_OPTIONS: Array<{ value: string; label: string }> =
+  Object.entries(PDTP_BUILDER_ROLE_LABELS).map(([value, label]) => ({ value, label }))
+
+/**
+ * Esqueleto mínimo de `ChecklistDefinition` para empezar a editar en modo
+ * visual sin escribir JSON (F1). Empieza con `sections: []` — no pasa
+ * `pdtpChecklistDefinitionSchema` hasta que haya ≥1 sección con ≥1 ítem, pero
+ * sí el check loose del editor (`Array.isArray(sections)`), así el toggle
+ * visual/JSON aparece desde el inicio y "Guardar" queda deshabilitado hasta
+ * que la definición sea válida. Misma forma que `ensureDefaultChecklist`.
+ */
+export function buildSkeletonDefinition(activityId: string, title: string): ChecklistDefinition {
+  return {
+    code: `pdtp_${activityId}`,
+    version: "01",
+    revisionDate: new Date().toISOString().slice(0, 10),
+    title,
+    tipo: "nuevo",
+    legalFramework: [],
+    applicableTo: "",
+    sections: [],
+    closingAct: {
+      title: "Cierre de verificación",
+      resultOptions: [
+        { value: "conforme", label: "Conforme" },
+        { value: "observacion", label: "Con observaciones" },
+        { value: "no_conforme", label: "No conforme" },
+      ],
+      signatureRoles: ["prevencionista_faena"],
+    },
+  }
+}
 
 export function reorder<T>(list: T[], index: number, dir: -1 | 1): T[] {
   const target = index + dir
@@ -91,6 +126,57 @@ export function textToOptions(text: string): ChecklistItem["options"] {
   })
 }
 
+/**
+ * Valida el texto "valor: etiqueta" de las opciones (F11). Avisos NO
+ * bloqueantes: el schema acepta opciones con label repetido o "value: value",
+ * pero eso suele ser un error de tipeo que conviene señalar antes de guardar.
+ */
+export function validateOptionsText(text: string): { valid: boolean; issues: string[] } {
+  const issues: string[] = []
+  const seen = new Set<string>()
+  for (const rawLine of text.split("\n")) {
+    const line = rawLine.trim()
+    if (!line) continue
+    const [value, ...rest] = line.split(":")
+    const v = (value ?? "").trim()
+    const label = rest.join(":").trim()
+    if (!v) {
+      issues.push(`La línea «${line}» no tiene valor.`)
+    } else if (!label) {
+      issues.push(`La línea «${line}» no tiene etiqueta.`)
+    }
+    if (v && seen.has(v)) {
+      issues.push(`El valor «${v}» está repetido.`)
+    }
+    if (v) seen.add(v)
+  }
+  return { valid: issues.length === 0, issues }
+}
+
+/** Duplica un ítem con id nuevo y sufijo "(copia)" para distinguirlo del original (F8). */
+export function duplicateItem(item: ChecklistItem): ChecklistItem {
+  return { ...item, id: nanoid(), label: `${item.label} (copia)` }
+}
+
+/** Duplica una sección completa: id nuevo, ítems duplicados con ids nuevos (F8). */
+export function duplicateSection(section: ChecklistSection): ChecklistSection {
+  return { ...section, id: nanoid(), title: `${section.title} (copia)`, items: section.items.map(duplicateItem) }
+}
+
+/**
+ * Clona la plantilla de otra actividad como punto de partida (F12): code
+ * apuntando a la actividad destino, revisionDate hoy e ids de secciones/ítems
+ * regenerados para no colisionar con la fuente.
+ */
+export function cloneDefinitionForActivity(source: ChecklistDefinition, activityId: string): ChecklistDefinition {
+  return {
+    ...source,
+    code: `pdtp_${activityId}`,
+    revisionDate: new Date().toISOString().slice(0, 10),
+    sections: source.sections.map((s) => ({ ...s, id: nanoid(), items: s.items.map((i) => ({ ...i, id: nanoid() })) })),
+  }
+}
+
 export function ChecklistBuilder({ definition, onChange }: {
   definition: ChecklistDefinition
   onChange: (next: ChecklistDefinition) => void
@@ -103,8 +189,18 @@ export function ChecklistBuilder({ definition, onChange }: {
   function moveSection(index: number, dir: -1 | 1) {
     onChange({ ...definition, sections: reorder(definition.sections, index, dir) })
   }
+  function duplicateSectionAt(index: number) {
+    const sections = [...definition.sections]
+    sections.splice(index + 1, 0, duplicateSection(definition.sections[index]!))
+    onChange({ ...definition, sections })
+  }
+  const addSectionRef = React.useRef<HTMLButtonElement | null>(null)
   function removeSection(index: number) {
     onChange({ ...definition, sections: definition.sections.filter((_, i) => i !== index) })
+    // Deferido: si el borrado vino del ConfirmDialog, hay que dejar que Radix
+    // haga su focus-restore (que apunta al botón ya desmontado) y luego
+    // reenfocar de forma determinista al CTA de agregar.
+    setTimeout(() => addSectionRef.current?.focus(), 0)
   }
   function addSection() {
     const section: ChecklistSection = { id: nanoid(), title: "Nueva sección", items: [] }
@@ -113,8 +209,25 @@ export function ChecklistBuilder({ definition, onChange }: {
 
   const sectionDrag = useDragReorder((from, to) => onChange({ ...definition, sections: moveTo(definition.sections, from, to) }))
 
+  const itemCount = definition.sections.reduce((sum, sec) => sum + sec.items.length, 0)
+  const emptySections = definition.sections.filter((sec) => sec.items.length === 0)
+
   return (
     <div className="space-y-3">
+      {/* F4 — panel de configuración visual: título, tipo, frecuencia, marco
+          legal, cierre y firmas (antes solo editables en JSON). */}
+      <ConfigPanel definition={definition} onChange={onChange} />
+      {/* F9 — resumen del builder para orientarse en checklists largos. */}
+      <div className="flex flex-wrap items-center gap-1.5 text-xs text-[var(--color-text-muted)]">
+        <span>
+          {definition.sections.length} {definition.sections.length === 1 ? "sección" : "secciones"} · {itemCount} {itemCount === 1 ? "ítem" : "ítems"}
+        </span>
+        {emptySections.length > 0 && (
+          <span className="rounded-full border border-[var(--color-warning-line)] bg-[var(--color-warning-tint)] px-2 py-0.5 font-medium text-[var(--color-warning-ink)]">
+            {emptySections.length} {emptySections.length === 1 ? "sección sin ítems" : "secciones sin ítems"} — bloquea el guardado
+          </span>
+        )}
+      </div>
       {definition.sections.length === 0 && (
         <p className="text-xs text-[var(--color-text-muted)]">Sin secciones. Agrega al menos una.</p>
       )}
@@ -126,11 +239,12 @@ export function ChecklistBuilder({ definition, onChange }: {
             onMoveUp={index > 0 ? () => moveSection(index, -1) : undefined}
             onMoveDown={index < definition.sections.length - 1 ? () => moveSection(index, 1) : undefined}
             onRemove={() => removeSection(index)}
+            onDuplicate={() => duplicateSectionAt(index)}
             onDragHandleStart={sectionDrag.handleDragStart(index)}
           />
         </div>
       ))}
-      <Button type="button" variant="secondary" size="sm" onClick={addSection}>
+      <Button ref={addSectionRef} type="button" variant="secondary" size="sm" onClick={addSection}>
         <Plus size={14} weight="bold" className="mr-1" />
         Agregar sección
       </Button>
@@ -138,14 +252,134 @@ export function ChecklistBuilder({ definition, onChange }: {
   )
 }
 
-function SectionEditor({ section, onChange, onMoveUp, onMoveDown, onRemove, onDragHandleStart }: {
+/** Cierre por defecto si la definición viene sin closingAct (defensivo). */
+const DEFAULT_CLOSING_ACT: ClosingActDefinition = {
+  title: "Cierre de verificación",
+  resultOptions: [{ value: "conforme", label: "Conforme" }],
+  signatureRoles: ["prevencionista_faena"],
+}
+
+/**
+ * Panel de configuración de la definición (F4): campos de checklist que antes
+ * solo se podían editar en JSON (título, tipo, frecuencia, marco legal, cierre
+ * y firmas). Se renderiza plegado para no robar espacio a las secciones.
+ */
+function ConfigPanel({ definition, onChange }: {
+  definition: ChecklistDefinition
+  onChange: (next: ChecklistDefinition) => void
+}) {
+  const closingAct = definition.closingAct ?? DEFAULT_CLOSING_ACT
+  const closingOptionsText = optionsToText(closingAct.resultOptions)
+  const closingOptionsValidation = validateOptionsText(closingOptionsText)
+  // useId para que los labels del panel no colisionen entre filas de actividades.
+  const baseId = React.useId()
+
+  function patch(p: Partial<ChecklistDefinition>) {
+    onChange({ ...definition, ...p })
+  }
+  function patchClosing(p: Partial<ClosingActDefinition>) {
+    onChange({ ...definition, closingAct: { ...closingAct, ...p } })
+  }
+
+  return (
+    <details className="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-2)]">
+      <summary className="cursor-pointer px-3 py-2 text-xs font-semibold uppercase tracking-wide text-[var(--color-text-subtle)] select-none">
+        Configuración del checklist
+      </summary>
+      <div className="space-y-3 border-t border-[var(--color-border)] p-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <Field label="Título" htmlFor={`${baseId}-title`}>
+            <Input id={`${baseId}-title`} value={definition.title} onChange={(e) => patch({ title: e.target.value })} />
+          </Field>
+          <Field label="Tipo" htmlFor={`${baseId}-tipo`}>
+            <Select value={definition.tipo} onValueChange={(v) => patch({ tipo: v as ChecklistDefinition["tipo"] })}>
+              <SelectTrigger id={`${baseId}-tipo`} className="h-9 text-sm"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="nuevo">Nuevo</SelectItem>
+                <SelectItem value="seguimiento">Seguimiento</SelectItem>
+              </SelectContent>
+            </Select>
+          </Field>
+        </div>
+        <Field label="Subtítulo" htmlFor={`${baseId}-subtitle`} helper="Opcional.">
+          <Input id={`${baseId}-subtitle`} value={definition.subtitle ?? ""} onChange={(e) => patch({ subtitle: e.target.value || undefined })} />
+        </Field>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <Field label="Frecuencia sugerida" htmlFor={`${baseId}-freq`}>
+            <Input id={`${baseId}-freq`} value={definition.frequencySuggested ?? ""} onChange={(e) => patch({ frequencySuggested: e.target.value || undefined })} />
+          </Field>
+          <Field label="Aplica a" htmlFor={`${baseId}-applies`}>
+            <Input id={`${baseId}-applies`} value={definition.applicableTo ?? ""} onChange={(e) => patch({ applicableTo: e.target.value })} />
+          </Field>
+        </div>
+        <Field label="Objetivo" htmlFor={`${baseId}-objective`}>
+          <Textarea id={`${baseId}-objective`} value={definition.objective ?? ""} onChange={(e) => patch({ objective: e.target.value || undefined })} rows={2} />
+        </Field>
+        <Field label="Criterios de evaluación" htmlFor={`${baseId}-criteria`}>
+          <Textarea id={`${baseId}-criteria`} value={definition.evaluationCriteria ?? ""} onChange={(e) => patch({ evaluationCriteria: e.target.value || undefined })} rows={2} />
+        </Field>
+        <Field label="Marco legal" htmlFor={`${baseId}-legal`} helper="Uno por línea.">
+          <Textarea
+            id={`${baseId}-legal`}
+            value={(definition.legalFramework ?? []).join("\n")}
+            onChange={(e) => patch({ legalFramework: e.target.value.split("\n").map((l) => l.trim()).filter(Boolean) })}
+            rows={2}
+            className="font-mono text-xs"
+          />
+        </Field>
+        <div className="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-[var(--color-text-subtle)]">Cierre de verificación</p>
+          <div className="mt-2 space-y-3">
+            <Field label="Título del cierre" htmlFor={`${baseId}-closing-title`}>
+              <Input id={`${baseId}-closing-title`} value={closingAct.title} onChange={(e) => patchClosing({ title: e.target.value })} />
+            </Field>
+            <Field label="Opciones de resultado" htmlFor={`${baseId}-closing-options`} helper="Una por línea, formato 'valor: etiqueta'.">
+              <Textarea
+                id={`${baseId}-closing-options`}
+                value={closingOptionsText}
+                onChange={(e) => patchClosing({ resultOptions: textToOptions(e.target.value) })}
+                rows={3}
+                className="font-mono text-xs"
+              />
+              {closingOptionsText.trim() !== "" && !closingOptionsValidation.valid && (
+                <p className="mt-1 text-xs text-[var(--color-warning-ink)]">{closingOptionsValidation.issues.join(" · ")}</p>
+              )}
+            </Field>
+            <Field label="Roles que firman" helper="Vacío = no se exige firma.">
+              <div className="flex flex-wrap gap-3">
+                {ROLE_OPTIONS.map((role) => (
+                  <Checkbox
+                    key={role.value}
+                    label={role.label}
+                    checked={(closingAct.signatureRoles ?? []).includes(role.value)}
+                    onChange={(e) => {
+                      const current = closingAct.signatureRoles ?? []
+                      const next = e.target.checked ? [...current, role.value] : current.filter((r) => r !== role.value)
+                      patchClosing({ signatureRoles: next })
+                    }}
+                  />
+                ))}
+              </div>
+            </Field>
+          </div>
+        </div>
+      </div>
+    </details>
+  )
+}
+
+function SectionEditor({ section, onChange, onMoveUp, onMoveDown, onRemove, onDuplicate, onDragHandleStart }: {
   section: ChecklistSection
   onChange: (patch: Partial<ChecklistSection>) => void
   onMoveUp?: () => void
   onMoveDown?: () => void
   onRemove: () => void
+  onDuplicate: () => void
   onDragHandleStart: () => void
 }) {
+  const [confirmingRemove, setConfirmingRemove] = React.useState(false)
+  const addItemRef = React.useRef<HTMLButtonElement | null>(null)
+
   function updateItem(index: number, patch: Partial<ChecklistItem>) {
     const items = [...section.items]
     items[index] = { ...items[index]!, ...patch }
@@ -154,8 +388,16 @@ function SectionEditor({ section, onChange, onMoveUp, onMoveDown, onRemove, onDr
   function moveItem(index: number, dir: -1 | 1) {
     onChange({ items: reorder(section.items, index, dir) })
   }
+  function duplicateItemAt(index: number) {
+    const items = [...section.items]
+    items.splice(index + 1, 0, duplicateItem(items[index]!))
+    onChange({ items })
+  }
   function removeItem(index: number) {
     onChange({ items: section.items.filter((_, i) => i !== index) })
+    // Deferido por la misma razón que removeSection (F10): dejar que Radix
+    // cierre el diálogo antes de reenfocar el CTA de agregar ítem.
+    setTimeout(() => addItemRef.current?.focus(), 0)
   }
   function addItem() {
     const item: ChecklistItem = { id: nanoid(), label: "Nuevo ítem", kind: "cumple_nocumple_obs" }
@@ -167,16 +409,16 @@ function SectionEditor({ section, onChange, onMoveUp, onMoveDown, onRemove, onDr
   return (
     <div className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3">
       <div className="flex items-start gap-2">
-        <button
-          type="button"
+        {/* Handle de drag (F7): span aria-hidden, no un botón sin acción. La
+            vía accesible de reordenar son los botones subir/bajar. */}
+        <span
           draggable
           onDragStart={onDragHandleStart}
-          aria-label="Arrastrar para reordenar sección"
-          title="Arrastrar para reordenar"
+          aria-hidden="true"
           className="mt-1 cursor-grab text-[var(--color-text-muted)] active:cursor-grabbing"
         >
           <DotsSixVertical size={16} weight="bold" />
-        </button>
+        </span>
         <div className="flex flex-1 flex-col gap-2">
           <Input
             value={section.title}
@@ -195,12 +437,12 @@ function SectionEditor({ section, onChange, onMoveUp, onMoveDown, onRemove, onDr
             <div className="flex flex-wrap gap-3">
               {ROLE_OPTIONS.map((role) => (
                 <Checkbox
-                  key={role}
-                  label={role}
-                  checked={(section.appliesWhen ?? []).includes(role)}
+                  key={role.value}
+                  label={role.label}
+                  checked={(section.appliesWhen ?? []).includes(role.value)}
                   onChange={(e) => {
                     const current = section.appliesWhen ?? []
-                    const next = e.target.checked ? [...current, role] : current.filter((r) => r !== role)
+                    const next = e.target.checked ? [...current, role.value] : current.filter((r) => r !== role.value)
                     onChange({ appliesWhen: next.length > 0 ? next : undefined })
                   }}
                 />
@@ -215,7 +457,10 @@ function SectionEditor({ section, onChange, onMoveUp, onMoveDown, onRemove, onDr
           <Button type="button" variant="ghost" size="sm" onClick={onMoveDown} disabled={!onMoveDown} aria-label="Bajar sección">
             <ArrowDown size={14} />
           </Button>
-          <Button type="button" variant="ghost" size="sm" onClick={onRemove} aria-label="Eliminar sección">
+          <Button type="button" variant="ghost" size="sm" onClick={onDuplicate} aria-label="Duplicar sección">
+            <Copy size={14} />
+          </Button>
+          <Button type="button" variant="ghost" size="sm" onClick={() => setConfirmingRemove(true)} aria-label="Eliminar sección">
             <Trash size={14} className="text-[var(--color-danger)]" />
           </Button>
         </div>
@@ -233,42 +478,56 @@ function SectionEditor({ section, onChange, onMoveUp, onMoveDown, onRemove, onDr
               onMoveUp={index > 0 ? () => moveItem(index, -1) : undefined}
               onMoveDown={index < section.items.length - 1 ? () => moveItem(index, 1) : undefined}
               onRemove={() => removeItem(index)}
+              onDuplicate={() => duplicateItemAt(index)}
               onDragHandleStart={itemDrag.handleDragStart(index)}
             />
           </div>
         ))}
-        <Button type="button" variant="ghost" size="sm" onClick={addItem}>
+        <Button ref={addItemRef} type="button" variant="ghost" size="sm" onClick={addItem}>
           <Plus size={14} weight="bold" className="mr-1" />
           Agregar ítem
         </Button>
       </div>
+
+      <ConfirmDialog
+        open={confirmingRemove}
+        onOpenChange={setConfirmingRemove}
+        title="Eliminar sección"
+        description={`Se eliminará la sección «${section.title || "sin título"}» y sus ${section.items.length} ítems. Esta acción no se puede deshacer.`}
+        confirmLabel="Eliminar"
+        variant="destructive"
+        onConfirm={() => { setConfirmingRemove(false); onRemove() }}
+      />
     </div>
   )
 }
 
-function ItemEditor({ item, onChange, onMoveUp, onMoveDown, onRemove, onDragHandleStart }: {
+function ItemEditor({ item, onChange, onMoveUp, onMoveDown, onRemove, onDuplicate, onDragHandleStart }: {
   item: ChecklistItem
   onChange: (patch: Partial<ChecklistItem>) => void
   onMoveUp?: () => void
   onMoveDown?: () => void
   onRemove: () => void
+  onDuplicate: () => void
   onDragHandleStart: () => void
 }) {
+  const [confirmingRemove, setConfirmingRemove] = React.useState(false)
   const needsOptions = item.kind === "select" || item.kind === "multiselect"
+  const optionsText = optionsToText(item.options)
+  const optionsValidation = validateOptionsText(optionsText)
 
   return (
     <div className="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-2">
       <div className="flex items-start gap-2">
-        <button
-          type="button"
+        {/* Handle de drag (F7): span aria-hidden, no un botón sin acción. */}
+        <span
           draggable
           onDragStart={onDragHandleStart}
-          aria-label="Arrastrar para reordenar ítem"
-          title="Arrastrar para reordenar"
+          aria-hidden="true"
           className="mt-1 cursor-grab text-[var(--color-text-muted)] active:cursor-grabbing"
         >
           <DotsSixVertical size={14} weight="bold" />
-        </button>
+        </span>
         <div className="flex flex-1 flex-col gap-2">
           <Input
             value={item.label}
@@ -299,11 +558,14 @@ function ItemEditor({ item, onChange, onMoveUp, onMoveDown, onRemove, onDragHand
           {needsOptions && (
             <Field label="Opciones" helper="Una por línea, formato 'valor: etiqueta'.">
               <Textarea
-                value={optionsToText(item.options)}
+                value={optionsText}
                 onChange={(e) => onChange({ options: textToOptions(e.target.value) })}
                 rows={3}
                 className="font-mono text-xs"
               />
+              {optionsText.trim() !== "" && !optionsValidation.valid && (
+                <p className="mt-1 text-xs text-[var(--color-warning-ink)]">{optionsValidation.issues.join(" · ")}</p>
+              )}
             </Field>
           )}
           <Checkbox
@@ -319,11 +581,24 @@ function ItemEditor({ item, onChange, onMoveUp, onMoveDown, onRemove, onDragHand
           <Button type="button" variant="ghost" size="sm" onClick={onMoveDown} disabled={!onMoveDown} aria-label="Bajar ítem">
             <ArrowDown size={12} />
           </Button>
-          <Button type="button" variant="ghost" size="sm" onClick={onRemove} aria-label="Eliminar ítem">
+          <Button type="button" variant="ghost" size="sm" onClick={onDuplicate} aria-label="Duplicar ítem">
+            <Copy size={12} />
+          </Button>
+          <Button type="button" variant="ghost" size="sm" onClick={() => setConfirmingRemove(true)} aria-label="Eliminar ítem">
             <Trash size={12} className="text-[var(--color-danger)]" />
           </Button>
         </div>
       </div>
+
+      <ConfirmDialog
+        open={confirmingRemove}
+        onOpenChange={setConfirmingRemove}
+        title="Eliminar ítem"
+        description={`Se eliminará el ítem «${item.label || "sin título"}». Esta acción no se puede deshacer.`}
+        confirmLabel="Eliminar"
+        variant="destructive"
+        onConfirm={() => { setConfirmingRemove(false); onRemove() }}
+      />
     </div>
   )
 }

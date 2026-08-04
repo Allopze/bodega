@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest"
-import { reorder, moveTo, optionsToText, textToOptions } from "./checklist-builder"
+import {
+  reorder, moveTo, optionsToText, textToOptions, buildSkeletonDefinition,
+  duplicateItem, duplicateSection, validateOptionsText, cloneDefinitionForActivity,
+} from "./checklist-builder"
 import { pdtpChecklistDefinitionSchema } from "@/lib/validation/prevention-module/pdtp"
-import type { ChecklistDefinition } from "@/lib/sst/types"
+import type { ChecklistDefinition, ChecklistSection } from "@/lib/sst/types"
 
 const BASE_DEFINITION: ChecklistDefinition = {
   code: "c1",
@@ -20,6 +23,29 @@ const BASE_DEFINITION: ChecklistDefinition = {
   ],
   closingAct: { title: "Cierre", resultOptions: [], signatureRoles: [] },
 }
+
+describe("checklist-builder: buildSkeletonDefinition (F1)", () => {
+  it("genera un esqueleto con la forma mínima esperada para empezar en modo visual", () => {
+    const def = buildSkeletonDefinition("act-1", "Inspección de Estado de Extintores")
+    expect(def.code).toBe("pdtp_act-1")
+    expect(def.version).toBe("01")
+    expect(def.title).toBe("Inspección de Estado de Extintores")
+    expect(def.tipo).toBe("nuevo")
+    expect(def.legalFramework).toEqual([])
+    expect(def.sections).toEqual([])
+    expect(def.revisionDate).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+    expect(def.closingAct.resultOptions).toHaveLength(3)
+    expect(def.closingAct.signatureRoles).toContain("prevencionista_faena")
+  })
+
+  it("empieza con sections vacías (no pasa el schema hasta agregar 1 sección con 1 ítem)", () => {
+    const def = buildSkeletonDefinition("act-2", "Charla de seguridad")
+    const section: ChecklistSection = { id: "s1", title: "Verificación", items: [{ id: "i1", label: "Ítem", kind: "cumple_nocumple_obs" }] }
+    const withContent: typeof def = { ...def, sections: [section] }
+    expect(() => pdtpChecklistDefinitionSchema.parse(def)).toThrow()
+    expect(() => pdtpChecklistDefinitionSchema.parse(withContent)).not.toThrow()
+  })
+})
 
 describe("checklist-builder: reorder", () => {
   it("mueve un elemento hacia arriba/abajo", () => {
@@ -59,6 +85,67 @@ describe("checklist-builder: opciones select/multiselect", () => {
 
   it("ignora líneas vacías y usa el value como label si falta ':'", () => {
     expect(textToOptions("a: A\n\nb")).toEqual([{ value: "a", label: "A" }, { value: "b", label: "b" }])
+  })
+})
+
+describe("checklist-builder: validateOptionsText (F11)", () => {
+  it("acepta opciones bien formadas", () => {
+    expect(validateOptionsText("si: Sí\nno: No")).toEqual({ valid: true, issues: [] })
+  })
+
+  it("señala línea sin valor, sin etiqueta y valores repetidos", () => {
+    const result = validateOptionsText("si: Sí\nsi: Sí otra\n: Sin valor\nsolo-valor")
+    expect(result.valid).toBe(false)
+    expect(result.issues.some((i) => i.includes("repetido"))).toBe(true)
+    expect(result.issues.some((i) => i.includes("no tiene valor"))).toBe(true)
+    expect(result.issues.some((i) => i.includes("no tiene etiqueta"))).toBe(true)
+  })
+
+  it("texto vacío es válido (no bloqueante)", () => {
+    expect(validateOptionsText("")).toEqual({ valid: true, issues: [] })
+  })
+})
+
+describe("checklist-builder: duplicateItem / duplicateSection (F8)", () => {
+  it("duplica un ítem con id y label nuevos", () => {
+    const original = { id: "i1", label: "Ítem 1", kind: "cumple_nocumple_obs" as const, danoPotencial: "grave" as const }
+    const copy = duplicateItem(original)
+    expect(copy.id).not.toBe(original.id)
+    expect(copy.label).toBe("Ítem 1 (copia)")
+    expect(copy.kind).toBe(original.kind)
+    expect(copy.danoPotencial).toBe(original.danoPotencial)
+  })
+
+  it("duplica una sección con sus ítems y conserva appliesWhen", () => {
+    const section: ChecklistSection = {
+      id: "s1",
+      title: "Estado del extintor",
+      appliesWhen: ["prevencionista_faena"],
+      items: [
+        { id: "i1", label: "Sello", kind: "cumple_nocumple_obs" },
+        { id: "i2", label: "Presión", kind: "cumple_nocumple_na_obs" },
+      ],
+    }
+    const copy = duplicateSection(section)
+    expect(copy.id).not.toBe("s1")
+    expect(copy.title).toBe("Estado del extintor (copia)")
+    expect(copy.appliesWhen).toEqual(["prevencionista_faena"])
+    expect(copy.items).toHaveLength(2)
+    expect(copy.items.map((i) => i.id)).not.toEqual(["i1", "i2"])
+    expect(copy.items[0]!.label).toBe("Sello (copia)")
+  })
+})
+
+describe("checklist-builder: cloneDefinitionForActivity (F12)", () => {
+  it("reapunta code a la actividad destino, regenera ids y mantiene el resto", () => {
+    const cloned = cloneDefinitionForActivity(BASE_DEFINITION, "act-99")
+    expect(cloned.code).toBe("pdtp_act-99")
+    expect(cloned.sections[0]!.id).not.toBe("s1")
+    expect(cloned.sections[0]!.items[0]!.id).not.toBe("i1")
+    expect(cloned.sections[0]!.title).toBe("Sección 1")
+    expect(cloned.sections[0]!.items[0]!.label).toBe("Ítem 1")
+    expect(cloned.revisionDate).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+    expect(() => pdtpChecklistDefinitionSchema.parse(cloned)).not.toThrow()
   })
 })
 
