@@ -15,9 +15,28 @@ const CLP_FORMAT = new Intl.NumberFormat("es-CL", {
 
 const QTY_FORMAT = new Intl.NumberFormat("es-CL")
 
-/** Format currency in CLP (Chilean Pesos) */
+/**
+ * Monto en pesos chilenos.
+ *
+ * El signo va **delante del símbolo**: `-$4.500`, no `$-4.500`.
+ *
+ * `Intl` con `es-CL` produce lo segundo, y así estuvo hasta que un snapshot lo
+ * dejó a la vista. Es la salida estándar de la localización, no un defecto,
+ * pero se lee peor justo donde más aparece —notas de crédito y ajustes— y una
+ * cifra que se lee mal en un documento contable es un problema de producto.
+ * Decisión de 2026-08-04: se antepone el signo.
+ *
+ * Se opera sobre el valor absoluto y se prefija, en vez de mover el guion con
+ * una expresión regular: así el formato del número —separador de miles, cero
+ * decimales— sigue siendo el que decide `Intl` y no una manipulación de texto.
+ */
 export function formatCLP(amount: number): string {
-  return CLP_FORMAT.format(amount)
+  if (!Number.isFinite(amount)) return VALUE_MISSING
+  if (amount < 0) return `-${CLP_FORMAT.format(Math.abs(amount))}`
+  // `-0 < 0` es falso, así que el cero negativo llegaba a `Intl` y salía como
+  // "$-0": un saldo cuadrado presentado como si tuviera signo. Aparece al
+  // restar dos montos iguales, que en conciliación es el caso normal.
+  return CLP_FORMAT.format(amount === 0 ? 0 : amount)
 }
 
 /**
@@ -39,10 +58,63 @@ export function pluralizeUnit(n: number, unit: string): string {
   return UNIT_PLURALS[unit.trim().toLowerCase()] ?? unit
 }
 
+/**
+ * Pluraliza un sustantivo español de forma sistemática (auditoría UI/UX
+ * §4.4 — "1 submódulo / 2 submódulos" ya no se resuelve a mano en cada
+ * sitio). Reglas: vocal → +s, consonante → +es, -z → -ces, -ión → -iones,
+ * más irregulares conocidos. `plural` permite forzar la forma plural de
+ * frases compuestas ("ítem seleccionado" / "ítems seleccionados").
+ */
+const SPANISH_PLURALS: Record<string, string> = {
+  mes: "meses",
+  ítem: "ítems",
+}
+
+export function pluralize(count: number, singular: string, plural?: string): string {
+  if (count === 1) return singular
+  if (plural) return plural
+  const key = singular.trim().toLowerCase()
+  const known = SPANISH_PLURALS[key]
+  if (known) return known
+  if (/ión$/.test(key)) return singular.slice(0, -3) + "iones"
+  if (/z$/.test(key)) return singular.slice(0, -1) + "ces"
+  if (/[aeiouáéíóú]$/.test(key)) return singular + "s"
+  return singular + "es"
+}
+
+/**
+ * "3 pantallas" — la cifra y su sustantivo concordados, en una sola llamada.
+ *
+ * `pluralize` devuelve **sólo la palabra**, y eso partió los sitios de uso en
+ * dos idiomas: unos escriben `${n} ${pluralize(n, "mes")}` y otros llamaban a
+ * `pluralize` esperando que trajera el número. Los segundos perdían la cifra en
+ * silencio: "Se ocultarán pantallas", "12 tramos con observaciones". Un texto
+ * gramaticalmente correcto al que le falta el dato no lo delata ningún test de
+ * tipos.
+ *
+ * `pluralize` se conserva para cuando la frase no lleva número
+ * ("Ver registros del período").
+ */
+export function countOf(count: number, singular: string, plural?: string): string {
+  return `${QTY_FORMAT.format(count)} ${pluralize(count, singular, plural)}`
+}
+
 /** Format a number with thousands separators (for quantities) */
 export function formatQty(n: number, unit?: string): string {
+  if (!Number.isFinite(n)) return VALUE_MISSING
   const formatted = QTY_FORMAT.format(n)
   return unit ? `${formatted} ${pluralizeUnit(n, unit)}` : formatted
+}
+
+/**
+ * Tamaño de archivo para superficies de producto. Conserva la separación
+ * decimal chilena y evita que cada lista implemente sus propios KB/MB.
+ */
+export function formatFileSize(bytes: number | null | undefined): string {
+  if (bytes == null || !Number.isFinite(bytes) || bytes < 0) return VALUE_MISSING
+  if (bytes < 1024) return `${formatQty(bytes)} B`
+  if (bytes < 1024 * 1024) return `${QTY_FORMAT.format(bytes / 1024)} KB`
+  return `${QTY_FORMAT.format(bytes / (1024 * 1024))} MB`
 }
 
 /** Lowercase (es-CL) and strip diacritics, so accented and unaccented text compare equal. */
@@ -67,11 +139,37 @@ export function toCode(str: string): string {
     .replace(/^-|-$/g, "")
 }
 
+/**
+ * Marca única para un valor que no se puede representar (TASK-UI-012).
+ *
+ * La tarea declaraba cuatro estados de valor —ausente, desconocido, legacy y
+ * timezone— y no los había diseñado nadie, así que cada formateador improvisaba
+ * el suyo. Sondearlos destapó tres formas distintas de fallar mal:
+ *
+ *   formatDate("basura")   → **lanzaba** `Invalid time value`, y en un Server
+ *                            Component un campo sucio se lleva la página entera
+ *                            al `error.tsx`.
+ *   formatDate(null)       → **"31-12-1969"**, la época presentada como una
+ *                            fecha real. Peor que fallar: es una mentira
+ *                            verosímil que nadie va a cuestionar.
+ *   formatQty(NaN)         → "NaN", "$NaN", "NaN MB" — jerga de implementación
+ *                            en pantalla, que es MICRO-001 otra vez.
+ *
+ * El contrato es uno: un valor que no se puede representar se dice, no se
+ * inventa ni tumba la pantalla. Un dato ausente y uno corrupto se ven igual a
+ * propósito — la diferencia le importa a quien depura, no a quien opera, y para
+ * eso está el registro.
+ */
+export const VALUE_MISSING = "—"
+
 /** Format a date in es-CL locale */
 export function formatDate(date: Date | string | number): string {
   const plain = plainDateParts(date)
   if (plain) return `${plain[2]}-${plain[1]}-${plain[0]}`
-  const [year, month, day] = CHILE_DATE_FORMAT.format(new Date(date)).split("-")
+  if (date === null || date === undefined || date === "") return VALUE_MISSING
+  const parsed = new Date(date)
+  if (Number.isNaN(parsed.getTime())) return VALUE_MISSING
+  const [year, month, day] = CHILE_DATE_FORMAT.format(parsed).split("-")
   return `${day}-${month}-${year}`
 }
 
@@ -79,8 +177,34 @@ export function formatDate(date: Date | string | number): string {
 export function formatDateTime(date: Date | string | number): string {
   // Una fecha calendario ("2026-06-11") no tiene hora que convertir.
   if (plainDateParts(date)) return `${formatDate(date)} 00:00`
+  if (date === null || date === undefined || date === "") return VALUE_MISSING
   const d = new Date(date)
+  if (Number.isNaN(d.getTime())) return VALUE_MISSING
   return `${formatDate(d)} ${CHILE_TIME_FORMAT.format(d)}`
+}
+
+/**
+ * Formatea una cadena de calendario 'YYYY-MM-DD' como 'dd-mm-yyyy'.
+ *
+ * Alias del contrato SST (históricamente en `lib/sst/date.ts`): el render de
+ * fechas tiene una sola fuente — `lib/utils.ts` (auditoría UI/UX §4.4). Para
+ * una cadena ISO de calendario la salida es idéntica a `formatDate`.
+ */
+export function formatDateDisplay(isoDate: string): string {
+  return formatDate(isoDate)
+}
+
+/**
+ * Variante tolerante del contrato de fecha: acepta ISO 'YYYY-MM-DD',
+ * 'YYYY-MM-DDTHH:mm:ss' o con zona horaria explícita. Trunca al día y
+ * formatea 'dd-mm-yyyy' (mismo contrato que `formatDate`). Entrada vacía o
+ * no parseable → "—".
+ */
+export function formatDateSafe(input: string | null | undefined): string {
+  if (!input) return VALUE_MISSING
+  const isoDay = input.slice(0, 10)
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(isoDay)) return VALUE_MISSING
+  return formatDate(isoDay)
 }
 
 /**
@@ -191,5 +315,4 @@ export function toLocalInputValue(date: Date): string {
 export function linesToArray(value: string): string[] {
   return value.split("\n").map((line) => line.trim()).filter(Boolean)
 }
-
 

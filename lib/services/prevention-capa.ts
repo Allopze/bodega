@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, sql } from "drizzle-orm"
+import { and, asc, desc, eq, inArray, lt, ne, notInArray, sql } from "drizzle-orm"
 import { z } from "zod"
 import { db, type DB, type Tx } from "@/db"
 import {
@@ -15,6 +15,8 @@ import { nanoid } from "@/lib/id"
 import { recordOperationalActivity } from "@/lib/services/operational-activity"
 import type { RequestContext } from "@/lib/services/prevention-documents/utils"
 import type { ReportData } from "@/lib/reports/export"
+import type { CapaQuickFilter } from "@/lib/prevention/capa-list-filters"
+import { chileDateParts } from "@/lib/utils"
 
 export const CAPA_STATUSES = [
   "pending",
@@ -28,6 +30,26 @@ export const CAPA_STATUSES = [
 
 export type CapaStatus = typeof CAPA_STATUSES[number]
 export type CapaClient = DB | Tx
+
+function chileToday() {
+  const { year, month, day } = chileDateParts()
+  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`
+}
+
+function capaQuickFilterWhere(filter: CapaQuickFilter | undefined) {
+  if (!filter || filter === "all") return undefined
+  if (filter === "open") return notInArray(preventionCapaActions.status, ["closed", "cancelled"])
+  if (filter === "overdue") return and(
+    notInArray(preventionCapaActions.status, ["verified", "closed", "cancelled"]),
+    lt(preventionCapaActions.targetDate, chileToday()),
+  )
+  if (filter === "pending_verification") return eq(preventionCapaActions.status, "pending_verification")
+  if (filter === "unreconciled") return ne(preventionCapaActions.reconciliationStatus, "reconciled")
+  return and(
+    eq(preventionCapaActions.requiresImmediateStop, true),
+    notInArray(preventionCapaActions.status, ["closed", "cancelled"]),
+  )
+}
 
 const capaCreateSchema = z.object({
   sourceType: z.enum(["pdtp", "sst_evaluation", "ppa", "incident", "risk", "legal_requirement", "training", "work_permit", "inspection", "cphs", "emergency", "change", "epp", "manual"]),
@@ -596,6 +618,7 @@ export async function listCapaActionsPage(args: {
   status?: CapaStatus
   sourceType?: string
   worksiteId?: string
+  quickFilter?: CapaQuickFilter
   limit?: number
   offset?: number
 }) {
@@ -613,6 +636,7 @@ export async function listCapaActionsPage(args: {
     scopeWhere,
     args.status ? eq(preventionCapaActions.status, args.status) : undefined,
     args.sourceType ? eq(preventionCapaActions.sourceType, args.sourceType) : undefined,
+    capaQuickFilterWhere(args.quickFilter),
   )
   const [rows, [totalRow]] = await Promise.all([
     db.select().from(preventionCapaActions).where(where).orderBy(desc(preventionCapaActions.createdAt)).limit(effectiveLimit).offset(effectiveOffset),
@@ -644,23 +668,25 @@ export async function getCapaDashboardCounts(args: {
 }) {
   requirePermission(args.permissions, "prevention:capa:view")
   if (args.scope.mode === "none") {
-    return { open: 0, overdue: 0, pendingVerification: 0, unreconciled: 0 }
+    return { open: 0, overdue: 0, pendingVerification: 0, unreconciled: 0, immediateStop: 0 }
   }
   const scopeWhere = args.scope.mode === "some"
     ? inArray(preventionCapaActions.worksiteId, args.scope.ids)
     : undefined
-  const today = new Date().toISOString().slice(0, 10)
+  const today = chileToday()
   const [row] = await db.select({
     open: sql<number>`count(*) filter (where ${preventionCapaActions.status} not in ('closed', 'cancelled'))::int`,
     overdue: sql<number>`count(*) filter (where ${preventionCapaActions.status} not in ('verified', 'closed', 'cancelled') and ${preventionCapaActions.targetDate} < ${today})::int`,
     pendingVerification: sql<number>`count(*) filter (where ${preventionCapaActions.status} = 'pending_verification')::int`,
     unreconciled: sql<number>`count(*) filter (where ${preventionCapaActions.reconciliationStatus} <> 'reconciled')::int`,
+    immediateStop: sql<number>`count(*) filter (where ${preventionCapaActions.requiresImmediateStop} = true and ${preventionCapaActions.status} not in ('closed', 'cancelled'))::int`,
   }).from(preventionCapaActions).where(scopeWhere)
   return {
     open: row?.open ?? 0,
     overdue: row?.overdue ?? 0,
     pendingVerification: row?.pendingVerification ?? 0,
     unreconciled: row?.unreconciled ?? 0,
+    immediateStop: row?.immediateStop ?? 0,
   }
 }
 

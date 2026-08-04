@@ -1,11 +1,14 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, within } from "@testing-library/react"
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { UserForm } from "./user-form"
 import { INITIAL_STATE } from "@/components/admin/form-state"
 
-vi.mock("./actions", () => ({
+vi.mock("./actions/create", () => ({
   createUser: vi.fn(async () => INITIAL_STATE),
+}))
+
+vi.mock("./actions/update", () => ({
   updateUser: vi.fn(async () => INITIAL_STATE),
 }))
 
@@ -115,7 +118,7 @@ describe("UserForm permissions layout", () => {
     expect(unselectedRole.querySelector("[data-role-selection-slot='true']")).toBeInTheDocument()
   })
 
-  it("renders permissions as a labelled scroll region with a precise direct grant counter", () => {
+  it("keeps direct permissions in an explicit exception section without technical keys", () => {
     render(
       <UserForm
         open
@@ -129,10 +132,55 @@ describe("UserForm permissions layout", () => {
 
     expect(screen.getByText("1 permiso directo")).toBeInTheDocument()
 
-    const permissionsRegion = screen.getByRole("region", { name: "Permisos de usuario" })
-    // Inherited permission shows its description (not the technical name)
+    expect(screen.getByText("Excepciones de permisos (1)")).toBeInTheDocument()
+    const permissionsRegion = screen.getByRole("region", { name: "Excepciones de permisos" })
     expect(within(permissionsRegion).getByText("Gestionar usuarios")).toBeInTheDocument()
-    // Directly granted permission shows the technical name in the font-mono label
-    expect(within(permissionsRegion).getByText("reports:view")).toBeInTheDocument()
+    expect(within(permissionsRegion).queryByText("reports:view")).not.toBeInTheDocument()
+  })
+
+  it("blocks submission with a clear cause until the access definition is valid", () => {
+    render(
+      <UserForm
+        open
+        onClose={vi.fn()}
+        editUser={null}
+        allRoles={roles}
+        allPermissions={permissions}
+        allWorksites={[]}
+      />,
+    )
+
+    const submit = screen.getByRole("button", { name: "Crear usuario" })
+    expect(screen.getByRole("alert")).toHaveTextContent("Selecciona al menos un rol")
+    expect(submit).toBeDisabled()
+
+    fireEvent.click(screen.getByRole("button", { name: "Administrador" }))
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument()
+    expect(submit).toBeEnabled()
+  })
+
+  it("requires a worksite before enabling a worksite-scoped role", () => {
+    render(
+      <UserForm
+        open
+        onClose={vi.fn()}
+        editUser={null}
+        allRoles={[
+          ...roles,
+          { id: "rol-prevencion", name: "prevencionista_faena", label: "Prevencionista de faena", requiresWorksiteAssignment: true },
+        ]}
+        allPermissions={permissions}
+        allWorksites={[{ id: "ws-1", name: "Faena Norte", code: "FN-01" }]}
+      />,
+    )
+
+    const submit = screen.getByRole("button", { name: "Crear usuario" })
+    fireEvent.click(screen.getByRole("button", { name: "Prevencionista de faena" }))
+    expect(screen.getByRole("alert")).toHaveTextContent("Prevencionista de faena requiere al menos una faena")
+    expect(submit).toBeDisabled()
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Seleccionar Faena Norte (FN-01)" }))
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument()
+    expect(submit).toBeEnabled()
   })
 })

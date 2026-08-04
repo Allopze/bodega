@@ -15,7 +15,7 @@ import { PageContainer } from "@/components/ui/page-container"
 import { HeaderSignals, type HeaderSignal } from "@/components/ui/header-signals"
 import { ServerPagination } from "@/components/ui/server-pagination"
 import { buildPaginationHref, resolvePagination } from "@/lib/pagination"
-import { parseListParams, statusSql, eqFilter, worksiteEqSql } from "@/lib/adquisiciones/list-query"
+import { parseListParams, periodSql, statusSql, eqFilter, worksiteEqSql } from "@/lib/adquisiciones/list-query"
 import { INVOICE_DUE_ORDER_STATUSES } from "@/lib/work-queue"
 import { orderHasNoInvoice } from "@/lib/services/operational-work-queue"
 import { ComprasActions } from "./compras-actions"
@@ -84,6 +84,8 @@ export default async function ComprasPage({
   if (listParams.faena) exportParams.set("faena", listParams.faena)
   if (listParams.proveedor) exportParams.set("proveedor", listParams.proveedor)
   if (listParams.factura === "pendiente") exportParams.set("factura", "pendiente")
+  if (listParams.desde) exportParams.set("desde", listParams.desde)
+  if (listParams.hasta) exportParams.set("hasta", listParams.hasta)
   const exportHref = `/api/reportes/export?${exportParams.toString()}`
 
   // Extended text search: match OC code OR supplier name via EXISTS subquery.
@@ -112,6 +114,9 @@ export default async function ComprasPage({
     worksiteEqSql(purchaseOrders.worksiteId, listParams.faena),
     eqFilter(purchaseOrders.supplierId, listParams.proveedor),
     listParams.factura === "pendiente" ? invoicePendingCondition : undefined,
+    // El KPI "Inversión" del dashboard cuenta OC emitidas en su ventana; este
+    // filtro es el destino equivalente: reproduce esa ventana en la lista.
+    periodSql(purchaseOrders.issuedAt, listParams.desde, listParams.hasta),
   )
 
   const [[totalOrdersRow], [invoicePendingRow]] = await Promise.all([

@@ -1,12 +1,12 @@
 "use client"
-
-import * as React from "react"
 import Link from "next/link"
 import { Heartbeat } from "@phosphor-icons/react"
 import { useSafeShellHeader } from "@/components/layout/header-context"
 import { Badge } from "@/components/ui/badge"
 import { EmptyState } from "@/components/ui/empty-state"
+import { FilterToolbar, type ActiveFilterChip } from "@/components/ui/filter-toolbar"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { useUrlFilters } from "@/lib/hooks/use-url-filters"
 import {
   AGENT_TYPE_LABELS,
   MEASUREMENT_OUTCOME_LABELS,
@@ -14,6 +14,15 @@ import {
   measurementOutcomeBadgeVariant,
   type AnonymizedExposureSummary,
 } from "@/lib/prevention/hygiene"
+import {
+  HYGIENE_QUICK_FILTER_LABELS,
+  isHygieneDashboardTab,
+  isHygieneQuickFilter,
+  matchesHygieneGroupQuickFilter,
+  matchesHygieneProgramQuickFilter,
+  type HygieneDashboardTab,
+  type HygieneQuickFilter,
+} from "@/lib/prevention/hygiene-dashboard-filters"
 import { NewAgentDialog, NewGroupDialog, NewProgramDialog } from "./hygiene-dialogs"
 
 interface GroupItem {
@@ -60,50 +69,78 @@ export function HygieneDashboard({ groups, programs, summary, agents, worksites,
   canManage: boolean
 }) {
   const { searchQuery } = useSafeShellHeader()
-  const [tab, setTab] = React.useState<"groups" | "programs" | "summary">("groups")
+  const { getFilter, setFilters, clearFilters: clearUrlFilters } = useUrlFilters()
+  const tabValue = getFilter("tab")
+  const quickFilterValue = getFilter("vista")
+  const tab: HygieneDashboardTab = isHygieneDashboardTab(tabValue) ? tabValue : "groups"
+  const parsedQuickFilter: HygieneQuickFilter = isHygieneQuickFilter(quickFilterValue) ? quickFilterValue : "all"
+  const quickFilter: HygieneQuickFilter = tab === "groups"
+    ? parsedQuickFilter === "overdue" ? "all" : parsedQuickFilter
+    : tab === "programs" && (parsedQuickFilter === "all" || parsedQuickFilter === "overdue")
+      ? parsedQuickFilter
+      : "all"
 
   const query = searchQuery.trim().toLocaleLowerCase("es-CL")
   const filteredGroups = groups.filter((item) =>
-    !query || `${item.code} ${item.name} ${item.agentName} ${item.worksiteName}`.toLocaleLowerCase("es-CL").includes(query))
+    matchesHygieneGroupQuickFilter(item, quickFilter)
+    && (!query || `${item.code} ${item.name} ${item.agentName} ${item.worksiteName}`.toLocaleLowerCase("es-CL").includes(query)))
   const filteredPrograms = programs.filter((item) =>
-    !query || `${item.code} ${item.name} ${item.protocol}`.toLocaleLowerCase("es-CL").includes(query))
+    matchesHygieneProgramQuickFilter(item, quickFilter)
+    && (!query || `${item.code} ${item.name} ${item.protocol}`.toLocaleLowerCase("es-CL").includes(query)))
 
   const metrics = [
-    { id: "surveillance", label: "GES bajo vigilancia", value: groups.filter((item) => item.surveillanceRequired).length, detail: "Excedieron nivel de acción o límite" },
-    { id: "above", label: "Sobre el límite", value: groups.filter((item) => item.latestOutcome === "above_limit").length, detail: "Última medición" },
-    { id: "notcomparable", label: "Sin límite declarado", value: groups.filter((item) => item.latestOutcome === "not_comparable").length, detail: "No comparable, no conforme" },
-    { id: "overdue", label: "Controles vencidos", value: programs.reduce((total, item) => total + item.overdue, 0), detail: "Vigilancia fuera de plazo" },
+    { id: "surveillance", key: "surveillance" as const, tab: "groups" as const, label: "GES bajo vigilancia", value: groups.filter((item) => item.surveillanceRequired).length, detail: "Excedieron nivel de acción o límite" },
+    { id: "above", key: "above_limit" as const, tab: "groups" as const, label: "Sobre el límite", value: groups.filter((item) => item.latestOutcome === "above_limit").length, detail: "Última medición" },
+    { id: "notcomparable", key: "not_comparable" as const, tab: "groups" as const, label: "Sin límite declarado", value: groups.filter((item) => item.latestOutcome === "not_comparable").length, detail: "No comparable, no conforme" },
+    { id: "overdue", key: "overdue" as const, tab: "programs" as const, label: "Programas con vencidos", value: programs.filter((item) => item.overdue > 0).length, detail: "Vigilancia con control fuera de plazo" },
   ]
+  const activeChips: ActiveFilterChip[] = quickFilter === "all" ? [] : [{
+    key: "vista",
+    label: "Vista",
+    value: quickFilter,
+    displayValue: HYGIENE_QUICK_FILTER_LABELS[quickFilter],
+  }]
 
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 overflow-hidden border-y border-[var(--color-border)] lg:grid-cols-4">
         {metrics.map((metric) => (
-          <div key={metric.id} className="border-r border-[var(--color-border)] px-4 py-3">
+          <button
+            key={metric.id}
+            type="button"
+            onClick={() => setFilters({ tab: metric.tab, vista: tab === metric.tab && quickFilter === metric.key ? null : metric.key })}
+            aria-pressed={tab === metric.tab && quickFilter === metric.key}
+            className="border-r border-[var(--color-border)] px-4 py-3 text-left hover:bg-[var(--color-surface-2)] aria-pressed:bg-[var(--color-primary-tint)]"
+          >
             <span className="text-eyebrow">{metric.label}</span>
             <span className="mt-1 block font-mono text-xl font-semibold tabular-nums">{metric.value}</span>
             <span className="text-xs text-[var(--color-text-subtle)]">{metric.detail}</span>
-          </div>
+          </button>
         ))}
       </div>
 
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex gap-1 rounded-md border border-[var(--color-border)] p-1 w-fit">
-          {([["groups", `Grupos (${groups.length})`], ["programs", `Vigilancia (${programs.length})`], ["summary", "Panel anonimizado"]] as const).map(([value, label]) => (
-            <button key={value} type="button" onClick={() => setTab(value)} aria-pressed={tab === value}
-              className="rounded px-3 py-1 text-sm aria-pressed:bg-[var(--color-primary-tint)]">
-              {label}
-            </button>
-          ))}
-        </div>
-        {canManage && (
+      <FilterToolbar
+        activeChips={activeChips}
+        onRemoveChip={() => setFilters({ vista: null })}
+        onClearAll={() => clearUrlFilters(["tab"])}
+        hasActiveFilters={quickFilter !== "all"}
+        actions={canManage && (
           <div className="flex flex-wrap gap-2">
             <NewAgentDialog />
             {agents.length > 0 && worksites.length > 0 && tab === "groups" && <NewGroupDialog agents={agents} worksites={worksites} />}
             {worksites.length > 0 && tab === "programs" && <NewProgramDialog agents={agents} worksites={worksites} />}
           </div>
         )}
-      </div>
+      >
+        <div role="tablist" aria-label="Vista de higiene" className="flex gap-1 rounded-md border border-[var(--color-border)] p-1 w-fit">
+          {([["groups", `Grupos (${groups.length})`], ["programs", `Vigilancia (${programs.length})`], ["summary", "Panel anonimizado"]] as const).map(([value, label]) => (
+            <button key={value} type="button" role="tab" onClick={() => setFilters({ tab: value, vista: null })} aria-selected={tab === value}
+              className="rounded px-3 py-1 text-sm aria-selected:bg-[var(--color-primary-tint)]">
+              {label}
+            </button>
+          ))}
+        </div>
+      </FilterToolbar>
 
       {tab === "groups" && (filteredGroups.length === 0 ? (
         <EmptyState

@@ -50,7 +50,8 @@ test("EPP import: subir Excel, revisar en página de lote y cancelar importació
   })
 
   // ── 6. Submit the form ─────────────────────────────────────────────────
-  await dialog.getByRole("button", { name: /importar xlsx/i }).click()
+  // El control se llama "Importar Excel", en línea con "Exportar Excel".
+  await dialog.getByRole("button", { name: /importar excel/i }).click()
 
   // ── 7. Verify success: "Análisis listo" with "Revisar lote" button ─────
   await expect(page.getByText(/análisis listo para confirmar/i)).toBeVisible({ timeout: 30_000 })

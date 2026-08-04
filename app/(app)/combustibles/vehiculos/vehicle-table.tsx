@@ -11,6 +11,7 @@ import { toggleFuelVehicleActiveAction, bulkToggleFuelVehicleActiveAction } from
 import { VehicleForm } from "./vehicle-form"
 import { VehicleDesktopRow, VehicleMobileCard, type VehicleRow } from "./vehicle-catalog-items"
 import { COLUMNS, CONTRACT } from "./catalog-contract"
+import { pluralize } from "@/lib/utils"
 
 async function toggleVehicleActive(_prev: unknown, formData: FormData) {
   const id = formData.get("id") as string
@@ -134,7 +135,7 @@ export function VehicleCatalogTable({ vehicles, worksites, users, equipmentTypes
         {selectedIds.size > 0 && (
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-chrome)] px-4 py-2 mb-3">
             <span className="text-sm font-medium text-[var(--color-text)]">
-              {selectedIds.size} vehículo{selectedIds.size === 1 ? "" : "s"} seleccionado{selectedIds.size === 1 ? "" : "s"}
+              {pluralize(selectedIds.size, "vehículo")} {pluralize(selectedIds.size, "seleccionado", "seleccionados")}
             </span>
             <div className="flex items-center gap-2">
               {tab === "inactive" && (
@@ -219,7 +220,7 @@ export function VehicleCatalogTable({ vehicles, worksites, users, equipmentTypes
         open={bulkActionType !== null}
         onOpenChange={(open) => { if (!open) setBulkActionType(null) }}
         title={bulkActionType === "activate" ? "¿Reactivar vehículos seleccionados?" : "¿Desactivar vehículos seleccionados?"}
-        description={`Se ${bulkActionType === "activate" ? "reactivarán" : "desactivarán"} ${selectedIds.size} vehículo${selectedIds.size === 1 ? "" : "s"}. Esta acción no elimina cargas ni registros históricos y puede revertirse individualmente.`}
+        description={`Se ${bulkActionType === "activate" ? "reactivarán" : "desactivarán"} ${pluralize(selectedIds.size, "vehículo")}. Esta acción no elimina cargas ni registros históricos y puede revertirse individualmente.`}
         confirmLabel={bulkActionType === "activate" ? "Reactivar" : "Desactivar"}
         variant={bulkActionType === "activate" ? "default" : "warning"}
         loading={bulkPending}

@@ -4,7 +4,6 @@ import * as React from "react"
 import Link from "next/link"
 import { ShieldCheck, SignOut, UserCircle } from "@phosphor-icons/react"
 import type { Session as AuthSession } from "next-auth"
-import { signOut } from "next-auth/react"
 import { Avatar } from "@/components/ui/avatar"
 import {
   DropdownMenu,
@@ -14,15 +13,10 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu"
+import { useSignOut } from "./use-sign-out"
 
 export function UserMenu({ session }: { session: AuthSession }) {
-  const [isSigningOut, setIsSigningOut] = React.useState(false)
-
-  async function handleSignOut() {
-    setIsSigningOut(true)
-    await signOut({ redirect: false })
-    window.location.href = "/login"
-  }
+  const { isSigningOut, handleSignOut } = useSignOut()
 
   return (
     <DropdownMenu>

@@ -1,13 +1,6 @@
-export interface Role { id: string; name: string; label: string }
-export interface Worksite { id: string; name: string; code: string }
-export interface WorkerOption {
-  id: string
-  name: string
-  rut: string | null
-  worksiteId: string
-  worksiteName: string
-  linkedUserId: string | null
-}
+import type { Role, WorkerOption, Worksite } from "./user-form.helpers"
+
+export type { Role, WorkerOption, Worksite }
 
 export interface PendingInvite {
   email:    string

@@ -191,3 +191,65 @@ export async function getOperationalSnapshotHistory(
   }
   return empty
 }
+
+export interface OperationalSnapshotHealth {
+  lastSnapshotDate: string | null
+  ageDays: number | null
+  activeWorksites: number
+  /** Filas que debe tener un día completo: faenas activas × métricas. */
+  expectedRowsPerDay: number
+  lastDayRows: number
+  lastDayComplete: boolean
+  /** Días con cobertura completa dentro de los últimos 30. */
+  completeDaysLast30: number
+}
+
+/**
+ * Salud de la captura diaria de instantáneas.
+ *
+ * Existe porque el par captura/lectura falla **en silencio**:
+ * `captureOperationalMetricSnapshots` escribe una fila por métrica × faena
+ * activa, y `getOperationalSnapshotHistory` descarta los días sin cobertura
+ * completa. Si el cron deja de correr —o corre a medias— las series del
+ * dashboard simplemente **se acortan**, sin error visible en pantalla.
+ *
+ * Reporta la edad del último corte y cuántos de los últimos 30 días tienen
+ * cobertura completa, que es exactamente lo que la lectura exige.
+ */
+export async function getOperationalSnapshotHealth(now = new Date()): Promise<OperationalSnapshotHealth> {
+  const today = todayInChile(now)
+  const since = new Date(`${today}T00:00:00Z`)
+  since.setUTCDate(since.getUTCDate() - 30)
+  const windowStart = since.toISOString().slice(0, 10)
+
+  const [activeWorksites, rows] = await Promise.all([
+    db.select({ id: worksites.id }).from(worksites).where(eq(worksites.isActive, true)),
+    db.select({ snapshotDate: operationalMetricSnapshots.snapshotDate, rows: count() })
+      .from(operationalMetricSnapshots)
+      .where(and(
+        inArray(operationalMetricSnapshots.metric, SNAPSHOT_METRICS),
+        gte(operationalMetricSnapshots.snapshotDate, windowStart),
+      ))
+      .groupBy(operationalMetricSnapshots.snapshotDate)
+      .orderBy(desc(operationalMetricSnapshots.snapshotDate)),
+  ])
+
+  const expectedRowsPerDay = activeWorksites.length * SNAPSHOT_METRICS.length
+  const last = rows[0]
+  const lastDayRows = Number(last?.rows ?? 0)
+  const ageDays = last
+    ? Math.round((Date.parse(`${today}T00:00:00Z`) - Date.parse(`${last.snapshotDate}T00:00:00Z`)) / 86_400_000)
+    : null
+
+  return {
+    lastSnapshotDate: last?.snapshotDate ?? null,
+    ageDays,
+    activeWorksites: activeWorksites.length,
+    expectedRowsPerDay,
+    lastDayRows,
+    lastDayComplete: expectedRowsPerDay > 0 && lastDayRows >= expectedRowsPerDay,
+    completeDaysLast30: expectedRowsPerDay > 0
+      ? rows.filter((row) => Number(row.rows) >= expectedRowsPerDay).length
+      : 0,
+  }
+}

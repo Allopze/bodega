@@ -1,0 +1,146 @@
+import { relations, sql } from "drizzle-orm"
+import { pgTable, text, integer, numeric, timestamp, check, index, uniqueIndex } from "drizzle-orm/pg-core"
+import { purchaseOrderInvoices } from "./purchasing"
+import { fuelLoads } from "./fuel-invoices"
+
+/* ── DTE Sync Run States ─────────────────────────────────────────────────── */
+// running | success | partial | failed
+
+/* ── DTE Document SII States ─────────────────────────────────────────────── */
+// pendiente_envio | enviado | aceptado | rechazado | anulado | manual
+
+/* ── DTE Document Intercambio States ─────────────────────────────────────── */
+// pendiente | aceptado | rechazado
+
+/* ── DTE Sync Runs (corrida de sincronización) ───────────────────────────── */
+
+/**
+ * Registro de cada corrida de sincronización con el portal DTE FacturaEnLinea.
+ * Patrón: backupLog + fuelImportBatches.
+ *
+ * Cada corrida abarca un período y empresa, registra cuántas filas se vieron
+ * e insertaron, y su resultado final.
+ */
+export const dteSyncRuns = pgTable("dte_sync_runs", {
+  id:            text("id").primaryKey(),
+  periodo:       text("periodo").notNull(),                        // "2026-08"
+  codEmp:        text("cod_emp").notNull(),                        // Código interno de empresa en el portal
+  trigger:       text("trigger").notNull().$type<"manual" | "cron">().default("manual"),
+  status:        text("status").notNull().$type<"running" | "success" | "partial" | "failed">().default("running"),
+  rowsSeen:      integer("rows_seen").notNull().default(0),
+  rowsInserted:  integer("rows_inserted").notNull().default(0),
+  rowsUpdated:   integer("rows_updated").notNull().default(0),
+  error:         text("error"),
+  startedAt:     timestamp("started_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+  finishedAt:    timestamp("finished_at", { withTimezone: true, mode: "string" }),
+}, (table) => [
+  check("dte_sync_runs_trigger_valid", sql`${table.trigger} IN ('manual', 'cron')`),
+  check("dte_sync_runs_status_valid", sql`${table.status} IN ('running', 'success', 'partial', 'failed')`),
+  index("dte_sync_runs_periodo_idx").on(table.periodo),
+  index("dte_sync_runs_status_idx").on(table.status),
+  index("dte_sync_runs_started_idx").on(table.startedAt),
+])
+
+/* ── DTE Documents (documentos tributarios sincronizados) ─────────────────── */
+
+/**
+ * Documento tributario electrónico obtenido del portal DTE FacturaEnLinea.
+ *
+ * Clave única: (tipoDte, folio, rutEmisor, codEmp). El folio NO es
+ * globalmente único: la serie 12715 puede ser una Factura 33 y una NC 61
+ * simultáneamente.
+ *
+ * Los montos usan numeric para evitar errores de redondeo en CLP.
+ */
+export const dteDocuments = pgTable("dte_documents", {
+  id:                     text("id").primaryKey(),
+
+  /** Tipo de documento SII: 33, 34, 61, 56, 52, etc. */
+  tipoDte:                text("tipo_dte").notNull(),
+  /** Número de folio del documento */
+  folio:                  integer("folio").notNull(),
+  /** RUT del emisor del documento (ej: "78023530-6") */
+  rutEmisor:              text("rut_emisor").notNull(),
+  /** Razón social del emisor */
+  razonSocialEmisor:      text("razon_social_emisor").notNull(),
+  /** Fecha de emisión en formato YYYY-MM-DD */
+  fechaEmision:           text("fecha_emision").notNull(),
+
+  /** Monto neto ($ CLP). Puede ser negativo en NC. */
+  montoNeto:              numeric("monto_neto", { precision: 14, scale: 2, mode: "number" }),
+  /** IVA ($ CLP) */
+  iva:                    numeric("iva", { precision: 14, scale: 2, mode: "number" }),
+  /** Monto total ($ CLP). Puede ser negativo en NC. */
+  montoTotal:             numeric("monto_total", { precision: 14, scale: 2, mode: "number" }).notNull(),
+
+  /** Estado en el SII (columna "Aceptación SII" del panel) */
+  estadoSii:              text("estado_sii").$type<"pendiente_envio" | "enviado" | "aceptado" | "rechazado" | "anulado" | "manual">(),
+  /** Estado de intercambio electrónico (flag_*.png) */
+  estadoIntercambio:      text("estado_intercambio").$type<"pendiente" | "aceptado" | "rechazado">(),
+  /** Estado textual del documento en la plataforma */
+  estadoPlataforma:       text("estado_plataforma"),
+
+  /** Código de empresa del portal (ej: "433") */
+  codEmp:                 text("cod_emp").notNull(),
+  /** Período de sincronización YYYY-MM */
+  periodo:                text("periodo").notNull(),
+
+  /** Ruta al archivo XML descargado (relativa a storage/) — nullable, se llena on-demand */
+  xmlPath:                text("xml_path"),
+  /** Ruta al archivo PDF descargado (relativa a storage/) — nullable, se llena on-demand */
+  pdfPath:                text("pdf_path"),
+
+  /** SHA-256 del contenido clave para deduplicación (tipoDte+folio+rutEmisor+montoTotal+fecha) */
+  rawHash:                text("raw_hash").notNull(),
+
+  /** FK a purchaseOrderInvoices — si se pudo conciliar con una factura de OC */
+  purchaseOrderInvoiceId: text("purchase_order_invoice_id").references(() => purchaseOrderInvoices.id),
+  /** FK a fuelLoads — si se pudo conciliar con una carga de combustible */
+  fuelLoadId:             text("fuel_load_id").references(() => fuelLoads.id),
+  /** FK a la corrida de sync que creó este registro */
+  syncRunId:              text("sync_run_id").references(() => dteSyncRuns.id),
+
+  syncedAt:               timestamp("synced_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+  createdAt:              timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+}, (table) => [
+  // El folio no es único global: la clave compuesta evita duplicados de misma serie+tipo+emisor+empresa
+  uniqueIndex("dte_documents_unique_key").on(table.tipoDte, table.folio, table.rutEmisor, table.codEmp),
+  check("dte_documents_estado_sii_valid", sql`
+    ${table.estadoSii} IS NULL OR ${table.estadoSii} IN (
+      'pendiente_envio', 'enviado', 'aceptado', 'rechazado', 'anulado', 'manual'
+    )
+  `),
+  check("dte_documents_estado_intercambio_valid", sql`
+    ${table.estadoIntercambio} IS NULL OR ${table.estadoIntercambio} IN (
+      'pendiente', 'aceptado', 'rechazado'
+    )
+  `),
+  index("dte_documents_periodo_idx").on(table.periodo),
+  index("dte_documents_estado_sii_idx").on(table.estadoSii),
+  index("dte_documents_rut_emisor_idx").on(table.rutEmisor),
+  index("dte_documents_purchase_invoice_idx").on(table.purchaseOrderInvoiceId),
+  index("dte_documents_fuel_load_idx").on(table.fuelLoadId),
+  index("dte_documents_raw_hash_idx").on(table.rawHash),
+  index("dte_documents_sync_run_idx").on(table.syncRunId),
+])
+
+/* ── Relations ───────────────────────────────────────────────────────────── */
+
+export const dteDocumentsRelations = relations(dteDocuments, ({ one }) => ({
+  purchaseOrderInvoice: one(purchaseOrderInvoices, {
+    fields: [dteDocuments.purchaseOrderInvoiceId],
+    references: [purchaseOrderInvoices.id],
+  }),
+  fuelLoad: one(fuelLoads, {
+    fields: [dteDocuments.fuelLoadId],
+    references: [fuelLoads.id],
+  }),
+  syncRun: one(dteSyncRuns, {
+    fields: [dteDocuments.syncRunId],
+    references: [dteSyncRuns.id],
+  }),
+}))
+
+export const dteSyncRunsRelations = relations(dteSyncRuns, ({ many }) => ({
+  documents: many(dteDocuments),
+}))

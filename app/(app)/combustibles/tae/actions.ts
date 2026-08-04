@@ -13,6 +13,7 @@ import { recordAudit, recordStatusChange } from "@/lib/audit"
 import { logger } from "@/lib/logger"
 import { nanoid } from "@/lib/id"
 import { addExportMetadataSheet } from "@/lib/combustibles/xlsx-utils"
+import { formatDateTime } from "@/lib/utils"
 
 const MAX_TAE_EXPORT_ROWS = 10_000
 
@@ -212,7 +213,7 @@ export async function exportTaeSubmissionsXlsxAction(filters: TaeExportFilters =
 
   for (const row of exportRows) {
     ws.addRow({
-      loadedAt: new Date(row.loadedAt).toLocaleString("es-CL"),
+      loadedAt: formatDateTime(row.loadedAt),
       worksite: row.worksite?.name ?? "",
       loadingPoint: row.loadingPoint?.name ?? "",
       equipment: row.equipmentCodeSnapshot,

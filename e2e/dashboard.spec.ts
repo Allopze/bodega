@@ -122,7 +122,7 @@ test.describe("Dashboard operacional", () => {
    */
   test("la ranura de dinero se renderiza para quien la tiene autorizada", async ({ page }) => {
     const strip = page.getByRole("region", { name: "Indicadores Operacionales" })
-    await expect(strip.getByText("Inversión del período", { exact: true })).toBeVisible()
+    await expect(strip.getByText("Inversión", { exact: true })).toBeVisible()
   })
 
   // L-02: la cola es el widget principal; no puede exigir scroll horizontal en
@@ -206,6 +206,78 @@ test.describe("Dashboard operacional", () => {
     await expect(all).toHaveAttribute("href", /\/pendientes\?worksiteId=/)
   })
 
+  /*
+   * Fase 3: las cinco secciones por dominio reemplazan al bloque "Analítica y
+   * tendencias", que cubría 6 de ~19 dominios y cuyos gráficos no llevaban a
+   * ningún módulo (G-03).
+   */
+  test("el admin ve las secciones por dominio en orden de gasto primero", async ({ page }) => {
+    const index = page.getByRole("navigation", { name: "Secciones del tablero" })
+    await expect(index).toBeVisible()
+
+    // `purchasing:view` manda Adquisiciones y Flota al frente.
+    const titles = await index.getByRole("link").allTextContents()
+    expect(titles).toEqual(["Adquisiciones", "Flota y combustible", "Prevención y SST", "Bodega y entregas", "Control preventivo en terreno", "Cumplimiento y gobernanza"])
+  })
+
+  test("el índice navega a cada sección", async ({ page }) => {
+    const index = page.getByRole("navigation", { name: "Secciones del tablero" })
+    await index.getByRole("link", { name: "Prevención y SST" }).click()
+    await expect(page).toHaveURL(/#dominio-prevencion/)
+    await expect(page.getByRole("region", { name: "Prevención y SST" })).toBeVisible()
+  })
+
+  /*
+   * Ninguna sección es homogénea en el tiempo, así que la cabecera **no**
+   * declara un período: lo hace cada cifra.
+   *
+   * La primera versión de la Fase 3 sí lo declaraba y era L-07/G-04.4 otra vez:
+   * "Prevención · Año en curso" encabezaba tres KPIs de estado actual, y
+   * "Adquisiciones · Mes en curso" una tendencia de 6 meses, un backlog de hoy
+   * y una inversión acumulada histórica.
+   */
+  test("cada cifra declara su ventana y la sección no promete una global", async ({ page }) => {
+    const prevencion = page.getByRole("region", { name: "Prevención y SST" })
+    // El PDTP es anual; los incidentes y las CAPA son estado actual. Conviven.
+    await expect(prevencion.getByText(/Avance acreditado · año \d{4}/)).toBeVisible()
+    await expect(prevencion.getByText(/abiertas en total · ahora/)).toBeVisible()
+
+    // La cabecera de la sección es sólo el título y sus enlaces.
+    const encabezado = prevencion.getByRole("heading", { name: "Prevención y SST" })
+    await expect(encabezado).toBeVisible()
+
+    const adquisiciones = page.getByRole("region", { name: "Adquisiciones" })
+    await expect(adquisiciones.getByText(/OC emitidas · mes en curso/)).toBeVisible()
+    // Y el gráfico acumulado sigue declarando lo suyo, distinto del KPI de al lado.
+    await expect(adquisiciones.getByText(/acumulado histórico/)).toBeVisible()
+  })
+
+  // G-03: los gráficos dejaban de ser callejones sin salida.
+  test("cada sección enlaza al módulo que la explica", async ({ page }) => {
+    const adquisiciones = page.getByRole("region", { name: "Adquisiciones" })
+    await expect(adquisiciones.getByRole("link", { name: "Compras" })).toHaveAttribute("href", "/compras")
+    // `/analitica` no estaba enlazada desde ningún punto del dashboard.
+    await expect(adquisiciones.getByRole("link", { name: "Analítica" })).toHaveAttribute("href", "/analitica")
+  })
+
+  /*
+   * Los seis dominios que no tenían representación (inspecciones, permisos,
+   * simulacros, comité, higiene, gestión del cambio) viven en **una** sección:
+   * seis más habrían devuelto la pantalla al muro que la auditoría desarmó.
+   */
+  test("el control preventivo en terreno agrupa los seis dominios que faltaban", async ({ page }) => {
+    const seccion = page.getByRole("region", { name: "Control preventivo en terreno" })
+    await expect(seccion).toBeVisible()
+
+    for (const kpi of [
+      "Cumplimiento de inspecciones", "Hallazgos críticos abiertos", "Permisos de trabajo activos",
+      "Simulacros por mejorar", "Mediciones sobre el límite", "Acuerdos del comité abiertos",
+      "Gestión del cambio abierta",
+    ]) {
+      await expect(seccion.getByText(kpi, { exact: true })).toBeVisible()
+    }
+  })
+
   test("una faena inexistente cae a todas en vez de dejar el tablero en cero", async ({ page }) => {
     await page.goto("/dashboard?faena=ws-que-no-existe")
 
@@ -241,7 +313,7 @@ test.describe("Dashboard con rol restringido", () => {
     // ahora depende del **permiso**: antes pasaba por el `.slice(0, 4)`, que
     // cortaba el tile para todos los roles, así que no podía fallar.
     await expect(strip.getByText("Por aprobar")).toHaveCount(0)
-    await expect(strip.getByText("Inversión del período")).toHaveCount(0)
+    await expect(strip.getByText("Inversión", { exact: true })).toHaveCount(0)
     await expect(strip.getByText("OC activas")).toHaveCount(0)
     await expect(page.getByText("ítems esperan aprobación")).toHaveCount(0)
 
@@ -274,6 +346,25 @@ test.describe("Dashboard con rol restringido", () => {
     const workLabelsPresent = WORK_SLOT_LABELS.filter((label) => stripText.includes(label))
     expect(workLabelsPresent).toHaveLength(1)
     expect(stripText).not.toContain("Tareas críticas")
+  })
+
+  /*
+   * El orden y la visibilidad de las secciones los decide el **perfil de
+   * permisos**, no el slug del rol. Este usuario no tiene `purchasing:view`, así
+   * que no abre por gasto, y no tiene prevención ni combustibles: esas
+   * secciones no existen —no se consultan ni aparecen en el índice—.
+   */
+  test("el rol restringido no ve las secciones que su permiso no autoriza", async ({ page }) => {
+    const index = page.getByRole("navigation", { name: "Secciones del tablero" })
+    const titles = await index.getByRole("link").allTextContents()
+
+    expect(titles).toContain("Adquisiciones")
+    expect(titles).toContain("Bodega y entregas")
+    expect(titles).not.toContain("Flota y combustible")
+    expect(titles).not.toContain("Prevención y SST")
+
+    await expect(page.getByRole("region", { name: "Flota y combustible" })).toHaveCount(0)
+    await expect(page.getByRole("region", { name: "Prevención y SST" })).toHaveCount(0)
   })
 
   test("el flujo del mes sólo lista los módulos autorizados", async ({ page }) => {

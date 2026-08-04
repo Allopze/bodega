@@ -2,7 +2,7 @@ import { createHash } from "node:crypto"
 import path from "node:path"
 import { expect, test, type Page } from "@playwright/test"
 import postgres from "postgres"
-import { selectRadixById } from "./helpers"
+import { blobStorageWorks, selectRadixById } from "./helpers"
 
 const accessToken = "tae-e2e-access-token"
 const photoPath = path.resolve(process.cwd(), "public/tae-icon-512.png")
@@ -50,10 +50,16 @@ test.describe("TAE — flujo público completo", () => {
     await page.getByRole("button", { name: "Registrar carga TAE" }).click()
     await expect(page).toHaveURL(/\/tae\/resultado\//, { timeout: 45_000 })
     await expect(page.getByRole("heading", { name: "Carga registrada" })).toBeVisible()
-
-    await page.goto("/tae")
+    await page.getByRole("link", { name: "Registrar otra carga con el acceso guardado" }).click()
+    await expect(page).toHaveURL(/\/tae$/, { timeout: 20_000 })
+    await expect(page.getByRole("heading", { name: "Carga TAE" })).toBeVisible()
     await fillTaeForm(page, "102.5")
     await context.setOffline(true)
+    // La cola guarda las cuatro fotos como `Blob`. En el WebKit que Playwright
+    // instala aquí, `setOffline(true)` deja los `Blob` ilegibles —incluso uno
+    // creado en memoria— así que el encolado no puede completarse y el fallo no
+    // mediría la aplicación. Ver `blobStorageWorks`.
+    test.skip(!await blobStorageWorks(page), "Con la red simulada apagada este navegador no puede releer un Blob: el escenario no mide la aplicación.")
     await page.getByRole("button", { name: "Registrar carga TAE" }).click()
     await expect(page.getByText(/1 pendiente/)).toBeVisible({ timeout: 15_000 })
     await context.setOffline(false)
@@ -62,10 +68,16 @@ test.describe("TAE — flujo público completo", () => {
     const sql = postgres(databaseUrl!, { max: 1 })
     try {
       await expect.poll(async () => {
+        // Acotado al punto de carga de esta prueba: contar toda la tabla hacía
+        // que cualquier otra spec que registrara una carga TAE rompiera este
+        // aserto, que pasaba en aislamiento y fallaba en la suite completa.
         const [row] = await sql<[{ submissions: number; evidence: number }][]>`
           select
-            (select count(*)::int from fuel_tae_submissions where source = 'public_pwa') as submissions,
-            (select count(*)::int from fuel_tae_evidence e inner join fuel_tae_submissions s on s.id = e.submission_id where s.source = 'public_pwa') as evidence
+            (select count(*)::int from fuel_tae_submissions
+               where source = 'public_pwa' and loading_point_id = 'tae-point-e2e') as submissions,
+            (select count(*)::int from fuel_tae_evidence e
+               inner join fuel_tae_submissions s on s.id = e.submission_id
+               where s.source = 'public_pwa' and s.loading_point_id = 'tae-point-e2e') as evidence
         `
         return row
       }, { timeout: 45_000 }).toEqual({ submissions: 2, evidence: 8 })

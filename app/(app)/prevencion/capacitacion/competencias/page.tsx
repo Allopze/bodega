@@ -1,5 +1,4 @@
 import type { Metadata } from "next"
-import Link from "next/link"
 import { redirect } from "next/navigation"
 import { requirePermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
@@ -50,7 +49,7 @@ export default async function CompetenciasPage({
         actions={
           session.user.permissions.includes("prevention:training:export") ? (
             <Button asChild variant="secondary">
-              <Link href="/api/prevencion/capacitacion/export">Exportar Excel</Link>
+              <a href="/api/prevencion/capacitacion/export" download>Exportar Excel</a>
             </Button>
           ) : undefined
         }

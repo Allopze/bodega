@@ -25,6 +25,7 @@ export const sstModule = {
           label: "Evaluaciones SST",
           href: "/prevencion/evaluaciones",
           iconName: "ClipboardText",
+          group: "Evaluación en terreno",
           permissions: ["sst:view", "sst:evaluate_acompanamiento"],
         },
       ],

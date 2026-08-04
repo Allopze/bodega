@@ -28,7 +28,7 @@ export default async function TrazabilidadItemPage({
 }) {
   let session
   try { session = await requirePermission("traceability:view") }
-  catch { redirect("/forbidden") }
+  catch { redirect(`/forbidden?desde=${encodeURIComponent("/trazabilidad")}`) }
 
   const { itemId } = await params
   const detail = await getItemDetail(session, itemId)

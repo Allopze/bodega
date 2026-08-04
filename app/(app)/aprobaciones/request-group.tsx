@@ -67,7 +67,10 @@ export function RequestGroup({
         <button
           type="button"
           onClick={() => setCollapsed((c) => !c)}
-          className="flex flex-1 basis-full items-center gap-2 text-left sm:basis-auto min-w-0"
+          /* Sin alto propio el control medía 21px: sólo la altura de línea del
+             texto. `min-h-11 sm:min-h-9` es la misma escala táctil que usan los
+             demás controles del sistema. */
+          className="flex min-h-11 flex-1 basis-full items-center gap-2 text-left sm:min-h-9 sm:basis-auto min-w-0"
           aria-expanded={!collapsed}
         >
           <CaretDown

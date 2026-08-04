@@ -1,0 +1,8 @@
+export { DtePortalClient, decodeXmlBuffer } from "./client"
+export { parseDteTable, parseEstadoSii, parseEstadoIntercambio, extractPdfPostUrl, parseMonto, parseFechaPortal, parseFolio } from "./parser"
+export { queryDtePortal, queryByFolio, queryByPeriodo, queryByRango, queryByRut, queryAllPages } from "./query"
+export { downloadDteXml, downloadDtePdf } from "./download"
+export { syncDteDocuments, computeDocumentHash } from "./sync"
+export { matchToPurchaseOrderInvoices, matchToFuelLoads, computeHealthStats } from "./reconciliation"
+export { readDtePortalEnv, buildDtePortalClientConfig, isDteSyncEnabled } from "./config"
+export type * from "./types"

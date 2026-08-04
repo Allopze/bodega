@@ -14,7 +14,7 @@ export default async function ProgramaPage({ params }: { params: Promise<{ progr
 
   let auth
   try { auth = await requirePermission("prevention:hygiene:view") }
-  catch { redirect("/forbidden") }
+  catch { redirect(`/forbidden?desde=${encodeURIComponent("/prevencion/higiene/programas")}`) }
 
   const access = {
     userId: auth.user.id,

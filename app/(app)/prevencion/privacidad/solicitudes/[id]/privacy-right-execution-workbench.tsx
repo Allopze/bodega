@@ -9,8 +9,19 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Field } from "@/components/ui/field"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Textarea } from "@/components/ui/textarea"
+import { PPA_STATE_META } from "@/components/states/state-badge"
 import { toast } from "@/lib/toast"
+import { formatDate } from "@/lib/utils"
 import type { getPreventionPrivacyRequestWorkbench } from "@/lib/services/prevention-privacy-rights"
+import {
+  HEALTH_FITNESS_LABELS,
+  HEALTH_RECORD_STATUS_LABELS,
+  HEALTH_RECORD_TYPE_LABELS,
+  RESERVED_CASE_CATEGORY_LABELS,
+  RESERVED_CASE_STATUS_LABELS,
+  SST_DOCUMENT_STATUS_LABELS,
+  labelOf,
+} from "@/lib/prevention/privacy-inventory"
 
 type Bundle = NonNullable<Awaited<ReturnType<typeof getPreventionPrivacyRequestWorkbench>>>
 type Domain = "health_record" | "reserved_case" | "ppa" | "document"
@@ -30,11 +41,39 @@ export function PrivacyRightExecutionWorkbench({ bundle }: { bundle: Bundle }) {
   const [changesJson, setChangesJson] = React.useState("{}")
   const [busy, setBusy] = React.useState(false)
 
+  // Quien atiende una solicitud legal decide sobre estos registros: mostrar el
+  // enum crudo (`vigente · apto`, `ley_karin · en_investigacion`) le hacía
+  // traducir jerga de implementación en el peor momento posible.
   const inventory: InventoryRow[] = [
-    ...bundle.inventory.healthRecords.map((row) => ({ domain: "health_record" as const, id: row.id, label: `Salud · ${row.recordType}`, status: `${row.status} · ${row.fitnessStatus}` })),
-    ...bundle.inventory.reservedCases.map((row) => ({ domain: "reserved_case" as const, id: row.id, label: `Caso reservado · ${row.code}`, status: `${row.category} · ${row.status}` })),
-    ...bundle.inventory.ppas.map((row) => ({ domain: "ppa" as const, id: row.id, label: `PPA · ${row.id}`, status: row.estado })),
-    ...bundle.inventory.documentLinks.map((row) => ({ domain: "document" as const, id: row.id, label: `Documento · ${row.title}`, status: row.status })),
+    ...bundle.inventory.healthRecords.map((row) => ({
+      domain: "health_record" as const,
+      id: row.id,
+      label: `Salud · ${labelOf(HEALTH_RECORD_TYPE_LABELS, row.recordType)}`,
+      status: `${labelOf(HEALTH_RECORD_STATUS_LABELS, row.status)} · ${labelOf(HEALTH_FITNESS_LABELS, row.fitnessStatus)}`,
+    })),
+    ...bundle.inventory.reservedCases.map((row) => ({
+      domain: "reserved_case" as const,
+      id: row.id,
+      label: `Caso reservado · ${row.code}`,
+      status: `${labelOf(RESERVED_CASE_CATEGORY_LABELS, row.category)} · ${labelOf(RESERVED_CASE_STATUS_LABELS, row.status)}`,
+    })),
+    // El PPA es el único dominio cuyo vocabulario ya vive fuera de este módulo:
+    // `PPA_STATE_META` es la fuente que usa `StateBadge` en toda la aplicación,
+    // así que se reutiliza en vez de escribir un segundo catálogo que podría
+    // divergir. Y el identificador se sustituye por la fecha: un UUID no
+    // distingue dos PPA para quien atiende la solicitud.
+    ...bundle.inventory.ppas.map((row) => ({
+      domain: "ppa" as const,
+      id: row.id,
+      label: `PPA · ${formatDate(row.createdAt)}`,
+      status: PPA_STATE_META[row.estado]?.label ?? row.estado,
+    })),
+    ...bundle.inventory.documentLinks.map((row) => ({
+      domain: "document" as const,
+      id: row.id,
+      label: `Documento · ${row.title}`,
+      status: labelOf(SST_DOCUMENT_STATUS_LABELS, row.status),
+    })),
   ]
   const operation = bundle.request.rightType as "rectification" | "deletion" | "opposition" | "restriction"
   const executable = ["rectification", "deletion", "opposition", "restriction"].includes(operation)

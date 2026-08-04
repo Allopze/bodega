@@ -116,6 +116,24 @@ describe("buildOperationalMetrics — ranuras", () => {
       .toBe("/pendientes?quick=overdue&worksiteId=ws-sur")
   })
 
+  // §3.3: cada cifra debe tener un destino que pueda acotar lo que cuenta. La
+  // inversión baja a la lista con la ventana del período; incidentes pre-filtra
+  // "abiertos"; stock crítico pre-filtra bajo mínimo.
+  it("la inversión lleva a compras con la ventana del período", () => {
+    const spend = buildOperationalMetrics(jefatura).find((m) => m.key === "spend")
+    expect(spend?.href).toMatch(/^\/compras\?desde=\d{4}-\d{2}-\d{2}&hasta=\d{4}-\d{2}-\d{2}$/)
+  })
+
+  it("los incidentes abiertos pre-filtran quick=open", () => {
+    const incidents = buildOperationalMetrics(jefatura).find((m) => m.key === "incidents")
+    expect(incidents?.href).toBe("/prevencion/incidentes?quick=open")
+  })
+
+  it("el stock crítico pre-filtra bajo mínimo en bodega", () => {
+    const stock = buildOperationalMetrics({ ...jefatura, canViewIncidents: false, canViewCapa: false }).find((m) => m.key === "stock")
+    expect(stock?.href).toBe("/bodega?stock=low")
+  })
+
   it("el rótulo de PDTP declara la meta, y sin dato la ranura cae", () => {
     expect(buildOperationalMetrics(jefatura).find((m) => m.key === "pdtp")?.description)
       .toBe("Meta anual 90%")
@@ -171,5 +189,13 @@ describe("buildOperationalAlerts — sin repetir tiles", () => {
     })
 
     expect(alert?.href).toBe("/pendientes?quick=critical&worksiteId=ws-sur")
+  })
+
+  it("la alerta de stock crítico pre-filtra bajo mínimo en bodega", () => {
+    const stockAlert = buildOperationalAlerts({
+      ...alertInput,
+      shownAsTile: new Set(["overdue"]), // sin tile de stock ocupando la ranura, la alerta sí aparece
+    }).find((a) => a.key === "stock")
+    expect(stockAlert?.href).toBe("/bodega?stock=low")
   })
 })

@@ -9,6 +9,7 @@ import type { Session } from "next-auth"
 import { db } from "@/db"
 import { userRoles, roles, permissions } from "@/db/schema"
 import { canAccessWorksite, can } from "@/lib/auth/can"
+import { requiresWorksiteAssignment } from "@/lib/auth/role-scope"
 import type { ActionState } from "@/lib/validation/masters"
 
 // ── Worksite assignments ──────────────────────────────────────────────────────
@@ -58,15 +59,7 @@ export async function validateRoleWorksiteRules(
       },
     }
   }
-  const FAENA_SCOPED_ROLES = [
-    "solicitante_faena",
-    "prevencionista_faena",
-    "conductor_lider",
-    "admin_contrato",
-    "jefe_terreno",
-    "cphs",
-  ]
-  const isFaenaScoped = selected.some((role) => FAENA_SCOPED_ROLES.includes(role.name))
+  const isFaenaScoped = selected.some((role) => requiresWorksiteAssignment(role.name))
   if (isFaenaScoped && worksiteAssignments.length === 0) {
     return {
       ok: false,

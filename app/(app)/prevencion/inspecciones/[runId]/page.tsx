@@ -15,7 +15,7 @@ export default async function InspeccionPage({ params }: { params: Promise<{ run
 
   let auth
   try { auth = await requirePermission("prevention:inspections:view") }
-  catch { redirect("/forbidden") }
+  catch { redirect(`/forbidden?desde=${encodeURIComponent("/prevencion/inspecciones")}`) }
 
   const access = {
     userId: auth.user.id,

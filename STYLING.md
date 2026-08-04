@@ -11,11 +11,11 @@ Todos los tokens viven en `app/globals.css` dentro del bloque `@theme`:
 
 | Grupo | Prefijo | Ejemplos |
 | --- | --- | --- |
-| Colores | `--color-*` | `--color-primary` (verde #218649), `--color-signal` (naranja #f39200), `--color-accent` (amber #ffd51e), `--color-chrome`, `--color-surface`, `--color-text-muted` |
+| Colores | `--color-*` | `--color-primary` (verde #005c3f), `--color-signal` (naranja #e78400), `--color-accent` (amber #ffd53f), `--color-chrome`, `--color-surface`, `--color-text-muted` |
 | Tipografía | `--font-*`, `--text-*`, `--leading-*` | `--font-display` (Exo), `--font-sans` (Myriad Pro), `--font-mono` (Geist Mono) |
-| Radios | `--radius-*` | `--radius` 6px · `--radius-md` 8px · `--radius-lg` 10px · `--radius-xl` 12px · `--radius-2xl` 16px |
-| Sombras | `--shadow-*` | `--shadow-card`, `--shadow-md`, `--shadow-lg` |
-| Motion | `--duration-*`, `--ease-*` | `--duration-fast` 120ms · `--ease-drawer` |
+| Radios | `--radius-*` | `--radius-sm` 6px · `--radius` 8px · `--radius-md` 10px · `--radius-lg` 12px · `--radius-xl` 16px · `--radius-2xl` 20px |
+| Sombras | `--shadow-*` | `--shadow-card`, `--shadow-md`, `--shadow-lg`, `--shadow-well` (pozo principal) |
+| Motion | `--duration-*`, `--ease-*` | `--duration-fast` 140ms · `--ease-drawer` |
 
 **Sintaxis Tailwind v4:** usa la forma canónica `bg-surface-2`,
 `text-(--color-text-muted)`, `rounded-(--radius)` — no `var()` explícito en las
@@ -33,10 +33,10 @@ desktop) y es el scroll container.
 ```
 [chrome gris  bg-(--color-chrome)  h-[100dvh]]
 ┌─ DesktopNav ─┐ ┌──────────── main = pozo blanco ────────────────┐
-│  rail +      │ │ bg-(--color-surface) · lg:rounded-tl-(--radius-xl)│
+│  rail +      │ │ bg-(--color-surface) · lg:rounded-tl-[36px]      │
 │  panel       │ │ overflow-y-auto                                  │
 │  (al ras)    │ │  ┌────────────────────────────────────────────┐ │
-│              │ │  │ TopBar  sticky top-0  h-[3.25rem]           │ │
+│              │ │  │ TopBar  sticky top-0  h-[3.5rem]            │ │
 │              │ │  ├────────────────────────────────────────────┤ │
 │              │ │  │ <PageContainer>  ← controla ancho/padding   │ │
 │              │ │  │   <PageHeader />                            │ │

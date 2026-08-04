@@ -66,15 +66,16 @@ test.describe("Flujo OC por oficina", () => {
     await expectOcState(page, /Rec\. parcial/)
     await expect(page.getByText(/6 unidades pendientes/)).toBeVisible()
 
+    // ── Recepción completa → cierre automático ───────────────────────────────
+    // Recibir el saldo cierra la orden en la misma transacción
+    // (`closeOrderTx` desde `rollupOrderReceiptStatus`): "Recibida" es un
+    // estado transitorio que la interfaz nunca llega a mostrar, y por eso no
+    // hay un paso manual de cierre una vez que todo llegó.
     await registerReception(page, "Faena", 6)
-    await expectOcState(page, /Recibida/)
+    await expectOcState(page, /Completada/)
     // Nada pendiente: el CTA de recepción desaparece.
     await expect(page.getByRole("link", { name: /Recepcionar en faena/i })).toHaveCount(0)
-
-    // ── Recibida → cerrada ───────────────────────────────────────────────────
-    await page.getByRole("button", { name: "Cerrar orden" }).click()
-    await page.getByLabel("Motivo del cierre").fill("Recepción completa verificada en E2E")
-    await page.getByRole("button", { name: "Cerrar OC" }).click()
-    await expect(page.getByText(/Cerrada/).first()).toBeVisible({ timeout: 15_000 })
+    // Y tampoco se ofrece cerrar algo que ya está cerrado.
+    await expect(page.getByRole("button", { name: "Cerrar orden" })).toHaveCount(0)
   })
 })

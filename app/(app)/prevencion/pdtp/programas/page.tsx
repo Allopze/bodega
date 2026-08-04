@@ -11,6 +11,8 @@ import { Button } from "@/components/ui/button"
 import { Plus } from "@phosphor-icons/react/dist/ssr"
 import { buildPdtpProgramHref, resolvePdtpYear } from "../pdtp-context"
 import { PdtpYearPicker } from "../pdtp-sheet-table-ui"
+import { pdtpProgramStatusLabel } from "@/lib/prevention/pdtp"
+import { pluralize } from "@/lib/utils"
 
 export const metadata: Metadata = { title: "Listado de programas preventivos SG-SST" }
 
@@ -96,7 +98,7 @@ export default async function PdtpProgramasListPage({ searchParams }: PdtpProgra
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {programs.map((program) => {
             const indicators = complianceByProgram.get(program.id)
-            const statusLabel = program.status === "active" ? "Activo" : program.status === "closed" ? "Cerrado" : "Borrador"
+            const statusLabel = pdtpProgramStatusLabel(program.status)
             const statusClass = program.status === "active"
               ? "bg-[var(--color-success-tint)] text-[var(--color-success)]"
               : program.status === "closed"
@@ -119,7 +121,7 @@ export default async function PdtpProgramasListPage({ searchParams }: PdtpProgra
                 <div className="mt-3 flex items-center gap-4 text-xs text-[var(--color-text-subtle)]">
                   {indicators?.annual && (
                     <span title={`Ejecutado / planificado agregado sobre ${indicators.worksiteCount} faena(s) autorizada(s)`}>
-                      Cumplimiento ({indicators.worksiteCount} faena{indicators.worksiteCount === 1 ? "" : "s"}): {indicators.annual.percent !== null ? `${Math.round(indicators.annual.percent * 100)}%` : "—"}
+                      Cumplimiento ({indicators.worksiteCount} {pluralize(indicators.worksiteCount, "faena")}): {indicators.annual.percent !== null ? `${Math.round(indicators.annual.percent * 100)}%` : "—"}
                     </span>
                   )}
                   <span>Elaborado por: {program.elaboratedByName}</span>

@@ -3,6 +3,7 @@
 import { useState } from "react"
 import Image from "next/image"
 import { X } from "@phosphor-icons/react"
+import { formatDateTime } from "@/lib/utils"
 
 const EVIDENCE_LABELS: Record<string, string> = { odometer: "Odómetro / horómetro", liter_meter: "Medidor de litros", removed_seal: "Sello retirado", installed_seal: "Sello instalado" }
 
@@ -62,7 +63,7 @@ export function EvidenceThumbnail({ evidence }: Props) {
 
             {evidence.capturedAt && (
               <p className="mt-2 text-center text-xs text-white/60">
-                Capturada: {new Date(evidence.capturedAt).toLocaleString("es-CL")}
+                Capturada: {formatDateTime(evidence.capturedAt)}
                 {evidence.fileName && <> · {evidence.fileName}</>}
                 {evidence.sha256 && <span className="ml-2 font-mono text-white/40" title={`SHA-256: ${evidence.sha256}`}>SHA-256</span>}
               </p>

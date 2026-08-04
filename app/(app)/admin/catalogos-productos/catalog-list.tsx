@@ -4,8 +4,9 @@ import * as React from "react"
 import { useActionState, useEffect } from "react"
 import { PencilSimple, ToggleLeft, ToggleRight } from "@phosphor-icons/react"
 import { Badge } from "@/components/ui/badge"
-import { DesktopOnlyTableNotice } from "@/components/ui/desktop-only-table"
 import { DataTable } from "@/components/admin/data-table"
+import { Button } from "@/components/ui/button"
+import { ResponsiveDataListCard, ResponsiveDataListField } from "@/components/ui/responsive-data-list"
 import { TableRow, TableCell } from "@/components/ui/table"
 import { toast } from "@/lib/toast"
 import { INITIAL_STATE } from "@/components/admin/form-state"
@@ -101,7 +102,6 @@ export function CatalogList({ units, templates, categories, legacyUnits }: Catal
               </p>
             </div>
           )}
-          <DesktopOnlyTableNotice />
           <DataTable
         caption="Unidades de Producto"
         enableColumnToggle
@@ -113,6 +113,33 @@ export function CatalogList({ units, templates, categories, legacyUnits }: Catal
             pageSize={20}
             emptyTitle="Sin unidades"
             emptyDescription="Crea unidades para empezar a normalizar el catálogo."
+            renderMobileCard={(row) => {
+              const u = row as ProductUnitRow
+              return (
+                <ResponsiveDataListCard
+                  title={u.label}
+                  description={<span className="font-mono">{u.code}</span>}
+                  status={u.isActive ? <Badge variant="success">Activa</Badge> : <Badge variant="default">Inactiva</Badge>}
+                  actions={
+                    <>
+                      <Button type="button" variant="ghost" size="sm" onClick={() => { setEditUnit(u); setUnitSheetOpen(true) }}>
+                        <PencilSimple size={15} />Editar
+                      </Button>
+                      <form action={unitToggleAction}>
+                        <input type="hidden" name="id" value={u.id} />
+                        <input type="hidden" name="activate" value={String(!u.isActive)} />
+                        <Button type="submit" variant="ghost" size="sm">
+                          {u.isActive ? <ToggleRight size={17} /> : <ToggleLeft size={17} />}
+                          {u.isActive ? "Desactivar" : "Reactivar"}
+                        </Button>
+                      </form>
+                    </>
+                  }
+                >
+                  <ResponsiveDataListField label="Descripción" className="col-span-2">{u.description || "Sin descripción"}</ResponsiveDataListField>
+                </ResponsiveDataListCard>
+              )
+            }}
             renderRow={(row) => {
               const u = row as ProductUnitRow
               return (
@@ -162,6 +189,34 @@ export function CatalogList({ units, templates, categories, legacyUnits }: Catal
             pageSize={20}
             emptyTitle="Sin plantillas"
             emptyDescription={'Crea plantillas (ej. "Talla", "Color", "Capacidad") reutilizables por categoría.'}
+            renderMobileCard={(row) => {
+              const t = row as AttributeTemplateRow
+              return (
+                <ResponsiveDataListCard
+                  title={t.name}
+                  status={t.isActive ? <Badge variant="success">Activa</Badge> : <Badge variant="default">Inactiva</Badge>}
+                  actions={
+                    <>
+                      <Button type="button" variant="ghost" size="sm" onClick={() => { setEditAttr(t); setAttrSheetOpen(true) }}>
+                        <PencilSimple size={15} />Editar
+                      </Button>
+                      <form action={attrToggleAction}>
+                        <input type="hidden" name="id" value={t.id} />
+                        <input type="hidden" name="activate" value={String(!t.isActive)} />
+                        <Button type="submit" variant="ghost" size="sm">
+                          {t.isActive ? <ToggleRight size={17} /> : <ToggleLeft size={17} />}
+                          {t.isActive ? "Desactivar" : "Reactivar"}
+                        </Button>
+                      </form>
+                    </>
+                  }
+                >
+                  <ResponsiveDataListField label="Tipo"><Badge variant="default">{t.type}</Badge></ResponsiveDataListField>
+                  <ResponsiveDataListField label="Categoría">{t.categoryName || "Todas"}</ResponsiveDataListField>
+                  <ResponsiveDataListField label="Requerido" className="col-span-2">{t.isRequired ? "Sí" : "No"}</ResponsiveDataListField>
+                </ResponsiveDataListCard>
+              )
+            }}
             renderRow={(row) => {
               const t = row as AttributeTemplateRow
               return (

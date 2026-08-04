@@ -3,6 +3,7 @@
 import * as React from "react"
 import * as Collapsible from "@radix-ui/react-collapsible"
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover"
+import { Tooltip } from "@/components/ui/tooltip"
 import { CaretDown, SquaresFour } from "@phosphor-icons/react"
 import { cn } from "@/lib/utils"
 import { NAV_ICONS } from "./nav-icons"
@@ -124,20 +125,27 @@ export function RailFlyout({
   const Icon = NAV_ICONS[area.iconName] ?? SquaresFour
   return (
     <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          aria-label={area.label}
-          className={cn(
-            "group relative flex items-center justify-center rounded-lg px-1 py-2 transition-[background-color,color] duration-(--duration-fast) ease-out",
-            inRoute
-              ? "bg-(--color-primary-tint) text-(--color-primary-ink)"
-              : "text-(--color-text-muted) hover:bg-(--color-chrome-hover) hover:text-(--color-text)",
-          )}
-        >
-          <Icon size={21} weight="regular" className={cn("shrink-0", inRoute && "text-(--color-primary)")} />
-        </button>
-      </PopoverTrigger>
+      {/* En el rail colapsado el icono es el único rótulo. `aria-label` resuelve
+          al lector de pantalla, pero quien navega con vista o con teclado no
+          tenía forma de saber el destino sin abrir el panel: el tooltip lo
+          revela también con foco. Radix cierra el tooltip en `pointerdown`, así
+          que no se solapa con el popover que el mismo botón abre. */}
+      <Tooltip content={area.label} side="right" delayDuration={250}>
+        <PopoverTrigger asChild>
+          <button
+            type="button"
+            aria-label={area.label}
+            className={cn(
+              "group relative flex items-center justify-center rounded-lg px-1 py-2 transition-[background-color,color] duration-(--duration-fast) ease-out",
+              inRoute
+                ? "bg-(--color-primary-tint) text-(--color-primary-ink)"
+                : "text-(--color-text-muted) hover:bg-(--color-chrome-hover) hover:text-(--color-text)",
+            )}
+          >
+            <Icon size={21} weight="regular" className={cn("shrink-0", inRoute && "text-(--color-primary)")} />
+          </button>
+        </PopoverTrigger>
+      </Tooltip>
       <PopoverContent
         side="right"
         align="start"

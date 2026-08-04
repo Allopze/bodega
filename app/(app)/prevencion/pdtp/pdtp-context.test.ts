@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { buildPdtpProgramHref, resolvePdtpYear, resolveSelectedWorksiteId } from "./pdtp-context"
+import { buildPdtpActivitiesHref, buildPdtpProgramHref, resolvePdtpActivitiesReturnHref, resolvePdtpYear, resolveSelectedWorksiteId } from "./pdtp-context"
 
 describe("PDTP context", () => {
   it("usa año calendario y descarta parámetros inválidos", () => {
@@ -12,6 +12,19 @@ describe("PDTP context", () => {
     expect(buildPdtpProgramHref("programa-1", {
       anio: "2026", hoja: "pdtp_general", faena: "faena-1", vista: "semana",
     })).toBe("/prevencion/pdtp/programa-1?hoja=pdtp_general&faena=faena-1&vista=semana")
+  })
+
+  it("conserva programa, período y filtros al volver al visor después de corregirlo", () => {
+    const href = buildPdtpActivitiesHref({
+      programa: "programa-1", anio: "2026", hoja: "pdtp_general", faena: "faena-1", vista: "semana", estado: "pending", mes: 7, semana: 2,
+    })
+    expect(href).toBe("/prevencion/pdtp/actividades?programa=programa-1&hoja=pdtp_general&faena=faena-1&vista=semana&anio=2026&estado=pending&mes=7&semana=2")
+    expect(resolvePdtpActivitiesReturnHref(href)).toBe(href)
+  })
+
+  it("solo acepta retornos internos hacia Actividades PDTP", () => {
+    expect(resolvePdtpActivitiesReturnHref("https://example.com")).toBeUndefined()
+    expect(resolvePdtpActivitiesReturnHref("/prevencion/pdtp/programa-1")).toBeUndefined()
   })
 
   it("solo elige la faena automáticamente cuando es la única disponible", () => {

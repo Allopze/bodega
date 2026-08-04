@@ -32,7 +32,7 @@ test.describe("Conciliación OC-factura-recepción", () => {
     await expect(page.getByText("Falta la factura de esta orden")).toBeVisible({ timeout: 10_000 })
 
     const cta = page.getByRole("link", { name: /adjuntar factura/i })
-    await expect(cta).toHaveAttribute("href", `/compras/${OC_SIN_FACTURA_ID}?tab=facturacion`)
+    await expect(cta).toHaveAttribute("href", `/compras/${OC_SIN_FACTURA_ID}?tab=facturacion`, { timeout: 10_000 })
     await cta.click()
 
     // El deep-link abre la pestaña y el archivo es el primer control del
@@ -52,14 +52,16 @@ test.describe("Conciliación OC-factura-recepción", () => {
 
     // El filtro se activa desde el chip del header, no desde la barra: sin un
     // control visible, la lista quedaba recortada sin explicación ni salida.
-    await page.getByRole("button", { name: /Quitar filtro de facturas pendientes/i }).click()
-    await expect(page).not.toHaveURL(/factura=pendiente/)
+    // El chip es un enlace con href real, no un botón: así funciona desde el
+    // primer pintado, sin esperar a que el componente hidrate.
+    await page.getByRole("link", { name: /Quitar filtro de facturas pendientes/i }).click()
+    await expect(page).not.toHaveURL(/factura=pendiente/, { timeout: 10_000 })
     await expect(page.getByRole("link", { name: /Ver OC OC-2026-0001/ })).toBeVisible({ timeout: 10_000 })
 
     // Y "Limpiar" —que sólo aparece con filtros activos— también lo apaga.
     await page.goto("/compras?factura=pendiente")
     await page.getByRole("button", { name: "Limpiar" }).click()
-    await expect(page).not.toHaveURL(/factura=pendiente/)
+    await expect(page).not.toHaveURL(/factura=pendiente/, { timeout: 10_000 })
   })
 
   // El número de guía se tipea en la recepción, con el documento en la mano.

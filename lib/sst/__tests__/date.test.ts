@@ -124,27 +124,27 @@ describe('addDays', () => {
 // ── formatDateDisplay ───────────────────────────────────────────────────────
 
 describe('formatDateDisplay', () => {
-  it('formats to dd/mm/yyyy', () => {
-    expect(formatDateDisplay('2026-06-15')).toBe('15/06/2026')
+  it('formats to dd-mm-yyyy', () => {
+    expect(formatDateDisplay('2026-06-15')).toBe('15-06-2026')
   })
 
   it('pads single-digit day and month', () => {
-    expect(formatDateDisplay('2026-01-05')).toBe('05/01/2026')
+    expect(formatDateDisplay('2026-01-05')).toBe('05-01-2026')
   })
 
   it('formats December 31st', () => {
-    expect(formatDateDisplay('2026-12-31')).toBe('31/12/2026')
+    expect(formatDateDisplay('2026-12-31')).toBe('31-12-2026')
   })
 
   it('does not shift by timezone (the core bug)', () => {
     // Same as parseLocalDate — should use local components
     const result = formatDateDisplay('2026-06-15')
-    expect(result).toBe('15/06/2026')
+    expect(result).toBe('15-06-2026')
   })
 
   it('roundtrips with parseLocalDate → localDateToISO', () => {
     const input = '2026-03-20'
     const display = formatDateDisplay(input)
-    expect(display).toBe('20/03/2026')
+    expect(display).toBe('20-03-2026')
   })
 })

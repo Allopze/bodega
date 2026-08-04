@@ -1,5 +1,6 @@
 "use client"
 
+import * as React from "react"
 import { Sheet, SheetContent, SheetHeader, SheetBody, SheetFooter, SheetTitle, SheetDescription, SheetCloseButton } from "@/components/admin/sheet"
 import { SubmitButton } from "@/components/admin/submit-button"
 import { Button } from "@/components/ui/button"
@@ -11,6 +12,7 @@ import { InvitePendingCard } from "./invite-pending-card"
 import { RoleSelector } from "./role-selector"
 import { PermissionSection } from "./permission-section"
 import { WorksiteSelector } from "./worksite-selector"
+import { UserAccessReview } from "./user-access-review"
 import { WorkerSelector } from "./worker-selector"
 import type { UserFormProps, WorkerOption } from "./user-form.helpers"
 
@@ -27,6 +29,7 @@ export function UserForm({ open, onClose, editUser, allRoles, allPermissions, al
     groupedPermissions,
     directPermissionLabel,
     activeModules,
+    accessIssue,
     toggleRole,
     togglePermission,
     toggleAllInModule,
@@ -40,7 +43,7 @@ export function UserForm({ open, onClose, editUser, allRoles, allPermissions, al
   } = useUserForm({ editUser, onClose, allRoles, allPermissions, allWorksites, allWorkers })
 
   const safeEditUser = editUser!
-
+  const [exceptionsOpen, setExceptionsOpen] = React.useState((editUser?.permissionIds.length ?? 0) > 0)
   return (
     <Sheet open={open} onOpenChange={handleOpenChange}>
       <SheetContent className="sm:max-w-2xl">
@@ -83,7 +86,25 @@ export function UserForm({ open, onClose, editUser, allRoles, allPermissions, al
               <p className="mb-4 text-sm text-[var(--color-danger)]">{state.message}</p>
             )}
 
-            <FieldGroup className="gap-4">
+            <RoleSelector
+              roles={allRoles}
+              selectedIds={selection.selectedRoles}
+              onToggle={toggleRole}
+              error={state.fieldErrors?.roleIds?.[0]}
+            />
+
+            <WorksiteSelector
+              worksites={allWorksites}
+              selectedIds={selection.selectedWsIds}
+              primaryId={selection.primaryWorksiteId}
+              onToggle={toggleWorksite}
+              onSetPrimary={setPrimary}
+              error={state.fieldErrors?.worksiteAssignments?.[0]}
+            />
+
+            <section className="mt-5" aria-labelledby="user-identity-title">
+              <h3 id="user-identity-title" className="text-eyebrow mb-2">Datos de la persona</h3>
+              <FieldGroup className="gap-4">
               <WorkerSelector
                 workers={allWorkers}
                 selectedId={selection.workerId}
@@ -144,32 +165,33 @@ export function UserForm({ open, onClose, editUser, allRoles, allPermissions, al
                 </Field>
               )}
             </FieldGroup>
+            </section>
 
-            <RoleSelector
+            <details className="mt-5" open={exceptionsOpen} onToggle={(event) => setExceptionsOpen(event.currentTarget.open)}>
+              <summary className="min-h-11 cursor-pointer rounded-[var(--radius)] px-2 py-2 text-sm font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-2)] sm:min-h-9">
+                Excepciones de permisos ({selection.selectedPermissions.length})
+              </summary>
+              <PermissionSection
+                groupedPermissions={groupedPermissions}
+                selectedRoleIds={selection.selectedRoles}
+                selectedPermissionIds={selection.selectedPermissions}
+                directPermissionLabel={directPermissionLabel}
+                activeModules={activeModules}
+                onTogglePermission={togglePermission}
+                onToggleAllInModule={toggleAllInModule}
+                error={state.fieldErrors?.permissionIds?.[0]}
+              />
+            </details>
+
+            <UserAccessReview
               roles={allRoles}
-              selectedIds={selection.selectedRoles}
-              onToggle={toggleRole}
-              error={state.fieldErrors?.roleIds?.[0]}
-            />
-
-            <PermissionSection
-              groupedPermissions={groupedPermissions}
-              selectedRoleIds={selection.selectedRoles}
-              selectedPermissionIds={selection.selectedPermissions}
-              directPermissionLabel={directPermissionLabel}
-              activeModules={activeModules}
-              onTogglePermission={togglePermission}
-              onToggleAllInModule={toggleAllInModule}
-              error={state.fieldErrors?.permissionIds?.[0]}
-            />
-
-            <WorksiteSelector
               worksites={allWorksites}
-              selectedIds={selection.selectedWsIds}
-              primaryId={selection.primaryWorksiteId}
-              onToggle={toggleWorksite}
-              onSetPrimary={setPrimary}
-              error={state.fieldErrors?.worksiteAssignments?.[0]}
+              permissions={allPermissions}
+              selectedRoleIds={selection.selectedRoles}
+              selectedWorksiteIds={selection.selectedWsIds}
+              primaryWorksiteId={selection.primaryWorksiteId}
+              selectedPermissionIds={selection.selectedPermissions}
+              issue={accessIssue}
             />
           </SheetBody>
 
@@ -180,6 +202,7 @@ export function UserForm({ open, onClose, editUser, allRoles, allPermissions, al
             <SubmitButton
               label={isEdit ? "Guardar cambios" : "Crear usuario"}
               loadingLabel={isEdit ? "Guardando..." : "Creando..."}
+              disabled={!!accessIssue}
             />
           </SheetFooter>
         </form>

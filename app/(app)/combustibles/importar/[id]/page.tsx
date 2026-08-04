@@ -19,7 +19,7 @@ export const metadata: Metadata = { title: "Detalle de importación" }
 export default async function ImportBatchDetailPage({ params }: { params: Promise<{ id: string }> }) {
   let session
   try { session = await requirePermission("combustibles:import") }
-  catch { redirect("/forbidden") }
+  catch { redirect(`/forbidden?desde=${encodeURIComponent("/combustibles/importar")}`) }
 
   const { id } = await params
   const batch = await db.query.fuelImportBatches.findFirst({
@@ -31,7 +31,7 @@ export default async function ImportBatchDetailPage({ params }: { params: Promis
     },
   })
   if (!batch) notFound()
-  if (!canAccessWorksite(session, batch.worksiteId)) redirect("/forbidden")
+  if (!canAccessWorksite(session, batch.worksiteId)) redirect(`/forbidden?desde=${encodeURIComponent("/combustibles/importar")}`)
 
   const unassociatedPlates = [...new Set(batch.records.filter((r) => !r.vehicle).map((r) => r.patente))].sort()
   const canManageVehicles = can(session, "combustibles:manage_vehicles")

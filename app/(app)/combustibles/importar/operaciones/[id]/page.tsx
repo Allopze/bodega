@@ -20,8 +20,8 @@ const SAMPLE_LIMIT = 50
 export default async function OperationsBatchDetailPage({ params }: { params: Promise<{ id: string }> }) {
   let session
   try { session = await requirePermission("combustibles:import") }
-  catch { redirect("/forbidden") }
-  if (!isGlobalRole(session)) redirect("/forbidden")
+  catch { redirect(`/forbidden?desde=${encodeURIComponent("/combustibles/importar/operaciones")}`) }
+  if (!isGlobalRole(session)) redirect(`/forbidden?desde=${encodeURIComponent("/combustibles/importar/operaciones")}`)
 
   const { id } = await params
   const batch = await db.query.fuelOperationBatches.findFirst({

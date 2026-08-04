@@ -36,7 +36,7 @@ function bundle(overrides: Record<string, unknown> = {}) {
     inventory: {
       healthRecords: [{ id: "health-1", recordType: "aptitud", status: "vigente", fitnessStatus: "apto", validUntil: null }],
       reservedCases: [],
-      ppas: [],
+      ppas: [{ id: "ppa-1", estado: "aprobado_auto", createdAt: "2026-07-15T00:00:00.000Z" }],
       documentLinks: [],
     },
     executions: [],
@@ -49,8 +49,17 @@ function bundle(overrides: Record<string, unknown> = {}) {
 describe("privacy-right execution workbench", () => {
   it("offers the domain mutation only after identity validation and without hold", () => {
     render(<PrivacyRightExecutionWorkbench bundle={bundle()} />)
-    expect(screen.getByRole("button", { name: "Ejecutar" })).toBeInTheDocument()
+    expect(screen.getAllByRole("button", { name: "Ejecutar" })).toHaveLength(2)
     expect(screen.getByText(/Aún no hay una mutación demostrable/i)).toBeInTheDocument()
+  })
+
+  // El identificador crudo se conserva a propósito: es la traza que una
+  // solicitud legal necesita citar. Lo que no puede quedar crudo es el estado.
+  it("names the PPA state and date in business language, never as an enum", () => {
+    render(<PrivacyRightExecutionWorkbench bundle={bundle()} />)
+    expect(screen.getByText("Aprob. auto")).toBeInTheDocument()
+    expect(screen.queryByText("aprobado_auto")).not.toBeInTheDocument()
+    expect(screen.getByText(/^PPA · \d{2}-\d{2}-\d{4}$/)).toBeInTheDocument()
   })
 
   it("hides execution while legal retention is active", () => {

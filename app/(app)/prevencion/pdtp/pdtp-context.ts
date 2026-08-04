@@ -5,6 +5,13 @@ export interface PdtpListQuery {
   anio?: string
 }
 
+export interface PdtpActivitiesQuery extends PdtpListQuery {
+  programa: string
+  estado?: string
+  mes?: number
+  semana?: number
+}
+
 export function resolvePdtpYear(value: string | undefined, currentYear = new Date().getFullYear()): number {
   const year = Number(value)
   return Number.isInteger(year) && year >= 2024 && year <= 2100 ? year : currentYear
@@ -17,6 +24,28 @@ export function buildPdtpProgramHref(programId: string, query: PdtpListQuery): s
   if (query.vista) params.set("vista", query.vista)
   const search = params.toString()
   return `/prevencion/pdtp/${programId}${search ? `?${search}` : ""}`
+}
+
+/** Conserva el contexto de trabajo cuando una corrección abre el editor PDTP. */
+export function buildPdtpActivitiesHref(query: PdtpActivitiesQuery): string {
+  const params = new URLSearchParams({ programa: query.programa })
+  if (query.hoja) params.set("hoja", query.hoja)
+  if (query.faena) params.set("faena", query.faena)
+  if (query.vista) params.set("vista", query.vista)
+  if (query.anio) params.set("anio", query.anio)
+  if (query.estado && query.estado !== "all") params.set("estado", query.estado)
+  if (query.mes) params.set("mes", String(query.mes))
+  if (query.semana) params.set("semana", String(query.semana))
+  return `/prevencion/pdtp/actividades?${params}`
+}
+
+/** Evita redirecciones abiertas al volver desde el editor al visor transversal. */
+export function resolvePdtpActivitiesReturnHref(value: string | undefined): string | undefined {
+  if (!value) return undefined
+  const url = new URL(value, "https://chome.local")
+  return url.origin === "https://chome.local" && url.pathname === "/prevencion/pdtp/actividades"
+    ? `${url.pathname}${url.search}`
+    : undefined
 }
 
 export function resolveSelectedWorksiteId(

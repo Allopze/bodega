@@ -31,28 +31,39 @@ function submoduleKey(moduleId: string, submoduleHref: string): string {
   return `${SUBMODULE_PREFIX}:${moduleId}:${submoduleHref}`
 }
 
-// ── Module-to-area label map (evita importar de components/ en lib/) ─────────
+// ── Nombre propio de cada módulo (evita importar de components/ en lib/) ─────
 
-/** ID de módulo → label legible. Se deriva del catálogo de áreas. */
+/**
+ * ID de módulo → nombre propio.
+ *
+ * Antes esto devolvía el nombre del **área** de navegación, de modo que la
+ * pantalla de módulos mostraba seis tarjetas llamadas "Adquisiciones", tres
+ * "Control operacional", tres "Bodega" y tres "Prevención". Lo único que las
+ * distinguía era el identificador técnico en inglés (`purchasing`,
+ * `receiving`, `traceability`), justo el tipo de jerga que la auditoría
+ * pide retirar del flujo estándar — y quien apagaba un módulo no podía saber
+ * cuál estaba apagando. Cada módulo tiene ahora su propio nombre; el área
+ * sigue disponible aparte para agrupar.
+ */
 const MODULE_LABELS: Record<string, string> = {
   admin:           "Administración",
-  requests:        "Adquisiciones",
-  approvals:       "Adquisiciones",
-  purchasing:      "Adquisiciones",
-  receiving:       "Adquisiciones",
+  requests:        "Solicitudes",
+  approvals:       "Aprobaciones",
+  purchasing:      "Órdenes de compra",
+  receiving:       "Recepción",
   warehouse:       "Bodega",
-  deliveries:      "Bodega",
-  traceability:    "Bodega",
+  deliveries:      "Entregas",
+  traceability:    "Trazabilidad",
   reports:         "Reportes",
-  analytics:       "Reportes",
-  repuestos:       "Adquisiciones",
-  servicios:       "Adquisiciones",
-  sst:             "Prevención",
-  ppa:             "Prevención",
+  analytics:       "Analítica",
+  repuestos:       "Repuestos",
+  servicios:       "Servicios",
+  sst:             "Evaluaciones SST",
+  ppa:             "PPA digital",
   feedback:        "Soporte",
-  combustibles:    "Control operacional",
-  flota:           "Control operacional",
-  mantenciones:    "Control operacional",
+  combustibles:    "Combustibles",
+  flota:           "Flota",
+  mantenciones:    "Mantenciones",
   prevention:      "Prevención",
 }
 

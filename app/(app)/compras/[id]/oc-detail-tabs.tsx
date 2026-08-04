@@ -62,7 +62,7 @@ export function OcDetailTabs({
 
   return (
     <Tabs value={tab} onValueChange={handleChange}>
-      <TabsList className="flex-wrap">
+      <TabsList className="flex-nowrap">
         <TabsTrigger value="items">
           Ítems
           <Count>{itemsCount}</Count>

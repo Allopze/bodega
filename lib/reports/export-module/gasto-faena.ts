@@ -5,6 +5,7 @@ import { purchaseOrders, worksites, suppliers } from "@/db/schema"
 import { formatDate } from "@/lib/utils"
 import { buildWorksiteFilter, buildDateFilter } from "./utils"
 import type { ReportData, ExportFilters } from "./types"
+import { ocStatusLabel } from "./labels"
 
 export async function gastoPorFaena(session: Session | null, filters: ExportFilters, limit: number): Promise<ReportData> {
   const orderFilter = buildWorksiteFilter(session, purchaseOrders.worksiteId)
@@ -48,7 +49,7 @@ export async function gastoPorFaena(session: Session | null, filters: ExportFilt
       o.code,
       wsMap[o.worksiteId] ?? o.worksiteId,
       supMap[o.supplierId] ?? o.supplierId,
-      o.status,
+      ocStatusLabel(o.status),
       o.totalAmount,
       formatDate(o.createdAt),
     ]),

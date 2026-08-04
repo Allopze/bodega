@@ -48,14 +48,20 @@ describe("prevention documentation canonical surface", () => {
 
   it("exposes the documentacion app routes and does not have legacy surfaces", () => {
     const root = process.cwd()
+    const nextConfigSource = readFileSync(path.join(root, "next.config.ts"), "utf8")
 
     expect(existsSync(path.join(root, "app/(app)/prevencion/documentacion/page.tsx"))).toBe(true)
     expect(existsSync(path.join(root, "app/(app)/prevencion/documentacion/actions.ts"))).toBe(true)
     expect(existsSync(path.join(root, "app/api/prevencion/documentacion/export/route.ts"))).toBe(false)
     expect(existsSync(path.join(root, "lib/services/prevention-legal-docs.ts"))).toBe(false)
-    expect(readFileSync(path.join(root, "app/(app)/prevencion/documentacion/nuevo/page.tsx"), "utf8")).toContain('redirect("/prevencion/documentacion")')
-    expect(readFileSync(path.join(root, "app/(app)/prevencion/documentacion/revisiones/page.tsx"), "utf8")).toContain('redirect("/prevencion/documentacion")')
-    expect(readFileSync(path.join(root, "app/(app)/prevencion/documentacion/vencimientos/page.tsx"), "utf8")).toContain('redirect("/prevencion/documentacion")')
+    // Las tres superficies legadas se resuelven en `next.config.ts`, que actúa
+    // en la capa de rutas: la página equivalente no llegaba a ejecutarse nunca,
+    // así que declarar el redirect dos veces sólo dejaba código muerto y una
+    // ruta de más en el inventario.
+    for (const legacy of ["nuevo", "revisiones", "vencimientos"]) {
+      expect(existsSync(path.join(root, `app/(app)/prevencion/documentacion/${legacy}/page.tsx`))).toBe(false)
+      expect(nextConfigSource).toContain(`source: "/prevencion/documentacion/${legacy}", destination: "/prevencion/documentacion"`)
+    }
     expect(existsSync(path.join(root, "app/api/cron/sst-document-expiry/route.ts"))).toBe(false)
 
     const actionsSource = readFileSync(path.join(root, "app/(app)/prevencion/documentacion/actions.ts"), "utf8")

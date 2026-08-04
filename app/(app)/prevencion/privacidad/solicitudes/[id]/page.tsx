@@ -24,8 +24,8 @@ const RIGHT_LABELS: Record<string, string> = {
 export default async function PrivacyRequestDetailPage({ params }: Props) {
   let session
   try { session = await requireAuth() }
-  catch { redirect("/forbidden") }
-  if (!can(session, "prevention:privacy:manage_requests")) redirect("/forbidden")
+  catch { redirect(`/forbidden?desde=${encodeURIComponent("/prevencion/privacidad/solicitudes")}`) }
+  if (!can(session, "prevention:privacy:manage_requests")) redirect(`/forbidden?desde=${encodeURIComponent("/prevencion/privacidad/solicitudes")}`)
   const { id } = await params
   const bundle = await getPreventionPrivacyRequestWorkbench({
     requestId: id,

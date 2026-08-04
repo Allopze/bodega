@@ -1,7 +1,6 @@
 "use client"
 
 import { useState, useTransition, type FormEvent, type ReactNode } from "react"
-import Link from "next/link"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { DatePicker } from "@/components/ui/date-picker"
@@ -40,7 +39,7 @@ function useOperation() {
 function Field({ label, children }: { label: string; children: ReactNode }) { return <label className="grid gap-1 text-sm"><span className="font-medium">{label}</span>{children}</label> }
 
 export function LegalRequirementsHeaderActions({ canAssess, canExport }: { canAssess: boolean; canExport: boolean }) {
-  return <div className="flex gap-2">{canExport && <Button asChild variant="secondary"><Link href="/api/prevencion/requisitos-legales/export">Exportar Excel</Link></Button>}{canAssess && <CreateRequirementDialog />}</div>
+  return <div className="flex gap-2">{canExport && <Button asChild variant="secondary"><a href="/api/prevencion/requisitos-legales/export" download>Exportar Excel</a></Button>}{canAssess && <CreateRequirementDialog />}</div>
 }
 
 function CreateRequirementDialog() {

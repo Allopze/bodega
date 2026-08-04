@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation"
 import { CheckCircle, ClockCounterClockwise, XCircle } from "@phosphor-icons/react/dist/ssr"
 import { getTaeSubmissionByToken } from "@/lib/services/fuel-tae"
+import { TaeResultActions } from "./tae-result-actions"
 
 export default async function TaeResultPage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params
@@ -20,6 +21,7 @@ export default async function TaeResultPage({ params }: { params: Promise<{ toke
         <p className="mt-2 text-sm text-[var(--color-text-muted)]">{state.message}</p>
         <p className="mt-2 text-sm text-[var(--color-text-muted)]">{submission.worksite?.name}{submission.loadingPoint ? ` · ${submission.loadingPoint.name}` : ""}</p>
         <p className="mt-4 font-mono text-xl tabular-nums">{Number(submission.liters).toLocaleString("es-CL")} L</p>
+        <TaeResultActions />
       </section>
     </main>
   )

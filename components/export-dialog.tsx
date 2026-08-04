@@ -35,6 +35,14 @@ export interface ExportDialogProps {
   isoDateISOFormat?: boolean
   canExport?: boolean
   trigger?: React.ReactNode
+  /**
+   * Modo controlado. Sirve para montar el diálogo **fuera** del contenedor que
+   * lo abre: dentro de un `DropdownMenuContent`, cerrar el menú desmonta su
+   * contenido y se lleva el diálogo con él, de modo que el enlace de descarga
+   * desaparece bajo el cursor del usuario.
+   */
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
 }
 
 const ExportDialogInner = React.memo(function ExportDialogInner({
@@ -50,6 +58,8 @@ const ExportDialogInner = React.memo(function ExportDialogInner({
   isoDateISOFormat = false,
   canExport = true,
   trigger,
+  open,
+  onOpenChange,
 }: ExportDialogProps) {
   const [from, setFrom] = React.useState("")
   const [to, setTo] = React.useState("")
@@ -89,7 +99,8 @@ const ExportDialogInner = React.memo(function ExportDialogInner({
   const dialogTitle = title ?? `Exportar ${label}`
 
   return (
-    <Dialog>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      {open === undefined && (
       <DialogTrigger asChild>
         {trigger ?? (
           <Button variant="secondary" size="sm" className={tone === "signal" ? baseClass : undefined}>
@@ -98,6 +109,7 @@ const ExportDialogInner = React.memo(function ExportDialogInner({
           </Button>
         )}
       </DialogTrigger>
+      )}
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>{dialogTitle}</DialogTitle>
@@ -152,14 +164,16 @@ const ExportDialogInner = React.memo(function ExportDialogInner({
           <DialogClose asChild>
             <Button variant="secondary" size="sm">Cancelar</Button>
           </DialogClose>
-          <DialogClose asChild>
-            <Button asChild size="sm">
-              <a href={buildUrl()} download>
-                <Funnel size={13} className="mr-1.5" />
-                Descargar
-              </a>
-            </Button>
-          </DialogClose>
+          {/* Sin `DialogClose`: envolverlo aquí desmontaba el propio <a> en el
+              mismo clic que inicia la descarga, así que el diálogo se cerraba y
+              a veces no llegaba ningún archivo. Además, dejarlo abierto permite
+              exportar otra vez con los mismos filtros. */}
+          <Button asChild size="sm">
+            <a href={buildUrl()} download>
+              <Funnel size={13} className="mr-1.5" />
+              Descargar
+            </a>
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

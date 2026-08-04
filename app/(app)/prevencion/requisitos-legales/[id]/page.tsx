@@ -32,8 +32,8 @@ const COMPLIANCE_STATUS: Record<string, string> = {
 export default async function LegalRequirementDetailPage({ params }: { params: Promise<{ id: string }> }) {
   let session
   try { session = await requireAuth() }
-  catch { redirect("/forbidden") }
-  if (!can(session, "prevention:legal:view") && !can(session, "prevention:pdtp:view")) redirect("/forbidden")
+  catch { redirect(`/forbidden?desde=${encodeURIComponent("/prevencion/requisitos-legales")}`) }
+  if (!can(session, "prevention:legal:view") && !can(session, "prevention:pdtp:view")) redirect(`/forbidden?desde=${encodeURIComponent("/prevencion/requisitos-legales")}`)
   const { id } = await params
   let detail
   try { detail = await getLegalRequirementDetail(id, { userId: session.user.id, scope: resolveWorksiteScope(session), permissions: session.user.permissions }) }

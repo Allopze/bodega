@@ -6,7 +6,9 @@ import { describe, it, expect } from "vitest"
 import {
   cn,
   formatCLP,
+  formatFileSize,
   formatQty,
+  pluralize,
   toCode,
   formatDate,
   formatDateTime,
@@ -40,7 +42,9 @@ describe("formatCLP()", () => {
   })
 
   it("formats a negative amount", () => {
-    expect(formatCLP(-5000)).toBe("$-5.000")
+    // El signo va delante del símbolo (decisión de producto, 2026-08-04):
+    // `es-CL` produce "$-5.000" y se antepone a "-$5.000".
+    expect(formatCLP(-5000)).toBe("-$5.000")
   })
 
   it("rounds to whole pesos (no decimals)", () => {
@@ -69,6 +73,55 @@ describe("formatQty()", () => {
 
   it("formats zero without unit", () => {
     expect(formatQty(0)).toBe("0")
+  })
+})
+
+describe("pluralize()", () => {
+  it("keeps the singular for count 1", () => {
+    expect(pluralize(1, "submódulo")).toBe("submódulo")
+  })
+
+  it("adds -s to words ending in a vowel", () => {
+    expect(pluralize(3, "submódulo")).toBe("submódulos")
+    expect(pluralize(2, "faena")).toBe("faenas")
+    expect(pluralize(2, "vehículo")).toBe("vehículos")
+    expect(pluralize(2, "documento")).toBe("documentos")
+  })
+
+  it("adds -es to words ending in a consonant", () => {
+    expect(pluralize(2, "actividad")).toBe("actividades")
+  })
+
+  it("turns -z into -ces", () => {
+    expect(pluralize(2, "lápiz")).toBe("lápices")
+  })
+
+  it("turns -ión into -iones", () => {
+    expect(pluralize(2, "observación")).toBe("observaciones")
+  })
+
+  it("uses the known irregulars", () => {
+    expect(pluralize(2, "mes")).toBe("meses")
+    expect(pluralize(2, "ítem")).toBe("ítems")
+  })
+
+  it("supports forcing an explicit plural (compound phrases)", () => {
+    expect(pluralize(1, "ítem seleccionado", "ítems seleccionados")).toBe("ítem seleccionado")
+    expect(pluralize(5, "ítem seleccionado", "ítems seleccionados")).toBe("ítems seleccionados")
+  })
+})
+
+describe("formatFileSize()", () => {
+  it("uses Chilean separators and explicit binary units", () => {
+    expect(formatFileSize(512)).toBe("512 B")
+    expect(formatFileSize(1536)).toBe("1,5 KB")
+    expect(formatFileSize(1024 * 1024)).toBe("1 MB")
+  })
+
+  it("keeps missing or invalid sizes distinct from an empty file", () => {
+    expect(formatFileSize(0)).toBe("0 B")
+    expect(formatFileSize(null)).toBe("—")
+    expect(formatFileSize(-1)).toBe("—")
   })
 })
 

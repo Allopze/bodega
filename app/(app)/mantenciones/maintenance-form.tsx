@@ -9,6 +9,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { createMaintenanceRecordAction } from "./actions"
 import type { ActionState } from "@/lib/validation/masters"
+import { MAINTENANCE_STATUSES, MAINTENANCE_STATUS_LABELS } from "@/lib/validation/maintenance"
 import { toast } from "@/lib/toast"
 
 interface Option {
@@ -131,10 +132,7 @@ export function MaintenanceForm({
         <Select value={status || undefined} onValueChange={setStatus}>
           <SelectTrigger id="status" className="w-full"><SelectValue /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="scheduled">Programada</SelectItem>
-            <SelectItem value="in_progress">En curso</SelectItem>
-            <SelectItem value="completed">Completada</SelectItem>
-            <SelectItem value="cancelled">Cancelada</SelectItem>
+            {MAINTENANCE_STATUSES.map((item) => <SelectItem key={item} value={item}>{MAINTENANCE_STATUS_LABELS[item]}</SelectItem>)}
           </SelectContent>
         </Select>
       </div>

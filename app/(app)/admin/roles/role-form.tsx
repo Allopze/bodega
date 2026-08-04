@@ -144,8 +144,10 @@ export function RoleForm({ open, onClose, editRole, groupedPermissions }: RoleFo
               </div>
             )}
             <FieldGroup className="gap-4">
+              <section aria-labelledby="role-profile-title">
+                <h3 id="role-profile-title" className="text-eyebrow mb-2">1. Perfil del rol</h3>
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <Field label="Nombre / slug" htmlFor="role-name" required error={state.fieldErrors?.name?.[0]} helper="Se usa como identificador interno (ej: jefe_bodega).">
+                <Field label="Identificador interno" htmlFor="role-name" required error={state.fieldErrors?.name?.[0]} helper="En minúsculas y sin espacios (ej.: jefe_bodega).">
                   <Input
                     id="role-name"
                     name="name"
@@ -172,6 +174,11 @@ export function RoleForm({ open, onClose, editRole, groupedPermissions }: RoleFo
                   error={!!state.fieldErrors?.description}
                 />
               </Field>
+              </section>
+
+              <section aria-labelledby="role-scope-title">
+                <h3 id="role-scope-title" className="text-eyebrow mb-1">2. Alcance</h3>
+                <p className="mb-2 text-xs text-[var(--color-text-subtle)]">Define si este rol puede operar en todas las faenas o debe limitarse al alcance asignado a cada usuario.</p>
               <Checkbox
                 id="role-global"
                 name="isGlobal"
@@ -179,9 +186,16 @@ export function RoleForm({ open, onClose, editRole, groupedPermissions }: RoleFo
                 defaultChecked={editRole?.isGlobal ?? false}
                 label="Rol global (acceso a todas las faenas)"
               />
+              </section>
 
-              <div className="mt-2">
-                <p className="text-eyebrow mb-2">Permisos incluidos</p>
+              <section className="mt-2" aria-labelledby="role-permissions-title">
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <h3 id="role-permissions-title" className="text-eyebrow">3. Permisos incluidos</h3>
+                  <span className="rounded-[var(--radius-full)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-0.5 text-[11px] font-medium text-[var(--color-text-muted)]">
+                    {selected.size} {selected.size === 1 ? "permiso" : "permisos"}
+                  </span>
+                </div>
+                <p className="mb-2 text-xs text-[var(--color-text-subtle)]">Estos permisos se aplicarán por defecto a quienes reciban este rol.</p>
                 <div className="max-h-72 space-y-3 overflow-y-auto rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3">
                   {groupedPermissions.map((group) => {
                     const allOn = group.permissions.every((p) => selected.has(p.id))
@@ -196,7 +210,7 @@ export function RoleForm({ open, onClose, editRole, groupedPermissions }: RoleFo
                             onClick={() => toggleModule(group)}
                             className="text-[11px] text-[var(--color-primary)] hover:underline"
                           >
-                            {allOn ? "Quuitar todos" : "Seleccionar todos"}
+                            {allOn ? "Quitar todos" : "Seleccionar todos"}
                           </button>
                         </div>
                         <ul className="space-y-1">
@@ -204,16 +218,15 @@ export function RoleForm({ open, onClose, editRole, groupedPermissions }: RoleFo
                             const checked = selected.has(p.id)
                             return (
                               <li key={p.id}>
-                                <label className="flex cursor-pointer items-start gap-2 rounded px-1 py-0.5 hover:bg-[var(--color-surface)]">
+                                <label className="flex min-h-11 cursor-pointer items-start gap-2 rounded px-1 py-1.5 hover:bg-[var(--color-surface)] sm:min-h-9">
                                   <input
                                     type="checkbox"
                                     checked={checked}
                                     onChange={() => togglePermission(p.id)}
                                     className="mt-0.5"
                                   />
-                                  <span className="min-w-0">
-                                    <span className="block text-xs font-medium text-[var(--color-text)]">{p.name}</span>
-                                    <span className="block text-[11px] text-[var(--color-text-muted)]">{p.description}</span>
+                                  <span className="min-w-0 text-xs font-medium text-[var(--color-text)]">
+                                    {p.description}
                                   </span>
                                 </label>
                               </li>
@@ -224,7 +237,7 @@ export function RoleForm({ open, onClose, editRole, groupedPermissions }: RoleFo
                     )
                   })}
                 </div>
-              </div>
+              </section>
             </FieldGroup>
           </SheetBody>
 

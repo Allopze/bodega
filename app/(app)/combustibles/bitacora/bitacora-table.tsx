@@ -101,7 +101,10 @@ function ReviewToggle({ row }: { row: EnrichedRow }) {
       onClick={handleClick}
       disabled={busy}
       className={`inline-flex items-center gap-1 text-xs transition-colors hover:opacity-80 ${marked ? "text-amber-600 dark:text-amber-400" : "text-[var(--color-text-muted)] hover:text-amber-600 dark:hover:text-amber-400"}`}
-      title={marked ? "Quitar marca de revisión" : "Marcar para revisión"}
+      // `title` era el único nombre de un botón que sólo muestra un icono: el
+      // más débil de la cadena de nombres accesibles, y nulo al tacto.
+      aria-label={marked ? "Quitar marca de revisión" : "Marcar para revisión"}
+      aria-pressed={Boolean(marked)}
     >
       <Flag size={14} weight={marked ? "fill" : "regular"} />
     </button>

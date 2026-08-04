@@ -23,13 +23,13 @@ import { ConsumptionAlerts } from "./consumption-alerts"
 import { ConsumptionDetailTable } from "./consumption-detail-table"
 import { EvolutionChart, PriceEvolutionChart, PatenteRankingChart, RendimientoChart } from "./consumption-charts-lazy"
 import { CategoryBarChart } from "./fuel-charts-lazy"
+import { ChartDataSummary } from "./chart-data-summary"
 import { OperationsProveedorChart } from "./operations-category-chart"
-import { LitersVsKmChart, LitersVsHourMeterChart } from "./scatter-charts"
-import { EvolutionByVehicleChart } from "./evolution-by-vehicle-chart"
+import { EvolutionByVehicleChart, LitersVsHourMeterChart, LitersVsKmChart } from "./operations-charts-lazy"
 import { WorksiteEquipmentHeatmap } from "./worksite-equipment-heatmap"
 import { AnomalyDistributionChart } from "./anomalias/anomaly-charts-lazy"
 import { ChartErrorBoundary } from "@/components/chart-error-boundary"
-import { formatCLP, formatQty, cn } from "@/lib/utils"
+import { formatCLP, formatDate, formatQty, cn, pluralize } from "@/lib/utils"
 import { FuelControlOverviewPanel } from "./fuel-control-overview"
 
 export const metadata: Metadata = { title: "Combustibles" }
@@ -123,6 +123,7 @@ export default async function CombustiblesPage({
   const scatterHora = (scatterPoints ?? []).filter((p) => p.medidoPor === "hora")
   // Si el dashboard falló, usamos requestedFilters (que tiene los mismos campos) en vez de dashboard.filters.
   const effectiveFilters = dashboard?.filters ?? requestedFilters
+  const chartPeriodLabel = `${formatDate(effectiveFilters.fromDate)} — ${formatDate(effectiveFilters.toDate)}`
 
   const detailWhere = buildConsumptionWhere(session, effectiveFilters)
   const [detailRows, detailCountResult] = await Promise.all([
@@ -261,7 +262,7 @@ export default async function CombustiblesPage({
               <p className="text-eyebrow">Lectura del período</p>
               <h2 id="consumo-evolucion-title" className="text-lg font-semibold tracking-tight text-[var(--color-text)]">Tendencia y precio</h2>
             </div>
-            <p className="text-sm text-[var(--color-text-muted)]">{effectiveFilters.fromDate} a {effectiveFilters.toDate}</p>
+            <p className="text-sm text-[var(--color-text-muted)]">{chartPeriodLabel}</p>
           </div>
           <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1.8fr)_minmax(18rem,0.9fr)]">
             <Card>
@@ -292,7 +293,7 @@ export default async function CombustiblesPage({
 
       <div className="mt-2 border-t border-[var(--color-border)] pt-4">
         <Link href={vistaHref("registros")} className="text-sm font-medium text-[var(--color-primary-ink)] hover:underline">
-          Ver {totalDetail} {totalDetail === 1 ? "registro" : "registros"} del período →
+          Ver {pluralize(totalDetail, "registro")} del período →
         </Link>
       </div>
         </>
@@ -314,6 +315,14 @@ export default async function CombustiblesPage({
               <CardDescription>¿Qué tipo de equipo consume la mayor parte del combustible?</CardDescription>
             </CardHeader>
             <CardContent>
+              <ChartDataSummary
+                title="Tipo de equipo"
+                data={byEquipmentType.map((row) => ({ group: row.equipmentTypeName, totalLiters: row.totalLiters, totalAmount: row.totalAmount, count: row.uniqueVehicles }))}
+                periodLabel={chartPeriodLabel}
+                groupLabel="Tipos de equipo"
+                visibleLimit={8}
+                className="mb-4 mt-0 border-b border-t-0 pb-3 pt-0"
+              />
               <ChartErrorBoundary chartName="Consumo por tipo de equipo">
                 <CategoryBarChart
                   data={byEquipmentType.map((r) => ({ group: r.equipmentTypeName, totalLiters: r.totalLiters, totalAmount: r.totalAmount, count: r.uniqueVehicles }))}
@@ -502,6 +511,14 @@ export default async function CombustiblesPage({
                 <CardDescription>¿Qué faena concentra el gasto de combustible del log operacional?</CardDescription>
               </CardHeader>
               <CardContent>
+                <ChartDataSummary
+                  title="Faenas"
+                  data={operationsSummary.porFaena.map((worksite) => ({ group: worksite.faena, totalLiters: worksite.litros, totalAmount: worksite.monto, count: worksite.equipos }))}
+                  periodLabel={chartPeriodLabel}
+                  groupLabel="Faenas"
+                  visibleLimit={8}
+                  className="mb-4 mt-0 border-b border-t-0 pb-3 pt-0"
+                />
                 <CategoryBarChart data={operationsSummary.porFaena.map((f) => ({ group: f.faena, totalLiters: f.litros, totalAmount: f.monto, count: f.equipos }))} title="Faenas" />
               </CardContent>
             </Card>
@@ -511,6 +528,14 @@ export default async function CombustiblesPage({
                 <CardDescription>¿Con qué proveedor se concentra el volumen y el gasto?</CardDescription>
               </CardHeader>
               <CardContent>
+                <ChartDataSummary
+                  title="Proveedores"
+                  data={operationsSummary.porProveedor.map((supplier) => ({ group: supplier.proveedor, totalLiters: supplier.litros, totalAmount: supplier.monto, count: supplier.transacciones }))}
+                  periodLabel={chartPeriodLabel}
+                  groupLabel="Proveedores"
+                  visibleLimit={8}
+                  className="mb-4 mt-0 border-b border-t-0 pb-3 pt-0"
+                />
                 <OperationsProveedorChart data={operationsSummary.porProveedor.map((p) => ({ group: p.proveedor, totalLiters: p.litros, totalAmount: p.monto, count: p.transacciones }))} />
               </CardContent>
             </Card>

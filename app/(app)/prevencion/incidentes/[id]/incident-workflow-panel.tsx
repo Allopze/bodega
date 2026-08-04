@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea"
 import { INCIDENT_STATUS_LABELS, notificationStatusLabel } from "@/lib/prevention/incidents"
 import type { IncidentStatus } from "@/lib/services/prevention-incidents"
+import { formatDateTime } from "@/lib/utils"
 import {
   addPreventionIncidentEvidenceAction,
   authorizePreventionIncidentRestartAction,
@@ -73,8 +74,6 @@ interface Props {
   permissions: string[]
   defaultTargetDate: string
 }
-
-const DEADLINE_FORMAT = new Intl.DateTimeFormat("es-CL", { dateStyle: "short", timeStyle: "short", timeZone: "America/Santiago" })
 
 const NEXT_STATUS: Partial<Record<IncidentStatus, IncidentStatus>> = {
   triage: "immediate_measures",
@@ -232,7 +231,7 @@ export function IncidentWorkflowPanel({ incident, notifications, investigation, 
           <h2 className="font-semibold">Denuncias y notificaciones</h2>
           <div className="mt-3 grid gap-3 lg:grid-cols-2">{notifications.filter((lane) => lane.notificationType !== "restart_authorization").map((lane) => (
             <form key={lane.id} className="space-y-2 rounded-lg border border-[var(--color-border)] p-3" action={(formData) => run(() => recordPreventionIncidentNotificationAction({ incidentId: incident.id, expectedVersion: incident.version, notificationType: lane.notificationType, sentAt: new Date().toISOString(), evidenceReference: formData.get("evidenceReference"), observations: formData.get("observations") || null }))}>
-              <div className="flex justify-between gap-2"><strong>{lane.notificationType.toUpperCase()}</strong><span className={lane.status === "overdue" ? "text-[var(--color-danger)]" : "text-[var(--color-text-subtle)]"}>{notificationStatusLabel(lane.status)}</span></div><p className="text-xs text-[var(--color-text-subtle)]">Plazo: {lane.deadlineAt ? DEADLINE_FORMAT.format(new Date(lane.deadlineAt)) : "Inmediato"}</p>{!["sent", "acknowledged"].includes(lane.status) && <><Input name="evidenceReference" required placeholder="Folio, documento o evidencia de envío" /><Input name="observations" placeholder="Observaciones" /><Button type="submit" size="sm" disabled={pending}>Registrar envío ahora</Button></>}{lane.sentAt && <p className="text-xs">Enviada: {lane.sentAt}</p>}{lane.escalatedAt && <p className="text-xs text-[var(--color-danger)]">Atraso/escalamiento conservado: {lane.escalatedAt}</p>}
+              <div className="flex justify-between gap-2"><strong>{lane.notificationType.toUpperCase()}</strong><span className={lane.status === "overdue" ? "text-[var(--color-danger)]" : "text-[var(--color-text-subtle)]"}>{notificationStatusLabel(lane.status)}</span></div><p className="text-xs text-[var(--color-text-subtle)]">Plazo: {lane.deadlineAt ? formatDateTime(lane.deadlineAt) : "Inmediato"}</p>{!["sent", "acknowledged"].includes(lane.status) && <><Input name="evidenceReference" required placeholder="Folio, documento o evidencia de envío" /><Input name="observations" placeholder="Observaciones" /><Button type="submit" size="sm" disabled={pending}>Registrar envío ahora</Button></>}{lane.sentAt && <p className="text-xs">Enviada: {formatDateTime(lane.sentAt)}</p>}{lane.escalatedAt && <p className="text-xs text-[var(--color-danger)]">Atraso/escalamiento conservado: {formatDateTime(lane.escalatedAt)}</p>}
             </form>
           ))}</div>
         </section>

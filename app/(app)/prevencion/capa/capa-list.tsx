@@ -16,6 +16,12 @@ import { ClipboardText } from "@phosphor-icons/react"
 import { CAPA_SOURCE_LABELS, CAPA_STATUS_LABELS, capaStatusBadgeVariant } from "@/lib/prevention/capa"
 import type { CapaStatus } from "@/lib/services/prevention-capa"
 import type { PaginationState } from "@/lib/pagination"
+import { chileDateParts } from "@/lib/utils"
+import {
+  CAPA_QUICK_FILTER_LABELS,
+  matchesCapaQuickFilter,
+  type CapaQuickFilter,
+} from "@/lib/prevention/capa-list-filters"
 
 interface CapaListItem {
   id: string
@@ -38,11 +44,9 @@ interface CapaListItem {
 interface Props {
   actions: CapaListItem[]
   worksites: { id: string; name: string }[]
-  counts: { open: number; overdue: number; pendingVerification: number; unreconciled: number }
+  counts: { open: number; overdue: number; pendingVerification: number; unreconciled: number; immediateStop: number }
   pagination: PaginationState
 }
-
-type QuickFilter = "all" | "open" | "overdue" | "pending_verification" | "unreconciled" | "immediate_stop"
 
 const PRIORITY_LABEL: Record<string, string> = {
   low: "Baja", medium: "Media", high: "Alta", critical: "Crítica",
@@ -60,8 +64,15 @@ export function CapaList({ actions, worksites, counts, pagination }: Props) {
   const status = getFilter("status") || "all"
   const source = getFilter("source") || "all"
   const worksite = getFilter("worksite") || "all"
-  const [quickFilter, setQuickFilter] = React.useState<QuickFilter>("all")
+  const quickFilterValue = getFilter("vista")
+  const quickFilter = quickFilterValue === "open" || quickFilterValue === "overdue" || quickFilterValue === "pending_verification" || quickFilterValue === "unreconciled" || quickFilterValue === "immediate_stop"
+    ? quickFilterValue
+    : "all"
   const worksiteName = React.useMemo(() => new Map(worksites.map((item) => [item.id, item.name])), [worksites])
+  const today = React.useMemo(() => {
+    const { year, month, day } = chileDateParts()
+    return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`
+  }, [])
   const query = searchQuery.trim().toLocaleLowerCase("es-CL")
 
   function navigateToPage(p: number) {
@@ -73,18 +84,25 @@ export function CapaList({ actions, worksites, counts, pagination }: Props) {
   }
 
   const filtered = actions.filter((item) => {
+    if (!matchesCapaQuickFilter(item, quickFilter, today)) return false
     if (!query) return true
     return [item.code, item.finding, item.actionDescription, item.responsibleSnapshot, worksiteName.get(item.worksiteId)]
       .filter(Boolean).some((value) => String(value).toLocaleLowerCase("es-CL").includes(query))
   })
 
-  const metrics: Array<{ key: QuickFilter; label: string; value: number; detail: string }> = [
-    { key: "immediate_stop", label: "Exigen detener la tarea", value: actions.filter((item) => item.requiresImmediateStop && !["closed", "cancelled"].includes(item.status)).length, detail: "Respuesta inmediata en terreno" },
+  const metrics: Array<{ key: CapaQuickFilter; label: string; value: number; detail: string }> = [
+    { key: "immediate_stop", label: "Exigen detener la tarea", value: counts.immediateStop, detail: "Respuesta inmediata en terreno" },
     { key: "open", label: "Abiertas", value: counts.open, detail: "Requieren gestión" },
     { key: "overdue", label: "Vencidas", value: counts.overdue, detail: "Plazo incumplido" },
     { key: "pending_verification", label: "Por verificar", value: counts.pendingVerification, detail: "Esperan inspección" },
-    { key: "unreconciled", label: "Por conciliar", value: counts.unreconciled, detail: "Histórico incompleto" },
   ]
+
+  // Estado y fuente se filtran en el servidor, así que `actions` **ya llega
+  // recortado**: usar su tamaño para distinguir "vacío por filtro" de "vacío
+  // sin datos" fallaba siempre en ese caso, y la pantalla anunciaba que no hay
+  // acciones —sin ofrecer salida— cuando en realidad las había fuera del
+  // filtro. La causa se decide por los filtros activos, no por el resultado.
+  const hayFiltroActivo = status !== "all" || source !== "all" || worksite !== "all" || quickFilter !== "all" || Boolean(query)
 
   const STATUS_LABELS = CAPA_STATUS_LABELS as Record<string, string>
   const SOURCE_LABELS = CAPA_SOURCE_LABELS as Record<string, string>
@@ -95,7 +113,14 @@ export function CapaList({ actions, worksites, counts, pagination }: Props) {
     const ws = worksites.find((w) => w.id === worksite)
     if (ws) activeChips.push({ key: "worksite", label: "Faena", value: worksite, displayValue: ws.name })
   }
+  if (quickFilter !== "all") {
+    activeChips.push({ key: "quick", label: "Vista", value: quickFilter, displayValue: CAPA_QUICK_FILTER_LABELS[quickFilter] })
+  }
   function handleRemoveChip(key: string) {
+    if (key === "quick") {
+      setFilters({ vista: null })
+      return
+    }
     setFilters({ [key]: null })
   }
   function clearFilters() {
@@ -109,7 +134,7 @@ export function CapaList({ actions, worksites, counts, pagination }: Props) {
           <button
             key={metric.key}
             type="button"
-            onClick={() => setQuickFilter((current) => current === metric.key ? "all" : metric.key)}
+            onClick={() => setFilters({ vista: quickFilter === metric.key ? null : metric.key })}
             aria-pressed={quickFilter === metric.key}
             className="border-r border-[var(--color-border)] px-4 py-3 text-left hover:bg-[var(--color-surface-2)] aria-pressed:bg-[var(--color-primary-tint)]"
           >
@@ -123,8 +148,20 @@ export function CapaList({ actions, worksites, counts, pagination }: Props) {
       <FilterToolbar
         activeChips={activeChips}
         onRemoveChip={handleRemoveChip}
-        onClearAll={clearUrlFilters}
+        onClearAll={clearFilters}
         hasActiveFilters={status !== "all" || source !== "all" || worksite !== "all" || quickFilter !== "all"}
+        activeCount={quickFilter === "unreconciled" ? 1 : 0}
+        overflowFilters={
+          <Button
+            type="button"
+            variant={quickFilter === "unreconciled" ? "primary" : "secondary"}
+            onClick={() => setFilters({ vista: quickFilter === "unreconciled" ? null : "unreconciled" })}
+            aria-pressed={quickFilter === "unreconciled"}
+            className="w-full justify-start"
+          >
+            Por conciliar ({counts.unreconciled})
+          </Button>
+        }
       >
         <Select value={status} onValueChange={(value) => setFilters({ status: value === "all" ? null : value })}>
           <SelectTrigger className="w-48" aria-label="Estado CAPA"><SelectValue placeholder="Estado" /></SelectTrigger>
@@ -152,11 +189,11 @@ export function CapaList({ actions, worksites, counts, pagination }: Props) {
       {filtered.length === 0 ? (
         <EmptyState
           icon={<ClipboardText size={20} />}
-          title={actions.length === 0 ? "Aún no hay acciones CAPA" : "No hay acciones con estos filtros"}
-          description={actions.length === 0
-            ? "Las acciones aparecerán al registrar hallazgos desde PPA, PDTP, evaluaciones, incidentes o riesgos."
-            : "Ajusta los filtros o el texto del buscador superior para volver a ver acciones."}
-          action={actions.length > 0 ? <Button type="button" variant="secondary" onClick={clearFilters}>Ver todas</Button> : undefined}
+          title={hayFiltroActivo ? "No hay acciones con estos filtros" : "Aún no hay acciones CAPA"}
+          description={hayFiltroActivo
+            ? "Ajusta los filtros o el texto del buscador superior para volver a ver acciones."
+            : "Las acciones aparecerán al registrar hallazgos desde PPA, PDTP, evaluaciones, incidentes o riesgos."}
+          action={hayFiltroActivo ? <Button type="button" variant="secondary" onClick={clearFilters}>Ver todas</Button> : undefined}
         />
       ) : (
         <>
@@ -174,7 +211,7 @@ export function CapaList({ actions, worksites, counts, pagination }: Props) {
               </TableHeader>
               <TableBody>
                 {filtered.map((item) => {
-                  const overdue = !["verified", "closed", "cancelled"].includes(item.status) && item.targetDate < new Date().toISOString().slice(0, 10)
+                  const overdue = matchesCapaQuickFilter(item, "overdue", today)
                   return (
                     <TableRow key={item.id}>
                       <TableCell>

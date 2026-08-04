@@ -46,6 +46,8 @@ export const adminModule = {
     "admin:module_management",
     // Backups
     "admin:backups",
+    // DTE Portal
+    "admin:dte_sync",
   ] as const,
 
   permissionMeta: {
@@ -74,6 +76,7 @@ export const adminModule = {
     "admin:ops_settings":      { id: "p-adm-ops",    description: "Gestionar parámetros operativos avanzados" },
     "admin:module_management": { id: "p-adm-modules", description: "Activar/desactivar módulos del sistema" },
     "admin:backups":            { id: "p-adm-bkp",   description: "Gestionar respaldos y restauración" },
+    "admin:dte_sync":           { id: "p-adm-dte",   description: "Sincronizar documentos tributarios (DTE)" },
   },
 
   // No aparece en el sidebar principal; el TopBar lo descubre dinámicamente
@@ -144,5 +147,8 @@ export const adminModule = {
     { roleSlug: "administrador", permission: "admin:module_management" },
     { roleSlug: "administrador", permission: "admin:backups" },
     { roleSlug: "jefa_chome", permission: "admin:backups" },
+    // DTE Portal
+    { roleSlug: "administrador", permission: "admin:dte_sync" },
+    { roleSlug: "jefa_chome", permission: "admin:dte_sync" },
   ],
 } as const satisfies ModuleManifest

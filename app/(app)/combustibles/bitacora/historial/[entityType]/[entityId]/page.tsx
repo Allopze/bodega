@@ -32,7 +32,7 @@ function DiffRow({ field, oldValue, newValue }: { field: string; oldValue: unkno
 }
 
 export default async function FuelLogHistoryPage({ params }: { params: Promise<{ entityType: string; entityId: string }> }) {
-  try { await requirePermission("combustibles:view_audit") } catch { redirect("/forbidden") }
+  try { await requirePermission("combustibles:view_audit") } catch { redirect(`/forbidden?desde=${encodeURIComponent("/combustibles/bitacora/historial")}`) }
   const { entityType, entityId } = await params
   if (!(entityType in ENTITY_LABEL)) redirect("/combustibles/bitacora")
 

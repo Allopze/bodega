@@ -25,11 +25,11 @@ export default async function WorkerEvaluationsPage({ params }: Props) {
   try {
     session = await requireAuth()
   } catch {
-    redirect("/forbidden")
+    redirect(`/forbidden?desde=${encodeURIComponent("/prevencion/trabajador")}`)
   }
 
   if (!canAny(session, "sst:view", "sst:evaluate_acompanamiento")) {
-    redirect("/forbidden")
+    redirect(`/forbidden?desde=${encodeURIComponent("/prevencion/trabajador")}`)
   }
 
   const scope = resolveWorksiteScope(session)
@@ -60,7 +60,7 @@ export default async function WorkerEvaluationsPage({ params }: Props) {
 
   // Verify worksite scope access
   if (worksiteIds !== "all" && !worksiteIds.includes(worker.worksiteId)) {
-    redirect("/forbidden")
+    redirect(`/forbidden?desde=${encodeURIComponent("/prevencion/trabajador")}`)
   }
 
   // Fetch all evaluations for this worker

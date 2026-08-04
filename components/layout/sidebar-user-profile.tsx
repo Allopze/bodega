@@ -4,7 +4,6 @@ import * as React from "react"
 import Link from "next/link"
 import type { Session } from "next-auth"
 import { CaretUpDown, SignOut } from "@phosphor-icons/react"
-import { signOut } from "next-auth/react"
 import { Avatar } from "@/components/ui/avatar"
 import { Tooltip } from "@/components/ui/tooltip"
 import {
@@ -15,6 +14,7 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu"
+import { useSignOut } from "./use-sign-out"
 
 interface SidebarUserProfileProps {
   session: Session
@@ -31,13 +31,7 @@ const SidebarUserProfileInner = React.memo(function SidebarUserProfileInner({
   session,
   collapsed = false,
 }: SidebarUserProfileProps) {
-  const [isSigningOut, setIsSigningOut] = React.useState(false)
-
-  async function handleSignOut() {
-    setIsSigningOut(true)
-    await signOut({ redirect: false })
-    window.location.href = "/login"
-  }
+  const { isSigningOut, handleSignOut } = useSignOut()
 
   const name = session.user.name ?? session.user.email ?? ""
   const email = session.user.email ?? ""

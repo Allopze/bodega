@@ -5,9 +5,14 @@ import { deliveries, products } from "@/db/schema"
 import { eq, inArray } from "drizzle-orm"
 import { requirePermission } from "@/lib/auth/can"
 import { canAccessWorksite } from "@/lib/auth/scope"
-import { formatDate } from "@/lib/utils"
+import { formatDate, formatQty } from "@/lib/utils"
+import { MobileDocumentSummary } from "@/components/print/mobile-document-summary"
+import { DELIVERY_PRINT_STYLES } from "./delivery-print-styles"
+import { PrintTrigger } from "./print-trigger"
 
 interface PageProps { params: Promise<{ id: string }> }
+
+export const dynamic = "force-dynamic"
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { id } = await params
@@ -28,7 +33,10 @@ export default async function DeliveryPrintPage({ params }: PageProps) {
   if (!delivery) notFound()
   if (!delivery.worksiteId || !canAccessWorksite(session, delivery.worksiteId)) notFound()
 
-  const productIds = delivery.items.map((item) => item.productId).filter((id): id is string => id !== null)
+  const productIds = delivery.items.reduce<string[]>((ids, item) => {
+    if (item.productId) ids.push(item.productId)
+    return ids
+  }, [])
   const productMap = productIds.length > 0
     ? new Map(
       (await db.query.products.findMany({ where: inArray(products.id, productIds) }))
@@ -41,6 +49,20 @@ export default async function DeliveryPrintPage({ params }: PageProps) {
     : delivery.receiverName ?? "—"
   const workerRut = delivery.worker?.rut ?? delivery.receiverRut ?? "—"
   const generatedAt = new Date().toISOString()
+  const suggestedFilename = `comprobante-entrega-${delivery.code}.pdf`
+  const deliveryItems = delivery.items.map((item, index) => ({
+    label: `EPP ${index + 1}`,
+    value: `${productMap.get(item.productId ?? "") ?? item.productNameFree ?? "EPP"} · ${formatQty(item.quantity, item.unitOfMeasure)}`,
+  }))
+  const returnedItems = delivery.items.reduce<Array<{ label: string; value: string }>>((items, item) => {
+    if (item.returnQuantity) {
+      items.push({
+        label: `Devolución ${items.length + 1}`,
+        value: `${item.returnProductNameFree ?? "EPP"} · ${formatQty(item.returnQuantity, item.unitOfMeasure)}`,
+      })
+    }
+    return items
+  }, [])
 
   return (
     // Antes esto renderizaba su propio <html><head><body> además del que ya
@@ -53,37 +75,30 @@ export default async function DeliveryPrintPage({ params }: PageProps) {
     // Mismo patrón que las rutas hermanas compras/print y sst/print: sólo
     // <style> + contenido, sin envoltorio de documento propio.
     <>
-      <style>{`
-          *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-          body {
-            font-family: "Inter", system-ui, -apple-system, sans-serif;
-            font-size: 12px;
-            line-height: 1.5;
-            color: #111827;
-            max-width: 210mm;
-            margin: 0 auto;
-            padding: 12mm 14mm;
-          }
-          .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; }
-          h1 { font-size: 18px; font-weight: 700; }
-          .code { font-family: "JetBrains Mono", monospace; font-size: 11px; color: #6b7280; }
-          .section { margin-bottom: 20px; }
-          .section h2 { font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: #374151; margin-bottom: 8px; border-bottom: 1px solid #e5e7eb; padding-bottom: 4px; }
-          .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 24px; }
-          .field { display: flex; padding: 6px 0; border-bottom: 1px solid #f3f4f6; }
-          .field dt { width: 110px; font-weight: 500; color: #6b7280; flex-shrink: 0; }
-          .field dd { flex: 1; font-weight: 400; }
-          table { width: 100%; border-collapse: collapse; margin-top: 8px; }
-          th { text-align: left; font-size: 10px; font-weight: 600; color: #6b7280; text-transform: uppercase; padding: 6px 4px; border-bottom: 2px solid #e5e7eb; }
-          td { padding: 6px 4px; border-bottom: 1px solid #f3f4f6; font-size: 11px; }
-          .total { font-weight: 700; }
-          .signature { margin-top: 60px; display: flex; justify-content: space-between; gap: 40px; }
-          .sig-box { flex: 1; }
-          .sig-line { border-bottom: 1px solid #111827; margin-top: 48px; margin-bottom: 4px; }
-          .sig-label { font-size: 10px; color: #6b7280; }
-          .footer { margin-top: 40px; padding-top: 12px; border-top: 1px solid #e5e7eb; font-size: 9px; color: #9ca3af; text-align: center; }
-        `}</style>
+      <style>{DELIVERY_PRINT_STYLES}</style>
 
+      <PrintTrigger pdfHref={`/entregas/${delivery.id}/print/pdf`} suggestedFilename={suggestedFilename} />
+
+      <MobileDocumentSummary
+        code={`Comprobante de entrega ${delivery.code}`}
+        title={workerName}
+        description={`${delivery.items.length} ${delivery.items.length === 1 ? "elemento entregado" : "elementos entregados"} · ${delivery.worksite?.name ?? "Sin faena"}`}
+        sections={[
+          {
+            title: "Entrega",
+            fields: [
+              { label: "Faena", value: delivery.worksite?.name ?? "Sin faena" },
+              { label: "Fecha", value: formatDate(delivery.deliveredAt) },
+              { label: "Entregado por", value: delivery.deliveredBy?.name ?? delivery.deliveredBy?.email ?? "Sin registro" },
+              { label: "Tipo", value: delivery.destinationType === "faena" ? "Entrega a faena" : "Entrega a trabajador" },
+            ],
+          },
+          { title: "Productos entregados", fields: deliveryItems },
+          ...(returnedItems.length > 0 ? [{ title: "Devolución de EPP", fields: returnedItems }] : []),
+        ]}
+      />
+
+      <main className="delivery-sheet" aria-label={`Comprobante de entrega ${delivery.code}`}>
         <div className="header">
           <div>
             <h1>Comprobante de Entrega EPP</h1>
@@ -192,6 +207,7 @@ export default async function DeliveryPrintPage({ params }: PageProps) {
         <div className="footer">
           Documento generado por Plataforma Chome — {formatDate(generatedAt)}
         </div>
+      </main>
       </>
   )
 }

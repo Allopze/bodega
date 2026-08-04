@@ -27,7 +27,7 @@ export default async function RecepcionDetallePage({
 }) {
   let session
   try { session = await requirePermission("receiving:view") }
-  catch { redirect("/forbidden") }
+  catch { redirect(`/forbidden?desde=${encodeURIComponent("/recepcion")}`) }
 
   const { id } = await params
   const receipt = await db.query.receipts.findFirst({

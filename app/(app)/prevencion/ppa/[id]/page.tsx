@@ -7,7 +7,7 @@ import { getCapaActionBundle } from "@/lib/services/prevention-capa"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { Badge } from "@/components/ui/badge"
-import { cn } from "@/lib/utils"
+import { cn, formatDateTime } from "@/lib/utils"
 import { estadoPpaLabel, estadoPpaBadgeVariant, decisionPpaLabel, isPendienteRevision } from "@/lib/ppa/badges"
 import {
   PPA_STOP_REASON_LABELS, PPA_COMPLEMENTARIAS, controlLabel, tipoTrabajoLabel,
@@ -31,8 +31,8 @@ function Row({ label, value }: { label: string; value: React.ReactNode }) {
 }
 
 function fmtDateTime(iso: string): string {
-  try { return new Date(iso).toLocaleString("es-CL", { dateStyle: "short", timeStyle: "short" }) }
-  catch { return iso }
+  try { return formatDateTime(iso) }
+  catch { return "Fecha no disponible" }
 }
 
 type TimelineTone = "neutral" | "success" | "warning" | "danger"
@@ -80,7 +80,7 @@ export default async function PpaDetailPage({
 
   let session
   try { session = await requirePermission("ppa:view") }
-  catch { redirect("/forbidden") }
+  catch { redirect(`/forbidden?desde=${encodeURIComponent("/prevencion/ppa")}`) }
 
   const worksiteIds = scopeToIds(resolveWorksiteScope(session))
   const ppa = await getPpa(id, worksiteIds)
@@ -160,7 +160,7 @@ export default async function PpaDetailPage({
               <Row label="Faena" value={ppa.worksiteName} />
               <Row label="Tarea declarada" value={tipoTrabajoLabel(ppa.tipoTrabajo)} />
               <Row label="¿Tarea crítica?" value={ppa.esCritica ? "Sí" : "No"} />
-              <Row label="Fecha y hora" value={new Date(ppa.createdAt).toLocaleString("es-CL")} />
+              <Row label="Fecha y hora" value={fmtDateTime(ppa.createdAt)} />
             </dl>
           </section>
 
@@ -217,7 +217,7 @@ export default async function PpaDetailPage({
                 <Row label="¿Fue al lugar?" value={ppa.fuiAlLugar ? "Sí" : "No"} />
                 <Row label="Acción correctiva" value={ppa.accionCorrectiva} />
                 <Row label="Nota" value={ppa.reviewNota} />
-                <Row label="Revisado" value={ppa.reviewedAt ? new Date(ppa.reviewedAt).toLocaleString("es-CL") : "—"} />
+                <Row label="Revisado" value={ppa.reviewedAt ? fmtDateTime(ppa.reviewedAt) : "—"} />
               </dl>
               {correctiveAction && (
                 <div className="mt-3 rounded-md border border-[var(--color-warning)] bg-[var(--color-warning-tint)] p-3">

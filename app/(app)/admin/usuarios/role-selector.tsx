@@ -8,16 +8,24 @@ interface RoleSelectorProps {
   selectedIds: string[]
   onToggle: (id: string) => void
   error?: string
+  title?: string
+  helper?: string
 }
 
-export function RoleSelector({ roles, selectedIds, onToggle, error }: RoleSelectorProps) {
+export function RoleSelector({
+  roles,
+  selectedIds,
+  onToggle,
+  error,
+  title = "1. Rol y acceso base",
+  helper = "El rol aplica el acceso habitual. Combina roles sólo cuando la responsabilidad lo exige.",
+}: RoleSelectorProps) {
   return (
-    <div className="mt-5">
-      <p className="text-eyebrow mb-2">
-        Roles
-      </p>
+    <section className="mt-5" aria-labelledby="user-role-title">
+      <h3 id="user-role-title" className="text-eyebrow mb-1">{title}</h3>
+      <p className="mb-2 text-xs text-[var(--color-text-subtle)]">{helper}</p>
       {error && (
-        <p className="text-xs text-[var(--color-danger)] mb-2">{error}</p>
+        <p role="alert" className="mb-2 text-xs text-[var(--color-danger)]">{error}</p>
       )}
       <div className="grid grid-cols-2 gap-1.5">
         {roles.map((role) => {
@@ -29,7 +37,7 @@ export function RoleSelector({ roles, selectedIds, onToggle, error }: RoleSelect
               aria-pressed={checked}
               onClick={() => onToggle(role.id)}
               className={[
-                "inline-flex items-center gap-1.5 rounded-[var(--radius)] border px-3 py-2 text-left text-xs font-medium",
+                "inline-flex min-h-11 items-center gap-1.5 rounded-[var(--radius)] border px-3 py-2 text-left text-xs font-medium sm:min-h-9",
                 "transition-[background-color,border-color,color] duration-[var(--duration-fast)]",
                 checked
                   ? "border-[var(--color-primary)] bg-[var(--color-primary)] text-white shadow-[0_1px_2px_rgba(15,23,42,0.12)] hover:bg-[var(--color-primary-strong)]"
@@ -48,6 +56,6 @@ export function RoleSelector({ roles, selectedIds, onToggle, error }: RoleSelect
           )
         })}
       </div>
-    </div>
+    </section>
   )
 }

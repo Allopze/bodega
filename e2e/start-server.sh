@@ -2,10 +2,32 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-DB_URL="${E2E_DATABASE_URL:-postgres:///bodega_e2e}"
+if [[ -z "${E2E_DATABASE_URL:-}" ]]; then
+  echo "ERROR: E2E_DATABASE_URL is required. DATABASE_URL is never used as a fallback for destructive E2E setup."
+  exit 2
+fi
+
+if [[ "${E2E_ALLOW_DESTRUCTIVE_RESET:-}" != "true" ]]; then
+  echo "ERROR: E2E_ALLOW_DESTRUCTIVE_RESET=true is required before resetting the E2E database."
+  exit 2
+fi
+
+DB_URL="$E2E_DATABASE_URL"
 PORT="${E2E_PORT:-3100}"
 AUTH_SECRET_VALUE="e2e-auth-secret-for-playwright"
 APP_URL_VALUE="http://localhost:$PORT"
+# `.env` declara tres orígenes absolutos apuntando al servidor de desarrollo
+# (puerto 3001) y todos ganan sobre lo que fija este script si no se
+# sobrescriben uno por uno:
+#
+#   AUTH_URL           gana sobre NEXTAUTH_URL en `lib/auth/auth.ts`, así que
+#                      cada redirección a /login salía a localhost:3001 y las
+#                      pruebas fallaban con ERR_CONNECTION_REFUSED como si el
+#                      servidor E2E se hubiera caído.
+#   PDF_RENDER_ORIGIN  gana sobre APP_URL en `resolvePdfRenderOrigin`, así que
+#                      todo render de PDF navegaba al puerto de desarrollo.
+#
+# Ninguno de esos fallos era un defecto de la aplicación.
 
 # postgres-js treats a URL without a host as TCP localhost unless PGHOST is
 # explicit, while psql resolves the same URL through the local socket. Keep
@@ -56,6 +78,7 @@ AUTH_SECRET="$AUTH_SECRET_VALUE" \
 NEXTAUTH_SECRET="$AUTH_SECRET_VALUE" \
 APP_URL="$APP_URL_VALUE" \
 NEXTAUTH_URL="$APP_URL_VALUE" \
+AUTH_URL="$APP_URL_VALUE" \
 SMTP_HOST="" \
 SMTP_USER="" \
 SMTP_PASS="" \
@@ -86,6 +109,8 @@ AUTH_SECRET="$AUTH_SECRET_VALUE" \
 NEXTAUTH_SECRET="$AUTH_SECRET_VALUE" \
 APP_URL="$APP_URL_VALUE" \
 NEXTAUTH_URL="$APP_URL_VALUE" \
+AUTH_URL="$APP_URL_VALUE" \
+PDF_RENDER_ORIGIN="http://127.0.0.1:$PORT" \
 SMTP_HOST="" \
 SMTP_USER="" \
 SMTP_PASS="" \

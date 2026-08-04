@@ -1,5 +1,21 @@
 import type { CapaStatus } from "@/lib/services/prevention-capa"
 
+/**
+ * Tipo de evidencia adjunta a una CAPA — los cuatro valores que admite la
+ * restricción `prevention_capa_evidence_kind_valid`. El detalle imprimía el
+ * enum crudo ("document · CAP-2026-001").
+ */
+export const CAPA_EVIDENCE_KIND_LABELS: Record<string, string> = {
+  document: "Documento",
+  photo: "Fotografía",
+  url: "Enlace",
+  note: "Nota",
+}
+
+export function capaEvidenceKindLabel(kind: string): string {
+  return CAPA_EVIDENCE_KIND_LABELS[kind] ?? kind
+}
+
 export const CAPA_STATUS_LABELS: Record<CapaStatus, string> = {
   pending: "Pendiente",
   in_progress: "En proceso",

@@ -19,6 +19,9 @@ test.describe("Módulo de Trazabilidad de Ítems", () => {
 
     // Título y descripción
     await expect(page.getByRole("heading", { name: "Trazabilidad de ítems" })).toBeVisible()
-    await expect(page.getByText(/Estado de cada ítem a lo largo del flujo/i)).toBeVisible()
+    // La descripción existe dos veces: el bloque semántico del PageHeader y su
+    // eco visual en la barra superior. Una vez hidratada la cabecera, un
+    // selector sin acotar viola el modo estricto de forma intermitente.
+    await expect(page.getByText(/Estado de cada ítem a lo largo del flujo/i).first()).toBeVisible()
   })
 })

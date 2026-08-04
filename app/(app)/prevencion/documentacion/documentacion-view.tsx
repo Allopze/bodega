@@ -21,6 +21,7 @@ import {
   MoveFolderDialog,
 } from "./documentacion-view-dialogs"
 import { useDocumentacionView } from "./documentacion-view.hooks"
+import { EXPIRY_FILTER_LABELS, parseExpiryFilter } from "./expiry-filter"
 
 export function DocumentacionView(props: Props) {
   const router = useRouter()
@@ -45,19 +46,40 @@ export function DocumentacionView(props: Props) {
     mimeType: d.mimeType ?? null,
     updatedAt: d.updatedAt,
   }))
-  const attentionItems = [
-    counters?.pendingReview ? `${counters.pendingReview} por revisar` : null,
-    counters?.observed ? `${counters.observed} observados` : null,
-    counters?.ackPending ? `${counters.ackPending} acuses pendientes` : null,
-    counters?.expiringSoon.within30 ? `${counters.expiringSoon.within30} vencen en 30 días` : null,
-  ].filter((item): item is string => Boolean(item))
+  // La tira anunciaba cifras que el usuario no podía seguir: eran texto muerto.
+  // Las que tienen un filtro equivalente pasan a ser enlaces con href real
+  // —no botones— para que funcionen desde el primer pintado.
+  const activeExpiry = parseExpiryFilter(props.searchParams.vence)
+  const attentionItems: Array<{ text: string; href?: string }> = [
+    counters?.pendingReview ? { text: `${counters.pendingReview} por revisar` } : null,
+    counters?.observed ? { text: `${counters.observed} observados` } : null,
+    counters?.ackPending ? { text: `${counters.ackPending} acuses pendientes` } : null,
+    counters?.expiringSoon.within30
+      ? { text: `${counters.expiringSoon.within30} vencen en 30 días`, href: "/prevencion/documentacion?vence=30" }
+      : null,
+  ].filter((item): item is { text: string; href?: string } => Boolean(item))
 
   return (
     <div className="space-y-5">
       {attentionItems.length > 0 && (
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-y border-(--color-border) py-2 text-xs text-(--color-text-muted)" role="status">
           <span className="font-semibold text-(--color-text)">Atención documental</span>
-          {attentionItems.map((item) => <span key={item}>{item}</span>)}
+          {attentionItems.map((item) => item.href
+            ? <Link key={item.text} href={item.href} className="underline underline-offset-2 hover:text-(--color-text)">{item.text}</Link>
+            : <span key={item.text}>{item.text}</span>)}
+        </div>
+      )}
+
+      {activeExpiry && (
+        // Filtro activo, removible y explicado: sin esto la lista aparece
+        // recortada sin decir por qué ni cómo volver.
+        <div className="flex flex-wrap items-center gap-2 text-xs" role="status">
+          <span className="inline-flex h-8 items-center gap-1 rounded-full bg-signal-tint px-2.5 font-medium text-signal-ink">
+            {EXPIRY_FILTER_LABELS[activeExpiry]}
+          </span>
+          <Link href="/prevencion/documentacion" className="text-(--color-text-muted) underline underline-offset-2 hover:text-(--color-text)">
+            Quitar filtro de vencimiento
+          </Link>
         </div>
       )}
       <div className="flex justify-end">

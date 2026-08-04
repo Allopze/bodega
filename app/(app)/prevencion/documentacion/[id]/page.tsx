@@ -23,8 +23,8 @@ export default async function DocumentDetailPage({ params }: Props) {
 
   let session
   try { session = await requireAuth() }
-  catch { redirect("/forbidden") }
-  if (!can(session, "prevention:docs:view")) redirect("/forbidden")
+  catch { redirect(`/forbidden?desde=${encodeURIComponent("/prevencion/documentacion")}`) }
+  if (!can(session, "prevention:docs:view")) redirect(`/forbidden?desde=${encodeURIComponent("/prevencion/documentacion")}`)
 
   const scope = resolveWorksiteScope(session)
   const bundle = await getDocumentBundle(id, scope, session.user.permissions)

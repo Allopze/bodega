@@ -4,7 +4,7 @@ import { requirePermission } from "@/lib/auth/can"
 import { PageHeader } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { getEmailsEnabled } from "@/lib/services/system-settings"
-import { getResendStatus } from "@/lib/services/smtp-settings"
+import { getLastDeliveryTest, getResendStatus } from "@/lib/services/smtp-settings"
 import { CorreoForms } from "./smtp-form"
 
 export const metadata: Metadata = { title: "Configuración de Correo" }
@@ -16,9 +16,10 @@ export default async function CorreoSmtpPage() {
     redirect("/forbidden")
   }
 
-  const [resendStatus, emailsEnabled] = await Promise.all([
+  const [resendStatus, emailsEnabled, lastTest] = await Promise.all([
     getResendStatus(),
     getEmailsEnabled(),
+    getLastDeliveryTest(),
   ])
 
   return (
@@ -32,7 +33,7 @@ export default async function CorreoSmtpPage() {
           { label: "Correo" },
         ]}
       />
-      <CorreoForms resendStatus={resendStatus} initialEmailsEnabled={emailsEnabled} />
+      <CorreoForms resendStatus={resendStatus} initialEmailsEnabled={emailsEnabled} lastTest={lastTest} />
     </PageContainer>
   )
 }

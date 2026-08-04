@@ -182,6 +182,10 @@ jobs:
 
       - name: E2E full suite
         env:
+          # La suite reconstruye el esquema; la URL E2E debe declararse de
+          # forma separada para que Playwright nunca derive un destino
+          # destructivo desde DATABASE_URL.
+          E2E_DATABASE_URL: postgres://postgres:postgres@localhost:5432/bodega_e2e
           # e2e/start-server.sh corre su propio `npm run build` para levantar
           # el standalone que sirve Playwright; mismo OOM de heap por defecto
           # que los pasos Typecheck/Build. NODE_OPTIONS se hereda hasta el

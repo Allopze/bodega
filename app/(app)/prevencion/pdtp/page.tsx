@@ -30,6 +30,7 @@ import {
   type CategoryBreakdownData,
 } from "./pdtp-dashboard-charts"
 import { PdtpDashboardChartsLazy } from "./pdtp-dashboard-charts-lazy"
+import { pdtpProgramStatusLabel } from "@/lib/prevention/pdtp"
 
 export const metadata: Metadata = { title: "Dashboard de Cumplimiento — PDTP SG-SST" }
 
@@ -255,7 +256,7 @@ export default async function PdtpDashboardPage({ searchParams }: PdtpDashboardP
                   className="flex items-center justify-between rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm transition-colors hover:bg-[var(--color-surface-2)]"
                 >
                   <span className="font-medium text-[var(--color-text)]">{program.title}</span>
-                  <span className="text-xs text-[var(--color-text-muted)]">{program.status}</span>
+                  <span className="text-xs text-[var(--color-text-muted)]">{pdtpProgramStatusLabel(program.status)}</span>
                 </Link>
               </li>
             ))}

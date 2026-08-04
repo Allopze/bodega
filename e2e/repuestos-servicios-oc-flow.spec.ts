@@ -48,9 +48,12 @@ test.describe("Repuestos/Servicios — aprobación y visibilidad en compras", ()
     // Navigate to approvals and approve the repuesto item
     await page.goto("/aprobaciones")
     // Find the repuesto item row and approve it
-    const approveBtn = page.getByRole("button", { name: "Aprobar", exact: true })
+    // La cola puede traer más de un ítem aprobable según lo que dejaron las
+    // pruebas anteriores: `isVisible()` sobre el locator sin acotar viola el
+    // modo estricto en cuanto hay dos.
+    const approveBtn = page.getByRole("button", { name: "Aprobar", exact: true }).first()
     if (await approveBtn.isVisible()) {
-      await approveBtn.first().click()
+      await approveBtn.click()
       await page.getByRole("button", { name: "Confirmar aprobación" }).click()
     }
 
@@ -64,9 +67,12 @@ test.describe("Repuestos/Servicios — aprobación y visibilidad en compras", ()
     await createAndSubmitServicio(page)
 
     await page.goto("/aprobaciones")
-    const approveBtn = page.getByRole("button", { name: "Aprobar", exact: true })
+    // La cola puede traer más de un ítem aprobable según lo que dejaron las
+    // pruebas anteriores: `isVisible()` sobre el locator sin acotar viola el
+    // modo estricto en cuanto hay dos.
+    const approveBtn = page.getByRole("button", { name: "Aprobar", exact: true }).first()
     if (await approveBtn.isVisible()) {
-      await approveBtn.first().click()
+      await approveBtn.click()
       await page.getByRole("button", { name: "Confirmar aprobación" }).click()
     }
 

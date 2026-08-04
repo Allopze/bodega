@@ -25,8 +25,8 @@ type PageProps = {
 export default async function PdtpManagementReportPage({ params, searchParams }: PageProps) {
   let session
   try { session = await requireAuth() }
-  catch { redirect("/forbidden") }
-  if (!can(session, "prevention:pdtp:view")) redirect("/forbidden")
+  catch { redirect(`/forbidden?desde=${encodeURIComponent("/prevencion/pdtp/[programId]/reporte")}`) }
+  if (!can(session, "prevention:pdtp:view")) redirect(`/forbidden?desde=${encodeURIComponent("/prevencion/pdtp/[programId]/reporte")}`)
 
   const [{ programId }, query] = await Promise.all([params, searchParams])
   const program = await getPdtpProgram(programId)

@@ -12,7 +12,8 @@
  * record regardless of the page it would land on.
  */
 
-import { and, eq, ilike, inArray, or, type AnyColumn, type SQL } from "drizzle-orm"
+import { and, eq, gte, ilike, inArray, lt, or, type AnyColumn, type SQL } from "drizzle-orm"
+import { addDays } from "@/lib/sst/date"
 
 export interface ListParams {
   /** Free-text query (matched against code and other text columns). */
@@ -27,6 +28,13 @@ export interface ListParams {
   urgencia:  string
   /** "pendiente" = sólo OC que ya deberían tener factura y no la tienen. Compras. */
   factura:   string
+  /**
+   * Período [desde, hasta) en fecha calendario (YYYY-MM-DD), límite superior
+   * exclusivo. Vacío = sin acotar. Da a un KPI del dashboard un destino que
+   * reproduce la ventana que la cifra cuenta (p.ej. "Inversión · mes").
+   */
+  desde:     string
+  hasta:     string
 }
 
 function firstStr(value: string | string[] | undefined): string {
@@ -47,7 +55,9 @@ export function parseListParams(
   const proveedor = firstStr(sp.proveedor).trim()
   const urgencia = firstStr(sp.urgencia).trim()
   const factura = firstStr(sp.factura).trim()
-  return { q, estados, faena, proveedor, urgencia, factura }
+  const desde = /^\d{4}-\d{2}-\d{2}$/.test(firstStr(sp.desde).trim()) ? firstStr(sp.desde).trim() : ""
+  const hasta = /^\d{4}-\d{2}-\d{2}$/.test(firstStr(sp.hasta).trim()) ? firstStr(sp.hasta).trim() : ""
+  return { q, estados, faena, proveedor, urgencia, factura, desde, hasta }
 }
 
 /** Escape LIKE wildcards so user input is matched literally. */
@@ -81,6 +91,23 @@ export function eqFilter(column: AnyColumn, value: string): SQL | undefined {
 /** Restrict `column` to a single worksite id. Undefined when not set. */
 export function worksiteEqSql(column: AnyColumn, faena: string): SQL | undefined {
   return eqFilter(column, faena)
+}
+
+/**
+ * Restrict `column` to the calendar window `[desde, hasta)` (YYYY-MM-DD, upper
+ * bound exclusive). Undefined when no bound is set.
+ */
+/**
+ * Ventana [desde, hasta+1d) sobre una columna de fecha/hora (texto ISO
+ * 'YYYY-MM-DD' o timestamp). `hasta` es INCLUSIVO: el límite superior se
+ * convierte al día siguiente para que el último día del período no quede
+ * fuera (off-by-one §3.3 — una OC emitida el día `hasta` desaparecía del
+ * drill-down del dashboard).
+ */
+export function periodSql(column: AnyColumn, desde: string, hasta: string): SQL | undefined {
+  const from = desde ? gte(column, desde) : undefined
+  const to = hasta ? lt(column, addDays(hasta, 1)) : undefined
+  return from || to ? and(from, to) : undefined
 }
 
 /**

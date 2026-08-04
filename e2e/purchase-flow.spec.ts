@@ -98,7 +98,11 @@ test("flujo solicitud, aprobación, OC, recepción y trazabilidad", async ({ pag
   await expect(page.getByRole("row", { name: /Guante E2E.*5 unidad.*Recibido/ }).first()).toBeVisible()
 
   await page.goto("/reportes")
-  await expect(page.getByRole("button", { name: "Exportar Gasto por faena" })).toBeVisible()
+  // La pasada 32 unificó los cuatro exportes bajo una sola entrada: el informe
+  // ya no es un botón propio sino una opción del menú "Exportar Excel".
+  await page.getByRole("button", { name: "Exportar Excel" }).click()
+  await expect(page.getByRole("menuitem", { name: "Gasto por faena" })).toBeVisible()
+  await page.keyboard.press("Escape")
   const response = await page.request.get("/api/reportes/export?tipo=gasto_faena&formato=xlsx")
   expect(response.status()).toBe(200)
   expect(response.headers()["content-disposition"]).toContain("gasto-por-faena.xlsx")
@@ -131,7 +135,10 @@ test("descarga real de Excel desde el navegador", async ({ page }) => {
   await login(page)
   await page.goto("/reportes")
 
-  await page.getByRole("button", { name: /Exportar .tems sin OC/ }).click()
+  // La pasada 32 dejó una sola entrada de exportación: el informe se elige
+  // dentro del menú, no desde un botón propio por informe.
+  await page.getByRole("button", { name: "Exportar Excel" }).click()
+  await page.getByRole("menuitem", { name: "Ítems sin OC" }).click()
   await expect(page.getByRole("dialog")).toBeVisible({ timeout: 5_000 })
 
   const downloadPromise = page.waitForEvent("download", { timeout: 15_000 })

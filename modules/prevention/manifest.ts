@@ -222,27 +222,30 @@ export const preventionModule = {
       areaId: "prevencion",
       items: [
         {
-          label: "MIPER y controles",
+          label: "Matriz de riesgos",
           href: "/prevencion/miper",
           iconName: "ShieldWarning",
+          group: "Planificación",
           permissions: ["prevention:risk:view"],
         },
         {
           label: "Requisitos legales",
           href: "/prevencion/requisitos-legales",
           iconName: "Scales",
+          group: "Planificación",
           permissions: ["prevention:legal:view"],
         },
         {
-          label: "Programa de trabajo (PDTP)",
+          label: "Programa preventivo",
           href: "/prevencion/pdtp",
           iconName: "ClipboardText",
+          group: "Planificación",
           permissions: ["prevention:pdtp:view"],
           // El item padre ya lleva al dashboard: un hijo "Dashboard" con la misma
           // href duplicaba la fila y dejaba padre e hijo resaltados a la vez.
           children: [
             {
-              label: "Actividades del programa",
+              label: "Actividades",
               href: "/prevencion/pdtp/actividades",
               permissions: ["prevention:pdtp:view"],
             },
@@ -257,32 +260,34 @@ export const preventionModule = {
               permissions: ["prevention:pdtp:approve"],
             },
             {
-              label: "Acciones y seguimiento",
+              label: "Acciones",
               href: "/prevencion/pdtp/acciones",
               permissions: ["prevention:pdtp:view"],
             },
             {
-              label: "Trabajo por eventos",
+              label: "Eventos",
               href: "/prevencion/pdtp/obligaciones",
               permissions: ["prevention:pdtp:view"],
             },
             {
-              label: "Cobertura MIPER y legal",
+              label: "Cobertura",
               href: "/prevencion/pdtp/cobertura",
               permissions: ["prevention:pdtp:view"],
             },
           ],
         },
         {
-          label: "Acciones CAPA",
+          label: "Acciones correctivas",
           href: "/prevencion/capa",
           iconName: "CheckSquare",
+          group: "Gestión en terreno",
           permissions: ["prevention:capa:view"],
         },
         {
-          label: "Incidentes y denuncias",
+          label: "Incidentes",
           href: "/prevencion/incidentes",
           iconName: "Siren",
+          group: "Gestión en terreno",
           permissions: ["prevention:incidents:view", "prevention:incidents:report"],
           children: [
             {
@@ -293,9 +298,10 @@ export const preventionModule = {
           ],
         },
         {
-          label: "Capacitación y competencias",
+          label: "Capacitación",
           href: "/prevencion/capacitacion",
           iconName: "Certificate",
+          group: "Gestión en terreno",
           permissions: ["prevention:training:view"],
           children: [
             {
@@ -319,12 +325,14 @@ export const preventionModule = {
           label: "Permisos de trabajo",
           href: "/prevencion/permisos",
           iconName: "ShieldCheck",
+          group: "Gestión en terreno",
           permissions: ["prevention:permits:view"],
         },
         {
-          label: "Inspecciones y auditorías",
+          label: "Inspecciones",
           href: "/prevencion/inspecciones",
           iconName: "MagnifyingGlass",
+          group: "Gestión en terreno",
           permissions: ["prevention:inspections:view"],
           children: [
             {
@@ -335,51 +343,85 @@ export const preventionModule = {
           ],
         },
         {
-          label: "CPHS y gobernanza",
+          label: "Comités paritarios",
           href: "/prevencion/cphs",
           iconName: "UsersThree",
+          group: "Preparación y gobernanza",
           permissions: ["prevention:cphs:view"],
         },
         {
-          label: "Higiene y vigilancia",
+          label: "Higiene ocupacional",
           href: "/prevencion/higiene",
           iconName: "Heartbeat",
+          group: "Preparación y gobernanza",
           permissions: ["prevention:hygiene:view"],
         },
         {
-          label: "Emergencias y simulacros",
+          label: "Emergencias",
           href: "/prevencion/emergencias",
           iconName: "Siren",
+          group: "Preparación y gobernanza",
           permissions: ["prevention:emergency:view"],
         },
         {
           label: "Gestión del cambio",
           href: "/prevencion/gestion-cambio",
           iconName: "GearSix",
+          group: "Preparación y gobernanza",
           permissions: ["prevention:change:view"],
         },
         {
-          label: "EPP preventivo",
+          label: "EPP obligatorio",
           href: "/prevencion/epp-preventivo",
           iconName: "HardHat",
+          group: "Gestión en terreno",
           permissions: ["prevention:epp:view"],
         },
         {
-          label: "Documentación",
+          label: "Campañas preventivas",
+          href: "/prevencion/campanas",
+          iconName: "MegaphoneSimple",
+          group: "Gestión en terreno",
+          permissions: ["prevention:campaign:view"],
+        },
+        {
+          label: "Documentos SST",
           href: "/prevencion/documentacion",
           iconName: "FolderOpen",
+          group: "Información y cumplimiento",
           permissions: ["prevention:docs:view"],
         },
         {
-          label: "Indicadores de seguridad y salud en el trabajo",
+          label: "Privacidad",
+          href: "/prevencion/privacidad",
+          iconName: "LockKey",
+          group: "Información y cumplimiento",
+          permissions: ["prevention:privacy:audit", "prevention:privacy:manage_requests"],
+          children: [
+            {
+              label: "Solicitudes de derechos",
+              href: "/prevencion/privacidad/solicitudes",
+              permissions: ["prevention:privacy:manage_requests"],
+            },
+            {
+              label: "Auditoría de accesos",
+              href: "/prevencion/privacidad/auditoria",
+              permissions: ["prevention:privacy:audit"],
+            },
+          ],
+        },
+        {
+          label: "Indicadores SST",
           href: "/prevencion/indicadores",
           iconName: "ChartLineUp",
+          group: "Indicadores",
           permissions: ["prevention:indicadores:view"],
         },
         {
-          label: "Indicadores material y ambiental",
+          label: "Indicadores ambientales",
           href: "/prevencion/indicadores-material-ambiental",
           iconName: "TreeStructure",
+          group: "Indicadores",
           permissions: ["prevention:indicadores:view"],
         },
       ],

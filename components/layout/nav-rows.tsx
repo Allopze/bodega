@@ -157,8 +157,29 @@ const AreaItemsInner = React.memo(function AreaItemsInner({
   badgeCounts?: Record<string, number>
   onNavigate?:  () => void
 }) {
+  const listRef = React.useRef<HTMLUListElement>(null)
+
+  // El sidebar tiene su propio scroll. Al entrar a un detalle profundo se
+  // centra la fila activa dentro de ese panel, sin desplazar el lienzo de la
+  // pantalla ni obligar a recordar dónde quedó el módulo padre.
+  React.useEffect(() => {
+    const list = listRef.current
+    const active = list?.querySelector<HTMLElement>("[aria-current='page']")
+    const scrollPanel = list?.closest<HTMLElement>("[data-nav-scroll]")
+    if (!active || !scrollPanel) return
+
+    const panel = scrollPanel.getBoundingClientRect()
+    const target = active.getBoundingClientRect()
+    const margin = 12
+    if (target.top < panel.top + margin) {
+      scrollPanel.scrollTop += target.top - panel.top - margin
+    } else if (target.bottom > panel.bottom - margin) {
+      scrollPanel.scrollTop += target.bottom - panel.bottom + margin
+    }
+  }, [pathname])
+
   return (
-    <ul className="space-y-0.5">
+    <ul ref={listRef} className="space-y-0.5">
       {area.items.map((item, index) => {
         const count = item.badge === "count" ? (badgeCounts?.[item.href] ?? 0) : 0
         const showGroupHeader = item.group && item.group !== area.items[index - 1]?.group

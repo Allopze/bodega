@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/field"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { toast } from "@/lib/toast"
+import { formatDateTime } from "@/lib/utils"
 import {
   countPendingTaeSubmissions,
   clearTaeAccessConfig,
@@ -326,7 +327,7 @@ export function TaeForm() {
           <ul className="mt-2 space-y-2 text-xs text-[var(--color-danger-ink)]">
             {failed.map((item) => (
               <li key={item.id} className="flex items-start justify-between gap-3">
-                <span>{item.lastError ?? "La plataforma rechazó esta carga"} · {new Date(item.createdAt).toLocaleString("es-CL")}</span>
+                <span>{item.lastError ?? "La plataforma rechazó esta carga"} · {formatDateTime(item.createdAt)}</span>
                 <Button type="button" variant="ghost" size="sm" onClick={() => void deleteTaeSubmission(item.id).then(refreshQueue)}>Descartar</Button>
               </li>
             ))}

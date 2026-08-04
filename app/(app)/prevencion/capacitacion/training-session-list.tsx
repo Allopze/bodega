@@ -19,6 +19,12 @@ import {
   TRAINING_MODALITY_LABELS,
   TRAINING_SESSION_STATUS_LABELS,
 } from "@/lib/prevention/training"
+import {
+  isTrainingSessionQuickFilter,
+  matchesTrainingSessionQuickFilter,
+  TRAINING_SESSION_QUICK_FILTER_LABELS,
+  type TrainingSessionQuickFilter,
+} from "@/lib/prevention/training-list-filters"
 import { formatDateTime } from "@/lib/utils"
 import { acknowledgeTrainingAction, createTrainingSessionAction } from "./actions"
 import { Field } from "@/components/ui/field"
@@ -76,8 +82,6 @@ interface Props {
   workers: WorkerOption[]
 }
 
-type QuickFilter = "all" | "planned" | "pending_ack" | "blocking_gaps"
-
 function statusBadgeVariant(status: string): "default" | "info" | "success" | "outline" {
   if (status === "completed") return "success"
   if (status === "in_progress") return "info"
@@ -99,7 +103,8 @@ export function TrainingSessionList({
   const status = getFilter("estado") || "all"
   const worksite = getFilter("faena") || "all"
   const kind = getFilter("tipo") || "all"
-  const quickFilter = (getFilter("vista") || "all") as QuickFilter
+  const quickFilterValue = getFilter("vista")
+  const quickFilter: TrainingSessionQuickFilter = isTrainingSessionQuickFilter(quickFilterValue) ? quickFilterValue : "all"
   const [ackPending, startAck] = React.useTransition()
   const [ackMessage, setAckMessage] = React.useState<string | null>(null)
 
@@ -115,8 +120,7 @@ export function TrainingSessionList({
     if (status !== "all" && item.status !== status) return false
     if (worksite !== "all" && item.worksiteId !== worksite) return false
     if (kind !== "all" && item.courseKind !== kind) return false
-    if (quickFilter === "planned" && item.status !== "planned") return false
-    if (quickFilter === "pending_ack" && item.acknowledgedCount >= item.attendedCount) return false
+    if (!matchesTrainingSessionQuickFilter(item, quickFilter)) return false
     if (!query) return true
     return `${item.code} ${item.courseName} ${item.worksiteName} ${item.versionLabel}`.toLocaleLowerCase("es-CL").includes(query)
   })
@@ -133,6 +137,12 @@ export function TrainingSessionList({
   const STATUS_LABELS = TRAINING_SESSION_STATUS_LABELS as Record<string, string>
   const KIND_LABELS = TRAINING_KIND_LABELS as Record<string, string>
   const activeChips: ActiveFilterChip[] = []
+  if (quickFilter !== "all") activeChips.push({
+    key: "vista",
+    label: "Vista",
+    value: quickFilter,
+    displayValue: TRAINING_SESSION_QUICK_FILTER_LABELS[quickFilter],
+  })
   if (status !== "all") activeChips.push({ key: "estado", label: "Estado", value: status, displayValue: STATUS_LABELS[status] ?? status })
   if (kind !== "all") activeChips.push({ key: "tipo", label: "Tipo", value: kind, displayValue: KIND_LABELS[kind] ?? kind })
   if (worksite !== "all") {

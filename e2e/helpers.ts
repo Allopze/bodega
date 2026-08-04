@@ -60,6 +60,11 @@ export async function selectRadixById(page: Page, id: string, option: string | R
   await page.getByRole("option", { name: option }).first().click()
 }
 
+/** Avanza el formulario público PPA al siguiente bloque sin acoplar el spec al layout. */
+export async function continuePpaStep(page: Page) {
+  await page.getByRole("button", { name: "Continuar", exact: true }).click()
+}
+
 /** Pick the current visible-month day in the shared DatePicker component. */
 /**
  * Elige HOY en un `DatePicker`.
@@ -117,12 +122,60 @@ export async function fillManualPpaForm(page: Page, faena = "Faena E2E") {
   await page.locator("#wname").fill("Trabajador Offline E2E")
 
   await selectRadixById(page, "tipo", "Conductor Batea")
+  await continuePpaStep(page)
 
   await page.getByTestId("cambio-no").click()
   await page.getByTestId("peligro-no").click()
 
   await page.getByRole("checkbox", { name: "Elementos de protección personal" }).check()
   await page.getByRole("checkbox", { name: "Herramientas adecuadas y en buen estado" }).check()
+  await continuePpaStep(page)
 
   await page.getByTestId("seguro-si").click()
+}
+
+/**
+ * ¿Puede este navegador respaldar un `Blob`?
+ *
+ * Existe por un diagnóstico que casi se publica como defecto de la aplicación.
+ * En la primera corrida en WebKit, el escenario offline del TAE fallaba: la
+ * carga no llegaba a la cola. La conclusión fácil —"el TAE offline no funciona
+ * en Safari"— era **falsa**, y habría mandado a alguien a buscar un fallo que
+ * no existe en un flujo de terreno.
+ *
+ * La causa real es del entorno: en el WebKit que Playwright instala aquí,
+ * `await new Blob(["hola"]).text()` lanza `NotReadableError: The I/O read
+ * operation failed`. No es IndexedDB ni el Service Worker: un `Blob` en memoria
+ * **no se puede releer**, así que nada que adjunte fotos puede funcionar. No
+ * dice nada sobre Safari real en un iPhone.
+ *
+ * Se comprueba en tiempo de ejecución en vez de anotarse en una lista: el día
+ * que el binario se arregle, los escenarios vuelven solos.
+ */
+export async function blobStorageWorks(page: Page): Promise<boolean> {
+  return page.evaluate(async () => {
+    try {
+      return (await new Blob(["probe"]).text()) === "probe"
+    } catch {
+      return false
+    }
+  })
+}
+
+/**
+ * Un registro de lista, sea fila o tarjeta.
+ *
+ * `DataTable` renderiza **las dos representaciones** y oculta una por CSS según
+ * el ancho (contrato de TASK-UI-004). Las pruebas escritas con
+ * `getByRole("row")` sólo veían la de escritorio, así que bajo un proyecto móvil
+ * fallaban por construcción — y ese fallo se leyó, la primera vez, como si la
+ * pantalla estuviera rota en el teléfono.
+ *
+ * Los roles de Playwright respetan `display:none`, de modo que en cada ancho
+ * sólo una de las dos ramas resuelve: la unión localiza el registro en ambos sin
+ * que la prueba tenga que saber en qué viewport corre.
+ */
+export function listRecord(page: Page, text: RegExp | string) {
+  const filter = typeof text === "string" ? { hasText: text } : { hasText: text }
+  return page.getByRole("row").filter(filter).or(page.getByRole("article").filter(filter))
 }

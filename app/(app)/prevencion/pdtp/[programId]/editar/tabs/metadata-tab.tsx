@@ -166,6 +166,10 @@ export function MetadataTab({ program, canDelete, activities = [] }: {
               <span className="sr-only" aria-live="polite">{autosaveStatus}</span>
               <span
                 aria-hidden
+                // El mismo rótulo se pinta dos veces a propósito: uno `sr-only`
+                // con `aria-live` y este visible. Sin un ancla, una prueba que
+                // busque el texto encuentra los dos.
+                data-autosave-status
                 className={
                   isDirty && !updatePending
                     ? "text-xs font-medium text-[var(--color-warning)]"

@@ -3,6 +3,7 @@ import {
   QUOTATION_TYPES,
   isRequestType,
   permissionForRequestType,
+  resolveInitialRequestType,
   visibleRequestTypeOptions,
 } from "@/lib/request-types"
 
@@ -52,6 +53,36 @@ describe("request type permissions", () => {
     expect(visibleRequestTypeOptions(["servicios:submit"], "submit").map((option) => option.value)).toEqual([
       "servicios",
     ])
+  })
+
+  it("preserves a permitted type from a specialized creation route", () => {
+    const available = visibleRequestTypeOptions(["requests:create", "repuestos:create", "servicios:create"])
+
+    expect(resolveInitialRequestType("repuestos", available)).toEqual({
+      requestType: "repuestos",
+      matchedCandidate: true,
+    })
+    expect(resolveInitialRequestType("servicios", available)).toEqual({
+      requestType: "servicios",
+      matchedCandidate: true,
+    })
+  })
+
+  it("falls back explicitly when the requested type is invalid or unavailable", () => {
+    const eppOnly = visibleRequestTypeOptions(["requests:create"])
+
+    expect(resolveInitialRequestType("inventado", eppOnly)).toEqual({
+      requestType: "epp",
+      matchedCandidate: false,
+    })
+    expect(resolveInitialRequestType("servicios", eppOnly)).toEqual({
+      requestType: "epp",
+      matchedCandidate: false,
+    })
+    expect(resolveInitialRequestType(["epp", "servicios"], eppOnly)).toEqual({
+      requestType: "epp",
+      matchedCandidate: false,
+    })
   })
 
   it("keeps quotation flow limited to repuestos and servicios", () => {

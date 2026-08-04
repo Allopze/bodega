@@ -46,7 +46,7 @@ const MobileNavInner = React.memo(function MobileNavInner({ session, worksiteNam
         </div>
       )}
 
-      <nav aria-label="Navegación" className="flex-1 overflow-y-auto px-2 py-3">
+      <nav aria-label="Navegación" data-nav-scroll className="flex-1 overflow-y-auto px-2 py-3">
         <Link
           href={DASHBOARD_ITEM.href}
           onClick={onNavigate}
@@ -153,4 +153,3 @@ function AreaAccordion({
     </Collapsible.Root>
   )
 }
-

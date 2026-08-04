@@ -10,7 +10,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { TableCell, TableRow } from "@/components/ui/table"
-import { cn } from "@/lib/utils"
+import { cn, formatDate } from "@/lib/utils"
 import type { FolderRow } from "./documentacion-view.types"
 
 interface FolderTableRowProps {
@@ -109,8 +109,4 @@ export function FolderTableRow({
       </TableCell>
     </TableRow>
   )
-}
-
-export function formatDate(value: string) {
-  return value.slice(0, 10)
 }

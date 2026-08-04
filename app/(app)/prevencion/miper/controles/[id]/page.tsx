@@ -32,8 +32,8 @@ const RISK_LEVEL: Record<string, string> = {
 export default async function RiskControlDetailPage({ params }: { params: Promise<{ id: string }> }) {
   let session
   try { session = await requireAuth() }
-  catch { redirect("/forbidden") }
-  if (!can(session, "prevention:risk:view") && !can(session, "prevention:pdtp:view")) redirect("/forbidden")
+  catch { redirect(`/forbidden?desde=${encodeURIComponent("/prevencion/miper/controles")}`) }
+  if (!can(session, "prevention:risk:view") && !can(session, "prevention:pdtp:view")) redirect(`/forbidden?desde=${encodeURIComponent("/prevencion/miper/controles")}`)
   const { id } = await params
   let detail
   try { detail = await getRiskControlDetail(id, { userId: session.user.id, scope: resolveWorksiteScope(session), permissions: session.user.permissions }) }

@@ -6,10 +6,17 @@ import { DataTable } from "@/components/admin/data-table"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { FilterToolbar, type ActiveFilterChip } from "@/components/ui/filter-toolbar"
+import { ResponsiveDataListCard, ResponsiveDataListField } from "@/components/ui/responsive-data-list"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { TableCell, TableRow } from "@/components/ui/table"
 import { useUrlFilters } from "@/lib/hooks/use-url-filters"
 import { PERMIT_STATUS_LABELS, permitStatusBadgeVariant } from "@/lib/prevention/permits"
+import {
+  isPermitQuickFilter,
+  matchesPermitQuickFilter,
+  PERMIT_QUICK_FILTER_LABELS,
+  type PermitQuickFilter,
+} from "@/lib/prevention/permit-list-filters"
 import { formatDateTime } from "@/lib/utils"
 import { NewPermitDialog, PermitTypeDialog } from "./permit-dialogs"
 
@@ -49,8 +56,6 @@ interface PermitItem {
   openIsolationCount: number
 }
 
-type QuickFilter = "all" | "active" | "pending" | "isolations"
-
 interface Props {
   permits: PermitItem[]
   canManage: boolean
@@ -75,7 +80,8 @@ export function WorkPermitList({ permits, canManage, canRequest, types, worksite
   const { getFilter, setFilters, clearFilters: clearUrlFilters } = useUrlFilters()
   const status = getFilter("status") || "all"
   const worksite = getFilter("worksite") || "all"
-  const [quickFilter, setQuickFilter] = React.useState<QuickFilter>("all")
+  const quickFilterValue = getFilter("vista")
+  const quickFilter: PermitQuickFilter = isPermitQuickFilter(quickFilterValue) ? quickFilterValue : "all"
 
   const permitWorksites = React.useMemo(() => {
     const map = new Map(permits.map((item) => [item.worksiteId, item.worksiteName]))
@@ -85,10 +91,7 @@ export function WorkPermitList({ permits, canManage, canRequest, types, worksite
   const filtered = permits.filter((item) => {
     if (status !== "all" && item.status !== status) return false
     if (worksite !== "all" && item.worksiteId !== worksite) return false
-    if (quickFilter === "active" && item.status !== "active") return false
-    if (quickFilter === "pending" && item.status !== "pending_approval") return false
-    if (quickFilter === "isolations" && item.openIsolationCount === 0) return false
-    return true
+    return matchesPermitQuickFilter(item, quickFilter)
   })
 
   const rows = filtered as unknown as Record<string, unknown>[]
@@ -97,11 +100,17 @@ export function WorkPermitList({ permits, canManage, canRequest, types, worksite
     { id: "active", key: "active" as const, label: "Vigentes en terreno", value: permits.filter((item) => item.status === "active").length, detail: "Trabajo habilitado ahora" },
     { id: "pending", key: "pending" as const, label: "Esperando aprobación", value: permits.filter((item) => item.status === "pending_approval").length, detail: "Requieren revisión" },
     { id: "isolations", key: "isolations" as const, label: "Con energías bloqueadas", value: permits.filter((item) => item.openIsolationCount > 0).length, detail: "LOTO aplicado sin retirar" },
-    { id: "suspended", key: "all" as const, label: "Suspendidos", value: permits.filter((item) => item.status === "suspended").length, detail: "Detenidos por desviación o vencimiento" },
+    { id: "suspended", key: "suspended" as const, label: "Suspendidos", value: permits.filter((item) => item.status === "suspended").length, detail: "Detenidos por desviación o vencimiento" },
   ]
 
   const STATUS_LABELS = PERMIT_STATUS_LABELS as Record<string, string>
   const activeChips: ActiveFilterChip[] = []
+  if (quickFilter !== "all") activeChips.push({
+    key: "vista",
+    label: "Vista",
+    value: quickFilter,
+    displayValue: PERMIT_QUICK_FILTER_LABELS[quickFilter],
+  })
   if (status !== "all") activeChips.push({ key: "status", label: "Estado", value: status, displayValue: STATUS_LABELS[status] ?? status })
   if (worksite !== "all") {
     const ws = permitWorksites.find((w) => w.id === worksite)
@@ -118,7 +127,7 @@ export function WorkPermitList({ permits, canManage, canRequest, types, worksite
           <button
             key={metric.id}
             type="button"
-            onClick={() => setQuickFilter((current) => current === metric.key ? "all" : metric.key)}
+            onClick={() => setFilters({ vista: quickFilter === metric.key ? null : metric.key })}
             aria-pressed={quickFilter === metric.key}
             className="border-r border-[var(--color-border)] px-4 py-3 text-left hover:bg-[var(--color-surface-2)] aria-pressed:bg-[var(--color-primary-tint)]"
           >
@@ -132,7 +141,7 @@ export function WorkPermitList({ permits, canManage, canRequest, types, worksite
       <FilterToolbar
         activeChips={activeChips}
         onRemoveChip={handleRemoveChip}
-        onClearAll={() => { clearUrlFilters(); setQuickFilter("all") }}
+        onClearAll={clearUrlFilters}
         hasActiveFilters={status !== "all" || worksite !== "all" || quickFilter !== "all"}
         actions={
           <>
@@ -143,7 +152,7 @@ export function WorkPermitList({ permits, canManage, canRequest, types, worksite
           </>
         }
       >
-        <Select value={status} onValueChange={(value) => { setFilters({ status: value === "all" ? null : value }); setQuickFilter("all") }}>
+        <Select value={status} onValueChange={(value) => setFilters({ status: value === "all" ? null : value })}>
           <SelectTrigger className="w-56" aria-label="Estado del permiso"><SelectValue placeholder="Estado" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Todos los estados</SelectItem>
@@ -166,7 +175,30 @@ export function WorkPermitList({ permits, canManage, canRequest, types, worksite
         searchKeys={["code", "typeName", "taskDescription", "location", "worksiteName"]}
         emptyTitle={permits.length === 0 ? "Aún no hay permisos de trabajo" : "No hay permisos con estos filtros"}
         emptyDescription={permits.length === 0 ? "Un permiso autoriza una tarea crítica sólo cuando su AST está escrito, los controles verificados, las energías aisladas y toda la cuadrilla habilitada." : "Ajusta los filtros o el texto del buscador superior."}
-        emptyAction={permits.length > 0 ? <Button type="button" variant="secondary" onClick={() => { clearUrlFilters(); setQuickFilter("all") }}>Ver todos</Button> : canRequest && types.length > 0 && worksites.length > 0 ? <NewPermitDialog types={types} worksites={worksites} workers={workers} supervisors={supervisors} /> : canManage ? <PermitTypeDialog /> : undefined}
+        emptyAction={permits.length > 0 ? <Button type="button" variant="secondary" onClick={() => clearUrlFilters()}>Ver todos</Button> : canRequest && types.length > 0 && worksites.length > 0 ? <NewPermitDialog types={types} worksites={worksites} workers={workers} supervisors={supervisors} /> : canManage ? <PermitTypeDialog /> : undefined}
+        renderMobileCard={(row) => {
+          const item = row as unknown as PermitItem
+          return (
+            <ResponsiveDataListCard
+              title={<Link href={`/prevencion/permisos/${item.id}`} className="font-mono hover:underline">{item.code}</Link>}
+              description={item.taskDescription}
+              status={<Badge variant={permitStatusBadgeVariant(item.status)}>{PERMIT_STATUS_LABELS[item.status] ?? item.status}</Badge>}
+              actions={<Button asChild type="button" variant="ghost" size="sm"><Link href={`/prevencion/permisos/${item.id}`}>Ver permiso</Link></Button>}
+            >
+              <ResponsiveDataListField label="Tipo">{item.typeName}</ResponsiveDataListField>
+              <ResponsiveDataListField label="Faena / lugar">{item.worksiteName} · {item.location}</ResponsiveDataListField>
+              <ResponsiveDataListField label="Ventana">
+                {formatDateTime(item.plannedStartAt)} hasta {formatDateTime(item.extendedUntilAt ?? item.plannedEndAt)}
+              </ResponsiveDataListField>
+              <ResponsiveDataListField label="Acuses / cuadrilla">
+                <span className="font-mono tabular-nums text-[var(--color-text)]">{item.acknowledgedCount} / {item.crewCount}</span>
+              </ResponsiveDataListField>
+              <ResponsiveDataListField label="LOTO abierto">
+                <span className="font-mono tabular-nums text-[var(--color-text)]">{item.openIsolationCount || "—"}</span>
+              </ResponsiveDataListField>
+            </ResponsiveDataListCard>
+          )
+        }}
         renderRow={(row) => {
           const item = row as unknown as PermitItem
           return (

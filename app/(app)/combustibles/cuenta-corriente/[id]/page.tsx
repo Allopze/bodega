@@ -14,9 +14,9 @@ export default async function StatementDetailPage({
 }) {
   let session
   try { session = await requirePermission("combustibles:view") }
-  catch { redirect("/forbidden") }
+  catch { redirect(`/forbidden?desde=${encodeURIComponent("/combustibles/cuenta-corriente")}`) }
 
-  if (!isGlobalRole(session)) redirect("/forbidden")
+  if (!isGlobalRole(session)) redirect(`/forbidden?desde=${encodeURIComponent("/combustibles/cuenta-corriente")}`)
 
   const { id } = await params
 

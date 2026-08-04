@@ -8,6 +8,8 @@ import { SegmentedControl } from "@/components/ui/segmented-control"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tooltip } from "@/components/ui/tooltip"
 import type { PdtpActivityStatus } from "@/lib/services/pdtp/period"
+import { pdtpExecutionStatusLabel } from "@/lib/prevention/pdtp"
+import { countOf } from "@/lib/utils"
 
 // ---------------------------------------------------------------------------
 // PdtpStatusBadge
@@ -32,7 +34,7 @@ export function PdtpStatusBadge({
 
   let displayLabel = label
   if (status === "overdue" && overdueMonths > 0) {
-    displayLabel = `Atrasado · ${overdueMonths} ${overdueMonths === 1 ? "mes" : "meses"}`
+    displayLabel = `Atrasado · ${countOf(overdueMonths, "mes")}`
   }
 
   const showDot = status === "overdue" || status === "pending"
@@ -48,16 +50,15 @@ export function PdtpStatusBadge({
 // PdtpExecutionStatusBadge — estado de una ejecución registrada
 // ---------------------------------------------------------------------------
 
-const EXECUTION_STATUS_BADGE: Record<string, { label: string; variant: "default" | "success" | "danger" | "warning" }> = {
-  draft:     { label: "Borrador", variant: "default" },
-  submitted: { label: "Enviada", variant: "warning" },
-  approved:  { label: "Aprobada", variant: "success" },
-  rejected:  { label: "Rechazada", variant: "danger" },
+const EXECUTION_STATUS_VARIANT: Record<string, "default" | "success" | "danger" | "warning"> = {
+  draft:     "default",
+  submitted: "warning",
+  approved:  "success",
+  rejected:  "danger",
 }
 
 export function PdtpExecutionStatusBadge({ status }: { status: string }) {
-  const config = EXECUTION_STATUS_BADGE[status] ?? { label: status, variant: "default" as const }
-  return <Badge variant={config.variant} size="sm">{config.label}</Badge>
+  return <Badge variant={EXECUTION_STATUS_VARIANT[status] ?? "default"} size="sm">{pdtpExecutionStatusLabel(status)}</Badge>
 }
 
 // ---------------------------------------------------------------------------

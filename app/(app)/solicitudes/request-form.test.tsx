@@ -212,6 +212,37 @@ describe("RequestForm", () => {
       expect(screen.getByText("Guardar borrador")).toBeDefined()
       expect(screen.getByText("Enviar a aprobación")).toBeDefined()
     })
+
+    it("keeps the specialized route type in the form and summary", () => {
+      render(
+        <RequestForm
+          worksites={worksites}
+          products={products}
+          suppliers={suppliers}
+          maxFileSizeMb={10}
+          userPermissions={["servicios:create"]}
+          initialRequestType="servicios"
+        />,
+      )
+
+      expect(screen.getByText("Flujo para Servicios")).toBeDefined()
+      expect(screen.getAllByText("Servicios").length).toBeGreaterThanOrEqual(2)
+    })
+
+    it("makes an invalid specialized-route type visible instead of silently using a default", () => {
+      render(
+        <RequestForm
+          worksites={worksites}
+          products={products}
+          suppliers={suppliers}
+          maxFileSizeMb={10}
+          initialRequestType="epp"
+          initialRequestTypeNotice="El tipo indicado en el enlace no está disponible para tu cuenta."
+        />,
+      )
+
+      expect(screen.getByRole("alert")).toHaveTextContent("El tipo indicado en el enlace no está disponible")
+    })
   })
 
   describe("edit mode", () => {

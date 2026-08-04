@@ -1,21 +1,17 @@
 "use client"
 
-import { CheckCircle, XCircle, Clock, Database } from "@phosphor-icons/react/dist/ssr"
-
-interface StatusCard {
-  label: string
-  value: string
-  status: "success" | "failed" | "running" | "none"
-}
+import { CheckCircle, XCircle, Clock, Database, WarningCircle } from "@phosphor-icons/react/dist/ssr"
+import type { BackupStatusCard } from "./backup-health"
 
 interface Props {
-  cards: StatusCard[]
+  cards: BackupStatusCard[]
 }
 
 const STATUS_ICONS = {
   success: CheckCircle,
   failed: XCircle,
   running: Clock,
+  warning: WarningCircle,
   none: Database,
 } as const
 
@@ -33,6 +29,12 @@ const STATUS_COLORS = {
     text: "text-[var(--color-danger)]",
   },
   running: {
+    bg: "bg-[var(--color-warning-tint)]",
+    border: "border-[var(--color-warning)]",
+    icon: "text-[var(--color-warning)]",
+    text: "text-[var(--color-warning)]",
+  },
+  warning: {
     bg: "bg-[var(--color-warning-tint)]",
     border: "border-[var(--color-warning)]",
     icon: "text-[var(--color-warning)]",
@@ -56,6 +58,7 @@ export function BackupsStatusCards({ cards }: Props) {
         return (
           <div
             key={card.label}
+            role="status"
             className={`rounded-[var(--radius-xl)] border ${colors.border} ${colors.bg} p-4 shadow-[var(--shadow-card)] transition-colors duration-[var(--duration-fast)]`}
           >
             <div className="flex items-start gap-3">

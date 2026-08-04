@@ -46,6 +46,19 @@ describe("PdtpCoverageWorkbench", () => {
     expect(screen.getByRole("link", { name: /Incidente\/CAPA · CAPA v4/ })).toHaveAttribute("href", "/prevencion/capa/capa-1")
   })
 
+  it("shows each pending update deadline in the shared Chilean date format", () => {
+    const coverage = {
+      program: { id: "program-1", year: 2026, version: 3 },
+      coverage: { sourcedActivities: 1, totalActivities: 1, unsourcedActivities: 0, pendingUpdates: 1 },
+      obligations: [{ id: "obligation-1", sourceVersionSnapshot: "MIPER v2", sourceType: "risk_matrix", dueAt: "2026-08-14", status: "pending" }],
+      activities: [],
+    } as unknown as Coverage
+
+    render(<PdtpCoverageWorkbench coverage={coverage} worksites={[]} canManage={false} />)
+
+    expect(screen.getByText("Vence 14-08-2026")).toBeDefined()
+  })
+
   it("offers a populated CAPA picker scoped to the selected worksite when linking a new source", () => {
     const coverage = {
       program: { id: "program-1", year: 2026, version: 3 },

@@ -6,8 +6,8 @@ import { useActionState, useEffect } from "react"
 import { LockOpen, Trash } from "@phosphor-icons/react"
 import { DataTable } from "@/components/admin/data-table"
 import { Badge } from "@/components/ui/badge"
-import { DesktopOnlyTableNotice } from "@/components/ui/desktop-only-table"
 import { Button } from "@/components/ui/button"
+import { ResponsiveDataListCard, ResponsiveDataListField } from "@/components/ui/responsive-data-list"
 import { TableRow, TableCell } from "@/components/ui/table"
 import { toast } from "@/lib/toast"
 import { INITIAL_STATE, type ActionState } from "@/components/admin/form-state"
@@ -79,7 +79,6 @@ export function RateLimitList({ rows, total }: RateLimitListProps) {
           </Button>
         </form>
       </div>
-      <DesktopOnlyTableNotice />
       <DataTable
         caption="Claves con Bloqueo por Rate Limit"
         columns={COLUMNS}
@@ -88,6 +87,37 @@ export function RateLimitList({ rows, total }: RateLimitListProps) {
         pageSize={20}
         emptyTitle="Sin claves registradas"
         emptyDescription="Las claves aparecen aquí cuando alguien supera los intentos permitidos."
+        renderMobileCard={(row) => {
+          const r = row as RateLimitRow
+          const status = lockStatus(r.lockUntil)
+          return (
+            <ResponsiveDataListCard
+              title={<span className="font-mono">{r.key}</span>}
+              status={<Badge variant={status.variant}>{status.label}</Badge>}
+              actions={
+                <form action={clearAction}>
+                  <input type="hidden" name="key" value={r.key} />
+                  <Button type="submit" variant="ghost" size="sm">
+                    <LockOpen size={14} />Liberar
+                  </Button>
+                </form>
+              }
+            >
+              <ResponsiveDataListField label="Fallos">
+                <span className="font-mono tabular-nums text-[var(--color-text)]">{r.count}</span>
+              </ResponsiveDataListField>
+              <ResponsiveDataListField label="Intentos correctos">
+                <span className="font-mono tabular-nums text-[var(--color-text)]">{r.successCount}</span>
+              </ResponsiveDataListField>
+              <ResponsiveDataListField label="Bloqueo">
+                {formatLockUntil(r.lockUntil)}
+              </ResponsiveDataListField>
+              <ResponsiveDataListField label="Actualización">
+                {r.updatedAt ? formatDateTime(r.updatedAt) : "—"}
+              </ResponsiveDataListField>
+            </ResponsiveDataListCard>
+          )
+        }}
         renderRow={(row) => {
           const r = row as RateLimitRow
           const status = lockStatus(r.lockUntil)

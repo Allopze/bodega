@@ -9,7 +9,7 @@ import { PageContainer } from "@/components/ui/page-container"
 import { HeaderSignals, type HeaderSignal } from "@/components/ui/header-signals"
 import { ServerPagination } from "@/components/ui/server-pagination"
 import { buildPaginationHref, resolvePagination } from "@/lib/pagination"
-import { parseListParams, statusSql, worksiteEqSql } from "@/lib/adquisiciones/list-query"
+import { parseListParams, periodSql, statusSql, worksiteEqSql } from "@/lib/adquisiciones/list-query"
 import { RequestList } from "./request-list"
 import { SolicitudesActions } from "./solicitudes-actions"
 
@@ -77,6 +77,7 @@ export default async function SolicitudesPage({
     textCondition,
     statusSql(purchaseRequests.status, listParams.estados),
     worksiteEqSql(purchaseRequests.worksiteId, listParams.faena),
+    periodSql(purchaseRequests.createdAt, listParams.desde, listParams.hasta),
   )
 
   // Count total matching requests and overall summary metrics.

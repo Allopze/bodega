@@ -18,6 +18,7 @@ import {
 import type { WorksiteScope } from "@/lib/auth/scope"
 import { nanoid } from "@/lib/id"
 import { assessDrillCompletion, assessPlanReadiness } from "@/lib/prevention/emergency"
+import type { EmergencyQuickFilter } from "@/lib/prevention/emergency-list-filters"
 import { createCapaActionWithClient } from "@/lib/services/prevention-capa"
 import { onEmergencyDrillCompleted } from "@/lib/services/pdtp-adapters/pdtp-accreditation-connectors"
 import { getUserIdsWithPermission } from "@/lib/services/notification-targeting"
@@ -50,6 +51,18 @@ function scopeCondition(scope: WorksiteScope, column: AnyPgColumn) {
   if (scope.mode === "all") return undefined
   if (scope.mode === "none" || scope.ids.length === 0) return sql`false`
   return inArray(column, scope.ids)
+}
+
+function emergencyPlanQuickFilterWhere(filter: EmergencyQuickFilter | undefined) {
+  if (filter === "approved") return eq(preventionEmergencyPlans.status, "approved")
+  if (filter === "draft") return eq(preventionEmergencyPlans.status, "draft")
+  return undefined
+}
+
+function emergencyDrillQuickFilterWhere(filter: EmergencyQuickFilter | undefined) {
+  if (filter === "completed") return eq(preventionEmergencyDrills.status, "completed")
+  if (filter === "needs_improvement") return eq(preventionEmergencyDrills.outcome, "needs_improvement")
+  return undefined
 }
 
 async function history(client: Client, args: {
@@ -441,11 +454,18 @@ export async function listEmergencyPlans(access: EmergencyAccess, opts?: { limit
     .offset(offset)
 }
 
-export async function listEmergencyPlansPage(access: EmergencyAccess, opts?: { limit?: number; offset?: number }) {
+export async function listEmergencyPlansPage(access: EmergencyAccess, opts?: {
+  limit?: number
+  offset?: number
+  quickFilter?: EmergencyQuickFilter
+}) {
   requireAccess(access, "prevention:emergency:view")
   const limit = Math.min(opts?.limit ?? 50, 500)
   const offset = opts?.offset ?? 0
-  const where = scopeCondition(access.scope, preventionEmergencyPlans.worksiteId)
+  const where = and(
+    scopeCondition(access.scope, preventionEmergencyPlans.worksiteId),
+    emergencyPlanQuickFilterWhere(opts?.quickFilter),
+  )
   const [rows, [totalRow2]] = await Promise.all([
     db.select({
       plan: preventionEmergencyPlans,
@@ -460,13 +480,12 @@ export async function listEmergencyPlansPage(access: EmergencyAccess, opts?: { l
       .orderBy(asc(worksites.name))
       .limit(limit)
       .offset(offset),
-    db.select({ count: sql<number>`count(*)::int` }).from(preventionEmergencyPlans)
-      .where(scopeCondition(access.scope, preventionEmergencyPlans.worksiteId)),
+    db.select({ count: sql<number>`count(*)::int` }).from(preventionEmergencyPlans).where(where),
   ])
   return { rows, total: totalRow2?.count ?? 0, limit, offset }
 }
 
-export async function listEmergencyDrills(access: EmergencyAccess) {
+export async function listEmergencyDrills(access: EmergencyAccess, opts?: { quickFilter?: EmergencyQuickFilter }) {
   requireAccess(access, "prevention:emergency:view")
   return db.select({
     drill: preventionEmergencyDrills,
@@ -476,9 +495,38 @@ export async function listEmergencyDrills(access: EmergencyAccess) {
     .from(preventionEmergencyDrills)
     .innerJoin(preventionEmergencyPlans, eq(preventionEmergencyDrills.planId, preventionEmergencyPlans.id))
     .innerJoin(worksites, eq(preventionEmergencyDrills.worksiteId, worksites.id))
-    .where(scopeCondition(access.scope, preventionEmergencyDrills.worksiteId))
+    .where(and(
+      scopeCondition(access.scope, preventionEmergencyDrills.worksiteId),
+      emergencyDrillQuickFilterWhere(opts?.quickFilter),
+    ))
     .orderBy(desc(preventionEmergencyDrills.scheduledFor))
     .limit(300)
+}
+
+export async function getEmergencyDashboardCounts(access: EmergencyAccess) {
+  requireAccess(access, "prevention:emergency:view")
+  const [plans, drills] = await Promise.all([
+    db.select({
+      totalPlans: sql<number>`count(*)::int`,
+      approvedPlans: sql<number>`count(*) filter (where ${preventionEmergencyPlans.status} = 'approved')::int`,
+      draftPlans: sql<number>`count(*) filter (where ${preventionEmergencyPlans.status} = 'draft')::int`,
+    }).from(preventionEmergencyPlans).where(scopeCondition(access.scope, preventionEmergencyPlans.worksiteId)),
+    db.select({
+      totalDrills: sql<number>`count(*)::int`,
+      completedDrills: sql<number>`count(*) filter (where ${preventionEmergencyDrills.status} = 'completed')::int`,
+      needsImprovementDrills: sql<number>`count(*) filter (where ${preventionEmergencyDrills.outcome} = 'needs_improvement')::int`,
+    }).from(preventionEmergencyDrills).where(scopeCondition(access.scope, preventionEmergencyDrills.worksiteId)),
+  ])
+  const planCounts = plans[0]
+  const drillCounts = drills[0]
+  return {
+    totalPlans: planCounts?.totalPlans ?? 0,
+    approvedPlans: planCounts?.approvedPlans ?? 0,
+    draftPlans: planCounts?.draftPlans ?? 0,
+    totalDrills: drillCounts?.totalDrills ?? 0,
+    completedDrills: drillCounts?.completedDrills ?? 0,
+    needsImprovementDrills: drillCounts?.needsImprovementDrills ?? 0,
+  }
 }
 
 export async function getEmergencyPlanDetail(planId: string, access: EmergencyAccess) {

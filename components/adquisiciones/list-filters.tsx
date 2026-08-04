@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import Link from "next/link"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { DownloadSimple, MagnifyingGlass, X } from "@phosphor-icons/react"
 import { Input } from "@/components/ui/input"
@@ -68,6 +69,11 @@ const ListFiltersInner = React.memo(function ListFiltersInner({
   // aquí, la lista quedaba filtrada sin ningún control en pantalla que lo dijera
   // ni lo apagara: "Limpiar" ni siquiera aparecía.
   const currentFactura = searchParams.get("factura") ?? ""
+  // Período [desde, hasta): llega desde un KPI del dashboard (p.ej. "Inversión
+  // · mes") como URL, no desde un select de la barra. Mismo tratamiento que
+  // `factura`: chip removible para que se lea y se pueda quitar.
+  const currentDesde = searchParams.get("desde") ?? ""
+  const currentHasta = searchParams.get("hasta") ?? ""
 
   const [q, setQ] = React.useState(currentQ)
 
@@ -92,6 +98,23 @@ const ListFiltersInner = React.memo(function ListFiltersInner({
     [router, pathname, searchParams],
   )
 
+  const withoutFacturaHref = React.useMemo(() => {
+    const params = new URLSearchParams(Array.from(searchParams.entries()))
+    params.delete("factura")
+    params.delete("page")
+    const qs = params.toString()
+    return qs ? `${pathname}?${qs}` : pathname
+  }, [pathname, searchParams])
+
+  const withoutPeriodHref = React.useMemo(() => {
+    const params = new URLSearchParams(Array.from(searchParams.entries()))
+    params.delete("desde")
+    params.delete("hasta")
+    params.delete("page")
+    const qs = params.toString()
+    return qs ? `${pathname}?${qs}` : pathname
+  }, [pathname, searchParams])
+
   // Debounce the free-text query into the URL.
   const onDebouncedQChange = React.useEffectEvent((value: string) => {
     setParam("q", value.trim())
@@ -108,7 +131,7 @@ const ListFiltersInner = React.memo(function ListFiltersInner({
   const handleFaenaChange = React.useMemo(() => createSelectHandler(setParam, "faena"), [setParam])
   const handleProveedorChange = React.useMemo(() => createSelectHandler(setParam, "proveedor"), [setParam])
 
-  const hasActiveFilters = Boolean(currentQ || currentEstado || currentUrgencia || currentFaena || currentProveedor || currentFactura)
+  const hasActiveFilters = Boolean(currentQ || currentEstado || currentUrgencia || currentFaena || currentProveedor || currentFactura || currentDesde || currentHasta)
 
   // Export URL respects the active filters (estado→status, q/faena/proveedor passthrough).
   // Note: the URL param is "estado" for page-level filtering but "status" for the export
@@ -135,6 +158,8 @@ const ListFiltersInner = React.memo(function ListFiltersInner({
     // apague: sin borrarlo aquí, "Limpiar" dejaba la lista filtrada sin que
     // nada en pantalla lo explicara.
     params.delete("factura")
+    params.delete("desde")
+    params.delete("hasta")
     params.delete("page")
     const qs = params.toString()
     router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false })
@@ -229,15 +254,34 @@ const ListFiltersInner = React.memo(function ListFiltersInner({
         {/* A2: chip removible del único filtro sin select propio, para que se lea
             qué está recortando la lista y se pueda quitar sin borrar el resto. */}
         {currentFactura === "pendiente" && (
-          <button
-            type="button"
-            onClick={() => setParam("factura", "")}
+          // Enlace y no botón: `setParam` navega con `router.replace`, así que
+          // antes de que el componente hidrate el clic no hacía nada y la lista
+          // seguía recortada sin que el usuario supiera por qué. Un href real
+          // funciona desde el primer pintado, y además permite abrirlo con el
+          // teclado o en otra pestaña como cualquier otro enlace.
+          <Link
+            href={withoutFacturaHref}
+            scroll={false}
             className="inline-flex h-8 items-center gap-1 rounded-full bg-signal-tint px-2.5 text-xs font-medium text-signal-ink transition-colors hover:bg-[var(--color-signal-line)]"
           >
             Sólo sin factura
             <X size={12} weight="bold" aria-hidden />
             <span className="sr-only">Quitar filtro de facturas pendientes</span>
-          </button>
+          </Link>
+        )}
+
+        {/* A2: el período llega desde un KPI del dashboard y no tiene select;
+            chip removible con el mismo patrón que `factura`. */}
+        {(currentDesde || currentHasta) && (
+          <Link
+            href={withoutPeriodHref}
+            scroll={false}
+            className="inline-flex h-8 items-center gap-1 rounded-full bg-[var(--color-info-tint)] px-2.5 text-xs font-medium text-[var(--color-info-ink)] transition-colors hover:bg-[var(--color-info-line)]"
+          >
+            Período {currentDesde || "…"} → {currentHasta || "…"}
+            <X size={12} weight="bold" aria-hidden />
+            <span className="sr-only">Quitar filtro de período</span>
+          </Link>
         )}
 
         {hasActiveFilters && (

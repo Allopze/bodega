@@ -18,7 +18,7 @@ export default async function PlanEmergenciaPage({ params }: { params: Promise<{
 
   let auth
   try { auth = await requirePermission("prevention:emergency:view") }
-  catch { redirect("/forbidden") }
+  catch { redirect(`/forbidden?desde=${encodeURIComponent("/prevencion/emergencias")}`) }
 
   const access = {
     userId: auth.user.id,

@@ -6,11 +6,13 @@ import { useEffect } from "react"
 import { useReducer } from "react"
 import { toast } from "@/lib/toast"
 import { INITIAL_STATE, type ActionState } from "@/components/admin/form-state"
-import { createUser, updateUser } from "./actions"
+import { createUser } from "./actions/create"
+import { updateUser } from "./actions/update"
 import {
   userSelectionReducer,
   getUserSelection,
   groupPermissions,
+  getAccessIssue,
   type UserForEdit,
   type Permission,
   type Role,
@@ -44,6 +46,7 @@ export interface UseUserFormReturn {
   groupedPermissions: ReturnType<typeof groupPermissions>
   directPermissionLabel: string
   activeModules: string[]
+  accessIssue?: string
   toggleRole: (id: string) => void
   togglePermission: (id: string) => void
   toggleAllInModule: (group: { module: string; permissions: Permission[] }) => void
@@ -56,7 +59,7 @@ export interface UseUserFormReturn {
   handleOpenChange: (v: boolean) => void
 }
 
-export function useUserForm({ editUser, onClose, allRoles: _allRoles, allPermissions, allWorkers, allWorksites: _allWorksites }: UseUserFormProps): UseUserFormReturn {
+export function useUserForm({ editUser, onClose, allRoles, allPermissions, allWorkers, allWorksites: _allWorksites }: UseUserFormProps): UseUserFormReturn {
   const isEdit = !!editUser
 
   const action = isEdit ? updateUser : createUser
@@ -168,6 +171,10 @@ export function useUserForm({ editUser, onClose, allRoles: _allRoles, allPermiss
     }
     return [...modules]
   }, [allPermissions, selectedRoles, selectedPermissions])
+  const accessIssue = React.useMemo(
+    () => getAccessIssue(allRoles, selectedRoles, selectedWsIds),
+    [allRoles, selectedRoles, selectedWsIds],
+  )
 
   return {
     isEdit,
@@ -179,6 +186,7 @@ export function useUserForm({ editUser, onClose, allRoles: _allRoles, allPermiss
     groupedPermissions: groupped,
     directPermissionLabel,
     activeModules,
+    accessIssue,
     toggleRole,
     togglePermission,
     toggleAllInModule,

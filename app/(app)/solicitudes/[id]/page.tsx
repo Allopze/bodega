@@ -40,7 +40,7 @@ export const metadata: Metadata = { title: "Solicitud de compra" }
 export default async function SolicitudPage({ params }: { params: Promise<{ id: string }> }) {
   let session
   try { session = await requireAuth() }
-  catch { redirect("/forbidden") }
+  catch { redirect(`/forbidden?desde=${encodeURIComponent("/solicitudes")}`) }
 
   const { id } = await params
 

@@ -9,8 +9,11 @@ import {
   CartesianGrid,
   Cell,
   ComposedChart,
+  Label,
   Line,
   LineChart,
+  Pie,
+  PieChart,
   XAxis,
   YAxis,
 } from "recharts"
@@ -23,7 +26,8 @@ import {
   ChartTooltipContent,
 } from "@/components/ui/chart"
 import { formatCLP } from "@/lib/utils"
-import { CHART_COLORS, CHART_SERIES } from "./chart-palette"
+import { CHART_COLORS, CHART_SERIES } from "@/lib/chart-palette"
+import { ChartDataTable } from "@/components/ui/chart-data-table"
 
 // ── Configuration for Charts ──────────────────────────────────────────────────
 
@@ -113,6 +117,17 @@ const materialEnvConfig = {
  * Formato compacto para ejes de dinero: `formatCLP` completo no cabe en un tick
  * de 52px y obliga a rotarlo. El valor exacto vive en el tooltip.
  */
+/**
+ * Lectura equivalente de los gráficos del tablero (TASK-UI-015).
+ *
+ * Todas estas series se distinguen sólo por color de línea o de segmento, y en
+ * 320 px las etiquetas del eje desaparecen. La tabla va bajo la cabecera de
+ * cada tarjeta, antes del gráfico.
+ */
+function maxBy<T>(rows: T[], value: (row: T) => number): T {
+  return rows.reduce((current, row) => value(row) > value(current) ? row : current, rows[0]!)
+}
+
 function compactCLPTick(value: number) {
   if (Math.abs(value) >= 1_000_000) return `$${(value / 1_000_000).toFixed(1)}M`
   if (Math.abs(value) >= 1_000) return `$${Math.round(value / 1_000)}k`
@@ -178,6 +193,15 @@ export function OperationalTrendChart({ data }: { data: Array<{ month: string; r
         <p className="text-xs text-[var(--color-text-muted)]">Solicitudes, órdenes y recepciones — últimos 6 meses</p>
       </div>
 
+      <ChartDataTable
+        title="Tendencia operativa"
+        groupLabel="Mes"
+        columns={["Solicitudes", "Órdenes", "Recepciones"]}
+        rows={data.map((row) => ({ label: row.month, values: [row.requests, row.orders, row.receipts] }))}
+        conclusion={`El mes de mayor actividad es ${maxBy(data, (row) => row.requests + row.orders + row.receipts).month}.`}
+        className="mb-3 mt-0 border-b border-t-0 pb-3 pt-0"
+      />
+
       <ChartContainer config={trendChartConfig} className="h-48 w-full">
         <AreaChart data={data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
           <defs>
@@ -239,6 +263,15 @@ export function ModuleWorkloadChart({ data, total }: { data: ModuleWorkloadPoint
         </span>
       </div>
 
+      <ChartDataTable
+        title="Distribución por módulo"
+        groupLabel="Módulo"
+        columns={["Tareas", "Del backlog"]}
+        rows={counts.map((row) => ({ label: row.module, values: [row.count, total === 0 ? "0%" : `${Math.round((row.count / total) * 100)}%`] }))}
+        conclusion={`${maxBy(counts, (row) => row.count).module} concentra el mayor backlog: ${maxBy(counts, (row) => row.count).count} de ${total} tareas.`}
+        className="mb-3 mt-0 border-b border-t-0 pb-3 pt-0"
+      />
+
       <ChartContainer config={workloadChartConfig} className="h-48 w-full">
         <BarChart data={counts} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
           <CartesianGrid strokeDasharray="3 3" vertical={false} />
@@ -274,6 +307,16 @@ export function SstTrendChart({ data }: { data: SstMonthlyPoint[] }) {
         <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--color-text-muted)]">Tasas de Siniestralidad SST</h3>
         <p className="text-xs text-[var(--color-text-muted)]">Tasa de Frecuencia (izq.) y Tasa de Gravedad (der.), cada una en su escala</p>
       </div>
+
+      <ChartDataTable
+        title="Tasas de siniestralidad SST"
+        groupLabel="Mes"
+        columns={["Tasa de frecuencia", "Tasa de gravedad"]}
+        rows={data.map((row) => ({ label: row.month, values: [row.tasaFrecuencia, row.tasaGravedad] }))}
+        conclusion={`La gravedad más alta se registró en ${maxBy(data, (row) => row.tasaGravedad).month}: ${maxBy(data, (row) => row.tasaGravedad).tasaGravedad}.`}
+        caption="Dos escalas distintas: la de gravedad cuenta días perdidos, la de frecuencia cuenta personas lesionadas. Comparar las líneas entre sí induce a error."
+        className="mb-3 mt-0 border-b border-t-0 pb-3 pt-0"
+      />
 
       <ChartContainer config={sstChartConfig} className="h-48 w-full">
         <LineChart data={data} margin={{ top: 10, right: 6, left: -20, bottom: 0 }}>
@@ -315,6 +358,18 @@ export function SstAccidentChart({ data }: { data: SstMonthlyPoint[] }) {
         </p>
       </div>
 
+      <ChartDataTable
+        title="Accidentes por estado de calificación"
+        groupLabel="Mes"
+        columns={["Confirmados", "Por calificar", "Total provisional"]}
+        rows={data.map((row) => ({ label: row.month, values: [row.confirmados, row.porCalificar, row.confirmados + row.porCalificar] }))}
+        conclusion={hasPending
+          ? `Quedan ${data.reduce((sum, row) => sum + row.porCalificar, 0)} accidentes por calificar en el período.`
+          : "Todos los accidentes del período están confirmados."}
+        caption="Barras apiladas: el alto de la columna es el total provisional del mes."
+        className="mb-3 mt-0 border-b border-t-0 pb-3 pt-0"
+      />
+
       <ChartContainer config={sstAccidentConfig} className="h-48 w-full">
         <BarChart data={data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
           <CartesianGrid strokeDasharray="3 3" vertical={false} />
@@ -342,6 +397,15 @@ export function MaterialEnvironmentalChart({ data }: { data: MaterialEnvironment
         <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--color-text-muted)]">Impacto Material y Ambiental</h3>
         <p className="text-xs text-[var(--color-text-muted)]">Incidentes peligrosos, daños materiales y derrames ambientales</p>
       </div>
+
+      <ChartDataTable
+        title="Impacto material y ambiental"
+        groupLabel="Mes"
+        columns={["Inc. peligrosos", "Daño material", "Daño ambiental"]}
+        rows={data.map((row) => ({ label: row.month, values: [row.dangerousIncidents, row.materialDamage, row.environmentalSpills] }))}
+        conclusion={`El mes con más eventos es ${maxBy(data, (row) => row.dangerousIncidents + row.materialDamage + row.environmentalSpills).month}.`}
+        className="mb-3 mt-0 border-b border-t-0 pb-3 pt-0"
+      />
 
       <ChartContainer config={materialEnvConfig} className="h-48 w-full">
         <BarChart data={data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
@@ -374,7 +438,9 @@ export function WorksiteActivityChart({
 }) {
   if (worksites.length === 0) return null
 
-  const data = [...worksites].sort((a, b) => b.totalCost - a.totalCost).slice(0, 6)
+  // `getDashboardData` ya devuelve ordenado por `totalCost` descendente, así que
+  // acá sólo se corta el top-N. Reordenar era trabajo repetido en el cliente.
+  const data = worksites.slice(0, 6)
 
   const hasCost = data.some((d) => d.totalCost > 0)
   if (!hasCost) return null
@@ -385,6 +451,16 @@ export function WorksiteActivityChart({
         <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--color-text-muted)]">Inversión por Faena</h3>
         <p className="text-xs text-[var(--color-text-muted)]">Monto comprometido por centro de costos — acumulado histórico</p>
       </div>
+
+      <ChartDataTable
+        title="Inversión por faena"
+        groupLabel="Faena"
+        columns={["Inversión acumulada"]}
+        rows={data.map((row) => ({ label: row.name, values: [formatCLP(row.totalCost)] }))}
+        conclusion={`${maxBy(data, (row) => row.totalCost).name} concentra la mayor inversión: ${formatCLP(maxBy(data, (row) => row.totalCost).totalCost)}.`}
+        caption={worksites.length > data.length ? `Se muestran las ${data.length} faenas de mayor inversión de ${worksites.length}. El eje abrevia a miles; los montos exactos están en esta tabla.` : "El eje abrevia a miles; los montos exactos están en esta tabla."}
+        className="mb-3 mt-0 border-b border-t-0 pb-3 pt-0"
+      />
 
       <ChartContainer config={worksiteChartConfig} className="h-56 w-full">
         <BarChart data={data} layout="vertical" margin={{ top: 10, right: 15, left: 10, bottom: 0 }}>
@@ -449,6 +525,16 @@ export function FuelConsumptionChart({ data }: { data: FuelMonthlyChartPoint[] }
         </div>
       </div>
 
+      <ChartDataTable
+        title="Consumo de combustibles"
+        groupLabel="Mes"
+        columns={["Litros", "Costo", "Cargas"]}
+        rows={data.map((row) => ({ label: row.month, values: [row.liters.toLocaleString("es-CL"), formatCLP(row.amount), row.loads] }))}
+        conclusion={`El mayor costo se registró en ${maxBy(data, (row) => row.amount).month}: ${formatCLP(maxBy(data, (row) => row.amount).amount)}.`}
+        caption="Litros en el eje izquierdo y costo en el derecho: son dos escalas y no se comparan entre sí. Las cargas sólo aparecían en el tooltip."
+        className="mb-3 mt-0 border-b border-t-0 pb-3 pt-0"
+      />
+
       <ChartContainer config={fuelChartConfig} className="h-48 w-full">
         <ComposedChart data={data} margin={{ top: 10, right: 6, left: -20, bottom: 0 }}>
           <CartesianGrid strokeDasharray="3 3" vertical={false} />
@@ -508,3 +594,254 @@ export function MaintenanceTrendChart({ data }: { data: MaintenanceMonthlyChartP
   )
 }
 
+
+// ── 9. Dona de composición ───────────────────────────────────────────────────
+
+export interface CompositionSlice {
+  key: string
+  label: string
+  value: number
+}
+
+/**
+ * Dona para **composición de un total** (gasto por módulo, estados
+ * documentales): responde "de qué está hecho" mejor que una barra, porque el
+ * total va al centro y cada arco se lee como parte de él.
+ *
+ * Sólo para composición. Para comparar magnitudes entre categorías la barra
+ * sigue ganando —los ángulos se comparan peor que las longitudes—, y por eso el
+ * ranking por faena o por producto no usa esto.
+ */
+export function CompositionDonutChart({ data, title, description, totalLabel, format = "count" }: {
+  data: CompositionSlice[]
+  title: string
+  description: string
+  totalLabel: string
+  /**
+   * Discriminador y **no** una función: este componente lo instancia un Server
+   * Component, y las funciones no cruzan la frontera RSC — pasar `formatCLP`
+   * directo tiraba la página entera al `error.tsx` del dashboard.
+   */
+  format?: "count" | "clp"
+}) {
+  /*
+   * Se fusionan las porciones que comparten etiqueta antes de dibujar.
+   *
+   * `spendByModule` mapea varios módulos a "Otros", así que la leyenda mostraba
+   * **"Otros" dos veces** con dos colores: dos porciones indistinguibles entre
+   * sí. Lo detectó la pasada visual; ningún test lo veía.
+   */
+  const slices = React.useMemo(() => {
+    const merged = new Map<string, CompositionSlice>()
+    for (const slice of data) {
+      if (slice.value <= 0) continue
+      const current = merged.get(slice.label)
+      if (current) current.value += slice.value
+      else merged.set(slice.label, { ...slice })
+    }
+    return [...merged.values()].sort((left, right) => right.value - left.value)
+  }, [data])
+  const total = React.useMemo(() => slices.reduce((sum, slice) => sum + slice.value, 0), [slices])
+  const config = React.useMemo<ChartConfig>(
+    () => Object.fromEntries(slices.map((slice, index) => [slice.key, { label: slice.label, color: CHART_SERIES[index % CHART_SERIES.length] }])),
+    [slices],
+  )
+  if (slices.length === 0) return null
+
+  const formatted = (value: number) => (format === "clp" ? formatCLP(value) : value.toLocaleString("es-CL"))
+
+  return (
+    <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-xs">
+      <div className="mb-3">
+        <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--color-text-muted)]">{title}</h3>
+        <p className="text-xs text-[var(--color-text-muted)]">{description}</p>
+      </div>
+
+      <ChartDataTable
+        title={title}
+        groupLabel="Categoría"
+        columns={[totalLabel, "Del total"]}
+        rows={slices.map((slice) => ({ label: slice.label, values: [formatted(slice.value), `${Math.round((slice.value / total) * 100)}%`] }))}
+        conclusion={slices.length === 1
+          ? `Una sola categoría: ${slices[0]!.label}, ${formatted(total)}.`
+          : `${slices[0]!.label} es la mayor: ${formatted(slices[0]!.value)} de ${formatted(total)}.`}
+        caption="Los arcos se distinguen sólo por color; los valores exactos están aquí."
+        className="mb-3 mt-0 border-b border-t-0 pb-3 pt-0"
+      />
+
+      <ChartContainer config={config} className="h-48 w-full">
+        <PieChart>
+          <ChartTooltip content={<ChartTooltipContent formatter={(value, name) => [formatted(Number(value)), String(name)]} />} />
+          <Pie data={slices} dataKey="value" nameKey="label" innerRadius={52} outerRadius={78} strokeWidth={2} paddingAngle={2}>
+            {slices.map((slice, index) => <Cell key={slice.key} fill={CHART_SERIES[index % CHART_SERIES.length]} />)}
+            <Label content={({ viewBox }) => {
+              if (!viewBox || !("cx" in viewBox)) return null
+              return (
+                <text x={viewBox.cx} y={viewBox.cy} textAnchor="middle" dominantBaseline="middle">
+                  <tspan x={viewBox.cx} y={viewBox.cy} className="fill-[var(--color-text)] font-mono text-lg font-bold">{formatted(total)}</tspan>
+                  <tspan x={viewBox.cx} y={(viewBox.cy ?? 0) + 18} className="fill-[var(--color-text-muted)] text-[11px]">{totalLabel}</tspan>
+                </text>
+              )
+            }} />
+          </Pie>
+          <ChartLegend content={<ChartLegendContent />} />
+        </PieChart>
+      </ChartContainer>
+    </div>
+  )
+}
+
+// ── 10. Barra horizontal con semáforo por umbral ─────────────────────────────
+
+export interface ThresholdBar {
+  name: string
+  value: number
+  /** Texto de apoyo del tooltip: "12 de 15 ejecutadas". */
+  detail?: string
+}
+
+/**
+ * Ranking horizontal donde **el color codifica el umbral**, no la categoría.
+ *
+ * Patrón tomado de `pdtp-dashboard-charts.tsx`, donde ya se usaba para
+ * cumplimiento por faena. Sirve para cualquier "% contra meta" y para déficits:
+ * el largo ordena y el color dice si está bien, en el límite o mal, sin obligar
+ * a leer el eje.
+ */
+export function ThresholdRankingChart({ data, title, description, unit = "%", format = "plain", goodAtOrAbove = 80, warnAtOrAbove = 50, invert = false, max }: {
+  data: ThresholdBar[]
+  title: string
+  description: string
+  unit?: string
+  /**
+   * `"clp"` formatea eje y tooltip como dinero. Sin esto, un ranking de gasto
+   * mostraba "31416" pelado en el eje — lo destapó la pasada visual.
+   * Discriminador y no función: lo instancia un Server Component.
+   */
+  format?: "plain" | "clp"
+  goodAtOrAbove?: number
+  warnAtOrAbove?: number
+  /** `true` cuando más alto es peor (déficit de stock, atrasos). */
+  invert?: boolean
+  max?: number
+}) {
+  const rows = React.useMemo(
+    () => [...data].sort((left, right) => (invert ? right.value - left.value : left.value - right.value)).slice(-8),
+    [data, invert],
+  )
+  if (rows.length === 0) return null
+
+  const colorFor = (value: number) => {
+    if (invert) {
+      if (value >= goodAtOrAbove) return CHART_COLORS.danger
+      if (value >= warnAtOrAbove) return CHART_COLORS.signal
+      return CHART_COLORS.brand
+    }
+    if (value >= goodAtOrAbove) return CHART_COLORS.brand
+    if (value >= warnAtOrAbove) return CHART_COLORS.signal
+    return CHART_COLORS.danger
+  }
+
+  return (
+    <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-xs">
+      <div className="mb-4">
+        <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--color-text-muted)]">{title}</h3>
+        <p className="text-xs text-[var(--color-text-muted)]">{description}</p>
+      </div>
+
+      <ChartDataTable
+        title={title}
+        groupLabel="Elemento"
+        columns={[format === "clp" ? "Monto" : "Valor", "Detalle"]}
+        rows={rows.map((row) => ({
+          label: row.name,
+          values: [format === "clp" ? formatCLP(row.value) : `${row.value}${unit}`, row.detail ?? "—"],
+        }))}
+        conclusion={(() => {
+          const critico = invert
+            ? rows.reduce((current, row) => row.value > current.value ? row : current, rows[0]!)
+            : rows.reduce((current, row) => row.value < current.value ? row : current, rows[0]!)
+          const valor = format === "clp" ? formatCLP(critico.value) : `${critico.value}${unit}`
+          return invert
+            ? `El caso más crítico es ${critico.name}: ${valor}.`
+            : `El más rezagado es ${critico.name}: ${valor}.`
+        })()}
+        caption={`El color de la barra codifica el umbral (${invert ? "más alto es peor" : "más alto es mejor"}); esta columna lo dice sin depender del color.`}
+        className="mb-3 mt-0 border-b border-t-0 pb-3 pt-0"
+      />
+
+      <ChartContainer config={{ value: { label: title } }} className="h-56 w-full">
+        <BarChart data={rows} layout="vertical" margin={{ top: 4, right: 16, left: 8, bottom: 0 }}>
+          <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+          <XAxis type="number" domain={[0, max ?? (unit === "%" ? 100 : "dataMax")]} tickFormatter={(value) => (format === "clp" ? compactCLPTick(Number(value)) : `${value}${unit}`)} tickLine={false} axisLine={false} tick={{ fontSize: 11 }} />
+          <YAxis type="category" dataKey="name" width={116} tickLine={false} axisLine={false} tick={{ fontSize: 11 }} />
+          <ChartTooltip content={<ChartTooltipContent hideLabel formatter={(value, _name, item) => {
+            const shown = format === "clp" ? formatCLP(Number(value)) : `${value}${unit}`
+            return [
+              item?.payload?.detail ? `${shown} · ${String(item.payload.detail)}` : shown,
+              String(item?.payload?.name ?? ""),
+            ]
+          }} />} />
+          <Bar dataKey="value" radius={[0, 6, 6, 0]} barSize={18}>
+            {rows.map((row) => <Cell key={row.name} fill={colorFor(row.value)} />)}
+          </Bar>
+        </BarChart>
+      </ChartContainer>
+    </div>
+  )
+}
+
+// ── 11. Barra apilada 100% de estados ────────────────────────────────────────
+
+export interface StatusShare {
+  key: string
+  label: string
+  value: number
+}
+
+/**
+ * Una sola barra al 100% partida por estado.
+ *
+ * Para "cómo se reparte una población entre estados" cuando el total absoluto
+ * ya está dicho en el KPI de al lado: la proporción se lee de un vistazo y no
+ * compite con la cifra. Los conteos exactos van en el tooltip y en la leyenda.
+ */
+export function StatusShareBar({ data, title, description }: {
+  data: StatusShare[]
+  title: string
+  description: string
+}) {
+  const slices = React.useMemo(() => data.filter((slice) => slice.value > 0), [data])
+  const total = React.useMemo(() => slices.reduce((sum, slice) => sum + slice.value, 0), [slices])
+  if (total === 0) return null
+
+  return (
+    <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-xs">
+      <div className="mb-3">
+        <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--color-text-muted)]">{title}</h3>
+        <p className="text-xs text-[var(--color-text-muted)]">{description}</p>
+      </div>
+
+      <div className="flex h-6 w-full overflow-hidden rounded-full bg-[var(--color-surface-2)]" role="img" aria-label={slices.map((s) => `${s.label}: ${s.value}`).join(", ")}>
+        {slices.map((slice, index) => (
+          <div
+            key={slice.key}
+            className="h-full first:rounded-l-full last:rounded-r-full"
+            style={{ width: `${(slice.value / total) * 100}%`, backgroundColor: CHART_SERIES[index % CHART_SERIES.length] }}
+            title={`${slice.label}: ${slice.value} (${Math.round((slice.value / total) * 100)}%)`}
+          />
+        ))}
+      </div>
+
+      <ul className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5">
+        {slices.map((slice, index) => (
+          <li key={slice.key} className="flex items-center gap-1.5 text-[11px] text-[var(--color-text-muted)]">
+            <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: CHART_SERIES[index % CHART_SERIES.length] }} aria-hidden />
+            {slice.label}
+            <span className="font-mono tabular-nums text-[var(--color-text)]">{slice.value}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}

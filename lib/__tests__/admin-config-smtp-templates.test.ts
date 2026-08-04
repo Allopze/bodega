@@ -16,6 +16,7 @@ const mockSetCompanyProfile = vi.hoisted(() => vi.fn())
 const mockSetPdfMaxSizeMb = vi.hoisted(() => vi.fn())
 const mockSetEmailsEnabled = vi.hoisted(() => vi.fn())
 const mockTestResendConnection = vi.hoisted(() => vi.fn())
+const mockRecordAudit = vi.hoisted(() => vi.fn())
 const mockUpdateTemplate = vi.hoisted(() => vi.fn())
 const mockResetTemplate = vi.hoisted(() => vi.fn())
 const mockSeedDefaultTemplates = vi.hoisted(() => vi.fn())
@@ -30,6 +31,7 @@ vi.mock("@/lib/services/system-settings", () => ({
 vi.mock("@/lib/services/smtp-settings", () => ({
   testResendConnection: mockTestResendConnection,
 }))
+vi.mock("@/lib/audit", () => ({ recordAudit: mockRecordAudit }))
 vi.mock("@/lib/services/email-templates", () => ({
   updateTemplate: mockUpdateTemplate,
   resetTemplate: mockResetTemplate,
@@ -88,7 +90,7 @@ describe("updateSystemSettings", () => {
 // ── admin/correo-smtp ─────────────────────────────────────────────────────
 
 describe("correo-smtp actions", () => {
-  beforeEach(() => { vi.clearAllMocks(); mockSetEmailsEnabled.mockResolvedValue(undefined); mockTestResendConnection.mockResolvedValue({ ok: true }) })
+  beforeEach(() => { vi.clearAllMocks(); mockSetEmailsEnabled.mockResolvedValue(undefined); mockTestResendConnection.mockResolvedValue({ ok: true }); mockRecordAudit.mockResolvedValue(undefined) })
 
   describe("setEmailsEnabledAction", () => {
     it("denies without admin:smtp", async () => {
@@ -133,6 +135,11 @@ describe("correo-smtp actions", () => {
       const { testResendAction } = await import("@/app/(app)/admin/correo-smtp/actions")
       const r = await testResendAction(null, new FormData())
       expect(r.ok).toBe(true); expect(r.message).toContain("enviado")
+      expect(mockRecordAudit).toHaveBeenCalledWith(expect.objectContaining({
+        entityType: "smtp_delivery_test",
+        entityId: "resend",
+        newState: expect.objectContaining({ recipient: "admin@chome.cl", result: "sent" }),
+      }))
     })
 
     it("propagates service error", async () => {
@@ -141,6 +148,18 @@ describe("correo-smtp actions", () => {
       const { testResendAction } = await import("@/app/(app)/admin/correo-smtp/actions")
       const r = await testResendAction(null, new FormData())
       expect(r.ok).toBe(false); expect(r.message).toContain("API key")
+    })
+
+    it("audits a provider exception as a failed delivery test", async () => {
+      mockAuthFn.mockResolvedValue(makeSession("admin:smtp"))
+      mockTestResendConnection.mockRejectedValue(new Error("Proveedor no disponible"))
+      const { testResendAction } = await import("@/app/(app)/admin/correo-smtp/actions")
+      const r = await testResendAction(null, new FormData())
+      expect(r.ok).toBe(false)
+      expect(r.message).toContain("Proveedor no disponible")
+      expect(mockRecordAudit).toHaveBeenCalledWith(expect.objectContaining({
+        newState: expect.objectContaining({ result: "failed", error: "Proveedor no disponible" }),
+      }))
     })
   })
 })

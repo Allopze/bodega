@@ -3,7 +3,6 @@
 import * as React from "react"
 import { useActionState } from "react"
 import { toast } from "@/lib/toast"
-import { Check } from "@phosphor-icons/react"
 import { Sheet, SheetContent, SheetHeader, SheetBody, SheetFooter, SheetTitle, SheetDescription, SheetCloseButton } from "@/components/admin/sheet"
 import { INITIAL_STATE, type ActionState } from "@/components/admin/form-state"
 import { SubmitButton } from "@/components/admin/submit-button"
@@ -13,6 +12,10 @@ import { Input } from "@/components/ui/input"
 import { inviteUser } from "./actions/invite"
 import { PendingInvitePanel } from "./user-invite-form-pending"
 import { WorkerSelector } from "./worker-selector"
+import { RoleSelector } from "./role-selector"
+import { WorksiteSelector } from "./worksite-selector"
+import { UserAccessReview } from "./user-access-review"
+import { getAccessIssue } from "./user-form.helpers"
 import type { PendingInvite, UserInviteFormProps } from "./user-invite-form.types"
 
 interface InviteSelection {
@@ -54,6 +57,10 @@ export function UserInviteForm({ open, onClose, allRoles, allWorksites, allWorke
   const [selection, dispatchSelection] = React.useReducer(inviteSelectionReducer, EMPTY_SELECTION)
   const [pending, setPending] = React.useState<PendingInvite | null>(null)
   const { selectedRoles, selectedWsIds, primaryWorksiteId, selectedWorkerId, name } = selection
+  const accessIssue = React.useMemo(
+    () => getAccessIssue(allRoles, selectedRoles, selectedWsIds),
+    [allRoles, selectedRoles, selectedWsIds],
+  )
 
   const [state, formAction] = useActionState<ActionState, FormData>(
     async (prev, formData) => {
@@ -130,7 +137,25 @@ export function UserInviteForm({ open, onClose, allRoles, allWorksites, allWorke
                 <p className="mb-4 text-sm text-(--color-danger)">{state.message}</p>
               )}
 
-              <FieldGroup className="gap-4">
+              <RoleSelector
+                roles={allRoles}
+                selectedIds={selectedRoles}
+                onToggle={toggleRole}
+                error={state.fieldErrors?.roleIds?.[0]}
+              />
+
+              <WorksiteSelector
+                worksites={allWorksites}
+                selectedIds={selectedWsIds}
+                primaryId={primaryWorksiteId}
+                onToggle={toggleWorksite}
+                onSetPrimary={(id) => dispatchSelection({ type: "set-primary", id })}
+                error={state.fieldErrors?.worksiteAssignments?.[0]}
+              />
+
+              <section className="mt-5" aria-labelledby="invite-identity-title">
+                <h3 id="invite-identity-title" className="text-eyebrow mb-2">Datos de la persona</h3>
+                <FieldGroup className="gap-4">
                 <WorkerSelector
                   workers={allWorkers}
                   selectedId={selectedWorkerId}
@@ -177,107 +202,26 @@ export function UserInviteForm({ open, onClose, allRoles, allWorksites, allWorke
                     error={!!state.fieldErrors?.expiresInDays}
                   />
                 </Field>
-              </FieldGroup>
+                </FieldGroup>
+              </section>
 
-              <div className="mt-5">
-                <p className="mb-2 text-eyebrow">
-                  Roles
-                </p>
-                {state.fieldErrors?.roleIds?.[0] && (
-                  <p className="mb-2 text-xs text-(--color-danger)">{state.fieldErrors.roleIds[0]}</p>
-                )}
-                <div className="grid grid-cols-2 gap-1.5">
-                  {allRoles.map((role) => {
-                    const checked = selectedRoles.includes(role.id)
-                    return (
-                      <button
-                        key={role.id}
-                        type="button"
-                        onClick={() => toggleRole(role.id)}
-                        className={[
-                          "inline-flex items-center gap-1.5 rounded-[var(--radius)] border px-3 py-2 text-left text-xs font-medium",
-                          "transition-all duration-(--duration-fast) ease-[var(--ease-out)] cursor-pointer select-none",
-                          checked
-                            ? "border-(--color-primary) bg-(--color-primary) text-white font-semibold shadow-(--shadow-xs) hover:opacity-90"
-                            : "border-(--color-border) bg-surface text-(--color-text-muted) hover:bg-surface-2 hover:border-(--color-border-strong) hover:text-(--color-text)",
-                        ].join(" ")}
-                      >
-                        <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center" aria-hidden="true">
-                          {checked && <Check size={11} weight="bold" />}
-                        </span>
-                        <span title={role.label} className="truncate">{role.label}</span>
-                      </button>
-                    )
-                  })}
-                </div>
-              </div>
-
-              <div className="mt-5">
-                <p className="mb-2 text-eyebrow">
-                  Faenas asignadas
-                </p>
-                {state.fieldErrors?.worksiteAssignments?.[0] && (
-                  <p className="mb-2 text-xs text-(--color-danger)">
-                    {state.fieldErrors.worksiteAssignments[0]}
-                  </p>
-                )}
-                {allWorksites.length === 0 && (
-                  <p className="text-xs text-(--color-text-subtle)">No hay faenas registradas</p>
-                )}
-                <div className="flex flex-col gap-1">
-                  {allWorksites.map((worksite) => {
-                    const isChecked = selectedWsIds.includes(worksite.id)
-                    const isPrimary = primaryWorksiteId === worksite.id && isChecked
-                    return (
-                      <label
-                        key={worksite.id}
-                        className={[
-                          "group flex cursor-pointer items-center gap-3 rounded-(--radius) px-2 py-1.5 select-none",
-                          "transition-colors duration-(--duration-fast) ease-[var(--ease-out)]",
-                          isChecked
-                            ? "bg-(--color-primary-tint) hover:bg-(--color-primary-tint)"
-                            : "hover:bg-surface-2",
-                        ].join(" ")}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={isChecked}
-                          onChange={() => toggleWorksite(worksite.id)}
-                          className="h-4 w-4 shrink-0 accent-(--color-primary) cursor-pointer"
-                        />
-                        <span className="flex-1 text-sm text-(--color-text)">
-                          {worksite.name}
-                          <span className="ml-1.5 font-mono text-xs text-(--color-text-subtle)">
-                            {worksite.code}
-                          </span>
-                        </span>
-                        {isChecked && (
-                          <button
-                            type="button"
-                            onClick={(e) => { e.preventDefault(); dispatchSelection({ type: "set-primary", id: worksite.id }) }}
-                            className={[
-                              "rounded-(--radius-sm) border px-2 py-0.5 text-xs cursor-pointer select-none",
-                              "transition-all duration-(--duration-fast) ease-[var(--ease-out)]",
-                              isPrimary
-                                ? "border-(--color-primary) bg-(--color-primary) text-white font-medium shadow-(--shadow-xs)"
-                                : "border-(--color-border) bg-surface text-(--color-text-subtle) hover:border-(--color-primary) hover:text-(--color-primary) hover:bg-surface-2",
-                            ].join(" ")}
-                          >
-                            {isPrimary ? "Principal" : "Marcar principal"}
-                          </button>
-                        )}
-                      </label>
-                    )
-                  })}
-                </div>
-              </div>
+              <UserAccessReview
+                roles={allRoles}
+                worksites={allWorksites}
+                permissions={[]}
+                selectedRoleIds={selectedRoles}
+                selectedWorksiteIds={selectedWsIds}
+                primaryWorksiteId={primaryWorksiteId}
+                selectedPermissionIds={[]}
+                issue={accessIssue}
+              />
             </SheetBody>
 
             <SheetFooter>
               <Button type="button" variant="secondary" onClick={onClose}>
                 Cancelar
               </Button>
-              <SubmitButton label="Enviar invitación" loadingLabel="Enviando..." />
+              <SubmitButton label="Enviar invitación" loadingLabel="Enviando..." disabled={!!accessIssue} />
             </SheetFooter>
           </form>
         )}
