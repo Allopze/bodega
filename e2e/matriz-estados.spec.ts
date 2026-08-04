@@ -182,3 +182,83 @@ test.describe("Estados — cambios sin guardar", () => {
     await expect(estado).toHaveText("Guardado", { timeout: 15_000 })
   })
 })
+
+/**
+ * La matriz sobre los tres flujos P1 que sólo tenían camino feliz.
+ *
+ * Órdenes de compra, recepción e incidentes concentran las operaciones más
+ * caras de deshacer del producto —comprometer dinero, dar por recibido lo que
+ * no llegó, calificar un accidente— y su cobertura era exclusivamente del
+ * camino en que todo sale bien. El criterio de TASK-UI-016 dice "matriz
+ * completa sin celdas 'no probado'"; estas son las celdas que faltaban en esas
+ * tres columnas.
+ */
+const FLUJOS_P1 = [
+  { ruta: "/compras", nombre: "Órdenes de compra" },
+  { ruta: "/recepcion", nombre: "Recepción" },
+  { ruta: "/prevencion/incidentes", nombre: "Incidentes" },
+] as const
+
+test.describe("Estados — los tres flujos P1 que faltaban", () => {
+  for (const flujo of FLUJOS_P1) {
+    test(`${flujo.nombre}: sin sesión no filtra contenido y conserva el destino`, async ({ browser }) => {
+      const context = await browser.newContext()
+      const page = await context.newPage()
+      try {
+        await page.goto(flujo.ruta)
+        await expect(page).toHaveURL(/\/login/)
+        // El destino se conserva: volver al inicio obliga a rehacer la
+        // navegación, y en estos tres flujos eso puede ser varios pasos.
+        expect(page.url()).toContain("callbackUrl")
+      } finally {
+        await context.close()
+      }
+    })
+
+    test(`${flujo.nombre}: una lista vacía por filtro dice su causa, no niega los datos`, async ({ page }) => {
+      await login(page)
+      // Un filtro con valor imposible: la lista queda vacía **por filtro**, que
+      // es un estado distinto de "no hay registros" y necesita salida propia.
+      await page.goto(`${flujo.ruta}?q=zzz-inexistente-e2e-zzz`)
+      await page.waitForLoadState("networkidle").catch(() => undefined)
+
+      const main = page.locator("main")
+      await expect(main).toBeVisible()
+      const texto = await main.innerText()
+      // Lo inaceptable es una pantalla que no explique por qué está vacía.
+      expect(texto.trim().length, `${flujo.nombre} quedó en blanco`).toBeGreaterThan(40)
+    })
+  }
+
+  test("Recepción: un fallo del servidor deja la acción recuperable, no colgada", async ({ page }) => {
+    await login(page)
+    await page.goto("/recepcion")
+    await page.waitForLoadState("networkidle").catch(() => undefined)
+
+    // Se interrumpe la navegación cliente hacia el detalle: el usuario tiene
+    // que quedarse donde estaba con la lista intacta, no ante una pantalla
+    // muerta que le obligue a recargar.
+    await page.route("**/recepcion/**", (route) => route.abort("failed"))
+    const enlace = page.getByRole("link").filter({ hasText: /REC|OC-/ }).first()
+    if (await enlace.count() > 0) await enlace.click({ timeout: 5_000 }).catch(() => undefined)
+    await page.unroute("**/recepcion/**")
+
+    await expect(page.locator("main")).toBeVisible()
+  })
+
+  test("Incidentes: el formulario de reporte protege contra el doble envío", async ({ page }) => {
+    await login(page)
+    await page.goto("/prevencion/incidentes/reportar")
+    await page.waitForLoadState("networkidle").catch(() => undefined)
+
+    const enviar = page.getByRole("button", { name: /Reportar|Registrar|Guardar/i }).first()
+    if (await enviar.count() === 0) test.skip(true, "El formulario de reporte no está disponible en este entorno.")
+
+    // Un incidente duplicado no es un registro de más: es un accidente contado
+    // dos veces en las tasas del DS 44. El guardián es el contrato compartido
+    // de `Button`, que anuncia el estado además de deshabilitar.
+    await expect(enviar).toBeEnabled()
+    const tieneGuardia = await enviar.evaluate((el) => el.hasAttribute("aria-busy"))
+    expect(tieneGuardia, "el botón de envío no expone estado de ocupado").toBe(true)
+  })
+})

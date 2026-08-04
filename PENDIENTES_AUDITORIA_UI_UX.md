@@ -1,6 +1,6 @@
 # Pendientes de la auditoría UI/UX
 
-Estado al **4 de agosto de 2026**, tras la pasada 66 de `AUDITORIA_UI_UX_CAPTURAS.md`.
+Estado al **4 de agosto de 2026**, tras la pasada 69 de `AUDITORIA_UI_UX_CAPTURAS.md`.
 
 Este documento es el inventario de lo que **falta**. Lo ya resuelto vive en el registro de ejecución de la auditoría; aquí sólo se nombra cuando hace falta para entender un pendiente.
 
@@ -26,43 +26,36 @@ Cifras medidas, no estimadas:
 
 | Señal | Valor | Cómo se obtuvo |
 |---|---|---|
-| Suite E2E | **345 aprobados, 4 saltados, 0 fallos**, 15,3 min | `npm run test:e2e` (2 workers) |
+| Suite E2E | **367 aprobados, 4 saltados**, 16,9 min; 1 fallo intermitente que pasa en aislamiento (§4.1) | `npm run test:e2e` (2 workers) |
 | Suite E2E, un worker | **334 aprobados, 0 fallos**, 25,6 min | `npm run test:e2e -- --workers=1` |
-| Safari móvil | **17 de 18** (el TAE salta por límite del entorno) | `E2E_MOBILE_BROWSERS=1 … --project=mobile-safari` |
+| Safari móvil | **22 de 23** (el TAE salta por límite del entorno); incluye 5 del formulario PPA | `E2E_MOBILE_BROWSERS=1 … --project=mobile-safari` |
 | Chrome móvil | **18 de 18** | `… --project=mobile-chrome` |
 | Reflow 320 / 768 / 1024 px | 0 desbordamiento en 8 pantallas, ambos motores | `e2e/reflow-anchos.spec.ts` |
 | Payload RSC de las listas grandes | **136–326 ms**, 94–481 KB | `e2e/rsc-payload.spec.ts` |
 | Bundle | 160 rutas, peor caso **2,41 MB**, mediana 1,37 MB (presupuesto 3 MB) | `npm run check:bundle-budget` |
-| Captura completa | 163/163, 0 errores de cliente, 0 scroll horizontal, 0 inválidas/huérfanas; **1 hash duplicado** (§4.2) | `npm run screenshots` |
+| Captura completa | **163/163, gate en verde** en desktop+móvil | `npm run screenshots` |
+| Captura en 320 / 768 / 1366 px | **163 rutas cada uno**, 0 errores de cliente, **0 scroll horizontal**, integridad limpia | `npm run ss -- small\|tablet\|laptop` |
+| Controles cuyo nombre depende de `title` | **0**, con control positivo | `tooltip-por-foco.test.ts` |
 | Gráficos con lectura equivalente | 14 de 14 | `chart-equivalent-reading.test.ts` |
 | Enums visibles en pantallas | 0, con control positivo | `vocabulario-visible.test.ts` |
+| Pruebas unitarias | **3406 aprobadas** | `npm run test:fast` |
 | Typecheck y lint | Verdes; 4 avisos preexistentes | `npx tsc --noEmit`, `npx eslint` |
-| Árbol de trabajo | **352 archivos sin commit** | `git status --porcelain` |
+| Árbol de trabajo | **4 archivos sin commit** — otro proceso commiteó el resto (§3.5) | `git status --porcelain` |
 
 ---
 
-## 3. Decisiones bloqueadas — esperan una respuesta
+## 3. Decisiones — todas resueltas
 
-### 3.1 TASK-UI-017 · Minimización de RUT
-No iniciado, por tu decisión. Verificado: no existe `maskRut` en el repositorio y el RUT completo aparece en listados, selectores y detalle. Su criterio de aceptación empieza por *"matriz aprobada"*, y no existe.
+Las seis que llevaban pasadas esperando dueño se cerraron el 4 de agosto. Se dejan escritas con su consecuencia, porque una decisión sin registrar vuelve a aparecer como pendiente.
 
-**Para desbloquearlo:** una matriz por rol y superficie. Riesgo conocido a resolver en ella: enmascarar crea homónimos, hay que acordar el identificador alternativo.
-
-### 3.2 Salud por módulo — qué señal es honesta
-`/admin/modulos` ya antepone la salud **de plataforma** que se mide ejecutando algo: consulta a PostgreSQL, escritura en el volumen y espacio en disco. Y dice explícitamente que los interruptores no miden salud.
-
-No existe sonda **por módulo**: uno activo cuyo backend falla se ve igual que uno sano. No se inventó una a propósito. Definir esa señal —¿qué significa que "Recepción" está sano?— es decisión de producto.
-
-### 3.3 PPA sin JavaScript
-Abierta desde la pasada 57. Si debe funcionar con JavaScript deshabilitado, hay que diseñar el fallback; si no, decirlo y cerrar el criterio.
-
-### 3.4 Cargas TAE offline al cerrar sesión
-Se promete borrado local de la cola sin haber decidido qué debe pasar en un dispositivo compartido.
-
-### 3.5 Consolidación en git
-**~352 archivos sin commit**, en un checkout que otro proceso edita a la vez. Diez pasadas de trabajo viven sólo en el árbol. Sigue siendo el riesgo más barato de eliminar.
-
----
+| Decisión | Respuesta | Estado |
+|---|---|---|
+| **TASK-UI-017 · Minimización de RUT** | No es necesario enmascarar | **Descartada.** No es un pendiente: es una decisión tomada. |
+| **TASK-UI-011 · Salud por módulo** | Se deja como está | **Cerrada.** La banda de plataforma es la única salud demostrable y la pantalla ya dice que los interruptores miden visibilidad, no salud. |
+| **TASK-UI-007 · PPA** | Debe funcionar sin red | **Cerrada.** Ya funciona, certificado por E2E. Y como la cola offline **es** JavaScript, el fallback sin JavaScript queda descartado por incompatible con el requisito. |
+| **TASK-UI-008 · Cola TAE en dispositivo compartido** | Bloquear "Finalizar" mientras haya pendientes | **Implementada** (§5.1). |
+| **Montos negativos** | Cambiar a `-$4.500` | **Implementada** (§5.1). |
+| **Historia de git** | No rehacerla | **Cerrada.** El commit `docs(audit)` con 349 archivos de código se queda como está. |
 
 ## 4. Defectos abiertos con diagnóstico parcial
 
@@ -77,55 +70,44 @@ Lo que ahora se sabe con cifras:
 
 **Decisión tomada:** se conserva `workers: 2`. CI ya tiene `retries: 1`, que lo absorbe, y +69 % de tiempo en cada corrida local es peor negocio. `--workers=1` queda documentado para cuando se necesite una corrida determinista.
 
-**Lo que queda:** "Mis pendientes" pesa 481 KB, cuatro veces el resto de listas. No incumple el presupuesto hoy, pero es la que primero lo hará. `rsc-payload.spec.ts` lo vigila.
+**Los 481 KB de "Mis pendientes" están explicados:** la cola sirve **50 registros** por página (`DEFAULT_PAGE_SIZE`) mientras Compras y Solicitudes sirven 25, y cada elemento arrastra más campos. No es una fuga, es el doble de filas más ricas. No se recorta: a 277 ms está a un orden de magnitud del margen, y bajar el tamaño de página cambia cuántas tareas ve un usuario antes de paginar, que es decisión de producto. `rsc-payload.spec.ts` avisará si deja de ser proporcionado.
 
-### 4.2 Un duplicado en el manifest — cambió de causa dos veces
-**Prioridad: baja.** Es cosmético: no afecta a la aplicación, sólo impide que el gate de capturas cierre en verde.
+**Lo que queda:** un fallo por corrida completa, siempre en `oc-reconciliation` o `ppa-flow`, siempre verde en aislamiento. Es contención, está medida y CI la absorbe con `retries: 1`.
 
-Las dos causas anteriores están cerradas y confirmadas por corrida limpia:
+### 4.2 El duplicado del manifest — cerrado tras cambiar de causa tres veces
+**Cerrado.** Cada arreglo destapaba la causa siguiente:
 
 - El barrido select/dropdown fotografiando el mismo control dos veces.
 - El detector de "modal abierto" resolviendo contra un acordeón ya abierto, y —después— fotografiando el diálogo **antes de que terminara su animación**, con el overlay a opacidad cero. Se corrigió esperando a `document.getAnimations()`; `mobile-prevencion-campanas` salió limpio en la corrida siguiente.
 
-**Lo que queda es distinto:** `mobile-compras-detalle-avance.png` es idéntico a `mobile-compras-detalle-tab-avance.png`. La pestaña "Avance" está declarada **a la vez** como ruta propia (`/compras/po-audit-1?tab=avance`) y como pestaña del detalle, así que se fotografía dos veces.
+La tercera y última era la pestaña "Avance", declarada **a la vez** como ruta propia y como pestaña del detalle. Cualquier heurística por nombre o URL falla en algún caso —el rótulo es "Avance por ítem" y el query es `avance`—, así que la comparación se hace donde la respuesta es exacta: **el hash del PNG**. Si una captura de interacción produce el mismo byte que una de ruta, se borra la interacción y se conserva la canónica. Sólo se poda la interacción; dos vistas idénticas siguen rompiendo el gate.
 
-`isDeclaredElsewhere` ya existe para esto, pero compara la **URL** tras el clic, y esta pestaña no la cambia: es estado de cliente. Por texto tampoco casa —el rótulo es "Avance por ítem" y el query es `avance`—, así que la solución por nombre sería frágil.
+**Cerrado.** La corrida completa de la pasada 67 imprime «Integridad de capturas: sin URL inválida, huérfano, referencia o hash duplicado ✓».
 
-**Arreglo correcto:** comparar el hash de la captura de interacción contra el de las rutas base al reconciliar, y descartar la redundante conservando la canónica. Resuelve esta y cualquier futura de la misma forma sin adivinar URLs. **No implementado.**
+### 4.3 Fontanería PWA sin certificar en WebKit
+**Reducido.** Los escenarios de **formulario** —verificación de RUT y progresión por pasos— quedaban fuera sólo por compartir archivo con los de plumbing. Viven ahora en `ppa-formulario.spec.ts` y están certificados en Safari: **5 de 5**.
 
-### 4.3 PPA offline sin certificar en WebKit
-`ppa-offline` queda fuera del alcance móvil, con el motivo escrito en `playwright.config.ts`: prueba fontanería de Service Worker, IndexedDB y permisos de notificación con APIs que sólo Chromium expone. Sus escenarios de formulario **sí** pasaron en Safari; los de plumbing no están certificados ahí.
+Lo que sigue sin certificar en WebKit es exactamente lo que ese motor no puede ejecutar: Service Worker, IndexedDB y permisos de notificación, que `ppa-offline.spec.ts` prueba con `context.grantPermissions(["notifications"])` y `Object.defineProperty(Notification, …)`. Sólo un dispositivo real lo cubre (§7).
 
 ---
 
 ## 5. Código por escribir
 
-### 5.1 TASK-UI-012 · Lo que queda del glosario
-Cerrados: PDTP, incidentes, inventario ARCO, evidencia CAPA, slugs de `/admin/modulos`, enums en los XLSX, pluralización (`countOf`), snapshots de formato y el barrido estático con control positivo.
+### 5.1 Decisiones implementadas en la pasada 69
+- **Cola TAE en dispositivo compartido.** "Finalizar" se bloquea mientras haya cargas sin enviar, y dice cuántas. Se reconsulta la cola dentro del manejador —entre el refresco y el clic pueden encolarse cargas— y un fallo al leerla se trata como "hay pendientes".
+- **Montos negativos.** `-$4.500` en vez de `$-4.500`. El cambio destapó que `-0 < 0` es falso en JavaScript, así que el cero negativo salía como `$-0`: un saldo cuadrado con signo, en el caso normal de restar dos montos iguales. Normalizado.
 
-**Queda:**
-- **Estados de valor ausente, desconocido, legacy y timezone.** Declarados en la tarea, no diseñados. `formatDateSafe` cubre el ausente; los otros tres no tienen tratamiento.
-- **Tooltips por foco y tacto.** El rail colapsado ya los tiene; falta el barrido del resto y la verificación en dispositivo real (§7).
-- **Una rareza anotada, no resuelta:** `es-CL` escribe los negativos como **`$-4.500`**, con el signo dentro del símbolo. Aparece en notas de crédito y ajustes. Congelado en el snapshot; cambiarlo es decisión de producto.
-
-### 5.2 TASK-UI-011 · El ejercicio de respaldo
-Acto operativo, no código: ejecutar un respaldo y **restaurarlo** en un entorno desechable, para que la pantalla pueda afirmar recuperabilidad con evidencia. Hoy sólo puede afirmar que se ejecutó una copia.
-
-### 5.3 TASK-UI-002 · Estado "eliminado" en el resto de entidades
-Resuelto donde hay borrado lógico —OC y documentos SST—. Para las demás, "eliminado" e "inexistente" son el mismo caso. Si se añade borrado lógico a otra entidad, hay que añadirle su estado; hoy no hay deuda ni prueba que lo obligue.
-
----
+### 5.2 Lo que sigue sin escribir
+- **El ejercicio de respaldo y restauración.** Acto operativo, no código: ejecutar un respaldo y **restaurarlo** en un entorno desechable, para que la pantalla pueda afirmar recuperabilidad con evidencia. Hoy sólo puede afirmar que se ejecutó una copia.
+- **Estado "eliminado" en el resto de entidades.** Resuelto donde hay borrado lógico —OC y documentos SST—. Para las demás, "eliminado" e "inexistente" son el mismo caso. Si se añade borrado lógico a otra entidad, hay que añadirle su estado; hoy no hay deuda ni prueba que lo obligue.
 
 ## 6. Certificación ejecutable
 
 | Tarea | Qué falta ejecutar |
 |---|---|
-| **TASK-UI-016** | La matriz cubre carga, error recuperable, sin permiso, sesión expirada, doble envío y offline sobre flujos P1. Falta **extenderla al resto de flujos P1** —OC, recepción, incidentes— y el estado *dirty* (salir de un formulario con cambios sin guardar), que no tiene tratamiento. |
-| **TASK-UI-009** | E2E de ida y vuelta del editor PDTP conservando año, faena, período, vista y filtro; y la prueba por rol del KPI de HH faltantes. |
-| **TASK-UI-010** | E2E de roles con principal y excepciones, POST manipulado y accesibilidad del diff de permisos. |
-| **TASK-UI-003** | Cubierta la entrada por ruta en dos viewports. Falta **revisar las solicitudes históricas potencialmente mal tipadas antes de migrar datos** — eso es una consulta a producción, no una prueba. |
-| **TASK-UI-004 / 014** | Reflow certificado en cinco anchos y dos motores. Falta el **recorrido por teclado y el foco visible** en 320/768/1024, que hoy sólo se comprueban a 960 (zoom 200 %). |
-| **TASK-UI-001** | Recaptura en los tres anchos del gate selectivo (`small`, `tablet`, `laptop`), que existen pero no se han ejercitado. |
+| **TASK-UI-016** | Las siete celdas están cubiertas, ahora también sobre OC, recepción e incidentes. Falta el **recorrido completo por teclado de cada flujo** —hoy se comprueba el foco visible, no que la tarea se pueda terminar sin ratón—. |
+| **TASK-UI-003** | Cubierta la entrada por ruta en dos viewports, y existe `npm run check:mistyped-requests`. Falta **ejecutarlo contra producción y decidir sobre lo que encuentre**: reclasificar cambia el flujo de aprobación ya ejecutado. |
+| **TASK-UI-001** | **Ejecutado.** Los tres anchos del gate selectivo, 163 rutas cada uno, sin scroll horizontal ni errores de cliente. Se repite cuando cambien rutas o fixtures. |
 
 ---
 
@@ -147,8 +129,8 @@ Resuelto donde hay borrado lógico —OC y documentos SST—. Para las demás, "
 
 | Acción | Estado |
 |---|---|
-| Recaptura canónica before/after | Recaptura limpia y reproducible; falta el *before/after* comparado |
-| Prueba E2E de flujos completos | **345 escenarios, 0 fallos.** Estados de borde cubiertos en flujos P1; falta extenderlos (§6) |
+| Recaptura canónica before/after | **Gate en verde** por primera vez; falta el *before/after* comparado |
+| Prueba E2E de flujos completos | **367 escenarios.** Siete estados de borde cubiertos, incluidos OC, recepción e incidentes |
 | Auditoría WCAG automatizada + manual | Automática ampliada y ejecutada: axe, teclado, zoom, reflow en cinco anchos, dos motores. **Manual sin empezar** |
 | Pruebas de usabilidad por rol | Sin empezar |
 | Medición de rendimiento percibido | **Payload y bundle medidos.** Falta LCP, INP y CLS reales |
@@ -161,12 +143,11 @@ El veredicto original —*"no recomendable para producción sin corregir problem
 ## 9. Orden sugerido
 
 1. **Commitear** (§3.5). Minutos, y elimina el único riesgo de pérdida.
-2. **Cerrar el último duplicado del manifest** (§4.2) comparando hashes al reconciliar. Media hora, y deja el gate de capturas en verde.
-3. **Extender la matriz de estados** al resto de flujos P1 y añadir el estado *dirty* (§6).
-4. **Teclado y foco visible en 320/768/1024** (§6). El harness ya está.
-5. **Los E2E de PDTP y roles** (§6).
-6. **Decidir la señal de salud por módulo** (§3.2) y **la matriz de RUT** (§3.1).
-7. **Agendar lo no automatizable** (§7): personas, dispositivos físicos y lector de pantalla.
+2. **Ejecutar `npm run check:mistyped-requests` contra producción** (§6) y decidir sobre lo que encuentre. Es lo único que toca datos reales.
+3. **El ejercicio de respaldo y restauración** (§5.2). Acto operativo sobre un entorno desechable.
+4. **Agendar lo no automatizable** (§7): personas, dispositivos físicos y lector de pantalla. **Es la partida más grande que queda, y ninguna parte de ella se puede automatizar.**
+
+Con las seis decisiones cerradas, **ya no queda nada bloqueado por falta de respuesta**. Lo que resta necesita acceso a producción, un entorno desechable, o personas y dispositivos reales.
 
 ---
 
@@ -178,3 +159,8 @@ El veredicto original —*"no recomendable para producción sin corregir problem
 - **Un barrido que no encuentra nada no distingue "limpio" de "roto".** Por eso `vocabulario-visible.test.ts` lleva control positivo.
 - **No correr el capturador y la suite E2E a la vez.** Ambos reconstruyen `.next`; hacerlo produjo un build a medias, 90 pantallas de error idénticas y una corrida entera perdida. Dos veces.
 - **Cuidado al relajar un gate.** La primera versión de la excepción de hashes compartidos habría dado por buenas esas 90 pantallas de error.
+- **Los defectos que quedan no están en las pantallas, están en lo que todas comparten.** El de la pasada 67 eran cuatro formateadores: `formatDate(null)` devolvía `31-12-1969` y `formatDate("basura")` tumbaba la página. Ninguno aparece jamás con datos sembrados, que es por qué sobrevivieron a sesenta y seis pasadas.
+- **Playwright sigue redirecciones por defecto.** Una aserción sobre el estado de un POST sin `maxRedirects: 0` da por buena una barrera que no comprobó.
+- **Contar antes de barrer.** El inventario decía 444 `title=`; medirlos dejó 3 defectos y 441 falsos positivos, y 58 de esos habrían empeorado la navegación por teclado si se migraban. Media hora de contar bien cambió por completo la decisión.
+- **Una prueba verde puede fijar el defecto — ya van tres.** El enum `"sent"` en los exportes, `comprador@e2e` que la semilla hace administrador, y un test que exigía el atributo `title` justo donde el criterio dice que no debe estar. Distinto es un **snapshot** que congela un formato: los dos que afirmaban `$-5.000` y `$-4.500` estaban haciendo su trabajo, y por eso el cambio de formato no pudo pasar inadvertido.
+- **Responder a la pregunta que se hizo.** Se preguntó por JavaScript deshabilitado y la respuesta llegó sobre red. No son lo mismo; darlo por equivalente habría cerrado un criterio con la respuesta a otra cosa.

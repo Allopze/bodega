@@ -172,6 +172,44 @@ async function main() {
     { roleId: "rol-sol-faena", permissionId: "p-ops-view-work" },
   ]
   await db.insert(schema.rolePermissions).values(solFaenaPermissions)
+
+  /*
+   * Observador de prevención: ve los indicadores pero **no** puede cargar los
+   * denominadores. Existe para una pregunta concreta de TASK-UI-009 que no se
+   * podía responder con los tres usuarios anteriores: cuando falta el
+   * denominador de horas-hombre y la tasa aparece como «—», ¿quien no puede
+   * corregirlo entiende **por qué** falta, o se queda ante un guion mudo?
+   *
+   * Sin este rol, la prueba por rol sólo podía ejercitar el caso de quien sí
+   * puede arreglarlo, que es el fácil.
+   */
+  await db.insert(schema.roles).values({
+    id: "rol-prev-lectura",
+    name: "prevencion_lectura",
+    label: "Prevención — sólo lectura",
+    description: "Consulta indicadores SST sin poder registrar denominadores — E2E",
+  })
+  await db.insert(schema.rolePermissions).values([
+    { roleId: "rol-prev-lectura", permissionId: "p-prev-ind-view" },
+  ])
+  await db.insert(schema.users).values({
+    id: "user-prev-lectura-e2e",
+    name: "Prevención Lectura E2E",
+    email: "prevencion.lectura@e2e.chome.cl",
+    hashedPassword: await bcrypt.hash("chome2026", 10),
+    avatarColor: "260",
+    isActive: true,
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.userRoles).values({ userId: "user-prev-lectura-e2e", roleId: "rol-prev-lectura" })
+  // Con alcance a una faena: sin él no ve ningún indicador y la prueba por rol
+  // se saltaría sin comprobar nada, que es peor que fallar.
+  await db.insert(schema.worksiteUsers).values({
+    userId: "user-prev-lectura-e2e",
+    worksiteId: "ws-e2e",
+    isPrimary: true,
+  })
   await db.insert(schema.users).values({
     id: "user-scoped-e2e",
     name: "Scoped E2E",

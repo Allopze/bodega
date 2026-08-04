@@ -3,6 +3,7 @@
 import { Clock, CheckCircle, XCircle, Cloud, HardDrives, WarningCircle } from "@phosphor-icons/react/dist/ssr"
 import { formatBytes } from "@/lib/format-bytes"
 import { formatDateTime } from "@/lib/utils"
+import { Tooltip } from "@/components/ui/tooltip"
 
 interface BackupRow {
   id: string
@@ -88,9 +89,21 @@ export function BackupsList({ backups }: Props) {
                       <span className={statusInfo.color}>{statusInfo.label}</span>
                     </span>
                     {b.errorMessage && (
-                      <span className="ml-1 text-xs text-[var(--color-text-muted)]" title={b.errorMessage}>
-                        <WarningCircle size={12} className="inline text-[var(--color-warning)]" />
-                      </span>
+                      /* La causa del fallo vivía **sólo** en el `title` de un
+                         icono: invisible con teclado y en un teléfono. Es un
+                         diagnóstico —lo que un administrador viene a buscar
+                         cuando un respaldo falla—, así que necesita ser
+                         alcanzable. `Tooltip` responde a foco, y el `button`
+                         lo hace enfocable con un nombre propio. */
+                      <Tooltip content={b.errorMessage} side="top">
+                        <button
+                          type="button"
+                          aria-label={`Ver el error de este respaldo: ${b.errorMessage}`}
+                          className="ml-1 inline-flex items-center rounded-(--radius-sm) text-xs text-[var(--color-text-muted)]"
+                        >
+                          <WarningCircle size={12} className="inline text-[var(--color-warning)]" />
+                        </button>
+                      </Tooltip>
                     )}
                   </td>
                   <td className="whitespace-nowrap px-4 py-2.5 text-[var(--color-text-muted)]">

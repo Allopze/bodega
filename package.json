@@ -16,6 +16,7 @@
     "verify:epp-lots": "tsx scripts/verify-epp-lot-reconciliation.ts",
     "check:drizzle-aliases": "bash scripts/check-drizzle-aliases.sh",
     "check:bundle-budget": "tsx scripts/check-bundle-budget.ts",
+    "check:mistyped-requests": "tsx scripts/check-mistyped-requests.ts",
     "db:verify-migrations": "node scripts/verify-migration-chain.mjs",
     "perf:queries": "tsx scripts/measure-operational-queries.ts",
     "prepare": "husky",

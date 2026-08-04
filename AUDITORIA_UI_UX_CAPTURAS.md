@@ -4855,3 +4855,165 @@ Tres veces en dos pasadas, el mismo patrón: una prueba roja se leyó como aplic
 - El duplicado del manifest cambió de causa dos veces al arreglarse: barrido doble → detector de modal contra un acordeón → animación sin terminar. Los tres cerrados. **Queda uno de naturaleza distinta**: la pestaña "Avance" del detalle de OC está declarada a la vez como ruta propia y como pestaña, así que se fotografía dos veces. `isDeclaredElsewhere` no lo ve porque esa pestaña no cambia la URL. El arreglo correcto —comparar hashes al reconciliar— queda anotado, sin implementar.
 
 **Veredicto tras la pasada 66:** lo más valioso de esta pasada no fue lo que se construyó sino lo que se retiró: un hallazgo publicado como el pendiente más caro del proyecto que no existía, y dos más de la misma familia. Las tres veces el síntoma era real y la explicación no estaba comprobada, y las tres veces bastó instrumentar para verlo. Queda escrito en el código —`blobStorageWorks`, `listRecord`— porque un documento se lee una vez y una prueba se ejecuta siempre. Lo demás fueron cifras donde antes había hipótesis: 136–326 ms de payload, 2,41 MB de bundle, 25,6 min contra 15,3 min por dos workers. Ninguna de esas tres cosas se podía discutir antes de medirlas.
+
+### Pasada 67 — Los formateadores mentían, y nadie lo había mirado
+
+**Fecha:** 4 de agosto de 2026.
+
+**Objetivo de la pasada:** cerrar lo que la 66 dejó abierto y ejecutable — el duplicado del manifest, `ppa-offline` en WebKit, los 481 KB de Mis pendientes, los estados de valor de TASK-UI-012, el estado *dirty* y la extensión de la matriz, teclado y foco en los anchos nuevos, los E2E de PDTP y de roles, y las solicitudes históricas mal tipadas.
+
+#### El hallazgo de la pasada: tres formas de mentir con un dato
+
+TASK-UI-012 declaraba cuatro estados de valor —ausente, desconocido, legacy y zona horaria— y **nadie los había diseñado**, así que cada formateador improvisaba el suyo. Sondearlos con seis entradas sucias bastó:
+
+| Llamada | Devolvía |
+|---|---|
+| `formatDate("basura")` | **Lanzaba** `Invalid time value`. En un Server Component, un solo campo sucio se lleva la página entera al `error.tsx`. |
+| `formatDate(null)` | **`31-12-1969`** — la época presentada como una fecha real. |
+| `formatQty(NaN)`, `formatCLP(NaN)`, `formatFileSize(NaN)` | `"NaN"`, `"$NaN"`, `"NaN MB"`: jerga de implementación en pantalla, que es MICRO-001 otra vez. |
+
+El segundo es el peor de los tres. Un error visible se reporta; una fecha de 1969 en un informe de vencimientos **es verosímil**, y nadie la cuestiona hasta que alguien decide sobre ella. Es exactamente el mismo patrón que el "verde ficticio" de los respaldos y el `data-state="open"` del capturador: el sistema prefiere responder algo antes que admitir que no sabe.
+
+El contrato es ahora uno solo, `VALUE_MISSING`: un valor que no se puede representar se dice, no se inventa ni tumba la pantalla. Ausente y corrupto se ven igual a propósito — la diferencia le importa a quien depura, no a quien opera.
+
+Ninguno de estos casos aparece en un entorno sembrado, que es por qué sobrevivieron a sesenta y seis pasadas.
+
+#### Trabajo realizado
+
+| Tarea | Naturaleza | Cambio aplicado |
+|---|---|---|
+| §4.2 / duplicado del manifest | **Cerrado por comparación exacta** | Cambió de causa tres veces al arreglarse; la última era la pestaña "Avance" declarada a la vez como ruta y como pestaña. Cualquier heurística por nombre o URL falla en algún caso, así que la comparación se hace donde la respuesta es exacta: **el hash del PNG**. Si una interacción produce el mismo byte que una ruta ya capturada, se borra su archivo. Sólo se poda la interacción; dos vistas idénticas siguen rompiendo el gate. |
+| §4.3 / `ppa-offline` en WebKit | **Separación, no exclusión** | Los escenarios de formulario —verificación de RUT y progresión por pasos— sí pasaban en Safari y quedaban fuera **sólo por compartir archivo** con los de Service Worker. Viven ahora en `ppa-formulario.spec.ts` y entran al alcance móvil: **5 de 5 en WebKit**. Lo que queda sin certificar es exactamente lo que el motor no puede ejecutar, ni un escenario más. |
+| §4.1 / los 481 KB | **Explicado, no recortado** | La cola sirve **50 registros** por página mientras Compras y Solicitudes sirven 25, y cada elemento arrastra más campos. No es una fuga: es el doble de filas más ricas. A 277 ms no se recorta —bajar el tamaño de página cambia cuántas tareas ve un usuario antes de paginar, que es decisión de producto—. El presupuesto avisará si deja de ser proporcionado. |
+| TASK-UI-012 / estados de valor | **Defectos reales** | Los tres de arriba, más `formatFileSize` y `formatDateSafe` alineados al mismo contrato. Seis pruebas nuevas, incluida la de zona horaria: una marca UTC de madrugada debe mostrarse con el **día chileno**, que es el riesgo real de un proceso corriendo en UTC. |
+| TASK-UI-016 / estado *dirty* | **Celda que faltaba** | El editor PDTP anuncia "Cambios sin guardar" y vuelve a "Guardado" cuando el autoguardado cierra el ciclo. Se comprueba el **rótulo visible**, no el `beforeunload`: el editor autoguarda tras una pausa, así que una aserción sobre el evento corre contra ese temporizador. |
+| TASK-UI-004 y 014 / teclado | **Certificación que faltaba** | Recorrido de 25 tabulaciones en 320, 768 y 1024 px comprobando que ningún elemento enfocado quede sin área, oculto o fuera de la ventana. Verde en los tres anchos. |
+| TASK-UI-009 | **E2E que faltaba** | El visor de actividades acepta ocho parámetros de URL y nada comprobaba que sobrevivieran a salir y volver. Tres escenarios: los ocho se conservan tras `goBack`, el enlace profundo abre acotado y sin "No calculable", y un programa inexistente ofrece salida. |
+| TASK-UI-010 | **E2E que faltaba** | Cinco escenarios: excepciones colapsadas y en cero, **cero claves de permiso visibles en el flujo estándar** —comprobado con una expresión sobre el texto del diálogo—, la región anunciada al desplegarlas, el POST sin sesión rechazado y un usuario legítimo sin administración que no alcanza la pantalla. |
+| TASK-UI-003 / datos históricos | **Diagnóstico, no migración** | `scripts/check-mistyped-requests.ts` busca solicitudes tipadas `epp` u `otro` que lleven atributos que **sólo** el editor de repuestos y servicios sabe escribir. **No escribe una fila**: reclasificar cambia el flujo de aprobación —los tipos con cotización exigen tres cotizaciones o justificación—, así que produce la lista y distingue las que ya salieron de borrador, que son las caras. |
+
+#### Nota sobre las propias pruebas
+
+Cinco fallaron antes de pasar, y ninguna por culpa de la aplicación:
+
+- El E2E de roles daba por buena una barrera que no comprobó: `page.request.post` **sigue redirecciones** por defecto, así que el 302 a `/login` llegaba como el 200 de la página de inicio de sesión. Sin `maxRedirects: 0`, la aserción sobre el estado es decorativa.
+- Ese mismo archivo usaba `comprador@e2e.chome.cl` como "usuario sin administración". La semilla le asigna `rol-admin`: el nombre engañaba y el falso verde estaba servido.
+- La prueba de *dirty* buscaba el campo en la pestaña equivocada, luego dentro de un `<details>` colapsado, y después chocaba con que el rótulo se pinta **dos veces a propósito** —uno `sr-only` con `aria-live` y otro visible—. Se resolvió con `data-autosave-status`, igual que `data-kpi-card` y `data-module-id` antes.
+
+#### Nota sobre el entorno
+
+A mitad de la pasada apareció un error de tipos en `lib/services/dte-portal/`, un directorio **sin seguimiento en git y creado minutos antes**: otro proceso editando este mismo checkout, que es el riesgo que el inventario lleva pasadas señalando. No se tocó.
+
+#### Resultado de la pasada 67
+
+- Suite E2E completa: **356 aprobados, 4 saltados**, 16,1 min. Un fallo, `ppa-flow:208`, que **pasa en aislamiento** (10,3 s) y es uno de los dos escenarios que §4.1 tiene identificados como intermitentes por contención.
+- Pruebas unitarias: **3399 aprobadas**, 408 archivos.
+- Captura completa: **163/163**, sin errores de cliente, sin scroll horizontal, y por primera vez **«Integridad de capturas: sin URL inválida, huérfano, referencia o hash duplicado ✓»**. El gate de capturas cierra en verde.
+- `npx tsc --noEmit` y `npx eslint`: verdes salvo el error de tipos de `lib/services/dte-portal/`, que es de otro proceso.
+
+#### Lo que pasó con el árbol de trabajo
+
+Durante la pasada, **otro proceso commiteó el checkout entero**: `9163aaf feat(dte)` (31 archivos) y `2337b97 docs(audit)` (**349 archivos, 17.775 inserciones**). El riesgo que el inventario venía señalando —diez pasadas viviendo sólo en el árbol— desapareció, pero no de forma limpia: el trabajo de las pasadas 65 a 67 quedó absorbido en un commit rotulado `docs(audit)` que en realidad contiene cientos de archivos de código.
+
+No se deshizo nada: rehacer esa historia con otro proceso escribiendo sobre el mismo checkout es más peligroso que el rótulo equivocado. Queda anotado porque un `git log` de este repositorio ya no cuenta lo que pasó.
+
+**Veredicto tras la pasada 67:** el hallazgo de la pasada no está en ninguna pantalla sino en cuatro funciones que todo el producto usa. `formatDate(null)` devolvía `31-12-1969` —la época presentada como una fecha real— y `formatDate("basura")` tumbaba la página entera. Ninguno de los dos aparece jamás en un entorno sembrado, que es por qué sobrevivieron a sesenta y seis pasadas de auditoría, capturas y pruebas. Es la misma familia que el verde ficticio de los respaldos y el `data-state="open"` del capturador: el sistema prefiere responder algo antes que admitir que no sabe. Y como en las dos veces anteriores, lo que lo destapó no fue leer el código sino ejecutarlo con datos que nadie había pensado en darle.
+
+### Pasada 68 — Medir antes de barrer, y el rol al que nadie le había preguntado
+
+**Fecha:** 4 de agosto de 2026.
+
+**Objetivo de la pasada:** las cuatro cosas que quedaban accionables sin acceso a producción ni a dispositivos físicos — el barrido de tooltips, la prueba por rol del KPI de horas-hombre, la extensión de la matriz de estados a OC/recepción/incidentes, y la recaptura en los tres anchos del gate selectivo.
+
+#### El barrido que no había que hacer
+
+El inventario decía "444 atributos `title=`" y proponía migrarlos al componente `Tooltip`. Medirlos antes de tocarlos ahorró una migración masiva e inútil:
+
+| De los 444 `title=` | Cuántos | Qué son |
+|---|---|---|
+| Props de componentes React (`<Dialog title=…>`) | **340** | No producen tooltip alguno. El recuento estaba inflado por confundir una prop con un atributo HTML. |
+| Atributos HTML que **repiten el contenido visible** | **58** | Ayuda de truncado. El dato está en el DOM y un lector de pantalla lo lee entero; migrarlos a `Tooltip` habría añadido 58 paradas de tabulación sin ganar información. |
+| Atributos HTML donde el `title` era la **única** fuente | **3** | Los defectos reales. |
+
+Los tres corregidos:
+
+- **`backup-list.tsx`** — la causa de un respaldo fallido vivía sólo en el `title` de un icono de advertencia. Es el diagnóstico que un administrador viene a buscar justamente cuando algo falló, y era inalcanzable con teclado y en un teléfono. Pasa a `Tooltip` sobre un `button` con nombre propio.
+- **`program-lifecycle-controls.tsx`** — la sigla expandida de cada paso del ciclo PDTP sólo aparecía al pasar el ratón. MICRO-001 pide *expandir siglas*, y hacerlo por hover deja fuera exactamente a quien más lo necesita.
+- **`bitacora-table.tsx`** — un botón que sólo muestra un icono, cuyo único nombre accesible era su `title`: el último recurso de la cadena de nombres y el peor soportado. Ahora `aria-label` + `aria-pressed`, que además comunica si la marca está puesta.
+
+`components/__tests__/tooltip-por-foco.test.ts` fija la línea con **control positivo sobre el detector real**, no sobre una imitación: se le dan los dos casos que existían antes de la corrección y se comprueba que los ve, y tres casos legítimos para que no acuse de más.
+
+**La conclusión útil no es que había tres defectos, es que había 441 falsos positivos.** Un inventario que dice "444 sitios" y una medición que dice "3" llevan a decisiones opuestas.
+
+#### El rol al que nadie le había preguntado
+
+DATA-IND-001 —las tasas que aparecían como «—» sin decir qué faltaba— estaba corregido y probado **sólo con un administrador**, que es el caso fácil: quien puede arreglarlo. La pregunta sin responder era la del otro lado: alguien que consulta indicadores sin permiso para registrar horas-hombre ve el mismo guion, y si la explicación estuviera detrás del permiso de edición, para ese rol el defecto original seguiría intacto.
+
+No se podía responder con los usuarios sembrados: los tres existentes eran dos administradores y un solicitante de faena que ni siquiera alcanza la pantalla. Se siembra `prevencion.lectura@e2e.chome.cl` **con alcance a una faena** — sin él la prueba se saltaba sin comprobar nada, que es peor que fallar.
+
+**El resultado es bueno:** la causa es información y no está tras el permiso. El rol de lectura ve la banda completa —qué falta, cuánto falta y por qué el mes no puede cerrarse— y no se le ofrece un botón que el servidor le rechazaría.
+
+Y apareció un matiz que la prueba obligó a mirar: con el alcance en "Total" tampoco hay botón para el administrador, porque los denominadores se cargan por faena. En su lugar dice *"Selecciona una faena para cargarlos"*. Es la diferencia entre "no hay acción" y "la acción necesita un paso previo", y estaba bien resuelto sin que nadie lo hubiera comprobado.
+
+#### Trabajo realizado
+
+| Tarea | Naturaleza | Cambio aplicado |
+|---|---|---|
+| TASK-UI-012 / tooltips | **Tres defectos, 441 falsos positivos** | Descrito arriba. Más el test estático con control positivo. |
+| TASK-UI-009 / KPI de HH por rol | **Certificación que faltaba** | Tres escenarios y un rol nuevo en la semilla. La explicación del denominador ausente es igual para quien puede corregirlo y para quien no. |
+| TASK-UI-016 / OC, recepción, incidentes | **Celdas que faltaban** | Los tres flujos P1 más caros de deshacer —comprometer dinero, dar por recibido lo que no llegó, calificar un accidente— sólo tenían camino feliz. Ahora: sin sesión conservando destino, vacío por filtro que no niega los datos, fallo de servidor recuperable en recepción, y guardia de doble envío en el reporte de incidentes, donde un duplicado no es un registro de más sino **un accidente contado dos veces en las tasas del DS 44**. |
+| TASK-UI-001 / gate selectivo | **Anchos nunca ejercitados** | Las 163 rutas capturadas en `small` (320×568), `tablet` (768×1024) y `laptop` (1366×768). Existían desde la pasada 65 y no se habían corrido. |
+
+#### Verificación ejecutada en la pasada 68
+
+- Captura en los tres anchos del gate selectivo, **163 rutas cada uno**: `small` (320×568), `tablet` (768×1024) y `laptop` (1366×768). Los tres con **cero errores de cliente, cero scroll horizontal e integridad limpia**. Es la certificación de WCAG 1.4.10 a 320 px sobre la aplicación entera, no sobre las ocho pantallas que cubría el E2E.
+- Suite E2E: **367 aprobados, 4 saltados**, 16,9 min. Un fallo, `oc-reconciliation:46`, que **pasa en aislamiento** (5,4 s) y es uno de los dos escenarios que §4.1 tiene identificados como intermitentes por contención.
+- Pruebas unitarias: **3403 aprobadas**.
+- `npx tsc --noEmit` y `npx eslint`: verdes salvo el error de `lib/services/dte-portal/`, que es de otro proceso.
+
+#### Una prueba que fijaba el defecto
+
+`program-lifecycle-controls.test.tsx` afirmaba `toHaveAttribute("title", …)`: comprobaba que la sigla estuviera **exactamente donde el criterio dice que no debe estar**. Es la tercera vez en cuatro pasadas que una prueba verde resulta estar protegiendo el comportamiento incorrecto —antes fueron el enum `"sent"` en los exportes y el `comprador@e2e` que la semilla hace administrador—. Ahora comprueba que el rótulo es alcanzable por foco y que el `title` ya no está.
+
+**Veredicto tras la pasada 68:** el resultado más útil de la pasada es una resta. El inventario proponía barrer 444 atributos `title`; medirlos primero dejó **3 defectos reales y 441 falsos positivos**, y de esos 441, cincuenta y ocho eran ayuda de truncado que migrar habría empeorado —cincuenta y ocho paradas de tabulación nuevas sin una sola información ganada—. Un inventario que dice "444 sitios" y una medición que dice "3" llevan a decisiones opuestas, y la diferencia entre ambos era media hora de contar bien. Lo mismo con el rol de lectura: la pregunta no era si el mensaje existía, sino a quién se le mostraba, y no se podía responder porque los tres usuarios sembrados eran dos administradores y alguien que ni llega a la pantalla.
+
+### Pasada 69 — Las seis decisiones, resueltas
+
+**Fecha:** 4 de agosto de 2026.
+
+**Objetivo de la pasada:** cerrar las decisiones que llevaban pasadas bloqueadas esperando a su dueño. Ninguna era trabajo pendiente por falta de tiempo: eran preguntas cuya respuesta no me correspondía.
+
+#### Las resoluciones
+
+| Decisión | Respuesta | Consecuencia |
+|---|---|---|
+| **TASK-UI-017 · Minimización de RUT** | **Descartada.** No es necesario enmascarar. | La tarea deja de ser un pendiente bloqueado y pasa a ser una decisión tomada. No se implementa `maskRut` ni la matriz por rol. |
+| **TASK-UI-011 · Salud por módulo** | **Se deja como está.** | La banda de plataforma —base de datos, volumen, disco— es la única salud que se puede demostrar, y la pantalla ya dice que los interruptores miden visibilidad y no salud. No se inventa una sonda por módulo. |
+| **TASK-UI-007 · PPA sin red** | **Debe funcionar sin red.** | Ya funciona: es la PWA con cola en IndexedDB, certificada por E2E. Y como esa cola **es** JavaScript, exigir el modo offline implica que JavaScript es obligatorio: el fallback sin JavaScript queda descartado por incompatible con el requisito, no por falta de tiempo. |
+| **TASK-UI-008 · Cola TAE en dispositivo compartido** | **Bloquear "Finalizar" mientras haya pendientes.** | Implementado. Ver abajo. |
+| **Formato de montos negativos** | **Cambiarlo a `-$4.500`.** | Implementado. Ver abajo. |
+| **Historia de git** | **No rehacerla.** Commit, merge a `main` y volver a `main` al terminar. | El commit `docs(audit)` con 349 archivos de código se queda como está. |
+
+#### Una pregunta que respondí antes de proceder
+
+Pregunté por **JavaScript deshabilitado** y la respuesta llegó sobre **red**. No son lo mismo, y darlo por equivalente habría cerrado un criterio con una respuesta a otra pregunta. Sin red ya funciona; sin JavaScript no existiría la cola que hace posible el modo offline. Con eso, exigir lo primero resuelve lo segundo por implicación, y así queda escrito — sujeto a corrección.
+
+#### Trabajo realizado
+
+| Tarea | Naturaleza | Cambio aplicado |
+|---|---|---|
+| TASK-UI-008 / cola en dispositivo compartido | **Decisión implementada** | "Finalizar en este dispositivo" nunca borró la cola —sólo el acceso—, así que las cargas encoladas sin red sobrevivían al cambio de turno. La atribución no se rompía: cada carga guarda su `accessToken` y se registra a nombre de quien la hizo. Lo que se perdía era la certeza: el trabajador entregaba el teléfono sin forma de saber si su registro existía. Ahora el botón se bloquea mientras haya pendientes y **dice cuántas** —un botón deshabilitado sin cifra es indistinguible de uno roto—. Se reconsulta la cola dentro del propio manejador, porque entre el último refresco y el clic pueden encolarse cargas nuevas. Y si la cola no se puede leer, se trata como "hay pendientes": bloquear de más es recuperable, borrar el acceso sobre una cola no consultada no lo es. |
+| Formato de montos negativos | **Decisión implementada** | `es-CL` produce `$-4.500`, con el signo dentro del símbolo. Se antepone: `-$4.500`. Se opera sobre el valor absoluto y se prefija en vez de mover el guion con una expresión regular, para que el formato del número lo siga decidiendo `Intl`. |
+| Cero negativo | **Defecto que destapó el cambio** | Al escribir la prueba apareció que `-0 < 0` es **falso** en JavaScript, así que el cero negativo llegaba a `Intl` y salía como **`$-0`**: un saldo cuadrado presentado como si tuviera signo. Aparece al restar dos montos iguales, que en conciliación es el caso normal. Normalizado. |
+
+#### Dos pruebas que fijaban el formato anterior
+
+`lib/__tests__/utils.test.ts` afirmaba `"$-5.000"` y el snapshot de la pasada 66 afirmaba `"$-4.500"`. Ninguna de las dos estaba mal cuando se escribió —congelaban la salida real—, y ese es justamente el valor de un snapshot: un cambio de formato no puede pasar inadvertido. Las dos se actualizaron con el motivo de la decisión escrito al lado.
+
+#### Verificación ejecutada en la pasada 69
+
+- Suite E2E: **368 aprobados, 4 saltados, 0 fallos**, 16,5 min. El intermitente de §4.1 no apareció.
+- Pruebas unitarias: **3406 aprobadas**.
+- `npx tsc --noEmit` y `npx eslint`: verdes salvo el error de `lib/services/dte-portal/`, ajeno a esta auditoría.
+
+**Veredicto tras la pasada 69:** con estas seis respuestas **no queda un solo pendiente bloqueado por falta de decisión**. Lo que resta necesita acceso a producción, un entorno desechable o personas y dispositivos reales — nada que se resuelva escribiendo código. De las seis, dos eran implementación y cuatro eran permiso para dejar de considerar algo un pendiente, que es una forma de trabajo que no deja diff pero libera el inventario. Y una tercera cosa apareció por el camino sin que nadie la buscara: al anteponer el signo del peso, el cero negativo se destapó como `$-0` — un saldo cuadrado presentado con signo, en el caso más común de la conciliación. Es la cuarta vez en esta auditoría que un cambio cosmético descubre un defecto de datos debajo.

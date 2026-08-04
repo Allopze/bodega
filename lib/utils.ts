@@ -15,10 +15,28 @@ const CLP_FORMAT = new Intl.NumberFormat("es-CL", {
 
 const QTY_FORMAT = new Intl.NumberFormat("es-CL")
 
-/** Format currency in CLP (Chilean Pesos) */
+/**
+ * Monto en pesos chilenos.
+ *
+ * El signo va **delante del símbolo**: `-$4.500`, no `$-4.500`.
+ *
+ * `Intl` con `es-CL` produce lo segundo, y así estuvo hasta que un snapshot lo
+ * dejó a la vista. Es la salida estándar de la localización, no un defecto,
+ * pero se lee peor justo donde más aparece —notas de crédito y ajustes— y una
+ * cifra que se lee mal en un documento contable es un problema de producto.
+ * Decisión de 2026-08-04: se antepone el signo.
+ *
+ * Se opera sobre el valor absoluto y se prefija, en vez de mover el guion con
+ * una expresión regular: así el formato del número —separador de miles, cero
+ * decimales— sigue siendo el que decide `Intl` y no una manipulación de texto.
+ */
 export function formatCLP(amount: number): string {
   if (!Number.isFinite(amount)) return VALUE_MISSING
-  return CLP_FORMAT.format(amount)
+  if (amount < 0) return `-${CLP_FORMAT.format(Math.abs(amount))}`
+  // `-0 < 0` es falso, así que el cero negativo llegaba a `Intl` y salía como
+  // "$-0": un saldo cuadrado presentado como si tuviera signo. Aparece al
+  // restar dos montos iguales, que en conciliación es el caso normal.
+  return CLP_FORMAT.format(amount === 0 ? 0 : amount)
 }
 
 /**

@@ -42,7 +42,9 @@ describe("formatCLP()", () => {
   })
 
   it("formats a negative amount", () => {
-    expect(formatCLP(-5000)).toBe("$-5.000")
+    // El signo va delante del símbolo (decisión de producto, 2026-08-04):
+    // `es-CL` produce "$-5.000" y se antepone a "-$5.000".
+    expect(formatCLP(-5000)).toBe("-$5.000")
   })
 
   it("rounds to whole pesos (no decimals)", () => {

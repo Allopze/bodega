@@ -64,7 +64,19 @@ describe("ProgramLifecycleControls", () => {
     expect(screen.getByText("Registrada")).toBeInTheDocument()
   })
 
-  it("expands the JDPR abbreviation as a tooltip on the lifecycle step label", () => {
+  /*
+   * La expansión de la sigla ya no vive en un atributo `title`.
+   *
+   * `title` sólo aparece al pasar el ratón: en un teléfono no existe y con
+   * teclado tampoco, así que la sigla se quedaba sin expandir justo para quien
+   * más lo necesita — y MICRO-001 pide expandirlas, no esconderlas detrás de un
+   * gesto de escritorio. Ahora es un `Tooltip`, que responde a foco.
+   *
+   * Lo que se comprueba es eso: que el rótulo es **alcanzable**. El contenido
+   * del tooltip lo monta Radix en un portal al abrirse, y forzar esa apertura
+   * en jsdom probaría la biblioteca, no la aplicación.
+   */
+  it("expands the JDPR abbreviation through a focusable tooltip, not a hover-only title", () => {
     render(<ProgramLifecycleControls program={{
       ...baseProgram,
       status: "in_review",
@@ -73,7 +85,10 @@ describe("ProgramLifecycleControls", () => {
     }} permissions={permissions} />)
 
     const stepLabel = screen.getByText("Revisión JDPR", { selector: "p" })
-    expect(stepLabel).toHaveAttribute("title", expect.stringContaining("Jefatura de Prevención de Riesgos"))
+    expect(stepLabel).not.toHaveAttribute("title")
+    expect(stepLabel).toHaveAttribute("tabindex", "0")
+    // Radix marca su disparador; sin él no habría tooltip que abrir.
+    expect(stepLabel).toHaveAttribute("data-state")
   })
 
   it("advances to Legal only after JDPR approved", () => {

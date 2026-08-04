@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { Tooltip } from "@/components/ui/tooltip"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -239,7 +240,13 @@ function expandRoleAbbreviations(label: string): string | undefined {
 function LifecycleStep({ label, value, done }: { label: string; value: string; done: boolean }) {
   return (
     <div className="bg-[var(--color-surface)] px-4 py-2.5">
-      <p className="text-[10px] font-semibold uppercase tracking-wide text-[var(--color-text-subtle)]" title={expandRoleAbbreviations(label)}>{label}</p>
+      {/* La sigla expandida ("PDTP" → su nombre completo) vivía sólo en el
+          `title`: MICRO-001 pedía expandir siglas, y hacerlo por hover deja
+          fuera al teclado y al teléfono. `Tooltip` responde a foco; `tabIndex`
+          hace alcanzable un rótulo que si no, no lo sería. */}
+      <Tooltip content={expandRoleAbbreviations(label)} side="top">
+        <p tabIndex={0} className="w-fit rounded-(--radius-sm) text-[10px] font-semibold uppercase tracking-wide text-[var(--color-text-subtle)]">{label}</p>
+      </Tooltip>
       <p className={done ? "mt-0.5 text-xs font-medium text-[var(--color-success-ink)]" : "mt-0.5 text-xs text-[var(--color-text-muted)]"}>{value}</p>
     </div>
   )

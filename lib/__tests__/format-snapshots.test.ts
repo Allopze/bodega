@@ -56,11 +56,13 @@ describe("formato de moneda y cantidad", () => {
   it("usa el peso chileno sin decimales y con punto de miles", () => {
     expect(formatCLP(1_234_567)).toBe("$1.234.567")
     expect(formatCLP(0)).toBe("$0")
-    // Observación, no aprobación: `es-CL` coloca el signo **dentro**, después
-    // del símbolo. "$-4.500" se lee peor que "-$4.500" y aparece en notas de
-    // crédito y ajustes. Se congela lo que hoy sale; cambiarlo es una decisión
-    // de producto, no un arreglo.
-    expect(formatCLP(-4_500)).toBe("$-4.500")
+    // El signo va delante del símbolo (decisión de producto, 2026-08-04):
+    // `es-CL` produce "$-4.500" y se antepone a "-$4.500", que es como se lee
+    // un negativo en un documento contable.
+    expect(formatCLP(-4_500)).toBe("-$4.500")
+    expect(formatCLP(-1_234_567)).toBe("-$1.234.567")
+    // El cero negativo no debe imprimirse con signo.
+    expect(formatCLP(-0)).toBe("$0")
   })
 
   it("separa miles en cantidades y concuerda la unidad", () => {
