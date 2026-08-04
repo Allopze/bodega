@@ -31,23 +31,40 @@
  *   DATABASE_URL=<url> npx tsx scripts/check-mistyped-requests.ts
  */
 import postgres from "postgres"
+import { REPUESTO_ATTRIBUTE_NAMES } from "@/lib/validation/repuestos"
+import { SERVICE_ATTRIBUTE_NAMES } from "@/lib/validation/servicios"
 
 /**
- * Atributos que **sólo** el editor de repuestos/servicios sabe escribir.
+ * Atributos compartidos con el catálogo de productos: **no** delatan nada.
  *
- * "Marca" y "Modelo" estuvieron en esta lista y era un error: el catálogo EPP
- * los usa como atributos de producto corrientes —`product_attributes` los
+ * "Marca" y "Modelo" estuvieron en la lista de sospechosos y era un error: el
+ * catálogo EPP los usa como atributos corrientes —`product_attributes` los
  * enumera junto a talla, color y medida, y la revisión de importación EPP mapea
  * `brand: "Marca", model: "Modelo"`—. Con ellos dentro, la consulta contra
- * producción devolvió **once solicitudes EPP perfectamente bien tipadas**, todas
- * delatadas por tener un campo "Modelo", que es exactamente lo que un casco
- * tiene.
+ * producción devolvió **once solicitudes EPP perfectamente bien tipadas**,
+ * delatadas todas por tener un campo "Modelo", que es lo que un casco tiene.
  *
- * Un detector de datos sucios que produce falsos positivos plausibles es peor
- * que no tenerlo: invita a "corregir" registros correctos. Quedan sólo los tres
- * campos que ningún producto de catálogo posee.
+ * Un detector con falsos positivos plausibles es peor que ninguno: invita a
+ * "corregir" registros correctos, y nueve de esas once estaban en compra.
  */
-const ATRIBUTOS_DE_EQUIPO = ["N° de Parte", "Equipo / Máquina", "Patente / Código interno"]
+const COMPARTIDOS_CON_CATALOGO = new Set<string>(["Marca", "Modelo"])
+
+/**
+ * Atributos que **sólo** el editor de repuestos y servicios sabe escribir.
+ *
+ * Se derivan de las constantes que la propia aplicación usa al persistir, no de
+ * los rótulos del formulario. La diferencia no es cosmética: el campo rotulado
+ * "Equipo / Máquina" se guarda como **"Equipo"**, y "Patente / Código interno"
+ * como **"Patente/Código"**. La primera versión de este script copió los
+ * rótulos y habría producido **falsos negativos** —el peor sentido del error:
+ * un "no hay nada" que nadie vuelve a cuestionar—.
+ *
+ * Atado a la fuente, un cambio de nombre en el formulario no puede desalinear
+ * el detector en silencio.
+ */
+const ATRIBUTOS_DE_EQUIPO = [
+  ...new Set([...Object.values(REPUESTO_ATTRIBUTE_NAMES), ...Object.values(SERVICE_ATTRIBUTE_NAMES)]),
+].filter((nombre) => !COMPARTIDOS_CON_CATALOGO.has(nombre))
 
 /** Tipos que no deberían llevar esos atributos nunca. */
 const TIPOS_SIN_EQUIPO = ["epp", "otro"]

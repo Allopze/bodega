@@ -5017,3 +5017,42 @@ Pregunté por **JavaScript deshabilitado** y la respuesta llegó sobre **red**. 
 - `npx tsc --noEmit` y `npx eslint`: verdes salvo el error de `lib/services/dte-portal/`, ajeno a esta auditoría.
 
 **Veredicto tras la pasada 69:** con estas seis respuestas **no queda un solo pendiente bloqueado por falta de decisión**. Lo que resta necesita acceso a producción, un entorno desechable o personas y dispositivos reales — nada que se resuelva escribiendo código. De las seis, dos eran implementación y cuatro eran permiso para dejar de considerar algo un pendiente, que es una forma de trabajo que no deja diff pero libera el inventario. Y una tercera cosa apareció por el camino sin que nadie la buscara: al anteponer el signo del peso, el cero negativo se destapó como `$-0` — un saldo cuadrado presentado con signo, en el caso más común de la conciliación. Es la cuarta vez en esta auditoría que un cambio cosmético descubre un defecto de datos debajo.
+
+### Pasada 70 — TASK-UI-003 cerrado contra producción, y el detector que buscaba mal
+
+**Fecha:** 4 de agosto de 2026.
+
+La consulta a producción se ejecutó. El resultado es **cero solicitudes mal tipadas**, y no hay deuda histórica de FORM-CORE-001. Pero llegar ahí requirió corregir dos veces el propio detector, y las dos correcciones enseñan cosas distintas.
+
+#### Primera corrección: acusaba a las correctas
+
+La lista de atributos "exclusivos del editor de repuestos" incluía **"Marca" y "Modelo"**. No lo son: el catálogo EPP los usa como atributos de producto corrientes —`product_attributes` los enumera junto a talla, color y medida, y la revisión de importación EPP mapea `brand: "Marca", model: "Modelo"`—.
+
+Contra producción eso devolvió **once solicitudes EPP perfectamente bien tipadas**, delatadas todas por tener un campo "Modelo", que es exactamente lo que un casco tiene. **Nueve de las once estaban `in_purchasing`**: actuar sobre esa lista habría reclasificado solicitudes en curso y alterado el flujo de aprobación de compras reales.
+
+Un detector con falsos positivos plausibles es peor que ninguno, porque invita a "corregir" lo que está bien.
+
+#### Segunda corrección: buscaba nombres que no existen
+
+Al verificar dónde se persisten esos campos apareció que el script copiaba los **rótulos del formulario**, no los nombres que la aplicación guarda. `lib/validation/repuestos.ts` y `lib/validation/servicios.ts` son la fuente:
+
+| Rótulo en pantalla | Nombre persistido |
+|---|---|
+| Equipo / Máquina | **Equipo** |
+| Patente / Código interno | **Patente/Código** |
+
+Dos de tres nombres eran incorrectos, y el sentido del error era el peligroso: **falsos negativos**, un "no hay nada" que nadie vuelve a cuestionar. También faltaba `"Ubicación"`, que sólo existe en servicios: media el alcance del detector sin que ninguna prueba lo dijera.
+
+El detector se ata ahora a `REPUESTO_ATTRIBUTE_NAMES` y `SERVICE_ATTRIBUTE_NAMES`, de modo que renombrar un campo no puede desalinearlo en silencio. `lib/__tests__/mistyped-requests-attrs.test.ts` fija las dos mitades: qué nombres son exclusivos y cuáles son compartidos con el catálogo.
+
+#### Lo que salvó la conclusión
+
+La consulta que **enumeraba el vocabulario completo** de `request_item_attributes` antes de buscar en él. Producción tiene seis nombres de atributo:
+
+```
+Color 22 · Modelo 21 · Talla 8 · Presentación 6 · Tipo 3 · Gramaje 2
+```
+
+Los seis son del catálogo de productos. Ninguno de los cuatro exclusivos —`N° de Parte`, `Equipo`, `Patente/Código`, `Ubicación`— existe en la base. Por eso el "cero filas" es una conclusión y no un artefacto: sin esa lista, un cero producido por dos literales equivocados sería indistinguible de un cero real.
+
+**Veredicto tras la pasada 70:** el hallazgo FORM-CORE-001 queda cerrado del todo — corregido en el código, certificado por E2E desde ambas rutas de entrada en dos viewports, y sin deuda en producción. Y la lección es la misma que esta auditoría viene repitiendo con otra forma: no basta con ejecutar, hay que comprobar que lo que se ejecuta puede medir lo que dice medir. Un detector escrito de memoria sobre los rótulos de la interfaz acusó a once inocentes y luego estuvo a punto de absolver sin mirar.

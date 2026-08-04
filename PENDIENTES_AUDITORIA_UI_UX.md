@@ -106,7 +106,7 @@ Lo que sigue sin certificar en WebKit es exactamente lo que ese motor no puede e
 | Tarea | Qué falta ejecutar |
 |---|---|
 | **TASK-UI-016** | Las siete celdas están cubiertas, ahora también sobre OC, recepción e incidentes. Falta el **recorrido completo por teclado de cada flujo** —hoy se comprueba el foco visible, no que la tarea se pueda terminar sin ratón—. |
-| **TASK-UI-003** | Cubierta la entrada por ruta en dos viewports, y existe `npm run check:mistyped-requests`. Falta **ejecutarlo contra producción y decidir sobre lo que encuentre**: reclasificar cambia el flujo de aprobación ya ejecutado. |
+| **TASK-UI-003** | **Cerrado.** Ejecutado contra producción el 4 de agosto: **cero solicitudes mal tipadas**. El vocabulario completo de `request_item_attributes` en producción son seis nombres —Color, Modelo, Talla, Presentación, Tipo, Gramaje—, todos del catálogo de productos; ninguno de los cuatro que sólo escriben los editores de repuestos y servicios existe en la base. No hay deuda histórica. |
 | **TASK-UI-001** | **Ejecutado.** Los tres anchos del gate selectivo, 163 rutas cada uno, sin scroll horizontal ni errores de cliente. Se repite cuando cambien rutas o fixtures. |
 
 ---
@@ -143,11 +143,10 @@ El veredicto original —*"no recomendable para producción sin corregir problem
 ## 9. Orden sugerido
 
 1. **Commitear** (§3.5). Minutos, y elimina el único riesgo de pérdida.
-2. **Ejecutar `npm run check:mistyped-requests` contra producción** (§6) y decidir sobre lo que encuentre. Es lo único que toca datos reales.
-3. **El ejercicio de respaldo y restauración** (§5.2). Acto operativo sobre un entorno desechable.
-4. **Agendar lo no automatizable** (§7): personas, dispositivos físicos y lector de pantalla. **Es la partida más grande que queda, y ninguna parte de ella se puede automatizar.**
+2. **El ejercicio de respaldo y restauración** (§5.2). Acto operativo sobre un entorno desechable.
+3. **Agendar lo no automatizable** (§7): personas, dispositivos físicos y lector de pantalla. **Es la partida más grande que queda, y ninguna parte de ella se puede automatizar.**
 
-Con las seis decisiones cerradas, **ya no queda nada bloqueado por falta de respuesta**. Lo que resta necesita acceso a producción, un entorno desechable, o personas y dispositivos reales.
+Con las seis decisiones cerradas y la consulta a producción ejecutada, **ya no queda nada bloqueado por falta de respuesta ni por falta de acceso a datos**. Lo que resta necesita un entorno desechable, o personas y dispositivos reales.
 
 ---
 
@@ -161,6 +160,7 @@ Con las seis decisiones cerradas, **ya no queda nada bloqueado por falta de resp
 - **Cuidado al relajar un gate.** La primera versión de la excepción de hashes compartidos habría dado por buenas esas 90 pantallas de error.
 - **Los defectos que quedan no están en las pantallas, están en lo que todas comparten.** El de la pasada 67 eran cuatro formateadores: `formatDate(null)` devolvía `31-12-1969` y `formatDate("basura")` tumbaba la página. Ninguno aparece jamás con datos sembrados, que es por qué sobrevivieron a sesenta y seis pasadas.
 - **Playwright sigue redirecciones por defecto.** Una aserción sobre el estado de un POST sin `maxRedirects: 0` da por buena una barrera que no comprobó.
+- **Enumerar el vocabulario real antes de buscar en él.** La consulta que listaba los seis nombres de atributo que existen en producción es la que salvó la conclusión: el detector buscaba dos nombres equivocados —copió los rótulos del formulario, no lo que la aplicación persiste— y sin esa lista un "cero filas" habría sido indistinguible de una consulta rota.
 - **Contar antes de barrer.** El inventario decía 444 `title=`; medirlos dejó 3 defectos y 441 falsos positivos, y 58 de esos habrían empeorado la navegación por teclado si se migraban. Media hora de contar bien cambió por completo la decisión.
 - **Una prueba verde puede fijar el defecto — ya van tres.** El enum `"sent"` en los exportes, `comprador@e2e` que la semilla hace administrador, y un test que exigía el atributo `title` justo donde el criterio dice que no debe estar. Distinto es un **snapshot** que congela un formato: los dos que afirmaban `$-5.000` y `$-4.500` estaban haciendo su trabajo, y por eso el cambio de formato no pudo pasar inadvertido.
 - **Responder a la pregunta que se hizo.** Se preguntó por JavaScript deshabilitado y la respuesta llegó sobre red. No son lo mismo; darlo por equivalente habría cerrado un criterio con la respuesta a otra cosa.
