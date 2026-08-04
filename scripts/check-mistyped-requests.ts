@@ -32,8 +32,22 @@
  */
 import postgres from "postgres"
 
-/** Atributos que sólo el editor de repuestos/servicios sabe escribir. */
-const ATRIBUTOS_DE_EQUIPO = ["N° de Parte", "Equipo / Máquina", "Patente / Código interno", "Marca", "Modelo"]
+/**
+ * Atributos que **sólo** el editor de repuestos/servicios sabe escribir.
+ *
+ * "Marca" y "Modelo" estuvieron en esta lista y era un error: el catálogo EPP
+ * los usa como atributos de producto corrientes —`product_attributes` los
+ * enumera junto a talla, color y medida, y la revisión de importación EPP mapea
+ * `brand: "Marca", model: "Modelo"`—. Con ellos dentro, la consulta contra
+ * producción devolvió **once solicitudes EPP perfectamente bien tipadas**, todas
+ * delatadas por tener un campo "Modelo", que es exactamente lo que un casco
+ * tiene.
+ *
+ * Un detector de datos sucios que produce falsos positivos plausibles es peor
+ * que no tenerlo: invita a "corregir" registros correctos. Quedan sólo los tres
+ * campos que ningún producto de catálogo posee.
+ */
+const ATRIBUTOS_DE_EQUIPO = ["N° de Parte", "Equipo / Máquina", "Patente / Código interno"]
 
 /** Tipos que no deberían llevar esos atributos nunca. */
 const TIPOS_SIN_EQUIPO = ["epp", "otro"]
