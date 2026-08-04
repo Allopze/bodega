@@ -280,3 +280,29 @@ export function resolveFuelTaeEvidenceFile(filePath: string): string | null {
   if (!isSafeStorageName(storageName)) return null
   return path.join(/*turbopackIgnore: true*/ resolveFuelTaeEvidenceDir(), storageName)
 }
+
+/* ── XML de proveedores (portal DTE) ─────────────────────────────────────────
+ *
+ * Copia local del XML del proveedor descargado bajo demanda desde la Bandeja
+ * de Entrada del portal DTE (ver dte-portal/bandeja-entrada.ts). Se guarda al
+ * verlo por primera vez para no volver a descargarlo del portal.
+ */
+const DTE_XML_PREFIX = "storage/dte/"
+
+export function resolveDteDir(): string {
+  return path.join(/*turbopackIgnore: true*/ resolveStorageDir(), "dte")
+}
+
+export function createDtePath(storageName: string): string {
+  if (!isSafeStorageName(storageName)) {
+    throw new Error("Invalid DTE XML storage name")
+  }
+  return `${DTE_XML_PREFIX}${storageName}`
+}
+
+export function resolveDteFile(filePath: string): string | null {
+  if (!filePath.startsWith(DTE_XML_PREFIX)) return null
+  const storageName = filePath.slice(DTE_XML_PREFIX.length)
+  if (!isSafeStorageName(storageName)) return null
+  return path.join(/*turbopackIgnore: true*/ resolveDteDir(), storageName)
+}

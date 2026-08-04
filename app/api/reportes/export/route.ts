@@ -27,6 +27,9 @@ const TYPE_PERMISSIONS: Record<string, Permission[]> = {
   compras:       ["purchasing:view", "purchasing:create_order"],
   oc_cerradas_sin_factura: ["purchasing:view", "purchasing:create_order"],
   recepcion:     ["receiving:view", "receiving:register_office", "receiving:register_faena"],
+  dte_libro_compras:   ["purchasing:view"],
+  dte_conciliacion:    ["purchasing:view"],
+  dte_facturas_sin_oc: ["purchasing:view"],
 }
 
 const MAX_EXPORT_ROWS = 10_000

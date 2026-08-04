@@ -85,9 +85,5 @@ function resolveUrl(client: DtePortalClient, relativeUrl: string): string {
   if (relativeUrl.startsWith("http://") || relativeUrl.startsWith("https://")) {
     return relativeUrl
   }
-  const status = client.getStatus()
-  const base = status.baseUrl.replace(/\*+/g, "").replace(/\/+$/, "")
-  // Reconstruct base from the masked URL by using the config directly
-  // The status masks credentials, but for download we need the full base URL
-  return `${base}/${relativeUrl.replace(/^\/+/, "")}`
+  return `${client.baseUrl}/${relativeUrl.replace(/^\/+/, "")}`
 }

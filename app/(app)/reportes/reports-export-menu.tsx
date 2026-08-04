@@ -36,6 +36,9 @@ const REPORT_EXPORTS: ReportExportDefinition[] = [
     ],
   },
   { tipo: "oc_cerradas_sin_factura", label: "OC cerradas sin factura" },
+  { tipo: "dte_libro_compras", label: "Libro de Compras DTE" },
+  { tipo: "dte_conciliacion", label: "Conciliación OC-Factura-DTE" },
+  { tipo: "dte_facturas_sin_oc", label: "Facturas DTE sin OC", tone: "signal" },
   {
     tipo: "oc_por_estado",
     label: "OC por estado",

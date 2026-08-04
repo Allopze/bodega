@@ -17,8 +17,9 @@ export const dynamic = "force-dynamic"
  *   { periodo?: "YYYY-MM", force?: boolean }
  */
 export async function POST(request: NextRequest) {
+  let session
   try {
-    await requirePermission("admin:dte_sync" as Parameters<typeof requirePermission>[0])
+    session = await requirePermission("admin:dte_sync")
   } catch {
     return NextResponse.json({ error: "Sin permisos" }, { status: 403 })
   }
@@ -53,6 +54,7 @@ export async function POST(request: NextRequest) {
       periodo: body.periodo,
       trigger: "manual",
       force: body.force,
+      importerId: session.user.id,
     })
 
     return NextResponse.json({ ok: true, ...result })

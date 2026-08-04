@@ -9,3 +9,7 @@ export { closeOrderAction, cancelOrderAction, deleteOrderAction } from "./order-
 
 // ── Item state ───────────────────────────────────────────────────────────────
 export { postponeItemAction, resumeItemAction } from "./item-state"
+
+// ── DTE (portal DTE FacturaEnLínea, Bandeja de Entrada) ───────────────────────
+export { downloadDteDocumentXml } from "./dte-download-xml"
+export type { DteXmlDetail, DteXmlDownloadResult } from "./dte-download-xml"

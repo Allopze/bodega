@@ -104,6 +104,12 @@ if [ -d public ]; then
   cp -r public .next/standalone/public
 fi
 
+# El output standalone no lee .env.local (solo lo hace `next dev`/`next
+# start`), así que toda variable que el código lea vía process.env en
+# runtime debe pasarse explícita acá. Los reportes/dashboard de DTE
+# resuelven el CodEmp de la cuenta con DTE_PORTAL_CODEMP — sin ella
+# readDtePortalEnv().credentials.codEmp da "" y ninguna fila de
+# dte_documents (codEmp='433', ver e2e/setup-db.ts) calza.
 DATABASE_URL="$DB_URL" \
 AUTH_SECRET="$AUTH_SECRET_VALUE" \
 NEXTAUTH_SECRET="$AUTH_SECRET_VALUE" \
@@ -111,6 +117,7 @@ APP_URL="$APP_URL_VALUE" \
 NEXTAUTH_URL="$APP_URL_VALUE" \
 AUTH_URL="$APP_URL_VALUE" \
 PDF_RENDER_ORIGIN="http://127.0.0.1:$PORT" \
+DTE_PORTAL_CODEMP="433" \
 SMTP_HOST="" \
 SMTP_USER="" \
 SMTP_PASS="" \

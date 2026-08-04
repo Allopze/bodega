@@ -6,7 +6,7 @@ import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import Link from "next/link"
 import {
-  Users, MapPin, Cube, Buildings, ShieldCheck, UserCircle, Gear, FileText, ArrowRight, EnvelopeSimple, ToggleLeft, HardDrives,
+  Users, MapPin, Cube, Buildings, ShieldCheck, UserCircle, Gear, FileText, ArrowRight, EnvelopeSimple, ToggleLeft, HardDrives, Receipt,
 } from "@phosphor-icons/react/dist/ssr"
 
 export const metadata: Metadata = { title: "Panel de Administración" }
@@ -162,6 +162,14 @@ const modules = [
     href:        "/admin/backups",
     icon:        HardDrives,
     permission:  "admin:backups",
+    group:       "gobierno",
+  },
+  {
+    title:       "Sincronización DTE",
+    description: "Documentos tributarios recibidos de proveedores vía el portal DTE FacturaEnLínea.",
+    href:        "/admin/dte",
+    icon:        Receipt,
+    permission:  "admin:dte_sync",
     group:       "gobierno",
   },
   {

@@ -8,6 +8,9 @@ import { comprasList } from "./compras"
 import { ocCerradasSinFactura } from "./oc-cerradas-sin-factura"
 import { recepcionList } from "./recepcion"
 import { gastoPorFaena } from "./gasto-faena"
+import { dteLibroCompras } from "./dte-libro-compras"
+import { dteConciliacion } from "./dte-conciliacion"
+import { dteFacturasSinOc } from "./dte-facturas-sin-oc"
 
 export async function getReportData(tipo: string, session: Session | null, filters: ExportFilters = {}, maxRows = 10_000): Promise<ReportData> {
   switch (tipo) {
@@ -25,6 +28,12 @@ export async function getReportData(tipo: string, session: Session | null, filte
       return ocCerradasSinFactura(session, filters, maxRows)
     case "recepcion":
       return recepcionList(session, filters, maxRows)
+    case "dte_libro_compras":
+      return dteLibroCompras(session, filters, maxRows)
+    case "dte_conciliacion":
+      return dteConciliacion(session, filters, maxRows)
+    case "dte_facturas_sin_oc":
+      return dteFacturasSinOc(session, filters, maxRows)
     case "gasto_faena":
     default:
       return gastoPorFaena(session, filters, maxRows)

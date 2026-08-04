@@ -131,47 +131,22 @@ export async function queryByRut(
 }
 
 /**
- * Navega a una página específica de resultados.
+ * Obtiene los documentos de una consulta.
  *
  * @see § 9 — Paginación
- */
-export async function queryPage(
-  client: DtePortalClient,
-  pagina: number,
-  currentQuery: DteQuery,
-): Promise<DtePageResult> {
-  // Re-ejecutar la consulta base con el parámetro de página
-  const baseQuery = structuredClone(currentQuery) as DteQuery & { pagina?: number }
-  baseQuery.pagina = pagina
-
-  switch (baseQuery.tipo) {
-    case "folio":   return queryByFolio(client, baseQuery as DteFolioQuery)
-    case "periodo": return queryByPeriodo(client, baseQuery as DtePeriodoQuery)
-    case "rango":   return queryByRango(client, baseQuery as DteRangoQuery)
-    case "rut":     return queryByRut(client, baseQuery as DteRutQuery)
-  }
-}
-
-/**
- * Obtiene todas las páginas de una consulta, iterando automáticamente.
- * Útil para sincronización completa.
+ *
+ * Verificado contra el portal real (2026-08-04): el `<select name="pagina">`
+ * del panel se llena por JavaScript en el navegador y nunca refleja el total
+ * real en el HTML crudo. Probado con una cuenta real de hasta 305 documentos
+ * en una sola consulta: el portal los devolvió TODOS en una sola respuesta,
+ * sin paginar. Por eso no hay navegación de páginas — `parseDteTable` ya
+ * avisa por consola si `tbxTotalDocumentos` no coincide con las filas
+ * parseadas, que sería la señal de que esta suposición dejó de ser válida.
  */
 export async function queryAllPages(
   client: DtePortalClient,
   query: DteQuery,
-  maxPages = 50,
 ): Promise<DteDocumentRow[]> {
-  const allDocs: DteDocumentRow[] = []
-  const firstPage = await queryDtePortal(client, query)
-  allDocs.push(...firstPage.docs)
-
-  const totalPages = firstPage.totalPages ?? 1
-  const max = Math.min(totalPages, maxPages)
-
-  for (let page = 2; page <= max; page++) {
-    const result = await queryPage(client, page, query)
-    allDocs.push(...result.docs)
-  }
-
-  return allDocs
+  const result = await queryDtePortal(client, query)
+  return result.docs
 }

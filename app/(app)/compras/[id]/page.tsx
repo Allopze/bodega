@@ -2,8 +2,8 @@ import type { Metadata } from "next"
 import Link from "next/link"
 import { notFound, redirect } from "next/navigation"
 import { db }                  from "@/db"
-import { purchaseOrderInvoices, purchaseOrders, statusHistory, users } from "@/db/schema"
-import { and, desc, eq } from "drizzle-orm"
+import { dteDocuments, purchaseOrderInvoices, purchaseOrders, statusHistory, users } from "@/db/schema"
+import { and, desc, eq, inArray } from "drizzle-orm"
 import { requirePermission, can } from "@/lib/auth/can"
 import { canAccessWorksite }  from "@/lib/auth/can"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
@@ -23,6 +23,7 @@ import { OcInvoiceCta } from "./oc-invoice-cta"
 import { OcDetailItems } from "./oc-detail-items"
 import { DetailLine, AmountLine } from "./oc-detail-page.helpers"
 import { getOcReconciliation } from "@/lib/services/oc-reconciliation"
+import { DteReceivedCard } from "./dte-received-card"
 
 
 export const metadata: Metadata = { title: "Orden de compra" }
@@ -143,6 +144,16 @@ export default async function OcDetailPage({
   const invoiceItemRows = invoiceIds.length > 0
     ? await db.query.purchaseOrderInvoiceItems.findMany({
         where: (t, { inArray }) => inArray(t.invoiceId, invoiceIds),
+      })
+    : []
+
+  // DTE del portal tributario ya conciliados contra las facturas de esta OC
+  // (ver lib/services/dte-portal/reconciliation.ts).
+  const dteRows = invoiceIds.length > 0
+    ? await db.query.dteDocuments.findMany({
+        where: inArray(dteDocuments.purchaseOrderInvoiceId, invoiceIds),
+        columns: { id: true, tipoDte: true, folio: true, rutEmisor: true, razonSocialEmisor: true, montoTotal: true, estadoSii: true },
+        orderBy: (d, { desc: descOrder }) => [descOrder(d.fechaEmision)],
       })
     : []
 
@@ -336,22 +347,25 @@ export default async function OcDetailPage({
               </div>
             }
             facturacion={showInvoicing ? (
-              <InvoicesSection
-                purchaseOrderId={order.id}
-                invoices={invoicesWithItems as unknown as React.ComponentProps<typeof InvoicesSection>["invoices"]}
-                ocItems={order.items.map((i) => ({
-                  id: i.id,
-                  productName: i.productNameFree ?? (i.productId ? productMap[i.productId]?.name : null) ?? i.id,
-                  productCode: i.productId ? productMap[i.productId]?.sku ?? null : null,
-                  unitOfMeasure: i.unitOfMeasure,
-                  quantity: i.quantity,
-                  unitPrice: i.unitPrice,
-                  subtotal: i.subtotal,
-                }))}
-                totalAmount={order.totalAmount}
-                canManage={canInvoice}
-                defaultInvoiceNumber={defaultInvoiceNumber}
-              />
+              <div className="flex flex-col gap-6">
+                <InvoicesSection
+                  purchaseOrderId={order.id}
+                  invoices={invoicesWithItems as unknown as React.ComponentProps<typeof InvoicesSection>["invoices"]}
+                  ocItems={order.items.map((i) => ({
+                    id: i.id,
+                    productName: i.productNameFree ?? (i.productId ? productMap[i.productId]?.name : null) ?? i.id,
+                    productCode: i.productId ? productMap[i.productId]?.sku ?? null : null,
+                    unitOfMeasure: i.unitOfMeasure,
+                    quantity: i.quantity,
+                    unitPrice: i.unitPrice,
+                    subtotal: i.subtotal,
+                  }))}
+                  totalAmount={order.totalAmount}
+                  canManage={canInvoice}
+                  defaultInvoiceNumber={defaultInvoiceNumber}
+                />
+                <DteReceivedCard docs={dteRows} />
+              </div>
             ) : undefined}
             avance={showInvoicing ? <OcProgressTable rows={progressRows} /> : undefined}
             historial={<EntityTimeline entityType="oc" events={timelineEvents} />}

@@ -1,0 +1,2 @@
+ALTER TABLE "dte_sync_runs" ADD COLUMN "importer_id" text;--> statement-breakpoint
+ALTER TABLE "dte_sync_runs" ADD CONSTRAINT "dte_sync_runs_importer_id_users_id_fk" FOREIGN KEY ("importer_id") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;

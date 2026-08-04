@@ -26,6 +26,8 @@ import { getFleetOverview } from "@/lib/services/fleet"
 import { getUsageMaintenanceAlerts } from "@/lib/services/maintenance"
 import { getCanonicalSafetyIndicatorYear, getMaterialEnvironmentalEvents } from "@/lib/services/prevention-indicadores"
 import { getPdtpComplianceIndicatorsForScope } from "@/lib/services/pdtp/compliance"
+import { computeHealthStats, countPendingFuelCreditNotes } from "@/lib/services/dte-portal/reconciliation"
+import { readDtePortalEnv } from "@/lib/services/dte-portal/config"
 import { DASHBOARD_DOMAINS, orderDashboardDomains, type DashboardDomainKey } from "./dashboard-domains"
 import { DomainIndex, DomainSection, DomainSectionFallback } from "./dashboard-domain-shell"
 import { periodScopeLabel, scopedWorksiteId, type DashboardScope } from "./dashboard-scope"
@@ -84,12 +86,14 @@ function plusDays(date: string, days: number) {
 
 // ── Adquisiciones ────────────────────────────────────────────────────────────
 
-async function AcquisitionsSection({ session, scope, moduleWorkload, queueTotal, worksitesBreakdown }: DomainSectionsProps) {
+async function AcquisitionsSection({ session, scope, worksiteScope, moduleWorkload, queueTotal, worksitesBreakdown }: DomainSectionsProps) {
   const bounds = getOperationalCalendarBounds(new Date(), scope.period)
-  const [analytics, quality, trend] = await Promise.all([
+  const dteCodEmp = readDtePortalEnv().credentials.codEmp
+  const [analytics, quality, trend, dteHealth] = await Promise.all([
     getAnalyticsDashboard(session, analyticsFilters(scope)),
     getReceptionQuality(session, { from: bounds.currentStart, to: bounds.currentEnd }, scopedWorksiteId(scope)),
     getOperationalTrendHistory(session, 6, new Date(), scopedWorksiteId(scope)),
+    computeHealthStats(todayInChile().slice(0, 7), dteCodEmp).catch(() => null),
   ])
 
   const periodo = periodScopeLabel(scope.period).toLocaleLowerCase("es-CL")
@@ -97,6 +101,11 @@ async function AcquisitionsSection({ session, scope, moduleWorkload, queueTotal,
   return (
     <DomainSection
       domain={DASHBOARD_DOMAINS.adquisiciones}
+      // dteHealth es por empresa/período tributario (CodEmp del portal DTE),
+      // no por faena — no sigue el filtro de arriba cuando hay una faena elegida.
+      note={dteHealth && worksiteScope.mode !== "all"
+        ? "Las cifras de DTE (facturas del portal tributario) son por empresa y período, no por faena: no siguen el filtro de arriba."
+        : undefined}
       links={[{ label: "Compras", href: "/compras" }, { label: "Analítica", href: "/analitica" }]}
       kpis={
         <>
@@ -111,6 +120,24 @@ async function AcquisitionsSection({ session, scope, moduleWorkload, queueTotal,
             detail="Esperando decisión ahora" href="/pendientes?module=aprobaciones" />
         </>
       }
+      summary={dteHealth && (dteHealth.reconciliation.unmatched > 0 || dteHealth.reconciliation.discrepancies > 0) ? (
+        <SummaryBar stats={[
+          {
+            key: "dte-sin-oc",
+            label: "Facturas DTE sin vincular a OC",
+            value: dteHealth.reconciliation.unmatched,
+            tone: dteHealth.reconciliation.unmatched > 0 ? "signal" : undefined,
+            href: "/compras/dte?vinculo=sin_oc",
+          },
+          {
+            key: "dte-discrepancias",
+            label: "Discrepancias de monto (DTE vs. factura)",
+            value: dteHealth.reconciliation.discrepancies,
+            tone: dteHealth.reconciliation.discrepancies > 0 ? "signal" : undefined,
+            href: "/compras/dte?vinculo=discrepancia",
+          },
+        ]} />
+      ) : undefined}
       charts={
         <>
           <OperationalTrendChart data={trend.map((p) => ({ month: p.month, requests: p.requests, orders: p.orders, receipts: p.receipts }))} />
@@ -302,7 +329,8 @@ async function FleetSection({ session, scope }: DomainSectionsProps) {
   const permissions = session.user.permissions
 
   const bounds = getOperationalCalendarBounds(new Date(), scope.period)
-  const [fuelControl, fuelTrend, maintenanceTrend, docs, debt, fleet, usageAlerts] = await Promise.all([
+  const dteCodEmp = readDtePortalEnv().credentials.codEmp
+  const [fuelControl, fuelTrend, maintenanceTrend, docs, debt, fleet, usageAlerts, pendingFuelCreditNotes] = await Promise.all([
     getFuelControlOverview(session, {
       includeTae: true,
       filters: { fromDate: bounds.currentStart.slice(0, 10), toDate: bounds.currentEnd.slice(0, 10), ...(worksiteId ? { worksiteId } : {}) },
@@ -315,6 +343,9 @@ async function FleetSection({ session, scope }: DomainSectionsProps) {
       : Promise.resolve({ amount: 0, statements: 0 }),
     getFleetOverview(session).catch(() => []),
     getUsageMaintenanceAlerts(session).catch(() => []),
+    // Notas de crédito de combustible sin aplicar (rutEmisor de fuelSuppliers,
+    // por empresa/período tributario — no por faena, igual que la deuda arriba).
+    countPendingFuelCreditNotes(today.slice(0, 7), dteCodEmp).catch(() => null),
   ])
 
   const periodCost = fuelTrend.reduce((sum, point) => sum + point.amount, 0)
@@ -365,13 +396,22 @@ async function FleetSection({ session, scope }: DomainSectionsProps) {
             tone={usageAlerts.length > 0 ? "signal" : "neutral"} href="/mantenciones" />
         </>
       }
-      summary={<SummaryBar stats={[{
-        key: "tae-billed-gap",
-        label: "Brecha TAE vs. facturado",
-        value: fuelControl?.tae ? `${Math.abs(Math.round(fuelControl.tae.liters - fuelControl.billed.liters)).toLocaleString("es-CL")} L` : "—",
-        secondary: fuelControl?.tae ? `${fuelControl.tae.pendingReview} por revisar · ${periodo}` : "Sin control TAE",
-        href: "/combustibles/tae/conciliacion",
-      }]} />}
+      summary={<SummaryBar stats={[
+        {
+          key: "tae-billed-gap",
+          label: "Brecha TAE vs. facturado",
+          value: fuelControl?.tae ? `${Math.abs(Math.round(fuelControl.tae.liters - fuelControl.billed.liters)).toLocaleString("es-CL")} L` : "—",
+          secondary: fuelControl?.tae ? `${fuelControl.tae.pendingReview} por revisar · ${periodo}` : "Sin control TAE",
+          href: "/combustibles/tae/conciliacion",
+        },
+        ...(pendingFuelCreditNotes !== null ? [{
+          key: "dte-nc-pendientes",
+          label: "NC de combustible sin aplicar",
+          value: pendingFuelCreditNotes,
+          tone: (pendingFuelCreditNotes > 0 ? "signal" : undefined) as "signal" | undefined,
+          href: "/compras/dte?tipo=61",
+        }] : []),
+      ]} />}
       charts={
         <>
           <FuelConsumptionChart data={fuelTrend} />

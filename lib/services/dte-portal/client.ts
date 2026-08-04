@@ -16,9 +16,25 @@
  * @see explicacion_integral_dte_facturaenlinea.md § 2
  */
 
+import { Agent } from "undici"
 import { DtePortalError, type DtePortalClientConfig, type DtePortalCredentials } from "./types"
 
 const CREDENTIAL_KEYS = ["rut_usr", "rut_emp", "clave"] as const
+
+/**
+ * El portal es un servidor legacy que solo negocia TLS 1.2 con ciphers
+ * SECLEVEL 0 — verificado 2026-08-04: el `fetch` nativo de Node falla con
+ * `ERR_SSL_WRONG_SIGNATURE_TYPE` sin este ajuste (mismo motivo por el que
+ * curl necesita `--tlsv1.2 --ciphers DEFAULT@SECLEVEL=0`). El certificado sí
+ * valida correctamente (no hace falta `rejectUnauthorized: false`).
+ */
+const LEGACY_TLS_DISPATCHER = new Agent({
+  connect: {
+    ciphers: "DEFAULT@SECLEVEL=0",
+    minVersion: "TLSv1.2",
+    maxVersion: "TLSv1.2",
+  },
+})
 
 /**
  * Objeto de fetch reutilizable que incluye sanitización de credenciales en
@@ -31,13 +47,18 @@ export class DtePortalClient {
   constructor(config: DtePortalClientConfig) {
     this.config = {
       delayMs: 500,
-      requestTimeoutMs: 30_000,
+      requestTimeoutMs: 120_000, // Bandeja de Entrada puede tardar ~80s, ver config.ts
       ...config,
     }
   }
 
   get credentials(): DtePortalCredentials {
     return this.config.credentials
+  }
+
+  /** URL base sin credenciales (nunca las lleva) — para resolver URLs relativas. */
+  get baseUrl(): string {
+    return this.config.baseUrl.replace(/\/+$/, "")
   }
 
   /**
@@ -72,6 +93,8 @@ export class DtePortalClient {
    * codificación original del XML y luego aplicar decodeXmlBuffer().
    */
   async downloadBinary(url: string): Promise<Buffer> {
+    await this.throttle()
+
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), this.config.requestTimeoutMs)
 
@@ -79,7 +102,8 @@ export class DtePortalClient {
       const response = await fetch(url, {
         signal: controller.signal,
         headers: { "Accept": "application/pdf, application/xml, */*" },
-      })
+        dispatcher: LEGACY_TLS_DISPATCHER,
+      } as RequestInit)
 
       if (!response.ok) {
         throw new DtePortalError(
@@ -130,19 +154,26 @@ export class DtePortalClient {
     return url
   }
 
-  private async fetchWithTimeout(url: string, init: RequestInit): Promise<string> {
-    // Rate limiting
+  private async throttle(): Promise<void> {
     const elapsed = Date.now() - this.lastRequestTime
     if (elapsed < this.config.delayMs) {
       await new Promise((resolve) => setTimeout(resolve, this.config.delayMs - elapsed))
     }
     this.lastRequestTime = Date.now()
+  }
+
+  private async fetchWithTimeout(url: string, init: RequestInit): Promise<string> {
+    await this.throttle()
 
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), this.config.requestTimeoutMs)
 
     try {
-      const response = await fetch(url, { ...init, signal: controller.signal })
+      const response = await fetch(url, {
+        ...init,
+        signal: controller.signal,
+        dispatcher: LEGACY_TLS_DISPATCHER,
+      } as RequestInit)
 
       if (!response.ok) {
         throw new DtePortalError(

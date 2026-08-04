@@ -22,7 +22,11 @@ import type { DtePortalClientConfig, DtePortalCredentials } from "./types"
 
 const DEFAULT_BASE_URL = "https://clientes.dtefacturaenlinea.cl/facturaenlinea"
 const DEFAULT_DELAY_MS = 500
-const DEFAULT_TIMEOUT_MS = 30_000
+// La Bandeja de Entrada (PNC_PanelCorreo.php) puede tardar ~80s en responder
+// para un mes de alto volumen (verificado: 681 documentos); 30s cortaba la
+// consulta antes de tiempo. paneldte.php responde en <1s, así que un timeout
+// más alto acá no le cuesta nada.
+const DEFAULT_TIMEOUT_MS = 120_000
 
 export interface DtePortalEnvConfig {
   baseUrl: string

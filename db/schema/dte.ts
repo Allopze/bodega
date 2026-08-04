@@ -2,6 +2,7 @@ import { relations, sql } from "drizzle-orm"
 import { pgTable, text, integer, numeric, timestamp, check, index, uniqueIndex } from "drizzle-orm/pg-core"
 import { purchaseOrderInvoices } from "./purchasing"
 import { fuelLoads } from "./fuel-invoices"
+import { users } from "./users"
 
 /* ── DTE Sync Run States ─────────────────────────────────────────────────── */
 // running | success | partial | failed
@@ -30,6 +31,8 @@ export const dteSyncRuns = pgTable("dte_sync_runs", {
   rowsSeen:      integer("rows_seen").notNull().default(0),
   rowsInserted:  integer("rows_inserted").notNull().default(0),
   rowsUpdated:   integer("rows_updated").notNull().default(0),
+  /** Usuario técnico resuelto para la corrida (sesión del botón manual, o DTE_SYNC_IMPORTER_EMAIL en cron) */
+  importerId:    text("importer_id").references(() => users.id),
   error:         text("error"),
   startedAt:     timestamp("started_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   finishedAt:    timestamp("finished_at", { withTimezone: true, mode: "string" }),

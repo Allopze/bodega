@@ -57,6 +57,8 @@ export type DteTipo =
   | "56"  // Nota de Débito Electrónica
   | "43"  // Liquidación Factura Electrónica
   | "52"  // Guía de Despacho Electrónica
+  | "39"  // Boleta Afecta Electrónica
+  | "41"  // Boleta Exenta Electrónica
   | "30"  // Factura Afecta (manual)
   | "32"  // Factura Exenta (manual)
   | "60"  // Nota de Crédito (manual)
@@ -89,11 +91,6 @@ export type DteEstadoIntercambio =
   | "pendiente"     // flag_blue.png
   | "aceptado"      // flag_green.png
   | "rechazado"     // flag_red.png
-
-export type DteEstadoEnvioComercial =
-  | "pendiente"     // CorrPen.png
-  | "enviado"       // CorrEnv.png
-  | "leido"         // enviaentre.png
 
 /**
  * @see § 6.2 — Búsqueda por folio (fil=3)
@@ -141,6 +138,55 @@ export interface DteRutQuery {
 
 export type DteQuery = DteFolioQuery | DtePeriodoQuery | DteRangoQuery | DteRutQuery
 
+// ── Bandeja de Entrada (Panel Correo) ────────────────────────────────────────
+//
+// Fuente real de las compras: a diferencia de paneldte.php?rlib=com (vacío,
+// nunca se procesan los documentos hacia el libro), PNC_PanelCorreo.php trae
+// los DTE que los proveedores envían a Chome, con RUT emisor incluido.
+// Verificado contra el portal real (2026-08-04): 681 documentos en 2026-06,
+// sin paginación (una sola respuesta trae todo el período).
+// @see EXPLORACION_PORTAL_DTE_FACTURAENLINEA_2026-08-04.md § 7
+
+export interface DteBandejaFilter {
+  mes: string   // "01".."12"
+  anio: string  // "2026"
+  codEmp: string
+  estadoPlataforma?: "" | "ENV" | "PEN" | "BLO"
+  rutProveedor?: string
+}
+
+export interface DteBandejaRow {
+  /** Fecha/hora de recepción del correo, tal como llega ("YYYY-MM-DD HH:mm") */
+  fechaRecepcion: string
+  /**
+   * Texto libre derivado del ícono `penplata.gif` (su `title`) cuando está
+   * presente; `null` si no. La celda de texto correspondiente es en realidad
+   * un comentario HTML nunca renderizado — no se debe leer como texto plano.
+   */
+  estadoPlataforma: string | null
+  /** Fecha del documento "YYYY-MM-DD" */
+  fecha: string
+  /** Código de tipo de documento (33, 34, 52, 61, etc.) */
+  tipoDoc: string
+  folio: number
+  rutEmisor: string
+  razonSocial: string
+  montoTotal: number
+  tipoRef: string | null
+  folioRef: string | null
+  fechaRef: string | null
+  /** Id interno del portal (Nreguist), extraído del post= de dtepdfX.php */
+  nreguist: string | null
+  pdfUrl: string | null
+  /** Enlace directo al XML del proveedor, sin salto intermedio (ver § 7.3) */
+  xmlUrl: string | null
+}
+
+export interface DteBandejaResult {
+  rows: DteBandejaRow[]
+  totalRegistros: number
+}
+
 // ── Documento extraído del HTML ──────────────────────────────────────────────
 
 /**
@@ -152,6 +198,8 @@ export interface DteDocumentRow {
   rowId: string | null
   /** Estado SII desde columna "Aceptación SII" */
   estadoSii: DteEstadoSii | null
+  /** Estado de intercambio electrónico (flag_*.png), si la columna lo expone */
+  estadoIntercambio: DteEstadoIntercambio | null
   /** Fecha del documento "YYYY-MM-DD" */
   fecha: string
   /** Tipo de documento (33, 34, 61, 56, 52, etc.) */

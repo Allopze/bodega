@@ -3,10 +3,28 @@
  *
  * Parser defensivo del HTML de paneldte.php.
  *
- * El portal DTE FacturaEnLinea es PHP legacy: la tabla de resultados
- * (id="tabla") y los formularios tienen una estructura predecible pero
- * quebradiza. Este parser está diseñado para fallar con un error explícito
- * cuando el HTML cambia, en vez de devolver datos silenciosamente corruptos.
+ * Verificado contra HTML real del portal (2026-08-04, cuenta rut_emp 78023530-6,
+ * CodEmp 433, libro de ventas). Hallazgos que difieren de lo asumido original:
+ * - Las filas de documentos NO están dentro de <table id="tabla"> (esa tabla
+ *   se cierra justo después del encabezado); son bloques sueltos
+ *   `<tr onmouseover=...>` que aparecen después, fuera de cualquier tabla con
+ *   nombre. Ese atributo es exclusivo de filas de datos reales.
+ * - Cada celda "top-level" puede contener una subtabla propia (Opciones,
+ *   Estado), así que separar celdas requiere rastrear profundidad de <table>.
+ * - "Aceptación SII" no trae íconos: trae 1-2 puntos de color inline
+ *   (background: #hex) cuyo mapeo completo no se pudo determinar con los
+ *   datos disponibles — se ignora deliberadamente.
+ * - Los íconos Sii*.png / flag_*.png están en la columna "Estado", no en
+ *   "Aceptación SII".
+ * - "Documento" trae el nombre en español (ej. "Factura Electronica"), no el
+ *   código numérico — se resuelve por texto contra el catálogo TipDoc real.
+ * - La fecha viene en ISO (yyyy-mm-dd), no dd-mm-yyyy.
+ * - El `<select name="pagina">` se llena por JavaScript en el navegador; en
+ *   el HTML crudo siempre trae una sola opción sin importar el total real.
+ *   Con hasta 305 documentos en una cuenta real, el portal los devolvió TODOS
+ *   en una sola respuesta (sin paginar). Por eso no se implementa navegación
+ *   de páginas: se usa `tbxTotalDocumentos` solo como señal de alerta si no
+ *   coincide con las filas parseadas.
  *
  * @see explicacion_integral_dte_facturaenlinea.md § 8–10, 19
  */
@@ -35,19 +53,63 @@ const INTERCAMBIO_MAP: Record<string, DteEstadoIntercambio> = {
   "flag_red.png":    "rechazado",
 }
 
+// ── Mapa texto→código del dropdown TipDoc (§ 4), verificado contra el HTML
+// real del catálogo; sin tildes tal como lo renderiza el portal. Ordenado de
+// texto más largo a más corto para evitar falsos positivos por substring
+// (ej. "Factura Exenta" no debe matchear dentro de "Factura Exenta Electronica").
+const TIPDOC_TEXT_MAP: Array<[text: string, code: string]> = [
+  ["Nota Debito Exportacion Electronica", "111"],
+  ["Nota Credito Exportacion Electronica", "112"],
+  ["Factura Exportacion Electronica", "110"],
+  ["Liquidacion Factura Electronica", "43"],
+  ["Factura de Compra Electronica", "87"],
+  ["Nota de Credito Exportacion", "106"],
+  ["Nota de Debito Exportacion", "104"],
+  ["Fac. Venta Exenta a Z.Franca", "102"],
+  ["Boleta Afecta Electronica", "39"], // verificado contra la Bandeja de Entrada real (2026-08-04)
+  ["Boleta Exenta Electronica", "41"],
+  ["Factura Exenta Electronica", "34"],
+  ["Guia de Despacho Electronica", "52"], // § 4.4, no confirmado contra HTML real
+  ["Nota de Credito Electronica", "61"],
+  ["Nota de Debito Electronica", "56"],
+  ["Liquidacion Factura", "40"],
+  ["Factura de Compra", "92"],
+  ["Factura Exportacion", "88"],
+  ["Factura Electronica", "33"],
+  ["Nota de Credito", "60"],
+  ["Nota de Debito", "55"],
+  ["Factura Afecta", "30"],
+  ["Factura Exenta", "32"],
+  ["Liquidacion", "103"],
+]
+TIPDOC_TEXT_MAP.sort((a, b) => b[0].length - a[0].length)
+
+/** Divisores cosméticos entre columnas: <td> negro sin contenido. */
+const DIVIDER_TD_RE = /<td[^>]*\bbgcolor=["']#000000["'][^>]*>\s*<\/td>/gi
+
+/** Marca exclusiva de las filas de datos reales del panel (verificado contra HTML real). */
+const ROW_MARKER_RE = /<tr\s+onmouseover=/gi
+
 // ── Parsers principales ──────────────────────────────────────────────────────
 
 /**
  * Parsea el HTML de la tabla de resultados de paneldte.php.
- *
- * Busca un elemento <table> con id="tabla" y extrae cada fila <tr>
- * interpretando las columnas según el orden esperado (§ 8).
  */
 export function parseDteTable(html: string, codEmp: string): DtePageResult {
-  const table = extractTable(html)
-  if (!table) {
+  const rows = extractRows(html)
+  const docs: DteDocumentRow[] = []
+
+  for (const row of rows) {
+    const cells = extractCells(row)
+    if (cells.length < 9) continue // Mínimo 9 columnas reales (§ 8), sin divisores
+
+    const doc = parseRow(cells, codEmp)
+    if (doc) docs.push(doc)
+  }
+
+  if (docs.length === 0 && rows.length === 0 && !hasEmptyResultMarker(html)) {
     throw new DtePortalError(
-      "No se encontró la tabla de resultados en el portal DTE. " +
+      "No se encontraron filas de documentos ni el marcador de resultado vacío en el HTML del portal DTE. " +
       "Es posible que el HTML del portal haya cambiado o que las credenciales sean inválidas.",
       "PARSE_FAILED",
       undefined,
@@ -55,28 +117,22 @@ export function parseDteTable(html: string, codEmp: string): DtePageResult {
     )
   }
 
-  const rows = extractRows(table)
-  const docs: DteDocumentRow[] = []
-
-  for (const row of rows) {
-    const cells = extractCells(row)
-    if (cells.length < 8) continue // Mínimo 8 columnas (§ 8)
-
-    const doc = parseRow(cells, rows.indexOf(row), codEmp)
-    if (doc) docs.push(doc)
+  const totalDocs = extractTotalDocumentos(html)
+  if (totalDocs !== null && totalDocs !== docs.length) {
+    console.warn(`[dte-parser] tbxTotalDocumentos declara ${totalDocs} pero se parsearon ${docs.length} filas. El portal podría estar paginando resultados que este parser no está siguiendo.`)
   }
 
   return {
     docs,
-    currentPage: extractCurrentPage(html),
-    totalPages: extractTotalPages(html),
-    totalDocs: docs.length > 0 ? null : 0, // No tenemos total del portal, solo lo que parseamos
+    currentPage: 1,
+    totalPages: 1, // Verificado: el portal devuelve todos los resultados en una sola respuesta (hasta 305 filas probadas)
+    totalDocs,
     periodo: extractPeriodo(html),
   }
 }
 
 /**
- * Parsea el estado SII desde el HTML de la columna "Aceptación SII".
+ * Parsea el estado SII desde el HTML de la columna "Estado".
  * Busca el nombre del archivo de imagen del icono.
  */
 export function parseEstadoSii(cellHtml: string): DteEstadoSii | null {
@@ -91,7 +147,7 @@ export function parseEstadoSii(cellHtml: string): DteEstadoSii | null {
 
 /**
  * Parsea el estado de intercambio electrónico desde el HTML.
- * Busca el icono flag_*.png.
+ * Busca el icono flag_*.png (columna "Estado", junto al icono SII).
  */
 export function parseEstadoIntercambio(cellHtml: string): DteEstadoIntercambio | null {
   const imgMatch = cellHtml.match(/<img[^>]*src=["'](?:[^"']*\/)?(flag_\w+\.png)["']/i)
@@ -101,7 +157,10 @@ export function parseEstadoIntercambio(cellHtml: string): DteEstadoIntercambio |
 }
 
 /**
- * Extrae el parámetro `post` de un enlace pdf_dte.php
+ * Extrae el parámetro `post` de un enlace pdf_dte.php.
+ * Nota: el portal trae dos enlaces a pdf_dte.php por fila (copia cedible en
+ * "Opciones", copia tributaria normal en "Documento"); esta función toma el
+ * primero que encuentre en el HTML pasado.
  */
 export function extractPdfPostUrl(cellHtml: string): string | null {
   const match = cellHtml.match(/href=["']([^"']*pdf_dte\.php[^"']*)["']/i)
@@ -110,21 +169,23 @@ export function extractPdfPostUrl(cellHtml: string): string | null {
 
 /**
  * Extrae el enlace al XML del documento.
+ *
+ * Verificado contra el portal real: no hay descarga directa de XML desde la
+ * tabla de resultados. El ícono file-xml.png suele estar envuelto en un
+ * onclick que abre `estadodoc.php?codemp=...&folio=...&tipodoc=...&Nreguist=...`,
+ * una página intermedia desde la que sí se puede extraer el enlace real
+ * (`dn.php?file=<RUT_EMISOR>_<TIPO>_<FOLIO>.xml&Tp=...`). Ese segundo salto
+ * vive en download.ts, no acá — esta función solo confirma si existe el
+ * onclick de navegación.
  */
 export function extractXmlUrl(cellHtml: string): string | null {
-  // Buscar enlaces o iconos que lleven al XML
-  const match = cellHtml.match(/href=["']([^"']*file-xml[^"']*)["']/i)
-  if (match) return decodeHtmlEntities(match[1]!)
-
-  // También puede ser un onclick que lleve a panelAceptacionSii.php
-  const onclickMatch = cellHtml.match(/onclick=["'][^"']*panelAceptacionSii\.php[^"']*["']/i)
-  if (onclickMatch) return null // No hay URL directa, se requiere navegación
-
+  const onclickMatch = cellHtml.match(/onClick=["']popupd\(['"]([^'"]*estadodoc\.php[^'"]*)['"]\)["']/i)
+  if (onclickMatch) return decodeHtmlEntities(onclickMatch[1]!)
   return null
 }
 
 /**
- * Extrae el rowId de un documento (parámetro nreg o similar).
+ * Extrae el rowId de un documento (parámetro Nreguist).
  */
 export function extractRowId(cellHtml: string): string | null {
   const matchUrl = cellHtml.match(/nreg(?:uist)?=([^&"'\s]+)/i)
@@ -147,15 +208,26 @@ export function parseMonto(text: string): number | null {
 }
 
 /**
- * Parsea una fecha del portal (formato dd-mm-yyyy o dd/mm/yyyy) a ISO (yyyy-mm-dd).
+ * Parsea una fecha del portal a ISO (yyyy-mm-dd).
+ * Formato real observado: yyyy-mm-dd. Se acepta también dd-mm-yyyy / dd/mm/yyyy
+ * por si otro formulario del portal lo usa (ej. selectores de rango, § 6.4).
  */
 export function parseFechaPortal(text: string): string | null {
   const cleaned = text.trim()
-  // dd-mm-yyyy o dd/mm/yyyy
-  const match = cleaned.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})$/)
-  if (!match) return null
-  const [_, day, month, year] = match
-  return `${year}-${month!.padStart(2, "0")}-${day!.padStart(2, "0")}`
+
+  const iso = cleaned.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/)
+  if (iso) {
+    const [, year, month, day] = iso
+    return `${year}-${month!.padStart(2, "0")}-${day!.padStart(2, "0")}`
+  }
+
+  const dmy = cleaned.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})$/)
+  if (dmy) {
+    const [, day, month, year] = dmy
+    return `${year}-${month!.padStart(2, "0")}-${day!.padStart(2, "0")}`
+  }
+
+  return null
 }
 
 /**
@@ -167,80 +239,169 @@ export function parseFolio(text: string): number | null {
   return isNaN(n) ? null : n
 }
 
-// ── Helpers de extracción del HTML ───────────────────────────────────────────
-
-function extractTable(html: string): string | null {
-  // Buscar <table id="tabla"> o <table id="mytable"> o <table> que contenga los datos
-  const patterns = [
-    /<table[^>]*\bid=["']tabla["'][^>]*>([\s\S]*?)<\/table>/i,
-    /<table[^>]*\bid=["']mytable["'][^>]*>([\s\S]*?)<\/table>/i,
-    /<table[^>]*class=["'][^"']*tabla[^"']*["'][^>]*>([\s\S]*?)<\/table>/i,
-  ]
-
-  for (const pattern of patterns) {
-    const match = html.match(pattern)
-    if (match) return match[0]
+/**
+ * Resuelve el código numérico de tipo de documento a partir del texto en
+ * español que muestra la columna "Documento" (ej. "Factura Electronica" → "33").
+ * Usa coincidencia por substring (más largo primero) porque la celda puede
+ * traer texto adicional pegado (ej. el link "[POS]" del ticket térmico).
+ */
+export function resolveTipoDocFromText(text: string): string | null {
+  const cleaned = text.replace(/\s+/g, " ").trim()
+  for (const [label, code] of TIPDOC_TEXT_MAP) {
+    if (cleaned.includes(label)) return code
   }
-
   return null
 }
 
-function extractRows(tableHtml: string): string[] {
-  const rows: string[] = []
-  // Buscar solo <tr> que no estén dentro de <thead>
-  const theadEnd = tableHtml.search(/<\/thead>/i)
-  const tbody = theadEnd >= 0 ? tableHtml.slice(theadEnd + 8) : tableHtml
+// ── Helpers de extracción del HTML ───────────────────────────────────────────
 
-  const trPattern = /<tr[^>]*>([\s\S]*?)<\/tr>/gi
+function hasEmptyResultMarker(html: string): boolean {
+  return /No se encontraron documentos/i.test(html)
+}
+
+/**
+ * Extrae las filas de documentos reales del HTML completo del panel.
+ *
+ * Las filas NO están dentro de <table id="tabla"> (esa tabla solo contiene
+ * el encabezado); son bloques `<tr onmouseover=...>` sueltos que aparecen
+ * después. Ese atributo es exclusivo de filas de datos: no aparece en las
+ * subtablas anidadas de "Opciones" ni "Estado".
+ */
+function extractRows(html: string): string[] {
+  const rows: string[] = []
+  const starts: number[] = []
   let match: RegExpExecArray | null
-  while ((match = trPattern.exec(tbody)) !== null) {
-    rows.push(match[0])
+  ROW_MARKER_RE.lastIndex = 0
+  while ((match = ROW_MARKER_RE.exec(html)) !== null) {
+    starts.push(match.index)
   }
+
+  for (let i = 0; i < starts.length; i++) {
+    const start = starts[i]!
+    const end = i + 1 < starts.length ? starts[i + 1]! : html.length
+    const chunk = html.slice(start, end)
+    // Cortar en el cierre real de esta fila, no en el de una subtabla anidada.
+    const rowEnd = findMatchingRowEnd(chunk)
+    rows.push(rowEnd >= 0 ? chunk.slice(0, rowEnd) : chunk)
+  }
+
   return rows
 }
 
-function extractCells(rowHtml: string): string[] {
-  const cells: string[] = []
-  const tdPattern = /<td[^>]*>([\s\S]*?)<\/td>/gi
-  let match: RegExpExecArray | null
-  while ((match = tdPattern.exec(rowHtml)) !== null) {
-    cells.push(match[1]!.trim())
+/**
+ * Encuentra el `</tr>` que cierra la fila (profundidad 0 de <table> anidada)
+ * dentro de un fragmento que empieza en la apertura de un `<tr>`.
+ *
+ * Genérico — no asume nada específico de paneldte.php, reutilizado también
+ * por bandeja-entrada.ts (Panel Correo).
+ */
+export function findMatchingRowEnd(rowChunk: string): number {
+  const tagRe = /<(\/?)(table)\b[^>]*>|<\/tr>/gi
+  let tableDepth = 0
+  let m: RegExpExecArray | null
+  while ((m = tagRe.exec(rowChunk)) !== null) {
+    if (m[0].toLowerCase() === "</tr>") {
+      if (tableDepth === 0) return m.index + m[0].length
+      continue
+    }
+    if (m[1] === "/") tableDepth = Math.max(0, tableDepth - 1)
+    else tableDepth++
   }
+  return -1
+}
+
+/**
+ * Separa un HTML en sus celdas `<td>` de nivel superior, ignorando `<td>` que
+ * pertenezcan a subtablas anidadas. Genérico — no asume nada específico de
+ * paneldte.php, reutilizado también por bandeja-entrada.ts (Panel Correo).
+ */
+export function splitTopLevelTdCells(html: string): string[] {
+  const cells: string[] = []
+  const tagRe = /<(\/?)(td|table)\b[^>]*>/gi
+  let tableDepth = 0
+  let cellStart = -1
+  let m: RegExpExecArray | null
+
+  while ((m = tagRe.exec(html)) !== null) {
+    const closing = m[1] === "/"
+    const tag = m[2]!.toLowerCase()
+
+    if (tag === "table") {
+      tableDepth = closing ? Math.max(0, tableDepth - 1) : tableDepth + 1
+      continue
+    }
+
+    // tag === "td"
+    if (!closing) {
+      if (tableDepth === 0) cellStart = m.index + m[0].length
+    } else if (tableDepth === 0 && cellStart >= 0) {
+      cells.push(html.slice(cellStart, m.index).trim())
+      cellStart = -1
+    }
+  }
+
   return cells
 }
 
-function parseRow(cells: string[], rowIndex: number, codEmp: string): DteDocumentRow | null {
-  const cellTexts = cells.map((c) => c.replace(/<[^>]*>/g, "").trim())
+/**
+ * Separa una fila de paneldte.php en sus celdas de nivel superior. Antes
+ * descarta los <td> divisores (negros, sin contenido) para que los índices
+ * resultantes coincidan 1:1 con las columnas documentadas (§ 8) — esa
+ * convención de divisores es específica de este panel, por eso no vive en
+ * splitTopLevelTdCells().
+ */
+function extractCells(rowHtml: string): string[] {
+  return splitTopLevelTdCells(rowHtml.replace(DIVIDER_TD_RE, ""))
+}
+
+function parseRow(cells: string[], codEmp: string): DteDocumentRow | null {
+  const cellTexts = cells.map((c) => c.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim())
 
   // Columna 0: Opciones (iconos PDF, XML, email, etc.)
-  // Columna 1: Aceptación SII (estado)
+  // Columna 1: Aceptación SII (puntos de color — no se parsea, ver cabecera del archivo)
   // Columna 2: Fecha
-  // Columna 3: Documento (tipo)
+  // Columna 3: Documento (nombre en texto, se resuelve a código)
   // Columna 4: Folio
   // Columna 5: Razón Social
-  // Columna 6: Estado
+  // Columna 6: Estado (íconos Sii*.png + flag_*.png + Corr*.png)
   // Columna 7: Total Neto
   // Columna 8: Total
 
   const fecha = parseFechaPortal(cellTexts[2] ?? "")
-  if (!fecha) return null
+  if (!fecha) {
+    console.warn(`[dte-parser] Fecha no reconocida, fila descartada: "${cellTexts[2]}"`)
+    return null
+  }
 
   const folio = parseFolio(cellTexts[4] ?? "")
-  if (!folio) return null
+  if (!folio) {
+    console.warn(`[dte-parser] Folio no reconocido, fila descartada: "${cellTexts[4]}"`)
+    return null
+  }
+
+  const tipoDoc = resolveTipoDocFromText(cellTexts[3] ?? "")
+  if (!tipoDoc) {
+    console.warn(`[dte-parser] Tipo de documento no reconocido, fila descartada (folio ${folio}): "${cellTexts[3]}"`)
+    return null
+  }
 
   const montoNeto = parseMonto(cellTexts[7] ?? "")
-  const montoTotal = parseMonto(cellTexts[8] ?? "") ?? montoNeto ?? 0
+  const montoTotal = parseMonto(cellTexts[8] ?? "")
+  if (montoTotal === null) {
+    console.warn(`[dte-parser] Monto total no reconocido, fila descartada (folio ${folio}): "${cellTexts[8]}"`)
+    return null
+  }
 
-  const estadoSii = parseEstadoSii(cells[1] ?? "")
+  const estadoSii = parseEstadoSii(cells[6] ?? "")
+  const estadoIntercambio = parseEstadoIntercambio(cells[6] ?? "")
   const pdfUrl = extractPdfPostUrl(cells[0] ?? "")
   const xmlUrl = extractXmlUrl(cells[0] ?? "")
   const rowId = extractRowId(cells[0] ?? "")
 
-  const tipoDoc = (cellTexts[3] ?? "").trim()
-
   return {
     rowId,
     estadoSii,
+    estadoIntercambio,
     fecha,
     tipoDoc,
     folio,
@@ -250,34 +411,14 @@ function parseRow(cells: string[], rowIndex: number, codEmp: string): DteDocumen
     montoTotal,
     pdfUrl,
     xmlUrl,
-    rutEmisor: null, // Se llena desde el contexto de la consulta, no del HTML
+    rutEmisor: null, // No visible en la tabla; se resuelve en la Fase 3 vía estadodoc.php
     codEmp: codEmp,
   }
 }
 
-function extractCurrentPage(html: string): number {
-  // Buscar en el select de paginación o en el texto "Página X de Y"
-  const pageMatch = html.match(/pagina["']\s*>\s*<option[^>]*selected[^>]*>(\d+)<\/option>/i)
-  if (pageMatch) return parseInt(pageMatch[1]!, 10)
-
-  const textMatch = html.match(/Página\s+(\d+)\s+de\s+\d+/i)
-  if (textMatch) return parseInt(textMatch[1]!, 10)
-
-  return 1
-}
-
-function extractTotalPages(html: string): number | null {
-  const match = html.match(/Página\s+\d+\s+de\s+(\d+)/i)
-  if (match) return parseInt(match[1]!, 10)
-
-  // Buscar en el select de paginación el último option
-  const options = html.match(/<option[^>]*>\d+<\/option>/gi)
-  if (options && options.length > 0) {
-    const last = options[options.length - 1]!.match(/>(\d+)</)
-    if (last) return parseInt(last[1]!, 10)
-  }
-
-  return null
+function extractTotalDocumentos(html: string): number | null {
+  const match = html.match(/tbxTotalDocumentos["'][^>]*value=["'](\d+)["']/i)
+  return match ? parseInt(match[1]!, 10) : null
 }
 
 function extractPeriodo(html: string): string | null {
@@ -285,7 +426,8 @@ function extractPeriodo(html: string): string | null {
   return match ? match[1]! : null
 }
 
-function decodeHtmlEntities(text: string): string {
+/** Decodifica entidades HTML comunes del portal (sin librería externa). */
+export function decodeHtmlEntities(text: string): string {
   return text
     .replace(/&amp;/g, "&")
     .replace(/&lt;/g, "<")
@@ -299,8 +441,4 @@ function decodeHtmlEntities(text: string): string {
     .replace(/&iacute;/g, "í")
     .replace(/&oacute;/g, "ó")
     .replace(/&uacute;/g, "ú")
-} /**
- * Parser defensivo del HTML de paneldte.php.
- *
- * @see explicacion_integral_dte_facturaenlinea.md § 8–10, 19
- */
+}

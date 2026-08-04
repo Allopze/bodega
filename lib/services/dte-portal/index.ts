@@ -1,6 +1,7 @@
 export { DtePortalClient, decodeXmlBuffer } from "./client"
-export { parseDteTable, parseEstadoSii, parseEstadoIntercambio, extractPdfPostUrl, parseMonto, parseFechaPortal, parseFolio } from "./parser"
+export { parseDteTable, parseEstadoSii, parseEstadoIntercambio, extractPdfPostUrl, parseMonto, parseFechaPortal, parseFolio, resolveTipoDocFromText } from "./parser"
 export { queryDtePortal, queryByFolio, queryByPeriodo, queryByRango, queryByRut, queryAllPages } from "./query"
+export { fetchBandejaEntrada, parseBandejaRows, parseBandejaResult, extractBandejaTotal, extractBandejaXmlUrl } from "./bandeja-entrada"
 export { downloadDteXml, downloadDtePdf } from "./download"
 export { syncDteDocuments, computeDocumentHash } from "./sync"
 export { matchToPurchaseOrderInvoices, matchToFuelLoads, computeHealthStats } from "./reconciliation"

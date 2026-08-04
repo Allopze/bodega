@@ -815,6 +815,83 @@ async function main() {
     subtotal: 10000,
   })
 
+  // ── DTE fixture: portal DTE FacturaEnLínea (Bandeja de Entrada) ──────────────
+  // Da a e2e/export-volume.spec.ts datos para los 3 reportes de DTE: uno
+  // vinculado sin discrepancia, uno vinculado CON discrepancia (mismo
+  // oc-invoice-e2e, $500 de diferencia) y uno huérfano (sin OC ni combustible).
+  const dtePeriodo = "2026-07"
+  await db.insert(schema.dteSyncRuns).values({
+    id: "dte-sync-run-e2e",
+    periodo: dtePeriodo,
+    codEmp: "433",
+    trigger: "manual",
+    status: "success",
+    rowsSeen: 3,
+    rowsInserted: 3,
+    rowsUpdated: 0,
+    importerId: "user-admin-e2e",
+    startedAt: now,
+    finishedAt: now,
+  })
+  await db.insert(schema.dteDocuments).values([
+    {
+      id: "dte-e2e-matched",
+      tipoDte: "33",
+      folio: 900001,
+      rutEmisor: "76000000-0",
+      razonSocialEmisor: "Proveedor E2E",
+      fechaEmision: "2026-07-15",
+      montoNeto: 8403,
+      iva: 1597,
+      montoTotal: 10000,
+      estadoSii: "aceptado",
+      codEmp: "433",
+      periodo: dtePeriodo,
+      rawHash: "e2e-hash-matched",
+      purchaseOrderInvoiceId: "oc-invoice-e2e",
+      syncRunId: "dte-sync-run-e2e",
+      syncedAt: now,
+      createdAt: now,
+    },
+    {
+      id: "dte-e2e-discrepancia",
+      tipoDte: "33",
+      folio: 900002,
+      rutEmisor: "76000000-0",
+      razonSocialEmisor: "Proveedor E2E",
+      fechaEmision: "2026-07-16",
+      montoNeto: 8823,
+      iva: 1677,
+      montoTotal: 10500,
+      estadoSii: "aceptado",
+      codEmp: "433",
+      periodo: dtePeriodo,
+      rawHash: "e2e-hash-discrepancia",
+      purchaseOrderInvoiceId: "oc-invoice-e2e",
+      syncRunId: "dte-sync-run-e2e",
+      syncedAt: now,
+      createdAt: now,
+    },
+    {
+      id: "dte-e2e-huerfana",
+      tipoDte: "61",
+      folio: 900003,
+      rutEmisor: "99999999-9",
+      razonSocialEmisor: "Proveedor Huérfano E2E",
+      fechaEmision: "2026-07-17",
+      montoNeto: 21008,
+      iva: 3992,
+      montoTotal: 25000,
+      estadoSii: "pendiente_envio",
+      codEmp: "433",
+      periodo: dtePeriodo,
+      rawHash: "e2e-hash-huerfana",
+      syncRunId: "dte-sync-run-e2e",
+      syncedAt: now,
+      createdAt: now,
+    },
+  ])
+
   // Advance the OC sequence past the fixture code (OC-2026-0001) so the
   // first real app call gets OC-2026-0002 and doesn't collide.
   await db.execute(sql`SELECT next_document_code('OC', EXTRACT(YEAR FROM NOW())::int)`)

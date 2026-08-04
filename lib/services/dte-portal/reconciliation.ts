@@ -7,12 +7,13 @@
  *
  * Detecta facturas huérfanas, discrepancias de monto y NC sin aplicar.
  *
- * @see explicacion_integral_dte_facturaenlinea.md § Plan de Implementación, Fase 3
+ * @see EXPLORACION_PORTAL_DTE_FACTURAENLINEA_2026-08-04.md § 7
  */
 
 import { eq, and, isNull, sql, inArray } from "drizzle-orm"
 import { db } from "@/db"
 import { dteDocuments, purchaseOrderInvoices, fuelLoads } from "@/db/schema"
+import { cleanRut } from "@/lib/rut"
 
 // ── Tipos de resultado ──────────────────────────────────────────────────────
 
@@ -56,12 +57,16 @@ export interface DteHealthStats {
 /**
  * Intenta vincular documentos DTE sin match con facturas de OC.
  *
- * Estrategia: cruza por (folio → invoiceNumber). El RUT emisor debería
- * coincidir con el supplier de la OC, pero el portal no siempre expone
- * el RUT en el HTML de la tabla, así que el cruce por folio + tipo es
- * el match primario.
+ * Estrategia: cruza por (folio Y RUT emisor). El folio NO es único global
+ * — dos proveedores distintos pueden compartir numeración — así que cruzar
+ * solo por folio (como se hacía antes) podía vincular una factura con el
+ * proveedor equivocado. El RUT del proveedor de la OC se obtiene vía
+ * purchaseOrderInvoices → purchaseOrders → suppliers.rut (no hay FK directo
+ * proveedor↔factura). Los RUT se normalizan con cleanRut() antes de
+ * comparar — el ingresado a mano en `suppliers.rut` no siempre tiene el
+ * mismo formato (puntos, mayúsculas) que el que trae el portal.
  *
- * @returns Cantidad de documentos nuevamente vinculados.
+ * @returns Documentos nuevamente vinculados.
  */
 export async function matchToPurchaseOrderInvoices(
   periodo: string,
@@ -89,7 +94,8 @@ export async function matchToPurchaseOrderInvoices(
 
   if (unmatchedDocs.length === 0) return matches
 
-  // Buscar invoices que coincidan por folio
+  // Buscar invoices que coincidan por folio, trayendo el RUT del proveedor
+  // de la OC en la misma consulta (join vía la relación purchaseOrder→supplier).
   const folios = unmatchedDocs.map((d) => String(d.folio))
 
   const invoices = await db.query.purchaseOrderInvoices.findMany({
@@ -100,13 +106,24 @@ export async function matchToPurchaseOrderInvoices(
       amount: true,
       purchaseOrderId: true,
     },
+    with: {
+      purchaseOrder: {
+        columns: {},
+        with: { supplier: { columns: { rut: true } } },
+      },
+    },
   })
 
-  // Crear mapa de folio → invoice para match rápido
-  const invoiceByFolio = new Map(invoices.map((inv) => [inv.invoiceNumber, inv]))
+  // Mapa (folio|RUT normalizado) → invoice, para exigir ambos en el match.
+  const invoiceByFolioAndRut = new Map<string, (typeof invoices)[number]>()
+  for (const inv of invoices) {
+    const rut = inv.purchaseOrder?.supplier?.rut
+    if (!rut) continue
+    invoiceByFolioAndRut.set(`${inv.invoiceNumber}|${cleanRut(rut)}`, inv)
+  }
 
   for (const doc of unmatchedDocs) {
-    const invoice = invoiceByFolio.get(String(doc.folio))
+    const invoice = invoiceByFolioAndRut.get(`${doc.folio}|${cleanRut(doc.rutEmisor)}`)
     if (!invoice) continue
 
     const dteTotal = doc.montoTotal ?? 0
@@ -140,9 +157,11 @@ export async function matchToPurchaseOrderInvoices(
 /**
  * Intenta vincular documentos DTE con cargas de combustible.
  *
- * Cruza por folio → fuelLoads.receiptNumber.
+ * Cruza por (folio → receiptNumber) Y RUT emisor (vía fuelLoads.fuelSupplierId
+ * → fuelSuppliers.rut — acá sí hay FK directo, a diferencia de OC). Mismo
+ * motivo que en matchToPurchaseOrderInvoices: el folio no es único global.
  *
- * @returns Cantidad de documentos nuevamente vinculados.
+ * @returns Documentos nuevamente vinculados.
  */
 export async function matchToFuelLoads(
   periodo: string,
@@ -171,7 +190,7 @@ export async function matchToFuelLoads(
 
   const folios = unmatchedDocs.map((d) => String(d.folio))
 
-  // Buscar cargas por receiptNumber
+  // Buscar cargas por receiptNumber, trayendo el RUT del proveedor de combustible.
   const loads = await db.query.fuelLoads.findMany({
     where: inArray(fuelLoads.receiptNumber, folios),
     columns: {
@@ -179,14 +198,17 @@ export async function matchToFuelLoads(
       receiptNumber: true,
       totalAmount: true,
     },
+    with: { supplier: { columns: { rut: true } } },
   })
 
-  const loadByReceipt = new Map(
-    loads.filter((l) => l.receiptNumber).map((l) => [l.receiptNumber!, l]),
-  )
+  const loadByReceiptAndRut = new Map<string, (typeof loads)[number]>()
+  for (const load of loads) {
+    if (!load.receiptNumber || !load.supplier?.rut) continue
+    loadByReceiptAndRut.set(`${load.receiptNumber}|${cleanRut(load.supplier.rut)}`, load)
+  }
 
   for (const doc of unmatchedDocs) {
-    const load = loadByReceipt.get(String(doc.folio))
+    const load = loadByReceiptAndRut.get(`${doc.folio}|${cleanRut(doc.rutEmisor)}`)
     if (!load) continue
 
     const dteTotal = doc.montoTotal ?? 0
@@ -268,9 +290,9 @@ export async function computeHealthStats(
   const matchedToFuel = docs.filter((d) => d.fuelLoadId).length
   const unmatched = docs.filter((d) => !d.purchaseOrderInvoiceId && !d.fuelLoadId).length
 
-  // Discrepancias: documentos con vínculo pero montos que difieren
-  // (esto se calcula en detalle en los reportes, aquí solo el conteo)
-  const discrepancies = 0 // TODO: calcular contra purchaseOrderInvoices.amount
+  // Discrepancias: documentos con vínculo cuyo monto difiere del de la
+  // entidad vinculada (factura de OC o carga de combustible).
+  const discrepancies = await countDiscrepancies(docs)
 
   // Notas de crédito
   const creditNotes = docs.filter((d) => d.tipoDte === "61")
@@ -294,4 +316,72 @@ export async function computeHealthStats(
       pending: creditNotes.length - appliedCreditNotes.length,
     },
   }
+}
+
+/** Diferencia mínima (CLP) para considerar dos montos "distintos" — evita falsos positivos por redondeo. */
+const DISCREPANCY_TOLERANCE_CLP = 1
+
+/**
+ * Cuenta documentos vinculados (a OC o a combustible) cuyo monto difiere del
+ * de la entidad vinculada en más de DISCREPANCY_TOLERANCE_CLP. Recalcula
+ * contra el monto ACTUAL de la entidad — no reutiliza el discrepancyPercent
+ * calculado al momento del match (matchTo*), que no se persiste.
+ */
+async function countDiscrepancies(
+  docs: Array<{ purchaseOrderInvoiceId: string | null; fuelLoadId: string | null; montoTotal: number }>,
+): Promise<number> {
+  const ocIds = docs.flatMap((d) => (d.purchaseOrderInvoiceId ? [d.purchaseOrderInvoiceId] : []))
+  const fuelIds = docs.flatMap((d) => (d.fuelLoadId ? [d.fuelLoadId] : []))
+
+  const [invoices, loads] = await Promise.all([
+    ocIds.length > 0
+      ? db.query.purchaseOrderInvoices.findMany({ where: inArray(purchaseOrderInvoices.id, ocIds), columns: { id: true, amount: true } })
+      : Promise.resolve([]),
+    fuelIds.length > 0
+      ? db.query.fuelLoads.findMany({ where: inArray(fuelLoads.id, fuelIds), columns: { id: true, totalAmount: true } })
+      : Promise.resolve([]),
+  ])
+
+  const invoiceAmountById = new Map(invoices.map((i) => [i.id, i.amount ?? 0]))
+  const loadAmountById = new Map(loads.map((l) => [l.id, l.totalAmount ?? 0]))
+
+  let count = 0
+  for (const doc of docs) {
+    const entityTotal = doc.purchaseOrderInvoiceId
+      ? invoiceAmountById.get(doc.purchaseOrderInvoiceId)
+      : doc.fuelLoadId
+        ? loadAmountById.get(doc.fuelLoadId)
+        : undefined
+    if (entityTotal === undefined) continue
+    if (Math.abs((doc.montoTotal ?? 0) - entityTotal) > DISCREPANCY_TOLERANCE_CLP) count++
+  }
+  return count
+}
+
+/**
+ * Notas de crédito (tipo 61) emitidas por un proveedor de combustible que aún
+ * no se vincularon a ninguna carga. A diferencia de `creditNotes.pending` de
+ * `computeHealthStats` (que mezcla NC de cualquier dominio sin vínculo), esto
+ * exige que el RUT emisor pertenezca a `fuelSuppliers` — la única forma
+ * honesta de mostrar "NC de combustible" en el Dashboard sin conflar dominios.
+ */
+export async function countPendingFuelCreditNotes(periodo: string, codEmp: string): Promise<number> {
+  const notes = await db.query.dteDocuments.findMany({
+    where: and(
+      eq(dteDocuments.periodo, periodo),
+      eq(dteDocuments.codEmp, codEmp),
+      eq(dteDocuments.tipoDte, "61"),
+      isNull(dteDocuments.fuelLoadId),
+    ),
+    columns: { rutEmisor: true },
+  })
+  if (notes.length === 0) return 0
+
+  // inArray() exige coincidencia literal — igual que en el resto de este
+  // archivo, el RUT guardado en fuelSuppliers puede llevar puntos/mayúsculas
+  // distintas al del portal, así que se compara en memoria tras normalizar.
+  const suppliers = await db.query.fuelSuppliers.findMany({ columns: { rut: true } })
+  const fuelSupplierRuts = new Set(suppliers.flatMap((s) => (s.rut ? [cleanRut(s.rut)] : [])))
+
+  return notes.filter((n) => fuelSupplierRuts.has(cleanRut(n.rutEmisor))).length
 }
