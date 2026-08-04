@@ -6,7 +6,7 @@ coverage
 playwright-report
 test-results
 audit
-.DS_Store
+**/.DS_Store
 ._*
 **/._*
 .commandcode
