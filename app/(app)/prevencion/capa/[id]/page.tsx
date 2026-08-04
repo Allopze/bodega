@@ -7,8 +7,9 @@ import { Badge } from "@/components/ui/badge"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { getCapaActionBundle, listAssignableCapaUsers, listCapaWorksites, type CapaStatus } from "@/lib/services/prevention-capa"
-import { CAPA_SOURCE_LABELS, capaSourceHref, capaStatusBadgeVariant, capaStatusLabel } from "@/lib/prevention/capa"
+import { CAPA_SOURCE_LABELS, capaSourceHref, capaStatusBadgeVariant, capaStatusLabel, capaEvidenceKindLabel } from "@/lib/prevention/capa"
 import { CapaControls } from "./capa-controls"
+import { formatDateTime } from "@/lib/utils"
 
 export const metadata: Metadata = { title: "Detalle CAPA" }
 
@@ -21,15 +22,11 @@ function Row({ label, value }: { label: string; value: React.ReactNode }) {
   )
 }
 
-function formatDate(value: string | null) {
-  return value ? new Date(value).toLocaleString("es-CL", { dateStyle: "short", timeStyle: "short" }) : "—"
-}
-
 export default async function CapaDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   let session
   try { session = await requirePermission("prevention:capa:view") }
-  catch { redirect("/forbidden") }
+  catch { redirect(`/forbidden?desde=${encodeURIComponent("/prevencion/capa")}`) }
   const scope = resolveWorksiteScope(session)
   let bundle
   try {
@@ -91,8 +88,8 @@ export default async function CapaDetailPage({ params }: { params: Promise<{ id:
               <ul className="mt-3 space-y-2">
                 {bundle.evidence.map((item) => (
                   <li key={item.id} className="border-l-2 border-[var(--color-border-strong)] pl-3 text-sm">
-                    <p className="font-medium">{item.kind} · {item.reference}</p>
-                    <p className="text-xs text-[var(--color-text-subtle)]">{item.description || "Sin descripción"} · {formatDate(item.createdAt)}</p>
+                    <p className="font-medium">{capaEvidenceKindLabel(item.kind)} · {item.reference}</p>
+                    <p className="text-xs text-[var(--color-text-subtle)]">{item.description || "Sin descripción"} · {formatDateTime(item.createdAt)}</p>
                   </li>
                 ))}
               </ul>
@@ -110,7 +107,7 @@ export default async function CapaDetailPage({ params }: { params: Promise<{ id:
                       : item.changeType}
                   </p>
                   <p className="text-xs text-[var(--color-text-subtle)]">
-                    {formatDate(item.createdAt)} · {userName.get(item.actorUserId) ?? item.actorUserId}
+                    {formatDateTime(item.createdAt)} · {userName.get(item.actorUserId) ?? item.actorUserId}
                     {item.reason ? ` · ${item.reason}` : ""}
                   </p>
                 </li>
@@ -126,7 +123,7 @@ export default async function CapaDetailPage({ params }: { params: Promise<{ id:
                   <li key={item.id} className="text-sm">
                     <span className="font-medium">{item.progress === null ? "Seguimiento" : `${item.progress}%`}</span>
                     {` · ${item.note}`}
-                    <span className="block text-xs text-[var(--color-text-subtle)]">{formatDate(item.createdAt)}</span>
+                    <span className="block text-xs text-[var(--color-text-subtle)]">{formatDateTime(item.createdAt)}</span>
                   </li>
                 ))}
               </ul>

@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { X } from "@phosphor-icons/react/dist/ssr"
 import { ServerPagination } from "@/components/ui/server-pagination"
+import { pluralize } from "@/lib/utils"
 import { buildPaginationHref, resolvePagination } from "@/lib/pagination"
 import { BitacoraTable } from "./bitacora-table"
 import { BitacoraExportButton } from "./export-button"
@@ -195,7 +196,7 @@ export default async function FuelLogPage({ searchParams }: { searchParams: Prom
             entradas siguen en el DOM aunque estén ocultas, así que se envían igual. */}
         <details open={advancedActiveCount > 0} className="border-t border-(--color-border) pt-3">
           <summary className="cursor-pointer text-sm font-medium text-(--color-text-muted) hover:text-(--color-text)">
-            Más filtros{advancedActiveCount > 0 ? ` · ${advancedActiveCount} activo${advancedActiveCount === 1 ? "" : "s"}` : ""}
+            Más filtros{advancedActiveCount > 0 ? ` · ${pluralize(advancedActiveCount, "activo")}` : ""}
           </summary>
           <div className="mt-4 flex flex-col gap-5">
             <fieldset className="grid gap-3 md:grid-cols-4">

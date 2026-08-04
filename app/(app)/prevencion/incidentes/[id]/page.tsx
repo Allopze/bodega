@@ -4,6 +4,7 @@ import { notFound, redirect } from "next/navigation"
 import { ArrowLeft, DownloadSimple, LockKeyOpen } from "@phosphor-icons/react/dist/ssr"
 import { can, requirePermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
+import { formatDateTime } from "@/lib/utils"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -33,10 +34,8 @@ type PageProps = {
   searchParams: Promise<{ sensitive?: string; purpose?: string }>
 }
 
-const dateTimeFormatter = new Intl.DateTimeFormat("es-CL", { dateStyle: "medium", timeStyle: "short" })
-
 function dateTime(value: string | null) {
-  return value ? dateTimeFormatter.format(new Date(value)) : "—"
+  return value ? formatDateTime(value) : "—"
 }
 
 export default async function IncidentDetailPage({ params, searchParams }: PageProps) {
@@ -44,7 +43,7 @@ export default async function IncidentDetailPage({ params, searchParams }: PageP
   const query = await searchParams
   let session
   try { session = await requirePermission("prevention:incidents:view") }
-  catch { redirect("/forbidden") }
+  catch { redirect(`/forbidden?desde=${encodeURIComponent("/prevencion/incidentes")}`) }
   const access = { ctx: { userId: session.user.id }, scope: resolveWorksiteScope(session), permissions: session.user.permissions }
   const requestSensitive = query.sensitive === "1" && Boolean(query.purpose?.trim())
   let bundle

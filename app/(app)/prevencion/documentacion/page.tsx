@@ -18,13 +18,14 @@ import { PageContainer } from "@/components/ui/page-container"
 import { Button } from "@/components/ui/button"
 import { DocumentacionHeaderActions } from "./documentacion-header-actions"
 import { DocumentacionView } from "./documentacion-view"
+import { expiryFilterInput, parseExpiryFilter } from "./expiry-filter"
 
 export const metadata: Metadata = { title: "Documentación" }
 
 export default async function DocumentacionPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; folder?: string; page?: string }>
+  searchParams: Promise<{ q?: string; folder?: string; page?: string; vence?: string }>
 }) {
   let session
   try { session = await requireAuth() }
@@ -34,6 +35,10 @@ export default async function DocumentacionPage({
   const scope = resolveWorksiteScope(session)
   const params = await searchParams
 
+  // TASK-UI-006: el indicador "Documentos por vencer" señalaba una urgencia que
+  // su destino no sabía acotar. `searchDocuments` ya admitía el rango; sólo
+  // faltaba que la pantalla lo aceptara desde la URL.
+  const expiryFilter = parseExpiryFilter(params.vence)
   const activeFolderId = params.folder || null
   const page = Math.max(1, Number(params.page) || 1)
   const pageSize = 50
@@ -49,9 +54,12 @@ export default async function DocumentacionPage({
     getDashboardCounters(scope, session.user.permissions),
     searchDocuments({
       q: params.q ?? "",
-      folderId: documentFolderId,
+      // Un filtro por vencimiento recorre toda la documentación: acotarlo a la
+      // carpeta abierta devolvería menos de lo que el indicador promete.
+      folderId: expiryFilter ? undefined : documentFolderId,
       page,
       pageSize,
+      ...expiryFilterInput(expiryFilter),
     }, scope, session.user.permissions),
   ])
 

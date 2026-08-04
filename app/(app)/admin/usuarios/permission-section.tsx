@@ -28,11 +28,14 @@ export function PermissionSection({
   return (
     <div className="mt-5">
       <div className="mb-2 flex items-center justify-between gap-3">
-        <p className="text-eyebrow">Permisos</p>
+        <p className="text-eyebrow">Permisos adicionales</p>
         <span className="rounded-[var(--radius-full)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-0.5 font-mono text-[10px] font-semibold uppercase text-[var(--color-text-muted)]">
           {directPermissionLabel}
         </span>
       </div>
+      <p className="mb-3 text-xs text-[var(--color-text-subtle)]">
+        El acceso del rol se conserva. Aquí sólo agregas excepciones directas.
+      </p>
 
       {activeModules.length > 0 && (
         <div className="mb-3 flex flex-wrap gap-1.5">
@@ -51,10 +54,10 @@ export function PermissionSection({
         <p className="mb-2 text-xs text-[var(--color-danger)]">{error}</p>
       )}
       {groupedPermissions.length === 0 && (
-        <p className="text-xs text-[var(--color-text-subtle)]">No hay permisos registrados</p>
+        <p className="text-xs text-[var(--color-text-subtle)]">No hay permisos adicionales disponibles</p>
       )}
 
-      <div role="region" aria-label="Permisos de usuario" className="space-y-4">
+      <div role="region" aria-label="Excepciones de permisos" className="space-y-4">
         {groupedPermissions.map((group) => {
           const toggleableIds = group.permissions
             .filter((p) => !p.roleIds.some((rid) => selectedRoleIds.includes(rid)))
@@ -84,7 +87,7 @@ export function PermissionSection({
                     return (
                       <div
                         key={permission.id}
-                        className="flex h-9 items-center gap-3 rounded-md px-2 opacity-50"
+                        className="flex min-h-11 items-center gap-3 rounded-md px-2 opacity-50 sm:min-h-9"
                       >
                         <Lock size={14} weight="bold" className="shrink-0 text-[var(--color-text-faint)]" aria-hidden />
                         <span title={permission.description ?? permission.name} className="flex-1 truncate text-sm text-[var(--color-text-muted)]">
@@ -98,7 +101,7 @@ export function PermissionSection({
                     <label
                       key={permission.id}
                       className={cn(
-                        "flex h-9 cursor-pointer items-center gap-3 rounded-md px-2",
+                        "flex min-h-11 cursor-pointer items-center gap-3 rounded-md px-2 sm:min-h-9",
                         "transition-colors duration-[var(--duration-fast)] ease-out",
                         "hover:bg-[var(--color-surface-2)]",
                       )}
@@ -117,9 +120,6 @@ export function PermissionSection({
                         )}
                       >
                         {permission.description ?? permission.name}
-                      </span>
-                      <span className="shrink-0 font-mono text-[11px] text-[var(--color-text-faint)]">
-                        {permission.name}
                       </span>
                     </label>
                   )

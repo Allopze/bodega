@@ -14,7 +14,7 @@ import { getCriticalStockAlertCount } from "@/lib/services/stock-alerts"
 import { getDashboardData } from "@/lib/services/dashboard"
 import { getOperationalWorkQueue, type OperationalModule } from "@/lib/services/operational-work-queue"
 import { listOperationalActivity } from "@/lib/services/operational-activity"
-import { getOperationalPeriodMetrics, type OperationalPeriodMetric, type OperationalPeriodMetrics, type OperationalPeriodSpan } from "@/lib/services/operational-period-metrics"
+import { getOperationalPeriodMetrics, getOperationalCalendarBounds, type OperationalPeriodMetric, type OperationalPeriodMetrics, type OperationalPeriodSpan } from "@/lib/services/operational-period-metrics"
 import { getOperationalBacklogComparisons, getOperationalSnapshotHistory, type OperationalBacklogComparison, type OperationalSnapshotMetric } from "@/lib/services/operational-metric-snapshots"
 import { QuickActions } from "./quick-actions"
 import { RecentActivity } from "./recent-activity"
@@ -331,6 +331,19 @@ function pendientesHref(scope: DashboardScope, params: Record<string, string> = 
 }
 
 /**
+ * Ventana calendario [desde, hasta) del período del alcance, en claves de
+ * fecha (YYYY-MM-DD). Alimenta los destinos de lista que pueden reproducir lo
+ * que la cifra cuenta (p.ej. "Inversión · mes" → `/compras?desde=…&hasta=…`).
+ */
+function periodWindowHref(scope: DashboardScope, path: string) {
+  const bounds = getOperationalCalendarBounds(new Date(), scope.period)
+  const search = new URLSearchParams()
+  search.set("desde", bounds.currentStart.slice(0, 10))
+  search.set("hasta", bounds.currentEnd.slice(0, 10))
+  return `${path}?${search.toString()}`
+}
+
+/**
  * Atajos de la cola. Los conteos salen de `queue.summary` — población completa
  * del alcance vigente — y cada uno navega a `/pendientes` con el filtro
  * equivalente más la faena elegida.
@@ -387,11 +400,11 @@ function buildOperationalPeriodSummary(input: {
 }): OperationalPeriodSummaryEntry[] {
   const compare = (metric: OperationalPeriodMetric) => periodComparison(metric, input.scope.period)
   const entries: Array<OperationalPeriodSummaryEntry | null> = [
-    input.canViewRequests ? { key: "requests", label: "Solicitudes creadas", value: input.periodMetrics.requests.current, comparison: compare(input.periodMetrics.requests), href: "/solicitudes" } : null,
-    input.canViewPurchasing ? { key: "orders", label: "OC emitidas", value: input.periodMetrics.ordersIssued.current, comparison: compare(input.periodMetrics.ordersIssued), href: "/compras" } : null,
+    input.canViewRequests ? { key: "requests", label: "Solicitudes creadas", value: input.periodMetrics.requests.current, comparison: compare(input.periodMetrics.requests), href: periodWindowHref(input.scope, "/solicitudes") } : null,
+    input.canViewPurchasing ? { key: "orders", label: "OC emitidas", value: input.periodMetrics.ordersIssued.current, comparison: compare(input.periodMetrics.ordersIssued), href: periodWindowHref(input.scope, "/compras") } : null,
     input.canReceive ? { key: "receipts", label: "Recepciones", value: input.periodMetrics.receipts.current, comparison: compare(input.periodMetrics.receipts), href: "/recepcion" } : null,
     input.canDeliver ? { key: "deliveries", label: "Entregas", value: input.periodMetrics.deliveries.current, comparison: compare(input.periodMetrics.deliveries), href: "/entregas" } : null,
-    input.canViewPurchasing ? { key: "spend", label: "Inversión emitida", value: formatCLP(input.periodMetrics.spend.current), comparison: compare(input.periodMetrics.spend), href: "/compras" } : null,
+    input.canViewPurchasing ? { key: "spend", label: "Inversión emitida", value: formatCLP(input.periodMetrics.spend.current), comparison: compare(input.periodMetrics.spend), href: periodWindowHref(input.scope, "/compras") } : null,
   ]
   return entries.filter((entry): entry is OperationalPeriodSummaryEntry => entry !== null)
 }
@@ -480,10 +493,8 @@ export function buildOperationalMetrics(input: {
   const periodLabel = periodScopeLabel(input.scope.period).toLocaleLowerCase("es-CL")
   const href = (params?: Record<string, string>) => pendientesHref(input.scope, params)
 
-  const money: Array<DashboardMetric | null> = [
-    input.canViewPurchasing ? {
-      key: "spend", label: "Inversión", value: formatCLP(input.periodSpend),
-      description: `OC emitidas · ${periodLabel}`, icon: "investment", href: "/compras",
+  const money: Array<DashboardMetric | null> = [    input.canViewPurchasing ? { key: "spend", label: "Inversión", value: formatCLP(input.periodSpend),
+      description: `OC emitidas · ${periodLabel}`, icon: "investment", href: periodWindowHref(input.scope, "/compras"),
     } : null,
     input.canViewPurchasing ? {
       key: "orders", label: "OC activas", value: input.activeOrders,
@@ -513,7 +524,7 @@ export function buildOperationalMetrics(input: {
       description: input.fatalOrSeriousIncidents > 0
         ? `${input.fatalOrSeriousIncidents} fatal${input.fatalOrSeriousIncidents === 1 ? "" : "es"} o grave${input.fatalOrSeriousIncidents === 1 ? "" : "s"}`
         : input.openIncidents > 0 ? "Ninguno fatal ni grave" : "Sin incidentes abiertos",
-      icon: "critical", href: "/prevencion/incidentes",
+      icon: "critical", href: "/prevencion/incidentes?quick=open",
       tone: input.fatalOrSeriousIncidents > 0 ? "danger" : input.openIncidents > 0 ? "signal" : "neutral",
     } : null,
     input.canViewCapa ? {
@@ -525,7 +536,7 @@ export function buildOperationalMetrics(input: {
     input.canViewStock ? {
       key: "stock", label: "Stock crítico", value: input.stockAlerts,
       description: input.stockAlerts > 0 ? "Productos bajo su mínimo definido" : "Todo sobre el mínimo definido",
-      icon: "stock", href: "/bodega",
+      icon: "stock", href: "/bodega?stock=low",
       tone: input.stockAlerts > 0 ? "danger" : "neutral", sparkline: input.stockTrend,
     } : null,
   ]
@@ -589,7 +600,7 @@ export function buildOperationalAlerts(input: {
     input.overdueTasks > 0 ? { key: "overdue", title: "tareas vencidas", description: "Su fecha nativa o compromiso complementario ya venció.", count: input.overdueTasks, severity: "critical", href: href({ quick: "overdue" }) } : null,
     input.blockedTasks > 0 ? { key: "blocked", title: "procesos bloqueados", description: "Requieren resolver una observación, detención o condición previa.", count: input.blockedTasks, severity: "warning", href: href({ quick: "blocked" }) } : null,
     input.unassignedTasks > 0 ? { key: "unassigned", title: "tareas sin responsable", description: "No tienen una asignación complementaria ni un responsable nativo.", count: input.unassignedTasks, severity: "warning", href: href({ quick: "unassigned" }) } : null,
-    input.canViewStock && input.stockAlerts > 0 ? { key: "stock", title: "productos con stock crítico", description: "El nivel actual está por debajo del mínimo definido para la faena.", count: input.stockAlerts, severity: "critical", href: "/bodega" } : null,
+    input.canViewStock && input.stockAlerts > 0 ? { key: "stock", title: "productos con stock crítico", description: "El nivel actual está por debajo del mínimo definido para la faena.", count: input.stockAlerts, severity: "critical", href: "/bodega?stock=low" } : null,
     input.canViewCapa && input.overdueCapa > 0 ? { key: "capa", title: "acciones correctivas vencidas", description: "Su plazo de cierre comprometido ya venció.", count: input.overdueCapa, severity: "critical", href: href({ module: "capa" }) } : null,
     input.canApprove && input.pendingApprovals > 0 ? { key: "approvals", title: "ítems esperan aprobación", description: "Una decisión de aprobación desbloquea el siguiente paso de compra.", count: input.pendingApprovals, severity: "warning", href: href({ module: "aprobaciones" }) } : null,
     input.canReceive && input.ordersPendingReceipt > 0 ? { key: "receipts", title: "órdenes pendientes de recepción", description: "Registra la llegada para que la operación pueda avanzar.", count: input.ordersPendingReceipt, severity: "warning", href: href({ module: "recepciones" }) } : null,

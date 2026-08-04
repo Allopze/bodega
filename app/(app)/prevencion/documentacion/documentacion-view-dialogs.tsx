@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import type { MenuState } from "./documentacion-view.types"
+import { pluralize } from "@/lib/utils"
 
 /** Dialog to move a single document. */
 export function MoveDocumentDialog({
@@ -86,7 +87,7 @@ export function BulkMoveDialog({
         <form onSubmit={onSubmit}>
           <DialogHeader>
             <DialogTitle>Mover documentos seleccionados</DialogTitle>
-            <DialogDescription>Selecciona la carpeta de destino para {selectedCount} documento{selectedCount === 1 ? "" : "s"}.</DialogDescription>
+            <DialogDescription>Selecciona la carpeta de destino para {pluralize(selectedCount, "documento")}.</DialogDescription>
           </DialogHeader>
           <Select value={moveFolderId || "root"} onValueChange={(value) => onFolderChange(value === "root" ? "" : value)}>
             <SelectTrigger><SelectValue placeholder="Destino" /></SelectTrigger>

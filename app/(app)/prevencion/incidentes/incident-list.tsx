@@ -1,14 +1,15 @@
 "use client"
 
-import { useState } from "react"
 import Link from "next/link"
 import { DataTable } from "@/components/admin/data-table"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { FilterToolbar, type ActiveFilterChip } from "@/components/ui/filter-toolbar"
+import { ResponsiveDataListCard, ResponsiveDataListField } from "@/components/ui/responsive-data-list"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { TableCell, TableRow } from "@/components/ui/table"
 import { useUrlFilters } from "@/lib/hooks/use-url-filters"
+import { formatDateTime } from "@/lib/utils"
 import {
   INCIDENT_EVENT_LABELS,
   INCIDENT_SEVERITY_LABELS,
@@ -16,8 +17,6 @@ import {
   incidentStatusBadgeVariant,
 } from "@/lib/prevention/incidents"
 import type { IncidentStatus } from "@/lib/services/prevention-incidents"
-
-const OCCURRED_AT_FORMAT = new Intl.DateTimeFormat("es-CL", { dateStyle: "medium", timeStyle: "short", timeZone: "America/Santiago" })
 
 interface IncidentListItem {
   id: string
@@ -61,7 +60,10 @@ export function IncidentList({ incidents, worksites, counts, canReport, indicato
   const status = getFilter("status") || "all"
   const eventType = getFilter("eventType") || "all"
   const worksiteId = getFilter("worksiteId") || "all"
-  const [quickFilter, setQuickFilter] = useState<QuickFilter>("all")
+  // §3.3: el quick filter vive en la URL (`quick=open`) y no en estado local, para
+  // que un KPI del dashboard pueda aterrizar en la lista ya filtrada y la cifra
+  // tenga un camino hacia el detalle que la reproduce.
+  const quickFilter = (getFilter("quick") || "all") as QuickFilter
   const filtered = incidents.filter((incident) => {
     if (status !== "all" && incident.status !== status) return false
     if (eventType !== "all" && incident.eventType !== eventType) return false
@@ -103,7 +105,7 @@ export function IncidentList({ incidents, worksites, counts, canReport, indicato
       {indicatorContext && <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-[var(--color-info-line)] bg-[var(--color-info-tint)] px-4 py-3 text-sm"><p><strong>Drill-down canónico:</strong> {indicatorContext}</p><Button asChild size="sm" variant="ghost"><Link href="/prevencion/incidentes">Quitar filtro</Link></Button></div>}
       <div className="grid grid-cols-2 overflow-hidden border-y border-[var(--color-border)] lg:grid-cols-4">
         {metrics.map((metric) => (
-          <button key={metric.key} type="button" onClick={() => setQuickFilter((current) => current === metric.key ? "all" : metric.key)} aria-pressed={quickFilter === metric.key} className="border-r border-[var(--color-border)] px-4 py-3 text-left hover:bg-[var(--color-surface-2)] aria-pressed:bg-[var(--color-primary-tint)]">
+          <button key={metric.key} type="button" onClick={() => setFilters({ quick: quickFilter === metric.key ? null : metric.key })} aria-pressed={quickFilter === metric.key} className="border-r border-[var(--color-border)] px-4 py-3 text-left hover:bg-[var(--color-surface-2)] aria-pressed:bg-[var(--color-primary-tint)]">
             <span className="text-eyebrow">{metric.label}</span>
             <span className="mt-1 block font-mono text-xl font-semibold tabular-nums">{metric.value}</span>
             <span className="text-xs text-[var(--color-text-subtle)]">{metric.detail}</span>
@@ -117,7 +119,7 @@ export function IncidentList({ incidents, worksites, counts, canReport, indicato
         onClearAll={clearUrlFilters}
         hasActiveFilters={status !== "all" || eventType !== "all" || worksiteId !== "all" || quickFilter !== "all"}
       >
-        <Select value={status} onValueChange={(value) => { setFilters({ status: value === "all" ? null : value }); setQuickFilter("all") }}>
+        <Select value={status} onValueChange={(value) => { setFilters({ status: value === "all" ? null : value, quick: null }) }}>
           <SelectTrigger className="w-52" aria-label="Estado del incidente"><SelectValue /></SelectTrigger>
           <SelectContent><SelectItem value="all">Todos los estados</SelectItem>{Object.entries(INCIDENT_STATUS_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent>
         </Select>
@@ -138,14 +140,35 @@ export function IncidentList({ incidents, worksites, counts, canReport, indicato
         searchKeys={["code", "companyName", "worksiteName", "location", "eventTypeLabel"]}
         emptyTitle={incidents.length === 0 ? "Aún no hay incidentes canónicos" : "No hay incidentes con estos filtros"}
         emptyDescription={incidents.length === 0 ? "Registra aquí los eventos ocurridos en tus faenas: reporte, triage, investigación y CAPA quedan trazados desde el primer registro." : "Ajusta filtros o el buscador superior."}
-        emptyAction={incidents.length === 0 && canReport ? <Button asChild><Link href="/prevencion/incidentes/reportar">Reportar incidente</Link></Button> : <Button type="button" variant="secondary" onClick={() => { clearUrlFilters(); setQuickFilter("all") }}>Ver todos</Button>}
+        emptyAction={incidents.length === 0 && canReport ? <Button asChild><Link href="/prevencion/incidentes/reportar">Reportar incidente</Link></Button> : <Button type="button" variant="secondary" onClick={() => clearUrlFilters()}>Ver todos</Button>}
+        renderMobileCard={(row) => {
+          const incident = row as unknown as IncidentListItem
+          return (
+            <ResponsiveDataListCard
+              title={<Link href={`/prevencion/incidentes/${incident.id}`} className="hover:underline">{incident.code}</Link>}
+              description={INCIDENT_EVENT_LABELS[incident.eventType] ?? incident.eventType}
+              status={<Badge variant={incidentStatusBadgeVariant(incident.status)}>{INCIDENT_STATUS_LABELS[incident.status as IncidentStatus] ?? incident.status}</Badge>}
+              actions={<Button asChild type="button" variant="ghost" size="sm"><Link href={`/prevencion/incidentes/${incident.id}`}>Ver incidente</Link></Button>}
+            >
+              <ResponsiveDataListField label="Faena">{incident.worksiteName}</ResponsiveDataListField>
+              <ResponsiveDataListField label="Empresa">{incident.companyName}</ResponsiveDataListField>
+              <ResponsiveDataListField label="Ocurrió">
+                {formatDateTime(incident.occurredAt)}
+              </ResponsiveDataListField>
+              <ResponsiveDataListField label="Gravedad">
+                <Badge variant={incident.isFatalOrSerious ? "danger" : "default"}>{INCIDENT_SEVERITY_LABELS[incident.actualSeverity] ?? incident.actualSeverity}</Badge>
+              </ResponsiveDataListField>
+              <ResponsiveDataListField label="Ubicación" className="col-span-2">{incident.location}</ResponsiveDataListField>
+            </ResponsiveDataListCard>
+          )
+        }}
         renderRow={(row) => {
           const incident = row as unknown as IncidentListItem
           return (
             <TableRow key={incident.id}>
               <TableCell><Link href={`/prevencion/incidentes/${incident.id}`} className="font-mono text-xs font-semibold text-[var(--color-primary-ink)] hover:underline">{incident.code}</Link><p className="mt-1 text-xs text-[var(--color-text-subtle)]">{INCIDENT_EVENT_LABELS[incident.eventType] ?? incident.eventType}</p></TableCell>
               <TableCell><p className="font-medium">{incident.worksiteName}</p><p className="text-xs text-[var(--color-text-subtle)]">{incident.companyName}</p></TableCell>
-              <TableCell><p className="tabular-nums">{OCCURRED_AT_FORMAT.format(new Date(incident.occurredAt))}</p><p className="max-w-56 truncate text-xs text-[var(--color-text-subtle)]">{incident.location}</p></TableCell>
+              <TableCell><p className="tabular-nums">{formatDateTime(incident.occurredAt)}</p><p className="max-w-56 truncate text-xs text-[var(--color-text-subtle)]">{incident.location}</p></TableCell>
               <TableCell><Badge variant={incident.isFatalOrSerious ? "danger" : "default"}>{INCIDENT_SEVERITY_LABELS[incident.actualSeverity] ?? incident.actualSeverity}</Badge><p className="mt-1 text-xs text-[var(--color-text-subtle)]">Potencial {INCIDENT_SEVERITY_LABELS[incident.potentialSeverity] ?? incident.potentialSeverity}</p></TableCell>
               <TableCell><Badge variant={incidentStatusBadgeVariant(incident.status)}>{INCIDENT_STATUS_LABELS[incident.status as IncidentStatus] ?? incident.status}</Badge></TableCell>
             </TableRow>

@@ -5,7 +5,7 @@ import { spawn, type ChildProcess } from "node:child_process"
 import crypto from "node:crypto"
 import postgres from "postgres"
 import bcrypt from "bcryptjs"
-import { chromium, type BrowserContext, type Page } from "@playwright/test"
+import { chromium, type BrowserContext, type Locator, type Page } from "@playwright/test"
 import { loadEnvConfig } from "@next/env"
 import { drizzle } from "drizzle-orm/postgres-js"
 import { migrate } from "drizzle-orm/postgres-js/migrator"
@@ -48,6 +48,10 @@ import {
  *     CAPTURE_OUTPUT_DIR                Directorio de salida (def. audit/screenshots/{fecha})
  *     CAPTURE_CONCURRENCY               Workers en paralelo (def. 4)
  *     CAPTURE_ALLOW_DESTRUCTIVE_RESET   "true" para permitir reset de BD
+ *     CAPTURE_SKIP_HASH                 "true" omite el SHA-256 de cada PNG (más rápido)
+ *     CAPTURE_SKIP_BUILD                "true" salta el build on-demand; sin build, dos
+ *                                        `next dev` paralelos comparten `.next` y pueden
+ *                                        devolver 500 en rutas autenticadas
  *
  * ── FILTRO POR MÓDULO ─────────────────────────────────────────────────────
  *
@@ -62,11 +66,18 @@ import {
  *
  * ── FILTRO POR VIEWPORT ───────────────────────────────────────────────────
  *
- *   Cualquier argumento que sea "desktop" o "mobile" filtra las capturas
- *   a solo ese viewport. Puede ir como primer o segundo argumento:
+ *   Cualquier argumento que nombre un viewport filtra las capturas a ése.
+ *   Puede ir como primer o segundo argumento:
  *
  *     npm run ss desktop                  Solo desktop 1920×1080
  *     npm run ss admin mobile             Solo admin en mobile 390×844
+ *
+ *   La corrida por defecto captura desktop y mobile. Los tres anchos del gate
+ *   selectivo se piden por nombre y no entran en el barrido completo:
+ *
+ *     npm run ss prevencion small         Solo 320×568
+ *     npm run ss prevencion tablet        Solo 768×1024
+ *     npm run ss compras laptop           Solo 1366×768
  *
  * ── SALIDA ────────────────────────────────────────────────────────────────
  *
@@ -83,26 +94,50 @@ import {
  * ── ARQUITECTURA ──────────────────────────────────────────────────────────
  *
  *   1. Prepara BD:   resetea esquema → migraciones → inserta fixtures
- *   2. Inicia server Next.js embebido en CAPTURE_PORT
- *   3. Abre Chromium y captura en 1 o 2 viewports según filtro:
+ *   2. Si hay más de un viewport y no existe build, compila `next build` una
+ *      vez para que los servidores paralelos sirvan desde `.next` sin pisarse
+ *   3. Inicia server Next.js embebido en CAPTURE_PORT
+ *   4. Abre Chromium y captura en 1 o 2 viewports según filtro:
  *       a) Rutas públicas (sin auth)
  *       b) Login como admin.audit@chome.cl
  *       c) Rutas autenticadas
- *   4. Barra de progreso en vivo con spinner, ⏱ tiempo transcurrido y ETA
- *   5. Genera manifest.json con resultados y metadatos
- *   6. Cierra servidor y navegador
+ *   5. Barra de progreso en vivo con spinner, ⏱ tiempo transcurrido y ETA
+ *   6. Genera manifest.json con resultados y metadatos
+ *   7. Cierra servidor y navegador
  */
 
 loadEnvConfig(process.cwd())
 
 export type CaptureMode = "modals" | "tabs" | "interactive" | "full"
 
+const desktop = { name: "desktop", width: 1920, height: 1080 }
+const mobile = { name: "mobile", width: 390, height: 844 }
+
+/**
+ * Gate selectivo de anchos (TASK-UI-001).
+ *
+ * La corrida por defecto sigue siendo 1920 y 390: son los dos anchos que la
+ * auditoría exige en cada pasada y duplicar el resto en cada ejecución haría el
+ * barrido inviable. Pero el criterio pedía además 320, 768 y 1366 "al gate
+ * selectivo", y esos tres no existían en ninguna parte: no había forma de
+ * capturarlos ni siquiera a mano.
+ *
+ *   npm run ss prevencion small     320×568  — el ancho donde el reflow falla
+ *   npm run ss prevencion tablet    768×1024 — el salto de tarjeta a tabla
+ *   npm run ss compras laptop       1366×768 — el escritorio pequeño real
+ */
+const small = { name: "small", width: 320, height: 568 }
+const tablet = { name: "tablet", width: 768, height: 1024 }
+const laptop = { name: "laptop", width: 1366, height: 768 }
+
+const SELECTABLE_VIEWPORTS = { desktop, mobile, small, tablet, laptop } as const
+
 function parseCliArgs(): {
   moduleFilter: string | undefined
   viewportFilter: string | undefined
   captureMode: CaptureMode
 } {
-  const viewportNames = new Set(["desktop", "mobile"])
+  const viewportNames = new Set(Object.keys(SELECTABLE_VIEWPORTS))
   const modeNames: Record<string, CaptureMode> = {
     "--modals": "modals",
     "modals": "modals",
@@ -173,6 +208,10 @@ export type RouteTarget = {
   path: string
   auth: boolean
   expectedStatus?: number
+  /** Exact pathname+query values allowed after navigation. Defaults to `path`. */
+  allowedPaths?: string[]
+  /** Redirect aliases are verified in the manifest but do not emit a duplicate PNG. */
+  captureView?: boolean
   notes?: string
   modals?: ModalTarget[]
 }
@@ -182,7 +221,9 @@ export type CaptureSeedArea = {
   fixtures: string[]
 }
 
-type CaptureResult = {
+export type CaptureState = "capture-ok" | "capture-invalid" | "expected-redirect" | "expected-404" | "fixture-missing"
+
+export type CaptureResult = {
   viewport: string
   slug: string
   path: string
@@ -190,10 +231,126 @@ type CaptureResult = {
   finalUrl: string
   status: number | null
   ok: boolean
+  state: CaptureState
   screenshot: string
+  screenshotHash?: string
   type?: "view" | "modal" | "tab" | "select" | "hover" | "dropdown"
+  selector?: string
   error?: string
   notes?: string
+}
+
+/** Paths are deliberately exact: an unexpected redirect must be declared on its route. */
+export function getAllowedCapturePaths(route: RouteTarget): string[] {
+  return route.allowedPaths ?? [route.path]
+}
+
+export function isCaptureUrlAllowed(route: RouteTarget, url: string): boolean {
+  const parsed = new URL(url, baseUrl)
+  const currentPath = `${parsed.pathname}${parsed.search}`
+  return getAllowedCapturePaths(route).includes(currentPath)
+}
+
+/**
+ * Tras una interacción (tab, modal, select, dropdown) el invariante que importa
+ * es no haber abandonado la ruta: el pathname debe seguir siendo uno de los
+ * declarados. La query sí puede cambiar, porque las vistas y pestañas persisten
+ * su estado en la URL a propósito (pasadas 41 y 51) para ser enlazables y
+ * recuperables. Exigir la query exacta marcaría ese diseño como error.
+ */
+export function isCaptureInteractionUrlAllowed(route: RouteTarget, url: string): boolean {
+  if (isCaptureUrlAllowed(route, url)) return true
+  const parsed = new URL(url, baseUrl)
+  return getAllowedCapturePaths(route).some((allowed) => new URL(allowed, baseUrl).pathname === parsed.pathname)
+}
+
+function resolveCaptureState(
+  route: RouteTarget,
+  status: number | null,
+  finalUrl: string,
+  scope: "view" | "interaction" = "view"
+): CaptureState {
+  const allowed = scope === "interaction" ? isCaptureInteractionUrlAllowed(route, finalUrl) : isCaptureUrlAllowed(route, finalUrl)
+  if (!allowed) return "capture-invalid"
+  if (route.expectedStatus === 404 && status === 404) return "expected-404"
+  if (status === 404) return "fixture-missing"
+  if (status !== null && status >= 400) return "capture-invalid"
+  if (getAllowedCapturePaths(route)[0] !== route.path) return "expected-redirect"
+  return "capture-ok"
+}
+
+function isSuccessfulCaptureState(state: CaptureState): boolean {
+  return state === "capture-ok" || state === "expected-redirect" || state === "expected-404"
+}
+
+/**
+ * "Ruta y viewport" de una captura, derivados de su nombre de archivo.
+ *
+ * `desktop-prevencion-pdtp-modal-auto-2.png` → `desktop-prevencion-pdtp`. Es
+ * lo que permite distinguir un duplicado que delata un fallo (mismo ámbito) de
+ * uno que sólo refleja un componente compartido (ámbitos distintos).
+ */
+/**
+ * Retira las capturas de interacción que son idénticas a una captura de ruta.
+ *
+ * El caso que lo motivó: la pestaña "Avance" del detalle de OC está declarada
+ * **a la vez** como ruta propia (`/compras/po-audit-1?tab=avance`) y como
+ * pestaña del detalle, de modo que se fotografiaba dos veces. `isDeclaredElsewhere`
+ * no lo veía porque esa pestaña no cambia la URL: es estado de cliente.
+ *
+ * Cualquier heurística por nombre o por URL falla en algún caso —el rótulo es
+ * "Avance por ítem" y el query es `avance`—, así que la comparación se hace
+ * donde la respuesta es exacta: el hash del PNG. Si una interacción produce el
+ * mismo byte que una ruta ya capturada, la ruta es la evidencia canónica y la
+ * interacción no aporta nada; se borra su archivo y se retira del manifest.
+ *
+ * Sólo se poda la interacción, nunca la vista: dos vistas idénticas siguen
+ * siendo un problema y tienen que romper el gate.
+ */
+export function pruneRedundantInteractionCaptures(root: string, results: CaptureResult[]): string[] {
+  const viewHashes = new Set(
+    results.filter((r) => (r.type ?? "view") === "view" && r.screenshotHash).map((r) => r.screenshotHash!),
+  )
+  const pruned: string[] = []
+
+  for (let i = results.length - 1; i >= 0; i--) {
+    const result = results[i]!
+    if ((result.type ?? "view") === "view") continue
+    if (!result.screenshotHash || !viewHashes.has(result.screenshotHash)) continue
+
+    const file = path.join(root, result.screenshot)
+    fs.rmSync(file, { force: true })
+    pruned.push(result.slug)
+    results.splice(i, 1)
+  }
+
+  return pruned.reverse()
+}
+
+/** ¿Es la captura de un overlay (modal, tab, select) y no de la ruta base? */
+function isInteractionCapture(screenshot: string): boolean {
+  return /-(?:modal|modal-auto|tab|select|dropdown)-/.test(path.basename(screenshot))
+}
+
+/** Espera a que el navegador declare terminadas sus animaciones en curso. */
+async function settleAnimations(page: Page): Promise<void> {
+  await page
+    .waitForFunction(
+      () => document.getAnimations().every((animation) => animation.playState !== "running"),
+      undefined,
+      { timeout: 2000 },
+    )
+    .catch(() => undefined)
+}
+
+function captureScope(screenshot: string): string {
+  const base = path.basename(screenshot, ".png")
+  return base.split(/-(?:modal|modal-auto|tab|select|dropdown)-/)[0] ?? base
+}
+
+function screenshotHash(screenshot: string): string {
+  if (process.env.CAPTURE_SKIP_HASH === "true") return ""
+  return crypto.createHash("sha256").update(fs.readFileSync(screenshot)).digest("hex")
 }
 
 // ── Progress bar helpers ─────────────────────────────────────────────────
@@ -276,44 +433,42 @@ async function runWithSpinner<T>(label: string, fn: () => Promise<T>): Promise<T
   }
 }
 
-function requireCaptureDatabaseUrl() {
-  if (!process.env.CAPTURE_ALLOW_DESTRUCTIVE_RESET) {
-    process.env.CAPTURE_ALLOW_DESTRUCTIVE_RESET = "true"
-  }
-  if (!process.env.PGHOST) {
-    process.env.PGHOST = "/var/run/postgresql"
+/**
+ * Capturar reinicia el esquema y siembra fixtures: nunca puede inferir una BD
+ * ni habilitar el borrado a partir de `DATABASE_URL`. La doble declaración
+ * hace visible la intención operativa antes de limpiar salida o tocar Postgres.
+ */
+type CaptureEnvironment = Readonly<Record<string, string | undefined>>
+
+export function requireCaptureDatabaseUrl(env: CaptureEnvironment = process.env) {
+  const captureDbUrl = env.CAPTURE_DATABASE_URL?.trim()
+  if (!captureDbUrl) {
+    throw new Error(
+      "CAPTURE_DATABASE_URL is required for screenshot capture. Set it to an isolated disposable database; DATABASE_URL is never used as a fallback.",
+    )
   }
 
-  // Use explicit CAPTURE_DATABASE_URL if set.
-  if (process.env.CAPTURE_DATABASE_URL) return process.env.CAPTURE_DATABASE_URL
+  assertSafeDestructiveDatabase({
+    databaseUrl: captureDbUrl,
+    allowDestructiveReset: env.CAPTURE_ALLOW_DESTRUCTIVE_RESET === "true",
+    context: "CAPTURE",
+  })
 
-  // Derive from DATABASE_URL by appending _capture to the database name.
-  // This avoids the guard tripping on the production DB name (e.g. "bodega").
-  const base = process.env.DATABASE_URL || "postgres:///bodega"
-  try {
-    const parsed = new URL(base)
-    const rawName = parsed.pathname.replace(/^\//, "") || "bodega"
-    if (!rawName.endsWith("_capture")) {
-      parsed.pathname = `/${rawName}_capture`
-    }
-    return parsed.toString()
-  } catch {
-    return "postgres:///bodega_capture"
-  }
+  return captureDbUrl
 }
 
-const desktop = { name: "desktop", width: 1920, height: 1080 }
-const mobile = { name: "mobile", width: 390, height: 844 }
+
 
 const routeTargets: RouteTarget[] = [
-  { slug: "root", path: "/", auth: false },
+  { slug: "root", path: "/", auth: false, allowedPaths: ["/login?callbackUrl=%2F"], captureView: false, notes: "Sin sesión, el tablero canónico redirige a inicio de sesión conservando el destino." },
   { slug: "login", path: "/login", auth: false },
   { slug: "registro", path: "/registro", auth: false },
   { slug: "recuperar", path: "/recuperar", auth: false },
   { slug: "recuperar-token", path: "/recuperar/capture-reset-token", auth: false },
-  { slug: "not-found", path: "/ruta-inexistente-auditoria", auth: true, expectedStatus: 404 },
   { slug: "dashboard", path: "/dashboard", auth: true },
   { slug: "perfil", path: "/perfil", auth: true },
+  // Una sola ruta inexistente: cualquier URL sin coincidencia resuelve al mismo
+  // 404 con shell, así que declarar dos producía una evidencia repetida.
   { slug: "app-not-found", path: "/app-ruta-inexistente-auditoria", auth: true, expectedStatus: 404 },
   { slug: "solicitudes", path: "/solicitudes", auth: true },
   { slug: "solicitudes-nueva", path: "/solicitudes/nueva", auth: true },
@@ -365,8 +520,8 @@ const routeTargets: RouteTarget[] = [
   { slug: "combustibles-nueva", path: "/combustibles/nueva", auth: true },
   { slug: "combustibles-detalle", path: "/combustibles/fuel-audit-1", auth: true },
   { slug: "combustibles-reportes", path: "/combustibles/reportes", auth: true },
-  { slug: "combustibles-vehiculos-legacy", path: "/combustibles/vehiculos", auth: true, notes: "Compatibilidad: redirige al catálogo administrativo canónico." },
-  { slug: "combustibles-proveedores-legacy", path: "/combustibles/proveedores-combustible", auth: true, notes: "Compatibilidad: redirige al catálogo administrativo canónico." },
+  { slug: "combustibles-vehiculos-legacy", path: "/combustibles/vehiculos", auth: true, allowedPaths: ["/admin/flota-catalogos/vehiculos"], captureView: false, notes: "Compatibilidad: redirige al catálogo administrativo canónico." },
+  { slug: "combustibles-proveedores-legacy", path: "/combustibles/proveedores-combustible", auth: true, allowedPaths: ["/admin/flota-catalogos/proveedores-combustible"], captureView: false, notes: "Compatibilidad: redirige al catálogo administrativo canónico." },
   {
     slug: "combustibles-cuenta-corriente",
     path: "/combustibles/cuenta-corriente",
@@ -390,15 +545,15 @@ const routeTargets: RouteTarget[] = [
   { slug: "combustibles-anomalias", path: "/combustibles/anomalias", auth: true },
   { slug: "combustibles-anomalias-reglas", path: "/combustibles/anomalias/reglas", auth: true },
   { slug: "combustibles-bitacora", path: "/combustibles/bitacora", auth: true },
-  { slug: "combustibles-bitacora-historial", path: "/combustibles/bitacora/historial/sst/entity-audit-1", auth: true },
+  { slug: "combustibles-bitacora-historial", path: "/combustibles/bitacora/historial/sst/entity-audit-1", auth: true, allowedPaths: ["/combustibles/bitacora"], captureView: false, notes: "Fixture pendiente: el ID de auditoría actual redirige al historial canónico." },
   { slug: "combustibles-ciclo", path: "/combustibles/ciclo", auth: true },
   { slug: "combustibles-sellos", path: "/combustibles/sellos", auth: true },
-  { slug: "repuestos", path: "/repuestos", auth: true },
-  { slug: "repuestos-nueva", path: "/repuestos/nueva", auth: true },
-  { slug: "repuestos-detalle", path: "/repuestos/rep-audit-1", auth: true },
-  { slug: "servicios", path: "/servicios", auth: true },
-  { slug: "servicios-nueva", path: "/servicios/nueva", auth: true },
-  { slug: "servicios-detalle", path: "/servicios/srv-audit-1", auth: true },
+  { slug: "repuestos", path: "/repuestos", auth: true, allowedPaths: ["/solicitudes"], captureView: false },
+  { slug: "repuestos-nueva", path: "/repuestos/nueva", auth: true, allowedPaths: ["/solicitudes/nueva?tipo=repuestos"] },
+  { slug: "repuestos-detalle", path: "/repuestos/rep-audit-1", auth: true, allowedPaths: ["/solicitudes/rep-audit-1"] },
+  { slug: "servicios", path: "/servicios", auth: true, allowedPaths: ["/solicitudes"], captureView: false },
+  { slug: "servicios-nueva", path: "/servicios/nueva", auth: true, allowedPaths: ["/solicitudes/nueva?tipo=servicios"] },
+  { slug: "servicios-detalle", path: "/servicios/srv-audit-1", auth: true, allowedPaths: ["/solicitudes/srv-audit-1"] },
   { slug: "prevencion", path: "/prevencion", auth: true },
   { slug: "prevencion-nueva", path: "/prevencion/nueva", auth: true },
   { slug: "prevencion-detalle", path: "/prevencion/sst-audit-1", auth: true },
@@ -409,7 +564,8 @@ const routeTargets: RouteTarget[] = [
   { slug: "prevencion-trabajador-detalle", path: "/prevencion/trabajador/worker-audit-1", auth: true },
   { slug: "prevencion-pdtp", path: "/prevencion/pdtp", auth: true },
   { slug: "prevencion-pdtp-detalle", path: "/prevencion/pdtp/prog-audit-1", auth: true },
-  { slug: "prevencion-pdtp-editar", path: "/prevencion/pdtp/prog-audit-1/editar", auth: true },
+  { slug: "prevencion-pdtp-editar", path: "/prevencion/pdtp/prog-audit-2/editar", auth: true, notes: "El editor sólo abre programas en borrador; un programa activo redirige a su detalle." },
+  { slug: "prevencion-pdtp-editar-activo", path: "/prevencion/pdtp/prog-audit-1/editar", auth: true, allowedPaths: ["/prevencion/pdtp/prog-audit-1"], captureView: false, notes: "Programa activo: la edición redirige al detalle en vez de abrir un editor sin efecto." },
   { slug: "prevencion-pdtp-ejecucion", path: "/prevencion/pdtp/prog-audit-1/ejecucion/exec-audit-1", auth: true },
   { slug: "prevencion-pdtp-reporte", path: "/prevencion/pdtp/prog-audit-1/reporte", auth: true },
   { slug: "prevencion-pdtp-acciones", path: "/prevencion/pdtp/acciones", auth: true },
@@ -425,9 +581,8 @@ const routeTargets: RouteTarget[] = [
   { slug: "prevencion-capa-detalle", path: "/prevencion/capa/capa-audit-1", auth: true },
   { slug: "prevencion-incidentes", path: "/prevencion/incidentes", auth: true },
   { slug: "prevencion-incidentes-reportar", path: "/prevencion/incidentes/reportar", auth: true },
-  { slug: "prevencion-incidentes-importar", path: "/prevencion/incidentes/importar", auth: true },
   { slug: "prevencion-incidentes-detalle", path: "/prevencion/incidentes/inc-audit-1", auth: true },
-  { slug: "prevencion-incidentes-procedimiento", path: "/prevencion/incidentes/inc-audit-1/procedimiento", auth: true },
+  { slug: "prevencion-incidentes-procedimiento", path: "/prevencion/incidentes/inc-audit-1/procedimiento", auth: true, expectedStatus: 404, captureView: false, notes: "No existe página App Router para este subpath: la investigación RE-20 se gestiona dentro del detalle canónico del incidente." },
   { slug: "prevencion-miper", path: "/prevencion/miper", auth: true },
   { slug: "prevencion-miper-control", path: "/prevencion/miper/controles/risk-control-audit-1", auth: true },
   { slug: "prevencion-requisitos-legales", path: "/prevencion/requisitos-legales", auth: true },
@@ -458,10 +613,10 @@ const routeTargets: RouteTarget[] = [
   { slug: "prevencion-epp-preventivo", path: "/prevencion/epp-preventivo", auth: true },
   { slug: "prevencion-documentacion", path: "/prevencion/documentacion", auth: true },
   { slug: "prevencion-documentacion-detalle", path: "/prevencion/documentacion/doc-audit-1", auth: true },
-  { slug: "prevencion-documentacion-nuevo", path: "/prevencion/documentacion/nuevo", auth: true },
+  { slug: "prevencion-documentacion-nuevo", path: "/prevencion/documentacion/nuevo", auth: true, allowedPaths: ["/prevencion/documentacion"], captureView: false },
   { slug: "prevencion-documentacion-papelera", path: "/prevencion/documentacion/papelera", auth: true },
-  { slug: "prevencion-documentacion-revisiones", path: "/prevencion/documentacion/revisiones", auth: true },
-  { slug: "prevencion-documentacion-vencimientos", path: "/prevencion/documentacion/vencimientos", auth: true },
+  { slug: "prevencion-documentacion-revisiones", path: "/prevencion/documentacion/revisiones", auth: true, allowedPaths: ["/prevencion/documentacion"], captureView: false },
+  { slug: "prevencion-documentacion-vencimientos", path: "/prevencion/documentacion/vencimientos", auth: true, allowedPaths: ["/prevencion/documentacion"], captureView: false },
   { slug: "prevencion-documentacion-regularizacion", path: "/prevencion/documentacion/regularizacion", auth: true },
   { slug: "sst-print", path: "/sst/sst-audit-1/print", auth: true },
   { slug: "ppa-form", path: "/ppa", auth: false },
@@ -492,7 +647,7 @@ const routeTargets: RouteTarget[] = [
   { slug: "admin-productos", path: "/admin/productos", auth: true },
   { slug: "admin-epps", path: "/admin/epps", auth: true },
   { slug: "admin-productos-nuevo", path: "/admin/productos/nuevo", auth: true },
-  { slug: "admin-productos-detalle", path: "/admin/productos/prod-audit-1", auth: true, notes: "Esta ruta redirige a /admin/productos." },
+  { slug: "admin-productos-detalle", path: "/admin/productos/prod-audit-1", auth: true, notes: "Detalle propio del producto: ya no redirige al listado." },
   { slug: "admin-productos-importar", path: "/admin/productos/importar/batch-audit-1", auth: true, notes: "Vista de revisión de lotes EPP importados." },
   { slug: "admin-proveedores", path: "/admin/proveedores", auth: true },
   {
@@ -536,20 +691,20 @@ const seedCoverage: CaptureSeedArea[] = [
   { section: "analitica", fixtures: ["compras", "combustible", "flota", "stock crítico", "EPP"] },
   { section: "flota", fixtures: ["vehículos activos", "cargas de combustible", "mantenciones"] },
   { section: "mantenciones", fixtures: ["vehículos", "proveedores", "mantenciones registradas"] },
-  { section: "combustibles", fixtures: ["cargas de combustible", "carga TAE con resultado público", "vehículos de combustible", "proveedores de combustible", "cuentas corrientes", "reportes mensuales"] },
+  { section: "combustibles", fixtures: ["cargas de combustible", "lote de consumos con registros asociados y sin asociar", "lote de log operacional con faena pendiente de asociar", "carga TAE con resultado público", "lote TAE histórico con carga observada y rechazo", "vehículos de combustible", "proveedores de combustible", "cuentas corrientes", "reportes mensuales"] },
   { section: "repuestos", fixtures: ["solicitud de repuestos", "ítem libre", "cotización pendiente"] },
   { section: "servicios", fixtures: ["solicitud de servicios", "ítem libre", "cotización pendiente"] },
-  { section: "prevencion", fixtures: ["evaluación nueva", "evaluación seguimiento", "plan de acción",    "indicadores mensuales de seguridad y salud en el trabajo", "indicadores material y ambiental"] },
+  { section: "prevencion", fixtures: ["evaluación nueva", "evaluación seguimiento", "plan de acción", "acción CAPA en progreso con evidencia y seguimiento", "requisito legal publicado con aplicabilidad por faena", "solicitud de privacidad con identidad verificada", "incidente en investigación con evidencia y difusión RE-20", "inspección revisada con hallazgo CAPA", "ejecución PDTP aprobada con checklist y plan de acción", "sesión de capacitación cerrada con asistencia", "gestión de cambio evaluada con CAPA", "plan de emergencia con simulacro y roles", "permiso activo con AST, medición y aislamiento", "comité CPHS paritario con acta", "grupo de exposición con medición", "programa de vigilancia con matrículas", "documento vigente distribuido con acuse", "control MIPER crítico verificado", "indicadores mensuales de seguridad y salud en el trabajo", "indicadores material y ambiental"] },
   { section: "admin-faenas", fixtures: ["faenas activas"] },
   { section: "admin-plantillas", fixtures: ["plantillas de correo del sistema"] },
-  { section: "admin-productos", fixtures: ["categorías", "productos EPP", "productos insumo", "proveedores preferidos", "importación EPP"] },
+  { section: "admin-productos", fixtures: ["categorías", "productos EPP", "productos insumo", "proveedores preferidos", "lote EPP pendiente de revisión"] },
   { section: "admin-proveedores", fixtures: ["proveedores activos con contacto"] },
   { section: "admin-trabajadores", fixtures: ["trabajadores por faena"] },
   { section: "admin-usuarios", fixtures: ["usuarios con roles y faenas"] },
   { section: "admin-auditoria", fixtures: ["eventos create", "status_change", "update"] },
   { section: "admin-configuracion", fixtures: ["datos empresa", "pie OC", "límite PDF"] },
   { section: "notificaciones", fixtures: ["notificación no leída", "notificación leída"] },
-  { section: "soporte", fixtures: ["reporte de soporte abierto", "reporte resuelto"] },
+  { section: "soporte", fixtures: ["reporte de soporte abierto con nota de gestión", "reporte resuelto"] },
 ]
 
 const moduleAliases: Record<string, string[]> = {
@@ -575,6 +730,104 @@ export function getCaptureSeedCoverage() {
   return seedCoverage.map((area) => ({ ...area, fixtures: [...area.fixtures] }))
 }
 
+export type CaptureArtifactReconciliation = {
+  invalidResults: string[]
+  missingFiles: string[]
+  orphanFiles: string[]
+  /** PNGs más antiguos que el inicio de la corrida en directorios heredados (no fallan el gate). */
+  staleFiles: string[]
+  duplicateReferences: string[]
+  duplicateHashes: Array<{ hash: string; screenshots: string[] }>
+  /** Mismo hash en rutas distintas: informativo, no rompe el gate. */
+  sharedHashes: Array<{ hash: string; screenshots: string[] }>
+}
+
+/** Elimina capturas y manifest previos para que cada corrida sobrescriba su carpeta (C3). */
+export function cleanOutputDir(directory: string) {
+  if (!fs.existsSync(directory)) return
+  const entries = fs.readdirSync(directory)
+  for (const entry of entries) {
+    if (entry.endsWith(".png") || entry === "manifest.json") {
+      fs.rmSync(path.join(directory, entry), { force: true })
+    }
+  }
+}
+
+/** Keep the manifest and the actual directory as one auditable contract. */
+export function reconcileCaptureArtifacts(
+  directory: string,
+  results: readonly CaptureResult[],
+  options: { runStartedAt?: number } = {},
+): CaptureArtifactReconciliation {
+  const references = results.map((result) => result.screenshot).filter(Boolean)
+  const referenceCounts = new Map<string, number>()
+  for (const reference of references) {
+    referenceCounts.set(reference, (referenceCounts.get(reference) ?? 0) + 1)
+  }
+
+  const files = fs.existsSync(directory)
+    ? fs.readdirSync(directory).filter((entry) => entry.endsWith(".png")).map((entry) => path.join(directory, entry))
+    : []
+  const referenced = new Set(references)
+  const hashes = new Map<string, string[]>()
+  for (const result of results) {
+    if (!result.screenshot || !result.screenshotHash) continue
+    const group = hashes.get(result.screenshotHash) ?? []
+    group.push(result.screenshot)
+    hashes.set(result.screenshotHash, group)
+  }
+
+  // F4: en directorios heredados (CAPTURE_OUTPUT_DIR apuntando a una carpeta
+  // con capturas previas) un PNG anterior al inicio de la corrida es evidencia
+  // antigua, no un huérfano de esta corrida: se reporta como `staleFiles` sin
+  // romper el gate. Con Fase 3 (limpieza previa) esto es redundante en el
+  // flujo normal, pero protege los casos donde la carpeta no se puede limpiar.
+  const runStartedAt = options.runStartedAt
+  const orphanFiles: string[] = []
+  const staleFiles: string[] = []
+  for (const file of files) {
+    const relative = path.relative(root, file)
+    if (referenced.has(relative)) continue
+    if (runStartedAt !== undefined) {
+      const stat = fs.statSync(file)
+      if (stat.mtimeMs < runStartedAt) {
+        staleFiles.push(relative)
+        continue
+      }
+    }
+    orphanFiles.push(relative)
+  }
+
+  return {
+    invalidResults: results.filter((result) => !result.ok).map((result) => result.slug),
+    missingFiles: references.filter((reference) => !fs.existsSync(path.join(root, reference))),
+    orphanFiles,
+    staleFiles,
+    duplicateReferences: [...referenceCounts.entries()].filter(([, count]) => count > 1).map(([reference]) => reference),
+    /*
+     * Un hash repetido **dentro de la misma ruta y viewport** significa que algo
+     * no ocurrió: la captura del modal es la página sin modal, o dos barridos
+     * fotografiaron el mismo control. Eso es evidencia falsa y rompe el gate.
+     *
+     * Entre rutas distintas la excepción es **estrecha a propósito**: sólo vale
+     * para capturas de interacción, donde dos pantallas pueden compartir un
+     * diálogo a pantalla completa —el selector de fecha de Repuestos y el de
+     * Servicios son el mismo componente— y ambas evidencias son ciertas.
+     *
+     * Dos capturas **de ruta base** idénticas nunca son benignas, y esta regla
+     * casi las deja pasar: una corrida contra un build a medias produjo 90
+     * pantallas de error con el mismo hash, y una excepción más ancha las
+     * habría absorbido como "componente compartido". El gate está para eso.
+     */
+    duplicateHashes: [...hashes.entries()]
+      .filter(([, shots]) => shots.length > 1 && !(shots.every(isInteractionCapture) && new Set(shots.map(captureScope)).size > 1))
+      .map(([hash, screenshots]) => ({ hash, screenshots })),
+    sharedHashes: [...hashes.entries()]
+      .filter(([, shots]) => shots.length > 1 && shots.every(isInteractionCapture) && new Set(shots.map(captureScope)).size > 1)
+      .map(([hash, screenshots]) => ({ hash, screenshots })),
+  }
+}
+
 /**
  * Captura rutas en paralelo usando un pool de workers que comparten una cola.
  * Cada worker toma la siguiente ruta disponible (índice atómico en JS
@@ -587,7 +840,8 @@ async function captureRouteBatch(
   context: BrowserContext,
   viewport: string,
   routes: RouteTarget[],
-  concurrency: number = Number(process.env.CAPTURE_CONCURRENCY) || 4,
+  concurrency: number = Number(process.env.CAPTURE_CONCURRENCY) || 8,
+  serverBaseUrl: string = baseUrl,
 ): Promise<CaptureResult[]> {
   if (routes.length === 0) return []
 
@@ -602,7 +856,7 @@ async function captureRouteBatch(
     while (nextIndex < routes.length) {
       const idx = nextIndex++
       const routeStart = Date.now()
-      const routeResults = await captureRoute(context, viewport, routes[idx]!)
+      const routeResults = await captureRoute(context, viewport, routes[idx]!, serverBaseUrl)
       const routeMs = Date.now() - routeStart
       results.push(...routeResults)
       completedCount++
@@ -623,6 +877,11 @@ async function main() {
   const captureDbUrl = requireCaptureDatabaseUrl()
   const routes = getCaptureRoutes(moduleFilter)
 
+  // F4: marca el inicio de la corrida ANTES de limpiar y capturar, para que la
+  // reconciliación distinga PNG heredados (más viejos que este instante) de
+  // huérfanos reales de la corrida actual.
+  const runStartedAt = Date.now()
+
   if (moduleFilter) {
     console.log(`📷 Módulo filtrado: "${moduleFilter}" → ${routes.length} rutas específicas`)
   } else {
@@ -633,59 +892,85 @@ async function main() {
   }
 
   // ── Preparar directorio de salida ──
-  // Cuando hay filtro de módulo, la carpeta es fija y se limpia al empezar
-  // para que cada ejecución sobrescriba las capturas anteriores.
-  if (moduleFilter && fs.existsSync(outputDir)) {
-    const entries = fs.readdirSync(outputDir)
-    for (const entry of entries) {
-      if (entry.endsWith(".png") || entry === "manifest.json") {
-        fs.rmSync(path.join(outputDir, entry), { force: true })
-      }
-    }
-  }
+  // Toda corrida (filtrada o completa) sobrescribe su carpeta: se eliminan
+  // los .png y manifest.json previos al empezar. Antes esto sólo ocurría con
+  // filtro de módulo; en corridas completas el directorio con fecha acumulaba
+  // archivos de corridas anteriores del mismo día y el gate de integridad los
+  // reportaba como 777 huérfanos (C3).
+  cleanOutputDir(outputDir)
   fs.mkdirSync(outputDir, { recursive: true })
 
   await runWithSpinner("Preparando base de datos (reset → migraciones → fixtures)", () => prepareDatabase(captureDbUrl))
-  const server = await startServer(captureDbUrl)
-  const browser = await chromium.launch()
-  const results: CaptureResult[] = []
 
   const viewports = (
-    viewportFilter === "desktop" ? [desktop]
-    : viewportFilter === "mobile" ? [mobile]
-    : [desktop, mobile]
+    viewportFilter && viewportFilter in SELECTABLE_VIEWPORTS
+      ? [SELECTABLE_VIEWPORTS[viewportFilter as keyof typeof SELECTABLE_VIEWPORTS]]
+      : [desktop, mobile]
   )
 
+  // ── Paralelizar viewports:2 servidores en puertos distintos ──
+  // Cuando hay más de1 viewport, lanzamos un servidor por viewport
+  // para que desktop y mobile corran simultáneamente.
+  const needsParallel = viewports.length > 1
+  // C1: los servidores paralelos deben servirse desde un build de producción;
+  // dos `next dev` sobre el mismo `.next` se pisan (chunks text/plain → 500
+  // en rutas autenticadas). Con un solo viewport `next dev` es seguro.
+  if (needsParallel) {
+    await ensureProductionBuild(captureDbUrl)
+  }
+  const serverPortBase = port
+  const results: CaptureResult[] = []
+  const serversToStop: ChildProcess[] = []
+
+  const serverInfos = await Promise.all(
+    viewports.map((vp, idx) =>
+      startServer(captureDbUrl, needsParallel ? serverPortBase + idx : serverPortBase)
+    )
+  )
+  serversToStop.push(...serverInfos.map((s) => s.server))
+
+  const browser = await chromium.launch()
+
   try {
-    for (const viewport of viewports) {
-      const context = await browser.newContext({
-        viewport: { width: viewport.width, height: viewport.height },
-        deviceScaleFactor: 1,
-        locale: "es-CL",
-      })
+    const viewportTasks = viewports.map((viewport, vpIdx) => {
+      const serverBaseUrl = serverInfos[vpIdx]!.serverBaseUrl
+      return (async () => {
+        const context = await browser.newContext({
+          viewport: { width: viewport.width, height: viewport.height },
+          deviceScaleFactor: 1,
+          locale: "es-CL",
+        })
 
-      const nonAuthRoutes = routes.filter((r) => !r.auth)
-      if (nonAuthRoutes.length > 0) {
-        const nonAuthResults = await captureRouteBatch(context, viewport.name, nonAuthRoutes)
-        results.push(...nonAuthResults)
-      }
+        const nonAuthRoutes = routes.filter((r) => !r.auth)
+        if (nonAuthRoutes.length > 0) {
+          const nonAuthResults = await captureRouteBatch(context, viewport.name, nonAuthRoutes, undefined, serverBaseUrl)
+          results.push(...nonAuthResults)
+        }
 
-      const authRoutes = routes.filter((r) => r.auth)
-      if (authRoutes.length > 0) {
-        await login(context)
-        const authResults = await captureRouteBatch(context, viewport.name, authRoutes)
-        results.push(...authResults)
-      }
+        const authRoutes = routes.filter((r) => r.auth)
+        if (authRoutes.length > 0) {
+          await login(context, serverBaseUrl)
+          const authResults = await captureRouteBatch(context, viewport.name, authRoutes, undefined, serverBaseUrl)
+          results.push(...authResults)
+        }
 
-      await context.close()
-    }
+        await context.close()
+      })()
+    })
+
+    await Promise.all(viewportTasks)
   } finally {
     await browser.close()
-    await stopServer(server)
+    await Promise.all(serversToStop.map((s) => stopServer(s)))
   }
 
+  // Se poda antes de reconciliar: una captura retirada no debe contarse como
+  // referencia, ni su archivo borrado aparecer como fichero faltante.
+  const prunedInteractions = pruneRedundantInteractionCaptures(root, results)
+  const artifactReconciliation = reconcileCaptureArtifacts(outputDir, results, { runStartedAt })
   const manifest = {
     generatedAt: new Date().toISOString(),
+    runStartedAt: new Date(runStartedAt).toISOString(),
     moduleFilter: moduleFilter ?? null,
     viewportFilter: viewportFilter ?? null,
     baseUrl,
@@ -700,6 +985,9 @@ async function main() {
     clientErrors,
     routes,
     results,
+    /** Interacciones idénticas a una ruta ya capturada, retiradas por redundantes. */
+    prunedInteractions,
+    artifactReconciliation,
   }
   fs.writeFileSync(path.join(outputDir, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`)
   console.log(`Screenshots written to ${outputDir}`)
@@ -727,6 +1015,29 @@ async function main() {
     process.exitCode = 1
   } else {
     console.log("Sin scroll horizontal en ninguna ruta ✓")
+  }
+
+  const artifactIssues = [
+    ...artifactReconciliation.invalidResults,
+    ...artifactReconciliation.missingFiles,
+    ...artifactReconciliation.orphanFiles,
+    ...artifactReconciliation.duplicateReferences,
+    ...artifactReconciliation.duplicateHashes.map((group) => group.hash),
+  ]
+  if (artifactIssues.length > 0) {
+    console.error(`\n✖ Integridad de capturas: ${artifactIssues.length} problema(s). Revisa artifactReconciliation en el manifest.`)
+    process.exitCode = 1
+  } else {
+    console.log("Integridad de capturas: sin URL inválida, huérfano, referencia o hash duplicado ✓")
+  }
+  if (prunedInteractions.length > 0) {
+    console.warn(`ℹ ${prunedInteractions.length} captura(s) de interacción retiradas por ser idénticas a su ruta canónica: ${prunedInteractions.join(", ")}`)
+  }
+  if (artifactReconciliation.sharedHashes.length > 0) {
+    console.warn(`ℹ ${artifactReconciliation.sharedHashes.length} captura(s) idénticas entre rutas distintas (componente compartido; no afectan el gate).`)
+  }
+  if (artifactReconciliation.staleFiles.length > 0) {
+    console.warn(`ℹ ${artifactReconciliation.staleFiles.length} PNG heredados de una corrida anterior en ${outputDir} (no afectan el gate).`)
   }
 }
 
@@ -926,6 +1237,167 @@ async function prepareDatabase(captureDbUrl: string) {
     { userId: "user-audit-inactive", worksiteId: "ws-audit-2", isPrimary: true },
   ])
 
+  // CAPA con relaciones reales: el detalle necesita una acción dentro del
+  // scope, más evidencia, transición y seguimiento. Antes la ruta apuntaba a
+  // un ID inexistente y la captura lo registraba como 404 sin distinguir un
+  // problema de fixture de un fallo de producto.
+  await db.insert(schema.preventionCapaActions).values({
+    id: "capa-audit-1",
+    code: "CAPA-2026-001",
+    sourceType: "manual",
+    sourceId: "hallazgo-captura-1",
+    worksiteId,
+    finding: "Protección lateral ausente en punto de corte de mantención.",
+    immediateMeasure: "Se detuvo la tarea y se delimitó el área hasta instalar la guarda.",
+    rootCause: "La inspección de preuso no incluía verificación de la guarda lateral.",
+    actionDescription: "Instalar guarda, actualizar pauta y verificar competencia del equipo.",
+    responsibleUserId: "user-audit-prevencion",
+    responsibleSnapshot: "Prevencionista Faena",
+    responsibleRole: "prevencionista",
+    priority: "high",
+    targetDate: "2026-06-20",
+    status: "in_progress",
+    evidenceRequired: true,
+    requiresImmediateStop: false,
+    createdByUserId: userId,
+    startedByUserId: "user-audit-prevencion",
+    startedAt: now,
+    reconciliationStatus: "reconciled",
+    effectivenessStatus: "pending",
+    version: 1,
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.preventionCapaEvidence).values({
+    id: "capa-evidence-audit-1",
+    actionId: "capa-audit-1",
+    kind: "photo",
+    reference: "storage/captures/capa-guarda-lateral.jpg",
+    description: "Registro fotográfico de la guarda instalada para revisión.",
+    uploadedByUserId: "user-audit-prevencion",
+    createdAt: now,
+  })
+  await db.insert(schema.preventionCapaTransitions).values([
+    { id: "capa-transition-audit-1", actionId: "capa-audit-1", changeType: "created", toStatus: "pending", reason: "Hallazgo de inspección incorporado al plan.", actorUserId: userId, createdAt: now },
+    { id: "capa-transition-audit-2", actionId: "capa-audit-1", changeType: "status", fromStatus: "pending", toStatus: "in_progress", reason: "Instalación de guarda iniciada.", actorUserId: "user-audit-prevencion", createdAt: now },
+  ])
+  await db.insert(schema.preventionCapaFollowups).values({
+    id: "capa-followup-audit-1",
+    actionId: "capa-audit-1",
+    note: "Guarda instalada; queda pendiente validar la pauta de preuso.",
+    progress: 60,
+    createdByUserId: "user-audit-prevencion",
+    createdAt: now,
+  })
+
+  // Requisito legal publicado con decisión de aplicabilidad dentro del scope.
+  // La ruta de detalle exige ambos niveles: sólo sembrar el requisito deja una
+  // pantalla técnicamente válida pero sin la decisión que el usuario revisa.
+  await db.insert(schema.preventionLegalRequirements).values({
+    id: "legal-requirement-audit-1",
+    code: "DS44-ART-16",
+    requirementVersion: 1,
+    sourceType: "regulatory",
+    authority: "Ministerio del Trabajo y Previsión Social",
+    sourceTitle: "Decreto Supremo N.º 44",
+    sourceReference: "DS 44, Reglamento de gestión preventiva de riesgos laborales",
+    sourceUrl: "https://www.bcn.cl/leychile",
+    article: "Artículo 16",
+    requirement: "Mantener capacitación preventiva verificable para las personas que ejecutan trabajo en la faena.",
+    versionLabel: "Vigencia 2026",
+    validFrom: "2025-02-01",
+    topic: "Capacitación preventiva",
+    chomeRole: "Prevención",
+    evidenceRequired: "Registro de asistencia, contenido impartido y evaluación cuando corresponda.",
+    frequency: "Anual",
+    status: "published",
+    createdByUserId: userId,
+    reviewedByUserId: "user-audit-prevencion",
+    reviewedAt: now,
+    approvedByUserId: userId,
+    approvedAt: now,
+    publishedByUserId: userId,
+    publishedAt: now,
+    version: 1,
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.preventionLegalApplicabilities).values({
+    id: "legal-applicability-audit-1",
+    requirementId: "legal-requirement-audit-1",
+    worksiteId,
+    activityReference: "Inducción y capacitación preventiva de cuadrillas",
+    applicabilityStatus: "applicable",
+    rationale: "La faena mantiene personal operativo expuesto a riesgos de corte y movimiento de equipos.",
+    responsibleUserId: "user-audit-prevencion",
+    responsibleSnapshot: "Prevencionista Faena",
+    evidenceReference: "CAP-2026-001 · registro de capacitación",
+    evidenceDueAt: "2026-12-31",
+    complianceStatus: "partial",
+    assessedByUserId: "user-audit-prevencion",
+    assessedAt: now,
+    version: 1,
+    createdAt: now,
+    updatedAt: now,
+  })
+
+  // Los trabajadores se siembran antes que cualquier fixture preventivo que
+  // los referencie (privacidad, comité, higiene, permisos, emergencias): son
+  // el titular del dato, no un detalle posterior.
+  await db.insert(schema.workers).values([
+    { id: "worker-audit-1", rut: "18.111.222-3", firstName: "Daniela", lastName: "Fuentes", position: "Operadora", worksiteId, isActive: true, createdAt: now },
+    { id: "worker-audit-2", rut: "17.444.555-6", firstName: "Marco", lastName: "Silva", position: "Mecánico", worksiteId, isActive: true, createdAt: now },
+    { id: "worker-audit-3", rut: "16.777.888-9", firstName: "Paula", lastName: "Mella", position: "Supervisora", worksiteId: "ws-audit-2", isActive: true, createdAt: now },
+  ])
+
+  // Solicitud ARCO con un titular dentro de la faena autorizada. El workbench
+  // resuelve al titular desde `workers` y rechaza cualquier solicitud fuera
+  // del scope, por lo que el ID por sí solo no era un fixture suficiente.
+  await db.insert(schema.preventionPrivacyRequests).values({
+    id: "privacy-request-audit-1",
+    subjectWorkerId: "worker-audit-1",
+    rightType: "access",
+    status: "en_proceso",
+    requestScope: "Información laboral y preventiva asociada al titular.",
+    receivedAt: now,
+    dueAt: "2026-06-29T12:00:00.000Z",
+    handledByUserId: "user-audit-prevencion",
+    createdByUserId: userId,
+    identityVerifiedAt: now,
+    identityVerifiedByUserId: "user-audit-prevencion",
+    legalHold: false,
+    createdAt: now,
+    updatedAt: now,
+  })
+
+  // Gestión de cambio con las seis dimensiones del flujo evaluadas. Una de
+  // ellas queda enlazada a CAPA para mostrar la medida operativa en vez de un
+  // formulario vacío o una falsa aprobación.
+  await db.insert(schema.preventionChangeRequests).values({
+    id: "cambio-audit-1",
+    worksiteId,
+    code: "MOC-2026-001",
+    title: "Cambio de resguardo en línea de corte",
+    changeType: "equipo",
+    description: "Se reemplazará el resguardo lateral de la línea de corte por una guarda enclavada.",
+    reason: "Cerrar el hallazgo CAPA-2026-001 y reducir exposición a partes móviles.",
+    riskLevel: "high",
+    status: "under_evaluation",
+    plannedReviewDate: "2026-07-15",
+    requestedByUserId: "user-audit-prevencion",
+    version: 1,
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.preventionChangeAssessments).values([
+    { id: "change-assessment-audit-risk", changeRequestId: "cambio-audit-1", dimension: "risk", evaluated: true, impacted: true, notes: "La guarda modifica el control crítico y requiere verificación previa al reinicio.", actionRequired: true, capaActionId: "capa-audit-1", evaluatedByUserId: "user-audit-prevencion", evaluatedAt: now, createdAt: now, updatedAt: now },
+    { id: "change-assessment-audit-permit", changeRequestId: "cambio-audit-1", dimension: "permit", evaluated: true, impacted: false, notes: "No cambia la autorización vigente de trabajo.", actionRequired: false, evaluatedByUserId: "user-audit-prevencion", evaluatedAt: now, createdAt: now, updatedAt: now },
+    { id: "change-assessment-audit-training", changeRequestId: "cambio-audit-1", dimension: "training", evaluated: true, impacted: true, notes: "La cuadrilla recibe inducción antes del uso de la guarda enclavada.", actionRequired: false, evaluatedByUserId: "user-audit-prevencion", evaluatedAt: now, createdAt: now, updatedAt: now },
+    { id: "change-assessment-audit-document", changeRequestId: "cambio-audit-1", dimension: "document", evaluated: true, impacted: true, notes: "Debe actualizarse la pauta de inspección de preuso.", actionRequired: false, evaluatedByUserId: "user-audit-prevencion", evaluatedAt: now, createdAt: now, updatedAt: now },
+    { id: "change-assessment-audit-miper", changeRequestId: "cambio-audit-1", dimension: "miper", evaluated: true, impacted: true, notes: "Se revisará el control de atrapamiento en la matriz vigente.", actionRequired: false, evaluatedByUserId: "user-audit-prevencion", evaluatedAt: now, createdAt: now, updatedAt: now },
+    { id: "change-assessment-audit-emergency", changeRequestId: "cambio-audit-1", dimension: "emergency", evaluated: true, impacted: false, notes: "No altera rutas de evacuación ni recursos de emergencia.", actionRequired: false, evaluatedByUserId: "user-audit-prevencion", evaluatedAt: now, createdAt: now, updatedAt: now },
+  ])
+
   await db.insert(schema.suppliers).values([
     {
       id: supplierId,
@@ -1061,6 +1533,62 @@ async function prepareDatabase(captureDbUrl: string) {
     options: JSON.stringify(["S", "M", "L", "XL"]),
     sortOrder: 1,
   })
+  // Lote pendiente de revisión: usa el mismo contrato persistido por el
+  // importador EPP. Así la captura valida la mesa de decisión y no una 404.
+  const normalizedEppImportRow = {
+    sourceCode: "EPP-LEG-021",
+    name: "Guante anticorte nivel 5",
+    canonicalName: "Guante anticorte nivel 5",
+    description: "Fila histórica para revisar antes de publicar el catálogo.",
+    supplierName: "TRECK Seguridad Industrial",
+    price: 12900,
+    categoryName: "Elementos de Protección Personal",
+    unitOfMeasure: "par",
+    attributes: [{ name: "Talla", value: "L" }, { name: "Color", value: "Negro" }],
+    eppType: "guante",
+    brand: "Treck",
+    model: null,
+    material: "Nitrilo",
+    identityKey: "elementos de proteccion personal|guante anticorte nivel 5|treck||color=negro|talla=l",
+    familyIdentityKey: "elementos de proteccion personal|guante anticorte nivel 5|treck|",
+    issues: [{ severity: "info", message: "Coincidencia de catálogo encontrada; requiere decisión del revisor." }],
+  }
+  await db.insert(schema.eppImportBatches).values({
+    id: "batch-audit-1",
+    source: "xlsx",
+    fileName: "catalogo-epp-historico-auditoria.xlsx",
+    fileHash: "capture-epp-import-batch-audit-1",
+    status: "reviewing",
+    headersJson: JSON.stringify({ codigo: 1, nombre: 2, unidad: 3, proveedor: 4, precio: 5 }),
+    sourceFileJson: JSON.stringify({ sheetName: "EPP histórico", rows: 1 }),
+    sourceFileData: "UEsDBBQAAAAIAAAAIQAAAAAAAAAAAAAAAAAAAAAA",
+    rulesVersion: "epp-normalization-v1",
+    createdBy: userId,
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.eppImportRows).values({
+    id: "epp-import-row-audit-1",
+    batchId: "batch-audit-1",
+    rowNumber: 2,
+    sourceCode: "EPP-LEG-021",
+    originalJson: JSON.stringify({ codigo: "EPP-LEG-021", nombre: "Guante anticorte nivel 5", unidad: "par", proveedor: "TRECK Seguridad Industrial", precio: "12.900" }),
+    normalizedJson: JSON.stringify(normalizedEppImportRow),
+    identityKey: normalizedEppImportRow.identityKey,
+    severity: "info",
+    decision: "pending",
+    reviewReason: "Coincidencia con el producto EPP-AUD-001; seleccionar actualizar o crear antes de confirmar.",
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.eppImportMatches).values({
+    id: "epp-import-match-audit-1",
+    rowId: "epp-import-row-audit-1",
+    productId,
+    score: 92,
+    reasonsJson: JSON.stringify(["Nombre canónico equivalente", "Unidad equivalente", "Talla coincidente"]),
+    disposition: "proposed",
+  })
   await db.insert(schema.productSuppliers).values([
     { id: "prod-sup-audit-1", productId, supplierId, unitPrice: 11900, isPreferred: true, lastUpdated: now },
     { id: "prod-sup-audit-2", productId: "prod-audit-2", supplierId: "sup-audit-2", unitPrice: 7900, isPreferred: true, lastUpdated: now },
@@ -1068,10 +1596,840 @@ async function prepareDatabase(captureDbUrl: string) {
     { id: "prod-sup-audit-4", productId: "prod-audit-4", supplierId: "sup-audit-3", unitPrice: 118000, isPreferred: true, lastUpdated: now },
   ])
 
-  await db.insert(schema.workers).values([
-    { id: "worker-audit-1", rut: "18.111.222-3", firstName: "Daniela", lastName: "Fuentes", position: "Operadora", worksiteId, isActive: true, createdAt: now },
-    { id: "worker-audit-2", rut: "17.444.555-6", firstName: "Marco", lastName: "Silva", position: "Mecánico", worksiteId, isActive: true, createdAt: now },
-    { id: "worker-audit-3", rut: "16.777.888-9", firstName: "Paula", lastName: "Mella", position: "Supervisora", worksiteId: "ws-audit-2", isActive: true, createdAt: now },
+  // Documento vigente: el detalle consulta categoría, tipo, versión actual,
+  // distribución, acuse y bitácora. Sembrarlos juntos evita una ficha que
+  // parece publicable pero no demuestra ni trazabilidad ni comunicación.
+  await db.insert(schema.sstDocumentCategories).values({
+    slug: "procedimientos-operacionales-audit",
+    name: "Procedimientos operacionales",
+    description: "Categoría de captura para documentación preventiva vigente.",
+    sortOrder: 1,
+    isActive: true,
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.sstDocumentTypes).values({
+    id: "doc-type-audit-1",
+    categorySlug: "procedimientos-operacionales-audit",
+    code: "PROC-LOTO",
+    name: "Procedimiento de bloqueo y etiquetado",
+    description: "Procedimiento operativo asociado a control de energías peligrosas.",
+    defaultConfidentiality: "publico_interno",
+    defaultValidityMonths: 12,
+    requiresApproval: true,
+    requiresAcknowledgment: true,
+    isActive: true,
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.sstDocuments).values({
+    id: "doc-audit-1",
+    categorySlug: "procedimientos-operacionales-audit",
+    typeId: "doc-type-audit-1",
+    internalCode: "PROC-LOTO-2026-01",
+    title: "Procedimiento de bloqueo y etiquetado de energías",
+    description: "Define el aislamiento, verificación de energía cero y liberación controlada antes de mantención.",
+    worksiteId,
+    status: "vigente",
+    confidentiality: "publico_interno",
+    dataClass: "operational",
+    currentVersionId: "doc-version-audit-1",
+    effectiveFrom: "2026-01-01",
+    expiresAt: "2026-12-31",
+    responsibleUserId: "user-audit-prevencion",
+    uploadedBy: userId,
+    reviewedBy: "user-audit-prevencion",
+    approvedBy: userId,
+    approvedAt: now,
+    requiresAcknowledgment: true,
+    tags: ["LOTO", "energías peligrosas", "mantención"],
+    extraMetadata: { source: "capture-audit", revisionReason: "Vigencia anual" },
+    checksum: "c".repeat(64),
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.sstDocumentVersions).values({
+    id: "doc-version-audit-1",
+    documentId: "doc-audit-1",
+    version: 1,
+    status: "vigente",
+    fileName: "procedimiento-loto-2026-v1.pdf",
+    storageName: "capture-doc-version-audit-1.pdf",
+    filePath: "captures/documentos/procedimiento-loto-2026-v1.pdf",
+    mimeType: "application/pdf",
+    fileSize: 186240,
+    checksum: "c".repeat(64),
+    effectiveFrom: "2026-01-01",
+    effectiveTo: "2026-12-31",
+    changelog: "Primera versión vigente para la faena de captura.",
+    uploadedBy: userId,
+    reviewedBy: "user-audit-prevencion",
+    approvedBy: userId,
+    approvedAt: now,
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.sstDocumentLinks).values({
+    id: "doc-link-audit-1",
+    documentId: "doc-audit-1",
+    entityType: "emergency_plan",
+    entityId: "plan-audit-1",
+    notes: "Procedimiento de aislamiento aplicable a intervenciones durante la respuesta a emergencias.",
+    createdByUserId: userId,
+    createdAt: now,
+  })
+  await db.insert(schema.sstDocumentDistributionTargets).values({
+    id: "doc-distribution-audit-1",
+    versionId: "doc-version-audit-1",
+    userId: "user-audit-prevencion",
+    assignmentReason: "Responsable de validar la difusión preventiva en faena.",
+    worksiteId,
+    positionSnapshot: "Prevencionista",
+    companySnapshot: "Chome",
+    assignedByUserId: userId,
+    assignedAt: now,
+    dueAt: "2026-06-30T23:59:59.000Z",
+    status: "acusado",
+    reminderCount: 0,
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.sstDocumentAcknowledgments).values({
+    id: "doc-ack-audit-1",
+    versionId: "doc-version-audit-1",
+    userId: "user-audit-prevencion",
+    method: "digital",
+    signature: "Acuse digital de Prevención para PROC-LOTO-2026-01",
+    ip: "127.0.0.1",
+    userAgent: "Chome capture fixture",
+    acknowledgedAt: now,
+  })
+  await db.insert(schema.sstDocumentAudit).values([
+    { id: "doc-audit-log-1", documentId: "doc-audit-1", versionId: "doc-version-audit-1", action: "create", userId, comment: "Documento creado para revisión preventiva.", createdAt: now },
+    { id: "doc-audit-log-2", documentId: "doc-audit-1", versionId: "doc-version-audit-1", action: "approve", userId, fromStatus: "en_revision", toStatus: "vigente", comment: "Versión aprobada y publicada para la faena.", createdAt: now },
+    { id: "doc-audit-log-3", documentId: "doc-audit-1", versionId: "doc-version-audit-1", action: "distribute", userId, comment: "Distribuido a Prevención con acuse registrado.", createdAt: now },
+  ])
+
+  // Control MIPER publicado. El detalle no consulta un control aislado: la
+  // matriz debe estar publicada y cada tramo de la jerarquía debe existir.
+  await db.insert(schema.preventionRiskMethodologies).values({
+    id: "risk-methodology-audit-1",
+    code: "MIPER-5X5",
+    name: "Matriz de probabilidad y consecuencia 5×5",
+    versionLabel: "2026.1",
+    kind: "primary",
+    authoritySource: "Metodología preventiva interna alineada con DS 44",
+    configuration: { probabilityScale: 5, consequenceScale: 5 },
+    isActive: true,
+    createdByUserId: userId,
+    createdAt: now,
+  })
+  await db.insert(schema.preventionRiskProcesses).values({
+    id: "risk-process-audit-1",
+    worksiteId,
+    code: "MANT",
+    name: "Mantención de equipos",
+    description: "Intervenciones programadas y correctivas de equipos operativos.",
+    isActive: true,
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.preventionRiskTasks).values({
+    id: "risk-task-audit-1",
+    processId: "risk-process-audit-1",
+    code: "LOTO",
+    name: "Aislar energías antes de mantención",
+    isRoutine: true,
+    isActive: true,
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.preventionRiskPositions).values({
+    id: "risk-position-audit-1",
+    taskId: "risk-task-audit-1",
+    code: "MEC",
+    name: "Mecánico mantenedor",
+    workerPositionKey: "mecanico",
+    isActive: true,
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.preventionRiskMatrices).values({
+    id: "risk-matrix-audit-1",
+    worksiteId,
+    matrixVersion: 1,
+    title: "MIPER Faena Mininco 2026",
+    status: "published",
+    methodologyId: "risk-methodology-audit-1",
+    methodologySnapshot: { code: "MIPER-5X5", name: "Matriz de probabilidad y consecuencia 5×5", versionLabel: "2026.1", kind: "primary", authoritySource: "Metodología preventiva interna alineada con DS 44", configuration: { probabilityScale: 5, consequenceScale: 5 } },
+    revisionReason: "Revisión anual previa a la ejecución del programa preventivo.",
+    participationSummary: "Participaron supervisión, mantención y Prevención de la faena.",
+    consultationEvidenceReference: "Acta de consulta MIPER-MIN-2026-01",
+    effectiveFrom: "2026-01-01",
+    reviewDueAt: "2026-12-01",
+    publishedHashSha256: "d".repeat(64),
+    createdByUserId: userId,
+    reviewedByUserId: "user-audit-prevencion",
+    reviewedAt: now,
+    approvedByUserId: userId,
+    approvedAt: now,
+    publishedByUserId: userId,
+    publishedAt: now,
+    version: 1,
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.preventionRiskEntries).values({
+    id: "risk-entry-audit-1",
+    matrixId: "risk-matrix-audit-1",
+    processId: "risk-process-audit-1",
+    taskId: "risk-task-audit-1",
+    positionId: "risk-position-audit-1",
+    hazardCode: "ELEC-001",
+    hazard: "Energía eléctrica residual",
+    riskFactor: "Intervención sin aislamiento y verificación de energía cero.",
+    expectedEventOrDamage: "Electrocución o quemadura grave durante la mantención.",
+    exposedPeopleDescription: "Mecánicos y supervisores que intervienen equipos energizados.",
+    exposedPeopleCount: 4,
+    genderConsiderations: "El control aplica por exposición, sin distinción de género.",
+    sensitiveWorkerConsiderations: "Restringir la intervención a personal competente y autorizado.",
+    inherentDimensions: { probability: 4, consequence: 5 },
+    inherentScore: 20,
+    inherentLevel: "critico",
+    residualDimensions: { probability: 1, consequence: 5 },
+    residualScore: 5,
+    residualLevel: "medio",
+    isCritical: true,
+    responsibleUserId: "user-audit-prevencion",
+    responsibleSnapshot: "Equipo de mantención y Prevención",
+    evidenceReference: "MIPER-MIN-2026-01 · observación en terreno",
+    version: 1,
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.preventionRiskControls).values({
+    id: "risk-control-audit-1",
+    riskEntryId: "risk-entry-audit-1",
+    description: "Aplicar LOTO, probar ausencia de tensión y registrar energía cero antes de intervenir.",
+    hierarchy: "engineering",
+    isExisting: true,
+    isCritical: true,
+    performanceStandard: "Candado personal, tarjeta vigente y prueba de ausencia de tensión registrada.",
+    verificationFrequency: "Antes de cada intervención",
+    responsibleUserId: "user-audit-prevencion",
+    responsibleSnapshot: "Prevencionista y supervisor de mantención",
+    dueDate: "2026-12-31",
+    status: "verified",
+    evidenceReference: "Permiso permit-audit-1 y registro LOTO de junio 2026.",
+    lastVerifiedByUserId: userId,
+    lastVerifiedAt: now,
+    effectivenessStatus: "effective",
+    version: 1,
+    createdAt: now,
+    updatedAt: now,
+  })
+
+  // Incidente con investigación en curso. La ficha y el panel RE-20 usan la
+  // misma ruta canónica y consultan personas, carriles legales, investigación,
+  // evidencia, bitácora y difusión; el subpath /procedimiento no existe.
+  await db.insert(schema.preventionIncidents).values({
+    id: "inc-audit-1",
+    code: "INC-2026-0001",
+    clientSubmissionId: "capture-incident-submission-1",
+    worksiteId,
+    companyName: "Chome",
+    companyTaxId: "76.123.456-7",
+    eventType: "work_accident",
+    status: "under_investigation",
+    occurredAt: "2026-06-08T10:15:00.000Z",
+    knownAt: "2026-06-08T10:25:00.000Z",
+    location: "Taller de mantención · tablero eléctrico N.º 2",
+    initialNarrative: "Durante una intervención preventiva se detectó energía residual antes de iniciar el retiro de una cubierta. La actividad se detuvo y se activó la investigación.",
+    reportedByUserId: "user-audit-prevencion",
+    processName: "Mantención de equipos",
+    taskName: "Aislamiento de energías",
+    shiftName: "Turno día",
+    equipmentReference: "Tablero eléctrico N.º 2",
+    actualSeverity: "medical_treatment",
+    potentialSeverity: "critical",
+    immediateMeasures: "Suspender la intervención, bloquear el tablero, verificar ausencia de tensión y derivar evaluación médica preventiva.",
+    operationsSuspended: true,
+    evacuated: false,
+    isFatalOrSerious: false,
+    source: "platform",
+    version: 1,
+    triagedAt: now,
+    triagedByUserId: userId,
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.preventionIncidentPeople).values({
+    id: "incident-person-audit-1",
+    incidentId: "inc-audit-1",
+    workerId: "worker-audit-1",
+    displayLabel: "Daniela Fuentes · operadora",
+    employerName: "Chome",
+    sex: "female",
+    relationshipType: "employee",
+    absenceAtLeastNormalShift: false,
+    absenceDays: 0,
+    chargeDays: 0,
+    administratorQualification: "En evaluación por organismo administrador.",
+    indicatorInclusionStatus: "included",
+    indicatorInclusionReason: "Evento laboral clasificado para indicadores SST.",
+    indicatorClassifiedByUserId: userId,
+    indicatorClassifiedAt: now,
+    version: 1,
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.preventionIncidentNotifications).values({
+    id: "incident-notification-audit-1",
+    incidentId: "inc-audit-1",
+    notificationType: "diat",
+    deadlineAt: "2026-06-09T23:59:59.000Z",
+    status: "sent",
+    administratorName: "Organismo administrador",
+    responsibleUserId: "user-audit-prevencion",
+    sentAt: "2026-06-08T15:30:00.000Z",
+    evidenceReference: "DIAT-INC-2026-0001.pdf",
+    evidenceChecksumSha256: "e".repeat(64),
+    observations: "Notificación enviada dentro del plazo de la faena.",
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.preventionIncidentInvestigations).values({
+    id: "incident-investigation-audit-1",
+    incidentId: "inc-audit-1",
+    status: "in_progress",
+    methodology: "ICAM",
+    team: [{ userId, role: "Líder de investigación" }, { userId: "user-audit-prevencion", role: "Asesor de Prevención" }],
+    evidenceSummary: "Se revisaron permiso de trabajo, registro LOTO, fotografías del tablero y declaración de la involucrada.",
+    immediateCauses: ["Verificación de ausencia de tensión iniciada después de abrir el tablero."],
+    basicCauses: ["Secuencia de bloqueo no estaba visible en el punto de intervención."],
+    organizationalCauses: ["La difusión del procedimiento LOTO requiere refuerzo por turno."],
+    failedControls: ["Lista de verificación previa a intervención."],
+    conclusions: "La barrera LOTO evitó una lesión grave, pero la secuencia debe reforzarse antes de reanudar trabajos equivalentes.",
+    preliminaryReportText: "Informe preliminar RE-20: se mantiene suspensión local hasta verificar señalización y difusión del procedimiento.",
+    preliminaryReportAt: "2026-06-09T12:00:00.000Z",
+    riskProbability: 2,
+    riskConsequence: 5,
+    riskLevel: "alto",
+    miperUpdateRequired: false,
+    procedureUpdateRequired: true,
+    trainingRequired: true,
+    startedByUserId: userId,
+    startedAt: "2026-06-08T14:00:00.000Z",
+    version: 1,
+    updatedAt: now,
+  })
+  await db.insert(schema.preventionIncidentEvidence).values({
+    id: "incident-evidence-audit-1",
+    incidentId: "inc-audit-1",
+    investigationId: "incident-investigation-audit-1",
+    kind: "photo",
+    reference: "EVID-INC-2026-0001-01.jpg",
+    description: "Tablero aislado y tarjeta LOTO visible luego de la detención segura.",
+    checksumSha256: "f".repeat(64),
+    isSensitive: false,
+    capturedAt: "2026-06-08T10:35:00.000Z",
+    createdByUserId: "user-audit-prevencion",
+    createdAt: now,
+  })
+  await db.insert(schema.preventionIncidentHistory).values([
+    { id: "incident-history-audit-1", incidentId: "inc-audit-1", changeType: "reported", reason: "Reporte inicial recibido desde la faena.", changeSet: { source: "platform" }, actorUserId: "user-audit-prevencion", createdAt: "2026-06-08T10:25:00.000Z" },
+    { id: "incident-history-audit-2", incidentId: "inc-audit-1", changeType: "status", fromStatus: "reported", toStatus: "under_investigation", reason: "Se inicia investigación ICAM por potencial crítico.", changeSet: { methodology: "ICAM" }, actorUserId: userId, createdAt: "2026-06-08T14:00:00.000Z" },
+  ])
+  await db.insert(schema.preventionIncidentStatements).values({
+    id: "incident-statement-audit-1",
+    incidentId: "inc-audit-1",
+    kind: "involved",
+    deponentName: "Daniela Fuentes",
+    deponentRole: "Operadora",
+    statementText: "Detuve el trabajo al identificar que el equipo no estaba completamente aislado y avisé a mi supervisión.",
+    signedAt: "2026-06-08T11:00:00.000Z",
+    createdByUserId: "user-audit-prevencion",
+    createdAt: now,
+  })
+  await db.insert(schema.preventionIncidentDiffusion).values({
+    id: "incident-diffusion-audit-1",
+    incidentId: "inc-audit-1",
+    onePageSummary: "Detención segura frente a energía residual durante mantención.",
+    rootCauseText: "Secuencia LOTO insuficientemente visible en el punto de intervención.",
+    actionPlanSummary: "Reforzar señalización, difusión por turno y verificación previa de energía cero.",
+    diffusedAt: "2026-06-10T08:00:00.000Z",
+    evidenceRef: "ONEPAGE-INC-2026-0001.pdf",
+    createdByUserId: userId,
+    createdAt: now,
+  })
+  await db.insert(schema.preventionIncidentFollowups).values({
+    id: "incident-followup-audit-1",
+    incidentId: "inc-audit-1",
+    followupDate: "2026-06-22",
+    note: "La señalización LOTO fue instalada y se mantiene pendiente la capacitación de refuerzo.",
+    status: "completed",
+    evidenceRef: "SEG-INC-2026-0001",
+    createdByUserId: "user-audit-prevencion",
+    createdAt: now,
+  })
+  await db.insert(schema.preventionIncidentShiftDiffusions).values({
+    id: "incident-shift-diffusion-audit-1",
+    incidentId: "inc-audit-1",
+    kind: "corrective_measures",
+    summary: "Difusión de medidas de aislamiento y prueba de energía cero al turno día.",
+    evidenceRef: "CHARLA-INC-2026-0001",
+    status: "confirmed",
+    markedByUserId: "user-audit-prevencion",
+    markedAt: "2026-06-10T08:10:00.000Z",
+    confirmedByUserId: userId,
+    confirmedAt: "2026-06-10T09:00:00.000Z",
+    createdAt: now,
+  })
+
+  // Inspección revisada. El detalle consume la definición versionada, cada
+  // respuesta y sus hallazgos, además de nombres de asignación, ejecución y
+  // revisión; una ejecución aislada no basta para ejercitar esa pantalla.
+  await db.insert(schema.preventionInspectionTemplates).values({
+    id: "inspection-template-audit-1",
+    code: "INSP-LOTO",
+    versionLabel: "2026.1",
+    name: "Inspección de aislamiento de energías",
+    kind: "inspection",
+    sourceDefinitionCode: "INSP-LOTO-BASE",
+    definitionSnapshot: {
+      code: "INSP-LOTO",
+      version: "2026.1",
+      revisionDate: "2026-01-01",
+      title: "Inspección de aislamiento de energías",
+      tipo: "seguimiento",
+      legalFramework: ["DS 44", "Procedimiento interno LOTO"],
+      applicableTo: "Equipos intervenidos en mantención",
+      objective: "Verificar barreras críticas antes y durante intervenciones con energía peligrosa.",
+      sections: [{
+        id: "aislamiento",
+        title: "Aislamiento y verificación",
+        countsForCompliance: true,
+        items: [
+          { id: "bloqueo-personal", label: "Cada persona expuesta utiliza su bloqueo personal", kind: "cumple_nocumple_na_obs", required: true, danoPotencial: "grave" },
+          { id: "energia-cero", label: "Se verifica y registra ausencia de tensión antes de intervenir", kind: "cumple_nocumple_na_obs", required: true, danoPotencial: "fatal" },
+          { id: "senalizacion", label: "La señalización del punto aislado es visible y vigente", kind: "cumple_nocumple_na_obs", required: true, danoPotencial: "moderado" },
+        ],
+      }],
+      closingAct: { title: "Cierre de inspección", resultOptions: [], signatureRoles: ["Inspector", "Supervisor"] },
+    },
+    contentHash: "a".repeat(64),
+    status: "approved",
+    legalFramework: "DS 44 y procedimiento interno LOTO",
+    authorUserId: "user-audit-prevencion",
+    approvedByUserId: userId,
+    approvedAt: now,
+    pdtpActivityNumbers: [63],
+    version: 1,
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.preventionInspectionRuns).values({
+    id: "insp-audit-1",
+    code: "INSP-2026-0001",
+    templateId: "inspection-template-audit-1",
+    worksiteId,
+    subjectType: "equipment",
+    subjectLabel: "Tablero eléctrico N.º 2",
+    scheduledFor: "2026-06-12",
+    status: "reviewed",
+    assignedToUserId: "user-audit-prevencion",
+    executedByUserId: "user-audit-prevencion",
+    executedAt: "2026-06-12T09:30:00.000Z",
+    reviewedByUserId: userId,
+    reviewedAt: "2026-06-12T15:00:00.000Z",
+    reviewComment: "Hallazgo crítico vinculado a CAPA; seguimiento verificable antes de próxima intervención.",
+    conformingCount: 2,
+    nonConformingCount: 1,
+    notApplicableCount: 0,
+    compliancePercent: 67,
+    locationLatitude: "-37.4800",
+    locationLongitude: "-72.3500",
+    clientSubmissionId: "capture-inspection-submission-1",
+    version: 1,
+    createdByUserId: userId,
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.preventionInspectionAnswers).values([
+    { id: "inspection-answer-audit-1", runId: "insp-audit-1", sectionId: "aislamiento", itemId: "bloqueo-personal", itemLabel: "Cada persona expuesta utiliza su bloqueo personal", result: "conforming", comment: "Bloqueos personales instalados y verificados.", evidenceReference: "FOTO-INSP-001", danoPotencial: "grave", createdAt: now, updatedAt: now },
+    { id: "inspection-answer-audit-2", runId: "insp-audit-1", sectionId: "aislamiento", itemId: "energia-cero", itemLabel: "Se verifica y registra ausencia de tensión antes de intervenir", result: "conforming", comment: "Registro de energía cero disponible junto al permiso.", evidenceReference: "PERM-LOTO-001", danoPotencial: "fatal", createdAt: now, updatedAt: now },
+    { id: "inspection-answer-audit-3", runId: "insp-audit-1", sectionId: "aislamiento", itemId: "senalizacion", itemLabel: "La señalización del punto aislado es visible y vigente", result: "non_conforming", comment: "Señalización temporal deteriorada en el acceso del tablero.", evidenceReference: "FOTO-INSP-003", danoPotencial: "moderado", createdAt: now, updatedAt: now },
+  ])
+  await db.insert(schema.preventionInspectionFindings).values({
+    id: "inspection-finding-audit-1",
+    runId: "insp-audit-1",
+    answerId: "inspection-answer-audit-3",
+    description: "Reponer señalización LOTO deteriorada en el acceso al tablero eléctrico N.º 2.",
+    criticality: "high",
+    immediateMeasure: "Se delimitó el acceso y se instaló señal temporal mientras se repone la definitiva.",
+    capaActionId: "capa-audit-1",
+    status: "capa_linked",
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.preventionInspectionHistory).values([
+    { id: "inspection-history-audit-1", entityType: "run", entityId: "insp-audit-1", worksiteId, changeType: "created", reason: "Inspección programada en faena.", afterState: { status: "planned" }, actorUserId: userId, createdAt: now },
+    { id: "inspection-history-audit-2", entityType: "run", entityId: "insp-audit-1", worksiteId, changeType: "reviewed", reason: "Revisión completada con hallazgo vinculado a CAPA.", beforeState: { status: "completed" }, afterState: { status: "reviewed", capaActionId: "capa-audit-1" }, actorUserId: userId, createdAt: now },
+  ])
+
+  // Sesión de capacitación completa: el detalle une sesión, versión del
+  // curso, curso, faena y asistencia. Sembrar sólo la sesión dejaba una ruta
+  // con FK inválidas o sin el denominador real de asistentes.
+  await db.insert(schema.preventionTrainingCourses).values({
+    id: "trcourse-audit-1",
+    code: "CAP-DS44-001",
+    name: "Inducción preventiva DS 44",
+    kind: "legal_mandatory",
+    description: "Inducción de riesgos, controles y reporte de condiciones inseguras.",
+    minimumDurationMinutes: 480,
+    validityMonths: 24,
+    requiresAssessment: true,
+    passingScore: 70,
+    legalRequirementId: "legal-requirement-audit-1",
+    legalBasis: "DS 44, artículo 16",
+    isActive: true,
+    createdByUserId: userId,
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.preventionTrainingCourseVersions).values({
+    id: "trcourse-version-audit-1",
+    courseId: "trcourse-audit-1",
+    versionLabel: "2026.1",
+    status: "published",
+    contentOutline: ["Riesgos críticos", "Controles operacionales", "Reporte y detención segura"],
+    durationMinutes: 480,
+    modality: "presencial",
+    assessmentType: "theoretical",
+    passingScore: 70,
+    contentHash: "a".repeat(64),
+    effectiveFrom: "2026-01-01",
+    authorUserId: "user-audit-prevencion",
+    reviewedByUserId: userId,
+    reviewedAt: now,
+    approvedByUserId: userId,
+    approvedAt: now,
+    publishedByUserId: userId,
+    publishedAt: now,
+    version: 1,
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.preventionTrainingSessions).values({
+    id: "trsess-audit-1",
+    code: "CAP-2026-001",
+    courseVersionId: "trcourse-version-audit-1",
+    worksiteId,
+    scheduledAt: "2026-06-09T08:00:00.000Z",
+    startedAt: "2026-06-09T08:05:00.000Z",
+    endedAt: "2026-06-09T16:10:00.000Z",
+    durationMinutes: 480,
+    modality: "presencial",
+    location: "Sala de capacitación Faena Mininco",
+    instructorUserId: "user-audit-prevencion",
+    instructorCompetencyEvidence: "Registro de competencia PREV-2026-01",
+    status: "completed",
+    closedByUserId: userId,
+    closedAt: now,
+    version: 1,
+    createdByUserId: userId,
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.preventionTrainingAttendance).values([
+    { id: "trattendance-audit-1", sessionId: "trsess-audit-1", workerId: "worker-audit-1", status: "attended", attendanceMinutes: 480, assessmentScore: 92, assessmentAttempts: 1, assessmentResult: "approved", evidenceReference: "Lista CAP-2026-001 · Daniela Fuentes", recordedByUserId: "user-audit-prevencion", createdAt: now, updatedAt: now },
+    { id: "trattendance-audit-2", sessionId: "trsess-audit-1", workerId: "worker-audit-2", status: "attended", attendanceMinutes: 480, assessmentScore: 84, assessmentAttempts: 1, assessmentResult: "approved", evidenceReference: "Lista CAP-2026-001 · Marco Silva", recordedByUserId: "user-audit-prevencion", createdAt: now, updatedAt: now },
+  ])
+
+  // Plan de emergencia con los insumos que consume el detalle: escenario,
+  // organigrama, recursos, contacto y simulacro. El resultado mejorable del
+  // simulacro mantiene la trazabilidad hacia la CAPA ya sembrada.
+  await db.insert(schema.preventionEmergencyPlans).values({
+    id: "plan-audit-1",
+    worksiteId,
+    code: "PEE-2026-001",
+    title: "Plan de emergencia Faena Mininco 2026",
+    status: "draft",
+    description: "Respuesta coordinada para incendio en instalaciones operativas y evacuación de cuadrillas.",
+    createdByUserId: userId,
+    version: 1,
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.preventionEmergencyScenarios).values({
+    id: "emergency-scenario-audit-1",
+    planId: "plan-audit-1",
+    type: "incendio",
+    title: "Incendio en línea de corte",
+    description: "Foco incipiente en zona de equipos con presencia de cuadrilla.",
+    responseProcedure: "Detener operación, activar alarma, evacuar al punto seguro y coordinar con Bomberos.",
+    createdAt: now,
+  })
+  await db.insert(schema.preventionEmergencyRoles).values([
+    { id: "emergency-role-audit-1", planId: "plan-audit-1", roleName: "Jefa de emergencia", assigneeWorkerId: "worker-audit-3", backupWorkerId: "worker-audit-1", createdAt: now },
+    { id: "emergency-role-audit-2", planId: "plan-audit-1", roleName: "Guía de evacuación", assigneeWorkerId: "worker-audit-1", backupWorkerId: "worker-audit-2", createdAt: now },
+  ])
+  await db.insert(schema.preventionEmergencyResources).values({
+    id: "emergency-resource-audit-1",
+    planId: "plan-audit-1",
+    name: "Extintor PQS 10 kg",
+    kind: "Extintor",
+    location: "Acceso línea de corte",
+    lastInspectedAt: "2026-06-01",
+    nextInspectionAt: "2026-07-01",
+    status: "operational",
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.preventionEmergencyContacts).values({
+    id: "emergency-contact-audit-1",
+    planId: "plan-audit-1",
+    name: "Central de emergencias",
+    org: "Bomberos de Mininco",
+    role: "Despacho de emergencia",
+    phone: "+56 9 5555 0101",
+    createdAt: now,
+  })
+  await db.insert(schema.preventionEmergencyDrills).values({
+    id: "emergency-drill-audit-1",
+    planId: "plan-audit-1",
+    worksiteId,
+    scenarioType: "incendio",
+    scheduledFor: "2026-06-09T10:00:00.000Z",
+    executedAt: "2026-06-09T10:00:00.000Z",
+    status: "completed",
+    durationMinutes: 18,
+    evacuationSeconds: 245,
+    observations: "La cuadrilla evacuó, pero la señalización del punto seguro requiere actualización.",
+    outcome: "needs_improvement",
+    capaActionId: "capa-audit-1",
+    createdByUserId: "user-audit-prevencion",
+    version: 1,
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.preventionEmergencyDrillParticipants).values([
+    { id: "emergency-participant-audit-1", drillId: "emergency-drill-audit-1", workerId: "worker-audit-1", present: true, roleName: "Guía de evacuación", createdAt: now },
+    { id: "emergency-participant-audit-2", drillId: "emergency-drill-audit-1", workerId: "worker-audit-2", present: true, roleName: "Participante", createdAt: now },
+  ])
+
+  // Permiso activo completo. El detalle une el tipo y la cabecera, y consulta
+  // controles, LOTO, mediciones, AST y cuadrilla por separado; se siembran
+  // todos para evitar un permiso aparentemente habilitable pero sin controles.
+  await db.insert(schema.preventionPermitTypes).values({
+    id: "permit-type-audit-1",
+    code: "LOTO-MANT",
+    name: "Mantención con bloqueo de energías",
+    description: "Permiso para intervenir equipo con aislamiento eléctrico y AST.",
+    competencyTaskKey: "mantenimiento_loto",
+    requiresIsolation: true,
+    requiresMeasurement: true,
+    requiresJsa: true,
+    measurementValidityMinutes: 60,
+    maxDurationHours: 8,
+    legalBasis: "DS 44 y procedimiento interno de LOTO",
+    isActive: true,
+    createdByUserId: userId,
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.preventionWorkPermits).values({
+    id: "permit-audit-1",
+    code: "PT-2026-001",
+    permitTypeId: "permit-type-audit-1",
+    worksiteId,
+    taskDescription: "Cambio de guarda lateral y verificación de enclavamiento en línea de corte.",
+    location: "Línea de corte, sector norte",
+    supervisorUserId: "user-audit-prevencion",
+    plannedStartAt: "2026-06-09T09:00:00.000Z",
+    plannedEndAt: "2026-06-09T17:00:00.000Z",
+    status: "active",
+    requestedByUserId: userId,
+    submittedAt: now,
+    approvedByUserId: userId,
+    approvedAt: now,
+    activatedByUserId: "user-audit-prevencion",
+    activatedAt: now,
+    version: 1,
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.preventionPermitCrew).values([
+    { id: "permit-crew-audit-1", permitId: "permit-audit-1", workerId: "worker-audit-1", role: "executor", acknowledgedAt: now, acknowledgementSha256: "b".repeat(64), createdAt: now },
+    { id: "permit-crew-audit-2", permitId: "permit-audit-1", workerId: "worker-audit-2", role: "standby", acknowledgedAt: now, acknowledgementSha256: "c".repeat(64), createdAt: now },
+  ])
+  await db.insert(schema.preventionPermitControls).values([
+    { id: "permit-control-audit-1", permitId: "permit-audit-1", description: "Área delimitada y señalizada antes de intervenir.", isMandatory: true, verified: true, verifiedByUserId: "user-audit-prevencion", verifiedAt: now, createdAt: now },
+    { id: "permit-control-audit-2", permitId: "permit-audit-1", description: "EPP anticorte y protección ocular verificados.", isMandatory: true, verified: true, verifiedByUserId: "user-audit-prevencion", verifiedAt: now, createdAt: now },
+  ])
+  await db.insert(schema.preventionPermitIsolations).values({
+    id: "permit-isolation-audit-1",
+    permitId: "permit-audit-1",
+    energySource: "electrical",
+    equipmentTag: "LC-01",
+    isolationMethod: "Interruptor bloqueado y tarjeta personal",
+    lockTagId: "LOTO-2026-001",
+    appliedByUserId: "user-audit-prevencion",
+    appliedAt: now,
+    verifiedZeroEnergy: true,
+    createdAt: now,
+  })
+  await db.insert(schema.preventionPermitMeasurements).values({
+    id: "permit-measurement-audit-1",
+    permitId: "permit-audit-1",
+    parameter: "Oxígeno",
+    value: "20.9",
+    unit: "%",
+    acceptableMin: "19.5",
+    acceptableMax: "23.5",
+    withinRange: true,
+    equipmentTag: "GAS-01",
+    calibrationDate: "2026-05-20",
+    takenByUserId: "user-audit-prevencion",
+    takenAt: now,
+    createdAt: now,
+  })
+  await db.insert(schema.preventionJsaSteps).values({
+    id: "permit-jsa-audit-1",
+    permitId: "permit-audit-1",
+    stepOrder: 1,
+    stepDescription: "Aislar la energía e instalar la guarda lateral.",
+    hazards: ["Energía eléctrica", "Atrapamiento"],
+    controls: ["LOTO", "Prueba de energía cero", "EPP anticorte"],
+    residualRisk: "low",
+    createdByUserId: "user-audit-prevencion",
+    createdAt: now,
+  })
+
+  // Comité con paridad mínima, acta cerrada y acuerdo enlazado a CAPA. El
+  // estado del comité calcula paridad y cadencia desde estas entidades, no
+  // sólo desde la cabecera del comité.
+  await db.insert(schema.preventionCommittees).values({
+    id: "comite-audit-1",
+    worksiteId,
+    name: "Comité Paritario Faena Mininco",
+    constitutedOn: "2026-01-15",
+    mandateEndsOn: "2028-01-14",
+    status: "active",
+    meetingDayOfMonth: 15,
+    version: 1,
+    createdByUserId: userId,
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.preventionCommitteeMembers).values([
+    { id: "committee-member-audit-1", committeeId: "comite-audit-1", workerId: "worker-audit-1", representation: "workers", seat: "titular", role: "presidente", electedOn: "2026-01-15", termEndsOn: "2028-01-14", hasFuero: true, status: "active", createdAt: now, updatedAt: now },
+    { id: "committee-member-audit-2", committeeId: "comite-audit-1", workerId: "worker-audit-2", representation: "company", seat: "titular", role: "secretario", electedOn: "2026-01-15", termEndsOn: "2028-01-14", hasFuero: false, status: "active", createdAt: now, updatedAt: now },
+  ])
+  await db.insert(schema.preventionCommitteeMeetings).values({
+    id: "committee-meeting-audit-1",
+    code: "CPHS-2026-006",
+    committeeId: "comite-audit-1",
+    meetingType: "ordinary",
+    scheduledFor: "2026-06-15T10:00:00.000Z",
+    heldAt: "2026-06-15T10:00:00.000Z",
+    agenda: "Revisión de hallazgos, capacitación y simulacro de emergencia.",
+    minutes: "Se revisó el hallazgo de la línea de corte y se acordó verificar la guarda y actualizar la pauta de preuso antes del siguiente turno.",
+    status: "closed",
+    quorumReached: true,
+    closedByUserId: userId,
+    closedAt: now,
+    version: 1,
+    createdByUserId: userId,
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.preventionCommitteeAttendance).values([
+    { id: "committee-attendance-audit-1", meetingId: "committee-meeting-audit-1", memberId: "committee-member-audit-1", attended: true, createdAt: now },
+    { id: "committee-attendance-audit-2", meetingId: "committee-meeting-audit-1", memberId: "committee-member-audit-2", attended: true, createdAt: now },
+  ])
+  await db.insert(schema.preventionCommitteeAgreements).values({
+    id: "committee-agreement-audit-1",
+    meetingId: "committee-meeting-audit-1",
+    description: "Verificar eficacia de la guarda lateral y su pauta de inspección antes del siguiente turno.",
+    capaActionId: "capa-audit-1",
+    status: "capa_linked",
+    createdAt: now,
+    updatedAt: now,
+  })
+
+  // Higiene industrial: ambos detalles (GES y programa de vigilancia) se
+  // basan en el mismo agente, grupo y trabajadores. La medición y matrículas
+  // permiten revisar decisión de vigilancia, no sólo nombres de catálogos.
+  await db.insert(schema.preventionExposureAgents).values({
+    id: "hygiene-agent-audit-1",
+    code: "RUIDO",
+    name: "Ruido ocupacional",
+    agentType: "physical",
+    unit: "dB(A)",
+    permissibleLimit: "85",
+    actionLevelFactor: "0.5",
+    limitBasis: "DS 594 y protocolo PREXOR",
+    surveillanceProtocol: "PREXOR",
+    isActive: true,
+    createdByUserId: userId,
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.preventionExposureGroups).values({
+    id: "grupo-audit-1",
+    code: "GES-RUIDO-001",
+    name: "Operadores línea de corte",
+    worksiteId,
+    agentId: "hygiene-agent-audit-1",
+    processDescription: "Operación y mantención menor en línea de corte con exposición continua a ruido.",
+    surveillanceRequired: true,
+    surveillanceReason: "La medición alcanza el nivel de acción definido por PREXOR.",
+    isActive: true,
+    version: 1,
+    createdByUserId: "user-audit-prevencion",
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.preventionExposureGroupMembers).values([
+    { id: "hygiene-group-member-audit-1", groupId: "grupo-audit-1", workerId: "worker-audit-1", joinedOn: "2026-01-15", createdAt: now },
+    { id: "hygiene-group-member-audit-2", groupId: "grupo-audit-1", workerId: "worker-audit-2", joinedOn: "2026-01-15", createdAt: now },
+  ])
+  await db.insert(schema.preventionExposureMeasurements).values({
+    id: "hygiene-measurement-audit-1",
+    groupId: "grupo-audit-1",
+    measuredOn: "2026-06-03",
+    value: "81",
+    unit: "dB(A)",
+    permissibleLimitSnapshot: "85",
+    actionLevelSnapshot: "80",
+    outcome: "above_action",
+    method: "Dosimetría personal de jornada completa",
+    laboratoryName: "Laboratorio Higiene Audit",
+    equipmentTag: "DOS-01",
+    calibrationDate: "2026-05-15",
+    sampleDurationMinutes: 480,
+    reportReference: "HIG-2026-014",
+    recordedByUserId: "user-audit-prevencion",
+    createdAt: now,
+  })
+  await db.insert(schema.preventionSurveillancePrograms).values({
+    id: "programa-audit-1",
+    code: "PV-RUIDO-2026",
+    name: "Vigilancia auditiva Faena Mininco",
+    protocol: "PREXOR",
+    agentId: "hygiene-agent-audit-1",
+    worksiteId,
+    periodicityMonths: 12,
+    legalBasis: "DS 594 y protocolo PREXOR",
+    status: "active",
+    createdByUserId: "user-audit-prevencion",
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.preventionSurveillanceEnrollments).values([
+    { id: "hygiene-enrollment-audit-1", programId: "programa-audit-1", workerId: "worker-audit-1", groupId: "grupo-audit-1", enrolledOn: "2026-06-04", dueOn: "2027-06-04", status: "summoned", summonedAt: now, createdAt: now, updatedAt: now },
+    { id: "hygiene-enrollment-audit-2", programId: "programa-audit-1", workerId: "worker-audit-2", groupId: "grupo-audit-1", enrolledOn: "2026-06-04", dueOn: "2027-06-04", status: "attended", attendedOn: "2026-06-07", createdAt: now, updatedAt: now },
   ])
 
   await db.insert(schema.purchaseRequests).values([
@@ -1415,6 +2773,161 @@ async function prepareDatabase(captureDbUrl: string) {
     createdAt: now,
     updatedAt: now,
   })
+  // El editor de programas sólo acepta borradores: un programa activo redirige
+  // al detalle. Sin un borrador, la ruta de edición nunca se podía capturar y
+  // la evidencia de TASK-UI-009 quedaba sin la pantalla que se corrige.
+  await db.insert(schema.pdtpPrograms).values({
+    id: "prog-audit-2",
+    year: 2027,
+    version: 1,
+    status: "draft",
+    title: "Programa de Trabajo Preventivo 2027 (borrador)",
+    elaboratedByName: "Prevencionista Auditor",
+    elaboratedByTitle: "Experto en Prevención",
+    complianceTarget: 0.9,
+    createdAt: now,
+    updatedAt: now,
+  })
+  // Ejecución PDTP completa. La vista de verificación valida en conjunto la
+  // actividad del programa, la evidencia aprobada, el checklist por sujeto y
+  // las acciones correctivas; se siembran como una misma cadena auditable.
+  const pdtpChecklistDefinition = {
+    code: "PDTP-LOTO-001",
+    version: "01",
+    revisionDate: "2026-01-01",
+    title: "Verificación de bloqueo y etiquetado",
+    tipo: "seguimiento",
+    legalFramework: ["DS 44", "Procedimiento LOTO"],
+    applicableTo: "Personal de mantención autorizado",
+    objective: "Confirmar el uso de barreras críticas antes de intervenir equipos energizados.",
+    sections: [{
+      id: "barreras-criticas",
+      title: "Barreras críticas LOTO",
+      countsForCompliance: true,
+      items: [
+        { id: "candado-personal", label: "Cada trabajador mantiene su candado personal instalado", kind: "cumple_nocumple_na_obs", required: true, danoPotencial: "grave" },
+        { id: "energia-cero", label: "La prueba de energía cero queda registrada antes de intervenir", kind: "cumple_nocumple_na_obs", required: true, danoPotencial: "fatal" },
+      ],
+    }],
+    closingAct: { title: "Cierre de verificación", resultOptions: [], signatureRoles: ["Ejecutor", "Supervisor"] },
+  }
+  await db.insert(schema.pdtpActivities).values({
+    id: "pdtp-activity-audit-1",
+    programId: "prog-audit-1",
+    n: 63,
+    displayOrder: 63,
+    status: "active",
+    activity: "Verificación de controles críticos de bloqueo y etiquetado",
+    program: "Programa de Trabajo Preventivo 2026",
+    responsibleSlugs: ["prevencion", "supervision"],
+    responsibleDisplay: "Prevención y supervisión de mantención",
+    audienceRoles: ["mecanico", "supervisor"],
+    scheduleMode: "scheduled",
+    scheduleClassificationStatus: "confirmed",
+    recurrenceRule: { frequency: "monthly" },
+    evidenceRequirement: "Checklist firmado, evidencia fotográfica y registro de acciones correctivas.",
+    indicatorMode: "planned_vs_completed",
+    targetValue: 1,
+    targetUnit: "verificación",
+    sourceSheetRow: 63,
+    notes: "Actividad de control crítico vinculada al procedimiento LOTO.",
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.pdtpActivitySchedule).values({
+    id: "pdtp-schedule-audit-1",
+    activityId: "pdtp-activity-audit-1",
+    year: 2026,
+    month: 6,
+    week: 2,
+    plannedQuantity: 1,
+    sourceColumn: "JUN-S2",
+  })
+  await db.insert(schema.pdtpActivityChecklists).values({
+    id: "pdtp-checklist-audit-1",
+    activityId: "pdtp-activity-audit-1",
+    programId: "prog-audit-1",
+    version: "01",
+    label: "Checklist de verificación LOTO",
+    definitionJson: pdtpChecklistDefinition,
+    isActive: true,
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.pdtpExecutions).values({
+    id: "exec-audit-1",
+    activityId: "pdtp-activity-audit-1",
+    worksiteId,
+    year: 2026,
+    month: 6,
+    week: 2,
+    executedQuantity: 1,
+    status: "approved",
+    evidenceText: "Checklist de barreras críticas aplicado al tablero eléctrico N.º 2; se identificó una brecha de registro que quedó en plan de acción.",
+    evidenceUrl: "captures/pdtp/exec-audit-1-evidencia.pdf",
+    evidencePhotos: ["captures/pdtp/exec-audit-1-tablero.jpg"],
+    executedByUserId: "user-audit-prevencion",
+    executedAt: "2026-06-12T09:30:00.000Z",
+    approvedByUserId: userId,
+    approvedAt: "2026-06-12T16:00:00.000Z",
+    origin: "manual",
+    idempotencyKey: "capture-pdtp-exec-audit-1",
+    sourceMetadataJson: { source: "capture-audit", permitId: "permit-audit-1" },
+    evidenceStatus: "provided",
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.pdtpExecutionChecklists).values({
+    id: "exec-audit-1-cli-worker-audit-1",
+    executionId: "exec-audit-1",
+    checklistId: "pdtp-checklist-audit-1",
+    definitionSnapshotJson: pdtpChecklistDefinition,
+    overallStatus: "completado",
+    porcentajeCumplimiento: 50,
+    completedByUserId: "user-audit-prevencion",
+    completedAt: "2026-06-12T10:00:00.000Z",
+    subjectType: "trabajador",
+    subjectId: "worker-audit-1",
+    subjectLabel: "Daniela Fuentes · operadora",
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.pdtpExecutionChecklistResponses).values([
+    { id: "exec-response-audit-1", checklistInstanceId: "exec-audit-1-cli-worker-audit-1", seccionId: "barreras-criticas", itemId: "candado-personal", estado: "cumple", observacion: "Candado personal instalado y etiquetado.", respondedByUserId: "user-audit-prevencion", respondedAt: "2026-06-12T09:45:00.000Z" },
+    { id: "exec-response-audit-2", checklistInstanceId: "exec-audit-1-cli-worker-audit-1", seccionId: "barreras-criticas", itemId: "energia-cero", estado: "no_cumple", observacion: "La medición fue realizada, pero el folio no quedó registrado en el permiso.", accionCorrectiva: "Incorporar el folio de energía cero al permiso antes de liberar la intervención.", respondedByUserId: "user-audit-prevencion", respondedAt: "2026-06-12T09:50:00.000Z" },
+  ])
+  await db.insert(schema.pdtpActionPlan).values({
+    id: "exec-audit-1-ap-001",
+    executionId: "exec-audit-1",
+    capaActionId: "capa-audit-1",
+    n: 1,
+    origen: "checklist_item",
+    seccionId: "barreras-criticas",
+    itemId: "energia-cero",
+    hallazgo: "Folio de la prueba de energía cero ausente en el permiso de trabajo.",
+    accion: "Actualizar el permiso LOTO y verificar el registro antes de reanudar intervenciones equivalentes.",
+    responsableRole: "Supervisor de mantención",
+    responsable: "Paula Mella",
+    responsableUserId: "user-audit-prevencion",
+    plazo: "2026-06-19",
+    prioridad: "alta",
+    estado: "en_proceso",
+    createdByUserId: "user-audit-prevencion",
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.pdtpActionPlanFollowups).values({
+    id: "exec-audit-1-ap-001-followup-1",
+    actionPlanItemId: "exec-audit-1-ap-001",
+    fecha: "2026-06-15",
+    estadoAnterior: "pendiente",
+    estadoNuevo: "en_proceso",
+    observacion: "Formato de permiso actualizado; queda validar en próxima intervención.",
+    evidenciaUrl: "captures/pdtp/exec-audit-1-seguimiento.pdf",
+    evidenciaPhotos: [],
+    updatedByUserId: "user-audit-prevencion",
+    createdAt: now,
+  })
 
   await db.insert(schema.ppaSubmissions).values([
     {
@@ -1492,6 +3005,148 @@ async function prepareDatabase(captureDbUrl: string) {
       notes: "Camión de carga para faena Mininco.",
       createdAt: now,
       updatedAt: now,
+    },
+  ])
+
+  await db.insert(schema.fuelImportBatches).values({
+    id: "fuel-import-audit-1",
+    worksiteId,
+    fuente: "COPEC TCT",
+    periodoDesde: "2026-06-01",
+    periodoHasta: "2026-06-30",
+    archivoNombre: "consumo-copec-junio-2026.xlsx",
+    archivoPath: "storage/captures/consumo-copec-junio-2026.xlsx",
+    hashArchivo: "capture-fuel-import-audit-1",
+    estado: "importado",
+    totalFilas: 2,
+    filasValidas: 2,
+    filasInvalidas: 0,
+    totalPatentes: 2,
+    totalTarjetas: 2,
+    totalTransacciones: 5,
+    totalCantidad: 237.8,
+    totalMonto: 402154,
+    importadoPor: userId,
+    notas: "Lote de consumo preparado para certificar detalle y conciliación de patente.",
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.fuelConsumptionRecords).values([
+    {
+      id: "fuel-consumption-audit-1",
+      batchId: "fuel-import-audit-1",
+      worksiteId,
+      vehicleId: "fuel-veh-audit-1",
+      patente: "FD-71-22",
+      numeroTarjetas: 1,
+      numeroTransacciones: 3,
+      cantidadUnidad: 152.3,
+      monto: 257387,
+      rendimientoPromedio: 9.4,
+      precioPromedioUnidad: 1690,
+      periodoDesde: "2026-06-01",
+      periodoHasta: "2026-06-30",
+      fuente: "COPEC TCT",
+      rawRow: { patente: "FD-71-22", litros: 152.3 },
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: "fuel-consumption-audit-2",
+      batchId: "fuel-import-audit-1",
+      worksiteId,
+      vehicleId: null,
+      patente: "ZZ-99-88",
+      numeroTarjetas: 1,
+      numeroTransacciones: 2,
+      cantidadUnidad: 85.5,
+      monto: 144767,
+      rendimientoPromedio: 0,
+      precioPromedioUnidad: 1693.18,
+      periodoDesde: "2026-06-01",
+      periodoHasta: "2026-06-30",
+      fuente: "COPEC TCT",
+      rawRow: { patente: "ZZ-99-88", litros: 85.5 },
+      createdAt: now,
+      updatedAt: now,
+    },
+  ])
+
+  await db.insert(schema.fuelOperationBatches).values({
+    id: "fuel-op-audit-1",
+    archivoNombre: "log-operacional-combustibles-junio-2026.xlsx",
+    archivoPath: "storage/captures/log-operacional-combustibles-junio-2026.xlsx",
+    hashArchivo: "capture-fuel-operation-audit-1",
+    estado: "importado",
+    periodoDesde: "2026-06-01",
+    periodoHasta: "2026-06-30",
+    totalFilas: 2,
+    filasValidas: 2,
+    filasInvalidas: 0,
+    totalEquipos: 2,
+    totalLitros: 203.5,
+    totalMonto: 344718,
+    importadoPor: userId,
+    notas: "Lote operativo con una faena pendiente para comprobar la corrección asistida.",
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.fuelOperationRecords).values([
+    {
+      id: "fuel-operation-record-audit-1",
+      batchId: "fuel-op-audit-1",
+      worksiteId,
+      vehicleId: "fuel-veh-audit-1",
+      plate: "FD-71-22",
+      code: "CAM-01",
+      faenaNombre: "Faena Mininco",
+      tipo: "Camioneta",
+      marca: "Toyota",
+      modelo: "Hilux 4x4",
+      anio: 2023,
+      fecha: "2026-06-08",
+      horaCarga: "09:30",
+      horometro: 45820,
+      medidoPor: "km",
+      liters: 98.5,
+      operador: "Daniela Fuentes",
+      supervisor: "Marco Silva",
+      proveedorNombre: "COPEC Los Ángeles",
+      fuelSupplierId: "fuel-sup-audit-1",
+      precioLitro: 1690,
+      monto: 166465,
+      rendimiento: 9.4,
+      tipoRendimiento: "km_lt",
+      rawRow: { fecha: "2026-06-08", patente: "FD-71-22" },
+      createdAt: now,
+    },
+    {
+      id: "fuel-operation-record-audit-2",
+      batchId: "fuel-op-audit-1",
+      worksiteId: null,
+      vehicleId: null,
+      plate: "AB-12-34",
+      code: "EQ-LEG-77",
+      faenaNombre: "Faena histórica sin equivalencia",
+      tipo: "Camión",
+      marca: "Mercedes-Benz",
+      modelo: "Atego 1726",
+      anio: 2022,
+      fecha: "2026-06-12",
+      horaCarga: "14:10",
+      horometro: 2860,
+      medidoPor: "hora",
+      liters: 105,
+      operador: "Operador histórico",
+      supervisor: "Supervisor histórico",
+      proveedorNombre: "COPEC Los Ángeles",
+      fuelSupplierId: "fuel-sup-audit-1",
+      precioLitro: 1697.65,
+      monto: 178253,
+      rendimiento: 12.1,
+      tipoRendimiento: "lt_hr",
+      rawRow: { fecha: "2026-06-12", patente: "AB-12-34" },
+      createdAt: now,
     },
   ])
 
@@ -1582,6 +3237,63 @@ async function prepareDatabase(captureDbUrl: string) {
     reviewedAt: now,
     createdAt: now,
     updatedAt: now,
+  })
+
+  await db.insert(schema.fuelTaeImportBatches).values({
+    id: "tae-import-audit-1",
+    fileName: "historico-tae-junio-2026.xlsx",
+    filePath: "storage/captures/historico-tae-junio-2026.xlsx",
+    fileHash: "capture-tae-import-audit-1",
+    status: "imported",
+    totalRows: 2,
+    validRows: 1,
+    observedRows: 1,
+    invalidRows: 1,
+    totalLiters: 74.2,
+    importedBy: userId,
+    notes: "Histórico de TAE con una identidad que requiere decisión y una fila rechazada trazable.",
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.fuelTaeSubmissions).values({
+    id: "tae-import-submission-audit-1",
+    clientSubmissionId: "capture-tae-import-submission-1",
+    importBatchId: "tae-import-audit-1",
+    source: "legacy_xlsx",
+    legacySourceId: "TAE-HIST-00021",
+    publicResultToken: "capture-tae-import-result-token-1",
+    worksiteId,
+    loadingPointId: "tae-point-audit-1",
+    vehicleId: null,
+    productId: "fuel-diesel",
+    equipmentCodeSnapshot: "EQ-LEG-77",
+    plateSnapshot: "AB-12-34",
+    loadedAt: "2026-06-05T08:45:00.000Z",
+    submittedAt: now,
+    driverWorkerId: null,
+    driverNameSnapshot: "Conductor histórico",
+    supervisorWorkerId: "worker-audit-2",
+    supervisorNameSnapshot: "Marco Silva",
+    meterType: "hour_meter",
+    meterReading: 2860,
+    meterReadingSource: "import",
+    liters: 74.2,
+    status: "observed",
+    reviewNote: "Requiere asociar equipo y conductor del registro histórico.",
+    rawRow: { equipo: "EQ-LEG-77", conductor: "Conductor histórico", litros: 74.2 },
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.fuelTaeImportRejections).values({
+    id: "tae-import-rejection-audit-1",
+    batchId: "tae-import-audit-1",
+    rowIndex: 3,
+    stage: "worksite",
+    field: "Faena",
+    message: "No fue posible asociar la faena histórica 'Base externa'.",
+    legacySourceId: "TAE-HIST-00022",
+    rawRow: { faena: "Base externa", equipo: "EQ-LEG-78" },
+    createdAt: now,
   })
 
   await db.insert(schema.fuelPayments).values([
@@ -2063,6 +3775,40 @@ async function prepareDatabase(captureDbUrl: string) {
       createdAt: now,
     },
   ])
+  await db.insert(schema.feedbackReports).values([
+    {
+      id: "sop-audit-1",
+      tipo: "bug",
+      titulo: "Validar detalle de importación desde soporte",
+      descripcion: "El equipo operativo reportó que necesita revisar el lote y sus filas antes de confirmar cambios en el catálogo.",
+      pagina: "/admin/productos/importar/batch-audit-1",
+      priority: "alta",
+      dueAt: "2026-06-12T12:00:00.000Z",
+      estado: "en_progreso",
+      notaInterna: "Fixture de auditoría: validar flujo de revisión y respuesta del gestor.",
+      createdBy: "user-audit-prevencion",
+      resolvedBy: null,
+      resolvedAt: null,
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: "sop-audit-2",
+      tipo: "consulta",
+      titulo: "Consulta resuelta sobre lectura TAE",
+      descripcion: "La carga fue explicada y el operador recibió la guía de conciliación.",
+      pagina: "/combustibles/tae",
+      priority: "normal",
+      dueAt: "2026-06-10T12:00:00.000Z",
+      estado: "resuelto",
+      notaInterna: "Cierre incluido para que la lista tenga estados diversos.",
+      createdBy: "user-audit-prevencion",
+      resolvedBy: userId,
+      resolvedAt: now,
+      createdAt: now,
+      updatedAt: now,
+    },
+  ])
   await db.insert(schema.systemSettings).values([
     { key: "company_name", value: "Chome Operaciones", updatedAt: now },
     { key: "company_rut", value: "76.000.000-0", updatedAt: now },
@@ -2119,6 +3865,129 @@ async function prepareDatabase(captureDbUrl: string) {
 }
 
 
+const CAPTURE_BUILD_TIMEOUT_MS = 10 * 60_000
+
+/** Directorios que participan del bundle de producción y deben invalidar el build. */
+const CAPTURE_BUILD_SOURCES = [
+  "app",
+  "lib",
+  "components",
+  "modules",
+  "db/schema",
+  "db/migrations",
+  "db/index.ts",
+  "next.config.ts",
+  "proxy.ts",
+  "instrumentation.ts",
+]
+
+function newestSourceMtime(): number {
+  let newest = 0
+  for (const entry of CAPTURE_BUILD_SOURCES) {
+    const fullPath = path.join(root, entry)
+    if (!fs.existsSync(fullPath)) continue
+    const stat = fs.statSync(fullPath)
+    if (stat.isDirectory()) {
+      const stack = [fullPath]
+      while (stack.length > 0) {
+        const dir = stack.pop()!
+        for (const child of fs.readdirSync(dir, { withFileTypes: true })) {
+          const childPath = path.join(dir, child.name)
+          if (child.isDirectory()) stack.push(childPath)
+          else if (child.isFile()) newest = Math.max(newest, fs.statSync(childPath).mtimeMs)
+        }
+      }
+    } else if (stat.isFile()) {
+      newest = Math.max(newest, stat.mtimeMs)
+    }
+  }
+  return newest
+}
+
+function hasProductionBuildArtifacts(): boolean {
+  return (
+    fs.existsSync(path.join(root, ".next", "BUILD_ID")) &&
+    fs.existsSync(path.join(root, ".next", "standalone", "server.js"))
+  )
+}
+
+/**
+ * Un build es stale si el código fuente es más nuevo que el BUILD_ID: capturar
+ * desde un build viejo reportaría como evidencia UI de una versión anterior
+ * (mismo problema que obliga a `e2e/start-server.sh` a `rm -rf .next`).
+ */
+function isProductionBuildStale(): boolean {
+  const buildIdPath = path.join(root, ".next", "BUILD_ID")
+  if (!fs.existsSync(buildIdPath)) return true
+  return fs.statSync(buildIdPath).mtimeMs < newestSourceMtime()
+}
+
+/**
+ * C1: los viewports paralelos deben servirse desde un build de producción.
+ * Dos `next dev` compartiendo el mismo `.next` se pisan entre sí (chunks
+ * servidos como `text/plain` → ChunkLoadError → HTTP 500 en rutas
+ * autenticadas). Si no hay build (o está desactualizado), se compila con el
+ * entorno de captura y los servidores quedan como procesos read-only sobre
+ * `.next`, igual que hace `e2e/start-server.sh` para Playwright.
+ *
+ * `CAPTURE_SKIP_BUILD=true` salta el build (útil para depurar el propio
+ * script); sin build, dos `next dev` paralelos vuelven a romper las capturas.
+ * `CAPTURE_FORCE_BUILD=true` borra `.next` antes de compilar (build limpia,
+ * misma razón que `e2e/start-server.sh`).
+ */
+async function ensureProductionBuild(captureDbUrl: string) {
+  const buildUpToDate = hasProductionBuildArtifacts() && !isProductionBuildStale()
+  if (buildUpToDate) return
+  if (process.env.CAPTURE_SKIP_BUILD === "true") {
+    console.warn("⚠ CAPTURE_SKIP_BUILD=true: sin build de producción, dos `next dev` paralelos comparten `.next` y las rutas autenticadas pueden devolver 500.")
+    return
+  }
+
+  if (process.env.CAPTURE_FORCE_BUILD === "true") {
+    // Evita reusar el cache de Turbopack de un build anterior (la causa de
+    // "Failed to find Server Action" documentada en e2e/start-server.sh).
+    fs.rmSync(path.join(root, ".next"), { recursive: true, force: true })
+  }
+
+  const nextBin = path.join(root, "node_modules", ".bin", "next")
+  const buildEnv = {
+    ...buildCaptureEnv(captureDbUrl),
+    // next build corre su propia verificación de TypeScript en un worker
+    // aparte del proceso principal; el límite de heap por defecto de V8 se
+    // agota ahí también (mismo ajuste que usa CI para el paso Build).
+    ...(process.env.NODE_OPTIONS ? {} : { NODE_OPTIONS: "--max-old-space-size=4096" }),
+  }
+
+  await runWithSpinner("Compilando build de producción (next build)", async () => {
+    await new Promise<void>((resolve, reject) => {
+      const build = spawn(nextBin, ["build"], {
+        cwd: root,
+        env: buildEnv as NodeJS.ProcessEnv,
+        stdio: ["ignore", "pipe", "pipe"],
+      })
+      const timeout = setTimeout(() => {
+        build.kill("SIGKILL")
+        reject(new Error(`next build excedió ${CAPTURE_BUILD_TIMEOUT_MS / 60_000} minutos y fue terminado`))
+      }, CAPTURE_BUILD_TIMEOUT_MS)
+      build.stdout.on("data", (chunk) => process.stdout.write(`[build] ${chunk}`))
+      build.stderr.on("data", (chunk) => process.stderr.write(`[build] ${chunk}`))
+      build.on("error", (error) => {
+        clearTimeout(timeout)
+        reject(error)
+      })
+      build.on("close", (code) => {
+        clearTimeout(timeout)
+        if (code === 0) resolve()
+        else reject(new Error(`next build falló con exit code ${code}`))
+      })
+    })
+  })
+
+  if (!hasProductionBuildArtifacts()) {
+    throw new Error("next build terminó pero no se encontró .next/BUILD_ID ni .next/standalone/server.js")
+  }
+}
+
 async function ensureDatabaseExists(databaseUrl: string) {
   const databaseName = getDatabaseNameFromUrl(databaseUrl)
   const maintenanceClient = postgres(getMaintenanceDatabaseUrl(databaseUrl), { max: 1 })
@@ -2134,11 +4003,56 @@ async function ensureDatabaseExists(databaseUrl: string) {
   }
 }
 
-async function startServer(captureDbUrl: string) {
+export type ServerLaunch = {
+  command: string
+  args: string[]
+}
+
+export type ServerLaunchInput = {
+  useStandalone: boolean
+  hasProductionBuild: boolean
+  standaloneServer: string
+  nextBin: string
+  nodeExecPath: string
+  /** Puerto propio de este servidor (3127, 3128...), nunca la base. */
+  serverPort: number
+}
+
+/**
+ * Decide cómo lanzar el servidor Next.js de la captura. Aislada y exportada
+ * para poder testearla: el bug histórico (dos `next dev` compitiendo por el
+ * mismo `.next`, chunks servidos como `text/plain` → 500 en rutas autenticadas)
+ * vivía en esta ramificación, y la rama `next start` usaba el puerto base en
+ * vez del puerto propio del servidor (C1/C2).
+ */
+export function resolveServerLaunch({
+  useStandalone,
+  hasProductionBuild,
+  standaloneServer,
+  nextBin,
+  nodeExecPath,
+  serverPort,
+}: ServerLaunchInput): ServerLaunch {
+  if (useStandalone) {
+    return { command: nodeExecPath, args: [standaloneServer] }
+  }
+  if (hasProductionBuild) {
+    return { command: nextBin, args: ["start", "--hostname", "127.0.0.1", "--port", String(serverPort)] }
+  }
+  return { command: nextBin, args: ["dev", "--hostname", "127.0.0.1", "--port", String(serverPort)] }
+}
+
+/**
+ * Entorno compartido entre el build on-demand y los servidores de captura:
+ * apunta la BD al fixture de captura, fija los secretos de auth y deja el
+ * correo desactivado. Un solo punto de definición evita que build y servidores
+ * diverjan en variables (p. ej. agregar una var a uno y olvidar la otra).
+ */
+function buildCaptureEnv(captureDbUrl: string, serverBaseUrl?: string): NodeJS.Dict<string> {
   const captureUrl = new URL(captureDbUrl)
   const socketHost = captureUrl.hostname ? undefined : (process.env.PGHOST ?? "/var/run/postgresql")
-  const env = {
-    ...process.env,
+  return {
+    ...(process.env as Record<string, string>),
     DATABASE_URL: captureDbUrl,
     ...(socketHost ? {
       PGHOST: socketHost,
@@ -2146,10 +4060,12 @@ async function startServer(captureDbUrl: string) {
     } : {}),
     AUTH_SECRET: authSecret,
     NEXTAUTH_SECRET: authSecret,
-    AUTH_URL: baseUrl,
-    APP_URL: baseUrl,
-    NEXTAUTH_URL: baseUrl,
-    PORT: String(port),
+    ...(serverBaseUrl ? {
+      AUTH_URL: serverBaseUrl,
+      APP_URL: serverBaseUrl,
+      NEXTAUTH_URL: serverBaseUrl,
+      PORT: serverBaseUrl.slice(serverBaseUrl.lastIndexOf(":") + 1),
+    } : {}),
     SMTP_HOST: "",
     SMTP_USER: "",
     SMTP_PASS: "",
@@ -2157,6 +4073,11 @@ async function startServer(captureDbUrl: string) {
     SMTP_DISABLED: "true",
     SMTP_TIMEOUT_MS: "1000",
   }
+}
+
+async function startServer(captureDbUrl: string, serverPort: number = port) {
+  const serverBaseUrl = `http://127.0.0.1:${serverPort}`
+  const env = buildCaptureEnv(captureDbUrl, serverBaseUrl)
   const standaloneServer = path.join(root, ".next", "standalone", "server.js")
   const hasProductionBuild = fs.existsSync(path.join(root, ".next", "BUILD_ID"))
   const useStandalone = fs.existsSync(standaloneServer)
@@ -2168,26 +4089,28 @@ async function startServer(captureDbUrl: string) {
     }
     fs.cpSync(path.join(root, "public"), path.join(root, ".next", "standalone", "public"), { recursive: true, force: true })
   }
-  const command = useStandalone ? process.execPath : path.join(root, "node_modules", ".bin", "next")
-  const args = useStandalone
-    ? [standaloneServer]
-    : hasProductionBuild
-      ? ["start", "--hostname", "127.0.0.1", "--port", String(port)]
-      : ["dev", "--hostname", "127.0.0.1", "--port", String(port)]
+  const { command, args } = resolveServerLaunch({
+    useStandalone,
+    hasProductionBuild,
+    standaloneServer,
+    nextBin: path.join(root, "node_modules", ".bin", "next"),
+    nodeExecPath: process.execPath,
+    serverPort,
+  })
   const server = spawn(command, args, {
     cwd: root,
-    env,
+    env: env as NodeJS.ProcessEnv,
     stdio: ["ignore", "pipe", "pipe"],
   })
 
   server.stdout.on("data", (chunk) => process.stdout.write(`[next] ${chunk}`))
   server.stderr.on("data", (chunk) => process.stderr.write(`[next] ${chunk}`))
 
-  await waitForServer(server)
-  return server
+  await waitForServer(server, serverBaseUrl)
+  return { server, serverBaseUrl }
 }
 
-async function waitForServer(server: ChildProcess) {
+async function waitForServer(server: ChildProcess, serverBaseUrl: string = baseUrl) {
   const deadline = Date.now() + 120_000
   let lastError = ""
   while (Date.now() < deadline) {
@@ -2195,7 +4118,7 @@ async function waitForServer(server: ChildProcess) {
       throw new Error(`Next server exited early with code ${server.exitCode}`)
     }
     try {
-      const response = await fetch(`${baseUrl}/login`, { redirect: "manual" })
+      const response = await fetch(`${serverBaseUrl}/login`, { redirect: "manual" })
       if (response.status < 500) return
       lastError = `HTTP ${response.status}`
     } catch (error) {
@@ -2221,9 +4144,9 @@ async function stopServer(server: ChildProcess) {
   })
 }
 
-async function login(context: BrowserContext) {
+async function login(context: BrowserContext, serverBaseUrl: string = baseUrl) {
   const page = await context.newPage()
-  const loginUrl = `${baseUrl}/login`
+  const loginUrl = `${serverBaseUrl}/login`
 
   // Retry the full login flow (goto → fill → submit → wait for redirect)
   // up to 3 times. The server may be slow after a cold start or DB migration,
@@ -2256,6 +4179,81 @@ async function login(context: BrowserContext) {
   throw new Error("Login failed after 3 attempts")
 }
 
+type InteractionReset = {
+  status: number | null
+  finalUrl: string
+  state: CaptureState
+  ok: boolean
+}
+
+/** Every interactive artifact starts from the declared route, never from a prior control. */
+async function resetRouteForInteraction(page: Page, route: RouteTarget, requestedUrl: string): Promise<InteractionReset> {
+  const response = await page.goto(requestedUrl, { waitUntil: "domcontentloaded", timeout: 45_000 })
+  await settle(page)
+  const status = response?.status() ?? null
+  const finalUrl = page.url()
+  const state = resolveCaptureState(route, status, finalUrl)
+  return { status, finalUrl, state, ok: isExpectedStatus(status, route) && isSuccessfulCaptureState(state) }
+}
+
+function recordInvalidInteraction(
+  results: CaptureResult[],
+  {
+    viewport,
+    route,
+    requestedUrl,
+    finalUrl,
+    status,
+    type,
+    selector,
+    error,
+  }: {
+    viewport: string
+    route: RouteTarget
+    requestedUrl: string
+    finalUrl: string
+    status: number | null
+    type: NonNullable<CaptureResult["type"]>
+    selector: string
+    error: string
+  },
+) {
+  results.push({
+    viewport,
+    slug: `${route.slug}-${type}-invalid`,
+    path: route.path,
+    requestedUrl,
+    finalUrl,
+    status,
+    ok: false,
+    state: "capture-invalid",
+    type,
+    selector,
+    screenshot: "",
+    error,
+  })
+}
+
+/**
+ * ¿Este trigger es el mismo elemento que el trigger de un modal declarado en la
+ * ruta? Un modal declarado y el auto-discovery pueden apuntar al mismo botón con
+ * slugs distintos (auditoría §3.2, caso 4): comparar por identidad de elemento
+ * evita capturar dos veces el mismo diálogo con el mismo hash.
+ */
+async function isDeclaredModalTrigger(page: Page, route: RouteTarget, trigger: Locator): Promise<boolean> {
+  if (!route.modals?.length) return false
+  const handle = await trigger.elementHandle().catch(() => null)
+  if (!handle) return false
+  for (const modal of route.modals) {
+    const declared = page.locator(modal.triggerSelector).first()
+    const isSame = await declared
+      .evaluate((el, target) => el === target, handle)
+      .catch(() => false)
+    if (isSame) return true
+  }
+  return false
+}
+
 async function captureModalsForRoute(
   page: Page,
   viewport: string,
@@ -2267,12 +4265,31 @@ async function captureModalsForRoute(
   if (route.modals && route.modals.length > 0) {
     for (const modal of route.modals) {
       try {
+        const reset = await resetRouteForInteraction(page, route, requestedUrl)
+        if (!reset.ok) {
+          recordInvalidInteraction(results, {
+            viewport, route, requestedUrl, finalUrl: reset.finalUrl, status: reset.status,
+            type: "modal", selector: modal.triggerSelector,
+            error: `La ruta base no coincide con su allowlist: ${getAllowedCapturePaths(route).join(", ")}`,
+          })
+          return
+        }
         const trigger = page.locator(modal.triggerSelector).first()
         if (await trigger.isVisible({ timeout: 2000 }).catch(() => false)) {
           await trigger.click({ force: true })
           const modalSelector = modal.waitForSelector ?? '[role="dialog"], [role="alertdialog"], [data-state="open"], [data-radix-portal]'
           await page.waitForSelector(modalSelector, { state: "visible", timeout: 4000 }).catch(() => undefined)
-          await page.waitForTimeout(400)
+          await page.waitForTimeout(100)
+
+          const state = resolveCaptureState(route, reset.status, page.url(), "interaction")
+          if (!isSuccessfulCaptureState(state)) {
+            recordInvalidInteraction(results, {
+              viewport, route, requestedUrl, finalUrl: page.url(), status: reset.status,
+              type: "modal", selector: modal.triggerSelector,
+              error: `La interacción abandonó la ruta declarada. Pathnames permitidos: ${getAllowedCapturePaths(route).join(", ")}`,
+            })
+            return
+          }
 
           const modalScreenshot = path.join(outputDir, `${viewport}-${route.slug}-modal-${modal.slug}.png`)
           await page.screenshot({ path: modalScreenshot, fullPage: true })
@@ -2283,19 +4300,27 @@ async function captureModalsForRoute(
             path: route.path,
             requestedUrl,
             finalUrl: page.url(),
-            status,
+            status: reset.status,
             ok: true,
+            state,
             type: "modal",
             screenshot: path.relative(root, modalScreenshot),
+            screenshotHash: screenshotHash(modalScreenshot),
+            selector: modal.triggerSelector,
             notes: modal.notes ?? `Modal/Sheet: ${modal.slug}`,
           })
 
           await page.keyboard.press("Escape").catch(() => undefined)
-          await page.waitForTimeout(300)
+          await page.waitForTimeout(100)
         }
       } catch (modalErr) {
         const reason = modalErr instanceof Error ? modalErr.message : String(modalErr)
         console.warn(`  ⚠ modal "${modal.slug}" en ${viewport} ${route.slug}: ${reason}`)
+        recordInvalidInteraction(results, {
+          viewport, route, requestedUrl, finalUrl: page.url(), status,
+          type: "modal", selector: modal.triggerSelector, error: reason,
+        })
+        return
       }
     }
   }
@@ -2326,21 +4351,86 @@ async function captureModalsForRoute(
     ].join(", "))
     const count = await triggers.count().catch(() => 0)
     const maxDynamic = Math.min(count, 5)
+    const usedModalSlugs = new Set<string>()
 
     for (let i = 0; i < maxDynamic; i++) {
+      const reset = await resetRouteForInteraction(page, route, requestedUrl)
+      if (!reset.ok) {
+        recordInvalidInteraction(results, {
+          viewport, route, requestedUrl, finalUrl: reset.finalUrl, status: reset.status,
+          type: "modal", selector: `dynamic-modal-${i}`,
+          error: `La ruta base no coincide con su allowlist: ${getAllowedCapturePaths(route).join(", ")}`,
+        })
+        return
+      }
       const trigger = triggers.nth(i)
       if (!(await trigger.isVisible({ timeout: 1000 }).catch(() => false))) continue
       const text = (await trigger.textContent().catch(() => ""))?.trim() || `trigger-${i}`
-      const cleanSlug = text.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 30)
+      const baseSlug = text.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 30)
 
-      if (route.modals?.some((m) => m.slug === cleanSlug)) continue
+      // Dedup por identidad de elemento, no por slug: un modal declarado puede
+      // usar un slug distinto al que deriva del texto del botón (p. ej. modal
+      // "nuevo-estado" cuyo trigger `button:has-text("Nuevo")` abre el botón
+      // "Nuevo resumen") y entonces el dedup por slug no basta — ambos barridos
+      // capturaban el mismo diálogo con el mismo hash (auditoría §3.2, caso 4).
+      if (await isDeclaredModalTrigger(page, route, trigger)) continue
+      if (route.modals?.some((m) => m.slug === baseSlug)) continue
+      const cleanSlug = uniqueInteractionSlug(usedModalSlugs, baseSlug)
 
+      /*
+       * El selector anterior incluía `[data-state="open"]` y
+       * `[data-radix-portal]`, que coinciden con cosas que **ya estaban
+       * abiertas** en la página —un acordeón, cualquier contenedor de portal—.
+       * `waitForSelector` resolvía al instante sin que se hubiera abierto nada,
+       * y la captura resultante era la página tal cual: dos PNG con el mismo
+       * hash y una evidencia de modal que no mostraba ningún modal.
+       *
+       * Ahora la condición es un aumento real en el número de diálogos
+       * visibles. No depende de lo amplio que sea el selector: si tras el clic
+       * no hay un diálogo más que antes, no se abrió nada y no hay evidencia
+       * que guardar.
+       */
+      const dialogosAntes = await page
+        .locator('[role="dialog"]:visible, [role="alertdialog"]:visible')
+        .count()
       await trigger.click({ force: true }).catch(() => undefined)
-      const modalSelector = '[role="dialog"], [role="alertdialog"], [data-state="open"], [data-radix-portal]'
-      const opened = await page.waitForSelector(modalSelector, { state: "visible", timeout: 2500 }).catch(() => null)
+      const opened = await page
+        .waitForFunction(
+          (previos) => {
+            // Radix deja el diálogo en el DOM con `data-state="closed"`: contar
+            // nodos no basta, hay que contar los que realmente se ven.
+            const visibles = [...document.querySelectorAll('[role="dialog"], [role="alertdialog"]')]
+              .filter((el) => (el as HTMLElement).offsetParent !== null || getComputedStyle(el).position === "fixed")
+              .filter((el) => getComputedStyle(el).visibility !== "hidden" && getComputedStyle(el).display !== "none")
+            return visibles.length > previos
+          },
+          dialogosAntes,
+          { timeout: 2500 },
+        )
+        .then(() => true)
+        .catch(() => false)
 
       if (opened) {
-        await page.waitForTimeout(400)
+        /*
+         * 100 ms no siempre alcanzan: el diálogo ya está en el árbol y visible,
+         * pero su animación de entrada aún no terminó, así que la captura sale
+         * con el overlay a opacidad cero — un PNG idéntico a la página sin
+         * modal. Apareció como duplicado intermitente en la corrida completa y
+         * no en la del módulo aislado, que es la firma de una carrera. En vez
+         * de subir el tiempo a ojo, se espera a que el navegador declare
+         * terminadas sus animaciones.
+         */
+        await settleAnimations(page)
+        await page.waitForTimeout(100)
+        const state = resolveCaptureState(route, reset.status, page.url(), "interaction")
+        if (!isSuccessfulCaptureState(state)) {
+          recordInvalidInteraction(results, {
+            viewport, route, requestedUrl, finalUrl: page.url(), status: reset.status,
+            type: "modal", selector: "dynamic-modal",
+            error: `La interacción abandonó la ruta declarada. Pathnames permitidos: ${getAllowedCapturePaths(route).join(", ")}`,
+          })
+          return
+        }
         const modalScreenshot = path.join(outputDir, `${viewport}-${route.slug}-modal-auto-${cleanSlug}.png`)
         await page.screenshot({ path: modalScreenshot, fullPage: true })
 
@@ -2350,20 +4440,42 @@ async function captureModalsForRoute(
           path: route.path,
           requestedUrl,
           finalUrl: page.url(),
-          status,
+          status: reset.status,
           ok: true,
+          state,
           type: "modal",
           screenshot: path.relative(root, modalScreenshot),
+          screenshotHash: screenshotHash(modalScreenshot),
+          selector: "dynamic-modal",
           notes: `Modal automático: ${text}`,
         })
 
         await page.keyboard.press("Escape").catch(() => undefined)
-        await page.waitForTimeout(300)
+        await page.waitForTimeout(100)
       }
     }
   } catch {
     // Dynamic modal scan fallback
   }
+}
+
+/**
+ * Dos disparadores (o pestañas) con el mismo texto visible generaban el mismo
+ * nombre de archivo: el segundo pisaba al primero y ambos resultados apuntaban
+ * a una sola imagen. El sufijo mantiene una captura por interacción real.
+ */
+function isDeclaredElsewhere(route: RouteTarget, url: string): boolean {
+  const parsed = new URL(url, baseUrl)
+  const current = `${parsed.pathname}${parsed.search}`
+  return getCaptureRoutes().some((other) => other.slug !== route.slug && other.path === current)
+}
+
+function uniqueInteractionSlug(used: Set<string>, base: string): string {
+  let slug = base
+  let n = 2
+  while (used.has(slug)) slug = `${base}-${n++}`
+  used.add(slug)
+  return slug
 }
 
 async function captureTabsForRoute(
@@ -2375,18 +4487,50 @@ async function captureTabsForRoute(
   results: CaptureResult[]
 ) {
   try {
+    // Una ruta que ya declara su pestaña en la query (`?tab=facturacion`) es la
+    // evidencia de esa pestaña. Volver a barrer todas desde ella multiplica el
+    // mismo conjunto de vistas por cada ruta declarada y no agrega evidencia.
+    if (new URL(route.path, baseUrl).searchParams.has("tab")) return
     const tabs = page.locator('[role="tab"], button[data-state="inactive"]')
     const count = await tabs.count().catch(() => 0)
     const maxTabs = Math.min(count, 5)
+    const usedTabSlugs = new Set<string>()
 
     for (let i = 0; i < maxTabs; i++) {
+      const reset = await resetRouteForInteraction(page, route, requestedUrl)
+      if (!reset.ok) {
+        recordInvalidInteraction(results, {
+          viewport, route, requestedUrl, finalUrl: reset.finalUrl, status: reset.status,
+          type: "tab", selector: `[role="tab"]:nth(${i})`,
+          error: `La ruta base no coincide con su allowlist: ${getAllowedCapturePaths(route).join(", ")}`,
+        })
+        return
+      }
       const tab = tabs.nth(i)
       if (!(await tab.isVisible({ timeout: 1000 }).catch(() => false))) continue
+      // La pestaña ya activa es la vista que acaba de capturarse: repetirla
+      // produce dos archivos idénticos y una cobertura nominal inflada.
+      if ((await tab.getAttribute("data-state").catch(() => null)) === "active") continue
+      if ((await tab.getAttribute("aria-selected").catch(() => null)) === "true") continue
       const text = (await tab.textContent().catch(() => ""))?.trim() || `tab-${i}`
-      const cleanSlug = text.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 30)
+      const cleanSlug = uniqueInteractionSlug(usedTabSlugs, text.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 30))
 
       await tab.click({ force: true }).catch(() => undefined)
       await settle(page)
+
+      const state = resolveCaptureState(route, reset.status, page.url(), "interaction")
+      if (!isSuccessfulCaptureState(state)) {
+        recordInvalidInteraction(results, {
+          viewport, route, requestedUrl, finalUrl: page.url(), status: reset.status,
+          type: "tab", selector: `[role="tab"]:nth(${i})`,
+          error: `La interacción abandonó la ruta declarada. Pathnames permitidos: ${getAllowedCapturePaths(route).join(", ")}`,
+        })
+        return
+      }
+
+      // Si la pestaña deja la URL de otra ruta ya declarada, esa ruta es la
+      // evidencia canónica: capturar aquí produce el mismo PNG dos veces.
+      if (isDeclaredElsewhere(route, page.url())) continue
 
       const tabScreenshot = path.join(outputDir, `${viewport}-${route.slug}-tab-${cleanSlug}.png`)
       await page.screenshot({ path: tabScreenshot, fullPage: true })
@@ -2397,10 +4541,13 @@ async function captureTabsForRoute(
         path: route.path,
         requestedUrl,
         finalUrl: page.url(),
-        status,
+        status: reset.status,
         ok: true,
+        state,
         type: "tab",
         screenshot: path.relative(root, tabScreenshot),
+        screenshotHash: screenshotHash(tabScreenshot),
+        selector: `[role="tab"]:nth(${i})`,
         notes: `Pestaña React State: ${text}`,
       })
     }
@@ -2418,11 +4565,24 @@ async function captureSelectsForRoute(
   results: CaptureResult[]
 ) {
   try {
-    const triggers = page.locator('[role="combobox"], [aria-haspopup="listbox"], [aria-haspopup="menu"], button[id*="select"]')
+    // El selector NO incluye `[aria-haspopup="menu"]`: un DropdownMenu de Radix
+    // satisface a la vez ese atributo y `data-radix-dropdown-menu-trigger`, así
+    // que el mismo control se capturaba como select-* y dropdown-* con el mismo
+    // hash (auditoría §3.2, casos Columnas / Más acciones / Abrir menú).
+    const triggers = page.locator('[role="combobox"], [aria-haspopup="listbox"], button[id*="select"]')
     const count = await triggers.count().catch(() => 0)
-    const maxSelects = Math.min(count, 3)
+    const maxSelects = Math.min(count, 2)
 
     for (let i = 0; i < maxSelects; i++) {
+      const reset = await resetRouteForInteraction(page, route, requestedUrl)
+      if (!reset.ok) {
+        recordInvalidInteraction(results, {
+          viewport, route, requestedUrl, finalUrl: reset.finalUrl, status: reset.status,
+          type: "select", selector: "[role=combobox]",
+          error: `La ruta base no coincide con su allowlist: ${getAllowedCapturePaths(route).join(", ")}`,
+        })
+        return
+      }
       const trigger = triggers.nth(i)
       if (!(await trigger.isVisible({ timeout: 1000 }).catch(() => false))) continue
       const label = (await trigger.getAttribute("aria-label").catch(() => "")) || (await trigger.textContent().catch(() => "")) || `select-${i}`
@@ -2433,7 +4593,26 @@ async function captureSelectsForRoute(
       const opened = await page.waitForSelector(menuSelector, { state: "visible", timeout: 2000 }).catch(() => null)
 
       if (opened) {
-        await page.waitForTimeout(300)
+        /*
+         * 100 ms no siempre alcanzan: el diálogo ya está en el árbol y visible,
+         * pero su animación de entrada aún no terminó, así que la captura sale
+         * con el overlay a opacidad cero — un PNG idéntico a la página sin
+         * modal. Apareció como duplicado intermitente en la corrida completa y
+         * no en la del módulo aislado, que es la firma de una carrera. En vez
+         * de subir el tiempo a ojo, se espera a que el navegador declare
+         * terminadas sus animaciones.
+         */
+        await settleAnimations(page)
+        await page.waitForTimeout(100)
+        const state = resolveCaptureState(route, reset.status, page.url(), "interaction")
+        if (!isSuccessfulCaptureState(state)) {
+          recordInvalidInteraction(results, {
+            viewport, route, requestedUrl, finalUrl: page.url(), status: reset.status,
+            type: "select", selector: "[role=combobox]",
+            error: `La interacción abandonó la ruta declarada. Pathnames permitidos: ${getAllowedCapturePaths(route).join(", ")}`,
+          })
+          return
+        }
         const selectScreenshot = path.join(outputDir, `${viewport}-${route.slug}-select-${cleanSlug}.png`)
         await page.screenshot({ path: selectScreenshot, fullPage: true })
 
@@ -2443,15 +4622,18 @@ async function captureSelectsForRoute(
           path: route.path,
           requestedUrl,
           finalUrl: page.url(),
-          status,
+          status: reset.status,
           ok: true,
+          state,
           type: "select",
           screenshot: path.relative(root, selectScreenshot),
+          screenshotHash: screenshotHash(selectScreenshot),
+          selector: "[role=combobox]",
           notes: `Desplegable / Select: ${label}`,
         })
 
         await page.keyboard.press("Escape").catch(() => undefined)
-        await page.waitForTimeout(200)
+        await page.waitForTimeout(100)
       }
     }
   } catch {
@@ -2474,16 +4656,35 @@ async function captureTooltipsForRoute(
     // inyecta aria-describedby apuntando al contenido del tooltip.
     const tooltipTriggers = page.locator('[data-radix-tooltip-trigger], [data-state][aria-describedby]')
     const count = await tooltipTriggers.count().catch(() => 0)
-    const maxHover = Math.min(count, 3)
+    const maxHover = Math.min(count, 2)
 
     for (let i = 0; i < maxHover; i++) {
+      const reset = await resetRouteForInteraction(page, route, requestedUrl)
+      if (!reset.ok) {
+        recordInvalidInteraction(results, {
+          viewport, route, requestedUrl, finalUrl: reset.finalUrl, status: reset.status,
+          type: "hover", selector: "[data-radix-tooltip-trigger]",
+          error: `La ruta base no coincide con su allowlist: ${getAllowedCapturePaths(route).join(", ")}`,
+        })
+        return
+      }
       const el = tooltipTriggers.nth(i)
       if (!(await el.isVisible({ timeout: 1000 }).catch(() => false))) continue
       const label = (await el.getAttribute("title").catch(() => "")) || (await el.textContent().catch(() => "")) || `hover-${i}`
       const cleanSlug = label.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 25)
 
       await el.hover().catch(() => undefined)
-      await page.waitForTimeout(350)
+      await page.waitForTimeout(150)
+
+      const state = resolveCaptureState(route, reset.status, page.url(), "interaction")
+      if (!isSuccessfulCaptureState(state)) {
+        recordInvalidInteraction(results, {
+          viewport, route, requestedUrl, finalUrl: page.url(), status: reset.status,
+          type: "hover", selector: "[data-radix-tooltip-trigger]",
+          error: `La interacción abandonó la ruta declarada. Pathnames permitidos: ${getAllowedCapturePaths(route).join(", ")}`,
+        })
+        return
+      }
 
       const hoverScreenshot = path.join(outputDir, `${viewport}-${route.slug}-hover-${cleanSlug}.png`)
       await page.screenshot({ path: hoverScreenshot, fullPage: true })
@@ -2494,10 +4695,13 @@ async function captureTooltipsForRoute(
         path: route.path,
         requestedUrl,
         finalUrl: page.url(),
-        status,
+        status: reset.status,
         ok: true,
+        state,
         type: "hover",
         screenshot: path.relative(root, hoverScreenshot),
+        screenshotHash: screenshotHash(hoverScreenshot),
+        selector: "[data-radix-tooltip-trigger]",
         notes: `Estado Hover / Tooltip: ${label}`,
       })
       await page.mouse.move(0, 0).catch(() => undefined)
@@ -2526,13 +4730,26 @@ async function captureDropdownMenusForRoute(
   results: CaptureResult[]
 ) {
   try {
+    // Excluye lo que el barrido de select ya cubrió ([role=combobox] y
+    // aria-haspopup="listbox"): un control con ambos atributos se capturaba dos
+    // veces con el mismo hash (auditoría §3.2, misma causa que la nota del scan
+    // de select).
     const triggers = page.locator(
-      '[data-radix-dropdown-menu-trigger], [data-state="closed"][aria-haspopup="menu"]'
+      '[data-radix-dropdown-menu-trigger]:not([role="combobox"]):not([aria-haspopup="listbox"]), [data-state="closed"][aria-haspopup="menu"]:not([role="combobox"]):not([aria-haspopup="listbox"]):not(button[id*="select"])'
     )
     const count = await triggers.count().catch(() => 0)
-    const maxMenus = Math.min(count, 3)
+    const maxMenus = Math.min(count, 2)
 
     for (let i = 0; i < maxMenus; i++) {
+      const reset = await resetRouteForInteraction(page, route, requestedUrl)
+      if (!reset.ok) {
+        recordInvalidInteraction(results, {
+          viewport, route, requestedUrl, finalUrl: reset.finalUrl, status: reset.status,
+          type: "dropdown", selector: "[data-radix-dropdown-menu-trigger]",
+          error: `La ruta base no coincide con su allowlist: ${getAllowedCapturePaths(route).join(", ")}`,
+        })
+        return
+      }
       const trigger = triggers.nth(i)
       if (!(await trigger.isVisible({ timeout: 1000 }).catch(() => false))) continue
       const label =
@@ -2552,7 +4769,26 @@ async function captureDropdownMenusForRoute(
         .catch(() => null)
 
       if (opened) {
-        await page.waitForTimeout(300)
+        /*
+         * 100 ms no siempre alcanzan: el diálogo ya está en el árbol y visible,
+         * pero su animación de entrada aún no terminó, así que la captura sale
+         * con el overlay a opacidad cero — un PNG idéntico a la página sin
+         * modal. Apareció como duplicado intermitente en la corrida completa y
+         * no en la del módulo aislado, que es la firma de una carrera. En vez
+         * de subir el tiempo a ojo, se espera a que el navegador declare
+         * terminadas sus animaciones.
+         */
+        await settleAnimations(page)
+        await page.waitForTimeout(100)
+        const state = resolveCaptureState(route, reset.status, page.url(), "interaction")
+        if (!isSuccessfulCaptureState(state)) {
+          recordInvalidInteraction(results, {
+            viewport, route, requestedUrl, finalUrl: page.url(), status: reset.status,
+            type: "dropdown", selector: "[data-radix-dropdown-menu-trigger]",
+            error: `La interacción abandonó la ruta declarada. Pathnames permitidos: ${getAllowedCapturePaths(route).join(", ")}`,
+          })
+          return
+        }
         const menuScreenshot = path.join(
           outputDir,
           `${viewport}-${route.slug}-dropdown-${cleanSlug}.png`
@@ -2565,15 +4801,18 @@ async function captureDropdownMenusForRoute(
           path: route.path,
           requestedUrl,
           finalUrl: page.url(),
-          status,
+          status: reset.status,
           ok: true,
+          state,
           type: "dropdown",
           screenshot: path.relative(root, menuScreenshot),
+          screenshotHash: screenshotHash(menuScreenshot),
+          selector: "[data-radix-dropdown-menu-trigger]",
           notes: `Menú contextual: ${label}`,
         })
 
         await page.keyboard.press("Escape").catch(() => undefined)
-        await page.waitForTimeout(200)
+        await page.waitForTimeout(100)
       }
     }
   } catch {
@@ -2581,8 +4820,8 @@ async function captureDropdownMenusForRoute(
   }
 }
 
-async function captureRoute(context: BrowserContext, viewport: string, route: RouteTarget): Promise<CaptureResult[]> {
-  const requestedUrl = `${baseUrl}${route.path}`
+async function captureRoute(context: BrowserContext, viewport: string, route: RouteTarget, serverBaseUrl: string = baseUrl): Promise<CaptureResult[]> {
+  const requestedUrl = `${serverBaseUrl}${route.path}`
   const screenshot = path.join(outputDir, `${viewport}-${route.slug}.png`)
   const relativeScreenshot = path.relative(root, screenshot)
   const results: CaptureResult[] = []
@@ -2606,10 +4845,14 @@ async function captureRoute(context: BrowserContext, viewport: string, route: Ro
     try {
       const response = await page.goto(requestedUrl, { waitUntil: "domcontentloaded", timeout: 45_000 })
       await settle(page)
-      await page.screenshot({ path: screenshot, fullPage: true })
       const status = response?.status() ?? null
       const finalUrl = page.url()
-      const mainOk = isExpectedStatus(status, route, finalUrl)
+      const state = resolveCaptureState(route, status, finalUrl)
+      const mainOk = isExpectedStatus(status, route) && isSuccessfulCaptureState(state)
+      const shouldCaptureView = route.captureView !== false
+      if (shouldCaptureView) {
+        await page.screenshot({ path: screenshot, fullPage: true })
+      }
 
       // A-7: detección de scroll horizontal (WCAG 1.4.10 Reflow). La auditoría
       // 2026-07-24 encontró /prevencion/evaluaciones a 676px en un viewport de
@@ -2673,12 +4916,21 @@ async function captureRoute(context: BrowserContext, viewport: string, route: Ro
         finalUrl,
         status,
         ok: mainOk,
+        state,
         type: "view",
-        screenshot: relativeScreenshot,
+        screenshot: shouldCaptureView ? relativeScreenshot : "",
+        screenshotHash: shouldCaptureView ? screenshotHash(screenshot) : undefined,
+        error: mainOk
+          ? undefined
+          : state === "capture-invalid"
+            ? `URL final no declarada. Permitidas: ${getAllowedCapturePaths(route).join(", ")}`
+            : `Estado HTTP inesperado: ${status ?? "sin respuesta"}`,
         notes: route.notes,
       })
 
-      if (mainOk) {
+      // Una ruta inexistente no tiene interacción propia: barrer sus modales y
+      // pestañas sólo produce capturas del chrome compartido, iguales entre sí.
+      if (mainOk && shouldCaptureView && route.expectedStatus !== 404) {
         if (captureMode === "modals" || captureMode === "full") {
           await captureModalsForRoute(page, viewport, route, requestedUrl, status, results)
         }
@@ -2714,6 +4966,7 @@ async function captureRoute(context: BrowserContext, viewport: string, route: Ro
         finalUrl: requestedUrl,
         status: null,
         ok: false,
+        state: "capture-invalid",
         screenshot: relativeScreenshot,
         error: errorMsg,
         notes: route.notes,
@@ -2736,11 +4989,9 @@ async function settle(page: Page) {
   await page.waitForTimeout(300)
 }
 
-function isExpectedStatus(status: number | null, route: RouteTarget, finalUrl?: string) {
+function isExpectedStatus(status: number | null, route: RouteTarget) {
   if (route.expectedStatus !== undefined) {
-    if (status === route.expectedStatus) return true
-    if (route.expectedStatus === 404 && (status === 404 || status === 200 || finalUrl?.endsWith("/forbidden") || finalUrl?.includes("not-found"))) return true
-    return false
+    return status === route.expectedStatus
   }
   return !status || status < 400
 }

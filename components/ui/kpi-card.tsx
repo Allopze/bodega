@@ -38,7 +38,10 @@ export function KpiCard({
 }) {
   const hasSparkline = Array.isArray(sparkline) && sparkline.length >= 2
   const card = (
-    <Card className={cn(
+    // Ancla estable para el conteo automatizado que TASK-UI-006 exige como
+    // evidencia: el criterio es "máximo cuatro tiles por pantalla" y sin un
+    // selector fiable sólo podía comprobarse a ojo.
+    <Card data-kpi-card="" className={cn(
       "transition-all duration-(--duration-fast)",
       tone === "signal" && "ring-1 ring-[var(--color-signal-line)]",
       tone === "danger" && "ring-1 ring-[var(--color-danger-line)]",

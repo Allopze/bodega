@@ -4,7 +4,7 @@ import Link from "next/link"
 import { EmptyState } from "@/components/ui/empty-state"
 import { StockTable } from "./stock-table"
 import { KardexTable } from "./kardex-table"
-import { ArrowRight, Package, Warehouse, WarningCircle } from "@phosphor-icons/react/dist/ssr"
+import { ArrowRight, Package, Warehouse, WarningCircle, X } from "@phosphor-icons/react/dist/ssr"
 import type { WorksiteStockWithProduct, InventoryMovementWithRelations } from "./types"
 import { useSafeShellHeader } from "@/components/layout/header-context"
 import { filterStockItems, filterMovements } from "./filters"
@@ -16,18 +16,21 @@ interface WorksiteOption {
   name: string
 }
 
-export function StockSection({ worksites, stockByWorksite, initialWorksiteId, receivingHref, canExportStock }: {
+export function StockSection({ worksites, stockByWorksite, initialWorksiteId, receivingHref, canExportStock, lowStockOnly = false }: {
   worksites: WorksiteOption[]
   stockByWorksite: Record<string, WorksiteStockWithProduct[]>
   initialWorksiteId?: string
   receivingHref?: string
   canExportStock?: boolean
+  /** Sólo ítems bajo su mínimo definido — destino del KPI "Stock crítico". */
+  lowStockOnly?: boolean
 }) {
   const { searchQuery } = useSafeShellHeader()
+  const isLowStock = (item: WorksiteStockWithProduct) => item.minStock > 0 && item.quantity <= item.minStock
 
   const sortedWorksites = [...worksites].sort((a, b) => {
-    const aHasStock = (stockByWorksite[a.id] ?? []).some((item) => item.quantity > 0)
-    const bHasStock = (stockByWorksite[b.id] ?? []).some((item) => item.quantity > 0)
+    const aHasStock = (stockByWorksite[a.id] ?? []).some((item) => item.quantity > 0 && (!lowStockOnly || isLowStock(item)))
+    const bHasStock = (stockByWorksite[b.id] ?? []).some((item) => item.quantity > 0 && (!lowStockOnly || isLowStock(item)))
     if (a.id === initialWorksiteId) return -1
     if (b.id === initialWorksiteId) return 1
     if (aHasStock !== bHasStock) return aHasStock ? -1 : 1
@@ -35,9 +38,10 @@ export function StockSection({ worksites, stockByWorksite, initialWorksiteId, re
   })
   // Faenas that genuinely have stock — independent of the search query, so
   // the "Sin stock" footer below never mislabels a faena that has stock but
-  // didn't match the current search.
+  // didn't match the current search. With `lowStockOnly` the faena counts only
+  // when it has at least one item under its defined minimum.
   const worksitesWithAnyStock = sortedWorksites
-    .map((ws) => ({ ...ws, items: (stockByWorksite[ws.id] ?? []).filter((item) => item.quantity > 0) }))
+    .map((ws) => ({ ...ws, items: (stockByWorksite[ws.id] ?? []).filter((item) => item.quantity > 0 && (!lowStockOnly || isLowStock(item))) }))
     .filter((ws) => ws.items.length > 0)
   const worksitesWithoutStock = sortedWorksites.filter((ws) => !worksitesWithAnyStock.some((stocked) => stocked.id === ws.id))
   const worksitesWithStock = worksitesWithAnyStock
@@ -65,6 +69,17 @@ export function StockSection({ worksites, stockByWorksite, initialWorksiteId, re
             title="Sin coincidencias"
             description={`Ningún producto en stock coincide con "${searchQuery.trim()}".`}
           />
+        ) : lowStockOnly ? (
+          <EmptyState
+            icon={<Package size={24} />}
+            title="Nada bajo el mínimo"
+            description="No hay productos por debajo de su stock mínimo definido en las faenas visibles."
+            action={
+              <Link href="/bodega" className="inline-flex h-8 items-center justify-center gap-2 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 text-[13px] font-semibold text-white transition-[background-color,transform] duration-[var(--duration-fast)] ease-[var(--ease-out)] hover:bg-[var(--color-primary-strong)]">
+                Ver todo el stock
+              </Link>
+            }
+          />
         ) : (
           <EmptyState
             icon={<Package size={24} />}
@@ -87,6 +102,16 @@ export function StockSection({ worksites, stockByWorksite, initialWorksiteId, re
 
   return (
     <div className="space-y-4">
+      {lowStockOnly && (
+        <Link
+          href="/bodega"
+          className="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-signal-line)] bg-[var(--color-signal-tint)] px-3 py-1 text-xs font-semibold text-[var(--color-signal-ink)] transition-colors hover:bg-[var(--color-signal-line)]"
+        >
+          Sólo bajo mínimo
+          <X size={12} weight="bold" aria-hidden />
+          <span className="sr-only">Quitar filtro de stock crítico</span>
+        </Link>
+      )}
       <StockTable worksites={worksitesWithStock} canExport={canExportStock} />
 
       {worksitesWithoutStock.length > 0 && (

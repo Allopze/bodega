@@ -152,7 +152,8 @@ describe("EvaluationDetail", () => {
 
     it("renders evaluation date", () => {
       render(<EvaluationDetail {...defaultProps} />)
-      expect(screen.getByText(/Fecha:.*15\/06\/2026/)).toBeDefined()
+      // El contrato compartido de fecha usa guiones desde la pasada 29.
+      expect(screen.getByText(/Fecha:.*15-06-2026/)).toBeDefined()
     })
 
     it("shows 'Borrador' badge when estado is borrador", () => {

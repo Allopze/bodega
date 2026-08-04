@@ -1,10 +1,11 @@
 import { Suspense } from "react"
 import type { Session } from "next-auth"
 import {
-  Broom, Certificate, CheckSquare, ClipboardText, CurrencyDollar, FileText, Gauge, Package,
+  Broom, Certificate, ClipboardText, CurrencyDollar, FileText, Gauge, Package,
   ShieldWarning, Siren, Timer, Truck, WarningOctagon, Wrench,
 } from "@phosphor-icons/react/dist/ssr"
 import { KpiCard } from "@/components/ui/kpi-card"
+import { SummaryBar, type SummaryStat } from "@/components/ui/summary-bar"
 import type { WorksiteScope } from "@/lib/auth/scope"
 import { formatCLP } from "@/lib/utils"
 import { getAnalyticsDashboard } from "@/lib/services/analytics-module/dashboard"
@@ -36,6 +37,13 @@ import {
   ThresholdRankingChart, WorksiteActivityChart,
 } from "./dashboard-domain-charts"
 
+const CHILE_TODAY_FORMATTER = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "America/Santiago",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+})
+
 export interface DomainSectionsProps {
   session: Session
   scope: DashboardScope
@@ -60,7 +68,7 @@ function analyticsFilters(scope: DashboardScope) {
 }
 
 function todayInChile() {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Santiago", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date())
+  return CHILE_TODAY_FORMATTER.format(new Date())
 }
 
 /** Porcentaje entero, con 0 cuando no hay denominador (evita NaN en el gráfico). */
@@ -236,21 +244,24 @@ async function PreventionSection({ session, worksiteScope, worksiteIds, currentY
             detail={pdtpPercent === null ? "Sin programa activo" : `Avance acreditado · año ${currentYear}`} href="/prevencion/pdtp" />
           <KpiCard icon={<Siren size={16} />} label="Incidentes abiertos" value={String(incidents.totalOpen)}
             detail={incidents.fatalOrSerious > 0 ? `${incidents.fatalOrSerious} fatal(es) o grave(s) · ahora` : "Ninguno fatal ni grave, ahora"}
-            tone={incidents.fatalOrSerious > 0 ? "signal" : "neutral"} href="/prevencion/incidentes" />
+            tone={incidents.fatalOrSerious > 0 ? "signal" : "neutral"} href="/prevencion/incidentes?quick=open" />
           <KpiCard icon={<ShieldWarning size={16} />} label="CAPA vencidas" value={String(capa.overdue)}
-            detail={`${capa.open} abiertas en total · ahora`} tone={capa.overdue > 0 ? "signal" : "neutral"} href="/prevencion/capa" />
+            detail={`${capa.open} abiertas en total · ahora`} tone={capa.overdue > 0 ? "signal" : "neutral"} href="/prevencion/capa?vista=overdue" />
           {risk && (
             <KpiCard icon={<ShieldWarning size={16} />} label="Riesgos críticos sin control"
               value={String(risk.criticalBlockers.length)}
               detail={risk.criticalBlockers.length > 0 ? "Sin control verificado ni PDTP · ahora" : "Todos con control verificado"}
-              tone={risk.criticalBlockers.length > 0 ? "signal" : "neutral"} href="/prevencion/miper" />
+              tone={risk.criticalBlockers.length > 0 ? "signal" : "neutral"} href="/prevencion/miper#bloqueos" />
           )}
-          <KpiCard icon={<Gauge size={16} />} label="Cumplimiento legal"
-            value={legalCompliance === null ? "—" : `${legalCompliance}%`}
-            detail={applicableCount > 0 ? `${legalGaps} brechas de ${applicableCount} aplicables · ahora` : "Sin requisitos evaluados"}
-            href="/prevencion/requisitos-legales" />
         </>
       }
+      summary={<SummaryBar stats={[{
+        key: "legal-compliance",
+        label: "Cumplimiento legal",
+        value: legalCompliance === null ? "—" : `${legalCompliance}%`,
+        secondary: applicableCount > 0 ? `${legalGaps} brechas de ${applicableCount} aplicables · ahora` : "Sin requisitos evaluados",
+        href: "/prevencion/requisitos-legales",
+      }]} />}
       charts={
         <>
           {sstPoints.length > 0 && <SstTrendChart data={sstPoints} />}
@@ -352,12 +363,15 @@ async function FleetSection({ session, scope }: DomainSectionsProps) {
           <KpiCard icon={<Wrench size={16} />} label="Mantención vencida por uso" value={String(usageAlerts.length)}
             detail={usageAlerts.length > 0 ? `${usageAlerts[0]!.plate} lleva ${Math.round(usageAlerts[0]!.usageSinceLastMaintenance)} ${usageAlerts[0]!.medidoPor} · ahora` : "Ninguna pasada de intervalo"}
             tone={usageAlerts.length > 0 ? "signal" : "neutral"} href="/mantenciones" />
-          <KpiCard icon={<Wrench size={16} />} label="Brecha TAE vs. facturado"
-            value={fuelControl?.tae ? `${Math.abs(Math.round(fuelControl.tae.liters - fuelControl.billed.liters)).toLocaleString("es-CL")} L` : "—"}
-            detail={fuelControl?.tae ? `${fuelControl.tae.pendingReview} por revisar · ${periodo}` : "Sin control TAE"}
-            href="/combustibles/tae/conciliacion" />
         </>
       }
+      summary={<SummaryBar stats={[{
+        key: "tae-billed-gap",
+        label: "Brecha TAE vs. facturado",
+        value: fuelControl?.tae ? `${Math.abs(Math.round(fuelControl.tae.liters - fuelControl.billed.liters)).toLocaleString("es-CL")} L` : "—",
+        secondary: fuelControl?.tae ? `${fuelControl.tae.pendingReview} por revisar · ${periodo}` : "Sin control TAE",
+        href: "/combustibles/tae/conciliacion",
+      }]} />}
       charts={
         <>
           <FuelConsumptionChart data={fuelTrend} />
@@ -411,27 +425,18 @@ async function FieldControlSection({ session, scope }: DomainSectionsProps) {
           <KpiCard icon={<WarningOctagon size={16} />} label="Hallazgos críticos abiertos"
             value={String(field.criticalFindingsOpen)}
             detail={field.criticalFindingsOpen > 0 ? "Criticidad alta o crítica · ahora" : "Ninguno abierto, ahora"}
-            tone={field.criticalFindingsOpen > 0 ? "danger" : "neutral"} href="/prevencion/inspecciones" />
-          <KpiCard icon={<Certificate size={16} />} label="Permisos de trabajo activos"
-            value={String(field.permitsActive)}
-            detail={field.permitsSuspended > 0 ? `${field.permitsSuspended} suspendido(s) · ahora` : "Ninguno suspendido, ahora"}
-            tone={field.permitsSuspended > 0 ? "signal" : "neutral"} href="/prevencion/permisos" />
+            tone={field.criticalFindingsOpen > 0 ? "danger" : "neutral"} href="/prevencion/inspecciones?vista=critical" />
           <KpiCard icon={<Siren size={16} />} label="Simulacros por mejorar"
             value={String(field.drillsNeedingImprovement)}
             detail={drillTotal > 0 ? `De ${drillTotal} ejecutado(s) · ahora` : "Sin simulacros ejecutados"}
-            tone={field.drillsNeedingImprovement > 0 ? "signal" : "neutral"} href="/prevencion/emergencias" />
+            tone={field.drillsNeedingImprovement > 0 ? "signal" : "neutral"} href="/prevencion/emergencias?tab=drills&vista=needs_improvement" />
           <KpiCard icon={<ShieldWarning size={16} />} label="Mediciones sobre el límite"
             value={String(field.measurementsAboveLimit)}
             detail={field.measurementsAboveLimit > 0 ? "Exposición sobre el límite permisible · ahora" : "Ninguna sobre el límite"}
-            tone={field.measurementsAboveLimit > 0 ? "danger" : "neutral"} href="/prevencion/higiene" />
-          <KpiCard icon={<CheckSquare size={16} />} label="Acuerdos del comité abiertos"
-            value={String(field.committeeAgreementsOpen)}
-            detail="Sin cerrar ni derivar a CAPA · ahora" href="/prevencion/cphs" />
-          <KpiCard icon={<Wrench size={16} />} label="Gestión del cambio abierta"
-            value={String(field.changeRequestsOpen)}
-            detail="Cambios sin cerrar · ahora" href="/prevencion/gestion-cambio" />
+            tone={field.measurementsAboveLimit > 0 ? "danger" : "neutral"} href="/prevencion/higiene?tab=groups&vista=above_limit" />
         </>
       }
+      summary={<SummaryBar stats={fieldControlSummaryStats(field)} />}
       charts={
         permitTotal > 0 || drillTotal > 0 ? (
           <>
@@ -458,6 +463,36 @@ async function FieldControlSection({ session, scope }: DomainSectionsProps) {
       }
     />
   )
+}
+
+function fieldControlSummaryStats(field: Awaited<ReturnType<typeof getFieldControlSummary>>): SummaryStat[] {
+  return [
+    {
+      key: "permits-active",
+      // "Permisos" a secas es ambiguo en una sección que también habla de
+      // inspecciones, simulacros y mediciones: el dominio es permiso de trabajo.
+      label: "Permisos de trabajo activos",
+      value: field.permitsActive,
+      secondary: field.permitsSuspended > 0 ? `${field.permitsSuspended} suspendido(s) · ahora` : "Ninguno suspendido, ahora",
+      href: "/prevencion/permisos",
+    },
+    {
+      key: "committee-agreements",
+      label: "Acuerdos del comité abiertos",
+      value: field.committeeAgreementsOpen,
+      secondary: "Sin cerrar ni derivar a CAPA · ahora",
+      href: "/prevencion/cphs",
+      tone: "signal",
+    },
+    {
+      key: "change-open",
+      label: "Gestión del cambio abierta",
+      value: field.changeRequestsOpen,
+      secondary: "Cambios sin cerrar · ahora",
+      href: "/prevencion/gestion-cambio",
+      tone: "signal",
+    },
+  ]
 }
 
 // ── Cumplimiento y gobernanza ────────────────────────────────────────────────
@@ -493,7 +528,9 @@ async function GovernanceSection({ session, scope, worksiteScope, worksiteIds }:
           <KpiCard icon={<FileText size={16} />} label="Documentos por vencer"
             value={String(docs?.expiringSoon.within30 ?? 0)}
             detail={`${docs?.expiringSoon.within7 ?? 0} en 7 días · ${docs?.byStatus.vencido ?? 0} ya vencidos`}
-            tone={(docs?.expiringSoon.within7 ?? 0) > 0 ? "signal" : "neutral"} href="/prevencion/documentacion/vencimientos" />
+            // El indicador lleva a la lista ya acotada al mismo rango que cuenta:
+            // antes anunciaba una urgencia y dejaba al usuario buscándola a mano.
+            tone={(docs?.expiringSoon.within7 ?? 0) > 0 ? "signal" : "neutral"} href="/prevencion/documentacion?vence=30" />
           <KpiCard icon={<Certificate size={16} />} label="Acuses pendientes" value={String(docs?.ackPending ?? 0)}
             detail="Distribuciones sin firmar, ahora" href="/prevencion/documentacion" />
           <KpiCard icon={<ShieldWarning size={16} />} label="Brechas de competencia" value={String(blockingGaps)}

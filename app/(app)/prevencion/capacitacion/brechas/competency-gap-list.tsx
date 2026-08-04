@@ -5,6 +5,7 @@ import Link from "next/link"
 import { DataTable } from "@/components/admin/data-table"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { ResponsiveDataListCard, ResponsiveDataListField } from "@/components/ui/responsive-data-list"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { TableCell, TableRow } from "@/components/ui/table"
 import type { CompetencyGap } from "@/lib/prevention/training"
@@ -110,6 +111,23 @@ export function CompetencyGapList({ gaps, canEscalate }: Props) {
         emptyTitle={gaps.length === 0 ? "Sin brechas de competencia" : "No hay brechas con estos filtros"}
         emptyDescription={gaps.length === 0 ? "Toda la dotación activa alcanzada por un requisito vigente tiene su habilitación al día. Si esperabas ver brechas, revisa que existan requisitos de competencia declarados." : "Ajusta los filtros o el texto del buscador superior."}
         emptyAction={gaps.length === 0 ? <Button asChild variant="secondary"><Link href="/prevencion/capacitacion/competencias">Ver requisitos</Link></Button> : <Button type="button" variant="secondary" onClick={() => { setEnforcement("all"); setGapType("all") }}>Ver todas</Button>}
+        renderMobileCard={(row) => {
+          const gap = row as unknown as CompetencyGap
+          const workerHref = `/prevencion/capacitacion/competencias?workerId=${gap.workerId}`
+          return (
+            <ResponsiveDataListCard
+              title={<Link href={workerHref} className="hover:underline">{gap.workerName}</Link>}
+              description={gap.position ?? "Sin cargo"}
+              status={<Badge variant={gap.enforcement === "blocking" ? "danger" : "warning"}>{gap.enforcement === "blocking" ? "Bloqueante" : "Advertencia"}</Badge>}
+              actions={<Button asChild type="button" variant="ghost" size="sm"><Link href={workerHref}>Ver competencia</Link></Button>}
+            >
+              <ResponsiveDataListField label="Curso exigido">{gap.courseName}</ResponsiveDataListField>
+              <ResponsiveDataListField label="Tipo de brecha">{GAP_TYPE_LABELS[gap.gapType]}</ResponsiveDataListField>
+              <ResponsiveDataListField label="Venció">{gap.expiredAt ?? "—"}</ResponsiveDataListField>
+              <ResponsiveDataListField label="Fundamento">{gap.reason}</ResponsiveDataListField>
+            </ResponsiveDataListCard>
+          )
+        }}
         renderRow={(row) => {
           const gap = row as unknown as CompetencyGap
           return (

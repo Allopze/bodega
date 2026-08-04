@@ -103,6 +103,10 @@ export const OC_PRINT_STYLES = `
     color: #b91c1c;
   }
 
+  .mobile-document-summary {
+    display: none;
+  }
+
   .sheet {
     width: 210mm;
     padding: 12mm;
@@ -449,37 +453,52 @@ export const OC_PRINT_STYLES = `
 
   @media (max-width: 760px) {
     .print-toolbar,
-    .sheet {
+    .mobile-document-summary {
       width: calc(100vw - 24px);
     }
 
-    .sheet {
-      padding: 18px;
-      min-height: auto;
+    .print-toolbar {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      flex-wrap: wrap;
+      padding: 8px 0;
+      background: #e9eeeb;
     }
 
-    .doc-header,
-    .supplier-panel,
-    .summary-row {
-      grid-template-columns: 1fr;
+    .print-action {
+      min-height: 44px;
     }
 
-    .totals {
-      justify-self: stretch;
-      width: 100%;
-    }
+    .sheet { display: none; }
 
-    .doc-box {
-      justify-self: stretch;
+    .mobile-document-summary {
+      display: block;
+      margin: 16px auto 28px;
+      padding: 20px;
+      border: 1px solid #d8dfda;
+      border-radius: 14px;
+      background: #ffffff;
+      color: #232522;
     }
-
     .print-filename {
       display: none;
     }
 
     .print-error {
-      display: none;
+      margin: 0;
+      width: 100%;
     }
+    .mobile-document-summary-code { margin: 0; color: #647067; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; }
+    .mobile-document-summary h1 { margin: 4px 0 0; font-size: 24px; line-height: 1.15; }
+    .mobile-document-summary-description { margin: 8px 0 0; color: #45514a; font-size: 15px; }
+    .mobile-document-summary-notice { margin: 16px 0; padding: 10px 12px; border-radius: 8px; background: #f1f5f3; color: #45514a; font-size: 14px; line-height: 1.45; }
+    .mobile-document-summary-section { margin-top: 18px; }
+    .mobile-document-summary-section h2 { margin: 0 0 8px; font-size: 14px; color: #17422b; }
+    .mobile-document-summary-section dl { margin: 0; }
+    .mobile-document-summary-section dl > div { padding: 10px 0; border-top: 1px solid #e5ebe6; }
+    .mobile-document-summary-section dt { color: #647067; font-size: 12px; }
+    .mobile-document-summary-section dd { margin: 3px 0 0; font-size: 15px; font-weight: 600; }
   }
 
   @media print {
@@ -488,7 +507,8 @@ export const OC_PRINT_STYLES = `
       background: #ffffff;
     }
 
-    .print-toolbar {
+    .print-toolbar,
+    .mobile-document-summary {
       display: none;
     }
 

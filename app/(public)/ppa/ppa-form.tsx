@@ -1,21 +1,13 @@
 "use client"
 
 import * as React from "react"
-import { CheckCircle } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import {
-  Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
-} from "@/components/ui/select"
-import { Textarea } from "@/components/ui/textarea"
-import { Field } from "@/components/ui/field"
-import { Checkbox } from "@/components/ui/checkbox"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
-import { PPA_STOP_REASON_LABELS } from "@/lib/ppa/types"
+import { PPA_REQUIRED_CONTROLS, PPA_STOP_REASON_LABELS, isTareaCritica } from "@/lib/ppa/types"
 import { OfflineBanner } from "@/components/pwa/offline-banner"
 import { OfflineSavedMessage } from "./offline-saved"
-import { SiNo } from "./ppa-form-sino"
 import { usePpaForm } from "./ppa-form.hooks"
+import { PpaDecisionStep, PpaIdentityStep, PpaRiskControlsStep } from "./ppa-form-steps"
 import type { PpaFormProps } from "./ppa-form.types"
 
 export { type PpaFormProps } from "./ppa-form.types"
@@ -57,8 +49,38 @@ function PpaFormInner(props: PpaFormProps & { onRequestNewSubmission: () => void
   } = usePpaForm(props)
 
   const { worksites, workPermits, hasFaenaParam, tipoTrabajoOptions, controlOptions, complementarias, onRequestNewSubmission } = props
-  const isVerifyButtonDisabled = !rutSearch || searchingWorker
   const eligiblePermits = workPermits.filter((p) => p.worksiteId === worksiteId)
+  const [step, setStep] = React.useState<1 | 2 | 3>(1)
+  const [stepError, setStepError] = React.useState<string | null>(null)
+  const isCriticalTask = isTareaCritica(tipoTrabajo)
+
+  function showStepError(message: string, targetId: string) {
+    setStepError(message)
+    requestAnimationFrame(() => document.getElementById(targetId)?.focus())
+  }
+
+  function nextStep() {
+    if (step === 1) {
+      if (!worksiteId) return showStepError("Selecciona o verifica la faena antes de continuar.", manual ? "worksite" : "rutSearch")
+      if (manual ? !workerName.trim() : !matchedWorker) return showStepError("Identifica a la persona que realizará la tarea.", manual ? "wname" : "rutSearch")
+      if (!tipoTrabajo) return showStepError("Selecciona el trabajo que vas a realizar.", "tipo")
+    }
+    if (step === 2) {
+      if (!cambioPlanificado) return showStepError("Responde si hubo un cambio respecto a lo planificado.", "cambio-si")
+      if (cambioPlanificado === "si" && cambioDescripcion.trim().length < 4) return showStepError("Describe el cambio antes de continuar.", "cambiodesc")
+      if (!peligroNoControlado) return showStepError("Responde si existe un peligro sin controlar.", "peligro-si")
+      if (peligroNoControlado === "si" && peligroDescripcion.trim().length < 4) return showStepError("Describe el peligro antes de continuar.", "peligrodesc")
+      if (PPA_REQUIRED_CONTROLS.some((control) => !controles.includes(control))) return showStepError("Confirma los controles mínimos antes de continuar.", "controles-minimos")
+      if (isCriticalTask && complementarias.some((question) => (comp[question.key] ?? "").trim().length < 4)) return showStepError("Completa las preguntas críticas de esta tarea.", `comp-${complementarias[0]?.key ?? "peligroCritico"}`)
+    }
+    setStepError(null)
+    setStep((current) => Math.min(3, current + 1) as 1 | 2 | 3)
+  }
+
+  function previousStep() {
+    setStepError(null)
+    setStep((current) => Math.max(1, current - 1) as 1 | 2 | 3)
+  }
 
   // El submit offline muestra la confirmación inline en vez de navegar — ver
   // el comentario de showOfflineSaved() en ppa-form.hooks.ts para el porqué.
@@ -67,200 +89,103 @@ function PpaFormInner(props: PpaFormProps & { onRequestNewSubmission: () => void
   }
 
   return (
-    <form onSubmit={onSubmit} className="flex flex-col gap-6">
+    <form onSubmit={(event) => {
+      if (step < 3) {
+        event.preventDefault()
+        nextStep()
+        return
+      }
+      onSubmit(event)
+    }} className="flex flex-col gap-6">
       <OfflineBanner />
-      {/* ── Identificación ───────────────────────────────────────────── */}
-      <section className="flex flex-col gap-4 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] p-4">
-        <h2 className="text-base font-semibold">Identificación</h2>
+      <nav aria-label="Progreso del PPA" className="sticky top-2 z-10 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-2 shadow-[var(--shadow-card)]">
+        <ol className="grid grid-cols-3 gap-1">
+          {[
+            [1, "Persona y tarea"],
+            [2, "Riesgos y controles"],
+            [3, "Decisión final"],
+          ].map(([number, label]) => {
+            const value = number as 1 | 2 | 3
+            const active = step === value
+            const complete = step > value
+            return (
+              <li key={number} className="min-w-0">
+                <button type="button" onClick={() => value < step && (setStepError(null), setStep(value))} disabled={value > step} aria-current={active ? "step" : undefined} className={`flex w-full min-h-11 flex-col items-center justify-center rounded-[var(--radius)] px-1 text-center text-[11px] font-medium ${active ? "bg-[var(--color-primary-tint)] text-[var(--color-primary-ink)]" : complete ? "text-[var(--color-text)]" : "text-[var(--color-text-subtle)]"}`}>
+                  <span className="font-mono text-xs">{complete ? "✓" : number}</span>
+                  <span className="truncate">{label}</span>
+                </button>
+              </li>
+            )
+          })}
+        </ol>
+      </nav>
+      <p className="text-sm text-[var(--color-text-muted)]" aria-live="polite">Paso {step} de 3: {step === 1 ? "identifica la persona y la tarea" : step === 2 ? "revisa riesgos y controles" : "confirma si es seguro comenzar"}.</p>
+      {stepError && <p role="alert" className="rounded-[var(--radius)] border border-[var(--color-danger)] bg-[var(--color-danger-tint)] px-3 py-2 text-sm text-[var(--color-danger-ink)]">{stepError}</p>}
 
-        {!manual ? (
-          <div className="flex flex-col gap-4">
-            {hasFaenaParam && resolvedWorksiteName && (
-              <Field label="Faena / lugar de trabajo">
-                <div className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-1)] px-3 py-3 text-base text-[var(--color-text-muted)]">
-                  {resolvedWorksiteName}
-                </div>
-              </Field>
-            )}
-
-            <Field label="Ingresa tu RUT (sin puntos, con guion)" htmlFor="rutSearch" required error={err("workerId")}>
-              <div className="flex gap-2">
-                <Input
-                  id="rutSearch"
-                  placeholder="12345678-9"
-                  value={rutSearch}
-                  onChange={(e) => {
-                    setRutSearch(e.target.value)
-                    resetIdentity()
-                  }}
-                />
-                <Button
-                  type="button"
-                  onClick={handleVerifyRut}
-                  disabled={isVerifyButtonDisabled}
-                  variant="secondary"
-                  className="px-4 shrink-0"
-                >
-                  {searchingWorker ? "Buscando..." : "Verificar"}
-                </Button>
-              </div>
-            </Field>
-
-            {matchedWorker && (
-              <div className="flex flex-col gap-1 rounded-md border border-[var(--color-success)] bg-[var(--color-success-tint)] p-3 text-sm text-[var(--color-success-ink)]">
-                <div className="flex items-center gap-2">
-                  <CheckCircle size={18} weight="fill" className="shrink-0" />
-                  <span>Verificado: <strong>{matchedWorker.name}</strong></span>
-                </div>
-                {!hasFaenaParam && resolvedWorksiteName && (
-                  <span className="pl-7 text-xs">Faena: <strong>{resolvedWorksiteName}</strong></span>
-                )}
-              </div>
-            )}
-          </div>
-        ) : (
-          <div className="flex flex-col gap-3 rounded-md border border-dashed border-[var(--color-warning)] bg-[var(--color-warning-tint)] p-3">
-            <p className="text-xs text-[var(--color-warning-ink)]">
-              Identificación manual — quedará marcada como pendiente de validación.
-            </p>
-            <Field label="Faena / lugar de trabajo" htmlFor="worksite" required error={err("worksiteId")}>
-              <Select
-                value={worksiteId}
-                onValueChange={setWorksiteId}
-                disabled={hasFaenaParam}
-              >
-                <SelectTrigger id="worksite" aria-label="Selecciona la faena" error={!!err("worksiteId")}>
-                  <SelectValue placeholder="Selecciona la faena…" />
-                </SelectTrigger>
-                <SelectContent>
-                  {worksites.map((w) => (
-                    <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </Field>
-            <Field label="Nombre completo" htmlFor="wname" required error={err("workerName")}>
-              <Input id="wname" value={workerName} onChange={(e) => setWorkerName(e.target.value)} />
-            </Field>
-            <Field label="RUT (opcional)" htmlFor="wrut">
-              <Input id="wrut" value={workerRut} onChange={(e) => setWorkerRut(e.target.value)} />
-            </Field>
-            <Field label="Empresa (opcional)" htmlFor="wcompany">
-              <Input id="wcompany" value={workerCompany} onChange={(e) => setWorkerCompany(e.target.value)} />
-            </Field>
-          </div>
-        )}
-
-        <button
-          type="button"
-          className="self-start text-sm font-medium text-[var(--color-primary)] underline"
-          onClick={toggleManual}
-        >
-          {manual ? "Volver a verificación por RUT" : "No estoy en la lista (identificación manual)"}
-        </button>
-      </section>
-
-      {/* ── Permiso de trabajo (opcional) ────────────────────────────── */}
-      {eligiblePermits.length > 0 && (
-        <section className="flex flex-col gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] p-4">
-          <Field label="¿Esta tarea está bajo un permiso de trabajo vigente?" htmlFor="permit" helper="Opcional. Selecciónalo si tu tarea lo exige.">
-            <Select value={workPermitId} onValueChange={setWorkPermitId}>
-              <SelectTrigger id="permit" aria-label="Selecciona el permiso de trabajo">
-                <SelectValue placeholder="Sin permiso asociado" />
-              </SelectTrigger>
-              <SelectContent>
-                {eligiblePermits.map((p) => (
-                  <SelectItem key={p.id} value={p.id}>{p.code} · {p.taskDescription.slice(0, 60)}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </Field>
-        </section>
+      {step === 1 && (
+        <PpaIdentityStep
+          worksiteId={worksiteId}
+          setWorksiteId={setWorksiteId}
+          workPermitId={workPermitId}
+          setWorkPermitId={setWorkPermitId}
+          rutSearch={rutSearch}
+          setRutSearch={setRutSearch}
+          searchingWorker={searchingWorker}
+          matchedWorker={matchedWorker}
+          manual={manual}
+          workerName={workerName}
+          setWorkerName={setWorkerName}
+          workerRut={workerRut}
+          setWorkerRut={setWorkerRut}
+          workerCompany={workerCompany}
+          setWorkerCompany={setWorkerCompany}
+          tipoTrabajo={tipoTrabajo}
+          setTipoTrabajo={setTipoTrabajo}
+          worksites={worksites}
+          eligiblePermits={eligiblePermits}
+          hasFaenaParam={hasFaenaParam}
+          resolvedWorksiteName={resolvedWorksiteName}
+          tipoTrabajoOptions={tipoTrabajoOptions}
+          err={err}
+          handleVerifyRut={handleVerifyRut}
+          toggleManual={toggleManual}
+          resetIdentity={resetIdentity}
+        />
       )}
 
-      {/* ── Pregunta 1 ───────────────────────────────────────────────── */}
-      <section className="flex flex-col gap-4 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] p-4">
-        <Field label="¿Qué trabajo voy a realizar?" htmlFor="tipo" required error={err("tipoTrabajo")}>
-          <Select value={tipoTrabajo} onValueChange={setTipoTrabajo}>
-            <SelectTrigger id="tipo" aria-label="Selecciona el tipo de trabajo" error={!!err("tipoTrabajo")}>
-              <SelectValue placeholder="Selecciona…" />
-            </SelectTrigger>
-            <SelectContent>
-              {tipoTrabajoOptions.map((o) => (
-                <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </Field>
-      </section>
+      {step === 2 && (
+        <PpaRiskControlsStep
+          cambioPlanificado={cambioPlanificado}
+          setCambioPlanificado={setCambioPlanificado}
+          cambioDescripcion={cambioDescripcion}
+          setCambioDescripcion={setCambioDescripcion}
+          peligroNoControlado={peligroNoControlado}
+          setPeligroNoControlado={setPeligroNoControlado}
+          peligroDescripcion={peligroDescripcion}
+          setPeligroDescripcion={setPeligroDescripcion}
+          controles={controles}
+          toggleControl={toggleControl}
+          comp={comp}
+          setComp={setComp}
+          controlOptions={controlOptions}
+          complementarias={complementarias}
+          isCriticalTask={isCriticalTask}
+          err={err}
+        />
+      )}
 
-      {/* ── Pregunta 2 ───────────────────────────────────────────────── */}
-      <section className="flex flex-col gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] p-4">
-        <p className="text-base font-medium">¿Existe algún cambio respecto a lo planificado?</p>
-        <SiNo name="cambio" value={cambioPlanificado} onChange={setCambioPlanificado} />
-        {err("cambioPlanificado") && <p className="text-xs text-[var(--color-danger)]">{err("cambioPlanificado")}</p>}
-        {cambioPlanificado === "si" && (
-          <Field label="¿Qué cambió?" htmlFor="cambiodesc" required helper="Si no lo describes, el trabajo se detendrá.">
-            <Textarea id="cambiodesc" rows={2} value={cambioDescripcion} onChange={(e) => setCambioDescripcion(e.target.value)} />
-          </Field>
-        )}
-      </section>
+      {step === 3 && (
+        <PpaDecisionStep
+          seguroComenzar={seguroComenzar}
+          setSeguroComenzar={setSeguroComenzar}
+          err={err}
+        />
+      )}
 
-      {/* ── Pregunta 3 ───────────────────────────────────────────────── */}
-      <section className="flex flex-col gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] p-4">
-        <p className="text-base font-medium">¿Existe un peligro que no esté controlado?</p>
-        <SiNo name="peligro" value={peligroNoControlado} onChange={setPeligroNoControlado} dangerOn="si" />
-        {err("peligroNoControlado") && <p className="text-xs text-[var(--color-danger)]">{err("peligroNoControlado")}</p>}
-        {peligroNoControlado === "si" && (
-          <Field label="¿Cuál es el peligro?" htmlFor="peligrodesc" required helper="Declarar un peligro no controlado detiene el trabajo.">
-            <Textarea id="peligrodesc" rows={2} value={peligroDescripcion} onChange={(e) => setPeligroDescripcion(e.target.value)} />
-          </Field>
-        )}
-      </section>
-
-      {/* ── Pregunta 4 ───────────────────────────────────────────────── */}
-      <section className="flex flex-col gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] p-4">
-        <p className="text-base font-medium">¿Tengo todos los controles implementados?</p>
-        <div className="flex flex-col gap-2">
-          {controlOptions.map((c) => (
-            <Checkbox
-              key={c.value}
-              label={c.label}
-              checked={controles.includes(c.value)}
-              onChange={() => toggleControl(c.value)}
-            />
-          ))}
-        </div>
-      </section>
-
-      {/* ── Preguntas complementarias PPA ────────────────────────────── */}
-      <section className="flex flex-col gap-4 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] p-4">
-        <h2 className="text-base font-semibold">Para, Piensa y Actúa</h2>
-        <p className="text-xs text-[var(--color-text-muted)]">
-          Obligatorias para tareas críticas. Responde con detalle.
-        </p>
-        {complementarias.map((q) => (
-          <Field key={q.key} label={q.label} htmlFor={`comp-${q.key}`}>
-            <Textarea
-              id={`comp-${q.key}`}
-              rows={2}
-              value={comp[q.key] ?? ""}
-              onChange={(e) => setComp((prev) => ({ ...prev, [q.key]: e.target.value }))}
-            />
-          </Field>
-        ))}
-      </section>
-
-      {/* ── Pregunta 5 ───────────────────────────────────────────────── */}
-      <section className="flex flex-col gap-3 rounded-lg border-2 border-[var(--color-border)] bg-[var(--color-surface-2)] p-4">
-        <p className="text-lg font-semibold">¿Es seguro comenzar el trabajo?</p>
-        <SiNo name="seguro" value={seguroComenzar} onChange={setSeguroComenzar} dangerOn="no" />
-        {err("seguroComenzar") && <p className="text-xs text-[var(--color-danger)]">{err("seguroComenzar")}</p>}
-      </section>
-
-      <Button type="submit" size="lg" loading={pending} className="w-full">
-        {online ? "Enviar PPA" : "Guardar offline"}
-      </Button>
+      <div className="sticky bottom-2 flex gap-2 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-2 shadow-[var(--shadow-card)]">
+        {step > 1 && <Button type="button" size="lg" variant="secondary" onClick={previousStep} className="flex-1">Volver</Button>}
+        {step < 3 ? <Button type="button" size="lg" onClick={nextStep} className="flex-1">Continuar</Button> : <Button type="submit" size="lg" loading={pending} className="flex-1">{online ? "Enviar PPA" : "Guardar offline"}</Button>}
+      </div>
 
       <ConfirmDialog
         open={confirmOpen}

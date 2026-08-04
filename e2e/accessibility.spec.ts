@@ -13,8 +13,14 @@ const CRITICAL_PAGES = [
   { path: "/recepcion",        name: "Recepción" },
   { path: "/bodega",           name: "Bodega" },
   { path: "/entregas",         name: "Entregas" },
+  { path: "/entregas/del-e2e/print", name: "Comprobante de entrega" },
+  { path: "/compras/oc-e2e/print", name: "Orden de compra" },
+  { path: "/sst/sst-eval-e2e/print", name: "Acta SST" },
   { path: "/trazabilidad",     name: "Trazabilidad" },
   { path: "/reportes",         name: "Reportes" },
+  { path: "/combustibles",     name: "Combustibles" },
+  { path: "/combustibles/reportes", name: "Reportes de combustibles" },
+  { path: "/combustibles/analisis", name: "Análisis de rendimiento" },
   { path: "/admin/faenas",     name: "Admin faenas" },
   { path: "/admin/usuarios",   name: "Admin usuarios" },
   { path: "/admin/productos",  name: "Admin productos" },
@@ -29,6 +35,9 @@ const CRITICAL_PAGES = [
   { path: "/prevencion/pdtp/aprobaciones", name: "PDTP — Aprobaciones" },
   { path: "/prevencion/pdtp/acciones",    name: "PDTP — Acciones correctivas" },
   { path: "/prevencion/pdtp/cobertura",   name: "PDTP — Cobertura MIPER y legal" },
+  { path: "/prevencion/ppa",              name: "PPA — Gestión interna" },
+  { path: "/prevencion/capa",             name: "CAPA" },
+  { path: "/prevencion/emergencias",      name: "Emergencias" },
 ]
 
 test.describe("Accessibility audit", () => {
@@ -40,11 +49,25 @@ test.describe("Accessibility audit", () => {
       await page.waitForLoadState("networkidle")
 
       const results = await new AxeBuilder({ page })
-        .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
+        .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"])
         .disableRules(["color-contrast"]) // audited separately in AUDITORIA.md
         .analyze()
 
       expect(results.violations).toEqual([])
     })
   }
+})
+
+test.describe("Accessibility audit — public PPA", () => {
+  test("PPA público (/ppa)", async ({ page }) => {
+    await page.goto("/ppa")
+    await page.waitForLoadState("networkidle")
+
+    const results = await new AxeBuilder({ page })
+      .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"])
+      .disableRules(["color-contrast"])
+      .analyze()
+
+    expect(results.violations).toEqual([])
+  })
 })

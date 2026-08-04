@@ -9,7 +9,8 @@ import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ChartBar, Truck, Buildings, GasPump, CalendarBlank } from "@phosphor-icons/react"
 import { MonthlyEvolutionChart, CategoryBarChart } from "../fuel-charts-lazy"
-import { formatCLP } from "@/lib/utils"
+import { ChartDataSummary } from "../chart-data-summary"
+import { formatCLP, formatDate } from "@/lib/utils"
 
 interface ReportRow {
   group: string | null
@@ -38,9 +39,17 @@ interface ReportsViewProps {
 const LITERS_FORMAT = new Intl.NumberFormat("es-CL", { maximumFractionDigits: 0 })
 const formatLiters = (n: number) => LITERS_FORMAT.format(n)
 
+function getPeriodLabel({ startDate, endDate }: ReportsViewProps["currentFilters"]) {
+  if (startDate && endDate) return `${formatDate(startDate)} — ${formatDate(endDate)}`
+  if (startDate) return `desde ${formatDate(startDate)}`
+  if (endDate) return `hasta ${formatDate(endDate)}`
+  return "todos los registros"
+}
+
 export function ReportsView({ byMonth, byWeek, byWorksite, byVehicle, bySupplier, byProduct, currentFilters }: ReportsViewProps) {
   const router = useRouter()
   const searchParams = useSearchParams()
+  const periodLabel = getPeriodLabel(currentFilters)
 
   function setDateFilter(key: string, value: string) {
     const params = new URLSearchParams(searchParams.toString())
@@ -73,12 +82,18 @@ export function ReportsView({ byMonth, byWeek, byWorksite, byVehicle, bySupplier
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <Card className="lg:col-span-2">
           <CardHeader><CardTitle className="text-base">Evolución mensual</CardTitle></CardHeader>
-          <CardContent><MonthlyEvolutionChart data={byMonth} /></CardContent>
+          <CardContent>
+            <ChartDataSummary title="Evolución mensual" data={byMonth} periodLabel={periodLabel} groupLabel="Meses" className="mb-4 mt-0 border-b border-t-0 pb-3 pt-0" />
+            <MonthlyEvolutionChart data={byMonth} />
+          </CardContent>
         </Card>
         <Card>
           <CardHeader><CardTitle className="text-base">Por producto</CardTitle></CardHeader>
           {/* Barra, no torta: con pocos productos el gasto se compara con precisión (dataviz: "donut para comparar valores cercanos → barra"). */}
-          <CardContent><CategoryBarChart data={byProduct} title="Productos" /></CardContent>
+          <CardContent>
+            <ChartDataSummary title="Productos" data={byProduct} periodLabel={periodLabel} groupLabel="Productos" visibleLimit={8} className="mb-4 mt-0 border-b border-t-0 pb-3 pt-0" />
+            <CategoryBarChart data={byProduct} title="Productos" />
+          </CardContent>
         </Card>
       </div>
 
@@ -98,24 +113,36 @@ export function ReportsView({ byMonth, byWeek, byWorksite, byVehicle, bySupplier
         <TabsContent value="monthly"><ReportCard title="Consumo mensual" icon={<ChartBar className="h-5 w-5" />} rows={byMonth} /></TabsContent>
         <TabsContent value="worksite">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <CategoryBarChart data={byWorksite} title="Faenas" />
+            <ChartWithSummary title="Faenas" data={byWorksite} periodLabel={periodLabel} groupLabel="Faenas" />
             <ReportCard title="Por faena" icon={<Buildings className="h-5 w-5" />} rows={byWorksite} />
           </div>
         </TabsContent>
         <TabsContent value="vehicle">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <CategoryBarChart data={byVehicle} title="Vehículos" />
+            <ChartWithSummary title="Vehículos" data={byVehicle} periodLabel={periodLabel} groupLabel="Vehículos" />
             <ReportCard title="Por vehículo" icon={<Truck className="h-5 w-5" />} rows={byVehicle} />
           </div>
         </TabsContent>
         <TabsContent value="supplier">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <CategoryBarChart data={bySupplier} title="Proveedores" />
+            <ChartWithSummary title="Proveedores" data={bySupplier} periodLabel={periodLabel} groupLabel="Proveedores" />
             <ReportCard title="Por proveedor" icon={<GasPump className="h-5 w-5" />} rows={bySupplier} />
           </div>
         </TabsContent>
       </Tabs>
     </div>
+  )
+}
+
+function ChartWithSummary({ title, data, periodLabel, groupLabel }: { title: string; data: ChartDataPoint[]; periodLabel: string; groupLabel: string }) {
+  return (
+    <Card>
+      <CardHeader><CardTitle className="text-base">{title}</CardTitle></CardHeader>
+      <CardContent>
+        <ChartDataSummary title={title} data={data} periodLabel={periodLabel} groupLabel={groupLabel} visibleLimit={8} className="mb-4 mt-0 border-b border-t-0 pb-3 pt-0" />
+        <CategoryBarChart data={data} title={title} />
+      </CardContent>
+    </Card>
   )
 }
 

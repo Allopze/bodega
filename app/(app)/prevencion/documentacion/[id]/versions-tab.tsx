@@ -10,6 +10,7 @@ import { Field } from "@/components/ui/field"
 import { FileInput } from "@/components/ui/file-input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { toast } from "@/lib/toast"
+import { formatDate, formatFileSize } from "@/lib/utils"
 import {
   approveSstDocumentVersionAction,
   markSstDocumentVersionReviewedAction,
@@ -103,7 +104,7 @@ export function VersionsTab({
                     </TableCell>
                     <TableCell className="text-xs">{v.fileName}</TableCell>
                     <TableCell className="text-xs">{userMap[v.uploadedBy]?.name ?? v.uploadedBy}</TableCell>
-                    <TableCell className="text-xs">{v.createdAt.slice(0, 10)}</TableCell>
+                    <TableCell className="text-xs">{formatDate(v.createdAt)}</TableCell>
                     <TableCell className="text-xs">{formatFileSize(v.fileSize)}</TableCell>
                     <TableCell>
                       <div className="flex flex-wrap items-center justify-end gap-2">
@@ -254,10 +255,4 @@ function statusBadgeVariant(status: string): "default" | "info" | "warning" | "s
   if (status === "observado") return "warning"
   if (status === "reemplazado" || status === "archivado") return "outline"
   return "default"
-}
-
-function formatFileSize(size: number) {
-  if (size < 1024) return `${size} B`
-  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`
-  return `${(size / (1024 * 1024)).toFixed(1)} MB`
 }

@@ -13,6 +13,7 @@ import { assertOrderAccess } from "../actions.helpers"
 import { dbErrMsg, serviceWorksiteScope } from "./helpers"
 import { REVALIDATE } from "./revalidate"
 import { revalidateOperationalViews } from "@/lib/services/operational-cache"
+import { pluralize } from "@/lib/utils"
 
 // ── Issue OC (draft → issued) ─────────────────────────────────────────────────
 
@@ -101,7 +102,7 @@ export async function sendOrderAction(
       notifyManyUser(receiverIds, {
         type: "oc_sent",
         title: `OC lista para recepción: ${code}`,
-        body: `${worksiteName} · ${itemCount} ítem${itemCount === 1 ? "" : "s"} enviado${itemCount === 1 ? "" : "s"} al proveedor${supplierTag}.`,
+        body: `${worksiteName} · ${pluralize(itemCount, "ítem")} ${pluralize(itemCount, "enviado", "enviados")} al proveedor${supplierTag}.`,
         entityType: "purchase_order",
         entityId: orderId,
         entityHref: `/recepcion/nueva?oc=${orderId}`,

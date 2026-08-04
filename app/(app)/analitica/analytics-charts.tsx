@@ -16,6 +16,7 @@ import {
 import type { SpendByModuleRow, SpendByMonthRow, VehicleCostRow, WorksiteSpendRow } from "@/lib/services/analytics"
 import { formatCLP } from "@/lib/utils"
 import { CHART_SERIES, chartTooltipStyle } from "@/lib/chart-palette"
+import { ChartDataTable } from "@/components/ui/chart-data-table"
 
 // Segunda de las tres paletas que coexistían (G-07). Ahora es la única del
 // producto, en `lib/chart-palette.ts`: sus hues están verificados para
@@ -32,7 +33,24 @@ function compactCLP(value: number) {
 export function MonthlySpendChart({ data }: { data: SpendByMonthRow[] }) {
   if (data.length === 0) return <EmptyChart label="Aún no hay gasto en el período" hint="No se registraron órdenes de compra ni cargas de combustible en las fechas y faenas seleccionadas. Prueba ampliar el rango o revisa que existan movimientos." ctaLabel="Ver compras" ctaHref="/compras" />
 
+  // Tres líneas del mismo grosor distinguidas sólo por color: sin la tabla, la
+  // serie es ilegible para quien no separa verde de ámbar (TASK-UI-015).
+  const total = data.reduce((sum, row) => sum + row.totalAmount, 0)
+  const pico = data.reduce((current, row) => row.totalAmount > current.totalAmount ? row : current, data[0]!)
+
   return (
+    <>
+      <ChartDataTable
+        title="Gasto mensual"
+        groupLabel="Mes"
+        columns={["Total", "Compras", "Combustible"]}
+        rows={data.map((row) => ({ label: row.month, values: [formatCLP(row.totalAmount), formatCLP(row.purchasingAmount), formatCLP(row.fuelAmount)] }))}
+        conclusion={data.length === 1
+          ? `Único mes con gasto: ${pico.month}, ${formatCLP(pico.totalAmount)}.`
+          : `El mes de mayor gasto es ${pico.month} con ${formatCLP(pico.totalAmount)}. Total del período: ${formatCLP(total)}.`}
+        caption="Montos en pesos chilenos."
+        className="mb-4 mt-0 border-b border-t-0 pb-3 pt-0"
+      />
     <div className="h-72">
       <ResponsiveContainer width="100%" height="100%">
         <LineChart data={data} margin={{ top: 10, right: 12, left: 0, bottom: 0 }}>
@@ -49,13 +67,29 @@ export function MonthlySpendChart({ data }: { data: SpendByMonthRow[] }) {
         </LineChart>
       </ResponsiveContainer>
     </div>
+    </>
   )
 }
 
 export function ModuleSpendChart({ data }: { data: SpendByModuleRow[] }) {
   if (data.length === 0) return <EmptyChart label="Sin gasto para distribuir" hint="La distribución por módulo aparece cuando hay compras o combustible registrados en el período." />
 
+  // Ocho barras con ocho colores de la paleta categórica: el color es el único
+  // canal que las separa, así que la tabla no es un extra.
+  const visible = data.slice(0, 8)
+  const mayor = visible.reduce((current, row) => row.totalAmount > current.totalAmount ? row : current, visible[0]!)
+
   return (
+    <>
+      <ChartDataTable
+        title="Gasto por módulo"
+        groupLabel="Módulo"
+        columns={["Monto"]}
+        rows={visible.map((row) => ({ label: row.module, values: [formatCLP(row.totalAmount)] }))}
+        conclusion={`${mayor.module} concentra el mayor gasto: ${formatCLP(mayor.totalAmount)}.`}
+        caption={data.length > visible.length ? `Se muestran los ${visible.length} módulos de mayor gasto de ${data.length}.` : "Montos en pesos chilenos."}
+        className="mb-4 mt-0 border-b border-t-0 pb-3 pt-0"
+      />
     <div className="h-72">
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={data.slice(0, 8)} layout="vertical" margin={{ top: 6, right: 16, left: 10, bottom: 6 }}>
@@ -71,6 +105,7 @@ export function ModuleSpendChart({ data }: { data: SpendByModuleRow[] }) {
         </BarChart>
       </ResponsiveContainer>
     </div>
+    </>
   )
 }
 
@@ -96,7 +131,19 @@ export function RankingBarChart({
         : 0,
   }))
 
+  const mayor = chartData.reduce((current, row) => row.value > current.value ? row : current, chartData[0]!)
+
   return (
+    <>
+      <ChartDataTable
+        title={emptyLabel}
+        groupLabel={labelKey === "plate" ? "Patente" : "Faena"}
+        columns={["Costo"]}
+        rows={chartData.map((row) => ({ label: row.name, values: [formatCLP(row.value)] }))}
+        conclusion={`Encabeza ${mayor.name} con ${formatCLP(mayor.value)}.`}
+        caption={data.length > chartData.length ? `Se muestran los ${chartData.length} primeros de ${data.length}.` : "Montos en pesos chilenos."}
+        className="mb-4 mt-0 border-b border-t-0 pb-3 pt-0"
+      />
     <div className="h-64">
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={chartData} layout="vertical" margin={{ top: 5, right: 12, left: 0, bottom: 5 }}>
@@ -108,6 +155,7 @@ export function RankingBarChart({
         </BarChart>
       </ResponsiveContainer>
     </div>
+    </>
   )
 }
 

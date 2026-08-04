@@ -1,3 +1,6 @@
+// El destino de rechazo lleva ahora la sección de origen (`?desde=`) para
+// ofrecer un retorno contextual, así que se comprueba el prefijo y no la
+// cadena exacta.
 /**
  * Unit tests for page-level permission gates.
  *
@@ -80,6 +83,7 @@ vi.mock("@/lib/adquisiciones/list-query", () => ({
   parseListParams: () => ({ q: "", estados: [], faena: null }),
   statusSql: () => undefined,
   worksiteEqSql: () => undefined,
+  periodSql: () => undefined,
 }))
 vi.mock("@/lib/constants", () => ({ SOLICITUDES_PAGE_SIZE: 20 }))
 vi.mock("@/lib/services/feedback", () => ({
@@ -119,14 +123,14 @@ describe("solicitudes/page.tsx — permission gate", () => {
     mockAuthFn.mockResolvedValue(null)
     await expect(SolicitudesPage({ searchParams: Promise.resolve({}) }))
       .rejects.toThrow("NEXT_REDIRECT")
-    expect(mockRedirect).toHaveBeenCalledWith("/forbidden")
+    expect(mockRedirect).toHaveBeenCalledWith(expect.stringMatching(/^\/forbidden(\?|$)/))
   })
 
   it("redirects to /forbidden for users without requests:view_own AND without requests:view_all", async () => {
     mockAuthFn.mockResolvedValue(makeSession({ permissions: ["some:other"] }))
     await expect(SolicitudesPage({ searchParams: Promise.resolve({}) }))
       .rejects.toThrow("NEXT_REDIRECT")
-    expect(mockRedirect).toHaveBeenCalledWith("/forbidden")
+    expect(mockRedirect).toHaveBeenCalledWith(expect.stringMatching(/^\/forbidden(\?|$)/))
   })
 
   it("allows users with only requests:view_own through the gate", async () => {
@@ -136,7 +140,7 @@ describe("solicitudes/page.tsx — permission gate", () => {
     }))
     await expect(SolicitudesPage({ searchParams: Promise.resolve({}) }))
       .resolves.toBeDefined()
-    expect(mockRedirect).not.toHaveBeenCalledWith("/forbidden")
+    expect(mockRedirect).not.toHaveBeenCalledWith(expect.stringMatching(/^\/forbidden(\?|$)/))
   })
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -151,7 +155,7 @@ describe("solicitudes/page.tsx — permission gate", () => {
     }))
     await expect(SolicitudesPage({ searchParams: Promise.resolve({}) }))
       .resolves.toBeDefined()
-    expect(mockRedirect).not.toHaveBeenCalledWith("/forbidden")
+    expect(mockRedirect).not.toHaveBeenCalledWith(expect.stringMatching(/^\/forbidden(\?|$)/))
   })
 })
 
@@ -165,31 +169,31 @@ describe("soporte/page.tsx — permission gate", () => {
   it("redirects to /forbidden for unauthenticated users", async () => {
     mockAuthFn.mockResolvedValue(null)
     await expect(SoportePage()).rejects.toThrow("NEXT_REDIRECT")
-    expect(mockRedirect).toHaveBeenCalledWith("/forbidden")
+    expect(mockRedirect).toHaveBeenCalledWith(expect.stringMatching(/^\/forbidden(\?|$)/))
   })
 
   it("redirects to /forbidden for users without feedback:view_own AND without feedback:view_all AND without feedback:manage", async () => {
     mockAuthFn.mockResolvedValue(makeSession({ permissions: ["some:other"] }))
     await expect(SoportePage()).rejects.toThrow("NEXT_REDIRECT")
-    expect(mockRedirect).toHaveBeenCalledWith("/forbidden")
+    expect(mockRedirect).toHaveBeenCalledWith(expect.stringMatching(/^\/forbidden(\?|$)/))
   })
 
   it("allows users with only feedback:view_own through the gate", async () => {
     mockAuthFn.mockResolvedValue(makeSession({ permissions: ["feedback:view_own"] }))
     await expect(SoportePage()).resolves.toBeDefined()
-    expect(mockRedirect).not.toHaveBeenCalledWith("/forbidden")
+    expect(mockRedirect).not.toHaveBeenCalledWith(expect.stringMatching(/^\/forbidden(\?|$)/))
   })
 
   it("allows users with only feedback:view_all through the gate", async () => {
     mockAuthFn.mockResolvedValue(makeSession({ permissions: ["feedback:view_all"] }))
     await expect(SoportePage()).resolves.toBeDefined()
-    expect(mockRedirect).not.toHaveBeenCalledWith("/forbidden")
+    expect(mockRedirect).not.toHaveBeenCalledWith(expect.stringMatching(/^\/forbidden(\?|$)/))
   })
 
   it("allows users with only feedback:manage through the gate", async () => {
     mockAuthFn.mockResolvedValue(makeSession({ permissions: ["feedback:manage"] }))
     await expect(SoportePage()).resolves.toBeDefined()
-    expect(mockRedirect).not.toHaveBeenCalledWith("/forbidden")
+    expect(mockRedirect).not.toHaveBeenCalledWith(expect.stringMatching(/^\/forbidden(\?|$)/))
   })
 })
 
@@ -204,34 +208,34 @@ describe("soporte/[id]/page.tsx — permission gate", () => {
     mockAuthFn.mockResolvedValue(null)
     await expect(ReporteDetailPage({ params: Promise.resolve({ id: "test-1" }) }))
       .rejects.toThrow("NEXT_REDIRECT")
-    expect(mockRedirect).toHaveBeenCalledWith("/forbidden")
+    expect(mockRedirect).toHaveBeenCalledWith(expect.stringMatching(/^\/forbidden(\?|$)/))
   })
 
   it("redirects to /forbidden for users without feedback:view_own AND without feedback:view_all AND without feedback:manage", async () => {
     mockAuthFn.mockResolvedValue(makeSession({ permissions: ["some:other"] }))
     await expect(ReporteDetailPage({ params: Promise.resolve({ id: "test-1" }) }))
       .rejects.toThrow("NEXT_REDIRECT")
-    expect(mockRedirect).toHaveBeenCalledWith("/forbidden")
+    expect(mockRedirect).toHaveBeenCalledWith(expect.stringMatching(/^\/forbidden(\?|$)/))
   })
 
   it("allows users with feedback:view_own through the gate (then calls notFound)", async () => {
     mockAuthFn.mockResolvedValue(makeSession({ permissions: ["feedback:view_own"] }))
     await expect(ReporteDetailPage({ params: Promise.resolve({ id: "test-1" }) }))
       .rejects.toThrow("NEXT_NOT_FOUND")
-    expect(mockRedirect).not.toHaveBeenCalledWith("/forbidden")
+    expect(mockRedirect).not.toHaveBeenCalledWith(expect.stringMatching(/^\/forbidden(\?|$)/))
   })
 
   it("allows users with feedback:view_all through the gate", async () => {
     mockAuthFn.mockResolvedValue(makeSession({ permissions: ["feedback:view_all"] }))
     await expect(ReporteDetailPage({ params: Promise.resolve({ id: "test-1" }) }))
       .rejects.toThrow("NEXT_NOT_FOUND")
-    expect(mockRedirect).not.toHaveBeenCalledWith("/forbidden")
+    expect(mockRedirect).not.toHaveBeenCalledWith(expect.stringMatching(/^\/forbidden(\?|$)/))
   })
 
   it("allows users with feedback:manage through the gate", async () => {
     mockAuthFn.mockResolvedValue(makeSession({ permissions: ["feedback:manage"] }))
     await expect(ReporteDetailPage({ params: Promise.resolve({ id: "test-1" }) }))
       .rejects.toThrow("NEXT_NOT_FOUND")
-    expect(mockRedirect).not.toHaveBeenCalledWith("/forbidden")
+    expect(mockRedirect).not.toHaveBeenCalledWith(expect.stringMatching(/^\/forbidden(\?|$)/))
   })
 })

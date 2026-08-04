@@ -4,7 +4,8 @@ import * as React from "react"
 import { PencilSimple } from "@phosphor-icons/react"
 import { DataTable } from "@/components/admin/data-table"
 import { Badge } from "@/components/ui/badge"
-import { DesktopOnlyTableNotice } from "@/components/ui/desktop-only-table"
+import { Button } from "@/components/ui/button"
+import { ResponsiveDataListCard, ResponsiveDataListField } from "@/components/ui/responsive-data-list"
 import { TableRow, TableCell } from "@/components/ui/table"
 import { RoleForm, type RoleRow, type PermissionOption } from "./role-form"
 
@@ -40,7 +41,6 @@ export function RoleList({ roles, groupedPermissions, permissions }: RoleListPro
 
   return (
     <>
-      <DesktopOnlyTableNotice />
       <DataTable
         caption="Roles"
         columns={ROLE_COLUMNS}
@@ -49,6 +49,28 @@ export function RoleList({ roles, groupedPermissions, permissions }: RoleListPro
         pageSize={20}
         emptyTitle="Sin roles"
         emptyDescription="Crea un rol base para agrupar permisos reutilizables."
+        renderMobileCard={(row) => {
+          const r = row as RoleRow
+          return (
+            <ResponsiveDataListCard
+              title={r.label}
+              description={r.description}
+              status={r.isGlobal ? <Badge variant="info">Global</Badge> : <Badge variant="default">Faena</Badge>}
+              actions={
+                <Button type="button" variant="ghost" size="sm" onClick={() => openEdit(r)}>
+                  <PencilSimple size={15} />Editar
+                </Button>
+              }
+            >
+              <ResponsiveDataListField label="Slug">
+                <span className="font-mono">{r.name}{r.isProtected ? " · protegido" : ""}</span>
+              </ResponsiveDataListField>
+              <ResponsiveDataListField label="Permisos">
+                <span className="font-mono tabular-nums text-[var(--color-text)]">{r.permissionCount}</span>
+              </ResponsiveDataListField>
+            </ResponsiveDataListCard>
+          )
+        }}
         renderRow={(row) => {
           const r = row as RoleRow
           return (

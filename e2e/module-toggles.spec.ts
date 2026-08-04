@@ -19,7 +19,16 @@ import { login } from "./helpers"
 
 test.describe("Module toggles", () => {
   function flotaModuleSection(page: import("@playwright/test").Page) {
-    return page.locator("section").filter({ hasText: "Control operacional" }).filter({ hasText: "flota" }).first()
+    // Varias tarjetas mencionan "Flota" (Combustibles y Mantenciones enlazan
+    // catálogos de flota), así que filtrar por texto elige la sección
+    // equivocada. El identificador del módulo dejó de pintarse en la interfaz
+    // —era jerga— y vive ahora en `data-module-id`, que sigue siendo único.
+    return page.locator("section[data-module-id='flota']").first()
+  }
+
+  /** Apagar exige confirmar el impacto; encender no. */
+  async function confirmDisable(page: import("@playwright/test").Page, label: string) {
+    await page.getByRole("button", { name: label }).click()
   }
 
   async function resetFlotaToggles() {
@@ -63,11 +72,14 @@ test.describe("Module toggles", () => {
     await expect(moduleSection).toBeVisible()
 
     // Click the toggle switch for the module (the first switch in the card)
+    await moduleSection.getByLabel("Desactivar módulo Flota").click({ force: true })
+    // La confirmación nombra lo que se va a ocultar; sin ella no hay cambio.
+    await expect(page.getByRole("dialog")).toContainText("navegación de todos los usuarios")
     const disableResponse = page.waitForResponse((response) => response.status() === 200 && response.url().includes("/admin/modulos"))
-    await moduleSection.getByLabel("Desactivar módulo Control operacional").click({ force: true })
+    await confirmDisable(page, "Desactivar módulo")
     await disableResponse
     await page.reload()
-    await expect(flotaModuleSection(page).getByLabel("Activar módulo Control operacional")).toBeVisible()
+    await expect(flotaModuleSection(page).getByLabel("Activar módulo Flota")).toBeVisible()
 
     // Verify nav items disappeared — navigate back to dashboard
     await page.goto("/dashboard")
@@ -90,19 +102,28 @@ test.describe("Module toggles", () => {
 
     // Find and toggle "Control operacional" off
     const moduleSection = flotaModuleSection(page)
+    const disableToggle = moduleSection.getByLabel("Desactivar módulo Flota")
+    await expect(disableToggle).toBeVisible()
+    await disableToggle.click({ force: true })
     const disableResponse = page.waitForResponse((response) => response.status() === 200 && response.url().includes("/admin/modulos"))
-    await moduleSection.getByLabel("Desactivar módulo Control operacional").locator("xpath=..").click({ force: true })
+    await confirmDisable(page, "Desactivar módulo")
     await disableResponse
     await page.waitForTimeout(300)
 
     // Now toggle it back on
     await page.reload()
     const refreshedModuleSection = flotaModuleSection(page)
+    // `force: true` desactiva la auto-espera de Playwright, así que tras un
+    // reload el clic puede caer antes de que el interruptor tenga caja y
+    // fallar con "Element is not visible". Esperar explícitamente devuelve esa
+    // espera sin cambiar la semántica del clic sobre un input `sr-only`.
+    const enableToggle = refreshedModuleSection.getByLabel("Activar módulo Flota")
+    await expect(enableToggle).toBeVisible()
     const enableResponse = page.waitForResponse((response) => response.status() === 200 && response.url().includes("/admin/modulos"))
-    await refreshedModuleSection.getByLabel("Activar módulo Control operacional").locator("xpath=..").click({ force: true })
+    await enableToggle.click({ force: true })
     await enableResponse
     await page.reload()
-    await expect(flotaModuleSection(page).getByLabel("Desactivar módulo Control operacional")).toBeVisible()
+    await expect(flotaModuleSection(page).getByLabel("Desactivar módulo Flota")).toBeVisible()
 
     // Navigate to dashboard and verify nav items reappeared
     await page.goto("/dashboard")
@@ -124,10 +145,28 @@ test.describe("Module toggles", () => {
     // The first switch is the module itself; the second is the first submodule
     if (await submoduleSwitches.count() > 1) {
       const subToggle = submoduleSwitches.nth(1)
-      const submoduleResponse = page.waitForResponse((response) => response.status() === 200 && response.url().includes("/admin/modulos"))
       await subToggle.locator("xpath=..").click({ force: true })
+      const submoduleResponse = page.waitForResponse((response) => response.status() === 200 && response.url().includes("/admin/modulos"))
+      await confirmDisable(page, "Ocultar pantalla")
       await submoduleResponse
     }
+  })
+
+  test("la confirmación es la única vía: cancelar deja el módulo encendido", async ({ page }) => {
+    await page.goto("/admin/modulos")
+    const moduleSection = flotaModuleSection(page)
+    await moduleSection.getByLabel("Desactivar módulo Flota").click({ force: true })
+
+    const dialog = page.getByRole("dialog")
+    await expect(dialog).toBeVisible()
+    // El diálogo nombra las pantallas afectadas, no pregunta "¿estás seguro?".
+    await expect(dialog).toContainText("navegación de todos los usuarios")
+    // Y no promete un control de acceso que el interruptor no ejerce.
+    await expect(dialog).toContainText("No es un control de acceso")
+
+    await dialog.getByRole("button", { name: "Cancelar" }).click()
+    await page.reload()
+    await expect(flotaModuleSection(page).getByLabel("Desactivar módulo Flota")).toBeVisible()
   })
 
   test("permission check: non-admin cannot access /admin/modulos", async ({ browser }) => {

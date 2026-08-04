@@ -292,6 +292,7 @@ export function UserList({ users, invitations, allRoles, allPermissions, allWork
       <UserInvitationsPanel invitations={invitations} />
 
       <UserForm
+        key={editUser?.id ?? "nuevo"}
         open={sheetOpen}
         onClose={() => setSheetOpen(false)}
         editUser={editUser}

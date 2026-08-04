@@ -60,9 +60,11 @@ export function DomainIndex({ domains }: { domains: DashboardDomain[] }) {
  * **cada KPI y cada gráfico declara su propia ventana** y la cabecera no promete
  * una que no puede cumplir.
  */
-export function DomainSection({ domain, kpis, charts, links, note }: {
+export function DomainSection({ domain, kpis, summary, charts, links, note }: {
   domain: DashboardDomain
   kpis: ReactNode
+  /** Métricas secundarias en tira editorial, fuera del máximo de cuatro tiles. */
+  summary?: ReactNode
   charts: ReactNode
   links: Array<{ label: string; href: string }>
   /** Advertencia de alcance cuando alguna cifra no puede respetar el filtro. */
@@ -89,6 +91,7 @@ export function DomainSection({ domain, kpis, charts, links, note }: {
       {note && <p className="mb-3 text-[11px] text-[var(--color-text-faint)]">{note}</p>}
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{kpis}</div>
+      {summary && <div className="mt-3">{summary}</div>}
 
       <div className="mt-4 grid gap-6 grid-cols-1 xl:grid-cols-2">{charts}</div>
     </section>

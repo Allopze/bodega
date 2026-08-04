@@ -7,6 +7,8 @@ import { SidebarUserProfile } from "./sidebar-user-profile"
 
 vi.mock("next-auth/react", () => ({
   signOut: vi.fn(),
+  // `useSignOut` confirma contra el servidor que la sesión murió antes de salir.
+  getSession: vi.fn(async () => null),
 }))
 
 function makeSession(permissions: string[] = []): Session {

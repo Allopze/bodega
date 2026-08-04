@@ -24,8 +24,8 @@ type Props = { params: Promise<{ programId: string; executionId: string }> }
 export default async function PdtpExecutionDetailPage({ params }: Props) {
   let session
   try { session = await requireAuth() }
-  catch { redirect("/forbidden") }
-  if (!can(session, "prevention:pdtp:view")) redirect("/forbidden")
+  catch { redirect(`/forbidden?desde=${encodeURIComponent("/prevencion/pdtp/[programId]/ejecucion")}`) }
+  if (!can(session, "prevention:pdtp:view")) redirect(`/forbidden?desde=${encodeURIComponent("/prevencion/pdtp/[programId]/ejecucion")}`)
 
   const { programId, executionId } = await params
   const program = await getPdtpProgram(programId)

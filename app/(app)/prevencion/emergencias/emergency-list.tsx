@@ -6,9 +6,16 @@ import { useSearchParams } from "next/navigation"
 import { useUrlFilters } from "@/lib/hooks/use-url-filters"
 import { DataTable } from "@/components/admin/data-table"
 import { Badge } from "@/components/ui/badge"
+import { FilterToolbar, type ActiveFilterChip } from "@/components/ui/filter-toolbar"
 import { Pagination } from "@/components/ui/pagination"
+import { ResponsiveDataListCard, ResponsiveDataListField } from "@/components/ui/responsive-data-list"
 import { TableCell, TableRow } from "@/components/ui/table"
 import type { PaginationState } from "@/lib/pagination"
+import {
+  EMERGENCY_QUICK_FILTER_LABELS,
+  type EmergencyListTab,
+  type EmergencyQuickFilter,
+} from "@/lib/prevention/emergency-list-filters"
 import {
   EMERGENCY_DRILL_OUTCOME_LABELS,
   EMERGENCY_DRILL_STATUS_LABELS,
@@ -45,6 +52,16 @@ interface Props {
   worksites: { id: string; name: string }[]
   canManage: boolean
   plansPagination: PaginationState
+  tab: EmergencyListTab
+  quickFilter: EmergencyQuickFilter
+  counts: {
+    totalPlans: number
+    approvedPlans: number
+    draftPlans: number
+    totalDrills: number
+    completedDrills: number
+    needsImprovementDrills: number
+  }
 }
 
 const PLAN_COLUMNS = [
@@ -63,10 +80,9 @@ const DRILL_COLUMNS = [
   { key: "outcome", label: "Resultado" },
 ]
 
-export function EmergencyList({ plans, drills, worksites, canManage, plansPagination }: Props) {
+export function EmergencyList({ plans, drills, worksites, canManage, plansPagination, tab, quickFilter, counts }: Props) {
   const searchParams = useSearchParams()
-  const { getFilter, setFilter } = useUrlFilters()
-  const tab = (getFilter("tab") || "plans") as "plans" | "drills"
+  const { setFilters, clearFilters: clearUrlFilters } = useUrlFilters()
   const navigatePlansPage = React.useCallback((page: number) => {
     const params = new URLSearchParams(searchParams.toString())
     params.set("page", String(page))
@@ -83,39 +99,54 @@ export function EmergencyList({ plans, drills, worksites, canManage, plansPagina
   })) as unknown as Record<string, unknown>[]
 
   const metrics = [
-    { id: "approved", label: "Planes aprobados", value: plans.filter((item) => item.status === "approved").length, detail: "Vigentes" },
-    { id: "draft", label: "En preparación", value: plans.filter((item) => item.status === "draft").length, detail: "Sin aprobar" },
-    { id: "drills", label: "Simulacros realizados", value: drills.filter((item) => item.status === "completed").length, detail: "Con resultado registrado" },
-    { id: "needs_improvement", label: "Requieren mejora", value: drills.filter((item) => item.outcome === "needs_improvement").length, detail: "Derivados a CAPA" },
+    { id: "approved", key: "approved" as const, tab: "plans" as const, label: "Planes aprobados", value: counts.approvedPlans, detail: "Vigentes" },
+    { id: "draft", key: "draft" as const, tab: "plans" as const, label: "En preparación", value: counts.draftPlans, detail: "Sin aprobar" },
+    { id: "drills", key: "completed" as const, tab: "drills" as const, label: "Simulacros realizados", value: counts.completedDrills, detail: "Con resultado registrado" },
+    { id: "needs_improvement", key: "needs_improvement" as const, tab: "drills" as const, label: "Requieren mejora", value: counts.needsImprovementDrills, detail: "Derivados a CAPA" },
   ]
+  const activeChips: ActiveFilterChip[] = quickFilter === "all" ? [] : [{
+    key: "vista",
+    label: "Vista",
+    value: quickFilter,
+    displayValue: EMERGENCY_QUICK_FILTER_LABELS[quickFilter],
+  }]
 
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 overflow-hidden border-y border-[var(--color-border)] lg:grid-cols-4">
         {metrics.map((metric) => (
-          <div key={metric.id} className="border-r border-[var(--color-border)] px-4 py-3">
+          <button
+            key={metric.id}
+            type="button"
+            onClick={() => setFilters({ tab: metric.tab, vista: tab === metric.tab && quickFilter === metric.key ? null : metric.key })}
+            aria-pressed={tab === metric.tab && quickFilter === metric.key}
+            className="border-r border-[var(--color-border)] px-4 py-3 text-left hover:bg-[var(--color-surface-2)] aria-pressed:bg-[var(--color-primary-tint)]"
+          >
             <span className="text-eyebrow">{metric.label}</span>
             <span className="mt-1 block font-mono text-xl font-semibold tabular-nums">{metric.value}</span>
             <span className="text-xs text-[var(--color-text-subtle)]">{metric.detail}</span>
-          </div>
+          </button>
         ))}
       </div>
 
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex gap-1 rounded-md border border-[var(--color-border)] p-1 w-fit">
-          <button type="button" onClick={() => setFilter("tab", "plans")} aria-pressed={tab === "plans"}
-            className="rounded px-3 py-1 text-sm aria-pressed:bg-[var(--color-primary-tint)]">
-            Planes ({plans.length})
+      <FilterToolbar
+        activeChips={activeChips}
+        onRemoveChip={() => setFilters({ vista: null })}
+        onClearAll={() => clearUrlFilters(["tab"])}
+        hasActiveFilters={quickFilter !== "all"}
+        actions={tab === "plans" && canManage && worksites.length > 0 ? <NewPlanDialog worksites={worksites} /> : undefined}
+      >
+        <div role="tablist" aria-label="Vista de emergencias" className="flex gap-1 rounded-md border border-[var(--color-border)] p-1 w-fit">
+          <button type="button" role="tab" onClick={() => setFilters({ tab: "plans", vista: null })} aria-selected={tab === "plans"}
+            className="rounded px-3 py-1 text-sm aria-selected:bg-[var(--color-primary-tint)]">
+            Planes ({counts.totalPlans})
           </button>
-          <button type="button" onClick={() => setFilter("tab", "drills")} aria-pressed={tab === "drills"}
-            className="rounded px-3 py-1 text-sm aria-pressed:bg-[var(--color-primary-tint)]">
-            Simulacros ({drills.length})
+          <button type="button" role="tab" onClick={() => setFilters({ tab: "drills", vista: null })} aria-selected={tab === "drills"}
+            className="rounded px-3 py-1 text-sm aria-selected:bg-[var(--color-primary-tint)]">
+            Simulacros ({counts.totalDrills})
           </button>
         </div>
-        <div className="flex flex-wrap gap-2">
-          {tab === "plans" && canManage && worksites.length > 0 && <NewPlanDialog worksites={worksites} />}
-        </div>
-      </div>
+      </FilterToolbar>
 
       {tab === "plans" && (
         <>
@@ -131,6 +162,22 @@ export function EmergencyList({ plans, drills, worksites, canManage, plansPagina
             ? "Un plan de emergencia declara escenarios, organigrama de respuesta, recursos y contactos por faena. Aprobarlo exige al menos un escenario y un rol."
             : "Ajusta el texto del buscador superior."}
           emptyAction={canManage && worksites.length > 0 ? <NewPlanDialog worksites={worksites} /> : undefined}
+          renderMobileCard={(row) => {
+            const item = row as unknown as PlanItem
+            return (
+              <ResponsiveDataListCard
+                title={<Link href={`/prevencion/emergencias/${item.id}`} className="hover:underline">{item.title}</Link>}
+                description={<span className="font-mono">{item.code}</span>}
+                status={<Badge variant={emergencyPlanStatusBadgeVariant(item.status)}>{EMERGENCY_PLAN_STATUS_LABELS[item.status] ?? item.status}</Badge>}
+                actions={<Link href={`/prevencion/emergencias/${item.id}`} className="inline-flex min-h-11 items-center text-xs font-medium text-[var(--color-primary-ink)] hover:underline">Ver plan</Link>}
+              >
+                <ResponsiveDataListField label="Faena">{item.worksiteName}</ResponsiveDataListField>
+                <ResponsiveDataListField label="Escenarios"><span className="font-mono tabular-nums text-[var(--color-text)]">{item.scenarios}</span></ResponsiveDataListField>
+                <ResponsiveDataListField label="Organigrama"><span className="font-mono tabular-nums text-[var(--color-text)]">{item.roles}</span></ResponsiveDataListField>
+                <ResponsiveDataListField label="Simulacros"><span className="font-mono tabular-nums text-[var(--color-text)]">{item.drills}</span></ResponsiveDataListField>
+              </ResponsiveDataListCard>
+            )
+          }}
           renderRow={(row) => {
             const item = row as unknown as PlanItem
             return (
@@ -172,6 +219,24 @@ export function EmergencyList({ plans, drills, worksites, canManage, plansPagina
           emptyDescription={drills.length === 0
             ? "Sólo un plan aprobado puede programar simulacros. Prográmalos desde el detalle del plan."
             : "Ajusta el texto del buscador superior."}
+          renderMobileCard={(row) => {
+            const item = row as unknown as DrillItem
+            return (
+              <ResponsiveDataListCard
+                title={item.planTitle}
+                description={item.worksiteName}
+                status={<Badge variant={item.status === "completed" ? "success" : item.status === "cancelled" ? "outline" : "default"}>{EMERGENCY_DRILL_STATUS_LABELS[item.status] ?? item.status}</Badge>}
+              >
+                <ResponsiveDataListField label="Escenario">{item.scenarioType}</ResponsiveDataListField>
+                <ResponsiveDataListField label="Programado">{formatDateTime(item.scheduledFor)}</ResponsiveDataListField>
+                <ResponsiveDataListField label="Resultado" className="col-span-2">
+                  {item.outcome
+                    ? <Badge variant={item.outcome === "satisfactory" ? "success" : "warning"}>{EMERGENCY_DRILL_OUTCOME_LABELS[item.outcome] ?? item.outcome}</Badge>
+                    : "Sin resultado registrado"}
+                </ResponsiveDataListField>
+              </ResponsiveDataListCard>
+            )
+          }}
           renderRow={(row) => {
             const item = row as unknown as DrillItem
             return (

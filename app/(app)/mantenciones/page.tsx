@@ -12,15 +12,16 @@ import { getMaintenancePageData, getUpcomingMaintenance, getUsageMaintenanceAler
 import { MaintenanceCreateButton } from "./maintenance-create-button"
 import { MaintenanceRowActions } from "./maintenance-row-actions"
 import { MaintenanceFilters } from "./maintenance-filters"
-import { formatCLP } from "@/lib/utils"
+import { formatCLP, formatDate } from "@/lib/utils"
+import { MAINTENANCE_STATUS_LABELS } from "@/lib/validation/maintenance"
 
 export const metadata: Metadata = { title: "Mantenciones" }
 
 const statusLabels: Record<string, { label: string; variant: "default" | "warning" | "success" | "danger" | "outline" }> = {
-  scheduled: { label: "Programada", variant: "outline" },
-  in_progress: { label: "En curso", variant: "warning" },
-  completed: { label: "Completada", variant: "success" },
-  cancelled: { label: "Cancelada", variant: "danger" },
+  scheduled: { label: MAINTENANCE_STATUS_LABELS.scheduled, variant: "outline" },
+  in_progress: { label: MAINTENANCE_STATUS_LABELS.in_progress, variant: "warning" },
+  completed: { label: MAINTENANCE_STATUS_LABELS.completed, variant: "success" },
+  cancelled: { label: MAINTENANCE_STATUS_LABELS.cancelled, variant: "danger" },
 }
 
 const NUMBER_FORMAT = new Intl.NumberFormat("es-CL", { maximumFractionDigits: 1 })
@@ -109,7 +110,7 @@ export default async function MantencionesPage({
                   <strong className="text-[var(--color-danger-ink)]">Mantenciones vencidas:</strong>
                   {upcomingData.overdue.map((m) => (
                     <span key={m.id} className="ml-2 text-[var(--color-danger-ink)]">
-                      {m.vehicle?.plate ?? m.vehicleId} ({m.maintenanceDate}) — {m.maintenanceType}
+                      {m.vehicle?.plate ?? m.vehicleId} ({formatDate(m.maintenanceDate)}) — {m.maintenanceType}
                     </span>
                   ))}
                 </div>
@@ -145,8 +146,8 @@ export default async function MantencionesPage({
               </p>
               {usageAlerts.map((a) => (
                 <p key={a.vehicleId} className="text-[var(--color-warning-ink)]">
-                  {a.code ? `${a.code} — ` : ""}{a.plate}: +{formatNumber(a.usageSinceLastMaintenance)} {a.medidoPor === "km" ? "km" : "hr"} desde {a.lastMaintenanceDate}
-                  {" "}(lectura actual {formatNumber(a.currentReading)} al {a.currentReadingDate})
+                  {a.code ? `${a.code} — ` : ""}{a.plate}: +{formatNumber(a.usageSinceLastMaintenance)} {a.medidoPor === "km" ? "km" : "hr"} desde {formatDate(a.lastMaintenanceDate)}
+                  {" "}(lectura actual {formatNumber(a.currentReading)} al {formatDate(a.currentReadingDate)})
                 </p>
               ))}
             </div>
@@ -186,7 +187,7 @@ export default async function MantencionesPage({
                 const statusMeta = statusLabels[record.status] ?? { label: record.status, variant: "default" as const }
                 return (
                   <TableRow key={record.id}>
-                    <TableCell className="font-mono text-sm">{record.maintenanceDate}</TableCell>
+                    <TableCell className="font-mono text-sm">{formatDate(record.maintenanceDate)}</TableCell>
                     <TableCell>{record.vehicle?.plate ?? record.vehicleId}</TableCell>
                     <TableCell>{record.maintenanceType}</TableCell>
                     <TableCell>{record.supplier?.name ?? "—"}</TableCell>

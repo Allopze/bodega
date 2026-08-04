@@ -13,7 +13,7 @@ export const metadata: Metadata = { title: "Editar producto" }
 
 export default async function EditarProductoPage({ params }: { params: Promise<{ id: string }> }) {
   try { await requirePermission("admin:products") }
-  catch { redirect("/forbidden") }
+  catch { redirect(`/forbidden?desde=${encodeURIComponent("/admin/productos")}`) }
 
   const { id } = await params
   const [product, allCategories, allSuppliers, units, templates] = await Promise.all([

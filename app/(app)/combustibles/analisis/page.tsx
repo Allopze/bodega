@@ -15,8 +15,7 @@ import { Button } from "@/components/ui/button"
 import { DatePicker } from "@/components/ui/date-picker"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { ChartErrorBoundary } from "@/components/chart-error-boundary"
-import { PerformanceGroupChart } from "./performance-charts"
-import { HistogramChart } from "./histogram-chart"
+import { HistogramChart, PerformanceGroupChart } from "./analysis-charts-lazy"
 import { FilterSelect } from "../filter-select"
 
 export const metadata: Metadata = { title: "Análisis de rendimiento por equipo" }

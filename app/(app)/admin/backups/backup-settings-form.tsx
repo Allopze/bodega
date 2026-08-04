@@ -105,7 +105,7 @@ export function BackupSettingsForm() {
   if (!config) return null
 
   return (
-    <section className="mb-5 overflow-hidden rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-card)]">
+    <section id="backup-settings" className="mb-5 scroll-mt-24 overflow-hidden rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-card)]">
       <div className="flex items-center gap-2 border-b border-[var(--color-border)] bg-[var(--color-surface-2)] px-4 py-3">
         <Gear size={16} className="text-[var(--color-text-muted)]" />
         <h2 className="text-sm font-semibold text-[var(--color-text)]">Configuración de respaldos</h2>

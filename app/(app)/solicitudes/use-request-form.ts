@@ -8,9 +8,10 @@ import { URGENCY_OPTS } from "./request-form.constants"
 import type { ActionState } from "@/lib/validation/operations"
 import type { ItemRow, ProductOption, WorksiteOption, SupplierOption, WorkerOption, EditRequest } from "./request-form.types"
 import { QUOTATION_TYPES, visibleRequestTypeOptions } from "@/lib/request-types"
+import type { RequestType } from "@/lib/request-types"
 import { saveDraft, submitRequest, cancelRequest, deleteRequestAction, resubmitReturnedItemAction } from "./actions"
 import {
-  blankItem, blankItemForType, buildAttrsFromProduct, buildRequestSummaryIssues,
+  blankItemForType, buildAttrsFromProduct, buildRequestSummaryIssues,
   equipmentFromAttributes, parseAttributeOptions, requestStatusLabel,
 } from "./request-form.helpers"
 import { groupProductVariants } from "@/lib/products/variant-grouping"
@@ -127,15 +128,18 @@ function useDraftPersistence({
 }
 
 export function useRequestForm({
-  worksites, products, workers, editRequest, userPermissions = [],
+  worksites, products, workers, editRequest, userPermissions = [], initialRequestType,
 }: {
   worksites: WorksiteOption[]; products: ProductOption[]; suppliers: SupplierOption[]; workers?: WorkerOption[]
-  editRequest?: EditRequest; maxFileSizeMb: number; userRoles?: string[]; userPermissions?: string[]
+  editRequest?: EditRequest; maxFileSizeMb: number; userRoles?: string[]; userPermissions?: string[]; initialRequestType?: RequestType
 }) {
   const router = useRouter()
   const isEdit = !!editRequest
   const isDraft = !isEdit || ["draft", "returned"].includes(editRequest.status)
   const requestTypeOpts = visibleRequestTypeOptions(userPermissions)
+  const allowedInitialRequestType = initialRequestType && requestTypeOpts.some((option) => option.value === initialRequestType)
+    ? initialRequestType
+    : undefined
   const canDeleteRequest = isEdit
     && (DELETABLE_REQUEST_STATUSES as readonly string[]).includes(editRequest.status)
     && (userPermissions.includes("requests:delete") || userPermissions.includes("requests:view_own"))
@@ -155,7 +159,7 @@ export function useRequestForm({
 
   const [savedId, setSavedId] = useState(editRequest?.id)
   const [worksiteId, setWorksiteId] = useState(editRequest?.worksiteId ?? (worksites[0]?.id ?? ""))
-  const [requestType, setRequestType] = useState(editRequest?.requestType ?? requestTypeOpts[0]?.value ?? "epp")
+  const [requestType, setRequestType] = useState(editRequest?.requestType ?? allowedInitialRequestType ?? requestTypeOpts[0]?.value ?? "epp")
   const [urgency, setUrgency] = useState(editRequest?.urgency ?? "normal")
   const [deliveryMode, setDeliveryMode] = useState<string>(editRequest?.deliveryMode ?? "via_oficina")
   const [requiredDate, setRequiredDate] = useState(editRequest?.requiredDate ?? "")
@@ -187,7 +191,7 @@ export function useRequestForm({
         }
       })
     }
-    return [blankItem()]
+    return [blankItemForType(crypto.randomUUID(), requestType)]
   })
 
   const [dirty, setDirty] = useState(false)

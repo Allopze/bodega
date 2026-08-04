@@ -6,7 +6,8 @@ import { useActionState, useEffect } from "react"
 import { PencilSimple, Warning } from "@phosphor-icons/react"
 import { DataTable } from "@/components/admin/data-table"
 import { Badge } from "@/components/ui/badge"
-import { DesktopOnlyTableNotice } from "@/components/ui/desktop-only-table"
+import { Button } from "@/components/ui/button"
+import { ResponsiveDataListCard, ResponsiveDataListField } from "@/components/ui/responsive-data-list"
 import { TableRow, TableCell } from "@/components/ui/table"
 import { toast } from "@/lib/toast"
 import { INITIAL_STATE } from "@/components/admin/form-state"
@@ -78,7 +79,6 @@ export function SequenceList({ rows }: SequenceListProps) {
         </p>
       ) : (
         <>
-        <DesktopOnlyTableNotice />
         <DataTable
           caption="Secuencias de Folios"
           columns={COLUMNS}
@@ -87,6 +87,21 @@ export function SequenceList({ rows }: SequenceListProps) {
           pageSize={20}
           emptyTitle="Sin secuencias"
           emptyDescription="Las secuencias se administran vía la función nativa de Postgres."
+          renderMobileCard={(row) => {
+            const r = row as SequenceRow
+            return (
+              <ResponsiveDataListCard
+                title={<span className="font-mono">{formatCode(r.prefix, r.year, r.nextValue)}</span>}
+                description="Próximo código a emitir"
+                actions={<Button type="button" variant="ghost" size="sm" onClick={() => openEdit(r)}><PencilSimple size={15} />Corregir</Button>}
+              >
+                <ResponsiveDataListField label="Prefijo"><span className="font-mono">{r.prefix}</span></ResponsiveDataListField>
+                <ResponsiveDataListField label="Año"><span className="font-mono tabular-nums text-[var(--color-text)]">{r.year}</span></ResponsiveDataListField>
+                <ResponsiveDataListField label="Próximo folio"><Badge variant="default">{r.nextValue}</Badge></ResponsiveDataListField>
+                <ResponsiveDataListField label="Actualización">{r.updatedAt ? formatDateTime(r.updatedAt) : "—"}</ResponsiveDataListField>
+              </ResponsiveDataListCard>
+            )
+          }}
           renderRow={(row) => {
             const r = row as SequenceRow
             return (

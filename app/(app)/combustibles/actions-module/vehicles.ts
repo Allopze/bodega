@@ -18,6 +18,7 @@ import {
 } from "@/lib/combustibles/validation"
 import { getFleetAdminSettings } from "@/lib/services/system-settings"
 import type { ActionState } from "@/lib/validation/masters"
+import { pluralize } from "@/lib/utils"
 import { dbErrMsg } from "./loads"
 
 const FLEET_CATALOG_PATH = "/admin/flota-catalogos/vehiculos"
@@ -258,7 +259,7 @@ export async function bulkToggleFuelVehicleActiveAction(_prev: ActionState, form
     })
 
     revalidatePath(FLEET_CATALOG_PATH)
-    return { ok: true, message: `${updated.length} vehículo${updated.length === 1 ? "" : "s"} ${activate ? "activado" : "desactivado"}${updated.length === 1 ? "" : "s"}` }
+    return { ok: true, message: `${pluralize(updated.length, "vehículo")} ${pluralize(updated.length, activate ? "activado" : "desactivado", activate ? "activados" : "desactivados")}` }
   } catch (e) {
     return { ok: false, message: await dbErrMsg(e, activate ? "Error al activar" : "Error al desactivar") }
   }

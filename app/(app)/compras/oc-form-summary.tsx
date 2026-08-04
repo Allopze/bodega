@@ -1,7 +1,7 @@
 "use client"
 
 import { Badge } from "@/components/ui/badge"
-import { formatCLP } from "@/lib/utils"
+import { formatCLP, pluralize } from "@/lib/utils"
 import type { OcItemRow } from "./oc-form.types"
 
 interface OcFormSummaryProps {
@@ -28,7 +28,7 @@ export function OcFormSummary({
         <div>
           <p className="text-xs font-medium uppercase tracking-wide text-[var(--color-text-subtle)]">Resumen OC</p>
           <p className="mt-1 text-sm text-[var(--color-text-muted)]">
-            {includedItems.length} ítem{includedItems.length === 1 ? "" : "s"} seleccionado{includedItems.length === 1 ? "" : "s"}
+            {pluralize(includedItems.length, "ítem")} {pluralize(includedItems.length, "seleccionado", "seleccionados")}
           </p>
         </div>
         {supplierGroupCount > 1 && (

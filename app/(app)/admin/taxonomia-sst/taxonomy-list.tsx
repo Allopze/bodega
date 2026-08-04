@@ -12,8 +12,8 @@ import {
 } from "@phosphor-icons/react"
 import { DataTable } from "@/components/admin/data-table"
 import { Badge } from "@/components/ui/badge"
-import { DesktopOnlyTableNotice } from "@/components/ui/desktop-only-table"
 import { Button } from "@/components/ui/button"
+import { ResponsiveDataListCard, ResponsiveDataListField } from "@/components/ui/responsive-data-list"
 import { TableRow, TableCell } from "@/components/ui/table"
 import { toast } from "@/lib/toast"
 import { INITIAL_STATE } from "@/components/admin/form-state"
@@ -116,7 +116,6 @@ export function TaxonomyView({ categories, activeSlug, types }: TaxonomyViewProp
             <Link href="/admin/taxonomia-sst" className="underline">cambiar</Link>)
           </p>
         )}
-        <DesktopOnlyTableNotice />
         <DataTable
         caption="Categorías Documentales SST"
         enableColumnToggle
@@ -128,6 +127,46 @@ export function TaxonomyView({ categories, activeSlug, types }: TaxonomyViewProp
           pageSize={20}
           emptyTitle="Sin categorías"
           emptyDescription="Crea o siembra las categorías maestras del SST."
+          renderMobileCard={(row) => {
+            const c = row as CategoryRow
+            const isActive = c.slug === activeSlug
+            return (
+              <ResponsiveDataListCard
+                title={
+                  <Link
+                    href={{ pathname: "/admin/taxonomia-sst", query: { category: c.slug } }}
+                    className={isActive ? "text-[var(--color-primary)]" : undefined}
+                  >
+                    {c.name}
+                  </Link>
+                }
+                description={c.description || undefined}
+                status={c.isActive ? <Badge variant="success">Activa</Badge> : <Badge variant="default">Inactiva</Badge>}
+                actions={
+                  <>
+                    <Button type="button" variant="ghost" size="sm" onClick={() => { setEditCategory(c); setCatSheetOpen(true) }}>
+                      <PencilSimple size={15} />Editar
+                    </Button>
+                    <form action={catToggleAction}>
+                      <input type="hidden" name="slug" value={c.slug} />
+                      <input type="hidden" name="activate" value={String(!c.isActive)} />
+                      <Button type="submit" variant="ghost" size="sm">
+                        {c.isActive ? <ToggleRight size={17} /> : <ToggleLeft size={17} />}
+                        {c.isActive ? "Desactivar" : "Reactivar"}
+                      </Button>
+                    </form>
+                  </>
+                }
+              >
+                <ResponsiveDataListField label="Código">
+                  <span className="font-mono">{c.slug}</span>
+                </ResponsiveDataListField>
+                <ResponsiveDataListField label="Orden">
+                  <span className="font-mono tabular-nums text-[var(--color-text)]">{c.sortOrder}</span>
+                </ResponsiveDataListField>
+              </ResponsiveDataListCard>
+            )
+          }}
           renderRow={(row) => {
             const c = row as CategoryRow
             const isActive = c.slug === activeSlug
@@ -204,6 +243,41 @@ export function TaxonomyView({ categories, activeSlug, types }: TaxonomyViewProp
             pageSize={20}
             emptyTitle="Sin tipos"
             emptyDescription={`Crea el primer tipo para la categoría ${activeCategory?.name ?? ""}.`}
+            renderMobileCard={(row) => {
+              const t = row as TypeRow
+              return (
+                <ResponsiveDataListCard
+                  title={t.name}
+                  description={t.description || undefined}
+                  status={t.isActive ? <Badge variant="success">Activo</Badge> : <Badge variant="default">Inactivo</Badge>}
+                  actions={
+                    <>
+                      <Button type="button" variant="ghost" size="sm" onClick={() => { setEditType(t); setTypeSheetOpen(true) }}>
+                        <PencilSimple size={15} />Editar
+                      </Button>
+                      <form action={typeToggleAction}>
+                        <input type="hidden" name="id" value={t.id} />
+                        <input type="hidden" name="activate" value={String(!t.isActive)} />
+                        <Button type="submit" variant="ghost" size="sm">
+                          {t.isActive ? <ToggleRight size={17} /> : <ToggleLeft size={17} />}
+                          {t.isActive ? "Desactivar" : "Reactivar"}
+                        </Button>
+                      </form>
+                    </>
+                  }
+                >
+                  <ResponsiveDataListField label="Código">
+                    <span className="font-mono">{t.code}</span>
+                  </ResponsiveDataListField>
+                  <ResponsiveDataListField label="Confidencialidad">
+                    {t.defaultConfidentiality}
+                  </ResponsiveDataListField>
+                  <ResponsiveDataListField label="Vigencia" className="col-span-2">
+                    {t.defaultValidityMonths ? `${t.defaultValidityMonths} meses` : "Sin vencimiento predeterminado"}
+                  </ResponsiveDataListField>
+                </ResponsiveDataListCard>
+              )
+            }}
             renderRow={(row) => {
               const t = row as TypeRow
               return (

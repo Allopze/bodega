@@ -12,7 +12,7 @@ import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { formatDate } from "@/lib/utils"
+import { formatDate, formatQty } from "@/lib/utils"
 import { User, HardHat, CheckCircle, Warning } from "@phosphor-icons/react/dist/ssr"
 import { listEppCoverageGaps } from "@/lib/services/prevention-epp"
 
@@ -25,7 +25,7 @@ export default async function WorkerEppTraceabilityPage({
 }) {
   let session
   try { session = await requirePermission("traceability:view") }
-  catch { redirect("/forbidden") }
+  catch { redirect(`/forbidden?desde=${encodeURIComponent("/trazabilidad/trabajador")}`) }
 
   const { workerId } = await params
 
@@ -183,7 +183,7 @@ export default async function WorkerEppTraceabilityPage({
                     <TableCell className="font-mono text-xs text-[var(--color-text)]">{r.code}</TableCell>
                     <TableCell className="text-xs text-[var(--color-text-subtle)]">{r.deliveredAt ? formatDate(r.deliveredAt) : ""}</TableCell>
                     <TableCell className="text-sm font-medium text-[var(--color-text)]">{r.productName ?? "EPP"}</TableCell>
-                    <TableCell className="text-xs font-mono">{r.quantity} {r.unitOfMeasure}</TableCell>
+                    <TableCell className="text-xs font-mono">{formatQty(Number(r.quantity), r.unitOfMeasure ?? undefined)}</TableCell>
                     <TableCell className="text-xs">
                       {r.hasSig ? (
                         <span className="text-[var(--color-success)] font-medium">Firmado ✓</span>

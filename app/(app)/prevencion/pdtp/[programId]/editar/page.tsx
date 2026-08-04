@@ -1,4 +1,5 @@
 import type { Metadata } from "next"
+import Link from "next/link"
 import { redirect, notFound } from "next/navigation"
 import { and, eq, inArray } from "drizzle-orm"
 import { requireAuth, can } from "@/lib/auth/can"
@@ -19,19 +20,26 @@ import { db } from "@/db"
 import { pdtpActivitySchedule, worksites } from "@/db/schema"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
+import { Button } from "@/components/ui/button"
 import { PdtpBuilderTabs } from "./builder-tabs"
+import { resolvePdtpActivitiesReturnHref } from "../../pdtp-context"
 
 export const metadata: Metadata = { title: "Editar programa PDTP" }
 
-type Props = { params: Promise<{ programId: string }> }
+type Props = {
+  params: Promise<{ programId: string }>
+  searchParams: Promise<{ volver?: string | string[] }>
+}
 
-export default async function PdtpEditProgramPage({ params }: Props) {
+export default async function PdtpEditProgramPage({ params, searchParams }: Props) {
   let session
   try { session = await requireAuth() }
-  catch { redirect("/forbidden") }
-  if (!can(session, "prevention:pdtp:program:manage")) redirect("/forbidden")
+  catch { redirect(`/forbidden?desde=${encodeURIComponent("/prevencion/pdtp/[programId]/editar")}`) }
+  if (!can(session, "prevention:pdtp:program:manage")) redirect(`/forbidden?desde=${encodeURIComponent("/prevencion/pdtp/[programId]/editar")}`)
 
   const { programId } = await params
+  const query = await searchParams
+  const returnHref = resolvePdtpActivitiesReturnHref(Array.isArray(query.volver) ? query.volver[0] : query.volver)
   const program = await getPdtpProgram(programId)
   if (!program) notFound()
   if (program.status !== "draft") redirect(`/prevencion/pdtp/${programId}`)
@@ -75,6 +83,7 @@ export default async function PdtpEditProgramPage({ params }: Props) {
             { label: "Editar" },
           ]} />
         }
+        actions={returnHref ? <Button asChild size="sm" variant="secondary"><Link href={returnHref}>Volver a actividades</Link></Button> : undefined}
       />
       <PdtpBuilderTabs
         program={program}

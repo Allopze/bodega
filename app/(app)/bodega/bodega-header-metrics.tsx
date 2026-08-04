@@ -18,7 +18,7 @@ export function WarehouseHeaderMetrics({
   const stats: SummaryStat[] = [
     { key: "faenas",    label: "Faenas con stock",  value: `${worksitesWithStock}/${worksiteCount}` },
     { key: "products",  label: "Productos activos", value: productsWithStock.toLocaleString("es-CL") },
-    { key: "low",       label: "Bajo mínimo",       value: lowStockCount.toLocaleString("es-CL"), tone: lowStockCount > 0 ? "signal" : undefined },
+    { key: "low",       label: "Bajo mínimo",       value: lowStockCount.toLocaleString("es-CL"), tone: lowStockCount > 0 ? "signal" : undefined, href: "/bodega?stock=low" },
     { key: "movements", label: "Movimientos",       value: movementCount.toLocaleString("es-CL") },
   ]
 

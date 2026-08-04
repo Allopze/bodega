@@ -9,6 +9,7 @@ import { StateBadge } from "@/components/states/state-badge"
 import { FEEDBACK_TIPO_LABELS } from "@/components/states/state-badge"
 import type { FeedbackEstado, FeedbackTipo } from "@/lib/validation/feedback"
 import { StatusPanel } from "./status-panel"
+import { formatDateTime } from "@/lib/utils"
 
 export const metadata: Metadata = { title: "Detalle de reporte — Soporte" }
 
@@ -19,9 +20,9 @@ interface Props {
 export default async function ReporteDetailPage({ params }: Props) {
   let session
   try { session = await requireAuth() }
-  catch { redirect("/forbidden") }
+  catch { redirect(`/forbidden?desde=${encodeURIComponent("/soporte")}`) }
   if (!can(session, "feedback:view_own") && !can(session, "feedback:view_all") && !can(session, "feedback:manage")) {
-    redirect("/forbidden")
+    redirect(`/forbidden?desde=${encodeURIComponent("/soporte")}`)
   }
 
   const { id } = await params
@@ -33,19 +34,9 @@ export default async function ReporteDetailPage({ params }: Props) {
   const isOwn       = report.createdBy === session.user.id
 
   // Non-managers can only see their own reports
-  if (!canViewAll && !isOwn) redirect("/forbidden")
+  if (!canViewAll && !isOwn) redirect(`/forbidden?desde=${encodeURIComponent("/soporte")}`)
 
   const tipoLabel = FEEDBACK_TIPO_LABELS[report.tipo as FeedbackTipo] ?? report.tipo
-
-  function formatDate(iso: string) {
-    return new Date(iso).toLocaleString("es-CL", {
-      day:    "2-digit",
-      month:  "short",
-      year:   "numeric",
-      hour:   "2-digit",
-      minute: "2-digit",
-    })
-  }
 
   return (
     <PageContainer>
@@ -114,12 +105,12 @@ export default async function ReporteDetailPage({ params }: Props) {
               </div>
               <div>
                 <p className="text-[var(--color-text-subtle)]">Enviado</p>
-                <p>{formatDate(report.createdAt)}</p>
+                <p>{formatDateTime(report.createdAt)}</p>
               </div>
               {report.resolvedAt && (
                 <div>
                   <p className="text-[var(--color-text-subtle)]">Resuelto</p>
-                  <p>{formatDate(report.resolvedAt)}</p>
+                  <p>{formatDateTime(report.resolvedAt)}</p>
                 </div>
               )}
               <div>
@@ -128,7 +119,7 @@ export default async function ReporteDetailPage({ params }: Props) {
               </div>
               <div>
                 <p className="text-[var(--color-text-subtle)]">SLA</p>
-                <p>{report.dueAt ? formatDate(report.dueAt) : "—"}</p>
+                <p>{report.dueAt ? formatDateTime(report.dueAt) : "—"}</p>
               </div>
             </CardContent>
           </Card>

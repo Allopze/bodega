@@ -1,8 +1,9 @@
 "use client"
 
-import { useActionState, useEffect } from "react"
+import { useActionState, useEffect, useState } from "react"
 import { toast } from "@/lib/toast"
-import { cn } from "@/lib/utils"
+import { cn, countOf } from "@/lib/utils"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { Switch } from "@/components/ui/switch"
 import {
   toggleModuleAction,
@@ -63,7 +64,29 @@ export function ModuleToggleList({ moduleToggles }: ModuleToggleListProps) {
   )
 }
 
+/**
+ * Apagar un módulo lo retira de la navegación de **todos** los usuarios, y el
+ * interruptor lo hacía en un gesto, sin decir qué se llevaba por delante. La
+ * confirmación no pide "¿estás seguro?": nombra las pantallas que van a
+ * desaparecer, que es la única información con la que se puede decidir.
+ *
+ * Encender no se confirma a propósito: no retira nada y se deshace con el mismo
+ * interruptor. Tampoco se ofrece "Deshacer" en el toast — el rollback real es
+ * volver a pulsar, y prometer un undo que no es transaccional es exactamente lo
+ * que esta pantalla vino a dejar de hacer.
+ */
+function disableImpact(labels: string[]): string {
+  const scope = " No es un control de acceso: quien tenga el enlace y el permiso seguirá pudiendo abrir esas pantallas."
+  if (labels.length === 0) {
+    return `Dejará de aparecer en la navegación de todos los usuarios, incluidos los administradores.${scope}`
+  }
+  const shown = labels.slice(0, 4).join(", ")
+  const rest = labels.length > 4 ? ` y ${labels.length - 4} más` : ""
+  return `Se ocultarán ${countOf(labels.length, "pantalla")} de la navegación de todos los usuarios, incluidos los administradores: ${shown}${rest}.${scope}`
+}
+
 function ModuleCard({ mod }: { mod: ModuleToggle }) {
+  const [confirmOpen, setConfirmOpen] = useState(false)
   const [state, formAction, isPending] = useActionState(
     async () => toggleModuleAction(mod.id, !mod.enabled),
     INITIAL_STATE,
@@ -77,10 +100,23 @@ function ModuleCard({ mod }: { mod: ModuleToggle }) {
     }
   }, [state])
 
+  function requestToggle() {
+    if (mod.enabled) setConfirmOpen(true)
+    else formAction()
+  }
+
+  function confirmDisable() {
+    setConfirmOpen(false)
+    formAction()
+  }
+
   const enabledSubmodules = mod.submodules.filter((s) => s.enabled).length
 
   return (
     <section
+      // El identificador ya no se pinta; sigue siendo el ancla estable con la
+      // que las pruebas distinguen dos tarjetas de nombre parecido.
+      data-module-id={mod.id}
       className={cn(
         "rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] transition-opacity duration-[var(--duration-fast)]",
         !mod.enabled && "opacity-70",
@@ -96,12 +132,20 @@ function ModuleCard({ mod }: { mod: ModuleToggle }) {
             )}>
               {mod.label}
             </h3>
-            <span className="rounded-[var(--radius-full)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-1.5 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">
-              {mod.id}
+            {/* El identificador técnico (`purchasing`, `traceability`) se
+                retiró: cada módulo ya tiene nombre propio, así que el slug
+                sólo aportaba jerga. */}
+            <span className={cn(
+              "rounded-[var(--radius-full)] px-1.5 py-0.5 text-[10px] font-medium",
+              mod.enabled
+                ? "bg-[var(--color-success-tint)] text-[var(--color-success-ink)]"
+                : "bg-[var(--color-surface-2)] text-[var(--color-text-muted)]",
+            )}>
+              {mod.enabled ? "Activo" : "Desactivado"}
             </span>
           </div>
           <p className="mt-0.5 text-xs text-[var(--color-text-subtle)]">
-            {mod.submodules.length} submódulo{mod.submodules.length !== 1 ? "s" : ""}
+            {countOf(mod.submodules.length, "submódulo")}
             {mod.submodules.length > 0 && ` · ${enabledSubmodules} activos`}
           </p>
         </div>
@@ -110,9 +154,20 @@ function ModuleCard({ mod }: { mod: ModuleToggle }) {
           checked={mod.enabled}
           disabled={isPending}
           label={`${mod.enabled ? "Desactivar" : "Activar"} módulo ${mod.label}`}
-          onCheckedChange={() => formAction()}
+          onCheckedChange={requestToggle}
         />
       </div>
+
+      <ConfirmDialog
+        open={confirmOpen}
+        onOpenChange={setConfirmOpen}
+        title={`Desactivar ${mod.label}`}
+        description={disableImpact(mod.submodules.filter((s) => s.enabled).map((s) => s.label))}
+        confirmLabel="Desactivar módulo"
+        variant="warning"
+        loading={isPending}
+        onConfirm={confirmDisable}
+      />
 
       {/* Submodules */}
       {mod.submodules.length > 0 && (
@@ -143,6 +198,7 @@ function SubmoduleRow({
   sub: SubmoduleToggle
   moduleEnabled: boolean
 }) {
+  const [confirmOpen, setConfirmOpen] = useState(false)
   const [state, formAction, isPending] = useActionState(
     async () => toggleSubmoduleAction(moduleId, sub.href, !sub.enabled),
     INITIAL_STATE,
@@ -156,6 +212,11 @@ function SubmoduleRow({
     }
   }, [state])
 
+  function requestToggle() {
+    if (sub.enabled) setConfirmOpen(true)
+    else formAction()
+  }
+
   return (
     <div className="flex items-center gap-3 px-4 py-2.5 pl-8">
       <div className="min-w-0 flex-1">
@@ -168,12 +229,15 @@ function SubmoduleRow({
           </span>
           {sub.permissions && sub.permissions.length > 0 && (
             <span className="rounded-[var(--radius-full)] bg-[var(--color-primary-tint)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--color-primary-ink)]">
-              permiso
+              Requiere permiso
             </span>
           )}
         </div>
-        <p className="mt-0.5 font-mono text-[10px] text-[var(--color-text-faint)]">
-          {sub.href}
+        {/* La ruta cruda (`/prevencion/pdtp/nuevo`) era el único subtítulo. Se
+            sustituye por lo que la pantalla necesita responder: si está visible
+            o no. La ruta sigue siendo la clave de la operación, no un rótulo. */}
+        <p className="mt-0.5 text-[10px] text-[var(--color-text-faint)]">
+          {sub.enabled ? "Visible en la navegación" : "Oculto para todos los usuarios"}
         </p>
       </div>
 
@@ -181,7 +245,18 @@ function SubmoduleRow({
         checked={sub.enabled}
         disabled={isPending || !moduleEnabled}
         label={`${sub.enabled ? "Desactivar" : "Activar"} ${sub.label}`}
-        onCheckedChange={() => formAction()}
+        onCheckedChange={requestToggle}
+      />
+
+      <ConfirmDialog
+        open={confirmOpen}
+        onOpenChange={setConfirmOpen}
+        title={`Ocultar ${sub.label}`}
+        description="La pantalla dejará de aparecer en la navegación de todos los usuarios, incluidos los administradores. No es un control de acceso: quien tenga el enlace y el permiso seguirá pudiendo abrirla."
+        confirmLabel="Ocultar pantalla"
+        variant="warning"
+        loading={isPending}
+        onConfirm={() => { setConfirmOpen(false); formAction() }}
       />
     </div>
   )

@@ -16,7 +16,9 @@ test.describe("PDTP — Creación y edición de programas", () => {
 
     await expect(page.getByRole("heading", { name: "Nuevo programa preventivo" })).toBeVisible()
     await expect(page.getByLabel("Año del programa")).toBeVisible()
-    await expect(page.getByText("Base preventiva 2026")).toBeVisible()
+    // La descripción vive en el PageHeader y se repite como eco visual en la
+    // barra superior; el contrato es el bloque semántico.
+    await expect(page.getByText("Base preventiva 2026").first()).toBeVisible()
     await expect(page.getByLabel("Título del programa")).toHaveCount(0)
     await expect(page.getByText(/programa anterior|crear en blanco/i)).toHaveCount(0)
   })

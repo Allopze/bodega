@@ -24,7 +24,7 @@ export function DoneStep({ result, onImportAnother, onClose }: DoneStepProps) {
           <p className="font-medium mb-1">Entidades creadas automáticamente:</p>
           {result.created.map((c) => (
             <p key={`${c.type}:${c.name}`} className="text-muted-foreground">
-              • {c.type}: {c.name}
+              • {c.type.charAt(0).toUpperCase() + c.type.slice(1)}: {c.name}
             </p>
           ))}
         </div>

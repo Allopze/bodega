@@ -18,7 +18,7 @@ export const metadata: Metadata = { title: "Detalle de lote TAE" }
 
 export default async function TaeImportBatchDetailPage({ params }: { params: Promise<{ id: string }> }) {
   let session
-  try { session = await requirePermission("combustibles:tae_import") } catch { redirect("/forbidden") }
+  try { session = await requirePermission("combustibles:tae_import") } catch { redirect(`/forbidden?desde=${encodeURIComponent("/combustibles/tae/importar")}`) }
   const { id } = await params
   const batch = await db.query.fuelTaeImportBatches.findFirst({
     where: eq(fuelTaeImportBatches.id, id),

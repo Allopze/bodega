@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/input"
 import { Pagination } from "@/components/ui/pagination"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
+import { formatDate } from "@/lib/utils"
 import type { PaginationState } from "@/lib/pagination"
 import type { getRiskDashboard } from "@/lib/services/prevention-risk-legal"
 import type { listRiskImportBatchesPage } from "@/lib/services/prevention-risk-import"
@@ -147,7 +148,7 @@ export function MiperWorkbench({ dashboard, imports, importsTotal, importsPagina
             </section>
           })}
         </TabsContent>
-        <TabsContent value="reviews" id="revisiones" className="space-y-3">{dashboard.triggers.length === 0 ? <EmptyState title="Sin revisiones pendientes" description="La revisión anual y los cambios/incidentes crearán tareas aquí." /> : dashboard.triggers.map((trigger) => <div key={trigger.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-4"><div><div className="flex gap-2"><strong>{trigger.description}</strong><Badge variant={trigger.dueAt < new Date().toISOString().slice(0, 10) ? "danger" : "warning"}>{trigger.dueAt}</Badge></div><p className="text-xs text-[var(--color-text-subtle)]">Origen {trigger.sourceType} · {trigger.sourceId}</p></div>{canReview && <ResolveTriggerDialog triggerId={trigger.id} matrices={published.filter((item) => item.worksiteId === trigger.worksiteId)} />}</div>)}</TabsContent>
+        <TabsContent value="reviews" id="revisiones" className="space-y-3">{dashboard.triggers.length === 0 ? <EmptyState title="Sin revisiones pendientes" description="La revisión anual y los cambios/incidentes crearán tareas aquí." /> : dashboard.triggers.map((trigger) => <div key={trigger.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-4"><div><div className="flex gap-2"><strong>{trigger.description}</strong><Badge variant={trigger.dueAt < new Date().toISOString().slice(0, 10) ? "danger" : "warning"}>{formatDate(trigger.dueAt)}</Badge></div><p className="text-xs text-[var(--color-text-subtle)]">Origen {trigger.sourceType} · {trigger.sourceId}</p></div>{canReview && <ResolveTriggerDialog triggerId={trigger.id} matrices={published.filter((item) => item.worksiteId === trigger.worksiteId)} />}</div>)}</TabsContent>
         <TabsContent value="imports" className="space-y-3">
           {imports.length === 0 ? <EmptyState title="Sin importaciones" description="Carga un Excel para conservar el original y revisar su normalización." /> : imports.map((batch) => <ImportBatch key={batch.id} batch={batch} methodologies={dashboard.methodologies} canEdit={canEdit} canApprove={canApprove} currentUserId={currentUserId} />)}
           {importsPagination.totalPages > 1 && (

@@ -4,12 +4,14 @@ import { redirect } from "next/navigation"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { SummaryBar, type SummaryStat } from "@/components/ui/summary-bar"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { requirePermission } from "@/lib/auth/can"
 import { getFleetOverview } from "@/lib/services/fleet"
 import { getFleetAdminSettings } from "@/lib/services/system-settings"
+import { formatFuelVehicleStatus } from "@/lib/combustibles/validation"
 import { FleetFilters } from "./fleet-filters"
 import { FleetTableRow } from "./fleet-table-row"
 
@@ -82,6 +84,12 @@ export default async function FlotaPage({
   const showMeterReading = filteredVehicles.some((vehicle) => vehicle.lastOdometerReading != null || vehicle.lastHourMeterReading != null)
   const showLastMaintenance = filteredVehicles.some((vehicle) => vehicle.lastMaintenanceDate != null)
   const visibleColumnCount = 8 + Number(showCostPerDistance) + Number(showMeterReading) + Number(showLastMaintenance)
+  const summaryStats: SummaryStat[] = [
+    { key: "active", label: "Vehículos activos", value: active },
+    { key: "cost", label: "Costo operacional", value: formatCLP(totalCost) },
+    { key: "liters", label: "Litros registrados", value: formatNumber(totalLiters) },
+    { key: "maintenance", label: "Mantenciones", value: maintenanceCount },
+  ]
 
   return (
     <PageContainer>
@@ -101,12 +109,7 @@ export default async function FlotaPage({
         }
       />
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
-        <Metric title="Vehículos activos" value={active} />
-        <Metric title="Costo operacional" value={formatCLP(totalCost)} />
-        <Metric title="Litros registrados" value={formatNumber(totalLiters)} />
-        <Metric title="Mantenciones" value={maintenanceCount} />
-      </div>
+      <SummaryBar stats={summaryStats} />
 
       {(expiredVehicles.length > 0 || expiringSoon.length > 0) && (
         <div className="flex flex-col gap-2">
@@ -184,7 +187,7 @@ export default async function FlotaPage({
                   <TableCell>{vehicle.worksiteName}</TableCell>
                   <TableCell>
                     <Badge variant={vehicle.isActive && vehicle.operationalStatus === "operativo" ? "success" : "outline"}>
-                      {vehicle.isActive ? vehicle.operationalStatus : "inactivo"}
+                      {vehicle.isActive ? formatFuelVehicleStatus(vehicle.operationalStatus) : "Inactivo"}
                     </Badge>
                   </TableCell>
                   <TableCell>{vehicle.responsibleName ?? "—"}</TableCell>
@@ -214,16 +217,5 @@ export default async function FlotaPage({
         </CardContent>
       </Card>
     </PageContainer>
-  )
-}
-
-function Metric({ title, value }: { title: string; value: string | number }) {
-  return (
-    <Card>
-      <CardContent className="p-4">
-        <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{title}</div>
-        <div className="mt-1 text-2xl font-semibold">{value}</div>
-      </CardContent>
-    </Card>
   )
 }

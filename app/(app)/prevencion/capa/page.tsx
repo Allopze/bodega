@@ -1,5 +1,4 @@
 import type { Metadata } from "next"
-import Link from "next/link"
 import { redirect } from "next/navigation"
 import { requirePermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
@@ -9,10 +8,11 @@ import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { getCapaDashboardCounts, listCapaActionsPage, listCapaWorksites, type CapaStatus } from "@/lib/services/prevention-capa"
 import { CapaList } from "./capa-list"
+import { isCapaQuickFilter } from "@/lib/prevention/capa-list-filters"
 
 export const metadata: Metadata = { title: "Acciones CAPA" }
 
-type SearchParams = { page?: string; status?: string; source?: string; worksite?: string }
+type SearchParams = { page?: string; status?: string; source?: string; worksite?: string; vista?: string }
 
 export default async function CapaPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   let session
@@ -27,9 +27,10 @@ export default async function CapaPage({ searchParams }: { searchParams: Promise
   const status = raw.status && raw.status !== "all" ? raw.status : undefined
   const source = raw.source && raw.source !== "all" ? raw.source : undefined
   const worksite = raw.worksite && raw.worksite !== "all" ? raw.worksite : undefined
+  const quickFilter = isCapaQuickFilter(raw.vista) && raw.vista !== "all" ? raw.vista : undefined
 
   const [{ rows: actions, total }, worksites, counts] = await Promise.all([
-    listCapaActionsPage({ ...access, status: status as CapaStatus, sourceType: source, worksiteId: worksite, limit: pageSize, offset: pagination.offset }),
+    listCapaActionsPage({ ...access, status: status as CapaStatus, sourceType: source, worksiteId: worksite, quickFilter, limit: pageSize, offset: pagination.offset }),
     listCapaWorksites(access),
     getCapaDashboardCounts(access),
   ])
@@ -48,7 +49,7 @@ export default async function CapaPage({ searchParams }: { searchParams: Promise
         ]} />}
         actions={
           <Button asChild variant="secondary">
-            <Link href="/api/prevencion/capa/export">Exportar Excel</Link>
+            <a href="/api/prevencion/capa/export" download>Exportar Excel</a>
           </Button>
         }
       />

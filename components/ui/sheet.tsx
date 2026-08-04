@@ -131,7 +131,7 @@ function SheetCloseButton({ onClick }: { onClick?: React.MouseEventHandler<HTMLB
     <DialogPrimitive.Close
       onClick={onClick}
       className={cn(
-        "shrink-0 h-7 w-7 flex items-center justify-center rounded-[var(--radius-md)]",
+        "shrink-0 flex min-h-11 min-w-11 items-center justify-center rounded-[var(--radius-md)] sm:h-7 sm:w-7 sm:min-h-0 sm:min-w-0",
         "text-[var(--color-text-subtle)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)]",
         "transition-[color,background-color,transform] duration-[var(--duration-fast)]",
         "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]",

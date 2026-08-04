@@ -9,16 +9,26 @@ interface WorksiteSelectorProps {
   onToggle: (id: string) => void
   onSetPrimary: (id: string) => void
   error?: string
+  title?: string
+  helper?: string
 }
 
-export function WorksiteSelector({ worksites, selectedIds, primaryId, onToggle, onSetPrimary, error }: WorksiteSelectorProps) {
+export function WorksiteSelector({
+  worksites,
+  selectedIds,
+  primaryId,
+  onToggle,
+  onSetPrimary,
+  error,
+  title = "2. Faenas y alcance",
+  helper = "Selecciona dónde ejercerá el acceso. Define una faena principal cuando haya más de una.",
+}: WorksiteSelectorProps) {
   return (
-    <div className="mt-5">
-      <p className="text-eyebrow mb-2">
-        Faenas asignadas
-      </p>
+    <section className="mt-5" aria-labelledby="user-worksite-title">
+      <h3 id="user-worksite-title" className="text-eyebrow mb-1">{title}</h3>
+      <p className="mb-2 text-xs text-[var(--color-text-subtle)]">{helper}</p>
       {error && (
-        <p className="text-xs text-[var(--color-danger)] mb-2">
+        <p role="alert" className="mb-2 text-xs text-[var(--color-danger)]">
           {error}
         </p>
       )}
@@ -30,24 +40,25 @@ export function WorksiteSelector({ worksites, selectedIds, primaryId, onToggle, 
           const isChecked = selectedIds.includes(ws.id)
           const isPrimary = primaryId === ws.id && isChecked
           return (
-            <label key={ws.id} className="flex items-center gap-3 py-1.5 px-2 rounded-[var(--radius)] hover:bg-[var(--color-surface-2)] cursor-pointer group">
-              <input
-                type="checkbox"
-                checked={isChecked}
-                onChange={() => onToggle(ws.id)}
-                className="h-4 w-4 accent-[var(--color-primary)] shrink-0"
-              />
-              <span className="flex-1 text-sm text-[var(--color-text)]">
-                {ws.name}
-                <span className="ml-1.5 font-mono text-xs text-[var(--color-text-subtle)]">{ws.code}</span>
-              </span>
+            <div key={ws.id} className="flex min-h-11 items-center gap-3 rounded-[var(--radius)] px-2 hover:bg-[var(--color-surface-2)] sm:min-h-9">
+              <label htmlFor={`worksite-${ws.id}`} className="flex min-w-0 flex-1 cursor-pointer items-center gap-3">
+                <input
+                  id={`worksite-${ws.id}`}
+                  type="checkbox"
+                  checked={isChecked}
+                  onChange={() => onToggle(ws.id)}
+                  aria-label={`Seleccionar ${ws.name} (${ws.code})`}
+                  className="h-4 w-4 shrink-0 accent-[var(--color-primary)]"
+                />
+                <span className="min-w-0 flex-1 truncate text-sm text-[var(--color-text)]">
+                  {ws.name}
+                  <span className="ml-1.5 font-mono text-xs text-[var(--color-text-subtle)]">{ws.code}</span>
+                </span>
+              </label>
               {isChecked && (
                 <button
                   type="button"
-                  onClick={(e) => {
-                    e.preventDefault()
-                    onSetPrimary(ws.id)
-                  }}
+                  onClick={() => onSetPrimary(ws.id)}
                   className={[
                     "text-xs px-2 py-0.5 rounded-[var(--radius-sm)] border",
                     "transition-colors duration-[var(--duration-fast)]",
@@ -59,10 +70,10 @@ export function WorksiteSelector({ worksites, selectedIds, primaryId, onToggle, 
                   {isPrimary ? "Principal" : "Marcar principal"}
                 </button>
               )}
-            </label>
+            </div>
           )
         })}
       </div>
-    </div>
+    </section>
   )
 }

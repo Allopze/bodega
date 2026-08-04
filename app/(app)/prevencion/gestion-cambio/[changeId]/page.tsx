@@ -14,7 +14,7 @@ export default async function CambioPage({ params }: { params: Promise<{ changeI
 
   let auth
   try { auth = await requirePermission("prevention:change:view") }
-  catch { redirect("/forbidden") }
+  catch { redirect(`/forbidden?desde=${encodeURIComponent("/prevencion/gestion-cambio")}`) }
 
   const access = {
     userId: auth.user.id,

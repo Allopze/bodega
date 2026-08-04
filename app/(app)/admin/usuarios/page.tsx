@@ -4,6 +4,7 @@ import { db } from "@/db"
 import { permissions, rolePermissions, roles, userPermissions, userRoles, users, workers, worksites, worksiteUsers } from "@/db/schema"
 import { and, eq, inArray, isNotNull, or, sql } from "drizzle-orm"
 import { requirePermission, can } from "@/lib/auth/can"
+import { requiresWorksiteAssignment } from "@/lib/auth/role-scope"
 import { visibleUserIdsForAdminScope } from "@/lib/auth/admin-user-scope"
 import { worksiteScopeSql } from "@/lib/auth/scope"
 import { isPasswordSetupPending } from "@/lib/auth/password-setup"
@@ -82,7 +83,9 @@ export default async function UsuariosPage() {
     roleIds.push(assignment.roleId)
     roleIdsByPermission.set(assignment.permissionId, roleIds)
   }
-  const availableRoles = allRolesData.flatMap((role) => canManageAdmins || role.name !== "administrador" ? [{ id: role.id, name: role.name, label: role.label }] : [])
+  const availableRoles = allRolesData.flatMap((role) => canManageAdmins || role.name !== "administrador"
+    ? [{ id: role.id, name: role.name, label: role.label, requiresWorksiteAssignment: requiresWorksiteAssignment(role.name) }]
+    : [])
   const availablePermissions = allPermissionsData.flatMap((permission) => canManageAdmins || permission.module !== "admin" ? [{
     id: permission.id,
     name: permission.name,

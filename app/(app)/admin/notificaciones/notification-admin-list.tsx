@@ -4,8 +4,8 @@ import { useActionState, useEffect } from "react"
 import { Trash, Calendar } from "@phosphor-icons/react"
 import { DataTable } from "@/components/admin/data-table"
 import { Badge } from "@/components/ui/badge"
-import { DesktopOnlyTableNotice } from "@/components/ui/desktop-only-table"
 import { Button } from "@/components/ui/button"
+import { ResponsiveDataListCard, ResponsiveDataListField } from "@/components/ui/responsive-data-list"
 import { TableRow, TableCell } from "@/components/ui/table"
 import { toast } from "@/lib/toast"
 import { formatDateTime } from "@/lib/utils"
@@ -67,7 +67,6 @@ export function NotificationAdminList({ rows, oldestReadDate, retentionDays }: N
           </Button>
         </form>
       </div>
-      <DesktopOnlyTableNotice />
       <DataTable
         caption="Notificaciones de la Plataforma"
         columns={COLUMNS}
@@ -76,6 +75,27 @@ export function NotificationAdminList({ rows, oldestReadDate, retentionDays }: N
         pageSize={25}
         emptyTitle="Sin notificaciones"
         emptyDescription="El servicio no ha registrado notificaciones recientemente."
+        renderMobileCard={(row) => {
+          const r = row as AdminNotificationView
+          return (
+            <ResponsiveDataListCard
+              title={r.title}
+              description={r.body}
+              status={r.isRead ? <Badge variant="success">Leída</Badge> : <Badge variant="warning">Sin leer</Badge>}
+            >
+              <ResponsiveDataListField label="Tipo">{r.type}</ResponsiveDataListField>
+              <ResponsiveDataListField label="Usuario">
+                {r.userName || r.userEmail}
+              </ResponsiveDataListField>
+              <ResponsiveDataListField label="Correo" className="col-span-2">
+                {r.userEmail}
+              </ResponsiveDataListField>
+              <ResponsiveDataListField label="Fecha" className="col-span-2">
+                {formatDateTime(r.createdAt)}
+              </ResponsiveDataListField>
+            </ResponsiveDataListCard>
+          )
+        }}
         renderRow={(row) => {
           const r = row as AdminNotificationView
           return (

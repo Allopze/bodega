@@ -13,7 +13,7 @@
  * admin con permisos ppa:*).
  */
 import { expect, test, type Page } from "@playwright/test"
-import { login, pickCurrentMonthDate, selectRadixById } from "./helpers"
+import { continuePpaStep, login, pickCurrentMonthDate, selectRadixById } from "./helpers"
 
 const FAENA = "Faena E2E"
 const RUT = "11111111-1"
@@ -33,14 +33,51 @@ async function startForm(page: Page) {
   await expect(page.getByText(/Verificado:/)).toBeVisible()
   await expect(page.getByText(new RegExp(`Faena:.*${FAENA}`))).toBeVisible()
   await selectRadixById(page, "tipo", "Conductor Batea")
+  await continuePpaStep(page)
 }
 
 async function checkRequiredControls(page: Page) {
   await page.getByRole("checkbox", { name: "Elementos de protección personal" }).check()
   await page.getByRole("checkbox", { name: "Herramientas adecuadas y en buen estado" }).check()
+  await continuePpaStep(page)
 }
 
 test.describe("PPA Digital — formulario público", () => {
+  test("el avance conserva la identificación y exige respuestas críticas cuando corresponde", async ({ page }) => {
+    await page.goto("/ppa")
+    await page.getByRole("button", { name: "No estoy en la lista" }).click()
+    await selectRadixById(page, "worksite", FAENA)
+    await page.locator("#wname").fill("Trabajador PPA E2E")
+    await selectRadixById(page, "tipo", "Operador Maquinaria Pesada")
+    await continuePpaStep(page)
+
+    await expect(page.getByText("Paso 2 de 3: revisa riesgos y controles.")).toBeVisible()
+    await expect(page.getByRole("heading", { name: "Para, Piensa y Actúa" })).toBeVisible()
+
+    await page.getByRole("button", { name: "Volver", exact: true }).click()
+    await expect(page.locator("#wname")).toHaveValue("Trabajador PPA E2E")
+    await continuePpaStep(page)
+
+    await page.getByTestId("cambio-no").click()
+    await page.getByTestId("peligro-no").click()
+    await page.getByRole("checkbox", { name: "Elementos de protección personal" }).check()
+    await page.getByRole("checkbox", { name: "Herramientas adecuadas y en buen estado" }).check()
+    await continuePpaStep(page)
+
+    // Next monta su propio `role="alert"` (#__next-route-announcer__) siempre
+    // presente y vacío: el contrato es la alerta del formulario.
+    await expect(page.getByRole("alert").filter({ hasText: /\S/ })).toContainText("Completa las preguntas críticas")
+    await expect(page.locator("#comp-peligroCritico")).toBeFocused()
+
+    await page.locator("#comp-peligroCritico").fill("Riesgo de atrapamiento durante el movimiento")
+    await page.locator("#comp-queCambio").fill("El terreno está húmedo por la lluvia")
+    await page.locator("#comp-revisionEquipo").fill("Revisé frenos, alarma y protecciones")
+    await page.locator("#comp-condicionClima").fill("Detendré la tarea si baja la visibilidad")
+    await continuePpaStep(page)
+
+    await expect(page.getByText("Paso 3 de 3: confirma si es seguro comenzar.")).toBeVisible()
+  })
+
   test("envío seguro permite iniciar el trabajo", async ({ page }) => {
     await startForm(page)
     await page.getByTestId("cambio-no").click()

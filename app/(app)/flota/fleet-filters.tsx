@@ -3,6 +3,7 @@
 import { useRouter, useSearchParams } from "next/navigation"
 import { FilterToolbar, type ActiveFilterChip } from "@/components/ui/filter-toolbar"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { formatFuelVehicleStatus } from "@/lib/combustibles/validation"
 
 interface FleetFiltersProps {
   operationalStatuses: string[]
@@ -35,7 +36,7 @@ export function FleetFilters({ operationalStatuses, responsibleUsers, current, w
 
   const activeChips: ActiveFilterChip[] = []
   if (current.estado) {
-    activeChips.push({ key: "estado", label: "Estado", value: current.estado, displayValue: current.estado })
+    activeChips.push({ key: "estado", label: "Estado", value: current.estado, displayValue: formatFuelVehicleStatus(current.estado) })
   }
   if (current.responsable) {
     const resp = responsibleUsers.find((r) => r.id === current.responsable)
@@ -65,7 +66,7 @@ export function FleetFilters({ operationalStatuses, responsibleUsers, current, w
         <SelectContent>
           <SelectItem value="all">Todos los estados</SelectItem>
           {operationalStatuses.map((s) => (
-            <SelectItem key={s} value={s}>{s}</SelectItem>
+            <SelectItem key={s} value={s}>{formatFuelVehicleStatus(s)}</SelectItem>
           ))}
         </SelectContent>
       </Select>

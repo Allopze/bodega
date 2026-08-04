@@ -1,4 +1,5 @@
 import type { Metadata } from "next"
+import Link from "next/link"
 import { notFound, redirect } from "next/navigation"
 import { db }                  from "@/db"
 import { purchaseOrderInvoices, purchaseOrders, statusHistory, users } from "@/db/schema"
@@ -35,7 +36,7 @@ export default async function OcDetailPage({
 }) {
   let session
   try { session = await requirePermission("purchasing:view") }
-  catch { redirect("/forbidden") }
+  catch { redirect(`/forbidden?desde=${encodeURIComponent("/compras")}`) }
 
   const [{ id }, { tab, nro }] = await Promise.all([params, searchParams])
 
@@ -50,6 +51,30 @@ export default async function OcDetailPage({
 
   if (!order) notFound()
   if (!canAccessWorksite(session, order.worksiteId)) notFound()
+
+  // Estado "eliminado" (TASK-UI-002). Borrar una OC no borra la fila: le pone
+  // `deletedAt` y le muta el código a `OC-…-DELETED-<id>` para liberar el
+  // UNIQUE. Sin este corte, quien abría un enlace antiguo veía la ficha
+  // completa —con ese código mutado en el encabezado— como si el registro
+  // siguiera vivo. Se muestra qué pasó, cuándo, y la salida a la lista.
+  if (order.deletedAt) {
+    const originalCode = order.code.replace(/-DELETED-[A-Za-z0-9_-]+$/, "")
+    return (
+      <PageContainer width="form">
+        <div className="mx-auto max-w-2xl py-10">
+          <p className="font-mono text-xs uppercase tracking-[0.08em] text-[var(--color-text-subtle)]">Orden eliminada</p>
+          <h1 className="mt-1 text-h1 text-[var(--color-text)]">{originalCode}</h1>
+          <p className="mt-2 max-w-[60ch] text-sub">
+            Esta orden de compra fue eliminada el {formatDate(order.deletedAt)}. Se conserva en la
+            auditoría para poder rastrearla, pero ya no forma parte del flujo de adquisiciones.
+          </p>
+          <div className="mt-6">
+            <Button asChild><Link href="/compras">Volver a Órdenes de compra</Link></Button>
+          </div>
+        </div>
+      </PageContainer>
+    )
+  }
 
 
 

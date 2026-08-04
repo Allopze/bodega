@@ -37,6 +37,8 @@ export const pgliteTestFiles = [
   "lib/__tests__/pdtp-worksites.test.ts",
   "lib/__tests__/physical-inventory-service.test.ts",
   "lib/__tests__/prevention-pdtp.test.ts",
+  "lib/__tests__/prevention-capa-list.test.ts",
+  "lib/__tests__/prevention-emergency-list.test.ts",
   "lib/__tests__/prevention-documents-persistence.test.ts",
   "lib/__tests__/prevention-ppa-workflow-persistence.test.ts",
   "lib/__tests__/purchase-order-edit-items.test.ts",

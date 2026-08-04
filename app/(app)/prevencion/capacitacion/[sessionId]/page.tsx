@@ -14,7 +14,7 @@ export default async function SesionPage({ params }: { params: Promise<{ session
 
   let auth
   try { auth = await requirePermission("prevention:training:view") }
-  catch { redirect("/forbidden") }
+  catch { redirect(`/forbidden?desde=${encodeURIComponent("/prevencion/capacitacion")}`) }
 
   const detail = await getTrainingSessionDetail(sessionId, {
     userId: auth.user.id,

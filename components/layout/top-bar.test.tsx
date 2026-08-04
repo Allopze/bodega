@@ -15,6 +15,8 @@ vi.mock("next/navigation", () => ({
 
 vi.mock("next-auth/react", () => ({
   signOut: vi.fn(),
+  // `useSignOut` confirma contra el servidor que la sesión murió antes de salir.
+  getSession: vi.fn(async () => null),
 }))
 
 vi.mock("./notification-bell", () => ({

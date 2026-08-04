@@ -6,7 +6,7 @@ import { eq, asc, desc } from "drizzle-orm"
 import { requireAuth } from "@/lib/auth/can"
 import { canAccessWorksite } from "@/lib/auth/can"
 import { getPdfMaxSizeMb } from "@/lib/services/system-settings"
-import { visibleRequestTypeOptions } from "@/lib/request-types"
+import { resolveInitialRequestType, visibleRequestTypeOptions } from "@/lib/request-types"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { RequestForm } from "../request-form"
@@ -17,13 +17,23 @@ import { Warning } from "@phosphor-icons/react/dist/ssr"
 
 export const metadata: Metadata = { title: "Nueva solicitud de compra" }
 
-export default async function NuevaSolicitudPage() {
+export default async function NuevaSolicitudPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ tipo?: string | string[] }>
+}) {
   let session
   try { session = await requireAuth() }
   catch { redirect("/forbidden") }
 
   const requestTypeOptions = visibleRequestTypeOptions(session.user.permissions, "create")
   if (requestTypeOptions.length === 0) redirect("/forbidden")
+
+  const query = await searchParams
+  const initialType = resolveInitialRequestType(query.tipo, requestTypeOptions)
+  const initialTypeNotice = query.tipo !== undefined && !initialType.matchedCandidate
+    ? "El tipo indicado en el enlace no está disponible para tu cuenta. Se seleccionó el primer tipo de solicitud que puedes crear."
+    : undefined
 
   const [allWorksites, allProducts, allAttrs, productSupplierRows, allSuppliers, allWorkers, maxFileSizeMb] = await Promise.all([
     db.select().from(worksites)
@@ -171,6 +181,8 @@ export default async function NuevaSolicitudPage() {
         maxFileSizeMb={maxFileSizeMb}
         userRoles={session.user.roles}
         userPermissions={session.user.permissions}
+        initialRequestType={initialType.requestType}
+        initialRequestTypeNotice={initialTypeNotice}
       />
     </PageContainer>
   )

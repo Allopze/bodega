@@ -10,7 +10,7 @@ import { StateBadge } from "@/components/states/state-badge"
 import { SubmitButton } from "@/components/admin/submit-button"
 import { TableRow, TableCell, TableCellNum } from "@/components/ui/table"
 import { INITIAL_STATE } from "@/components/admin/form-state"
-import { formatCLP, formatDate } from "@/lib/utils"
+import { formatCLP, formatDate, pluralize } from "@/lib/utils"
 import { issueOrderAction, sendOrderAction } from "./actions/order-status"
 import { deleteOrderAction } from "./actions/order-cancel"
 import { resumeItemAction } from "./actions/item-state"
@@ -248,7 +248,7 @@ export function OcMobileCard({ row }: { row: OcRow }) {
       </dl>
       {row.invoiceCount > 0 ? (
         <p className="mt-2 text-xs text-[var(--color-text-muted)]">
-          {row.invoiceCount} factura{row.invoiceCount === 1 ? "" : "s"} asociada{row.invoiceCount === 1 ? "" : "s"}
+          {pluralize(row.invoiceCount, "factura")} {pluralize(row.invoiceCount, "asociada", "asociadas")}
         </p>
       ) : invoiceDue(row.status) && (
         <p className="mt-2 text-xs font-medium text-signal-ink">Sin factura</p>

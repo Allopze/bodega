@@ -11,11 +11,11 @@ import { isGlobalRole, visibleWorksiteIds } from "@/lib/auth/can"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { Badge } from "@/components/ui/badge"
-import { ExportDialog } from "@/components/export-dialog"
 import { formatCLP } from "@/lib/utils"
 import { and, count, eq, inArray, sql, sum, asc } from "drizzle-orm"
 import { ChartBar, ShoppingCart, Truck } from "@phosphor-icons/react/dist/ssr"
 import { ReportMetric, BreakdownPanel, StatusGroup, statusRows } from "./reportes-page.helpers"
+import { ReportsExportMenu } from "./reports-export-menu"
 
 export const metadata: Metadata = { title: "Reportes" }
 
@@ -161,54 +161,7 @@ export default async function Page() {
             { label: "Reportes" },
           ]} />
         }
-        actions={
-          <div className="grid w-full grid-cols-1 gap-2 sm:w-auto sm:grid-cols-3">
-            <ExportDialog
-              tipo="items_sin_oc"
-              label="Ítems sin OC"
-              worksites={activeWorksites}
-              statuses={[
-                { value: "approved", label: "Aprobado" },
-                { value: "pending_purchase", label: "Pendiente compra" },
-              ]}
-              tone="signal"
-            />
-            <ExportDialog
-              tipo="gasto_faena"
-              label="Gasto por faena"
-              worksites={activeWorksites}
-              statuses={[
-                { value: "draft", label: "Borrador" },
-                { value: "issued", label: "Emitida" },
-                { value: "sent", label: "Enviada" },
-                { value: "received", label: "Recibida" },
-                { value: "cancelled", label: "Cancelada" },
-              ]}
-            />
-            {/* Una OC cerrada sale de la cola operacional —cerrada no admite
-                trabajo pendiente—, así que cerrarla sin respaldo tributario no
-                deja rastro en ninguna pantalla. Esto audita esas decisiones,
-                que el cierre ya obliga a confirmar y justificar. */}
-            <ExportDialog
-              tipo="oc_cerradas_sin_factura"
-              label="OC cerradas sin factura"
-              worksites={activeWorksites}
-            />
-            <ExportDialog
-              tipo="oc_por_estado"
-              label="OC por estado"
-              worksites={activeWorksites}
-              statuses={[
-                { value: "draft", label: "Borrador" },
-                { value: "issued", label: "Emitida" },
-                { value: "sent", label: "Enviada" },
-                              { value: "office_received", label: "Recibida oficina" },
-                { value: "received", label: "Recibida" },
-                { value: "cancelled", label: "Cancelada" },
-              ]}
-            />
-          </div>
-        }
+        actions={<ReportsExportMenu worksites={activeWorksites} />}
       />
 
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">

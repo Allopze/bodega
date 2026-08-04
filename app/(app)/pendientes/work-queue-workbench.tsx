@@ -7,6 +7,7 @@ import { ArrowRight, FunnelSimple, WarningCircle } from "@phosphor-icons/react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
+import { FilterToolbar, type ActiveFilterChip } from "@/components/ui/filter-toolbar"
 import { OPERATIONAL_MODULE_LABELS } from "@/lib/work-queue"
 import { PriorityBadge } from "@/components/ui/priority-badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -18,6 +19,16 @@ const QUICK_FILTERS = [
   ["all", "Todas"], ["critical", "Críticas"], ["overdue", "Vencidas"], ["today", "Hoy"],
   ["blocked", "Bloqueadas"], ["unassigned", "Sin asignar"], ["mine", "Mis tareas"],
 ] as const
+
+const PRIMARY_QUICK_FILTERS = QUICK_FILTERS.filter(([value]) => ["all", "critical", "overdue", "mine"].includes(value))
+const SECONDARY_QUICK_FILTERS = QUICK_FILTERS.filter(([value]) => !["all", "critical", "overdue", "mine"].includes(value))
+
+const PRIORITY_LABELS: Record<string, string> = {
+  critical: "Crítica",
+  high: "Alta",
+  normal: "Normal",
+  low: "Baja",
+}
 
 /** Hoy en la zona de operación, para decidir si una fecha ya venció. */
 function chileToday() {
@@ -100,6 +111,29 @@ export function WorkQueueWorkbench({ result }: WorkQueueWorkbenchProps) {
     return value && value !== "all"
   }).length
   const { modules, worksites, statuses } = result.filterOptions
+  const advancedFilterCount = ["module", "estado", "priority"].filter((key) => {
+    const value = searchParams.get(key)
+    return value && value !== "all"
+  }).length
+  const activeChips: ActiveFilterChip[] = []
+  const query = searchParams.get("q")
+  const moduleFilter = searchParams.get("module")
+  const worksiteId = searchParams.get("faena")
+  const priority = searchParams.get("priority")
+  const status = searchParams.get("estado")
+  const quickLabel = QUICK_FILTERS.find(([value]) => value === activeQuick)?.[1]
+  if (query) activeChips.push({ key: "q", label: "Búsqueda", value: query, displayValue: query })
+  if (quickLabel && activeQuick !== "all") activeChips.push({ key: "quick", label: "Vista rápida", value: activeQuick, displayValue: quickLabel })
+  if (worksiteId && worksiteId !== "all") {
+    const worksite = worksites.find((item) => item.id === worksiteId)
+    if (worksite) activeChips.push({ key: "faena", label: "Faena", value: worksiteId, displayValue: worksite.name })
+  }
+  if (moduleFilter && moduleFilter !== "all") activeChips.push({ key: "module", label: "Módulo", value: moduleFilter, displayValue: OPERATIONAL_MODULE_LABELS[moduleFilter as keyof typeof OPERATIONAL_MODULE_LABELS] ?? moduleFilter })
+  if (priority && priority !== "all") activeChips.push({ key: "priority", label: "Prioridad", value: priority, displayValue: PRIORITY_LABELS[priority] ?? priority })
+  if (status && status !== "all") {
+    const statusLabel = statuses.find((item) => item.value === status)?.label ?? status
+    activeChips.push({ key: "estado", label: "Estado", value: status, displayValue: statusLabel })
+  }
 
   return (
     <section aria-labelledby="cola-operacional" className="space-y-4">
@@ -124,8 +158,8 @@ export function WorkQueueWorkbench({ result }: WorkQueueWorkbenchProps) {
         <Button type="submit" variant="secondary" size="sm"><FunnelSimple size={14} />Buscar</Button>
       </form>
 
-      <div className="flex flex-wrap gap-1 pb-1" aria-label="Filtros rápidos">
-        {QUICK_FILTERS.map(([value, label]) => {
+      <div className="flex flex-wrap gap-1 pb-1" aria-label="Vistas rápidas de pendientes">
+        {PRIMARY_QUICK_FILTERS.map(([value, label]) => {
           const count = result.summary[value]
           return (
             <button
@@ -150,36 +184,48 @@ export function WorkQueueWorkbench({ result }: WorkQueueWorkbenchProps) {
         })}
       </div>
 
-      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-        <Select value={searchParams.get("module") ?? "all"} onValueChange={(value) => update({ module: value })}>
-          <SelectTrigger aria-label="Filtrar por módulo" className="h-11 sm:h-8 text-xs"><SelectValue placeholder="Módulo" /></SelectTrigger>
-          <SelectContent><SelectItem value="all">Todos los módulos</SelectItem>{modules.map((module) => <SelectItem key={module} value={module}>{OPERATIONAL_MODULE_LABELS[module]}</SelectItem>)}</SelectContent>
-        </Select>
+      <FilterToolbar
+        activeChips={activeChips}
+        activeCount={advancedFilterCount}
+        hasActiveFilters={activeFilters > 0}
+        onRemoveChip={(key) => update({ [key]: null })}
+        onClearAll={() => router.replace(pathname, { scroll: false })}
+        overflowFilters={
+          <>
+            <div className="space-y-2">
+              <p className="text-eyebrow">Vistas adicionales</p>
+              <div className="flex flex-wrap gap-1">
+                {SECONDARY_QUICK_FILTERS.map(([value, label]) => (
+                  <Button key={value} type="button" variant={activeQuick === value ? "primary" : "secondary"} size="sm" onClick={() => update({ quick: value })}>
+                    {label} <span className="font-mono tabular-nums">{result.summary[value]}</span>
+                  </Button>
+                ))}
+              </div>
+            </div>
+            <Select value={searchParams.get("module") ?? "all"} onValueChange={(value) => update({ module: value })}>
+              <SelectTrigger aria-label="Filtrar por módulo"><SelectValue placeholder="Módulo" /></SelectTrigger>
+              <SelectContent><SelectItem value="all">Todos los módulos</SelectItem>{modules.map((item) => <SelectItem key={item} value={item}>{OPERATIONAL_MODULE_LABELS[item]}</SelectItem>)}</SelectContent>
+            </Select>
+            <Select value={searchParams.get("priority") ?? "all"} onValueChange={(value) => update({ priority: value })}>
+              <SelectTrigger aria-label="Filtrar por prioridad"><SelectValue placeholder="Prioridad" /></SelectTrigger>
+              <SelectContent><SelectItem value="all">Todas las prioridades</SelectItem><SelectItem value="critical">Crítica</SelectItem><SelectItem value="high">Alta</SelectItem><SelectItem value="normal">Normal</SelectItem><SelectItem value="low">Baja</SelectItem></SelectContent>
+            </Select>
+            <Select value={searchParams.get("estado") ?? "all"} onValueChange={(value) => update({ estado: value })}>
+              <SelectTrigger aria-label="Filtrar por estado"><SelectValue placeholder="Estado" /></SelectTrigger>
+              <SelectContent><SelectItem value="all">Todos los estados</SelectItem>{statuses.map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}</SelectContent>
+            </Select>
+          </>
+        }
+      >
         <Select value={searchParams.get("faena") ?? "all"} onValueChange={(value) => update({ faena: value })}>
           <SelectTrigger aria-label="Filtrar por faena" className="h-11 sm:h-8 text-xs"><SelectValue placeholder="Faena" /></SelectTrigger>
           <SelectContent><SelectItem value="all">Todas las faenas</SelectItem>{worksites.map((worksite) => <SelectItem key={worksite.id} value={worksite.id}>{worksite.name}</SelectItem>)}</SelectContent>
         </Select>
-        <Select value={searchParams.get("priority") ?? "all"} onValueChange={(value) => update({ priority: value })}>
-          <SelectTrigger aria-label="Filtrar por prioridad" className="h-11 sm:h-8 text-xs"><SelectValue placeholder="Prioridad" /></SelectTrigger>
-          <SelectContent><SelectItem value="all">Todas las prioridades</SelectItem><SelectItem value="critical">Crítica</SelectItem><SelectItem value="high">Alta</SelectItem><SelectItem value="normal">Normal</SelectItem><SelectItem value="low">Baja</SelectItem></SelectContent>
-        </Select>
         <Select value={searchParams.get("sort") ?? "priority"} onValueChange={(value) => update({ sort: value })}>
-          <SelectTrigger aria-label="Ordenar cola" className="h-11 sm:h-8 text-xs"><SelectValue placeholder="Orden" /></SelectTrigger>
+          <SelectTrigger aria-label="Ordenar por" className="h-11 sm:h-8 text-xs"><SelectValue placeholder="Ordenar por" /></SelectTrigger>
           <SelectContent><SelectItem value="priority">Prioridad</SelectItem><SelectItem value="due">Fecha de vencimiento</SelectItem><SelectItem value="oldest">Más antiguas</SelectItem><SelectItem value="newest">Más recientes</SelectItem></SelectContent>
         </Select>
-      </div>
-
-      <details className="rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-2">
-        <summary className="cursor-pointer text-xs font-medium text-[var(--color-text-muted)]">Más filtros{activeFilters > 0 ? ` (${activeFilters})` : ""}</summary>
-        <div className="mt-3 grid gap-2 sm:grid-cols-2">
-          <Select value={searchParams.get("estado") ?? "all"} onValueChange={(value) => update({ estado: value })}>
-            <SelectTrigger aria-label="Filtrar por estado"><SelectValue placeholder="Estado" /></SelectTrigger>
-            <SelectContent><SelectItem value="all">Todos los estados</SelectItem>{statuses.map((status) => <SelectItem key={status.value} value={status.value}>{status.label}</SelectItem>)}</SelectContent>
-          </Select>
-        </div>
-      </details>
-
-      {activeFilters > 0 && <div className="flex items-center gap-2 text-xs text-[var(--color-text-muted)]"><span>{activeFilters} filtro{activeFilters === 1 ? "" : "s"} activo{activeFilters === 1 ? "" : "s"}</span><Button type="button" size="sm" variant="link" onClick={() => router.replace(pathname, { scroll: false })}>Limpiar filtros</Button></div>}
+      </FilterToolbar>
 
       {result.sourceErrors.length > 0 && (
         <div role="status" className="flex gap-2 rounded-[var(--radius)] border border-[var(--color-warning-line)] bg-[var(--color-warning-tint)] px-3 py-2 text-sm text-[var(--color-warning-ink)]">

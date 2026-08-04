@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test"
 
-import { login, selectRadixById } from "./helpers"
+import { listRecord, login, selectRadixById } from "./helpers"
 
 test("entregas: bloquea cantidad mayor al saldo pendiente", async ({ page }) => {
   await login(page)
@@ -24,7 +24,11 @@ test("entregas: bloquea cantidad mayor al saldo pendiente", async ({ page }) => 
   ).toEqual({ max: "2", rangeOverflow: true })
 
   await page.locator("form").getByRole("button", { name: "Registrar entrega" }).click()
-  await expect(page.getByRole("row", { name: /Trabajador E2E.*Casco EPP E2E.*5 unidad/ })).toHaveCount(0)
+  // El registro no debe existir en ninguna de las dos representaciones. La
+  // cantidad es parte de la aserción: existen entregas legítimas del mismo EPP
+  // al mismo trabajador, y lo que esta prueba niega es la de 5 unidades, que
+  // excede el saldo pendiente.
+  await expect(listRecord(page, /Trabajador E2E/).filter({ hasText: "Casco EPP E2E" }).filter({ hasText: /5 unidad/ })).toHaveCount(0)
 })
 
 test("entregas: rechaza comprobante con formato no permitido", async ({ page }) => {
@@ -69,7 +73,7 @@ test("entregas: registra comprobante y permite descargarlo", async ({ page }) =>
   await page.goto("/entregas")
   await expect(page.getByRole("heading", { name: "Entregas", exact: true })).toBeVisible()
 
-  const row = page.getByRole("row", { name: /SOL-2026-EPP-ADJ/ })
+  const row = listRecord(page, /SOL-2026-EPP-ADJ/)
   await expect(row).toBeVisible({ timeout: 30_000 })
   await expect(row).toContainText("Receptor adjunto E2E")
   const link = row.getByRole("link", { name: /Adjunto|Archivo/ })
@@ -99,7 +103,7 @@ test("entregas: registra EPP recibido a trabajador", async ({ page }) => {
   await page.goto("/entregas")
   await expect(page.getByRole("heading", { name: "Entregas", exact: true })).toBeVisible()
 
-  await expect(page.getByRole("row", { name: /SOL-2026-EPP/ }).filter({ hasText: "Supervisor E2E" })).toBeVisible({
+  await expect(listRecord(page, /SOL-2026-EPP/).filter({ hasText: "Supervisor E2E" })).toBeVisible({
     timeout: 30_000,
   })
 })

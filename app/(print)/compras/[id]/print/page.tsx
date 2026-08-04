@@ -6,6 +6,7 @@ import { loadOcPrintData } from "./oc-print-data"
 import { OC_PRINT_STYLES } from "./oc-print-styles"
 import { FieldLine, TotalLine } from "./oc-print-components"
 import { formatOrderNumber, formatPlainCLP, formatDecimal, formatDiscount, formatUnit } from "./oc-print-formatters"
+import { MobileDocumentSummary } from "@/components/print/mobile-document-summary"
 
 export const dynamic = "force-dynamic"
 
@@ -26,6 +27,30 @@ export default async function PrintOcPage({ params }: { params: Promise<{ id: st
         backHref={`/compras/${order.id}`}
         pdfHref={`/compras/${order.id}/print/pdf`}
         suggestedFilename={data.suggestedFilename}
+      />
+
+      <MobileDocumentSummary
+        code={`Orden de compra ${order.code}`}
+        title={order.supplier?.name ?? "Proveedor sin nombre"}
+        description={`${order.items.length} ${order.items.length === 1 ? "ítem solicitado" : "ítems solicitados"} · ${issuedDate}`}
+        sections={[
+          {
+            title: "Compra",
+            fields: [
+              { label: "Faena", value: order.worksite?.name ?? "Sin faena" },
+              { label: "Forma de pago", value: order.paymentTerms || order.supplier?.paymentTerms || "Sin definir" },
+              { label: "Fecha de emisión", value: issuedDate },
+            ],
+          },
+          {
+            title: "Total",
+            fields: [
+              { label: "Neto", value: formatPlainCLP(order.netAmount) },
+              { label: "IVA", value: formatPlainCLP(order.taxAmount) },
+              { label: "Total", value: formatPlainCLP(order.totalAmount) },
+            ],
+          },
+        ]}
       />
 
       <main className="sheet" aria-label={`Orden de compra ${order.code}`}>

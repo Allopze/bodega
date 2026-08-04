@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation"
 import { BarChart, Bar, Cell, ErrorBar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from "recharts"
 import { ChartLineUp } from "@phosphor-icons/react"
 import type { PerformanceGroup } from "@/lib/combustibles/equipment-performance"
+import { ChartDataTable } from "@/components/ui/chart-data-table"
 
 const NORMAL_COLOR = "var(--color-primary)"
 const LOW_RELIABILITY_COLOR = "var(--color-warning-ink)"
@@ -56,7 +57,29 @@ export function PerformanceGroupChart({ groups, drilldownHref }: { groups: Perfo
     ? { low: Math.min(...expectedRanges.map((r) => r.low)), high: Math.max(...expectedRanges.map((r) => r.high)) }
     : null
 
+  // La confiabilidad se codificaba **sólo** en el ámbar de la barra: quien no
+  // distingue ese color no sabía qué promedios eran concluyentes. Aquí es una
+  // columna con palabras, y el nombre del grupo va completo, sin truncar a 16.
+  const mejor = chartData.reduce((current, row) => row.mean > current.mean ? row : current, chartData[0]!)
+  const noConcluyentes = chartData.filter((row) => row.reliability !== "confiable").length
+
   return (
+    <>
+      <ChartDataTable
+        title={`Rendimiento medio por grupo, en ${unitLabel}`}
+        groupLabel="Grupo"
+        columns={[`Promedio (${unitLabel})`, "Desv. estándar", "Observaciones", "Confiabilidad"]}
+        rows={chartData.map((row) => ({
+          label: row.group.label,
+          values: [row.mean, `±${row.group.stats.stdDev}`, row.count, row.reliability === "confiable" ? "Confiable" : "Muestra no concluyente"],
+        }))}
+        conclusion={`El mejor promedio es ${mejor.group.label}: ${mejor.mean} ${unitLabel}.`
+          + (noConcluyentes > 0 ? ` ${noConcluyentes} de ${chartData.length} grupos tienen muestra no concluyente.` : "")}
+        caption={commonExpected
+          ? `Rango esperado del grupo comparable: ${commonExpected.low}–${commonExpected.high} ${unitLabel}.`
+          : "Los grupos visibles no comparten un rango esperado común."}
+        className="mb-4 mt-0 border-b border-t-0 pb-3 pt-0"
+      />
     <div className="h-72" aria-label={`Rendimiento medio por grupo, en ${unitLabel}`}>
       <ResponsiveContainer width="100%" height="100%" debounce={80}>
         <BarChart
@@ -101,5 +124,6 @@ export function PerformanceGroupChart({ groups, drilldownHref }: { groups: Perfo
         </BarChart>
       </ResponsiveContainer>
     </div>
+    </>
   )
 }

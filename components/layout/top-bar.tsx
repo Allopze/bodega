@@ -116,7 +116,11 @@ const TopBarInner = React.memo(function TopBarInner({
               {header.breadcrumb && (
                 <div className="hidden min-w-0 truncate xl:block">{header.breadcrumb}</div>
               )}
-              <div className="flex min-w-0 items-baseline gap-2">
+              {/* Eco visual del PageHeader, que en `lg` queda `sr-only` pero
+                  sigue en el árbol de accesibilidad con su <h1> y su
+                  descripción. Sin `aria-hidden` el lector anuncia el título y
+                  la descripción de la página dos veces en escritorio. */}
+              <div aria-hidden="true" className="flex min-w-0 items-baseline gap-2">
                 {/* Heading destacado al inicio de la vista */}
                 <p title={header.title} className="truncate text-lg font-bold tracking-tight text-(--color-text)">
                   {header.title}

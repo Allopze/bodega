@@ -40,7 +40,7 @@ export default async function DocumentRegularizationPage() {
               <Link href="/prevencion/privacidad/auditoria">Revisar accesos sensibles</Link>
             </Button>
             <Button asChild size="sm">
-              <Link href="/api/prevencion/documentacion/integrity/export">Exportar hallazgos Excel</Link>
+              <a href="/api/prevencion/documentacion/integrity/export" download>Exportar hallazgos Excel</a>
             </Button>
           </div>
         )}

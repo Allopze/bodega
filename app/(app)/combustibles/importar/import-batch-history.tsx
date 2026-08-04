@@ -4,9 +4,9 @@ import { useState, useMemo } from "react"
 import Link from "next/link"
 import { DataTable, type ColumnDef } from "@/components/admin/data-table"
 import { TableCell, TableRow } from "@/components/ui/table"
-import { DesktopOnlyTableNotice } from "@/components/ui/desktop-only-table"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { ResponsiveDataListCard, ResponsiveDataListField } from "@/components/ui/responsive-data-list"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { formatCLP, formatQty, formatDateTime } from "@/lib/utils"
 
@@ -154,7 +154,6 @@ export function ImportBatchHistory({ batches }: { batches: BatchRow[] }) {
 
   return (
     <>
-  <DesktopOnlyTableNotice>El historial de importaciones tiene 11 columnas. La importación de planillas se hace desde un computador; aquí puedes desplazar en horizontal para consultarlo.</DesktopOnlyTableNotice>
       <DataTable
           caption="Historial de Importaciones de Combustible"
           enableColumnToggle
@@ -165,6 +164,27 @@ export function ImportBatchHistory({ batches }: { batches: BatchRow[] }) {
         searchKeys={SEARCH_KEYS}
         searchPlaceholder="Filtrar lotes..."
         renderRow={renderRow}
+        renderMobileCard={(row) => {
+          const r = row as unknown as BatchRowFlat
+          return (
+            <ResponsiveDataListCard
+              title={r.archivoNombre}
+              description={r.periodoLabel}
+              status={<Badge variant={r.estado === "revertido" ? "danger" : "success"}>{r.estado === "revertido" ? "Revertido" : "Importado"}</Badge>}
+              actions={<Button asChild type="button" variant="ghost" size="sm"><Link href={`/combustibles/importar/${r.id}`}>Ver lote</Link></Button>}
+            >
+              <ResponsiveDataListField label="Faena">{r.worksiteName}</ResponsiveDataListField>
+              <ResponsiveDataListField label="Fuente">{r.fuente}</ResponsiveDataListField>
+              <ResponsiveDataListField label="Filas">
+                <span className="font-mono tabular-nums text-[var(--color-text)]">{formatQty(r.filasValidas)}{r.filasInvalidas > 0 ? ` válidas · ${r.filasInvalidas} con error` : " válidas"}</span>
+              </ResponsiveDataListField>
+              <ResponsiveDataListField label="Cantidad / monto">
+                <span className="font-mono tabular-nums text-[var(--color-text)]">{formatQty(r.totalCantidad, "L")} · {formatCLP(r.totalMonto)}</span>
+              </ResponsiveDataListField>
+              <ResponsiveDataListField label="Importado por" className="col-span-2">{r.importerName} · {formatDateTime(r.createdAt)}</ResponsiveDataListField>
+            </ResponsiveDataListCard>
+          )
+        }}
         emptyTitle="Sin lotes de importación"
         emptyDescription="Aún no se han importado lotes de consumo de combustible."
         actions={actions}

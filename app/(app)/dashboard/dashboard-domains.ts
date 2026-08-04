@@ -77,8 +77,12 @@ const MONEY_PERMISSION: Permission = "purchasing:view"
 const MONEY_FIRST: readonly DashboardDomainKey[] = ["adquisiciones", "flota", "prevencion", "bodega", "terreno", "gobernanza"]
 const PREVENTION_FIRST: readonly DashboardDomainKey[] = ["prevencion", "terreno", "gobernanza", "bodega", "adquisiciones", "flota"]
 
+function domainIsVisibleForPermissions(domain: DashboardDomain, permissions: ReadonlySet<string>) {
+  return domain.permissions.some((permission) => permissions.has(permission))
+}
+
 export function domainIsVisible(domain: DashboardDomain, permissions: readonly string[]) {
-  return domain.permissions.some((permission) => permissions.includes(permission))
+  return domainIsVisibleForPermissions(domain, new Set(permissions))
 }
 
 /**
@@ -94,8 +98,14 @@ export function domainIsVisible(domain: DashboardDomain, permissions: readonly s
  * queda fuera por `domainIsVisible`.
  */
 export function orderDashboardDomains(permissions: readonly string[]): DashboardDomain[] {
-  const order = permissions.includes(MONEY_PERMISSION) ? MONEY_FIRST : PREVENTION_FIRST
-  return order
-    .map((key) => DASHBOARD_DOMAINS[key])
-    .filter((domain) => domainIsVisible(domain, permissions))
+  const permissionSet = new Set(permissions)
+  const order = permissionSet.has(MONEY_PERMISSION) ? MONEY_FIRST : PREVENTION_FIRST
+  const domains: DashboardDomain[] = []
+
+  for (const key of order) {
+    const domain = DASHBOARD_DOMAINS[key]
+    if (domainIsVisibleForPermissions(domain, permissionSet)) domains.push(domain)
+  }
+
+  return domains
 }

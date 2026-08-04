@@ -3,7 +3,7 @@
 import * as React from "react"
 import { DataTable } from "@/components/admin/data-table"
 import { Badge } from "@/components/ui/badge"
-import { DesktopOnlyTableNotice } from "@/components/ui/desktop-only-table"
+import { ResponsiveDataListCard, ResponsiveDataListField } from "@/components/ui/responsive-data-list"
 
 import type { ColumnDef } from "@/components/admin/data-table"
 
@@ -52,12 +52,24 @@ export function EppFamilyList({ families, eppTypes }: Props) {
 
   return (
     <>
-  <DesktopOnlyTableNotice />
       <DataTable
         caption="Catálogo de EPP"
         columns={COLUMNS}
         rows={rows}
         searchKeys={["canonicalName", "brand", "model", "certification"]}
+        renderMobileCard={(row) => (
+          <ResponsiveDataListCard
+            title={row.canonicalName}
+            status={<Badge variant="info">{row.eppTypeLabel}</Badge>}
+          >
+            <ResponsiveDataListField label="Marca / modelo">{row.brand} · {row.model}</ResponsiveDataListField>
+            <ResponsiveDataListField label="Categoría">{row.categoryName}</ResponsiveDataListField>
+            <ResponsiveDataListField label="Certificación" className="col-span-2">{row.certification}</ResponsiveDataListField>
+            <ResponsiveDataListField label="Variantes" className="col-span-2">
+              <span className="font-mono tabular-nums text-[var(--color-text)]">{row.activeVariants} activas de {row.totalVariants}</span>
+            </ResponsiveDataListField>
+          </ResponsiveDataListCard>
+        )}
         renderRow={(row) => (
           <tr key={row.id} className="border-b border-(--color-border) hover:bg-(--color-surface-2) transition-colors">
             <td className="px-4 py-3">

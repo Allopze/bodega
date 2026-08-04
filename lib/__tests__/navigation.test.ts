@@ -99,21 +99,21 @@ describe("sidebar navigation", () => {
     expect(prevention?.items.map((item) => item.label)).toEqual([
       "Evaluaciones SST",
       "Para, Piensa y Actúa",
-      "Programa de trabajo (PDTP)",
-      "Documentación",
-      "Indicadores de seguridad y salud en el trabajo",
-      "Indicadores material y ambiental",
+      "Programa preventivo",
+      "Documentos SST",
+      "Indicadores SST",
+      "Indicadores ambientales",
     ])
     expect(prevention?.items.map((item) => item.href)).not.toContain("/prevencion")
 
     const pdtp = prevention?.items.find((item) => item.href === "/prevencion/pdtp")
     expect(pdtp?.children?.map((item) => item.label)).toEqual([
-      "Actividades del programa",
+      "Actividades",
       "Programas",
       "Aprobaciones",
-      "Acciones y seguimiento",
-      "Trabajo por eventos",
-      "Cobertura MIPER y legal",
+      "Acciones",
+      "Eventos",
+      "Cobertura",
     ])
     // El item padre ya lleva al dashboard: ningún hijo debe repetir su href, o el
     // sidebar pinta la fila dos veces y resalta padre e hijo a la vez.
@@ -125,6 +125,28 @@ describe("sidebar navigation", () => {
       "/prevencion/pdtp/obligaciones",
       "/prevencion/pdtp/cobertura",
     ]))
+  })
+
+  it("gives privacy and campaigns canonical destinations without hijacking Evaluaciones", () => {
+    const session = {
+      ...adminSession,
+      user: {
+        ...adminSession.user,
+        permissions: ["prevention:campaign:view", "prevention:privacy:manage_requests"],
+      },
+    } satisfies Session
+
+    const prevention = getVisibleAreas(session).find((area) => area.id === "prevencion")
+    const privacy = prevention?.items.find((item) => item.href === "/prevencion/privacidad")
+
+    expect(prevention?.items.map((item) => item.href)).toEqual(expect.arrayContaining([
+      "/prevencion/campanas",
+      "/prevencion/privacidad",
+    ]))
+    expect(privacy?.children?.map((item) => item.href)).toEqual(["/prevencion/privacidad/solicitudes"])
+    expect(isHrefActive("/prevencion/evaluaciones", "/prevencion/privacidad/solicitudes")).toBe(false)
+    expect(isHrefActive("/prevencion/privacidad", "/prevencion/privacidad/solicitudes")).toBe(false)
+    expect(isHrefActive("/prevencion/privacidad/solicitudes", "/prevencion/privacidad/solicitudes")).toBe(true)
   })
 
   it("hides the Prevención area when no prevention module is visible", () => {

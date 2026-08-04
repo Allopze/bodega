@@ -19,6 +19,8 @@ test.describe("Prevención — Requisitos legales y normativa", () => {
 
     // Título de la página
     await expect(page.getByRole("heading", { name: "Requisitos legales" })).toBeVisible()
-    await expect(page.getByText(/Control de vigencia, aplicabilidad/i)).toBeVisible()
+    // La descripción vive en el PageHeader y se repite como eco visual en la
+    // barra superior; el contrato es el bloque semántico.
+    await expect(page.getByText(/Control de vigencia, aplicabilidad/i).first()).toBeVisible()
   })
 })

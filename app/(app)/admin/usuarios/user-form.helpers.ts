@@ -1,4 +1,9 @@
-export interface Role    { id: string; name: string; label: string }
+export interface Role {
+  id: string
+  name: string
+  label: string
+  requiresWorksiteAssignment?: boolean
+}
 export interface Permission {
   id: string
   name: string
@@ -136,4 +141,19 @@ export function groupPermissions(permissions: Permission[]) {
     else groups.push({ module: permission.module, permissions: [permission] })
     return groups
   }, [])
+}
+
+export function getAccessIssue(roles: Role[], selectedRoleIds: string[], selectedWorksiteIds: string[]) {
+  if (selectedRoleIds.length === 0) return "Selecciona al menos un rol antes de continuar."
+
+  const selectedRoleIdSet = new Set(selectedRoleIds)
+  const rolesRequiringWorksite = roles.filter(
+    (role) => selectedRoleIdSet.has(role.id) && role.requiresWorksiteAssignment,
+  )
+  if (rolesRequiringWorksite.length > 0 && selectedWorksiteIds.length === 0) {
+    const labels = rolesRequiringWorksite.map((role) => role.label).join(", ")
+    return `${labels} requiere al menos una faena asignada.`
+  }
+
+  return undefined
 }

@@ -6,7 +6,7 @@ import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { EppImportReview } from "./epp-import-review"
 
 export default async function EppImportReviewPage({ params }: { params: Promise<{ batchId: string }> }) {
-  try { await requirePermission("admin:epp_import_review") } catch { redirect("/forbidden") }
+  try { await requirePermission("admin:epp_import_review") } catch { redirect(`/forbidden?desde=${encodeURIComponent("/admin/productos/importar")}`) }
   const { batchId } = await params
   const batch = await getEppImportBatch(batchId)
   if (!batch) notFound()

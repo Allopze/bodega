@@ -181,6 +181,12 @@ export const FUEL_VEHICLE_STATUS_LABELS: Record<(typeof FUEL_VEHICLE_STATUSES)[n
   fuera_servicio: "Fuera de servicio",
 }
 
+/** Etiqueta de negocio para listas, filtros y detalle; nunca expone el enum crudo. */
+export function formatFuelVehicleStatus(value: string | null | undefined): string {
+  if (!value) return "Sin estado operacional"
+  return FUEL_VEHICLE_STATUS_LABELS[value as keyof typeof FUEL_VEHICLE_STATUS_LABELS] ?? "Estado operacional no reconocido"
+}
+
 export const ANOMALY_RULE_SEVERITIES = ["low", "medium", "high", "critical"] as const
 export const ANOMALY_RULE_SEVERITY_LABELS: Record<(typeof ANOMALY_RULE_SEVERITIES)[number], string> = {
   low: "Baja", medium: "Media", high: "Alta", critical: "Crítica",

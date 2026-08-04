@@ -8,6 +8,7 @@ import { SubmitButton } from "@/components/admin/submit-button"
 import { INITIAL_STATE } from "@/components/admin/form-state"
 import { toast } from "@/lib/toast"
 import { bulkApproveRequestAction } from "./actions"
+import { pluralize } from "@/lib/utils"
 
 /**
  * E-3 · Barra de acciones en lote de la bandeja de aprobaciones.
@@ -55,7 +56,7 @@ export function BulkApproveBar({
       <div className="mx-auto flex max-w-440 flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-[var(--color-text)]">
           <span className="font-mono font-semibold tabular-nums">{selectedIds.length}</span>
-          {selectedIds.length === 1 ? " ítem seleccionado" : " ítems seleccionados"}
+          {pluralize(selectedIds.length, "ítem seleccionado", "ítems seleccionados")}
         </p>
         <div className="flex items-center gap-2">
           <Button type="button" variant="ghost" size="sm" onClick={onClear}>

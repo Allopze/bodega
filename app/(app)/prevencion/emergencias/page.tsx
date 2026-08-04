@@ -5,7 +5,9 @@ import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { resolvePagination } from "@/lib/pagination"
+import { isEmergencyListTab, resolveEmergencyQuickFilter } from "@/lib/prevention/emergency-list-filters"
 import {
+  getEmergencyDashboardCounts,
   listEmergencyDrills,
   listEmergencyPlansPage,
   listEmergencyWorksites,
@@ -14,7 +16,7 @@ import { EmergencyList } from "./emergency-list"
 
 export const metadata: Metadata = { title: "Emergencias y simulacros" }
 
-type SearchParams = { page?: string }
+type SearchParams = { page?: string; tab?: string; vista?: string }
 
 export default async function EmergenciasPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   let session
@@ -28,12 +30,15 @@ export default async function EmergenciasPage({ searchParams }: { searchParams: 
   }
   const canManage = session.user.permissions.includes("prevention:emergency:manage")
   const raw = await searchParams
+  const tab = isEmergencyListTab(raw.tab) ? raw.tab : "plans"
+  const quickFilter = resolveEmergencyQuickFilter(tab, raw.vista)
   const pagination = resolvePagination({ pageParam: raw.page, totalItems: 0, pageSize: 50 })
 
-  const [plansPage, drills, worksites] = await Promise.all([
-    listEmergencyPlansPage(access, { limit: 50, offset: pagination.offset }),
-    listEmergencyDrills(access),
+  const [plansPage, drills, worksites, counts] = await Promise.all([
+    listEmergencyPlansPage(access, { limit: 50, offset: pagination.offset, quickFilter: tab === "plans" ? quickFilter : undefined }),
+    listEmergencyDrills(access, { quickFilter: tab === "drills" ? quickFilter : undefined }),
     canManage ? listEmergencyWorksites(access) : Promise.resolve([]),
+    getEmergencyDashboardCounts(access),
   ])
 
   const resolvedPagination = resolvePagination({ pageParam: raw.page, totalItems: plansPage.total, pageSize: 50 })
@@ -72,6 +77,9 @@ export default async function EmergenciasPage({ searchParams }: { searchParams: 
         worksites={worksites}
         canManage={canManage}
         plansPagination={resolvedPagination}
+        tab={tab}
+        quickFilter={quickFilter}
+        counts={counts}
       />
     </PageContainer>
   )

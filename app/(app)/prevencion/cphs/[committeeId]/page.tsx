@@ -19,7 +19,7 @@ export default async function ComitePage({ params }: { params: Promise<{ committ
 
   let auth
   try { auth = await requirePermission("prevention:cphs:view") }
-  catch { redirect("/forbidden") }
+  catch { redirect(`/forbidden?desde=${encodeURIComponent("/prevencion/cphs")}`) }
 
   const access = {
     userId: auth.user.id,

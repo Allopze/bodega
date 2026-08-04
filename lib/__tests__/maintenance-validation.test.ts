@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest"
 import {
   createMaintenanceRecordSchema,
+  MAINTENANCE_STATUSES,
+  MAINTENANCE_STATUS_LABELS,
   updateMaintenanceRecordSchema,
 } from "@/lib/validation/maintenance"
 
@@ -15,6 +17,16 @@ const base = {
 }
 
 describe("createMaintenanceRecordSchema", () => {
+  it("keeps the status vocabulary and its user-facing labels together", () => {
+    expect(MAINTENANCE_STATUSES).toEqual(["scheduled", "in_progress", "completed", "cancelled"])
+    expect(MAINTENANCE_STATUS_LABELS).toEqual({
+      scheduled: "Programada",
+      in_progress: "En curso",
+      completed: "Completada",
+      cancelled: "Cancelada",
+    })
+  })
+
   it("accepts a coherent total (neto + IVA)", () => {
     const result = createMaintenanceRecordSchema.safeParse(base)
     expect(result.success).toBe(true)

@@ -93,12 +93,22 @@ export function PdtpBuilderTabs({
   const storageKey = `pdtp-builder-step:${program.id}`
   const [activeStep, setActiveStep] = React.useState<Step>("actividades")
 
+  // La pestaña guardada sólo puede leerse en el cliente, así que el servidor
+  // siempre pinta "actividades" y el efecto corrige después. Ese salto no es
+  // cosmético: el panel inicial se desmonta con lo que el usuario tuviera
+  // abierto, y un clic hecho entre ambos renders se pierde junto con su
+  // diálogo. `restored` mantiene los paneles fuera hasta que la pestaña real
+  // está resuelta, de modo que nunca se interactúa con un panel provisional.
+  const [restored, setRestored] = React.useState(false)
+
   React.useEffect(() => {
     try {
       const saved = window.sessionStorage.getItem(storageKey)
       if (isStep(saved)) setActiveStep(saved)
     } catch {
       // El editor sigue operativo aunque sessionStorage no esté disponible.
+    } finally {
+      setRestored(true)
     }
   }, [storageKey])
 
@@ -137,6 +147,10 @@ export function PdtpBuilderTabs({
         ))}
       </TabsList>
 
+      {!restored ? (
+        <p className="py-6 text-sm text-[var(--color-text-muted)]">Abriendo el editor…</p>
+      ) : (
+      <>
       <TabsContent value="actividades" className="space-y-5">
         <GuidedActivityForm
           programId={program.id}
@@ -245,6 +259,8 @@ export function PdtpBuilderTabs({
           </div>
         </details>
       </TabsContent>
+      </>
+      )}
     </Tabs>
   )
 }

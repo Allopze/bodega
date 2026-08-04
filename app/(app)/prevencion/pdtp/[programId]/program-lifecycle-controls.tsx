@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/dialog"
 import { Textarea } from "@/components/ui/textarea"
 import type { ActionState } from "@/lib/validation/prevention"
+import { pdtpProgramStatusLabel } from "@/lib/prevention/pdtp"
 import {
   activatePdtpProgramAction,
   archivePdtpProgramAction,
@@ -52,13 +53,14 @@ type ApprovalStepProgress = {
   decision: { decision: string; decidedAt: string } | null
 }
 
-const STATUS: Record<string, { label: string; variant: "default" | "warning" | "danger" | "success" | "outline" }> = {
-  draft: { label: "Borrador", variant: "default" },
-  in_review: { label: "En revisión", variant: "warning" },
-  rejected: { label: "Rechazado", variant: "danger" },
-  active: { label: "Activo", variant: "success" },
-  closed: { label: "Cerrado", variant: "outline" },
-  archived: { label: "Archivado", variant: "outline" },
+// El texto viene del vocabulario compartido; aquí sólo vive el color.
+const STATUS_VARIANT: Record<string, "default" | "warning" | "danger" | "success" | "outline"> = {
+  draft: "default",
+  in_review: "warning",
+  rejected: "danger",
+  active: "success",
+  closed: "outline",
+  archived: "outline",
 }
 
 function nextStep(program: ProgramLifecycle, pendingStep: ApprovalStepProgress | undefined): string {
@@ -86,7 +88,7 @@ export function ProgramLifecycleControls({
 }) {
   const [pending, startTransition] = React.useTransition()
   const [error, setError] = React.useState<string | null>(null)
-  const status = STATUS[program.status] ?? { label: program.status, variant: "outline" as const }
+  const statusVariant = STATUS_VARIANT[program.status] ?? "outline"
   const steps: ApprovalStepProgress[] = approvalSteps ?? [
     {
       id: `${program.id}-approval-jdpr`, code: "jdpr", label: "Revisión JDPR", isRequired: true,
@@ -118,7 +120,7 @@ export function ProgramLifecycleControls({
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <h2 id="program-lifecycle-title" className="text-sm font-semibold text-[var(--color-text)]">Estado del programa</h2>
-            <Badge variant={status.variant} dot>{status.label}</Badge>
+            <Badge variant={statusVariant} dot>{pdtpProgramStatusLabel(program.status)}</Badge>
             <span className="font-mono text-[11px] text-[var(--color-text-subtle)]">contenido v{program.contentVersion}</span>
             {program.contentDigest && (
               <code title={program.contentDigest} className="rounded bg-[var(--color-surface-2)] px-1.5 py-0.5 text-[10px] text-[var(--color-text-muted)]">

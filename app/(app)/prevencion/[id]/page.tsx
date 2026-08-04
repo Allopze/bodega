@@ -25,9 +25,9 @@ export default async function EvaluacionDetailPage({ params }: Props) {
 
   let session
   try { session = await requireAuth() }
-  catch { redirect("/forbidden") }
+  catch { redirect(`/forbidden?desde=${encodeURIComponent("/prevencion")}`) }
   // Acceso: prevención (sst:view) o roles acotados a una sección (p.ej. conductor_lider)
-  if (!canAny(session, "sst:view", "sst:evaluate_acompanamiento")) redirect("/forbidden")
+  if (!canAny(session, "sst:view", "sst:evaluate_acompanamiento")) redirect(`/forbidden?desde=${encodeURIComponent("/prevencion")}`)
 
   const scope = resolveWorksiteScope(session)
   const worksiteIds: string[] | "all" =

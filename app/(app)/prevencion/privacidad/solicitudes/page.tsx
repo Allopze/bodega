@@ -51,7 +51,7 @@ export default async function PreventionPrivacyRequestsPage({ searchParams }: { 
         description="Gestiona derechos del titular, validación de identidad, retenciones y entregas auditadas."
         breadcrumb={<Breadcrumbs items={[
           { label: "Prevención", href: "/prevencion" },
-          { label: "Privacidad", href: "/prevencion/privacidad/auditoria" },
+          { label: "Privacidad", href: "/prevencion/privacidad" },
           { label: "Solicitudes" },
         ]} />}
         actions={<PrivacyRequestCreateButton workers={workerRows.map((worker) => ({

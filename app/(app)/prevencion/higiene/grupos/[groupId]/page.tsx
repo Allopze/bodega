@@ -14,7 +14,7 @@ export default async function GrupoPage({ params }: { params: Promise<{ groupId:
 
   let auth
   try { auth = await requirePermission("prevention:hygiene:view") }
-  catch { redirect("/forbidden") }
+  catch { redirect(`/forbidden?desde=${encodeURIComponent("/prevencion/higiene/grupos")}`) }
 
   const access = {
     userId: auth.user.id,

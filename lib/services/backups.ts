@@ -48,6 +48,7 @@ export interface BackupStats {
   failedCount:       number
   runningCount:      number
   backupsLast7Days:  number
+  successfulBackupsLast7Days: number
   totalSizeBytes:    number | null
   driveUploaded:     boolean
 }
@@ -171,6 +172,7 @@ export async function getBackupStats(): Promise<BackupStats> {
     .sort((a, b) => b.startedAt.localeCompare(a.startedAt))[0] ?? null
 
   const last7Days = all.filter((b) => b.startedAt >= sevenDaysAgo)
+  const successfulLast7Days = last7Days.filter((b) => b.status === "success")
 
   const lastBackupWithDrive = all
     .filter((b) => b.driveUploaded)
@@ -185,6 +187,7 @@ export async function getBackupStats(): Promise<BackupStats> {
     failedCount: all.filter((b) => b.status === "failed").length,
     runningCount: all.filter((b) => b.status === "running").length,
     backupsLast7Days: last7Days.length,
+    successfulBackupsLast7Days: successfulLast7Days.length,
     totalSizeBytes: lastSuccess?.totalSizeBytes ?? null,
     driveUploaded: lastBackupWithDrive?.driveUploaded ?? false,
   }

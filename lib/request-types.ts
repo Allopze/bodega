@@ -54,6 +54,29 @@ export function visibleRequestTypeOptions(
   )
 }
 
+/**
+ * Resolve a request type supplied by an entry route such as
+ * `/repuestos/nueva`. The route intent is only accepted when the value is
+ * known *and* the current user can create that type of request. Keeping this
+ * decision here prevents the server page and the client form from quietly
+ * choosing different defaults.
+ */
+export function resolveInitialRequestType(
+  candidate: string | string[] | undefined,
+  availableOptions: readonly { value: RequestType }[],
+): { requestType: RequestType; matchedCandidate: boolean } {
+  const requested = typeof candidate === "string" && isRequestType(candidate)
+    ? candidate
+    : undefined
+  const isAvailable = requested !== undefined
+    && availableOptions.some((option) => option.value === requested)
+
+  return {
+    requestType: isAvailable ? requested : availableOptions[0]!.value,
+    matchedCandidate: isAvailable,
+  }
+}
+
 /** Includes legacy types for display in existing records */
 export const REQUEST_TYPE_LABELS: Record<string, string> = {
   epp:        "EPP",

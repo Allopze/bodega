@@ -50,28 +50,9 @@ export function addDays(isoDate: string, days: number): string {
 }
 
 /**
- * Formatea una cadena 'YYYY-MM-DD' al formato de visualización 'dd/mm/aaaa'.
- * Parsea como fecha local para evitar desfase.
+ * El contrato de render de fechas vive en `lib/utils.ts` (`formatDate`,
+ * `formatDateDisplay`, `formatDateSafe`). Se re-exporta desde aquí para que
+ * los imports existentes del área SST sigan funcionando con una sola fuente
+ * (auditoría UI/UX §4.4 — duplicación de formatters).
  */
-export function formatDateDisplay(isoDate: string): string {
-  const date = parseLocalDate(isoDate)
-  const d = String(date.getDate()).padStart(2, '0')
-  const m = String(date.getMonth() + 1).padStart(2, '0')
-  const y = date.getFullYear()
-  return `${d}/${m}/${y}`
-}
-
-/**
- * Variante tolerante: acepta ISO 'YYYY-MM-DD', 'YYYY-MM-DDTHH:mm:ss' o
- * `YYYY-MM-DDTHH:mm:ssZ`. Trunca al día local y formatea como dd/mm/aaaa.
- * Si la cadena es vacía o no parseable, devuelve "—".
- *
- * Usar para unificar el render de fechas en toda el área de prevención
- * (audit §3 — "4 estilos compitiendo").
- */
-export function formatDateSafe(input: string | null | undefined): string {
-  if (!input) return "—"
-  const isoDay = input.slice(0, 10)
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(isoDay)) return "—"
-  return formatDateDisplay(isoDay)
-}
+export { formatDateDisplay, formatDateSafe } from "@/lib/utils"

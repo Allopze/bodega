@@ -229,6 +229,7 @@ export default async function BodegaPage({
           initialWorksiteId={initialWorksiteId}
           receivingHref={canViewReceiving ? "/recepcion" : undefined}
           canExportStock={canExportStock}
+          lowStockOnly={sp.stock === "low"}
         />
 
         <KardexSection

@@ -36,7 +36,12 @@ export function FilterSelect({
   return (
     <>
       <Select value={value} onValueChange={setValue}>
-        <SelectTrigger aria-label={ariaLabel} className={className}>
+        {/* El disparador de Radix es un <button role="combobox">: envolverlo en
+            un <label> no le da nombre accesible, y sin nombre axe lo reporta
+            como `button-name` crítico. El placeholder ya describe el filtro
+            ("Todas las faenas autorizadas"), así que sirve de nombre por
+            defecto y ningún llamador puede dejar el control mudo. */}
+        <SelectTrigger aria-label={ariaLabel ?? placeholder} className={className}>
           <SelectValue placeholder={placeholder} />
         </SelectTrigger>
         <SelectContent>

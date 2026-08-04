@@ -9,20 +9,10 @@ import { BackupsStatusCards } from "./backup-status-cards"
 import { BackupsList } from "./backup-list"
 import { BackupsActions } from "./backup-actions"
 import { BackupSettingsForm } from "./backup-settings-form"
-import { formatBytes } from "@/lib/format-bytes"
+import { buildBackupStatusCards } from "./backup-health"
 
 export const dynamic = "force-dynamic"
 export const metadata: Metadata = { title: "Respaldos del sistema" }
-
-function timeAgo(dateStr: string | null): string {
-  if (!dateStr) return "—"
-  const ms = Date.now() - new Date(dateStr).getTime()
-  const hours = Math.floor(ms / 3600000)
-  if (hours < 1) return "Hace menos de 1 hora"
-  if (hours < 24) return `Hace ${hours}h`
-  const days = Math.floor(hours / 24)
-  return `Hace ${days}d`
-}
 
 const BACKUPS_BREADCRUMBS = (
   <Breadcrumbs items={[
@@ -44,66 +34,7 @@ export default async function BackupsPage() {
     getDriveHealth().catch(() => null),
   ])
 
-  const lastBackup = stats.lastBackup
-  const lastSuccess = stats.lastSuccess
-  const lastFailed = stats.lastFailed
-
-  // Determinar estado de Drive
-  let driveStatus: "success" | "failed" | "running" | "none" = "none"
-  let driveLabel: string
-  if (driveHealth?.reachable) {
-    driveStatus = "success"
-    driveLabel = "Conectado y accesible"
-  } else if (driveHealth?.remoteConfigured && !driveHealth?.reachable) {
-    driveStatus = "failed"
-    driveLabel = "Configurado pero no accesible"
-  } else if (driveHealth?.rcloneInstalled && !driveHealth?.remoteConfigured) {
-    driveStatus = "none"
-    driveLabel = "rclone instalado, remote no configurado"
-  } else if (!driveHealth?.rcloneInstalled) {
-    driveStatus = "none"
-    driveLabel = "rclone no instalado"
-  } else {
-    driveLabel = stats.driveUploaded ? "Último backup subido" : "Pendiente"
-  }
-  // Agregar detalle del SA JSON si aplica
-  if (driveHealth && driveStatus === "success") {
-    const saStatus = driveHealth.saJsonPresent ? "✓ SA" : "✗ SA"
-    driveLabel += ` (${saStatus})`
-  }
-
-  const statusCards = [
-    {
-      label: "Último respaldo",
-      value: lastBackup ? `${lastBackup.backupDate} (${timeAgo(lastBackup.startedAt)})` : "Sin respaldos",
-      status: (lastBackup?.status ?? "none") as "success" | "failed" | "running" | "none",
-    },
-    {
-      label: "Último exitoso",
-      value: lastSuccess ? `${lastSuccess.backupDate} (${timeAgo(lastSuccess.startedAt)})` : "—",
-      status: lastSuccess ? "success" : "none" as "success" | "failed" | "running" | "none",
-    },
-    {
-      label: "Último fallido",
-      value: lastFailed ? `${lastFailed.backupDate} — ${lastFailed.errorMessage ?? "Error desconocido"}` : "Sin fallos",
-      status: lastFailed ? "failed" : "success" as "success" | "failed" | "running" | "none",
-    },
-    {
-      label: "Respaldos (7 días)",
-      value: `${stats.backupsLast7Days} ejecutados`,
-      status: stats.backupsLast7Days > 0 ? "success" : "failed" as "success" | "failed" | "running" | "none",
-    },
-    {
-      label: "Tamaño total",
-      value: formatBytes(stats.totalSizeBytes ?? lastBackup?.totalSizeBytes ?? null),
-      status: "none" as "success" | "failed" | "running" | "none",
-    },
-    {
-      label: "Google Drive",
-      value: driveLabel,
-      status: driveStatus,
-    },
-  ]
+  const statusCards = buildBackupStatusCards(stats, driveHealth)
 
   const saSummary = driveHealth ? getSaStatusSummary(driveHealth) : null
 
@@ -115,6 +46,13 @@ export default async function BackupsPage() {
         breadcrumb={BACKUPS_BREADCRUMBS}
         actions={BACKUPS_ACTIONS}
       />
+      {stats.totalBackups === 0 && (
+        <section role="alert" className="mb-5 rounded-[var(--radius-xl)] border border-[var(--color-danger)] bg-[var(--color-danger-tint)] p-4 text-[var(--color-danger-ink)]">
+          <h2 className="font-semibold">Aún no existe un respaldo verificable</h2>
+          <p className="mt-1 text-sm">Configura la política, confirma el destino remoto y ejecuta el primer respaldo antes de depender de esta recuperación.</p>
+          <a href="#backup-settings" className="mt-3 inline-flex min-h-11 items-center rounded-[var(--radius)] bg-[var(--color-danger)] px-3 text-sm font-semibold text-white hover:opacity-90">Revisar configuración</a>
+        </section>
+      )}
       <BackupsStatusCards cards={statusCards} />
 
       {/* ── Backup Settings ──────────────────────────────────────────── */}
@@ -144,5 +82,4 @@ export default async function BackupsPage() {
     </PageContainer>
   )
 }
-
 

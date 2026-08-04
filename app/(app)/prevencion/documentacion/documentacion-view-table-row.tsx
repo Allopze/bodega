@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { TableCell, TableRow } from "@/components/ui/table"
 import { getFileIcon } from "@/lib/prevention/file-icon"
+import { formatDate, formatFileSize } from "@/lib/utils"
 import type { DocumentRow } from "./documentacion-view.types"
 import { DRAG_MIME } from "./documentacion-view.types"
 
@@ -100,15 +101,4 @@ export function DocumentTableRow({
       </TableCell>
     </TableRow>
   )
-}
-
-export function formatFileSize(size: number | null | undefined) {
-  if (!size) return "—"
-  if (size < 1024) return `${size} B`
-  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`
-  return `${(size / (1024 * 1024)).toFixed(1)} MB`
-}
-
-export function formatDate(value: string) {
-  return value.slice(0, 10)
 }

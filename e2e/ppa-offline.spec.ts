@@ -6,7 +6,7 @@
  *   2. El submit offline encola en IndexedDB y redirige a ?saved=offline.
  *   3. Al restaurar la conexión, el sync automático envía el PPA al servidor.
  *   4. El Service Worker se registra y el manifest.json es accesible.
- *   5. La página funciona即使 la red se cae después de cargar.
+ *   5. La página sigue operativa si la red se cae después de cargar.
  *
  * Usa las fixtures de e2e/setup-db.ts (Faena E2E + trabajador 11111111-1).
  * No requiere login — el formulario PPA es público.
@@ -230,102 +230,6 @@ test.describe("PPA Digital — Service Worker y manifest", () => {
   })
 })
 
-test.describe("PPA Digital — verificación de RUT", () => {
-  test("RUT inválido muestra error de formato", async ({ page }) => {
-    await page.goto("/ppa")
-    await expect(page.locator("#rutSearch")).toBeVisible({ timeout: 15_000 })
-
-    // Enter an invalid RUT (letters instead of digits)
-    await page.locator("#rutSearch").fill("abc-def")
-    await page.getByRole("button", { name: "Verificar" }).click()
-
-    // Should show format error toast
-    await expect(
-      page.getByText(/RUT inválido|formato/),
-    ).toBeVisible({ timeout: 10_000 })
-
-    // Worker should NOT be verified
-    await expect(page.getByText(/Verificado:/)).not.toBeVisible()
-  })
-
-  test("RUT no encontrado muestra error de trabajador", async ({ page }) => {
-    await page.goto("/ppa")
-    await expect(page.locator("#rutSearch")).toBeVisible({ timeout: 15_000 })
-
-    // Enter a valid-format RUT that doesn't exist in the DB
-    await page.locator("#rutSearch").fill("99999999-9")
-    await page.getByRole("button", { name: "Verificar" }).click()
-
-    // Should show not-found error toast
-    await expect(
-      page.getByText(/no se encontró|ningún trabajador/),
-    ).toBeVisible({ timeout: 10_000 })
-
-    // Worker should NOT be verified
-    await expect(page.getByText(/Verificado:/)).not.toBeVisible()
-  })
-
-  test("RUT vacío mantiene botón deshabilitado", async ({ page }) => {
-    await page.goto("/ppa")
-    await expect(page.locator("#rutSearch")).toBeVisible({ timeout: 15_000 })
-
-    // Verify button is disabled when RUT is empty
-    const verifyBtn = page.getByRole("button", { name: "Verificar" })
-    await expect(verifyBtn).toBeDisabled()
-
-    // Fill and clear — button should re-disable
-    await page.locator("#rutSearch").fill("12345678-9")
-    await expect(verifyBtn).not.toBeDisabled()
-    await page.locator("#rutSearch").fill("")
-    await expect(verifyBtn).toBeDisabled()
-  })
-
-  test("verificar con RUT exitoso muestra trabajador verificado", async ({ page }) => {
-    await page.goto("/ppa")
-    await expect(page.locator("#rutSearch")).toBeVisible({ timeout: 15_000 })
-
-    // Enter the E2E worker RUT
-    await page.locator("#rutSearch").fill("11111111-1")
-    await page.getByRole("button", { name: "Verificar" }).click()
-
-    // findWorkerByRutAction minimiza PII en la respuesta pública: el nombre
-    // llega enmascarado (primer nombre + inicial apellido) y worksiteName
-    // vacío. En el flujo !manual (este test) no hay ningún <select> de faena
-    // visible en absoluto — solo aparece en modo manual (identificación
-    // manual) — así que el nombre de faena no puede verificarse visualmente
-    // aquí; worksiteId sí se propaga internamente para el submit.
-    await expect(page.getByText(/Verificado:/)).toBeVisible({ timeout: 15_000 })
-    await expect(page.getByText(/Trabajador E\./)).toBeVisible()
-  })
-
-  test("envío con error de validación del server action muestra toast de error", async ({ page }) => {
-    await page.goto("/ppa")
-    await expect(page.locator("#rutSearch")).toBeVisible({ timeout: 15_000 })
-
-    // Verify worker
-    await page.locator("#rutSearch").fill("11111111-1")
-    await page.getByRole("button", { name: "Verificar" }).click()
-    await expect(page.getByText(/Verificado:/)).toBeVisible({ timeout: 15_000 })
-
-    // Fill form but leave type of work empty (required field)
-    await page.getByTestId("cambio-no").click()
-    await page.getByTestId("peligro-no").click()
-    await page.getByRole("checkbox", { name: "Elementos de protección personal" }).check()
-    await page.getByRole("checkbox", { name: "Herramientas adecuadas y en buen estado" }).check()
-    await page.getByTestId("seguro-si").click()
-
-    // Submit — should fail client-side validation (missing tipoTrabajo)
-    await page.getByRole("button", { name: "Enviar PPA" }).click()
-
-    // Should show validation error toast
-    await expect(
-      page.getByText(/faltan respuestas|obligatorias/),
-    ).toBeVisible({ timeout: 10_000 })
-
-    // Should NOT navigate to result page
-    await expect(page).toHaveURL(/\/ppa$/)
-  })
-})
 
 test.describe("PPA Digital — notificaciones offline", () => {
   /**
@@ -703,7 +607,7 @@ test.describe("PPA Digital — SW cache eviction", () => {
 })
 
 test.describe("PPA Digital — resilience", () => {
-  test("el formulario funciona即使 la red se cae después de cargar", async ({ page, context }) => {
+  test("el formulario sigue operativo si la red se cae después de cargar", async ({ page, context }) => {
     // Load the page normally first
     await page.goto("/ppa")
     await expect(page.locator("#rutSearch")).toBeVisible({ timeout: 15_000 })

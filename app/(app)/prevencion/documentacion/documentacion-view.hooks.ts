@@ -45,7 +45,7 @@ export function useDocumentacionView(
   folders: FolderRow[],
   folderOptions: { id: string; name: string; parentId: string | null }[],
   currentFolderId: string | null,
-  searchParams: { q?: string; folder?: string; page?: string },
+  searchParams: { q?: string; folder?: string; page?: string; vence?: string },
   canManage: boolean,
   canArchive: boolean,
   userId: string,

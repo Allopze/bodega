@@ -3,7 +3,7 @@
 import { CatalogRowActions } from "@/components/admin/catalog-row-actions"
 import { Badge } from "@/components/ui/badge"
 import { TableCell, TableRow } from "@/components/ui/table"
-import { FUEL_VEHICLE_STATUS_LABELS } from "@/lib/combustibles/validation"
+import { formatFuelVehicleStatus } from "@/lib/combustibles/validation"
 import type { VehicleForEdit } from "./vehicle-form"
 
 export interface VehicleRow extends VehicleForEdit {
@@ -24,7 +24,7 @@ interface ItemProps {
 }
 
 function operationalStatus(vehicle: VehicleRow) {
-  return FUEL_VEHICLE_STATUS_LABELS[vehicle.operationalStatus as keyof typeof FUEL_VEHICLE_STATUS_LABELS] ?? vehicle.operationalStatus
+  return formatFuelVehicleStatus(vehicle.operationalStatus)
 }
 
 export function VehicleDesktopRow({ vehicle, selected, onSelect, onEdit, onDeactivate, toggleAction, togglePending }: ItemProps) {

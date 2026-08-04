@@ -20,6 +20,7 @@ import { ItemEditor } from "./item-editor"
 import { URGENCY_OPTS } from "./request-form.constants"
 import { formatDate, formatDateTime } from "@/lib/utils"
 import { QUOTATION_TYPES } from "@/lib/request-types"
+import type { RequestType } from "@/lib/request-types"
 import type { ItemRow, ProductOption, WorksiteOption, SupplierOption, WorkerOption, EditRequest } from "./request-form.types"
 import { useRequestForm } from "./use-request-form"
 
@@ -43,6 +44,8 @@ interface RequestFormProps {
   maxFileSizeMb: number
   userRoles?: string[]
   userPermissions?: string[]
+  initialRequestType?: RequestType
+  initialRequestTypeNotice?: string
 }
 
 function RequestFormHeader({
@@ -225,14 +228,38 @@ function SummarySidebar({
   )
 }
 
-export function RequestForm({ worksites, products, suppliers, workers, editRequest, maxFileSizeMb, userPermissions = [] }: RequestFormProps) {
-  const form = useRequestForm({ worksites, products, suppliers, workers, editRequest, maxFileSizeMb, userPermissions })
+export function RequestForm({
+  worksites,
+  products,
+  suppliers,
+  workers,
+  editRequest,
+  maxFileSizeMb,
+  userPermissions = [],
+  initialRequestType,
+  initialRequestTypeNotice,
+}: RequestFormProps) {
+  const form = useRequestForm({
+    worksites,
+    products,
+    suppliers,
+    workers,
+    editRequest,
+    maxFileSizeMb,
+    userPermissions,
+    initialRequestType,
+  })
   const [leaveConfirmOpen, setLeaveConfirmOpen] = useState(false)
 
   return (
     <div className="grid gap-6 pb-16 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start">
       <div className="min-w-0 space-y-8">
         <form onSubmit={(e) => { e.preventDefault(); form.startSaveTransition(() => form.draftAction(form.buildDraftFormData())) }} className="space-y-6">
+          {initialRequestTypeNotice && !form.readOnly && (
+            <div role="alert" className="rounded-[var(--radius)] border border-[var(--color-warning-line)] bg-[var(--color-warning-tint)] px-4 py-3 text-sm text-[var(--color-warning-ink)]">
+              {initialRequestTypeNotice}
+            </div>
+          )}
           <RequestFormHeader
             worksiteId={form.worksiteId} requestType={form.requestType} urgency={form.urgency}
             deliveryMode={form.deliveryMode} requiredDate={form.requiredDate} notes={form.notes} readOnly={form.readOnly}

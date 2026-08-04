@@ -8,6 +8,9 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { requirePermission } from "@/lib/auth/can"
 import { getFleetVehicleDetail } from "@/lib/services/fleet"
+import { formatFuelVehicleStatus } from "@/lib/combustibles/validation"
+import { MAINTENANCE_STATUS_LABELS } from "@/lib/validation/maintenance"
+import { formatDate, formatDateTime, formatQty } from "@/lib/utils"
 import { FleetDocumentsPanel } from "./fleet-documents-panel"
 
 export const metadata: Metadata = { title: "Detalle de vehículo" }
@@ -19,7 +22,7 @@ export default async function FlotaVehiclePage({
 }) {
   let session
   try { session = await requirePermission("flota:view") }
-  catch { redirect("/forbidden") }
+  catch { redirect(`/forbidden?desde=${encodeURIComponent("/flota")}`) }
 
   const { id } = await params
   const detail = await getFleetVehicleDetail(session, id)
@@ -57,21 +60,21 @@ export default async function FlotaVehiclePage({
             <Fact label="Faena" value={vehicle.worksite?.name ?? "Sin faena"} />
             <Fact label="Tipo" value={vehicle.equipmentType?.name ?? vehicle.type} />
             <Fact label="Rendimiento" value={vehicle.performanceUnit === "km_per_liter" ? "km/L" : vehicle.performanceUnit === "liters_per_hour" ? "L/h" : "No aplica"} />
-            <Fact label="Capacidad" value={vehicle.tankCapacityLiters != null ? `${Number(vehicle.tankCapacityLiters).toLocaleString("es-CL")} L` : "Sin información"} />
+            <Fact label="Capacidad" value={vehicle.tankCapacityLiters != null ? formatQty(Number(vehicle.tankCapacityLiters), "L") : "Sin información"} />
             <Fact label="Proveedor habitual" value={vehicle.usualFuelSupplier?.name ?? "No asignado"} />
             <Fact label="Responsable" value={vehicle.responsibleUser?.name ?? vehicle.responsibleUser?.email ?? "—"} />
-            <Fact label="Estado" value={<Badge variant={vehicle.operationalStatus === "operativo" ? "success" : "outline"}>{vehicle.operationalStatus}</Badge>} />
-            <Fact label="Próximo vencimiento" value={detail.nextExpiryDate ?? "—"} />
+            <Fact label="Estado" value={<Badge variant={vehicle.operationalStatus === "operativo" ? "success" : "outline"}>{formatFuelVehicleStatus(vehicle.operationalStatus)}</Badge>} />
+            <Fact label="Próximo vencimiento" value={detail.nextExpiryDate ? formatDate(detail.nextExpiryDate) : "—"} />
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader><CardTitle className="text-base">Vencimientos</CardTitle></CardHeader>
           <CardContent className="space-y-3 text-sm">
-            <Fact label="SOAP" value={vehicle.soapExpiresAt ?? "—"} />
-            <Fact label="Revisión técnica" value={vehicle.technicalReviewExpiresAt ?? "—"} />
-            <Fact label="Permiso circulación" value={vehicle.circulationPermitExpiresAt ?? "—"} />
-            <Fact label="Seguro" value={vehicle.insuranceExpiresAt ?? "—"} />
+            <Fact label="SOAP" value={vehicle.soapExpiresAt ? formatDate(vehicle.soapExpiresAt) : "—"} />
+            <Fact label="Revisión técnica" value={vehicle.technicalReviewExpiresAt ? formatDate(vehicle.technicalReviewExpiresAt) : "—"} />
+            <Fact label="Permiso circulación" value={vehicle.circulationPermitExpiresAt ? formatDate(vehicle.circulationPermitExpiresAt) : "—"} />
+            <Fact label="Seguro" value={vehicle.insuranceExpiresAt ? formatDate(vehicle.insuranceExpiresAt) : "—"} />
           </CardContent>
         </Card>
 
@@ -133,15 +136,15 @@ export default async function FlotaVehiclePage({
               {detail.operationalIntervals.map((interval) => (
                 <li key={interval.id} className="grid gap-1 py-3 text-sm sm:grid-cols-[10rem_1fr_auto] sm:items-center sm:gap-4">
                   <Badge variant={interval.status === "operativo" ? "success" : interval.status === "mantencion" ? "warning" : "danger"}>
-                    {interval.status === "operativo" ? "Operativo" : interval.status === "mantencion" ? "En mantención" : "Fuera de servicio"}
+                    {formatFuelVehicleStatus(interval.status)}
                   </Badge>
                   <div>
                     <p>{interval.reason ?? "Sin motivo informado"}</p>
                     <p className="text-xs text-muted-foreground">{interval.changedByUser?.name ?? interval.changedByUser?.email ?? "Usuario no disponible"}</p>
                   </div>
                   <p className="text-xs text-muted-foreground sm:text-right">
-                    {new Date(interval.startedAt).toLocaleString("es-CL")}
-                    <span className="block">{interval.endedAt ? `hasta ${new Date(interval.endedAt).toLocaleString("es-CL")}` : "intervalo vigente"}</span>
+                    {formatDateTime(interval.startedAt)}
+                    <span className="block">{interval.endedAt ? `hasta ${formatDateTime(interval.endedAt)}` : "intervalo vigente"}</span>
                   </p>
                 </li>
               ))}
@@ -161,9 +164,9 @@ export default async function FlotaVehiclePage({
                 return (
                   <li key={m.id} className="grid gap-1 py-3 text-sm sm:grid-cols-[10rem_1fr_auto] sm:items-center sm:gap-4">
                     <span className="capitalize">{m.maintenanceType}</span>
-                    <Badge variant={m.status === "completed" ? "success" : m.status === "cancelled" ? "default" : "outline"}>{m.status}</Badge>
+                    <Badge variant={m.status === "completed" ? "success" : m.status === "cancelled" ? "default" : "outline"}>{MAINTENANCE_STATUS_LABELS[m.status as keyof typeof MAINTENANCE_STATUS_LABELS] ?? m.status}</Badge>
                     <p className="text-xs text-muted-foreground sm:text-right">
-                      {m.maintenanceDate}
+                      {formatDate(m.maintenanceDate)}
                       {impact && (impact.avgBefore != null || impact.avgAfter != null) ? (
                         <span className="block font-mono">{impact.avgBefore?.toFixed(2) ?? "—"} → {impact.avgAfter?.toFixed(2) ?? "—"}</span>
                       ) : (

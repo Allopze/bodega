@@ -14,7 +14,7 @@ export default async function PermisoPage({ params }: { params: Promise<{ permit
 
   let auth
   try { auth = await requirePermission("prevention:permits:view") }
-  catch { redirect("/forbidden") }
+  catch { redirect(`/forbidden?desde=${encodeURIComponent("/prevencion/permisos")}`) }
 
   const access = {
     userId: auth.user.id,
