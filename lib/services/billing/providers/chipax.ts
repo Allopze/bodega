@@ -1,73 +1,101 @@
 /**
  * lib/services/billing/providers/chipax.ts
  *
- * Adaptador de Chipax — **autenticación verificada, operaciones de datos no.**
+ * Adaptador de Chipax — **implementado contra el contrato real**.
  *
- * ## Lo que SÍ está verificado (2026-08-05, contra la API real)
+ * ## Contrato verificado (2026-08-05)
  *
- * ```
- * POST https://api.chipax.com/v2/login  {}                     → 400 "Parámetros inválidos."
- * POST https://api.chipax.com/v2/login  {usuario, clave}       → 400 "Parámetros inválidos."   ← control
- * POST https://api.chipax.com/v2/login  {app_id, secret_key}   → 401 "Credenciales inválidas"
- * ```
+ * El documento OpenAPI 3.0.1 («Chipax API v2.0», 28 operaciones) no está en
+ * `/swagger.json` —eso da 404— sino **embebido en el bundle de Swagger UI**:
+ * `GET /v2/swagger-docs/swagger-ui-init.js`, dentro de `options.swaggerDoc`.
  *
- * El **401** frente al **400** del control es la prueba: con `{app_id,
- * secret_key}` el servidor aceptó el esquema del cuerpo y solo rechazó los
- * valores. Por eso `login()` está implementado con esa forma exacta — no es una
- * suposición por parecido con otras API.
+ * De ahí salen, sin adivinar:
  *
- * ## Lo que sigue SIN verificar
+ * | Elemento | Valor |
+ * |---|---|
+ * | `servers` | `https://api.chipax.com/v2/` |
+ * | Seguridad | `apiKey` en cabecera **`Authorization`**, con el valor **`JWT <token>`** |
+ * | Autenticación | `POST /login` con `{app_id, secret_key}` → `{message, token, tokenExpiration, nombre}` |
  *
- * - **La forma de la respuesta exitosa**: qué campo trae el token.
- * - **El esquema de seguridad**: nombre y formato de la cabecera de autorización.
- * - **Cualquier ruta de datos**: DTE, cartolas, clientes, sus filtros y su
- *   paginación.
+ * El prefijo es `JWT`, **no** `Bearer`: con `Bearer` la API responde 401. Y como
+ * el middleware de autenticación corre antes del enrutado, una cabecera
+ * equivocada devuelve 401 hasta en rutas inexistentes — por eso el prefijo
+ * correcto no se puede deducir probando, hay que leerlo del contrato.
  *
- * El contrato OpenAPI sigue devolviendo **401** y el Swagger UI publicado apunta
- * a la plantilla de ejemplo (petstore), así que nada de eso se puede leer todavía.
+ * ## Discrepancia contrato ↔ realidad
  *
- * Por eso el proveedor **no declara ninguna capacidad de datos**. Lo que sí hace
- * ahora es autenticarse de verdad en `healthCheck()` y reportar los **nombres de
- * los campos** de la respuesta —nunca sus valores—, que es exactamente el dato
- * que falta para identificar el token y desbloquear el resto sin adivinar.
+ * El contrato declara que `GET /dtes` devuelve un array plano. **La API real
+ * devuelve `{items, paginationAttributes}`.** Manda la respuesta real: el
+ * adaptador tolera ambas formas para no romperse si lo corrigen.
+ *
+ * ## Límite de tasa
+ *
+ * La API responde `x-ratelimit-limit: 60` por minuto. El cliente espaciа las
+ * solicitudes y respeta `Retry-After` ante un 429.
  */
 
 import type { BillingProviderId } from "@/db/schema"
+import { cleanRut } from "@/lib/rut"
 import { logger } from "@/lib/logger"
 import {
   BillingProviderError,
   NO_CAPABILITIES,
   type BillingProvider,
   type BillingProviderCapabilities,
+  type ProviderBankTransaction,
   type ProviderHealth,
+  type ProviderInvoice,
+  type ProviderPage,
+  type ProviderPeriodQuery,
 } from "./types"
 import { readChipaxConfig } from "../config"
 
 const PROVIDER_ID: BillingProviderId = "chipax"
 
 /**
- * Capacidades de datos reales hoy: ninguna. Se activan una por una **después**
- * de leer el contrato, no antes. Autenticarse no es leer facturas.
+ * Capacidades verificadas una por una contra la API real.
+ *
+ * `canListReceivedInvoices` queda en `false` aunque `GET /compras` exista en el
+ * contrato: no se verificó su forma de respuesta, y las facturas de proveedor ya
+ * las cubre FacturaEnLínea en el módulo de Compras. Se activará cuando se
+ * verifique, no antes.
  */
-export const CHIPAX_CAPABILITIES: BillingProviderCapabilities = { ...NO_CAPABILITIES }
+export const CHIPAX_CAPABILITIES: BillingProviderCapabilities = {
+  ...NO_CAPABILITIES,
+  canListIssuedInvoices: true,
+  canListBankTransactions: true,
+}
 
 export const CHIPAX_CONTRACT_BLOCKER =
-  "El contrato OpenAPI de Chipax requiere autenticación (401) y el Swagger UI publicado " +
-  "apunta a la plantilla de ejemplo. La autenticación sí está resuelta; faltan las rutas " +
-  "de datos. Ver docs/facturacion/CHIPAX.md."
+  "Operación no implementada para Chipax: su contrato no la cubre o no se verificó."
 
-/** Resultado de autenticarse. El token nunca sale de esta capa. */
-export interface ChipaxLoginResult {
-  ok: boolean
-  /** Código HTTP devuelto por el proveedor. */
-  status: number
-  /**
-   * Nombres de los campos de primer nivel de la respuesta, **sin sus valores**.
-   * Es lo que permite identificar dónde viene el token sin exponerlo.
-   */
-  responseFields: string[]
-  /** Mensaje ya redactado. */
-  detail: string
+/** Milisegundos entre solicitudes para no acercarse al límite de 60/min. */
+const REQUEST_SPACING_MS = 1100
+/** Tamaño de página observado en `/dtes`; la API no permite cambiarlo. */
+const DTE_PAGE_SIZE = 50
+
+interface ChipaxDte {
+  id: number
+  tipo: number
+  folio: number
+  rut: string
+  razonSocial: string
+  fechaEmision: string
+  fechaVencimiento: string | null
+  montoNeto: number
+  montoExento: number
+  montoTotal: number
+  iva: number
+}
+
+interface ChipaxCartola {
+  id: number
+  fecha: string
+  abono: number
+  cargo: number
+  descripcion: string | null
+  comentario_transferencia: string | null
+  cuenta_corriente_id: number
 }
 
 export class ChipaxProvider implements BillingProvider {
@@ -75,89 +103,14 @@ export class ChipaxProvider implements BillingProvider {
   readonly label = "Chipax"
   readonly capabilities = CHIPAX_CAPABILITIES
 
+  /** Token en memoria. Nunca sale de la instancia ni se persiste. */
+  private token: { value: string; expiresAt: number } | null = null
+  private lastRequestAt = 0
+
   async isConfigured(): Promise<boolean> {
-    const config = readChipaxConfig()
-    // "Configurado" exige credenciales Y contrato de datos verificado. Tener la
-    // clave no habilita nada mientras no se sepa a qué operación llamar.
-    return config.hasCredentials && config.contractVerified
+    return readChipaxConfig().hasCredentials
   }
 
-  /**
-   * Autentica contra `POST /login` con el cuerpo verificado `{app_id, secret_key}`.
-   *
-   * No cachea el token ni lo devuelve: mientras no haya operaciones de datos,
-   * exponerlo solo agrega superficie de fuga. Cuando se implementen, esta
-   * función es el único lugar donde debe vivir.
-   */
-  async login(): Promise<ChipaxLoginResult> {
-    const config = readChipaxConfig()
-    if (!config.hasCredentials) {
-      return {
-        ok: false,
-        status: 0,
-        responseFields: [],
-        detail: "Faltan CHIPAX_APP_ID y/o CHIPAX_SECRET_KEY en el servidor.",
-      }
-    }
-
-    const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), config.requestTimeoutMs)
-
-    try {
-      const response = await fetch(`${config.baseUrl}/login`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Accept: "application/json" },
-        // Exactamente los dos campos que el proveedor acepta. Nada más: agregar
-        // propiedades no documentadas es la vía rápida a un 400 inexplicable.
-        body: JSON.stringify({ app_id: config.appId, secret_key: config.secretKey }),
-        signal: controller.signal,
-        // Nunca seguir una redirección con credenciales a un host inesperado.
-        redirect: "manual",
-      })
-
-      const payload = await safeJson(response)
-      const responseFields = payload && typeof payload === "object" && !Array.isArray(payload)
-        ? Object.keys(payload as Record<string, unknown>)
-        : []
-
-      if (!response.ok) {
-        return {
-          ok: false,
-          status: response.status,
-          responseFields,
-          detail: describeAuthFailure(response.status, payload),
-        }
-      }
-
-      // Éxito: se reportan los NOMBRES de los campos, jamás sus valores. Es el
-      // insumo para completar el esquema de seguridad en el contrato interno.
-      return {
-        ok: true,
-        status: response.status,
-        responseFields,
-        detail: responseFields.length > 0
-          ? `Autenticación correcta. La respuesta trae los campos: ${responseFields.join(", ")}.`
-          : "Autenticación correcta, pero la respuesta no es un objeto JSON con campos de primer nivel.",
-      }
-    } catch (error) {
-      return {
-        ok: false,
-        status: 0,
-        responseFields: [],
-        detail: redact(error, controller.signal.aborted, config.requestTimeoutMs),
-      }
-    } finally {
-      clearTimeout(timeout)
-    }
-  }
-
-  /**
-   * Diagnóstico sin secretos.
-   *
-   * Con credenciales presentes **intenta autenticarse de verdad**: es una
-   * operación de solo lectura y es lo que distingue "no configurado" de
-   * "credencial equivocada" de "operativo pero sin rutas de datos".
-   */
   async healthCheck(): Promise<ProviderHealth> {
     const checkedAt = new Date().toISOString()
     const config = readChipaxConfig()
@@ -170,79 +123,250 @@ export class ChipaxProvider implements BillingProvider {
       }
     }
 
-    const result = await this.login()
-    if (!result.ok) {
-      logger.warn("[billing/chipax] healthCheck falló", { status: result.status })
-      return { ok: false, detail: result.detail, checkedAt }
-    }
-
-    if (!config.contractVerified) {
+    try {
+      // Consulta mínima y no sensible: el catálogo de monedas.
+      await this.get<unknown>("/monedas")
+      const empresa = config.companyTaxId
+        ? ""
+        : " Falta BILLING_COMPANY_TAX_ID (o DTE_PORTAL_RUT_EMP) para identificar al emisor de las ventas."
       return {
-        ok: false,
-        detail: `${result.detail} Falta leer el contrato de datos y completar las operaciones de lectura; ` +
-          `hasta entonces el proveedor no aporta facturas ni movimientos. ${CHIPAX_CONTRACT_BLOCKER}`,
+        ok: !empresa,
+        detail: `Autenticación y lectura correctas contra ${config.baseUrl}.${empresa}`,
         checkedAt,
       }
+    } catch (error) {
+      const detail = error instanceof BillingProviderError ? error.message : redact(error)
+      logger.warn("[billing/chipax] healthCheck falló")
+      return { ok: false, detail, checkedAt }
     }
-
-    if (!config.enabled) {
-      return { ok: false, detail: `${result.detail} Proveedor desactivado (BILLING_CHIPAX_ENABLED=false).`, checkedAt }
-    }
-
-    return { ok: true, detail: result.detail, checkedAt }
   }
 
   /**
-   * Guarda explícita: cualquier intento de pedir datos antes de tener el
-   * contrato falla ruidosamente en el backend, en vez de devolver listas vacías
-   * que la interfaz mostraría como "no hay facturas".
+   * Facturas de venta del período.
+   *
+   * `GET /dtes?fechaInicial&fechaFinal&page` — filtros y paginación del
+   * contrato. `nextCursor` lleva el número de página siguiente.
    */
-  assertUsable(): never {
-    throw new BillingProviderError(CHIPAX_CONTRACT_BLOCKER, "CONTRACT_UNKNOWN", PROVIDER_ID)
+  async listIssuedInvoices(query: ProviderPeriodQuery): Promise<ProviderPage<ProviderInvoice>> {
+    const config = readChipaxConfig()
+    if (!config.companyTaxId) {
+      throw new BillingProviderError(
+        "Falta el RUT de la empresa (BILLING_COMPANY_TAX_ID o DTE_PORTAL_RUT_EMP): sin él no se puede " +
+        "identificar al emisor de una factura de venta.",
+        "NOT_CONFIGURED",
+        PROVIDER_ID,
+      )
+    }
+
+    const page = parseCursor(query.cursor)
+    const params = new URLSearchParams({
+      fechaInicial: `${query.period}-01`,
+      fechaFinal: endOfMonth(query.period),
+      page: String(page),
+    })
+
+    const body = await this.get<{ items?: ChipaxDte[]; paginationAttributes?: { count?: number; totalPages?: number } }>(
+      `/dtes?${params}`,
+    )
+    // El contrato declara un array plano; la API devuelve un envoltorio. Se
+    // aceptan ambos para no romperse si lo corrigen.
+    const items = Array.isArray(body) ? (body as ChipaxDte[]) : body.items ?? []
+    const totalPages = body?.paginationAttributes?.totalPages ?? 1
+
+    return {
+      items: items.map((dte) => this.mapDte(dte, config.companyTaxId)),
+      nextCursor: page < totalPages ? String(page + 1) : null,
+      reportedTotal: body?.paginationAttributes?.count ?? null,
+    }
+  }
+
+  /**
+   * Movimientos bancarios del período.
+   *
+   * `GET /flujo-caja/cartolas?startDate&endDate&page` → `{docs, pages, total}`.
+   */
+  async listBankTransactions(query: ProviderPeriodQuery): Promise<ProviderPage<ProviderBankTransaction>> {
+    const page = parseCursor(query.cursor)
+    const params = new URLSearchParams({
+      startDate: `${query.period}-01`,
+      endDate: endOfMonth(query.period),
+      page: String(page),
+    })
+
+    const body = await this.get<{ docs?: ChipaxCartola[]; pages?: number; total?: number }>(
+      `/flujo-caja/cartolas?${params}`,
+    )
+    const docs = body.docs ?? []
+
+    return {
+      items: docs.map(mapCartola),
+      nextCursor: page < (body.pages ?? 1) ? String(page + 1) : null,
+      reportedTotal: body.total ?? null,
+    }
+  }
+
+  /* ── Interno ─────────────────────────────────────────────────────────────── */
+
+  /** Autentica y cachea el token mientras siga vigente. */
+  private async authenticate(): Promise<string> {
+    // Margen de 60 s para no usar un token que expira a mitad de la corrida.
+    if (this.token && this.token.expiresAt - 60_000 > Date.now()) return this.token.value
+
+    const config = readChipaxConfig()
+    const response = await fetch(`${config.baseUrl}/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ app_id: config.appId, secret_key: config.secretKey }),
+      signal: AbortSignal.timeout(config.requestTimeoutMs),
+      redirect: "manual",
+    })
+
+    if (!response.ok) {
+      throw new BillingProviderError(
+        response.status === 401 || response.status === 403
+          ? "Chipax rechazó las credenciales. Revisa CHIPAX_APP_ID y CHIPAX_SECRET_KEY."
+          : `Chipax rechazó la autenticación (HTTP ${response.status}).`,
+        response.status === 401 || response.status === 403 ? "AUTH_FAILED" : "UNKNOWN",
+        PROVIDER_ID,
+      )
+    }
+
+    const body = (await response.json()) as { token?: string; tokenExpiration?: number }
+    if (!body.token) {
+      throw new BillingProviderError("La respuesta de login no trae token.", "PARSE_FAILED", PROVIDER_ID)
+    }
+
+    // `tokenExpiration` viene en segundos epoch.
+    const expiresAt = body.tokenExpiration ? body.tokenExpiration * 1000 : Date.now() + 30 * 60_000
+    this.token = { value: body.token, expiresAt }
+    return body.token
+  }
+
+  /** GET autenticado, espaciado y con reintento único ante 401 o 429. */
+  private async get<T>(path: string, retry = true): Promise<T> {
+    const config = readChipaxConfig()
+    await this.space()
+
+    const token = await this.authenticate()
+    const response = await fetch(`${config.baseUrl}${path}`, {
+      // El contrato lo dice explícitamente: el valor va con el prefijo "JWT".
+      headers: { Authorization: `JWT ${token}`, Accept: "application/json" },
+      signal: AbortSignal.timeout(config.requestTimeoutMs),
+      redirect: "manual",
+    })
+
+    if (response.status === 401 && retry) {
+      // Token vencido a mitad de camino: se renueva UNA vez y se repite una
+      // sola consulta idempotente. Un segundo 401 detiene el flujo.
+      this.token = null
+      return this.get<T>(path, false)
+    }
+
+    if (response.status === 429) {
+      const retryAfter = Number(response.headers.get("retry-after") ?? "0")
+      throw new BillingProviderError(
+        `Chipax aplicó límite de tasa. Reintenta en ${retryAfter || 60} segundos.`,
+        "RATE_LIMITED",
+        PROVIDER_ID,
+      )
+    }
+
+    if (!response.ok) {
+      throw new BillingProviderError(
+        `Chipax respondió HTTP ${response.status} en ${path.split("?")[0]}.`,
+        response.status >= 500 ? "NETWORK_ERROR" : "UNKNOWN",
+        PROVIDER_ID,
+      )
+    }
+
+    return (await response.json()) as T
+  }
+
+  /** Espacia las solicitudes para no acercarse al límite de 60 por minuto. */
+  private async space(): Promise<void> {
+    const wait = this.lastRequestAt + REQUEST_SPACING_MS - Date.now()
+    if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait))
+    this.lastRequestAt = Date.now()
+  }
+
+  /** DTE de venta de Chipax → documento normalizado. */
+  private mapDte(dte: ChipaxDte, companyTaxId: string): ProviderInvoice {
+    return {
+      externalId: `chipax:dte:${dte.id}`,
+      direction: "sale",
+      docType: String(dte.tipo),
+      folio: dte.folio,
+      // En una venta el emisor es la propia empresa: Chipax no lo repite en
+      // cada documento porque para él es implícito.
+      issuerTaxId: cleanRut(companyTaxId),
+      issuerName: null,
+      receiverTaxId: dte.rut ? cleanRut(dte.rut) : null,
+      receiverName: dte.razonSocial || null,
+      issueDate: isoDay(dte.fechaEmision),
+      dueDate: dte.fechaVencimiento ? isoDay(dte.fechaVencimiento) : null,
+      currency: "CLP",
+      netAmount: numberOrNull(dte.montoNeto),
+      taxAmount: numberOrNull(dte.iva),
+      exemptAmount: numberOrNull(dte.montoExento),
+      totalAmount: dte.montoTotal,
+      // Chipax no informa el estado en el SII: dejarlo en `unknown` evita que
+      // pise el estado real que sí entrega FacturaEnLínea.
+      documentStatus: "unknown",
+      externalStatus: null,
+      documentUrl: null,
+      xmlUrl: null,
+      accountRef: null,
+      items: [],
+    }
   }
 }
 
 /* ── Helpers ─────────────────────────────────────────────────────────────── */
 
-async function safeJson(response: Response): Promise<unknown> {
-  try {
-    return await response.json()
-  } catch {
-    return null
+function mapCartola(row: ChipaxCartola): ProviderBankTransaction {
+  // `abono` entra y `cargo` sale: el signo lo define la diferencia.
+  const amount = Math.round(((row.abono ?? 0) - (row.cargo ?? 0)) * 100) / 100
+  const glosa = [row.descripcion, row.comentario_transferencia].filter(Boolean).join(" · ")
+
+  return {
+    externalId: `chipax:cartola:${row.id}`,
+    transactionDate: isoDay(row.fecha),
+    amount,
+    currency: "CLP",
+    // Glosa del banco: dato NO confiable, se sanitiza al mostrar y al exportar.
+    description: glosa || null,
+    // La cartola no identifica la contraparte; la conciliación se apoyará en
+    // monto, fecha y folio en la glosa.
+    counterpartyName: null,
+    counterpartyTaxId: null,
+    // Identificador interno de la cuenta, no su número: no hay nada que enmascarar.
+    accountRef: `cc:${row.cuenta_corriente_id}`,
   }
 }
 
-/**
- * Traduce el fallo a algo accionable **sin repetir el cuerpo enviado**. El
- * mensaje del proveedor se cita solo cuando es un texto corto y conocido.
- */
-function describeAuthFailure(status: number, payload: unknown): string {
-  const message = typeof (payload as { error?: unknown })?.error === "string"
-    ? String((payload as { error: string }).error)
-    : null
-
-  switch (status) {
-    case 400:
-      return `El proveedor rechazó los parámetros (400${message ? `: ${message}` : ""}). ` +
-        "El cuerpo enviado es {app_id, secret_key}; si el contrato cambió, hay que releerlo."
-    case 401:
-    case 403:
-      return `Credenciales rechazadas por Chipax (${status}${message ? `: ${message}` : ""}). ` +
-        "Revisa CHIPAX_APP_ID y CHIPAX_SECRET_KEY."
-    case 429:
-      return "Chipax aplicó límite de tasa (429). Reintenta más tarde."
-    default:
-      return status >= 500
-        ? `Chipax respondió con un error de servidor (${status}).`
-        : `Respuesta inesperada de Chipax (${status}).`
-  }
+function parseCursor(cursor: string | null | undefined): number {
+  const page = Number.parseInt(cursor ?? "1", 10)
+  return Number.isSafeInteger(page) && page >= 1 ? page : 1
 }
 
-/** Error de red/timeout redactado: nunca incluye credenciales ni el cuerpo. */
-function redact(error: unknown, aborted: boolean, timeoutMs: number): string {
-  if (aborted) return `Chipax no respondió dentro de ${Math.round(timeoutMs / 1000)} s.`
+function isoDay(value: string): string {
+  return String(value).slice(0, 10)
+}
+
+function numberOrNull(value: number | null | undefined): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null
+}
+
+function endOfMonth(period: string): string {
+  const [year, month] = period.split("-").map(Number) as [number, number]
+  return new Date(Date.UTC(year, month, 0)).toISOString().slice(0, 10)
+}
+
+function redact(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error)
   return /app_id|secret_key|authorization|token/i.test(message)
     ? "Error de conexión con Chipax [detalle omitido por contener credenciales]."
     : `Error de conexión con Chipax: ${message}`
 }
+
+export { DTE_PAGE_SIZE }

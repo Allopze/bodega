@@ -22,9 +22,10 @@
  * dato faltante visible y un dato falso invisible.
  */
 
+import { createHash } from "node:crypto"
 import { and, eq, sql } from "drizzle-orm"
 import { db } from "@/db"
-import { billingSyncRuns, type BillingProviderId } from "@/db/schema"
+import { billingBankTransactions, billingSyncRuns, type BillingProviderId } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { logger } from "@/lib/logger"
 import { readSalesSyncConfig } from "./config"
@@ -38,7 +39,7 @@ const STALE_RUN_THRESHOLD_MS = 60 * 60 * 1000
 /** Tope de páginas por corrida: cinturón contra un cursor que no avanza. */
 const MAX_PAGES_PER_RUN = 50
 
-export type BillingSyncScope = "sales_invoices" | "purchase_invoices"
+export type BillingSyncScope = "sales_invoices" | "purchase_invoices" | "bank_transactions"
 
 export interface BillingSyncOptions {
   provider: BillingProviderId
@@ -244,6 +245,127 @@ async function fetchPage(
   }
   assertCapability(provider, "canListReceivedInvoices", "listReceivedInvoices")
   return provider.listReceivedInvoices!(query)
+}
+
+/**
+ * Sincroniza movimientos bancarios: el insumo del motor de conciliación.
+ *
+ * Va aparte de `syncBillingInvoices` porque no son documentos: no tienen
+ * identidad tributaria, no se vinculan a la operación y su deduplicación es
+ * simplemente `(provider, external_id)`. Forzarlos por el mismo camino habría
+ * significado un modelo que no le calza a ninguno de los dos.
+ */
+export async function syncBankTransactions(options: {
+  provider: BillingProviderId
+  period?: string
+  trigger?: "manual" | "cron" | "backfill"
+  triggeredBy?: string | null
+}): Promise<BillingSyncResult> {
+  const period = options.period ?? currentPeriod()
+  const correlationId = nanoid(12)
+  assertPeriodFormat(period)
+  assertPeriodFloor(period, options.trigger ?? "manual")
+
+  const base = {
+    runId: "", correlationId, provider: options.provider,
+    scope: "bank_transactions" as BillingSyncScope, period, dryRun: false,
+  }
+
+  if (!isProviderEnabled(options.provider)) {
+    return skipped({ ...base, reason: "El proveedor está deshabilitado por configuración." })
+  }
+  const provider = getBillingProvider(options.provider)
+  if (!provider.capabilities.canListBankTransactions) {
+    return skipped({ ...base, reason: `${provider.label} no entrega movimientos bancarios.` })
+  }
+  if (!(await provider.isConfigured())) {
+    return skipped({ ...base, reason: "El proveedor no está configurado en este servidor." })
+  }
+
+  const runId = nanoid()
+  try {
+    await db.insert(billingSyncRuns).values({
+      id: runId, provider: options.provider, scope: "bank_transactions",
+      trigger: options.trigger ?? "manual", status: "running", dryRun: false,
+      periodFrom: period, periodTo: period, correlationId,
+      triggeredBy: options.triggeredBy ?? null,
+    })
+  } catch {
+    return skipped({ ...base, reason: "Ya hay una sincronización en curso para este período." })
+  }
+
+  const metrics = {
+    recordsFetched: 0, recordsCreated: 0, recordsUpdated: 0, recordsUnchanged: 0,
+    duplicatesDetected: 0, conflictsDetected: 0, errorsCount: 0,
+  }
+  const errors: string[] = []
+  let status: BillingSyncResult["status"] = "success"
+  let cursor: string | null = null
+  let pages = 0
+
+  try {
+    do {
+      const page = await provider.listBankTransactions!({ period, cursor })
+      pages++
+      metrics.recordsFetched += page.items.length
+
+      for (const transaction of page.items) {
+        try {
+          const hash = createHash("sha256")
+            .update([transaction.externalId, transaction.transactionDate, transaction.amount.toFixed(2)].join("|"))
+            .digest("hex")
+
+          const result = await db.insert(billingBankTransactions).values({
+            id: nanoid(),
+            provider: options.provider,
+            externalId: transaction.externalId,
+            transactionDate: transaction.transactionDate,
+            amount: transaction.amount,
+            currency: transaction.currency,
+            description: transaction.description,
+            counterpartyName: transaction.counterpartyName,
+            counterpartyTaxId: transaction.counterpartyTaxId,
+            accountRef: transaction.accountRef,
+            payloadHash: hash,
+            syncedAt: new Date().toISOString(),
+          }).onConflictDoNothing({
+            target: [billingBankTransactions.provider, billingBankTransactions.externalId],
+          }).returning({ id: billingBankTransactions.id })
+
+          // `onConflictDoNothing` no devuelve fila cuando ya existía: eso es lo
+          // que hace idempotente la corrida sin pisar la imputación acumulada.
+          if (result.length > 0) metrics.recordsCreated++
+          else metrics.recordsUnchanged++
+        } catch (error) {
+          metrics.errorsCount++
+          errors.push(redact(error))
+        }
+      }
+
+      cursor = page.nextCursor
+      if (pages >= MAX_PAGES_PER_RUN && cursor) {
+        errors.push(`Se alcanzó el tope de ${MAX_PAGES_PER_RUN} páginas; la corrida queda reanudable por cursor.`)
+        status = "partial"
+        break
+      }
+    } while (cursor)
+
+    if (metrics.errorsCount > 0) {
+      status = metrics.errorsCount === metrics.recordsFetched ? "failed" : "partial"
+    }
+  } catch (error) {
+    status = "failed"
+    metrics.errorsCount++
+    errors.push(redact(error))
+    logger.error(`[billing/sync ${correlationId}] cartolas fallaron`, { message: redact(error) })
+  }
+
+  const errorSummary = errors.length > 0 ? truncateSummary(errors) : null
+  await db.update(billingSyncRuns).set({
+    status, cursor, ...metrics, errorSummary, finishedAt: new Date().toISOString(),
+  }).where(eq(billingSyncRuns.id, runId))
+
+  return { ...base, runId, status, ...metrics, errorSummary }
 }
 
 /**

@@ -54,8 +54,9 @@ export function getAllBillingProviders(): BillingProvider[] {
  */
 export function isProviderEnabled(id: BillingProviderId): boolean {
   if (id !== "chipax") return true
-  const config = readChipaxConfig()
-  return config.enabled && config.contractVerified
+  // Ya no hay un segundo interruptor de "contrato verificado": el contrato se
+  // leyó y las operaciones están implementadas contra él. Queda el feature flag.
+  return readChipaxConfig().enabled
 }
 
 /**

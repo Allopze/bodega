@@ -16,7 +16,7 @@ import { afterAll, beforeEach, describe, expect, it, vi } from "vitest"
 import { and, eq } from "drizzle-orm"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
 import * as schema from "@/db/schema"
-import type { BillingProvider, ProviderInvoice, ProviderPage } from "../providers/types"
+import type { BillingProvider, ProviderBankTransaction, ProviderInvoice, ProviderPage } from "../providers/types"
 
 const pg = new PGlite()
 const inMemoryDb = drizzle(pg, { schema })
@@ -29,10 +29,12 @@ await migratePGlite(pg, path.resolve(process.cwd(), "db/migrations"))
 /* ── Proveedor falso, controlado por la prueba ────────────────────────────── */
 
 let issuedPages: ProviderPage<ProviderInvoice>[] = []
+let bankPages: ProviderPage<ProviderBankTransaction>[] = []
 let configured = true
 
 function fakeProvider(id: "factura_en_linea" | "chipax"): BillingProvider {
   let call = 0
+  let bankCall = 0
   return {
     id,
     label: `Fake ${id}`,
@@ -42,7 +44,7 @@ function fakeProvider(id: "factura_en_linea" | "chipax"): BillingProvider {
       canRetrieveXml: false,
       canRetrievePdf: false,
       canListPayments: false,
-      canListBankTransactions: false,
+      canListBankTransactions: true,
       canListClients: false,
       canCreateInvoices: false,
       canCreateExpenses: false,
@@ -50,6 +52,7 @@ function fakeProvider(id: "factura_en_linea" | "chipax"): BillingProvider {
     isConfigured: async () => configured,
     healthCheck: async () => ({ ok: true, detail: "fake", checkedAt: new Date().toISOString() }),
     listIssuedInvoices: async () => issuedPages[call++] ?? { items: [], nextCursor: null, reportedTotal: 0 },
+    listBankTransactions: async () => bankPages[bankCall++] ?? { items: [], nextCursor: null, reportedTotal: 0 },
   }
 }
 
@@ -58,7 +61,10 @@ vi.mock("../providers", async (importOriginal) => {
   return {
     ...actual,
     isProviderEnabled: () => true,
-    getBillingProvider: (id: "factura_en_linea" | "chipax") => fakeProvider(id),
+    // Solo se sustituyen los proveedores externos: "manual" sigue siendo el real
+    // para que las pruebas de capacidad se midan contra su declaración auténtica.
+    getBillingProvider: (id: "factura_en_linea" | "chipax" | "manual") =>
+      id === "manual" ? actual.getBillingProvider(id) : fakeProvider(id),
   }
 })
 
@@ -69,7 +75,7 @@ vi.mock("../providers", async (importOriginal) => {
  */
 const serviceDb = inMemoryDb as unknown as typeof import("@/db").db
 
-const { syncBillingInvoices } = await import("../sync")
+const { syncBillingInvoices, syncBankTransactions } = await import("../sync")
 const {
   upsertProviderInvoice,
   recomputeInvoicePaymentStatus,
@@ -82,8 +88,10 @@ afterAll(async () => {
 
 beforeEach(async () => {
   issuedPages = []
+  bankPages = []
   configured = true
   await inMemoryDb.delete(schema.billingInvoicePayments)
+  await inMemoryDb.delete(schema.billingBankTransactions)
   await inMemoryDb.delete(schema.billingInvoiceItems)
   await inMemoryDb.delete(schema.billingInvoiceLinks)
   await inMemoryDb.delete(schema.billingExternalRefs)
@@ -470,5 +478,66 @@ describe("aislamiento por dirección", () => {
     const sales = await inMemoryDb.select().from(schema.billingInvoices)
       .where(and(eq(schema.billingInvoices.direction, "sale"), eq(schema.billingInvoices.folio, 1234)))
     expect(sales).toHaveLength(1)
+  })
+})
+
+describe("sincronización de movimientos bancarios", () => {
+  function movimiento(overrides: Partial<ProviderBankTransaction> = {}): ProviderBankTransaction {
+    return {
+      externalId: "chipax:cartola:1",
+      transactionDate: "2026-07-14",
+      amount: 4998000,
+      currency: "CLP",
+      description: "TRANSFERENCIA FACT 1234",
+      counterpartyName: null,
+      counterpartyTaxId: null,
+      accountRef: "cc:7",
+      ...overrides,
+    }
+  }
+
+  it("importa las cartolas del período", async () => {
+    bankPages = [{ items: [movimiento()], nextCursor: null, reportedTotal: 1 }]
+    const result = await syncBankTransactions({ provider: "chipax", period: "2026-07" })
+
+    expect(result.status).toBe("success")
+    expect(result.recordsCreated).toBe(1)
+    const rows = await inMemoryDb.select().from(schema.billingBankTransactions)
+    expect(rows).toHaveLength(1)
+    expect(rows[0]!.provider).toBe("chipax")
+    expect(rows[0]!.allocatedAmount).toBe(0)
+  })
+
+  it("es idempotente: repetirla no duplica ni pisa lo ya imputado", async () => {
+    bankPages = [{ items: [movimiento()], nextCursor: null, reportedTotal: 1 }]
+    await syncBankTransactions({ provider: "chipax", period: "2026-07" })
+
+    // Alguien confirmó una imputación parcial sobre ese movimiento.
+    await inMemoryDb.update(schema.billingBankTransactions).set({ allocatedAmount: 1000000 })
+
+    bankPages = [{ items: [movimiento()], nextCursor: null, reportedTotal: 1 }]
+    const segunda = await syncBankTransactions({ provider: "chipax", period: "2026-07" })
+
+    expect(segunda.recordsCreated).toBe(0)
+    expect(segunda.recordsUnchanged).toBe(1)
+    const rows = await inMemoryDb.select().from(schema.billingBankTransactions)
+    expect(rows).toHaveLength(1)
+    // Lo imputado sobrevive: la sincronización no puede borrar una decisión.
+    expect(rows[0]!.allocatedAmount).toBe(1000000)
+  })
+
+  it("sigue el cursor entre páginas", async () => {
+    bankPages = [
+      { items: [movimiento()], nextCursor: "2", reportedTotal: 2 },
+      { items: [movimiento({ externalId: "chipax:cartola:2" })], nextCursor: null, reportedTotal: 2 },
+    ]
+    const result = await syncBankTransactions({ provider: "chipax", period: "2026-07" })
+    expect(result.recordsCreated).toBe(2)
+  })
+
+  it("se salta el proveedor que no entrega movimientos bancarios", async () => {
+    const result = await syncBankTransactions({ provider: "manual", period: "2026-07" })
+    expect(result.status).toBe("skipped")
+    expect(result.errorSummary).toMatch(/no entrega movimientos bancarios/i)
   })
 })

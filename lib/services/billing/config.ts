@@ -45,11 +45,11 @@ export interface ChipaxConfig {
   /** True si ambas credenciales están presentes. */
   hasCredentials: boolean
   /**
-   * True solo cuando alguien leyó el contrato vigente y completó las operaciones
-   * de datos en el adaptador. Es un interruptor **distinto** de tener la
-   * credencial: autenticarse no autoriza a adivinar rutas de datos.
+   * RUT de la empresa emisora, para las facturas de venta que Chipax devuelve
+   * sin identificar al emisor (obvio para Chipax: es la cuenta). Cae al RUT ya
+   * configurado del portal DTE, que es la misma empresa.
    */
-  contractVerified: boolean
+  companyTaxId: string
   /** Timeout por request. */
   requestTimeoutMs: number
 }
@@ -80,7 +80,10 @@ export function readChipaxConfig(): ChipaxConfig {
     appId,
     secretKey,
     hasCredentials: Boolean(appId && secretKey),
-    contractVerified: process.env.CHIPAX_CONTRACT_VERIFIED?.trim().toLowerCase() === "true",
+    companyTaxId:
+      process.env.BILLING_COMPANY_TAX_ID?.trim() ||
+      process.env.DTE_PORTAL_RUT_EMP?.trim() ||
+      "",
     requestTimeoutMs: parsePositiveInt(process.env.CHIPAX_REQUEST_TIMEOUT_MS, 30_000),
   }
 }

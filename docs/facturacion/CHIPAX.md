@@ -1,123 +1,135 @@
 # Chipax
 
-## Estado: autenticación VERIFICADA e implementada. Operaciones de datos, no.
+## Estado: IMPLEMENTADO contra el contrato real y verificado en vivo.
 
-## Lo que sí quedó verificado (2026-08-05, contra la API real)
+## Dónde está el contrato
+
+El documento OpenAPI **no** está en `/v2/swagger.json` —eso devuelve 404— sino
+**embebido en el bundle de Swagger UI**:
 
 ```
-POST https://api.chipax.com/v2/login   {}                      → 400  {"error":"Parámetros inválidos."}
-POST https://api.chipax.com/v2/login   {usuario, clave}        → 400  {"error":"Parámetros inválidos."}   ← control
-POST https://api.chipax.com/v2/login   {app_id, secret_key}    → 401  {"error":"Credenciales inválidas"}
+GET https://api.chipax.com/v2/swagger-docs/swagger-ui-init.js
+    → options.swaggerDoc   (OpenAPI 3.0.1, «Chipax API v2.0», 28 operaciones)
 ```
 
-**El 401 frente al 400 del control es la prueba.** Con `{app_id, secret_key}` el
-servidor aceptó el esquema del cuerpo y solo rechazó los *valores*; con otros
-nombres de campo ni siquiera llega a evaluarlos. Eso deja fijado, sin adivinar:
+El `swagger-initializer.js` del mismo directorio apunta al *petstore* de ejemplo,
+lo que hacía parecer que el contrato no estaba publicado.
+
+## Autenticación y autorización
 
 | Elemento | Valor verificado |
 |---|---|
-| Método y ruta | `POST /login` |
-| URL base | `https://api.chipax.com/v2` |
-| Cuerpo | `{ "app_id": …, "secret_key": … }` — exactamente esos dos campos |
+| Servidor (`servers`) | `https://api.chipax.com/v2/` |
+| Login | `POST /login` con `{app_id, secret_key}` |
+| Respuesta | `{message, token, tokenExpiration, nombre}` — `token` es un JWT HS256 |
+| Seguridad | `apiKey` en cabecera **`Authorization`**, valor **`JWT <token>`** |
+| Límite de tasa | **60 solicitudes por minuto** (`x-ratelimit-limit`) |
 
-`login()` está implementado con esa forma exacta en
-`lib/services/billing/providers/chipax.ts`.
+**El prefijo es `JWT`, no `Bearer`.** Con `Bearer` la API responde 401. Y como el
+middleware de autenticación corre **antes** del enrutado, una cabecera equivocada
+devuelve 401 incluso en rutas inexistentes: el prefijo correcto **no se puede
+deducir probando**, hay que leerlo del contrato. Ese fue el bloqueo durante toda
+la exploración a ciegas.
 
-## Lo que sigue sin verificar
+## Operaciones implementadas
 
-```
-GET  https://api.chipax.com/v2/swagger.json   → 401
-GET  https://api.chipax.com/v2/api-docs       → 401
-GET  https://api.chipax.com/v2/openapi.json   → 401
-GET  .../swagger-docs/swagger-initializer.js  → url: "https://petstore.swagger.io/v2/swagger.json"
-```
+### `GET /dtes` — facturas de venta
 
-El Swagger UI publicado **no está configurado** (apunta al petstore de ejemplo) y
-el documento OpenAPI real está detrás de autenticación. Por lo tanto no se conoce:
+Parámetros usados: `fechaInicial`, `fechaFinal` (`YYYY-MM-DD`), `page`.
 
-- **La forma de la respuesta exitosa del login**: qué campo trae el token.
-- **El esquema de seguridad**: nombre y formato de la cabecera de autorización.
-- **Ninguna ruta de datos**: DTE de venta y compra, cartolas, gastos, clientes,
-  con sus filtros y su paginación.
+> **Discrepancia contrato ↔ realidad.** El contrato declara que devuelve un array
+> plano; la API real devuelve `{items, paginationAttributes: {count, totalPages,
+> currentPage}}`. Manda la respuesta real, y el adaptador **tolera ambas formas**
+> para no romperse si lo corrigen.
 
-Por eso el proveedor **no declara ninguna capacidad de datos** y
-`assertUsable()` falla ruidosamente si algo intenta pedirle facturas.
+Campos que se usan: `id`, `tipo`, `folio`, `rut`, `razonSocial`, `fechaEmision`,
+**`fechaVencimiento`**, `montoNeto`, `montoExento`, `iva`, `montoTotal`.
 
-## El descubridor: "Probar conexión"
+Verificado en vivo: **3.105 documentos**, 63 páginas de 50. Junio 2026 devuelve
+**46 DTE**, coherente con los 43–48/mes que reporta FacturaEnLínea.
 
-Con credenciales cargadas, el botón **Probar conexión** de
-`/facturacion/sincronizacion` ejecuta el login real y reporta **los nombres de
-los campos de la respuesta, nunca sus valores**:
+El **emisor** no viene en la respuesta —para Chipax es implícito, es la cuenta—
+así que se toma de `BILLING_COMPANY_TAX_ID` (o `DTE_PORTAL_RUT_EMP`, la misma
+empresa). Sin ese valor el adaptador **se niega a mapear** en vez de inventar un
+emisor.
 
-> *Autenticación correcta. La respuesta trae los campos: token, expiresIn.*
+`documentStatus` queda en `unknown`: Chipax no informa el estado en el SII, y
+dejarlo así evita pisar el que sí entrega FacturaEnLínea.
 
-Ese es exactamente el dato que falta para identificar dónde viene el token y
-completar el esquema de seguridad — sin exponerlo en pantalla, en logs ni en la
-auditoría. Es el siguiente paso concreto para desbloquear el resto.
+### `GET /flujo-caja/cartolas` — movimientos bancarios
+
+Parámetros usados: `startDate`, `endDate` (`YYYY-MM-DD`), `page`.
+Respuesta: `{docs, pages, total}`.
+
+Campos: `id`, `fecha`, `abono`, `cargo`, `descripcion`,
+`comentario_transferencia`, `cuenta_corriente_id`.
+
+El monto normalizado es `abono − cargo`: entra positivo, sale negativo. La
+cartola **no identifica la contraparte**, así que `counterpartyTaxId` y
+`counterpartyName` quedan nulos y la conciliación se apoya en monto, fecha y
+folio en la glosa. `accountRef` guarda `cc:<id>` — un identificador interno de
+cuenta, no un número bancario, así que no hay nada que enmascarar.
+
+Verificado en vivo: **186 movimientos en 3 días**.
+
+Esto es lo que **desbloquea el motor de conciliación**, que hasta ahora no tenía
+fuente de movimientos en producción.
+
+## Capacidades declaradas
+
+| Capacidad | Estado | Motivo |
+|---|:--:|---|
+| `canListIssuedInvoices` | ✅ | `/dtes`, verificado |
+| `canListBankTransactions` | ✅ | `/flujo-caja/cartolas`, verificado |
+| `canListReceivedInvoices` | ❌ | `/compras` existe en el contrato pero **no se verificó su forma**, y las facturas de proveedor ya las cubre FacturaEnLínea |
+| `canCreateInvoices` · `canCreateExpenses` | ❌ | La integración es de **solo lectura**. `POST /gastos`, `POST /notas-venta` y `POST /clientes` existen y **no se usan** |
+
+Una capacidad se activa **después** de verificar su operación, nunca antes.
 
 ## Configuración
 
 ```bash
 CHIPAX_APP_ID=                 # credencial de aplicación
 CHIPAX_SECRET_KEY=             # secreto de aplicación
-CHIPAX_API_BASE_URL=           # vacío → https://api.chipax.com/v2 (verificado)
-CHIPAX_OPENAPI_URL=https://api.chipax.com/v2/swagger-docs/
+CHIPAX_API_BASE_URL=           # vacío → https://api.chipax.com/v2
 CHIPAX_REQUEST_TIMEOUT_MS=30000
-
-BILLING_CHIPAX_ENABLED=false   # feature flag del proveedor
-CHIPAX_CONTRACT_VERIFIED=false # ← interruptor DISTINTO, ver abajo
+BILLING_CHIPAX_ENABLED=true    # feature flag del proveedor
+BILLING_COMPANY_TAX_ID=        # vacío → usa DTE_PORTAL_RUT_EMP
 ```
 
 Guardar `CHIPAX_APP_ID` y `CHIPAX_SECRET_KEY` en un gestor de secretos. Nunca en
 el repositorio, nunca con prefijo `NEXT_PUBLIC_`.
 
-### Por qué son dos interruptores y no uno
+> Desapareció `CHIPAX_CONTRACT_VERIFIED`. Existía como freno mientras el contrato
+> no se podía leer; ahora se leyó y las operaciones están implementadas contra
+> él, así que un segundo interruptor solo sería ruido.
 
-`BILLING_CHIPAX_ENABLED` habilita el proveedor. `CHIPAX_CONTRACT_VERIFIED`
-declara que alguien **leyó el contrato de datos** y completó las operaciones de
-lectura en el adaptador.
+## Manejo del token y de los límites
 
-Están separados a propósito: **autenticarse no autoriza a adivinar rutas**. Hoy
-lo primero funciona y lo segundo no, y el módulo tiene que poder distinguirlo.
-
-## Pasos para activarlo del todo
-
-1. Cargar `CHIPAX_APP_ID` y `CHIPAX_SECRET_KEY`.
-2. **Probar conexión** desde el centro de sincronización → anotar los campos que
-   devuelve la respuesta.
-3. Con el token en mano, leer el contrato OpenAPI (`GET /v2/swagger.json` con la
-   cabecera de autorización correspondiente) y registrar, por operación: método,
-   ruta, parámetros requeridos, cuerpo, respuesta y mecanismo de paginación.
-4. Implementar `listIssuedInvoices` y/o `listBankTransactions` con tipos
-   derivados del contrato, y activar **solo** esas capacidades en
-   `CHIPAX_CAPABILITIES`.
-5. `BILLING_CHIPAX_ENABLED=true` **y** `CHIPAX_CONTRACT_VERIFIED=true`.
-
-## Reglas que siguen vigentes al activarlo
-
-- **Solo lectura.** `canCreateInvoices` y `canCreateExpenses` no se activan sin
-  una decisión de negocio explícita y documentada.
-- El token vive **solo en el backend**. Hoy `login()` ni siquiera lo devuelve:
-  mientras no haya operaciones de datos, exponerlo solo agrega superficie de fuga.
-- Ante `401`: reautenticar **una** vez y repetir **una** consulta idempotente. Un
+- El token vive **solo en memoria** de la instancia del proveedor, se reutiliza
+  mientras siga vigente (con margen de 60 s sobre `tokenExpiration`) y **nunca**
+  se persiste ni se registra.
+- Ante `401` se renueva **una** vez y se repite **una** consulta idempotente. Un
   segundo `401` detiene el flujo.
-- **Funcionamiento en paralelo** con FacturaEnLínea durante un período
-  controlado: ambas fuentes describen la misma factura y la pantalla de detalle
-  muestra las diferencias. Recién con esa comparación tiene sentido evaluar una
-  migración.
-- Las cuentas bancarias se guardan **enmascaradas**; el número completo no entra
-  a la base.
+- Las solicitudes se espacian ~1,1 s para no acercarse al límite de 60/min.
+- Ante `429` se informa el `Retry-After` en vez de reintentar a ciegas.
 
-## Matriz de responsabilidades proyectada
+## Lo que sigue en manos de una persona
+
+Que Chipax entregue movimientos bancarios **no** significa que los pagos se
+confirmen solos. El motor solo **sugiere**, con evidencia y confianza; convertir
+una sugerencia en cobro sigue exigiendo `billing:confirm_payments`. Ver
+[README.md](README.md) y [SINCRONIZACION.md](SINCRONIZACION.md).
+
+## Matriz de responsabilidades
 
 | Capacidad | FacturaEnLínea | Chipax | Chome |
 |---|---|---|---|
-| Factura emitida | Fuente actual | Verificación | Registro normalizado |
-| Factura recibida | Fuente actual (Compras) | Verificación financiera | Relación con OC |
-| Neto / IVA / exento | XML del documento | Verificación | — |
-| Estado tributario | Fuente única | — | — |
-| Pago bancario | No disponible | **Fuente** | Conciliación y confirmación |
-| Movimiento bancario | No disponible | **Fuente** | Sugerencias |
+| Factura emitida | Fuente (estado SII) | Fuente (montos, vencimiento) | Registro normalizado |
+| Factura recibida | Fuente (Compras) | No activado | Relación con OC |
+| Estado tributario | **Fuente única** | No informa | — |
+| Vencimiento | XML (`FchVenc`) | `fechaVencimiento` | Puede fijarlo a mano |
+| Movimiento bancario | No disponible | **Fuente única** | Sugerencias |
+| Pago confirmado | — | — | **Solo una persona** |
 | Cliente, contrato, faena | No corresponde | No corresponde | **Fuente única** |
-| Estado de cobranza | No corresponde | No corresponde | **Fuente única** |
-| Emisión tributaria | Sistema existente (manual) | No asumir | No implementar |
+| Emisión tributaria | Sistema existente (manual) | No se usa | No implementar |

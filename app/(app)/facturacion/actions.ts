@@ -16,7 +16,7 @@ import { nanoid } from "@/lib/id"
 import { recordAudit } from "@/lib/audit"
 import { logger } from "@/lib/logger"
 import { recordInvoiceEvent } from "@/lib/services/billing/invoices"
-import { syncBillingInvoices, currentPeriod } from "@/lib/services/billing/sync"
+import { syncBillingInvoices, syncBankTransactions, currentPeriod } from "@/lib/services/billing/sync"
 import { getBillingProvider } from "@/lib/services/billing/providers"
 import { writeStoredHealth } from "@/lib/services/billing/health"
 import type { BillingProviderId } from "@/db/schema"
@@ -30,7 +30,7 @@ export interface ActionResult {
 
 const syncSchema = z.object({
   provider: z.enum(["factura_en_linea", "chipax", "manual"]),
-  scope: z.enum(["sales_invoices", "purchase_invoices"]),
+  scope: z.enum(["sales_invoices", "purchase_invoices", "bank_transactions"]),
   period: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, "El período debe tener formato AAAA-MM"),
   dryRun: z.boolean().default(false),
 })
@@ -52,11 +52,20 @@ export async function triggerBillingSyncAction(input: unknown): Promise<ActionRe
   }
 
   try {
-    const result = await syncBillingInvoices({
-      ...parsed.data,
-      trigger: "manual",
-      triggeredBy: session.user.id,
-    })
+    // Las cartolas no son documentos: van por su propio camino.
+    const result = parsed.data.scope === "bank_transactions"
+      ? await syncBankTransactions({
+          provider: parsed.data.provider,
+          period: parsed.data.period,
+          trigger: "manual",
+          triggeredBy: session.user.id,
+        })
+      : await syncBillingInvoices({
+          ...parsed.data,
+          scope: parsed.data.scope,
+          trigger: "manual",
+          triggeredBy: session.user.id,
+        })
 
     await recordAudit({
       userId: session.user.id,

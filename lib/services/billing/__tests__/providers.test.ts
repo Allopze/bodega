@@ -6,7 +6,6 @@ import {
   isProviderEnabled,
   assertCapability,
   providerInvoiceFromXml,
-  CHIPAX_CONTRACT_BLOCKER,
   ChipaxProvider,
 } from "../providers"
 import type { BillingProvider } from "../providers/types"
@@ -71,13 +70,17 @@ describe("FacturaEnLínea", () => {
 describe("Chipax", () => {
   const provider = getBillingProvider("chipax")
 
-  it("no declara ninguna capacidad de datos mientras el contrato no sea legible", () => {
-    for (const value of Object.values(provider.capabilities)) {
-      expect(value).toBe(false)
-    }
+  it("declara solo las capacidades verificadas contra el contrato", () => {
+    expect(provider.capabilities.canListIssuedInvoices).toBe(true)
+    expect(provider.capabilities.canListBankTransactions).toBe(true)
+    // `/compras` existe en el contrato pero no se verificó su forma, y las
+    // facturas de proveedor ya las cubre FacturaEnLínea.
+    expect(provider.capabilities.canListReceivedInvoices).toBe(false)
+    expect(provider.capabilities.canCreateInvoices).toBe(false)
+    expect(provider.capabilities.canCreateExpenses).toBe(false)
   })
 
-  it("queda deshabilitado sin flag y sin contrato verificado", () => {
+  it("queda deshabilitado mientras el feature flag esté apagado", () => {
     expect(isProviderEnabled("chipax")).toBe(false)
   })
 
@@ -87,32 +90,29 @@ describe("Chipax", () => {
 
     expect(health.ok).toBe(false)
     expect(health.detail).toMatch(/CHIPAX_APP_ID/)
-    expect(health.checkedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/)
-    // Sin credenciales no tiene sentido molestar al proveedor.
     expect(fetchSpy).not.toHaveBeenCalled()
     fetchSpy.mockRestore()
   })
-
-  it("autenticarse NO alcanza para considerarlo configurado", async () => {
-    // Es la distinción central: tener la credencial no autoriza a adivinar
-    // rutas de datos. Hacen falta credenciales Y contrato verificado.
-    vi.stubEnv("CHIPAX_APP_ID", "app-de-prueba")
-    vi.stubEnv("CHIPAX_SECRET_KEY", "secreto-de-prueba")
-    expect(await provider.isConfigured()).toBe(false)
-    vi.unstubAllEnvs()
-  })
-
-  it("el motivo del bloqueo nombra el 401 del contrato de datos", () => {
-    expect(CHIPAX_CONTRACT_BLOCKER).toMatch(/401/)
-  })
 })
 
-describe("Chipax — autenticación", () => {
-  const provider = getBillingProvider("chipax") as ChipaxProvider
+describe("Chipax — contrato real", () => {
+  const TOKEN = "jwt-de-prueba-no-debe-filtrarse"
+
+  function nuevoProveedor() {
+    // Instancia nueva por prueba: el token se cachea por instancia.
+    return getBillingProvider("chipax") as ChipaxProvider
+  }
+
+  function respuesta(body: unknown, status = 200) {
+    return new Response(JSON.stringify(body), {
+      status, headers: { "Content-Type": "application/json" },
+    })
+  }
 
   beforeEach(() => {
     vi.stubEnv("CHIPAX_APP_ID", "app-de-prueba")
     vi.stubEnv("CHIPAX_SECRET_KEY", "secreto-de-prueba")
+    vi.stubEnv("BILLING_COMPANY_TAX_ID", "78023530-6")
   })
 
   afterEach(() => {
@@ -120,76 +120,145 @@ describe("Chipax — autenticación", () => {
     vi.restoreAllMocks()
   })
 
-  it("envía exactamente {app_id, secret_key} a POST /login", async () => {
-    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(JSON.stringify({ token: "no-debe-filtrarse" }), {
-        status: 200, headers: { "Content-Type": "application/json" },
-      }),
-    )
+  it("autentica con {app_id, secret_key} y autoriza con el prefijo JWT", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(respuesta({ token: TOKEN, tokenExpiration: Math.floor(Date.now() / 1000) + 3600 }))
+      .mockResolvedValueOnce(respuesta({ items: [], paginationAttributes: { count: 0, totalPages: 1 } }))
 
-    await provider.login()
+    await nuevoProveedor().listIssuedInvoices({ period: "2026-06" })
 
-    const [url, init] = fetchMock.mock.calls[0]!
-    expect(String(url)).toBe("https://api.chipax.com/v2/login")
-    expect(init!.method).toBe("POST")
-    // Ni un campo de más: agregar propiedades no documentadas es la vía rápida
-    // a un 400 inexplicable.
-    expect(JSON.parse(String(init!.body))).toEqual({
-      app_id: "app-de-prueba",
-      secret_key: "secreto-de-prueba",
+    const [loginUrl, loginInit] = fetchMock.mock.calls[0]!
+    expect(String(loginUrl)).toBe("https://api.chipax.com/v2/login")
+    expect(JSON.parse(String(loginInit!.body))).toEqual({
+      app_id: "app-de-prueba", secret_key: "secreto-de-prueba",
     })
+
+    // El contrato exige "JWT <token>". Con "Bearer" la API responde 401.
+    const [, dteInit] = fetchMock.mock.calls[1]!
+    const headers = dteInit!.headers as Record<string, string>
+    expect(headers.Authorization).toBe(`JWT ${TOKEN}`)
+    expect(headers.Authorization).not.toMatch(/Bearer/)
   })
 
-  it("reporta los NOMBRES de los campos de la respuesta, nunca sus valores", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(JSON.stringify({ token: "jwt-secretísimo", expiresIn: 3600 }), {
-        status: 200, headers: { "Content-Type": "application/json" },
-      }),
-    )
+  it("mapea un DTE de venta al modelo normalizado", async () => {
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(respuesta({ token: TOKEN, tokenExpiration: Math.floor(Date.now() / 1000) + 3600 }))
+      .mockResolvedValueOnce(respuesta({
+        items: [{
+          id: 987, tipo: 33, folio: 10424, rut: "76.543.210-K", razonSocial: "MINERA EJEMPLO SPA",
+          fechaEmision: "2026-06-11T00:00:00.000Z", fechaVencimiento: "2026-07-11T00:00:00.000Z",
+          montoNeto: 4200000, montoExento: 0, iva: 798000, montoTotal: 4998000,
+        }],
+        paginationAttributes: { count: 46, totalPages: 1 },
+      }))
 
-    const result = await provider.login()
+    const page = await nuevoProveedor().listIssuedInvoices({ period: "2026-06" })
+    const invoice = page.items[0]!
 
-    expect(result.ok).toBe(true)
-    expect(result.responseFields).toEqual(["token", "expiresIn"])
-    // El valor del token no puede aparecer en ninguna parte del diagnóstico.
-    expect(result.detail).not.toContain("jwt-secretísimo")
-    expect(JSON.stringify(result)).not.toContain("jwt-secretísimo")
+    expect(invoice.externalId).toBe("chipax:dte:987")
+    expect(invoice.direction).toBe("sale")
+    expect(invoice.docType).toBe("33")
+    expect(invoice.folio).toBe(10424)
+    // El emisor de una venta es la propia empresa: Chipax no lo repite.
+    expect(invoice.issuerTaxId).toBe("78023530-6")
+    expect(invoice.receiverTaxId).toBe("76543210-K")
+    expect(invoice.issueDate).toBe("2026-06-11")
+    expect(invoice.dueDate).toBe("2026-07-11")
+    expect(invoice.totalAmount).toBe(4998000)
+    // Chipax no informa estado SII: dejarlo en `unknown` evita pisar el que sí
+    // entrega FacturaEnLínea.
+    expect(invoice.documentStatus).toBe("unknown")
+    expect(page.reportedTotal).toBe(46)
   })
 
-  it("distingue credencial equivocada (401) de esquema equivocado (400)", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(JSON.stringify({ error: "Credenciales inválidas" }), { status: 401 }),
-    )
-    expect((await provider.login()).detail).toMatch(/CHIPAX_APP_ID/)
+  it("tolera el array plano que declara el contrato y el envoltorio que devuelve la API", async () => {
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(respuesta({ token: TOKEN, tokenExpiration: Math.floor(Date.now() / 1000) + 3600 }))
+      .mockResolvedValueOnce(respuesta([{
+        id: 1, tipo: 33, folio: 500, rut: "76543210-K", razonSocial: "X",
+        fechaEmision: "2026-06-01", fechaVencimiento: null,
+        montoNeto: 100, montoExento: 0, iva: 19, montoTotal: 119,
+      }]))
 
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(JSON.stringify({ error: "Parámetros inválidos." }), { status: 400 }),
-    )
-    expect((await provider.login()).detail).toMatch(/releerlo|parámetros/i)
+    const page = await nuevoProveedor().listIssuedInvoices({ period: "2026-06" })
+    expect(page.items).toHaveLength(1)
+    expect(page.items[0]!.dueDate).toBeNull()
   })
 
-  it("no expone credenciales cuando la red falla", async () => {
-    vi.spyOn(globalThis, "fetch").mockRejectedValue(
-      new Error("connect ECONNREFUSED con secret_key=secretísimo"),
-    )
-    const result = await provider.login()
+  it("pagina con el cursor y lo cierra en la última página", async () => {
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(respuesta({ token: TOKEN, tokenExpiration: Math.floor(Date.now() / 1000) + 3600 }))
+      .mockResolvedValueOnce(respuesta({ items: [], paginationAttributes: { count: 100, totalPages: 3 } }))
 
-    expect(result.ok).toBe(false)
-    expect(result.detail).not.toContain("secretísimo")
-    expect(result.detail).toMatch(/omitido por contener credenciales/i)
+    const primera = await nuevoProveedor().listIssuedInvoices({ period: "2026-06" })
+    expect(primera.nextCursor).toBe("2")
+
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(respuesta({ token: TOKEN, tokenExpiration: Math.floor(Date.now() / 1000) + 3600 }))
+      .mockResolvedValueOnce(respuesta({ items: [], paginationAttributes: { count: 100, totalPages: 3 } }))
+    const ultima = await nuevoProveedor().listIssuedInvoices({ period: "2026-06", cursor: "3" })
+    expect(ultima.nextCursor).toBeNull()
   })
 
-  it("aunque el login funcione, sin contrato de datos el healthCheck no dice ok", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(JSON.stringify({ token: "x" }), {
-        status: 200, headers: { "Content-Type": "application/json" },
-      }),
-    )
+  it("convierte una cartola en movimiento bancario con el signo correcto", async () => {
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(respuesta({ token: TOKEN, tokenExpiration: Math.floor(Date.now() / 1000) + 3600 }))
+      .mockResolvedValueOnce(respuesta({
+        docs: [
+          { id: 1, fecha: "2026-07-02T00:00:00.000Z", abono: 1190000, cargo: 0, descripcion: "TRANSF FACT 1234", comentario_transferencia: null, cuenta_corriente_id: 7 },
+          { id: 2, fecha: "2026-07-03T00:00:00.000Z", abono: 0, cargo: 50000, descripcion: "COMISION", comentario_transferencia: null, cuenta_corriente_id: 7 },
+        ],
+        pages: 1, total: 2,
+      }))
 
-    const health = await provider.healthCheck()
+    const page = await nuevoProveedor().listBankTransactions({ period: "2026-07" })
+
+    expect(page.items[0]!.amount).toBe(1190000)    // abono entra: positivo
+    expect(page.items[1]!.amount).toBe(-50000)     // cargo sale: negativo
+    expect(page.items[0]!.transactionDate).toBe("2026-07-02")
+    expect(page.items[0]!.externalId).toBe("chipax:cartola:1")
+    // La cartola no identifica contraparte: no se inventa.
+    expect(page.items[0]!.counterpartyTaxId).toBeNull()
+    // Es un id interno de cuenta, no un número de cuenta bancaria.
+    expect(page.items[0]!.accountRef).toBe("cc:7")
+  })
+
+  it("sin RUT de la empresa se niega a mapear ventas en vez de inventar el emisor", async () => {
+    vi.stubEnv("BILLING_COMPANY_TAX_ID", "")
+    vi.stubEnv("DTE_PORTAL_RUT_EMP", "")
+
+    await expect(nuevoProveedor().listIssuedInvoices({ period: "2026-06" }))
+      .rejects.toThrow(/RUT de la empresa/i)
+  })
+
+  it("renueva el token una sola vez ante un 401 y no entra en bucle", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(respuesta({ token: TOKEN, tokenExpiration: Math.floor(Date.now() / 1000) + 3600 }))
+      .mockResolvedValueOnce(respuesta({ message: "Unauthorized" }, 401))
+      .mockResolvedValueOnce(respuesta({ token: TOKEN, tokenExpiration: Math.floor(Date.now() / 1000) + 3600 }))
+      .mockResolvedValueOnce(respuesta({ message: "Unauthorized" }, 401))
+
+    await expect(nuevoProveedor().listIssuedInvoices({ period: "2026-06" })).rejects.toThrow(/HTTP 401/)
+    // login + dte + login + dte = 4. Un segundo 401 detiene el flujo.
+    expect(fetchMock).toHaveBeenCalledTimes(4)
+  })
+
+  it("informa el límite de tasa en vez de reintentar a ciegas", async () => {
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(respuesta({ token: TOKEN, tokenExpiration: Math.floor(Date.now() / 1000) + 3600 }))
+      .mockResolvedValueOnce(new Response("{}", { status: 429, headers: { "retry-after": "30" } }))
+
+    await expect(nuevoProveedor().listBankTransactions({ period: "2026-07" }))
+      .rejects.toThrow(/límite de tasa.*30/i)
+  })
+
+  it("no expone el token ni las credenciales al fallar la autenticación", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(respuesta({ error: "Credenciales inválidas" }, 401))
+
+    const health = await nuevoProveedor().healthCheck()
     expect(health.ok).toBe(false)
-    expect(health.detail).toMatch(/Autenticación correcta/)
-    expect(health.detail).toMatch(/contrato/i)
+    expect(JSON.stringify(health)).not.toContain("secreto-de-prueba")
+    expect(health.detail).toMatch(/CHIPAX_APP_ID/)
   })
 })
 
