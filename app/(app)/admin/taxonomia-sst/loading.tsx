@@ -7,7 +7,7 @@ export default function Loading() {
       <PageHeader
         title="Taxonomía documental SST"
         breadcrumb={[
-          { label: "Dashboard", href: "/dashboard" },
+          { label: "Inicio", href: "/dashboard" },
           { label: "Administración", href: "/admin" },
           { label: "Taxonomía documental SST" },
         ]}

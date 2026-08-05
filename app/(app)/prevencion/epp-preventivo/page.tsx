@@ -43,7 +43,7 @@ export default async function EppPreventivoPage() {
         title="EPP preventivo"
         description="Requisitos de EPP obligatorio por cargo o faena, comparados contra las entregas reales de Bodega para detectar cobertura faltante o vencida."
         breadcrumb={<Breadcrumbs items={[
-          { label: "Dashboard", href: "/dashboard" },
+          { label: "Inicio", href: "/dashboard" },
           { label: "Prevención" },
           { label: "EPP preventivo" },
         ]} />}

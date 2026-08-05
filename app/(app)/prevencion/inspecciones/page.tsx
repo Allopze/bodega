@@ -42,7 +42,7 @@ export default async function InspeccionesPage() {
         title="Inspecciones y auditorías"
         description="Motor transversal de inspecciones, observaciones y auditorías, con hallazgos derivados a CAPA y cierre independiente."
         breadcrumb={<Breadcrumbs items={[
-          { label: "Dashboard", href: "/dashboard" },
+          { label: "Inicio", href: "/dashboard" },
           { label: "Prevención" },
           { label: "Inspecciones" },
         ]} />}

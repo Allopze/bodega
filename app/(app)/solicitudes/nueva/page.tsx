@@ -138,7 +138,7 @@ export default async function NuevaSolicitudPage({
           description="Completa los datos y agrega los ítems que necesitas."
           breadcrumb={
             <Breadcrumbs items={[
-              { label: "Dashboard",   href: "/dashboard"   },
+              { label: "Inicio",   href: "/dashboard"   },
               { label: "Solicitudes", href: "/solicitudes" },
               { label: "Nueva"                             },
             ]} />
@@ -167,7 +167,7 @@ export default async function NuevaSolicitudPage({
         description="Completa los datos y agrega los ítems que necesitas."
         breadcrumb={
           <Breadcrumbs items={[
-            { label: "Dashboard",   href: "/dashboard"   },
+            { label: "Inicio",   href: "/dashboard"   },
             { label: "Solicitudes", href: "/solicitudes" },
             { label: "Nueva"                             },
           ]} />

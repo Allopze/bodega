@@ -7,7 +7,7 @@ export default function LoadingPendingWork() {
     <>
       <PageHeader
         title="Mis pendientes"
-        breadcrumb={<Breadcrumbs items={[{ label: "Dashboard", href: "/dashboard" }, { label: "Mis pendientes" }]} />}
+        breadcrumb={<Breadcrumbs items={[{ label: "Inicio", href: "/dashboard" }, { label: "Mis pendientes" }]} />}
       />
       <SkeletonPage rows={8} />
     </>

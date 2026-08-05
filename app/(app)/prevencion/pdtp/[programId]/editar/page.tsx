@@ -77,7 +77,7 @@ export default async function PdtpEditProgramPage({ params, searchParams }: Prop
         description="Gestiona actividades, ajustes por faena y la revisión del programa anual."
         breadcrumb={
           <Breadcrumbs items={[
-            { label: "Dashboard", href: "/dashboard" },
+            { label: "Inicio", href: "/dashboard" },
             { label: "Programas PDTP", href: "/prevencion/pdtp" },
             { label: program.title, href: `/prevencion/pdtp/${programId}` },
             { label: "Editar" },

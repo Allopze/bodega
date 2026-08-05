@@ -49,7 +49,7 @@ export default async function EmergenciasPage({ searchParams }: { searchParams: 
         title="Emergencias y simulacros"
         description="Planes de emergencia por faena, escenarios, organigrama de respuesta, recursos, contactos y simulacros con resultado derivado a CAPA."
         breadcrumb={<Breadcrumbs items={[
-          { label: "Dashboard", href: "/dashboard" },
+          { label: "Inicio", href: "/dashboard" },
           { label: "Prevención" },
           { label: "Emergencias" },
         ]} />}

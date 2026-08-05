@@ -6,7 +6,7 @@ export default function Loading() {
     <>
       <PageHeader
         title="Revisar importación EPP"
-        breadcrumb={<Breadcrumbs items={[{ label: "Dashboard", href: "/dashboard" }, { label: "Administración", href: "/admin" }, { label: "Productos", href: "/admin/productos" }, { label: "Importación EPP" }]} />}
+        breadcrumb={<Breadcrumbs items={[{ label: "Inicio", href: "/dashboard" }, { label: "Administración", href: "/admin" }, { label: "Productos", href: "/admin/productos" }, { label: "Importación EPP" }]} />}
       />
       <SkeletonPage rows={6} />
     </>

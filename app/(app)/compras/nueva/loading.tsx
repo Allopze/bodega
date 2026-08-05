@@ -8,7 +8,7 @@ export default function Loading() {
         title="Nueva orden de compra"
         breadcrumb={
           <Breadcrumbs items={[
-            { label: "Dashboard", href: "/dashboard" },
+            { label: "Inicio", href: "/dashboard" },
             { label: "Órdenes de compra", href: "/compras" },
             { label: "Nueva" },
           ]} />

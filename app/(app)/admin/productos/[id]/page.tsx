@@ -45,7 +45,7 @@ export default async function EditarProductoPage({ params }: { params: Promise<{
         description={`Editar SKU ${product.sku}`}
         breadcrumb={
           <Breadcrumbs items={[
-            { label: "Dashboard", href: "/dashboard" },
+            { label: "Inicio", href: "/dashboard" },
             { label: "Administración", href: "/admin" },
             { label: "Productos", href: "/admin/productos" },
             { label: product.sku },

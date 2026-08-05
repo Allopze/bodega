@@ -71,7 +71,7 @@ export default async function RolesPage() {
         title="Roles"
         description="Gestiona roles base, su alcance y los permisos incluidos por cada rol."
         breadcrumb={[
-          { label: "Dashboard", href: "/dashboard" },
+          { label: "Inicio", href: "/dashboard" },
           { label: "Administración", href: "/admin" },
           { label: "Roles" },
         ]}

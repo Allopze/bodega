@@ -84,7 +84,7 @@ export default async function EvaluacionDetailPage({ params }: Props) {
         description={`${workerName} · ${worksiteName}`}
         breadcrumb={
           <Breadcrumbs items={[
-            { label: "Dashboard",        href: "/dashboard"  },
+            { label: "Inicio",        href: "/dashboard"  },
             { label: "Evaluaciones SST", href: "/prevencion" },
             { label: evaluation.definicionCode               },
           ]} />

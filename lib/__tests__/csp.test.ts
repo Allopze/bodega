@@ -2,6 +2,13 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 import { createCspHeader } from "@/lib/security/csp"
 
 describe("createCspHeader (audit S-09)", () => {
+  // Los tests no deben depender del entorno: si NEXT_PUBLIC_SENTRY_DSN está
+  // definido (p. ej. .env.local), su origen de ingest se intercala en
+  // connect-src y rompe las aserciones de orden de los tests de WebSocket.
+  afterEach(() => {
+    vi.unstubAllEnvs()
+  })
+
   it("includes the nonce and same-origin scripts in production without unsafe script sources", () => {
     const csp = createCspHeader("abc123nonce", { isDev: false })
     expect(csp).toContain("script-src 'self' 'nonce-abc123nonce'")
@@ -49,11 +56,15 @@ describe("createCspHeader (audit S-09)", () => {
   })
 
   it("allows WebSocket (ws://, wss://) in development for HMR", () => {
+    // Sin DSN de Sentry el connect-src de desarrollo es exactamente
+    // 'self' + ws:/wss: (ver afterEach de nivel superior).
+    vi.stubEnv("NEXT_PUBLIC_SENTRY_DSN", "")
     const csp = createCspHeader("nonce", { isDev: true })
     expect(csp).toContain("connect-src 'self' ws: wss:")
   })
 
   it("restricts connect-src to 'self' in production (no WebSocket)", () => {
+    vi.stubEnv("NEXT_PUBLIC_SENTRY_DSN", "")
     const csp = createCspHeader("nonce", { isDev: false })
     expect(csp).toContain("connect-src 'self'")
     expect(csp).not.toContain("ws:")
@@ -61,10 +72,6 @@ describe("createCspHeader (audit S-09)", () => {
   })
 
   describe("connect-src y el DSN de Sentry (UIUX-018)", () => {
-    afterEach(() => {
-      vi.unstubAllEnvs()
-    })
-
     it("no añade ningún origen extra si NEXT_PUBLIC_SENTRY_DSN no está definido", () => {
       vi.stubEnv("NEXT_PUBLIC_SENTRY_DSN", "")
       const csp = createCspHeader("nonce", { isDev: false })
@@ -73,6 +80,7 @@ describe("createCspHeader (audit S-09)", () => {
     })
 
     it("permite el origen de ingest derivado del DSN cuando está configurado", () => {
+      // Mismo DSN sintético que el gate de CI `npm run test:env-dsn`.
       vi.stubEnv("NEXT_PUBLIC_SENTRY_DSN", "https://publickey@o123456.ingest.sentry.io/789")
       const csp = createCspHeader("nonce", { isDev: false })
       expect(csp).toContain("connect-src 'self' https://o123456.ingest.sentry.io")

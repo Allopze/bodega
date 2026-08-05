@@ -6,7 +6,7 @@ export default function Loading() {
     <>
       <PageHeader
         title="Evaluaciones del Trabajador"
-        breadcrumb={<Breadcrumbs items={[{ label: "Dashboard", href: "/dashboard" }, { label: "Evaluaciones SST", href: "/prevencion" }, { label: "Trabajador" }]} />}
+        breadcrumb={<Breadcrumbs items={[{ label: "Inicio", href: "/dashboard" }, { label: "Evaluaciones SST", href: "/prevencion" }, { label: "Trabajador" }]} />}
       />
       <SkeletonPage rows={6} />
     </>

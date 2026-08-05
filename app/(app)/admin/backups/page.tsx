@@ -16,7 +16,7 @@ export const metadata: Metadata = { title: "Respaldos del sistema" }
 
 const BACKUPS_BREADCRUMBS = (
   <Breadcrumbs items={[
-    { label: "Dashboard", href: "/dashboard" },
+    { label: "Inicio", href: "/dashboard" },
     { label: "Administración", href: "/admin" },
     { label: "Respaldos" },
   ]} />

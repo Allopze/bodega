@@ -23,8 +23,14 @@ export function DomainIndex({ domains }: { domains: DashboardDomain[] }) {
     <nav
       aria-label="Secciones del tablero"
       className={cn(
-        "sticky top-0 z-10 -mx-1 flex gap-1.5 overflow-x-auto bg-[var(--color-bg)]/95 px-1 py-2 backdrop-blur",
-        "2xl:top-4 2xl:mx-0 2xl:flex-col 2xl:overflow-visible 2xl:bg-transparent 2xl:px-0 2xl:backdrop-blur-none",
+        // `top-14` = alto de la TopBar (h-[3.5rem]), que es sticky en el mismo
+        // scroll container con el mismo z-10: con `top-0`/`top-4` este índice
+        // se pegaba ENCIMA del título ("texto sobre texto" a 1920, barra
+        // tapando la TopBar completa a 1366 — I-05, auditoría 2026-08-05).
+        // z-[5] < z-10: si algún ancho intermedio los superpone, la TopBar
+        // opaca gana.
+        "sticky top-14 z-5 -mx-1 flex gap-1.5 overflow-x-auto bg-[var(--color-bg)]/95 px-1 py-2 backdrop-blur",
+        "2xl:top-18 2xl:mx-0 2xl:flex-col 2xl:overflow-visible 2xl:px-0",
       )}
     >
       {domains.map((domain) => (
@@ -70,10 +76,15 @@ export function DomainSection({ domain, kpis, summary, charts, links, note }: {
   /** Advertencia de alcance cuando alguna cifra no puede respetar el filtro. */
   note?: string
 }) {
+  // scroll-mt = TopBar (3.5rem) + barra índice sticky (~2.75rem) + aire;
+  // en 2xl no hay barra horizontal sobre el contenido, sólo la TopBar.
   return (
-    <section id={domain.anchor} aria-labelledby={`${domain.anchor}-titulo`} className="scroll-mt-16 2xl:scroll-mt-6">
+    <section id={domain.anchor} aria-labelledby={`${domain.anchor}-titulo`} className="scroll-mt-28 2xl:scroll-mt-20">
       <div className="mb-3 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 border-b border-[var(--color-border)] pb-2">
-        <h2 id={`${domain.anchor}-titulo`} className="text-h3 text-[var(--color-text)]">{domain.title}</h2>
+        {/* Un escalón sobre los títulos de tarjeta (eyebrow uppercase): los
+            dominios son el nivel de navegación de la mitad inferior y a la
+            misma escala competían con sus propias tarjetas (§6.2). */}
+        <h2 id={`${domain.anchor}-titulo`} className="text-h2 text-[var(--color-text)]">{domain.title}</h2>
         <div className="flex flex-wrap items-center gap-x-3">
           {links.map((link) => (
             <Link

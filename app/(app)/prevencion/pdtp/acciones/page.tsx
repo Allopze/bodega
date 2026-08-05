@@ -82,7 +82,7 @@ export default async function PdtpAccionesPage({ searchParams }: Props) {
         description="Vista transversal de acciones correctivas de todas las actividades del programa activo."
         breadcrumb={
           <Breadcrumbs items={[
-            { label: "Dashboard", href: "/dashboard" },
+            { label: "Inicio", href: "/dashboard" },
             { label: "Programas PDTP", href: "/prevencion/pdtp" },
             { label: "Plan de acción" },
           ]} />

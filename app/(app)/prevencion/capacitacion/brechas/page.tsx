@@ -27,7 +27,7 @@ export default async function BrechasPage() {
         title="Brechas de competencia"
         description="Personas exigidas por un requisito vigente que hoy no tienen la habilitación al día."
         breadcrumb={<Breadcrumbs items={[
-          { label: "Dashboard", href: "/dashboard" },
+          { label: "Inicio", href: "/dashboard" },
           { label: "Prevención" },
           { label: "Capacitación", href: "/prevencion/capacitacion" },
           { label: "Brechas" },

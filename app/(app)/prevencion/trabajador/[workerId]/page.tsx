@@ -110,7 +110,7 @@ export default async function WorkerEvaluationsPage({ params }: Props) {
         description={`RUT: ${worker.rut || "—"} · Faena: ${worker.worksiteName || "—"}`}
         breadcrumb={
           <Breadcrumbs items={[
-            { label: "Dashboard", href: "/dashboard" },
+            { label: "Inicio", href: "/dashboard" },
             { label: "Evaluaciones SST", href: "/prevencion" },
             { label: workerName },
           ]} />

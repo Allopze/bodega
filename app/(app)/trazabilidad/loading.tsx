@@ -8,7 +8,7 @@ export default function Loading() {
         title="Trazabilidad"
         breadcrumb={
           <Breadcrumbs items={[
-            { label: "Dashboard", href: "/dashboard" },
+            { label: "Inicio", href: "/dashboard" },
             { label: "Trazabilidad" },
           ]} />
         }

@@ -46,7 +46,7 @@ export default async function ComitePage({ params }: { params: Promise<{ committ
         title={status.committee.name}
         description={status.worksiteName}
         breadcrumb={<Breadcrumbs items={[
-          { label: "Dashboard", href: "/dashboard" },
+          { label: "Inicio", href: "/dashboard" },
           { label: "Prevención" },
           { label: "CPHS", href: "/prevencion/cphs" },
           { label: status.committee.name },

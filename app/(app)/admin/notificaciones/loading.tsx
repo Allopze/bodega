@@ -7,7 +7,7 @@ export default function Loading() {
       <PageHeader
         title="Notificaciones"
         breadcrumb={[
-          { label: "Dashboard", href: "/dashboard" },
+          { label: "Inicio", href: "/dashboard" },
           { label: "Administración", href: "/admin" },
           { label: "Notificaciones" },
         ]}

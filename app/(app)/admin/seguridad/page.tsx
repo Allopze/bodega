@@ -26,7 +26,7 @@ export default async function SecurityPage() {
         title="Seguridad y bloqueos"
         description="Diagnostica bloqueos por intentos fallidos en login y formularios públicos, y libera claves manualmente."
         breadcrumb={[
-          { label: "Dashboard", href: "/dashboard" },
+          { label: "Inicio", href: "/dashboard" },
           { label: "Administración", href: "/admin" },
           { label: "Seguridad y bloqueos" },
         ]}

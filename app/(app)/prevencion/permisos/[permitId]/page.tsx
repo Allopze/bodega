@@ -33,7 +33,7 @@ export default async function PermisoPage({ params }: { params: Promise<{ permit
         title={`${detail.typeName} · ${detail.permit.code}`}
         description={`${detail.worksiteName} · ${detail.permit.location}`}
         breadcrumb={<Breadcrumbs items={[
-          { label: "Dashboard", href: "/dashboard" },
+          { label: "Inicio", href: "/dashboard" },
           { label: "Prevención" },
           { label: "Permisos de trabajo", href: "/prevencion/permisos" },
           { label: detail.permit.code },

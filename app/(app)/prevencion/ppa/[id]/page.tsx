@@ -131,7 +131,7 @@ export default async function PpaDetailPage({
         description={`${tipoTrabajoLabel(ppa.tipoTrabajo)} · ${ppa.worksiteName ?? "—"}`}
         breadcrumb={
           <Breadcrumbs items={[
-            { label: "Dashboard", href: "/dashboard" },
+            { label: "Inicio", href: "/dashboard" },
             { label: "Para, Piensa y Actúa", href: listHref },
             { label: ppa.workerName },
           ]} />

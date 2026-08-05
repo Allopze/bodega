@@ -99,7 +99,7 @@ export default async function AprobacionesPage({
           description="Revisión y aprobación de ítems solicitados por faena."
           breadcrumb={
             <Breadcrumbs items={[
-              { label: "Dashboard", href: "/dashboard" },
+              { label: "Inicio", href: "/dashboard" },
               { label: "Aprobaciones" },
             ]} />
           }
@@ -295,7 +295,7 @@ export default async function AprobacionesPage({
         description={buildDescription()}
         breadcrumb={
           <Breadcrumbs items={[
-            { label: "Dashboard",    href: "/dashboard" },
+            { label: "Inicio",    href: "/dashboard" },
             { label: "Aprobaciones" },
           ]} />
         }

@@ -37,7 +37,7 @@ export default async function AuditoriaPage() {
         title="Log de auditoría"
         description={description}
         breadcrumb={[
-          { label: "Dashboard", href: "/dashboard" },
+          { label: "Inicio", href: "/dashboard" },
           { label: "Administración", href: "/admin" },
           { label: "Auditoría" },
         ]}

@@ -40,7 +40,7 @@ export default async function FaenasPage() {
         title="Faenas"
         description={description}
         breadcrumb={[
-          { label: "Dashboard", href: "/dashboard" },
+          { label: "Inicio", href: "/dashboard" },
           { label: "Administración", href: "/admin" },
           { label: "Faenas" },
         ]}

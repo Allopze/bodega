@@ -157,7 +157,7 @@ export default async function UsuariosPage() {
         description="Gestión de usuarios del sistema, roles y acceso a faenas."
         breadcrumb={
           <Breadcrumbs items={[
-            { label: "Dashboard", href: "/dashboard" },
+            { label: "Inicio", href: "/dashboard" },
             { label: "Administración", href: "/admin" },
             { label: "Usuarios" },
           ]} />

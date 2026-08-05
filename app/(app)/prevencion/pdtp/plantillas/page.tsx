@@ -28,7 +28,7 @@ export default async function PdtpTemplatesPage() {
         title="Plantillas de programas preventivos"
         description="Versiones reutilizables y programas creados desde cada foto publicada."
         breadcrumb={<Breadcrumbs items={[
-          { label: "Dashboard", href: "/dashboard" },
+          { label: "Inicio", href: "/dashboard" },
           { label: "Programas PDTP", href: "/prevencion/pdtp" },
           { label: "Plantillas" },
         ]} />}

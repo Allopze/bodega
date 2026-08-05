@@ -7,7 +7,7 @@ export default function Loading() {
       <PageHeader
         title="Catálogos de productos"
         breadcrumb={[
-          { label: "Dashboard", href: "/dashboard" },
+          { label: "Inicio", href: "/dashboard" },
           { label: "Administración", href: "/admin" },
           { label: "Catálogos de productos" },
         ]}

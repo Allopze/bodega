@@ -7,7 +7,7 @@ export default function Loading() {
       <PageHeader
         title="Parámetros operativos"
         breadcrumb={[
-          { label: "Dashboard", href: "/dashboard" },
+          { label: "Inicio", href: "/dashboard" },
           { label: "Administración", href: "/admin" },
           { label: "Parámetros operativos" },
         ]}

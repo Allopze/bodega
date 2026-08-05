@@ -32,7 +32,7 @@ export default async function MiperPage({ searchParams }: { searchParams: Promis
       <PageHeader
         title="MIPER y controles"
         description="Versiona peligros, riesgos y controles por proceso, tarea y puesto de trabajo."
-        breadcrumb={<Breadcrumbs items={[{ label: "Dashboard", href: "/dashboard" }, { label: "Prevención", href: "/prevencion" }, { label: "MIPER" }]} />}
+        breadcrumb={<Breadcrumbs items={[{ label: "Inicio", href: "/dashboard" }, { label: "Prevención", href: "/prevencion" }, { label: "MIPER" }]} />}
         actions={<MiperHeaderActions worksites={dashboard.worksites} methodologies={dashboard.methodologies} canEdit={can(session, "prevention:risk:edit")} />}
       />
       <MiperWorkbench

@@ -288,7 +288,7 @@ export default async function OcDetailPage({
         description={`${order.worksite?.name ?? "—"} · ${order.supplier?.name ?? "—"}`}
         breadcrumb={
           <Breadcrumbs items={[
-            { label: "Dashboard", href: "/dashboard" },
+            { label: "Inicio", href: "/dashboard" },
             { label: "Órdenes de compra", href: "/compras" },
             { label: order.code                       },
           ]} />

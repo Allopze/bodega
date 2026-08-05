@@ -33,7 +33,7 @@ export default async function ProveedoresPage() {
         title="Proveedores"
         description={description}
         breadcrumb={[
-          { label: "Dashboard", href: "/dashboard" },
+          { label: "Inicio", href: "/dashboard" },
           { label: "Administración", href: "/admin" },
           { label: "Proveedores" },
         ]}

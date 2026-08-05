@@ -34,7 +34,7 @@ export default async function SoportePage() {
         description="Reporta bugs, consultas o sugerencias para mejorar la plataforma."
         breadcrumb={
           <Breadcrumbs items={[
-            { label: "Dashboard", href: "/dashboard" },
+            { label: "Inicio", href: "/dashboard" },
             { label: "Soporte" },
           ]} />
         }

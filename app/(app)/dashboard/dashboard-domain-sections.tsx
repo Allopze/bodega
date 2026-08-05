@@ -27,11 +27,12 @@ import { getUsageMaintenanceAlerts } from "@/lib/services/maintenance"
 import { getCanonicalSafetyIndicatorYear, getMaterialEnvironmentalEvents } from "@/lib/services/prevention-indicadores"
 import { getPdtpComplianceIndicatorsForScope } from "@/lib/services/pdtp/compliance"
 import { computeHealthStats, countPendingFuelCreditNotes } from "@/lib/services/dte-portal/reconciliation"
-import { readDtePortalEnv } from "@/lib/services/dte-portal/config"
+import { readDtePortalConfig } from "@/lib/services/dte-portal/config"
 import { DASHBOARD_DOMAINS, orderDashboardDomains, type DashboardDomainKey } from "./dashboard-domains"
 import { DomainIndex, DomainSection, DomainSectionFallback } from "./dashboard-domain-shell"
 import { periodScopeLabel, scopedWorksiteId, type DashboardScope } from "./dashboard-scope"
 import { MONTH_LABELS, toSstMonthlyPoints } from "./sst-monthly-points"
+import { CHART_COLORS } from "@/lib/chart-palette"
 import type { ModuleWorkloadPoint } from "./dashboard-charts"
 import {
   CompositionDonutChart, FuelConsumptionChart, MaintenanceTrendChart, MaterialEnvironmentalChart,
@@ -57,6 +58,13 @@ export interface DomainSectionsProps {
   moduleWorkload: ModuleWorkloadPoint[]
   queueTotal: number
   worksitesBreakdown: { name: string; totalCost: number }[]
+  /**
+   * Ítems esperando aprobación **ahora** (`data.metrics.pending_approvals`),
+   * la misma cifra que la alerta del Centro de Control. El KPI usaba
+   * `analytics.kpis.pendingApprovals`, que filtra por la ventana del período:
+   * la pantalla mostraba 3, 1 y 0 para "aprobaciones" a la vez (I-02).
+   */
+  pendingApprovals: number
 }
 
 /** Filtros de `getAnalyticsDashboard` derivados del alcance global. */
@@ -86,9 +94,9 @@ function plusDays(date: string, days: number) {
 
 // ── Adquisiciones ────────────────────────────────────────────────────────────
 
-async function AcquisitionsSection({ session, scope, worksiteScope, moduleWorkload, queueTotal, worksitesBreakdown }: DomainSectionsProps) {
+async function AcquisitionsSection({ session, scope, worksiteScope, moduleWorkload, queueTotal, worksitesBreakdown, pendingApprovals }: DomainSectionsProps) {
   const bounds = getOperationalCalendarBounds(new Date(), scope.period)
-  const dteCodEmp = readDtePortalEnv().credentials.codEmp
+  const dteCodEmp = (await readDtePortalConfig()).credentials.codEmp
   const [analytics, quality, trend, dteHealth] = await Promise.all([
     getAnalyticsDashboard(session, analyticsFilters(scope)),
     getReceptionQuality(session, { from: bounds.currentStart, to: bounds.currentEnd }, scopedWorksiteId(scope)),
@@ -116,8 +124,8 @@ async function AcquisitionsSection({ session, scope, worksiteScope, moduleWorklo
           <KpiCard icon={<Broom size={16} />} label="Rechazo en recepción" value={`${quality.rejectionRate}%`}
             detail={quality.rejected + quality.damaged > 0 ? `${quality.rejected} rechazadas · ${quality.damaged} dañadas · ${periodo}` : `Todo llegó conforme · ${periodo}`}
             tone={quality.rejectionRate > 5 ? "signal" : "neutral"} href="/recepcion" />
-          <KpiCard icon={<Package size={16} />} label="Por aprobar" value={String(analytics.kpis.pendingApprovals)}
-            detail="Esperando decisión ahora" href="/pendientes?module=aprobaciones" />
+          <KpiCard icon={<Package size={16} />} label="Por aprobar" value={String(pendingApprovals)}
+            detail="Ítems esperando decisión ahora" href="/pendientes?module=aprobaciones" />
         </>
       }
       summary={dteHealth && (dteHealth.reconciliation.unmatched > 0 || dteHealth.reconciliation.discrepancies > 0) ? (
@@ -273,7 +281,7 @@ async function PreventionSection({ session, worksiteScope, worksiteIds, currentY
             detail={incidents.fatalOrSerious > 0 ? `${incidents.fatalOrSerious} fatal(es) o grave(s) · ahora` : "Ninguno fatal ni grave, ahora"}
             tone={incidents.fatalOrSerious > 0 ? "signal" : "neutral"} href="/prevencion/incidentes?quick=open" />
           <KpiCard icon={<ShieldWarning size={16} />} label="CAPA vencidas" value={String(capa.overdue)}
-            detail={`${capa.open} abiertas en total · ahora`} tone={capa.overdue > 0 ? "signal" : "neutral"} href="/prevencion/capa?vista=overdue" />
+            detail={`${capa.open} abierta${capa.open === 1 ? "" : "s"} en total · ahora`} tone={capa.overdue > 0 ? "signal" : "neutral"} href="/prevencion/capa?vista=overdue" />
           {risk && (
             <KpiCard icon={<ShieldWarning size={16} />} label="Riesgos críticos sin control"
               value={String(risk.criticalBlockers.length)}
@@ -329,7 +337,7 @@ async function FleetSection({ session, scope }: DomainSectionsProps) {
   const permissions = session.user.permissions
 
   const bounds = getOperationalCalendarBounds(new Date(), scope.period)
-  const dteCodEmp = readDtePortalEnv().credentials.codEmp
+  const dteCodEmp = (await readDtePortalConfig()).credentials.codEmp
   const [fuelControl, fuelTrend, maintenanceTrend, docs, debt, fleet, usageAlerts, pendingFuelCreditNotes] = await Promise.all([
     getFuelControlOverview(session, {
       includeTae: true,
@@ -484,8 +492,8 @@ async function FieldControlSection({ session, scope }: DomainSectionsProps) {
               <StatusShareBar
                 title="Permisos de trabajo por estado" description="Reparto entre activos y suspendidos, ahora"
                 data={[
-                  { key: "active", label: "Activos", value: field.permitsActive },
-                  { key: "suspended", label: "Suspendidos", value: field.permitsSuspended },
+                  { key: "active", label: "Activos", value: field.permitsActive, color: CHART_COLORS.brand },
+                  { key: "suspended", label: "Suspendidos", value: field.permitsSuspended, color: CHART_COLORS.signal },
                 ]}
               />
             )}
@@ -493,8 +501,8 @@ async function FieldControlSection({ session, scope }: DomainSectionsProps) {
               <StatusShareBar
                 title="Resultado de los simulacros" description="Ejecutados, por resultado registrado"
                 data={[
-                  { key: "ok", label: "Satisfactorios", value: Math.max(0, drillTotal - field.drillsNeedingImprovement) },
-                  { key: "mejora", label: "Por mejorar", value: field.drillsNeedingImprovement },
+                  { key: "ok", label: "Satisfactorios", value: Math.max(0, drillTotal - field.drillsNeedingImprovement), color: CHART_COLORS.brand },
+                  { key: "mejora", label: "Por mejorar", value: field.drillsNeedingImprovement, color: CHART_COLORS.signal },
                 ]}
               />
             )}
@@ -597,9 +605,9 @@ async function GovernanceSection({ session, scope, worksiteScope, worksiteIds }:
             <StatusShareBar
               title="Evaluaciones SST de trabajador" description="Reparto entre habilitados y no habilitados"
               data={[
-                { key: "habilitados", label: "Habilitados", value: sstStats.habilitados },
-                { key: "noHabilitados", label: "No habilitados", value: sstStats.noHabilitados },
-                { key: "borrador", label: "En borrador", value: sstStats.borrador },
+                { key: "habilitados", label: "Habilitados", value: sstStats.habilitados, color: CHART_COLORS.brand },
+                { key: "noHabilitados", label: "No habilitados", value: sstStats.noHabilitados, color: CHART_COLORS.danger },
+                { key: "borrador", label: "En borrador", value: sstStats.borrador, color: CHART_COLORS.neutral },
               ]}
             />
           )}

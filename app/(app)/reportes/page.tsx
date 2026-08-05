@@ -157,7 +157,7 @@ export default async function Page() {
         description="Resumen operativo desde datos persistidos."
         breadcrumb={
           <Breadcrumbs items={[
-            { label: "Dashboard", href: "/dashboard" },
+            { label: "Inicio", href: "/dashboard" },
             { label: "Reportes" },
           ]} />
         }

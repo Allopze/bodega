@@ -31,7 +31,7 @@ export default async function PdtpCreateProgramPage() {
         description="Crea el programa anual desde la Base preventiva 2026."
         breadcrumb={
           <Breadcrumbs items={[
-            { label: "Dashboard", href: "/dashboard" },
+            { label: "Inicio", href: "/dashboard" },
             { label: "Programas PDTP", href: "/prevencion/pdtp" },
             { label: "Nuevo" },
           ]} />

@@ -45,7 +45,7 @@ export default async function CphsPage() {
         title="CPHS y gobernanza"
         description="Comités paritarios por centro de trabajo, sesiones con quórum, acuerdos derivados a CAPA y revisión por la dirección."
         breadcrumb={<Breadcrumbs items={[
-          { label: "Dashboard", href: "/dashboard" },
+          { label: "Inicio", href: "/dashboard" },
           { label: "Prevención" },
           { label: "CPHS" },
         ]} />}

@@ -133,6 +133,8 @@ export async function getOperationalPeriodMetrics(session: Session, options: Ope
     ordersIssued: buildOperationalPeriodComparison(ordersCurrent?.value ?? 0, ordersPrevious?.value ?? 0, ordersHistory?.value ?? 0),
     receipts: buildOperationalPeriodComparison(receiptsCurrent?.value ?? 0, receiptsPrevious?.value ?? 0, receiptsHistory?.value ?? 0),
     deliveries: buildOperationalPeriodComparison(deliveriesCurrent?.value ?? 0, deliveriesPrevious?.value ?? 0, deliveriesHistory?.value ?? 0),
-    spend: buildOperationalPeriodComparison(spendCurrent?.value ?? 0, spendPrevious?.value ?? 0, spendHistory?.value ?? 0),
+    // `Number(...)`: el driver devuelve SUM(NUMERIC) como string aunque el tipo
+    // diga `sql<number>`, y `formatCLP` responde "—" a un string (I-01).
+    spend: buildOperationalPeriodComparison(Number(spendCurrent?.value ?? 0), Number(spendPrevious?.value ?? 0), Number(spendHistory?.value ?? 0)),
   }
 }

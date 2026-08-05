@@ -6,7 +6,7 @@ import {
 import { PageContainer } from "@/components/ui/page-container"
 
 const RECOVERY_LINKS = [
-  { href: "/dashboard",   label: "Dashboard",          description: "Resumen y cola de trabajo",   icon: <House size={18} /> },
+  { href: "/dashboard",   label: "Inicio",          description: "Resumen y cola de trabajo",   icon: <House size={18} /> },
   { href: "/solicitudes", label: "Solicitudes",        description: "Repuestos, servicios y EPP",  icon: <ClipboardText size={18} /> },
   { href: "/compras",     label: "Órdenes de compra",  description: "Generación y seguimiento",    icon: <ShoppingCart size={18} /> },
   { href: "/recepcion",   label: "Recepción",          description: "Ingreso de mercadería",       icon: <Truck size={18} /> },

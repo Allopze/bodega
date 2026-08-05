@@ -116,7 +116,7 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
         description={`Programa anual de Trabajo Preventivo ${program.year}`}
         breadcrumb={
           <Breadcrumbs items={[
-            { label: "Dashboard", href: "/dashboard" },
+            { label: "Inicio", href: "/dashboard" },
             { label: "Prevención", href: "/prevencion" },
             { label: "Programas PDTP", href: "/prevencion/pdtp" },
             { label: program.title },

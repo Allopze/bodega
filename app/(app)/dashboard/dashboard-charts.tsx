@@ -184,7 +184,9 @@ export interface MaterialEnvironmentalPoint {
 // ── 1. Operational Trend Area Chart (supports 6+ data points) ───────────────
 
 export function OperationalTrendChart({ data }: { data: Array<{ month: string; requests: number; orders: number; receipts: number }> }) {
-  if (data.length === 0) return null
+  // Todo-en-cero también se oculta: una rejilla vacía con conclusión absurda
+  // ("el mes de mayor actividad es Mar: 0") es peor que nada (I-03).
+  if (!data.some((row) => row.requests + row.orders + row.receipts > 0)) return null
 
   return (
     <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-xs flex flex-col justify-between">
@@ -278,11 +280,9 @@ export function ModuleWorkloadChart({ data, total }: { data: ModuleWorkloadPoint
           <XAxis dataKey="module" tickLine={false} axisLine={false} tickMargin={8} />
           <YAxis tickLine={false} axisLine={false} tickMargin={8} allowDecimals={false} />
           <ChartTooltip content={<ChartTooltipContent hideLabel indicator="line" />} />
-          <Bar dataKey="count" radius={[6, 6, 0, 0]}>
-            {counts.map((entry, index) => (
-              <Cell key={`cell-${entry.module}`} fill={CHART_SERIES[index % CHART_SERIES.length]} />
-            ))}
-          </Bar>
+          {/* Una serie = un color (I-10): la rotación por índice teñía la barra
+              de "Aprobaciones" con el rojo de severidad sin que significara nada. */}
+          <Bar dataKey="count" fill={CHART_COLORS.blue} radius={[6, 6, 0, 0]} />
         </BarChart>
       </ChartContainer>
     </div>
@@ -299,7 +299,8 @@ export function ModuleWorkloadChart({ data, total }: { data: ModuleWorkloadPoint
  * común la línea de frecuencia se aplanaba contra el cero.
  */
 export function SstTrendChart({ data }: { data: SstMonthlyPoint[] }) {
-  if (data.length === 0) return null
+  // Ambas tasas en cero todo el año: no hay línea que leer (I-03).
+  if (!data.some((row) => row.tasaFrecuencia > 0 || row.tasaGravedad > 0)) return null
 
   return (
     <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-xs">
@@ -343,7 +344,9 @@ export function SstTrendChart({ data }: { data: SstMonthlyPoint[] }) {
  * (ver `sstAccidentConfig`).
  */
 export function SstAccidentChart({ data }: { data: SstMonthlyPoint[] }) {
-  if (data.length === 0) return null
+  // Sin accidentes en el año la tarjeta pintaba sólo ejes y gridlines, con la
+  // descripción "todos están confirmados" hablando de un conjunto vacío (I-03).
+  if (!data.some((point) => point.confirmados + point.porCalificar > 0)) return null
 
   const hasPending = data.some((point) => point.porCalificar > 0)
 
@@ -389,7 +392,8 @@ export function SstAccidentChart({ data }: { data: SstMonthlyPoint[] }) {
 // ── 5. Material & Environmental Chart ───────────────────────────────────────
 
 export function MaterialEnvironmentalChart({ data }: { data: MaterialEnvironmentalPoint[] }) {
-  if (data.length === 0) return null
+  // Todo-en-cero → rejilla vacía + "el mes con más eventos es Ene" (I-03).
+  if (!data.some((row) => row.dangerousIncidents + row.materialDamage + row.environmentalSpills > 0)) return null
 
   return (
     <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-xs">
@@ -482,11 +486,12 @@ export function WorksiteActivityChart({
           <ChartTooltip
             content={
               <ChartTooltipContent
-                formatter={(value) => [formatCLP(Number(value)), "Inversión acumulada"]}
+                formatter={(value) => `Inversión acumulada: ${formatCLP(Number(value))}`}
               />
             }
           />
-          <Bar dataKey="totalCost" fill={CHART_COLORS.brand} radius={[0, 6, 6, 0]} />
+          {/* barSize acotado: con 1-2 faenas la barra ocupaba ~150px de grosor. */}
+          <Bar dataKey="totalCost" fill={CHART_COLORS.brand} radius={[0, 6, 6, 0]} barSize={22} />
         </BarChart>
       </ChartContainer>
     </div>
@@ -576,6 +581,19 @@ export function MaintenanceTrendChart({ data }: { data: MaintenanceMonthlyChartP
           <p className="text-xs text-[var(--color-text-muted)]">Completadas vs. programadas y costo por mes</p>
         </div>
       </div>
+
+      {/* Era el único gráfico del tablero sin lectura equivalente (I-15). */}
+      <ChartDataTable
+        title="Mantención de flota"
+        groupLabel="Mes"
+        columns={["Completadas", "Programadas", "Costo"]}
+        rows={data.map((row) => ({ label: row.month, values: [row.completed, row.scheduled, formatCLP(row.amount)] }))}
+        conclusion={data.some((row) => row.amount > 0)
+          ? `El mayor costo se registró en ${maxBy(data, (row) => row.amount).month}: ${formatCLP(maxBy(data, (row) => row.amount).amount)}.`
+          : `Sin costos de mantención registrados en el período.`}
+        caption="Conteos en el eje izquierdo y costo en el derecho: dos escalas, no se comparan entre sí."
+        className="mb-3 mt-0 border-b border-t-0 pb-3 pt-0"
+      />
 
       <ChartContainer config={maintenanceChartConfig} className="h-48 w-full">
         <ComposedChart data={data} margin={{ top: 10, right: 6, left: -20, bottom: 0 }}>
@@ -762,6 +780,11 @@ export function ThresholdRankingChart({ data, title, description, unit = "%", fo
             ? rows.reduce((current, row) => row.value > current.value ? row : current, rows[0]!)
             : rows.reduce((current, row) => row.value < current.value ? row : current, rows[0]!)
           const valor = format === "clp" ? formatCLP(critico.value) : `${critico.value}${unit}`
+          // Con todos los valores iguales no hay rezagado que nombrar: "el más
+          // rezagado es Procesos: 100%" era una conclusión absurda (I-03).
+          if (rows.every((row) => row.value === rows[0]!.value)) {
+            return rows.length === 1 ? `Un solo caso: ${critico.name}, ${valor}.` : `Sin diferencias: todos en ${valor}.`
+          }
           return invert
             ? `El caso más crítico es ${critico.name}: ${valor}.`
             : `El más rezagado es ${critico.name}: ${valor}.`
@@ -776,11 +799,13 @@ export function ThresholdRankingChart({ data, title, description, unit = "%", fo
           <XAxis type="number" domain={[0, max ?? (unit === "%" ? 100 : "dataMax")]} tickFormatter={(value) => (format === "clp" ? compactCLPTick(Number(value)) : `${value}${unit}`)} tickLine={false} axisLine={false} tick={{ fontSize: 11 }} />
           <YAxis type="category" dataKey="name" width={116} tickLine={false} axisLine={false} tick={{ fontSize: 11 }} />
           <ChartTooltip content={<ChartTooltipContent hideLabel formatter={(value, _name, item) => {
+            // Un solo string: `ChartTooltipContent` renderiza el retorno tal
+            // cual, y el array anterior concatenaba sin separador ("1 de
+            // 1Procesos").
             const shown = format === "clp" ? formatCLP(Number(value)) : `${value}${unit}`
-            return [
-              item?.payload?.detail ? `${shown} · ${String(item.payload.detail)}` : shown,
-              String(item?.payload?.name ?? ""),
-            ]
+            const name = String(item?.payload?.name ?? "")
+            const detail = item?.payload?.detail ? ` · ${String(item.payload.detail)}` : ""
+            return `${name}: ${shown}${detail}`
           }} />} />
           <Bar dataKey="value" radius={[0, 6, 6, 0]} barSize={18}>
             {rows.map((row) => <Cell key={row.name} fill={colorFor(row.value)} />)}
@@ -797,6 +822,13 @@ export interface StatusShare {
   key: string
   label: string
   value: number
+  /**
+   * Color semántico de la categoría (brand/signal/danger/neutral). Sin él se
+   * asigna por índice sobre las categorías **presentes**, y eso pintaba "Por
+   * mejorar" con el verde de marca cuando "Satisfactorios" venía en cero
+   * (I-11): quien tenga semántica de estado debe declararla.
+   */
+  color?: string
 }
 
 /**
@@ -827,7 +859,7 @@ export function StatusShareBar({ data, title, description }: {
           <div
             key={slice.key}
             className="h-full first:rounded-l-full last:rounded-r-full"
-            style={{ width: `${(slice.value / total) * 100}%`, backgroundColor: CHART_SERIES[index % CHART_SERIES.length] }}
+            style={{ width: `${(slice.value / total) * 100}%`, backgroundColor: slice.color ?? CHART_SERIES[index % CHART_SERIES.length] }}
             title={`${slice.label}: ${slice.value} (${Math.round((slice.value / total) * 100)}%)`}
           />
         ))}
@@ -836,7 +868,7 @@ export function StatusShareBar({ data, title, description }: {
       <ul className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5">
         {slices.map((slice, index) => (
           <li key={slice.key} className="flex items-center gap-1.5 text-[11px] text-[var(--color-text-muted)]">
-            <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: CHART_SERIES[index % CHART_SERIES.length] }} aria-hidden />
+            <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: slice.color ?? CHART_SERIES[index % CHART_SERIES.length] }} aria-hidden />
             {slice.label}
             <span className="font-mono tabular-nums text-[var(--color-text)]">{slice.value}</span>
           </li>

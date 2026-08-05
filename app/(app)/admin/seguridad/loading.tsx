@@ -7,7 +7,7 @@ export default function Loading() {
       <PageHeader
         title="Seguridad y bloqueos"
         breadcrumb={[
-          { label: "Dashboard", href: "/dashboard" },
+          { label: "Inicio", href: "/dashboard" },
           { label: "Administración", href: "/admin" },
           { label: "Seguridad y bloqueos" },
         ]}

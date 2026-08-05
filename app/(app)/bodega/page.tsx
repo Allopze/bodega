@@ -148,7 +148,7 @@ export default async function BodegaPage({
     return (
       <PageContainer>
         <PageHeader title="Bodega" description="Control de stock e inventario."
-          breadcrumb={<Breadcrumbs items={[{ label: "Dashboard", href: "/dashboard" }, { label: "Bodega" }]} />}
+          breadcrumb={<Breadcrumbs items={[{ label: "Inicio", href: "/dashboard" }, { label: "Bodega" }]} />}
         />
         <EmptyState icon={<Warehouse size={24} />} title="Sin faenas configuradas"
           description="Configura las faenas en el módulo de administración para ver el stock aquí."
@@ -200,7 +200,7 @@ export default async function BodegaPage({
   return (
     <PageContainer>
       <PageHeader title="Bodega" description="Stock por producto y kardex de movimientos."
-        breadcrumb={<Breadcrumbs items={[{ label: "Dashboard", href: "/dashboard" }, { label: "Bodega" }]} />}
+        breadcrumb={<Breadcrumbs items={[{ label: "Inicio", href: "/dashboard" }, { label: "Bodega" }]} />}
         headerActions={(
           <WarehouseHeaderMetrics
             worksiteCount={worksiteOptions.length}

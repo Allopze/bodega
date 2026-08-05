@@ -29,7 +29,7 @@ export default async function SesionPage({ params }: { params: Promise<{ session
         title={`${detail.courseName} · ${detail.session.code}`}
         description={`Versión ${detail.versionLabel} · ${detail.worksiteName}`}
         breadcrumb={<Breadcrumbs items={[
-          { label: "Dashboard", href: "/dashboard" },
+          { label: "Inicio", href: "/dashboard" },
           { label: "Prevención" },
           { label: "Capacitación", href: "/prevencion/capacitacion" },
           { label: detail.session.code },

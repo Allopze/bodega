@@ -161,6 +161,8 @@ function NewActionDraft({ executionId, onCancel, onSaved }: {
   const [prioridad, setPrioridad] = React.useState("media")
   // Daño potencial (módulo 04): al seleccionarlo deriva prioridad + plazo.
   const [dañoPotencial, setDañoPotencial] = React.useState<string>("")
+  // Anexo 8, columna "Normativa legal aplicable".
+  const [normativaLegal, setNormativaLegal] = React.useState("")
   const [pending, setPending] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
 
@@ -185,6 +187,7 @@ function NewActionDraft({ executionId, onCancel, onSaved }: {
         executionId, hallazgo, accion, responsable, responsableRole, plazo, prioridad,
         // dañoPotencial solo se envía cuando se seleccionó (módulo 04).
         ...(dañoPotencial ? { dañoPotencial } : {}),
+        ...(normativaLegal.trim() ? { normativaLegal: normativaLegal.trim() } : {}),
       })
       if (!result.ok) setError(result.message ?? "Error al crear la acción.")
       else onSaved()
@@ -213,6 +216,10 @@ function NewActionDraft({ executionId, onCancel, onSaved }: {
               ))}
             </SelectContent>
           </Select>
+        </Field>
+        {/* Anexo 8: "Normativa legal aplicable". */}
+        <Field label="Normativa legal aplicable" htmlFor="np-normativa" helper="Opcional — p. ej. Ley 21.512 art. 32, DS 40.">
+          <Input id="np-normativa" value={normativaLegal} onChange={(e) => setNormativaLegal(e.target.value)} maxLength={500} />
         </Field>
         <Field label="Responsable" htmlFor="np-responsable">
           <Input id="np-responsable" value={responsable} onChange={(e) => setResponsable(e.target.value)} maxLength={200} />

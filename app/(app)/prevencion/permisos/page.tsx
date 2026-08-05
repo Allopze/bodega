@@ -46,7 +46,7 @@ export default async function PermisosPage() {
         title="Permisos de trabajo"
         description="Autorización de tareas críticas con AST, controles verificados, aislamiento de energías y cuadrilla habilitada."
         breadcrumb={<Breadcrumbs items={[
-          { label: "Dashboard", href: "/dashboard" },
+          { label: "Inicio", href: "/dashboard" },
           { label: "Prevención" },
           { label: "Permisos de trabajo" },
         ]} />}

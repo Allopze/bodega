@@ -38,7 +38,7 @@ export default async function CostCentersPage() {
         title="Centros de costo"
         description="Crea y mantiene centros de costo asociados a faenas e imputaciones."
         breadcrumb={[
-          { label: "Dashboard", href: "/dashboard" },
+          { label: "Inicio", href: "/dashboard" },
           { label: "Administración", href: "/admin" },
           { label: "Centros de costo" },
         ]}

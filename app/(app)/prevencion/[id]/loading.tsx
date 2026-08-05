@@ -9,7 +9,7 @@ export default function Loading() {
         title="Evaluación SST"
         breadcrumb={
           <Breadcrumbs items={[
-            { label: "Dashboard",        href: "/dashboard"  },
+            { label: "Inicio",        href: "/dashboard"  },
             { label: "Evaluaciones SST", href: "/prevencion" },
             { label: "Cargando…"                             },
           ]} />

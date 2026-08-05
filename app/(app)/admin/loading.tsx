@@ -2,7 +2,7 @@ import { SkeletonPage } from "@/components/ui/skeleton"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 
 const BREADCRUMBS = (
-  <Breadcrumbs items={[{ label: "Dashboard", href: "/dashboard" }, { label: "Administración" }]} />
+  <Breadcrumbs items={[{ label: "Inicio", href: "/dashboard" }, { label: "Administración" }]} />
 )
 
 export default function Loading() {

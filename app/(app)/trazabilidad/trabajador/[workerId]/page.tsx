@@ -84,7 +84,7 @@ export default async function WorkerEppTraceabilityPage({
         description={`Hoja de vida de entregas EPP, tallas registradas y estado de prevención.`}
         breadcrumb={
           <Breadcrumbs items={[
-            { label: "Dashboard", href: "/dashboard" },
+            { label: "Inicio", href: "/dashboard" },
             { label: "Trazabilidad", href: "/trazabilidad" },
             { label: `${worker.firstName} ${worker.lastName}` },
           ]} />

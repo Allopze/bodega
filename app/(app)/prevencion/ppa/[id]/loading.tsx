@@ -6,7 +6,7 @@ export default function Loading() {
     <>
       <PageHeader
         title="Detalle PPA"
-        breadcrumb={<Breadcrumbs items={[{ label: "Dashboard", href: "/dashboard" }, { label: "PPA Digital", href: "/prevencion/ppa" }, { label: "Detalle" }]} />}
+        breadcrumb={<Breadcrumbs items={[{ label: "Inicio", href: "/dashboard" }, { label: "PPA Digital", href: "/prevencion/ppa" }, { label: "Detalle" }]} />}
       />
       <SkeletonPage rows={8} />
     </>

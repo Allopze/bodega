@@ -50,7 +50,7 @@ export default async function TrazabilidadPage({
         description="Estado de cada ítem a lo largo del flujo: solicitud → aprobación → OC → recepción → entrega."
         breadcrumb={
           <Breadcrumbs items={[
-            { label: "Dashboard", href: "/dashboard" },
+            { label: "Inicio", href: "/dashboard" },
             { label: "Trazabilidad" },
           ]} />
         }

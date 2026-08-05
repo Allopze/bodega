@@ -36,7 +36,7 @@ export default async function GrupoPage({ params }: { params: Promise<{ groupId:
         title={detail.group.name}
         description={`${detail.worksiteName} · ${detail.agent.name}`}
         breadcrumb={<Breadcrumbs items={[
-          { label: "Dashboard", href: "/dashboard" },
+          { label: "Inicio", href: "/dashboard" },
           { label: "Prevención" },
           { label: "Higiene", href: "/prevencion/higiene" },
           { label: detail.group.name },

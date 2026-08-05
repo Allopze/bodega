@@ -302,7 +302,7 @@ export default async function Page({
         <PageHeader
           title="Entregas"
           description="Asignación de EPP recibido a trabajadores."
-          breadcrumb={<Breadcrumbs items={[{ label: "Dashboard", href: "/dashboard" }, { label: "Entregas" }]} />}
+          breadcrumb={<Breadcrumbs items={[{ label: "Inicio", href: "/dashboard" }, { label: "Entregas" }]} />}
         />
         <EmptyState
           icon={<User size={24} />}
@@ -325,7 +325,7 @@ export default async function Page({
         description="Asignación de EPP recibido a trabajadores."
         breadcrumb={
           <Breadcrumbs items={[
-            { label: "Dashboard", href: "/dashboard" },
+            { label: "Inicio", href: "/dashboard" },
             { label: "Entregas" },
           ]} />
         }

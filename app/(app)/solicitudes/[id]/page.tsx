@@ -336,7 +336,7 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
         }
         breadcrumb={
           <Breadcrumbs items={[
-            { label: "Dashboard",   href: "/dashboard"   },
+            { label: "Inicio",   href: "/dashboard"   },
             { label: "Solicitudes", href: "/solicitudes" },
             { label: request.code                        },
           ]} />

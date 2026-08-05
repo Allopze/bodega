@@ -33,7 +33,7 @@ export default async function MaterialAmbientalPage({ searchParams }: PageProps)
         description="Conteo canónico de incidentes peligrosos, daños materiales y derrames ambientales por faena."
         breadcrumb={
           <Breadcrumbs items={[
-            { label: "Dashboard", href: "/dashboard" },
+            { label: "Inicio", href: "/dashboard" },
             { label: "Prevención", href: "/prevencion" },
             { label: "Indicadores material y ambiental" },
           ]} />

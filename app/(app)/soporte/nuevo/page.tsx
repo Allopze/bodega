@@ -18,7 +18,7 @@ export default async function NuevoReportePage() {
         description="Envía un bug, consulta o sugerencia al equipo de desarrollo."
         breadcrumb={
           <Breadcrumbs items={[
-            { label: "Dashboard",  href: "/dashboard" },
+            { label: "Inicio",  href: "/dashboard" },
             { label: "Soporte",    href: "/soporte" },
             { label: "Nuevo reporte" },
           ]} />

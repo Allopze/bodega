@@ -31,7 +31,7 @@ export default async function ReportIncidentPage() {
         title="Reportar incidente"
         description="Captura rápida móvil, con cola offline e idempotencia al sincronizar. En fatal/grave, suspende y documenta medidas inmediatas."
         breadcrumb={<Breadcrumbs items={[
-          { label: "Dashboard", href: "/dashboard" },
+          { label: "Inicio", href: "/dashboard" },
           { label: "Prevención" },
           { label: "Incidentes", href: "/prevencion/incidentes" },
           { label: "Reportar" },

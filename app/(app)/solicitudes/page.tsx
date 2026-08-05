@@ -165,7 +165,7 @@ export default async function SolicitudesPage({
           description="Historial de solicitudes de compra por faena."
           breadcrumb={
             <Breadcrumbs items={[
-              { label: "Dashboard", href: "/dashboard" },
+              { label: "Inicio", href: "/dashboard" },
               { label: "Solicitudes" },
             ]} />
           }
@@ -225,7 +225,7 @@ export default async function SolicitudesPage({
         description="Historial de solicitudes de compra por faena."
         breadcrumb={
           <Breadcrumbs items={[
-            { label: "Dashboard", href: "/dashboard" },
+            { label: "Inicio", href: "/dashboard" },
             { label: "Solicitudes" },
           ]} />
         }

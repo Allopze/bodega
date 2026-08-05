@@ -277,7 +277,8 @@ export async function getOperationalDetailWorkItem(
       module: "solicitudes",
       code: request.code,
       title: request.code,
-      subtitle: request.worksiteName,
+      // La faena va en `worksiteName`; repetirla acá la duplicaba en cada fila (I-07).
+      subtitle: "",
       worksiteId: request.worksiteId,
       worksiteName: request.worksiteName,
       status: request.status,
@@ -298,6 +299,7 @@ export async function getOperationalDetailWorkItem(
       code: purchaseOrders.code,
       worksiteId: purchaseOrders.worksiteId,
       worksiteName: worksites.name,
+      supplierName: suppliers.name,
       status: purchaseOrders.status,
       deliveryMode: purchaseOrders.deliveryMode,
       estimatedDelivery: purchaseOrders.estimatedDelivery,
@@ -307,6 +309,7 @@ export async function getOperationalDetailWorkItem(
     })
     .from(purchaseOrders)
     .innerJoin(worksites, eq(purchaseOrders.worksiteId, worksites.id))
+    .innerJoin(suppliers, eq(purchaseOrders.supplierId, suppliers.id))
     .where(and(
       eq(purchaseOrders.id, source.sourceId),
       scopeCondition(scope, purchaseOrders.worksiteId),
@@ -353,7 +356,8 @@ export async function getOperationalDetailWorkItem(
     module: stage.module,
     code: order.code,
     title: stage.title,
-    subtitle: order.worksiteName,
+    // Proveedor, igual que la rama SQL: la faena ya viaja en `worksiteName` (I-07).
+    subtitle: order.supplierName,
     worksiteId: order.worksiteId,
     worksiteName: order.worksiteName,
     status: order.status,
@@ -521,7 +525,7 @@ function operationalSourceBranches(session: Session, scope: WorksiteScope): Oper
       SELECT 'purchase_request'::text AS source_type, ${purchaseRequests.id} AS source_id,
         CASE WHEN ${purchaseRequests.status} IN ('draft', 'returned') THEN 'complete' ELSE 'follow_up' END AS action_key,
         'solicitudes'::text AS module, ${purchaseRequests.code} AS code, ${purchaseRequests.code} AS title,
-        CONCAT(${worksites.name}, ' · ', ${itemCount}, ' ítem', CASE WHEN ${itemCount} = 1 THEN '' ELSE 's' END) AS subtitle,
+        CONCAT(${itemCount}, ' ítem', CASE WHEN ${itemCount} = 1 THEN '' ELSE 's' END) AS subtitle,
         ${purchaseRequests.worksiteId} AS worksite_id, ${worksites.name} AS worksite_name,
         ${purchaseRequests.status} AS status,
         CASE ${purchaseRequests.status}
@@ -572,7 +576,7 @@ function operationalSourceBranches(session: Session, scope: WorksiteScope): Oper
   if (hasPermission(session, "approvals:approve")) add("aprobaciones", sql`
     SELECT 'purchase_request_item'::text AS source_type, ${purchaseRequestItems.id} AS source_id, 'approve'::text AS action_key,
       'aprobaciones'::text AS module, ${purchaseRequests.code} AS code, CONCAT('Aprobar ', ${itemTitle}) AS title,
-      CONCAT(${purchaseRequests.code}, ' · ', ${worksites.name}) AS subtitle, ${purchaseRequests.worksiteId} AS worksite_id,
+      ''::text AS subtitle, ${purchaseRequests.worksiteId} AS worksite_id,
       ${worksites.name} AS worksite_name, ${purchaseRequestItems.status} AS status, 'Necesita aprobación'::text AS status_label,
       ${itemPriority} AS priority, false AS blocked, ${purchaseRequestItems.createdAt}::text AS created_at, LEFT((${itemDue})::text, 10) AS source_due_at,
       ${emptyAssignee} AS native_assignee_user_id, ${emptyAssignee} AS native_assignee_name,
@@ -584,7 +588,7 @@ function operationalSourceBranches(session: Session, scope: WorksiteScope): Oper
   if (hasPermission(session, "purchasing:create_order")) add("compras", sql`
     SELECT 'purchase_request_item'::text AS source_type, ${purchaseRequestItems.id} AS source_id, 'create_order'::text AS action_key,
       'compras'::text AS module, ${purchaseRequests.code} AS code, CONCAT('Comprar ', ${itemTitle}) AS title,
-      CONCAT(${purchaseRequests.code}, ' · ', ${worksites.name}) AS subtitle, ${purchaseRequests.worksiteId} AS worksite_id,
+      ''::text AS subtitle, ${purchaseRequests.worksiteId} AS worksite_id,
       ${worksites.name} AS worksite_name, ${purchaseRequestItems.status} AS status, 'Listo para comprar'::text AS status_label,
       ${itemPriority} AS priority, false AS blocked, ${purchaseRequestItems.createdAt}::text AS created_at, LEFT((${itemDue})::text, 10) AS source_due_at,
       ${emptyAssignee} AS native_assignee_user_id, ${emptyAssignee} AS native_assignee_name,
@@ -595,7 +599,7 @@ function operationalSourceBranches(session: Session, scope: WorksiteScope): Oper
   if (hasPermission(session, "deliveries:create")) add("entregas", sql`
     SELECT 'purchase_request_item'::text AS source_type, ${purchaseRequestItems.id} AS source_id, 'deliver'::text AS action_key,
       'entregas'::text AS module, ${purchaseRequests.code} AS code, CONCAT('Entregar ', ${itemTitle}) AS title,
-      CONCAT(${purchaseRequests.code}, ' · ', ${worksites.name}) AS subtitle, ${purchaseRequests.worksiteId} AS worksite_id,
+      ''::text AS subtitle, ${purchaseRequests.worksiteId} AS worksite_id,
       ${worksites.name} AS worksite_name, ${purchaseRequestItems.status} AS status,
       CASE ${purchaseRequestItems.status}
         WHEN 'partially_received' THEN 'Recibido parcial'
@@ -624,7 +628,7 @@ function operationalSourceBranches(session: Session, scope: WorksiteScope): Oper
   const orderFields = (actionKey: string, module: OperationalModule, title: SQL, statusLabel: string, href: SQL, ctaLabel: string, createdAt: SQL): SQL => sql`
     'purchase_order'::text AS source_type, ${purchaseOrders.id} AS source_id, ${actionKey}::text AS action_key,
     ${module}::text AS module, ${purchaseOrders.code} AS code, ${title} AS title,
-    CONCAT(${worksites.name}, ' · ', ${suppliers.name}) AS subtitle, ${purchaseOrders.worksiteId} AS worksite_id,
+    ${suppliers.name} AS subtitle, ${purchaseOrders.worksiteId} AS worksite_id,
     ${worksites.name} AS worksite_name, ${purchaseOrders.status} AS status, ${statusLabel}::text AS status_label,
     'normal'::text AS priority, false AS blocked, ${createdAt} AS created_at, LEFT(${purchaseOrders.estimatedDelivery}::text, 10) AS source_due_at,
     ${emptyAssignee} AS native_assignee_user_id, ${emptyAssignee} AS native_assignee_name,
@@ -661,7 +665,7 @@ function operationalSourceBranches(session: Session, scope: WorksiteScope): Oper
   if (hasPermission(session, "prevention:pdtp:view")) {
     add("pdtp", sql`
       SELECT 'pdtp_obligation'::text AS source_type, ${pdtpObligations.id} AS source_id, 'execute'::text AS action_key,
-        'pdtp'::text AS module, NULL::text AS code, 'Cumplir obligación PDTP'::text AS title, ${worksites.name} AS subtitle,
+        'pdtp'::text AS module, NULL::text AS code, 'Cumplir obligación PDTP'::text AS title, ''::text AS subtitle,
         ${pdtpObligations.worksiteId} AS worksite_id, ${worksites.name} AS worksite_name, ${pdtpObligations.status} AS status,
         CASE WHEN ${pdtpObligations.status} = 'overdue' THEN 'Vencida' ELSE 'Pendiente' END AS status_label,
         CASE WHEN ${pdtpObligations.status} = 'overdue' THEN 'high' ELSE 'normal' END AS priority, false AS blocked,
@@ -674,7 +678,7 @@ function operationalSourceBranches(session: Session, scope: WorksiteScope): Oper
     `)
     add("pdtp", sql`
       SELECT 'pdtp_action'::text AS source_type, ${pdtpActionPlan.id} AS source_id, 'advance'::text AS action_key,
-        'pdtp'::text AS module, NULL::text AS code, 'Acción correctiva PDTP'::text AS title, ${worksites.name} AS subtitle,
+        'pdtp'::text AS module, NULL::text AS code, 'Acción correctiva PDTP'::text AS title, ''::text AS subtitle,
         ${pdtpExecutions.worksiteId} AS worksite_id, ${worksites.name} AS worksite_name, ${pdtpActionPlan.estado} AS status,
         REPLACE(${pdtpActionPlan.estado}, '_', ' ') AS status_label,
         CASE ${pdtpActionPlan.prioridad} WHEN 'alta' THEN 'critical' WHEN 'high' THEN 'high' WHEN 'baja' THEN 'low' ELSE 'normal' END AS priority,
@@ -692,7 +696,7 @@ function operationalSourceBranches(session: Session, scope: WorksiteScope): Oper
   if (hasPermission(session, "prevention:capa:view")) add("capa", sql`
     SELECT 'capa'::text AS source_type, ${preventionCapaActions.id} AS source_id, 'advance'::text AS action_key,
       'capa'::text AS module, ${preventionCapaActions.code} AS code, CONCAT('Gestionar ', ${preventionCapaActions.code}) AS title,
-      ${worksites.name} AS subtitle, ${preventionCapaActions.worksiteId} AS worksite_id, ${worksites.name} AS worksite_name,
+      ''::text AS subtitle, ${preventionCapaActions.worksiteId} AS worksite_id, ${worksites.name} AS worksite_name,
       ${preventionCapaActions.status} AS status, REPLACE(${preventionCapaActions.status}, '_', ' ') AS status_label,
       CASE ${preventionCapaActions.priority} WHEN 'critical' THEN 'critical' WHEN 'high' THEN 'high' WHEN 'alta' THEN 'critical' WHEN 'low' THEN 'low' WHEN 'baja' THEN 'low' ELSE 'normal' END AS priority,
       (${preventionCapaActions.reconciliationStatus} <> 'reconciled') AS blocked, ${preventionCapaActions.createdAt}::text AS created_at,
@@ -709,7 +713,7 @@ function operationalSourceBranches(session: Session, scope: WorksiteScope): Oper
       CASE WHEN ${preventionInspectionRuns.status} = 'completed' THEN 'review' ELSE 'execute' END AS action_key,
       'inspecciones'::text AS module, ${preventionInspectionRuns.code} AS code,
       CASE WHEN ${preventionInspectionRuns.status} = 'completed' THEN CONCAT('Revisar ', ${preventionInspectionTemplates.name}) ELSE CONCAT('Ejecutar ', ${preventionInspectionTemplates.name}) END AS title,
-      ${worksites.name} AS subtitle, ${preventionInspectionRuns.worksiteId} AS worksite_id, ${worksites.name} AS worksite_name,
+      ''::text AS subtitle, ${preventionInspectionRuns.worksiteId} AS worksite_id, ${worksites.name} AS worksite_name,
       ${preventionInspectionRuns.status} AS status,
       CASE ${preventionInspectionRuns.status} WHEN 'planned' THEN 'Planificada' WHEN 'completed' THEN 'Pendiente de revisión' ELSE 'En proceso' END AS status_label,
       'normal'::text AS priority, false AS blocked, ${preventionInspectionRuns.createdAt}::text AS created_at,
@@ -727,7 +731,7 @@ function operationalSourceBranches(session: Session, scope: WorksiteScope): Oper
     SELECT 'sst_document'::text AS source_type, ${sstDocuments.id} AS source_id,
       CASE WHEN ${sstDocuments.status} = 'en_revision' THEN 'review' ELSE 'renew' END AS action_key,
       'documentacion'::text AS module, ${sstDocuments.internalCode} AS code, ${sstDocuments.title} AS title,
-      ${worksites.name} AS subtitle, ${sstDocuments.worksiteId} AS worksite_id, ${worksites.name} AS worksite_name,
+      ''::text AS subtitle, ${sstDocuments.worksiteId} AS worksite_id, ${worksites.name} AS worksite_name,
       ${sstDocuments.status} AS status,
       CASE WHEN ${sstDocuments.status} = 'vencido' THEN 'Documento vencido' ELSE REPLACE(${sstDocuments.status}, '_', ' ') END AS status_label,
       CASE WHEN ${sstDocuments.status} = 'vencido' THEN 'high' ELSE 'normal' END AS priority,
@@ -744,7 +748,7 @@ function operationalSourceBranches(session: Session, scope: WorksiteScope): Oper
 
   if (hasPermission(session, "ppa:view")) add("ppa", sql`
     SELECT 'ppa'::text AS source_type, ${ppaSubmissions.id} AS source_id, 'review'::text AS action_key,
-      'ppa'::text AS module, NULL::text AS code, 'Caso PPA requiere revisión'::text AS title, ${worksites.name} AS subtitle,
+      'ppa'::text AS module, NULL::text AS code, 'Caso PPA requiere revisión'::text AS title, ''::text AS subtitle,
       ${ppaSubmissions.worksiteId} AS worksite_id, ${worksites.name} AS worksite_name, ${ppaSubmissions.estado} AS status,
       CASE WHEN ${ppaSubmissions.estado} = 'detenido' THEN 'Trabajo detenido' ELSE REPLACE(${ppaSubmissions.estado}, '_', ' ') END AS status_label,
       CASE WHEN ${ppaSubmissions.esCritica} THEN 'critical' ELSE 'high' END AS priority,
@@ -758,7 +762,7 @@ function operationalSourceBranches(session: Session, scope: WorksiteScope): Oper
 
   if (hasPermission(session, "sst:view")) add("sst", sql`
     SELECT 'sst_followup'::text AS source_type, ${sstScheduledFollowups.id} AS source_id, 'complete'::text AS action_key,
-      'sst'::text AS module, NULL::text AS code, 'Seguimiento SST pendiente'::text AS title, ${worksites.name} AS subtitle,
+      'sst'::text AS module, NULL::text AS code, 'Seguimiento SST pendiente'::text AS title, ''::text AS subtitle,
       ${sstEvaluations.worksiteId} AS worksite_id, ${worksites.name} AS worksite_name, 'pending'::text AS status,
       CONCAT('Pendiente · ', REPLACE(${sstScheduledFollowups.instancia}, '_', ' ')) AS status_label,
       'normal'::text AS priority, false AS blocked, ${sstEvaluations.createdAt}::text AS created_at, LEFT(${sstScheduledFollowups.fechaProgramada}::text, 10) AS source_due_at,

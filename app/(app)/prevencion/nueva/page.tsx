@@ -74,7 +74,7 @@ export default async function NuevaEvaluacionPage() {
         description="Completa los datos para crear una nueva evaluación de seguridad."
         breadcrumb={
           <Breadcrumbs items={[
-            { label: "Dashboard",        href: "/dashboard"   },
+            { label: "Inicio",        href: "/dashboard"   },
             { label: "Evaluaciones SST", href: "/prevencion"  },
             { label: "Nueva"                                   },
           ]} />

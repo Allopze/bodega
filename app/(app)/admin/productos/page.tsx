@@ -55,7 +55,7 @@ export default async function ProductosPage() {
         description="Productos, categorías, atributos y EPP."
         breadcrumb={
           <Breadcrumbs items={[
-            { label: "Dashboard", href: "/dashboard" },
+            { label: "Inicio", href: "/dashboard" },
             { label: "Administración", href: "/admin" },
             { label: "Productos" },
           ]} />

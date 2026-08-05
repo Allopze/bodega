@@ -62,7 +62,7 @@ export default async function TrazabilidadItemPage({
         }
         breadcrumb={
           <Breadcrumbs items={[
-            { label: "Dashboard", href: "/dashboard" },
+            { label: "Inicio", href: "/dashboard" },
             { label: "Trazabilidad", href: "/trazabilidad" },
             { label: item.productName },
           ]} />

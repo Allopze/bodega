@@ -32,9 +32,14 @@ function estadoVariant(estado: string, vencida: boolean): BadgeProps["variant"] 
   }
 }
 
+// Orden y rótulos del Anexo 15 ("Seguimiento y Control de Inspecciones /
+// Observaciones"): N° · Fecha · AREA · Desviación Detectada · Medidas
+// Correctivas · Responsable Mejora · Fecha Ejecución MC · Status.
 const COLUMNS = [
   { key: "n", label: "N°", width: "w-12" },
+  { key: "fecha", label: "Fecha", width: "w-28" },
   { key: "hallazgo", label: "Hallazgo" },
+  { key: "accion", label: "Medidas correctivas" },
   { key: "activity", label: "Actividad" },
   { key: "worksite", label: "Faena" },
   { key: "responsable", label: "Responsable" },
@@ -127,6 +132,9 @@ export function AccionesTable({ items, activityLabelById, worksiteNameById, work
           return (
             <TableRow key={item.id}>
               <TableCell className="text-(--color-text-muted)">{item.n}</TableCell>
+              <TableCell className="tabular-nums text-xs text-(--color-text-muted)">
+                {item.createdAt?.slice(0, 10) ?? "—"}
+              </TableCell>
               <TableCell>
                 <Link
                   href={`/prevencion/pdtp/${programId}/ejecucion/${item.executionId}`}
@@ -134,6 +142,9 @@ export function AccionesTable({ items, activityLabelById, worksiteNameById, work
                 >
                   {item.hallazgo}
                 </Link>
+              </TableCell>
+              <TableCell title={item.accion} className="max-w-64 truncate text-xs text-(--color-text-muted)">
+                {item.accion}
               </TableCell>
               <TableCell className="text-xs text-(--color-text-muted)">{item.activity}</TableCell>
               <TableCell className="text-xs text-(--color-text-muted)">{item.worksite}</TableCell>

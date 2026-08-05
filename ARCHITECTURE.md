@@ -68,7 +68,7 @@ contienen lógica de negocio; solo declaran permisos, entradas de nav (por
 
 Permisos, sidebar y seed RBAC se derivan automáticamente del registry.
 
-### Módulos registrados (19)
+### Módulos registrados (21)
 
 | ID | Permisos | Descripción |
 |---|---|---|
@@ -84,6 +84,8 @@ Permisos, sidebar y seed RBAC se derivan automáticamente del registry.
 | `analytics` | 2 | Analítica |
 | `repuestos` | 5 | Solicitudes de repuestos |
 | `servicios` | 5 | Solicitudes de servicios |
+| `operations` | 2 | Cola operacional transversal |
+| `billing` | 12 | Facturación y cobranza (cuentas por cobrar) — ver [docs/facturacion/](docs/facturacion/README.md) |
 | `sst` | 5 | Evaluaciones SST |
 | `ppa` | 3 | Prevención de Peligros en el Área |
 | `feedback` | 4 | Soporte / feedback interno |
@@ -92,7 +94,7 @@ Permisos, sidebar y seed RBAC se derivan automáticamente del registry.
 | `mantenciones` | 3 | Mantención de flota/equipos |
 | `prevention` | 17 | Documentación SST, capacitaciones, incidentes, inspecciones, PDTP, indicadores |
 
-**Total: 109 permisos**, derivados automáticamente. Recalcular con:
+**Total: 217 permisos**, derivados automáticamente. Recalcular con:
 
 ```bash
 npx tsx -e "import { registry } from './modules/registry'; \
@@ -206,6 +208,8 @@ singleton Drizzle previene múltiples clientes en HMR de desarrollo.
 | `feedback.ts` | Soporte / feedback interno |
 | `audit.ts` | `audit_log`, `status_history`, `attachments` |
 | `system-settings.ts` | `system_settings`, `notifications` |
+| `clients.ts` | Dominio comercial: `clients`, `client_contacts`, `contracts` |
+| `billing.ts` (12) | Facturación y cobranza: facturas normalizadas, ítems, referencias externas, vínculos operacionales, pagos, movimientos bancarios, gestiones de cobranza, propuestas, corridas de sincronización, eventos y candidatos a duplicado |
 | `cost-centers.ts`, `email-templates.ts`, `code-sequences.ts`, `rate-limits.ts` | Soporte transversal |
 
 Tipos de movimiento de kardex: `receipt`, `delivery`, `adjustment`, `transfer`,

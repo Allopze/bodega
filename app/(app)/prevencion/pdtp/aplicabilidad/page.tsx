@@ -96,7 +96,7 @@ export default async function PdtpAplicabilidadPage() {
         description={`Programa anual ${program.year}: gestiona exclusiones, sujetos esperados y metas de cobertura por faena.`}
         breadcrumb={
           <Breadcrumbs items={[
-            { label: "Dashboard", href: "/dashboard" },
+            { label: "Inicio", href: "/dashboard" },
             { label: "Prevención", href: "/prevencion" },
             { label: "Programa PDTP", href: "/prevencion/pdtp" },
             { label: "Aplicabilidad por Faena" },

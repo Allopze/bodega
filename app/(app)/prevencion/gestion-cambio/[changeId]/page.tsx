@@ -35,7 +35,7 @@ export default async function CambioPage({ params }: { params: Promise<{ changeI
         title={detail.request.title}
         description={`${detail.request.code} · ${detail.worksiteName}`}
         breadcrumb={<Breadcrumbs items={[
-          { label: "Dashboard", href: "/dashboard" },
+          { label: "Inicio", href: "/dashboard" },
           { label: "Prevención" },
           { label: "Gestión del cambio", href: "/prevencion/gestion-cambio" },
           { label: detail.request.title },

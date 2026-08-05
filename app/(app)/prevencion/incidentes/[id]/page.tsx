@@ -79,7 +79,7 @@ export default async function IncidentDetailPage({ params, searchParams }: PageP
       <PageHeader
         title={incident.code}
         description={`${INCIDENT_EVENT_LABELS[incident.eventType] ?? incident.eventType} · ${bundle.worksiteName}`}
-        breadcrumb={<Breadcrumbs items={[{ label: "Dashboard", href: "/dashboard" }, { label: "Prevención" }, { label: "Incidentes", href: "/prevencion/incidentes" }, { label: incident.code }]} />}
+        breadcrumb={<Breadcrumbs items={[{ label: "Inicio", href: "/dashboard" }, { label: "Prevención" }, { label: "Incidentes", href: "/prevencion/incidentes" }, { label: incident.code }]} />}
         actions={<div className="flex gap-2">
           <Button asChild variant="secondary"><Link href="/prevencion/incidentes"><ArrowLeft className="size-4" />Bandeja</Link></Button>
           {canExport && <Button asChild variant="secondary"><Link href={`/api/prevencion/incidentes/${incident.id}/expediente`}><DownloadSimple className="size-4" />Expediente Excel</Link></Button>}

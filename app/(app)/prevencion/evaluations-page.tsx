@@ -32,7 +32,7 @@ export async function EvaluationsPage() {
         description="Registro de evaluaciones de seguridad y salud en el trabajo, agrupadas por trabajador."
         breadcrumb={
           <Breadcrumbs items={[
-            { label: "Dashboard", href: "/dashboard" },
+            { label: "Inicio", href: "/dashboard" },
             { label: "Evaluaciones SST" },
           ]} />
         }

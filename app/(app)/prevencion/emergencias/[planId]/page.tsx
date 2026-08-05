@@ -45,7 +45,7 @@ export default async function PlanEmergenciaPage({ params }: { params: Promise<{
         title={detail.plan.title}
         description={`${detail.plan.code} · ${detail.worksiteName}`}
         breadcrumb={<Breadcrumbs items={[
-          { label: "Dashboard", href: "/dashboard" },
+          { label: "Inicio", href: "/dashboard" },
           { label: "Prevención" },
           { label: "Emergencias", href: "/prevencion/emergencias" },
           { label: detail.plan.title },

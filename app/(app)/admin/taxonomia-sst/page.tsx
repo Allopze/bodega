@@ -40,7 +40,7 @@ export default async function TaxonomySstPage({ searchParams }: PageProps) {
         title="Taxonomía documental SST"
         description="Mantén las categorías y tipos de documentos preventivos que usa toda la organización."
         breadcrumb={[
-          { label: "Dashboard", href: "/dashboard" },
+          { label: "Inicio", href: "/dashboard" },
           { label: "Administración", href: "/admin" },
           { label: "Taxonomía documental SST" },
         ]}

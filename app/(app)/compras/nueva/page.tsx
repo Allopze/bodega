@@ -161,7 +161,7 @@ export default async function NuevaOcPage({
         description="Selecciona ítems aprobados, elige el proveedor y fija los precios."
         breadcrumb={
           <Breadcrumbs items={[
-            { label: "Dashboard", href: "/dashboard" },
+            { label: "Inicio", href: "/dashboard" },
             { label: "Órdenes de compra", href: "/compras" },
             { label: "Nueva OC"                       },
           ]} />

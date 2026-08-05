@@ -41,7 +41,7 @@ export default async function CompetenciasPage({
         title="Matriz de competencias"
         description="Habilitación vigente por persona y curso, con su origen, evidencia y vencimiento."
         breadcrumb={<Breadcrumbs items={[
-          { label: "Dashboard", href: "/dashboard" },
+          { label: "Inicio", href: "/dashboard" },
           { label: "Prevención" },
           { label: "Capacitación", href: "/prevencion/capacitacion" },
           { label: "Competencias" },

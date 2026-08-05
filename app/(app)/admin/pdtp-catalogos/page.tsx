@@ -27,7 +27,7 @@ export default async function PdtpCatalogsPage() {
         title="Catálogos PDTP"
         description="Mantén el catálogo de responsables, las hojas del programa preventivo y revisa los programas activos."
         breadcrumb={[
-          { label: "Dashboard", href: "/dashboard" },
+          { label: "Inicio", href: "/dashboard" },
           { label: "Administración", href: "/admin" },
           { label: "Catálogos PDTP" },
         ]}

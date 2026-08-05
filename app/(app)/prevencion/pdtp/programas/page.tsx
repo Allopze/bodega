@@ -57,7 +57,7 @@ export default async function PdtpProgramasListPage({ searchParams }: PdtpProgra
         description={`Programas anuales ${year}: gestiona versiones, plantillas y accesos por faena.`}
         breadcrumb={
           <Breadcrumbs items={[
-            { label: "Dashboard", href: "/dashboard" },
+            { label: "Inicio", href: "/dashboard" },
             { label: "Prevención", href: "/prevencion" },
             { label: "Programa de trabajo (PDTP)", href: "/prevencion/pdtp" },
             { label: "Listado de programas" },

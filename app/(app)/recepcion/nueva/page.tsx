@@ -137,7 +137,7 @@ export default async function NuevaRecepcionPage({
           : "Registra primero la llegada a oficina Chome y luego la recepción en faena."}
         breadcrumb={
           <Breadcrumbs items={[
-            { label: "Dashboard",  href: "/dashboard" },
+            { label: "Inicio",  href: "/dashboard" },
             { label: "Recepción",  href: "/recepcion" },
             { label: "Registrar"                       },
           ]} />

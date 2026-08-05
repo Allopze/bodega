@@ -44,7 +44,10 @@ import {
   type QueueShortcut,
 } from "./dashboard-control-center"
 
-export const metadata: Metadata = { title: "Dashboard" }
+// "Inicio", igual que el ítem del nav: la página se llamaba "Dashboard" al lado
+// de un sidebar que decía "Inicio" (I-13; ya detectado en
+// AUDITORIA_LENGUAJE_TECNICO §2.2 y migrado a medias).
+export const metadata: Metadata = { title: "Inicio" }
 
 /**
  * Tope de filas que baja a la cola del dashboard; el resto vive en /pendientes.
@@ -75,7 +78,14 @@ function toDashboardTask(item: Awaited<ReturnType<typeof getOperationalWorkQueue
     id: item.id,
     type: MODULE_TO_TASK_TYPE[item.module],
     title: item.title,
-    subtitle: item.assignee ? `${item.subtitle} · ${item.assignee.name}` : item.subtitle,
+    // El código sólo si el título no lo trae ya ("Aprobar Cinta…" → SOL-…;
+    // "Recibir OC-2026-0001" ya lo contiene). La faena no va: el servicio dejó
+    // de duplicarla en `subtitle` y la fila la pinta desde `worksiteName` (I-07).
+    subtitle: [
+      item.code && !item.title.includes(item.code) ? item.code : null,
+      item.subtitle || null,
+      item.assignee?.name ?? null,
+    ].filter(Boolean).join(" · "),
     worksiteId: item.worksiteId,
     worksiteName: item.worksiteName,
     statusLabel: item.blocked ? `Bloqueada · ${item.statusLabel}` : item.statusLabel,
@@ -123,6 +133,9 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const scopedWorksite = scopedWorksiteId(scope)
   const worksiteScope = intersectWorksiteScope(roleScope, scope)
   const pdtpScope = scopeToWorksiteIds(worksiteScope)
+  // Ids explícitos del alcance: varios consumidores (tarjeta PDTP, secciones
+  // por dominio) exigen `string[]`, nunca el centinela "all".
+  const scopeWorksiteIds = scopedWorksite ? [scopedWorksite] : authorizedWorksites.map((worksite) => worksite.id)
 
   // Un solo lote: el bloque de prevención no depende del operacional, y
   // encadenarlos duplicaba la latencia de red de la página (P-01).
@@ -144,7 +157,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     getOperationalBacklogComparisons(session, new Date(), scopedWorksite),
     getOperationalSnapshotHistory(session, 30, new Date(), scopedWorksite),
     canViewPdtp
-      ? loadPdtpComplianceSummary(pdtpScope)
+      ? loadPdtpComplianceSummary(scopeWorksiteIds)
       : Promise.resolve(null),
     canViewPdtp ? getActivePdtpProgram(currentYear) : Promise.resolve(null),
     canViewPdtp ? listPdtpPrograms() : Promise.resolve([]),
@@ -229,7 +242,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     .filter((entry) => entry.count > 0)
   return (
     <PageContainer>
-      <PageHeader title="Dashboard" actions={<QuickActions session={session} />} />
+      <PageHeader title="Inicio" actions={<QuickActions session={session} />} />
       <div className="animate-in fade-in duration-[var(--duration-default)]">
 
         {/* ── Control Center: KPIs + Cola de trabajo + Aside (prioridad de carga) ── */}
@@ -303,11 +316,12 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
           scope={scope}
           worksiteScope={worksiteScope}
           pdtpScope={pdtpScope}
-          worksiteIds={scopedWorksite ? [scopedWorksite] : authorizedWorksites.map((worksite) => worksite.id)}
+          worksiteIds={scopeWorksiteIds}
           currentYear={currentYear}
           moduleWorkload={moduleWorkload}
           queueTotal={queue.total}
           worksitesBreakdown={data.worksitesBreakdown}
+          pendingApprovals={data.metrics.pending_approvals}
         />
       </div>
     </PageContainer>
@@ -544,7 +558,7 @@ export function buildOperationalMetrics(input: {
   const work: Array<DashboardMetric | null> = [
     input.overdueTasks > 0 ? {
       key: "overdue", label: "Tareas vencidas", value: input.overdueTasks,
-      description: "Su plazo comprometido ya venció", icon: "critical",
+      description: "Plazo comprometido vencido", icon: "critical",
       href: href({ quick: "overdue" }), tone: "danger",
     } : null,
     input.canApprove ? {

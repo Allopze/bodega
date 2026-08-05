@@ -40,7 +40,7 @@ export default async function NuevoProductoPage() {
         description="Registra un producto del catálogo."
         breadcrumb={
           <Breadcrumbs items={[
-            { label: "Dashboard", href: "/dashboard" },
+            { label: "Inicio", href: "/dashboard" },
             { label: "Administración", href: "/admin" },
             { label: "Productos", href: "/admin/productos" },
             { label: "Nuevo" },

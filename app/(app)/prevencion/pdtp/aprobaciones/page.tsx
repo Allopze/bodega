@@ -93,7 +93,7 @@ export default async function PdtpApprovalsPage({ searchParams }: PdtpApprovalsP
         description={scopeDescription}
         breadcrumb={
           <Breadcrumbs items={[
-            { label: "Dashboard", href: "/dashboard" },
+            { label: "Inicio", href: "/dashboard" },
             { label: "Prevención", href: "/prevencion" },
             { label: "Programa de trabajo (PDTP)", href: "/prevencion/pdtp" },
             ...(program ? [{ label: program.title, href: `/prevencion/pdtp/${program.id}` }] : []),

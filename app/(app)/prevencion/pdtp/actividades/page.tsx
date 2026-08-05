@@ -119,7 +119,7 @@ export default async function PdtpActivitiesPage({ searchParams }: ActivityViewe
       <PageHeader
         title="Actividades del programa preventivo"
         description={selectedWorksiteId ? "Trabajo programado, evidencia y avance de la faena seleccionada." : "Resumen anual agregado de todas las faenas autorizadas. Selecciona una faena para revisar evidencias y ejecutar."}
-        breadcrumb={<Breadcrumbs items={[{ label: "Dashboard", href: "/dashboard" }, { label: "Prevención", href: "/prevencion" }, { label: "Programa preventivo SG-SST (PDTP)", href: "/prevencion/pdtp" }, { label: "Actividades" }]} />}
+        breadcrumb={<Breadcrumbs items={[{ label: "Inicio", href: "/dashboard" }, { label: "Prevención", href: "/prevencion" }, { label: "Programa preventivo SG-SST (PDTP)", href: "/prevencion/pdtp" }, { label: "Actividades" }]} />}
         actions={<><Button asChild size="sm" variant="secondary"><Link href="/prevencion/pdtp/programas">Programas</Link></Button>{canManageProgram && <Button asChild size="sm"><Link href={`/prevencion/pdtp/${program.id}/editar`}>Gestionar programa</Link></Button>}</>}
       />
 

@@ -44,7 +44,7 @@ export default async function ReporteDetailPage({ params }: Props) {
         title={report.titulo}
         breadcrumb={
           <Breadcrumbs items={[
-            { label: "Dashboard", href: "/dashboard" },
+            { label: "Inicio", href: "/dashboard" },
             { label: "Soporte",   href: "/soporte" },
             { label: report.titulo },
           ]} />

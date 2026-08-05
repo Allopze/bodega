@@ -48,7 +48,7 @@ export default async function CapaDetailPage({ params }: { params: Promise<{ id:
         title={bundle.action.code}
         description={`${CAPA_SOURCE_LABELS[bundle.action.sourceType] ?? bundle.action.sourceType} · ${worksiteName}`}
         breadcrumb={<Breadcrumbs items={[
-          { label: "Dashboard", href: "/dashboard" },
+          { label: "Inicio", href: "/dashboard" },
           { label: "Acciones CAPA", href: "/prevencion/capa" },
           { label: bundle.action.code },
         ]} />}

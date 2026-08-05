@@ -35,7 +35,7 @@ export default async function IndicadoresPage({ searchParams }: IndicadoresPageP
         description="Registro mensual de indicadores de seguridad y salud ocupacional: tasa de accidentabilidad, frecuencia y gravedad por faena."
         breadcrumb={
           <Breadcrumbs items={[
-            { label: "Dashboard", href: "/dashboard" },
+            { label: "Inicio", href: "/dashboard" },
             { label: "Prevención", href: "/prevencion" },
             { label: "Indicadores de seguridad y salud en el trabajo" },
           ]} />

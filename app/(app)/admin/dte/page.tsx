@@ -4,9 +4,11 @@ import { desc } from "drizzle-orm"
 import { db } from "@/db"
 import { dteSyncRuns } from "@/db/schema"
 import { requirePermission } from "@/lib/auth/can"
-import { isDteSyncEnabled } from "@/lib/services/dte-portal/config"
+import { readDtePortalConfig } from "@/lib/services/dte-portal/config"
+import { hasStoredDteSettings } from "@/lib/services/dte-portal/settings"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
+import { DteCredentialsForm } from "./credentials-form"
 import { DteSyncActions } from "./dte-sync-actions"
 import { DteSyncList } from "./dte-sync-list"
 
@@ -15,7 +17,7 @@ export const metadata: Metadata = { title: "Sincronización DTE" }
 
 const DTE_BREADCRUMBS = (
   <Breadcrumbs items={[
-    { label: "Dashboard", href: "/dashboard" },
+    { label: "Inicio", href: "/dashboard" },
     { label: "Administración", href: "/admin" },
     { label: "Sincronización DTE" },
   ]} />
@@ -27,12 +29,13 @@ export default async function DtePage() {
   try { await requirePermission("admin:dte_sync") }
   catch { redirect("/forbidden") }
 
-  const [runs, syncEnabled] = await Promise.all([
+  const [runs, config, hasStored] = await Promise.all([
     db.query.dteSyncRuns.findMany({
       orderBy: [desc(dteSyncRuns.startedAt)],
       limit: 30,
     }),
-    Promise.resolve(isDteSyncEnabled()),
+    readDtePortalConfig(),
+    hasStoredDteSettings(),
   ])
 
   return (
@@ -44,14 +47,19 @@ export default async function DtePage() {
         actions={DTE_ACTIONS}
       />
 
-      {!syncEnabled && (
+      {!config.syncEnabled && (
         <section role="alert" className="mb-5 rounded-[var(--radius-xl)] border border-[var(--color-warning)] bg-[var(--color-warning-tint)] p-4 text-[var(--color-warning-ink)]">
           <h2 className="font-semibold">La sincronización no está habilitada</h2>
-          <p className="mt-1 text-sm">Configure <code>DTE_SYNC_ENABLED=true</code> y las credenciales del portal (<code>DTE_PORTAL_*</code>) en las variables de entorno.</p>
+          <p className="mt-1 text-sm">Configure las credenciales del portal abajo y active la sincronización, o use las variables de entorno (<code>DTE_PORTAL_*</code> y <code>DTE_SYNC_ENABLED=true</code>).</p>
         </section>
       )}
 
-      <DteSyncList runs={runs} />
+      <DteCredentialsForm initial={config} hasStored={hasStored} />
+
+      <div className="mt-8">
+        <h2 className="mb-3 text-h2 text-[var(--color-text)]">Historial de sincronización</h2>
+        <DteSyncList runs={runs} />
+      </div>
     </PageContainer>
   )
 }

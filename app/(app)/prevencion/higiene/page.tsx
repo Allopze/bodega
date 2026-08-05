@@ -41,7 +41,7 @@ export default async function HigienePage() {
         title="Higiene y vigilancia"
         description="Agentes con límite permisible, grupos de exposición similar, mediciones y cobertura de vigilancia ocupacional."
         breadcrumb={<Breadcrumbs items={[
-          { label: "Dashboard", href: "/dashboard" },
+          { label: "Inicio", href: "/dashboard" },
           { label: "Prevención" },
           { label: "Higiene" },
         ]} />}

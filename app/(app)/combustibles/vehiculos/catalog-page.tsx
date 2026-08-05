@@ -53,7 +53,7 @@ export async function FuelVehiclesCatalogPage() {
         title="Vehículos de combustible"
         description="Catálogo administrativo de vehículos que cargan combustible."
         breadcrumb={<Breadcrumbs items={[
-          { label: "Dashboard", href: "/dashboard" },
+          { label: "Inicio", href: "/dashboard" },
           { label: "Administración", href: "/admin" },
           { label: "Catálogos de flota", href: "/admin/flota-catalogos" },
           { label: "Vehículos" },

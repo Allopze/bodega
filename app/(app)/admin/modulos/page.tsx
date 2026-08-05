@@ -28,7 +28,7 @@ export default async function ModulosPage() {
         title="Módulos del sistema"
         description="Activa o desactiva módulos y submódulos completos. El interruptor controla qué aparece en la navegación de todos los usuarios, incluidos los administradores; no mide si el módulo funciona ni sustituye a los permisos."
         breadcrumb={[
-          { label: "Dashboard", href: "/dashboard" },
+          { label: "Inicio", href: "/dashboard" },
           { label: "Administración", href: "/admin" },
           { label: "Módulos" },
         ]}

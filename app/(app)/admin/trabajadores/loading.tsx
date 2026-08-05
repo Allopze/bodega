@@ -8,7 +8,7 @@ export default function Loading() {
         title="Trabajadores"
         breadcrumb={
           <Breadcrumbs items={[
-            { label: "Dashboard", href: "/dashboard" },
+            { label: "Inicio", href: "/dashboard" },
             { label: "Administración", href: "/admin" },
             { label: "Trabajadores" },
           ]} />

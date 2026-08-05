@@ -189,7 +189,7 @@ export default async function PdtpDashboardPage({ searchParams }: PdtpDashboardP
         breadcrumb={
           <Breadcrumbs
             items={[
-              { label: "Dashboard", href: "/dashboard" },
+              { label: "Inicio", href: "/dashboard" },
               { label: "Prevención", href: "/prevencion" },
               { label: "Programa de trabajo (PDTP)" },
             ]}

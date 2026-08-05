@@ -126,7 +126,8 @@ export async function getDashboardData(session: Session, worksiteId?: string): P
       id:            w.id,
       name:          w.name,
       requestsCount: w.requestsCount,
-      totalCost:     costMap.get(w.id) ?? 0,
+      // `Number(...)`: SUM(NUMERIC) llega como string del driver (I-01).
+      totalCost:     Number(costMap.get(w.id) ?? 0),
     }))
     .filter((w) => w.requestsCount > 0 || w.totalCost > 0)
     .sort((a, b) => b.totalCost - a.totalCost)

@@ -11,6 +11,7 @@ import { gastoPorFaena } from "./gasto-faena"
 import { dteLibroCompras } from "./dte-libro-compras"
 import { dteConciliacion } from "./dte-conciliacion"
 import { dteFacturasSinOc } from "./dte-facturas-sin-oc"
+import { billingCobranza } from "./billing-cobranza"
 
 export async function getReportData(tipo: string, session: Session | null, filters: ExportFilters = {}, maxRows = 10_000): Promise<ReportData> {
   switch (tipo) {
@@ -34,6 +35,8 @@ export async function getReportData(tipo: string, session: Session | null, filte
       return dteConciliacion(session, filters, maxRows)
     case "dte_facturas_sin_oc":
       return dteFacturasSinOc(session, filters, maxRows)
+    case "facturacion_cobranza":
+      return billingCobranza(session, filters, maxRows)
     case "gasto_faena":
     default:
       return gastoPorFaena(session, filters, maxRows)

@@ -9,7 +9,7 @@ export default function Loading() {
         title="Nuevo reporte"
         breadcrumb={
           <Breadcrumbs items={[
-            { label: "Dashboard",  href: "/dashboard" },
+            { label: "Inicio",  href: "/dashboard" },
             { label: "Soporte",    href: "/soporte" },
             { label: "Nuevo reporte" },
           ]} />

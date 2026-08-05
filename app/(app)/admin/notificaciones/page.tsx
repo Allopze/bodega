@@ -39,7 +39,7 @@ export default async function AdminNotificationsPage() {
         title="Notificaciones"
         description={description}
         breadcrumb={[
-          { label: "Dashboard", href: "/dashboard" },
+          { label: "Inicio", href: "/dashboard" },
           { label: "Administración", href: "/admin" },
           { label: "Notificaciones" },
         ]}

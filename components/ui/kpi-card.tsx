@@ -72,22 +72,28 @@ export function KpiCard({
         )}>{value}</p>
 
         {(typeof trend === "number" || detail) && (
-          <div className="mt-2.5 flex items-center gap-2 text-xs">
+          <div className="mt-2.5 flex items-start gap-2 text-xs">
             {typeof trend === "number" && (
               <span
                 className={cn(
                   "inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[11px] font-semibold",
-                  trend >= 0
-                    ? "bg-[var(--color-success-tint)] text-[var(--color-success-ink)]"
-                    : "bg-[var(--color-danger-tint)] text-[var(--color-danger-ink)]"
+                  // 0% no es buena noticia ni mala: sin flecha y en neutro. El
+                  // `>= 0` anterior pintaba "↑0%" verde éxito (I-14).
+                  trend === 0
+                    ? "bg-[var(--color-surface-2)] text-[var(--color-text-muted)]"
+                    : trend > 0
+                      ? "bg-[var(--color-success-tint)] text-[var(--color-success-ink)]"
+                      : "bg-[var(--color-danger-tint)] text-[var(--color-danger-ink)]"
                 )}
               >
-                {trend >= 0 ? <ArrowUp size={11} weight="bold" /> : <ArrowDown size={11} weight="bold" />}
+                {trend > 0 ? <ArrowUp size={11} weight="bold" /> : trend < 0 ? <ArrowDown size={11} weight="bold" /> : null}
                 {Math.abs(trend)}%
               </span>
             )}
             {detail && (
-              <span className="truncate text-xs text-[var(--color-text-muted)]">{detail}</span>
+              // 2 líneas y no `truncate`: a 1366 con sidebar abierto los cuatro
+              // tiles cortaban su detalle con elipsis (I-08).
+              <span className="line-clamp-2 text-xs text-[var(--color-text-muted)]">{detail}</span>
             )}
           </div>
         )}

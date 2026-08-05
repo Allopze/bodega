@@ -24,7 +24,7 @@ export async function FuelSuppliersCatalogPage() {
         title="Proveedores de combustible"
         description="Catálogo administrativo de proveedores de combustible y su identidad comercial compartida."
         breadcrumb={<Breadcrumbs items={[
-          { label: "Dashboard", href: "/dashboard" },
+          { label: "Inicio", href: "/dashboard" },
           { label: "Administración", href: "/admin" },
           { label: "Catálogos de flota", href: "/admin/flota-catalogos" },
           { label: "Proveedores de combustible" },

@@ -203,7 +203,7 @@ export default async function ComprasPage({
           description="Órdenes de compra y bandeja de ítems aprobados."
           breadcrumb={
             <Breadcrumbs items={[
-              { label: "Dashboard", href: "/dashboard" },
+              { label: "Inicio", href: "/dashboard" },
               { label: "Órdenes de compra" },
             ]} />
           }
@@ -318,7 +318,7 @@ export default async function ComprasPage({
         description="Órdenes de compra y bandeja de ítems aprobados."
         breadcrumb={
           <Breadcrumbs items={[
-            { label: "Dashboard", href: "/dashboard" },
+            { label: "Inicio", href: "/dashboard" },
             { label: "Órdenes de compra" },
           ]} />
         }

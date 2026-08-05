@@ -25,7 +25,7 @@ export default async function FleetCatalogsPage() {
         title="Catálogos de flota"
         description="Concentra los catálogos administrativos de vehículos, combustible y mantenciones, y define parámetros por defecto."
         breadcrumb={[
-          { label: "Dashboard", href: "/dashboard" },
+          { label: "Inicio", href: "/dashboard" },
           { label: "Administración", href: "/admin" },
           { label: "Catálogos de flota" },
         ]}

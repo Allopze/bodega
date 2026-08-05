@@ -35,7 +35,7 @@ export default async function ProgramaPage({ params }: { params: Promise<{ progr
         title={detail.program.name}
         description={detail.program.protocol}
         breadcrumb={<Breadcrumbs items={[
-          { label: "Dashboard", href: "/dashboard" },
+          { label: "Inicio", href: "/dashboard" },
           { label: "Prevención" },
           { label: "Higiene", href: "/prevencion/higiene" },
           { label: detail.program.name },

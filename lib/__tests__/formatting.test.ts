@@ -93,5 +93,14 @@ describe("formato · contrato compartido (§4.4)", () => {
     it("congela formatCLP", () => {
       expect(formatCLP(1500000)).toMatchInlineSnapshot(`"$1.500.000"`)
     })
+
+    // I-01 (auditoría 2026-08-05): SUM(NUMERIC) llega como string del driver;
+    // antes cualquier string —incluso "0"— se mostraba como "—".
+    it("acepta agregados string del driver", () => {
+      expect(formatCLP("230000")).toBe("$230.000")
+      expect(formatCLP("0")).toBe("$0")
+      expect(formatCLP("no-numérico")).toBe("—")
+      expect(formatCLP("")).toBe("—")
+    })
   })
 })

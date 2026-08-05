@@ -5,7 +5,7 @@ import { Receipt } from "@phosphor-icons/react/dist/ssr"
 import { db } from "@/db"
 import { dteDocuments, purchaseOrderInvoices, fuelLoads } from "@/db/schema"
 import { requirePermission } from "@/lib/auth/can"
-import { readDtePortalEnv } from "@/lib/services/dte-portal/config"
+import { readDtePortalConfig } from "@/lib/services/dte-portal/config"
 import { dteTipoLabel } from "@/lib/services/dte-portal/labels"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
@@ -34,7 +34,7 @@ export default async function DteListPage({
   catch { redirect(`/forbidden?desde=${encodeURIComponent("/compras")}`) }
 
   const { vinculo, tipo } = await searchParams
-  const codEmp = readDtePortalEnv().credentials.codEmp
+  const codEmp = (await readDtePortalConfig()).credentials.codEmp
   const periodo = new Date().toISOString().slice(0, 7)
 
   const conditions = [eq(dteDocuments.codEmp, codEmp), eq(dteDocuments.periodo, periodo)]
@@ -87,7 +87,7 @@ export default async function DteListPage({
         description={`Documentos tributarios recibidos de proveedores en ${periodo} — solo lectura del portal DTE FacturaEnLínea.`}
         breadcrumb={
           <Breadcrumbs items={[
-            { label: "Dashboard", href: "/dashboard" },
+            { label: "Inicio", href: "/dashboard" },
             { label: "Órdenes de compra", href: "/compras" },
             { label: "Documentos DTE" },
           ]} />

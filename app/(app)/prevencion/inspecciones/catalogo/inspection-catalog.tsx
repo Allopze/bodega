@@ -16,6 +16,7 @@ import {
   approveInspectionTemplateAction,
   createInspectionProgramAction,
   importInspectionTemplateAction,
+  setInspectionTemplatePdtpActivitiesAction,
 } from "../actions"
 import { Field } from "@/components/ui/field"
 import { useOperation } from "@/lib/hooks/use-operation"
@@ -37,6 +38,8 @@ interface TemplateItem {
   authorUserId: string
   version: number
   coverage: Coverage
+  /** Actividades del PDTP (campo `n`) que acredita al completarse un run. */
+  pdtpActivityNumbers: number[] | null
 }
 
 interface ProgramItem {
@@ -122,6 +125,7 @@ export function InspectionCatalog({ templates, programs, importable, approvedTem
                 <TableHead>Versión</TableHead>
                 <TableHead>Estado</TableHead>
                 <TableHead>Calibración</TableHead>
+                <TableHead>Acredita PDTP</TableHead>
                 <TableHead className="text-right">Acción</TableHead>
               </TableRow>
             </TableHeader>
@@ -139,10 +143,29 @@ export function InspectionCatalog({ templates, programs, importable, approvedTem
                     {coverageLabel(item.coverage)}
                     {item.coverage.criticalityInert && <span className="ml-1 text-xs text-[var(--color-warning-ink)]">(sin calibrar)</span>}
                   </TableCell>
-                  <TableCell className="text-right">
-                    {item.status === "draft" && canApprove && item.authorUserId !== currentUserId && (
-                      <ApproveDialog templateId={item.id} name={item.name} expectedVersion={item.version} />
+                  {/* Sin actividades declaradas, completar un run no acredita
+                      nada en el programa anual: el conector es un no-op. */}
+                  <TableCell className="text-sm">
+                    {item.pdtpActivityNumbers && item.pdtpActivityNumbers.length > 0 ? (
+                      <span className="font-mono text-xs">N° {item.pdtpActivityNumbers.join(", ")}</span>
+                    ) : (
+                      <span className="text-xs text-[var(--color-warning-ink)]">No acredita</span>
                     )}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <div className="flex justify-end gap-2">
+                      {item.status === "draft" && canManage && (
+                        <PdtpActivitiesDialog
+                          templateId={item.id}
+                          name={item.name}
+                          expectedVersion={item.version}
+                          current={item.pdtpActivityNumbers ?? []}
+                        />
+                      )}
+                      {item.status === "draft" && canApprove && item.authorUserId !== currentUserId && (
+                        <ApproveDialog templateId={item.id} name={item.name} expectedVersion={item.version} />
+                      )}
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}
@@ -240,6 +263,59 @@ function ImportTemplateDialog({ importable }: { importable: ImportableDefinition
           </div>
           {operation.message && <p role="status" className="text-sm">{operation.message}</p>}
           <DialogFooter><Button type="submit" disabled={operation.pending}>Incorporar</Button></DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+/* ── Acreditación PDTP ─────────────────────────────────────────────────────── */
+
+/**
+ * Declara qué actividades del programa anual acredita la plantilla. Sin esto
+ * el conector `onInspectionCompleted` no hace nada y la inspección jamás llega
+ * al PDTP — que fue el estado de todas las plantillas hasta 2026-08-04.
+ */
+function PdtpActivitiesDialog({ templateId, name, expectedVersion, current }: {
+  templateId: string
+  name: string
+  expectedVersion: number
+  current: number[]
+}) {
+  const [open, setOpen] = React.useState(false)
+  const operation = useOperation()
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild><Button size="sm" variant="ghost">Acreditación PDTP</Button></DialogTrigger>
+      <DialogContent>
+        <form
+          onSubmit={(event) => {
+            event.preventDefault()
+            const raw = String(new FormData(event.currentTarget).get("numbers") ?? "")
+            const pdtpActivityNumbers = raw
+              .split(/[\s,]+/)
+              .map((token) => Number(token.trim()))
+              .filter((value) => Number.isInteger(value) && value > 0)
+            operation.run(
+              () => setInspectionTemplatePdtpActivitiesAction({ templateId, expectedVersion, pdtpActivityNumbers }),
+              () => setOpen(false),
+            )
+          }}
+          className="space-y-4"
+        >
+          <DialogHeader>
+            <DialogTitle>Acreditación PDTP · {name}</DialogTitle>
+            <DialogDescription>
+              Números de actividad del programa anual que se acreditan al completar una inspección con esta
+              plantilla. Vacío = no acredita nada.
+            </DialogDescription>
+          </DialogHeader>
+          <Field label="Números de actividad" hint="Separados por coma o espacio. Ej.: 24, 27">
+            <Input name="numbers" defaultValue={current.join(", ")} maxLength={120} />
+          </Field>
+          {operation.message && <p role="status" className="text-sm">{operation.message}</p>}
+          <DialogFooter><Button type="submit" disabled={operation.pending}>Guardar</Button></DialogFooter>
         </form>
       </DialogContent>
     </Dialog>

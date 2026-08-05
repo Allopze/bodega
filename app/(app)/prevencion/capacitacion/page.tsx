@@ -47,7 +47,7 @@ export default async function CapacitacionPage() {
         title="Capacitación y competencias"
         description="Sesiones, asistencia, evaluación y habilitación vigente por trabajador (DS 44 arts. 15 y 16)."
         breadcrumb={<Breadcrumbs items={[
-          { label: "Dashboard", href: "/dashboard" },
+          { label: "Inicio", href: "/dashboard" },
           { label: "Prevención" },
           { label: "Capacitación" },
         ]} />}

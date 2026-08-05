@@ -37,7 +37,7 @@ export default async function CatalogoPage() {
         title="Catálogo de capacitación"
         description="Cursos, contenidos versionados y requisitos de competencia. Un curso legal obligatorio debe cumplir el piso del DS 44 art. 16."
         breadcrumb={<Breadcrumbs items={[
-          { label: "Dashboard", href: "/dashboard" },
+          { label: "Inicio", href: "/dashboard" },
           { label: "Prevención" },
           { label: "Capacitación", href: "/prevencion/capacitacion" },
           { label: "Catálogo" },

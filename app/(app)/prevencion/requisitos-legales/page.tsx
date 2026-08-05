@@ -21,7 +21,7 @@ export default async function LegalRequirementsPage() {
       <PageHeader
         title="Requisitos legales"
         description="Control de vigencia, aplicabilidad, evidencia y cumplimiento por faena."
-        breadcrumb={<Breadcrumbs items={[{ label: "Dashboard", href: "/dashboard" }, { label: "Prevención", href: "/prevencion" }, { label: "Requisitos legales" }]} />}
+        breadcrumb={<Breadcrumbs items={[{ label: "Inicio", href: "/dashboard" }, { label: "Prevención", href: "/prevencion" }, { label: "Requisitos legales" }]} />}
         actions={<LegalRequirementsHeaderActions canAssess={can(session, "prevention:legal:assess")} canExport={can(session, "prevention:legal:export")} />}
       />
       <LegalRequirementsWorkbench

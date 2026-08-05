@@ -26,7 +26,11 @@ const FIELD_KIND_OPTIONS: Array<{ value: FieldKind; label: string }> = [
   { value: "entregado_obs", label: "Entregado / No entregado + observación" },
   { value: "apto_obs", label: "Apto / No apto + observación" },
   { value: "si_no_obs", label: "Sí / No + observación" },
+  { value: "bueno_regular_malo_obs", label: "Bueno / Regular / Malo" },
+  { value: "bueno_regular_malo_na_obs", label: "Bueno / Regular / Malo / N/A" },
+  { value: "bueno_regular_malo_na_nt_obs", label: "Bueno / Regular / Malo / N/A / No tiene" },
   { value: "text", label: "Texto libre" },
+  { value: "textarea", label: "Texto libre (párrafo)" },
   { value: "date", label: "Fecha" },
   { value: "select", label: "Selección única" },
   { value: "multiselect", label: "Selección múltiple" },
@@ -427,9 +431,14 @@ function SectionEditor({ section, onChange, onMoveUp, onMoveDown, onRemove, onDu
             className="font-medium"
           />
           <div className="flex flex-wrap items-center gap-3">
+            {/* `undefined` cuenta para el motor (getApplicableItems trata
+                `countsForCompliance ?? true`), así que la casilla debe verse
+                marcada. Antes mostraba `?? false`: toda sección nueva aparecía
+                desmarcada mientras sí puntuaba, y marcar+desmarcar escribía un
+                `false` explícito que la sacaba del denominador en silencio. */}
             <Checkbox
               label="Cuenta para el % de cumplimiento"
-              checked={section.countsForCompliance ?? false}
+              checked={section.countsForCompliance ?? true}
               onChange={(e) => onChange({ countsForCompliance: e.target.checked })}
             />
           </div>

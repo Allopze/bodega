@@ -76,7 +76,7 @@ export default async function PpaPanelPage({ searchParams }: { searchParams: Pro
         description="PPA: evaluaciones preventivas, trabajos detenidos e indicadores."
         breadcrumb={
           <Breadcrumbs items={[
-            { label: "Dashboard", href: "/dashboard" },
+            { label: "Inicio", href: "/dashboard" },
             { label: "Para, Piensa y Actúa" },
           ]} />
         }

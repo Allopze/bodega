@@ -23,7 +23,7 @@ export default async function FoliosPage() {
         title="Folios operativos"
         description="Revisa las secuencias de documentos. Corrige desfases de folio solo en casos puntuales: los documentos ya emitidos no se modifican."
         breadcrumb={[
-          { label: "Dashboard", href: "/dashboard" },
+          { label: "Inicio", href: "/dashboard" },
           { label: "Administración", href: "/admin" },
           { label: "Folios" },
         ]}

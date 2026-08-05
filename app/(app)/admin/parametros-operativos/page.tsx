@@ -26,7 +26,7 @@ export default async function OpsSettingsPage() {
         title="Parámetros operativos"
         description="Ajustes avanzados que gobiernan exportaciones, retención de notificaciones y límites de adjuntos."
         breadcrumb={[
-          { label: "Dashboard", href: "/dashboard" },
+          { label: "Inicio", href: "/dashboard" },
           { label: "Administración", href: "/admin" },
           { label: "Parámetros operativos" },
         ]}

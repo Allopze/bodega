@@ -326,7 +326,7 @@ function QueueRow({ item, today }: { item: OperationalWorkItem; today: string })
       <td className="px-3 py-2.5"><PriorityBadge priority={item.priority} /></td>
       <td className="px-3 py-2.5">
         <Link href={item.href} className="font-medium text-[var(--color-text)] hover:text-[var(--color-primary-ink)] hover:underline">{item.title}</Link>
-        <p className="mt-0.5 text-[11px] text-[var(--color-text-muted)]">{item.code && <span>{item.code} · </span>}{item.subtitle}</p>
+        <p className="mt-0.5 text-[11px] text-[var(--color-text-muted)]">{[item.code, item.subtitle].filter(Boolean).join(" · ")}</p>
       </td>
       <td className="px-3 py-2.5 text-[var(--color-text-muted)]">{OPERATIONAL_MODULE_LABELS[item.module]}</td>
       <td className="px-3 py-2.5 text-[var(--color-text-muted)]">{item.worksiteName}</td>

@@ -42,7 +42,7 @@ export default async function ProductCatalogsPage() {
         title="Catálogos de productos"
         description="Unidades de medida y plantillas de atributos reutilizables para normalizar el catálogo."
         breadcrumb={[
-          { label: "Dashboard", href: "/dashboard" },
+          { label: "Inicio", href: "/dashboard" },
           { label: "Administración", href: "/admin" },
           { label: "Catálogos de productos" },
         ]}

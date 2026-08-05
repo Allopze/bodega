@@ -28,7 +28,7 @@ export default async function CorreoSmtpPage() {
         title="Configuración de Correo"
         description="Estado del servicio de envío de correos y configuración global de notificaciones."
         breadcrumb={[
-          { label: "Dashboard", href: "/dashboard" },
+          { label: "Inicio", href: "/dashboard" },
           { label: "Administración", href: "/admin" },
           { label: "Correo" },
         ]}

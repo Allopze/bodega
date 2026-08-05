@@ -96,8 +96,23 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      # Sin DSN explícito el runner no define NEXT_PUBLIC_SENTRY_DSN, pero
+      # fijarlo a "" hace explícito el caso "sin definir" y protege el paso de
+      # un futuro entorno CI que sí lo inyecte (ver paso de regresión abajo).
       - name: Unit tests (with coverage threshold)
+        env:
+          NEXT_PUBLIC_SENTRY_DSN: ""
         run: npm run test:coverage
+
+      # Regresión de tests dependientes del entorno: en desarrollo local
+      # .env.local define NEXT_PUBLIC_SENTRY_DSN, y cuando ese origen de ingest
+      # se intercala en connect-src (lib/security/csp.ts) hubo una aserción que
+      # solo fallaba con el DSN presente (lib/__tests__/csp.test.ts, 2026-08-04).
+      # Este paso repite la suite rápida (no-PGlite) con un DSN sintético (el
+      # mismo fixture del test) para que una regresión así no vuelva a colarse
+      # en verde. Equivale a correr localmente `npm run test:env-dsn`.
+      - name: Unit tests con NEXT_PUBLIC_SENTRY_DSN definido (regresión de entorno)
+        run: npm run test:env-dsn
 
       - name: Concurrency tests (real Postgres)
         env:

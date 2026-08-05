@@ -12,6 +12,7 @@ import {
   importInspectionTemplate,
   reviewInspectionRun,
   saveInspectionAnswers,
+  setInspectionTemplatePdtpActivities,
   type InspectionAccess,
 } from "@/lib/services/prevention-inspections"
 import type { ActionState } from "@/lib/validation/prevention"
@@ -45,6 +46,12 @@ export async function importInspectionTemplateAction(input: unknown): Promise<Ac
   const guard = await guardPermission("prevention:inspections:manage")
   if (guard.error) return guard.error
   return run(accessFromSession(guard.session), (access) => importInspectionTemplate(input, access))
+}
+
+export async function setInspectionTemplatePdtpActivitiesAction(input: unknown): Promise<ActionState> {
+  const guard = await guardPermission("prevention:inspections:manage")
+  if (guard.error) return guard.error
+  return run(accessFromSession(guard.session), (access) => setInspectionTemplatePdtpActivities(input, access))
 }
 
 export async function approveInspectionTemplateAction(input: unknown): Promise<ActionState> {

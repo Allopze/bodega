@@ -61,7 +61,7 @@ export default async function AnaliticaPage({
         description="Indicadores transversales de compras, bodega, EPP y combustible."
         breadcrumb={
           <Breadcrumbs items={[
-            { label: "Dashboard", href: "/dashboard" },
+            { label: "Inicio", href: "/dashboard" },
             { label: "Reportes", href: "/reportes" },
             { label: "Analítica" },
           ]} />

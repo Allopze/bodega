@@ -240,7 +240,7 @@ export default async function AdminPage() {
         description="Configura los parámetros, catálogos y accesos de Plataforma Chome."
         breadcrumb={
           <Breadcrumbs items={[
-            { label: "Dashboard", href: "/dashboard" },
+            { label: "Inicio", href: "/dashboard" },
             { label: "Administración" },
           ]} />
         }

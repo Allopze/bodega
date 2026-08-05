@@ -20,11 +20,11 @@ export async function triggerDteSyncAction(): Promise<DteSyncActionResult> {
   try {
     const session = await requirePermission("admin:dte_sync")
 
-    if (!isDteSyncEnabled()) {
-      return { ok: false, message: "La sincronización DTE no está habilitada. Configure DTE_SYNC_ENABLED=true y las credenciales del portal." }
+    if (!(await isDteSyncEnabled())) {
+      return { ok: false, message: "La sincronización DTE no está habilitada. Configure las credenciales del portal en esta misma página o DTE_SYNC_ENABLED=true." }
     }
 
-    const client = new DtePortalClient(buildDtePortalClientConfig())
+    const client = new DtePortalClient(await buildDtePortalClientConfig())
     const result = await syncDteDocuments(client, { trigger: "manual", importerId: session.user.id })
 
     revalidatePath("/admin/dte")

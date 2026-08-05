@@ -7,7 +7,7 @@ export default function Loading() {
       <PageHeader
         title="Faenas y centros de costo"
         breadcrumb={[
-          { label: "Dashboard", href: "/dashboard" },
+          { label: "Inicio", href: "/dashboard" },
           { label: "Administración", href: "/admin" },
           { label: "Faenas" },
         ]}

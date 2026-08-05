@@ -56,7 +56,7 @@ export default async function IncidentsPage({ searchParams }: { searchParams: Pr
       <PageHeader
         title="Incidentes y denuncias"
         description="Fuente canónica de eventos, plazos DIAT/DIEP, investigación, CAPA y autorización de reinicio."
-        breadcrumb={<Breadcrumbs items={[{ label: "Dashboard", href: "/dashboard" }, { label: "Prevención" }, { label: "Incidentes" }]} />}
+        breadcrumb={<Breadcrumbs items={[{ label: "Inicio", href: "/dashboard" }, { label: "Prevención" }, { label: "Incidentes" }]} />}
         actions={<div className="flex gap-2">
           {canReport && <Button asChild><Link href="/prevencion/incidentes/reportar"><Plus className="size-4" />Reportar</Link></Button>}
           {canExport && <Button asChild variant="secondary"><a href="/api/prevencion/incidentes/export" download><DownloadSimple className="size-4" />Exportar Excel</a></Button>}

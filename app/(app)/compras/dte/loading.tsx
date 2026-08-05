@@ -8,7 +8,7 @@ export default function Loading() {
         title="Documentos DTE"
         breadcrumb={
           <Breadcrumbs items={[
-            { label: "Dashboard", href: "/dashboard" },
+            { label: "Inicio", href: "/dashboard" },
             { label: "Órdenes de compra", href: "/compras" },
             { label: "Documentos DTE" },
           ]} />

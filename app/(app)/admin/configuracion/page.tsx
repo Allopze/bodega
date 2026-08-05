@@ -26,7 +26,7 @@ export default async function ConfiguracionPage() {
         title="Configuración del Sistema"
         description="Ajustar parámetros globales de Plataforma Chome."
         breadcrumb={[
-          { label: "Dashboard", href: "/dashboard" },
+          { label: "Inicio", href: "/dashboard" },
           { label: "Administración", href: "/admin" },
           { label: "Configuración" },
         ]}

@@ -36,7 +36,7 @@ export default async function InspeccionPage({ params }: { params: Promise<{ run
         title={`${detail.templateName} · ${detail.run.code}`}
         description={`${detail.worksiteName}${detail.run.subjectLabel ? ` · ${detail.run.subjectLabel}` : ""}`}
         breadcrumb={<Breadcrumbs items={[
-          { label: "Dashboard", href: "/dashboard" },
+          { label: "Inicio", href: "/dashboard" },
           { label: "Prevención" },
           { label: "Inspecciones", href: "/prevencion/inspecciones" },
           { label: detail.run.code },

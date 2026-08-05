@@ -32,7 +32,7 @@ export default async function GestionCambioPage() {
         title="Gestión del cambio"
         description="Un cambio de proceso, instalación, equipo, sustancia, proveedor, requisito legal, dotación, software o procedimiento evalúa su impacto en riesgos, permisos, capacitación, documentos, MIPER y emergencia antes de aprobarse."
         breadcrumb={<Breadcrumbs items={[
-          { label: "Dashboard", href: "/dashboard" },
+          { label: "Inicio", href: "/dashboard" },
           { label: "Prevención" },
           { label: "Gestión del cambio" },
         ]} />}

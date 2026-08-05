@@ -40,7 +40,7 @@ export default async function CatalogoInspeccionesPage() {
         title="Catálogo de inspecciones"
         description="Plantillas versionadas del catálogo SST y programación por faena y frecuencia."
         breadcrumb={<Breadcrumbs items={[
-          { label: "Dashboard", href: "/dashboard" },
+          { label: "Inicio", href: "/dashboard" },
           { label: "Prevención" },
           { label: "Inspecciones", href: "/prevencion/inspecciones" },
           { label: "Catálogo" },
@@ -57,6 +57,7 @@ export default async function CatalogoInspeccionesPage() {
           authorUserId: row.authorUserId,
           version: row.version,
           coverage: row.coverage,
+          pdtpActivityNumbers: row.pdtpActivityNumbers,
         }))}
         programs={programs.map((row) => ({
           id: row.program.id,

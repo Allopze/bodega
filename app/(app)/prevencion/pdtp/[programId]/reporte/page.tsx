@@ -67,7 +67,7 @@ export default async function PdtpManagementReportPage({ params, searchParams }:
         description="Avance, desviaciones y responsables por actividad, igual que en la descarga Excel."
         breadcrumb={
           <Breadcrumbs items={[
-            { label: "Dashboard", href: "/dashboard" },
+            { label: "Inicio", href: "/dashboard" },
             { label: "Prevención", href: "/prevencion" },
             { label: "Programas PDTP", href: "/prevencion/pdtp" },
             { label: program.title, href: `/prevencion/pdtp/${programId}` },

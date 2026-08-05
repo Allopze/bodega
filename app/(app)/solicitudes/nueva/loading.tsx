@@ -8,7 +8,7 @@ export default function Loading() {
         title="Nueva solicitud"
         breadcrumb={
           <Breadcrumbs items={[
-            { label: "Dashboard", href: "/dashboard" },
+            { label: "Inicio", href: "/dashboard" },
             { label: "Solicitudes", href: "/solicitudes" },
             { label: "Nueva" },
           ]} />

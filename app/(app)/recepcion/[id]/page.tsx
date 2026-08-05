@@ -101,7 +101,7 @@ export default async function RecepcionDetallePage({
         description={`Recepción de ${receipt.purchaseOrder.code} · ${receipt.purchaseOrder.supplier?.name ?? "Proveedor sin nombre"}`}
         breadcrumb={
           <Breadcrumbs items={[
-            { label: "Dashboard", href: "/dashboard" },
+            { label: "Inicio", href: "/dashboard" },
             { label: "Recepción", href: "/recepcion" },
             { label: receipt.code },
           ]} />

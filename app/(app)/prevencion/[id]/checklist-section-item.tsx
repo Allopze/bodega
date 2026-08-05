@@ -13,6 +13,14 @@ import {
   Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
 } from "@/components/ui/select"
 import type { ChecklistItem, FieldKind, StatusValue } from "@/lib/sst/types"
+import { requiresObservation } from "@/lib/sst/compliance"
+
+/** Escalas Bueno/Regular/Malo de los anexos de inspección (3, 13, 14). */
+const BRM_KINDS: FieldKind[] = [
+  "bueno_regular_malo_obs",
+  "bueno_regular_malo_na_obs",
+  "bueno_regular_malo_na_nt_obs",
+]
 import { cn } from "@/lib/utils"
 import type { ItemResponse } from "./checklist-section"
 
@@ -70,7 +78,14 @@ export function ItemField({
   const [notesOpen, setNotesOpen] = useState(false)
   const [noteDraft, setNoteDraft] = useState(resp.observacion)
   const hasObservation = Boolean(resp.observacion.trim())
-  const needsCorrectiveAction = ["cumple_nocumple_obs", "cumple_nocumple_na_obs"].includes(item.kind) && resp.estado === "no_cumple"
+  // Regular / Malo / No cumple exigen justificarse por escrito. El submit lo
+  // rechaza igual (assertNonConformingItemsHaveObservation); esto lo avisa antes.
+  const observacionPendiente = requiresObservation(resp.estado) && !hasObservation
+  // "Malo" de la escala B/R/M se persiste como no_cumple, así que también pide
+  // acción correctiva.
+  const needsCorrectiveAction = [
+    "cumple_nocumple_obs", "cumple_nocumple_na_obs", ...BRM_KINDS,
+  ].includes(item.kind) && resp.estado === "no_cumple"
 
   function setEstado(estado: StatusValue) {
     onChange({ estado: resp.estado === estado ? null : estado })
@@ -110,6 +125,18 @@ export function ItemField({
     } else if (kind === "si_no_obs") {
       pairs.push({ value: "si", label: "Sí", variant: "positive" })
       pairs.push({ value: "no", label: "No", variant: "negative" })
+    } else if (BRM_KINDS.includes(kind)) {
+      // Escala B/R/M de los anexos de inspección. Regular puntúa 0.5.
+      pairs.push({ value: "cumple",    label: "Bueno",   variant: "positive" })
+      pairs.push({ value: "regular",   label: "Regular", variant: "neutral" })
+      pairs.push({ value: "no_cumple", label: "Malo",    variant: "negative" })
+      if (kind === "bueno_regular_malo_na_obs" || kind === "bueno_regular_malo_na_nt_obs") {
+        pairs.push({ value: "na", label: "N/A", variant: "neutral" })
+      }
+      if (kind === "bueno_regular_malo_na_nt_obs") {
+        // NT = "no tiene" (Anexo 14): el contenedor no posee el componente.
+        pairs.push({ value: "no_tiene", label: "No tiene", variant: "neutral" })
+      }
     }
 
     return (
@@ -142,11 +169,14 @@ export function ItemField({
                     "transition-[background-color,border-color,color,transform] duration-150 ease-[var(--ease-out)] ",
                     hasObservation
                       ? "border-(--color-primary-line) bg-(--color-primary-tint) text-(--color-primary)"
-                      : "border-(--color-border) bg-(--color-surface) text-text-subtle hover:border-(--color-border-strong) hover:text-(--color-text)"
+                      : observacionPendiente
+                        ? "border-(--color-danger-line) bg-(--color-danger-tint) text-(--color-danger)"
+                        : "border-(--color-border) bg-(--color-surface) text-text-subtle hover:border-(--color-border-strong) hover:text-(--color-text)"
                   )}
+                  aria-describedby={observacionPendiente ? `${item.id}-obs-required` : undefined}
                 >
                   <NotePencil size={14} weight="bold" aria-hidden="true" />
-                  {hasObservation ? "Editar nota" : "Agregar nota"}
+                  {hasObservation ? "Editar nota" : observacionPendiente ? "Nota requerida" : "Agregar nota"}
                 </button>
               </DialogTrigger>
               <DialogContent className="sm:max-w-xl">
@@ -203,6 +233,11 @@ export function ItemField({
             {resp.observacion}
           </p>
         )}
+        {observacionPendiente && (
+          <p id={`${item.id}-obs-required`} className="text-right text-xs leading-5 text-(--color-danger)">
+            Deja una observación: este ítem no quedó conforme.
+          </p>
+        )}
         {needsCorrectiveAction && (
           <div className="grid gap-1.5 rounded-(--radius-lg) border border-(--color-danger-line) bg-(--color-danger-tint) p-3">
             <label className="text-[11px] font-semibold uppercase tracking-wide text-(--color-danger)">
@@ -223,7 +258,10 @@ export function ItemField({
     )
   }
 
-  if (["cumple_nocumple_obs", "cumple_nocumple_na_obs", "entregado_obs", "apto_obs", "si_no_obs"].includes(kind)) {
+  if ([
+    "cumple_nocumple_obs", "cumple_nocumple_na_obs", "entregado_obs", "apto_obs", "si_no_obs",
+    ...BRM_KINDS,
+  ].includes(kind)) {
     return renderStatusButtons()
   }
 
@@ -235,6 +273,21 @@ export function ItemField({
         onChange={(e) => onChange({ observacion: e.target.value })}
         disabled={readOnly}
         maxLength={500}
+      />
+    )
+  }
+
+  // Relato largo (p. ej. la descripción de la Observación Planeada, Anexo 7).
+  // maxLength 2000 = tope de `observacion` en pdtpChecklistResponseItemSchema.
+  if (kind === "textarea") {
+    return (
+      <Textarea
+        rows={6}
+        placeholder={item.placeholder ?? "Ingresa texto…"}
+        value={resp.observacion}
+        onChange={(e) => onChange({ observacion: e.target.value })}
+        disabled={readOnly}
+        maxLength={2000}
       />
     )
   }

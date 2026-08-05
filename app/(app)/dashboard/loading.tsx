@@ -5,8 +5,8 @@ export default function Loading() {
   return (
     <>
       <PageHeader
-        title="Dashboard"
-        breadcrumb={<Breadcrumbs items={[{ label: "Dashboard" }]} />}
+        title="Inicio"
+        breadcrumb={<Breadcrumbs items={[{ label: "Inicio" }]} />}
       />
       <SkeletonPage rows={6} />
     </>

@@ -30,7 +30,12 @@ const QTY_FORMAT = new Intl.NumberFormat("es-CL")
  * una expresión regular: así el formato del número —separador de miles, cero
  * decimales— sigue siendo el que decide `Intl` y no una manipulación de texto.
  */
-export function formatCLP(amount: number): string {
+export function formatCLP(amount: number | string): string {
+  // Acepta string numérico: el driver de Postgres entrega SUM(NUMERIC)/BIGINT
+  // como string aunque el select lo tipee `sql<number>`, y ese string terminaba
+  // acá como "—" en el KPI de Inversión del dashboard (I-01, auditoría
+  // 2026-08-05). Un string no numérico sigue siendo dato faltante.
+  if (typeof amount === "string") amount = amount.trim() === "" ? NaN : Number(amount)
   if (!Number.isFinite(amount)) return VALUE_MISSING
   if (amount < 0) return `-${CLP_FORMAT.format(Math.abs(amount))}`
   // `-0 < 0` es falso, así que el cero negativo llegaba a `Intl` y salía como

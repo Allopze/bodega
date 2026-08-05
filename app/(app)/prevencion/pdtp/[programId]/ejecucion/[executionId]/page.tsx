@@ -81,7 +81,7 @@ export default async function PdtpExecutionDetailPage({ params }: Props) {
         description={`Período ${execution.month}/${execution.year} · Semana ${execution.week} · Cantidad ejecutada: ${execution.executedQuantity}`}
         breadcrumb={
           <Breadcrumbs items={[
-            { label: "Dashboard", href: "/dashboard" },
+            { label: "Inicio", href: "/dashboard" },
             { label: "Programas PDTP", href: "/prevencion/pdtp" },
             { label: program.title, href: `/prevencion/pdtp/${programId}` },
             { label: "Verificación" },

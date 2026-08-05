@@ -43,7 +43,7 @@ export default async function CapaPage({ searchParams }: { searchParams: Promise
         title="Acciones CAPA"
         description="Fuente común de acciones correctivas y preventivas, evidencia, eficacia y cierre."
         breadcrumb={<Breadcrumbs items={[
-          { label: "Dashboard", href: "/dashboard" },
+          { label: "Inicio", href: "/dashboard" },
           { label: "Prevención" },
           { label: "Acciones CAPA" },
         ]} />}

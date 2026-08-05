@@ -31,7 +31,7 @@ export default async function EquipmentTypesPage() {
     .orderBy(fuelEquipmentTypes.sortOrder, fuelEquipmentTypes.name)
 
   return <PageContainer>
-    <PageHeader title="Tipos de equipo" description="Taxonomía configurable para vehículos, maquinaria, unidades de medición y grupos analíticos." breadcrumb={[{ label: "Dashboard", href: "/dashboard" }, { label: "Administración", href: "/admin" }, { label: "Catálogos de flota", href: "/admin/flota-catalogos" }, { label: "Tipos de equipo" }]} />
+    <PageHeader title="Tipos de equipo" description="Taxonomía configurable para vehículos, maquinaria, unidades de medición y grupos analíticos." breadcrumb={[{ label: "Inicio", href: "/dashboard" }, { label: "Administración", href: "/admin" }, { label: "Catálogos de flota", href: "/admin/flota-catalogos" }, { label: "Tipos de equipo" }]} />
     <EquipmentTypeCatalog rows={rows.map((row) => ({ ...row, vehicleCount: Number(row.vehicleCount) }))} />
   </PageContainer>
 }

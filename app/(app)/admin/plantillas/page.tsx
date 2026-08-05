@@ -22,7 +22,7 @@ export default async function PlantillasPage() {
         description="Personaliza el asunto y cuerpo HTML de los correos que envía el sistema."
         breadcrumb={
           <Breadcrumbs items={[
-            { label: "Dashboard", href: "/dashboard" },
+            { label: "Inicio", href: "/dashboard" },
             { label: "Administración", href: "/admin" },
             { label: "Plantillas" },
           ]} />

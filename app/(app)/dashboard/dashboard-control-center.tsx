@@ -260,11 +260,13 @@ export function DashboardControlCenter({
                 <div className="flex flex-col gap-3 border-b border-[var(--color-border)] pb-4 lg:flex-row lg:items-end lg:justify-between">
                   <div>
                     <h2 id="titulo-cola-trabajo" className="text-h3 text-[var(--color-text)]">Cola de trabajo</h2>
+                    {/* Sin la coletilla "El texto se filtra desde…": una
+                        instrucción permanente en un subtítulo es ruido; el
+                        placeholder del buscador ya lo dice (I-16). */}
                     <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">
                       {isTruncated
                         ? `Las ${tasks.length} tareas más urgentes de tus faenas autorizadas.`
                         : "Acciones disponibles en tus faenas autorizadas."}
-                      {" "}El texto se filtra desde la búsqueda de la cabecera.
                     </p>
                   </div>
                   <p aria-live="polite" className="font-mono text-xs font-medium text-[var(--color-text-muted)]">
@@ -272,42 +274,47 @@ export function DashboardControlCenter({
                   </p>
                 </div>
 
-                {/* Conteos de población completa: navegan a /pendientes, no filtran estas filas. */}
-                {queueShortcuts.length > 0 && (
-                  <nav className="mt-4 flex gap-1.5 overflow-x-auto pb-1" aria-label="Atajos a la cola completa">
-                    {queueShortcuts.map((shortcut) => (
-                      <Link
-                        key={shortcut.key}
-                        href={shortcut.href}
-                        className={cn(
-                          "inline-flex h-11 sm:h-8 shrink-0 items-center gap-2 rounded-xl px-3 text-xs font-semibold",
-                          "bg-[var(--color-surface-2)] text-[var(--color-text-muted)] hover:bg-[var(--color-surface-3)]",
-                          "transition-all duration-150 ease-out motion-safe:active:scale-[0.97]",
-                          "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]",
-                        )}
-                      >
-                        {shortcut.label}
-                        <span className="font-mono text-xs tabular-nums opacity-80">{shortcut.count}</span>
-                      </Link>
-                    ))}
-                  </nav>
-                )}
-
-                {/* Un solo control: el orden. La faena se elige una vez arriba y
-                    reencuadra el tablero completo, así que repetirla acá sería
-                    una segunda representación de la misma dimensión (A5). */}
-                <div className="mt-4 grid gap-2.5 border-y border-[var(--color-border)] py-3.5 sm:grid-cols-2 xl:grid-cols-3">
-                  <FilterSelect label="Ordenar por" value={sort} onValueChange={(value) => setSort(value as SortOption)}>
-                    <SelectItem value="priority">Prioridad</SelectItem>
-                    <SelectItem value="oldest">Más antigua</SelectItem>
-                    <SelectItem value="newest">Más reciente</SelectItem>
-                  </FilterSelect>
+                {/* Atajos (población completa, navegan a /pendientes) y el único
+                    control local —el orden— en UNA fila: la banda anterior
+                    reservaba un grid de 3 columnas para un solo select y quedaba
+                    como franja casi vacía de borde a borde (I-16). La faena se
+                    elige una vez arriba (A5). */}
+                <div className="mt-4 flex flex-wrap items-end gap-x-3 gap-y-2">
+                  {queueShortcuts.length > 0 && (
+                    <nav className="flex min-w-0 flex-1 gap-1.5 overflow-x-auto pb-1" aria-label="Atajos a la cola completa">
+                      {queueShortcuts.map((shortcut) => (
+                        <Link
+                          key={shortcut.key}
+                          href={shortcut.href}
+                          className={cn(
+                            "inline-flex h-11 sm:h-8 shrink-0 items-center gap-2 rounded-xl px-3 text-xs font-semibold",
+                            "bg-[var(--color-surface-2)] text-[var(--color-text-muted)] hover:bg-[var(--color-surface-3)]",
+                            "transition-all duration-150 ease-out motion-safe:active:scale-[0.97]",
+                            "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]",
+                          )}
+                        >
+                          {shortcut.label}
+                          <span className="font-mono text-xs tabular-nums opacity-80">{shortcut.count}</span>
+                        </Link>
+                      ))}
+                    </nav>
+                  )}
+                  <div className="w-full shrink-0 sm:w-44">
+                    <FilterSelect label="Ordenar por" value={sort} onValueChange={(value) => setSort(value as SortOption)}>
+                      <SelectItem value="priority">Prioridad</SelectItem>
+                      <SelectItem value="oldest">Más antigua</SelectItem>
+                      <SelectItem value="newest">Más reciente</SelectItem>
+                    </FilterSelect>
+                  </div>
                 </div>
 
                 {filteredTasks.length > 0 ? (
                   <div className="mt-4 overflow-x-auto rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]">
-                    <div className="min-w-[34rem]">
-                      <div className="grid grid-cols-[5.5rem_minmax(12rem,1fr)_5rem_9rem] gap-3 border-b border-[var(--color-border)] bg-[var(--color-surface-2)] px-4 py-2.5 text-left text-[11px] font-bold uppercase tracking-wider text-[var(--color-text-muted)]">
+                    {/* Bajo `sm` la fila se apila: la tabla con scroll lateral dejaba
+                        Antigüedad y el CTA fuera del viewport de 390px sin ningún
+                        indicio de que existían (I-12). */}
+                    <div className="sm:min-w-[34rem]">
+                      <div className="hidden sm:grid grid-cols-[5.5rem_minmax(12rem,1fr)_5rem_9rem] gap-3 border-b border-[var(--color-border)] bg-[var(--color-surface-2)] px-4 py-2.5 text-left text-[11px] font-bold uppercase tracking-wider text-[var(--color-text-muted)]">
                         <span>Prioridad</span>
                         <span>Tarea</span>
                         <span>Antigüedad</span>
@@ -480,8 +487,12 @@ function FilterSelect({ label, value, onValueChange, children }: {
 function WorkQueueRow({ task, refreshedAt, canAssign }: { task: DashboardTask; refreshedAt: string; canAssign: boolean }) {
   const { label: moduleLabel, Icon } = moduleMeta(task.type)
   return (
-    <li className="grid grid-cols-[5.5rem_minmax(12rem,1fr)_5rem_9rem] items-center gap-3 px-4 py-3 text-sm transition-colors hover:bg-[var(--color-surface-2)]">
-      <PriorityBadge priority={task.priority} size="sm" className="justify-self-start" />
+    // Mobile: apilada (badge+edad / título / meta / acciones). Desktop: grid de
+    // 4 columnas. La celda de acción envuelve (`flex-wrap`) en vez de
+    // `whitespace-nowrap`: "Asignar" + CTA medían ~230px en una columna de 9rem
+    // y desbordaban ENCIMA de "56 días" (I-06).
+    <li className="flex flex-col gap-2 px-4 py-3 text-sm transition-colors hover:bg-[var(--color-surface-2)] sm:grid sm:grid-cols-[5.5rem_minmax(12rem,1fr)_5rem_9rem] sm:items-center sm:gap-3">
+      <PriorityBadge priority={task.priority} size="sm" className="self-start sm:justify-self-start" />
       <div className="min-w-0">
         <p className="truncate font-semibold text-[var(--color-text)]" title={task.title}>{task.title}</p>
         <div className="mt-1 flex min-w-0 items-center gap-2">
@@ -489,13 +500,13 @@ function WorkQueueRow({ task, refreshedAt, canAssign }: { task: DashboardTask; r
             <Icon size={13} aria-hidden />{moduleLabel}
           </span>
           <Badge variant="default" size="sm" className="shrink-0">{task.statusLabel}</Badge>
-          <span className="truncate text-xs text-[var(--color-text-muted)]" title={`${task.worksiteName} · ${task.subtitle}`}>
-            {task.worksiteName} · {task.subtitle}
+          <span className="truncate text-xs text-[var(--color-text-muted)]" title={[task.worksiteName, task.subtitle].filter(Boolean).join(" · ")}>
+            {[task.worksiteName, task.subtitle].filter(Boolean).join(" · ")}
           </span>
         </div>
       </div>
       <time dateTime={task.createdAt} className="font-mono text-xs tabular-nums text-[var(--color-text-subtle)]">{relativeAge(task.createdAt, refreshedAt)}</time>
-      <span className="flex justify-self-end gap-1 whitespace-nowrap">
+      <span className="flex flex-wrap items-center gap-1 sm:justify-end sm:justify-self-end">
         {canAssign && task.operationalItem?.assignable ? <WorkAssignmentControl item={task.operationalItem} /> : null}
         <Button asChild size="sm" variant="link"><Link href={task.href}>{task.ctaLabel}</Link></Button>
       </span>
