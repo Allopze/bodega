@@ -24,7 +24,7 @@ vi.mock("@/lib/services/dte-portal/download", () => ({
   downloadDteXml: (...args: unknown[]) => mockDownloadDteXml(...args),
 }))
 vi.mock("@/lib/services/dte-portal/config", () => ({
-  buildDtePortalClientConfig: () => ({
+  buildDtePortalClientConfig: async () => ({
     baseUrl: "https://clientes.dtefacturaenlinea.cl/facturaenlinea",
     credentials: { rutUsr: "1", rutEmp: "2", clave: "3", codEmp: "433" },
   }),

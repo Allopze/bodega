@@ -5,5 +5,6 @@ export { fetchBandejaEntrada, parseBandejaRows, parseBandejaResult, extractBande
 export { downloadDteXml, downloadDtePdf } from "./download"
 export { syncDteDocuments, computeDocumentHash } from "./sync"
 export { matchToPurchaseOrderInvoices, matchToFuelLoads, computeHealthStats } from "./reconciliation"
-export { readDtePortalEnv, buildDtePortalClientConfig, isDteSyncEnabled } from "./config"
+export { readDtePortalEnv, readDtePortalConfig, buildDtePortalClientConfig, isDteSyncEnabled } from "./config"
+export { DTE_SETTING_KEYS, readStoredDteSettings, saveDtePortalSettings, clearStoredDteSettings, hasStoredDteSettings } from "./settings"
 export type * from "./types"

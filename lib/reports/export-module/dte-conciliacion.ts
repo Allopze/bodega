@@ -2,7 +2,7 @@ import type { Session } from "next-auth"
 import { and, desc, eq, inArray, isNotNull } from "drizzle-orm"
 import { db } from "@/db"
 import { dteDocuments, purchaseOrderInvoices, purchaseOrders } from "@/db/schema"
-import { readDtePortalEnv } from "@/lib/services/dte-portal/config"
+import { readDtePortalConfig } from "@/lib/services/dte-portal/config"
 import { dteTipoLabel } from "@/lib/services/dte-portal/labels"
 import { buildDateFilter } from "./utils"
 import type { ReportData, ExportFilters } from "./types"
@@ -13,7 +13,7 @@ import type { ReportData, ExportFilters } from "./types"
  * emitió el proveedor) contra el monto de la factura subida a la OC.
  */
 export async function dteConciliacion(_session: Session | null, filters: ExportFilters, limit: number): Promise<ReportData> {
-  const codEmp = readDtePortalEnv().credentials.codEmp
+  const codEmp = (await readDtePortalConfig()).credentials.codEmp
 
   const docs = await db
     .select({

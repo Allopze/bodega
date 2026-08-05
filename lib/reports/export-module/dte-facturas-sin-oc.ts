@@ -2,7 +2,7 @@ import type { Session } from "next-auth"
 import { and, desc, eq, isNull } from "drizzle-orm"
 import { db } from "@/db"
 import { dteDocuments } from "@/db/schema"
-import { readDtePortalEnv } from "@/lib/services/dte-portal/config"
+import { readDtePortalConfig } from "@/lib/services/dte-portal/config"
 import { dteTipoLabel } from "@/lib/services/dte-portal/labels"
 import { buildDateFilter } from "./utils"
 import type { ReportData, ExportFilters } from "./types"
@@ -13,7 +13,7 @@ import type { ReportData, ExportFilters } from "./types"
  * la OC, o es un gasto que nunca pasó por una orden de compra?
  */
 export async function dteFacturasSinOc(_session: Session | null, filters: ExportFilters, limit: number): Promise<ReportData> {
-  const codEmp = readDtePortalEnv().credentials.codEmp
+  const codEmp = (await readDtePortalConfig()).credentials.codEmp
 
   const docs = await db
     .select({

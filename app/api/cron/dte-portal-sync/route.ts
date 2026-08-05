@@ -20,12 +20,12 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
-  if (!isDteSyncEnabled()) {
+  if (!(await isDteSyncEnabled())) {
     return NextResponse.json({ ok: true, skipped: true, reason: "DTE sync not enabled" })
   }
 
   try {
-    const config = buildDtePortalClientConfig()
+    const config = await buildDtePortalClientConfig()
     const client = new DtePortalClient(config)
 
     const result = await syncDteDocuments(client, { trigger: "cron" })

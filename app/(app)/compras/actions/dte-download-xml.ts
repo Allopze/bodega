@@ -61,7 +61,7 @@ export async function downloadDteDocumentXml(dteDocumentId: string): Promise<Dte
   let xml: string
   let buffer: Buffer
   try {
-    const client = new DtePortalClient(buildDtePortalClientConfig())
+    const client = new DtePortalClient(await buildDtePortalClientConfig())
     const downloaded = await downloadDteXml(client, relativeUrl)
     xml = downloaded.xml
     buffer = downloaded.buffer

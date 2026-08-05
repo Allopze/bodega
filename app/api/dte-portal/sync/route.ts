@@ -24,9 +24,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Sin permisos" }, { status: 403 })
   }
 
-  if (!isDteSyncEnabled()) {
+  if (!(await isDteSyncEnabled())) {
     return NextResponse.json(
-      { error: "La sincronización DTE no está habilitada. Configure DTE_SYNC_ENABLED=true." },
+      { error: "La sincronización DTE no está habilitada. Configúrela en Administración › Sincronización DTE o con DTE_SYNC_ENABLED=true." },
       { status: 400 },
     )
   }
@@ -47,7 +47,7 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const config = buildDtePortalClientConfig()
+    const config = await buildDtePortalClientConfig()
     const client = new DtePortalClient(config)
 
     const result = await syncDteDocuments(client, {
