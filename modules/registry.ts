@@ -30,6 +30,7 @@ import { flotaModule }         from "@/modules/flota/manifest"
 import { mantencionesModule }  from "@/modules/mantenciones/manifest"
 import { preventionModule }    from "@/modules/prevention/manifest"
 import { operationsModule }    from "@/modules/operations/manifest"
+import { billingModule }       from "@/modules/billing/manifest"
 
 /**
  * Registry central — array `as const` de todos los módulos registrados.
@@ -51,6 +52,8 @@ export const registry = [
   repuestosModule,
   serviciosModule,
   operationsModule,
+  // ── Facturación y Cobranza (cuentas por cobrar) ─────────────────────────
+  billingModule,
   // ── Prevención de riesgos (próximas entregas) ──────────────────────────
   sstModule,
   ppaModule,

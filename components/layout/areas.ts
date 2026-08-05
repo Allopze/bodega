@@ -29,6 +29,7 @@ export const AREAS: AreaDef[] = [
   { id: "adquisiciones", label: "Adquisiciones", iconName: "Stack",     order: 10 },
   { id: "control-operacional", label: "Control operacional", iconName: "Car", order: 15 },
   { id: "bodega",      label: "Bodega",      iconName: "Warehouse", order: 20 },
+  { id: "facturacion", label: "Facturación", iconName: "Receipt",   order: 25 },
   { id: "reportes",    label: "Reportes",    iconName: "ChartBar",  order: 30 },
   // ── Próximas áreas (descomenta al registrar sus módulos) ──────────────────
   { id: "prevencion", label: "Prevención", iconName: "ShieldCheck", order: 40 },

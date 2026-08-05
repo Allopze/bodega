@@ -36,9 +36,9 @@ export interface AreaNode {
   items:    NavItem[]
 }
 
-/** Dashboard — entrada fija del rail (icono home, sin panel). */
+/** Inicio — entrada fija del rail (icono home, sin panel). */
 export const DASHBOARD_ITEM = {
-  label:    "Dashboard",
+  label:    "Inicio",
   href:     "/dashboard",
   iconName: "SquaresFour",
 } as const
