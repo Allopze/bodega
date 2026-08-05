@@ -1,0 +1,122 @@
+/**
+ * lib/services/billing/config.ts
+ *
+ * Configuración y feature flags del módulo de Facturación y Cobranza.
+ *
+ * Todo se lee **solo en el servidor**. Ninguna variable lleva prefijo
+ * `NEXT_PUBLIC_`: las credenciales de un proveedor financiero no entran al
+ * bundle del cliente bajo ninguna circunstancia.
+ */
+
+/* ── Sincronización de ventas (FacturaEnLínea) ───────────────────────────── */
+
+export interface BillingSalesSyncConfig {
+  /** Habilita la sincronización automática de ventas por cron. */
+  enabled: boolean
+  /**
+   * Período más antiguo que una importación histórica puede alcanzar, "YYYY-MM".
+   * Existe para que un error de tipeo no dispare una descarga de 10 años.
+   */
+  historyFloor: string
+}
+
+export function readSalesSyncConfig(): BillingSalesSyncConfig {
+  return {
+    enabled: process.env.BILLING_SALES_SYNC_ENABLED?.trim().toLowerCase() === "true",
+    historyFloor: normalizePeriod(process.env.BILLING_HISTORY_FLOOR) ?? "2024-01",
+  }
+}
+
+/* ── Chipax ──────────────────────────────────────────────────────────────── */
+
+export interface ChipaxConfig {
+  /** Feature flag. Apagado por defecto. */
+  enabled: boolean
+  /** URL del contrato OpenAPI. Se lee del contrato, no se asume. */
+  openApiUrl: string
+  /**
+   * URL base de la API. Debe venir del bloque `servers` del contrato vigente;
+   * la variable existe para no fijarla en el código.
+   */
+  baseUrl: string | null
+  /** True si hay credenciales en el servidor (no se exponen ni se loguean). */
+  hasCredentials: boolean
+  /**
+   * True solo cuando alguien verificó el contrato vigente y completó las
+   * operaciones en el adaptador. Es un interruptor deliberado: tener la clave
+   * no autoriza a adivinar rutas.
+   */
+  contractVerified: boolean
+  /** Timeout por request. */
+  requestTimeoutMs: number
+}
+
+const DEFAULT_CHIPAX_OPENAPI_URL = "https://api.chipax.com/v2/swagger-docs/"
+
+export function readChipaxConfig(): ChipaxConfig {
+  return {
+    enabled: process.env.BILLING_CHIPAX_ENABLED?.trim().toLowerCase() === "true",
+    openApiUrl: process.env.CHIPAX_OPENAPI_URL?.trim() || DEFAULT_CHIPAX_OPENAPI_URL,
+    baseUrl: process.env.CHIPAX_API_BASE_URL?.trim() || null,
+    hasCredentials: Boolean(process.env.CHIPAX_LOGIN_PAYLOAD_JSON?.trim()),
+    contractVerified: process.env.CHIPAX_CONTRACT_VERIFIED?.trim().toLowerCase() === "true",
+    requestTimeoutMs: parsePositiveInt(process.env.CHIPAX_REQUEST_TIMEOUT_MS, 30_000),
+  }
+}
+
+/* ── Conciliación de pagos ───────────────────────────────────────────────── */
+
+export interface ReconciliationConfig {
+  /**
+   * Diferencia máxima, en pesos, para considerar que un movimiento calza con el
+   * total de una factura. Un peso de diferencia es redondeo bancario; mil no.
+   */
+  amountToleranceClp: number
+  /** Días de ventana alrededor del vencimiento para buscar el pago. */
+  dateWindowDays: number
+}
+
+export function readReconciliationConfig(): ReconciliationConfig {
+  return {
+    amountToleranceClp: parsePositiveInt(process.env.BILLING_MATCH_AMOUNT_TOLERANCE_CLP, 1000),
+    dateWindowDays: parsePositiveInt(process.env.BILLING_MATCH_DATE_WINDOW_DAYS, 60),
+  }
+}
+
+/* ── Antigüedad de deuda ─────────────────────────────────────────────────── */
+
+/**
+ * Tramos de antigüedad, en un solo lugar para que reportes y dashboard no se
+ * contradigan. `maxDays: null` = el último tramo, abierto.
+ */
+export const AGING_BUCKETS = [
+  { id: "not_due",   label: "No vencida",      minDays: null, maxDays: 0 },
+  { id: "d1_30",     label: "1–30 días",       minDays: 1,    maxDays: 30 },
+  { id: "d31_60",    label: "31–60 días",      minDays: 31,   maxDays: 60 },
+  { id: "d61_90",    label: "61–90 días",      minDays: 61,   maxDays: 90 },
+  { id: "d90_plus",  label: "Más de 90 días",  minDays: 91,   maxDays: null },
+] as const
+
+export type AgingBucketId = typeof AGING_BUCKETS[number]["id"]
+
+/** Clasifica días de atraso (negativo = aún no vence) en un tramo. */
+export function agingBucketFor(daysOverdue: number): AgingBucketId {
+  if (daysOverdue <= 0) return "not_due"
+  if (daysOverdue <= 30) return "d1_30"
+  if (daysOverdue <= 60) return "d31_60"
+  if (daysOverdue <= 90) return "d61_90"
+  return "d90_plus"
+}
+
+/* ── Helpers ─────────────────────────────────────────────────────────────── */
+
+function parsePositiveInt(value: string | undefined, fallback: number): number {
+  if (!value) return fallback
+  const parsed = Number(value)
+  return Number.isFinite(parsed) && parsed >= 0 ? Math.trunc(parsed) : fallback
+}
+
+function normalizePeriod(value: string | undefined): string | null {
+  const trimmed = value?.trim()
+  return trimmed && /^\d{4}-(0[1-9]|1[0-2])$/.test(trimmed) ? trimmed : null
+}

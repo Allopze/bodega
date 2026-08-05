@@ -1,0 +1,382 @@
+/**
+ * lib/services/billing/reconciliation.ts
+ *
+ * Motor de sugerencias de pago.
+ *
+ * ## La regla que gobierna todo este archivo
+ *
+ * **Una coincidencia de monto no es un pago.** El motor propone; una persona con
+ * `billing:confirm_payments` decide. Nada de lo que se genera acá mueve el saldo
+ * de una factura: las sugerencias nacen `suggested` y solo cuentan como cobrado
+ * cuando alguien las confirma.
+ *
+ * ## Cómo puntúa
+ *
+ * Cada sugerencia acumula evidencia y de ahí sale la confianza:
+ *
+ * - **alta**: el RUT de la contraparte coincide Y el monto calza dentro de la
+ *   tolerancia. O bien la glosa del movimiento contiene el folio de la factura.
+ * - **media**: coincide el monto y la fecha cae en la ventana, pero el RUT no
+ *   viene informado.
+ * - **baja**: solo coincide el monto, o el nombre se parece.
+ *
+ * Nunca se genera una sugerencia sin al menos una coincidencia fuerte (monto
+ * dentro de tolerancia o folio en la glosa). Un movimiento que solo comparte
+ * fecha con una factura no es evidencia de nada.
+ */
+
+import { and, eq, ne, sql } from "drizzle-orm"
+import { db } from "@/db"
+import { billingBankTransactions, billingInvoicePayments, billingInvoices } from "@/db/schema"
+import { nanoid } from "@/lib/id"
+import { cleanRut } from "@/lib/rut"
+import { readReconciliationConfig } from "./config"
+import { absAmount, addAmounts, amountsWithinTolerance, compareAmounts, sumAmounts } from "./money"
+import { daysOverdue, recordInvoiceEvent } from "./invoices"
+
+export type MatchConfidence = "high" | "medium" | "low"
+
+export interface ReconciliationCandidate {
+  invoiceId: string
+  bankTransactionId: string
+  /** Monto que se propone imputar. */
+  matchedAmount: number
+  /** Saldo que quedaría en la factura si se confirma. */
+  remainingAmount: number
+  currency: string
+  confidence: MatchConfidence
+  /** Hechos concretos que sustentan la propuesta. */
+  evidence: string[]
+  /** Motivos para desconfiar, si los hay. */
+  warnings: string[]
+}
+
+export interface InvoiceForMatching {
+  id: string
+  folio: number
+  counterpartyTaxId: string
+  counterpartyName: string
+  issueDate: string
+  dueDate: string | null
+  currency: string
+  totalAmount: number
+  paidAmount: number
+}
+
+export interface TransactionForMatching {
+  id: string
+  transactionDate: string
+  amount: number
+  currency: string
+  description: string | null
+  counterpartyName: string | null
+  counterpartyTaxId: string | null
+  allocatedAmount: number
+}
+
+/**
+ * Propone imputaciones entre movimientos bancarios y facturas abiertas.
+ *
+ * Función pura: recibe los datos y devuelve candidatos. Eso permite probarla sin
+ * base de datos y, sobre todo, razonar sobre sus reglas sin perseguir consultas.
+ */
+export function proposeMatches(
+  invoices: readonly InvoiceForMatching[],
+  transactions: readonly TransactionForMatching[],
+  options: { amountTolerance: number; dateWindowDays: number },
+): ReconciliationCandidate[] {
+  const candidates: ReconciliationCandidate[] = []
+
+  for (const transaction of transactions) {
+    const available = addAmounts(transaction.amount, -transaction.allocatedAmount)
+    // Un movimiento ya imputado por completo no propone nada más.
+    if (compareAmounts(absAmount(available), 0) === 0) continue
+
+    for (const invoice of invoices) {
+      // Nunca se cruzan monedas distintas: no hay tipo de cambio que inventar.
+      if (invoice.currency !== transaction.currency) continue
+
+      const outstanding = addAmounts(invoice.totalAmount, -invoice.paidAmount)
+      if (compareAmounts(absAmount(outstanding), 0) === 0) continue
+
+      const evidence: string[] = []
+      const warnings: string[] = []
+
+      // ── Evidencia fuerte 1: el folio aparece en la glosa ──────────────────
+      const folioInDescription = mentionsFolio(transaction.description, invoice.folio)
+      if (folioInDescription) {
+        evidence.push(`La glosa del movimiento menciona el folio ${invoice.folio}`)
+      }
+
+      // ── Evidencia fuerte 2: el monto calza ────────────────────────────────
+      const exactAmount = amountsWithinTolerance(absAmount(available), absAmount(outstanding), options.amountTolerance)
+      if (exactAmount) {
+        evidence.push("El monto disponible del movimiento calza con el saldo de la factura")
+      }
+
+      // Sin ninguna evidencia fuerte no hay sugerencia. Compartir fecha o
+      // cliente no basta: eso describe a media cartola.
+      if (!folioInDescription && !exactAmount) continue
+
+      // ── Evidencia de apoyo ────────────────────────────────────────────────
+      const sameTaxId =
+        Boolean(transaction.counterpartyTaxId) &&
+        cleanRut(transaction.counterpartyTaxId!) === cleanRut(invoice.counterpartyTaxId)
+      if (sameTaxId) {
+        evidence.push("El RUT de la contraparte del movimiento coincide con el de la factura")
+      } else if (transaction.counterpartyTaxId) {
+        warnings.push("El RUT de la contraparte no coincide con el de la factura")
+      } else if (namesLookAlike(transaction.counterpartyName, invoice.counterpartyName)) {
+        evidence.push("El nombre de la contraparte se parece al del cliente")
+      }
+
+      const reference = invoice.dueDate ?? invoice.issueDate
+      const distance = Math.abs(daysOverdue(reference, transaction.transactionDate))
+      if (distance <= options.dateWindowDays) {
+        evidence.push(`La fecha del movimiento está a ${distance} días del vencimiento de la factura`)
+      } else {
+        warnings.push(`El movimiento está a ${distance} días del vencimiento: fuera de la ventana habitual`)
+      }
+
+      if (transaction.transactionDate < invoice.issueDate) {
+        warnings.push("El movimiento es anterior a la emisión de la factura")
+      }
+
+      // ── Confianza ─────────────────────────────────────────────────────────
+      let confidence: MatchConfidence = "low"
+      if (folioInDescription && (sameTaxId || exactAmount)) confidence = "high"
+      else if (exactAmount && sameTaxId) confidence = "high"
+      else if (exactAmount && distance <= options.dateWindowDays) confidence = "medium"
+      else if (folioInDescription) confidence = "medium"
+
+      if (warnings.length > 0 && confidence === "high") confidence = "medium"
+
+      // El monto propuesto nunca supera ni el saldo de la factura ni lo que
+      // queda disponible del movimiento: un pago parcial es un resultado válido.
+      const matchedAmount = compareAmounts(absAmount(available), absAmount(outstanding)) < 0
+        ? available
+        : outstanding
+
+      candidates.push({
+        invoiceId: invoice.id,
+        bankTransactionId: transaction.id,
+        matchedAmount,
+        remainingAmount: addAmounts(outstanding, -matchedAmount),
+        currency: invoice.currency,
+        confidence,
+        evidence,
+        warnings,
+      })
+    }
+  }
+
+  // Primero lo más confiable; a igual confianza, el saldo remanente más chico
+  // (la imputación que deja la factura más cerca de cerrarse).
+  const order: Record<MatchConfidence, number> = { high: 0, medium: 1, low: 2 }
+  return candidates.sort((a, b) =>
+    order[a.confidence] - order[b.confidence] ||
+    absAmount(a.remainingAmount) - absAmount(b.remainingAmount),
+  )
+}
+
+/** ¿La glosa menciona el folio como número separado (no como parte de otro)? */
+export function mentionsFolio(description: string | null, folio: number): boolean {
+  if (!description) return false
+  // El folio tiene que aparecer delimitado: "fact 1234" sí, "51234" no.
+  return new RegExp(`(^|\\D)${folio}(\\D|$)`).test(description)
+}
+
+/** Comparación laxa de nombres: sin tildes, sin sufijos societarios, sin ruido. */
+export function namesLookAlike(a: string | null, b: string | null): boolean {
+  if (!a || !b) return false
+  const normalize = (value: string) =>
+    value
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toUpperCase()
+      .replace(/\b(S\.?A\.?|SPA|LTDA|LIMITADA|EIRL|E\.?I\.?R\.?L\.?|Y CIA|CIA)\b/g, "")
+      .replace(/[^A-Z0-9]/g, "")
+  const left = normalize(a)
+  const right = normalize(b)
+  if (left.length < 4 || right.length < 4) return false
+  return left.includes(right) || right.includes(left)
+}
+
+/* ── Persistencia de sugerencias ─────────────────────────────────────────── */
+
+export interface SuggestionRunResult {
+  invoicesConsidered: number
+  transactionsConsidered: number
+  suggestionsCreated: number
+  suggestionsSkipped: number
+}
+
+/**
+ * Genera y persiste sugerencias para las facturas abiertas.
+ *
+ * Idempotente: si ya existe una imputación (sugerida, confirmada o descartada)
+ * entre esa factura y ese movimiento, no se vuelve a crear. Una sugerencia
+ * rechazada **no reaparece**: descartar es una decisión que se respeta.
+ */
+export async function generatePaymentSuggestions(
+  options: { direction?: "sale" | "purchase"; limit?: number } = {},
+): Promise<SuggestionRunResult> {
+  const direction = options.direction ?? "sale"
+  const config = readReconciliationConfig()
+
+  const invoiceRows = await db
+    .select({
+      id: billingInvoices.id,
+      folio: billingInvoices.folio,
+      issuerTaxId: billingInvoices.issuerTaxId,
+      issuerName: billingInvoices.issuerName,
+      receiverTaxId: billingInvoices.receiverTaxId,
+      receiverName: billingInvoices.receiverName,
+      issueDate: billingInvoices.issueDate,
+      dueDate: billingInvoices.dueDate,
+      currency: billingInvoices.currency,
+      totalAmount: billingInvoices.totalAmount,
+      paidAmount: billingInvoices.paidAmount,
+    })
+    .from(billingInvoices)
+    .where(and(
+      eq(billingInvoices.direction, direction),
+      ne(billingInvoices.documentStatus, "void"),
+      ne(billingInvoices.paymentStatus, "paid"),
+    ))
+    .limit(options.limit ?? 500)
+
+  const transactionRows = await db
+    .select({
+      id: billingBankTransactions.id,
+      transactionDate: billingBankTransactions.transactionDate,
+      amount: billingBankTransactions.amount,
+      currency: billingBankTransactions.currency,
+      description: billingBankTransactions.description,
+      counterpartyName: billingBankTransactions.counterpartyName,
+      counterpartyTaxId: billingBankTransactions.counterpartyTaxId,
+      allocatedAmount: billingBankTransactions.allocatedAmount,
+    })
+    .from(billingBankTransactions)
+    .where(sql`${billingBankTransactions.amount} <> ${billingBankTransactions.allocatedAmount}`)
+    .limit(options.limit ?? 500)
+
+  const invoices: InvoiceForMatching[] = invoiceRows.map((row) => ({
+    id: row.id,
+    folio: row.folio,
+    // En una venta la contraparte es el receptor; en una compra, el emisor.
+    counterpartyTaxId: direction === "sale" ? row.receiverTaxId : row.issuerTaxId,
+    counterpartyName: direction === "sale" ? row.receiverName : row.issuerName,
+    issueDate: row.issueDate,
+    dueDate: row.dueDate,
+    currency: row.currency,
+    totalAmount: row.totalAmount,
+    paidAmount: row.paidAmount,
+  }))
+
+  const candidates = proposeMatches(invoices, transactionRows, {
+    amountTolerance: config.amountToleranceClp,
+    dateWindowDays: config.dateWindowDays,
+  })
+
+  let created = 0
+  let skipped = 0
+
+  for (const candidate of candidates) {
+    // Cualquier imputación previa entre este par bloquea la sugerencia: incluida
+    // una rechazada, para no volver a proponer lo que ya se descartó.
+    const existing = await db
+      .select({ id: billingInvoicePayments.id })
+      .from(billingInvoicePayments)
+      .where(and(
+        eq(billingInvoicePayments.invoiceId, candidate.invoiceId),
+        eq(billingInvoicePayments.bankTransactionId, candidate.bankTransactionId),
+      ))
+      .limit(1)
+
+    if (existing.length > 0) {
+      skipped++
+      continue
+    }
+
+    const transaction = transactionRows.find((row) => row.id === candidate.bankTransactionId)!
+    await db.transaction(async (tx) => {
+      await tx.insert(billingInvoicePayments).values({
+        id: nanoid(),
+        invoiceId: candidate.invoiceId,
+        bankTransactionId: candidate.bankTransactionId,
+        paymentDate: transaction.transactionDate,
+        amount: candidate.matchedAmount,
+        currency: candidate.currency,
+        source: "manual",
+        verificationStatus: "suggested",
+        confidence: candidate.confidence,
+        matchedBy: "auto",
+        evidence: { evidence: candidate.evidence, warnings: candidate.warnings },
+      })
+
+      await recordInvoiceEvent(tx, {
+        invoiceId: candidate.invoiceId,
+        eventType: "payment.suggested",
+        actorKind: "system",
+        detail: {
+          confidence: candidate.confidence,
+          matchedAmount: candidate.matchedAmount,
+          evidence: candidate.evidence,
+        },
+      })
+    })
+    created++
+  }
+
+  return {
+    invoicesConsidered: invoices.length,
+    transactionsConsidered: transactionRows.length,
+    suggestionsCreated: created,
+    suggestionsSkipped: skipped,
+  }
+}
+
+/* ── Imputación de movimientos ───────────────────────────────────────────── */
+
+/**
+ * Recalcula cuánto de un movimiento bancario está imputado por pagos
+ * **confirmados**. Se llama después de confirmar o revertir una imputación.
+ */
+export async function recomputeTransactionAllocation(
+  executor: typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0],
+  bankTransactionId: string,
+): Promise<number> {
+  const payments = await executor
+    .select({ amount: billingInvoicePayments.amount })
+    .from(billingInvoicePayments)
+    .where(and(
+      eq(billingInvoicePayments.bankTransactionId, bankTransactionId),
+      eq(billingInvoicePayments.verificationStatus, "confirmed"),
+    ))
+
+  const allocated = sumAmounts(payments.map((row) => row.amount))
+  await executor
+    .update(billingBankTransactions)
+    .set({ allocatedAmount: allocated })
+    .where(eq(billingBankTransactions.id, bankTransactionId))
+
+  return allocated
+}
+
+/**
+ * Verifica que confirmar `amount` no sobrepase lo disponible del movimiento.
+ * Un movimiento repartido entre varias facturas es válido; sobregirarlo no.
+ */
+export function assertAllocationFits(
+  transactionAmount: number,
+  alreadyAllocated: number,
+  newAmount: number,
+): void {
+  const available = addAmounts(absAmount(transactionAmount), -absAmount(alreadyAllocated))
+  if (compareAmounts(absAmount(newAmount), available) > 0) {
+    throw new Error(
+      `El movimiento solo tiene ${available.toLocaleString("es-CL")} disponibles y se intenta imputar ${absAmount(newAmount).toLocaleString("es-CL")}`,
+    )
+  }
+}
