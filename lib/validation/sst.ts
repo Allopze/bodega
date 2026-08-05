@@ -6,8 +6,10 @@ export type { ActionState } from "./masters"
 // ── StatusValue enum ──────────────────────────────────────────────────────────
 const statusValueSchema = z.enum([
   'cumple',
+  'regular',
   'no_cumple',
   'na',
+  'no_tiene',
   'entregado',
   'no_entregado',
   'apto',

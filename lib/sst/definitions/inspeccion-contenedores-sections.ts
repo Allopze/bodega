@@ -10,10 +10,11 @@ import type { ChecklistSection } from '../types'
  * por `subjectLabel` libre en v1 (no hay inventario permanente; PLAN_INTEGRACION
  * §7). El inventario + alerta de estado operativo es follow-up (no v1).
  *
- * Normalización B/R/M/NA/NT (regla §5): B=cumple · R=no_cumple (prioridad
- * media) · M=no_cumple (prioridad alta) · NA=na · NT=na+obs "no tiene".
- * Modelado como `cumple_nocumple_na_obs` — el detalle R vs M va en la
- * observación y la acción correctiva.
+ * Escala nativa B/R/M/NA/NT (`bueno_regular_malo_na_nt_obs`), tal como la
+ * leyenda del Anexo 14: "B= BUENO  R= REGULAR  M= MALO  NA= NO APLICA
+ * NT= NO TIENE". Regular puntúa 0.5; NA y NT salen del denominador. Antes se
+ * aplanaba a `cumple_nocumple_na_obs`, que colapsaba R con M y confundía
+ * "no aplica" con "no tiene" — dos cosas distintas para el auditor.
  *
  * Ítems críticos (markdown 08): Soportes de levante + Cadenas de fijación en
  * estado Malo → contenedor fuera de servicio (acción alta). El inspector lo
@@ -24,50 +25,50 @@ export const CONTENEDORES_SECTIONS: ChecklistSection[] = [
     id: 'estructura_contenedor',
     title: 'Evaluación estructural y de componentes del contenedor',
     description:
-      'Marca Cumple (Bueno) / No cumple (Regular o Malo) / N/A (No aplica o No tiene). Si marca No cumple, describe el estado (Regular/Malo) y la acción correctiva. Los ítems críticos (soportes de levante, cadenas de fijación) en Malo requieren acción de prioridad alta.',
+      'Marca Bueno / Regular / Malo · N/A si el ítem no aplica al contenedor · No tiene si el componente no existe. Regular y Malo exigen observación. Los ítems críticos (soportes de levante, cadenas de fijación) en Malo requieren acción de prioridad alta.',
     countsForCompliance: true,
     hasActionCorrectiva: true,
     items: [
-      { id: 'soportes_levante',       label: 'Soportes de levante.', kind: 'cumple_nocumple_na_obs',
+      { id: 'soportes_levante',       label: 'Soportes de levante.', kind: 'bueno_regular_malo_na_nt_obs',
         danoPotencial: 'fatal',
       },
-      { id: 'cadenas_fijacion',       label: 'Cadenas de fijación.', kind: 'cumple_nocumple_na_obs',
+      { id: 'cadenas_fijacion',       label: 'Cadenas de fijación.', kind: 'bueno_regular_malo_na_nt_obs',
         danoPotencial: 'fatal',
       },
-      { id: 'puerta_lateral_volteo',  label: 'Puerta lateral o de volteo.', kind: 'cumple_nocumple_na_obs',
+      { id: 'puerta_lateral_volteo',  label: 'Puerta lateral o de volteo.', kind: 'bueno_regular_malo_na_nt_obs',
         danoPotencial: 'fatal',
       },
-      { id: 'puerta_escotilla',       label: 'Puerta escotilla.', kind: 'cumple_nocumple_na_obs',
+      { id: 'puerta_escotilla',       label: 'Puerta escotilla.', kind: 'bueno_regular_malo_na_nt_obs',
         danoPotencial: 'fatal',
       },
-      { id: 'seguro_puertas',         label: 'Seguro de puertas.', kind: 'cumple_nocumple_na_obs',
+      { id: 'seguro_puertas',         label: 'Seguro de puertas.', kind: 'bueno_regular_malo_na_nt_obs',
         danoPotencial: 'fatal',
       },
-      { id: 'sellos_hermerticos',     label: 'Sellos de puertas herméticos.', kind: 'cumple_nocumple_na_obs',
+      { id: 'sellos_hermerticos',     label: 'Sellos de puertas herméticos.', kind: 'bueno_regular_malo_na_nt_obs',
         danoPotencial: 'moderado',
       },
-      { id: 'bisagras_puertas',       label: 'Bisagras de puertas.', kind: 'cumple_nocumple_na_obs',
+      { id: 'bisagras_puertas',       label: 'Bisagras de puertas.', kind: 'bueno_regular_malo_na_nt_obs',
         danoPotencial: 'grave',
       },
-      { id: 'letreros',               label: 'Letreros.', kind: 'cumple_nocumple_na_obs',
+      { id: 'letreros',               label: 'Letreros.', kind: 'bueno_regular_malo_na_nt_obs',
         danoPotencial: 'moderado',
       },
-      { id: 'aletas_seguridad',       label: 'Aletas de seguridad.', kind: 'cumple_nocumple_na_obs',
+      { id: 'aletas_seguridad',       label: 'Aletas de seguridad.', kind: 'bueno_regular_malo_na_nt_obs',
         danoPotencial: 'fatal',
       },
-      { id: 'rodillos',               label: 'Rodillos.', kind: 'cumple_nocumple_na_obs',
+      { id: 'rodillos',               label: 'Ruedas.', kind: 'bueno_regular_malo_na_nt_obs',
         danoPotencial: 'grave',
       },
-      { id: 'escalas_accesos',        label: 'Escalas de accesos.', kind: 'cumple_nocumple_na_obs',
+      { id: 'escalas_accesos',        label: 'Escalas de accesos.', kind: 'bueno_regular_malo_na_nt_obs',
         danoPotencial: 'grave',
       },
-      { id: 'estructura_barrotes',    label: 'Estructura apoya barrotes.', kind: 'cumple_nocumple_na_obs',
+      { id: 'estructura_barrotes',    label: 'Estructura apoya barrotes.', kind: 'bueno_regular_malo_na_nt_obs',
         danoPotencial: 'fatal',
       },
-      { id: 'estado_vigas',           label: 'Estado de vigas.', kind: 'cumple_nocumple_na_obs',
+      { id: 'estado_vigas',           label: 'Estado de vigas.', kind: 'bueno_regular_malo_na_nt_obs',
         danoPotencial: 'fatal',
       },
-      { id: 'estado_general',         label: 'Estado general del contenedor.', kind: 'cumple_nocumple_na_obs',
+      { id: 'estado_general',         label: 'Estado general del contenedor.', kind: 'bueno_regular_malo_na_nt_obs',
         danoPotencial: 'fatal',
       },
     ],

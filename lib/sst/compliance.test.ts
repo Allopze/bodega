@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { calculateCompliance, classifyEfficacy, getAutomaticResultadoFinal } from "./compliance"
+import { calculateCompliance, classifyEfficacy, getAutomaticResultadoFinal, requiresObservation } from "./compliance"
 import type { StatusValue } from "./types"
 
 describe("calculateCompliance", () => {
@@ -52,6 +52,64 @@ describe("calculateCompliance", () => {
     const result = calculateCompliance([])
     expect(result.percentage).toBe(0)
     expect(result.total).toBe(0)
+  })
+
+  // Escala B/R/M: cumple = +1, regular = +0.5, no cumple = 0.
+  it("puntúa 'regular' como medio punto", () => {
+    const result = calculateCompliance([
+      { estado: "cumple" },
+      { estado: "regular" },
+      { estado: "no_cumple" },
+    ])
+    // (1 + 0.5 + 0) / 3
+    expect(result.percentage).toBeCloseTo(50, 10)
+    expect(result.cumplidos).toBe(1)
+    expect(result.regulares).toBe(1)
+    expect(result.noCumplidos).toBe(1)
+    expect(result.total).toBe(3)
+  })
+
+  it("'regular' entra al denominador (a diferencia de 'na')", () => {
+    const soloRegular = calculateCompliance([{ estado: "regular" }, { estado: "regular" }])
+    expect(soloRegular.total).toBe(2)
+    expect(soloRegular.percentage).toBe(50)
+
+    const conNa = calculateCompliance([{ estado: "cumple" }, { estado: "na" }])
+    expect(conNa.total).toBe(1)
+    expect(conNa.percentage).toBe(100)
+  })
+})
+
+describe("estados excluidos del denominador", () => {
+  it("'no_tiene' (NT del Anexo 14) se excluye igual que 'na'", () => {
+    const result = calculateCompliance([
+      { estado: "cumple" },
+      { estado: "no_tiene" },
+      { estado: "na" },
+    ])
+    expect(result.total).toBe(1)
+    expect(result.na).toBe(2)
+    expect(result.percentage).toBe(100)
+  })
+
+  it("un checklist entero en NT/NA no puntúa 0, queda sin base", () => {
+    const result = calculateCompliance([{ estado: "no_tiene" }, { estado: "na" }])
+    expect(result.total).toBe(0)
+    expect(result.percentage).toBe(0)
+  })
+})
+
+describe("requiresObservation", () => {
+  it("exige observación en regular y en todo estado negativo", () => {
+    for (const estado of ["regular", "no_cumple", "no_entregado", "no_apto", "no"] as StatusValue[]) {
+      expect(requiresObservation(estado)).toBe(true)
+    }
+  })
+
+  it("no la exige en estados conformes, N/A ni 'no tiene'", () => {
+    for (const estado of ["cumple", "entregado", "apto", "si", "na", "no_tiene", null] as StatusValue[]) {
+      expect(requiresObservation(estado)).toBe(false)
+    }
   })
 })
 

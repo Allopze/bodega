@@ -2,15 +2,18 @@ import type { ChecklistDefinition, ChecklistSection, ChecklistItem, FieldKind, S
 
 /**
  * Kinds que producen un valor de estado (cumple/no_cumple/na/entregado/etc.).
- * Los kinds text, date, select, multiselect, signature y readonly no contribuyen
- * al cálculo de cumplimiento — no generan un StatusValue comparable.
+ * Los kinds text, textarea, date, select, multiselect, signature y readonly no
+ * contribuyen al cálculo de cumplimiento — no generan un StatusValue comparable.
  */
 const STATUS_KINDS: FieldKind[] = [
   'cumple_nocumple_obs',
   'cumple_nocumple_na_obs',
   'entregado_obs',
   'apto_obs',
-  'si_no_obs'
+  'si_no_obs',
+  'bueno_regular_malo_obs',
+  'bueno_regular_malo_na_obs',
+  'bueno_regular_malo_na_nt_obs'
 ]
 
 export function isStatusKind(kind: FieldKind): boolean {

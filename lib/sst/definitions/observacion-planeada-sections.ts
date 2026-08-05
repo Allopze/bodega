@@ -1,129 +1,65 @@
 import type { ChecklistSection } from '../types'
 
 /**
- * Observación Planeada de Seguridad — módulo 14 (genérica).
+ * Observación Planeada — módulo 14 (Anexo 7, Rev. 01).
  *
- * ⚠️ FUENTE FALTANTE: el markdown `14-observaciones-planeadas.md` no existe
- * en `docx revisado/` (referenciado en el índice como "Anexo 7 Observaciones
- * Planeadas.XLS"). Esta es una plantilla GENÉRICA provisional redactada para
- * habilitar el flujo; confirmar los ítems reales con el cliente antes de
- * considerar cerrada la definición. Ver PLAN_INTEGRACION §5.6 y §14 #4.
+ * TRANSCRIPCIÓN LITERAL de `checklists/Anexo 7 Observaciones Planeadas.XLS`
+ * (hoja "Observacion"). El formulario real NO es una lista de chequeo: no
+ * tiene un solo ítem Cumple / No cumple. Es un relato libre más una tabla de
+ * acciones preventivas. Su estructura completa es:
  *
- * Actividad PDTP 2026: n=41 ("Caminatas de seguridad, levantamiento de
- * inspecciones y observaciones en terreno").
+ *   Quien Observa / Fecha de la observación / Lugar y Trabajo Observado
+ *   → "Describa cualquier procedimiento, método, tarea, etc. que usted
+ *      observó y que piensa debiera considerar un cambio o felicitación."
+ *   → Nombre y Firma Observador | Nombre y Firma trabajador
+ *   → Accion Preventiva | Responsable | Fecha Control   (6 filas)
+ *   → Agregar foto de lo observado
+ *   → "1° COPIA: ENVIAR A ADM. DE CONTRATO (SI NECESITA GESTIÓN)"
  *
- * Patrón B (single-sujeto): una instancia por faena/período.
+ * Qué NO se modela aquí, porque el PDTP ya lo cubre y duplicarlo crearía dos
+ * fuentes de verdad:
+ *   · "Quien Observa"            → `pdtpExecutions.executedByUserId`
+ *   · "Fecha de la observación"  → `pdtpExecutions.executedAt`
+ *   · "Agregar foto"             → `pdtpExecutions.evidenceUrl` / `evidencePhotos`
+ *   · Tabla Acción/Responsable/Fecha Control → plan de acción de la ejecución
+ *     (`pdtpActionPlan`, alta manual con origen='manual'). Los tres campos del
+ *     anexo son exactamente `accion`, `responsable` y `plazo`.
+ *   · Las dos firmas             → `closingAct.signatureRoles`.
  *
- * Estructura: 3 secciones de cumplimiento (condiciones / comportamientos /
- * equipos e instalaciones) + 1 sección de observación libre. Todos los
- * ítems de cumplimiento usan `cumple_nocumple_na_obs` y generan acciones
- * correctivas en línea (`hasActionCorrectiva: true`).
+ * Ninguna sección cuenta para cumplimiento: el formulario no puntúa. La
+ * instancia persiste `porcentajeCumplimiento = null`
+ * (`calculateInstanceCompliance` corta en `applicable.length === 0`), y el
+ * promedio del eje de verificación descarta los nulls, así que no arrastra el
+ * KPI del programa.
+ *
+ * Actividad PDTP 2026: n=39 ("Realizar Observación para corregir desviaciones
+ * de conductas incorrectas sobre normas, procedimientos y/o estándares" —
+ * Sup/JT, mensual). NO es la n=41: esa es la caminata de seguridad y ya tiene
+ * OBSERVACION_MAQUINARIA.
  */
 export const OBSERVACION_PLANEADA_SECTIONS: ChecklistSection[] = [
-  // ============================================================
-  // 1. Condiciones generales del lugar de trabajo
-  // ============================================================
   {
-    id: 'condiciones_lugar_trabajo',
-    title: '1. Condiciones generales del lugar de trabajo',
-    description: 'Evalúe las condiciones físicas y de orden del área observada.',
-    countsForCompliance: true,
-    hasActionCorrectiva: true,
-    items: [
-      { id: 'orden_limpieza',          label: 'Lugares de trabajo limpios, ordenados y libres de obstáculos.', kind: 'cumple_nocumple_na_obs',
-        danoPotencial: 'moderado',
-      },
-      { id: 'pasillos_transito',       label: 'Pasillos de circulación y vías de tránsito despejados y debidamente señalizados.', kind: 'cumple_nocumple_na_obs',
-        danoPotencial: 'grave',
-      },
-      { id: 'senalizacion_riesgos',    label: 'Señalización de riesgos y de uso obligatorio de EPP presente, visible y en buen estado.', kind: 'cumple_nocumple_na_obs',
-        danoPotencial: 'moderado',
-      },
-      { id: 'superficies_estructuras', label: 'Superficies de trabajo, pisos y estructuras en condiciones seguras y sin deterioro.', kind: 'cumple_nocumple_na_obs',
-        danoPotencial: 'grave',
-      },
-      { id: 'iluminacion_ventilacion', label: 'Iluminación y ventilación adecuadas para la tarea que se realiza.', kind: 'cumple_nocumple_na_obs',
-        danoPotencial: 'grave',
-      },
-      { id: 'almacenamiento_materiales', label: 'Materiales, herramientas y productos almacenados de forma segura, estable y ordenada.', kind: 'cumple_nocumple_na_obs',
-        danoPotencial: 'grave',
-      },
-    ],
-  },
-
-  // ============================================================
-  // 2. Comportamiento y prácticas seguras de los trabajadores
-  // ============================================================
-  {
-    id: 'comportamientos_trabajadores',
-    title: '2. Comportamiento y prácticas seguras de los trabajadores',
-    description: 'Observe las conductas y prácticas de los trabajadores durante la caminata.',
-    countsForCompliance: true,
-    hasActionCorrectiva: true,
-    items: [
-      { id: 'uso_epp',               label: 'Los trabajadores utilizan el EPP correspondiente a la tarea y al riesgo del área.', kind: 'cumple_nocumple_na_obs',
-        danoPotencial: 'grave',
-      },
-      { id: 'procedimientos_trabajo', label: 'Se cumplen los procedimientos de trabajo seguro establecidos para la tarea.', kind: 'cumple_nocumple_na_obs',
-        danoPotencial: 'grave',
-      },
-      { id: 'pausa_seguridad',       label: 'Los trabajadores realizan pausa de seguridad y evalúan riesgos antes de iniciar o reiniciar la tarea.', kind: 'cumple_nocumple_na_obs',
-        danoPotencial: 'grave',
-      },
-      { id: 'conducta_preventiva',   label: 'Se observan conductas preventivas, sin exceso de confianza ni actos subestándar.', kind: 'cumple_nocumple_na_obs',
-        danoPotencial: 'grave',
-      },
-      { id: 'reporte_condiciones',   label: 'Los trabajadores reportan condiciones o actos subestándar detectados.', kind: 'cumple_nocumple_na_obs',
-        danoPotencial: 'moderado',
-      },
-    ],
-  },
-
-  // ============================================================
-  // 3. Equipos, herramientas e instalaciones
-  // ============================================================
-  {
-    id: 'equipos_instalaciones',
-    title: '3. Equipos, herramientas e instalaciones',
-    description: 'Verifique el estado y condiciones de equipos, herramientas e instalaciones del área.',
-    countsForCompliance: true,
-    hasActionCorrectiva: true,
-    items: [
-      { id: 'estado_equipos',           label: 'Equipos y máquinas en buen estado de funcionamiento y mantención.', kind: 'cumple_nocumple_na_obs',
-        danoPotencial: 'fatal',
-      },
-      { id: 'proteccion_partes_moviles', label: 'Partes móviles, transmisiones y puntos de operación debidamente protegidos.', kind: 'cumple_nocumple_na_obs',
-        danoPotencial: 'fatal',
-      },
-      { id: 'herramientas_estado',      label: 'Herramientas manuales y eléctricas en buen estado y uso adecuado.', kind: 'cumple_nocumple_na_obs',
-        danoPotencial: 'grave',
-      },
-      { id: 'instalaciones_electricas', label: 'Instalaciones eléctricas, tableros y empalmes en condiciones seguras y protegidos.', kind: 'cumple_nocumple_na_obs',
-        danoPotencial: 'fatal',
-      },
-      { id: 'extintores_acceso',        label: 'Extintores accesibles, señalizados, sin obstáculos y en condiciones de uso.', kind: 'cumple_nocumple_na_obs',
-        danoPotencial: 'grave',
-      },
-      { id: 'servicios_higienicos',     label: 'Servicios higiénicos y áreas de descanso en condiciones adecuadas de aseo y operación.', kind: 'cumple_nocumple_na_obs',
-        danoPotencial: 'moderado',
-      },
-    ],
-  },
-
-  // ============================================================
-  // 4. Observaciones generales
-  // ============================================================
-  {
-    id: 'observaciones_generales',
-    title: '4. Observaciones generales',
-    description: 'Registro libre de hallazgos adicionales, medidas preventivas o compromisos detectados en la caminata.',
+    id: 'observacion',
+    title: 'Observación',
+    description:
+      'El observador es el jefe directo del área. Registra una sola observación planeada por instancia.',
     countsForCompliance: false,
     items: [
       {
-        id: 'observacion_libre',
-        label: 'Observaciones adicionales de la caminata de seguridad',
+        id: 'lugar_trabajo_observado',
+        label: 'Lugar y trabajo observado',
         kind: 'text',
-        placeholder: 'Describa observaciones, medidas preventivas o compromisos detectados…',
+        placeholder: 'Área / puesto y tarea que se observó…',
+        required: true,
+      },
+      {
+        id: 'descripcion',
+        label:
+          'Describa cualquier procedimiento, método, tarea, etc. que usted observó y que piensa debiera considerar un cambio o felicitación',
+        kind: 'textarea',
+        placeholder:
+          'Relate lo observado: qué hacía la persona, cómo lo hacía, qué debería cambiar o qué merece felicitación…',
+        required: true,
       },
     ],
   },

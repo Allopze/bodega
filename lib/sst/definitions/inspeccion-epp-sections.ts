@@ -11,52 +11,58 @@ import type { ChecklistSection } from '../types'
  * filtrado por worksiteId de la ejecución. La cobertura ("% trabajadores con
  * EPP completo") se deriva de instancias completadas / trabajadores de la faena.
  *
- * El markdown 11 es una matriz trabajador × EPP con dos dimensiones (Usa +
- * Estado) por tipo. Decisión lazy-correcta (PLAN_INTEGRACION §5.5): **un ítem
- * por EPP**, `cumple_nocumple_na_obs`, donde `no_cumple` = "no lo usa **o**
- * está en mal estado" y el motivo va en `observacion`. Evita una segunda
- * dimensión y mantiene el % limpio.
+ * El Anexo 3 es una matriz trabajador × EPP con dos dimensiones por tipo:
+ * **Usa** (SI / NO / N/A) y **Estado** (B = BUENO / R = REGULAR / M = MALO).
+ * Decisión vigente (PLAN_INTEGRACION §5.5): **un ítem por EPP** en vez de dos,
+ * para no duplicar el trabajo de terreno — son 10 EPP por trabajador y esto es
+ * multi-sujeto.
  *
- * Excepción: **Bloqueador solar** = `entregado_obs` (se verifica registro de
- * entrega, no estado — igual que la sección EPP de trabajador-nuevo-sections).
+ * Escala `bueno_regular_malo_na_obs`, leída como el Estado del anexo:
+ *   Bueno = lo usa y está en buen estado · Regular = lo usa pero deteriorado
+ *   (puntúa 0.5) · Malo = no lo usa o está inservible · N/A = no aplica al cargo.
+ * El motivo va en `observacion`, obligatoria en Regular y Malo.
  *
- * Normalización (regla §5): Usa Si/No/N/A + Estado B/R/M → cumple/no_cumple/na.
+ * Excepción: **Bloqueador solar** = `entregado_obs` (el anexo pide "Registro",
+ * no "Estado" — igual que la sección EPP de trabajador-nuevo-sections).
+ *
+ * Pendiente de decisión: separar Usa y Estado en dos campos, como el papel.
+ * Duplicaría los ítems de 10 a 20 por trabajador; hoy se mantiene el colapso.
  */
 export const EPP_SECTIONS: ChecklistSection[] = [
   {
     id: 'uso_estado_epp',
     title: 'Uso y estado de EPP por trabajador',
     description:
-      'Para cada EPP: Cumple = lo usa y está en buen estado · No cumple = no lo usa o está en mal estado (detallar en observación y acción correctiva) · N/A = no aplica al cargo. Bloqueador solar verifica registro de entrega.',
+      'Para cada EPP: Bueno = lo usa y está en buen estado · Regular = lo usa pero deteriorado · Malo = no lo usa o está inservible · N/A = no aplica al cargo. Regular y Malo exigen observación. Bloqueador solar verifica registro de entrega.',
     countsForCompliance: true,
     hasActionCorrectiva: true,
     items: [
-      { id: 'zapatos_seguridad',       label: 'Zapatos de seguridad — uso y estado.', kind: 'cumple_nocumple_na_obs',
+      { id: 'zapatos_seguridad',       label: 'Zapatos de seguridad — uso y estado.', kind: 'bueno_regular_malo_na_obs',
         danoPotencial: 'grave',
       },
-      { id: 'lentes_seguridad',        label: 'Lentes de seguridad — uso y estado.', kind: 'cumple_nocumple_na_obs',
+      { id: 'lentes_seguridad',        label: 'Lentes de seguridad — uso y estado.', kind: 'bueno_regular_malo_na_obs',
         danoPotencial: 'grave',
       },
-      { id: 'casco_cubre_cuello',      label: 'Casco / cubre cuello — uso y estado.', kind: 'cumple_nocumple_na_obs',
+      { id: 'casco_cubre_cuello',      label: 'Casco / cubre cuello — uso y estado.', kind: 'bueno_regular_malo_na_obs',
         danoPotencial: 'fatal',
       },
-      { id: 'guantes',                 label: 'Guantes — uso y estado.', kind: 'cumple_nocumple_na_obs',
+      { id: 'guantes',                 label: 'Guantes — uso y estado.', kind: 'bueno_regular_malo_na_obs',
         danoPotencial: 'grave',
       },
-      { id: 'proteccion_auditiva',     label: 'Protección auditiva — uso y estado.', kind: 'cumple_nocumple_na_obs',
+      { id: 'proteccion_auditiva',     label: 'Protección auditiva — uso y estado.', kind: 'bueno_regular_malo_na_obs',
         danoPotencial: 'grave',
       },
-      { id: 'ropa_trabajo',            label: 'Ropa de trabajo — uso y estado.', kind: 'cumple_nocumple_na_obs',
+      { id: 'ropa_trabajo',            label: 'Ropa de trabajo — uso y estado.', kind: 'bueno_regular_malo_na_obs',
         danoPotencial: 'grave',
       },
-      { id: 'chaleco_reflectante',     label: 'Chaleco reflectante — uso y estado.', kind: 'cumple_nocumple_na_obs',
+      { id: 'chaleco_reflectante',     label: 'Chaleco reflectante — uso y estado.', kind: 'bueno_regular_malo_na_obs',
         danoPotencial: 'fatal',
       },
       { id: 'bloqueador_solar',        label: 'Bloqueador solar — registro de entrega.', kind: 'entregado_obs' },
-      { id: 'traje_agua',              label: 'Traje de agua — uso y estado.', kind: 'cumple_nocumple_na_obs',
+      { id: 'traje_agua',              label: 'Traje de agua — uso y estado.', kind: 'bueno_regular_malo_na_obs',
         danoPotencial: 'moderado',
       },
-      { id: 'traje_termico',           label: 'Traje térmico — uso y estado.', kind: 'cumple_nocumple_na_obs',
+      { id: 'traje_termico',           label: 'Traje térmico — uso y estado.', kind: 'bueno_regular_malo_na_obs',
         danoPotencial: 'grave',
       },
     ],

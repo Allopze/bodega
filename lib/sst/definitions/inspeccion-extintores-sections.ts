@@ -70,7 +70,10 @@ export const EXTINTORES_SECTIONS: ChecklistSection[] = [
   {
     id: 'estado_extintor',
     title: '2. Estado del extintor',
-    description: 'Evaluación de condiciones operativas. Marca No cumple ante cualquier desviación y registra la acción correctiva.',
+    // La leyenda del Anexo 2 es "B= BUENO   M= MALO", sin grado intermedio, así
+    // que el par Cumple/No cumple lo representa sin pérdida (a diferencia de los
+    // anexos 3, 13 y 14, que sí tienen Regular y usan la escala B/R/M).
+    description: 'Evaluación de condiciones operativas (B = Bueno / M = Malo del anexo). Marca No cumple ante cualquier desviación, deja observación y registra la acción correctiva.',
     countsForCompliance: true,
     hasActionCorrectiva: true,
     items: [

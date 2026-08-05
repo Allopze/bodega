@@ -6,36 +6,69 @@ import type { StatusValue, ComplianceResult, EfficacyResult, ResultadoEficacia, 
 const POSITIVE_STATUSES: StatusValue[] = ['cumple', 'entregado', 'apto', 'si']
 
 /**
+ * Estados intermedios: puntúan medio punto.
+ *
+ * Regla de puntaje de las escalas B/R/M (Bueno / Regular / Malo) de los anexos
+ * de inspección: cumple = +1, regular = +0.5, no cumple = 0. `regular` sí entra
+ * al denominador — es una respuesta dada, no un N/A.
+ */
+const PARTIAL_STATUSES: StatusValue[] = ['regular']
+
+/** Peso de un estado intermedio en el numerador. */
+export const PARTIAL_STATUS_WEIGHT = 0.5
+
+/**
  * Negative statuses that count as "no cumplidos"
  */
 const NEGATIVE_STATUSES: StatusValue[] = ['no_cumple', 'no_entregado', 'no_apto', 'no']
 
-// Statuses 'na' and null are excluded from compliance (not counted in denominator)
+/**
+ * Estados que salen del denominador: el ítem no se evaluó.
+ * 'na' = no aplica al sujeto · 'no_tiene' = el sujeto no posee el componente
+ * (NT del Anexo 14). Distintos en el papel, idénticos para el puntaje.
+ */
+export const EXCLUDED_STATUSES: StatusValue[] = ['na', 'no_tiene']
+
+export function isExcludedStatus(status: StatusValue): boolean {
+  return EXCLUDED_STATUSES.includes(status)
+}
+
+// 'na', 'no_tiene' y null quedan fuera del cálculo (no cuentan en el denominador)
 
 /**
  * Calculate compliance percentage from a set of responses.
- * Formula: cumplidos / (cumplidos + no_cumplidos) — excludes N/A items.
+ * Formula: (cumplidos + 0.5·regulares) / (cumplidos + regulares + no_cumplidos)
+ * — excludes N/A items.
+ *
+ * `cumplidos` cuenta cabezas (ítems plenamente conformes), no puntaje: el medio
+ * punto de los `regulares` vive sólo en `percentage`, para que los contadores
+ * sigan sumando `cumplidos + regulares + noCumplidos === total`.
  */
 export function calculateCompliance(respuestas: { estado: StatusValue }[]): ComplianceResult {
   let cumplidos = 0
+  let regulares = 0
   let noCumplidos = 0
   let na = 0
 
   for (const r of respuestas) {
     if (POSITIVE_STATUSES.includes(r.estado)) {
       cumplidos++
+    } else if (PARTIAL_STATUSES.includes(r.estado)) {
+      regulares++
     } else if (NEGATIVE_STATUSES.includes(r.estado)) {
       noCumplidos++
-    } else if (r.estado === 'na') {
+    } else if (isExcludedStatus(r.estado)) {
       na++
     }
   }
 
-  const total = cumplidos + noCumplidos
-  const percentage = total > 0 ? (cumplidos / total) * 100 : 0
+  const total = cumplidos + regulares + noCumplidos
+  const puntaje = cumplidos + regulares * PARTIAL_STATUS_WEIGHT
+  const percentage = total > 0 ? (puntaje / total) * 100 : 0
 
   return {
     cumplidos,
+    regulares,
     noCumplidos,
     na,
     total,
@@ -109,8 +142,10 @@ export function getEfficacyColor(classification: ResultadoEficacia): string {
 export function getStatusLabel(status: StatusValue): string {
   const labels: Record<string, string> = {
     cumple: 'Cumple',
+    regular: 'Regular',
     no_cumple: 'No cumple',
     na: 'N/A',
+    no_tiene: 'No tiene',
     entregado: 'Entregado',
     no_entregado: 'No entregado',
     apto: 'Apto',
@@ -133,6 +168,19 @@ export function isPositiveStatus(status: StatusValue): boolean {
  */
 export function isNegativeStatus(status: StatusValue): boolean {
   return NEGATIVE_STATUSES.includes(status)
+}
+
+/**
+ * Un ítem que no resultó plenamente conforme exige justificarse por escrito:
+ * 'regular' y cualquier estado negativo ('no_cumple'/"Malo", 'no_entregado',
+ * 'no_apto', 'no') obligan a dejar observación.
+ *
+ * Sin esto un checklist puede cerrarse con ítems en Regular o Malo y ninguna
+ * traza de por qué, que es justamente lo que un auditor pide primero. 'na' no
+ * entra: no es un incumplimiento, sólo sale del denominador.
+ */
+export function requiresObservation(status: StatusValue): boolean {
+  return PARTIAL_STATUSES.includes(status) || NEGATIVE_STATUSES.includes(status)
 }
 
 /**

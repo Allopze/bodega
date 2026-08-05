@@ -99,6 +99,13 @@ const importTemplateSchema = z.object({
   definitionCode: z.string().min(1),
   kind: z.enum(["inspection", "observation", "audit"]).default("inspection"),
   versionLabel: z.string().trim().min(1).max(80).optional(),
+  /**
+   * Actividades del PDTP (campo `n`) que esta plantilla acredita al completar
+   * un run. Sin esto el conector `onInspectionCompleted` es un no-op y la
+   * inspección nunca llega al programa anual — que era el estado de todas las
+   * plantillas hasta 2026-08-04.
+   */
+  pdtpActivityNumbers: z.array(z.number().int().positive()).max(20).optional(),
 })
 
 /**
@@ -152,11 +159,55 @@ export async function importInspectionTemplate(input: unknown, access: Inspectio
     contentHash,
     status: "draft",
     legalFramework: definition.legalFramework?.join(" · ") ?? null,
+    pdtpActivityNumbers: data.pdtpActivityNumbers?.length ? data.pdtpActivityNumbers : null,
     authorUserId: access.userId,
   }).returning()
   if (!created) throw new Error("No se pudo incorporar la plantilla.")
   await history(db, { entityType: "template", entityId: created.id, changeType: "imported", reason: `Definición ${data.definitionCode} incorporada como plantilla ${versionLabel}`, afterState: created, actorUserId: access.userId })
   return created
+}
+
+/**
+ * Declara qué actividades del PDTP acredita la plantilla. Editable sólo en
+ * borrador: aprobar congela el contenido, y de esto depende qué se acredita.
+ *
+ * No toca `contentHash` a propósito — el hash cubre el cuestionario
+ * (`definitionSnapshot`), no el cableado al programa anual. Cambiar a qué
+ * actividad acredita no altera la evidencia de lo que se preguntó.
+ */
+export async function setInspectionTemplatePdtpActivities(input: unknown, access: InspectionAccess) {
+  const data = z.object({
+    templateId: z.string().min(1),
+    expectedVersion: z.number().int().positive(),
+    pdtpActivityNumbers: z.array(z.number().int().positive()).max(20),
+  }).parse(input)
+  requireAccess(access, "prevention:inspections:manage")
+
+  return db.transaction(async (tx) => {
+    const [template] = await tx.select().from(preventionInspectionTemplates)
+      .where(eq(preventionInspectionTemplates.id, data.templateId)).limit(1)
+    if (!template) throw new Error(NOT_FOUND)
+    if (template.version !== data.expectedVersion) throw new Error("La plantilla cambió mientras la editabas. Recarga y reintenta.")
+    if (template.status !== "draft") throw new Error("Sólo una plantilla en borrador puede cambiar sus actividades PDTP.")
+
+    const now = nowIso()
+    const numbers = data.pdtpActivityNumbers.length > 0 ? [...new Set(data.pdtpActivityNumbers)].sort((a, b) => a - b) : null
+    const [updated] = await tx.update(preventionInspectionTemplates).set({
+      pdtpActivityNumbers: numbers,
+      version: template.version + 1,
+      updatedAt: now,
+    }).where(and(
+      eq(preventionInspectionTemplates.id, template.id),
+      eq(preventionInspectionTemplates.version, data.expectedVersion),
+    )).returning()
+    if (!updated) throw new Error("La plantilla cambió mientras la editabas. Recarga y reintenta.")
+    await history(tx, {
+      entityType: "template", entityId: template.id, changeType: "pdtp_activities_set",
+      reason: numbers ? `Acredita actividades PDTP ${numbers.join(", ")}` : "Sin acreditación PDTP",
+      beforeState: template, afterState: updated, actorUserId: access.userId,
+    })
+    return updated
+  })
 }
 
 /**

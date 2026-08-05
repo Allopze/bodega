@@ -14,8 +14,8 @@ import { EPP_SECTIONS } from './inspeccion-epp-sections'
  */
 export const INSPECCION_EPP: ChecklistDefinition = {
   code: 'inspeccion_epp',
-  version: '01',
-  revisionDate: '2026-07-14',
+  version: '02',
+  revisionDate: '2026-08-04',
   tipo: 'seguimiento',
   title: 'Inspección de Uso y Estado de EPP',
   subtitle: 'Verificación por trabajador — uno por instancia de checklist.',
@@ -30,7 +30,7 @@ export const INSPECCION_EPP: ChecklistDefinition = {
     'Verificar el uso y estado del EPP de cada trabajador, detectando EPP en mal estado o mal uso para su recambio o reinstrucción.',
   frequencySuggested: 'Mensual, por trabajador.',
   evaluationCriteria:
-    'Cada EPP se evalúa como Cumple (lo usa y está en buen estado) / No cumple (no lo usa o está en mal estado) / N/A. Bloqueador solar verifica registro de entrega. Los ítems No cumple generan automáticamente acciones del plan de acción PDTP.',
+    'Escala del anexo: Bueno (lo usa y está en buen estado) / Regular (lo usa pero deteriorado) / Malo (no lo usa o está inservible) / N/A. Bueno suma 1 punto, Regular 0.5 y Malo 0. Regular y Malo exigen observación. Bloqueador solar verifica registro de entrega; los ítems en Malo generan acciones del plan de acción PDTP.',
   sections: EPP_SECTIONS,
   closingAct: {
     title: 'Cierre de inspección de EPP',

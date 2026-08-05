@@ -12,7 +12,15 @@ export type FieldKind =
   | 'entregado_obs'
   | 'apto_obs'
   | 'si_no_obs'
+  /** Escala B/R/M (Anexo 13 Carros): Bueno / Regular / Malo, sin escape. */
+  | 'bueno_regular_malo_obs'
+  /** B/R/M + N/A (Anexo 3 EPP). */
+  | 'bueno_regular_malo_na_obs'
+  /** B/R/M + N/A + NT "no tiene" (Anexo 14 Contenedores). */
+  | 'bueno_regular_malo_na_nt_obs'
   | 'text'
+  /** Texto libre multilínea (relato/descripción). `text` es de una sola línea. */
+  | 'textarea'
   | 'date'
   | 'select'
   | 'multiselect'
@@ -21,8 +29,20 @@ export type FieldKind =
 
 export type StatusValue =
   | 'cumple'
+  /**
+   * Estado intermedio de las escalas B/R/M (Bueno / Regular / Malo) de los
+   * anexos de inspección. Puntúa 0.5 — ver PARTIAL_STATUSES en
+   * `lib/sst/compliance.ts`.
+   */
+  | 'regular'
   | 'no_cumple'
   | 'na'
+  /**
+   * "NT = NO TIENE" del Anexo 14 (Contenedores): el componente no existe en el
+   * sujeto inspeccionado. Distinto de 'na' ("no aplica"), pero puntúa igual —
+   * ambos salen del denominador.
+   */
+  | 'no_tiene'
   | 'entregado'
   | 'no_entregado'
   | 'apto'
@@ -136,6 +156,8 @@ export type ResultadoEficacia =
 
 export interface ComplianceResult {
   cumplidos: number
+  /** Respuestas 'regular' (escala B/R/M). Puntúan 0.5 en `percentage`. */
+  regulares: number
   noCumplidos: number
   na: number
   total: number

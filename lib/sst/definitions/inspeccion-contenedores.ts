@@ -14,8 +14,8 @@ import { CONTENEDORES_SECTIONS } from './inspeccion-contenedores-sections'
  */
 export const INSPECCION_CONTENEDORES: ChecklistDefinition = {
   code: 'inspeccion_contenedores',
-  version: '01',
-  revisionDate: '2026-07-14',
+  version: '02',
+  revisionDate: '2026-08-04',
   tipo: 'seguimiento',
   title: 'Inspección de Contenedores',
   subtitle: 'Verificación por contenedor — uno por instancia de checklist.',
@@ -30,7 +30,7 @@ export const INSPECCION_CONTENEDORES: ChecklistDefinition = {
     'Verificar las condiciones estructurales y de seguridad de cada contenedor, priorizando los ítems críticos (soportes de levante y cadenas de fijación).',
   frequencySuggested: 'Mensual, según cantidad de contenedores de la faena.',
   evaluationCriteria:
-    'Cada ítem se evalúa como Cumple (Bueno) / No cumple (Regular o Malo) / N/A (No aplica o No tiene). El detalle del estado (R vs M) se registra en la observación y define la prioridad de la acción correctiva.',
+    'Escala del anexo: Bueno / Regular / Malo / N/A (no aplica) / No tiene. Bueno suma 1 punto, Regular 0.5 y Malo 0; N/A y No tiene salen del cálculo. Regular y Malo exigen observación y definen la prioridad de la acción correctiva.',
   sections: CONTENEDORES_SECTIONS,
   closingAct: {
     title: 'Cierre de inspección del contenedor',

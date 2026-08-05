@@ -14,8 +14,8 @@ import { CARROS_SECTIONS } from './inspeccion-carros-sections'
  */
 export const INSPECCION_CARROS: ChecklistDefinition = {
   code: 'inspeccion_carros',
-  version: '01',
-  revisionDate: '2026-07-14',
+  version: '02',
+  revisionDate: '2026-08-04',
   tipo: 'seguimiento',
   title: 'Inspección de Carros',
   subtitle: 'Verificación por carro — uno por instancia de checklist.',
@@ -30,7 +30,7 @@ export const INSPECCION_CARROS: ChecklistDefinition = {
     'Verificar el estado de luces, neumáticos, documentación y estructura de cada carro, levantando hallazgos y acciones correctivas.',
   frequencySuggested: 'Mensual, por cada carro.',
   evaluationCriteria:
-    'Cada ítem se evalúa como Cumple (Bueno) / No cumple (Regular o Malo) / N/A. El detalle del estado (R vs M) se registra en la observación. Los ítems No cumple generan automáticamente acciones del plan de acción PDTP.',
+    'Escala del anexo: Bueno / Regular / Malo. Bueno suma 1 punto, Regular 0.5 y Malo 0. Regular y Malo exigen observación. Los ítems en Malo generan automáticamente acciones del plan de acción PDTP.',
   sections: CARROS_SECTIONS,
   closingAct: {
     title: 'Cierre de inspección del carro',

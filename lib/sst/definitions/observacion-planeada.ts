@@ -2,48 +2,59 @@ import type { ChecklistDefinition } from '../types'
 import { OBSERVACION_PLANEADA_SECTIONS } from './observacion-planeada-sections'
 
 /**
- * Observación Planeada de Seguridad — módulo 14 (genérica, provisional).
+ * Observación Planeada — módulo 14 (Anexo 7, Rev. 01).
  *
- * ⚠️ El markdown fuente (Anexo 7) no está disponible en `docx revisado/`.
- * Esta definición es genérica y provisional; confirmar contenido con el
- * cliente. Ver `observacion-planeada-sections.ts` y PLAN_INTEGRACION §5.6.
+ * v02 reemplaza la plantilla genérica provisional de la v01. Aquella se
+ * redactó a ciegas —el Anexo 7 no estaba en `docx revisado/`— e inventó 17
+ * ítems Cumple/No cumple/N/A repartidos en tres secciones de cumplimiento.
+ * El formulario real no tiene ninguno: es un relato libre firmado por
+ * observador y trabajador, más una tabla de acciones preventivas. Ver el
+ * desglose campo por campo en `observacion-planeada-sections.ts`.
  *
- * Se siembra como plantilla de la actividad PDTP n=41 del programa 2026
- * ("Caminatas de seguridad, levantamiento de inspecciones y observaciones
- * en terreno"). Ver `scripts/seed-pdtp-checklists-2026.ts`.
+ * La v01 nunca llegó a instalarse en ninguna actividad (la n=41 quedó con
+ * OBSERVACION_MAQUINARIA), así que no hay instancias llenadas que migrar.
  *
- * Firmas: observador (prevencionista) + acompañante (administrador de
- * contrato / jefe de área).
+ * Patrón B (single-sujeto): una instancia por faena/período.
+ *
+ * Actividad PDTP 2026: n=39, "Realizar Observación para corregir desviaciones
+ * de conductas incorrectas sobre normas, procedimientos y/o estándares"
+ * (Sup, JT — mensual, semana 2; "cada jefe directo en las distintas áreas de
+ * trabajo"). Ver `lib/services/pdtp-adapters/checklist-templates-2026.ts`.
+ *
+ * No puntúa: sin ítems de estado, `porcentajeCumplimiento` queda en null. La
+ * regla de puntaje cumple=1 / regular=0.5 / no cumple=0 no aplica aquí.
  */
 export const OBSERVACION_PLANEADA: ChecklistDefinition = {
   code: 'observacion_planeada',
-  version: '01',
-  revisionDate: '2026-07-14',
+  version: '02',
+  revisionDate: '2026-08-04',
   tipo: 'seguimiento',
-  title: 'Observación Planeada de Seguridad (Caminata de Terreno)',
+  title: 'Observación Planeada',
   subtitle:
-    'Plantilla genérica provisional — contenido pendiente de confirmación con el cliente (módulo 14, fuente Anexo 7 faltante).',
+    'Anexo 7 (Rev. 01). Relato libre de una conducta observada en terreno; las acciones preventivas se levantan en el plan de acción de la ejecución.',
   legalFramework: [
     'Ley 16.744',
     'Ley 21.512 (ex DS 594)',
     'DS 40',
   ],
   applicableTo:
-    'Prevencionista y administrador de contrato durante caminatas de seguridad y observaciones planeadas en terreno.',
+    'Jefe directo del área (supervisor / jefe de terreno) sobre la persona trabajadora observada.',
   objective:
-    'Registrar observaciones planeadas de condiciones, comportamientos y equipos durante caminatas de seguridad, levantando hallazgos y acciones correctivas.',
-  frequencySuggested: 'Mensual o semanal según programación de la actividad.',
+    'Observar y registrar procedimientos, métodos o tareas que ameriten un cambio o una felicitación, corrigiendo desviaciones de conductas respecto de normas, procedimientos y estándares.',
+  frequencySuggested: 'Mensual, por área y jefe directo.',
   evaluationCriteria:
-    'Cada ítem se evalúa como Cumple / No cumple / N/A. Los ítems No cumple generan automáticamente acciones del plan de acción PDTP.',
+    'El formulario no puntúa: es un registro narrativo. Cada acción preventiva acordada se levanta como acción del plan de acción PDTP, con responsable y fecha de control.',
   sections: OBSERVACION_PLANEADA_SECTIONS,
   closingAct: {
-    title: 'Cierre de observación',
+    title: 'Cierre de la observación',
     resultOptions: [
-      { value: 'conforme', label: 'Conforme' },
-      { value: 'con_observaciones', label: 'Con observaciones' },
-      { value: 'no_conforme', label: 'No conforme' },
+      { value: 'felicitacion', label: 'Felicitación (conducta destacada)' },
+      { value: 'requiere_cambio', label: 'Requiere cambio (se acuerdan acciones preventivas)' },
     ],
     hasRestrictions: false,
-    signatureRoles: ['prevencionista', 'jefe_area'],
+    // Anexo 7: "Nombre y Firma Observador" + "Nombre y Firma trabajador".
+    // `jefe_area` = "Supervisor de faena/Jefe de terreno" en SIGNATURE_ROLE_LABELS,
+    // que es el "jefe directo" que la actividad n=39 designa como observador.
+    signatureRoles: ['jefe_area', 'trabajador'],
   },
 }
