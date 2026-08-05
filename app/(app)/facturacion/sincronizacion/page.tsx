@@ -1,8 +1,11 @@
 import type { Metadata } from "next"
 import { redirect } from "next/navigation"
+import { Info } from "@phosphor-icons/react/dist/ssr"
 import { auth } from "@/lib/auth/auth"
 import { can } from "@/lib/auth/can"
 import { getAllBillingProviders, isProviderEnabled } from "@/lib/services/billing/providers"
+import type { BillingProviderCapabilities } from "@/lib/services/billing/providers/types"
+import { deriveProviderStatus, readStoredHealth } from "@/lib/services/billing/health"
 import { listRecentSyncRuns, getLastSuccessfulRuns, todayIso } from "@/lib/services/billing/queries"
 import { readSalesSyncConfig } from "@/lib/services/billing/config"
 import {
@@ -16,6 +19,7 @@ import { PageContainer } from "@/components/ui/page-container"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { Badge } from "@/components/ui/badge"
 import { SyncControls } from "./sync-controls"
+import { ProviderHealthButton } from "./provider-health-button"
 
 export const dynamic = "force-dynamic"
 export const metadata: Metadata = { title: "Sincronización de facturación" }
@@ -23,11 +27,16 @@ export const metadata: Metadata = { title: "Sincronización de facturación" }
 /**
  * Centro de sincronización.
  *
- * Muestra los proveedores configurados, sus capacidades reales y el historial de
- * corridas con su desglose. Un error de sincronización se ve acá: nunca se
- * oculta ni se degrada a "sin datos".
+ * **Esta pantalla no llama a ningún servicio externo al renderizar.** Un
+ * `healthCheck` cuesta un scraping del portal (timeout de 120 s) o un login real
+ * contra Chipax; hacerlo en cada carga significaba golpear ambos servicios por
+ * cada visita, con la página colgada y con riesgo de throttle. Lo que se muestra
+ * es el **último estado guardado**, rotulado con su fecha, y la comprobación se
+ * dispara a mano desde cada tarjeta.
  *
- * El diagnóstico no expone secretos — ni credenciales, ni cuerpos de respuesta.
+ * Solo aparecen acá los proveedores que **sincronizan** algo. La carga manual no
+ * es una fuente de sincronización —es tipear una factura a mano— así que se
+ * explica aparte en vez de fingir que es un proveedor degradado.
  */
 export default async function BillingSyncPage() {
   const session = await auth()
@@ -36,16 +45,16 @@ export default async function BillingSyncPage() {
     redirect(`/forbidden?desde=${encodeURIComponent("/facturacion")}`)
   }
 
-  const providers = getAllBillingProviders()
-  const [health, runs, lastSuccess] = await Promise.all([
-    Promise.all(providers.map(async (provider) => ({
-      id: provider.id,
-      label: provider.label,
-      capabilities: provider.capabilities,
-      enabled: isProviderEnabled(provider.id),
-      configured: await provider.isConfigured(),
-      health: await provider.healthCheck(),
-    }))),
+  const syncProviders = getAllBillingProviders().filter((provider) =>
+    provider.capabilities.canListIssuedInvoices ||
+    provider.capabilities.canListReceivedInvoices ||
+    provider.capabilities.canListBankTransactions ||
+    provider.id === "chipax",   // se muestra aunque aún no declare capacidades
+  )
+
+  const [stored, configured, runs, lastSuccess] = await Promise.all([
+    readStoredHealth(syncProviders.map((provider) => provider.id)),
+    Promise.all(syncProviders.map((provider) => provider.isConfigured())),
     listRecentSyncRuns(30),
     getLastSuccessfulRuns(),
   ])
@@ -53,11 +62,24 @@ export default async function BillingSyncPage() {
   const salesConfig = readSalesSyncConfig()
   const lastSuccessMap = new Map(lastSuccess.map((row) => [`${row.provider}:${row.scope}`, row.finishedAt]))
 
+  const cards = syncProviders.map((provider, index) => ({
+    id: provider.id,
+    label: provider.label,
+    capabilities: provider.capabilities,
+    enabled: isProviderEnabled(provider.id),
+    configured: configured[index]!,
+    status: deriveProviderStatus({
+      enabled: isProviderEnabled(provider.id),
+      configured: configured[index]!,
+      stored: stored[provider.id] ?? null,
+    }),
+  }))
+
   return (
     <PageContainer>
       <PageHeader
         title="Sincronización de facturación"
-        description="Proveedores de datos de facturación, su estado real y el historial de corridas. Sincronizar es una acción explícita: nada se importa solo por abrir esta pantalla."
+        description="Proveedores de datos de facturación y el historial de corridas. Sincronizar es una acción explícita: nada se importa solo por abrir esta pantalla, y el estado de cada proveedor se comprueba a pedido."
         breadcrumb={
           <Breadcrumbs items={[
             { label: "Inicio", href: "/dashboard" },
@@ -70,49 +92,54 @@ export default async function BillingSyncPage() {
       {/* ── Proveedores ──────────────────────────────────────────────────── */}
       <section aria-labelledby="proveedores-titulo" className="space-y-3">
         <h2 id="proveedores-titulo" className="text-sm font-semibold text-[var(--color-text)]">
-          Proveedores configurados
+          Proveedores de sincronización
         </h2>
 
-        <div className="grid gap-3 lg:grid-cols-3">
-          {health.map((provider) => (
+        <div className="grid gap-3 lg:grid-cols-2">
+          {cards.map((card) => (
             <article
-              key={provider.id}
-              className="rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-[var(--shadow-card)]"
+              key={card.id}
+              className="flex flex-col rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-[var(--shadow-card)]"
             >
-              <header className="flex items-start justify-between gap-2">
-                <div>
-                  <h3 className="text-sm font-semibold text-[var(--color-text)]">{provider.label}</h3>
-                  <p className="text-xs text-[var(--color-text-muted)]">
-                    {provider.enabled ? "Habilitado" : "Deshabilitado por configuración"}
-                    {provider.enabled && (provider.configured ? " · configurado" : " · sin configurar")}
-                  </p>
-                </div>
-                <Badge variant={provider.health.ok ? "success" : provider.enabled ? "danger" : "neutral"}>
-                  {provider.health.ok ? "Operativo" : provider.enabled ? "Con problema" : "Inactivo"}
-                </Badge>
+              <header className="flex items-start justify-between gap-3">
+                <h3 className="text-sm font-semibold text-[var(--color-text)]">{card.label}</h3>
+                <Badge variant={card.status.tone}>{card.status.label}</Badge>
               </header>
 
-              <p className="mt-2 text-xs text-[var(--color-text-muted)]">{provider.health.detail}</p>
+              <p className="mt-1.5 text-xs text-[var(--color-text-muted)]">{card.status.detail}</p>
 
-              <ul className="mt-3 space-y-0.5 text-xs text-[var(--color-text-subtle)]">
-                <Capability enabled={provider.capabilities.canListIssuedInvoices}>Facturas emitidas</Capability>
-                <Capability enabled={provider.capabilities.canListReceivedInvoices}>Facturas recibidas</Capability>
-                <Capability enabled={provider.capabilities.canRetrieveXml}>XML del documento</Capability>
-                <Capability enabled={provider.capabilities.canListBankTransactions}>Movimientos bancarios</Capability>
-                <Capability enabled={provider.capabilities.canListPayments}>Pagos</Capability>
-              </ul>
+              {/* Solo lo que el proveedor SÍ puede hacer. Lo que no, en una
+                  línea apagada: cinco líneas tachadas eran ruido, y el tachado
+                  se anuncia como "texto eliminado" en lector de pantalla. */}
+              <Capabilities capabilities={card.capabilities} />
 
-              <p className="mt-3 text-xs text-[var(--color-text-subtle)]">
-                Última corrida exitosa (ventas):{" "}
-                {formatDateTime(lastSuccessMap.get(`${provider.id}:sales_invoices`) ?? null)}
-              </p>
+              <dl className="mt-3 space-y-0.5 border-t border-[var(--color-border)] pt-2 text-xs text-[var(--color-text-subtle)]">
+                <div className="flex justify-between gap-2">
+                  <dt>Última corrida exitosa (ventas)</dt>
+                  <dd>{formatDateTime(lastSuccessMap.get(`${card.id}:sales_invoices`) ?? null)}</dd>
+                </div>
+                <div className="flex justify-between gap-2">
+                  <dt>Estado comprobado</dt>
+                  <dd>{card.status.checkedAt ? formatDateTime(card.status.checkedAt) : "nunca"}</dd>
+                </div>
+              </dl>
 
-              <p className="text-xs text-[var(--color-text-subtle)]">
-                Verificado: {formatDateTime(provider.health.checkedAt)}
-              </p>
+              <div className="mt-3 flex items-center justify-end">
+                <ProviderHealthButton
+                  provider={card.id}
+                  label={card.label}
+                  disabled={!card.configured}
+                />
+              </div>
             </article>
           ))}
         </div>
+
+        <p className="flex items-start gap-1.5 text-xs text-[var(--color-text-subtle)]">
+          <Info size={13} className="mt-0.5 shrink-0" aria-hidden />
+          Las facturas también pueden cargarse a mano o importando su XML, sin depender de ningún
+          proveedor externo. Esa vía siempre está disponible y no aparece acá porque no se sincroniza.
+        </p>
       </section>
 
       {/* ── Ejecución manual ─────────────────────────────────────────────── */}
@@ -120,9 +147,9 @@ export default async function BillingSyncPage() {
         defaultPeriod={todayIso().slice(0, 7)}
         historyFloor={salesConfig.historyFloor}
         cronEnabled={salesConfig.enabled}
-        providers={health
-          .filter((provider) => provider.enabled && provider.capabilities.canListIssuedInvoices)
-          .map((provider) => ({ id: provider.id, label: provider.label, configured: provider.configured }))}
+        providers={cards
+          .filter((card) => card.enabled && card.capabilities.canListIssuedInvoices)
+          .map((card) => ({ id: card.id, label: card.label, configured: card.configured }))}
       />
 
       {/* ── Historial ────────────────────────────────────────────────────── */}
@@ -204,10 +231,37 @@ export default async function BillingSyncPage() {
   )
 }
 
-function Capability({ enabled, children }: { enabled: boolean; children: React.ReactNode }) {
+/** Capacidades en positivo; lo que falta se resume en una línea. */
+function Capabilities({ capabilities }: { capabilities: BillingProviderCapabilities }) {
+  const CATALOG: [keyof BillingProviderCapabilities, string][] = [
+    ["canListIssuedInvoices", "facturas emitidas"],
+    ["canListReceivedInvoices", "facturas recibidas"],
+    ["canRetrieveXml", "XML del documento"],
+    ["canListBankTransactions", "movimientos bancarios"],
+    ["canListPayments", "pagos"],
+  ]
+
+  const can = CATALOG.filter(([key]) => capabilities[key]).map(([, label]) => label)
+  const cannot = CATALOG.filter(([key]) => !capabilities[key]).map(([, label]) => label)
+
   return (
-    <li className={enabled ? "text-[var(--color-text-muted)]" : "text-[var(--color-text-subtle)] line-through"}>
-      {enabled ? "✓" : "✕"} {children}
-    </li>
+    <div className="mt-2.5 text-xs">
+      {can.length > 0 ? (
+        <p className="text-[var(--color-text)]">
+          <span className="text-[var(--color-success-ink)]">✓</span> Entrega {joinEs(can)}.
+        </p>
+      ) : (
+        <p className="text-[var(--color-text-muted)]">Todavía no entrega ningún dato.</p>
+      )}
+      {cannot.length > 0 && can.length > 0 && (
+        <p className="mt-0.5 text-[var(--color-text-subtle)]">No entrega {joinEs(cannot)}.</p>
+      )}
+    </div>
   )
+}
+
+/** "a, b y c" — una coma de más se nota, y esto se lee en voz alta. */
+function joinEs(items: string[]): string {
+  if (items.length <= 1) return items[0] ?? ""
+  return `${items.slice(0, -1).join(", ")} y ${items.at(-1)}`
 }

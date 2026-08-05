@@ -18,6 +18,7 @@ import { logger } from "@/lib/logger"
 import { recordInvoiceEvent } from "@/lib/services/billing/invoices"
 import { syncBillingInvoices, currentPeriod } from "@/lib/services/billing/sync"
 import { getBillingProvider } from "@/lib/services/billing/providers"
+import { writeStoredHealth } from "@/lib/services/billing/health"
 import type { BillingProviderId } from "@/db/schema"
 
 export interface ActionResult {
@@ -106,17 +107,30 @@ export async function triggerBillingSyncAction(input: unknown): Promise<ActionRe
   }
 }
 
-/** Diagnóstico de un proveedor, sin secretos. */
+/**
+ * Diagnóstico de un proveedor, sin secretos.
+ *
+ * Es la **única** vía por la que se llama al servicio externo para comprobar
+ * salud. La pantalla no lo hace al renderizar: muestra el resultado guardado
+ * acá. Un `healthCheck` cuesta un scraping del portal o un login real, así que
+ * no puede dispararse solo porque alguien abrió una página.
+ */
 export async function checkProviderHealthAction(provider: BillingProviderId): Promise<ActionResult> {
   const { error } = await guardPermission("billing:manage_sync")
   if (error) return error
 
   try {
     const health = await getBillingProvider(provider).healthCheck()
+    await writeStoredHealth(provider, health)
     revalidatePath("/facturacion/sincronizacion")
     return { ok: health.ok, message: health.detail }
   } catch (err) {
-    return { ok: false, message: err instanceof Error ? err.message : "No se pudo consultar el proveedor" }
+    const message = err instanceof Error ? err.message : "No se pudo consultar el proveedor"
+    // Un fallo inesperado también es un estado: se guarda para que la pantalla
+    // no siga mostrando un "operativo" viejo que ya no es cierto.
+    await writeStoredHealth(provider, { ok: false, detail: message, checkedAt: new Date().toISOString() })
+    revalidatePath("/facturacion/sincronizacion")
+    return { ok: false, message }
   }
 }
 

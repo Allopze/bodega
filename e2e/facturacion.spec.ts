@@ -117,9 +117,45 @@ test.describe("Facturación — centro de sincronización", () => {
     await expect(page.getByRole("heading", { name: "FacturaEnLínea", level: 3 })).toBeVisible()
     await expect(page.getByRole("heading", { name: "Chipax", level: 3 })).toBeVisible()
 
-    // Chipax no puede aparecer como operativo: su contrato no es legible.
+    // Chipax no puede aparecer como operativo: su contrato de datos no es legible.
     const chipax = page.locator("article").filter({ hasText: "Chipax" }).first()
-    await expect(chipax.getByText(/Inactivo|Con problema/)).toBeVisible()
+    await expect(chipax.getByText(/Inactivo|Sin configurar|Con problema/)).toBeVisible()
+  })
+
+  test("la carga manual no se presenta como un proveedor de sincronización", async ({ page }) => {
+    await login(page)
+    await page.goto("/facturacion/sincronizacion")
+
+    // No es una fuente que se sincronice: mostrarla con ficha de proveedor la
+    // hacía parecer un proveedor averiado.
+    await expect(page.getByRole("heading", { name: "Carga manual", level: 3 })).toHaveCount(0)
+    await expect(page.getByText(/pueden cargarse a mano o importando su XML/i)).toBeVisible()
+  })
+
+  test("sin credenciales, un proveedor se marca «Sin configurar» y no como falla", async ({ page }) => {
+    await login(page)
+    await page.goto("/facturacion/sincronizacion")
+
+    const fel = page.locator("article").filter({ hasText: "FacturaEnLínea" }).first()
+    // El entorno e2e no tiene credenciales del portal: eso es una tarea
+    // pendiente, no una caída.
+    await expect(fel.getByText("Sin configurar")).toBeVisible()
+    await expect(fel.getByText(/no es una falla/i)).toBeVisible()
+    // Y sin credenciales no tiene sentido ofrecer la comprobación.
+    await expect(fel.getByRole("button", { name: "Probar conexión" })).toBeDisabled()
+  })
+
+  test("la comprobación de conexión es por proveedor y a pedido", async ({ page }) => {
+    await login(page)
+    await page.goto("/facturacion/sincronizacion")
+
+    // Un botón dentro de cada tarjeta, no un enlace suelto entre los controles
+    // de sincronización: la comprobación es por proveedor.
+    const buttons = page.getByRole("button", { name: "Probar conexión" })
+    expect(await buttons.count()).toBeGreaterThan(1)
+
+    // Nunca se comprobó nada todavía, y la pantalla lo dice en vez de fingir.
+    await expect(page.getByText("nunca").first()).toBeVisible()
   })
 
   test("el diagnóstico no expone credenciales", async ({ page }) => {
@@ -129,7 +165,8 @@ test.describe("Facturación — centro de sincronización", () => {
     const body = (await page.textContent("body")) ?? ""
     expect(body).not.toMatch(/clave=/i)
     expect(body).not.toMatch(/rut_usr/i)
-    expect(body).not.toMatch(/CHIPAX_LOGIN_PAYLOAD/i)
+    expect(body).not.toMatch(/secret_key/i)
+    expect(body).not.toMatch(/CHIPAX_SECRET_KEY/i)
   })
 })
 

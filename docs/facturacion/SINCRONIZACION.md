@@ -13,6 +13,43 @@
 | **Independiente de la sesión web** | No lee la sesión; el actor se pasa como parámetro. Por eso el cron funciona igual. |
 | **Tolerante a fallos parciales** | Un documento que falla no aborta la corrida: se cuenta y se reporta. |
 
+## Estado de los proveedores: comprobación bajo demanda
+
+La pantalla **no llama a ningún servicio externo al renderizar**. Un
+`healthCheck()` cuesta un scraping real del portal (timeout 120 s) o un login
+real contra Chipax; ejecutarlo en cada carga significaba golpear ambos servicios
+por cada visita, con la página colgada mientras tanto y con riesgo de throttle o
+bloqueo de cuenta.
+
+En su lugar:
+
+- **«Probar conexión»**, en la tarjeta de cada proveedor, ejecuta la
+  comprobación y **persiste** el resultado en `system_settings`
+  (`billing.health.<proveedor>`): solo `ok`, un detalle ya redactado y la fecha.
+  Nunca credenciales.
+- La pantalla muestra ese último estado **rotulado con su fecha**. Un estado de
+  hace una hora, dicho como tal, es más honesto y muchísimo más barato que uno
+  fresco que nadie pidió.
+
+### Los cinco estados posibles
+
+| Estado | Cuándo | Tono |
+|---|---|---|
+| **Inactivo** | Apagado por feature flag | neutro |
+| **Sin configurar** | Habilitado pero sin credenciales | advertencia |
+| **Sin comprobar** | Configurado, nadie probó la conexión todavía | neutro |
+| **Operativo** | Última comprobación exitosa | éxito |
+| **Con problema** | Última comprobación fallida | peligro |
+
+**«Sin configurar» no es «con problema».** Un proveedor que nunca se configuró
+tiene una tarea pendiente, no una falla; pintarlo de rojo junto a una caída real
+enseña a ignorar el rojo. Los cinco estados se distinguen por **texto**, no solo
+por color (verificado en `health.test.ts`).
+
+La carga manual **no aparece** en esta grilla: no es una fuente que se
+sincronice, sino la vía para tipear una factura o importar su XML. Se menciona
+aparte para no hacerla pasar por un proveedor degradado.
+
 ## Formas de ejecutarla
 
 ### Automática (cron)

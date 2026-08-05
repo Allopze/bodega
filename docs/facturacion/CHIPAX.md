@@ -1,77 +1,110 @@
 # Chipax
 
-## Estado: NO implementado. Arquitectura lista, contrato no legible.
+## Estado: autenticación VERIFICADA e implementada. Operaciones de datos, no.
 
-## Qué se verificó (2026-08-04, en vivo)
+## Lo que sí quedó verificado (2026-08-05, contra la API real)
 
 ```
-GET  https://api.chipax.com/v2/swagger-docs/            → 200  Swagger UI estático
-GET  .../swagger-docs/swagger-initializer.js            → url: "https://petstore.swagger.io/v2/swagger.json"
-GET  https://api.chipax.com/v2/swagger.json             → 401  {"message":"Unauthorized"}
-GET  https://api.chipax.com/v2/api-docs                 → 401
-GET  https://api.chipax.com/v2/openapi.json             → 401
-GET  https://api.chipax.com/v2/docs.json                → 401
-POST https://api.chipax.com/v2/login   (cuerpo vacío)   → 400  {"error":"Parámetros inválidos."}
+POST https://api.chipax.com/v2/login   {}                      → 400  {"error":"Parámetros inválidos."}
+POST https://api.chipax.com/v2/login   {usuario, clave}        → 400  {"error":"Parámetros inválidos."}   ← control
+POST https://api.chipax.com/v2/login   {app_id, secret_key}    → 401  {"error":"Credenciales inválidas"}
 ```
 
-Dos hechos:
+**El 401 frente al 400 del control es la prueba.** Con `{app_id, secret_key}` el
+servidor aceptó el esquema del cuerpo y solo rechazó los *valores*; con otros
+nombres de campo ni siquiera llega a evaluarlos. Eso deja fijado, sin adivinar:
 
-1. El Swagger UI publicado **no está configurado**: su initializer apunta al
-   petstore de ejemplo, no al contrato de Chipax.
-2. El documento OpenAPI real **está detrás de autenticación** (401). El endpoint
-   de login existe y valida parámetros, pero sin credenciales no se puede leer.
+| Elemento | Valor verificado |
+|---|---|
+| Método y ruta | `POST /login` |
+| URL base | `https://api.chipax.com/v2` |
+| Cuerpo | `{ "app_id": …, "secret_key": … }` — exactamente esos dos campos |
 
-## Por qué no se implementó igual
+`login()` está implementado con esa forma exacta en
+`lib/services/billing/providers/chipax.ts`.
 
-Escribir rutas, nombres de filtros, forma de paginación o esquemas de respuesta
-sin leer el contrato sería **inventarlos**. En una integración financiera eso
-produce exactamente el fallo que hay que evitar: código que parece funcionar,
-falla silenciosamente contra la API real, y cuyo error se descubre cuando las
-cifras no cuadran.
+## Lo que sigue sin verificar
 
-Por eso `ChipaxProvider` declara **todas sus capacidades en `false`** y su
-`healthCheck` reporta el bloqueo en vez de fingir salud. Cualquier intento de
-usarlo falla ruidosamente en el backend (`assertUsable`), no devuelve listas
-vacías que la UI mostraría como "no hay facturas".
+```
+GET  https://api.chipax.com/v2/swagger.json   → 401
+GET  https://api.chipax.com/v2/api-docs       → 401
+GET  https://api.chipax.com/v2/openapi.json   → 401
+GET  .../swagger-docs/swagger-initializer.js  → url: "https://petstore.swagger.io/v2/swagger.json"
+```
 
-## Qué está listo
+El Swagger UI publicado **no está configurado** (apunta al petstore de ejemplo) y
+el documento OpenAPI real está detrás de autenticación. Por lo tanto no se conoce:
 
-- `lib/services/billing/providers/chipax.ts` — adaptador con capacidades,
-  configuración y diagnóstico.
-- `lib/services/billing/config.ts::readChipaxConfig` — flags y variables.
-- Variables documentadas en `.env.example`, sin valores.
-- Modelo de datos preparado: `billing_bank_transactions` y `billing_external_refs`
-  ya aceptan `provider = 'chipax'`.
-- El motor de conciliación ya consume movimientos bancarios de cualquier fuente.
-- Pruebas: `providers.test.ts` verifica que Chipax no declare capacidades ni se
-  considere configurado; `sync-integration.test.ts` demuestra que dos fuentes
-  distintas describen la misma factura sin duplicarla.
+- **La forma de la respuesta exitosa del login**: qué campo trae el token.
+- **El esquema de seguridad**: nombre y formato de la cabecera de autorización.
+- **Ninguna ruta de datos**: DTE de venta y compra, cartolas, gastos, clientes,
+  con sus filtros y su paginación.
 
-## Qué falta para activarlo
+Por eso el proveedor **no declara ninguna capacidad de datos** y
+`assertUsable()` falla ruidosamente si algo intenta pedirle facturas.
 
-1. **Credenciales de API** en `CHIPAX_LOGIN_PAYLOAD_JSON` (gestor de secretos,
-   nunca el repositorio). Chipax las entrega según su documentación de ayuda.
-2. **Leer el contrato vigente** con esas credenciales y registrar, por operación:
-   servidor (bloque `servers`), esquema de seguridad, método, ruta, parámetros
-   requeridos, cuerpo, respuesta y mecanismo de paginación.
-3. **Implementar** `listIssuedInvoices` y/o `listBankTransactions` con tipos
-   derivados del contrato, y activar **solo** esas capacidades.
-4. Poner `CHIPAX_API_BASE_URL` con el valor del bloque `servers` (no asumirlo).
-5. Encender `BILLING_CHIPAX_ENABLED=true` **y** `CHIPAX_CONTRACT_VERIFIED=true`.
-   Son dos interruptores distintos a propósito: tener la credencial no autoriza a
-   adivinar rutas.
+## El descubridor: "Probar conexión"
 
-## Reglas para cuando se active
+Con credenciales cargadas, el botón **Probar conexión** de
+`/facturacion/sincronizacion` ejecuta el login real y reporta **los nombres de
+los campos de la respuesta, nunca sus valores**:
+
+> *Autenticación correcta. La respuesta trae los campos: token, expiresIn.*
+
+Ese es exactamente el dato que falta para identificar dónde viene el token y
+completar el esquema de seguridad — sin exponerlo en pantalla, en logs ni en la
+auditoría. Es el siguiente paso concreto para desbloquear el resto.
+
+## Configuración
+
+```bash
+CHIPAX_APP_ID=                 # credencial de aplicación
+CHIPAX_SECRET_KEY=             # secreto de aplicación
+CHIPAX_API_BASE_URL=           # vacío → https://api.chipax.com/v2 (verificado)
+CHIPAX_OPENAPI_URL=https://api.chipax.com/v2/swagger-docs/
+CHIPAX_REQUEST_TIMEOUT_MS=30000
+
+BILLING_CHIPAX_ENABLED=false   # feature flag del proveedor
+CHIPAX_CONTRACT_VERIFIED=false # ← interruptor DISTINTO, ver abajo
+```
+
+Guardar `CHIPAX_APP_ID` y `CHIPAX_SECRET_KEY` en un gestor de secretos. Nunca en
+el repositorio, nunca con prefijo `NEXT_PUBLIC_`.
+
+### Por qué son dos interruptores y no uno
+
+`BILLING_CHIPAX_ENABLED` habilita el proveedor. `CHIPAX_CONTRACT_VERIFIED`
+declara que alguien **leyó el contrato de datos** y completó las operaciones de
+lectura en el adaptador.
+
+Están separados a propósito: **autenticarse no autoriza a adivinar rutas**. Hoy
+lo primero funciona y lo segundo no, y el módulo tiene que poder distinguirlo.
+
+## Pasos para activarlo del todo
+
+1. Cargar `CHIPAX_APP_ID` y `CHIPAX_SECRET_KEY`.
+2. **Probar conexión** desde el centro de sincronización → anotar los campos que
+   devuelve la respuesta.
+3. Con el token en mano, leer el contrato OpenAPI (`GET /v2/swagger.json` con la
+   cabecera de autorización correspondiente) y registrar, por operación: método,
+   ruta, parámetros requeridos, cuerpo, respuesta y mecanismo de paginación.
+4. Implementar `listIssuedInvoices` y/o `listBankTransactions` con tipos
+   derivados del contrato, y activar **solo** esas capacidades en
+   `CHIPAX_CAPABILITIES`.
+5. `BILLING_CHIPAX_ENABLED=true` **y** `CHIPAX_CONTRACT_VERIFIED=true`.
+
+## Reglas que siguen vigentes al activarlo
 
 - **Solo lectura.** `canCreateInvoices` y `canCreateExpenses` no se activan sin
   una decisión de negocio explícita y documentada.
-- El token vive **solo en el backend**, en memoria o almacenamiento temporal
-  seguro. Nunca en el cliente, nunca en un log.
+- El token vive **solo en el backend**. Hoy `login()` ni siquiera lo devuelve:
+  mientras no haya operaciones de datos, exponerlo solo agrega superficie de fuga.
 - Ante `401`: reautenticar **una** vez y repetir **una** consulta idempotente. Un
   segundo `401` detiene el flujo.
-- Funcionamiento **en paralelo** con FacturaEnLínea durante un período controlado:
-  ambas fuentes describen la misma factura y la pantalla de detalle muestra las
-  diferencias. Recién con esa comparación tiene sentido evaluar una migración.
+- **Funcionamiento en paralelo** con FacturaEnLínea durante un período
+  controlado: ambas fuentes describen la misma factura y la pantalla de detalle
+  muestra las diferencias. Recién con esa comparación tiene sentido evaluar una
+  migración.
 - Las cuentas bancarias se guardan **enmascaradas**; el número completo no entra
   a la base.
 

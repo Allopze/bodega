@@ -25,7 +25,7 @@ facturar, qué se facturó, qué se cobró y qué sigue pendiente.
 | Emitir documentos tributarios (DTE) | La emisión sigue siendo manual en el portal. Aprobar una propuesta **no** emite nada. |
 | Aceptar o rechazar documentos recibidos (Ley 19.983) | Tiene efecto tributario; requiere decisión y autorización expresas. |
 | Contabilidad, libro de compras/ventas oficial, declaraciones | Eso vive en los sistemas contables. |
-| Escribir en Chipax | La integración es de solo lectura y hoy está deshabilitada. |
+| Escribir en Chipax | La integración será de solo lectura. Hoy solo la **autenticación** está implementada y verificada; las rutas de datos siguen sin contrato legible. |
 | Reemplazar el módulo de Compras | Las facturas de proveedor siguen en `/compras`. Acá se separan por `direction`. |
 | Confirmar un pago automáticamente | Una coincidencia de monto no es un pago. |
 

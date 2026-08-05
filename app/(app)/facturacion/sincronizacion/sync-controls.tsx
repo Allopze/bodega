@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "@/lib/toast"
-import { triggerBillingSyncAction, checkProviderHealthAction } from "../actions"
+import { triggerBillingSyncAction } from "../actions"
 import type { BillingProviderId } from "@/db/schema"
 
 /**
@@ -62,17 +62,6 @@ export function SyncControls({
     })
   }
 
-  function checkHealth() {
-    if (!provider) return
-    startTransition(async () => {
-      const result = await checkProviderHealthAction(provider)
-      setLastResult(result.message)
-      if (result.ok) toast.success(result.message)
-      else toast.error(result.message)
-      router.refresh()
-    })
-  }
-
   if (providers.length === 0) {
     return (
       <section className="rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
@@ -127,11 +116,14 @@ export function SyncControls({
           />
         </label>
 
+        {/* Simular antes que Sincronizar: es el camino seguro y va primero.
+            Un botón deshabilitado se ve deshabilitado — nada de un primario
+            apagado que no se lee ni como activo ni como bloqueado. */}
         <button
           type="button"
           disabled={isPending || !selected?.configured}
           onClick={() => execute(true)}
-          className="rounded-[var(--radius-md)] border border-[var(--color-border)] px-3 py-2 text-sm font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-2)] disabled:opacity-60"
+          className="rounded-[var(--radius-md)] border border-[var(--color-border)] px-3 py-2 text-sm font-medium text-[var(--color-text)] transition-colors duration-[var(--duration-fast)] hover:bg-[var(--color-surface-2)] disabled:cursor-not-allowed disabled:opacity-50"
         >
           Simular
         </button>
@@ -140,24 +132,16 @@ export function SyncControls({
           type="button"
           disabled={isPending || !selected?.configured}
           onClick={() => execute(false)}
-          className="rounded-[var(--radius-md)] bg-[var(--color-primary)] px-3 py-2 text-sm font-medium text-[var(--color-primary-contrast)] disabled:opacity-60"
+          className="rounded-[var(--radius-md)] bg-[var(--color-primary)] px-3 py-2 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors duration-[var(--duration-fast)] disabled:cursor-not-allowed disabled:bg-[var(--color-surface-2)] disabled:text-[var(--color-text-subtle)]"
         >
           {isPending ? "Ejecutando…" : "Sincronizar"}
-        </button>
-
-        <button
-          type="button"
-          disabled={isPending}
-          onClick={checkHealth}
-          className="rounded-[var(--radius-md)] px-3 py-2 text-sm text-[var(--color-text-muted)] underline underline-offset-2 disabled:opacity-60"
-        >
-          Probar conexión
         </button>
       </div>
 
       {!selected?.configured && (
-        <p className="mt-2 text-xs text-[var(--color-danger-ink)]">
-          {selected?.label} no está configurado en este servidor: falta la credencial o el contrato del proveedor.
+        <p className="mt-2 text-xs text-[var(--color-text-muted)]">
+          {selected?.label} todavía no está configurado en este servidor. No es una falla: falta cargar sus
+          credenciales para poder sincronizar.
         </p>
       )}
 

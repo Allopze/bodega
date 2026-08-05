@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest"
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import {
   BILLING_PROVIDER_IDS,
   getAllBillingProviders,
@@ -7,6 +7,7 @@ import {
   assertCapability,
   providerInvoiceFromXml,
   CHIPAX_CONTRACT_BLOCKER,
+  ChipaxProvider,
 } from "../providers"
 import type { BillingProvider } from "../providers/types"
 
@@ -70,7 +71,7 @@ describe("FacturaEnLínea", () => {
 describe("Chipax", () => {
   const provider = getBillingProvider("chipax")
 
-  it("no declara ninguna capacidad mientras el contrato no sea legible", () => {
+  it("no declara ninguna capacidad de datos mientras el contrato no sea legible", () => {
     for (const value of Object.values(provider.capabilities)) {
       expect(value).toBe(false)
     }
@@ -80,19 +81,115 @@ describe("Chipax", () => {
     expect(isProviderEnabled("chipax")).toBe(false)
   })
 
-  it("el healthCheck reporta el bloqueo en vez de fingir salud", async () => {
+  it("sin credenciales el healthCheck lo dice y NO llama a la red", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch")
+    const health = await provider.healthCheck()
+
+    expect(health.ok).toBe(false)
+    expect(health.detail).toMatch(/CHIPAX_APP_ID/)
+    expect(health.checkedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/)
+    // Sin credenciales no tiene sentido molestar al proveedor.
+    expect(fetchSpy).not.toHaveBeenCalled()
+    fetchSpy.mockRestore()
+  })
+
+  it("autenticarse NO alcanza para considerarlo configurado", async () => {
+    // Es la distinción central: tener la credencial no autoriza a adivinar
+    // rutas de datos. Hacen falta credenciales Y contrato verificado.
+    vi.stubEnv("CHIPAX_APP_ID", "app-de-prueba")
+    vi.stubEnv("CHIPAX_SECRET_KEY", "secreto-de-prueba")
+    expect(await provider.isConfigured()).toBe(false)
+    vi.unstubAllEnvs()
+  })
+
+  it("el motivo del bloqueo nombra el 401 del contrato de datos", () => {
+    expect(CHIPAX_CONTRACT_BLOCKER).toMatch(/401/)
+  })
+})
+
+describe("Chipax — autenticación", () => {
+  const provider = getBillingProvider("chipax") as ChipaxProvider
+
+  beforeEach(() => {
+    vi.stubEnv("CHIPAX_APP_ID", "app-de-prueba")
+    vi.stubEnv("CHIPAX_SECRET_KEY", "secreto-de-prueba")
+  })
+
+  afterEach(() => {
+    vi.unstubAllEnvs()
+    vi.restoreAllMocks()
+  })
+
+  it("envía exactamente {app_id, secret_key} a POST /login", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ token: "no-debe-filtrarse" }), {
+        status: 200, headers: { "Content-Type": "application/json" },
+      }),
+    )
+
+    await provider.login()
+
+    const [url, init] = fetchMock.mock.calls[0]!
+    expect(String(url)).toBe("https://api.chipax.com/v2/login")
+    expect(init!.method).toBe("POST")
+    // Ni un campo de más: agregar propiedades no documentadas es la vía rápida
+    // a un 400 inexplicable.
+    expect(JSON.parse(String(init!.body))).toEqual({
+      app_id: "app-de-prueba",
+      secret_key: "secreto-de-prueba",
+    })
+  })
+
+  it("reporta los NOMBRES de los campos de la respuesta, nunca sus valores", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ token: "jwt-secretísimo", expiresIn: 3600 }), {
+        status: 200, headers: { "Content-Type": "application/json" },
+      }),
+    )
+
+    const result = await provider.login()
+
+    expect(result.ok).toBe(true)
+    expect(result.responseFields).toEqual(["token", "expiresIn"])
+    // El valor del token no puede aparecer en ninguna parte del diagnóstico.
+    expect(result.detail).not.toContain("jwt-secretísimo")
+    expect(JSON.stringify(result)).not.toContain("jwt-secretísimo")
+  })
+
+  it("distingue credencial equivocada (401) de esquema equivocado (400)", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ error: "Credenciales inválidas" }), { status: 401 }),
+    )
+    expect((await provider.login()).detail).toMatch(/CHIPAX_APP_ID/)
+
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ error: "Parámetros inválidos." }), { status: 400 }),
+    )
+    expect((await provider.login()).detail).toMatch(/releerlo|parámetros/i)
+  })
+
+  it("no expone credenciales cuando la red falla", async () => {
+    vi.spyOn(globalThis, "fetch").mockRejectedValue(
+      new Error("connect ECONNREFUSED con secret_key=secretísimo"),
+    )
+    const result = await provider.login()
+
+    expect(result.ok).toBe(false)
+    expect(result.detail).not.toContain("secretísimo")
+    expect(result.detail).toMatch(/omitido por contener credenciales/i)
+  })
+
+  it("aunque el login funcione, sin contrato de datos el healthCheck no dice ok", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ token: "x" }), {
+        status: 200, headers: { "Content-Type": "application/json" },
+      }),
+    )
+
     const health = await provider.healthCheck()
     expect(health.ok).toBe(false)
-    expect(health.detail.length).toBeGreaterThan(0)
-    expect(health.checkedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/)
-  })
-
-  it("no se considera configurado solo por tener credenciales", async () => {
-    expect(await provider.isConfigured()).toBe(false)
-  })
-
-  it("el motivo del bloqueo nombra el 401 del contrato", () => {
-    expect(CHIPAX_CONTRACT_BLOCKER).toMatch(/401/)
+    expect(health.detail).toMatch(/Autenticación correcta/)
+    expect(health.detail).toMatch(/contrato/i)
   })
 })
 

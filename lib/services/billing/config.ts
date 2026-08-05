@@ -32,19 +32,22 @@ export function readSalesSyncConfig(): BillingSalesSyncConfig {
 export interface ChipaxConfig {
   /** Feature flag. Apagado por defecto. */
   enabled: boolean
-  /** URL del contrato OpenAPI. Se lee del contrato, no se asume. */
+  /** URL del contrato OpenAPI. */
   openApiUrl: string
+  /** URL base de la API. Ver `DEFAULT_CHIPAX_BASE_URL`. */
+  baseUrl: string
   /**
-   * URL base de la API. Debe venir del bloque `servers` del contrato vigente;
-   * la variable existe para no fijarla en el código.
+   * Credenciales de aplicación. **Nunca se exponen ni se loguean**: solo se
+   * consulta `hasCredentials` fuera de la capa de autenticación.
    */
-  baseUrl: string | null
-  /** True si hay credenciales en el servidor (no se exponen ni se loguean). */
+  appId: string
+  secretKey: string
+  /** True si ambas credenciales están presentes. */
   hasCredentials: boolean
   /**
-   * True solo cuando alguien verificó el contrato vigente y completó las
-   * operaciones en el adaptador. Es un interruptor deliberado: tener la clave
-   * no autoriza a adivinar rutas.
+   * True solo cuando alguien leyó el contrato vigente y completó las operaciones
+   * de datos en el adaptador. Es un interruptor **distinto** de tener la
+   * credencial: autenticarse no autoriza a adivinar rutas de datos.
    */
   contractVerified: boolean
   /** Timeout por request. */
@@ -53,12 +56,30 @@ export interface ChipaxConfig {
 
 const DEFAULT_CHIPAX_OPENAPI_URL = "https://api.chipax.com/v2/swagger-docs/"
 
+/**
+ * URL base verificada empíricamente el 2026-08-05, no asumida:
+ *
+ *   POST https://api.chipax.com/v2/login  {}                        → 400 "Parámetros inválidos."
+ *   POST https://api.chipax.com/v2/login  {usuario, clave}          → 400 "Parámetros inválidos."
+ *   POST https://api.chipax.com/v2/login  {app_id, secret_key}      → 401 "Credenciales inválidas"
+ *
+ * El 401 frente al 400 del control demuestra que la ruta existe bajo `/v2` y
+ * que acepta ese cuerpo. Sigue siendo sobrescribible con `CHIPAX_API_BASE_URL`
+ * por si el bloque `servers` del contrato indica otra cosa.
+ */
+const DEFAULT_CHIPAX_BASE_URL = "https://api.chipax.com/v2"
+
 export function readChipaxConfig(): ChipaxConfig {
+  const appId = process.env.CHIPAX_APP_ID?.trim() ?? ""
+  const secretKey = process.env.CHIPAX_SECRET_KEY?.trim() ?? ""
+
   return {
     enabled: process.env.BILLING_CHIPAX_ENABLED?.trim().toLowerCase() === "true",
     openApiUrl: process.env.CHIPAX_OPENAPI_URL?.trim() || DEFAULT_CHIPAX_OPENAPI_URL,
-    baseUrl: process.env.CHIPAX_API_BASE_URL?.trim() || null,
-    hasCredentials: Boolean(process.env.CHIPAX_LOGIN_PAYLOAD_JSON?.trim()),
+    baseUrl: (process.env.CHIPAX_API_BASE_URL?.trim() || DEFAULT_CHIPAX_BASE_URL).replace(/\/+$/, ""),
+    appId,
+    secretKey,
+    hasCredentials: Boolean(appId && secretKey),
     contractVerified: process.env.CHIPAX_CONTRACT_VERIFIED?.trim().toLowerCase() === "true",
     requestTimeoutMs: parsePositiveInt(process.env.CHIPAX_REQUEST_TIMEOUT_MS, 30_000),
   }
