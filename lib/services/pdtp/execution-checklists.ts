@@ -21,6 +21,7 @@ import {
 } from "@/db/schema"
 import type { ChecklistDefinition, StatusValue } from "@/lib/sst/types"
 import { getApplicableItems } from "@/lib/sst/checklist"
+import { PARTIAL_STATUS_WEIGHT, isExcludedStatus } from "@/lib/sst/compliance"
 import { getActivePdtpActivityChecklist } from "./checklists"
 import {
   pdtpChecklistResponseId,
@@ -260,18 +261,26 @@ export function calculateInstanceCompliance(
   if (applicable.length === 0) return null
 
   const responseMap = new Map(responses.map((r) => [`${r.seccionId}::${r.itemId}`, r.estado]))
-  let cumplidos = 0
+  let puntaje = 0
   let total = 0
   for (const { seccionId, item } of applicable) {
     const estado = responseMap.get(`${seccionId}::${item.id}`)
     if (estado === null || estado === undefined) continue
+    // 'na' y 'no_tiene' (NT del Anexo 14) salen del denominador: el ítem no se
+    // evaluó. Antes 'na' sí sumaba a `total` sin sumar puntaje, o sea puntuaba
+    // como un incumplimiento y hundía el % de checklists con muchos N/A —
+    // además de contradecir al cálculo SST, que siempre lo excluyó.
+    if (isExcludedStatus(estado as StatusValue)) continue
     total++
     if (estado === "cumple" || estado === "entregado" || estado === "apto" || estado === "si") {
-      cumplidos++
+      puntaje += 1
+    } else if (estado === "regular") {
+      // Escala B/R/M: regular vale medio punto (ver PARTIAL_STATUS_WEIGHT).
+      puntaje += PARTIAL_STATUS_WEIGHT
     }
   }
   if (total === 0) return null
-  return Math.round((cumplidos / total) * 10000) / 100
+  return Math.round((puntaje / total) * 10000) / 100
 }
 
 /**

@@ -61,6 +61,13 @@ beforeEach(async () => {
   await inMemoryDb.delete(schema.pdtpActivitySchedule)
   await inMemoryDb.delete(schema.pdtpActivities)
   await inMemoryDb.delete(schema.pdtpPrograms)
+  // Motor transversal de inspecciones: sus runs referencian worksites con
+  // RESTRICT, así que van antes que la faena.
+  await inMemoryDb.delete(schema.preventionInspectionFindings)
+  await inMemoryDb.delete(schema.preventionInspectionAnswers)
+  await inMemoryDb.delete(schema.preventionInspectionRuns)
+  await inMemoryDb.delete(schema.preventionInspectionPrograms)
+  await inMemoryDb.delete(schema.preventionInspectionTemplates)
   await inMemoryDb.delete(schema.worksites)
   await inMemoryDb.delete(schema.users)
 
@@ -379,5 +386,233 @@ describe("revokePdtpAccreditation", () => {
 
     expect(result.revoked).toHaveLength(0)
     expect(result.skippedApproved).toHaveLength(0)
+  })
+})
+
+// ── Regresiones 2026-08-04 ────────────────────────────────────────────────────
+
+describe("evento fuera del año del programa", () => {
+  it("no acredita y lo reporta, en vez de sellar la fila con el año del programa", async () => {
+    const { accreditPdtpFromEvent } = await import("@/lib/services/pdtp/accreditation")
+
+    // Único programa activo: 2026. El evento ocurre en 2027.
+    const result = await accreditPdtpFromEvent({
+      sourceType: "capacitacion",
+      sourceId: "sesion-2027",
+      worksiteId: WS_ID,
+      activityNumbers: [ACT_N],
+      occurredAt: "2027-01-20T12:00:00.000Z",
+    })
+
+    expect(result.accredited).toHaveLength(0)
+    expect(result.skippedOutOfPeriod).toMatchObject({ occurredYear: 2027, programYear: 2026 })
+
+    // Antes esto creaba una ejecución year=2026, month=1 indistinguible de una real.
+    const rows = await inMemoryDb.select().from(schema.pdtpExecutions)
+    expect(rows).toHaveLength(0)
+  })
+
+  it("sí acredita cuando el año coincide, con el año de ocurrencia", async () => {
+    const { accreditPdtpFromEvent } = await import("@/lib/services/pdtp/accreditation")
+    await accreditPdtpFromEvent({
+      sourceType: "capacitacion",
+      sourceId: "sesion-2026",
+      worksiteId: WS_ID,
+      activityNumbers: [ACT_N],
+      occurredAt: "2026-01-20T12:00:00.000Z",
+    })
+    const [row] = await inMemoryDb.select().from(schema.pdtpExecutions)
+    expect(row!.year).toBe(2026)
+    expect(row!.month).toBe(1)
+  })
+})
+
+describe("dos eventos en la misma celda de período", () => {
+  it("suma el segundo en vez de perderlo por el índice único", async () => {
+    const { accreditPdtpFromEvent } = await import("@/lib/services/pdtp/accreditation")
+    const base = {
+      sourceType: "inspeccion" as const,
+      worksiteId: WS_ID,
+      activityNumbers: [ACT_N],
+      occurredAt: "2026-03-03T10:00:00.000Z", // misma semana 1 de marzo
+    }
+
+    const first = await accreditPdtpFromEvent({ ...base, sourceId: "run-A" })
+    // Antes: 23505 sobre pdtp_executions_activity_scope_period_unique, tragado
+    // por safeAccredit; la segunda inspección desaparecía sin rastro.
+    const second = await accreditPdtpFromEvent({ ...base, sourceId: "run-B", occurredAt: "2026-03-05T10:00:00.000Z" })
+
+    expect(first.accredited).toHaveLength(1)
+    expect(second.accredited).toHaveLength(1)
+
+    const rows = await inMemoryDb.select().from(schema.pdtpExecutions)
+    expect(rows).toHaveLength(1)
+    expect(rows[0]!.executedQuantity).toBe(2)
+  })
+
+  it("reintentar el mismo evento no vuelve a sumar", async () => {
+    const { accreditPdtpFromEvent } = await import("@/lib/services/pdtp/accreditation")
+    const base = {
+      sourceType: "inspeccion" as const,
+      worksiteId: WS_ID,
+      activityNumbers: [ACT_N],
+      occurredAt: "2026-03-03T10:00:00.000Z",
+    }
+    await accreditPdtpFromEvent({ ...base, sourceId: "run-A" })
+    await accreditPdtpFromEvent({ ...base, sourceId: "run-B", occurredAt: "2026-03-05T10:00:00.000Z" })
+    await accreditPdtpFromEvent({ ...base, sourceId: "run-B", occurredAt: "2026-03-05T10:00:00.000Z" })
+
+    const rows = await inMemoryDb.select().from(schema.pdtpExecutions)
+    expect(rows).toHaveLength(1)
+    expect(rows[0]!.executedQuantity).toBe(2)
+  })
+
+  it("no suma sobre una ejecución ya aprobada", async () => {
+    const { accreditPdtpFromEvent } = await import("@/lib/services/pdtp/accreditation")
+    const base = {
+      sourceType: "inspeccion" as const,
+      worksiteId: WS_ID,
+      activityNumbers: [ACT_N],
+      occurredAt: "2026-03-03T10:00:00.000Z",
+    }
+    await accreditPdtpFromEvent({ ...base, sourceId: "run-A" })
+    await inMemoryDb.update(schema.pdtpExecutions).set({ status: "approved" })
+
+    await accreditPdtpFromEvent({ ...base, sourceId: "run-B", occurredAt: "2026-03-05T10:00:00.000Z" })
+
+    const rows = await inMemoryDb.select().from(schema.pdtpExecutions)
+    expect(rows).toHaveLength(1)
+    expect(rows[0]!.executedQuantity).toBe(1)
+    expect(rows[0]!.status).toBe("approved")
+  })
+})
+
+// ── Integración con el motor transversal de inspecciones ─────────────────────
+
+describe("una inspección acreditada alimenta los ejes de verificación y cierre", () => {
+  const TPL_ID = "instpl-acc-1"
+  const RUN_ID = "insrun-acc-1"
+
+  async function seedInspection(compliancePercent: number) {
+    await inMemoryDb.insert(schema.preventionInspectionTemplates).values({
+      id: TPL_ID,
+      code: "inspeccion_extintores",
+      versionLabel: "01",
+      name: "Inspección de extintores",
+      kind: "inspection",
+      definitionSnapshot: { sections: [] },
+      contentHash: "a".repeat(64),
+      status: "approved",
+      pdtpActivityNumbers: [ACT_N],
+      authorUserId: USER_ID,
+      approvedByUserId: USER_ID,
+      approvedAt: new Date().toISOString(),
+    })
+    await inMemoryDb.insert(schema.preventionInspectionRuns).values({
+      id: RUN_ID,
+      code: "INS-0001",
+      templateId: TPL_ID,
+      worksiteId: WS_ID,
+      status: "completed",
+      compliancePercent,
+      executedByUserId: USER_ID,
+      executedAt: "2026-04-15T10:00:00.000Z",
+      createdByUserId: USER_ID,
+    })
+  }
+
+  it("el % de la inspección entra al eje de verificación", async () => {
+    const { accreditPdtpFromEvent } = await import("@/lib/services/pdtp/accreditation")
+    const { getPdtpIntegralCompliance } = await import("@/lib/services/pdtp/compliance")
+    await seedInspection(80)
+
+    await accreditPdtpFromEvent({
+      sourceType: "inspeccion",
+      sourceId: RUN_ID,
+      worksiteId: WS_ID,
+      activityNumbers: [ACT_N],
+      occurredAt: "2026-04-15T10:00:00.000Z",
+    })
+    // El índice integral sólo considera ejecuciones aprobadas.
+    await inMemoryDb.update(schema.pdtpExecutions).set({ status: "approved" })
+
+    const integral = await getPdtpIntegralCompliance(PROGRAM_ID, WS_ID)
+    // Antes daba null: computeVerificacionYCierre sólo miraba los checklists del PDTP.
+    expect(integral!.verificacion).toBe(80)
+  })
+
+  it("un hallazgo sin CAPA cerrada deja el eje de cierre en 0", async () => {
+    const { accreditPdtpFromEvent } = await import("@/lib/services/pdtp/accreditation")
+    const { getPdtpIntegralCompliance } = await import("@/lib/services/pdtp/compliance")
+    await seedInspection(50)
+    await inMemoryDb.insert(schema.preventionInspectionFindings).values({
+      id: "insfind-acc-1",
+      runId: RUN_ID,
+      description: "Extintor sin carga",
+      criticality: "high",
+      status: "open",
+    })
+
+    await accreditPdtpFromEvent({
+      sourceType: "inspeccion",
+      sourceId: RUN_ID,
+      worksiteId: WS_ID,
+      activityNumbers: [ACT_N],
+      occurredAt: "2026-04-15T10:00:00.000Z",
+    })
+    await inMemoryDb.update(schema.pdtpExecutions).set({ status: "approved" })
+
+    const integral = await getPdtpIntegralCompliance(PROGRAM_ID, WS_ID)
+    expect(integral!.cierre).toBe(0)
+  })
+})
+
+// ── El escritor que faltaba ───────────────────────────────────────────────────
+
+describe("declarar qué actividades PDTP acredita una plantilla", () => {
+  const ACCESS = {
+    userId: USER_ID,
+    scope: { mode: "all" as const, ids: [] as [] },
+    permissions: ["prevention:inspections:manage", "prevention:inspections:view"],
+  }
+
+  it("importInspectionTemplate persiste los números declarados", async () => {
+    const service = await import("@/lib/services/prevention-inspections")
+    const template = await service.importInspectionTemplate(
+      { definitionCode: "inspeccion_extintores", pdtpActivityNumbers: [ACT_N] },
+      ACCESS,
+    )
+    expect(template.pdtpActivityNumbers).toEqual([ACT_N])
+  })
+
+  it("sin declararlos queda en null — el conector es no-op, que era el estado de todas", async () => {
+    const service = await import("@/lib/services/prevention-inspections")
+    const template = await service.importInspectionTemplate({ definitionCode: "inspeccion_taller" }, ACCESS)
+    expect(template.pdtpActivityNumbers).toBeNull()
+  })
+
+  it("se pueden corregir después, en borrador, deduplicados y ordenados", async () => {
+    const service = await import("@/lib/services/prevention-inspections")
+    const template = await service.importInspectionTemplate({ definitionCode: "inspeccion_carros" }, ACCESS)
+    const updated = await service.setInspectionTemplatePdtpActivities(
+      { templateId: template.id, expectedVersion: template.version, pdtpActivityNumbers: [34, 33, 34] },
+      ACCESS,
+    )
+    expect(updated.pdtpActivityNumbers).toEqual([33, 34])
+    expect(updated.version).toBe(template.version + 1)
+  })
+
+  it("no se pueden cambiar una vez aprobada la plantilla", async () => {
+    const service = await import("@/lib/services/prevention-inspections")
+    const template = await service.importInspectionTemplate({ definitionCode: "inspeccion_contenedores" }, ACCESS)
+    // El check `..._approved_consistent` exige aprobador y fecha junto al estado.
+    await inMemoryDb.update(schema.preventionInspectionTemplates)
+      .set({ status: "approved", approvedByUserId: USER_ID, approvedAt: new Date().toISOString() })
+      .where(eq(schema.preventionInspectionTemplates.id, template.id))
+
+    await expect(service.setInspectionTemplatePdtpActivities(
+      { templateId: template.id, expectedVersion: template.version, pdtpActivityNumbers: [29] },
+      ACCESS,
+    )).rejects.toThrow(/borrador/i)
   })
 })

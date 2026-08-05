@@ -508,3 +508,215 @@ describe("detención inmediata frente al plazo administrativo", () => {
     expect(plazos).toEqual([...plazos].sort())
   })
 })
+
+// Escala B/R/M de los anexos de inspección (Anexos 3, 13, 14).
+describe("escala Bueno/Regular/Malo", () => {
+  const BRM_TEMPLATE = {
+    code: "brm", version: "01", revisionDate: "2026-01-01", title: "Inspección B/R/M", tipo: "seguimiento",
+    legalFramework: [], applicableTo: "",
+    sections: [{
+      id: "s1", title: "Estado",
+      items: [
+        { id: "i1", label: "Ítem 1", kind: "bueno_regular_malo_obs" },
+        { id: "i2", label: "Ítem 2", kind: "bueno_regular_malo_obs" },
+        { id: "i3", label: "Ítem 3", kind: "bueno_regular_malo_na_obs" },
+      ],
+    }],
+    closingAct: { title: "Cierre", resultOptions: [], signatureRoles: [] },
+  }
+
+  it("puntúa Bueno=1, Regular=0.5, Malo=0", async () => {
+    const { getOrCreateExecutionChecklist, upsertChecklistResponses } = await import("@/lib/services/pdtp/execution-checklists")
+    await seedChecklistTemplate("act-1", "BRM", BRM_TEMPLATE)
+
+    const instance = await getOrCreateExecutionChecklist("exec-1", "u1")
+    const { porcentajeCumplimiento } = await upsertChecklistResponses(instance.id, [
+      { seccionId: "s1", itemId: "i1", estado: "cumple" },
+      { seccionId: "s1", itemId: "i2", estado: "regular", observacion: "Desgaste leve" },
+      { seccionId: "s1", itemId: "i3", estado: "no_cumple", observacion: "Roto" },
+    ], "u1")
+
+    // (1 + 0.5 + 0) / 3 = 50%
+    expect(porcentajeCumplimiento).toBeCloseTo(50, 2)
+  })
+
+  it("Regular no genera acción correctiva; Malo sí", async () => {
+    const { getOrCreateExecutionChecklist, upsertChecklistResponses } = await import("@/lib/services/pdtp/execution-checklists")
+    const { submitExecutionChecklist } = await import("@/lib/services/pdtp/action-plan")
+    await seedChecklistTemplate("act-1", "BRM", BRM_TEMPLATE)
+
+    const instance = await getOrCreateExecutionChecklist("exec-1", "u1")
+    await upsertChecklistResponses(instance.id, [
+      { seccionId: "s1", itemId: "i1", estado: "cumple" },
+      { seccionId: "s1", itemId: "i2", estado: "regular", observacion: "Desgaste leve" },
+      { seccionId: "s1", itemId: "i3", estado: "no_cumple", observacion: "Roto", accionCorrectiva: "Reemplazar" },
+    ], "u1")
+
+    const { generadas } = await submitExecutionChecklist(instance.id, "u1")
+    expect(generadas).toBe(1)
+  })
+
+  it("no deja enviar un ítem Regular o Malo sin observación", async () => {
+    const { getOrCreateExecutionChecklist, upsertChecklistResponses } = await import("@/lib/services/pdtp/execution-checklists")
+    const { submitExecutionChecklist } = await import("@/lib/services/pdtp/action-plan")
+    await seedChecklistTemplate("act-1", "BRM", BRM_TEMPLATE)
+
+    const instance = await getOrCreateExecutionChecklist("exec-1", "u1")
+    await upsertChecklistResponses(instance.id, [
+      { seccionId: "s1", itemId: "i1", estado: "cumple" },
+      { seccionId: "s1", itemId: "i2", estado: "regular" },
+      { seccionId: "s1", itemId: "i3", estado: "no_cumple" },
+    ], "u1")
+
+    await expect(submitExecutionChecklist(instance.id, "u1")).rejects.toThrow(/observación/i)
+
+    // Con la observación puesta, el mismo envío pasa.
+    await upsertChecklistResponses(instance.id, [
+      { seccionId: "s1", itemId: "i2", estado: "regular", observacion: "Desgaste leve" },
+      { seccionId: "s1", itemId: "i3", estado: "no_cumple", observacion: "Roto" },
+    ], "u1")
+    await expect(submitExecutionChecklist(instance.id, "u1")).resolves.toBeTruthy()
+  })
+
+  it("un 'cumple' sin observación no bloquea el envío", async () => {
+    const { getOrCreateExecutionChecklist, upsertChecklistResponses } = await import("@/lib/services/pdtp/execution-checklists")
+    const { submitExecutionChecklist } = await import("@/lib/services/pdtp/action-plan")
+    await seedChecklistTemplate("act-1", "BRM", BRM_TEMPLATE)
+
+    const instance = await getOrCreateExecutionChecklist("exec-1", "u1")
+    await upsertChecklistResponses(instance.id, [
+      { seccionId: "s1", itemId: "i1", estado: "cumple" },
+      { seccionId: "s1", itemId: "i3", estado: "na" },
+    ], "u1")
+
+    await expect(submitExecutionChecklist(instance.id, "u1")).resolves.toBeTruthy()
+  })
+})
+
+// Anexo 7 — Observación Planeada: formulario narrativo, no puntúa.
+describe("OBSERVACION_PLANEADA (Anexo 7)", () => {
+  it("pasa el validador de definiciones del PDTP", async () => {
+    const { OBSERVACION_PLANEADA } = await import("@/lib/sst/definitions/observacion-planeada")
+    const { pdtpChecklistDefinitionSchema } = await import("@/lib/validation/prevention-module/pdtp")
+    expect(() => pdtpChecklistDefinitionSchema.parse(OBSERVACION_PLANEADA)).not.toThrow()
+  })
+
+  it("no tiene ítems de estado, así que no puntúa", async () => {
+    const { OBSERVACION_PLANEADA } = await import("@/lib/sst/definitions/observacion-planeada")
+    const { getApplicableItems } = await import("@/lib/sst/checklist")
+    const { calculateInstanceCompliance } = await import("@/lib/services/pdtp/execution-checklists")
+
+    expect(getApplicableItems(OBSERVACION_PLANEADA, ["prevencionista_faena"])).toHaveLength(0)
+    expect(calculateInstanceCompliance(OBSERVACION_PLANEADA, [])).toBeNull()
+  })
+
+  it("conserva el relato libre del anexo como campo multilínea", async () => {
+    const { OBSERVACION_PLANEADA } = await import("@/lib/sst/definitions/observacion-planeada")
+    const items = OBSERVACION_PLANEADA.sections.flatMap((s) => s.items)
+    expect(items.find((i) => i.id === "descripcion")?.kind).toBe("textarea")
+    expect(items.find((i) => i.id === "lugar_trabajo_observado")).toBeTruthy()
+  })
+})
+
+// Anexos 3, 13 y 14: escala real B/R/M y sus escapes.
+describe("definiciones migradas a B/R/M", () => {
+  it("EPP, Carros y Contenedores usan la escala del anexo, no la binaria", async () => {
+    const { INSPECCION_EPP } = await import("@/lib/sst/definitions/inspeccion-epp")
+    const { INSPECCION_CARROS } = await import("@/lib/sst/definitions/inspeccion-carros")
+    const { INSPECCION_CONTENEDORES } = await import("@/lib/sst/definitions/inspeccion-contenedores")
+    const kinds = (d: { sections: Array<{ items: Array<{ kind: string }> }> }) =>
+      new Set(d.sections.flatMap((s) => s.items.map((i) => i.kind)))
+
+    // Ninguna debe conservar el kind binario que aplanaba Regular.
+    for (const def of [INSPECCION_EPP, INSPECCION_CARROS, INSPECCION_CONTENEDORES]) {
+      expect([...kinds(def)]).not.toContain("cumple_nocumple_na_obs")
+    }
+    // Carros: leyenda "B= BUENO  R= REGULAR  M= MALO", sin N/A.
+    expect(kinds(INSPECCION_CARROS)).toContain("bueno_regular_malo_obs")
+    // Contenedores: la única con NT ("no tiene").
+    expect(kinds(INSPECCION_CONTENEDORES)).toContain("bueno_regular_malo_na_nt_obs")
+    // EPP: B/R/M + N/A, y el bloqueador sigue siendo registro de entrega.
+    expect(kinds(INSPECCION_EPP)).toContain("bueno_regular_malo_na_obs")
+    expect(kinds(INSPECCION_EPP)).toContain("entregado_obs")
+  })
+
+  it("las tres pasan el validador del PDTP", async () => {
+    const { pdtpChecklistDefinitionSchema } = await import("@/lib/validation/prevention-module/pdtp")
+    const { INSPECCION_EPP } = await import("@/lib/sst/definitions/inspeccion-epp")
+    const { INSPECCION_CARROS } = await import("@/lib/sst/definitions/inspeccion-carros")
+    const { INSPECCION_CONTENEDORES } = await import("@/lib/sst/definitions/inspeccion-contenedores")
+    for (const def of [INSPECCION_EPP, INSPECCION_CARROS, INSPECCION_CONTENEDORES]) {
+      expect(() => pdtpChecklistDefinitionSchema.parse(def)).not.toThrow()
+    }
+  })
+
+  it("NT y N/A salen del denominador en el cálculo PDTP", async () => {
+    const { getOrCreateExecutionChecklist, upsertChecklistResponses } = await import("@/lib/services/pdtp/execution-checklists")
+    await seedChecklistTemplate("act-1", "NT", {
+      code: "nt", version: "01", revisionDate: "2026-01-01", title: "NT", tipo: "seguimiento",
+      legalFramework: [], applicableTo: "",
+      sections: [{
+        id: "s1", title: "S",
+        items: [
+          { id: "i1", label: "I1", kind: "bueno_regular_malo_na_nt_obs" },
+          { id: "i2", label: "I2", kind: "bueno_regular_malo_na_nt_obs" },
+          { id: "i3", label: "I3", kind: "bueno_regular_malo_na_nt_obs" },
+        ],
+      }],
+      closingAct: { title: "Cierre", resultOptions: [], signatureRoles: [] },
+    })
+    const instance = await getOrCreateExecutionChecklist("exec-1", "u1")
+    const { porcentajeCumplimiento } = await upsertChecklistResponses(instance.id, [
+      { seccionId: "s1", itemId: "i1", estado: "cumple" },
+      { seccionId: "s1", itemId: "i2", estado: "na" },
+      { seccionId: "s1", itemId: "i3", estado: "no_tiene" },
+    ], "u1")
+    // Sólo i1 entra al denominador → 100%, no 33%.
+    expect(porcentajeCumplimiento).toBe(100)
+  })
+})
+
+// Anexo 8 — Evidencia Objetiva No Planeada.
+describe("Anexo 8: daño potencial y normativa legal", () => {
+  it("persiste ambos campos en el hallazgo manual", async () => {
+    const { createActionPlanItem } = await import("@/lib/services/pdtp/action-plan")
+    const row = await createActionPlanItem({
+      executionId: "exec-1",
+      hallazgo: "Tablero eléctrico sin tapa",
+      accion: "Instalar tapa y señalizar",
+      responsableRole: "prevencionista_faena",
+      responsable: "Prevencionista",
+      plazo: "2026-08-20",
+      prioridad: "alta",
+      dañoPotencial: "fatal",
+      normativaLegal: "Ley 21.512 art. 32",
+    }, "u1")
+
+    expect(row.danoPotencial).toBe("fatal")
+    expect(row.normativaLegal).toBe("Ley 21.512 art. 32")
+    // La prioridad sola no basta: grave y fatal colapsan ambos en alta.
+    expect(row.prioridad).toBe("alta")
+  })
+
+  it("guarda el daño potencial declarado por la plantilla en las acciones automáticas", async () => {
+    const { getOrCreateExecutionChecklist, upsertChecklistResponses } = await import("@/lib/services/pdtp/execution-checklists")
+    const { submitExecutionChecklist, listActionPlanItems } = await import("@/lib/services/pdtp/action-plan")
+    await seedChecklistTemplate("act-1", "DP", {
+      code: "dp", version: "01", revisionDate: "2026-01-01", title: "DP", tipo: "seguimiento",
+      legalFramework: [], applicableTo: "",
+      sections: [{
+        id: "s1", title: "S",
+        items: [{ id: "i1", label: "Alarma de retroceso", kind: "cumple_nocumple_obs", danoPotencial: "fatal" }],
+      }],
+      closingAct: { title: "Cierre", resultOptions: [], signatureRoles: [] },
+    })
+    const instance = await getOrCreateExecutionChecklist("exec-1", "u1")
+    await upsertChecklistResponses(instance.id, [
+      { seccionId: "s1", itemId: "i1", estado: "no_cumple", observacion: "No suena", accionCorrectiva: "Reparar" },
+    ], "u1")
+    await submitExecutionChecklist(instance.id, "u1")
+
+    const acciones = await listActionPlanItems("exec-1")
+    expect(acciones[0]!.danoPotencial).toBe("fatal")
+  })
+})

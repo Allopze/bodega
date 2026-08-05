@@ -265,7 +265,8 @@ const pdtpChecklistItemSchema = z.object({
   label: z.string().trim().min(1),
   kind: z.enum([
     "cumple_nocumple_obs", "cumple_nocumple_na_obs", "entregado_obs", "apto_obs",
-    "si_no_obs", "text", "date", "select", "multiselect", "signature", "readonly",
+    "si_no_obs", "bueno_regular_malo_obs", "bueno_regular_malo_na_obs", "bueno_regular_malo_na_nt_obs",
+    "text", "textarea", "date", "select", "multiselect", "signature", "readonly",
   ]),
   options: z.array(z.object({ value: z.string(), label: z.string() })).optional(),
   placeholder: z.string().optional(),
@@ -322,7 +323,7 @@ export const pdtpChecklistTemplateDeleteSchema = z.object({
 export const pdtpChecklistResponseItemSchema = z.object({
   seccionId: z.string().min(1),
   itemId: z.string().min(1),
-  estado: z.enum(["cumple", "no_cumple", "na", "entregado", "no_entregado", "apto", "no_apto", "si", "no"]).nullable(),
+  estado: z.enum(["cumple", "regular", "no_cumple", "na", "no_tiene", "entregado", "no_entregado", "apto", "no_apto", "si", "no"]).nullable(),
   observacion: z.string().max(2000).optional(),
   accionCorrectiva: z.string().max(2000).optional(),
 })
@@ -358,11 +359,14 @@ export const pdtpActionPlanCreateSchema = z.object({
   responsableUserId: z.string().optional(),
   plazo: z.string().trim().min(1, "Plazo requerido"),
   prioridad: z.enum(["alta", "media", "baja"]).default("media"),
-  // Daño potencial del hallazgo (módulo 04, Evidencia Objetiva No Planeada).
-  // Opcional: cuando se indica, la UI deriva prioridad y plazo desde aquí
-  // (PLAN_INTEGRACION §5.4). Se persiste solo como guía; la prioridad/plazo
-  // efectivos son los que arriba se envían (coherentes con la derivación).
+  // Daño potencial del hallazgo (módulo 04, Evidencia Objetiva No Planeada —
+  // columna "DAÑO POTENCIAL" del Anexo 8). Opcional: cuando se indica, la UI
+  // deriva prioridad y plazo desde aquí (PLAN_INTEGRACION §5.4). Se persiste
+  // en `pdtp_action_plan.dano_potencial` además de derivar, porque la
+  // derivación pierde información: grave y fatal dan ambos prioridad alta.
   dañoPotencial: z.enum(["leve", "moderado", "grave", "fatal"]).optional(),
+  // Anexo 8, columna "NORMATIVA LEGAL APLICABLE".
+  normativaLegal: z.string().trim().max(500).optional(),
 })
 
 export const pdtpActionPlanUpdateSchema = z.object({

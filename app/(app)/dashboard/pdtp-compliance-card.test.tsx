@@ -10,6 +10,7 @@ describe("PdtpComplianceCard", () => {
       <PdtpComplianceCard
         year={2026}
         worksiteId="ws-1"
+        worksiteCount={1}
         pendingCount={0}
         target={0.9}
         percent={0.92}
@@ -29,26 +30,29 @@ describe("PdtpComplianceCard", () => {
     expect(container.querySelector('[style="width: 92%;"]')).toBeTruthy()
   })
 
-  it("does not present an aggregate compliance number without a selected worksite", () => {
+  // I-04 (auditoría 2026-08-05): sin faena única la tarjeta muestra el agregado
+  // global —mismo motor que la sección Prevención— en vez de pedir elegir faena.
+  it("presents the aggregate compliance number for a multi-worksite scope", () => {
     const { container } = render(
       <PdtpComplianceCard
         year={2026}
-        requiresWorksiteSelection
+        worksiteCount={3}
         pendingCount={4}
         target={0.9}
-        percent={null}
+        percent={0.5}
         integralPercent={null}
-        planned={0}
-        executed={0}
-        expectedPercent={null}
-        variancePercent={null}
+        planned={120}
+        executed={60}
+        expectedPercent={0.58}
+        variancePercent={-8}
         lastExecutionUpdatedAt={null}
         month={7}
         week={2}
       />,
     )
 
-    expect(screen.getByText("Abrir PDTP y elegir faena →")).toBeDefined()
-    expect(container.querySelector('[style="width: 0%;"]')).toBeTruthy()
+    expect(screen.getByText("50%")).toBeDefined()
+    expect(screen.getByText(/Global · 3 faenas/)).toBeDefined()
+    expect(container.querySelector('[style="width: 50%;"]')).toBeTruthy()
   })
 })

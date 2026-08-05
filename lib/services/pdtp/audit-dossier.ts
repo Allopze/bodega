@@ -15,6 +15,7 @@ import {
   pdtpImportBatches,
   pdtpPrograms,
   preventionPdtpSourceLinks,
+  worksites,
 } from "@/db/schema"
 import { assertWorksiteAccess, type WorksiteScope } from "./helpers"
 import { getPdtpApprovalProgress } from "./approval-flow"
@@ -77,6 +78,8 @@ export type PdtpAuditDossier = {
   programId: string
   programTitle: string
   worksiteId: string
+  /** Nombre de la faena. El expediente lo imprimía como id crudo (regla A6). */
+  worksiteName: string
   contentVersion: number
   contentDigest: string | null
   status: string
@@ -170,10 +173,14 @@ export async function getPdtpAuditDossier(input: {
       createdAt: row.createdAt, appliedAt: row.appliedAt, cancellationReason: row.cancellationReason,
     }))
 
+  const [worksite] = await db.select({ name: worksites.name })
+    .from(worksites).where(eq(worksites.id, input.worksiteId)).limit(1)
+
   return {
     programId: program.id,
     programTitle: program.title,
     worksiteId: input.worksiteId,
+    worksiteName: worksite?.name ?? input.worksiteId,
     contentVersion: program.contentVersion,
     contentDigest: program.contentDigest,
     status: program.status,

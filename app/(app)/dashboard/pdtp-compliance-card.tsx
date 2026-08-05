@@ -3,13 +3,15 @@ import { ChartLineUp } from "@phosphor-icons/react/dist/ssr"
 import { cn, formatDateTime } from "@/lib/utils"
 import { getPdtpComplianceIndicators, getPdtpIntegralCompliance } from "@/lib/services/prevention-pdtp"
 import { listPendingPdtpExecutions } from "@/lib/services/prevention-pdtp"
+import { getPdtpComplianceIndicatorsForScope } from "@/lib/services/pdtp/compliance"
 import { currentPdtpPeriod } from "@/lib/services/pdtp/period"
 
 type PdtpComplianceCardProps = {
   year: number
   /** Faena única seleccionada para calcular cumplimiento. */
   worksiteId?: string
-  requiresWorksiteSelection?: boolean
+  /** Faenas que suma el agregado cuando no hay faena única. */
+  worksiteCount: number
   pendingCount: number
   target: number
   percent: number | null
@@ -38,7 +40,7 @@ export function PdtpComplianceCard(props: PdtpComplianceCardProps) {
   const {
     year,
     worksiteId,
-    requiresWorksiteSelection = false,
+    worksiteCount,
     pendingCount,
     target,
     percent,
@@ -74,13 +76,12 @@ export function PdtpComplianceCard(props: PdtpComplianceCardProps) {
           </span>
           <p className="text-eyebrow text-[var(--color-text-muted)] group-hover:text-[var(--color-text)]">PDTP {year}</p>
         </div>
-        {worksiteId ? (
-          <span className="text-[10px] uppercase tracking-wider text-[var(--color-text-faint)]">Por faena</span>
-        ) : requiresWorksiteSelection ? (
-          <span className="text-[10px] uppercase tracking-wider text-[var(--color-text-faint)]">Selecciona faena</span>
-        ) : (
-          <span className="text-[10px] uppercase tracking-wider text-[var(--color-text-faint)]">Global</span>
-        )}
+        {/* El agregado global existe (mismo motor que la sección Prevención);
+            antes esta tarjeta pedía "selecciona faena" mientras esa sección
+            publicaba el porcentaje global cuatro pantallas más abajo (I-04). */}
+        <span className="text-[10px] uppercase tracking-wider text-[var(--color-text-faint)]">
+          {worksiteId ? "Por faena" : `Global · ${worksiteCount} faenas`}
+        </span>
       </div>
 
       <div className="mt-3 flex flex-wrap items-end gap-x-2 gap-y-1">
@@ -135,11 +136,7 @@ export function PdtpComplianceCard(props: PdtpComplianceCardProps) {
 
       <div className="mt-3 grid gap-x-3 gap-y-1 text-[11px] text-[var(--color-text-muted)] sm:grid-cols-2">
         <span className="min-w-0">
-          {requiresWorksiteSelection ? (
-            <span className="font-medium text-[var(--color-primary-ink)] group-hover:underline">
-              Abrir PDTP y elegir faena →
-            </span>
-          ) : pendingCount > 0 ? (
+          {pendingCount > 0 ? (
             <>
               <span className="font-semibold text-[var(--color-signal-ink)]">{pendingCount}</span>{" "}
               por aprobar
@@ -148,12 +145,10 @@ export function PdtpComplianceCard(props: PdtpComplianceCardProps) {
             <span className="text-[var(--color-success)]">Sin pendientes</span>
           )}
         </span>
-        {!requiresWorksiteSelection && (
-          <span className="font-mono tabular-nums text-[var(--color-text-subtle)]">
-            {executed.toLocaleString("es-CL")} de {planned.toLocaleString("es-CL")} planificado
-          </span>
-        )}
-        {!requiresWorksiteSelection && expectedPct !== null && (
+        <span className="font-mono tabular-nums text-[var(--color-text-subtle)]">
+          {executed.toLocaleString("es-CL")} de {planned.toLocaleString("es-CL")} planificado
+        </span>
+        {expectedPct !== null && (
           <span>
             Esperado al período: <strong className="font-mono tabular-nums text-[var(--color-text)]">{expectedPct}%</strong>
             {variancePercent !== null && (
@@ -172,13 +167,19 @@ export function PdtpComplianceCard(props: PdtpComplianceCardProps) {
   )
 }
 
-export async function loadPdtpComplianceSummary(worksiteIds: string[] | "all") {
+export async function loadPdtpComplianceSummary(worksiteIds: string[]) {
   const period = currentPdtpPeriod()
-  const targetWorksiteId = Array.isArray(worksiteIds) && worksiteIds.length === 1
-    ? worksiteIds[0]
-    : undefined
-  const requiresWorksiteSelection = targetWorksiteId === undefined
-  const indicators = await getPdtpComplianceIndicators(period.year, targetWorksiteId)
+  const targetWorksiteId = worksiteIds.length === 1 ? worksiteIds[0] : undefined
+  /*
+   * Multi-faena usa el mismo agregado que la sección Prevención
+   * (`getPdtpComplianceIndicatorsForScope`). Antes esta tarjeta anulaba el
+   * porcentaje y pedía "selecciona faena" mientras esa sección publicaba el
+   * global cuatro pantallas más abajo (I-04). El integral sigue siendo
+   * por-faena: ese cálculo sí no tiene versión agregada.
+   */
+  const indicators = targetWorksiteId
+    ? await getPdtpComplianceIndicators(period.year, targetWorksiteId)
+    : await getPdtpComplianceIndicatorsForScope(period.year, worksiteIds)
   if (!indicators) return null
   const [pending, integral] = await Promise.all([
     listPendingPdtpExecutions(worksiteIds, { year: period.year }),
@@ -197,15 +198,15 @@ export async function loadPdtpComplianceSummary(worksiteIds: string[] | "all") {
   return {
     year: period.year,
     worksiteId: targetWorksiteId,
-    requiresWorksiteSelection,
+    worksiteCount: worksiteIds.length,
     pendingCount: pending.length,
     target: indicators.target,
-    percent: requiresWorksiteSelection ? null : indicators.annual.percent,
+    percent: indicators.annual.percent,
     integralPercent: integral?.integral ?? null,
     planned,
     executed,
-    expectedPercent: requiresWorksiteSelection ? null : expectedPercent,
-    variancePercent: requiresWorksiteSelection ? null : variancePercent,
+    expectedPercent,
+    variancePercent,
     lastExecutionUpdatedAt: indicators.lastExecutionUpdatedAt,
     month: period.month,
     week: period.week,

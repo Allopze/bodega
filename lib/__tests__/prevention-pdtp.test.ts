@@ -2564,8 +2564,8 @@ describe("prevention PDTP service", () => {
       checklistIdsCreated: secondChecklists.createdChecklistIds,
     })
 
-    expect(firstChecklists).toMatchObject({ expected: 9, created: 9, skipped: 0, missing: [] })
-    expect(secondChecklists).toMatchObject({ expected: 9, created: 0, skipped: 9, missing: [] })
+    expect(firstChecklists).toMatchObject({ expected: 10, created: 10, skipped: 0, missing: [] })
+    expect(secondChecklists).toMatchObject({ expected: 10, created: 0, skipped: 10, missing: [] })
     expect(secondTemplate).toMatchObject({ unchanged: true })
     expect(secondTemplate.version.id).toBe(firstTemplate.version.id)
     expect(artifactsAfterRetry).toMatchObject({
@@ -2573,7 +2573,7 @@ describe("prevention PDTP service", () => {
       templateIdCreated: firstTemplate.template.id,
       templateVersionIdCreated: firstTemplate.version.id,
     })
-    expect(await inMemoryDb.select().from(schema.pdtpActivityChecklists)).toHaveLength(9)
+    expect(await inMemoryDb.select().from(schema.pdtpActivityChecklists)).toHaveLength(10)
     expect(await inMemoryDb.select().from(schema.pdtpProgramTemplateVersions)).toHaveLength(1)
     expect(await inMemoryDb.select().from(schema.pdtpExecutions)).toHaveLength(0)
 

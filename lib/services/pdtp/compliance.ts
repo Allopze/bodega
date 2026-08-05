@@ -1,6 +1,16 @@
 import { and, desc, eq, inArray, sql } from "drizzle-orm"
 import { db } from "@/db"
-import { pdtpActivities, pdtpActionPlan, pdtpActivityWorksiteParams, pdtpPrograms, workers } from "@/db/schema"
+import {
+  pdtpActivities,
+  pdtpActionPlan,
+  pdtpActivityWorksiteParams,
+  pdtpExecutions,
+  pdtpPrograms,
+  preventionCapaActions,
+  preventionInspectionFindings,
+  preventionInspectionRuns,
+  workers,
+} from "@/db/schema"
 import { PDTP_ESTADOS_CERRADOS } from "./checklist-domain"
 import { loadApprovedExecutionsForWorksites, loadProgramScheduleAndExecutions } from "./helpers"
 
@@ -312,6 +322,14 @@ export type PdtpIntegralCompliance = PdtpIntegralComplianceAxes & {
  * filas crudas**: `verificacion` es un promedio y `cierre` un ratio, así que
  * promediar los resultados por faena daría un número distinto (y equivocado)
  * cuando las faenas tienen distinto número de checklists o de acciones.
+ *
+ * Dos motores alimentan estos ejes:
+ *  · checklists del PDTP (`pdtp_execution_checklists` + `pdtp_action_plan`);
+ *  · inspecciones del motor transversal, alcanzadas por la ejecución que
+ *    acreditaron (`origin='integration'`, `sourceType='inspeccion'`,
+ *    `sourceId=runId`). Antes sólo se leía el primero, así que una faena que
+ *    trabajara en el motor de inspecciones aparecía con verificación y cierre
+ *    en null y perdía los dos ejes del índice integral.
  */
 async function computeVerificacionYCierre(approvedExecutionIds: string[]): Promise<{
   verificacion: number | null
@@ -319,23 +337,55 @@ async function computeVerificacionYCierre(approvedExecutionIds: string[]): Promi
 }> {
   if (approvedExecutionIds.length === 0) return { verificacion: null, cierre: null }
 
-  const [instances, actions] = await Promise.all([
+  const [instances, actions, inspectionRows] = await Promise.all([
     db.query.pdtpExecutionChecklists.findMany({
       where: (t, { inArray: ia }) => ia(t.executionId, approvedExecutionIds),
     }),
     db.select({ estado: pdtpActionPlan.estado })
       .from(pdtpActionPlan).where(inArray(pdtpActionPlan.executionId, approvedExecutionIds)),
+    db.select({
+      runId: preventionInspectionRuns.id,
+      compliancePercent: preventionInspectionRuns.compliancePercent,
+    })
+      .from(pdtpExecutions)
+      .innerJoin(preventionInspectionRuns, eq(preventionInspectionRuns.id, pdtpExecutions.sourceId))
+      .where(and(
+        inArray(pdtpExecutions.id, approvedExecutionIds),
+        eq(pdtpExecutions.sourceType, "inspeccion"),
+      )),
   ])
 
-  const validPct = instances
-    .map((instance) => instance.porcentajeCumplimiento)
-    .filter((pct): pct is number => pct !== null)
+  // El cierre real del hallazgo vive en su CAPA, no en su propia columna: hoy
+  // `preventionInspectionFindings.status` nunca llega a 'closed' (sólo hay
+  // escritor para 'capa_linked'), así que leerla sola daría 0 % siempre.
+  const inspectionRunIds = inspectionRows.map((row) => row.runId)
+  const findings = inspectionRunIds.length > 0
+    ? await db.select({
+        status: preventionInspectionFindings.status,
+        capaStatus: preventionCapaActions.status,
+      })
+        .from(preventionInspectionFindings)
+        .leftJoin(preventionCapaActions, eq(preventionCapaActions.id, preventionInspectionFindings.capaActionId))
+        .where(inArray(preventionInspectionFindings.runId, inspectionRunIds))
+    : []
+
+  const validPct = [
+    ...instances.map((instance) => instance.porcentajeCumplimiento),
+    ...inspectionRows.map((row) => row.compliancePercent),
+  ].filter((pct): pct is number => pct !== null)
   const verificacion = validPct.length > 0
     ? Math.round((validPct.reduce((sum, pct) => sum + pct, 0) / validPct.length) * 100) / 100
     : null
 
-  const cierre = actions.length > 0
-    ? Math.round((actions.filter((a) => PDTP_ESTADOS_CERRADOS.has(a.estado)).length / actions.length) * 10000) / 100
+  // Mismo criterio para las dos fuentes: cuenta como cerrado lo que quedó
+  // verificado o cerrado. Un hallazgo sin CAPA enlazada está abierto.
+  const findingCerrado = (f: { status: string; capaStatus: string | null }) =>
+    f.status === "closed" || f.capaStatus === "closed" || f.capaStatus === "verified"
+  const cerrados = actions.filter((a) => PDTP_ESTADOS_CERRADOS.has(a.estado)).length
+    + findings.filter(findingCerrado).length
+  const totalCierre = actions.length + findings.length
+  const cierre = totalCierre > 0
+    ? Math.round((cerrados / totalCierre) * 10000) / 100
     : null
 
   return { verificacion, cierre }

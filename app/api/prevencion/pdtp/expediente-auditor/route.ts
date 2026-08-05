@@ -105,7 +105,7 @@ export async function GET(request: NextRequest) {
     cover.addRow({ label: "Estado", value: dossier.status })
     cover.addRow({ label: "Versión de contenido", value: dossier.contentVersion })
     cover.addRow({ label: "Digest (SHA-256)", value: dossier.contentDigest ?? "Sin firmar" })
-    cover.addRow({ label: "Faena", value: worksiteId })
+    cover.addRow({ label: "Faena", value: safe(dossier.worksiteName) })
     cover.getColumn("label").font = { bold: true }
 
     const executions = workbook.addWorksheet("Ejecuciones")
@@ -153,18 +153,29 @@ export async function GET(request: NextRequest) {
     })
     styleHeader(obligations)
 
+    // Columnas del Anexo 15 ("Seguimiento y Control") más el daño potencial y
+    // la normativa legal del Anexo 8 ("Evidencia Objetiva No Planeada"), que
+    // son parte del registro que el auditor exige y antes no se exportaban.
     const actions = workbook.addWorksheet("Acciones correctivas")
     actions.columns = [
-      { header: "N°", key: "n", width: 8 }, { header: "Hallazgo", key: "hallazgo", width: 40 },
-      { header: "Acción", key: "accion", width: 40 }, { header: "Responsable", key: "responsable", width: 24 },
-      { header: "Plazo", key: "plazo", width: 14 }, { header: "Prioridad", key: "prioridad", width: 12 },
+      { header: "N°", key: "n", width: 8 }, { header: "Fecha", key: "fecha", width: 14 },
+      { header: "Área / Faena", key: "worksite", width: 24 },
+      { header: "Desviación detectada", key: "hallazgo", width: 40 },
+      { header: "Daño potencial", key: "danoPotencial", width: 16 },
+      { header: "Medidas correctivas", key: "accion", width: 40 },
+      { header: "Normativa legal aplicable", key: "normativaLegal", width: 30 },
+      { header: "Responsable mejora", key: "responsable", width: 24 },
+      { header: "Fecha ejecución MC", key: "plazo", width: 18 }, { header: "Prioridad", key: "prioridad", width: 12 },
       { header: "Estado", key: "estado", width: 14 }, { header: "Vencida", key: "vencida", width: 10 },
-      { header: "Faena", key: "worksiteId", width: 14 }, { header: "ID acción (navegable)", key: "id", width: 30 },
+      { header: "ID acción (navegable)", key: "id", width: 30 },
     ]
     for (const row of dossier.actions) actions.addRow({
-      n: row.n, hallazgo: safe(row.hallazgo), accion: safe(row.accion), responsable: safe(row.responsable),
+      n: row.n, fecha: row.createdAt?.slice(0, 10) ?? "", worksite: safe(dossier.worksiteName),
+      hallazgo: safe(row.hallazgo), danoPotencial: row.danoPotencial ?? "",
+      accion: safe(row.accion), normativaLegal: safe(row.normativaLegal ?? ""),
+      responsable: safe(row.responsable),
       plazo: row.plazo, prioridad: row.prioridad, estado: row.estado, vencida: row.vencida ? "Sí" : "No",
-      worksiteId: row.worksiteId, id: row.id,
+      id: row.id,
     })
     styleHeader(actions)
 

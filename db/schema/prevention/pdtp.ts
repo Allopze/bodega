@@ -559,6 +559,15 @@ export const pdtpActionPlan = pgTable("pdtp_action_plan", {
   seccionId:          text("seccion_id"),
   itemId:             text("item_id"),
   hallazgo:           text("hallazgo").notNull(),
+  /**
+   * Daño potencial del hallazgo (Anexo 8, columna "DAÑO POTENCIAL").
+   * Deriva prioridad y plazo, pero se persiste aparte porque la derivación es
+   * lossy: grave y fatal colapsan ambos en prioridad alta, así que sin esta
+   * columna el dato del anexo no se puede reconstruir para el auditor.
+   */
+  danoPotencial:      text("dano_potencial"),
+  /** Anexo 8, columna "NORMATIVA LEGAL APLICABLE". Texto libre. */
+  normativaLegal:     text("normativa_legal"),
   accion:             text("accion").notNull(),
   responsableRole:    text("responsable_role").notNull(),
   responsable:        text("responsable").notNull(),
@@ -581,6 +590,7 @@ export const pdtpActionPlan = pgTable("pdtp_action_plan", {
   index("pdtp_action_plan_plazo_idx").on(table.plazo),
   check("pdtp_action_plan_origen_check", sql`${table.origen} IN ('checklist_item', 'manual')`),
   check("pdtp_action_plan_prioridad_check", sql`${table.prioridad} IN ('alta', 'media', 'baja')`),
+  check("pdtp_action_plan_dano_potencial_check", sql`${table.danoPotencial} IS NULL OR ${table.danoPotencial} IN ('leve', 'moderado', 'grave', 'fatal')`),
   check("pdtp_action_plan_estado_check", sql`${table.estado} IN ('pendiente', 'en_proceso', 'completado', 'verificado', 'reabierto', 'cancelado')`),
 ])
 

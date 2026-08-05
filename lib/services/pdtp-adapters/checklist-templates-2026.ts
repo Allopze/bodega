@@ -10,6 +10,7 @@ import { INSPECCION_EQUIPOS_MOVILES } from "@/lib/sst/definitions/inspeccion-equ
 import { INSPECCION_EPP } from "@/lib/sst/definitions/inspeccion-epp"
 import { OBSERVACION_AMPLIROLL } from "@/lib/sst/definitions/observacion-ampliroll"
 import { OBSERVACION_MAQUINARIA } from "@/lib/sst/definitions/observacion-maquinaria"
+import { OBSERVACION_PLANEADA } from "@/lib/sst/definitions/observacion-planeada"
 import type { ChecklistDefinition } from "@/lib/sst/types"
 import { getActivePdtpActivityChecklist, savePdtpActivityChecklist } from "@/lib/services/pdtp/checklists"
 
@@ -29,6 +30,7 @@ const PDTP_2026_CHECKLIST_SPECS: ChecklistSpec[] = [
   { n: 65, label: "Inspección de Uso y Estado de EPP (PRF)", definition: INSPECCION_EPP },
   { n: 40, label: "Observación de Seguridad — Camión Ampliroll", definition: OBSERVACION_AMPLIROLL },
   { n: 41, label: "Observación de Seguridad — Maquinaria Pesada", definition: OBSERVACION_MAQUINARIA },
+  { n: 39, label: "Observación Planeada", definition: OBSERVACION_PLANEADA },
 ]
 
 /** Instala snapshots versionados sólo después de que el importador materializó

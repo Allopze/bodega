@@ -20,8 +20,11 @@ import { recordOperationalActivity } from "@/lib/services/operational-activity"
 import {
   getNonCompliantItems,
   completeExecutionChecklist,
+  getChecklistResponses,
   recalcExecutionQuantityFromInstances,
 } from "./execution-checklists"
+import { requiresObservation } from "@/lib/sst/compliance"
+import type { StatusValue } from "@/lib/sst/types"
 import {
   PDTP_DANO_POTENCIAL_A_PRIORIDAD,
   PDTP_ESTADOS_CERRADOS,
@@ -66,6 +69,10 @@ export type PdtpActionPlanItemInput = {
   responsableUserId?: string | null
   plazo: string
   prioridad?: string
+  /** Anexo 8: se guarda además de derivar prioridad/plazo (la derivación es lossy). */
+  dañoPotencial?: string | null
+  /** Anexo 8: "Normativa legal aplicable". */
+  normativaLegal?: string | null
   seccionId?: string | null
   itemId?: string | null
   origen?: string
@@ -92,7 +99,42 @@ export type PdtpActionPlanItemUpdate = {
  * condicional — solo actúa con >1 instancia completada (preserva la cantidad
  * manual del flujo single-sujeto).
  */
+/**
+ * Todo ítem que no quedó plenamente conforme (Regular, Malo/No cumple, No
+ * entregado, No apto, No) debe traer observación escrita antes de cerrar el
+ * checklist. Ver `requiresObservation` en `lib/sst/compliance.ts`.
+ *
+ * Se valida en el submit y no en cada `upsertChecklistResponses` a propósito:
+ * el llenado es incremental y el inspector marca el estado antes de redactar
+ * la observación; bloquear en el autosave haría el formulario inusable.
+ */
+async function assertNonConformingItemsHaveObservation(instanceId: string) {
+  const responses = await getChecklistResponses(instanceId)
+  const faltantes = responses.filter((r) =>
+    requiresObservation(r.estado as StatusValue) && !r.observacion?.trim())
+  if (faltantes.length === 0) return
+
+  const definition = await getInstanceDefinition(instanceId)
+  const labelByItemId = new Map(
+    (definition?.sections ?? []).flatMap((s) => s.items.map((i) => [i.id, i.label] as const)),
+  )
+  const detalle = faltantes
+    .map((r) => labelByItemId.get(r.itemId) ?? r.itemId)
+    .join("; ")
+  throw new Error(
+    `Deja una observación en los ítems marcados como Regular o Malo antes de enviar: ${detalle}`,
+  )
+}
+
+async function getInstanceDefinition(instanceId: string): Promise<ChecklistDefinition | null> {
+  const [row] = await db.select({ definition: pdtpExecutionChecklists.definitionSnapshotJson })
+    .from(pdtpExecutionChecklists)
+    .where(eq(pdtpExecutionChecklists.id, instanceId)).limit(1)
+  return (row?.definition as unknown as ChecklistDefinition) ?? null
+}
+
 export async function submitExecutionChecklist(instanceId: string, userId: string) {
+  await assertNonConformingItemsHaveObservation(instanceId)
   const [completion, actionPlan] = await Promise.all([
     completeExecutionChecklist(instanceId, userId),
     generateActionPlanFromChecklist(instanceId, userId),
@@ -223,6 +265,9 @@ export async function generateActionPlanFromChecklist(
         seccionId: item.seccionId,
         itemId: item.itemId,
         hallazgo,
+        // Se persiste el daño declarado por la plantilla, no solo su derivada:
+        // prioridad no distingue grave de fatal.
+        danoPotencial: danoPotencial ?? null,
         accion,
         responsableRole,
         responsable: responsableRole,
@@ -294,6 +339,8 @@ export async function createActionPlanItem(input: PdtpActionPlanItemInput, userI
       seccionId: input.seccionId ?? null,
       itemId: input.itemId ?? null,
       hallazgo: input.hallazgo,
+      danoPotencial: input.dañoPotencial ?? null,
+      normativaLegal: input.normativaLegal?.trim() || null,
       accion: input.accion,
       responsableRole: input.responsableRole,
       responsable: input.responsable,

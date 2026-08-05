@@ -17,7 +17,7 @@
  *   vacío sin error.
  */
 
-import { and, desc, eq, inArray, sql } from "drizzle-orm"
+import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm"
 import { db } from "@/db"
 import {
   pdtpActivities,
@@ -47,6 +47,13 @@ export type AccreditationResult = {
   skippedExcluded: number[]
   /** Actividades no encontradas en el programa activo (no error fatal, se registra en log). */
   skippedNotFound: number[]
+  /**
+   * El evento ocurrió en un año que el programa resuelto no cubre. No se
+   * acredita nada: una ejecución sellada con el año del programa mentiría
+   * sobre cuándo ocurrió el trabajo, y sellada con el año real sería invisible
+   * para `loadProgramScheduleAndExecutions`, que filtra por `program.year`.
+   */
+  skippedOutOfPeriod?: { occurredYear: number; programYear: number; activityNumbers: number[] }
 }
 
 export type AccreditationInput = {
@@ -174,6 +181,29 @@ export async function accreditPdtpFromEvent(
     )
   }
 
+  // El programa resuelto tiene que cubrir el año en que ocurrió el evento. La
+  // selección de arriba cae al programa activo más reciente cuando no hay uno
+  // del año del evento, y antes eso acreditaba igual sellando la fila con
+  // `program.year`: una capacitación de enero 2027 quedaba archivada como
+  // ejecución de 2026, mes 1, indistinguible de una real de ese mes.
+  // Preferimos no acreditar y dejar rastro: el trabajo ocurrió, pero no hay
+  // plan vigente que lo contemple.
+  if (program.year !== occurredYear) {
+    logger.warn(
+      {
+        sourceType: input.sourceType, sourceId: input.sourceId, worksiteId: input.worksiteId,
+        programId: program.id, programYear: program.year, occurredYear,
+      },
+      "[accreditPdtpFromEvent] El evento ocurrió fuera del año del programa activo; no se acredita.",
+    )
+    return {
+      accredited: [],
+      skippedExcluded: [],
+      skippedNotFound: [],
+      skippedOutOfPeriod: { occurredYear, programYear: program.year, activityNumbers: input.activityNumbers },
+    }
+  }
+
   // 2. Resolver las actividades del programa por número
   const activityRows = await db
     .select({ id: pdtpActivities.id, n: pdtpActivities.n })
@@ -251,6 +281,55 @@ export async function accreditPdtpFromEvent(
       ...(input.metadata ?? {}),
     }
 
+    // Celda del período (`pdtp_executions_activity_scope_period_unique`). Si ya
+    // hay una ejecución ahí y no es la nuestra, insertar levanta un 23505 que
+    // `safeAccredit` se traga: la segunda inspección de la semana —o la primera,
+    // si ya había una carga manual en esa celda— desaparecía sin rastro.
+    const [periodRow] = existing ? [] : await db
+      .select({
+        id: pdtpExecutions.id,
+        status: pdtpExecutions.status,
+        executedQuantity: pdtpExecutions.executedQuantity,
+        sourceMetadataJson: pdtpExecutions.sourceMetadataJson,
+      })
+      .from(pdtpExecutions)
+      .where(and(
+        eq(pdtpExecutions.activityId, activity.id),
+        eq(pdtpExecutions.worksiteId, input.worksiteId),
+        eq(pdtpExecutions.year, occurredYear),
+        eq(pdtpExecutions.month, slot.month),
+        eq(pdtpExecutions.week, slot.week),
+        isNull(pdtpExecutions.obligationId),
+      ))
+      .limit(1)
+
+    if (periodRow) {
+      // Sumamos el evento a la celda en vez de perderlo. La lista de claves ya
+      // contabilizadas mantiene la idempotencia: reintentar el mismo evento no
+      // vuelve a sumar. Una ejecución aprobada no se toca.
+      const meta = (periodRow.sourceMetadataJson ?? {}) as Record<string, unknown>
+      const contributed = Array.isArray(meta.accreditedKeys) ? (meta.accreditedKeys as string[]) : []
+      if (contributed.includes(idempotencyKey)) {
+        accredited.push({ activityId: activity.id, activityN: activity.n, executionId: periodRow.id, created: false })
+      } else if (periodRow.status === "approved") {
+        logger.warn(
+          { executionId: periodRow.id, sourceType: input.sourceType, sourceId: input.sourceId, activityN: activity.n },
+          "[accreditPdtpFromEvent] La celda del período ya tiene una ejecución aprobada; no se suma el evento.",
+        )
+      } else {
+        await db.update(pdtpExecutions).set({
+          executedQuantity: periodRow.executedQuantity + executedQuantity,
+          sourceMetadataJson: { ...meta, accreditedKeys: [...contributed, idempotencyKey] },
+          updatedAt: now,
+        }).where(and(
+          eq(pdtpExecutions.id, periodRow.id),
+          sql`${pdtpExecutions.status} <> 'approved'`,
+        ))
+        accredited.push({ activityId: activity.id, activityN: activity.n, executionId: periodRow.id, created: false })
+      }
+      continue
+    }
+
     if (existing) {
       // Actualizar ejecución existente (estaba en draft/rejected/submitted)
       await db
@@ -280,7 +359,9 @@ export async function accreditPdtpFromEvent(
           id: executionId,
           activityId: activity.id,
           worksiteId: input.worksiteId,
-          year: program.year,
+          // Igual a `program.year` por el guard de arriba; se escribe el año de
+          // ocurrencia para que la invariante quede explícita en el código.
+          year: occurredYear,
           month: slot.month,
           week: slot.week,
           executedQuantity,
@@ -292,18 +373,23 @@ export async function accreditPdtpFromEvent(
           sourceType: input.sourceType,
           sourceId: input.sourceId,
           idempotencyKey,
-          sourceMetadataJson: sourceMetadata,
+          sourceMetadataJson: { ...sourceMetadata, accreditedKeys: [idempotencyKey] },
           evidenceStatus: isRealEvidence ? "provided" : "not_required",
           createdAt: now,
           updatedAt: now,
         })
-        .onConflictDoNothing({ target: pdtpExecutions.idempotencyKey })
+        // Sin `target`: cubre tanto la clave idempotente como el índice único de
+        // período, que es el que puede chocar en una carrera con otra fuente.
+        .onConflictDoNothing()
         .returning({ id: pdtpExecutions.id })
 
       if (created) {
         accredited.push({ activityId: activity.id, activityN: activity.n, executionId: created.id, created: true })
       } else {
-        // Conflicto de unicidad: alguien más insertó mientras tanto — leemos
+        // Conflicto de unicidad: alguien más insertó mientras tanto — leemos.
+        // Puede haber chocado por la clave idempotente (mismo evento en paralelo)
+        // o por el índice de período (otra fuente ganó la celda entre nuestro
+        // SELECT y este INSERT); hay que mirar las dos, o el evento se pierde.
         const [concurrent] = await db
           .select({ id: pdtpExecutions.id, status: pdtpExecutions.status })
           .from(pdtpExecutions)
@@ -311,6 +397,25 @@ export async function accreditPdtpFromEvent(
           .limit(1)
         if (concurrent) {
           accredited.push({ activityId: activity.id, activityN: activity.n, executionId: concurrent.id, created: false })
+        } else {
+          const [concurrentPeriod] = await db
+            .select({ id: pdtpExecutions.id })
+            .from(pdtpExecutions)
+            .where(and(
+              eq(pdtpExecutions.activityId, activity.id),
+              eq(pdtpExecutions.worksiteId, input.worksiteId),
+              eq(pdtpExecutions.year, occurredYear),
+              eq(pdtpExecutions.month, slot.month),
+              eq(pdtpExecutions.week, slot.week),
+              isNull(pdtpExecutions.obligationId),
+            ))
+            .limit(1)
+          if (concurrentPeriod) {
+            logger.warn(
+              { executionId: concurrentPeriod.id, sourceType: input.sourceType, sourceId: input.sourceId },
+              "[accreditPdtpFromEvent] Otra fuente tomó la celda del período en paralelo; el evento no se sumó.",
+            )
+          }
         }
       }
     }

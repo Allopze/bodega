@@ -15,6 +15,7 @@
  *   n=40 → Observación Ampliroll (12) · multi-sujeto
  *   n=41 → Observación Maquinaria (13) · multi-sujeto (reemplaza la genérica
  *          provisional de Fase A por la real PR-SGC-25)
+ *   n=39 → Observación Planeada (14) · single-sujeto (Anexo 7 real)
  *
  * Idempotencia: si ya existe una plantilla activa con el MISMO `code` y
  * `version` (snapshot de `definitionJson`), se omite. Solo si el contenido
@@ -42,6 +43,7 @@ import { INSPECCION_EQUIPOS_MOVILES } from "../lib/sst/definitions/inspeccion-eq
 import { INSPECCION_EPP } from "../lib/sst/definitions/inspeccion-epp"
 import { OBSERVACION_AMPLIROLL } from "../lib/sst/definitions/observacion-ampliroll"
 import { OBSERVACION_MAQUINARIA } from "../lib/sst/definitions/observacion-maquinaria"
+import { OBSERVACION_PLANEADA } from "../lib/sst/definitions/observacion-planeada"
 import { savePdtpActivityChecklist, getActivePdtpActivityChecklist } from "../lib/services/pdtp/checklists"
 import type { ChecklistDefinition } from "../lib/sst/types"
 
@@ -112,6 +114,13 @@ const SPECS: SeedSpec[] = [
     n: 41,
     label: "Observación de Seguridad — Maquinaria Pesada",
     definition: OBSERVACION_MAQUINARIA,
+  },
+  // 14 Observación planeada (Anexo 7) → act 39. No es la n=41: esa es la
+  // caminata de seguridad. La v01 genérica nunca se sembró en ninguna actividad.
+  {
+    n: 39,
+    label: "Observación Planeada",
+    definition: OBSERVACION_PLANEADA,
   },
 ]
 
