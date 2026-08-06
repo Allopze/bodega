@@ -16,6 +16,7 @@ import { nanoid } from "@/lib/id"
 import { recordAudit } from "@/lib/audit"
 import { logger } from "@/lib/logger"
 import { recordInvoiceEvent } from "@/lib/services/billing/invoices"
+import { canReachInvoice } from "@/lib/services/billing/queries"
 import { syncBillingInvoices, syncBankTransactions, currentPeriod } from "@/lib/services/billing/sync"
 import { getBillingProvider } from "@/lib/services/billing/providers"
 import { writeStoredHealth } from "@/lib/services/billing/health"
@@ -191,6 +192,12 @@ export async function linkInvoiceAction(input: unknown): Promise<ActionResult> {
       columns: { id: true, folio: true, docType: true },
     })
     if (!invoice) return { ok: false, message: "La factura no existe" }
+    // Sin esto, un rol acotado podía vincular a su faena una factura que no
+    // alcanza — y el vínculo, al nacer `confirmed`, le abría el acceso: el
+    // vínculo pasaba de reflejar el permiso a otorgarlo (H-08).
+    if (!(await canReachInvoice(session, data.invoiceId))) {
+      return { ok: false, message: "No tienes acceso a esta factura" }
+    }
 
     // El contrato tiene que pertenecer al cliente indicado: un vínculo
     // inconsistente contamina todos los reportes por contrato.
@@ -270,6 +277,9 @@ export async function rejectInvoiceLinkAction(linkId: string): Promise<ActionRes
       columns: { id: true, invoiceId: true, status: true },
     })
     if (!link) return { ok: false, message: "El vínculo no existe" }
+    if (!(await canReachInvoice(session, link.invoiceId))) {
+      return { ok: false, message: "No tienes acceso a esta factura" }
+    }
 
     await db.transaction(async (tx) => {
       await tx.update(billingInvoiceLinks)
@@ -317,6 +327,11 @@ export async function confirmInvoiceLinkAction(linkId: string): Promise<ActionRe
     const scope = resolveWorksiteScope(session)
     if (link.worksiteId && scope.mode === "some" && !scope.ids.includes(link.worksiteId)) {
       return { ok: false, message: "No tienes acceso a esa faena" }
+    }
+    // La faena del vínculo no basta: un vínculo `suggested` sin faena pasaba
+    // la comprobación de arriba y, al confirmarse, abría la factura (H-08).
+    if (!(await canReachInvoice(session, link.invoiceId))) {
+      return { ok: false, message: "No tienes acceso a esta factura" }
     }
 
     const now = new Date().toISOString()
@@ -384,6 +399,9 @@ export async function updateInvoiceInternalDataAction(input: unknown): Promise<A
       columns: { id: true, dueDate: true, dueDateSource: true, ownerUserId: true, collectionStatus: true, notes: true },
     })
     if (!invoice) return { ok: false, message: "La factura no existe" }
+    if (!(await canReachInvoice(session, data.invoiceId))) {
+      return { ok: false, message: "No tienes acceso a esta factura" }
+    }
 
     const updates: Record<string, unknown> = { updatedAt: new Date().toISOString() }
     const changed: string[] = []

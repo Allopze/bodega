@@ -212,6 +212,12 @@ export class ChipaxProvider implements BillingProvider {
     // Margen de 60 s para no usar un token que expira a mitad de la corrida.
     if (this.token && this.token.expiresAt - 60_000 > Date.now()) return this.token.value
 
+    // El login cuenta contra el mismo límite de 60/min que el resto: sin
+    // espaciarlo, una renovación de token disparaba dos solicitudes seguidas
+    // (login + consulta) y el reintento por 401 encadenaba tres
+    // (H-16, AUDITORIA_BUGS_2026-08-05.md).
+    await this.space()
+
     const config = readChipaxConfig()
     const response = await fetch(`${config.baseUrl}/login`, {
       method: "POST",
@@ -245,9 +251,14 @@ export class ChipaxProvider implements BillingProvider {
   /** GET autenticado, espaciado y con reintento único ante 401 o 429. */
   private async get<T>(path: string, retry = true): Promise<T> {
     const config = readChipaxConfig()
+
+    // Autenticar primero y espaciar después: `authenticate()` espacia su
+    // propio login cuando toca renovar, así cada solicitud HTTP real queda
+    // precedida por su propia espera. Al revés, la espera del GET se consumía
+    // antes del login y ambas salían pegadas.
+    const token = await this.authenticate()
     await this.space()
 
-    const token = await this.authenticate()
     const response = await fetch(`${config.baseUrl}${path}`, {
       // El contrato lo dice explícitamente: el valor va con el prefijo "JWT".
       headers: { Authorization: `JWT ${token}`, Accept: "application/json" },

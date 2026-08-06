@@ -1,6 +1,9 @@
 "use client"
 
 import { useMemo, useState, useTransition } from "react"
+import { DatePicker } from "@/components/ui/date-picker"
+import { buttonVariants } from "@/components/ui/button"
+import { cn } from "@/lib/utils"
 import { useRouter } from "next/navigation"
 import { Plus, Trash } from "@phosphor-icons/react"
 import { toast } from "@/lib/toast"
@@ -86,7 +89,7 @@ export function ProposalDialog({
       }}
     >
       <DialogTrigger asChild>
-        <button type="button" className={primaryButtonClass} disabled={clients.length === 0}>
+        <button type="button" className={buttonVariants()} disabled={clients.length === 0}>
           Nueva propuesta
         </button>
       </DialogTrigger>
@@ -176,10 +179,10 @@ export function ProposalDialog({
             </Field>
 
             <Field label="Desde">
-              <input name="serviceFrom" type="date" className={inputClass} />
+              <DatePicker name="serviceFrom" ariaLabel="Servicio desde" />
             </Field>
             <Field label="Hasta">
-              <input name="serviceTo" type="date" className={inputClass} />
+              <DatePicker name="serviceTo" ariaLabel="Servicio hasta" />
             </Field>
 
             <Field label="Centro de costo">
@@ -295,7 +298,7 @@ export function ProposalDialog({
             Aprobar una propuesta no emite ningún documento tributario: la emisión sigue siendo manual en el portal.
           </p>
 
-          <button type="submit" disabled={isPending} className={`${primaryButtonClass} w-full`}>
+          <button type="submit" disabled={isPending} className={cn(buttonVariants(), "w-full")}>
             {isPending ? "Guardando…" : "Crear propuesta"}
           </button>
         </form>
@@ -328,8 +331,6 @@ function updateItem(
 const inputClass =
   "w-full rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-sm text-[var(--color-text)]"
 
-const primaryButtonClass =
-  "rounded-[var(--radius-md)] bg-[var(--color-primary)] px-3 py-2 text-sm font-medium text-[var(--color-primary-contrast)] disabled:opacity-60"
 
 function Field({
   label,

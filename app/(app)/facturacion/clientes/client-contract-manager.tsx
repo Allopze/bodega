@@ -1,6 +1,9 @@
 "use client"
 
 import { useState, useTransition } from "react"
+import { DatePicker } from "@/components/ui/date-picker"
+import { buttonVariants } from "@/components/ui/button"
+import { cn } from "@/lib/utils"
 import { useRouter } from "next/navigation"
 import { toast } from "@/lib/toast"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
@@ -115,7 +118,7 @@ function ClientDialog({ users }: { users: Option[] }) {
           <Field label="Notas">
             <textarea name="notes" rows={2} className={inputClass} />
           </Field>
-          <button type="submit" disabled={isPending} className={primaryButtonClass}>
+          <button type="submit" disabled={isPending} className={buttonVariants()}>
             {isPending ? "Guardando…" : "Crear cliente"}
           </button>
         </form>
@@ -142,7 +145,7 @@ function ContractDialog({
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <button type="button" className={primaryButtonClass} disabled={clients.length === 0}>
+        <button type="button" className={buttonVariants()} disabled={clients.length === 0}>
           Nuevo contrato
         </button>
       </DialogTrigger>
@@ -214,10 +217,10 @@ function ContractDialog({
               <input name="clientPoNumber" className={inputClass} />
             </Field>
             <Field label="Inicio">
-              <input name="startDate" type="date" className={inputClass} />
+              <DatePicker name="startDate" ariaLabel="Inicio del contrato" />
             </Field>
             <Field label="Término">
-              <input name="endDate" type="date" className={inputClass} />
+              <DatePicker name="endDate" ariaLabel="Término del contrato" />
             </Field>
             <Field label="Ciclo de facturación">
               <select name="billingCycle" defaultValue="monthly" className={inputClass}>
@@ -249,7 +252,7 @@ function ContractDialog({
           <Field label="Notas">
             <textarea name="notes" rows={2} className={inputClass} />
           </Field>
-          <button type="submit" disabled={isPending} className={primaryButtonClass}>
+          <button type="submit" disabled={isPending} className={buttonVariants()}>
             {isPending ? "Guardando…" : "Crear contrato"}
           </button>
         </form>
@@ -261,8 +264,6 @@ function ContractDialog({
 const inputClass =
   "w-full rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-sm text-[var(--color-text)]"
 
-const primaryButtonClass =
-  "rounded-[var(--radius-md)] bg-[var(--color-primary)] px-3 py-2 text-sm font-medium text-[var(--color-primary-contrast)] disabled:opacity-60"
 
 const secondaryButtonClass =
   "rounded-[var(--radius-md)] border border-[var(--color-border)] px-3 py-2 text-sm font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-2)]"

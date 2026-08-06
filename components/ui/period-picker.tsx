@@ -41,12 +41,17 @@ export function PeriodPicker({ period }: { period: string }) {
 }
 
 /** Últimos N períodos hasta el mes actual, del más reciente al más antiguo. */
-function recentPeriods(count: number): string[] {
+export function recentPeriods(count: number): string[] {
   const now = new Date()
   return Array.from({ length: count }, (_, index) => {
     const date = new Date(Date.UTC(now.getFullYear(), now.getMonth() - index, 1))
     return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`
   })
+}
+
+/** "2026-08" → "Agosto de 2026", siempre en es-CL (no depende del navegador). */
+export function formatPeriodOption(period: string): string {
+  return formatOption(period)
 }
 
 function formatOption(period: string): string {

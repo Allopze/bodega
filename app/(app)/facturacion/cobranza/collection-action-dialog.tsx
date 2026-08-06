@@ -1,6 +1,11 @@
 "use client"
 
 import { useState, useTransition } from "react"
+import { DatePicker } from "@/components/ui/date-picker"
+import { DotsThreeVertical } from "@phosphor-icons/react"
+import { Button, buttonVariants } from "@/components/ui/button"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { cn } from "@/lib/utils"
 import { useRouter } from "next/navigation"
 import { toast } from "@/lib/toast"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -44,24 +49,22 @@ export function CollectionActionDialog({
 
   return (
     <>
-      <div className="flex flex-col gap-1 text-xs">
-        <button
-          type="button"
-          onClick={() => setMode("action")}
-          className="text-left font-medium text-[var(--color-primary-ink)] hover:underline"
-        >
-          Registrar gestión
-        </button>
-        {canConfirmPayments && (
-          <button
-            type="button"
-            onClick={() => setMode("payment")}
-            className="text-left font-medium text-[var(--color-primary-ink)] hover:underline"
-          >
-            Registrar pago
-          </button>
-        )}
-      </div>
+      {/* Menú por fila en vez de dos links apilados en cada una de las ~20
+          filas: mismo par de acciones repetido era puro ruido visual
+          (UI/UX 2026-08-05, M5). */}
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button type="button" size="icon-mobile" variant="ghost" aria-label={`Acciones del folio ${folio}`}>
+            <DotsThreeVertical size={16} />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem onSelect={() => setMode("action")}>Registrar gestión</DropdownMenuItem>
+          {canConfirmPayments && (
+            <DropdownMenuItem onSelect={() => setMode("payment")}>Registrar pago</DropdownMenuItem>
+          )}
+        </DropdownMenuContent>
+      </DropdownMenu>
 
       {/* ── Gestión de cobranza ──────────────────────────────────────────── */}
       <Dialog open={mode === "action"} onOpenChange={(open) => !open && close()}>
@@ -99,7 +102,7 @@ export function CollectionActionDialog({
           >
             <div className="grid grid-cols-2 gap-3">
               <Field label="Fecha" required>
-                <input name="actionDate" type="date" required defaultValue={today} className={inputClass} />
+                <DatePicker name="actionDate" defaultValue={today} ariaLabel="Fecha de la gestión" />
               </Field>
               <Field label="Tipo" required>
                 <select
@@ -152,12 +155,7 @@ export function CollectionActionDialog({
                 label="Fecha comprometida"
                 hint={actionType === "commitment" ? "Obligatoria para un compromiso de pago." : undefined}
               >
-                <input
-                  name="commitmentDate"
-                  type="date"
-                  required={actionType === "commitment"}
-                  className={inputClass}
-                />
+                <DatePicker name="commitmentDate" ariaLabel="Fecha comprometida" />
               </Field>
               <Field label="Monto comprometido">
                 <input name="commitmentAmount" type="number" min={0} step="0.01" className={inputClass} />
@@ -168,10 +166,10 @@ export function CollectionActionDialog({
               <textarea name="notes" rows={2} maxLength={2000} className={inputClass} />
             </Field>
             <Field label="Próxima gestión">
-              <input name="nextActionDate" type="date" className={inputClass} />
+              <DatePicker name="nextActionDate" ariaLabel="Próxima gestión" />
             </Field>
 
-            <button type="submit" disabled={isPending} className={primaryButtonClass}>
+            <button type="submit" disabled={isPending} className={cn(buttonVariants(), "w-full")}>
               {isPending ? "Guardando…" : "Registrar gestión"}
             </button>
           </form>
@@ -215,7 +213,7 @@ export function CollectionActionDialog({
 
             <div className="grid grid-cols-2 gap-3">
               <Field label="Fecha del pago" required>
-                <input name="paymentDate" type="date" required defaultValue={today} className={inputClass} />
+                <DatePicker name="paymentDate" defaultValue={today} ariaLabel="Fecha del pago" />
               </Field>
               <Field label={`Monto (${currency})`} required>
                 <input
@@ -236,7 +234,7 @@ export function CollectionActionDialog({
               <textarea name="notes" rows={2} maxLength={1000} className={inputClass} />
             </Field>
 
-            <button type="submit" disabled={isPending} className={primaryButtonClass}>
+            <button type="submit" disabled={isPending} className={cn(buttonVariants(), "w-full")}>
               {isPending ? "Guardando…" : "Confirmar pago"}
             </button>
           </form>
@@ -249,8 +247,6 @@ export function CollectionActionDialog({
 const inputClass =
   "w-full rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-sm text-[var(--color-text)]"
 
-const primaryButtonClass =
-  "w-full rounded-[var(--radius-md)] bg-[var(--color-primary)] px-3 py-2 text-sm font-medium text-[var(--color-primary-contrast)] disabled:opacity-60"
 
 function Field({
   label,

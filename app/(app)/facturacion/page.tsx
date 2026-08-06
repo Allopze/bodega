@@ -1,4 +1,5 @@
 import type { Metadata } from "next"
+import { buttonVariants } from "@/components/ui/button"
 import Link from "next/link"
 import { redirect } from "next/navigation"
 import { ChartLineUp, Warning } from "@phosphor-icons/react/dist/ssr"
@@ -18,7 +19,7 @@ import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Badge } from "@/components/ui/badge"
 import { MoneyStat } from "./money-stat"
-import { PeriodPicker } from "./period-picker"
+import { PeriodPicker } from "@/components/ui/period-picker"
 
 export const dynamic = "force-dynamic"
 export const metadata: Metadata = { title: "Facturación y cobranza" }
@@ -77,7 +78,7 @@ export default async function BillingSummaryPage({
             can(session, "billing:manage_sync") ? (
               <Link
                 href="/facturacion/sincronizacion"
-                className="rounded-[var(--radius-md)] bg-[var(--color-primary)] px-3 py-2 text-sm font-medium text-[var(--color-primary-contrast)]"
+                className={buttonVariants()}
               >
                 Ir a Sincronización
               </Link>
@@ -99,7 +100,7 @@ export default async function BillingSummaryPage({
             <MoneyStat
               label="Cobrado del período"
               amounts={summary.collectedByCurrency}
-              detail="Solo pagos confirmados por una persona"
+              detail="Solo pagos con confirmación manual"
               origin="Suma de pagos con estado confirmado imputados a facturas emitidas en el período. Una sugerencia de pago no suma acá."
               href={`/facturacion/facturas?periodo=${period}&pago=paid`}
             />

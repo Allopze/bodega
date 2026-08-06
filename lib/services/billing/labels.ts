@@ -15,6 +15,12 @@ import type { BillingProviderId } from "@/db/schema"
 
 export type BadgeTone = "neutral" | "primary" | "success" | "warning" | "signal" | "info" | "danger" | "outline"
 
+/**
+ * Regla de tonos (UI/UX 2026-08-05, M1): las dimensiones de ESTADO usan solo
+ * variantes con tipografia severity (neutral/primary/success/warning/signal/
+ * danger) para que una misma columna no mezcle mono-uppercase con prose.
+ * `info`/`outline`/`default` (prose) quedan para chips informativos sueltos.
+ */
 export interface StatusLabel {
   label: string
   tone: BadgeTone
@@ -26,10 +32,10 @@ export interface StatusLabel {
 
 const DOCUMENT_STATUS: Record<string, StatusLabel> = {
   draft:    { label: "Pendiente de envío", tone: "neutral", hint: "Emitida en el portal pero aún no enviada al SII." },
-  issued:   { label: "Emitida",            tone: "info",    hint: "Enviada al SII; sin acuse de aceptación todavía." },
+  issued:   { label: "Emitida",            tone: "primary",    hint: "Enviada al SII; sin acuse de aceptación todavía." },
   accepted: { label: "Aceptada por el SII", tone: "success", hint: "El SII acusó recibo conforme." },
   rejected: { label: "Rechazada por el SII", tone: "danger", hint: "El SII rechazó el documento." },
-  void:     { label: "Anulada",            tone: "outline", hint: "No cuenta como facturación válida." },
+  void:     { label: "Anulada",            tone: "neutral", hint: "No cuenta como facturación válida." },
   unknown:  { label: "Sin estado",         tone: "neutral", hint: "La fuente no informa estado tributario." },
 }
 
@@ -56,11 +62,11 @@ export function paymentStatusLabel(status: string): StatusLabel {
 
 const COLLECTION_STATUS: Record<string, StatusLabel> = {
   none:        { label: "Sin gestión",         tone: "neutral" },
-  in_progress: { label: "En gestión",          tone: "info" },
+  in_progress: { label: "En gestión",          tone: "primary" },
   committed:   { label: "Compromiso de pago",  tone: "primary", hint: "El cliente comprometió una fecha de pago." },
   disputed:    { label: "En disputa",          tone: "warning", hint: "El cliente objetó el cobro." },
   closed:      { label: "Gestión cerrada",     tone: "success" },
-  written_off: { label: "Castigada",           tone: "outline", hint: "Se dio por incobrable." },
+  written_off: { label: "Castigada",           tone: "neutral", hint: "Se dio por incobrable." },
 }
 
 export function collectionStatusLabel(status: string): StatusLabel {
@@ -96,14 +102,14 @@ export function dueStatusLabel(
 
 const PROPOSAL_STATUS: Record<string, StatusLabel> = {
   draft:     { label: "Borrador",             tone: "neutral" },
-  in_review: { label: "En revisión",          tone: "info" },
+  in_review: { label: "En revisión",          tone: "primary" },
   observed:  { label: "Observada",            tone: "warning", hint: "Devuelta con observaciones que hay que resolver." },
   approved:  { label: "Aprobada",             tone: "success" },
   ready:     { label: "Lista para facturar",  tone: "primary", hint: "Aprobada y con antecedentes completos. La emisión del DTE sigue siendo manual." },
   invoiced:  { label: "Relacionada con factura", tone: "success" },
-  closed:    { label: "Cerrada",              tone: "outline" },
+  closed:    { label: "Cerrada",              tone: "neutral" },
   rejected:  { label: "Rechazada",            tone: "danger" },
-  cancelled: { label: "Anulada",              tone: "outline" },
+  cancelled: { label: "Anulada",              tone: "neutral" },
 }
 
 export function proposalStatusLabel(status: string): StatusLabel {
@@ -113,7 +119,7 @@ export function proposalStatusLabel(status: string): StatusLabel {
 /* ── Sincronización ──────────────────────────────────────────────────────── */
 
 const SYNC_STATUS: Record<string, StatusLabel> = {
-  running: { label: "En curso",   tone: "info" },
+  running: { label: "En curso",   tone: "primary" },
   success: { label: "Exitosa",    tone: "success" },
   partial: { label: "Parcial",    tone: "warning", hint: "Terminó, pero con documentos que no se pudieron procesar." },
   failed:  { label: "Con error",  tone: "danger" },
@@ -171,9 +177,9 @@ export function dueDateSourceLabel(source: string | null): string | null {
 /* ── Vínculos y pagos ────────────────────────────────────────────────────── */
 
 const VERIFICATION_STATUS: Record<string, StatusLabel> = {
-  suggested: { label: "Sugerido",  tone: "info",    hint: "Propuesto por la plataforma. No cuenta hasta que una persona lo confirme." },
+  suggested: { label: "Sugerido",  tone: "neutral",    hint: "Propuesto por la plataforma. No cuenta hasta que una persona lo confirme." },
   confirmed: { label: "Confirmado", tone: "success", hint: "Validado por una persona autorizada." },
-  rejected:  { label: "Descartado", tone: "outline" },
+  rejected:  { label: "Descartado", tone: "neutral" },
 }
 
 export function verificationStatusLabel(status: string): StatusLabel {
@@ -207,7 +213,7 @@ export function actionTypeLabel(type: string): string {
 }
 
 const ACTION_OUTCOME: Record<string, StatusLabel> = {
-  contacted:        { label: "Contactado",          tone: "info" },
+  contacted:        { label: "Contactado",          tone: "primary" },
   no_answer:        { label: "Sin respuesta",       tone: "neutral" },
   promised_payment: { label: "Prometió pago",       tone: "primary" },
   disputed:         { label: "Objetó el cobro",     tone: "warning" },

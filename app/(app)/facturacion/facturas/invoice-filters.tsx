@@ -3,6 +3,7 @@
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { useTransition } from "react"
 import { X } from "@phosphor-icons/react"
+import { formatPeriodOption, recentPeriods } from "@/components/ui/period-picker"
 
 /**
  * Filtros del listado de facturas.
@@ -41,13 +42,20 @@ export function InvoiceFiltersBar({ clients }: { clients: { id: string; name: st
     <section aria-label="Filtros" className="space-y-2">
       <div className="flex flex-wrap items-end gap-3">
         <Field label="Período">
-          <input
-            type="month"
+          {/* Select propio en vez de <input type="month">: el nativo muestra
+              "August 2026" o "-------- ----" según el locale del navegador
+              (UI/UX 2026-08-05, M8). */}
+          <select
             defaultValue={searchParams.get("periodo") ?? ""}
             onChange={(event) => setParam("periodo", event.target.value)}
             className={inputClass}
             aria-label="Período de emisión"
-          />
+          >
+            <option value="">Todos</option>
+            {recentPeriods(24).map((value) => (
+              <option key={value} value={value}>{formatPeriodOption(value)}</option>
+            ))}
+          </select>
         </Field>
 
         <Field label="Cliente">

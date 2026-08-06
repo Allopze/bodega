@@ -125,6 +125,39 @@ describe("generación de sugerencias", () => {
     expect(rerun.suggestionsCreated).toBe(0)
   })
 
+  // H-15 (AUDITORIA_BUGS_2026-08-05.md): descartar y revertir se trataban
+  // igual, así que un pago revertido por error de dedo dejaba ese movimiento
+  // inimputable contra esa factura para siempre.
+  it("un pago revertido SÍ vuelve a proponerse, a diferencia de uno descartado", async () => {
+    await insertTransaction()
+    await generatePaymentSuggestions({ direction: "sale" })
+
+    const [suggestion] = await inMemoryDb.select().from(schema.billingInvoicePayments)
+    await inMemoryDb.update(schema.billingInvoicePayments)
+      .set({
+        verificationStatus: "reverted",
+        rejectedBy: CONFIRMER,
+        rejectedAt: new Date().toISOString(),
+        rejectionReason: "Confirmé la fila equivocada.",
+      })
+      .where(eq(schema.billingInvoicePayments.id, suggestion!.id))
+
+    const rerun = await generatePaymentSuggestions({ direction: "sale" })
+    expect(rerun.suggestionsCreated).toBeGreaterThan(0)
+
+    // Se reactiva la misma fila (el índice único (factura, movimiento) no
+    // admite otra) y conserva la traza de quién revirtió y por qué.
+    const payments = await inMemoryDb.select().from(schema.billingInvoicePayments)
+      .where(eq(schema.billingInvoicePayments.id, suggestion!.id))
+    expect(payments[0]!.verificationStatus).toBe("suggested")
+    expect(payments[0]!.rejectionReason).toBe("Confirmé la fila equivocada.")
+
+    const events = await inMemoryDb.select().from(schema.billingInvoiceEvents)
+    const reactivado = events.filter((event) =>
+      (event.detail as { reactivatedFrom?: string }).reactivatedFrom === "reverted")
+    expect(reactivado).toHaveLength(1)
+  })
+
   it("registra el evento de sugerencia con su evidencia", async () => {
     await insertTransaction()
     await generatePaymentSuggestions({ direction: "sale" })
@@ -168,7 +201,7 @@ describe("confirmación y reversión", () => {
     expect(afterConfirm.outstandingAmount).toBe(0)
 
     await inMemoryDb.update(schema.billingInvoicePayments)
-      .set({ verificationStatus: "rejected", confirmedBy: null, confirmedAt: null })
+      .set({ verificationStatus: "reverted", confirmedBy: null, confirmedAt: null })
       .where(eq(schema.billingInvoicePayments.id, "pay-1"))
     const afterRevert = await recomputeInvoicePaymentStatus(serviceDb, "inv-1")
     expect(afterRevert.paymentStatus).toBe("unpaid")

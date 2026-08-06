@@ -175,11 +175,22 @@ export default async function PendingBillingPage() {
                           </span>
                         </td>
                         <td className="px-4 py-2.5">
+                          {/* Sin propuesta: el motivo y el bloqueo son idénticos en
+                              todas las filas (el período ya tiene su columna), así
+                              que van al tooltip y no como 3 líneas repetidas
+                              (UI/UX 2026-08-05, M4). Con propuesta, el detalle sí
+                              varía y se muestra. */}
                           {proposalStatus
                             ? <Badge variant={proposalStatus.tone}>{proposalStatus.label}</Badge>
-                            : <Badge variant="neutral">Sin propuesta</Badge>}
-                          <p className="mt-1 max-w-[36ch] text-xs text-[var(--color-text-muted)]">{item.reason}</p>
-                          {item.blocker && (
+                            : (
+                              <span title={[item.reason, item.blocker].filter(Boolean).join(" — ")}>
+                                <Badge variant="neutral">Sin propuesta</Badge>
+                              </span>
+                            )}
+                          {proposalStatus && (
+                            <p className="mt-1 max-w-[36ch] text-xs text-[var(--color-text-muted)]">{item.reason}</p>
+                          )}
+                          {proposalStatus && item.blocker && (
                             <p className="mt-0.5 max-w-[36ch] text-xs text-[var(--color-warning-ink)]">{item.blocker}</p>
                           )}
                           {item.proposalId && (

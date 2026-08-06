@@ -146,7 +146,7 @@ export default async function ProposalsPage({
                         <Badge variant={status.tone}>{status.label}</Badge>
                         {proposal.missingDocuments && (
                           <p className="mt-1 max-w-[28ch] text-xs text-[var(--color-warning-ink)]">
-                            Falta: {proposal.missingDocuments}
+                            Antecedentes pendientes: {proposal.missingDocuments}
                           </p>
                         )}
                         <p className="mt-1 text-xs text-[var(--color-text-subtle)]">

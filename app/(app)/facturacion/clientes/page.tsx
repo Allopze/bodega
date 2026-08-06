@@ -83,7 +83,7 @@ export default async function ClientsPage() {
                 <div className="min-w-0">
                   <h2 className="flex items-center gap-2 text-sm font-semibold text-[var(--color-text)]">
                     {client.name}
-                    {!client.isActive && <Badge variant="outline">Inactivo</Badge>}
+                    {!client.isActive && <Badge variant="neutral">Inactivo</Badge>}
                   </h2>
                   <p className="text-xs tabular-nums text-[var(--color-text-muted)]">
                     {client.rut}
@@ -178,8 +178,10 @@ const STATUS_LABELS: Record<string, string> = {
   closed:    "Cerrado",
 }
 
-const STATUS_TONES: Record<string, "success" | "warning" | "outline"> = {
+// `neutral` y no `outline`: misma columna, misma tipografía que VIGENTE
+// (UI/UX 2026-08-05, M1).
+const STATUS_TONES: Record<string, "success" | "warning" | "neutral"> = {
   active:    "success",
   suspended: "warning",
-  closed:    "outline",
+  closed:    "neutral",
 }

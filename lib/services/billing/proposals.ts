@@ -37,6 +37,7 @@ import {
   worksites,
 } from "@/db/schema"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
+import { nextCodeTx } from "@/lib/code-sequences"
 import { nanoid } from "@/lib/id"
 
 export * from "./proposal-rules"
@@ -144,21 +145,21 @@ export async function getProposalDetail(session: Session | null, proposalId: str
 /**
  * Genera el código de la propuesta ("PF-2026-0007").
  *
- * Cuenta las propuestas del año dentro de la transacción del llamador. En el
- * peor caso de una carrera, el índice único de `code` rechaza el duplicado y la
- * acción reporta el conflicto en vez de crear dos con el mismo código.
+ * Usa el secuenciador central (`nextCodeTx`, sobre la SEQUENCE nativa de
+ * Postgres) igual que el resto de los correlativos del sistema — SOL, OC, REC,
+ * AJU, DEV. Antes contaba filas con `count(*) + 1`: bastaba con que se borrara
+ * una propuesta para que el contador retrocediera y quedara colisionando de
+ * forma permanente con un código ya emitido (H-11, AUDITORIA_BUGS_2026-08-05.md).
+ *
+ * Como toda reserva por SEQUENCE, un rollback consume el número y deja un hueco
+ * en la serie. Es el mismo trade-off ya aceptado para OC y solicitudes: la
+ * propuesta es un documento interno, no tributario.
  */
 export async function nextProposalCode(
-  executor: typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0],
+  executor: Parameters<Parameters<typeof db.transaction>[0]>[0],
   year: number,
 ): Promise<string> {
-  const rows = await executor
-    .select({ count: sql<number>`count(*)::int` })
-    .from(billingProposals)
-    .where(sql`${billingProposals.code} LIKE ${`PF-${year}-%`}`)
-
-  const next = (rows[0]?.count ?? 0) + 1
-  return `PF-${year}-${String(next).padStart(4, "0")}`
+  return nextCodeTx(executor, "PF", year)
 }
 
 export function newProposalId(): string {

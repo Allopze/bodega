@@ -1,10 +1,20 @@
 "use client"
 
 import { useState, useTransition } from "react"
+import { buttonVariants } from "@/components/ui/button"
 import { useRouter } from "next/navigation"
 import { toast } from "@/lib/toast"
 import { triggerBillingSyncAction } from "../actions"
+import { formatPeriodOption, recentPeriods } from "@/components/ui/period-picker"
 import type { BillingProviderId } from "@/db/schema"
+
+/** Meses entre dos períodos "YYYY-MM", inclusivo. */
+function monthsBetween(floor: string, ceil: string): number {
+  const [fy, fm] = floor.split("-").map(Number)
+  const [cy, cm] = ceil.split("-").map(Number)
+  if (!fy || !fm || !cy || !cm) return 24
+  return Math.max(1, (cy - fy) * 12 + (cm - fm) + 1)
+}
 
 /**
  * Ejecución manual de una sincronización.
@@ -106,14 +116,17 @@ export function SyncControls({
 
         <label className="flex flex-col gap-1">
           <span className="text-xs font-medium text-[var(--color-text-muted)]">Período</span>
-          <input
-            type="month"
+          {/* Select propio en vez de <input type="month">: el nativo muestra
+              "August 2026" según el locale del navegador (UI/UX 2026-08-05, M8). */}
+          <select
             value={period}
-            min={historyFloor}
-            max={defaultPeriod}
             onChange={(event) => setPeriod(event.target.value)}
             className={inputClass}
-          />
+          >
+            {recentPeriods(monthsBetween(historyFloor, defaultPeriod)).map((value) => (
+              <option key={value} value={value}>{formatPeriodOption(value)}</option>
+            ))}
+          </select>
         </label>
 
         {/* Simular antes que Sincronizar: es el camino seguro y va primero.
@@ -132,7 +145,7 @@ export function SyncControls({
           type="button"
           disabled={isPending || !selected?.configured}
           onClick={() => execute(false)}
-          className="rounded-[var(--radius-md)] bg-[var(--color-primary)] px-3 py-2 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors duration-[var(--duration-fast)] disabled:cursor-not-allowed disabled:bg-[var(--color-surface-2)] disabled:text-[var(--color-text-subtle)]"
+          className={buttonVariants()}
         >
           {isPending ? "Ejecutando…" : "Sincronizar"}
         </button>

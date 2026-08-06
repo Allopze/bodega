@@ -211,12 +211,31 @@ export default async function BillingSyncPage() {
                         <td className="px-4 py-2.5">
                           <Badge variant={status.tone}>{status.label}</Badge>
                           {run.errorSummary && (
-                            <p className="mt-1 max-w-[40ch] text-xs text-[var(--color-text-muted)]">{run.errorSummary}</p>
+                            // El resumen puede traer decenas de mensajes concatenados
+                            // con " | " y reventaba la celda a ~1.500px de alto
+                            // (auditoría UI/UX 2026-08-05, A2): se muestra el primero
+                            // y el resto queda tras un <details>.
+                            <div className="mt-1 max-w-[40ch] text-xs text-[var(--color-text-muted)]">
+                              <p className="line-clamp-2">{run.errorSummary.split(" | ")[0]}</p>
+                              {run.errorSummary.includes(" | ") && (
+                                <details>
+                                  <summary className="cursor-pointer text-[var(--color-text-subtle)] hover:text-[var(--color-text)]">
+                                    Ver los {run.errorSummary.split(" | ").length} mensajes
+                                  </summary>
+                                  <p className="mt-1 whitespace-pre-line">{run.errorSummary.split(" | ").join("\n")}</p>
+                                </details>
+                              )}
+                            </div>
                           )}
                           {run.cursor && (
                             <p className="text-xs text-[var(--color-text-subtle)]">reanudable desde cursor</p>
                           )}
-                          <p className="text-xs text-[var(--color-text-subtle)]">id {run.correlationId}</p>
+                          <p
+                            className="font-mono text-[10px] text-[var(--color-text-faint)]"
+                            title="Identificador para cruzar esta corrida con los logs del servidor"
+                          >
+                            {run.correlationId}
+                          </p>
                         </td>
                       </tr>
                     )

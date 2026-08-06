@@ -24,6 +24,7 @@ import {
   billingInvoiceLinks,
   billingInvoicePayments,
   billingInvoices,
+  billingProposals,
   billingSyncRuns,
   clients,
   contracts,
@@ -112,6 +113,56 @@ function invoiceScopePredicate(session: Session | null): SQL | null | false {
       AND ${billingInvoiceLinks.status} = 'confirmed'
       AND ${billingInvoiceLinks.worksiteId} IN ${scope.ids}
   )`
+}
+
+/**
+ * ¿La sesión alcanza esta factura?
+ *
+ * Misma regla que `invoiceScopePredicate`, en forma de guarda puntual para las
+ * acciones de escritura: una acción no puede confiar en que la pantalla filtró
+ * bien. Vive acá —y no en un archivo de acciones— porque **todas** las
+ * escrituras que reciben un `invoiceId` deben usarla; tenerla privada en
+ * Cobranza dejó al resto del módulo sin verificar el alcance del registro que
+ * modificaba (H-08, AUDITORIA_BUGS_2026-08-05.md).
+ */
+export async function canReachInvoice(session: Session | null, invoiceId: string): Promise<boolean> {
+  const scope = resolveWorksiteScope(session)
+  if (scope.mode === "all") return true
+  if (scope.mode === "none") return false
+
+  const rows = await db
+    .select({ id: billingInvoiceLinks.id })
+    .from(billingInvoiceLinks)
+    .where(and(
+      eq(billingInvoiceLinks.invoiceId, invoiceId),
+      eq(billingInvoiceLinks.status, "confirmed"),
+      inArray(billingInvoiceLinks.worksiteId, scope.ids),
+    ))
+    .limit(1)
+
+  return rows.length > 0
+}
+
+/**
+ * ¿La sesión alcanza esta propuesta?
+ *
+ * Una propuesta lleva su faena en la fila, así que la regla es directa: un rol
+ * acotado sólo llega a las de sus faenas. Una propuesta sin faena es visible
+ * sólo para un rol global.
+ */
+export async function canReachProposal(session: Session | null, proposalId: string): Promise<boolean> {
+  const scope = resolveWorksiteScope(session)
+  if (scope.mode === "all") return true
+  if (scope.mode === "none") return false
+
+  const rows = await db
+    .select({ worksiteId: billingProposals.worksiteId })
+    .from(billingProposals)
+    .where(eq(billingProposals.id, proposalId))
+    .limit(1)
+
+  const worksiteId = rows[0]?.worksiteId
+  return Boolean(worksiteId && scope.ids.includes(worksiteId))
 }
 
 /* ── Listado ─────────────────────────────────────────────────────────────── */

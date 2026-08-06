@@ -22,8 +22,10 @@ testGlobal.__db = inMemoryDb
 
 await migratePGlite(pg, path.resolve(process.cwd(), "db/migrations"))
 
-const { listInvoices, getBillingSummary, getInvoiceDetail, listUnlinkedInvoices, computeSourceDifferences } =
-  await import("../queries")
+const {
+  listInvoices, getBillingSummary, getInvoiceDetail, listUnlinkedInvoices, computeSourceDifferences,
+  canReachInvoice, canReachProposal,
+} = await import("../queries")
 
 afterAll(async () => {
   delete testGlobal.__db
@@ -65,6 +67,8 @@ beforeEach(async () => {
   await inMemoryDb.delete(schema.billingExternalRefs)
   await inMemoryDb.delete(schema.billingInvoiceEvents)
   await inMemoryDb.delete(schema.billingInvoices)
+  await inMemoryDb.delete(schema.billingProposalItems)
+  await inMemoryDb.delete(schema.billingProposals)
   await inMemoryDb.delete(schema.contracts)
   await inMemoryDb.delete(schema.clients)
   await inMemoryDb.delete(schema.worksites)
@@ -278,6 +282,59 @@ describe("facturas sin relación operacional", () => {
 
   it("un rol acotado por faena no las ve: por definición no están en su alcance", async () => {
     expect(await listUnlinkedInvoices(session({ isGlobal: false, worksiteIds: ["w-norte"] }))).toEqual([])
+  })
+})
+
+// H-08 (AUDITORIA_BUGS_2026-08-05.md): la guarda de escritura vivía privada en
+// Cobranza, así que las acciones de facturas y propuestas modificaban sin
+// verificar el alcance del registro. Ahora es la contraparte puntual del
+// predicado de lectura y se prueba con la misma regla.
+describe("guarda de escritura por alcance", () => {
+  it("un rol global alcanza cualquier factura", async () => {
+    const global = session({ isGlobal: true })
+    expect(await canReachInvoice(global, "inv-norte")).toBe(true)
+    expect(await canReachInvoice(global, "inv-sur")).toBe(true)
+    expect(await canReachInvoice(global, "inv-huerfana")).toBe(true)
+  })
+
+  it("un rol acotado sólo alcanza las facturas vinculadas a sus faenas", async () => {
+    const norte = session({ isGlobal: false, worksiteIds: ["w-norte"] })
+    expect(await canReachInvoice(norte, "inv-norte")).toBe(true)
+    expect(await canReachInvoice(norte, "inv-sur")).toBe(false)
+    // Sin vínculo confirmado no hay alcance: es la misma regla que impide
+    // verla en el listado, aplicada a la escritura.
+    expect(await canReachInvoice(norte, "inv-huerfana")).toBe(false)
+  })
+
+  it("un rol sin faenas no alcanza ninguna factura", async () => {
+    const sinFaenas = session({ isGlobal: false, worksiteIds: [] })
+    expect(await canReachInvoice(sinFaenas, "inv-norte")).toBe(false)
+  })
+
+  it("coincide con el modelo de lectura: lo que no se puede ver, no se puede escribir", async () => {
+    const norte = session({ isGlobal: false, worksiteIds: ["w-norte"] })
+    for (const invoiceId of ["inv-norte", "inv-sur", "inv-huerfana"]) {
+      const visible = (await getInvoiceDetail(norte, invoiceId)) !== null
+      expect(await canReachInvoice(norte, invoiceId)).toBe(visible)
+    }
+  })
+
+  it("una propuesta se alcanza por su faena, y sin faena sólo la ve un rol global", async () => {
+    await inMemoryDb.insert(schema.billingProposals).values([
+      {
+        id: "prop-norte", code: "PF-2026-9001", clientId: "cli-a", worksiteId: "w-norte",
+        servicePeriod: PERIOD, currency: "CLP", status: "draft", createdBy: "u1",
+      },
+      {
+        id: "prop-sin-faena", code: "PF-2026-9002", clientId: "cli-a", worksiteId: null,
+        servicePeriod: PERIOD, currency: "CLP", status: "draft", createdBy: "u1",
+      },
+    ])
+
+    const norte = session({ isGlobal: false, worksiteIds: ["w-norte"] })
+    expect(await canReachProposal(norte, "prop-norte")).toBe(true)
+    expect(await canReachProposal(norte, "prop-sin-faena")).toBe(false)
+    expect(await canReachProposal(session({ isGlobal: true }), "prop-sin-faena")).toBe(true)
   })
 })
 

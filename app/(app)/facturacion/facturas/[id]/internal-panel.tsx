@@ -1,8 +1,12 @@
 "use client"
 
 import { useState, useTransition } from "react"
+import { DatePicker } from "@/components/ui/date-picker"
+import { buttonVariants } from "@/components/ui/button"
+import { cn } from "@/lib/utils"
 import { useRouter } from "next/navigation"
 import { toast } from "@/lib/toast"
+import { formatPeriodOption, recentPeriods } from "@/components/ui/period-picker"
 import {
   confirmInvoiceLinkAction,
   linkInvoiceAction,
@@ -77,68 +81,12 @@ export function InvoiceInternalPanel({
       </header>
 
       {/* ── Vínculo con la operación ─────────────────────────────────────── */}
-      <form
-        className="space-y-2 border-b border-[var(--color-border)] pb-3"
-        action={(formData) => {
-          const worksiteId = String(formData.get("worksiteId") ?? "")
-          const contractId = String(formData.get("contractId") ?? "")
-          const servicePeriod = String(formData.get("servicePeriod") ?? "")
-          const clientPoNumber = String(formData.get("clientPoNumber") ?? "")
-          run(() => linkInvoiceAction({
-            invoiceId,
-            clientId: clientId || null,
-            contractId: contractId || null,
-            worksiteId: worksiteId || null,
-            servicePeriod: servicePeriod || null,
-            clientPoNumber: clientPoNumber || null,
-          }))
-        }}
-      >
-        <p className="text-xs font-medium text-[var(--color-text-muted)]">Vincular con la operación</p>
-
-        <Field label="Cliente">
-          <select name="clientId" value={clientId} onChange={(event) => setClientId(event.target.value)} className={inputClass}>
-            <option value="">Sin cliente</option>
-            {clients.map((client) => (
-              <option key={client.id} value={client.id}>{client.name}</option>
-            ))}
-          </select>
-        </Field>
-
-        <Field label="Contrato">
-          <select name="contractId" className={inputClass}>
-            <option value="">Sin contrato</option>
-            {availableContracts.map((contract) => (
-              <option key={contract.id} value={contract.id}>{contract.code} — {contract.name}</option>
-            ))}
-          </select>
-        </Field>
-
-        <Field label="Faena">
-          <select name="worksiteId" className={inputClass}>
-            <option value="">Sin faena</option>
-            {worksites.map((worksite) => (
-              <option key={worksite.id} value={worksite.id}>{worksite.name}</option>
-            ))}
-          </select>
-        </Field>
-
-        <Field label="Período de servicio">
-          <input type="month" name="servicePeriod" className={inputClass} />
-        </Field>
-
-        <Field label="OC del cliente">
-          <input type="text" name="clientPoNumber" maxLength={120} placeholder="Número entregado por el cliente" className={inputClass} />
-        </Field>
-
-        <button type="submit" disabled={isPending} className={primaryButtonClass}>
-          Agregar vínculo
-        </button>
-      </form>
-
-      {/* ── Vínculos existentes ──────────────────────────────────────────── */}
-      {links.length > 0 && (
-        <ul className="space-y-1.5 border-b border-[var(--color-border)] py-3 text-xs">
+      {/* El estado actual va ANTES del formulario: con los selects "Sin
+          cliente…" arriba, la factura parecía no tener vínculo aunque hubiera
+          uno confirmado (UI/UX 2026-08-05, M6). */}
+      <p className="text-xs font-medium text-[var(--color-text-muted)]">Vínculo con la operación</p>
+      {links.length > 0 ? (
+        <ul className="space-y-1.5 py-2 text-xs">
           {links.map((link) => (
             <li key={link.id} className="flex items-center justify-between gap-2">
               <span className="min-w-0 truncate text-[var(--color-text)]">{link.label}</span>
@@ -168,7 +116,78 @@ export function InvoiceInternalPanel({
             </li>
           ))}
         </ul>
+      ) : (
+        <p className="py-2 text-xs text-[var(--color-text-subtle)]">Sin vínculo todavía.</p>
       )}
+
+      <details open={links.length === 0} className="border-b border-[var(--color-border)] pb-3">
+        <summary className="cursor-pointer text-xs font-medium text-[var(--color-primary-ink)] hover:underline">
+          Agregar vínculo
+        </summary>
+      <form
+        className="mt-2 space-y-2"
+        action={(formData) => {
+          const worksiteId = String(formData.get("worksiteId") ?? "")
+          const contractId = String(formData.get("contractId") ?? "")
+          const servicePeriod = String(formData.get("servicePeriod") ?? "")
+          const clientPoNumber = String(formData.get("clientPoNumber") ?? "")
+          run(() => linkInvoiceAction({
+            invoiceId,
+            clientId: clientId || null,
+            contractId: contractId || null,
+            worksiteId: worksiteId || null,
+            servicePeriod: servicePeriod || null,
+            clientPoNumber: clientPoNumber || null,
+          }))
+        }}
+      >
+        <Field label="Cliente">
+          <select name="clientId" value={clientId} onChange={(event) => setClientId(event.target.value)} className={inputClass}>
+            <option value="">Sin cliente</option>
+            {clients.map((client) => (
+              <option key={client.id} value={client.id}>{client.name}</option>
+            ))}
+          </select>
+        </Field>
+
+        <Field label="Contrato">
+          <select name="contractId" className={inputClass}>
+            <option value="">Sin contrato</option>
+            {availableContracts.map((contract) => (
+              <option key={contract.id} value={contract.id}>{contract.code} — {contract.name}</option>
+            ))}
+          </select>
+        </Field>
+
+        <Field label="Faena">
+          <select name="worksiteId" className={inputClass}>
+            <option value="">Sin faena</option>
+            {worksites.map((worksite) => (
+              <option key={worksite.id} value={worksite.id}>{worksite.name}</option>
+            ))}
+          </select>
+        </Field>
+
+        <Field label="Período de servicio">
+          {/* Select propio: el <input type="month"> nativo depende del locale
+              del navegador (UI/UX 2026-08-05, M8). */}
+          <select name="servicePeriod" defaultValue="" className={inputClass}>
+            <option value="">Sin período</option>
+            {recentPeriods(24).map((value) => (
+              <option key={value} value={value}>{formatPeriodOption(value)}</option>
+            ))}
+          </select>
+        </Field>
+
+        <Field label="OC del cliente">
+          <input type="text" name="clientPoNumber" maxLength={120} placeholder="Número entregado por el cliente" className={inputClass} />
+        </Field>
+
+        <button type="submit" disabled={isPending} className={cn(buttonVariants(), "w-full")}>
+          Agregar vínculo
+        </button>
+      </form>
+      </details>
 
       {/* ── Vencimiento, responsable y estado de cobranza ────────────────── */}
       <form
@@ -185,7 +204,7 @@ export function InvoiceInternalPanel({
         }}
       >
         <Field label="Fecha de vencimiento">
-          <input type="date" name="dueDate" defaultValue={dueDate ?? ""} className={inputClass} />
+          <DatePicker name="dueDate" defaultValue={dueDate ?? ""} ariaLabel="Fecha de vencimiento" />
         </Field>
         <p className="text-xs text-[var(--color-text-subtle)]">
           {dueDateSource === "manual"
@@ -217,7 +236,7 @@ export function InvoiceInternalPanel({
           <textarea name="notes" defaultValue={notes ?? ""} rows={3} maxLength={2000} className={inputClass} />
         </Field>
 
-        <button type="submit" disabled={isPending} className={primaryButtonClass}>
+        <button type="submit" disabled={isPending} className={cn(buttonVariants(), "w-full")}>
           Guardar datos internos
         </button>
       </form>
@@ -228,8 +247,6 @@ export function InvoiceInternalPanel({
 const inputClass =
   "w-full rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-sm text-[var(--color-text)]"
 
-const primaryButtonClass =
-  "w-full rounded-[var(--radius-md)] bg-[var(--color-primary)] px-3 py-2 text-sm font-medium text-[var(--color-primary-contrast)] disabled:opacity-60"
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (

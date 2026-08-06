@@ -132,4 +132,10 @@ describe("money — monedas", () => {
     expect(formatMoney(1190000, "CLP").replace(/\s/g, "")).toBe("$1.190.000")
     expect(formatMoney(1190.5, "USD")).toContain("1.190,50")
   })
+
+  it("antepone el signo al símbolo en negativos, como formatCLP", () => {
+    // Intl es-CL produce "$-1.190.000"; la convención de la plataforma es "-$".
+    expect(formatMoney(-1190000, "CLP").replace(/\s/g, "")).toBe("-$1.190.000")
+    expect(formatMoney(-0, "CLP").replace(/\s/g, "")).toBe("$0")
+  })
 })

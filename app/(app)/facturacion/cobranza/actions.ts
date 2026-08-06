@@ -2,26 +2,24 @@
 
 import { revalidatePath } from "next/cache"
 import { z } from "zod"
-import { and, eq, inArray } from "drizzle-orm"
+import { and, eq } from "drizzle-orm"
 import { db } from "@/db"
 import {
-  billingBankTransactions,
   billingCollectionActions,
-  billingInvoiceLinks,
   billingInvoicePayments,
   billingInvoices,
 } from "@/db/schema"
 import { guardPermission } from "@/lib/auth/can"
-import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { nanoid } from "@/lib/id"
 import { recordAudit } from "@/lib/audit"
 import { logger } from "@/lib/logger"
 import { recomputeInvoicePaymentStatus, recordInvoiceEvent } from "@/lib/services/billing/invoices"
 import {
-  assertAllocationFits,
+  confirmPaymentSuggestion,
   generatePaymentSuggestions,
-  recomputeTransactionAllocation,
+  revertConfirmedPayment,
 } from "@/lib/services/billing/reconciliation"
+import { canReachInvoice } from "@/lib/services/billing/queries"
 import type { ActionResult } from "../actions"
 
 /* ── Gestiones de cobranza ───────────────────────────────────────────────── */
@@ -316,37 +314,18 @@ export async function resolvePaymentSuggestionAction(input: unknown): Promise<Ac
 
     const finalAmount = amount ?? payment.amount
 
-    const snapshot = await db.transaction(async (tx) => {
-      if (payment.bankTransactionId) {
-        const transaction = await tx.query.billingBankTransactions.findFirst({
-          where: eq(billingBankTransactions.id, payment.bankTransactionId),
-          columns: { id: true, amount: true, allocatedAmount: true },
-        })
-        if (!transaction) throw new Error("El movimiento bancario ya no existe")
-        assertAllocationFits(transaction.amount, transaction.allocatedAmount, finalAmount)
-      }
-
-      await tx.update(billingInvoicePayments).set({
-        verificationStatus: "confirmed",
-        amount: finalAmount,
-        confirmedBy: session.user.id,
-        confirmedAt: now,
-        updatedAt: now,
-      }).where(eq(billingInvoicePayments.id, paymentId))
-
-      await recordInvoiceEvent(tx, {
-        invoiceId: payment.invoiceId,
-        eventType: "payment.confirmed",
-        actorKind: "user",
+    // El lock de fila del movimiento bancario y el `WHERE ... status = 'suggested'`
+    // viven en confirmPaymentSuggestion: dos confirmaciones concurrentes sobre el
+    // mismo movimiento no pueden pisarse el saldo imputado (H-01, AUDITORIA_BUGS_2026-08-05.md).
+    const snapshot = await db.transaction((tx) =>
+      confirmPaymentSuggestion(tx, {
+        paymentId,
+        bankTransactionId: payment.bankTransactionId,
+        finalAmount,
         actorUserId: session.user.id,
-        detail: { paymentId, amount: finalAmount, currency: payment.currency },
-      })
-
-      if (payment.bankTransactionId) {
-        await recomputeTransactionAllocation(tx, payment.bankTransactionId)
-      }
-      return recomputeInvoicePaymentStatus(tx, payment.invoiceId)
-    })
+        now,
+      }),
+    )
 
     await recordAudit({
       userId: session.user.id,
@@ -401,30 +380,18 @@ export async function revertPaymentAction(input: unknown): Promise<ActionResult>
     }
 
     const now = new Date().toISOString()
-    const snapshot = await db.transaction(async (tx) => {
-      await tx.update(billingInvoicePayments).set({
-        verificationStatus: "rejected",
-        rejectedBy: session.user.id,
-        rejectedAt: now,
-        rejectionReason: parsed.data.reason,
-        confirmedBy: null,
-        confirmedAt: null,
-        updatedAt: now,
-      }).where(eq(billingInvoicePayments.id, payment.id))
-
-      await recordInvoiceEvent(tx, {
-        invoiceId: payment.invoiceId,
-        eventType: "payment.reverted",
-        actorKind: "user",
+    // Mismo lock de fila que confirmPaymentSuggestion: revertir también
+    // recalcula allocated_amount y necesita el mismo punto de serialización
+    // frente a una confirmación concurrente sobre el mismo movimiento.
+    const snapshot = await db.transaction((tx) =>
+      revertConfirmedPayment(tx, {
+        paymentId: payment.id,
+        bankTransactionId: payment.bankTransactionId,
+        reason: parsed.data.reason,
         actorUserId: session.user.id,
-        detail: { paymentId: payment.id, amount: payment.amount, reason: parsed.data.reason },
-      })
-
-      if (payment.bankTransactionId) {
-        await recomputeTransactionAllocation(tx, payment.bankTransactionId)
-      }
-      return recomputeInvoicePaymentStatus(tx, payment.invoiceId)
-    })
+        now,
+      }),
+    )
 
     await recordAudit({
       userId: session.user.id,
@@ -433,7 +400,7 @@ export async function revertPaymentAction(input: unknown): Promise<ActionResult>
       entityType: "billing_invoice_payment",
       entityId: payment.id,
       oldState: { status: "confirmed" },
-      newState: { status: "rejected" },
+      newState: { status: "reverted" },
       reason: parsed.data.reason,
     })
 
@@ -486,30 +453,7 @@ export async function generateSuggestionsAction(): Promise<ActionResult> {
 
 /* ── Alcance ─────────────────────────────────────────────────────────────── */
 
-/**
- * ¿La sesión alcanza esta factura?
- *
- * Repite la regla de `queries.ts` a propósito: una acción de escritura no puede
- * confiar en que la pantalla filtró bien. Un rol acotado por faena solo llega a
- * facturas con vínculo confirmado a sus faenas.
- */
-async function canReachInvoice(
-  session: Parameters<typeof resolveWorksiteScope>[0],
-  invoiceId: string,
-): Promise<boolean> {
-  const scope = resolveWorksiteScope(session)
-  if (scope.mode === "all") return true
-  if (scope.mode === "none") return false
-
-  const rows = await db
-    .select({ id: billingInvoiceLinks.id })
-    .from(billingInvoiceLinks)
-    .where(and(
-      eq(billingInvoiceLinks.invoiceId, invoiceId),
-      eq(billingInvoiceLinks.status, "confirmed"),
-      inArray(billingInvoiceLinks.worksiteId, scope.ids),
-    ))
-    .limit(1)
-
-  return rows.length > 0
-}
+// `canReachInvoice` vive en `lib/services/billing/queries.ts`, junto al
+// predicado de lectura del que es la contraparte puntual: tenerla privada acá
+// dejó al resto del módulo escribiendo sin verificar el alcance del registro
+// (H-08, AUDITORIA_BUGS_2026-08-05.md).

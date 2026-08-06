@@ -140,6 +140,30 @@ describe("Chipax — contrato real", () => {
     expect(headers.Authorization).not.toMatch(/Bearer/)
   })
 
+  // H-16 (AUDITORIA_BUGS_2026-08-05.md): `space()` sólo cubría el GET, así que
+  // una renovación de token disparaba login + consulta pegados contra un
+  // límite de 60/min, y el reintento por 401 encadenaba tres.
+  it("espacia también el login, no sólo la consulta", async () => {
+    const momentos: { url: string; at: number }[] = []
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (url) => {
+      momentos.push({ url: String(url), at: Date.now() })
+      // Token ya vencido al recibirlo: cada consulta obliga a renovar, que es
+      // el escenario donde login y GET salían pegados.
+      return String(url).endsWith("/login")
+        ? respuesta({ token: TOKEN, tokenExpiration: Math.floor(Date.now() / 1000) - 1 })
+        : respuesta({ items: [], paginationAttributes: { count: 0, totalPages: 1 } })
+    })
+
+    await nuevoProveedor().listIssuedInvoices({ period: "2026-06" })
+
+    // Login seguido de la consulta: dos solicitudes HTTP reales.
+    expect(momentos).toHaveLength(2)
+    expect(momentos[0]!.url).toMatch(/\/login$/)
+    expect(momentos[1]!.url).toMatch(/\/dtes/)
+    // Cada una precedida por su propia espera: sin el fix salían con ~0 ms.
+    expect(momentos[1]!.at - momentos[0]!.at).toBeGreaterThanOrEqual(1000)
+  }, 20_000)
+
   it("mapea un DTE de venta al modelo normalizado", async () => {
     vi.spyOn(globalThis, "fetch")
       .mockResolvedValueOnce(respuesta({ token: TOKEN, tokenExpiration: Math.floor(Date.now() / 1000) + 3600 }))

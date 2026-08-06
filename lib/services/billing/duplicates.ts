@@ -31,7 +31,7 @@ import {
 } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { absAmount, amountsWithinTolerance, compareAmounts } from "./money"
-import { daysOverdue, recordInvoiceEvent } from "./invoices"
+import { daysOverdue, recomputeInvoicePaymentStatus, recordInvoiceEvent } from "./invoices"
 
 export type DuplicateClassification = "probable" | "possible" | "conflict"
 
@@ -232,12 +232,18 @@ export async function listOpenDuplicates(limit = 50) {
       totalA: left.totalAmount,
       paidA: left.paidAmount,
       sourceA: left.source,
+      receiverTaxIdA: left.receiverTaxId,
+      receiverNameA: left.receiverName,
+      documentStatusA: left.documentStatus,
       folioB: right.folio,
       docTypeB: right.docType,
       issueDateB: right.issueDate,
       totalB: right.totalAmount,
       paidB: right.paidAmount,
       sourceB: right.source,
+      receiverTaxIdB: right.receiverTaxId,
+      receiverNameB: right.receiverName,
+      documentStatusB: right.documentStatus,
     })
     .from(billingDuplicateCandidates)
     .innerJoin(left, eq(left.id, billingDuplicateCandidates.invoiceId))
@@ -325,6 +331,14 @@ export async function mergeDuplicate(input: {
     await tx.update(billingInvoicePayments)
       .set({ invoiceId: input.keepId })
       .where(eq(billingInvoicePayments.invoiceId, input.dropId))
+
+    // paid_amount/payment_status son caché derivada de los pagos: mover pagos
+    // sin rederivarla deja ambas facturas con un saldo que no refleja lo que
+    // acaban de recibir/perder (H-02, AUDITORIA_BUGS_2026-08-05.md). dropId
+    // también se recalcula — queda `void`, pero su caché de saldo no debe
+    // seguir describiendo pagos que ya no le pertenecen.
+    await recomputeInvoicePaymentStatus(tx, input.keepId)
+    await recomputeInvoicePaymentStatus(tx, input.dropId)
 
     const keepItems = await tx
       .select({ id: billingInvoiceItems.id })

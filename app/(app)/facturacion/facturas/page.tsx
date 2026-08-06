@@ -143,15 +143,15 @@ export default async function InvoicesPage({
                   <tr className="border-b border-[var(--color-border)] bg-[var(--color-surface-2)]">
                     <th scope="col" className="px-4 py-2.5 th-type">Documento</th>
                     <th scope="col" className="px-4 py-2.5 th-type">Cliente</th>
-                    <th scope="col" className="px-4 py-2.5 th-type">Emisión</th>
+                    <th scope="col" className="hidden px-4 py-2.5 th-type lg:table-cell">Emisión</th>
                     <th scope="col" className="px-4 py-2.5 th-type">Vencimiento</th>
-                    <th scope="col" className="px-4 py-2.5 th-type text-right">Neto</th>
-                    <th scope="col" className="px-4 py-2.5 th-type text-right">IVA</th>
+                    <th scope="col" className="hidden px-4 py-2.5 th-type text-right lg:table-cell">Neto</th>
+                    <th scope="col" className="hidden px-4 py-2.5 th-type text-right lg:table-cell">IVA</th>
                     <th scope="col" className="px-4 py-2.5 th-type text-right">Total</th>
                     <th scope="col" className="px-4 py-2.5 th-type text-right">Saldo</th>
                     <th scope="col" className="px-4 py-2.5 th-type">Estado</th>
-                    <th scope="col" className="px-4 py-2.5 th-type">Contrato · Faena</th>
-                    <th scope="col" className="px-4 py-2.5 th-type">Fuente</th>
+                    <th scope="col" className="hidden px-4 py-2.5 th-type lg:table-cell">Contrato · Faena</th>
+                    <th scope="col" className="hidden px-4 py-2.5 th-type lg:table-cell">Fuente</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[var(--color-border)]">
@@ -174,7 +174,7 @@ export default async function InvoicesPage({
                           </div>
                           <div className="text-xs tabular-nums text-[var(--color-text-subtle)]">{row.counterpartyTaxId}</div>
                         </td>
-                        <td className="whitespace-nowrap px-4 py-2.5 tabular-nums text-[var(--color-text-muted)]">
+                        <td className="hidden whitespace-nowrap px-4 py-2.5 tabular-nums text-[var(--color-text-muted)] lg:table-cell">
                           {formatDateShort(row.issueDate)}
                         </td>
                         <td className="whitespace-nowrap px-4 py-2.5">
@@ -185,10 +185,10 @@ export default async function InvoicesPage({
                             </div>
                           )}
                         </td>
-                        <td className="whitespace-nowrap px-4 py-2.5 text-right tabular-nums text-[var(--color-text-muted)]">
+                        <td className="hidden whitespace-nowrap px-4 py-2.5 text-right tabular-nums text-[var(--color-text-muted)] lg:table-cell">
                           {row.netAmount === null ? "—" : formatMoney(row.netAmount, row.currency)}
                         </td>
-                        <td className="whitespace-nowrap px-4 py-2.5 text-right tabular-nums text-[var(--color-text-muted)]">
+                        <td className="hidden whitespace-nowrap px-4 py-2.5 text-right tabular-nums text-[var(--color-text-muted)] lg:table-cell">
                           {row.taxAmount === null ? "—" : formatMoney(row.taxAmount, row.currency)}
                         </td>
                         <td className="whitespace-nowrap px-4 py-2.5 text-right tabular-nums font-medium text-[var(--color-text)]">
@@ -205,15 +205,17 @@ export default async function InvoicesPage({
                             )}
                           </div>
                         </td>
-                        <td className="px-4 py-2.5 text-xs text-[var(--color-text-muted)]">
+                        <td className="hidden px-4 py-2.5 text-xs text-[var(--color-text-muted)] lg:table-cell">
                           {row.contractCode ?? "—"}
                           {row.worksiteName && <div className="text-[var(--color-text-subtle)]">{row.worksiteName}</div>}
                         </td>
-                        <td className="whitespace-nowrap px-4 py-2.5 text-xs text-[var(--color-text-muted)]">
+                        {/* La fecha de última lectura era idéntica en todas las
+                            filas (ruido); va al tooltip (UI/UX 2026-08-05, B3). */}
+                        <td
+                          className="hidden whitespace-nowrap px-4 py-2.5 text-xs text-[var(--color-text-muted)] lg:table-cell"
+                          title={row.sourceLastSyncedAt ? `Última lectura: ${formatDateShort(row.sourceLastSyncedAt.slice(0, 10))}` : undefined}
+                        >
                           {providerLabel(row.source)}
-                          <div className="text-[var(--color-text-subtle)]">
-                            {row.sourceLastSyncedAt ? formatDateShort(row.sourceLastSyncedAt.slice(0, 10)) : "—"}
-                          </div>
                         </td>
                       </tr>
                     )

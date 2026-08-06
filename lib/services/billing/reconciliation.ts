@@ -32,7 +32,9 @@ import { nanoid } from "@/lib/id"
 import { cleanRut } from "@/lib/rut"
 import { readReconciliationConfig } from "./config"
 import { absAmount, addAmounts, amountsWithinTolerance, compareAmounts, sumAmounts } from "./money"
-import { daysOverdue, recordInvoiceEvent } from "./invoices"
+import { daysOverdue, recomputeInvoicePaymentStatus, recordInvoiceEvent, type PaymentStatusSnapshot } from "./invoices"
+
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0]
 
 export type MatchConfidence = "high" | "medium" | "low"
 
@@ -283,10 +285,12 @@ export async function generatePaymentSuggestions(
   let skipped = 0
 
   for (const candidate of candidates) {
-    // Cualquier imputación previa entre este par bloquea la sugerencia: incluida
-    // una rechazada, para no volver a proponer lo que ya se descartó.
+    // Una imputación previa entre este par bloquea la sugerencia — salvo que
+    // sea `reverted`: descartar (`rejected`) es una decisión sobre el vínculo
+    // y se respeta para siempre; revertir es corregir un error de dedo y el
+    // par vuelve a ser proponible (H-15, AUDITORIA_BUGS_2026-08-05.md).
     const existing = await db
-      .select({ id: billingInvoicePayments.id })
+      .select({ id: billingInvoicePayments.id, verificationStatus: billingInvoicePayments.verificationStatus })
       .from(billingInvoicePayments)
       .where(and(
         eq(billingInvoicePayments.invoiceId, candidate.invoiceId),
@@ -294,12 +298,45 @@ export async function generatePaymentSuggestions(
       ))
       .limit(1)
 
-    if (existing.length > 0) {
+    const previous = existing[0]
+    if (previous && previous.verificationStatus !== "reverted") {
       skipped++
       continue
     }
 
     const transaction = transactionRows.find((row) => row.id === candidate.bankTransactionId)!
+
+    // El índice único (factura, movimiento) impide insertar una fila nueva
+    // para el mismo par: la reversión se reactiva en su lugar, conservando su
+    // historia (quién revirtió y por qué) en las columnas de rechazo.
+    if (previous) {
+      await db.transaction(async (tx) => {
+        await tx.update(billingInvoicePayments).set({
+          verificationStatus: "suggested",
+          paymentDate: transaction.transactionDate,
+          amount: candidate.matchedAmount,
+          currency: candidate.currency,
+          confidence: candidate.confidence,
+          matchedBy: "auto",
+          evidence: { evidence: candidate.evidence, warnings: candidate.warnings },
+          updatedAt: new Date().toISOString(),
+        }).where(eq(billingInvoicePayments.id, previous.id))
+
+        await recordInvoiceEvent(tx, {
+          invoiceId: candidate.invoiceId,
+          eventType: "payment.suggested",
+          actorKind: "system",
+          detail: {
+            confidence: candidate.confidence,
+            matchedAmount: candidate.matchedAmount,
+            evidence: candidate.evidence,
+            reactivatedFrom: "reverted",
+          },
+        })
+      })
+      created++
+      continue
+    }
     await db.transaction(async (tx) => {
       await tx.insert(billingInvoicePayments).values({
         id: nanoid(),
@@ -379,4 +416,146 @@ export function assertAllocationFits(
       `El movimiento solo tiene ${available.toLocaleString("es-CL")} disponibles y se intenta imputar ${absAmount(newAmount).toLocaleString("es-CL")}`,
     )
   }
+}
+
+/**
+ * Bloquea la fila del movimiento bancario dentro de la transacción del
+ * llamador. Es el punto de serialización: cualquier escritura que después
+ * toque `billing_invoice_payments` para este movimiento y llame a
+ * `recomputeTransactionAllocation` tiene que pasar primero por acá — sin el
+ * lock, dos confirmaciones (o una confirmación y una reversión) concurrentes
+ * sobre el mismo movimiento pueden leer el mismo `allocatedAmount`, pasar
+ * ambas la validación, y la última en escribir pisa el saldo real de la otra
+ * (H-01, AUDITORIA_BUGS_2026-08-05.md).
+ */
+async function lockBankTransaction(
+  tx: Tx,
+  bankTransactionId: string,
+): Promise<{ id: string; amount: number; allocatedAmount: number }> {
+  const [transaction] = await tx
+    .select({
+      id: billingBankTransactions.id,
+      amount: billingBankTransactions.amount,
+      allocatedAmount: billingBankTransactions.allocatedAmount,
+    })
+    .from(billingBankTransactions)
+    .where(eq(billingBankTransactions.id, bankTransactionId))
+    .for("update")
+  if (!transaction) throw new Error("El movimiento bancario ya no existe")
+  return transaction
+}
+
+export interface ConfirmPaymentSuggestionInput {
+  paymentId: string
+  bankTransactionId: string | null
+  finalAmount: number
+  actorUserId: string
+  now: string
+}
+
+export type ConfirmPaymentSuggestionResult = PaymentStatusSnapshot & { invoiceId: string }
+
+/**
+ * Confirma una sugerencia de pago dentro de la transacción del llamador,
+ * serializada contra cualquier otra confirmación/reversión del mismo
+ * movimiento bancario. Es el único camino correcto para pasar un pago de
+ * `suggested` a `confirmed` — `resolvePaymentSuggestionAction` es un wrapper
+ * fino sobre esta función.
+ */
+export async function confirmPaymentSuggestion(
+  tx: Tx,
+  input: ConfirmPaymentSuggestionInput,
+): Promise<ConfirmPaymentSuggestionResult> {
+  if (input.bankTransactionId) {
+    const transaction = await lockBankTransaction(tx, input.bankTransactionId)
+    assertAllocationFits(transaction.amount, transaction.allocatedAmount, input.finalAmount)
+  }
+
+  const [updated] = await tx
+    .update(billingInvoicePayments)
+    .set({
+      verificationStatus: "confirmed",
+      amount: input.finalAmount,
+      confirmedBy: input.actorUserId,
+      confirmedAt: input.now,
+      updatedAt: input.now,
+    })
+    .where(and(
+      eq(billingInvoicePayments.id, input.paymentId),
+      eq(billingInvoicePayments.verificationStatus, "suggested"),
+    ))
+    .returning({ id: billingInvoicePayments.id, invoiceId: billingInvoicePayments.invoiceId })
+
+  if (!updated) throw new Error("La sugerencia ya fue resuelta por otra persona")
+
+  await recordInvoiceEvent(tx, {
+    invoiceId: updated.invoiceId,
+    eventType: "payment.confirmed",
+    actorKind: "user",
+    actorUserId: input.actorUserId,
+    detail: { paymentId: input.paymentId, amount: input.finalAmount },
+  })
+
+  if (input.bankTransactionId) await recomputeTransactionAllocation(tx, input.bankTransactionId)
+  const snapshot = await recomputeInvoicePaymentStatus(tx, updated.invoiceId)
+  return { ...snapshot, invoiceId: updated.invoiceId }
+}
+
+export interface RevertConfirmedPaymentInput {
+  paymentId: string
+  bankTransactionId: string | null
+  reason: string
+  actorUserId: string
+  now: string
+}
+
+export type RevertConfirmedPaymentResult = PaymentStatusSnapshot & { invoiceId: string; amount: number }
+
+/**
+ * Revierte un pago confirmado dentro de la transacción del llamador, con el
+ * mismo lock del movimiento bancario que `confirmPaymentSuggestion` — la
+ * reversión también recalcula `allocated_amount` y necesita el mismo punto de
+ * serialización para no pisarse con una confirmación concurrente.
+ */
+export async function revertConfirmedPayment(
+  tx: Tx,
+  input: RevertConfirmedPaymentInput,
+): Promise<RevertConfirmedPaymentResult> {
+  if (input.bankTransactionId) {
+    await lockBankTransaction(tx, input.bankTransactionId)
+  }
+
+  const [updated] = await tx
+    .update(billingInvoicePayments)
+    .set({
+      // `reverted`, no `rejected`: revertir corrige un error de dedo, no
+      // descarta el vínculo. Marcarlo `rejected` lo excluía para siempre del
+      // motor de sugerencias (H-15, AUDITORIA_BUGS_2026-08-05.md).
+      verificationStatus: "reverted",
+      rejectedBy: input.actorUserId,
+      rejectedAt: input.now,
+      rejectionReason: input.reason,
+      confirmedBy: null,
+      confirmedAt: null,
+      updatedAt: input.now,
+    })
+    .where(and(
+      eq(billingInvoicePayments.id, input.paymentId),
+      eq(billingInvoicePayments.verificationStatus, "confirmed"),
+    ))
+    .returning({ id: billingInvoicePayments.id, invoiceId: billingInvoicePayments.invoiceId, amount: billingInvoicePayments.amount })
+
+  if (!updated) throw new Error("El pago ya no está confirmado — posible concurrencia")
+
+  await recordInvoiceEvent(tx, {
+    invoiceId: updated.invoiceId,
+    eventType: "payment.reverted",
+    actorKind: "user",
+    actorUserId: input.actorUserId,
+    detail: { paymentId: input.paymentId, amount: updated.amount, reason: input.reason },
+  })
+
+  if (input.bankTransactionId) await recomputeTransactionAllocation(tx, input.bankTransactionId)
+  const snapshot = await recomputeInvoicePaymentStatus(tx, updated.invoiceId)
+  return { ...snapshot, invoiceId: updated.invoiceId, amount: updated.amount }
 }

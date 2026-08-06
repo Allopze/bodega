@@ -145,15 +145,23 @@ export function sumByCurrency(items: readonly MoneyAmount[]): MoneyAmount[] {
 
 // ── Formato ──────────────────────────────────────────────────────────────────
 
-/** Formatea con la moneda visible. CLP sin decimales; el resto con 2. */
+/**
+ * Formatea con la moneda visible. CLP sin decimales; el resto con 2.
+ *
+ * El signo va delante del símbolo (`-$4.500`, no `$-4.500`), igual que
+ * `formatCLP` en `lib/utils.ts` — misma decisión de 2026-08-04: `Intl` es-CL
+ * pone el guion tras el símbolo y en notas de crédito se lee mal. Se formatea
+ * el valor absoluto y se antepone el signo para no manipular el número.
+ */
 export function formatMoney(amount: number, currency = "CLP"): string {
   const fractionDigits = currency === "CLP" ? 0 : SCALE
-  return new Intl.NumberFormat("es-CL", {
+  const formatted = new Intl.NumberFormat("es-CL", {
     style: "currency",
     currency,
     minimumFractionDigits: fractionDigits,
     maximumFractionDigits: fractionDigits,
-  }).format(amount)
+  }).format(amount < 0 ? -amount : amount === 0 ? 0 : amount)
+  return amount < 0 ? `-${formatted}` : formatted
 }
 
 /** Tasa de IVA configurada (`TAX_RATE`, default 0,19). */

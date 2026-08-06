@@ -167,6 +167,45 @@ describe("fusión", () => {
     expect(payment!.invoiceId).toBe("inv-reemitida")
   })
 
+  it("recalcula el saldo de ambas facturas al mover un pago confirmado (H-02)", async () => {
+    await seedSuspiciousPair()
+    // El pago confirmado vive hoy en "inv-original" (dropId); su caché de
+    // saldo ya lo refleja, como lo dejaría recomputeInvoicePaymentStatus en
+    // producción. La superviviente ("inv-reemitida") sigue sin pagos.
+    await inMemoryDb.insert(schema.billingInvoicePayments).values({
+      id: "pay-confirmed", invoiceId: "inv-original", paymentDate: "2026-08-01",
+      amount: 1000000, currency: "CLP", verificationStatus: "confirmed",
+      confirmedBy: ACTOR, confirmedAt: new Date().toISOString(),
+    })
+    await inMemoryDb.update(schema.billingInvoices)
+      .set({ paidAmount: 1000000, paymentStatus: "paid" })
+      .where(eq(schema.billingInvoices.id, "inv-original"))
+
+    await detectDuplicateCandidates({ direction: "sale" })
+    const [candidate] = await listOpenDuplicates()
+
+    await mergeDuplicate({
+      candidateId: candidate!.id, keepId: "inv-reemitida", dropId: "inv-original", actorUserId: ACTOR,
+    })
+
+    const invoices = await inMemoryDb.select().from(schema.billingInvoices)
+    const keep = invoices.find((invoice) => invoice.id === "inv-reemitida")!
+    const drop = invoices.find((invoice) => invoice.id === "inv-original")!
+
+    // Antes de H-02, mergeDuplicate movía el pago pero no llamaba a
+    // recomputeInvoicePaymentStatus: la superviviente quedaba "unpaid" pese a
+    // ser ahora dueña de un pago confirmado.
+    expect(keep.paidAmount).toBe(1000000)
+    expect(keep.paymentStatus).toBe("paid")
+    // La descartada ya no es dueña de ningún pago: su caché debe reflejarlo,
+    // no seguir describiendo un pago que ya se fue a la otra factura.
+    expect(drop.paidAmount).toBe(0)
+    expect(drop.paymentStatus).toBe("unpaid")
+
+    const [payment] = await inMemoryDb.select().from(schema.billingInvoicePayments)
+    expect(payment!.invoiceId).toBe("inv-reemitida")
+  })
+
   it("no borra la descartada: la anula y deja rastro en ambas", async () => {
     await seedSuspiciousPair()
     await detectDuplicateCandidates({ direction: "sale" })

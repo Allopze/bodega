@@ -65,7 +65,7 @@ export default async function CollectionsPage({
     <PageContainer>
       <PageHeader
         title="Cobranza"
-        description="Estado de cobro de las facturas emitidas, agrupado por lo que corresponde hacer con cada una. Solo los pagos confirmados por una persona descuentan del saldo."
+        description="Estado de cobro de las facturas emitidas, agrupado por lo que corresponde hacer con cada una. Solo los pagos con confirmación manual descuentan del saldo."
         breadcrumb={
           <Breadcrumbs items={[
             { label: "Inicio", href: "/dashboard" },
@@ -152,8 +152,8 @@ export default async function CollectionsPage({
                     <th scope="col" className="px-4 py-2.5 th-type">Vencimiento</th>
                     <th scope="col" className="px-4 py-2.5 th-type text-right">Saldo</th>
                     <th scope="col" className="px-4 py-2.5 th-type">Situación</th>
-                    <th scope="col" className="px-4 py-2.5 th-type">Última gestión</th>
-                    <th scope="col" className="px-4 py-2.5 th-type">Responsable</th>
+                    <th scope="col" className="hidden px-4 py-2.5 th-type lg:table-cell">Última gestión</th>
+                    <th scope="col" className="hidden px-4 py-2.5 th-type lg:table-cell">Responsable</th>
                     {canManage && <th scope="col" className="px-4 py-2.5 th-type">Acción</th>}
                   </tr>
                 </thead>
@@ -212,7 +212,7 @@ export default async function CollectionsPage({
                             </p>
                           )}
                         </td>
-                        <td className="px-4 py-2.5 text-xs text-[var(--color-text-muted)]">
+                        <td className="hidden px-4 py-2.5 text-xs text-[var(--color-text-muted)] lg:table-cell">
                           {row.lastActionDate
                             ? <>
                                 {actionTypeLabel(row.lastActionType ?? "")} · {formatDateShort(row.lastActionDate)}
@@ -220,7 +220,7 @@ export default async function CollectionsPage({
                               </>
                             : <span className="text-[var(--color-text-subtle)]">Sin gestión registrada</span>}
                         </td>
-                        <td className="px-4 py-2.5 text-xs text-[var(--color-text-muted)]">
+                        <td className="hidden px-4 py-2.5 text-xs text-[var(--color-text-muted)] lg:table-cell">
                           {row.ownerName ?? "Sin asignar"}
                         </td>
                         {canManage && (

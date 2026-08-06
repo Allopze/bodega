@@ -58,6 +58,9 @@ export default async function DuplicatesPage() {
             totalAmount: candidate.totalA,
             paidAmount: candidate.paidA,
             source: candidate.sourceA,
+            receiverTaxId: candidate.receiverTaxIdA,
+            receiverName: candidate.receiverNameA,
+            documentStatus: candidate.documentStatusA,
           },
           right: {
             id: candidate.otherInvoiceId,
@@ -67,6 +70,9 @@ export default async function DuplicatesPage() {
             totalAmount: candidate.totalB,
             paidAmount: candidate.paidB,
             source: candidate.sourceB,
+            receiverTaxId: candidate.receiverTaxIdB,
+            receiverName: candidate.receiverNameB,
+            documentStatus: candidate.documentStatusB,
           },
         }))}
       />

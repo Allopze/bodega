@@ -414,7 +414,7 @@ export default async function InvoiceDetailPage({ params }: { params: Promise<{ 
                   {detail.events.map((entry) => (
                     <li key={entry.event.id} className="border-l-2 border-[var(--color-border)] pl-2">
                       <p className="font-medium text-[var(--color-text)]">
-                        {EVENT_LABELS[entry.event.eventType] ?? entry.event.eventType}
+                        {eventLabel(entry.event.eventType)}
                       </p>
                       <p className="text-[var(--color-text-subtle)]">
                         {formatDateTime(entry.event.occurredAt)} ·{" "}
@@ -535,8 +535,24 @@ const EVENT_LABELS: Record<string, string> = {
   "invoice.link_added": "Vínculo con la operación agregado",
   "invoice.link_confirmed": "Vínculo confirmado",
   "invoice.link_rejected": "Vínculo descartado",
+  "invoice.linked_to_proposal": "Relacionada con una propuesta",
+  "invoice.merged_from": "Absorbió un duplicado",
+  "invoice.merged_into": "Fusionada en otra factura",
   "payment.suggested": "Pago sugerido por la plataforma",
   "payment.confirmed": "Pago confirmado",
   "payment.rejected": "Sugerencia de pago descartada",
+  "payment.reverted": "Confirmación de pago revertida",
   "collection.action_recorded": "Gestión de cobranza registrada",
+}
+
+/**
+ * Un tipo de evento sin traducción no debe mostrarse crudo ("invoice.link_confirmed"):
+ * se descarta el prefijo de dominio y se leen los guiones bajos como espacios
+ * (UI/UX 2026-08-05, M7).
+ */
+function eventLabel(eventType: string): string {
+  const known = EVENT_LABELS[eventType]
+  if (known) return known
+  const bare = (eventType.split(".").pop() ?? eventType).replaceAll("_", " ").trim()
+  return bare ? bare.charAt(0).toUpperCase() + bare.slice(1) : eventType
 }

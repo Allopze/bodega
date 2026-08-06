@@ -85,7 +85,7 @@ export async function syncBillingInvoices(options: BillingSyncOptions): Promise<
   const correlationId = nanoid(12)
 
   assertPeriodFormat(period)
-  assertPeriodFloor(period, trigger)
+  assertPeriodFloor(period)
 
   if (!isProviderEnabled(options.provider)) {
     return skipped({
@@ -119,9 +119,12 @@ export async function syncBillingInvoices(options: BillingSyncOptions): Promise<
       correlationId,
       triggeredBy: options.triggeredBy ?? null,
     })
-  } catch {
-    // El índice único parcial rechazó la inserción: ya hay una corrida activa
-    // para este (proveedor, alcance, período).
+  } catch (error) {
+    // Sólo el índice único parcial significa "ya hay una corrida activa". Una
+    // base caída, un timeout o una FK rota son incidentes que deben propagarse:
+    // reportarlos como "ya está corriendo" es un diagnóstico falso justo donde
+    // más se necesita el verdadero (H-09, AUDITORIA_BUGS_2026-08-05.md).
+    if (!isSingleActiveRunConflict(error)) throw error
     return skipped({
       runId: "", correlationId, provider: options.provider, scope: options.scope, period, dryRun,
       reason: "Ya hay una sincronización en curso para este período.",
@@ -264,7 +267,7 @@ export async function syncBankTransactions(options: {
   const period = options.period ?? currentPeriod()
   const correlationId = nanoid(12)
   assertPeriodFormat(period)
-  assertPeriodFloor(period, options.trigger ?? "manual")
+  assertPeriodFloor(period)
 
   const base = {
     runId: "", correlationId, provider: options.provider,
@@ -282,6 +285,11 @@ export async function syncBankTransactions(options: {
     return skipped({ ...base, reason: "El proveedor no está configurado en este servidor." })
   }
 
+  // Sin esto, una corrida de cartolas cuyo proceso murió deja una fila
+  // `running` que el índice único parcial nunca deja reemplazar: el período
+  // queda bloqueado para siempre (H-07, AUDITORIA_BUGS_2026-08-05.md).
+  await markStaleRunsAsFailed(options.provider, "bank_transactions")
+
   const runId = nanoid()
   try {
     await db.insert(billingSyncRuns).values({
@@ -290,7 +298,8 @@ export async function syncBankTransactions(options: {
       periodFrom: period, periodTo: period, correlationId,
       triggeredBy: options.triggeredBy ?? null,
     })
-  } catch {
+  } catch (error) {
+    if (!isSingleActiveRunConflict(error)) throw error
     return skipped({ ...base, reason: "Ya hay una sincronización en curso para este período." })
   }
 
@@ -311,9 +320,7 @@ export async function syncBankTransactions(options: {
 
       for (const transaction of page.items) {
         try {
-          const hash = createHash("sha256")
-            .update([transaction.externalId, transaction.transactionDate, transaction.amount.toFixed(2)].join("|"))
-            .digest("hex")
+          const hash = bankTransactionHash(transaction)
 
           const result = await db.insert(billingBankTransactions).values({
             id: nanoid(),
@@ -334,8 +341,34 @@ export async function syncBankTransactions(options: {
 
           // `onConflictDoNothing` no devuelve fila cuando ya existía: eso es lo
           // que hace idempotente la corrida sin pisar la imputación acumulada.
-          if (result.length > 0) metrics.recordsCreated++
-          else metrics.recordsUnchanged++
+          if (result.length > 0) {
+            metrics.recordsCreated++
+            continue
+          }
+
+          // Ya existía: comparar el hash es lo que le da sentido a la columna.
+          // Si el banco rectificó fecha o monto de un movimiento ya imputado,
+          // pisarlo en silencio corrompería la conciliación y no pisarlo sin
+          // avisar oculta la diferencia. Se reporta como conflicto y lo
+          // resuelve una persona (H-14, AUDITORIA_BUGS_2026-08-05.md).
+          const [stored] = await db
+            .select({ payloadHash: billingBankTransactions.payloadHash })
+            .from(billingBankTransactions)
+            .where(and(
+              eq(billingBankTransactions.provider, options.provider),
+              eq(billingBankTransactions.externalId, transaction.externalId),
+            ))
+            .limit(1)
+
+          if (stored && stored.payloadHash !== hash) {
+            metrics.conflictsDetected++
+            errors.push(
+              `El movimiento ${transaction.externalId} cambió en el proveedor (fecha o monto) después de importarse: ` +
+              `no se sobrescribe para no alterar lo ya imputado. Revísalo a mano.`,
+            )
+          } else {
+            metrics.recordsUnchanged++
+          }
         } catch (error) {
           metrics.errorsCount++
           errors.push(redact(error))
@@ -429,10 +462,16 @@ function assertPeriodFormat(period: string): void {
 }
 
 /**
- * Un backfill no puede ir más atrás que el piso configurado, y una corrida
- * normal no puede pedir un período anterior al piso por error de tipeo.
+ * Ninguna corrida puede pedir un período anterior al piso configurado ni un
+ * período futuro.
+ *
+ * El futuro se prohíbe para **todos** los triggers, backfill incluido: un
+ * backfill es, por definición, recuperación de historia hacia atrás. Antes la
+ * guarda hacía justo lo contrario —sólo el backfill podía pedir el futuro— y
+ * dejaba corridas `success` con cero documentos contra meses que no existen
+ * (H-13, AUDITORIA_BUGS_2026-08-05.md).
  */
-function assertPeriodFloor(period: string, trigger: string): void {
+function assertPeriodFloor(period: string): void {
   const { historyFloor } = readSalesSyncConfig()
   if (period < historyFloor) {
     throw new Error(
@@ -440,15 +479,63 @@ function assertPeriodFloor(period: string, trigger: string): void {
       `Ajusta BILLING_HISTORY_FLOOR si realmente necesitas importar más atrás.`,
     )
   }
-  if (period > currentPeriod() && trigger !== "backfill") {
+  if (period > currentPeriod()) {
     throw new Error(`El período ${period} es futuro.`)
   }
 }
 
+/**
+ * Huella del contenido de un movimiento bancario.
+ *
+ * Cubre lo que define al movimiento como hecho económico —identificador,
+ * fecha y monto—, no su glosa: una corrección de descripción no debe
+ * levantarse como conflicto, una de monto o fecha sí. Estable a propósito:
+ * cambiar los campos que entran al hash marcaría como divergentes todas las
+ * filas ya importadas.
+ */
+function bankTransactionHash(transaction: { externalId: string; transactionDate: string; amount: number }): string {
+  return createHash("sha256")
+    .update([transaction.externalId, transaction.transactionDate, transaction.amount.toFixed(2)].join("|"))
+    .digest("hex")
+}
+
+/** Índice parcial: una sola corrida `running` por (proveedor, alcance, período). */
+const SINGLE_ACTIVE_RUN_INDEX = "billing_sync_runs_single_active_unique"
+
+/**
+ * ¿El error viene del índice único parcial de corridas activas?
+ *
+ * Drizzle envuelve el error del driver, así que el SQLSTATE y el nombre de la
+ * restricción viven en la cadena de `cause`, no en el error de arriba: hay que
+ * recorrerla. Se exige el nombre del índice, no sólo el 23505 — otra violación
+ * de unicidad de la misma tabla no significa "ya hay una corrida en curso".
+ */
+function isSingleActiveRunConflict(error: unknown): boolean {
+  for (let current: unknown = error, depth = 0; current && depth < 5; depth++) {
+    const candidate = current as { code?: string; constraint?: string; detail?: string; cause?: unknown }
+    if (candidate.code === "23505" && candidate.constraint === SINGLE_ACTIVE_RUN_INDEX) return true
+    if (typeof candidate.detail === "string" && candidate.detail.includes(SINGLE_ACTIVE_RUN_INDEX)) return true
+    current = candidate.cause
+  }
+  return String((error as { message?: string })?.message ?? "").includes(SINGLE_ACTIVE_RUN_INDEX)
+}
+
 /** Resumen acotado: la columna no es un buzón de logs. */
 function truncateSummary(errors: string[]): string {
+  // Mensajes que solo difieren en números (folio, id) se agrupan: 45 variantes
+  // de "Documento N sin RUT…" son UNA línea con conteo, no 45 (UI/UX 2026-08-05, A2).
+  const groups = new Map<string, { first: string; count: number }>()
+  for (const message of errors) {
+    const shape = message.replace(/\d+/g, "#")
+    const group = groups.get(shape)
+    if (group) group.count += 1
+    else groups.set(shape, { first: message, count: 1 })
+  }
+  const lines = [...groups.values()].map((group) =>
+    group.count > 1 ? `${group.first} (y ${group.count - 1} similares)` : group.first,
+  )
   const MAX = 2000
-  const joined = errors.join(" | ")
+  const joined = lines.join(" | ")
   if (joined.length <= MAX) return joined
   return `${joined.slice(0, MAX - 40)}… (+${errors.length} errores en total)`
 }

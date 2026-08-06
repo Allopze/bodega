@@ -102,11 +102,18 @@ export async function saveProposalAction(input: unknown): Promise<ActionResult> 
       if (id) {
         const existing = await tx.query.billingProposals.findFirst({
           where: eq(billingProposals.id, id),
-          columns: { id: true, status: true },
+          columns: { id: true, status: true, worksiteId: true },
         })
         if (!existing) throw new Error("La propuesta no existe")
         if (existing.status !== "draft" && existing.status !== "observed") {
           throw new Error("Solo se puede editar una propuesta en borrador u observada")
+        }
+        // El alcance ya se validó sobre la faena *entrante*; falta la de la
+        // propuesta que se está editando. Sin esto, un rol acotado podía tomar
+        // una propuesta ajena y moverla a su faena (H-08,
+        // AUDITORIA_BUGS_2026-08-05.md).
+        if (scope.mode === "some" && (!existing.worksiteId || !scope.ids.includes(existing.worksiteId))) {
+          throw new Error("No tienes acceso a esta propuesta")
         }
 
         await tx.update(billingProposals).set({

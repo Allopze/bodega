@@ -1,6 +1,8 @@
 "use client"
 
 import { useState, useTransition } from "react"
+import { buttonVariants } from "@/components/ui/button"
+import { cn } from "@/lib/utils"
 import { useRouter } from "next/navigation"
 import { toast } from "@/lib/toast"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -56,11 +58,14 @@ export function ProposalActions({
     })
   }
 
-  const actions: { transition: ProposalTransition; label: string; show: boolean; confirm?: string }[] = [
+  // `danger`: las salidas del flujo (rechazar, anular) no pueden leerse igual
+  // que "Aprobar" — mismo peso visual invitaba al click equivocado
+  // (UI/UX 2026-08-05, M5).
+  const actions: { transition: ProposalTransition; label: string; show: boolean; confirm?: string; danger?: boolean }[] = [
     { transition: "submit",     label: "Enviar a revisión", show: canCreate && (status === "draft" || status === "observed") },
     { transition: "observe",    label: "Observar",          show: canReview && status === "in_review" },
     { transition: "approve",    label: "Aprobar",           show: canApprove && status === "in_review" },
-    { transition: "reject",     label: "Rechazar",          show: canApprove && status === "in_review" },
+    { transition: "reject",     label: "Rechazar",          show: canApprove && status === "in_review", danger: true },
     { transition: "mark_ready", label: "Marcar lista",      show: canApprove && status === "approved" },
     { transition: "reopen",     label: "Reabrir",           show: canCreate && (status === "observed" || status === "rejected") },
     {
@@ -68,6 +73,7 @@ export function ProposalActions({
       label: "Anular",
       show: canCreate && ["draft", "observed", "in_review", "approved", "ready"].includes(status),
       confirm: `¿Anular la propuesta ${code}? Queda registrada como anulada, no se borra.`,
+      danger: true,
     },
   ]
 
@@ -99,7 +105,11 @@ export function ProposalActions({
               if (action.confirm && !confirm(action.confirm)) return
               run(action.transition)
             }}
-            className="font-medium text-[var(--color-primary-ink)] hover:underline disabled:cursor-not-allowed disabled:text-[var(--color-text-subtle)] disabled:no-underline"
+            className={
+              action.danger
+                ? "font-medium text-[var(--color-danger-ink)] hover:underline disabled:cursor-not-allowed disabled:text-[var(--color-text-subtle)] disabled:no-underline"
+                : "font-medium text-[var(--color-primary-ink)] hover:underline disabled:cursor-not-allowed disabled:text-[var(--color-text-subtle)] disabled:no-underline"
+            }
           >
             {action.label}
           </button>
@@ -141,7 +151,7 @@ export function ProposalActions({
               </span>
               <textarea name="reason" rows={3} required maxLength={1000} className={inputClass} />
             </label>
-            <button type="submit" disabled={isPending} className={primaryButtonClass}>
+            <button type="submit" disabled={isPending} className={cn(buttonVariants(), "w-full")}>
               {isPending ? "Guardando…" : "Confirmar"}
             </button>
           </form>
@@ -187,7 +197,7 @@ export function ProposalActions({
                 ))}
               </select>
             </label>
-            <button type="submit" disabled={isPending} className={primaryButtonClass}>
+            <button type="submit" disabled={isPending} className={cn(buttonVariants(), "w-full")}>
               {isPending ? "Relacionando…" : "Relacionar"}
             </button>
           </form>
@@ -200,5 +210,3 @@ export function ProposalActions({
 const inputClass =
   "w-full rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-sm text-[var(--color-text)]"
 
-const primaryButtonClass =
-  "w-full rounded-[var(--radius-md)] bg-[var(--color-primary)] px-3 py-2 text-sm font-medium text-[var(--color-primary-contrast)] disabled:opacity-60"

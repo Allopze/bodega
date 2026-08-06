@@ -224,6 +224,18 @@ describe("syncBillingInvoices — idempotencia", () => {
       .rejects.toThrow(/Período inválido/i)
   })
 
+  // H-13 (AUDITORIA_BUGS_2026-08-05.md): la guarda dejaba pasar el futuro
+  // justo en el trigger que menos lo necesita. Un backfill recupera historia
+  // hacia atrás; pedirle un mes que aún no ocurrió sólo generaba corridas
+  // `success` vacías contra períodos inexistentes.
+  it("un backfill tampoco puede pedir un período futuro", async () => {
+    await expect(syncBillingInvoices({
+      provider: "factura_en_linea", scope: "sales_invoices", period: "2099-01", trigger: "backfill",
+    })).rejects.toThrow(/futuro/i)
+    await expect(syncBankTransactions({ provider: "chipax", period: "2099-01", trigger: "backfill" }))
+      .rejects.toThrow(/futuro/i)
+  })
+
   it("una segunda corrida concurrente del mismo período se salta en vez de competir", async () => {
     // Se simula la corrida en curso dejando una fila `running` del período.
     await inMemoryDb.insert(schema.billingSyncRuns).values({
@@ -241,6 +253,22 @@ describe("syncBillingInvoices — idempotencia", () => {
 
     expect(result.status).toBe("skipped")
     expect(result.errorSummary).toMatch(/en curso/i)
+    expect(await countInvoices()).toBe(0)
+  })
+
+  // H-09 (AUDITORIA_BUGS_2026-08-05.md): el catch asumía que cualquier fallo
+  // al abrir la corrida era el índice único. Una FK rota, un timeout o una
+  // base caída se reportaban como "ya hay una sincronización en curso" con
+  // `ok: true` — un diagnóstico falso justo donde más se necesita el real.
+  it("un fallo de base al abrir la corrida se propaga en vez de disfrazarse de 'ya en curso'", async () => {
+    issuedPages = [{ items: [sale()], nextCursor: null, reportedTotal: 1 }]
+    // `triggeredBy` apunta a un usuario inexistente: viola la FK, no el índice
+    // único parcial de corridas activas.
+    await expect(syncBillingInvoices({
+      provider: "factura_en_linea", scope: "sales_invoices", period: "2026-07",
+      triggeredBy: "usuario-que-no-existe",
+    })).rejects.toThrow()
+
     expect(await countInvoices()).toBe(0)
   })
 })
@@ -539,5 +567,65 @@ describe("sincronización de movimientos bancarios", () => {
     const result = await syncBankTransactions({ provider: "manual", period: "2026-07" })
     expect(result.status).toBe("skipped")
     expect(result.errorSummary).toMatch(/no entrega movimientos bancarios/i)
+  })
+
+  // H-07 (AUDITORIA_BUGS_2026-08-05.md): `syncBankTransactions` no limpiaba
+  // corridas colgadas, así que una fila `running` de un proceso muerto
+  // bloqueaba ese período para siempre vía el índice único parcial.
+  it("una corrida de cartolas colgada no bloquea el período para siempre", async () => {
+    const dosHorasAtras = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString()
+    await inMemoryDb.insert(schema.billingSyncRuns).values({
+      id: "run-cartolas-colgada",
+      provider: "chipax",
+      scope: "bank_transactions",
+      status: "running",
+      periodFrom: "2026-07",
+      periodTo: "2026-07",
+      correlationId: "corr-colgada",
+      startedAt: dosHorasAtras,
+    })
+
+    bankPages = [{ items: [movimiento()], nextCursor: null, reportedTotal: 1 }]
+    const result = await syncBankTransactions({ provider: "chipax", period: "2026-07" })
+
+    expect(result.status).toBe("success")
+    expect(result.recordsCreated).toBe(1)
+    const colgada = await inMemoryDb.select().from(schema.billingSyncRuns)
+      .where(eq(schema.billingSyncRuns.id, "run-cartolas-colgada"))
+    expect(colgada[0]!.status).toBe("failed")
+  })
+
+  // H-14: la columna `payload_hash` se calculaba y nunca se leía. Ahora una
+  // rectificación del banco sobre un movimiento ya importado se reporta como
+  // conflicto en vez de pasar inadvertida (y sin pisar lo ya imputado).
+  it("detecta que el proveedor rectificó el monto de un movimiento ya importado", async () => {
+    bankPages = [{ items: [movimiento()], nextCursor: null, reportedTotal: 1 }]
+    await syncBankTransactions({ provider: "chipax", period: "2026-07" })
+    await inMemoryDb.update(schema.billingBankTransactions).set({ allocatedAmount: 1000000 })
+
+    // Mismo externalId, monto distinto: el banco corrigió la cartola.
+    bankPages = [{ items: [movimiento({ amount: 4990000 })], nextCursor: null, reportedTotal: 1 }]
+    const segunda = await syncBankTransactions({ provider: "chipax", period: "2026-07" })
+
+    expect(segunda.conflictsDetected).toBe(1)
+    expect(segunda.recordsUnchanged).toBe(0)
+    expect(segunda.errorSummary).toMatch(/cambió en el proveedor/i)
+
+    // No se pisa: ni el monto original ni la imputación acumulada.
+    const rows = await inMemoryDb.select().from(schema.billingBankTransactions)
+    expect(rows).toHaveLength(1)
+    expect(rows[0]!.amount).toBe(4998000)
+    expect(rows[0]!.allocatedAmount).toBe(1000000)
+  })
+
+  it("una reimportación idéntica no se reporta como conflicto", async () => {
+    bankPages = [{ items: [movimiento()], nextCursor: null, reportedTotal: 1 }]
+    await syncBankTransactions({ provider: "chipax", period: "2026-07" })
+
+    bankPages = [{ items: [movimiento()], nextCursor: null, reportedTotal: 1 }]
+    const segunda = await syncBankTransactions({ provider: "chipax", period: "2026-07" })
+
+    expect(segunda.conflictsDetected).toBe(0)
+    expect(segunda.recordsUnchanged).toBe(1)
   })
 })

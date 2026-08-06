@@ -1,12 +1,14 @@
 "use client"
 
-import { useState, useTransition } from "react"
+import { useState, useTransition, type ReactNode } from "react"
+import { buttonVariants } from "@/components/ui/button"
+import { cn } from "@/lib/utils"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { toast } from "@/lib/toast"
 import { Badge } from "@/components/ui/badge"
 import { formatMoney } from "@/lib/services/billing/money"
-import { docTypeShortLabel, formatDateShort, providerLabel } from "@/lib/services/billing/labels"
+import { docTypeShortLabel, documentStatusLabel, formatDateShort, providerLabel } from "@/lib/services/billing/labels"
 import { detectDuplicatesAction, resolveDuplicateAction } from "./actions"
 
 interface InvoiceSide {
@@ -17,6 +19,19 @@ interface InvoiceSide {
   totalAmount: number
   paidAmount: number
   source: string
+  receiverTaxId: string
+  receiverName: string
+  documentStatus: string
+}
+
+/**
+ * Resalta el valor de un campo cuando difiere entre las dos facturas: la
+ * decisión de fusión se toma mirando la diferencia, no adivinándola
+ * (auditoría UI/UX 2026-08-05, A5).
+ */
+function SideValue({ children, differs }: { children: ReactNode; differs: boolean }) {
+  if (!differs) return <>{children}</>
+  return <mark className="rounded-[var(--radius-xs)] bg-[var(--color-warning-tint)] px-1 font-medium text-[var(--color-warning-ink)]">{children}</mark>
 }
 
 export interface DuplicateCandidateRow {
@@ -93,20 +108,28 @@ export function DuplicateReview({ candidates }: { candidates: DuplicateCandidate
           </header>
 
           <div className="grid gap-3 sm:grid-cols-2">
-            {[candidate.left, candidate.right].map((side) => (
+            {[candidate.left, candidate.right].map((side) => {
+              const other = side.id === candidate.left.id ? candidate.right : candidate.left
+              return (
               <div key={side.id} className="rounded-[var(--radius-md)] border border-[var(--color-border)] p-3">
                 <Link
                   href={`/facturacion/facturas/${side.id}`}
                   className="text-sm font-medium text-[var(--color-text)] hover:underline"
                 >
-                  {docTypeShortLabel(side.docType)} {side.folio}
+                  <SideValue differs={side.docType !== other.docType || side.folio !== other.folio}>
+                    {docTypeShortLabel(side.docType)} {side.folio}
+                  </SideValue>
                 </Link>
                 <dl className="mt-1 space-y-0.5 text-xs text-[var(--color-text-muted)]">
-                  <div>Emitida el {formatDateShort(side.issueDate)}</div>
-                  <div className="tabular-nums">Total {formatMoney(side.totalAmount, candidate.currency)}</div>
-                  <div className="tabular-nums">
-                    Cobrado {formatMoney(side.paidAmount, candidate.currency)}
+                  <div>
+                    Receptor: <SideValue differs={side.receiverTaxId !== other.receiverTaxId || side.receiverName !== other.receiverName}>{side.receiverName} · {side.receiverTaxId}</SideValue>
                   </div>
+                  <div>Emitida el <SideValue differs={side.issueDate !== other.issueDate}>{formatDateShort(side.issueDate)}</SideValue></div>
+                  <div className="tabular-nums">Total <SideValue differs={side.totalAmount !== other.totalAmount}>{formatMoney(side.totalAmount, candidate.currency)}</SideValue></div>
+                  <div className="tabular-nums">
+                    Cobrado <SideValue differs={side.paidAmount !== other.paidAmount}>{formatMoney(side.paidAmount, candidate.currency)}</SideValue>
+                  </div>
+                  <div>Estado: <SideValue differs={side.documentStatus !== other.documentStatus}>{documentStatusLabel(side.documentStatus).label}</SideValue></div>
                   <div>Fuente: {providerLabel(side.source)}</div>
                 </dl>
 
@@ -115,7 +138,6 @@ export function DuplicateReview({ candidates }: { candidates: DuplicateCandidate
                     type="button"
                     disabled={isPending}
                     onClick={() => {
-                      const other = side.id === candidate.left.id ? candidate.right : candidate.left
                       const confirmed = confirm(
                         `Conservar ${docTypeShortLabel(side.docType)} ${side.folio} y anular ` +
                         `${docTypeShortLabel(other.docType)} ${other.folio}?\n\n` +
@@ -125,13 +147,13 @@ export function DuplicateReview({ candidates }: { candidates: DuplicateCandidate
                       if (!confirmed) return
                       resolve(candidate.id, "merge", side.id)
                     }}
-                    className="mt-2 w-full rounded-[var(--radius-md)] bg-[var(--color-primary)] px-2 py-1.5 text-xs font-medium text-[var(--color-primary-contrast)] disabled:opacity-60"
+                    className={cn(buttonVariants({ size: "sm" }), "mt-2 w-full")}
                   >
                     Conservar esta
                   </button>
                 )}
               </div>
-            ))}
+            )})}
           </div>
 
           <div className="mt-3 flex flex-wrap gap-3 text-xs">
