@@ -1,4 +1,5 @@
 import fs from "node:fs"
+import os from "node:os"
 import path from "node:path"
 import { describe, expect, it } from "vitest"
 import {
@@ -15,6 +16,19 @@ import {
 } from "./capture-all-routes"
 
 const root = process.cwd()
+
+/**
+ * Directorio desechable para las pruebas de artefactos.
+ *
+ * Estaba bajo `audit/screenshots/`, que está en .gitignore: en un checkout
+ * limpio —o sea, en CI— el directorio padre no existe y `mkdtempSync` muere con
+ * ENOENT antes de ejecutar una sola aserción. Sólo pasaba en una máquina que ya
+ * hubiera corrido `npm run screenshots`. Ninguna de las funciones bajo prueba
+ * ata la ruta a ese directorio: reciben el destino por parámetro.
+ */
+function tempCaptureDir(prefix: string) {
+  return fs.mkdtempSync(path.join(os.tmpdir(), prefix))
+}
 
 const dynamicSamples: Record<string, string> = {
   "/admin/productos/[id]": "/admin/productos/prod-audit-1",
@@ -283,7 +297,7 @@ describe("capture-all-routes server launch (C1/C2)", () => {
 
 describe("capture-all-routes artifact reconciliation (C3/F4)", () => {
   it("flags PNGs older than the run start as stale, not as orphans", () => {
-    const dir = fs.mkdtempSync(path.join(root, "audit", "screenshots", "reconcile-test-"))
+    const dir = tempCaptureDir("reconcile-test-")
     try {
       const fresh = path.join(dir, "desktop-something.png")
       const stale = path.join(dir, "desktop-old.png")
@@ -316,7 +330,7 @@ describe("capture-all-routes artifact reconciliation (C3/F4)", () => {
   })
 
   it("cleanOutputDir removes pngs and manifests but keeps other files", () => {
-    const dir = fs.mkdtempSync(path.join(root, "audit", "screenshots", "clean-test-"))
+    const dir = tempCaptureDir("clean-test-")
     try {
       fs.writeFileSync(path.join(dir, "desktop-x.png"), "png")
       fs.writeFileSync(path.join(dir, "mobile-x.png"), "png")
@@ -382,7 +396,7 @@ describe("poda de interacciones redundantes", () => {
   }
 
   it("retira la interacción idéntica a una ruta y conserva la ruta", () => {
-    const dir = fs.mkdtempSync(path.join(root, "audit", "screenshots", "prune-test-"))
+    const dir = tempCaptureDir("prune-test-")
     try {
       fs.writeFileSync(path.join(dir, "detalle-avance.png"), "x")
       fs.writeFileSync(path.join(dir, "detalle-tab-avance.png"), "x")
@@ -403,7 +417,7 @@ describe("poda de interacciones redundantes", () => {
   })
 
   it("no toca dos vistas idénticas: eso sigue siendo un defecto", () => {
-    const dir = fs.mkdtempSync(path.join(root, "audit", "screenshots", "prune-test-"))
+    const dir = tempCaptureDir("prune-test-")
     try {
       fs.writeFileSync(path.join(dir, "a.png"), "x")
       fs.writeFileSync(path.join(dir, "b.png"), "x")
@@ -417,7 +431,7 @@ describe("poda de interacciones redundantes", () => {
   })
 
   it("conserva una interacción que no coincide con ninguna ruta", () => {
-    const dir = fs.mkdtempSync(path.join(root, "audit", "screenshots", "prune-test-"))
+    const dir = tempCaptureDir("prune-test-")
     try {
       fs.writeFileSync(path.join(dir, "detalle.png"), "x")
       fs.writeFileSync(path.join(dir, "detalle-tab-otra.png"), "y")
