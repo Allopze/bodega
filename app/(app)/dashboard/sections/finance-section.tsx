@@ -37,11 +37,25 @@ export async function FinanceSection({ session, scope }: DomainSectionsProps) {
   const worksiteId = scopedWorksiteId(scope)
   const bounds = getOperationalCalendarBounds(new Date(), scope.period)
 
-  // `getBillingSummary` acepta período tributario `YYYY-MM` y faena, así que el
-  // alcance global del tablero lo reencuadra sin código de datos nuevo. Con
-  // trimestre o año elegidos toma el mes de inicio de la ventana: el libro de
-  // ventas es mensual por norma, y el `note` de abajo lo declara.
+  /*
+   * La facturación de venta sigue el **mismo alcance** que el resto del
+   * tablero: faena y ventana de fechas.
+   *
+   * `getBillingSummary` toma `[from, to)` en claves de fecha, que es
+   * exactamente lo que `getOperationalCalendarBounds` entrega (`currentEnd` es
+   * exclusivo). `period` queda como el período tributario ancla —el mes de
+   * inicio de la ventana— y sólo rotula.
+   */
   const billingPeriod = bounds.currentStart.slice(0, 7)
+  const billingWindow = {
+    from: bounds.currentStart.slice(0, 10),
+    to: bounds.currentEnd.slice(0, 10),
+  }
+  /** Con el mes elegido, la ventana ES el período tributario: el enlace acota. */
+  const invoiceListHref = (extra = "") =>
+    scope.period === "mes"
+      ? `/facturacion/facturas?periodo=${billingPeriod}${extra}`
+      : `/facturacion/facturas${extra ? `?${extra.replace(/^&/, "")}` : ""}`
   const canSeeFuelCosts = has("combustibles:view_costs")
   const canSeePurchasing = has("purchasing:view")
 
@@ -49,7 +63,7 @@ export async function FinanceSection({ session, scope }: DomainSectionsProps) {
 
   const [billing, analytics, fuelTrend, debt, dteHealth, dashboardData] = await Promise.all([
     has("billing:view")
-      ? getBillingSummary(session, { period: billingPeriod, ...(worksiteId ? { worksiteId } : {}) }).catch(() => null)
+      ? getBillingSummary(session, { period: billingPeriod, ...billingWindow, ...(worksiteId ? { worksiteId } : {}) }).catch(() => null)
       : Promise.resolve(null),
     canSeePurchasing
       ? getAnalyticsDashboard(session, {
@@ -68,14 +82,35 @@ export async function FinanceSection({ session, scope }: DomainSectionsProps) {
   const fuelCost = fuelTrend.reduce((sum, point) => sum + point.amount, 0)
 
   /*
-   * Tres cifras de esta sección no pueden respetar el filtro de faena y hay que
-   * decirlo: el libro de ventas es por período tributario, y tanto los DTE como
-   * la cuenta corriente de combustible son por empresa o por proveedor.
+   * Los gráficos de ranking dibujan **una sola moneda**.
+   *
+   * `MoneyStat` sabe apilar una línea por moneda sin sumarlas nunca, pero una
+   * barra en un eje común no: 1.000 USD junto a 900.000 CLP se leería como una
+   * barra 900 veces más corta, y con `format="clp"` además llevaría signo de
+   * peso. Hoy no puede pasar —el único proveedor fija `currency: "CLP"`
+   * (`providers/factura-en-linea.ts`)— pero el esquema admite cualquier
+   * ISO-4217, así que el gráfico se acota por construcción y no por suerte.
+   *
+   * Se elige la moneda de mayor monto y se declara cuando hay más de una: el
+   * resto no se esconde en silencio.
+   */
+  const dominantCurrency = (amounts: ReadonlyArray<{ currency: string; amount: number }>) =>
+    amounts.reduce<{ currency: string; amount: number } | null>(
+      (top, entry) => (top === null || entry.amount > top.amount ? entry : top), null,
+    )?.currency ?? null
+
+  const debtCurrency = billing ? dominantCurrency(billing.outstandingByCurrency) : null
+  const salesCurrency = billing ? dominantCurrency(billing.invoicedByCurrency) : null
+  /** Coletilla que declara el recorte, sólo cuando hay algo que recortar. */
+  const onlyCurrency = (currency: string | null, all: ReadonlyArray<{ currency: string }>) =>
+    currency && all.some((entry) => entry.currency !== currency) ? ` · sólo ${currency}` : ""
+
+  /*
+   * Dos cifras de esta sección no pueden respetar el filtro de faena y hay que
+   * decirlo: los DTE son por empresa y período tributario, y la cuenta
+   * corriente de combustible es por proveedor.
    */
   const notes = [
-    billing && scope.period !== "mes"
-      ? "La facturación de venta usa el período tributario del mes en curso del alcance, no el trimestre ni el año completos."
-      : null,
     dteHealth && worksiteId
       ? "Las cifras de DTE son por empresa y período tributario, no por faena: no siguen el filtro de arriba."
       : null,
@@ -95,11 +130,11 @@ export async function FinanceSection({ session, scope }: DomainSectionsProps) {
           <MoneyStat label="Facturado en el período" amounts={billing.invoicedByCurrency}
             detail={`${billing.invoiceCount} ${billing.invoiceCount === 1 ? "documento emitido" : "documentos emitidos"} · ${periodo}`}
             origin="Documentos sincronizados desde FacturaEnLínea, sin contar anuladas."
-            href={`/facturacion/facturas?periodo=${billingPeriod}`} />
+            href={invoiceListHref()} />
           <MoneyStat label="Cobrado del período" amounts={billing.collectedByCurrency}
             detail="Sólo pagos con confirmación manual"
             origin="Suma de pagos confirmados imputados a facturas emitidas en el período. Una sugerencia de pago no suma acá."
-            href={`/facturacion/facturas?periodo=${billingPeriod}&pago=paid`} />
+            href={invoiceListHref("&pago=paid")} />
           <MoneyStat label="Pendiente de cobro" amounts={billing.outstandingByCurrency}
             detail="Saldo de todas las facturas abiertas"
             origin="Total menos pagos confirmados, de todas las facturas no pagadas (no sólo del período)."
@@ -176,16 +211,16 @@ export async function FinanceSection({ session, scope }: DomainSectionsProps) {
               }))} />
             </div>
           )}
-          {billing && billing.aging.some((bucket) => bucket.count > 0) && (
+          {billing && debtCurrency && billing.aging.some((bucket) => bucket.count > 0) && (
             <ThresholdRankingChart
-              title="Antigüedad de la deuda" description="Saldo pendiente por días desde el vencimiento"
+              title="Antigüedad de la deuda"
+              description={`Saldo pendiente por días desde el vencimiento${onlyCurrency(debtCurrency, billing.outstandingByCurrency)}`}
               unit="" format="clp" invert
               goodAtOrAbove={Number.POSITIVE_INFINITY} warnAtOrAbove={Number.POSITIVE_INFINITY}
               data={billing.aging.map((bucket) => ({
                 name: bucket.label,
-                // Una sola moneda en el eje: mezclarlas daría un total falso.
-                value: bucket.byCurrency[0]?.amount ?? 0,
-                detail: `${bucket.count} factura(s)${bucket.byCurrency.length > 1 ? ` · ${bucket.byCurrency[0]!.currency}` : ""}`,
+                value: bucket.byCurrency.find((entry) => entry.currency === debtCurrency)?.amount ?? 0,
+                detail: `${bucket.count} factura(s)`,
               }))}
             />
           )}
@@ -205,13 +240,16 @@ export async function FinanceSection({ session, scope }: DomainSectionsProps) {
               }))}
             />
           )}
-          {billing && billing.topClients.length > 0 && (
+          {billing && salesCurrency && billing.topClients.some((row) => row.currency === salesCurrency) && (
             <ThresholdRankingChart
-              title="Principales clientes" description="Facturación del período atribuida a un cliente" unit="" format="clp"
+              title="Principales clientes"
+              description={`Facturación del período atribuida a un cliente${onlyCurrency(salesCurrency, billing.invoicedByCurrency)}`}
+              unit="" format="clp"
               invert goodAtOrAbove={Number.POSITIVE_INFINITY} warnAtOrAbove={Number.POSITIVE_INFINITY}
-              data={billing.topClients.slice(0, 8).map((row) => ({
-                name: row.clientName, value: Math.round(row.amount), detail: row.currency,
-              }))}
+              data={billing.topClients
+                .filter((row) => row.currency === salesCurrency)
+                .slice(0, 8)
+                .map((row) => ({ name: row.clientName, value: Math.round(row.amount) }))}
             />
           )}
           {dashboardData && dashboardData.worksitesBreakdown.length > 0 && (

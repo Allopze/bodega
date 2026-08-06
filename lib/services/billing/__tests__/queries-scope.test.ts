@@ -179,6 +179,77 @@ describe("alcance por faena", () => {
   })
 })
 
+/**
+ * El libro de ventas es mensual por norma, pero el tablero ofrece trimestre y
+ * año. `getBillingSummary` acepta una ventana `[from, to)` explícita para eso.
+ */
+describe("ventana de emisión explícita", () => {
+  /** Primer día del mes N meses antes del período ancla. */
+  function monthStart(monthsBack: number): string {
+    const [year, month] = PERIOD.split("-").map(Number) as [number, number]
+    return new Date(Date.UTC(year, month - 1 - monthsBack, 1)).toISOString().slice(0, 10)
+  }
+
+  beforeEach(async () => {
+    // Una factura de hace dos meses: fuera del mes ancla, dentro del trimestre.
+    await inMemoryDb.insert(schema.billingInvoices).values({
+      id: "inv-vieja", direction: "sale", docType: "33", folio: 1005,
+      issuerTaxId: "78023530-6", issuerName: "CHOME",
+      receiverTaxId: "76111111-1", receiverName: "Cliente A",
+      issueDate: `${monthStart(2).slice(0, 7)}-15`,
+      currency: "CLP", totalAmount: 500000, paidAmount: 0,
+      documentStatus: "accepted", paymentStatus: "unpaid", source: "factura_en_linea",
+    })
+  })
+
+  it("sin ventana sigue siendo el mes de `period`", async () => {
+    const summary = await getBillingSummary(session({ isGlobal: true }), { period: PERIOD })
+    expect(summary.invoiceCount).toBe(3)
+    expect(summary.invoicedByCurrency.find((m) => m.currency === "CLP")?.amount).toBe(3000000)
+  })
+
+  it("una ventana de tres meses alcanza la factura anterior", async () => {
+    const summary = await getBillingSummary(session({ isGlobal: true }), {
+      period: PERIOD, from: monthStart(2), to: monthStart(-1),
+    })
+    expect(summary.invoiceCount).toBe(4)
+    expect(summary.invoicedByCurrency.find((m) => m.currency === "CLP")?.amount).toBe(3500000)
+  })
+
+  /*
+   * `to` es **exclusivo**, como `currentEnd` de `getOperationalCalendarBounds`.
+   * Con un fin inclusivo, un documento del último día se contaría en el período
+   * que termina y otra vez en el que empieza.
+   */
+  it("`to` excluye su propio día: no hay doble conteo entre períodos contiguos", async () => {
+    const soloViejas = await getBillingSummary(session({ isGlobal: true }), {
+      period: PERIOD, from: monthStart(2), to: monthStart(0),
+    })
+    expect(soloViejas.invoiceCount).toBe(1)
+    expect(soloViejas.invoicedByCurrency.find((m) => m.currency === "CLP")?.amount).toBe(500000)
+  })
+
+  // La ventana alcanza a lo que **es** del período. El saldo abierto y la
+  // antigüedad son de todas las facturas vivas y no dependen de ella.
+  it("no toca el saldo pendiente ni la antigüedad de la deuda", async () => {
+    const mes = await getBillingSummary(session({ isGlobal: true }), { period: PERIOD })
+    const trimestre = await getBillingSummary(session({ isGlobal: true }), {
+      period: PERIOD, from: monthStart(2), to: monthStart(-1),
+    })
+    expect(trimestre.outstandingByCurrency).toEqual(mes.outstandingByCurrency)
+    expect(trimestre.aging).toEqual(mes.aging)
+  })
+
+  it("los clientes principales siguen la misma ventana que el facturado", async () => {
+    const trimestre = await getBillingSummary(session({ isGlobal: true }), {
+      period: PERIOD, from: monthStart(2), to: monthStart(-1),
+    })
+    // "inv-vieja" no tiene vínculo a cliente, así que el ranking no cambia; lo
+    // que se fija es que consulte la ventana y no reviente al ensancharla.
+    expect(trimestre.topClients.every((row) => row.amount > 0)).toBe(true)
+  })
+})
+
 describe("facturas anuladas", () => {
   it("no cuentan como facturación válida", async () => {
     const result = await listInvoices(session({ isGlobal: true }), "sale")

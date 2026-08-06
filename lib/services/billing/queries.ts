@@ -14,7 +14,7 @@
  */
 
 import type { Session } from "next-auth"
-import { and, asc, desc, eq, gte, inArray, lte, ne, or, sql, type SQL } from "drizzle-orm"
+import { and, asc, desc, eq, gte, inArray, lt, lte, ne, or, sql, type SQL } from "drizzle-orm"
 import { db } from "@/db"
 import {
   billingCollectionActions,
@@ -552,7 +552,27 @@ export interface BillingSummary {
  */
 export async function getBillingSummary(
   session: Session | null,
-  options: { period?: string; worksiteId?: string } = {},
+  options: {
+    /** Período tributario ancla (`YYYY-MM`). Rotula el resumen. */
+    period?: string
+    worksiteId?: string
+    /**
+     * Ventana de emisión **[from, to)** en claves de fecha (`YYYY-MM-DD`), para
+     * cuando el consumidor mira un trimestre o un año.
+     *
+     * El libro de ventas es mensual por norma, así que el defecto sigue siendo
+     * el mes de `period`; esto no lo reemplaza, lo ensancha. Media abierta como
+     * el resto del tablero (`getOperationalCalendarBounds` entrega `currentEnd`
+     * exclusivo), para que un documento del último día no se cuente dos veces
+     * al comparar períodos contiguos.
+     *
+     * Sólo alcanza a lo que **es** del período: facturado, cobrado, conteo,
+     * clientes y faenas. El saldo pendiente, el vencido y la antigüedad de la
+     * deuda son de todas las facturas abiertas y no dependen de esta ventana.
+     */
+    from?: string
+    to?: string
+  } = {},
 ): Promise<BillingSummary> {
   const period = options.period ?? todayIso().slice(0, 7)
   const today = todayIso()
@@ -587,8 +607,10 @@ export async function getBillingSummary(
     )`)
   }
 
-  const periodStart = `${period}-01`
-  const periodEnd = endOfMonth(period)
+  const periodStart = options.from ?? `${period}-01`
+  // `monthsAgo(period, -1)` es el día 1 del mes siguiente: el fin exclusivo del
+  // mes de `period`.
+  const periodEnd = options.to ?? monthsAgo(period, -1)
 
   const [periodRows, openRows, agingRows, clientRows, worksiteRows, monthlyRows, paidRows, runs] = await Promise.all([
     // Facturado y cobrado del período.
@@ -599,7 +621,7 @@ export async function getBillingSummary(
       collected: sql<number>`coalesce(sum(${billingInvoices.paidAmount}), 0)::float8`,
     })
       .from(billingInvoices)
-      .where(and(...saleScope, gte(billingInvoices.issueDate, periodStart), lte(billingInvoices.issueDate, periodEnd)))
+      .where(and(...saleScope, gte(billingInvoices.issueDate, periodStart), lt(billingInvoices.issueDate, periodEnd)))
       .groupBy(billingInvoices.currency),
 
     // Saldo abierto y vencido (todas las facturas, no solo del período).
@@ -634,7 +656,7 @@ export async function getBillingSummary(
         ne(billingInvoiceLinks.status, "rejected"),
       ))
       .innerJoin(clients, eq(clients.id, billingInvoiceLinks.clientId))
-      .where(and(...saleScope, gte(billingInvoices.issueDate, periodStart), lte(billingInvoices.issueDate, periodEnd)))
+      .where(and(...saleScope, gte(billingInvoices.issueDate, periodStart), lt(billingInvoices.issueDate, periodEnd)))
       .groupBy(clients.name, billingInvoices.currency)
       .orderBy(desc(sql`coalesce(sum(${billingInvoices.totalAmount}), 0)`))
       .limit(10),
@@ -651,7 +673,7 @@ export async function getBillingSummary(
         ne(billingInvoiceLinks.status, "rejected"),
       ))
       .innerJoin(worksites, eq(worksites.id, billingInvoiceLinks.worksiteId))
-      .where(and(...saleScope, gte(billingInvoices.issueDate, periodStart), lte(billingInvoices.issueDate, periodEnd)))
+      .where(and(...saleScope, gte(billingInvoices.issueDate, periodStart), lt(billingInvoices.issueDate, periodEnd)))
       .groupBy(worksites.name, billingInvoices.currency)
       .orderBy(desc(sql`coalesce(sum(${billingInvoices.totalAmount}), 0)`))
       .limit(15),
