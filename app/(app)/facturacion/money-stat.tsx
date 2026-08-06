@@ -13,6 +13,10 @@ import { cn } from "@/lib/utils"
  *    número en un panel es una afirmación sin respaldo.
  * 3. **Distingue "sin datos" de "cero".** Una lista vacía dice "sin datos", no
  *    muestra $0, porque significan cosas distintas.
+ * 4. **Cuenta como tile.** `data-kpi-card` es el ancla que usa
+ *    `e2e/densidad-kpi.spec.ts` para contar indicadores por pantalla. Sin él,
+ *    una fila de cuatro `MoneyStat` era invisible para el tope de densidad —y
+ *    la sección Finanzas del tablero está hecha de ellos.
  */
 export function MoneyStat({
   label,
@@ -73,5 +77,7 @@ export function MoneyStat({
     href && "transition-colors duration-[var(--duration-fast)] hover:border-[var(--color-primary)]",
   )
 
-  return href ? <Link href={href} className={className}>{content}</Link> : <div className={className}>{content}</div>
+  return href
+    ? <Link href={href} data-kpi-card="" className={className}>{content}</Link>
+    : <div data-kpi-card="" className={className}>{content}</div>
 }

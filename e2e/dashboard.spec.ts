@@ -57,8 +57,10 @@ test.describe("Dashboard operacional", () => {
     expect(total).toBeTruthy()
 
     // El atajo "Todas" es la otra representación legítima del mismo total
-    // (acceso, no estado). Si hay cola, tiene que coincidir.
+    // (acceso, no estado). Si hay cola, tiene que coincidir — y vive en la
+    // pestaña Mi trabajo, mientras el saludo es de la cabecera, común a todas.
     if (total !== "0") {
+      await page.goto("/dashboard?vista=trabajo")
       const shortcuts = page.getByRole("navigation", { name: "Atajos a la cola completa" })
       await expect(shortcuts.getByRole("link", { name: new RegExp(`Todas\\s*${total}$`) })).toBeVisible()
     }
@@ -67,6 +69,7 @@ test.describe("Dashboard operacional", () => {
   // D-01: los atajos anuncian el backlog completo y navegan a /pendientes; no
   // filtran en cliente las filas visibles.
   test("los atajos de la cola navegan a la cola completa", async ({ page }) => {
+    await page.goto("/dashboard?vista=trabajo")
     const shortcuts = page.getByRole("navigation", { name: "Atajos a la cola completa" })
     await expect(shortcuts).toBeVisible()
 
@@ -79,6 +82,7 @@ test.describe("Dashboard operacional", () => {
   // D-01: si la cola está truncada tiene que decirlo. Si no lo está, no debe
   // inventar un aviso.
   test("declara el truncamiento sólo cuando lo hay", async ({ page }) => {
+    await page.goto("/dashboard?vista=trabajo")
     const queue = page.getByRole("region", { name: "Cola de trabajo" })
     const notice = queue.getByText(/Mostrando las .* más urgentes de/)
     const visibleCount = queue.getByText(/\d+ de \d+ visibles?/)
@@ -129,6 +133,7 @@ test.describe("Dashboard operacional", () => {
   // un portátil estándar.
   test("la cola de trabajo no scrollea horizontalmente a 1440px", async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 })
+    await page.goto("/dashboard?vista=trabajo")
     const scroller = page.locator("#cola-de-trabajo div.overflow-x-auto").first()
     if ((await scroller.count()) === 0) test.skip(true, "Sin tareas en la cola para este usuario")
 
@@ -150,6 +155,7 @@ test.describe("Dashboard operacional", () => {
   test("la pantalla tiene dos controles de alcance y el de la cola es sólo el orden", async ({ page }) => {
     await expect(page.getByRole("group", { name: "Período del tablero" })).toBeVisible()
 
+    await page.goto("/dashboard?vista=trabajo")
     const queue = page.getByRole("region", { name: "Cola de trabajo" })
     await expect(queue.getByRole("combobox", { name: "Ordenar por" })).toBeVisible()
     // La faena ya no se elige dos veces.
@@ -199,6 +205,11 @@ test.describe("Dashboard operacional", () => {
     await page.getByRole("option").filter({ hasNotText: "Todas las faenas" }).first().click()
     await expect(page).toHaveURL(/faena=/)
 
+    // La faena viaja con el cambio de vista: es la mitad del contrato.
+    await page.getByRole("navigation", { name: "Vistas del tablero" })
+      .getByRole("link", { name: /Mi trabajo/ }).click()
+    await expect(page).toHaveURL(/faena=/)
+
     // Sin esto, salir del dashboard con una faena elegida aterrizaba en
     // /pendientes sin filtro: el conteo del atajo y la lista de destino
     // hablaban de poblaciones distintas.
@@ -207,24 +218,100 @@ test.describe("Dashboard operacional", () => {
   })
 
   /*
-   * Fase 3: las cinco secciones por dominio reemplazan al bloque "Analítica y
-   * tendencias", que cubría 6 de ~19 dominios y cuyos gráficos no llevaban a
-   * ningún módulo (G-03).
+   * El selector de vistas: una a la vez. Sustituye al índice de anclas, que
+   * navegaba con scroll sobre una página con las seis secciones ya montadas.
    */
-  test("el admin ve las secciones por dominio en orden de gasto primero", async ({ page }) => {
-    const index = page.getByRole("navigation", { name: "Secciones del tablero" })
-    await expect(index).toBeVisible()
+  test("el admin ve Resumen, Mi trabajo y sus dominios, con la plata primero", async ({ page }) => {
+    const tabs = page.getByRole("navigation", { name: "Vistas del tablero" })
+    await expect(tabs).toBeVisible()
 
-    // `purchasing:view` manda Adquisiciones y Flota al frente.
-    const titles = await index.getByRole("link").allTextContents()
-    expect(titles).toEqual(["Adquisiciones", "Flota y combustible", "Prevención y SST", "Bodega y entregas", "Control preventivo en terreno", "Cumplimiento y gobernanza"])
+    // La insignia de "Mi trabajo" pega el conteo al rótulo; se recorta.
+    const titles = (await tabs.getByRole("link").allTextContents()).map((t) => t.replace(/\d+$/, "").trim())
+    expect(titles.slice(0, 3)).toEqual(["Resumen", "Mi trabajo", "Adquisiciones"])
   })
 
-  test("el índice navega a cada sección", async ({ page }) => {
-    const index = page.getByRole("navigation", { name: "Secciones del tablero" })
-    await index.getByRole("link", { name: "Prevención y SST" }).click()
-    await expect(page).toHaveURL(/#dominio-prevencion/)
+  test("Inicio abre en Resumen y sólo esa vista está montada", async ({ page }) => {
+    await expect(page.getByRole("region", { name: "Indicadores Operacionales" })).toBeVisible()
+    // La cola vive en su pestaña: montarla acá era lo que empujaba todo
+    // indicador bajo el pliegue.
+    await expect(page.locator("#cola-de-trabajo")).toHaveCount(0)
+    await expect(page.getByRole("region", { name: "Adquisiciones" })).toHaveCount(0)
+  })
+
+  test("elegir una vista la pinta y deja las otras fuera del DOM", async ({ page }) => {
+    const tabs = page.getByRole("navigation", { name: "Vistas del tablero" })
+    await tabs.getByRole("link", { name: "Prevención" }).click()
+
+    await expect(page).toHaveURL(/vista=prevencion/)
     await expect(page.getByRole("region", { name: "Prevención y SST" })).toBeVisible()
+    await expect(page.getByRole("region", { name: "Adquisiciones" })).toHaveCount(0)
+    await expect(tabs.getByRole("link", { name: "Prevención" })).toHaveAttribute("aria-current", "page")
+  })
+
+  test("Mi trabajo es la cola completa y su insignia cuadra con el saludo", async ({ page }) => {
+    const tabs = page.getByRole("navigation", { name: "Vistas del tablero" })
+    const saludo = (await page.getByText(/Tienes (\d+) tareas? pendientes?/).textContent().catch(() => "")) ?? ""
+    const total = saludo.match(/Tienes (\d+)/)?.[1]
+
+    if (total) await expect(tabs.getByRole("link", { name: /Mi trabajo/ })).toContainText(total)
+    await tabs.getByRole("link", { name: /Mi trabajo/ }).click()
+
+    await expect(page).toHaveURL(/vista=trabajo/)
+    await expect(page.getByRole("region", { name: "Cola de trabajo" })).toBeVisible()
+  })
+
+  test("cambiar de vista no reinicia la faena", async ({ page }) => {
+    const picker = await worksitePicker(page)
+    if ((await picker.count()) === 0) test.skip(true, "El usuario tiene una sola faena autorizada")
+
+    await picker.click()
+    await page.getByRole("option").filter({ hasNotText: "Todas las faenas" }).first().click()
+    await expect(page).toHaveURL(/faena=/)
+
+    await page.getByRole("navigation", { name: "Vistas del tablero" })
+      .getByRole("link", { name: "Flota" }).click()
+
+    // Las tres dimensiones conviven en la URL: sin esto, elegir vista tras
+    // elegir faena devolvía el tablero a "todas".
+    await expect(page).toHaveURL(/vista=flota/)
+    await expect(page).toHaveURL(/faena=/)
+  })
+
+  test("una vista no autorizada cae al Resumen en vez de dejar la página en blanco", async ({ page }) => {
+    await page.goto("/dashboard?vista=contabilidad")
+    await expect(page.getByRole("region", { name: "Indicadores Operacionales" })).toBeVisible()
+  })
+
+  /*
+   * Finanzas absorbe las dos direcciones del dinero. A5 sigue viva aunque el
+   * tope de tiles se haya relajado: una cifra, una representación — por eso el
+   * gasto salió de Adquisiciones en vez de quedar en las dos vistas.
+   */
+  test("el dinero vive en Finanzas y no se repite en Adquisiciones ni Flota", async ({ page }) => {
+    await page.goto("/dashboard?vista=finanzas")
+    const finanzas = page.getByRole("region", { name: "Finanzas" })
+    await expect(finanzas.getByText("Egresos — compra y consumo")).toBeVisible()
+    await expect(finanzas.getByText("Gasto en OC", { exact: true })).toBeVisible()
+
+    await page.goto("/dashboard?vista=adquisiciones")
+    const adquisiciones = page.getByRole("region", { name: "Adquisiciones" })
+    await expect(adquisiciones.getByText("Gasto", { exact: true })).toHaveCount(0)
+    await expect(adquisiciones.getByText("Proveedores por gasto")).toHaveCount(0)
+    await expect(adquisiciones.getByText("Gasto por módulo")).toHaveCount(0)
+
+    await page.goto("/dashboard?vista=flota")
+    await expect(page.getByRole("region", { name: "Flota y combustible" })
+      .getByText("Deuda vencida", { exact: true })).toHaveCount(0)
+  })
+
+  // Las cifras de venta sólo vivían en /facturacion, sin presencia en el tablero.
+  test("Finanzas trae la facturación de venta, que no estaba en el tablero", async ({ page }) => {
+    await page.goto("/dashboard?vista=finanzas")
+    const finanzas = page.getByRole("region", { name: "Finanzas" })
+
+    await expect(finanzas.getByText("Ingresos — facturación de venta")).toBeVisible()
+    await expect(finanzas.getByText("Pendiente de cobro", { exact: true })).toBeVisible()
+    await expect(finanzas.getByRole("link", { name: "Facturación" })).toHaveAttribute("href", "/facturacion")
   })
 
   /*
@@ -232,28 +319,20 @@ test.describe("Dashboard operacional", () => {
    * declara un período: lo hace cada cifra.
    *
    * La primera versión de la Fase 3 sí lo declaraba y era L-07/G-04.4 otra vez:
-   * "Prevención · Año en curso" encabezaba tres KPIs de estado actual, y
-   * "Adquisiciones · Mes en curso" una tendencia de 6 meses, un backlog de hoy
-   * y una inversión acumulada histórica.
+   * "Prevención · Año en curso" encabezaba tres KPIs de estado actual.
    */
   test("cada cifra declara su ventana y la sección no promete una global", async ({ page }) => {
+    await page.goto("/dashboard?vista=prevencion")
     const prevencion = page.getByRole("region", { name: "Prevención y SST" })
     // El PDTP es anual; los incidentes y las CAPA son estado actual. Conviven.
     await expect(prevencion.getByText(/Avance acreditado · año \d{4}/)).toBeVisible()
     await expect(prevencion.getByText(/abiertas en total · ahora/)).toBeVisible()
-
-    // La cabecera de la sección es sólo el título y sus enlaces.
-    const encabezado = prevencion.getByRole("heading", { name: "Prevención y SST" })
-    await expect(encabezado).toBeVisible()
-
-    const adquisiciones = page.getByRole("region", { name: "Adquisiciones" })
-    await expect(adquisiciones.getByText(/OC emitidas · mes en curso/)).toBeVisible()
-    // Y el gráfico acumulado sigue declarando lo suyo, distinto del KPI de al lado.
-    await expect(adquisiciones.getByText(/acumulado histórico/)).toBeVisible()
+    await expect(prevencion.getByRole("heading", { name: "Prevención y SST" })).toBeVisible()
   })
 
   // G-03: los gráficos dejaban de ser callejones sin salida.
   test("cada sección enlaza al módulo que la explica", async ({ page }) => {
+    await page.goto("/dashboard?vista=adquisiciones")
     const adquisiciones = page.getByRole("region", { name: "Adquisiciones" })
     await expect(adquisiciones.getByRole("link", { name: "Compras" })).toHaveAttribute("href", "/compras")
     // `/analitica` no estaba enlazada desde ningún punto del dashboard.
@@ -262,10 +341,11 @@ test.describe("Dashboard operacional", () => {
 
   /*
    * Los seis dominios que no tenían representación (inspecciones, permisos,
-   * simulacros, comité, higiene, gestión del cambio) viven en **una** sección:
+   * simulacros, comité, higiene, gestión del cambio) viven en **una** vista:
    * seis más habrían devuelto la pantalla al muro que la auditoría desarmó.
    */
   test("el control preventivo en terreno agrupa los seis dominios que faltaban", async ({ page }) => {
+    await page.goto("/dashboard?vista=terreno")
     const seccion = page.getByRole("region", { name: "Control preventivo en terreno" })
     await expect(seccion).toBeVisible()
 
@@ -354,17 +434,19 @@ test.describe("Dashboard con rol restringido", () => {
    * que no abre por gasto, y no tiene prevención ni combustibles: esas
    * secciones no existen —no se consultan ni aparecen en el índice—.
    */
-  test("el rol restringido no ve las secciones que su permiso no autoriza", async ({ page }) => {
-    const index = page.getByRole("navigation", { name: "Secciones del tablero" })
-    const titles = await index.getByRole("link").allTextContents()
+  test("el rol restringido no ve las pestañas que su permiso no autoriza", async ({ page }) => {
+    const tabs = page.getByRole("navigation", { name: "Vistas del tablero" })
+    const titles = (await tabs.getByRole("link").allTextContents()).map((t) => t.replace(/\d+$/, "").trim())
 
     expect(titles).toContain("Adquisiciones")
-    expect(titles).toContain("Bodega y entregas")
-    expect(titles).not.toContain("Flota y combustible")
-    expect(titles).not.toContain("Prevención y SST")
+    expect(titles).toContain("Bodega")
+    expect(titles).not.toContain("Flota")
+    expect(titles).not.toContain("Prevención")
 
+    // Y escribir la vista a mano tampoco la abre: cae al Resumen.
+    await page.goto("/dashboard?vista=flota")
     await expect(page.getByRole("region", { name: "Flota y combustible" })).toHaveCount(0)
-    await expect(page.getByRole("region", { name: "Prevención y SST" })).toHaveCount(0)
+    await expect(page.getByRole("region", { name: "Indicadores Operacionales" })).toBeVisible()
   })
 
   test("el flujo del mes sólo lista los módulos autorizados", async ({ page }) => {

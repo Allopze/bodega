@@ -24,18 +24,32 @@ import type { DashboardDomain } from "./dashboard-domains"
  * **cada KPI y cada gráfico declara su propia ventana** y la cabecera no promete
  * una que no puede cumplir.
  */
-export function DomainSection({ domain, kpis, summary, charts, links, note }: {
+export interface DomainKpiGroup {
+  key: string
+  /** Rótulo de la fila. `null` la deja sin encabezado (grupo único). */
+  label: string | null
+  content: ReactNode
+}
+
+export function DomainSection({ domain, kpis, kpiGroups, summary, charts, links, note }: {
   domain: DashboardDomain
-  kpis: ReactNode
-  /** Métricas secundarias en tira editorial, fuera del máximo de cuatro tiles. */
+  /** Una sola fila sin rótulo. Excluyente con `kpiGroups`. */
+  kpis?: ReactNode
+  /**
+   * Varias filas rotuladas. Finanzas las necesita: ocho cifras seguidas sin
+   * separar ingresos de egresos se leen como una sola lista indistinguible, que
+   * es el defecto que §A1 previene. Ver la excepción declarada en AGENTS.md.
+   */
+  kpiGroups?: DomainKpiGroup[]
+  /** Métricas secundarias en tira editorial, fuera del conteo de tiles. */
   summary?: ReactNode
   charts: ReactNode
   links: Array<{ label: string; href: string }>
   /** Advertencia de alcance cuando alguna cifra no puede respetar el filtro. */
   note?: string
 }) {
-  // scroll-mt = TopBar (3.5rem) + barra índice sticky (~2.75rem) + aire;
-  // en 2xl no hay barra horizontal sobre el contenido, sólo la TopBar.
+  const groups: DomainKpiGroup[] = kpiGroups ?? (kpis ? [{ key: "default", label: null, content: kpis }] : [])
+  // scroll-mt = TopBar (3.5rem) + barra de pestañas sticky (~2.75rem) + aire.
   return (
     <section id={domain.anchor} aria-labelledby={`${domain.anchor}-titulo`} className="scroll-mt-28 2xl:scroll-mt-20">
       <div className="mb-3 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 border-b border-[var(--color-border)] pb-2">
@@ -59,7 +73,14 @@ export function DomainSection({ domain, kpis, summary, charts, links, note }: {
 
       {note && <p className="mb-3 text-[11px] text-[var(--color-text-faint)]">{note}</p>}
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{kpis}</div>
+      {groups.map((group, index) => (
+        <div key={group.key} className={index === 0 ? undefined : "mt-4"}>
+          {group.label && (
+            <h3 className="text-eyebrow mb-2 text-[var(--color-text-faint)]">{group.label}</h3>
+          )}
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{group.content}</div>
+        </div>
+      ))}
       {summary && <div className="mt-3">{summary}</div>}
 
       <div className="mt-4 grid gap-6 grid-cols-1 xl:grid-cols-2">{charts}</div>

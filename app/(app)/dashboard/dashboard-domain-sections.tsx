@@ -1,12 +1,11 @@
 import type { Session } from "next-auth"
 import {
-  Broom, Certificate, ClipboardText, CurrencyDollar, FileText, Gauge, Package,
-  ShieldWarning, Siren, Timer, Truck, WarningOctagon, Wrench,
+  Broom, Certificate, ClipboardText, FileText, Gauge, Package,
+  ShieldWarning, Siren, Truck, WarningOctagon, Wrench,
 } from "@phosphor-icons/react/dist/ssr"
 import { KpiCard } from "@/components/ui/kpi-card"
 import { SummaryBar, type SummaryStat } from "@/components/ui/summary-bar"
 import type { WorksiteScope } from "@/lib/auth/scope"
-import { formatCLP } from "@/lib/utils"
 import { getAnalyticsDashboard } from "@/lib/services/analytics-module/dashboard"
 import { getDashboardData } from "@/lib/services/dashboard"
 import { getCapaDashboardCounts } from "@/lib/services/prevention-capa"
@@ -19,16 +18,17 @@ import { getFuelControlOverview } from "@/lib/combustibles/fuel-control-overview
 import { getStockAlerts } from "@/lib/services/stock-alerts"
 import { listCompetencyGaps } from "@/lib/services/prevention-training"
 import { getOperationalCalendarBounds } from "@/lib/services/operational-period-metrics"
-import { getExpiringFleetDocuments, getFieldControlSummary, getOverdueFuelDebt, getReceptionQuality } from "@/lib/services/dashboard-domains-data"
+import { getExpiringFleetDocuments, getFieldControlSummary, getReceptionQuality } from "@/lib/services/dashboard-domains-data"
 import { getOperationalTrendHistory } from "@/lib/services/operational-trend-history"
 import { getFuelMonthlyTrend, getMaintenanceMonthlyTrend } from "@/lib/services/dashboard-fleet-maintenance"
 import { getFleetOverview } from "@/lib/services/fleet"
 import { getUsageMaintenanceAlerts } from "@/lib/services/maintenance"
 import { getCanonicalSafetyIndicatorYear, getMaterialEnvironmentalEvents } from "@/lib/services/prevention-indicadores"
 import { getPdtpComplianceIndicatorsForScope } from "@/lib/services/pdtp/compliance"
-import { computeHealthStats, countPendingFuelCreditNotes } from "@/lib/services/dte-portal/reconciliation"
+import { countPendingFuelCreditNotes } from "@/lib/services/dte-portal/reconciliation"
 import { readDtePortalConfig } from "@/lib/services/dte-portal/config"
 import { DASHBOARD_DOMAINS, type DashboardDomainKey } from "./dashboard-domains"
+import { FinanceSection } from "./sections/finance-section"
 import { DomainSection } from "./dashboard-domain-shell"
 import { periodScopeLabel, scopedWorksiteId, type DashboardScope } from "./dashboard-scope"
 import { MONTH_LABELS, toSstMonthlyPoints } from "./sst-monthly-points"
@@ -37,7 +37,7 @@ import type { ModuleWorkloadPoint } from "./dashboard-charts"
 import {
   CompositionDonutChart, FuelConsumptionChart, MaintenanceTrendChart, MaterialEnvironmentalChart,
   ModuleWorkloadChart, OperationalTrendChart, SstAccidentChart, SstTrendChart, StatusShareBar,
-  ThresholdRankingChart, WorksiteActivityChart,
+  ThresholdRankingChart,
 } from "./dashboard-domain-charts"
 
 const CHILE_TODAY_FORMATTER = new Intl.DateTimeFormat("en-CA", {
@@ -86,45 +86,50 @@ function plusDays(date: string, days: number) {
 
 // ── Adquisiciones ────────────────────────────────────────────────────────────
 
-async function AcquisitionsSection({ session, scope, worksiteScope, moduleWorkload, queueTotal }: DomainSectionsProps) {
+/**
+ * Adquisiciones: el **proceso** de comprar, no su monto.
+ *
+ * El gasto, el ticket medio, los proveedores por gasto, el gasto por módulo, la
+ * inversión por faena y la salud DTE se fueron a Finanzas, donde conviven con la
+ * facturación de venta. Quedaron acá las cifras que describen cómo avanza el
+ * flujo: cuántas OC se emiten, cuántas siguen abiertas, qué tan limpio llega lo
+ * que se recibe y qué espera una decisión.
+ *
+ * A5 sigue rigiendo: una cifra, una representación. El tope de tiles se relajó
+ * para el tablero; la prohibición de duplicar cifras no.
+ */
+async function AcquisitionsSection({ session, scope, moduleWorkload, queueTotal }: DomainSectionsProps) {
   const bounds = getOperationalCalendarBounds(new Date(), scope.period)
-  const dteCodEmp = (await readDtePortalConfig()).credentials.codEmp
   /*
    * `getDashboardData` se consulta acá y no en la página.
    *
    * Entrega `pendingApprovals` —ítems esperando decisión **ahora**, la misma
    * cifra que la alerta del Resumen; `analytics.kpis.pendingApprovals` filtra
    * por la ventana del período y la pantalla llegó a mostrar 3, 1 y 0 para
-   * "aprobaciones" a la vez (I-02)— y el desglose por faena. Con las vistas
+   * "aprobaciones" a la vez (I-02)— y `orders_pending_receipt`. Con las vistas
    * conmutadas, dejarla en la página la cobraba a los ocho renders.
    */
-  const [analytics, quality, trend, dteHealth, dashboardData] = await Promise.all([
+  const [analytics, quality, trend, dashboardData] = await Promise.all([
     getAnalyticsDashboard(session, analyticsFilters(scope)),
     getReceptionQuality(session, { from: bounds.currentStart, to: bounds.currentEnd }, scopedWorksiteId(scope)),
     getOperationalTrendHistory(session, 6, new Date(), scopedWorksiteId(scope)),
-    computeHealthStats(todayInChile().slice(0, 7), dteCodEmp).catch(() => null),
     getDashboardData(session, scopedWorksiteId(scope)),
   ])
   const pendingApprovals = dashboardData.metrics.pending_approvals
-  const worksitesBreakdown = dashboardData.worksitesBreakdown
 
   const periodo = periodScopeLabel(scope.period).toLocaleLowerCase("es-CL")
 
   return (
     <DomainSection
       domain={DASHBOARD_DOMAINS.adquisiciones}
-      // dteHealth es por empresa/período tributario (CodEmp del portal DTE),
-      // no por faena — no sigue el filtro de arriba cuando hay una faena elegida.
-      note={dteHealth && worksiteScope.mode !== "all"
-        ? "Las cifras de DTE (facturas del portal tributario) son por empresa y período, no por faena: no siguen el filtro de arriba."
-        : undefined}
-      links={[{ label: "Compras", href: "/compras" }, { label: "Analítica", href: "/analitica" }]}
+      links={[{ label: "Compras", href: "/compras" }, { label: "Analítica", href: "/analitica" }, { label: "Finanzas", href: "/dashboard?vista=finanzas" }]}
       kpis={
         <>
-          <KpiCard icon={<CurrencyDollar size={16} />} label="Gasto" value={formatCLP(analytics.kpis.totalSpend)}
-            detail={`${analytics.kpis.purchaseOrderCount} OC emitidas · ${periodo}`} trend={analytics.kpis.spendVariationPct} href="/compras" />
-          <KpiCard icon={<Timer size={16} />} label="Monto promedio por OC" value={formatCLP(analytics.kpis.averageOrderAmount)}
-            detail={`Ticket medio · ${periodo}`} href="/analitica" />
+          <KpiCard icon={<ClipboardText size={16} />} label="OC emitidas" value={String(analytics.kpis.purchaseOrderCount)}
+            detail={`Órdenes creadas · ${periodo}`} href="/compras" />
+          <KpiCard icon={<Truck size={16} />} label="Por recibir" value={String(dashboardData.metrics.orders_pending_receipt)}
+            detail="Órdenes con recepción pendiente · ahora"
+            tone={dashboardData.metrics.orders_pending_receipt > 0 ? "signal" : "neutral"} href="/recepcion" />
           <KpiCard icon={<Broom size={16} />} label="Rechazo en recepción" value={`${quality.rejectionRate}%`}
             detail={quality.rejected + quality.damaged > 0 ? `${quality.rejected} rechazadas · ${quality.damaged} dañadas · ${periodo}` : `Todo llegó conforme · ${periodo}`}
             tone={quality.rejectionRate > 5 ? "signal" : "neutral"} href="/recepcion" />
@@ -132,39 +137,12 @@ async function AcquisitionsSection({ session, scope, worksiteScope, moduleWorklo
             detail="Ítems esperando decisión ahora" href="/pendientes?module=aprobaciones" />
         </>
       }
-      summary={dteHealth && (dteHealth.reconciliation.unmatched > 0 || dteHealth.reconciliation.discrepancies > 0) ? (
-        <SummaryBar stats={[
-          {
-            key: "dte-sin-oc",
-            label: "Facturas DTE sin vincular a OC",
-            value: dteHealth.reconciliation.unmatched,
-            tone: dteHealth.reconciliation.unmatched > 0 ? "signal" : undefined,
-            href: "/compras/dte?vinculo=sin_oc",
-          },
-          {
-            key: "dte-discrepancias",
-            label: "Discrepancias de monto (DTE vs. factura)",
-            value: dteHealth.reconciliation.discrepancies,
-            tone: dteHealth.reconciliation.discrepancies > 0 ? "signal" : undefined,
-            href: "/compras/dte?vinculo=discrepancia",
-          },
-        ]} />
-      ) : undefined}
       charts={
         <>
-          <OperationalTrendChart data={trend.map((p) => ({ month: p.month, requests: p.requests, orders: p.orders, receipts: p.receipts }))} />
-          <CompositionDonutChart
-            title="Gasto por módulo" description={`De qué se compone el gasto — ${periodo}`}
-            totalLabel="del período" format="clp"
-            data={analytics.spendByModule.map((row) => ({ key: row.module, label: row.module, value: row.totalAmount }))}
-          />
-          <ThresholdRankingChart
-            title="Proveedores por gasto" description="Concentración de compra en el período" unit="" format="clp"
-            invert goodAtOrAbove={Number.POSITIVE_INFINITY} warnAtOrAbove={Number.POSITIVE_INFINITY}
-            data={analytics.topSuppliers.slice(0, 8).map((row) => ({ name: row.name, value: Math.round(row.totalAmount), detail: `${row.count} OC` }))}
-          />
+          <div className="xl:col-span-2">
+            <OperationalTrendChart data={trend.map((p) => ({ month: p.month, requests: p.requests, orders: p.orders, receipts: p.receipts }))} />
+          </div>
           {moduleWorkload.length > 0 && <ModuleWorkloadChart data={moduleWorkload} total={queueTotal} />}
-          {worksitesBreakdown.length > 0 && <WorksiteActivityChart worksites={worksitesBreakdown} />}
         </>
       }
     />
@@ -335,6 +313,15 @@ async function PreventionSection({ session, worksiteScope, worksiteIds, currentY
 
 // ── Flota y combustible ──────────────────────────────────────────────────────
 
+/**
+ * Flota y combustible: el **consumo y el estado de los equipos**, no su costo
+ * agregado.
+ *
+ * El costo de combustible del período y la deuda vencida de cuenta corriente se
+ * fueron a Finanzas. Se queda `FuelConsumptionChart`, que grafica litros y costo
+ * en eje doble: esa es una lectura operacional —cuánto se consume y a qué
+ * precio— y no el agregado financiero que Finanzas compara con los ingresos.
+ */
 async function FleetSection({ session, scope }: DomainSectionsProps) {
   const worksiteId = scopedWorksiteId(scope)
   const today = todayInChile()
@@ -342,7 +329,7 @@ async function FleetSection({ session, scope }: DomainSectionsProps) {
 
   const bounds = getOperationalCalendarBounds(new Date(), scope.period)
   const dteCodEmp = (await readDtePortalConfig()).credentials.codEmp
-  const [fuelControl, fuelTrend, maintenanceTrend, docs, debt, fleet, usageAlerts, pendingFuelCreditNotes] = await Promise.all([
+  const [fuelControl, fuelTrend, maintenanceTrend, docs, fleet, usageAlerts, pendingFuelCreditNotes] = await Promise.all([
     getFuelControlOverview(session, {
       includeTae: true,
       filters: { fromDate: bounds.currentStart.slice(0, 10), toDate: bounds.currentEnd.slice(0, 10), ...(worksiteId ? { worksiteId } : {}) },
@@ -350,9 +337,6 @@ async function FleetSection({ session, scope }: DomainSectionsProps) {
     getFuelMonthlyTrend(session, 6, worksiteId),
     getMaintenanceMonthlyTrend(session, 6, worksiteId),
     getExpiringFleetDocuments(session, today, plusDays(today, 30), worksiteId),
-    permissions.includes("combustibles:view_costs")
-      ? getOverdueFuelDebt(today)
-      : Promise.resolve({ amount: 0, statements: 0 }),
     getFleetOverview(session).catch(() => []),
     getUsageMaintenanceAlerts(session).catch(() => []),
     // Notas de crédito de combustible sin aplicar (rutEmisor de fuelSuppliers,
@@ -360,7 +344,6 @@ async function FleetSection({ session, scope }: DomainSectionsProps) {
     countPendingFuelCreditNotes(today.slice(0, 7), dteCodEmp).catch(() => null),
   ])
 
-  const periodCost = fuelTrend.reduce((sum, point) => sum + point.amount, 0)
   const canSeeCosts = permissions.includes("combustibles:view_costs")
   const periodo = periodScopeLabel(scope.period).toLocaleLowerCase("es-CL")
 
@@ -383,23 +366,19 @@ async function FleetSection({ session, scope }: DomainSectionsProps) {
   return (
     <DomainSection
       domain={DASHBOARD_DOMAINS.flota}
-      note={canSeeCosts && debt.statements > 0
-        ? "La deuda de cuenta corriente es por proveedor: no se puede repartir por faena, así que no sigue el filtro de arriba."
-        : undefined}
       links={[
         { label: "Combustibles", href: "/combustibles" },
         { label: "Flota", href: "/flota" },
         { label: "Mantenciones", href: "/mantenciones" },
+        ...(canSeeCosts ? [{ label: "Finanzas", href: "/dashboard?vista=finanzas" }] : []),
       ]}
       kpis={
         <>
-          <KpiCard icon={<CurrencyDollar size={16} />} label="Costo de combustible" value={formatCLP(periodCost)}
-            detail="Cargas facturadas · últimos 6 meses" href="/combustibles" />
-          {canSeeCosts && (
-            <KpiCard icon={<FileText size={16} />} label="Deuda vencida" value={formatCLP(debt.amount)}
-              detail={debt.statements > 0 ? `${debt.statements} cuenta(s) · todas las faenas, hoy` : "Sin cuentas vencidas, hoy"}
-              tone={debt.amount > 0 ? "signal" : "neutral"} href="/combustibles/cuenta-corriente" />
-          )}
+          <KpiCard icon={<Truck size={16} />} label="Vehículos con actividad" value={String(fleet.length)}
+            detail="Con al menos un movimiento registrado · ahora" href="/flota" />
+          <KpiCard icon={<Gauge size={16} />} label="Litros del período"
+            value={`${Math.round(fuelTrend.reduce((sum, point) => sum + point.liters, 0)).toLocaleString("es-CL")} L`}
+            detail="Cargas registradas · últimos 6 meses" href="/combustibles" />
           <KpiCard icon={<Certificate size={16} />} label="Documentos por vencer" value={String(docs.within30)}
             detail={docs.expired > 0 ? `${docs.expired} ya vencido(s) · próximos 30 días` : "Próximos 30 días"}
             tone={docs.within30 + docs.expired > 0 ? "signal" : "neutral"} href="/flota" />
@@ -624,6 +603,7 @@ async function GovernanceSection({ session, scope, worksiteScope, worksiteIds }:
 // ── Orquestador ──────────────────────────────────────────────────────────────
 
 export const SECTION_BY_DOMAIN: Record<DashboardDomainKey, (props: DomainSectionsProps) => Promise<React.JSX.Element>> = {
+  finanzas: FinanceSection,
   adquisiciones: AcquisitionsSection,
   bodega: WarehouseSection,
   prevencion: PreventionSection,

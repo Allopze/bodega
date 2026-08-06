@@ -149,6 +149,11 @@ const fuelChartConfig = {
   },
 } satisfies ChartConfig
 
+const billingFlowConfig = {
+  invoiced:  { label: "Facturado", color: CHART_COLORS.brand },
+  collected: { label: "Cobrado",   color: CHART_COLORS.blue },
+} satisfies ChartConfig
+
 const maintenanceChartConfig = {
   completed: {
     label: "Completadas",
@@ -877,6 +882,56 @@ export function StatusShareBar({ data, title, description }: {
           </li>
         ))}
       </ul>
+    </div>
+  )
+}
+
+// ── 12. Billing Flow Chart ───────────────────────────────────────────────────
+
+/**
+ * Facturado contra cobrado, mes a mes.
+ *
+ * Las dos series son dinero en la misma moneda y la misma escala, así que
+ * comparten eje (A5b sólo prohíbe mezclar unidades distintas). La brecha entre
+ * ambas líneas **es** la lectura: lo emitido que todavía no entra en caja.
+ */
+export function BillingFlowChart({ data }: {
+  data: Array<{ period: string; invoiced: number; collected: number }>
+}) {
+  // Todo-en-cero también se oculta: una rejilla vacía con conclusión absurda
+  // ("el mayor facturado se registró en Mar: $0") es peor que nada (I-03).
+  if (!data.some((row) => row.invoiced + row.collected > 0)) return null
+
+  const peak = maxBy(data, (row) => row.invoiced)
+
+  return (
+    <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-xs">
+      <div className="mb-3">
+        <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--color-text-muted)]">Facturado y cobrado</h3>
+        <p className="text-xs text-[var(--color-text-muted)]">Emisión contra pagos confirmados, por mes</p>
+      </div>
+
+      <ChartDataTable
+        title="Facturado y cobrado"
+        groupLabel="Mes"
+        columns={["Facturado", "Cobrado"]}
+        rows={data.map((row) => ({ label: row.period, values: [formatCLP(row.invoiced), formatCLP(row.collected)] }))}
+        conclusion={`El mayor facturado se registró en ${peak.period}: ${formatCLP(peak.invoiced)}.`}
+        caption="Las dos series se distinguen sólo por color; los valores exactos están aquí."
+        className="mb-3 mt-0 border-b border-t-0 pb-3 pt-0"
+      />
+
+      <ChartContainer config={billingFlowConfig} className="h-56 w-full">
+        <LineChart data={data} margin={{ left: 4, right: 8, top: 8, bottom: 0 }}>
+          <CartesianGrid vertical={false} strokeDasharray="3 3" />
+          <XAxis dataKey="period" tickLine={false} axisLine={false} tickMargin={8} fontSize={11} />
+          <YAxis tickLine={false} axisLine={false} width={52} fontSize={11} tickFormatter={compactCLPTick} />
+          <ChartTooltip content={<ChartTooltipContent formatter={(value, name) => `${String(name)}: ${formatCLP(Number(value))}`} />} />
+          <ChartLegend content={<ChartLegendContent />} />
+          <Line dataKey="invoiced" type="monotone" stroke={CHART_COLORS.brand} strokeWidth={2} dot={false} />
+          <Line dataKey="collected" type="monotone" stroke={CHART_COLORS.blue} strokeWidth={2} dot={false} />
+        </LineChart>
+      </ChartContainer>
     </div>
   )
 }

@@ -57,3 +57,4 @@ export const MaintenanceTrendChart = lazyChart(() => import("./dashboard-charts"
 export const CompositionDonutChart = lazyChart(() => import("./dashboard-charts").then((m) => m.CompositionDonutChart), "la composición")
 export const ThresholdRankingChart = lazyChart(() => import("./dashboard-charts").then((m) => m.ThresholdRankingChart), "el ranking")
 export const StatusShareBar = lazyChart(() => import("./dashboard-charts").then((m) => m.StatusShareBar), "el reparto por estado", "h-28")
+export const BillingFlowChart = lazyChart(() => import("./dashboard-charts").then((m) => m.BillingFlowChart), "el flujo de facturación", "h-80")
