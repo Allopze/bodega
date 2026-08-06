@@ -1,5 +1,11 @@
 import type { WorksiteScope } from "@/lib/auth/scope"
 import type { OperationalPeriodSpan } from "@/lib/services/operational-period-metrics"
+import {
+  DEFAULT_DASHBOARD_VIEW,
+  parseDashboardView,
+  type DashboardView,
+  type DashboardViewKey,
+} from "./dashboard-views"
 
 /**
  * Alcance global del dashboard: **faena + período**, los dos únicos filtros de
@@ -33,11 +39,18 @@ export interface DashboardScope {
   period: OperationalPeriodSpan
   /** Nombre de la faena elegida; `null` con `"all"`. Para rótulos. */
   worksiteName: string | null
+  /**
+   * Vista activa. Vive en el mismo objeto que faena y período porque es lo que
+   * la URL dice, y porque todo enlace del tablero debe conservar las tres: sin
+   * esto, cambiar de faena te devolvía al Resumen.
+   */
+  view: DashboardViewKey
 }
 
 export interface DashboardScopeSearchParams {
   faena?: string | string[]
   periodo?: string | string[]
+  vista?: string | string[]
 }
 
 function firstValue(value: string | string[] | undefined) {
@@ -60,6 +73,7 @@ function isPeriod(value: string | undefined): value is OperationalPeriodSpan {
 export function parseDashboardScope(
   searchParams: DashboardScopeSearchParams,
   authorizedWorksites: ReadonlyArray<{ id: string; name: string }>,
+  availableViews: readonly DashboardView[],
 ): DashboardScope {
   const rawPeriod = firstValue(searchParams.periodo)
   const period = isPeriod(rawPeriod) ? rawPeriod : DEFAULT_DASHBOARD_PERIOD
@@ -73,6 +87,7 @@ export function parseDashboardScope(
     worksiteId: match?.id ?? ALL_WORKSITES,
     worksiteName: match?.name ?? null,
     period,
+    view: parseDashboardView(firstValue(searchParams.vista), availableViews),
   }
 }
 
@@ -126,11 +141,18 @@ export function periodFlowTitle(period: OperationalPeriodSpan) {
   }
 }
 
-/** Href que conserva el alcance y cambia sólo una de sus dos dimensiones. */
-export function dashboardScopeHref(scope: DashboardScope, patch: Partial<Pick<DashboardScope, "worksiteId" | "period">>) {
+/** Href que conserva el alcance completo y cambia sólo lo que el patch pide. */
+export function dashboardScopeHref(
+  scope: DashboardScope,
+  patch: Partial<Pick<DashboardScope, "worksiteId" | "period" | "view">>,
+) {
   const worksiteId = patch.worksiteId ?? scope.worksiteId
   const period = patch.period ?? scope.period
+  const view = patch.view ?? scope.view
   const params = new URLSearchParams()
+  // `vista` primero: es lo que el usuario acaba de elegir y lo que verá en la
+  // barra de direcciones si copia el enlace.
+  if (view !== DEFAULT_DASHBOARD_VIEW) params.set("vista", view)
   if (worksiteId !== ALL_WORKSITES) params.set("faena", worksiteId)
   if (period !== DEFAULT_DASHBOARD_PERIOD) params.set("periodo", period)
   const query = params.toString()
