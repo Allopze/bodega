@@ -80,8 +80,11 @@ export async function matchToPurchaseOrderInvoices(
       eq(dteDocuments.periodo, periodo),
       eq(dteDocuments.codEmp, codEmp),
       isNull(dteDocuments.purchaseOrderInvoiceId),
-      // Solo facturas y NC (33, 34, 61, 56), no guías ni boletas
-      sql`${dteDocuments.tipoDte} IN ('33', '34', '61', '56')`,
+      // Solo facturas (33, 34): el folio de una NC/ND (61, 56) viene de una
+      // secuencia SII independiente, así que su igualdad numérica con el
+      // invoiceNumber de una OC es coincidencia, no identidad — auto-vincular
+      // ahí colgaba la NC de una factura ajena. NC/ND quedan para vínculo manual.
+      sql`${dteDocuments.tipoDte} IN ('33', '34')`,
     ),
     columns: {
       id: true,
@@ -175,7 +178,9 @@ export async function matchToFuelLoads(
       eq(dteDocuments.periodo, periodo),
       eq(dteDocuments.codEmp, codEmp),
       isNull(dteDocuments.fuelLoadId),
-      sql`${dteDocuments.tipoDte} IN ('33', '34', '61', '56')`,
+      // Solo facturas (33, 34): mismo motivo que en matchToPurchaseOrderInvoices
+      // — el folio de una NC/ND no comparte secuencia con el receiptNumber.
+      sql`${dteDocuments.tipoDte} IN ('33', '34')`,
     ),
     columns: {
       id: true,

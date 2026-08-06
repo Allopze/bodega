@@ -14,6 +14,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 import { Sliders } from "@phosphor-icons/react"
+import { toast } from "@/lib/toast"
 import { Tooltip } from "@/components/ui/tooltip"
 import { setPdtpActivityOverrideFormAction } from "./actions"
 
@@ -73,9 +74,16 @@ export function PdtpOverrideForm(props: Props) {
           </DialogDescription>
         </DialogHeader>
         <form
-          action={(fd) => {
-            setPdtpActivityOverrideFormAction(fd)
-            setOpen(false)
+          action={async (fd) => {
+            // Fire-and-forget cerraba el diálogo aunque la llamada fallara a
+            // nivel de red: el usuario veía "guardado" y no se guardó nada.
+            // Los errores de validación viajan por redirect + overrideError.
+            try {
+              await setPdtpActivityOverrideFormAction(fd)
+              setOpen(false)
+            } catch {
+              toast.error("No se pudo guardar la meta por faena. Revisa la conexión e inténtalo de nuevo.")
+            }
           }}
           className="space-y-3"
         >

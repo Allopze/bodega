@@ -9,6 +9,7 @@ import {
   pdtpPrograms,
   preventionCapaActions,
   preventionCommittees,
+  preventionCampaigns,
   preventionEmergencyPlans,
   preventionEppRequirements,
   preventionInspectionRuns,
@@ -742,6 +743,11 @@ export async function linkPdtpActivitySource(input: unknown, access: RiskLegalAc
       const [source] = await tx.select().from(preventionEmergencyPlans).where(and(eq(preventionEmergencyPlans.id, data.sourceId), eq(preventionEmergencyPlans.worksiteId, data.worksiteId), eq(preventionEmergencyPlans.status, "approved"))).limit(1)
       if (!source) throw new Error("Plan de emergencia no encontrado, no aprobado o fuera de alcance.")
       sourceVersionSnapshot = `${source.code} v${source.version}`
+    } else if (data.sourceType === "campana") {
+      // Único tipo con catálogo que quedaba sin verificar pertenencia a faena.
+      const [source] = await tx.select().from(preventionCampaigns).where(and(eq(preventionCampaigns.id, data.sourceId), eq(preventionCampaigns.worksiteId, data.worksiteId), ne(preventionCampaigns.status, "cancelled"))).limit(1)
+      if (!source) throw new Error("Campaña no encontrada, cancelada o fuera de alcance.")
+      sourceVersionSnapshot = source.code
     }
     const [created] = await tx.insert(preventionPdtpSourceLinks).values({
       id: `pdtpsource-${nanoid()}`,

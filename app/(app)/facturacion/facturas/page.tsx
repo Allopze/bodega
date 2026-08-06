@@ -1,7 +1,8 @@
 import type { Metadata } from "next"
 import Link from "next/link"
 import { redirect } from "next/navigation"
-import { Receipt } from "@phosphor-icons/react/dist/ssr"
+import { DownloadSimple, Receipt } from "@phosphor-icons/react/dist/ssr"
+import { Button } from "@/components/ui/button"
 import { auth } from "@/lib/auth/auth"
 import { can } from "@/lib/auth/can"
 import { listInvoices, listActiveClients, type InvoiceFilters } from "@/lib/services/billing/queries"
@@ -79,6 +80,16 @@ export default async function InvoicesPage({
             { label: "Facturas emitidas" },
           ]} />
         }
+        actions={can(session, "billing:export") ? (
+          <Button asChild size="sm" variant="secondary">
+            {/* El export respeta los filtros activos: mismo conjunto que la tabla. */}
+            <a href={`/api/facturacion/facturas/export?${new URLSearchParams(
+              Object.entries(params).filter(([key, value]) => key !== "pagina" && Boolean(value)) as [string, string][],
+            ).toString()}`}>
+              <DownloadSimple size={14} className="mr-1" /> Exportar Excel
+            </a>
+          </Button>
+        ) : undefined}
       />
 
       <InvoiceFiltersBar clients={clients} />

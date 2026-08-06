@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache"
 import { z } from "zod"
-import { and, eq } from "drizzle-orm"
+import { and, eq, sql } from "drizzle-orm"
 import { db } from "@/db"
 import {
   billingCollectionActions,
@@ -175,11 +175,37 @@ export async function registerManualPaymentAction(input: unknown): Promise<Actio
     if (!(await canReachInvoice(session, data.invoiceId))) {
       return { ok: false, message: "No tienes acceso a esta factura" }
     }
+    // Un pago negativo es un ajuste (NC, devolución): sin explicación escrita,
+    // el historial muestra un cobro que se achica sin que nadie sepa por qué.
+    if (data.amount < 0 && !data.notes?.trim()) {
+      return { ok: false, message: "Un pago negativo es un ajuste: explica el motivo en la nota (p. ej. nota de crédito o devolución)." }
+    }
 
     const paymentId = nanoid()
     const now = new Date().toISOString()
 
     const snapshot = await db.transaction(async (tx) => {
+      // El índice único (invoiceId, bankTransactionId) no cubre pagos manuales
+      // (bank_tx NULL): un doble clic o doble pestaña duplicaba el cobro. El
+      // lock serializa y la ventana corta atrapa el reintento accidental sin
+      // impedir dos pagos reales iguales en días distintos.
+      await tx.execute(sql`SELECT id FROM ${billingInvoices} WHERE id = ${data.invoiceId} FOR UPDATE`)
+      const [recentTwin] = await tx
+        .select({ id: billingInvoicePayments.id })
+        .from(billingInvoicePayments)
+        .where(and(
+          eq(billingInvoicePayments.invoiceId, data.invoiceId),
+          eq(billingInvoicePayments.source, "manual"),
+          eq(billingInvoicePayments.amount, data.amount),
+          eq(billingInvoicePayments.paymentDate, data.paymentDate),
+          eq(billingInvoicePayments.verificationStatus, "confirmed"),
+          sql`${billingInvoicePayments.createdAt} > now() - interval '2 minutes'`,
+        ))
+        .limit(1)
+      if (recentTwin) {
+        throw new Error("Ya se registró un pago idéntico hace un momento. Si realmente son dos pagos distintos, espera dos minutos o diferéncialos en la nota.")
+      }
+
       await tx.insert(billingInvoicePayments).values({
         id: paymentId,
         invoiceId: data.invoiceId,

@@ -251,6 +251,7 @@ export function PdtpAplicabilidadClient({ activities, worksites, exclusions, par
               <Input
                 id="subjectCount"
                 type="number"
+                min={0}
                 placeholder="Ej. 10 extintores o equipos..."
                 value={subjectCountInput}
                 onChange={(e) => setSubjectCountInput(e.target.value)}
@@ -265,6 +266,8 @@ export function PdtpAplicabilidadClient({ activities, worksites, exclusions, par
               <Input
                 id="coveragePercent"
                 type="number"
+                min={0}
+                max={100}
                 step="0.1"
                 placeholder="Ej. 90.0"
                 value={coveragePercentInput}

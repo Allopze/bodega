@@ -82,27 +82,61 @@ conserva el tope de 4 sin excepciones.
    de cumplimiento cae ahora en "Por recibir", y la tarjeta de detalle
    (`PdtpComplianceCard`) se mudó a la vista de Prevención.
 
-## 4. Lo que quedó fuera
+## 4. Deuda cerrada después del plan
 
-| Tema | Estado |
+Las tres cosas que el plan había declarado fuera de alcance se cerraron en la
+misma rama:
+
+**Período real de la facturación de venta.** `getBillingSummary` acepta ahora una
+ventana `[from, to)` en claves de fecha, media abierta como el resto del tablero
+(`getOperationalCalendarBounds` entrega `currentEnd` exclusivo, y con un fin
+inclusivo un documento del último día se contaría en dos períodos contiguos).
+Trimestre y año dejan de caer al mes ancla. La ventana alcanza sólo a lo que
+**es** del período —facturado, cobrado, conteo, clientes, faenas—; el saldo
+pendiente, el vencido y la antigüedad siguen siendo de todas las facturas
+abiertas y no dependen de ella. Cubierto por 5 tests nuevos en
+`queries-scope.test.ts`, incluido el del doble conteo.
+
+Consecuencia en la UI: los enlaces de los tiles ya no arrastran `?periodo=` de un
+mes cuando el alcance es trimestre o año —linkear a un mes de tres mentía—, y la
+nota que advertía del recorte desapareció porque ya no hay recorte.
+
+**Multi-moneda en los rankings.** Los dos gráficos de barras (antigüedad de la
+deuda, principales clientes) se acotan a la moneda dominante y lo declaran en su
+descripción cuando hay más de una. No es soporte multimoneda —no hay de dónde
+venga: el único proveedor fija `currency: "CLP"`— sino la guarda que impide que
+1.000 USD se dibuje como una barra 900 veces más corta que 900.000 CLP, con signo
+de peso encima, el día que alguien conecte un segundo proveedor. Los cuatro tiles
+de Ingresos ya lo hacían bien: `MoneyStat` apila una línea por moneda y nunca
+suma entre ellas.
+
+**Un archivo por dominio.** `dashboard-domain-sections.tsx` pasó de 638 líneas a
+42: sólo el mapa y el despacho. Las siete secciones viven en
+`sections/<dominio>-section.tsx` (69 a 262 líneas cada una) y el contrato de
+props más los cuatro helpers de fecha y alcance en `sections/shared.ts`. Eso
+además rompe un ciclo de tipos real: el orquestador importa cada sección, así que
+una sección no podía importar `DomainSectionsProps` de vuelta desde él.
+
+## 5. Lo que sigue fuera
+
+| Tema | Por qué |
 |---|---|
-| Período de la facturación de venta | `getBillingSummary` toma un `YYYY-MM`. Con trimestre o año elegidos, Finanzas usa el mes de inicio de la ventana y lo declara en su nota. Soportar trimestre real es un cambio en `lib/services/billing/queries.ts`, fuera de este plan. |
-| Multi-moneda en "Antigüedad de la deuda" | El gráfico toma `byCurrency[0]` y declara la moneda en el detalle de cada tramo. Con dos monedas activas hay que partirlo en un gráfico por moneda. |
-| `dashboard-domain-sections.tsx` | Queda en ~640 líneas con seis secciones. Partirlo en `sections/<dominio>-section.tsx` —uno por archivo, como ya hace Finanzas— es deuda declarada, no entra acá. |
 | Modo oscuro | No existe en el producto (`color-scheme: light`); el tile hero y el medidor están hechos para claro. |
+| Soporte multimoneda de verdad | Requiere un segundo proveedor de sincronización que emita en otra moneda. Hoy no existe: `providers/factura-en-linea.ts` fija CLP. |
 
-## 5. Verificación
+## 6. Verificación
 
 - `npm run typecheck` — limpio
-- `npm run lint` — 0 errores (5 advertencias preexistentes, ninguna en el tablero)
-- `npm test` — **3718 pasan**, 174 saltados, 0 fallan
-- `npm run test:e2e -- e2e/dashboard.spec.ts e2e/densidad-kpi.spec.ts` — **42 pasan**, 0 fallan
+- `npm run lint` — 0 errores, 0 advertencias en el tablero
+- `npm test` — **3720 pasan**, 174 saltados, 0 fallan
+- `npm run test:pglite -- lib/services/billing/__tests__/queries-scope.test.ts` — 37 pasan
+- `npm run test:e2e -- e2e/dashboard.spec.ts e2e/densidad-kpi.spec.ts e2e/facturacion.spec.ts` — **56 pasan**, 0 fallan
 - `npm run check:bundle-budget` — 171 rutas, peor caso `/combustibles/facturas`
   2,42 MB de 3,00 MB de presupuesto: recharts sigue fuera del chunk inicial
 - `npm run screenshots` — 27 capturas de tablero (9 vistas × desktop/móvil +
   variantes), donde antes había 2
 
-## 6. Nota sobre los e2e
+## 7. Nota sobre los e2e
 
 La primera corrida de `dashboard.spec.ts` falló **los 26 tests**, incluidos los
 que este trabajo no toca. La causa no era el código: el formulario de login había

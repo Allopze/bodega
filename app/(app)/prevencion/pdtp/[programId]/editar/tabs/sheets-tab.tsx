@@ -3,6 +3,7 @@
 import * as React from "react"
 import { useActionState } from "react"
 import { Button } from "@/components/ui/button"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { Input } from "@/components/ui/input"
 import { Field } from "@/components/ui/field"
 import { createPdtpSheetAction, deletePdtpSheetAction } from "../../../actions"
@@ -87,14 +88,31 @@ function CreateSheetForm({ programId }: { programId: string }) {
 
 function DeleteSheetButton({ sheetId, programId }: { sheetId: string; programId: string }) {
   const [state, formAction, pending] = useActionState(deletePdtpSheetAction, null)
+  // Confirmación como el resto del editor (borrar programa, sección, ítem):
+  // era el único destructivo de un solo clic.
+  const [confirmOpen, setConfirmOpen] = React.useState(false)
+  const formRef = React.useRef<HTMLFormElement>(null)
 
   return (
-    <form action={formAction} className="flex flex-col items-end gap-1">
+    <form ref={formRef} action={formAction} className="flex flex-col items-end gap-1">
       <input type="hidden" name="sheetId" value={sheetId} />
       <input type="hidden" name="programId" value={programId} />
-      <Button type="submit" variant="ghost" size="sm" disabled={pending}>
+      <Button type="button" variant="ghost" size="sm" disabled={pending} onClick={() => setConfirmOpen(true)}>
         Eliminar
       </Button>
+      <ConfirmDialog
+        open={confirmOpen}
+        onOpenChange={setConfirmOpen}
+        title="Eliminar hoja"
+        description="Se elimina la hoja del programa junto con sus membresías de actividades. Esta acción no se puede deshacer."
+        confirmLabel="Eliminar hoja"
+        variant="destructive"
+        loading={pending}
+        onConfirm={() => {
+          setConfirmOpen(false)
+          formRef.current?.requestSubmit()
+        }}
+      />
       {state?.message && !state.ok && (
         <p role="status" className="max-w-56 text-right text-xs text-[var(--color-danger)]">
           {state.message}
