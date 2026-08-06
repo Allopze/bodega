@@ -7,6 +7,12 @@ on:
       - main
       - master
 
+# El pipeline dura ~15 min; varios pushes seguidos sobre la misma rama
+# encolaban corridas completas que ya nadie iba a mirar.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
   # gitleaks-action lista los commits del PR para acotar el escaneo; sin este
@@ -14,42 +20,31 @@ permissions:
   # antes de compilar o correr una sola prueba.
   pull-requests: read
 
+env:
+  # El mismo runtime que la imagen de producción (`node:22.13-alpine`) y que
+  # exige `engines`. CI corría en 20: se validaba sobre un runtime que no es
+  # el que se despliega, justo el punto que dejó al fallback OCR de PDF sin
+  # cobertura confiable (auditoría OCR 2026-07-30).
+  NODE_VERSION: "22.13"
+
+# ---------------------------------------------------------------------------
+# El pipeline corría como un único job secuencial: el reloj de pared era la
+# suma de todos los pasos (~53 min medidos el 2026-07-29, y más desde que se
+# sumaron las suites PGlite). Acá sólo `e2e` depende de `build`; todo lo demás
+# corre en paralelo, así que el reloj es el camino crítico build → e2e.
+# ---------------------------------------------------------------------------
+
 jobs:
-  verify:
+  static:
+    name: Estáticos (secretos, tipos, lint)
     runs-on: ubuntu-latest
-    # Full pipeline needs ~25-30 min end to end once Postgres suites, build
-    # and the full E2E run (workers: 2, 1 retry on failure) actually execute;
-    # 45 min left no margin and let the job get force-cancelled mid-report.
-    timeout-minutes: 75
-    strategy:
-      matrix:
-        # El mismo runtime que la imagen de producción (`node:22.13-alpine`) y que
-        # exige `engines`. CI corría en 20: se validaba sobre un runtime que no es
-        # el que se despliega, justo el punto que dejó al fallback OCR de PDF sin
-        # cobertura confiable (auditoría OCR 2026-07-30).
-        node-version: ["22.13"]
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: bodega_e2e
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd="pg_isready -U postgres"
-          --health-interval=10s
-          --health-timeout=5s
-          --health-retries=5
-
-    env:
-      DATABASE_URL: postgres://postgres:postgres@localhost:5432/bodega_e2e
-
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
+          # gitleaks recorre el historial del PR. El resto de los jobs se queda
+          # con el checkout superficial por defecto.
           fetch-depth: 0
 
       - name: Secret scan (gitleaks)
@@ -62,7 +57,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
-          node-version: ${{ matrix.node-version }}
+          node-version: ${{ env.NODE_VERSION }}
           cache: npm
 
       - name: Install dependencies
@@ -80,39 +75,187 @@ jobs:
       - name: Audit dependencies (allowlist documentado)
         run: npm run check:security-audit
 
-      - name: Verify Drizzle migrations
-        run: |
-          npm run db:verify-migrations
-          npm run db:migrate
-
       - name: Typecheck
         env:
-          # El runner hosted (7 GB, compartido con el contenedor de Postgres)
-          # hace que tsc agote el heap por defecto de V8 (~2 GB) en este
-          # repo; no ocurre en desarrollo local con más memoria disponible.
+          # El runner hosted (7 GB) hace que tsc agote el heap por defecto de
+          # V8 (~2 GB) en este repo; no ocurre en desarrollo local con más
+          # memoria disponible.
           NODE_OPTIONS: --max-old-space-size=4096
         run: npm run typecheck
 
       - name: Lint
         run: npm run lint
 
+  unit:
+    name: Unit tests (blob de cobertura)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Setup Node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
       # Sin DSN explícito el runner no define NEXT_PUBLIC_SENTRY_DSN, pero
       # fijarlo a "" hace explícito el caso "sin definir" y protege el paso de
-      # un futuro entorno CI que sí lo inyecte (ver paso de regresión abajo).
-      - name: Unit tests (with coverage threshold)
+      # un futuro entorno CI que sí lo inyecte (ver job `unit-env-dsn`).
+      # Emite un blob de cobertura en vez de aplicar el umbral acá: este
+      # proyecto no ejecuta las 53 suites PGlite, así que su cifra aislada
+      # castiga a lib/services/** por lo que cubre el otro. El umbral se aplica
+      # sobre la combinación de ambos, en el job `coverage` (H-12,
+      # AUDITORIA_BUGS_2026-08-05.md).
+      - name: Unit tests (coverage blob)
         env:
           NEXT_PUBLIC_SENTRY_DSN: ""
-        run: npm run test:coverage
+        run: npm run test:coverage:unit
 
-      # Regresión de tests dependientes del entorno: en desarrollo local
-      # .env.local define NEXT_PUBLIC_SENTRY_DSN, y cuando ese origen de ingest
-      # se intercala en connect-src (lib/security/csp.ts) hubo una aserción que
-      # solo fallaba con el DSN presente (lib/__tests__/csp.test.ts, 2026-08-04).
-      # Este paso repite la suite rápida (no-PGlite) con un DSN sintético (el
-      # mismo fixture del test) para que una regresión así no vuelva a colarse
-      # en verde. Equivale a correr localmente `npm run test:env-dsn`.
-      - name: Unit tests con NEXT_PUBLIC_SENTRY_DSN definido (regresión de entorno)
+      - name: Upload coverage blob
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        with:
+          name: coverage-blob-unit
+          path: .vitest-reports/unit.json
+          retention-days: 1
+
+  unit-env-dsn:
+    # Regresión de tests dependientes del entorno: en desarrollo local
+    # .env.local define NEXT_PUBLIC_SENTRY_DSN, y cuando ese origen de ingest
+    # se intercala en connect-src (lib/security/csp.ts) hubo una aserción que
+    # solo fallaba con el DSN presente (lib/__tests__/csp.test.ts, 2026-08-04).
+    # Este job repite la suite rápida (no-PGlite) con un DSN sintético (el
+    # mismo fixture del test) para que una regresión así no vuelva a colarse
+    # en verde. Equivale a correr localmente `npm run test:env-dsn`.
+    #
+    # Duplica la suite entera, así que vive en su propio job: en paralelo no
+    # cuesta reloj de pared, sólo minutos de runner.
+    name: Unit tests con NEXT_PUBLIC_SENTRY_DSN definido
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Setup Node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Unit tests (regresión de entorno)
         run: npm run test:env-dsn
+
+  pglite:
+    # Las 53 suites de integración con PGlite (Postgres WASM in-memory) quedan
+    # fuera del job `unit` a propósito (vitest.config.ts excluye
+    # tests/pglite-files.ts) porque saturan CPU en paralelo y necesitan
+    # ejecución serial. Hasta 2026-08-05 no corrían en ningún gate: entre ellas
+    # está exactamente la evidencia de cierre P0/P1 de compras/recepción/stock
+    # de AUDITORIA_BUGS_2026-07-28.md (H-05, AUDITORIA_BUGS_2026-08-05.md).
+    # vitest.pglite.config.ts define su propio DATABASE_URL/PGHOST, así que
+    # este job no necesita un Postgres real.
+    name: Integration tests (PGlite, serial)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Setup Node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Integration tests (PGlite, serial)
+        run: npm run test:coverage:pglite
+
+      - name: Upload coverage blob
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        with:
+          name: coverage-blob-pglite
+          path: .vitest-reports/pglite.json
+          retention-days: 1
+
+  coverage:
+    # Única cifra de cobertura comparable del repositorio: combina los dos
+    # blobs sobre lib/** + Server Actions y aplica el umbral. No vuelve a
+    # ejecutar ningún test, así que cuesta segundos.
+    name: Coverage threshold (unit + PGlite)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [unit, pglite]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Setup Node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Download coverage blobs
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          pattern: coverage-blob-*
+          merge-multiple: true
+          path: .vitest-reports
+
+      - name: Coverage threshold (unit + PGlite combinados)
+        run: npm run test:coverage:merge
+
+  db:
+    name: Suites contra Postgres real
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: bodega_e2e
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/bodega_e2e
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Setup Node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify Drizzle migrations
+        run: |
+          npm run db:verify-migrations
+          npm run db:migrate
 
       - name: Concurrency tests (real Postgres)
         env:
@@ -121,11 +264,13 @@ jobs:
           APPROVALS_CONCURRENCY_DATABASE_URL: postgres://postgres:postgres@localhost:5432/bodega_e2e
           DELIVERIES_CONCURRENCY_DATABASE_URL: postgres://postgres:postgres@localhost:5432/bodega_e2e
           RECEIVING_CONCURRENCY_DATABASE_URL: postgres://postgres:postgres@localhost:5432/bodega_e2e
+          BILLING_PAYMENTS_CONCURRENCY_DATABASE_URL: postgres://postgres:postgres@localhost:5432/bodega_e2e
           STOCK_CONCURRENCY_ALLOW_DESTRUCTIVE_RESET: "true"
           RECEIVING_CONCURRENCY_ALLOW_DESTRUCTIVE_RESET: "true"
           DELIVERIES_CONCURRENCY_ALLOW_DESTRUCTIVE_RESET: "true"
           RATE_LIMIT_CONCURRENCY_ALLOW_DESTRUCTIVE_RESET: "true"
           APPROVALS_CONCURRENCY_ALLOW_DESTRUCTIVE_RESET: "true"
+          BILLING_PAYMENTS_CONCURRENCY_ALLOW_DESTRUCTIVE_RESET: "true"
         run: npx vitest run --no-file-parallelism --reporter=verbose lib/__tests__/*concurrency-postgres.test.ts 2>&1
 
       - name: Cross-faena scope tests (real Postgres)
@@ -181,29 +326,183 @@ jobs:
           PERF_ALLOW_DESTRUCTIVE_RESET: "true"
         run: npm run perf:queries
 
+  build:
+    # Antes se compilaba dos veces: este paso, y otra vez dentro de
+    # e2e/start-server.sh (que hace `rm -rf .next` y reconstruye). Con el E2E
+    # shardeado serían cinco builds de ~3 min. Acá se compila una sola vez y
+    # el resultado viaja como artifact a cada shard.
+    name: Build + presupuesto de bundle
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: bodega_e2e
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/bodega_e2e
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Setup Node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # `next build` prerenderiza rutas que consultan la base; el esquema tiene
+      # que existir aunque este job no corra tests.
+      - name: Migrate
+        run: npm run db:migrate
+
       - name: Build
         env:
           # next build corre su propia verificación de TypeScript en un worker
-          # aparte del paso "Typecheck"; el mismo límite de heap por defecto
-          # de V8 se agota ahí también en este runner.
+          # aparte; el límite de heap por defecto de V8 se agota en este runner.
           NODE_OPTIONS: --max-old-space-size=4096
+          # Mismos valores que usaba la build de e2e/start-server.sh, para que
+          # este artifact sea equivalente al que producía ese script: cualquier
+          # NEXT_PUBLIC_* queda inlineado en los chunks de cliente durante la
+          # build, y el prerender lee el resto. Si divergen, el servidor E2E
+          # sirve una build distinta de la que espera la suite.
+          AUTH_SECRET: e2e-auth-secret-for-playwright
+          NEXTAUTH_SECRET: e2e-auth-secret-for-playwright
+          APP_URL: http://localhost:3100
+          NEXTAUTH_URL: http://localhost:3100
+          AUTH_URL: http://localhost:3100
+          SMTP_HOST: ""
+          SMTP_USER: ""
+          SMTP_PASS: ""
+          SMTP_FROM: ""
+          SMTP_DISABLED: "true"
+          SMTP_TIMEOUT_MS: "1000"
         run: npm run build
 
       - name: Bundle size budget
         run: npm run check:bundle-budget
 
+      # `.next/standalone` son decenas de miles de archivos pequeños y
+      # upload-artifact los sube uno a uno; empaquetar primero convierte varios
+      # minutos en segundos. `.next/static` va aparte porque el output
+      # standalone no lo incluye (start-server.sh lo copia adentro al arrancar).
+      - name: Pack build output
+        run: tar -czf next-build.tar.gz .next/standalone .next/static
+
+      - name: Upload build output
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        with:
+          name: next-build
+          path: next-build.tar.gz
+          retention-days: 1
+          # Ya viene comprimido con gzip.
+          compression-level: 0
+
+  e2e:
+    # 78 spec files / 274 escenarios tardaban 32 min en un solo runner con
+    # `workers: 2` compitiendo por un mismo Postgres. Cada shard es un runner
+    # aparte con su propio contenedor de Postgres, así que no hay contención
+    # cruzada y no hace falta tocar `fullyParallel`.
+    name: E2E (shard ${{ matrix.shard }}/4)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: bodega_e2e
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Setup Node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Download build output
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          name: next-build
+
+      - name: Unpack build output
+        run: tar -xzf next-build.tar.gz
+
+      - name: Resolve Playwright version
+        id: playwright
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      # Descargar chromium en cada shard costaba ~3m43s × 4. El caché guarda los
+      # navegadores; las dependencias de sistema son paquetes apt fuera de
+      # ~/.cache y se reinstalan aparte cuando hay hit.
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
+
       - name: Install Playwright browser
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
         run: npx playwright install --with-deps chromium
 
-      - name: E2E full suite
+      - name: Install Playwright system deps
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: npx playwright install-deps chromium
+
+      - name: E2E shard ${{ matrix.shard }}/4
         env:
           # La suite reconstruye el esquema; la URL E2E debe declararse de
           # forma separada para que Playwright nunca derive un destino
           # destructivo desde DATABASE_URL.
           E2E_DATABASE_URL: postgres://postgres:postgres@localhost:5432/bodega_e2e
-          # e2e/start-server.sh corre su propio `npm run build` para levantar
-          # el standalone que sirve Playwright; mismo OOM de heap por defecto
-          # que los pasos Typecheck/Build. NODE_OPTIONS se hereda hasta el
-          # subproceso `bash e2e/start-server.sh` que arranca webServer.
+          # La build viene del job `build`; e2e/start-server.sh sólo levanta el
+          # standalone. Falla en vez de compilar si el artifact no está.
+          E2E_SKIP_BUILD: "true"
+          # Se hereda hasta el servidor standalone que arranca webServer; los
+          # flujos de OCR/PDF de la suite son los que consumen heap.
           NODE_OPTIONS: --max-old-space-size=4096
-        run: npx playwright test
+        run: npx playwright test --shard=${{ matrix.shard }}/4
+
+      # Los traces y videos quedan sólo en fallo (`retain-on-failure`); sin esto
+      # se pierden con el runner y el shard rojo no deja evidencia.
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        with:
+          name: playwright-report-shard-${{ matrix.shard }}
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
+          if-no-files-found: ignore

@@ -64,28 +64,39 @@ DATABASE_URL="$DB_URL" \
 E2E_ALLOW_DESTRUCTIVE_RESET="${E2E_ALLOW_DESTRUCTIVE_RESET:-}" \
 npm run e2e:setup
 
-# El job de CI ya corrió su propio `npm run build` en este mismo workspace
-# (paso "Build", para validar que compila). Si esta build reutiliza ese
-# `.next/cache` de Turbopack, algunos chunks del cliente pueden quedar
-# desincronizados del manifest de Server Actions que genera esta segunda
-# build, y el navegador falla con "Failed to find Server Action" al enviar
-# cualquier formulario — la página nunca navega, como si el submit no hiciera
-# nada. rm -rf antes de reconstruir garantiza una build autoconsistente.
-rm -rf .next
+# En CI la build ya viene hecha: el job `build` compila una sola vez con estas
+# mismas variables y publica `.next/standalone` + `.next/static` como artifact,
+# que cada shard de E2E desempaqueta antes de llegar acá. Reconstruir costaba
+# ~3 min por shard sobre una build byte a byte equivalente.
+if [[ "${E2E_SKIP_BUILD:-}" == "true" ]]; then
+  if [[ ! -f .next/standalone/server.js ]]; then
+    echo "ERROR: E2E_SKIP_BUILD=true pero no existe .next/standalone/server.js."
+    echo "  El artifact de build no se desempaquetó en este workspace."
+    exit 2
+  fi
+else
+  # Un `.next/cache` de Turbopack sobrante de otra build (por ejemplo la del
+  # servidor de desarrollo) deja chunks de cliente desincronizados del manifest
+  # de Server Actions que genera esta build, y el navegador falla con "Failed to
+  # find Server Action" al enviar cualquier formulario — la página nunca navega,
+  # como si el submit no hiciera nada. rm -rf antes de reconstruir garantiza una
+  # build autoconsistente.
+  rm -rf .next
 
-DATABASE_URL="$DB_URL" \
-AUTH_SECRET="$AUTH_SECRET_VALUE" \
-NEXTAUTH_SECRET="$AUTH_SECRET_VALUE" \
-APP_URL="$APP_URL_VALUE" \
-NEXTAUTH_URL="$APP_URL_VALUE" \
-AUTH_URL="$APP_URL_VALUE" \
-SMTP_HOST="" \
-SMTP_USER="" \
-SMTP_PASS="" \
-SMTP_FROM="" \
-SMTP_DISABLED="true" \
-SMTP_TIMEOUT_MS="1000" \
-npm run build
+  DATABASE_URL="$DB_URL" \
+  AUTH_SECRET="$AUTH_SECRET_VALUE" \
+  NEXTAUTH_SECRET="$AUTH_SECRET_VALUE" \
+  APP_URL="$APP_URL_VALUE" \
+  NEXTAUTH_URL="$APP_URL_VALUE" \
+  AUTH_URL="$APP_URL_VALUE" \
+  SMTP_HOST="" \
+  SMTP_USER="" \
+  SMTP_PASS="" \
+  SMTP_FROM="" \
+  SMTP_DISABLED="true" \
+  SMTP_TIMEOUT_MS="1000" \
+  npm run build
+fi
 
 # El output standalone de Next no incluye assets estáticos ni public/.
 # Sin esto los chunks de cliente dan 404, la página no hidrata y el form de
@@ -98,6 +109,10 @@ npm run build
 # y demás quedan en una ruta que Next nunca sirve como estático, caen al
 # router de la app, 404, y el proxy redirige a /login. rm -rf + cp -r deja
 # siempre una copia limpia y completa de public/ tal cual está en el repo.
+# Mismo rm -rf para static: con E2E_SKIP_BUILD ya no hay `rm -rf .next` previo,
+# así que una segunda pasada sobre el mismo workspace anidaría
+# .next/standalone/.next/static/static y todos los chunks darían 404.
+rm -rf .next/standalone/.next/static
 cp -r .next/static .next/standalone/.next/static
 if [ -d public ]; then
   rm -rf .next/standalone/public
