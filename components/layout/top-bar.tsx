@@ -121,8 +121,12 @@ const TopBarInner = React.memo(function TopBarInner({
                   descripción. Sin `aria-hidden` el lector anuncia el título y
                   la descripción de la página dos veces en escritorio. */}
               <div aria-hidden="true" className="flex min-w-0 items-baseline gap-2">
-                {/* Heading destacado al inicio de la vista */}
-                <p title={header.title} className="truncate text-lg font-bold tracking-tight text-(--color-text)">
+                {/* Heading destacado al inicio de la vista. `shrink-0`: el
+                    título no cede espacio ante la descripción — sin esto, una
+                    descripción larga lo truncaba a "Pendientes de f…" incluso
+                    a 1920px (auditoría UI/UX 2026-08-05, A3). El `max-w` cubre
+                    el caso patológico de un título larguísimo sin descripción. */}
+                <p title={header.title} className="max-w-[36rem] shrink-0 truncate text-lg font-bold tracking-tight text-(--color-text)">
                   {header.title}
                 </p>
                 {/* Estaba en `2xl:block`, así que en un laptop de 1440 se perdían

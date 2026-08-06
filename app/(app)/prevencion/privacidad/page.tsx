@@ -1,7 +1,7 @@
 import type { Metadata } from "next"
 import Link from "next/link"
 import { redirect } from "next/navigation"
-import { LockKey, ShieldCheck } from "@phosphor-icons/react/dist/ssr"
+import { ArrowRight, LockKey, ShieldCheck } from "@phosphor-icons/react/dist/ssr"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { can, requireAuth } from "@/lib/auth/can"
@@ -22,7 +22,7 @@ export default async function PreventionPrivacyPage() {
       <PageHeader
         title="Privacidad"
         description="Gestiona derechos del titular y revisa accesos sensibles sin exponer información clínica o reservada."
-        breadcrumb={<Breadcrumbs items={[{ label: "Prevención", href: "/prevencion" }, { label: "Privacidad" }]} />}
+        breadcrumb={<Breadcrumbs items={[{ label: "Inicio", href: "/dashboard" }, { label: "Prevención", href: "/prevencion" }, { label: "Privacidad" }]} />}
       />
 
       <div className="grid gap-3 sm:grid-cols-2">
@@ -34,7 +34,7 @@ export default async function PreventionPrivacyPage() {
             <ShieldCheck size={20} className="text-[var(--color-primary)]" />
             <h2 className="mt-3 text-sm font-semibold text-[var(--color-text)]">Solicitudes de derechos</h2>
             <p className="mt-1 text-xs text-[var(--color-text-muted)]">Valida identidad, retenciones y entregas auditadas.</p>
-            <span className="mt-3 inline-flex text-xs font-medium text-[var(--color-primary-ink)] group-hover:underline">Gestionar solicitudes</span>
+            <span className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-[var(--color-primary-ink)] group-hover:underline">Gestionar solicitudes <ArrowRight size={12} weight="bold" /></span>
           </Link>
         )}
         {canAudit && (
@@ -45,7 +45,7 @@ export default async function PreventionPrivacyPage() {
             <LockKey size={20} className="text-[var(--color-primary)]" />
             <h2 className="mt-3 text-sm font-semibold text-[var(--color-text)]">Auditoría de accesos</h2>
             <p className="mt-1 text-xs text-[var(--color-text-muted)]">Revisa consultas y descargas sin abrir contenido sensible.</p>
-            <span className="mt-3 inline-flex text-xs font-medium text-[var(--color-primary-ink)] group-hover:underline">Ver auditoría</span>
+            <span className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-[var(--color-primary-ink)] group-hover:underline">Ver auditoría <ArrowRight size={12} weight="bold" /></span>
           </Link>
         )}
       </div>

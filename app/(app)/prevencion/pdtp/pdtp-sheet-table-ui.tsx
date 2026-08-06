@@ -260,18 +260,21 @@ export function PdtpActivitySummary({
   activeFilter: PdtpActivityStatus | "all"
   onFilter: (s: PdtpActivityStatus | "all") => void
 }) {
+  // Misma dimensión (estado de actividad) → mismo tratamiento tipográfico:
+  // antes convivían 4 estilos de chip en la misma fila de filtros
+  // (UI/UX 2026-08-05, M1). "Pendientes" usa `signal`, el tono reservado
+  // para "pendiente" en el sistema de tokens.
   const items: Array<{
     key: PdtpActivityStatus | "all"
     label: string
     count: number
-    variant: "success" | "default" | "danger" | "outline"
-    dot: boolean
+    variant: "success" | "signal" | "danger" | "neutral"
   }> = [
-    { key: "all", label: "Todas", count: counts.executed + counts.pending + counts.overdue + counts.not_scheduled, variant: "outline", dot: false },
-    { key: "executed", label: "Ejecutadas", count: counts.executed, variant: "success", dot: false },
-    { key: "pending", label: "Pendientes", count: counts.pending, variant: "default", dot: true },
-    { key: "overdue", label: "Atrasadas", count: counts.overdue, variant: "danger", dot: true },
-    { key: "not_scheduled", label: "Sin programar", count: counts.not_scheduled, variant: "outline", dot: false },
+    { key: "all", label: "Todas", count: counts.executed + counts.pending + counts.overdue + counts.not_scheduled, variant: "neutral" },
+    { key: "executed", label: "Ejecutadas", count: counts.executed, variant: "success" },
+    { key: "pending", label: "Pendientes", count: counts.pending, variant: "signal" },
+    { key: "overdue", label: "Atrasadas", count: counts.overdue, variant: "danger" },
+    { key: "not_scheduled", label: "Sin programar", count: counts.not_scheduled, variant: "neutral" },
   ]
 
   return (
@@ -291,7 +294,7 @@ export function PdtpActivitySummary({
             ].join(" ")}
             aria-pressed={isActive}
           >
-            <Badge variant={item.variant} dot={item.dot} size="sm">
+            <Badge variant={item.variant} size="sm">
               {item.label} {item.count}
             </Badge>
           </button>

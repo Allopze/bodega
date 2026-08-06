@@ -58,9 +58,13 @@ function PdtpExecutionBadges({ exec }: { exec: ExecutionForBadges }) {
   )
 }
 
-function PdtpAggregateBreakdown({ summaries, worksiteNames }: { summaries: PdtpAggregateActivityWorksite[]; worksiteNames: Record<string, string> }) {
+function PdtpAggregateBreakdown({ summaries, worksiteNames, bare = false }: { summaries: PdtpAggregateActivityWorksite[]; worksiteNames: Record<string, string>; bare?: boolean }) {
   if (summaries.length === 0) return null
-  return <details className="mt-2 text-[11px] text-[var(--color-text-muted)]"><summary className="cursor-pointer">Desglose por faena ({summaries.length})</summary><div className="mt-1 flex flex-wrap gap-1.5">{summaries.map((summary) => <Badge key={summary.worksiteId} variant="outline" size="sm">{worksiteNames[summary.worksiteId] ?? "Faena"}: {summary.executed}/{summary.planned} · {summary.status === "executed" ? "Ejecutada" : summary.status === "overdue" ? "Atrasada" : summary.status === "pending" ? "Pendiente" : "No programada"}</Badge>)}</div></details>
+  const chips = <div className="mt-1 flex flex-wrap gap-1.5">{summaries.map((summary) => <Badge key={summary.worksiteId} variant="outline" size="sm">{worksiteNames[summary.worksiteId] ?? "Faena"}: {summary.executed}/{summary.planned} · {summary.status === "executed" ? "Ejecutada" : summary.status === "overdue" ? "Atrasada" : summary.status === "pending" ? "Pendiente" : "No programada"}</Badge>)}</div>
+  // `bare`: sin <details> propio, para vivir dentro del expander único de la
+  // vista anual (UI/UX 2026-08-05, B1b — antes había dos expanders por fila).
+  if (bare) return chips
+  return <details className="mt-2 text-[11px] text-[var(--color-text-muted)]"><summary className="cursor-pointer">Desglose por faena ({summaries.length})</summary>{chips}</details>
 }
 
 function aggregateSummaries(activity: PdtpSheetView["activities"][number]): PdtpAggregateActivityWorksite[] | null {
@@ -352,22 +356,28 @@ export function PdtpSheetTable({
                     {group.activities.map((activity) => {
                       const status = deriveActivityStatus(activity.monthlyPlanned, activity.monthlyExecuted, currentPeriod)
                       const overdueMonths = countOverdueMonths(activity.monthlyPlanned, activity.monthlyExecuted, currentPeriod)
+                      // `group` + `group-hover` en las celdas sticky: su fondo
+                      // sólido tapaba el hover de la fila y el gris se veía solo
+                      // de ESTADO a la derecha — la "fila cortada" de la
+                      // auditoría (UI/UX 2026-08-05, B1c).
                       return (
-                        <TableRow key={activity.id}>
-                          <TableCell className={`sticky left-0 z-10 bg-[var(--color-surface)] font-mono text-xs text-[var(--color-text-faint)] shadow-[1px_0_0_var(--color-border)] ${rowPy}`}>
+                        <TableRow key={activity.id} className="group">
+                          <TableCell className={`sticky left-0 z-10 bg-[var(--color-surface)] group-hover:bg-[var(--color-surface-2)] font-mono text-xs text-[var(--color-text-faint)] shadow-[1px_0_0_var(--color-border)] ${rowPy}`}>
                             {activity.n}
                           </TableCell>
-                          <TableCell className={`sticky left-12 z-10 bg-[var(--color-surface)] shadow-[1px_0_0_var(--color-border)] ${rowPy}`}>
+                          <TableCell className={`sticky left-12 z-10 bg-[var(--color-surface)] group-hover:bg-[var(--color-surface-2)] shadow-[1px_0_0_var(--color-border)] ${rowPy}`}>
                             <div className="max-w-[36rem]">
                               <p className="font-medium text-[var(--color-text)]">{activity.activity}</p>
                               <details className="mt-1 text-[11px] text-[var(--color-text-muted)]">
-                                <summary className="cursor-pointer hover:text-[var(--color-text)]">Ver programa y responsables</summary>
+                                <summary className="cursor-pointer hover:text-[var(--color-text)]">
+                                  {worksiteId ? "Ver programa y responsables" : "Ver programa, responsables y faenas"}
+                                </summary>
                                 <div className="mt-1.5 space-y-1 border-l border-[var(--color-border)] pl-2">
                                   <p>{activity.program}</p>
                                   <PdtpResponsibleChips display={activity.responsibleDisplay} />
+                                  {!worksiteId && <PdtpAggregateBreakdown bare summaries={aggregateSummaries(activity) ?? []} worksiteNames={aggregateWorksiteNames} />}
                                 </div>
                               </details>
-                              {!worksiteId && <PdtpAggregateBreakdown summaries={aggregateSummaries(activity) ?? []} worksiteNames={aggregateWorksiteNames} />}
                               {worksiteId && activity.executions.length > 0 && (
                                 <details className="mt-2 text-[11px]">
                                   <summary className="cursor-pointer text-[var(--color-text-muted)]">

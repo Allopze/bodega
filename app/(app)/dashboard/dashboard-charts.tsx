@@ -808,7 +808,10 @@ export function ThresholdRankingChart({ data, title, description, unit = "%", fo
             return `${name}: ${shown}${detail}`
           }} />} />
           <Bar dataKey="value" radius={[0, 6, 6, 0]} barSize={18}>
-            {rows.map((row) => <Cell key={row.name} fill={colorFor(row.value)} />)}
+            {/* Key posicional: `row.name` puede repetirse (dos personas con el
+                mismo nombre completo) y React descartaba una barra (UI/UX
+                2026-08-05, C3). Las Cell son 1:1 con `rows`, el índice es estable. */}
+            {rows.map((row, index) => <Cell key={index} fill={colorFor(row.value)} />)}
           </Bar>
         </BarChart>
       </ChartContainer>

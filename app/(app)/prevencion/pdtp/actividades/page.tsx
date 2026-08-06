@@ -114,6 +114,11 @@ export default async function PdtpActivitiesPage({ searchParams }: ActivityViewe
   const editProgramHref = `/prevencion/pdtp/${program.id}/editar?volver=${encodeURIComponent(activityViewerHref)}`
   const canRepairProgram = canManageProgram && program.status === "draft"
 
+  const faenaChips = aggregateView?.worksiteSummaries.map((summary) => {
+    const worksite = worksites.find((item) => item.id === summary.worksiteId)
+    return <span key={summary.worksiteId} title={`${summary.executed} ejecutadas de ${summary.planned} instancias planificadas del año en ${worksite?.name ?? "la faena"}`} className="rounded-full border border-[var(--color-border)] px-2 py-1">{worksite?.name ?? "Faena"}: {summary.executed}/{summary.planned} ejec.</span>
+  })
+
   return (
     <PageContainer>
       <PageHeader
@@ -134,12 +139,24 @@ export default async function PdtpActivitiesPage({ searchParams }: ActivityViewe
             <p className="text-sm text-[var(--color-text-muted)]">Este programa aún no tiene hojas de actividades.</p>
           )}
           {worksites.length > 1 && <PdtpWorksitePicker current={selectedWorksiteId} sheetCode={sheetCode} worksites={worksites} programId={program.id} viewMode={viewMode} hrefBase={VIEWER_HREF} year={year} status={statusFilter} month={currentPeriod.month} week={currentPeriod.week} />}
-          <div className="ml-auto"><PdtpViewToggle current={viewMode} sheetCode={sheetCode} worksiteId={selectedWorksiteId} programId={program.id} hrefBase={VIEWER_HREF} year={year} status={statusFilter} month={currentPeriod.month} week={currentPeriod.week} /></div>
+          {/* Fila propia en móvil: con `ml-auto` a secas el toggle quedaba
+              huérfano bajo los selects (UI/UX 2026-08-05, MV-3). */}
+          <div className="w-full lg:ml-auto lg:w-auto"><PdtpViewToggle current={viewMode} sheetCode={sheetCode} worksiteId={selectedWorksiteId} programId={program.id} hrefBase={VIEWER_HREF} year={year} status={statusFilter} month={currentPeriod.month} week={currentPeriod.week} /></div>
         </div>
 
         {requiresWorksiteSelection ? <EmptyState compact title="Selecciona una faena para comenzar" description="Puedes consultar la vista anual, pero debes elegir una faena para revisar su evidencia o registrar ejecución." /> : !view ? <EmptyState compact tone="warning" title={sheets.length === 0 ? "Este programa aún no tiene una hoja de actividades" : `No se puede mostrar «${selectedSheet?.label ?? sheetCode}»`} description={sheets.length === 0 ? `Agrega una hoja y sus actividades a «${program.title}» para que la faena pueda registrar ejecución.` : `La hoja seleccionada no está disponible para «${program.title}». Revisa la configuración del programa y vuelve a esta misma vista.`} action={<Button asChild size="sm"><Link href={canRepairProgram ? editProgramHref : `/prevencion/pdtp/programas?anio=${year}`}>{canRepairProgram ? "Gestionar programa" : "Volver a programas"}</Link></Button>} /> : (
           <>
-            {aggregateView && <div className="flex flex-wrap gap-2 text-xs text-[var(--color-text-muted)]">{aggregateView.worksiteSummaries.map((summary) => { const worksite = worksites.find((item) => item.id === summary.worksiteId); return <span key={summary.worksiteId} className="rounded-full border border-[var(--color-border)] px-2 py-1">{worksite?.name ?? "Faena"}: {summary.executed}/{summary.planned}</span> })}</div>}
+            {/* Móvil: los 9 chips eran ~4 filas antes del contenido; van tras un
+                expander (UI/UX 2026-08-05, MV-2). En escritorio caben en una línea. */}
+            {aggregateView && (
+              <>
+                <div className="hidden flex-wrap gap-2 text-xs text-[var(--color-text-muted)] lg:flex">{faenaChips}</div>
+                <details className="text-xs text-[var(--color-text-muted)] lg:hidden">
+                  <summary className="cursor-pointer font-medium">Ejecución por faena ({aggregateView.worksiteSummaries.length})</summary>
+                  <div className="flex flex-wrap gap-2 pt-2">{faenaChips}</div>
+                </details>
+              </>
+            )}
             <PdtpSheetTable view={view} worksiteId={selectedWorksiteId} canExecute={Boolean(selectedWorksiteId) && can(session, "prevention:pdtp:execute")} viewMode={viewMode} currentPeriod={currentPeriod} sheetCode={sheetCode} initialStatusFilter={statusFilter} aggregateWorksiteNames={Object.fromEntries(worksites.map((worksite) => [worksite.id, worksite.name]))} />
           </>
         )}

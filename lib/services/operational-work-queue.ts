@@ -697,7 +697,14 @@ function operationalSourceBranches(session: Session, scope: WorksiteScope): Oper
     SELECT 'capa'::text AS source_type, ${preventionCapaActions.id} AS source_id, 'advance'::text AS action_key,
       'capa'::text AS module, ${preventionCapaActions.code} AS code, CONCAT('Gestionar ', ${preventionCapaActions.code}) AS title,
       ''::text AS subtitle, ${preventionCapaActions.worksiteId} AS worksite_id, ${worksites.name} AS worksite_name,
-      ${preventionCapaActions.status} AS status, REPLACE(${preventionCapaActions.status}, '_', ' ') AS status_label,
+      ${preventionCapaActions.status} AS status,
+      -- Espejo de CAPA_STATUS_LABELS (lib/prevention/capa.ts): el REPLACE
+      -- anterior mostraba "in progress" en inglés en la cola (UI/UX 2026-08-05, C2).
+      CASE ${preventionCapaActions.status}
+        WHEN 'pending' THEN 'Pendiente' WHEN 'in_progress' THEN 'En proceso'
+        WHEN 'pending_verification' THEN 'Pendiente de verificación' WHEN 'verified' THEN 'Verificada'
+        WHEN 'closed' THEN 'Cerrada' WHEN 'reopened' THEN 'Reabierta' WHEN 'cancelled' THEN 'Cancelada'
+        ELSE REPLACE(${preventionCapaActions.status}, '_', ' ') END AS status_label,
       CASE ${preventionCapaActions.priority} WHEN 'critical' THEN 'critical' WHEN 'high' THEN 'high' WHEN 'alta' THEN 'critical' WHEN 'low' THEN 'low' WHEN 'baja' THEN 'low' ELSE 'normal' END AS priority,
       (${preventionCapaActions.reconciliationStatus} <> 'reconciled') AS blocked, ${preventionCapaActions.createdAt}::text AS created_at,
       LEFT(${preventionCapaActions.targetDate}::text, 10) AS source_due_at, ${preventionCapaActions.responsibleUserId} AS native_assignee_user_id,
