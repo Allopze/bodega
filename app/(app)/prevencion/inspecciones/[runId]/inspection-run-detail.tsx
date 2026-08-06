@@ -18,12 +18,14 @@ import {
   INSPECTION_KIND_LABELS,
   INSPECTION_RESULT_LABELS,
   INSPECTION_RUN_STATUS_LABELS,
+  fieldKindAcceptsPartial,
   resultBadgeVariant,
   runStatusBadgeVariant,
   summarizeCompliance,
   type InspectionAnswerInput,
   type InspectionItemSpec,
 } from "@/lib/prevention/inspections"
+import type { FieldKind } from "@/lib/sst/types"
 import { formatDateTime } from "@/lib/utils"
 import {
   completeInspectionRunAction,
@@ -56,6 +58,7 @@ interface RunInfo {
 interface ItemInfo {
   id: string
   label: string
+  kind?: FieldKind
   required: boolean
   countsForCompliance: boolean
   danoPotencial: string | null
@@ -236,7 +239,9 @@ export function InspectionRunDetail({
                               <SelectTrigger aria-label={`Resultado de ${item.label}`}><SelectValue placeholder="Sin responder" /></SelectTrigger>
                               <SelectContent>
                                 <SelectItem value="__unset__">Sin responder</SelectItem>
-                                {Object.entries(INSPECTION_RESULT_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}
+                                {Object.entries(INSPECTION_RESULT_LABELS)
+                                  .filter(([value]) => value !== "partial" || fieldKindAcceptsPartial(item.kind))
+                                  .map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}
                               </SelectContent>
                             </Select>
                           ) : draft.result ? (

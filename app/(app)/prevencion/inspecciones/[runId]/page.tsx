@@ -72,6 +72,9 @@ export default async function InspeccionPage({ params }: { params: Promise<{ run
           items: section.items.map((item) => ({
             id: item.id,
             label: item.label,
+            // Sin el kind, el cliente ofrecía "Regular" en ítems cumple/no-cumple
+            // y el servidor rechazaba la transacción completa recién al guardar.
+            kind: item.kind,
             required: item.required ?? false,
             countsForCompliance: section.countsForCompliance ?? true,
             danoPotencial: item.danoPotencial ?? null,

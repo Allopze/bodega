@@ -7,6 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { PERMIT_CREW_ROLE_LABELS } from "@/lib/prevention/permits"
+import { toLocalInputValue } from "@/lib/utils"
 import { createPermitTypeAction, createWorkPermitAction } from "./actions"
 import { Field } from "@/components/ui/field"
 import { useOperation } from "@/lib/hooks/use-operation"
@@ -185,9 +186,11 @@ export function NewPermitDialog({ types, worksites, workers, supervisors }: {
       open={open}
       onOpenChange={(value) => {
         if (value) {
+          // datetime-local espera hora local; toISOString() (UTC) adelantaba
+          // el prefill 3-4 h respecto de la hora chilena.
           const now = new Date()
-          setDefaultStart(now.toISOString().slice(0, 16))
-          setDefaultEnd(new Date(now.getTime() + 4 * 3_600_000).toISOString().slice(0, 16))
+          setDefaultStart(toLocalInputValue(now))
+          setDefaultEnd(toLocalInputValue(new Date(now.getTime() + 4 * 3_600_000)))
         }
         setOpen(value)
       }}

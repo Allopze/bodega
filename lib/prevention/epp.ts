@@ -1,3 +1,8 @@
+// Reusa el addMonths con clamping de fin de mes: la versión local con
+// setUTCMonth desbordaba (31 ene + 1 mes → 3 mar) y retrasaba días la
+// detección de EPP vencido.
+import { addMonths } from "./training"
+
 export const EPP_REQUIREMENT_SCOPE_LABELS: Record<string, string> = {
   global: "Toda la organización",
   worksite: "Faena",
@@ -77,11 +82,6 @@ export function requirementApplies(requirement: EppRequirementRow, worker: EppWo
   }
 }
 
-function addMonths(dateIso: string, months: number) {
-  const date = new Date(dateIso)
-  date.setUTCMonth(date.getUTCMonth() + months)
-  return date.toISOString().slice(0, 10)
-}
 
 /**
  * Cruza dotación activa × requisitos vigentes × entregas reales y devuelve
@@ -115,7 +115,7 @@ export function computeEppCoverageGaps(args: {
       let gapType: "missing" | "expired" | null = null
       if (!delivery) {
         gapType = "missing"
-      } else if (delivery.lifespanMonths !== null && addMonths(delivery.deliveredAt, delivery.lifespanMonths) < args.asOf) {
+      } else if (delivery.lifespanMonths !== null && addMonths(delivery.deliveredAt.slice(0, 10), delivery.lifespanMonths) < args.asOf) {
         gapType = "expired"
       }
       if (!gapType) continue

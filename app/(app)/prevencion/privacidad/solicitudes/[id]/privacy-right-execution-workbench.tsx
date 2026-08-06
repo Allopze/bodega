@@ -102,7 +102,8 @@ export function PrivacyRightExecutionWorkbench({ bundle }: { bundle: Bundle }) {
     try {
       const response = await fetch(`/api/prevencion/privacidad/solicitudes/${bundle.request.id}/execute`, {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        // El endpoint exige Idempotency-Key (8-64 chars) y responde 400 sin él.
+        headers: { "content-type": "application/json", "idempotency-key": crypto.randomUUID() },
         body: JSON.stringify({
           domain: selected.domain,
           entityId: selected.id,
