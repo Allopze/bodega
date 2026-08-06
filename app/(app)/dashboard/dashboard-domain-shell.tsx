@@ -1,55 +1,13 @@
 import type { ReactNode } from "react"
 import Link from "next/link"
 import { ArrowRight } from "@phosphor-icons/react/dist/ssr"
-import { cn } from "@/lib/utils"
 import type { DashboardDomain } from "./dashboard-domains"
 
-/**
- * Índice de las secciones por dominio.
- *
- * Rail vertical pegajoso desde `2xl` y barra horizontal pegajosa debajo. Es un
- * `<nav>` propio y no `SegmentedControl` porque ese componente envuelve sus
- * items en un `flex flex-wrap` interno al que no llega ninguna `className`, así
- * que no se puede volver columna.
- *
- * *Por qué no rail siempre:* a 1280px el sidebar de la app ya se lleva 256px
- * —medido por el e2e de la auditoría anterior— y un rail de 180px más dejaría
- * los gráficos bajo 420px de ancho.
+/*
+ * `DomainIndex` vivía acá: un rail de anclas `#dominio-*` sobre una página que
+ * tenía las seis secciones montadas a la vez. Lo reemplaza
+ * `DashboardViewTabs`, que conmuta la vista en vez de hacer scroll hasta ella.
  */
-export function DomainIndex({ domains }: { domains: DashboardDomain[] }) {
-  if (domains.length < 2) return null
-
-  return (
-    <nav
-      aria-label="Secciones del tablero"
-      className={cn(
-        // `top-14` = alto de la TopBar (h-[3.5rem]), que es sticky en el mismo
-        // scroll container con el mismo z-10: con `top-0`/`top-4` este índice
-        // se pegaba ENCIMA del título ("texto sobre texto" a 1920, barra
-        // tapando la TopBar completa a 1366 — I-05, auditoría 2026-08-05).
-        // z-[5] < z-10: si algún ancho intermedio los superpone, la TopBar
-        // opaca gana.
-        "sticky top-14 z-5 -mx-1 flex gap-1.5 overflow-x-auto bg-[var(--color-bg)]/95 px-1 py-2 backdrop-blur",
-        "2xl:top-18 2xl:mx-0 2xl:flex-col 2xl:overflow-visible 2xl:px-0",
-      )}
-    >
-      {domains.map((domain) => (
-        <Link
-          key={domain.key}
-          href={`#${domain.anchor}`}
-          className={cn(
-            "shrink-0 rounded-lg px-3 py-2 text-xs font-semibold text-[var(--color-text-muted)] transition-colors",
-            "hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)]",
-            "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]",
-            "2xl:text-left",
-          )}
-        >
-          {domain.title}
-        </Link>
-      ))}
-    </nav>
-  )
-}
 
 /**
  * Una sección de dominio: KPIs arriba, gráficos abajo, enlaces al módulo.
