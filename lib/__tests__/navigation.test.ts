@@ -99,7 +99,7 @@ describe("sidebar navigation", () => {
     expect(prevention?.items.map((item) => item.label)).toEqual([
       "Evaluaciones SST",
       "Para, Piensa y Actúa",
-      "Programa preventivo",
+      "Programa PDTP",
       "Documentos SST",
       "Indicadores SST",
       "Indicadores ambientales",

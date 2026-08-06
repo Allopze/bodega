@@ -9,18 +9,28 @@
  */
 import { ROLE_RESPONSIBLE_SLUGS } from "./sheet-meta-2026"
 
+/**
+ * Nombre visible por slug. Son cargos, no áreas: la planilla abrevia ("JDPR",
+ * "SUP") y nombraba departamentos ("Jefatura de terreno"); aquí se expanden al
+ * título de la persona responsable, que es como aparece en la UI y el Excel
+ * exportado. Cambiar un valor exige migrar `pdtp_activities.responsible_display`
+ * (está denormalizado) — ver `0137_pdtp_responsible_names.sql`.
+ */
+const DISPLAY_NAME_BY_SLUG: Record<string, string> = {
+  conductores_operadores_choferes: "Conductores, operadores y choferes",
+  admin_contrato:                  "Administrador de contrato",
+  subgerente_operaciones:          "Subgerente de operaciones",
+  gerente_legal_rrhh:              "Gerencia Legal y Recursos Humanos",
+  jdpr:                            "Jefe del Departamento de Prevención de Riesgos",
+  prf:                             "Prevencionista de riesgos en faena",
+  sup:                             "Supervisor de terreno",
+  jt:                              "Jefe de terreno",
+  cphs:                            "Comité Paritario de Higiene y Seguridad",
+  jm:                              "Jefe de mantención",
+}
+
 export function displayNameForSlug(slug: string, fallback: string) {
-  if (slug === "conductores_operadores_choferes") return "Conductores, operadores y choferes"
-  if (slug === "admin_contrato") return "Administración de contrato"
-  if (slug === "subgerente_operaciones") return "Subgerencia de operaciones"
-  if (slug === "gerente_legal_rrhh") return "Gerencia Legal y Recursos Humanos"
-  if (slug === "jdpr") return "Jefatura del Departamento de Prevención de Riesgos"
-  if (slug === "prf") return "Prevencionista de riesgos en faena"
-  if (slug === "sup") return "Supervisión de faena"
-  if (slug === "jt") return "Jefatura de terreno"
-  if (slug === "cphs") return "Comité Paritario de Higiene y Seguridad"
-  if (slug === "jm") return "Jefatura de mantenimiento"
-  return fallback
+  return DISPLAY_NAME_BY_SLUG[slug] ?? fallback
 }
 
 export function displayNameForActivity(slugs: string[], fallback: string) {

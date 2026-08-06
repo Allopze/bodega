@@ -37,9 +37,20 @@ describe("system-rbac → manifest parity", () => {
     expect(SYSTEM_ROLE_PERMISSIONS.length).toBeGreaterThan(50)
   })
 
-  it("does not expose supervisor_faena as a separate system role", () => {
-    expect(SYSTEM_ROLES.map((role) => role.name)).not.toContain("supervisor_faena")
-    expect(SYSTEM_ROLE_PERMISSIONS.some((grant) => grant.roleId === "rol-sup-faena")).toBe(false)
+  it("expone un rol por responsable PDTP con cargo propio", () => {
+    // La planilla distingue SUP de JT, y Legal/RRHH y Subgerencia de operaciones
+    // de la Jefatura; antes los tres colapsaban en otro rol y no se podía asignar
+    // un usuario al responsable real de la actividad.
+    const names = SYSTEM_ROLES.map((role) => role.name)
+    for (const slug of ["supervisor_terreno", "gerente_legal_rrhh", "subgerente_operaciones"]) {
+      expect(names, `falta el rol ${slug}`).toContain(slug)
+      const roleId = SYSTEM_ROLES.find((role) => role.name === slug)!.id
+      expect(SYSTEM_ROLE_PERMISSIONS.some((grant) => grant.roleId === roleId)).toBe(true)
+    }
+    // `supervisor` a secas no sirve: en las firmas SST ya significa "Administrador
+    // de contrato" (SIGNATURE_ROLE_LABELS), que es otra persona.
+    expect(names).not.toContain("supervisor")
+    expect(names).not.toContain("supervisor_faena")
   })
 
   // These permissions must exist in the derived permission set, in the admin

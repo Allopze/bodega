@@ -236,7 +236,9 @@ export const preventionModule = {
           permissions: ["prevention:legal:view"],
         },
         {
-          label: "Programa preventivo",
+          // "Programa preventivo" se truncaba a "Programa prev…" en el sidebar
+          // (UI/UX 2026-08-05, B2); PDTP es el nombre con que se usa el módulo.
+          label: "Programa PDTP",
           href: "/prevencion/pdtp",
           iconName: "ClipboardText",
           group: "Planificación",
@@ -447,6 +449,14 @@ export const preventionModule = {
     { roleSlug: "admin_contrato",      permission: "prevention:pdtp:execute" },
     { roleSlug: "jefe_terreno",        permission: "prevention:pdtp:view" },
     { roleSlug: "jefe_terreno",        permission: "prevention:pdtp:execute" },
+    { roleSlug: "supervisor_terreno", permission: "prevention:pdtp:view" },
+    { roleSlug: "supervisor_terreno", permission: "prevention:pdtp:execute" },
+    // Responsables de actividades del PDTP, sin rol en el flujo de aprobación:
+    // `sign_legal`/`approve` siguen en jefa_chome hasta que se pida moverlos.
+    { roleSlug: "gerente_legal_rrhh",  permission: "prevention:pdtp:view" },
+    { roleSlug: "gerente_legal_rrhh",  permission: "prevention:pdtp:execute" },
+    { roleSlug: "subgerente_operaciones", permission: "prevention:pdtp:view" },
+    { roleSlug: "subgerente_operaciones", permission: "prevention:pdtp:execute" },
     { roleSlug: "cphs",                permission: "prevention:pdtp:view" },
     { roleSlug: "administrador",       permission: "prevention:pdtp:view" },
     { roleSlug: "administrador",       permission: "prevention:pdtp:execute" },
@@ -466,6 +476,7 @@ export const preventionModule = {
     { roleSlug: "admin_contrato",      permission: "prevention:pdtp:checklist:fill" },
     { roleSlug: "admin_contrato",      permission: "prevention:pdtp:action:manage" },
     { roleSlug: "jefe_terreno",        permission: "prevention:pdtp:action:manage" },
+    { roleSlug: "supervisor_terreno", permission: "prevention:pdtp:action:manage" },
     { roleSlug: "administrador",       permission: "prevention:pdtp:checklist:manage" },
     { roleSlug: "administrador",       permission: "prevention:pdtp:action:manage" },
     { roleSlug: "administrador",       permission: "prevention:pdtp:action:verify" },

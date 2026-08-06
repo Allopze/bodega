@@ -28,7 +28,7 @@ import {
 import { SHEET_META } from "@/lib/services/pdtp-adapters/sheet-meta-2026"
 import { PDTP_2026_GENERAL_SHEET_NAME } from "@/lib/services/prevention-pdtp-catalog"
 import { PDTP_2026_PROGRAM_SOURCE } from "@/lib/services/pdtp-adapters/contract-2026"
-import { collectResponsibleCatalog } from "@/lib/services/pdtp-adapters/responsible-catalog-2026"
+import { collectResponsibleCatalog, displayNameForActivity } from "@/lib/services/pdtp-adapters/responsible-catalog-2026"
 import { writePdtpActivityContent } from "./activity-content"
 import {
   addPdtpChangeLogEntry,
@@ -494,7 +494,9 @@ export async function applyPdtpImportBatch(input: {
           executionGuidance: activity.program,
         }),
         responsibleSlugs: activity.responsibleSlugs,
-        responsibleDisplay: activity.responsibleDisplay,
+        // La planilla trae la abreviatura ("PRF", "Sup, JT"); se expande al cargo
+        // igual que en el bootstrap (catalog.ts), o la UI muestra la sigla cruda.
+        responsibleDisplay: displayNameForActivity(activity.responsibleSlugs, activity.responsibleDisplay),
         scheduleMode: activity.schedule.length > 0 ? "scheduled" : "on_demand",
         scheduleClassificationStatus: activity.schedule.length > 0 ? "confirmed" : "needs_review",
         recurrenceRule: null,

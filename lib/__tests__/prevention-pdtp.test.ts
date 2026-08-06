@@ -2102,7 +2102,13 @@ describe("prevention PDTP service", () => {
 
     const activities = await inMemoryDb.select().from(schema.pdtpActivities)
       .where(and(eq(schema.pdtpActivities.programId, program.id), eq(schema.pdtpActivities.scheduleMode, "scheduled")))
-    const target = activities[0]!
+    // Una actividad anual (planned = 1) cumple su meta con una sola ejecución
+    // aprobada (percent = 1.0 >= complianceTarget) — no sirve para probar el
+    // filtro "deviates" más abajo. H-17 (AUDITORIA_BUGS_2026-08-05.md): elegir
+    // explícitamente, con orden determinista, una actividad con más de una
+    // unidad planificada en el año, en vez de `activities[0]` sin `ORDER BY`.
+    const candidateRow = report!.activities.find((row) => row.planned > 1)!
+    const target = activities.find((activity) => activity.n === candidateRow.activityNumber)!
     const execution = await markPdtpExecution({
       activityId: target.id, worksiteId: "ws-1", year: program.year, month: 1, week: 1, executedQuantity: 1,
     }, "user-1", ["ws-1"])
@@ -2111,6 +2117,9 @@ describe("prevention PDTP service", () => {
     const updated = await getPdtpManagementReport({ programId: program.id, worksiteId: "ws-1", scope: ["ws-1"] })
     const updatedTarget = updated!.activities.find((row) => row.activityNumber === target.n)!
     expect(updatedTarget.executed).toBeGreaterThan(0)
+    // El motivo por el que sigue en desviación tiene que quedar explícito: una
+    // sola unidad ejecutada, contra un plan mayor a uno, no alcanza la meta.
+    expect(updatedTarget.percent).toBeLessThan(program.complianceTarget)
     expect(updated!.activities.filter((row) => row.activityNumber !== target.n).every((row) => row.executed === 0)).toBe(true)
 
     const deviating = await getPdtpManagementReport({

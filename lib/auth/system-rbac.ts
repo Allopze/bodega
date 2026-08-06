@@ -19,14 +19,17 @@ export const SYSTEM_ROLES = [
   { id: "rol-admin", name: "administrador", label: "Administrador", description: "Control total técnico del sistema", isGlobal: true },
   { id: "rol-jefa", name: "jefa_chome", label: "Jefatura", description: "Revisa, aprueba y administra la operación", isGlobal: true },
   { id: "rol-sec", name: "secretaria", label: "Secretaría", description: "Revisa, aprueba y gestiona operación diaria", isGlobal: true },
-  { id: "rol-prev", name: "prevencionista", label: "Jefa Dpto. Prevención de riesgos", description: "Revisa y aprueba solicitudes", isGlobal: true },
+  { id: "rol-prev", name: "prevencionista", label: "Jefe del Departamento de Prevención de Riesgos", description: "Revisa y aprueba solicitudes", isGlobal: true },
   { id: "rol-sol-faena", name: "solicitante_faena", label: "Solicitante faena", description: "Solicita ítems para sus faenas asignadas", isGlobal: false },
   { id: "rol-prev-faena", name: "prevencionista_faena", label: "Prevencionista faena", description: "Evalúa EPP, recibe en faena y gestiona stock en sus faenas asignadas", isGlobal: false },
   { id: "rol-jefe-mant", name: "jefe_mantencion", label: "Jefe de mantención", description: "Solicita repuestos, servicios y otros para todas las faenas", isGlobal: true },
   { id: "rol-cond-lider", name: "conductor_lider", label: "Conductor líder", description: "Evalúa el acompañamiento en terreno (Punto 3) de trabajadores nuevos en sus faenas asignadas", isGlobal: false },
-  { id: "rol-admin-contrato", name: "admin_contrato", label: "Administrador de contrato / Supervisor de faena", description: "Evalúa SST (secciones 1-2) de trabajadores nuevos y antiguos en sus faenas asignadas", isGlobal: false },
+  { id: "rol-admin-contrato", name: "admin_contrato", label: "Administrador de contrato", description: "Evalúa SST (secciones 1-2) de trabajadores nuevos y antiguos en sus faenas asignadas", isGlobal: false },
   { id: "rol-jt", name: "jefe_terreno", label: "Jefe de terreno", description: "Lidera actividades de terreno, alcotest, emergencias y bitacora preventiva en sus faenas asignadas", isGlobal: false },
+  { id: "rol-sup-terreno", name: "supervisor_terreno", label: "Supervisor de terreno", description: "Ejecuta y reporta las actividades del PDTP que la planilla asigna a supervisión (SUP), junto al Jefe de terreno. Distinto del Administrador de contrato", isGlobal: false },
   { id: "rol-cphs", name: "cphs", label: "Comité Paritario de Higiene y Seguridad", description: "Miembro del Comite Paritario de Higiene y Seguridad con acceso a programa, reuniones e indicadores", isGlobal: false },
+  { id: "rol-gerente-legal", name: "gerente_legal_rrhh", label: "Gerencia Legal y Recursos Humanos", description: "Responsable de las actividades del PDTP asignadas a Legal y Recursos Humanos", isGlobal: true },
+  { id: "rol-subgerente-ops", name: "subgerente_operaciones", label: "Subgerente de operaciones", description: "Responsable de las actividades del PDTP asignadas a la subgerencia de operaciones y mantenimiento", isGlobal: true },
 ] satisfies Array<typeof roles.$inferInsert>
 
 // ── Permissions (auto-derived from module manifests) ──────────────────────────

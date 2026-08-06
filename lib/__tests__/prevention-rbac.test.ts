@@ -143,12 +143,16 @@ describe("prevention module RBAC", () => {
       .map((grant) => grant.roleSlug)
       .sort()
 
+    // Todo responsable de actividad ejecuta; administrar el programa no.
     expect(rolesFor("prevention:pdtp:execute")).toEqual([
       "admin_contrato",
       "administrador",
+      "gerente_legal_rrhh",
       "jefe_terreno",
       "prevencionista",
       "prevencionista_faena",
+      "subgerente_operaciones",
+      "supervisor_terreno",
     ])
     expect(rolesFor("prevention:pdtp:program:manage")).toEqual([
       "administrador",

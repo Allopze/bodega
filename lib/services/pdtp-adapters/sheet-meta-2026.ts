@@ -11,10 +11,10 @@ export const SHEET_META: Record<PdtpSheetCode, { label: string; area: string; de
   pdtp_general: { label: "Programa preventivo general", area: "prevencion", defaultScopeRoles: ["prevencionista", "administrador"] },
   cphs: { label: "Comité Paritario de Higiene y Seguridad", area: "prevencion", defaultScopeRoles: ["cphs", "prevencionista", "admin_contrato"] },
   prf_adm_contrato: { label: "Prevencionista de faena y administración de contrato", area: "prevencion", defaultScopeRoles: ["prevencionista_faena", "admin_contrato"] },
-  sup_jt: { label: "Supervisión y jefatura de terreno", area: "prevencion", defaultScopeRoles: ["jefe_terreno"] },
+  sup_jt: { label: "Supervisión y jefatura de terreno", area: "prevencion", defaultScopeRoles: ["supervisor_terreno", "jefe_terreno"] },
   prf: { label: "Prevencionista de riesgos en faena", area: "prevencion", defaultScopeRoles: ["prevencionista_faena"] },
   adm_contrato: { label: "Administración de contrato", area: "prevencion", defaultScopeRoles: ["admin_contrato"] },
-  subgerente: { label: "Subgerencia de operaciones y mantenimiento", area: "subgerencia", defaultScopeRoles: ["jefa_chome"] },
+  subgerente: { label: "Subgerencia de operaciones y mantenimiento", area: "subgerencia", defaultScopeRoles: ["subgerente_operaciones", "jefa_chome"] },
   capacitacion: { label: "Capacitación y campañas", area: "capacitacion", defaultScopeRoles: ["prevencionista_faena"] },
 }
 
@@ -32,11 +32,11 @@ export const SHEET_EXPORT_NAMES: Record<PdtpSheetCode, string> = {
 export const ROLE_RESPONSIBLE_SLUGS = new Map<string, string>([
   ["admin_contrato", "admin_contrato"],
   ["cphs", "cphs"],
-  ["gerente_legal_rrhh", "jefa_chome"],
+  ["gerente_legal_rrhh", "gerente_legal_rrhh"],
   ["jdpr", "prevencionista"],
   ["jm", "jefe_mantencion"],
   ["jt", "jefe_terreno"],
   ["prf", "prevencionista_faena"],
-  ["subgerente_operaciones", "jefa_chome"],
-  ["sup", "jefe_terreno"],
+  ["subgerente_operaciones", "subgerente_operaciones"],
+  ["sup", "supervisor_terreno"],
 ])
