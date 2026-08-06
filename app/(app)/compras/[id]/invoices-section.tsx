@@ -126,7 +126,7 @@ export function InvoicesSection({
               return (
                 <li key={ocItem.id} className="flex items-center justify-between gap-2">
                   <span title={ocItem.productName} className="truncate min-w-0 text-text-subtle">{ocItem.productName}</span>
-                  <span className={`font-mono tabular-nums shrink-0 ${isMatched ? "text-[var(--color-success)]" : "text-[var(--color-warning)]"}`}>
+                  <span className={`font-mono tabular-nums shrink-0 ${isMatched ? "text-[var(--color-success)]" : "text-[var(--color-warning-ink)]"}`}>
                     {invoicedQty}/{ocItem.quantity}
                   </span>
                 </li>
@@ -652,7 +652,7 @@ function AddInvoiceForm({
                     <option value="__unlinked">Mantener sin asociar a la OC</option>
                   </select>
                   {li.resolution === "needs_review" && (
-                    <p className="mb-1 text-[10px] text-[var(--color-warning)]">Esta línea no se asociará hasta que selecciones un ítem de la OC o confirmes que queda sin asociar.</p>
+                    <p className="mb-1 text-[10px] text-[var(--color-warning-ink)]">Esta línea no se asociará hasta que selecciones un ítem de la OC o confirmes que queda sin asociar.</p>
                   )}
                   <div className="grid grid-cols-2 gap-1.5">
                     <Input
@@ -680,7 +680,7 @@ function AddInvoiceForm({
                     Unidad documento: <span className="font-medium text-(--color-text)">{li.unitOfMeasure || "no declarada"}</span>
                     {ocItem && <> · OC: {ocItem.unitOfMeasure}</>}
                   </p>
-                  {unitMismatch && <p className="mt-1 text-[10px] text-[var(--color-warning)]">La unidad del documento difiere de la unidad de la OC; confirma cantidad y precio.</p>}
+                  {unitMismatch && <p className="mt-1 text-[10px] text-[var(--color-warning-ink)]">La unidad del documento difiere de la unidad de la OC; confirma cantidad y precio.</p>}
                   <input type="hidden" name={`item_ocItemId_${index}`} value={li.ocItemId} />
                   <input type="hidden" name={`item_resolution_${index}`} value={li.resolution} />
                   <input type="hidden" name={`item_productName_${index}`} value={li.productName} />
@@ -705,7 +705,7 @@ function AddInvoiceForm({
       )}
 
       {unresolvedLineCount > 0 && (
-        <p className="text-[11px] text-[var(--color-warning)]">Resuelve {unresolvedLineCount} línea(s) antes de adjuntar la factura.</p>
+        <p className="text-[11px] text-[var(--color-warning-ink)]">Resuelve {unresolvedLineCount} línea(s) antes de adjuntar la factura.</p>
       )}
 
       <SubmitButton

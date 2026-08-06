@@ -145,7 +145,7 @@ export function ImportWizard({ worksites, canImportAllWorksites }: { worksites: 
           {result.errors.length > 0 && (
             <div className="text-sm text-left p-3 bg-[var(--color-warning-tint)] rounded-md max-w-md mx-auto">
               <div className="flex items-center justify-between mb-1">
-                <p className="font-medium text-[var(--color-warning)]">{result.errors.length} filas omitidas por errores:</p>
+                <p className="font-medium text-[var(--color-warning-ink)]">{result.errors.length} filas omitidas por errores:</p>
                 <button
                   type="button"
                   onClick={() => downloadErrorsXlsx(result.errors, "errores-importacion.xlsx")}
@@ -186,7 +186,7 @@ export function ImportWizard({ worksites, canImportAllWorksites }: { worksites: 
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <Stat label="Filas válidas" value={formatQty(preview.totales.totalFilas)} icon={<CheckCircle className="h-5 w-5 text-[var(--color-success)]" />} />
             <Stat label="Filas rechazadas" value={formatQty(preview.errores.length)} icon={<WarningCircle className="h-5 w-5 text-[var(--color-danger)]" />} />
-            <Stat label="Duplicados en archivo" value={formatQty(preview.duplicadosEnArchivo)} icon={<WarningCircle className="h-5 w-5 text-[var(--color-warning)]" />} />
+            <Stat label="Duplicados en archivo" value={formatQty(preview.duplicadosEnArchivo)} icon={<WarningCircle className="h-5 w-5 text-[var(--color-warning-ink)]" />} />
             <Stat label="Patentes únicas" value={formatQty(preview.totales.totalPatentes)} icon={<FileText className="h-5 w-5 text-muted-foreground" />} />
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -223,7 +223,7 @@ export function ImportWizard({ worksites, canImportAllWorksites }: { worksites: 
 
           {worksiteId === "all" && preview.patentesSinVehiculo > 0 && (
             <div className="flex items-start gap-2 rounded-md bg-[var(--color-warning-tint)] p-3 text-sm">
-              <WarningCircle className="mt-0.5 h-4 w-4 shrink-0 text-[var(--color-warning)]" />
+              <WarningCircle className="mt-0.5 h-4 w-4 shrink-0 text-[var(--color-warning-ink)]" />
               <p>{preview.patentesSinVehiculo} patente(s) no están vinculadas a un vehículo y se omitirán en esta importación general.</p>
             </div>
           )}

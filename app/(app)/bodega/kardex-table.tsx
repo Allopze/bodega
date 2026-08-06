@@ -14,7 +14,7 @@ const MOVEMENT_QTY_CLASS: Record<string, string> = {
   ingreso_oc:         "text-[var(--color-success)] font-medium",
   egreso_entrega:     "text-[var(--color-danger)]",
   ingreso_devolucion: "text-[var(--color-success)]",
-  egreso_desecho:     "text-[var(--color-warning)]",
+  egreso_desecho:     "text-[var(--color-warning-ink)]",
 }
 
 interface WorksiteOption {

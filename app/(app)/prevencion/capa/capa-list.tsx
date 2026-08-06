@@ -235,7 +235,7 @@ export function CapaList({ actions, worksites, counts, pagination }: Props) {
                       </TableCell>
                       <TableCell>
                         <Badge variant={capaStatusBadgeVariant(item.status)}>{CAPA_STATUS_LABELS[item.status as CapaStatus] ?? item.status}</Badge>
-                        {item.reconciliationStatus !== "reconciled" && <p className="mt-1 text-xs text-[var(--color-warning)]">Por conciliar</p>}
+                        {item.reconciliationStatus !== "reconciled" && <p className="mt-1 text-xs text-[var(--color-warning-ink)]">Por conciliar</p>}
                       </TableCell>
                     </TableRow>
                   )

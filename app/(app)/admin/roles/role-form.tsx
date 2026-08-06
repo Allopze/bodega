@@ -137,7 +137,7 @@ export function RoleForm({ open, onClose, editRole, groupedPermissions }: RoleFo
             )}
             {editRole?.isProtected && (
               <div className="mb-4 flex items-start gap-2 rounded-[var(--radius)] border border-[var(--color-warning)] bg-[var(--color-warning-tint, var(--color-surface-2))] p-3 text-xs text-[var(--color-text)]">
-                <Warning size={16} className="mt-0.5 shrink-0 text-[var(--color-warning)]" aria-hidden />
+                <Warning size={16} className="mt-0.5 shrink-0 text-[var(--color-warning-ink)]" aria-hidden />
                 <span>
                   Este rol está protegido. Conserva al menos un permiso; los cambios se aplican a todos los usuarios asignados.
                 </span>

@@ -158,7 +158,7 @@ export function PreviewStep({
         <Card>
           <CardContent className="pt-4">
             <div className="flex items-center gap-2">
-              <WarningCircle className="h-5 w-5 text-[var(--color-warning)]" />
+              <WarningCircle className="h-5 w-5 text-[var(--color-warning-ink)]" />
               <div>
                 <p className="text-xl font-bold">{duplicates.length}</p>
                 <p className="text-xs text-muted-foreground">Duplicados</p>

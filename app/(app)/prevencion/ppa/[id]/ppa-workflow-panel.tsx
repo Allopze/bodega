@@ -227,7 +227,7 @@ export function PpaWorkflowPanel({
             Declarar controles implementados
           </Button>
           {capa.evidenceCount === 0 && (
-            <p className="mt-2 text-xs text-[var(--color-warning)]">Adjunta al menos una evidencia documental, fotográfica o URL.</p>
+            <p className="mt-2 text-xs text-[var(--color-warning-ink)]">Adjunta al menos una evidencia documental, fotográfica o URL.</p>
           )}
         </div>
       )}

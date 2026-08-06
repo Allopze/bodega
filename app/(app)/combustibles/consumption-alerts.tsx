@@ -36,7 +36,7 @@ export function ConsumptionAlerts({ alerts }: { alerts: ConsumptionAlert[] }) {
                       <p className="mt-2 text-sm font-semibold text-[var(--color-text)]">{alert.entityLabel}</p>
                       <p className="mt-1 text-xs leading-5 text-[var(--color-text-muted)]">{alert.reason}</p>
                     </div>
-                    <Warning size={17} className="mt-1 shrink-0 text-[var(--color-signal)]" />
+                    <Warning size={17} className="mt-1 shrink-0 text-[var(--color-signal-ink)]" />
                   </div>
                   <p className="mt-2 text-xs font-medium text-[var(--color-text)]">{alert.action}</p>
                 </div>

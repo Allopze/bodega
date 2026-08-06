@@ -112,7 +112,7 @@ export function OperationsImportWizard() {
           {result.errors.length > 0 && (
             <div className="text-sm text-left p-3 bg-[var(--color-warning-tint)] rounded-md max-w-md mx-auto">
               <div className="flex items-center justify-between mb-1">
-                <p className="font-medium text-[var(--color-warning)]">{result.errors.length} filas omitidas por errores:</p>
+                <p className="font-medium text-[var(--color-warning-ink)]">{result.errors.length} filas omitidas por errores:</p>
                 <button
                   type="button"
                   onClick={() => downloadErrorsXlsx(result.errors, "errores-operaciones.xlsx")}

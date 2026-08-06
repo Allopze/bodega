@@ -31,14 +31,14 @@ const STATUS_COLORS = {
   running: {
     bg: "bg-[var(--color-warning-tint)]",
     border: "border-[var(--color-warning)]",
-    icon: "text-[var(--color-warning)]",
-    text: "text-[var(--color-warning)]",
+    icon: "text-[var(--color-warning-ink)]",
+    text: "text-[var(--color-warning-ink)]",
   },
   warning: {
     bg: "bg-[var(--color-warning-tint)]",
     border: "border-[var(--color-warning)]",
-    icon: "text-[var(--color-warning)]",
-    text: "text-[var(--color-warning)]",
+    icon: "text-[var(--color-warning-ink)]",
+    text: "text-[var(--color-warning-ink)]",
   },
   none: {
     bg: "bg-[var(--color-surface-2)]",

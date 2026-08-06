@@ -162,6 +162,19 @@ export default function MyNewPage() {
 - **Sidebar 1:1:** Fondo blanco puro (`bg-white`), encabezado de sección micro-uppercase (`PLATAFORMA`), ítems con pills redondeados suaves (`rounded-xl bg-slate-100 font-semibold text-slate-900`) y perfil de usuario fijado al fondo del panel.
 - **TopBar integrado en Desktop:** En escritorio el `TopBar` se mantiene transparente (`bg-transparent border-b-0`), proyectando el título de página y la barra de controles directamente sobre el lienzo sin franjas ni bordes rígidos.
 - **Mainzone / Tarjetas flotantes:** Las vistas (tablas, gráficos, listas) flotan sobre el lienzo tenue (`bg-[#f8fafc]`) como contenedores blancos redondeados (`bg-white border border-slate-200/70 rounded-2xl p-6 shadow-xs`).
+
+## 9. Color de texto: siempre tokens `-ink`, nunca los base
+
+Los tokens base `--color-signal`, `--color-warning` y `--color-accent` son colores de
+superficie/acento: sobre fondo claro miden 2.3–2.7:1 y **fallan WCAG AA (4.5:1)** como
+texto. Para texto (y para íconos que comunican estado) usa SIEMPRE la variante `-ink`
+(`--color-warning-ink` = 8.75:1, `--color-signal-ink` = 9.43:1). `--color-danger` y
+`--color-success` sí pasan como texto (5.9:1 y 8.1:1), pero sus `-ink` siguen siendo la
+opción por defecto sobre tints. Un barrido del 2026-08-05 limpió 28 archivos que
+usaban warning/signal como color de texto; no lo reintroduzcas. Botones primarios: usa
+`<Button variant="primary">` (texto blanco) — nunca una clase local con un token
+inventado (`--color-primary-contrast` no existe y así nació el peor bug de contraste
+de la plataforma).
 <!-- END:page-layout -->
 
 <!-- BEGIN:search-architecture -->

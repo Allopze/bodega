@@ -32,7 +32,7 @@ export function DoneStep({ result, onImportAnother, onClose }: DoneStepProps) {
 
       {result.errors.length > 0 && (
         <div className="text-sm text-left p-3 bg-[var(--color-warning-tint)] rounded-md">
-          <p className="font-medium text-[var(--color-warning)] mb-1">
+          <p className="font-medium text-[var(--color-warning-ink)] mb-1">
             {result.errors.length} filas omitidas por errores:
           </p>
           <div className="max-h-32 overflow-y-auto space-y-0.5 text-muted-foreground">

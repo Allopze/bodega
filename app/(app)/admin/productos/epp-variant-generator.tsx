@@ -147,7 +147,7 @@ export function VariantGenerator({
                   ) : (
                     <>
                       Generar variantes ({count} combinaciones)
-                      {isNearLimit && <span className="ml-1.5 text-[var(--color-warning)]">· máx. {variantLimit}</span>}
+                      {isNearLimit && <span className="ml-1.5 text-[var(--color-warning-ink)]">· máx. {variantLimit}</span>}
                     </>
                   )}
                 </Button>

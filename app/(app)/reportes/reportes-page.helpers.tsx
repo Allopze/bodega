@@ -27,7 +27,7 @@ export function BreakdownPanel({
     <section className="flex flex-col rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] p-5">
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-2">
-          <span className={signalActive ? "text-[var(--color-signal)]" : "text-[var(--color-text-subtle)]"}>{icon}</span>
+          <span className={signalActive ? "text-[var(--color-signal-ink)]" : "text-[var(--color-text-subtle)]"}>{icon}</span>
           <div>
             <h2 className="text-sm font-medium text-[var(--color-text)]">{title}</h2>
             <p className="mt-0.5 text-xs text-[var(--color-text-subtle)]">{subtitle}</p>

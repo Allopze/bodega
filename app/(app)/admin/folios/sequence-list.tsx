@@ -67,7 +67,7 @@ export function SequenceList({ rows }: SequenceListProps) {
   return (
     <>
       <div className="mb-4 flex items-start gap-2 rounded-[var(--radius)] border border-[var(--color-warning)] bg-[var(--color-surface-2)] p-3 text-xs text-[var(--color-text)]">
-        <Warning size={16} className="mt-0.5 shrink-0 text-[var(--color-warning)]" aria-hidden />
+        <Warning size={16} className="mt-0.5 shrink-0 text-[var(--color-warning-ink)]" aria-hidden />
         <span>
           Usar solo para corregir desincronizaciones de folio. No modifica documentos ya emitidos.
           La corrección requiere escribir exactamente el código <code>&lt;prefijo&gt;-&lt;año&gt;</code> para confirmar.

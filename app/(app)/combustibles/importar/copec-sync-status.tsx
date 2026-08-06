@@ -167,11 +167,11 @@ export function CopecSyncStatus({ initialStatus, initialStartOptions }: { initia
             </span>
             {status.cursor && (
               <span className="flex items-center gap-1.5 text-muted-foreground">
-                <WarningCircle className="h-3.5 w-3.5 text-[var(--color-warning)]" />
+                <WarningCircle className="h-3.5 w-3.5 text-[var(--color-warning-ink)]" />
                 Próximo mes pendiente: {formatMonth(status.cursor)}
               </span>
             )}
-            {status.pending > 0 && <span className="text-[var(--color-warning)]">{status.pending} patente(s) sin vehículo registrado — su consumo no se importa hasta que las registres en la flota y vuelvas a sincronizar su período</span>}
+            {status.pending > 0 && <span className="text-[var(--color-warning-ink)]">{status.pending} patente(s) sin vehículo registrado — su consumo no se importa hasta que las registres en la flota y vuelvas a sincronizar su período</span>}
           </div>
 
           <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-[var(--color-border)] pt-3 text-xs">

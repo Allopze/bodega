@@ -130,7 +130,7 @@ export default async function WorkerEppTraceabilityPage({
             {workerGaps.length === 0 ? (
               <CheckCircle size={18} className="text-[var(--color-success)]" />
             ) : (
-              <Warning size={18} className="text-[var(--color-warning)]" />
+              <Warning size={18} className="text-[var(--color-warning-ink)]" />
             )}
             <span>Estado de Cobertura EPP</span>
           </div>

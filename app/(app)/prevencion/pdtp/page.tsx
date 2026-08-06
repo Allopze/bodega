@@ -317,7 +317,7 @@ export default async function PdtpDashboardPage({ searchParams }: PdtpDashboardP
               icon={
                 <WarningCircle
                   size={22}
-                  className={overdueActionsCount > 0 ? "text-[var(--color-danger)]" : "text-[var(--color-warning)]"}
+                  className={overdueActionsCount > 0 ? "text-[var(--color-danger)]" : "text-[var(--color-warning-ink)]"}
                 />
               }
               href={focusProgram ? `/prevencion/pdtp/acciones?programa=${focusProgram.id}&anio=${year}${selectedWorksiteId ? `&faena=${selectedWorksiteId}` : ""}${overdueActionsCount > 0 ? "&vencidas=1" : "&estado=abierta"}` : "/prevencion/pdtp/acciones"}

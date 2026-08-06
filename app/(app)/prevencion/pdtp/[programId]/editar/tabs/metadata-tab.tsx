@@ -172,7 +172,7 @@ export function MetadataTab({ program, canDelete, activities = [] }: {
                 data-autosave-status
                 className={
                   isDirty && !updatePending
-                    ? "text-xs font-medium text-[var(--color-warning)]"
+                    ? "text-xs font-medium text-[var(--color-warning-ink)]"
                     : "text-xs text-[var(--color-text-muted)]"
                 }
               >
@@ -301,7 +301,7 @@ export function WorksiteScopePanel({ programId, visibleWorksites, memberWorksite
             ahí se leía como hint del botón en vez de como estado del programa.
             Cuando hay cambios pendientes, explica por qué el botón se habilita
             (y, al revés, por qué está deshabilitado el resto del tiempo). */}
-        <p className={isDirty ? "text-xs font-medium text-[var(--color-warning)]" : "text-xs text-[var(--color-text-muted)]"}>
+        <p className={isDirty ? "text-xs font-medium text-[var(--color-warning-ink)]" : "text-xs text-[var(--color-text-muted)]"}>
           {isDirty
             ? "Cambios sin guardar."
             : selected.length === 0

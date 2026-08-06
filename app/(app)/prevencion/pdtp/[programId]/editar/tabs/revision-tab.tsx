@@ -56,7 +56,7 @@ export function ReviewTab({
         {checks.map((check) => (
           <li key={check.label} className="flex items-center justify-between gap-4 px-4 py-3 text-sm">
             <span className="font-medium text-[var(--color-text)]">{check.label}</span>
-            <span className={check.ok ? "text-[var(--color-success)]" : "text-[var(--color-signal)]"}>{check.ok ? "Completo" : check.detail}</span>
+            <span className={check.ok ? "text-[var(--color-success)]" : "text-[var(--color-signal-ink)]"}>{check.ok ? "Completo" : check.detail}</span>
           </li>
         ))}
       </ul>

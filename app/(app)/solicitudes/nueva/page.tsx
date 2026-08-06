@@ -146,7 +146,7 @@ export default async function NuevaSolicitudPage({
         />
         <div className="max-w-md mx-auto mt-8 p-6 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius)]">
           <EmptyState
-            icon={<Warning size={28} className="text-[var(--color-warning)]" />}
+            icon={<Warning size={28} className="text-[var(--color-warning-ink)]" />}
             title="Sin faenas asignadas"
             description="No tienes faenas activas asignadas a tu cuenta o no existen faenas en el sistema. Contacta a un administrador para que te asigne una faena antes de poder crear una solicitud."
             action={

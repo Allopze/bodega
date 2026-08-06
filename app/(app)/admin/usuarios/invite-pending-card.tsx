@@ -33,7 +33,7 @@ export function InvitePendingCard({ pending, copied, onCopy, onDismiss, onDismis
           className="rounded-[var(--radius)] border border-[var(--color-warning-line)] bg-[var(--color-warning-tint)] p-4"
         >
           <div className="flex items-start gap-2">
-            <Envelope size={16} weight="bold" className="mt-0.5 text-[var(--color-warning)]" />
+            <Envelope size={16} weight="bold" className="mt-0.5 text-[var(--color-warning-ink)]" />
             <div className="min-w-0 flex-1">
               <p className="text-sm font-medium text-[var(--color-text)]">
                 Enlace para crear contraseña

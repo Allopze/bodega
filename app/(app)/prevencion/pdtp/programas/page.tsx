@@ -103,7 +103,7 @@ export default async function PdtpProgramasListPage({ searchParams }: PdtpProgra
               ? "bg-[var(--color-success-tint)] text-[var(--color-success)]"
               : program.status === "closed"
                 ? "bg-[var(--color-text-muted)]/10 text-[var(--color-text-muted)]"
-                : "bg-[var(--color-warning-tint)] text-[var(--color-warning)]"
+                : "bg-[var(--color-warning-tint)] text-[var(--color-warning-ink)]"
 
             return (
               <div key={program.id} className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition-shadow hover:shadow-md">

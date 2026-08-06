@@ -13,7 +13,7 @@ export function SummaryBarStatCell({ stat }: { stat: SummaryStat }) {
       <div className="flex items-center gap-1.5">
         {stat.icon && <span className={cn(
           "shrink-0 transition-colors duration-[var(--duration-fast)]",
-          signalActive ? "text-[var(--color-signal)]" : "text-[var(--color-text-faint)]",
+          signalActive ? "text-[var(--color-signal-ink)]" : "text-[var(--color-text-faint)]",
           stat.href && "group-hover:text-[var(--color-primary)]",
         )}>{stat.icon}</span>}
         <span className={cn("text-eyebrow truncate transition-colors duration-[var(--duration-fast)]", stat.href && "group-hover:text-[var(--color-primary)]")}>{stat.label}</span>

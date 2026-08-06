@@ -10,7 +10,7 @@ export default async function TaeResultPage({ params }: { params: Promise<{ toke
   const state = submission.status === "voided"
     ? { icon: <XCircle size={38} className="mx-auto text-[var(--color-danger)]" />, eyebrow: "Carga anulada", title: "Registro sin vigencia", message: submission.reviewNote ?? "Esta carga fue anulada durante la revisión." }
     : submission.status === "observed"
-      ? { icon: <ClockCounterClockwise size={38} className="mx-auto text-[var(--color-signal)]" />, eyebrow: "En revisión", title: "Carga observada", message: submission.reviewNote ?? "El equipo responsable está revisando este registro." }
+      ? { icon: <ClockCounterClockwise size={38} className="mx-auto text-[var(--color-signal-ink)]" />, eyebrow: "En revisión", title: "Carga observada", message: submission.reviewNote ?? "El equipo responsable está revisando este registro." }
       : { icon: <CheckCircle size={38} className="mx-auto text-[var(--color-success)]" />, eyebrow: submission.status === "validated" ? "Carga validada" : "Control TAE", title: "Carga registrada", message: submission.status === "validated" ? "El registro fue revisado y validado." : "El registro fue recibido y está pendiente de revisión." }
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-lg items-center px-4 py-6">

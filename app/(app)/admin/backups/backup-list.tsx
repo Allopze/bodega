@@ -29,7 +29,7 @@ interface Props {
 const STATUS_ICONS = {
   success: { icon: CheckCircle, color: "text-[var(--color-success)]", label: "Exitoso" },
   failed: { icon: XCircle, color: "text-[var(--color-danger)]", label: "Fallido" },
-  running: { icon: Clock, color: "text-[var(--color-warning)]", label: "En progreso" },
+  running: { icon: Clock, color: "text-[var(--color-warning-ink)]", label: "En progreso" },
 } as const
 
 const TRIGGER_LABELS = {
@@ -101,7 +101,7 @@ export function BackupsList({ backups }: Props) {
                           aria-label={`Ver el error de este respaldo: ${b.errorMessage}`}
                           className="ml-1 inline-flex items-center rounded-(--radius-sm) text-xs text-[var(--color-text-muted)]"
                         >
-                          <WarningCircle size={12} className="inline text-[var(--color-warning)]" />
+                          <WarningCircle size={12} className="inline text-[var(--color-warning-ink)]" />
                         </button>
                       </Tooltip>
                     )}
