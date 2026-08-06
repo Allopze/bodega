@@ -1,0 +1,7 @@
+ALTER TABLE "prevention_inspection_answers" DROP CONSTRAINT "prevention_inspection_answer_na_has_comment";--> statement-breakpoint
+ALTER TABLE "prevention_inspection_answers" DROP CONSTRAINT "prevention_inspection_answer_result_valid";--> statement-breakpoint
+ALTER TABLE "prevention_inspection_runs" DROP CONSTRAINT "prevention_inspection_run_counts_nonnegative";--> statement-breakpoint
+ALTER TABLE "prevention_inspection_runs" ADD COLUMN "partial_count" integer DEFAULT 0 NOT NULL;--> statement-breakpoint
+ALTER TABLE "prevention_inspection_answers" ADD CONSTRAINT "prevention_inspection_answer_requires_comment" CHECK ("prevention_inspection_answers"."result" NOT IN ('not_applicable', 'partial') OR length("prevention_inspection_answers"."comment") >= 3);--> statement-breakpoint
+ALTER TABLE "prevention_inspection_answers" ADD CONSTRAINT "prevention_inspection_answer_result_valid" CHECK ("prevention_inspection_answers"."result" IN ('conforming', 'partial', 'non_conforming', 'not_applicable'));--> statement-breakpoint
+ALTER TABLE "prevention_inspection_runs" ADD CONSTRAINT "prevention_inspection_run_counts_nonnegative" CHECK ("prevention_inspection_runs"."conforming_count" >= 0 AND "prevention_inspection_runs"."partial_count" >= 0 AND "prevention_inspection_runs"."non_conforming_count" >= 0 AND "prevention_inspection_runs"."not_applicable_count" >= 0);

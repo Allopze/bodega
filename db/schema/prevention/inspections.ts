@@ -89,6 +89,8 @@ export const preventionInspectionRuns = pgTable("prevention_inspection_runs", {
   cancelledAt:       timestamp("cancelled_at", { withTimezone: true, mode: "string" }),
   cancellationReason: text("cancellation_reason"),
   conformingCount:   integer("conforming_count").notNull().default(0),
+  /** Respuestas 'partial' (escala B/R/M "Regular"). Puntúan 0,5 en `compliancePercent` — ver PARTIAL_STATUS_WEIGHT en lib/sst/compliance.ts. */
+  partialCount:      integer("partial_count").notNull().default(0),
   nonConformingCount: integer("non_conforming_count").notNull().default(0),
   notApplicableCount: integer("not_applicable_count").notNull().default(0),
   compliancePercent: integer("compliance_percent"),
@@ -106,7 +108,7 @@ export const preventionInspectionRuns = pgTable("prevention_inspection_runs", {
   index("prevention_inspection_run_template_idx").on(table.templateId, table.executedAt),
   check("prevention_inspection_run_status_valid", sql`${table.status} IN ('planned', 'in_progress', 'completed', 'reviewed', 'cancelled')`),
   check("prevention_inspection_run_compliance_valid", sql`${table.compliancePercent} IS NULL OR ${table.compliancePercent} BETWEEN 0 AND 100`),
-  check("prevention_inspection_run_counts_nonnegative", sql`${table.conformingCount} >= 0 AND ${table.nonConformingCount} >= 0 AND ${table.notApplicableCount} >= 0`),
+  check("prevention_inspection_run_counts_nonnegative", sql`${table.conformingCount} >= 0 AND ${table.partialCount} >= 0 AND ${table.nonConformingCount} >= 0 AND ${table.notApplicableCount} >= 0`),
   check("prevention_inspection_run_cancel_consistent", sql`(${table.cancelledAt} IS NULL AND ${table.cancelledByUserId} IS NULL) OR (${table.cancelledAt} IS NOT NULL AND ${table.cancelledByUserId} IS NOT NULL AND length(${table.cancellationReason}) >= 5)`),
   check("prevention_inspection_run_review_consistent", sql`(${table.reviewedAt} IS NULL AND ${table.reviewedByUserId} IS NULL) OR (${table.reviewedAt} IS NOT NULL AND ${table.reviewedByUserId} IS NOT NULL)`),
   check("prevention_inspection_run_version_positive", sql`${table.version} >= 1`),
@@ -128,8 +130,18 @@ export const preventionInspectionAnswers = pgTable("prevention_inspection_answer
   updatedAt:        timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [
   uniqueIndex("prevention_inspection_answer_unique").on(table.runId, table.sectionId, table.itemId),
-  check("prevention_inspection_answer_result_valid", sql`${table.result} IN ('conforming', 'non_conforming', 'not_applicable')`),
-  check("prevention_inspection_answer_na_has_comment", sql`${table.result} <> 'not_applicable' OR length(${table.comment}) >= 3`),
+  // 'partial' = escala B/R/M "Regular" (H-04, AUDITORIA_BUGS_2026-08-05.md):
+  // el motor transversal solo tenía cumple/no cumple/no aplica, perdiendo el
+  // estado intermedio que el catálogo de ítems B/R/M (lib/sst/definitions)
+  // declara y que el motor SST (lib/sst/compliance.ts) ya puntúa en 0,5.
+  check("prevention_inspection_answer_result_valid", sql`${table.result} IN ('conforming', 'partial', 'non_conforming', 'not_applicable')`),
+  // 'partial' exige observación igual que 'not_applicable': es la misma regla
+  // que ya rige la escala B/R/M en el motor SST (requiresObservation en
+  // lib/sst/compliance.ts — 'regular' siempre justifica por escrito, ahí
+  // sin distinguir por ítem). 'non_conforming' queda fuera a propósito: ya
+  // se permite sin comentario en este motor y cambiar eso es un ajuste
+  // aparte, no parte de H-04.
+  check("prevention_inspection_answer_requires_comment", sql`${table.result} NOT IN ('not_applicable', 'partial') OR length(${table.comment}) >= 3`),
   check("prevention_inspection_answer_dano_valid", sql`${table.danoPotencial} IS NULL OR ${table.danoPotencial} IN ('leve', 'moderado', 'grave', 'fatal')`),
 ])
 

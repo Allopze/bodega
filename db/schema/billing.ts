@@ -293,7 +293,12 @@ export const billingBankTransactions = pgTable("billing_bank_transactions", {
  * `verificationStatus`:
  *   - `suggested`: el motor propuso la asociación. NO cuenta como cobrado.
  *   - `confirmed`: una persona autorizada la validó. Cuenta como cobrado.
- *   - `rejected`: descartada; se conserva para no volver a proponerla.
+ *   - `rejected`: descartada a propósito; no se vuelve a proponer nunca.
+ *   - `reverted`: una confirmación que se deshizo por error. No cuenta como
+ *     cobrado, pero **sí** vuelve a ser proponible: descartar es una decisión
+ *     sobre el vínculo, revertir es corregir un error de dedo, y tratarlos
+ *     igual dejaba el movimiento inimputable para siempre contra esa factura
+ *     (H-15, AUDITORIA_BUGS_2026-08-05.md).
  */
 export const billingInvoicePayments = pgTable("billing_invoice_payments", {
   id:                 text("id").primaryKey(),
@@ -311,7 +316,7 @@ export const billingInvoicePayments = pgTable("billing_invoice_payments", {
   /** Id de la transacción en la fuente externa, si aplica. */
   externalTransactionId: text("external_transaction_id"),
 
-  verificationStatus: text("verification_status").notNull().$type<"suggested" | "confirmed" | "rejected">().default("suggested"),
+  verificationStatus: text("verification_status").notNull().$type<"suggested" | "confirmed" | "rejected" | "reverted">().default("suggested"),
   confidence:         text("confidence").$type<"high" | "medium" | "low">(),
   /** Qué sustenta la sugerencia: monto, RUT, folio en la glosa… */
   evidence:           jsonb("evidence").notNull().default(sql`'{}'::jsonb`),
@@ -334,7 +339,7 @@ export const billingInvoicePayments = pgTable("billing_invoice_payments", {
   // Un movimiento bancario no puede imputarse dos veces a la misma factura.
   uniqueIndex("billing_invoice_payments_invoice_bank_tx_unique")
     .on(table.invoiceId, table.bankTransactionId),
-  check("billing_invoice_payments_status_valid", sql`${table.verificationStatus} IN ('suggested', 'confirmed', 'rejected')`),
+  check("billing_invoice_payments_status_valid", sql`${table.verificationStatus} IN ('suggested', 'confirmed', 'rejected', 'reverted')`),
   check("billing_invoice_payments_matched_by_valid", sql`${table.matchedBy} IN ('auto', 'user')`),
   check("billing_invoice_payments_source_valid", sql`${table.source} IN ${sql.raw(PROVIDER_SQL)}`),
   check("billing_invoice_payments_confidence_valid", sql`${table.confidence} IS NULL OR ${table.confidence} IN ('high', 'medium', 'low')`),

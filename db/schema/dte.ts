@@ -42,6 +42,14 @@ export const dteSyncRuns = pgTable("dte_sync_runs", {
   index("dte_sync_runs_periodo_idx").on(table.periodo),
   index("dte_sync_runs_status_idx").on(table.status),
   index("dte_sync_runs_started_idx").on(table.startedAt),
+  // Una sola corrida `running` por (empresa, período): el cron y el botón de
+  // administración disparándose a la vez raspaban el portal dos veces y la
+  // segunda contabilizaba fallos falsos al chocar con `dte_documents_unique_key`.
+  // Mismo patrón que `billing_sync_runs_single_active_unique` (H-10,
+  // AUDITORIA_BUGS_2026-08-05.md).
+  uniqueIndex("dte_sync_runs_single_active_unique")
+    .on(table.codEmp, table.periodo)
+    .where(sql`${table.status} = 'running'`),
 ])
 
 /* ── DTE Documents (documentos tributarios sincronizados) ─────────────────── */

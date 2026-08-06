@@ -9,6 +9,12 @@ export const worksites = pgTable("worksites", {
   code:      text("code").notNull().unique(),   // e.g. "FN-001"
   address:   text("address"),
   region:    text("region"),
+  /**
+   * Título del cargo `admin_contrato` en el contrato de esta faena:
+   * "Administrador de contrato" o "Supervisor de faena" son la misma persona.
+   * Null = usar el nombre por defecto (ver `lib/prevention/admin-contrato-label`).
+   */
+  adminContratoLabel: text("admin_contrato_label"),
   isActive:  boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
