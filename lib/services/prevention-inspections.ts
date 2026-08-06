@@ -24,6 +24,7 @@ import {
   assessRunReview,
   capaPriorityForCriticality,
   deriveFindings,
+  fieldKindAcceptsPartial,
   summarizeCompliance,
   FREQUENCY_INTERVAL_DAYS,
   type InspectionAnswerInput,
@@ -123,6 +124,9 @@ export function itemsFromDefinition(definition: ChecklistDefinition): Inspection
         required: item.required ?? false,
         countsForCompliance: section.countsForCompliance ?? true,
         danoPotencial: item.danoPotencial ?? null,
+        // H-04 (AUDITORIA_BUGS_2026-08-05.md): antes se descartaba acá, y el
+        // motor perdía la escala B/R/M del ítem sin poder ofrecer 'partial'.
+        kind: item.kind,
       })
     }
   }
@@ -347,7 +351,7 @@ const answersSchema = z.object({
   answers: z.array(z.object({
     sectionId: z.string().min(1),
     itemId: z.string().min(1),
-    result: z.enum(["conforming", "non_conforming", "not_applicable"]),
+    result: z.enum(["conforming", "partial", "non_conforming", "not_applicable"]),
     value: z.string().trim().max(2000).nullable().optional(),
     comment: z.string().trim().max(2000).nullable().optional(),
     evidenceReference: z.string().trim().max(2000).nullable().optional(),
@@ -371,10 +375,16 @@ export async function saveInspectionAnswers(input: unknown, access: InspectionAc
       .where(eq(preventionInspectionTemplates.id, run.templateId)).limit(1)
     if (!template) throw new Error(NOT_FOUND)
     const items = itemsFromDefinition(template.definitionSnapshot as unknown as ChecklistDefinition)
-    const known = new Set(items.map((item) => `${item.sectionId}::${item.itemId}`))
+    const itemBySpec = new Map(items.map((item) => [`${item.sectionId}::${item.itemId}`, item]))
     for (const answer of data.answers) {
-      if (!known.has(`${answer.sectionId}::${answer.itemId}`)) {
+      const item = itemBySpec.get(`${answer.sectionId}::${answer.itemId}`)
+      if (!item) {
         throw new Error("Una respuesta no corresponde a ningún ítem de la plantilla.")
+      }
+      // 'partial' (Regular) sólo existe en la escala B/R/M — aceptarlo en un
+      // ítem cumple/no-cumple inventaría un estado que ese ítem no tiene.
+      if (answer.result === "partial" && !fieldKindAcceptsPartial(item.kind)) {
+        throw new Error(`"${item.label}" no admite la respuesta "Regular".`)
       }
     }
 
@@ -478,6 +488,7 @@ export async function completeInspectionRun(input: unknown, access: InspectionAc
       executedByUserId: access.userId,
       executedAt: now,
       conformingCount: summary.conforming,
+      partialCount: summary.partial,
       nonConformingCount: summary.nonConforming,
       notApplicableCount: summary.notApplicable,
       compliancePercent: summary.compliancePercent,

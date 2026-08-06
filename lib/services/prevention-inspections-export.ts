@@ -51,12 +51,12 @@ export async function buildInspectionExport(access: InspectionAccess): Promise<R
   const sheets: ReportSheet[] = [
     sheet(
       "Inspecciones",
-      ["Código", "Plantilla", "Tipo", "Faena", "Sujeto", "Estado", "Ejecutada", "Ejecutó", "Revisó", "Cumple", "No cumple", "No aplica", "Cumplimiento %", "Comentario de revisión"],
+      ["Código", "Plantilla", "Tipo", "Faena", "Sujeto", "Estado", "Ejecutada", "Ejecutó", "Revisó", "Cumple", "Regular", "No cumple", "No aplica", "Cumplimiento %", "Comentario de revisión"],
       runs.map((row) => [
         safeCell(row.run.code), safeCell(row.templateName), label(INSPECTION_KIND_LABELS, row.templateKind),
         safeCell(row.worksiteName), safeCell(row.run.subjectLabel), label(INSPECTION_RUN_STATUS_LABELS, row.run.status),
         row.run.executedAt, safeCell(row.run.executedByUserId), safeCell(row.run.reviewedByUserId),
-        row.run.conformingCount, row.run.nonConformingCount, row.run.notApplicableCount,
+        row.run.conformingCount, row.run.partialCount, row.run.nonConformingCount, row.run.notApplicableCount,
         row.run.compliancePercent === null ? "No calculable" : row.run.compliancePercent,
         safeCell(row.run.reviewComment),
       ]),

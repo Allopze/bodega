@@ -1,3 +1,6 @@
+import { PARTIAL_STATUS_WEIGHT } from "@/lib/sst/compliance"
+import type { FieldKind } from "@/lib/sst/types"
+
 export const INSPECTION_KIND_LABELS: Record<string, string> = {
   inspection: "Inspección",
   observation: "Observación planeada",
@@ -14,6 +17,9 @@ export const INSPECTION_RUN_STATUS_LABELS: Record<string, string> = {
 
 export const INSPECTION_RESULT_LABELS: Record<string, string> = {
   conforming: "Cumple",
+  // "Regular" (escala B/R/M): puntúa 0,5 — ver PARTIAL_STATUS_WEIGHT en
+  // lib/sst/compliance.ts. H-04, AUDITORIA_BUGS_2026-08-05.md.
+  partial: "Regular",
   non_conforming: "No cumple",
   not_applicable: "No aplica",
 }
@@ -62,6 +68,19 @@ export function runStatusBadgeVariant(status: string): "default" | "info" | "suc
   return "default"
 }
 
+/**
+ * Variante del badge de una respuesta. 'partial' tiene su propia rama a
+ * propósito: antes de H-04 un estado no reconocido caía al `else` de
+ * "success" (verde) por accidente — exactamente el riesgo que introducir un
+ * estado nuevo sin actualizar este mapeo habría repetido.
+ */
+export function resultBadgeVariant(result: string): "success" | "warning" | "danger" | "outline" {
+  if (result === "non_conforming") return "danger"
+  if (result === "partial") return "warning"
+  if (result === "not_applicable") return "outline"
+  return "success"
+}
+
 export function criticalityBadgeVariant(criticality: string): "default" | "warning" | "danger" {
   if (criticality === "critical" || criticality === "high") return "danger"
   if (criticality === "medium") return "warning"
@@ -107,6 +126,18 @@ export function capaPriorityForCriticality(criticality: string): {
   }
 }
 
+/** Ítems con escala B/R/M (Bueno/Regular/Malo): los únicos que admiten 'partial'. */
+const BRM_KINDS: readonly FieldKind[] = [
+  "bueno_regular_malo_obs",
+  "bueno_regular_malo_na_obs",
+  "bueno_regular_malo_na_nt_obs",
+]
+
+/** ¿Este tipo de ítem admite la respuesta intermedia 'partial' (Regular)? */
+export function fieldKindAcceptsPartial(kind: FieldKind | null | undefined): boolean {
+  return kind !== null && kind !== undefined && BRM_KINDS.includes(kind)
+}
+
 export interface InspectionItemSpec {
   sectionId: string
   itemId: string
@@ -114,25 +145,37 @@ export interface InspectionItemSpec {
   required: boolean
   countsForCompliance: boolean
   danoPotencial?: string | null
+  /**
+   * Tipo de campo del catálogo SST (lib/sst/types.ts). Determina si el ítem
+   * admite 'partial' — sin esto se perdía la escala B/R/M al aplanar la
+   * definición (H-04, AUDITORIA_BUGS_2026-08-05.md).
+   */
+  kind?: FieldKind
 }
 
 export interface InspectionAnswerInput {
   sectionId: string
   itemId: string
-  result: "conforming" | "non_conforming" | "not_applicable"
+  result: "conforming" | "partial" | "non_conforming" | "not_applicable"
   comment?: string | null
 }
 
 export interface ComplianceSummary {
   conforming: number
+  /** Respuestas 'partial' (Regular, escala B/R/M). Puntúan 0,5 en `compliancePercent`. */
+  partial: number
   nonConforming: number
   notApplicable: number
   /**
    * Porcentaje sobre los ítems que cuentan para cumplimiento y fueron
-   * respondidos como cumple/no cumple. Los "no aplica" salen del denominador:
-   * incluirlos castigaría o premiaría según cuántos ítems no correspondan.
-   * Sin ítems evaluables devuelve `null`, no 0: no es cero cumplimiento, es
-   * cumplimiento no calculable.
+   * respondidos como cumple/regular/no cumple. Los "no aplica" salen del
+   * denominador: incluirlos castigaría o premiaría según cuántos ítems no
+   * correspondan. Sin ítems evaluables devuelve `null`, no 0: no es cero
+   * cumplimiento, es cumplimiento no calculable.
+   *
+   * Misma fórmula que `calculateCompliance` en lib/sst/compliance.ts —
+   * (cumplidos + 0,5·regulares) / total — para que un mismo checklist B/R/M
+   * puntúe igual sin importar por qué motor pasó (H-04).
    */
   compliancePercent: number | null
 }
@@ -140,28 +183,32 @@ export interface ComplianceSummary {
 export function summarizeCompliance(items: InspectionItemSpec[], answers: InspectionAnswerInput[]): ComplianceSummary {
   const spec = new Map(items.map((item) => [`${item.sectionId}::${item.itemId}`, item]))
   let conforming = 0
+  let partial = 0
   let nonConforming = 0
   let notApplicable = 0
   let scored = 0
-  let scoredConforming = 0
+  let scoredPoints = 0
 
   for (const answer of answers) {
     const item = spec.get(`${answer.sectionId}::${answer.itemId}`)
     if (answer.result === "conforming") conforming += 1
+    else if (answer.result === "partial") partial += 1
     else if (answer.result === "non_conforming") nonConforming += 1
     else notApplicable += 1
 
     if (!item?.countsForCompliance) continue
     if (answer.result === "not_applicable") continue
     scored += 1
-    if (answer.result === "conforming") scoredConforming += 1
+    if (answer.result === "conforming") scoredPoints += 1
+    else if (answer.result === "partial") scoredPoints += PARTIAL_STATUS_WEIGHT
   }
 
   return {
     conforming,
+    partial,
     nonConforming,
     notApplicable,
-    compliancePercent: scored === 0 ? null : Math.round((scoredConforming / scored) * 100),
+    compliancePercent: scored === 0 ? null : Math.round((scoredPoints / scored) * 100),
   }
 }
 
@@ -191,7 +238,7 @@ export function deriveFindings(items: InspectionItemSpec[], answers: InspectionA
 }
 
 export interface CompletionBlocker {
-  kind: "missing_required" | "missing_na_reason"
+  kind: "missing_required" | "missing_na_reason" | "missing_partial_reason"
   detail: string
 }
 
@@ -219,6 +266,11 @@ export function assessRunCompletion(items: InspectionItemSpec[], answers: Inspec
     }
     if (answer.result === "not_applicable" && (answer.comment?.trim().length ?? 0) < 3) {
       blockers.push({ kind: "missing_na_reason", detail: item.label })
+    }
+    // 'Regular' (escala B/R/M) exige justificarse por escrito, igual que en
+    // el motor SST — ver requiresObservation en lib/sst/compliance.ts.
+    if (answer.result === "partial" && (answer.comment?.trim().length ?? 0) < 3) {
+      blockers.push({ kind: "missing_partial_reason", detail: item.label })
     }
   }
   return { allowed: blockers.length === 0, blockers }

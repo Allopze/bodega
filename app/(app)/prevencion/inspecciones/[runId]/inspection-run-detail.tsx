@@ -18,6 +18,7 @@ import {
   INSPECTION_KIND_LABELS,
   INSPECTION_RESULT_LABELS,
   INSPECTION_RUN_STATUS_LABELS,
+  resultBadgeVariant,
   runStatusBadgeVariant,
   summarizeCompliance,
   type InspectionAnswerInput,
@@ -44,6 +45,7 @@ interface RunInfo {
   reviewedAt: string | null
   reviewComment: string | null
   conformingCount: number
+  partialCount: number
   nonConformingCount: number
   notApplicableCount: number
   compliancePercent: number | null
@@ -80,7 +82,7 @@ interface FindingInfo {
   capaActionId: string | null
 }
 
-type ResultValue = "" | "conforming" | "non_conforming" | "not_applicable"
+type ResultValue = "" | "conforming" | "partial" | "non_conforming" | "not_applicable"
 interface Draft { result: ResultValue; comment: string }
 
 interface Props {
@@ -219,7 +221,9 @@ export function InspectionRunDetail({
                   {section.items.map((item) => {
                     const key = draftKey(section.id, item.id)
                     const draft = drafts[key] ?? { result: "" as ResultValue, comment: "" }
-                    const needsComment = draft.result === "not_applicable"
+                    // 'Regular' exige justificarse por escrito igual que 'No aplica'
+                    // — mismo criterio que el motor SST (requiresObservation).
+                    const needsComment = draft.result === "not_applicable" || draft.result === "partial"
                     return (
                       <TableRow key={item.id}>
                         <TableCell className="text-sm">
@@ -236,7 +240,7 @@ export function InspectionRunDetail({
                               </SelectContent>
                             </Select>
                           ) : draft.result ? (
-                            <Badge variant={draft.result === "non_conforming" ? "danger" : draft.result === "not_applicable" ? "outline" : "success"}>
+                            <Badge variant={resultBadgeVariant(draft.result)}>
                               {INSPECTION_RESULT_LABELS[draft.result] ?? draft.result}
                             </Badge>
                           ) : "—"}
@@ -246,7 +250,7 @@ export function InspectionRunDetail({
                             <Input
                               value={draft.comment}
                               onChange={(event) => update(section.id, item.id, { comment: event.target.value })}
-                              placeholder={needsComment ? "Motivo por el que no aplica (mínimo 3 caracteres)" : "Opcional"}
+                              placeholder={needsComment ? (draft.result === "partial" ? "Motivo del Regular (mínimo 3 caracteres)" : "Motivo por el que no aplica (mínimo 3 caracteres)") : "Opcional"}
                               aria-label={`Comentario de ${item.label}`}
                             />
                           ) : (

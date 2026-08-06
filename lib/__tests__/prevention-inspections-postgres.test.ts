@@ -7,6 +7,7 @@ import { migrate } from "drizzle-orm/postgres-js/migrator"
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest"
 import * as schema from "@/db/schema"
 import type { WorksiteScope } from "@/lib/auth/scope"
+import type { InspectionItemSpec } from "@/lib/prevention/inspections"
 import {
   assertSafeDestructiveDatabase,
   getDatabaseNameFromUrl,
@@ -41,7 +42,7 @@ describeIf("Motor de inspecciones on real PostgreSQL", () => {
   let templateVersion = 1
   let runId = ""
   let runVersion = 1
-  let itemsCache: { sectionId: string; itemId: string; required: boolean; danoPotencial?: string | null }[] = []
+  let itemsCache: InspectionItemSpec[] = []
 
   beforeAll(async () => {
     assertSafeDestructiveDatabase({ databaseUrl: databaseUrl!, allowDestructiveReset: canReset, context: "PREVENTION_INSPECTIONS" })
@@ -284,6 +285,66 @@ describeIf("Motor de inspecciones on real PostgreSQL", () => {
     const service = await import("@/lib/services/prevention-inspections")
     expect(await service.listInspectionRuns(OUTSIDER)).toEqual([])
     expect(await service.getInspectionRunDetail(runId, OUTSIDER)).toBeNull()
+  })
+
+  // H-04 (AUDITORIA_BUGS_2026-08-05.md): el motor transversal recupera la
+  // escala B/R/M ("Regular" = 'partial') que antes se perdía al aplanar la
+  // definición. El template de extintores (arriba) es cumple/no-cumple puro:
+  // sirve para probar el rechazo. inspeccion_carros es 100% B/R/M: prueba el
+  // camino feliz end-to-end.
+  it("rejects 'partial' on an item whose scale does not support it", async () => {
+    const service = await import("@/lib/services/prevention-inspections")
+    const { fieldKindAcceptsPartial } = await import("@/lib/prevention/inspections")
+    // Run propio, no el `runId` compartido: para este punto de la suite ya
+    // quedó "reviewed" (cerrado) por los tests de revisión de más abajo.
+    const created = await service.createInspectionRun({ templateId, worksiteId: "ws-in-a" }, AUTHOR)
+    // El template de extintores es cumple/no-cumple puro (§80-92): ningún
+    // ítem admite 'partial'.
+    const target = itemsCache.find((item) => !fieldKindAcceptsPartial(item.kind))!
+    expect(target).toBeDefined()
+    await expect(service.saveInspectionAnswers({
+      runId: created.run.id, answers: [{ sectionId: target.sectionId, itemId: target.itemId, result: "partial", comment: "Desgaste menor." }],
+    }, AUTHOR)).rejects.toThrow(/no admite la respuesta "Regular"/)
+  })
+
+  it("persists 'partial' end-to-end on a B/R/M template and scores it at 0.5", async () => {
+    const service = await import("@/lib/services/prevention-inspections")
+    const template = await service.importInspectionTemplate({ definitionCode: "inspeccion_carros" }, AUTHOR)
+    const approved = await service.approveInspectionTemplate({
+      templateId: template.id, expectedVersion: template.version,
+      reason: "Contenido revisado y conforme al estándar de la faena.",
+    }, APPROVER)
+
+    const created = await service.createInspectionRun({
+      templateId: approved.id, worksiteId: "ws-in-a", subjectLabel: "Carro CR-04",
+    }, AUTHOR)
+    const brmItems = service.itemsFromDefinition(approved.definitionSnapshot as never)
+    expect(brmItems.length).toBeGreaterThanOrEqual(3)
+
+    // 1 Bueno, 1 Regular, resto Bueno: exactamente el caso que antes de H-04
+    // el motor no podía siquiera registrar.
+    const answers = brmItems.map((item, index) => ({
+      sectionId: item.sectionId,
+      itemId: item.itemId,
+      result: index === 1 ? "partial" as const : "conforming" as const,
+      comment: index === 1 ? "Desgaste menor, aún operativo." : null,
+    }))
+    await service.saveInspectionAnswers({ runId: created.run.id, answers }, AUTHOR)
+
+    const [before] = await getDb().select().from(schema.preventionInspectionRuns)
+      .where(eq(schema.preventionInspectionRuns.id, created.run.id))
+    const result = await service.completeInspectionRun({ runId: created.run.id, expectedVersion: before!.version }, AUTHOR)
+
+    expect(result.run.partialCount).toBe(1)
+    expect(result.run.conformingCount).toBe(brmItems.length - 1)
+    // (n-1 + 0.5) / n, redondeado — misma fórmula que lib/sst/compliance.ts.
+    const expected = Math.round(((brmItems.length - 1 + 0.5) / brmItems.length) * 100)
+    expect(result.compliancePercent).toBe(expected)
+
+    const [stored] = await getDb().select().from(schema.preventionInspectionRuns)
+      .where(eq(schema.preventionInspectionRuns.id, created.run.id))
+    expect(stored!.partialCount).toBe(1)
+    expect(stored!.compliancePercent).toBe(expected)
   })
 })
 

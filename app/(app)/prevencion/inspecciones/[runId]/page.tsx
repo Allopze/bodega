@@ -54,6 +54,7 @@ export default async function InspeccionPage({ params }: { params: Promise<{ run
           reviewedAt: detail.run.reviewedAt,
           reviewComment: detail.run.reviewComment,
           conformingCount: detail.run.conformingCount,
+          partialCount: detail.run.partialCount,
           nonConformingCount: detail.run.nonConformingCount,
           notApplicableCount: detail.run.notApplicableCount,
           compliancePercent: detail.run.compliancePercent,

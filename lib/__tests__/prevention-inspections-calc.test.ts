@@ -6,10 +6,13 @@ import {
   capaPriorityForCriticality,
   criticalityFromDanoPotencial,
   deriveFindings,
+  fieldKindAcceptsPartial,
+  resultBadgeVariant,
   summarizeCompliance,
   type InspectionAnswerInput,
   type InspectionItemSpec,
 } from "@/lib/prevention/inspections"
+import { calculateCompliance } from "@/lib/sst/compliance"
 
 const item = (over: Partial<InspectionItemSpec> = {}): InspectionItemSpec => ({
   sectionId: "s1",
@@ -87,6 +90,46 @@ describe("cálculo de cumplimiento", () => {
     const answers = [answer(), answer({ itemId: "i2" }), answer({ itemId: "i3", result: "non_conforming" })]
     expect(summarizeCompliance(items, answers).compliancePercent).toBe(67)
   })
+
+  describe("'partial' (Regular, escala B/R/M) — H-04, AUDITORIA_BUGS_2026-08-05.md", () => {
+    it("puntúa 0,5, no 0 ni 1: 8 buenos y 2 regulares de 10 dan 90%, no 80% ni 100%", () => {
+      const items = Array.from({ length: 10 }, (_, i) => item({ itemId: `i${i}` }))
+      const answers = [
+        ...Array.from({ length: 8 }, (_, i) => answer({ itemId: `i${i}`, result: "conforming" as const })),
+        ...Array.from({ length: 2 }, (_, i) => answer({ itemId: `i${i + 8}`, result: "partial" as const, comment: "Desgaste menor." })),
+      ]
+      const summary = summarizeCompliance(items, answers)
+      expect(summary.partial).toBe(2)
+      expect(summary.compliancePercent).toBe(90)
+    })
+
+    it("puntúa exactamente igual que el motor SST (lib/sst/compliance.ts) para el mismo Anexo B/R/M", () => {
+      const items = Array.from({ length: 10 }, (_, i) => item({ itemId: `i${i}` }))
+      const answers = [
+        ...Array.from({ length: 8 }, (_, i) => answer({ itemId: `i${i}`, result: "conforming" as const })),
+        ...Array.from({ length: 2 }, (_, i) => answer({ itemId: `i${i + 8}`, result: "partial" as const, comment: "Desgaste menor." })),
+      ]
+      const transversal = summarizeCompliance(items, answers).compliancePercent
+
+      // Mismo checklist, evaluado por el motor SST con su propio vocabulario
+      // (cumple/regular/no_cumple en vez de conforming/partial/non_conforming).
+      const sstRespuestas = [
+        ...Array.from({ length: 8 }, () => ({ estado: "cumple" as const })),
+        ...Array.from({ length: 2 }, () => ({ estado: "regular" as const })),
+      ]
+      const sst = Math.round(calculateCompliance(sstRespuestas).percentage)
+
+      expect(transversal).toBe(sst)
+    })
+
+    it("cuenta 'partial' aparte de cumple y no cumple", () => {
+      const summary = summarizeCompliance(
+        [item(), item({ itemId: "i2" }), item({ itemId: "i3" })],
+        [answer(), answer({ itemId: "i2", result: "partial", comment: "Observación." }), answer({ itemId: "i3", result: "non_conforming" })],
+      )
+      expect(summary).toMatchObject({ conforming: 1, partial: 1, nonConforming: 1 })
+    })
+  })
 })
 
 describe("derivación de hallazgos", () => {
@@ -150,6 +193,36 @@ describe("cierre de la ejecución", () => {
   it("un 'no aplica' con motivo pasa", () => {
     const result = assessRunCompletion([item()], [answer({ result: "not_applicable", comment: "Equipo retirado de servicio." })])
     expect(result.allowed).toBe(true)
+  })
+
+  it("un 'partial' (Regular) sin motivo bloquea, igual que 'no aplica'", () => {
+    const result = assessRunCompletion([item()], [answer({ result: "partial" })])
+    expect(result.blockers[0]?.kind).toBe("missing_partial_reason")
+  })
+
+  it("un 'partial' con motivo pasa", () => {
+    const result = assessRunCompletion([item()], [answer({ result: "partial", comment: "Desgaste menor, aún operativo." })])
+    expect(result.allowed).toBe(true)
+  })
+})
+
+describe("estado 'partial' — qué ítems lo admiten y cómo se muestra", () => {
+  it("sólo los tres tipos B/R/M admiten 'partial'", () => {
+    expect(fieldKindAcceptsPartial("bueno_regular_malo_obs")).toBe(true)
+    expect(fieldKindAcceptsPartial("bueno_regular_malo_na_obs")).toBe(true)
+    expect(fieldKindAcceptsPartial("bueno_regular_malo_na_nt_obs")).toBe(true)
+    expect(fieldKindAcceptsPartial("cumple_nocumple_obs")).toBe(false)
+    expect(fieldKindAcceptsPartial(undefined)).toBe(false)
+  })
+
+  it("'partial' tiene su propia variante de badge, no cae al 'success' por defecto", () => {
+    // H-04: antes de agregar 'partial' al mapeo, un estado no reconocido caía
+    // al `else` de "success" (verde) por accidente — el bug de UI que el
+    // hallazgo señala explícitamente.
+    expect(resultBadgeVariant("partial")).not.toBe("success")
+    expect(resultBadgeVariant("conforming")).toBe("success")
+    expect(resultBadgeVariant("non_conforming")).toBe("danger")
+    expect(resultBadgeVariant("not_applicable")).toBe("outline")
   })
 })
 
