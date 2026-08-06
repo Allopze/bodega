@@ -26,8 +26,13 @@ export default defineConfig({
     server: { deps: { inline: ["next-auth"] } },
     // Secuencial: PGlite satura CPU en paralelo
     fileParallelism: false,
-    testTimeout: 20_000,
-    hookTimeout: 30_000,
+    // 60 s y no 20: estos tests levantan un Postgres WASM y le corren las
+    // migraciones completas, y bajo `--coverage` —que es como los ejecuta el
+    // CI— la instrumentación de V8 los frena lo suficiente como para que
+    // `prevention-pdtp` cruce el límite. El margen es para la instrumentación,
+    // no para tests lentos: si uno tarda de verdad 60 s, hay que mirarlo.
+    testTimeout: 60_000,
+    hookTimeout: 60_000,
     // Cobertura apagada por defecto (instrumentar cuesta y `npm run
     // test:pglite` es el gate de CI, no una medición). Se enciende con
     // `--coverage` desde `test:coverage:all`, que combina este proyecto con el
