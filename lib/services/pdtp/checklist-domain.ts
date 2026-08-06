@@ -122,19 +122,30 @@ export function pdtpActionPlanFollowupId() {
   return nanoid()
 }
 
-/** Suma hoy (ISO date) para calcular plazo desde prioridad. */
+/**
+ * Día calendario chileno de un instante. toISOString() (UTC) rota 3-4 h antes
+ * que el calendario de Chile: marcaba acciones vencidas la tarde previa a su
+ * plazo y corría un día los plazos generados de noche.
+ */
+function chileDateIso(date: Date): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Santiago",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(date)
+}
+
+/** Suma hoy (ISO date, calendario Chile) para calcular plazo desde prioridad. */
 export function plazoFromPrioridad(prioridad: string, fromDate = new Date()): string {
   const dias = PDTP_PLAZO_DIAS_POR_PRIORIDAD[prioridad] ?? 7
-  const d = new Date(fromDate)
-  d.setDate(d.getDate() + dias)
+  const d = new Date(`${chileDateIso(fromDate)}T00:00:00Z`)
+  d.setUTCDate(d.getUTCDate() + dias)
   return d.toISOString().slice(0, 10)
 }
 
-/** Determina si una acción está vencida (plazo < hoy y no está cerrada). */
+/** Determina si una acción está vencida (plazo < hoy en Chile y no está cerrada). */
 export function isActionVencida(estado: string, plazo: string, today = new Date()): boolean {
   if (PDTP_ESTADOS_CERRADOS.has(estado)) return false
-  const plazoDate = new Date(plazo + "T00:00:00")
-  const todayStr = today.toISOString().slice(0, 10)
-  const todayDate = new Date(todayStr + "T00:00:00")
-  return plazoDate < todayDate
+  return plazo < chileDateIso(today)
 }

@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, isNull, or } from "drizzle-orm"
+import { and, desc, eq, inArray, isNull, or, sql } from "drizzle-orm"
 import { db } from "@/db"
 import { nanoid } from "@/lib/id"
 import {
@@ -323,30 +323,36 @@ async function createPdtpProgramAttempt(input: LegacyPdtpProgramCreateInput, now
 }
 
 export async function updatePdtpProgram(programId: string, input: { title?: string; complianceTarget?: number }, userId: string) {
-  const [program] = await db.select().from(pdtpPrograms).where(eq(pdtpPrograms.id, programId)).limit(1)
-  if (!program) throw new Error("Programa PDTP no encontrado.")
-  assertPdtpProgramEditableState(program)
+  // Lock + re-chequeo dentro de la transacción: sin esto, un submit-a-revisión
+  // concurrente podía confirmar entre el SELECT plano y el UPDATE, mutando un
+  // programa ya bloqueado (mismo patrón que el resto del módulo).
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`SELECT id FROM ${pdtpPrograms} WHERE id = ${programId} FOR UPDATE`)
+    const [program] = await tx.select().from(pdtpPrograms).where(eq(pdtpPrograms.id, programId)).limit(1)
+    if (!program) throw new Error("Programa PDTP no encontrado.")
+    assertPdtpProgramEditableState(program)
 
-  const now = new Date().toISOString()
-  const before: Record<string, unknown> = {}
-  const after: Record<string, unknown> = {}
-  const updates: Partial<typeof pdtpPrograms.$inferInsert> = { updatedAt: now }
+    const now = new Date().toISOString()
+    const before: Record<string, unknown> = {}
+    const after: Record<string, unknown> = {}
+    const updates: Partial<typeof pdtpPrograms.$inferInsert> = { updatedAt: now }
 
-  if (input.title !== undefined && input.title !== program.title) {
-    before.title = program.title; after.title = input.title; updates.title = input.title
-  }
-  if (input.complianceTarget !== undefined && input.complianceTarget !== program.complianceTarget) {
-    before.complianceTarget = program.complianceTarget; after.complianceTarget = input.complianceTarget
-    updates.complianceTarget = input.complianceTarget
-  }
+    if (input.title !== undefined && input.title !== program.title) {
+      before.title = program.title; after.title = input.title; updates.title = input.title
+    }
+    if (input.complianceTarget !== undefined && input.complianceTarget !== program.complianceTarget) {
+      before.complianceTarget = program.complianceTarget; after.complianceTarget = input.complianceTarget
+      updates.complianceTarget = input.complianceTarget
+    }
 
-  const [updated] = await db.update(pdtpPrograms).set(updates).where(eq(pdtpPrograms.id, programId)).returning()
-  if (!updated) throw new Error("No se pudo actualizar el programa PDTP.")
+    const [updated] = await tx.update(pdtpPrograms).set(updates).where(eq(pdtpPrograms.id, programId)).returning()
+    if (!updated) throw new Error("No se pudo actualizar el programa PDTP.")
 
-  if (Object.keys(after).length > 0) {
-    await addPdtpChangeLogEntry(programId, program.version, userId, "metadata", before, after, "Metadatos actualizados.")
-  }
-  return updated
+    if (Object.keys(after).length > 0) {
+      await addPdtpChangeLogEntry(programId, program.version, userId, "metadata", before, after, "Metadatos actualizados.", tx)
+    }
+    return updated
+  })
 }
 
 export async function listPdtpPrograms(opts?: { status?: string; year?: number }) {
@@ -362,13 +368,18 @@ export async function getPdtpProgram(programId: string) {
 }
 
 export async function deletePdtpProgram(programId: string) {
-  const [program] = await db.select().from(pdtpPrograms).where(eq(pdtpPrograms.id, programId)).limit(1)
-  if (!program) throw new Error("Programa PDTP no encontrado.")
-  assertPdtpProgramEditableState(program)
+  // Lock + re-chequeo: borrar en carrera con un submit-a-revisión cascadearía
+  // hojas/actividades/ejecuciones de un programa que ya entró a revisión.
+  await db.transaction(async (tx) => {
+    await tx.execute(sql`SELECT id FROM ${pdtpPrograms} WHERE id = ${programId} FOR UPDATE`)
+    const [program] = await tx.select().from(pdtpPrograms).where(eq(pdtpPrograms.id, programId)).limit(1)
+    if (!program) throw new Error("Programa PDTP no encontrado.")
+    assertPdtpProgramEditableState(program)
 
-  // El delete cascadea a hojas/actividades/schedule/ejecuciones/overrides/
-  // change_log (FK ON DELETE CASCADE). No escribimos un changelog "programa
-  // eliminado" después: el programa ya no existe, y la fila violaría su
-  // propia FK (además, el cascade ya borró el historial previo).
-  await db.delete(pdtpPrograms).where(eq(pdtpPrograms.id, programId))
+    // El delete cascadea a hojas/actividades/schedule/ejecuciones/overrides/
+    // change_log (FK ON DELETE CASCADE). No escribimos un changelog "programa
+    // eliminado" después: el programa ya no existe, y la fila violaría su
+    // propia FK (además, el cascade ya borró el historial previo).
+    await tx.delete(pdtpPrograms).where(eq(pdtpPrograms.id, programId))
+  })
 }

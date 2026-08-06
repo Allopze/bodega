@@ -211,6 +211,9 @@ export function ImportExcelSection({ programId, visibleWorksites }: ImportExcelS
               </details>
             )}
           </div>
+          {/* Son la razón por la que "Aplicar lote" está deshabilitado: sin
+              pintarlos el usuario no sabía qué corregir del archivo. */}
+          {preview.blockingErrors.length > 0 && <ul className="space-y-1 rounded-lg border border-[var(--color-danger-line)] bg-[var(--color-danger-tint)] px-3 py-2 text-xs text-[var(--color-danger-ink)]">{preview.blockingErrors.map((error) => <li key={error}>• {error}</li>)}</ul>}
           {preview.warnings.length > 0 && <ul className="space-y-1 rounded-lg border border-[var(--color-warning-line)] bg-[var(--color-warning-tint)] px-3 py-2 text-xs text-[var(--color-warning-ink)]">{preview.warnings.map((warning) => <li key={warning}>• {warning}</li>)}</ul>}
 
           {preview.counts.executedCells > 0 && (

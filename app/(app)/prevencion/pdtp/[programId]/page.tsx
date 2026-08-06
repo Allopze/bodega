@@ -33,6 +33,7 @@ import { PdtpSheetPicker, PdtpViewToggle, PdtpWorksitePicker } from "../pdtp-she
 import { PdtpIndicatorsPanel } from "../pdtp-indicators-panel"
 import { PdtpImportExcelDialog } from "../pdtp-import-excel-dialog"
 import { resolveSelectedWorksiteId } from "../pdtp-context"
+import type { PdtpActivityStatus } from "@/lib/services/pdtp/period"
 import { ProgramLifecycleControls } from "./program-lifecycle-controls"
 import { ReconcileDeclaredActorButton } from "./reconcile-declared-actor-button"
 
@@ -40,7 +41,7 @@ export const metadata: Metadata = { title: "Programa de Trabajo Preventivo SG-SS
 
 type PdtpPageProps = {
   params: Promise<{ programId: string }>
-  searchParams: Promise<{ hoja?: string | string[]; faena?: string | string[]; vista?: string | string[]; anio?: string | string[]; overrideError?: string | string[] }>
+  searchParams: Promise<{ hoja?: string | string[]; faena?: string | string[]; vista?: string | string[]; anio?: string | string[]; estado?: string | string[]; overrideError?: string | string[] }>
 }
 
 export default async function PdtpDetailPage({ params, searchParams }: PdtpPageProps) {
@@ -70,6 +71,13 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
   const requestedView = Array.isArray(query.vista) ? query.vista[0] : query.vista
   const overrideError = Array.isArray(query.overrideError) ? query.overrideError[0] : query.overrideError
   const viewMode: "semana" | "anual" = requestedView === "anual" ? "anual" : "semana"
+  // La tabla escribe ?estado= al filtrar (router.replace); sin leerlo acá, un
+  // enlace compartido o un remount del árbol volvían el filtro a "Todas".
+  // Mismo patrón que actividades/page.tsx.
+  const requestedStatus = Array.isArray(query.estado) ? query.estado[0] : query.estado
+  const statusFilter: PdtpActivityStatus | "all" = ["executed", "pending", "overdue", "not_scheduled"].includes(requestedStatus ?? "")
+    ? requestedStatus as PdtpActivityStatus
+    : "all"
   const renderedAt = new Date().toISOString()
   const currentPeriod = currentPdtpPeriod()
   const sheetCode = normalizeSheetCode(requestedSheet, programSheets)
@@ -248,6 +256,7 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
               viewMode={viewMode}
               currentPeriod={currentPeriod}
               sheetCode={sheetCode}
+              initialStatusFilter={statusFilter}
             />
           </div>
         ) : (
