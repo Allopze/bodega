@@ -1337,14 +1337,26 @@ export async function listIncidentNotificationResponsibles(access: IncidentAcces
 
 /* ── RE-20: Módulo de Investigación y Auto-acreditación PDTP ─────────────── */
 
+/**
+ * Prólogo común del expediente RE-20. El cierre exigió investigación completa y
+ * CAPA cerradas; permitir escrituras posteriores corrompería el expediente que
+ * sustentó el cierre (y re-dispararía acreditaciones PDTP), sin transición de
+ * reapertura que lo audite.
+ */
+async function getInvestigableIncident(incidentId: string, access: IncidentAccess) {
+  const [incident] = await db.select().from(preventionIncidents).where(eq(preventionIncidents.id, incidentId)).limit(1)
+  if (!incident) throw new Error("Incidente no encontrado.")
+  requireAccess(access, "prevention:incidents:investigate", incident.worksiteId)
+  if (incident.status === "closed") throw new Error("El incidente está cerrado y su expediente de investigación es inmutable.")
+  return incident
+}
+
 export async function createPreliminaryReport(args: {
   incidentId: string
   preliminaryReportText: string
   access: IncidentAccess
 }) {
-  const [incident] = await db.select().from(preventionIncidents).where(eq(preventionIncidents.id, args.incidentId)).limit(1)
-  if (!incident) throw new Error("Incidente no encontrado.")
-  requireAccess(args.access, "prevention:incidents:investigate", incident.worksiteId)
+  const incident = await getInvestigableIncident(args.incidentId, args.access)
 
   const now = new Date().toISOString()
   const [investigation] = await db.select().from(preventionIncidentInvestigations)
@@ -1384,9 +1396,7 @@ export async function recordIncidentStatement(args: {
   statementText: string
   access: IncidentAccess
 }) {
-  const [incident] = await db.select().from(preventionIncidents).where(eq(preventionIncidents.id, args.incidentId)).limit(1)
-  if (!incident) throw new Error("Incidente no encontrado.")
-  requireAccess(args.access, "prevention:incidents:investigate", incident.worksiteId)
+  const incident = await getInvestigableIncident(args.incidentId, args.access)
 
   const now = new Date().toISOString()
   const [created] = await db.insert(preventionIncidentStatements).values({
@@ -1415,9 +1425,7 @@ export async function publishOnePageDiffusion(args: {
   evidenceRef?: string
   access: IncidentAccess
 }) {
-  const [incident] = await db.select().from(preventionIncidents).where(eq(preventionIncidents.id, args.incidentId)).limit(1)
-  if (!incident) throw new Error("Incidente no encontrado.")
-  requireAccess(args.access, "prevention:incidents:investigate", incident.worksiteId)
+  const incident = await getInvestigableIncident(args.incidentId, args.access)
 
   const now = new Date().toISOString()
   const [created] = await db.insert(preventionIncidentDiffusion).values({
@@ -1445,9 +1453,7 @@ export async function recordBiweeklyFollowup(args: {
   evidenceRef?: string
   access: IncidentAccess
 }) {
-  const [incident] = await db.select().from(preventionIncidents).where(eq(preventionIncidents.id, args.incidentId)).limit(1)
-  if (!incident) throw new Error("Incidente no encontrado.")
-  requireAccess(args.access, "prevention:incidents:investigate", incident.worksiteId)
+  const incident = await getInvestigableIncident(args.incidentId, args.access)
 
   const now = new Date().toISOString()
   const [created] = await db.insert(preventionIncidentFollowups).values({
@@ -1497,9 +1503,7 @@ export async function markIncidentDiffusion(args: {
   access: IncidentAccess
 }) {
   if (args.summary.trim().length < 3) throw new Error("La difusión requiere un resumen de lo comunicado.")
-  const [incident] = await db.select().from(preventionIncidents).where(eq(preventionIncidents.id, args.incidentId)).limit(1)
-  if (!incident) throw new Error("Incidente no encontrado.")
-  requireAccess(args.access, "prevention:incidents:investigate", incident.worksiteId)
+  const incident = await getInvestigableIncident(args.incidentId, args.access)
 
   const now = new Date().toISOString()
   const [created] = await db.insert(preventionIncidentShiftDiffusions).values({

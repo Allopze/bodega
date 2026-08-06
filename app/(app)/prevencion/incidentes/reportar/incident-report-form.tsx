@@ -14,6 +14,7 @@ import { reportPreventionIncidentAction } from "../actions"
 import {
   createIncidentSubmissionId,
   flushIncidentReportQueue,
+  listQueuedIncidentReports,
   queueIncidentReport,
   type OfflineIncidentReport,
 } from "./offline-incident-queue"
@@ -85,6 +86,21 @@ export function IncidentReportForm({ worksites, defaultDate, defaultTime }: { wo
   useEffect(() => {
     window.addEventListener("online", synchronize)
     return () => window.removeEventListener("online", synchronize)
+  }, [synchronize])
+
+  // Si la página se abre ya con conexión, el evento "online" nunca dispara: un
+  // reporte encolado en una sesión anterior quedaba en IndexedDB sin sincronizar
+  // y sin siquiera mostrarse en el contador.
+  useEffect(() => {
+    let cancelled = false
+    if (navigator.onLine) {
+      void synchronize()
+    } else {
+      void listQueuedIncidentReports().then((reports) => {
+        if (!cancelled) setQueued(reports.length)
+      })
+    }
+    return () => { cancelled = true }
   }, [synchronize])
 
   function handleSubmit(formData: FormData) {

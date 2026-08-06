@@ -121,12 +121,14 @@ export default async function IncidentDetailPage({ params, searchParams }: PageP
               defaultTargetDate={defaultTargetDate}
             />
 
+            {/* Cerrado el incidente, el expediente RE-20 es inmutable (el
+                servidor también lo rechaza); el panel queda de solo lectura. */}
             <RE20Panel
               incidentId={incident.id}
               preliminaryReportText={bundle.investigation?.preliminaryReportText}
               preliminaryReportAt={bundle.investigation?.preliminaryReportAt}
-              canInvestigate={can(session, "prevention:incidents:investigate")}
-              canConfirmDiffusion={can(session, "prevention:incidents:close")}
+              canInvestigate={can(session, "prevention:incidents:investigate") && incident.status !== "closed"}
+              canConfirmDiffusion={can(session, "prevention:incidents:close") && incident.status !== "closed"}
               diffusions={diffusions}
             />
           </div>

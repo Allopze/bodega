@@ -264,7 +264,7 @@ export function RE20Panel({
             />
           </div>
           {canInvestigate && (
-            <Button size="sm" onClick={handlePreliminary} disabled={isPending || !prelimText.trim()}>
+            <Button size="sm" onClick={handlePreliminary} disabled={!canInvestigate || isPending || !prelimText.trim()}>
               {isPending ? "Guardando..." : "Guardar Informe Preliminar y Acreditar PDTP"}
             </Button>
           )}
@@ -317,7 +317,7 @@ export function RE20Panel({
             />
           </div>
           {canInvestigate && (
-            <Button size="sm" onClick={handleStatement} disabled={isPending || !stmtName.trim() || !stmtText.trim()}>
+            <Button size="sm" onClick={handleStatement} disabled={!canInvestigate || isPending || !stmtName.trim() || !stmtText.trim()}>
               {isPending ? "Guardando..." : "Registrar Declaración Firmada (Acredita Act. 69)"}
             </Button>
           )}
@@ -358,7 +358,7 @@ export function RE20Panel({
             <Button
               size="sm"
               onClick={handleOnePage}
-              disabled={isPending || !onePageSummary.trim() || !onePageRootCause.trim() || !onePageActionPlan.trim()}
+              disabled={!canInvestigate || isPending || !onePageSummary.trim() || !onePageRootCause.trim() || !onePageActionPlan.trim()}
             >
               {isPending ? "Publicando..." : "Publicar ONE PAGE y Acreditar PDTP (Act. 78)"}
             </Button>
@@ -390,7 +390,7 @@ export function RE20Panel({
             </div>
           </div>
           {canInvestigate && (
-            <Button size="sm" onClick={handleFollowup} disabled={isPending || !followupNote.trim()}>
+            <Button size="sm" onClick={handleFollowup} disabled={!canInvestigate || isPending || !followupNote.trim()}>
               {isPending ? "Guardando..." : "Registrar Seguimiento Quincenal (Acredita Act. 76)"}
             </Button>
           )}
@@ -430,7 +430,7 @@ export function RE20Panel({
                   aria-label="Resumen de lo comunicado"
                 />
               </div>
-              <Button size="sm" onClick={handleMarkDiffusion} disabled={isPending || !diffSummary.trim()}>
+              <Button size="sm" onClick={handleMarkDiffusion} disabled={!canInvestigate || isPending || !diffSummary.trim()}>
                 {isPending ? "Marcando..." : "Marcar difusión como completada"}
               </Button>
             </div>
