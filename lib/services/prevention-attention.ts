@@ -1,6 +1,7 @@
 import { and, asc, eq, inArray, or } from "drizzle-orm"
 import { db } from "@/db"
 import { pdtpActionPlan, pdtpExecutions, ppaSubmissions, sstEvaluations, worksites } from "@/db/schema"
+import { adminContratoLabel } from "@/lib/prevention/admin-contrato-label"
 
 export type PreventionAttentionItem = {
   id: string
@@ -37,7 +38,7 @@ export async function getPreventionAttention(args: {
           .orderBy(asc(pdtpActionPlan.plazo)).limit(limit)
       : Promise.resolve([]),
     args.includeEvaluations
-      ? db.select({ id: sstEvaluations.id, fecha: sstEvaluations.fechaEvaluacion, role: sstEvaluations.evaluatorRole, worksiteName: worksites.name })
+      ? db.select({ id: sstEvaluations.id, fecha: sstEvaluations.fechaEvaluacion, role: sstEvaluations.evaluatorRole, worksiteName: worksites.name, adminContratoLabel: worksites.adminContratoLabel })
           .from(sstEvaluations).innerJoin(worksites, eq(sstEvaluations.worksiteId, worksites.id))
           .where(and(scope(worksites.id), eq(sstEvaluations.estado, "borrador"))).orderBy(asc(sstEvaluations.fechaEvaluacion)).limit(limit)
       : Promise.resolve([]),
@@ -61,7 +62,7 @@ export async function getPreventionAttention(args: {
 
   items.push(...evalRows.map((row) => ({
     id: `evaluation:${row.id}`, kind: "evaluation" as const, title: "Evaluación SST pendiente",
-    detail: row.role === "admin_contrato" ? "Supervisor de faena" : row.role === "conductor_lider" ? "Conductor líder" : "Prevencionista de faena",
+    detail: row.role === "admin_contrato" ? adminContratoLabel(row.adminContratoLabel) : row.role === "conductor_lider" ? "Conductor líder" : "Prevencionista de faena",
     worksiteName: row.worksiteName, dueDate: row.fecha, href: `/prevencion/${row.id}`, tone: "warning" as const,
   })))
 

@@ -6,6 +6,7 @@ import { Field, FieldGroup } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
 import { toCode } from "@/lib/utils"
+import { ADMIN_CONTRATO_DEFAULT_LABEL, ADMIN_CONTRATO_LABEL_OPTIONS } from "@/lib/prevention/admin-contrato-label"
 import { createWorksite, updateWorksite } from "./actions"
 
 interface WorksiteForEdit {
@@ -14,6 +15,7 @@ interface WorksiteForEdit {
   code:     string
   address:  string | null
   region:   string | null
+  adminContratoLabel: string | null
   isActive: boolean
 }
 
@@ -69,6 +71,26 @@ export function WorksiteForm({ open, onClose, editWorksite }: WorksiteFormProps)
 
           <Field label="Dirección" htmlFor="ws-address" error={state.fieldErrors?.address?.[0]}>
             <Input id="ws-address" name="address" defaultValue={editWorksite?.address ?? ""} placeholder="Ruta B-35 km 42..." />
+          </Field>
+
+          <Field
+            label="Cargo del administrador de contrato"
+            htmlFor="ws-admin-contrato-label"
+            error={state.fieldErrors?.adminContratoLabel?.[0]}
+            helper="Cómo nombra este contrato al cargo. Vacío = «Administrador de contrato»."
+          >
+            <Input
+              id="ws-admin-contrato-label"
+              name="adminContratoLabel"
+              defaultValue={editWorksite?.adminContratoLabel ?? ""}
+              list="ws-admin-contrato-label-options"
+              placeholder={ADMIN_CONTRATO_DEFAULT_LABEL}
+            />
+            {/* ponytail: datalist nativo — sugiere los dos títulos en uso sin
+                cerrar la puerta a un contrato que use otro nombre. */}
+            <datalist id="ws-admin-contrato-label-options">
+              {ADMIN_CONTRATO_LABEL_OPTIONS.map((option) => <option key={option} value={option} />)}
+            </datalist>
           </Field>
 
           <Checkbox id="ws-isActive" name="isActive" value="on" defaultChecked={editWorksite?.isActive ?? true} label="Faena activa" />

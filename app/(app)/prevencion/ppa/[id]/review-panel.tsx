@@ -13,6 +13,7 @@ import { toast } from "@/lib/toast"
 import { cn } from "@/lib/utils"
 import { reviewPpaAction } from "../actions"
 import type { PpaDecision } from "@/lib/ppa/types"
+import { adminContratoLabel } from "@/lib/prevention/admin-contrato-label"
 
 const DECISIONS: {
   value: PpaDecision
@@ -30,7 +31,7 @@ const TONE_ACTIVE: Record<"success" | "warning" | "danger", string> = {
   danger:  "border-[var(--color-danger)] bg-[var(--color-danger-tint)]",
 }
 
-export function ReviewPanel({ ppaId, detenido }: { ppaId: string; detenido: boolean }) {
+export function ReviewPanel({ ppaId, detenido, worksiteAdminContratoLabel }: { ppaId: string; detenido: boolean; worksiteAdminContratoLabel: string | null }) {
   const router = useRouter()
   const [pending, startTransition] = React.useTransition()
   const [fuiAlLugar, setFuiAlLugar] = React.useState(false)
@@ -107,7 +108,7 @@ export function ReviewPanel({ ppaId, detenido }: { ppaId: string; detenido: bool
               <SelectTrigger id="responsible-role"><SelectValue placeholder="Selecciona un rol" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="prevencionista_faena">Prevencionista de faena</SelectItem>
-                <SelectItem value="admin_contrato">Supervisor de faena</SelectItem>
+                <SelectItem value="admin_contrato">{adminContratoLabel(worksiteAdminContratoLabel)}</SelectItem>
                 <SelectItem value="jefe_faena">Jefe de faena</SelectItem>
                 <SelectItem value="prevencionista">Jefa Dpto. Prevención</SelectItem>
               </SelectContent>

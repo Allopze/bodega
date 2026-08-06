@@ -17,6 +17,7 @@ import {
   resultadoBadgeVariant,
 } from "@/lib/sst/badges"
 import type { WorkerEvaluationGroup } from "@/lib/services/sst"
+import { ADMIN_CONTRATO_DEFAULT_LABEL } from "@/lib/prevention/admin-contrato-label"
 
 interface Props {
   workerGroups: WorkerEvaluationGroup[]
@@ -52,7 +53,7 @@ export function EvaluationList({ workerGroups, canCreate }: Props) {
             <TableHead>Trabajador</TableHead>
             <TableHead>Faena</TableHead>
             <TableHead>Prevencionista</TableHead>
-            <TableHead>Supervisor de faena</TableHead>
+            <TableHead>{ADMIN_CONTRATO_DEFAULT_LABEL}</TableHead>
             <TableHead>Conductor Líder</TableHead>
             <TableHead><span className="sr-only">Ver</span></TableHead>
           </TableRow>

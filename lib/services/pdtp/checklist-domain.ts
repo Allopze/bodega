@@ -28,7 +28,7 @@ export const PDTP_ESTADOS_CERRADOS = new Set(["completado", "verificado", "cance
  */
 export const PDTP_BUILDER_ROLE_LABELS: Record<string, string> = {
   prevencionista_faena: "Prevencionista de faena",
-  admin_contrato: "Supervisor de faena",
+  admin_contrato: "Administrador de contrato",
   jefe_faena: "Jefe de faena",
 }
 

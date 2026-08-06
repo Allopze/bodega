@@ -77,6 +77,8 @@ export const worksiteSchema = z.object({
   code:     z.string().min(1, "Código requerido").max(20).toUpperCase(),
   address:  z.string().max(200).optional().or(z.literal("")),
   region:   z.string().max(60).optional().or(z.literal("")),
+  /** Título del cargo `admin_contrato` en el contrato de esta faena. */
+  adminContratoLabel: z.string().max(60).optional().or(z.literal("")),
   isActive: z.coerce.boolean().default(true),
 })
 

@@ -14,9 +14,12 @@ import {
   resultadoBadgeVariant,
 } from "@/lib/sst/badges"
 import { formatDateDisplay } from "@/lib/sst/date"
+import { evaluatorRoleLabel } from "@/lib/prevention/admin-contrato-label"
 
 interface EvaluationCardProps {
   title: string
+  /** Título del cargo admin_contrato en el contrato de la faena. */
+  worksiteAdminContratoLabel: string | null
   role: 'prevencionista_faena' | 'admin_contrato' | 'conductor_lider'
   icon: React.ReactNode
   evaluation: SstEvaluation | undefined
@@ -33,6 +36,7 @@ interface EvaluationCardProps {
 
 export function EvaluationCard({
   title,
+  worksiteAdminContratoLabel,
   role,
   icon,
   evaluation,
@@ -164,7 +168,7 @@ export function EvaluationCard({
               <p className="text-xs text-text-subtle">
                 {canUserCreateThis
                   ? "Puedes iniciar una nueva evaluación para este rol."
-                  : `Solo el rol "${role === 'prevencionista_faena' ? 'Prevencionista de faena' : role === 'admin_contrato' ? 'Supervisor de faena' : 'Conductor Líder'}" puede iniciar esta evaluación.`
+                  : `Solo el rol "${evaluatorRoleLabel(role, worksiteAdminContratoLabel)}" puede iniciar esta evaluación.`
                 }
               </p>
             </div>

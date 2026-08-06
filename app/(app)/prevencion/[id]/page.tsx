@@ -45,7 +45,7 @@ export default async function EvaluacionDetailPage({ params }: Props) {
     db.select().from(sstActionPlan).where(and(eq(sstActionPlan.evaluationId, id), ne(sstActionPlan.estado, "cancelado"))),
     db.select({ firstName: workers.firstName, lastName: workers.lastName, rut: workers.rut })
       .from(workers).where(eq(workers.id, evaluation.workerId)).limit(1),
-    db.select({ name: worksites.name })
+    db.select({ name: worksites.name, adminContratoLabel: worksites.adminContratoLabel })
       .from(worksites).where(eq(worksites.id, evaluation.worksiteId)).limit(1),
     db.select().from(sstWeeklyEvaluations).where(eq(sstWeeklyEvaluations.evaluationId, id)).orderBy(sstWeeklyEvaluations.semana),
   ])
@@ -99,6 +99,7 @@ export default async function EvaluacionDetailPage({ params }: Props) {
         workerName={workerName}
         workerRut={workerRut}
         worksiteName={worksiteName}
+        worksiteAdminContratoLabel={worksite?.adminContratoLabel ?? null}
         cargoLabels={cargoLabels}
         canClose={canClose}
         canManage={canManage}

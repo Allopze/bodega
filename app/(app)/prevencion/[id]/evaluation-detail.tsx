@@ -20,6 +20,7 @@ interface Props {
   workerName: string
   workerRut: string
   worksiteName: string
+  worksiteAdminContratoLabel: string | null
   cargoLabels: string[]
   canClose: boolean
   canManage: boolean
@@ -37,6 +38,7 @@ export function EvaluationDetail(props: Props) {
         workerName={props.workerName}
         workerRut={props.workerRut}
         worksiteName={props.worksiteName}
+        worksiteAdminContratoLabel={props.worksiteAdminContratoLabel}
         cargoLabels={props.cargoLabels}
         evaluation={props.evaluation}
         isCerrado={ctx.isCerrado}

@@ -10,6 +10,7 @@ import { deleteEvaluationAction } from "@/app/(app)/prevencion/actions"
 import type { SstEvaluation } from "@/db/schema/sst"
 import { EvaluationCard } from "./worker-evaluations-card"
 import { CreateEvaluationDialog } from "./worker-evaluations-create-dialog"
+import { adminContratoLabel } from "@/lib/prevention/admin-contrato-label"
 import type { WorkerEvaluationsProps } from "./worker-evaluations.types"
 
 export function WorkerEvaluations({
@@ -30,6 +31,9 @@ export function WorkerEvaluations({
   const adminEval = evaluations.find(e => e.evaluatorRole === 'admin_contrato')
   const condEval = evaluations.find(e => e.evaluatorRole === 'conductor_lider')
   const defaultVisitId = openVisits.length === 1 ? openVisits.at(0)?.id : undefined
+  // El contrato de la faena decide si el cargo se llama "Administrador de
+  // contrato" o "Supervisor de faena": es la misma persona.
+  const adminLabel = adminContratoLabel(worker.adminContratoLabel)
 
   const handleDelete = () => {
     if (!deleteTarget) return
@@ -61,6 +65,7 @@ export function WorkerEvaluations({
         <EvaluationCard
           title="Prevencionista de Faena"
           role="prevencionista_faena"
+          worksiteAdminContratoLabel={worker.adminContratoLabel}
           icon={<ShieldCheck size={18} />}
           evaluation={prevEval}
           weeklyEvals={weeklyEvals}
@@ -70,8 +75,9 @@ export function WorkerEvaluations({
           onDelete={setDeleteTarget}
         />
         <EvaluationCard
-          title="Supervisor de faena"
+          title={adminLabel}
           role="admin_contrato"
+          worksiteAdminContratoLabel={worker.adminContratoLabel}
           icon={<Briefcase size={18} />}
           evaluation={adminEval}
           weeklyEvals={weeklyEvals}
@@ -83,6 +89,7 @@ export function WorkerEvaluations({
         <EvaluationCard
           title="Conductor Líder (Acompañamiento)"
           role="conductor_lider"
+          worksiteAdminContratoLabel={worker.adminContratoLabel}
           icon={<Car size={18} />}
           evaluation={condEval}
           weeklyEvals={weeklyEvals}

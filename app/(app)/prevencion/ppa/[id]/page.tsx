@@ -18,6 +18,7 @@ import { PpaWorkflowPanel } from "./ppa-workflow-panel"
 import { RevokeTokenButton } from "./revoke-token-button"
 import { scopeToIds } from "@/lib/ppa/utils"
 import { readPpaReturnHref } from "../list-filters"
+import { ppaResponsibleRoleLabel } from "@/lib/prevention/admin-contrato-label"
 
 export const metadata: Metadata = { title: "Detalle PPA" }
 
@@ -227,7 +228,7 @@ export default async function PpaDetailPage({
                       : "Acción correctiva pendiente de verificación"}
                   </p>
                   <dl className="mt-2">
-                    <Row label="Responsable" value={`${correctiveAction.responsible} · ${correctiveAction.responsibleRole === "admin_contrato" ? "Supervisor de faena" : correctiveAction.responsibleRole === "prevencionista_faena" ? "Prevencionista de faena" : correctiveAction.responsibleRole === "prevencionista" ? "Jefa Dpto. Prevención" : "Jefe de faena"}`} />
+                    <Row label="Responsable" value={`${correctiveAction.responsible} · ${ppaResponsibleRoleLabel(correctiveAction.responsibleRole, ppa.adminContratoLabel)}`} />
                     <Row label="Plazo" value={correctiveAction.dueDate} />
                     <Row label="Prioridad" value={correctiveAction.priority} />
                     <Row label="Estado" value={correctiveAction.status} />
@@ -238,7 +239,7 @@ export default async function PpaDetailPage({
               )}
             </section>
           ) : canReview && pendiente ? (
-            <ReviewPanel ppaId={ppa.id} detenido={detenido} />
+            <ReviewPanel ppaId={ppa.id} detenido={detenido} worksiteAdminContratoLabel={ppa.adminContratoLabel ?? null} />
           ) : pendiente ? (
             <section className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] p-4 text-sm text-[var(--color-text-muted)]">
               Este PPA está pendiente de revisión por un responsable autorizado.

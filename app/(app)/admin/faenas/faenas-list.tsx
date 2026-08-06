@@ -16,6 +16,7 @@ interface WorksiteRow {
   code: string
   address: string | null
   region: string | null
+  adminContratoLabel: string | null
   isActive: boolean
   createdAt: string
   updatedAt: string

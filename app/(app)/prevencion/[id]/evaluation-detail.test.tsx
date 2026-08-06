@@ -119,6 +119,7 @@ const defaultProps = {
   workerName: "Juan Pérez",
   workerRut: "12.345.678-9",
   worksiteName: "Faena Norte",
+  worksiteAdminContratoLabel: null,
   cargoLabels: ["Conductor General"],
   canClose: true,
   canManage: false,

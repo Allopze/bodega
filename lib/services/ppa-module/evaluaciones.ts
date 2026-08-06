@@ -21,7 +21,11 @@ import { logger } from "@/lib/logger"
 import { recordOperationalActivity } from "@/lib/services/operational-activity"
 import { hashPpaPublicToken } from "./public-token"
 
-export type PpaRow = Omit<PpaSubmission, "publicToken"> & { worksiteName: string | null }
+export type PpaRow = Omit<PpaSubmission, "publicToken"> & {
+  worksiteName: string | null
+  /** Título del cargo admin_contrato en el contrato de la faena; null = por defecto. */
+  adminContratoLabel?: string | null
+}
 
 export type PpaTokenResult = PpaRow & {
   supervisor: string | null

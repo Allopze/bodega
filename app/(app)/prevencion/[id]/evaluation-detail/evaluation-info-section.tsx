@@ -13,13 +13,14 @@ import { Badge } from "@/components/ui/badge"
 import { formatDateDisplay } from "@/lib/sst/date"
 import { RESULTADO_LABELS, resultadoBadgeVariant, estadoBadgeVariant, tipoBadgeVariant } from "@/lib/sst/badges"
 import { Check, LockSimple, Printer, Warning } from "@phosphor-icons/react"
-import { ROLE_LABELS } from "./helpers"
+import { evaluatorRoleLabel } from "@/lib/prevention/admin-contrato-label"
 import type { EvaluationProgress } from "./evaluation-progress"
 
 interface Props {
   workerName: string
   workerRut: string
   worksiteName: string
+  worksiteAdminContratoLabel: string | null
   cargoLabels: string[]
   evaluation: {
     evaluatorRole?: string | null
@@ -56,6 +57,7 @@ export function EvaluationInfoSection({
   workerName,
   workerRut,
   worksiteName,
+  worksiteAdminContratoLabel,
   cargoLabels,
   evaluation,
   isCerrado,
@@ -88,7 +90,7 @@ export function EvaluationInfoSection({
             {workerRut && <span className="text-sm text-text-subtle">RUT {workerRut}</span>}
             {evaluation.evaluatorRole && (
               <Badge variant="outline">
-                Rol: {ROLE_LABELS[evaluation.evaluatorRole] ?? evaluation.evaluatorRole}
+                Rol: {evaluatorRoleLabel(evaluation.evaluatorRole, worksiteAdminContratoLabel)}
               </Badge>
             )}
           </div>

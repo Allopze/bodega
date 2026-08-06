@@ -139,7 +139,9 @@ describe("ChecklistTab — Fase 2", () => {
     // La sección nueva y el panel de configuración (firmas del cierre) exponen
     // los mismos roles, así que la búsqueda es múltiple.
     expect(screen.getAllByRole("checkbox", { name: "Prevencionista de faena" }).length).toBeGreaterThan(0)
-    expect(screen.getAllByRole("checkbox", { name: "Supervisor de faena" }).length).toBeGreaterThan(0)
+    // `admin_contrato` se rotula por su cargo: "Supervisor" ya es un rol propio
+    // del sistema (responsable SUP de la planilla) y era otra persona.
+    expect(screen.getAllByRole("checkbox", { name: "Administrador de contrato" }).length).toBeGreaterThan(0)
     expect(screen.getAllByRole("checkbox", { name: "Jefe de faena" }).length).toBeGreaterThan(0)
     expect(screen.queryByRole("checkbox", { name: "prevencionista_faena" })).toBeNull()
   })

@@ -24,6 +24,7 @@ import type { z } from "zod"
 import { MOTIVO_OPTIONS, todayStr } from "./worker-evaluations.types"
 import type { Worker } from "./worker-evaluations.types"
 import type { OpenEvaluationVisit } from "./visit-context"
+import { evaluatorRoleLabel } from "@/lib/prevention/admin-contrato-label"
 
 interface Props {
   worker: Worker
@@ -130,7 +131,7 @@ export function CreateEvaluationDialog({ worker, open, onOpenChange, initialRole
       <DialogContent className="max-w-lg">
         <DialogHeader>
           <DialogTitle>
-            Iniciar Evaluación como {createRole === 'prevencionista_faena' ? 'Prevencionista de faena' : createRole === 'admin_contrato' ? 'Supervisor de faena' : 'Conductor Líder'}
+            Iniciar Evaluación como {evaluatorRoleLabel(createRole, worker.adminContratoLabel)}
           </DialogTitle>
         </DialogHeader>
 

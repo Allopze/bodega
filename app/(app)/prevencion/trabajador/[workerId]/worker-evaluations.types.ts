@@ -8,6 +8,8 @@ export interface Worker {
   position: string | null
   worksiteId: string
   worksiteName: string | null
+  /** Título del cargo admin_contrato en el contrato de esta faena. */
+  adminContratoLabel: string | null
 }
 
 export interface WorkerEvaluationsProps {

@@ -48,6 +48,7 @@ export default async function WorkerEvaluationsPage({ params }: Props) {
       position: workers.position,
       worksiteId: workers.worksiteId,
       worksiteName: worksites.name,
+      adminContratoLabel: worksites.adminContratoLabel,
     })
     .from(workers)
     .leftJoin(worksites, eq(workers.worksiteId, worksites.id))

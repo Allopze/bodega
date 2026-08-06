@@ -137,16 +137,16 @@ export async function getPpa(id: string, worksiteIds: string[] | "all"): Promise
   if (worksiteIds !== "all" && worksiteIds.length === 0) return null
 
   const rows = await db
-    .select({ submission: ppaSubmissions, worksiteName: worksites.name })
+    .select({ submission: ppaSubmissions, worksiteName: worksites.name, adminContratoLabel: worksites.adminContratoLabel })
     .from(ppaSubmissions)
     .leftJoin(worksites, eq(ppaSubmissions.worksiteId, worksites.id))
     .where(eq(ppaSubmissions.id, id))
     .limit(1)
 
   if (rows.length === 0) return null
-  const { submission, worksiteName } = rows[0]!
+  const { submission, worksiteName, adminContratoLabel } = rows[0]!
   if (worksiteIds !== "all" && !worksiteIds.includes(submission.worksiteId)) return null
-  return { ...submission, worksiteName }
+  return { ...submission, worksiteName, adminContratoLabel }
 }
 
 export interface PpaStats {

@@ -142,7 +142,7 @@ async function goToStoppedPpaDetail(page: Page) {
 async function defineCorrection(page: Page) {
   await page.getByLabel("Acción correctiva").fill("Se aisló el cable y se delimitó la zona")
   await page.locator("#responsible").fill("Supervisor E2E")
-  await selectRadixById(page, "responsible-role", "Supervisor de faena")
+  await selectRadixById(page, "responsible-role", "Administrador de contrato")
   await selectRadixById(page, "priority", "Baja")
   await pickCurrentMonthDate(page, "Seleccionar fecha")
   await page.getByRole("button", { name: /Definir corrección/ }).click()
