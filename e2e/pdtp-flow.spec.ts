@@ -66,7 +66,11 @@ test.describe("PDTP — Checklist de verificación y plan de acción", () => {
     // Marca el único ítem como "No cumple" y agrega la observación que se
     // convertirá en el hallazgo de la acción generada.
     await page.getByRole("button", { name: "No cumple" }).click()
-    await page.getByRole("button", { name: "Agregar nota" }).click()
+    // El botón de la nota cambia de rótulo según el estado del ítem: al marcar
+    // "No cumple" pasa a "Nota requerida" (requiresObservation), y una vez
+    // escrita, a "Editar nota". El test buscaba sólo "Agregar nota", que es
+    // justamente el único de los tres que ya no está en pantalla acá.
+    await page.getByRole("button", { name: /Agregar nota|Nota requerida|Editar nota/ }).click()
     await page.getByPlaceholder("Agrega una nota breve...").fill("Falta EPP en terreno")
     await page.getByRole("button", { name: "Guardar nota" }).click()
 

@@ -3,6 +3,10 @@ import { login, pickCurrentMonthDate, selectRadixById } from "./helpers"
 
 async function createAndSubmitRepuesto(page: Page) {
   await page.goto("/solicitudes/nueva")
+  // El formulario es cliente puro (selects Radix, autosave, Server Actions):
+  // sin hidratar, los clics se pierden y el envío se queda en /solicitudes/nueva
+  // sin dejar rastro. En el runner de CI, más lento, esa carrera se pierde.
+  await page.waitForLoadState("networkidle").catch(() => undefined)
   await selectRadixById(page, "worksiteId", "Faena E2E")
   await selectRadixById(page, "requestType", "Repuestos")
   await expect(page.locator("#requestType")).toContainText("Repuestos")
@@ -21,6 +25,10 @@ async function createAndSubmitRepuesto(page: Page) {
 
 async function createAndSubmitServicio(page: Page) {
   await page.goto("/solicitudes/nueva")
+  // El formulario es cliente puro (selects Radix, autosave, Server Actions):
+  // sin hidratar, los clics se pierden y el envío se queda en /solicitudes/nueva
+  // sin dejar rastro. En el runner de CI, más lento, esa carrera se pierde.
+  await page.waitForLoadState("networkidle").catch(() => undefined)
   await selectRadixById(page, "worksiteId", "Faena E2E")
   await selectRadixById(page, "requestType", "Servicios")
   await expect(page.locator("#requestType")).toContainText("Servicios")

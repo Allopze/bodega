@@ -54,12 +54,21 @@ test.describe("Conciliación OC-factura-recepción", () => {
     // control visible, la lista quedaba recortada sin explicación ni salida.
     // El chip es un enlace con href real, no un botón: así funciona desde el
     // primer pintado, sin esperar a que el componente hidrate.
+    // Esperar a que el cliente termine de cargar antes de hacer clic: el
+    // elemento es accionable desde el HTML del servidor, así que Playwright
+    // clickea antes de que React hidrate. Ahí `Link` ya hace preventDefault
+    // pero el router todavía no navega, y el clic se pierde sin dejar rastro
+    // —la URL simplemente no cambia y la aserción agota sus 10 s.
+    await page.waitForLoadState("networkidle").catch(() => undefined)
     await page.getByRole("link", { name: /Quitar filtro de facturas pendientes/i }).click()
     await expect(page).not.toHaveURL(/factura=pendiente/, { timeout: 10_000 })
     await expect(page.getByRole("link", { name: /Ver OC OC-2026-0001/ })).toBeVisible({ timeout: 10_000 })
 
     // Y "Limpiar" —que sólo aparece con filtros activos— también lo apaga.
+    // Este sí es un <button> con onClick: sin hidratar no hace absolutamente
+    // nada, y es el que fallaba de forma reproducible en local.
     await page.goto("/compras?factura=pendiente")
+    await page.waitForLoadState("networkidle").catch(() => undefined)
     await page.getByRole("button", { name: "Limpiar" }).click()
     await expect(page).not.toHaveURL(/factura=pendiente/, { timeout: 10_000 })
   })

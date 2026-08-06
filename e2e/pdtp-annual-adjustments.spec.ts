@@ -11,6 +11,11 @@ test.describe.serial("PDTP anual — ajustes, Base y retiro", () => {
   test.beforeEach(async ({ page }) => {
     await login(page)
     await page.goto("/prevencion/pdtp/pdtp-draft-e2e/editar")
+    // Todo lo que sigue —pestañas, diálogos, selects Radix— es cliente puro:
+    // sin hidratar, el primer clic no abre nada y el fallo se lee como "no
+    // existe el botón del diálogo". En el runner de CI, más lento, esa carrera
+    // se pierde; en local casi nunca.
+    await page.waitForLoadState("networkidle").catch(() => undefined)
   })
 
   test("permite un cero explícito por faena y volver a la herencia", async ({ page }) => {

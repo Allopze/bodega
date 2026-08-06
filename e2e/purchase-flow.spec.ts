@@ -58,11 +58,17 @@ test("flujo solicitud, aprobación, OC, recepción y trazabilidad", async ({ pag
   // Playwright la rellena: hay que volver a pedirla. `expect.poll` recarga hasta
   // que la OC aparece, en vez de depender de que la revalidación haya ganado la
   // carrera (falla intermitente vista en las rondas 3 y 5).
+  // Acotado a SU OC por el href de "Recibir", no a `.first()` de "Proveedor
+  // E2E": el seed deja otras OC del mismo proveedor en la bandeja y el orden
+  // de la lista no es estable entre corridas. Con `.first()` el test podía
+  // abrir la recepción de otra OC y fallar más abajo con "no se encontró la
+  // cantidad en oficina", que no dice nada de la causa.
+  const receptionRow = page.locator("tbody tr").filter({ has: page.locator(`a[href*="oc=${orderId}"]`) })
   await expect.poll(async () => {
     await page.goto("/recepcion")
-    return page.locator("tbody tr").filter({ hasText: "Proveedor E2E" }).count()
+    return receptionRow.count()
   }, { timeout: 30_000 }).toBeGreaterThan(0)
-  const pendingReceptionRow = page.locator("tbody tr").filter({ hasText: "Proveedor E2E" }).first()
+  const pendingReceptionRow = receptionRow.first()
   await expect(pendingReceptionRow).toContainText("Faena E2E")
   await pendingReceptionRow.getByRole("link", { name: "Recibir" }).click()
   // Se acota a la tarjeta de etapa: "Recepción en oficina" también aparece como
@@ -75,9 +81,9 @@ test("flujo solicitud, aprobación, OC, recepción y trazabilidad", async ({ pag
   // Stage 2 — receipt at the worksite from the transit queue (generates stock + traceability).
   await expect.poll(async () => {
     await page.goto("/recepcion")
-    return page.locator("tbody tr").filter({ hasText: "Proveedor E2E" }).count()
+    return receptionRow.count()
   }, { timeout: 30_000 }).toBeGreaterThan(0)
-  const transitReceptionRow = page.locator("tbody tr").filter({ hasText: "Proveedor E2E" }).first()
+  const transitReceptionRow = receptionRow.first()
   // El badge de la columna "Pend. de faena" cuenta LÍNEAS pendientes de despacho
   // (una acá), y dice sólo el número: antes repetía el nombre de la columna
   // ("N pend. faena"), jerga duplicada (auditoría UI/UX 2026-07-29, A-35).
@@ -118,6 +124,11 @@ test("ítem rechazado no aparece como pendiente de compra", async ({ page }) => 
   // can race against unrelated items (intermittent strict-mode violations /
   // dialog-not-found timeouts under the full run).
   const ownItem = page.getByRole("listitem").filter({ hasText: "Rechazo E2E" })
+  // El diálogo de rechazo es Radix, o sea cliente puro: si el clic llega antes
+  // de que hidrate no abre nada y el fallo aparece más abajo como un `fill` que
+  // agota su timeout contra un campo que nunca existió. Reproducido en local
+  // sólo con la máquina cargada, que es la condición permanente del runner.
+  await page.waitForLoadState("networkidle").catch(() => undefined)
   await ownItem.getByRole("button", { name: "Rechazar" }).click()
   await page.getByPlaceholder("Explica por qué este ítem no puede ser aprobado...").fill("No corresponde comprar este implemento")
   await page.getByRole("button", { name: "Confirmar rechazo" }).click()

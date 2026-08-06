@@ -176,7 +176,11 @@ test.describe("Facturación — cobranza", () => {
     await page.goto("/facturacion/cobranza")
 
     await expect(page.getByRole("heading", { name: "Cobranza", level: 1 })).toBeVisible()
-    await expect(page.getByText(/Solo los pagos confirmados por una persona descuentan del saldo/i).first()).toBeVisible()
+    // Lo que esta prueba defiende es que la página diga que sólo un pago
+    // confirmado descuenta del saldo, no la redacción exacta: la frase citaba
+    // literal "confirmados por una persona" y una reescritura a "con
+    // confirmación manual" —mismo significado— la dejó en rojo.
+    await expect(page.getByText(/pagos.+descuentan del saldo/i).first()).toBeVisible()
   })
 
   test("el listado de facturas emitidas se puede filtrar por período", async ({ page }) => {
