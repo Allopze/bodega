@@ -32,6 +32,18 @@ export const AUDIT_ALLOWLIST = [
       "(OCR de TAE y facturas) usa la copia raíz 0.35.3, que no es vulnerable.",
     reviewBy: "2026-10-28",
   },
+  {
+    ghsaId: "GHSA-rgw5-rvv9-x895", // brace-expansion: bypass de la mitigación de CVE-2026-14257
+    reason:
+      "Mismo paquete y misma ruta que GHSA-mh99-v99m-4gvg: npm audit reporta ambos " +
+      "advisories sobre la misma entrada 'brace-expansion', alcanzada desde los mismos " +
+      "tres subpaths (raíz, minimatch/, readdir-glob/). Solo alcanzable vía " +
+      "Archiver.prototype.directory()/.glob(), que esta app no usa (ver la justificación " +
+      "de GHSA-mh99-v99m-4gvg arriba, incluido el guardrail de WorkbookWriter que cubre " +
+      "ambos advisories). No es una alcanzabilidad independiente, es la misma cadena bajo " +
+      "un segundo advisory del mismo CVE base (CVE-2026-14257).",
+    reviewBy: "2026-10-28",
+  },
 ] as const
 
 type AuditVulnerability = {
@@ -145,7 +157,7 @@ function main() {
   if (streamingUsage.length > 0) {
     console.error("Se encontró uso de la API de streaming de ExcelJS (carga archiver de verdad):")
     for (const file of streamingUsage) console.error(`- ${file}`)
-    console.error("Esto invalida el allowlist de GHSA-mh99-v99m-4gvg; revisa scripts/check-security-audit.ts.")
+    console.error("Esto invalida el allowlist de GHSA-mh99-v99m-4gvg/GHSA-rgw5-rvv9-x895; revisa scripts/check-security-audit.ts.")
     process.exit(1)
   }
 
