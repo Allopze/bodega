@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm"
 import { db, type Tx } from "@/db"
 import { sstEvaluations } from "@/db/schema/sst"
 import { getDefinition } from "@/lib/sst/definitions/index"
-import { getApplicableItems } from "@/lib/sst/checklist"
+import { getApplicableItems, sectionAppliesToEvaluatorRole } from "@/lib/sst/checklist"
 
 export const SECTIONS_EXCLUDED_FROM_PERCENTAGE: Record<string, string[]> = {
   trabajador_nuevo: ["competencias_operacionales"],
@@ -20,7 +20,6 @@ export function getEvaluationApplicableItems(definition: ReturnType<typeof getDe
   return getApplicableItems(definition, cargoKeys).filter(({ seccionId }) => {
     const section = sectionById.get(seccionId)
     if (!section) return false
-    if (evaluatorRole === "conductor_lider") return section.requiresPermission === "sst:evaluate_acompanamiento"
-    return !section.requiresPermission
+    return sectionAppliesToEvaluatorRole(section, evaluatorRole)
   })
 }

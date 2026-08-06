@@ -84,6 +84,22 @@ export function getApplicableResponseStatuses(
 export type SectionAccess = { canView: boolean; canEdit: boolean }
 
 /**
+ * Qué secciones cuentan para el cierre/cumplimiento de UNA evaluación según el
+ * rol de quien la ejecuta (no de quien la mira): las de Punto 3
+ * (`requiresPermission`) solo aplican a evaluaciones de conductor_lider, y para
+ * ese rol solo aplican esas. Es el mismo criterio de
+ * `getEvaluationApplicableItems` en el servidor; compartirlo evita que el
+ * cliente bloquee el cierre exigiendo ítems que el servidor no cuenta.
+ */
+export function sectionAppliesToEvaluatorRole(
+  section: Pick<ChecklistSection, "requiresPermission">,
+  evaluatorRole: string | null | undefined,
+): boolean {
+  if (evaluatorRole === "conductor_lider") return section.requiresPermission === "sst:evaluate_acompanamiento"
+  return !section.requiresPermission
+}
+
+/**
  * Calcula el acceso por sección de un usuario sobre un checklist.
  *
  * - Secciones con `requiresPermission`: solo visibles/editables si el usuario

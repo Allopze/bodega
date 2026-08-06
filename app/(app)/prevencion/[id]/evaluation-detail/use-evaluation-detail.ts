@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation"
 import { toast } from "@/lib/toast"
 import { markWeekCompletedAction } from "@/app/(app)/prevencion/actions"
 import { calculateCompliance } from "@/lib/sst/compliance"
-import { getApplicableResponseStatuses, type SectionAccess } from "@/lib/sst/checklist"
+import { getApplicableResponseStatuses, sectionAppliesToEvaluatorRole, type SectionAccess } from "@/lib/sst/checklist"
 import type { ChecklistDefinition } from "@/lib/sst/types"
 import type { SstEvaluation, SstResponse, SstScheduledFollowup, SstActionPlan, SstWeeklyEvaluation } from "@/db/schema/sst"
 import { useChecklistResponses } from "./use-checklist-responses"
@@ -82,9 +82,16 @@ export function useEvaluationDetail({
   )
   const allResponses = getApplicableResponseStatuses(definition, cargos, visibleResponses)
   const compliance = calculateCompliance(allResponses)
+  // El gate de cierre debe contar las mismas secciones que closeEvaluation en
+  // el servidor: un administrador (que ve el Punto 3 en cualquier evaluación)
+  // quedaba bloqueado con "Completar pendientes" por ítems que el servidor
+  // excluye cuando la evaluación no es de conductor_lider.
   const progress = useMemo(
-    () => getEvaluationProgress(nav.visibleSections, responses.responseMap),
-    [nav.visibleSections, responses.responseMap],
+    () => getEvaluationProgress(
+      nav.visibleSections.filter((sec) => sectionAppliesToEvaluatorRole(sec, evaluation.evaluatorRole)),
+      responses.responseMap,
+    ),
+    [nav.visibleSections, responses.responseMap, evaluation.evaluatorRole],
   )
 
   const handleClose = useCallback(() => {

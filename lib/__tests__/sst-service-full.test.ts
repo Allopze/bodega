@@ -34,6 +34,10 @@ vi.mock("@/lib/sst/definitions/index", () => ({
 }))
 vi.mock("@/lib/sst/checklist", () => ({
   getApplicableItems: vi.fn(() => []),
+  sectionAppliesToEvaluatorRole: vi.fn((section: { requiresPermission?: string }, evaluatorRole: string | null) =>
+    evaluatorRole === "conductor_lider"
+      ? section.requiresPermission === "sst:evaluate_acompanamiento"
+      : !section.requiresPermission),
 }))
 vi.mock("@/lib/services/prevention-capa", () => ({
   createCapaActionWithClient: (...args: unknown[]) => mockCreateCapa(...args),
@@ -44,6 +48,7 @@ vi.mock("@/lib/sst/compliance", () => ({
   calculateCompliance: vi.fn(() => ({ percentage: 100 })),
   getAutomaticResultadoFinal: vi.fn(() => "habilitado_autonomo"),
   classifyEfficacy: vi.fn(() => ({ classification: "destacado" })),
+  requiresObservation: vi.fn((estado: string) => ["regular", "no_cumple", "no_entregado", "no_apto", "no"].includes(estado)),
 }))
 
 import {
@@ -542,6 +547,40 @@ describe("closeEvaluation", () => {
     expect(result.resultadoFinal).toBe("habilitado_autonomo")
     expect(mockTransactionFn).toHaveBeenCalled()
     expect(mockTxUpdate).toHaveBeenCalled()
+  })
+
+  it("rejects closing when a non-conforming item lacks observation", async () => {
+    const { getDefinition } = await import("@/lib/sst/definitions/index")
+    const { getApplicableItems } = await import("@/lib/sst/checklist")
+    vi.mocked(getDefinition).mockReturnValueOnce({
+      version: "1.0",
+      sections: [{ id: "sec1", title: "Sección 1", items: [] }],
+    } as never)
+    vi.mocked(getApplicableItems).mockReturnValueOnce([
+      { seccionId: "sec1", item: { id: "item1", label: "Ítem 1", kind: "cumple_nocumple_obs" } },
+      { seccionId: "sec1", item: { id: "item2", label: "Ítem 2", kind: "cumple_nocumple_obs" } },
+    ] as never)
+
+    mockSelectFn.mockReturnValueOnce(chainResultFirst({
+      id: "eval-1", worksiteId: "ws-1", estado: "borrador", definicionCode: "trabajador_nuevo", definicionVersion: "1.0", cargosJson: [],
+    }))
+
+    const mockTxSelect = vi.fn()
+    const mockTx = { select: mockTxSelect, update: vi.fn() }
+    mockTransactionFn.mockImplementation(async (fn) => fn(mockTx))
+    mockTxSelect.mockReturnValueOnce(chainResultFirst({ estado: "borrador" }))
+    // Todos respondidos, pero item1 queda "no_cumple" con observación en blanco.
+    mockTxSelect.mockReturnValueOnce(chainResult([
+      { seccionId: "sec1", itemId: "item1", estado: "no_cumple", observacion: "   " },
+      { seccionId: "sec1", itemId: "item2", estado: "cumple", observacion: null },
+    ]))
+
+    await expect(closeEvaluation("eval-1", {
+      evaluationId: "eval-1",
+      hasCriticalDeviation: false,
+      hasReincidence: false,
+    }, "all")).rejects.toThrow(/sin observación/)
+    expect(mockTx.update).not.toHaveBeenCalled()
   })
 
   it("closes evaluation and computes efficacy for trabajador_antiguo", async () => {

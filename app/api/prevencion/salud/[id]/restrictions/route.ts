@@ -27,7 +27,9 @@ export async function GET(request: Request, context: RouteContext) {
       permissions: session.user.permissions,
       purpose,
     })
-    return NextResponse.json({ restriction })
+    return NextResponse.json({ restriction }, {
+      headers: { "Cache-Control": "private, max-age=0, no-store" },
+    })
   } catch {
     return NextResponse.json({ error: "Registro no encontrado o fuera de alcance" }, { status: 404 })
   }

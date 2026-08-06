@@ -7,7 +7,7 @@ import { nanoid } from "@/lib/id"
 import { addDays } from "@/lib/sst/date"
 import { getDefinition } from "@/lib/sst/definitions/index"
 import { isPersonEvaluationDefinition } from "@/lib/sst/definitions"
-import { calculateCompliance, getAutomaticResultadoFinal, classifyEfficacy } from "@/lib/sst/compliance"
+import { calculateCompliance, getAutomaticResultadoFinal, classifyEfficacy, requiresObservation } from "@/lib/sst/compliance"
 import { sstEvaluationCreateSchema, sstCloseEvaluationSchema } from "@/lib/validation/sst"
 import type { StatusValue, EvaluatorRole } from "@/lib/sst/types"
 import { assertEditable, getEvaluationApplicableItems, SECTIONS_EXCLUDED_FROM_PERCENTAGE } from "./helpers"
@@ -183,6 +183,15 @@ export async function closeEvaluation(id: string, input: z.infer<typeof sstClose
     const responseByItem = new Map(applicableResponses.map((r) => [`${r.seccionId}::${r.itemId}`, r]))
     const unanswered = applicableItems.filter(({ seccionId, item }) => { const resp = responseByItem.get(`${seccionId}::${item.id}`); return !resp || resp.estado === null })
     if (unanswered.length > 0) throw new Error(`No se puede cerrar la evaluación: hay ${unanswered.length} ítem(s) aplicable(s) sin responder. Primer pendiente: ${unanswered[0]!.seccionId} / ${unanswered[0]!.item.label}.`)
+
+    // Regular / Malo / No cumple exigen observación escrita (DS N°44: el acta
+    // cerrada es inmutable). La UI lo avisa, pero el gate real vive acá — igual
+    // que assertNonConformingItemsHaveObservation en el motor PDTP.
+    const sinObservacion = applicableItems.filter(({ seccionId, item }) => {
+      const resp = responseByItem.get(`${seccionId}::${item.id}`)
+      return resp?.estado != null && requiresObservation(resp.estado as StatusValue) && !resp.observacion?.trim()
+    })
+    if (sinObservacion.length > 0) throw new Error(`No se puede cerrar la evaluación: hay ${sinObservacion.length} ítem(s) con "Regular" o "No cumple" sin observación. Primer pendiente: ${sinObservacion[0]!.seccionId} / ${sinObservacion[0]!.item.label}.`)
 
     const excludedSections = SECTIONS_EXCLUDED_FROM_PERCENTAGE[evaluation.definicionCode] ?? []
     const complianceInput = applicableResponses.filter((r) => !excludedSections.includes(r.seccionId)).map((r) => ({ estado: r.estado as StatusValue }))

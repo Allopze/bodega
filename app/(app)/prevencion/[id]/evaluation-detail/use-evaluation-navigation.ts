@@ -4,6 +4,7 @@ import { useState, useCallback, useMemo } from "react"
 import type { ChecklistDefinition } from "@/lib/sst/types"
 import type { SectionAccess } from "@/lib/sst/checklist"
 import type { SstWeeklyEvaluation } from "@/db/schema/sst"
+import { todayLocalISO } from "@/lib/sst/date"
 import { getApplicableSections } from "./helpers"
 
 export interface NavigationItem {
@@ -33,7 +34,8 @@ export function useEvaluationNavigation({
   const isWeekLocked = useCallback((semana: number) => {
     const weekly = weeklyEvals.find(w => w.semana === semana)
     if (!weekly) return false
-    const today = new Date().toISOString().slice(0, 10)
+    // Mismo criterio local-safe que markWeekCompleted en el servidor.
+    const today = todayLocalISO()
     return today < weekly.fechaDesbloqueo
   }, [weeklyEvals])
 

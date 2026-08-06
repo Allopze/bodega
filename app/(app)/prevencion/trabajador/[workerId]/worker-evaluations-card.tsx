@@ -13,7 +13,7 @@ import {
   estadoBadgeVariant,
   resultadoBadgeVariant,
 } from "@/lib/sst/badges"
-import { formatDateDisplay } from "@/lib/sst/date"
+import { formatDateDisplay, todayLocalISO } from "@/lib/sst/date"
 import { evaluatorRoleLabel } from "@/lib/prevention/admin-contrato-label"
 
 interface EvaluationCardProps {
@@ -112,7 +112,7 @@ export function EvaluationCard({
                   </p>
                   <div className="grid grid-cols-2 gap-2">
                     {weeklyEvals.map((week) => {
-                      const isLocked = new Date().toISOString().slice(0, 10) < week.fechaDesbloqueo
+                      const isLocked = todayLocalISO() < week.fechaDesbloqueo
                       const statusColor = week.estado === 'completada'
                         ? 'text-[var(--color-success)] bg-[var(--color-success-tint)]'
                         : isLocked
