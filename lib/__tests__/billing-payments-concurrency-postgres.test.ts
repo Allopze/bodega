@@ -149,9 +149,19 @@ describeIf("billing payment confirmation concurrency on real Postgres", () => {
     ])
 
     // Ambas son válidas individualmente (revertir libera saldo, confirmar lo
-    // toma); lo único que no puede pasar es que el saldo final no refleje la
-    // suma real de lo confirmado — el punto que H-01 dejaba roto.
-    expect(results.every((result) => result.status === "fulfilled")).toBe(true)
+    // toma), pero cuál sobrevive depende de quién gane el lock de fila:
+    //
+    //   revertir primero → libera el saldo y el confirm entra: las dos cumplen.
+    //   confirmar primero → el segundo pago de 1M excedería el saldo del
+    //                       movimiento y se rechaza, que es exactamente lo que
+    //                       debe pasar.
+    //
+    // Exigir que NINGUNA rechace convertía una serialización correcta en un
+    // rojo que salía cara o sello (verde en local, rojo en CI). Lo que este
+    // test defiende —el punto que H-01 dejaba roto— es la invariante de abajo:
+    // el saldo imputado refleja exactamente la suma de lo confirmado, gane
+    // quien gane.
+    expect(results.some((result) => result.status === "fulfilled")).toBe(true)
 
     const [transaction] = await db
       .select({ allocatedAmount: schema.billingBankTransactions.allocatedAmount })
