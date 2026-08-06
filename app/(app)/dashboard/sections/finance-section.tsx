@@ -14,9 +14,12 @@ import { DASHBOARD_DOMAINS } from "../dashboard-domains"
 import { DomainSection, type DomainKpiGroup } from "../dashboard-domain-shell"
 import { periodScopeLabel, scopedWorksiteId } from "../dashboard-scope"
 import {
-  BillingFlowChart, CompositionDonutChart, ThresholdRankingChart, WorksiteActivityChart,
+  BillingFlowChart,
+  CompositionDonutChart,
+  ThresholdRankingChart,
+  WorksiteActivityChart,
 } from "../dashboard-domain-charts"
-import type { DomainSectionsProps } from "../dashboard-domain-sections"
+import type { DomainSectionsProps } from "./shared"
 
 /**
  * Finanzas: **toda la plata**, en las dos direcciones.
@@ -31,6 +34,7 @@ import type { DomainSectionsProps } from "../dashboard-domain-sections"
  * relaja es A5 — por eso el gasto en OC se fue de Adquisiciones al nacer esta
  * sección, en vez de quedar en las dos.
  */
+
 export async function FinanceSection({ session, scope }: DomainSectionsProps) {
   const permissions = session.user.permissions
   const has = (permission: string) => permissions.includes(permission)
