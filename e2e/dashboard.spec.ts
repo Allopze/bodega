@@ -227,7 +227,8 @@ test.describe("Dashboard operacional", () => {
 
     // La insignia de "Mi trabajo" pega el conteo al rótulo; se recorta.
     const titles = (await tabs.getByRole("link").allTextContents()).map((t) => t.replace(/\d+$/, "").trim())
-    expect(titles.slice(0, 3)).toEqual(["Resumen", "Mi trabajo", "Adquisiciones"])
+    // Finanzas al frente: es el dominio que abre para quien mira la plata.
+    expect(titles.slice(0, 4)).toEqual(["Resumen", "Mi trabajo", "Finanzas", "Adquisiciones"])
   })
 
   test("Inicio abre en Resumen y sólo esa vista está montada", async ({ page }) => {
