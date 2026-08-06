@@ -16,6 +16,8 @@
 /playwright-report
 /test-results
 /.tmp
+# Blobs intermedios de la cobertura combinada (npm run test:coverage:all)
+/.vitest-reports
 
 # next.js
 /.next/
@@ -59,6 +61,8 @@ next-env.d.ts
 # tool artifacts (local only)
 .VSCodeCounter/
 .commandcode/
+# índice local de CodeGraph (~127 MB, se regenera solo)
+.codegraph/
 
 /audit
 /ui-audit

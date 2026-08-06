@@ -2,6 +2,7 @@ import { defineConfig } from "vitest/config"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { pgliteTestFiles } from "./tests/pglite-files"
+import { COVERAGE_EXCLUDE, COVERAGE_EXCLUDE_AFTER_REMAP, COVERAGE_INCLUDE } from "./vitest.coverage.shared"
 
 const projectRoot = path.dirname(fileURLToPath(import.meta.url))
 
@@ -24,25 +25,16 @@ export default defineConfig({
     testTimeout: 20_000,
     hookTimeout: 30_000,
     server: { deps: { inline: ["next-auth"] } },
+    // Sin `thresholds` a propósito: este proyecto no ejecuta las 53 suites
+    // PGlite, así que su cifra aislada castiga a `lib/services/**` por lo que
+    // cubre el otro proyecto. El umbral se aplica sobre la corrida combinada
+    // (`npm run test:coverage:all`), que es la única cifra comparable
+    // (H-12, AUDITORIA_BUGS_2026-08-05.md).
     coverage: {
       reporter: ["text", "lcov"],
-      include:  [
-        "lib/**/*.ts",
-      ],
-      exclude: [
-        "lib/auth/types.ts",
-        "lib/sst/types.ts",
-        "lib/requests/request-config.ts",
-        "lib/sst/index.ts",
-        "**/*.d.ts",
-        "**/node_modules/**",
-      ],
-      thresholds: {
-        statements: 40,
-        branches:   30,
-        functions:  40,
-        lines:      40,
-      },
+      include: COVERAGE_INCLUDE,
+      exclude: COVERAGE_EXCLUDE,
+      excludeAfterRemap: COVERAGE_EXCLUDE_AFTER_REMAP,
     },
   },
 })
