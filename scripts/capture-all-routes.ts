@@ -465,7 +465,21 @@ const routeTargets: RouteTarget[] = [
   { slug: "registro", path: "/registro", auth: false },
   { slug: "recuperar", path: "/recuperar", auth: false },
   { slug: "recuperar-token", path: "/recuperar/capture-reset-token", auth: false },
+  /*
+   * Inicio pinta **una vista a la vez** (`?vista=`), así que una sola captura
+   * de `/dashboard` sólo documenta el Resumen y deja las otras ocho sin
+   * evidencia. Una entrada por vista; el gating por permiso decide cuáles
+   * existen para el usuario de la captura.
+   */
   { slug: "dashboard", path: "/dashboard", auth: true },
+  { slug: "dashboard-trabajo", path: "/dashboard?vista=trabajo", auth: true },
+  { slug: "dashboard-finanzas", path: "/dashboard?vista=finanzas", auth: true },
+  { slug: "dashboard-adquisiciones", path: "/dashboard?vista=adquisiciones", auth: true },
+  { slug: "dashboard-flota", path: "/dashboard?vista=flota", auth: true },
+  { slug: "dashboard-prevencion", path: "/dashboard?vista=prevencion", auth: true },
+  { slug: "dashboard-bodega", path: "/dashboard?vista=bodega", auth: true },
+  { slug: "dashboard-terreno", path: "/dashboard?vista=terreno", auth: true },
+  { slug: "dashboard-gobernanza", path: "/dashboard?vista=gobernanza", auth: true },
   { slug: "perfil", path: "/perfil", auth: true },
   // Una sola ruta inexistente: cualquier URL sin coincidencia resuelve al mismo
   // 404 con shell, así que declarar dos producía una evidencia repetida.
