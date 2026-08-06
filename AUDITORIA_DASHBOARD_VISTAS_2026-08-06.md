@@ -26,16 +26,20 @@ Las nueve vistas, en el orden que decide el perfil de permisos:
 ### Scroll
 
 El punto de partida es `audit/screenshots/inicio-2026-08-05/`, donde `/dashboard`
-montaba todo a la vez:
+montaba todo a la vez. Medido sobre el contenedor de scroll real del shell —el
+`document` no crece, así que `documentElement.scrollHeight` no sirve—:
 
-| Viewport | Antes (rebanadas de 1 pantalla) | Después (vista más larga) |
-|---|---|---|
-| desktop 1920 | 8 | 1–2 |
-| laptop 1366 | 11 | 1–3 |
-| mobile 390 | 15 | 2–4 |
+| Viewport | Antes | Vista más larga | Vista más corta |
+|---|---|---|---|
+| desktop 1920 | 8 pantallas (~8.640 px) | 1,5 (Prevención, 1.579 px) | 1,0 (Finanzas, Adquisiciones, Bodega, Terreno, Gobernanza) |
+| laptop 1366 | 11 pantallas | 3,1 (Prevención, 2.351 px) | 1,0 (Terreno, Gobernanza) |
+| mobile 390 | 15 pantallas | 4,3 (Resumen, 3.601 px) | 1,3 (Gobernanza, 1.132 px) |
 
-Las capturas nuevas viven en `audit/screenshots/<fecha>-playwright/`, una por
-vista (`dashboard`, `dashboard-trabajo`, `dashboard-finanzas`, …).
+Ninguna vista desborda horizontalmente en ninguno de los tres anchos.
+
+Las capturas nuevas viven en `audit/screenshots/2026-08-06-playwright/`, una por
+vista y por viewport (`dashboard`, `dashboard-trabajo`, `dashboard-finanzas`, …):
+27 archivos donde antes había 2.
 
 ### Consultas por carga
 
@@ -91,9 +95,12 @@ conserva el tope de 4 sin excepciones.
 
 - `npm run typecheck` — limpio
 - `npm run lint` — 0 errores (5 advertencias preexistentes, ninguna en el tablero)
-- `npm test` — 3718 pasan, 174 saltados, 0 fallan
-- `e2e/dashboard.spec.ts` y `e2e/densidad-kpi.spec.ts` — ver §6
-- `npm run check:bundle-budget` — recharts sigue fuera del chunk inicial
+- `npm test` — **3718 pasan**, 174 saltados, 0 fallan
+- `npm run test:e2e -- e2e/dashboard.spec.ts e2e/densidad-kpi.spec.ts` — **42 pasan**, 0 fallan
+- `npm run check:bundle-budget` — 171 rutas, peor caso `/combustibles/facturas`
+  2,42 MB de 3,00 MB de presupuesto: recharts sigue fuera del chunk inicial
+- `npm run screenshots` — 27 capturas de tablero (9 vistas × desktop/móvil +
+  variantes), donde antes había 2
 
 ## 6. Nota sobre los e2e
 
