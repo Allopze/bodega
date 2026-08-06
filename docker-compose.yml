@@ -40,6 +40,14 @@ services:
       - "127.0.0.1:3000:3000"
     environment:
       - NODE_ENV=production
+      # node:22.13-alpine corre en UTC. `lib/sst/date.ts` construye fechas con la
+      # hora del sistema y `lib/utils.ts` las formatea fijando America/Santiago:
+      # en UTC, la medianoche que produce `parseLocalDate` todavía es el día
+      # anterior en Chile y la fecha se renderiza corrida un día — de forma
+      # permanente, no sólo de noche. `todayLocalISO()` además adelanta el día
+      # entre las 20:00 y medianoche. Node 22 resuelve la zona por ICU, así que
+      # no hace falta el paquete tzdata.
+      - TZ=America/Santiago
       # Next standalone (node server.js) binds to $HOSTNAME; Docker sets that to the
       # container id, so it only listens on the container's eth0 IP and the internal
       # healthcheck (wget localhost:3000) gets ECONNREFUSED → container marked unhealthy.
@@ -97,6 +105,9 @@ services:
       app:
         condition: service_healthy
     environment:
+      # Misma zona que `app`: este servicio fecha respaldos y dispara los cron
+      # diarios, que se corren contra el calendario chileno.
+      - TZ=America/Santiago
       - DATABASE_URL=${DATABASE_URL:-postgres://${POSTGRES_USER:-bodega}:${POSTGRES_PASSWORD:?err}@db:5432/${POSTGRES_DB:-bodega}}
       - STORAGE_PATH=${STORAGE_PATH:-/data/storage}
       - BACKUP_DIR=${BACKUP_DIR:-/data/backups}

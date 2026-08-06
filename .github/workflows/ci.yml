@@ -26,6 +26,13 @@ env:
   # el que se despliega, justo el punto que dejó al fallback OCR de PDF sin
   # cobertura confiable (auditoría OCR 2026-07-30).
   NODE_VERSION: "22.13"
+  # El runner corre en UTC. `lib/sst/date.ts` entiende "local" como la hora del
+  # sistema y `lib/utils.ts` formatea fijando America/Santiago: sólo coinciden
+  # si el sistema ES Chile. En UTC, `parseLocalDate("2026-08-06")` es medianoche
+  # UTC, que en Chile todavía es el día 5, y toda fecha construida así se
+  # renderiza corrida un día. La plataforma es de un solo país; se fija la zona
+  # aquí igual que en el contenedor de producción (docker-compose.yml).
+  TZ: America/Santiago
 
 # ---------------------------------------------------------------------------
 # El pipeline corría como un único job secuencial: el reloj de pared era la
