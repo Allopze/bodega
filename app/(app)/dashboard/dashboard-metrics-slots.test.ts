@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { buildOperationalAlerts, buildOperationalMetrics } from "./page"
+import { buildOperationalAlerts, buildOperationalMetrics } from "./views/resumen-view"
 import type { DashboardScope } from "./dashboard-scope"
 
 /**
@@ -11,7 +11,7 @@ import type { DashboardScope } from "./dashboard-scope"
  * (candidato 8) y "Stock crítico" (7) quedaban **fuera para todos los roles**.
  */
 
-const scope: DashboardScope = { worksiteId: "all", worksiteName: null, period: "mes" }
+const scope: DashboardScope = { worksiteId: "all", worksiteName: null, period: "mes", view: "resumen" }
 
 const numbers = {
   tasks: 40,
@@ -109,7 +109,7 @@ describe("buildOperationalMetrics — ranuras", () => {
   it("una faena elegida viaja en los enlaces de drill-down", () => {
     const withWorksite = buildOperationalMetrics({
       ...jefatura,
-      scope: { worksiteId: "ws-sur", worksiteName: "Faena Sur", period: "mes" },
+      scope: { worksiteId: "ws-sur", worksiteName: "Faena Sur", period: "mes", view: "resumen" },
     })
 
     expect(withWorksite.find((m) => m.key === "overdue")?.href)
@@ -184,7 +184,7 @@ describe("buildOperationalAlerts — sin repetir tiles", () => {
   it("las alertas también conservan la faena en su enlace", () => {
     const [alert] = buildOperationalAlerts({
       ...alertInput,
-      scope: { worksiteId: "ws-sur", worksiteName: "Faena Sur", period: "mes" },
+      scope: { worksiteId: "ws-sur", worksiteName: "Faena Sur", period: "mes", view: "resumen" },
       shownAsTile: new Set<string>(),
     })
 

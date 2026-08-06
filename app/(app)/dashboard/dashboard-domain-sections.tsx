@@ -1,4 +1,3 @@
-import { Suspense } from "react"
 import type { Session } from "next-auth"
 import {
   Broom, Certificate, ClipboardText, CurrencyDollar, FileText, Gauge, Package,
@@ -9,6 +8,7 @@ import { SummaryBar, type SummaryStat } from "@/components/ui/summary-bar"
 import type { WorksiteScope } from "@/lib/auth/scope"
 import { formatCLP } from "@/lib/utils"
 import { getAnalyticsDashboard } from "@/lib/services/analytics-module/dashboard"
+import { getDashboardData } from "@/lib/services/dashboard"
 import { getCapaDashboardCounts } from "@/lib/services/prevention-capa"
 import { getIncidentDashboardCounts } from "@/lib/services/prevention-incidents"
 import { getDashboardCounters } from "@/lib/services/prevention-documents/search"
@@ -28,8 +28,8 @@ import { getCanonicalSafetyIndicatorYear, getMaterialEnvironmentalEvents } from 
 import { getPdtpComplianceIndicatorsForScope } from "@/lib/services/pdtp/compliance"
 import { computeHealthStats, countPendingFuelCreditNotes } from "@/lib/services/dte-portal/reconciliation"
 import { readDtePortalConfig } from "@/lib/services/dte-portal/config"
-import { DASHBOARD_DOMAINS, orderDashboardDomains, type DashboardDomainKey } from "./dashboard-domains"
-import { DomainIndex, DomainSection, DomainSectionFallback } from "./dashboard-domain-shell"
+import { DASHBOARD_DOMAINS, type DashboardDomainKey } from "./dashboard-domains"
+import { DomainSection } from "./dashboard-domain-shell"
 import { periodScopeLabel, scopedWorksiteId, type DashboardScope } from "./dashboard-scope"
 import { MONTH_LABELS, toSstMonthlyPoints } from "./sst-monthly-points"
 import { CHART_COLORS } from "@/lib/chart-palette"
@@ -57,14 +57,6 @@ export interface DomainSectionsProps {
   currentYear: number
   moduleWorkload: ModuleWorkloadPoint[]
   queueTotal: number
-  worksitesBreakdown: { name: string; totalCost: number }[]
-  /**
-   * Ítems esperando aprobación **ahora** (`data.metrics.pending_approvals`),
-   * la misma cifra que la alerta del Centro de Control. El KPI usaba
-   * `analytics.kpis.pendingApprovals`, que filtra por la ventana del período:
-   * la pantalla mostraba 3, 1 y 0 para "aprobaciones" a la vez (I-02).
-   */
-  pendingApprovals: number
 }
 
 /** Filtros de `getAnalyticsDashboard` derivados del alcance global. */
@@ -94,15 +86,27 @@ function plusDays(date: string, days: number) {
 
 // ── Adquisiciones ────────────────────────────────────────────────────────────
 
-async function AcquisitionsSection({ session, scope, worksiteScope, moduleWorkload, queueTotal, worksitesBreakdown, pendingApprovals }: DomainSectionsProps) {
+async function AcquisitionsSection({ session, scope, worksiteScope, moduleWorkload, queueTotal }: DomainSectionsProps) {
   const bounds = getOperationalCalendarBounds(new Date(), scope.period)
   const dteCodEmp = (await readDtePortalConfig()).credentials.codEmp
-  const [analytics, quality, trend, dteHealth] = await Promise.all([
+  /*
+   * `getDashboardData` se consulta acá y no en la página.
+   *
+   * Entrega `pendingApprovals` —ítems esperando decisión **ahora**, la misma
+   * cifra que la alerta del Resumen; `analytics.kpis.pendingApprovals` filtra
+   * por la ventana del período y la pantalla llegó a mostrar 3, 1 y 0 para
+   * "aprobaciones" a la vez (I-02)— y el desglose por faena. Con las vistas
+   * conmutadas, dejarla en la página la cobraba a los ocho renders.
+   */
+  const [analytics, quality, trend, dteHealth, dashboardData] = await Promise.all([
     getAnalyticsDashboard(session, analyticsFilters(scope)),
     getReceptionQuality(session, { from: bounds.currentStart, to: bounds.currentEnd }, scopedWorksiteId(scope)),
     getOperationalTrendHistory(session, 6, new Date(), scopedWorksiteId(scope)),
     computeHealthStats(todayInChile().slice(0, 7), dteCodEmp).catch(() => null),
+    getDashboardData(session, scopedWorksiteId(scope)),
   ])
+  const pendingApprovals = dashboardData.metrics.pending_approvals
+  const worksitesBreakdown = dashboardData.worksitesBreakdown
 
   const periodo = periodScopeLabel(scope.period).toLocaleLowerCase("es-CL")
 
@@ -619,7 +623,7 @@ async function GovernanceSection({ session, scope, worksiteScope, worksiteIds }:
 
 // ── Orquestador ──────────────────────────────────────────────────────────────
 
-const SECTION_BY_DOMAIN: Record<DashboardDomainKey, (props: DomainSectionsProps) => Promise<React.JSX.Element>> = {
+export const SECTION_BY_DOMAIN: Record<DashboardDomainKey, (props: DomainSectionsProps) => Promise<React.JSX.Element>> = {
   adquisiciones: AcquisitionsSection,
   bodega: WarehouseSection,
   prevencion: PreventionSection,
@@ -629,29 +633,13 @@ const SECTION_BY_DOMAIN: Record<DashboardDomainKey, (props: DomainSectionsProps)
 }
 
 /**
- * Las cinco secciones por dominio, en el orden que decide el perfil de permisos.
+ * La sección del dominio activo. Una, no seis.
  *
- * Cada una va en su **propio `Suspense`**: la sección de Adquisiciones llama a
- * `getAnalyticsDashboard` (~20 consultas) y no puede hacer esperar a las otras
- * cuatro ni al Centro de Control, que ya se pintó arriba.
+ * `DashboardDomainSections` montaba las seis con un `Suspense` cada una: la de
+ * Adquisiciones sola dispara ~20 consultas, y se pagaban todas en cada carga
+ * aunque el usuario mirara Prevención.
  */
-export function DashboardDomainSections(props: DomainSectionsProps) {
-  const domains = orderDashboardDomains(props.session.user.permissions)
-  if (domains.length === 0) return null
-
-  return (
-    <div className="mb-6 2xl:grid 2xl:grid-cols-[168px_minmax(0,1fr)] 2xl:gap-8">
-      <DomainIndex domains={domains} />
-      <div className="flex min-w-0 flex-col gap-8">
-        {domains.map((domain) => {
-          const Section = SECTION_BY_DOMAIN[domain.key]
-          return (
-            <Suspense key={domain.key} fallback={<DomainSectionFallback />}>
-              <Section {...props} />
-            </Suspense>
-          )
-        })}
-      </div>
-    </div>
-  )
+export function DashboardDomainSection({ domain, ...props }: DomainSectionsProps & { domain: DashboardDomainKey }) {
+  const Section = SECTION_BY_DOMAIN[domain]
+  return <Section {...props} />
 }
