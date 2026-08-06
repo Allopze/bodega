@@ -25,8 +25,15 @@ test.describe("PDTP — Creación y edición de programas", () => {
 
   test("si el año ya existe lo abre sin duplicarlo", async ({ page }) => {
     await page.goto("/prevencion/pdtp/nuevo")
-    await page.getByLabel("Año del programa").fill("2027")
-    await expect(page.getByRole("button", { name: "Abrir programa anual" })).toBeVisible()
+    // El rótulo del botón ("Crear" vs "Abrir") lo decide el cliente al detectar
+    // que el año ya existe, o sea que depende del `onChange` de React: si el
+    // `fill` llega antes de hidratar, el valor queda en el DOM pero el handler
+    // nunca corre y el botón se queda en "Crear" para siempre. Se reintenta el
+    // fill —idempotente— hasta que el cliente reacciona.
+    await expect.poll(async () => {
+      await page.getByLabel("Año del programa").fill("2027")
+      return page.getByRole("button", { name: "Abrir programa anual" }).count()
+    }, { timeout: 15_000 }).toBeGreaterThan(0)
     await page.getByRole("button", { name: "Abrir programa anual" }).click()
     await expect(page).toHaveURL(/\/prevencion\/pdtp\/pdtp-draft-e2e\/editar/, { timeout: 15_000 })
   })

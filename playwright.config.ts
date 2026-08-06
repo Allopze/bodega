@@ -48,7 +48,14 @@ export default defineConfig({
   // not app bugs — a real bug fails consistently across retries too);
   // local runs stay at 0 so a real failure is never hidden while iterating.
   retries: process.env.CI ? 1 : 0,
-  workers: 2,
+  // 1 worker en CI, 2 en local. Con el suite ya shardeado en 4 runners, bajar a
+  // un worker por shard SIGUE dando más paralelismo total que el job único
+  // original (4 tests concurrentes contra 2), y a cambio cada test deja de
+  // competir por CPU con un segundo navegador, el servidor Next y Postgres en la
+  // misma VM de 4 núcleos. Esa contención es la causa de fondo de las fallas que
+  // sólo ocurren en CI: clics que llegan antes de que React hidrate y
+  // presupuestos de latencia que se pasan por ruido de hardware, no por la app.
+  workers: process.env.CI ? 1 : 2,
   reporter: process.env.CI ? "github" : "list",
   use: {
     baseURL: `http://localhost:${port}`,

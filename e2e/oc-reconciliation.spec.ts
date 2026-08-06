@@ -59,18 +59,27 @@ test.describe("Conciliación OC-factura-recepción", () => {
     // clickea antes de que React hidrate. Ahí `Link` ya hace preventDefault
     // pero el router todavía no navega, y el clic se pierde sin dejar rastro
     // —la URL simplemente no cambia y la aserción agota sus 10 s.
-    await page.waitForLoadState("networkidle").catch(() => undefined)
-    await page.getByRole("link", { name: /Quitar filtro de facturas pendientes/i }).click()
-    await expect(page).not.toHaveURL(/factura=pendiente/, { timeout: 10_000 })
+    // `networkidle` no alcanza: vuelve apenas la red se calma, que puede ser
+    // antes de que React termine de hidratar. En esa ventana `Link` ya hace
+    // preventDefault pero el router todavía no navega, así que el clic se pierde
+    // en silencio. Se reintenta hasta que el cliente lo toma; el destino es el
+    // mismo, así que repetirlo no tiene efecto secundario.
+    await expect.poll(async () => {
+      const chip = page.getByRole("link", { name: /Quitar filtro de facturas pendientes/i })
+      if (await chip.count()) await chip.click().catch(() => undefined)
+      return page.url()
+    }, { timeout: 15_000 }).not.toMatch(/factura=pendiente/)
     await expect(page.getByRole("link", { name: /Ver OC OC-2026-0001/ })).toBeVisible({ timeout: 10_000 })
 
     // Y "Limpiar" —que sólo aparece con filtros activos— también lo apaga.
     // Este sí es un <button> con onClick: sin hidratar no hace absolutamente
     // nada, y es el que fallaba de forma reproducible en local.
     await page.goto("/compras?factura=pendiente")
-    await page.waitForLoadState("networkidle").catch(() => undefined)
-    await page.getByRole("button", { name: "Limpiar" }).click()
-    await expect(page).not.toHaveURL(/factura=pendiente/, { timeout: 10_000 })
+    await expect.poll(async () => {
+      const limpiar = page.getByRole("button", { name: "Limpiar" })
+      if (await limpiar.count()) await limpiar.click().catch(() => undefined)
+      return page.url()
+    }, { timeout: 15_000 }).not.toMatch(/factura=pendiente/)
   })
 
   // El número de guía se tipea en la recepción, con el documento en la mano.
