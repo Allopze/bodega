@@ -53,6 +53,7 @@ export default async function InvoicesPage({
     source: oneOf(params.fuente, ["factura_en_linea", "chipax", "manual"] as const),
     currency: matches(params.moneda, /^[A-Z]{3}$/),
     overdueOnly: params.vencidas === "1",
+    unlinkedOnly: params.sinVinculo === "1",
     search: params.q?.trim() || undefined,
     page,
     pageSize: PAGE_SIZE,

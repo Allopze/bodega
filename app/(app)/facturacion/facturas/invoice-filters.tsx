@@ -35,6 +35,7 @@ export function InvoiceFiltersBar({ clients }: { clients: { id: string; name: st
     chip("documento", "Estado documental", DOCUMENT_LABELS[searchParams.get("documento") ?? ""] ?? null),
     chip("fuente", "Fuente", SOURCE_LABELS[searchParams.get("fuente") ?? ""] ?? null),
     chip("vencidas", "Solo vencidas", searchParams.get("vencidas") === "1" ? "Sí" : null),
+    chip("sinVinculo", "Sin vínculo", searchParams.get("sinVinculo") === "1" ? "Sí" : null),
     chip("q", "Búsqueda", searchParams.get("q")),
   ].filter((entry): entry is { key: string; label: string; value: string } => entry !== null)
 
@@ -131,6 +132,16 @@ export function InvoiceFiltersBar({ clients }: { clients: { id: string; name: st
             className="size-4 rounded border-[var(--color-border)]"
           />
           Solo vencidas
+        </label>
+
+        <label className="flex items-center gap-2 pb-1.5 text-sm text-[var(--color-text)]">
+          <input
+            type="checkbox"
+            checked={searchParams.get("sinVinculo") === "1"}
+            onChange={(event) => setParam("sinVinculo", event.target.checked ? "1" : "")}
+            className="size-4 rounded border-[var(--color-border)]"
+          />
+          Sin vínculo operacional
         </label>
       </div>
 

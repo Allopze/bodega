@@ -180,6 +180,9 @@ const VERIFICATION_STATUS: Record<string, StatusLabel> = {
   suggested: { label: "Sugerido",  tone: "neutral",    hint: "Propuesto por la plataforma. No cuenta hasta que una persona lo confirme." },
   confirmed: { label: "Confirmado", tone: "success", hint: "Validado por una persona autorizada." },
   rejected:  { label: "Descartado", tone: "neutral" },
+  // Sin esta entrada, un pago confirmado y luego revertido caía al fallback
+  // "Sugerido", borrando la trama de que hubo una confirmación corregida.
+  reverted:  { label: "Revertido", tone: "neutral", hint: "Confirmación revertida por error. El motor puede volver a proponerlo." },
 }
 
 export function verificationStatusLabel(status: string): StatusLabel {

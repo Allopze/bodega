@@ -17,6 +17,7 @@ import { nanoid } from "@/lib/id"
 import { recordAudit } from "@/lib/audit"
 import { logger } from "@/lib/logger"
 import { recordInvoiceEvent } from "@/lib/services/billing/invoices"
+import { canReachInvoice } from "@/lib/services/billing/queries"
 import {
   assertProposalTransition,
   computeProposalTotals,
@@ -368,6 +369,12 @@ export async function relateProposalToInvoiceAction(input: unknown): Promise<Act
     const scope = resolveWorksiteScope(session)
     if (scope.mode === "some" && (!proposal.worksiteId || !scope.ids.includes(proposal.worksiteId))) {
       return { ok: false, message: "No tienes acceso a esa faena" }
+    }
+    // El alcance de la propuesta no basta: la factura llega por ID desde el
+    // cliente y vincularla la abre a toda lectura futura (H-08 dejó esta
+    // guarda como obligatoria para toda escritura que reciba un invoiceId).
+    if (!(await canReachInvoice(session, invoiceId))) {
+      return { ok: false, message: "No tienes acceso a esta factura" }
     }
 
     const now = new Date().toISOString()

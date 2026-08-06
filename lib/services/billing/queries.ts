@@ -54,6 +54,8 @@ export interface InvoiceFilters {
   ownerUserId?: string
   /** Solo vencidas al día de hoy. */
   overdueOnly?: boolean
+  /** Solo facturas sin vínculo operacional confirmado (`?sinVinculo=1`). */
+  unlinkedOnly?: boolean
   /** Búsqueda por folio o RUT. */
   search?: string
   page?: number
@@ -322,6 +324,17 @@ function buildInvoiceConditions(filters: InvoiceFilters, today: string): SQL[] {
   if (filters.overdueOnly) {
     conditions.push(sql`${billingInvoices.dueDate} IS NOT NULL AND ${billingInvoices.dueDate} < ${today}`)
     conditions.push(ne(billingInvoices.paymentStatus, "paid"))
+  }
+
+  // Mismo criterio de "sin relación con la operación" que listUnlinkedInvoices:
+  // ningún vínculo confirmado. El dashboard enlazaba ?sinVinculo=1 sin que
+  // ningún código lo leyera — el usuario llegaba a la lista completa sin aviso.
+  if (filters.unlinkedOnly) {
+    conditions.push(sql`NOT EXISTS (
+      SELECT 1 FROM ${billingInvoiceLinks}
+      WHERE ${billingInvoiceLinks.invoiceId} = ${billingInvoices.id}
+        AND ${billingInvoiceLinks.status} = 'confirmed'
+    )`)
   }
 
   if (filters.clientId || filters.contractId || filters.worksiteId) {

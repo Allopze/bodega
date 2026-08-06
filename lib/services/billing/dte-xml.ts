@@ -91,10 +91,18 @@ export function parseSaleDteXml(xml: string): DteXmlDocument | null {
   const receiverTaxId = rut(text(child(receptor, "RUTRecep")))
   const receiverName  = text(child(receptor, "RznSocRecep"))
 
-  const netAmount    = num(child(totales, "MntNeto"))
-  const taxAmount    = num(child(totales, "IVA"))
-  const exemptAmount = num(child(totales, "MntExe"))
-  const totalAmount  = num(child(totales, "MntTotal"))
+  // El XML del SII declara los montos como magnitud sin signo; el signo de una
+  // Nota de Crédito (TipoDTE 61) es convención contable externa al documento.
+  // La convención interna (invoices.ts, derivePaymentStatus) exige que una NC
+  // tenga total NEGATIVO para reducir la cuenta por cobrar — sin esto, una NC
+  // cargada desde XML se contabilizaba como factura que aumenta la deuda.
+  const asCredit = docType === "61"
+    ? (v: number | null) => (v === null ? null : -Math.abs(v))
+    : (v: number | null) => v
+  const netAmount    = asCredit(num(child(totales, "MntNeto")))
+  const taxAmount    = asCredit(num(child(totales, "IVA")))
+  const exemptAmount = asCredit(num(child(totales, "MntExe")))
+  const totalAmount  = asCredit(num(child(totales, "MntTotal")))
 
   // Identidad mínima. Sin esto el registro no se puede deduplicar ni atribuir.
   if (
@@ -206,7 +214,10 @@ function int(value: unknown): number | null {
 function num(value: unknown): number | null {
   const asText = text(value)
   if (asText === null) return null
-  const parsedNum = Number(asText.replace(/\./g, "").replace(",", "."))
+  // Contenido XML usa la sintaxis léxica de XSD decimal (punto = decimal, sin
+  // separador de miles). Tratarlo como texto chileno convertía "6.00" en 600;
+  // ese tratamiento pertenece solo a parseMonto() del parser HTML del portal.
+  const parsedNum = Number(asText)
   return Number.isFinite(parsedNum) ? parsedNum : null
 }
 

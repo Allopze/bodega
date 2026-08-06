@@ -129,4 +129,24 @@ describe("parseSaleDteXml", () => {
     const xml = SALE_INVOICE_XML.replace("76.543.210-K", "55555555-5")
     expect(parseSaleDteXml(xml)!.receiverTaxId).toBe("55555555-5")
   })
+
+  it("una nota de crédito (TipoDTE 61) invierte el signo de todos los montos", () => {
+    // El XML del SII declara magnitudes sin signo; la convención interna
+    // (derivePaymentStatus) exige total negativo para que la NC reste deuda.
+    const xml = SALE_INVOICE_XML.replace("<TipoDTE>33</TipoDTE>", "<TipoDTE>61</TipoDTE>")
+    const doc = parseSaleDteXml(xml)!
+    expect(doc.docType).toBe("61")
+    expect(doc.netAmount).toBe(-4200000)
+    expect(doc.taxAmount).toBe(-798000)
+    expect(doc.exemptAmount).toBe(-150000)
+    expect(doc.totalAmount).toBe(-5148000)
+  })
+
+  it("lee decimales XSD del XML (punto decimal, sin separador de miles)", () => {
+    // "6.00" son 6 unidades, no 600: el contenido XML no usa formato chileno.
+    const xml = SALE_INVOICE_XML
+      .replace("<QtyItem>1</QtyItem>\n          <UnmdItem>SERV</UnmdItem>", "<QtyItem>6.00</QtyItem>\n          <UnmdItem>SERV</UnmdItem>")
+    const doc = parseSaleDteXml(xml)!
+    expect(doc.items[0]!.quantity).toBe(6)
+  })
 })

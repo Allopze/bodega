@@ -18,8 +18,9 @@
  * deshacer.
  */
 
-import { and, eq, ne, or, sql } from "drizzle-orm"
-import { alias } from "drizzle-orm/pg-core"
+import { and, eq, isNotNull, ne, or, sql, type SQL } from "drizzle-orm"
+import { alias, type AnyPgColumn } from "drizzle-orm/pg-core"
+import type { Session } from "next-auth"
 import { db } from "@/db"
 import {
   billingDuplicateCandidates,
@@ -29,7 +30,9 @@ import {
   billingInvoicePayments,
   billingInvoices,
 } from "@/db/schema"
+import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { nanoid } from "@/lib/id"
+import { cleanRut } from "@/lib/rut"
 import { absAmount, amountsWithinTolerance, compareAmounts } from "./money"
 import { daysOverdue, recomputeInvoicePaymentStatus, recordInvoiceEvent } from "./invoices"
 
@@ -80,7 +83,11 @@ export function classifyPair(a: InvoiceRow, b: InvoiceRow): DuplicatePair | null
   // Distinta dirección o distinta moneda: no son el mismo cobro.
   if (a.direction !== b.direction || a.currency !== b.currency) return null
 
-  const sameCounterparty = a.issuerTaxId === b.issuerTaxId && a.receiverTaxId === b.receiverTaxId
+  // cleanRut como defensa: la razón de ser de este motor es atrapar lo que la
+  // identidad exacta no captura, y un RUT con puntos en una fuente y sin
+  // puntos en otra (fuentes históricas sin normalizar) lo dejaba ciego.
+  const sameCounterparty = cleanRut(a.issuerTaxId) === cleanRut(b.issuerTaxId)
+    && cleanRut(a.receiverTaxId) === cleanRut(b.receiverTaxId)
   if (!sameCounterparty) return null
 
   const sameTotal = amountsWithinTolerance(a.totalAmount, b.totalAmount, AMOUNT_TOLERANCE)
@@ -212,9 +219,32 @@ export async function detectDuplicateCandidates(
  * mostrar lado a lado lo que dice cada una y que la decisión se tome mirando los
  * dos documentos, no un identificador.
  */
-export async function listOpenDuplicates(limit = 50) {
+/**
+ * Misma regla de alcance que `invoiceScopePredicate` (queries.ts), aplicada a
+ * un alias: un rol acotado solo ve facturas con vínculo confirmado a sus
+ * faenas. Sin esto, la pantalla de duplicados mostraba pares (con montos y
+ * RUT) de toda la empresa a cualquier rol con billing:manage_invoices.
+ */
+function aliasScopePredicate(session: Session | null, invoiceAlias: { id: AnyPgColumn }): SQL | null | false {
+  const scope = resolveWorksiteScope(session)
+  if (scope.mode === "all") return null
+  if (scope.mode === "none") return false
+
+  return sql`EXISTS (
+    SELECT 1 FROM ${billingInvoiceLinks}
+    WHERE ${billingInvoiceLinks.invoiceId} = ${invoiceAlias.id}
+      AND ${billingInvoiceLinks.status} = 'confirmed'
+      AND ${billingInvoiceLinks.worksiteId} IN ${scope.ids}
+  )`
+}
+
+export async function listOpenDuplicates(session: Session | null, limit = 50) {
   const left = alias(billingInvoices, "invoice_left")
   const right = alias(billingInvoices, "invoice_right")
+
+  const leftScope = aliasScopePredicate(session, left)
+  const rightScope = aliasScopePredicate(session, right)
+  if (leftScope === false || rightScope === false) return []
 
   return db
     .select({
@@ -248,7 +278,11 @@ export async function listOpenDuplicates(limit = 50) {
     .from(billingDuplicateCandidates)
     .innerJoin(left, eq(left.id, billingDuplicateCandidates.invoiceId))
     .innerJoin(right, eq(right.id, billingDuplicateCandidates.otherInvoiceId))
-    .where(eq(billingDuplicateCandidates.status, "open"))
+    .where(and(
+      eq(billingDuplicateCandidates.status, "open"),
+      ...(leftScope ? [leftScope] : []),
+      ...(rightScope ? [rightScope] : []),
+    ))
     .limit(limit)
 }
 
@@ -327,6 +361,29 @@ export async function mergeDuplicate(input: {
     await tx.update(billingInvoiceLinks)
       .set({ invoiceId: input.keepId })
       .where(eq(billingInvoiceLinks.invoiceId, input.dropId))
+
+    // El índice único (invoiceId, bankTransactionId) impide que ambas facturas
+    // tengan imputado el mismo movimiento — típico cuando el motor de
+    // conciliación sugirió el mismo depósito a las dos candidatas. Sin este
+    // chequeo, el UPDATE reventaba con el error crudo de Postgres en el toast.
+    const sharedBankTx = await tx
+      .select({ id: billingInvoicePayments.id })
+      .from(billingInvoicePayments)
+      .where(and(
+        eq(billingInvoicePayments.invoiceId, input.dropId),
+        isNotNull(billingInvoicePayments.bankTransactionId),
+        sql`${billingInvoicePayments.bankTransactionId} IN (
+          SELECT bank_transaction_id FROM ${billingInvoicePayments}
+          WHERE ${billingInvoicePayments.invoiceId} = ${input.keepId}
+            AND bank_transaction_id IS NOT NULL
+        )`,
+      ))
+      .limit(1)
+    if (sharedBankTx.length > 0) {
+      throw new DuplicateMergeError(
+        "Ambas facturas tienen una imputación del mismo movimiento bancario. Descarta o revierte esa imputación en una de las dos antes de fusionar.",
+      )
+    }
 
     await tx.update(billingInvoicePayments)
       .set({ invoiceId: input.keepId })

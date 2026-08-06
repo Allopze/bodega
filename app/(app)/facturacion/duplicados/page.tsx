@@ -27,7 +27,7 @@ export default async function DuplicatesPage() {
     redirect(`/forbidden?desde=${encodeURIComponent("/facturacion")}`)
   }
 
-  const candidates = await listOpenDuplicates()
+  const candidates = await listOpenDuplicates(session)
 
   return (
     <PageContainer>

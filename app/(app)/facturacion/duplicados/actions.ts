@@ -6,6 +6,7 @@ import { eq } from "drizzle-orm"
 import { db } from "@/db"
 import { billingDuplicateCandidates } from "@/db/schema"
 import { guardPermission } from "@/lib/auth/can"
+import { canReachInvoice } from "@/lib/services/billing/queries"
 import { recordAudit } from "@/lib/audit"
 import { logger } from "@/lib/logger"
 import {
@@ -72,6 +73,17 @@ export async function resolveDuplicateAction(input: unknown): Promise<ActionResu
     })
     if (!candidate) return { ok: false, message: "El caso no existe" }
     if (candidate.status !== "open") return { ok: false, message: "El caso ya fue resuelto" }
+
+    // Alcance sobre AMBAS facturas: fusionar o descartar decide el destino de
+    // registros financieros; la pantalla filtra, pero la acción no puede
+    // confiar en eso (H-08: toda escritura que recibe un invoiceId lo verifica).
+    const [reachesA, reachesB] = await Promise.all([
+      canReachInvoice(session, candidate.invoiceId),
+      canReachInvoice(session, candidate.otherInvoiceId),
+    ])
+    if (!reachesA || !reachesB) {
+      return { ok: false, message: "No tienes acceso a las facturas de este caso" }
+    }
 
     if (decision === "dismiss") {
       await dismissDuplicate(candidateId, session.user.id)

@@ -32,6 +32,12 @@ afterAll(async () => {
 
 const ACTOR = "u-admin"
 
+/** Sesión de rol global: estas pruebas ejercitan la mecánica, no el alcance
+ *  (el alcance por faena lo cubre queries-scope.test.ts). */
+const GLOBAL_SESSION = {
+  user: { id: ACTOR, name: "Administración", email: "admin@test", permissions: [], roles: [], worksiteIds: [], isGlobal: true },
+} as unknown as import("next-auth").Session
+
 /** Dos facturas del mismo cliente, mismo monto y misma fecha: distinto folio. */
 async function seedSuspiciousPair() {
   await inMemoryDb.insert(schema.billingInvoices).values([
@@ -76,7 +82,7 @@ describe("detección", () => {
     expect(result.scanned).toBe(2)
     expect(result.created).toBe(1)
 
-    const open = await listOpenDuplicates()
+    const open = await listOpenDuplicates(GLOBAL_SESSION)
     expect(open).toHaveLength(1)
     expect(open[0]!.classification).toBe("probable")
     // La pantalla necesita los dos documentos completos para poder decidir.
@@ -91,7 +97,7 @@ describe("detección", () => {
 
     expect(second.created).toBe(0)
     expect(second.alreadyKnown).toBe(1)
-    expect(await listOpenDuplicates()).toHaveLength(1)
+    expect(await listOpenDuplicates(GLOBAL_SESSION)).toHaveLength(1)
   })
 
   it("no marca facturas de clientes distintos", async () => {
@@ -117,14 +123,14 @@ describe("detección", () => {
   it("un caso descartado no vuelve a abrirse", async () => {
     await seedSuspiciousPair()
     await detectDuplicateCandidates({ direction: "sale" })
-    const [candidate] = await listOpenDuplicates()
+    const [candidate] = await listOpenDuplicates(GLOBAL_SESSION)
 
     await dismissDuplicate(candidate!.id, ACTOR)
-    expect(await listOpenDuplicates()).toHaveLength(0)
+    expect(await listOpenDuplicates(GLOBAL_SESSION)).toHaveLength(0)
 
     const rerun = await detectDuplicateCandidates({ direction: "sale" })
     expect(rerun.created).toBe(0)
-    expect(await listOpenDuplicates()).toHaveLength(0)
+    expect(await listOpenDuplicates(GLOBAL_SESSION)).toHaveLength(0)
   })
 })
 
@@ -147,7 +153,7 @@ describe("fusión", () => {
     })
 
     await detectDuplicateCandidates({ direction: "sale" })
-    const [candidate] = await listOpenDuplicates()
+    const [candidate] = await listOpenDuplicates(GLOBAL_SESSION)
 
     await mergeDuplicate({
       candidateId: candidate!.id,
@@ -182,7 +188,7 @@ describe("fusión", () => {
       .where(eq(schema.billingInvoices.id, "inv-original"))
 
     await detectDuplicateCandidates({ direction: "sale" })
-    const [candidate] = await listOpenDuplicates()
+    const [candidate] = await listOpenDuplicates(GLOBAL_SESSION)
 
     await mergeDuplicate({
       candidateId: candidate!.id, keepId: "inv-reemitida", dropId: "inv-original", actorUserId: ACTOR,
@@ -209,7 +215,7 @@ describe("fusión", () => {
   it("no borra la descartada: la anula y deja rastro en ambas", async () => {
     await seedSuspiciousPair()
     await detectDuplicateCandidates({ direction: "sale" })
-    const [candidate] = await listOpenDuplicates()
+    const [candidate] = await listOpenDuplicates(GLOBAL_SESSION)
 
     await mergeDuplicate({
       candidateId: candidate!.id, keepId: "inv-reemitida", dropId: "inv-original", actorUserId: ACTOR,
@@ -239,7 +245,7 @@ describe("fusión", () => {
     await inMemoryDb.update(schema.billingInvoices)
       .set({ paidAmount: 500000, paymentStatus: "partial" })
     await detectDuplicateCandidates({ direction: "sale" })
-    const [candidate] = await listOpenDuplicates()
+    const [candidate] = await listOpenDuplicates(GLOBAL_SESSION)
 
     await expect(mergeDuplicate({
       candidateId: candidate!.id, keepId: "inv-reemitida", dropId: "inv-original", actorUserId: ACTOR,
@@ -257,7 +263,7 @@ describe("fusión", () => {
       { id: "ref-2", invoiceId: "inv-reemitida", provider: "manual", externalId: "manual:2", payloadHash: "h2" },
     ])
     await detectDuplicateCandidates({ direction: "sale" })
-    const [candidate] = await listOpenDuplicates()
+    const [candidate] = await listOpenDuplicates(GLOBAL_SESSION)
 
     await mergeDuplicate({
       candidateId: candidate!.id, keepId: "inv-reemitida", dropId: "inv-original", actorUserId: ACTOR,
@@ -280,7 +286,7 @@ describe("fusión", () => {
   it("la fusionada sale de las agregaciones por quedar anulada", async () => {
     await seedSuspiciousPair()
     await detectDuplicateCandidates({ direction: "sale" })
-    const [candidate] = await listOpenDuplicates()
+    const [candidate] = await listOpenDuplicates(GLOBAL_SESSION)
     await mergeDuplicate({
       candidateId: candidate!.id, keepId: "inv-reemitida", dropId: "inv-original", actorUserId: ACTOR,
     })

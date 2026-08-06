@@ -31,6 +31,7 @@ import { fetchBandejaEntrada } from "@/lib/services/dte-portal/bandeja-entrada"
 import { downloadDteXml } from "@/lib/services/dte-portal/download"
 import type { DteDocumentRow, DteBandejaRow, DteEstadoSii } from "@/lib/services/dte-portal/types"
 import { logger } from "@/lib/logger"
+import { cleanRut } from "@/lib/rut"
 import {
   BillingProviderError,
   NO_CAPABILITIES,
@@ -109,7 +110,10 @@ export class FacturaEnLineaProvider implements BillingProvider {
   async listIssuedInvoices(query: ProviderPeriodQuery): Promise<ProviderPage<ProviderInvoice>> {
     const client = await this.resolveClient()
     const config = await readDtePortalConfig()
-    const issuerTaxId = config.credentials.rutEmp
+    // cleanRut: la identidad de factura y el detector de duplicados comparan
+    // RUT por igualdad exacta; un rutEmp configurado con puntos crearía una
+    // segunda identidad para el mismo documento (Chipax sí normaliza).
+    const issuerTaxId = cleanRut(config.credentials.rutEmp)
     const accountRef = config.credentials.codEmp
 
     const result = await queryByPeriodo(client, {
@@ -155,7 +159,7 @@ export class FacturaEnLineaProvider implements BillingProvider {
     })
 
     return {
-      items: rows.map((row) => this.mapPurchaseRow(row, config.credentials.rutEmp, accountRef)),
+      items: rows.map((row) => this.mapPurchaseRow(row, cleanRut(config.credentials.rutEmp), accountRef)),
       nextCursor: null,
       reportedTotal: totalRegistros,
     }
@@ -259,11 +263,13 @@ export class FacturaEnLineaProvider implements BillingProvider {
     return {
       externalId:     row.nreguist
         ? `fel:bandeja:${accountRef}:${row.nreguist}`
-        : naturalKey("purchase", row.tipoDoc, row.folio, row.rutEmisor, accountRef),
+        : naturalKey("purchase", row.tipoDoc, row.folio, cleanRut(row.rutEmisor), accountRef),
       direction:      "purchase",
       docType:        row.tipoDoc,
       folio:          row.folio,
-      issuerTaxId:    row.rutEmisor,
+      // El HTML de la bandeja trae el RUT con puntos; sin normalizar, la misma
+      // factura vía otro proveedor generaba una identidad distinta.
+      issuerTaxId:    cleanRut(row.rutEmisor),
       issuerName:     row.razonSocial,
       receiverTaxId,
       receiverName:   null,
