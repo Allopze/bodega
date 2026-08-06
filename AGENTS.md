@@ -265,6 +265,26 @@ Derivan de la auditoría `PLAN_MEJORA_UX_PANTALLAS_2026-07-16.md`.
 - Un tile en estado vacío muestra la acción para dejar de estarlo, nunca "0"
   ni "—" pelados.
 
+### Excepción declarada: el tablero (`/dashboard`)
+
+Inicio pinta **una vista a la vez** (`?vista=`) y cada vista es un dominio
+completo, no una pantalla de gestión con una lista debajo: no hay "contenido
+principal" que los tiles puedan sepultar. Ahí el tope es de **8 tiles por
+vista**, y sobre 4 la fila se parte en **grupos rotulados**
+(`DomainSection.kpiGroups`) — Finanzas separa "Ingresos" de "Egresos". Ocho
+cifras seguidas sin ese corte se leen como una sola lista indistinguible, que es
+el defecto que A1 previene.
+
+Lo que **no** se relaja:
+
+- Cada tile sigue siendo accionable y sigue llevando a su subconjunto, no al
+  total (lo verifica `e2e/densidad-kpi.spec.ts`).
+- **A5 sigue rigiendo**: una cifra no puede estar en dos vistas del tablero, ni
+  dos veces en la misma. Por eso el gasto en OC se fue de Adquisiciones cuando
+  nació Finanzas, y el cumplimiento PDTP salió de la fila de tiles al ganar su
+  medidor radial.
+- El resto de las pantallas conserva el tope de 4 sin excepciones.
+
 ## A2 — Muro de filtros: 4–6 primarios + "Más filtros (N)"
 
 - Máximo 4–6 filtros primarios visibles (los de uso diario: período, faena,

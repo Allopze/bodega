@@ -6,14 +6,17 @@
  * ojo, pantalla por pantalla, y cualquier KPI añadido después pasaba
  * inadvertido. Estas pruebas cuentan sobre el DOM real.
  *
- * El tope se aplica **por sección** en el tablero —que agrupa dominios— y por
- * pantalla en el resto, que es como quedó definido en la pasada 44.
+ * El tope se aplica **por vista** en el tablero —que pinta una a la vez— y por
+ * pantalla en el resto. El tablero tiene su propio techo, más alto y con grupos
+ * rotulados sobre cuatro: es la excepción declarada en AGENTS.md §A1.
  */
 import { test, expect, type Page } from "@playwright/test"
 import { login } from "./helpers"
 
 const MAX_KPIS = 4
 const MAX_FILTROS = 6
+/** Excepción de AGENTS.md §A1 para el tablero: 8 por vista, en grupos. */
+const MAX_KPIS_TABLERO = 8
 
 /** Pantallas de gestión nombradas por TASK-UI-006. */
 const PANTALLAS = [
@@ -60,26 +63,37 @@ test.describe("Densidad — máximo cuatro KPI y seis filtros", () => {
     })
   }
 
-  test("el tablero respeta el tope dentro de cada sección de dominio", async ({ page }) => {
+  test("cada vista del tablero respeta su tope y agrupa sobre cuatro tiles", async ({ page }) => {
     await login(page)
     await page.goto("/dashboard")
     await page.waitForLoadState("networkidle").catch(() => undefined)
 
-    // El tablero agrupa varios dominios, así que el tope es por sección: un
-    // conteo de página entera no diría nada útil sobre la carga de cada bloque.
-    const excedidas = await page.evaluate((max) => {
-      const fuera: string[] = []
-      for (const section of document.querySelectorAll("section[aria-labelledby]")) {
-        const total = section.querySelectorAll("[data-kpi-card]").length
-        if (total > max) {
-          const titulo = document.getElementById(section.getAttribute("aria-labelledby") ?? "")
-          fuera.push(`${titulo?.textContent?.trim() ?? section.id}: ${total}`)
-        }
+    // Se recorren las pestañas reales, no una lista fija: una vista nueva no
+    // puede quedar fuera de la guarda por olvido.
+    const hrefs = await page.getByRole("navigation", { name: "Vistas del tablero" })
+      .getByRole("link").evaluateAll((links) => links.map((link) => (link as HTMLAnchorElement).href))
+    expect(hrefs.length).toBeGreaterThan(1)
+
+    const excedidas: string[] = []
+    const sinAgrupar: string[] = []
+    for (const href of hrefs) {
+      await page.goto(href)
+      await page.waitForLoadState("networkidle").catch(() => undefined)
+
+      const vista = new URL(href).searchParams.get("vista") ?? "resumen"
+      const total = await page.locator("[data-kpi-card]").count()
+      if (total > MAX_KPIS_TABLERO) excedidas.push(`${vista}: ${total}`)
+
+      // Sobre cuatro tiles la fila tiene que estar rotulada por grupos: ocho
+      // cifras seguidas sin ese corte se leen como una sola lista.
+      if (total > MAX_KPIS) {
+        const grupos = await page.locator("section[aria-labelledby] h3").count()
+        if (grupos < 2) sinAgrupar.push(`${vista}: ${total} tiles, ${grupos} grupos`)
       }
-      return fuera
-    }, MAX_KPIS)
+    }
 
     expect(excedidas).toEqual([])
+    expect(sinAgrupar).toEqual([])
   })
 })
 
@@ -116,29 +130,41 @@ test.describe("Densidad — el estado cero conduce a una acción", () => {
  * total. Esta prueba fija ese contrato para que un KPI nuevo no lo pierda.
  */
 test.describe("Densidad — todo KPI de subconjunto llega a su subconjunto", () => {
+  /**
+   * Cada KPI declara **en qué vista** vive.
+   *
+   * Con el tablero por pestañas, buscarlos todos en `/dashboard` los saltaba a
+   * todos menos uno por el `continue` de abajo: la prueba pasaba verde sin
+   * comprobar casi nada. La vista es parte del contrato, no un detalle.
+   */
   const KPIS_DE_SUBCONJUNTO = [
-    { label: "Incidentes abiertos", destino: "/prevencion/incidentes?quick=open" },
-    { label: "CAPA vencidas", destino: "/prevencion/capa?vista=overdue" },
-    { label: "Riesgos críticos sin control", destino: "/prevencion/miper#bloqueos" },
-    { label: "Hallazgos críticos abiertos", destino: "/prevencion/inspecciones?vista=critical" },
-    { label: "Simulacros por mejorar", destino: "/prevencion/emergencias?tab=drills&vista=needs_improvement" },
-    { label: "Mediciones sobre el límite", destino: "/prevencion/higiene?tab=groups&vista=above_limit" },
+    { vista: "prevencion", label: "Incidentes abiertos", destino: "/prevencion/incidentes?quick=open" },
+    { vista: "prevencion", label: "CAPA vencidas", destino: "/prevencion/capa?vista=overdue" },
+    { vista: "prevencion", label: "Riesgos críticos sin control", destino: "/prevencion/miper#bloqueos" },
+    { vista: "terreno", label: "Hallazgos críticos abiertos", destino: "/prevencion/inspecciones?vista=critical" },
+    { vista: "terreno", label: "Simulacros por mejorar", destino: "/prevencion/emergencias?tab=drills&vista=needs_improvement" },
+    { vista: "terreno", label: "Mediciones sobre el límite", destino: "/prevencion/higiene?tab=groups&vista=above_limit" },
   ]
 
   test("los indicadores del tablero enlazan a su destino acotado", async ({ page }) => {
     await login(page)
-    await page.goto("/dashboard")
-    await page.waitForLoadState("networkidle").catch(() => undefined)
 
     const sinAcotar: string[] = []
+    const noEncontrados: string[] = []
     for (const kpi of KPIS_DE_SUBCONJUNTO) {
+      await page.goto(`/dashboard?vista=${kpi.vista}`)
+      await page.waitForLoadState("networkidle").catch(() => undefined)
+
       // `KpiCard` envuelve la tarjeta en el enlace, no al revés: el ancla es el
       // `<a>` que contiene el `data-kpi-card`, no un `<a>` dentro de él.
       const enlace = page.locator("a:has([data-kpi-card])").filter({ hasText: kpi.label }).first()
       const tarjeta = page.locator("[data-kpi-card]").filter({ hasText: kpi.label }).first()
-      // Un dominio puede no estar visible para el rol o la faena sembrada; lo
-      // que no puede pasar es que esté visible y no sepa acotar.
-      if (await tarjeta.count() === 0) continue
+      if (await tarjeta.count() === 0) {
+        // Ya no se salta en silencio: si el KPI no está donde dice la tabla, o
+        // se movió de vista o desapareció, y las dos cosas hay que verlas.
+        noEncontrados.push(`${kpi.label}: no está en ?vista=${kpi.vista}`)
+        continue
+      }
       if (await enlace.count() === 0) {
         sinAcotar.push(`${kpi.label}: sin enlace`)
         continue
@@ -147,6 +173,7 @@ test.describe("Densidad — todo KPI de subconjunto llega a su subconjunto", () 
       if (href !== kpi.destino) sinAcotar.push(`${kpi.label}: ${href ?? "sin enlace"}`)
     }
 
+    expect(noEncontrados).toEqual([])
     expect(sinAcotar).toEqual([])
   })
 
