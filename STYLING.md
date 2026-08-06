@@ -135,3 +135,25 @@ export default async function MiPagina() {
   )
 }
 ```
+
+## Modo oscuro — descartado a propósito (2026-08-06)
+
+No existe y **no debe improvisarse**. Se evaluó y se descartó como tarea de
+código suelta: es un proyecto de diseño con QA visual, no un toggle.
+
+Lo que haría falta el día que se retome:
+
+1. **Paleta oscura para los 62 tokens** de `app/globals.css`. No sirve invertir
+   mecánicamente: los tríos `*-tint` / `*-line` / `*-ink` (danger, warning,
+   success…) están calibrados entre sí en oklch y hay que rediseñarlos como
+   conjunto.
+2. **Paleta de charts** (`lib/chart-palette.ts`) coherente con la anterior.
+3. **Mecanismo**: `[data-theme="dark"]` en el root + toggle persistido
+   (localStorage) + `prefers-color-scheme` como default. Los ~13 colores
+   hardcodeados fuera de tokens (grep `#hex` y `bg-white|bg-black`) se migran a
+   tokens primero.
+4. **QA visual con evidencia**: pasada de capturas por ruta (pipeline
+   `npm run screenshots`) en ambos temas, como toda auditoría UI de este repo.
+
+Hasta entonces: cualquier PR que "agregue dark mode" sin los 4 puntos se
+rechaza — un tema a medias es peor que un solo tema bien hecho.

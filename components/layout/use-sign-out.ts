@@ -30,7 +30,16 @@ export function useSignOut() {
     setIsSigningOut(true)
     try {
       await signOut({ redirect: false })
-      if (await getSession()) {
+      // Tercera lección (2026-08-06): el middleware re-emite la cookie de
+      // sesión (JWT rolling) en CADA respuesta, y las páginas con muchos
+      // prefetches en vuelo (el tablero prefetchea todas sus vistas) la
+      // RESUCITAN después del signout — el reintento único también perdía esa
+      // carrera. Se insiste con un respiro entre intentos hasta que la
+      // tormenta de respuestas pase y la sesión esté muerta de verdad;
+      // getSession() con sesión ya limpia no re-emite nada.
+      for (let attempt = 0; attempt < 5; attempt++) {
+        await new Promise((resolve) => setTimeout(resolve, 400))
+        if (!(await getSession())) break
         await signOut({ redirect: false })
       }
     } finally {
