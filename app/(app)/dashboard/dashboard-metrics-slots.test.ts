@@ -54,15 +54,26 @@ describe("buildOperationalMetrics — ranuras", () => {
   it("Jefatura ve una cifra por dominio, no cuatro de tareas", () => {
     const keys = buildOperationalMetrics(jefatura).map((metric) => metric.key)
 
-    expect(keys).toEqual(["spend", "pdtp", "incidents", "overdue"])
+    expect(keys).toEqual(["spend", "receipts", "incidents", "overdue"])
   })
 
-  // El defecto que motivó la fase: estas dos eran inalcanzables.
-  it("la inversión y el cumplimiento ya no quedan cortados", () => {
+  // El defecto que motivó la fase: la inversión era el candidato 8 de una lista
+  // cortada en 4, así que no se renderizaba para ningún rol.
+  it("la inversión ya no queda cortada", () => {
     const metrics = buildOperationalMetrics(jefatura)
 
     expect(metrics.find((m) => m.key === "spend")?.value).toBe("$12.400.000")
-    expect(metrics.find((m) => m.key === "pdtp")?.value).toBe("87%")
+  })
+
+  /*
+   * El PDTP salió de la fila: lo carga el medidor radial del Resumen, que
+   * además dibuja la meta. Tenerlo en los dos sitios era la misma cifra dos
+   * veces en la misma pantalla (A5).
+   */
+  it("el cumplimiento PDTP no es tile: vive en el medidor radial", () => {
+    for (const perfil of [jefatura, prevencionistaFaena]) {
+      expect(buildOperationalMetrics(perfil).map((m) => m.key)).not.toContain("pdtp")
+    }
   })
 
   it("no repite la misma dimensión en dos ranuras", () => {
@@ -85,14 +96,14 @@ describe("buildOperationalMetrics — ranuras", () => {
     const keys = buildOperationalMetrics(prevencionistaFaena).map((metric) => metric.key)
 
     // Sin `purchasing:view` la ranura de dinero se cede; cumplimiento cae en
-    // PDTP y riesgo en incidentes.
-    expect(keys).toEqual(["pdtp", "incidents", "overdue"])
+    // recepciones y riesgo en incidentes.
+    expect(keys).toEqual(["receipts", "incidents", "overdue"])
   })
 
   it("baja a la cascada cuando el primer candidato no aplica", () => {
-    // Sin PDTP la ranura de cumplimiento cae en "Por recibir".
-    const sinPdtp = buildOperationalMetrics({ ...jefatura, canViewPdtp: false })
-    expect(sinPdtp.map((m) => m.key)).toEqual(["spend", "receipts", "incidents", "overdue"])
+    // Sin recepción autorizada la ranura de cumplimiento se cede entera.
+    const sinRecepcion = buildOperationalMetrics({ ...jefatura, canReceive: false })
+    expect(sinRecepcion.map((m) => m.key)).toEqual(["spend", "incidents", "overdue"])
 
     // Sin incidentes ni CAPA, riesgo cae en stock — y con su sparkline real.
     const sinPrevencion = buildOperationalMetrics({ ...jefatura, canViewIncidents: false, canViewCapa: false })
@@ -103,7 +114,7 @@ describe("buildOperationalMetrics — ranuras", () => {
 
   it("sin tareas vencidas la ranura de trabajo cae en aprobaciones", () => {
     const keys = buildOperationalMetrics({ ...jefatura, overdueTasks: 0 }).map((m) => m.key)
-    expect(keys).toEqual(["spend", "pdtp", "incidents", "approvals"])
+    expect(keys).toEqual(["spend", "receipts", "incidents", "approvals"])
   })
 
   it("una faena elegida viaja en los enlaces de drill-down", () => {
@@ -134,11 +145,8 @@ describe("buildOperationalMetrics — ranuras", () => {
     expect(stock?.href).toBe("/bodega?stock=low")
   })
 
-  it("el rótulo de PDTP declara la meta, y sin dato la ranura cae", () => {
-    expect(buildOperationalMetrics(jefatura).find((m) => m.key === "pdtp")?.description)
-      .toBe("Meta anual 90%")
-
-    // Sin programa activo `percent` es null: no se dibuja un 0% inventado.
+  // El PDTP ya no participa de la fila, así que su ausencia no la reordena.
+  it("un programa sin avance acreditado no cambia las ranuras", () => {
     const sinPrograma = buildOperationalMetrics({ ...jefatura, pdtpPercent: null })
     expect(sinPrograma.map((m) => m.key)).toEqual(["spend", "receipts", "incidents", "overdue"])
   })

@@ -14,6 +14,9 @@ import {
   LineChart,
   Pie,
   PieChart,
+  PolarAngleAxis,
+  RadialBar,
+  RadialBarChart,
   XAxis,
   YAxis,
 } from "recharts"
@@ -932,6 +935,64 @@ export function BillingFlowChart({ data }: {
           <Line dataKey="collected" type="monotone" stroke={CHART_COLORS.blue} strokeWidth={2} dot={false} />
         </LineChart>
       </ChartContainer>
+    </div>
+  )
+}
+
+// ── 13. Radial Gauge ─────────────────────────────────────────────────────────
+
+const gaugeConfig = {
+  value: { label: "Avance", color: CHART_COLORS.brand },
+} satisfies ChartConfig
+
+/**
+ * Medidor radial para una sola tasa contra su meta.
+ *
+ * Un porcentaje anual no es una serie: dibujarlo como línea de un punto o como
+ * barra suelta desperdicia la tarjeta. El arco declara la meta y el color dice
+ * si está bajo ella — `signal` (naranja) por debajo, marca por encima, que es
+ * exactamente el rol reservado del naranja en DESIGN.md: "pendiente".
+ */
+export function RadialGaugeChart({ title, description, percent, targetPercent, footer }: {
+  title: string
+  description: string
+  /** 0-100 ya redondeado por el llamador. */
+  percent: number
+  /** Meta en la misma escala. Omitida, el arco siempre va en color de marca. */
+  targetPercent?: number
+  footer?: string
+}) {
+  const value = Math.max(0, Math.min(100, Math.round(percent)))
+  const belowTarget = targetPercent !== undefined && value < targetPercent
+
+  return (
+    <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-xs">
+      <div className="mb-3">
+        <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--color-text-muted)]">{title}</h3>
+        <p className="text-xs text-[var(--color-text-muted)]">{description}</p>
+      </div>
+
+      <ChartContainer config={gaugeConfig} className="mx-auto aspect-[2/1] max-h-44 w-full">
+        <RadialBarChart data={[{ name: title, value }]} startAngle={200} endAngle={-20} innerRadius="72%" outerRadius="100%">
+          {/* Sin el eje polar explícito recharts escala el arco al máximo del
+              dato, así que un 41% dibujaba el círculo completo. */}
+          <PolarAngleAxis type="number" domain={[0, 100]} angleAxisId={0} tick={false} />
+          <RadialBar
+            dataKey="value" angleAxisId={0} background cornerRadius={999}
+            fill={belowTarget ? CHART_COLORS.signal : CHART_COLORS.brand}
+            isAnimationActive={false}
+          />
+          <text x="50%" y="78%" textAnchor="middle" className="fill-[var(--color-text)] font-mono text-3xl font-bold">
+            {`${value}%`}
+          </text>
+        </RadialBarChart>
+      </ChartContainer>
+
+      {(footer || targetPercent !== undefined) && (
+        <p className="mt-1 text-center text-xs text-[var(--color-text-muted)]">
+          {footer ?? `Meta ${targetPercent}%`}
+        </p>
+      )}
     </div>
   )
 }

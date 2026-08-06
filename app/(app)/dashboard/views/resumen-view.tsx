@@ -28,8 +28,10 @@ import { listEppCoverageGaps } from "@/lib/services/prevention-epp"
 import { getCapaDashboardCounts } from "@/lib/services/prevention-capa"
 import { getIncidentDashboardCounts } from "@/lib/services/prevention-incidents"
 import { getActivePdtpProgram, listPdtpPrograms } from "@/lib/services/prevention-pdtp"
-import { loadPdtpComplianceSummary, PdtpComplianceCard } from "../pdtp-compliance-card"
+import { getOperationalTrendHistory } from "@/lib/services/operational-trend-history"
+import { loadPdtpComplianceSummary } from "../pdtp-compliance-card"
 import { RecentActivity } from "../recent-activity"
+import { OperationalTrendChart, RadialGaugeChart } from "../dashboard-domain-charts"
 import {
   DashboardResumenBody,
   type DashboardAlert,
@@ -93,7 +95,7 @@ export async function ResumenView({
   // encadenarlos duplicaba la latencia de red de la página (P-01).
   const [
     data, activity, stockAlertCount, eppGapsCount, periodMetrics, backlogComparisons, snapshotHistory,
-    pdtpSummary, activeProgram, allPrograms, capaCounts, incidentCounts,
+    pdtpSummary, activeProgram, allPrograms, capaCounts, incidentCounts, trend,
   ] = await Promise.all([
     getDashboardData(session, scopedWorksite),
     listOperationalActivity(session, 6),
@@ -120,6 +122,9 @@ export async function ResumenView({
     canViewIncidents
       ? getIncidentDashboardCounts({ ctx: { userId: session.user.id }, scope: worksiteScope, permissions: session.user.permissions })
       : Promise.resolve({ totalOpen: 0, overdueNotifications: 0, fatalOrSerious: 0, pendingInvestigation: 0 }),
+    // Transversal, no de un dominio: solicitudes, OC y recepciones en la misma
+    // tendencia son el pulso de la operación completa.
+    getOperationalTrendHistory(session, 6, new Date(), scopedWorksite),
   ])
 
   const hasNextYearProgram = allPrograms.some((p) => p.year === currentYear + 1)
@@ -178,36 +183,55 @@ export async function ResumenView({
       alerts={alerts}
       periodSummary={buildOperationalPeriodSummary({ periodMetrics, scope, canViewRequests, canViewPurchasing, canReceive, canDeliver })}
       backlogSummary={buildOperationalBacklogSummary({ backlogComparisons, snapshotHistory, scope, canViewRequests, canViewPurchasing, canViewCapa, canViewPdtp })}
-      mainSlot={<RecentActivity entries={activity} />}
-      asideSlot={
-        canViewPdtp ? (
-          <section>
-            <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-baseline sm:justify-between">
-              {/* Misma escala que "Requiere atención" y "Flujo del mes": son
-                  hermanos en el aside (L-05). */}
-              <h2 className="text-h3 text-[var(--color-text)]">Programa de Trabajo Preventivo</h2>
-              <div className="flex flex-wrap items-center gap-2">
-                {shouldSuggestNextYear && (
-                  <Button asChild size="sm" variant="secondary">
-                    <Link href="/prevencion/pdtp/nuevo"><Plus size={13} />Preparar {currentYear + 1}</Link>
-                  </Button>
-                )}
-                {!activeProgram && allPrograms.length === 0 && canManagePdtp && (
-                  <Button asChild size="sm"><Link href="/prevencion/pdtp/nuevo"><Plus size={13} />Crear programa</Link></Button>
-                )}
-              </div>
-            </div>
-            {pdtpSummary ? <PdtpComplianceCard {...pdtpSummary} /> : (
+      mainSlot={
+        <>
+          {/* Dos lecturas transversales, no un dominio: el cumplimiento anual
+              contra su meta y el pulso de la operación. El detalle del PDTP
+              —por faena, por actividad— vive en la pestaña de Prevención; A5
+              impide que la misma cifra tenga dos representaciones acá. */}
+          <div className="grid gap-6 xl:grid-cols-2">
+            {/* `percent === null` es "sin acreditación todavía", no 0%: dibujar
+                un arco vacío afirmaría un incumplimiento que nadie midió. */}
+            {canViewPdtp && pdtpSummary?.percent != null ? (
+              // El medidor no tiene tooltip ni ejes interactivos, así que
+              // envolverlo en el enlace no le roba ningún gesto: sigue siendo un
+              // indicador accionable, como exige A1.
+              <Link href="/prevencion/pdtp" className="block rounded-2xl focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]">
+                <RadialGaugeChart
+                  title="Cumplimiento PDTP"
+                  description={`Avance acreditado · año ${currentYear}`}
+                  percent={Math.round(pdtpSummary.percent * 100)}
+                  targetPercent={Math.round(pdtpSummary.target * 100)}
+                />
+              </Link>
+            ) : canViewPdtp ? (
               <EmptyState
                 compact
                 align="start"
-                title={`No hay un programa activo para ${currentYear}`}
-                description="Crea o activa un programa para visualizar avance preventivo desde este centro de control."
-                action={canManagePdtp ? <Button asChild size="sm"><Link href="/prevencion/pdtp/nuevo">Crear programa</Link></Button> : undefined}
+                title={pdtpSummary
+                  ? `El programa ${currentYear} no tiene avance acreditado`
+                  : `No hay un programa activo para ${currentYear}`}
+                description={pdtpSummary
+                  ? "El cumplimiento aparece cuando se acredite la primera actividad."
+                  : "Crea o activa un programa para visualizar el avance preventivo desde acá."}
+                action={canManagePdtp && !pdtpSummary ? (
+                  <Button asChild size="sm">
+                    <Link href="/prevencion/pdtp/nuevo">
+                      <Plus size={13} />
+                      {shouldSuggestNextYear ? `Preparar ${currentYear + 1}` : "Crear programa"}
+                    </Link>
+                  </Button>
+                ) : undefined}
               />
-            )}
-          </section>
-        ) : undefined
+            ) : null}
+            <OperationalTrendChart
+              data={trend.map((point) => ({
+                month: point.month, requests: point.requests, orders: point.orders, receipts: point.receipts,
+              }))}
+            />
+          </div>
+          <RecentActivity entries={activity} />
+        </>
       }
     />
   )
@@ -407,13 +431,13 @@ export function buildOperationalMetrics(input: {
     } : null,
   ]
 
+  /*
+   * La ranura de cumplimiento **ya no incluye el PDTP**: esa cifra la carga el
+   * medidor radial de más abajo, que además dibuja la meta. Tenerla en los dos
+   * sitios era la misma cifra dos veces en la misma pantalla (A5) — el defecto
+   * que esta fila existe para evitar.
+   */
   const compliance: Array<DashboardMetric | null> = [
-    input.canViewPdtp && input.pdtpPercent !== null ? {
-      key: "pdtp", label: "Cumplimiento PDTP", value: `${Math.round(input.pdtpPercent * 100)}%`,
-      description: `Meta anual ${Math.round(input.pdtpTarget * 100)}%`,
-      icon: "rate", href: "/prevencion/pdtp",
-      tone: input.pdtpPercent < input.pdtpTarget ? "signal" : "neutral",
-    } : null,
     input.canReceive ? {
       key: "receipts", label: "Por recibir", value: input.ordersPendingReceipt,
       description: input.ordersPendingReceipt > 0 ? "Órdenes con recepción pendiente" : "Sin recepciones pendientes",

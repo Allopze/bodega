@@ -397,8 +397,9 @@ test.describe("Dashboard con rol restringido", () => {
     await expect(strip.getByText("OC activas")).toHaveCount(0)
     await expect(page.getByText("ítems esperan aprobación")).toHaveCount(0)
 
-    // Sin prevention:pdtp:view no se instancia la sección del lateral.
-    await expect(page.getByRole("heading", { name: "Programa de Trabajo Preventivo" })).toHaveCount(0)
+    // Sin prevention:pdtp:view no se instancia el medidor de cumplimiento, que
+    // es donde vive esa cifra desde que salió de la fila de tiles (A5).
+    await expect(page.getByText("Cumplimiento PDTP")).toHaveCount(0)
     await expect(strip.getByText("Cumplimiento PDTP")).toHaveCount(0)
   })
 

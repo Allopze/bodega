@@ -8,6 +8,7 @@ import {
   Warehouse,
 } from "@phosphor-icons/react/dist/ssr"
 import { KpiCard } from "@/components/ui/kpi-card"
+import { HeroKpiCard } from "@/components/ui/hero-kpi-card"
 import type { DashboardMetric } from "./dashboard-control-center"
 
 const METRIC_ICON = {
@@ -51,8 +52,24 @@ export function OperationalMetricsStrip({ metrics }: { metrics: DashboardMetric[
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        {metrics.map((metric) => {
+        {metrics.map((metric, index) => {
           const Icon = METRIC_ICON[metric.icon] ?? CheckCircle
+          // Sólo el primero va relleno: dos anclas macizas en una fila de cuatro
+          // compiten entre sí y ninguna ancla nada. La primera ranura es dinero
+          // para quien lo mira, y cumplimiento o riesgo para el resto — siempre
+          // la cifra de mayor jerarquía que el permiso autoriza.
+          if (index === 0) {
+            return (
+              <HeroKpiCard
+                key={metric.key}
+                icon={<Icon size={16} />}
+                label={metric.label}
+                value={String(metric.value)}
+                detail={metric.description}
+                href={metric.href}
+              />
+            )
+          }
           return (
             <KpiCard
               key={metric.key}

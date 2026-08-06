@@ -52,6 +52,16 @@ function contrast(fg: string, bg: string): number {
   return (hi + 0.05) / (lo + 0.05)
 }
 
+/**
+ * Contraste contra blanco puro.
+ *
+ * El texto del tile hero no sale de un token: es `text-white` sobre un relleno
+ * macizo, así que no hay par de tokens que comparar.
+ */
+function contrastWithWhite(token: string): number {
+  return (1 + 0.05) / (luminance(token) + 0.05)
+}
+
 describe("contraste de tokens de diseño", () => {
   describe("texto sobre superficie — WCAG 1.4.3 (AA, 4.5:1)", () => {
     const TEXT_TOKENS = ["color-text", "color-text-muted", "color-text-subtle", "color-text-faint"]
@@ -75,6 +85,27 @@ describe("contraste de tokens de diseño", () => {
         expect(contrast(token, surface)).toBeGreaterThanOrEqual(4.5)
       },
     )
+  })
+
+  /**
+   * `--color-primary-deep` está documentado en DESIGN.md como "Fondo hero card"
+   * y no se usó hasta el tile hero del tablero. El mínimo se fija acá porque si
+   * un ajuste de paleta lo aclara, el número blanco deja de leerse y nadie lo
+   * nota a ojo: la tarjeta sigue viéndose "verde y bonita".
+   *
+   * AAA (7:1) y no AA: el valor del tile es la cifra, y va en grande sobre un
+   * relleno macizo — es el peor caso de lectura de toda la pantalla.
+   */
+  describe("tile hero — texto blanco sobre relleno macizo", () => {
+    it("primary-deep sostiene texto blanco con contraste AAA", () => {
+      expect(contrastWithWhite("color-primary-deep")).toBeGreaterThanOrEqual(7)
+    })
+
+    // El detalle del tile va a 70% de opacidad sobre el mismo fondo. La
+    // aproximación conservadora es exigirle AA al blanco pleno con margen.
+    it("y su texto secundario al 70% sigue sobre AA", () => {
+      expect(contrastWithWhite("color-primary-deep")).toBeGreaterThanOrEqual(4.5 / 0.7)
+    })
   })
 
   describe("texto de badge sobre su propio tint — WCAG 1.4.3", () => {

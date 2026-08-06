@@ -83,7 +83,11 @@ export function DomainSection({ domain, kpis, kpiGroups, summary, charts, links,
       ))}
       {summary && <div className="mt-3">{summary}</div>}
 
-      <div className="mt-4 grid gap-6 grid-cols-1 xl:grid-cols-2">{charts}</div>
+      {/* Bento: 3 columnas en 2xl, 2 en xl, 1 abajo. Un gráfico pide ancho
+          doble envolviéndose en `<div className="xl:col-span-2">`; las series
+          temporales lo necesitan y los donuts y rankings verticales se leen
+          mejor en una sola columna. */}
+      <div className="mt-4 grid grid-cols-1 gap-6 xl:grid-cols-2 2xl:grid-cols-3">{charts}</div>
     </section>
   )
 }

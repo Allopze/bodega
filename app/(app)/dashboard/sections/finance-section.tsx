@@ -170,9 +170,11 @@ export async function FinanceSection({ session, scope }: DomainSectionsProps) {
       charts={
         <>
           {billing && billing.monthly.length > 0 && (
-            <BillingFlowChart data={billing.monthly.map((row) => ({
-              period: row.period, invoiced: row.invoiced, collected: row.collected,
-            }))} />
+            <div className="xl:col-span-2">
+              <BillingFlowChart data={billing.monthly.map((row) => ({
+                period: row.period, invoiced: row.invoiced, collected: row.collected,
+              }))} />
+            </div>
           )}
           {billing && billing.aging.some((bucket) => bucket.count > 0) && (
             <ThresholdRankingChart

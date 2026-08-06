@@ -28,6 +28,7 @@ import { getPdtpComplianceIndicatorsForScope } from "@/lib/services/pdtp/complia
 import { countPendingFuelCreditNotes } from "@/lib/services/dte-portal/reconciliation"
 import { readDtePortalConfig } from "@/lib/services/dte-portal/config"
 import { DASHBOARD_DOMAINS, type DashboardDomainKey } from "./dashboard-domains"
+import { loadPdtpComplianceSummary, PdtpComplianceCard } from "./pdtp-compliance-card"
 import { FinanceSection } from "./sections/finance-section"
 import { DomainSection } from "./dashboard-domain-shell"
 import { periodScopeLabel, scopedWorksiteId, type DashboardScope } from "./dashboard-scope"
@@ -209,7 +210,7 @@ async function PreventionSection({ session, worksiteScope, worksiteIds, currentY
   const permissions = session.user.permissions
   const has = (permission: string) => permissions.includes(permission)
 
-  const [capa, incidents, legal, risk, sstYear, envEvents, pdtpByWorksite] = await Promise.all([
+  const [capa, incidents, legal, risk, sstYear, envEvents, pdtpByWorksite, pdtpSummary] = await Promise.all([
     has("prevention:capa:view")
       ? getCapaDashboardCounts({ scope: worksiteScope, permissions })
       : Promise.resolve({ open: 0, overdue: 0, pendingVerification: 0, unreconciled: 0 }),
@@ -221,6 +222,13 @@ async function PreventionSection({ session, worksiteScope, worksiteIds, currentY
     has("prevention:indicadores:view") ? getCanonicalSafetyIndicatorYear(currentYear, worksiteScope).catch(() => null) : Promise.resolve(null),
     has("prevention:indicadores:view") ? getMaterialEnvironmentalEvents(currentYear, worksiteScope).catch(() => null) : Promise.resolve(null),
     has("prevention:pdtp:view") ? getPdtpComplianceIndicatorsForScope(currentYear, worksiteIds).catch(() => null) : Promise.resolve(null),
+    /*
+     * La tarjeta de cumplimiento PDTP vivía en el aside del Centro de Control.
+     * Se muda acá, junto al resto del detalle preventivo: en el Resumen ahora
+     * hay un medidor radial con la misma cifra, y A5 prohíbe que una cifra
+     * tenga dos representaciones en la misma pantalla.
+     */
+    has("prevention:pdtp:view") ? loadPdtpComplianceSummary(worksiteIds).catch(() => null) : Promise.resolve(null),
   ])
 
   const totalGroup = sstYear?.groups.find((group) => group.worksiteId === "total")
@@ -272,18 +280,23 @@ async function PreventionSection({ session, worksiteScope, worksiteIds, currentY
           )}
         </>
       }
-      summary={<SummaryBar stats={[{
-        key: "legal-compliance",
-        label: "Cumplimiento legal",
-        value: legalCompliance === null ? "—" : `${legalCompliance}%`,
-        secondary: applicableCount > 0 ? `${legalGaps} brechas de ${applicableCount} aplicables · ahora` : "Sin requisitos evaluados",
-        href: "/prevencion/requisitos-legales",
-      }]} />}
+      summary={
+        <>
+          <SummaryBar stats={[{
+            key: "legal-compliance",
+            label: "Cumplimiento legal",
+            value: legalCompliance === null ? "—" : `${legalCompliance}%`,
+            secondary: applicableCount > 0 ? `${legalGaps} brechas de ${applicableCount} aplicables · ahora` : "Sin requisitos evaluados",
+            href: "/prevencion/requisitos-legales",
+          }]} />
+          {pdtpSummary && <div className="mt-3"><PdtpComplianceCard {...pdtpSummary} /></div>}
+        </>
+      }
       charts={
         <>
-          {sstPoints.length > 0 && <SstTrendChart data={sstPoints} />}
+          {sstPoints.length > 0 && <div className="xl:col-span-2"><SstTrendChart data={sstPoints} /></div>}
           {sstPoints.length > 0 && <SstAccidentChart data={sstPoints} />}
-          {materialEnvPoints.length > 0 && <MaterialEnvironmentalChart data={materialEnvPoints} />}
+          {materialEnvPoints.length > 0 && <div className="xl:col-span-2"><MaterialEnvironmentalChart data={materialEnvPoints} /></div>}
           {risk && (risk.coverage.activeProcesses > 0 || risk.coverage.activePositions > 0) && (
             <ThresholdRankingChart
               title="Cobertura MIPER" description="Procesos y cargos con matriz de riesgos publicada"
@@ -405,8 +418,8 @@ async function FleetSection({ session, scope }: DomainSectionsProps) {
       ]} />}
       charts={
         <>
-          <FuelConsumptionChart data={fuelTrend} />
-          <MaintenanceTrendChart data={maintenanceTrend} />
+          <div className="xl:col-span-2"><FuelConsumptionChart data={fuelTrend} /></div>
+          <div className="xl:col-span-2"><MaintenanceTrendChart data={maintenanceTrend} /></div>
           {costPerUse.length > 0 && (
             <ThresholdRankingChart
               title="Costo operacional por unidad de uso"
