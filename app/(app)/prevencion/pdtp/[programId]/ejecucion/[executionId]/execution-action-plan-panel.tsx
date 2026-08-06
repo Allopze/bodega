@@ -229,7 +229,7 @@ function NewActionDraft({ executionId, onCancel, onSaved }: {
             <SelectTrigger id="np-role"><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="prevencionista_faena">Prevencionista de faena</SelectItem>
-              <SelectItem value="admin_contrato">Admin. de contrato</SelectItem>
+              <SelectItem value="admin_contrato">Administrador de contrato</SelectItem>
               <SelectItem value="jefe_faena">Jefe de faena</SelectItem>
             </SelectContent>
           </Select>
