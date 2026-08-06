@@ -23,7 +23,13 @@ export type DashboardDomainKey = typeof DASHBOARD_DOMAIN_KEYS[number]
 export interface DashboardDomain {
   key: DashboardDomainKey
   title: string
-  /** Ancla del índice; también el `id` de la `<section>`. */
+  /**
+   * Rótulo de la pestaña. `title` no sirve: "Control preventivo en terreno" y
+   * "Cumplimiento y gobernanza" empujaban la barra a scroll horizontal ya en el
+   * primer render a 1366.
+   */
+  shortTitle: string
+  /** `id` de la `<section>` y destino de los enlaces profundos al dominio. */
   anchor: string
   /**
    * Con **ninguno** de estos permisos la sección no existe: no se consulta, no
@@ -36,36 +42,42 @@ export const DASHBOARD_DOMAINS: Record<DashboardDomainKey, DashboardDomain> = {
   adquisiciones: {
     key: "adquisiciones",
     title: "Adquisiciones",
+    shortTitle: "Adquisiciones",
     anchor: "dominio-adquisiciones",
     permissions: ["requests:view_own", "requests:view_all", "purchasing:view", "approvals:approve", "receiving:view"],
   },
   bodega: {
     key: "bodega",
     title: "Bodega y entregas",
+    shortTitle: "Bodega",
     anchor: "dominio-bodega",
     permissions: ["warehouse:view_stock", "deliveries:view", "deliveries:create", "prevention:epp:view"],
   },
   prevencion: {
     key: "prevencion",
     title: "Prevención y SST",
+    shortTitle: "Prevención",
     anchor: "dominio-prevencion",
     permissions: ["prevention:pdtp:view", "prevention:incidents:view", "prevention:capa:view", "prevention:indicadores:view", "prevention:legal:view"],
   },
   flota: {
     key: "flota",
     title: "Flota y combustible",
+    shortTitle: "Flota",
     anchor: "dominio-flota",
     permissions: ["combustibles:view", "flota:view", "mantenciones:view"],
   },
   terreno: {
     key: "terreno",
     title: "Control preventivo en terreno",
+    shortTitle: "Terreno",
     anchor: "dominio-terreno",
     permissions: ["prevention:inspections:view", "prevention:permits:view", "prevention:emergency:view", "prevention:hygiene:view", "prevention:change:view", "prevention:cphs:view"],
   },
   gobernanza: {
     key: "gobernanza",
     title: "Cumplimiento y gobernanza",
+    shortTitle: "Gobernanza",
     anchor: "dominio-gobernanza",
     permissions: ["prevention:docs:view", "prevention:training:view", "ppa:view", "sst:view"],
   },
