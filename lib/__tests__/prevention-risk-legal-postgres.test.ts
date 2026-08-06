@@ -233,8 +233,13 @@ describeIf("P0-05 MIPER/legal on real PostgreSQL", () => {
     expect(coverage.activities.find((item) => item.id === "pdtp-risk-activity")?.sources[0]?.sourceId).toBe(currentControlId)
     await expect(service.linkPdtpActivitySource({ activityId: "pdtp-risk-activity", worksiteId: "ws-risk-a", sourceType: "risk_control", sourceId: currentControlId, justification: "Intento duplicado del mismo vínculo de cobertura." }, access("risk-outsider", ["prevention:pdtp:program:manage"], ["ws-risk-b"]))).rejects.toThrow(/fuera de alcance/i)
 
+    // 2027 y no 2026: `pdtp_programs_year_unique` admite un solo programa por
+    // año, así que un segundo 2026 no puede existir — el helper reintentaba
+    // ocho veces creyendo que era una carrera de versiones y terminaba
+    // reportando una concurrencia que no había. Copiar a otro año es además el
+    // caso real de esta operación: el rollover anual.
     const copiedProgram = await pdtpProgramsService.createLegacyPdtpProgramForTests({
-      year: 2026,
+      year: 2027,
       title: "PDTP pruebas P0-05 copiado",
       userId: "risk-author",
       copySheetsFromProgramId: "pdtp-risk-program",

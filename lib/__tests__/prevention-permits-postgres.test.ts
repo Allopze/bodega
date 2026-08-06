@@ -31,6 +31,22 @@ const REQUESTER = { userId: "pm-requester", scope: scopeA, permissions: ["preven
 const APPROVER = { userId: "pm-approver", scope: scopeA, permissions: ALL }
 const OUTSIDER = { userId: "pm-outsider", scope: { mode: "some", ids: ["ws-pm-b"] } as WorksiteScope, permissions: ALL }
 
+/**
+ * Ventana planificada del permiso, relativa al reloj.
+ *
+ * Estaba fija en 2026-08-01: el 2026-08-05 venció sola y `evaluatePermitGates`
+ * empezó a devolver el blocker `window_expired` en todos los escenarios, que
+ * nada tenían que ver con la vigencia. Un permiso se pide para trabajo que
+ * todavía no ocurre, así que la ventana tiene que ser futura por construcción y
+ * no por la fecha en que se escribió la prueba. El caso de la ventana vencida
+ * se cubre aparte, fijando fechas de 2020 explícitamente.
+ */
+function plannedWindow(durationHours: number) {
+  const start = new Date(Date.now() + 60 * 60 * 1000)
+  const end = new Date(start.getTime() + durationHours * 60 * 60 * 1000)
+  return { plannedStartAt: start.toISOString(), plannedEndAt: end.toISOString() }
+}
+
 function getDb() {
   if (!testDb) throw new Error("Test database not initialised")
   return testDb
@@ -89,7 +105,7 @@ describeIf("Permisos de trabajo on real PostgreSQL", () => {
       permitTypeId: confinedTypeId, worksiteId: "ws-pm-a",
       taskDescription: "Limpieza interior de estanque de residuos industriales.",
       location: "Estanque TK-01", supervisorUserId: "pm-approver",
-      plannedStartAt: "2026-08-01T12:00:00.000Z", plannedEndAt: "2026-08-02T12:00:00.000Z",
+      ...plannedWindow(24),
       crew: [], controls: [],
     }, REQUESTER)).rejects.toThrow(/supera el máximo/)
   })
@@ -100,7 +116,7 @@ describeIf("Permisos de trabajo on real PostgreSQL", () => {
       permitTypeId: confinedTypeId, worksiteId: "ws-pm-a",
       taskDescription: "Limpieza interior de estanque de residuos industriales.",
       location: "Estanque TK-01", supervisorUserId: "pm-approver",
-      plannedStartAt: "2026-08-01T12:00:00.000Z", plannedEndAt: "2026-08-01T18:00:00.000Z",
+      ...plannedWindow(6),
       crew: [{ workerId: "wk-b1", role: "executor" }], controls: [],
     }, REQUESTER)).rejects.toThrow(/otra faena/)
   })
@@ -111,7 +127,7 @@ describeIf("Permisos de trabajo on real PostgreSQL", () => {
       permitTypeId: confinedTypeId, worksiteId: "ws-pm-a",
       taskDescription: "Intento desde alcance ajeno a la faena.",
       location: "Estanque TK-01", supervisorUserId: "pm-approver",
-      plannedStartAt: "2026-08-01T12:00:00.000Z", plannedEndAt: "2026-08-01T18:00:00.000Z",
+      ...plannedWindow(6),
       crew: [], controls: [],
     }, OUTSIDER)).rejects.toThrow(/fuera de alcance/)
   })
@@ -122,7 +138,7 @@ describeIf("Permisos de trabajo on real PostgreSQL", () => {
       permitTypeId: confinedTypeId, worksiteId: "ws-pm-a",
       taskDescription: "Limpieza interior de estanque de residuos industriales.",
       location: "Estanque TK-01", supervisorUserId: "pm-approver",
-      plannedStartAt: "2026-08-01T12:00:00.000Z", plannedEndAt: "2026-08-01T18:00:00.000Z",
+      ...plannedWindow(6),
       crew: [
         { workerId: "wk-a1", role: "executor" },
         { workerId: "wk-a2", role: "standby" },
@@ -310,7 +326,7 @@ describeIf("Permisos de trabajo on real PostgreSQL", () => {
       permitTypeId: confinedTypeId, worksiteId: "ws-pm-a",
       taskDescription: "Permiso de prueba para vencimiento automático de ventana.",
       location: "Estanque TK-02", supervisorUserId: "pm-approver",
-      plannedStartAt: "2026-08-01T12:00:00.000Z", plannedEndAt: "2026-08-01T18:00:00.000Z",
+      ...plannedWindow(6),
       crew: [], controls: [],
     }, REQUESTER)
     const submitted = await service.transitionWorkPermit({ permitId: permit.id, expectedVersion: permit.version, toStatus: "pending_approval", reason: "Enviado para probar vencimiento de ventana." }, REQUESTER)
