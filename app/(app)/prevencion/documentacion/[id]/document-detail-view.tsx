@@ -1,7 +1,7 @@
 "use client"
 
 import { useRouter } from "next/navigation"
-import { useTransition } from "react"
+import { useEffect, useState, useTransition } from "react"
 import { Eye } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -29,6 +29,7 @@ export function DocumentDetailView(props: DetailViewProps) {
     canAck,
     canLink,
     recipientOptions,
+    onMutated,
   } = props
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
@@ -39,13 +40,36 @@ export function DocumentDetailView(props: DetailViewProps) {
   const canPreviewCurrentVersion = currentVersion
     ? currentVersion.mimeType === "application/pdf" || currentVersion.mimeType.startsWith("image/")
     : false
+  const hasDistributionTab = doc.requiresAcknowledgment || bundle.distribution.length > 0
+
+  const refresh = () => {
+    router.refresh()
+    onMutated?.()
+  }
+
+  // router.refresh() + loading.tsx remonta el árbol y un Tabs no controlado
+  // volvía a "Resumen" tras cada acción de versiones/distribución; la pestaña
+  // activa se persiste en sessionStorage para sobrevivir el remount.
+  const [tab, setTab] = useState("overview")
+  useEffect(() => {
+    const stored = sessionStorage.getItem(`sst-doc-tab:${doc.id}`)
+    if (stored && (stored !== "distribution" || hasDistributionTab)) setTab(stored)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [doc.id])
 
   return (
-    <Tabs defaultValue="overview" className="space-y-4">
+    <Tabs
+      value={tab}
+      onValueChange={(value) => {
+        setTab(value)
+        sessionStorage.setItem(`sst-doc-tab:${doc.id}`, value)
+      }}
+      className="space-y-4"
+    >
       <TabsList>
         <TabsTrigger value="overview">Resumen</TabsTrigger>
         <TabsTrigger value="versions">Versiones ({bundle.versions.length})</TabsTrigger>
-        {doc.requiresAcknowledgment || bundle.distribution.length > 0 ? (
+        {hasDistributionTab ? (
           <TabsTrigger value="distribution">Distribución ({bundle.distribution.length})</TabsTrigger>
         ) : null}
       </TabsList>
@@ -98,7 +122,7 @@ export function DocumentDetailView(props: DetailViewProps) {
 
           <div className="space-y-4">
             {(canLink || bundle.links.length > 0) && (
-              <DocumentLinksCard documentId={doc.id} links={bundle.links} canLink={canLink} />
+              <DocumentLinksCard documentId={doc.id} links={bundle.links} canLink={canLink} onMutated={onMutated} />
             )}
             {(canArchive || canManage) ? (
               <Card>
@@ -110,7 +134,7 @@ export function DocumentDetailView(props: DetailViewProps) {
                     </Button>
                   ) : null}
                   {canArchive && !isArchived ? (
-                    <ArchiveButton documentId={doc.id} disabled={isPending} onArchived={() => router.refresh()} />
+                    <ArchiveButton documentId={doc.id} disabled={isPending} onArchived={refresh} />
                   ) : null}
                 </CardContent>
               </Card>
@@ -134,11 +158,11 @@ export function DocumentDetailView(props: DetailViewProps) {
           }}
           currentUserId={currentUserId}
           isArchived={isArchived}
-          onUploaded={() => router.refresh()}
+          onUploaded={refresh}
         />
       </TabsContent>
 
-      {doc.requiresAcknowledgment || bundle.distribution.length > 0 ? (
+      {hasDistributionTab ? (
         <TabsContent value="distribution">
           <DistributionTab
             documentId={doc.id}
@@ -151,7 +175,7 @@ export function DocumentDetailView(props: DetailViewProps) {
             canDistribute={canDistribute}
             canAck={canAck}
             isArchived={isArchived}
-            onChanged={() => router.refresh()}
+            onChanged={refresh}
           />
         </TabsContent>
       ) : null}
@@ -163,7 +187,7 @@ export function DocumentDetailView(props: DetailViewProps) {
       const res = await restoreSstDocumentAction({ documentId: doc.id, comment: "Restaurado desde detalle" })
       if (res.ok) {
         toast.success(res.message ?? "Documento restaurado.")
-        router.refresh()
+        refresh()
       } else {
         toast.error(res.message ?? "Error al restaurar.")
       }

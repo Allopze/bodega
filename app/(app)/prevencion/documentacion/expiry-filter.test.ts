@@ -28,6 +28,9 @@ describe("expiryFilterInput", () => {
     expect(proximos.expiresAfter).toMatch(/^\d{4}-\d{2}-\d{2}$/)
     expect(proximos.expiresBefore).toMatch(/^\d{4}-\d{2}-\d{2}$/)
     expect(proximos.expiresAfter! < proximos.expiresBefore!).toBe(true)
+    // Lo que vence hoy aún no está "vencido" (effectiveStatus lo marca recién
+    // mañana): el corte de "vencidos" debe quedar antes del inicio de la ventana.
+    expect(vencidos.expiresBefore! < proximos.expiresAfter!).toBe(true)
   })
 
   it("la ventana de 7 días cabe dentro de la de 30", () => {

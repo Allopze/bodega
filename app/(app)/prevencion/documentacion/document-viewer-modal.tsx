@@ -37,6 +37,17 @@ export function DocumentViewerModal({ documentId, open, onClose }: Props) {
     if (!open) setData(null)
   }, [open, documentId])
 
+  // Las mutaciones dentro del detalle hacen router.refresh(), que revalida la
+  // página de fondo pero no este estado local: sin re-consultar, el modal seguía
+  // mostrando el documento previo a la acción (p. ej. "Archivar" tras archivar).
+  const reload = () => {
+    if (!documentId) return
+    startTransition(async () => {
+      const result = await getDocumentDetailAction(documentId)
+      setData(result)
+    })
+  }
+
   const ok = data && isOk(data) ? data : null
   const docTitle = ok ? ok.bundle.doc.title : "Documento"
   const errorMsg = data && "error" in data && typeof data.error === "string" ? data.error : null
@@ -139,6 +150,7 @@ export function DocumentViewerModal({ documentId, open, onClose }: Props) {
               recipientOptions={ok.recipientOptions}
               currentUserId={ok.currentUserId}
               currentUserName={ok.currentUserName}
+              onMutated={reload}
             />
           )}
         </div>

@@ -126,6 +126,7 @@ export async function getDashboardCounters(scope: WorksiteScope, permissions: re
       .where(and(baseWhere, isNotNull(sstDocuments.status)))
       .groupBy(sstDocuments.status),
     db.select({
+      status: sstDocuments.status,
       expiresAt: sstDocuments.expiresAt,
       requiresAcknowledgment: sstDocuments.requiresAcknowledgment,
       currentVersionId: sstDocuments.currentVersionId,
@@ -158,13 +159,16 @@ export async function getDashboardCounters(scope: WorksiteScope, permissions: re
   const ackPending = Number(ackPendingRow?.count ?? 0)
 
   for (const d of vigentesRows) {
-    const eff = effectiveStatus("vigente" as SstDocumentStatus, d.expiresAt)
-    if (eff !== "vigente") {
+    const days = daysUntil(d.expiresAt)
+    const expired = days !== null && days < 0
+    // La query trae vigentes Y aprobados (ambos pueden estar por vencer); el
+    // traspaso vigente→vencido solo corresponde a filas realmente vigentes —
+    // moverlo para un "aprobado" vencido creaba un "vencido" fantasma.
+    if (expired && d.status === "vigente") {
       byStatus["vigente"] = Math.max(0, byStatus["vigente"] - 1)
       byStatus["vencido"] = (byStatus["vencido"] ?? 0) + 1
     }
-    const days = daysUntil(d.expiresAt)
-    if (days !== null && eff === "vigente") {
+    if (days !== null && !expired) {
       if (days <= 7) expiring7 += 1
       else if (days <= 15) expiring15 += 1
       else if (days <= 30) expiring30 += 1

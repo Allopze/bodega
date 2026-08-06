@@ -46,6 +46,9 @@ function plusDays(isoDate: string, days: number): string {
 export function expiryFilterInput(filter: ExpiryFilter | null): { expiresBefore?: string; expiresAfter?: string } {
   if (!filter) return {}
   const today = todayInChile()
-  if (filter === "vencidos") return { expiresBefore: today }
+  // "Ya vencidos" excluye lo que vence hoy: `effectiveStatus` recién marca
+  // "vencido" al día siguiente, y un documento listado como vencido con badge
+  // "Vigente" era una contradicción visible.
+  if (filter === "vencidos") return { expiresBefore: plusDays(today, -1) }
   return { expiresAfter: today, expiresBefore: plusDays(today, Number(filter)) }
 }

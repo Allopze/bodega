@@ -97,4 +97,9 @@ export interface DetailViewProps {
   recipientOptions: Array<{ id: string; name: string; email: string; workerId: string | null }>
   currentUserId: string
   currentUserName: string
+  /**
+   * Extra al `router.refresh()` tras cada mutación. El visor rápido lo usa para
+   * re-consultar el bundle: su estado local no se entera del refresh del árbol.
+   */
+  onMutated?: () => void
 }

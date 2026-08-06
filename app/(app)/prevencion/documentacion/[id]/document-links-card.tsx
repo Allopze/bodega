@@ -29,10 +29,15 @@ interface Props {
   documentId: string
   links: Array<{ id: string; entityType: string; entityId: string; notes: string | null }>
   canLink: boolean
+  onMutated?: () => void
 }
 
-export function DocumentLinksCard({ documentId, links, canLink }: Props) {
+export function DocumentLinksCard({ documentId, links, canLink, onMutated }: Props) {
   const router = useRouter()
+  const refresh = () => {
+    router.refresh()
+    onMutated?.()
+  }
   const [entityType, setEntityType] = React.useState("worker")
   const [entityId, setEntityId] = React.useState("")
   const [notes, setNotes] = React.useState("")
@@ -48,7 +53,7 @@ export function DocumentLinksCard({ documentId, links, canLink }: Props) {
       setEntityId("")
       setNotes("")
       toast.success(result.message ?? "Vínculo registrado.")
-      router.refresh()
+      refresh()
     })
   }
 
@@ -62,7 +67,7 @@ export function DocumentLinksCard({ documentId, links, canLink }: Props) {
         return
       }
       toast.success(result.message ?? "Vínculo retirado.")
-      router.refresh()
+      refresh()
     })
   }
 

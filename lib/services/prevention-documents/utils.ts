@@ -171,15 +171,23 @@ export function assertGeneralLibraryContentAllowed(args: {
 }
 
 export function todayIso(): string {
-  return new Date().toISOString().slice(0, 10)
+  // Día calendario de Chile continental: toISOString() daría el día UTC, que
+  // rota 3-4 h antes que el chileno y desalineaba estos cálculos del filtro
+  // "vencidos" (que ya usaba hora de Chile).
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Santiago",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date())
 }
 
 export function daysUntil(dateIso: string | null | undefined): number | null {
   if (!dateIso) return null
   const target = new Date(`${dateIso}T00:00:00Z`).getTime()
   if (Number.isNaN(target)) return null
-  const now = Date.now()
-  return Math.ceil((target - now) / (1000 * 60 * 60 * 24))
+  const today = new Date(`${todayIso()}T00:00:00Z`).getTime()
+  return Math.round((target - today) / (1000 * 60 * 60 * 24))
 }
 
 export function effectiveStatus(

@@ -1,6 +1,6 @@
-import { eq } from "drizzle-orm"
+import { and, eq, isNull, ne } from "drizzle-orm"
 import { db } from "@/db"
-import { sstDocumentFolders } from "@/db/schema"
+import { sstDocumentFolders, sstDocuments } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import {
   sstDocumentFolderCreateSchema,
@@ -81,6 +81,17 @@ export async function archiveDocumentFolder(args: {
   scope: WorksiteScope
 }) {
   const folder = await getFolderOrThrow(args.input.id, args.scope)
+  // Archivar con contenido activo dejaba subcarpetas y documentos huérfanos e
+  // inaccesibles desde el árbol (el breadcrumb lanza si un ancestro está archivado).
+  const [activeChild] = await db.select({ id: sstDocumentFolders.id }).from(sstDocumentFolders)
+    .where(and(eq(sstDocumentFolders.parentId, folder.id), isNull(sstDocumentFolders.archivedAt)))
+    .limit(1)
+  const [activeDoc] = await db.select({ id: sstDocuments.id }).from(sstDocuments)
+    .where(and(eq(sstDocuments.folderId, folder.id), ne(sstDocuments.status, "archivado")))
+    .limit(1)
+  if (activeChild || activeDoc) {
+    throw new Error("La carpeta tiene subcarpetas o documentos activos. Muévelos o archívalos antes de archivar la carpeta.")
+  }
   const now = new Date().toISOString()
   const [updated] = await db.update(sstDocumentFolders)
     .set({ archivedAt: now, updatedAt: now })
@@ -99,9 +110,18 @@ export async function restoreDocumentFolder(args: {
   if (!folder || !folder.archivedAt) throw new Error("Carpeta archivada no encontrada.")
   assertScopeAccess(folder.worksiteId, args.scope)
 
+  // Restaurar bajo un padre aún archivado dejaría la carpeta huérfana (invisible
+  // en el árbol y con breadcrumb roto): se re-cuelga en la raíz.
+  let parentId = folder.parentId
+  if (parentId) {
+    const [parent] = await db.select({ archivedAt: sstDocumentFolders.archivedAt })
+      .from(sstDocumentFolders).where(eq(sstDocumentFolders.id, parentId)).limit(1)
+    if (!parent || parent.archivedAt) parentId = null
+  }
+
   const now = new Date().toISOString()
   const [updated] = await db.update(sstDocumentFolders)
-    .set({ archivedAt: null, updatedAt: now })
+    .set({ archivedAt: null, parentId, updatedAt: now })
     .where(eq(sstDocumentFolders.id, folder.id))
     .returning()
   if (!updated) throw new Error("No se pudo restaurar la carpeta.")

@@ -50,7 +50,9 @@ export default async function DocumentacionPage({
       ? Promise.resolve([])
       : listDocumentFolders({ parentId: activeFolderId, scope }),
     listFolderOptions(scope),
-    getFolderBreadcrumbItems(activeFolderId, scope),
+    // Un enlace guardado a una carpeta hoy archivada no debe botar la página:
+    // se degrada al breadcrumb de la raíz.
+    getFolderBreadcrumbItems(activeFolderId, scope).catch(() => getFolderBreadcrumbItems(null, scope)),
     getDashboardCounters(scope, session.user.permissions),
     searchDocuments({
       q: params.q ?? "",
