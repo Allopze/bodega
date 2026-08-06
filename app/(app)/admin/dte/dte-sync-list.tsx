@@ -1,5 +1,7 @@
-import { CheckCircle, Clock, XCircle, WarningCircle, Archive } from "@phosphor-icons/react/dist/ssr"
+import { Archive } from "@phosphor-icons/react/dist/ssr"
 import { formatDateTime } from "@/lib/utils"
+import { Badge } from "@/components/ui/badge"
+import { syncStatusLabel } from "@/lib/services/billing/labels"
 
 export interface DteSyncRunRow {
   id: string
@@ -13,13 +15,6 @@ export interface DteSyncRunRow {
   startedAt: string
   finishedAt: string | null
 }
-
-const STATUS_ICONS = {
-  success: { icon: CheckCircle, color: "text-[var(--color-success)]", label: "Exitosa" },
-  partial: { icon: WarningCircle, color: "text-[var(--color-warning)]", label: "Parcial" },
-  failed: { icon: XCircle, color: "text-[var(--color-danger)]", label: "Fallida" },
-  running: { icon: Clock, color: "text-[var(--color-warning)]", label: "En curso" },
-} as const
 
 const TRIGGER_LABELS = { manual: "Manual", cron: "Programado" } as const
 
@@ -53,16 +48,16 @@ export function DteSyncList({ runs }: { runs: DteSyncRunRow[] }) {
           </thead>
           <tbody className="divide-y divide-[var(--color-border)]">
             {runs.map((run) => {
-              const statusInfo = STATUS_ICONS[run.status]
-              const StatusIcon = statusInfo.icon
+              // Mismo vocabulario visual que /facturacion/sincronizacion
+              // (UI/UX 2026-08-05, M3): un solo estilo de chip para el mismo concepto.
+              const statusInfo = syncStatusLabel(run.status)
               return (
                 <tr key={run.id} className="transition-colors duration-[var(--duration-fast)] hover:bg-[var(--color-primary-tint)]">
                   <td className="whitespace-nowrap px-4 py-2.5 font-medium text-[var(--color-text)]">{run.periodo}</td>
                   <td className="whitespace-nowrap px-4 py-2.5 text-[var(--color-text-muted)]">{formatDateTime(run.startedAt)}</td>
                   <td className="whitespace-nowrap px-4 py-2.5">
-                    <span className="inline-flex items-center gap-1 text-sm" title={run.error ?? undefined}>
-                      <StatusIcon size={14} className={statusInfo.color} />
-                      <span className={statusInfo.color}>{statusInfo.label}</span>
+                    <span title={run.error ?? undefined}>
+                      <Badge variant={statusInfo.tone}>{statusInfo.label}</Badge>
                     </span>
                   </td>
                   <td className="whitespace-nowrap px-4 py-2.5 text-[var(--color-text-muted)]">{TRIGGER_LABELS[run.trigger]}</td>

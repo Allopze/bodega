@@ -78,7 +78,12 @@ export async function syncDteDocuments(
 
   await markStaleRunsAsFailed(codEmp)
 
-  if (!options.force) {
+  // El mes en curso sigue recibiendo documentos de los proveedores hasta que
+  // termina: saltar por "ya sincronizado" ahí dejaba el libro de compras
+  // congelado en la foto del primer día del mes (H-03, AUDITORIA_BUGS_2026-08-05.md).
+  // Sólo un período ya cerrado puede darse por sincronizado.
+  const periodoCerrado = periodo < currentPeriodo()
+  if (!options.force && periodoCerrado) {
     const priorSuccess = await db.query.dteSyncRuns.findFirst({
       where: and(
         eq(dteSyncRuns.periodo, periodo),
@@ -96,23 +101,41 @@ export async function syncDteDocuments(
         rowsSeen: 0,
         rowsInserted: 0,
         rowsUpdated: 0,
-        error: "Ya existe una corrida exitosa para este período. Use force=true para re-sincronizar.",
+        error: "Ya existe una corrida exitosa para este período cerrado. Use force=true para re-sincronizar.",
       }
     }
   }
 
   const importerId = options.importerId ?? await resolveImporterId()
 
-  // 1. Registrar la corrida
-  await db.insert(dteSyncRuns).values({
-    id: runId,
-    periodo,
-    codEmp,
-    trigger,
-    importerId,
-    status: "running",
-    startedAt: new Date().toISOString(),
-  })
+  // 1. Registrar la corrida. El índice único parcial
+  // `dte_sync_runs_single_active_unique` deja una sola `running` por
+  // (empresa, período): si el cron y el botón se disparan a la vez, la
+  // segunda choca en la base en vez de raspar el portal por duplicado
+  // (H-10, AUDITORIA_BUGS_2026-08-05.md).
+  try {
+    await db.insert(dteSyncRuns).values({
+      id: runId,
+      periodo,
+      codEmp,
+      trigger,
+      importerId,
+      status: "running",
+      startedAt: new Date().toISOString(),
+    })
+  } catch (error) {
+    if (!isSingleActiveRunConflict(error)) throw error
+    return {
+      runId: "",
+      periodo,
+      codEmp,
+      status: "skipped",
+      rowsSeen: 0,
+      rowsInserted: 0,
+      rowsUpdated: 0,
+      error: "Ya hay una sincronización en curso para este período.",
+    }
+  }
 
   let rowsSeen = 0
   let rowsInserted = 0
@@ -210,6 +233,26 @@ async function markStaleRunsAsFailed(codEmp: string): Promise<void> {
     eq(dteSyncRuns.status, "running"),
     lt(dteSyncRuns.startedAt, threshold),
   ))
+}
+
+/** Índice parcial: una sola corrida `running` por (empresa, período). */
+const SINGLE_ACTIVE_RUN_INDEX = "dte_sync_runs_single_active_unique"
+
+/**
+ * ¿El error viene del índice único parcial de corridas activas?
+ *
+ * Drizzle envuelve el error del driver, así que el SQLSTATE y el nombre de la
+ * restricción viven en la cadena de `cause`. Se exige el nombre del índice: no
+ * cualquier violación de unicidad de esta tabla significa "ya hay una corrida".
+ */
+function isSingleActiveRunConflict(error: unknown): boolean {
+  for (let current: unknown = error, depth = 0; current && depth < 5; depth++) {
+    const candidate = current as { code?: string; constraint?: string; detail?: string; cause?: unknown }
+    if (candidate.code === "23505" && candidate.constraint === SINGLE_ACTIVE_RUN_INDEX) return true
+    if (typeof candidate.detail === "string" && candidate.detail.includes(SINGLE_ACTIVE_RUN_INDEX)) return true
+    current = candidate.cause
+  }
+  return String((error as { message?: string })?.message ?? "").includes(SINGLE_ACTIVE_RUN_INDEX)
 }
 
 /**

@@ -138,7 +138,9 @@ describe("syncDteDocuments", () => {
     expect(mockTxUpdateSet).toHaveBeenCalledTimes(1)
   })
 
-  it("skips the sync when a successful run already exists for the period and force is not set", async () => {
+  it("skips the sync for a CLOSED period when a successful run already exists and force is not set", async () => {
+    // "2026-06" es un período cerrado frente a cualquier fecha real de
+    // ejecución de esta suite: el corte por "ya sincronizado" sólo aplica acá.
     mockSyncRunsFindFirst.mockResolvedValue({ id: "prior-run" })
 
     const result = await syncDteDocuments(makeClient(), { periodo: "2026-06" })
@@ -146,6 +148,60 @@ describe("syncDteDocuments", () => {
     expect(result.status).toBe("skipped")
     expect(result.runId).toBe("prior-run")
     expect(mockFetchBandejaEntrada).not.toHaveBeenCalled()
+  })
+
+  it("never skips the CURRENT period, even if a successful run already exists (H-03)", async () => {
+    // Antes de H-03, cualquier corrida `success` previa —incluida la del
+    // primer día del mes— dejaba el resto del mes sin re-consultar. El mes en
+    // curso ni siquiera debe preguntar por una corrida previa.
+    mockSyncRunsFindFirst.mockResolvedValue({ id: "prior-run-current-month" })
+    mockDocumentsFindFirst.mockResolvedValue(undefined)
+    mockFetchBandejaEntrada.mockResolvedValue({ rows: [BASE_ROW], totalRegistros: 1 })
+
+    const currentPeriodo = new Date().toISOString().slice(0, 7)
+    const result = await syncDteDocuments(makeClient(), { periodo: currentPeriodo, importerId: "user-1" })
+
+    expect(result.status).toBe("success")
+    expect(mockSyncRunsFindFirst).not.toHaveBeenCalled()
+    expect(mockFetchBandejaEntrada).toHaveBeenCalled()
+  })
+
+  it("still allows forcing a re-sync of a closed period explicitly", async () => {
+    mockSyncRunsFindFirst.mockResolvedValue({ id: "prior-run" })
+    mockDocumentsFindFirst.mockResolvedValue(undefined)
+    mockFetchBandejaEntrada.mockResolvedValue({ rows: [BASE_ROW], totalRegistros: 1 })
+
+    const result = await syncDteDocuments(makeClient(), { periodo: "2026-06", force: true, importerId: "user-1" })
+
+    expect(result.status).toBe("success")
+    expect(mockFetchBandejaEntrada).toHaveBeenCalled()
+  })
+
+  // H-10 (AUDITORIA_BUGS_2026-08-05.md): sin índice único parcial, el cron y
+  // el botón de administración disparándose a la vez raspaban el portal dos
+  // veces y la segunda contabilizaba fallos falsos al chocar con
+  // `dte_documents_unique_key`.
+  it("skips instead of scraping twice when another run is already active", async () => {
+    mockSyncRunsFindFirst.mockResolvedValue(undefined)
+    // El índice único parcial rechaza la segunda corrida `running`.
+    const conflict = Object.assign(new Error("Failed query: insert into dte_sync_runs"), {
+      cause: { code: "23505", constraint: "dte_sync_runs_single_active_unique" },
+    })
+    mockInsertValues.mockRejectedValueOnce(conflict)
+
+    const result = await syncDteDocuments(makeClient(), { periodo: "2026-06", importerId: "user-1" })
+
+    expect(result.status).toBe("skipped")
+    expect(result.error).toMatch(/en curso/i)
+    expect(mockFetchBandejaEntrada).not.toHaveBeenCalled()
+  })
+
+  it("propagates a real database failure instead of reporting it as 'already running'", async () => {
+    mockSyncRunsFindFirst.mockResolvedValue(undefined)
+    mockInsertValues.mockRejectedValueOnce(new Error("connection terminated unexpectedly"))
+
+    await expect(syncDteDocuments(makeClient(), { periodo: "2026-06", importerId: "user-1" }))
+      .rejects.toThrow(/connection terminated/i)
   })
 
   it("marks the run partial when some documents fail to upsert", async () => {
