@@ -38,7 +38,7 @@ describe("availableDashboardViews", () => {
     const keys = availableDashboardViews(JEFATURA).map((view) => view.key)
     expect(keys.slice(0, 2)).toEqual(["resumen", "trabajo"])
     // `purchasing:view` manda la plata al frente.
-    expect(keys[2]).toBe("adquisiciones")
+    expect(keys[2]).toBe("finanzas")
   })
 
   it("cada pestaña declara un rótulo corto: los títulos largos no caben en la barra", () => {
@@ -73,6 +73,6 @@ describe("isDomainView", () => {
   it("separa las dos vistas propias de las de dominio", () => {
     expect(isDomainView("resumen")).toBe(false)
     expect(isDomainView("trabajo")).toBe(false)
-    expect(isDomainView("adquisiciones")).toBe(true)
+    expect(isDomainView("finanzas")).toBe(true)
   })
 })

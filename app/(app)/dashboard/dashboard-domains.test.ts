@@ -25,15 +25,16 @@ const PREVENCIONISTA_FAENA = [
 const SOLICITANTE = ["requests:view_own"]
 
 describe("orderDashboardDomains", () => {
-  it("a quien mira la plata le abre con gasto: Adquisiciones y Flota primero", () => {
+  it("a quien mira la plata le abre con gasto: Finanzas y Adquisiciones primero", () => {
     const keys = orderDashboardDomains(JEFATURA).map((domain) => domain.key)
-    expect(keys).toEqual(["adquisiciones", "flota", "prevencion", "bodega", "terreno", "gobernanza"])
+    expect(keys).toEqual(["finanzas", "adquisiciones", "flota", "prevencion", "bodega", "terreno", "gobernanza"])
   })
 
   it("sin permiso de compras abre por prevención", () => {
     const keys = orderDashboardDomains(PREVENCIONISTA_FAENA).map((domain) => domain.key)
     expect(keys[0]).toBe("prevencion")
     expect(keys).not.toContain("flota")
+    expect(keys).not.toContain("finanzas")
   })
 
   // Ordena, no decide visibilidad: eso ya lo hizo `domainIsVisible`.
@@ -46,15 +47,21 @@ describe("orderDashboardDomains", () => {
     expect(orderDashboardDomains([])).toEqual([])
   })
 
-  it("`purchasing:view` es lo único que cambia el orden entre dos perfiles iguales", () => {
+  /*
+   * `purchasing:view` no sólo reordena: también **hace visible** Finanzas, que
+   * lo declara entre sus permisos. Por eso los dos perfiles ya no tienen los
+   * mismos dominios, y la comparación se hace sobre el resto.
+   */
+  it("un permiso de dinero cambia por dónde abre el tablero", () => {
     const base = ["requests:view_all", "prevention:pdtp:view", "combustibles:view", "warehouse:view_stock"]
     const sinPlata = orderDashboardDomains(base).map((d) => d.key)
     const conPlata = orderDashboardDomains([...base, "purchasing:view"]).map((d) => d.key)
 
     expect(sinPlata[0]).toBe("prevencion")
-    expect(conPlata[0]).toBe("adquisiciones")
-    // Mismos dominios, distinto orden.
-    expect([...sinPlata].sort()).toEqual([...conPlata].sort())
+    expect(conPlata[0]).toBe("finanzas")
+    expect(sinPlata).not.toContain("finanzas")
+    // Los mismos dominios salvo el que el permiso nuevo destrabó.
+    expect([...conPlata].filter((key) => key !== "finanzas").sort()).toEqual([...sinPlata].sort())
   })
 })
 
@@ -73,5 +80,31 @@ describe("domainIsVisible", () => {
   it("las anclas son únicas: el índice navega por ellas", () => {
     const anchors = Object.values(DASHBOARD_DOMAINS).map((d) => d.anchor)
     expect(new Set(anchors).size).toBe(anchors.length)
+  })
+})
+
+/**
+ * Finanzas absorbe **las dos direcciones del dinero**: la venta, que sólo vivía
+ * en `/facturacion` sin presencia en el tablero, y la compra, repartida hasta
+ * ahora entre Adquisiciones y Flota.
+ */
+describe("dominio Finanzas", () => {
+  it("a quien mira la plata le abre por Finanzas, antes que Adquisiciones", () => {
+    const keys = orderDashboardDomains([...JEFATURA, "billing:view"]).map((d) => d.key)
+    expect(keys[0]).toBe("finanzas")
+    expect(keys.indexOf("finanzas")).toBeLessThan(keys.indexOf("adquisiciones"))
+  })
+
+  it("`purchasing:view` solo ya abre Finanzas: el gasto también es plata", () => {
+    expect(orderDashboardDomains(["purchasing:view"]).map((d) => d.key)).toContain("finanzas")
+  })
+
+  it("`billing:view` solo también, sin ningún permiso de compra", () => {
+    expect(orderDashboardDomains(["billing:view"]).map((d) => d.key)).toEqual(["finanzas"])
+  })
+
+  it("sin ningún permiso de dinero, Finanzas no existe", () => {
+    const keys = orderDashboardDomains(["prevention:pdtp:view", "warehouse:view_stock"]).map((d) => d.key)
+    expect(keys).not.toContain("finanzas")
   })
 })

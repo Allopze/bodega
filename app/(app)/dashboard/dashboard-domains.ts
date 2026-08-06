@@ -10,6 +10,7 @@ import type { Permission } from "@/modules/permissions"
  */
 
 export const DASHBOARD_DOMAIN_KEYS = [
+  "finanzas",
   "adquisiciones",
   "bodega",
   "prevencion",
@@ -39,6 +40,19 @@ export interface DashboardDomain {
 }
 
 export const DASHBOARD_DOMAINS: Record<DashboardDomainKey, DashboardDomain> = {
+  finanzas: {
+    key: "finanzas",
+    title: "Finanzas",
+    shortTitle: "Finanzas",
+    anchor: "dominio-finanzas",
+    /*
+     * Cubre las dos direcciones del dinero: `billing:view` la venta
+     * (facturación y cobranza), `purchasing:view` la compra (gasto en OC), y
+     * `combustibles:view_costs` el costo de combustible y su deuda. Basta uno:
+     * quien sólo ve compras entra igual y ve su mitad de la sección.
+     */
+    permissions: ["billing:view", "purchasing:view", "combustibles:view_costs"],
+  },
   adquisiciones: {
     key: "adquisiciones",
     title: "Adquisiciones",
@@ -83,11 +97,16 @@ export const DASHBOARD_DOMAINS: Record<DashboardDomainKey, DashboardDomain> = {
   },
 }
 
-/** Permiso que marca a alguien como "mira la plata": decide el orden. */
-const MONEY_PERMISSION: Permission = "purchasing:view"
+/**
+ * Permisos que marcan a alguien como "mira la plata": deciden el orden.
+ *
+ * Era sólo `purchasing:view`. Con Finanzas hay un perfil nuevo —quien ve la
+ * cobranza pero no emite OC— que también debe abrir por dinero.
+ */
+const MONEY_PERMISSIONS: readonly Permission[] = ["purchasing:view", "billing:view"]
 
-const MONEY_FIRST: readonly DashboardDomainKey[] = ["adquisiciones", "flota", "prevencion", "bodega", "terreno", "gobernanza"]
-const PREVENTION_FIRST: readonly DashboardDomainKey[] = ["prevencion", "terreno", "gobernanza", "bodega", "adquisiciones", "flota"]
+const MONEY_FIRST: readonly DashboardDomainKey[] = ["finanzas", "adquisiciones", "flota", "prevencion", "bodega", "terreno", "gobernanza"]
+const PREVENTION_FIRST: readonly DashboardDomainKey[] = ["prevencion", "terreno", "gobernanza", "bodega", "adquisiciones", "flota", "finanzas"]
 
 function domainIsVisibleForPermissions(domain: DashboardDomain, permissions: ReadonlySet<string>) {
   return domain.permissions.some((permission) => permissions.has(permission))
@@ -111,7 +130,7 @@ export function domainIsVisible(domain: DashboardDomain, permissions: readonly s
  */
 export function orderDashboardDomains(permissions: readonly string[]): DashboardDomain[] {
   const permissionSet = new Set(permissions)
-  const order = permissionSet.has(MONEY_PERMISSION) ? MONEY_FIRST : PREVENTION_FIRST
+  const order = MONEY_PERMISSIONS.some((permission) => permissionSet.has(permission)) ? MONEY_FIRST : PREVENTION_FIRST
   const domains: DashboardDomain[] = []
 
   for (const key of order) {
