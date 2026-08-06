@@ -52,21 +52,22 @@ test.describe("Conciliación OC-factura-recepción", () => {
 
     // El filtro se activa desde el chip del header, no desde la barra: sin un
     // control visible, la lista quedaba recortada sin explicación ni salida.
-    // El chip es un enlace con href real, no un botón: así funciona desde el
-    // primer pintado, sin esperar a que el componente hidrate.
-    // Esperar a que el cliente termine de cargar antes de hacer clic: el
-    // elemento es accionable desde el HTML del servidor, así que Playwright
-    // clickea antes de que React hidrate. Ahí `Link` ya hace preventDefault
-    // pero el router todavía no navega, y el clic se pierde sin dejar rastro
-    // —la URL simplemente no cambia y la aserción agota sus 10 s.
-    // `networkidle` no alcanza: vuelve apenas la red se calma, que puede ser
-    // antes de que React termine de hidratar. En esa ventana `Link` ya hace
-    // preventDefault pero el router todavía no navega, así que el clic se pierde
-    // en silencio. Se reintenta hasta que el cliente lo toma; el destino es el
-    // mismo, así que repetirlo no tiene efecto secundario.
+    //
+    // Dos problemas se sumaban acá, y el segundo escondía al primero:
+    //
+    //   1. El clic puede llegar antes de que React hidrate. `Link` ya hace
+    //      preventDefault pero el router todavía no navega, así que se pierde
+    //      sin dejar rastro. Por eso se reintenta en vez de clickear una vez.
+    //   2. Tras un clic que SÍ funcionó, `page.url()` se lee antes de que la
+    //      navegación del cliente aterrice, así que la primera vuelta devuelve
+    //      la URL vieja. En la segunda, el chip ya está desapareciendo y un
+    //      `click()` sin timeout se queda esperando actionability hasta el
+    //      timeout del test (150 s): el poll no vuelve a muestrear nunca y
+    //      agota sus 15 s con una sola medición. El timeout corto es lo que lo
+    //      mantiene muestreando.
     await expect.poll(async () => {
       const chip = page.getByRole("link", { name: /Quitar filtro de facturas pendientes/i })
-      if (await chip.count()) await chip.click().catch(() => undefined)
+      if (await chip.count()) await chip.click({ timeout: 2_000 }).catch(() => undefined)
       return page.url()
     }, { timeout: 15_000 }).not.toMatch(/factura=pendiente/)
     await expect(page.getByRole("link", { name: /Ver OC OC-2026-0001/ })).toBeVisible({ timeout: 10_000 })
@@ -77,7 +78,8 @@ test.describe("Conciliación OC-factura-recepción", () => {
     await page.goto("/compras?factura=pendiente")
     await expect.poll(async () => {
       const limpiar = page.getByRole("button", { name: "Limpiar" })
-      if (await limpiar.count()) await limpiar.click().catch(() => undefined)
+      // Mismo timeout corto y por la misma razón que el chip de arriba.
+      if (await limpiar.count()) await limpiar.click({ timeout: 2_000 }).catch(() => undefined)
       return page.url()
     }, { timeout: 15_000 }).not.toMatch(/factura=pendiente/)
   })
