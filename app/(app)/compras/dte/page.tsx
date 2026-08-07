@@ -91,7 +91,7 @@ export default async function DteListPage({
     <PageContainer>
       <PageHeader
         title="Documentos DTE"
-        description={`Documentos tributarios recibidos de proveedores en ${periodo} — solo lectura del portal DTE FacturaEnLínea.`}
+        description={`Documentos tributarios recibidos de proveedores en ${periodo}. Solo lectura del portal DTE FacturaEnLínea.`}
         breadcrumb={
           <Breadcrumbs items={[
             { label: "Inicio", href: "/dashboard" },

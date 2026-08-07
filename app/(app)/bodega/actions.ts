@@ -291,13 +291,20 @@ export async function closePhysicalInventoryCountAction(
   const countedQuantities = formValues(formData, "countedQuantity")
   const itemNotes = formValues(formData, "itemNotes")
 
+  // Sólo cuenta lo que el usuario efectivamente escribió: el formulario envía una
+  // fila por producto de la faena y `Number("")` es 0, así que sin este filtro las
+  // filas en blanco ajustarían todo el catálogo a cero.
   const items = productIds
-    .map((productId, index) => ({
-      productId,
-      countedQuantity: Number(countedQuantities[index] ?? ""),
-      notes: itemNotes[index] ?? "",
-    }))
-    .filter((item) => item.productId)
+    .map((productId, index) => {
+      const rawCount = countedQuantities[index]
+      const trimmed = rawCount?.trim()
+      return {
+        productId,
+        countedQuantity: trimmed !== undefined && trimmed !== "" ? Number(trimmed) : NaN,
+        notes: itemNotes[index] ?? "",
+      }
+    })
+    .filter((item) => item.productId && Number.isFinite(item.countedQuantity))
 
   if (!worksiteId) {
     return { ok: false, message: "Selecciona una faena" }

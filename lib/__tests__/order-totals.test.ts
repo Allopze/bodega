@@ -53,6 +53,17 @@ describe("computeOrderTotals", () => {
     expect(result.totalAmount).toBe(119)
   })
 
+  it("el neto es la suma de los subtotales redondeados por línea", () => {
+    const result = computeOrderTotals([
+      { quantity: 1, unitPrice: 1990, discount: 15 },
+      { quantity: 1, unitPrice: 1990, discount: 15 },
+    ])
+    // cada línea se persiste como Math.round(1691,5) = 1692
+    expect(result.netAmount).toBe(3384)
+    expect(result.taxAmount).toBe(643)
+    expect(result.totalAmount).toBe(4027)
+  })
+
   it("rounds correctly", () => {
     const result = computeOrderTotals([
       { quantity: 3, unitPrice: 3333 },

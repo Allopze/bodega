@@ -45,7 +45,7 @@ export async function addItemToPurchaseOrderTx(
     }
     if (!["approved", "pending_purchase"].includes(locked.status)) {
       throw new Error(
-        `El ítem ya no está disponible (estado: ${locked.status}) — posible concurrencia`,
+        `El ítem ya no está disponible (estado: ${locked.status}): posible concurrencia`,
       )
     }
 
@@ -62,7 +62,7 @@ export async function addItemToPurchaseOrderTx(
 
     if (!updated) {
       throw new Error(
-        `El ítem ya no está disponible — posible concurrencia`,
+        `El ítem ya no está disponible: posible concurrencia`,
       )
     }
 
@@ -111,7 +111,7 @@ export async function markItemPendingPurchase(
       .set({ status: "pending_purchase", updatedAt: now })
       .where(and(eq(purchaseRequestItems.id, itemId), eq(purchaseRequestItems.status, item.status)))
       .returning({ id: purchaseRequestItems.id })
-    if (!updated) throw new Error("El ítem ya no está disponible — posible concurrencia")
+    if (!updated) throw new Error("El ítem ya no está disponible: posible concurrencia")
 
     await recordStatusChange({
       entityType: "request_item",
@@ -163,7 +163,7 @@ export async function postponeItem(
       .set({ status: "postponed", updatedAt: now })
       .where(and(eq(purchaseRequestItems.id, itemId), eq(purchaseRequestItems.status, item.status)))
       .returning({ id: purchaseRequestItems.id })
-    if (!updated) throw new Error("El ítem ya no está disponible — posible concurrencia")
+    if (!updated) throw new Error("El ítem ya no está disponible: posible concurrencia")
 
     await recordStatusChange({
       entityType: "request_item",

@@ -5,28 +5,41 @@ import { db } from "@/db"
 import {
   deliveries, deliveryItems,
   purchaseRequestItems, purchaseRequests,
-  products, eppProductFamilies,
+  products, eppProductFamilies, workers,
 } from "@/db/schema"
-import { requireAuth } from "@/lib/auth/can"
+import { canAny, requireAuth } from "@/lib/auth/can"
+import { worksiteScopeSql } from "@/lib/auth/scope"
 
 export interface WorkerEppStatusResult {
   activeRequest: { code: string; status: string } | null
   lastDelivery: { deliveredAt: string; lifespanMonths: number | null } | null
 }
 
+const EMPTY: WorkerEppStatusResult = { activeRequest: null, lastDelivery: null }
+
 export async function getWorkerEppStatusAction(
   workerId: string,
   productId: string,
 ): Promise<WorkerEppStatusResult> {
+  let session
   try {
-    await requireAuth()
+    session = await requireAuth()
   } catch {
-    return { activeRequest: null, lastDelivery: null }
+    return EMPTY
   }
+  if (!canAny(session, "requests:create", "requests:view_all", "requests:view_own")) return EMPTY
 
   if (!workerId || !productId) {
-    return { activeRequest: null, lastDelivery: null }
+    return EMPTY
   }
+
+  // El workerId llega del cliente: autorizarlo por faena antes de usarlo como
+  // clave de consulta, si no cualquier sesión lee el estado EPP de cualquiera.
+  const worker = await db.query.workers.findFirst({
+    columns: { id: true },
+    where: and(eq(workers.id, workerId), worksiteScopeSql(session, workers.worksiteId)),
+  })
+  if (!worker) return EMPTY
 
   // 1. Check active requests for this worker + product
   const activeRequestItem = await db

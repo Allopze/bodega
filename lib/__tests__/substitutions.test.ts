@@ -81,7 +81,7 @@ describe("Substitutions Service (R7)", () => {
       email: "reemplazo@example.test",
       substituteForUserId: ORIGINAL_USER,
       validUntilDays: 15,
-    }, ADMIN_ID)
+    }, ADMIN_ID, true)
 
     expect(tempUser!.isTemporary).toBe(true)
     expect(tempUser!.substituteForUserId).toBe(ORIGINAL_USER)
@@ -107,6 +107,55 @@ describe("Substitutions Service (R7)", () => {
     expect(invitation!.tokenHash).toBe(hashInvitationToken(tempUser!.invitationToken))
   })
 
+  it("rechaza crear la suplencia de un administrador sin admin:manage_admins", async () => {
+    const { createTemporarySubstituteUser } = await import("@/lib/services/substitutions")
+
+    await inMemoryDb.insert(schema.roles).values({ id: "rol-admin", name: "administrador", label: "Administrador" })
+    await inMemoryDb.insert(schema.userRoles).values({ userId: ORIGINAL_USER, roleId: "rol-admin" })
+
+    await expect(createTemporarySubstituteUser({
+      name: "Suplente Escalador",
+      email: "escalador@example.test",
+      substituteForUserId: ORIGINAL_USER,
+      validUntilDays: 90,
+    }, ADMIN_ID, false)).rejects.toThrow(/Solo un administrador/)
+
+    // La transacción revierte: ni usuario temporal ni invitación quedan creados.
+    const leftovers = await inMemoryDb.select().from(schema.users).where(eq(schema.users.email, "escalador@example.test"))
+    expect(leftovers).toHaveLength(0)
+    const invitations = await inMemoryDb.select().from(schema.userInvitations).where(eq(schema.userInvitations.email, "escalador@example.test"))
+    expect(invitations).toHaveLength(0)
+
+    // Con el permiso sí se permite.
+    const allowed = await createTemporarySubstituteUser({
+      name: "Suplente Legitimo",
+      email: "legitimo@example.test",
+      substituteForUserId: ORIGINAL_USER,
+      validUntilDays: 90,
+    }, ADMIN_ID, true)
+    expect(allowed!.isTemporary).toBe(true)
+  })
+
+  it("rechaza reactivar una suplencia de administrador sin admin:manage_admins", async () => {
+    const { createTemporarySubstituteUser, extendTemporarySubstituteValidity, revokeTemporarySubstitute } = await import("@/lib/services/substitutions")
+
+    await inMemoryDb.insert(schema.roles).values({ id: "rol-admin", name: "administrador", label: "Administrador" })
+    await inMemoryDb.insert(schema.userRoles).values({ userId: ORIGINAL_USER, roleId: "rol-admin" })
+
+    const tempUser = await createTemporarySubstituteUser({
+      name: "Suplente Admin",
+      email: "suplente-admin@example.test",
+      substituteForUserId: ORIGINAL_USER,
+      validUntilDays: 7,
+    }, ADMIN_ID, true)
+    await revokeTemporarySubstitute(tempUser!.id, ADMIN_ID)
+
+    await expect(extendTemporarySubstituteValidity(tempUser!.id, 30, ADMIN_ID, false)).rejects.toThrow(/Solo un administrador/)
+
+    const [stillRevoked] = await inMemoryDb.select().from(schema.users).where(eq(schema.users.id, tempUser!.id))
+    expect(stillRevoked!.isActive).toBe(false)
+  })
+
   it("permite extender vigencia y revocar la cuenta", async () => {
     const { createTemporarySubstituteUser, extendTemporarySubstituteValidity, revokeTemporarySubstitute } = await import("@/lib/services/substitutions")
 
@@ -115,9 +164,9 @@ describe("Substitutions Service (R7)", () => {
       email: "reemplazo2@example.test",
       substituteForUserId: ORIGINAL_USER,
       validUntilDays: 7,
-    }, ADMIN_ID)
+    }, ADMIN_ID, true)
 
-    const extended = await extendTemporarySubstituteValidity(tempUser!.id, 10, ADMIN_ID)
+    const extended = await extendTemporarySubstituteValidity(tempUser!.id, 10, ADMIN_ID, true)
     expect(extended!.isActive).toBe(true)
 
     const revoked = await revokeTemporarySubstitute(tempUser!.id, ADMIN_ID)

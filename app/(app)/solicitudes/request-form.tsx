@@ -146,7 +146,7 @@ function ItemsSection({
       {QUOTATION_TYPES.has(requestType) && !savedId && (
         <p className="flex items-center gap-1.5 text-xs font-medium text-[var(--color-signal-ink)] rounded-[var(--radius)] border border-[var(--color-signal-line)] bg-[var(--color-signal-tint)] px-3 py-2.5">
           <Warning size={14} weight="fill" className="shrink-0" />
-          Guarda el borrador primero — la cotización se adjunta por ítem después de guardar.
+          Guarda el borrador primero: la cotización se adjunta por ítem después de guardar.
         </p>
       )}
       <div className="space-y-2">

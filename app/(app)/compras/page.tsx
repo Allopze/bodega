@@ -27,6 +27,9 @@ export const metadata: Metadata = { title: "Órdenes de compra" }
 
 import { ORDERS_PAGE_SIZE } from "@/lib/constants"
 
+/** Ítems postergados que muestra la bandeja antes de pedir "ver todos". */
+const POSTPONED_PREVIEW = 10
+
 export default async function ComprasPage({
   searchParams,
 }: {
@@ -71,6 +74,7 @@ export default async function ComprasPage({
   ])
   const pendingCount = pendingRow?.total ?? 0
   const postponedCount = postponedRow?.total ?? 0
+  const showAllPostponed = sp.postergados === "todos"
 
   // URL-synced search & filters (server-side, so search finds records on any page)
   const listParams = parseListParams(sp)
@@ -274,7 +278,10 @@ export default async function ComprasPage({
           .leftJoin(products, eq(purchaseRequestItems.productId, products.id))
           .where(and(eq(purchaseRequestItems.status, "postponed"), requestWorksiteScope))
           .orderBy(desc(purchaseRequestItems.updatedAt))
-          .limit(10)
+          // La bandeja es un adelanto: sin el `?postergados=todos` los ítems
+          // sobre el tope quedaban inalcanzables — la pastilla los contaba y
+          // la lista no los mostraba, sin paginador propio.
+          .limit(showAllPostponed ? postponedCount : POSTPONED_PREVIEW)
       : Promise.resolve([]),
   ])
 
@@ -329,6 +336,8 @@ export default async function ComprasPage({
         orders={rows}
         pendingCount={pendingCount}
         postponedItems={postponedItems}
+        postponedTotal={postponedCount}
+        showAllPostponedHref={buildPaginationHref("/compras", { ...sp, postergados: "todos" }, 1)}
         canCreate={canCreateOrder}
         canDelete={canDeleteOrder}
         createdCount={createdCount}

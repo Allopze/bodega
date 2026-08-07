@@ -15,6 +15,8 @@ import {
   TableRoot, Table, TableHeader, TableBody,
   TableRow, TableHead, TableCell, TableCellNum,
 } from "@/components/ui/table"
+import { getDocumentChain } from "@/lib/services/document-chain"
+import { DocumentChainStrip } from "@/components/documents/document-chain-strip"
 import { cn, formatCLP, formatDateTime, formatQty, formatWorksiteLabel } from "@/lib/utils"
 import { ArrowSquareOut } from "@phosphor-icons/react/dist/ssr"
 
@@ -63,6 +65,8 @@ export default async function RecepcionDetallePage({
       })
     : []
 
+  const documentChain = await getDocumentChain(session, { kind: "receipt", id: receipt.id })
+
   const productMap = Object.fromEntries(productRows.map((product) => [product.id, product]))
   const destinationLabel = receipt.locationType === "office"
     ? "Oficina Chome"
@@ -106,6 +110,13 @@ export default async function RecepcionDetallePage({
             { label: receipt.code },
           ]} />
         }
+      />
+
+      <DocumentChainStrip
+        chain={documentChain}
+        current={{ kind: "receipt", id: receipt.id }}
+        currentCode={receipt.code}
+        className="mb-6"
       />
 
       {progress && (

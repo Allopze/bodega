@@ -40,7 +40,17 @@ export function DeliveryFormReturn({
         </p>
       </div>
 
-      <div className="rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-surface-2)] p-4 flex flex-col gap-4">
+      {/* fieldset y no div: plegar la sección la esconde con CSS, pero el
+          formulario se serializa desde el DOM, así que sin `disabled` los
+          campos plegados igual viajaban y se persistía una devolución que la
+          persona canceló. `disabled` en el fieldset es lo único que excluye a
+          los hijos del envío (incluido el <select> nativo que arma Radix), y de
+          paso los saca del orden de tabulación. `min-w-0` compensa el
+          `min-inline-size: min-content` que el UA le pone al fieldset. */}
+      <fieldset
+        disabled={!showReturn}
+        className="min-w-0 rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-surface-2)] p-4 flex flex-col gap-4"
+      >
         <p className="text-sm font-medium text-[var(--color-text)]">Datos del EPP devuelto</p>
 
         <Field label="Producto (catálogo)" htmlFor="returnProductId">
@@ -106,7 +116,7 @@ export function DeliveryFormReturn({
             placeholder="Condición del EPP devuelto, observaciones..."
           />
         </Field>
-      </div>
+      </fieldset>
     </div>
   )
 }

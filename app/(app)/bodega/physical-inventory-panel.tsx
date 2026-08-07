@@ -103,9 +103,8 @@ export function PhysicalInventoryPanel({
                     type="number"
                     min="0"
                     step="0.01"
-                    defaultValue={product.quantity}
+                    placeholder="—"
                     className="h-8 text-right tabular-nums"
-                    required
                   />
                 </div>
               ))}

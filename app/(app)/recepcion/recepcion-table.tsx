@@ -3,6 +3,7 @@
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { DataTable } from "@/components/admin/data-table"
+import { RECEPCION_PAGE_SIZE } from "@/lib/constants"
 import { ListFilters, type FilterOption } from "@/components/adquisiciones/list-filters"
 import { OnboardingHint } from "@/components/ui/onboarding-hint"
 import { TableRow, TableCell } from "@/components/ui/table"
@@ -69,7 +70,7 @@ export function RecepcionTable({ orders, wsMap, supMap, gapMap, canRegister, wor
       rows={orders as unknown as Record<string, unknown>[]}
       searchKeys={["code"]}
       disableInternalSearch
-      pageSize={20}
+      pageSize={RECEPCION_PAGE_SIZE}
       emptyTitle="Sin OCs pendientes de recepción"
       emptyDescription="No hay órdenes que coincidan con los filtros."
       renderRow={(row) => {

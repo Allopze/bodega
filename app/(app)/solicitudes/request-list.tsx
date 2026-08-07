@@ -5,6 +5,7 @@ import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import { Plus, Trash } from "@phosphor-icons/react"
 import { DataTable } from "@/components/admin/data-table"
+import { SOLICITUDES_PAGE_SIZE } from "@/lib/constants"
 import { StateBadge, REQUEST_STATE_META } from "@/components/states/state-badge"
 import { ListFilters, type FilterOption } from "@/components/adquisiciones/list-filters"
 import { OnboardingHint } from "@/components/ui/onboarding-hint"
@@ -149,7 +150,7 @@ export function RequestList({
         rows={requests as unknown as Record<string, unknown>[]}
         searchKeys={["code", "worksiteName", "requesterName", "status", "requestType"]}
         disableInternalSearch
-        pageSize={25}
+        pageSize={SOLICITUDES_PAGE_SIZE}
         emptyTitle="Sin solicitudes"
         emptyDescription={hasActiveFilters ? "No hay solicitudes que coincidan con los filtros aplicados." : "No hay solicitudes registradas aún."}
         emptyAction={

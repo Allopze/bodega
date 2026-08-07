@@ -1,7 +1,7 @@
 import { and, desc, eq, isNull, lte, sql } from "drizzle-orm"
 import { z } from "zod"
 import { db } from "@/db"
-import { userInvitations, userRoles, users, worksiteUsers } from "@/db/schema"
+import { roles, userInvitations, userRoles, users, worksiteUsers } from "@/db/schema"
 import { generateInvitationToken, hashInvitationToken } from "@/lib/auth/bootstrap"
 import { createPendingPasswordMarker } from "@/lib/auth/password-setup"
 import { nanoid } from "@/lib/id"
@@ -14,7 +14,28 @@ const createSubstituteSchema = z.object({
   validUntilDays: z.number().int().min(1).max(90).default(30),
 })
 
-export async function createTemporarySubstituteUser(input: unknown, createdByUserId: string) {
+/**
+ * Impide que quien no puede gestionar administradores cree o reactive una
+ * suplencia que hereda el rol `administrador` (escalada vertical).
+ * Misma regla que validateRoleWorksiteRules en /admin/usuarios: compara por
+ * nombre de rol, no por id.
+ */
+async function assertNoAdminEscalation(
+  tx: Pick<typeof db, "select">,
+  userId: string,
+  canManageAdmins: boolean,
+) {
+  if (canManageAdmins) return
+  const [adminRole] = await tx
+    .select({ roleId: userRoles.roleId })
+    .from(userRoles)
+    .innerJoin(roles, eq(roles.id, userRoles.roleId))
+    .where(and(eq(userRoles.userId, userId), eq(roles.name, "administrador")))
+    .limit(1)
+  if (adminRole) throw new Error("Solo un administrador puede gestionar una suplencia de un usuario administrador.")
+}
+
+export async function createTemporarySubstituteUser(input: unknown, createdByUserId: string, canManageAdmins: boolean) {
   const data = createSubstituteSchema.parse(input)
   const now = new Date()
   const nowIso = now.toISOString()
@@ -48,6 +69,7 @@ export async function createTemporarySubstituteUser(input: unknown, createdByUse
       tx.select({ roleId: userRoles.roleId }).from(userRoles).where(eq(userRoles.userId, originalUser.id)),
       tx.select({ worksiteId: worksiteUsers.worksiteId, isPrimary: worksiteUsers.isPrimary }).from(worksiteUsers).where(eq(worksiteUsers.userId, originalUser.id)),
     ])
+    await assertNoAdminEscalation(tx, originalUser.id, canManageAdmins)
     if (roleRows.length > 0) {
       await tx.insert(userRoles).values(roleRows.map((role) => ({ userId: id, roleId: role.roleId })))
     }
@@ -94,9 +116,12 @@ export async function createTemporarySubstituteUser(input: unknown, createdByUse
   return { ...created, invitationToken, invitationExpiresAt: validUntilDate.toISOString() }
 }
 
-export async function extendTemporarySubstituteValidity(userId: string, additionalDays: number, updatedByUserId: string) {
+export async function extendTemporarySubstituteValidity(userId: string, additionalDays: number, updatedByUserId: string, canManageAdmins: boolean) {
   const [user] = await db.select().from(users).where(eq(users.id, userId)).limit(1)
   if (!user || !user.isTemporary) throw new Error("Cuenta temporal no encontrada.")
+  // Extender reactiva la cuenta (isActive: true): sin esta guarda se podría
+  // revivir una suplencia de administrador ya revocada con sólo admin:users.
+  await assertNoAdminEscalation(db, userId, canManageAdmins)
 
   const currentValidUntil = user.validUntil ? new Date(user.validUntil) : new Date()
   const newValidUntil = new Date(currentValidUntil.getTime() + additionalDays * 24 * 60 * 60 * 1000)

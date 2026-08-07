@@ -9,6 +9,7 @@ import { SubmitButton } from "@/components/admin/submit-button"
 import { Field } from "@/components/ui/field"
 import { DatePicker } from "@/components/ui/date-picker"
 import { Input } from "@/components/ui/input"
+import { OptionSelect } from "@/components/ui/option-select"
 import { FileInput } from "@/components/ui/file-input"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { formatCLP, formatDate } from "@/lib/utils"
@@ -535,7 +536,7 @@ function AddInvoiceForm({
       <Field
         label="Archivo"
         htmlFor="invoice-file"
-        helper="PDF, JPG, PNG o XML (DTE) — se auto-extraen los datos"
+        helper="PDF, JPG, PNG o XML (DTE): se auto-extraen los datos"
       >
         <FileInput
           id="invoice-file"
@@ -556,7 +557,7 @@ function AddInvoiceForm({
 
       {dteParsed && !extracting && (
         <p className="text-[11px] text-[var(--color-success)] flex items-center gap-1">
-          ✓ Datos extraídos del archivo — campos auto-completados
+          ✓ Datos extraídos del archivo: campos auto-completados
         </p>
       )}
 
@@ -641,16 +642,17 @@ function AddInvoiceForm({
               <div key={li.id} className="flex items-end gap-1.5 rounded border border-(--color-border) p-2 bg-surface-2">
                 <div className="flex-1 min-w-0">
                   <p title={li.productName || "Ítem"} className="text-[10px] text-text-subtle truncate mb-1">Documento: {li.productName || "Ítem sin descripción"}</p>
-                  <select
+                  <OptionSelect
                     aria-label={`Asociar línea ${index + 1} a un ítem de la orden de compra`}
                     value={li.ocItemId || (li.resolution === "unlinked" ? "__unlinked" : "")}
-                    onChange={(event) => updateLineItemAssociation(index, event.target.value)}
-                    className={`mb-1 h-7 w-full rounded border bg-(--color-surface) px-1.5 text-[11px] ${li.resolution === "needs_review" ? "border-[var(--color-warning)]" : "border-(--color-border)"}`}
-                  >
-                    <option value="" disabled>Selecciona ítem de OC</option>
-                    {ocItems.map((item) => <option key={item.id} value={item.id}>{item.productName}</option>)}
-                    <option value="__unlinked">Mantener sin asociar a la OC</option>
-                  </select>
+                    onValueChange={(value) => updateLineItemAssociation(index, value)}
+                    placeholder="Selecciona ítem de OC"
+                    options={[
+                      ...ocItems.map((item) => ({ value: item.id, label: item.productName })),
+                      { value: "__unlinked", label: "Mantener sin asociar a la OC" },
+                    ]}
+                    className={`mb-1 h-8 sm:h-8 px-1.5 text-[11px] ${li.resolution === "needs_review" ? "border-[var(--color-warning)]" : ""}`}
+                  />
                   {li.resolution === "needs_review" && (
                     <p className="mb-1 text-[10px] text-[var(--color-warning-ink)]">Esta línea no se asociará hasta que selecciones un ítem de la OC o confirmes que queda sin asociar.</p>
                   )}

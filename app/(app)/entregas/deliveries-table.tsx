@@ -2,6 +2,7 @@
 
 import { FileText, User } from "@phosphor-icons/react"
 import { DataTable } from "@/components/admin/data-table"
+import { HISTORY_PAGE_SIZE } from "@/lib/constants"
 import { TableCell, TableRow } from "@/components/ui/table"
 import { formatDate } from "@/lib/utils"
 
@@ -27,14 +28,20 @@ const COLUMNS = [
   { key: "attachmentId", label: "Comprobante", sortable: false, width: "w-32" },
 ]
 
-export function DeliveriesTable({ deliveries }: { deliveries: DeliveryRow[] }) {
+/**
+ * `canViewTraceability` llega como prop porque la ficha del trabajador exige
+ * `traceability:view`, permiso que varios roles con `deliveries:view` no tienen:
+ * sin el gate el nombre enlazaba derecho a /forbidden. Es cliente, así que la
+ * sesión la resuelve la página.
+ */
+export function DeliveriesTable({ deliveries, canViewTraceability = false }: { deliveries: DeliveryRow[]; canViewTraceability?: boolean }) {
   return (
     <DataTable
       caption="Entregas"
       columns={COLUMNS}
       rows={deliveries as unknown as Record<string, unknown>[]}
       searchKeys={["code", "workerName", "worksiteName", "itemSummary"]}
-      pageSize={20}
+      pageSize={HISTORY_PAGE_SIZE}
 
       emptyTitle="Sin entregas"
       emptyDescription="No hay entregas de EPP que coincidan con la búsqueda."
@@ -47,7 +54,7 @@ export function DeliveriesTable({ deliveries }: { deliveries: DeliveryRow[] }) {
                 <User size={18} className="mt-0.5 shrink-0 text-[var(--color-text-subtle)]" />
                 <div className="min-w-0">
                   <p className="font-mono text-xs text-[var(--color-text-subtle)]">{delivery.code}</p>
-                  {delivery.workerId ? (
+                  {delivery.workerId && canViewTraceability ? (
                     <a
                       href={`/trazabilidad/trabajador/${delivery.workerId}`}
                       className="mt-0.5 block truncate text-sm font-medium text-[var(--color-primary)] hover:underline"

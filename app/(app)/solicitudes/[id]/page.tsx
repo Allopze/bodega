@@ -33,6 +33,8 @@ import {
   RECEIVABLE_ORDER_STATUSES,
 } from "@/lib/work-queue"
 import { RequestPeoplePanel } from "../request-people-panel"
+import { getDocumentChain } from "@/lib/services/document-chain"
+import { DocumentChainStrip } from "@/components/documents/document-chain-strip"
 
 
 export const metadata: Metadata = { title: "Solicitud de compra" }
@@ -215,6 +217,8 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
     name: s.name,
   }))
 
+  const documentChain = await getDocumentChain(session, { kind: "request", id: request.id })
+
   const productNameById = new Map(allProducts.map((product) => [product.id, product.name]))
   const progress = buildRequestProgress(
     request.status,
@@ -343,6 +347,11 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
         }
       />
       <div className="space-y-6">
+        <DocumentChainStrip
+          chain={documentChain}
+          current={{ kind: "request", id: request.id }}
+          currentCode={request.code}
+        />
         <RequestProgressPanel progress={progress} action={purchaseCta} />
         <RequestPeoplePanel
           requesterName={request.requester?.name}

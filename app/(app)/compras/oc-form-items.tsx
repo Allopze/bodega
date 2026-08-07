@@ -3,6 +3,7 @@
 import * as React from "react"
 import { Package, MagnifyingGlass } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -118,12 +119,12 @@ export function OcFormItems({
                   isSelected ? "bg-[var(--color-primary-tint)]" : "bg-[var(--color-surface)]"
                 }`}
               >
-                <input
-                  type="checkbox"
+                <Checkbox
+                  labelHidden
+                  label={`Incluir ${item.productName}`}
                   checked={isSelected}
                   onChange={() => onToggle(item.id)}
-                  className="mt-1 h-4 w-4 rounded border-[var(--color-border)] accent-[var(--color-primary)] cursor-pointer"
-                  aria-label={`Incluir ${item.productName}`}
+                  className="mt-1 cursor-pointer"
                 />
 
                 <div className="flex-1 min-w-0">

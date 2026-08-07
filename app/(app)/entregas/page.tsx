@@ -44,6 +44,7 @@ export default async function Page({
   try { session = await requirePermission("deliveries:view") }
   catch { redirect("/forbidden") }
   const canAssignWork = session.user.permissions.includes("operations:assign_work")
+  const canViewTraceability = session.user.permissions.includes("traceability:view")
 
   const sp = await searchParams
   const requestedWorksiteId = typeof sp.faena === "string" ? sp.faena : ""
@@ -408,7 +409,7 @@ export default async function Page({
               />
             </div>
           ) : (
-            <DeliveriesTable deliveries={deliveriesForTable} />
+            <DeliveriesTable deliveries={deliveriesForTable} canViewTraceability={canViewTraceability} />
           )}
           <ServerPagination pagination={historyPagination} hrefForPage={pageHref} />
         </section>

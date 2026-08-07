@@ -31,13 +31,22 @@ export async function receiveItemTx(
     })
     if (!item) throw new Error(`Item ${itemId} not found`)
 
-    const targetStatus = opts?.fullReceived === false ? "partially_received" : "received"
-
-    const allowedFrom: ItemStatus[] = ["purchased", "partially_received"]
+    const allowedFrom: ItemStatus[] = ["purchased", "partially_received", "partially_delivered"]
     if (!allowedFrom.includes(item.status as ItemStatus)) {
       throw new Error(`Cannot receive item in state '${item.status}'`)
     }
-    if (!canTransition(item.status as ItemStatus, targetStatus as ItemStatus)) {
+
+    // Un ítem que ya salió en entrega parcial no retrocede cuando llega el saldo a
+    // faena: conserva 'partially_delivered' y sólo se registra el ingreso.
+    const targetStatus: ItemStatus = item.status === "partially_delivered"
+      ? "partially_delivered"
+      : opts?.fullReceived === false ? "partially_received" : "received"
+
+    // Mismo guardia que deliverItemTx: la segunda recepción parcial apunta al estado
+    // que el ítem ya tiene ('partially_received' → 'partially_received') y eso no es
+    // una transición — ALLOWED_TRANSITIONS sólo describe avances.
+    const statusChanged = item.status !== targetStatus
+    if (statusChanged && !canTransition(item.status as ItemStatus, targetStatus)) {
       throw new Error(`Cannot transition item from '${item.status}' to '${targetStatus}'`)
     }
 
@@ -47,13 +56,15 @@ export async function receiveItemTx(
       .set({ status: targetStatus, updatedAt: now })
       .where(eq(purchaseRequestItems.id, itemId))
 
-    await recordStatusChange({
-      entityType: "request_item",
-      entityId:   itemId,
-      fromStatus: item.status,
-      toStatus:   targetStatus,
-      changedBy:  userId,
-    }, tx)
+    if (statusChanged) {
+      await recordStatusChange({
+        entityType: "request_item",
+        entityId:   itemId,
+        fromStatus: item.status,
+        toStatus:   targetStatus,
+        changedBy:  userId,
+      }, tx)
+    }
     await recordAudit({
       userId,
       userEmail:  opts?.userEmail,

@@ -59,7 +59,7 @@ export function TwoStageProgress({
           <p className="font-medium text-[var(--color-text)]">Llegada a oficina</p>
           <p className="text-[var(--color-text-subtle)]">
             {officeComplete
-              ? `${qty(totalOfficeReceived, linesInOffice)} — completo`
+              ? `${qty(totalOfficeReceived, linesInOffice)} completo`
               : officeInProgress
               ? unit
                 ? `${totalOfficeReceived} / ${totalOrdered} ${unit}`

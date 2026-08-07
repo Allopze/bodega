@@ -37,7 +37,7 @@ export async function submitItemTx(
       .set({ status: "requested", updatedAt: now })
       .where(and(eq(purchaseRequestItems.id, itemId), eq(purchaseRequestItems.status, item.status)))
       .returning({ id: purchaseRequestItems.id })
-    if (!updated) throw new Error("El ítem ya no está disponible — posible concurrencia")
+    if (!updated) throw new Error("El ítem ya no está disponible: posible concurrencia")
 
     await recordStatusChange({
       entityType: "request_item",

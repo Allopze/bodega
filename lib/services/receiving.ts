@@ -58,7 +58,12 @@ export async function registerReceipt(
   const now       = new Date().toISOString()
   const year      = new Date().getFullYear()
 
+  // notifyAfterCommit sólo difiere al microtask: dentro del tx se drenaría en el
+  // siguiente await, antes del COMMIT. Se acumulan y se disparan al salir.
+  const pendingNotifications: Array<() => unknown> = []
+
   const code = await db.transaction(async (tx) => {
+    pendingNotifications.length = 0
     // Read order INSIDE the transaction to avoid stale status checks.
     const [order] = await tx.select().from(purchaseOrders)
       .where(eq(purchaseOrders.id, input.purchaseOrderId)).for("update")
@@ -157,7 +162,11 @@ export async function registerReceipt(
       )
       const requestedDisposition = qtyRec + qtyRej + qtyDmg
       if (requestedDisposition > dispositionCapacity - alreadyDisposed) {
-        throw new Error(`La disposición excede el saldo pendiente del ítem ${ri.purchaseOrderItemId} (disposition exceeds pending quantity)`)
+        // El saldo descuenta lo recibido + lo rechazado + lo dañado en esta etapa.
+        // Se informan ambas cifras: el id interno de la línea no le decía nada al
+        // recepcionista y era lo único que salía en pantalla.
+        const pending = dispositionCapacity - alreadyDisposed
+        throw new Error(`La disposición excede el saldo pendiente de la línea: quedan ${pending} y estás registrando ${requestedDisposition} (disposition exceeds pending quantity)`)
       }
 
       const totalNowReceived = currentReceived + qtyRec
@@ -194,7 +203,7 @@ export async function registerReceipt(
           const request = reqItem?.request
           const requesterId = request?.requesterId
           if (requesterId) {
-            notifyAfterCommit(() => notifyManyUser([requesterId], {
+            pendingNotifications.push(() => notifyManyUser([requesterId], {
               type: "receipt_done",
               title: "Pedido recibido en Oficina Chome",
               body: `El ítem de tu solicitud ${request?.code ?? ""} llegó al checkpoint de Oficina Chome y se prepara su traslado a faena.`,
@@ -220,7 +229,7 @@ export async function registerReceipt(
             })
             const requesterId = reqItem?.request?.requesterId
             if (requesterId) {
-              notifyAfterCommit(() => notifyManyUser([requesterId], {
+              pendingNotifications.push(() => notifyManyUser([requesterId], {
                 type: "receipt_done",
                 title: `Tu pedido llegó a faena`,
                 body: `El ítem de tu solicitud ${reqItem?.request?.code ?? ""} fue recepcionado en faena y está disponible para entrega.`,
@@ -241,7 +250,7 @@ export async function registerReceipt(
               referenceId: input.purchaseOrderId,
               performedBy: input.receivedBy,
               userEmail:   input.userEmail,
-              notes:       `Recepción ${txCode} — guía ${input.dispatchGuideNo ?? "s/n"}`,
+              notes:       `Recepción ${txCode}, guía ${input.dispatchGuideNo ?? "s/n"}`,
             })
           }
         }
@@ -280,6 +289,8 @@ export async function registerReceipt(
   })
 
   void code // used only for audit above; receiptId is returned
+
+  for (const notify of pendingNotifications) notifyAfterCommit(notify)
 
   return receiptId
 }

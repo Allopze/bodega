@@ -23,6 +23,8 @@ import { OcInvoiceCta } from "./oc-invoice-cta"
 import { OcDetailItems } from "./oc-detail-items"
 import { DetailLine, AmountLine } from "./oc-detail-page.helpers"
 import { getOcReconciliation } from "@/lib/services/oc-reconciliation"
+import { getDocumentChain } from "@/lib/services/document-chain"
+import { DocumentChainStrip } from "@/components/documents/document-chain-strip"
 import { DteReceivedCard } from "./dte-received-card"
 
 
@@ -204,7 +206,10 @@ export default async function OcDetailPage({
     (order.status === "received" && canManage)
 
   const orderItemIds = order.items.map((i) => i.id)
-  const { receivedByItem } = await getOcReconciliation(order.id, orderItemIds)
+  const [{ receivedByItem }, documentChain] = await Promise.all([
+    getOcReconciliation(order.id, orderItemIds),
+    getDocumentChain(session, { kind: "order", id: order.id }),
+  ])
 
   // Calculate invoice reconciliation warnings for the close form
   const hasLineItems = invoiceItemRows.length > 0
@@ -293,6 +298,13 @@ export default async function OcDetailPage({
             { label: order.code                       },
           ]} />
         }
+      />
+
+      <DocumentChainStrip
+        chain={documentChain}
+        current={{ kind: "order", id: order.id }}
+        currentCode={order.code}
+        className="mb-6"
       />
 
       {progress && (

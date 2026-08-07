@@ -3,6 +3,7 @@
 import Link from "next/link"
 import { CheckCircle, Plus, Warning } from "@phosphor-icons/react"
 import { DataTable } from "@/components/admin/data-table"
+import { ORDERS_PAGE_SIZE } from "@/lib/constants"
 import { OC_STATE_META } from "@/components/states/state-badge"
 import { ListFilters, type FilterOption } from "@/components/adquisiciones/list-filters"
 import { OnboardingHint } from "@/components/ui/onboarding-hint"
@@ -33,6 +34,8 @@ export function OcList({
   orders,
   pendingCount,
   postponedItems = [],
+  postponedTotal = 0,
+  showAllPostponedHref,
   canCreate,
   canDelete = false,
   createdCount = 0,
@@ -42,6 +45,9 @@ export function OcList({
   orders:       OcRow[]
   pendingCount: number
   postponedItems?: PendingItem[]
+  /** Total real de postergados; `postponedItems` puede venir topado. */
+  postponedTotal?: number
+  showAllPostponedHref?: string
   canCreate:    boolean
   canDelete?:   boolean
   createdCount?: number
@@ -90,6 +96,14 @@ export function OcList({
               <h2 className="text-sm font-semibold text-[var(--color-text)]">Ítems postergados</h2>
               <p className="text-xs text-[var(--color-text-muted)]">Reanúdalos para que vuelvan al consolidado de OC.</p>
             </div>
+            {showAllPostponedHref && postponedTotal > postponedItems.length && (
+              <Link
+                href={showAllPostponedHref}
+                className="shrink-0 text-xs font-medium text-[var(--color-primary)] underline-offset-2 hover:underline"
+              >
+                Ver los {postponedTotal}
+              </Link>
+            )}
           </div>
           <div>
             {postponedItems.map((item) => (
@@ -117,7 +131,7 @@ export function OcList({
         rows={orders as unknown as Record<string, unknown>[]}
         searchKeys={["code", "worksiteName", "supplierName", "status"]}
         disableInternalSearch
-        pageSize={25}
+        pageSize={ORDERS_PAGE_SIZE}
         emptyTitle="Sin órdenes de compra"
         emptyDescription="No hay órdenes que coincidan con los filtros."
         renderRow={(row) => <OcTableRow key={(row as unknown as OcRow).id} row={row as unknown as OcRow} canDelete={canDelete} />}

@@ -135,7 +135,7 @@ export async function approveItem(
       .returning({ id: purchaseRequestItems.id })
 
     if (!updated) {
-      throw new Error("El ítem ya no está disponible — posible concurrencia")
+      throw new Error("El ítem ya no está disponible: posible concurrencia")
     }
 
     if (opts?.modifiedQty !== undefined && !opts?.reason) {
@@ -202,7 +202,7 @@ export async function rejectItem(
       .set({ status: "rejected", updatedAt: now })
       .where(and(eq(purchaseRequestItems.id, itemId), eq(purchaseRequestItems.status, item.status)))
       .returning({ id: purchaseRequestItems.id })
-    if (!updated) throw new Error("El ítem ya no está disponible — posible concurrencia")
+    if (!updated) throw new Error("El ítem ya no está disponible: posible concurrencia")
 
     await tx.insert(approvalDecisions).values({
       id:            nanoid(),
@@ -266,7 +266,7 @@ export async function returnItem(
       .set({ status: "returned", updatedAt: now })
       .where(and(eq(purchaseRequestItems.id, itemId), eq(purchaseRequestItems.status, item.status)))
       .returning({ id: purchaseRequestItems.id })
-    if (!updated) throw new Error("El ítem ya no está disponible — posible concurrencia")
+    if (!updated) throw new Error("El ítem ya no está disponible: posible concurrencia")
 
     await tx.insert(approvalDecisions).values({
       id:            nanoid(),

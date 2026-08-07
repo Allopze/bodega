@@ -369,6 +369,28 @@ describe("bodega actions", () => {
       expect(result.message).toContain("Agrega")
     })
 
+    it("ignora las filas que el usuario no contó (no ajusta el catálogo completo)", async () => {
+      mockAuthFn.mockResolvedValue(makeSession("warehouse:adjust_stock", ["ws-1"]))
+      const { closePhysicalInventoryCountAction } = await import("@/app/(app)/bodega/actions")
+      const fd = new FormData()
+      fd.set("worksiteId", "ws-1")
+      // El formulario envía una fila por producto de la faena; sólo la segunda fue contada.
+      for (const productId of ["prod-1", "prod-2", "prod-3"]) fd.append("countProductId", productId)
+      for (const counted of ["", "7", "  "]) fd.append("countedQuantity", counted)
+      for (const note of ["", "", ""]) fd.append("itemNotes", note)
+
+      const result = await closePhysicalInventoryCountAction({ ok: false }, fd)
+
+      expect(result.ok).toBe(true)
+      expect(mockClosePhysicalInventoryCount).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          items: [{ productId: "prod-2", countedQuantity: 7, notes: "" }],
+        }),
+        ["ws-1"],
+      )
+    })
+
     it("closes a physical inventory count on happy path", async () => {
       mockAuthFn.mockResolvedValue(makeSession("warehouse:adjust_stock", ["ws-1"]))
       const { closePhysicalInventoryCountAction } = await import("@/app/(app)/bodega/actions")

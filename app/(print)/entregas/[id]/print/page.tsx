@@ -33,8 +33,13 @@ export default async function DeliveryPrintPage({ params }: PageProps) {
   if (!delivery) notFound()
   if (!delivery.worksiteId || !canAccessWorksite(session, delivery.worksiteId)) notFound()
 
+  // El EPP devuelto puede venir del catálogo (`returnProductId`) o escrito a
+  // mano (`returnProductNameFree`), y son excluyentes: si se eligió del
+  // catálogo hay que resolver el nombre acá o el comprobante firmado sale con
+  // un guion en vez del EPP.
   const productIds = delivery.items.reduce<string[]>((ids, item) => {
     if (item.productId) ids.push(item.productId)
+    if (item.returnProductId) ids.push(item.returnProductId)
     return ids
   }, [])
   const productMap = productIds.length > 0
@@ -58,7 +63,7 @@ export default async function DeliveryPrintPage({ params }: PageProps) {
     if (item.returnQuantity) {
       items.push({
         label: `Devolución ${items.length + 1}`,
-        value: `${item.returnProductNameFree ?? "EPP"} · ${formatQty(item.returnQuantity, item.unitOfMeasure)}`,
+        value: `${productMap.get(item.returnProductId ?? "") ?? item.returnProductNameFree ?? "EPP"} · ${formatQty(item.returnQuantity, item.unitOfMeasure)}`,
       })
     }
     return items
@@ -180,7 +185,7 @@ export default async function DeliveryPrintPage({ params }: PageProps) {
               <tbody>
                 {delivery.items.filter((i) => i.returnQuantity).map((item) => (
                   <tr key={`return-${item.id}`}>
-                    <td>{item.returnProductNameFree ?? "—"}</td>
+                    <td>{productMap.get(item.returnProductId ?? "") ?? item.returnProductNameFree ?? "—"}</td>
                     <td style={{ textAlign: "right" }}>{item.returnQuantity}</td>
                     <td>{item.returnReason ?? "—"}</td>
                   </tr>
@@ -205,7 +210,7 @@ export default async function DeliveryPrintPage({ params }: PageProps) {
         </div>
 
         <div className="footer">
-          Documento generado por Plataforma Chome — {formatDate(generatedAt)}
+          Documento generado por Plataforma Chome el {formatDate(generatedAt)}
         </div>
       </main>
       </>

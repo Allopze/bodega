@@ -10,6 +10,8 @@ import { INITIAL_STATE } from "@/components/admin/form-state"
 import { issueOrderAction, sendOrderAction } from "../actions/order-status"
 import { cancelOrderAction, closeOrderAction, deleteOrderAction } from "../actions/order-cancel"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
+import { Checkbox } from "@/components/ui/checkbox"
+import { Textarea } from "@/components/ui/textarea"
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
 } from "@/components/ui/dropdown-menu"
@@ -145,12 +147,12 @@ export function OcActions({
             ? "La orden ya fue recibida completamente. Indica el motivo de la finalización formal."
             : "Indica el motivo por el que se finaliza la orden (ítems rechazados, dañados, etc.)."}
         </p>
-        <textarea
+        <Textarea
           name="reason"
           placeholder="Ej: ítems dañados no serán repuestos, acuerdo con proveedor..."
           required
           aria-label="Motivo de la finalización"
-          className="w-full text-xs p-2 rounded border border-(--color-border-control) bg-(--color-surface) resize-none"
+          className="min-h-0 resize-none text-xs"
           rows={3}
         />
         {!closeState.ok && closeState.message && closeState !== INITIAL_STATE && (
@@ -164,18 +166,15 @@ export function OcActions({
             confirma a mano y la confirmación queda en el motivo y el historial.
             El servidor lo revalida; esta casilla no es la única defensa. */}
         {closeWarnings.length > 0 && (
-          <label className="flex items-start gap-2 text-xs text-(--color-text)">
-            <input
-              type="checkbox"
-              name="acknowledgeInvoiceWarnings"
-              value="true"
-              required
-              className="mt-0.5 size-4 shrink-0 accent-[var(--color-danger)]"
-            />
-            <span>
+          <Checkbox
+            name="acknowledgeInvoiceWarnings"
+            value="true"
+            required
+            className="accent-[var(--color-danger)]"
+            label={<span className="text-xs">
               Confirmo que la orden se cierra sin la facturación conciliada y que queda registrado en su historial.
-            </span>
-          </label>
+            </span>}
+          />
         )}
         <div className="flex items-center justify-end gap-2 mt-1">
           <button
@@ -205,12 +204,12 @@ export function OcActions({
       >
         <input type="hidden" name="orderId" value={orderId} />
         <label className="text-xs font-semibold text-danger">Motivo de anulación (obligatorio)</label>
-        <textarea
+        <Textarea
           name="reason"
           placeholder="Explique el motivo por el cual se anula esta orden de compra..."
           required
           aria-label="Motivo de anulación"
-          className="w-full text-xs p-2 rounded border border-(--color-border-control) bg-(--color-surface) resize-none"
+          className="min-h-0 resize-none text-xs"
           rows={3}
         />
         {!cancelState.ok && cancelState.message && cancelState !== INITIAL_STATE && (

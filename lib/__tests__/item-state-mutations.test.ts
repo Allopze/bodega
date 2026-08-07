@@ -25,7 +25,7 @@ vi.mock("@/db", () => ({
 
 const migrationsFolder = path.resolve(process.cwd(), "db/migrations")
 
-import { submitItem, approveItem, bulkApproveItems, rejectItem, returnItem, markItemPendingPurchase, postponeItem } from "@/lib/services/item-state"
+import { submitItem, approveItem, bulkApproveItems, rejectItem, returnItem, markItemPendingPurchase, postponeItem, receiveItem } from "@/lib/services/item-state"
 
 describe("Item State Machine — DB integration", () => {
   const now = new Date().toISOString()
@@ -295,6 +295,49 @@ describe("Item State Machine — DB integration", () => {
         createdAt: now, updatedAt: now,
       })
       await expect(markItemPendingPurchase(noTrans, userId)).rejects.toThrow("Cannot move")
+    })
+  })
+
+  // ── receiveItem ─────────────────────────────────────────────────────────
+  describe("receiveItem", () => {
+    it("acepta una segunda recepción parcial sobre un ítem ya parcialmente recibido", async () => {
+      const partialId = "item-partial-twice"
+      await inMemoryDb.insert(schema.purchaseRequestItems).values({
+        id: partialId, requestId, productNameFree: "Parcial x2", quantity: 10,
+        unitOfMeasure: "unidad", status: "purchased",
+        createdAt: now, updatedAt: now,
+      })
+
+      await receiveItem(partialId, userId, { fullReceived: false })
+      // El saldo llega en un segundo tramo que tampoco completa la línea: antes
+      // reventaba con "Cannot transition item from 'partially_received' to
+      // 'partially_received'" y arrastraba todo el comprobante en el rollback.
+      await receiveItem(partialId, userId, { fullReceived: false })
+
+      const item = await inMemoryDb.query.purchaseRequestItems
+        .findFirst({ where: eq(schema.purchaseRequestItems.id, partialId) })
+      expect(item?.status).toBe("partially_received")
+
+      // Sin cambio de estado no se ensucia el historial: sólo la primera recepción
+      // deja fila en status_history.
+      const history = await inMemoryDb.query.statusHistory
+        .findMany({ where: eq(schema.statusHistory.entityId, partialId) })
+      expect(history).toHaveLength(1)
+    })
+
+    it("no retrocede el estado de un ítem con entrega parcial cuando llega el saldo", async () => {
+      const deliveredId = "item-partial-delivered"
+      await inMemoryDb.insert(schema.purchaseRequestItems).values({
+        id: deliveredId, requestId, productNameFree: "Saldo tras entrega", quantity: 10,
+        unitOfMeasure: "unidad", status: "partially_delivered",
+        createdAt: now, updatedAt: now,
+      })
+
+      await receiveItem(deliveredId, userId, { fullReceived: true })
+
+      const item = await inMemoryDb.query.purchaseRequestItems
+        .findFirst({ where: eq(schema.purchaseRequestItems.id, deliveredId) })
+      expect(item?.status).toBe("partially_delivered")
     })
   })
 

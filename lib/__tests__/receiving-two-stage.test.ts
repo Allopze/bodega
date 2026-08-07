@@ -30,9 +30,18 @@ vi.mock("@/db", () => ({
   },
 }))
 
+// notifyAfterCommit queda REAL a propósito: lo que se verifica es que registerReceipt
+// no lo invoque dentro de la transacción, no el primitivo en sí.
+vi.mock("@/lib/services/notifications", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/services/notifications")>()),
+  notifyManyUser: vi.fn(async () => {}),
+}))
+
 await migratePGlite(pg, path.resolve(process.cwd(), "db/migrations"))
 
 import { registerReceipt } from "@/lib/services/receiving"
+import { getOcReconciliation } from "@/lib/services/oc-reconciliation"
+import { notifyManyUser } from "@/lib/services/notifications"
 
 const USER_ID = "u-test"
 const WS_ID   = "ws-test"
@@ -239,5 +248,67 @@ describe("direct-to-faena receiving", () => {
       purchaseOrderId: orderId, receivedBy: USER_ID, stage: "office",
       items: [{ purchaseOrderItemId: itemIds[0]!, quantityReceived: 5 }],
     })).rejects.toThrow(/directo a faena/i)
+  })
+})
+
+describe("receipt notifications", () => {
+  it("no notifica cuando la transacción termina en rollback", async () => {
+    vi.mocked(notifyManyUser).mockClear()
+
+    // Ítem de solicitud real: sin requestItemId el aviso de oficina ni siquiera se arma.
+    const now = new Date().toISOString()
+    const reqId = `req-notify-${++ocCounter}`
+    const reqItemId = nanoid()
+    await inMemoryDb.insert(schema.purchaseRequests).values({
+      id: reqId, code: `SOL-NOTIFY-${ocCounter}`, worksiteId: WS_ID, requesterId: USER_ID,
+      requestType: "epp", urgency: "normal", status: "in_purchasing", createdAt: now, updatedAt: now,
+    })
+    await inMemoryDb.insert(schema.purchaseRequestItems).values({
+      id: reqItemId, requestId: reqId, productNameFree: "Casco", quantity: 10,
+      unitOfMeasure: "unidad", status: "purchased", createdAt: now, updatedAt: now,
+    })
+
+    const { orderId, itemIds } = await makeOrder([10, 10])
+    await inMemoryDb.update(schema.purchaseOrderItems)
+      .set({ requestItemId: reqItemId })
+      .where(eq(schema.purchaseOrderItems.id, itemIds[0]!))
+
+    // La primera línea encola el aviso; la segunda revienta el saldo (5+7 > 10) y
+    // arrastra todo el comprobante. El aviso no puede haber salido.
+    await expect(registerReceipt({
+      purchaseOrderId: orderId, receivedBy: USER_ID, stage: "office",
+      items: [
+        { purchaseOrderItemId: itemIds[0]!, quantityReceived: 5 },
+        { purchaseOrderItemId: itemIds[1]!, quantityReceived: 5, quantityRejected: 7 },
+      ],
+    })).rejects.toThrow(/exceeds pending/i)
+
+    // Se drena la cola de microtasks: con notifyAfterCommit dentro del tx el aviso
+    // ya habría salido en este punto.
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(notifyManyUser).not.toHaveBeenCalled()
+    expect(await status(orderId)).toBe("sent")
+  })
+})
+
+describe("avance de la OC (getOcReconciliation)", () => {
+  it("no suma la etapa de oficina: el recibido es sólo lo que llegó a faena", async () => {
+    const { orderId, itemIds } = await makeOrder([10])
+    await registerReceipt({
+      purchaseOrderId: orderId, receivedBy: USER_ID, stage: "office",
+      items: [{ purchaseOrderItemId: itemIds[0]!, quantityReceived: 10 }],
+    })
+    const soloOficina = await getOcReconciliation(orderId, itemIds)
+    expect(soloOficina.receivedByItem.get(itemIds[0]!) ?? 0).toBe(0)
+    expect(soloOficina.totalReceived).toBe(0)
+
+    await registerReceipt({
+      purchaseOrderId: orderId, receivedBy: USER_ID, stage: "faena", worksiteId: WS_ID,
+      items: [{ purchaseOrderItemId: itemIds[0]!, quantityReceived: 10 }],
+    })
+    // La misma unidad generó una fila en oficina y otra en faena: 10, no 20.
+    const conFaena = await getOcReconciliation(orderId, itemIds)
+    expect(conFaena.receivedByItem.get(itemIds[0]!)).toBe(10)
+    expect(conFaena.totalReceived).toBe(10)
   })
 })
