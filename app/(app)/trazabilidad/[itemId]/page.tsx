@@ -19,7 +19,7 @@ import {
   InventoryMovementsTable,
 } from "./trazabilidad-item-tables"
 
-export const metadata: Metadata = { title: "Detalle de ítem — Trazabilidad" }
+export const metadata: Metadata = { title: "Detalle de ítem (Trazabilidad)" }
 
 export default async function TrazabilidadItemPage({
   params,
@@ -52,10 +52,14 @@ export default async function TrazabilidadItemPage({
         actions={
           <div className="flex items-center gap-2">
             <StateBadge state={item.status} entity="item" />
+            {/* El botón decía sólo "Ver solicitud": esta pantalla existe para
+                responder "¿de dónde viene esto?" y era la única del recorrido
+                que no publicaba el correlativo de la solicitud, obligando a
+                volver a la matriz para leerlo. */}
             <Link href={`/solicitudes/${item.requestId}`}>
               <Button variant="secondary" size="sm">
                 <ArrowSquareOut size={14} className="mr-1" />
-                Ver solicitud
+                Ver solicitud <span className="ml-1 font-mono">{item.requestCode}</span>
               </Button>
             </Link>
           </div>

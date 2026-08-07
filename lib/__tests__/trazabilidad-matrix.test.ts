@@ -134,6 +134,45 @@ describe("getTrazabilidadMatrix", () => {
     expect(result.rows).toHaveLength(1)
     expect(result.rows[0]?.inOc).toBe(10)
   })
+
+  // El banner de /trazabilidad y el desplegable de faena se presentan como
+  // totales, así que no pueden salir de `rows`, que es una sola página de 50.
+  it("cuenta las alertas de todo el universo y ofrece las faenas del alcance, no las de la página", async () => {
+    const base = Date.parse("2026-01-01T00:00:00.000Z")
+    const at = (minutes: number) => new Date(base + minutes * 60_000).toISOString()
+
+    await inMemoryDb.insert(schema.worksites).values([
+      { id: "ws-1", name: "Faena 1", code: "F-1", isActive: true, createdAt: at(0), updatedAt: at(0) },
+      { id: "ws-2", name: "Faena 2", code: "F-2", isActive: true, createdAt: at(0), updatedAt: at(0) },
+    ])
+    await inMemoryDb.insert(schema.purchaseRequests).values([
+      { id: "req-1", code: "SOL-0001", worksiteId: "ws-1", requesterId: "u-1", status: "approved", createdAt: at(0), updatedAt: at(0) },
+      { id: "req-2", code: "SOL-0002", worksiteId: "ws-2", requesterId: "u-1", status: "approved", createdAt: at(0), updatedAt: at(0) },
+    ])
+    await inMemoryDb.insert(schema.purchaseRequestItems).values([
+      // Dos aprobados sin OC (alerta) y viejos: caen fuera de las 50 filas más recientes.
+      { id: "old-ws1", requestId: "req-1", productNameFree: "Guantes", quantity: 5, unitOfMeasure: "par", status: "approved", createdAt: at(1), updatedAt: at(1) },
+      { id: "old-ws2", requestId: "req-2", productNameFree: "Casco", quantity: 5, unitOfMeasure: "unidad", status: "approved", createdAt: at(2), updatedAt: at(2) },
+      // 50 ítems más nuevos, sin aprobar: llenan la página y no generan alerta.
+      ...Array.from({ length: 50 }, (_, i) => ({
+        id: `new-${i}`,
+        requestId: "req-1",
+        productNameFree: `Item ${i}`,
+        quantity: 1,
+        unitOfMeasure: "unidad",
+        status: "requested",
+        createdAt: at(100 + i),
+        updatedAt: at(100 + i),
+      })),
+    ])
+
+    const result = await getTrazabilidadMatrix({}, globalSession())
+
+    expect(result.rows).toHaveLength(50)
+    expect(result.rows.some((r) => r.alert)).toBe(false)
+    expect(result.alertCount).toBe(2)
+    expect(result.visibleWorksites.map((w) => w.id)).toEqual(["ws-1", "ws-2"])
+  })
 })
 
 function globalSession(): Parameters<typeof getTrazabilidadMatrix>[1] {

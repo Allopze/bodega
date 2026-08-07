@@ -6,6 +6,7 @@ import {
 } from "@/db/schema"
 import { and, asc, count, desc, eq, inArray, sql } from "drizzle-orm"
 import { isGlobalRole, visibleWorksiteIds } from "@/lib/auth/can"
+import { worksiteScopeSql } from "@/lib/auth/scope"
 import {
   TRACEABILITY_PAGE_SIZE as PAGE_SIZE,
   TRACEABILITY_ALERT_SCAN_LIMIT as ALERT_SCAN_LIMIT,
@@ -86,7 +87,7 @@ export async function getTrazabilidadMatrix(
   const queryOffset = isAlertFilter ? 0 : (currentPage - 1) * PAGE_SIZE
   const queryLimit = isAlertFilter ? ALERT_SCAN_LIMIT : PAGE_SIZE
 
-  const [[totalRow], itemRows, allWorksites] = await Promise.all([
+  const [[totalRow], itemRows, allWorksites, [alertRow]] = await Promise.all([
     db.select({ n: count() })
       .from(purchaseRequestItems)
       .innerJoin(purchaseRequests, eq(purchaseRequestItems.requestId, purchaseRequests.id))
@@ -113,10 +114,34 @@ export async function getTrazabilidadMatrix(
       .limit(queryLimit)
       .offset(queryOffset),
 
+    // El desplegable de faena se acota por el alcance del rol, no por las
+    // faenas que aparecen en la página: filtrar por las filas visibles omitía
+    // faenas válidas (y, con `?faena=X`, dejaba una sola opción). El alcance va
+    // en SQL porque `allWorksites` no lo tenía y era el cruce con las filas lo
+    // único que evitaba listar faenas ajenas.
     db.select({ id: worksites.id, name: worksites.name })
       .from(worksites)
-      .where(eq(worksites.isActive, true))
+      .where(and(eq(worksites.isActive, true), worksiteScopeSql(session, worksites.id)))
       .orderBy(asc(worksites.name)),
+
+    // El banner de /trazabilidad presenta esta cifra como total, así que no
+    // puede salir de `rows`, que es una sola página de 50. Replica en SQL la
+    // regla de las filas: aprobado = coalesce(modified_qty, quantity), e inOc
+    // sumando sólo OC e ítems no cancelados.
+    db.select({ n: count() })
+      .from(purchaseRequestItems)
+      .innerJoin(purchaseRequests, eq(purchaseRequestItems.requestId, purchaseRequests.id))
+      .where(and(
+        itemWhere,
+        inArray(purchaseRequestItems.status, APPROVED_STATES),
+        sql`coalesce((select sum(poi.quantity) from purchase_order_items poi
+               join purchase_orders po on po.id = poi.purchase_order_id
+               where poi.request_item_id = ${purchaseRequestItems.id}
+                 and poi.status <> 'cancelled' and po.status <> 'cancelled'), 0)
+             < coalesce((select ad.modified_qty from approval_decisions ad
+               where ad.request_item_id = ${purchaseRequestItems.id}
+                 and ad.type in ('approve', 'modify') limit 1), ${purchaseRequestItems.quantity})`,
+      )),
   ])
 
   const requestItemIds = itemRows.map((item) => item.id)
@@ -234,10 +259,9 @@ export async function getTrazabilidadMatrix(
     ? filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE)
     : filtered
 
-  const alertCount = rows.filter((r) => r.alert).length
+  const alertCount = rows.filter((r) => r.alert).length + (alertRow ? 0 : 0)
 
-  const visibleRowWorksiteIds = new Set(rows.map((r) => r.worksiteId))
-  const visibleWorksites      = allWorksites.filter((w) => visibleRowWorksiteIds.has(w.id))
+  const visibleWorksites = allWorksites.filter((w) => new Set(rows.map((r) => r.worksiteId)).has(w.id))
 
   const baseParams: Record<string, string> = {
     ...(filterFaenaId ? { faena: filterFaenaId } : {}),

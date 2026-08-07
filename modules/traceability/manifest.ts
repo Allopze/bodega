@@ -18,6 +18,13 @@ export const traceabilityModule = {
           href:        "/trazabilidad",
           iconName:    "Path",
           permissions: ["traceability:view"],
+          children: [
+            {
+              label:       "Buscar por código",
+              href:        "/trazabilidad/documento",
+              permissions: ["traceability:view"],
+            },
+          ],
         },
       ],
     },
