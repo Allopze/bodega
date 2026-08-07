@@ -4,6 +4,9 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { useTransition } from "react"
 import { X } from "@phosphor-icons/react"
 import { formatPeriodOption, recentPeriods } from "@/components/ui/period-picker"
+import { OptionSelect } from "@/components/ui/option-select"
+import { Input } from "@/components/ui/input"
+import { Checkbox } from "@/components/ui/checkbox"
 
 /**
  * Filtros del listado de facturas.
@@ -46,73 +49,62 @@ export function InvoiceFiltersBar({ clients }: { clients: { id: string; name: st
           {/* Select propio en vez de <input type="month">: el nativo muestra
               "August 2026" o "-------- ----" según el locale del navegador
               (UI/UX 2026-08-05, M8). */}
-          <select
-            defaultValue={searchParams.get("periodo") ?? ""}
-            onChange={(event) => setParam("periodo", event.target.value)}
-            className={inputClass}
+          <OptionSelect
+            value={searchParams.get("periodo") ?? ""}
+            onValueChange={(value) => setParam("periodo", value)}
+            emptyLabel="Todos"
+            options={recentPeriods(24).map((value) => ({ value, label: formatPeriodOption(value) }))}
+            className={selectClass}
             aria-label="Período de emisión"
-          >
-            <option value="">Todos</option>
-            {recentPeriods(24).map((value) => (
-              <option key={value} value={value}>{formatPeriodOption(value)}</option>
-            ))}
-          </select>
+          />
         </Field>
 
         <Field label="Cliente">
-          <select
+          <OptionSelect
             value={searchParams.get("cliente") ?? ""}
-            onChange={(event) => setParam("cliente", event.target.value)}
-            className={inputClass}
-          >
-            <option value="">Todos</option>
-            {clients.map((client) => (
-              <option key={client.id} value={client.id}>{client.name}</option>
-            ))}
-          </select>
+            onValueChange={(value) => setParam("cliente", value)}
+            emptyLabel="Todos"
+            options={clients.map((client) => ({ value: client.id, label: client.name }))}
+            className={selectClass}
+            aria-label="Cliente"
+          />
         </Field>
 
         <Field label="Estado de pago">
-          <select
+          <OptionSelect
             value={searchParams.get("pago") ?? ""}
-            onChange={(event) => setParam("pago", event.target.value)}
-            className={inputClass}
-          >
-            <option value="">Todos</option>
-            {Object.entries(PAYMENT_LABELS).map(([value, label]) => (
-              <option key={value} value={value}>{label}</option>
-            ))}
-          </select>
+            onValueChange={(value) => setParam("pago", value)}
+            emptyLabel="Todos"
+            options={Object.entries(PAYMENT_LABELS).map(([value, label]) => ({ value, label }))}
+            className={selectClass}
+            aria-label="Estado de pago"
+          />
         </Field>
 
         <Field label="Estado documental">
-          <select
+          <OptionSelect
             value={searchParams.get("documento") ?? ""}
-            onChange={(event) => setParam("documento", event.target.value)}
-            className={inputClass}
-          >
-            <option value="">Vigentes (excluye anuladas)</option>
-            {Object.entries(DOCUMENT_LABELS).map(([value, label]) => (
-              <option key={value} value={value}>{label}</option>
-            ))}
-          </select>
+            onValueChange={(value) => setParam("documento", value)}
+            emptyLabel="Vigentes (excluye anuladas)"
+            options={Object.entries(DOCUMENT_LABELS).map(([value, label]) => ({ value, label }))}
+            className={selectClass}
+            aria-label="Estado documental"
+          />
         </Field>
 
         <Field label="Fuente">
-          <select
+          <OptionSelect
             value={searchParams.get("fuente") ?? ""}
-            onChange={(event) => setParam("fuente", event.target.value)}
-            className={inputClass}
-          >
-            <option value="">Todas</option>
-            {Object.entries(SOURCE_LABELS).map(([value, label]) => (
-              <option key={value} value={value}>{label}</option>
-            ))}
-          </select>
+            onValueChange={(value) => setParam("fuente", value)}
+            emptyLabel="Todas"
+            options={Object.entries(SOURCE_LABELS).map(([value, label]) => ({ value, label }))}
+            className={selectClass}
+            aria-label="Fuente"
+          />
         </Field>
 
         <Field label="Folio o RUT">
-          <input
+          <Input
             type="search"
             defaultValue={searchParams.get("q") ?? ""}
             placeholder="Ej: 1234 o 76543210-K"
@@ -120,29 +112,25 @@ export function InvoiceFiltersBar({ clients }: { clients: { id: string; name: st
               if (event.key === "Enter") setParam("q", event.currentTarget.value)
             }}
             onBlur={(event) => setParam("q", event.target.value)}
-            className={inputClass}
+            className="w-52"
           />
         </Field>
 
-        <label className="flex items-center gap-2 pb-1.5 text-sm text-[var(--color-text)]">
-          <input
-            type="checkbox"
+        <div className="pb-1.5">
+          <Checkbox
+            label="Solo vencidas"
             checked={searchParams.get("vencidas") === "1"}
             onChange={(event) => setParam("vencidas", event.target.checked ? "1" : "")}
-            className="size-4 rounded border-[var(--color-border)]"
           />
-          Solo vencidas
-        </label>
+        </div>
 
-        <label className="flex items-center gap-2 pb-1.5 text-sm text-[var(--color-text)]">
-          <input
-            type="checkbox"
+        <div className="pb-1.5">
+          <Checkbox
+            label="Sin vínculo operacional"
             checked={searchParams.get("sinVinculo") === "1"}
             onChange={(event) => setParam("sinVinculo", event.target.checked ? "1" : "")}
-            className="size-4 rounded border-[var(--color-border)]"
           />
-          Sin vínculo operacional
-        </label>
+        </div>
       </div>
 
       {activeChips.length > 0 && (
@@ -173,8 +161,9 @@ export function InvoiceFiltersBar({ clients }: { clients: { id: string; name: st
   )
 }
 
-const inputClass =
-  "rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-sm text-[var(--color-text)]"
+// Ancho fijo: el trigger se dimensiona por su contenido y la barra de filtros
+// saltaría de layout cada vez que cambia la opción elegida.
+const selectClass = "w-44"
 
 const PAYMENT_LABELS: Record<string, string> = {
   unpaid:   "Pendiente de pago",

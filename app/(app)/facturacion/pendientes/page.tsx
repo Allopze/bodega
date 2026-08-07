@@ -183,7 +183,7 @@ export default async function PendingBillingPage() {
                           {proposalStatus
                             ? <Badge variant={proposalStatus.tone}>{proposalStatus.label}</Badge>
                             : (
-                              <span title={[item.reason, item.blocker].filter(Boolean).join(" — ")}>
+                              <span title={[item.reason, item.blocker].filter(Boolean).join(" · ")}>
                                 <Badge variant="neutral">Sin propuesta</Badge>
                               </span>
                             )}

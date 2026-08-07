@@ -7,6 +7,9 @@ import { cn } from "@/lib/utils"
 import { useRouter } from "next/navigation"
 import { toast } from "@/lib/toast"
 import { formatPeriodOption, recentPeriods } from "@/components/ui/period-picker"
+import { OptionSelect } from "@/components/ui/option-select"
+import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
 import {
   confirmInvoiceLinkAction,
   linkInvoiceAction,
@@ -142,45 +145,50 @@ export function InvoiceInternalPanel({
         }}
       >
         <Field label="Cliente">
-          <select name="clientId" value={clientId} onChange={(event) => setClientId(event.target.value)} className={inputClass}>
-            <option value="">Sin cliente</option>
-            {clients.map((client) => (
-              <option key={client.id} value={client.id}>{client.name}</option>
-            ))}
-          </select>
+          <OptionSelect
+            name="clientId"
+            value={clientId}
+            onValueChange={setClientId}
+            emptyLabel="Sin cliente"
+            options={clients.map((client) => ({ value: client.id, label: client.name }))}
+            aria-label="Cliente"
+          />
         </Field>
 
         <Field label="Contrato">
-          <select name="contractId" className={inputClass}>
-            <option value="">Sin contrato</option>
-            {availableContracts.map((contract) => (
-              <option key={contract.id} value={contract.id}>{contract.code} — {contract.name}</option>
-            ))}
-          </select>
+          <OptionSelect
+            name="contractId"
+            emptyLabel="Sin contrato"
+            options={availableContracts.map((contract) => ({
+              value: contract.id,
+              label: `${contract.code} · ${contract.name}`,
+            }))}
+            aria-label="Contrato"
+          />
         </Field>
 
         <Field label="Faena">
-          <select name="worksiteId" className={inputClass}>
-            <option value="">Sin faena</option>
-            {worksites.map((worksite) => (
-              <option key={worksite.id} value={worksite.id}>{worksite.name}</option>
-            ))}
-          </select>
+          <OptionSelect
+            name="worksiteId"
+            emptyLabel="Sin faena"
+            options={worksites.map((worksite) => ({ value: worksite.id, label: worksite.name }))}
+            aria-label="Faena"
+          />
         </Field>
 
         <Field label="Período de servicio">
           {/* Select propio: el <input type="month"> nativo depende del locale
               del navegador (UI/UX 2026-08-05, M8). */}
-          <select name="servicePeriod" defaultValue="" className={inputClass}>
-            <option value="">Sin período</option>
-            {recentPeriods(24).map((value) => (
-              <option key={value} value={value}>{formatPeriodOption(value)}</option>
-            ))}
-          </select>
+          <OptionSelect
+            name="servicePeriod"
+            emptyLabel="Sin período"
+            options={recentPeriods(24).map((value) => ({ value, label: formatPeriodOption(value) }))}
+            aria-label="Período de servicio"
+          />
         </Field>
 
         <Field label="OC del cliente">
-          <input type="text" name="clientPoNumber" maxLength={120} placeholder="Número entregado por el cliente" className={inputClass} />
+          <Input type="text" name="clientPoNumber" maxLength={120} placeholder="Número entregado por el cliente" />
         </Field>
 
         <button type="submit" disabled={isPending} className={cn(buttonVariants(), "w-full")}>
@@ -213,27 +221,26 @@ export function InvoiceInternalPanel({
         </p>
 
         <Field label="Responsable de cobranza">
-          <select name="ownerUserId" defaultValue={ownerUserId ?? ""} className={inputClass}>
-            <option value="">Sin asignar</option>
-            {users.map((user) => (
-              <option key={user.id} value={user.id}>{user.name}</option>
-            ))}
-          </select>
+          <OptionSelect
+            name="ownerUserId"
+            defaultValue={ownerUserId ?? ""}
+            emptyLabel="Sin asignar"
+            options={users.map((user) => ({ value: user.id, label: user.name }))}
+            aria-label="Responsable de cobranza"
+          />
         </Field>
 
         <Field label="Estado de cobranza">
-          <select name="collectionStatus" defaultValue={collectionStatus} className={inputClass}>
-            <option value="none">Sin gestión</option>
-            <option value="in_progress">En gestión</option>
-            <option value="committed">Compromiso de pago</option>
-            <option value="disputed">En disputa</option>
-            <option value="closed">Gestión cerrada</option>
-            <option value="written_off">Castigada</option>
-          </select>
+          <OptionSelect
+            name="collectionStatus"
+            defaultValue={collectionStatus}
+            options={COLLECTION_STATUS_OPTIONS}
+            aria-label="Estado de cobranza"
+          />
         </Field>
 
         <Field label="Notas internas">
-          <textarea name="notes" defaultValue={notes ?? ""} rows={3} maxLength={2000} className={inputClass} />
+          <Textarea name="notes" defaultValue={notes ?? ""} rows={3} maxLength={2000} className="min-h-0" />
         </Field>
 
         <button type="submit" disabled={isPending} className={cn(buttonVariants(), "w-full")}>
@@ -244,8 +251,14 @@ export function InvoiceInternalPanel({
   )
 }
 
-const inputClass =
-  "w-full rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-sm text-[var(--color-text)]"
+const COLLECTION_STATUS_OPTIONS = [
+  { value: "none",        label: "Sin gestión" },
+  { value: "in_progress", label: "En gestión" },
+  { value: "committed",   label: "Compromiso de pago" },
+  { value: "disputed",    label: "En disputa" },
+  { value: "closed",      label: "Gestión cerrada" },
+  { value: "written_off", label: "Castigada" },
+]
 
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {

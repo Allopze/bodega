@@ -168,7 +168,7 @@ export function DuplicateReview({ candidates }: { candidates: DuplicateCandidate
                 onClick={() => setMerging(candidate.id)}
                 className="font-medium text-[var(--color-primary-ink)] hover:underline disabled:opacity-60"
               >
-                Fusionar — elegir cuál conservar
+                Fusionar: elegir cuál conservar
               </button>
             )}
             <button

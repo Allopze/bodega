@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation"
 import { Sparkle, Warning } from "@phosphor-icons/react"
 import { toast } from "@/lib/toast"
 import { Badge } from "@/components/ui/badge"
+import { Input } from "@/components/ui/input"
 import { formatMoney } from "@/lib/services/billing/money"
 import { confidenceLabel, formatDateShort } from "@/lib/services/billing/labels"
 import { generateSuggestionsAction, resolvePaymentSuggestionAction } from "./actions"
@@ -140,7 +141,7 @@ export function SuggestionsPanel({ suggestions }: { suggestions: SuggestionRow[]
                   >
                     <label className="flex-1">
                       <span className="mb-0.5 block text-xs text-[var(--color-text-muted)]">Motivo del descarte</span>
-                      <input name="reason" maxLength={500} className={inputClass} />
+                      <Input name="reason" maxLength={500} />
                     </label>
                     <button type="submit" disabled={isPending} className={dangerButtonClass}>Descartar</button>
                     <button type="button" onClick={() => setRejecting(null)} className="pb-2 text-xs text-[var(--color-text-muted)]">
@@ -181,9 +182,6 @@ export function SuggestionsPanel({ suggestions }: { suggestions: SuggestionRow[]
     </section>
   )
 }
-
-const inputClass =
-  "w-full rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-sm text-[var(--color-text)]"
 
 const dangerButtonClass =
   "rounded-[var(--radius-md)] border border-[var(--color-danger-tint)] px-3 py-1.5 text-xs font-medium text-[var(--color-danger-ink)] disabled:opacity-60"

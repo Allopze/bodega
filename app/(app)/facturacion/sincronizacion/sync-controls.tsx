@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react"
 import { buttonVariants } from "@/components/ui/button"
+import { OptionSelect } from "@/components/ui/option-select"
 import { useRouter } from "next/navigation"
 import { toast } from "@/lib/toast"
 import { triggerBillingSyncAction } from "../actions"
@@ -103,30 +104,29 @@ export function SyncControls({
       <div className="flex flex-wrap items-end gap-3">
         <label className="flex flex-col gap-1">
           <span className="text-xs font-medium text-[var(--color-text-muted)]">Proveedor</span>
-          <select
+          <OptionSelect
             value={provider}
-            onChange={(event) => setProvider(event.target.value as BillingProviderId)}
-            className={inputClass}
-          >
-            {providers.map((entry) => (
-              <option key={entry.id} value={entry.id}>{entry.label}</option>
-            ))}
-          </select>
+            onValueChange={(value) => setProvider(value as BillingProviderId)}
+            options={providers.map((entry) => ({ value: entry.id, label: entry.label }))}
+            className="w-56"
+            aria-label="Proveedor"
+          />
         </label>
 
         <label className="flex flex-col gap-1">
           <span className="text-xs font-medium text-[var(--color-text-muted)]">Período</span>
           {/* Select propio en vez de <input type="month">: el nativo muestra
               "August 2026" según el locale del navegador (UI/UX 2026-08-05, M8). */}
-          <select
+          <OptionSelect
             value={period}
-            onChange={(event) => setPeriod(event.target.value)}
-            className={inputClass}
-          >
-            {recentPeriods(monthsBetween(historyFloor, defaultPeriod)).map((value) => (
-              <option key={value} value={value}>{formatPeriodOption(value)}</option>
-            ))}
-          </select>
+            onValueChange={setPeriod}
+            options={recentPeriods(monthsBetween(historyFloor, defaultPeriod)).map((value) => ({
+              value,
+              label: formatPeriodOption(value),
+            }))}
+            className="w-48"
+            aria-label="Período"
+          />
         </label>
 
         {/* Simular antes que Sincronizar: es el camino seguro y va primero.
@@ -170,6 +170,3 @@ export function SyncControls({
     </section>
   )
 }
-
-const inputClass =
-  "rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-sm text-[var(--color-text)]"

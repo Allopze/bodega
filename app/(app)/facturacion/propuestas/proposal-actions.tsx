@@ -2,6 +2,8 @@
 
 import { useState, useTransition } from "react"
 import { buttonVariants } from "@/components/ui/button"
+import { OptionSelect } from "@/components/ui/option-select"
+import { Textarea } from "@/components/ui/textarea"
 import { cn } from "@/lib/utils"
 import { useRouter } from "next/navigation"
 import { toast } from "@/lib/toast"
@@ -149,7 +151,7 @@ export function ProposalActions({
               <span className="mb-1 block text-xs font-medium text-[var(--color-text-muted)]">
                 Motivo {reasonFor === "reject" ? "del rechazo" : "de la observación"}
               </span>
-              <textarea name="reason" rows={3} required maxLength={1000} className={inputClass} />
+              <Textarea name="reason" rows={3} required maxLength={1000} className="min-h-0" />
             </label>
             <button type="submit" disabled={isPending} className={cn(buttonVariants(), "w-full")}>
               {isPending ? "Guardando…" : "Confirmar"}
@@ -190,12 +192,11 @@ export function ProposalActions({
             </p>
             <label className="block">
               <span className="mb-1 block text-xs font-medium text-[var(--color-text-muted)]">Factura emitida</span>
-              <select name="invoiceId" required className={inputClass}>
-                <option value="">Selecciona…</option>
-                {invoiceOptions.map((invoice) => (
-                  <option key={invoice.id} value={invoice.id}>{invoice.label}</option>
-                ))}
-              </select>
+              <OptionSelect
+                name="invoiceId"
+                options={invoiceOptions.map((invoice) => ({ value: invoice.id, label: invoice.label }))}
+                aria-label="Factura emitida"
+              />
             </label>
             <button type="submit" disabled={isPending} className={cn(buttonVariants(), "w-full")}>
               {isPending ? "Relacionando…" : "Relacionar"}
@@ -206,7 +207,4 @@ export function ProposalActions({
     </>
   )
 }
-
-const inputClass =
-  "w-full rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-sm text-[var(--color-text)]"
 

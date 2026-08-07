@@ -2,6 +2,9 @@
 
 import { useState, useTransition } from "react"
 import { DatePicker } from "@/components/ui/date-picker"
+import { OptionSelect } from "@/components/ui/option-select"
+import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
 import { buttonVariants } from "@/components/ui/button"
 import { useRouter } from "next/navigation"
 import { toast } from "@/lib/toast"
@@ -80,42 +83,45 @@ function ClientDialog({ users }: { users: Option[] }) {
         >
           <div className="grid gap-3 sm:grid-cols-2">
             <Field label="RUT" required>
-              <input name="rut" required placeholder="76.543.210-K" className={inputClass} />
+              <Input name="rut" required placeholder="76.543.210-K" />
             </Field>
             <Field label="Razón social" required>
-              <input name="name" required className={inputClass} />
+              <Input name="name" required />
             </Field>
             <Field label="Nombre de fantasía">
-              <input name="tradeName" className={inputClass} />
+              <Input name="tradeName" />
             </Field>
             <Field label="Correo">
-              <input name="email" type="email" className={inputClass} />
+              <Input name="email" type="email" />
             </Field>
             <Field label="Teléfono">
-              <input name="phone" className={inputClass} />
+              <Input name="phone" />
             </Field>
             <Field label="Dirección">
-              <input name="address" className={inputClass} />
+              <Input name="address" />
             </Field>
             <Field label="Plazo de pago (días)" hint="Se usa para calcular el vencimiento cuando el documento no lo declara.">
-              <input name="paymentTermsDays" type="number" min={0} max={365} className={inputClass} />
+              <Input name="paymentTermsDays" type="number" min={0} max={365} />
             </Field>
             <Field label="Moneda habitual">
-              <select name="defaultCurrency" defaultValue="CLP" className={inputClass}>
-                <option value="CLP">CLP</option>
-                <option value="USD">USD</option>
-                <option value="EUR">EUR</option>
-              </select>
+              <OptionSelect
+                name="defaultCurrency"
+                defaultValue="CLP"
+                options={CURRENCY_OPTIONS}
+                aria-label="Moneda habitual"
+              />
             </Field>
             <Field label="Responsable comercial">
-              <select name="ownerUserId" className={inputClass}>
-                <option value="">Sin asignar</option>
-                {users.map((user) => <option key={user.id} value={user.id}>{user.name}</option>)}
-              </select>
+              <OptionSelect
+                name="ownerUserId"
+                emptyLabel="Sin asignar"
+                options={userOptions(users)}
+                aria-label="Responsable comercial"
+              />
             </Field>
           </div>
           <Field label="Notas">
-            <textarea name="notes" rows={2} className={inputClass} />
+            <Textarea name="notes" rows={2} className="min-h-0" />
           </Field>
           <button type="submit" disabled={isPending} className={buttonVariants()}>
             {isPending ? "Guardando…" : "Crear cliente"}
@@ -155,12 +161,19 @@ function ContractDialog({
         <form
           className="space-y-3"
           action={(formData) => {
+            // El select ya no es nativo, así que `required` del navegador no
+            // bloquea el envío: el cliente se valida acá (y en el servidor).
+            const clientId = String(formData.get("clientId") ?? "")
+            if (!clientId) {
+              toast.error("Selecciona un cliente")
+              return
+            }
             startTransition(async () => {
               const terms = String(formData.get("paymentTermsDays") ?? "")
               const amount = String(formData.get("periodAmount") ?? "")
               const result = await saveContractAction({
                 code: String(formData.get("code") ?? ""),
-                clientId: String(formData.get("clientId") ?? ""),
+                clientId,
                 name: String(formData.get("name") ?? ""),
                 worksiteId: String(formData.get("worksiteId") ?? "") || null,
                 costCenterId: String(formData.get("costCenterId") ?? "") || null,
@@ -187,33 +200,39 @@ function ContractDialog({
         >
           <div className="grid gap-3 sm:grid-cols-2">
             <Field label="Código" required>
-              <input name="code" required placeholder="CTR-2026-0001" className={inputClass} />
+              <Input name="code" required placeholder="CTR-2026-0001" />
             </Field>
             <Field label="Cliente" required>
-              <select name="clientId" required className={inputClass}>
-                <option value="">Selecciona…</option>
-                {clients.map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}
-              </select>
+              <OptionSelect
+                name="clientId"
+                options={clients.map((client) => ({ value: client.id, label: client.name }))}
+                aria-label="Cliente"
+              />
             </Field>
             <Field label="Nombre del contrato" required>
-              <input name="name" required className={inputClass} />
+              <Input name="name" required />
             </Field>
             <Field label="Faena" hint="Déjalo vacío si el contrato cubre varias faenas.">
-              <select name="worksiteId" className={inputClass}>
-                <option value="">Transversal</option>
-                {worksites.map((worksite) => <option key={worksite.id} value={worksite.id}>{worksite.name}</option>)}
-              </select>
+              <OptionSelect
+                name="worksiteId"
+                emptyLabel="Transversal"
+                options={worksites.map((worksite) => ({ value: worksite.id, label: worksite.name }))}
+                aria-label="Faena"
+              />
             </Field>
             <Field label="Centro de costo">
-              <select name="costCenterId" className={inputClass}>
-                <option value="">Sin asignar</option>
-                {costCenters.map((center) => (
-                  <option key={center.id} value={center.id}>{center.code} — {center.name}</option>
-                ))}
-              </select>
+              <OptionSelect
+                name="costCenterId"
+                emptyLabel="Sin asignar"
+                options={costCenters.map((center) => ({
+                  value: center.id,
+                  label: `${center.code} · ${center.name}`,
+                }))}
+                aria-label="Centro de costo"
+              />
             </Field>
             <Field label="OC marco del cliente">
-              <input name="clientPoNumber" className={inputClass} />
+              <Input name="clientPoNumber" />
             </Field>
             <Field label="Inicio">
               <DatePicker name="startDate" ariaLabel="Inicio del contrato" />
@@ -222,34 +241,42 @@ function ContractDialog({
               <DatePicker name="endDate" ariaLabel="Término del contrato" />
             </Field>
             <Field label="Ciclo de facturación">
-              <select name="billingCycle" defaultValue="monthly" className={inputClass}>
-                <option value="monthly">Mensual</option>
-                <option value="milestone">Por hito</option>
-                <option value="none">Sin calendario</option>
-              </select>
+              <OptionSelect
+                name="billingCycle"
+                defaultValue="monthly"
+                options={[
+                  { value: "monthly",   label: "Mensual" },
+                  { value: "milestone", label: "Por hito" },
+                  { value: "none",      label: "Sin calendario" },
+                ]}
+                aria-label="Ciclo de facturación"
+              />
             </Field>
             <Field label="Moneda">
-              <select name="currency" defaultValue="CLP" className={inputClass}>
-                <option value="CLP">CLP</option>
-                <option value="USD">USD</option>
-                <option value="EUR">EUR</option>
-              </select>
+              <OptionSelect
+                name="currency"
+                defaultValue="CLP"
+                options={CURRENCY_OPTIONS}
+                aria-label="Moneda"
+              />
             </Field>
             <Field label="Monto del período" hint="Déjalo vacío si el cobro es variable.">
-              <input name="periodAmount" type="number" min={0} step="0.01" className={inputClass} />
+              <Input name="periodAmount" type="number" min={0} step="0.01" />
             </Field>
             <Field label="Plazo de pago (días)">
-              <input name="paymentTermsDays" type="number" min={0} max={365} className={inputClass} />
+              <Input name="paymentTermsDays" type="number" min={0} max={365} />
             </Field>
             <Field label="Administrador del contrato">
-              <select name="ownerUserId" className={inputClass}>
-                <option value="">Sin asignar</option>
-                {users.map((user) => <option key={user.id} value={user.id}>{user.name}</option>)}
-              </select>
+              <OptionSelect
+                name="ownerUserId"
+                emptyLabel="Sin asignar"
+                options={userOptions(users)}
+                aria-label="Administrador del contrato"
+              />
             </Field>
           </div>
           <Field label="Notas">
-            <textarea name="notes" rows={2} className={inputClass} />
+            <Textarea name="notes" rows={2} className="min-h-0" />
           </Field>
           <button type="submit" disabled={isPending} className={buttonVariants()}>
             {isPending ? "Guardando…" : "Crear contrato"}
@@ -260,9 +287,15 @@ function ContractDialog({
   )
 }
 
-const inputClass =
-  "w-full rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-sm text-[var(--color-text)]"
+const CURRENCY_OPTIONS = [
+  { value: "CLP", label: "CLP" },
+  { value: "USD", label: "USD" },
+  { value: "EUR", label: "EUR" },
+]
 
+function userOptions(users: Option[]) {
+  return users.map((user) => ({ value: user.id, label: user.name }))
+}
 
 const secondaryButtonClass =
   "rounded-[var(--radius-md)] border border-[var(--color-border)] px-3 py-2 text-sm font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-2)]"

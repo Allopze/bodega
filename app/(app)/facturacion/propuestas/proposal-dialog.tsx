@@ -2,6 +2,10 @@
 
 import { useMemo, useState, useTransition } from "react"
 import { DatePicker } from "@/components/ui/date-picker"
+import { OptionSelect } from "@/components/ui/option-select"
+import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
+import { Checkbox } from "@/components/ui/checkbox"
 import { buttonVariants } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { useRouter } from "next/navigation"
@@ -9,6 +13,7 @@ import { Plus, Trash } from "@phosphor-icons/react"
 import { toast } from "@/lib/toast"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { formatMoney } from "@/lib/services/billing/money"
+import { formatPeriodOption, recentPeriods } from "@/components/ui/period-picker"
 import { computeProposalTotals } from "@/lib/services/billing/proposal-rules"
 import { saveProposalAction } from "./actions"
 
@@ -52,6 +57,11 @@ export function ProposalDialog({
   const [clientId, setClientId] = useState("")
   const [contractId, setContractId] = useState("")
   const [currency, setCurrency] = useState("CLP")
+  // Controlados: como no controlados, su `defaultValue` se congela en el primer
+  // render (cuando todavía no hay contrato elegido) y la faena y el centro de
+  // costo del contrato nunca se precargaban — se guardaban en null.
+  const [worksiteId, setWorksiteId] = useState("")
+  const [costCenterId, setCostCenterId] = useState("")
   const [items, setItems] = useState<ItemDraft[]>([emptyItem()])
 
   const availableContracts = clientId
@@ -77,6 +87,8 @@ export function ProposalDialog({
     setClientId("")
     setContractId("")
     setCurrency("CLP")
+    setWorksiteId("")
+    setCostCenterId("")
     setItems([emptyItem()])
   }
 
@@ -101,6 +113,16 @@ export function ProposalDialog({
         <form
           className="space-y-4"
           action={(formData) => {
+            // El select ya no es nativo: `required` del navegador no bloquea el
+            // envío, así que el cliente se valida acá (y en el servidor).
+            if (!clientId) {
+              toast.error("Selecciona un cliente")
+              return
+            }
+            if (!String(formData.get("servicePeriod") ?? "")) {
+              toast.error("Selecciona el período de servicio")
+              return
+            }
             if (parsedItems.length === 0) {
               toast.error("Agrega al menos un ítem con descripción")
               return
@@ -133,49 +155,60 @@ export function ProposalDialog({
         >
           <div className="grid gap-3 sm:grid-cols-2">
             <Field label="Cliente" required>
-              <select
+              <OptionSelect
                 value={clientId}
-                onChange={(event) => { setClientId(event.target.value); setContractId("") }}
-                required
-                className={inputClass}
-              >
-                <option value="">Selecciona…</option>
-                {clients.map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}
-              </select>
+                onValueChange={(value) => { setClientId(value); setContractId(""); setWorksiteId(""); setCostCenterId("") }}
+                options={clients.map((client) => ({ value: client.id, label: client.name }))}
+                aria-label="Cliente"
+              />
             </Field>
 
             <Field label="Contrato">
-              <select
+              <OptionSelect
                 value={contractId}
-                onChange={(event) => {
-                  setContractId(event.target.value)
-                  const contract = contracts.find((entry) => entry.id === event.target.value)
-                  if (contract) setCurrency(contract.currency)
+                onValueChange={(value) => {
+                  setContractId(value)
+                  const contract = contracts.find((entry) => entry.id === value)
+                  if (contract) {
+                    setCurrency(contract.currency)
+                    // Sólo se siembra lo que la persona puede ver: `worksites` llega
+                    // recortado por alcance y `listActiveContracts` no filtra por
+                    // alcance, así que un contrato puede apuntar a una faena ajena.
+                    // Sembrarla sería un id invisible que el servidor rechaza.
+                    setWorksiteId(worksites.some((entry) => entry.id === contract.worksiteId) ? contract.worksiteId! : "")
+                    setCostCenterId(costCenters.some((entry) => entry.id === contract.costCenterId) ? contract.costCenterId! : "")
+                  }
                 }}
-                className={inputClass}
-              >
-                <option value="">Sin contrato</option>
-                {availableContracts.map((contract) => (
-                  <option key={contract.id} value={contract.id}>{contract.code} — {contract.name}</option>
-                ))}
-              </select>
+                emptyLabel="Sin contrato"
+                options={availableContracts.map((contract) => ({
+                  value: contract.id,
+                  label: `${contract.code} · ${contract.name}`,
+                }))}
+                aria-label="Contrato"
+              />
             </Field>
 
             <Field label="Período de servicio" required>
-              <input
+              {/* Select propio en vez de <input type="month">: el nativo se
+                  rinde según el locale del navegador (UI/UX 2026-08-05, M8),
+                  como ya se resolvió en filtros y datos internos. */}
+              <OptionSelect
                 name="servicePeriod"
-                type="month"
-                required
-                defaultValue={defaultPeriod}
-                className={inputClass}
+                defaultValue={defaultPeriod ?? ""}
+                options={recentPeriods(24).map((value) => ({ value, label: formatPeriodOption(value) }))}
+                aria-label="Período de servicio"
               />
             </Field>
 
             <Field label="Faena">
-              <select name="worksiteId" defaultValue={selectedContract?.worksiteId ?? ""} className={inputClass}>
-                <option value="">Sin faena</option>
-                {worksites.map((worksite) => <option key={worksite.id} value={worksite.id}>{worksite.name}</option>)}
-              </select>
+              <OptionSelect
+                name="worksiteId"
+                value={worksiteId}
+                onValueChange={setWorksiteId}
+                emptyLabel="Sin faena"
+                options={worksites.map((worksite) => ({ value: worksite.id, label: worksite.name }))}
+                aria-label="Faena"
+              />
             </Field>
 
             <Field label="Desde">
@@ -186,24 +219,34 @@ export function ProposalDialog({
             </Field>
 
             <Field label="Centro de costo">
-              <select name="costCenterId" defaultValue={selectedContract?.costCenterId ?? ""} className={inputClass}>
-                <option value="">Sin asignar</option>
-                {costCenters.map((center) => (
-                  <option key={center.id} value={center.id}>{center.code} — {center.name}</option>
-                ))}
-              </select>
+              <OptionSelect
+                name="costCenterId"
+                value={costCenterId}
+                onValueChange={setCostCenterId}
+                emptyLabel="Sin asignar"
+                options={costCenters.map((center) => ({
+                  value: center.id,
+                  label: `${center.code} · ${center.name}`,
+                }))}
+                aria-label="Centro de costo"
+              />
             </Field>
 
             <Field label="Moneda">
-              <select value={currency} onChange={(event) => setCurrency(event.target.value)} className={inputClass}>
-                <option value="CLP">CLP</option>
-                <option value="USD">USD</option>
-                <option value="EUR">EUR</option>
-              </select>
+              <OptionSelect
+                value={currency}
+                onValueChange={setCurrency}
+                options={[
+                  { value: "CLP", label: "CLP" },
+                  { value: "USD", label: "USD" },
+                  { value: "EUR", label: "EUR" },
+                ]}
+                aria-label="Moneda"
+              />
             </Field>
 
             <Field label="OC del cliente">
-              <input name="clientPoNumber" defaultValue={selectedContract?.clientPoNumber ?? ""} className={inputClass} />
+              <Input name="clientPoNumber" defaultValue={selectedContract?.clientPoNumber ?? ""} />
             </Field>
           </div>
 
@@ -214,37 +257,33 @@ export function ProposalDialog({
               <div key={item.key} className="grid grid-cols-[1fr_auto_auto_auto_auto] items-end gap-2">
                 <label className="block">
                   <span className="sr-only">Descripción del ítem {index + 1}</span>
-                  <input
+                  <Input
                     value={item.description}
                     onChange={(event) => updateItem(setItems, item.key, { description: event.target.value })}
                     placeholder="Descripción del servicio"
-                    className={inputClass}
                   />
                 </label>
                 <label className="block w-20">
                   <span className="mb-0.5 block text-[10px] text-[var(--color-text-muted)]">Cant.</span>
-                  <input
+                  <Input
                     type="number" min="0" step="0.0001" value={item.quantity}
                     onChange={(event) => updateItem(setItems, item.key, { quantity: event.target.value })}
-                    className={inputClass}
                   />
                 </label>
                 <label className="block w-32">
                   <span className="mb-0.5 block text-[10px] text-[var(--color-text-muted)]">Precio unit.</span>
-                  <input
+                  <Input
                     type="number" min="0" step="0.01" value={item.unitPrice}
                     onChange={(event) => updateItem(setItems, item.key, { unitPrice: event.target.value })}
-                    className={inputClass}
                   />
                 </label>
-                <label className="flex items-center gap-1 pb-2 text-xs text-[var(--color-text-muted)]">
-                  <input
-                    type="checkbox" checked={item.isExempt}
+                <div className="pb-2">
+                  <Checkbox
+                    label="Exento"
+                    checked={item.isExempt}
                     onChange={(event) => updateItem(setItems, item.key, { isExempt: event.target.checked })}
-                    className="size-3.5"
                   />
-                  Exento
-                </label>
+                </div>
                 <button
                   type="button"
                   onClick={() => setItems((current) => current.length === 1 ? current : current.filter((entry) => entry.key !== item.key))}
@@ -287,11 +326,11 @@ export function ProposalDialog({
           )}
 
           <Field label="Documentos faltantes" hint="Si hay algo pendiente, la propuesta no se podrá marcar lista para facturar.">
-            <input name="missingDocuments" maxLength={1000} className={inputClass} />
+            <Input name="missingDocuments" maxLength={1000} />
           </Field>
 
           <Field label="Observaciones">
-            <textarea name="observations" rows={2} maxLength={2000} className={inputClass} />
+            <Textarea name="observations" rows={2} maxLength={2000} className="min-h-0" />
           </Field>
 
           <p className="text-xs text-[var(--color-text-subtle)]">
@@ -327,10 +366,6 @@ function updateItem(
 ) {
   setItems((current) => current.map((item) => (item.key === key ? { ...item, ...patch } : item)))
 }
-
-const inputClass =
-  "w-full rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-sm text-[var(--color-text)]"
-
 
 function Field({
   label,

@@ -4,6 +4,9 @@ import { useState, useTransition } from "react"
 import { DatePicker } from "@/components/ui/date-picker"
 import { DotsThreeVertical } from "@phosphor-icons/react"
 import { Button, buttonVariants } from "@/components/ui/button"
+import { OptionSelect } from "@/components/ui/option-select"
+import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { cn } from "@/lib/utils"
 import { useRouter } from "next/navigation"
@@ -105,51 +108,39 @@ export function CollectionActionDialog({
                 <DatePicker name="actionDate" defaultValue={today} ariaLabel="Fecha de la gestión" />
               </Field>
               <Field label="Tipo" required>
-                <select
-                  name="actionType"
+                <OptionSelect
                   value={actionType}
-                  onChange={(event) => setActionType(event.target.value)}
-                  className={inputClass}
-                >
-                  <option value="call">Llamada</option>
-                  <option value="email">Correo</option>
-                  <option value="meeting">Reunión</option>
-                  <option value="note">Observación</option>
-                  <option value="claim">Reclamo formal</option>
-                  <option value="commitment">Compromiso de pago</option>
-                  <option value="dispute">Disputa</option>
-                </select>
+                  onValueChange={setActionType}
+                  options={ACTION_TYPE_OPTIONS}
+                  aria-label="Tipo de gestión"
+                />
               </Field>
               <Field label="Canal">
-                <select name="channel" className={inputClass}>
-                  <option value="">Sin especificar</option>
-                  <option value="phone">Teléfono</option>
-                  <option value="email">Correo</option>
-                  <option value="in_person">Presencial</option>
-                  <option value="portal">Portal del cliente</option>
-                  <option value="letter">Carta</option>
-                  <option value="other">Otro</option>
-                </select>
+                <OptionSelect
+                  name="channel"
+                  emptyLabel="Sin especificar"
+                  options={CHANNEL_OPTIONS}
+                  aria-label="Canal"
+                />
               </Field>
               <Field label="Resultado" required>
-                <select name="outcome" required defaultValue="contacted" className={inputClass}>
-                  <option value="contacted">Contactado</option>
-                  <option value="no_answer">Sin respuesta</option>
-                  <option value="promised_payment">Prometió pago</option>
-                  <option value="disputed">Objetó el cobro</option>
-                  <option value="escalated">Escalado</option>
-                  <option value="resolved">Resuelto</option>
-                  <option value="other">Otro</option>
-                </select>
+                <OptionSelect
+                  name="outcome"
+                  defaultValue="contacted"
+                  options={OUTCOME_OPTIONS}
+                  aria-label="Resultado"
+                />
               </Field>
               <Field label="Contacto">
-                <input name="contactName" maxLength={160} className={inputClass} />
+                <Input name="contactName" maxLength={160} />
               </Field>
               <Field label="Responsable">
-                <select name="assigneeUserId" className={inputClass}>
-                  <option value="">Yo</option>
-                  {users.map((user) => <option key={user.id} value={user.id}>{user.name}</option>)}
-                </select>
+                <OptionSelect
+                  name="assigneeUserId"
+                  emptyLabel="Yo"
+                  options={users.map((user) => ({ value: user.id, label: user.name }))}
+                  aria-label="Responsable"
+                />
               </Field>
               <Field
                 label="Fecha comprometida"
@@ -158,12 +149,12 @@ export function CollectionActionDialog({
                 <DatePicker name="commitmentDate" ariaLabel="Fecha comprometida" />
               </Field>
               <Field label="Monto comprometido">
-                <input name="commitmentAmount" type="number" min={0} step="0.01" className={inputClass} />
+                <Input name="commitmentAmount" type="number" min={0} step="0.01" />
               </Field>
             </div>
 
             <Field label="Notas">
-              <textarea name="notes" rows={2} maxLength={2000} className={inputClass} />
+              <Textarea name="notes" rows={2} maxLength={2000} className="min-h-0" />
             </Field>
             <Field label="Próxima gestión">
               <DatePicker name="nextActionDate" ariaLabel="Próxima gestión" />
@@ -216,22 +207,21 @@ export function CollectionActionDialog({
                 <DatePicker name="paymentDate" defaultValue={today} ariaLabel="Fecha del pago" />
               </Field>
               <Field label={`Monto (${currency})`} required>
-                <input
+                <Input
                   name="amount"
                   type="number"
                   step="0.01"
                   required
                   defaultValue={outstandingAmount}
-                  className={inputClass}
                 />
               </Field>
             </div>
 
             <Field label="Medio de pago">
-              <input name="method" maxLength={60} placeholder="Transferencia, cheque, factoring…" className={inputClass} />
+              <Input name="method" maxLength={60} placeholder="Transferencia, cheque, factoring…" />
             </Field>
             <Field label="Notas">
-              <textarea name="notes" rows={2} maxLength={1000} className={inputClass} />
+              <Textarea name="notes" rows={2} maxLength={1000} className="min-h-0" />
             </Field>
 
             <button type="submit" disabled={isPending} className={cn(buttonVariants(), "w-full")}>
@@ -244,8 +234,34 @@ export function CollectionActionDialog({
   )
 }
 
-const inputClass =
-  "w-full rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-sm text-[var(--color-text)]"
+const ACTION_TYPE_OPTIONS = [
+  { value: "call",       label: "Llamada" },
+  { value: "email",      label: "Correo" },
+  { value: "meeting",    label: "Reunión" },
+  { value: "note",       label: "Observación" },
+  { value: "claim",      label: "Reclamo formal" },
+  { value: "commitment", label: "Compromiso de pago" },
+  { value: "dispute",    label: "Disputa" },
+]
+
+const CHANNEL_OPTIONS = [
+  { value: "phone",     label: "Teléfono" },
+  { value: "email",     label: "Correo" },
+  { value: "in_person", label: "Presencial" },
+  { value: "portal",    label: "Portal del cliente" },
+  { value: "letter",    label: "Carta" },
+  { value: "other",     label: "Otro" },
+]
+
+const OUTCOME_OPTIONS = [
+  { value: "contacted",        label: "Contactado" },
+  { value: "no_answer",        label: "Sin respuesta" },
+  { value: "promised_payment", label: "Prometió pago" },
+  { value: "disputed",         label: "Objetó el cobro" },
+  { value: "escalated",        label: "Escalado" },
+  { value: "resolved",         label: "Resuelto" },
+  { value: "other",            label: "Otro" },
+]
 
 
 function Field({

@@ -545,7 +545,7 @@ export async function revertConfirmedPayment(
     ))
     .returning({ id: billingInvoicePayments.id, invoiceId: billingInvoicePayments.invoiceId, amount: billingInvoicePayments.amount })
 
-  if (!updated) throw new Error("El pago ya no está confirmado — posible concurrencia")
+  if (!updated) throw new Error("El pago ya no está confirmado: posible concurrencia")
 
   await recordInvoiceEvent(tx, {
     invoiceId: updated.invoiceId,

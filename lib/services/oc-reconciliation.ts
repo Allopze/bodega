@@ -11,7 +11,7 @@ export async function getOcReconciliation(orderId: string, itemIds: string[]) {
       quantityReceived: receiptItems.quantityReceived,
     })
     .from(receiptItems)
-    .where(inArray(receiptItems.purchaseOrderItemId, itemIds))
+    .where(and(inArray(receiptItems.purchaseOrderItemId, itemIds)))
 
   const receivedByItem = new Map<string, number>()
   let totalReceived = 0
