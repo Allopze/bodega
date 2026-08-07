@@ -110,7 +110,7 @@ export default async function MantencionesPage({
                   <strong className="text-[var(--color-danger-ink)]">Mantenciones vencidas:</strong>
                   {upcomingData.overdue.map((m) => (
                     <span key={m.id} className="ml-2 text-[var(--color-danger-ink)]">
-                      {m.vehicle?.plate ?? m.vehicleId} ({formatDate(m.maintenanceDate)}) — {m.maintenanceType}
+                      {m.vehicle?.plate ?? m.vehicleId} ({formatDate(m.maintenanceDate)}): {m.maintenanceType}
                     </span>
                   ))}
                 </div>
@@ -120,7 +120,7 @@ export default async function MantencionesPage({
                   <strong className="text-[var(--color-warning-ink)]">Próximas (30 días):</strong>
                   {upcomingData.upcoming.map((m) => (
                     <span key={m.id} className="ml-2 text-[var(--color-warning-ink)]">
-                      {m.vehicle?.plate ?? m.vehicleId} ({m.maintenanceDate}) — {m.maintenanceType}
+                      {m.vehicle?.plate ?? m.vehicleId} ({m.maintenanceDate}): {m.maintenanceType}
                     </span>
                   ))}
                 </div>
@@ -146,7 +146,7 @@ export default async function MantencionesPage({
               </p>
               {usageAlerts.map((a) => (
                 <p key={a.vehicleId} className="text-[var(--color-warning-ink)]">
-                  {a.code ? `${a.code} — ` : ""}{a.plate}: +{formatNumber(a.usageSinceLastMaintenance)} {a.medidoPor === "km" ? "km" : "hr"} desde {formatDate(a.lastMaintenanceDate)}
+                  {a.code ? `${a.code} · ` : ""}{a.plate}: +{formatNumber(a.usageSinceLastMaintenance)} {a.medidoPor === "km" ? "km" : "hr"} desde {formatDate(a.lastMaintenanceDate)}
                   {" "}(lectura actual {formatNumber(a.currentReading)} al {formatDate(a.currentReadingDate)})
                 </p>
               ))}

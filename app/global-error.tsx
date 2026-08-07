@@ -39,7 +39,7 @@ export default function GlobalError({
     <html lang="es">
       <head>
         <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <title>Error — Chome</title>
+        <title>Error · Chome</title>
       </head>
       <body style={BODY_STYLE}>
         <div style={PANEL_STYLE}>

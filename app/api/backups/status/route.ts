@@ -7,13 +7,15 @@
  * - Verificación de script de backup (¿existe?)
  * - Estado de Google Drive (última subida)
  *
- * Usado por:
- * - Panel admin /admin/backups
- * - Monitoreo externo (healthchecks.io, etc.)
+ * Usado por el panel admin /admin/backups. Exige `admin:backups`: no es un
+ * endpoint de monitoreo externo. Para eso, exponer uno nuevo por CRON_SECRET
+ * como hace /api/backups/config.
  */
 export const dynamic = "force-dynamic"
 
 import { NextResponse } from "next/server"
+import { auth } from "@/lib/auth/auth"
+import { can } from "@/lib/auth/can"
 import { getBackupStats, getLatestBackup, getDriveHealth, getBackupConfig } from "@/lib/services/backups"
 import { execFile } from "node:child_process"
 import { promisify } from "node:util"
@@ -63,6 +65,10 @@ interface BackupApiStatus {
 }
 
 export async function GET() {
+  const session = await auth()
+  if (!session) return NextResponse.json({ error: "No autenticado" }, { status: 401 })
+  if (!can(session, "admin:backups")) return NextResponse.json({ error: "Sin permisos" }, { status: 403 })
+
   const result: BackupApiStatus = {
     status: "ok",
     lastBackup: {

@@ -11,7 +11,7 @@ import type { FeedbackEstado, FeedbackTipo } from "@/lib/validation/feedback"
 import { StatusPanel } from "./status-panel"
 import { formatDateTime } from "@/lib/utils"
 
-export const metadata: Metadata = { title: "Detalle de reporte — Soporte" }
+export const metadata: Metadata = { title: "Detalle de reporte (Soporte)" }
 
 interface Props {
   params: Promise<{ id: string }>

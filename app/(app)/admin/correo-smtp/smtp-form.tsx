@@ -175,7 +175,7 @@ function ResendStatusCard({ resendStatus }: { resendStatus: ResendStatus }) {
   return (
     <div className="rounded-(--radius-2xl) bg-(--color-surface) shadow-(--shadow-card) p-6">
       <div className="mb-5">
-        <h2 className="text-h2 text-(--color-text)">Servicio de envío — Resend</h2>
+        <h2 className="text-h2 text-(--color-text)">Servicio de envío: Resend</h2>
         <p className="mt-1 text-sm text-(--color-text-muted)">
           Los correos se envían a través de{" "}
           <span className="font-medium text-(--color-text)">Resend</span>.

@@ -143,7 +143,7 @@ export function VariantGenerator({
                   ) : someEmpty ? (
                     "selecciona valores"
                   ) : isOverLimit ? (
-                    `${count} combinaciones — máx. ${variantLimit}`
+                    `${count} combinaciones (máx. ${variantLimit})`
                   ) : (
                     <>
                       Generar variantes ({count} combinaciones)

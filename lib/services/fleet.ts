@@ -1,5 +1,5 @@
 import type { Session } from "next-auth"
-import { and, desc, eq, inArray, isNotNull, sql } from "drizzle-orm"
+import { and, desc, eq, isNotNull, sql } from "drizzle-orm"
 import { db } from "@/db"
 import {
   fleetVehicleDocuments,
@@ -11,15 +11,13 @@ import {
 } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { recordAudit } from "@/lib/audit"
-import { isGlobalRole, visibleWorksiteIds } from "@/lib/auth/scope"
+import { isGlobalRole, visibleWorksiteIds, worksiteScopeSql } from "@/lib/auth/scope"
 
-export async function getFleetOverview(session: Session) {
-  const scopedWorksites = isGlobalRole(session) ? null : visibleWorksiteIds(session)
-  const vehicleScope = scopedWorksites === null
-    ? undefined
-    : scopedWorksites.length > 0
-      ? inArray(fuelVehicles.worksiteId, scopedWorksites)
-      : sql`false`
+// `worksiteId` es la faena elegida en el tablero: se intersecta con el alcance
+// del rol (nunca lo reemplaza). Los llamadores sin selector de faena (/flota)
+// lo omiten y conservan el alcance del rol tal cual.
+export async function getFleetOverview(session: Session, worksiteId?: string) {
+  const vehicleScope = worksiteScopeSql(session, fuelVehicles.worksiteId, worksiteId)
 
   const sinceDate = new Date()
   sinceDate.setFullYear(sinceDate.getFullYear() - 1)
@@ -45,7 +43,7 @@ export async function getFleetOverview(session: Session) {
       .from(fuelLoads)
       .where(and(
         sql`${fuelLoads.loadDate} >= ${since.slice(0, 10)}`,
-        scopedWorksites === null ? undefined : scopedWorksites.length > 0 ? inArray(fuelLoads.worksiteId, scopedWorksites) : sql`false`,
+        worksiteScopeSql(session, fuelLoads.worksiteId, worksiteId),
       ))
       .groupBy(fuelLoads.vehicleId),
     db
@@ -59,7 +57,7 @@ export async function getFleetOverview(session: Session) {
       .where(and(
         sql`${maintenanceRecords.maintenanceDate} >= ${since.slice(0, 10)}`,
         sql`${maintenanceRecords.status} <> 'cancelled'`,
-        scopedWorksites === null ? undefined : scopedWorksites.length > 0 ? inArray(maintenanceRecords.worksiteId, scopedWorksites) : sql`false`,
+        worksiteScopeSql(session, maintenanceRecords.worksiteId, worksiteId),
       ))
       .groupBy(maintenanceRecords.vehicleId),
   ])
@@ -134,19 +132,18 @@ export async function getFleetVehicleDetail(session: Session, id: string) {
     return null
   }
 
-  const [documents, recentLoads, recentMaintenance, recentOperations, operatorCounts, operationalIntervals] = await Promise.all([
+  const [documents, recentMaintenance, recentOperations, operatorCounts, operationalIntervals] = await Promise.all([
     db.query.fleetVehicleDocuments.findMany({
       where: eq(fleetVehicleDocuments.vehicleId, id),
       orderBy: [fleetVehicleDocuments.expiresAt],
     }),
-    db.query.fuelLoads.findMany({
-      where: eq(fuelLoads.vehicleId, id),
-      orderBy: [fuelLoads.loadDate],
-      limit: 10,
-    }),
+    // De la más reciente a la más antigua: con `limit: 10` el orden ascendente
+    // devolvía el tramo más viejo del historial y la última mantención del
+    // vehículo quedaba fuera de la tarjeta. `maintenance_date` es sólo fecha,
+    // así que se desempata por `createdAt` igual que el listado de mantenciones.
     db.query.maintenanceRecords.findMany({
       where: eq(maintenanceRecords.vehicleId, id),
-      orderBy: [maintenanceRecords.maintenanceDate],
+      orderBy: [desc(maintenanceRecords.maintenanceDate), desc(maintenanceRecords.createdAt)],
       limit: 10,
     }),
     // Log operacional de combustible: fecha real por carga (a diferencia de
@@ -193,7 +190,6 @@ export async function getFleetVehicleDetail(session: Session, id: string) {
   return {
     vehicle,
     documents,
-    recentLoads,
     recentMaintenance,
     maintenanceConsumptionImpact,
     // Última lectura de horómetro/odómetro con fecha real, y los operadores

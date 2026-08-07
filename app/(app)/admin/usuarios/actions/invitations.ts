@@ -7,6 +7,7 @@ import { roles, userInvitations, users } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { recordAudit } from "@/lib/audit"
 import { generateInvitationToken, hashInvitationToken } from "@/lib/auth/bootstrap"
+import { canAccessWorksite } from "@/lib/auth/can"
 import { buildInvitationUrl, isInvitationUsable, parseInvitationJson } from "@/lib/auth/invitations"
 import { isPasswordSetupPending } from "@/lib/auth/password-setup"
 import { getAppBaseUrl, sendInvitationEmail } from "@/lib/email/smtp"
@@ -40,6 +41,14 @@ async function validateInvitationRoleScope(
   session: NonNullable<Awaited<ReturnType<typeof requireAdminPermission>>>,
   invitation: typeof userInvitations.$inferSelect,
 ): Promise<ActionState | null> {
+  // La invitación lleva su alcance en worksiteAssignmentsJson: un admin acotado
+  // no puede tocar invitaciones de faenas que no administra (misma regla que
+  // page.tsx al listarlas). Sin asignaciones = invitación global, gestionable.
+  const assignments = parseInvitationJson<{ worksiteId: string }[]>(invitation.worksiteAssignmentsJson, [])
+  if (assignments.length > 0 && !assignments.some((assignment) => canAccessWorksite(session, assignment.worksiteId))) {
+    return { ok: false, message: "Invitación no encontrada" }
+  }
+
   const roleIds = parseInvitationJson<string[]>(invitation.roleIdsJson, [])
   const invitationRoles = roleIds.length
     ? await db.query.roles.findMany({ where: inArray(roles.id, roleIds) })

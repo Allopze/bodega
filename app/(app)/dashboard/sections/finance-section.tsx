@@ -128,7 +128,7 @@ export async function FinanceSection({ session, scope }: DomainSectionsProps) {
   if (billing) {
     kpiGroups.push({
       key: "ingresos",
-      label: "Ingresos — facturación de venta",
+      label: "Ingresos (facturación de venta)",
       content: (
         <>
           <MoneyStat label="Facturado en el período" amounts={billing.invoicedByCurrency}
@@ -156,7 +156,7 @@ export async function FinanceSection({ session, scope }: DomainSectionsProps) {
   if (analytics || canSeeFuelCosts) {
     kpiGroups.push({
       key: "egresos",
-      label: "Egresos — compra y consumo",
+      label: "Egresos (compra y consumo)",
       content: (
         <>
           {analytics && (
@@ -230,7 +230,7 @@ export async function FinanceSection({ session, scope }: DomainSectionsProps) {
           )}
           {analytics && (
             <CompositionDonutChart
-              title="Gasto por módulo" description={`De qué se compone el gasto — ${periodo}`}
+              title="Gasto por módulo" description={`De qué se compone el gasto en ${periodo}`}
               totalLabel="del período" format="clp"
               data={analytics.spendByModule.map((row) => ({ key: row.module, label: row.module, value: row.totalAmount }))}
             />

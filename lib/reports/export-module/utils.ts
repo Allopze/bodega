@@ -23,6 +23,8 @@ export function buildDateFilter(filters: ExportFilters, column: SQLWrapper) {
   if (!filters.fromDate && !filters.toDate) return undefined
   const conditions = []
   if (filters.fromDate) conditions.push(sql`${column} >= ${filters.fromDate}`)
-  if (filters.toDate) conditions.push(sql`${column} <= ${filters.toDate}T23:59:59`)
+  // El sufijo se concatena en JS: dentro de la plantilla `sql` quedaría pegado
+  // al placeholder ($1T23:59:59) y Postgres rechaza la consulta.
+  if (filters.toDate) conditions.push(sql`${column} <= ${filters.toDate + "T23:59:59"}`)
   return and(...conditions)
 }

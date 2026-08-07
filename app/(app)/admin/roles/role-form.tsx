@@ -218,17 +218,15 @@ export function RoleForm({ open, onClose, editRole, groupedPermissions }: RoleFo
                             const checked = selected.has(p.id)
                             return (
                               <li key={p.id}>
-                                <label className="flex min-h-11 cursor-pointer items-start gap-2 rounded px-1 py-1.5 hover:bg-[var(--color-surface)] sm:min-h-9">
-                                  <input
-                                    type="checkbox"
+                                <div className="flex min-h-11 items-start rounded px-1 py-1.5 hover:bg-[var(--color-surface)] sm:min-h-9">
+                                  <Checkbox
                                     checked={checked}
                                     onChange={() => togglePermission(p.id)}
-                                    className="mt-0.5"
+                                    label={<span className="min-w-0 text-xs font-medium text-[var(--color-text)]">
+                                      {p.description}
+                                    </span>}
                                   />
-                                  <span className="min-w-0 text-xs font-medium text-[var(--color-text)]">
-                                    {p.description}
-                                  </span>
-                                </label>
+                                </div>
                               </li>
                             )
                           })}

@@ -15,6 +15,7 @@ import { SubmitButton } from "@/components/admin/submit-button"
 import { Button } from "@/components/ui/button"
 import { Field, FieldGroup } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { INITIAL_STATE, type ActionState } from "@/components/admin/form-state"
@@ -115,13 +116,12 @@ export function AttributeTemplateForm({ open, onClose, editTemplate, categories 
               </Field>
               {isSelectType && (
                 <Field label="Opciones (una por línea)" htmlFor="attr-options" required error={state.fieldErrors?.optionsText?.[0]}>
-                  <textarea
+                  <Textarea
                     id="attr-options"
                     name="optionsText"
                     rows={5}
                     defaultValue={optionsAsLines(editTemplate?.options)}
                     aria-label="Opciones (una por línea)"
-                    className="w-full rounded-[var(--radius)] border border-[var(--color-border-control)] bg-[var(--color-surface)] px-3 py-2 text-sm"
                   />
                 </Field>
               )}

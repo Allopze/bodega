@@ -1,7 +1,7 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
-import { guardPermission } from "@/lib/auth/can"
+import { can, guardPermission } from "@/lib/auth/can"
 import { getAppBaseUrl, sendInvitationEmail } from "@/lib/email/smtp"
 import type { ActionState } from "@/lib/validation/masters"
 import {
@@ -16,7 +16,7 @@ export async function createTemporarySubstituteAction(input: unknown): Promise<A
   const guard = await guardPermission("admin:users")
   if (guard.error) return guard.error
   try {
-    const created = await createTemporarySubstituteUser(input, guard.session.user.id)
+    const created = await createTemporarySubstituteUser(input, guard.session.user.id, can(guard.session, "admin:manage_admins"))
     const inviteUrl = `${getAppBaseUrl()}/registro?token=${encodeURIComponent(created.invitationToken)}`
     let message = `Cuenta temporal de reemplazo creada para ${created.name}. Invitación enviada para definir contraseña.`
     let pendingInviteUrl: string | undefined
@@ -51,7 +51,7 @@ export async function extendTemporarySubstituteAction(args: { userId: string; ad
   const guard = await guardPermission("admin:users")
   if (guard.error) return guard.error
   try {
-    await extendTemporarySubstituteValidity(args.userId, args.additionalDays, guard.session.user.id)
+    await extendTemporarySubstituteValidity(args.userId, args.additionalDays, guard.session.user.id, can(guard.session, "admin:manage_admins"))
     revalidatePath(ROOT)
     return { ok: true, message: `Vigencia extendida por ${args.additionalDays} días` }
   } catch (error: unknown) {

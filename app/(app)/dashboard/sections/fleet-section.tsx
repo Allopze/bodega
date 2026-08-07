@@ -47,8 +47,8 @@ export async function FleetSection({ session, scope }: DomainSectionsProps) {
     getFuelMonthlyTrend(session, 6, worksiteId),
     getMaintenanceMonthlyTrend(session, 6, worksiteId),
     getExpiringFleetDocuments(session, today, plusDays(today, 30), worksiteId),
-    getFleetOverview(session).catch(() => []),
-    getUsageMaintenanceAlerts(session).catch(() => []),
+    getFleetOverview(session, worksiteId).catch(() => []),
+    getUsageMaintenanceAlerts(session, worksiteId).catch(() => []),
     // Notas de crédito de combustible sin aplicar (rutEmisor de fuelSuppliers,
     // por empresa/período tributario — no por faena, igual que la deuda arriba).
     countPendingFuelCreditNotes(today.slice(0, 7), dteCodEmp).catch(() => null),
@@ -84,8 +84,8 @@ export async function FleetSection({ session, scope }: DomainSectionsProps) {
       ]}
       kpis={
         <>
-          <KpiCard icon={<Truck size={16} />} label="Vehículos con actividad" value={String(fleet.length)}
-            detail="Con al menos un movimiento registrado · ahora" href="/flota" />
+          <KpiCard icon={<Truck size={16} />} label="Vehículos activos" value={String(fleet.filter((vehicle) => vehicle.isActive).length)}
+            detail="En catálogo operativo · ahora" href="/flota" />
           <KpiCard icon={<Gauge size={16} />} label="Litros del período"
             value={`${Math.round(fuelTrend.reduce((sum, point) => sum + point.liters, 0)).toLocaleString("es-CL")} L`}
             detail="Cargas registradas · últimos 6 meses" href="/combustibles" />
@@ -120,7 +120,7 @@ export async function FleetSection({ session, scope }: DomainSectionsProps) {
           {costPerUse.length > 0 && (
             <ThresholdRankingChart
               title="Costo operacional por unidad de uso"
-              description="Combustible + mantención por km o por hora — últimos 12 meses"
+              description="Combustible + mantención por km o por hora (últimos 12 meses)"
               unit="" format="clp" invert goodAtOrAbove={Number.POSITIVE_INFINITY} warnAtOrAbove={Number.POSITIVE_INFINITY}
               data={costPerUse}
             />

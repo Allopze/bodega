@@ -1,5 +1,6 @@
 "use client"
 
+import { Checkbox } from "@/components/ui/checkbox"
 import type { Worksite } from "./user-form.helpers"
 
 interface WorksiteSelectorProps {
@@ -41,20 +42,19 @@ export function WorksiteSelector({
           const isPrimary = primaryId === ws.id && isChecked
           return (
             <div key={ws.id} className="flex min-h-11 items-center gap-3 rounded-[var(--radius)] px-2 hover:bg-[var(--color-surface-2)] sm:min-h-9">
-              <label htmlFor={`worksite-${ws.id}`} className="flex min-w-0 flex-1 cursor-pointer items-center gap-3">
-                <input
-                  id={`worksite-${ws.id}`}
-                  type="checkbox"
-                  checked={isChecked}
-                  onChange={() => onToggle(ws.id)}
-                  aria-label={`Seleccionar ${ws.name} (${ws.code})`}
-                  className="h-4 w-4 shrink-0 accent-[var(--color-primary)]"
-                />
-                <span className="min-w-0 flex-1 truncate text-sm text-[var(--color-text)]">
+              <Checkbox
+                id={`worksite-${ws.id}`}
+                checked={isChecked}
+                onChange={() => onToggle(ws.id)}
+                // Nombre accesible explícito: la etiqueta visible pone el código
+                // sin paréntesis y aquí se anuncia "Faena Norte (FN-01)".
+                aria-label={`Seleccionar ${ws.name} (${ws.code})`}
+                className="mr-1"
+                label={<span className="min-w-0 flex-1 truncate">
                   {ws.name}
                   <span className="ml-1.5 font-mono text-xs text-[var(--color-text-subtle)]">{ws.code}</span>
-                </span>
-              </label>
+                </span>}
+              />
               {isChecked && (
                 <button
                   type="button"

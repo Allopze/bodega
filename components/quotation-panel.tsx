@@ -137,7 +137,7 @@ export function QuotationPanel({
           </h2>
           <p className="mt-0.5 text-xs text-[var(--color-text-subtle)]">
             {isEditable
-              ? `${quotations.length}/3 adjuntadas${quotations.length < 3 ? " — se recomienda mínimo 3" : ""}`
+              ? `${quotations.length}/3 adjuntadas${quotations.length < 3 ? " (se recomienda mínimo 3)" : ""}`
               : isPendingReview
               ? "Selecciona la cotización ganadora"
               : ""}

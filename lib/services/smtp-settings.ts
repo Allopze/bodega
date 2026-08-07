@@ -75,7 +75,7 @@ export async function testResendConnection(
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const result = await sendEmail({
     to,
-    subject: "Correo de prueba — Plataforma Chome",
+    subject: "Correo de prueba de Plataforma Chome",
     text: "Este es un correo de prueba enviado desde Plataforma Chome para verificar que Resend está correctamente configurado.",
     html: `
       <p>Este es un correo de prueba enviado desde <strong>Plataforma Chome</strong>.</p>

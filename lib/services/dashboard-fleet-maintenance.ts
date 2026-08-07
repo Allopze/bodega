@@ -11,6 +11,7 @@ import type { Session } from "next-auth"
 import { db } from "@/db"
 import { fuelLoads, fuelVehicles, maintenanceRecords } from "@/db/schema"
 import { worksiteScopeSql } from "@/lib/auth/scope"
+import { chileDateParts } from "@/lib/utils"
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -178,14 +179,14 @@ export async function getMaintenanceMonthlyTrend(session: Session, months = 6, w
 
 export async function getMaintenanceDashboardSummary(session: Session): Promise<MaintenanceDashboardSummary> {
   const scope = maintenanceScope(session)
-  const today = new Date().toISOString().slice(0, 10)
-  const dateParts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/Santiago", year: "numeric", month: "2-digit",
-  }).formatToParts(new Date())
-  const currentYear = Number(dateParts.find((p) => p.type === "year")?.value)
-  const currentMonth = Number(dateParts.find((p) => p.type === "month")?.value) - 1
-  const monthStart = `${currentYear}-${String(currentMonth + 1).padStart(2, "0")}-01`
-  const monthEnd = new Date(Date.UTC(currentYear, currentMonth + 1, 1)).toISOString().slice(0, 10)
+  // Día y mes en calendario chileno: `maintenance_date` guarda la fecha civil y
+  // `toISOString()` rinde UTC, así que durante las últimas horas del día local
+  // las mantenciones de hoy se contaban como vencidas.
+  const { year, month, day } = chileDateParts()
+  const monthLabel = String(month).padStart(2, "0")
+  const today = `${year}-${monthLabel}-${String(day).padStart(2, "0")}`
+  const monthStart = `${year}-${monthLabel}-01`
+  const monthEnd = new Date(Date.UTC(year, month, 1)).toISOString().slice(0, 10)
 
   const [scheduledRow, overdueRow, completedRow, spendRow] = await Promise.all([
     db.select({ value: count() }).from(maintenanceRecords).where(and(scope, eq(maintenanceRecords.status, "scheduled"), gte(maintenanceRecords.maintenanceDate, today))),

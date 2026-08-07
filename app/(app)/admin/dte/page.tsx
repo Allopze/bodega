@@ -9,7 +9,7 @@ import { hasStoredDteSettings } from "@/lib/services/dte-portal/settings"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { DteCredentialsForm } from "./credentials-form"
-import { DteSyncActions } from "./dte-sync-actions"
+import { DteSyncActions, DteForceSyncControl } from "./dte-sync-actions"
 import { DteSyncList } from "./dte-sync-list"
 
 export const dynamic = "force-dynamic"
@@ -42,7 +42,7 @@ export default async function DtePage() {
     <PageContainer>
       <PageHeader
         title="Sincronización DTE"
-        description="Documentos tributarios recibidos de proveedores (Bandeja de Entrada del portal DTE FacturaEnLínea) — solo lectura, nunca acepta ni rechaza documentos en el portal."
+        description="Documentos tributarios recibidos de proveedores (Bandeja de Entrada del portal DTE FacturaEnLínea). Solo lectura: nunca acepta ni rechaza documentos en el portal."
         breadcrumb={DTE_BREADCRUMBS}
         actions={DTE_ACTIONS}
       />
@@ -57,7 +57,10 @@ export default async function DtePage() {
       <DteCredentialsForm initial={config} hasStored={hasStored} />
 
       <div className="mt-8">
-        <h2 className="mb-3 text-h2 text-[var(--color-text)]">Historial de sincronización</h2>
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-h2 text-[var(--color-text)]">Historial de sincronización</h2>
+          <DteForceSyncControl />
+        </div>
         <DteSyncList runs={runs} />
       </div>
     </PageContainer>

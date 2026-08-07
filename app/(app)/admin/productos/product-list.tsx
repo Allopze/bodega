@@ -11,6 +11,7 @@ import { CategoryPanel, type CategoryForEdit } from "./category-panel"
 import { ProductForm } from "./product-form"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { TableRow, TableCell, TableCellNum } from "@/components/ui/table"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
@@ -188,13 +189,12 @@ export function ProductList({ products, categories, allSuppliers, units, templat
     return (
       <TableRow key={family.id}>
         <TableCell>
-          <input
-            type="checkbox"
+          <Checkbox
+            labelHidden
+            label={`Seleccionar ${p.name}`}
             checked={selectedIds.has(p.id)}
             onChange={() => toggleSelect(p.id)}
             onClick={(e) => e.stopPropagation()}
-            className="h-4 w-4 rounded border-[var(--color-border)] text-[var(--color-primary)] focus:ring-[var(--color-primary)]"
-            aria-label={`Seleccionar ${p.name}`}
           />
         </TableCell>
         <TableCell>
@@ -263,12 +263,11 @@ export function ProductList({ products, categories, allSuppliers, units, templat
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
-              <input
-                type="checkbox"
+              <Checkbox
+                labelHidden
+                label={`Seleccionar ${p.name}`}
                 checked={selectedIds.has(p.id)}
                 onChange={() => toggleSelect(p.id)}
-                className="h-4 w-4 shrink-0 rounded border-[var(--color-border)] text-[var(--color-primary)] focus:ring-[var(--color-primary)]"
-                aria-label={`Seleccionar ${p.name}`}
               />
               <div>
                 <p className="font-mono text-xs text-[var(--color-text-subtle)]">{p.sku}</p>
@@ -368,21 +367,14 @@ export function ProductList({ products, categories, allSuppliers, units, templat
         </div>
 
         <div className="flex items-center gap-3 mb-3">
-          <label className="flex items-center gap-1.5 cursor-pointer text-xs text-[var(--color-text-subtle)] hover:text-[var(--color-text)] transition-colors">
-            <input
-              ref={selectAllRef}
-              type="checkbox"
-              checked={allSelected}
-              onChange={toggleSelectAll}
-              className="h-4 w-4 rounded border-[var(--color-border-control)] text-[var(--color-primary)] focus:ring-[var(--color-primary)]"
-              aria-label="Seleccionar o deseleccionar todos"
-            />
-            {allSelected
-              ? `${selectedIds.size} seleccionados`
-              : selectedIds.size > 0
-                ? `${selectedIds.size} seleccionados`
-                : "Seleccionar todo"}
-          </label>
+          <Checkbox
+            ref={selectAllRef}
+            checked={allSelected}
+            onChange={toggleSelectAll}
+            label={<span className="text-xs text-[var(--color-text-subtle)]">
+              {selectedIds.size > 0 ? `${selectedIds.size} seleccionados` : "Seleccionar todo"}
+            </span>}
+          />
         </div>
 
         {selectedIds.size > 0 && (

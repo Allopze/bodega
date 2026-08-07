@@ -33,6 +33,20 @@ export const AUDIT_ALLOWLIST = [
     reviewBy: "2026-10-28",
   },
   {
+    ghsaId: "GHSA-5p4m-2wfm-xmqj", // js-yaml: consumo cuadrático de CPU resolviendo !!omap
+    reason:
+      "js-yaml 4.3.0 entra solo por eslint > @eslint/eslintrc, una devDependency que " +
+      "nunca se empaqueta ni corre en producción. eslintrc usa js-yaml únicamente para " +
+      "leer configuraciones legacy .eslintrc.yaml/.eslintrc.yml; este repo usa flat " +
+      "config (eslint.config.mjs) y no tiene ningún archivo de ese tipo (guardrail " +
+      "findLegacyEslintYamlConfigs abajo). El único YAML del repo es docker-compose.yml, " +
+      "que eslint no parsea. El ataque exige YAML controlado por un tercero, y aquí el " +
+      "único input de eslint es código propio. No hay versión 4.x corregida: el fix vive " +
+      "en js-yaml 5 y @eslint/eslintrc@3.3.6 (la última) sigue pidiendo ^4.3.0, así que " +
+      "la alternativa sería un major de eslint sin relación con el riesgo.",
+    reviewBy: "2026-11-07",
+  },
+  {
     ghsaId: "GHSA-rgw5-rvv9-x895", // brace-expansion: bypass de la mitigación de CVE-2026-14257
     reason:
       "Mismo paquete y misma ruta que GHSA-mh99-v99m-4gvg: npm audit reporta ambos " +
@@ -126,6 +140,13 @@ export function findStreamingWorkbookWriterUsage(): string[] {
   }
 }
 
+/** GHSA-5p4m-2wfm-xmqj solo está cubierto mientras eslint no lea configuración legacy en YAML. */
+export function findLegacyEslintYamlConfigs(cwd = "."): string[] {
+  return fs
+    .readdirSync(cwd)
+    .filter((name) => /^\.eslintrc(\.\w+)?\.ya?ml$|^\.eslintrc\.ya?ml$/.test(name))
+}
+
 /** GHSA-f88m-g3jw-g9cj solo está cubierto mientras next/image no procese hosts externos no confiables. */
 export function hasRemoteImagePatterns(nextConfigSource: string): boolean {
   return /remotePatterns|images\s*:\s*{[^}]*\bdomains\s*:/.test(nextConfigSource)
@@ -158,6 +179,14 @@ function main() {
     console.error("Se encontró uso de la API de streaming de ExcelJS (carga archiver de verdad):")
     for (const file of streamingUsage) console.error(`- ${file}`)
     console.error("Esto invalida el allowlist de GHSA-mh99-v99m-4gvg/GHSA-rgw5-rvv9-x895; revisa scripts/check-security-audit.ts.")
+    process.exit(1)
+  }
+
+  const legacyYamlConfigs = findLegacyEslintYamlConfigs()
+  if (legacyYamlConfigs.length > 0) {
+    console.error("Apareció configuración legacy de ESLint en YAML, que sí pasa por js-yaml:")
+    for (const file of legacyYamlConfigs) console.error(`- ${file}`)
+    console.error("Esto invalida el allowlist de GHSA-5p4m-2wfm-xmqj; revisa scripts/check-security-audit.ts.")
     process.exit(1)
   }
 

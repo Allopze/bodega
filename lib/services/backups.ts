@@ -392,7 +392,7 @@ export function getSaStatusSummary(drive: DriveHealth | null): {
     if (drive.remoteConfigured && drive.reachable) {
       details.push("Conectividad Drive: OK ✓")
     } else if (drive.remoteConfigured && !drive.reachable) {
-      details.push("Conectividad Drive: error — verifica conectividad de red")
+      details.push("Conectividad Drive: error. Verifica conectividad de red")
     }
   }
 

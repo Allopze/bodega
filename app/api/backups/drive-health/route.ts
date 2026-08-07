@@ -8,9 +8,14 @@
 export const dynamic = "force-dynamic"
 
 import { NextResponse } from "next/server"
+import { auth } from "@/lib/auth/auth"
+import { can } from "@/lib/auth/can"
 import { getDriveHealth, getSaStatusSummary } from "@/lib/services/backups"
 
 export async function GET() {
+  const session = await auth()
+  if (!session) return NextResponse.json({ error: "No autenticado" }, { status: 401 })
+  if (!can(session, "admin:backups")) return NextResponse.json({ error: "Sin permisos" }, { status: 403 })
   try {
     const driveHealth = await getDriveHealth()
     const summary = getSaStatusSummary(driveHealth)

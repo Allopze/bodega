@@ -235,9 +235,13 @@ export async function notifyManyUser(
 }
 
 /**
- * S-05: schedule a notification to run only after the current Server
- * Action returns to the runtime (i.e. after the surrounding DB
- * transaction has committed).
+ * S-05: difiere el envío al siguiente microtask, no al COMMIT.
+ *
+ * Sólo sirve DESPUÉS de que `await db.transaction(...)` haya resuelto. Llamarlo
+ * DENTRO del callback de una transacción notifica antes de tiempo: el microtask
+ * se drena en el primer `await` siguiente y `createNotification*` escribe con el
+ * `db` global (otra conexión del pool), así que un ROLLBACK posterior no deshace
+ * ni la notificación ni el correo.
  */
 export function notifyAfterCommit(thunk: () => unknown | Promise<unknown>): void {
   queueMicrotask(() => {

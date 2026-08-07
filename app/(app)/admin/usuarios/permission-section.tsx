@@ -1,6 +1,7 @@
 "use client"
 
 import { Lock } from "@phosphor-icons/react"
+import { Checkbox } from "@/components/ui/checkbox"
 import { cn } from "@/lib/utils"
 import { getModuleLabel, type Permission } from "./user-form.helpers"
 
@@ -98,30 +99,28 @@ export function PermissionSection({
                     )
                   }
                   return (
-                    <label
+                    <div
                       key={permission.id}
                       className={cn(
-                        "flex min-h-11 cursor-pointer items-center gap-3 rounded-md px-2 sm:min-h-9",
+                        "flex min-h-11 items-center rounded-md px-2 sm:min-h-9",
                         "transition-colors duration-[var(--duration-fast)] ease-out",
                         "hover:bg-[var(--color-surface-2)]",
                       )}
                     >
-                      <input
-                        type="checkbox"
+                      <Checkbox
                         checked={directlyGranted}
                         onChange={() => onTogglePermission(permission.id)}
-                        aria-label={permission.description ?? permission.name}
-                        className="h-4 w-4 shrink-0 accent-[var(--color-primary)]"
+                        className="mr-1"
+                        label={<span
+                          className={cn(
+                            "flex-1 truncate transition-colors duration-[var(--duration-fast)]",
+                            active ? "font-medium text-[var(--color-text)]" : "text-[var(--color-text-muted)]",
+                          )}
+                        >
+                          {permission.description ?? permission.name}
+                        </span>}
                       />
-                      <span
-                        className={cn(
-                          "flex-1 truncate text-sm transition-colors duration-[var(--duration-fast)]",
-                          active ? "font-medium text-[var(--color-text)]" : "text-[var(--color-text-muted)]",
-                        )}
-                      >
-                        {permission.description ?? permission.name}
-                      </span>
-                    </label>
+                    </div>
                   )
                 })}
               </div>

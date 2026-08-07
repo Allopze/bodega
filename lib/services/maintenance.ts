@@ -9,9 +9,20 @@ import {
   suppliers,
   worksites,
 } from "@/db/schema"
-import { visibleWorksiteIds, isGlobalRole } from "@/lib/auth/scope"
+import { canAccessWorksite, visibleWorksiteIds, isGlobalRole, worksiteScopeSql } from "@/lib/auth/scope"
 import { recordAudit } from "@/lib/audit"
 import { nanoid } from "@/lib/id"
+import { chileDateParts } from "@/lib/utils"
+
+/**
+ * Hoy en calendario chileno. `maintenance_date` es texto "YYYY-MM-DD" con la
+ * fecha civil de Chile, y `toISOString()` serializa siempre en UTC: durante las
+ * últimas horas del día chileno marcaba como vencidas las mantenciones de hoy.
+ */
+function todayInChile(): string {
+  const { year, month, day } = chileDateParts()
+  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`
+}
 
 export interface MaintenanceFilters {
   vehicleId?: string
@@ -93,8 +104,10 @@ export async function getUpcomingMaintenance(session: Session) {
       ? inArray(maintenanceRecords.worksiteId, scopedWorksites)
       : sql`false`
 
-  const today = new Date().toISOString().slice(0, 10)
-  const thirtyDays = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+  const today = todayInChile()
+  // +30 días sobre la fecha civil anclada a medianoche UTC: no la corre el
+  // cambio de hora chileno.
+  const thirtyDays = new Date(Date.parse(`${today}T00:00:00Z`) + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
 
   const upcoming = await db.query.maintenanceRecords.findMany({
     where: and(
@@ -145,13 +158,11 @@ const USAGE_ALERT_THRESHOLDS: Record<"km" | "hora", number> = { km: 10_000, hora
  * de `getUpcomingMaintenance`, que solo mira mantenciones ya programadas por
  * fecha — esto detecta uso acumulado sin mantención programada.
  */
-export async function getUsageMaintenanceAlerts(session: Session): Promise<UsageMaintenanceAlert[]> {
-  const scopedWorksites = isGlobalRole(session) ? null : visibleWorksiteIds(session)
-  const vehicleScope = scopedWorksites === null
-    ? undefined
-    : scopedWorksites.length > 0
-      ? inArray(fuelVehicles.worksiteId, scopedWorksites)
-      : sql`false`
+export async function getUsageMaintenanceAlerts(session: Session, worksiteId?: string): Promise<UsageMaintenanceAlert[]> {
+  // `worksiteId` es la faena elegida en el tablero: se intersecta con el
+  // alcance del rol. Las lecturas y mantenciones se cruzan contra los vehículos
+  // ya acotados, así que no necesitan predicado propio.
+  const vehicleScope = worksiteScopeSql(session, fuelVehicles.worksiteId, worksiteId)
 
   const [vehicles, readings, completedMaintenances] = await Promise.all([
     db.query.fuelVehicles.findMany({
@@ -227,6 +238,11 @@ export async function createMaintenanceRecord(session: Session, input: CreateMai
   if (!isGlobalRole(session) && worksiteId && !visibleWorksiteIds(session).includes(worksiteId)) {
     throw new Error("No puedes registrar mantenciones para esta faena")
   }
+  // …y la faena del vehículo: imputar a una faena propia no habilita escribir
+  // sobre un equipo de otra.
+  if (!canAccessWorksite(session, vehicle.worksiteId)) {
+    throw new Error("No puedes registrar mantenciones para este vehículo")
+  }
 
   const now = new Date().toISOString()
   const id = nanoid()
@@ -276,6 +292,11 @@ export async function updateMaintenanceRecord(session: Session, id: string, inpu
   const worksiteId = input.worksiteId || vehicle.worksiteId
   if (!isGlobalRole(session) && worksiteId && !visibleWorksiteIds(session).includes(worksiteId)) {
     throw new Error("No puedes asignar mantenciones a esta faena")
+  }
+  // …y la faena del vehículo destino: si no, se puede re-apuntar una mantención
+  // propia a un equipo de otra faena.
+  if (!canAccessWorksite(session, vehicle.worksiteId)) {
+    throw new Error("No puedes asignar mantenciones a este vehículo")
   }
 
   const newState = {

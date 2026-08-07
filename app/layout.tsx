@@ -29,9 +29,9 @@ const myriad = localFont({
 export const metadata: Metadata = {
   title: {
     default: "Plataforma Chome",
-    template: "%s — Plataforma Chome",
+    template: "%s · Plataforma Chome",
   },
-  description: "Plataforma interna para operación, trazabilidad, prevención y gestión por faena — Chome",
+  description: "Plataforma interna para operación, trazabilidad, prevención y gestión por faena, de Chome",
   robots: { index: false, follow: false },
 }
 

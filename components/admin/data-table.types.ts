@@ -36,6 +36,13 @@ export interface DataTableProps<T extends Record<string, unknown>> {
   emptyTitle?:  string
   emptyDescription?: string
   emptyAction?: React.ReactNode
+  /**
+   * Filas por página del paginador **interno** (cliente). Cuando la página ya
+   * pagina en el servidor, debe igualar ese tamaño de página: si es menor, la
+   * tabla parte la página del servidor en dos y esconde el resto tras un
+   * segundo paginador — dos paginadores con totales distintos. Pasa la misma
+   * constante de `@/lib/constants` que usa el `page.tsx`.
+   */
   pageSize?:    number
   searchPlaceholder?: string
   className?:   string

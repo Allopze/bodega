@@ -84,7 +84,7 @@
     "jspdf": "^4.2.1",
     "next": "^16.2.12",
     "next-auth": "5.0.0-beta.32",
-    "pdfjs-dist": "^6.1.200",
+    "pdfjs-dist": "^6.2.108",
     "playwright": "^1.60.0",
     "postgres": "^3.4.9",
     "qrcode": "^1.5.4",

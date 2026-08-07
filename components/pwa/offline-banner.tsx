@@ -40,7 +40,7 @@ const OfflineBannerInner = React.memo(function OfflineBannerInner() {
       >
         <WifiSlash size={16} weight="fill" className="shrink-0" />
         <span className="flex-1">
-          Sin conexión — tu PPA se guardará y enviará automáticamente.
+          Sin conexión: tu PPA se guardará y enviará automáticamente.
         </span>
         <button
           type="button"

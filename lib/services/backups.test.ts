@@ -152,7 +152,7 @@ describe("getSaStatusSummary", () => {
     expect(result.label).toBe("SA configurado, Drive inaccesible")
     expect(result.status).toBe("none")
     expect(result.details).toContain("rclone.conf: presente")
-    expect(result.details).toContain("Conectividad Drive: error — verifica conectividad de red")
+    expect(result.details).toContain("Conectividad Drive: error. Verifica conectividad de red")
   })
 
   // ── SA valid + not configured in rclone ───────────────────────────────────

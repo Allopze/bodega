@@ -48,6 +48,7 @@ function scopedSession(worksiteIds: string[]): Session {
 describe("fuel cycle read model (PostgreSQL integration)", () => {
   const worksiteA = nanoid()
   const worksiteB = nanoid()
+  const worksiteC = nanoid()
   const productId = nanoid()
   const supplierId = nanoid()
   const equipmentTypeId = nanoid()
@@ -63,6 +64,7 @@ describe("fuel cycle read model (PostgreSQL integration)", () => {
     await inMemoryDb.insert(schema.worksites).values([
       { id: worksiteA, name: "Faena A", code: `FA-${nanoid().slice(0, 8)}`, isActive: true },
       { id: worksiteB, name: "Faena B", code: `FB-${nanoid().slice(0, 8)}`, isActive: true },
+      { id: worksiteC, name: "Faena C", code: `FC-${nanoid().slice(0, 8)}`, isActive: true },
     ])
     await inMemoryDb.insert(schema.users).values({ id: userId, name: "Importador", email: `import-${nanoid()}@example.com`, hashedPassword: "x", isActive: true })
     await inMemoryDb.insert(schema.fuelProducts).values({ id: productId, code: `DIESEL-${nanoid().slice(0, 6)}`, name: "Diésel", category: "diesel", unit: "liter" })
@@ -111,6 +113,21 @@ describe("fuel cycle read model (PostgreSQL integration)", () => {
       id: nanoid(), eventType: "received", worksiteId: worksiteB, productId, quantity: 500,
       occurredAt: "2026-06-05T12:00:00.000Z", supplierId, targetLocationId: storageB, createdBy: userId,
     })
+    // Borde nocturno: recepción a las 21:30 del 30-06 en Chile (= 01:30 UTC del
+    // 01-07). Su factura queda con loadDate "2026-06-30" (día calendario
+    // chileno); si la ventana se compara contra instantes UTC, el movimiento se
+    // cae de junio y la pantalla inventa −20.000 L en junio y +20.000 en julio.
+    const storageC = nanoid()
+    await inMemoryDb.insert(schema.fuelStorageLocations).values({ id: storageC, worksiteId: worksiteC, productId, name: "Vasija C", isActive: true })
+    await inMemoryDb.insert(schema.fuelCycleMovements).values({
+      id: nanoid(), eventType: "received", worksiteId: worksiteC, productId, quantity: 20000,
+      occurredAt: "2026-07-01T01:30:00.000Z", supplierId, targetLocationId: storageC, createdBy: userId,
+    })
+    await inMemoryDb.insert(schema.fuelLoads).values({
+      id: nanoid(), loadDate: "2026-06-30", month: "2026-06", serviceType: "TAE", vehicleId,
+      fuelSupplierId: supplierId, worksiteId: worksiteC, product: "PETROLEO DIESEL", productId,
+      liters: 20000, baseAmount: 100000, totalAmount: 119000, status: "registered", createdBy: userId,
+    })
     void now
   })
 
@@ -147,6 +164,18 @@ describe("fuel cycle read model (PostgreSQL integration)", () => {
       balanceLiters: 60,
       capacityLiters: 1000,
     })
+  })
+
+  it("cuenta la recepción nocturna del último día en el mes chileno, igual que su factura", async () => {
+    const result = await getFuelCycleComparison(globalSession(), { worksiteId: worksiteC, from, to })
+
+    expect(result.received).toEqual({ liters: 20000, records: 1 })
+    expect(result.registered).toEqual({ liters: 20000, records: 1 })
+    expect(result.differences.receivedVsRegistered).toEqual({ status: "available", absolute: 0, percent: 0 })
+
+    // Y no reaparece en julio.
+    const july = await getFuelCycleComparison(globalSession(), { worksiteId: worksiteC, from: "2026-07-01T00:00:00.000Z", to: "2026-07-31T23:59:59.999Z" })
+    expect(july.received).toBeNull()
   })
 
   it("muestra 'sin fuente disponible' cuando falta la etapa registrada", async () => {

@@ -5,7 +5,7 @@ import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { ReportForm } from "./report-form"
 
-export const metadata: Metadata = { title: "Nuevo reporte — Soporte" }
+export const metadata: Metadata = { title: "Nuevo reporte (Soporte)" }
 
 export default async function NuevoReportePage() {
   try { await requirePermission("feedback:create") }

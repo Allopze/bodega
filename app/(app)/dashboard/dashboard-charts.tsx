@@ -200,7 +200,7 @@ export function OperationalTrendChart({ data }: { data: Array<{ month: string; r
     <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-xs flex flex-col justify-between">
       <div className="mb-3">
         <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--color-text-muted)]">Tendencia Operativa</h3>
-        <p className="text-xs text-[var(--color-text-muted)]">Solicitudes, órdenes y recepciones — últimos 6 meses</p>
+        <p className="text-xs text-[var(--color-text-muted)]">Solicitudes, órdenes y recepciones (últimos 6 meses)</p>
       </div>
 
       <ChartDataTable
@@ -461,7 +461,7 @@ export function WorksiteActivityChart({
     <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-xs">
       <div className="mb-4">
         <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--color-text-muted)]">Inversión por Faena</h3>
-        <p className="text-xs text-[var(--color-text-muted)]">Monto comprometido por centro de costos — acumulado histórico</p>
+        <p className="text-xs text-[var(--color-text-muted)]">Monto comprometido por centro de costos (acumulado histórico)</p>
       </div>
 
       <ChartDataTable

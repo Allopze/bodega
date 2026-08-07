@@ -6,6 +6,7 @@ import {
 } from "@phosphor-icons/react"
 import { StateBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Badge } from "@/components/ui/badge"
 import { formatQty, formatDate } from "@/lib/utils"
 import { PriorityBadge } from "@/components/ui/priority-badge"
@@ -76,12 +77,12 @@ export function ItemRow({
           acciones bajan a su línea (A-01). */}
       <div className="flex flex-wrap items-start gap-x-3 gap-y-2 p-3">
         {onToggleSelect && (
-          <input
-            type="checkbox"
+          <Checkbox
+            labelHidden
+            label={`Seleccionar ${item.productName}`}
             checked={selected}
             onChange={() => onToggleSelect(item.id)}
-            aria-label={`Seleccionar ${item.productName}`}
-            className="mt-1 h-4 w-4 shrink-0 rounded border-[var(--color-border-control)] accent-[var(--color-primary)]"
+            className="mt-1"
           />
         )}
         <div className="flex-1 basis-[min(100%,18rem)] min-w-0">

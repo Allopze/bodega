@@ -8,6 +8,7 @@ const mockRequirePermission = vi.hoisted(() => vi.fn())
 const mockCanManageUserInAdminScope = vi.hoisted(() => vi.fn(() => true))
 const mockUserHasAdministratorRole = vi.hoisted(() => vi.fn(() => false))
 const mockCanManageAdministratorRole = vi.hoisted(() => vi.fn(() => true))
+const mockCanAccessWorksite = vi.hoisted(() => vi.fn(() => true))
 const mockFindFirstUser = vi.hoisted(() => vi.fn())
 const mockFindFirstInvitation = vi.hoisted(() => vi.fn())
 const mockFindManyRoles = vi.hoisted(() => vi.fn<() => Array<{ id: string; name: string; label: string }>>(() => []))
@@ -36,7 +37,7 @@ vi.mock("@/db", () => {
 
 vi.mock("@/lib/auth/can", () => ({
   requirePermission: mockRequirePermission,
-  canAccessWorksite: vi.fn(() => true),
+  canAccessWorksite: mockCanAccessWorksite,
   can: vi.fn(() => true),
 }))
 vi.mock("@/lib/auth/admin-user-scope", () => ({
@@ -451,6 +452,32 @@ describe("cancelInvitation", () => {
 
     expect(res.ok).toBe(false)
     expect(res.message).toContain("Solo un administrador")
+    expect(mockUpdateSet).not.toHaveBeenCalled()
+  })
+
+  it("denies cancelling an invitation of a worksite outside the admin scope", async () => {
+    mockRequirePermission.mockResolvedValue(makeSession({
+      roles: ["solicitante_faena"], isGlobal: false,
+      permissions: ["admin:users"], worksiteIds: ["ws-1"],
+    }))
+    mockCanAccessWorksite.mockReturnValue(false)
+    mockFindFirstInvitation.mockResolvedValueOnce({
+      id: "inv-ajena",
+      email: "otra-faena@chome.cl",
+      name: "Invitado Ajeno",
+      roleIdsJson: "[]",
+      worksiteAssignmentsJson: '[{"worksiteId":"ws-9","isPrimary":true}]',
+      acceptedAt: null,
+      cancelledAt: null,
+      replacedAt: null,
+      expiresAt: new Date(Date.now() + 86_400_000).toISOString(),
+      createdAt: new Date().toISOString(),
+    })
+
+    const res = await cancelInvitation(prevState, cancelForm({ id: "inv-ajena" }))
+
+    expect(res.ok).toBe(false)
+    expect(res.message).toBe("Invitación no encontrada")
     expect(mockUpdateSet).not.toHaveBeenCalled()
   })
 })

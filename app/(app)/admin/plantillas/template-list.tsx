@@ -8,6 +8,7 @@ import { toast } from "@/lib/toast"
 import { SubmitButton } from "@/components/admin/submit-button"
 import { Field } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
 import { INITIAL_STATE } from "@/components/admin/form-state"
@@ -153,12 +154,12 @@ function TemplateCard({
             helper="HTML completo con {{variable}} para valores dinámicos. {{#var}}...{{/var}} para condicionales."
             error={state.fieldErrors?.bodyHtml?.[0]}
           >
-            <textarea
+            <Textarea
               id={`body-${template.key}`}
               name="bodyHtml"
               defaultValue={template.bodyHtml}
               rows={12}
-              className="w-full rounded-[var(--radius)] border border-[var(--color-border-control)] bg-[var(--color-surface)] px-3 py-2 font-mono text-sm text-[var(--color-text)] placeholder:text-[var(--color-text-faint)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary-ring)]"
+              className="font-mono"
               spellCheck={false}
             />
           </Field>

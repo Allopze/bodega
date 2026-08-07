@@ -2,6 +2,7 @@
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { useTransition } from "react"
+import { OptionSelect } from "@/components/ui/option-select"
 
 /**
  * Selector de período del resumen.
@@ -22,20 +23,18 @@ export function PeriodPicker({ period }: { period: string }) {
   return (
     <label className="flex items-center gap-2 text-sm">
       <span className="text-[var(--color-text-muted)]">Período</span>
-      <select
+      <OptionSelect
         value={period}
         disabled={isPending}
-        onChange={(event) => {
+        onValueChange={(value) => {
           const params = new URLSearchParams(searchParams.toString())
-          params.set("periodo", event.target.value)
+          params.set("periodo", value)
           startTransition(() => router.push(`${pathname}?${params.toString()}`))
         }}
-        className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-sm text-[var(--color-text)]"
-      >
-        {months.map((value) => (
-          <option key={value} value={value}>{formatOption(value)}</option>
-        ))}
-      </select>
+        options={months.map((value) => ({ value, label: formatOption(value) }))}
+        className="w-48"
+        aria-label="Período"
+      />
     </label>
   )
 }

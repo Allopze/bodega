@@ -131,6 +131,19 @@ const testReport: ReportData = {
 }
 
 describe("report export helpers", () => {
+  it("buildDateFilter mete el sufijo de fin de día en el parámetro, no en el texto SQL", async () => {
+    const { PgDialect } = await import("drizzle-orm/pg-core")
+    const { buildDateFilter } = await import("@/lib/reports/export-module/utils")
+
+    const query = new PgDialect().sqlToQuery(
+      buildDateFilter({ toDate: "2026-07-31" }, purchaseOrders.createdAt)!,
+    )
+    // Con el bug el SQL emitido era `<= $1T23:59:59` y Postgres respondía
+    // "trailing junk after parameter".
+    expect(query.sql).not.toMatch(/\$\d+T/)
+    expect(query.params).toContain("2026-07-31T23:59:59")
+  })
+
   it("builds a parseable Excel workbook with headers and rows", async () => {
     const buffer = await buildXlsxBuffer(testReport)
     const workbook = new ExcelJS.Workbook()

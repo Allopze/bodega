@@ -3,6 +3,8 @@
 import { useState } from "react"
 import { PencilSimple, ToggleLeft, ToggleRight } from "@phosphor-icons/react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
 import { CatalogFormSheet } from "@/components/admin/catalog-form-sheet"
 import { formatQty } from "@/lib/utils"
 import { setFuelStorageLocationStatusAction, createFuelStorageLocationAction, updateFuelStorageLocationAction } from "./actions"
@@ -70,7 +72,7 @@ export function StorageCatalog({ rows, worksites, products, initialOpen = false 
       successMessage="Estanque guardado"
     >
       {state => <div className="grid gap-4">
-        <Field label="Nombre"><input name="name" defaultValue={selected?.name} required aria-label="Nombre" className="control" /></Field>
+        <Field label="Nombre"><Input name="name" defaultValue={selected?.name} required aria-label="Nombre" /></Field>
         <Field label="Faena">
           <Select value={worksiteId} onValueChange={setWorksiteId}>
             <SelectTrigger><SelectValue placeholder="Selecciona" /></SelectTrigger>
@@ -89,9 +91,9 @@ export function StorageCatalog({ rows, worksites, products, initialOpen = false 
           </Select>
           <input type="hidden" name="productId" value={productId} />
         </Field>
-        <Field label="Capacidad (litros)"><input name="capacityLiters" type="number" min="0.01" step="0.01" defaultValue={selected?.capacityLiters ?? ""} aria-label="Capacidad (litros)" className="control" /></Field>
-        <Field label="Tarjeta Copec TAE"><input name="taeCardNumber" defaultValue={selected?.taeCardNumber ?? ""} placeholder="1-242269-00230-9-1" aria-label="Tarjeta Copec TAE" className="control" /><p className="mt-1 text-xs text-[var(--color-text-muted)]">Número de tarjeta con que esta vasija carga en estación. Sin él, sus recepciones del informe TAE de Copec no se pueden atribuir.</p></Field>
-        <Field label="Observaciones"><textarea name="notes" rows={3} defaultValue={selected?.notes ?? ""} aria-label="Observaciones" className="control" /></Field>
+        <Field label="Capacidad (litros)"><Input name="capacityLiters" type="number" min="0.01" step="0.01" defaultValue={selected?.capacityLiters ?? ""} aria-label="Capacidad (litros)" /></Field>
+        <Field label="Tarjeta Copec TAE"><Input name="taeCardNumber" defaultValue={selected?.taeCardNumber ?? ""} placeholder="1-242269-00230-9-1" aria-label="Tarjeta Copec TAE" /><p className="mt-1 text-xs text-[var(--color-text-muted)]">Número de tarjeta con que esta vasija carga en estación. Sin él, sus recepciones del informe TAE de Copec no se pueden atribuir.</p></Field>
+        <Field label="Observaciones"><Textarea name="notes" rows={3} defaultValue={selected?.notes ?? ""} aria-label="Observaciones" className="min-h-0" /></Field>
         {state.fieldErrors && <p className="text-sm text-[var(--color-danger)]">Revisa los campos marcados.</p>}
       </div>}
     </CatalogFormSheet>

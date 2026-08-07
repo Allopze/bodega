@@ -14,6 +14,7 @@ import {
 } from "@/components/admin/sheet"
 import { SubmitButton } from "@/components/admin/submit-button"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Field, FieldGroup } from "@/components/ui/field"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Input } from "@/components/ui/input"
@@ -125,10 +126,10 @@ export function SheetForm({ open, onClose, editSheet, programs, roleOptions }: S
               <Field label="Programa (opcional)" htmlFor="sht-prog" error={state.fieldErrors?.programId?.[0]} helper="Vacío para hoja plantilla global.">
                 <Select value={programId || NONE} onValueChange={(v) => setProgramId(v === NONE ? "" : v)}>
                   <SelectTrigger id="sht-prog" className="h-9 w-full">
-                    <SelectValue placeholder="— Hoja plantilla global —" />
+                    <SelectValue placeholder="Hoja plantilla global" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value={NONE}>— Hoja plantilla global —</SelectItem>
+                    <SelectItem value={NONE}>Hoja plantilla global</SelectItem>
                     {programs.map((p) => (
                       <SelectItem key={p.id} value={p.id}>{p.title} · {p.year} v{p.version} ({p.status})</SelectItem>
                     ))}
@@ -140,9 +141,8 @@ export function SheetForm({ open, onClose, editSheet, programs, roleOptions }: S
                 <p className="text-eyebrow mb-2">Roles con acceso predeterminado</p>
                 <div className="space-y-1 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3">
                   {roleOptions.map((r) => (
-                    <label key={r} className="flex cursor-pointer items-center gap-2 rounded px-1 py-0.5 hover:bg-[var(--color-surface)]">
-                      <input
-                        type="checkbox"
+                    <div key={r} className="rounded px-1 py-0.5 hover:bg-[var(--color-surface)]">
+                      <Checkbox
                         checked={selected.has(r)}
                         onChange={() => {
                           setSelected((prev) => {
@@ -152,9 +152,9 @@ export function SheetForm({ open, onClose, editSheet, programs, roleOptions }: S
                             return next
                           })
                         }}
+                        label={<span className="font-mono text-xs">{r}</span>}
                       />
-                      <span className="font-mono text-xs">{r}</span>
-                    </label>
+                    </div>
                   ))}
                 </div>
               </div>
