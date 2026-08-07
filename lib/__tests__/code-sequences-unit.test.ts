@@ -1,8 +1,9 @@
 import { describe, expect, it, vi } from "vitest"
 
 const mockSelect = vi.hoisted(() => vi.fn())
+const mockExecute = vi.hoisted(() => vi.fn())
 
-vi.mock("@/db", () => ({ db: { select: mockSelect } }))
+vi.mock("@/db", () => ({ db: { select: mockSelect, execute: mockExecute } }))
 
 describe("nextCodeTx", () => {
   it("normalizes driver result shapes and reserves SOL independently of the requested year", async () => {
@@ -23,12 +24,14 @@ describe("nextCodeTx", () => {
   })
 
   it("lists persisted folios in deterministic prefix/year order", async () => {
-    const rows = [{ prefix: "AJU", year: 2026, nextValue: 4 }]
-    const orderBy = vi.fn().mockResolvedValue(rows)
-    mockSelect.mockReturnValue({ from: vi.fn(() => ({ orderBy })) })
+    mockExecute.mockResolvedValueOnce([
+      { prefix: "AJU", year: "2026", next_value: "4" },
+    ])
     const { listCodeSequences } = await import("@/lib/code-sequences")
 
-    await expect(listCodeSequences()).resolves.toEqual(rows)
-    expect(orderBy).toHaveBeenCalledOnce()
+    await expect(listCodeSequences()).resolves.toEqual([
+      { prefix: "AJU", year: 2026, nextValue: 4, updatedAt: "" },
+    ])
+    expect(mockExecute).toHaveBeenCalledOnce()
   })
 })

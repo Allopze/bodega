@@ -3,16 +3,23 @@ import { drizzle } from "drizzle-orm/pglite"
 import path from "node:path"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import * as schema from "@/db/schema"
-import { nextCodeTx } from "@/lib/code-sequences"
+import { listCodeSequences, nextCodeTx, setCodeSequenceNextValue } from "@/lib/code-sequences"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
 import type { Tx } from "@/db"
+
+// `listCodeSequences`/`setCodeSequenceNextValue` usan la conexión global (son
+// pantalla de admin, no reciben tx), así que se la apuntamos a esta PGlite.
+const globalDb = vi.hoisted(() => ({ current: null as unknown }))
+vi.mock("@/db", () => ({ get db() { return globalDb.current } }))
 
 let pg: PGlite | null = null
 
 async function makeDb() {
   pg = new PGlite()
   await migratePGlite(pg, path.resolve(process.cwd(), "db/migrations"))
-  return drizzle(pg, { schema })
+  const db = drizzle(pg, { schema })
+  globalDb.current = db
+  return db
 }
 
 afterEach(async () => {
@@ -71,11 +78,20 @@ describe("nextCodeTx", () => {
     )
   })
 
-  it("throws error when db returns no rows for reserved code", async () => {
-    const mockTx = {
-      execute: vi.fn().mockResolvedValue([]),
-    } as unknown as Tx
+  it("lists and sets code sequences natively", async () => {
+    const db = await makeDb()
+    await db.transaction(async (tx) => {
+      await nextCodeTx(tx as unknown as Tx, "OC", 2026)
+    })
 
-    await expect(nextCodeTx(mockTx, "SOL", 2026)).rejects.toThrow(/Failed to reserve next code/)
+    const initial = await listCodeSequences()
+    expect(initial).toContainEqual({ prefix: "OC", year: 2026, nextValue: 2, updatedAt: "" })
+
+    const { before, after } = await setCodeSequenceNextValue({ prefix: "OC", year: 2026, nextValue: 10 })
+    expect(before).toBe(2)
+    expect(after).toBe(10)
+
+    const updated = await listCodeSequences()
+    expect(updated).toContainEqual({ prefix: "OC", year: 2026, nextValue: 10, updatedAt: "" })
   })
 })
