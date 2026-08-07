@@ -2,7 +2,7 @@ import type { ChecklistDefinition } from '../types'
 import { OBSERVACION_MAQUINARIA_SECTIONS } from './observacion-seguridad-sections'
 
 /**
- * Observación de Seguridad — Maquinaria Pesada — módulo 13 (PR-SGC-25).
+ * Observación de Seguridad: Maquinaria Pesada — módulo 13 (PR-SGC-25).
  *
  * Patrón C (multi-sujeto). Se siembra como plantilla de la actividad PDTP
  * n=41 del programa 2026 ("Caminatas de seguridad, levantamiento de
@@ -22,7 +22,7 @@ export const OBSERVACION_MAQUINARIA: ChecklistDefinition = {
   version: '01',
   revisionDate: '2026-07-14',
   tipo: 'seguimiento',
-  title: 'Observación de Seguridad — Maquinaria Pesada',
+  title: 'Observación de Seguridad: Maquinaria Pesada',
   subtitle: 'Observación conductual por operador (PR-SGC-25). Una instancia por operador.',
   legalFramework: [
     'Ley 16.744',

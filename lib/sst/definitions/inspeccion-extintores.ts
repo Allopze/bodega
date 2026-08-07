@@ -19,7 +19,7 @@ export const INSPECCION_EXTINTORES: ChecklistDefinition = {
   revisionDate: '2026-07-14',
   tipo: 'seguimiento',
   title: 'Inspección de Estado de Extintores',
-  subtitle: 'Verificación por extintor — uno por instancia de checklist.',
+  subtitle: 'Verificación por extintor: uno por instancia de checklist.',
   legalFramework: [
     'DS 36 (RSE)',
     'Ley 21.512 (ex DS 594)',

@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge"
 import { DatePicker } from "@/components/ui/date-picker"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/field"
 import {
   Select,
@@ -253,10 +254,10 @@ export function RE20Panel({
           )}
           <div className="space-y-1">
             <Label>Resumen del Informe Preliminar (RE-20-02)</Label>
-            <textarea
+            <Textarea
               rows={4}
               disabled={!canInvestigate}
-              className="w-full text-sm rounded-md border border-[var(--color-border-control)] bg-[var(--color-surface)] p-2 focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)]"
+              className="min-h-0"
               placeholder="Describa brevemente los hechos observados, medidas de emergencia tomadas y estado de personas..."
               value={prelimText}
               onChange={(e) => setPrelimText(e.target.value)}
@@ -307,9 +308,9 @@ export function RE20Panel({
           </div>
           <div className="space-y-1">
             <Label>Texto de la Declaración / Entrevista</Label>
-            <textarea
+            <Textarea
               rows={4}
-              className="w-full text-sm rounded-md border border-[var(--color-border-control)] bg-[var(--color-surface)] p-2 focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)]"
+              className="min-h-0"
               placeholder="Transcripción de la declaración o testimonio firmado..."
               value={stmtText}
               onChange={(e) => setStmtText(e.target.value)}
@@ -345,9 +346,9 @@ export function RE20Panel({
           </div>
           <div className="space-y-1">
             <Label>Resumen del Plan de Acción y Lección Aprendida</Label>
-            <textarea
+            <Textarea
               rows={3}
-              className="w-full text-sm rounded-md border border-[var(--color-border-control)] bg-[var(--color-surface)] p-2 focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)]"
+              className="min-h-0"
               placeholder="Medidas inmediatas y permanentes para evitar recurrencia..."
               value={onePageActionPlan}
               onChange={(e) => setOnePageActionPlan(e.target.value)}
@@ -379,9 +380,9 @@ export function RE20Panel({
             </div>
             <div className="space-y-1">
               <Label>Estado de Implementación de Medidas</Label>
-              <textarea
+              <Textarea
                 rows={2}
-                className="w-full text-sm rounded-md border border-[var(--color-border-control)] bg-[var(--color-surface)] p-2 focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)]"
+                className="min-h-0"
                 placeholder="Estado del avance quincenal de los compromisos..."
                 value={followupNote}
                 onChange={(e) => setFollowupNote(e.target.value)}
@@ -421,9 +422,9 @@ export function RE20Panel({
               </div>
               <div className="space-y-1">
                 <Label>Resumen de lo comunicado</Label>
-                <textarea
+                <Textarea
                   rows={2}
-                  className="w-full text-sm rounded-md border border-[var(--color-border-control)] bg-[var(--color-surface)] p-2 focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)]"
+                  className="min-h-0"
                   placeholder="Qué se comunicó, a qué turnos/personal, y cómo..."
                   value={diffSummary}
                   onChange={(e) => setDiffSummary(e.target.value)}

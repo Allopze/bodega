@@ -8,7 +8,7 @@ import { PageContainer } from "@/components/ui/page-container"
 export default function Loading() {
   return (
     <PageContainer>
-      <PageHeader title="Aplicabilidad por Faena — PDTP SG-SST" />
+      <PageHeader title="Aplicabilidad por Faena (PDTP SG-SST)" />
       <SkeletonPage rows={6} />
     </PageContainer>
   )

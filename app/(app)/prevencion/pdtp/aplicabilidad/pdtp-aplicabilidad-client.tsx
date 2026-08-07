@@ -121,7 +121,7 @@ export function PdtpAplicabilidadClient({ activities, worksites, exclusions, par
               <SelectContent>
                 {worksites.map((ws) => (
                   <SelectItem key={ws.id} value={ws.id}>
-                    {ws.name} ({ws.code}) — {ws.workerCount} trabajad.
+                    {ws.name} ({ws.code}) · {ws.workerCount} trabajad.
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -236,7 +236,7 @@ export function PdtpAplicabilidadClient({ activities, worksites, exclusions, par
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Parámetros por Faena — Actividad N° {editingActivity?.n}</DialogTitle>
+            <DialogTitle>Parámetros por Faena: Actividad N° {editingActivity?.n}</DialogTitle>
             <DialogDescription>
               Configura los sujetos esperados (Regla R1 todo-o-nada) o meta de cobertura (Regla R2) para {currentWorksite?.name}.
             </DialogDescription>

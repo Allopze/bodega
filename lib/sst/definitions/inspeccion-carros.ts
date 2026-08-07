@@ -18,7 +18,7 @@ export const INSPECCION_CARROS: ChecklistDefinition = {
   revisionDate: '2026-08-04',
   tipo: 'seguimiento',
   title: 'Inspección de Carros',
-  subtitle: 'Verificación por carro — uno por instancia de checklist.',
+  subtitle: 'Verificación por carro: uno por instancia de checklist.',
   legalFramework: [
     'Ley 18.290 (Tránsito)',
     'Ley 16.744',

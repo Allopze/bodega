@@ -161,7 +161,7 @@ export async function createPpaSubmission(
         if (reviewerIds.length > 0) {
           await notifyManyUser(reviewerIds, {
             type:       "ppa_stopped",
-            title:      "PPA detenido — requiere revisión",
+            title:      "PPA detenido: requiere revisión",
             body:       `${workerName} detuvo un trabajo en ${worksite.name}. Revisa y registra la acción correctiva.`,
             entityType: "ppa",
             entityId:   id,

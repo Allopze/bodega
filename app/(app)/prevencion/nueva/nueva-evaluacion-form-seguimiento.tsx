@@ -71,7 +71,7 @@ export function SeguimientoSection({
       <Field
         label="Descripción del evento"
         htmlFor={`${uid}-desc`}
-        helper="Opcional — describe el evento que origina el seguimiento"
+        helper="Opcional: describe el evento que origina el seguimiento"
       >
         <Textarea
           id={`${uid}-desc`}
@@ -86,7 +86,7 @@ export function SeguimientoSection({
       <Field
         label="Patente del equipo"
         htmlFor={`${uid}-patente`}
-        helper="Opcional — p. ej. ABCD12"
+        helper="Opcional: p. ej. ABCD12"
       >
         <Input
           id={`${uid}-patente`}

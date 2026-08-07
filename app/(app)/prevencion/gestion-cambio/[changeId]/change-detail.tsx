@@ -7,6 +7,7 @@ import { DatePicker } from "@/components/ui/date-picker"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Textarea } from "@/components/ui/textarea"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import {
   CHANGE_DIMENSION_LABELS,
@@ -195,15 +196,9 @@ function EvaluateDialog({ changeRequestId, assessment, assignees }: {
             <DialogTitle>{CHANGE_DIMENSION_LABELS[assessment.dimension as keyof typeof CHANGE_DIMENSION_LABELS] ?? assessment.dimension}</DialogTitle>
             <DialogDescription>Si el cambio requiere una acción nueva en esta dimensión, se deriva a CAPA con responsable y plazo.</DialogDescription>
           </DialogHeader>
-          <label className="flex items-center gap-2 text-sm">
-            <input type="checkbox" checked={impacted} onChange={(event) => setImpacted(event.target.checked)} />
-            El cambio impacta esta dimensión
-          </label>
+          <Checkbox label="El cambio impacta esta dimensión" checked={impacted} onChange={(event) => setImpacted(event.target.checked)} />
           <Field label="Notas" hint="Opcional."><Textarea name="notes" defaultValue={assessment.notes ?? ""} maxLength={3000} /></Field>
-          <label className="flex items-center gap-2 text-sm">
-            <input type="checkbox" checked={actionRequired} onChange={(event) => setActionRequired(event.target.checked)} />
-            Requiere una acción correctiva o preventiva nueva
-          </label>
+          <Checkbox label="Requiere una acción correctiva o preventiva nueva" checked={actionRequired} onChange={(event) => setActionRequired(event.target.checked)} />
           {actionRequired && (
             <div className="space-y-3 rounded-lg border border-[var(--color-border)] p-3">
               <Field label="Descripción de la acción">

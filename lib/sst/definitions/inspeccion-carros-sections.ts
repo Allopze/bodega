@@ -71,7 +71,7 @@ export const CARROS_SECTIONS: ChecklistSection[] = [
     countsForCompliance: true,
     hasActionCorrectiva: true,
     items: [
-      { id: 'desgaste_profundidad',    label: 'Desgaste — profundidad mínima 3 mm.', kind: 'bueno_regular_malo_obs',
+      { id: 'desgaste_profundidad',    label: 'Desgaste: profundidad mínima 3 mm.', kind: 'bueno_regular_malo_obs',
         danoPotencial: 'fatal',
       },
       { id: 'apriete_tuercas',         label: 'Apriete de tuercas.', kind: 'bueno_regular_malo_obs',

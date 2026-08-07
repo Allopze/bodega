@@ -2,6 +2,7 @@
 
 import * as React from "react"
 import { DotsThreeVertical, Folder, FolderOpen } from "@phosphor-icons/react"
+import { Checkbox } from "@/components/ui/checkbox"
 import type { FileIconDescriptor } from "@/lib/prevention/file-icon"
 import { cn } from "@/lib/utils"
 
@@ -79,13 +80,13 @@ export const DocumentTile = React.memo(React.forwardRef<HTMLDivElement, Document
             className="absolute left-2 top-2"
             onClick={(event) => event.stopPropagation()}
           >
-            <input
-              type="checkbox"
+            <Checkbox
+              labelHidden
+              label={`Seleccionar ${isFolder ? "carpeta" : "documento"} ${name}`}
               checked={selected}
               onChange={onSelect}
               onClick={(event) => event.stopPropagation()}
-              aria-label={`Seleccionar ${isFolder ? "carpeta" : "documento"} ${name}`}
-              className="h-4 w-4 cursor-pointer accent-[var(--color-primary)]"
+              className="cursor-pointer"
             />
           </span>
         )}

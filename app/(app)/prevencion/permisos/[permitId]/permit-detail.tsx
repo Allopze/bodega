@@ -4,6 +4,7 @@ import * as React from "react"
 import { Badge } from "@/components/ui/badge"
 import { DatePicker } from "@/components/ui/date-picker"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Input } from "@/components/ui/input"
@@ -194,7 +195,7 @@ export function PermitDetail({
     { label: "Lugar", value: permit.location },
     { label: "Supervisor", value: supervisorName },
     { label: "Solicitado por", value: requesterName },
-    { label: "Ventana planificada", value: `${formatDateTime(permit.plannedStartAt)} — ${formatDateTime(permit.plannedEndAt)}` },
+    { label: "Ventana planificada", value: `${formatDateTime(permit.plannedStartAt)} a ${formatDateTime(permit.plannedEndAt)}` },
     { label: "Extensión", value: permit.extendedUntilAt ? `hasta ${formatDateTime(permit.extendedUntilAt)}` : "Sin extender" },
     { label: "Duración máxima del tipo", value: `${maxDurationHours} h` },
     ...(permit.riskEntryId ? [{ label: "Peligro MIPER de origen", value: permit.riskEntryId }] : []),
@@ -253,7 +254,7 @@ export function PermitDetail({
         </div>
         {jsaSteps.length === 0 ? (
           <p className="rounded-lg border border-[var(--color-border)] p-4 text-sm text-[var(--color-text-subtle)]">
-            Sin pasos registrados{requiresJsa && " — este tipo de permiso exige al menos uno para habilitarse"}.
+            Sin pasos registrados{requiresJsa && ": este tipo de permiso exige al menos uno para habilitarse"}.
           </p>
         ) : (
           <div className="space-y-2">
@@ -748,10 +749,7 @@ function ApplyIsolationDialog({ isolation }: { isolation: IsolationItem }) {
             <DialogTitle>Aplicar aislamiento {isolation.lockTagId}</DialogTitle>
             <DialogDescription>{isolation.equipmentTag} · {isolation.isolationMethod}</DialogDescription>
           </DialogHeader>
-          <label className="flex items-center gap-2 text-sm">
-            <input type="checkbox" checked={verifiedZeroEnergy} onChange={(event) => setVerifiedZeroEnergy(event.target.checked)} />
-            Energía cero verificada en terreno
-          </label>
+          <Checkbox label="Energía cero verificada en terreno" checked={verifiedZeroEnergy} onChange={(event) => setVerifiedZeroEnergy(event.target.checked)} />
           {operation.message && <p role="status" className="text-sm">{operation.message}</p>}
           <DialogFooter><Button type="submit" disabled={operation.pending}>Aplicar</Button></DialogFooter>
         </form>

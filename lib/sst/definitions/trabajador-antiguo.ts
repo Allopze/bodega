@@ -13,7 +13,7 @@ export const TRABAJADOR_ANTIGUO: ChecklistDefinition = {
   version: '01',
   revisionDate: '2026-06-05',
   tipo: 'seguimiento',
-  title: 'Lista de Chequeo — Control de Seguimiento',
+  title: 'Lista de Chequeo: Control de Seguimiento',
   subtitle: 'Conductores Camión Sistema Ampliroll, Batea y Operadores de Maquinaria Pesada',
   legalFramework: [
     'Ley N°16.744',

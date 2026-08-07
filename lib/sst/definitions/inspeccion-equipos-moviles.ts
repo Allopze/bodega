@@ -19,7 +19,7 @@ export const INSPECCION_EQUIPOS_MOVILES: ChecklistDefinition = {
   revisionDate: '2026-07-14',
   tipo: 'seguimiento',
   title: 'Inspección de Equipos Móviles',
-  subtitle: 'Verificación por equipo — uno por instancia de checklist. Realizar en conjunto con el operador.',
+  subtitle: 'Verificación por equipo: uno por instancia de checklist. Realizar en conjunto con el operador.',
   legalFramework: [
     'Ley 18.290 (Tránsito)',
     'Ley 16.744',

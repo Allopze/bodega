@@ -77,7 +77,7 @@ export const EXTINTORES_SECTIONS: ChecklistSection[] = [
     countsForCompliance: true,
     hasActionCorrectiva: true,
     items: [
-      { id: 'manometro',       label: 'Manómetro — aguja en zona verde.', kind: 'cumple_nocumple_na_obs',
+      { id: 'manometro',       label: 'Manómetro: aguja en zona verde.', kind: 'cumple_nocumple_na_obs',
         danoPotencial: 'grave',
       },
       { id: 'sello',           label: 'Sello de seguridad intacto (no manipulado).', kind: 'cumple_nocumple_na_obs',

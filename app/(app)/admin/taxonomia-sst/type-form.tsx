@@ -141,7 +141,7 @@ export function TypeForm({ open, onClose, editType, categorySlug }: TypeFormProp
                 </Select>
                 <input type="hidden" name="defaultConfidentiality" value={defaultConf} />
               </Field>
-              <Field label="Vigencia por defecto (meses)" htmlFor="type-validity" error={state.fieldErrors?.defaultValidityMonths?.[0]} helper="Opcional — meses hasta vencimiento si aplica.">
+              <Field label="Vigencia por defecto (meses)" htmlFor="type-validity" error={state.fieldErrors?.defaultValidityMonths?.[0]} helper="Opcional: meses hasta vencimiento si aplica.">
                 <Input
                   id="type-validity"
                   name="defaultValidityMonths"

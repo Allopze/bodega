@@ -11,7 +11,9 @@ export function buildFolderOptionLabels(folders: Array<{ id: string; name: strin
   const visit = (parentId: string | null, depth: number, path: Set<string>) => {
     for (const folder of byParent.get(parentId) ?? []) {
       if (path.has(folder.id)) continue
-      labels.push({ id: folder.id, label: `${"—".repeat(depth)}${depth ? " " : ""}${folder.name}` })
+      // La sangría va con espacios duros: en un <option> los espacios normales
+      // se colapsan y todos los niveles quedarían alineados al margen.
+      labels.push({ id: folder.id, label: `${"\u00a0\u00a0".repeat(depth)}${folder.name}` })
       visit(folder.id, depth + 1, new Set([...path, folder.id]))
     }
   }

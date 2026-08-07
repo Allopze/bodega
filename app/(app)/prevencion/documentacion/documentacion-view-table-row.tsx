@@ -3,6 +3,7 @@
 import Link from "next/link"
 import { DownloadSimple, DotsThreeVertical } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -47,12 +48,11 @@ export function DocumentTableRow({
       onContextMenu={onContextMenu}
     >
       <TableCell>
-        <input
-          type="checkbox"
-          aria-label={`Seleccionar documento ${d.title}`}
+        <Checkbox
+          labelHidden
+          label={`Seleccionar documento ${d.title}`}
           checked={selected}
           onChange={onToggleSelected}
-          className="h-4 w-4 accent-[var(--color-primary)]"
         />
       </TableCell>
       <TableCell>

@@ -18,7 +18,7 @@ export const INSPECCION_EPP: ChecklistDefinition = {
   revisionDate: '2026-08-04',
   tipo: 'seguimiento',
   title: 'Inspección de Uso y Estado de EPP',
-  subtitle: 'Verificación por trabajador — uno por instancia de checklist.',
+  subtitle: 'Verificación por trabajador: uno por instancia de checklist.',
   legalFramework: [
     'Ley 21.512 (ex DS 594)',
     'DS 40',

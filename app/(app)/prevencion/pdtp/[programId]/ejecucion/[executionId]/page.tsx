@@ -77,7 +77,7 @@ export default async function PdtpExecutionDetailPage({ params }: Props) {
   return (
     <PageContainer width="workbench">
       <PageHeader
-        title={`Verificación — N°${activity.n} ${activity.activity}`}
+        title={`Verificación N°${activity.n}: ${activity.activity}`}
         description={`Período ${execution.month}/${execution.year} · Semana ${execution.week} · Cantidad ejecutada: ${execution.executedQuantity}`}
         breadcrumb={
           <Breadcrumbs items={[

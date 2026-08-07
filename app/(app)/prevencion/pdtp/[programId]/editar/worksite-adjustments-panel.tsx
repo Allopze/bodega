@@ -232,10 +232,12 @@ function AdjustmentDialog({
             helper="No generará planificación ni obligaciones mientras esté excluida."
             className="rounded-lg border border-[var(--color-border)] p-3"
           >
+            {/* Sin envolver en <Checkbox>: el Field de arriba ya aporta la
+                etiqueta y el htmlFor; un segundo <label> la duplicaría. */}
             <input
               id="worksite-excluded"
               type="checkbox"
-              className="h-4 w-4"
+              className="h-4 w-4 accent-[var(--color-primary)]"
               checked={excluded}
               onChange={(event) => setExcluded(event.target.checked)}
             />

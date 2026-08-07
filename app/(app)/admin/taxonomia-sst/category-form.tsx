@@ -91,7 +91,7 @@ export function CategoryForm({ open, onClose, editCategory }: CategoryFormProps)
                   error={!!state.fieldErrors?.description}
                 />
               </Field>
-              <Field label="Orden" htmlFor="cat-order" error={state.fieldErrors?.sortOrder?.[0]} helper="Número entero — orden ascendente en listados.">
+              <Field label="Orden" htmlFor="cat-order" error={state.fieldErrors?.sortOrder?.[0]} helper="Número entero: orden ascendente en listados.">
                 <Input
                   id="cat-order"
                   name="sortOrder"

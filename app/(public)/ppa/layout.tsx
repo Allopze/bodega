@@ -2,7 +2,7 @@ import type { Metadata } from "next"
 import { PwaRegister } from "@/components/pwa/pwa-register"
 
 export const metadata: Metadata = {
-  title: "PPA Digital — Para, Piensa y Actúa",
+  title: "PPA Digital: Para, Piensa y Actúa",
   description: "Evaluación preventiva antes de iniciar el trabajo. Funciona sin conexión a internet.",
   manifest: "/manifest.json",
   appleWebApp: {

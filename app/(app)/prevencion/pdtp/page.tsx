@@ -32,7 +32,7 @@ import {
 import { PdtpDashboardChartsLazy } from "./pdtp-dashboard-charts-lazy"
 import { pdtpProgramStatusLabel } from "@/lib/prevention/pdtp"
 
-export const metadata: Metadata = { title: "Dashboard de Cumplimiento — PDTP SG-SST" }
+export const metadata: Metadata = { title: "Dashboard de Cumplimiento (PDTP SG-SST)" }
 
 type PdtpDashboardPageProps = {
   searchParams: Promise<{ faena?: string | string[]; anio?: string | string[] }>

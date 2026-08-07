@@ -3,6 +3,8 @@
 import * as React from "react"
 import { Button } from "@/components/ui/button"
 import { Field } from "@/components/ui/field"
+import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select"
 import {
   Dialog,
@@ -120,7 +122,7 @@ export function PdtpOverrideForm(props: Props) {
               </Select>
             </Field>
             <Field label="Cantidad" htmlFor="ovr-qty">
-              <input
+              <Input
                 id="ovr-qty"
                 name="plannedQuantity"
                 type="number"
@@ -128,7 +130,6 @@ export function PdtpOverrideForm(props: Props) {
                 step="0.25"
                 defaultValue={initial}
                 aria-label="Cantidad"
-                className="h-9 rounded-md border border-[var(--color-border-control)] bg-[var(--color-surface)] px-2 text-sm text-[var(--color-text)]"
               />
             </Field>
           </div>
@@ -136,7 +137,7 @@ export function PdtpOverrideForm(props: Props) {
             Define 0 para borrar el override y volver al plan global del catálogo.
           </p>
           <Field label="Motivo de la excepción" htmlFor="ovr-reason">
-            <textarea
+            <Textarea
               id="ovr-reason"
               name="reason"
               required
@@ -145,7 +146,7 @@ export function PdtpOverrideForm(props: Props) {
               rows={3}
               placeholder="Explica por qué esta faena necesita una meta diferente"
               aria-label="Motivo de la excepción"
-              className="w-full resize-y rounded-md border border-[var(--color-border-control)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
+              className="min-h-0"
             />
           </Field>
           <DialogFooter>

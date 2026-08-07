@@ -19,6 +19,7 @@ import * as React from "react"
 import { useRouter } from "next/navigation"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import { FileInput } from "@/components/ui/file-input"
 import { Textarea } from "@/components/ui/textarea"
 import { Field } from "@/components/ui/field"
@@ -227,10 +228,15 @@ export function ImportExcelSection({ programId, visibleWorksites }: ImportExcelS
               <Field label="Motivo de aceptación" htmlFor="pdtp-import-reason" helper="Se conservará junto al lote y las celdas de origen.">
                 <Textarea id="pdtp-import-reason" value={acceptanceReason} onChange={(event) => setAcceptanceReason(event.target.value)} rows={2} placeholder="Ej.: histórico validado por Jefatura de Prevención" />
               </Field>
-              <label className="flex items-start gap-2 text-xs text-[var(--color-text-muted)] md:col-span-2">
-                <input type="checkbox" className="mt-0.5" checked={acceptMissingEvidence} onChange={(event) => setAcceptMissingEvidence(event.target.checked)} />
-                Acepto migrar {preview.counts.executedCells} celda(s) E como reportadas sin evidencia adjunta; no se inventará un archivo ni un ejecutor histórico.
-              </label>
+              <div className="md:col-span-2">
+                <Checkbox
+                  checked={acceptMissingEvidence}
+                  onChange={(event) => setAcceptMissingEvidence(event.target.checked)}
+                  label={<span className="text-xs text-[var(--color-text-muted)]">
+                    Acepto migrar {preview.counts.executedCells} celda(s) E como reportadas sin evidencia adjunta; no se inventará un archivo ni un ejecutor histórico.
+                  </span>}
+                />
+              </div>
               <ul className="max-h-32 overflow-y-auto text-xs text-[var(--color-text-subtle)] md:col-span-2">
                 {preview.executions.map((execution) => <li key={execution.sourceCell}>Actividad {execution.activityNumber} · mes {execution.month}, semana {execution.week} · {execution.executedQuantity} · celda {execution.sourceCell}</li>)}
               </ul>

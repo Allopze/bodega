@@ -25,7 +25,7 @@ export const TRAINING_MODALITIES = ["presencial", "elearning", "mixta", "practic
  */
 export const DS44_ART16_MIN_DURATION_MINUTES = 480
 export const DS44_ART16_MAX_VALIDITY_MONTHS = 24
-export const DS44_ART16_CITATION = "DS 44/2024 art. 16 — capacitación mínima de 8 horas y periodicidad no superior a 2 años."
+export const DS44_ART16_CITATION = "DS 44/2024 art. 16: capacitación mínima de 8 horas y periodicidad no superior a 2 años."
 
 export const trainingCourseSchema = z.object({
   code: z.string().trim().min(2).max(60),

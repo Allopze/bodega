@@ -36,7 +36,7 @@ export default async function PpaPublicPage({
       <header className="mb-6 text-center">
         <h1 className="text-xl font-bold tracking-tight">PPA Digital</h1>
         <p className="text-sm text-[var(--color-text-muted)]">
-          Para, Piensa y Actúa — evaluación preventiva antes de iniciar el trabajo.
+          Para, Piensa y Actúa: evaluación preventiva antes de iniciar el trabajo.
         </p>
         <p className="mt-1 text-xs text-[var(--color-text-faint)]">
           Funciona sin conexión a internet.

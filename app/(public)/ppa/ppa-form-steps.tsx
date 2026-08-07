@@ -116,7 +116,7 @@ export function PpaIdentityStep({
       ) : (
         <div className="flex flex-col gap-3 rounded-md border border-dashed border-[var(--color-warning)] bg-[var(--color-warning-tint)] p-3">
           <p className="text-xs text-[var(--color-warning-ink)]">
-            Identificación manual — quedará marcada como pendiente de validación.
+            Identificación manual: quedará marcada como pendiente de validación.
           </p>
           <Field label="Faena / lugar de trabajo" htmlFor="worksite" required error={err("worksiteId")}>
             <Select value={worksiteId} onValueChange={setWorksiteId} disabled={hasFaenaParam}>

@@ -29,9 +29,9 @@ export interface Props {
 
 export const MOTIVO_OPTIONS = [
   { value: "control_periodico",              label: "Control periódico" },
-  { value: "post_incidente_persona",         label: "Post incidente — persona" },
-  { value: "post_incidente_material",        label: "Post incidente — material" },
-  { value: "post_incidente_ambiental",       label: "Post incidente — ambiental" },
+  { value: "post_incidente_persona",         label: "Post incidente: persona" },
+  { value: "post_incidente_material",        label: "Post incidente: material" },
+  { value: "post_incidente_ambiental",       label: "Post incidente: ambiental" },
   { value: "cuasi_accidente",                label: "Cuasi accidente" },
   { value: "incumplimiento_procedimiento",   label: "Incumplimiento de procedimiento" },
   { value: "reincidencia",                   label: "Reincidencia" },

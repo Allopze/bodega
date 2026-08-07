@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Input } from "@/components/ui/input"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Textarea } from "@/components/ui/textarea"
 import { PERMIT_CREW_ROLE_LABELS } from "@/lib/prevention/permits"
 import { toLocalInputValue } from "@/lib/utils"
@@ -87,18 +88,9 @@ export function PermitTypeDialog() {
             <Input name="competencyTaskKey" maxLength={120} placeholder="espacio-confinado" />
           </Field>
           <div className="grid gap-3 md:grid-cols-3">
-            <label className="flex items-center gap-2 text-sm">
-              <input type="checkbox" checked={requiresJsa} onChange={(event) => setRequiresJsa(event.target.checked)} />
-              Exige AST/JSA
-            </label>
-            <label className="flex items-center gap-2 text-sm">
-              <input type="checkbox" checked={requiresIsolation} onChange={(event) => setRequiresIsolation(event.target.checked)} />
-              Exige aislamiento LOTO
-            </label>
-            <label className="flex items-center gap-2 text-sm">
-              <input type="checkbox" checked={requiresMeasurement} onChange={(event) => setRequiresMeasurement(event.target.checked)} />
-              Exige mediciones
-            </label>
+            <Checkbox label="Exige AST/JSA" checked={requiresJsa} onChange={(event) => setRequiresJsa(event.target.checked)} />
+            <Checkbox label="Exige aislamiento LOTO" checked={requiresIsolation} onChange={(event) => setRequiresIsolation(event.target.checked)} />
+            <Checkbox label="Exige mediciones" checked={requiresMeasurement} onChange={(event) => setRequiresMeasurement(event.target.checked)} />
           </div>
           {requiresMeasurement && (
             <Field label="Vigencia de la medición (minutos)" hint="Una lectura más antigua que esto ya no habilita.">
@@ -106,7 +98,7 @@ export function PermitTypeDialog() {
             </Field>
           )}
           <Field label="Fundamento normativo" hint="Mínimo 5 caracteres.">
-            <Textarea name="legalBasis" required minLength={5} maxLength={2000} placeholder="DS 44/2024 art. 18 — tarea crítica" />
+            <Textarea name="legalBasis" required minLength={5} maxLength={2000} placeholder="DS 44/2024 art. 18: tarea crítica" />
           </Field>
           <Field label="Descripción"><Textarea name="description" maxLength={2000} /></Field>
           {operation.message && <p role="status" className="text-sm">{operation.message}</p>}
@@ -263,7 +255,7 @@ export function NewPermitDialog({ types, worksites, workers, supervisors }: {
                     const selected = worker.id in crew
                     return (
                       <div key={worker.id} className="flex items-center gap-2 border-b border-[var(--color-border)] px-3 py-2 text-sm last:border-b-0">
-                        <input type="checkbox" checked={selected} onChange={(event) => toggleWorker(worker.id, event.target.checked)} aria-label={`Seleccionar a ${worker.name}`} />
+                        <Checkbox labelHidden label={`Seleccionar a ${worker.name}`} checked={selected} onChange={(event) => toggleWorker(worker.id, event.target.checked)} />
                         <span className="flex-1">
                           {worker.name}
                           {worker.position && <span className="ml-2 text-xs text-[var(--color-text-subtle)]">{worker.position}</span>}
@@ -298,13 +290,11 @@ export function NewPermitDialog({ types, worksites, workers, supervisors }: {
                   onChange={(event) => setControls((current) => current.map((c, i) => i === index ? { ...c, description: event.target.value } : c))}
                   placeholder="Descripción del control" className="flex-1"
                 />
-                <label className="flex items-center gap-1 text-xs whitespace-nowrap">
-                  <input
-                    type="checkbox" checked={item.isMandatory}
-                    onChange={(event) => setControls((current) => current.map((c, i) => i === index ? { ...c, isMandatory: event.target.checked } : c))}
-                  />
-                  Obligatorio
-                </label>
+                <Checkbox
+                  label={<span className="whitespace-nowrap text-xs">Obligatorio</span>}
+                  checked={item.isMandatory}
+                  onChange={(event) => setControls((current) => current.map((c, i) => i === index ? { ...c, isMandatory: event.target.checked } : c))}
+                />
                 <Button type="button" variant="ghost" size="sm" onClick={() => setControls((current) => current.filter((_, i) => i !== index))}>
                   Quitar
                 </Button>

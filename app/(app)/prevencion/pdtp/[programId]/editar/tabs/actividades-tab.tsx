@@ -4,6 +4,7 @@ import * as React from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Checkbox } from "@/components/ui/checkbox"
 import { DatePicker } from "@/components/ui/date-picker"
 import { Textarea } from "@/components/ui/textarea"
 import { Field, FieldGroup } from "@/components/ui/field"
@@ -154,7 +155,7 @@ export function ActividadesTab({
             <tbody className="divide-y divide-[var(--color-border)]">
               {items.map((activity, index) => (
                 <tr key={activity.id} className={activity.status === "retired" ? "bg-[var(--color-surface-2)] opacity-70" : "bg-[var(--color-surface)]"}>
-                  <td className="px-3 py-2"><input type="checkbox" className="h-4 w-4 accent-[var(--color-primary)]" aria-label={`Seleccionar actividad ${activity.n}`} disabled={activity.status === "retired"} checked={selectedIdSet.has(activity.id)} onChange={(event) => setSelectedIds((current) => event.target.checked ? [...current, activity.id] : current.filter((id) => id !== activity.id))} /></td>
+                  <td className="px-3 py-2"><Checkbox labelHidden label={`Seleccionar actividad ${activity.n}`} disabled={activity.status === "retired"} checked={selectedIdSet.has(activity.id)} onChange={(event) => setSelectedIds((current) => event.target.checked ? [...current, activity.id] : current.filter((id) => id !== activity.id))} /></td>
                   <td className="px-3 py-2 font-mono text-xs text-[var(--color-text-subtle)]">{activity.n}</td>
                   <td className="px-3 py-2">
                     <div className="flex flex-wrap items-center gap-2">
@@ -283,7 +284,7 @@ function BatchEditActivitiesDialog({ open, onOpenChange, programId, activityIds,
               <SelectContent><SelectItem value="keep">Sin cambio</SelectItem>{responsibleCatalog.map((item) => <SelectItem key={item.slug} value={item.slug}>{item.displayName}</SelectItem>)}</SelectContent>
             </Select>
           </Field>
-          <label className="flex items-center gap-2 text-sm text-[var(--color-text)]"><input type="checkbox" checked={replaceEvidence} onChange={(event) => setReplaceEvidence(event.target.checked)} /> Reemplazar evidencia mínima</label>
+          <Checkbox label="Reemplazar evidencia mínima" checked={replaceEvidence} onChange={(event) => setReplaceEvidence(event.target.checked)} />
           {replaceEvidence && <Textarea value={evidence} onChange={(event) => setEvidence(event.target.value)} maxLength={3000} placeholder="Evidencia mínima común para la selección" />}
           <p className="text-xs text-[var(--color-text-muted)]">Solo se cambian los campos indicados. Calendario, vistas, checklist y ejecuciones permanecen asociados.</p>
           {error && <p role="alert" className="text-sm text-[var(--color-danger)]">{error}</p>}

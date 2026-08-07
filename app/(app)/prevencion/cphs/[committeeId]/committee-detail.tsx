@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Input } from "@/components/ui/input"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Textarea } from "@/components/ui/textarea"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import {
@@ -290,9 +291,7 @@ function AddMemberDialog({ committeeId, eligibleWorkers, existingMemberNames }: 
                 <Field label="Cargo" hint="Opcional.">
                   <Select value={role} onValueChange={setRole}><SelectTrigger><SelectValue placeholder="Integrante" /></SelectTrigger><SelectContent><SelectItem value="_none">Integrante</SelectItem><SelectItem value="presidente">Presidente</SelectItem><SelectItem value="secretario">Secretario</SelectItem></SelectContent></Select><input type="hidden" name="role" value={role === "_none" ? "" : role} />
                 </Field>
-                <label className="mt-6 flex items-center gap-2 text-sm">
-                  <input type="checkbox" name="hasFuero" /> Tiene fuero sindical
-                </label>
+                <div className="mt-6"><Checkbox name="hasFuero" label="Tiene fuero sindical" /></div>
               </div>
               <div className="grid gap-3 md:grid-cols-2">
                 <Field label="Electo el" hint="Opcional."><DatePicker name="electedOn" /></Field>
@@ -434,15 +433,16 @@ function CloseMeetingDialog({ meeting, members, assignees }: {
             <div className="max-h-56 overflow-y-auto rounded-md border border-[var(--color-border)]">
               {members.map((member) => (
                 <div key={member.id} className="border-b border-[var(--color-border)] px-3 py-2 text-sm last:border-b-0">
-                  <label className="flex items-center gap-2">
-                    <input type="checkbox" checked={attended.has(member.id)} onChange={(event) => toggleAttended(member.id, event.target.checked)} />
-                    <span className="flex-1">
+                  <Checkbox
+                    checked={attended.has(member.id)}
+                    onChange={(event) => toggleAttended(member.id, event.target.checked)}
+                    label={<>
                       {member.workerName}
                       <span className="ml-2 text-xs text-[var(--color-text-subtle)]">
                         {REPRESENTATION_LABELS[member.representation] ?? member.representation} · {SEAT_LABELS[member.seat] ?? member.seat}
                       </span>
-                    </span>
-                  </label>
+                    </>}
+                  />
                   {!attended.has(member.id) && (
                     <Input
                       className="mt-1"

@@ -109,7 +109,7 @@ export function ExecutionActionPlanPanel({ executionId, worksiteId, items, follo
               className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left text-sm"
             >
               <div className="min-w-0 flex-1">
-                <p className="truncate font-medium text-(--color-text)">#{item.n} — {item.hallazgo}</p>
+                <p className="truncate font-medium text-(--color-text)">#{item.n}: {item.hallazgo}</p>
                 <p className="truncate text-xs text-text-subtle">{item.accion} · Responsable: {item.responsable} · Plazo: {item.plazo}</p>
               </div>
               <div className="flex shrink-0 items-center gap-2">
@@ -207,7 +207,7 @@ function NewActionDraft({ executionId, onCancel, onSaved }: {
           <Textarea id="np-accion" value={accion} onChange={(e) => setAccion(e.target.value)} rows={2} maxLength={1000} />
         </Field>
         {/* Daño potencial (módulo 04): deriva prioridad + plazo automáticamente. */}
-        <Field label="Daño potencial" htmlFor="np-dano" helper="Opcional — al seleccionarlo, prioridad y plazo se calculan solos.">
+        <Field label="Daño potencial" htmlFor="np-dano" helper="Opcional: al seleccionarlo, prioridad y plazo se calculan solos.">
           <Select value={dañoPotencial} onValueChange={handleDañoPotencialChange}>
             <SelectTrigger id="np-dano"><SelectValue placeholder="Sin clasificar" /></SelectTrigger>
             <SelectContent>
@@ -218,7 +218,7 @@ function NewActionDraft({ executionId, onCancel, onSaved }: {
           </Select>
         </Field>
         {/* Anexo 8: "Normativa legal aplicable". */}
-        <Field label="Normativa legal aplicable" htmlFor="np-normativa" helper="Opcional — p. ej. Ley 21.512 art. 32, DS 40.">
+        <Field label="Normativa legal aplicable" htmlFor="np-normativa" helper="Opcional: p. ej. Ley 21.512 art. 32, DS 40.">
           <Input id="np-normativa" value={normativaLegal} onChange={(e) => setNormativaLegal(e.target.value)} maxLength={500} />
         </Field>
         <Field label="Responsable" htmlFor="np-responsable">
@@ -366,7 +366,7 @@ function ActionFollowupTimeline({ itemId, estado, worksiteId, followups, canMana
         <ul className="space-y-2">
           {followups.map((f) => (
             <li key={f.id} className="rounded-(--radius) border border-(--color-border) bg-(--color-surface) px-3 py-2 text-xs">
-              <p className="font-medium text-(--color-text)">{f.fecha} — {ESTADO_LABELS[f.estadoNuevo] ?? f.estadoNuevo}</p>
+              <p className="font-medium text-(--color-text)">{f.fecha} · {ESTADO_LABELS[f.estadoNuevo] ?? f.estadoNuevo}</p>
               {f.observacion && <p className="mt-1 text-text-subtle">{f.observacion}</p>}
               {(f.evidenciaUrl || (Array.isArray(f.evidenciaPhotos) && f.evidenciaPhotos.length > 0)) && (
                 <div className="mt-1">

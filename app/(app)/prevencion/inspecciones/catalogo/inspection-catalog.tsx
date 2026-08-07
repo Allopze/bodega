@@ -250,7 +250,7 @@ function ImportTemplateDialog({ importable }: { importable: ImportableDefinition
           {definition && (
             <p className="text-xs text-[var(--color-text-subtle)]">
               {definition.sections} secciones · {definition.items} ítems · {coverageLabel(definition.coverage)}
-              {definition.coverage.criticalityInert && " — ningún hallazgo alcanzará criticidad alta hasta calibrar."}
+              {definition.coverage.criticalityInert && " · ningún hallazgo alcanzará criticidad alta hasta calibrar."}
             </p>
           )}
           <div className="grid gap-3 md:grid-cols-2">

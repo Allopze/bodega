@@ -4,6 +4,7 @@ import { useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import {
   Dialog,
   DialogContent,
@@ -304,7 +305,7 @@ export function CampanasClient({
       <Sheet open={!!attendanceCampaign} onOpenChange={(open: boolean) => !open && setAttendanceCampaign(null)}>
         <SheetContent className="sm:max-w-[500px] overflow-y-auto">
           <SheetHeader>
-            <SheetTitle>Registrar Asistencia — {attendanceCampaign?.code}</SheetTitle>
+            <SheetTitle>Registrar Asistencia: {attendanceCampaign?.code}</SheetTitle>
             <SheetDescription>
               Selecciona los trabajadores que participaron en la actividad de difusión en {attendanceCampaign?.worksiteName}.
             </SheetDescription>
@@ -322,12 +323,8 @@ export function CampanasClient({
                 workersInWorksite.map((w) => {
                   const isChecked = selectedWorkerIds.includes(w.id)
                   return (
-                    <label
-                      key={w.id}
-                      className="flex items-center gap-3 p-2 hover:bg-[var(--color-surface-hover)] cursor-pointer rounded-md"
-                    >
-                      <input
-                        type="checkbox"
+                    <div key={w.id} className="rounded-md p-2 hover:bg-[var(--color-surface-hover)]">
+                      <Checkbox
                         checked={isChecked}
                         onChange={(e) => {
                           if (e.target.checked) {
@@ -336,13 +333,12 @@ export function CampanasClient({
                             setSelectedWorkerIds(selectedWorkerIds.filter((id) => id !== w.id))
                           }
                         }}
-                        className="rounded text-[var(--color-primary)]"
+                        label={<>
+                          <span className="block text-sm font-medium text-[var(--color-text)]">{w.name}</span>
+                          <span className="block text-xs text-[var(--color-text-muted)]">RUT: {w.rut}</span>
+                        </>}
                       />
-                      <div>
-                        <div className="text-sm font-medium text-[var(--color-text)]">{w.name}</div>
-                        <div className="text-xs text-[var(--color-text-muted)]">RUT: {w.rut}</div>
-                      </div>
-                    </label>
+                    </div>
                   )
                 })
               )}

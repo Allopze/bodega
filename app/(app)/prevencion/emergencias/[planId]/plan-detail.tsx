@@ -4,6 +4,7 @@ import * as React from "react"
 import { Badge } from "@/components/ui/badge"
 import { DatePicker } from "@/components/ui/date-picker"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Input } from "@/components/ui/input"
@@ -598,10 +599,13 @@ function CompleteDrillDialog({ drill, eligibleWorkers, assignees }: {
               {eligibleWorkers.length === 0 ? (
                 <p className="p-3 text-sm text-[var(--color-text-subtle)]">Sin dotación disponible en esta faena.</p>
               ) : eligibleWorkers.map((worker) => (
-                <label key={worker.id} className="flex items-center gap-2 border-b border-[var(--color-border)] px-3 py-2 text-sm last:border-b-0">
-                  <input type="checkbox" checked={present.has(worker.id)} onChange={(event) => togglePresent(worker.id, event.target.checked)} />
-                  <span>{worker.name}{worker.position ? ` · ${worker.position}` : ""}</span>
-                </label>
+                <div key={worker.id} className="border-b border-[var(--color-border)] px-3 py-2 last:border-b-0">
+                  <Checkbox
+                    label={`${worker.name}${worker.position ? ` · ${worker.position}` : ""}`}
+                    checked={present.has(worker.id)}
+                    onChange={(event) => togglePresent(worker.id, event.target.checked)}
+                  />
+                </div>
               ))}
             </div>
           </div>

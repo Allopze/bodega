@@ -36,7 +36,7 @@ export function ActaDocument({ data, logoSrc }: { data: ActaData; logoSrc: strin
   } = data
 
   return (
-    <main className="sheet" aria-label={`Acta SST — ${worker.firstName} ${worker.lastName}`}>
+    <main className="sheet" aria-label={`Acta SST de ${worker.firstName} ${worker.lastName}`}>
       {/* ── Header ─────────────────────────────────────────────────────── */}
       <header className="doc-header">
         <div className="brand-row">
@@ -79,7 +79,7 @@ export function ActaDocument({ data, logoSrc }: { data: ActaData; logoSrc: strin
           value={
             isNuevo
               ? "Trabajador Nuevo"
-              : `Seguimiento${evaluation.motivo ? ` — ${getMotivoLabel(evaluation.motivo)}` : ""}`
+              : `Seguimiento${evaluation.motivo ? `: ${getMotivoLabel(evaluation.motivo)}` : ""}`
           }
         />
         {!isNuevo && evaluation.motivoOtro && (

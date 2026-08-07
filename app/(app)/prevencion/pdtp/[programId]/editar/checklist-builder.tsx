@@ -228,7 +228,7 @@ export function ChecklistBuilder({ definition, onChange }: {
         </span>
         {emptySections.length > 0 && (
           <span className="rounded-full border border-[var(--color-warning-line)] bg-[var(--color-warning-tint)] px-2 py-0.5 font-medium text-[var(--color-warning-ink)]">
-            {emptySections.length} {emptySections.length === 1 ? "sección sin ítems" : "secciones sin ítems"} — bloquea el guardado
+            {emptySections.length} {emptySections.length === 1 ? "sección sin ítems" : "secciones sin ítems"}: bloquea el guardado
           </span>
         )}
       </div>

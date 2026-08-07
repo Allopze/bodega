@@ -13,7 +13,7 @@ export const TRABAJADOR_NUEVO: ChecklistDefinition = {
   version: '01',
   revisionDate: '2026-02-25',
   tipo: 'nuevo',
-  title: 'Lista de Chequeo — Trabajador Nuevo',
+  title: 'Lista de Chequeo: Trabajador Nuevo',
   subtitle: 'Conductores Camión Ampliroll, Batea y Operadores de Maquinaria Pesada',
   legalFramework: ['DS N°44', 'DS N°594', 'ISO 45001'],
   applicableTo: 'Personal nuevo, reubicado o con cambio de función.',
@@ -21,7 +21,7 @@ export const TRABAJADOR_NUEVO: ChecklistDefinition = {
   sections: NUEVO_SECTIONS,
 
   closingAct: {
-    title: '4. Acta de Cierre — Habilitación Operacional',
+    title: '4. Acta de Cierre: Habilitación Operacional',
     resultOptions: [
       { value: 'habilitado_autonomo', label: 'CUMPLE' },
       { value: 'no_habilitado', label: 'NO CUMPLE' },

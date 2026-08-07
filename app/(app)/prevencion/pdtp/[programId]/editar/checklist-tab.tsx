@@ -308,7 +308,7 @@ function ChecklistEditor({ programId, activity, template, copySources, onSaved }
             <SelectContent>
               {copySources.map((c) => (
                 <SelectItem key={c.activityId} value={c.activityId}>
-                  {c.activityName} — {c.templateLabel}
+                  {c.activityName} · {c.templateLabel}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -383,7 +383,7 @@ function ChecklistEditor({ programId, activity, template, copySources, onSaved }
         </div>
       ) : (
         <Field
-          label="Definición (JSON — ChecklistDefinition)"
+          label="Definición JSON (ChecklistDefinition)"
           htmlFor={`cl-json-${activity.id}`}
           helper="Estructura: { code, version, title, tipo, sections: [{ id, title, items: [{ id, label, kind }] }], closingAct }."
         >

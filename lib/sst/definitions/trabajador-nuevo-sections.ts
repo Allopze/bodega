@@ -73,11 +73,11 @@ export const NUEVO_SECTIONS: ChecklistSection[] = [
   },
 
   // ============================================================
-  // 3.1 Acompañamiento en terreno — Semana 1 (días 1-7)
+  // 3.1 Acompañamiento en terreno: Semana 1 (días 1-7)
   // ============================================================
   {
     id: 'acompanamiento_terreno_s1',
-    title: '3.1 Acompañamiento en terreno — Semana 1',
+    title: '3.1 Acompañamiento en terreno: Semana 1',
     description: 'Días 1–7 desde la fecha de evaluación',
     countsForCompliance: true,
     hasActionCorrectiva: true,
@@ -94,11 +94,11 @@ export const NUEVO_SECTIONS: ChecklistSection[] = [
   },
 
   // ============================================================
-  // 3.2 Acompañamiento en terreno — Semana 2 (días 8-14)
+  // 3.2 Acompañamiento en terreno: Semana 2 (días 8-14)
   // ============================================================
   {
     id: 'acompanamiento_terreno_s2',
-    title: '3.2 Acompañamiento en terreno — Semana 2',
+    title: '3.2 Acompañamiento en terreno: Semana 2',
     description: 'Días 8–14 desde la fecha de evaluación',
     countsForCompliance: true,
     hasActionCorrectiva: true,
@@ -115,11 +115,11 @@ export const NUEVO_SECTIONS: ChecklistSection[] = [
   },
 
   // ============================================================
-  // 3.3 Acompañamiento en terreno — Semana 3 (días 15-21)
+  // 3.3 Acompañamiento en terreno: Semana 3 (días 15-21)
   // ============================================================
   {
     id: 'acompanamiento_terreno_s3',
-    title: '3.3 Acompañamiento en terreno — Semana 3',
+    title: '3.3 Acompañamiento en terreno: Semana 3',
     description: 'Días 15–21 desde la fecha de evaluación',
     countsForCompliance: true,
     hasActionCorrectiva: true,
@@ -136,11 +136,11 @@ export const NUEVO_SECTIONS: ChecklistSection[] = [
   },
 
   // ============================================================
-  // 3.4 Acompañamiento en terreno — Semana 4 (días 22-30)
+  // 3.4 Acompañamiento en terreno: Semana 4 (días 22-30)
   // ============================================================
   {
     id: 'acompanamiento_terreno_s4',
-    title: '3.4 Acompañamiento en terreno — Semana 4',
+    title: '3.4 Acompañamiento en terreno: Semana 4',
     description: 'Días 22–30 desde la fecha de evaluación',
     countsForCompliance: true,
     hasActionCorrectiva: true,

@@ -43,8 +43,8 @@ describe("prevention document folders", () => {
 
     expect(labels).toEqual([
       { id: "sdf-a", label: "Gestión preventiva" },
-      { id: "sdf-b", label: "— Procedimientos" },
-      { id: "sdf-c", label: "—— Mensuales" },
+      { id: "sdf-b", label: "\u00a0\u00a0Procedimientos" },
+      { id: "sdf-c", label: "\u00a0\u00a0\u00a0\u00a0Mensuales" },
     ])
   })
 

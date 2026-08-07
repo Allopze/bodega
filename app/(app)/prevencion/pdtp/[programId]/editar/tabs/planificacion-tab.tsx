@@ -102,7 +102,7 @@ export function PlanificacionTab({ programId: _programId, year, periodStart, per
       <p className="text-xs text-[var(--color-text-muted)]">
         Cantidad planificada por semana para {year}
         {horizon.months.length < 12 ? ` (período de ${horizon.months.length} mes(es))` : ""}. Cada mes tiene {horizon.weeksPerMonth} celda(s).
-        &ldquo;Rellenar&rdquo; fija una cantidad en las {horizon.months.length * horizon.weeksPerMonth} semanas del período de la fila (sin guardar todavía) — revisa y presiona Guardar.
+        &ldquo;Rellenar&rdquo; fija una cantidad en las {horizon.months.length * horizon.weeksPerMonth} semanas del período de la fila (sin guardar todavía). Revisa y presiona Guardar.
       </p>
       <div className="overflow-x-auto rounded-lg border border-[var(--color-border)]">
         <table className="w-full border-collapse text-sm">

@@ -167,7 +167,7 @@ export function EvaluationInfoSection({
         )}
         {saveState === "error" && (
           <span role="alert" className="text-xs text-danger font-medium">
-            Error al guardar — verifica tu conexión
+            Error al guardar: verifica tu conexión
           </span>
         )}
         {saveState !== null && saveState !== "saving" && saveState !== "error" && (
@@ -182,7 +182,7 @@ export function EvaluationInfoSection({
         {isCerrado && (
           <span className="flex items-center gap-1 text-xs text-text-subtle">
             <LockSimple size={12} />
-            Solo lectura — evaluación cerrada
+            Solo lectura: evaluación cerrada
           </span>
         )}
         <div className="ml-auto flex items-center gap-2">

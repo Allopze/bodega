@@ -28,8 +28,8 @@ const PDTP_2026_CHECKLIST_SPECS: ChecklistSpec[] = [
   { n: 24, label: "Inspección de Estado de Extintores", definition: INSPECCION_EXTINTORES },
   { n: 64, label: "Inspección de Uso y Estado de EPP (JT)", definition: INSPECCION_EPP },
   { n: 65, label: "Inspección de Uso y Estado de EPP (PRF)", definition: INSPECCION_EPP },
-  { n: 40, label: "Observación de Seguridad — Camión Ampliroll", definition: OBSERVACION_AMPLIROLL },
-  { n: 41, label: "Observación de Seguridad — Maquinaria Pesada", definition: OBSERVACION_MAQUINARIA },
+  { n: 40, label: "Observación de Seguridad: Camión Ampliroll", definition: OBSERVACION_AMPLIROLL },
+  { n: 41, label: "Observación de Seguridad: Maquinaria Pesada", definition: OBSERVACION_MAQUINARIA },
   { n: 39, label: "Observación Planeada", definition: OBSERVACION_PLANEADA },
 ]
 

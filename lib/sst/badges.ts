@@ -12,8 +12,8 @@ export const MOTIVO_LABELS: Record<string, string> = {
   ingreso_nuevo:           "Ingreso nuevo",
   reincorporacion:         "Reincorporación",
   cambio_cargo:            "Cambio de cargo",
-  post_incidente_persona:  "Post incidente — persona",
-  post_incidente_ambiente: "Post incidente — ambiente",
+  post_incidente_persona:  "Post incidente: persona",
+  post_incidente_ambiente: "Post incidente: ambiente",
   evaluacion_periodica:    "Evaluación periódica",
   solicitud_trabajador:    "Solicitud del trabajador",
 }

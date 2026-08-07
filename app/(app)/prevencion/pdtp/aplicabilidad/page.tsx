@@ -9,7 +9,7 @@ import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { PdtpAplicabilidadClient, type ExclusionsMap, type ParamsMap } from "./pdtp-aplicabilidad-client"
 
-export const metadata: Metadata = { title: "Aplicabilidad por Faena — PDTP SG-SST" }
+export const metadata: Metadata = { title: "Aplicabilidad por Faena (PDTP SG-SST)" }
 
 export default async function PdtpAplicabilidadPage() {
   let session

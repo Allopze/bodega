@@ -3,6 +3,7 @@
 import Link from "next/link"
 import { FolderOpen, DotsThreeVertical } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -63,12 +64,11 @@ export function FolderTableRow({
       className={cn(dragOver && "bg-(--color-surface-2) outline outline-2 -outline-offset-2 outline-(--color-primary)")}
     >
       <TableCell>
-        <input
-          type="checkbox"
-          aria-label={`Seleccionar carpeta ${folder.name}`}
+        <Checkbox
+          labelHidden
+          label={`Seleccionar carpeta ${folder.name}`}
           checked={selected}
           onChange={onToggleSelected}
-          className="h-4 w-4 accent-[var(--color-primary)]"
         />
       </TableCell>
       <TableCell>

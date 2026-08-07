@@ -3,6 +3,7 @@
 import { useRef, useState, useTransition } from "react"
 import { CaretLeft, CaretRight } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
@@ -173,7 +174,7 @@ export function IndicatorDenominatorDialog({ worksiteId, year, month, denominato
             <div className="space-y-2"><Label>Conciliación</Label><Select value={reconciliationStatus} onValueChange={(value) => { setReconciliationStatus(value); setDirty(true) }}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="pending">Pendiente</SelectItem><SelectItem value="matched">Cuadra con la fuente</SelectItem><SelectItem value="difference">Con diferencia explicada</SelectItem><SelectItem value="exception">Excepción aceptada</SelectItem></SelectContent></Select></div>
             <div className="space-y-2"><Label htmlFor={`notes-${month}`}>Notas</Label><Textarea id={`notes-${month}`} name="reconciliationNotes" defaultValue={denominator?.reconciliationNotes ?? ""} rows={2} /></div>
             {denominator?.status === "approved" && <div className="space-y-2 md:col-span-2"><Label htmlFor={`correction-${month}`}>Motivo de corrección del aprobado</Label><Textarea id={`correction-${month}`} name="correctionReason" required minLength={10} rows={2} /></div>}
-            <label className="flex items-center gap-2 text-sm md:col-span-2"><input type="checkbox" name="submitForReview" /> Enviar a revisión al guardar</label>
+            <div className="md:col-span-2"><Checkbox name="submitForReview" label="Enviar a revisión al guardar" /></div>
             <DialogFooter className="md:col-span-2"><Button type="submit" disabled={pending}>Guardar denominador</Button></DialogFooter>
           </form>
         )}

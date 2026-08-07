@@ -128,7 +128,7 @@ export default async function PpaDetailPage({
   return (
     <PageContainer>
       <PageHeader
-        title={`PPA — ${ppa.workerName}`}
+        title={`PPA de ${ppa.workerName}`}
         description={`${tipoTrabajoLabel(ppa.tipoTrabajo)} · ${ppa.worksiteName ?? "—"}`}
         breadcrumb={
           <Breadcrumbs items={[
@@ -152,7 +152,7 @@ export default async function PpaDetailPage({
                 <span>
                   {ppa.workerName}
                   {ppa.manualIdentificacion && (
-                    <Badge variant="warning" size="sm" className="ml-2">Identificación manual — validar</Badge>
+                    <Badge variant="warning" size="sm" className="ml-2">Identificación manual: validar</Badge>
                   )}
                 </span>
               } />

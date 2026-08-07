@@ -2,7 +2,7 @@ import type { ChecklistDefinition } from '../types'
 import { OBSERVACION_AMPLIROLL_SECTIONS } from './observacion-seguridad-sections'
 
 /**
- * Observación de Seguridad — Camión Ampliroll — módulo 12 (PR-SGC-24).
+ * Observación de Seguridad: Camión Ampliroll — módulo 12 (PR-SGC-24).
  *
  * Patrón C (multi-sujeto). Se siembra como plantilla de la actividad PDTP
  * n=40 del programa 2026 ("Realizar Inspecciones para corregir desviaciones").
@@ -21,7 +21,7 @@ export const OBSERVACION_AMPLIROLL: ChecklistDefinition = {
   version: '01',
   revisionDate: '2026-07-14',
   tipo: 'seguimiento',
-  title: 'Observación de Seguridad — Camión Ampliroll',
+  title: 'Observación de Seguridad: Camión Ampliroll',
   subtitle: 'Observación conductual por operador (PR-SGC-24). Una instancia por operador.',
   legalFramework: [
     'Ley 16.744',

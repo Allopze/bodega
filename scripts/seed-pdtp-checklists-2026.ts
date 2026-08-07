@@ -105,14 +105,14 @@ const SPECS: SeedSpec[] = [
   // 12 Observación ampliroll → act 40.
   {
     n: 40,
-    label: "Observación de Seguridad — Camión Ampliroll",
+    label: "Observación de Seguridad: Camión Ampliroll",
     definition: OBSERVACION_AMPLIROLL,
   },
   // 13 Observación maquinaria → act 41. Reemplaza la plantilla genérica
   // provisional de Fase A (OBSERVACION_PLANEADA) por la real (PR-SGC-25).
   {
     n: 41,
-    label: "Observación de Seguridad — Maquinaria Pesada",
+    label: "Observación de Seguridad: Maquinaria Pesada",
     definition: OBSERVACION_MAQUINARIA,
   },
   // 14 Observación planeada (Anexo 7) → act 39. No es la n=41: esa es la

@@ -18,7 +18,7 @@ export const INSPECCION_CONTENEDORES: ChecklistDefinition = {
   revisionDate: '2026-08-04',
   tipo: 'seguimiento',
   title: 'Inspección de Contenedores',
-  subtitle: 'Verificación por contenedor — uno por instancia de checklist.',
+  subtitle: 'Verificación por contenedor: uno por instancia de checklist.',
   legalFramework: [
     'Ley 16.744',
     'Ley 21.512 (ex DS 594)',

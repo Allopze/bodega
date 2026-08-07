@@ -442,7 +442,7 @@ function AddSubjectButton({
                   maxLength={200}
                 />
                 <p className="text-[11px] text-text-subtle">
-                  Texto libre — no hay inventario permanente de {subjectType}s en v1.
+                  Texto libre: no hay inventario permanente de {subjectType}s en v1.
                 </p>
               </div>
             ) : (

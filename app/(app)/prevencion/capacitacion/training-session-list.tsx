@@ -6,6 +6,7 @@ import { Certificate } from "@phosphor-icons/react"
 import { useSafeShellHeader } from "@/components/layout/header-context"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Input } from "@/components/ui/input"
@@ -417,17 +418,18 @@ function SessionDialog({ versions, worksites, workers }: {
                 <Input value={workerQuery} onChange={(event) => setWorkerQuery(event.target.value)} placeholder="Buscar por nombre o cargo" />
                 <div className="max-h-56 overflow-y-auto rounded-md border border-[var(--color-border)]">
                   {shown.map((worker) => (
-                    <label key={worker.id} className="flex items-center gap-2 border-b border-[var(--color-border)] px-3 py-2 text-sm last:border-b-0">
-                      <input
-                        type="checkbox"
+                    <div key={worker.id} className="border-b border-[var(--color-border)] px-3 py-2 last:border-b-0">
+                      <Checkbox
                         checked={convened.includes(worker.id)}
                         onChange={(event) => setConvened((current) => event.target.checked
                           ? [...current, worker.id]
                           : current.filter((id) => id !== worker.id))}
+                        label={<>
+                          {worker.name}
+                          {worker.position && <span className="ml-2 text-xs text-[var(--color-text-subtle)]">{worker.position}</span>}
+                        </>}
                       />
-                      <span>{worker.name}</span>
-                      {worker.position && <span className="text-xs text-[var(--color-text-subtle)]">{worker.position}</span>}
-                    </label>
+                    </div>
                   ))}
                 </div>
               </>
