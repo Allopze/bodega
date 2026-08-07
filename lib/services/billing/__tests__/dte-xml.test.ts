@@ -56,6 +56,72 @@ const SALE_INVOICE_XML = `<?xml version="1.0" encoding="ISO-8859-1"?>
   </SetDTE>
 </EnvioDTE>`
 
+/**
+ * NC de compra con la estructura real del portal (EnvioDTE → SetDTE →
+ * Caratula + DTE → Documento, con Referencia y tags vacíos). Datos ficticios;
+ * los montos y la forma vienen de un documento real del 2026-08-06.
+ */
+const CREDIT_NOTE_ENVELOPE_XML = `<EnvioDTE xmlns="http://www.sii.cl/SiiDte" version="1.0">
+<SetDTE ID="EnvioDte1">
+<Caratula version="1.0">
+<RutEmisor>76111222-3</RutEmisor>
+<RutReceptor>78023530-6</RutReceptor>
+<SubTotDTE><TpoDTE>61</TpoDTE><NroDTE>1</NroDTE></SubTotDTE>
+</Caratula>
+<DTE xmlns="http://www.sii.cl/SiiDte" version="1.0">
+<Documento ID="R76111222F376999T61">
+<Encabezado>
+<IdDoc>
+<TipoDTE>61</TipoDTE>
+<Folio>376999</Folio>
+<FchEmis>2026-08-06</FchEmis>
+<FmaPago>2</FmaPago>
+<TermPagoCdg/>
+<FchVenc>2026-09-05</FchVenc>
+</IdDoc>
+<Emisor>
+<RUTEmisor>76111222-3</RUTEmisor>
+<RznSoc>Proveedora Austral SpA</RznSoc>
+<Sucursal/>
+</Emisor>
+<Receptor>
+<RUTRecep>78023530-6</RUTRecep>
+<CdgIntRecep/>
+<RznSocRecep>SERVICIOS INDUSTRIALES CHOME LTDA</RznSocRecep>
+<CiudadPostal/>
+</Receptor>
+<Totales>
+<MntNeto>392787</MntNeto>
+<TasaIVA>19.00</TasaIVA>
+<IVA>74630</IVA>
+<MntTotal>467417</MntTotal>
+<MontoNF>0</MontoNF>
+<VlrPagar>0</VlrPagar>
+</Totales>
+</Encabezado>
+<Detalle>
+<NroLinDet>1</NroLinDet>
+<CdgItem><TpoCodigo>INT1</TpoCodigo><VlrCodigo>830974</VlrCodigo></CdgItem>
+<NmbItem>Neumático 11 R 22.5</NmbItem>
+<QtyItem>2</QtyItem>
+<UnmdItem/>
+<PrcItem>260296</PrcItem>
+<DescuentoMonto>127805</DescuentoMonto>
+<MontoItem>392787</MontoItem>
+</Detalle>
+<Referencia>
+<NroLinRef>1</NroLinRef>
+<TpoDocRef>33</TpoDocRef>
+<FolioRef>0005358218</FolioRef>
+<FchRef>2026-08-05</FchRef>
+<CodRef>1</CodRef>
+<RazonRef/>
+</Referencia>
+</Documento>
+</DTE>
+</SetDTE>
+</EnvioDTE>`
+
 describe("parseSaleDteXml", () => {
   it("extrae la identidad tributaria completa, incluido el receptor", () => {
     const doc = parseSaleDteXml(SALE_INVOICE_XML)
@@ -140,6 +206,29 @@ describe("parseSaleDteXml", () => {
     expect(doc.taxAmount).toBe(-798000)
     expect(doc.exemptAmount).toBe(-150000)
     expect(doc.totalAmount).toBe(-5148000)
+  })
+
+  it("procesa una NC real del portal: sobre EnvioDTE completo, signos invertidos y campos vacíos", () => {
+    // Estructura calcada de una NC de compra real recibida el 2026-08-06
+    // (Caratula + Referencia + tags vacíos como <UnmdItem/>), con RUT, nombres
+    // y folios ficticios. Valida en un documento del mundo real lo que los
+    // casos sintéticos prueban por partes.
+    const doc = parseSaleDteXml(CREDIT_NOTE_ENVELOPE_XML)
+    expect(doc).not.toBeNull()
+    expect(doc!.docType).toBe("61")
+    expect(doc!.folio).toBe(376999)
+    expect(doc!.issuerTaxId).toBe("76111222-3")
+    expect(doc!.receiverTaxId).toBe("78023530-6")
+    expect(doc!.dueDate).toBe("2026-09-05")
+    // El XML del SII declara magnitudes sin signo (confirmado contra el
+    // documento real): la convención interna exige NC negativa.
+    expect(doc!.netAmount).toBe(-392787)
+    expect(doc!.taxAmount).toBe(-74630)
+    expect(doc!.totalAmount).toBe(-467417)
+    expect(doc!.items).toHaveLength(1)
+    expect(doc!.items[0]!.quantity).toBe(2)
+    expect(doc!.items[0]!.unit).toBeNull()
+    expect(doc!.items[0]!.discount).toBe(127805)
   })
 
   it("lee decimales XSD del XML (punto decimal, sin separador de miles)", () => {
