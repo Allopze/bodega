@@ -290,7 +290,7 @@ export function ModuleWorkloadChart({ data, total }: { data: ModuleWorkloadPoint
           <ChartTooltip content={<ChartTooltipContent hideLabel indicator="line" />} />
           {/* Una serie = un color (I-10): la rotación por índice teñía la barra
               de "Aprobaciones" con el rojo de severidad sin que significara nada. */}
-          <Bar dataKey="count" fill={CHART_COLORS.blue} radius={[6, 6, 0, 0]} />
+          <Bar dataKey="count" fill={CHART_COLORS.blue} radius={[6, 6, 0, 0]} maxBarSize={48} />
         </BarChart>
       </ChartContainer>
     </div>
@@ -389,8 +389,8 @@ export function SstAccidentChart({ data }: { data: SstMonthlyPoint[] }) {
           <ChartTooltip content={<ChartTooltipContent indicator="dot" />} />
           <ChartLegend content={<ChartLegendContent />} />
           {/* Un solo `stackId`: el tope de la columna es el total provisional. */}
-          <Bar dataKey="confirmados" stackId="accidentes" fill={CHART_COLORS.danger} radius={hasPending ? [0, 0, 0, 0] : [4, 4, 0, 0]} />
-          <Bar dataKey="porCalificar" stackId="accidentes" fill={CHART_COLORS.signal} radius={[4, 4, 0, 0]} />
+          <Bar dataKey="confirmados" stackId="accidentes" fill={CHART_COLORS.danger} radius={hasPending ? [0, 0, 0, 0] : [4, 4, 0, 0]} maxBarSize={48} />
+          <Bar dataKey="porCalificar" stackId="accidentes" fill={CHART_COLORS.signal} radius={[4, 4, 0, 0]} maxBarSize={48} />
         </BarChart>
       </ChartContainer>
     </div>
@@ -426,9 +426,9 @@ export function MaterialEnvironmentalChart({ data }: { data: MaterialEnvironment
           <YAxis tickLine={false} axisLine={false} tickMargin={8} allowDecimals={false} />
           <ChartTooltip content={<ChartTooltipContent indicator="dot" />} />
           <ChartLegend content={<ChartLegendContent />} />
-          <Bar dataKey="dangerousIncidents" fill={CHART_COLORS.violet} radius={[4, 4, 0, 0]} />
-          <Bar dataKey="materialDamage" fill={CHART_COLORS.signal} radius={[4, 4, 0, 0]} />
-          <Bar dataKey="environmentalSpills" fill={CHART_COLORS.teal} radius={[4, 4, 0, 0]} />
+          <Bar dataKey="dangerousIncidents" fill={CHART_COLORS.violet} radius={[4, 4, 0, 0]} maxBarSize={48} />
+          <Bar dataKey="materialDamage" fill={CHART_COLORS.signal} radius={[4, 4, 0, 0]} maxBarSize={48} />
+          <Bar dataKey="environmentalSpills" fill={CHART_COLORS.teal} radius={[4, 4, 0, 0]} maxBarSize={48} />
         </BarChart>
       </ChartContainer>
     </div>
@@ -695,24 +695,49 @@ export function CompositionDonutChart({ data, title, description, totalLabel, fo
         className="mb-3 mt-0 border-b border-t-0 pb-3 pt-0"
       />
 
-      <ChartContainer config={config} className="h-48 w-full">
-        <PieChart>
-          <ChartTooltip content={<ChartTooltipContent formatter={(value, name) => [formatted(Number(value)), String(name)]} />} />
-          <Pie data={slices} dataKey="value" nameKey="label" innerRadius={52} outerRadius={78} strokeWidth={2} paddingAngle={2}>
-            {slices.map((slice, index) => <Cell key={slice.key} fill={CHART_SERIES[index % CHART_SERIES.length]} />)}
-            <Label content={({ viewBox }) => {
-              if (!viewBox || !("cx" in viewBox)) return null
-              return (
-                <text x={viewBox.cx} y={viewBox.cy} textAnchor="middle" dominantBaseline="middle">
-                  <tspan x={viewBox.cx} y={viewBox.cy} className="fill-[var(--color-text)] font-mono text-lg font-bold">{formatted(total)}</tspan>
-                  <tspan x={viewBox.cx} y={(viewBox.cy ?? 0) + 18} className="fill-[var(--color-text-muted)] text-[11px]">{totalLabel}</tspan>
-                </text>
-              )
-            }} />
-          </Pie>
-          <ChartLegend content={<ChartLegendContent />} />
-        </PieChart>
-      </ChartContainer>
+      {slices.length <= 2 ? (
+        /* I-09: una dona de 1-2 categorías es decoración (Tufte) — la misma
+           composición cabe en una barra apilada de 12 px y la tarjeta deja de
+           reservar 192 px de alto para un solo dato. */
+        <div>
+          <p className="flex items-baseline gap-2">
+            <span className="font-mono text-2xl font-bold text-[var(--color-text)]">{formatted(total)}</span>
+            <span className="text-[11px] text-[var(--color-text-muted)]">{totalLabel}</span>
+          </p>
+          <div className="mt-2 flex h-3 w-full overflow-hidden rounded-full bg-[var(--color-surface-2)]" aria-hidden>
+            {slices.map((slice, index) => (
+              <div key={slice.key} style={{ width: `${(slice.value / total) * 100}%`, background: CHART_SERIES[index % CHART_SERIES.length] }} />
+            ))}
+          </div>
+          <ul className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
+            {slices.map((slice, index) => (
+              <li key={slice.key} className="flex items-center gap-1.5 text-xs text-[var(--color-text-muted)]">
+                <span className="size-2 rounded-full" style={{ background: CHART_SERIES[index % CHART_SERIES.length] }} aria-hidden />
+                {slice.label}: <span className="font-mono font-semibold text-[var(--color-text)]">{formatted(slice.value)}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : (
+        <ChartContainer config={config} className="h-48 w-full">
+          <PieChart>
+            <ChartTooltip content={<ChartTooltipContent formatter={(value, name) => [formatted(Number(value)), String(name)]} />} />
+            <Pie data={slices} dataKey="value" nameKey="label" innerRadius={52} outerRadius={78} strokeWidth={2} paddingAngle={2}>
+              {slices.map((slice, index) => <Cell key={slice.key} fill={CHART_SERIES[index % CHART_SERIES.length]} />)}
+              <Label content={({ viewBox }) => {
+                if (!viewBox || !("cx" in viewBox)) return null
+                return (
+                  <text x={viewBox.cx} y={viewBox.cy} textAnchor="middle" dominantBaseline="middle">
+                    <tspan x={viewBox.cx} y={viewBox.cy} className="fill-[var(--color-text)] font-mono text-lg font-bold">{formatted(total)}</tspan>
+                    <tspan x={viewBox.cx} y={(viewBox.cy ?? 0) + 18} className="fill-[var(--color-text-muted)] text-[11px]">{totalLabel}</tspan>
+                  </text>
+                )
+              }} />
+            </Pie>
+            <ChartLegend content={<ChartLegendContent />} />
+          </PieChart>
+        </ChartContainer>
+      )}
     </div>
   )
 }
@@ -801,6 +826,32 @@ export function ThresholdRankingChart({ data, title, description, unit = "%", fo
         className="mb-3 mt-0 border-b border-t-0 pb-3 pt-0"
       />
 
+      {rows.length <= 2 ? (
+        /* I-09: 1-2 barras dentro de un plot de 224 px eran una tarjeta casi
+           vacía. La misma lectura cabe en un medidor compacto por fila; el
+           color sigue codificando el umbral y la tabla de arriba ya da el
+           detalle exacto. */
+        <div className="space-y-3">
+          {rows.map((row, index) => {
+            const shown = format === "clp" ? formatCLP(row.value) : `${row.value}${unit}`
+            const scale = max ?? (unit === "%" ? 100 : null)
+            return (
+              <div key={index}>
+                <div className="flex items-baseline justify-between gap-2">
+                  <span className="text-sm font-medium text-[var(--color-text)]">{row.name}</span>
+                  <span className="font-mono text-lg font-bold" style={{ color: colorFor(row.value) }}>{shown}</span>
+                </div>
+                {scale !== null && (
+                  <div className="mt-1 h-2 w-full overflow-hidden rounded-full bg-[var(--color-surface-2)]" aria-hidden>
+                    <div className="h-full rounded-full" style={{ width: `${Math.min(100, (row.value / scale) * 100)}%`, background: colorFor(row.value) }} />
+                  </div>
+                )}
+                {row.detail && <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">{row.detail}</p>}
+              </div>
+            )
+          })}
+        </div>
+      ) : (
       <ChartContainer config={{ value: { label: title } }} className="h-56 w-full">
         <BarChart data={rows} layout="vertical" margin={{ top: 4, right: 16, left: 8, bottom: 0 }}>
           <CartesianGrid strokeDasharray="3 3" horizontal={false} />
@@ -823,6 +874,7 @@ export function ThresholdRankingChart({ data, title, description, unit = "%", fo
           </Bar>
         </BarChart>
       </ChartContainer>
+      )}
     </div>
   )
 }

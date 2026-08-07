@@ -126,16 +126,20 @@ export async function PreventionSection({ session, worksiteScope, worksiteIds, c
             />
           )}
           {pdtpByWorksite && pdtpByWorksite.perWorksite.length > 0 && (
-            <ThresholdRankingChart
-              title="Cumplimiento PDTP por faena" description="Comparativa entre las faenas del alcance"
-              data={pdtpByWorksite.perWorksite
-                .filter((entry) => entry.indicators !== null)
-                .map((entry) => ({
-                  name: worksiteNames.get(entry.worksiteId) ?? entry.worksiteId,
-                  value: Math.round((entry.indicators!.annual.percent ?? 0) * 100),
-                  detail: `${entry.indicators!.annual.executed} de ${entry.indicators!.annual.planned}`,
-                }))}
-            />
+            /* Ancho completo: cerraba la grilla solo en su fila (I-09) y un
+               ranking de hasta 9 faenas gana con barras y rótulos más largos. */
+            <div className="xl:col-span-2 2xl:col-span-3">
+              <ThresholdRankingChart
+                title="Cumplimiento PDTP por faena" description="Comparativa entre las faenas del alcance"
+                data={pdtpByWorksite.perWorksite
+                  .filter((entry) => entry.indicators !== null)
+                  .map((entry) => ({
+                    name: worksiteNames.get(entry.worksiteId) ?? entry.worksiteId,
+                    value: Math.round((entry.indicators!.annual.percent ?? 0) * 100),
+                    detail: `${entry.indicators!.annual.executed} de ${entry.indicators!.annual.planned}`,
+                  }))}
+              />
+            </div>
           )}
         </>
       }

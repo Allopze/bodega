@@ -257,7 +257,11 @@ export async function FinanceSection({ session, scope }: DomainSectionsProps) {
             />
           )}
           {dashboardData && dashboardData.worksitesBreakdown.length > 0 && (
-            <WorksiteActivityChart worksites={dashboardData.worksitesBreakdown} />
+            /* Ancho completo: cerraba la grilla solo en su fila (I-09) y un
+               ranking de faenas gana con barras y rótulos más largos. */
+            <div className="xl:col-span-2 2xl:col-span-3">
+              <WorksiteActivityChart worksites={dashboardData.worksitesBreakdown} />
+            </div>
           )}
         </>
       }

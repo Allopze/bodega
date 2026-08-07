@@ -514,15 +514,29 @@ build (ver nota al final).
   como un solo string ("Procesos: 100% · 1 de 1" — antes "1 de 1Procesos");
   pluralización "1 abierta en total".
 
-## 10 · I-09 — Estética con datos escasos · ◐ parcial
+## 10 · I-09 — Estética con datos escasos · ✔ cerrado (2026-08-06)
 
 - Hecho: `barSize={22}` en Inversión por Faena (la barra única de ~150 px de
   grosor); los charts todo-en-cero ahora se ocultan (ítem 4), lo que elimina
   varios de los huecos observados.
-- **Pendiente (requiere staging con datos reales)**: decidir si degradar
-  charts de ≤2 datos a `SummaryBar`, y si el último chart impar de cada
-  sección debe ocupar `xl:col-span-2`. Con fixtures no se puede juzgar la
-  densidad real.
+- **Cierre con datos reales (2026-08-06, seed demo + gaps, tablero de vistas
+  conmutadas):** las dos decisiones diferidas se tomaron mirando el render
+  real (evidencia en `audit/screenshots/inicio-2026-08-05/i09-datos-reales/`):
+  - **Degradar ≤2 datos: sí.** `ThresholdRankingChart` con 1-2 filas rinde un
+    medidor compacto por fila (color de umbral + detalle) y
+    `CompositionDonutChart` con 1-2 porciones rinde total + barra de
+    composición apilada — la tarjeta deja de reservar ~200 px de plot para
+    uno o dos números (Cobertura MIPER, Principales clientes, Gasto por
+    módulo eran exactamente ese caso). Umbral fijado por test en
+    `dashboard-charts.test.tsx`.
+  - **Impar: ancho completo, no compactar.** Los rankings de faena que
+    cerraban cada sección ("Cumplimiento PDTP por faena", "Inversión por
+    faena") van en `xl:col-span-2 2xl:col-span-3`: un ranking de hasta 9
+    faenas gana con barras y rótulos largos, y el hueco desaparece sin
+    depender del conteo dinámico de charts ocultos.
+  - Además `maxBarSize={48}` en los BarCharts verticales que no tenían tope
+    (workload, accidentes, impacto material), como seguro para meses con
+    1-2 categorías.
 
 ## Verificación
 
