@@ -4,6 +4,7 @@ import * as React from "react"
 import Link from "next/link"
 import { CatalogFormSheet } from "@/components/admin/catalog-form-sheet"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Field, FieldGroup } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { DatePicker } from "@/components/ui/date-picker"
@@ -188,7 +189,7 @@ export function VehicleForm({ open, onClose, worksites, users, equipmentTypes, s
                     <legend className="text-sm font-medium text-[var(--color-text)]">Productos compatibles</legend>
                     <p className="text-xs text-[var(--color-text-muted)]">TAE sólo permitirá registrar productos habilitados para este equipo.</p>
                     <div className="grid gap-2 sm:grid-cols-2">
-                      {products.map((product) => <label key={product.id} className="flex items-center gap-2 border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm"><input type="checkbox" name="compatibleProductIds" value={product.id} defaultChecked={editVehicle ? selectedProductIds.has(product.id) : product.id === "fuel-diesel"} disabled={!product.isActive && !selectedProductIds.has(product.id)} />{product.name}</label>)}
+                      {products.map((product) => <div key={product.id} className="border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2"><Checkbox name="compatibleProductIds" value={product.id} defaultChecked={editVehicle ? selectedProductIds.has(product.id) : product.id === "fuel-diesel"} disabled={!product.isActive && !selectedProductIds.has(product.id)} label={product.name} /></div>)}
                     </div>
                   </fieldset>
                   <fieldset className="space-y-3 border-t border-[var(--color-border)] pt-4">

@@ -3,6 +3,8 @@
 import { useActionState, useMemo, useState } from "react"
 import { Plus, WarningCircle } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { INITIAL_STATE } from "@/components/admin/form-state"
 import { createFuelCycleMovementAction } from "./actions"
@@ -43,7 +45,7 @@ export function CycleWorkbench({ worksites, products, suppliers, locations, vehi
                   </SelectContent>
                 </Select>
               </Field>
-              <Field label="Fecha y hora"><input name="occurredAt" type="datetime-local" required defaultValue={new Date().toISOString().slice(0, 16)} aria-label="Fecha y hora" className="control" /></Field>
+              <Field label="Fecha y hora"><Input name="occurredAt" type="datetime-local" required defaultValue={new Date().toISOString().slice(0, 16)} aria-label="Fecha y hora" /></Field>
               <Field label="Faena">
                 <Select value={worksiteId} onValueChange={(v) => { setWorksiteId(v); setSourceLocationId(""); setTargetLocationId(""); setVehicleId("") }}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
@@ -60,8 +62,8 @@ export function CycleWorkbench({ worksites, products, suppliers, locations, vehi
                   </SelectContent>
                 </Select>
               </Field>
-              <Field label="Litros"><input name="quantity" type="number" min="0.01" step="0.01" required aria-label="Litros" className="control" /></Field>
-              <Field label="Documento / guía"><input name="documentNumber" maxLength={120} aria-label="Documento / guía" className="control" /></Field>
+              <Field label="Litros"><Input name="quantity" type="number" min="0.01" step="0.01" required aria-label="Litros" /></Field>
+              <Field label="Documento / guía"><Input name="documentNumber" maxLength={120} aria-label="Documento / guía" /></Field>
               {(type === "received" || type === "direct_delivery") && <Field label="Proveedor">
                 <Select value={supplierId} onValueChange={setSupplierId}>
                   <SelectTrigger><SelectValue placeholder="Selecciona" /></SelectTrigger>
@@ -100,7 +102,7 @@ export function CycleWorkbench({ worksites, products, suppliers, locations, vehi
               </Field>}
             </div>
             {usableLocations.length === 0 && (type === "received" || type === "transfer" || type === "tank_delivery") && <p className="rounded-[var(--radius)] border border-[var(--color-signal-line)] bg-[var(--color-signal-tint)] p-3 text-sm text-[var(--color-signal-ink)]">No hay estanques activos para esta faena y producto. Solicita su alta en el catálogo antes de registrar este evento.</p>}
-            <Field label="Observaciones"><textarea name="notes" maxLength={1000} rows={3} aria-label="Observaciones" className="control" /></Field>
+            <Field label="Observaciones"><Textarea name="notes" maxLength={1000} rows={3} aria-label="Observaciones" className="min-h-0" /></Field>
             <div className="flex justify-end gap-2 border-t border-[var(--color-border)] pt-4"><Button type="button" variant="secondary" onClick={() => setOpen(false)}>Cancelar</Button><Button type="submit" loading={pending}>Registrar movimiento</Button></div>
           </form>
         </div>

@@ -3,8 +3,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 const mockRequirePermission = vi.fn()
 const mockCanAccessWorksite = vi.fn()
 const mockFindLoad = vi.fn()
-const mockDeleteWhere = vi.fn(async () => undefined)
-const mockUpdateWhere = vi.fn(async () => undefined)
+const mockFindVehicle = vi.fn(async () => ({ id: "v-1", worksiteId: "ws-1", plate: "XX-XX-01", worksite: { name: "Faena Test" } }))
+// update/delete devuelven la fila escrita: la precondición "sin cuenta corriente"
+// se reafirma en el WHERE, así que 0 filas significa que otro proceso la asignó.
+const mockDeleteReturning = vi.fn(async () => [{ id: "load-1" }])
+const mockDeleteWhere = vi.fn(() => ({ returning: mockDeleteReturning }))
+const mockUpdateReturning = vi.fn(async () => [{ id: "load-1" }])
+const mockUpdateWhere = vi.fn(() => ({ returning: mockUpdateReturning }))
 const mockUpdateSet = vi.fn(() => ({ where: mockUpdateWhere }))
 const mockInsertValues = vi.fn(async () => undefined)
 const mockRecordAudit = vi.fn()
@@ -30,7 +35,7 @@ vi.mock("@/db", () => ({
         findFirst: (...args: unknown[]) => mockFindLoad(...args),
       },
       fuelVehicles: {
-        findFirst: vi.fn(async () => ({ id: "v-1", worksiteId: "ws-1", plate: "XX-XX-01", worksite: { name: "Faena Test" } })),
+        findFirst: (...args: unknown[]) => mockFindVehicle(...(args as [])),
       },
       systemSettings: { findFirst: vi.fn(async () => null) },
     },
@@ -52,6 +57,12 @@ import {
   registerFuelLoadAction,
   updateFuelLoadAction,
 } from "./actions"
+
+// Vehículo por defecto de cada caso: sin esto, un test que lo redefine filtraría
+// su vehículo al resto del archivo (clearAllMocks no revierte implementaciones).
+beforeEach(() => {
+  mockFindVehicle.mockResolvedValue({ id: "v-1", worksiteId: "ws-1", plate: "XX-XX-01", worksite: { name: "Faena Test" } })
+})
 
 const globalSession = {
   user: { id: "user-1", roles: ["administrador"], worksiteIds: [], isGlobal: true, permissions: ["combustibles:delete", "combustibles:create"] },
@@ -86,6 +97,18 @@ describe("deleteFuelLoadAction", () => {
 
     expect(result.ok).toBe(true)
     expect(mockDeleteWhere).toHaveBeenCalled()
+  })
+
+  it("falla si la carga fue asignada a una cuenta corriente entre la lectura y el DELETE", async () => {
+    mockFindLoad.mockResolvedValue({ id: "load-1", worksiteId: "ws-mine", statementId: null, status: "registered" })
+    mockCanAccessWorksite.mockReturnValue(true)
+    mockDeleteReturning.mockResolvedValueOnce([])   // el WHERE guardado ya no calza
+
+    const result = await deleteFuelLoadAction("load-1")
+
+    expect(result.ok).toBe(false)
+    expect(result.message).toMatch(/cuenta corriente/i)
+    expect(mockRecordAudit).not.toHaveBeenCalled()
   })
 })
 
@@ -168,6 +191,65 @@ describe("updateFuelLoadAction — statement guard (H5)", () => {
     expect(result.message).toBe("Carga actualizada")
     expect(mockNotifyAfterCommit).toHaveBeenCalled()
     expect(mockReevaluateFuelLoadAnomalies).toHaveBeenCalledWith("load-1", "user-1")
+  })
+
+  it("falla si la carga fue asignada a una cuenta corriente entre la lectura y el UPDATE", async () => {
+    mockFindLoad.mockResolvedValue({
+      id: "load-1", worksiteId: "ws-1", statementId: null, status: "registered",
+      loadDate: "2026-01-15", month: "2026-01", serviceType: "TCT",
+      vehicleId: "v-1", fuelSupplierId: "s-1", product: "PETROLEO DIESEL",
+      receiptNumber: null, odometerReading: null, hourMeterReading: null,
+      liters: 100, iecFixed: 0, iecVariable: 0, baseAmount: 1000, iecTotal: 0, ivaAmount: 190, totalAmount: 1190,
+      notes: null,
+    })
+    mockUpdateReturning.mockResolvedValueOnce([])   // el WHERE guardado ya no calza
+
+    const fd = new FormData()
+    for (const [key, value] of Object.entries({
+      id: "load-1", loadDate: "2026-01-15", serviceType: "TCT", vehicleId: "v-1", fuelSupplierId: "s-1", worksiteId: "ws-1", product: "PETROLEO DIESEL",
+      receiptNumber: "", notes: "", liters: "100", baseAmount: "1000", iecFixed: "0", iecVariable: "0", iecTotal: "0", ivaAmount: "190", totalAmount: "1190",
+    })) fd.set(key, value)
+
+    const result = await updateFuelLoadAction({ ok: false, message: "" }, fd)
+
+    expect(result.ok).toBe(false)
+    expect(result.message).toMatch(/cuenta corriente/i)
+    expect(mockRecordAudit).not.toHaveBeenCalled()
+    expect(mockNotifyAfterCommit).not.toHaveBeenCalled()
+  })
+})
+
+describe("updateFuelLoadAction — alcance de la faena destino (H9)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockRequirePermission.mockResolvedValue(scopedSession)
+    mockCanAccessWorksite.mockImplementation((_s: unknown, ws: string) => ws === "ws-mine")
+  })
+
+  it("rechaza mover una carga a una faena fuera del alcance", async () => {
+    // El vehículo destino SÍ pertenece a la faena destino: la validación cruzada
+    // vehículo↔faena pasa, así que sólo el chequeo de alcance puede rechazarlo.
+    mockFindVehicle.mockResolvedValue({ id: "v-2", worksiteId: "ws-otra", plate: "XX-XX-02", worksite: { name: "Faena Ajena" } })
+    mockFindLoad.mockResolvedValue({
+      id: "load-1", worksiteId: "ws-mine", statementId: null, status: "registered",
+      loadDate: "2026-01-15", month: "2026-01", serviceType: "TCT",
+      vehicleId: "v-1", fuelSupplierId: "s-1", product: "PETROLEO DIESEL",
+      receiptNumber: null, odometerReading: null, hourMeterReading: null,
+      liters: 100, iecFixed: 0, iecVariable: 0, baseAmount: 1000, iecTotal: 0, ivaAmount: 190, totalAmount: 1190,
+      notes: null,
+    })
+
+    const fd = new FormData()
+    for (const [key, value] of Object.entries({
+      id: "load-1", loadDate: "2026-01-15", serviceType: "TCT", vehicleId: "v-2", fuelSupplierId: "s-1", worksiteId: "ws-otra", product: "PETROLEO DIESEL",
+      liters: "100", baseAmount: "1000", iecFixed: "0", iecVariable: "0", iecTotal: "0", ivaAmount: "190", totalAmount: "1190",
+    })) fd.set(key, value)
+
+    const result = await updateFuelLoadAction({ ok: false, message: "" }, fd)
+
+    expect(result.ok).toBe(false)
+    expect(result.message).toBe("No puedes mover cargas a esta faena")
+    expect(mockUpdateWhere).not.toHaveBeenCalled()
   })
 })
 

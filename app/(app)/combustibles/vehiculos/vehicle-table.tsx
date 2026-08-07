@@ -5,6 +5,7 @@ import { DataTable } from "@/components/admin/data-table"
 import { useCatalogSheet } from "@/components/admin/use-catalog-sheet"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { toast } from "@/lib/toast"
 import { toggleFuelVehicleActiveAction, bulkToggleFuelVehicleActiveAction } from "../actions"
@@ -115,21 +116,14 @@ export function VehicleCatalogTable({ vehicles, worksites, users, equipmentTypes
         </div>
 
         <div className="flex items-center gap-3 mb-3">
-          <label className="flex items-center gap-1.5 cursor-pointer text-xs text-[var(--color-text-subtle)] hover:text-[var(--color-text)] transition-colors">
-            <input
-              ref={selectAllRef}
-              type="checkbox"
-              checked={allSelected}
-              onChange={toggleSelectAll}
-              className="h-4 w-4 rounded border-[var(--color-border-control)] text-[var(--color-primary)] focus:ring-[var(--color-primary)]"
-              aria-label="Seleccionar o deseleccionar todos"
-            />
-            {allSelected
-              ? `${selectedIds.size} seleccionados`
-              : selectedIds.size > 0
-                ? `${selectedIds.size} seleccionados`
-                : "Seleccionar todo"}
-          </label>
+          <Checkbox
+            ref={selectAllRef}
+            checked={allSelected}
+            onChange={toggleSelectAll}
+            label={<span className="text-xs text-[var(--color-text-subtle)]">
+              {selectedIds.size > 0 ? `${selectedIds.size} seleccionados` : "Seleccionar todo"}
+            </span>}
+          />
         </div>
 
         {selectedIds.size > 0 && (

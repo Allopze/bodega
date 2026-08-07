@@ -76,7 +76,7 @@ export default async function EquipmentPerformancePage({ searchParams }: { searc
     <PageContainer width="full">
       <PageHeader
         title="Análisis de rendimiento por equipo"
-        description="Estadística descriptiva por faena, equipo o tipo — nunca mezcla observaciones km/L con L/h."
+        description="Estadística descriptiva por faena, equipo o tipo: nunca mezcla observaciones km/L con L/h."
         breadcrumb={<Breadcrumbs items={[{ label: "Combustibles", href: "/combustibles" }, { label: "Análisis de rendimiento" }]} />}
       />
 
@@ -100,7 +100,7 @@ export default async function EquipmentPerformancePage({ searchParams }: { searc
       {groups.length === 0 ? (
         <div className="border border-dashed border-(--color-border-strong) p-8 text-center text-sm text-(--color-text-muted)">
           {worksiteId || preset !== "truck" || aggregateBy !== "worksite" ? (
-            <>Sin coincidencias para estos filtros. Intenta con otro preset, faena, agregación o rango de fechas. Sólo el consumo TCT importado y el log operacional traen rendimiento calculado — TAE y facturación todavía no lo tienen.
+            <>Sin coincidencias para estos filtros. Intenta con otro preset, faena, agregación o rango de fechas. Sólo el consumo TCT importado y el log operacional traen rendimiento calculado: TAE y facturación todavía no lo tienen.
             </>
           ) : (
             <>Sin observaciones de rendimiento para camiones en todas las faenas autorizadas. Sólo el consumo TCT importado y el log operacional traen rendimiento calculado.

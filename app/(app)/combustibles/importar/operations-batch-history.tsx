@@ -57,7 +57,7 @@ const SEARCH_KEYS = ["archivoNombre", "importerName", "periodoLabel"]
 function flatRow(b: OperationBatchRow): OperationBatchRowFlat {
   return {
     id: b.id,
-    periodoLabel: `${b.periodoDesde} — ${b.periodoHasta}`,
+    periodoLabel: `${b.periodoDesde} a ${b.periodoHasta}`,
     archivoNombre: b.archivoNombre,
     totalEquipos: b.totalEquipos,
     filasValidas: b.filasValidas,

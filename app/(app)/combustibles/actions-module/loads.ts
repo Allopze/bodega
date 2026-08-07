@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache"
 import { redirect } from "next/navigation"
 import { db } from "@/db"
 import { fuelLoads, fuelVehicles } from "@/db/schema"
-import { eq } from "drizzle-orm"
+import { and, eq, isNull } from "drizzle-orm"
 import { requirePermission } from "@/lib/auth/can"
 import { canAccessWorksite } from "@/lib/auth/scope"
 import { nanoid } from "@/lib/id"
@@ -179,6 +179,11 @@ export async function updateFuelLoadAction(
   // Validación cruzada: si cambió el vehículo, verificar que su faena coincida
   const newVehicleId = String(formData.get("vehicleId") ?? existing.vehicleId)
   const newWorksiteId = String(formData.get("worksiteId") ?? existing.worksiteId)
+  // Hay dos faenas en juego: la actual y la propuesta. Ambas necesitan alcance,
+  // igual que updateFuelVehicleAction (vehicles.ts:161) y updateMaintenanceRecord.
+  if (!canAccessWorksite(session, newWorksiteId)) {
+    return { ok: false, message: "No puedes mover cargas a esta faena" }
+  }
   if (newVehicleId !== existing.vehicleId || newWorksiteId !== existing.worksiteId) {
     const vehicle = await db.query.fuelVehicles.findFirst({
       where: eq(fuelVehicles.id, newVehicleId),
@@ -230,15 +235,25 @@ export async function updateFuelLoadAction(
   }
 
   try {
-    await db.update(fuelLoads).set({ ...parsed.data, productId: fuelProductIdForLegacy(parsed.data.product), updatedAt: new Date().toISOString() }).where(eq(fuelLoads.id, id))
+    // El gate de :172 lee una fila que puede quedar obsoleta: createMonthlyStatementAction
+    // toma FOR UPDATE sobre las cargas sin resumen y las asigna. Repetir la precondición
+    // en el WHERE hace que, al despertar del lock, la fila ya no calce y no se pise el
+    // total congelado del resumen.
+    const [updated] = await db.update(fuelLoads)
+      .set({ ...parsed.data, productId: fuelProductIdForLegacy(parsed.data.product), updatedAt: new Date().toISOString() })
+      .where(and(eq(fuelLoads.id, id), isNull(fuelLoads.statementId)))
+      .returning({ id: fuelLoads.id })
+    if (!updated) {
+      return { ok: false, message: "No se puede editar una carga asignada a una cuenta corriente" }
+    }
 
     await recordAudit({
       userId: session.user.id,
       action: "update",
       entityType: "fuel_load",
       entityId: id,
-      oldState: { liters: existing.liters, baseAmount: existing.baseAmount, totalAmount: existing.totalAmount },
-      newState: { liters: parsed.data.liters, baseAmount: parsed.data.baseAmount, totalAmount: parsed.data.totalAmount },
+      oldState: { worksiteId: existing.worksiteId, liters: existing.liters, baseAmount: existing.baseAmount, totalAmount: existing.totalAmount },
+      newState: { worksiteId: parsed.data.worksiteId, liters: parsed.data.liters, baseAmount: parsed.data.baseAmount, totalAmount: parsed.data.totalAmount },
     })
 
     revalidatePath(REVALIDATE)
@@ -268,7 +283,14 @@ export async function deleteFuelLoadAction(id: string): Promise<ActionState> {
   }
 
   try {
-    await db.delete(fuelLoads).where(eq(fuelLoads.id, id))
+    // Misma carrera que en la edición: sin FK que frene el DELETE, una carga
+    // recién asignada a un resumen desaparecería del detalle sin salir del total.
+    const [deleted] = await db.delete(fuelLoads)
+      .where(and(eq(fuelLoads.id, id), isNull(fuelLoads.statementId)))
+      .returning({ id: fuelLoads.id })
+    if (!deleted) {
+      return { ok: false, message: "No se puede eliminar una carga asignada a una cuenta corriente" }
+    }
 
     await recordAudit({
       userId: session.user.id,

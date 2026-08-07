@@ -3,6 +3,7 @@
 import { useReducer } from "react"
 import { FileXls, Upload } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { toast } from "@/lib/toast"
 import type { TaeImportMappingDecision, TaeImportPreview } from "@/lib/combustibles/tae-import-service"
@@ -155,7 +156,7 @@ export function TaeImportReportForm() {
         </ul>}
         {preview.reviewItems.length === 0 && <p className="border border-(--color-success-line) bg-(--color-success-tint) p-3 text-sm text-(--color-success-ink)">No hay identidades ambiguas pendientes. El plan usa sólo coincidencias confiables o decisiones ya guardadas.</p>}
         <div className="border-t border-(--color-border) pt-4">
-          <label className="flex items-start gap-2 text-sm"><input type="checkbox" className="mt-0.5" checked={confirmed} onChange={(event) => dispatch({ type: "confirmed", value: event.target.checked })} disabled={pendingDecisions > 0} /><span>Revisé el reporte y las decisiones anteriores. Confirmo importar las filas con faena válida; las cargas que conserven observaciones de lectura, sello o identidad quedarán en estado <strong>Observada</strong>.</span></label>
+          <Checkbox checked={confirmed} onChange={(event) => dispatch({ type: "confirmed", value: event.target.checked })} disabled={pendingDecisions > 0} label={<>Revisé el reporte y las decisiones anteriores. Confirmo importar las filas con faena válida; las cargas que conserven observaciones de lectura, sello o identidad quedarán en estado <strong>Observada</strong>.</>} />
           {pendingDecisions > 0 && <p className="mt-2 text-xs text-(--color-warning-ink)">Faltan {pendingDecisions.toLocaleString("es-CL")} decisiones de mapeo.</p>}
           <Button className="mt-3" variant="destructive" onClick={handleImport} disabled={loading || !confirmed || pendingDecisions > 0}>{loading ? "Importando…" : "Importar histórico definitivamente"}</Button>
         </div>

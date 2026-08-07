@@ -8,7 +8,7 @@ import { PageContainer } from "@/components/ui/page-container"
 export default function Loading() {
   return (
     <PageContainer>
-      <PageHeader title="Detalle de importación — Log operacional" />
+      <PageHeader title="Detalle de importación (Log operacional)" />
       <SkeletonPage rows={4} />
     </PageContainer>
   )

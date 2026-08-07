@@ -75,7 +75,7 @@ function flatRow(b: BatchRow): BatchRowFlat {
     estado: b.estado,
     createdAt: b.createdAt,
     importerName: b.importer?.name ?? b.importer?.email ?? "—",
-    periodoLabel: `${b.periodoDesde} — ${b.periodoHasta}`,
+    periodoLabel: `${b.periodoDesde} a ${b.periodoHasta}`,
   }
 }
 

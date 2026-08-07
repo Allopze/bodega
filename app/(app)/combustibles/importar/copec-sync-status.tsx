@@ -112,12 +112,14 @@ export function CopecSyncStatus({ initialStatus, initialStartOptions }: { initia
         return
       }
 
-      dispatchView({ type: "patch", patch: { result: `${imported} registros importados · ${received} recepciones TAE${pendingPlates ? ` · ${pendingPlates} patentes pendientes` : ""}${unmappedCards.size ? ` · ${unmappedCards.size} tarjetas TAE sin estanque` : ""}${unavailable.length ? ` · ${unavailable.length} reportes sin archivo` : ""}` } })
+      dispatchView({ type: "patch", patch: { result: `${imported} registros importados · ${received} recepciones TAE${pendingPlates ? ` · ${pendingPlates} patentes pendientes` : ""}${unmappedCards.size ? ` · ${unmappedCards.size} tarjetas TAE sin estanque` : ""}${unavailable.length ? ` · ${unavailable.length} reportes sin importar` : ""}` } })
       // Una tarjeta sin estanque asociado significa que ese combustible NO entró al
       // ciclo: la recepción se omitió. Hay que avisarlo, no dejarlo en el resumen.
       if (unmappedCards.size) toast.warning(`${unmappedCards.size} tarjeta(s) TAE sin estanque asociado: sus recepciones no se importaron. Asócialas en Administración › Estanques de combustible.`)
 
-      if (unavailable.length) toast.warning(`${unavailable.length} reporte(s) de Copec sin archivo`)
+      // "Sin importar" cubre los dos casos: el portal no entregó el archivo, o la
+      // faena ya tenía una importación manual de ese período y se omitió.
+      if (unavailable.length) toast.warning(`${unavailable.length} reporte(s) de Copec sin importar`)
       else toast.success(`Copec sincronizado: ${imported} registros`)
     })
   }, [router])
@@ -171,13 +173,13 @@ export function CopecSyncStatus({ initialStatus, initialStartOptions }: { initia
                 Próximo mes pendiente: {formatMonth(status.cursor)}
               </span>
             )}
-            {status.pending > 0 && <span className="text-[var(--color-warning-ink)]">{status.pending} patente(s) sin vehículo registrado — su consumo no se importa hasta que las registres en la flota y vuelvas a sincronizar su período</span>}
+            {status.pending > 0 && <span className="text-[var(--color-warning-ink)]">{status.pending} patente(s) sin vehículo registrado: su consumo no se importa hasta que las registres en la flota y vuelvas a sincronizar su período</span>}
           </div>
 
           <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-[var(--color-border)] pt-3 text-xs">
             <span className="text-muted-foreground">Primer mes pendiente: <span className="font-medium text-[var(--color-text)]">{formatMonth(startOptions.currentStart)}</span></span>
             {!isEditingStart && (
-              <Button type="button" variant="ghost" size="sm" onClick={() => dispatchView({ type: "patch", patch: { isEditingStart: true } })} disabled={isActiveSync || startOptions.minimumStart > startOptions.maximumStart}>
+              <Button type="button" variant="ghost" size="sm" onClick={() => dispatchView({ type: "patch", patch: { isEditingStart: true } })} disabled={isActiveSync}>
                 <PencilSimple className="mr-1 h-3.5 w-3.5" />
                 Ajustar mes
               </Button>
@@ -188,10 +190,10 @@ export function CopecSyncStatus({ initialStatus, initialStartOptions }: { initia
             <div className="grid gap-3 border-t border-[var(--color-border)] pt-3 sm:grid-cols-[minmax(0,220px)_auto] sm:items-end">
               <div className="grid gap-1.5">
                 <label htmlFor="copec-sync-start" className="text-xs font-medium text-[var(--color-text)]">Comenzar desde el mes</label>
-                <DatePicker id="copec-sync-start" value={selectedStart} onChange={(value) => dispatchView({ type: "patch", patch: { selectedStart: firstDayOfMonth(value) } })} min={startOptions.minimumStart} max={startOptions.maximumStart} disabled={isActiveSync} />
+                <DatePicker id="copec-sync-start" value={selectedStart} onChange={(value) => dispatchView({ type: "patch", patch: { selectedStart: firstDayOfMonth(value) } })} max={startOptions.maximumStart} disabled={isActiveSync} />
               </div>
               <div className="flex flex-wrap gap-2">
-                <Button type="button" size="sm" onClick={saveStartDate} disabled={isActiveSync || selectedStart < startOptions.minimumStart || selectedStart > startOptions.maximumStart}>
+                <Button type="button" size="sm" onClick={saveStartDate} disabled={isActiveSync || selectedStart > startOptions.maximumStart}>
                   {pending ? "Guardando…" : "Guardar mes"}
                 </Button>
                 <Button type="button" variant="ghost" size="sm" onClick={() => dispatchView({ type: "patch", patch: { selectedStart: startOptions.currentStart, isEditingStart: false } })} disabled={isActiveSync}>
@@ -199,7 +201,7 @@ export function CopecSyncStatus({ initialStatus, initialStartOptions }: { initia
                 </Button>
               </div>
               <p className="text-xs text-muted-foreground sm:col-span-2">
-                Se consulta un mes completo por vez. Disponible desde {formatMonth(startOptions.minimumStart)} hasta el mes actual; solo los meses ya cerrados se descargan. No se superpone con importaciones activas{startOptions.latestImportedUntil ? `, la última termina el ${startOptions.latestImportedUntil}` : ""}.
+                Se consulta un mes completo por vez, hasta el mes actual; solo los meses ya cerrados se descargan. Puedes retroceder para recuperar meses pendientes{startOptions.latestImportedUntil ? `: la última importación activa termina el ${startOptions.latestImportedUntil}, y las faenas que ya tengan una importación manual de esos meses se saltan para no duplicar consumo` : ""}.
               </p>
             </div>
           )}

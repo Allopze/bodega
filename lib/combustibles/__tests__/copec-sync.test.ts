@@ -47,7 +47,7 @@ vi.mock("@/lib/combustibles/tae-receipts", () => ({
   importTaeReceipts: (...args: unknown[]) => mockImportTaeReceipts(...args),
 }))
 
-const { buildCopecSyncPeriods, getCopecSyncStartOptions, setCopecSyncStartDate, syncCopecReportPeriod } = await import("../copec-sync")
+const { buildCopecSyncPeriods, getCopecSyncPlan, getCopecSyncStartOptions, setCopecSyncStartDate, syncCopecReportPeriod } = await import("../copec-sync")
 
 describe("buildCopecSyncPeriods", () => {
   it("divides an initial historical import into closed calendar months", () => {
@@ -154,6 +154,25 @@ describe("syncCopecReportPeriod", () => {
     // El lote existente se actualiza con los totales de la patente nueva.
     expect(mockTxUpdateSet).toHaveBeenCalledOnce()
   })
+
+  it("skips a worksite already imported from another source instead of duplicating its consumption", async () => {
+    const row = (patente: string): unknown => ({ rowIndex: 1, patente, numeroTarjetas: 1, numeroTransacciones: 2, cantidadUnidad: 100, monto: 50000, rendimientoPromedio: 3, rawRow: {} })
+    mockDownloadCopecReports.mockResolvedValue([
+      { product: "diesel", unavailable: false, report: { buffer: Buffer.from("x"), fileName: "tct-diesel.xlsx" } },
+      { product: "bluemax", unavailable: true },
+    ])
+    mockParseConsumptionExcel.mockResolvedValue({ rows: [row("AAA")], errors: [], duplicates: [] })
+    mockVehiclesFindMany.mockResolvedValue([{ id: "v-aaa", plate: "AAA", worksiteId: "W1" }])
+    // 1ª consulta: no hay lote propio (dedup por fuente exacta). 2ª: sí hay uno
+    // importado a mano ('Copec') que cubre el mismo período de esa faena.
+    mockBatchFindFirst.mockResolvedValueOnce(undefined).mockResolvedValueOnce({ fuente: "Copec" })
+
+    const result = await syncCopecReportPeriod({ from: "2026-02-01", to: "2026-02-28" }, "operator-1")
+
+    expect(result.imported).toBe(0)
+    expect(mockTransaction).not.toHaveBeenCalled()
+    expect(result.unavailable).toContain("Diesel: faena con importación previa (Copec) en el período")
+  })
 })
 
 describe("Copec synchronization start date", () => {
@@ -169,20 +188,40 @@ describe("Copec synchronization start date", () => {
     vi.unstubAllEnvs()
   })
 
-  it("only offers dates after the latest active fuel import", async () => {
+  it("keeps the explicit cursor even when a foreign batch reaches a later month", async () => {
+    // El piso (mes siguiente al último lote activo) es solo informativo: recortar
+    // el cursor contra él saltaba en silencio todos los meses intermedios.
     const options = await getCopecSyncStartOptions()
 
     expect(options).toMatchObject({
-      currentStart: "2026-07-01",
+      currentStart: "2020-02-01",
       minimumStart: "2026-07-01",
       latestImportedUntil: "2026-06-30",
     })
   })
 
-  it("rejects a configured start that would overlap an imported period", async () => {
-    await expect(setCopecSyncStartDate("2026-06-01", "2020-02-01"))
-      .rejects.toThrow("posterior al último período importado")
-    expect(mockSaveState).not.toHaveBeenCalled()
+  it("allows going back before the latest imported period to recover skipped months", async () => {
+    const result = await setCopecSyncStartDate("2026-04-01", "2020-02-01")
+
+    expect(result.currentStart).toBe("2026-04-01")
+    expect(mockSaveState).toHaveBeenCalledOnce()
+  })
+
+  it("plans the months a foreign manual batch used to swallow", async () => {
+    // Cursor en abril y un lote ajeno que llega hasta julio: el plan debe cubrir
+    // abril–julio, no quedar vacío con "no hay meses cerrados nuevos".
+    mockSettingFindFirst.mockResolvedValue({ value: JSON.stringify({ cursor: "2026-04-01", lastRunAt: null, pending: [] }) })
+    mockBatchFindFirst.mockResolvedValue({ periodoHasta: "2026-07-31" })
+    vi.useFakeTimers({ toFake: ["Date"] })
+    vi.setSystemTime(new Date("2026-08-07T12:00:00.000Z"))
+    try {
+      const plan = await getCopecSyncPlan()
+      expect(plan.from).toBe("2026-04-01")
+      expect(plan.to).toBe("2026-07-31")
+      expect(plan.periods).toHaveLength(4)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it("allows skipping ahead to a date after imported periods", async () => {

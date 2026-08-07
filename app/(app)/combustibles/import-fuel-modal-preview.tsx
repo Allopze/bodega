@@ -179,7 +179,7 @@ export function PreviewStep({
             <div className="max-h-32 overflow-y-auto space-y-1 text-sm">
               {errors.map((err) => (
                 <p key={`${err.rowIndex}-${err.field}`} className="text-[var(--color-danger)]">
-                  Fila {err.rowIndex} — {err.field}: {err.message}
+                  Fila {err.rowIndex}, {err.field}: {err.message}
                 </p>
               ))}
             </div>

@@ -51,6 +51,16 @@ export function sheetToRecords(sheet: ExcelJS.Worksheet): Record<string, unknown
   return records
 }
 
+/** Extrae "YYYY-MM-DD" de una fecha Excel usando componentes UTC — ExcelJS
+ *  decodifica los seriales de fecha/hora de Excel como UTC, y los getters
+ *  locales desplazarían el día según la zona del proceso o del navegador. */
+export function formatExcelDateUTC(date: Date): string {
+  const y = date.getUTCFullYear()
+  const m = String(date.getUTCMonth() + 1).padStart(2, "0")
+  const d = String(date.getUTCDate()).padStart(2, "0")
+  return `${y}-${m}-${d}`
+}
+
 /** Convierte un valor de celda (número, o texto con formato chileno —
  *  miles con "." y decimales con ",") a número. Vacío/no numérico → 0. */
 export function parseChileanNumber(value: unknown): number {
@@ -58,7 +68,14 @@ export function parseChileanNumber(value: unknown): number {
   if (typeof value === "string") {
     const cleaned = value.trim().replace(/[$\s]/g, "")
     if (!cleaned || cleaned === "-") return 0
-    const n = parseFloat(cleaned.replace(/[,.](?=\d{3})/g, "").replace(",", "."))
+    // En notación chilena la coma es SIEMPRE el decimal: si hay coma, todo punto
+    // es separador de miles. Sin coma, un punto seguido de exactamente 3 dígitos
+    // (y luego otro punto o el fin) son miles; si no, es un decimal a la inglesa.
+    const n = parseFloat(
+      cleaned.includes(",")
+        ? cleaned.replace(/\./g, "").replace(",", ".")
+        : cleaned.replace(/\.(?=\d{3}(?:\.|$))/g, ""),
+    )
     return isNaN(n) ? 0 : n
   }
   return 0

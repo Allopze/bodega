@@ -42,7 +42,7 @@ export function UploadStep({
             <span className="text-[var(--color-primary)]">haz clic para buscar</span>
           </p>
           <p className="text-xs text-muted-foreground mt-0.5">
-            Excel de TCT Copec — .xlsx o .xls
+            Excel de TCT Copec (.xlsx o .xls)
           </p>
         </div>
         <input

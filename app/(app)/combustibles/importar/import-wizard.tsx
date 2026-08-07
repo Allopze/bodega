@@ -156,7 +156,7 @@ export function ImportWizard({ worksites, canImportAllWorksites }: { worksites: 
               </div>
               <div className="max-h-32 overflow-y-auto space-y-0.5 text-muted-foreground">
                 {result.errors.slice(0, 20).map((error) => (
-                  <p key={importErrorKey(error)}>• Fila {error.rowIndex} — {error.field}: {error.message}</p>
+                  <p key={importErrorKey(error)}>• Fila {error.rowIndex}, {error.field}: {error.message}</p>
                 ))}
                 {result.errors.length > 20 && (
                   <p className="text-xs text-muted-foreground">…y {result.errors.length - 20} errores más</p>
@@ -210,7 +210,7 @@ export function ImportWizard({ worksites, canImportAllWorksites }: { worksites: 
               </div>
               <div className="max-h-40 overflow-y-auto space-y-0.5">
                 {preview.errores.slice(0, 30).map((error) => (
-                  <p key={importErrorKey(error)} className="text-[var(--color-danger)]">Fila {error.rowIndex} — {error.field}: {error.message}</p>
+                  <p key={importErrorKey(error)} className="text-[var(--color-danger)]">Fila {error.rowIndex}, {error.field}: {error.message}</p>
                 ))}
                 {preview.errores.length > 30 && (
                   <p className="text-xs text-muted-foreground">
@@ -344,7 +344,7 @@ export function ImportWizard({ worksites, canImportAllWorksites }: { worksites: 
               </p>
             )}
             {!fileError && (
-              <p className="text-xs text-muted-foreground mt-0.5">Reporte de tarjetas de combustible — .xlsx</p>
+              <p className="text-xs text-muted-foreground mt-0.5">Reporte de tarjetas de combustible (.xlsx)</p>
             )}
           </div>
           <input type="file" accept=".xlsx" onChange={(e) => handleFile(e.target.files?.[0])} className="sr-only" aria-label="Seleccionar archivo Excel" />

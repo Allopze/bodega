@@ -96,7 +96,7 @@ export function ConsumptionDetailTable({ rows, page, totalPages, total }: Consum
                     {row.precioPromedioUnidad != null ? `${formatCLP(row.precioPromedioUnidad)}/L` : "—"}
                   </TableCell>
                   <TableCell className="text-right font-mono">{row.rendimientoPromedio > 0 ? row.rendimientoPromedio.toFixed(2) : "—"}</TableCell>
-                  <TableCell className="font-mono text-xs">{row.periodoDesde} — {row.periodoHasta}</TableCell>
+                  <TableCell className="font-mono text-xs">{row.periodoDesde} a {row.periodoHasta}</TableCell>
                   <TableCell className="max-w-32 truncate">{row.fuente ?? "—"}</TableCell>
                   <TableCell>
                     <Button asChild variant="ghost" size="sm">

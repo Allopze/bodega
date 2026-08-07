@@ -5,7 +5,7 @@
  */
 
 import ExcelJS from "exceljs"
-import { normKey, sheetToRecords, parseChileanNumber, nullableChileanNumber } from "./xlsx-utils"
+import { normKey, sheetToRecords, parseChileanNumber, nullableChileanNumber, formatExcelDateUTC } from "./xlsx-utils"
 
 export interface ParsedFuelLoad {
   rowIndex: number
@@ -84,20 +84,14 @@ export async function parseFuelExcel(fileBuffer: ArrayBuffer): Promise<ImportRes
     let loadDate = ""
     let month = ""
     if (rawDate instanceof Date) {
-      const y = rawDate.getFullYear()
-      const m = String(rawDate.getMonth() + 1).padStart(2, "0")
-      const d = String(rawDate.getDate()).padStart(2, "0")
-      loadDate = `${y}-${m}-${d}`
-      month = `${y}-${m}`
+      loadDate = formatExcelDateUTC(rawDate)
+      month = loadDate.slice(0, 7)
     } else if (typeof rawDate === "string" && rawDate.trim()) {
       // Intentar parsear string
       const d = new Date(rawDate)
       if (!isNaN(d.getTime())) {
-        const y = d.getFullYear()
-        const mo = String(d.getMonth() + 1).padStart(2, "0")
-        const da = String(d.getDate()).padStart(2, "0")
-        loadDate = `${y}-${mo}-${da}`
-        month = `${y}-${mo}`
+        loadDate = formatExcelDateUTC(d)
+        month = loadDate.slice(0, 7)
       } else {
         errors.push({ rowIndex: rowNum, field: "MES-AÑO", message: `Fecha inválida: ${rawDate}` })
         continue

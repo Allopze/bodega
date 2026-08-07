@@ -117,7 +117,7 @@ export default async function TaeImportBatchDetailPage({ params }: { params: Pro
         <Card className="mt-5">
           <CardHeader><CardTitle>Identidades sin equivalente ({ambiguous.size})</CardTitle></CardHeader>
           <CardContent>
-            <p className="mb-4 text-sm text-(--color-text-muted)">Asigna el equipo o persona real del catálogo. La decisión se guarda por faena y se aplica sola en la próxima importación del mismo histórico — no corrige las cargas ya importadas en este lote.</p>
+            <p className="mb-4 text-sm text-(--color-text-muted)">Asigna el equipo o persona real del catálogo. La decisión se guarda por faena y se aplica sola en la próxima importación del mismo histórico: no corrige las cargas ya importadas en este lote.</p>
             <TaeMappingReview items={[...ambiguous.values()]} vehicleOptions={vehicleOptions} workerOptions={workerOptions} />
           </CardContent>
         </Card>

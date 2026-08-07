@@ -123,7 +123,7 @@ export function OperationsImportWizard() {
               </div>
               <div className="max-h-32 overflow-y-auto space-y-0.5 text-muted-foreground">
                 {result.errors.slice(0, 20).map((e) => (
-                  <p key={importErrorKey(e)}>• Fila {e.rowIndex} — {e.field}: {e.message}</p>
+                  <p key={importErrorKey(e)}>• Fila {e.rowIndex}, {e.field}: {e.message}</p>
                 ))}
                 {result.errors.length > 20 && (
                   <p className="text-xs text-muted-foreground">…y {result.errors.length - 20} errores más</p>
@@ -154,7 +154,7 @@ export function OperationsImportWizard() {
             <Stat label="Filas válidas" value={formatQty(preview.totales.totalFilas)} icon={<CheckCircle className="h-5 w-5 text-[var(--color-success)]" />} />
             <Stat label="Filas rechazadas" value={formatQty(preview.errores.length)} icon={<WarningCircle className="h-5 w-5 text-[var(--color-danger)]" />} />
             <Stat label="Equipos únicos" value={formatQty(preview.totales.totalEquipos)} icon={<FileText className="h-5 w-5 text-muted-foreground" />} />
-            <Stat label="Período" value={`${preview.totales.periodoDesde} — ${preview.totales.periodoHasta}`} />
+            <Stat label="Período" value={`${preview.totales.periodoDesde} a ${preview.totales.periodoHasta}`} />
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <Stat label="Litros totales" value={formatQty(Math.round(preview.totales.totalLitros), "L")} />
@@ -165,7 +165,7 @@ export function OperationsImportWizard() {
 
           {preview.faenasSinMatch.length > 0 && (
             <div className="p-3 bg-[var(--color-warning-tint)] rounded-md text-sm">
-              <p className="font-medium mb-1">Faenas sin match ({preview.faenasSinMatch.length}) — se podrán vincular manualmente después:</p>
+              <p className="font-medium mb-1">Faenas sin match ({preview.faenasSinMatch.length}). Se podrán vincular manualmente después:</p>
               <p className="text-muted-foreground">{preview.faenasSinMatch.join(", ")}</p>
             </div>
           )}
@@ -190,7 +190,7 @@ export function OperationsImportWizard() {
               </div>
               <div className="max-h-40 overflow-y-auto space-y-0.5">
                 {preview.errores.slice(0, 30).map((e) => (
-                  <p key={importErrorKey(e)} className="text-[var(--color-danger)]">Fila {e.rowIndex} — {e.field}: {e.message}</p>
+                  <p key={importErrorKey(e)} className="text-[var(--color-danger)]">Fila {e.rowIndex}, {e.field}: {e.message}</p>
                 ))}
                 {preview.errores.length > 30 && (
                   <p className="text-xs text-muted-foreground">…y {preview.errores.length - 30} errores más. Usa el botón de arriba para descargar la lista completa.</p>
@@ -241,7 +241,7 @@ export function OperationsImportWizard() {
         <p className="text-sm text-muted-foreground">
           Carga el consolidado de cargas de combustible por transacción (fecha, horómetro,
           operador, proveedor y rendimiento por carga). A diferencia del reporte de
-          consumos por patente, este archivo abarca varias faenas y periodos a la vez —
+          consumos por patente, este archivo abarca varias faenas y periodos a la vez:
           se detectan automáticamente desde las columnas FECHA y FAENA de cada fila.
         </p>
         <div className="grid gap-3 sm:grid-cols-1 max-w-sm">
@@ -284,7 +284,7 @@ export function OperationsImportWizard() {
               </p>
             )}
             {!fileError && (
-              <p className="text-xs text-muted-foreground mt-0.5">Consolidado de cargas de combustible — .xlsx</p>
+              <p className="text-xs text-muted-foreground mt-0.5">Consolidado de cargas de combustible (.xlsx)</p>
             )}
           </div>
           <input type="file" accept=".xlsx" onChange={(e) => handleFile(e.target.files?.[0])} className="sr-only" />

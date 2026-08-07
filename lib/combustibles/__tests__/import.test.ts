@@ -109,6 +109,17 @@ describe("parseFuelExcel", () => {
     expect(result.loads[0]!.month).toBe("2026-01")
   })
 
+  it("no corre de mes el serial de fecha pura de la columna MES-AÑO", async () => {
+    // "MES-AÑO" trae el primero de cada mes como serial entero (numFmt "mmmm-yy").
+    // ExcelJS lo decodifica como medianoche UTC; leerlo con getters locales lo
+    // dejaba en el día/mes anterior para cualquier navegador chileno (UTC-3/-4).
+    const buffer = await createTestExcel([{ ...validRow, "MES-AÑO": new Date(Date.UTC(2026, 0, 1)) }])
+    const result = await parseFuelExcel(buffer)
+    expect(result.errors).toHaveLength(0)
+    expect(result.loads[0]!.loadDate).toBe("2026-01-01")
+    expect(result.loads[0]!.month).toBe("2026-01")
+  })
+
   it("returns empty for empty file", async () => {
     const result = await parseFuelExcel(new ArrayBuffer(0))
     expect(result.loads).toHaveLength(0)

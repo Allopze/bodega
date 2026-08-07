@@ -11,6 +11,7 @@ import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { getFuelLogRows, getFuelLogTotal, FUEL_LOG_SOURCE_LABEL, fuelLogDetailHref, fuelLogAuditEntity, type FuelLogSource } from "@/lib/combustibles/fuel-log"
 import { ANOMALY_RULE_SEVERITY_LABELS, ANOMALY_RULE_SEVERITIES } from "@/lib/combustibles/validation"
 import { PageContainer } from "@/components/ui/page-container"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { Input } from "@/components/ui/input"
 import { DatePicker } from "@/components/ui/date-picker"
@@ -201,11 +202,11 @@ export default async function FuelLogPage({ searchParams }: { searchParams: Prom
           <div className="mt-4 flex flex-col gap-5">
             <fieldset className="grid gap-3 md:grid-cols-4">
               <legend className="text-eyebrow mb-2 md:col-span-4">Vehículo</legend>
-              <Input name="marca" defaultValue={sp.marca} aria-label="Marca del vehículo" placeholder="Marca del vehículo" className="control" />
-              <Input name="modelo" defaultValue={sp.modelo} aria-label="Modelo del vehículo" placeholder="Modelo del vehículo" className="control" />
+              <Input name="marca" defaultValue={sp.marca} aria-label="Marca del vehículo" placeholder="Marca del vehículo" />
+              <Input name="modelo" defaultValue={sp.modelo} aria-label="Modelo del vehículo" placeholder="Modelo del vehículo" />
               <FilterSelect name="tipo" defaultValue={sp.tipo} options={equipmentTypesList.map((item) => ({ value: item.id, label: item.name }))} placeholder="Todos los tipos de equipo" />
-              <Input name="conductor" defaultValue={sp.conductor} aria-label="Nombre del conductor" placeholder="Nombre del conductor" className="control" />
-              <Input name="supervisor" defaultValue={sp.supervisor} aria-label="Nombre del supervisor" placeholder="Nombre del supervisor" className="control" />
+              <Input name="conductor" defaultValue={sp.conductor} aria-label="Nombre del conductor" placeholder="Nombre del conductor" />
+              <Input name="supervisor" defaultValue={sp.supervisor} aria-label="Nombre del supervisor" placeholder="Nombre del supervisor" />
             </fieldset>
             <fieldset className="grid gap-3 md:grid-cols-4">
               <legend className="text-eyebrow mb-2 md:col-span-4">Operación</legend>
@@ -213,19 +214,19 @@ export default async function FuelLogPage({ searchParams }: { searchParams: Prom
               <FilterSelect name="producto" defaultValue={sp.producto} options={productsList.map((item) => ({ value: item.id, label: item.name }))} placeholder="Todos los productos" />
               <FilterSelect name="punto_carga" defaultValue={sp.punto_carga} options={loadingPointsList.map((item) => ({ value: item.id, label: item.name }))} placeholder="Todos los puntos de carga" />
               <FilterSelect name="unidad_rendimiento" defaultValue={sp.unidad_rendimiento} options={[{ value: "km_per_liter", label: "km/L" }, { value: "liters_per_hour", label: "L/h" }]} placeholder="Cualquier unidad" />
-              <FilterSelect name="estado_operativo" defaultValue={sp.estado_operativo} options={[{ value: "operativo", label: "Operativo" }, { value: "inactivo_mantencion", label: "Inactivo — mantención" }, { value: "inactivo_fuera_servicio", label: "Inactivo — fuera de servicio" }, { value: "inactivo_revision", label: "Inactivo — revisión" }]} placeholder="Cualquier estado" />
-              <Input name="sello_retirado" defaultValue={sp.sello_retirado} aria-label="Número de sello retirado" placeholder="Número de sello retirado" className="control" />
-              <Input name="sello_instalado" defaultValue={sp.sello_instalado} aria-label="Número de sello instalado" placeholder="Número de sello instalado" className="control" />
+              <FilterSelect name="estado_operativo" defaultValue={sp.estado_operativo} options={[{ value: "operativo", label: "Operativo" }, { value: "inactivo_mantencion", label: "Inactivo (mantención)" }, { value: "inactivo_fuera_servicio", label: "Inactivo (fuera de servicio)" }, { value: "inactivo_revision", label: "Inactivo (revisión)" }]} placeholder="Cualquier estado" />
+              <Input name="sello_retirado" defaultValue={sp.sello_retirado} aria-label="Número de sello retirado" placeholder="Número de sello retirado" />
+              <Input name="sello_instalado" defaultValue={sp.sello_instalado} aria-label="Número de sello instalado" placeholder="Número de sello instalado" />
               <FilterSelect name="evidencia_tipo" defaultValue={sp.evidencia_tipo} options={[{ value: "odometer", label: "Odómetro / horómetro" }, { value: "liter_meter", label: "Medidor de litros" }, { value: "removed_seal", label: "Sello retirado" }, { value: "installed_seal", label: "Sello instalado" }]} placeholder="Cualquier tipo de evidencia" />
-              <label className="flex items-center gap-2 text-xs text-(--color-text-muted)"><input type="checkbox" name="observaciones" value="si" defaultChecked={sp.observaciones === "si"} />Sólo con observaciones</label>
+              <Checkbox name="observaciones" value="si" defaultChecked={sp.observaciones === "si"} label={<span className="text-xs text-(--color-text-muted)">Sólo con observaciones</span>} />
             </fieldset>
             <fieldset className="grid gap-3 md:grid-cols-4">
               <legend className="text-eyebrow mb-2 md:col-span-4">Anomalías</legend>
               <FilterSelect name="anomalia_tipo" defaultValue={sp.anomalia_tipo} options={anomalyRulesList.map((item) => ({ value: item.code, label: item.name }))} placeholder="Cualquier tipo de anomalía" />
               <FilterSelect name="anomalia_severidad" defaultValue={sp.anomalia_severidad} options={ANOMALY_RULE_SEVERITIES.map((item) => ({ value: item, label: ANOMALY_RULE_SEVERITY_LABELS[item] }))} placeholder="Cualquier severidad" />
               <FilterSelect name="anomalia_responsable" defaultValue={sp.anomalia_responsable} options={anomalyAssigneesList.map((item) => ({ value: item.id, label: item.name }))} placeholder="Cualquier responsable" />
-              <label className="flex items-center gap-2 text-xs text-(--color-text-muted)"><input type="checkbox" name="anomalia" value="si" defaultChecked={sp.anomalia === "si"} />Sólo con anomalías</label>
-              <label className="flex items-center gap-2 text-xs text-(--color-text-muted)"><input type="checkbox" name="revision" value="si" defaultChecked={sp.revision === "si"} />Sólo marcados para revisión</label>
+              <Checkbox name="anomalia" value="si" defaultChecked={sp.anomalia === "si"} label={<span className="text-xs text-(--color-text-muted)">Sólo con anomalías</span>} />
+              <Checkbox name="revision" value="si" defaultChecked={sp.revision === "si"} label={<span className="text-xs text-(--color-text-muted)">Sólo marcados para revisión</span>} />
             </fieldset>
           </div>
         </details>

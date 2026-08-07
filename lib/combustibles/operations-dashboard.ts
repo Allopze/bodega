@@ -18,9 +18,11 @@ export interface OperationsSummary {
   totalMonto: number
   totalEquipos: number
   totalRegistros: number
-  rendimientoPromedioPonderado: number
   topEquiposPorGasto: PatenteRankingRow[]
-  rendimientoPorEquipo: RendimientoRow[]
+  /** Cada fila lleva la unidad del rendimiento (`km_lt` | `lt_hr`, o null cuando la
+   *  patente no la informa o mezcla las dos). Los atípicos se calculan DENTRO de cada
+   *  unidad: km/L y L/h no son la misma población ni tienen la misma polaridad. */
+  rendimientoPorEquipo: Array<RendimientoRow & { unidad: string | null }>
   porFaena: Array<{ faena: string; litros: number; monto: number; equipos: number }>
   porProveedor: Array<{ proveedor: string; litros: number; monto: number; transacciones: number }>
 }
@@ -53,6 +55,21 @@ export function buildOperationsWhere(session: Session, filters: OperationsFilter
   return defined.length > 0 ? and(...defined) : undefined
 }
 
+/** Marca atípicos DENTRO de cada unidad de rendimiento. km/L y L/h no son la misma
+ *  población —ni comparten polaridad: en L/h más alto es peor—, así que mezclarlas
+ *  marcaba como atípico al equipo normal de la unidad minoritaria (y enmascaraba los
+ *  atípicos reales en mezclas parejas). Las filas sin unidad no se comparan con
+ *  nadie: solo se marcan si no informan rendimiento. */
+export function flagRendimientoPorUnidad<T extends { rendimiento: number; unidad: string | null }>(rows: T[]): Array<T & { atipico: boolean }> {
+  const unidades = [...new Set(rows.map((row) => row.unidad))]
+  return unidades.flatMap((unidad) => {
+    const grupo = rows.filter((row) => row.unidad === unidad)
+    return unidad === null
+      ? grupo.map((row) => ({ ...row, atipico: row.rendimiento === 0 }))
+      : flagOutliersGeneric(grupo, (row) => row.rendimiento)
+  })
+}
+
 /** Devuelve null si no hay ningún registro visible para la sesión — evita
  *  mostrar una sección vacía en faenas que no usan este log operacional. */
 export async function getOperationsSummary(session: Session, filters: OperationsFilters = {}): Promise<OperationsSummary | null> {
@@ -64,9 +81,6 @@ export async function getOperationsSummary(session: Session, filters: Operations
       totalMonto: sql<number>`coalesce(sum(${fuelOperationRecords.monto}), 0)`,
       totalEquipos: sql<number>`count(distinct ${fuelOperationRecords.plate})`,
       totalRegistros: sql<number>`count(*)`,
-      rendimientoPonderado: sql<number>`case when sum(${fuelOperationRecords.liters}) > 0
-        then sum(coalesce(${fuelOperationRecords.rendimiento}, 0) * ${fuelOperationRecords.liters}) / sum(${fuelOperationRecords.liters})
-        else 0 end`,
     }).from(fuelOperationRecords).where(where),
 
     db.select({
@@ -79,6 +93,12 @@ export async function getOperationsSummary(session: Session, filters: Operations
         then sum(coalesce(${fuelOperationRecords.rendimiento}, 0) * ${fuelOperationRecords.liters}) / sum(${fuelOperationRecords.liters})
         else 0 end`,
       vehicleId: sql<string | null>`max(${fuelOperationRecords.vehicleId})`,
+      // Unidad del rendimiento de la patente. No se agrega al groupBy a propósito:
+      // `byEquipoRaw` también alimenta "Equipos con mayor gasto" y una patente con
+      // filas de ambas unidades aparecería duplicada. null = sin unidad informada o
+      // unidades mezcladas → no se compara con nadie.
+      unidad: sql<string | null>`case when count(distinct ${fuelOperationRecords.tipoRendimiento}) = 1
+        then max(${fuelOperationRecords.tipoRendimiento}) else null end`,
     }).from(fuelOperationRecords).where(where)
       .groupBy(fuelOperationRecords.plate),
 
@@ -115,6 +135,7 @@ export async function getOperationsSummary(session: Session, filters: Operations
     filterPatente: r.plate,
     rendimiento: Number(r.rendimiento),
     cantidad: Number(r.cantidad),
+    unidad: r.unidad,
   }))
 
   return {
@@ -122,9 +143,8 @@ export async function getOperationsSummary(session: Session, filters: Operations
     totalMonto: Number(totals?.totalMonto ?? 0),
     totalEquipos: Number(totals?.totalEquipos ?? 0),
     totalRegistros,
-    rendimientoPromedioPonderado: Number(totals?.rendimientoPonderado ?? 0),
     topEquiposPorGasto: [...byEquipo].sort((a, b) => b.monto - a.monto).slice(0, 10),
-    rendimientoPorEquipo: flagOutliersGeneric(rendimientosRaw, (r) => r.rendimiento).sort((a, b) => b.cantidad - a.cantidad).slice(0, 15),
+    rendimientoPorEquipo: flagRendimientoPorUnidad(rendimientosRaw).sort((a, b) => b.cantidad - a.cantidad).slice(0, 15),
     porFaena: porFaenaRaw.map((r) => ({ faena: r.faena, litros: Number(r.litros), monto: Number(r.monto), equipos: Number(r.equipos) }))
       .sort((a, b) => b.monto - a.monto),
     porProveedor: porProveedorRaw.map((r) => ({ proveedor: r.proveedor, litros: Number(r.litros), monto: Number(r.monto), transacciones: Number(r.transacciones) }))

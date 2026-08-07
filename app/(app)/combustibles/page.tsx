@@ -123,7 +123,7 @@ export default async function CombustiblesPage({
   const scatterHora = (scatterPoints ?? []).filter((p) => p.medidoPor === "hora")
   // Si el dashboard falló, usamos requestedFilters (que tiene los mismos campos) en vez de dashboard.filters.
   const effectiveFilters = dashboard?.filters ?? requestedFilters
-  const chartPeriodLabel = `${formatDate(effectiveFilters.fromDate)} — ${formatDate(effectiveFilters.toDate)}`
+  const chartPeriodLabel = `${formatDate(effectiveFilters.fromDate)} a ${formatDate(effectiveFilters.toDate)}`
 
   const detailWhere = buildConsumptionWhere(session, effectiveFilters)
   const [detailRows, detailCountResult] = await Promise.all([

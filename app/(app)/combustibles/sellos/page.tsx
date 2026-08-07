@@ -59,8 +59,8 @@ export default async function SealHistoryPage({ searchParams }: { searchParams: 
         <DatePicker name="desde" defaultValue={sp.desde} placeholder="Desde" />
         <DatePicker name="hasta" defaultValue={sp.hasta} placeholder="Hasta" />
         <FilterSelect name="faena" defaultValue={sp.faena} options={worksitesList.map((item) => ({ value: item.id, label: item.name }))} placeholder="Todas las faenas autorizadas" />
-        <Input name="sello" defaultValue={sp.sello} placeholder="Número de sello" className="control" />
-        <Input name="patente" defaultValue={sp.patente} placeholder="Patente" className="control" />
+        <Input name="sello" defaultValue={sp.sello} placeholder="Número de sello" />
+        <Input name="patente" defaultValue={sp.patente} placeholder="Patente" />
         <div className="md:col-span-5"><Button type="submit" variant="secondary">Aplicar</Button></div>
       </form>
 

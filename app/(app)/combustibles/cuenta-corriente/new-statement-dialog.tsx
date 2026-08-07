@@ -4,8 +4,9 @@ import { useActionState, useState } from "react"
 import { createMonthlyStatementAction } from "../actions"
 import type { ActionState } from "@/lib/validation/masters"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { DatePicker } from "@/components/ui/date-picker"
+import { OptionSelect } from "@/components/ui/option-select"
+import { formatPeriodOption, recentPeriods } from "@/components/ui/period-picker"
 import { Label } from "@/components/ui/field"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
@@ -33,7 +34,14 @@ export function NewStatementDialog({ suppliers }: { suppliers: Array<{ id: strin
         <form action={formAction} className="space-y-4">
           <div className="space-y-2">
             <Label>Mes *</Label>
-            <Input name="month" type="month" required />
+            {/* Select propio en vez de <input type="month">: el nativo se rinde
+                según el locale del navegador (UI/UX 2026-08-05, M8). */}
+            <OptionSelect
+              name="month"
+              defaultValue={recentPeriods(1)[0]}
+              options={recentPeriods(24).map((value) => ({ value, label: formatPeriodOption(value) }))}
+              aria-label="Mes"
+            />
             {state.fieldErrors?.month && <p className="text-sm text-destructive">{state.fieldErrors.month[0]}</p>}
           </div>
           <div className="space-y-2">

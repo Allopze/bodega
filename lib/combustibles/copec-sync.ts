@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto"
-import { and, desc, eq, inArray, ne, sql } from "drizzle-orm"
+import { and, desc, eq, gte, inArray, lte, ne, notInArray, sql } from "drizzle-orm"
 import { db } from "@/db"
 import { fuelConsumptionRecords, fuelImportBatches, fuelVehicles, systemSettings, users } from "@/db/schema"
 import { nanoid } from "@/lib/id"
@@ -14,6 +14,10 @@ import { importTaeReceipts } from "@/lib/combustibles/tae-receipts"
 const STATE_KEY = "combustibles.copec.sync"
 const START_KEY = "COPEC_SYNC_START_DATE"
 const DEFAULT_START = "2020-01-01"
+/** Las únicas fuentes que escribe esta sincronización. Diésel y BlueMax son lotes
+ *  separados por diseño; cualquier OTRA fuente para la misma faena y período es una
+ *  importación ajena (manual) cuyo consumo ya está contado. */
+const TCT_SOURCES = ["Copec TCT Diesel", "Copec TCT BlueMax"]
 
 interface SyncState { cursor: string | null; lastRunAt: string | null; pending: string[]; }
 
@@ -90,16 +94,24 @@ async function latestActiveImportUntil(): Promise<string | null> {
 }
 
 /**
- * The configurable starting point is bounded after every active fuel import,
- * not just Copec batches. This prevents an automatic import from duplicating
- * periods that were already loaded manually.
+ * `minimumStart` (mes siguiente a la última importación activa) es SOLO la semilla
+ * de una instalación sin cursor: sin él, COPEC_SYNC_START_DATE (2020-01-01)
+ * barrería años ya cargados a mano. Un cursor explícito siempre manda sobre el
+ * piso: "existe un lote posterior" no significa "todo lo anterior está importado",
+ * y recortar el cursor contra un lote ajeno saltaba meses completos en silencio
+ * (el plan quedaba vacío y la UI decía "no hay meses nuevos"). El doble conteo lo
+ * evita el guard por faena+período de `importCopecPeriod`, no este piso.
  */
+function resolveStart(current: SyncState, minimumStart: string): string {
+  const start = startFrom(current)
+  return firstDayOfMonth(isValidIsoDate(current.cursor) || start >= minimumStart ? start : minimumStart)
+}
+
 export async function getCopecSyncStartOptions(): Promise<CopecSyncStartOptions> {
   const [current, latestImportedUntil] = await Promise.all([state(), latestActiveImportUntil()])
   const minimumStart = latestImportedUntil ? nextMonth(latestImportedUntil) : DEFAULT_START
-  const currentStart = firstDayOfMonth(startFrom(current) < minimumStart ? minimumStart : startFrom(current))
   return {
-    currentStart,
+    currentStart: resolveStart(current, minimumStart),
     minimumStart,
     maximumStart: firstDayOfMonth(today()),
     latestImportedUntil,
@@ -111,16 +123,16 @@ export async function setCopecSyncStartDate(startDate: string, expectedStart: st
   if (!startDate.endsWith("-01")) throw new Error("Selecciona el primer día del mes desde el que quieres sincronizar")
 
   const [current, latestImportedUntil] = await Promise.all([state(), latestActiveImportUntil()])
-  const currentStart = firstDayOfMonth(startFrom(current))
+  const minimumStart = latestImportedUntil ? nextMonth(latestImportedUntil) : DEFAULT_START
+  const currentStart = resolveStart(current, minimumStart)
   if (currentStart !== expectedStart) {
     throw new Error("La sincronización cambió mientras ajustabas la fecha. Actualiza la página e inténtalo nuevamente.")
   }
 
-  const minimumStart = latestImportedUntil ? nextMonth(latestImportedUntil) : DEFAULT_START
   const maximumStart = firstDayOfMonth(today())
-  if (startDate < minimumStart) {
-    throw new Error(`La fecha debe ser posterior al último período importado (${latestImportedUntil}).`)
-  }
+  // Se permite retroceder por debajo de `minimumStart`: es la única vía para
+  // recuperar meses que un lote ajeno dejó fuera del plan. Reimportar no duplica
+  // porque `importCopecPeriod` salta las faenas ya importadas por otra fuente.
   if (startDate > maximumStart) {
     throw new Error("La importación automática solo puede comenzar hasta el mes actual.")
   }
@@ -147,7 +159,7 @@ export function buildCopecSyncPeriods(from: string, to: string): CopecSyncPeriod
 export async function getCopecSyncPlan(): Promise<{ from: string; to: string; periods: CopecSyncPeriod[]; pending: number }> {
   const [current, latestImportedUntil] = await Promise.all([state(), latestActiveImportUntil()])
   const minimumStart = latestImportedUntil ? nextMonth(latestImportedUntil) : DEFAULT_START
-  const from = firstDayOfMonth(startFrom(current) < minimumStart ? minimumStart : startFrom(current))
+  const from = resolveStart(current, minimumStart)
   const to = lastClosedMonthEnd()
   return { from, to, periods: buildCopecSyncPeriods(from, to), pending: current.pending.length }
 }
@@ -242,6 +254,25 @@ async function importCopecPeriod(
           }).where(eq(fuelImportBatches.id, duplicate.id))
         })
         imported += missing.length
+        continue
+      }
+      // El dedup de arriba compara la fuente exacta, así que no ve los lotes
+      // importados a mano (fuente 'Copec'): sin este guard, sincronizar un mes ya
+      // cargado a mano duplicaría litros y monto de esa faena. Se excluyen las dos
+      // fuentes propias — Diésel y BlueMax son lotes separados por diseño y no
+      // deben bloquearse entre sí.
+      const foreign = await db.query.fuelImportBatches.findFirst({
+        where: and(
+          eq(fuelImportBatches.worksiteId, worksiteId),
+          lte(fuelImportBatches.periodoDesde, to),
+          gte(fuelImportBatches.periodoHasta, from),
+          notInArray(fuelImportBatches.fuente, TCT_SOURCES),
+          ne(fuelImportBatches.estado, "revertido"),
+        ),
+        columns: { fuente: true },
+      })
+      if (foreign) {
+        unavailable.push(`${productLabel}: faena con importación previa (${foreign.fuente ?? "sin fuente"}) en el período`)
         continue
       }
       const totals = computeBatchTotals(rows)

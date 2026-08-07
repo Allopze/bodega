@@ -170,7 +170,7 @@ export default async function CombustiblesFacturasPage({
     ? "Sin datos"
     : monthsPresent[0] === monthsPresent[monthsPresent.length - 1]
       ? monthsPresent[0]!
-      : `${monthsPresent[0]} — ${monthsPresent[monthsPresent.length - 1]}`
+      : `${monthsPresent[0]} a ${monthsPresent[monthsPresent.length - 1]}`
 
   return (
     <PageContainer>

@@ -83,7 +83,7 @@ export function WorksiteEquipmentHeatmap({ cells }: { cells: HeatmapCell[] }) {
         <span className="inline-block h-3 w-6 rounded-sm border border-(--color-border)" style={{ backgroundColor: MID_COLOR }} />
         <span className="inline-block h-3 w-6 rounded-sm border border-(--color-border)" style={{ backgroundColor: HIGH_COLOR }} />
         <span>Más litros</span>
-        <span className="ml-3">—{">"} Hover para detalle</span>
+        <span className="ml-3">→ Hover para detalle</span>
       </div>
     </div>
   )

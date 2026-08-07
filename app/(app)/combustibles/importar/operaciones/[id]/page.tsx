@@ -13,7 +13,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { formatCLP, formatQty, formatDateTime } from "@/lib/utils"
 import { RevertOperationsBatchButton, LinkOperationVehicleForm, LinkOperationWorksiteForm } from "../batch-detail-actions"
 
-export const metadata: Metadata = { title: "Detalle de importación — Log operacional" }
+export const metadata: Metadata = { title: "Detalle de importación (Log operacional)" }
 
 const SAMPLE_LIMIT = 50
 
@@ -56,8 +56,8 @@ export default async function OperationsBatchDetailPage({ params }: { params: Pr
   return (
     <PageContainer width="wide">
       <PageHeader
-        title="Detalle de importación — Log operacional"
-        description={`${batch.archivoNombre} — ${batch.periodoDesde} a ${batch.periodoHasta}`}
+        title="Detalle de importación (Log operacional)"
+        description={`${batch.archivoNombre} · ${batch.periodoDesde} a ${batch.periodoHasta}`}
         breadcrumb={<Breadcrumbs items={[{ label: "Combustibles", href: "/combustibles" }, { label: "Importar consumos", href: "/combustibles/importar" }, { label: batch.archivoNombre }]} />}
         headerActions={<RevertOperationsBatchButton batchId={batch.id} canRevert={canRevert} />}
       />
@@ -70,7 +70,7 @@ export default async function OperationsBatchDetailPage({ params }: { params: Pr
           </Badge>
         </CardHeader>
         <CardContent className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-          <Field label="Período" value={`${batch.periodoDesde} — ${batch.periodoHasta}`} />
+          <Field label="Período" value={`${batch.periodoDesde} a ${batch.periodoHasta}`} />
           <Field label="Equipos" value={formatQty(batch.totalEquipos)} />
           <Field label="Filas válidas" value={formatQty(batch.filasValidas)} />
           <Field label="Filas rechazadas" value={formatQty(batch.filasInvalidas)} />

@@ -40,7 +40,7 @@ const LITERS_FORMAT = new Intl.NumberFormat("es-CL", { maximumFractionDigits: 0 
 const formatLiters = (n: number) => LITERS_FORMAT.format(n)
 
 function getPeriodLabel({ startDate, endDate }: ReportsViewProps["currentFilters"]) {
-  if (startDate && endDate) return `${formatDate(startDate)} — ${formatDate(endDate)}`
+  if (startDate && endDate) return `${formatDate(startDate)} a ${formatDate(endDate)}`
   if (startDate) return `desde ${formatDate(startDate)}`
   if (endDate) return `hasta ${formatDate(endDate)}`
   return "todos los registros"

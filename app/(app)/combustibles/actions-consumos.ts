@@ -70,6 +70,20 @@ async function readImportForm(formData: FormData): Promise<
   return { ok: true, buffer, fileName: file.name, meta: { worksiteId, periodoDesde, periodoHasta, fuente, notas } }
 }
 
+/** Resuelve patente→vehículo respetando el invariante «vehículo y registro comparten
+ *  faena», el mismo que exigen linkConsumptionPlateAction y el alta manual de cargas
+ *  (actions-module/loads.ts). En "all" la faena se deriva del vehículo, así que ahí no
+ *  hay nada que filtrar. Compartido por preview y confirm para que ambos cuenten igual. */
+async function findVehiclesByPlate(plates: string[], worksiteId: string) {
+  if (plates.length === 0) return []
+  const vehicles = await db.query.fuelVehicles.findMany({
+    where: worksiteId === "all"
+      ? inArray(fuelVehicles.plate, plates)
+      : and(inArray(fuelVehicles.plate, plates), eq(fuelVehicles.worksiteId, worksiteId)),
+  })
+  return worksiteId === "all" ? vehicles : vehicles.filter((v) => v.worksiteId === worksiteId)
+}
+
 export interface ConsumptionPreviewData {
   totales: BatchTotals
   errores: ImportError[]
@@ -122,9 +136,7 @@ export async function previewConsumptionImportAction(
   ])
 
   const plates = [...new Set(parsed.rows.map((r) => r.patente))]
-  const vehicles = plates.length > 0
-    ? await db.query.fuelVehicles.findMany({ where: inArray(fuelVehicles.plate, plates) })
-    : []
+  const vehicles = await findVehiclesByPlate(plates, meta.worksiteId)
   const matchedPlates = new Set(vehicles.map((v) => v.plate))
 
   return {
@@ -196,9 +208,7 @@ export async function confirmConsumptionImportAction(
   const plates = [...new Set(parsed.rows.map((r) => r.patente))]
 
   const totales = computeBatchTotals(parsed.rows)
-  const vehicles = plates.length > 0
-    ? await db.query.fuelVehicles.findMany({ where: inArray(fuelVehicles.plate, plates) })
-    : []
+  const vehicles = await findVehiclesByPlate(plates, meta.worksiteId)
   const vehicleByPlate = new Map(vehicles.map((v) => [v.plate, v]))
   const rowsByWorksite = new Map<string, typeof parsed.rows>()
   if (meta.worksiteId === "all") {

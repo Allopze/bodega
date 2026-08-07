@@ -128,6 +128,21 @@ describe("confirmConsumptionImportAction", () => {
     expect(recordsInsert[0]!.vehicleId).toBeNull()
   })
 
+  it("no vincula una patente cuyo vehículo pertenece a otra faena", async () => {
+    const tx = makeTx()
+    mockFindManyFuelVehicles.mockResolvedValue([{ id: "veh-1", plate: "ABCD12", worksiteId: "ws-2" }])
+    mockTransaction.mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) => cb(tx))
+
+    const file = await makeXlsxFile(validRows)
+    const res = await confirmConsumptionImportAction(makeFormData(file, { worksiteId: "ws-1" }))
+
+    expect(res.ok).toBe(true)
+    if (!res.ok) return
+    const recordsInsert = tx._insertedRows[1]!.values as Array<{ vehicleId: string | null; worksiteId: string }>
+    expect(recordsInsert[0]!.worksiteId).toBe("ws-1")
+    expect(recordsInsert[0]!.vehicleId).toBeNull()
+  })
+
   it("imports a first general file into one batch per vehicle worksite", async () => {
     const tx = makeTx()
     tx.query.fuelVehicles.findMany.mockResolvedValue([
@@ -213,5 +228,17 @@ describe("previewConsumptionImportAction", () => {
     expect(res.data.errores).toHaveLength(0)
     expect(mockTransaction).not.toHaveBeenCalled()
     expect(mockWriteBuffer).not.toHaveBeenCalled()
+  })
+
+  it("no cuenta como asociada una patente de otra faena", async () => {
+    mockFindManyFuelVehicles.mockResolvedValue([{ id: "veh-1", plate: "ABCD12", worksiteId: "ws-2" }])
+
+    const file = await makeXlsxFile(validRows)
+    const res = await previewConsumptionImportAction(makeFormData(file, { worksiteId: "ws-1" }))
+
+    expect(res.ok).toBe(true)
+    if (!res.ok) return
+    expect(res.data.patentesConVehiculo).toBe(0)
+    expect(res.data.patentesSinVehiculo).toBe(1)
   })
 })

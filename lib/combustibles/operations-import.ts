@@ -8,7 +8,7 @@
  */
 
 import ExcelJS from "exceljs"
-import { normKey, sheetToRecords, parseChileanNumber, nullableChileanNumber } from "./xlsx-utils"
+import { normKey, sheetToRecords, parseChileanNumber, nullableChileanNumber, formatExcelDateUTC } from "./xlsx-utils"
 
 export type MedidoPor = "km" | "hora"
 export type TipoRendimiento = "km_lt" | "lt_hr"
@@ -128,15 +128,8 @@ function normalizeTipoRendimiento(raw: unknown): TipoRendimiento | null {
   return null
 }
 
-/** Extrae "YYYY-MM-DD" de una fecha Excel, usando componentes UTC — ExcelJS
- *  decodifica los seriales de fecha/hora de Excel como UTC, y usar getters
- *  locales desplazaría el día según la zona horaria del servidor. */
-function formatDateUTC(date: Date): string {
-  const y = date.getUTCFullYear()
-  const m = String(date.getUTCMonth() + 1).padStart(2, "0")
-  const d = String(date.getUTCDate()).padStart(2, "0")
-  return `${y}-${m}-${d}`
-}
+// La regla vive en ./xlsx-utils, compartida con el parser de facturas.
+const formatDateUTC = formatExcelDateUTC
 
 function formatTimeUTC(date: Date): string {
   const h = String(date.getUTCHours()).padStart(2, "0")

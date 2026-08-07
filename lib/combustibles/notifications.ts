@@ -12,6 +12,18 @@ import { fuelMonthlyStatements, fuelLoads } from "@/db/schema"
 import { eq, and, sql, lte } from "drizzle-orm"
 import { notifyManyUser, getUserIdsWithPermission } from "@/lib/services/notifications"
 import { logger } from "@/lib/logger"
+import { chileDateParts } from "@/lib/utils"
+
+/**
+ * Mes anterior a `year`-`month` (mes 1-based) como "YYYY-MM".
+ *
+ * Se normaliza sobre el día 1, que siempre existe: `setMonth` sobre la fecha de
+ * hoy desborda los días 29-31 cuando el mes destino es más corto y devuelve el
+ * mes en curso (2026-03-31 → "2026-03").
+ */
+export function previousMonth(year: number, month: number): string {
+  return new Date(Date.UTC(year, month - 2, 1)).toISOString().slice(0, 7)
+}
 
 /**
  * Check for overdue and soon-due monthly statements.
@@ -51,7 +63,7 @@ export async function checkFuelStatementNotifications(): Promise<void> {
       await notifyManyUser(adminUserIds, {
         type: "fuel_statement_due_soon",
         title: `Resumen ${supplierName} ${stmt.month} vence pronto`,
-        body: `Pendiente: $${pending.toLocaleString("es-CL")} — Vence: ${stmt.dueDate}`,
+        body: `Pendiente: $${pending.toLocaleString("es-CL")} · Vence: ${stmt.dueDate}`,
         entityType: "fuel_monthly_statement",
         entityId: stmt.id,
         entityHref: `/combustibles/cuenta-corriente/${stmt.id}`,
@@ -67,7 +79,7 @@ export async function checkFuelStatementNotifications(): Promise<void> {
       await notifyManyUser(adminUserIds, {
         type: "fuel_statement_overdue",
         title: `⚠️ Resumen ${supplierName} ${stmt.month} VENCIDO`,
-        body: `Pendiente: $${pending.toLocaleString("es-CL")} — Venció: ${stmt.dueDate}`,
+        body: `Pendiente: $${pending.toLocaleString("es-CL")} · Venció: ${stmt.dueDate}`,
         entityType: "fuel_monthly_statement",
         entityId: stmt.id,
         entityHref: `/combustibles/cuenta-corriente/${stmt.id}`,
@@ -75,9 +87,8 @@ export async function checkFuelStatementNotifications(): Promise<void> {
     }
 
     // Check for unassigned loads (loads from previous months without a statement)
-    const prevMonth = new Date()
-    prevMonth.setMonth(prevMonth.getMonth() - 1)
-    const prevMonthStr = prevMonth.toISOString().substring(0, 7)
+    const { year, month } = chileDateParts()
+    const prevMonthStr = previousMonth(year, month)
 
     const unassignedCount = await db.select({ count: sql<number>`count(*)` })
       .from(fuelLoads)

@@ -1,5 +1,6 @@
 import type { Session } from "next-auth"
 import { and, eq, gte, inArray, lte, ne, sql } from "drizzle-orm"
+import type { AnyPgColumn } from "drizzle-orm/pg-core"
 import { z } from "zod"
 import { db } from "@/db"
 import { fuelCycleMovements, fuelLoads, fuelStorageLocations, fuelTaeLoadingPoints, fuelTaeSubmissions } from "@/db/schema"
@@ -69,13 +70,23 @@ export function differenceSeverity(difference: CycleDifference): DifferenceSever
   return "critical"
 }
 
+/** Ventana en día calendario chileno sobre una columna timestamptz, igual que
+ *  el resto del módulo (fuel-log, tae-dashboard, seal-history, …). Comparar el
+ *  instante crudo contra un límite en UTC dejaría fuera las recepciones
+ *  nocturnas del último día del rango y colaría las de la víspera.
+ *  El `.slice(0, 10)` tolera "YYYY-MM-DD" o un ISO completo. */
+const chileDayRange = (column: AnyPgColumn, from: string, to: string) => and(
+  sql`(${column} at time zone 'America/Santiago')::date >= ${from.slice(0, 10)}::date`,
+  sql`(${column} at time zone 'America/Santiago')::date <= ${to.slice(0, 10)}::date`,
+)
+
 export async function getFuelCycleComparison(session: Session, filters: { worksiteId?: string; productId?: string; from: string; to: string }) {
-  const movementWhere = and(gte(fuelCycleMovements.occurredAt, filters.from), lte(fuelCycleMovements.occurredAt, filters.to), filters.worksiteId ? eq(fuelCycleMovements.worksiteId, filters.worksiteId) : undefined, filters.productId ? eq(fuelCycleMovements.productId, filters.productId) : undefined, worksiteScopeSql(session, fuelCycleMovements.worksiteId))
+  const movementWhere = and(chileDayRange(fuelCycleMovements.occurredAt, filters.from, filters.to), filters.worksiteId ? eq(fuelCycleMovements.worksiteId, filters.worksiteId) : undefined, filters.productId ? eq(fuelCycleMovements.productId, filters.productId) : undefined, worksiteScopeSql(session, fuelCycleMovements.worksiteId))
   const registeredWhere = and(gte(fuelLoads.loadDate, filters.from.slice(0, 10)), lte(fuelLoads.loadDate, filters.to.slice(0, 10)), filters.worksiteId ? eq(fuelLoads.worksiteId, filters.worksiteId) : undefined, filters.productId ? eq(fuelLoads.productId, filters.productId) : undefined, worksiteScopeSql(session, fuelLoads.worksiteId))
   // La PWA es la fuente real de lo entregado desde la vasija: registra litros,
   // medidor, sellos y evidencia por equipo. No se duplica como movimiento del
   // ledger — se lee de origen, y así una carga anulada deja de contar sola.
-  const taeWhere = and(gte(fuelTaeSubmissions.loadedAt, filters.from), lte(fuelTaeSubmissions.loadedAt, filters.to), filters.worksiteId ? eq(fuelTaeSubmissions.worksiteId, filters.worksiteId) : undefined, filters.productId ? eq(fuelTaeSubmissions.productId, filters.productId) : undefined, ne(fuelTaeSubmissions.status, "voided"), worksiteScopeSql(session, fuelTaeSubmissions.worksiteId))
+  const taeWhere = and(chileDayRange(fuelTaeSubmissions.loadedAt, filters.from, filters.to), filters.worksiteId ? eq(fuelTaeSubmissions.worksiteId, filters.worksiteId) : undefined, filters.productId ? eq(fuelTaeSubmissions.productId, filters.productId) : undefined, ne(fuelTaeSubmissions.status, "voided"), worksiteScopeSql(session, fuelTaeSubmissions.worksiteId))
   const [movementRows, registeredRows, taeRows] = await Promise.all([
     db.select({ eventType: fuelCycleMovements.eventType, liters: sql<number>`coalesce(sum(${fuelCycleMovements.quantity}), 0)`, records: sql<number>`count(*)` }).from(fuelCycleMovements).where(movementWhere).groupBy(fuelCycleMovements.eventType),
     db.select({ liters: sql<number>`coalesce(sum(${fuelLoads.liters}), 0)`, records: sql<number>`count(*)` }).from(fuelLoads).where(registeredWhere),
@@ -122,7 +133,7 @@ export async function getFuelStorageBalances(session: Session, filters: { worksi
   })
   if (!locations.length) return []
   const ids = locations.map((location) => location.id)
-  const dateWhere = and(gte(fuelCycleMovements.occurredAt, filters.from), lte(fuelCycleMovements.occurredAt, filters.to))
+  const dateWhere = chileDayRange(fuelCycleMovements.occurredAt, filters.from, filters.to)
 
   const [inbound, outboundMovements, outboundSubmissions] = await Promise.all([
     db.select({ locationId: fuelCycleMovements.targetLocationId, eventType: fuelCycleMovements.eventType, liters: sql<number>`coalesce(sum(${fuelCycleMovements.quantity}), 0)` })
@@ -136,7 +147,7 @@ export async function getFuelStorageBalances(session: Session, filters: { worksi
     db.select({ locationId: fuelTaeLoadingPoints.storageLocationId, liters: sql<number>`coalesce(sum(${fuelTaeSubmissions.liters}), 0)` })
       .from(fuelTaeSubmissions)
       .innerJoin(fuelTaeLoadingPoints, eq(fuelTaeSubmissions.loadingPointId, fuelTaeLoadingPoints.id))
-      .where(and(gte(fuelTaeSubmissions.loadedAt, filters.from), lte(fuelTaeSubmissions.loadedAt, filters.to), ne(fuelTaeSubmissions.status, "voided"), inArray(fuelTaeLoadingPoints.storageLocationId, ids)))
+      .where(and(chileDayRange(fuelTaeSubmissions.loadedAt, filters.from, filters.to), ne(fuelTaeSubmissions.status, "voided"), inArray(fuelTaeLoadingPoints.storageLocationId, ids)))
       .groupBy(fuelTaeLoadingPoints.storageLocationId),
   ])
 
