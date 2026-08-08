@@ -49,7 +49,7 @@ export function CompetencyGapList({ gaps, canEscalate }: Props) {
     return true
   })
 
-  const rows = filtered as unknown as Record<string, unknown>[]
+  const rows = filtered
   const blockingCount = gaps.filter((gap) => gap.enforcement === "blocking").length
 
   function escalate() {
@@ -111,8 +111,7 @@ export function CompetencyGapList({ gaps, canEscalate }: Props) {
         emptyTitle={gaps.length === 0 ? "Sin brechas de competencia" : "No hay brechas con estos filtros"}
         emptyDescription={gaps.length === 0 ? "Toda la dotación activa alcanzada por un requisito vigente tiene su habilitación al día. Si esperabas ver brechas, revisa que existan requisitos de competencia declarados." : "Ajusta los filtros o el texto del buscador superior."}
         emptyAction={gaps.length === 0 ? <Button asChild variant="secondary"><Link href="/prevencion/capacitacion/competencias">Ver requisitos</Link></Button> : <Button type="button" variant="secondary" onClick={() => { setEnforcement("all"); setGapType("all") }}>Ver todas</Button>}
-        renderMobileCard={(row) => {
-          const gap = row as unknown as CompetencyGap
+        renderMobileCard={(gap) => {
           const workerHref = `/prevencion/capacitacion/competencias?workerId=${gap.workerId}`
           return (
             <ResponsiveDataListCard
@@ -128,8 +127,7 @@ export function CompetencyGapList({ gaps, canEscalate }: Props) {
             </ResponsiveDataListCard>
           )
         }}
-        renderRow={(row) => {
-          const gap = row as unknown as CompetencyGap
+        renderRow={(gap) => {
           return (
             <TableRow key={`${gap.workerId}-${gap.requirementId}`}>
               <TableCell>

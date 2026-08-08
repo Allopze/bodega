@@ -1,5 +1,5 @@
 import type { Session } from "next-auth"
-import { and, eq, inArray } from "drizzle-orm"
+import { and, eq, inArray, isNull } from "drizzle-orm"
 import { db } from "@/db"
 import { purchaseOrders, worksites, suppliers } from "@/db/schema"
 import { formatDate } from "@/lib/utils"
@@ -24,7 +24,9 @@ export async function gastoPorFaena(session: Session | null, filters: ExportFilt
       supplierId:  purchaseOrders.supplierId,
     })
     .from(purchaseOrders)
-    .where(and(orderFilter, dateFilter, statusFilter, wsFilter))
+    // DAT-16: sin esto, filtrar por estado="cancelled" mezclaba las OC
+    // anuladas de verdad con las eliminadas (código mutado a -DELETED-<id>).
+    .where(and(isNull(purchaseOrders.deletedAt), orderFilter, dateFilter, statusFilter, wsFilter))
     .limit(limit + 1)
 
   const rowLimitApplied = orders.length > limit

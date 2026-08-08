@@ -18,7 +18,7 @@ import {
 } from "@/lib/prevention/incidents"
 import type { IncidentStatus } from "@/lib/services/prevention-incidents"
 
-interface IncidentListItem {
+type IncidentListItem = {
   id: string
   code: string
   worksiteId: string
@@ -78,7 +78,7 @@ export function IncidentList({ incidents, worksites, counts, canReport, indicato
   const rows = filtered.map((incident) => ({
     ...incident,
     eventTypeLabel: INCIDENT_EVENT_LABELS[incident.eventType] ?? incident.eventType,
-  })) as unknown as Record<string, unknown>[]
+  }))
 
   const metrics: Array<{ key: QuickFilter; label: string; value: number; detail: string }> = [
     { key: "open", label: "Abiertos", value: counts.totalOpen, detail: "Requieren gestión" },
@@ -141,8 +141,7 @@ export function IncidentList({ incidents, worksites, counts, canReport, indicato
         emptyTitle={incidents.length === 0 ? "Aún no hay incidentes canónicos" : "No hay incidentes con estos filtros"}
         emptyDescription={incidents.length === 0 ? "Registra aquí los eventos ocurridos en tus faenas: reporte, triage, investigación y CAPA quedan trazados desde el primer registro." : "Ajusta filtros o el buscador superior."}
         emptyAction={incidents.length === 0 && canReport ? <Button asChild><Link href="/prevencion/incidentes/reportar">Reportar incidente</Link></Button> : <Button type="button" variant="secondary" onClick={() => clearUrlFilters()}>Ver todos</Button>}
-        renderMobileCard={(row) => {
-          const incident = row as unknown as IncidentListItem
+        renderMobileCard={(incident) => {
           return (
             <ResponsiveDataListCard
               title={<Link href={`/prevencion/incidentes/${incident.id}`} className="hover:underline">{incident.code}</Link>}
@@ -162,8 +161,7 @@ export function IncidentList({ incidents, worksites, counts, canReport, indicato
             </ResponsiveDataListCard>
           )
         }}
-        renderRow={(row) => {
-          const incident = row as unknown as IncidentListItem
+        renderRow={(incident) => {
           return (
             <TableRow key={incident.id}>
               <TableCell><Link href={`/prevencion/incidentes/${incident.id}`} className="font-mono text-xs font-semibold text-[var(--color-primary-ink)] hover:underline">{incident.code}</Link><p className="mt-1 text-xs text-[var(--color-text-subtle)]">{INCIDENT_EVENT_LABELS[incident.eventType] ?? incident.eventType}</p></TableCell>

@@ -25,7 +25,7 @@ import {
 import { formatDateTime } from "@/lib/utils"
 import { NewPlanDialog } from "./emergencias-dialogs"
 
-interface PlanItem {
+type PlanItem = {
   id: string
   code: string
   title: string
@@ -36,7 +36,7 @@ interface PlanItem {
   drills: number
 }
 
-interface DrillItem {
+type DrillItem = {
   id: string
   planTitle: string
   worksiteName: string
@@ -92,11 +92,11 @@ export function EmergencyList({ plans, drills, worksites, canManage, plansPagina
   const planRows = plans.map((item) => ({
     ...item,
     plan: item.code,
-  })) as unknown as Record<string, unknown>[]
+  }))
 
   const drillRows = drills.map((item) => ({
     ...item,
-  })) as unknown as Record<string, unknown>[]
+  }))
 
   const metrics = [
     { id: "approved", key: "approved" as const, tab: "plans" as const, label: "Planes aprobados", value: counts.approvedPlans, detail: "Vigentes" },
@@ -162,8 +162,7 @@ export function EmergencyList({ plans, drills, worksites, canManage, plansPagina
             ? "Un plan de emergencia declara escenarios, organigrama de respuesta, recursos y contactos por faena. Aprobarlo exige al menos un escenario y un rol."
             : "Ajusta el texto del buscador superior."}
           emptyAction={canManage && worksites.length > 0 ? <NewPlanDialog worksites={worksites} /> : undefined}
-          renderMobileCard={(row) => {
-            const item = row as unknown as PlanItem
+          renderMobileCard={(item) => {
             return (
               <ResponsiveDataListCard
                 title={<Link href={`/prevencion/emergencias/${item.id}`} className="hover:underline">{item.title}</Link>}
@@ -178,8 +177,7 @@ export function EmergencyList({ plans, drills, worksites, canManage, plansPagina
               </ResponsiveDataListCard>
             )
           }}
-          renderRow={(row) => {
-            const item = row as unknown as PlanItem
+          renderRow={(item) => {
             return (
               <TableRow key={item.id}>
                 <TableCell>
@@ -219,8 +217,7 @@ export function EmergencyList({ plans, drills, worksites, canManage, plansPagina
           emptyDescription={drills.length === 0
             ? "Sólo un plan aprobado puede programar simulacros. Prográmalos desde el detalle del plan."
             : "Ajusta el texto del buscador superior."}
-          renderMobileCard={(row) => {
-            const item = row as unknown as DrillItem
+          renderMobileCard={(item) => {
             return (
               <ResponsiveDataListCard
                 title={item.planTitle}
@@ -237,8 +234,7 @@ export function EmergencyList({ plans, drills, worksites, canManage, plansPagina
               </ResponsiveDataListCard>
             )
           }}
-          renderRow={(row) => {
-            const item = row as unknown as DrillItem
+          renderRow={(item) => {
             return (
               <TableRow key={item.id}>
                 <TableCell>

@@ -22,7 +22,10 @@ interface TopBarProps {
   hidden?:       boolean
 }
 
-const ROUTES_WITH_OWN_SEARCH = ["/solicitudes", "/aprobaciones", "/compras", "/recepcion", "/pendientes", "/prevencion/ppa", "/combustibles", "/facturacion/facturas", "/trazabilidad/documento"]
+// `/combustibles` no construye ningún input propio en ninguna de sus
+// subrutas — estaba en esta lista sin que nada lo alimentara, así que sus
+// tablas basadas en DataTable (vehículos, proveedores) quedaban sin buscador.
+const ROUTES_WITH_OWN_SEARCH = ["/solicitudes", "/aprobaciones", "/compras", "/recepcion", "/pendientes", "/prevencion/ppa", "/facturacion/facturas", "/trazabilidad/documento"]
 
 /** Formularios de alta/edición: no hay lista que filtrar, así que el input de
  *  la shell prometería un filtrado inexistente. Ninguna ruta bajo estos

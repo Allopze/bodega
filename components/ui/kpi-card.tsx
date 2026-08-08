@@ -20,6 +20,7 @@ export function KpiCard({
   value,
   detail,
   trend,
+  trendPolarity = "up-good",
   tone = "neutral",
   glossary,
   href,
@@ -30,6 +31,14 @@ export function KpiCard({
   value: string
   detail: string
   trend?: number | null
+  /**
+   * Qué significa que la cifra suba. El default `up-good` es el histórico, pero
+   * para gasto y consumo subir es MALA noticia: pintarlo verde presentaba un
+   * alza de costo como éxito, y contradecía al panel de canales de al lado, que
+   * ya usaba ámbar para lo mismo. `neutral` para volúmenes que no son ni bueno
+   * ni malo por sí solos (litros entregados, transacciones).
+   */
+  trendPolarity?: "up-good" | "up-bad" | "neutral"
   tone?: "neutral" | "signal" | "danger"
   glossary?: string
   href?: string
@@ -79,9 +88,9 @@ export function KpiCard({
                   "inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[11px] font-semibold",
                   // 0% no es buena noticia ni mala: sin flecha y en neutro. El
                   // `>= 0` anterior pintaba "↑0%" verde éxito (I-14).
-                  trend === 0
+                  trend === 0 || trendPolarity === "neutral"
                     ? "bg-[var(--color-surface-2)] text-[var(--color-text-muted)]"
-                    : trend > 0
+                    : (trend > 0) === (trendPolarity === "up-good")
                       ? "bg-[var(--color-success-tint)] text-[var(--color-success-ink)]"
                       : "bg-[var(--color-danger-tint)] text-[var(--color-danger-ink)]"
                 )}

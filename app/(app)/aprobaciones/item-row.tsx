@@ -1,9 +1,7 @@
 "use client"
 
 import * as React from "react"
-import {
-  ArrowUUpLeft, CheckCircle, XCircle,
-} from "@phosphor-icons/react"
+import { CheckCircle, XCircle } from "@phosphor-icons/react"
 import { StateBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -16,7 +14,7 @@ import { ReasonForm } from "./reason-form"
 import { useItemActions } from "./use-approval-actions"
 import { WorkAssignmentControl } from "../pendientes/work-assignment-control"
 
-type ItemAction = "idle" | "approving" | "rejecting" | "returning"
+type ItemAction = "idle" | "approving" | "rejecting"
 
 export function ItemRow({
   item, canApprove = true, canAssignWork = false, selected = false, onToggleSelect,
@@ -32,7 +30,6 @@ export function ItemRow({
   const {
     approveState, approveAction, approvePending,
     rejectState, rejectAction, rejectPending,
-    returnState, returnAction, returnPending,
     decided,
   } = useItemActions()
   const prevDecidedRef = React.useRef(decided)
@@ -47,7 +44,7 @@ export function ItemRow({
   }, [decided])
 
   if (decided) {
-    const label = decided === "approved" ? "Aprobado" : decided === "returned" ? "Devuelto" : "Rechazado"
+    const label = decided === "approved" ? "Aprobado" : "Rechazado"
     return (
       <li className="flex items-center gap-3 py-2.5 px-3 rounded-[var(--radius)] bg-[var(--color-surface-2)] opacity-60">
         <StateBadge state={decided} entity="item" size="sm" />
@@ -64,7 +61,7 @@ export function ItemRow({
     )
   }
 
-  const showLoading = approvePending || rejectPending || returnPending
+  const showLoading = approvePending || rejectPending
 
   return (
     <li
@@ -155,18 +152,6 @@ export function ItemRow({
               <CheckCircle size={13} weight="bold" />
               Aprobar
             </Button>
-            {/* Devolver ≠ rechazar: devuelve al solicitante para que corrija y
-                deja la solicitud en `returned`, que la cola marca "Bloqueada".
-                Rechazar es terminal. Ambas piden motivo (A-24). */}
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => setAction("returning")}
-              className="gap-1"
-            >
-              <ArrowUUpLeft size={13} weight="bold" />
-              Devolver
-            </Button>
             {/* `ghost` con sólo texto rojo dejaba a la decisión negativa sin
                 afordancia de botón frente al verde sólido de Aprobar. */}
             <Button
@@ -209,25 +194,10 @@ export function ItemRow({
           onCancel={() => setAction("idle")}
           label="Motivo del rechazo"
           placeholder="Explica por qué este ítem no puede ser aprobado..."
-          note="Una vez confirmado, el rechazo no se puede revertir desde aquí."
+          note="Una vez confirmado, el rechazo no se puede revertir desde aquí. El resto de los ítems sigue su curso a compras."
           submitLabel="Confirmar rechazo"
           submitLoadingLabel="Rechazando..."
           colorClass="text-[var(--color-danger)]"
-        />
-      )}
-
-      {action === "returning" && canApprove && (
-        <ReasonForm
-          itemId={item.id}
-          actionFn={returnAction}
-          state={returnState}
-          onCancel={() => setAction("idle")}
-          label="Observaciones para el solicitante"
-          placeholder="Indica qué debe corregir para volver a enviarlo..."
-          note="El solicitante podrá corregir el ítem y enviarlo de nuevo."
-          submitLabel="Devolver al solicitante"
-          submitLoadingLabel="Devolviendo..."
-          colorClass="text-[var(--color-warning-ink)]"
         />
       )}
     </li>

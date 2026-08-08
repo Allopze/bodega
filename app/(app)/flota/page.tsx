@@ -5,21 +5,17 @@ import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { SummaryBar, type SummaryStat } from "@/components/ui/summary-bar"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { requirePermission } from "@/lib/auth/can"
 import { getFleetOverview } from "@/lib/services/fleet"
 import { getFleetAdminSettings } from "@/lib/services/system-settings"
-import { formatFuelVehicleStatus } from "@/lib/combustibles/validation"
+import { addDaysToPlainDate, formatCLP, todayInChile } from "@/lib/utils"
 import { FleetFilters } from "./fleet-filters"
-import { FleetTableRow } from "./fleet-table-row"
+import { FleetTable } from "./fleet-table"
 
 export const metadata: Metadata = { title: "Flota" }
 
-const CLP_FORMATTER = new Intl.NumberFormat("es-CL", { style: "currency", currency: "CLP", maximumFractionDigits: 0 })
 const NUMBER_FORMATTER = new Intl.NumberFormat("es-CL", { maximumFractionDigits: 1 })
-const formatCLP = (value: number) => CLP_FORMATTER.format(value)
 const formatNumber = (value: number) => NUMBER_FORMATTER.format(value)
 
 export default async function FlotaPage({
@@ -41,8 +37,11 @@ export default async function FlotaPage({
   const filterVencimiento = typeof sp.vencimiento === "string" ? sp.vencimiento : undefined
 
   const warningDays = fleetSettings.warningDays
-  const now = new Date()
-  const warningWindowEnd = new Date(now.getTime() + warningDays * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+  // Las columnas de vencimiento son fechas civiles chilenas: medirlas con
+  // `toISOString()` (siempre UTC) adelantaba el corte del día y marcaba como
+  // vencido, entre las 20:00 y la medianoche, lo que vence hoy.
+  const today = todayInChile()
+  const warningWindowEnd = addDaysToPlainDate(today, warningDays)
 
   // Client-side filtering after server fetch
   let filteredVehicles = vehicles
@@ -53,13 +52,14 @@ export default async function FlotaPage({
     filteredVehicles = filteredVehicles.filter((v) => v.responsibleName === filterResponsable)
   }
   if (filterVencimiento) {
-    const nowStr = now.toISOString().slice(0, 10)
     if (filterVencimiento === "vencidos") {
-      filteredVehicles = filteredVehicles.filter((v) => v.nextExpiryDate && v.nextExpiryDate < nowStr)
+      filteredVehicles = filteredVehicles.filter((v) => v.nextExpiryDate && v.nextExpiryDate < today)
     } else if (filterVencimiento === "proximos") {
-      filteredVehicles = filteredVehicles.filter((v) => v.nextExpiryDate && v.nextExpiryDate >= nowStr && v.nextExpiryDate <= warningWindowEnd)
+      filteredVehicles = filteredVehicles.filter((v) => v.nextExpiryDate && v.nextExpiryDate >= today && v.nextExpiryDate <= warningWindowEnd)
     } else if (filterVencimiento === "al-dia") {
-      filteredVehicles = filteredVehicles.filter((v) => !v.nextExpiryDate || v.nextExpiryDate >= warningWindowEnd)
+      // `>` y no `>=`: con `>=` el vehículo que vence justo el último día de la
+      // ventana caía a la vez en "Próximos a vencer" y en "Al día".
+      filteredVehicles = filteredVehicles.filter((v) => !v.nextExpiryDate || v.nextExpiryDate > warningWindowEnd)
     }
   }
 
@@ -69,26 +69,27 @@ export default async function FlotaPage({
     vehicles.filter((v) => v.responsibleName).map((v) => [v.responsibleName, { id: v.responsibleName!, name: v.responsibleName! }])
   ).values()]
 
-  const active = vehicles.filter((vehicle) => vehicle.isActive).length
-  const totalCost = vehicles.reduce((sum, vehicle) => sum + vehicle.totalOperationalCost, 0)
-  const totalLiters = vehicles.reduce((sum, vehicle) => sum + vehicle.totalLiters, 0)
-  const maintenanceCount = vehicles.reduce((sum, vehicle) => sum + vehicle.maintenanceCount, 0)
+  // Sobre el conjunto filtrado, no sobre el total: con un filtro activo la fila
+  // de cifras contradecía a la tabla que tiene debajo.
+  const active = filteredVehicles.filter((vehicle) => vehicle.isActive).length
+  const totalCost = filteredVehicles.reduce((sum, vehicle) => sum + vehicle.totalOperationalCost, 0)
+  const totalLiters = filteredVehicles.reduce((sum, vehicle) => sum + vehicle.totalLiters, 0)
+  const maintenanceCount = filteredVehicles.reduce((sum, vehicle) => sum + vehicle.maintenanceCount, 0)
 
-  const expiredVehicles = vehicles.filter((vehicle) => vehicle.nextExpiryDate && vehicle.nextExpiryDate < now.toISOString().slice(0, 10))
-  const expiringSoon = vehicles.filter((vehicle) =>
+  const expiredVehicles = filteredVehicles.filter((vehicle) => vehicle.nextExpiryDate && vehicle.nextExpiryDate < today)
+  const expiringSoon = filteredVehicles.filter((vehicle) =>
     vehicle.nextExpiryDate &&
-    vehicle.nextExpiryDate >= now.toISOString().slice(0, 10) &&
+    vehicle.nextExpiryDate >= today &&
     vehicle.nextExpiryDate <= warningWindowEnd,
   )
-  const showCostPerDistance = filteredVehicles.some((vehicle) => vehicle.costPerKm != null || vehicle.costPerHour != null)
-  const showMeterReading = filteredVehicles.some((vehicle) => vehicle.lastOdometerReading != null || vehicle.lastHourMeterReading != null)
-  const showLastMaintenance = filteredVehicles.some((vehicle) => vehicle.lastMaintenanceDate != null)
-  const visibleColumnCount = 8 + Number(showCostPerDistance) + Number(showMeterReading) + Number(showLastMaintenance)
+  // El servicio agrega combustible y mantenciones de los últimos 12 meses
+  // (lib/services/fleet.ts): la etiqueta lo dice para que la cifra no se lea
+  // como el histórico completo del vehículo.
   const summaryStats: SummaryStat[] = [
     { key: "active", label: "Vehículos activos", value: active },
-    { key: "cost", label: "Costo operacional", value: formatCLP(totalCost) },
-    { key: "liters", label: "Litros registrados", value: formatNumber(totalLiters) },
-    { key: "maintenance", label: "Mantenciones", value: maintenanceCount },
+    { key: "cost", label: "Costo operacional (12 meses)", value: formatCLP(totalCost) },
+    { key: "liters", label: "Litros registrados (12 meses)", value: formatNumber(totalLiters) },
+    { key: "maintenance", label: "Mantenciones (12 meses)", value: maintenanceCount },
   ]
 
   return (
@@ -147,73 +148,7 @@ export default async function FlotaPage({
           <CardTitle className="text-base">Vehículos</CardTitle>
         </CardHeader>
         <CardContent className="overflow-x-auto">
-          <Table className="min-w-[760px]">
-            <TableHeader>
-              <TableRow>
-                <TableHead>Vehículo</TableHead>
-                <TableHead>Faena</TableHead>
-                <TableHead>Estado</TableHead>
-                <TableHead>Responsable</TableHead>
-                <TableHead>Próximo vencimiento</TableHead>
-                <TableHead className="text-right">Combustible</TableHead>
-                <TableHead className="text-right">Mantenciones</TableHead>
-                <TableHead className="text-right">Total</TableHead>
-                {showCostPerDistance && <TableHead className="text-right">$/km·h</TableHead>}
-                {showMeterReading && <TableHead className="text-right">Km/Hr</TableHead>}
-                {showLastMaintenance && <TableHead>Última mantención</TableHead>}
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {vehicles.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={visibleColumnCount} className="py-8 text-center text-muted-foreground">
-                    No hay vehículos visibles para tu alcance.
-                  </TableCell>
-                </TableRow>
-              ) : filteredVehicles.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={visibleColumnCount} className="py-8 text-center text-muted-foreground">
-                    No hay vehículos que coincidan con los filtros.
-                  </TableCell>
-                </TableRow>
-              ) : filteredVehicles.map((vehicle) => (
-                <FleetTableRow key={vehicle.id} href={`/flota/${vehicle.id}`}>
-                  <TableCell>
-                    <span className="font-medium text-[var(--color-primary)]">{vehicle.plate}</span>
-                    <div className="text-xs text-muted-foreground">
-                      {[vehicle.brand, vehicle.model, vehicle.year].filter(Boolean).join(" ") || vehicle.type}
-                    </div>
-                  </TableCell>
-                  <TableCell>{vehicle.worksiteName}</TableCell>
-                  <TableCell>
-                    <Badge variant={vehicle.isActive && vehicle.operationalStatus === "operativo" ? "success" : "outline"}>
-                      {vehicle.isActive ? formatFuelVehicleStatus(vehicle.operationalStatus) : "Inactivo"}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>{vehicle.responsibleName ?? "—"}</TableCell>
-                  <TableCell>{vehicle.nextExpiryDate ?? "—"}</TableCell>
-                  <TableCell className="text-right font-mono">{formatCLP(vehicle.totalFuelAmount)}</TableCell>
-                  <TableCell className="text-right font-mono">{formatCLP(vehicle.totalMaintenanceAmount)}</TableCell>
-                  <TableCell className="text-right font-mono font-semibold">{formatCLP(vehicle.totalOperationalCost)}</TableCell>
-                  {showCostPerDistance && <TableCell className="text-right font-mono text-xs text-muted-foreground">
-                    {vehicle.costPerKm != null
-                      ? `${formatCLP(vehicle.costPerKm)}/km`
-                      : vehicle.costPerHour != null
-                        ? `${formatCLP(vehicle.costPerHour)}/h`
-                        : "—"}
-                  </TableCell>}
-                  {showMeterReading && <TableCell className="text-right font-mono">
-                    {vehicle.lastOdometerReading != null
-                      ? formatNumber(vehicle.lastOdometerReading)
-                      : vehicle.lastHourMeterReading != null
-                        ? `${formatNumber(vehicle.lastHourMeterReading)} h`
-                        : "—"}
-                  </TableCell>}
-                  {showLastMaintenance && <TableCell>{vehicle.lastMaintenanceDate ?? "—"}</TableCell>}
-                </FleetTableRow>
-              ))}
-            </TableBody>
-          </Table>
+          <FleetTable vehicles={filteredVehicles} hasAnyVehicle={vehicles.length > 0} />
         </CardContent>
       </Card>
     </PageContainer>

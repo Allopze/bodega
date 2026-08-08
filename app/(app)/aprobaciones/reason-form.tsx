@@ -26,8 +26,9 @@ export function ReasonForm({
     <div className="border-t border-[var(--color-border)] bg-[var(--color-surface-2)] p-3">
       <form action={actionFn} className="flex flex-col gap-2">
         <input type="hidden" name="itemId" value={itemId} />
-        <label className={`text-xs font-medium ${colorClass}`}>{label}</label>
+        <label htmlFor={`reason-${itemId}`} className={`text-xs font-medium ${colorClass}`}>{label}</label>
         <Textarea
+          id={`reason-${itemId}`}
           name="reason"
           placeholder={placeholder}
           rows={2}

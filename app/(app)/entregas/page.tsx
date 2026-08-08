@@ -15,6 +15,7 @@ import {
 } from "@/db/schema"
 import { requirePermission } from "@/lib/auth/can"
 import { worksiteScopeSql } from "@/lib/auth/scope"
+import { formatQty } from "@/lib/utils"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { ServerPagination } from "@/components/ui/server-pagination"
@@ -87,10 +88,16 @@ export default async function Page({
       .from(workers)
       .where(and(eq(workers.isActive, true), worksiteScopeSql(session, workers.worksiteId)))
       .orderBy(asc(workers.lastName), asc(workers.firstName)),
-    db.query.worksiteStock.findMany({
-      with: { product: true },
-      where: worksiteScopeSql(session, worksiteStock.worksiteId),
-    }),
+    // ARQ-9: sólo se leen estas 3 columnas más abajo (stockByWorksiteProduct) —
+    // el join a products vía `with` cargaba el catálogo entero sin usarlo.
+    db
+      .select({
+        worksiteId: worksiteStock.worksiteId,
+        productId:  worksiteStock.productId,
+        quantity:   worksiteStock.quantity,
+      })
+      .from(worksiteStock)
+      .where(worksiteScopeSql(session, worksiteStock.worksiteId)),
     db
       .select({
         id:              purchaseRequestItems.id,
@@ -130,6 +137,8 @@ export default async function Page({
       .orderBy(desc(deliveries.deliveredAt))
       .limit(historyPagination.limit)
       .offset(historyPagination.offset),
+    // ARQ-9: returnProducts alimenta el picker de "producto de reemplazo" en
+    // una devolución EPP — nunca un producto no-EPP, igual que receivedItems.
     db
       .select({
         id: products.id,
@@ -138,7 +147,7 @@ export default async function Page({
         unitOfMeasure: products.unitOfMeasure,
       })
       .from(products)
-      .where(eq(products.isActive, true))
+      .where(and(eq(products.isActive, true), eq(products.isEpp, true)))
       .orderBy(asc(products.name)),
   ])
 
@@ -281,7 +290,7 @@ export default async function Page({
     const items = historyItemsByDelivery.get(delivery.id) ?? []
     const firstItem = items[0]
     const itemSummary = firstItem
-      ? `${firstItem.productName ?? firstItem.productNameFree ?? "EPP"} · ${firstItem.quantity} ${firstItem.unitOfMeasure}`
+      ? `${firstItem.productName ?? firstItem.productNameFree ?? "EPP"} · ${formatQty(firstItem.quantity, firstItem.unitOfMeasure)}`
       : "Sin ítems"
     return {
       id: delivery.id,

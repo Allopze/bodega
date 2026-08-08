@@ -37,11 +37,18 @@ export function MaintenanceRowActions({
 
   async function handleCancel() {
     setCancelling(true)
-    const res = await cancelMaintenanceRecordAction(record.id)
-    setCancelling(false)
-    setConfirmOpen(false)
-    if (res.ok) toast.success(res.message)
-    else toast.error(res.message)
+    // Sin `finally`, un rechazo de la action (red caída, error no capturado)
+    // dejaba el botón en "Cancelando..." y el diálogo abierto para siempre.
+    try {
+      const res = await cancelMaintenanceRecordAction(record.id)
+      setConfirmOpen(false)
+      if (res.ok) toast.success(res.message)
+      else toast.error(res.message)
+    } catch {
+      toast.error("No se pudo cancelar la mantención. Reintenta.")
+    } finally {
+      setCancelling(false)
+    }
   }
 
   return (
@@ -68,11 +75,11 @@ export function MaintenanceRowActions({
       {record.status !== "cancelled" && (
         <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
           <DialogTrigger asChild>
-            <Button size="sm" variant="ghost" className="text-destructive">Cancelar</Button>
+            <Button size="sm" variant="destructive">Cancelar</Button>
           </DialogTrigger>
           <DialogContent>
             <DialogHeader><DialogTitle>Cancelar mantención</DialogTitle></DialogHeader>
-            <p className="text-sm text-muted-foreground">
+            <p className="text-sm text-[var(--color-text-muted)]">
               La mantención quedará marcada como cancelada y dejará de sumar al costo de flota. Esta acción no la elimina.
             </p>
             <DialogFooter>

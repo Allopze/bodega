@@ -31,7 +31,7 @@ export function ApproveForm({
             htmlFor={`modifiedQty-${item.id}`}
             className="text-xs text-(--color-text-muted) shrink-0"
           >
-            Qty aprobada
+            Cantidad aprobada
           </label>
           <Input
             id={`modifiedQty-${item.id}`}

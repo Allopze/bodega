@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input"
 import { DatePicker } from "@/components/ui/date-picker"
 import { Label } from "@/components/ui/field"
 import { Textarea } from "@/components/ui/textarea"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { OptionSelect } from "@/components/ui/option-select"
 import { createMaintenanceRecordAction } from "./actions"
 import type { ActionState } from "@/lib/validation/masters"
 import { MAINTENANCE_STATUSES, MAINTENANCE_STATUS_LABELS } from "@/lib/validation/maintenance"
@@ -37,8 +37,18 @@ export interface MaintenanceDefaults {
   netAmount?: number
   taxAmount?: number
   documentNumber?: string | null
+  /** Sin campo visible, pero se reenvía: si no viaja, el update lo pone en NULL. */
+  documentName?: string | null
   notes?: string | null
 }
+
+const MAINTENANCE_TYPES = [
+  { value: "preventiva", label: "Preventiva" },
+  { value: "correctiva", label: "Correctiva" },
+  { value: "neumaticos", label: "Neumáticos" },
+  { value: "lubricacion", label: "Lubricación" },
+  { value: "revision_tecnica", label: "Revisión técnica" },
+]
 
 type MaintenanceAction = (prev: ActionState, formData: FormData) => Promise<ActionState>
 
@@ -92,121 +102,131 @@ export function MaintenanceForm({
   return (
     <form action={formAction} className="grid grid-cols-1 gap-4 lg:grid-cols-4">
       {defaults?.id && <input type="hidden" name="id" value={defaults.id} />}
+      {defaults?.documentName && <input type="hidden" name="documentName" value={defaults.documentName} />}
       <div>
         <Label htmlFor="vehicleId" required>Vehículo</Label>
-        <input type="hidden" name="vehicleId" value={vehicleId} />
-        <Select value={vehicleId || undefined} onValueChange={setVehicleId}>
-          <SelectTrigger id="vehicleId" className="w-full"><SelectValue placeholder="Seleccionar" /></SelectTrigger>
-          <SelectContent>
-            {vehicles.map((vehicle) => (
-              <SelectItem key={vehicle.id} value={vehicle.id}>{vehicle.plate} ({vehicle.type})</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        {state.fieldErrors?.vehicleId && <p className="mt-1 text-xs text-destructive">{state.fieldErrors.vehicleId[0]}</p>}
+        <OptionSelect
+          id="vehicleId"
+          name="vehicleId"
+          value={vehicleId}
+          onValueChange={setVehicleId}
+          placeholder="Seleccionar"
+          error={Boolean(state.fieldErrors?.vehicleId)}
+          options={vehicles.map((vehicle) => ({ value: vehicle.id, label: `${vehicle.plate} (${vehicle.type})` }))}
+        />
+        <FieldError message={state.fieldErrors?.vehicleId?.[0]} />
       </div>
 
       <div>
         <Label htmlFor="maintenanceDate" required>Fecha</Label>
         <DatePicker id="maintenanceDate" name="maintenanceDate" defaultValue={defaults?.maintenanceDate ?? ""} />
+        <FieldError message={state.fieldErrors?.maintenanceDate?.[0]} />
       </div>
 
       <div>
         <Label htmlFor="maintenanceType" required>Tipo</Label>
-        <input type="hidden" name="maintenanceType" value={maintenanceType} />
-        <Select value={maintenanceType || undefined} onValueChange={setMaintenanceType}>
-          <SelectTrigger id="maintenanceType" className="w-full"><SelectValue placeholder="Seleccionar" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="preventiva">Preventiva</SelectItem>
-            <SelectItem value="correctiva">Correctiva</SelectItem>
-            <SelectItem value="neumaticos">Neumáticos</SelectItem>
-            <SelectItem value="lubricacion">Lubricación</SelectItem>
-            <SelectItem value="revision_tecnica">Revisión técnica</SelectItem>
-          </SelectContent>
-        </Select>
+        <OptionSelect
+          id="maintenanceType"
+          name="maintenanceType"
+          value={maintenanceType}
+          onValueChange={setMaintenanceType}
+          placeholder="Seleccionar"
+          error={Boolean(state.fieldErrors?.maintenanceType)}
+          options={MAINTENANCE_TYPES}
+        />
+        <FieldError message={state.fieldErrors?.maintenanceType?.[0]} />
       </div>
 
       <div>
         <Label htmlFor="status">Estado</Label>
-        <input type="hidden" name="status" value={status} />
-        <Select value={status || undefined} onValueChange={setStatus}>
-          <SelectTrigger id="status" className="w-full"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            {MAINTENANCE_STATUSES.map((item) => <SelectItem key={item} value={item}>{MAINTENANCE_STATUS_LABELS[item]}</SelectItem>)}
-          </SelectContent>
-        </Select>
+        <OptionSelect
+          id="status"
+          name="status"
+          value={status}
+          onValueChange={setStatus}
+          options={MAINTENANCE_STATUSES.map((item) => ({ value: item, label: MAINTENANCE_STATUS_LABELS[item] }))}
+        />
+        <FieldError message={state.fieldErrors?.status?.[0]} />
       </div>
 
+      {/* `emptyLabel` es lo que faltaba: con un Select de Radix a secas, una vez
+          elegido un proveedor/faena/centro no había forma de volver a dejarlo
+          vacío — no existe opción para "sin valor". */}
       <div>
         <Label htmlFor="supplierId">Proveedor</Label>
-        <input type="hidden" name="supplierId" value={supplierId} />
-        <Select value={supplierId || undefined} onValueChange={setSupplierId}>
-          <SelectTrigger id="supplierId" className="w-full"><SelectValue placeholder="Sin proveedor" /></SelectTrigger>
-          <SelectContent>
-            {suppliers.map((supplier) => (
-              <SelectItem key={supplier.id} value={supplier.id}>{supplier.name}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <OptionSelect
+          id="supplierId"
+          name="supplierId"
+          value={supplierId}
+          onValueChange={setSupplierId}
+          placeholder="Sin proveedor"
+          emptyLabel="Sin proveedor"
+          options={suppliers.map((supplier) => ({ value: supplier.id, label: supplier.name }))}
+        />
       </div>
 
       <div>
         <Label htmlFor="worksiteId">Faena</Label>
-        <input type="hidden" name="worksiteId" value={worksiteId} />
-        <Select value={worksiteId || undefined} onValueChange={setWorksiteId}>
-          <SelectTrigger id="worksiteId" className="w-full"><SelectValue placeholder="Usar faena del vehículo" /></SelectTrigger>
-          <SelectContent>
-            {worksites.map((worksite) => (
-              <SelectItem key={worksite.id} value={worksite.id}>{worksite.name}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <OptionSelect
+          id="worksiteId"
+          name="worksiteId"
+          value={worksiteId}
+          onValueChange={setWorksiteId}
+          placeholder="Usar faena del vehículo"
+          emptyLabel="Usar faena del vehículo"
+          options={worksites.map((worksite) => ({ value: worksite.id, label: worksite.name }))}
+        />
       </div>
 
       <div>
         <Label htmlFor="costCenterId">Centro de costo</Label>
-        <input type="hidden" name="costCenterId" value={costCenterId} />
-        <Select value={costCenterId || undefined} onValueChange={setCostCenterId}>
-          <SelectTrigger id="costCenterId" className="w-full"><SelectValue placeholder="Sin centro" /></SelectTrigger>
-          <SelectContent>
-            {costCenters.map((center) => (
-              <SelectItem key={center.id} value={center.id}>{center.code} - {center.name}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <OptionSelect
+          id="costCenterId"
+          name="costCenterId"
+          value={costCenterId}
+          onValueChange={setCostCenterId}
+          placeholder="Sin centro"
+          emptyLabel="Sin centro"
+          options={costCenters.map((center) => ({ value: center.id, label: `${center.code} - ${center.name}` }))}
+        />
       </div>
 
       <div>
         <Label htmlFor="documentNumber">Documento</Label>
         <Input id="documentNumber" name="documentNumber" placeholder="Factura, OT o guía" defaultValue={defaults?.documentNumber ?? ""} />
+        <FieldError message={state.fieldErrors?.documentNumber?.[0]} />
       </div>
 
       <div>
-        <Label htmlFor="odometerReading">Kilometraje</Label>
+        <Label htmlFor="odometerReading">Kilometraje (km)</Label>
         <Input id="odometerReading" name="odometerReading" type="number" min="0" step="0.01" inputMode="decimal" defaultValue={defaults?.odometerReading ?? ""} />
+        <FieldError message={state.fieldErrors?.odometerReading?.[0]} />
       </div>
 
       <div>
-        <Label htmlFor="hourMeterReading">Horómetro</Label>
+        <Label htmlFor="hourMeterReading">Horómetro (h)</Label>
         <Input id="hourMeterReading" name="hourMeterReading" type="number" min="0" step="0.01" inputMode="decimal" defaultValue={defaults?.hourMeterReading ?? ""} />
+        <FieldError message={state.fieldErrors?.hourMeterReading?.[0]} />
       </div>
 
       <div>
         <Label htmlFor="netAmount">Neto</Label>
         <Input id="netAmount" name="netAmount" type="number" min="0" step="1" inputMode="numeric"
           value={netAmount || ""} onChange={(e) => setNetAmount(Number(e.target.value) || 0)} />
+        <FieldError message={state.fieldErrors?.netAmount?.[0]} />
       </div>
 
       <div>
         <Label htmlFor="taxAmount">IVA</Label>
         <Input id="taxAmount" name="taxAmount" type="number" min="0" step="1" inputMode="numeric"
           value={taxAmount || ""} onChange={(e) => setTaxAmount(Number(e.target.value) || 0)} />
+        <FieldError message={state.fieldErrors?.taxAmount?.[0]} />
       </div>
 
       <div>
         <Label htmlFor="totalAmount" required>Total (neto + IVA)</Label>
-        <Input id="totalAmount" name="totalAmount" type="number" value={totalAmount} readOnly tabIndex={-1} className="bg-muted" />
-        {state.fieldErrors?.totalAmount && <p className="mt-1 text-xs text-destructive">{state.fieldErrors.totalAmount[0]}</p>}
+        <Input id="totalAmount" name="totalAmount" type="number" value={totalAmount} readOnly tabIndex={-1} className="bg-[var(--color-surface-2)]" />
+        <FieldError message={state.fieldErrors?.totalAmount?.[0]} />
       </div>
 
       <div className="lg:col-span-3">
@@ -221,4 +241,14 @@ export function MaintenanceForm({
       </div>
     </form>
   )
+}
+
+/**
+ * `text-destructive` no existe en el tema (`@theme` de app/globals.css no define
+ * `--color-destructive`), así que la clase no generaba ninguna utilidad y los
+ * errores salían en color de cuerpo. Además sólo dos campos los mostraban.
+ */
+function FieldError({ message }: { message?: string }) {
+  if (!message) return null
+  return <p className="mt-1 text-xs text-[var(--color-danger-ink)]">{message}</p>
 }

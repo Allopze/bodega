@@ -108,16 +108,16 @@ export default async function FlotaVehiclePage({
                   <Fact label="Último operador" value={detail.currentReading.operador ?? "—"} />
                 </>
               ) : (
-                <p className="text-muted-foreground">Sin lecturas del log operacional de combustible.</p>
+                <p className="text-[var(--color-text-muted)]">Sin lecturas del log operacional de combustible.</p>
               )}
             </div>
             {detail.topOperators.length > 0 && (
               <div className="space-y-1.5 text-sm">
-                <p className="text-muted-foreground mb-1">Operadores más frecuentes</p>
+                <p className="text-[var(--color-text-muted)] mb-1">Operadores más frecuentes</p>
                 {detail.topOperators.map((o) => (
                   <div key={o.operador} className="flex items-center justify-between gap-3">
                     <span>{o.operador}</span>
-                    <span className="font-mono text-muted-foreground">{o.count}</span>
+                    <span className="font-mono text-[var(--color-text-muted)]">{o.count}</span>
                   </div>
                 ))}
               </div>
@@ -130,7 +130,7 @@ export default async function FlotaVehiclePage({
         <CardHeader><CardTitle className="text-base">Historial de estado operacional</CardTitle></CardHeader>
         <CardContent>
           {detail.operationalIntervals.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Sin intervalos históricos registrados.</p>
+            <p className="text-sm text-[var(--color-text-muted)]">Sin intervalos históricos registrados.</p>
           ) : (
             <ol className="divide-y divide-[var(--color-border)]">
               {detail.operationalIntervals.map((interval) => (
@@ -140,9 +140,9 @@ export default async function FlotaVehiclePage({
                   </Badge>
                   <div>
                     <p>{interval.reason ?? "Sin motivo informado"}</p>
-                    <p className="text-xs text-muted-foreground">{interval.changedByUser?.name ?? interval.changedByUser?.email ?? "Usuario no disponible"}</p>
+                    <p className="text-xs text-[var(--color-text-muted)]">{interval.changedByUser?.name ?? interval.changedByUser?.email ?? "Usuario no disponible"}</p>
                   </div>
-                  <p className="text-xs text-muted-foreground sm:text-right">
+                  <p className="text-xs text-[var(--color-text-muted)] sm:text-right">
                     {formatDateTime(interval.startedAt)}
                     <span className="block">{interval.endedAt ? `hasta ${formatDateTime(interval.endedAt)}` : "intervalo vigente"}</span>
                   </p>
@@ -157,7 +157,7 @@ export default async function FlotaVehiclePage({
         <Card>
           <CardHeader><CardTitle className="text-base">Mantenciones y su efecto en el rendimiento</CardTitle></CardHeader>
           <CardContent>
-            <p className="mb-3 text-xs text-muted-foreground">Rendimiento promedio del log operacional 30 días antes vs. 30 días después de cada mantención.</p>
+            <p className="mb-3 text-xs text-[var(--color-text-muted)]">Rendimiento promedio del log operacional 30 días antes vs. 30 días después de cada mantención.</p>
             <ol className="divide-y divide-[var(--color-border)]">
               {detail.recentMaintenance.map((m) => {
                 const impact = detail.maintenanceConsumptionImpact.find((i) => i.maintenanceId === m.id)
@@ -165,7 +165,7 @@ export default async function FlotaVehiclePage({
                   <li key={m.id} className="grid gap-1 py-3 text-sm sm:grid-cols-[10rem_1fr_auto] sm:items-center sm:gap-4">
                     <span className="capitalize">{m.maintenanceType}</span>
                     <Badge variant={m.status === "completed" ? "success" : m.status === "cancelled" ? "default" : "outline"}>{MAINTENANCE_STATUS_LABELS[m.status as keyof typeof MAINTENANCE_STATUS_LABELS] ?? m.status}</Badge>
-                    <p className="text-xs text-muted-foreground sm:text-right">
+                    <p className="text-xs text-[var(--color-text-muted)] sm:text-right">
                       {formatDate(m.maintenanceDate)}
                       {impact && (impact.avgBefore != null || impact.avgAfter != null) ? (
                         <span className="block font-mono">{impact.avgBefore?.toFixed(2) ?? "—"} → {impact.avgAfter?.toFixed(2) ?? "—"}</span>
@@ -204,7 +204,7 @@ export default async function FlotaVehiclePage({
 function Fact({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="flex items-center justify-between gap-3">
-      <span className="text-muted-foreground">{label}</span>
+      <span className="text-[var(--color-text-muted)]">{label}</span>
       <span className="text-right font-medium">{value}</span>
     </div>
   )

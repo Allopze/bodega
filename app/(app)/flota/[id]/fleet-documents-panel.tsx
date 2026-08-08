@@ -1,9 +1,10 @@
 "use client"
 
 import * as React from "react"
-import { useActionState } from "react"
+import { useActionState, useTransition } from "react"
 import { UploadSimple, Trash, FileText } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { DatePicker } from "@/components/ui/date-picker"
 import { FileInput } from "@/components/ui/file-input"
 import { Field } from "@/components/ui/field"
@@ -44,6 +45,10 @@ export function FleetDocumentsPanel({
   const [deleteState, deleteAction, deletePending] = useActionState<ActionState, FormData>(deleteFleetDocumentAction, { ok: false, message: "" })
   const [selectedType, setSelectedType] = React.useState("")
   const [expiresAt, setExpiresAt] = React.useState("")
+  // Borrar un SOAP o un seguro es irreversible y el disparador era un botón de
+  // icono que enviaba el form al primer clic, sin confirmación.
+  const [pendingDelete, setPendingDelete] = React.useState<FleetDocument | null>(null)
+  const [, startTransition] = useTransition()
 
   React.useEffect(() => {
     if (uploadState.ok && uploadState.message) {
@@ -63,8 +68,6 @@ export function FleetDocumentsPanel({
 
   return (
     <>
-      <h3 className="mb-3 text-sm font-semibold">Documentos del vehículo</h3>
-
       {documents.length > 0 && (
         <div className="mb-4 space-y-2">
           {documents.map((document) => (
@@ -81,22 +84,43 @@ export function FleetDocumentsPanel({
               </div>
               <div className="flex items-center gap-1 shrink-0">
                 <Button asChild variant="ghost" size="sm">
-                  <a href={`/api/flota/documentos/${document.id}`} target="_blank" rel="noopener noreferrer">
-                    <FileText size={14} />
+                  <a href={`/api/flota/documentos/${document.id}`} target="_blank" rel="noopener noreferrer" aria-label={`Abrir ${document.fileName}`}>
+                    <FileText size={14} aria-hidden />
                   </a>
                 </Button>
-                <form action={deleteAction}>
-                  <input type="hidden" name="documentId" value={document.id} />
-                  <input type="hidden" name="vehicleId" value={vehicleId} />
-                  <Button type="submit" variant="ghost" size="sm" disabled={deletePending}>
-                    <Trash size={14} />
-                  </Button>
-                </form>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  aria-label={`Eliminar ${document.fileName}`}
+                  disabled={deletePending}
+                  onClick={() => setPendingDelete(document)}
+                >
+                  <Trash size={14} aria-hidden />
+                </Button>
               </div>
             </div>
           ))}
         </div>
       )}
+
+      <ConfirmDialog
+        open={pendingDelete !== null}
+        onOpenChange={(next) => { if (!next) setPendingDelete(null) }}
+        title="Eliminar documento"
+        description={pendingDelete ? `Se eliminará «${pendingDelete.fileName}» del vehículo. Esta acción no se puede deshacer.` : ""}
+        confirmLabel="Eliminar"
+        variant="destructive"
+        loading={deletePending}
+        onConfirm={() => {
+          if (!pendingDelete) return
+          const data = new FormData()
+          data.set("documentId", pendingDelete.id)
+          data.set("vehicleId", vehicleId)
+          startTransition(() => deleteAction(data))
+          setPendingDelete(null)
+        }}
+      />
 
       {documents.length === 0 && (
         <p className="mb-4 text-xs text-[var(--color-text-subtle)]">Sin documentos registrados.</p>

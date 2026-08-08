@@ -4,7 +4,7 @@ import * as React from "react"
 import { useActionState } from "react"
 import { toast } from "@/lib/toast"
 import { INITIAL_STATE } from "@/components/admin/form-state"
-import { approveItemAction, rejectItemAction, returnItemAction, bulkApproveRequestAction } from "./actions"
+import { approveItemAction, rejectItemAction, bulkApproveRequestAction } from "./actions"
 import type { ActionState } from "@/lib/validation/operations"
 
 export function useItemActions() {
@@ -14,18 +14,10 @@ export function useItemActions() {
   const [rejectState, rejectAction, rejectPending] = useActionState<ActionState, FormData>(
     rejectItemAction, INITIAL_STATE,
   )
-  // `returnItemAction` existía completa —con permisos, observaciones obligatorias
-  // y su propio estado de dominio `returned`— y **ningún botón la alcanzaba**,
-  // mientras el CTA de /pendientes prometía "Aprobar o devolver" y la cola
-  // pintaba `returned` como "Bloqueada" (auditoría UI/UX 2026-07-29, A-24).
-  const [returnState, returnAction, returnPending] = useActionState<ActionState, FormData>(
-    returnItemAction, INITIAL_STATE,
-  )
   const decided =
     approveState.ok ? "approved" :
     rejectState.ok ? "rejected" :
-    returnState.ok ? "returned" :
-    null as "approved" | "rejected" | "returned" | null
+    null as "approved" | "rejected" | null
 
   React.useEffect(() => {
     if (approveState.ok && approveState.message) {
@@ -43,18 +35,9 @@ export function useItemActions() {
     }
   }, [rejectState])
 
-  React.useEffect(() => {
-    if (returnState.ok && returnState.message) {
-      toast.success(returnState.message)
-    } else if (returnState.ok === false && returnState.message && returnState !== INITIAL_STATE) {
-      toast.error(returnState.message)
-    }
-  }, [returnState])
-
   return {
     approveState, approveAction, approvePending,
     rejectState, rejectAction, rejectPending,
-    returnState, returnAction, returnPending,
     decided,
   }
 }

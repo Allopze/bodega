@@ -56,7 +56,7 @@ export function BulkApproveBar({
       <div className="mx-auto flex max-w-440 flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-[var(--color-text)]">
           <span className="font-mono font-semibold tabular-nums">{selectedIds.length}</span>
-          {pluralize(selectedIds.length, "ítem seleccionado", "ítems seleccionados")}
+          {" "}{pluralize(selectedIds.length, "ítem seleccionado", "ítems seleccionados")}
         </p>
         <div className="flex items-center gap-2">
           <Button type="button" variant="ghost" size="sm" onClick={onClear}>

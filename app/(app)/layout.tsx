@@ -31,10 +31,12 @@ const getCachedBadgeCounts = unstable_cache(
     // que nunca aparecían en la lista.
     const approvalFilter = approvalQueueFilter({ isGlobal, worksiteIds: wsIds })
 
+    // El badge de Compras cuenta las OC en borrador: son las que esperan un
+    // "Emitir y enviar" (antes contaba las emitidas, estado ya retirado).
     const purchaseFilter = isGlobal
-      ? inArray(purchaseOrders.status, ["issued"])
+      ? inArray(purchaseOrders.status, ["draft"])
       : and(
-          inArray(purchaseOrders.status, ["issued"]),
+          inArray(purchaseOrders.status, ["draft"]),
           wsIds.length > 0 ? inArray(purchaseOrders.worksiteId, wsIds) : sql`false`
         )
 
@@ -52,7 +54,7 @@ const getCachedBadgeCounts = unstable_cache(
       : wsIds.length > 0 ? inArray(purchaseRequests.worksiteId, wsIds) : sql`false`
     const requestFilter = and(
       requestScopeFilter,
-      inArray(purchaseRequests.status, ["draft", "submitted", "in_review", "partially_approved", "returned", "approved", "in_purchasing"]),
+      inArray(purchaseRequests.status, ["draft", "submitted", "in_review", "partially_approved", "approved", "in_purchasing"]),
       canViewAllRequests ? undefined : eq(purchaseRequests.requesterId, userId),
     )
 

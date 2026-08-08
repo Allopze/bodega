@@ -73,7 +73,7 @@ export function AccionesTable({ items, activityLabelById, worksiteNameById, work
     ...item,
     activity: activityLabelById[item.activityId] ?? item.activityId,
     worksite: worksiteNameById[item.worksiteId] ?? item.worksiteId,
-  })) as unknown as Record<string, unknown>[]
+  }))
 
   return (
     <div className="space-y-4">
@@ -127,8 +127,7 @@ export function AccionesTable({ items, activityLabelById, worksiteNameById, work
         searchKeys={["hallazgo", "accion", "responsable", "activity", "worksite"]}
         emptyTitle="Sin acciones"
         emptyDescription="No hay acciones correctivas que coincidan con los filtros."
-        renderRow={(row) => {
-          const item = row as unknown as ActionRow & { activity: string; worksite: string }
+        renderRow={(item) => {
           return (
             <TableRow key={item.id}>
               <TableCell className="text-(--color-text-muted)">{item.n}</TableCell>
@@ -162,8 +161,7 @@ export function AccionesTable({ items, activityLabelById, worksiteNameById, work
         /* A-1: un prevencionista revisa las CAPA pendientes en faena, no en
            escritorio. En 390px la tabla de 8 columnas ocultaba plazo, prioridad
            y estado — justo lo que hace falta para priorizar. */
-        renderMobileCard={(row) => {
-          const item = row as unknown as ActionRow & { activity: string; worksite: string }
+        renderMobileCard={(item) => {
           return (
             <Link
               href={`/prevencion/pdtp/${programId}/ejecucion/${item.executionId}`}

@@ -48,28 +48,31 @@ export default async function AprobacionesPage({
     eqFilter(purchaseRequests.urgency, listParams.urgencia),
   )
 
-  const [totalRequestsRow] = await db
-    .select({ total: count() })
-    .from(purchaseRequests)
-    .where(requestFilter)
+  // ARQ-10: ninguna depende de la otra — ambas cuelgan sólo del scope/filtro
+  // ya resuelto arriba — así que van juntas en vez de en 2 round-trips.
+  const [[totalRequestsRow], worksiteOptionRows] = await Promise.all([
+    db
+      .select({ total: count() })
+      .from(purchaseRequests)
+      .where(requestFilter),
+    // Worksite options for the faena filter (active, scoped)
+    db
+      .select({ id: worksites.id, name: worksites.name })
+      .from(worksites)
+      .where(and(
+        eq(worksites.isActive, true),
+        isGlobalRole(session)
+          ? undefined
+          : visibleWsIds.length > 0 ? inArray(worksites.id, visibleWsIds) : sql`false`,
+      ))
+      .orderBy(worksites.name),
+  ])
   const pagination = resolvePagination({
     pageParam: sp.page,
     totalItems: totalRequestsRow?.total ?? 0,
     pageSize: APPROVAL_REQUESTS_PAGE_SIZE,
   })
   const pageHref = (page: number) => buildPaginationHref("/aprobaciones", sp, page)
-
-  // Worksite options for the faena filter (active, scoped)
-  const worksiteOptionRows = await db
-    .select({ id: worksites.id, name: worksites.name })
-    .from(worksites)
-    .where(and(
-      eq(worksites.isActive, true),
-      isGlobalRole(session)
-        ? undefined
-        : visibleWsIds.length > 0 ? inArray(worksites.id, visibleWsIds) : sql`false`,
-    ))
-    .orderBy(worksites.name)
   const worksiteOptions: FilterOption[] = worksiteOptionRows.map((w) => ({ value: w.id, label: w.name }))
 
   // Load only submitted/in-review requests in the approver's worksite scope.
@@ -254,7 +257,7 @@ export default async function AprobacionesPage({
                 createdAt: item.createdAt,
                 sourceDueAt: item.requiredDate,
                 href: `/aprobaciones?solicitud=${r.id}`,
-                ctaLabel: "Aprobar o devolver",
+                ctaLabel: "Aprobar o rechazar",
                 assignable: true,
               }, assignmentRecords.get(operationalAssignmentKey("purchase_request_item", item.id, "approve")))
             : undefined,

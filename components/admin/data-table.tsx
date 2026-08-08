@@ -85,6 +85,7 @@ const DataTableInner = <T extends Record<string, unknown>>({
   hideDensityToggle = false,
   stickyFirstColumn = false,
   viewKey,
+  onVisibleRowsChange,
 }: DataTableProps<T>) => {
   const { searchQuery } = useSafeShellHeader()
   const density = React.useSyncExternalStore(subscribeDensity, getDensitySnapshot, () => "comfortable" as Density)
@@ -236,6 +237,10 @@ const DataTableInner = <T extends Record<string, unknown>>({
     () => sorted.slice((safePage - 1) * pageSize, safePage * pageSize),
     [sorted, safePage, pageSize],
   )
+
+  React.useEffect(() => {
+    onVisibleRowsChange?.(paginated)
+  }, [paginated, onVisibleRowsChange])
 
   // ── Sort toggle ──────────────────────────────────────────────────────────────
   const toggleSort = React.useCallback((key: string) => {

@@ -35,7 +35,7 @@ interface WorkerOption {
   worksiteName: string
   linkedUserId: string | null
 }
-interface UserRow {
+type UserRow = {
   id:          string
   name:        string
   email:       string
@@ -98,14 +98,13 @@ export function UserList({ users, invitations, allRoles, allPermissions, allWork
       <DataTable
         caption="Usuarios de la plataforma"
         columns={COLUMNS}
-        rows={users as unknown as Record<string, unknown>[]}
+        rows={users}
         searchKeys={["name", "email"]}
         pageSize={25}
 
         emptyTitle="Sin usuarios"
         emptyDescription="Invita al equipo o crea usuarios manualmente."
-        renderRow={(row) => {
-          const u = row as unknown as UserRow
+        renderRow={(u) => {
           return (
             <TableRow key={u.id}>
               {/* User */}
@@ -190,8 +189,7 @@ export function UserList({ users, invitations, allRoles, allPermissions, allWork
             </TableRow>
           )
         }}
-        renderMobileCard={(row) => {
-          const u = row as unknown as UserRow
+        renderMobileCard={(u) => {
           return (
             <article className="rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] p-4">
               <div className="flex items-start justify-between gap-3">

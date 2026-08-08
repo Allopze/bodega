@@ -12,7 +12,7 @@ import { COLUMNS, CONTRACT } from "./catalog-contract"
 
 interface WorksiteOption { id: string; name: string }
 
-interface WorkerRow {
+type WorkerRow = {
   id:          string
   rut:         string | null
   firstName:   string
@@ -45,14 +45,13 @@ export function WorkerList({
       <DataTable
         caption="Trabajadores"
         columns={COLUMNS}
-        rows={workers as unknown as Record<string, unknown>[]}
-        searchKeys={CONTRACT.searchKeys}
+        rows={workers}
+        searchKeys={CONTRACT.searchKeys as (keyof WorkerRow)[]}
         pageSize={25}
 
         emptyTitle="Sin trabajadores"
         emptyDescription="Registra el primer trabajador para gestionar entregas de EPP."
-        renderMobileCard={(row) => {
-          const w = row as unknown as WorkerRow
+        renderMobileCard={(w) => {
           return (
             <article className="rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] p-4">
               <div className="flex items-start justify-between gap-3">
@@ -90,8 +89,7 @@ export function WorkerList({
             </article>
           )
         }}
-        renderRow={(row) => {
-          const w = row as unknown as WorkerRow
+        renderRow={(w) => {
           return (
             <TableRow key={w.id}>
               <TableCell>

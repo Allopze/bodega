@@ -4,7 +4,7 @@ import { eq, inArray } from "drizzle-orm"
 import { db } from "@/db"
 import { purchaseRequestItems, purchaseRequests } from "@/db/schema"
 import { canAccessWorksite, requirePermission } from "@/lib/auth/can"
-import { approveItem, bulkApproveItems, rejectItem, returnItem } from "@/lib/services/item-state"
+import { approveItem, bulkApproveItems, rejectItem } from "@/lib/services/item-state"
 import { notifySafe, notifyAfterCommit } from "@/lib/services/notifications"
 import { logger } from "@/lib/logger"
 import { revalidateOperationalViews } from "@/lib/services/operational-cache"
@@ -57,6 +57,12 @@ export async function approveItemAction(
     }
     if (itemBefore.request.requestType === "epp" && !canApproveEpp(session.user.roles)) {
       return { ok: false, message: "Las solicitudes de EPP solo pueden ser aprobadas por Jefatura, Secretaría o Prevención" }
+    }
+    if (["repuestos", "servicios"].includes(itemBefore.request.requestType)) {
+      return { ok: false, message: "Los ítems de repuestos y servicios se aprueban seleccionando la cotización ganadora, no ítem a ítem" }
+    }
+    if (modifiedQty !== undefined && modifiedQty > itemBefore.quantity) {
+      return { ok: false, message: `La cantidad modificada no puede superar la cantidad solicitada (${itemBefore.quantity})` }
     }
 
     await approveItem(itemId, session.user.id, {
@@ -121,6 +127,9 @@ export async function rejectItemAction(
     if (itemBefore.request.requestType === "epp" && !canApproveEpp(session.user.roles)) {
       return { ok: false, message: "Las solicitudes de EPP solo pueden ser gestionadas por Jefatura, Secretaría o Prevención" }
     }
+    if (["repuestos", "servicios"].includes(itemBefore.request.requestType)) {
+      return { ok: false, message: "Los ítems de repuestos y servicios se gestionan seleccionando la cotización ganadora, no ítem a ítem" }
+    }
 
     await rejectItem(itemId, session.user.id, reason, {
       userEmail:   session.user.email ?? undefined,
@@ -148,47 +157,6 @@ export async function rejectItemAction(
   } catch (e) {
     logger.error("[rejectItemAction]", e)
     return { ok: false, message: e instanceof Error ? e.message : "Error al rechazar ítem" }
-  }
-}
-
-// ── Return item ───────────────────────────────────────────────────────────────
-
-export async function returnItemAction(
-  _prev: ActionState,
-  formData: FormData,
-): Promise<ActionState> {
-  let session
-  try { session = await requirePermission("approvals:approve") }
-  catch { return { ok: false, message: "Sin permisos para devolver ítems" } }
-
-  const itemId = formData.get("itemId") as string | null
-  const reason = (formData.get("reason") as string | null)?.trim()
-
-  if (!itemId) return { ok: false, message: "Ítem no especificado" }
-  if (!reason) return { ok: false, message: "Las observaciones son obligatorias para devolver un ítem" }
-
-  try {
-    const itemBefore = await db.query.purchaseRequestItems.findFirst({
-      where: eq(purchaseRequestItems.id, itemId),
-      with: { request: { columns: { worksiteId: true, requestType: true } } },
-    })
-    if (!itemBefore) return { ok: false, message: "Ítem no encontrado" }
-    if (!canAccessWorksite(session, itemBefore.request.worksiteId)) {
-      return { ok: false, message: "No tienes acceso a la faena de este ítem" }
-    }
-    if (itemBefore.request.requestType === "epp" && !canApproveEpp(session.user.roles)) {
-      return { ok: false, message: "Las solicitudes de EPP solo pueden ser gestionadas por Jefatura, Secretaría o Prevención" }
-    }
-
-    await returnItem(itemId, session.user.id, reason, {
-      userEmail:   session.user.email ?? undefined,
-      roleContext: getRoleContext(session.user.roles),
-    })
-    revalidateOperationalViews([REVALIDATE])
-    return { ok: true, message: "Ítem devuelto al solicitante" }
-  } catch (e) {
-    logger.error("[returnItemAction]", e)
-    return { ok: false, message: e instanceof Error ? e.message : "Error al devolver ítem" }
   }
 }
 
@@ -221,7 +189,8 @@ export async function bulkApproveRequestAction(
   }
   if (scopedItems.some((item) =>
     !canAccessWorksite(session, item.request.worksiteId)
-    || (item.request.requestType === "epp" && !userCanApproveEpp),
+    || (item.request.requestType === "epp" && !userCanApproveEpp)
+    || ["repuestos", "servicios"].includes(item.request.requestType),
   )) {
     return { ok: false, message: "No tienes permiso para aprobar todos los ítems seleccionados" }
   }
@@ -281,7 +250,7 @@ export async function updateDeliveryModeAction(
         .where(eq(purchaseRequestItems.requestId, requestId))
 
       const hasPurchasedItems = items.some((i) =>
-        ["in_purchase_order", "purchased", "partially_received", "received"].includes(i.status),
+        ["in_purchase_order", "purchased", "partially_received", "received", "partially_delivered", "delivered"].includes(i.status),
       )
       if (hasPurchasedItems) {
         throw new Error("No se puede cambiar el modo de despacho porque esta solicitud ya posee ítems en Orden de Compra")

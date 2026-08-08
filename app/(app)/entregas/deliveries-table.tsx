@@ -6,7 +6,7 @@ import { HISTORY_PAGE_SIZE } from "@/lib/constants"
 import { TableCell, TableRow } from "@/components/ui/table"
 import { formatDate } from "@/lib/utils"
 
-export interface DeliveryRow {
+export type DeliveryRow = {
   id:           string
   code:         string
   worksiteName: string
@@ -39,14 +39,13 @@ export function DeliveriesTable({ deliveries, canViewTraceability = false }: { d
     <DataTable
       caption="Entregas"
       columns={COLUMNS}
-      rows={deliveries as unknown as Record<string, unknown>[]}
+      rows={deliveries}
       searchKeys={["code", "workerName", "worksiteName", "itemSummary"]}
       pageSize={HISTORY_PAGE_SIZE}
 
       emptyTitle="Sin entregas"
       emptyDescription="No hay entregas de EPP que coincidan con la búsqueda."
-      renderMobileCard={(row) => {
-        const delivery = row as unknown as DeliveryRow
+      renderMobileCard={(delivery) => {
         return (
           <article className="rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] p-4">
             <div className="flex items-start justify-between gap-3">
@@ -112,8 +111,7 @@ export function DeliveriesTable({ deliveries, canViewTraceability = false }: { d
           </article>
         )
       }}
-      renderRow={(row) => {
-        const delivery = row as unknown as DeliveryRow
+      renderRow={(delivery) => {
         return (
           <TableRow key={delivery.id}>
             <TableCell>
@@ -121,7 +119,16 @@ export function DeliveriesTable({ deliveries, canViewTraceability = false }: { d
             </TableCell>
             <TableCell>
               <div className="min-w-0">
-                <p title={delivery.workerName} className="truncate text-sm font-medium text-[var(--color-text)]">{delivery.workerName}</p>
+                {delivery.workerId && canViewTraceability ? (
+                  <a
+                    href={`/trazabilidad/trabajador/${delivery.workerId}`}
+                    className="block truncate text-sm font-medium text-[var(--color-primary)] hover:underline"
+                  >
+                    {delivery.workerName}
+                  </a>
+                ) : (
+                  <p title={delivery.workerName} className="truncate text-sm font-medium text-[var(--color-text)]">{delivery.workerName}</p>
+                )}
                 {delivery.receiverName && delivery.receiverName !== delivery.workerName && (
                   <p className="text-[11px] text-[var(--color-text-subtle)]">Recibido por: {delivery.receiverName}</p>
                 )}
@@ -158,7 +165,8 @@ export function DeliveriesTable({ deliveries, canViewTraceability = false }: { d
                     rel="noopener noreferrer"
                     className="inline-flex h-6 items-center gap-1 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 text-xs text-[var(--color-text-muted)] transition-colors hover:text-[var(--color-text)]"
                   >
-                    Adjunto
+                    <FileText size={12} />
+                    Archivo
                   </a>
                 )}
               </div>

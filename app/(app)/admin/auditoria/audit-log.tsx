@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge"
 import { TableRow, TableCell } from "@/components/ui/table"
 import { formatDateTime } from "@/lib/utils"
 
-interface AuditRow {
+type AuditRow = {
   id:          string
   userEmail:   string | null
   action:      string
@@ -51,14 +51,13 @@ export function AuditLog({ entries }: { entries: AuditRow[] }) {
     <DataTable
       caption="Log de Auditoría"
       columns={COLUMNS}
-      rows={entries as unknown as Record<string, unknown>[]}
+      rows={entries}
       searchKeys={["userEmail", "entityType", "entityCode", "action"]}
       pageSize={30}
 
       emptyTitle="Sin entradas de auditoría"
       emptyDescription="Las acciones del sistema aparecerán aquí."
-      renderMobileCard={(row) => {
-        const e = row as unknown as AuditRow
+      renderMobileCard={(e) => {
         return (
           <article className="rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] p-4">
             <div className="flex items-start justify-between gap-3">
@@ -96,8 +95,7 @@ export function AuditLog({ entries }: { entries: AuditRow[] }) {
           </article>
         )
       }}
-      renderRow={(row) => {
-        const e = row as unknown as AuditRow
+      renderRow={(e) => {
         return (
           <TableRow key={e.id}>
             <TableCell className="text-xs font-mono text-[var(--color-text-muted)] whitespace-nowrap">

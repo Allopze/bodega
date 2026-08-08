@@ -12,7 +12,7 @@ import { FilterToolbar, type ActiveFilterChip } from "@/components/ui/filter-too
 import { useUrlFilters } from "@/lib/hooks/use-url-filters"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { EPP_GAP_TYPE_LABELS, type EppCoverageGap } from "@/lib/prevention/epp"
-import { escalateBlockingEppGapsAction, generateReplenishmentAction } from "./actions"
+import { escalateBlockingEppGapsAction } from "./actions"
 
 const ENFORCEMENT_LABELS: Record<string, string> = { blocking: "Bloqueante", warning: "Advertencia" }
 
@@ -81,14 +81,8 @@ export function EppGapList({ gaps, canEscalate }: Props) {
               <Button size="sm" variant="destructive" disabled={pending} onClick={escalate}>
                 Escalar brechas bloqueantes a CAPA
               </Button>
-              <Button size="sm" variant="secondary" disabled={pending} onClick={() => {
-                setMessage(null)
-                startTransition(async () => {
-                  const res = await generateReplenishmentAction()
-                  setMessage(res.ok ? "Borradores de solicitud de reposición creados en Solicitudes." : res.message ?? "Error")
-                })
-              }}>
-                Generar Solicitud de Reposición
+              <Button size="sm" variant="secondary" asChild>
+                <Link href="/solicitudes/nueva?reposicion=1">Crear solicitud de reposición</Link>
               </Button>
             </div>
           )}{message && <p role="status" className="mt-2 text-sm">{message}</p>}

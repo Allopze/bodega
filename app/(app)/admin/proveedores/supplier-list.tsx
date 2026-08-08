@@ -10,7 +10,7 @@ import { TableRow, TableCell } from "@/components/ui/table"
 import { toggleSupplierActive } from "./actions"
 import { COLUMNS, CONTRACT } from "./catalog-contract"
 
-interface SupplierRow {
+type SupplierRow = {
   id: string; name: string; rut: string | null; contactName: string | null
   businessActivity: string | null
   email: string | null; phone: string | null; address: string | null
@@ -29,14 +29,13 @@ export function SupplierList({ suppliers }: { suppliers: SupplierRow[] }) {
       <DataTable
         caption="Proveedores"
         columns={COLUMNS}
-        rows={suppliers as unknown as Record<string, unknown>[]}
-        searchKeys={CONTRACT.searchKeys}
+        rows={suppliers}
+        searchKeys={CONTRACT.searchKeys as (keyof SupplierRow)[]}
         pageSize={25}
 
         emptyTitle="Sin proveedores"
         emptyDescription="Registra el primer proveedor para comenzar."
-        renderMobileCard={(row) => {
-          const s = row as unknown as SupplierRow
+        renderMobileCard={(s) => {
           return (
             <article className="rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] p-4">
               <div className="flex items-start justify-between gap-3">
@@ -78,8 +77,7 @@ export function SupplierList({ suppliers }: { suppliers: SupplierRow[] }) {
             </article>
           )
         }}
-        renderRow={(row) => {
-          const s = row as unknown as SupplierRow
+        renderRow={(s) => {
           return (
             <TableRow key={s.id}>
               <TableCell>

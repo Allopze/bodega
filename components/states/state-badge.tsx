@@ -14,8 +14,18 @@ interface StateMeta {
   description?: string
 }
 
+/**
+ * Estados de ítem retirados del flujo: ninguno se produce ya, pero el historial
+ * (`status_history`, EntityTimeline) conserva transiciones antiguas y debe
+ * seguir legible. Mismo trato que `supplier_confirmed` en las OC. `returned`
+ * ("devolver al solicitante") se sumó aquí el 2026-08-07: ya estaba muerto para
+ * repuestos/servicios desde el 2026-07-29 y hoy dejó de producirse también
+ * para EPP/otro — ningún tipo de solicitud puede alcanzarlo.
+ */
+type RetiredItemStatus = "postponed" | "returned"
+
 /** Unified state vocabulary — every state in the system maps here. */
-const ITEM_STATE_META: Record<ItemStatus, StateMeta> = {
+const ITEM_STATE_META: Record<ItemStatus | RetiredItemStatus, StateMeta> = {
   draft:               { label: "Borrador",           variant: "default",  family: "neutral"  },
   requested:           { label: "Solicitado",          variant: "default",  family: "neutral"  },
   approved:            { label: "Aprobado",            variant: "success",  family: "success"  },
@@ -44,6 +54,8 @@ const REQUEST_STATE_META: Record<RequestStatus, StateMeta> = {
   partially_approved: { label: "Aprob. parcial",       variant: "warning",  family: "warning"  },
   approved:           { label: "Aprobada",             variant: "success",  family: "success"  },
   rejected:           { label: "Rechazada",            variant: "danger",   family: "danger"   },
+  // Estado retirado (2026-08-07): derivado del ítem, y ningún ítem puede estar
+  // ya en `returned` — se conserva sólo para renderizar historial antiguo.
   returned:           { label: "Devuelta",             variant: "warning",  family: "warning"  },
   in_purchasing:      { label: "En proceso",           variant: "info",     family: "info"     },
   closed:             { label: "Cerrada",              variant: "default",  family: "neutral"  },
@@ -56,19 +68,24 @@ export type OcStatus =
   | "partially_office_received" | "office_received"
   | "partially_received" | "received" | "closed" | "cancelled"
 
+/**
+ * Vocabulario de recepción (2026-08-07): tres etapas visibles —pendiente de
+ * recepción, recibido en oficina, recibido en faena— y los parciales como
+ * matiz de la misma etapa, no como estados aparte.
+ */
 const OC_STATE_META: Record<OcStatus, StateMeta> = {
-  draft:              { label: "Borrador",             variant: "default",  family: "neutral", description: "OC en preparación, aún no emitida al proveedor." },
-  issued:             { label: "Emitida",              variant: "info",     family: "info",    description: "OC emitida internamente; falta marcarla como enviada al proveedor." },
-  sent:               { label: "Enviada",              variant: "info",     family: "info",    description: "OC enviada al proveedor; a la espera de recepción." },
-  // Estado retirado del flujo (2026-07-30): ninguna OC nueva lo alcanza, pero el
-  // historial de estados conserva transiciones antiguas y debe seguir legible.
-  supplier_confirmed: { label: "Confirmada",           variant: "primary",  family: "success", description: "El proveedor confirmó la orden (estado retirado)." },
-  partially_office_received: { label: "Oficina parcial", variant: "warning", family: "warning", description: "Parte de los ítems llegó a oficina Chome; falta el saldo." },
-  office_received:    { label: "En oficina",           variant: "info",     family: "info",    description: "Los ítems llegaron a oficina Chome, aún no despachados a faena." },
-  partially_received: { label: "Rec. parcial",         variant: "warning",  family: "warning", description: "Parte de los ítems se recibió en faena; falta el saldo." },
-  received:           { label: "Recibida",             variant: "success",  family: "success", description: "Todos los ítems recibidos en faena." },
+  draft:              { label: "Borrador",             variant: "default",  family: "neutral", description: "OC en preparación: se puede revisar e imprimir antes de emitirla y enviarla." },
+  sent:               { label: "Pendiente de recepción", variant: "info",   family: "info",    description: "OC emitida y enviada al proveedor; a la espera de que llegue la mercadería." },
+  partially_office_received: { label: "Recibido en oficina (parcial)", variant: "warning", family: "warning", description: "Parte de los ítems llegó a oficina Chome; falta el saldo." },
+  office_received:    { label: "Recibido en oficina",  variant: "info",     family: "info",    description: "Los ítems llegaron a oficina Chome, aún no despachados a faena." },
+  partially_received: { label: "Recibido en faena (parcial)", variant: "warning", family: "warning", description: "Parte de los ítems se recibió en faena; falta el saldo." },
+  received:           { label: "Recibido en faena",    variant: "success",  family: "success", description: "Todos los ítems recibidos en faena." },
   closed:             { label: "Completada",           variant: "success",  family: "success", description: "OC completada: recepción finalizada, sin acciones pendientes." },
   cancelled:          { label: "Anulada",              variant: "danger",   family: "danger",  description: "OC anulada." },
+  // Estados retirados del flujo: ninguna OC nueva los alcanza, pero el historial
+  // conserva transiciones antiguas y debe seguir legible.
+  issued:             { label: "Emitida",              variant: "info",     family: "info",    description: "OC emitida sin enviar todavía (estado retirado: hoy emitir y enviar es un solo paso)." },
+  supplier_confirmed: { label: "Confirmada",           variant: "primary",  family: "success", description: "El proveedor confirmó la orden (estado retirado)." },
 }
 
 /* ── Feedback (Soporte) states ───────────────────────────────────────────── */

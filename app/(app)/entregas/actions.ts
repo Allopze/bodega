@@ -3,7 +3,7 @@
 import { promises as fs } from "node:fs"
 import path from "node:path"
 import { canAccessWorksite, requirePermission } from "@/lib/auth/can"
-import { resolveWorksiteScope } from "@/lib/auth/scope"
+import { serviceWorksiteScope } from "@/lib/auth/scope"
 import { nanoid } from "@/lib/id"
 import { logger } from "@/lib/logger"
 import { revalidateOperationalViews } from "@/lib/services/operational-cache"
@@ -13,11 +13,6 @@ import { workerDeliverySchema, type ActionState } from "@/lib/validation/operati
 
 import { createDeliveryAttachmentPath, resolveDeliveriesDir } from "@/lib/storage/config"
 import { validateFileBuffer, MimeType } from "@/lib/file-validation"
-
-function serviceWorksiteScope(session: Awaited<ReturnType<typeof requirePermission>>): string[] | "all" {
-  const scope = resolveWorksiteScope(session)
-  return scope.mode === "all" ? "all" : scope.ids
-}
 
 export async function registerWorkerDeliveryAction(
   _prev: ActionState,

@@ -12,7 +12,7 @@ import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { Badge } from "@/components/ui/badge"
 import { formatCLP } from "@/lib/utils"
-import { and, count, eq, inArray, sql, sum, asc } from "drizzle-orm"
+import { and, count, eq, inArray, isNull, sql, sum, asc } from "drizzle-orm"
 import { ChartBar, ShoppingCart, Truck } from "@phosphor-icons/react/dist/ssr"
 import { ReportMetric, BreakdownPanel, StatusGroup, statusRows } from "./reportes-page.helpers"
 import { ReportsExportMenu } from "./reports-export-menu"
@@ -27,7 +27,12 @@ export default async function Page() {
   const isGlobal = isGlobalRole(session)
   const wsIds = visibleWorksiteIds(session)
   const requestWsFilter = isGlobal ? undefined : (wsIds.length > 0 ? inArray(purchaseRequests.worksiteId, wsIds) : sql`false`)
-  const orderWsFilter = isGlobal ? undefined : (wsIds.length > 0 ? inArray(purchaseOrders.worksiteId, wsIds) : sql`false`)
+  // DAT-16: una OC eliminada (soft-delete, deletedAt poblado) no debe seguir
+  // sumando en los agregados del dashboard de reportes.
+  const orderWsFilter = and(
+    isNull(purchaseOrders.deletedAt),
+    isGlobal ? undefined : (wsIds.length > 0 ? inArray(purchaseOrders.worksiteId, wsIds) : sql`false`),
+  )
   // Un usuario scoped solo ve recepciones de sus faenas — nunca las de worksiteId NULL (B-6).
   const receiptWsFilter = isGlobal
     ? undefined

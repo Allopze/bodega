@@ -29,7 +29,6 @@ const REPORT_EXPORTS: ReportExportDefinition[] = [
     label: "Gasto por faena",
     statuses: [
       { value: "draft", label: "Borrador" },
-      { value: "issued", label: "Emitida" },
       { value: "sent", label: "Enviada" },
       { value: "received", label: "Recibida" },
       { value: "cancelled", label: "Cancelada" },
@@ -45,7 +44,6 @@ const REPORT_EXPORTS: ReportExportDefinition[] = [
     label: "OC por estado",
     statuses: [
       { value: "draft", label: "Borrador" },
-      { value: "issued", label: "Emitida" },
       { value: "sent", label: "Enviada" },
       { value: "office_received", label: "Recibida oficina" },
       { value: "received", label: "Recibida" },

@@ -4,7 +4,7 @@ import { db } from "@/db"
 import { deliveryItems, purchaseRequestItems, purchaseRequests, worksiteStock } from "@/db/schema"
 import { eq } from "drizzle-orm"
 import { canAccessWorksite, requirePermission } from "@/lib/auth/can"
-import { resolveWorksiteScope } from "@/lib/auth/scope"
+import { serviceWorksiteScope } from "@/lib/auth/scope"
 import { registerWorksiteDelivery } from "@/lib/services/deliveries"
 import { closePhysicalInventoryCount } from "@/lib/services/physical-inventory"
 import { registerStockAdjustment, registerStockReturn } from "@/lib/services/stock"
@@ -14,11 +14,6 @@ import { recordAudit } from "@/lib/audit"
 import { revalidateOperationalViews } from "@/lib/services/operational-cache"
 
 const REVALIDATE = "/bodega"
-
-function serviceWorksiteScope(session: Awaited<ReturnType<typeof requirePermission>>): string[] | "all" {
-  const scope = resolveWorksiteScope(session)
-  return scope.mode === "all" ? "all" : scope.ids
-}
 
 function formValues(formData: FormData, key: string) {
   return formData.getAll(key).map((value) => String(value ?? ""))

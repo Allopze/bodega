@@ -51,7 +51,7 @@ const STATUS_LABELS: Record<string, { label: string; variant: "info" | "warning"
   confirmed: { label: "Confirmado", variant: "success" },
   cancelled: { label: "Cancelado", variant: "default" },
 }
-interface ProductFamilyRow {
+type ProductFamilyRow = {
   id: string
   name: string
   variants: ProductRow[]
@@ -183,8 +183,7 @@ export function ProductList({ products, categories, allSuppliers, units, templat
     ...COLUMNS,
   ]
 
-  const renderRow = React.useCallback((row: Record<string, unknown>) => {
-    const family = row as unknown as ProductFamilyRow
+  const renderRow = React.useCallback((family: ProductFamilyRow) => {
     const p = selectedVariant(family)
     return (
       <TableRow key={family.id}>
@@ -255,8 +254,7 @@ export function ProductList({ products, categories, allSuppliers, units, templat
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedVariantByFamily, loadingEditId, selectedIds])
 
-  const renderMobileCard = React.useCallback((row: Record<string, unknown>) => {
-    const family = row as unknown as ProductFamilyRow
+  const renderMobileCard = React.useCallback((family: ProductFamilyRow) => {
     const p = selectedVariant(family)
     return (
       <article key={family.id} className="rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] p-4">
@@ -414,8 +412,8 @@ export function ProductList({ products, categories, allSuppliers, units, templat
           <DataTable
             caption="Productos Activos"
             columns={COLUMNS_WITH_CHECKBOX}
-            rows={activeFamilies as unknown as Record<string, unknown>[]}
-            searchKeys={CONTRACT.searchKeys}
+            rows={activeFamilies}
+            searchKeys={CONTRACT.searchKeys as (keyof ProductFamilyRow)[]}
             tableClassName="table-fixed min-w-0"
             pageSize={25}
             emptyTitle="Sin productos activos"
@@ -429,8 +427,8 @@ export function ProductList({ products, categories, allSuppliers, units, templat
           <DataTable
             caption="Productos Inactivos"
             columns={COLUMNS_WITH_CHECKBOX}
-            rows={inactiveFamilies as unknown as Record<string, unknown>[]}
-            searchKeys={CONTRACT.searchKeys}
+            rows={inactiveFamilies}
+            searchKeys={CONTRACT.searchKeys as (keyof ProductFamilyRow)[]}
             tableClassName="table-fixed min-w-0"
             pageSize={25}
             emptyTitle="Sin productos inactivos"

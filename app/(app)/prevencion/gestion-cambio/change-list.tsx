@@ -16,7 +16,7 @@ import {
 } from "@/lib/prevention/change"
 import { NewChangeDialog } from "./change-dialogs"
 
-interface ChangeItem {
+type ChangeItem = {
   id: string
   code: string
   title: string
@@ -42,7 +42,7 @@ const COLUMNS = [
 ]
 
 export function ChangeList({ changes, worksites, canManage }: Props) {
-  const rows = changes as unknown as Record<string, unknown>[]
+  const rows = changes
 
   const metrics = [
     { id: "open", label: "Abiertos", value: changes.filter((item) => item.status === "draft" || item.status === "under_evaluation").length, detail: "En preparación o evaluación" },
@@ -76,8 +76,7 @@ export function ChangeList({ changes, worksites, canManage }: Props) {
         emptyTitle={changes.length === 0 ? "Aún no hay solicitudes de gestión del cambio" : "Ninguna solicitud coincide con la búsqueda"}
         emptyDescription={changes.length === 0 ? "Un cambio de proceso, instalación, equipo, sustancia, proveedor, requisito legal, dotación, software o procedimiento debe evaluar su impacto en las seis dimensiones antes de aprobarse." : "Ajusta el texto del buscador superior."}
         emptyAction={canManage && worksites.length > 0 ? <NewChangeDialog worksites={worksites} /> : undefined}
-        renderMobileCard={(row) => {
-          const item = row as unknown as ChangeItem
+        renderMobileCard={(item) => {
           return (
             <ResponsiveDataListCard
               title={<Link href={`/prevencion/gestion-cambio/${item.id}`} className="hover:underline">{item.title}</Link>}
@@ -96,8 +95,7 @@ export function ChangeList({ changes, worksites, canManage }: Props) {
             </ResponsiveDataListCard>
           )
         }}
-        renderRow={(row) => {
-          const item = row as unknown as ChangeItem
+        renderRow={(item) => {
           return (
             <TableRow key={item.id}>
               <TableCell>

@@ -12,8 +12,8 @@ const RECEPTION_STATES: OcStatus[] = [
 ]
 
 /**
- * Leyenda desplegable de los estados de recepción — explica la jerga
- * (En oficina / Oficina parcial / Rec. parcial…) sin obligar a memorizarla.
+ * Leyenda desplegable de los estados de recepción — explica las tres etapas
+ * (pendiente / oficina / faena) y sus parciales sin obligar a memorizarlas.
  * Usa <details> nativo: sin JS ni estado de cliente.
  */
 export function StateLegend() {

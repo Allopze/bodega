@@ -4,18 +4,13 @@ import { revalidatePath } from "next/cache"
 import { promises as fs } from "node:fs"
 import path from "node:path"
 import { requirePermission } from "@/lib/auth/can"
-import { resolveWorksiteScope } from "@/lib/auth/scope"
+import { serviceWorksiteScope } from "@/lib/auth/scope"
 import { nanoid } from "@/lib/id"
 import { logger } from "@/lib/logger"
 import { uploadFleetDocument, deleteFleetDocument } from "@/lib/services/fleet"
 import { createFleetDocumentPath, resolveFleetDir } from "@/lib/storage/config"
 import { validateFileBuffer, MimeType } from "@/lib/file-validation"
 import type { ActionState } from "@/lib/validation/operations"
-
-function serviceWorksiteScope(session: Awaited<ReturnType<typeof requirePermission>>): string[] | "all" {
-  const scope = resolveWorksiteScope(session)
-  return scope.mode === "all" ? "all" : scope.ids
-}
 
 export async function uploadFleetDocumentAction(
   _prev: ActionState,

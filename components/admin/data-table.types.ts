@@ -79,6 +79,12 @@ export interface DataTableProps<T extends Record<string, unknown>> {
   onSelectionChange?: (selectedKeys: string[]) => void
   /** Render custom action component for selected rows (e.g. Export selected) */
   onSelectionExport?: (selectedRows: T[]) => React.ReactNode
+  /**
+   * Called whenever the filtered + paginated row set changes (search, sort,
+   * page). Pass a stable (useCallback) reference — an inline arrow function
+   * changes identity every render and re-fires the effect needlessly.
+   */
+  onVisibleRowsChange?: (rows: T[]) => void
 }
 
 export type SortDir = "asc" | "desc" | null

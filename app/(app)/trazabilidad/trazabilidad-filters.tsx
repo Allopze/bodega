@@ -24,7 +24,6 @@ const FILTER_ESTADOS = [
   { value: "partially_received", label: "Rec. parcial" },
   { value: "received", label: "Recibido" },
   { value: "rejected", label: "Rechazado" },
-  { value: "postponed", label: "Postergado" },
 ]
 
 export function TrazabilidadFilters({ worksites, current }: TrazabilidadFiltersProps) {
