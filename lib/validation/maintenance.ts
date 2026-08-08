@@ -18,7 +18,10 @@ const maintenanceBaseShape = {
   supplierId: optionalText,
   worksiteId: optionalText,
   costCenterId: optionalText,
-  maintenanceDate: z.string().min(1, "Fecha requerida"),
+  // Formato, no sólo "no vacío": el string llega a SQL crudo sin castear
+  // (`${m.maintenanceDate}::date` en lib/services/fleet.ts) y una fecha con
+  // formato inválido revienta esa consulta para todo el vehículo.
+  maintenanceDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Fecha inválida"),
   maintenanceType: z.string().min(1, "Tipo requerido").max(80),
   status: z.enum(MAINTENANCE_STATUSES),
   odometerReading: optionalNumber,

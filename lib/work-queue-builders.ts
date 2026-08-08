@@ -126,8 +126,7 @@ function ocNextAction(
 ): string {
   if (audience === "recepcion") {
     switch (orderStatus) {
-      case "draft":
-      case "issued":             return "La orden aún no ha sido enviada al proveedor."
+      case "draft":              return "La orden aún no ha sido emitida ni enviada al proveedor."
       case "sent":
         return items.some((item) => item.quantityReceived > 0)
           ? "Recepción parcial registrada. Queda saldo por recibir."
@@ -141,8 +140,7 @@ function ocNextAction(
     }
   }
   switch (orderStatus) {
-    case "draft":              return "Emite la orden para poder enviarla al proveedor."
-    case "issued":             return "Marca la orden como enviada al proveedor."
+    case "draft":              return "Emite y envía la orden al proveedor."
     case "sent":               return "Registra la recepción cuando lleguen los ítems."
     case "partially_office_received": return "Completa la llegada a oficina del saldo pendiente."
     case "office_received":    return "Despacha los ítems a faena para completar la recepción."

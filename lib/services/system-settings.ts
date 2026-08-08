@@ -180,6 +180,22 @@ export async function getFleetAdminSettings(): Promise<FleetAdminSettings> {
   }
 }
 
+/**
+ * Tasas de IEC (CLP/litro) vigentes, para que un formulario pueda previsualizar
+ * el mismo cálculo que `actions-module/loads.ts` hará en el servidor con
+ * `autoCalc`. `null` = no configurada (calculateFuelAmounts la trata como 0).
+ */
+export async function getFuelIecRates(): Promise<{ iecFixedRate: number | null; iecVariableRate: number | null }> {
+  const [fixedRaw, variableRaw] = await Promise.all([
+    readSystemSetting("fuel:iec_fixed_rate"),
+    readSystemSetting("fuel:iec_variable_rate"),
+  ])
+  return {
+    iecFixedRate: fixedRaw != null ? Number(fixedRaw) : null,
+    iecVariableRate: variableRaw != null ? Number(variableRaw) : null,
+  }
+}
+
 /** Generic single-number system setting setter (validates min/max if provided). */
 export async function updateSystemSettingNumber(input: {
   key: string

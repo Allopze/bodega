@@ -7,7 +7,7 @@ import { SYSTEM_PERMISSIONS, SYSTEM_ROLES, SYSTEM_ROLE_PERMISSIONS } from "@/lib
 export { SYSTEM_PERMISSIONS, SYSTEM_ROLES, SYSTEM_ROLE_PERMISSIONS } from "@/lib/auth/system-rbac"
 
 /** Permissions removed from the registry that must not survive in direct grants. */
-const RETIRED_PERMISSION_NAMES = ["prevention:pdtp:manage"] as const
+const RETIRED_PERMISSION_NAMES = ["prevention:pdtp:manage", "requests:submit"] as const
 
 /**
  * Idempotently seeds system roles/permissions. Accepts an optional transaction

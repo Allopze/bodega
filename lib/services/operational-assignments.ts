@@ -38,8 +38,8 @@ async function resolveSource(input: OperationalAssignmentInput): Promise<Source>
     })
     if (!request || !["complete", "follow_up"].includes(input.actionKey)) throw new Error("Pendiente no encontrado o etapa no asignable")
     const active = input.actionKey === "complete"
-      ? ["draft", "returned"].includes(request.status)
-      : ["submitted", "in_review", "partially_approved", "approved", "in_purchasing", "returned"].includes(request.status)
+      ? request.status === "draft"
+      : ["submitted", "in_review", "partially_approved", "approved", "in_purchasing"].includes(request.status)
     return { worksiteId: request.worksiteId, permission: input.actionKey === "complete" ? "requests:create" : "requests:view_all", active, entityCode: request.code }
   }
   if (input.sourceType === "purchase_request_item") {
@@ -64,8 +64,7 @@ async function resolveSource(input: OperationalAssignmentInput): Promise<Source>
   })
   if (!order) throw new Error("Orden de compra no encontrada")
   const expected: Record<string, { statuses: string[]; permission: string }> = {
-    issue: { statuses: ["draft"], permission: "purchasing:create_order" },
-    send: { statuses: ["issued"], permission: "purchasing:send_order" },
+    issue: { statuses: ["draft"], permission: "purchasing:send_order" },
     receive_office: { statuses: ["sent", "partially_office_received"], permission: "receiving:register_office" },
     receive_worksite: { statuses: order.deliveryMode === "directo_faena" ? ["sent", "partially_received"] : ["partially_office_received", "office_received", "partially_received"], permission: "receiving:register_faena" },
   }

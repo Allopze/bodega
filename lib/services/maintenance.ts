@@ -12,17 +12,10 @@ import {
 import { canAccessWorksite, visibleWorksiteIds, isGlobalRole, worksiteScopeSql } from "@/lib/auth/scope"
 import { recordAudit } from "@/lib/audit"
 import { nanoid } from "@/lib/id"
-import { chileDateParts } from "@/lib/utils"
+import { addDaysToPlainDate, todayInChile } from "@/lib/utils"
 
-/**
- * Hoy en calendario chileno. `maintenance_date` es texto "YYYY-MM-DD" con la
- * fecha civil de Chile, y `toISOString()` serializa siempre en UTC: durante las
- * últimas horas del día chileno marcaba como vencidas las mantenciones de hoy.
- */
-function todayInChile(): string {
-  const { year, month, day } = chileDateParts()
-  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`
-}
+/** Tope del historial de /mantenciones. Exportado para que la página pueda avisar cuando lo alcanza. */
+export const MAINTENANCE_HISTORY_LIMIT = 100
 
 export interface MaintenanceFilters {
   vehicleId?: string
@@ -73,7 +66,7 @@ export async function getMaintenancePageData(session: Session, filters: Maintena
       where,
       with: { vehicle: true, supplier: true, worksite: true, costCenter: true },
       orderBy: [desc(maintenanceRecords.maintenanceDate), desc(maintenanceRecords.createdAt)],
-      limit: 100,
+      limit: MAINTENANCE_HISTORY_LIMIT,
     }),
     db.query.fuelVehicles.findMany({
       where: vehicleScope,
@@ -105,9 +98,7 @@ export async function getUpcomingMaintenance(session: Session) {
       : sql`false`
 
   const today = todayInChile()
-  // +30 días sobre la fecha civil anclada a medianoche UTC: no la corre el
-  // cambio de hora chileno.
-  const thirtyDays = new Date(Date.parse(`${today}T00:00:00Z`) + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+  const thirtyDays = addDaysToPlainDate(today, 30)
 
   const upcoming = await db.query.maintenanceRecords.findMany({
     where: and(
@@ -164,43 +155,49 @@ export async function getUsageMaintenanceAlerts(session: Session, worksiteId?: s
   // ya acotados, así que no necesitan predicado propio.
   const vehicleScope = worksiteScopeSql(session, fuelVehicles.worksiteId, worksiteId)
 
-  const [vehicles, readings, completedMaintenances] = await Promise.all([
-    db.query.fuelVehicles.findMany({
-      where: and(vehicleScope, eq(fuelVehicles.isActive, true)),
-      columns: { id: true, plate: true, code: true },
-    }),
-    db.select({
+  const vehicles = await db.query.fuelVehicles.findMany({
+    where: and(vehicleScope, eq(fuelVehicles.isActive, true)),
+    columns: { id: true, plate: true, code: true },
+  })
+  if (vehicles.length === 0) return []
+  const vehicleIds = vehicles.map((vehicle) => vehicle.id)
+
+  // Antes se traían `fuel_operation_records` y `maintenance_records` ENTEROS a
+  // memoria (sin filtro de faena ni límite) sólo para quedarse con una fila por
+  // equipo. Ahora la reducción "última fila por vehículo" la resuelve Postgres
+  // con DISTINCT ON, y sólo sobre los equipos activos visibles.
+  const [readings, completedMaintenances] = await Promise.all([
+    db.selectDistinctOn([fuelOperationRecords.vehicleId], {
       vehicleId: fuelOperationRecords.vehicleId,
       fecha: fuelOperationRecords.fecha,
       horometro: fuelOperationRecords.horometro,
       medidoPor: fuelOperationRecords.medidoPor,
     })
       .from(fuelOperationRecords)
-      .where(and(isNotNull(fuelOperationRecords.vehicleId), isNotNull(fuelOperationRecords.horometro), isNotNull(fuelOperationRecords.medidoPor))),
-    db.select({
+      .where(and(
+        inArray(fuelOperationRecords.vehicleId, vehicleIds),
+        isNotNull(fuelOperationRecords.horometro),
+        isNotNull(fuelOperationRecords.medidoPor),
+      ))
+      .orderBy(fuelOperationRecords.vehicleId, desc(fuelOperationRecords.fecha)),
+    db.selectDistinctOn([maintenanceRecords.vehicleId], {
       vehicleId: maintenanceRecords.vehicleId,
       maintenanceDate: maintenanceRecords.maintenanceDate,
       odometerReading: maintenanceRecords.odometerReading,
       hourMeterReading: maintenanceRecords.hourMeterReading,
     })
       .from(maintenanceRecords)
-      .where(eq(maintenanceRecords.status, "completed")),
+      .where(and(eq(maintenanceRecords.status, "completed"), inArray(maintenanceRecords.vehicleId, vehicleIds)))
+      .orderBy(maintenanceRecords.vehicleId, desc(maintenanceRecords.maintenanceDate)),
   ])
 
   const latestReadingByVehicle = new Map<string, { fecha: string; horometro: number; medidoPor: "km" | "hora" }>()
   for (const r of readings) {
     if (!r.vehicleId || r.horometro == null || !r.medidoPor) continue
-    const existing = latestReadingByVehicle.get(r.vehicleId)
-    if (!existing || r.fecha > existing.fecha) {
-      latestReadingByVehicle.set(r.vehicleId, { fecha: r.fecha, horometro: r.horometro, medidoPor: r.medidoPor as "km" | "hora" })
-    }
+    latestReadingByVehicle.set(r.vehicleId, { fecha: r.fecha, horometro: r.horometro, medidoPor: r.medidoPor as "km" | "hora" })
   }
 
-  const lastMaintenanceByVehicle = new Map<string, { maintenanceDate: string; odometerReading: number | null; hourMeterReading: number | null }>()
-  for (const m of completedMaintenances) {
-    const existing = lastMaintenanceByVehicle.get(m.vehicleId)
-    if (!existing || m.maintenanceDate > existing.maintenanceDate) lastMaintenanceByVehicle.set(m.vehicleId, m)
-  }
+  const lastMaintenanceByVehicle = new Map(completedMaintenances.map((m) => [m.vehicleId, m]))
 
   const alerts: UsageMaintenanceAlert[] = []
   for (const vehicle of vehicles) {

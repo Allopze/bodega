@@ -258,12 +258,12 @@ export async function getOperationalDetailWorkItem(
       .where(and(
         eq(purchaseRequests.id, source.sourceId),
         scopeCondition(scope, purchaseRequests.worksiteId),
-        inArray(purchaseRequests.status, ["draft", "submitted", "in_review", "partially_approved", "approved", "returned", "in_purchasing"]),
+        inArray(purchaseRequests.status, ["draft", "submitted", "in_review", "partially_approved", "approved", "in_purchasing"]),
       ))
       .limit(1)
 
     if (!request || (!canViewAll && request.requesterId !== session.user.id)) return null
-    const actionKey = request.status === "draft" || request.status === "returned" ? "complete" : "follow_up"
+    const actionKey = request.status === "draft" ? "complete" : "follow_up"
     const assignment = await getAssignmentForSource({
       sourceType: source.sourceType,
       sourceId: source.sourceId,
@@ -284,7 +284,7 @@ export async function getOperationalDetailWorkItem(
       status: request.status,
       statusLabel: requestStatusLabel(request.status),
       priority: normalizePriority(request.urgency),
-      blocked: request.status === "returned",
+      blocked: false,
       createdAt: request.submittedAt ?? request.createdAt,
       sourceDueAt: request.requiredDate ?? null,
       href: `/solicitudes/${request.id}`,
@@ -330,11 +330,9 @@ export async function getOperationalDetailWorkItem(
           .then((rows) => rows.length === 0)
       : false
 
-  const stage = order.status === "draft" && hasPermission(session, "purchasing:create_order")
-    ? { actionKey: "issue" as const, module: "compras" as const, statusLabel: "OC en borrador", title: `Emitir ${order.code}`, ctaLabel: "Emitir orden de compra", createdAt: order.createdAt }
-    : order.status === "issued" && hasPermission(session, "purchasing:send_order")
-      ? { actionKey: "send" as const, module: "compras" as const, statusLabel: "OC emitida", title: `Enviar ${order.code}`, ctaLabel: "Enviar al proveedor", createdAt: order.issuedAt ?? order.createdAt }
-      : OFFICE_RECEIVABLE_STATUSES.has(order.status) && order.deliveryMode !== "directo_faena" && hasPermission(session, "receiving:register_office")
+  const stage = order.status === "draft" && hasPermission(session, "purchasing:send_order")
+    ? { actionKey: "issue" as const, module: "compras" as const, statusLabel: "OC en borrador", title: `Emitir y enviar ${order.code}`, ctaLabel: "Emitir y enviar", createdAt: order.createdAt }
+    : OFFICE_RECEIVABLE_STATUSES.has(order.status) && order.deliveryMode !== "directo_faena" && hasPermission(session, "receiving:register_office")
         ? { actionKey: "receive_office" as const, module: "recepciones" as const, statusLabel: "Recepción en oficina", title: `Registrar llegada de ${order.code}`, ctaLabel: "Registrar llegada", createdAt: order.sentAt ?? order.createdAt }
         : ((order.deliveryMode === "directo_faena" ? DIRECT_FAENA_RECEIVABLE_STATUSES.has(order.status) : FAENA_RECEIVABLE_STATUSES.has(order.status)) && hasPermission(session, "receiving:register_faena"))
           ? { actionKey: "receive_worksite" as const, module: "recepciones" as const, statusLabel: "Pendiente de faena", title: `Recibir ${order.code} en faena`, ctaLabel: "Registrar recepción", createdAt: order.sentAt ?? order.createdAt }
@@ -523,7 +521,7 @@ function operationalSourceBranches(session: Session, scope: WorksiteScope): Oper
     const itemCount = sql`(SELECT COUNT(*) FROM ${purchaseRequestItems} WHERE ${purchaseRequestItems.requestId} = ${purchaseRequests.id})`
     add("solicitudes", sql`
       SELECT 'purchase_request'::text AS source_type, ${purchaseRequests.id} AS source_id,
-        CASE WHEN ${purchaseRequests.status} IN ('draft', 'returned') THEN 'complete' ELSE 'follow_up' END AS action_key,
+        CASE WHEN ${purchaseRequests.status} = 'draft' THEN 'complete' ELSE 'follow_up' END AS action_key,
         'solicitudes'::text AS module, ${purchaseRequests.code} AS code, ${purchaseRequests.code} AS title,
         CONCAT(${itemCount}, ' ítem', CASE WHEN ${itemCount} = 1 THEN '' ELSE 's' END) AS subtitle,
         ${purchaseRequests.worksiteId} AS worksite_id, ${worksites.name} AS worksite_name,
@@ -531,20 +529,20 @@ function operationalSourceBranches(session: Session, scope: WorksiteScope): Oper
         CASE ${purchaseRequests.status}
           WHEN 'draft' THEN 'Borrador' WHEN 'submitted' THEN 'Enviada' WHEN 'in_review' THEN 'En revisión'
           WHEN 'partially_approved' THEN 'Parcialmente aprobada' WHEN 'approved' THEN 'Aprobada'
-          WHEN 'returned' THEN 'Devuelta' WHEN 'in_purchasing' THEN 'En compra' ELSE ${purchaseRequests.status} END AS status_label,
+          WHEN 'in_purchasing' THEN 'En compra' ELSE ${purchaseRequests.status} END AS status_label,
         CASE ${purchaseRequests.urgency} WHEN 'critical' THEN 'critical' WHEN 'high' THEN 'high' ELSE 'normal' END AS priority,
-        (${purchaseRequests.status} = 'returned') AS blocked,
+        false AS blocked,
         COALESCE(${purchaseRequests.submittedAt}, ${purchaseRequests.createdAt}::text) AS created_at,
         LEFT(${purchaseRequests.requiredDate}::text, 10) AS source_due_at,
         ${emptyAssignee} AS native_assignee_user_id, ${emptyAssignee} AS native_assignee_name,
         CONCAT('/solicitudes/', ${purchaseRequests.id}) AS href,
-        CASE WHEN ${purchaseRequests.status} IN ('draft', 'returned') THEN 'Completar solicitud' ELSE 'Revisar solicitud' END AS cta_label,
+        CASE WHEN ${purchaseRequests.status} = 'draft' THEN 'Completar solicitud' ELSE 'Revisar solicitud' END AS cta_label,
         true AS assignable
       FROM ${purchaseRequests}
       INNER JOIN ${worksites} ON ${worksites.id} = ${purchaseRequests.worksiteId}
       WHERE ${inScope(purchaseRequests.worksiteId)}
         AND ${requesterCondition}
-        AND ${purchaseRequests.status} IN ('draft', 'submitted', 'in_review', 'partially_approved', 'approved', 'returned', 'in_purchasing')
+        AND ${purchaseRequests.status} IN ('draft', 'submitted', 'in_review', 'partially_approved', 'approved', 'in_purchasing')
     `)
   }
 
@@ -580,10 +578,35 @@ function operationalSourceBranches(session: Session, scope: WorksiteScope): Oper
       ${worksites.name} AS worksite_name, ${purchaseRequestItems.status} AS status, 'Necesita aprobación'::text AS status_label,
       ${itemPriority} AS priority, false AS blocked, ${purchaseRequestItems.createdAt}::text AS created_at, LEFT((${itemDue})::text, 10) AS source_due_at,
       ${emptyAssignee} AS native_assignee_user_id, ${emptyAssignee} AS native_assignee_name,
-      CONCAT('/aprobaciones?solicitud=', ${purchaseRequests.id}) AS href, 'Aprobar o devolver'::text AS cta_label, true AS assignable
+      CONCAT('/aprobaciones?solicitud=', ${purchaseRequests.id}) AS href, 'Aprobar o rechazar'::text AS cta_label, true AS assignable
     ${itemBase} AND ${purchaseRequestItems.status} = 'requested'
       AND ${approvalQueueFilter(approvalScope)}
   `)
+
+  // UX-5: repuestos/servicios se aprueban seleccionando la cotización
+  // ganadora (selectQuotation), no ítem a ítem — por eso quedan excluidos de
+  // la fuente de arriba (approvalQueueFilter). Sin esta fuente, esa etapa no
+  // aparecía en ninguna cola: la solicitud podía quedar varada sin que nadie
+  // tuviera la tarea a la vista.
+  for (const [requestType, permission] of [["repuestos", "repuestos:approve"], ["servicios", "servicios:approve"]] as const) {
+    if (!hasPermission(session, permission)) continue
+    add("aprobaciones", sql`
+      SELECT 'purchase_request'::text AS source_type, ${purchaseRequests.id} AS source_id, 'select_quotation'::text AS action_key,
+        'aprobaciones'::text AS module, ${purchaseRequests.code} AS code, CONCAT('Seleccionar cotización — ', ${purchaseRequests.code}) AS title,
+        ''::text AS subtitle, ${purchaseRequests.worksiteId} AS worksite_id,
+        ${worksites.name} AS worksite_name, ${purchaseRequests.status} AS status, 'Esperando cotización ganadora'::text AS status_label,
+        CASE ${purchaseRequests.urgency} WHEN 'critical' THEN 'critical' WHEN 'high' THEN 'high' ELSE 'normal' END AS priority,
+        false AS blocked, COALESCE(${purchaseRequests.submittedAt}, ${purchaseRequests.createdAt}::text) AS created_at,
+        LEFT(${purchaseRequests.requiredDate}::text, 10) AS source_due_at,
+        ${emptyAssignee} AS native_assignee_user_id, ${emptyAssignee} AS native_assignee_name,
+        CONCAT('/solicitudes/', ${purchaseRequests.id}) AS href, 'Seleccionar cotización ganadora'::text AS cta_label, true AS assignable
+      FROM ${purchaseRequests}
+      INNER JOIN ${worksites} ON ${worksites.id} = ${purchaseRequests.worksiteId}
+      WHERE ${inScope(purchaseRequests.worksiteId)}
+        AND ${purchaseRequests.requestType} = ${requestType}
+        AND ${purchaseRequests.status} IN ('submitted', 'in_review')
+    `)
+  }
 
   if (hasPermission(session, "purchasing:create_order")) add("compras", sql`
     SELECT 'purchase_request_item'::text AS source_type, ${purchaseRequestItems.id} AS source_id, 'create_order'::text AS action_key,
@@ -634,13 +657,9 @@ function operationalSourceBranches(session: Session, scope: WorksiteScope): Oper
     ${emptyAssignee} AS native_assignee_user_id, ${emptyAssignee} AS native_assignee_name,
     ${href} AS href, ${ctaLabel}::text AS cta_label, true AS assignable
   `
-  if (hasPermission(session, "purchasing:create_order")) add("compras", sql`
-    SELECT ${orderFields('issue', 'compras', sql`CONCAT('Emitir ', ${purchaseOrders.code})`, 'OC en borrador', sql`CONCAT('/compras/', ${purchaseOrders.id})`, 'Emitir orden de compra', sql`${purchaseOrders.createdAt}::text`)}
-    ${orderBase} AND ${purchaseOrders.status} = 'draft'
-  `)
   if (hasPermission(session, "purchasing:send_order")) add("compras", sql`
-    SELECT ${orderFields('send', 'compras', sql`CONCAT('Enviar ', ${purchaseOrders.code})`, 'OC emitida', sql`CONCAT('/compras/', ${purchaseOrders.id})`, 'Enviar al proveedor', sql`COALESCE(${purchaseOrders.issuedAt}, ${purchaseOrders.createdAt}::text)`)}
-    ${orderBase} AND ${purchaseOrders.status} = 'issued'
+    SELECT ${orderFields('issue', 'compras', sql`CONCAT('Emitir y enviar ', ${purchaseOrders.code})`, 'OC en borrador', sql`CONCAT('/compras/', ${purchaseOrders.id})`, 'Emitir y enviar', sql`${purchaseOrders.createdAt}::text`)}
+    ${orderBase} AND ${purchaseOrders.status} = 'draft'
   `)
   if (hasPermission(session, "receiving:register_office")) add("recepciones", sql`
     SELECT ${orderFields('receive_office', 'recepciones', sql`CONCAT('Registrar llegada de ', ${purchaseOrders.code})`, 'Recepción en oficina', sql`CONCAT('/recepcion/nueva?oc=', ${purchaseOrders.id})`, 'Registrar llegada', sql`COALESCE(${purchaseOrders.sentAt}, ${purchaseOrders.createdAt}::text)`)}
@@ -1103,7 +1122,7 @@ export async function getOperationalWorkCount(session: Session) {
     counts.push(countRows(
       db.select({ total: count() }).from(purchaseRequests).where(and(
         requestScope,
-        inArray(purchaseRequests.status, ["draft", "submitted", "in_review", "partially_approved", "approved", "returned", "in_purchasing"]),
+        inArray(purchaseRequests.status, ["draft", "submitted", "in_review", "partially_approved", "approved", "in_purchasing"]),
         hasPermission(session, "requests:view_all") ? undefined : eq(purchaseRequests.requesterId, session.user.id),
       )),
     ))
@@ -1134,9 +1153,6 @@ export async function getOperationalWorkCount(session: Session) {
         .innerJoin(purchaseRequests, eq(purchaseRequestItems.requestId, purchaseRequests.id))
         .where(and(requestScope, liveRequest, inArray(purchaseRequestItems.status, ["approved", "pending_purchase"]))),
     ))
-    counts.push(countRows(
-      db.select({ total: count() }).from(purchaseOrders).where(and(orderScope, eq(purchaseOrders.status, "draft"))),
-    ))
   }
   if (hasPermission(session, "deliveries:create")) {
     counts.push(countRows(
@@ -1159,7 +1175,7 @@ export async function getOperationalWorkCount(session: Session) {
   }
   if (hasPermission(session, "purchasing:send_order")) {
     counts.push(countRows(
-      db.select({ total: count() }).from(purchaseOrders).where(and(orderScope, eq(purchaseOrders.status, "issued"))),
+      db.select({ total: count() }).from(purchaseOrders).where(and(orderScope, eq(purchaseOrders.status, "draft"))),
     ))
     // Espejo de la fuente `invoice` de la cola: mismo predicado, mismo permiso.
     counts.push(countRows(

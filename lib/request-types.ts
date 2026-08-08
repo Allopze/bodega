@@ -13,24 +13,39 @@ export const REQUEST_TYPE_OPTS = [
 ] as const
 
 export type RequestType = (typeof REQUEST_TYPE_OPTS)[number]["value"]
-export type RequestTypeAction = "create" | "submit"
+export type RequestTypeAction = "create" | "submit" | "approve"
 
 const REQUEST_TYPE_PERMISSIONS: Record<RequestType, Record<RequestTypeAction, Permission>> = {
+  // EPP/otro se crean y envían en un solo acto, así que "enviar" ya no es un
+  // permiso propio: `requests:submit` se retiró del registro y estas entradas
+  // aliasan a `requests:create`. De hecho, `permissionForRequestType(_, "submit")`
+  // nunca se llama con estos dos tipos en código real: el guard de
+  // app/(app)/solicitudes/actions-module/submit.ts filtra a QUOTATION_TYPES antes
+  // de llegar a consultarlo. Quedan aquí para que el `Record` sea exhaustivo, no
+  // porque gobiernen nada — no las "arregles" pensando que están mal mapeadas.
   epp: {
-    create: "requests:create",
-    submit: "requests:submit",
+    create:  "requests:create",
+    submit:  "requests:create",
+    approve: "approvals:approve",
   },
   otro: {
-    create: "requests:create",
-    submit: "requests:submit",
+    create:  "requests:create",
+    submit:  "requests:create",
+    approve: "approvals:approve",
   },
+  // Mismos permisos que ya usa el factory de repuestos/servicios en su config
+  // (app/(app)/repuestos/actions.ts, servicios/actions.ts) — centralizados
+  // aquí para que UX-5 (notificar/ofrecer la tarea a quien de verdad aprueba
+  // ese tipo) no tenga que reinventar el mapeo.
   repuestos: {
-    create: "repuestos:create",
-    submit: "repuestos:submit",
+    create:  "repuestos:create",
+    submit:  "repuestos:submit",
+    approve: "repuestos:approve",
   },
   servicios: {
-    create: "servicios:create",
-    submit: "servicios:submit",
+    create:  "servicios:create",
+    submit:  "servicios:submit",
+    approve: "servicios:approve",
   },
 }
 
@@ -45,6 +60,12 @@ export function permissionForRequestType(
   return REQUEST_TYPE_PERMISSIONS[requestType][action]
 }
 
+/**
+ * `action="submit"` no tiene ningún call-site de aplicación hoy (sólo lo
+ * ejercita lib/__tests__/request-type-permissions.test.ts); todo el código real
+ * llama con el default `"create"`. Se conserva el parámetro por si vuelve a
+ * hacer falta filtrar por permiso de envío, no como pieza viva del flujo actual.
+ */
 export function visibleRequestTypeOptions(
   permissions: readonly string[],
   action: RequestTypeAction = "create",

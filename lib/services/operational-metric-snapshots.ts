@@ -39,8 +39,8 @@ function monthStartInChile(now = new Date()) {
 async function currentBacklogRows(worksiteIds: string[]) {
   if (worksiteIds.length === 0) return [[], [], [], []] as const
   return Promise.all([
-    db.select({ worksiteId: purchaseRequests.worksiteId, value: count() }).from(purchaseRequests).where(and(inArray(purchaseRequests.worksiteId, worksiteIds), inArray(purchaseRequests.status, ["draft", "submitted", "in_review", "partially_approved", "approved", "returned", "in_purchasing"]))).groupBy(purchaseRequests.worksiteId),
-    db.select({ worksiteId: purchaseOrders.worksiteId, value: count() }).from(purchaseOrders).where(and(inArray(purchaseOrders.worksiteId, worksiteIds), inArray(purchaseOrders.status, ["draft", "issued", "sent", "partially_office_received", "office_received", "partially_received"]))).groupBy(purchaseOrders.worksiteId),
+    db.select({ worksiteId: purchaseRequests.worksiteId, value: count() }).from(purchaseRequests).where(and(inArray(purchaseRequests.worksiteId, worksiteIds), inArray(purchaseRequests.status, ["draft", "submitted", "in_review", "partially_approved", "approved", "in_purchasing"]))).groupBy(purchaseRequests.worksiteId),
+    db.select({ worksiteId: purchaseOrders.worksiteId, value: count() }).from(purchaseOrders).where(and(inArray(purchaseOrders.worksiteId, worksiteIds), inArray(purchaseOrders.status, ["draft", "sent", "partially_office_received", "office_received", "partially_received"]))).groupBy(purchaseOrders.worksiteId),
     db.select({ worksiteId: preventionCapaActions.worksiteId, value: count() }).from(preventionCapaActions).where(and(inArray(preventionCapaActions.worksiteId, worksiteIds), inArray(preventionCapaActions.status, ["pending", "in_progress", "pending_verification", "reopened"]))).groupBy(preventionCapaActions.worksiteId),
     db.select({ worksiteId: pdtpObligations.worksiteId, value: count() }).from(pdtpObligations).where(and(inArray(pdtpObligations.worksiteId, worksiteIds), inArray(pdtpObligations.status, ["pending", "overdue", "reported"]))).groupBy(pdtpObligations.worksiteId),
   ])
@@ -50,8 +50,8 @@ export async function captureOperationalMetricSnapshots(now = new Date()) {
   const snapshotDate = todayInChile(now)
   const [activeWorksites, requests, orders, capa, obligations, stockAlerts] = await Promise.all([
     db.select({ id: worksites.id }).from(worksites).where(eq(worksites.isActive, true)),
-    db.select({ worksiteId: purchaseRequests.worksiteId, value: count() }).from(purchaseRequests).where(inArray(purchaseRequests.status, ["draft", "submitted", "in_review", "partially_approved", "approved", "returned", "in_purchasing"])).groupBy(purchaseRequests.worksiteId),
-    db.select({ worksiteId: purchaseOrders.worksiteId, value: count() }).from(purchaseOrders).where(inArray(purchaseOrders.status, ["draft", "issued", "sent", "partially_office_received", "office_received", "partially_received"])).groupBy(purchaseOrders.worksiteId),
+    db.select({ worksiteId: purchaseRequests.worksiteId, value: count() }).from(purchaseRequests).where(inArray(purchaseRequests.status, ["draft", "submitted", "in_review", "partially_approved", "approved", "in_purchasing"])).groupBy(purchaseRequests.worksiteId),
+    db.select({ worksiteId: purchaseOrders.worksiteId, value: count() }).from(purchaseOrders).where(inArray(purchaseOrders.status, ["draft", "sent", "partially_office_received", "office_received", "partially_received"])).groupBy(purchaseOrders.worksiteId),
     db.select({ worksiteId: preventionCapaActions.worksiteId, value: count() }).from(preventionCapaActions).where(inArray(preventionCapaActions.status, ["pending", "in_progress", "pending_verification", "reopened"])).groupBy(preventionCapaActions.worksiteId),
     db.select({ worksiteId: pdtpObligations.worksiteId, value: count() }).from(pdtpObligations).where(inArray(pdtpObligations.status, ["pending", "overdue", "reported"])).groupBy(pdtpObligations.worksiteId),
     // Mismo predicado que `getCriticalStockAlertCount`, agrupado por faena.

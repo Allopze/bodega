@@ -1,4 +1,5 @@
 import type { Session } from "next-auth"
+import { promises as fs } from "node:fs"
 import { and, desc, eq, isNotNull, sql } from "drizzle-orm"
 import { db } from "@/db"
 import {
@@ -12,6 +13,7 @@ import {
 import { nanoid } from "@/lib/id"
 import { recordAudit } from "@/lib/audit"
 import { isGlobalRole, visibleWorksiteIds, worksiteScopeSql } from "@/lib/auth/scope"
+import { resolveFleetDocumentFile } from "@/lib/storage/config"
 
 // `worksiteId` es la faena elegida en el tablero: se intersecta con el alcance
 // del rol (nunca lo reemplaza). Los llamadores sin selector de faena (/flota)
@@ -23,7 +25,7 @@ export async function getFleetOverview(session: Session, worksiteId?: string) {
   sinceDate.setFullYear(sinceDate.getFullYear() - 1)
   const since = sinceDate.toISOString()
 
-  const [vehicles, fuelRows, maintenanceRows] = await Promise.all([
+  const [vehicles, fuelRows, maintenanceRows, documentExpiryRows] = await Promise.all([
     db.query.fuelVehicles.findMany({
       where: vehicleScope,
       with: { worksite: true, responsibleUser: true, equipmentType: true, usualFuelSupplier: true },
@@ -60,10 +62,23 @@ export async function getFleetOverview(session: Session, worksiteId?: string) {
         worksiteScopeSql(session, maintenanceRecords.worksiteId, worksiteId),
       ))
       .groupBy(maintenanceRecords.vehicleId),
+    // El detalle del vehículo incluye los documentos subidos en su "próximo
+    // vencimiento" (ver `getFleetVehicleDetail`); el listado los ignoraba, así
+    // que un seguro cargado como documento no aparecía ni en la columna ni en
+    // el banner de vencidos de /flota.
+    db
+      .select({
+        vehicleId: fleetVehicleDocuments.vehicleId,
+        nextExpiry: sql<string | null>`MIN(${fleetVehicleDocuments.expiresAt})`,
+      })
+      .from(fleetVehicleDocuments)
+      .where(isNotNull(fleetVehicleDocuments.expiresAt))
+      .groupBy(fleetVehicleDocuments.vehicleId),
   ])
 
   const fuelByVehicle = new Map(fuelRows.map((row) => [row.vehicleId, row]))
   const maintenanceByVehicle = new Map(maintenanceRows.map((row) => [row.vehicleId, row]))
+  const documentExpiryByVehicle = new Map(documentExpiryRows.map((row) => [row.vehicleId, row.nextExpiry]))
 
   return vehicles.map((vehicle) => {
     const fuel = fuelByVehicle.get(vehicle.id)
@@ -103,6 +118,7 @@ export async function getFleetOverview(session: Session, worksiteId?: string) {
         vehicle.technicalReviewExpiresAt,
         vehicle.circulationPermitExpiresAt,
         vehicle.insuranceExpiresAt,
+        documentExpiryByVehicle.get(vehicle.id) ?? null,
       ]),
       totalFuelAmount,
       totalMaintenanceAmount,
@@ -289,6 +305,12 @@ export async function deleteFleetDocument(
   }
 
   await db.delete(fleetVehicleDocuments).where(eq(fleetVehicleDocuments.id, documentId))
+
+  // El archivo quedaba en disco para siempre: sólo se borraba la fila. Se
+  // elimina después del DELETE y sin propagar el error — la fila ya no existe,
+  // un archivo huérfano no debe hacer fallar la acción.
+  const absolutePath = resolveFleetDocumentFile(document.filePath)
+  if (absolutePath) await fs.unlink(absolutePath).catch(() => undefined)
 
   await recordAudit({
     userId: session.user.id,

@@ -12,6 +12,7 @@ import {
   worksites,
 } from "@/db/schema"
 import { isGlobalRole, worksiteScopeSql } from "@/lib/auth/scope"
+import { RECEIVABLE_ORDER_STATUSES } from "@/lib/work-queue"
 import type { Session } from "next-auth"
 
 // ── Metric key type ───────────────────────────────────────────────────────────
@@ -75,7 +76,7 @@ export async function getDashboardData(session: Session, worksiteId?: string): P
       .from(purchaseOrders)
       .where(and(
         orderWorksiteFilter,
-        sql`${purchaseOrders.status} IN ('sent', 'partially_office_received', 'office_received', 'partially_received')`,
+        inArray(purchaseOrders.status, RECEIVABLE_ORDER_STATUSES),
       )),
 
     db

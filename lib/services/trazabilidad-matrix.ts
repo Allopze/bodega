@@ -259,9 +259,16 @@ export async function getTrazabilidadMatrix(
     ? filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE)
     : filtered
 
-  const alertCount = rows.filter((r) => r.alert).length + (alertRow ? 0 : 0)
+  // Cifra de todo el universo (ver el comentario de alertRow más arriba), nunca
+  // de `rows`: la página puede no contener ninguna alerta aunque existan otras
+  // fuera de su ventana.
+  const alertCount = Number(alertRow?.n ?? 0)
 
-  const visibleWorksites = allWorksites.filter((w) => new Set(rows.map((r) => r.worksiteId)).has(w.id))
+  // `allWorksites` ya viene acotada por el alcance del rol en SQL (ver el
+  // comentario junto a su query); cruzarla de nuevo contra `rows` reintroducía
+  // el mismo bug que ese cambio resolvió — faenas del alcance sin fila en la
+  // página actual desaparecían del desplegable.
+  const visibleWorksites = allWorksites
 
   const baseParams: Record<string, string> = {
     ...(filterFaenaId ? { faena: filterFaenaId } : {}),

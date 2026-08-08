@@ -49,6 +49,8 @@ export const requestItemSchema = z.object({
   sortOrder:           z.coerce.number().int().default(0),
   notes:               z.string().max(300).nullable().optional().or(z.literal("")),
   attributes:          z.array(requestItemAttributeSchema).default([]),
+  // Brecha de EPP que originó el ítem precargado; reserva su cupo al crear.
+  replenishmentGapKey: z.string().max(300).nullable().optional().or(z.literal("")),
   // Equipment fields — only used by quotation types (repuestos/servicios);
   // persisted as item attributes by the request-service factory.
   partNumber:          z.string().max(80).nullable().optional().or(z.literal("")),

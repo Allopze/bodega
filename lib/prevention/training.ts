@@ -127,7 +127,7 @@ export function assessLegalFloor(input: {
   return findings
 }
 
-export interface CompetencyGap {
+export type CompetencyGap = {
   workerId: string
   workerName: string
   worksiteId: string

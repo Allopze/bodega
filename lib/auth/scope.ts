@@ -62,6 +62,16 @@ export function resolveWorksiteScope(session: Session | null): WorksiteScope {
 }
 
 /**
+ * ARQ-11: forma que los servicios (fuera de Drizzle/SQL) esperan el alcance
+ * de faena — `"all"` o la lista concreta de ids. Estaba duplicada idéntica
+ * en flota/compras/entregas/bodega/recepcion `actions.ts`.
+ */
+export function serviceWorksiteScope(session: Session | null): string[] | "all" {
+  const scope = resolveWorksiteScope(session)
+  return scope.mode === "all" ? "all" : scope.ids
+}
+
+/**
  * Predicado de faena para una consulta: alcance del rol, opcionalmente acotado a
  * una sola faena.
  *

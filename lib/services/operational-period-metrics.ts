@@ -4,7 +4,7 @@
  * Cada valor usa la fecha nativa del hecho (creación, emisión, recepción o
  * entrega). No se infiere una decisión histórica desde el estado actual.
  */
-import { and, count, eq, gte, isNotNull, lt, sql } from "drizzle-orm"
+import { and, count, eq, gte, isNotNull, isNull, lt, sql } from "drizzle-orm"
 import type { Session } from "next-auth"
 import { db } from "@/db"
 import { deliveries, purchaseOrders, purchaseRequests, receipts } from "@/db/schema"
@@ -93,7 +93,10 @@ export async function getOperationalPeriodMetrics(session: Session, options: Ope
   const { period = "mes", worksiteId, now = new Date() } = options
   const bounds = getOperationalCalendarBounds(now, period)
   const requestScope = worksiteScopeSql(session, purchaseRequests.worksiteId, worksiteId)
-  const orderScope = worksiteScopeSql(session, purchaseOrders.worksiteId, worksiteId)
+  // DAT-16: una OC eliminada (soft-delete) no debe seguir contando en flujos
+  // ni sumando en "gasto del período" — se filtra una sola vez aquí, ya que
+  // orderScope alimenta todas las queries de OC/recepciones/gasto de abajo.
+  const orderScope = and(isNull(purchaseOrders.deletedAt), worksiteScopeSql(session, purchaseOrders.worksiteId, worksiteId))
   const deliveryScope = worksiteScopeSql(session, deliveries.worksiteId, worksiteId)
   const currentIssuedStart = dateKey(bounds.currentStart)
   const currentIssuedEnd = dateKey(bounds.currentEnd)

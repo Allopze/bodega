@@ -225,6 +225,24 @@ export function chileDateParts(date: Date | string | number = new Date()): { yea
   return { year: Number(year), month: Number(month), day: Number(day) }
 }
 
+/**
+ * "YYYY-MM-DD" del día civil chileno — el formato en que se guardan las columnas
+ * de fecha sin hora (`maintenance_date`, `expires_at`, `load_date`).
+ *
+ * Comparar esas columnas contra `toISOString().slice(0,10)` las mide en UTC y
+ * adelanta el corte del día 3–4 horas: entre las 20:00 y la medianoche chilena,
+ * lo que vence hoy aparece vencido. Usa esto, no `toISOString()`.
+ */
+export function todayInChile(date: Date | string | number = new Date()): string {
+  const { year, month, day } = chileDateParts(date)
+  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`
+}
+
+/** Desplaza `days` días sobre una fecha civil "YYYY-MM-DD" sin que la mueva el cambio de hora. */
+export function addDaysToPlainDate(plainDate: string, days: number): string {
+  return new Date(Date.parse(`${plainDate}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10)
+}
+
 // Todo lo que se muestra va en hora de Chile continental, no en la zona del
 // proceso: el contenedor de producción corre en UTC, así que leer los
 // componentes locales de la fecha (getHours/getDate) hacía que el servidor

@@ -23,7 +23,7 @@ export const STAGES = ["Solicitado", "Aprobación", "Compra", "Recepción", "Ent
 export const CLOSED_REQUEST_STATUSES = new Set(["closed", "cancelled", "rejected"])
 export const ACTIVE_REQUEST_STATUSES = new Set([
   "draft", "submitted", "in_review", "partially_approved",
-  "approved", "returned", "in_purchasing",
+  "approved", "in_purchasing",
 ])
 export const APPROVAL_ITEM_STATUSES = new Set(["requested"])
 export const PURCHASE_ITEM_STATUSES = new Set(["approved", "pending_purchase"])
@@ -74,8 +74,8 @@ export function itemStatusLabel(status: string): string {
 
 export function itemStageLabel(status: string): string {
   if (["draft"].includes(status)) return "Solicitado"
-  if (["requested", "returned", "rejected"].includes(status)) return "Aprobación"
-  if (["approved", "pending_purchase", "postponed", "in_purchase_order", "purchased"].includes(status)) return "Compra"
+  if (["requested", "rejected"].includes(status)) return "Aprobación"
+  if (["approved", "pending_purchase", "in_purchase_order", "purchased"].includes(status)) return "Compra"
   if (["partially_received", "received"].includes(status)) return "Recepción"
   if (["partially_delivered", "delivered"].includes(status)) return "Entrega"
   return "Solicitado"
@@ -86,12 +86,11 @@ export function requestNextAction(requestStatus: string, statuses: string[]): st
   if (statuses.length === 0) return "Agrega ítems para enviar la solicitud."
   if (statuses.every((status) => status === "delivered")) return "Pedido entregado en faena."
   if (statuses.every((status) => status === "rejected")) return "Solicitud cerrada sin ítems aprobados."
-  if (statuses.some((status) => status === "returned")) return "Corrige los ítems devueltos y vuelve a enviar."
-  if (statuses.some((status) => status === "draft")) return "Envía la solicitud a aprobación."
+  if (statuses.some((status) => status === "draft")) return "Adjunta las cotizaciones y envía la solicitud a aprobación."
   if (statuses.some((status) => status === "requested")) return "Aprobación debe revisar los ítems pendientes."
   // A-17: nombraban un módulo en lugar de un siguiente paso, y la pantalla no
   // ofrecía cómo continuar. El CTA ya está al lado; el texto dice qué falta.
-  if (statuses.some((status) => ["approved", "pending_purchase", "postponed"].includes(status))) return "Ítems aprobados y a la espera de una orden de compra."
+  if (statuses.some((status) => ["approved", "pending_purchase"].includes(status))) return "Ítems aprobados y a la espera de una orden de compra."
   if (statuses.some((status) => status === "in_purchase_order")) return "En una orden de compra, pendiente de emitir y enviar al proveedor."
   if (statuses.some((status) => ["purchased", "partially_received"].includes(status))) return "Esperando recepción en oficina o bodega."
   if (statuses.some((status) => ["received", "partially_delivered"].includes(status))) return "Bodega debe registrar la entrega a faena."
@@ -101,8 +100,8 @@ export function requestNextAction(requestStatus: string, statuses: string[]): st
 
 export function requestCurrentStage(requestStatus: string, statuses: string[]): string {
   if (requestStatus === "draft") return "Solicitado"
-  if (statuses.some((status) => ["requested", "returned", "rejected"].includes(status))) return "Aprobación"
-  if (statuses.some((status) => ["approved", "pending_purchase", "postponed", "in_purchase_order", "purchased"].includes(status))) return "Compra"
+  if (statuses.some((status) => ["requested", "rejected"].includes(status))) return "Aprobación"
+  if (statuses.some((status) => ["approved", "pending_purchase", "in_purchase_order", "purchased"].includes(status))) return "Compra"
   if (statuses.some((status) => ["partially_received", "received"].includes(status))) return "Recepción"
   if (statuses.some((status) => ["partially_delivered", "delivered"].includes(status))) return "Entrega"
   return requestStatus === "closed" ? "Entrega" : "Solicitado"
