@@ -1,15 +1,10 @@
 /**
- * Unit tests for submitRequest action (solicitudes/actions.ts).
+ * Unit tests for submitRequest (solicitudes/actions.ts).
  *
- * Covers:
- *  1. Permission denied (no requests:submit for the request type)
- *  2. Missing requestId in FormData
- *  3. Request not found in DB
- *  4. Request in wrong status (non-draft)
- *  5. Request with no items
- *  6. User is not the requester (and lacks view_all)
- *  7. Request type not supported
- *  8. Happy path (redirects)
+ * Desde la simplificación del flujo (2026-08-07) la acción tiene dos caminos:
+ *  A. Sin `requestId` — EPP/otro se crean y envían en un solo acto.
+ *  B. Con `requestId` — sólo repuestos/servicios, que envían un borrador ya
+ *     guardado con sus cotizaciones adjuntas.
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest"
@@ -21,28 +16,18 @@ vi.mock("next/navigation", () => ({
 
 const mockAuthFn = vi.hoisted(() => vi.fn())
 const mockFindFirst = vi.hoisted(() => vi.fn())
-const mockSubmitItemTx = vi.hoisted(() => vi.fn())
+const mockCreateSubmitted = vi.hoisted(() => vi.fn())
+const mockSubmitRepuesto = vi.hoisted(() => vi.fn())
+const mockSubmitService = vi.hoisted(() => vi.fn())
+const mockPersistRepuestoDraft = vi.hoisted(() => vi.fn())
 
 vi.mock("@/lib/auth/auth", () => ({ auth: mockAuthFn }))
 vi.mock("@/db", () => ({
   db: {
-    query: {
-      purchaseRequests: { findFirst: mockFindFirst },
-    },
-    transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => {
-      const fakeTx = {
-        query: { purchaseRequestItems: { findFirst: vi.fn().mockResolvedValue(null) } },
-        update: vi.fn().mockReturnThis(),
-        set: vi.fn().mockReturnThis(),
-        where: vi.fn().mockReturnThis(),
-        insert: vi.fn().mockReturnThis(),
-        values: vi.fn().mockResolvedValue(undefined),
-        select: vi.fn().mockReturnThis(),
-        from: vi.fn().mockReturnThis(),
-        returning: vi.fn().mockResolvedValue([]),
-      }
-      return fn(fakeTx)
-    }),
+    query: { purchaseRequests: { findFirst: mockFindFirst } },
+    // Sólo lo usa la comprobación de productos inactivos; los ítems de estas
+    // pruebas son de texto libre, así que nunca llega a resolverse.
+    select: vi.fn(() => ({ from: vi.fn(() => ({ where: vi.fn().mockResolvedValue([]) })) })),
   },
 }))
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), revalidateTag: vi.fn() }))
@@ -52,9 +37,18 @@ vi.mock("@/lib/services/notifications", () => ({
   notifyAfterCommit: vi.fn((fn: () => Promise<unknown>) => fn()),
   notifySafe: vi.fn(),
 }))
-vi.mock("@/lib/services/item-state", () => ({
-  submitItemTx: mockSubmitItemTx,
+vi.mock("@/lib/services/requests-draft", () => ({ createSubmittedRequest: mockCreateSubmitted }))
+vi.mock("@/lib/services/repuestos", () => ({
+  submitRepuestoRequest: mockSubmitRepuesto,
+  persistRepuestoDraft: mockPersistRepuestoDraft,
+  addQuotation: vi.fn(),
 }))
+vi.mock("@/lib/services/servicios", () => ({
+  submitServiceRequest: mockSubmitService,
+  persistServiceDraft: vi.fn(),
+  addServiceQuotation: vi.fn(),
+}))
+vi.mock("@/lib/services/system-settings", () => ({ getPdfMaxSizeMb: vi.fn().mockResolvedValue(10) }))
 
 import { submitRequest } from "@/app/(app)/solicitudes/actions"
 import type { ActionState } from "@/lib/validation/operations"
@@ -67,7 +61,7 @@ function makeSession(overrides: Record<string, unknown> = {}) {
       email: "user@test.cl",
       name: "User",
       roles: ["solicitante_faena"],
-      permissions: ["requests:submit"],
+      permissions: ["requests:create"],
       worksiteIds: ["ws-1"],
       primaryWorksiteId: "ws-1",
       avatarColor: "#000",
@@ -77,9 +71,18 @@ function makeSession(overrides: Record<string, unknown> = {}) {
   }
 }
 
-function makeFormData(overrides: Record<string, string> = {}): FormData {
+/** Formulario de creación directa (sin `requestId`). */
+function makeCreateFormData(overrides: Record<string, string> = {}): FormData {
   const fd = new FormData()
-  fd.set("requestId", "req-1")
+  fd.set("worksiteId", "ws-1")
+  fd.set("requestType", "epp")
+  fd.set("urgency", "normal")
+  fd.set("requiredDate", "2026-08-15")
+  fd.set("notes", "")
+  fd.set("itemsJson", JSON.stringify([{
+    productId: null, productNameFree: "Guantes de cabritilla", quantity: 2,
+    unitOfMeasure: "par", urgency: "normal", attributes: [],
+  }]))
   for (const [k, v] of Object.entries(overrides)) {
     if (v === "") fd.delete(k)
     else fd.set(k, v)
@@ -89,7 +92,104 @@ function makeFormData(overrides: Record<string, string> = {}): FormData {
 
 const prevState: ActionState = { ok: false, message: "" }
 
-describe("submitRequest (solicitudes)", () => {
+describe("submitRequest — creación directa (EPP/otro)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.mocked(redirect).mockImplementation(() => { throw new Error("NEXT_REDIRECT") })
+    mockCreateSubmitted.mockResolvedValue({ requestId: "req-nueva", code: "SOL-2026-0007" })
+  })
+
+  it("crea la solicitud ya enviada y redirige a su detalle", async () => {
+    mockAuthFn.mockResolvedValueOnce(makeSession())
+    await expect(submitRequest(prevState, makeCreateFormData())).rejects.toThrow("NEXT_REDIRECT")
+    expect(mockCreateSubmitted).toHaveBeenCalledWith("user-1", "user@test.cl", expect.objectContaining({
+      worksiteId: "ws-1",
+      requestType: "epp",
+      requiredDate: "2026-08-15",
+    }))
+    expect(redirect).toHaveBeenCalledWith("/solicitudes/req-nueva")
+  })
+
+  it("rechaza a quien no puede crear ese tipo de solicitud", async () => {
+    mockAuthFn.mockResolvedValueOnce(makeSession({ permissions: [] }))
+    const res = await submitRequest(prevState, makeCreateFormData())
+    expect(res.ok).toBe(false)
+    expect(res.message).toMatch(/permisos/i)
+    expect(mockCreateSubmitted).not.toHaveBeenCalled()
+  })
+
+  it("rechaza sin fecha requerida", async () => {
+    mockAuthFn.mockResolvedValueOnce(makeSession())
+    const res = await submitRequest(prevState, makeCreateFormData({ requiredDate: "" }))
+    expect(res.ok).toBe(false)
+    expect(mockCreateSubmitted).not.toHaveBeenCalled()
+  })
+
+  it("rechaza sin ítems", async () => {
+    mockAuthFn.mockResolvedValueOnce(makeSession())
+    const res = await submitRequest(prevState, makeCreateFormData({ itemsJson: "[]" }))
+    expect(res.ok).toBe(false)
+    expect(res.message).toMatch(/ítems|items/i)
+    expect(mockCreateSubmitted).not.toHaveBeenCalled()
+  })
+
+  it("rechaza una faena fuera del alcance del usuario", async () => {
+    mockAuthFn.mockResolvedValueOnce(makeSession())
+    const res = await submitRequest(prevState, makeCreateFormData({ worksiteId: "ws-ajena" }))
+    expect(res.ok).toBe(false)
+    expect(res.message).toMatch(/faena/i)
+    expect(mockCreateSubmitted).not.toHaveBeenCalled()
+  })
+
+  // Repuestos/servicios no se crean enviados: el formulario completo persiste
+  // su borrador (por si el usuario pulsó enviar con cambios sin guardar) y sólo
+  // después entra al envío por cotización.
+  it("con repuestos guarda el borrador en vez de crear una solicitud enviada", async () => {
+    mockAuthFn.mockResolvedValueOnce(makeSession({ permissions: ["repuestos:create", "repuestos:submit"] }))
+    mockPersistRepuestoDraft.mockResolvedValueOnce("req-repuesto")
+    mockFindFirst.mockResolvedValueOnce({
+      id: "req-repuesto", status: "draft", worksiteId: "ws-1", requesterId: "user-1",
+      requestType: "repuestos", code: "SOL-2026-0009", requiredDate: "2026-08-15",
+      items: [{ id: "item-1", status: "draft", productId: null }],
+    })
+    mockSubmitRepuesto.mockResolvedValueOnce(undefined)
+
+    await expect(submitRequest(prevState, makeCreateFormData({ requestType: "repuestos" })))
+      .rejects.toThrow("NEXT_REDIRECT")
+    expect(mockCreateSubmitted).not.toHaveBeenCalled()
+    expect(mockPersistRepuestoDraft).toHaveBeenCalled()
+    expect(mockSubmitRepuesto).toHaveBeenCalledWith(expect.objectContaining({ requestId: "req-repuesto" }))
+  })
+
+  // UX-5: antes de este fix, cualquier tipo notificaba a "approvals:approve"
+  // (el permiso de EPP/otro); una solicitud de repuestos nunca llegaba a
+  // quien de verdad tiene "repuestos:approve".
+  it("notifica a approvals:approve para EPP/otro", async () => {
+    const { getUserIdsWithPermission } = await import("@/lib/services/notifications")
+    mockAuthFn.mockResolvedValueOnce(makeSession())
+    await expect(submitRequest(prevState, makeCreateFormData())).rejects.toThrow("NEXT_REDIRECT")
+    expect(getUserIdsWithPermission).toHaveBeenCalledWith("approvals:approve")
+  })
+
+  it("notifica a repuestos:approve (no approvals:approve) al enviar un borrador de repuestos", async () => {
+    const { getUserIdsWithPermission } = await import("@/lib/services/notifications")
+    mockAuthFn.mockResolvedValueOnce(makeSession({ permissions: ["repuestos:create", "repuestos:submit"] }))
+    mockPersistRepuestoDraft.mockResolvedValueOnce("req-repuesto")
+    mockFindFirst.mockResolvedValueOnce({
+      id: "req-repuesto", status: "draft", worksiteId: "ws-1", requesterId: "user-1",
+      requestType: "repuestos", code: "SOL-2026-0009", requiredDate: "2026-08-15",
+      items: [{ id: "item-1", status: "draft", productId: null }],
+    })
+    mockSubmitRepuesto.mockResolvedValueOnce(undefined)
+
+    await expect(submitRequest(prevState, makeCreateFormData({ requestType: "repuestos" })))
+      .rejects.toThrow("NEXT_REDIRECT")
+    expect(getUserIdsWithPermission).toHaveBeenCalledWith("repuestos:approve")
+    expect(getUserIdsWithPermission).not.toHaveBeenCalledWith("approvals:approve")
+  })
+})
+
+describe("submitRequest — envío de un borrador (repuestos/servicios)", () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.mocked(redirect).mockImplementation(() => { throw new Error("NEXT_REDIRECT") })
@@ -98,138 +198,78 @@ describe("submitRequest (solicitudes)", () => {
       status: "draft",
       worksiteId: "ws-1",
       requesterId: "user-1",
-      requestType: "epp",
+      requestType: "repuestos",
       code: "SOL-2026-0001",
-      // submit.ts exige fecha requerida en los ítems o en la solicitud, y esa
-      // comprobación corre antes que las de propiedad y acceso a faena.
       requiredDate: "2026-08-15",
-      items: [{ id: "item-1", status: "draft" }],
+      items: [{ id: "item-1", status: "draft", productId: null }],
     })
-    mockSubmitItemTx.mockResolvedValue(undefined)
+    mockSubmitRepuesto.mockResolvedValue(undefined)
   })
 
-  it("returns error if user lacks permission", async () => {
-    mockAuthFn.mockResolvedValueOnce(makeSession({ permissions: [] }))
-    const res = await submitRequest(prevState, makeFormData())
-    expect(res.ok).toBe(false)
-    expect(res.message).toMatch(/permisos/i)
+  function draftFormData() {
+    const fd = new FormData()
+    fd.set("requestId", "req-1")
+    return fd
+  }
+
+  it("envía el borrador y redirige a su detalle", async () => {
+    mockAuthFn.mockResolvedValueOnce(makeSession({ permissions: ["repuestos:create", "repuestos:submit"] }))
+    await expect(submitRequest(prevState, draftFormData())).rejects.toThrow("NEXT_REDIRECT")
+    expect(mockSubmitRepuesto).toHaveBeenCalledWith(expect.objectContaining({ requestId: "req-1", userId: "user-1" }))
+    expect(redirect).toHaveBeenCalledWith("/solicitudes/req-1")
   })
 
-  it("returns error if requestId is empty", async () => {
-    mockAuthFn.mockResolvedValueOnce(makeSession())
-    const res = await submitRequest(prevState, makeFormData({ requestId: "" }))
-    expect(res.ok).toBe(false)
-    expect(res.message).toContain("requerido")
-  })
-
-  it("returns error if request not found", async () => {
-    mockAuthFn.mockResolvedValueOnce(makeSession())
+  it("devuelve error si la solicitud no existe", async () => {
+    mockAuthFn.mockResolvedValueOnce(makeSession({ permissions: ["repuestos:submit"] }))
     mockFindFirst.mockResolvedValueOnce(null)
-    const res = await submitRequest(prevState, makeFormData())
+    const res = await submitRequest(prevState, draftFormData())
     expect(res.ok).toBe(false)
     expect(res.message).toContain("no encontrada")
   })
 
-  it("returns error if request is already submitted", async () => {
-    mockAuthFn.mockResolvedValueOnce(makeSession())
+  it("rechaza un tipo de solicitud desconocido", async () => {
+    mockAuthFn.mockResolvedValueOnce(makeSession({ permissions: ["repuestos:submit"] }))
     mockFindFirst.mockResolvedValueOnce({
-      id: "req-1",
-      status: "submitted",
-      worksiteId: "ws-1",
-      requesterId: "user-1",
-      requestType: "epp",
-      code: "SOL-2026-0001",
-      items: [{ id: "item-1", status: "requested" }],
+      id: "req-1", status: "draft", worksiteId: "ws-1", requesterId: "user-1",
+      requestType: "invalid_type", code: "SOL-2026-0001", items: [{ id: "item-1", status: "draft" }],
     })
-    const res = await submitRequest(prevState, makeFormData())
-    expect(res.ok).toBe(false)
-    expect(res.message).toMatch(/solo se pueden enviar/i)
-  })
-
-  it("returns error if request has no items", async () => {
-    mockAuthFn.mockResolvedValueOnce(makeSession())
-    mockFindFirst.mockResolvedValueOnce({
-      id: "req-1",
-      status: "draft",
-      worksiteId: "ws-1",
-      requesterId: "user-1",
-      requestType: "epp",
-      code: "SOL-2026-0001",
-      items: [],
-    })
-    const res = await submitRequest(prevState, makeFormData())
-    expect(res.ok).toBe(false)
-    expect(res.message).toContain("al menos un")
-  })
-
-  it("returns error if user is not the requester", async () => {
-    mockAuthFn.mockResolvedValueOnce(makeSession())
-    mockFindFirst.mockResolvedValueOnce({
-      id: "req-1",
-      status: "draft",
-      worksiteId: "ws-1",
-      requesterId: "other-user",
-      requestType: "epp",
-      code: "SOL-2026-0001",
-      requiredDate: "2026-08-15",
-      items: [{ id: "item-1", status: "draft" }],
-    })
-    const res = await submitRequest(prevState, makeFormData())
-    expect(res.ok).toBe(false)
-    expect(res.message).toMatch(/propia/i)
-  })
-
-  it("returns error if neither the items nor the request carry a required date", async () => {
-    mockAuthFn.mockResolvedValueOnce(makeSession())
-    mockFindFirst.mockResolvedValueOnce({
-      id: "req-1",
-      status: "draft",
-      worksiteId: "ws-1",
-      requesterId: "user-1",
-      requestType: "epp",
-      code: "SOL-2026-0001",
-      requiredDate: null,
-      items: [{ id: "item-1", status: "draft", requiredDate: null }],
-    })
-    const res = await submitRequest(prevState, makeFormData())
-    expect(res.ok).toBe(false)
-    expect(res.message).toMatch(/fecha requerida/i)
-  })
-
-  it("accepts the request when only the items carry a required date", async () => {
-    mockAuthFn.mockResolvedValueOnce(makeSession())
-    mockFindFirst.mockResolvedValueOnce({
-      id: "req-1",
-      status: "draft",
-      worksiteId: "ws-1",
-      requesterId: "user-1",
-      requestType: "epp",
-      code: "SOL-2026-0001",
-      requiredDate: null,
-      items: [{ id: "item-1", status: "draft", requiredDate: "2026-08-15" }],
-    })
-    await expect(submitRequest(prevState, makeFormData())).rejects.toThrow("NEXT_REDIRECT")
-  })
-
-  it("returns error if request type is not supported", async () => {
-    mockAuthFn.mockResolvedValueOnce(makeSession())
-    mockFindFirst.mockResolvedValueOnce({
-      id: "req-1",
-      status: "draft",
-      worksiteId: "ws-1",
-      requesterId: "user-1",
-      requestType: "invalid_type",
-      code: "SOL-2026-0001",
-      items: [{ id: "item-1", status: "draft" }],
-    })
-    const res = await submitRequest(prevState, makeFormData())
+    const res = await submitRequest(prevState, draftFormData())
     expect(res.ok).toBe(false)
     expect(res.message).toContain("no soportado")
   })
 
-  it("redirects on happy path", async () => {
+  it("redirige a EPP/otro al creador: por esta vía ya no se envían", async () => {
     mockAuthFn.mockResolvedValueOnce(makeSession())
-    await expect(submitRequest(prevState, makeFormData())).rejects.toThrow("NEXT_REDIRECT")
-    expect(redirect).toHaveBeenCalledWith("/solicitudes/req-1")
+    mockFindFirst.mockResolvedValueOnce({
+      id: "req-1", status: "draft", worksiteId: "ws-1", requesterId: "user-1",
+      requestType: "epp", code: "SOL-2026-0001", items: [{ id: "item-1", status: "draft" }],
+    })
+    const res = await submitRequest(prevState, draftFormData())
+    expect(res.ok).toBe(false)
+    expect(res.message).toMatch(/un solo paso/i)
+  })
+
+  it("devuelve error si no es su solicitud y no puede ver todas", async () => {
+    mockAuthFn.mockResolvedValueOnce(makeSession({ permissions: ["repuestos:submit"] }))
+    mockFindFirst.mockResolvedValueOnce({
+      id: "req-1", status: "draft", worksiteId: "ws-1", requesterId: "otro-user",
+      requestType: "repuestos", code: "SOL-2026-0001", requiredDate: "2026-08-15",
+      items: [{ id: "item-1", status: "draft", productId: null }],
+    })
+    const res = await submitRequest(prevState, draftFormData())
+    expect(res.ok).toBe(false)
+    expect(res.message).toMatch(/propia/i)
+  })
+
+  it("devuelve error si no hay fecha requerida ni en la solicitud ni en los ítems", async () => {
+    mockAuthFn.mockResolvedValueOnce(makeSession({ permissions: ["repuestos:submit"] }))
+    mockFindFirst.mockResolvedValueOnce({
+      id: "req-1", status: "draft", worksiteId: "ws-1", requesterId: "user-1",
+      requestType: "repuestos", code: "SOL-2026-0001", requiredDate: null,
+      items: [{ id: "item-1", status: "draft", requiredDate: null, productId: null }],
+    })
+    const res = await submitRequest(prevState, draftFormData())
+    expect(res.ok).toBe(false)
+    expect(res.message).toMatch(/fecha requerida/i)
   })
 })

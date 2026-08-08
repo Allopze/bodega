@@ -1,17 +1,21 @@
 /**
- * Unit tests for cancelRequest — permission gate, authorization & validation.
+ * Unit tests for cancelRequest — permission gate, authorization & the action's
+ * own pre-check guards.
  *
- * Covers every guard in the action:
+ * La validación de negocio (estado cancelable, motivo obligatorio, ítems ya
+ * bloqueados, rechazo de ítems abiertos) vive ahora en el servicio unificado
+ * `cancelRequestTx` (lib/requests/request-service-module/cancel-request.ts,
+ * F1-1/F1-2) y se prueba contra PGlite en cancel-request-service.test.ts —
+ * ahí sí importa que corra dentro de una transacción real con locks. Este
+ * archivo cubre solo lo que la action todavía decide por sí misma:
+ *
  *  1. Permission gate (authenticated + requests:create OR requests:view_all)
  *  2. Input validation (missing requestId)
  *  3. Request existence
- *  4. Status validation (cancellable vs non-cancellable)
- *  5. Reason validation (required for submitted/in_review/partially_approved)
- *  6. Ownership (own vs other's request)
- *  7. Worksite (faena) access denied / granted
- *  8. Locked items check
- *  9. Transaction success (happy path)
- * 10. jefa_chome: has requests:view_all but NOT requests:create
+ *  4. Ownership (own vs other's request)
+ *  5. Worksite (faena) access denied / granted
+ *  6. Delega en el servicio y traduce su error a ActionState
+ *  7. jefa_chome: has requests:view_all but NOT requests:create
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest"
@@ -21,13 +25,13 @@ import type { Session } from "next-auth"
 
 const mockState = vi.hoisted(() => ({
   requestResult: undefined as {
-    id: string; status: string; requesterId: string; worksiteId: string; code: string
-    items: Array<{ id: string; status: string }>
+    id: string; requesterId: string; worksiteId: string; code: string
   } | undefined,
 }))
 
 const mockAuthFn = vi.hoisted(() => vi.fn())
 const mockRedirect = vi.hoisted(() => vi.fn(() => { throw new Error("NEXT_REDIRECT") }))
+const mockCancelRequestTx = vi.hoisted(() => vi.fn())
 
 // ── Module mocks ───────────────────────────────────────────────────────────────
 
@@ -40,21 +44,14 @@ vi.mock("@/db", () => ({
         findFirst: vi.fn(() => mockState.requestResult),
       },
     },
-    transaction: vi.fn(async (cb: (tx: Record<string, (...args: unknown[]) => unknown>) => Promise<void>) => {
-      const fakeTx = {
-        update: vi.fn(() => ({ set: vi.fn(() => ({ where: vi.fn() })) })),
-      }
-      await cb(fakeTx)
-    }),
   },
 }))
 
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), revalidateTag: vi.fn() }))
 vi.mock("next/navigation", () => ({ redirect: mockRedirect }))
 
-vi.mock("@/lib/audit", () => ({
-  recordAudit: vi.fn(),
-  recordStatusChange: vi.fn(),
+vi.mock("@/lib/requests/request-service-module/cancel-request", () => ({
+  cancelRequest: mockCancelRequestTx,
 }))
 
 // ── Import after mocks ───────────────────────────────────────────────────────
@@ -93,16 +90,13 @@ function makeSession(overrides: Partial<Session["user"]> = {}): Session {
 }
 
 function makeRequest(overrides: Partial<{
-  id: string; status: string; requesterId: string; worksiteId: string; code: string
-  items: Array<{ id: string; status: string }>
+  id: string; requesterId: string; worksiteId: string; code: string
 }> = {}): typeof mockState.requestResult {
   return {
     id: "req-123",
-    status: "submitted",
     requesterId: "u-requester",
     worksiteId: "ws-1",
     code: "SOL-001",
-    items: [{ id: "item-1", status: "approved" }],
     ...overrides,
   }
 }
@@ -113,6 +107,7 @@ describe("cancelRequest — permission, validation & authorization", () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockState.requestResult = undefined
+    mockCancelRequestTx.mockResolvedValue({ rejectedItemIds: [] })
   })
 
   // ── Permission gate ───────────────────────────────────────────────────────
@@ -170,6 +165,7 @@ describe("cancelRequest — permission, validation & authorization", () => {
       const result = await cancelRequest({ ok: false, message: "" }, makeFormData({ requestId: "" }))
       expect(result.ok).toBe(false)
       expect(result.message).toBe("ID requerido")
+      expect(mockCancelRequestTx).not.toHaveBeenCalled()
     })
   })
 
@@ -185,59 +181,7 @@ describe("cancelRequest — permission, validation & authorization", () => {
       const result = await cancelRequest({ ok: false, message: "" }, makeFormData())
       expect(result.ok).toBe(false)
       expect(result.message).toBe("Solicitud no encontrada")
-    })
-  })
-
-  // ── Status validation ─────────────────────────────────────────────────────
-
-  describe("status validation", () => {
-    it.each(["draft", "returned", "submitted", "in_review", "partially_approved"])(
-      "allows cancellable status '%s' (pending further checks)", async (status) => {
-        mockAuthFn.mockResolvedValue(makeSession({
-          permissions: ["requests:create"],
-          worksiteIds: ["ws-1"],
-        }))
-        mockState.requestResult = makeRequest({ status, requesterId: "u-test" })
-        await expect(cancelRequest({ ok: false, message: "" }, makeFormData()))
-          .rejects.toThrow("NEXT_REDIRECT")
-      },
-    )
-
-    it.each(["approved", "pending_purchase", "in_purchase_order", "purchased",
-             "partially_received", "received", "partially_delivered", "delivered", "cancelled"])(
-      "rejects non-cancellable status '%s'", async (status) => {
-        mockAuthFn.mockResolvedValue(makeSession({
-          permissions: ["requests:view_all"],
-        }))
-        mockState.requestResult = makeRequest({ status })
-        const result = await cancelRequest({ ok: false, message: "" }, makeFormData())
-        expect(result.ok).toBe(false)
-        expect(result.message).toContain("No se puede cancelar")
-      },
-    )
-  })
-
-  // ── Reason validation ─────────────────────────────────────────────────────
-
-  describe("reason validation", () => {
-    it("rejects missing reason for submitted request", async () => {
-      mockAuthFn.mockResolvedValue(makeSession({
-        permissions: ["requests:create"],
-      }))
-      mockState.requestResult = makeRequest({ status: "submitted", requesterId: "u-test" })
-      const result = await cancelRequest({ ok: false, message: "" }, makeFormData({ reason: "" }))
-      expect(result.ok).toBe(false)
-      expect(result.message).toBe("El motivo de cancelación es obligatorio")
-    })
-
-    it("allows missing reason for draft request", async () => {
-      mockAuthFn.mockResolvedValue(makeSession({
-        permissions: ["requests:create"],
-        worksiteIds: ["ws-1"],
-      }))
-      mockState.requestResult = makeRequest({ status: "draft", requesterId: "u-test" })
-      await expect(cancelRequest({ ok: false, message: "" }, makeFormData({ reason: "" })))
-        .rejects.toThrow("NEXT_REDIRECT")
+      expect(mockCancelRequestTx).not.toHaveBeenCalled()
     })
   })
 
@@ -263,6 +207,7 @@ describe("cancelRequest — permission, validation & authorization", () => {
       const result = await cancelRequest({ ok: false, message: "" }, makeFormData())
       expect(result.ok).toBe(false)
       expect(result.message).toBe("Solo puedes cancelar tus propias solicitudes")
+      expect(mockCancelRequestTx).not.toHaveBeenCalled()
     })
 
     it("allows jefa_chome (requests:view_all) to cancel another user's request", async () => {
@@ -303,6 +248,7 @@ describe("cancelRequest — permission, validation & authorization", () => {
       const result = await cancelRequest({ ok: false, message: "" }, makeFormData())
       expect(result.ok).toBe(false)
       expect(result.message).toBe("No tienes acceso a la faena de esta solicitud")
+      expect(mockCancelRequestTx).not.toHaveBeenCalled()
     })
 
     it("allows when user has the worksite explicitly assigned", async () => {
@@ -338,40 +284,36 @@ describe("cancelRequest — permission, validation & authorization", () => {
     })
   })
 
-  // ── Locked items check ────────────────────────────────────────────────────
+  // ── Delegación en el servicio ─────────────────────────────────────────────
 
-  describe("locked items", () => {
-    it("rejects when request has items in locked status", async () => {
-      mockAuthFn.mockResolvedValue(makeSession({
-        permissions: ["requests:view_all"],
-        worksiteIds: ["ws-1"],
-      }))
-      mockState.requestResult = makeRequest({
-        requesterId: "u-other",
-        items: [{ id: "item-1", status: "in_purchase_order" }],
-      })
-      const result = await cancelRequest({ ok: false, message: "" }, makeFormData())
-      expect(result.ok).toBe(false)
-      expect(result.message).toContain("No se puede cancelar")
-    })
-  })
-
-  // ── Transaction success ───────────────────────────────────────────────────
-
-  describe("success path", () => {
-    it("completes the transaction and redirects for a valid cancellation", async () => {
+  describe("delegates to cancelRequestTx", () => {
+    it("calls the service with requestId, userId, reason and redirects on success", async () => {
       mockAuthFn.mockResolvedValue(makeSession({
         permissions: ["requests:create"],
         worksiteIds: ["ws-1"],
       }))
       mockState.requestResult = makeRequest({ requesterId: "u-test" })
 
-      await expect(cancelRequest({ ok: false, message: "" }, makeFormData()))
+      await expect(cancelRequest({ ok: false, message: "" }, makeFormData({ reason: "Duplicada" })))
         .rejects.toThrow("NEXT_REDIRECT")
 
-      // Verify the transaction was executed
-      const { db } = await import("@/db")
-      expect(db.transaction).toHaveBeenCalledOnce()
+      expect(mockCancelRequestTx).toHaveBeenCalledWith(
+        "req-123", "u-test", "Duplicada",
+        expect.objectContaining({ userEmail: "test@chome.cl" }),
+      )
+    })
+
+    it("translates a thrown error from the service into ok:false (estado no cancelable, ítems bloqueados, etc.)", async () => {
+      mockAuthFn.mockResolvedValue(makeSession({
+        permissions: ["requests:create"],
+        worksiteIds: ["ws-1"],
+      }))
+      mockState.requestResult = makeRequest({ requesterId: "u-test" })
+      mockCancelRequestTx.mockRejectedValue(new Error("No se puede cancelar: la solicitud ya tiene ítems en compra, recepción o entrega"))
+
+      const result = await cancelRequest({ ok: false, message: "" }, makeFormData())
+      expect(result.ok).toBe(false)
+      expect(result.message).toBe("No se puede cancelar: la solicitud ya tiene ítems en compra, recepción o entrega")
     })
   })
 })

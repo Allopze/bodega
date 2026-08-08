@@ -3,7 +3,6 @@ import {
   canTransition,
   getDeliveryTargetStatus,
   ALLOWED_TRANSITIONS,
-  TERMINAL_STATES,
   type ItemStatus,
 } from "../services/item-state"
 
@@ -21,8 +20,8 @@ describe("Item State Machine", () => {
       expect(canTransition("requested", "rejected")).toBe(true)
     })
 
-    it("allows requested → returned", () => {
-      expect(canTransition("requested", "returned")).toBe(true)
+    it("no longer allows requested → returned (estado retirado)", () => {
+      expect(canTransition("requested", "returned" as ItemStatus)).toBe(false)
     })
 
     it("allows approved → rejected", () => {
@@ -33,20 +32,16 @@ describe("Item State Machine", () => {
       expect(canTransition("approved", "pending_purchase")).toBe(true)
     })
 
-    it("allows approved → postponed", () => {
-      expect(canTransition("approved", "postponed")).toBe(true)
-    })
-
-    it("allows returned → requested (re-submit)", () => {
-      expect(canTransition("returned", "requested")).toBe(true)
+    it("no longer allows approved → postponed (estado retirado)", () => {
+      expect(canTransition("approved", "postponed" as ItemStatus)).toBe(false)
     })
 
     it("allows pending_purchase → in_purchase_order", () => {
       expect(canTransition("pending_purchase", "in_purchase_order")).toBe(true)
     })
 
-    it("allows pending_purchase → postponed", () => {
-      expect(canTransition("pending_purchase", "postponed")).toBe(true)
+    it("no longer allows pending_purchase → postponed (estado retirado)", () => {
+      expect(canTransition("pending_purchase", "postponed" as ItemStatus)).toBe(false)
     })
 
     it("allows in_purchase_order → purchased", () => {
@@ -88,10 +83,6 @@ describe("Item State Machine", () => {
     it("allows partially_delivered → delivered", () => {
       expect(canTransition("partially_delivered", "delivered")).toBe(true)
     })
-
-    it("allows postponed → pending_purchase", () => {
-      expect(canTransition("postponed", "pending_purchase")).toBe(true)
-    })
   })
 
   describe("terminal states — no transitions out", () => {
@@ -107,11 +98,17 @@ describe("Item State Machine", () => {
       }
     })
 
-    it("postponed cannot transition anywhere except pending_purchase", () => {
-      expect(canTransition("postponed", "pending_purchase")).toBe(true)
+    // 'postponed' y 'returned' se retiraron del flujo: ya no son origen ni
+    // destino de nada.
+    it("postponed cannot transition anywhere", () => {
       for (const target of Object.keys(ALLOWED_TRANSITIONS) as ItemStatus[]) {
-        if (target === "pending_purchase") continue
         expect(canTransition("postponed" as ItemStatus, target)).toBe(false)
+      }
+    })
+
+    it("returned cannot transition anywhere", () => {
+      for (const target of Object.keys(ALLOWED_TRANSITIONS) as ItemStatus[]) {
+        expect(canTransition("returned" as ItemStatus, target)).toBe(false)
       }
     })
   })
@@ -136,8 +133,8 @@ describe("Item State Machine", () => {
 
   describe("ALLOWED_TRANSITIONS completeness", () => {
     const allStates: ItemStatus[] = [
-      "draft", "requested", "approved", "rejected", "returned",
-      "postponed", "pending_purchase", "in_purchase_order", "purchased",
+      "draft", "requested", "approved", "rejected",
+      "pending_purchase", "in_purchase_order", "purchased",
       "partially_received", "received", "partially_delivered", "delivered",
     ]
 
@@ -153,14 +150,6 @@ describe("Item State Machine", () => {
           expect(allStates).toContain(target)
         }
       }
-    })
-  })
-
-  describe("terminal states registry", () => {
-    it("TERMINAL_STATES matches states with empty transition lists", () => {
-      const computedTerminal = (Object.keys(ALLOWED_TRANSITIONS) as ItemStatus[])
-        .filter((s) => ALLOWED_TRANSITIONS[s].length === 0)
-      expect(new Set(TERMINAL_STATES)).toEqual(new Set(computedTerminal))
     })
   })
 

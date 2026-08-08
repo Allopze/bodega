@@ -6,7 +6,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest"
 const mockRequirePermission = vi.hoisted(() => vi.fn())
 const mockAssertOrderAccess = vi.hoisted(() => vi.fn(() => null))
 const mockCanAccessWorksite = vi.hoisted(() => vi.fn(() => true))
-const mockResolveWorksiteScope = vi.hoisted(() => vi.fn(() => ({ mode: "all" as const, ids: [] })))
+const mockResolveWorksiteScope = vi.hoisted(() => vi.fn((_session?: unknown) => ({ mode: "all" as const, ids: [] })))
 
 vi.mock("@/lib/auth/can", () => ({
   requirePermission: mockRequirePermission,
@@ -14,6 +14,10 @@ vi.mock("@/lib/auth/can", () => ({
 }))
 vi.mock("@/lib/auth/scope", () => ({
   resolveWorksiteScope: mockResolveWorksiteScope,
+  serviceWorksiteScope: (session: unknown) => {
+    const scope = mockResolveWorksiteScope(session)
+    return scope.mode === "all" ? "all" : scope.ids
+  },
 }))
 vi.mock("@/db", () => {
   const purchaseOrdersQuery = {
@@ -40,7 +44,7 @@ vi.mock("@/db", () => {
   return { db }
 })
 vi.mock("@/lib/services/purchasing", () => ({
-  markOrderSent: vi.fn(),
+  issueAndSendOrder: vi.fn(),
   cancelOrder: vi.fn(),
   closeOrder: vi.fn(),
   deleteOrder: vi.fn(),
@@ -60,7 +64,7 @@ vi.mock("@/app/(app)/compras/actions.helpers", () => ({
   assertOrderAccess: mockAssertOrderAccess,
 }))
 
-import { sendOrderAction, cancelOrderAction, closeOrderAction, deleteOrderAction, createOrderAction } from "@/app/(app)/compras/actions"
+import { issueAndSendOrderAction, cancelOrderAction, closeOrderAction, deleteOrderAction, createOrderAction } from "@/app/(app)/compras/actions"
 import * as purchasing from "@/lib/services/purchasing"
 import type { ActionState } from "@/lib/validation/operations"
 
@@ -79,7 +83,7 @@ function makeSession() {
   }
 }
 
-describe("sendOrderAction", () => {
+describe("issueAndSendOrderAction", () => {
   beforeEach(() => {
     vi.resetAllMocks()
     mockRequirePermission.mockResolvedValue(makeSession())
@@ -90,13 +94,13 @@ describe("sendOrderAction", () => {
     mockRequirePermission.mockRejectedValueOnce(new Error("no"))
     const fd = new FormData()
     fd.set("orderId", "oc-1")
-    const res = await sendOrderAction(prevState, fd)
+    const res = await issueAndSendOrderAction(prevState, fd)
     expect(res.ok).toBe(false)
   })
 
   it("returns error if orderId missing", async () => {
     const fd = new FormData()
-    const res = await sendOrderAction(prevState, fd)
+    const res = await issueAndSendOrderAction(prevState, fd)
     expect(res.ok).toBe(false)
     expect(res.message).toContain("Orden no especificada")
   })

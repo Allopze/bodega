@@ -309,7 +309,7 @@ describe("trazabilidad export scoping and filter tests", () => {
       worksiteId: "ws-1",
       supplierId: "sup-1",
       createdBy: "u-1",
-      status: "issued",
+      status: "sent",
       createdAt: now,
       updatedAt: now,
     })
@@ -412,7 +412,7 @@ describe("trazabilidad export scoping and filter tests", () => {
         worksiteId: "ws-1",
         supplierId: "sup-1",
         createdBy: "u-1",
-        status: "issued",
+        status: "sent",
         createdAt: now,
         updatedAt: now,
       },

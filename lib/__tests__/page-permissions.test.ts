@@ -42,6 +42,7 @@ vi.mock("@/db", () => ({
           offset: vi.fn(() => chain),
           innerJoin: vi.fn(() => chain),
           leftJoin: vi.fn(() => chain),
+          groupBy: vi.fn(() => chain),
         }
         chain.then = (fn: (rows: unknown[]) => unknown) =>
           Promise.resolve().then(() => fn([]))

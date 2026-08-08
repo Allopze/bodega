@@ -1,23 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import { z } from "zod"
 import { createRequestActions, type RequestActionsConfig } from "@/lib/requests/request-actions"
-import type { Permission } from "@/modules/permissions"
 
 // ── Mock cache & navigation ──────────────────────────────────────────────────
 const mockRevalidatePath = vi.fn()
 vi.mock("next/cache", () => ({
   revalidatePath: (...args: unknown[]) => mockRevalidatePath(...args),
   revalidateTag: vi.fn(),
-}))
-
-// Emulate Next.js redirect behavior which throws a specific redirect error
-const mockRedirect = vi.fn((path: string) => {
-  const err = new Error("NEXT_REDIRECT")
-  Object.defineProperty(err, "digest", { value: `NEXT_REDIRECT;307;${path};`, configurable: true })
-  throw err
-})
-vi.mock("next/navigation", () => ({
-  redirect: (path: string) => mockRedirect(path),
 }))
 
 // ── Mock Auth ──────────────────────────────────────────────────────────────────
@@ -47,12 +36,8 @@ vi.mock("@/lib/services/system-settings", () => ({
 }))
 
 // ── Mock notifications ─────────────────────────────────────────────────────────
-const mockGetUserIdsWithPermission = vi.fn()
-const mockNotifyManyUser = vi.fn()
 const mockNotifySafe = vi.fn()
 vi.mock("@/lib/services/notifications", () => ({
-  getUserIdsWithPermission: (...args: unknown[]) => mockGetUserIdsWithPermission(...args),
-  notifyManyUser: (...args: unknown[]) => mockNotifyManyUser(...args),
   notifySafe: (...args: unknown[]) => mockNotifySafe(...args),
 }))
 
@@ -64,15 +49,9 @@ vi.mock("@/lib/file-validation", () => ({
 }))
 
 describe("createRequestActions factory", () => {
+  // ARQ-1: el factory quedó acotado a las 3 acciones de cotización — guardar
+  // borrador/enviar/cancelar viven en solicitudes/actions-module/, no aquí.
   const schemas = {
-    request: z.object({
-      id: z.string().optional(),
-      worksiteId: z.string(),
-      urgency: z.enum(["normal", "high", "critical"]),
-      requiredDate: z.string(),
-      justification: z.string(),
-      items: z.array(z.any()),
-    }),
     quotationUpload: z.object({
       requestId: z.string(),
       totalAmount: z.coerce.number(),
@@ -84,32 +63,22 @@ describe("createRequestActions factory", () => {
       requestId: z.string(),
       quotationId: z.string(),
     }),
-    cancel: z.object({
-      requestId: z.string(),
-      reason: z.string(),
-    }),
   }
 
   const mockServices = {
-    persistDraft: vi.fn(),
-    submitRequest: vi.fn(),
     addQuotation: vi.fn(),
     deleteQuotation: vi.fn(),
     selectQuotation: vi.fn(),
-    cancelRequest: vi.fn(),
   }
 
   const mockConfig: RequestActionsConfig = {
-    moduleName: "repuestos",
     permissions: {
-      create: "repuestos:crear" as Permission,
-      submit: "repuestos:enviar" as Permission,
-      approve: "repuestos:aprobar" as Permission,
+      submit: "repuestos:submit",
+      approve: "repuestos:approve",
     },
     routePrefix: "/compras/repuestos",
     schemas,
     services: mockServices,
-    itemMapper: (x) => x,
     logPrefix: "repuestos",
   }
 
@@ -117,163 +86,6 @@ describe("createRequestActions factory", () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
-  })
-
-  describe("saveDraftAction", () => {
-    it("returns error if requirePermission throws", async () => {
-      mockRequirePermission.mockRejectedValue(new Error("Unauthorized"))
-      const result = await actions.saveDraftAction({ ok: false, message: "" }, new FormData())
-      expect(result.ok).toBe(false)
-      expect(result.message).toContain("Sin permisos")
-    })
-
-    it("returns fieldErrors if validation fails", async () => {
-      mockRequirePermission.mockResolvedValue({ user: { id: "u1" } })
-      const fd = new FormData()
-      fd.append("itemsJson", "[]")
-      const result = await actions.saveDraftAction({ ok: false, message: "" }, fd)
-      expect(result.ok).toBe(false)
-      expect(result.fieldErrors).toBeDefined()
-    })
-
-    it("returns error if user lacks worksite access", async () => {
-      mockRequirePermission.mockResolvedValue({ user: { id: "u1" } })
-      mockCanAccessWorksite.mockReturnValue(false)
-      const fd = new FormData()
-      fd.append("worksiteId", "ws-1")
-      fd.append("urgency", "normal")
-      fd.append("requiredDate", "2026-06-20")
-      fd.append("justification", "reason")
-      fd.append("itemsJson", "[]")
-
-      const result = await actions.saveDraftAction({ ok: false, message: "" }, fd)
-      expect(result.ok).toBe(false)
-      expect(result.message).toContain("No tienes acceso")
-    })
-
-    it("persists draft, revalidates and returns ID on success", async () => {
-      const session = { user: { id: "u1" } }
-      mockRequirePermission.mockResolvedValue(session)
-      mockCanAccessWorksite.mockReturnValue(true)
-      mockServices.persistDraft.mockResolvedValue("req-123")
-
-      const fd = new FormData()
-      fd.append("worksiteId", "ws-1")
-      fd.append("urgency", "normal")
-      fd.append("requiredDate", "2026-06-20")
-      fd.append("justification", "reason")
-      fd.append("itemsJson", "[]")
-
-      const result = await actions.saveDraftAction({ ok: false, message: "" }, fd)
-      expect(result.ok).toBe(true)
-      expect(result.requestId).toBe("req-123")
-      expect(mockServices.persistDraft).toHaveBeenCalled()
-      expect(mockRevalidatePath).toHaveBeenCalledWith("/compras/repuestos")
-    })
-
-    it("returns service error on exception", async () => {
-      mockRequirePermission.mockResolvedValue({ user: { id: "u1" } })
-      mockCanAccessWorksite.mockReturnValue(true)
-      mockServices.persistDraft.mockRejectedValue(new Error("Database error"))
-
-      const fd = new FormData()
-      fd.append("worksiteId", "ws-1")
-      fd.append("urgency", "normal")
-      fd.append("requiredDate", "2026-06-20")
-      fd.append("justification", "reason")
-      fd.append("itemsJson", "[]")
-
-      const result = await actions.saveDraftAction({ ok: false, message: "" }, fd)
-      expect(result.ok).toBe(false)
-      expect(result.message).toBe("Database error")
-    })
-
-    it("returns error on invalid itemsJson string", async () => {
-      mockRequirePermission.mockResolvedValue({ user: { id: "u1" } })
-      const fd = new FormData()
-      fd.append("itemsJson", "invalid-json")
-      const result = await actions.saveDraftAction({ ok: false, message: "" }, fd)
-      expect(result.ok).toBe(false)
-      expect(result.message).toContain("Revisa los datos")
-    })
-  })
-
-  describe("submitRequestAction", () => {
-    it("returns error if missing permissions", async () => {
-      mockRequirePermission.mockRejectedValue(new Error("Unauthorized"))
-      const result = await actions.submitRequestAction({ ok: false, message: "" }, new FormData())
-      expect(result.ok).toBe(false)
-      expect(result.message).toContain("Sin permisos")
-    })
-
-    it("returns error if requestId is missing", async () => {
-      mockRequirePermission.mockResolvedValue({ user: { id: "u1" } })
-      const result = await actions.submitRequestAction({ ok: false, message: "" }, new FormData())
-      expect(result.ok).toBe(false)
-      expect(result.message).toContain("Solicitud no especificada")
-    })
-
-    it("returns error if request not found", async () => {
-      mockRequirePermission.mockResolvedValue({ user: { id: "u1" } })
-      mockFindFirst.mockResolvedValue(null)
-      const fd = new FormData()
-      fd.append("requestId", "req-1")
-      const result = await actions.submitRequestAction({ ok: false, message: "" }, fd)
-      expect(result.ok).toBe(false)
-      expect(result.message).toContain("no encontrada")
-    })
-
-    it("returns error if user lacks worksite access", async () => {
-      mockRequirePermission.mockResolvedValue({ user: { id: "u1" } })
-      mockFindFirst.mockResolvedValue({ worksiteId: "ws-1" })
-      mockCanAccessWorksite.mockReturnValue(false)
-      const fd = new FormData()
-      fd.append("requestId", "req-1")
-
-      const result = await actions.submitRequestAction({ ok: false, message: "" }, fd)
-      expect(result.ok).toBe(false)
-      expect(result.message).toContain("No tienes acceso")
-    })
-
-    it("returns error if user is not the owner requester", async () => {
-      mockRequirePermission.mockResolvedValue({ user: { id: "u1" } })
-      mockFindFirst.mockResolvedValue({ worksiteId: "ws-1", requesterId: "u2" })
-      mockCanAccessWorksite.mockReturnValue(true)
-      const fd = new FormData()
-      fd.append("requestId", "req-1")
-
-      const result = await actions.submitRequestAction({ ok: false, message: "" }, fd)
-      expect(result.ok).toBe(false)
-      expect(result.message).toContain("Solo el solicitante")
-    })
-
-    it("submits request, sends notifications, and redirects on success", async () => {
-      mockRequirePermission.mockResolvedValue({ user: { id: "u1", email: "u1@test.com" } })
-      mockFindFirst.mockResolvedValue({ worksiteId: "ws-1", requesterId: "u1" })
-      mockCanAccessWorksite.mockReturnValue(true)
-      mockGetUserIdsWithPermission.mockResolvedValue(["approver-1"])
-
-      const fd = new FormData()
-      fd.append("requestId", "req-1")
-
-      await expect(actions.submitRequestAction({ ok: false, message: "" }, fd)).rejects.toThrow("NEXT_REDIRECT")
-      expect(mockServices.submitRequest).toHaveBeenCalled()
-      expect(mockRedirect).toHaveBeenCalledWith("/compras/repuestos/req-1")
-    })
-
-    it("returns service error on exception in submitRequest", async () => {
-      mockRequirePermission.mockResolvedValue({ user: { id: "u1", email: "u1@test.com" } })
-      mockFindFirst.mockResolvedValue({ worksiteId: "ws-1", requesterId: "u1" })
-      mockCanAccessWorksite.mockReturnValue(true)
-      mockServices.submitRequest.mockRejectedValue(new Error("Database submit error"))
-
-      const fd = new FormData()
-      fd.append("requestId", "req-1")
-
-      const result = await actions.submitRequestAction({ ok: false, message: "" }, fd)
-      expect(result.ok).toBe(false)
-      expect(result.message).toBe("Database submit error")
-    })
   })
 
   describe("uploadQuotationAction", () => {
@@ -414,50 +226,6 @@ describe("createRequestActions factory", () => {
       const result = await actions.selectQuotationAction({ ok: false, message: "" }, fd)
       expect(result.ok).toBe(false)
       expect(result.message).toBe("Select failed")
-    })
-  })
-
-  describe("cancelRequestAction", () => {
-    it("cancels request and redirects on success", async () => {
-      mockRequirePermission.mockResolvedValue({ user: { id: "u1", email: "u1@test.com" } })
-      mockFindFirst.mockResolvedValue({ worksiteId: "ws-1", requesterId: "u1" })
-      mockCanAccessWorksite.mockReturnValue(true)
-
-      const fd = new FormData()
-      fd.append("requestId", "req-1")
-      fd.append("reason", "no longer needed")
-
-      await expect(actions.cancelRequestAction({ ok: false, message: "" }, fd)).rejects.toThrow("NEXT_REDIRECT")
-      expect(mockServices.cancelRequest).toHaveBeenCalled()
-      expect(mockRedirect).toHaveBeenCalledWith("/compras/repuestos")
-    })
-
-    it("returns error if user is not the owner requester for cancelRequestAction", async () => {
-      mockRequirePermission.mockResolvedValue({ user: { id: "u1", email: "u1@test.com" } })
-      mockFindFirst.mockResolvedValue({ worksiteId: "ws-1", requesterId: "u2" })
-
-      const fd = new FormData()
-      fd.append("requestId", "req-1")
-      fd.append("reason", "no longer needed")
-
-      const result = await actions.cancelRequestAction({ ok: false, message: "" }, fd)
-      expect(result.ok).toBe(false)
-      expect(result.message).toContain("Solo el solicitante")
-    })
-
-    it("returns service error on exception in cancelRequestAction", async () => {
-      mockRequirePermission.mockResolvedValue({ user: { id: "u1", email: "u1@test.com" } })
-      mockFindFirst.mockResolvedValue({ worksiteId: "ws-1", requesterId: "u1" })
-      mockCanAccessWorksite.mockReturnValue(true)
-      mockServices.cancelRequest.mockRejectedValue(new Error("Cancel failed"))
-
-      const fd = new FormData()
-      fd.append("requestId", "req-1")
-      fd.append("reason", "no longer needed")
-
-      const result = await actions.cancelRequestAction({ ok: false, message: "" }, fd)
-      expect(result.ok).toBe(false)
-      expect(result.message).toBe("Cancel failed")
     })
   })
 })

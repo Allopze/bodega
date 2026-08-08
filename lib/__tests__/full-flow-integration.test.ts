@@ -22,6 +22,7 @@ import { describe, it, expect, vi, afterAll } from "vitest"
 import path from "node:path"
 import { eq } from "drizzle-orm"
 import * as schema from "@/db/schema"
+import type { Tx } from "@/db"
 
 // ── Setup in-memory PostgreSQL database & schema migrations ──────────────────
 const pg = new PGlite()
@@ -44,8 +45,8 @@ const migrationsFolder = path.resolve(process.cwd(), "db/migrations")
 await migratePGlite(pg, migrationsFolder)
 
 // Import the services to test (they now reference the mocked in-memory database)
-import { submitItem, approveItem, markItemPendingPurchase } from "@/lib/services/item-state"
-import { createOrder, createOrdersBySupplier, issueOrder, markOrderSent } from "@/lib/services/purchasing"
+import { submitItemTx, approveItem } from "@/lib/services/item-state"
+import { createOrder, createOrdersBySupplier, issueAndSendOrder } from "@/lib/services/purchasing"
 import { registerReceipt } from "@/lib/services/receiving"
 import { registerWorkerEppDelivery } from "@/lib/services/deliveries"
 
@@ -162,7 +163,7 @@ describe("Full procurement workflow integration", () => {
     expect(initialReq?.items[0]?.status).toBe("draft")
 
     // 3. Submit request item (transitions item to requested)
-    await submitItem(requestItemId, userId, { userEmail: "juan@chome.cl" })
+    await inMemoryDb.transaction((tx) => submitItemTx(tx as unknown as Tx, requestItemId, userId, { userEmail: "juan@chome.cl" }))
 
     // Simulate request header status update to "submitted" as done in submitRequest server action
     await inMemoryDb.update(schema.purchaseRequests)
@@ -187,15 +188,8 @@ describe("Full procurement workflow integration", () => {
     expect(approvedReq?.items[0]?.status).toBe("approved")
     expect(approvedReq?.status).toBe("approved")
 
-    // 5. Stage item for purchasing (transitions item to pending_purchase)
-    await markItemPendingPurchase(requestItemId, userId, { userEmail: "juan@chome.cl" })
-
-    const stagedReq = await inMemoryDb.query.purchaseRequests.findFirst({
-      where: eq(schema.purchaseRequests.id, requestId),
-      with: { items: true },
-    })
-    expect(stagedReq?.items[0]?.status).toBe("pending_purchase")
-
+    // 5. Create Purchase Order (OC) — el ítem aprobado entra directo, sin
+    //    paso intermedio de "pendiente de compra".
     // 6. Create Purchase Order (OC)
     const orderId = await createOrder({
       worksiteId: worksiteId,
@@ -230,19 +224,14 @@ describe("Full procurement workflow integration", () => {
     })
     expect(inOcReq?.items[0]?.status).toBe("in_purchase_order")
 
-    // 7. Issue OC
-    await issueOrder(orderId, userId, "all", { userEmail: "juan@chome.cl" })
-    const issuedOrder = await inMemoryDb.query.purchaseOrders.findFirst({
-      where: eq(schema.purchaseOrders.id, orderId),
-    })
-    expect(issuedOrder?.status).toBe("issued")
-
-    // 8. Send OC
-    await markOrderSent(orderId, userId, "all", { userEmail: "juan@chome.cl" })
+    // 7. Emitir y enviar la OC (un solo acto desde 2026-08-07)
+    await issueAndSendOrder(orderId, userId, "all", { userEmail: "juan@chome.cl" })
     const sentOrder = await inMemoryDb.query.purchaseOrders.findFirst({
       where: eq(schema.purchaseOrders.id, orderId),
     })
     expect(sentOrder?.status).toBe("sent")
+    expect(sentOrder?.issuedAt).toBeTruthy()
+    expect(sentOrder?.sentAt).toBeTruthy()
 
     // Request item should transition to purchased
     const purchasedReq = await inMemoryDb.query.purchaseRequests.findFirst({
@@ -425,6 +414,22 @@ describe("Full procurement workflow integration", () => {
       unitOfMeasure: "unidad", status: "received", createdAt: now, updatedAt: now,
     })
 
+    // LOG-5: la entrega ahora topa contra lo realmente recibido en faena, no
+    // solo contra la cantidad solicitada — necesita una línea de OC recibida.
+    const supplierId = "sup-return"
+    await inMemoryDb.insert(schema.suppliers).values({
+      id: supplierId, name: "Proveedor Return", createdAt: now, updatedAt: now,
+    })
+    const orderId = "oc-return"
+    await inMemoryDb.insert(schema.purchaseOrders).values({
+      id: orderId, code: "OC-RETURN-001", worksiteId, supplierId, createdBy: userId,
+      status: "received", createdAt: now, updatedAt: now,
+    })
+    await inMemoryDb.insert(schema.purchaseOrderItems).values({
+      id: "oci-return", purchaseOrderId: orderId, requestItemId, productId,
+      quantity: 5, unitOfMeasure: "unidad", quantityReceived: 5, status: "issued",
+    })
+
     // Register delivery with return
     const deliveryId = await registerWorkerEppDelivery({
       worksiteId, workerId, requestItemId, quantity: 2,
@@ -461,6 +466,87 @@ describe("Full procurement workflow integration", () => {
       where: eq(schema.worksiteStock.worksiteId, worksiteId),
     })
     expect(stock!.quantity).toBe(8) // 10 - 2 delivered, return didn't touch prod-new stock
+  })
+
+  it("rejects delivering more than what was actually received in faena for this item, even with extra stock from another origin (LOG-5)", async () => {
+    const now = new Date().toISOString()
+    const userId = "u-overdeliver"
+    await inMemoryDb.insert(schema.users).values({
+      id: userId, name: "Overdeliver Tester", email: "overdeliver@chome.cl",
+      hashedPassword: "x", isActive: true, createdAt: now, updatedAt: now,
+    })
+
+    const worksiteId = "ws-overdeliver"
+    await inMemoryDb.insert(schema.worksites).values({
+      id: worksiteId, name: "Faena Overdeliver", code: "F-OVERDELIVER",
+      isActive: true, createdAt: now, updatedAt: now,
+    })
+
+    const categoryId = "cat-overdeliver"
+    await inMemoryDb.insert(schema.productCategories).values({
+      id: categoryId, name: "EPP Overdeliver", slug: "epp-overdeliver", isEpp: true, sortOrder: 1,
+    })
+    const productId = "prod-overdeliver"
+    await inMemoryDb.insert(schema.products).values({
+      id: productId, sku: "OVR-001", name: "Casco Overdeliver",
+      categoryId, unitOfMeasure: "unidad", isEpp: true, isActive: true,
+      createdAt: now, updatedAt: now,
+    })
+
+    const workerId = "worker-overdeliver"
+    await inMemoryDb.insert(schema.workers).values({
+      id: workerId, rut: "23.333.333-3", firstName: "Diego", lastName: "Soto",
+      position: "Operador", worksiteId, isActive: true, createdAt: now,
+    })
+
+    // El stock agregado de la faena tiene 10 unidades (por otro ingreso), pero
+    // el ítem trazable en cuestión sólo recibió 4 de las 10 que se pidieron.
+    await inMemoryDb.insert(schema.worksiteStock).values({
+      id: "stock-overdeliver", worksiteId, productId, quantity: 10, minStock: 0,
+      lastMovementAt: now, updatedAt: now,
+    })
+
+    const requestId = "req-overdeliver"
+    await inMemoryDb.insert(schema.purchaseRequests).values({
+      id: requestId, code: "SOL-OVERDELIVER-001", worksiteId, requesterId: userId,
+      urgency: "normal", status: "in_purchasing", createdAt: now, updatedAt: now,
+    })
+    const requestItemId = "item-overdeliver"
+    await inMemoryDb.insert(schema.purchaseRequestItems).values({
+      id: requestItemId, requestId, productId, quantity: 10,
+      unitOfMeasure: "unidad", status: "partially_received", createdAt: now, updatedAt: now,
+    })
+
+    const supplierId = "sup-overdeliver"
+    await inMemoryDb.insert(schema.suppliers).values({
+      id: supplierId, name: "Proveedor Overdeliver", createdAt: now, updatedAt: now,
+    })
+    const orderId = "oc-overdeliver"
+    await inMemoryDb.insert(schema.purchaseOrders).values({
+      id: orderId, code: "OC-OVERDELIVER-001", worksiteId, supplierId, createdBy: userId,
+      status: "partially_received", createdAt: now, updatedAt: now,
+    })
+    await inMemoryDb.insert(schema.purchaseOrderItems).values({
+      id: "oci-overdeliver", purchaseOrderId: orderId, requestItemId, productId,
+      quantity: 10, unitOfMeasure: "unidad", quantityReceived: 4, status: "issued",
+    })
+
+    // Pedir 10 (la cantidad solicitada, y hay 10 en stock) debe rechazarse:
+    // sólo 4 llegaron a faena para este ítem trazable.
+    await expect(registerWorkerEppDelivery({
+      worksiteId, workerId, requestItemId, quantity: 10, deliveredBy: userId,
+    })).rejects.toThrow("La cantidad excede el saldo pendiente de entrega (4)")
+
+    // 4, lo que sí llegó, se entrega sin problema.
+    const deliveryId = await registerWorkerEppDelivery({
+      worksiteId, workerId, requestItemId, quantity: 4, deliveredBy: userId,
+    })
+    expect(deliveryId).toBeTruthy()
+
+    // Una vez entregado todo lo recibido, un quinto no tiene saldo.
+    await expect(registerWorkerEppDelivery({
+      worksiteId, workerId, requestItemId, quantity: 1, deliveredBy: userId,
+    })).rejects.toThrow("No hay saldo recibido en faena pendiente de entregar")
   })
 
   it("creates separate purchase orders for items assigned to different suppliers", async () => {

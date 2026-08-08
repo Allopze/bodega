@@ -29,8 +29,7 @@ const migrationsFolder = path.resolve(process.cwd(), "db/migrations")
 import {
   createOrder,
   createOrdersBySupplier,
-  issueOrder,
-  markOrderSent,
+  issueAndSendOrder,
   cancelOrder,
   closeOrder,
   createPurchaseOrderInvoice,
@@ -224,7 +223,7 @@ describe("Purchasing service — edge cases", () => {
     })
   })
 
-  // ── createOrder + issueOrder + markOrderSent ────────────────────────────
+  // ── createOrder + issueAndSendOrder ─────────────────────────────────────
 
   describe("createOrder → issue → send lifecycle", () => {
     it("creates an order in draft status with correct totals", async () => {
@@ -280,37 +279,44 @@ describe("Purchasing service — edge cases", () => {
       expect(item?.status).toBe("in_purchase_order")
     })
 
-    it("issueOrder transitions draft → issued", async () => {
-      // Find the order we just created
-      await issueOrder(lifecycleOrderId, userId)
+    it("issueAndSendOrder transitions draft → sent and moves items to purchased", async () => {
+      await issueAndSendOrder(lifecycleOrderId, userId)
 
       const order = await inMemoryDb.query.purchaseOrders.findFirst({
         where: eq(schema.purchaseOrders.id, lifecycleOrderId),
       })
-      expect(order?.status).toBe("issued")
+      expect(order?.status).toBe("sent")
+      // Emitir y enviar es un solo acto: ambas marcas de tiempo quedan escritas.
       expect(order?.issuedAt).toBeTruthy()
+      expect(order?.sentAt).toBeTruthy()
+
+      const item = await inMemoryDb.query.purchaseRequestItems.findFirst({
+        where: eq(schema.purchaseRequestItems.requestId, "req-purch-lifecycle"),
+      })
+      expect(item?.status).toBe("purchased")
+
       const events = await inMemoryDb.select().from(schema.operationalActivityEvents)
         .where(eq(schema.operationalActivityEvents.entityId, lifecycleOrderId))
       expect(events.map((event) => event.eventType)).toEqual([
         "purchase_order.created",
-        "purchase_order.issued",
+        "purchase_order.sent",
       ])
     })
 
-    it("issueOrder throws if order is not in draft", async () => {
+    it("issueAndSendOrder throws if order is not in draft", async () => {
       const orders = await inMemoryDb.query.purchaseOrders.findMany({
-        where: eq(schema.purchaseOrders.status, "issued"),
+        where: eq(schema.purchaseOrders.status, "sent"),
       })
       const orderId = orders[orders.length - 1]!.id
 
-      await expect(issueOrder(orderId, userId)).rejects.toThrow("Cannot issue")
+      await expect(issueAndSendOrder(orderId, userId)).rejects.toThrow("Cannot issue and send")
     })
 
-    it("issueOrder throws if order does not exist", async () => {
-      await expect(issueOrder("nonexistent", userId)).rejects.toThrow("not found")
+    it("issueAndSendOrder throws if order does not exist", async () => {
+      await expect(issueAndSendOrder("nonexistent", userId)).rejects.toThrow("not found")
     })
 
-    it("issueOrder rejects orders outside the provided worksite scope", async () => {
+    it("issueAndSendOrder rejects orders outside the provided worksite scope", async () => {
       const requestId = "req-issue-scope"
       const requestItemId = "item-issue-scope"
       await inMemoryDb.insert(schema.purchaseRequests).values({
@@ -338,69 +344,7 @@ describe("Purchasing service — edge cases", () => {
         }],
       })
 
-      await expect(issueOrder(orderId, userId, ["ws-other"])).rejects.toThrow("No tienes acceso")
-    })
-
-    it("markOrderSent transitions issued → sent and moves items to purchased", async () => {
-      const orders = await inMemoryDb.query.purchaseOrders.findMany({
-        where: eq(schema.purchaseOrders.status, "issued"),
-      })
-      const orderId = orders[orders.length - 1]!.id
-
-      await markOrderSent(orderId, userId)
-
-      const order = await inMemoryDb.query.purchaseOrders.findFirst({
-        where: eq(schema.purchaseOrders.id, orderId),
-      })
-      expect(order?.status).toBe("sent")
-      expect(order?.sentAt).toBeTruthy()
-
-      // Request item should now be purchased
-      const item = await inMemoryDb.query.purchaseRequestItems.findFirst({
-        where: eq(schema.purchaseRequestItems.requestId, "req-purch-lifecycle"),
-      })
-      expect(item?.status).toBe("purchased")
-    })
-
-    it("markOrderSent throws if order is not in issued state", async () => {
-      // The order we just sent is now in "sent" state
-      const orders = await inMemoryDb.query.purchaseOrders.findMany({
-        where: eq(schema.purchaseOrders.status, "sent"),
-      })
-      const orderId = orders[orders.length - 1]!.id
-
-      await expect(markOrderSent(orderId, userId)).rejects.toThrow("Cannot mark")
-    })
-
-    it("markOrderSent rejects orders outside the provided worksite scope", async () => {
-      const requestId = "req-send-scope"
-      const requestItemId = "item-send-scope"
-      await inMemoryDb.insert(schema.purchaseRequests).values({
-        id: requestId, code: "SOL-SEND-SCOPE", worksiteId: "ws-purch",
-        requesterId: userId, requestType: "epp", urgency: "normal",
-        status: "approved", createdAt: now, updatedAt: now,
-      })
-      await inMemoryDb.insert(schema.purchaseRequestItems).values({
-        id: requestItemId, requestId, productId: "prod-purch",
-        quantity: 1, unitOfMeasure: "unidad", status: "pending_purchase",
-        createdAt: now, updatedAt: now,
-      })
-      const orderId = await createOrder({
-        worksiteId: "ws-purch",
-        supplierId: "sup-purch",
-        createdBy: userId,
-        items: [{
-          requestItemId,
-          productId: "prod-purch",
-          productNameFree: null,
-          quantity: 1,
-          unitOfMeasure: "unidad",
-          unitPrice: 1000,
-        }],
-      })
-      await issueOrder(orderId, userId)
-
-      await expect(markOrderSent(orderId, userId, ["ws-other"])).rejects.toThrow("No tienes acceso")
+      await expect(issueAndSendOrder(orderId, userId, ["ws-other"])).rejects.toThrow("No tienes acceso")
     })
   })
 
@@ -522,8 +466,7 @@ describe("Purchasing service — edge cases", () => {
           quantity: 3, unitOfMeasure: "unidad", unitPrice: 2000,
         }],
       })
-      await issueOrder(oid, userId)
-      await markOrderSent(oid, userId)
+      await issueAndSendOrder(oid, userId)
 
       // Directly set status to 'received' to test the guard
       await inMemoryDb
@@ -670,9 +613,15 @@ describe("Purchasing service — edge cases", () => {
         .update(schema.purchaseOrders)
         .set({ status: "partially_received" })
         .where(eq(schema.purchaseOrders.id, orderId))
+      // office == faena (ambos 4/10): sin excedente en oficina, así que el
+      // guard de LOG-7 no bloquea — es un cierre parcial legítimo, "el
+      // proveedor no va a despachar el resto".
+      // ARQ-12: purchase_order_items.status sólo describe 'issued'/'cancelled'
+      // (activo/anulado) — la recepción se trackea con los contadores
+      // quantityOfficeReceived/quantityReceived, no con este status.
       await inMemoryDb
         .update(schema.purchaseOrderItems)
-        .set({ quantityOfficeReceived: 10, quantityReceived: 4, status: "partially_received" })
+        .set({ quantityOfficeReceived: 4, quantityReceived: 4 })
         .where(eq(schema.purchaseOrderItems.purchaseOrderId, orderId))
       await inMemoryDb
         .update(schema.purchaseRequestItems)
@@ -701,6 +650,56 @@ describe("Purchasing service — edge cases", () => {
         requiredDate: "2026-08-01",
       })
       expect(splitItem?.attributes[0]).toMatchObject({ attributeName: "Talla", value: "L" })
+    })
+
+    it("blocks closing an order with merchandise received at office but not yet at faena (LOG-7/DAT-17)", async () => {
+      const requestId = "req-close-office-excess"
+      const requestItemId = "item-close-office-excess"
+
+      await inMemoryDb.insert(schema.purchaseRequests).values({
+        id: requestId, code: "SOL-CLOSE-OFFICE", worksiteId: "ws-purch",
+        requesterId: userId, requestType: "epp", urgency: "normal",
+        status: "in_purchasing", createdAt: now, updatedAt: now,
+      })
+      await inMemoryDb.insert(schema.purchaseRequestItems).values({
+        id: requestItemId, requestId, productId: "prod-purch",
+        quantity: 10, unitOfMeasure: "unidad", status: "pending_purchase",
+        createdAt: now, updatedAt: now,
+      })
+
+      const orderId = await createOrder({
+        worksiteId: "ws-purch",
+        supplierId: "sup-purch",
+        createdBy: userId,
+        items: [{
+          requestItemId, productId: "prod-purch", productNameFree: null,
+          quantity: 10, unitOfMeasure: "unidad", unitPrice: 1000,
+        }],
+      })
+
+      // Las 10 llegaron a oficina; nada llegó a faena todavía.
+      await inMemoryDb
+        .update(schema.purchaseOrders)
+        .set({ status: "office_received" })
+        .where(eq(schema.purchaseOrders.id, orderId))
+      await inMemoryDb
+        .update(schema.purchaseOrderItems)
+        .set({ quantityOfficeReceived: 10, quantityReceived: 0 })
+        .where(eq(schema.purchaseOrderItems.purchaseOrderId, orderId))
+
+      await expect(closeOrder(orderId, userId, "Cerrar de todos modos"))
+        .rejects.toThrow("hay mercadería recibida en oficina que aún no llega a faena")
+
+      // No mutó nada: la orden sigue abierta y el ítem no volvió a pending_purchase.
+      const order = await inMemoryDb.query.purchaseOrders.findFirst({
+        where: eq(schema.purchaseOrders.id, orderId),
+      })
+      expect(order?.status).toBe("office_received")
+
+      const item = await inMemoryDb.query.purchaseRequestItems.findFirst({
+        where: eq(schema.purchaseRequestItems.id, requestItemId),
+      })
+      expect(item?.status).toBe("in_purchase_order")
     })
   })
 

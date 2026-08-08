@@ -26,8 +26,9 @@ describe("request type permissions", () => {
   })
 
   it("requires module-specific submit permissions for quotation request types", () => {
-    expect(permissionForRequestType("epp", "submit")).toBe("requests:submit")
-    expect(permissionForRequestType("otro", "submit")).toBe("requests:submit")
+    // EPP/otro se crean y envían en un acto: "enviar" ya no es un permiso propio.
+    expect(permissionForRequestType("epp", "submit")).toBe("requests:create")
+    expect(permissionForRequestType("otro", "submit")).toBe("requests:create")
     expect(permissionForRequestType("repuestos", "submit")).toBe("repuestos:submit")
     expect(permissionForRequestType("servicios", "submit")).toBe("servicios:submit")
   })
@@ -45,7 +46,7 @@ describe("request type permissions", () => {
   })
 
   it("filters visible request type options for submit permissions", () => {
-    expect(visibleRequestTypeOptions(["requests:submit"], "submit").map((option) => option.value)).toEqual([
+    expect(visibleRequestTypeOptions(["requests:create"], "submit").map((option) => option.value)).toEqual([
       "epp",
       "otro",
     ])

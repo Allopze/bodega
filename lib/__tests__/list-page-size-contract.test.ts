@@ -44,7 +44,7 @@ describe("tamaño de página de las listas de adquisiciones", () => {
     const match = source.match(/pageSize=\{([^}]+)\}/)
     expect(match, `${file} no pasa pageSize a DataTable`).not.toBeNull()
 
-    const raw = match![1].trim()
+    const raw = (match![1] ?? "").trim()
     const value = PAGE_SIZE_CONSTANTS[raw] ?? Number(raw)
     expect(Number.isFinite(value), `pageSize={${raw}} no resuelve a un número`).toBe(true)
     expect(value).toBe(server)

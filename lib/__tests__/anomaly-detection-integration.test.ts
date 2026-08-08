@@ -24,6 +24,9 @@ await migratePGlite(pg, path.resolve(process.cwd(), "db/migrations"))
 
 const { reviewTaeSubmission, isOutsideOperatingSchedule } = await import("@/lib/services/fuel-tae")
 const { seedAnomalyRulesIfEmpty, getAnomalyCases, updateAnomalyCaseStatus } = await import("@/lib/combustibles/anomaly-cases")
+
+/** Rol global: estas pruebas verifican la detección, no el alcance por faena. */
+const TEST_SESSION = { user: { id: "test-user", isGlobal: true, worksiteIds: [] } } as unknown as import("next-auth").Session
 const { runAllBatchRules } = await import("@/lib/combustibles/anomaly-detector")
 const { fuelAnomalyRules, fuelAnomalyCases, fuelTaeSubmissions, fuelTaeEvidence } = schema
 
@@ -87,7 +90,7 @@ describe("anomaly detection engine (PostgreSQL integration)", () => {
 
     await reviewTaeSubmission({ id: submission.id, expectedStatus: "submitted", status: "validated", reviewNote: "ok", userId })
 
-    const { cases } = await getAnomalyCases({ referenceEntityType: "fuel_tae_submission", referenceEntityId: submission.id })
+    const { cases } = await getAnomalyCases({ referenceEntityType: "fuel_tae_submission", referenceEntityId: submission.id }, TEST_SESSION)
     expect(cases.some((c) => c.ruleCode === "identidad_incompleta")).toBe(true)
   })
 
@@ -97,7 +100,7 @@ describe("anomaly detection engine (PostgreSQL integration)", () => {
 
     await reviewTaeSubmission({ id: submission.id, expectedStatus: "submitted", status: "validated", reviewNote: "ok", userId })
 
-    const { cases } = await getAnomalyCases({ referenceEntityType: "fuel_tae_submission", referenceEntityId: submission.id })
+    const { cases } = await getAnomalyCases({ referenceEntityType: "fuel_tae_submission", referenceEntityId: submission.id }, TEST_SESSION)
     expect(cases.some((c) => c.ruleCode === "carga_faena_distinta")).toBe(true)
   })
 
@@ -107,7 +110,7 @@ describe("anomaly detection engine (PostgreSQL integration)", () => {
 
     await reviewTaeSubmission({ id: submission.id, expectedStatus: "submitted", status: "validated", reviewNote: "ok", userId })
 
-    const { cases } = await getAnomalyCases({ referenceEntityType: "fuel_tae_submission", referenceEntityId: submission.id })
+    const { cases } = await getAnomalyCases({ referenceEntityType: "fuel_tae_submission", referenceEntityId: submission.id }, TEST_SESSION)
     expect(cases.map((c) => c.ruleCode)).toEqual(expect.arrayContaining(["sello_inicial_faltante", "sello_final_faltante"]))
   })
 
@@ -118,7 +121,7 @@ describe("anomaly detection engine (PostgreSQL integration)", () => {
     await inMemoryDb.insert(fuelTaeSubmissions).values(submission)
     await reviewTaeSubmission({ id: submission.id, expectedStatus: "submitted", status: "validated", reviewNote: "ok", userId })
 
-    const { cases } = await getAnomalyCases({ referenceEntityType: "fuel_tae_submission", referenceEntityId: submission.id })
+    const { cases } = await getAnomalyCases({ referenceEntityType: "fuel_tae_submission", referenceEntityId: submission.id }, TEST_SESSION)
     expect(cases.some((c) => c.ruleCode === "identidad_incompleta")).toBe(false)
 
     // Reactivar para no afectar otras pruebas del archivo.
@@ -129,7 +132,7 @@ describe("anomaly detection engine (PostgreSQL integration)", () => {
     const submission = baseSubmission({ manualIdentity: true })
     await inMemoryDb.insert(fuelTaeSubmissions).values(submission)
     await reviewTaeSubmission({ id: submission.id, expectedStatus: "submitted", status: "validated", reviewNote: "ok", userId })
-    const { cases } = await getAnomalyCases({ referenceEntityType: "fuel_tae_submission", referenceEntityId: submission.id })
+    const { cases } = await getAnomalyCases({ referenceEntityType: "fuel_tae_submission", referenceEntityId: submission.id }, TEST_SESSION)
     const created = cases.find((c) => c.ruleCode === "identidad_incompleta")!
 
     await expect(updateAnomalyCaseStatus(created.id, "dismissed", userId)).rejects.toThrow(/motivo/i)
@@ -150,7 +153,7 @@ describe("anomaly detection engine (PostgreSQL integration)", () => {
 
     await reviewTaeSubmission({ id: submission.id, expectedStatus: "submitted", status: "validated", reviewNote: "ok", userId })
 
-    const { cases } = await getAnomalyCases({ referenceEntityType: "fuel_tae_submission", referenceEntityId: submission.id })
+    const { cases } = await getAnomalyCases({ referenceEntityType: "fuel_tae_submission", referenceEntityId: submission.id }, TEST_SESSION)
     const evidenceCase = cases.find((c) => c.ruleCode === "evidencia_faltante")
     expect(evidenceCase?.observedValue).toBe("2")
     expect(evidenceCase?.expectedValue).toBe("4")
@@ -162,12 +165,12 @@ describe("anomaly detection engine (PostgreSQL integration)", () => {
     await reviewTaeSubmission({ id: submission.id, expectedStatus: "submitted", status: "validated", reviewNote: "ok", userId })
 
     // Al validar no debe crearse (es batch, no inline).
-    let { cases } = await getAnomalyCases({ referenceEntityType: "fuel_tae_submission", referenceEntityId: submission.id })
+    let { cases } = await getAnomalyCases({ referenceEntityType: "fuel_tae_submission", referenceEntityId: submission.id }, TEST_SESSION)
     expect(cases.some((c) => c.ruleCode === "litros_supera_capacidad")).toBe(false)
 
     await runAllBatchRules()
 
-    ;({ cases } = await getAnomalyCases({ referenceEntityType: "fuel_tae_submission", referenceEntityId: submission.id }))
+    ;({ cases } = await getAnomalyCases({ referenceEntityType: "fuel_tae_submission", referenceEntityId: submission.id }, TEST_SESSION))
     expect(cases.some((c) => c.ruleCode === "litros_supera_capacidad")).toBe(true)
   })
 
@@ -177,7 +180,7 @@ describe("anomaly detection engine (PostgreSQL integration)", () => {
     await reviewTaeSubmission({ id: submission.id, expectedStatus: "submitted", status: "validated", reviewNote: "ok", userId })
     await runAllBatchRules()
 
-    const before = await getAnomalyCases({ referenceEntityType: "fuel_tae_submission", referenceEntityId: submission.id })
+    const before = await getAnomalyCases({ referenceEntityType: "fuel_tae_submission", referenceEntityId: submission.id }, TEST_SESSION)
     const created = before.cases.find((c) => c.ruleCode === "litros_supera_capacidad")
     expect(created).toBeDefined()
 
@@ -187,7 +190,7 @@ describe("anomaly detection engine (PostgreSQL integration)", () => {
     // Segunda corrida del cron: no debe crear un caso nuevo para la misma carga.
     await runAllBatchRules()
 
-    const after = await getAnomalyCases({ referenceEntityType: "fuel_tae_submission", referenceEntityId: submission.id, status: ["open", "in_review", "reopened"] })
+    const after = await getAnomalyCases({ referenceEntityType: "fuel_tae_submission", referenceEntityId: submission.id, status: ["open", "in_review", "reopened"] }, TEST_SESSION)
     expect(after.cases.some((c) => c.ruleCode === "litros_supera_capacidad")).toBe(false)
   })
 })
@@ -234,7 +237,7 @@ describe("getAnomalyDistribution (sección 5 — gráfico de distribución)", ()
       },
     ])
 
-    const dist = await getAnomalyDistribution()
+    const dist = await getAnomalyDistribution({}, TEST_SESSION)
 
     expect(dist.total).toBeGreaterThanOrEqual(3)
     expect(dist.byStatus.some((s) => s.status === "open" && s.count >= 2)).toBe(true)
@@ -261,11 +264,11 @@ describe("getAnomalyDistribution (sección 5 — gráfico de distribución)", ()
     })
 
     // Filtrar por faena principal: debe encontrar los casos creados antes
-    const filtered = await getAnomalyDistribution({ worksiteId: distWorksiteId })
+    const filtered = await getAnomalyDistribution({ worksiteId: distWorksiteId }, TEST_SESSION)
     expect(filtered.total).toBeGreaterThan(0)
 
     // Filtrar por otraWorksite: debe encontrar el caso nuevo
-    const filteredOther = await getAnomalyDistribution({ worksiteId: anotherWorksite })
+    const filteredOther = await getAnomalyDistribution({ worksiteId: anotherWorksite }, TEST_SESSION)
     expect(filteredOther.total).toBe(1)
   })
 })
@@ -321,7 +324,7 @@ describe("rendimiento_fuera_historico (batch — performance outlier vs history)
 
     await runAllBatchRules()
 
-    const { cases } = await getAnomalyCases({ ruleCode: "rendimiento_fuera_historico" })
+    const { cases } = await getAnomalyCases({ ruleCode: "rendimiento_fuera_historico" }, TEST_SESSION)
     expect(cases.length).toBeGreaterThan(0)
   })
 })
@@ -382,7 +385,7 @@ describe("rendimiento_fuera_grupo (batch — performance outlier vs group)", () 
 
     await runAllBatchRules()
 
-    const { cases } = await getAnomalyCases({ ruleCode: "rendimiento_fuera_grupo" })
+    const { cases } = await getAnomalyCases({ ruleCode: "rendimiento_fuera_grupo" }, TEST_SESSION)
     expect(cases.length).toBeGreaterThan(0)
   })
 })
@@ -432,7 +435,7 @@ describe("proveedor_no_habitual (batch — supplier mismatch)", () => {
 
     await runAllBatchRules()
 
-    const { cases } = await getAnomalyCases({ ruleCode: "proveedor_no_habitual" })
+    const { cases } = await getAnomalyCases({ ruleCode: "proveedor_no_habitual" }, TEST_SESSION)
     expect(cases.length).toBeGreaterThan(0)
   })
 })
@@ -458,9 +461,18 @@ describe("consumo_durante_inactividad (batch — consumption while inactive)", (
       equipmentTypeId: eqTypeId, worksiteId: wsId, isActive: true,
       operationalStatus: "mantencion", // not "operativo" → inactivo
     })
+    // El detector acota la ventana al intervalo de inactividad VIGENTE: sin
+    // este intervalo abierto (el que crea la app real en cada cambio de
+    // estado, vía actions-module/vehicles.ts) no tiene desde-cuándo confiable
+    // y se salta el vehículo a propósito.
+    await inMemoryDb.insert(schema.fuelVehicleOperationalIntervals).values({
+      id: nanoid(), vehicleId: vehId, status: "mantencion",
+      startedAt: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
+      reason: "Fixture de prueba",
+    })
   })
 
-  it("crea un caso cuando un equipo inactivo tiene cargas registradas", async () => {
+  it("crea un caso cuando un equipo inactivo tiene cargas registradas después de volverse inactivo", async () => {
     await inMemoryDb.insert(schema.fuelTaeSubmissions).values({
       id: nanoid(), clientSubmissionId: nanoid(), source: "public_pwa",
       publicResultToken: nanoid(32),
@@ -474,8 +486,38 @@ describe("consumo_durante_inactividad (batch — consumption while inactive)", (
 
     await runAllBatchRules()
 
-    const { cases } = await getAnomalyCases({ ruleCode: "consumo_durante_inactividad" })
+    const { cases } = await getAnomalyCases({ ruleCode: "consumo_durante_inactividad" }, TEST_SESSION)
     expect(cases.length).toBeGreaterThan(0)
+  })
+
+  it("NO crea caso si la carga es anterior al intervalo de inactividad vigente", async () => {
+    const vehId2 = nanoid()
+    await inMemoryDb.insert(schema.fuelVehicles).values({
+      id: vehId2, plate: `OLDIN${nanoid().slice(0, 4).toUpperCase()}`, type: "camion",
+      equipmentTypeId: eqTypeId, worksiteId: wsId, isActive: true,
+      operationalStatus: "fuera_servicio",
+    })
+    await inMemoryDb.insert(schema.fuelVehicleOperationalIntervals).values({
+      id: nanoid(), vehicleId: vehId2, status: "fuera_servicio",
+      startedAt: new Date().toISOString(),
+    })
+    // Carga de cuando el equipo SÍ operaba, mucho antes del intervalo actual.
+    await inMemoryDb.insert(schema.fuelTaeSubmissions).values({
+      id: nanoid(), clientSubmissionId: nanoid(), source: "public_pwa",
+      publicResultToken: nanoid(32),
+      worksiteId: wsId, vehicleId: vehId2, productId,
+      equipmentCodeSnapshot: "OLDIN",
+      loadedAt: new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString(),
+      submittedAt: new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString(),
+      driverNameSnapshot: "Conductor", supervisorNameSnapshot: "Supervisor",
+      manualIdentity: false, meterType: "odometer", liters: 10,
+      status: "validated",
+    })
+
+    await runAllBatchRules()
+
+    const { cases } = await getAnomalyCases({ ruleCode: "consumo_durante_inactividad" }, TEST_SESSION)
+    expect(cases.some((c) => c.vehicleId === vehId2)).toBe(false)
   })
 })
 
@@ -528,7 +570,7 @@ describe("variacion_brusca_consumo (batch — sharp consumption change)", () => 
 
     await runAllBatchRules()
 
-    const { cases } = await getAnomalyCases({ ruleCode: "variacion_brusca_consumo" })
+    const { cases } = await getAnomalyCases({ ruleCode: "variacion_brusca_consumo" }, TEST_SESSION)
     expect(cases.length).toBeGreaterThan(0)
   })
 })
@@ -594,7 +636,7 @@ describe("evidencia_duplicada (batch — duplicate evidence by SHA-256)", () => 
 
     await runAllBatchRules()
 
-    const { cases } = await getAnomalyCases({ ruleCode: "evidencia_duplicada" })
+    const { cases } = await getAnomalyCases({ ruleCode: "evidencia_duplicada" }, TEST_SESSION)
     expect(cases.length).toBeGreaterThan(0)
   })
 })
@@ -640,7 +682,7 @@ describe("evidencia_ilegible (batch — corrupt/unreadable evidence)", () => {
 
     await runAllBatchRules()
 
-    const { cases } = await getAnomalyCases({ ruleCode: "evidencia_ilegible" })
+    const { cases } = await getAnomalyCases({ ruleCode: "evidencia_ilegible" }, TEST_SESSION)
     expect(cases.length).toBeGreaterThan(0)
   })
 
@@ -663,7 +705,7 @@ describe("evidencia_ilegible (batch — corrupt/unreadable evidence)", () => {
 
     await runAllBatchRules()
 
-    const { cases } = await getAnomalyCases({ ruleCode: "evidencia_ilegible" })
+    const { cases } = await getAnomalyCases({ ruleCode: "evidencia_ilegible" }, TEST_SESSION)
     // Puede tener 1 o 2 casos dependiendo de si la corrida anterior dejó casos
     expect(cases.length).toBeGreaterThan(0)
   })

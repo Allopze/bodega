@@ -104,7 +104,7 @@ describe("getTrazabilidadMatrix", () => {
         worksiteId: "ws-1",
         supplierId: "sup-1",
         createdBy: "u-1",
-        status: "issued",
+        status: "sent",
         createdAt: now,
         updatedAt: now,
       },

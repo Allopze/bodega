@@ -24,10 +24,6 @@ vi.mock("@/db", () => {
       purchaseRequestItems: { findMany: mockFindManyItems },
       products: { findMany: vi.fn(() => []) },
     },
-    select: vi.fn(() => {
-      const row = { id: "item-1", status: "returned", requestId: "req-1", requesterId: "user-1", worksiteId: "ws-1" }
-      return { from: vi.fn(() => ({ innerJoin: vi.fn(() => ({ where: vi.fn(() => ({ then: vi.fn((cb: (rows: typeof row[]) => unknown) => cb([row])) })) })) })) }
-    }),
     update: vi.fn(() => ({ set: vi.fn(() => ({ where: vi.fn() })) })),
     transaction: vi.fn(async <T,>(fn: (tx: typeof db) => T): Promise<T> => fn(db)),
     delete: vi.fn(() => ({ where: vi.fn() })),
@@ -36,9 +32,6 @@ vi.mock("@/db", () => {
 })
 vi.mock("@/lib/services/requests-delete", () => ({
   deleteRequest: vi.fn(),
-}))
-vi.mock("@/lib/services/item-state", () => ({
-  submitItem: vi.fn(),
 }))
 vi.mock("@/lib/audit", () => ({
   recordAudit: vi.fn(),
@@ -57,7 +50,7 @@ vi.mock("@/lib/request-types", () => ({
 }))
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), revalidateTag: vi.fn() }))
 
-import { cancelRequest, resubmitReturnedItemAction, deleteRequestAction } from "@/app/(app)/solicitudes/actions"
+import { deleteRequestAction } from "@/app/(app)/solicitudes/actions"
 import type { ActionState } from "@/lib/validation/operations"
 
 const prevState: ActionState = { ok: false, message: "" }
@@ -75,108 +68,15 @@ function makeSession() {
   }
 }
 
-describe("cancelRequest", () => {
-  beforeEach(() => {
-    vi.resetAllMocks()
-    mockRequirePermission.mockResolvedValue(makeSession())
-    mockRequireAuth.mockResolvedValue(makeSession())
-  })
-
-  it("returns error if permission denied", async () => {
-    mockRequirePermission.mockRejectedValueOnce(new Error("no"))
-    const fd = new FormData()
-    fd.set("requestId", "req-1")
-    const res = await cancelRequest(prevState, fd)
-    expect(res.ok).toBe(false)
-  })
-
-  it("returns error if requestId missing", async () => {
-    const fd = new FormData()
-    const res = await cancelRequest(prevState, fd)
-    expect(res.ok).toBe(false)
-    expect(res.message).toContain("ID requerido")
-  })
-
-  it("returns error if request not found", async () => {
-    mockFindFirstRequest.mockResolvedValueOnce(undefined)
-    const fd = new FormData()
-    fd.set("requestId", "req-1")
-    const res = await cancelRequest(prevState, fd)
-    expect(res.ok).toBe(false)
-    expect(res.message).toContain("Solicitud no encontrada")
-  })
-
-  it("returns error if status is not cancellable", async () => {
-    mockFindFirstRequest.mockResolvedValueOnce({
-      id: "req-1", status: "approved", requesterId: "user-1", worksiteId: "ws-1", code: "SOL-001",
-      items: [{ id: "item-1", status: "approved" }],
-    })
-    const fd = new FormData()
-    fd.set("requestId", "req-1")
-    const res = await cancelRequest(prevState, fd)
-    expect(res.ok).toBe(false)
-    expect(res.message).toContain("No se puede cancelar")
-  })
-
-  it("requires a reason when cancelling a submitted request", async () => {
-    mockFindFirstRequest.mockResolvedValueOnce({
-      id: "req-1", status: "submitted", requesterId: "user-1", worksiteId: "ws-1", code: "SOL-001",
-      items: [{ id: "item-1", status: "requested" }],
-    })
-    const fd = new FormData()
-    fd.set("requestId", "req-1")
-    const res = await cancelRequest(prevState, fd)
-    expect(res.ok).toBe(false)
-    expect(res.message).toContain("motivo")
-  })
-
-  it("cancels a submitted request with reason when no item has entered purchasing", async () => {
-    mockFindFirstRequest.mockResolvedValueOnce({
-      id: "req-1", status: "submitted", requesterId: "user-1", worksiteId: "ws-1", code: "SOL-001",
-      items: [{ id: "item-1", status: "requested" }],
-    })
-    const fd = new FormData()
-    fd.set("requestId", "req-1")
-    fd.set("reason", "Necesidad anulada")
-
-    await expect(cancelRequest(prevState, fd)).rejects.toThrow("NEXT_REDIRECT")
-  })
-
-  it("blocks submitted request cancellation after an item entered purchasing", async () => {
-    mockFindFirstRequest.mockResolvedValueOnce({
-      id: "req-1", status: "submitted", requesterId: "user-1", worksiteId: "ws-1", code: "SOL-001",
-      items: [{ id: "item-1", status: "purchased" }],
-    })
-    const fd = new FormData()
-    fd.set("requestId", "req-1")
-    fd.set("reason", "Necesidad anulada")
-    const res = await cancelRequest(prevState, fd)
-    expect(res.ok).toBe(false)
-    expect(res.message).toContain("compra")
-  })
-})
-
-describe("resubmitReturnedItemAction", () => {
-  beforeEach(() => {
-    vi.resetAllMocks()
-    mockRequireAuth.mockResolvedValue(makeSession())
-  })
-
-  it("returns error if not authenticated", async () => {
-    mockRequireAuth.mockRejectedValueOnce(new Error("no"))
-    const fd = new FormData()
-    fd.set("itemId", "item-1")
-    const res = await resubmitReturnedItemAction(prevState, fd)
-    expect(res.ok).toBe(false)
-  })
-
-  it("returns error if itemId missing", async () => {
-    const fd = new FormData()
-    const res = await resubmitReturnedItemAction(prevState, fd)
-    expect(res.ok).toBe(false)
-    expect(res.message).toContain("Ítem no especificado")
-  })
-})
+// F1-1/F1-2 unificó cancelRequest en un solo servicio (cancel-request.ts) que
+// lockea el padre Y sus ítems (FOR UPDATE) antes de decidir — el mock plano
+// de `@/db` de este archivo (un objeto único sin locks reales) ya no alcanza
+// para ejercitarlo. La cobertura real vive en:
+//   - lib/__tests__/cancel-request-action.test.ts (guards de la action: auth,
+//     ownership, scope de faena, delegación al servicio)
+//   - lib/__tests__/cancel-request-service.test.ts (PGlite: estado
+//     cancelable, motivo obligatorio, ítems bloqueados, rechazo de ítems
+//     abiertos, liberación de reposición EPP)
 
 describe("deleteRequestAction", () => {
   beforeEach(() => {

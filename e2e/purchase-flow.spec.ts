@@ -26,10 +26,11 @@ test("flujo solicitud, aprobación, OC, recepción y trazabilidad", async ({ pag
   // Acotado a SU solicitud: el seed también deja un ítem `approved` de "Guante
   // E2E" (el fixture de OC de `pdf-exports`, con cantidad 10), así que
   // seleccionar por nombre con `.first()` incluía el del seed y la OC quedaba
-  // con la cantidad equivocada. La fila es el div cuyo hijo directo es el
-  // checkbox; se filtra por el código de la solicitud que este test creó.
+  // con la cantidad equivocada. La fila es el div cuyo hijo directo es la
+  // casilla (el componente Checkbox envuelve el input en su <label>); se filtra
+  // por el código de la solicitud que este test creó.
   const ownItemRow = page
-    .locator('div:has(> input[type="checkbox"])')
+    .locator('div:has(> label > input[type="checkbox"])')
     .filter({ hasText: `SOL ${requestCode}` })
   await expect(ownItemRow).toHaveCount(1)
   await ownItemRow.getByLabel(/Incluir Guante E2E/).check()
@@ -46,15 +47,15 @@ test("flujo solicitud, aprobación, OC, recepción y trazabilidad", async ({ pag
   await page.emulateMedia({ media: "screen" })
   await page.goto(`/compras/${orderId}`)
 
-  await page.getByRole("button", { name: "Emitir orden" }).click()
-  const sendButton = page.getByRole("button", { name: "Marcar como enviada" })
+  // Emitir y enviar es un solo acto desde 2026-08-07.
+  const sendButton = page.getByRole("button", { name: "Emitir y enviar" })
   await expect(sendButton).toBeVisible({ timeout: 30_000 })
   await sendButton.click()
   await expect(sendButton).toBeHidden({ timeout: 30_000 })
 
   // Stage 1 — arrival at Chome office from the receiving queue.
   // La bandeja se renderiza en el servidor, así que si se pide antes de que el
-  // commit de "Marcar como enviada" sea visible, llega vacía y ninguna espera de
+  // commit de "Emitir y enviar" sea visible, llega vacía y ninguna espera de
   // Playwright la rellena: hay que volver a pedirla. `expect.poll` recarga hasta
   // que la OC aparece, en vez de depender de que la revalidación haya ganado la
   // carrera (falla intermitente vista en las rondas 3 y 5).
@@ -195,7 +196,7 @@ async function createCatalogRequest(
     await expect(page.getByRole("button", { name: "Cambiar" })).toBeVisible()
   }
   await page.getByLabel("Cantidad").fill(quantity)
-  await page.getByRole("button", { name: "Enviar a aprobación" }).click()
+  await page.getByRole("button", { name: "Crear y enviar a aprobación" }).click()
   await expect(page).toHaveURL(/\/solicitudes\/(?!nueva$)[^/]+$/, { timeout: 15_000 })
   await expect(page.getByText(productName).first()).toBeVisible()
   // El código es el título de la página de detalle. Se lee con `textContent`

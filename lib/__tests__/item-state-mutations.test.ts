@@ -25,7 +25,7 @@ vi.mock("@/db", () => ({
 
 const migrationsFolder = path.resolve(process.cwd(), "db/migrations")
 
-import { submitItem, approveItem, bulkApproveItems, rejectItem, returnItem, markItemPendingPurchase, postponeItem, receiveItem } from "@/lib/services/item-state"
+import { submitItemTx, approveItem, bulkApproveItems, rejectItem, receiveItemTx } from "@/lib/services/item-state"
 
 describe("Item State Machine — DB integration", () => {
   const now = new Date().toISOString()
@@ -69,7 +69,7 @@ describe("Item State Machine — DB integration", () => {
         createdAt: now, updatedAt: now,
       })
 
-      await submitItem(freshItem, userId)
+      await inMemoryDb.transaction((tx) => submitItemTx(tx, freshItem, userId))
 
       const updated = await inMemoryDb.query.purchaseRequestItems
         .findFirst({ where: eq(schema.purchaseRequestItems.id, freshItem) })
@@ -77,7 +77,7 @@ describe("Item State Machine — DB integration", () => {
     })
 
     it("throws if item does not exist", async () => {
-      await expect(submitItem("nonexistent", userId)).rejects.toThrow("not found")
+      await expect(inMemoryDb.transaction((tx) => submitItemTx(tx, "nonexistent", userId))).rejects.toThrow("not found")
     })
 
     it("throws if item is not in draft state", async () => {
@@ -87,7 +87,7 @@ describe("Item State Machine — DB integration", () => {
         unitOfMeasure: "unidad", status: "requested",
         createdAt: now, updatedAt: now,
       })
-      await expect(submitItem(lockedItem, userId)).rejects.toThrow("Cannot transition")
+      await expect(inMemoryDb.transaction((tx) => submitItemTx(tx, lockedItem, userId))).rejects.toThrow("Cannot transition")
     })
   })
 
@@ -202,102 +202,6 @@ describe("Item State Machine — DB integration", () => {
     })
   })
 
-  // ── returnItem ──────────────────────────────────────────────────────────
-  describe("returnItem", () => {
-    const returnItemId = "item-return"
-    beforeAll(async () => {
-      await inMemoryDb.insert(schema.purchaseRequestItems).values({
-        id: returnItemId, requestId, productNameFree: "Return Test", quantity: 1,
-        unitOfMeasure: "unidad", status: "requested",
-        createdAt: now, updatedAt: now,
-      })
-    })
-
-    it("transitions requested → returned", async () => {
-      await returnItem(returnItemId, userId, "Falta especificar marca")
-
-      const item = await inMemoryDb.query.purchaseRequestItems
-        .findFirst({ where: eq(schema.purchaseRequestItems.id, returnItemId) })
-      expect(item?.status).toBe("returned")
-
-      const decision = await inMemoryDb.query.approvalDecisions
-        .findFirst({ where: eq(schema.approvalDecisions.requestItemId, returnItemId) })
-      expect(decision?.reason).toBe("Falta especificar marca")
-    })
-
-    it("throws without reason", async () => {
-      await expect(returnItem(itemId, userId, "")).rejects.toThrow("Reason is required")
-    })
-  })
-
-  // ── postponeItem ────────────────────────────────────────────────────────
-  describe("postponeItem", () => {
-    const postponeItemId = "item-postpone"
-    beforeAll(async () => {
-      await inMemoryDb.insert(schema.purchaseRequestItems).values({
-        id: postponeItemId, requestId, productNameFree: "Postpone Test", quantity: 1,
-        unitOfMeasure: "unidad", status: "pending_purchase",
-        createdAt: now, updatedAt: now,
-      })
-    })
-
-    it("transitions pending_purchase → postponed", async () => {
-      await inMemoryDb.update(schema.purchaseRequestItems)
-        .set({ status: "pending_purchase" })
-        .where(eq(schema.purchaseRequestItems.id, postponeItemId))
-      await postponeItem(postponeItemId, userId, "Esperar presupuesto")
-
-      const item = await inMemoryDb.query.purchaseRequestItems
-        .findFirst({ where: eq(schema.purchaseRequestItems.id, postponeItemId) })
-      expect(item?.status).toBe("postponed")
-    })
-
-    it("transitions approved → postponed", async () => {
-      await inMemoryDb.update(schema.purchaseRequestItems)
-        .set({ status: "approved" })
-        .where(eq(schema.purchaseRequestItems.id, postponeItemId))
-      await postponeItem(postponeItemId, userId, "Repriorización aprobada")
-
-      const item = await inMemoryDb.query.purchaseRequestItems
-        .findFirst({ where: eq(schema.purchaseRequestItems.id, postponeItemId) })
-      expect(item?.status).toBe("postponed")
-    })
-
-    it("throws without reason", async () => {
-      await expect(postponeItem(itemId, userId, "")).rejects.toThrow("Reason is required")
-    })
-  })
-
-  // ── markItemPendingPurchase ─────────────────────────────────────────────
-  describe("markItemPendingPurchase", () => {
-    const pendingItemId = "item-pending"
-    beforeAll(async () => {
-      await inMemoryDb.insert(schema.purchaseRequestItems).values({
-        id: pendingItemId, requestId, productNameFree: "Pending Test", quantity: 1,
-        unitOfMeasure: "unidad", status: "approved",
-        createdAt: now, updatedAt: now,
-      })
-    })
-
-    it("transitions approved → pending_purchase", async () => {
-      await markItemPendingPurchase(pendingItemId, userId)
-
-      const item = await inMemoryDb.query.purchaseRequestItems
-        .findFirst({ where: eq(schema.purchaseRequestItems.id, pendingItemId) })
-      expect(item?.status).toBe("pending_purchase")
-    })
-
-    it("throws on invalid transition", async () => {
-      const noTrans = "item-no-mark"
-      await inMemoryDb.insert(schema.purchaseRequestItems).values({
-        id: noTrans, requestId, productNameFree: "No Mark", quantity: 1,
-        unitOfMeasure: "unidad", status: "draft",
-        createdAt: now, updatedAt: now,
-      })
-      await expect(markItemPendingPurchase(noTrans, userId)).rejects.toThrow("Cannot move")
-    })
-  })
-
   // ── receiveItem ─────────────────────────────────────────────────────────
   describe("receiveItem", () => {
     it("acepta una segunda recepción parcial sobre un ítem ya parcialmente recibido", async () => {
@@ -308,11 +212,11 @@ describe("Item State Machine — DB integration", () => {
         createdAt: now, updatedAt: now,
       })
 
-      await receiveItem(partialId, userId, { fullReceived: false })
+      await inMemoryDb.transaction((tx) => receiveItemTx(tx, partialId, userId, { fullReceived: false }))
       // El saldo llega en un segundo tramo que tampoco completa la línea: antes
       // reventaba con "Cannot transition item from 'partially_received' to
       // 'partially_received'" y arrastraba todo el comprobante en el rollback.
-      await receiveItem(partialId, userId, { fullReceived: false })
+      await inMemoryDb.transaction((tx) => receiveItemTx(tx, partialId, userId, { fullReceived: false }))
 
       const item = await inMemoryDb.query.purchaseRequestItems
         .findFirst({ where: eq(schema.purchaseRequestItems.id, partialId) })
@@ -333,7 +237,7 @@ describe("Item State Machine — DB integration", () => {
         createdAt: now, updatedAt: now,
       })
 
-      await receiveItem(deliveredId, userId, { fullReceived: true })
+      await inMemoryDb.transaction((tx) => receiveItemTx(tx, deliveredId, userId, { fullReceived: true }))
 
       const item = await inMemoryDb.query.purchaseRequestItems
         .findFirst({ where: eq(schema.purchaseRequestItems.id, deliveredId) })

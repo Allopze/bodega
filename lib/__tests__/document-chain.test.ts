@@ -84,11 +84,13 @@ describe("expediente de documentos", () => {
       { id: "oc-1", code: "OC-2026-0001", worksiteId: "ws-norte", supplierId: "sup-1", createdBy: "user-chain", status: "received", createdAt: now, updatedAt: now },
       { id: "oc-2", code: "OC-2026-0002", worksiteId: "ws-norte", supplierId: "sup-1", createdBy: "user-chain", status: "received", createdAt: now, updatedAt: now },
     ])
+    // ARQ-12: purchase_order_items.status sólo es 'issued'/'cancelled' — la
+    // recepción de estas líneas la representan los receiptItems de abajo.
     await inMemoryDb.insert(schema.purchaseOrderItems).values([
-      { id: "oci-a", purchaseOrderId: "oc-1", requestItemId: "item-a", quantity: 2, unitOfMeasure: "unidad", unitPrice: 100, subtotal: 200, status: "received" },
-      { id: "oci-c", purchaseOrderId: "oc-1", requestItemId: "item-c", quantity: 3, unitOfMeasure: "unidad", unitPrice: 100, subtotal: 300, status: "received" },
+      { id: "oci-a", purchaseOrderId: "oc-1", requestItemId: "item-a", quantity: 2, unitOfMeasure: "unidad", unitPrice: 100, subtotal: 200, status: "issued" },
+      { id: "oci-c", purchaseOrderId: "oc-1", requestItemId: "item-c", quantity: 3, unitOfMeasure: "unidad", unitPrice: 100, subtotal: 300, status: "issued" },
       // Compra directa: la OC no nace de ninguna solicitud.
-      { id: "oci-x", purchaseOrderId: "oc-2", requestItemId: null, productNameFree: "Insumo directo", quantity: 1, unitOfMeasure: "unidad", unitPrice: 500, subtotal: 500, status: "received" },
+      { id: "oci-x", purchaseOrderId: "oc-2", requestItemId: null, productNameFree: "Insumo directo", quantity: 1, unitOfMeasure: "unidad", unitPrice: 500, subtotal: 500, status: "issued" },
     ])
 
     await inMemoryDb.insert(schema.receipts).values([

@@ -155,9 +155,13 @@ async function createEppRequest(page: Page, productName: string, quantity: strin
   await expect(page).toHaveURL(/\/solicitudes\/(?!nueva$)[^/]+$/, { timeout: 20_000 })
 
   // El correlativo es el título de la página de detalle. `textContent` y no
-  // `innerText`: el h1 de `PageHeader` es `lg:sr-only` en escritorio.
-  const code = (await page.getByRole("heading", { level: 1 }).first().textContent())?.trim() ?? ""
-  expect(code).toMatch(/^SOL-\d{4,}$/)
+  // `innerText`: el h1 de `PageHeader` es `lg:sr-only` en escritorio. Hay que
+  // esperar a que el h1 SEA el correlativo: mientras el detalle carga, el
+  // esqueleto de `loading.tsx` monta su propio h1 ("Solicitud") y leerlo de
+  // inmediato devolvía el título del esqueleto.
+  const heading = page.getByRole("heading", { level: 1 }).first()
+  await expect(heading).toHaveText(/^SOL-\d{4,}$/, { timeout: 20_000 })
+  const code = (await heading.textContent())?.trim() ?? ""
   return code
 }
 
@@ -256,16 +260,16 @@ test.describe.serial("Correlativos entre secciones", () => {
 
     orderId = page.url().split("/").pop() ?? ""
     expect(orderId).toBeTruthy()
-    orderCode = (await page.getByRole("heading", { level: 1 }).first().textContent())?.trim() ?? ""
-    expect(orderCode).toMatch(/^OC-\d{4}-\d{4,}$/)
+    const orderHeading = page.getByRole("heading", { level: 1 }).first()
+    await expect(orderHeading).toHaveText(/^OC-\d{4}-\d{4,}$/, { timeout: 20_000 })
+    orderCode = (await orderHeading.textContent())?.trim() ?? ""
 
     // La OC nace mostrando el correlativo de la solicitud que la originó: es el
     // único punto donde ambas series se leen juntas.
     await expectCode(page, requestCode)
 
     // ── El correlativo sobrevive cada transición ────────────────────────────
-    await page.getByRole("button", { name: "Emitir orden" }).click()
-    const sendButton = page.getByRole("button", { name: "Marcar como enviada" })
+    const sendButton = page.getByRole("button", { name: "Emitir y enviar" })
     await expect(sendButton).toBeVisible({ timeout: 30_000 })
     await expect(page.getByRole("heading", { level: 1, name: orderCode })).toBeVisible()
 
@@ -280,7 +284,7 @@ test.describe.serial("Correlativos entre secciones", () => {
 
     // ── Sección: bandeja de recepción ───────────────────────────────────────
     // La bandeja se renderiza en el servidor: si se pide antes de que el commit
-    // de "Marcar como enviada" sea visible llega vacía y ninguna espera de
+    // de "Emitir y enviar" sea visible llega vacía y ninguna espera de
     // Playwright la rellena. Hay que volver a pedirla.
     const receptionLink = page.getByRole("link", { name: `Ver OC ${orderCode}`, exact: true })
     await expect.poll(async () => {
@@ -296,7 +300,7 @@ test.describe.serial("Correlativos entre secciones", () => {
     await registerReception(page, orderId, "Oficina", "6")
     await page.goto(`/compras/${orderId}`)
     await expect(page.getByRole("heading", { level: 1, name: orderCode })).toBeVisible()
-    await expect(page.getByText(/En oficina/).first()).toBeVisible()
+    await expect(page.getByText(/Recibido en oficina/).first()).toBeVisible()
 
     await registerReception(page, orderId, "Faena", "6")
     await page.goto(`/compras/${orderId}`)

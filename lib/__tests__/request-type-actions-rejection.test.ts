@@ -42,7 +42,7 @@ vi.mock("@/lib/services/servicios", () => ({
 }))
 
 vi.mock("@/lib/services/requests-draft", () => ({
-  persistRequestWithDiff: vi.fn(),
+  createSubmittedRequest: vi.fn(),
 }))
 
 vi.mock("@/lib/services/system-settings", () => ({
@@ -141,8 +141,9 @@ describe("saveDraft — RBAC rejection by request type", () => {
 
   it("allows epp when session has only requests:create", async () => {
     mockAuthFn.mockResolvedValueOnce(makeSession(["requests:create", "requests:view_all"]))
-    // Same as first test: the permission gate passes; the action will later
-    // fail at worksite checking or persistRequestWithDiff for other reasons.
+    // The permission gate passes; saveDraft rejects EPP/otro for a different,
+    // non-permission reason (esos tipos ya no tienen borrador — se crean y
+    // envían en un solo paso), which is exactly what this assertion confirms.
     const res = await saveDraft(INITIAL_STATE, formData({ requestType: "epp" }))
     expect(res.message).not.toContain("No tienes permisos para crear este tipo de solicitud")
   })

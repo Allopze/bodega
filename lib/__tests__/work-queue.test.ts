@@ -72,12 +72,8 @@ describe("requestNextAction", () => {
     expect(requestNextAction("closed", ["rejected", "rejected"])).toContain("sin ítems aprobados")
   })
 
-  it("has returned items", () => {
-    expect(requestNextAction("draft", ["returned"])).toContain("Corrige")
-  })
-
   it("has draft items", () => {
-    expect(requestNextAction("draft", ["draft", "requested"])).toContain("Envía")
+    expect(requestNextAction("draft", ["draft", "requested"])).toContain("Adjunta las cotizaciones")
   })
 
   it("has requested items (needs approval)", () => {
@@ -106,8 +102,8 @@ describe("requestNextAction", () => {
   })
 
   it("closed request with no active items", () => {
-    // "cancelled" status with no matching item branches hits the closed fallback
-    expect(requestNextAction("cancelled", ["postponed"])).toContain("cancelada")
+    // "cancelled" status short-circuits before any item branch is even inspected
+    expect(requestNextAction("cancelled", ["pending_purchase"])).toContain("cancelada")
   })
 
   it("fallback for unknown status", () => {
@@ -126,7 +122,7 @@ describe("buildOcProgress", () => {
   })
 
   it("maps purchase-phase statuses to Compra with Solicitado+Aprobación done", () => {
-    for (const status of ["draft", "issued", "sent"]) {
+    for (const status of ["draft", "sent"]) {
       const progress = buildOcProgress(status, [item(0)])
       expect(progress?.currentStage).toBe("Compra")
       expect(progress?.completedStages).toEqual(["Solicitado", "Aprobación"])
@@ -220,7 +216,7 @@ describe("RECEIVABLE_ORDER_STATUSES", () => {
   })
 
   it("no se solapa con los estados de OC ya cerrados para recepción", () => {
-    for (const closed of ["draft", "issued", "received", "closed", "cancelled"]) {
+    for (const closed of ["draft", "received", "closed", "cancelled"]) {
       expect(RECEIVABLE_ORDER_STATUSES).not.toContain(closed)
     }
   })

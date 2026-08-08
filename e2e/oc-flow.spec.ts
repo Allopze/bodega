@@ -38,10 +38,10 @@ test.describe("Flujo OC por oficina", () => {
   test("avanza de enviada a cerrada pasando por oficina y faena", async ({ page }) => {
     await login(page)
 
-    // ── Emitida → enviada ────────────────────────────────────────────────────
+    // ── Borrador → enviada (emitir y enviar es un solo acto) ─────────────────
     await page.goto(`/compras/${OC_ID}`)
-    await page.getByRole("button", { name: "Marcar como enviada" }).click()
-    await expect(page.getByText(/Enviada/).first()).toBeVisible({ timeout: 15_000 })
+    await page.getByRole("button", { name: "Emitir y enviar" }).click()
+    await expect(page.getByText(/Pendiente de recepción/).first()).toBeVisible({ timeout: 15_000 })
 
     // El estado retirado no debe volver a ofrecerse.
     await expect(page.getByRole("button", { name: /Confirmada por proveedor/i })).toHaveCount(0)
@@ -53,22 +53,22 @@ test.describe("Flujo OC por oficina", () => {
 
     // ── Llegada a oficina: parcial y luego el saldo ───────────────────────────
     await registerReception(page, "Oficina", 4)
-    await expectOcState(page, /Oficina parcial/)
+    await expectOcState(page, /Recibido en oficina \(parcial\)/)
     await expect(page.getByText(/6 unidades por llegar a oficina/)).toBeVisible()
 
     await registerReception(page, "Oficina", 6)
-    await expectOcState(page, /En oficina/)
+    await expectOcState(page, /Recibido en oficina/)
     // Todo en oficina: ahora el paso es faena.
     await expect(page.getByRole("link", { name: /Recepcionar en faena/i })).toBeVisible()
 
     // ── Recepción en faena: parcial y luego el saldo ──────────────────────────
     await registerReception(page, "Faena", 4)
-    await expectOcState(page, /Rec\. parcial/)
+    await expectOcState(page, /Recibido en faena \(parcial\)/)
     await expect(page.getByText(/6 unidades pendientes/)).toBeVisible()
 
     // ── Recepción completa → cierre automático ───────────────────────────────
     // Recibir el saldo cierra la orden en la misma transacción
-    // (`closeOrderTx` desde `rollupOrderReceiptStatus`): "Recibida" es un
+    // (`closeOrderTx` desde `rollupOrderReceiptStatus`): "Recibido en faena" es un
     // estado transitorio que la interfaz nunca llega a mostrar, y por eso no
     // hay un paso manual de cierre una vez que todo llegó.
     await registerReception(page, "Faena", 6)

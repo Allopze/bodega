@@ -272,12 +272,14 @@ jobs:
           DELIVERIES_CONCURRENCY_DATABASE_URL: postgres://postgres:postgres@localhost:5432/bodega_e2e
           RECEIVING_CONCURRENCY_DATABASE_URL: postgres://postgres:postgres@localhost:5432/bodega_e2e
           BILLING_PAYMENTS_CONCURRENCY_DATABASE_URL: postgres://postgres:postgres@localhost:5432/bodega_e2e
+          ROLLUP_CONCURRENCY_DATABASE_URL: postgres://postgres:postgres@localhost:5432/bodega_e2e
           STOCK_CONCURRENCY_ALLOW_DESTRUCTIVE_RESET: "true"
           RECEIVING_CONCURRENCY_ALLOW_DESTRUCTIVE_RESET: "true"
           DELIVERIES_CONCURRENCY_ALLOW_DESTRUCTIVE_RESET: "true"
           RATE_LIMIT_CONCURRENCY_ALLOW_DESTRUCTIVE_RESET: "true"
           APPROVALS_CONCURRENCY_ALLOW_DESTRUCTIVE_RESET: "true"
           BILLING_PAYMENTS_CONCURRENCY_ALLOW_DESTRUCTIVE_RESET: "true"
+          ROLLUP_CONCURRENCY_ALLOW_DESTRUCTIVE_RESET: "true"
         run: npx vitest run --no-file-parallelism --reporter=verbose lib/__tests__/*concurrency-postgres.test.ts 2>&1
 
       - name: Cross-faena scope tests (real Postgres)
@@ -289,6 +291,12 @@ jobs:
           COMBUSTIBLES_SCOPE_ALLOW_DESTRUCTIVE_RESET: "true"
           QUOTATION_SCOPE_ALLOW_DESTRUCTIVE_RESET: "true"
         run: npx vitest run --no-file-parallelism --reporter=verbose lib/__tests__/*scope-postgres.test.ts 2>&1
+
+      - name: Code sequence catalog tests (real Postgres)
+        env:
+          CODE_SEQUENCES_DATABASE_URL: postgres://postgres:postgres@localhost:5432/bodega_e2e
+          CODE_SEQUENCES_ALLOW_DESTRUCTIVE_RESET: "true"
+        run: npx vitest run --no-file-parallelism --reporter=verbose lib/__tests__/code-sequences-postgres.test.ts 2>&1
 
       # Estas suites son la evidencia principal del cierre P0/P1 de Prevención
       # (CAPA, incidentes, indicadores DS 44, privacidad, MIPER/legal y

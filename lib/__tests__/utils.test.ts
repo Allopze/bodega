@@ -6,6 +6,8 @@ import { describe, it, expect } from "vitest"
 import {
   cn,
   formatCLP,
+  todayInChile,
+  addDaysToPlainDate,
   formatFileSize,
   formatQty,
   pluralize,
@@ -272,5 +274,29 @@ describe("matchesQuery()", () => {
 
   it("matches against any of several values", () => {
     expect(matchesQuery("norte", ["Cemento", "Faena Norte"])).toBe(true)
+  })
+})
+
+/**
+ * `todayInChile` / `addDaysToPlainDate` existen porque medir "hoy" con
+ * `toISOString()` adelanta el día 3–4 horas y marcaba como vencidos documentos
+ * de flota y mantenciones todavía vigentes.
+ */
+describe("todayInChile / addDaysToPlainDate", () => {
+  it("devuelve el día civil chileno, no el UTC, en la franja nocturna", () => {
+    // 2026-08-08T01:30Z = 2026-08-07 21:30 en Chile (UTC-4).
+    expect(todayInChile("2026-08-08T01:30:00Z")).toBe("2026-08-07")
+    expect(new Date("2026-08-08T01:30:00Z").toISOString().slice(0, 10)).toBe("2026-08-08")
+  })
+
+  it("rellena mes y día con cero a la izquierda", () => {
+    expect(todayInChile("2026-01-05T15:00:00Z")).toBe("2026-01-05")
+  })
+
+  it("suma días sobre la fecha civil sin que la corra el cambio de hora", () => {
+    expect(addDaysToPlainDate("2026-08-31", 1)).toBe("2026-09-01")
+    // El cambio de hora chileno de 2026 cae el 6 de septiembre.
+    expect(addDaysToPlainDate("2026-09-05", 2)).toBe("2026-09-07")
+    expect(addDaysToPlainDate("2026-12-31", 30)).toBe("2027-01-30")
   })
 })

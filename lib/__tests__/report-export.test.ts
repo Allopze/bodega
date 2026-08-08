@@ -164,7 +164,7 @@ describe("report export helpers", () => {
     expect(data.headers).toEqual(["OC", "Faena", "Proveedor", "Estado", "Monto Total", "Fecha"])
     expect(data.rows).toHaveLength(2)
     // El exporte deja de escribir el enum: "Estado crudo nunca visible" (TASK-UI-012).
-    expect(data.rows[0]).toEqual(["OC-1", "Faena Uno", "Proveedor Uno", "Enviada", 1000, "01-01-2026"])
+    expect(data.rows[0]).toEqual(["OC-1", "Faena Uno", "Proveedor Uno", "Pendiente de recepción", 1000, "01-01-2026"])
   })
 
   it("gasto_faena report data (scoped role, date and worksite filters)", async () => {
@@ -221,7 +221,7 @@ describe("report export helpers", () => {
     expect(data.filenameBase).toBe("oc-por-estado")
     expect(data.headers).toEqual(["OC", "Estado", "Faena", "Total", "Emitida", "Enviada", "Confirmada"])
     expect(data.rows).toHaveLength(2)
-    expect(data.rows[0]).toEqual(["OC-1", "Enviada", "Faena Uno", 1000, "01-01-2026", "02-01-2026", ""])
+    expect(data.rows[0]).toEqual(["OC-1", "Pendiente de recepción", "Faena Uno", 1000, "01-01-2026", "02-01-2026", ""])
     // `confirmed` no está en el catálogo vigente: el helper devuelve el valor tal
     // cual a propósito, para que un estado nuevo se vea en vez de silenciarse.
     expect(data.rows[1]).toEqual(["OC-2", "confirmed", "Faena Dos", 2000, "03-01-2026", "04-01-2026", "05-01-2026"])

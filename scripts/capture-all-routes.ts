@@ -1129,8 +1129,13 @@ async function prepareDatabase(captureDbUrl: string) {
   const permissionIdByName = Object.fromEntries(permissions.map((permission) => [permission.name, permission.id]))
   const rolePermissionNames: Record<string, string[]> = {
     "rol-admin": permissions.map((permission) => permission.name),
-    "rol-jefa": ["requests:view_all", "approvals:approve", "purchasing:view", "purchasing:create_order", "purchasing:send_order", "receiving:view", "reports:view", "analytics:view", "analytics:export", "flota:view", "mantenciones:view", "mantenciones:create", "repuestos:view_all", "repuestos:approve", "servicios:view_all", "servicios:approve"],
-    "rol-prevencion": ["requests:create", "requests:view_own", "requests:submit", "repuestos:create", "repuestos:view_own", "repuestos:submit", "servicios:create", "servicios:view_own", "servicios:submit", "sst:view", "sst:create", "sst:close", "sst:manage"],
+    // El RBAC real (modules/purchasing/manifest.ts) no concede create_order ni
+    // send_order a jefa_chome; el seed de capturas los tenía de más, mostrando
+    // un acceso a compras que producción no da.
+    "rol-jefa": ["requests:view_all", "approvals:approve", "purchasing:view", "receiving:view", "reports:view", "analytics:view", "analytics:export", "flota:view", "mantenciones:view", "mantenciones:create", "repuestos:view_all", "repuestos:approve", "servicios:view_all", "servicios:approve"],
+    // `requests:submit` se retiró del registro (lib/auth/bootstrap.ts): EPP/otro
+    // se crean y envían en un solo paso con `requests:create`.
+    "rol-prevencion": ["requests:create", "requests:view_own", "repuestos:create", "repuestos:view_own", "repuestos:submit", "servicios:create", "servicios:view_own", "servicios:submit", "sst:view", "sst:create", "sst:close", "sst:manage"],
     // `receiving:register` no existe en el catálogo real (sólo register_office y
     // register_faena): el seed lo concedía y la captura mostraba a bodega con un
     // permiso que producción no tiene. Lo detectó la guardia de paridad.
@@ -3385,7 +3390,8 @@ async function prepareDatabase(captureDbUrl: string) {
       subtotal: 142800,
       quantityOfficeReceived: 6,
       quantityReceived: 6,
-      status: "partially_received",
+      // ARQ-12: purchase_order_items.status sólo es 'issued'/'cancelled'.
+      status: "issued",
       sortOrder: 0,
       notes: "Entrega parcial coordinada.",
     },

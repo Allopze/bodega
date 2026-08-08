@@ -142,7 +142,6 @@ describe("system-rbac → manifest parity", () => {
     expect(perms).toEqual(expect.arrayContaining([
       "requests:create",
       "requests:view_own",
-      "requests:submit",
       "receiving:register_faena",
       "warehouse:view_stock",
       "warehouse:register_movement",

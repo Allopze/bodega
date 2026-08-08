@@ -215,7 +215,7 @@ async function seedDeliveryFixture(db: ReturnType<typeof drizzle<typeof schema>>
     quantity: 10,
     unitOfMeasure: "unidad",
     quantityReceived: 10,
-    status: "received",
+    status: "issued",
   })
   await db.insert(schema.receipts).values({
     id: "receipt-dc-test",

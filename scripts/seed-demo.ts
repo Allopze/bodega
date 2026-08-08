@@ -268,22 +268,33 @@ async function main() {
 
       // Las viejas cerraron; las nuevas están en tránsito. Sin este reparto,
       // "OC activas" y "Por recibir" quedarían en cero o en todo.
-      const status = d < 15 ? pick(["issued", "sent", "sent", "partially_office_received"] as const)
+      const status = d < 15 ? pick(["draft", "sent", "sent", "partially_office_received"] as const)
         : d < 45 ? pick(["sent", "partially_received", "office_received", "received"] as const)
         : pick(["received", "closed", "closed"] as const)
 
       let net = 0
       const itemsDeOc: typeof orderItems = []
+      // DAT-12: el contador de la línea (quantityReceived/quantityOfficeReceived)
+      // y la suma de sus receipt_items son la misma cifra en producción (un solo
+      // writer serializado, sólo suma lo bueno) — aquí se calcula la merma una
+      // sola vez, antes de sembrar ambas fuentes, para que el receptor no tope
+      // con un CHECK descuadrado al abrir datos demo.
+      const disposicionByItemId = new Map<string, { rechazado: number; danado: number }>()
       for (const [k, item] of lote.entries()) {
         const unitPrice = int(3, 180) * 1000
         const quantity = item.quantity as number
         const subtotal = unitPrice * quantity
         net += subtotal
-        const recibido = status === "closed" || status === "received"
+        const recibidoBruto = status === "closed" || status === "received"
           ? quantity
           : status === "partially_received" ? Math.floor(quantity / 2) : 0
+        const rechazado = recibidoBruto > 0 && chance(0.06) ? int(1, Math.max(1, Math.floor(recibidoBruto * 0.2))) : 0
+        const danado = recibidoBruto > 0 && chance(0.04) ? int(1, Math.max(1, Math.floor(recibidoBruto * 0.15))) : 0
+        const recibido = Math.max(0, recibidoBruto - rechazado - danado)
+        const itemId = id("oci")
+        disposicionByItemId.set(itemId, { rechazado, danado })
         itemsDeOc.push({
-          id: id("oci"),
+          id: itemId,
           purchaseOrderId: orderId,
           requestItemId: item.id,
           productId: item.productId,
@@ -292,7 +303,9 @@ async function main() {
           subtotal,
           quantityOfficeReceived: recibido,
           quantityReceived: recibido,
-          status: recibido >= quantity ? "received" : recibido > 0 ? "partially_received" : "issued",
+          // ARQ-12: purchase_order_items.status sólo es 'issued'/'cancelled' —
+          // la recepción ya la representan quantityOfficeReceived/quantityReceived.
+          status: "issued",
           sortOrder: k,
         })
       }
@@ -305,9 +318,11 @@ async function main() {
         supplierId: supplier.id,
         createdBy: admin,
         status,
-        issuedAt: day(issued),
-        issuedBy: admin,
-        sentAt: day(issued),
+        // Una OC en borrador todavía no se emitió ni se envió: sin estas fechas
+        // la bandeja de compras la ordena por createdAt, como en producción.
+        issuedAt: status === "draft" ? null : day(issued),
+        issuedBy: status === "draft" ? null : admin,
+        sentAt: status === "draft" ? null : day(issued),
         estimatedDelivery: day(daysAgo(d - int(5, 20))),
         netAmount: net,
         taxAmount: tax,
@@ -335,14 +350,13 @@ async function main() {
         })
         for (const oci of itemsDeOc) {
           const q = oci.quantityReceived as number
-          if (q <= 0) continue
-          const rechazado = chance(0.06) ? int(1, Math.max(1, Math.floor(q * 0.2))) : 0
-          const danado = chance(0.04) ? int(1, Math.max(1, Math.floor(q * 0.15))) : 0
+          const { rechazado, danado } = disposicionByItemId.get(oci.id!)!
+          if (q <= 0 && rechazado <= 0 && danado <= 0) continue
           receiptItems.push({
             id: id("reci"),
             receiptId,
             purchaseOrderItemId: oci.id!,
-            quantityReceived: Math.max(0, q - rechazado - danado),
+            quantityReceived: q,
             quantityRejected: rechazado,
             quantityDamaged: danado,
             status: rechazado > 0 ? "partially_received" : "received",

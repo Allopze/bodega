@@ -122,7 +122,7 @@ test.describe("PDF exports — content integrity", () => {
     // Parse PDF for page count + content.
     const { pageCount, text } = await parsePdf(body)
 
-    // The OC fixture is a single-item order and must fit in exactly 1 page.
+    // The OC fixture has 2 line items (oc-item-e2e-01/02) and must still fit in exactly 1 page.
     expect(pageCount).toBe(1)
     expect(text).toMatch(/ORDEN DE COMPRA/i)
     expect(text).toContain("Talla: L")
@@ -145,7 +145,7 @@ test.describe("PDF exports — content integrity", () => {
     const body = await response.body()
     const { pageCount } = await parsePdf(body)
 
-    // OC fixture has a single line item — must be exactly 1 page with no trailing blank.
+    // OC fixture has 2 line items — must be exactly 1 page with no trailing blank.
     expect(pageCount).toBe(1)
     expect(body.byteLength).toBeLessThan(120_000)
   })

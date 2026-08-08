@@ -13,11 +13,12 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 
 const mockRequirePermission = vi.hoisted(() => vi.fn())
-const mockCanAccessWorksite = vi.hoisted(() => vi.fn(() => true))
+const mockCanAccessWorksite = vi.hoisted(() => vi.fn((_session?: unknown, _worksiteId?: string) => true))
 const mockApproveItem = vi.hoisted(() => vi.fn())
 const mockRejectItem = vi.hoisted(() => vi.fn())
-const mockReturnItem = vi.hoisted(() => vi.fn())
+const mockBulkApproveItems = vi.hoisted(() => vi.fn())
 const mockFindFirstItem = vi.hoisted(() => vi.fn())
+const mockFindManyItems = vi.hoisted(() => vi.fn())
 const mockFindFirstRequest = vi.hoisted(() => vi.fn())
 const mockDbUpdate = vi.hoisted(() => vi.fn(() => ({ set: vi.fn(() => ({ where: vi.fn() })) })))
 const mockNotifyAfterCommit = vi.hoisted(() => vi.fn((fn: () => Promise<unknown>) => fn()))
@@ -39,7 +40,7 @@ vi.mock("@/lib/auth/can", () => ({
 vi.mock("@/db", () => ({
   db: {
     query: {
-      purchaseRequestItems: { findFirst: mockFindFirstItem },
+      purchaseRequestItems: { findFirst: mockFindFirstItem, findMany: mockFindManyItems },
       purchaseRequests: { findFirst: mockFindFirstRequest },
     },
     update: mockDbUpdate,
@@ -49,7 +50,7 @@ vi.mock("@/db", () => ({
 vi.mock("@/lib/services/item-state", () => ({
   approveItem: mockApproveItem,
   rejectItem: mockRejectItem,
-  returnItem: mockReturnItem,
+  bulkApproveItems: mockBulkApproveItems,
 }))
 vi.mock("@/lib/services/notifications", () => ({
   notifySafe: mockNotifySafe,
@@ -57,7 +58,7 @@ vi.mock("@/lib/services/notifications", () => ({
 }))
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), revalidateTag: vi.fn() }))
 
-import { approveItemAction, rejectItemAction, returnItemAction, updateDeliveryModeAction } from "@/app/(app)/aprobaciones/actions"
+import { approveItemAction, rejectItemAction, bulkApproveRequestAction, updateDeliveryModeAction } from "@/app/(app)/aprobaciones/actions"
 import type { ActionState } from "@/lib/validation/operations"
 
 function txSelectChain(rows: unknown[]) {
@@ -212,40 +213,9 @@ describe("rejectItemAction", () => {
   })
 })
 
-describe("returnItemAction", () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
-    mockFindFirstItem.mockReset()
-  })
-
-  it("returns error if permission denied", async () => {
-    mockRequirePermission.mockRejectedValueOnce(new Error("No permission"))
-    const res = await returnItemAction(prevState, makeFormData({ reason: "Fix" }))
-    expect(res.ok).toBe(false)
-    expect(res.message).toContain("Sin permisos")
-  })
-
-  it("returns error if reason missing", async () => {
-    mockRequirePermission.mockResolvedValueOnce(makeSession())
-    const fd = makeFormData()
-    fd.delete("reason")
-    const res = await returnItemAction(prevState, fd)
-    expect(res.ok).toBe(false)
-    expect(res.message).toContain("obligatoria")
-  })
-
-  it("returns item successfully", async () => {
-    mockRequirePermission.mockResolvedValueOnce(makeSession())
-    mockFindFirstItem.mockResolvedValueOnce(makeItemBefore())
-    const res = await returnItemAction(prevState, makeFormData({ reason: "Falta detalle" }))
-    expect(res.ok).toBe(true)
-    expect(mockReturnItem).toHaveBeenCalledWith("item-1", "user-1", "Falta detalle", expect.any(Object))
-  })
-})
-
 // ── EPP approval gating ───────────────────────────────────────────────────────
 // Business rule: jefatura / secretaría / administrador / prevencionista can
-// approve, reject, or return EPP requests.
+// approve or reject EPP requests. "Devolver" se retiró del flujo (2026-08-07).
 
 function makeEppItemBefore() {
   return {
@@ -328,24 +298,6 @@ describe("EPP approval gating (MISS-04)", () => {
     expect(mockRejectItem).toHaveBeenCalled()
   })
 
-  // ── returnItemAction ───────────────────────────────────────────────────────
-
-  it("returnItemAction: allows EPP return by prevencionista", async () => {
-    mockRequirePermission.mockResolvedValueOnce(makeSession({ roles: ["prevencionista"] }))
-    mockFindFirstItem.mockResolvedValueOnce(makeEppItemBefore())
-    const res = await returnItemAction(prevState, makeFormData({ reason: "Falta detalle" }))
-    expect(res.ok).toBe(true)
-    expect(mockReturnItem).toHaveBeenCalled()
-  })
-
-  it("returnItemAction: allows EPP return by secretaria", async () => {
-    mockRequirePermission.mockResolvedValueOnce(makeSession({ roles: ["secretaria"] }))
-    mockFindFirstItem.mockResolvedValueOnce(makeEppItemBefore())
-    const res = await returnItemAction(prevState, makeFormData({ reason: "Corregir" }))
-    expect(res.ok).toBe(true)
-    expect(mockReturnItem).toHaveBeenCalled()
-  })
-
   // ── Multi-role: user with both authorized and unauthorized roles ────────────
 
   it("approveItemAction: allows EPP when user has at least one authorized role", async () => {
@@ -354,6 +306,192 @@ describe("EPP approval gating (MISS-04)", () => {
     const res = await approveItemAction(prevState, makeFormData())
     expect(res.ok).toBe(true)
     expect(mockApproveItem).toHaveBeenCalled()
+  })
+})
+
+// ── Repuestos/servicios bypass (F1-1b / LOG-2b) ──────────────────────────────
+// La aprobación por ítem es solo para EPP/otro; repuestos/servicios se
+// aprueban seleccionando la cotización ganadora (selectQuotation), que además
+// exige la regla de ≥3 cotizaciones. Sin este gate, approveItemAction podía
+// aprobar un ítem de repuestos directamente, saltándose esa regla entera.
+
+function makeRepuestosItemBefore() {
+  return {
+    id: "item-rep-1",
+    status: "requested",
+    quantity: 5,
+    request: { id: "req-rep", code: "SOL-REP", requesterId: "user-2", worksiteId: "ws-1", requestType: "repuestos" },
+  }
+}
+
+describe("requestType gating for repuestos/servicios", () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockFindFirstItem.mockReset()
+  })
+
+  it("approveItemAction: rejects a repuestos item", async () => {
+    mockRequirePermission.mockResolvedValueOnce(makeSession())
+    mockFindFirstItem.mockResolvedValueOnce(makeRepuestosItemBefore())
+    const res = await approveItemAction(prevState, makeFormData())
+    expect(res.ok).toBe(false)
+    expect(res.message).toContain("cotización ganadora")
+    expect(mockApproveItem).not.toHaveBeenCalled()
+  })
+
+  it("rejectItemAction: rejects a servicios item", async () => {
+    mockRequirePermission.mockResolvedValueOnce(makeSession())
+    mockFindFirstItem.mockResolvedValueOnce({
+      ...makeRepuestosItemBefore(),
+      request: { ...makeRepuestosItemBefore().request, requestType: "servicios" },
+    })
+    const res = await rejectItemAction(prevState, makeFormData({ reason: "No corresponde" }))
+    expect(res.ok).toBe(false)
+    expect(res.message).toContain("cotización ganadora")
+    expect(mockRejectItem).not.toHaveBeenCalled()
+  })
+})
+
+// ── modifiedQty no puede superar lo solicitado (LOG-10) ──────────────────────
+
+describe("approveItemAction: modifiedQty cap", () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockFindFirstItem.mockReset()
+  })
+
+  it("rejects a modifiedQty greater than the requested quantity", async () => {
+    mockRequirePermission.mockResolvedValueOnce(makeSession())
+    mockFindFirstItem.mockResolvedValueOnce({ ...makeItemBefore(), quantity: 5 })
+    const res = await approveItemAction(prevState, makeFormData({ modifiedQty: "500", reason: "motivo" }))
+    expect(res.ok).toBe(false)
+    expect(res.message).toContain("no puede superar")
+    expect(mockApproveItem).not.toHaveBeenCalled()
+  })
+
+  it("allows a modifiedQty within the requested quantity", async () => {
+    mockRequirePermission.mockResolvedValueOnce(makeSession())
+    mockFindFirstItem.mockResolvedValueOnce({ ...makeItemBefore(), quantity: 5 })
+    const res = await approveItemAction(prevState, makeFormData({ modifiedQty: "3", reason: "motivo" }))
+    expect(res.ok).toBe(true)
+    expect(mockApproveItem).toHaveBeenCalled()
+  })
+})
+
+// ── bulkApproveRequestAction (TST-4) ─────────────────────────────────────────
+
+function makeBulkFormData(itemIds: string[]): FormData {
+  const fd = new FormData()
+  fd.set("itemIds", itemIds.join(","))
+  return fd
+}
+
+function makeScopedItem(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "item-1",
+    request: { worksiteId: "ws-1", requestType: "epp", ...((overrides.request as object) ?? {}) },
+    ...overrides,
+  }
+}
+
+describe("bulkApproveRequestAction", () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockFindManyItems.mockReset()
+    mockBulkApproveItems.mockResolvedValue({ approved: 2 })
+  })
+
+  it("returns error if permission denied", async () => {
+    mockRequirePermission.mockRejectedValueOnce(new Error("No permission"))
+    const res = await bulkApproveRequestAction(prevState, makeBulkFormData(["item-1", "item-2"]))
+    expect(res.ok).toBe(false)
+    expect(res.message).toContain("Sin permisos")
+  })
+
+  it("returns error if itemIds is empty", async () => {
+    mockRequirePermission.mockResolvedValueOnce(makeSession())
+    const res = await bulkApproveRequestAction(prevState, new FormData())
+    expect(res.ok).toBe(false)
+    expect(res.message).toContain("No hay ítems")
+  })
+
+  it("rejects a selection with duplicated item ids", async () => {
+    mockRequirePermission.mockResolvedValueOnce(makeSession())
+    const res = await bulkApproveRequestAction(prevState, makeBulkFormData(["item-1", "item-1"]))
+    expect(res.ok).toBe(false)
+    expect(res.message).toContain("duplicados")
+    expect(mockBulkApproveItems).not.toHaveBeenCalled()
+  })
+
+  it("returns error if one or more items are no longer available", async () => {
+    mockRequirePermission.mockResolvedValueOnce(makeSession())
+    // Selección de 2 ids, pero la query sólo encuentra 1 (el otro ya cambió de estado o fue borrado).
+    mockFindManyItems.mockResolvedValueOnce([makeScopedItem({ id: "item-1" })])
+    const res = await bulkApproveRequestAction(prevState, makeBulkFormData(["item-1", "item-2"]))
+    expect(res.ok).toBe(false)
+    expect(res.message).toContain("ya no están disponibles")
+    expect(mockBulkApproveItems).not.toHaveBeenCalled()
+  })
+
+  it("rejects the batch if any item is outside the user's worksite scope", async () => {
+    mockRequirePermission.mockResolvedValueOnce(makeSession())
+    mockCanAccessWorksite.mockImplementation((_session?: unknown, worksiteId?: string) => worksiteId === "ws-1")
+    mockFindManyItems.mockResolvedValueOnce([
+      makeScopedItem({ id: "item-1" }),
+      makeScopedItem({ id: "item-2", request: { worksiteId: "ws-otra", requestType: "epp" } }),
+    ])
+    const res = await bulkApproveRequestAction(prevState, makeBulkFormData(["item-1", "item-2"]))
+    expect(res.ok).toBe(false)
+    expect(res.message).toContain("No tienes permiso")
+    expect(mockBulkApproveItems).not.toHaveBeenCalled()
+  })
+
+  it("rejects the batch if an EPP item is included without EPP approval permission", async () => {
+    // "jefe_mantencion" tiene approvals:approve pero no está en EPP_APPROVER_ROLES.
+    mockRequirePermission.mockResolvedValueOnce(makeSession({ roles: ["jefe_mantencion"] }))
+    mockFindManyItems.mockResolvedValueOnce([makeScopedItem({ id: "item-1" })])
+    const res = await bulkApproveRequestAction(prevState, makeBulkFormData(["item-1"]))
+    expect(res.ok).toBe(false)
+    expect(res.message).toContain("No tienes permiso")
+    expect(mockBulkApproveItems).not.toHaveBeenCalled()
+  })
+
+  it("rejects the batch if it includes a repuestos/servicios item (LOG-2b bypass)", async () => {
+    mockRequirePermission.mockResolvedValueOnce(makeSession())
+    mockFindManyItems.mockResolvedValueOnce([
+      makeScopedItem({ id: "item-1" }),
+      makeScopedItem({ id: "item-2", request: { worksiteId: "ws-1", requestType: "repuestos" } }),
+    ])
+    const res = await bulkApproveRequestAction(prevState, makeBulkFormData(["item-1", "item-2"]))
+    expect(res.ok).toBe(false)
+    expect(res.message).toContain("No tienes permiso")
+    expect(mockBulkApproveItems).not.toHaveBeenCalled()
+  })
+
+  it("approves the deduplicated batch and reports the approved count", async () => {
+    mockRequirePermission.mockResolvedValueOnce(makeSession())
+    mockFindManyItems.mockResolvedValueOnce([
+      makeScopedItem({ id: "item-1" }),
+      makeScopedItem({ id: "item-2" }),
+    ])
+    mockBulkApproveItems.mockResolvedValueOnce({ approved: 2 })
+    const res = await bulkApproveRequestAction(prevState, makeBulkFormData(["item-1", "item-2"]))
+    expect(res.ok).toBe(true)
+    expect(res.message).toContain("2")
+    expect(mockBulkApproveItems).toHaveBeenCalledWith(
+      ["item-1", "item-2"],
+      "user-1",
+      expect.objectContaining({ userEmail: "admin@test.cl", roleContext: "administrador" }),
+    )
+  })
+
+  it("propagates a service error from bulkApproveItems", async () => {
+    mockRequirePermission.mockResolvedValueOnce(makeSession())
+    mockFindManyItems.mockResolvedValueOnce([makeScopedItem({ id: "item-1" })])
+    mockBulkApproveItems.mockRejectedValueOnce(new Error("No se pudo aprobar"))
+    const res = await bulkApproveRequestAction(prevState, makeBulkFormData(["item-1"]))
+    expect(res.ok).toBe(false)
+    expect(res.message).toContain("No se pudo aprobar")
   })
 })
 
@@ -411,6 +549,29 @@ describe("updateDeliveryModeAction", () => {
     const res = await updateDeliveryModeAction(prevState, fd)
     expect(res.ok).toBe(false)
     expect(res.message).toMatch(/Orden de Compra/i)
+    expect(mockDbUpdate).not.toHaveBeenCalled()
+  })
+
+  it("rejects the change when an item is already partially delivered (LOG-11)", async () => {
+    mockTxSelectQueue.length = 0
+    mockTxSelectQueue.push([{ id: "req-1", worksiteId: "ws-1" }], [{ status: "partially_delivered" }])
+    const fd = new FormData()
+    fd.set("requestId", "req-1")
+    fd.set("mode", "directo_faena")
+    const res = await updateDeliveryModeAction(prevState, fd)
+    expect(res.ok).toBe(false)
+    expect(res.message).toMatch(/Orden de Compra/i)
+    expect(mockDbUpdate).not.toHaveBeenCalled()
+  })
+
+  it("rejects the change when an item is already delivered (LOG-11)", async () => {
+    mockTxSelectQueue.length = 0
+    mockTxSelectQueue.push([{ id: "req-1", worksiteId: "ws-1" }], [{ status: "delivered" }])
+    const fd = new FormData()
+    fd.set("requestId", "req-1")
+    fd.set("mode", "directo_faena")
+    const res = await updateDeliveryModeAction(prevState, fd)
+    expect(res.ok).toBe(false)
     expect(mockDbUpdate).not.toHaveBeenCalled()
   })
 

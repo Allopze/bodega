@@ -302,7 +302,7 @@ async function seedMediumDataset(db: ReturnType<typeof drizzle<typeof schema>>) 
   })
   await insertChunks(db, schema.purchaseRequestItems, requestItems)
 
-  const orderStatuses = ["draft", "issued", "sent", "partially_office_received", "office_received", "partially_received", "received", "closed"]
+  const orderStatuses = ["draft", "sent", "partially_office_received", "office_received", "partially_received", "received", "closed"]
   await insertChunks(db, schema.purchaseOrders, Array.from({ length: orderCount }, (_, index) => ({
     id: `perf-order-${index + 1}`,
     code: `PERF-OC-${index + 1}`,
@@ -334,7 +334,8 @@ async function seedMediumDataset(db: ReturnType<typeof drizzle<typeof schema>>) 
       subtotal: 10_000,
       quantityOfficeReceived,
       quantityReceived,
-      status: quantityReceived > 0 ? "partially_received" : "issued",
+      // ARQ-12: purchase_order_items.status sólo es 'issued'/'cancelled'.
+      status: "issued",
       sortOrder: index % 2,
     }
   }))

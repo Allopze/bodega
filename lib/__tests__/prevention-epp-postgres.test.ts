@@ -86,18 +86,25 @@ describeIf("EPP preventivo on real PostgreSQL", () => {
     expect(gaps.some((gap) => gap.workerId === "wk-a1")).toBe(false)
   })
 
-  it("creates one replenishment draft per live gap even when executed twice", async () => {
+  // La reposición ya no crea solicitudes por su cuenta: sugiere las brechas y
+  // reserva su cupo cuando alguien crea la solicitud desde el creador.
+  it("sugiere cada brecha viva y deja de hacerlo una vez reservada", async () => {
     const service = await import("@/lib/services/epp-replenishment")
 
-    const first = await service.generateReplenishmentDrafts(MANAGER)
-    const second = await service.generateReplenishmentDrafts(MANAGER)
+    const suggestions = await service.listReplenishmentSuggestions(MANAGER)
+    expect(suggestions).toHaveLength(1)
+    const [suggestion] = suggestions
+    expect(suggestion!.workerId).toBe("wk-a2")
 
-    expect(first.createdCount).toBe(1)
-    expect(second).toEqual({ createdCount: 0, requestCodes: [] })
+    await getDb().transaction(async (tx) => {
+      await service.reserveReplenishmentGapsTx(tx, [
+        { gapKey: suggestion!.gapKey, requestItemId: null as unknown as string },
+      ])
+    })
+
     const links = await getDb().select().from(schema.eppReplenishmentLinks)
     expect(links).toHaveLength(1)
-    const requestItems = await getDb().select().from(schema.purchaseRequestItems)
-    expect(requestItems.filter((item) => item.workerId === "wk-a2")).toHaveLength(1)
+    expect(await service.listReplenishmentSuggestions(MANAGER)).toHaveLength(0)
   })
 
   it("does not count a delivery to another worksite towards this worker's coverage", async () => {

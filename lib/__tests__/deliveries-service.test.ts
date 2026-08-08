@@ -289,6 +289,8 @@ describe("registerWorksiteDelivery — database transactions", () => {
     mockTxSelect.mockReturnValueOnce(chainResult([{ id: "item-1", status: "received", productId: "prod-1", quantity: 10 }]))
     // 2nd select inside tx: previous deliveries -> returns 3 already delivered
     mockTxSelect.mockReturnValueOnce(chainResult([{ quantity: 3 }]))
+    // 3rd select inside tx: recibido en faena (LOG-5) -> las 10 unidades ya llegaron
+    mockTxSelect.mockReturnValueOnce(chainResult([{ received: 10 }]))
 
     const result = await registerWorksiteDelivery({
       worksiteId: "ws-1",
@@ -343,7 +345,8 @@ describe("registerWorkerEppDelivery — database transactions", () => {
     mockTxSelect.mockReturnValueOnce(chainResult([{ id: "item-1", status: "received", productId: "prod-1", quantity: 2, unitOfMeasure: "unidad" }]))
     // previous deliveries -> returns 0
     mockTxSelect.mockReturnValueOnce(chainResult([]))
-    mockTxSelect.mockReturnValueOnce(chainResult([{ id: "lot-1", expiresAt: "2099-01-01", quantityAvailable: 2 }]))
+    // recibido en faena (LOG-5) -> las 2 unidades ya llegaron
+    mockTxSelect.mockReturnValueOnce(chainResult([{ received: 2 }]))
 
     const result = await registerWorkerEppDelivery({
       worksiteId: "ws-1",
@@ -398,7 +401,8 @@ describe("registerWorkerEppDelivery — database transactions", () => {
 
     mockTxSelect.mockReturnValueOnce(chainResult([{ id: "item-1", status: "partially_received", productId: "prod-1", requestId: "req-1", quantity: 10, unitOfMeasure: "unidad" }]))
     mockTxSelect.mockReturnValueOnce(chainResult([]))
-    mockTxSelect.mockReturnValueOnce(chainResult([{ id: "lot-1", expiresAt: "2099-01-01", quantityAvailable: 4 }]))
+    // recibido en faena (LOG-5) -> las 10 unidades ya llegaron
+    mockTxSelect.mockReturnValueOnce(chainResult([{ received: 10 }]))
 
     const result = await registerWorkerEppDelivery({
       worksiteId: "ws-1",
@@ -602,6 +606,8 @@ describe("registerWorkerEppDelivery — database transactions", () => {
 
     mockTxSelect.mockReturnValueOnce(chainResult([{ id: "item-1", status: "received", productId: "prod-1", requestId: "req-1", quantity: 5 }]))
     mockTxSelect.mockReturnValueOnce(chainResult([]))
+    // recibido en faena (LOG-5) -> alcanza para que el flujo llegue al chequeo de stock
+    mockTxSelect.mockReturnValueOnce(chainResult([{ received: 5 }]))
 
     await expect(registerWorkerEppDelivery({
       worksiteId: "ws-1",

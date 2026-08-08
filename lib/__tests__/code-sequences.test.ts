@@ -3,7 +3,7 @@ import { drizzle } from "drizzle-orm/pglite"
 import path from "node:path"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import * as schema from "@/db/schema"
-import { listCodeSequences, nextCodeTx, setCodeSequenceNextValue } from "@/lib/code-sequences"
+import { nextCodeTx } from "@/lib/code-sequences"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
 import type { Tx } from "@/db"
 
@@ -78,20 +78,8 @@ describe("nextCodeTx", () => {
     )
   })
 
-  it("lists and sets code sequences natively", async () => {
-    const db = await makeDb()
-    await db.transaction(async (tx) => {
-      await nextCodeTx(tx as unknown as Tx, "OC", 2026)
-    })
-
-    const initial = await listCodeSequences()
-    expect(initial).toContainEqual({ prefix: "OC", year: 2026, nextValue: 2, updatedAt: "" })
-
-    const { before, after } = await setCodeSequenceNextValue({ prefix: "OC", year: 2026, nextValue: 10 })
-    expect(before).toBe(2)
-    expect(after).toBe(10)
-
-    const updated = await listCodeSequences()
-    expect(updated).toContainEqual({ prefix: "OC", year: 2026, nextValue: 10, updatedAt: "" })
-  })
+  // "lists and sets code sequences natively" vive en
+  // code-sequences-postgres.test.ts (TST-3): bajo PGlite, las secuencias que
+  // crea next_document_code() funcionan pero no aparecen en pg_sequences, así
+  // que listCodeSequences/setCodeSequenceNextValue no son verificables aquí.
 })
