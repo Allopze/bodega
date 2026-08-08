@@ -54,6 +54,8 @@ export const receiptItems = pgTable("receipt_items", {
     AND (${table.quantityReceived} + ${table.quantityRejected} + ${table.quantityDamaged}) > 0
   `),
   index("idx_receipt_items_po_item").on(table.purchaseOrderItemId),
+  // DAT-11: FK caliente sin índice — CASCADE de receipts.
+  index("idx_receipt_items_receipt").on(table.receiptId),
 ])
 
 /* ── Deliveries (Entregas a Faena / Trabajador) ──────────────────────────── */
@@ -97,6 +99,8 @@ export const deliveryItems = pgTable("delivery_items", {
 }, (table) => [
   check("delivery_items_quantity_positive", sql`${table.quantity} > 0`),
   index("idx_delivery_items_request").on(table.requestItemId),
+  // DAT-11: FK caliente sin índice — CASCADE de deliveries.
+  index("idx_delivery_items_delivery").on(table.deliveryId),
 ])
 
 /* ── Relations ───────────────────────────────────────────────────────────── */

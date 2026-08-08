@@ -1,5 +1,5 @@
 import { relations, sql } from "drizzle-orm"
-import { pgTable, text, timestamp, numeric, check } from "drizzle-orm/pg-core"
+import { pgTable, text, timestamp, numeric, check, uniqueIndex, index } from "drizzle-orm/pg-core"
 import { purchaseRequests } from "./requests"
 import { users } from "./users"
 import { suppliers } from "./worksites"
@@ -36,6 +36,12 @@ export const serviceQuotations = pgTable("service_quotations", {
   check("service_quotations_status_valid", sql`
     ${table.status} IN ('pending', 'selected', 'rejected')
   `),
+  // Invariant (LOG-4/DAT-4): a lo sumo una cotización ganadora por solicitud.
+  uniqueIndex("service_quotations_one_selected").on(table.requestId).where(sql`${table.status} = 'selected'`),
+  // DAT-11: la unique de arriba es parcial (sólo status='selected') y no sirve
+  // para el query general "todas las cotizaciones de esta solicitud" — FK sin
+  // índice completo.
+  index("service_quotations_request_id_idx").on(table.requestId),
 ])
 
 /* ── Relations ────────────────────────────────────────────────────────────────── */

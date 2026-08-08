@@ -34,13 +34,15 @@ export const purchaseRequests = pgTable("purchase_requests", {
   createdAt:    timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   updatedAt:    timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [
-  // Invariant: requestType, urgency and status must be from the canonical lists
+  // Invariant: requestType, urgency and status must be from the canonical lists.
+  // 'returned' se retiró del flujo (2026-08-07, ARQ-5): ya estaba excluido de
+  // la guarda del rollup (F1-1c) — ningún tipo de solicitud puede producirlo.
   check("purchase_requests_type_urgency_status_valid", sql`
     ${table.requestType} IN ('epp', 'otro', 'repuestos', 'servicios')
     AND ${table.urgency} IN ('normal', 'high', 'critical')
     AND ${table.status} IN (
       'draft', 'submitted', 'in_review', 'partially_approved', 'approved',
-      'rejected', 'returned', 'in_purchasing', 'closed', 'cancelled'
+      'rejected', 'in_purchasing', 'closed', 'cancelled'
     )
   `),
   check("purchase_requests_delivery_mode_valid", sql`
@@ -76,9 +78,15 @@ export const purchaseRequestItems = pgTable("purchase_request_items", {
   // Invariant: quantity must be strictly positive; status from canonical item lifecycle
   // urgency is nullable (inherits from request by default), but when set must be from the canonical list
   check("purchase_request_items_quantity_positive", sql`${table.quantity} > 0`),
+  // 'postponed' y 'returned' se retiraron del flujo (2026-08-07): postergar
+  // dejó de existir (los ítems que lo tenían migraron a 'pending_purchase'), y
+  // devolver ya estaba muerto para repuestos/servicios desde el 2026-07-29
+  // (excluidos de la cola de aprobación por-ítem) — con `returnItem` eliminado
+  // hoy, ningún tipo de solicitud puede producirlo. 'draft' sigue vivo, pero
+  // sólo lo producen repuestos/servicios.
   check("purchase_request_items_state_valid", sql`
     ${table.status} IN (
-      'draft', 'requested', 'approved', 'rejected', 'returned', 'postponed',
+      'draft', 'requested', 'approved', 'rejected',
       'pending_purchase', 'in_purchase_order', 'purchased',
       'partially_received', 'received', 'partially_delivered', 'delivered'
     )
@@ -135,6 +143,8 @@ export const approvalDecisions = pgTable("approval_decisions", {
   check("approval_decisions_modified_qty_positive", sql`${table.modifiedQty} IS NULL OR ${table.modifiedQty} > 0`),
   check("approval_decisions_type_valid", sql`${table.type} IN ('approve', 'reject', 'return', 'modify')`),
   index("idx_approval_decisions_item").on(table.requestItemId),
+  // DAT-11: FK sin índice.
+  index("idx_approval_decisions_request").on(table.requestId),
 ])
 
 /* ── Relations ───────────────────────────────────────────────────────────── */

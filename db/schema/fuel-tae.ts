@@ -236,7 +236,11 @@ export const fuelTaePublicLinksRelations = relations(fuelTaePublicLinks, ({ one 
 
 export const fuelSealMovements = pgTable("fuel_seal_movements", {
   id:              text("id").primaryKey(),
-  submissionId:    text("submission_id").notNull().references(() => fuelTaeSubmissions.id),
+  // Sin CASCADE, revertir un lote de importación fallaba con violación de FK
+  // en cuanto una de sus cargas llegaba a validarse (eso es lo que inserta la
+  // fila de movimiento de sello) — el registro de movimiento es un derivado
+  // de la carga TAE, no una entidad independiente que deba sobrevivirla.
+  submissionId:    text("submission_id").notNull().references(() => fuelTaeSubmissions.id, { onDelete: "cascade" }),
   sealNumber:      text("seal_number").notNull(),
   movementType:    text("movement_type").notNull(),           // "removed" | "installed"
   changedBy:       text("changed_by").references(() => users.id),

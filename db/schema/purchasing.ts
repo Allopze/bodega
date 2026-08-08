@@ -7,9 +7,13 @@ import { purchaseRequestItems } from "./requests"
 import { costCenters } from "./cost-centers"
 
 /* ── Purchase Order States ───────────────────────────────────────────────── */
-// draft | issued | sent
+// draft | sent
 // partially_office_received | office_received
 // partially_received | received | closed | cancelled
+//
+// El status de purchase_order_items es un vocabulario aparte (ver el CHECK
+// más abajo): sólo 'issued' (activo) | 'cancelled' — la recepción ahí se
+// trackea con contadores numéricos, no con este status.
 
 /* ── Purchase Orders ─────────────────────────────────────────────────────── */
 export const purchaseOrders = pgTable("purchase_orders", {
@@ -41,7 +45,7 @@ export const purchaseOrders = pgTable("purchase_orders", {
   // Invariant: status from canonical PO lifecycle; all monetary amounts non-negative
   check("purchase_orders_status_valid", sql`
     ${table.status} IN (
-      'draft', 'issued', 'sent',
+      'draft', 'sent',
       'partially_office_received', 'office_received',
       'partially_received', 'received', 'closed', 'cancelled'
     )
@@ -77,9 +81,13 @@ export const purchaseOrderItems = pgTable("purchase_order_items", {
   sortOrder:            integer("sort_order").notNull().default(0),
   notes:                text("notes"),
 }, (table) => [
-  // Invariant: status from canonical PO item lifecycle
+  // Invariant: status from canonical PO item lifecycle.
+  // ARQ-12: 'partially_received'/'received' no los escribe nadie — la
+  // recepción se trackea con los contadores numéricos quantityOfficeReceived/
+  // quantityReceived, no con este status. Sólo describe si la línea sigue
+  // activa ('issued') o fue anulada ('cancelled').
   check("purchase_order_items_status_valid", sql`
-    ${table.status} IN ('issued', 'partially_received', 'received', 'cancelled')
+    ${table.status} IN ('issued', 'cancelled')
   `),
   // Invariant: quantity > 0, unitPrice/subtotal >= 0, discount in 0-100,
   // and received counters are each bounded by quantity (0 <= qtyOfficeReceived <= qty,
@@ -96,6 +104,11 @@ export const purchaseOrderItems = pgTable("purchase_order_items", {
     AND ${table.quantityOfficeReceived} <= ${table.quantity}
     AND ${table.quantityReceived} <= ${table.quantity}
   `),
+  // DAT-11: FK caliente sin índice — CASCADE de purchase_orders y el join más
+  // frecuente del módulo (una fila por línea de cada OC).
+  index("purchase_order_items_purchase_order_id_idx").on(table.purchaseOrderId),
+  // DAT-11: join hacia atrás desde el ítem de OC a su solicitud de origen.
+  index("purchase_order_items_request_item_id_idx").on(table.requestItemId),
 ])
 
 /* ── Quotations ───────────────────────────────────────────────────────────── */
@@ -110,7 +123,10 @@ export const quotations = pgTable("quotations", {
   notes:           text("notes"),
   uploadedBy:      text("uploaded_by").notNull().references(() => users.id),
   uploadedAt:      timestamp("uploaded_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
-})
+}, (table) => [
+  // DAT-11: FK sin índice.
+  index("quotations_purchase_order_id_idx").on(table.purchaseOrderId),
+])
 
 /* ── Purchase Order Invoices ──────────────────────────────────────────────── */
 // Facturas del proveedor adjuntadas a una OC (N-a-1).

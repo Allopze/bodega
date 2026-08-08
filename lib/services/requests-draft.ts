@@ -1,52 +1,45 @@
 /**
  * lib/services/requests-draft.ts
  *
- * Diff-based persist logic for purchase requests.
+ * Creación de solicitudes de compra (EPP/otro).
  *
- * Security audit A-01 / A-08: the previous implementation deleted and
- * re-inserted every request item on each save, which:
- *   - wiped `approval_decisions` rows (legal audit trail lost when an
- *     approver had modified the quantity),
- *   - wiped `inventory_movements` references,
- *   - generated expensive cascade deletes on `request_item_attributes`,
- *   - created a window where approvers could see "no items" between the
- *     delete and the re-insert.
- *
- * This service performs a true diff: items with a stable `id` are
- * updated in place (preserving `approval_decisions` and references),
- * items without an `id` are inserted, and items present in the DB but
- * missing from the input are deleted (and only their `approval_decisions`
- * are removed with them).
+ * Ya no existe una ruta de edición: desde la simplificación del flujo
+ * (2026-08-07) estas solicitudes nacen enviadas y se corrigen aprobando,
+ * rechazando o cancelando, nunca reescribiendo los ítems. Con eso desapareció
+ * el persist por diff que protegía `approval_decisions` de un borrador
+ * reescrito (auditoría A-01 / A-08): sin edición no hay reescritura.
  */
 
 import { db } from "@/db"
 import type { RequestFormData } from "@/lib/validation/operations"
-import { createRequestWithDiff } from "./requests-draft-create"
-import { updateRequestWithDiff } from "./requests-draft-update"
-import type { PersistDraftResult } from "./requests-draft.types"
-
-export type { PersistDraftResult }
+import { createRequest } from "./requests-draft-create"
+import { reserveReplenishmentGapsTx } from "./epp-replenishment"
 
 /**
- * Persist a request (create or update) using a diff algorithm.
+ * Crea una solicitud EPP/otro ya enviada a aprobación, en una sola transacción.
  *
- * Caller must have validated input with `requestSchema` and verified
- * worksite access. This function is wrapped in its own transaction.
+ * Antes esto eran dos pasos (crear borrador + enviarlo) en transacciones
+ * distintas; una caída entre medio dejaba un borrador huérfano que el flujo
+ * nuevo ya no sabe editar. Aquí la solicitud o nace enviada o no nace.
  */
-export async function persistRequestWithDiff(
+export async function createSubmittedRequest(
   sessionUserId: string,
   sessionUserEmail: string | undefined,
   data: RequestFormData,
-  isEdit: boolean,
-  actorCanEditAnyRequest: boolean,
-): Promise<PersistDraftResult> {
-  if (isEdit && !data.id) {
-    throw new Error("Internal: isEdit=true but data.id is missing")
-  }
+): Promise<{ requestId: string; code: string }> {
   return await db.transaction(async (tx) => {
-    if (isEdit) {
-      return await updateRequestWithDiff(tx, data, sessionUserId, sessionUserEmail, actorCanEditAnyRequest)
-    }
-    return await createRequestWithDiff(tx, data, sessionUserId, sessionUserEmail)
+    const { requestId, code, itemIds } = await createRequest(
+      tx, data, sessionUserId, sessionUserEmail,
+    )
+
+    const reservations = data.items.flatMap((item, i) => {
+      const key = item.replenishmentGapKey?.trim()
+      const requestItemId = itemIds[i]
+      return key && requestItemId ? [{ gapKey: key, requestItemId }] : []
+    })
+    if (reservations.length > 0) await reserveReplenishmentGapsTx(tx, reservations)
+
+    return { requestId, code }
   })
 }
+

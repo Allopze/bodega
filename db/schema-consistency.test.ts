@@ -221,7 +221,7 @@ async function insertOperationalConstraintFixture(suffix: string) {
     INSERT INTO purchase_orders (
       id, code, worksite_id, supplier_id, created_by, status, net_amount, tax_amount, total_amount, created_at, updated_at
     )
-    VALUES (${orderId}, ${`OC-${suffix}`}, ${worksiteId}, ${supplierId}, ${userId}, 'issued', 1000, 190, 1190, NOW(), NOW())
+    VALUES (${orderId}, ${`OC-${suffix}`}, ${worksiteId}, ${supplierId}, ${userId}, 'sent', 1000, 190, 1190, NOW(), NOW())
   `)
   await db.execute(sql`
     INSERT INTO purchase_order_items (
