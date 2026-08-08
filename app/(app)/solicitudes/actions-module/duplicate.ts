@@ -9,6 +9,7 @@ import { nextCodeTx } from "@/lib/code-sequences"
 import { recordAudit } from "@/lib/audit"
 import { canAccessWorksite, requirePermission } from "@/lib/auth/can"
 import { type ActionState } from "@/lib/validation/operations"
+import { QUOTATION_TYPES } from "@/lib/request-types"
 import { revalidateOperationalViews } from "@/lib/services/operational-cache"
 
 const REVALIDATE = "/solicitudes"
@@ -34,6 +35,12 @@ export async function duplicateRequest(_prev: ActionState, formData: FormData): 
   }
   if (!canAccessWorksite(session, source.worksiteId)) {
     return { ok: false, message: "No tienes acceso a la faena de la solicitud original" }
+  }
+
+  // EPP/otro ya no tienen borrador: duplicar es precargar el creador, para que
+  // la copia pase por la revisión de una persona antes de entrar a aprobación.
+  if (!QUOTATION_TYPES.has(source.requestType)) {
+    redirect(`${REVALIDATE}/nueva?desde=${sourceId}`)
   }
 
   let newId!: string

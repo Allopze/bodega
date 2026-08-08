@@ -115,7 +115,7 @@ export function OcFormItems({
             return (
               <div
                 key={item.id}
-                className={`flex items-start gap-3 px-4 py-3 transition-colors duration-[var(--duration-fast)] ${
+                className={`flex flex-wrap items-start gap-3 px-4 py-3 transition-colors duration-[var(--duration-fast)] ${
                   isSelected ? "bg-[var(--color-primary-tint)]" : "bg-[var(--color-surface)]"
                 }`}
               >
@@ -161,7 +161,7 @@ export function OcFormItems({
                 </div>
 
                 {isSelected && (
-                  <div className="flex items-start gap-2 shrink-0">
+                  <div className="flex flex-wrap items-start gap-2 shrink-0">
                     <div className="flex flex-col gap-1">
                       <label htmlFor={`qty-${item.id}`} className="text-[10px] text-[var(--color-text-subtle)]">
                         Cantidad

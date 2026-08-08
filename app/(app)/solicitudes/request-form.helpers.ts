@@ -2,6 +2,7 @@ import type { ItemRow, AttrRow, ProductOption } from "./request-form.types"
 import { REPUESTO_ATTRIBUTE_NAMES } from "@/lib/validation/repuestos"
 import { SERVICE_ATTRIBUTE_NAMES } from "@/lib/validation/servicios"
 import { REQUEST_STATE_META } from "@/components/states/state-badge"
+import { QUOTATION_TYPES } from "@/lib/request-types"
 
 export function equipmentFromAttributes(
   requestType: string,
@@ -67,9 +68,11 @@ export function requestStatusLabel(status: string): string {
 }
 
 export function buildRequestSummaryIssues({
-  worksiteId, requiredDate, items,
+  worksiteId, requiredDate, items, requestType, notes,
 }: {
   worksiteId: string; requiredDate: string; items: ItemRow[]
+  /** Repuestos/servicios exigen ≥3 cotizaciones o justificación (LOG-9/UX-2). */
+  requestType?: string; notes?: string
 }): string[] {
   const issues: string[] = []
   if (!worksiteId) issues.push("Selecciona una faena.")
@@ -81,5 +84,11 @@ export function buildRequestSummaryIssues({
     const missingAttrs = item.attributes.filter((attr) => attr.isRequired && !attr.value.trim())
     if (missingAttrs.length > 0) issues.push(`${label}: completa ${missingAttrs.map((attr) => attr.attributeName).join(", ")}.`)
   })
+  if (requestType && QUOTATION_TYPES.has(requestType)) {
+    const totalCotizaciones = items.reduce((sum, item) => sum + (item.cotizaciones?.length ?? 0), 0)
+    if (totalCotizaciones < 3 && !notes?.trim()) {
+      issues.push("Adjunta 3 cotizaciones o justifica en Notas generales por qué no es posible.")
+    }
+  }
   return issues
 }

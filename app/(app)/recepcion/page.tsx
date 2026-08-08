@@ -13,13 +13,21 @@ import { PageContainer } from "@/components/ui/page-container"
 import { HeaderSignals, type HeaderSignal } from "@/components/ui/header-signals"
 import { ServerPagination } from "@/components/ui/server-pagination"
 import { buildPaginationHref, resolvePagination } from "@/lib/pagination"
-import { parseListParams, eqFilter, worksiteEqSql } from "@/lib/adquisiciones/list-query"
+import { parseListParams, eqFilter, statusSql, worksiteEqSql } from "@/lib/adquisiciones/list-query"
+import type { StageTab } from "@/components/adquisiciones/stage-tabs"
 import { RECEIVABLE_ORDER_STATUSES } from "@/lib/work-queue"
 import { RecepcionTable } from "./recepcion-table"
 
 export const metadata: Metadata = { title: "Recepción" }
 
 import { RECEPCION_PAGE_SIZE } from "@/lib/constants"
+
+/** Las tres etapas de recepción; los parciales acompañan a la suya. */
+const STAGE_GROUPS = [
+  { value: "sent",                                      label: "Pendiente de recepción" },
+  { value: "partially_office_received,office_received", label: "Recibido en oficina" },
+  { value: "partially_received",                        label: "Recibido en faena (parcial)" },
+] as const
 
 export default async function RecepcionPage({
   searchParams,
@@ -50,17 +58,29 @@ export default async function RecepcionPage({
       )
     : undefined
 
-  const where = and(
+  const scopeWhere = and(
     scopeFilter,
     textCondition,
     worksiteEqSql(purchaseOrders.worksiteId, listParams.faena),
     eqFilter(purchaseOrders.supplierId, listParams.proveedor),
   )
+  // La lista ya está acotada a los estados recibibles; las tabs eligen dentro
+  // de ellos, así que un `estado` fuera de ese conjunto no entrega nada.
+  const where = and(scopeWhere, statusSql(purchaseOrders.status, listParams.estados))
 
-  const [totalRow] = await db
-    .select({ total: count() })
-    .from(purchaseOrders)
-    .where(where)
+  const [[totalRow], stageCountRows] = await Promise.all([
+    db.select({ total: count() }).from(purchaseOrders).where(where),
+    db.select({ status: purchaseOrders.status, total: count() }).from(purchaseOrders).where(scopeWhere).groupBy(purchaseOrders.status),
+  ])
+  const countByStatus = Object.fromEntries(stageCountRows.map((row) => [row.status, row.total]))
+  const stageTabs: StageTab[] = [
+    { value: "", label: "Todas", count: stageCountRows.reduce((sum, row) => sum + row.total, 0) },
+    ...STAGE_GROUPS.map((group) => ({
+      value: group.value,
+      label: group.label,
+      count: group.value.split(",").reduce((sum, status) => sum + (countByStatus[status] ?? 0), 0),
+    })),
+  ]
 
   const pagination = resolvePagination({
     pageParam: sp.page,
@@ -68,37 +88,39 @@ export default async function RecepcionPage({
     pageSize: RECEPCION_PAGE_SIZE,
   })
 
-  const visible = await db
-    .select({
-      id:          purchaseOrders.id,
-      code:        purchaseOrders.code,
-      worksiteId:  purchaseOrders.worksiteId,
-      supplierId:  purchaseOrders.supplierId,
-      status:      purchaseOrders.status,
-      sentAt:      purchaseOrders.sentAt,
-      createdAt:   purchaseOrders.createdAt,
-    })
-    .from(purchaseOrders)
-    .where(where)
-    .orderBy(desc(purchaseOrders.sentAt))
-    .limit(pagination.limit)
-    .offset(pagination.offset)
+  // ARQ-10: las 3 sólo cuelgan del scope/filtro y de `pagination` (ya
+  // resuelta arriba) — ninguna depende del resultado de otra.
+  const [visible, worksiteOptionRows, supplierOptionRows] = await Promise.all([
+    db
+      .select({
+        id:          purchaseOrders.id,
+        code:        purchaseOrders.code,
+        worksiteId:  purchaseOrders.worksiteId,
+        supplierId:  purchaseOrders.supplierId,
+        status:      purchaseOrders.status,
+        sentAt:      purchaseOrders.sentAt,
+        createdAt:   purchaseOrders.createdAt,
+      })
+      .from(purchaseOrders)
+      .where(where)
+      .orderBy(desc(purchaseOrders.sentAt))
+      .limit(pagination.limit)
+      .offset(pagination.offset),
+    // Worksite options for the faena filter (scoped + active)
+    db
+      .select({ id: worksites.id, name: worksites.name })
+      .from(worksites)
+      .where(and(eq(worksites.isActive, true), worksiteScopeSql(session, worksites.id))),
+    // Supplier options for the proveedor filter (active suppliers)
+    db
+      .select({ id: suppliers.id, name: suppliers.name })
+      .from(suppliers)
+      .where(eq(suppliers.isActive, true))
+      .orderBy(suppliers.name),
+  ])
 
   const pageHref = (page: number) => buildPaginationHref("/recepcion", sp, page)
-
-  // Worksite options for the faena filter (scoped + active)
-  const worksiteOptionRows = await db
-    .select({ id: worksites.id, name: worksites.name })
-    .from(worksites)
-    .where(and(eq(worksites.isActive, true), worksiteScopeSql(session, worksites.id)))
   const worksiteOptions = worksiteOptionRows.map((w) => ({ value: w.id, label: w.name }))
-
-  // Supplier options for the proveedor filter (active suppliers)
-  const supplierOptionRows = await db
-    .select({ id: suppliers.id, name: suppliers.name })
-    .from(suppliers)
-    .where(eq(suppliers.isActive, true))
-    .orderBy(suppliers.name)
   const supplierOptions = supplierOptionRows.map((s) => ({ value: s.id, label: s.name }))
 
   const wsIds       = [...new Set(visible.map((o) => o.worksiteId))]
@@ -135,7 +157,7 @@ export default async function RecepcionPage({
   const canRegister = canAny(session, "receiving:register_office", "receiving:register_faena")
 
   const headerSignals: HeaderSignal[] = [
-    { key: "to-receive", label: "Por recibir", value: totalRow?.total ?? 0 },
+    { key: "to-receive", label: "Por recibir", value: stageCountRows.reduce((sum, row) => sum + row.total, 0) },
   ]
 
   return (
@@ -163,6 +185,7 @@ export default async function RecepcionPage({
         canRegister={canRegister}
         worksiteOptions={worksiteOptions}
         supplierOptions={supplierOptions}
+        stageTabs={stageTabs}
       />
       <ServerPagination pagination={pagination} hrefForPage={pageHref} />
     </PageContainer>

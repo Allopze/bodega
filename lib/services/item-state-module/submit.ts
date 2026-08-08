@@ -1,20 +1,10 @@
 import { and, eq } from "drizzle-orm"
-import { db, type Tx } from "@/db"
+import { type Tx } from "@/db"
 import { purchaseRequestItems } from "@/db/schema"
 import { recordAudit, recordStatusChange } from "@/lib/audit"
 import { canTransition, type ItemStatus } from "./types"
 
 /** Transition a draft item to requested status. */
-export async function submitItem(
-  itemId: string,
-  userId: string,
-  opts?: { userEmail?: string },
-): Promise<void> {
-  await db.transaction(async (tx) => {
-    await submitItemTx(tx, itemId, userId, opts)
-  })
-}
-
 export async function submitItemTx(
   tx: Tx,
   itemId: string,

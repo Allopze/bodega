@@ -21,7 +21,7 @@ export async function deleteQuotation(
     where: eq(purchaseRequests.id, quotation.requestId),
     columns: { id: true, status: true, requesterId: true, worksiteId: true },
   })
-  if (!request || !["draft", "returned"].includes(request.status)) {
+  if (!request || request.status !== "draft") {
     throw new Error("La solicitud ya no es editable")
   }
   assertCanDeleteQuotation({

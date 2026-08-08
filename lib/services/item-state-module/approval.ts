@@ -5,6 +5,7 @@ import {
 } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { recordAudit, recordStatusChange } from "@/lib/audit"
+import { resolveReplenishmentLinksTx } from "@/lib/services/epp-replenishment"
 import { canTransition, type ItemStatus } from "./types"
 import { rollupRequestStatus } from "./rollup"
 
@@ -87,7 +88,7 @@ export async function bulkApproveItems(
     }
 
     for (const requestId of new Set(lockedItems.map((item) => item.requestId))) {
-      await rollupRequestStatus(requestId, tx)
+      await rollupRequestStatus(requestId, tx, userId)
     }
   })
 
@@ -113,6 +114,9 @@ export async function approveItem(
     if (!canTransition(locked.status as ItemStatus, "approved")) {
       throw new Error(`Cannot approve item in state '${locked.status}'`)
     }
+    if (opts?.modifiedQty !== undefined && !opts?.reason) {
+      throw new Error("Se requiere un motivo al modificar la cantidad aprobada")
+    }
 
     const now = new Date().toISOString()
     const updates: Partial<typeof purchaseRequestItems.$inferSelect> = {
@@ -136,10 +140,6 @@ export async function approveItem(
 
     if (!updated) {
       throw new Error("El ítem ya no está disponible: posible concurrencia")
-    }
-
-    if (opts?.modifiedQty !== undefined && !opts?.reason) {
-      throw new Error("Se requiere un motivo al modificar la cantidad aprobada")
     }
 
     await tx.insert(approvalDecisions).values({
@@ -169,7 +169,7 @@ export async function approveItem(
       oldState:   { status: locked.status },
       newState:   { status: "approved", modifiedQty: opts?.modifiedQty },
     }, tx)
-    await rollupRequestStatus(locked.requestId, tx)
+    await rollupRequestStatus(locked.requestId, tx, userId)
   })
 }
 
@@ -232,70 +232,7 @@ export async function rejectItem(
       newState:   { status: "rejected" },
       reason,
     }, tx)
-    await rollupRequestStatus(item.requestId, tx)
-  })
-}
-
-/**
- * Return an item to the requester for correction: requested → returned.
- * Reason is mandatory (must explain what needs to change).
- * A returned item can be re-submitted after editing.
- */
-export async function returnItem(
-  itemId: string,
-  userId: string,
-  reason: string,
-  opts?: { userEmail?: string; roleContext?: string },
-): Promise<void> {
-  if (!reason?.trim()) throw new Error("Reason is required to return an item")
-
-  await db.transaction(async (tx) => {
-    const [item] = await tx
-      .select({ id: purchaseRequestItems.id, status: purchaseRequestItems.status, requestId: purchaseRequestItems.requestId })
-      .from(purchaseRequestItems)
-      .where(eq(purchaseRequestItems.id, itemId))
-      .for("update")
-    if (!item) throw new Error(`Item ${itemId} not found`)
-    if (!canTransition(item.status as ItemStatus, "returned")) {
-      throw new Error(`Cannot return item in state '${item.status}'`)
-    }
-
-    const now = new Date().toISOString()
-    const [updated] = await tx
-      .update(purchaseRequestItems)
-      .set({ status: "returned", updatedAt: now })
-      .where(and(eq(purchaseRequestItems.id, itemId), eq(purchaseRequestItems.status, item.status)))
-      .returning({ id: purchaseRequestItems.id })
-    if (!updated) throw new Error("El ítem ya no está disponible: posible concurrencia")
-
-    await tx.insert(approvalDecisions).values({
-      id:            nanoid(),
-      requestItemId: itemId,
-      requestId:     item.requestId,
-      type:          "return",
-      decidedBy:     userId,
-      reason,
-      roleContext:   opts?.roleContext ?? null,
-    })
-
-    await recordStatusChange({
-      entityType: "request_item",
-      entityId:   itemId,
-      fromStatus: item.status,
-      toStatus:   "returned",
-      changedBy:  userId,
-      reason,
-    }, tx)
-    await recordAudit({
-      userId,
-      userEmail:  opts?.userEmail,
-      action:     "status_change",
-      entityType: "request_item",
-      entityId:   itemId,
-      oldState:   { status: item.status },
-      newState:   { status: "returned" },
-      reason,
-    }, tx)
-    await rollupRequestStatus(item.requestId, tx)
+    await resolveReplenishmentLinksTx(tx, [itemId])
+    await rollupRequestStatus(item.requestId, tx, userId)
   })
 }

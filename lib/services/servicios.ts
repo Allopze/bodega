@@ -35,5 +35,5 @@ export const addServiceQuotation            = svc.addQuotation
 export const deleteServiceQuotation         = svc.deleteQuotation
 export const submitServiceRequest           = svc.submitRequest
 export const selectServiceQuotation         = svc.selectQuotation
-export const cancelServiceRequest           = svc.cancelRequest
-export const getServiceQuotationsForRequest = svc.getQuotationsForRequest
+// ARQ-1: `cancelServiceRequest`/`getServiceQuotationsForRequest` sin
+// consumidores — ver el mismo comentario en lib/services/repuestos.ts.

@@ -33,6 +33,23 @@ export async function closeOrder(
       throw new Error(`No se puede cerrar una orden en estado '${order.status}'`)
     }
 
+    // LOG-7/DAT-17 (decisión: bloquear): cerrar con mercadería recibida en
+    // oficina pero sin llegar a faena mandaba ese saldo a re-compra —el ítem
+    // volvía a 'pending_purchase' y se compraba de nuevo lo que ya estaba
+    // físicamente en la oficina— y en el cierre parcial el excedente se
+    // recortaba con LEAST sin dejar rastro. Hay que registrar la llegada a
+    // faena (o gestionar el excedente) antes de poder cerrar.
+    const [officePending] = await tx
+      .select({ n: sql<number>`count(*)` })
+      .from(purchaseOrderItems)
+      .where(and(
+        eq(purchaseOrderItems.purchaseOrderId, orderId),
+        sql`${purchaseOrderItems.quantityOfficeReceived} > ${purchaseOrderItems.quantityReceived}`,
+      ))
+    if (Number(officePending?.n ?? 0) > 0) {
+      throw new Error("No se puede cerrar: hay mercadería recibida en oficina que aún no llega a faena. Registra la llegada a faena antes de cerrar la orden.")
+    }
+
     await closeOrderTx(tx, order, userId, reason, opts)
   })
 }
@@ -195,7 +212,7 @@ export async function closeOrderTx(
 
   const affectedRequestIds = [...new Set(linkedItems.map((item) => item.requestId))]
   for (const requestId of affectedRequestIds) {
-    await rollupRequestStatus(requestId, tx)
+    await rollupRequestStatus(requestId, tx, userId)
   }
 
   await recordStatusChange({

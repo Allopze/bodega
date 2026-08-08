@@ -1,18 +1,24 @@
 "use server"
 
 import type { Session } from "next-auth"
-import { can, canAccessWorksite, requireAuth } from "@/lib/auth/can"
-import { requestSchema, type ActionState } from "@/lib/validation/operations"
+import { requireAuth } from "@/lib/auth/can"
+import { type ActionState } from "@/lib/validation/operations"
 import { logger } from "@/lib/logger"
-import { isRequestType, permissionForRequestType, QUOTATION_TYPES } from "@/lib/request-types"
+import { QUOTATION_TYPES } from "@/lib/request-types"
 import { addQuotation, persistRepuestoDraft } from "@/lib/services/repuestos"
 import { addServiceQuotation, persistServiceDraft } from "@/lib/services/servicios"
 import { getPdfMaxSizeMb } from "@/lib/services/system-settings"
-import { persistRequestWithDiff } from "@/lib/services/requests-draft"
 import { revalidateOperationalViews } from "@/lib/services/operational-cache"
+import { validateFileBuffer, MimeType } from "@/lib/file-validation"
+import { parseRequestForm } from "./parse-request-form"
 
 const REVALIDATE = "/solicitudes"
 
+/**
+ * Borrador de solicitud. Desde 2026-08-07 solo existe para los tipos con
+ * cotización (repuestos/servicios), que necesitan adjuntar cotizaciones antes
+ * de enviar. EPP/otro se crean y envían en un solo paso (`submitRequest`).
+ */
 export async function saveDraft(
   _prev: ActionState,
   formData: FormData,
@@ -32,117 +38,105 @@ export async function persistDraft(
   session: Session,
   formData: FormData,
 ): Promise<ActionState & { requestId?: string }> {
-  let itemsRaw: unknown[] = []
-  try { itemsRaw = JSON.parse(formData.get("itemsJson") as string ?? "[]") } catch { logger.warn("[persistDraft] itemsJson inválido en formData, se usará arreglo vacío") }
-
-  const requestTypeRaw = formData.get("requestType") || "epp"
-  if (isRequestType(requestTypeRaw) && !can(session, permissionForRequestType(requestTypeRaw, "create"))) {
-    return { ok: false, message: "No tienes permisos para crear este tipo de solicitud" }
-  }
-
-  const parsed = requestSchema.safeParse({
-    id:           formData.get("id") || undefined,
-    worksiteId:   formData.get("worksiteId"),
-    requestType:  requestTypeRaw,
-    urgency:      formData.get("urgency") || "normal",
-    requiredDate: String(formData.get("requiredDate") ?? ""),
-    notes:        formData.get("notes") || "",
-    items:        itemsRaw,
-  })
-  if (!parsed.success) {
-    const flattened = parsed.error.flatten()
-    const fieldErrors = flattened.fieldErrors as Record<string, string[]>
-    return {
-      ok: false,
-      message: fieldErrors.items?.[0]
-        ? `Revisa los ítems de la solicitud: ${fieldErrors.items[0]}`
-        : "Revisa los datos de la solicitud",
-      fieldErrors,
-    }
-  }
+  const parsed = parseRequestForm(session, formData)
+  if (!parsed.ok) return parsed.error
   const d = parsed.data
 
-  const isEdit = !!d.id
-  if (!canAccessWorksite(session, d.worksiteId)) {
-    return { ok: false, message: "No tienes acceso a la faena seleccionada" }
+  if (!QUOTATION_TYPES.has(d.requestType)) {
+    return { ok: false, message: "Las solicitudes de EPP y otros se crean y envían en un solo paso" }
   }
 
-  if (QUOTATION_TYPES.has(d.requestType)) {
-    const items = d.items.map((item, i) => ({
-      id:            item.id,
-      description:   item.productNameFree?.trim() || item.productId || "",
-      quantity:      item.quantity,
-      unitOfMeasure: item.unitOfMeasure,
-      sortOrder:     i,
-      notes:         item.notes || null,
-      partNumber:    item.partNumber || null,
-      location:      item.location || null,
-      equipmentName: item.equipmentName || null,
-      patent:        item.patent || null,
-      brand:         item.brand || null,
-      model:         item.model || null,
-    }))
-    const requestInput = {
-      id:            d.id,
-      worksiteId:    d.worksiteId,
-      urgency:       d.urgency,
-      requiredDate:  d.requiredDate,
-      justification: d.notes || null,
-      items,
-    }
-    const factory = d.requestType === "repuestos" ? persistRepuestoDraft : persistServiceDraft
-    try {
-      const reqId = await factory(session, requestInput)
+  const items = d.items.map((item, i) => ({
+    id:            item.id,
+    description:   item.productNameFree?.trim() || item.productId || "",
+    quantity:      item.quantity,
+    unitOfMeasure: item.unitOfMeasure,
+    sortOrder:     i,
+    notes:         item.notes || null,
+    partNumber:    item.partNumber || null,
+    location:      item.location || null,
+    equipmentName: item.equipmentName || null,
+    patent:        item.patent || null,
+    brand:         item.brand || null,
+    model:         item.model || null,
+  }))
+  const requestInput = {
+    id:            d.id,
+    worksiteId:    d.worksiteId,
+    urgency:       d.urgency,
+    requiredDate:  d.requiredDate,
+    justification: d.notes || null,
+    items,
+  }
+  const factory = d.requestType === "repuestos" ? persistRepuestoDraft : persistServiceDraft
+  try {
+    const reqId = await factory(session, requestInput)
 
-      const maxSizeMb = await getPdfMaxSizeMb()
-      const addFn = d.requestType === "repuestos" ? addQuotation : addServiceQuotation
-      for (const [key, value] of formData.entries()) {
-        if (!key.startsWith("cotizacion_") || !(value instanceof File)) continue
-        if (value.size === 0) continue
-        if (value.size > maxSizeMb * 1024 * 1024) {
-          logger.warn(`[persistDraft] cotización ${value.name} excede tamaño máximo (${maxSizeMb}MB)`)
-          continue
-        }
-        try {
-          await addFn({
-            requestId: reqId,
-            totalAmount: 0,
-            supplierId: null,
-            supplierNameFree: null,
-            notes: null,
-            fileName: value.name,
-            fileSize: value.size,
-            mimeType: value.type,
-            fileBuffer: Buffer.from(await value.arrayBuffer()),
-            uploadedBy: session.user.id,
-          })
-        } catch (e) {
-          logger.error(`[persistDraft] Error subiendo cotización ${value.name}`, e)
-        }
+    const maxSizeMb = await getPdfMaxSizeMb()
+    const addFn = d.requestType === "repuestos" ? addQuotation : addServiceQuotation
+    const failedFiles: string[] = []
+    for (const [key, value] of formData.entries()) {
+      if (!key.startsWith("cotizacion_") || key.startsWith("cotizacion_meta_") || !(value instanceof File)) continue
+      if (value.size === 0) continue
+      if (value.size > maxSizeMb * 1024 * 1024) {
+        logger.warn(`[persistDraft] cotización ${value.name} excede tamaño máximo (${maxSizeMb}MB)`)
+        failedFiles.push(value.name)
+        continue
       }
 
-      return { ok: true, message: "Borrador guardado", requestId: reqId }
-    } catch (e) {
-      logger.error("[persistDraft:quotation]", e)
-      return { ok: false, message: e instanceof Error ? e.message : "Error al guardar la solicitud" }
+      const cotId = key.slice("cotizacion_".length)
+      const metaRaw = formData.get(`cotizacion_meta_${cotId}`)
+      let meta: { totalAmount?: string; supplierId?: string; supplierNameFree?: string } = {}
+      try { meta = metaRaw ? JSON.parse(String(metaRaw)) : {} } catch { /* deja meta vacía, se rechaza abajo */ }
+
+      const totalAmount = Number(meta.totalAmount)
+      if (!Number.isFinite(totalAmount) || totalAmount <= 0 || (!meta.supplierId && !meta.supplierNameFree?.trim())) {
+        logger.warn(`[persistDraft] cotización ${value.name} sin proveedor o monto válido`)
+        failedFiles.push(value.name)
+        continue
+      }
+
+      // Mismo camino de validación que el upload en vivo del panel — sin
+      // esto, cualquier archivo (aunque no fuera un PDF/imagen real) pasaba
+      // igual (LOG-9).
+      const fileBuf = new Uint8Array(await value.arrayBuffer())
+      const validation = validateFileBuffer(fileBuf, value.size, MimeType.QUOTATION)
+      if (validation.error) {
+        logger.warn(`[persistDraft] cotización ${value.name} rechazada: ${validation.error}`)
+        failedFiles.push(value.name)
+        continue
+      }
+
+      try {
+        await addFn({
+          requestId: reqId,
+          totalAmount,
+          supplierId: meta.supplierId || null,
+          supplierNameFree: meta.supplierNameFree?.trim() || null,
+          notes: null,
+          fileName: value.name,
+          fileSize: value.size,
+          mimeType: value.type,
+          fileBuffer: Buffer.from(fileBuf),
+          uploadedBy: session.user.id,
+        })
+      } catch (e) {
+        logger.error(`[persistDraft] Error subiendo cotización ${value.name}`, e)
+        failedFiles.push(value.name)
+      }
     }
-  }
 
-  let requestId = d.id
+    if (failedFiles.length > 0) {
+      return {
+        ok: true,
+        requestId: reqId,
+        message: `Borrador guardado, pero ${failedFiles.length} archivo(s) no se subieron: ${failedFiles.join(", ")}`,
+      }
+    }
 
-  try {
-    const result = await persistRequestWithDiff(
-      session.user.id,
-      session.user.email ?? undefined,
-      d,
-      isEdit,
-      session.user.permissions.includes("requests:view_all"),
-    )
-    requestId = result.requestId
+    return { ok: true, message: "Borrador guardado", requestId: reqId }
   } catch (e) {
-    logger.error("[persistDraft]", e)
+    logger.error("[persistDraft:quotation]", e)
     return { ok: false, message: e instanceof Error ? e.message : "Error al guardar la solicitud" }
   }
-
-  return { ok: true, message: "Borrador guardado", requestId }
 }

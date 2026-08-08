@@ -2,9 +2,12 @@
  * Purchase orders — barrel.
  * Re-exports from the following sub-modules:
  *   - purchase-orders-create    (createOrder, createOrdersBySupplier + types)
- *   - purchase-orders-status    (issueOrder, markOrderSent, cancelOrder)
+ *   - purchase-orders-status    (issueAndSendOrder, cancelOrder)
  *   - purchase-orders-delete    (deleteOrder)
- *   - purchase-orders-edit      (updateSentOrderItems + types)
+ *
+ * ARQ-1/F5-3: purchase-orders-edit (updateSentOrderItems) se eliminó — sin UI
+ * ni caso de negocio confirmado. Si hace falta editar una OC enviada, se
+ * construye a propósito más adelante.
  */
 
 export {
@@ -19,8 +22,7 @@ export type {
 } from "./purchase-orders-create"
 
 export {
-  issueOrder,
-  markOrderSent,
+  issueAndSendOrder,
   cancelOrder,
 } from "./purchase-orders-status"
 
@@ -31,14 +33,5 @@ export {
 export {
   DELETABLE_ORDER_STATUSES,
   isOrderDeletable,
-  EDITABLE_ITEM_ORDER_STATUSES,
-  isOrderItemsEditable,
 } from "@/lib/services/purchasing.constants"
-export type { DeletableOrderStatus, EditableItemOrderStatus } from "@/lib/services/purchasing.constants"
-
-export {
-  updateSentOrderItems,
-} from "./purchase-orders-edit"
-export type {
-  EditableOrderItemInput,
-} from "./purchase-orders-edit"
+export type { DeletableOrderStatus } from "@/lib/services/purchasing.constants"

@@ -89,14 +89,17 @@ export interface SelectQuotationInput {
   worksiteIds?: string[] | "all"
 }
 
-/** Typed service functions expected by the action factory. */
+/**
+ * Typed service functions expected by the action factory.
+ *
+ * ARQ-1: acotado a las 3 acciones que el factory de acciones todavía
+ * consume — persistDraft/submitRequest/cancelRequest ya no pasan por aquí
+ * (viven en solicitudes/actions-module/, llamados directo a sus servicios).
+ */
 export interface RequestServiceFunctions {
-  persistDraft:     (session: Session, data: RequestServiceInput) => Promise<string>
   addQuotation:     (input: AddQuotationInput) => Promise<string>
   deleteQuotation:  (input: DeleteQuotationInput) => Promise<void>
-  submitRequest:    (input: SubmitRequestInput) => Promise<void>
   selectQuotation:  (input: SelectQuotationInput) => Promise<void>
-  cancelRequest:    (id: string, userId: string, reason: string, opts?: { userEmail?: string }) => Promise<void>
 }
 
 // ── Complete module config ────────────────────────────────────────────────────

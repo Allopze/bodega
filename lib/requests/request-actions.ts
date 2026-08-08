@@ -5,17 +5,18 @@
  * Uso: cada módulo crea una instancia con su config y re-exporta las funciones.
  *
  *   const actions = createRequestActions(repuestoActionsConfig)
- *   export const saveDraftAction = actions.saveDraftAction
+ *   export const uploadQuotationAction = actions.uploadQuotationAction
  *   // ...
+ *
+ * ARQ-1: sólo quedan las tres acciones de cotización — guardar borrador,
+ * enviar y cancelar viven en app/(app)/solicitudes/actions-module/, sin
+ * pasar por este factory (ver el comentario de request-actions-workflow.ts).
  */
 
-import { saveDraftActionImpl } from "./request-actions-draft"
 import {
-  submitRequestActionImpl,
   uploadQuotationActionImpl,
   deleteQuotationActionImpl,
   selectQuotationActionImpl,
-  cancelRequestActionImpl,
 } from "./request-actions-workflow"
 import type { ActionState } from "@/lib/validation/masters"
 import type { RequestActionsConfig } from "./request-actions.types"
@@ -26,12 +27,9 @@ export type { RequestActionsConfig } from "./request-actions.types"
 
 export function createRequestActions(config: RequestActionsConfig) {
   return {
-    saveDraftAction:       (prev: ActionState, formData: FormData) => saveDraftActionImpl(config, prev, formData),
-    submitRequestAction:   (prev: ActionState, formData: FormData) => submitRequestActionImpl(config, prev, formData),
     uploadQuotationAction: (prev: ActionState, formData: FormData) => uploadQuotationActionImpl(config, prev, formData),
     deleteQuotationAction: (prev: ActionState, formData: FormData) => deleteQuotationActionImpl(config, prev, formData),
     selectQuotationAction: (prev: ActionState, formData: FormData) => selectQuotationActionImpl(config, prev, formData),
-    cancelRequestAction:   (prev: ActionState, formData: FormData) => cancelRequestActionImpl(config, prev, formData),
   }
 }
 

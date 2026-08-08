@@ -11,27 +11,23 @@ import { SubmitButton } from "@/components/admin/submit-button"
 import { TableRow, TableCell, TableCellNum } from "@/components/ui/table"
 import { INITIAL_STATE } from "@/components/admin/form-state"
 import { formatCLP, formatDate, pluralize } from "@/lib/utils"
-import { issueOrderAction, sendOrderAction } from "./actions/order-status"
+import { issueAndSendOrderAction } from "./actions/order-status"
 import { deleteOrderAction } from "./actions/order-cancel"
-import { resumeItemAction } from "./actions/item-state"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { DELETABLE_ORDER_STATUSES } from "@/lib/services/purchasing.constants"
 import { INVOICE_DUE_ORDER_STATUSES } from "@/lib/work-queue-labels"
 import type { ActionState } from "@/lib/validation/operations"
-import type { OcRow, PendingItem } from "./oc-list.types"
+import type { OcRow } from "./oc-list.types"
 
 /** La factura ya corresponde: llegó mercadería y la OC sigue abierta. */
 function invoiceDue(status: string) {
   return INVOICE_DUE_ORDER_STATUSES.includes(status)
 }
 
-export function OcTableRow({ row, canDelete = false }: { row: OcRow; canDelete?: boolean }) {
+export function OcTableRow({ row, canDelete = false, canSend = false }: { row: OcRow; canDelete?: boolean; canSend?: boolean }) {
   const router = useRouter()
   const [issueState, issueAction] = useActionState<ActionState, FormData>(
-    issueOrderAction, INITIAL_STATE,
-  )
-  const [sendState, sendAction] = useActionState<ActionState, FormData>(
-    sendOrderAction, INITIAL_STATE,
+    issueAndSendOrderAction, INITIAL_STATE,
   )
   const [deleteState, deleteAction] = useActionState<ActionState, FormData>(
     deleteOrderAction, INITIAL_STATE,
@@ -51,13 +47,6 @@ export function OcTableRow({ row, canDelete = false }: { row: OcRow; canDelete?:
       toast.error(issueState.message)
     }
   }, [issueState])
-
-  React.useEffect(() => {
-    if (sendState.ok && sendState.message) toast.success(sendState.message)
-    else if (sendState.ok === false && sendState.message && sendState !== INITIAL_STATE) {
-      toast.error(sendState.message)
-    }
-  }, [sendState])
 
   const href = `/compras/${row.id}`
 
@@ -96,22 +85,11 @@ export function OcTableRow({ row, canDelete = false }: { row: OcRow; canDelete?:
       <TableCell onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center gap-2">
           <StateBadge state={row.status} entity="oc" size="sm" />
-          {row.status === "draft" && (
+          {row.status === "draft" && canSend && (
             <form action={issueAction}>
               <input type="hidden" name="orderId" value={row.id} />
               <SubmitButton
-                label="Emitir"
-                loadingLabel="Emitiendo…"
-                variant="secondary"
-                size="sm"
-              />
-            </form>
-          )}
-          {row.status === "issued" && (
-            <form action={sendAction}>
-              <input type="hidden" name="orderId" value={row.id} />
-              <SubmitButton
-                label="Marcar enviada"
+                label="Emitir y enviar"
                 loadingLabel="Enviando…"
                 variant="secondary"
                 size="sm"
@@ -178,50 +156,11 @@ export function OcTableRow({ row, canDelete = false }: { row: OcRow; canDelete?:
   )
 }
 
-export function PostponedItemRow({ item }: { item: PendingItem }) {
-  const [resumeState, resumeAction] = useActionState<ActionState, FormData>(
-    resumeItemAction, INITIAL_STATE,
-  )
-
-  React.useEffect(() => {
-    if (resumeState.ok && resumeState.message) toast.success(resumeState.message)
-    else if (resumeState.ok === false && resumeState.message && resumeState !== INITIAL_STATE) {
-      toast.error(resumeState.message)
-    }
-  }, [resumeState])
-
-  return (
-    <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 border-t border-[var(--color-border)] py-3 first:border-t-0 first:pt-0 last:pb-0">
-      <div className="min-w-0">
-        <div className="flex flex-wrap items-center gap-2">
-          <Link href={`/solicitudes/${item.requestId}`} className="font-mono text-xs text-[var(--color-primary)] hover:underline">
-            {item.requestCode}
-          </Link>
-          <span className="text-xs text-[var(--color-text-subtle)]">{item.worksiteName}</span>
-        </div>
-        <p title={item.productName} className="mt-1 truncate text-sm font-medium text-[var(--color-text)]">{item.productName}</p>
-        <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">
-          {item.quantity} {item.unitOfMeasure}{item.notes ? ` · ${item.notes}` : ""}
-        </p>
-      </div>
-      <form action={resumeAction} className="self-center">
-        <input type="hidden" name="itemId" value={item.id} />
-        <SubmitButton
-          label="Reanudar"
-          loadingLabel="Reanudando…"
-          variant="secondary"
-          size="sm"
-        />
-      </form>
-    </div>
-  )
-}
-
 /**
  * A-1: variante móvil de `OcTableRow`. En 390px la tabla mostraba 3 de sus 8
  * columnas, y ni el total ni el estado eran visibles — no se puede reconocer
  * una OC sin ellos (Heurística #6). La tarjeta prioriza código, proveedor,
- * estado y total; las acciones de emisión/envío se resuelven en el detalle.
+ * estado y total; la emisión y el envío se resuelven en el detalle.
  */
 export function OcMobileCard({ row }: { row: OcRow }) {
   return (

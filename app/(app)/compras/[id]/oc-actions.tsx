@@ -7,7 +7,7 @@ import { toast } from "@/lib/toast"
 import { Warning } from "@phosphor-icons/react"
 import { SubmitButton } from "@/components/admin/submit-button"
 import { INITIAL_STATE } from "@/components/admin/form-state"
-import { issueOrderAction, sendOrderAction } from "../actions/order-status"
+import { issueAndSendOrderAction } from "../actions/order-status"
 import { cancelOrderAction, closeOrderAction, deleteOrderAction } from "../actions/order-cancel"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -33,7 +33,7 @@ import type { ActionState } from "@/lib/validation/operations"
 function CloseWarnings({ warnings, invoiceHref }: { warnings: string[]; invoiceHref?: string }) {
   if (warnings.length === 0) return null
   return (
-    <div className="rounded bg-[var(--color-warning-50)] border border-[var(--color-warning-200)] p-2 text-xs text-[var(--color-warning-700)]">
+    <div className="rounded bg-[var(--color-warning-tint)] border border-[var(--color-warning-line)] p-2 text-xs text-[var(--color-warning-ink)]">
       <p className="font-medium mb-1 flex items-center gap-1">
         <Warning size={12} /> Advertencias de conciliación
       </p>
@@ -49,7 +49,7 @@ function CloseWarnings({ warnings, invoiceHref }: { warnings: string[]; invoiceH
   )
 }
 
-const CANCELLABLE_STATUSES = new Set(["draft", "issued", "sent"])
+const CANCELLABLE_STATUSES = new Set(["draft", "sent"])
 // La finalización manual está disponible desde que hay algo recibido: antes de
 // eso la salida es anular, no finalizar. Recepción 100% completa ya no pasa por
 // acá — se auto-finaliza en registerReceipt (lib/services/receiving.ts).
@@ -79,8 +79,7 @@ export function OcActions({
   const [showCloseForm,  setShowCloseForm]  = React.useState(false)
   const [deleteOpen, setDeleteOpen] = React.useState(false)
 
-  const [issueState,   issueAction]   = useActionState<ActionState, FormData>(issueOrderAction,   INITIAL_STATE)
-  const [sendState,    sendAction]    = useActionState<ActionState, FormData>(sendOrderAction,    INITIAL_STATE)
+  const [issueState,   issueAction]   = useActionState<ActionState, FormData>(issueAndSendOrderAction, INITIAL_STATE)
   const [cancelState,  cancelAction]  = useActionState<ActionState, FormData>(cancelOrderAction,  INITIAL_STATE)
   const [closeState,   closeAction]   = useActionState<ActionState, FormData>(closeOrderAction,   INITIAL_STATE)
   const [deleteState,  deleteAction]  = useActionState<ActionState, FormData>(deleteOrderAction,  INITIAL_STATE)
@@ -90,11 +89,6 @@ export function OcActions({
     if (issueState.ok && issueState.message) toast.success(issueState.message)
     else if (!issueState.ok && issueState.message && issueState !== INITIAL_STATE) toast.error(issueState.message)
   }, [issueState])
-
-  React.useEffect(() => {
-    if (sendState.ok && sendState.message) toast.success(sendState.message)
-    else if (!sendState.ok && sendState.message && sendState !== INITIAL_STATE) toast.error(sendState.message)
-  }, [sendState])
 
   React.useEffect(() => {
     if (cancelState.ok && cancelState.message) {
@@ -244,18 +238,14 @@ export function OcActions({
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center justify-end gap-2 flex-wrap">
-        {/* ── Acción primaria ──────────────────────────────────────────────── */}
-        {status === "draft" && canManage && (
+        {/* ── Acción primaria ──────────────────────────────────────────────────
+            Emitir y enviar es un solo acto: el borrador existe para revisar e
+            imprimir, y al confirmarlo la OC queda enviada al proveedor y pasa a
+            recepción. */}
+        {status === "draft" && canSend && (
           <form action={issueAction} className="w-full">
             <input type="hidden" name="orderId" value={orderId} />
-            <SubmitButton label="Emitir orden" loadingLabel="Emitiendo..." variant="primary" className="w-full" />
-          </form>
-        )}
-
-        {status === "issued" && canSend && (
-          <form action={sendAction} className="w-full">
-            <input type="hidden" name="orderId" value={orderId} />
-            <SubmitButton label="Marcar como enviada" loadingLabel="Guardando..." variant="primary" className="w-full" />
+            <SubmitButton label="Emitir y enviar" loadingLabel="Enviando..." variant="primary" className="w-full" />
           </form>
         )}
 
@@ -323,11 +313,6 @@ export function OcActions({
       {!issueState.ok && issueState.message && issueState !== INITIAL_STATE && (
         <p className="text-sm text-danger flex items-center gap-1.5 justify-end">
           <Warning size={14} /> {issueState.message}
-        </p>
-      )}
-      {!sendState.ok && sendState.message && sendState !== INITIAL_STATE && (
-        <p className="text-sm text-danger flex items-center gap-1.5 justify-end">
-          <Warning size={14} /> {sendState.message}
         </p>
       )}
     </div>

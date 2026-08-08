@@ -11,7 +11,7 @@ import { recordAudit } from "@/lib/audit"
 /* ── Purchase Order Invoices ─────────────────────────────────────────────────── */
 
 const INVOICE_ALLOWED_STATUSES = new Set([
-  "issued", "sent",
+  "sent",
   "partially_office_received", "office_received",
   "partially_received", "received", "closed",
 ])

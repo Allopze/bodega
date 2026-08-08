@@ -1,5 +1,5 @@
-import { eq } from "drizzle-orm"
-import { db, type Tx } from "@/db"
+import { and, eq } from "drizzle-orm"
+import { type Tx } from "@/db"
 import { purchaseRequestItems } from "@/db/schema"
 import { recordAudit, recordStatusChange } from "@/lib/audit"
 import { canTransition, getDeliveryTargetStatus, type ItemStatus } from "./types"
@@ -10,25 +10,21 @@ import { rollupRequestStatus } from "./rollup"
  * Called from lib/services/receiving.ts after creating a receipt item.
  * fullReceived = true → "received", false → "partially_received"
  */
-export async function receiveItem(
-  itemId: string,
-  userId: string,
-  opts?: { fullReceived?: boolean; userEmail?: string },
-): Promise<void> {
-  await db.transaction(async (tx) => {
-    await receiveItemTx(tx, itemId, userId, opts)
-  })
-}
-
 export async function receiveItemTx(
   tx: Tx,
   itemId: string,
   userId: string,
   opts?: { fullReceived?: boolean; userEmail?: string },
 ): Promise<void> {
-    const item = await tx.query.purchaseRequestItems.findFirst({
-      where: eq(purchaseRequestItems.id, itemId),
-    })
+    // LOG-6/DAT-1: el caller de registerReceipt lockea la línea de OC, una fila
+    // distinta — sin lock propio aquí, una recepción y una entrega concurrentes
+    // sobre el MISMO ítem pueden intercalarse y regredir 'partially_delivered'
+    // a 'received' con una lectura obsoleta.
+    const [item] = await tx
+      .select()
+      .from(purchaseRequestItems)
+      .where(eq(purchaseRequestItems.id, itemId))
+      .for("update")
     if (!item) throw new Error(`Item ${itemId} not found`)
 
     const allowedFrom: ItemStatus[] = ["purchased", "partially_received", "partially_delivered"]
@@ -51,10 +47,12 @@ export async function receiveItemTx(
     }
 
     const now = new Date().toISOString()
-    await tx
+    const [updated] = await tx
       .update(purchaseRequestItems)
       .set({ status: targetStatus, updatedAt: now })
-      .where(eq(purchaseRequestItems.id, itemId))
+      .where(and(eq(purchaseRequestItems.id, itemId), eq(purchaseRequestItems.status, item.status)))
+      .returning({ id: purchaseRequestItems.id })
+    if (!updated) throw new Error("El ítem ya no está disponible: posible concurrencia")
 
     if (statusChanged) {
       await recordStatusChange({
@@ -75,23 +73,13 @@ export async function receiveItemTx(
       newState:   { status: targetStatus },
     }, tx)
 
-    await rollupRequestStatus(item.requestId, tx)
+    await rollupRequestStatus(item.requestId, tx, userId)
 }
 
 /**
  * Mark an item as delivered to faena (from warehouse dispatch).
  * Transitions received → delivered.
  */
-export async function deliverItem(
-  itemId: string,
-  userId: string,
-  opts?: { userEmail?: string; deliveredQuantity?: number; totalDelivered?: number },
-): Promise<void> {
-  await db.transaction(async (tx) => {
-    await deliverItemTx(tx, itemId, userId, opts)
-  })
-}
-
 export async function deliverItemTx(
   tx: Tx,
   itemId: string,
@@ -139,5 +127,5 @@ export async function deliverItemTx(
       },
     }, tx)
 
-    await rollupRequestStatus(item.requestId, tx)
+    await rollupRequestStatus(item.requestId, tx, userId)
 }

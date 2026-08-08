@@ -10,12 +10,25 @@ import { HeaderSignals, type HeaderSignal } from "@/components/ui/header-signals
 import { ServerPagination } from "@/components/ui/server-pagination"
 import { buildPaginationHref, resolvePagination } from "@/lib/pagination"
 import { parseListParams, periodSql, statusSql, worksiteEqSql } from "@/lib/adquisiciones/list-query"
+import type { StageTab } from "@/components/adquisiciones/stage-tabs"
 import { RequestList } from "./request-list"
 import { SolicitudesActions } from "./solicitudes-actions"
 
 export const metadata: Metadata = { title: "Solicitudes de compra" }
 
 import { SOLICITUDES_PAGE_SIZE } from "@/lib/constants"
+
+/**
+ * Etapas visibles de una solicitud (A5: el estado se representa una sola vez).
+ * "Borrador" sólo lo alcanzan repuestos y servicios, que adjuntan cotizaciones
+ * antes de enviar; EPP y otros nacen en aprobación.
+ */
+const STAGE_GROUPS = [
+  { value: "draft",                                          label: "Borrador" },
+  { value: "submitted,in_review",                            label: "En aprobación" },
+  { value: "approved,partially_approved,in_purchasing",      label: "En curso" },
+  { value: "closed,rejected,cancelled",                      label: "Cerradas" },
+] as const
 
 export default async function SolicitudesPage({
   searchParams,
@@ -72,21 +85,21 @@ export default async function SolicitudesPage({
       )
     : undefined
 
-  const where = and(
+  // El estado se aplica aparte para poder contar las tabs sobre el mismo
+  // recorte sin él: cada tab anuncia lo que entregaría al pulsarla.
+  const scopeWhere = and(
     filterConditions,
     textCondition,
-    statusSql(purchaseRequests.status, listParams.estados),
     worksiteEqSql(purchaseRequests.worksiteId, listParams.faena),
     periodSql(purchaseRequests.createdAt, listParams.desde, listParams.hasta),
   )
+  const where = and(scopeWhere, statusSql(purchaseRequests.status, listParams.estados))
 
-  // Count total matching requests and overall summary metrics.
-  // Only draft + critical are tracked: they are the actionable signals
-  // (finish/submit a draft; pay attention to critical urgency). Other states
-  // (submitted, approved, total) are visible in the table itself and in the
-  // pagination, so they don't need a TopBar chip — that would just duplicate
-  // the estado filter (screen-density rule A5).
-  const [totalRow, metricsRow] = await Promise.all([
+  // La urgencia crítica es la única señal del header: el estado ya se representa
+  // una sola vez, en las tabs de etapa (regla A5). El chip "Borradores"
+  // desapareció con ellos — EPP/otro nacen enviadas y sólo los tipos con
+  // cotización conservan borrador, visible en su propia tab.
+  const [totalRow, metricsRow, stageCountRows] = await Promise.all([
     db
       .select({ total: count() })
       .from(purchaseRequests)
@@ -95,16 +108,30 @@ export default async function SolicitudesPage({
 
     db
       .select({
-        draft: count(sql`CASE WHEN ${purchaseRequests.status} = 'draft' THEN 1 END`),
         critical: count(sql`CASE WHEN ${purchaseRequests.urgency} = 'critical' THEN 1 END`),
       })
       .from(purchaseRequests)
       .where(filterConditions)
       .then((res) => res[0]),
+
+    db
+      .select({ status: purchaseRequests.status, total: count() })
+      .from(purchaseRequests)
+      .where(scopeWhere)
+      .groupBy(purchaseRequests.status),
   ])
 
+  const countByStatus = Object.fromEntries(stageCountRows.map((row) => [row.status, row.total]))
+  const stageTabs: StageTab[] = [
+    { value: "", label: "Todas", count: stageCountRows.reduce((sum, row) => sum + row.total, 0) },
+    ...STAGE_GROUPS.map((group) => ({
+      value: group.value,
+      label: group.label,
+      count: group.value.split(",").reduce((sum, status) => sum + (countByStatus[status] ?? 0), 0),
+    })),
+  ]
+
   const headerSignals: HeaderSignal[] = [
-    { key: "draft",    label: "Borradores",      value: metricsRow?.draft ?? 0,    href: "/solicitudes?estado=draft" },
     { key: "critical", label: "Urgencia crítica", value: metricsRow?.critical ?? 0, href: "/solicitudes?urgencia=critical", tone: "signal" },
   ]
 
@@ -172,7 +199,7 @@ export default async function SolicitudesPage({
           headerActions={<HeaderSignals signals={headerSignals} />}
           actions={<SolicitudesActions canCreate={can(session, "requests:create")} hasWorksites={hasWorksites} exportHref={exportHref} />}
         />
-        <RequestList requests={[]} currentUserId={session.user.id} canDeleteAny={can(session, "requests:delete")} worksiteOptions={worksiteOptions} />
+        <RequestList requests={[]} currentUserId={session.user.id} canDeleteAny={can(session, "requests:delete")} worksiteOptions={worksiteOptions} stageTabs={stageTabs} />
         <ServerPagination pagination={pagination} hrefForPage={pageHref} />
       </PageContainer>
     )
@@ -237,6 +264,7 @@ export default async function SolicitudesPage({
         currentUserId={session.user.id}
         canDeleteAny={canDeleteAny}
         worksiteOptions={worksiteOptions}
+        stageTabs={stageTabs}
       />
       <ServerPagination pagination={pagination} hrefForPage={pageHref} />
     </PageContainer>

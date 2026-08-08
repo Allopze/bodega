@@ -3,7 +3,7 @@
 import * as React from "react"
 import { useActionState } from "react"
 import { toast } from "@/lib/toast"
-import { Warning } from "@phosphor-icons/react"
+import { CheckCircle, Warning } from "@phosphor-icons/react"
 import { SubmitButton } from "@/components/admin/submit-button"
 import { Field } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
@@ -142,9 +142,13 @@ export function ReceiptForm({
                 type="button"
                 onClick={() => setStage("office")}
                 disabled={!officeAvailable}
+                aria-pressed={stage === "office"}
                 className={`rounded-[var(--radius)] border px-3 py-2 text-left transition-colors disabled:opacity-50 ${stage === "office" ? "border-[var(--color-primary-line)] bg-[var(--color-primary-tint)]" : "border-[var(--color-border)] bg-[var(--color-surface-2)]"}`}
               >
-                <p className="text-sm font-medium text-[var(--color-text)]">Recepción en oficina</p>
+                <p className="flex items-center gap-1.5 text-sm font-medium text-[var(--color-text)]">
+                  {stage === "office" && <CheckCircle size={14} weight="fill" className="shrink-0 text-[var(--color-primary)]" />}
+                  Recepción en oficina
+                </p>
                 <p className="mt-0.5 text-xs text-[var(--color-text-subtle)]">
                   Proveedor entrega en oficina Chome. No suma stock ni cierra ítems.
                 </p>
@@ -160,9 +164,13 @@ export function ReceiptForm({
                 type="button"
                 onClick={() => setStage("faena")}
                 disabled={!faenaAvailable}
+                aria-pressed={stage === "faena"}
                 className={`rounded-[var(--radius)] border px-3 py-2 text-left transition-colors disabled:cursor-not-allowed ${stage === "faena" ? "border-[var(--color-primary-line)] bg-[var(--color-primary-tint)]" : "border-[var(--color-border)] bg-[var(--color-surface-2)]"}`}
               >
-                <p className={`text-sm font-medium ${faenaAvailable ? "text-[var(--color-text)]" : "text-[var(--color-text-muted)]"}`}>Recepción en faena</p>
+                <p className={`flex items-center gap-1.5 text-sm font-medium ${faenaAvailable ? "text-[var(--color-text)]" : "text-[var(--color-text-muted)]"}`}>
+                  {stage === "faena" && <CheckCircle size={14} weight="fill" className="shrink-0 text-[var(--color-primary)]" />}
+                  Recepción en faena
+                </p>
                 <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">
                   {faenaAvailable
                     ? `Oficina distribuye a ${orderWorksiteName}. Actualiza stock y trazabilidad.`

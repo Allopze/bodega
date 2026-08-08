@@ -21,7 +21,7 @@ import { URGENCY_OPTS } from "./request-form.constants"
 import { formatDate, formatDateTime } from "@/lib/utils"
 import { QUOTATION_TYPES } from "@/lib/request-types"
 import type { RequestType } from "@/lib/request-types"
-import type { ItemRow, ProductOption, WorksiteOption, SupplierOption, WorkerOption, EditRequest } from "./request-form.types"
+import type { ItemRow, ProductOption, WorksiteOption, SupplierOption, WorkerOption, EditRequest, PrefillItem } from "./request-form.types"
 import { useRequestForm } from "./use-request-form"
 
 function SummaryLine({ label, value, muted = false }: { label: string; value: string; muted?: boolean }) {
@@ -46,6 +46,10 @@ interface RequestFormProps {
   userPermissions?: string[]
   initialRequestType?: RequestType
   initialRequestTypeNotice?: string
+  /** Ítems con los que se abre el creador (reposición de EPP o copia). */
+  prefillItems?: PrefillItem[]
+  /** Explica de dónde salieron los ítems precargados. */
+  prefillNotice?: string
 }
 
 function RequestFormHeader({
@@ -123,7 +127,6 @@ function ItemsSection({
   items, requestType, requestTypeLabel: _requestTypeLabel, readOnly, savedId, itemsError,
   products, suppliers, workers, maxFileSizeMb,
   onAdd, onRemove, onUpdate, onSelectProduct, onSelectFreeProduct, onClearProduct, onUpdateAttr, onUpdateWorker,
-  resubmitAction, resubmitPending,
 }: {
   items: ItemRow[]; requestType: string; requestTypeLabel?: string; readOnly: boolean; savedId?: string
   itemsError?: string; products: ProductOption[]; suppliers: SupplierOption[]; workers?: WorkerOption[]; maxFileSizeMb: number
@@ -131,7 +134,6 @@ function ItemsSection({
   onSelectProduct: (key: string, pid: string) => void; onSelectFreeProduct: (key: string, name: string) => void
   onClearProduct: (key: string) => void; onUpdateAttr: (itemKey: string, attrIdx: number, value: string) => void
   onUpdateWorker: (itemKey: string, workerId: string) => void
-  resubmitAction: (payload: FormData) => void; resubmitPending: boolean
 }) {
   return (
     <section className="space-y-3">
@@ -146,33 +148,21 @@ function ItemsSection({
       {QUOTATION_TYPES.has(requestType) && !savedId && (
         <p className="flex items-center gap-1.5 text-xs font-medium text-[var(--color-signal-ink)] rounded-[var(--radius)] border border-[var(--color-signal-line)] bg-[var(--color-signal-tint)] px-3 py-2.5">
           <Warning size={14} weight="fill" className="shrink-0" />
-          Guarda el borrador primero: la cotización se adjunta por ítem después de guardar.
+          Los archivos que adjuntes se suben al guardar el borrador.
         </p>
       )}
       <div className="space-y-2">
         {items.map((item, idx) => (
-          <div key={item._key}>
-            <ItemEditor item={item} idx={idx} products={products} suppliers={suppliers} workers={workers}
-              readOnly={readOnly} requestType={requestType} maxFileSizeMb={maxFileSizeMb}
-              onUpdate={(patch) => onUpdate(item._key, patch)}
-              onSelectProduct={(pid) => onSelectProduct(item._key, pid)}
-              onSelectFreeProduct={(name) => onSelectFreeProduct(item._key, name)}
-              onClearProduct={() => onClearProduct(item._key)}
-              onUpdateAttr={(i, v) => onUpdateAttr(item._key, i, v)}
-              onUpdateWorker={(workerId) => onUpdateWorker(item._key, workerId)}
-              onRemove={() => onRemove(item._key)} canRemove={items.length > 1}
-            />
-            {readOnly && item.status === "returned" && item.id && (
-              <div className="mt-1 flex justify-end">
-                <form action={resubmitAction}>
-                  <input type="hidden" name="itemId" value={item.id} />
-                  <button type="submit" disabled={resubmitPending} className="text-xs font-medium text-(--color-primary) hover:underline disabled:opacity-40 px-2 py-1">
-                    {resubmitPending ? "Re-enviando..." : "Re-enviar a aprobación →"}
-                  </button>
-                </form>
-              </div>
-            )}
-          </div>
+          <ItemEditor key={item._key} item={item} idx={idx} products={products} suppliers={suppliers} workers={workers}
+            readOnly={readOnly} requestType={requestType} maxFileSizeMb={maxFileSizeMb}
+            onUpdate={(patch) => onUpdate(item._key, patch)}
+            onSelectProduct={(pid) => onSelectProduct(item._key, pid)}
+            onSelectFreeProduct={(name) => onSelectFreeProduct(item._key, name)}
+            onClearProduct={() => onClearProduct(item._key)}
+            onUpdateAttr={(i, v) => onUpdateAttr(item._key, i, v)}
+            onUpdateWorker={(workerId) => onUpdateWorker(item._key, workerId)}
+            onRemove={() => onRemove(item._key)} canRemove={items.length > 1}
+          />
         ))}
       </div>
     </section>
@@ -180,10 +170,10 @@ function ItemsSection({
 }
 
 function SummarySidebar({
-  isDraft, readOnly: _readOnly, worksiteLabel, requestTypeLabel, urgencyLabel, requiredDate,
+  isDraft, readOnly: _readOnly, isQuotation, worksiteLabel, requestTypeLabel, urgencyLabel, requiredDate,
   statusLabel, items, missingItems,
 }: {
-  isDraft: boolean; readOnly?: boolean; worksiteLabel: string; requestTypeLabel: string
+  isDraft: boolean; readOnly?: boolean; isQuotation: boolean; worksiteLabel: string; requestTypeLabel: string
   urgencyLabel: string; requiredDate: string; statusLabel: string; items: ItemRow[]
   missingItems: string[]
 }) {
@@ -192,7 +182,11 @@ function SummarySidebar({
       <div className="flex items-start justify-between gap-3">
         <div>
           <h2 className="text-sm font-semibold text-[var(--color-text)]">Resumen</h2>
-          <p className="mt-1 text-xs text-[var(--color-text-subtle)]">{isDraft ? "Revisa la solicitud antes de enviarla." : "Consulta el estado y los datos registrados."}</p>
+          <p className="mt-1 text-xs text-[var(--color-text-subtle)]">
+            {!isDraft ? "Consulta el estado y los datos registrados."
+              : isQuotation ? "Guarda el borrador, adjunta cotizaciones y envía a revisión."
+              : "Al crearla, la solicitud entra directo a aprobación."}
+          </p>
         </div>
         <span className="rounded-[var(--radius-sm)] bg-[var(--color-surface-2)] px-2 py-1 text-xs font-medium text-[var(--color-text-muted)]">
           {items.length} {items.length === 1 ? "ítem" : "ítems"}
@@ -207,12 +201,15 @@ function SummarySidebar({
       </dl>
       <div className="mt-4 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3">
         <p className="text-xs font-medium text-[var(--color-text)]">
-          {isDraft ? (missingItems.length === 0 ? "Listo para enviar" : "Pendientes") : statusLabel}
+          {isDraft ? (missingItems.length === 0 ? (isQuotation ? "Listo para enviar" : "Listo para crear") : "Pendientes") : statusLabel}
         </p>
         {!isDraft ? (
           <p className="mt-1 text-xs text-[var(--color-text-subtle)]">Esta solicitud ya fue enviada y se muestra en modo consulta.</p>
         ) : missingItems.length === 0 ? (
-          <p className="mt-1 text-xs text-[var(--color-text-subtle)]">Los campos requeridos y los ítems tienen la información mínima.</p>
+          <p className="mt-1 text-xs text-[var(--color-text-subtle)]">
+            Los campos requeridos y los ítems tienen la información mínima.
+            {!isQuotation && " Quien aprueba podrá ajustar cantidades o rechazar ítems sueltos."}
+          </p>
         ) : (
           <ul className="mt-2 space-y-1 text-xs text-[var(--color-text-muted)]">
             {missingItems.map((issue) => (
@@ -238,6 +235,8 @@ export function RequestForm({
   userPermissions = [],
   initialRequestType,
   initialRequestTypeNotice,
+  prefillItems,
+  prefillNotice,
 }: RequestFormProps) {
   const form = useRequestForm({
     worksites,
@@ -248,16 +247,34 @@ export function RequestForm({
     maxFileSizeMb,
     userPermissions,
     initialRequestType,
+    prefillItems,
   })
   const [leaveConfirmOpen, setLeaveConfirmOpen] = useState(false)
 
   return (
     <div className="grid gap-6 pb-16 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start">
       <div className="min-w-0 space-y-8">
-        <form onSubmit={(e) => { e.preventDefault(); form.startSaveTransition(() => form.draftAction(form.buildDraftFormData())) }} className="space-y-6">
+        <form
+          onSubmit={(e) => {
+            e.preventDefault()
+            if (form.isQuotation) {
+              form.startSaveTransition(() => form.draftAction(form.buildDraftFormData()))
+              return
+            }
+            // EPP/otro: un solo acto. La solicitud nace enviada a aprobación.
+            form.startSubmitTransition(() => form.submitAction(form.buildDraftFormData()))
+          }}
+          className="space-y-6"
+        >
           {initialRequestTypeNotice && !form.readOnly && (
             <div role="alert" className="rounded-[var(--radius)] border border-[var(--color-warning-line)] bg-[var(--color-warning-tint)] px-4 py-3 text-sm text-[var(--color-warning-ink)]">
               {initialRequestTypeNotice}
+            </div>
+          )}
+          {prefillNotice && !form.readOnly && (
+            <div className="flex items-start gap-2.5 rounded-[var(--radius)] border border-[var(--color-info-line)] bg-[var(--color-info-tint)] px-4 py-3">
+              <Info size={14} weight="fill" className="mt-0.5 shrink-0 text-[var(--color-info-ink)]" />
+              <p className="text-xs text-[var(--color-info-ink)]">{prefillNotice}</p>
             </div>
           )}
           <RequestFormHeader
@@ -286,30 +303,44 @@ export function RequestForm({
             onSelectProduct={form.selectProduct} onSelectFreeProduct={form.selectFreeProduct}
             onClearProduct={form.clearProduct} onUpdateAttr={form.updateAttr}
             onUpdateWorker={form.updateItemWorker}
-            resubmitAction={form.resubmitAction} resubmitPending={form.resubmitPending}
           />
           {form.isDraft && (
-            <div className="flex items-center justify-between pt-2 border-t border-[var(--color-border)]">
+            <div className="flex items-center justify-between gap-3 pt-2 border-t border-[var(--color-border)]">
               <Button type="button" variant="ghost" size="sm" onClick={() => {
                 if (form.dirty) setLeaveConfirmOpen(true)
                 else form.silentNavBack()
               }}>
                 <ArrowLeft size={14} /> Volver
               </Button>
-              <div className="flex items-center gap-3">
-                <span aria-live="polite" className="text-[11px] text-[var(--color-text-subtle)]">
-                  {(form.isSaving || form.isSubmitting || form.draftPending) ? "Guardando..."
-                    : form.dirty ? "Cambios sin guardar"
-                    : form.lastSavedAt ? `Guardado ${formatDateTime(form.lastSavedAt).slice(11, 16)}`
-                    : null}
-                </span>
-                <SubmitButton label="Guardar borrador" loadingLabel="Guardando..." variant="secondary" size="sm" />
-              </div>
+              {form.isQuotation ? (
+                <div className="flex items-center gap-3">
+                  <span aria-live="polite" className="text-[11px] text-[var(--color-text-subtle)]">
+                    {(form.isSaving || form.isSubmitting || form.draftPending) ? "Guardando..."
+                      : form.dirty ? "Cambios sin guardar"
+                      : form.lastSavedAt ? `Guardado ${formatDateTime(form.lastSavedAt).slice(11, 16)}`
+                      : null}
+                  </span>
+                  <SubmitButton
+                    label="Guardar borrador" loadingLabel="Guardando..." variant="secondary" size="sm"
+                    loading={form.isSaving || form.draftPending} disabled={form.isSaving || form.draftPending}
+                  />
+                </div>
+              ) : (
+                <div className="flex flex-col items-end gap-2">
+                  {form.submitMessage && !form.submitOk && (
+                    <p className="text-xs text-[var(--color-danger)] flex items-center gap-1.5"><Warning size={14} />{form.submitMessage}</p>
+                  )}
+                  <SubmitButton
+                    label="Crear y enviar a aprobación" loadingLabel="Enviando..." variant="primary"
+                    loading={form.isSubmitting} disabled={form.isSubmitting}
+                  />
+                </div>
+              )}
             </div>
           )}
         </form>
 
-        {form.isDraft && (
+        {form.isDraft && form.isQuotation && (
           <form onSubmit={(e) => {
             e.preventDefault()
             const fd = form.buildDraftFormData()
@@ -327,7 +358,7 @@ export function RequestForm({
               <p className="mb-3 text-xs text-[var(--color-danger)] flex items-center gap-1.5"><Warning size={14} />{form.submitMessage}</p>
             )}
             <div className="flex items-center justify-end gap-3">
-              {(form.isEdit as boolean) && (
+              {form.isEdit && (
                 <Dialog>
                   <DialogTrigger asChild>
                     <Button type="button" variant="ghost" size="sm" className="text-[var(--color-danger)] hover:text-[var(--color-danger)]">Cancelar solicitud</Button>
@@ -347,7 +378,10 @@ export function RequestForm({
                   </DialogContent>
                 </Dialog>
               )}
-              <SubmitButton label="Enviar a aprobación" loadingLabel="Enviando..." variant="primary" />
+              <SubmitButton
+                label="Enviar a aprobación" loadingLabel="Enviando..." variant="primary"
+                loading={form.isSubmitting} disabled={form.isSubmitting}
+              />
             </div>
           </form>
         )}
@@ -388,7 +422,9 @@ export function RequestForm({
             open={leaveConfirmOpen}
             onOpenChange={setLeaveConfirmOpen}
             title="¿Salir sin guardar?"
-            description="Tienes cambios sin guardar. Si sales ahora, se perderán. Guarda el borrador antes de salir si quieres conservarlos."
+            description={form.isQuotation
+              ? "Tienes cambios sin guardar. Si sales ahora, se perderán. Guarda el borrador antes de salir si quieres conservarlos."
+              : "Lo que escribiste se perderá: esta solicitud todavía no existe, se crea al enviarla a aprobación."}
             confirmLabel="Salir sin guardar"
             variant="warning"
             onConfirm={() => {
@@ -415,7 +451,7 @@ export function RequestForm({
         )}
       </div>
       <SummarySidebar
-        isDraft={form.isDraft} readOnly={form.readOnly}
+        isDraft={form.isDraft} readOnly={form.readOnly} isQuotation={form.isQuotation}
         worksiteLabel={form.worksiteLabel} requestTypeLabel={form.requestTypeLabel}
         urgencyLabel={form.urgencyLabel} requiredDate={form.requiredDate}
         statusLabel={form.statusLabel} items={form.items} missingItems={form.missingItems}

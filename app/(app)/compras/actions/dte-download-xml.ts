@@ -42,6 +42,12 @@ export type DteXmlDownloadResult =
  * archivo ya guardado en storage/dte/).
  */
 export async function downloadDteDocumentXml(dteDocumentId: string): Promise<DteXmlDownloadResult> {
+  // SEC-2: sin scoping por faena — es seguro solo porque hoy TODOS los
+  // titulares de `purchasing:view` son roles globales (admin, jefa_chome,
+  // secretaria, jefe_mantencion), y los DTE son documentos tributarios del
+  // SII, org-wide por naturaleza. Si algún día se otorga `purchasing:view` a
+  // un rol de faena, esto pasa a filtrar montos/ítems de DTE de todas las
+  // faenas — hay que agregar scoping por faena antes de ese cambio de grants.
   await requirePermission("purchasing:view")
 
   const doc = await db.query.dteDocuments.findFirst({

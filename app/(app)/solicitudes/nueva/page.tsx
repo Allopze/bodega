@@ -1,10 +1,14 @@
 import type { Metadata } from "next"
 import { redirect } from "next/navigation"
 import { db } from "@/db"
-import { worksites, products, productAttributes, suppliers, productSuppliers, workers } from "@/db/schema"
+import { worksites, products, productAttributes, suppliers, productSuppliers, workers, purchaseRequests } from "@/db/schema"
 import { eq, asc, desc } from "drizzle-orm"
 import { requireAuth } from "@/lib/auth/can"
 import { canAccessWorksite } from "@/lib/auth/can"
+import { resolveWorksiteScope } from "@/lib/auth/scope"
+import { listReplenishmentSuggestions } from "@/lib/services/epp-replenishment"
+import { logger } from "@/lib/logger"
+import type { PrefillItem } from "../request-form.types"
 import { getPdfMaxSizeMb } from "@/lib/services/system-settings"
 import { resolveInitialRequestType, visibleRequestTypeOptions } from "@/lib/request-types"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
@@ -20,7 +24,7 @@ export const metadata: Metadata = { title: "Nueva solicitud de compra" }
 export default async function NuevaSolicitudPage({
   searchParams,
 }: {
-  searchParams: Promise<{ tipo?: string | string[] }>
+  searchParams: Promise<{ tipo?: string | string[]; reposicion?: string | string[]; desde?: string | string[] }>
 }) {
   let session
   try { session = await requireAuth() }
@@ -130,6 +134,13 @@ export default async function NuevaSolicitudPage({
       sizeHelmet: w.sizeHelmet,
     }))
 
+  // ── Ítems precargados: reposición de EPP o copia de otra solicitud ──────────
+  const { prefillItems, prefillNotice } = await buildPrefill({
+    session,
+    reposicion: firstParam(query.reposicion) === "1",
+    desdeId: firstParam(query.desde),
+  })
+
   if (worksiteOptions.length === 0) {
     return (
       <PageContainer width="workbench">
@@ -183,7 +194,80 @@ export default async function NuevaSolicitudPage({
         userPermissions={session.user.permissions}
         initialRequestType={initialType.requestType}
         initialRequestTypeNotice={initialTypeNotice}
+        prefillItems={prefillItems}
+        prefillNotice={prefillNotice}
       />
     </PageContainer>
   )
+}
+
+function firstParam(value: string | string[] | undefined): string {
+  return (Array.isArray(value) ? value[0] : value) ?? ""
+}
+
+/**
+ * Ítems con los que se abre el creador. Dos orígenes, ninguno crea nada por su
+ * cuenta: la solicitud sólo existe cuando la persona la envía a aprobación.
+ */
+async function buildPrefill({
+  session, reposicion, desdeId,
+}: {
+  session: Awaited<ReturnType<typeof requireAuth>>
+  reposicion: boolean
+  desdeId: string
+}): Promise<{ prefillItems?: PrefillItem[]; prefillNotice?: string }> {
+  if (desdeId) {
+    const source = await db.query.purchaseRequests.findFirst({
+      where: eq(purchaseRequests.id, desdeId),
+      with: { items: true },
+    })
+    // Sin acceso a la faena de origen no se copia nada: el creador se abre vacío.
+    if (!source || !canAccessWorksite(session, source.worksiteId)) return {}
+    const isOwner = source.requesterId === session.user.id
+    if (!isOwner && !session.user.permissions.includes("requests:view_all")) return {}
+
+    return {
+      prefillItems: source.items.map((item) => ({
+        productId:           item.productId,
+        productNameFree:     item.productNameFree ?? "",
+        quantity:            item.quantity,
+        unitOfMeasure:       item.unitOfMeasure,
+        urgency:             item.urgency ?? source.urgency,
+        notes:               item.notes ?? "",
+        suggestedSupplierId: item.suggestedSupplierId,
+        supplierHint:        item.supplierHint,
+      })),
+      prefillNotice: `Ítems copiados de ${source.code}. Revísalos antes de enviar: la copia se crea recién al enviarla.`,
+    }
+  }
+
+  if (!reposicion || !session.user.permissions.includes("prevention:epp:view")) return {}
+
+  try {
+    const suggestions = await listReplenishmentSuggestions({
+      userId:      session.user.id,
+      scope:       resolveWorksiteScope(session),
+      permissions: session.user.permissions,
+    })
+    if (suggestions.length === 0) {
+      return { prefillNotice: "No hay brechas de EPP pendientes de reposición en tus faenas." }
+    }
+    return {
+      prefillItems: suggestions.map((suggestion) => ({
+        productId:       suggestion.productId,
+        productNameFree: suggestion.productId ? "" : suggestion.productName,
+        quantity:        1,
+        unitOfMeasure:   suggestion.unitOfMeasure,
+        urgency:         suggestion.urgency,
+        notes:           suggestion.notes,
+        workerId:        suggestion.workerId,
+        workerName:      suggestion.workerName,
+        replenishmentGapKey: suggestion.gapKey,
+      })),
+      prefillNotice: `${suggestions.length} ${suggestions.length === 1 ? "brecha de EPP detectada" : "brechas de EPP detectadas"} por Prevención. Quita las que no correspondan antes de enviar.`,
+    }
+  } catch (e) {
+    logger.error("[NuevaSolicitudPage:reposicion]", e)
+    return {}
+  }
 }

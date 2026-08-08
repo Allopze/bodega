@@ -204,85 +204,94 @@ export async function getDocumentChain(session: Session, anchor: ChainAnchor): P
   const canSeeReceipts    = can(session, "receiving:view")
   const canSeeDeliveries  = can(session, "deliveries:view")
 
-  // ── Solicitudes de esas líneas ──────────────────────────────────────────────
-  const requestRows = canSeeRequests && itemIds.length > 0
-    ? await db
-        .select({
-          id:          purchaseRequests.id,
-          code:        purchaseRequests.code,
-          status:      purchaseRequests.status,
-          worksiteId:  purchaseRequests.worksiteId,
-          createdAt:   purchaseRequests.createdAt,
-          submittedAt: purchaseRequests.submittedAt,
-        })
-        .from(purchaseRequestItems)
-        .innerJoin(purchaseRequests, eq(purchaseRequests.id, purchaseRequestItems.requestId))
-        .where(and(
-          inArray(purchaseRequestItems.id, itemIds),
-          canSeeAllRequests ? undefined : eq(purchaseRequests.requesterId, session.user.id),
-        ))
-        .limit(MAX_ROWS)
-    : []
+  // ARQ-10: las 3 consultas de este primer nivel sólo dependen de `itemIds` —
+  // ninguna espera el resultado de otra, así que corren en paralelo en vez de
+  // en 3 round-trips secuenciales.
+  const [requestRows, orderIdRows, deliveryRows] = await Promise.all([
+    // ── Solicitudes de esas líneas ────────────────────────────────────────────
+    canSeeRequests && itemIds.length > 0
+      ? db
+          .select({
+            id:          purchaseRequests.id,
+            code:        purchaseRequests.code,
+            status:      purchaseRequests.status,
+            worksiteId:  purchaseRequests.worksiteId,
+            createdAt:   purchaseRequests.createdAt,
+            submittedAt: purchaseRequests.submittedAt,
+          })
+          .from(purchaseRequestItems)
+          .innerJoin(purchaseRequests, eq(purchaseRequests.id, purchaseRequestItems.requestId))
+          .where(and(
+            inArray(purchaseRequestItems.id, itemIds),
+            canSeeAllRequests ? undefined : eq(purchaseRequests.requesterId, session.user.id),
+          ))
+          .limit(MAX_ROWS)
+      : Promise.resolve([]),
 
-  // ── Órdenes de esas líneas, más la del ancla si venía de una ────────────────
-  const orderIdRows = itemIds.length > 0
-    ? await db
-        .select({ purchaseOrderId: purchaseOrderItems.purchaseOrderId })
-        .from(purchaseOrderItems)
-        .where(inArray(purchaseOrderItems.requestItemId, itemIds))
-        .limit(MAX_ROWS)
-    : []
+    // ── Órdenes de esas líneas, más la del ancla si venía de una ──────────────
+    itemIds.length > 0
+      ? db
+          .select({ purchaseOrderId: purchaseOrderItems.purchaseOrderId })
+          .from(purchaseOrderItems)
+          .where(inArray(purchaseOrderItems.requestItemId, itemIds))
+          .limit(MAX_ROWS)
+      : Promise.resolve([]),
+
+    // ── Entregas de esas líneas ────────────────────────────────────────────────
+    canSeeDeliveries && itemIds.length > 0
+      ? db
+          .select({
+            id:              deliveries.id,
+            code:            deliveries.code,
+            destinationType: deliveries.destinationType,
+            worksiteId:      deliveries.worksiteId,
+            deliveredAt:     deliveries.deliveredAt,
+          })
+          .from(deliveryItems)
+          .innerJoin(deliveries, eq(deliveries.id, deliveryItems.deliveryId))
+          .where(inArray(deliveryItems.requestItemId, itemIds))
+          .limit(MAX_ROWS)
+      : Promise.resolve([]),
+  ])
   const orderIds = unique([...seed.orderIds, ...orderIdRows.map((row) => row.purchaseOrderId)])
 
-  const orderRows = canSeeOrders && orderIds.length > 0
-    ? await db
-        .select({
-          id:         purchaseOrders.id,
-          code:       purchaseOrders.code,
-          status:     purchaseOrders.status,
-          worksiteId: purchaseOrders.worksiteId,
-          issuedAt:   purchaseOrders.issuedAt,
-          createdAt:  purchaseOrders.createdAt,
-        })
-        .from(purchaseOrders)
-        .where(inArray(purchaseOrders.id, orderIds))
-        .limit(MAX_ROWS)
-    : []
+  // Segundo nivel: ambas dependen de `orderIds` (recién resuelto arriba) pero
+  // no una de la otra, así que también van en paralelo entre sí.
+  const [orderRows, receiptRows] = await Promise.all([
+    canSeeOrders && orderIds.length > 0
+      ? db
+          .select({
+            id:         purchaseOrders.id,
+            code:       purchaseOrders.code,
+            status:     purchaseOrders.status,
+            worksiteId: purchaseOrders.worksiteId,
+            issuedAt:   purchaseOrders.issuedAt,
+            createdAt:  purchaseOrders.createdAt,
+          })
+          .from(purchaseOrders)
+          .where(inArray(purchaseOrders.id, orderIds))
+          .limit(MAX_ROWS)
+      : Promise.resolve([]),
 
-  // ── Recepciones de esas órdenes ─────────────────────────────────────────────
-  // Cuelgan de la OC y no de la línea, así que se traen todas las de la orden:
-  // la llegada de una OC es parte de la historia de cualquier ítem que la
-  // integre, aunque la orden mezcle ítems de varias solicitudes.
-  const receiptRows = canSeeReceipts && orderIds.length > 0
-    ? await db
-        .select({
-          id:              receipts.id,
-          code:            receipts.code,
-          locationType:    receipts.locationType,
-          worksiteId:      receipts.worksiteId,
-          receivedAt:      receipts.receivedAt,
-          purchaseOrderId: receipts.purchaseOrderId,
-        })
-        .from(receipts)
-        .where(inArray(receipts.purchaseOrderId, orderIds))
-        .limit(MAX_ROWS)
-    : []
-
-  // ── Entregas de esas líneas ─────────────────────────────────────────────────
-  const deliveryRows = canSeeDeliveries && itemIds.length > 0
-    ? await db
-        .select({
-          id:              deliveries.id,
-          code:            deliveries.code,
-          destinationType: deliveries.destinationType,
-          worksiteId:      deliveries.worksiteId,
-          deliveredAt:     deliveries.deliveredAt,
-        })
-        .from(deliveryItems)
-        .innerJoin(deliveries, eq(deliveries.id, deliveryItems.deliveryId))
-        .where(inArray(deliveryItems.requestItemId, itemIds))
-        .limit(MAX_ROWS)
-    : []
+    // Las recepciones cuelgan de la OC y no de la línea, así que se traen
+    // todas las de la orden: la llegada de una OC es parte de la historia de
+    // cualquier ítem que la integre, aunque la orden mezcle ítems de varias
+    // solicitudes.
+    canSeeReceipts && orderIds.length > 0
+      ? db
+          .select({
+            id:              receipts.id,
+            code:            receipts.code,
+            locationType:    receipts.locationType,
+            worksiteId:      receipts.worksiteId,
+            receivedAt:      receipts.receivedAt,
+            purchaseOrderId: receipts.purchaseOrderId,
+          })
+          .from(receipts)
+          .where(inArray(receipts.purchaseOrderId, orderIds))
+          .limit(MAX_ROWS)
+      : Promise.resolve([]),
+  ])
 
   // La faena de una recepción es opcional en el esquema; cuando falta manda la
   // de su orden, que es la que decide quién puede verla.

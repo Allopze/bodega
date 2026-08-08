@@ -6,8 +6,9 @@ import { useRouter, useSearchParams } from "next/navigation"
 import { Plus, Trash } from "@phosphor-icons/react"
 import { DataTable } from "@/components/admin/data-table"
 import { SOLICITUDES_PAGE_SIZE } from "@/lib/constants"
-import { StateBadge, REQUEST_STATE_META } from "@/components/states/state-badge"
+import { StateBadge } from "@/components/states/state-badge"
 import { ListFilters, type FilterOption } from "@/components/adquisiciones/list-filters"
+import { StageTabs, type StageTab } from "@/components/adquisiciones/stage-tabs"
 import { OnboardingHint } from "@/components/ui/onboarding-hint"
 import { TableRow, TableCell, TableCellNum } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
@@ -23,7 +24,7 @@ import { INITIAL_STATE } from "@/components/admin/form-state"
 import { REQUEST_TYPE_LABELS, REQUEST_TYPE_VARIANTS } from "@/lib/request-types"
 import type { ActionState } from "@/lib/validation/operations"
 
-export interface RequestRow {
+export type RequestRow = {
   id:            string
   code:          string
   requestType:   string
@@ -50,14 +51,8 @@ const COLUMNS = [
 ]
 
 
-/** Tipos con detalle en su propio vertical (no en /solicitudes/[id]) */
-const DETAIL_BASE: Record<string, string> = {
-  repuestos: "/repuestos",
-  servicios: "/servicios",
-}
-
 function detailHref(r: RequestRow): string {
-  return `${DETAIL_BASE[r.requestType] ?? "/solicitudes"}/${r.id}`
+  return `/solicitudes/${r.id}`
 }
 
 function DeleteRequestButton({ requestId, code }: { requestId: string; code: string }) {
@@ -104,20 +99,18 @@ function DeleteRequestButton({ requestId, code }: { requestId: string; code: str
   )
 }
 
-const STATUS_OPTIONS: FilterOption[] = Object.entries(REQUEST_STATE_META).map(
-  ([value, meta]) => ({ value, label: meta.label }),
-)
-
 export function RequestList({
   requests,
   currentUserId,
   canDeleteAny = false,
   worksiteOptions = [],
+  stageTabs = [],
 }: {
   requests: RequestRow[]
   currentUserId: string
   canDeleteAny?: boolean
   worksiteOptions?: FilterOption[]
+  stageTabs?: StageTab[]
 }) {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -133,11 +126,12 @@ export function RequestList({
       <OnboardingHint
         storageKey="hint_solicitudes_v1"
         title="Solicitudes de EPPs, Servicios, repuestos u otros"
-        body="Crea solicitudes de EPPs, Servicios, repuestos u otros para tus faenas. Agrega los ítems, guarda el borrador y envíala a revisión. Puedes seguir el estado de cada solicitud desde aquí."
+        body="Crea solicitudes de EPPs, Servicios, repuestos u otros para tus faenas. EPP y otros se envían a aprobación al crearlos; repuestos y servicios pasan antes por un borrador para adjuntar cotizaciones."
       />
+      {/* A5: el estado vive en las tabs, así que la barra no repite su select. */}
+      {stageTabs.length > 0 && <StageTabs tabs={stageTabs} ariaLabel="Etapa de la solicitud" />}
       <ListFilters
         searchPlaceholder="Buscar por código o producto..."
-        statusOptions={STATUS_OPTIONS}
         worksiteOptions={worksiteOptions}
       />
       <DataTable
@@ -147,7 +141,7 @@ export function RequestList({
         viewKey="sol"
         stickyFirstColumn
         columns={COLUMNS}
-        rows={requests as unknown as Record<string, unknown>[]}
+        rows={requests}
         searchKeys={["code", "worksiteName", "requesterName", "status", "requestType"]}
         disableInternalSearch
         pageSize={SOLICITUDES_PAGE_SIZE}
@@ -172,48 +166,72 @@ export function RequestList({
             </Button>
           )
         }
-        renderMobileCard={(row) => {
-          const r = row as unknown as RequestRow
+        renderMobileCard={(r) => {
+          const href = detailHref(r)
+          // UX-20: la tarjeta entera es clicable para navegar (igual que la
+          // fila desktop, role="link" + onClick en vez de envolver todo en
+          // <Link>) — un <Link> envolvente no puede convivir con el botón de
+          // eliminar sin caer en el mismo error de interactivo-anidado que ya
+          // se corrigió una vez en este repo.
+          const canDelete = canDeleteAny
+            ? (DELETABLE_REQUEST_STATUSES as readonly string[]).includes(r.status)
+            : (r.requesterId === currentUserId && isOwnerDeletable(r.status))
           return (
-            <Link href={detailHref(r)} className="block">
-              <article className="rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] p-4 transition-colors duration-[var(--duration-fast)] hover:bg-[var(--color-primary-tint)]">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="font-mono text-xs text-[var(--color-text-subtle)]">{r.code}</p>
-                    <div className="mt-1 flex flex-wrap gap-1">
-                      <Badge variant={REQUEST_TYPE_VARIANTS[r.requestType] ?? "default"} size="sm">
-                        {REQUEST_TYPE_LABELS[r.requestType] ?? r.requestType}
-                      </Badge>
-                      <PriorityBadge priority={r.urgency} size="sm" />
-                    </div>
+            <article
+              role="link"
+              tabIndex={0}
+              aria-label={`Ver solicitud ${r.code}`}
+              onClick={() => router.push(href)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault()
+                  router.push(href)
+                }
+              }}
+              className="cursor-pointer rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] p-4 transition-colors duration-[var(--duration-fast)] hover:bg-[var(--color-primary-tint)]"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="font-mono text-xs text-[var(--color-text-subtle)]">{r.code}</p>
+                  <div className="mt-1 flex flex-wrap gap-1">
+                    <Badge variant={REQUEST_TYPE_VARIANTS[r.requestType] ?? "default"} size="sm">
+                      {REQUEST_TYPE_LABELS[r.requestType] ?? r.requestType}
+                    </Badge>
+                    <PriorityBadge priority={r.urgency} size="sm" />
                   </div>
-                  <StateBadge state={r.status} entity="request" size="sm" />
                 </div>
+                <div className="flex items-center gap-2">
+                  <StateBadge state={r.status} entity="request" size="sm" />
+                  {canDelete && (
+                    <div onClick={(e) => e.stopPropagation()}>
+                      <DeleteRequestButton requestId={r.id} code={r.code} />
+                    </div>
+                  )}
+                </div>
+              </div>
 
-                <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs sm:grid-cols-4">
-                  <div>
-                    <dt className="text-[var(--color-text-subtle)]">Faena</dt>
-                    <dd className="text-[var(--color-text-muted)] truncate">{r.worksiteName}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-[var(--color-text-subtle)]">Solicita</dt>
-                    <dd className="text-[var(--color-text-muted)] truncate">{r.requesterName}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-[var(--color-text-subtle)]">Ítems</dt>
-                    <dd className="font-mono tabular-nums text-[var(--color-text)]">{r.itemCount}</dd>
-                  </div>
-                  <div className="text-right">
-                    <dt className="text-[var(--color-text-subtle)]">Fecha</dt>
-                    <dd className="text-[var(--color-text-muted)]">{formatDate(r.submittedAt ?? r.createdAt)}</dd>
-                  </div>
-                </dl>
-              </article>
-            </Link>
+              <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs sm:grid-cols-4">
+                <div>
+                  <dt className="text-[var(--color-text-subtle)]">Faena</dt>
+                  <dd className="text-[var(--color-text-muted)] truncate">{r.worksiteName}</dd>
+                </div>
+                <div>
+                  <dt className="text-[var(--color-text-subtle)]">Solicita</dt>
+                  <dd className="text-[var(--color-text-muted)] truncate">{r.requesterName}</dd>
+                </div>
+                <div>
+                  <dt className="text-[var(--color-text-subtle)]">Ítems</dt>
+                  <dd className="font-mono tabular-nums text-[var(--color-text)]">{r.itemCount}</dd>
+                </div>
+                <div className="text-right">
+                  <dt className="text-[var(--color-text-subtle)]">Fecha</dt>
+                  <dd className="text-[var(--color-text-muted)]">{formatDate(r.submittedAt ?? r.createdAt)}</dd>
+                </div>
+              </dl>
+            </article>
           )
         }}
-        renderRow={(row) => {
-          const r = row as unknown as RequestRow
+        renderRow={(r) => {
           const href = detailHref(r)
           // B-1: con permiso privilegiado se pueden eliminar todos los estados borrables;
           // el dueño sin permiso, solo los que no están en el pipeline de aprobación.

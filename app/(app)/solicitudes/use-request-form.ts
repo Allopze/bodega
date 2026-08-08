@@ -6,10 +6,10 @@ import { INITIAL_STATE } from "@/components/admin/form-state"
 import { useActionWatchers } from "@/lib/hooks/use-action-watchers"
 import { URGENCY_OPTS } from "./request-form.constants"
 import type { ActionState } from "@/lib/validation/operations"
-import type { ItemRow, ProductOption, WorksiteOption, SupplierOption, WorkerOption, EditRequest } from "./request-form.types"
+import type { ItemRow, ProductOption, WorksiteOption, SupplierOption, WorkerOption, EditRequest, PrefillItem } from "./request-form.types"
 import { QUOTATION_TYPES, visibleRequestTypeOptions } from "@/lib/request-types"
 import type { RequestType } from "@/lib/request-types"
-import { saveDraft, submitRequest, cancelRequest, deleteRequestAction, resubmitReturnedItemAction } from "./actions"
+import { saveDraft, submitRequest, cancelRequest, deleteRequestAction } from "./actions"
 import {
   blankItemForType, buildAttrsFromProduct, buildRequestSummaryIssues,
   equipmentFromAttributes, parseAttributeOptions, requestStatusLabel,
@@ -40,13 +40,13 @@ interface AutosaveSnapshot {
 }
 
 function useDraftPersistence({
-  isDraft, dirty, hasRealContent,
+  enabled, isDraft, dirty, hasRealContent,
   savedId, setSavedId, setDirty, setLastSavedAt,
   itemsJson, worksiteId, requestType, urgency, deliveryMode, requiredDate, notes,
   items, setItems,
   draftState, draftAction, draftPending,
 }: {
-  isDraft: boolean; dirty: boolean; hasRealContent: boolean
+  enabled: boolean; isDraft: boolean; dirty: boolean; hasRealContent: boolean
   savedId: string | undefined; setSavedId: React.Dispatch<React.SetStateAction<string | undefined>>
   setDirty: React.Dispatch<React.SetStateAction<boolean>>
   setLastSavedAt: React.Dispatch<React.SetStateAction<Date | null>>
@@ -88,8 +88,16 @@ function useDraftPersistence({
     fd.set("urgency", urgency); fd.set("deliveryMode", deliveryMode); fd.set("requiredDate", requiredDate); fd.set("notes", notes)
     if (QUOTATION_TYPES.has(requestType)) {
       for (const item of itemsDataRef.current) {
-        const cots = item.cotizaciones
-        if (cots?.length) { for (const cot of cots) fd.append(`cotizacion_${item._key}`, cot.file) }
+        for (const cot of item.cotizaciones ?? []) {
+          // Clave por el id propio de la cotización (no por _key del ítem):
+          // el backend adjunta cotizaciones a la SOLICITUD, no al ítem, así
+          // que lo único que hace falta es un id único por archivo para
+          // llevar su metadata (proveedor, monto) junto a él (LOG-9/UX-3).
+          fd.append(`cotizacion_${cot._id}`, cot.file)
+          fd.set(`cotizacion_meta_${cot._id}`, JSON.stringify({
+            totalAmount: cot.totalAmount, supplierId: cot.supplierId, supplierNameFree: cot.supplierNameFree,
+          }))
+        }
       }
     }
     return fd
@@ -113,8 +121,10 @@ function useDraftPersistence({
   useEffect(() => { snapshotRef.current = { savedId, itemsJson, worksiteId, requestType, urgency, deliveryMode, requiredDate, notes, canSave: Boolean(worksiteId && requiredDate && hasRealContent) } })
 
   // ── Autosave timer (60s) ──
+  // Sólo para los tipos con cotización, que sí tienen borrador: EPP/otro se
+  // crean y envían en un acto, así que no hay nada que autoguardar.
   useEffect(() => {
-    if (!isDraft || !dirty || draftPending) return
+    if (!enabled || !isDraft || !dirty || draftPending) return
     const timer = window.setTimeout(() => {
       const snap = snapshotRef.current
       if (!snap.canSave) return
@@ -122,20 +132,21 @@ function useDraftPersistence({
       startTransition(() => draftAction(buildDraftRef.current()))
     }, AUTOSAVE_INTERVAL_MS)
     return () => window.clearTimeout(timer)
-  }, [isDraft, dirty, draftPending, draftAction])
+  }, [enabled, isDraft, dirty, draftPending, draftAction])
 
   return { buildDraftFormData }
 }
 
 export function useRequestForm({
-  worksites, products, workers, editRequest, userPermissions = [], initialRequestType,
+  worksites, products, workers, editRequest, userPermissions = [], initialRequestType, prefillItems,
 }: {
   worksites: WorksiteOption[]; products: ProductOption[]; suppliers: SupplierOption[]; workers?: WorkerOption[]
-  editRequest?: EditRequest; maxFileSizeMb: number; userRoles?: string[]; userPermissions?: string[]; initialRequestType?: RequestType
+  editRequest?: EditRequest; maxFileSizeMb: number; userRoles?: string[]; userPermissions?: string[]
+  initialRequestType?: RequestType; prefillItems?: PrefillItem[]
 }) {
   const router = useRouter()
   const isEdit = !!editRequest
-  const isDraft = !isEdit || ["draft", "returned"].includes(editRequest.status)
+  const isDraft = !isEdit || editRequest.status === "draft"
   const requestTypeOpts = visibleRequestTypeOptions(userPermissions)
   const allowedInitialRequestType = initialRequestType && requestTypeOpts.some((option) => option.value === initialRequestType)
     ? initialRequestType
@@ -144,7 +155,7 @@ export function useRequestForm({
     && (DELETABLE_REQUEST_STATUSES as readonly string[]).includes(editRequest.status)
     && (userPermissions.includes("requests:delete") || userPermissions.includes("requests:view_own"))
   const canCancelRequest = isEdit
-    && ["draft", "returned", "submitted", "in_review", "partially_approved"].includes(editRequest.status)
+    && ["draft", "submitted", "in_review", "partially_approved"].includes(editRequest.status)
     && (userPermissions.includes("requests:create") || userPermissions.includes("requests:view_all"))
 
   const [draftState, draftAction, draftPending] = useActionState<ActionState & { requestId?: string }, FormData>(saveDraft, INITIAL_STATE)
@@ -155,7 +166,6 @@ export function useRequestForm({
   const [isDeleting, startDeleteTransition] = useTransition()
   const [isSaving, startSaveTransition] = useTransition()
   const [isSubmitting, startSubmitTransition] = useTransition()
-  const [resubmitState, resubmitAction, resubmitPending] = useActionState<ActionState, FormData>(resubmitReturnedItemAction, INITIAL_STATE)
 
   const [savedId, setSavedId] = useState(editRequest?.id)
   const [worksiteId, setWorksiteId] = useState(editRequest?.worksiteId ?? (worksites[0]?.id ?? ""))
@@ -191,14 +201,44 @@ export function useRequestForm({
         }
       })
     }
+    if (prefillItems && prefillItems.length > 0) {
+      return prefillItems.map((prefill) => {
+        const prod = prefill.productId ? products.find((p) => p.id === prefill.productId) : null
+        const attrs = prod ? buildAttrsFromProduct(prod) : []
+        return {
+          ...blankItemForType(crypto.randomUUID(), requestType),
+          productId:           prefill.productId,
+          productNameFree:     prefill.productNameFree,
+          productName:         prod?.name ?? prefill.productNameFree,
+          quantity:            String(prefill.quantity),
+          unitOfMeasure:       prefill.unitOfMeasure,
+          urgency:             prefill.urgency,
+          notes:               prefill.notes,
+          workerId:            prefill.workerId ?? "",
+          workerName:          prefill.workerName ?? "",
+          suggestedSupplierId: prefill.suggestedSupplierId ?? "",
+          supplierHint:        prefill.supplierHint ?? "",
+          isEpp:               prod?.isEpp ?? false,
+          attributes:          attrs,
+          showAttrs:           attrs.length > 0,
+          replenishmentGapKey: prefill.replenishmentGapKey,
+        }
+      })
+    }
     return [blankItemForType(crypto.randomUUID(), requestType)]
   })
 
   const [dirty, setDirty] = useState(false)
   const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null)
+  /**
+   * Los tipos con cotización conservan el borrador (hay que adjuntar PDFs antes
+   * de enviar). EPP/otro se crean y envían en un solo paso: sin borrador, sin
+   * autoguardado y con una sola acción primaria.
+   */
+  const isQuotation = QUOTATION_TYPES.has(requestType)
 
   // ── Action-state watchers (toast on error / success) ──
-  useActionWatchers({ submitState, cancelState, deleteState, resubmitState, router })
+  useActionWatchers({ submitState, cancelState, deleteState, router })
 
   const prevRequestTypeRef = useRef(requestType)
   useEffect(() => {
@@ -294,6 +334,7 @@ export function useRequestForm({
         equipmentName: item.equipmentName || null, patent: item.patent || null,
         brand: item.brand || null, model: item.model || null,
         attributes: item.attributes.map((a) => ({ attributeId: a.attributeId, attributeName: a.attributeName, value: a.value })),
+        replenishmentGapKey: item.replenishmentGapKey ?? null,
       }
       return [{
         ...base,
@@ -306,7 +347,7 @@ export function useRequestForm({
   const hasRealContent = items.some((item) => item.productId || item.productNameFree.trim() !== "")
 
   const { buildDraftFormData } = useDraftPersistence({
-    isDraft, dirty, hasRealContent,
+    enabled: isQuotation, isDraft, dirty, hasRealContent,
     savedId, setSavedId, setDirty, setLastSavedAt,
     itemsJson, worksiteId, requestType, urgency, deliveryMode, requiredDate, notes,
     items, setItems,
@@ -345,7 +386,7 @@ export function useRequestForm({
   const requestTypeLabel = requestTypeOpts.find((o) => o.value === requestType)?.label ?? requestType
   const urgencyLabel = URGENCY_OPTS.find((o) => o.value === urgency)?.label ?? urgency
   const worksiteLabel = worksites.find((w) => w.id === worksiteId)?.name ?? "Sin faena"
-  const missingItems = buildRequestSummaryIssues({ worksiteId, requiredDate, items })
+  const missingItems = buildRequestSummaryIssues({ worksiteId, requiredDate, items, requestType, notes })
   const statusLabel = editRequest ? requestStatusLabel(editRequest.status) : "Borrador"
   const submitMessage = submitState.message
   const submitOk = submitState.ok
@@ -353,13 +394,13 @@ export function useRequestForm({
   return {
     worksiteId, setWorksiteId, requestType, setRequestType, urgency, setUrgency, deliveryMode, setDeliveryMode,
     requiredDate, setRequiredDate, notes, setNotes, items, requestTypeOpts,
-    isEdit, isDraft, readOnly, savedId, dirty, lastSavedAt, hasRealContent,
+    isEdit, isDraft, isQuotation, readOnly, savedId, dirty, lastSavedAt, hasRealContent,
     requestTypeLabel, urgencyLabel, worksiteLabel, missingItems, statusLabel,
     itemsError, requiredDateError, submitMessage, submitOk,
     canDeleteRequest, canCancelRequest, deleteConfirmOpen, setDeleteConfirmOpen,
-    isSaving, isSubmitting, isDeleting, draftPending, resubmitPending,
+    isSaving, isSubmitting, isDeleting, draftPending,
     addItem, removeItem, updateItem, selectProduct, selectFreeProduct, clearProduct, updateItemWorker, updateAttr,
-    buildDraftFormData, draftAction, submitAction, cancelAction, deleteAction, resubmitAction,
+    buildDraftFormData, draftAction, submitAction, cancelAction, deleteAction,
     startSaveTransition, startSubmitTransition, startDeleteTransition, silentNavBack,
   }
 }

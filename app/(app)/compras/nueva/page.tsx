@@ -52,8 +52,11 @@ export default async function NuevaOcPage({
     .orderBy(asc(purchaseRequestItems.requestId))
     .limit(501)
 
+  // UX-7: "Nueva OC" con la cola vacía rebotaba a /compras en silencio — el
+  // botón parecía no haber hecho nada. El parámetro deja que la lista
+  // explique por qué.
   if (rawItems.length === 0) {
-    redirect("/compras")
+    redirect("/compras?sin_pendientes=1")
   }
 
   const requestIds = [...new Set(rawItems.map((i) => i.requestId))]

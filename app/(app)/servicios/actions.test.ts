@@ -1,12 +1,11 @@
 import { describe, expect, it, vi } from "vitest"
 
+// ARQ-1: el factory quedó acotado a las 3 acciones de cotización — guardar
+// borrador/enviar/cancelar viven en solicitudes/actions-module/, no aquí.
 const mockCreateRequestActions = vi.hoisted(() => vi.fn(() => ({
-  saveDraftAction: vi.fn(),
-  submitRequestAction: vi.fn(),
   uploadQuotationAction: vi.fn(),
   deleteQuotationAction: vi.fn(),
   selectQuotationAction: vi.fn(),
-  cancelRequestAction: vi.fn(),
 })))
 
 vi.mock("@/lib/requests/request-actions", () => ({
@@ -15,24 +14,21 @@ vi.mock("@/lib/requests/request-actions", () => ({
 }))
 
 vi.mock("@/lib/services/servicios", () => ({
-  persistServiceDraft: vi.fn(),
   addServiceQuotation: vi.fn(),
   deleteServiceQuotation: vi.fn(),
-  submitServiceRequest: vi.fn(),
   selectServiceQuotation: vi.fn(),
-  cancelServiceRequest: vi.fn(),
 }))
 
 describe("servicios Server Actions wrapper", () => {
   it("configures permissions and route prefix for direct Server Action reachability", async () => {
     const actions = await import("./actions")
 
-    expect(actions.saveDraftAction).toBeTypeOf("function")
+    expect(actions.uploadQuotationAction).toBeTypeOf("function")
+    expect(actions.deleteQuotationAction).toBeTypeOf("function")
+    expect(actions.selectQuotationAction).toBeTypeOf("function")
     expect(mockCreateRequestActions).toHaveBeenCalledWith(expect.objectContaining({
-      moduleName: "servicios",
       routePrefix: "/solicitudes",
       permissions: {
-        create: "servicios:create",
         submit: "servicios:submit",
         approve: "servicios:approve",
       },

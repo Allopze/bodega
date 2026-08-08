@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import { DataTable } from "@/components/admin/data-table"
 import { RECEPCION_PAGE_SIZE } from "@/lib/constants"
 import { ListFilters, type FilterOption } from "@/components/adquisiciones/list-filters"
+import { StageTabs, type StageTab } from "@/components/adquisiciones/stage-tabs"
 import { OnboardingHint } from "@/components/ui/onboarding-hint"
 import { TableRow, TableCell } from "@/components/ui/table"
 import { StateBadge } from "@/components/states/state-badge"
@@ -13,7 +14,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { formatDate } from "@/lib/utils"
 
-interface OrderRow {
+type OrderRow = {
   id:          string
   code:        string
   worksiteId:  string
@@ -31,6 +32,7 @@ interface RecepcionTableProps {
   canRegister:      boolean
   worksiteOptions?: FilterOption[]
   supplierOptions?: FilterOption[]
+  stageTabs?:       StageTab[]
 }
 
 // A-20: "Enviada" era a la vez un valor de la columna Estado y el nombre de una
@@ -48,17 +50,18 @@ const COLUMNS = [
   { key: "actions",      label: "",               sortable: false, width: "w-28" },
 ]
 
-export function RecepcionTable({ orders, wsMap, supMap, gapMap, canRegister, worksiteOptions = [], supplierOptions = [] }: RecepcionTableProps) {
+export function RecepcionTable({ orders, wsMap, supMap, gapMap, canRegister, worksiteOptions = [], supplierOptions = [], stageTabs = [] }: RecepcionTableProps) {
   const router = useRouter()
 
   return (
     <div className="flex flex-col gap-4">
     <OnboardingHint
       storageKey="hint_recepcion_v1"
-      title="Recepción de repuestos, servicios y otros"
-      body="Registra la llegada de repuestos, servicios y otros en dos pasos: primero en oficina Chome (botón 'Recibir'), luego el despacho a la faena. El badge 'pend. faena' indica ítems que ya llegaron a oficina pero aún no se enviaron."
+      title="Recepción de órdenes de compra"
+      body="Registra la llegada en dos pasos cuando la entrega es vía oficina: primero en oficina Chome (botón 'Recibir'), luego la recepción en faena. Las OC de despacho directo a faena se reciben en un solo paso. El badge 'pend. faena' indica ítems que ya llegaron a oficina pero aún no se despacharon."
     />
     <StateLegend />
+    {stageTabs.length > 0 && <StageTabs tabs={stageTabs} ariaLabel="Etapa de la recepción" />}
     <ListFilters
       searchPlaceholder="Buscar por código o proveedor..."
       worksiteOptions={worksiteOptions}
@@ -67,14 +70,13 @@ export function RecepcionTable({ orders, wsMap, supMap, gapMap, canRegister, wor
     <DataTable
       caption="Órdenes de Compra Pendientes de Recepción"
       columns={COLUMNS}
-      rows={orders as unknown as Record<string, unknown>[]}
+      rows={orders}
       searchKeys={["code"]}
       disableInternalSearch
       pageSize={RECEPCION_PAGE_SIZE}
       emptyTitle="Sin OCs pendientes de recepción"
       emptyDescription="No hay órdenes que coincidan con los filtros."
-      renderRow={(row) => {
-        const o = row as unknown as OrderRow
+      renderRow={(o) => {
         const href = `/compras/${o.id}`
         return (
           <TableRow
@@ -123,8 +125,7 @@ export function RecepcionTable({ orders, wsMap, supMap, gapMap, canRegister, wor
       }}
       /* A-1: sin esto, en 390px se veían 3 de 6 columnas y "Recibir" —la acción
          principal del módulo, que se usa en faena— quedaba fuera de pantalla. */
-      renderMobileCard={(row) => {
-        const o = row as unknown as OrderRow
+      renderMobileCard={(o) => {
         const href = `/compras/${o.id}`
         const gap = gapMap[o.id] ?? 0
         return (

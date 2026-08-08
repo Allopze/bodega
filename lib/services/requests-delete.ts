@@ -6,7 +6,7 @@
  */
 
 import fs from "node:fs/promises"
-import { eq, inArray } from "drizzle-orm"
+import { and, eq, inArray } from "drizzle-orm"
 import { db } from "@/db"
 import {
   purchaseRequests,
@@ -91,9 +91,14 @@ export async function deleteRequest(
     }
 
     // 3. Eliminar la solicitud — cascade borra sólo dependencias no auditables.
+    // DAT-6: el DELETE lleva su propia guarda de estado (no solo el `findFirst`
+    // de arriba, sin lock): si un submit concurrente ya sacó la solicitud de
+    // 'draft' entre la lectura y este punto, el WHERE no matchea y el
+    // "modificada concurrentemente" de abajo detecta el conflicto de verdad,
+    // en vez de solo comprobar que la fila seguía existiendo por id.
     const deletedRows = await tx
       .delete(purchaseRequests)
-      .where(eq(purchaseRequests.id, requestId))
+      .where(and(eq(purchaseRequests.id, requestId), eq(purchaseRequests.status, "draft")))
       .returning({ id: purchaseRequests.id })
 
     // 4. Verify deletion occurred (paranoid check)

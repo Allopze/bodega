@@ -1,6 +1,7 @@
 import type { Metadata } from "next"
 import Link from "next/link"
 import { notFound, redirect } from "next/navigation"
+import { CheckCircle } from "@phosphor-icons/react/dist/ssr"
 import { db }                  from "@/db"
 import { dteDocuments, purchaseOrderInvoices, purchaseOrders, statusHistory, users } from "@/db/schema"
 import { and, desc, eq, inArray } from "drizzle-orm"
@@ -35,13 +36,13 @@ export default async function OcDetailPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>
-  searchParams: Promise<{ tab?: string; nro?: string }>
+  searchParams: Promise<{ tab?: string; nro?: string; actualizada?: string }>
 }) {
   let session
   try { session = await requirePermission("purchasing:view") }
   catch { redirect(`/forbidden?desde=${encodeURIComponent("/compras")}`) }
 
-  const [{ id }, { tab, nro }] = await Promise.all([params, searchParams])
+  const [{ id }, { tab, nro, actualizada }] = await Promise.all([params, searchParams])
 
   const order = await db.query.purchaseOrders.findFirst({
     where: eq(purchaseOrders.id, id),
@@ -141,23 +142,23 @@ export default async function OcDetailPage({
       .orderBy(desc(purchaseOrderInvoices.uploadedAt)),
   ])
 
-  // Load invoice items for reconciliation
+  // ARQ-10: ambas cuelgan sólo de `invoiceIds` — ninguna espera a la otra.
   const invoiceIds = orderInvoices.map((inv) => inv.id)
-  const invoiceItemRows = invoiceIds.length > 0
-    ? await db.query.purchaseOrderInvoiceItems.findMany({
-        where: (t, { inArray }) => inArray(t.invoiceId, invoiceIds),
-      })
-    : []
-
-  // DTE del portal tributario ya conciliados contra las facturas de esta OC
-  // (ver lib/services/dte-portal/reconciliation.ts).
-  const dteRows = invoiceIds.length > 0
-    ? await db.query.dteDocuments.findMany({
-        where: inArray(dteDocuments.purchaseOrderInvoiceId, invoiceIds),
-        columns: { id: true, tipoDte: true, folio: true, rutEmisor: true, razonSocialEmisor: true, montoTotal: true, estadoSii: true },
-        orderBy: (d, { desc: descOrder }) => [descOrder(d.fechaEmision)],
-      })
-    : []
+  const [invoiceItemRows, dteRows] = invoiceIds.length === 0
+    ? [[], []]
+    : await Promise.all([
+        // Load invoice items for reconciliation
+        db.query.purchaseOrderInvoiceItems.findMany({
+          where: (t, { inArray }) => inArray(t.invoiceId, invoiceIds),
+        }),
+        // DTE del portal tributario ya conciliados contra las facturas de esta
+        // OC (ver lib/services/dte-portal/reconciliation.ts).
+        db.query.dteDocuments.findMany({
+          where: inArray(dteDocuments.purchaseOrderInvoiceId, invoiceIds),
+          columns: { id: true, tipoDte: true, folio: true, rutEmisor: true, razonSocialEmisor: true, montoTotal: true, estadoSii: true },
+          orderBy: (d, { desc: descOrder }) => [descOrder(d.fechaEmision)],
+        }),
+      ])
 
   // Attach items to invoices
   const invoicesWithItems = orderInvoices.map((inv) => ({
@@ -199,8 +200,7 @@ export default async function OcDetailPage({
     0,
   )
   const canShowOrderActions =
-    (order.status === "draft" && (canManage || canDeleteOrder)) ||
-    (order.status === "issued" && (canManage || canSend || canDeleteOrder)) ||
+    (order.status === "draft" && (canManage || canSend || canDeleteOrder)) ||
     (order.status === "sent" && (canManage || canDeleteOrder)) ||
     (order.status === "partially_received" && canManage) ||
     (order.status === "received" && canManage)
@@ -299,6 +299,18 @@ export default async function OcDetailPage({
           ]} />
         }
       />
+
+      {/* UX-6: "Emitir y enviar" es la acción principal del módulo y antes
+          no confirmaba nada — el redirect llevaba este parámetro, pero
+          ningún componente lo consumía. */}
+      {(actualizada === "enviada" || actualizada === "creada") && (
+        <div className="mb-6 flex items-center gap-3 px-4 py-3 rounded-[var(--radius)] bg-[var(--color-success-tint)] border border-[var(--color-success-line)]">
+          <CheckCircle size={16} className="text-[var(--color-success-ink)] shrink-0" />
+          <p className="text-sm text-[var(--color-success-ink)]">
+            {actualizada === "creada" ? "Orden de compra creada en borrador." : "Orden emitida y enviada al proveedor."}
+          </p>
+        </div>
+      )}
 
       <DocumentChainStrip
         chain={documentChain}

@@ -5,49 +5,23 @@ import { db } from "@/db"
 import { purchaseOrderItems, purchaseOrders, suppliers, worksites } from "@/db/schema"
 import { count, eq } from "drizzle-orm"
 import { requirePermission } from "@/lib/auth/can"
-import { issueOrder, markOrderSent } from "@/lib/services/purchasing"
+import { serviceWorksiteScope } from "@/lib/auth/scope"
+import { issueAndSendOrder } from "@/lib/services/purchasing"
 import { getUserIdsWithPermission, notifyManyUser, notifyAfterCommit } from "@/lib/services/notifications"
 import { logger } from "@/lib/logger"
 import type { ActionState } from "@/lib/validation/operations"
 import { assertOrderAccess } from "../actions.helpers"
-import { dbErrMsg, serviceWorksiteScope } from "./helpers"
+import { dbErrMsg } from "./helpers"
 import { REVALIDATE } from "./revalidate"
 import { revalidateOperationalViews } from "@/lib/services/operational-cache"
 import { pluralize } from "@/lib/utils"
 
-// ── Issue OC (draft → issued) ─────────────────────────────────────────────────
+// ── Emitir y enviar (draft → sent) ────────────────────────────────────────────
+// Fusión 2026-08-07: antes eran `issueOrderAction` (draft → issued) y
+// `sendOrderAction` (issued → sent). El compromiso con el proveedor es lo que
+// exige `purchasing:send_order`, así que ese es el permiso de la acción fusionada.
 
-export async function issueOrderAction(
-  _prev: ActionState,
-  formData: FormData,
-): Promise<ActionState> {
-  let session
-  try {
-    session = await requirePermission("purchasing:create_order")
-  } catch {
-    return { ok: false, message: "Sin permisos" }
-  }
-
-  const orderId = formData.get("orderId") as string | null
-  if (!orderId) return { ok: false, message: "Orden no especificada" }
-  const accessError = await assertOrderAccess(session, orderId)
-  if (accessError) return accessError
-
-  try {
-    await issueOrder(orderId, session.user.id, serviceWorksiteScope(session), {
-      userEmail: session.user.email ?? undefined,
-    })
-  } catch (e) {
-    logger.error("[issueOrderAction]", e)
-    return { ok: false, message: dbErrMsg(e, "Error al emitir orden") }
-  }
-  revalidateOperationalViews([REVALIDATE, `/compras/${orderId}`])
-  redirect(`/compras/${orderId}?actualizada=emitida`)
-}
-
-// ── Mark as sent (issued → sent) ──────────────────────────────────────────────
-
-export async function sendOrderAction(
+export async function issueAndSendOrderAction(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
@@ -55,7 +29,7 @@ export async function sendOrderAction(
   try {
     session = await requirePermission("purchasing:send_order")
   } catch {
-    return { ok: false, message: "Sin permisos para enviar órdenes" }
+    return { ok: false, message: "Sin permisos para emitir y enviar órdenes" }
   }
 
   const orderId = formData.get("orderId") as string | null
@@ -63,7 +37,7 @@ export async function sendOrderAction(
   const accessError = await assertOrderAccess(session, orderId)
   if (accessError) return accessError
 
-  // Pull the order summary BEFORE markOrderSent so we can build the
+  // Pull the order summary BEFORE the transition so we can build the
   // notification body, and so we can fire the notification after the
   // status change has actually committed (S-05).
   const [[orderSummary], [itemCountRow]] = await Promise.all([
@@ -84,12 +58,12 @@ export async function sendOrderAction(
   ])
 
   try {
-    await markOrderSent(orderId, session.user.id, serviceWorksiteScope(session), {
+    await issueAndSendOrder(orderId, session.user.id, serviceWorksiteScope(session), {
       userEmail: session.user.email ?? undefined,
     })
   } catch (e) {
-    logger.error("[sendOrderAction]", e)
-    return { ok: false, message: dbErrMsg(e, "Error al enviar orden") }
+    logger.error("[issueAndSendOrderAction]", e)
+    return { ok: false, message: dbErrMsg(e, "Error al emitir y enviar la orden") }
   }
 
   // S-05: notify only after the status change has committed.
@@ -113,4 +87,3 @@ export async function sendOrderAction(
   revalidateOperationalViews([REVALIDATE, `/compras/${orderId}`, "/recepcion"])
   redirect(`/compras/${orderId}?actualizada=enviada`)
 }
-

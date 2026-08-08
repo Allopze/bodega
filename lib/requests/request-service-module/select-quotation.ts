@@ -41,14 +41,17 @@ export async function selectQuotation(
         eq(qt.id, input.quotationId),
         eq(qt.requestId, input.requestId),
       ))
+      .for("update")
     if (!quotation) throw new Error("Cotización no encontrada")
     if (quotation.status !== "pending") {
       throw new Error("La cotización ya fue procesada")
     }
 
-    await tx.update(qt)
+    const [selected] = await tx.update(qt)
       .set({ status: "selected", decidedBy: input.userId, selectedAt: now, updatedAt: now })
-      .where(eq(qt.id, input.quotationId))
+      .where(and(eq(qt.id, input.quotationId), eq(qt.status, "pending")))
+      .returning({ id: qt.id })
+    if (!selected) throw new Error("La cotización ya fue procesada")
 
     await tx.update(qt)
       .set({ status: "rejected", updatedAt: now })

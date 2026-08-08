@@ -1,8 +1,8 @@
-import { eq } from "drizzle-orm"
+import { eq, sql } from "drizzle-orm"
 import { db } from "@/db"
 import {
   deliveries, deliveryItems,
-  products, purchaseRequestItems, worksites,
+  products, purchaseOrderItems, purchaseRequestItems, worksites,
 } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { nextCodeTx } from "@/lib/code-sequences"
@@ -60,8 +60,20 @@ export async function registerWorksiteDelivery(
         .from(deliveryItems)
         .where(eq(deliveryItems.requestItemId, input.requestItemId))
       const alreadyDelivered = previousDeliveries.reduce((sum, item) => sum + item.quantity, 0)
-      const pending = lockedRequestItem.quantity - alreadyDelivered
-      if (pending <= 0) throw new Error("El ítem ya fue entregado completamente")
+
+      // LOG-5/DAT-13: el saldo entregable no puede superar lo que de verdad
+      // llegó a faena para este ítem — el stock agregado es fungible y no
+      // debe usarse para "adelantar" una entrega sobre mercadería que la
+      // trazabilidad de este ítem todavía no recibió.
+      const [receivedRow] = await tx
+        .select({ received: sql<number>`coalesce(sum(${purchaseOrderItems.quantityReceived}), 0)` })
+        .from(purchaseOrderItems)
+        .where(eq(purchaseOrderItems.requestItemId, input.requestItemId))
+      const receivedAtFaena = Number(receivedRow?.received ?? 0)
+
+      if (lockedRequestItem.quantity <= alreadyDelivered) throw new Error("El ítem ya fue entregado completamente")
+      if (receivedAtFaena <= alreadyDelivered) throw new Error("No hay saldo recibido en faena pendiente de entregar")
+      const pending = Math.min(lockedRequestItem.quantity, receivedAtFaena) - alreadyDelivered
       if (input.quantity > pending) {
         throw new Error(`La cantidad excede el saldo pendiente de entrega (${pending})`)
       }

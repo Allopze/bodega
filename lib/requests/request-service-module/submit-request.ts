@@ -13,15 +13,20 @@ export async function submitRequest(
   const qt = config.quotationsTable
 
   await db.transaction(async (tx) => {
-    const request = await tx.query.purchaseRequests.findFirst({
-      where: and(
+    // DAT-3: lockeado — sin esto, dos envíos concurrentes (o un envío en
+    // carrera con un editDraft) podían pisarse: el UPDATE final no llevaba
+    // ninguna guarda de estado.
+    const [request] = await tx
+      .select()
+      .from(purchaseRequests)
+      .where(and(
         eq(purchaseRequests.id, input.requestId),
         eq(purchaseRequests.requestType, config.requestType),
-      ),
-    })
+      ))
+      .for("update")
     if (!request) throw new Error(`Solicitud de ${config.requestType === "repuestos" ? "repuestos" : "servicios"} no encontrada`)
-    if (!["draft", "returned"].includes(request.status)) {
-      throw new Error("Solo se pueden enviar solicitudes en borrador o devueltas")
+    if (request.status !== "draft") {
+      throw new Error("Solo se pueden enviar solicitudes en borrador")
     }
 
     const quotations = await tx
@@ -50,11 +55,13 @@ export async function submitRequest(
       await submitItemTx(tx, item.id, input.userId, { userEmail: input.userEmail })
     }
 
-    await tx.update(purchaseRequests).set({
+    const [updated] = await tx.update(purchaseRequests).set({
       status:      "submitted",
       submittedAt: now,
       updatedAt:   now,
-    }).where(eq(purchaseRequests.id, input.requestId))
+    }).where(and(eq(purchaseRequests.id, input.requestId), eq(purchaseRequests.status, request.status)))
+      .returning({ id: purchaseRequests.id })
+    if (!updated) throw new Error("La solicitud ya no está disponible: posible concurrencia")
 
     await recordStatusChange({
       entityType: "purchase_request",

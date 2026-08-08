@@ -1,114 +1,145 @@
 /**
- * EPP Replenishment Service (M-4).
- * Generates draft purchase requests based on prevention coverage gaps (expired / missing EPP).
+ * EPP Replenishment (M-4).
+ *
+ * Antes generaba solicitudes en borrador automáticamente. Desde la
+ * simplificación del flujo (2026-08-07) las solicitudes nacen enviadas y las
+ * crea siempre una persona, así que este servicio solo *sugiere*: entrega las
+ * brechas de cobertura como ítems precargables para el creador de solicitudes.
+ * La reserva del cupo (idempotencia) ocurre al crear la solicitud, dentro de su
+ * misma transacción — ver `reserveReplenishmentGapsTx`.
  */
-import { db } from "@/db"
-import { eq } from "drizzle-orm"
-import { eppReplenishmentLinks, purchaseRequests, purchaseRequestItems } from "@/db/schema"
+import { db, type Tx } from "@/db"
+import { and, inArray, isNull } from "drizzle-orm"
+import { eppReplenishmentLinks } from "@/db/schema"
 import { nanoid } from "@/lib/id"
-import { nextCodeTx } from "@/lib/code-sequences"
 import { listEppCoverageGaps, type EppAccess } from "./prevention-epp"
+
+const KEY_SEPARATOR = "|"
 
 function gapVersion(gap: { gapType: "missing" | "expired"; lastDeliveredAt: string | null }) {
   return `${gap.gapType}:${gap.lastDeliveredAt ?? "none"}`
 }
 
-export async function generateReplenishmentDrafts(
+/** Clave opaca que viaja con el ítem precargado hasta la creación de la solicitud. */
+function gapKey(gap: {
+  worksiteId: string; workerId: string; eppTypeId: string
+  requirementId: string; gapType: "missing" | "expired"; lastDeliveredAt: string | null
+}) {
+  return [gap.worksiteId, gap.workerId, gap.eppTypeId, gap.requirementId, gapVersion(gap)].join(KEY_SEPARATOR)
+}
+
+function parseGapKey(key: string) {
+  const [worksiteId, workerId, eppTypeId, requirementId, version] = key.split(KEY_SEPARATOR)
+  if (!worksiteId || !workerId || !eppTypeId || !requirementId || !version) return null
+  return { worksiteId, workerId, eppTypeId, requirementId, gapVersion: version }
+}
+
+export type ReplenishmentSuggestion = {
+  gapKey:          string
+  worksiteId:      string
+  workerId:        string
+  workerName:      string
+  productId:       string | null
+  productName:     string
+  unitOfMeasure:   string
+  urgency:         "normal" | "high"
+  notes:           string
+  /** Texto corto de procedencia para mostrar en el ítem precargado. */
+  origin:          string
+}
+
+/**
+ * Brechas de EPP que todavía no tienen una reposición en curso, listas para
+ * precargarse como ítems del creador de solicitudes.
+ */
+export async function listReplenishmentSuggestions(
   access: EppAccess,
-): Promise<{ createdCount: number; requestCodes: string[] }> {
+  worksiteId?: string,
+): Promise<ReplenishmentSuggestion[]> {
   const gaps = await listEppCoverageGaps(access)
-  if (gaps.length === 0) {
-    return { createdCount: 0, requestCodes: [] }
-  }
+  const scoped = worksiteId ? gaps.filter((gap) => gap.worksiteId === worksiteId) : gaps
+  if (scoped.length === 0) return []
 
-  // Group gaps by worksiteId.
-  const gapsByWorksite = new Map<string, typeof gaps>()
-  for (const gap of gaps) {
-    const list = gapsByWorksite.get(gap.worksiteId) ?? []
-    list.push(gap)
-    gapsByWorksite.set(gap.worksiteId, list)
-  }
+  const openLinks = await db
+    .select({
+      worksiteId:    eppReplenishmentLinks.worksiteId,
+      workerId:      eppReplenishmentLinks.workerId,
+      eppTypeId:     eppReplenishmentLinks.eppTypeId,
+      requirementId: eppReplenishmentLinks.requirementId,
+      gapVersion:    eppReplenishmentLinks.gapVersion,
+    })
+    .from(eppReplenishmentLinks)
+    .where(isNull(eppReplenishmentLinks.resolvedAt))
+  const reserved = new Set(openLinks.map((link) => [
+    link.worksiteId, link.workerId, link.eppTypeId, link.requirementId, link.gapVersion,
+  ].join(KEY_SEPARATOR)))
 
-  const now = new Date().toISOString()
-  const year = new Date().getFullYear()
-  const createdCodes: string[] = []
+  const pending = scoped.filter((gap) => !reserved.has(gapKey(gap)))
+  if (pending.length === 0) return []
 
-  await db.transaction(async (tx) => {
-    for (const [worksiteId, worksiteGaps] of gapsByWorksite.entries()) {
-      const reservedGaps: Array<{ gap: (typeof gaps)[number]; linkId: string }> = []
-      for (const gap of worksiteGaps) {
-        // Reserve each live gap before creating any request data. The partial
-        // unique index makes the reservation idempotent even under concurrent
-        // executions; a conflict means another open replenishment already owns it.
-        const [reserved] = await tx.insert(eppReplenishmentLinks).values({
-          id:            nanoid(),
-          worksiteId:    gap.worksiteId,
-          workerId:      gap.workerId,
-          eppTypeId:     gap.eppTypeId,
-          requirementId: gap.requirementId,
-          gapVersion:    gapVersion(gap),
-          createdAt:     now,
-        }).onConflictDoNothing().returning({ id: eppReplenishmentLinks.id })
-        if (reserved) reservedGaps.push({ gap, linkId: reserved.id })
-      }
+  // Un solo lookup del catálogo para todas las etiquetas de EPP pendientes.
+  const labels = [...new Set(pending.map((gap) => gap.eppTypeLabel))]
+  const catalog = await db.query.products.findMany({
+    where: (p, { inArray }) => inArray(p.name, labels),
+    columns: { id: true, name: true, unitOfMeasure: true },
+  })
+  const byName = new Map(catalog.map((product) => [product.name, product]))
 
-      if (reservedGaps.length === 0) continue
-
-      const requestId = nanoid()
-      const code = await nextCodeTx(tx, "SOL", year)
-
-      await tx.insert(purchaseRequests).values({
-        id: requestId,
-        code,
-        worksiteId,
-        requesterId: access.userId,
-        requestType: "epp",
-        urgency: reservedGaps.some(({ gap }) => gap.enforcement === "blocking") ? "high" : "normal",
-        requiredDate: now.slice(0, 10),
-        status: "draft",
-        notes: `Solicitud de reposición automática generada por Prevención (${reservedGaps.length} brechas detectadas).`,
-        createdAt: now,
-        updatedAt: now,
-      })
-
-      for (let i = 0; i < reservedGaps.length; i++) {
-        const reservation = reservedGaps[i]
-        if (!reservation) continue
-        const { gap } = reservation
-
-        // Try to match product by eppTypeId or label
-        const matchedProduct = await tx.query.products.findFirst({
-          where: (p, { eq }) => eq(p.name, gap.eppTypeLabel),
-        })
-
-        const [requestItem] = await tx.insert(purchaseRequestItems).values({
-          id: nanoid(),
-          requestId,
-          productId: matchedProduct?.id ?? null,
-          productNameFree: matchedProduct ? null : gap.eppTypeLabel,
-          quantity: 1,
-          unitOfMeasure: matchedProduct?.unitOfMeasure ?? "unidad",
-          urgency: gap.enforcement === "blocking" ? "high" : "normal",
-          workerId: gap.workerId,
-          sortOrder: i,
-          status: "draft",
-          notes: `Reposición por EPP ${gap.gapType === "expired" ? "vencido" : "no entregado"}.`,
-          createdAt: now,
-          updatedAt: now,
-        }).returning({ id: purchaseRequestItems.id })
-
-        if (!requestItem) throw new Error("No se pudo vincular la reposición EPP creada")
-        await tx.update(eppReplenishmentLinks)
-          .set({ requestItemId: requestItem.id })
-          .where(eq(eppReplenishmentLinks.id, reservation.linkId))
-      }
-
-      createdCodes.push(code)
+  return pending.map((gap) => {
+    const product = byName.get(gap.eppTypeLabel)
+    return {
+      gapKey:        gapKey(gap),
+      worksiteId:    gap.worksiteId,
+      workerId:      gap.workerId,
+      workerName:    gap.workerName,
+      productId:     product?.id ?? null,
+      productName:   product?.name ?? gap.eppTypeLabel,
+      unitOfMeasure: product?.unitOfMeasure ?? "unidad",
+      urgency:       gap.enforcement === "blocking" ? "high" : "normal",
+      notes:         `Reposición por EPP ${gap.gapType === "expired" ? "vencido" : "no entregado"}.`,
+      origin:        `EPP ${gap.gapType === "expired" ? "vencido" : "no entregado"} · ${gap.workerName}`,
     }
   })
+}
 
-  return {
-    createdCount: createdCodes.length,
-    requestCodes: createdCodes,
+/**
+ * Reserva los cupos de las brechas que originaron ítems de la solicitud recién
+ * creada. El índice único parcial es la frontera de concurrencia: si otra
+ * solicitud ya tomó la brecha, el insert no hace nada.
+ *
+ * ponytail: un conflicto se ignora en silencio (el ítem ya existe y lo pidió
+ * una persona a la vista de la sugerencia). Si dos personas piden la misma
+ * brecha a la vez se verá el duplicado en aprobaciones; endurecerlo exigiría
+ * abortar la creación completa, que es peor.
+ */
+export async function reserveReplenishmentGapsTx(
+  tx: Tx,
+  entries: Array<{ gapKey: string; requestItemId: string }>,
+): Promise<void> {
+  for (const entry of entries) {
+    const parsed = parseGapKey(entry.gapKey)
+    if (!parsed) continue
+    await tx.insert(eppReplenishmentLinks).values({
+      id:            nanoid(),
+      ...parsed,
+      requestItemId: entry.requestItemId,
+    }).onConflictDoNothing()
   }
+}
+
+/**
+ * Libera la reserva de las brechas cuyo ítem murió (rechazado o cancelado)
+ * sin llegar a entregarse. Sin esto, `listReplenishmentSuggestions` suprime la
+ * brecha para siempre: `gapVersion` sólo cambia con una entrega que ya no va
+ * a ocurrir (LOG-1/DAT-7).
+ */
+export async function resolveReplenishmentLinksTx(tx: Tx, requestItemIds: string[]): Promise<void> {
+  if (requestItemIds.length === 0) return
+  await tx
+    .update(eppReplenishmentLinks)
+    .set({ resolvedAt: new Date().toISOString() })
+    .where(and(
+      inArray(eppReplenishmentLinks.requestItemId, requestItemIds),
+      isNull(eppReplenishmentLinks.resolvedAt),
+    ))
 }

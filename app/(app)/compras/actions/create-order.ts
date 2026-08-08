@@ -72,6 +72,11 @@ export async function createOrderAction(
 
   const dbItemMap = new Map(dbItems.map((item) => [item.id, item]))
 
+  // Pre-check barato para un error rápido sin abrir la transacción; el valor
+  // real que se persiste lo deriva `createOrdersBySupplier` de las
+  // solicitudes ya lockeadas (DAT-14) — este chequeo puede quedar obsoleto
+  // entre esta lectura y la transacción, y eso está bien: el servicio vuelve
+  // a validar bajo lock y rechaza igual si algo cambió.
   const deliveryModes = new Set(dbItems.map((i) => i.request.deliveryMode))
   if (deliveryModes.size > 1) {
     return {
@@ -80,7 +85,6 @@ export async function createOrderAction(
         "Los ítems seleccionados pertenecen a solicitudes con modo de despacho distinto. Crea órdenes separadas.",
     }
   }
-  const deliveryMode = (deliveryModes.values().next().value ?? "via_oficina") as "via_oficina" | "directo_faena"
 
   const supplierIdsByItem = new Map<string, string>()
   for (const item of items) {
@@ -141,7 +145,6 @@ ${supplierMismatches.map((m) => `  • ${m}`).join("\n")}`,
       estimatedDelivery: estimatedDelivery || null,
       deliveryAddress: deliveryAddress || null,
       notes: notes || null,
-      deliveryMode,
       orders: [...groups.entries()].map(([groupSupplierId, groupItems]) => ({
         supplierId: groupSupplierId,
         items: groupItems.map((item, i) => ({
@@ -159,7 +162,7 @@ ${supplierMismatches.map((m) => `  • ${m}`).join("\n")}`,
     })
 
     revalidateOperationalViews([REVALIDATE, "/compras/nueva"])
-    if (orderIds.length === 1) redirect(`/compras/${orderIds[0]}`)
+    if (orderIds.length === 1) redirect(`/compras/${orderIds[0]}?actualizada=creada`)
     redirect(`${REVALIDATE}?creadas=${orderIds.length}`)
   } catch (e) {
     if (e instanceof Error && e.message.includes("NEXT_REDIRECT")) throw e

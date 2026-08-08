@@ -77,7 +77,7 @@ export async function deleteOrder(
         .map((i) => i.requestId),
     )]
     for (const rid of affectedRequestIds) {
-      await rollupRequestStatus(rid, tx)
+      await rollupRequestStatus(rid, tx, userId)
     }
 
     await tx

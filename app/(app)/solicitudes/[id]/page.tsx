@@ -77,7 +77,7 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
   if (!hasAccess) notFound()
 
   // ── Quotation panel data (repuestos/servicios) ─────────────────────────────
-  const isEditable = ["draft", "returned"].includes(request.status)
+  const isEditable = request.status === "draft"
   const canUploadQuotation = isOwner && isEditable
   const canApproveQuotation =
     request.requestType === "repuestos" ? can(session, "repuestos:approve")
@@ -116,22 +116,40 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
     .map((i) => i.productId)
     .filter((id): id is string => id != null)
 
+  // ARQ-8: el picker de productos sólo hace falta mientras se pueden agregar
+  // ítems (repuestos/servicios en borrador) — EPP/otro nace enviada y ya no
+  // se edita, y una vez fuera del borrador tampoco. Fuera de ese caso, sólo
+  // hacen falta los productos que los ítems ya referencian, no el catálogo
+  // activo completo.
+  const canEditItems = request.status === "draft"
+
   const [allWorksites, allProducts, allAttrs, productSupplierRows, timelineEvents, approvalDecisionRows, allSuppliers, maxFileSizeMb] = await Promise.all([
     db.select().from(worksites).where(eq(worksites.isActive, true)).orderBy(asc(worksites.name)),
-    db.select().from(products).where(
-      referencedProductIds.length > 0
-        ? or(eq(products.isActive, true), inArray(products.id, referencedProductIds))
-        : eq(products.isActive, true)
-    ).orderBy(asc(products.name)),
-    db.select().from(productAttributes).orderBy(asc(productAttributes.sortOrder)),
-    db
-      .select({
-        productId:  productSuppliers.productId,
-        supplierId: productSuppliers.supplierId,
-        isPreferred: productSuppliers.isPreferred,
-      })
-      .from(productSuppliers)
-      .orderBy(desc(productSuppliers.isPreferred)),
+    canEditItems
+      ? db.select().from(products).where(
+          referencedProductIds.length > 0
+            ? or(eq(products.isActive, true), inArray(products.id, referencedProductIds))
+            : eq(products.isActive, true)
+        ).orderBy(asc(products.name))
+      : referencedProductIds.length === 0
+        ? Promise.resolve([])
+        : db.select().from(products).where(inArray(products.id, referencedProductIds)).orderBy(asc(products.name)),
+    !canEditItems && referencedProductIds.length === 0
+      ? Promise.resolve([])
+      : db.select().from(productAttributes)
+          .where(canEditItems ? undefined : inArray(productAttributes.productId, referencedProductIds))
+          .orderBy(asc(productAttributes.sortOrder)),
+    !canEditItems && referencedProductIds.length === 0
+      ? Promise.resolve([])
+      : db
+          .select({
+            productId:  productSuppliers.productId,
+            supplierId: productSuppliers.supplierId,
+            isPreferred: productSuppliers.isPreferred,
+          })
+          .from(productSuppliers)
+          .where(canEditItems ? undefined : inArray(productSuppliers.productId, referencedProductIds))
+          .orderBy(desc(productSuppliers.isPreferred)),
     db
       .select({
         id:          statusHistory.id,
@@ -334,7 +352,7 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
           <div className="flex items-center gap-2">
             <StateBadge state={request.status} entity="request" />
             {can(session, "requests:create") && (
-              <DuplicateButton requestId={request.id} />
+              <DuplicateButton requestId={request.id} requestType={request.requestType} />
             )}
           </div>
         }

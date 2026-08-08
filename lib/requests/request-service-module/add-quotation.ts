@@ -22,8 +22,8 @@ export async function addQuotation(
     columns: { id: true, status: true, requesterId: true },
   })
   if (!request) throw new Error(`Solicitud de ${config.requestType === "repuestos" ? "repuestos" : "servicios"} no encontrada`)
-  if (!["draft", "returned"].includes(request.status)) {
-    throw new Error("Solo se pueden agregar cotizaciones a solicitudes en borrador o devueltas")
+  if (request.status !== "draft") {
+    throw new Error("Solo se pueden agregar cotizaciones a solicitudes en borrador")
   }
 
   const dir = config.storage.dir()

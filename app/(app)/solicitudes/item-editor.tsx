@@ -103,7 +103,7 @@ export function ItemEditor({
                 <button
                   type="button"
                   onClick={onClearProduct}
-                  className="text-(--color-text-subtle) hover:text-(--color-danger) text-xs transition-colors duration-(--duration-fast)"
+                  className="inline-flex min-h-6 items-center px-1 text-(--color-text-subtle) hover:text-(--color-danger) text-xs transition-colors duration-(--duration-fast)"
                 >
                   Cambiar
                 </button>
@@ -142,7 +142,7 @@ export function ItemEditor({
           <button
             type="button"
             onClick={onRemove}
-            className="mt-0.5 p-1 rounded text-(--color-text-subtle) hover:text-(--color-danger) hover:bg-(--color-surface-2) transition-colors duration-(--duration-fast)"
+            className="mt-0.5 size-6 flex items-center justify-center shrink-0 rounded text-(--color-text-subtle) hover:text-(--color-danger) hover:bg-(--color-surface-2) transition-colors duration-(--duration-fast)"
             aria-label="Eliminar ítem"
           >
             <Trash size={14} />
@@ -304,6 +304,7 @@ export function ItemEditor({
           requestType={requestType ?? ""}
           maxFileSizeMb={maxFileSizeMb}
           readOnly={readOnly}
+          suppliers={suppliers}
           onUpdate={onUpdate}
         />
       )}

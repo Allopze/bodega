@@ -72,7 +72,7 @@ export function QuotationPanel({
   deleteQuotationAction,
   selectQuotationAction,
 }: QuotationPanelProps) {
-  const isEditable = ["draft", "returned"].includes(requestStatus)
+  const isEditable = requestStatus === "draft"
   const isPendingReview = ["submitted", "in_review"].includes(requestStatus)
   const isApproved = requestStatus === "approved"
 
@@ -137,7 +137,7 @@ export function QuotationPanel({
           </h2>
           <p className="mt-0.5 text-xs text-[var(--color-text-subtle)]">
             {isEditable
-              ? `${quotations.length}/3 adjuntadas${quotations.length < 3 ? " (se recomienda mínimo 3)" : ""}`
+              ? `${quotations.length}/3 adjuntadas${quotations.length < 3 ? " — mínimo 3, o menos con una justificación en Notas generales" : ""}`
               : isPendingReview
               ? "Selecciona la cotización ganadora"
               : ""}
@@ -154,7 +154,7 @@ export function QuotationPanel({
       {quotations.length === 0 ? (
         <p className="text-sm text-[var(--color-text-subtle)] italic">
           No hay cotizaciones adjuntas.{" "}
-          {isEditable && "Agrega al menos una para poder enviar la solicitud."}
+          {isEditable && "Mínimo 3, o menos con una justificación en Notas generales."}
         </p>
       ) : (
         <ul className="space-y-3">

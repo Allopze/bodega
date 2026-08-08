@@ -20,11 +20,12 @@ vi.mock("./actions", () => ({
   submitRequest: vi.fn(async () => INITIAL_STATE),
   cancelRequest: vi.fn(async () => INITIAL_STATE),
   deleteRequestAction: vi.fn(async () => INITIAL_STATE),
-  resubmitReturnedItemAction: vi.fn(async () => INITIAL_STATE),
 }))
 
 vi.mock("@/components/admin/submit-button", () => ({
-  SubmitButton: ({ label }: { label: string }) => <button type="submit">{label}</button>,
+  SubmitButton: ({ label, disabled }: { label: string; disabled?: boolean }) => (
+    <button type="submit" disabled={disabled}>{label}</button>
+  ),
 }))
 
 vi.mock("@/components/ui/select", () => ({
@@ -200,7 +201,9 @@ describe("RequestForm", () => {
       expect(screen.getByText("Resumen")).toBeDefined()
     })
 
-    it("renders save and submit buttons in draft mode", () => {
+    // EPP/otro se crean y envían en un solo acto: una sola acción primaria y
+    // ningún borrador intermedio.
+    it("renders a single create-and-submit button for EPP", () => {
       render(
         <RequestForm
           worksites={worksites}
@@ -209,8 +212,53 @@ describe("RequestForm", () => {
           maxFileSizeMb={10}
         />,
       )
+      expect(screen.getByText("Crear y enviar a aprobación")).toBeDefined()
+      expect(screen.queryByText("Guardar borrador")).toBeNull()
+    })
+
+    // Repuestos y servicios conservan los dos pasos: hay que adjuntar
+    // cotizaciones al borrador antes de enviarlo.
+    it("keeps draft + submit buttons for quotation types", () => {
+      render(
+        <RequestForm
+          worksites={worksites}
+          products={products}
+          suppliers={suppliers}
+          maxFileSizeMb={10}
+          userPermissions={["repuestos:create"]}
+          initialRequestType="repuestos"
+        />,
+      )
       expect(screen.getByText("Guardar borrador")).toBeDefined()
       expect(screen.getByText("Enviar a aprobación")).toBeDefined()
+    })
+
+    // UX-1: sin esto, el botón nunca se deshabilitaba durante el envío
+    // (useFormStatus no funciona sin action= en este form) y un doble click
+    // en una conexión lenta despachaba la creación dos veces.
+    it("disables the create-and-submit button while the transition is pending", async () => {
+      const { submitRequest } = await import("./actions")
+      let resolveSubmit!: () => void
+      vi.mocked(submitRequest).mockImplementationOnce(() => new Promise((resolve) => {
+        resolveSubmit = () => resolve(INITIAL_STATE)
+      }))
+
+      render(
+        <RequestForm
+          worksites={worksites}
+          products={products}
+          suppliers={suppliers}
+          maxFileSizeMb={10}
+        />,
+      )
+      const button = screen.getByText("Crear y enviar a aprobación").closest("button")!
+      expect(button).not.toBeDisabled()
+
+      fireEvent.submit(button.closest("form")!)
+      await vi.waitFor(() => expect(button).toBeDisabled())
+
+      resolveSubmit()
+      await vi.waitFor(() => expect(button).not.toBeDisabled())
     })
 
     it("keeps the specialized route type in the form and summary", () => {
@@ -284,7 +332,8 @@ describe("RequestForm", () => {
             code: "SOL-002",
             status: "draft",
             worksiteId: "ws-1",
-            requestType: "epp",
+            // El borrador sólo existe para los tipos con cotización.
+            requestType: "repuestos",
             urgency: "normal",
             requiredDate: "2026-07-01",
             notes: "",

@@ -24,13 +24,18 @@ export async function persistDraft(
 
   await db.transaction(async (tx) => {
     if (isEdit) {
-      const existing = await tx.query.purchaseRequests.findFirst({
-        where: eq(purchaseRequests.id, requestId),
-        columns: { id: true, requesterId: true, status: true },
-      })
+      // DAT-3: lockeado — sin esto, un submitRequest concurrente puede mover
+      // la solicitud a 'submitted' con ítems 'requested' justo entre esta
+      // lectura y el DELETE de más abajo, que igual borraría esos ítems ya
+      // enviados y crearía 'draft' nuevos bajo una solicitud que ya no lo es.
+      const [existing] = await tx
+        .select({ id: purchaseRequests.id, requesterId: purchaseRequests.requesterId, status: purchaseRequests.status })
+        .from(purchaseRequests)
+        .where(eq(purchaseRequests.id, requestId))
+        .for("update")
       if (!existing) throw new Error("Solicitud no encontrada")
-      if (!["draft", "returned"].includes(existing.status)) {
-        throw new Error("Solo se puede editar una solicitud en borrador o devuelta")
+      if (existing.status !== "draft") {
+        throw new Error("Solo se puede editar una solicitud en borrador")
       }
       if (existing.requesterId !== session.user.id) {
         throw new Error("Solo el solicitante puede editar su propia solicitud")

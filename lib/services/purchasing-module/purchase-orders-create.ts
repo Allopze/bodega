@@ -32,7 +32,6 @@ export interface CreateOrderInput {
   estimatedDelivery?: string | null
   deliveryAddress?:   string | null
   notes?:             string | null
-  deliveryMode?:      "via_oficina" | "directo_faena"
   /** Effective worksite scope of the authenticated actor. */
   worksiteScope?:     string[] | "all"
   items:              CreateOrderItemInput[]
@@ -56,7 +55,6 @@ export async function createOrder(input: CreateOrderInput): Promise<string> {
     estimatedDelivery:  input.estimatedDelivery,
     deliveryAddress:    input.deliveryAddress,
     notes:              input.notes,
-    deliveryMode:       input.deliveryMode,
     worksiteScope:      input.worksiteScope,
     orders: [{
       supplierId: input.supplierId,
@@ -93,9 +91,14 @@ export async function createOrdersBySupplier(input: CreateOrdersBySupplierInput)
         inputItem: CreateOrderItemInput
         requestItem: typeof purchaseRequestItems.$inferSelect
         costCenterId: string | null
+        deliveryMode: string
       }> = []
 
-      for (const item of orderInput.items) {
+      // DAT-18: lockea los ítems del grupo en orden estable — igual que
+      // bulkApproveItems — para que dos llamadas concurrentes con ítems
+      // solapados en distinto orden no se deadlockeen entre sí.
+      const sortedItems = [...orderInput.items].sort((a, b) => a.requestItemId.localeCompare(b.requestItemId))
+      for (const item of sortedItems) {
         if (seenRequestItemIds.has(item.requestItemId)) {
           throw new Error("No se puede incluir el mismo ítem de solicitud más de una vez")
         }
@@ -108,6 +111,7 @@ export async function createOrdersBySupplier(input: CreateOrdersBySupplierInput)
             requestItem: purchaseRequestItems,
             worksiteId: purchaseRequests.worksiteId,
             costCenterId: purchaseRequests.costCenterId,
+            deliveryMode: purchaseRequests.deliveryMode,
           })
           .from(purchaseRequestItems)
           .innerJoin(purchaseRequests, eq(purchaseRequestItems.requestId, purchaseRequests.id))
@@ -126,7 +130,7 @@ export async function createOrdersBySupplier(input: CreateOrdersBySupplierInput)
           throw new Error("La cantidad a comprar no puede superar la cantidad aprobada del ítem")
         }
 
-        sourceItems.push({ inputItem: item, requestItem, costCenterId: source.costCenterId })
+        sourceItems.push({ inputItem: item, requestItem, costCenterId: source.costCenterId, deliveryMode: source.deliveryMode })
 
         // Compra parcial: el remanente se separa en un ítem hermano que conserva
         // el estado original (approved/pending_purchase), para que vuelva al
@@ -188,6 +192,13 @@ export async function createOrdersBySupplier(input: CreateOrdersBySupplierInput)
       if (new Set(sourceItems.map((item) => item.costCenterId)).size > 1) {
         throw new Error("Los ítems de la OC pertenecen a centros de costo distintos; crea órdenes separadas")
       }
+      // DAT-14: el modo de despacho se deriva de las solicitudes ya
+      // lockeadas en esta transacción, nunca del valor que mandó el cliente
+      // — si alguien cambió el modo de despacho de la solicitud justo
+      // mientras se armaba esta OC, se ve el valor real, no uno obsoleto.
+      if (new Set(sourceItems.map((item) => item.deliveryMode)).size > 1) {
+        throw new Error("Los ítems de la OC pertenecen a solicitudes con modo de despacho distinto; crea órdenes separadas")
+      }
 
       const orderId = nanoid()
       const code    = await nextCodeTx(tx, "OC", year)
@@ -195,6 +206,7 @@ export async function createOrdersBySupplier(input: CreateOrdersBySupplierInput)
       orderIds.push(orderId)
 
       const costCenterId = sourceItems[0]!.costCenterId
+      const deliveryMode = sourceItems[0]!.deliveryMode
 
       await tx.insert(purchaseOrders).values({
         id:                orderId,
@@ -204,7 +216,7 @@ export async function createOrdersBySupplier(input: CreateOrdersBySupplierInput)
         supplierId:        orderInput.supplierId,
         createdBy:         input.createdBy,
         status:            "draft",
-        deliveryMode:      input.deliveryMode ?? "via_oficina",
+        deliveryMode,
         paymentTerms:      input.paymentTerms ?? null,
         estimatedDelivery: input.estimatedDelivery ?? null,
         deliveryAddress:   input.deliveryAddress ?? null,

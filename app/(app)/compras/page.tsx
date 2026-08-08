@@ -3,7 +3,7 @@ import { redirect } from "next/navigation"
 import { db }       from "@/db"
 import {
   purchaseOrders, purchaseOrderItems, purchaseOrderInvoices,
-  worksites, suppliers, products,
+  worksites, suppliers,
   purchaseRequests,
 } from "@/db/schema"
 import { and, or, ilike, inArray, count, desc, eq, sql } from "drizzle-orm"
@@ -18,6 +18,7 @@ import { buildPaginationHref, resolvePagination } from "@/lib/pagination"
 import { parseListParams, periodSql, statusSql, eqFilter, worksiteEqSql } from "@/lib/adquisiciones/list-query"
 import { INVOICE_DUE_ORDER_STATUSES } from "@/lib/work-queue"
 import { orderHasNoInvoice } from "@/lib/services/operational-work-queue"
+import type { StageTab } from "@/components/adquisiciones/stage-tabs"
 import { ComprasActions } from "./compras-actions"
 import { OcList } from "./oc-list"
 import type { OcRow } from "./oc-list"
@@ -27,8 +28,18 @@ export const metadata: Metadata = { title: "Órdenes de compra" }
 
 import { ORDERS_PAGE_SIZE } from "@/lib/constants"
 
-/** Ítems postergados que muestra la bandeja antes de pedir "ver todos". */
-const POSTPONED_PREVIEW = 10
+/**
+ * Etapas visibles del ciclo de una OC (A5: el estado se representa una sola vez,
+ * aquí). Los parciales acompañan a su etapa en vez de abrir una tab propia.
+ */
+const STAGE_GROUPS = [
+  { value: "draft",                                        label: "Borrador" },
+  { value: "sent",                                         label: "Pendiente de recepción" },
+  { value: "partially_office_received,office_received",    label: "En oficina" },
+  { value: "partially_received,received",                  label: "En faena" },
+  { value: "closed",                                       label: "Completadas" },
+  { value: "cancelled",                                    label: "Anuladas" },
+] as const
 
 export default async function ComprasPage({
   searchParams,
@@ -41,6 +52,7 @@ export default async function ComprasPage({
   const sp = await searchParams
   const createdCountRaw = typeof sp.creadas === "string" ? Number(sp.creadas) : 0
   const createdCount = Number.isFinite(createdCountRaw) && createdCountRaw > 1 ? createdCountRaw : 0
+  const noPendingItems = sp.sin_pendientes === "1"
   const visibleWsIds = visibleWorksiteIds(session)
   const worksiteScope = isGlobalRole(session)
     ? undefined
@@ -52,29 +64,6 @@ export default async function ComprasPage({
     : visibleWsIds.length > 0
       ? inArray(purchaseRequests.worksiteId, visibleWsIds)
       : sql`false`
-
-  // ── Approved / pending_purchase items (never-miss alert) ────────────────────
-  const [[pendingRow], [postponedRow]] = await Promise.all([
-    db
-    .select({ total: count() })
-    .from(purchaseRequestItems)
-    .innerJoin(purchaseRequests, eq(purchaseRequestItems.requestId, purchaseRequests.id))
-    .where(and(
-      inArray(purchaseRequestItems.status, ["approved", "pending_purchase"]),
-      requestWorksiteScope,
-    )),
-    db
-      .select({ total: count() })
-      .from(purchaseRequestItems)
-      .innerJoin(purchaseRequests, eq(purchaseRequestItems.requestId, purchaseRequests.id))
-      .where(and(
-        eq(purchaseRequestItems.status, "postponed"),
-        requestWorksiteScope,
-      )),
-  ])
-  const pendingCount = pendingRow?.total ?? 0
-  const postponedCount = postponedRow?.total ?? 0
-  const showAllPostponed = sp.postergados === "todos"
 
   // URL-synced search & filters (server-side, so search finds records on any page)
   const listParams = parseListParams(sp)
@@ -111,10 +100,11 @@ export default async function ComprasPage({
     orderHasNoInvoice,
   )
 
-  const ordersWhere = and(
+  // Los contadores de las tabs se cuentan sin el filtro de estado: cada tab
+  // anuncia lo que entregaría al pulsarla, no lo que ya está en pantalla.
+  const scopeWhere = and(
     worksiteScope,
     textCondition,
-    statusSql(purchaseOrders.status, listParams.estados),
     worksiteEqSql(purchaseOrders.worksiteId, listParams.faena),
     eqFilter(purchaseOrders.supplierId, listParams.proveedor),
     listParams.factura === "pendiente" ? invoicePendingCondition : undefined,
@@ -122,37 +112,59 @@ export default async function ComprasPage({
     // filtro es el destino equivalente: reproduce esa ventana en la lista.
     periodSql(purchaseOrders.issuedAt, listParams.desde, listParams.hasta),
   )
+  const ordersWhere = and(scopeWhere, statusSql(purchaseOrders.status, listParams.estados))
 
-  const [[totalOrdersRow], [invoicePendingRow]] = await Promise.all([
+  // ARQ-10: ninguna de estas 6 consultas depende del resultado de otra —
+  // todas cuelgan sólo de los filtros/scope ya resueltos arriba — así que van
+  // en un solo Promise.all en vez de 4 round-trips secuenciales.
+  const [[pendingRow], [totalOrdersRow], [invoicePendingRow], stageCountRows, worksiteOptionRows, supplierOptionRows] = await Promise.all([
+    // Approved / pending_purchase items (never-miss alert)
+    db
+      .select({ total: count() })
+      .from(purchaseRequestItems)
+      .innerJoin(purchaseRequests, eq(purchaseRequestItems.requestId, purchaseRequests.id))
+      .where(and(
+        inArray(purchaseRequestItems.status, ["approved", "pending_purchase"]),
+        requestWorksiteScope,
+      )),
     db.select({ total: count() }).from(purchaseOrders).where(ordersWhere),
     // La señal anuncia el atraso completo de la faena visible, no el de la vista
     // filtrada: si dependiera de los filtros, se apagaría justo al filtrar.
     db.select({ total: count() }).from(purchaseOrders).where(and(worksiteScope, invoicePendingCondition)),
+    db.select({ status: purchaseOrders.status, total: count() }).from(purchaseOrders).where(scopeWhere).groupBy(purchaseOrders.status),
+    // Worksite options for the faena filter (scoped + active)
+    db
+      .select({ id: worksites.id, name: worksites.name })
+      .from(worksites)
+      .where(isGlobalRole(session)
+        ? eq(worksites.isActive, true)
+        : visibleWsIds.length > 0
+          ? and(eq(worksites.isActive, true), inArray(worksites.id, visibleWsIds))
+          : sql`false`),
+    // Supplier options for the proveedor filter (active suppliers)
+    db
+      .select({ id: suppliers.id, name: suppliers.name })
+      .from(suppliers)
+      .where(eq(suppliers.isActive, true))
+      .orderBy(suppliers.name),
   ])
+  const pendingCount = pendingRow?.total ?? 0
   const invoicePendingCount = invoicePendingRow?.total ?? 0
+  const countByStatus = Object.fromEntries(stageCountRows.map((row) => [row.status, row.total]))
+  const stageTabs: StageTab[] = [
+    { value: "", label: "Todas", count: stageCountRows.reduce((sum, row) => sum + row.total, 0) },
+    ...STAGE_GROUPS.map((group) => ({
+      value: group.value,
+      label: group.label,
+      count: group.value.split(",").reduce((sum, status) => sum + (countByStatus[status] ?? 0), 0),
+    })),
+  ]
   const pagination = resolvePagination({
     pageParam: sp.page,
     totalItems: totalOrdersRow?.total ?? 0,
     pageSize: ORDERS_PAGE_SIZE,
   })
-
-  // Worksite options for the faena filter (scoped + active)
-  const worksiteOptionRows = await db
-    .select({ id: worksites.id, name: worksites.name })
-    .from(worksites)
-    .where(isGlobalRole(session)
-      ? eq(worksites.isActive, true)
-      : visibleWsIds.length > 0
-        ? and(eq(worksites.isActive, true), inArray(worksites.id, visibleWsIds))
-        : sql`false`)
   const worksiteOptions = worksiteOptionRows.map((w) => ({ value: w.id, label: w.name }))
-
-  // Supplier options for the proveedor filter (active suppliers)
-  const supplierOptionRows = await db
-    .select({ id: suppliers.id, name: suppliers.name })
-    .from(suppliers)
-    .where(eq(suppliers.isActive, true))
-    .orderBy(suppliers.name)
   const supplierOptions = supplierOptionRows.map((s) => ({ value: s.id, label: s.name }))
 
   // ── Purchase orders ──────────────────────────────────────────────────────────
@@ -177,12 +189,8 @@ export default async function ComprasPage({
 
   const canCreateOrder = can(session, "purchasing:create_order")
   const canDeleteOrder = can(session, "purchasing:delete_order")
-  // A-19: la pastilla "Sin OC" del top bar repetía, en el mismo viewport, la
-  // alerta ámbar de la lista — que además explica y trae su propio "Crear OC".
-  // Se queda la accionable. "Postergados" no tiene equivalente en la lista.
-  const headerSignals: HeaderSignal[] = [
-    { key: "postponed", label: "Postergados", value: postponedCount, tone: "signal" },
-  ]
+  const canSendOrder = can(session, "purchasing:send_order")
+  const headerSignals: HeaderSignal[] = []
   // Una OC con mercadería recibida y sin factura no se veía desde ninguna parte:
   // la columna "Facturas" mostraba el mismo "—" que en una recién emitida. La
   // señal va sólo para quien puede adjuntarla —el mismo permiso que exige
@@ -198,7 +206,7 @@ export default async function ComprasPage({
     })
   }
 
-  if (visibleOrders.length === 0 && pendingCount === 0 && postponedCount === 0) {
+  if (visibleOrders.length === 0 && pendingCount === 0) {
     return (
       <PageContainer>
         <PageHeader
@@ -214,7 +222,7 @@ export default async function ComprasPage({
           headerActions={<HeaderSignals signals={headerSignals} />}
           actions={<ComprasActions canCreate={canCreateOrder} exportHref={exportHref} />}
         />
-        <OcList orders={[]} pendingCount={0} postponedItems={[]} canCreate={canCreateOrder} canDelete={canDeleteOrder} createdCount={createdCount} worksiteOptions={worksiteOptions} supplierOptions={supplierOptions} />
+        <OcList orders={[]} pendingCount={0} stageTabs={stageTabs} canCreate={canCreateOrder} canDelete={canDeleteOrder} canSend={canSendOrder} createdCount={createdCount} noPendingItems={noPendingItems} worksiteOptions={worksiteOptions} supplierOptions={supplierOptions} />
 
         <ServerPagination pagination={pagination} hrefForPage={pageHref} />
       </PageContainer>
@@ -225,7 +233,7 @@ export default async function ComprasPage({
   const wsIds       = [...new Set(visibleOrders.map((o) => o.worksiteId))]
   const supplierIds = [...new Set(visibleOrders.map((o) => o.supplierId))]
 
-  const [wsRows, supplierRows, itemCounts, invoiceCounts, postponedRows] = await Promise.all([
+  const [wsRows, supplierRows, itemCounts, invoiceCounts] = await Promise.all([
     wsIds.length > 0
       ? db
           .select({ id: worksites.id, name: worksites.name })
@@ -256,33 +264,6 @@ export default async function ComprasPage({
           .groupBy(purchaseOrderInvoices.purchaseOrderId)
       : Promise.resolve([]),
 
-    postponedCount > 0
-      ? db
-          .select({
-            id: purchaseRequestItems.id,
-            requestId: purchaseRequestItems.requestId,
-            requestCode: purchaseRequests.code,
-            worksiteId: purchaseRequests.worksiteId,
-            worksiteName: worksites.name,
-            productNameFree: purchaseRequestItems.productNameFree,
-            productName: products.name,
-            productSku: products.sku,
-            quantity: purchaseRequestItems.quantity,
-            unitOfMeasure: purchaseRequestItems.unitOfMeasure,
-            urgency: purchaseRequestItems.urgency,
-            notes: purchaseRequestItems.notes,
-          })
-          .from(purchaseRequestItems)
-          .innerJoin(purchaseRequests, eq(purchaseRequestItems.requestId, purchaseRequests.id))
-          .innerJoin(worksites, eq(purchaseRequests.worksiteId, worksites.id))
-          .leftJoin(products, eq(purchaseRequestItems.productId, products.id))
-          .where(and(eq(purchaseRequestItems.status, "postponed"), requestWorksiteScope))
-          .orderBy(desc(purchaseRequestItems.updatedAt))
-          // La bandeja es un adelanto: sin el `?postergados=todos` los ítems
-          // sobre el tope quedaban inalcanzables — la pastilla los contaba y
-          // la lista no los mostraba, sin paginador propio.
-          .limit(showAllPostponed ? postponedCount : POSTPONED_PREVIEW)
-      : Promise.resolve([]),
   ])
 
   const wsMap  = Object.fromEntries(wsRows.map((w) => [w.id, w.name]))
@@ -304,20 +285,6 @@ export default async function ComprasPage({
     createdAt:    o.createdAt,
   }))
 
-  const postponedItems = postponedRows.map((item) => ({
-    id: item.id,
-    requestId: item.requestId,
-    requestCode: item.requestCode,
-    worksiteId: item.worksiteId,
-    worksiteName: item.worksiteName,
-    productName: item.productName ?? item.productNameFree ?? "(sin nombre)",
-    productSku: item.productSku,
-    quantity: item.quantity,
-    unitOfMeasure: item.unitOfMeasure,
-    urgency: item.urgency ?? "normal",
-    notes: item.notes,
-  }))
-
   return (
     <PageContainer>
       <PageHeader
@@ -335,12 +302,12 @@ export default async function ComprasPage({
       <OcList
         orders={rows}
         pendingCount={pendingCount}
-        postponedItems={postponedItems}
-        postponedTotal={postponedCount}
-        showAllPostponedHref={buildPaginationHref("/compras", { ...sp, postergados: "todos" }, 1)}
+        stageTabs={stageTabs}
         canCreate={canCreateOrder}
         canDelete={canDeleteOrder}
+        canSend={canSendOrder}
         createdCount={createdCount}
+        noPendingItems={noPendingItems}
         worksiteOptions={worksiteOptions}
         supplierOptions={supplierOptions}
       />

@@ -4,14 +4,14 @@ import Link from "next/link"
 import { CheckCircle, Plus, Warning } from "@phosphor-icons/react"
 import { DataTable } from "@/components/admin/data-table"
 import { ORDERS_PAGE_SIZE } from "@/lib/constants"
-import { OC_STATE_META } from "@/components/states/state-badge"
 import { ListFilters, type FilterOption } from "@/components/adquisiciones/list-filters"
+import { StageTabs, type StageTab } from "@/components/adquisiciones/stage-tabs"
 import { OnboardingHint } from "@/components/ui/onboarding-hint"
 import { Button } from "@/components/ui/button"
-import { OcTableRow, OcMobileCard, PostponedItemRow } from "./oc-list-rows"
-import type { OcRow, PendingItem } from "./oc-list.types"
+import { OcTableRow, OcMobileCard } from "./oc-list-rows"
+import type { OcRow } from "./oc-list.types"
 
-export type { OcRow, PendingItem } from "./oc-list.types"
+export type { OcRow } from "./oc-list.types"
 
 const COLUMNS = [
   { key: "code",          label: "Código OC",  sortable: true,  width: "w-36" },
@@ -26,31 +26,27 @@ const COLUMNS = [
 
 /* ── OC List component ───────────────────────────────────────────────────────── */
 
-const OC_STATUS_OPTIONS: FilterOption[] = Object.entries(OC_STATE_META).map(
-  ([value, meta]) => ({ value, label: meta.label }),
-)
-
 export function OcList({
   orders,
   pendingCount,
-  postponedItems = [],
-  postponedTotal = 0,
-  showAllPostponedHref,
+  stageTabs = [],
   canCreate,
   canDelete = false,
+  canSend = false,
   createdCount = 0,
+  noPendingItems = false,
   worksiteOptions = [],
   supplierOptions = [],
 }: {
   orders:       OcRow[]
   pendingCount: number
-  postponedItems?: PendingItem[]
-  /** Total real de postergados; `postponedItems` puede venir topado. */
-  postponedTotal?: number
-  showAllPostponedHref?: string
+  stageTabs?:   StageTab[]
   canCreate:    boolean
   canDelete?:   boolean
+  canSend?:     boolean
   createdCount?: number
+  /** "Nueva OC" rebotó aquí porque no hay ítems aprobados sin OC (UX-7). */
+  noPendingItems?: boolean
   worksiteOptions?: FilterOption[]
   supplierOptions?: FilterOption[]
 }) {
@@ -59,13 +55,22 @@ export function OcList({
       <OnboardingHint
         storageKey="hint_compras_v1"
         title="Órdenes de compra"
-        body="Aquí se generan las OC a partir de los ítems aprobados. El sistema las agrupa automáticamente por proveedor. Una vez emitida, márcala como enviada para que pase a Recepción."
+        body="Aquí se generan las OC a partir de los ítems aprobados. El sistema las agrupa automáticamente por proveedor. Revisa el borrador y pulsa «Emitir y enviar» para que pase a Recepción."
       />
       {createdCount > 1 && (
         <div className="flex items-center gap-3 px-4 py-3 rounded-[var(--radius)] bg-[var(--color-success-tint)] border border-[var(--color-success-line)]">
           <CheckCircle size={16} className="text-[var(--color-success-ink)] shrink-0" />
           <p className="text-sm text-[var(--color-success-ink)] flex-1">
             Se crearon <span className="font-semibold">{createdCount} órdenes de compra</span>, separadas por proveedor.
+          </p>
+        </div>
+      )}
+
+      {noPendingItems && (
+        <div className="flex items-center gap-3 px-4 py-3 rounded-[var(--radius)] bg-[var(--color-signal-tint)] border border-[var(--color-signal-line)]">
+          <Warning size={16} className="text-[var(--color-signal-ink)] shrink-0" />
+          <p className="text-sm text-[var(--color-signal-ink)] flex-1">
+            No hay ítems aprobados pendientes de compra por ahora.
           </p>
         </div>
       )}
@@ -89,34 +94,12 @@ export function OcList({
         </div>
       )}
 
-      {postponedItems.length > 0 && (
-        <section className="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3">
-          <div className="mb-3 flex items-center justify-between gap-3">
-            <div>
-              <h2 className="text-sm font-semibold text-[var(--color-text)]">Ítems postergados</h2>
-              <p className="text-xs text-[var(--color-text-muted)]">Reanúdalos para que vuelvan al consolidado de OC.</p>
-            </div>
-            {showAllPostponedHref && postponedTotal > postponedItems.length && (
-              <Link
-                href={showAllPostponedHref}
-                className="shrink-0 text-xs font-medium text-[var(--color-primary)] underline-offset-2 hover:underline"
-              >
-                Ver los {postponedTotal}
-              </Link>
-            )}
-          </div>
-          <div>
-            {postponedItems.map((item) => (
-              <PostponedItemRow key={item.id} item={item} />
-            ))}
-          </div>
-        </section>
-      )}
+      {/* A5: el estado vive en las tabs, así que la barra no repite su select. */}
+      {stageTabs.length > 0 && <StageTabs tabs={stageTabs} ariaLabel="Etapa de la orden de compra" />}
 
       {/* Filtros server-side (URL-synced) */}
       <ListFilters
         searchPlaceholder="Buscar por código o proveedor..."
-        statusOptions={OC_STATUS_OPTIONS}
         worksiteOptions={worksiteOptions}
         supplierOptions={supplierOptions}
       />
@@ -128,14 +111,14 @@ export function OcList({
         viewKey="oc"
         stickyFirstColumn
         columns={COLUMNS}
-        rows={orders as unknown as Record<string, unknown>[]}
+        rows={orders}
         searchKeys={["code", "worksiteName", "supplierName", "status"]}
         disableInternalSearch
         pageSize={ORDERS_PAGE_SIZE}
         emptyTitle="Sin órdenes de compra"
         emptyDescription="No hay órdenes que coincidan con los filtros."
-        renderRow={(row) => <OcTableRow key={(row as unknown as OcRow).id} row={row as unknown as OcRow} canDelete={canDelete} />}
-        renderMobileCard={(row) => <OcMobileCard key={(row as unknown as OcRow).id} row={row as unknown as OcRow} />}
+        renderRow={(row) => <OcTableRow key={row.id} row={row} canDelete={canDelete} canSend={canSend} />}
+        renderMobileCard={(row) => <OcMobileCard key={row.id} row={row} />}
       />
     </div>
   )

@@ -18,6 +18,7 @@ import { receiveItemTx } from "./item-state"
 import { applyMovementTx } from "./stock"
 import { notifyManyUser, notifyAfterCommit } from "./notifications"
 import { closeOrderTx } from "./purchasing-module/receiving"
+import { RECEIVABLE_ORDER_STATUSES } from "@/lib/work-queue-labels"
 
 /* ── Types ──────────────────────────────────────────────────────────────────── */
 
@@ -71,7 +72,7 @@ export async function registerReceipt(
     if (worksiteIds !== 'all' && !worksiteIds.includes(order.worksiteId)) {
       throw new Error("No tienes acceso a esta faena")
     }
-    if (!["sent", "partially_office_received", "office_received", "partially_received"].includes(order.status)) {
+    if (!RECEIVABLE_ORDER_STATUSES.includes(order.status)) {
       throw new Error(`Cannot receive against order in state '${order.status}'`)
     }
     const directFaena = order.deliveryMode === "directo_faena"

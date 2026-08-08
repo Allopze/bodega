@@ -13,7 +13,12 @@ import type { ReceiptOcItem } from "../receipt-form"
 import { WorkAssignmentControl } from "../../pendientes/work-assignment-control"
 import { getOperationalAssignmentRecords } from "@/lib/services/operational-assignments"
 import { buildOperationalWorkItem, operationalAssignmentKey } from "@/lib/services/operational-work-queue"
-import { RECEIVABLE_ORDER_STATUSES } from "@/lib/work-queue"
+import {
+  RECEIVABLE_ORDER_STATUSES,
+  OFFICE_RECEIVABLE_STATUSES,
+  FAENA_RECEIVABLE_STATUSES,
+  DIRECT_FAENA_RECEIVABLE_STATUSES,
+} from "@/lib/work-queue"
 
 export const dynamic = "force-dynamic"
 export const metadata: Metadata = { title: "Registrar recepción" }
@@ -69,13 +74,13 @@ export default async function NuevaRecepcionPage({
   const productMap = Object.fromEntries(productRows.map((p) => [p.id, p]))
 
   const assignableReceiptStages = [
-    ...(canOfficeForOrder && ["sent", "partially_office_received"].includes(order.status)
+    ...(canOfficeForOrder && OFFICE_RECEIVABLE_STATUSES.has(order.status)
       ? [{ actionKey: "receive_office" as const, title: `Registrar llegada de ${order.code}`, statusLabel: "Recepción en oficina" }]
       : []),
     ...(canFaena && (order.deliveryMode === "directo_faena"
-      ? ["sent", "partially_received"]
-      : ["partially_office_received", "office_received", "partially_received"]
-    ).includes(order.status)
+      ? DIRECT_FAENA_RECEIVABLE_STATUSES
+      : FAENA_RECEIVABLE_STATUSES
+    ).has(order.status)
       ? [{ actionKey: "receive_worksite" as const, title: `Recibir ${order.code} en faena`, statusLabel: "Pendiente de faena" }]
       : []),
   ]

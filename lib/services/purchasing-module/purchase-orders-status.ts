@@ -1,5 +1,5 @@
 /**
- * Purchase order status transitions: issue, send, confirm, cancel.
+ * Purchase order status transitions: issue+send (fused), cancel.
  * All DB mutations here, never in Server Actions or UI components.
  */
 
@@ -9,9 +9,12 @@ import { purchaseOrders, purchaseOrderItems, purchaseRequestItems } from "@/db/s
 import { recordAudit, recordStatusChange, recordStatusChanges } from "@/lib/audit"
 import { rollupRequestStatus } from "@/lib/services/item-state-module/rollup"
 
-/* ── Issue OC (draft → issued) ───────────────────────────────────────────────── */
+/* ── Emitir y enviar (draft → sent) ─────────────────────────────────────────────
+ * Fusión 2026-08-07: "emitir" y "enviar al proveedor" eran dos pasos (draft →
+ * issued → sent); el estado `issued` se retiró. issuedAt/issuedBy y sentAt se
+ * registran juntos en la única transición. */
 
-export async function issueOrder(
+export async function issueAndSendOrder(
   orderId: string,
   userId: string,
   worksiteIds: string[] | 'all' = 'all',
@@ -25,52 +28,7 @@ export async function issueOrder(
       throw new Error("No tienes acceso a esta faena")
     }
     if (order.status !== "draft") {
-      throw new Error(`Cannot issue order in state '${order.status}'`)
-    }
-
-    const now = new Date().toISOString()
-    await tx
-      .update(purchaseOrders)
-      .set({ status: "issued", issuedAt: now, issuedBy: userId, updatedAt: now })
-      .where(eq(purchaseOrders.id, orderId))
-
-    await recordStatusChange({
-      entityType: "purchase_order",
-      entityId:   orderId,
-      fromStatus: "draft",
-      toStatus:   "issued",
-      changedBy:  userId,
-    }, tx)
-    await recordAudit({
-      userId,
-      userEmail:  opts?.userEmail,
-      action:     "status_change",
-      entityType: "purchase_order",
-      entityId:   orderId,
-      entityCode: order.code,
-      oldState:   { status: "draft" },
-      newState:   { status: "issued" },
-    }, tx)
-  })
-}
-
-/* ── Mark as sent (issued → sent) ────────────────────────────────────────────── */
-
-export async function markOrderSent(
-  orderId: string,
-  userId: string,
-  worksiteIds: string[] | 'all' = 'all',
-  opts?: { userEmail?: string },
-): Promise<void> {
-  await db.transaction(async (tx) => {
-    const [order] = await tx.select().from(purchaseOrders)
-      .where(eq(purchaseOrders.id, orderId)).for("update")
-    if (!order) throw new Error(`Order ${orderId} not found`)
-    if (worksiteIds !== 'all' && !worksiteIds.includes(order.worksiteId)) {
-      throw new Error("No tienes acceso a esta faena")
-    }
-    if (order.status !== "issued") {
-      throw new Error(`Cannot mark order as sent from state '${order.status}'`)
+      throw new Error(`Cannot issue and send order in state '${order.status}'`)
     }
 
     // A-03: an empty OC must never reach 'sent'. The receipt rollup keys off
@@ -80,13 +38,13 @@ export async function markOrderSent(
       .from(purchaseOrderItems)
       .where(eq(purchaseOrderItems.purchaseOrderId, orderId))
     if (ocItems.length === 0) {
-      throw new Error("No se puede enviar una orden de compra sin ítems")
+      throw new Error("No se puede emitir y enviar una orden de compra sin ítems")
     }
 
     const now = new Date().toISOString()
     await tx
       .update(purchaseOrders)
-      .set({ status: "sent", sentAt: now, updatedAt: now })
+      .set({ status: "sent", issuedAt: now, issuedBy: userId, sentAt: now, updatedAt: now })
       .where(eq(purchaseOrders.id, orderId))
 
     // Move request items to "purchased" status
@@ -95,21 +53,24 @@ export async function markOrderSent(
       .filter((id): id is string => id !== null)
 
     if (requestItemIds.length > 0) {
-      const itemNow = new Date().toISOString()
-      await tx
+      // DAT-10: trazar sólo los ítems que la guarda realmente movió — si alguno
+      // ya no estaba en 'in_purchase_order' (carrera con otra transición), la
+      // guarda del WHERE no lo toca y el historial no debe fingir que sí.
+      const updatedItems = await tx
         .update(purchaseRequestItems)
-        .set({ status: "purchased", updatedAt: itemNow })
+        .set({ status: "purchased", updatedAt: now })
         .where(
           and(
             inArray(purchaseRequestItems.id, requestItemIds),
             eq(purchaseRequestItems.status, "in_purchase_order"),
           )
         )
+        .returning({ id: purchaseRequestItems.id })
 
       await recordStatusChanges(
-        requestItemIds.map((reqItemId) => ({
+        updatedItems.map(({ id }) => ({
           entityType: "request_item" as const,
-          entityId:   reqItemId,
+          entityId:   id,
           fromStatus: "in_purchase_order",
           toStatus:   "purchased",
           changedBy:  userId,
@@ -121,7 +82,7 @@ export async function markOrderSent(
     await recordStatusChange({
       entityType: "purchase_order",
       entityId:   orderId,
-      fromStatus: "issued",
+      fromStatus: "draft",
       toStatus:   "sent",
       changedBy:  userId,
     }, tx)
@@ -132,13 +93,13 @@ export async function markOrderSent(
       entityType: "purchase_order",
       entityId:   orderId,
       entityCode: order.code,
-      oldState:   { status: "issued" },
+      oldState:   { status: "draft" },
       newState:   { status: "sent" },
     }, tx)
   })
 }
 
-/* ── Cancel Order (draft/issued/sent → cancelled) ────────────────────────────── */
+/* ── Cancel Order (draft/sent → cancelled) ───────────────────────────────────── */
 
 export async function cancelOrder(
   orderId: string,
@@ -154,7 +115,7 @@ export async function cancelOrder(
     if (worksiteIds !== 'all' && !worksiteIds.includes(order.worksiteId)) {
       throw new Error("No tienes acceso a esta faena")
     }
-    if (!["draft", "issued", "sent"].includes(order.status)) {
+    if (!["draft", "sent"].includes(order.status)) {
       throw new Error(`Cannot cancel order in status '${order.status}'`)
     }
 
@@ -176,7 +137,11 @@ export async function cancelOrder(
       .filter((id): id is string => id !== null)
 
     if (requestItemIds.length > 0) {
-      await tx
+      // DAT-10: `ocItems.currentStatus` se leyó antes de esta guarda — sin
+      // `.returning()`, un ítem que cambió de estado entre esa lectura y este
+      // UPDATE (la guarda no lo habría tocado) igual quedaría trazado como si
+      // se hubiera movido a 'pending_purchase'.
+      const updatedItems = await tx
         .update(purchaseRequestItems)
         .set({ status: "pending_purchase", updatedAt: now })
         .where(
@@ -185,10 +150,13 @@ export async function cancelOrder(
             inArray(purchaseRequestItems.status, ["in_purchase_order", "purchased"])
           )
         )
+        .returning({ id: purchaseRequestItems.id })
+      const updatedIds = new Set(updatedItems.map((item) => item.id))
 
       await recordStatusChanges(
         ocItems
-          .filter((item): item is typeof item & { requestItemId: string; currentStatus: string } => Boolean(item.requestItemId && item.currentStatus && ["in_purchase_order", "purchased"].includes(item.currentStatus)))
+          .filter((item): item is typeof item & { requestItemId: string; currentStatus: string } =>
+            Boolean(item.requestItemId && item.currentStatus && updatedIds.has(item.requestItemId)))
           .map((item) => ({
           entityType: "request_item" as const,
           entityId:   item.requestItemId,
@@ -206,7 +174,7 @@ export async function cancelOrder(
         .map((i) => i.requestId),
     )]
     for (const rid of affectedRequestIds) {
-      await rollupRequestStatus(rid, tx)
+      await rollupRequestStatus(rid, tx, userId)
     }
 
     // Update purchaseOrderItems status to cancelled

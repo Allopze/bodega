@@ -88,6 +88,8 @@ export interface ItemRow {
   productName:         string
   showAttrs:           boolean
   cotizaciones:        PendingCotizacion[]
+  /** Brecha de EPP que originó un ítem precargado; reserva su cupo al crear. */
+  replenishmentGapKey?: string
   // Equipment data — only used by quotation types (repuestos/servicios).
   // Persisted as request item attributes via {REPUESTO,SERVICE}_ATTRIBUTE_NAMES.
   partNumber:          string
@@ -98,11 +100,35 @@ export interface ItemRow {
   model:               string
 }
 
+/**
+ * Ítem con el que se abre el creador: sugerencia de reposición de EPP
+ * (`?reposicion=1`) o copia de otra solicitud (`?desde=`).
+ */
+export interface PrefillItem {
+  productId:            string | null
+  productNameFree:      string
+  quantity:             number
+  unitOfMeasure:        string
+  urgency:              string
+  notes:                string
+  workerId?:            string | null
+  workerName?:          string | null
+  suggestedSupplierId?: string | null
+  supplierHint?:        string | null
+  replenishmentGapKey?: string
+}
+
 export interface PendingCotizacion {
   _id:       string
   file:      File
   fileName:  string
   fileSize:  number
+  // LOG-9/UX-3: mismos 3 campos que el panel de selección exige — sin esto,
+  // toda cotización subida desde el formulario llegaba como "Proveedor sin
+  // nombre · $0" y no se podía comparar para elegir ganadora.
+  totalAmount:      string
+  supplierId:       string
+  supplierNameFree: string
 }
 
 export interface AttrRow {

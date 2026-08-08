@@ -1,4 +1,4 @@
-export interface OcRow {
+export type OcRow = {
   id:              string
   code:            string
   worksiteName:    string
