@@ -16,6 +16,12 @@ export interface TaeCopecChannelRow {
   tctDieselLiters: number
   tctBlueMaxLiters: number
   tctRecords: number
+  /** `true` si algún registro TCT que contribuye a esta fila NO está 100%
+   *  contenido en [filters.from, filters.to] — su período completo se
+   *  solapa con el filtro, pero se extiende más allá. Sus litros NO entran
+   *  a `tctDieselLiters`/`tctBlueMaxLiters` (ver query): sumarlos enteros
+   *  sobreestimaba el canal TCT frente a una ventana TAE más angosta. */
+  tctPartial: boolean
 }
 
 export interface TaeCopecReconciliationRow extends TaeCopecChannelRow {
@@ -58,6 +64,7 @@ export function mergeTaeCopecChannels(taeRows: TaeCopecChannelRow[], tctRows: Ta
     current.tctDieselLiters += row.tctDieselLiters
     current.tctBlueMaxLiters += row.tctBlueMaxLiters
     current.tctRecords += row.tctRecords
+    current.tctPartial = current.tctPartial || row.tctPartial
   }
   return [...merged.values()].map((row) => {
     const tctLiters = row.tctDieselLiters + row.tctBlueMaxLiters
@@ -92,6 +99,15 @@ export async function getTaeCopecReconciliation(session: Session, filters: TaeCo
     filters.to ? lte(fuelConsumptionRecords.periodoDesde, filters.to) : undefined,
     worksiteScopeSql(session, fuelConsumptionRecords.worksiteId),
   )
+  // `tctWhere` es un test de SOLAPAMIENTO (periodoHasta >= from AND periodoDesde
+  // <= to): un registro TCT de mes completo entra igual con un filtro de 3 días,
+  // y antes se sumaban sus litros COMPLETOS. Esto es el test de CONTENCIÓN
+  // (el período del registro cae entero dentro del filtro) — `undefined` si no
+  // hay filtro de fecha, con lo que no hay ventana de la que "salirse".
+  const tctFullyContained = and(
+    filters.from ? gte(fuelConsumptionRecords.periodoDesde, filters.from) : undefined,
+    filters.to ? lte(fuelConsumptionRecords.periodoHasta, filters.to) : undefined,
+  )
 
   const [taeRaw, tctRaw, taeUnmapped, tctUnmapped] = await Promise.all([
     db.select({
@@ -116,8 +132,15 @@ export async function getTaeCopecReconciliation(session: Session, filters: TaeCo
       equipment: sql<string>`coalesce(${fuelVehicles.code}, ${fuelConsumptionRecords.patente})`,
       plate: fuelConsumptionRecords.patente,
       fuente: fuelConsumptionRecords.fuente,
-      liters: sql<number>`coalesce(sum(${fuelConsumptionRecords.cantidadUnidad}), 0)`,
+      // Sólo litros de registros 100% contenidos en el filtro — un registro
+      // que se solapa pero se extiende más allá NO aporta a este total.
+      liters: tctFullyContained
+        ? sql<number>`coalesce(sum(${fuelConsumptionRecords.cantidadUnidad}) filter (where ${tctFullyContained}), 0)`
+        : sql<number>`coalesce(sum(${fuelConsumptionRecords.cantidadUnidad}), 0)`,
       records: sql<number>`count(*)`,
+      partial: tctFullyContained
+        ? sql<boolean>`bool_or(not (${tctFullyContained}))`
+        : sql<boolean>`false`,
     }).from(fuelConsumptionRecords)
       .innerJoin(worksites, eq(worksites.id, fuelConsumptionRecords.worksiteId))
       .leftJoin(fuelVehicles, eq(fuelVehicles.id, fuelConsumptionRecords.vehicleId))
@@ -127,8 +150,8 @@ export async function getTaeCopecReconciliation(session: Session, filters: TaeCo
     getUnmappedTct(session, filters),
   ])
 
-  const taeRows: TaeCopecChannelRow[] = taeRaw.map((row) => ({ month: row.month, worksiteId: row.worksiteId, worksiteName: row.worksiteName, vehicleId: row.vehicleId!, equipment: row.equipment, plate: row.plate, taeLiters: Number(row.liters), taeLoads: Number(row.loads), tctDieselLiters: 0, tctBlueMaxLiters: 0, tctRecords: 0 }))
-  const tctRows: TaeCopecChannelRow[] = tctRaw.map((row) => ({ month: row.month, worksiteId: row.worksiteId, worksiteName: row.worksiteName, vehicleId: row.vehicleId!, equipment: row.equipment, plate: row.plate, taeLiters: 0, taeLoads: 0, tctDieselLiters: row.fuente?.toLocaleLowerCase("es-CL").includes("bluemax") ? 0 : Number(row.liters), tctBlueMaxLiters: row.fuente?.toLocaleLowerCase("es-CL").includes("bluemax") ? Number(row.liters) : 0, tctRecords: Number(row.records) }))
+  const taeRows: TaeCopecChannelRow[] = taeRaw.map((row) => ({ month: row.month, worksiteId: row.worksiteId, worksiteName: row.worksiteName, vehicleId: row.vehicleId!, equipment: row.equipment, plate: row.plate, taeLiters: Number(row.liters), taeLoads: Number(row.loads), tctDieselLiters: 0, tctBlueMaxLiters: 0, tctRecords: 0, tctPartial: false }))
+  const tctRows: TaeCopecChannelRow[] = tctRaw.map((row) => ({ month: row.month, worksiteId: row.worksiteId, worksiteName: row.worksiteName, vehicleId: row.vehicleId!, equipment: row.equipment, plate: row.plate, taeLiters: 0, taeLoads: 0, tctDieselLiters: row.fuente?.toLocaleLowerCase("es-CL").includes("bluemax") ? 0 : Number(row.liters), tctBlueMaxLiters: row.fuente?.toLocaleLowerCase("es-CL").includes("bluemax") ? Number(row.liters) : 0, tctRecords: Number(row.records), tctPartial: Boolean(row.partial) }))
   const rows = mergeTaeCopecChannels(taeRows, tctRows)
   const summary = rows.reduce((acc, row) => {
     acc.taeLiters += row.taeLiters

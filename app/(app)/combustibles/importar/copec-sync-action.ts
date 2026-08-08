@@ -3,7 +3,7 @@
 import { db } from "@/db"
 import { eq } from "drizzle-orm"
 import { systemSettings } from "@/db/schema"
-import { requirePermission } from "@/lib/auth/can"
+import { guardPermission } from "@/lib/auth/can"
 import { getCopecSyncPlan, setCopecSyncStartDate, syncCopecReportPeriod } from "@/lib/combustibles/copec-sync"
 import { z } from "zod"
 
@@ -34,8 +34,9 @@ export async function getCopecSyncStatusAction(): Promise<
   | { ok: true; data: CopecSyncStatus }
   | { ok: false; message: string }
 > {
+  const guard = await guardPermission("combustibles:import")
+  if (guard.error) return guard.error
   try {
-    await requirePermission("combustibles:import")
     const row = await db.query.systemSettings.findFirst({ where: eq(systemSettings.key, STATE_KEY) })
     if (!row) {
       return { ok: true, data: { lastRunAt: null, cursor: null, pending: 0 } }
@@ -59,8 +60,9 @@ export async function getCopecSyncPlanAction(): Promise<
   | { ok: true; from: string; to: string; periods: Array<{ from: string; to: string }> }
   | { ok: false; message: string }
 > {
+  const guard = await guardPermission("combustibles:import")
+  if (guard.error) return guard.error
   try {
-    await requirePermission("combustibles:import")
     const result = await getCopecSyncPlan()
     return { ok: true, from: result.from, to: result.to, periods: result.periods }
   } catch (error) {
@@ -72,8 +74,9 @@ export async function updateCopecSyncStartAction(input: { startDate: string; exp
   | { ok: true; data: CopecSyncStartOptions }
   | { ok: false; message: string }
 > {
+  const guard = await guardPermission("combustibles:import")
+  if (guard.error) return guard.error
   try {
-    await requirePermission("combustibles:import")
     const parsed = copecStartDateSchema.safeParse(input)
     if (!parsed.success) return { ok: false, message: "La fecha de inicio no es válida" }
     return { ok: true, data: await setCopecSyncStartDate(parsed.data.startDate, parsed.data.expectedStart) }
@@ -86,8 +89,10 @@ export async function runCopecSyncPeriodAction(period: { from: string; to: strin
   | { ok: true; imported: number; received: number; pending: number; unavailable: string[]; reports: number; unmappedCards: string[] }
   | { ok: false; message: string }
 > {
+  const guard = await guardPermission("combustibles:import")
+  if (guard.error) return guard.error
+  const session = guard.session
   try {
-    const session = await requirePermission("combustibles:import")
     const parsedPeriod = copecPeriodSchema.safeParse(period)
     if (!parsedPeriod.success || parsedPeriod.data.from > parsedPeriod.data.to) {
       return { ok: false, message: "El período de Copec no es válido" }

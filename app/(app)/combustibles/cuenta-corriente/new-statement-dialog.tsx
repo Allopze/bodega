@@ -42,7 +42,7 @@ export function NewStatementDialog({ suppliers }: { suppliers: Array<{ id: strin
               options={recentPeriods(24).map((value) => ({ value, label: formatPeriodOption(value) }))}
               aria-label="Mes"
             />
-            {state.fieldErrors?.month && <p className="text-sm text-destructive">{state.fieldErrors.month[0]}</p>}
+            {state.fieldErrors?.month && <p className="text-sm text-[var(--color-danger-ink)]">{state.fieldErrors.month[0]}</p>}
           </div>
           <div className="space-y-2">
             <Label>Proveedor *</Label>
@@ -52,14 +52,14 @@ export function NewStatementDialog({ suppliers }: { suppliers: Array<{ id: strin
                 {suppliers.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
               </SelectContent>
             </Select>
-            {state.fieldErrors?.fuelSupplierId && <p className="text-sm text-destructive">{state.fieldErrors.fuelSupplierId[0]}</p>}
+            {state.fieldErrors?.fuelSupplierId && <p className="text-sm text-[var(--color-danger-ink)]">{state.fieldErrors.fuelSupplierId[0]}</p>}
           </div>
           <div className="space-y-2">
             <Label>Fecha de vencimiento</Label>
             <DatePicker name="dueDate" />
           </div>
           {state.message && !state.ok && (
-            <p className="text-sm text-destructive">{state.message}</p>
+            <p className="text-sm text-[var(--color-danger-ink)]">{state.message}</p>
           )}
           <div className="flex justify-end gap-3">
             <Button type="button" variant="secondary" onClick={() => setOpen(false)}>Cancelar</Button>

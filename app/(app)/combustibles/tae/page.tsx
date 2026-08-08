@@ -20,15 +20,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { getTaeGroupedTotals } from "@/lib/combustibles/tae-dashboard"
 import { TaeGroupChart } from "./tae-group-chart"
 import { formatDateTime } from "@/lib/utils"
+import { TAE_STATUS_LABELS as STATUS } from "@/lib/combustibles/labels"
 
 export const metadata: Metadata = { title: "Control TAE" }
-
-const STATUS: Record<string, { label: string; variant: "primary" | "warning" | "success" | "danger" }> = {
-  submitted: { label: "Recibida", variant: "primary" },
-  observed: { label: "Observada", variant: "warning" },
-  validated: { label: "Validada", variant: "success" },
-  voided: { label: "Anulada", variant: "danger" },
-}
 
 const TAEGROUP_FALLBACK: Array<{ name: string; liters: number; group: string; count: number }> = []
 

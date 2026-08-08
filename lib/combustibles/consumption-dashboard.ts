@@ -129,8 +129,13 @@ export async function getConsumptionDashboard(session: Session, rawFilters: Cons
       totalTarjetas: sql<number>`coalesce(sum(${fuelConsumptionRecords.numeroTarjetas}), 0)`,
       patentesUnicas: sql<number>`count(distinct ${fuelConsumptionRecords.patente})`,
       patentesSinAsociacion: sql<number>`count(distinct ${fuelConsumptionRecords.patente}) filter (where ${fuelConsumptionRecords.vehicleId} is null)`,
-      rendimientoPonderado: sql<number>`case when sum(${fuelConsumptionRecords.cantidadUnidad}) > 0
-        then sum(${fuelConsumptionRecords.rendimientoPromedio} * ${fuelConsumptionRecords.cantidadUnidad}) / sum(${fuelConsumptionRecords.cantidadUnidad})
+      // El denominador se acota a las mismas filas que el numerador: `sum()`
+      // ignora los NULL del producto, pero sumaba los litros de esas filas
+      // igual, así que cada fila sin rendimiento informado hundía el promedio
+      // ponderado del período.
+      rendimientoPonderado: sql<number>`case when coalesce(sum(${fuelConsumptionRecords.cantidadUnidad}) filter (where ${fuelConsumptionRecords.rendimientoPromedio} is not null), 0) > 0
+        then sum(${fuelConsumptionRecords.rendimientoPromedio} * ${fuelConsumptionRecords.cantidadUnidad}) filter (where ${fuelConsumptionRecords.rendimientoPromedio} is not null)
+             / sum(${fuelConsumptionRecords.cantidadUnidad}) filter (where ${fuelConsumptionRecords.rendimientoPromedio} is not null)
         else 0 end`,
     }).from(fuelConsumptionRecords).where(where),
 
@@ -152,11 +157,15 @@ export async function getConsumptionDashboard(session: Session, rawFilters: Cons
       cantidad: sql<number>`coalesce(sum(${fuelConsumptionRecords.cantidadUnidad}), 0)`,
       monto: sql<number>`coalesce(sum(${fuelConsumptionRecords.monto}), 0)`,
       transacciones: sql<number>`coalesce(sum(${fuelConsumptionRecords.numeroTransacciones}), 0)`,
-      rendimiento: sql<number>`case when sum(${fuelConsumptionRecords.cantidadUnidad}) > 0
-        then sum(${fuelConsumptionRecords.rendimientoPromedio} * ${fuelConsumptionRecords.cantidadUnidad}) / sum(${fuelConsumptionRecords.cantidadUnidad})
+      rendimiento: sql<number>`case when coalesce(sum(${fuelConsumptionRecords.cantidadUnidad}) filter (where ${fuelConsumptionRecords.rendimientoPromedio} is not null), 0) > 0
+        then sum(${fuelConsumptionRecords.rendimientoPromedio} * ${fuelConsumptionRecords.cantidadUnidad}) filter (where ${fuelConsumptionRecords.rendimientoPromedio} is not null)
+             / sum(${fuelConsumptionRecords.cantidadUnidad}) filter (where ${fuelConsumptionRecords.rendimientoPromedio} is not null)
         else 0 end`,
-      // Un mismo vehicleId siempre que la patente esté asociada en todas sus filas del período.
-      vehicleId: sql<string | null>`max(${fuelConsumptionRecords.vehicleId})`,
+      // Un mismo vehicleId siempre que la patente esté asociada en TODAS sus
+      // filas del período: `max()` a secas devolvía el id aunque sólo una fila
+      // lo tuviera, y la patente se pintaba como asociada estando a medias.
+      vehicleId: sql<string | null>`case when count(*) = count(${fuelConsumptionRecords.vehicleId})
+        then max(${fuelConsumptionRecords.vehicleId}) else null end`,
     }).from(fuelConsumptionRecords).where(where)
       .groupBy(fuelConsumptionRecords.patente),
   ])
@@ -223,7 +232,7 @@ export interface EquipmentTypeConsumptionRow {
 }
 
 /** Litros totales agrupados por tipo de equipo, para el gráfico de la sección 5. */
-export async function getConsumptionByEquipmentType(session: Session, filters: Pick<ConsumptionFilters, "fromDate" | "toDate" | "worksiteId">): Promise<EquipmentTypeConsumptionRow[]> {
+export async function getConsumptionByEquipmentType(session: Session, filters: ConsumptionFilters): Promise<EquipmentTypeConsumptionRow[]> {
   const norm = normalizeConsumptionFilters(filters)
   const where = buildConsumptionWhere(session, norm)
   if (!where) return []
@@ -262,7 +271,7 @@ export interface VehicleEvolutionPoint {
 
 /** Serie temporal por vehículo para gráfico de evolución individual
  *  (sección 5). Cada punto es un período/vehículo con litros y monto agregados. */
-export async function getEvolutionByVehicle(session: Session, filters: Pick<ConsumptionFilters, "fromDate" | "toDate" | "worksiteId" | "patente">): Promise<VehicleEvolutionPoint[]> {
+export async function getEvolutionByVehicle(session: Session, filters: ConsumptionFilters): Promise<VehicleEvolutionPoint[]> {
   const norm = normalizeConsumptionFilters(filters)
   const where = buildConsumptionWhere(session, norm)
   if (!where) return []
@@ -305,7 +314,7 @@ export interface HeatmapCell {
 
 /** Matriz faena × equipo para el mapa de calor (sección 5).
  *  Agrupa por faena y equipo (código+patente), devuelve top-50 combinaciones. */
-export async function getWorksiteEquipmentMatrix(session: Session, filters: Pick<ConsumptionFilters, "fromDate" | "toDate" | "worksiteId">): Promise<HeatmapCell[]> {
+export async function getWorksiteEquipmentMatrix(session: Session, filters: ConsumptionFilters): Promise<HeatmapCell[]> {
   const norm = normalizeConsumptionFilters(filters)
   const where = buildConsumptionWhere(session, norm)
   if (!where) return []

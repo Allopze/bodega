@@ -3,8 +3,10 @@ import { and, desc, eq, gte, inArray, lte, ne, notInArray, sql } from "drizzle-o
 import { db } from "@/db"
 import { fuelConsumptionRecords, fuelImportBatches, fuelVehicles, systemSettings, users } from "@/db/schema"
 import { nanoid } from "@/lib/id"
+import { todayInChile, addDaysToPlainDate } from "@/lib/utils"
 import { parseConsumptionExcel, type ParsedConsumptionRow } from "@/lib/combustibles/consumption-import"
 import { computeBatchTotals } from "@/lib/combustibles/consumption-calculations"
+import { plateMatchKey } from "@/lib/combustibles/xlsx-utils"
 import {
   downloadCopecReports,
 } from "@/lib/combustibles/copec-reports"
@@ -45,13 +47,12 @@ async function saveState(next: SyncState) {
   await db.insert(systemSettings).values({ key: STATE_KEY, value }).onConflictDoUpdate({ target: systemSettings.key, set: { value, updatedAt: new Date().toISOString() } })
 }
 
-function today(): string { return new Date().toISOString().slice(0, 10) }
+// Fecha civil chilena: en UTC (la zona del proceso en producción), entre las
+// 21:00 y la medianoche de Chile el 1º del mes ya llegó — `lastClosedMonthEnd()`
+// cerraba un mes de más y el plan intentaba sincronizar un mes aún abierto.
+function today(): string { return todayInChile() }
 
-function addDays(value: string, days: number): string {
-  const date = new Date(`${value}T00:00:00.000Z`)
-  date.setUTCDate(date.getUTCDate() + days)
-  return date.toISOString().slice(0, 10)
-}
+function addDays(value: string, days: number): string { return addDaysToPlainDate(value, days) }
 
 function firstDayOfMonth(value: string): string {
   return `${value.slice(0, 7)}-01`
@@ -210,19 +211,31 @@ async function importCopecPeriod(
     reports.push(`${productLabel}:${report.fileName}`)
     const hash = createHash("sha256").update(report.buffer).digest("hex")
     const parsed = await parseConsumptionExcel(report.buffer)
+    // Matching por clave normalizada (sin separadores), no por igualdad
+    // exacta: el catálogo de vehículos guarda la patente con el formato del
+    // import masivo/alta manual (con o sin guion) y el reporte TCT trae su
+    // propio formato — "AB-CD12" contra "ABCD12" no calzaba con `inArray`
+    // y la carga quedaba en `pending` como "patente sin vincular" pese a
+    // que el vehículo sí existe.
     const plates = [...new Set(parsed.rows.map((row) => row.patente))]
-    const vehicles = plates.length ? await db.query.fuelVehicles.findMany({ where: inArray(fuelVehicles.plate, plates), columns: { id: true, plate: true, worksiteId: true } }) : []
-    const byPlate = new Map(vehicles.map((vehicle) => [vehicle.plate, vehicle]))
+    const vehicles = plates.length ? await db.query.fuelVehicles.findMany({ columns: { id: true, plate: true, worksiteId: true } }) : []
+    const byPlateKey = new Map(vehicles.map((vehicle) => [plateMatchKey(vehicle.plate), vehicle]))
     const groups = new Map<string, ParsedConsumptionRow[]>()
     for (const row of parsed.rows) {
-      const vehicle = byPlate.get(row.patente)
+      const vehicle = byPlateKey.get(plateMatchKey(row.patente))
       if (!vehicle) { pending.add(row.patente); continue }
       const rows = groups.get(vehicle.worksiteId) ?? []
       rows.push(row); groups.set(vehicle.worksiteId, rows)
     }
     const buildRecords = (rows: ParsedConsumptionRow[], batchId: string, worksiteId: string) =>
-      rows.map((row) => ({ id: nanoid(), batchId, worksiteId, vehicleId: byPlate.get(row.patente)?.id ?? null, patente: row.patente, numeroTarjetas: row.numeroTarjetas, numeroTransacciones: row.numeroTransacciones, cantidadUnidad: row.cantidadUnidad, monto: row.monto, rendimientoPromedio: row.rendimientoPromedio, precioPromedioUnidad: row.cantidadUnidad > 0 ? Math.round(row.monto / row.cantidadUnidad * 100) / 100 : null, periodoDesde: from, periodoHasta: to, fuente: source, rawRow: row.rawRow }))
+      rows.map((row) => ({ id: nanoid(), batchId, worksiteId, vehicleId: byPlateKey.get(plateMatchKey(row.patente))?.id ?? null, patente: row.patente, numeroTarjetas: row.numeroTarjetas, numeroTransacciones: row.numeroTransacciones, cantidadUnidad: row.cantidadUnidad, monto: row.monto, rendimientoPromedio: row.rendimientoPromedio, precioPromedioUnidad: row.cantidadUnidad > 0 ? Math.round(row.monto / row.cantidadUnidad * 100) / 100 : null, periodoDesde: from, periodoHasta: to, fuente: source, rawRow: row.rawRow }))
 
+    // Las filas de `parsed.errors` son del ARCHIVO completo, no por faena: el
+    // loop de abajo crea un lote nuevo por cada faena del archivo, y antes le
+    // sumaba el conteo COMPLETO de errores a cada uno — con 3 faenas en el
+    // mismo reporte, el total de filas rechazadas se triplicaba. Se atribuyen
+    // sólo al primer lote nuevo que se crea para este archivo.
+    let fileErrorsAttributed = false
     for (const [worksiteId, rows] of groups) {
       // Dedup por identidad lógica del período (faena + rango + fuente), NO por
       // hash del archivo: Copec regenera el Excel en cada descarga (hash distinto
@@ -277,8 +290,10 @@ async function importCopecPeriod(
       }
       const totals = computeBatchTotals(rows)
       const batchId = nanoid()
+      const fileErrors = fileErrorsAttributed ? 0 : parsed.errors.length
+      fileErrorsAttributed = true
       await db.transaction(async (tx) => {
-        await tx.insert(fuelImportBatches).values({ id: batchId, worksiteId, fuente: source, periodoDesde: from, periodoHasta: to, archivoNombre: report.fileName, hashArchivo: hash, estado: "importado", totalFilas: totals.totalFilas + parsed.errors.length, filasValidas: totals.totalFilas, filasInvalidas: parsed.errors.length, totalPatentes: totals.totalPatentes, totalTarjetas: totals.totalTarjetas, totalTransacciones: totals.totalTransacciones, totalCantidad: totals.totalCantidad, totalMonto: totals.totalMonto, importadoPor: resolvedImporterId, notas: "Sincronización mensual automática Copec TCT" })
+        await tx.insert(fuelImportBatches).values({ id: batchId, worksiteId, fuente: source, periodoDesde: from, periodoHasta: to, archivoNombre: report.fileName, hashArchivo: hash, estado: "importado", totalFilas: totals.totalFilas + fileErrors, filasValidas: totals.totalFilas, filasInvalidas: fileErrors, totalPatentes: totals.totalPatentes, totalTarjetas: totals.totalTarjetas, totalTransacciones: totals.totalTransacciones, totalCantidad: totals.totalCantidad, totalMonto: totals.totalMonto, importadoPor: resolvedImporterId, notas: "Sincronización mensual automática Copec TCT" })
         await tx.insert(fuelConsumptionRecords).values(buildRecords(rows, batchId, worksiteId))
       })
       imported += rows.length

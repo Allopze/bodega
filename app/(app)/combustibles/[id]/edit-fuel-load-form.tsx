@@ -55,13 +55,13 @@ export function EditFuelLoadForm({ load, vehicles, suppliers, worksites }: EditF
   const [baseAmount, setBaseAmount] = useState(load.baseAmount)
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false)
 
-  // IEC components are preserved from the existing load (rates aren't available client-side).
-  // Only IVA (always 19%) and total are recalculated when baseAmount changes — both are
-  // pure functions of the inputs, so they're derived during render rather than mirrored
-  // into state via an effect.
+  // Las tasas de IEC (CLP/litro) viven en system_settings y no están disponibles
+  // en el cliente: acá se muestra el IEC vigente de la carga. Si cambian los
+  // litros, el servidor lo recalcula al guardar — de ahí el aviso de abajo.
   const { iecFixed, iecVariable, iecTotal } = load
   const ivaAmount = Math.round(baseAmount * 0.19 * 100) / 100
   const totalAmount = Math.round((baseAmount + iecTotal + ivaAmount) * 100) / 100
+  const litersChanged = Number(liters) !== Number(load.liters)
 
   useEffect(() => {
     if (state.ok) {
@@ -198,20 +198,25 @@ export function EditFuelLoadForm({ load, vehicles, suppliers, worksites }: EditF
             </div>
             <div className="space-y-2">
               <Label>IEC Fijo</Label>
-              <Input value={formatCLP(iecFixed)} disabled className="bg-muted" />
+              <Input value={formatCLP(iecFixed)} disabled className="bg-[var(--color-surface-2)]" />
             </div>
             <div className="space-y-2">
               <Label>IEC Variable</Label>
-              <Input value={formatCLP(iecVariable)} disabled className="bg-muted" />
+              <Input value={formatCLP(iecVariable)} disabled className="bg-[var(--color-surface-2)]" />
             </div>
             <div className="space-y-2">
               <Label>IVA (19%)</Label>
-              <Input value={formatCLP(ivaAmount)} disabled className="bg-muted" />
+              <Input value={formatCLP(ivaAmount)} disabled className="bg-[var(--color-surface-2)]" />
             </div>
             <div className="space-y-2">
               <Label className="text-lg font-semibold">Total</Label>
-              <Input value={formatCLP(totalAmount)} disabled className="bg-muted text-lg font-bold" />
+              <Input value={formatCLP(totalAmount)} disabled className="bg-[var(--color-surface-2)] text-lg font-bold" />
             </div>
+            {litersChanged && (
+              <p className="sm:col-span-2 text-xs text-[var(--color-warning-ink)]">
+                Cambiaste los litros: el IEC (CLP por litro) y el total se recalculan al guardar con las tasas vigentes. Los valores de arriba son los de la carga actual.
+              </p>
+            )}
           </CardContent>
         </Card>
 

@@ -71,3 +71,28 @@ export function calculateStatementTotals(
     { totalLiters: 0, totalBaseAmount: 0, totalIec: 0, totalIva: 0, totalAmount: 0 }
   )
 }
+
+export type StatementDisplayStatus = "open" | "partial" | "paid" | "overdue" | "cancelled"
+
+/**
+ * "Vencido" NUNCA se persiste en `fuel_monthly_statements.status` — nadie lo
+ * escribe (grep confirmado en todo el módulo). Antes cada consumidor lo
+ * recalculaba a su manera: `notifications.ts` con su propia comparación de
+ * fecha (y en UTC), `statements-table.tsx` mostraba crudo el status de la
+ * fila y por eso NUNCA mostraba "Vencido" pese a tener el label listo. Un
+ * único cálculo, con `today` inyectado (usar `todayInChile()`) para que
+ * server y cliente no puedan divergir por zona horaria.
+ *
+ * `cancelled` no se deriva aquí: no existe ninguna acción de "cancelar" un
+ * resumen en el repo, así que ese estado queda para cuando exista.
+ */
+export function getStatementDisplayStatus(
+  statement: { status: string; dueDate: string | null; totalAmount: number; paidAmount: number },
+  today: string,
+): StatementDisplayStatus {
+  if (statement.status === "paid" || statement.status === "cancelled") return statement.status as StatementDisplayStatus
+  const pending = roundCLP(statement.totalAmount - statement.paidAmount)
+  if (pending <= 0) return "paid"
+  if (statement.dueDate && statement.dueDate < today) return "overdue"
+  return statement.status === "partial" ? "partial" : "open"
+}

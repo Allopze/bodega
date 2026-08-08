@@ -154,7 +154,7 @@ function ReportCard({ title, icon, rows }: { title: string; icon: React.ReactNod
       <CardHeader className="flex flex-row items-center gap-2">
         {icon}
         <CardTitle className="text-base">{title}</CardTitle>
-        <span className="ml-auto text-sm text-muted-foreground">{formatCLP(totalAmount)}</span>
+        <span className="ml-auto text-sm text-[var(--color-text-muted)]">{formatCLP(totalAmount)}</span>
       </CardHeader>
       <CardContent>
         <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
@@ -169,7 +169,7 @@ function ReportCard({ title, icon, rows }: { title: string; icon: React.ReactNod
           </TableHeader>
           <TableBody>
             {rows.length === 0 ? (
-              <TableRow><TableCell colSpan={4} className="text-center py-4 text-muted-foreground text-sm">Sin datos</TableCell></TableRow>
+              <TableRow><TableCell colSpan={4} className="text-center py-4 text-[var(--color-text-muted)] text-sm">Sin datos</TableCell></TableRow>
             ) : (
               rows.map((r) => (
                 <TableRow key={r.group ?? "sin-grupo"}>

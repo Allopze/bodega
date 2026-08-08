@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Plus, PencilSimple, Power } from "@phosphor-icons/react"
+import { PencilSimple, Power } from "@phosphor-icons/react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -19,7 +19,6 @@ export function AnomalyRuleCatalog({ rows }: { rows: AnomalyRuleRow[] }) {
   const [open, setOpen] = React.useState(false)
   const [pendingId, setPendingId] = React.useState<string | null>(null)
 
-  function create() { setEditRow(null); setOpen(true) }
   function edit(row: AnomalyRuleRow) { setEditRow(row); setOpen(true) }
   function close() { setOpen(false); setEditRow(null) }
 
@@ -32,7 +31,6 @@ export function AnomalyRuleCatalog({ rows }: { rows: AnomalyRuleRow[] }) {
   }
 
   return <>
-    <div className="mb-3 flex justify-end"><Button size="sm" onClick={create}><Plus size={15} />Nueva regla</Button></div>
     <div className="overflow-x-auto border border-[var(--color-border)]">
       <Table className="min-w-[880px]">
         <TableHeader><TableRow><TableHead>Regla</TableHead><TableHead>Severidad</TableHead><TableHead>Configuración</TableHead><TableHead>Estado</TableHead><TableHead className="text-right">Acciones</TableHead></TableRow></TableHeader>

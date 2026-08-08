@@ -13,6 +13,7 @@ import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { DatePicker } from "@/components/ui/date-picker"
+import { addDaysToPlainDate, todayInChile } from "@/lib/utils"
 import { CycleWorkbench } from "./cycle-workbench"
 import { CycleStageChart, type CycleStagePoint } from "./cycle-stage-chart"
 import { FilterSelect } from "../filter-select"
@@ -56,14 +57,22 @@ export default async function FuelCyclePage({ searchParams }: { searchParams: Pr
   catch { redirect("/forbidden") }
 
   const sp = await searchParams
-  const from = typeof sp.desde === "string" ? sp.desde : new Date(new Date().setDate(new Date().getDate() - 30)).toISOString().slice(0, 10)
-  const to = typeof sp.hasta === "string" ? sp.hasta : new Date().toISOString().slice(0, 10)
+  // Período por defecto en calendario chileno, no UTC.
+  const today = todayInChile()
+  const from = typeof sp.desde === "string" ? sp.desde : addDaysToPlainDate(today, -30)
+  const to = typeof sp.hasta === "string" ? sp.hasta : today
   const worksiteId = typeof sp.faena === "string" ? sp.faena : undefined
   const productId = typeof sp.producto === "string" ? sp.producto : undefined
   const traceStage: TraceStage | undefined = sp.etapa === "received" || sp.etapa === "delivered" ? sp.etapa : undefined
   const filters = { from, to, worksiteId, productId }
-  const fromTimestamp = `${from}T00:00:00.000Z`
-  const toTimestamp = `${to}T23:59:59.999Z`
+  // El rango son días CIVILES chilenos, y `occurredAt` es un instante. Anclar
+  // los extremos en "Z" recortaba una ventana UTC: incluía las últimas 4 horas
+  // del día chileno anterior y perdía las 4 últimas del día final, así que los
+  // movimientos de la tabla no cuadraban con los tiles de la misma página.
+  // Sin sufijo de zona, `new Date` interpreta en la zona del proceso
+  // (America/Santiago, ver docker-compose.yml).
+  const fromTimestamp = new Date(`${from}T00:00:00.000`).toISOString()
+  const toTimestamp = new Date(`${to}T23:59:59.999`).toISOString()
   const stageTypes = traceStage === "received"
     ? ["received"]
     : traceStage === "delivered"
@@ -124,7 +133,6 @@ export default async function FuelCyclePage({ searchParams }: { searchParams: Pr
   const receivedHref = cycleQuery(filters, "received")
   const deliveredHref = cycleQuery(filters, "delivered")
   const registeredHref = registeredQuery(filters)
-  const receivedVsRegistered = comparison.differences.receivedVsRegistered
   const receivedVsDelivered = comparison.differences.receivedVsDelivered
 
   return (
@@ -149,24 +157,20 @@ export default async function FuelCyclePage({ searchParams }: { searchParams: Pr
         <div className="flex items-end"><Button type="submit" variant="secondary" className="w-full">Aplicar</Button></div>
       </form>
 
-      <section className="grid gap-px overflow-hidden rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-border)] md:grid-cols-3" aria-label="Etapas del ciclo">
+      {/* 4 tiles (regla A1): las 3 etapas físicas más la diferencia que importa
+          operativamente — recibido vs. entregado, la merma de punta a punta.
+          La diferencia recibido/registrado (conciliación documental) y el tile
+          de "Consumido" (sin fuente de datos, siempre "Aún no disponible")
+          se retiraron — ninguno tenía una cifra real que mostrar. */}
+      <section className="grid gap-px overflow-hidden rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-border)] sm:grid-cols-2 lg:grid-cols-4" aria-label="Etapas del ciclo y diferencia">
         <Metric label="Recibido físico" value={amount(comparison.received)} detail={comparison.received ? `${comparison.received.records} eventos` : "Registra una recepción"} trace={<TraceLink href={receivedHref}>Abrir recepciones</TraceLink>} />
         <Metric label="Cargas registradas" value={amount(comparison.registered)} detail={comparison.registered ? `${comparison.registered.records} registros` : "Registra una carga"} trace={<TraceLink href={registeredHref}>Abrir cargas</TraceLink>} />
         <Metric label="Entregado a equipos" value={amount(comparison.delivered)} detail={comparison.delivered ? `${comparison.delivered.records} eventos` : "Sin entregas físicas"} trace={<TraceLink href={deliveredHref}>Abrir entregas</TraceLink>} />
-      </section>
-
-      <section className="mt-px grid gap-px overflow-hidden rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-border)] md:grid-cols-3" aria-label="Diferencias y consumo">
-        <DifferenceMetric
-          label="Diferencia recibido / registrado"
-          difference={receivedVsRegistered}
-          trace={<span className="flex flex-wrap gap-x-3"><TraceLink href={receivedHref}>Origen recibido</TraceLink><TraceLink href={registeredHref}>Origen registrado</TraceLink></span>}
-        />
         <DifferenceMetric
           label="Diferencia recibido / entregado"
           difference={receivedVsDelivered}
           trace={<span className="flex flex-wrap gap-x-3"><TraceLink href={receivedHref}>Origen recibido</TraceLink><TraceLink href={deliveredHref}>Origen entregado</TraceLink></span>}
         />
-        <Metric label="Consumido" value="Aún no disponible" detail="Se calculará cuando se registren entregas a equipos en el período. El consumo no se estima a partir de recibido o entregado." trace={<TraceLink href={deliveredHref}>Registrar entrega</TraceLink>} />
       </section>
 
       <section className="mt-7">
@@ -186,14 +190,14 @@ export default async function FuelCyclePage({ searchParams }: { searchParams: Pr
       <section className="mt-7">
         <div className="mb-3">
           <p className="text-eyebrow">Saldo</p>
-          <h2 className="text-lg font-semibold tracking-tight">Saldo por vasija</h2>
+          <h2 className="text-lg font-semibold tracking-tight">Saldo por estanque</h2>
         </div>
         {balances.length === 0 ? (
-          <div className="flex gap-3 border border-dashed border-[var(--color-border-strong)] p-6 text-sm text-[var(--color-text-muted)]"><Database size={20} />No hay vasijas activas en este filtro.</div>
+          <div className="flex gap-3 border border-dashed border-[var(--color-border-strong)] p-6 text-sm text-[var(--color-text-muted)]"><Database size={20} />No hay estanques activas en este filtro.</div>
         ) : (
           <div className="overflow-x-auto border border-[var(--color-border)]">
             <table className="w-full min-w-[700px] text-sm">
-              <thead className="bg-[var(--color-surface-2)] text-left th-type"><tr><th scope="col" className="p-3">Vasija</th><th>Recibido</th><th>Entregado</th><th>Saldo</th><th>Capacidad</th></tr></thead>
+              <thead className="bg-[var(--color-surface-2)] text-left th-type"><tr><th scope="col" className="p-3">Estanque</th><th>Recibido</th><th>Entregado</th><th>Saldo</th><th>Capacidad</th></tr></thead>
               <tbody className="divide-y divide-[var(--color-border)]">
                 {balances.map((balance) => {
                   const overCapacity = balance.capacityLiters != null && balance.balanceLiters > balance.capacityLiters

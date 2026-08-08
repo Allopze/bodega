@@ -140,7 +140,7 @@ export function ImportWizard({ worksites, canImportAllWorksites }: { worksites: 
           <CheckCircle className="h-12 w-12 mx-auto text-[var(--color-success)]" />
           <div>
             <p className="text-2xl font-bold">{result.imported}</p>
-            <p className="text-muted-foreground">registros de consumo importados exitosamente</p>
+            <p className="text-[var(--color-text-muted)]">registros de consumo importados exitosamente</p>
           </div>
           {result.errors.length > 0 && (
             <div className="text-sm text-left p-3 bg-[var(--color-warning-tint)] rounded-md max-w-md mx-auto">
@@ -154,12 +154,12 @@ export function ImportWizard({ worksites, canImportAllWorksites }: { worksites: 
                   Descargar (.xlsx)
                 </button>
               </div>
-              <div className="max-h-32 overflow-y-auto space-y-0.5 text-muted-foreground">
+              <div className="max-h-32 overflow-y-auto space-y-0.5 text-[var(--color-text-muted)]">
                 {result.errors.slice(0, 20).map((error) => (
                   <p key={importErrorKey(error)}>• Fila {error.rowIndex}, {error.field}: {error.message}</p>
                 ))}
                 {result.errors.length > 20 && (
-                  <p className="text-xs text-muted-foreground">…y {result.errors.length - 20} errores más</p>
+                  <p className="text-xs text-[var(--color-text-muted)]">…y {result.errors.length - 20} errores más</p>
                 )}
               </div>
             </div>
@@ -187,7 +187,7 @@ export function ImportWizard({ worksites, canImportAllWorksites }: { worksites: 
             <Stat label="Filas válidas" value={formatQty(preview.totales.totalFilas)} icon={<CheckCircle className="h-5 w-5 text-[var(--color-success)]" />} />
             <Stat label="Filas rechazadas" value={formatQty(preview.errores.length)} icon={<WarningCircle className="h-5 w-5 text-[var(--color-danger)]" />} />
             <Stat label="Duplicados en archivo" value={formatQty(preview.duplicadosEnArchivo)} icon={<WarningCircle className="h-5 w-5 text-[var(--color-warning-ink)]" />} />
-            <Stat label="Patentes únicas" value={formatQty(preview.totales.totalPatentes)} icon={<FileText className="h-5 w-5 text-muted-foreground" />} />
+            <Stat label="Patentes únicas" value={formatQty(preview.totales.totalPatentes)} icon={<FileText className="h-5 w-5 text-[var(--color-text-muted)]" />} />
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <Stat label="Cantidad total" value={formatQty(Math.round(preview.totales.totalCantidad), "L")} />
@@ -213,7 +213,7 @@ export function ImportWizard({ worksites, canImportAllWorksites }: { worksites: 
                   <p key={importErrorKey(error)} className="text-[var(--color-danger)]">Fila {error.rowIndex}, {error.field}: {error.message}</p>
                 ))}
                 {preview.errores.length > 30 && (
-                  <p className="text-xs text-muted-foreground">
+                  <p className="text-xs text-[var(--color-text-muted)]">
                     …y {preview.errores.length - 30} errores más. Usa el botón de arriba para descargar la lista completa.
                   </p>
                 )}
@@ -265,7 +265,7 @@ export function ImportWizard({ worksites, canImportAllWorksites }: { worksites: 
       </CardHeader>
       <CardContent className="space-y-4">
         {worksites.length === 0 && !canImportAllWorksites ? (
-          <p className="text-sm text-muted-foreground">No tienes faenas asignadas. Contacta a un administrador para que te asigne una faena.</p>
+          <p className="text-sm text-[var(--color-text-muted)]">No tienes faenas asignadas. Contacta a un administrador para que te asigne una faena.</p>
         ) : (
           <>
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -296,7 +296,7 @@ export function ImportWizard({ worksites, canImportAllWorksites }: { worksites: 
           </div>
         </div>
         {worksiteId === "all" && (
-          <p className="text-xs text-muted-foreground">Cada consumo se asignará a la faena del vehículo registrado.</p>
+          <p className="text-xs text-[var(--color-text-muted)]">Cada consumo se asignará a la faena del vehículo registrado.</p>
         )}
 
         <label
@@ -344,7 +344,7 @@ export function ImportWizard({ worksites, canImportAllWorksites }: { worksites: 
               </p>
             )}
             {!fileError && (
-              <p className="text-xs text-muted-foreground mt-0.5">Reporte de tarjetas de combustible (.xlsx)</p>
+              <p className="text-xs text-[var(--color-text-muted)] mt-0.5">Reporte de tarjetas de combustible (.xlsx)</p>
             )}
           </div>
           <input type="file" accept=".xlsx" onChange={(e) => handleFile(e.target.files?.[0])} className="sr-only" aria-label="Seleccionar archivo Excel" />
@@ -357,14 +357,14 @@ export function ImportWizard({ worksites, canImportAllWorksites }: { worksites: 
             className="flex w-full items-center justify-between px-3.5 py-2.5 text-sm font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-2)] rounded-t-[var(--radius-lg)]"
           >
             <span className="flex items-center gap-2">
-              <FileText className="h-4 w-4 text-muted-foreground" />
+              <FileText className="h-4 w-4 text-[var(--color-text-muted)]" />
               Columnas esperadas
             </span>
             {columnsOpen ? <ArrowUp className="h-4 w-4" /> : <ArrowDown className="h-4 w-4" />}
           </button>
           {columnsOpen && (
             <div className="border-t border-[var(--color-border)] px-3.5 py-3">
-              <p className="text-xs leading-relaxed text-muted-foreground">
+              <p className="text-xs leading-relaxed text-[var(--color-text-muted)]">
                 Patente, N° Tarjetas, N° Transacciones, Cantidad (Unidad), Monto ($), Rendimiento Promedio
               </p>
             </div>

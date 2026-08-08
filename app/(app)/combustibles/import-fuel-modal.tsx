@@ -163,13 +163,16 @@ export function ImportFuelLoadsModal({ worksites }: { worksites: Worksite[] }) {
               const isLast = i === 2
               return (
                 <div key={s} className="flex items-center gap-2">
-                  <div className={`flex items-center gap-1.5 text-sm ${active ? `font-semibold ${isLast ? "text-[var(--color-success)]" : "text-[var(--color-primary)]"}` : "text-muted-foreground"}`}>
-                    <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs ${active ? (isLast ? "bg-[var(--color-success)] text-white" : "bg-[var(--color-primary)] text-white") : "bg-muted"}`}>
+                  <div className={`flex items-center gap-1.5 text-sm ${active ? `font-semibold ${isLast ? "text-[var(--color-success)]" : "text-[var(--color-primary)]"}` : "text-[var(--color-text-muted)]"}`}>
+                    {/* `--color-surface-2`/`-3` son casi blancos: el círculo se perdía
+                        contra el fondo. `--color-border` es el gris de referencia para
+                        elementos inactivos junto a colores saturados (primary/success). */}
+                    <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs ${active ? (isLast ? "bg-[var(--color-success)] text-white" : "bg-[var(--color-primary)] text-white") : "bg-[var(--color-border)]"}`}>
                       {i + 1}
                     </span>
                     {STEP_LABELS[i]}
                   </div>
-                  {i < 2 && <div className="w-8 h-px bg-muted" />}
+                  {i < 2 && <div className="w-8 h-px bg-[var(--color-border)]" />}
                 </div>
               )
             })}

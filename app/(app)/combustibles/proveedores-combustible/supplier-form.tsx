@@ -8,7 +8,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { createFuelSupplierAction, updateFuelSupplierAction } from "../actions"
 
-export interface FuelSupplierRow {
+export type FuelSupplierRow = {
   id: string
   supplierId: string | null
   name: string

@@ -3,9 +3,9 @@
 import { createHash } from "node:crypto"
 import path from "node:path"
 import { revalidatePath } from "next/cache"
-import { and, eq, ne } from "drizzle-orm"
+import { and, eq, gte, inArray, lte, ne } from "drizzle-orm"
 import { db } from "@/db"
-import { fuelOperationBatches, fuelOperationRecords, fuelVehicles, worksites } from "@/db/schema"
+import { fuelAnomalyCases, fuelOperationBatches, fuelOperationRecords, fuelVehicles, worksites } from "@/db/schema"
 import { requirePermission } from "@/lib/auth/can"
 import { isGlobalRole } from "@/lib/auth/scope"
 import { nanoid } from "@/lib/id"
@@ -96,6 +96,8 @@ export interface OperationsPreviewData {
   faenasSinMatch: string[]
   proveedoresSinMatch: string[]
   archivoDuplicado: boolean
+  /** Filas del archivo que ya existen como carga de un lote vigente (se omitirán al confirmar). */
+  duplicateRows: number
 }
 
 export async function previewOperationsImportAction(
@@ -118,11 +120,13 @@ export async function previewOperationsImportAction(
     where: and(eq(fuelOperationBatches.hashArchivo, hashArchivo), ne(fuelOperationBatches.estado, "revertido")),
   })
 
-  const [allWorksites, allSuppliers, matchedVehicleKeys] = await Promise.all([
+  const [allWorksites, allSuppliers, matchedVehicleKeys, existingKeys] = await Promise.all([
     db.query.worksites.findMany({ columns: { id: true, name: true } }),
     db.query.fuelSuppliers.findMany({ columns: { id: true, name: true } }),
     lookupMatchedPlateKeys(parsed.rows.map((r) => r.plate)),
+    existingOperationKeys(parsed.rows),
   ])
+  const duplicateRows = parsed.rows.filter((row) => existingKeys.has(operationRowKey(row))).length
 
   const faenasSinMatch = new Set<string>()
   const proveedoresSinMatch = new Set<string>()
@@ -153,6 +157,7 @@ export async function previewOperationsImportAction(
       faenasSinMatch: [...faenasSinMatch].sort(),
       proveedoresSinMatch: [...proveedoresSinMatch].sort(),
       archivoDuplicado: !!archivoDuplicado,
+      duplicateRows,
     },
   }
 }
@@ -165,9 +170,59 @@ async function lookupMatchedPlateKeys(plates: string[]): Promise<Set<string>> {
   return new Set(uniquePlates.map(plateMatchKey).filter((k) => vehicleKeys.has(k)))
 }
 
+/** Identidad natural de una carga del log operacional: la combinación que
+ *  distingue dos eventos reales. `undefined`/`null` se normalizan a cadena
+ *  vacía para que el mismo campo ausente en ambos lados siga comparando igual. */
+function operationRowKey(row: { plate: string; fecha: string; horaCarga: string | null; liters: number; horometro: number | null }): string {
+  return [plateMatchKey(row.plate), row.fecha, row.horaCarga ?? "", row.liters, row.horometro ?? ""].join("|")
+}
+
+/**
+ * Filas del archivo que YA existen como carga real (de un lote no revertido).
+ * Antes la deduplicación era sólo por hash del ARCHIVO completo: un
+ * consolidado reimportado con filas nuevas AÑADIDAS al final tiene un hash
+ * distinto, así que pasaba el guard e insertaba de nuevo TODO lo ya cargado.
+ * Acotado por rango de fecha del archivo — `fecha` está indexada — para no
+ * escanear la tabla completa en cada confirmación.
+ */
+async function existingOperationKeys(rows: Awaited<ReturnType<typeof parseFuelOperationsExcel>>["rows"]): Promise<Set<string>> {
+  if (rows.length === 0) return new Set()
+  const fechas = rows.map((r) => r.fecha)
+  const minFecha = fechas.reduce((a, b) => (a < b ? a : b))
+  const maxFecha = fechas.reduce((a, b) => (a > b ? a : b))
+  const existing = await db.select({
+    plate: fuelOperationRecords.plate,
+    fecha: fuelOperationRecords.fecha,
+    horaCarga: fuelOperationRecords.horaCarga,
+    liters: fuelOperationRecords.liters,
+    horometro: fuelOperationRecords.horometro,
+  })
+    .from(fuelOperationRecords)
+    .innerJoin(fuelOperationBatches, eq(fuelOperationRecords.batchId, fuelOperationBatches.id))
+    .where(and(
+      gte(fuelOperationRecords.fecha, minFecha),
+      lte(fuelOperationRecords.fecha, maxFecha),
+      ne(fuelOperationBatches.estado, "revertido"),
+    ))
+  return new Set(existing.map(operationRowKey))
+}
+
+/** Postgres rechaza más de 65.535 parámetros por sentencia — 25 columnas por
+ *  fila dan un techo real de ~2.621 filas, muy por debajo de lo que cabe en
+ *  el límite de 10 MB del archivo. Se inserta en lotes. */
+const INSERT_CHUNK_SIZE = 2000
+
+async function insertInChunks<T>(tx: Parameters<Parameters<typeof db.transaction>[0]>[0], table: typeof fuelOperationRecords, rows: T[]) {
+  for (let i = 0; i < rows.length; i += INSERT_CHUNK_SIZE) {
+    await tx.insert(table).values(rows.slice(i, i + INSERT_CHUNK_SIZE) as (typeof fuelOperationRecords.$inferInsert)[])
+  }
+}
+
 export interface OperationsImportResultSummary {
   batchId: string
   imported: number
+  /** Filas del archivo que ya existían como carga de un lote vigente y se omitieron. */
+  duplicateRows: number
   errors: ImportError[]
 }
 
@@ -205,15 +260,25 @@ export async function confirmOperationsImportAction(
   await writeBuffer(path.join(storageDir, storageName), buffer)
   const archivoPath = createFuelImportPath(storageName)
 
-  const [allWorksites, allSuppliers, existingVehicles] = await Promise.all([
+  const [allWorksites, allSuppliers, existingVehicles, existingKeys] = await Promise.all([
     db.query.worksites.findMany({ columns: { id: true, name: true } }),
     db.query.fuelSuppliers.findMany({ columns: { id: true, name: true } }),
     db.query.fuelVehicles.findMany({ columns: { id: true, plate: true, code: true, type: true, brand: true, model: true, year: true } }),
+    existingOperationKeys(parsed.rows),
   ])
   const vehicleByKey = new Map(existingVehicles.map((v) => [plateMatchKey(v.plate), v]))
 
+  // Filas que ya existen como carga real de un lote vigente: se excluyen del
+  // lote nuevo en vez de duplicarlas. `duplicateRows` no cuenta como error —
+  // es información, no un archivo inválido — y se reporta aparte en el resumen.
+  const newRows = parsed.rows.filter((row) => !existingKeys.has(operationRowKey(row)))
+  const duplicateRows = parsed.rows.length - newRows.length
+  if (newRows.length === 0) {
+    return { ok: false, message: `Las ${duplicateRows} filas del archivo ya estaban importadas en un lote vigente. No hay filas nuevas que importar.` }
+  }
+
   const batchId = nanoid()
-  const totales = computeTotales(parsed.rows)
+  const totales = computeTotales(newRows)
 
   await db.transaction(async (tx) => {
     await tx.insert(fuelOperationBatches).values({
@@ -277,40 +342,40 @@ export async function confirmOperationsImportAction(
       }
     }
 
-    await tx.insert(fuelOperationRecords).values(
-      parsed.rows.map((row) => {
-        const vehicle = vehicleByKey.get(plateMatchKey(row.plate))
-        const worksite = row.faenaNombre ? matchByNameOrContains(row.faenaNombre, allWorksites) : null
-        const supplier = row.proveedorNombre ? matchByNameOrContains(row.proveedorNombre, allSuppliers) : null
-        return {
-          id: nanoid(),
-          batchId,
-          worksiteId: worksite?.id ?? null,
-          vehicleId: vehicle?.id ?? null,
-          plate: row.plate,
-          code: row.code,
-          faenaNombre: row.faenaNombre,
-          tipo: row.tipo,
-          marca: row.marca,
-          modelo: row.modelo,
-          anio: row.anio,
-          fecha: row.fecha,
-          horaCarga: row.horaCarga,
-          horometro: row.horometro,
-          medidoPor: row.medidoPor,
-          liters: row.liters,
-          operador: row.operador,
-          supervisor: row.supervisor,
-          proveedorNombre: row.proveedorNombre,
-          fuelSupplierId: supplier?.id ?? null,
-          precioLitro: row.precioLitro,
-          monto: row.monto,
-          rendimiento: row.rendimiento,
-          tipoRendimiento: row.tipoRendimiento,
-          rawRow: row.rawRow,
-        }
-      }),
-    )
+    // `newRows`, no `parsed.rows`: excluye las cargas ya existentes. En lotes
+    // (INSERT_CHUNK_SIZE) para no superar el límite de parámetros de Postgres.
+    await insertInChunks(tx, fuelOperationRecords, newRows.map((row) => {
+      const vehicle = vehicleByKey.get(plateMatchKey(row.plate))
+      const worksite = row.faenaNombre ? matchByNameOrContains(row.faenaNombre, allWorksites) : null
+      const supplier = row.proveedorNombre ? matchByNameOrContains(row.proveedorNombre, allSuppliers) : null
+      return {
+        id: nanoid(),
+        batchId,
+        worksiteId: worksite?.id ?? null,
+        vehicleId: vehicle?.id ?? null,
+        plate: row.plate,
+        code: row.code,
+        faenaNombre: row.faenaNombre,
+        tipo: row.tipo,
+        marca: row.marca,
+        modelo: row.modelo,
+        anio: row.anio,
+        fecha: row.fecha,
+        horaCarga: row.horaCarga,
+        horometro: row.horometro,
+        medidoPor: row.medidoPor,
+        liters: row.liters,
+        operador: row.operador,
+        supervisor: row.supervisor,
+        proveedorNombre: row.proveedorNombre,
+        fuelSupplierId: supplier?.id ?? null,
+        precioLitro: row.precioLitro,
+        monto: row.monto,
+        rendimiento: row.rendimiento,
+        tipoRendimiento: row.tipoRendimiento,
+        rawRow: row.rawRow,
+      }
+    }))
   })
 
   await recordAudit({
@@ -332,7 +397,7 @@ export async function confirmOperationsImportAction(
   // dinámicas (usan sesión/cookies) y se renderizan frescas en cada visita
   // real, así que no necesitan revalidación explícita aquí.
 
-  return { ok: true, data: { batchId, imported: parsed.rows.length, errors: parsed.errors } }
+  return { ok: true, data: { batchId, imported: newRows.length, duplicateRows, errors: parsed.errors } }
 }
 
 export async function revertBatchOperationsAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
@@ -348,7 +413,30 @@ export async function revertBatchOperationsAction(_prev: ActionState, formData: 
   if (batch.estado === "revertido") return { ok: false, message: "Este lote ya fue revertido" }
 
   await db.transaction(async (tx) => {
-    await tx.delete(fuelOperationRecords).where(eq(fuelOperationRecords.batchId, batchId))
+    // Capturar los ids ANTES de borrar: `fuel_anomaly_cases.reference_entity_id`
+    // es una referencia polimórfica sin FK (apunta a cualquiera de varias
+    // tablas), así que borrar estas filas no falla — deja los casos abiertos
+    // apuntando a un `fuel_operation_record` que ya no existe, invisibles pero
+    // eternamente "activos" en /combustibles/anomalias.
+    const deletedRows = await tx.delete(fuelOperationRecords)
+      .where(eq(fuelOperationRecords.batchId, batchId))
+      .returning({ id: fuelOperationRecords.id })
+    if (deletedRows.length > 0) {
+      const deletedIds = deletedRows.map((r) => r.id)
+      const now = new Date().toISOString()
+      await tx.update(fuelAnomalyCases).set({
+        status: "dismissed",
+        resolution: `Descartado automáticamente: el lote de origen (${batchId}) fue revertido.`,
+        resolvedById: session.user.id,
+        resolvedAt: now,
+        updatedAt: now,
+      }).where(and(
+        eq(fuelAnomalyCases.referenceEntityType, "fuel_operation_record"),
+        inArray(fuelAnomalyCases.referenceEntityId, deletedIds),
+        // No pisar un caso que un humano ya cerró — sólo los que seguían abiertos.
+        inArray(fuelAnomalyCases.status, ["open", "in_review", "reopened"]),
+      ))
+    }
     await tx.update(fuelOperationBatches).set({ estado: "revertido", updatedAt: new Date().toISOString() }).where(eq(fuelOperationBatches.id, batchId))
   })
 

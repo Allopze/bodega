@@ -45,14 +45,22 @@ export function VehicleCatalogTable({ vehicles, worksites, users, equipmentTypes
   const activeVehicles = React.useMemo(() => vehicles.filter((v) => v.isActive), [vehicles])
   const inactiveVehicles = React.useMemo(() => vehicles.filter((v) => !v.isActive), [vehicles])
 
-  const currentVehicles = tab === "active" ? activeVehicles : inactiveVehicles
-
   // Reset selection when switching tabs
   React.useEffect(() => { setSelectedIds(new Set()) }, [tab])
 
   // ── Bulk selection helpers ────────────────────────────────────────────────
-  const allIds = React.useMemo(() => new Set(currentVehicles.map((v) => v.id)), [currentVehicles])
+  // "Seleccionar todo" debe operar sobre lo que el usuario ve en la tabla
+  // (filtrado por búsqueda + página actual), no sobre el tab completo — antes
+  // marcaba vehículos ocultos por el buscador o en otras páginas.
+  const [visibleActiveIds, setVisibleActiveIds] = React.useState<Set<string>>(new Set())
+  const [visibleInactiveIds, setVisibleInactiveIds] = React.useState<Set<string>>(new Set())
+  const onVisibleActiveRowsChange = React.useCallback(
+    (rows: VehicleRow[]) => setVisibleActiveIds(new Set(rows.map((r) => r.id))), [])
+  const onVisibleInactiveRowsChange = React.useCallback(
+    (rows: VehicleRow[]) => setVisibleInactiveIds(new Set(rows.map((r) => r.id))), [])
+  const allIds = tab === "active" ? visibleActiveIds : visibleInactiveIds
   const allSelected = allIds.size > 0 && allIds.size === selectedIds.size
+    && Array.from(allIds).every((id) => selectedIds.has(id))
 
   const selectAllRef = React.useRef<HTMLInputElement>(null)
 
@@ -72,11 +80,12 @@ export function VehicleCatalogTable({ vehicles, worksites, users, equipmentTypes
   }
 
   function toggleSelectAll() {
-    if (allSelected) {
-      setSelectedIds(new Set())
-    } else {
-      setSelectedIds(new Set(allIds))
-    }
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (allSelected) allIds.forEach((id) => next.delete(id))
+      else allIds.forEach((id) => next.add(id))
+      return next
+    })
   }
 
   // Columns with checkbox
@@ -86,13 +95,11 @@ export function VehicleCatalogTable({ vehicles, worksites, users, equipmentTypes
     ...COLUMNS,
   ]
 
-  const renderRow = React.useCallback((row: Record<string, unknown>) => {
-    const v = row as unknown as VehicleRow
+  const renderRow = React.useCallback((v: VehicleRow) => {
     return <VehicleDesktopRow vehicle={v} selected={selectedIds.has(v.id)} onSelect={toggleSelect} onEdit={openEdit} onDeactivate={setConfirmId} toggleAction={toggleAction} togglePending={togglePending} />
   }, [openEdit, toggleAction, togglePending, selectedIds])
 
-  const renderMobileCard = React.useCallback((row: Record<string, unknown>) => {
-    const v = row as unknown as VehicleRow
+  const renderMobileCard = React.useCallback((v: VehicleRow) => {
     return <VehicleMobileCard vehicle={v} selected={selectedIds.has(v.id)} onSelect={toggleSelect} onEdit={openEdit} onDeactivate={setConfirmId} toggleAction={toggleAction} togglePending={togglePending} />
   }, [openEdit, toggleAction, togglePending, selectedIds])
 
@@ -163,14 +170,15 @@ export function VehicleCatalogTable({ vehicles, worksites, users, equipmentTypes
           <DataTable
             caption="Vehículos activos"
             columns={COLUMNS_WITH_CHECKBOX}
-            rows={activeVehicles as unknown as Record<string, unknown>[]}
-            searchKeys={CONTRACT.searchKeys}
+            rows={activeVehicles}
+            searchKeys={CONTRACT.searchKeys as (keyof VehicleRow)[]}
             tableClassName="table-fixed min-w-0"
             pageSize={25}
             emptyTitle="Sin vehículos activos"
             emptyDescription="No hay vehículos activos en el catálogo."
             renderRow={renderRow}
             renderMobileCard={renderMobileCard}
+            onVisibleRowsChange={onVisibleActiveRowsChange}
           />
         </TabsContent>
 
@@ -178,14 +186,15 @@ export function VehicleCatalogTable({ vehicles, worksites, users, equipmentTypes
           <DataTable
             caption="Vehículos inactivos"
             columns={COLUMNS_WITH_CHECKBOX}
-            rows={inactiveVehicles as unknown as Record<string, unknown>[]}
-            searchKeys={CONTRACT.searchKeys}
+            rows={inactiveVehicles}
+            searchKeys={CONTRACT.searchKeys as (keyof VehicleRow)[]}
             tableClassName="table-fixed min-w-0"
             pageSize={25}
             emptyTitle="Sin vehículos inactivos"
             emptyDescription="No hay vehículos dados de baja en el catálogo."
             renderRow={renderRow}
             renderMobileCard={renderMobileCard}
+            onVisibleRowsChange={onVisibleInactiveRowsChange}
           />
         </TabsContent>
       </Tabs>

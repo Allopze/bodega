@@ -16,6 +16,7 @@ import { DatePicker } from "@/components/ui/date-picker"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { ChartErrorBoundary } from "@/components/chart-error-boundary"
 import { HistogramChart, PerformanceGroupChart } from "./analysis-charts-lazy"
+import { addDaysToPlainDate, todayInChile } from "@/lib/utils"
 import { FilterSelect } from "../filter-select"
 
 export const metadata: Metadata = { title: "Análisis de rendimiento por equipo" }
@@ -35,7 +36,6 @@ const RELIABILITY_BADGE: Record<string, { label: string; variant: "danger" | "wa
 
 type AnalisisSearchParams = { preset?: string; agrupar?: string; faena?: string; desde?: string; hasta?: string }
 
-function isoDate(date: Date) { return date.toISOString().slice(0, 10) }
 
 function bitacoraHref(group: { unit: string; singlePlate: string | null }, worksiteId: string | undefined, from: string, to: string) {
   const params = new URLSearchParams({ desde: from, hasta: to })
@@ -52,9 +52,11 @@ export default async function EquipmentPerformancePage({ searchParams }: { searc
   const preset: EquipmentPreset = PRESETS.includes(sp.preset as EquipmentPreset) ? (sp.preset as EquipmentPreset) : "truck"
   const aggregateBy: AggregationLevel = AGGREGATIONS.some((a) => a.value === sp.agrupar) ? (sp.agrupar as AggregationLevel) : "worksite"
   const worksiteId = sp.faena?.trim() || undefined
-  const now = new Date()
-  const from = /^\d{4}-\d{2}-\d{2}$/.test(sp.desde ?? "") ? sp.desde! : isoDate(new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000))
-  const to = /^\d{4}-\d{2}-\d{2}$/.test(sp.hasta ?? "") ? sp.hasta! : isoDate(now)
+  // Calendario chileno, no UTC: `isoDate(new Date())` adelantaba el día entre
+  // las 20:00 y la medianoche y corría los 90 días del rango por defecto.
+  const today = todayInChile()
+  const from = /^\d{4}-\d{2}-\d{2}$/.test(sp.desde ?? "") ? sp.desde! : addDaysToPlainDate(today, -90)
+  const to = /^\d{4}-\d{2}-\d{2}$/.test(sp.hasta ?? "") ? sp.hasta! : today
 
   const scope = resolveWorksiteScope(session)
   const [worksitesList, groups] = await Promise.all([

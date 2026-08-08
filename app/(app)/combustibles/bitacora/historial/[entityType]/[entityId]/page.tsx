@@ -4,6 +4,8 @@ import { and, desc, eq } from "drizzle-orm"
 import { db } from "@/db"
 import { auditLog, statusHistory } from "@/db/schema"
 import { requirePermission } from "@/lib/auth/can"
+import { canAccessWorksite } from "@/lib/auth/scope"
+import { resolveEntityWorksite } from "../../../actions"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -32,9 +34,16 @@ function DiffRow({ field, oldValue, newValue }: { field: string; oldValue: unkno
 }
 
 export default async function FuelLogHistoryPage({ params }: { params: Promise<{ entityType: string; entityId: string }> }) {
-  try { await requirePermission("combustibles:view_audit") } catch { redirect(`/forbidden?desde=${encodeURIComponent("/combustibles/bitacora/historial")}`) }
+  let session
+  try { session = await requirePermission("combustibles:view_audit") } catch { redirect(`/forbidden?desde=${encodeURIComponent("/combustibles/bitacora/historial")}`) }
   const { entityType, entityId } = await params
   if (!(entityType in ENTITY_LABEL)) redirect("/combustibles/bitacora")
+
+  // `combustibles:view_audit` no acota por faena: sin esto, cualquier usuario
+  // con el permiso podía pasar el id de un registro de otra faena en la URL
+  // y ver el diff completo de campos (litros, montos, patente, motivos).
+  const entityCtx = await resolveEntityWorksite(entityType, entityId)
+  if (!entityCtx || !canAccessWorksite(session, entityCtx.worksiteId)) redirect("/combustibles/bitacora")
 
   const [auditRows, statusRows] = await Promise.all([
     db.query.auditLog.findMany({ where: and(eq(auditLog.entityType, entityType), eq(auditLog.entityId, entityId)), orderBy: [desc(auditLog.createdAt)] }),

@@ -8,6 +8,7 @@ const mockRecordStatusChange = vi.fn(async (..._args: unknown[]) => undefined)
 const mockFindBatch = vi.fn()
 const mockUpdateReturning = vi.fn()
 const mockDeleteReturning = vi.fn()
+const mockSelectSubmissionIds = vi.fn()
 
 const tx = {
   update: vi.fn(() => ({
@@ -15,8 +16,18 @@ const tx = {
       where: vi.fn(() => ({ returning: mockUpdateReturning })),
     })),
   })),
+  // Usado dos veces: borrar los movimientos de sello de las cargas del lote
+  // (sin .returning(), FK sin CASCADE — ver actions.ts) y borrar las cargas.
+  // `where()` devuelve el mismo objeto siempre: el primer delete lo await
+  // directo (sin llamar `.returning`, no-op inofensivo sobre un objeto plano),
+  // el segundo sí invoca `.returning()`.
   delete: vi.fn(() => ({
     where: vi.fn(() => ({ returning: mockDeleteReturning })),
+  })),
+  select: vi.fn(() => ({
+    from: vi.fn(() => ({
+      where: mockSelectSubmissionIds,
+    })),
   })),
   insert: vi.fn(),
   query: { fuelTaeImportBatches: { findFirst: (...args: unknown[]) => mockFindBatch(...args) } },
@@ -45,6 +56,7 @@ beforeEach(() => {
   mockCan.mockReturnValue(true)
   mockUpdateReturning.mockResolvedValue([{ id: "batch-1", status: "reverted" }])
   mockDeleteReturning.mockResolvedValue([{ id: "submission-1" }, { id: "submission-2" }])
+  mockSelectSubmissionIds.mockResolvedValue([{ id: "submission-1" }, { id: "submission-2" }])
 })
 
 describe("revertTaeImportBatchAction", () => {
@@ -74,6 +86,21 @@ describe("revertTaeImportBatchAction", () => {
       toStatus: "reverted",
     }), tx)
     expect(mockRevalidatePath).toHaveBeenCalledWith("/combustibles/tae/importar/historial")
+    // Movimientos de sello borrados ANTES de las cargas — sin CASCADE en la FK,
+    // el orden inverso revienta con violación de FK apenas una carga del lote
+    // llegó a validarse (ver el comentario en actions.ts).
+    expect(tx.select).toHaveBeenCalled()
+    expect(tx.delete).toHaveBeenCalledTimes(2)
+  })
+
+  it("skips the seal-movements cleanup when the batch has no submissions", async () => {
+    mockSelectSubmissionIds.mockResolvedValue([])
+    mockDeleteReturning.mockResolvedValue([])
+
+    await revertTaeImportBatchAction("batch-1")
+
+    // Un solo delete (las cargas) — no hay ids para borrar movimientos de sello.
+    expect(tx.delete).toHaveBeenCalledTimes(1)
   })
 
   it("does not repeat a reversal when the conditional state update changes no row", async () => {

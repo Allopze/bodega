@@ -291,8 +291,14 @@ export async function confirmConsumptionImportAction(
     newState: { worksiteId, periodo: `${meta.periodoDesde}..${meta.periodoHasta}`, fuente: meta.fuente, ...totales },
   })))
 
+  // Sin revalidar "/combustibles/importar": es la ruta donde vive ESTE wizard
+  // (import-wizard.tsx, renderizado desde importar/page.tsx). Revalidarla
+  // remonta el árbol de cliente en la misma respuesta y borra el paso "done"
+  // antes de que el usuario alcance a ver el resumen — mismo caso ya resuelto
+  // en actions-operaciones.ts:325-333. Basta con la ruta hermana: el
+  // historial de lotes se sirve fresco en la próxima visita real (dinámica,
+  // depende de sesión).
   revalidatePath("/combustibles")
-  revalidatePath("/combustibles/importar")
 
   return { ok: true, data: { batchId: batchIds[0]!, imported: [...rowsByWorksite.values()].flat().length, errors: parsed.errors } }
 }

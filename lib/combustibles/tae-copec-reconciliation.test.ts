@@ -14,6 +14,7 @@ function channel(overrides: Partial<TaeCopecChannelRow> = {}): TaeCopecChannelRo
     tctDieselLiters: 0,
     tctBlueMaxLiters: 0,
     tctRecords: 0,
+    tctPartial: false,
     ...overrides,
   }
 }
@@ -64,5 +65,17 @@ describe("mergeTaeCopecChannels", () => {
 
     expect(rows).toHaveLength(3)
     expect(rows.every((row) => row.coverage !== "both_channels")).toBe(true)
+  })
+
+  it("propaga tctPartial si CUALQUIERA de las filas fusionadas es parcial", () => {
+    const rows = mergeTaeCopecChannels(
+      [],
+      [
+        channel({ tctDieselLiters: 50, tctRecords: 1, tctPartial: false }),
+        channel({ tctBlueMaxLiters: 10, tctRecords: 1, tctPartial: true }),
+      ],
+    )
+    expect(rows).toHaveLength(1)
+    expect(rows[0]?.tctPartial).toBe(true)
   })
 })

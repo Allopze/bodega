@@ -247,7 +247,13 @@ export function PatenteRankingChart({
 }
 
 /* ── Rendimiento, destacando valores que requieren revisión ───────────────── */
-export function RendimientoChart({ data }: { data: RendimientoRow[] }) {
+/**
+ * `unitLabel` no es decorativo: km/L y L/h tienen escalas y polaridades
+ * distintas (más es mejor en km/L, peor en L/h). Graficarlas en un mismo eje
+ * sin declarar la unidad hacía ilegible la comparación (regla A5b de AGENTS.md);
+ * quien pase filas de dos unidades debe llamar a este gráfico una vez por unidad.
+ */
+export function RendimientoChart({ data, unitLabel }: { data: RendimientoRow[]; unitLabel?: string }) {
   const openPatente = usePatenteDrilldown()
   if (data.length === 0) return <EmptyChart label="No hay rendimiento informado para esta selección." />
 
@@ -257,21 +263,22 @@ export function RendimientoChart({ data }: { data: RendimientoRow[] }) {
     rendimiento: row.rendimiento,
     atipico: row.atipico,
   }))
+  const suffix = unitLabel ? ` ${unitLabel}` : ""
 
   return (
-    <div className="h-64" aria-label="Rendimiento promedio por patente">
+    <div className="h-64" aria-label={`Rendimiento promedio por patente${unitLabel ? ` en ${unitLabel}` : ""}`}>
       <ResponsiveContainer width="100%" height="100%" debounce={80}>
         <BarChart
           data={chartData}
           margin={{ top: 4, right: 4, left: -8, bottom: 4 }}
-          title="Rendimiento promedio por patente. Las barras ámbar son valores atípicos o sin rendimiento informado."
+          title={`Rendimiento promedio por patente${suffix}. Las barras ámbar son valores atípicos o sin rendimiento informado.`}
         >
           <CartesianGrid vertical={false} stroke={GRID_COLOR} strokeDasharray="2 5" />
           <XAxis dataKey="name" interval={0} angle={-28} textAnchor="end" height={52} {...chartAxisProps()} />
           <YAxis width={38} {...chartAxisProps()} />
           <Tooltip
             cursor={{ fill: "var(--color-surface-2)" }}
-            content={<TooltipPanel formatValue={(value) => value.toFixed(2)} />}
+            content={<TooltipPanel formatValue={(value) => `${value.toFixed(2)}${suffix}`} />}
           />
           <Bar
             dataKey="rendimiento"

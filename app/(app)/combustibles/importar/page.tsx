@@ -74,7 +74,7 @@ export default async function ImportarConsumosPage() {
 
         <TabsContent value="consumos">
           {canViewTae && (
-            <div className="mb-4 flex flex-col gap-2 border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2.5 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
+            <div className="mb-4 flex flex-col gap-2 border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2.5 text-xs text-[var(--color-text-muted)] sm:flex-row sm:items-center sm:justify-between">
               <span>TAE ya no se extrae junto con TCT. Las cargas físicas se registran en el control manual por QR.</span>
               <Link href="/combustibles/tae" className="shrink-0 font-medium text-[var(--color-primary)] hover:underline">Ir a Control TAE</Link>
             </div>

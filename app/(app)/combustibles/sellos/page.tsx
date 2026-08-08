@@ -7,13 +7,15 @@ import { worksites } from "@/db/schema"
 import { settle } from "@/lib/async-settle"
 import { requirePermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
-import { getSealHistory } from "@/lib/combustibles/seal-history"
+import { SEAL_HISTORY_MAX_ROWS, getSealHistory } from "@/lib/combustibles/seal-history"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { DatePicker } from "@/components/ui/date-picker"
 import { Badge } from "@/components/ui/badge"
+import { EmptyState } from "@/components/ui/empty-state"
+import { formatDateTime } from "@/lib/utils"
 import { FilterSelect } from "../filter-select"
 
 export const metadata: Metadata = { title: "Historial de sellos" }
@@ -55,17 +57,31 @@ export default async function SealHistoryPage({ searchParams }: { searchParams: 
         breadcrumb={<Breadcrumbs items={[{ label: "Combustibles", href: "/combustibles" }, { label: "Historial de sellos" }]} />}
       />
 
-      <form className="mb-4 grid gap-3 border-y border-(--color-border) py-4 md:grid-cols-5">
-        <DatePicker name="desde" defaultValue={sp.desde} placeholder="Desde" />
-        <DatePicker name="hasta" defaultValue={sp.hasta} placeholder="Hasta" />
-        <FilterSelect name="faena" defaultValue={sp.faena} options={worksitesList.map((item) => ({ value: item.id, label: item.name }))} placeholder="Todas las faenas autorizadas" />
-        <Input name="sello" defaultValue={sp.sello} placeholder="Número de sello" />
-        <Input name="patente" defaultValue={sp.patente} placeholder="Patente" />
+      {/* Los filtros no tienen etiqueta visible (van rotulados por placeholder):
+          `aria-label` es lo que los hace anunciables por lector de pantalla. */}
+      <form className="mb-4 grid gap-3 border-y border-(--color-border) py-4 md:grid-cols-5" aria-label="Filtros del historial de sellos">
+        <DatePicker name="desde" defaultValue={sp.desde} placeholder="Desde" aria-label="Desde" />
+        <DatePicker name="hasta" defaultValue={sp.hasta} placeholder="Hasta" aria-label="Hasta" />
+        <FilterSelect name="faena" defaultValue={sp.faena} options={worksitesList.map((item) => ({ value: item.id, label: item.name }))} placeholder="Todas las faenas autorizadas" aria-label="Faena" />
+        <Input name="sello" defaultValue={sp.sello} placeholder="Número de sello" aria-label="Número de sello" />
+        <Input name="patente" defaultValue={sp.patente} placeholder="Patente" aria-label="Patente" />
         <div className="md:col-span-5"><Button type="submit" variant="secondary">Aplicar</Button></div>
       </form>
 
-      <p className="mb-2 text-xs text-muted-foreground">{movements.length} movimientos encontrados{". "}Los sellos repetidos o con continuidad rota se marcan en ámbar.</p>
+      <p className="mb-2 text-xs text-(--color-text-muted)">
+        {movements.length} movimientos encontrados{". "}Los sellos repetidos o con continuidad rota se marcan en ámbar.
+        {/* Los avisos se calculan sobre las filas traídas: con el tope alcanzado,
+            el "siguiente" de un sello puede quedar fuera del corte. */}
+        {movements.length >= SEAL_HISTORY_MAX_ROWS && ` Se alcanzó el tope de ${SEAL_HISTORY_MAX_ROWS.toLocaleString("es-CL")} movimientos: acota el período o la faena para que los avisos de continuidad sean completos.`}
+      </p>
 
+      {movements.length === 0 ? (
+        <EmptyState
+          title="Sin movimientos de sello para estos filtros"
+          description="Sólo aparecen aquí las cargas TAE ya validadas que registraron sello retirado o instalado. Prueba con otro período, faena o número de sello."
+          action={<Button asChild size="sm" variant="secondary"><Link href="/combustibles/sellos">Quitar filtros</Link></Button>}
+        />
+      ) : (
       <div className="overflow-x-auto border border-(--color-border)">
         <table className="w-full min-w-[900px] text-sm">
           <thead className="bg-(--color-surface-2) text-left th-type">
@@ -85,7 +101,7 @@ export default async function SealHistoryPage({ searchParams }: { searchParams: 
           <tbody className="divide-y divide-(--color-border)">
             {movements.map((m) => (
               <tr key={m.submissionId}>
-                <td className="p-3 font-mono text-xs whitespace-nowrap">{m.loadedAt}</td>
+                <td className="p-3 font-mono text-xs whitespace-nowrap">{formatDateTime(m.loadedAt)}</td>
                 <td>{m.worksiteName ?? "—"}</td>
                 <td className="text-xs">{m.loadingPointName ?? "—"}</td>
                 <td className="font-medium whitespace-nowrap">{m.equipmentCode}{m.plate ? ` (${m.plate})` : ""}</td>
@@ -96,13 +112,14 @@ export default async function SealHistoryPage({ searchParams }: { searchParams: 
                   {m.installedSeal ?? "—"}
                   {m.installedRepeated && <Badge variant="warning" size="sm" className="ml-1">repetido</Badge>}
                 </td>
-                <td className="text-xs">{m.nextRemovedBy ? `${m.nextRemovedBy} · ${m.nextRemovedAt}` : m.continuityBroken ? <Badge variant="warning" size="sm">sin siguiente</Badge> : "—"}</td>
+                <td className="text-xs">{m.nextRemovedBy && m.nextRemovedAt ? `${m.nextRemovedBy} · ${formatDateTime(m.nextRemovedAt)}` : m.continuityBroken ? <Badge variant="warning" size="sm">sin siguiente</Badge> : "—"}</td>
                 <td><Link href={`/combustibles/tae/${m.submissionId}`} className="text-xs text-(--color-primary-ink) hover:underline">Ver carga</Link></td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+      )}
     </PageContainer>
   )
 }

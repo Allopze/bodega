@@ -8,8 +8,16 @@ import { logger } from "@/lib/logger"
 
 /** in_review/reopened son parte de la revisión; resolved/dismissed cierran el caso y requieren el permiso de resolución. */
 const RESOLVING_STATUSES = new Set(["resolved", "dismissed"])
+// "open" queda fuera a propósito: es el estado inicial que pone el detector,
+// no un destino de esta acción de revisión.
+const VALID_TARGET_STATUSES = new Set(["in_review", "resolved", "dismissed", "reopened"])
 
 export async function updateAnomalyStatusAction(input: { caseId: string; status: string; resolution?: string }) {
+  // `input.status as ...` más abajo era sólo un cast de TypeScript, sin
+  // chequeo real: un valor fuera del enum llegaba tal cual a la base.
+  if (!VALID_TARGET_STATUSES.has(input.status)) {
+    return { ok: false, message: "Estado inválido" }
+  }
   const permission = RESOLVING_STATUSES.has(input.status) ? "combustibles:resolve_anomalies" : "combustibles:review_anomalies"
   const guard = await guardPermission(permission)
   if (guard.error) return guard.error

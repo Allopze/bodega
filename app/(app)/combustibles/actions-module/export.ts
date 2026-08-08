@@ -8,6 +8,7 @@ import { recordAudit } from "@/lib/audit"
 import { nanoid } from "@/lib/id"
 import { buildFuelLoadsWhere } from "@/lib/combustibles/queries"
 import { addExportMetadataSheet } from "@/lib/combustibles/xlsx-utils"
+import { fuelLoadStatusLabel } from "@/lib/combustibles/labels"
 
 const MAX_FUEL_EXPORT_ROWS = 10_000
 
@@ -80,7 +81,7 @@ export async function exportFuelLoadsXlsxAction(filters?: {
       receiptNumber: row.receiptNumber ?? "", liters: row.liters,
       iecFixed: row.iecFixed, iecVariable: row.iecVariable, baseAmount: row.baseAmount,
       iecTotal: row.iecTotal, ivaAmount: row.ivaAmount, totalAmount: row.totalAmount,
-      status: row.status,
+      status: fuelLoadStatusLabel(row.status),
     })
   }
 

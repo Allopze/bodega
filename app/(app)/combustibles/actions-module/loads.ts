@@ -13,6 +13,7 @@ import {
   updateFuelLoadSchema,
 } from "@/lib/combustibles/validation"
 import { calculateFuelAmounts } from "@/lib/combustibles/calculations"
+import { getFuelIecRates } from "@/lib/services/system-settings"
 import { recordAudit } from "@/lib/audit"
 import { logger } from "@/lib/logger"
 import { isNetworkError } from "@/lib/network-error"
@@ -25,6 +26,21 @@ import { notifyAfterCommit } from "@/lib/services/notifications"
 const REVALIDATE = "/combustibles"
 
 const CONN_MSG = "Sin conexión al servidor. Verifica tu conexión a internet e inténtalo nuevamente."
+
+/** Campos editables de una carga que deben quedar en el diff de auditoría. */
+const AUDITED_LOAD_FIELDS = [
+  "loadDate", "month", "serviceType", "vehicleId", "fuelSupplierId", "worksiteId",
+  "product", "receiptNumber", "odometerReading", "hourMeterReading", "liters",
+  "iecFixed", "iecVariable", "baseAmount", "iecTotal", "ivaAmount", "totalAmount", "notes",
+] as const
+
+function pickAuditedLoadFields(source: Record<string, unknown>): Record<string, unknown> {
+  const picked: Record<string, unknown> = {}
+  for (const key of AUDITED_LOAD_FIELDS) {
+    if (source[key] !== undefined) picked[key] = source[key]
+  }
+  return picked
+}
 
 export async function dbErrMsg(e: unknown, fallback: string): Promise<string> {
   if (!(e instanceof Error)) return fallback
@@ -53,16 +69,13 @@ export async function createFuelLoadAction(
   let totalAmount = Number(formData.get("totalAmount") ?? 0)
 
   if (autoCalc) {
-    const [fixedRateRow, variableRateRow] = await Promise.all([
-      db.query.systemSettings.findFirst({ where: (t, { eq }) => eq(t.key, "fuel:iec_fixed_rate") }),
-      db.query.systemSettings.findFirst({ where: (t, { eq }) => eq(t.key, "fuel:iec_variable_rate") }),
-    ])
+    const rates = await getFuelIecRates()
 
     const calc = calculateFuelAmounts({
       liters,
       baseAmount,
-      iecFixedRate: fixedRateRow ? Number(fixedRateRow.value) : null,
-      iecVariableRate: variableRateRow ? Number(variableRateRow.value) : null,
+      iecFixedRate: rates.iecFixedRate,
+      iecVariableRate: rates.iecVariableRate,
     })
 
     iecFixed = calc.iecFixed
@@ -132,6 +145,7 @@ export async function createFuelLoadAction(
 
     await recordAudit({
       userId: session.user.id,
+      userEmail: session.user.email ?? undefined,
       action: "create",
       entityType: "fuel_load",
       entityId: id,
@@ -203,6 +217,33 @@ export async function updateFuelLoadAction(
   const liters = Number(formData.get("liters") ?? existing.liters)
   const baseAmount = Number(formData.get("baseAmount") ?? existing.baseAmount)
 
+  // El IEC es CLP por LITRO: al cambiar los litros hay que recalcularlo. El
+  // formulario de edición no conoce las tasas y reenvía el IEC congelado de la
+  // carga, así que sin esto el total quedaba subestimado (y la cuenta corriente
+  // con él). Sólo se recalcula si el usuario NO tocó el IEC a mano: si lo
+  // cambió, manda su valor.
+  let iecFixed = Number(formData.get("iecFixed") ?? existing.iecFixed)
+  let iecVariable = Number(formData.get("iecVariable") ?? existing.iecVariable)
+  let iecTotal = Number(formData.get("iecTotal") ?? existing.iecTotal)
+  let ivaAmount = Number(formData.get("ivaAmount") ?? existing.ivaAmount)
+  let totalAmount = Number(formData.get("totalAmount") ?? existing.totalAmount)
+
+  const iecUntouched = iecFixed === Number(existing.iecFixed) && iecVariable === Number(existing.iecVariable)
+  if (liters !== Number(existing.liters) && iecUntouched) {
+    const rates = await getFuelIecRates()
+    const calc = calculateFuelAmounts({
+      liters,
+      baseAmount,
+      iecFixedRate: rates.iecFixedRate,
+      iecVariableRate: rates.iecVariableRate,
+    })
+    iecFixed = calc.iecFixed
+    iecVariable = calc.iecVariable
+    iecTotal = calc.iecTotal
+    ivaAmount = calc.ivaAmount
+    totalAmount = calc.totalAmount
+  }
+
   const parsed = updateFuelLoadSchema.safeParse({
     id,
     loadDate,
@@ -217,11 +258,11 @@ export async function updateFuelLoadAction(
     hourMeterReading: await optionalNumber(formData.get("hourMeterReading")),
     liters,
     baseAmount,
-    iecFixed: Number(formData.get("iecFixed") ?? existing.iecFixed),
-    iecVariable: Number(formData.get("iecVariable") ?? existing.iecVariable),
-    iecTotal: Number(formData.get("iecTotal") ?? existing.iecTotal),
-    ivaAmount: Number(formData.get("ivaAmount") ?? existing.ivaAmount),
-    totalAmount: Number(formData.get("totalAmount") ?? existing.totalAmount),
+    iecFixed,
+    iecVariable,
+    iecTotal,
+    ivaAmount,
+    totalAmount,
     notes: formData.get("notes") ?? existing.notes,
   })
 
@@ -249,11 +290,15 @@ export async function updateFuelLoadAction(
 
     await recordAudit({
       userId: session.user.id,
+      userEmail: session.user.email ?? undefined,
       action: "update",
       entityType: "fuel_load",
       entityId: id,
-      oldState: { worksiteId: existing.worksiteId, liters: existing.liters, baseAmount: existing.baseAmount, totalAmount: existing.totalAmount },
-      newState: { worksiteId: parsed.data.worksiteId, liters: parsed.data.liters, baseAmount: parsed.data.baseAmount, totalAmount: parsed.data.totalAmount },
+      // El diff cubría 4 campos: cambiar vehículo, proveedor, factura, producto
+      // o fecha no dejaba rastro en el historial. Se guarda el estado editable
+      // completo a ambos lados.
+      oldState: pickAuditedLoadFields(existing),
+      newState: pickAuditedLoadFields(parsed.data),
     })
 
     revalidatePath(REVALIDATE)
@@ -294,6 +339,7 @@ export async function deleteFuelLoadAction(id: string): Promise<ActionState> {
 
     await recordAudit({
       userId: session.user.id,
+      userEmail: session.user.email ?? undefined,
       action: "delete",
       entityType: "fuel_load",
       entityId: id,

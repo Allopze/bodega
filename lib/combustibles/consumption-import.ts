@@ -7,7 +7,9 @@
  */
 
 import ExcelJS from "exceljs"
-import { normKey, sheetToRecords, parseChileanNumber } from "./xlsx-utils"
+import { normKey, sheetToRecords, parseChileanNumber, normalizePlate } from "./xlsx-utils"
+
+export { normalizePlate }
 
 export interface ParsedConsumptionRow {
   rowIndex: number
@@ -30,11 +32,6 @@ export interface ConsumptionImportResult {
   rows: ParsedConsumptionRow[]
   errors: ImportError[]
   duplicates: number[]   // rowIndex de patentes repetidas dentro del archivo
-}
-
-/** Normaliza una patente: trim, mayúsculas, colapsa espacios, conserva guion. */
-export function normalizePlate(value: string): string {
-  return value.trim().toUpperCase().replace(/\s+/g, "")
 }
 
 function normalizedRecord(record: Record<string, unknown>) {

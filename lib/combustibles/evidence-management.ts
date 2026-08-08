@@ -3,7 +3,7 @@
  * Detección de archivos corruptos, reutilización entre cargas, y políticas.
  */
 
-import { and, desc, eq, isNotNull, sql } from "drizzle-orm"
+import { desc, eq, isNotNull, sql } from "drizzle-orm"
 import { db } from "@/db"
 import { fuelTaeEvidence, fuelTaeSubmissions } from "@/db/schema/fuel-tae"
 import { worksites } from "@/db/schema"
@@ -17,6 +17,11 @@ export interface CorruptFileReport {
 
 /** Detectar evidencias potencialmente corruptas: tamaño 0, sin filePath ni externalUrl, o mimeType no imagen. */
 export async function detectCorruptEvidence(): Promise<CorruptFileReport[]> {
+  // Sin WHERE: el filtro `isNotNull(filePath)` de antes garantizaba
+  // `filePath != null` para TODA fila que llegaba al loop, así que la rama
+  // "sin filePath ni externalUrl" de abajo era inalcanzable por construcción
+  // — la evidencia histórica sólo-externa (Google Drive, sin filePath local)
+  // nunca se revisaba.
   const rows = await db.select({
     evidenceId: fuelTaeEvidence.id,
     fileName: fuelTaeEvidence.fileName,
@@ -27,18 +32,17 @@ export async function detectCorruptEvidence(): Promise<CorruptFileReport[]> {
     submissionId: fuelTaeEvidence.submissionId,
   })
     .from(fuelTaeEvidence)
-    .where(and(isNotNull(fuelTaeEvidence.filePath)))
 
   const corrupt: CorruptFileReport[] = []
   for (const row of rows) {
-    if (row.fileSize === 0) {
+    // Encadenadas como if/else if: antes "sin ruta" era un `if` aparte, así
+    // que una fila con fileSize=0 Y sin filePath se reportaba dos veces.
+    if (!row.filePath && !row.externalUrl) {
+      corrupt.push({ evidenceId: row.evidenceId, fileName: row.fileName, submissionId: row.submissionId, reason: "Sin ruta de archivo ni URL externa" })
+    } else if (row.fileSize === 0) {
       corrupt.push({ evidenceId: row.evidenceId, fileName: row.fileName, submissionId: row.submissionId, reason: "Archivo vacío (0 bytes)" })
     } else if (row.mimeType && !row.mimeType.startsWith("image/")) {
       corrupt.push({ evidenceId: row.evidenceId, fileName: row.fileName, submissionId: row.submissionId, reason: `Tipo MIME no reconocido: ${row.mimeType}` })
-    }
-    // Si no tiene filePath ni externalUrl, es ilegible
-    if (!row.filePath && !row.externalUrl) {
-      corrupt.push({ evidenceId: row.evidenceId, fileName: row.fileName, submissionId: row.submissionId, reason: "Sin ruta de archivo ni URL externa" })
     }
   }
   return corrupt

@@ -116,8 +116,14 @@ export function TaeImportReportForm() {
       </div>
       {reportGenerated && preview && !result && <section className="space-y-4 border-t border-(--color-border) pt-4" aria-labelledby="tae-preview-title">
         <div className="grid gap-3 sm:grid-cols-4">
-          <PreviewMetric label="Filas válidas" value={preview.summary.validRows} />
-          <PreviewMetric label="Litros válidos" value={`${preview.summary.totalLiters.toLocaleString("es-CL")} L`} />
+          {/* `summary.validRows`/`summary.totalLiters` son de la etapa de
+              PARSEO (antes de resolver faena/equipo): se solapaban con "Filas
+              rechazadas" de abajo, que sí cuenta las rechazadas por faena. Las
+              filas que efectivamente se van a importar (validadas + observadas)
+              y sus litros ya están en `planned`, y el propio componente los usa
+              más abajo en la comparación dry-run → definitiva. */}
+          <PreviewMetric label="Filas a importar" value={preview.planned.validatedRows + preview.planned.observedRows} />
+          <PreviewMetric label="Litros a importar" value={`${preview.planned.totalLiters.toLocaleString("es-CL")} L`} />
           <PreviewMetric label="Sello observadas" value={preview.sealObservations} />
           <PreviewMetric label="Filas rechazadas" value={preview.planned.rejectedRows} />
         </div>

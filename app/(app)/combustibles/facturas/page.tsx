@@ -4,7 +4,7 @@ import { db } from "@/db"
 import { fuelLoads, fuelProducts, fuelVehicles, fuelSuppliers, worksites } from "@/db/schema"
 import { desc, eq, inArray, sql } from "drizzle-orm"
 import { settle } from "@/lib/async-settle"
-import { can, requirePermission } from "@/lib/auth/can"
+import { can, isGlobalRole, requirePermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { buildFuelLoadsWhere, buildFuelVehiclesWhere } from "@/lib/combustibles/queries"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
@@ -194,6 +194,7 @@ export default async function CombustiblesFacturasPage({
         totalAmount={kpiRow?.totalAmount ?? 0}
         loadCount={kpiRow?.count ?? 0}
         periodLabel={periodLabel}
+        canViewCuentaCorriente={isGlobalRole(session)}
       />
 
       <FuelFilters
@@ -206,7 +207,7 @@ export default async function CombustiblesFacturasPage({
 
       {/* Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
-        <Card className="lg:col-span-2">
+        <Card id="evolucion-mensual" className="lg:col-span-2 scroll-mt-20">
           <CardHeader><CardTitle className="text-base">Evolución mensual</CardTitle></CardHeader>
           <CardContent>
             <MonthlyEvolutionChart data={chartByMonth} />
@@ -240,12 +241,14 @@ export default async function CombustiblesFacturasPage({
         </Card>
       </div>
 
-      <FuelLoadTable
-        rows={rows}
-        page={page}
-        totalPages={totalPages}
-        total={total}
-      />
+      <div id="tabla-cargas" className="scroll-mt-20">
+        <FuelLoadTable
+          rows={rows}
+          page={page}
+          totalPages={totalPages}
+          total={total}
+        />
+      </div>
     </PageContainer>
   )
 }

@@ -59,25 +59,25 @@ export function StatementDetail({ statement }: { statement: StatementData }) {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <Card>
           <CardContent className="pt-6">
-            <p className="text-sm text-muted-foreground">Total litros</p>
+            <p className="text-sm text-[var(--color-text-muted)]">Total litros</p>
             <p className="text-2xl font-bold">{formatLiters(statement.totalLiters)}</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-6">
-            <p className="text-sm text-muted-foreground">Total a pagar</p>
+            <p className="text-sm text-[var(--color-text-muted)]">Total a pagar</p>
             <p className="text-2xl font-bold">{formatCLP(statement.totalAmount)}</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-6">
-            <p className="text-sm text-muted-foreground">Pagado</p>
+            <p className="text-sm text-[var(--color-text-muted)]">Pagado</p>
             <p className="text-2xl font-bold text-green-600">{formatCLP(statement.paidAmount)}</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-6">
-            <p className="text-sm text-muted-foreground">Pendiente</p>
+            <p className="text-sm text-[var(--color-text-muted)]">Pendiente</p>
             <p className="text-2xl font-bold text-amber-600">{formatCLP(pending > 0 ? pending : 0)}</p>
           </CardContent>
         </Card>
@@ -87,10 +87,10 @@ export function StatementDetail({ statement }: { statement: StatementData }) {
       <Card>
         <CardHeader><CardTitle>Desglose</CardTitle></CardHeader>
         <CardContent className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-          <div><span className="text-muted-foreground">Base afecta:</span> {formatCLP(statement.totalBaseAmount)}</div>
-          <div><span className="text-muted-foreground">IEC total:</span> {formatCLP(statement.totalIec)}</div>
-          <div><span className="text-muted-foreground">IVA:</span> {formatCLP(statement.totalIva)}</div>
-          <div><span className="text-muted-foreground">Vencimiento:</span> {statement.dueDate ?? "—"}</div>
+          <div><span className="text-[var(--color-text-muted)]">Base afecta:</span> {formatCLP(statement.totalBaseAmount)}</div>
+          <div><span className="text-[var(--color-text-muted)]">IEC total:</span> {formatCLP(statement.totalIec)}</div>
+          <div><span className="text-[var(--color-text-muted)]">IVA:</span> {formatCLP(statement.totalIva)}</div>
+          <div><span className="text-[var(--color-text-muted)]">Vencimiento:</span> {statement.dueDate ?? "—"}</div>
         </CardContent>
       </Card>
 
@@ -102,7 +102,7 @@ export function StatementDetail({ statement }: { statement: StatementData }) {
         </CardHeader>
         <CardContent>
           {statement.payments.length === 0 ? (
-            <p className="text-muted-foreground text-sm">No hay pagos registrados</p>
+            <p className="text-[var(--color-text-muted)] text-sm">No hay pagos registrados</p>
           ) : (
             <Table>
               <TableHeader>
@@ -186,7 +186,7 @@ function AddPaymentDialog({ statementId, pendingAmount }: { statementId: string;
         </DialogHeader>
         <form action={formAction} className="space-y-4">
           <input type="hidden" name="statementId" value={statementId} />
-          <p className="text-sm text-muted-foreground">Pendiente: {formatCLP(pendingAmount)}</p>
+          <p className="text-sm text-[var(--color-text-muted)]">Pendiente: {formatCLP(pendingAmount)}</p>
           <div className="space-y-2">
             <Label>Fecha de pago *</Label>
             <DatePicker name="paymentDate" />
@@ -203,7 +203,7 @@ function AddPaymentDialog({ statementId, pendingAmount }: { statementId: string;
             <Label>Nro comprobante</Label>
             <Input name="reference" />
           </div>
-          {state.message && !state.ok && <p className="text-sm text-destructive">{state.message}</p>}
+          {state.message && !state.ok && <p className="text-sm text-[var(--color-danger-ink)]">{state.message}</p>}
           <div className="flex justify-end gap-3">
             <Button type="button" variant="secondary" onClick={() => setOpen(false)}>Cancelar</Button>
             <Button type="submit" disabled={isPending}>{isPending ? "Registrando..." : "Registrar pago"}</Button>

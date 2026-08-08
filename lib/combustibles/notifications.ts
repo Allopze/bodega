@@ -12,7 +12,7 @@ import { fuelMonthlyStatements, fuelLoads } from "@/db/schema"
 import { eq, and, sql, lte } from "drizzle-orm"
 import { notifyManyUser, getUserIdsWithPermission } from "@/lib/services/notifications"
 import { logger } from "@/lib/logger"
-import { chileDateParts } from "@/lib/utils"
+import { chileDateParts, todayInChile, addDaysToPlainDate } from "@/lib/utils"
 
 /**
  * Mes anterior a `year`-`month` (mes 1-based) como "YYYY-MM".
@@ -31,8 +31,11 @@ export function previousMonth(year: number, month: number): string {
  */
 export async function checkFuelStatementNotifications(): Promise<void> {
   try {
-    const today = new Date().toISOString().split("T")[0]!
-    const fiveDaysFromNow = new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString().split("T")[0]!
+    // Fecha civil chilena, no UTC: entre las 21:00 y la medianoche de Chile
+    // `toISOString()` ya está en el día siguiente y un resumen que vence hoy
+    // se notificaba VENCIDO con horas de anticipación.
+    const today = todayInChile()
+    const fiveDaysFromNow = addDaysToPlainDate(today, 5)
 
     // Find open/partial statements due soon or overdue
     const dueSoon = await db.query.fuelMonthlyStatements.findMany({
@@ -52,7 +55,11 @@ export async function checkFuelStatementNotifications(): Promise<void> {
       with: { supplier: true },
     })
 
-    const adminUserIds = await getUserIdsWithPermission("combustibles:view")
+    // combustibles:view_costs, no combustibles:view: la cuenta corriente
+    // (deuda, pagos, montos por proveedor) exige view_costs igual que
+    // /facturas y /reportes; notificar montos a un rol sin ese permiso
+    // filtraba la misma información que la pantalla ya protege.
+    const adminUserIds = await getUserIdsWithPermission("combustibles:view_costs")
 
     // Notify about due soon
     for (const stmt of dueSoon) {

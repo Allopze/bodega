@@ -10,12 +10,13 @@ interface FuelDashboardKpisProps {
   loadCount: number
   /** Rango de período representado (p. ej. "2026-01 — 2026-05"). */
   periodLabel: string
+  canViewCuentaCorriente: boolean
 }
 
 const NUM_FORMAT = new Intl.NumberFormat("es-CL", { maximumFractionDigits: 0 })
 const formatNum = (n: number) => NUM_FORMAT.format(n)
 
-export function FuelDashboardKpis({ totalLiters, totalAmount, loadCount, periodLabel }: FuelDashboardKpisProps) {
+export function FuelDashboardKpis({ totalLiters, totalAmount, loadCount, periodLabel, canViewCuentaCorriente }: FuelDashboardKpisProps) {
   const avgPricePerLiter = totalLiters > 0 ? totalAmount / totalLiters : 0
 
   return (
@@ -33,24 +34,28 @@ export function FuelDashboardKpis({ totalLiters, totalAmount, loadCount, periodL
           label="Cargas"
           value={formatNum(loadCount)}
           detail="Cargas registradas"
+          href="#tabla-cargas"
         />
         <KpiCard
           icon={<GasPump size={18} weight="bold" />}
           label="Litros totales"
           value={`${formatNum(totalLiters)} L`}
           detail="Combustible cargado"
+          href="#evolucion-mensual"
         />
         <KpiCard
           icon={<CurrencyCircleDollar size={18} weight="bold" />}
           label="Total gastado"
           value={formatCLP(totalAmount)}
           detail="Gasto del período"
+          href={canViewCuentaCorriente ? "/combustibles/cuenta-corriente" : undefined}
         />
         <KpiCard
           icon={<Gauge size={18} weight="bold" />}
           label="Precio promedio"
           value={`${formatCLP(avgPricePerLiter)}/L`}
           detail="Por litro"
+          href="#evolucion-mensual"
         />
       </div>
     </section>

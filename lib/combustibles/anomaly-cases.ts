@@ -7,10 +7,12 @@
  * con actor y timestamp para trazabilidad completa.
  */
 
+import type { Session } from "next-auth"
 import { and, desc, eq, inArray, sql, type SQL } from "drizzle-orm"
 import { db } from "@/db"
 import { fuelAnomalyCases, fuelAnomalyComments, fuelAnomalyRules, fuelVehicles, worksites, users } from "@/db/schema"
 import { nanoid } from "@/lib/id"
+import { worksiteScopeSql } from "@/lib/auth/scope"
 
 export type AnomalyCaseStatus = "open" | "in_review" | "resolved" | "dismissed" | "reopened"
 export type AnomalySeverity = "low" | "medium" | "high" | "critical"
@@ -123,10 +125,18 @@ export async function createAnomalyCase(input: CreateAnomalyCaseInput): Promise<
   return await enrichAnomalyCase(record!)
 }
 
-/** Obtener casos con filtros, paginados. */
-export async function getAnomalyCases(filters: AnomalyCasesFilters = {}): Promise<{ cases: AnomalyCaseRow[]; total: number }> {
+/**
+ * Obtener casos con filtros, paginados.
+ *
+ * `session` es obligatorio (aunque sea `null` en pruebas) a propósito: el
+ * `worksiteId` del filtro viene de la URL y sólo acota; el techo de permisos lo
+ * pone el alcance del rol. Sin este predicado la pantalla listaba los casos de
+ * todas las faenas a cualquier usuario con `combustibles:view`.
+ */
+export async function getAnomalyCases(filters: AnomalyCasesFilters, session: Session | null): Promise<{ cases: AnomalyCaseRow[]; total: number }> {
   const where: SQL[] = []
-  if (filters.worksiteId) where.push(eq(fuelAnomalyCases.worksiteId, filters.worksiteId))
+  const scope = worksiteScopeSql(session, fuelAnomalyCases.worksiteId, filters.worksiteId)
+  if (scope) where.push(scope)
   if (filters.status) {
     if (Array.isArray(filters.status)) where.push(inArray(fuelAnomalyCases.status, filters.status))
     else where.push(eq(fuelAnomalyCases.status, filters.status))
@@ -168,13 +178,23 @@ export async function updateAnomalyCaseStatus(
   if (isResolved && !(resolution ?? "").trim()) {
     throw new Error("Debes indicar el motivo para resolver o descartar un caso")
   }
+  // Antes CUALQUIER estado no resolutivo (incluido "in_review", que no es una
+  // decisión deliberada de reabrir) borraba resolution/resolvedById/resolvedAt
+  // incondicionalmente — mover un caso YA resuelto a "in_review" destruía el
+  // motivo y el responsable de la resolución sin dejar rastro (no hay
+  // recordAudit en esta función ni en su único llamador). Ahora sólo se
+  // escriben esos campos cuando SE resuelve (con el motivo nuevo) o cuando SE
+  // reabre explícitamente (`reopened` — la única transición cuyo nombre dice
+  // "empezar de nuevo"); cualquier otra transición conserva lo que ya había.
+  const resolutionFields = isResolved
+    ? { resolution: resolution ?? null, resolvedById: userId, resolvedAt: now }
+    : status === "reopened"
+      ? { resolution: null, resolvedById: null, resolvedAt: null }
+      : {}
   const [updated] = await db.update(fuelAnomalyCases).set({
     status,
-    resolution: resolution ?? null,
-    resolvedById: isResolved ? userId : null,
-    resolvedAt: isResolved ? now : null,
     updatedAt: now,
-    ...(status === "reopened" ? { resolvedById: null, resolvedAt: null, resolution: null } : {}),
+    ...resolutionFields,
   }).where(eq(fuelAnomalyCases.id, caseId)).returning()
   if (!updated) throw new Error("Caso de anomalía no encontrado")
   return await enrichAnomalyCase(updated)
@@ -198,14 +218,15 @@ export async function addAnomalyComment(caseId: string, userId: string, body: st
 }
 
 /** Agregar casos por estado, severidad y código de regla para el gráfico de distribución (sección 5). */
-export async function getAnomalyDistribution(filters: Pick<AnomalyCasesFilters, 'worksiteId' | 'status'> = {}): Promise<{
+export async function getAnomalyDistribution(filters: Pick<AnomalyCasesFilters, 'worksiteId' | 'status'>, session: Session | null): Promise<{
   byStatus: Array<{ status: string; count: number }>
   bySeverity: Array<{ severity: string; count: number }>
   byRuleCode: Array<{ ruleCode: string; ruleName: string | null; count: number }>
   total: number
 }> {
   const where: SQL[] = []
-  if (filters.worksiteId) where.push(eq(fuelAnomalyCases.worksiteId, filters.worksiteId))
+  const scope = worksiteScopeSql(session, fuelAnomalyCases.worksiteId, filters.worksiteId)
+  if (scope) where.push(scope)
   if (filters.status) {
     if (Array.isArray(filters.status)) where.push(inArray(fuelAnomalyCases.status, filters.status))
     else where.push(eq(fuelAnomalyCases.status, filters.status))
@@ -228,7 +249,9 @@ export async function getAnomalyDistribution(filters: Pick<AnomalyCasesFilters, 
     db.select({
       ruleCode: fuelAnomalyCases.ruleCode,
       count: sql<number>`count(*)::int`,
-    }).from(fuelAnomalyCases).where(condition).groupBy(fuelAnomalyCases.ruleCode).limit(10)
+      // Sin ORDER BY, el LIMIT 10 recortaba un subconjunto arbitrario y el
+      // gráfico se titulaba "Top reglas" mostrando cualquier decena.
+    }).from(fuelAnomalyCases).where(condition).groupBy(fuelAnomalyCases.ruleCode).orderBy(desc(sql`count(*)`)).limit(10)
       .then(async (rows) => {
         // Enriquecer con nombres de regla
         const codes = [...new Set(rows.map(r => r.ruleCode))]

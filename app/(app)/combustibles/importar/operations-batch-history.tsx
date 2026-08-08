@@ -25,7 +25,7 @@ interface OperationBatchRow {
   importer: { name: string | null; email: string | null } | null
 }
 
-interface OperationBatchRowFlat {
+type OperationBatchRowFlat = {
   id: string
   periodoLabel: string
   archivoNombre: string
@@ -52,7 +52,7 @@ const COLUMNS: ColumnDef[] = [
   { key: "actions", label: "", width: "w-12" },
 ]
 
-const SEARCH_KEYS = ["archivoNombre", "importerName", "periodoLabel"]
+const SEARCH_KEYS: (keyof OperationBatchRowFlat)[] = ["archivoNombre", "importerName", "periodoLabel"]
 
 function flatRow(b: OperationBatchRow): OperationBatchRowFlat {
   return {
@@ -81,8 +81,7 @@ export function OperationsBatchHistory({ batches }: { batches: OperationBatchRow
     return rows
   }, [flatRows, estadoFilter])
 
-  const renderRow = (row: Record<string, unknown>, _index: number) => {
-    const r = row as unknown as OperationBatchRowFlat
+  const renderRow = (r: OperationBatchRowFlat, _index: number) => {
     return (
       <TableRow key={r.id}>
         <TableCell className="font-mono text-xs">{formatDateTime(r.createdAt)}</TableCell>
@@ -100,7 +99,7 @@ export function OperationsBatchHistory({ batches }: { batches: OperationBatchRow
             {r.estado === "revertido" ? "Revertido" : "Importado"}
           </Badge>
         </TableCell>
-        <TableCell className="text-xs text-muted-foreground max-w-32 truncate" title={r.importerName}>{r.importerName}</TableCell>
+        <TableCell className="text-xs text-[var(--color-text-muted)] max-w-32 truncate" title={r.importerName}>{r.importerName}</TableCell>
         <TableCell>
           <Button asChild variant="ghost" size="sm">
             <Link href={`/combustibles/importar/operaciones/${r.id}`}>Ver</Link>
@@ -131,12 +130,11 @@ export function OperationsBatchHistory({ batches }: { batches: OperationBatchRow
           viewKey="ops"
         stickyFirstColumn
         columns={COLUMNS}
-        rows={preFiltered as unknown as Record<string, unknown>[]}
+        rows={preFiltered}
         searchKeys={SEARCH_KEYS}
         searchPlaceholder="Filtrar lotes..."
         renderRow={renderRow}
-        renderMobileCard={(row) => {
-          const r = row as unknown as OperationBatchRowFlat
+        renderMobileCard={(r) => {
           return (
             <ResponsiveDataListCard
               title={r.archivoNombre}

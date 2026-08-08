@@ -7,6 +7,7 @@ import { fuelSuppliers, suppliers } from "@/db/schema"
 import { requirePermission } from "@/lib/auth/can"
 import { nanoid } from "@/lib/id"
 import { recordAudit } from "@/lib/audit"
+import { cleanRut } from "@/lib/rut"
 import {
   createFuelSupplierSchema,
   updateFuelSupplierSchema,
@@ -16,8 +17,10 @@ import { dbErrMsg } from "./loads"
 
 const REVALIDATE = "/admin/flota-catalogos/proveedores-combustible"
 
-function normalizeRut(value: string) {
-  return value.replace(/[.\-\s]/g, "").toUpperCase()
+/** Forma compacta (sin guion) del RUT, sólo para comparar contra datos legacy
+ *  que puede que no estén en la forma canónica `cleanRut` (con guion). */
+function compactRut(value: string) {
+  return cleanRut(value).replace("-", "")
 }
 
 type FuelSupplierIdentity = {
@@ -33,7 +36,11 @@ type FuelSupplierIdentity = {
 function identityValues(input: FuelSupplierIdentity) {
   return {
     name: input.name,
-    rut: input.rut ?? null,
+    // Forma canónica (mayúsculas, sin puntos, con guion — lib/rut.ts es la
+    // fuente única). Antes se guardaba crudo pese a que el UNIQUE de la
+    // columna es sobre el string literal: "76.123.456-7" y "761234567"
+    // convivían como proveedores distintos.
+    rut: input.rut ? cleanRut(input.rut) : null,
     contactName: input.contactName ?? null,
     phone: input.contactPhone ?? null,
     email: input.contactEmail ?? null,
@@ -50,7 +57,7 @@ async function resolveGeneralSupplier(
 
   if (input.rut) {
     const byRut = await tx.query.suppliers.findFirst({
-      where: sql`regexp_replace(upper(${suppliers.rut}), '[.\\-[:space:]]', '', 'g') = ${normalizeRut(input.rut)}`,
+      where: sql`regexp_replace(upper(${suppliers.rut}), '[.\\-[:space:]]', '', 'g') = ${compactRut(input.rut)}`,
     })
     if (byRut && byRut.id !== supplierId) {
       if (supplierId) throw new Error("El RUT ya pertenece a otro proveedor general")
@@ -111,18 +118,19 @@ export async function createFuelSupplierAction(_prev: ActionState, formData: For
     const result = await db.transaction(async (tx) => {
       const supplierId = await resolveGeneralSupplier(tx, parsed.data)
       const id = nanoid()
+      const rut = parsed.data.rut ? cleanRut(parsed.data.rut) : null
       await tx.insert(fuelSuppliers).values({
         id,
         supplierId,
         name: parsed.data.name,
-        rut: parsed.data.rut ?? null,
+        rut,
         contactName: parsed.data.contactName ?? null,
         contactPhone: parsed.data.contactPhone ?? null,
         contactEmail: parsed.data.contactEmail ?? null,
         notes: parsed.data.notes ?? null,
         isActive: true,
       })
-      return { id, supplierId }
+      return { id, supplierId, rut }
     })
 
     await recordAudit({
@@ -131,7 +139,7 @@ export async function createFuelSupplierAction(_prev: ActionState, formData: For
       action: "create",
       entityType: "fuel_supplier",
       entityId: result.id,
-      newState: { supplierId: result.supplierId, name: parsed.data.name, rut: parsed.data.rut ?? null, isActive: true },
+      newState: { supplierId: result.supplierId, name: parsed.data.name, rut: result.rut, isActive: true },
     })
     revalidatePath(REVALIDATE)
     return { ok: true, message: "Proveedor creado", data: result }
@@ -163,13 +171,14 @@ export async function updateFuelSupplierAction(_prev: ActionState, formData: For
       contactEmail: parsed.data.contactEmail ?? current.contactEmail ?? undefined,
       notes: parsed.data.notes ?? current.notes ?? undefined,
     }
+    const rut = identity.rut ? cleanRut(identity.rut) : null
 
     const result = await db.transaction(async (tx) => {
       const supplierId = await resolveGeneralSupplier(tx, identity, current.supplierId)
       await tx.update(fuelSuppliers).set({
         supplierId,
         name: identity.name,
-        rut: identity.rut ?? null,
+        rut,
         contactName: identity.contactName ?? null,
         contactPhone: identity.contactPhone ?? null,
         contactEmail: identity.contactEmail ?? null,
@@ -186,7 +195,7 @@ export async function updateFuelSupplierAction(_prev: ActionState, formData: For
       entityType: "fuel_supplier",
       entityId: id,
       oldState: { supplierId: current.supplierId, name: current.name, rut: current.rut, isActive: current.isActive },
-      newState: { supplierId: result.supplierId, name: identity.name, rut: identity.rut ?? null, isActive: current.isActive },
+      newState: { supplierId: result.supplierId, name: identity.name, rut, isActive: current.isActive },
     })
     revalidatePath(REVALIDATE)
     return { ok: true, message: "Proveedor actualizado" }

@@ -63,6 +63,7 @@ export async function parseFuelExcel(fileBuffer: ArrayBuffer): Promise<ImportRes
   const loads: ParsedFuelLoad[] = []
   const errors: ImportError[] = []
   const seenReceipts = new Set<string>()
+  const flaggedReceipts = new Set<string>()
   const duplicates: number[] = []
 
   for (let i = 0; i < rows.length; i++) {
@@ -122,9 +123,13 @@ export async function parseFuelExcel(fileBuffer: ArrayBuffer): Promise<ImportRes
     if (!worksite) { errors.push({ rowIndex: rowNum, field: "FAENA", message: "Requerido" }); continue }
     if (!product) { errors.push({ rowIndex: rowNum, field: "PRODUCTO", message: "Requerido" }); continue }
 
-    // Duplicados por nro factura
-    if (receiptNumber && seenReceipts.has(receiptNumber)) {
+    // Duplicados por nro factura: se marca UNA vez por número de factura
+    // repetido, no una vez por línea excedente. Una factura real puede traer
+    // varias líneas de detalle (varias cargas bajo un mismo documento) — antes
+    // esa factura legítima de 5 líneas reportaba "4 duplicados".
+    if (receiptNumber && seenReceipts.has(receiptNumber) && !flaggedReceipts.has(receiptNumber)) {
       duplicates.push(rowNum)
+      flaggedReceipts.add(receiptNumber)
     }
     if (receiptNumber) seenReceipts.add(receiptNumber)
 

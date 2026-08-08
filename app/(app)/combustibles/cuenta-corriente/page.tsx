@@ -7,10 +7,14 @@ import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { StatementsTable } from "./statements-table"
 import { NewStatementDialog } from "./new-statement-dialog"
+import { todayInChile } from "@/lib/utils"
 
 export default async function CuentaCorrientePage() {
+  // combustibles:view_costs, no combustibles:view: esta pantalla es deuda,
+  // pagos y montos por proveedor de punta a punta — la misma llave que
+  // /facturas y /reportes, no la de sólo lectura.
   let session
-  try { session = await requirePermission("combustibles:view") }
+  try { session = await requirePermission("combustibles:view_costs") }
   catch { redirect("/forbidden") }
 
   if (!isGlobalRole(session)) redirect("/forbidden")
@@ -35,7 +39,7 @@ export default async function CuentaCorrientePage() {
           </div>
         }
       />
-      <StatementsTable statements={statements} />
+      <StatementsTable statements={statements} today={todayInChile()} />
     </PageContainer>
   )
 }

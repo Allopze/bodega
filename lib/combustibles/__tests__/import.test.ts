@@ -81,6 +81,13 @@ describe("parseFuelExcel", () => {
     expect(result.duplicates).toHaveLength(1)
   })
 
+  it("counts a receipt with several detail lines as ONE duplicate, not one per extra line", async () => {
+    const buffer = await createTestExcel([validRow, { ...validRow }, { ...validRow }, { ...validRow }])
+    const result = await parseFuelExcel(buffer)
+    expect(result.loads).toHaveLength(4)
+    expect(result.duplicates).toHaveLength(1)
+  })
+
   it("skips empty rows", async () => {
     const buffer = await createTestExcel([{}, {}, validRow])
     const result = await parseFuelExcel(buffer)

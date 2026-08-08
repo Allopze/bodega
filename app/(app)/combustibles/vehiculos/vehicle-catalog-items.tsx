@@ -7,7 +7,7 @@ import { TableCell, TableRow } from "@/components/ui/table"
 import { formatFuelVehicleStatus } from "@/lib/combustibles/validation"
 import type { VehicleForEdit } from "./vehicle-form"
 
-export interface VehicleRow extends VehicleForEdit {
+export type VehicleRow = VehicleForEdit & {
   equipmentTypeName: string
   usualFuelSupplierName: string | null
   worksiteName: string | null

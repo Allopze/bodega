@@ -8,7 +8,9 @@
  */
 
 import ExcelJS from "exceljs"
-import { normKey, sheetToRecords, parseChileanNumber, nullableChileanNumber, formatExcelDateUTC } from "./xlsx-utils"
+import { normKey, sheetToRecords, parseChileanNumber, nullableChileanNumber, formatExcelDateUTC, normalizePlate, plateMatchKey } from "./xlsx-utils"
+
+export { normalizePlate, plateMatchKey }
 
 export type MedidoPor = "km" | "hora"
 export type TipoRendimiento = "km_lt" | "lt_hr"
@@ -46,19 +48,6 @@ export interface ImportError {
 export interface OperationsImportResult {
   rows: ParsedOperationRow[]
   errors: ImportError[]
-}
-
-/** Normaliza una patente: trim, mayúsculas, colapsa espacios (conserva guiones tal
- *  como vienen en el archivo — el formato de patente no es uniforme). */
-export function normalizePlate(value: string): string {
-  return value.trim().toUpperCase().replace(/\s+/g, "")
-}
-
-/** Clave de comparación para matchear contra `fuel_vehicles.plate`: además de
- *  normalizar, quita guiones — la data operacional y el catálogo usan
- *  formatos de patente distintos (con/sin separadores) para el mismo vehículo. */
-export function plateMatchKey(value: string): string {
-  return value.toUpperCase().replace(/[^A-Z0-9]/g, "")
 }
 
 export interface MatchCandidate {

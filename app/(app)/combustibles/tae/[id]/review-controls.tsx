@@ -6,8 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { toast } from "@/lib/toast"
 import { reviewTaeSubmissionAction } from "../actions"
-
-const STATUS_LABELS: Record<string, string> = { submitted: "Enviada", observed: "Observada", validated: "Validada", voided: "Anulada" }
+import { taeStatusLabel } from "@/lib/combustibles/labels"
 
 export function ReviewControls({ id, status }: { id: string; status: string }) {
   const router = useRouter()
@@ -24,5 +23,5 @@ export function ReviewControls({ id, status }: { id: string; status: string }) {
       else toast.error(result.message)
     })
   }
-  return <section className="border border-(--color-border) bg-(--color-surface) p-4"><p className="text-eyebrow">Revisión</p><p className="mt-1 text-sm text-[var(--color-text-muted)]">Estado actual: {STATUS_LABELS[status] ?? status}</p>{status === "voided" ? <p className="mt-3 text-sm text-[var(--color-text-muted)]">La anulación es un estado terminal.</p> : <><Textarea aria-label="Motivo de la revisión" className="mt-3" value={note} onChange={(event) => setNote(event.target.value)} placeholder="Motivo de la revisión" rows={3} /><div className="mt-3 flex flex-wrap gap-2">{status !== "validated" && <Button size="sm" disabled={pending} onClick={() => update("validated")}>Validar</Button>}{status !== "observed" && <Button size="sm" variant="secondary" disabled={pending} onClick={() => update("observed")}>Observar</Button>}<Button size="sm" variant="destructive" disabled={pending} onClick={() => update("voided")}>Anular</Button></div></>}</section>
+  return <section className="border border-(--color-border) bg-(--color-surface) p-4"><p className="text-eyebrow">Revisión</p><p className="mt-1 text-sm text-[var(--color-text-muted)]">Estado actual: {taeStatusLabel(status)}</p>{status === "voided" ? <p className="mt-3 text-sm text-[var(--color-text-muted)]">La anulación es un estado terminal.</p> : <><Textarea aria-label="Motivo de la revisión" className="mt-3" value={note} onChange={(event) => setNote(event.target.value)} placeholder="Motivo de la revisión" rows={3} /><div className="mt-3 flex flex-wrap gap-2">{status !== "validated" && <Button size="sm" disabled={pending} onClick={() => update("validated")}>Validar</Button>}{status !== "observed" && <Button size="sm" variant="secondary" disabled={pending} onClick={() => update("observed")}>Observar</Button>}<Button size="sm" variant="destructive" disabled={pending} onClick={() => update("voided")}>Anular</Button></div></>}</section>
 }

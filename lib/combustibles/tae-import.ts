@@ -1,5 +1,5 @@
 import ExcelJS from "exceljs"
-import { normKey, sheetToRecords } from "./xlsx-utils"
+import { normKey, sheetToRecords, santiagoInstant } from "./xlsx-utils"
 
 export interface TaeLegacyImportError {
   rowIndex: number
@@ -102,11 +102,42 @@ function strictNumber(value: unknown): number | null {
   return /^\d+(?:\.\d+)?$/.test(normalized) ? Number(normalized) : null
 }
 
+// "DD-MM-YYYY[ HH:mm[:ss]]" o "YYYY-MM-DD[ HH:mm[:ss]]" (acepta "-" o "/"), sin zona.
+const DATE_TIME_TEXT = /^(\d{1,4})[/-](\d{1,2})[/-](\d{1,4})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?$/
+// Ya trae zona explícita (Z o ±HH:mm) — es un instante ya correcto, no hora de pared sin zonificar.
+const HAS_EXPLICIT_ZONE = /(Z|[+-]\d{2}:?\d{2})$/i
+
+/**
+ * "Fecha y hora" es UNA celda combinada. ExcelJS decodifica los seriales de
+ * fecha de Excel como si fueran UTC — `date.toISOString()` a secas conserva la
+ * hora de PARED chilena pero la etiqueta como instante UTC, corriendo cada
+ * carga 3–4 horas (y cambiando de mes las nocturnas de fin de mes). Pasar el
+ * mismo `Date` como fecha y como hora a `santiagoInstant` reinterpreta esos
+ * mismos componentes de pared como hora de Chile.
+ *
+ * La rama string cubre dos casos: (a) texto sin zona ("31-07-2026 22:00",
+ * como vendría escrito a mano en el Excel) — mismo criterio de reinterpretar
+ * como hora de pared chilena, sin pasar por `new Date(string)` que se
+ * interpreta en la zona del proceso; (b) un ISO ya con zona explícita (Z o
+ * ±HH:mm) — típicamente un `rawRow` ya persistido que se está re-parseando —
+ * ya es un instante correcto y no debe reinterpretarse.
+ */
 function formatTimestamp(value: unknown): string | null {
-  if (value instanceof Date && !isNaN(value.getTime())) return value.toISOString()
+  if (value instanceof Date && !isNaN(value.getTime())) return santiagoInstant(value, value)
   if (typeof value === "string" && value.trim()) {
-    const parsed = new Date(value)
-    if (!isNaN(parsed.getTime())) return parsed.toISOString()
+    const trimmed = value.trim()
+    if (HAS_EXPLICIT_ZONE.test(trimmed)) {
+      const parsed = new Date(trimmed)
+      return isNaN(parsed.getTime()) ? null : parsed.toISOString()
+    }
+    const match = DATE_TIME_TEXT.exec(trimmed)
+    if (!match) return null
+    const [, a, month, b, hour, minute, second] = match
+    // El primer grupo es año si tiene 4 dígitos (formato YYYY-MM-DD); si no, es día (DD-MM-YYYY).
+    const [year, day] = a!.length === 4 ? [a!, b!] : [b!, a!]
+    const wall = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day), Number(hour ?? 0), Number(minute ?? 0), Number(second ?? 0)))
+    if (isNaN(wall.getTime())) return null
+    return santiagoInstant(wall, wall)
   }
   return null
 }

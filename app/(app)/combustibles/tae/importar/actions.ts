@@ -1,10 +1,10 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
-import { and, eq } from "drizzle-orm"
+import { and, eq, inArray } from "drizzle-orm"
 import { isNetworkError } from "@/lib/network-error"
 import { db } from "@/db"
-import { fuelTaeImportBatches, fuelTaeSubmissions, fuelTaeVehicleMappings, fuelTaeWorkerMappings, fuelVehicles, workers } from "@/db/schema"
+import { fuelSealMovements, fuelTaeImportBatches, fuelTaeSubmissions, fuelTaeVehicleMappings, fuelTaeWorkerMappings, fuelVehicles, workers } from "@/db/schema"
 import { can, guardPermission } from "@/lib/auth/can"
 import { canAccessWorksite, resolveWorksiteScope } from "@/lib/auth/scope"
 import { generateTaeImportDryRunReport, generateTaeImportPreview } from "@/lib/services/fuel-tae"
@@ -86,6 +86,17 @@ export async function importTaeHistoryAction(formData: FormData) {
       allowedWorksiteIds: scope.mode === "all" ? undefined : new Set(scope.mode === "some" ? scope.ids : []),
       manualMappings,
     })
+    // Rutas HERMANAS, nunca "/combustibles/tae/importar": es la ruta donde
+    // vive este mismo formulario (tae-import-report-form.tsx, montado desde
+    // tae/importar/page.tsx) — revalidarla remonta el árbol de cliente y
+    // borra el resumen de importación antes de que el usuario lo vea (mismo
+    // patrón que actions-operaciones.ts:325-333). El detalle del lote recién
+    // creado es una ruta que el usuario aún no visitó, así que sí conviene
+    // dejarla fresca para cuando navegue a "Ver detalle".
+    revalidatePath("/combustibles")
+    revalidatePath("/combustibles/tae")
+    revalidatePath("/combustibles/tae/importar/historial")
+    revalidatePath(`/combustibles/tae/importar/${result.batchId}`)
     return { ok: true as const, data: result, message: `${result.importedRows} cargas históricas importadas` }
   } catch (error) {
     logger.error("[importTaeHistoryAction]", error)
@@ -117,6 +128,23 @@ export async function revertTaeImportBatchAction(batchId: string) {
         })
         if (!existing) throw new Error("Lote no encontrado")
         throw new Error("Este lote ya fue revertido")
+      }
+
+      // Borrar primero los movimientos de sello de estas cargas: la FK de
+      // fuel_seal_movements.submission_id hoy no tiene ON DELETE CASCADE (el
+      // schema.ts ya lo declara así — falta generar y aplicar la migración,
+      // pendiente porque el árbol tiene cambios de esquema en curso de otro
+      // proceso que no se pueden aislar limpiamente ahora mismo). Sin este
+      // borrado explícito, revertir un lote con al menos una carga validada
+      // (que es la que inserta el movimiento de sello) fallaba con violación
+      // de FK. Una vez aplicada la migración, este borrado queda redundante
+      // pero inofensivo — el CASCADE ya lo habría hecho.
+      const submissionIds = await tx
+        .select({ id: fuelTaeSubmissions.id })
+        .from(fuelTaeSubmissions)
+        .where(eq(fuelTaeSubmissions.importBatchId, batchId))
+      if (submissionIds.length > 0) {
+        await tx.delete(fuelSealMovements).where(inArray(fuelSealMovements.submissionId, submissionIds.map((s) => s.id)))
       }
 
       const removed = await tx

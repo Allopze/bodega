@@ -9,7 +9,7 @@
  */
 
 import ExcelJS from "exceljs"
-import { normKey, sheetToRecords, parseChileanNumber } from "./xlsx-utils"
+import { normKey, sheetToRecords, parseChileanNumber, santiagoInstant } from "./xlsx-utils"
 import { fuelProductIdForLegacy } from "./fuel-products"
 
 export interface ParsedTaeReceiptRow {
@@ -36,40 +36,6 @@ export interface TaeReceiptImportError {
 export interface TaeReceiptImportResult {
   rows: ParsedTaeReceiptRow[]
   errors: TaeReceiptImportError[]
-}
-
-const TZ = "America/Santiago"
-
-/** Desfase real de la zona en un instante UTC dado (Chile alterna -03/-04). */
-const ZONE_PARTS_FORMAT = new Intl.DateTimeFormat("en-US", {
-  timeZone: TZ, hour12: false,
-  year: "numeric", month: "2-digit", day: "2-digit",
-  hour: "2-digit", minute: "2-digit", second: "2-digit",
-})
-
-function zoneOffsetMs(instant: Date): number {
-  const parts = ZONE_PARTS_FORMAT.formatToParts(instant)
-  const at = (type: string) => Number(parts.find((part) => part.type === type)?.value)
-  const asUtc = Date.UTC(at("year"), at("month") - 1, at("day"), at("hour") % 24, at("minute"), at("second"))
-  return asUtc - instant.getTime()
-}
-
-/**
- * Copec entrega hora de pared chilena en dos celdas (fecha y hora por separado, la
- * hora como serial de Excel con época 1899). Interpretarla como UTC correría cada
- * carga 3–4 horas y movería de mes las de fin de mes por la noche, que es
- * justamente lo que la conciliación mensual tiene que cuadrar.
- */
-function santiagoInstant(date: Date, time: Date | null): string {
-  const wall = Date.UTC(
-    date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(),
-    time?.getUTCHours() ?? 0, time?.getUTCMinutes() ?? 0, time?.getUTCSeconds() ?? 0,
-  )
-  // Dos pasadas: la primera estima el desfase, la segunda lo corrige si la
-  // estimación cayó al otro lado de un cambio de horario.
-  let utc = wall - zoneOffsetMs(new Date(wall))
-  utc = wall - zoneOffsetMs(new Date(utc))
-  return new Date(utc).toISOString()
 }
 
 function asDate(value: unknown): Date | null {

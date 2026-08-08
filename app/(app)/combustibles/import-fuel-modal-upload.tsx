@@ -41,7 +41,7 @@ export function UploadStep({
             Arrastra tu archivo aquí o{" "}
             <span className="text-[var(--color-primary)]">haz clic para buscar</span>
           </p>
-          <p className="text-xs text-muted-foreground mt-0.5">
+          <p className="text-xs text-[var(--color-text-muted)] mt-0.5">
             Excel de TCT Copec (.xlsx o .xls)
           </p>
         </div>
@@ -55,10 +55,10 @@ export function UploadStep({
 
       <details className="group rounded-[var(--radius-lg)] border border-[var(--color-border)] px-3.5 py-2.5">
         <summary className="flex cursor-pointer list-none items-center gap-2 text-sm font-medium text-[var(--color-text)] [&::-webkit-details-marker]:hidden">
-          <FileText className="h-4 w-4 text-muted-foreground" />
+          <FileText className="h-4 w-4 text-[var(--color-text-muted)]" />
           Formato esperado
         </summary>
-        <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+        <p className="mt-2 text-xs leading-relaxed text-[var(--color-text-muted)]">
           Columnas: MES-AÑO, SERVICIO, VEHICULO, PROVEEDOR, CLIENTE, FAENA,
           PRODUCTO, FACTURA, LITROS, IEC Fijo, IEC Variable, Base Afecta,
           IMPUESTO IEC, IVA, TOTAL FACTURA A PAGAR

@@ -18,6 +18,8 @@ import { FilterSelect } from "../filter-select"
 
 export const metadata: Metadata = { title: "Anomalías de combustible" }
 
+const PAGE_SIZE = 50
+
 const SEVERITY_BADGE: Record<string, { label: string; variant: "danger" | "warning" | "success" | "info" }> = {
   low: { label: "Baja", variant: "info" },
   medium: { label: "Media", variant: "warning" },
@@ -53,6 +55,9 @@ export default async function AnomalyCasesPage({ searchParams }: { searchParams:
   const [refSource, ...refIdParts] = (sp.ref ?? "").split(":")
   const referenceEntityType = refSource ? SOURCE_TO_REFERENCE_TYPE[refSource] : undefined
   const referenceEntityId = refIdParts.length > 0 ? refIdParts.join(":") : undefined
+  // `?page=` no numérico → 1, no NaN (mismo guard que /combustibles).
+  const parsedPage = Number(sp.page)
+  const page = Number.isFinite(parsedPage) ? Math.max(1, Math.floor(parsedPage)) : 1
 
   const [worksitesList, anomalyCasesResult, distribution] = await Promise.all([
     settle(
@@ -64,17 +69,28 @@ export default async function AnomalyCasesPage({ searchParams }: { searchParams:
       "anomalias-worksites",
     ),
     settle(
-      getAnomalyCases({ worksiteId, status, severity, referenceEntityType, referenceEntityId }),
+      getAnomalyCases({ worksiteId, status, severity, referenceEntityType, referenceEntityId, limit: PAGE_SIZE, offset: (page - 1) * PAGE_SIZE }, session),
       { cases: [], total: 0 },
       "anomalias-cases",
     ),
     settle(
-      getAnomalyDistribution({ worksiteId, status }),
+      getAnomalyDistribution({ worksiteId, status }, session),
       { total: 0, byStatus: [], bySeverity: [], byRuleCode: [] },
       "anomalias-distribution",
     ),
   ])
   const { cases, total } = anomalyCasesResult
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
+  const pageHref = (target: number) => {
+    const params = new URLSearchParams()
+    if (sp.faena) params.set("faena", sp.faena)
+    if (sp.estado) params.set("estado", sp.estado)
+    if (sp.severidad) params.set("severidad", sp.severidad)
+    if (sp.ref) params.set("ref", sp.ref)
+    if (target > 1) params.set("page", String(target))
+    const qs = params.toString()
+    return `/combustibles/anomalias${qs ? `?${qs}` : ""}`
+  }
 
   return (
     <PageContainer width="wide">
@@ -97,7 +113,10 @@ export default async function AnomalyCasesPage({ searchParams }: { searchParams:
           Mostrando sólo el/los caso(s) del registro de origen. <Link href="/combustibles/anomalias" className="text-(--color-primary) hover:underline">Ver todos los casos</Link>
         </p>
       )}
-      <p className="mb-3 text-xs text-(--color-text-muted)">{total} casos encontrados</p>
+      <p className="mb-3 text-xs text-(--color-text-muted)">
+        {total} {total === 1 ? "caso encontrado" : "casos encontrados"}
+        {totalPages > 1 && ` · página ${page} de ${totalPages}`}
+      </p>
 
       {/* Gráfico de distribución (sección 5) */}
       <div className="mb-6">
@@ -113,6 +132,22 @@ export default async function AnomalyCasesPage({ searchParams }: { searchParams:
           {cases.map((c) => (
             <AnomalyCaseCard key={c.id} anomalyCase={c} canReview={canReview} canResolve={canResolve} />
           ))}
+        </div>
+      )}
+
+      {totalPages > 1 && (
+        <div className="mt-6 flex items-center justify-center gap-2">
+          {page > 1 ? (
+            <Button asChild variant="secondary" size="sm"><Link href={pageHref(page - 1)}>Anterior</Link></Button>
+          ) : (
+            <Button variant="secondary" size="sm" disabled>Anterior</Button>
+          )}
+          <span className="text-xs text-(--color-text-muted)">Página {page} de {totalPages}</span>
+          {page < totalPages ? (
+            <Button asChild variant="secondary" size="sm"><Link href={pageHref(page + 1)}>Siguiente</Link></Button>
+          ) : (
+            <Button variant="secondary" size="sm" disabled>Siguiente</Button>
+          )}
         </div>
       )}
     </PageContainer>

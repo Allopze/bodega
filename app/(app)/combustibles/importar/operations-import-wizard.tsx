@@ -90,8 +90,13 @@ export function OperationsImportWizard() {
       setFileError("Solo se aceptan archivos .xlsx")
       return
     }
-    if (f.size > 5 * 1024 * 1024) {
-      setFileError("El archivo no puede superar los 5 MB")
+    // El servidor acepta hasta 10 MB (actions-operaciones.ts MAX_FILE_BYTES) —
+    // este límite de 5 MB rechazaba en cliente archivos de 5-10 MB que el
+    // servidor sí habría aceptado. Ojo: el wizard hermano (import-wizard.tsx,
+    // consumos) SÍ debe quedarse en 5 MB — su propio servidor acepta sólo eso
+    // (actions-consumos.ts MAX_FILE_BYTES).
+    if (f.size > 10 * 1024 * 1024) {
+      setFileError("El archivo no puede superar los 10 MB")
       return
     }
     setFile(f)
@@ -107,7 +112,10 @@ export function OperationsImportWizard() {
           <CheckCircle className="h-12 w-12 mx-auto text-[var(--color-success)]" />
           <div>
             <p className="text-2xl font-bold">{result.imported}</p>
-            <p className="text-muted-foreground">registros de log operacional importados exitosamente</p>
+            <p className="text-[var(--color-text-muted)]">registros de log operacional importados exitosamente</p>
+            {result.duplicateRows > 0 && (
+              <p className="mt-1 text-xs text-[var(--color-text-muted)]">{result.duplicateRows} {result.duplicateRows === 1 ? "fila ya estaba" : "filas ya estaban"} importada{result.duplicateRows === 1 ? "" : "s"} de un lote anterior y se omitieron.</p>
+            )}
           </div>
           {result.errors.length > 0 && (
             <div className="text-sm text-left p-3 bg-[var(--color-warning-tint)] rounded-md max-w-md mx-auto">
@@ -121,12 +129,12 @@ export function OperationsImportWizard() {
                   Descargar (.xlsx)
                 </button>
               </div>
-              <div className="max-h-32 overflow-y-auto space-y-0.5 text-muted-foreground">
+              <div className="max-h-32 overflow-y-auto space-y-0.5 text-[var(--color-text-muted)]">
                 {result.errors.slice(0, 20).map((e) => (
                   <p key={importErrorKey(e)}>• Fila {e.rowIndex}, {e.field}: {e.message}</p>
                 ))}
                 {result.errors.length > 20 && (
-                  <p className="text-xs text-muted-foreground">…y {result.errors.length - 20} errores más</p>
+                  <p className="text-xs text-[var(--color-text-muted)]">…y {result.errors.length - 20} errores más</p>
                 )}
               </div>
             </div>
@@ -153,7 +161,7 @@ export function OperationsImportWizard() {
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <Stat label="Filas válidas" value={formatQty(preview.totales.totalFilas)} icon={<CheckCircle className="h-5 w-5 text-[var(--color-success)]" />} />
             <Stat label="Filas rechazadas" value={formatQty(preview.errores.length)} icon={<WarningCircle className="h-5 w-5 text-[var(--color-danger)]" />} />
-            <Stat label="Equipos únicos" value={formatQty(preview.totales.totalEquipos)} icon={<FileText className="h-5 w-5 text-muted-foreground" />} />
+            <Stat label="Equipos únicos" value={formatQty(preview.totales.totalEquipos)} icon={<FileText className="h-5 w-5 text-[var(--color-text-muted)]" />} />
             <Stat label="Período" value={`${preview.totales.periodoDesde} a ${preview.totales.periodoHasta}`} />
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -166,13 +174,13 @@ export function OperationsImportWizard() {
           {preview.faenasSinMatch.length > 0 && (
             <div className="p-3 bg-[var(--color-warning-tint)] rounded-md text-sm">
               <p className="font-medium mb-1">Faenas sin match ({preview.faenasSinMatch.length}). Se podrán vincular manualmente después:</p>
-              <p className="text-muted-foreground">{preview.faenasSinMatch.join(", ")}</p>
+              <p className="text-[var(--color-text-muted)]">{preview.faenasSinMatch.join(", ")}</p>
             </div>
           )}
           {preview.proveedoresSinMatch.length > 0 && (
             <div className="p-3 bg-[var(--color-warning-tint)] rounded-md text-sm">
               <p className="font-medium mb-1">Proveedores sin match ({preview.proveedoresSinMatch.length}):</p>
-              <p className="text-muted-foreground">{preview.proveedoresSinMatch.join(", ")}</p>
+              <p className="text-[var(--color-text-muted)]">{preview.proveedoresSinMatch.join(", ")}</p>
             </div>
           )}
 
@@ -193,7 +201,7 @@ export function OperationsImportWizard() {
                   <p key={importErrorKey(e)} className="text-[var(--color-danger)]">Fila {e.rowIndex}, {e.field}: {e.message}</p>
                 ))}
                 {preview.errores.length > 30 && (
-                  <p className="text-xs text-muted-foreground">…y {preview.errores.length - 30} errores más. Usa el botón de arriba para descargar la lista completa.</p>
+                  <p className="text-xs text-[var(--color-text-muted)]">…y {preview.errores.length - 30} errores más. Usa el botón de arriba para descargar la lista completa.</p>
                 )}
               </div>
             </div>
@@ -206,6 +214,15 @@ export function OperationsImportWizard() {
               checked={autoCreateVehicles}
               onChange={(e) => setAutoCreateVehicles(e.target.checked)}
             />
+          )}
+
+          {/* Distinto de "archivoDuplicado": esto es por-fila, no exige confirmación
+              porque las filas duplicadas simplemente se omiten al confirmar. */}
+          {preview.duplicateRows > 0 && (
+            <div className="flex items-start gap-2 p-3 rounded-md bg-[var(--color-surface-2)] text-sm">
+              <WarningCircle className="h-4 w-4 mt-0.5 shrink-0 text-[var(--color-text-muted)]" />
+              <p>{preview.duplicateRows} de {preview.totales.totalFilas} filas ya están importadas en un lote vigente y se omitirán automáticamente al confirmar.</p>
+            </div>
           )}
 
           {preview.archivoDuplicado && (
@@ -238,7 +255,7 @@ export function OperationsImportWizard() {
     <Card>
       <CardHeader><CardTitle>Nueva importación de log operacional</CardTitle></CardHeader>
       <CardContent className="space-y-4">
-        <p className="text-sm text-muted-foreground">
+        <p className="text-sm text-[var(--color-text-muted)]">
           Carga el consolidado de cargas de combustible por transacción (fecha, horómetro,
           operador, proveedor y rendimiento por carga). A diferencia del reporte de
           consumos por patente, este archivo abarca varias faenas y periodos a la vez:
@@ -284,7 +301,7 @@ export function OperationsImportWizard() {
               </p>
             )}
             {!fileError && (
-              <p className="text-xs text-muted-foreground mt-0.5">Consolidado de cargas de combustible (.xlsx)</p>
+              <p className="text-xs text-[var(--color-text-muted)] mt-0.5">Consolidado de cargas de combustible (.xlsx)</p>
             )}
           </div>
           <input type="file" accept=".xlsx" onChange={(e) => handleFile(e.target.files?.[0])} className="sr-only" />
@@ -297,14 +314,14 @@ export function OperationsImportWizard() {
             className="flex w-full items-center justify-between px-3.5 py-2.5 text-sm font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-2)] rounded-t-[var(--radius-lg)]"
           >
             <span className="flex items-center gap-2">
-              <FileText className="h-4 w-4 text-muted-foreground" />
+              <FileText className="h-4 w-4 text-[var(--color-text-muted)]" />
               Columnas esperadas
             </span>
             {columnsOpen ? <ArrowUp className="h-4 w-4" /> : <ArrowDown className="h-4 w-4" />}
           </button>
           {columnsOpen && (
             <div className="border-t border-[var(--color-border)] px-3.5 py-3">
-              <p className="text-xs leading-relaxed text-muted-foreground">
+              <p className="text-xs leading-relaxed text-[var(--color-text-muted)]">
                 Codigo, Patente, Fecha, Hora Carga, Faena, Tipo Equipo, Marca, Modelo, Año,
                 Horometro/Odometro, Medido Por (Km/Hora), LT, Operador, Supervisor Turno,
                 Suministro entregado por, Rendimiento, Tipo de Rendimiento, $/lt, Monto ($)

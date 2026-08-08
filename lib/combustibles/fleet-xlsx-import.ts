@@ -9,7 +9,7 @@
 
 import ExcelJS from "exceljs"
 import { canonicalFuelVehicleType } from "./validation"
-import { normKey, sheetToRecords } from "./xlsx-utils"
+import { normKey, sheetToRecords, normalizePlate } from "./xlsx-utils"
 
 export interface FleetXlsxRow {
   rowIndex: number
@@ -38,10 +38,6 @@ const REQUIRED_HEADERS = ["CODIGO", "PATENTE", "FAENA", "TIPO", "MARCA", "MODELO
 function text(value: unknown): string | null {
   const result = String(value ?? "").trim()
   return result && result !== "#N/D" ? result : null
-}
-
-function normalizePlate(value: string): string {
-  return value.toUpperCase().replace(/\s+/g, "")
 }
 
 function normalizeYear(value: unknown): number | null {
@@ -92,11 +88,13 @@ export async function parseFleetXlsx(fileBuffer: ArrayBuffer | Buffer): Promise<
     if (seenPlates.has(plate)) { errors.push({ rowIndex, field: "PATENTE", message: `Patente duplicada en el archivo: ${plate}` }); continue }
     seenPlates.add(plate)
 
+    // El año es metadato opcional: un "#N/D" arrastrado de una fórmula hacía
+    // que se descartara el vehículo entero (patente, faena, tipo, marca y
+    // modelo, todos válidos). Se avisa y se importa la fila sin año.
     const rawYear = get("AÑO")
     const year = normalizeYear(rawYear)
     if (rawYear !== null && rawYear !== undefined && rawYear !== "" && year === null) {
-      errors.push({ rowIndex, field: "AÑO", message: "Debe ser un año entre 1990 y 2030" })
-      continue
+      errors.push({ rowIndex, field: "AÑO", message: `Año ignorado (debe estar entre 1990 y 2030): "${text(rawYear) ?? String(rawYear)}"` })
     }
 
     rows.push({

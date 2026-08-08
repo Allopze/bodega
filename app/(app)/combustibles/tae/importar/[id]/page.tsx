@@ -2,8 +2,9 @@ import type { Metadata } from "next"
 import { notFound, redirect } from "next/navigation"
 import { eq, inArray } from "drizzle-orm"
 import { db } from "@/db"
-import { fuelTaeImportBatches, fuelTaeVehicleMappings, fuelTaeWorkerMappings, fuelVehicles, workers } from "@/db/schema"
+import { fuelTaeImportBatches, fuelTaeSubmissions, fuelTaeVehicleMappings, fuelTaeWorkerMappings, fuelVehicles, workers } from "@/db/schema"
 import { can, requirePermission } from "@/lib/auth/can"
+import { worksiteScopeSql } from "@/lib/auth/scope"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { Badge } from "@/components/ui/badge"
@@ -20,11 +21,18 @@ export default async function TaeImportBatchDetailPage({ params }: { params: Pro
   let session
   try { session = await requirePermission("combustibles:tae_import") } catch { redirect(`/forbidden?desde=${encodeURIComponent("/combustibles/tae/importar")}`) }
   const { id } = await params
+  // Un lote de importación histórica es multi-faena por naturaleza. Sin
+  // acotar `submissions` al alcance de la sesión, un rol scoped con
+  // `combustibles:tae_import` (hoy sólo lo tienen roles globales, pero nada
+  // en el código lo impide) vería las cargas, faenas, equipos y patentes de
+  // TODAS las faenas del lote, no sólo las suyas.
+  const scope = worksiteScopeSql(session, fuelTaeSubmissions.worksiteId)
   const batch = await db.query.fuelTaeImportBatches.findFirst({
     where: eq(fuelTaeImportBatches.id, id),
     with: {
       importer: { columns: { name: true, email: true } },
       submissions: {
+        where: scope,
         orderBy: (submissions, { asc }) => [asc(submissions.loadedAt)],
         with: {
           worksite: { columns: { name: true } },
@@ -36,6 +44,12 @@ export default async function TaeImportBatchDetailPage({ params }: { params: Pro
     },
   })
   if (!batch) notFound()
+  // `scope` sólo viene definido (no `undefined`) para roles NO globales — ver
+  // `worksiteScopeSql`. Para esos, cero submissions tras el filtro significa
+  // "el lote es enteramente de otra faena", no "el lote no tiene cargas": un
+  // lote real con todas sus filas rechazadas también llega en 0 para un rol
+  // global, y ese caso sí debe renderizar (para ver los rechazos).
+  if (scope !== undefined && batch.submissions.length === 0) notFound()
   const canRevert = batch.status === "imported" && can(session, "combustibles:revert")
   const canManageMappings = can(session, "combustibles:tae_import")
   const reprocessableRejections = batch.rejections.filter((rejection) => rejection.stage === "worksite" && rejection.rawRow && typeof rejection.rawRow === "object").length

@@ -89,8 +89,13 @@ export async function getOperationsSummary(session: Session, filters: Operations
       cantidad: sql<number>`coalesce(sum(${fuelOperationRecords.liters}), 0)`,
       monto: sql<number>`coalesce(sum(${fuelOperationRecords.monto}), 0)`,
       transacciones: sql<number>`count(*)`,
-      rendimiento: sql<number>`case when sum(${fuelOperationRecords.liters}) > 0
-        then sum(coalesce(${fuelOperationRecords.rendimiento}, 0) * ${fuelOperationRecords.liters}) / sum(${fuelOperationRecords.liters})
+      // `coalesce(rendimiento, 0)` contaba las cargas sin rendimiento informado
+      // como rendimiento 0 real: un equipo con la mitad de sus cargas sin
+      // lectura mostraba la mitad de su rendimiento. Se promedian sólo las
+      // cargas que sí lo traen.
+      rendimiento: sql<number>`case when coalesce(sum(${fuelOperationRecords.liters}) filter (where ${fuelOperationRecords.rendimiento} is not null), 0) > 0
+        then sum(${fuelOperationRecords.rendimiento} * ${fuelOperationRecords.liters}) filter (where ${fuelOperationRecords.rendimiento} is not null)
+             / sum(${fuelOperationRecords.liters}) filter (where ${fuelOperationRecords.rendimiento} is not null)
         else 0 end`,
       vehicleId: sql<string | null>`max(${fuelOperationRecords.vehicleId})`,
       // Unidad del rendimiento de la patente. No se agrega al groupBy a propósito:

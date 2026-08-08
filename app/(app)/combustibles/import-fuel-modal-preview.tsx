@@ -52,7 +52,7 @@ export function PreviewStep({
           <Button variant="ghost" size="sm" onClick={onBack}>
             <ArrowLeft className="h-4 w-4 mr-1" /> Volver
           </Button>
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-[var(--color-text-muted)]">
             Archivo: <span className="font-mono">{fileName}</span>
           </p>
         </div>
@@ -85,7 +85,7 @@ export function PreviewStep({
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
-            <p className="text-xs text-muted-foreground">
+            <p className="text-xs text-[var(--color-text-muted)]">
               Asocia cada faena del Excel con una del sistema. Las que no
               existan puedes crearlas u omitir sus filas.{" "}
               {!allFaenasMapped && (
@@ -101,7 +101,7 @@ export function PreviewStep({
                   title={faena}
                 >
                   {faena}{" "}
-                  <span className="font-mono text-muted-foreground">
+                  <span className="font-mono text-[var(--color-text-muted)]">
                     ({count})
                   </span>
                 </span>
@@ -139,7 +139,7 @@ export function PreviewStep({
               <CheckCircle className="h-5 w-5 text-[var(--color-success)]" />
               <div>
                 <p className="text-xl font-bold">{loads.length}</p>
-                <p className="text-xs text-muted-foreground">Válidas</p>
+                <p className="text-xs text-[var(--color-text-muted)]">Válidas</p>
               </div>
             </div>
           </CardContent>
@@ -150,7 +150,7 @@ export function PreviewStep({
               <WarningCircle className="h-5 w-5 text-[var(--color-danger)]" />
               <div>
                 <p className="text-xl font-bold">{errors.length}</p>
-                <p className="text-xs text-muted-foreground">Errores</p>
+                <p className="text-xs text-[var(--color-text-muted)]">Errores</p>
               </div>
             </div>
           </CardContent>
@@ -161,7 +161,7 @@ export function PreviewStep({
               <WarningCircle className="h-5 w-5 text-[var(--color-warning-ink)]" />
               <div>
                 <p className="text-xl font-bold">{duplicates.length}</p>
-                <p className="text-xs text-muted-foreground">Duplicados</p>
+                <p className="text-xs text-[var(--color-text-muted)]">Duplicados</p>
               </div>
             </div>
           </CardContent>
@@ -241,7 +241,7 @@ export function PreviewStep({
             </Table>
           </div>
           {loads.length > 100 && (
-            <p className="text-xs text-muted-foreground mt-2">
+            <p className="text-xs text-[var(--color-text-muted)] mt-2">
               Mostrando 100 de {loads.length} cargas
             </p>
           )}

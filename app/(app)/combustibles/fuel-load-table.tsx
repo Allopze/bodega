@@ -1,11 +1,13 @@
 "use client"
 
 import Link from "next/link"
+import { useSearchParams } from "next/navigation"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { CaretLeft, CaretRight } from "@phosphor-icons/react"
-import { formatCLP } from "@/lib/utils"
+import { formatCLP, formatDate } from "@/lib/utils"
+import { FUEL_LOAD_STATUS_LABELS as statusLabels } from "@/lib/combustibles/labels"
 
 interface FuelLoadRow {
   id: string
@@ -30,29 +32,43 @@ interface FuelLoadTableProps {
   total: number
 }
 
-const statusLabels: Record<string, { label: string; variant: "primary" | "default" | "info" | "warning" | "success" | "signal" | "danger" | "outline" }> = {
-  draft: { label: "Borrador", variant: "default" as const },
-  registered: { label: "Registrado", variant: "primary" as const },
-  reconciled: { label: "Conciliado", variant: "outline" as const },
-  cancelled: { label: "Anulado", variant: "danger" as const },
-}
-
 const LITERS_FORMAT = new Intl.NumberFormat("es-CL", { maximumFractionDigits: 0 })
 const formatLiters = (n: number) => LITERS_FORMAT.format(n)
 
 export function FuelLoadTable({ rows, page, totalPages, total }: FuelLoadTableProps) {
+  const searchParams = useSearchParams()
+  // `?page=N` a secas borraba proveedor, faena, estado y período: pasar a la
+  // página 2 devolvía el listado sin filtrar.
+  const pageHref = (target: number) => {
+    const params = new URLSearchParams(searchParams.toString())
+    params.set("page", String(target))
+    return `?${params.toString()}`
+  }
+  const hasPrev = page > 1
+  const hasNext = page < totalPages
+
   return (
     <div>
       <div className="flex items-center justify-between mb-3">
-        <p className="text-sm text-muted-foreground">{total} cargas encontradas</p>
+        <p className="text-sm text-[var(--color-text-muted)]">{total} cargas encontradas</p>
         <div className="flex items-center gap-2">
-          <Button asChild variant="secondary" size="sm" disabled={page <= 1}>
-            <Link href={`?page=${page - 1}`}><CaretLeft className="h-4 w-4" /></Link>
-          </Button>
+          {/* `disabled` sobre un <Button asChild> se pierde en el <Link>: el
+              botón seguía navegando. Fuera del rango se rinde sin enlace. */}
+          {hasPrev ? (
+            <Button asChild variant="secondary" size="sm">
+              <Link href={pageHref(page - 1)} aria-label="Página anterior"><CaretLeft className="h-4 w-4" aria-hidden /></Link>
+            </Button>
+          ) : (
+            <Button variant="secondary" size="sm" disabled aria-label="Página anterior"><CaretLeft className="h-4 w-4" aria-hidden /></Button>
+          )}
           <span className="text-sm">Página {page} de {totalPages || 1}</span>
-          <Button asChild variant="secondary" size="sm" disabled={page >= totalPages}>
-            <Link href={`?page=${page + 1}`}><CaretRight className="h-4 w-4" /></Link>
-          </Button>
+          {hasNext ? (
+            <Button asChild variant="secondary" size="sm">
+              <Link href={pageHref(page + 1)} aria-label="Página siguiente"><CaretRight className="h-4 w-4" aria-hidden /></Link>
+            </Button>
+          ) : (
+            <Button variant="secondary" size="sm" disabled aria-label="Página siguiente"><CaretRight className="h-4 w-4" aria-hidden /></Button>
+          )}
         </div>
       </div>
 
@@ -77,7 +93,7 @@ export function FuelLoadTable({ rows, page, totalPages, total }: FuelLoadTablePr
           <TableBody>
             {rows.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={12} className="text-center py-8 text-muted-foreground">
+                <TableCell colSpan={12} className="text-center py-8 text-[var(--color-text-muted)]">
                   No hay cargas de combustible registradas
                 </TableCell>
               </TableRow>
@@ -86,7 +102,7 @@ export function FuelLoadTable({ rows, page, totalPages, total }: FuelLoadTablePr
                 const st = statusLabels[row.status] ?? { label: row.status, variant: "default" as const }
                 return (
                   <TableRow key={row.id}>
-                    <TableCell className="font-mono text-sm">{row.loadDate}</TableCell>
+                    <TableCell className="font-mono text-sm">{formatDate(row.loadDate)}</TableCell>
                     <TableCell>{row.serviceType}</TableCell>
                     <TableCell>{row.vehicle?.plate ?? "—"}</TableCell>
                     <TableCell>{row.supplier?.name ?? "—"}</TableCell>

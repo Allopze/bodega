@@ -83,7 +83,7 @@ const chileDayRange = (column: AnyPgColumn, from: string, to: string) => and(
 export async function getFuelCycleComparison(session: Session, filters: { worksiteId?: string; productId?: string; from: string; to: string }) {
   const movementWhere = and(chileDayRange(fuelCycleMovements.occurredAt, filters.from, filters.to), filters.worksiteId ? eq(fuelCycleMovements.worksiteId, filters.worksiteId) : undefined, filters.productId ? eq(fuelCycleMovements.productId, filters.productId) : undefined, worksiteScopeSql(session, fuelCycleMovements.worksiteId))
   const registeredWhere = and(gte(fuelLoads.loadDate, filters.from.slice(0, 10)), lte(fuelLoads.loadDate, filters.to.slice(0, 10)), filters.worksiteId ? eq(fuelLoads.worksiteId, filters.worksiteId) : undefined, filters.productId ? eq(fuelLoads.productId, filters.productId) : undefined, worksiteScopeSql(session, fuelLoads.worksiteId))
-  // La PWA es la fuente real de lo entregado desde la vasija: registra litros,
+  // La PWA es la fuente real de lo entregado desde la estanque: registra litros,
   // medidor, sellos y evidencia por equipo. No se duplica como movimiento del
   // ledger — se lee de origen, y así una carga anulada deja de contar sola.
   const taeWhere = and(chileDayRange(fuelTaeSubmissions.loadedAt, filters.from, filters.to), filters.worksiteId ? eq(fuelTaeSubmissions.worksiteId, filters.worksiteId) : undefined, filters.productId ? eq(fuelTaeSubmissions.productId, filters.productId) : undefined, ne(fuelTaeSubmissions.status, "voided"), worksiteScopeSql(session, fuelTaeSubmissions.worksiteId))
@@ -114,11 +114,11 @@ export interface FuelStorageBalance {
 }
 
 /**
- * Saldo por vasija: recibido + transferido-hacia − transferido-desde − entregado,
+ * Saldo por estanque: recibido + transferido-hacia − transferido-desde − entregado,
  * en el período dado. "Entregado" combina las salidas manuales `tank_delivery`
  * del ledger con lo que la PWA repartió desde el punto de carga enlazado a esta
- * vasija (`fuel_tae_loading_points.storage_location_id`) — sin ese enlace, una
- * vasija que sólo reparte por PWA muestra saldo igual a lo recibido, porque no
+ * estanque (`fuel_tae_loading_points.storage_location_id`) — sin ese enlace, una
+ * estanque que sólo reparte por PWA muestra saldo igual a lo recibido, porque no
  * hay nada que restarle.
  */
 export async function getFuelStorageBalances(session: Session, filters: { worksiteId?: string; productId?: string; from: string; to: string }): Promise<FuelStorageBalance[]> {

@@ -10,7 +10,7 @@ type PatenteRankingChartType = ComponentType<{
   data: PatenteRankingRow[]
   metric: "cantidad" | "monto" | "transacciones"
 }>
-type RendimientoChartType = ComponentType<{ data: RendimientoRow[] }>
+type RendimientoChartType = ComponentType<{ data: RendimientoRow[]; unitLabel?: string }>
 
 function ChartSkeleton() {
   return (

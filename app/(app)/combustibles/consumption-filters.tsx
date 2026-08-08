@@ -82,7 +82,10 @@ export function ConsumptionFiltersBar({
   }
 
   function clearFilters() {
-    startTransition(() => router.replace("/combustibles", { scroll: false }))
+    // `vista` no es un filtro: descartarla devolvía al usuario a la pestaña
+    // Resumen cada vez que limpiaba desde Análisis o Registros.
+    const vista = searchParams.get("vista")
+    startTransition(() => router.replace(vista ? `/combustibles?vista=${vista}` : "/combustibles", { scroll: false }))
   }
 
   return (

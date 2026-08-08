@@ -392,6 +392,9 @@ async function detectTaeAnomaliesInTx(
         eq(fuelTaeSubmissions.installedSealNumber, submission.installedSealNumber),
         eq(fuelTaeSubmissions.worksiteId, submission.worksiteId),
         ne(fuelTaeSubmissions.id, submission.id),
+        // Una carga anulada no ocupa el sello: sin esto, corregir una carga
+        // anulándola y recargándola con el mismo sello abría un caso falso.
+        ne(fuelTaeSubmissions.status, "voided"),
       )).limit(1)
     if (reused.length > 0) {
       const rule = await tx.select({ id: fuelAnomalyRules.id }).from(fuelAnomalyRules).where(and(eq(fuelAnomalyRules.code, "sello_repetido"), eq(fuelAnomalyRules.isActive, true))).limit(1)
@@ -407,13 +410,17 @@ async function detectTaeAnomaliesInTx(
 
   // Sello no correlativo (instalado != siguiente retirado)
   if (submission.installedSealNumber && submission.vehicleId) {
+    // ASC: con `desc` esto no traía "la carga siguiente" sino la ÚLTIMA carga
+    // del equipo, así que la regla comparaba el sello instalado contra un sello
+    // retirado meses después. Sólo cargas vigentes.
     const next = await tx.select({ id: fuelTaeSubmissions.id, removedSealNumber: fuelTaeSubmissions.removedSealNumber })
       .from(fuelTaeSubmissions)
       .where(and(
         eq(fuelTaeSubmissions.vehicleId, submission.vehicleId),
         gt(fuelTaeSubmissions.loadedAt, submission.loadedAt),
+        ne(fuelTaeSubmissions.status, "voided"),
       ))
-      .orderBy(desc(fuelTaeSubmissions.loadedAt))
+      .orderBy(asc(fuelTaeSubmissions.loadedAt))
       .limit(1)
     if (next.length > 0 && next[0]!.removedSealNumber && next[0]!.removedSealNumber !== submission.installedSealNumber) {
       const rule = await tx.select({ id: fuelAnomalyRules.id }).from(fuelAnomalyRules).where(and(eq(fuelAnomalyRules.code, "sello_no_correlativo"), eq(fuelAnomalyRules.isActive, true))).limit(1)
@@ -435,6 +442,8 @@ async function detectTaeAnomaliesInTx(
         eq(fuelTaeSubmissions.vehicleId, submission.vehicleId),
         lt(fuelTaeSubmissions.loadedAt, submission.loadedAt),
         eq(fuelTaeSubmissions.meterType, submission.meterType),
+        // Una lectura anulada no es la lectura anterior válida del equipo.
+        ne(fuelTaeSubmissions.status, "voided"),
       ))
       .orderBy(desc(fuelTaeSubmissions.loadedAt))
       .limit(1)
@@ -635,7 +644,7 @@ export interface TaeAlert {
   message: string
 }
 
-function computeTaeAlerts(submission: TaeSubmissionRow, previous: TaeSubmissionRow | null, hasDuplicate: boolean): TaeAlert[] {
+function computeTaeAlerts(submission: TaeSubmissionRow, previous: TaeSubmissionRow | null, next: TaeSubmissionRow | null, hasDuplicate: boolean): TaeAlert[] {
   const alerts: TaeAlert[] = []
   if (submission.manualIdentity) {
     alerts.push({ code: "manual_identity", message: "Conductor o supervisor no verificado en catálogo (identificación manual)" })
@@ -650,6 +659,13 @@ function computeTaeAlerts(submission: TaeSubmissionRow, previous: TaeSubmissionR
     if (submission.meterReading != null && previous.meterReading != null && submission.meterType === previous.meterType && submission.meterReading < previous.meterReading) {
       alerts.push({ code: "reading_regression", message: `Lectura (${submission.meterReading}) menor que la carga anterior (${previous.meterReading})` })
     }
+  }
+  // `next` ya se consultaba (para la navegación de la UI) pero nunca entraba a
+  // las alertas: corregir la lectura de una carga a un valor mayor que el de
+  // la carga SIGUIENTE (ya validada) no disparaba nada, porque el único
+  // chequeo de regresión miraba hacia atrás.
+  if (next && submission.meterReading != null && next.meterReading != null && submission.meterType === next.meterType && next.meterReading < submission.meterReading) {
+    alerts.push({ code: "reading_regression", message: `Lectura (${submission.meterReading}) mayor que la carga siguiente (${next.meterReading})` })
   }
   if (hasDuplicate) {
     alerts.push({ code: "possible_duplicate", message: "Otra carga del mismo equipo tiene igual fecha, litros y lectura" })
@@ -734,7 +750,7 @@ export async function generateTaeImportPreview(fileBuffer: ArrayBuffer | Buffer,
 /** Carga anterior/siguiente del mismo equipo y alertas de continuidad de sello/lectura/duplicado. */
 export async function getTaeSubmissionContext(submission: TaeSubmissionRow): Promise<{ previous: TaeSubmissionRow | null; next: TaeSubmissionRow | null; alerts: TaeAlert[] }> {
   if (!submission.vehicleId) {
-    return { previous: null, next: null, alerts: computeTaeAlerts(submission, null, false) }
+    return { previous: null, next: null, alerts: computeTaeAlerts(submission, null, null, false) }
   }
   const [previous, next, sameLiters] = await Promise.all([
     db.query.fuelTaeSubmissions.findFirst({
@@ -753,5 +769,5 @@ export async function getTaeSubmissionContext(submission: TaeSubmissionRow): Pro
   const hasDuplicate = sameLiters.some((item) =>
     item.loadedAt.slice(0, 10) === submission.loadedAt.slice(0, 10) && item.meterReading === submission.meterReading
   )
-  return { previous: previous ?? null, next: next ?? null, alerts: computeTaeAlerts(submission, previous ?? null, hasDuplicate) }
+  return { previous: previous ?? null, next: next ?? null, alerts: computeTaeAlerts(submission, previous ?? null, next ?? null, hasDuplicate) }
 }

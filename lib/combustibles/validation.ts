@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { normalizePlate } from "./xlsx-utils"
 
 /* ── Fuel Load ───────────────────────────────────────────────────────────── */
 export const createFuelLoadSchema = z.object({
@@ -231,7 +232,11 @@ export const fuelEquipmentTypeSchema = z.object({
 })
 
 const fuelVehicleBaseSchema = z.object({
-  plate:     z.string().min(1, "Patente requerida").max(20),
+  // Normalizada aquí (mismo canon que usa el import masivo, `normalizePlate`
+  // de xlsx-utils.ts): antes el alta manual guardaba la patente cruda y el
+  // UNIQUE de `fuel_vehicles.plate` no evitaba " BPDH-41 " y "BPDH-41"
+  // conviviendo como dos vehículos distintos.
+  plate:     z.string().min(1, "Patente requerida").max(20).transform(normalizePlate),
   equipmentTypeId: z.string().min(1, "Tipo requerido"),
   type:      z.string().max(100).optional(), // snapshot derivado en servidor; compatibilidad para importadores legacy
   meterType: z.enum(FUEL_METER_TYPES),

@@ -27,7 +27,7 @@ interface BatchRow {
   importer: { name: string | null; email: string | null } | null
 }
 
-interface BatchRowFlat {
+type BatchRowFlat = {
   id: string
   worksiteName: string
   fuente: string
@@ -58,7 +58,7 @@ const COLUMNS: ColumnDef[] = [
   { key: "actions", label: "", width: "w-12" },
 ]
 
-const SEARCH_KEYS = ["worksiteName", "fuente", "archivoNombre", "importerName", "periodoLabel"]
+const SEARCH_KEYS: (keyof BatchRowFlat)[] = ["worksiteName", "fuente", "archivoNombre", "importerName", "periodoLabel"]
 
 function flatRow(b: BatchRow): BatchRowFlat {
   return {
@@ -97,8 +97,7 @@ export function ImportBatchHistory({ batches }: { batches: BatchRow[] }) {
     return rows
   }, [flatRows, estadoFilter, fuenteFilter])
 
-  const renderRow = (row: Record<string, unknown>, _index: number) => {
-    const r = row as unknown as BatchRowFlat
+  const renderRow = (r: BatchRowFlat, _index: number) => {
     return (
       <TableRow key={r.id}>
         <TableCell className="font-mono text-xs">{formatDateTime(r.createdAt)}</TableCell>
@@ -117,7 +116,7 @@ export function ImportBatchHistory({ batches }: { batches: BatchRow[] }) {
             {r.estado === "revertido" ? "Revertido" : "Importado"}
           </Badge>
         </TableCell>
-        <TableCell className="text-xs text-muted-foreground max-w-32 truncate" title={r.importerName}>{r.importerName}</TableCell>
+        <TableCell className="text-xs text-[var(--color-text-muted)] max-w-32 truncate" title={r.importerName}>{r.importerName}</TableCell>
         <TableCell>
           <Button asChild variant="ghost" size="sm">
             <Link href={`/combustibles/importar/${r.id}`}>Ver</Link>
@@ -160,12 +159,11 @@ export function ImportBatchHistory({ batches }: { batches: BatchRow[] }) {
           viewKey="imp"
         stickyFirstColumn
         columns={COLUMNS}
-        rows={preFiltered as unknown as Record<string, unknown>[]}
+        rows={preFiltered}
         searchKeys={SEARCH_KEYS}
         searchPlaceholder="Filtrar lotes..."
         renderRow={renderRow}
-        renderMobileCard={(row) => {
-          const r = row as unknown as BatchRowFlat
+        renderMobileCard={(r) => {
           return (
             <ResponsiveDataListCard
               title={r.archivoNombre}

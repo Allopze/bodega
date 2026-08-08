@@ -105,14 +105,22 @@ export function CopecSyncStatus({ initialStatus, initialStartOptions }: { initia
 
       const updated = await getCopecSyncStatusAction()
       if (updated.ok) dispatchView({ type: "patch", patch: { status: updated.data } })
-      router.refresh()
 
       if (stoppedAt) {
         dispatchView({ type: "patch", patch: { result: `Se importaron ${imported} registros antes de detenerse. Reintenta desde ${formatMonth(stoppedAt.from)}.` } })
-        return
+      } else {
+        dispatchView({ type: "patch", patch: { result: `${imported} registros importados · ${received} recepciones TAE${pendingPlates ? ` · ${pendingPlates} patentes pendientes` : ""}${unmappedCards.size ? ` · ${unmappedCards.size} tarjetas TAE sin estanque` : ""}${unavailable.length ? ` · ${unavailable.length} reportes sin importar` : ""}` } })
       }
 
-      dispatchView({ type: "patch", patch: { result: `${imported} registros importados · ${received} recepciones TAE${pendingPlates ? ` · ${pendingPlates} patentes pendientes` : ""}${unmappedCards.size ? ` · ${unmappedCards.size} tarjetas TAE sin estanque` : ""}${unavailable.length ? ` · ${unavailable.length} reportes sin importar` : ""}` } })
+      // `router.refresh()` AL FINAL, después de fijar el resultado en el estado
+      // local: antes corría primero y el resumen dispatchado justo después
+      // llegaba a pisar (o se perdía contra) el remount que el refresh dispara
+      // en esta misma ruta — el mismo patrón ya documentado en
+      // actions-operaciones.ts:325-333 para revalidatePath.
+      router.refresh()
+
+      if (stoppedAt) return
+
       // Una tarjeta sin estanque asociado significa que ese combustible NO entró al
       // ciclo: la recepción se omitió. Hay que avisarlo, no dejarlo en el resumen.
       if (unmappedCards.size) toast.warning(`${unmappedCards.size} tarjeta(s) TAE sin estanque asociado: sus recepciones no se importaron. Asócialas en Administración › Estanques de combustible.`)
@@ -153,22 +161,22 @@ export function CopecSyncStatus({ initialStatus, initialStartOptions }: { initia
             <ArrowsClockwise className="h-4 w-4 text-[var(--color-primary)]" />
             <div>
               <p className="text-sm font-semibold text-[var(--color-text)]">Copec TCT · detalle mensual automático</p>
-              <p className="max-w-[75ch] text-xs text-muted-foreground">Cada corrida entra a Informes → Informes de Consumos, consulta un mes cerrado, busca Diésel y BlueMax por separado y descarga el Detalle en Excel. TAE se registra en el nuevo control manual.</p>
+              <p className="max-w-[75ch] text-xs text-[var(--color-text-muted)]">Cada corrida entra a Informes → Informes de Consumos, consulta un mes cerrado, busca Diésel y BlueMax por separado y descarga el Detalle en Excel. TAE se registra en el nuevo control manual.</p>
             </div>
           </div>
 
           <div className="grid grid-cols-2 gap-px border border-[var(--color-border)] bg-[var(--color-border)] text-xs">
-            <div className="bg-[var(--color-surface-2)] px-3 py-2"><span className="font-medium text-[var(--color-text)]">Diésel</span><span className="ml-1 text-muted-foreground">TCT</span></div>
-            <div className="bg-[var(--color-surface-2)] px-3 py-2"><span className="font-medium text-[var(--color-text)]">BlueMax</span><span className="ml-1 text-muted-foreground">AdBlue</span></div>
+            <div className="bg-[var(--color-surface-2)] px-3 py-2"><span className="font-medium text-[var(--color-text)]">Diésel</span><span className="ml-1 text-[var(--color-text-muted)]">TCT</span></div>
+            <div className="bg-[var(--color-surface-2)] px-3 py-2"><span className="font-medium text-[var(--color-text)]">BlueMax</span><span className="ml-1 text-[var(--color-text-muted)]">AdBlue</span></div>
           </div>
 
           <div className="grid gap-2 text-xs sm:grid-cols-2">
-            <span className="flex items-center gap-1.5 text-muted-foreground">
+            <span className="flex items-center gap-1.5 text-[var(--color-text-muted)]">
               {status.lastRunAt ? <CheckCircle className="h-3.5 w-3.5 text-[var(--color-success)]" /> : <XCircle className="h-3.5 w-3.5" />}
               {status.lastRunAt ? `Última sincronización: ${formatDateTime(status.lastRunAt)}` : "Aún no se ha sincronizado"}
             </span>
             {status.cursor && (
-              <span className="flex items-center gap-1.5 text-muted-foreground">
+              <span className="flex items-center gap-1.5 text-[var(--color-text-muted)]">
                 <WarningCircle className="h-3.5 w-3.5 text-[var(--color-warning-ink)]" />
                 Próximo mes pendiente: {formatMonth(status.cursor)}
               </span>
@@ -177,7 +185,7 @@ export function CopecSyncStatus({ initialStatus, initialStartOptions }: { initia
           </div>
 
           <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-[var(--color-border)] pt-3 text-xs">
-            <span className="text-muted-foreground">Primer mes pendiente: <span className="font-medium text-[var(--color-text)]">{formatMonth(startOptions.currentStart)}</span></span>
+            <span className="text-[var(--color-text-muted)]">Primer mes pendiente: <span className="font-medium text-[var(--color-text)]">{formatMonth(startOptions.currentStart)}</span></span>
             {!isEditingStart && (
               <Button type="button" variant="ghost" size="sm" onClick={() => dispatchView({ type: "patch", patch: { isEditingStart: true } })} disabled={isActiveSync}>
                 <PencilSimple className="mr-1 h-3.5 w-3.5" />
@@ -200,7 +208,7 @@ export function CopecSyncStatus({ initialStatus, initialStartOptions }: { initia
                   Cancelar
                 </Button>
               </div>
-              <p className="text-xs text-muted-foreground sm:col-span-2">
+              <p className="text-xs text-[var(--color-text-muted)] sm:col-span-2">
                 Se consulta un mes completo por vez, hasta el mes actual; solo los meses ya cerrados se descargan. Puedes retroceder para recuperar meses pendientes{startOptions.latestImportedUntil ? `: la última importación activa termina el ${startOptions.latestImportedUntil}, y las faenas que ya tengan una importación manual de esos meses se saltan para no duplicar consumo` : ""}.
               </p>
             </div>
@@ -215,7 +223,7 @@ export function CopecSyncStatus({ initialStatus, initialStartOptions }: { initia
 
       {progress && (
         <div className="mt-4 border-t border-[var(--color-border)] pt-3">
-          <div className="mb-1.5 flex items-center justify-between gap-3 text-xs text-muted-foreground">
+          <div className="mb-1.5 flex items-center justify-between gap-3 text-xs text-[var(--color-text-muted)]">
             <span>Mes {progress.current} de {progress.total}: {formatMonth(progress.from)}</span>
             <span className="font-mono tabular-nums">{Math.round((progress.current / progress.total) * 100)}%</span>
           </div>
@@ -224,7 +232,7 @@ export function CopecSyncStatus({ initialStatus, initialStartOptions }: { initia
           </div>
         </div>
       )}
-      {result && <p className="mt-3 border-t border-[var(--color-border)] pt-3 text-xs text-muted-foreground">{result}</p>}
+      {result && <p className="mt-3 border-t border-[var(--color-border)] pt-3 text-xs text-[var(--color-text-muted)]">{result}</p>}
     </section>
   )
 }

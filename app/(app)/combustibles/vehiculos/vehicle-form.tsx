@@ -22,7 +22,7 @@ import {
   FUEL_VEHICLE_STATUS_LABELS,
 } from "@/lib/combustibles/validation"
 
-export interface VehicleForEdit {
+export type VehicleForEdit = {
   id: string
   plate: string
   code: string | null

@@ -87,7 +87,7 @@ export default async function OperationsBatchDetailPage({ params }: { params: Pr
             <CardTitle className="text-base">Faenas sin asociar ({unmatchedFaenas.length})</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
-            {!canManageVehicles && <p className="text-sm text-muted-foreground">No tienes permiso para vincular faenas.</p>}
+            {!canManageVehicles && <p className="text-sm text-[var(--color-text-muted)]">No tienes permiso para vincular faenas.</p>}
             {unmatchedFaenas.map((faenaNombre) => (
               <div key={faenaNombre} className="flex items-center justify-between gap-3 p-2 rounded-md bg-[var(--color-warning-tint)]">
                 <span className="text-sm">{faenaNombre}</span>
@@ -104,7 +104,7 @@ export default async function OperationsBatchDetailPage({ params }: { params: Pr
             <CardTitle className="text-base">Patentes sin asociar ({unmatchedPlates.length})</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
-            {!canManageVehicles && <p className="text-sm text-muted-foreground">No tienes permiso para vincular patentes a vehículos.</p>}
+            {!canManageVehicles && <p className="text-sm text-[var(--color-text-muted)]">No tienes permiso para vincular patentes a vehículos.</p>}
             {unmatchedPlates.map((plate) => (
               <div key={plate} className="flex items-center justify-between gap-3 p-2 rounded-md bg-[var(--color-warning-tint)]">
                 <span className="font-mono text-sm">{plate}</span>
@@ -157,7 +157,7 @@ export default async function OperationsBatchDetailPage({ params }: { params: Pr
 function Field({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className="text-xs text-[var(--color-text-muted)]">{label}</p>
       <p className="text-sm font-medium text-[var(--color-text)]">{value}</p>
     </div>
   )

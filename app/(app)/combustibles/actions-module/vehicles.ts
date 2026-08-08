@@ -11,6 +11,7 @@ import { canAccessWorksite, worksiteScopeSql } from "@/lib/auth/scope"
 import { validateFileBuffer, MimeType } from "@/lib/file-validation"
 import { nanoid } from "@/lib/id"
 import { parseFleetXlsx } from "@/lib/combustibles/fleet-xlsx-import"
+import { normalizePlate } from "@/lib/combustibles/xlsx-utils"
 import {
   createFuelVehicleSchema,
   fuelEquipmentTypeSlug,
@@ -294,7 +295,7 @@ export async function importFuelVehiclesFromXlsx(_prev: ActionState, formData: F
       .filter((worksite) => canManageFuelVehicleWorksite(session, worksite.id))
       .map((worksite) => [worksiteMatchKey(worksite.name), worksite]),
   )
-  const vehicleByPlate = new Map(existingVehicles.map((vehicle) => [vehicle.plate.toUpperCase().replace(/\s+/g, ""), vehicle]))
+  const vehicleByPlate = new Map(existingVehicles.map((vehicle) => [normalizePlate(vehicle.plate), vehicle]))
   const errors = [...parsed.errors]
   const importable = parsed.rows.flatMap((row) => {
     const worksite = worksiteByName.get(worksiteMatchKey(row.worksiteName))
@@ -334,17 +335,25 @@ export async function importFuelVehiclesFromXlsx(_prev: ActionState, formData: F
       }
       for (const row of importable) {
         const equipmentType = equipmentTypeBySlug.get(row.equipmentTypeSlug)!
+        // Campos identificatorios: los únicos que trae la planilla y los únicos
+        // que puede pisar una reimportación (contrato de fleet-xlsx-import.ts).
         const values = {
           plate: row.plate,
           code: row.code,
           type: equipmentType.slug,
           equipmentTypeId: equipmentType.id,
-          meterType: equipmentType.defaultMeterType,
-          performanceUnit: equipmentType.defaultPerformanceUnit,
           brand: row.brand,
           model: row.model,
           year: row.year,
           worksiteId: row.worksiteId,
+        }
+        // Sólo semillas para el alta: `meterType` y `performanceUnit` son
+        // editables por vehículo. Incluirlos en el UPDATE devolvía cada equipo
+        // ajustado a mano al default de su tipo en cada reimportación, y con
+        // `not_applicable` el vehículo desaparecía del costo por km/hora.
+        const defaultsForNewVehicle = {
+          meterType: equipmentType.defaultMeterType,
+          performanceUnit: equipmentType.defaultPerformanceUnit,
         }
         if (row.existing) {
           updated++
@@ -353,7 +362,7 @@ export async function importFuelVehiclesFromXlsx(_prev: ActionState, formData: F
           created++
           const vehicleId = nanoid()
           const startedAt = new Date().toISOString()
-          await tx.insert(fuelVehicles).values({ id: vehicleId, ...values })
+          await tx.insert(fuelVehicles).values({ id: vehicleId, ...values, ...defaultsForNewVehicle })
           await tx.insert(fuelVehicleOperationalIntervals).values({
             id: nanoid(),
             vehicleId,

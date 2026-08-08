@@ -21,7 +21,7 @@ interface NewFuelLoadData {
   worksites: Array<{ id: string; name: string }>
 }
 
-export function NewFuelLoadForm({ data }: { data: NewFuelLoadData }) {
+export function NewFuelLoadForm({ data, rates }: { data: NewFuelLoadData; rates: { iecFixedRate: number | null; iecVariableRate: number | null } }) {
   const router = useRouter()
   const [state, formAction, isPending] = useActionState<ActionState, FormData>(createFuelLoadAction, { ok: false, message: "" })
 
@@ -29,9 +29,12 @@ export function NewFuelLoadForm({ data }: { data: NewFuelLoadData }) {
   const [baseAmount, setBaseAmount] = useState(0)
   // Derivado en render: los montos son función pura de litros/base, así que
   // los inputs ocultos que se envían al servidor ya salen correctos en el
-  // primer render en vez de quedar en 0 hasta que corra un efecto.
+  // primer render en vez de quedar en 0 hasta que corra un efecto. Las tasas
+  // de IEC vienen del servidor (mismas que actions-module/loads.ts lee de
+  // system_settings con autoCalc) — antes se pasaba `null` a propósito y la
+  // previsualización mostraba IEC $0 mientras el servidor guardaba otro total.
   const { iecFixed, iecVariable, iecTotal, ivaAmount, totalAmount } =
-    calculateFuelAmounts({ liters, baseAmount, iecFixedRate: null, iecVariableRate: null })
+    calculateFuelAmounts({ liters, baseAmount, iecFixedRate: rates.iecFixedRate, iecVariableRate: rates.iecVariableRate })
 
   // En éxito, createFuelLoadAction redirige server-side a /combustibles
   // (ver actions-module/loads.ts) — este efecto solo necesita mostrar
@@ -57,7 +60,7 @@ export function NewFuelLoadForm({ data }: { data: NewFuelLoadData }) {
             <div className="space-y-2">
               <Label htmlFor="loadDate">Fecha *</Label>
               <DatePicker id="loadDate" name="loadDate" error={!!state.fieldErrors?.loadDate} />
-              {state.fieldErrors?.loadDate && <p className="text-sm text-destructive">{state.fieldErrors.loadDate[0]}</p>}
+              {state.fieldErrors?.loadDate && <p className="text-sm text-[var(--color-danger-ink)]">{state.fieldErrors.loadDate[0]}</p>}
             </div>
 
             <div className="space-y-2">
@@ -69,7 +72,7 @@ export function NewFuelLoadForm({ data }: { data: NewFuelLoadData }) {
                   <SelectItem value="TAE">TAE</SelectItem>
                 </SelectContent>
               </Select>
-              {state.fieldErrors?.serviceType && <p className="text-sm text-destructive">{state.fieldErrors.serviceType[0]}</p>}
+              {state.fieldErrors?.serviceType && <p className="text-sm text-[var(--color-danger-ink)]">{state.fieldErrors.serviceType[0]}</p>}
             </div>
 
             <div className="space-y-2">
@@ -82,7 +85,7 @@ export function NewFuelLoadForm({ data }: { data: NewFuelLoadData }) {
                   ))}
                 </SelectContent>
               </Select>
-              {state.fieldErrors?.vehicleId && <p className="text-sm text-destructive">{state.fieldErrors.vehicleId[0]}</p>}
+              {state.fieldErrors?.vehicleId && <p className="text-sm text-[var(--color-danger-ink)]">{state.fieldErrors.vehicleId[0]}</p>}
             </div>
 
             <div className="space-y-2">
@@ -95,7 +98,7 @@ export function NewFuelLoadForm({ data }: { data: NewFuelLoadData }) {
                   ))}
                 </SelectContent>
               </Select>
-              {state.fieldErrors?.fuelSupplierId && <p className="text-sm text-destructive">{state.fieldErrors.fuelSupplierId[0]}</p>}
+              {state.fieldErrors?.fuelSupplierId && <p className="text-sm text-[var(--color-danger-ink)]">{state.fieldErrors.fuelSupplierId[0]}</p>}
             </div>
 
             <div className="space-y-2">
@@ -108,7 +111,7 @@ export function NewFuelLoadForm({ data }: { data: NewFuelLoadData }) {
                   ))}
                 </SelectContent>
               </Select>
-              {state.fieldErrors?.worksiteId && <p className="text-sm text-destructive">{state.fieldErrors.worksiteId[0]}</p>}
+              {state.fieldErrors?.worksiteId && <p className="text-sm text-[var(--color-danger-ink)]">{state.fieldErrors.worksiteId[0]}</p>}
             </div>
 
             <div className="space-y-2">
@@ -120,7 +123,7 @@ export function NewFuelLoadForm({ data }: { data: NewFuelLoadData }) {
                   <SelectItem value="BLUEMAX">BlueMax</SelectItem>
                 </SelectContent>
               </Select>
-              {state.fieldErrors?.product && <p className="text-sm text-destructive">{state.fieldErrors.product[0]}</p>}
+              {state.fieldErrors?.product && <p className="text-sm text-[var(--color-danger-ink)]">{state.fieldErrors.product[0]}</p>}
             </div>
 
             <div className="space-y-2">
@@ -131,13 +134,13 @@ export function NewFuelLoadForm({ data }: { data: NewFuelLoadData }) {
             <div className="space-y-2">
               <Label htmlFor="odometerReading">Kilometraje</Label>
               <Input id="odometerReading" name="odometerReading" type="number" step="0.01" min="0" inputMode="decimal" />
-              {state.fieldErrors?.odometerReading && <p className="text-sm text-destructive">{state.fieldErrors.odometerReading[0]}</p>}
+              {state.fieldErrors?.odometerReading && <p className="text-sm text-[var(--color-danger-ink)]">{state.fieldErrors.odometerReading[0]}</p>}
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="hourMeterReading">Horómetro</Label>
               <Input id="hourMeterReading" name="hourMeterReading" type="number" step="0.01" min="0" inputMode="decimal" />
-              {state.fieldErrors?.hourMeterReading && <p className="text-sm text-destructive">{state.fieldErrors.hourMeterReading[0]}</p>}
+              {state.fieldErrors?.hourMeterReading && <p className="text-sm text-[var(--color-danger-ink)]">{state.fieldErrors.hourMeterReading[0]}</p>}
             </div>
           </CardContent>
         </Card>
@@ -149,34 +152,34 @@ export function NewFuelLoadForm({ data }: { data: NewFuelLoadData }) {
               <Label htmlFor="liters">Litros *</Label>
               <Input id="liters" name="liters" type="number" step="0.01" min="0" required
                 value={liters} onChange={(e) => setLiters(Number(e.target.value))} />
-              {state.fieldErrors?.liters && <p className="text-sm text-destructive">{state.fieldErrors.liters[0]}</p>}
+              {state.fieldErrors?.liters && <p className="text-sm text-[var(--color-danger-ink)]">{state.fieldErrors.liters[0]}</p>}
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="baseAmount">Base Afecta (CLP) *</Label>
               <Input id="baseAmount" name="baseAmount" type="number" step="0.01" min="0" required
                 value={baseAmount} onChange={(e) => setBaseAmount(Number(e.target.value))} />
-              {state.fieldErrors?.baseAmount && <p className="text-sm text-destructive">{state.fieldErrors.baseAmount[0]}</p>}
+              {state.fieldErrors?.baseAmount && <p className="text-sm text-[var(--color-danger-ink)]">{state.fieldErrors.baseAmount[0]}</p>}
             </div>
 
             <div className="space-y-2">
               <Label>IEC Fijo</Label>
-              <Input value={formatCLP(iecFixed)} disabled className="bg-muted" />
+              <Input value={formatCLP(iecFixed)} disabled className="bg-[var(--color-surface-2)]" />
             </div>
 
             <div className="space-y-2">
               <Label>IEC Variable</Label>
-              <Input value={formatCLP(iecVariable)} disabled className="bg-muted" />
+              <Input value={formatCLP(iecVariable)} disabled className="bg-[var(--color-surface-2)]" />
             </div>
 
             <div className="space-y-2">
               <Label>IVA (19%)</Label>
-              <Input value={formatCLP(ivaAmount)} disabled className="bg-muted" />
+              <Input value={formatCLP(ivaAmount)} disabled className="bg-[var(--color-surface-2)]" />
             </div>
 
             <div className="space-y-2">
               <Label className="text-lg font-semibold">Total</Label>
-              <Input value={formatCLP(totalAmount)} disabled className="bg-muted text-lg font-bold" />
+              <Input value={formatCLP(totalAmount)} disabled className="bg-[var(--color-surface-2)] text-lg font-bold" />
             </div>
           </CardContent>
         </Card>

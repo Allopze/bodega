@@ -382,7 +382,16 @@ export async function getFuelLogTotal(session: Session, filters: FuelLogFilters)
 /** Sólo las filas de la página pedida. Llama a `getFuelLogTotal` antes para resolver `offset`. */
 export async function getFuelLogRows(session: Session, filters: FuelLogFilters, page: { limit: number; offset: number; sort: "asc" | "desc" }): Promise<FuelLogRow[]> {
   const rowsQuery = buildUnified(session, filters).as("bitacora_page")
-  const rows = await db.select().from(rowsQuery).orderBy(page.sort === "asc" ? asc(rowsQuery.occurredAt) : desc(rowsQuery.occurredAt)).limit(page.limit).offset(page.offset)
+  // Desempate por `id`: `occurredAt` se repite masivamente (todas las filas de
+  // un mismo lote importado comparten instante) y sin criterio estable Postgres
+  // puede ordenar los empates distinto en cada consulta — la misma fila salía
+  // en dos páginas y otra no salía en ninguna.
+  const rows = await db.select().from(rowsQuery)
+    .orderBy(
+      page.sort === "asc" ? asc(rowsQuery.occurredAt) : desc(rowsQuery.occurredAt),
+      page.sort === "asc" ? asc(rowsQuery.id) : desc(rowsQuery.id),
+    )
+    .limit(page.limit).offset(page.offset)
   return rows as FuelLogRow[]
 }
 

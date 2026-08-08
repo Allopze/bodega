@@ -9,6 +9,7 @@ import {
   worksites,
 } from "@/db/schema"
 import { requirePermission } from "@/lib/auth/can"
+import { canAccessWorksite } from "@/lib/auth/scope"
 import { recordAudit } from "@/lib/audit"
 import { nanoid } from "@/lib/id"
 import { logger } from "@/lib/logger"
@@ -20,8 +21,9 @@ import {
 import { getFuelLogExportRows, getFuelLogRowsBySelection, FUEL_LOG_SOURCE_LABEL, fuelLogEntityType, type FuelLogFilters, type FuelLogRow, type FuelLogSource } from "@/lib/combustibles/fuel-log"
 import { addExportMetadataSheet } from "@/lib/combustibles/xlsx-utils"
 
-/** Resuelve el worksiteId y un label descriptivo para una entidad de la bitácora. */
-async function resolveEntityWorksite(
+/** Resuelve el worksiteId y un label descriptivo para una entidad de la bitácora.
+ *  Exportada: también la usa el historial de auditoría para acotar por faena. */
+export async function resolveEntityWorksite(
   entityType: string,
   entityId: string,
 ): Promise<{ worksiteId: string; worksiteName: string | null; label: string } | null> {
@@ -89,6 +91,13 @@ export async function toggleReviewMarkAction(source: FuelLogSource, entityId: st
 
   const entityType = fuelLogEntityType(source)
 
+  // `combustibles:view` no acota por faena: sin esto, cualquier usuario con
+  // el permiso podía marcar/desmarcar (y disparar la notificación de) un
+  // registro de una faena fuera de su alcance con sólo conocer su id.
+  const entityCtx = await resolveEntityWorksite(entityType, entityId)
+  if (!entityCtx) return { ok: false as const, message: "Registro no encontrado" }
+  if (!canAccessWorksite(session, entityCtx.worksiteId)) return { ok: false as const, message: "No tienes acceso a esta faena" }
+
   // Buscar si existe una marca para esta entidad
   const [existingRow] = await db.execute(sql`
     select id from fuel_review_marks
@@ -121,20 +130,16 @@ export async function toggleReviewMarkAction(source: FuelLogSource, entityId: st
   })
 
   // Notificar al responsable de la faena cuando se marca un registro
+  // (ya resuelto arriba para el chequeo de alcance — se reutiliza).
   notifyAfterCommit(async () => {
     try {
-      const ctx = await resolveEntityWorksite(entityType, entityId)
-      if (!ctx) {
-        logger.warn("[review-mark] could not resolve worksite for notification", { entityType, entityId })
-        return
-      }
-      const targetIds = await getUserIdsWithPermissionForWorksite("combustibles:tae_review", ctx.worksiteId)
+      const targetIds = await getUserIdsWithPermissionForWorksite("combustibles:tae_review", entityCtx.worksiteId)
       if (targetIds.length === 0) return
 
       await notifyManyUser(targetIds, {
         type: "system_alert",
         title: "Registro marcado para revisión",
-        body: `${ctx.label} · ${ctx.worksiteName ?? "Faena sin nombre"}`,
+        body: `${entityCtx.label} · ${entityCtx.worksiteName ?? "Faena sin nombre"}`,
         entityType,
         entityId,
         entityHref: `/combustibles/bitacora`,

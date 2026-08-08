@@ -13,7 +13,7 @@ export default async function StatementDetailPage({
   params: Promise<{ id: string }>
 }) {
   let session
-  try { session = await requirePermission("combustibles:view") }
+  try { session = await requirePermission("combustibles:view_costs") }
   catch { redirect(`/forbidden?desde=${encodeURIComponent("/combustibles/cuenta-corriente")}`) }
 
   if (!isGlobalRole(session)) redirect(`/forbidden?desde=${encodeURIComponent("/combustibles/cuenta-corriente")}`)

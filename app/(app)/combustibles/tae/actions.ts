@@ -13,6 +13,7 @@ import { recordAudit, recordStatusChange } from "@/lib/audit"
 import { logger } from "@/lib/logger"
 import { nanoid } from "@/lib/id"
 import { addExportMetadataSheet } from "@/lib/combustibles/xlsx-utils"
+import { taeStatusLabel, taeMeterSourceLabel } from "@/lib/combustibles/labels"
 import { formatDateTime } from "@/lib/utils"
 
 const MAX_TAE_EXPORT_ROWS = 10_000
@@ -222,12 +223,12 @@ export async function exportTaeSubmissionsXlsxAction(filters: TaeExportFilters =
       driver: row.driverNameSnapshot,
       meterType: row.meterType === "hour_meter" ? "Horómetro" : "Odómetro",
       meterReading: row.meterReading ?? "",
-      meterReadingSource: row.meterReadingSource ?? "",
+      meterReadingSource: taeMeterSourceLabel(row.meterReadingSource),
       liters: row.liters,
       removedSeal: row.removedSealNumber ?? "",
       installedSeal: row.installedSealNumber ?? "",
       manualIdentity: row.manualIdentity ? "Sí" : "No",
-      status: row.status,
+      status: taeStatusLabel(row.status),
       notes: row.notes ?? "",
     })
   }
@@ -253,58 +254,9 @@ export async function exportTaeSubmissionsXlsxAction(filters: TaeExportFilters =
   }
 }
 
-export async function replaceEvidenceAction(input: {
-  evidenceId: string
-  replacementFileName: string
-  replacementFilePath: string
-  replacementMimeType: string
-  replacementSize: number
-  replacementSha256: string
-  motivo: string
-}) {
-  const guard = await guardPermission("combustibles:tae_review")
-  if (guard.error) return guard.error
-
-  const evidence = await db.query.fuelTaeEvidence.findFirst({
-    where: eq(fuelTaeEvidence.id, input.evidenceId),
-    with: { submission: { columns: { worksiteId: true } } },
-  })
-  if (!evidence) return { ok: false, message: "Evidencia no encontrada" }
-  if (!canAccessWorksite(guard.session, evidence.submission.worksiteId)) return { ok: false, message: "No tienes acceso a esta faena" }
-
-  if (!input.motivo || input.motivo.trim().length < 10) return { ok: false, message: "El motivo de reemplazo debe tener al menos 10 caracteres" }
-
-  const now = new Date().toISOString()
-  try {
-    await db.transaction(async (tx) => {
-      const oldState = {
-        fileName: evidence.fileName, filePath: evidence.filePath,
-        mimeType: evidence.mimeType, fileSize: evidence.fileSize, sha256: evidence.sha256,
-      }
-      await tx.update(fuelTaeEvidence).set({
-        fileName: input.replacementFileName,
-        filePath: input.replacementFilePath,
-        mimeType: input.replacementMimeType,
-        fileSize: input.replacementSize,
-        sha256: input.replacementSha256,
-        capturedAt: now,
-      }).where(eq(fuelTaeEvidence.id, input.evidenceId))
-      await recordAudit({
-        userId: guard.session.user.id, action: "update",
-        entityType: "fuel_tae_evidence", entityId: input.evidenceId,
-        oldState,
-        newState: {
-          fileName: input.replacementFileName, filePath: input.replacementFilePath,
-          mimeType: input.replacementMimeType, fileSize: input.replacementSize, sha256: input.replacementSha256,
-        },
-        reason: input.motivo,
-      }, tx)
-    })
-    revalidatePath("/combustibles/tae")
-    return { ok: true, message: "Evidencia reemplazada correctamente" }
-  } catch (error) {
-    logger.error("[replaceEvidenceAction]", error)
-    const msg = error instanceof Error && isNetworkError(error) ? "Sin conexión al servidor. Verifica tu conexión a internet e inténtalo nuevamente." : error instanceof Error ? error.message : "No se pudo reemplazar la evidencia"
-    return { ok: false, message: msg }
-  }
-}
+// ponytail: replaceEvidenceAction (reemplazo de evidencia TAE) se borró aquí
+// — sin llamadores en todo el repo, y recibía metadatos de archivo (ruta,
+// MIME, SHA-256) crudos del cliente sin recibir ni validar el archivo real.
+// Si se necesita, reconstruir sobre el patrón de app/api/tae/submit/route.ts
+// (recibe el File, valida con validateFileBuffer, escribe con writeBuffer y
+// recalcula el SHA-256 en el servidor) — no revivir la firma anterior.

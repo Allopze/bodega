@@ -6,7 +6,7 @@
  */
 
 import type { Session } from "next-auth"
-import { and, eq, gte, isNotNull, lte, or, sql } from "drizzle-orm"
+import { and, eq, gte, inArray, isNotNull, lte, or, sql } from "drizzle-orm"
 import { db } from "@/db"
 import { fuelTaeSubmissions, fuelTaeLoadingPoints, worksites, fuelVehicles, fuelProducts } from "@/db/schema"
 import { worksiteScopeSql } from "@/lib/auth/scope"
@@ -43,6 +43,13 @@ export interface SealHistoryFilters {
   plate?: string
 }
 
+/**
+ * Tope de filas del historial. Los avisos de sello repetido y continuidad rota
+ * se derivan de las filas traídas, así que al alcanzarlo pueden ser incompletos
+ * — la página lo advierte.
+ */
+export const SEAL_HISTORY_MAX_ROWS = 2000
+
 export async function getSealHistory(session: Session, filters: SealHistoryFilters = {}): Promise<SealMovement[]> {
   const rows = await db.select({
     submissionId: fuelTaeSubmissions.id,
@@ -75,7 +82,7 @@ export async function getSealHistory(session: Session, filters: SealHistoryFilte
       filters.plate ? eq(fuelTaeSubmissions.plateSnapshot, filters.plate.trim().toUpperCase()) : undefined,
     ))
     .orderBy(sql`${fuelTaeSubmissions.loadedAt} desc`)
-    .limit(2000)
+    .limit(SEAL_HISTORY_MAX_ROWS)
 
   const movements: SealMovement[] = rows.map((r) => ({
     submissionId: r.submissionId,
@@ -103,20 +110,78 @@ export async function getSealHistory(session: Session, filters: SealHistoryFilte
     if (m.installedSeal && (installedCounts.get(m.installedSeal) ?? 0) > 1) m.installedRepeated = true
   }
 
-  // Detectar continuidad: por cada sello instalado, buscar si aparece como
-  // retirado en alguna carga posterior. Si no, está roto.
-  const removedSet = new Set(movements.filter((m) => m.removedSeal).map((m) => m.removedSeal))
+  // Enlazar el siguiente retiro y derivar la continuidad del MISMO cálculo.
+  //
+  // Antes eran dos criterios distintos y se contradecían: la continuidad usaba
+  // un Set de sellos retirados sin mirar la fecha, así que un sello retirado
+  // ANTES de instalarse (sello reutilizado) contaba como continuo mientras la
+  // columna "Siguiente" —que sí exige posterioridad— quedaba vacía. Y el enlace
+  // tomaba el primer match de un array ordenado DESC, es decir el retiro MÁS
+  // TARDÍO en vez del inmediato.
+  const removalsBySeal = new Map<string, SealMovement[]>()
   for (const m of movements) {
-    if (m.installedSeal && !removedSet.has(m.installedSeal)) m.continuityBroken = true
+    if (!m.removedSeal) continue
+    const list = removalsBySeal.get(m.removedSeal)
+    if (list) list.push(m)
+    else removalsBySeal.set(m.removedSeal, [m])
   }
 
-  // Enlazar siguiente: para cada sello instalado, buscar la carga donde se retira.
   for (const m of movements) {
     if (!m.installedSeal) continue
-    const next = movements.find((other) => other.removedSeal === m.installedSeal && other.loadedAt > m.loadedAt)
+    let next: SealMovement | null = null
+    for (const candidate of removalsBySeal.get(m.installedSeal) ?? []) {
+      if (candidate.loadedAt <= m.loadedAt) continue
+      if (!next || candidate.loadedAt < next.loadedAt) next = candidate
+    }
     if (next) {
       m.nextRemovedBy = next.equipmentCode ? `${next.equipmentCode} (${next.plate})` : next.plate
       m.nextRemovedAt = next.loadedAt
+    } else {
+      m.continuityBroken = true
+    }
+  }
+
+  // Segunda pasada, SIN filtro de fecha/faena de página, sólo para los sellos
+  // que quedaron "sin siguiente" dentro de la ventana filtrada: filtrar agosto
+  // podía marcar como roto un sello que se retiró en septiembre, simplemente
+  // porque esa carga cayó fuera del recorte. Acotada a `inArray` sobre los
+  // sellos realmente rotos de esta página (no un table scan completo) — el
+  // costo es proporcional a las anomalías encontradas, no al volumen total.
+  const brokenSeals = [...new Set(movements.filter((m) => m.continuityBroken && m.installedSeal).map((m) => m.installedSeal!))]
+  if (brokenSeals.length > 0) {
+    const laterRemovals = await db.select({
+      loadedAt: sql<string>`to_char(${fuelTaeSubmissions.loadedAt} at time zone 'America/Santiago', 'YYYY-MM-DD HH24:MI')`,
+      equipmentCode: fuelTaeSubmissions.equipmentCodeSnapshot,
+      plate: fuelTaeSubmissions.plateSnapshot,
+      removedSeal: fuelTaeSubmissions.removedSealNumber,
+    })
+      .from(fuelTaeSubmissions)
+      .where(and(
+        worksiteScopeSql(session, fuelTaeSubmissions.worksiteId),
+        eq(fuelTaeSubmissions.status, "validated"),
+        inArray(fuelTaeSubmissions.removedSealNumber, brokenSeals),
+      ))
+
+    const candidatesBySeal = new Map<string, typeof laterRemovals>()
+    for (const row of laterRemovals) {
+      if (!row.removedSeal) continue
+      const list = candidatesBySeal.get(row.removedSeal)
+      if (list) list.push(row)
+      else candidatesBySeal.set(row.removedSeal, [row])
+    }
+
+    for (const m of movements) {
+      if (!m.continuityBroken || !m.installedSeal) continue
+      let found: (typeof laterRemovals)[number] | null = null
+      for (const candidate of candidatesBySeal.get(m.installedSeal) ?? []) {
+        if (candidate.loadedAt <= m.loadedAt) continue
+        if (!found || candidate.loadedAt < found.loadedAt) found = candidate
+      }
+      if (found) {
+        m.nextRemovedBy = found.equipmentCode ? `${found.equipmentCode} (${found.plate})` : found.plate
+        m.nextRemovedAt = found.loadedAt
+        m.continuityBroken = false
+      }
     }
   }
 

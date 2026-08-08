@@ -24,15 +24,14 @@ export function FuelSupplierList({ suppliers, generalSuppliers }: { suppliers: F
       <DataTable
         caption="Proveedores de combustible"
         columns={COLUMNS}
-        rows={suppliers as unknown as Record<string, unknown>[]}
-        searchKeys={CONTRACT.searchKeys}
+        rows={suppliers}
+        searchKeys={CONTRACT.searchKeys as (keyof FuelSupplierRow)[]}
         pageSize={25}
         emptyTitle="Sin proveedores de combustible"
         emptyDescription="Registra el primer proveedor para comenzar."
         emptyAction={<Button size="sm" onClick={openCreate}><Plus size={14} />Nuevo proveedor</Button>}
         actions={<Button size="sm" onClick={openCreate}><Plus size={14} />Nuevo proveedor</Button>}
-        renderMobileCard={(row) => {
-          const supplier = row as unknown as FuelSupplierRow
+        renderMobileCard={(supplier) => {
           return (
             <article key={supplier.id} className="rounded-[var(--radius-2xl)] bg-[var(--color-surface)] p-4 shadow-[var(--shadow-card)]">
               <div className="flex items-start justify-between gap-3">
@@ -57,8 +56,7 @@ export function FuelSupplierList({ suppliers, generalSuppliers }: { suppliers: F
             </article>
           )
         }}
-        renderRow={(row) => {
-          const supplier = row as unknown as FuelSupplierRow
+        renderRow={(supplier) => {
           return (
             <TableRow key={supplier.id}>
               <TableCell className="font-medium">{supplier.name}</TableCell>

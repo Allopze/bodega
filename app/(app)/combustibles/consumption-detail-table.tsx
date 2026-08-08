@@ -40,18 +40,31 @@ export function ConsumptionDetailTable({ rows, page, totalPages, total }: Consum
     { resetPage: false },
   )
 
+  const hasPrev = page > 1
+  const hasNext = page < totalPages
+
   return (
     <div>
       <div className="flex items-center justify-between mb-3">
-        <p className="text-sm text-muted-foreground">{total} registros encontrados</p>
+        <p className="text-sm text-[var(--color-text-muted)]">{total} registros encontrados</p>
         <div className="flex items-center gap-2">
-          <Button asChild variant="secondary" size="sm" disabled={page <= 1}>
-            <Link href={pageHref(page - 1)} aria-label="Página anterior"><CaretLeft className="h-4 w-4" /></Link>
-          </Button>
+          {/* `disabled` sobre un <Button asChild> se pierde en el <Link>: el
+              botón seguía navegando. Fuera del rango se rinde sin enlace. */}
+          {hasPrev ? (
+            <Button asChild variant="secondary" size="sm">
+              <Link href={pageHref(page - 1)} aria-label="Página anterior"><CaretLeft className="h-4 w-4" aria-hidden /></Link>
+            </Button>
+          ) : (
+            <Button variant="secondary" size="sm" disabled aria-label="Página anterior"><CaretLeft className="h-4 w-4" aria-hidden /></Button>
+          )}
           <span className="text-sm">Página {page} de {totalPages || 1}</span>
-          <Button asChild variant="secondary" size="sm" disabled={page >= totalPages}>
-            <Link href={pageHref(page + 1)} aria-label="Página siguiente"><CaretRight className="h-4 w-4" /></Link>
-          </Button>
+          {hasNext ? (
+            <Button asChild variant="secondary" size="sm">
+              <Link href={pageHref(page + 1)} aria-label="Página siguiente"><CaretRight className="h-4 w-4" aria-hidden /></Link>
+            </Button>
+          ) : (
+            <Button variant="secondary" size="sm" disabled aria-label="Página siguiente"><CaretRight className="h-4 w-4" aria-hidden /></Button>
+          )}
         </div>
       </div>
 
@@ -75,7 +88,7 @@ export function ConsumptionDetailTable({ rows, page, totalPages, total }: Consum
           <TableBody>
             {rows.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={11} className="text-center py-8 text-muted-foreground">
+                <TableCell colSpan={11} className="text-center py-8 text-[var(--color-text-muted)]">
                   No hay registros de consumo importados para estos filtros
                 </TableCell>
               </TableRow>

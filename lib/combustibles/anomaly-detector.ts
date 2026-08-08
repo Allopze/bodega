@@ -6,14 +6,15 @@
  * Se ejecuta como proceso batch — no dentro del request HTTP.
  */
 
-import { and, eq, gte, inArray, isNotNull, ne, sql } from "drizzle-orm"
+import { and, desc, eq, gt, gte, inArray, isNotNull, isNull, ne, sql } from "drizzle-orm"
 import { db } from "@/db"
 import {
   fuelAnomalyExecutions, fuelAnomalyRules,
   fuelConsumptionRecords, fuelEquipmentTypes, fuelLoads, fuelOperationRecords,
-  fuelTaeSubmissions, fuelVehicles,
+  fuelTaeSubmissions, fuelVehicleOperationalIntervals, fuelVehicles,
 } from "@/db/schema"
 import { nanoid } from "@/lib/id"
+import { todayInChile } from "@/lib/utils"
 import { createAnomalyCase } from "./anomaly-cases"
 import { detectCorruptEvidence, getReusedEvidence } from "./evidence-management"
 import { DEFAULT_OUTLIER_THRESHOLD_STDDEVS, MIN_CONCLUSIVE_SAMPLE, flagOutliers } from "./performance-statistics"
@@ -235,7 +236,20 @@ const detectPerformanceOutlierGroup: DetectorFn = async (rule) => {
 
   for (const [, rows] of byGroup) {
     if (rows.length < minSample) continue
-    const vehicleSlug = rows[0]?.equipmentTypeSlug ?? undefined
+    // Tipo de equipo MÁS FRECUENTE del grupo, no el de la primera fila que
+    // devuelva Postgres (sin ORDER BY, ese orden es arbitrario y podía
+    // cambiar entre corridas). Un `comparisonGroup` puede mezclar tipos de
+    // equipo; con la mayoría se acierta más veces que con una fila al azar.
+    const slugCounts = new Map<string, number>()
+    for (const row of rows) {
+      if (!row.equipmentTypeSlug) continue
+      slugCounts.set(row.equipmentTypeSlug, (slugCounts.get(row.equipmentTypeSlug) ?? 0) + 1)
+    }
+    let vehicleSlug: string | undefined
+    let topCount = 0
+    for (const [slug, count] of slugCounts) {
+      if (count > topCount) { vehicleSlug = slug; topCount = count }
+    }
     const perGroupThreshold = thresholdStdDevsOf(rule, DEFAULT_OUTLIER_THRESHOLD_STDDEVS, vehicleSlug)
     const flagged = flagOutliers(rows, (r) => r.rendimiento, perGroupThreshold)
     for (const row of flagged) {
@@ -274,9 +288,15 @@ const detectLitersExceedCapacity: DetectorFn = async (rule) => {
     const margin = marginOf(rule, 0.05, v.equipmentTypeSlug ?? undefined)
     const threshold = Number(v.tankCapacityLiters) * (1 + margin)
 
-    // Escanear TAE
+    // Escanear TAE. Se excluyen las cargas anuladas: una carga corregida por
+    // anulación seguía generando un caso crítico contra un dato ya descartado.
+    // `gt` y no `gte`: el caso dice "supera la capacidad", no "la alcanza".
     const taeRows = await db.select({ id: fuelTaeSubmissions.id, liters: fuelTaeSubmissions.liters })
-      .from(fuelTaeSubmissions).where(and(eq(fuelTaeSubmissions.vehicleId, v.vehicleId), gte(fuelTaeSubmissions.liters, sql`${threshold}`)))
+      .from(fuelTaeSubmissions).where(and(
+        eq(fuelTaeSubmissions.vehicleId, v.vehicleId),
+        ne(fuelTaeSubmissions.status, "voided"),
+        gt(fuelTaeSubmissions.liters, sql`${threshold}`),
+      ))
     for (const row of taeRows) {
       scanned++
       try {
@@ -310,7 +330,12 @@ const detectSharpConsumptionChange: DetectorFn = async (rule) => {
     .from(fuelConsumptionRecords)
     .leftJoin(fuelVehicles, eq(fuelConsumptionRecords.vehicleId, fuelVehicles.id))
     .leftJoin(fuelEquipmentTypes, eq(fuelVehicles.equipmentTypeId, fuelEquipmentTypes.id))
-    .where(and(isNotNull(fuelConsumptionRecords.vehicleId), gte(fuelConsumptionRecords.cantidadUnidad, 1)))
+    // Sin filtro de cantidad mínima: el guard de línea `prev.cantidad <= 0` de
+    // abajo ya protege la división, y el `gte(cantidadUnidad, 1)` que había
+    // aquí saltaba los períodos de consumo casi nulo — con eso, un vehículo con
+    // junio=4.000L, julio=0,5L, agosto=3.900L comparaba junio contra agosto
+    // como si fueran consecutivos y nunca detectaba ni la caída ni el rebote.
+    .where(isNotNull(fuelConsumptionRecords.vehicleId))
     .orderBy(fuelConsumptionRecords.vehicleId, fuelConsumptionRecords.periodoDesde)
     .limit(rowLimit)
 
@@ -332,7 +357,9 @@ const detectSharpConsumptionChange: DetectorFn = async (rule) => {
           await createAnomalyCase({
             ruleId: rule.id, ruleCode: "variacion_brusca_consumo", severity: "medium",
             worksiteId: curr.worksiteId ?? undefined, vehicleId: curr.vehicleId ?? undefined,
-            referenceEntityType: "fuel_consumption_records", referenceEntityId: `${curr.vehicleId}:${curr.periodoDesde}`,
+            // Singular, como los otros 5 detectores: en plural, `fuelLogEntityType()`
+            // (fuel-log.ts) nunca lo emite y el enlace "Abrir caso relacionado" no matcheaba.
+            referenceEntityType: "fuel_consumption_record", referenceEntityId: `${curr.vehicleId}:${curr.periodoDesde}`,
             description: `Consumo varió ${Math.round(pct)}% respecto al período anterior (${Number(curr.cantidad).toLocaleString("es-CL")} L vs ${Number(prev.cantidad).toLocaleString("es-CL")} L).`,
             observedValue: `+${Math.round(pct)}%`,            expectedValue: `< ${perVehicleThreshold}%`,
           })
@@ -344,7 +371,19 @@ const detectSharpConsumptionChange: DetectorFn = async (rule) => {
   return { created, skipped, scanned }
 }
 
-/** Detectar consumo durante inactividad del equipo. */
+/**
+ * Detectar consumo durante inactividad del equipo.
+ *
+ * Antes buscaba CUALQUIER carga TAE histórica del vehículo (sin ventana de
+ * fecha, sin excluir anuladas) y, si existía una sola, abría caso — para
+ * SIEMPRE: `referenceEntityId` incluye la fecha de hoy justamente para poder
+ * resurgir en la corrida siguiente, así que un equipo con una carga de hace
+ * tres años (de cuando sí operaba) generaba un caso nuevo cada día,
+ * indefinidamente. Ahora se acota al intervalo de inactividad VIGENTE
+ * (`fuel_vehicle_operational_intervals`, `endedAt IS NULL` = el intervalo
+ * abierto actual — a lo más uno por vehículo, por el UNIQUE de la tabla):
+ * sólo cuenta actividad ocurrida DESPUÉS de que el equipo dejó de operar.
+ */
 const detectConsumptionWhileInactive: DetectorFn = async (rule) => {
   let created = 0, skipped = 0, scanned = 0
 
@@ -352,10 +391,25 @@ const detectConsumptionWhileInactive: DetectorFn = async (rule) => {
   const inactive = await db.select({ vehicleId: fuelVehicles.id, plate: fuelVehicles.plate, worksiteId: fuelVehicles.worksiteId, operationalStatus: fuelVehicles.operationalStatus })
     .from(fuelVehicles).where(ne(fuelVehicles.operationalStatus, "operativo"))
 
-  const today = new Date().toISOString().slice(0, 10)
+  const today = todayInChile()
   for (const v of inactive) {
+    const [interval] = await db.select({ startedAt: fuelVehicleOperationalIntervals.startedAt })
+      .from(fuelVehicleOperationalIntervals)
+      .where(and(eq(fuelVehicleOperationalIntervals.vehicleId, v.vehicleId), isNull(fuelVehicleOperationalIntervals.endedAt)))
+      .orderBy(desc(fuelVehicleOperationalIntervals.startedAt))
+      .limit(1)
+    // Sin intervalo registrado no hay desde-cuándo confiable: no se inventa
+    // una ventana arbitraria, se salta (el estado sigue viéndose en /flota).
+    if (!interval) continue
+
     const rows = await db.select({ id: fuelTaeSubmissions.id })
-      .from(fuelTaeSubmissions).where(eq(fuelTaeSubmissions.vehicleId, v.vehicleId)).limit(1)
+      .from(fuelTaeSubmissions)
+      .where(and(
+        eq(fuelTaeSubmissions.vehicleId, v.vehicleId),
+        ne(fuelTaeSubmissions.status, "voided"),
+        gt(fuelTaeSubmissions.loadedAt, interval.startedAt),
+      ))
+      .limit(1)
     if (rows.length === 0) continue
     scanned++
     try {
@@ -366,7 +420,7 @@ const detectConsumptionWhileInactive: DetectorFn = async (rule) => {
         ruleId: rule.id, ruleCode: "consumo_durante_inactividad", severity: "high",
         worksiteId: v.worksiteId ?? undefined, vehicleId: v.vehicleId,
         referenceEntityType: "fuel_vehicle", referenceEntityId: `${v.vehicleId}:${today}`,
-        description: `El equipo ${v.plate} está en estado "${v.operationalStatus}" y tiene cargas registradas.`,
+        description: `El equipo ${v.plate} está en estado "${v.operationalStatus}" desde ${interval.startedAt.slice(0, 10)} y tiene cargas registradas después de esa fecha.`,
         observedValue: "inactivo con cargas",
       })
       created++

@@ -14,7 +14,17 @@ export function normKey(key: string): string {
 }
 
 /** Reduce un valor de celda de ExcelJS (texto enriquecido, fórmula, hipervínculo,
- *  fecha o primitivo) al valor plano que el resto del parser espera. */
+ *  error, fecha o primitivo) al valor plano que el resto del parser espera.
+ *
+ *  Una celda de error (`#N/D`, `#N/A`, `#REF!`…) llegaba como el objeto crudo
+ *  de ExcelJS: `String(valor)` la volvía "[object Object]" en cualquier parser
+ *  que la leyera como texto, y `parseChileanNumber` la volvía 0 silencioso en
+ *  cualquiera que la leyera como número — el error de origen desaparecía sin
+ *  dejar rastro. Se devuelve el código de error como STRING (p. ej. "#N/D"):
+ *  sigue siendo "no numérico" para `parseChileanNumber` (mismo default 0 que
+ *  antes para texto no parseable — comportamiento sin cambios ahí), pero ya
+ *  no se pierde en un `[object Object]`, y `isExcelErrorText` permite a un
+ *  parser detectarlo explícitamente y reportar la fila en vez de aceptar el 0. */
 export function normalizeCellValue(value: ExcelJS.CellValue): unknown {
   if (value === null || value === undefined) return null
   if (value instanceof Date) return value
@@ -22,25 +32,42 @@ export function normalizeCellValue(value: ExcelJS.CellValue): unknown {
     if ("richText" in value && Array.isArray(value.richText)) {
       return value.richText.map((part) => part.text).join("")
     }
-    if ("result" in value) return value.result ?? null
+    // Una fórmula que resolvió en error trae `{result: {error: "#N/D"}, formula: ...}`.
+    if ("result" in value) {
+      const result = value.result
+      if (result !== null && typeof result === "object" && "error" in result) return String(result.error)
+      return result ?? null
+    }
+    // Una celda de error pura (sin fórmula) trae `{error: "#N/D"}`.
+    if ("error" in value) return String(value.error)
     if ("text" in value) return value.text
   }
   return value
 }
 
+/** `true` si el valor (ya normalizado por `normalizeCellValue`) es un código
+ *  de error de Excel — "#N/D", "#N/A", "#REF!", "#VALUE!", "#DIV/0!", etc. */
+export function isExcelErrorText(value: unknown): boolean {
+  return typeof value === "string" && /^#(N\/D|N\/A|REF!|VALUE!|DIV\/0!|NULL!|NUM!|NAME\?)$/i.test(value.trim())
+}
+
 /** Convierte la primera fila de la hoja en encabezados y el resto en objetos
- *  `{ encabezado: valor }`, replicando el comportamiento de `defval: null`. */
-export function sheetToRecords(sheet: ExcelJS.Worksheet): Record<string, unknown>[] {
+ *  `{ encabezado: valor }`, replicando el comportamiento de `defval: null`.
+ *  Cada registro lleva `__row` con el número de fila REAL de Excel (1-based):
+ *  `eachRow` con `includeEmpty` no salta filas en blanco intercaladas, así que
+ *  sin esto los parsers reconstruían la fila como `índice + 2` y esa cuenta se
+ *  desalineaba apenas el archivo traía una fila vacía en medio. */
+export function sheetToRecords(sheet: ExcelJS.Worksheet): Array<Record<string, unknown> & { __row: number }> {
   const headers: (string | null)[] = []
   sheet.getRow(1).eachCell({ includeEmpty: true }, (cell, colNumber) => {
     const value = normalizeCellValue(cell.value)
     headers[colNumber] = value === null ? null : String(value)
   })
 
-  const records: Record<string, unknown>[] = []
-  sheet.eachRow((row, rowNumber) => {
+  const records: Array<Record<string, unknown> & { __row: number }> = []
+  sheet.eachRow({ includeEmpty: true }, (row, rowNumber) => {
     if (rowNumber === 1) return
-    const record: Record<string, unknown> = {}
+    const record: Record<string, unknown> & { __row: number } = { __row: rowNumber }
     for (let col = 1; col < headers.length; col++) {
       const header = headers[col]
       if (!header) continue
@@ -49,6 +76,41 @@ export function sheetToRecords(sheet: ExcelJS.Worksheet): Record<string, unknown
     records.push(record)
   })
   return records
+}
+
+const TZ = "America/Santiago"
+
+/** Desfase real de la zona en un instante UTC dado (Chile alterna -03/-04). */
+const ZONE_PARTS_FORMAT = new Intl.DateTimeFormat("en-US", {
+  timeZone: TZ, hour12: false,
+  year: "numeric", month: "2-digit", day: "2-digit",
+  hour: "2-digit", minute: "2-digit", second: "2-digit",
+})
+
+function zoneOffsetMs(instant: Date): number {
+  const parts = ZONE_PARTS_FORMAT.formatToParts(instant)
+  const at = (type: string) => Number(parts.find((part) => part.type === type)?.value)
+  const asUtc = Date.UTC(at("year"), at("month") - 1, at("day"), at("hour") % 24, at("minute"), at("second"))
+  return asUtc - instant.getTime()
+}
+
+/**
+ * Compone una fecha y una hora de Excel (dos celdas separadas, ambas
+ * decodificadas por ExcelJS como si fueran UTC) en el instante real que
+ * representan en hora de pared chilena. Interpretarlas ya como UTC corre cada
+ * carga 3–4 horas y mueve de mes las de fin de mes por la noche — justo lo que
+ * las conciliaciones mensuales necesitan cuadrar.
+ */
+export function santiagoInstant(date: Date, time: Date | null): string {
+  const wall = Date.UTC(
+    date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(),
+    time?.getUTCHours() ?? 0, time?.getUTCMinutes() ?? 0, time?.getUTCSeconds() ?? 0,
+  )
+  // Dos pasadas: la primera estima el desfase, la segunda lo corrige si la
+  // estimación cayó al otro lado de un cambio de horario.
+  let utc = wall - zoneOffsetMs(new Date(wall))
+  utc = wall - zoneOffsetMs(new Date(utc))
+  return new Date(utc).toISOString()
 }
 
 /** Extrae "YYYY-MM-DD" de una fecha Excel usando componentes UTC — ExcelJS
@@ -86,4 +148,22 @@ export function nullableChileanNumber(value: unknown): number | null {
   if (value === null || value === undefined || value === "") return null
   const parsed = parseChileanNumber(value)
   return Number.isFinite(parsed) ? parsed : null
+}
+
+/**
+ * Canon de normalización de patente — antes duplicada de forma idéntica en
+ * `operations-import.ts` y `consumption-import.ts`, y de forma más débil (sin
+ * `.trim()`) en `fleet-xlsx-import.ts`: el alta manual de un vehículo y el
+ * import masivo normalizaban distinto, así que " BPDH-41 " (tipeado a mano) y
+ * "BPDH-41" (del Excel) no calzaban contra el mismo `UNIQUE` de `fuel_vehicles.plate`.
+ *  Conserva guiones — el formato de patente no es uniforme en los datos reales. */
+export function normalizePlate(value: string): string {
+  return value.trim().toUpperCase().replace(/\s+/g, "")
+}
+
+/** Clave de comparación para matchear contra `fuel_vehicles.plate`: además de
+ *  normalizar, quita todo separador — la data operacional y el catálogo usan
+ *  formatos de patente distintos (con/sin guion) para el mismo vehículo. */
+export function plateMatchKey(value: string): string {
+  return value.toUpperCase().replace(/[^A-Z0-9]/g, "")
 }

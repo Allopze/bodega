@@ -29,9 +29,10 @@ export async function exportTaeCopecReconciliationAction(filters: TaeCopecFilter
     { header: "TCT registros", key: "tctRecords", width: 14 },
     { header: "Total litros", key: "total", width: 14 },
     { header: "Cobertura", key: "coverage", width: 18 },
+    { header: "TCT parcial", key: "tctPartial", width: 14 },
   ]
   const coverageLabels = { both_channels: "Ambos canales", tae_only: "Solo TAE", tct_only: "Solo TCT" }
-  for (const row of rows) sheet.addRow({ month: row.month, worksite: row.worksiteName, equipment: row.equipment, plate: row.plate, tae: row.taeLiters, taeLoads: row.taeLoads, diesel: row.tctDieselLiters, bluemax: row.tctBlueMaxLiters, tctRecords: row.tctRecords, total: row.totalLiters, coverage: coverageLabels[row.coverage] })
+  for (const row of rows) sheet.addRow({ month: row.month, worksite: row.worksiteName, equipment: row.equipment, plate: row.plate, tae: row.taeLiters, taeLoads: row.taeLoads, diesel: row.tctDieselLiters, bluemax: row.tctBlueMaxLiters, tctRecords: row.tctRecords, total: row.totalLiters, coverage: coverageLabels[row.coverage], tctPartial: row.tctPartial ? "Sí — período fuera del rango excluido del total" : "" })
   sheet.getRow(1).font = { bold: true, color: { argb: "FFFFFFFF" } }
   sheet.getRow(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF2563EB" } }
   for (const key of ["tae", "diesel", "bluemax", "total"]) sheet.getColumn(key).numFmt = "#,##0.000"

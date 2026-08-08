@@ -36,6 +36,8 @@ export const metadata: Metadata = { title: "Combustibles" }
 
 const PAGE_SIZE = 50
 const ANOMALY_DIST_FALLBACK = { total: 0, byStatus: [], bySeverity: [], byRuleCode: [] }
+/** Unidad del rendimiento tal como la guarda el log operacional. */
+const RENDIMIENTO_UNIT_LABEL: Record<string, string> = { km_lt: "km/L", lt_hr: "L/h" }
 
 export default async function CombustiblesPage({
   searchParams,
@@ -62,12 +64,16 @@ export default async function CombustiblesPage({
   const needsAnalysis = vista === "analisis"
   const needsDashboard = needsSummary || needsAnalysis
   const needsRecords = vista === "registros"
-  const page = typeof sp.page === "string" ? Math.max(1, Number(sp.page)) : 1
+  // `Math.max(1, Number("abc"))` es NaN, no 1: el offset salía NaN y la vista
+  // Registros quedaba vacía rotulada "Página NaN".
+  const parsedPage = Number(sp.page)
+  const page = Number.isFinite(parsedPage) ? Math.max(1, Math.floor(parsedPage)) : 1
   const requestedFilters = normalizeConsumptionFilters({ fromDate, toDate, worksiteId, fuente, patente, associated })
 
   const worksiteScope = resolveWorksiteScope(session)
   const canImport = can(session, "combustibles:import")
   const canViewTae = can(session, "combustibles:tae_view")
+  const canViewCosts = can(session, "combustibles:view_costs")
 
   const [dashboard, worksitesList, fuentesRows, operationsSummary, controlOverview, byEquipmentType, scatterPoints, evolutionByVehicle, heatmapCells, anomalyDistribution] = await Promise.all([
     needsDashboard
@@ -103,20 +109,25 @@ export default async function CombustiblesPage({
     needsSummary
       ? settle(getFuelControlOverview(session, { filters: requestedFilters, includeTae: canViewTae }), null, "fuelControlOverview")
       : Promise.resolve(null),
+    // Filtros COMPLETOS: estos gráficos recibían sólo período y faena, así que
+    // Fuente, Patente y Asociación quedaban sin efecto sobre ellos mientras los
+    // KPIs de la misma vista sí los aplicaban.
     needsAnalysis
-      ? settle(getConsumptionByEquipmentType(session, { fromDate: requestedFilters.fromDate, toDate: requestedFilters.toDate, worksiteId: requestedFilters.worksiteId }), [], "byEquipmentType")
+      ? settle(getConsumptionByEquipmentType(session, requestedFilters), [], "byEquipmentType")
       : Promise.resolve([]),
     needsAnalysis
       ? settle(getScatterObservations(session, { fromDate: requestedFilters.fromDate, toDate: requestedFilters.toDate, worksiteId: requestedFilters.worksiteId, patente: requestedFilters.patente, proveedorNombre: proveedor }), [], "scatterPoints")
       : Promise.resolve([]),
     needsAnalysis
-      ? settle(getEvolutionByVehicle(session, { fromDate: requestedFilters.fromDate, toDate: requestedFilters.toDate, worksiteId: requestedFilters.worksiteId, patente: requestedFilters.patente }), [], "evolutionByVehicle")
+      ? settle(getEvolutionByVehicle(session, requestedFilters), [], "evolutionByVehicle")
       : Promise.resolve([]),
     needsAnalysis
-      ? settle(getWorksiteEquipmentMatrix(session, { fromDate: requestedFilters.fromDate, toDate: requestedFilters.toDate, worksiteId: requestedFilters.worksiteId }), [], "heatmapCells")
+      ? settle(getWorksiteEquipmentMatrix(session, requestedFilters), [], "heatmapCells")
       : Promise.resolve([]),
     needsAnalysis
-      ? settle(getAnomalyDistribution({ worksiteId: requestedFilters.worksiteId }), ANOMALY_DIST_FALLBACK, "anomalyDistribution")
+      // Sólo casos vigentes: sin el filtro de estado, "N casos activos" incluía
+      // los resueltos y descartados y nunca bajaba.
+      ? settle(getAnomalyDistribution({ worksiteId: requestedFilters.worksiteId, status: ["open", "in_review", "reopened"] }, session), ANOMALY_DIST_FALLBACK, "anomalyDistribution")
       : Promise.resolve(ANOMALY_DIST_FALLBACK),
   ])
   const scatterKm = (scatterPoints ?? []).filter((p) => p.medidoPor === "km")
@@ -164,14 +175,31 @@ export default async function CombustiblesPage({
     const qs = params.toString()
     return `/combustibles${qs ? `?${qs}` : ""}`
   }
+  // "Sin asociación" en los KPIs de resumen respalda su cifra enlazando a
+  // Registros ya filtrado por `asociacion=no`, en vez de dejar al usuario
+  // reconstruir el filtro a mano.
+  const sinAsociacionHref = (() => {
+    const params = new URLSearchParams()
+    for (const [k, v] of Object.entries(sp)) {
+      if (k === "vista" || k === "page" || k === "asociacion") continue
+      if (typeof v === "string" && v) params.set(k, v)
+    }
+    params.set("vista", "registros")
+    params.set("asociacion", "no")
+    return `/combustibles?${params.toString()}`
+  })()
   const VISTA_TABS: Array<{ key: "resumen" | "analisis" | "registros"; label: string }> = [
     { key: "resumen", label: "Resumen" },
     { key: "analisis", label: "Análisis" },
     { key: "registros", label: `Registros${totalDetail > 0 ? ` · ${totalDetail}` : ""}` },
   ]
+  // `Boolean(dashboard)` volvía esto siempre verdadero: el dashboard existe aunque
+  // no haya ni una fila, así que el estado vacío era inalcanzable y la vista
+  // Análisis mostraba cuatro tarjetas con gráficos en blanco.
   const hasAnalysisContent = byEquipmentType.length > 0 || scatterKm.length > 0 || scatterHora.length > 0
     || evolutionByVehicle.length > 0 || heatmapCells.length > 0 || anomalyDistribution.total > 0
-    || Boolean(dashboard) || Boolean(operationsSummary)
+    || (dashboard?.seriesPorPeriodo.length ?? 0) > 0
+    || (operationsSummary?.totalRegistros ?? 0) > 0
 
   return (
     <PageContainer>
@@ -204,7 +232,7 @@ export default async function CombustiblesPage({
       {needsSummary && controlOverview && (
         <FuelControlOverviewPanel
           data={controlOverview}
-          canViewCosts={can(session, "combustibles:view_costs")}
+          canViewCosts={canViewCosts}
           tct={{
             liters: dashboard?.kpis.totalCantidad ?? 0,
             transactions: dashboard?.kpis.totalTransacciones ?? 0,
@@ -253,7 +281,7 @@ export default async function CombustiblesPage({
 
       {vista === "resumen" && (
         <>
-      {dashboard && <ConsumptionKpis kpis={dashboard.kpis} />}
+      {dashboard && <ConsumptionKpis kpis={dashboard.kpis} hrefs={{ registros: vistaHref("registros"), sinAsociacion: sinAsociacionHref }} />}
 
       {dashboard && (
         <section aria-labelledby="consumo-evolucion-title" className="mb-8">
@@ -301,7 +329,7 @@ export default async function CombustiblesPage({
 
       {vista === "analisis" && (
         <>
-      {dashboard && <ConsumptionAnalysisMetrics kpis={dashboard.kpis} />}
+      {dashboard && hasAnalysisContent && <ConsumptionAnalysisMetrics kpis={dashboard.kpis} />}
       {byEquipmentType.length > 0 && (
         <section aria-labelledby="consumo-por-tipo-title" className="mb-8">
           <div className="mb-3">
@@ -423,7 +451,7 @@ export default async function CombustiblesPage({
         </section>
       )}
 
-      {dashboard && (
+      {dashboard && hasAnalysisContent && (
         <section aria-labelledby="consumo-rankings-title" className="mb-8">
           <div className="mb-3">
             <p className="text-eyebrow">Dónde actuar</p>
@@ -481,10 +509,17 @@ export default async function CombustiblesPage({
               <p className="mt-1 text-sm text-[var(--color-text-muted)]">Comparte período, faena, patente y asociación con el análisis superior.</p>
             </div>
             <p className="font-mono text-sm text-[var(--color-text-muted)]">
-              {formatQty(Math.round(operationsSummary.totalLitros), "L")} · {formatCLP(operationsSummary.totalMonto)}
+              {formatQty(Math.round(operationsSummary.totalLitros), "L")}
+              {canViewCosts && <> · {formatCLP(operationsSummary.totalMonto)}</>}
             </p>
           </div>
           <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+            {/* combustibles:view_costs: tres de las cuatro tarjetas de esta
+                sección están enteramente enmarcadas en gasto (ordenadas y
+                graficadas por monto) — no hay una variante "sólo litros"
+                razonable, así que se ocultan enteras en vez de mostrar un
+                gráfico de "gasto" sin el monto. */}
+            {canViewCosts && (
             <Card>
               <CardHeader>
                 <CardTitle className="text-base">Equipos con mayor gasto</CardTitle>
@@ -494,16 +529,28 @@ export default async function CombustiblesPage({
                 <PatenteRankingChart data={operationsSummary.topEquiposPorGasto} metric="monto" />
               </CardContent>
             </Card>
+            )}
+            {/* Un gráfico por unidad (A5b): km/L y L/h no comparten eje — más
+                km/L es mejor, más L/h es peor, y las escalas no son comparables. */}
             <Card>
               <CardHeader>
                 <CardTitle className="text-base">Rendimiento por equipo</CardTitle>
-                <CardDescription>La comparación pondera cada lectura por litros cargados.</CardDescription>
+                <CardDescription>La comparación pondera cada lectura por litros cargados y separa km/L de L/h.</CardDescription>
               </CardHeader>
-              <CardContent>
-                <RendimientoChart data={operationsSummary.rendimientoPorEquipo} />
+              <CardContent className="space-y-5">
+                {[...new Set(operationsSummary.rendimientoPorEquipo.map((row) => row.unidad))].map((unidad) => (
+                  <div key={unidad ?? "sin-unidad"}>
+                    <p className="mb-1 text-eyebrow">{RENDIMIENTO_UNIT_LABEL[unidad ?? ""] ?? "Unidad no informada"}</p>
+                    <RendimientoChart
+                      data={operationsSummary.rendimientoPorEquipo.filter((row) => row.unidad === unidad)}
+                      unitLabel={RENDIMIENTO_UNIT_LABEL[unidad ?? ""]}
+                    />
+                  </div>
+                ))}
               </CardContent>
             </Card>
           </div>
+          {canViewCosts && (
           <div className="mt-5 grid grid-cols-1 gap-5 lg:grid-cols-2">
             <Card>
               <CardHeader>
@@ -540,6 +587,7 @@ export default async function CombustiblesPage({
               </CardContent>
             </Card>
           </div>
+          )}
         </section>
       )}
 
