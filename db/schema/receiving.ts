@@ -1,5 +1,5 @@
 import { relations, sql } from "drizzle-orm"
-import { pgTable, text, real, timestamp, check, index } from "drizzle-orm/pg-core"
+import { pgTable, text, real, timestamp, check, index, uniqueIndex, jsonb } from "drizzle-orm/pg-core"
 import { users } from "./users"
 import { worksites, workers } from "./worksites"
 import { products } from "./products"
@@ -103,6 +103,51 @@ export const deliveryItems = pgTable("delivery_items", {
   index("idx_delivery_items_delivery").on(table.deliveryId),
 ])
 
+/* ── Historical traceability integrity ───────────────────────────────────── */
+// A finding never changes the operational history it observed. Resolution is a
+// second append-only event so the original snapshot stays auditable.
+export const traceabilityIntegrityCases = pgTable("traceability_integrity_cases", {
+  id:            text("id").primaryKey(),
+  findingKey:    text("finding_key").notNull(),
+  requestItemId: text("request_item_id").notNull().references(() => purchaseRequestItems.id),
+  worksiteId:    text("worksite_id").notNull().references(() => worksites.id),
+  findingCode:   text("finding_code").notNull(),
+  snapshot:      jsonb("snapshot").$type<Record<string, unknown>>().notNull(),
+  detectedAt:    timestamp("detected_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+}, (table) => [
+  check("traceability_integrity_case_code_valid", sql`
+    ${table.findingCode} IN ('DELIVERY_EXCEEDS_FAENA_RECEIPT', 'DELIVERY_BEFORE_FAENA_RECEIPT')
+  `),
+  uniqueIndex("traceability_integrity_cases_finding_key_unique").on(table.findingKey),
+  index("traceability_integrity_cases_worksite_detected_at_idx").on(table.worksiteId, table.detectedAt),
+  index("traceability_integrity_cases_request_item_idx").on(table.requestItemId),
+])
+
+export const traceabilityIntegrityResolutions = pgTable("traceability_integrity_resolutions", {
+  id:                      text("id").primaryKey(),
+  caseId:                  text("case_id").notNull().references(() => traceabilityIntegrityCases.id),
+  action:                  text("action").notNull(),
+  reason:                  text("reason").notNull(),
+  compensatingMovementId:  text("compensating_movement_id"),
+  resolvedBy:              text("resolved_by").notNull().references(() => users.id),
+  createdAt:               timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+}, (table) => [
+  check("traceability_integrity_resolution_action_valid", sql`
+    ${table.action} IN ('acknowledge', 'compensating_movement')
+  `),
+  check("traceability_integrity_resolution_reason_length", sql`
+    char_length(trim(${table.reason})) BETWEEN 10 AND 2000
+  `),
+  check("traceability_integrity_resolution_movement_required", sql`
+    (${table.action} = 'acknowledge' AND ${table.compensatingMovementId} IS NULL)
+    OR (${table.action} = 'compensating_movement' AND ${table.compensatingMovementId} IS NOT NULL)
+  `),
+  // Un solo cierre por caso evita dobles regularizaciones concurrentes sin
+  // sobrescribir el evento original.
+  uniqueIndex("traceability_integrity_resolutions_case_unique").on(table.caseId),
+  index("traceability_integrity_resolutions_created_at_idx").on(table.createdAt),
+])
+
 /* ── Relations ───────────────────────────────────────────────────────────── */
 export const receiptsRelations = relations(receipts, ({ one, many }) => ({
   purchaseOrder: one(purchaseOrders, { fields: [receipts.purchaseOrderId], references: [purchaseOrders.id] }),
@@ -128,4 +173,15 @@ export const deliveryItemsRelations = relations(deliveryItems, ({ one }) => ({
   delivery: one(deliveries, { fields: [deliveryItems.deliveryId], references: [deliveries.id] }),
   requestItem: one(purchaseRequestItems, { fields: [deliveryItems.requestItemId], references: [purchaseRequestItems.id] }),
   product: one(products, { fields: [deliveryItems.productId], references: [products.id] }),
+}))
+
+export const traceabilityIntegrityCasesRelations = relations(traceabilityIntegrityCases, ({ one, many }) => ({
+  requestItem: one(purchaseRequestItems, { fields: [traceabilityIntegrityCases.requestItemId], references: [purchaseRequestItems.id] }),
+  worksite: one(worksites, { fields: [traceabilityIntegrityCases.worksiteId], references: [worksites.id] }),
+  resolutions: many(traceabilityIntegrityResolutions),
+}))
+
+export const traceabilityIntegrityResolutionsRelations = relations(traceabilityIntegrityResolutions, ({ one }) => ({
+  case: one(traceabilityIntegrityCases, { fields: [traceabilityIntegrityResolutions.caseId], references: [traceabilityIntegrityCases.id] }),
+  resolvedByUser: one(users, { fields: [traceabilityIntegrityResolutions.resolvedBy], references: [users.id] }),
 }))

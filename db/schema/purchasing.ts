@@ -72,9 +72,18 @@ export const purchaseOrderItems = pgTable("purchase_order_items", {
   productNameFree:      text("product_name_free"),      // for uncatalogued
   quantity:             real("quantity").notNull(),
   unitOfMeasure:        text("unit_of_measure").notNull().default("unidad"),
-  unitPrice:            numeric("unit_price", { precision: 12, scale: 2, mode: "number" }).notNull().default(0),
+  /**
+   * NULL = costo pendiente: la línea es un servicio cuyo precio todavía no se
+   * conoce (mantención de monogás, calibración, vacuna). Es distinto de 0, que
+   * significa "sin costo". `subtotal` acompaña siempre a `unitPrice`: o los dos
+   * son NULL o los dos tienen valor (CHECK más abajo).
+   */
+  unitPrice:            numeric("unit_price", { precision: 12, scale: 2, mode: "number" }),
   discount:             numeric("discount", { precision: 12, scale: 2, mode: "number" }).notNull().default(0),
-  subtotal:             numeric("subtotal", { precision: 12, scale: 2, mode: "number" }).notNull().default(0),
+  subtotal:             numeric("subtotal", { precision: 12, scale: 2, mode: "number" }),
+  /** Trazabilidad del costo registrado a posteriori (quién y cuándo). */
+  costRecordedAt:       timestamp("cost_recorded_at", { withTimezone: true, mode: "string" }),
+  costRecordedBy:       text("cost_recorded_by").references(() => users.id),
   quantityOfficeReceived: real("quantity_office_received").notNull().default(0),
   quantityReceived:     real("quantity_received").notNull().default(0),
   status:               text("status").notNull().default("issued"),
@@ -89,20 +98,29 @@ export const purchaseOrderItems = pgTable("purchase_order_items", {
   check("purchase_order_items_status_valid", sql`
     ${table.status} IN ('issued', 'cancelled')
   `),
-  // Invariant: quantity > 0, unitPrice/subtotal >= 0, discount in 0-100,
-  // and received counters are each bounded by quantity (0 <= qtyOfficeReceived <= qty,
+  // Invariant: quantity > 0, unitPrice/subtotal >= 0 *cuando se conocen*, discount
+  // in 0-100, and received counters are each bounded by quantity (0 <= qtyOfficeReceived <= qty,
   // 0 <= qtyReceived <= qty). Office no longer caps faena: the office-before-faena order
   // is enforced in app code only for via_oficina OCs (directo_faena skips the office stage).
   check("purchase_order_items_numeric_integrity", sql`
     ${table.quantity} > 0
-    AND ${table.unitPrice} >= 0
+    AND (${table.unitPrice} IS NULL OR ${table.unitPrice} >= 0)
     AND ${table.discount} >= 0
     AND ${table.discount} <= 100
-    AND ${table.subtotal} >= 0
+    AND (${table.subtotal} IS NULL OR ${table.subtotal} >= 0)
     AND ${table.quantityOfficeReceived} >= 0
     AND ${table.quantityReceived} >= 0
     AND ${table.quantityOfficeReceived} <= ${table.quantity}
     AND ${table.quantityReceived} <= ${table.quantity}
+  `),
+  // Costo pendiente es un estado de la línea completa, no de una columna suelta:
+  // un precio sin subtotal (o al revés) dejaría los totales de la OC sin cuadrar.
+  check("purchase_order_items_cost_pending_pair", sql`
+    (${table.unitPrice} IS NULL) = (${table.subtotal} IS NULL)
+  `),
+  // La trazabilidad del costo sólo tiene sentido con un costo ya registrado.
+  check("purchase_order_items_cost_trace_requires_cost", sql`
+    ${table.costRecordedAt} IS NULL OR ${table.unitPrice} IS NOT NULL
   `),
   // DAT-11: FK caliente sin índice — CASCADE de purchase_orders y el join más
   // frecuente del módulo (una fila por línea de cada OC).
@@ -188,6 +206,7 @@ export const purchaseOrderItemsRelations = relations(purchaseOrderItems, ({ one 
   purchaseOrder: one(purchaseOrders, { fields: [purchaseOrderItems.purchaseOrderId], references: [purchaseOrders.id] }),
   requestItem:   one(purchaseRequestItems, { fields: [purchaseOrderItems.requestItemId], references: [purchaseRequestItems.id] }),
   product:       one(products, { fields: [purchaseOrderItems.productId], references: [products.id] }),
+  costRecordedByUser: one(users, { fields: [purchaseOrderItems.costRecordedBy], references: [users.id] }),
 }))
 
 export const purchaseOrderInvoicesRelations = relations(purchaseOrderInvoices, ({ one, many }) => ({

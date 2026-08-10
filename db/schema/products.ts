@@ -42,6 +42,20 @@ export const products = pgTable("products", {
   unitOfMeasure:       text("unit_of_measure").notNull().default("unidad"),
   isEpp:               boolean("is_epp").notNull().default(false),
   requiresPrevencion:  boolean("requires_prevencion").notNull().default(false),
+  /**
+   * El ítem es un servicio (mantención de monogás, calibración de alcotest,
+   * vacunación...): se solicita y se aprueba sin conocer su precio, y el costo
+   * real se registra sobre la línea de la OC cuando el proveedor lo factura.
+   * No es lo mismo que `requestType = 'servicios'`, que es el flujo por
+   * cotización: un servicio de estos convive con EPP en la misma solicitud.
+   */
+  isService:           boolean("is_service").notNull().default(false),
+  /**
+   * El ítem se solicita para una persona concreta (vacunas, exámenes). Obliga a
+   * `purchase_request_items.worker_id`, la misma FK que ya usa el EPP nominado
+   * — no se guarda el nombre suelto.
+   */
+  requiresWorker:      boolean("requires_worker").notNull().default(false),
   referencePrice:      numeric("reference_price", { precision: 12, scale: 2, mode: "number" }),
   isActive:            boolean("is_active").notNull().default(true),
   notes:               text("notes"),
@@ -55,7 +69,10 @@ export const productAttributes = pgTable("product_attributes", {
   productId:     text("product_id").references(() => products.id, { onDelete: "cascade" }),
   categoryId:    text("category_id").references(() => productCategories.id, { onDelete: "cascade" }),
   name:          text("name").notNull(),          // "Talla", "Color", "Medida"
-  type:          text("type").notNull(),           // "text" | "select" | "number"
+  // "text" | "select" | "number" | "integer".
+  // `integer` es un conteo entero ≥ 1 (nº de dosis, de sesiones): se valida así
+  // en el formulario y otra vez en el servidor. `number` admite decimales.
+  type:          text("type").notNull(),
   isRequired:    boolean("is_required").notNull().default(false),
   options:       text("options"),                  // JSON array for select type
   sizeFamily:    text("size_family"),              // canonical family: 'ropa' | 'calzado' | 'guantes' | 'casco'

@@ -61,6 +61,7 @@ next-env.d.ts
 # tool artifacts (local only)
 .VSCodeCounter/
 .commandcode/
+/artifacts/
 # índice local de CodeGraph (~127 MB, se regenera solo)
 .codegraph/
 
