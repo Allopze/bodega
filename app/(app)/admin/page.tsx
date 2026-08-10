@@ -61,6 +61,14 @@ const modules = [
     group:       "catalogos",
   },
   {
+    title:       "Equipos de servicio",
+    description: "Monogás, alcotest y otros instrumentos que se mandan a mantener o calibrar.",
+    href:        "/admin/equipos",
+    icon:        Cube,
+    permission:  "admin:service_equipment",
+    group:       "catalogos",
+  },
+  {
     title:       "Proveedores",
     description: "Registro de proveedores y sus condiciones comerciales.",
     href:        "/admin/proveedores",

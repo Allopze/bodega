@@ -13,7 +13,7 @@ const productVariantSupplierSchema = z.object({
 
 const productVariantAttributeSchema = z.object({
   name: z.string().min(1),
-  type: z.enum(["text", "select", "number"]),
+  type: z.enum(["text", "select", "number", "integer"]),
   options: z.string().optional().nullable(),
   sizeFamily: z.string().optional(),
   sortOrder: z.number(),
@@ -26,6 +26,8 @@ export const productVariantBatchSchema = z.object({
   unitOfMeasure: z.string().max(20).default("unidad"),
   isEpp: z.boolean().default(true),
   requiresPrevencion: z.boolean().default(false),
+  isService: z.boolean().default(false),
+  requiresWorker: z.boolean().default(false),
   referencePrice: z.number().min(0).optional().nullable(),
   notes: z.string().max(500).optional().or(z.literal("")),
   isActive: z.boolean().default(true),
@@ -36,4 +38,10 @@ export const productVariantBatchSchema = z.object({
   supplier: productVariantSupplierSchema,
 })
 
-export type ProductVariantBatchInput = z.infer<typeof productVariantBatchSchema>
+/**
+ * `z.input` y no `z.infer`: los campos con `.default()` son opcionales para
+ * quien llama (el formulario los manda todos; un caller que sólo quiere lote de
+ * variantes de EPP no tiene por qué declarar los flags de servicio). El body de
+ * la action trabaja con el resultado ya parseado, donde sí están todos.
+ */
+export type ProductVariantBatchInput = z.input<typeof productVariantBatchSchema>

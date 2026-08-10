@@ -90,6 +90,9 @@ export function ProductForm({ open, onClose, categories, allSuppliers, units, te
     notes: editProduct?.notes ?? "",
     isEpp: editProduct?.isEpp ?? false,
     requiresPrevencion: editProduct?.requiresPrevencion ?? false,
+    isService: editProduct?.isService ?? false,
+    requiresWorker: editProduct?.requiresWorker ?? false,
+    equipmentKind: editProduct?.equipmentKind ?? "",
     isActive: editProduct?.isActive ?? true,
   })
   const [wizAttrs, setWizAttrs] = React.useState<AttributeMultiValues[]>(() => {
@@ -215,6 +218,8 @@ export function ProductForm({ open, onClose, categories, allSuppliers, units, te
         unitOfMeasure: general.unitOfMeasure,
         isEpp: general.isEpp,
         requiresPrevencion: general.requiresPrevencion,
+        isService: general.isService,
+        requiresWorker: general.requiresWorker,
         referencePrice: general.referencePrice ? parseFloat(general.referencePrice) : null,
         notes: general.notes || undefined,
         isActive: general.isActive,
@@ -332,6 +337,47 @@ export function ProductForm({ open, onClose, categories, allSuppliers, units, te
                 onChange={(e) => { markDirty(); setGeneral((p) => ({ ...p, requiresPrevencion: e.target.checked })) }}
                 label="Requiere aprobación de Prevención"
               />
+              {/* Un servicio se solicita sin precio: su costo se conoce al
+                  ejecutarlo y se registra sobre la línea de la OC. */}
+              <Checkbox
+                id="p-service"
+                checked={general.isService}
+                onChange={(e) => {
+                  markDirty()
+                  setGeneral((p) => ({
+                    ...p,
+                    isService: e.target.checked,
+                    // Un servicio no puede exigir colaborador si deja de serlo.
+                    requiresWorker: e.target.checked ? p.requiresWorker : false,
+                  }))
+                }}
+                label="Es un servicio (costo pendiente al solicitar)"
+              />
+              {general.isService && (
+                <Field
+                  label="Familia de equipos que atiende"
+                  htmlFor="p-equipment-kind"
+                  helper="Sin espacios ni tildes (monogas, alcotest). Vacío = el servicio no es sobre un equipo."
+                  error={state.fieldErrors?.equipmentKind?.[0]}
+                  className="mt-1 ml-6 max-w-xs"
+                >
+                  <Input
+                    id="p-equipment-kind"
+                    value={general.equipmentKind}
+                    onChange={(e) => { markDirty(); setGeneral((p) => ({ ...p, equipmentKind: e.target.value })) }}
+                    placeholder="monogas"
+                  />
+                </Field>
+              )}
+              {general.isService && (
+                <Checkbox
+                  id="p-worker"
+                  checked={general.requiresWorker}
+                  onChange={(e) => { markDirty(); setGeneral((p) => ({ ...p, requiresWorker: e.target.checked })) }}
+                  label="Se solicita para un colaborador concreto"
+                  className="ml-6"
+                />
+              )}
               <Checkbox
                 id="p-active"
                 checked={general.isActive}
@@ -474,6 +520,9 @@ export function ProductForm({ open, onClose, categories, allSuppliers, units, te
         <input type="hidden" name="notes" value={general.notes} />
         {general.isEpp && <input type="hidden" name="isEpp" value="on" />}
         {general.requiresPrevencion && <input type="hidden" name="requiresPrevencion" value="on" />}
+        {general.isService && <input type="hidden" name="isService" value="on" />}
+        {general.isService && general.requiresWorker && <input type="hidden" name="requiresWorker" value="on" />}
+        {general.isService && <input type="hidden" name="equipmentKind" value={general.equipmentKind} />}
         {general.isActive && <input type="hidden" name="isActive" value="on" />}
         <input type="hidden" name="attributesJson" value={JSON.stringify(
           variants.length > 0

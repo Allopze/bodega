@@ -29,6 +29,7 @@ export const adminModule = {
     "admin:suppliers",
     "admin:cost_centers",
     "admin:product_catalogs",
+    "admin:service_equipment",
     // Prevención / SST
     "admin:document_taxonomy",
     "admin:pdtp_catalog",
@@ -57,6 +58,7 @@ export const adminModule = {
     "admin:worksites":         { id: "p-adm-ws",    description: "Gestionar faenas" },
     "admin:workers":           { id: "p-adm-wrk",   description: "Gestionar trabajadores" },
     "admin:products":          { id: "p-adm-prod",  description: "Gestionar catálogo" },
+    "admin:service_equipment": { id: "p-adm-equip", description: "Gestionar el registro de equipos de servicio (monogás, alcotest)" },
     "admin:epp_import_upload": { id: "p-adm-epp-up", description: "Cargar archivos de importación EPP" },
     "admin:epp_import_review": { id: "p-adm-epp-rv", description: "Revisar y resolver importaciones EPP" },
     "admin:epp_import_confirm": { id: "p-adm-epp-cf", description: "Confirmar importaciones EPP" },
@@ -101,6 +103,7 @@ export const adminModule = {
     { roleSlug: "administrador", permission: "admin:suppliers" },
     { roleSlug: "administrador", permission: "admin:cost_centers" },
     { roleSlug: "administrador", permission: "admin:product_catalogs" },
+    { roleSlug: "administrador", permission: "admin:service_equipment" },
     { roleSlug: "administrador", permission: "admin:document_taxonomy" },
     { roleSlug: "administrador", permission: "admin:pdtp_catalog" },
     { roleSlug: "administrador", permission: "admin:fleet_catalog" },
@@ -122,6 +125,7 @@ export const adminModule = {
     { roleSlug: "secretaria", permission: "admin:suppliers" },
     { roleSlug: "secretaria", permission: "admin:cost_centers" },
     { roleSlug: "secretaria", permission: "admin:product_catalogs" },
+    { roleSlug: "secretaria", permission: "admin:service_equipment" },
     // Jefa Chome (Jefatura)
     { roleSlug: "jefa_chome", permission: "admin:cost_centers" },
     { roleSlug: "jefa_chome", permission: "admin:product_catalogs" },
@@ -140,6 +144,8 @@ export const adminModule = {
     { roleSlug: "prevencionista", permission: "admin:pdtp_catalog" },
     // Jefe de mantención — flota
     { roleSlug: "jefe_mantencion", permission: "admin:fleet_catalog" },
+    // Quien manda a mantener y calibrar los instrumentos es quien los da de alta.
+    { roleSlug: "jefe_mantencion", permission: "admin:service_equipment" },
     // Prevencionista faena — solo trabajadores (para EPP tracking)
     { roleSlug: "solicitante_faena", permission: "admin:workers" },
     { roleSlug: "prevencionista_faena", permission: "admin:workers" },

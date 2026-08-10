@@ -7,7 +7,7 @@ export interface AttributeTemplateOption {
   categoryId: string
   categoryName?: string
   name: string
-  type: "text" | "select" | "number"
+  type: "text" | "select" | "number" | "integer"
   isRequired: boolean
   options: string
   sortOrder: number
@@ -17,7 +17,7 @@ export interface AttributeTemplateOption {
 export interface AttributeRow {
   id?: string
   name: string
-  type: "text" | "select" | "number"
+  type: "text" | "select" | "number" | "integer"
   isRequired: boolean
   options: string
   sortOrder: number
@@ -42,6 +42,9 @@ export interface ProductForEdit {
   unitOfMeasure:      string
   isEpp:              boolean
   requiresPrevencion: boolean
+  isService:          boolean
+  requiresWorker:     boolean
+  equipmentKind:      string | null
   referencePrice:     number | null
   notes:              string | null
   isActive:           boolean
@@ -91,6 +94,9 @@ export interface WizardGeneralState {
   notes: string
   isEpp: boolean
   requiresPrevencion: boolean
+  isService: boolean
+  requiresWorker: boolean
+  equipmentKind: string
   isActive: boolean
 }
 

@@ -167,6 +167,9 @@ describe("canAdvanceWizard", () => {
     notes: "",
     isEpp: false,
     requiresPrevencion: false,
+    isService: false,
+    requiresWorker: false,
+    equipmentKind: "",
     isActive: true,
   }
 

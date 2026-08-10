@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache"
 import { eq, inArray } from "drizzle-orm"
 import { db } from "@/db"
-import { products, productAttributes, productSuppliers, productCategories, eppProductFamilies } from "@/db/schema"
+import { products, productAttributes, productSuppliers, productCategories, eppProductFamilies, serviceEquipment } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { recordAudit } from "@/lib/audit"
 import { requirePermission } from "@/lib/auth/can"
@@ -19,6 +19,29 @@ import {
 import { productVariantBatchSchema, type ProductVariantBatchInput } from "./product-variant-batch.schema"
 
 // ── Product CRUD ──────────────────────────────────────────────────────────────
+
+/**
+ * La familia de equipos que un servicio dice atender tiene que existir en el
+ * registro. Es texto libre a propósito (sumar una familia es un dato, no una
+ * migración), pero un typo dejaba el servicio sin ningún equipo que ofrecer y
+ * el formulario de solicitud sin forma de completarse.
+ */
+async function unknownEquipmentKindError(kind: string | undefined): Promise<ActionState | null> {
+  const normalized = kind?.trim()
+  if (!normalized) return null
+  const [match] = await db
+    .select({ kind: serviceEquipment.kind })
+    .from(serviceEquipment)
+    .where(eq(serviceEquipment.kind, normalized))
+    .limit(1)
+  if (match) return null
+  return {
+    ok: false,
+    fieldErrors: {
+      equipmentKind: [`No hay equipos registrados del tipo «${normalized}». Créalos primero en Equipos de servicio.`],
+    },
+  }
+}
 
 export async function createProduct(_prev: ActionState, formData: FormData): Promise<ActionState> {
   let session
@@ -38,6 +61,9 @@ export async function createProduct(_prev: ActionState, formData: FormData): Pro
     unitOfMeasure:      formString(formData, "unitOfMeasure") || "unidad",
     isEpp:              formData.get("isEpp") === "on",
     requiresPrevencion: formData.get("requiresPrevencion") === "on",
+    isService:          formData.get("isService") === "on",
+    requiresWorker:     formData.get("requiresWorker") === "on",
+    equipmentKind:      formData.get("equipmentKind") || undefined,
     referencePrice:     formData.get("referencePrice") || null,
     notes:              formString(formData, "notes"),
     isActive:           formData.get("isActive") === "on",
@@ -46,6 +72,9 @@ export async function createProduct(_prev: ActionState, formData: FormData): Pro
   })
   if (!parsed.success) return { ok: false, fieldErrors: parsed.error.flatten().fieldErrors as Record<string, string[]> }
   const d = parsed.data
+
+  const kindError = await unknownEquipmentKindError(d.equipmentKind)
+  if (kindError) return kindError
 
   const id = nanoid()
   const sku = await generateUniqueProductSku(d.isEpp)
@@ -60,6 +89,9 @@ export async function createProduct(_prev: ActionState, formData: FormData): Pro
       unitOfMeasure: d.unitOfMeasure,
       isEpp: d.isEpp,
       requiresPrevencion: d.requiresPrevencion,
+      isService: d.isService,
+      requiresWorker: d.requiresWorker,
+      equipmentKind: d.equipmentKind || null,
       referencePrice: d.referencePrice ?? null,
       notes: d.notes || null,
       isActive: d.isActive,
@@ -72,6 +104,7 @@ export async function createProduct(_prev: ActionState, formData: FormData): Pro
           name: a.name, type: a.type, isRequired: a.isRequired,
           options: a.type === "select" ? normalizeSelectOptions(a.options) : null,
           sizeFamily: a.sizeFamily || null,
+          drivesQuantity: a.drivesQuantity,
           sortOrder: a.sortOrder,
         }))
       )
@@ -114,6 +147,9 @@ export async function updateProduct(_prev: ActionState, formData: FormData): Pro
     unitOfMeasure:      formString(formData, "unitOfMeasure") || "unidad",
     isEpp:              formData.get("isEpp") === "on",
     requiresPrevencion: formData.get("requiresPrevencion") === "on",
+    isService:          formData.get("isService") === "on",
+    requiresWorker:     formData.get("requiresWorker") === "on",
+    equipmentKind:      formData.get("equipmentKind") || undefined,
     referencePrice:     formData.get("referencePrice") || null,
     notes:              formString(formData, "notes"),
     isActive:           formData.get("isActive") === "on",
@@ -124,6 +160,9 @@ export async function updateProduct(_prev: ActionState, formData: FormData): Pro
   const d = parsed.data
   if (!d.id) return { ok: false, message: "ID requerido" }
   const productId = d.id
+
+  const kindError = await unknownEquipmentKindError(d.equipmentKind)
+  if (kindError) return kindError
 
   const current = await db.query.products.findFirst({ where: eq(products.id, productId) })
   if (!current) return { ok: false, message: "Producto no encontrado" }
@@ -139,6 +178,9 @@ export async function updateProduct(_prev: ActionState, formData: FormData): Pro
       unitOfMeasure: d.unitOfMeasure,
       isEpp: d.isEpp,
       requiresPrevencion: d.requiresPrevencion,
+      isService: d.isService,
+      requiresWorker: d.requiresWorker,
+      equipmentKind: d.equipmentKind || null,
       referencePrice: d.referencePrice ?? null,
       notes: d.notes || null,
       isActive: d.isActive,
@@ -154,6 +196,7 @@ export async function updateProduct(_prev: ActionState, formData: FormData): Pro
           categoryId: null, name: a.name, type: a.type,
           isRequired: a.isRequired,
           options: a.type === "select" ? normalizeSelectOptions(a.options) : null,
+          drivesQuantity: a.drivesQuantity,
           sortOrder: a.sortOrder ?? i,
         }))
       )
@@ -208,6 +251,9 @@ export async function getProductForEdit(id: string) {
     unitOfMeasure:      product.unitOfMeasure,
     isEpp:              product.isEpp,
     requiresPrevencion: product.requiresPrevencion,
+    isService:          product.isService,
+    requiresWorker:     product.requiresWorker,
+    equipmentKind:      product.equipmentKind,
     referencePrice:     product.referencePrice,
     notes:              product.notes,
     isActive:           product.isActive,
@@ -328,6 +374,8 @@ export async function createProductVariantBatch(input: ProductVariantBatchInput)
           unitOfMeasure: d.unitOfMeasure,
           isEpp: d.isEpp,
           requiresPrevencion: d.requiresPrevencion,
+          isService: d.isService,
+          requiresWorker: d.requiresWorker,
           referencePrice: d.referencePrice ?? null,
           notes: d.notes || null,
           isActive: d.isActive,
