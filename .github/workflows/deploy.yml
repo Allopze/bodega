@@ -124,6 +124,34 @@ jobs:
     needs: [sync-rbac, build-and-push]
     environment: production
     steps:
+      - name: Checkout deployment definition
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_SHA }}
+
+      - name: Back up current Compose definition
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script: |
+            cd ${{ secrets.DEPLOY_PATH || '/srv/bodega' }}
+            if [ -f docker-compose.yml ]; then
+              mkdir -p backups
+              cp docker-compose.yml "backups/docker-compose-predeploy-${{ env.RELEASE_SHA }}.yml"
+            fi
+
+      - name: Sync Compose definition
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          source: docker-compose.yml
+          target: ${{ secrets.DEPLOY_PATH || '/srv/bodega' }}
+          overwrite: true
+
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1
         with:

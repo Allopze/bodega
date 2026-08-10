@@ -66,6 +66,29 @@ services:
       - COPEC_PASSWORD=${COPEC_PASSWORD:-}
       - COPEC_SYNC_START_DATE=${COPEC_SYNC_START_DATE:-2020-01-01}
       - COPEC_SYNC_IMPORTER_EMAIL=${COPEC_SYNC_IMPORTER_EMAIL:-}
+      # Cron endpoints and the DTE/billing integrations are server-only. A
+      # Compose `.env` is used for interpolation; these explicit mappings are
+      # what actually put the values into the running app container.
+      - CRON_SECRET=${CRON_SECRET:-}
+      - DTE_PORTAL_BASE_URL=${DTE_PORTAL_BASE_URL:-https://clientes.dtefacturaenlinea.cl/facturaenlinea}
+      - DTE_PORTAL_RUT_USR=${DTE_PORTAL_RUT_USR:-}
+      - DTE_PORTAL_RUT_EMP=${DTE_PORTAL_RUT_EMP:-}
+      - DTE_PORTAL_CLAVE=${DTE_PORTAL_CLAVE:-}
+      - DTE_PORTAL_CODEMP=${DTE_PORTAL_CODEMP:-}
+      - DTE_SYNC_IMPORTER_EMAIL=${DTE_SYNC_IMPORTER_EMAIL:-}
+      - DTE_SYNC_DELAY_MS=${DTE_SYNC_DELAY_MS:-500}
+      - DTE_SYNC_ENABLED=${DTE_SYNC_ENABLED:-false}
+      - BILLING_SALES_SYNC_ENABLED=${BILLING_SALES_SYNC_ENABLED:-false}
+      - BILLING_HISTORY_FLOOR=${BILLING_HISTORY_FLOOR:-2024-01}
+      - BILLING_MATCH_AMOUNT_TOLERANCE_CLP=${BILLING_MATCH_AMOUNT_TOLERANCE_CLP:-1000}
+      - BILLING_MATCH_DATE_WINDOW_DAYS=${BILLING_MATCH_DATE_WINDOW_DAYS:-60}
+      - BILLING_COMPANY_TAX_ID=${BILLING_COMPANY_TAX_ID:-}
+      - BILLING_CHIPAX_ENABLED=${BILLING_CHIPAX_ENABLED:-false}
+      - CHIPAX_OPENAPI_URL=${CHIPAX_OPENAPI_URL:-https://api.chipax.com/v2/swagger-docs/}
+      - CHIPAX_API_BASE_URL=${CHIPAX_API_BASE_URL:-}
+      - CHIPAX_APP_ID=${CHIPAX_APP_ID:-}
+      - CHIPAX_SECRET_KEY=${CHIPAX_SECRET_KEY:-}
+      - CHIPAX_REQUEST_TIMEOUT_MS=${CHIPAX_REQUEST_TIMEOUT_MS:-30000}
       # Outbound mail runs on Resend (lib/email/smtp.ts). Without this key the app
       # boots fine but stays silent (no emails: invitations, password reset, etc.).
       - RESEND_API_KEY=${RESEND_API_KEY:-}

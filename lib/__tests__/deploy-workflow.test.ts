@@ -4,6 +4,35 @@ import { describe, expect, it } from "vitest"
 
 const repoRoot = process.cwd()
 
+const BILLING_RUNTIME_ENV_KEYS = [
+  "CRON_SECRET",
+  "DTE_PORTAL_BASE_URL",
+  "DTE_PORTAL_RUT_USR",
+  "DTE_PORTAL_RUT_EMP",
+  "DTE_PORTAL_CLAVE",
+  "DTE_PORTAL_CODEMP",
+  "DTE_SYNC_IMPORTER_EMAIL",
+  "DTE_SYNC_DELAY_MS",
+  "DTE_SYNC_ENABLED",
+  "BILLING_SALES_SYNC_ENABLED",
+  "BILLING_HISTORY_FLOOR",
+  "BILLING_MATCH_AMOUNT_TOLERANCE_CLP",
+  "BILLING_MATCH_DATE_WINDOW_DAYS",
+  "BILLING_COMPANY_TAX_ID",
+  "BILLING_CHIPAX_ENABLED",
+  "CHIPAX_OPENAPI_URL",
+  "CHIPAX_API_BASE_URL",
+  "CHIPAX_APP_ID",
+  "CHIPAX_SECRET_KEY",
+  "CHIPAX_REQUEST_TIMEOUT_MS",
+] as const
+
+function appServiceFromCompose(compose: string): string {
+  const appService = compose.match(/\n  app:\n([\s\S]*?)(?=\n  [a-z][a-z-]*:\n|$)/)?.[0]
+  if (!appService) throw new Error("No se encontró el servicio app en docker-compose.yml")
+  return appService
+}
+
 describe("deploy workflow", () => {
   it("builds and publishes the production Docker stage", () => {
     const workflow = readFileSync(path.join(repoRoot, ".github/workflows/deploy.yml"), "utf8")
@@ -11,5 +40,30 @@ describe("deploy workflow", () => {
 
     expect(buildPushStep).toBeDefined()
     expect(buildPushStep).toContain("target: prod")
+  })
+
+  it("syncs the versioned Compose definition before recreating production", () => {
+    const workflow = readFileSync(path.join(repoRoot, ".github/workflows/deploy.yml"), "utf8")
+
+    expect(workflow).toContain("uses: appleboy/scp-action@v0.1.7")
+    expect(workflow).toContain("source: docker-compose.yml")
+    expect(workflow).toContain("overwrite: true")
+    expect(workflow).toContain("backups/docker-compose-predeploy-${{ env.RELEASE_SHA }}.yml")
+  })
+
+  it("syncs Compose before the local production deploy uses it", () => {
+    const deployScript = readFileSync(path.join(repoRoot, "scripts/deploy-prod.sh"), "utf8")
+
+    expect(deployScript).toContain('cp docker-compose.yml "$PROD_DIR/docker-compose.yml"')
+    expect(deployScript).toContain("docker-compose-predeploy-")
+  })
+
+  it("injects the DTE, billing, and cron runtime configuration into app", () => {
+    const compose = readFileSync(path.join(repoRoot, "docker-compose.yml"), "utf8")
+    const appService = appServiceFromCompose(compose)
+
+    for (const key of BILLING_RUNTIME_ENV_KEYS) {
+      expect(appService).toMatch(new RegExp(`\\n\\s+- ${key}=\\$\\{${key}(?::-[^}]*)?\\}`))
+    }
   })
 })

@@ -38,6 +38,15 @@ if [ "$confirm" != "y" ]; then
   exit 1
 fi
 
+echo "==> Syncing versioned Docker Compose definition"
+mkdir -p "$PROD_DIR/backups"
+if [ -f "$PROD_DIR/docker-compose.yml" ] && ! cmp -s docker-compose.yml "$PROD_DIR/docker-compose.yml"; then
+  compose_backup="$PROD_DIR/backups/docker-compose-predeploy-$(date +%F-%H%M%S).yml"
+  cp "$PROD_DIR/docker-compose.yml" "$compose_backup"
+  echo "    saved previous Compose definition: $compose_backup"
+fi
+cp docker-compose.yml "$PROD_DIR/docker-compose.yml"
+
 echo "==> Tagging current image as rollback ($PREV_IMAGE)"
 if docker image inspect "$IMAGE" >/dev/null 2>&1; then
   docker tag "$IMAGE" "$PREV_IMAGE"
@@ -46,7 +55,6 @@ else
 fi
 
 echo "==> Dumping production database"
-mkdir -p "$PROD_DIR/backups"
 dump_file="$PROD_DIR/backups/prod-$(date +%F-%H%M).dump"
 (cd "$PROD_DIR" && docker compose exec -T db pg_dump -U bodega -Fc bodega) > "$dump_file"
 echo "    saved: $dump_file ($(du -h "$dump_file" | cut -f1))"
