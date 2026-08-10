@@ -44,6 +44,13 @@ export const RECEIVABLE_ORDER_STATUSES = [
 ]
 
 /**
+ * OC cuya recepción en faena ya terminó. `received` se conserva para los
+ * registros históricos anteriores al cierre automático; ambas se consultan en
+ * Recepción y no deben volver a la bandeja de trabajo de Compras.
+ */
+export const COMPLETED_RECEIPT_ORDER_STATUSES = ["received", "closed"]
+
+/**
  * Estados de OC en que ya se exige la factura: llegó mercadería, así que el
  * documento tributario debería existir. Antes de recibir nada, exigirla sería
  * ruido; una vez cerrada, la OC ya no admite trabajo pendiente. Compartido por

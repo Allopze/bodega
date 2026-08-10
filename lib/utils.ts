@@ -55,6 +55,9 @@ const UNIT_PLURALS: Record<string, string> = {
   set: "sets", juego: "juegos", rollo: "rollos", servicio: "servicios",
   litro: "litros", metro: "metros", bolsa: "bolsas", tarro: "tarros",
   bidon: "bidones", bidón: "bidones", kit: "kits", pack: "packs",
+  // "dosis" es invariable: sin esta entrada el fallback la dejaba igual y
+  // acertaba por accidente; explícita, no depende de ese accidente.
+  dosis: "dosis",
 }
 
 /** Concuerda la unidad con la cantidad: "1 par", "8 rollos", "12 unidades". */

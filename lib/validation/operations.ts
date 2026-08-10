@@ -45,6 +45,8 @@ export const requestItemSchema = z.object({
   urgency:             z.enum(["normal", "high", "critical"]).default("normal"),
   requiredDate:        requiredOperationalDate.optional().nullable(),
   workerId:            z.string().optional().nullable(),
+  /** Equipo del registro al que apunta el servicio (monogás, alcotest). */
+  equipmentId:         z.string().optional().nullable(),
   suggestedSupplierId: z.string().nullable().optional(),
   supplierHint:        z.string().max(100).nullable().optional().or(z.literal("")),
   sortOrder:           z.coerce.number().int().default(0),

@@ -9,9 +9,10 @@ import {
   requestItemAttributes,
   productAttributes,
   products,
+  serviceEquipment,
   workers,
 } from "@/db/schema"
-import { catalogItemIssues, type CatalogProductRules } from "@/lib/products/service-items"
+import { catalogItemIssues, quantityFromAttributes, type CatalogProductRules } from "@/lib/products/service-items"
 import type { RequestFormData, RequestItemFormData } from "@/lib/validation/operations"
 
 /**
@@ -82,12 +83,19 @@ export async function createRequest(
  * verdad es esta: el payload llega como JSON y `isRequired`/`type` se releen
  * del catálogo, nunca de lo que mandó el cliente.
  */
-async function assertCatalogItemRules(tx: Tx, items: RequestItemFormData[]): Promise<void> {
+async function assertCatalogItemRules(
+  tx: Tx,
+  items: RequestItemFormData[],
+): Promise<Map<number, number>> {
+  const drivenQuantities = new Map<number, number>()
   const productIds = [...new Set(items.flatMap((item) => (item.productId ? [item.productId] : [])))]
-  if (productIds.length === 0) return
+  if (productIds.length === 0) return drivenQuantities
 
   const [productRows, attributeRows] = await Promise.all([
-    tx.select({ id: products.id, name: products.name, requiresWorker: products.requiresWorker })
+    tx.select({
+      id: products.id, name: products.name,
+      requiresWorker: products.requiresWorker, equipmentKind: products.equipmentKind,
+    })
       .from(products)
       .where(inArray(products.id, productIds)),
     tx.select({
@@ -96,6 +104,7 @@ async function assertCatalogItemRules(tx: Tx, items: RequestItemFormData[]): Pro
       name:       productAttributes.name,
       type:       productAttributes.type,
       isRequired: productAttributes.isRequired,
+      drivesQuantity: productAttributes.drivesQuantity,
     })
       .from(productAttributes)
       .where(inArray(productAttributes.productId, productIds)),
@@ -105,10 +114,12 @@ async function assertCatalogItemRules(tx: Tx, items: RequestItemFormData[]): Pro
     productRows.map((product) => [product.id, {
       name:           product.name,
       requiresWorker: product.requiresWorker,
+      equipmentKind:  product.equipmentKind,
       attributes:     attributeRows
         .filter((attribute) => attribute.productId === product.id)
         .map((attribute) => ({
-          id: attribute.id, name: attribute.name, type: attribute.type, isRequired: attribute.isRequired,
+          id: attribute.id, name: attribute.name, type: attribute.type,
+          isRequired: attribute.isRequired, drivesQuantity: attribute.drivesQuantity,
         })),
     }]),
   )
@@ -119,6 +130,58 @@ async function assertCatalogItemRules(tx: Tx, items: RequestItemFormData[]): Pro
     if (!rules) continue
     const issues = catalogItemIssues(rules, item)
     if (issues.length > 0) throw new Error(`Ítem ${index + 1}: ${issues.join("; ")}`)
+    // Cuando el catálogo gobierna la cantidad (nº de dosis), se deriva del
+    // atributo en vez de creerle al cliente: así no hay dos números que puedan
+    // contradecirse ni forma de pedir 1 unidad de una vacuna de 3 dosis.
+    const driven = quantityFromAttributes(rules, item)
+    if (driven !== null) drivenQuantities.set(index, driven)
+  }
+
+  return drivenQuantities
+}
+
+/**
+ * El equipo referenciado debe existir, estar activo, ser de la faena de la
+ * solicitud y de la familia que el producto atiende.
+ */
+async function assertEquipmentBelongsToRequest(
+  tx: Tx,
+  items: RequestItemFormData[],
+  worksiteId: string,
+): Promise<void> {
+  const equipmentIds = [...new Set(items.flatMap((i) => (i.equipmentId ? [i.equipmentId] : [])))]
+  if (equipmentIds.length === 0) return
+
+  const rows = await tx
+    .select({ id: serviceEquipment.id, kind: serviceEquipment.kind, code: serviceEquipment.code })
+    .from(serviceEquipment)
+    .where(and(
+      inArray(serviceEquipment.id, equipmentIds),
+      eq(serviceEquipment.worksiteId, worksiteId),
+      eq(serviceEquipment.isActive, true),
+    ))
+  const byId = new Map(rows.map((row) => [row.id, row]))
+
+  const productIds = [...new Set(items.flatMap((i) => (i.productId ? [i.productId] : [])))]
+  const kindByProductId = new Map(
+    productIds.length === 0
+      ? []
+      : (await tx.select({ id: products.id, equipmentKind: products.equipmentKind })
+          .from(products)
+          .where(inArray(products.id, productIds))
+        ).map((product) => [product.id, product.equipmentKind] as const),
+  )
+
+  for (const [index, item] of items.entries()) {
+    if (!item.equipmentId) continue
+    const equipment = byId.get(item.equipmentId)
+    if (!equipment) {
+      throw new Error(`Ítem ${index + 1}: el equipo no existe, está inactivo o es de otra faena`)
+    }
+    const expectedKind = item.productId ? kindByProductId.get(item.productId) : null
+    if (expectedKind && equipment.kind !== expectedKind) {
+      throw new Error(`Ítem ${index + 1}: el equipo ${equipment.code} no corresponde a este servicio`)
+    }
   }
 }
 
@@ -129,7 +192,7 @@ async function insertAllItems(
   items: RequestItemFormData[],
   opts: { sessionUserId: string; worksiteId: string },
 ): Promise<string[]> {
-  await assertCatalogItemRules(tx, items)
+  const drivenQuantities = await assertCatalogItemRules(tx, items)
 
   // SEC-1: workerId no se valida contra la faena de la solicitud en ningún
   // otro punto de la creación — sin esto, un solicitante puede colocar el id
@@ -147,6 +210,11 @@ async function insertAllItems(
     if (invalidId) throw new Error("El trabajador no pertenece a la faena de la solicitud")
   }
 
+  // Mismo criterio que SEC-1 para el equipo: el cliente elige cuál, nunca de qué
+  // faena ni de qué familia. Un monogás de otra faena —o un alcotest colado en
+  // una mantención de monogás— se rechaza en el origen.
+  await assertEquipmentBelongsToRequest(tx, items, opts.worksiteId)
+
   const itemIds: string[] = []
   for (const [i, item] of items.entries()) {
     const itemId = item.id ?? nanoid()
@@ -156,12 +224,13 @@ async function insertAllItems(
       requestId,
       productId:           item.productId || null,
       productNameFree:     item.productNameFree?.trim() || null,
-      quantity:            item.quantity,
+      quantity:            drivenQuantities.get(i) ?? item.quantity,
       unitOfMeasure:       item.unitOfMeasure,
       status:              "requested",
       urgency:             item.urgency,
       requiredDate,
       workerId:            item.workerId || null,
+      equipmentId:         item.equipmentId || null,
       suggestedSupplierId: item.suggestedSupplierId || null,
       supplierHint:        item.supplierHint || null,
       sortOrder:           item.sortOrder ?? i,

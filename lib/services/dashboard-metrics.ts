@@ -11,7 +11,7 @@ import {
   purchaseRequests,
   worksites,
 } from "@/db/schema"
-import { isGlobalRole, worksiteScopeSql } from "@/lib/auth/scope"
+import { worksiteScopeSql } from "@/lib/auth/scope"
 import { RECEIVABLE_ORDER_STATUSES } from "@/lib/work-queue"
 import type { Session } from "next-auth"
 

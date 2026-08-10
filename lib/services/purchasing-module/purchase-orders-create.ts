@@ -220,6 +220,10 @@ export async function createOrdersBySupplier(input: CreateOrdersBySupplierInput)
             urgency:             requestItem.urgency,
             requiredDate:        requestItem.requiredDate,
             workerId:            requestItem.workerId,
+            // Sin esto, comprar parcialmente una mantención dejaba el remanente
+            // en la cola sin decir sobre qué instrumento era: el hermano tiene
+            // que apuntar al mismo equipo que el ítem del que salió.
+            equipmentId:         requestItem.equipmentId,
             suggestedSupplierId: requestItem.suggestedSupplierId,
             supplierHint:        requestItem.supplierHint,
             sortOrder:           requestItem.sortOrder,

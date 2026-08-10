@@ -22,18 +22,23 @@ export interface DeclaredAttribute {
   name:       string
   type:       string
   isRequired: boolean
+  /** Su valor **es** la cantidad del ítem (nº de dosis, de sesiones). */
+  drivesQuantity?: boolean
 }
 
 /** Reglas que el catálogo impone al ítem que referencia este producto. */
 export interface CatalogProductRules {
   name:           string
   requiresWorker: boolean
+  /** Familia de equipos que atiende ('monogas', 'alcotest'); null = no aplica. */
+  equipmentKind?: string | null
   attributes:     DeclaredAttribute[]
 }
 
 /** Lo que el ítem trae desde el formulario. */
 export interface SubmittedItemValues {
-  workerId?:  string | null
+  workerId?:    string | null
+  equipmentId?: string | null
   attributes: readonly { attributeId?: string | null; attributeName: string; value: string }[]
 }
 
@@ -81,6 +86,10 @@ export function catalogItemIssues(
     issues.push(`selecciona el colaborador para ${product.name}`)
   }
 
+  if (product.equipmentKind && !item.equipmentId?.trim()) {
+    issues.push(`selecciona el equipo para ${product.name}`)
+  }
+
   const byId = new Map(
     item.attributes.flatMap((a) => (a.attributeId ? [[a.attributeId, a.value] as const] : [])),
   )
@@ -93,4 +102,30 @@ export function catalogItemIssues(
   }
 
   return issues
+}
+
+/**
+ * Cantidad que impone el catálogo, si algún atributo la gobierna
+ * (`drivesQuantity`). `null` = el producto no manda y vale la que escribió
+ * quien solicita.
+ *
+ * Es una derivación, no una validación: el servidor recalcula la cantidad con
+ * esto en vez de comparar dos números que el cliente pudo mandar distintos.
+ */
+export function quantityFromAttributes(
+  product: Pick<CatalogProductRules, "attributes">,
+  item: SubmittedItemValues,
+): number | null {
+  const driver = product.attributes.find((attribute) => attribute.drivesQuantity)
+  if (!driver) return null
+
+  const byId = new Map(
+    item.attributes.flatMap((a) => (a.attributeId ? [[a.attributeId, a.value] as const] : [])),
+  )
+  const byName = new Map(item.attributes.map((a) => [normalizeName(a.attributeName), a.value] as const))
+  const raw = ((driver.id ? byId.get(driver.id) : undefined) ?? byName.get(normalizeName(driver.name)) ?? "").trim()
+
+  if (!/^\d+$/.test(raw)) return null
+  const parsed = Number(raw)
+  return parsed >= 1 ? parsed : null
 }

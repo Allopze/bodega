@@ -6,7 +6,7 @@
  * Se ejecuta como proceso batch — no dentro del request HTTP.
  */
 
-import { and, desc, eq, gt, gte, inArray, isNotNull, isNull, ne, sql } from "drizzle-orm"
+import { and, desc, eq, gt, inArray, isNotNull, isNull, ne, sql } from "drizzle-orm"
 import { db } from "@/db"
 import {
   fuelAnomalyExecutions, fuelAnomalyRules,

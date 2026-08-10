@@ -115,12 +115,38 @@ export const productAttributeSchema = z.object({
   productId:  z.string().optional().nullable(),
   categoryId: z.string().optional().nullable(),
   name:       z.string().min(1, "Nombre requerido").max(60),
-  type:       z.enum(["text", "select", "number"]),
+  // `integer` es un conteo entero ≥ 1 (nº de dosis, de sesiones).
+  type:       z.enum(["text", "select", "number", "integer"]),
   isRequired: z.coerce.boolean().default(false),
   options:    z.string().max(4000, "Opciones demasiado largas").optional().nullable(),   // JSON array string for "select"
   sizeFamily: z.string().max(20).optional().or(z.literal("")).or(z.literal("undefined")),
+  /** El valor de este atributo ES la cantidad del ítem solicitado. */
+  drivesQuantity: z.coerce.boolean().default(false),
   sortOrder:  z.coerce.number().int().default(0),
+}).refine(
+  (data) => !data.drivesQuantity || data.type === "integer",
+  { message: "Solo un atributo entero puede gobernar la cantidad", path: ["drivesQuantity"] },
+)
+
+// ── Equipo de servicio (instrumentos: monogás, alcotest, …) ──────────────────
+export const serviceEquipmentSchema = z.object({
+  id:           z.string().optional(),
+  code:         z.string().trim().min(1, "Código interno requerido").max(40),
+  name:         z.string().trim().min(2, "Nombre requerido").max(120),
+  // Slug normalizado: la BD exige minúsculas sin espacios para que el match
+  // contra `products.equipment_kind` no dependa de cómo se escribió.
+  kind:         z.string().trim().toLowerCase()
+                  .min(2, "Tipo requerido").max(40)
+                  .regex(/^[a-z0-9._-]+$/, "Usa sólo letras, números, guiones o puntos, sin espacios ni tildes"),
+  brand:        z.string().trim().max(80).optional().or(z.literal("")),
+  model:        z.string().trim().max(80).optional().or(z.literal("")),
+  serialNumber: z.string().trim().max(80).optional().or(z.literal("")),
+  worksiteId:   z.string().min(1, "Selecciona una faena"),
+  notes:        z.string().max(300).optional().or(z.literal("")),
+  isActive:     z.coerce.boolean().default(true),
 })
+
+export type ServiceEquipmentFormData = z.infer<typeof serviceEquipmentSchema>
 
 // ── Product Supplier link ─────────────────────────────────────────────────────
 export const productSupplierSchema = z.object({
@@ -140,12 +166,28 @@ export const productSchema = z.object({
   unitOfMeasure:      z.string().min(1, "Unidad requerida").max(20).default("unidad"),
   isEpp:              z.coerce.boolean().default(false),
   requiresPrevencion: z.coerce.boolean().default(false),
+  /** Servicio: se solicita sin precio y su costo se registra sobre la OC. */
+  isService:          z.coerce.boolean().default(false),
+  /** Se solicita para una persona concreta (vacunas, exámenes). */
+  requiresWorker:     z.coerce.boolean().default(false),
+  /** Familia de equipos que atiende ('monogas', 'alcotest'); vacío = no aplica. */
+  equipmentKind:      z.string().trim().toLowerCase().max(40)
+                        .regex(/^[a-z0-9._-]*$/, "Usa sólo letras, números, guiones o puntos, sin espacios ni tildes")
+                        .optional().or(z.literal("")),
   referencePrice:     z.coerce.number().min(0).optional().nullable(),
   notes:              z.string().max(500).optional().or(z.literal("")),
   isActive:           z.coerce.boolean().default(true),
   attributes:         z.array(productAttributeSchema).default([]),
   suppliers:          z.array(productSupplierSchema).default([]),
 }).superRefine((data, ctx) => {
+  // El índice único parcial de la BD ya lo cierra; acá el error es legible.
+  if (data.attributes.filter((a) => a.drivesQuantity).length > 1) {
+    ctx.addIssue({
+      code: "custom",
+      message: "Solo un atributo puede gobernar la cantidad del producto",
+      path: ["attributes"],
+    })
+  }
   if (data.suppliers.filter((s) => s.isPreferred).length > 1) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
