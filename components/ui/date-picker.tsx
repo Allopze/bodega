@@ -31,6 +31,12 @@ export interface DatePickerProps {
   className?:   string
   /** Nombre accesible del campo; cuando hay valor se anuncia junto a la fecha. */
   ariaLabel?:   string
+  /**
+   * `Field` lo inyecta apuntando al mensaje de error o al texto de ayuda. Hay
+   * que declararlo y reenviarlo: las props van destructuradas, así que sin esto
+   * el clon de `Field` se perdía y el error nunca se anunciaba.
+   */
+  "aria-describedby"?: string
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -48,6 +54,7 @@ export function DatePicker({
   max,
   className,
   ariaLabel,
+  "aria-describedby": ariaDescribedBy,
 }: DatePickerProps) {
   // When uncontrolled (FormData usage), keep internal state
   const [internalValue, setInternalValue] = React.useState(defaultValue ?? "")
@@ -82,7 +89,10 @@ export function DatePicker({
             disabled={disabled}
             aria-haspopup="dialog"
             aria-expanded={open}
-            aria-invalid={error}
+            // Sin `aria-invalid`: no está permitido en role=button. El estado de
+            // error se comunica por el borde rojo más el mensaje al que apunta
+            // `aria-describedby` — que antes se perdía y no se anunciaba nunca.
+            aria-describedby={ariaDescribedBy}
             aria-label={ariaLabel
               ? `${ariaLabel}${displayLabel ? `: ${displayLabel}` : ""}`
               : displayLabel || placeholder}

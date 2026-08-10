@@ -2,7 +2,10 @@
   "$schema": "https://react.doctor/schema.json",
   "ignore": {
     "files": [
-      ".venv/**"
+      ".venv/**",
+      ".next/**",
+      "referencia/**",
+      "db/migrations/**"
     ]
   },
   "rules": {
