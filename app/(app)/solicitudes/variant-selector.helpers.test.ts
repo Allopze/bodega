@@ -8,13 +8,13 @@ function variant(id: string, size: string, attributeName = "Talla calzado"): Pro
     sku: `BOT-${size}`,
     name: "Botín de seguridad",
     isEpp: true,
-    isService: false, requiresWorker: false,
+    isService: false, requiresWorker: false, equipmentKind: null,
     unitOfMeasure: "par",
     categoryName: "Calzado",
     referencePrice: null,
     familyId: "botin-seguridad",
     preferredSupplierId: null,
-    attributes: [{ id: `size-${size}`, name: attributeName, type: "select", isRequired: true, options: JSON.stringify([size]) }],
+    attributes: [{ id: `size-${size}`, name: attributeName, type: "select", isRequired: true, drivesQuantity: false, options: JSON.stringify([size]) }],
   }
 }
 

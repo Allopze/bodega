@@ -6,6 +6,23 @@ function formatLineAmount(amount: number | null) {
   return amount === null ? "Costo pendiente" : formatCLP(amount)
 }
 
+/**
+ * Instrumento y colaborador del ítem de origen. La OC de una mantención tiene
+ * que decir sobre qué aparato es: desde que el equipo pasó a ser una FK, dejó
+ * de viajar como atributo de texto y la ficha se quedó sin ese dato.
+ */
+function ItemContext({ item }: { item: OcDetailItem }) {
+  if (!item.equipmentLabel && !item.workerName) return null
+  return (
+    <p className="mt-0.5 text-xs text-[var(--color-text-subtle)]">
+      {[
+        item.equipmentLabel ? `Equipo: ${item.equipmentLabel}` : null,
+        item.workerName ? `Colaborador: ${item.workerName}` : null,
+      ].filter(Boolean).join(" · ")}
+    </p>
+  )
+}
+
 /** Traza del costo que se registró después de emitir la orden. */
 function CostTrace({ item }: { item: OcDetailItem }) {
   if (!item.costRecordedAt) return null
@@ -51,6 +68,7 @@ export function OcDetailItems({
                   {reqCode ? `Solicitud ${reqCode}` : "Sin solicitud asociada"}
                 </p>
               </div>
+              <ItemContext item={item} />
               {item.notes && (
                 <p className="mt-2 text-xs italic text-[var(--color-text-subtle)]">{item.notes}</p>
               )}
@@ -75,6 +93,7 @@ export function OcDetailItems({
               <CostTrace item={item} />
               {item.unitPrice === null && canRecordCost && (
                 <OcItemCostForm
+                  variant="mobile"
                   purchaseOrderItemId={item.id}
                   quantity={item.quantity}
                   unitOfMeasure={item.unitOfMeasure}
@@ -135,10 +154,12 @@ export function OcDetailItems({
                       <span className="font-medium text-[var(--color-text)]">{name}</span>
                     </div>
                     {reqCode && <p className="text-xs text-[var(--color-text-subtle)] mt-0.5">Solicitud: {reqCode}</p>}
+                    <ItemContext item={item} />
                     {item.notes && <p className="text-xs text-[var(--color-text-subtle)] italic mt-0.5">{item.notes}</p>}
                     <CostTrace item={item} />
                     {item.unitPrice === null && canRecordCost && (
                       <OcItemCostForm
+                        variant="desktop"
                         purchaseOrderItemId={item.id}
                         quantity={item.quantity}
                         unitOfMeasure={item.unitOfMeasure}

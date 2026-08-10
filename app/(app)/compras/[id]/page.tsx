@@ -95,7 +95,9 @@ export default async function OcDetailPage({
     requestItemIds.length > 0
       ? db.query.purchaseRequestItems.findMany({
           where: (ri, { inArray }) => inArray(ri.id, requestItemIds),
-          with: { request: true },
+          // `equipment` y `worker`: la ficha tiene que decir sobre qué
+          // instrumento y para quién es cada línea de servicio.
+          with: { request: true, equipment: true, worker: true },
         })
       : Promise.resolve([]),
 
@@ -373,6 +375,14 @@ export default async function OcDetailPage({
                       unitPrice: i.unitPrice,
                       subtotal: i.subtotal,
                       notes: i.notes,
+                      equipmentLabel: (() => {
+                        const equipment = i.requestItemId ? reqItemMap[i.requestItemId]?.equipment : null
+                        return equipment ? `${equipment.code} · ${equipment.name}` : null
+                      })(),
+                      workerName: (() => {
+                        const worker = i.requestItemId ? reqItemMap[i.requestItemId]?.worker : null
+                        return worker ? `${worker.firstName} ${worker.lastName}` : null
+                      })(),
                       costRecordedAt: i.costRecordedAt,
                       costRecordedByName: i.costRecordedBy ? (costRecorderNameById.get(i.costRecordedBy) ?? null) : null,
                     })),

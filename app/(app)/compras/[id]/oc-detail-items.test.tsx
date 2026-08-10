@@ -28,6 +28,8 @@ describe("OcDetailItems", () => {
             unitPrice: null,
             subtotal: null,
             notes: null,
+            equipmentLabel: null,
+            workerName: null,
             costRecordedAt: null,
             costRecordedByName: null,
           }],

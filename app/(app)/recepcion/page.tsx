@@ -15,7 +15,7 @@ import { ServerPagination } from "@/components/ui/server-pagination"
 import { buildPaginationHref, resolvePagination } from "@/lib/pagination"
 import { parseListParams, eqFilter, statusSql, worksiteEqSql } from "@/lib/adquisiciones/list-query"
 import type { StageTab } from "@/components/adquisiciones/stage-tabs"
-import { RECEIVABLE_ORDER_STATUSES } from "@/lib/work-queue"
+import { COMPLETED_RECEIPT_ORDER_STATUSES, RECEIVABLE_ORDER_STATUSES } from "@/lib/work-queue"
 import { RecepcionTable } from "./recepcion-table"
 
 export const metadata: Metadata = { title: "Recepción" }
@@ -27,6 +27,7 @@ const STAGE_GROUPS = [
   { value: "sent",                                      label: "Pendiente de recepción" },
   { value: "partially_office_received,office_received", label: "Recibido en oficina" },
   { value: "partially_received",                        label: "Recibido en faena (parcial)" },
+  { value: "received,closed",                           label: "Completadas" },
 ] as const
 
 function escapeLikeLocal(value: string) {
@@ -44,7 +45,10 @@ export default async function RecepcionPage({
 
   const sp = await searchParams
   const scopeFilter = and(
-    inArray(purchaseOrders.status, RECEIVABLE_ORDER_STATUSES),
+    inArray(purchaseOrders.status, [
+      ...RECEIVABLE_ORDER_STATUSES,
+      ...COMPLETED_RECEIPT_ORDER_STATUSES,
+    ]),
     worksiteScopeSql(session, purchaseOrders.worksiteId),
   )
 
@@ -67,8 +71,8 @@ export default async function RecepcionPage({
     worksiteEqSql(purchaseOrders.worksiteId, listParams.faena),
     eqFilter(purchaseOrders.supplierId, listParams.proveedor),
   )
-  // La lista ya está acotada a los estados recibibles; las tabs eligen dentro
-  // de ellos, así que un `estado` fuera de ese conjunto no entrega nada.
+  // La lista reúne la bandeja activa y el historial terminado de Recepción;
+  // las tabs eligen dentro de ambos conjuntos de estados.
   const where = and(scopeWhere, statusSql(purchaseOrders.status, listParams.estados))
 
   const [[totalRow], stageCountRows] = await Promise.all([
@@ -164,14 +168,20 @@ export default async function RecepcionPage({
   const canFaena = can(session, "receiving:register_faena")
 
   const headerSignals: HeaderSignal[] = [
-    { key: "to-receive", label: "Por recibir", value: stageCountRows.reduce((sum, row) => sum + row.total, 0) },
+    {
+      key: "to-receive",
+      label: "Por recibir",
+      value: stageCountRows
+        .filter((row) => RECEIVABLE_ORDER_STATUSES.includes(row.status))
+        .reduce((sum, row) => sum + row.total, 0),
+    },
   ]
 
   return (
     <PageContainer>
       <PageHeader
         title="Recepción"
-        description="Registra llegada a oficina Chome y posterior recepción en faena."
+        description="Registra las llegadas y consulta las recepciones completadas."
         breadcrumb={
           <Breadcrumbs items={[
             { label: "Inicio", href: "/dashboard" },

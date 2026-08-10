@@ -15,9 +15,9 @@ describe("buildRequestSummaryIssues", () => {
 
   const VACUNA: ProductOption = {
     id: "prod-srv-vacuna", sku: "SRV-VACUNA", name: "Vacuna", isEpp: false,
-    isService: true, requiresWorker: true, unitOfMeasure: "servicio", categoryName: "cat",
+    isService: true, requiresWorker: true, equipmentKind: null, unitOfMeasure: "servicio", categoryName: "cat",
     referencePrice: null, familyId: null, preferredSupplierId: null,
-    attributes: [{ id: "pa-dosis", name: "Número de dosis", type: "integer", isRequired: true, options: null }],
+    attributes: [{ id: "pa-dosis", name: "Número de dosis", type: "integer", isRequired: true, drivesQuantity: false, options: null }],
   }
 
   function vacunaItem(overrides: { workerId?: string; dosis?: string } = {}) {
@@ -26,7 +26,7 @@ describe("buildRequestSummaryIssues", () => {
       workerId: overrides.workerId ?? "",
       attributes: [{
         attributeId: "pa-dosis", attributeName: "Número de dosis",
-        value: overrides.dosis ?? "", isRequired: true, type: "integer", options: [],
+        value: overrides.dosis ?? "", isRequired: true, drivesQuantity: false, type: "integer", options: [],
       }],
     }
   }
@@ -57,7 +57,7 @@ describe("buildRequestSummaryIssues", () => {
 
   it("una solicitud mixta sólo reporta el ítem incompleto", () => {
     const casco: ProductOption = {
-      id: "prod-casco", sku: "EPP-1", name: "Casco", isEpp: true, isService: false, requiresWorker: false,
+      id: "prod-casco", sku: "EPP-1", name: "Casco", isEpp: true, isService: false, requiresWorker: false, equipmentKind: null,
       unitOfMeasure: "unidad", categoryName: "cat", referencePrice: null, familyId: null,
       preferredSupplierId: null, attributes: [],
     }
@@ -123,15 +123,15 @@ describe("buildAttrsFromProduct", () => {
       sku: "EPP-001",
       name: "Guante nitrilo",
       isEpp: true,
-      isService: false, requiresWorker: false,
+      isService: false, requiresWorker: false, equipmentKind: null,
       unitOfMeasure: "par",
       categoryName: "EPP",
       referencePrice: null,
       familyId: null,
       preferredSupplierId: null,
       attributes: [
-        { id: "attr-size", name: "Talla", type: "select", isRequired: true, options: "S, M, L" },
-        { id: "attr-color", name: "Color", type: "select", isRequired: true, options: "Negro\nAzul" },
+        { id: "attr-size", name: "Talla", type: "select", isRequired: true, drivesQuantity: false, options: "S, M, L" },
+        { id: "attr-color", name: "Color", type: "select", isRequired: true, drivesQuantity: false, options: "Negro\nAzul" },
       ],
     }
 
@@ -145,9 +145,9 @@ describe("buildAttrsFromProduct", () => {
 
   it("preselects the sole attribute values of a catalog variant", () => {
     const product: ProductOption = {
-      id: "casco-amarillo", sku: "CAS-AMA", name: "Casco", isEpp: true, isService: false, requiresWorker: false,
+      id: "casco-amarillo", sku: "CAS-AMA", name: "Casco", isEpp: true, isService: false, requiresWorker: false, equipmentKind: null,
       unitOfMeasure: "unidad", categoryName: "EPP", referencePrice: null, familyId: null, preferredSupplierId: null,
-      attributes: [{ id: "color", name: "Color", type: "select", isRequired: true, options: '["Amarillo"]' }],
+      attributes: [{ id: "color", name: "Color", type: "select", isRequired: true, drivesQuantity: false, options: '["Amarillo"]' }],
     }
 
     expect(buildAttrsFromProduct(product)[0]).toMatchObject({ attributeName: "Color", value: "Amarillo" })

@@ -128,6 +128,8 @@ export default async function PrintOcPage({ params }: { params: Promise<{ id: st
                 const attributes = item.requestItem?.attributes.filter((attribute) =>
                   attribute.attributeName.trim() && attribute.value.trim(),
                 ) ?? []
+                const equipment = item.requestItem?.equipment
+                const worker    = item.requestItem?.worker
 
                 return (
                   <tr key={item.id}>
@@ -135,6 +137,15 @@ export default async function PrintOcPage({ params }: { params: Promise<{ id: st
                     <td className="mono">{sku}</td>
                     <td>
                       <span className="item-name">{name}</span>
+                      {equipment && (
+                        <div className="item-note">
+                          Equipo: {equipment.code} · {equipment.name}
+                          {equipment.serialNumber ? ` · N° serie ${equipment.serialNumber}` : ""}
+                        </div>
+                      )}
+                      {worker && (
+                        <div className="item-note">Colaborador: {worker.firstName} {worker.lastName}</div>
+                      )}
                       {attributes.map((attribute) => (
                         <div key={attribute.id} className="item-note">
                           {attribute.attributeName}: {attribute.value}

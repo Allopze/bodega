@@ -3,6 +3,7 @@
 import * as React from "react"
 import { MagnifyingGlass } from "@phosphor-icons/react"
 import { cn } from "@/lib/utils"
+import { useComboboxListbox } from "@/components/ui/use-combobox-listbox"
 import type { ProductOption } from "./request-form.types"
 import { groupProductsForPicker } from "./product-picker.helpers"
 
@@ -36,15 +37,10 @@ export function ProductPicker({
   placeholder = "Buscar en catálogo o escribir producto...",
   className,
 }: ProductPickerProps) {
-  const [query, setQuery]       = React.useState("")
-  const [open, setOpen]         = React.useState(false)
-  const [activeIndex, setActiveIndex] = React.useState(0)
-
-  const inputRef     = React.useRef<HTMLInputElement>(null)
-  const listboxRef   = React.useRef<HTMLUListElement>(null)
-  const listboxId    = React.useId()
-  const labelId      = React.useId()
-  const optionId     = (i: number) => `${listboxId}-opt-${i}`
+  const [query, setQuery] = React.useState("")
+  const labelId = React.useId()
+  const inputRef = React.useRef<HTMLInputElement>(null)
+  const listboxRef = React.useRef<HTMLUListElement>(null)
 
   const groups = React.useMemo(() => {
     return groupProductsForPicker(products, query)
@@ -55,16 +51,10 @@ export function ProductPicker({
   const hasFreeTextOption = query.trim().length > 0 && groups.length === 0
   const totalOptions      = groups.length + (hasFreeTextOption ? 1 : 0)
 
-  // Keep activeIndex in range when the result set changes.
-  // Derived state — recompute during render instead of firing a setState
-  // inside an effect (which would cause a cascading render).
-  const safeActiveIndex = activeIndex < totalOptions ? activeIndex : Math.max(0, totalOptions - 1)
-
   function selectProduct(productId: string) {
     onSelectProduct(productId)
     setQuery("")
-    setOpen(false)
-    setActiveIndex(0)
+    listbox.close()
     inputRef.current?.focus()
   }
 
@@ -73,58 +63,22 @@ export function ProductPicker({
     if (!trimmed) return
     onSelectFreeText(trimmed)
     setQuery("")
-    setOpen(false)
-    setActiveIndex(0)
+    listbox.close()
     inputRef.current?.focus()
   }
 
-  function moveActive(delta: number) {
-    if (totalOptions === 0) return
-    setActiveIndex((current) => {
-      const next = (current + delta + totalOptions) % totalOptions
-      return next
-    })
-  }
-
-  function handleKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
-    if (event.key === "ArrowDown") {
-      event.preventDefault()
-      if (!open) setOpen(true)
-      moveActive(1)
-      return
-    }
-    if (event.key === "ArrowUp") {
-      event.preventDefault()
-      if (!open) setOpen(true)
-      moveActive(-1)
-      return
-    }
-    if (event.key === "Home") {
-      event.preventDefault()
-      setActiveIndex(0)
-      return
-    }
-    if (event.key === "End") {
-      event.preventDefault()
-      setActiveIndex(Math.max(0, totalOptions - 1))
-      return
-    }
-    if (event.key === "Enter") {
-      if (!open) return
-      event.preventDefault()
-      const variantId = groups[safeActiveIndex]?.variants[0]?.id
+  // Teclado, apertura y `aria-activedescendant` viven en el hook compartido con
+  // `Combobox`: eran la misma implementación duplicada en dos archivos.
+  const listbox = useComboboxListbox({
+    optionCount: totalOptions,
+    listboxRef,
+    onSelect: (index) => {
+      const variantId = groups[index]?.variants[0]?.id
       if (variantId) selectProduct(variantId)
       else if (hasFreeTextOption) selectFreeText()
-      return
-    }
-    if (event.key === "Escape") {
-      if (open) {
-        event.preventDefault()
-        setOpen(false)
-      }
-      return
-    }
-  }
+    },
+  })
+  const { open, listboxId, optionId, activeIndex: safeActiveIndex } = listbox
 
   return (
     <div className={cn("relative", className)}>
@@ -138,14 +92,8 @@ export function ProductPicker({
         <input
           ref={inputRef}
           type="text"
-          role="combobox"
-          aria-autocomplete="list"
-          aria-expanded={open}
-          aria-controls={listboxId}
-          aria-activedescendant={open && totalOptions > 0 ? optionId(safeActiveIndex) : undefined}
+          {...listbox.inputAriaProps}
           aria-labelledby={labelId}
-          autoComplete="off"
-          spellCheck={false}
           className={cn(
             "h-8 w-full rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] pl-7 pr-3 text-sm",
             "text-[var(--color-text)] placeholder:text-[var(--color-text-subtle)]",
@@ -154,17 +102,10 @@ export function ProductPicker({
           )}
           placeholder={placeholder}
           value={query}
-          onChange={(e) => { setQuery(e.target.value); setOpen(true); setActiveIndex(0) }}
-          onFocus={() => setOpen(true)}
-          onBlur={(event) => {
-            // Close when focus leaves the combobox entirely (the input AND
-            // the listbox). We rely on relatedTarget to detect a tab into
-            // the listbox instead of a deferred timeout.
-            const next = event.relatedTarget as Node | null
-            if (next && listboxRef.current?.contains(next)) return
-            setOpen(false)
-          }}
-          onKeyDown={handleKeyDown}
+          onChange={(e) => { setQuery(e.target.value); listbox.setOpen(true); listbox.setActiveIndex(0) }}
+          onFocus={() => listbox.setOpen(true)}
+          onBlur={(event) => { if (listbox.focusLeft(event)) listbox.close() }}
+          onKeyDown={listbox.handleKeyDown}
         />
         <span id={labelId} className="sr-only">
           Buscar producto en catálogo o ingresar ítem libre
@@ -195,7 +136,7 @@ export function ProductPicker({
                 const variantId = group.variants[0]?.id
                 if (variantId) selectProduct(variantId)
               }}
-              onMouseEnter={() => setActiveIndex(i)}
+              onMouseEnter={() => listbox.setActiveIndex(i)}
               className={cn(
                 "flex items-center gap-2 px-3 py-2 cursor-pointer text-left",
                 "transition-colors duration-[var(--duration-fast)]",
@@ -217,7 +158,7 @@ export function ProductPicker({
               aria-selected={safeActiveIndex === groups.length}
               tabIndex={-1}
               onMouseDown={(e) => { e.preventDefault(); selectFreeText() }}
-              onMouseEnter={() => setActiveIndex(groups.length)}
+              onMouseEnter={() => listbox.setActiveIndex(groups.length)}
               className={cn(
                 "flex flex-col gap-0.5 px-3 py-2 cursor-pointer",
                 "border-t border-[var(--color-border)]",

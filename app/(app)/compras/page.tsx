@@ -17,7 +17,7 @@ import { HeaderSignals, type HeaderSignal } from "@/components/ui/header-signals
 import { ServerPagination } from "@/components/ui/server-pagination"
 import { buildPaginationHref, resolvePagination } from "@/lib/pagination"
 import { parseListParams, periodSql, statusSql, eqFilter, worksiteEqSql } from "@/lib/adquisiciones/list-query"
-import { INVOICE_DUE_ORDER_STATUSES } from "@/lib/work-queue"
+import { COMPLETED_RECEIPT_ORDER_STATUSES, INVOICE_DUE_ORDER_STATUSES } from "@/lib/work-queue"
 import { orderHasNoInvoice } from "@/lib/services/operational-work-queue"
 import type { StageTab } from "@/components/adquisiciones/stage-tabs"
 import { ComprasActions } from "./compras-actions"
@@ -37,8 +37,7 @@ const STAGE_GROUPS = [
   { value: "draft",                                        label: "Borrador" },
   { value: "sent",                                         label: "Pendiente de recepción" },
   { value: "partially_office_received,office_received",    label: "En oficina" },
-  { value: "partially_received,received",                  label: "En faena" },
-  { value: "closed",                                       label: "Completadas" },
+  { value: "partially_received",                           label: "En faena (parcial)" },
   { value: "cancelled",                                    label: "Anuladas" },
 ] as const
 
@@ -105,6 +104,9 @@ export default async function ComprasPage({
   // anuncia lo que entregaría al pulsarla, no lo que ya está en pantalla.
   const scopeWhere = and(
     worksiteScope,
+    // Una vez finalizada la recepción, la OC vive en /recepcion para que la
+    // bandeja de Compras sólo muestre trabajo de abastecimiento pendiente.
+    notInArray(purchaseOrders.status, COMPLETED_RECEIPT_ORDER_STATUSES),
     textCondition,
     worksiteEqSql(purchaseOrders.worksiteId, listParams.faena),
     eqFilter(purchaseOrders.supplierId, listParams.proveedor),
@@ -136,7 +138,11 @@ export default async function ComprasPage({
     db.select({ total: count() }).from(purchaseOrders).where(ordersWhere),
     // La señal anuncia el atraso completo de la faena visible, no el de la vista
     // filtrada: si dependiera de los filtros, se apagaría justo al filtrar.
-    db.select({ total: count() }).from(purchaseOrders).where(and(worksiteScope, invoicePendingCondition)),
+    db.select({ total: count() }).from(purchaseOrders).where(and(
+      worksiteScope,
+      notInArray(purchaseOrders.status, COMPLETED_RECEIPT_ORDER_STATUSES),
+      invoicePendingCondition,
+    )),
     db.select({ status: purchaseOrders.status, total: count() }).from(purchaseOrders).where(scopeWhere).groupBy(purchaseOrders.status),
     // Worksite options for the faena filter (scoped + active)
     db

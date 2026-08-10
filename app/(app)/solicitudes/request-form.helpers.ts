@@ -26,7 +26,8 @@ export function blankItem(key = "new-0"): ItemRow {
   return {
     _key: key, productId: null, productNameFree: "", quantity: "1", unitOfMeasure: "unidad",
     urgency: "normal", suggestedSupplierId: "", supplierHint: "", notes: "", attributes: [],
-    variantQuantities: {}, workerId: "", workerName: "", isEpp: false, productName: "", showAttrs: false, cotizaciones: [],
+    variantQuantities: {}, workerId: "", workerName: "", equipmentId: "", equipmentLabel: "",
+    isEpp: false, productName: "", showAttrs: false, cotizaciones: [],
     partNumber: "", location: "", equipmentName: "", patent: "", brand: "", model: "",
   }
 }
@@ -48,6 +49,26 @@ export function parseAttributeOptions(options: string | null | undefined): strin
   return options.split(/[\n,]/).map((item) => item.trim()).filter(Boolean)
 }
 
+/**
+ * Vuelca sobre los atributos del producto los valores que traía la copia.
+ * El molde lo sigue poniendo el catálogo (qué es obligatorio, de qué tipo);
+ * de la copia sólo se toman los valores, y se descarta lo que el producto
+ * actual ya no declara.
+ */
+export function applyPrefillAttributeValues(
+  attrs: AttrRow[],
+  prefilled: readonly { attributeId: string | null; attributeName: string; value: string }[] | undefined,
+): AttrRow[] {
+  if (!prefilled || prefilled.length === 0) return attrs
+  const byId = new Map(prefilled.flatMap((a) => (a.attributeId ? [[a.attributeId, a.value] as const] : [])))
+  const byName = new Map(prefilled.map((a) => [a.attributeName.toLocaleLowerCase("es-CL"), a.value] as const))
+  return attrs.map((attr) => {
+    const value = (attr.attributeId ? byId.get(attr.attributeId) : undefined)
+      ?? byName.get(attr.attributeName.toLocaleLowerCase("es-CL"))
+    return value === undefined ? attr : { ...attr, value }
+  })
+}
+
 export function buildAttrsFromProduct(prod: ProductOption): AttrRow[] {
   return prod.attributes.map((a) => {
     const options = parseAttributeOptions(a.options)
@@ -58,6 +79,7 @@ export function buildAttrsFromProduct(prod: ProductOption): AttrRow[] {
       isRequired: a.isRequired,
       type: a.type,
       options,
+      drivesQuantity: a.drivesQuantity,
     }
   })
 }
@@ -92,8 +114,10 @@ export function buildRequestSummaryIssues({
         {
           name: product.name,
           requiresWorker: product.requiresWorker,
+          equipmentKind: product.equipmentKind,
           attributes: product.attributes.map((a) => ({
             id: a.id, name: a.name, type: a.type, isRequired: a.isRequired,
+            drivesQuantity: a.drivesQuantity,
           })),
         },
         item,

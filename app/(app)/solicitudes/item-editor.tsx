@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/select"
 import { COST_PENDING_LABEL } from "@/lib/products/service-items"
 import { ProductPicker } from "./product-picker"
-import type { ItemRow, ProductOption, SupplierOption, WorkerOption } from "./request-form.types"
+import type { ItemRow, ProductOption, SupplierOption, WorkerOption, EquipmentOption } from "./request-form.types"
 import { QUOTATION_TYPES } from "@/lib/request-types"
 import { ItemEditorEquipment } from "./item-editor-equipment"
 import { ItemEditorSupplier } from "./item-editor-supplier"
@@ -32,6 +32,7 @@ interface ItemEditorProps {
   products:        ProductOption[]
   suppliers:       SupplierOption[]
   workers?:        WorkerOption[]
+  equipment?:      EquipmentOption[]
   readOnly:        boolean
   requestType?:    string
   maxFileSizeMb:   number
@@ -41,6 +42,7 @@ interface ItemEditorProps {
   onClearProduct:  () => void
   onUpdateAttr:    (i: number, v: string) => void
   onUpdateWorker:  (workerId: string) => void
+  onUpdateEquipment: (equipmentId: string) => void
   onRemove:        () => void
   canRemove:       boolean
 }
@@ -48,8 +50,9 @@ interface ItemEditorProps {
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export function ItemEditor({
-  item, idx, products, suppliers, workers, readOnly, requestType, maxFileSizeMb,
-  onUpdate, onSelectProduct, onSelectFreeProduct, onClearProduct, onUpdateAttr, onUpdateWorker, onRemove, canRemove,
+  item, idx, products, suppliers, workers, equipment, readOnly, requestType, maxFileSizeMb,
+  onUpdate, onSelectProduct, onSelectFreeProduct, onClearProduct, onUpdateAttr, onUpdateWorker,
+  onUpdateEquipment, onRemove, canRemove,
 }: ItemEditorProps) {
   const isQuotationType    = QUOTATION_TYPES.has(requestType ?? "")
   const selectedProduct = item.productId ? products.find((product) => product.id === item.productId) : null
@@ -59,6 +62,18 @@ export function ItemEditor({
   const sizeVariantPicker = getSizeVariantPicker(variants)
 
   const workerRequired = selectedProduct?.requiresWorker ?? false
+  const quantityDriver = item.attributes.find((attribute) => attribute.drivesQuantity)
+
+  // El servicio declara qué familia de equipos atiende; el selector ofrece sólo
+  // los instrumentos de esa familia, para no pedir calibrar un monogás.
+  const equipmentKind = selectedProduct?.equipmentKind ?? null
+  const showEquipmentPicker = !isQuotationType && (!!equipmentKind || (readOnly && !!item.equipmentId))
+  const equipmentOptions = React.useMemo(
+    () => (equipment ?? [])
+      .filter((option) => !equipmentKind || option.kind === equipmentKind)
+      .map((option) => ({ value: option.id, label: `${option.code} · ${option.name}`, hint: option.kind })),
+    [equipment, equipmentKind],
+  )
   // En consulta el bloque se muestra si el ítem tiene colaborador, aunque la
   // pantalla no cargue el padrón de trabajadores (la ficha de detalle no lo pasa).
   const showWorkerPicker = !isQuotationType && (
@@ -247,18 +262,64 @@ export function ItemEditor({
         </div>
       )}
 
+      {/* Equipo del registro — servicios sobre instrumentos (monogás, alcotest).
+          Apunta a `service_equipment` en vez de re-escribir código y serie. */}
+      {showEquipmentPicker && (
+        <div className="ml-8 max-w-sm">
+          <Field
+            label="Equipo"
+            required={!!equipmentKind}
+            htmlFor={`equipment-${item._key}`}
+            helper={readOnly ? undefined : "Busca por código interno o nombre. Se registra el equipo, no una copia de sus datos."}
+          >
+            {readOnly ? (
+              <Input
+                id={`equipment-${item._key}`}
+                className="h-8 text-sm disabled:opacity-100 disabled:cursor-default"
+                value={item.equipmentLabel || "Sin asignar"}
+                disabled
+                readOnly
+              />
+            ) : (
+              <Combobox
+                id={`equipment-${item._key}`}
+                options={equipmentOptions}
+                value={item.equipmentId}
+                onChange={onUpdateEquipment}
+                placeholder="Buscar equipo..."
+              />
+            )}
+          </Field>
+          {!readOnly && equipmentOptions.length === 0 && (
+            <p className="mt-1 text-[11px] text-(--color-warning-ink)">
+              No hay equipos registrados de este tipo en el catálogo. Pídele a Administración que lo dé de alta.
+            </p>
+          )}
+        </div>
+      )}
+
       {/* Quantity + unit + (urgency for catalog types only) */}
       <div className={`ml-8 grid gap-3 ${isQuotationType ? "grid-cols-2" : "grid-cols-2 sm:grid-cols-3"}`}>
-        <Field label="Cantidad" required htmlFor={`qty-${item._key}`}>
+        {/* Cuando el catálogo declara que un atributo gobierna la cantidad
+            (el nº de dosis de una vacuna), este campo pasa a ser de lectura:
+            eran dos números para el mismo dato y nada obligaba a que
+            coincidieran. El servidor la deriva del atributo igual. */}
+        <Field
+          label="Cantidad"
+          required={!quantityDriver}
+          htmlFor={`qty-${item._key}`}
+          helper={!readOnly && quantityDriver ? `Se toma de ${quantityDriver.attributeName}.` : undefined}
+        >
           <Input
             id={`qty-${item._key}`}
             type="number"
             min="0.01"
             step="any"
-            className="h-8 text-sm tabular-nums"
+            className="h-8 text-sm tabular-nums disabled:opacity-100 disabled:cursor-default"
             value={item.quantity}
             onChange={(e) => onUpdate({ quantity: e.target.value })}
-            disabled={readOnly}
+            disabled={readOnly || !!quantityDriver}
+            readOnly={!!quantityDriver}
           />
         </Field>
 

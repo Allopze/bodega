@@ -25,6 +25,7 @@ const WORKERS: WorkerOption[] = [
 function product(overrides: Partial<ProductOption>): ProductOption {
   return {
     id: "prod-x", sku: "SKU-X", name: "Producto", isEpp: false, isService: false, requiresWorker: false,
+    equipmentKind: null,
     unitOfMeasure: "unidad", categoryName: "cat", referencePrice: null, familyId: null,
     preferredSupplierId: null, attributes: [],
     ...overrides,
@@ -33,14 +34,15 @@ function product(overrides: Partial<ProductOption>): ProductOption {
 
 const VACUNA = product({
   id: "prod-srv-vacuna", sku: "SRV-VACUNA", name: "Vacuna",
-  isService: true, requiresWorker: true, unitOfMeasure: "servicio",
-  attributes: [{ id: "pa-dosis", name: "Número de dosis", type: "integer", isRequired: true, options: null }],
+  isService: true, requiresWorker: true, unitOfMeasure: "dosis",
+  // El nº de dosis gobierna la cantidad del ítem: son el mismo número.
+  attributes: [{ id: "pa-dosis", name: "Número de dosis", type: "integer", isRequired: true, drivesQuantity: true, options: null }],
 })
 
 const MONOGAS = product({
   id: "prod-srv-monogas", sku: "SRV-MONOGAS", name: "Mantención de monogás",
   isService: true, unitOfMeasure: "servicio",
-  attributes: [{ id: "pa-serie", name: "Código interno / N° de serie", type: "text", isRequired: true, options: null }],
+  attributes: [{ id: "pa-serie", name: "Código interno / N° de serie", type: "text", isRequired: true, drivesQuantity: false, options: null }],
 })
 
 const CASCO = product({ id: "prod-casco", sku: "EPP-1", name: "Casco", isEpp: true })
@@ -55,6 +57,7 @@ function itemFor(prod: ProductOption, overrides: Partial<ItemRow> = {}): ItemRow
     attributes: prod.attributes.map((attribute) => ({
       attributeId: attribute.id, attributeName: attribute.name, value: "",
       isRequired: attribute.isRequired, type: attribute.type, options: [],
+      drivesQuantity: attribute.drivesQuantity,
     })),
     ...overrides,
   }
@@ -77,6 +80,7 @@ function renderItem(prod: ProductOption, overrides: Partial<ItemRow> = {}, props
       onClearProduct={vi.fn()}
       onUpdateAttr={vi.fn()}
       onUpdateWorker={vi.fn()}
+      onUpdateEquipment={vi.fn()}
       onRemove={vi.fn()}
       canRemove={false}
     />,

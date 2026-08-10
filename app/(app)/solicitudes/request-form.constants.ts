@@ -8,5 +8,5 @@ export { URGENCY_OPTIONS as URGENCY_OPTS, URGENCY_LABELS } from "@/lib/urgency-l
  */
 export const UNIT_OF_MEASURE_OPTIONS = [
   "unidad", "par", "caja", "paquete", "set", "juego",
-  "rollo", "bolsa", "litro", "metro", "kg", "servicio",
+  "rollo", "bolsa", "litro", "metro", "kg", "servicio", "dosis",
 ] as const

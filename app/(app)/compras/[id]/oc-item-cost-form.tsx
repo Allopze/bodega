@@ -19,13 +19,20 @@ export function OcItemCostForm({
   purchaseOrderItemId,
   quantity,
   unitOfMeasure,
+  variant,
 }: {
   purchaseOrderItemId: string
   quantity: number
   unitOfMeasure: string
+  /**
+   * La ficha dibuja la línea dos veces (tarjeta móvil y tabla de escritorio), y
+   * sin esto las dos instancias compartían el `id` del input: DOM inválido y
+   * `duplicate-id` en axe, además de un `<label for>` ambiguo.
+   */
+  variant: "mobile" | "desktop"
 }) {
   const [state, action] = useActionState<ActionState, FormData>(recordItemCostAction, INITIAL_STATE)
-  const inputId = `cost-${purchaseOrderItemId}`
+  const inputId = `cost-${variant}-${purchaseOrderItemId}`
 
   React.useEffect(() => {
     if (state === INITIAL_STATE || !state.message) return

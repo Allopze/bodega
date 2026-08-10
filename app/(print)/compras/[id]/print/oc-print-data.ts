@@ -31,7 +31,11 @@ async function loadOrderWithRelations(id: string) {
         orderBy: (i, { asc }) => [asc(i.sortOrder)],
         with: {
           requestItem: {
-            with: { request: true, attributes: true },
+            // `equipment` y `worker`: el instrumento y la persona son parte del
+            // encargo. Desde que el equipo pasó a ser una FK (0149) dejó de
+            // viajar como atributo de texto, y la OC impresa quedó sin decirle
+            // al proveedor qué aparato tiene que mantener.
+            with: { request: true, attributes: true, equipment: true, worker: true },
           },
         },
       },

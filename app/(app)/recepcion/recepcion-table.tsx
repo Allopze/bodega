@@ -91,16 +91,16 @@ export function RecepcionTable({ orders, wsMap, supMap, gapMap, canOffice, canFa
       supplierOptions={supplierOptions}
     />
     <DataTable
-      caption="Órdenes de Compra Pendientes de Recepción"
+      caption="Órdenes de compra en recepción"
       columns={COLUMNS}
       rows={rows}
       searchKeys={["code"]}
       disableInternalSearch
       pageSize={RECEPCION_PAGE_SIZE}
-      emptyTitle="Sin OCs pendientes de recepción"
+      emptyTitle="Sin OCs en recepción"
       emptyDescription={hasActiveFilters
         ? "No hay órdenes que coincidan con los filtros aplicados."
-        : "No hay órdenes esperando recepción."}
+        : "No hay órdenes en esta etapa de recepción."}
       emptyAction={hasActiveFilters ? (
         <Button type="button" size="sm" variant="secondary" onClick={() => router.replace("/recepcion", { scroll: false })}>
           Limpiar filtros

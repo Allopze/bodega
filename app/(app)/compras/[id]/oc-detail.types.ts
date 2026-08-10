@@ -9,6 +9,9 @@ export interface OcDetailItem {
   unitPrice: number | null
   subtotal: number | null
   notes: string | null
+  /** Instrumento y colaborador del ítem de origen, cuando el servicio los nombra. */
+  equipmentLabel: string | null
+  workerName: string | null
   /** Traza del costo registrado a posteriori: cuándo y quién. */
   costRecordedAt: string | null
   costRecordedByName: string | null

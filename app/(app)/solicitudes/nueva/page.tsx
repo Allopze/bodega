@@ -1,8 +1,8 @@
 import type { Metadata } from "next"
 import { redirect } from "next/navigation"
 import { db } from "@/db"
-import { worksites, products, productAttributes, suppliers, productSuppliers, workers, purchaseRequests } from "@/db/schema"
-import { eq, asc, desc } from "drizzle-orm"
+import { worksites, products, productAttributes, suppliers, productSuppliers, workers, serviceEquipment, purchaseRequests } from "@/db/schema"
+import { eq, asc, desc, inArray } from "drizzle-orm"
 import { requireAuth } from "@/lib/auth/can"
 import { canAccessWorksite } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
@@ -39,7 +39,7 @@ export default async function NuevaSolicitudPage({
     ? "El tipo indicado en el enlace no está disponible para tu cuenta. Se seleccionó el primer tipo de solicitud que puedes crear."
     : undefined
 
-  const [allWorksites, allProducts, allAttrs, productSupplierRows, allSuppliers, allWorkers, maxFileSizeMb] = await Promise.all([
+  const [allWorksites, allProducts, allAttrs, productSupplierRows, allSuppliers, allWorkers, allEquipment, maxFileSizeMb] = await Promise.all([
     db.select().from(worksites)
       .where(eq(worksites.isActive, true))
       .orderBy(asc(worksites.name)),
@@ -66,6 +66,12 @@ export default async function NuevaSolicitudPage({
     }).from(workers)
       .where(eq(workers.isActive, true))
       .orderBy(asc(workers.lastName), asc(workers.firstName)),
+    db.select({
+      id: serviceEquipment.id, code: serviceEquipment.code, name: serviceEquipment.name,
+      kind: serviceEquipment.kind, worksiteId: serviceEquipment.worksiteId,
+    }).from(serviceEquipment)
+      .where(eq(serviceEquipment.isActive, true))
+      .orderBy(asc(serviceEquipment.code)),
     getPdfMaxSizeMb(),
   ])
 
@@ -101,6 +107,7 @@ export default async function NuevaSolicitudPage({
     isEpp:          p.isEpp,
     isService:      p.isService,
     requiresWorker: p.requiresWorker,
+    equipmentKind:  p.equipmentKind,
     unitOfMeasure:  p.unitOfMeasure,
     categoryName:   p.categoryId,
     referencePrice: p.referencePrice,
@@ -113,6 +120,7 @@ export default async function NuevaSolicitudPage({
         name:       a.name,
         type:       a.type,
         isRequired: a.isRequired,
+        drivesQuantity: a.drivesQuantity,
         options:    a.options,
       })),
   }))
@@ -136,6 +144,10 @@ export default async function NuevaSolicitudPage({
       sizeGloves: w.sizeGloves,
       sizeHelmet: w.sizeHelmet,
     }))
+
+  // Sólo los equipos de las faenas que la persona puede ver: el selector no
+  // debe delatar el parque de instrumentos de otra faena.
+  const equipmentOptions = allEquipment.filter((e) => scopedWorksiteIds.has(e.worksiteId))
 
   // ── Ítems precargados: reposición de EPP o copia de otra solicitud ──────────
   const { prefillItems, prefillNotice } = await buildPrefill({
@@ -192,6 +204,7 @@ export default async function NuevaSolicitudPage({
         products={productOptions}
         suppliers={supplierOptions}
         workers={workerOptions}
+        equipment={equipmentOptions}
         maxFileSizeMb={maxFileSizeMb}
         userRoles={session.user.roles}
         userPermissions={session.user.permissions}
@@ -222,12 +235,24 @@ async function buildPrefill({
   if (desdeId) {
     const source = await db.query.purchaseRequests.findFirst({
       where: eq(purchaseRequests.id, desdeId),
-      with: { items: true },
+      with: { items: { with: { attributes: true } } },
     })
     // Sin acceso a la faena de origen no se copia nada: el creador se abre vacío.
     if (!source || !canAccessWorksite(session, source.worksiteId)) return {}
     const isOwner = source.requesterId === session.user.id
     if (!isOwner && !session.user.permissions.includes("requests:view_all")) return {}
+
+    // El colaborador y los atributos viajan con la copia: sin ellos, duplicar una
+    // vacuna o una mantención perdía en silencio para quién era y de qué equipo,
+    // y el creador se abría con los campos obligatorios en blanco sin decir por qué.
+    const workerIds = [...new Set(source.items.flatMap((item) => item.workerId ? [item.workerId] : []))]
+    const workerRows = workerIds.length === 0
+      ? []
+      : await db
+          .select({ id: workers.id, firstName: workers.firstName, lastName: workers.lastName })
+          .from(workers)
+          .where(inArray(workers.id, workerIds))
+    const workerNameById = new Map(workerRows.map((w) => [w.id, `${w.firstName} ${w.lastName}`]))
 
     return {
       prefillItems: source.items.map((item) => ({
@@ -239,6 +264,11 @@ async function buildPrefill({
         notes:               item.notes ?? "",
         suggestedSupplierId: item.suggestedSupplierId,
         supplierHint:        item.supplierHint,
+        workerId:            item.workerId,
+        workerName:          item.workerId ? (workerNameById.get(item.workerId) ?? null) : null,
+        attributes:          item.attributes.map((a) => ({
+          attributeId: a.attributeId, attributeName: a.attributeName, value: a.value,
+        })),
       })),
       prefillNotice: `Ítems copiados de ${source.code}. Revísalos antes de enviar: la copia se crea recién al enviarla.`,
     }

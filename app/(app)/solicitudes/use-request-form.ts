@@ -6,12 +6,12 @@ import { INITIAL_STATE } from "@/components/admin/form-state"
 import { useActionWatchers } from "@/lib/hooks/use-action-watchers"
 import { URGENCY_OPTS } from "./request-form.constants"
 import type { ActionState } from "@/lib/validation/operations"
-import type { ItemRow, ProductOption, WorksiteOption, SupplierOption, WorkerOption, EditRequest, PrefillItem } from "./request-form.types"
+import type { ItemRow, ProductOption, WorksiteOption, SupplierOption, WorkerOption, EquipmentOption, EditRequest, PrefillItem } from "./request-form.types"
 import { QUOTATION_TYPES, visibleRequestTypeOptions } from "@/lib/request-types"
 import type { RequestType } from "@/lib/request-types"
 import { saveDraft, submitRequest, cancelRequest, deleteRequestAction } from "./actions"
 import {
-  blankItemForType, buildAttrsFromProduct, buildRequestSummaryIssues,
+  applyPrefillAttributeValues, blankItemForType, buildAttrsFromProduct, buildRequestSummaryIssues,
   equipmentFromAttributes, parseAttributeOptions, requestStatusLabel,
 } from "./request-form.helpers"
 import { groupProductVariants } from "@/lib/products/variant-grouping"
@@ -150,9 +150,11 @@ function useDraftPersistence({
 }
 
 export function useRequestForm({
-  worksites, products, workers, editRequest, userPermissions = [], initialRequestType, prefillItems,
+  worksites, products, workers, equipment: equipmentOptions, editRequest,
+  userPermissions = [], initialRequestType, prefillItems,
 }: {
   worksites: WorksiteOption[]; products: ProductOption[]; suppliers: SupplierOption[]; workers?: WorkerOption[]
+  equipment?: EquipmentOption[]
   editRequest?: EditRequest; maxFileSizeMb: number; userRoles?: string[]; userPermissions?: string[]
   initialRequestType?: RequestType; prefillItems?: PrefillItem[]
 }) {
@@ -202,6 +204,7 @@ export function useRequestForm({
           // Sin esto la ficha de una solicitud ya enviada mostraba el selector de
           // colaborador vacío aunque el ítem sí tuviera uno asignado.
           variantQuantities: {}, workerId: item.workerId ?? "", workerName: item.workerName ?? "",
+          equipmentId: item.equipmentId ?? "", equipmentLabel: item.equipmentLabel ?? "",
           showAttrs: !isQuotation && item.attributes.length > 0, cotizaciones: [],
           ...equipmentFromAttributes(editRequest.requestType, item.attributes),
           attributes: isQuotation ? [] : item.attributes.map((a) => {
@@ -209,6 +212,7 @@ export function useRequestForm({
             return {
               attributeId: a.attributeId, attributeName: a.attributeName, value: a.value,
               isRequired: prodAttr?.isRequired ?? false, type: prodAttr?.type ?? "text",
+              drivesQuantity: prodAttr?.drivesQuantity ?? false,
               options: parseAttributeOptions(prodAttr?.options),
             }
           }),
@@ -218,7 +222,7 @@ export function useRequestForm({
     if (prefillItems && prefillItems.length > 0) {
       return prefillItems.map((prefill, index) => {
         const prod = prefill.productId ? products.find((p) => p.id === prefill.productId) : null
-        const attrs = prod ? buildAttrsFromProduct(prod) : []
+        const attrs = applyPrefillAttributeValues(prod ? buildAttrsFromProduct(prod) : [], prefill.attributes)
         return {
           // Esta llave llega a los id/htmlFor de los controles. Debe ser idéntica
           // durante SSR e hidratación; los UUID quedan reservados para ítems que
@@ -233,6 +237,8 @@ export function useRequestForm({
           notes:               prefill.notes,
           workerId:            prefill.workerId ?? "",
           workerName:          prefill.workerName ?? "",
+          equipmentId:         prefill.equipmentId ?? "",
+          equipmentLabel:      prefill.equipmentLabel ?? "",
           suggestedSupplierId: prefill.suggestedSupplierId ?? "",
           supplierHint:        prefill.supplierHint ?? "",
           isEpp:               prod?.isEpp ?? false,
@@ -278,12 +284,17 @@ export function useRequestForm({
     if (!prod) return
     setItems((prev) => prev.map((i) => {
       if (i._key !== key) return i
+      const previousKind = i.productId ? products.find((p) => p.id === i.productId)?.equipmentKind ?? null : null
       const attrs = buildAttrsFromProduct(prod)
       // Cambiar de concepto no puede arrastrar datos del anterior: los atributos
       // se reconstruyen desde el producto nuevo (así el "Número de dosis" de una
       // vacuna desaparece) y el colaborador se descarta salvo que el nuevo
       // producto también lo pida (o sea EPP, donde es opcional).
       const keepsWorker = prod.requiresWorker || prod.isEpp
+      // El equipo sólo sobrevive si el servicio nuevo atiende la misma familia;
+      // si no, arrastrarlo dejaría un alcotest colgando de una mantención de
+      // monogás (el servidor lo rechaza igual, pero acá no llega a pasar).
+      const keepsEquipment = !!prod.equipmentKind && prod.equipmentKind === previousKind
       return {
         ...i,
         productId: prod.id, productNameFree: "", productName: prod.name,
@@ -292,6 +303,8 @@ export function useRequestForm({
         attributes: attrs, variantQuantities: {}, showAttrs: attrs.length > 0,
         workerId: keepsWorker ? i.workerId : "",
         workerName: keepsWorker ? i.workerName : "",
+        equipmentId: keepsEquipment ? i.equipmentId : "",
+        equipmentLabel: keepsEquipment ? i.equipmentLabel : "",
       }
     }))
   }, [products])
@@ -302,13 +315,13 @@ export function useRequestForm({
     setItems((prev) => prev.map((i) =>
       // Un ítem fuera de catálogo no tiene reglas de producto: pierde también el
       // colaborador que hubiera quedado de la selección anterior.
-      i._key !== key ? i : { ...i, productId: null, productNameFree: trimmed, productName: trimmed, isEpp: false, unitOfMeasure: i.unitOfMeasure || "unidad", suggestedSupplierId: "", supplierHint: "", attributes: [], showAttrs: false, workerId: "", workerName: "" }
+      i._key !== key ? i : { ...i, productId: null, productNameFree: trimmed, productName: trimmed, isEpp: false, unitOfMeasure: i.unitOfMeasure || "unidad", suggestedSupplierId: "", supplierHint: "", attributes: [], showAttrs: false, workerId: "", workerName: "", equipmentId: "", equipmentLabel: "" }
     ))
   }, [])
 
   const clearProduct = useCallback((key: string) => {
     setItems((prev) => prev.map((i) =>
-      i._key !== key ? i : { ...i, productId: null, productNameFree: "", productName: "", isEpp: false, suggestedSupplierId: "", supplierHint: "", attributes: [], showAttrs: false, workerId: "", workerName: "" }
+      i._key !== key ? i : { ...i, productId: null, productNameFree: "", productName: "", isEpp: false, suggestedSupplierId: "", supplierHint: "", attributes: [], showAttrs: false, workerId: "", workerName: "", equipmentId: "", equipmentLabel: "" }
     ))
   }, [])
 
@@ -354,11 +367,29 @@ export function useRequestForm({
     }))
   }, [products, workers])
 
+  const updateItemEquipment = useCallback((key: string, equipmentId: string) => {
+    const equipment = equipmentId ? (equipmentOptions ?? []).find((e) => e.id === equipmentId) : undefined
+    setItems((prev) => prev.map((i) => i._key === key
+      ? {
+          ...i,
+          equipmentId: equipment?.id ?? "",
+          equipmentLabel: equipment ? `${equipment.code} · ${equipment.name}` : "",
+        }
+      : i))
+  }, [equipmentOptions])
+
   const updateAttr = useCallback((itemKey: string, attrIdx: number, value: string) => {
     setItems((prev) => prev.map((i) => {
       if (i._key !== itemKey) return i
       const attrs = i.attributes.map((a, idx) => idx === attrIdx ? { ...a, value } : a)
-      return { ...i, attributes: attrs }
+      // Un atributo que gobierna la cantidad (nº de dosis) la escribe él: el
+      // servidor la deriva igual, así que el formulario tiene que mostrar el
+      // mismo número en vez de dejar dos campos que se contradicen.
+      const driver = attrs.find((a) => a.drivesQuantity)
+      const drivenQuantity = driver && /^\d+$/.test(driver.value.trim()) && Number(driver.value) >= 1
+        ? driver.value.trim()
+        : undefined
+      return { ...i, attributes: attrs, ...(drivenQuantity ? { quantity: drivenQuantity } : {}) }
     }))
   }, [])
 
@@ -370,10 +401,18 @@ export function useRequestForm({
         requiredDate: requiredDate || null, suggestedSupplierId: item.suggestedSupplierId || null,
         supplierHint: item.supplierHint || null, notes: item.notes || null,
         workerId: item.workerId || null,
+        equipmentId: item.equipmentId || null,
         partNumber: item.partNumber || null, location: item.location || null,
         equipmentName: item.equipmentName || null, patent: item.patent || null,
         brand: item.brand || null, model: item.model || null,
-        attributes: item.attributes.map((a) => ({ attributeId: a.attributeId, attributeName: a.attributeName, value: a.value })),
+        // Sólo los atributos con valor: un opcional en blanco no es un dato, y
+        // enviarlo hacía que el esquema del servidor rechazara la solicitud
+        // entera con "Valor requerido" mientras el panel decía "Listo para
+        // crear". Lo destapó el primer producto del catálogo con atributos
+        // realmente opcionales (Marca/Modelo de un monogás).
+        attributes: item.attributes.flatMap((a) => a.value.trim()
+          ? [{ attributeId: a.attributeId, attributeName: a.attributeName, value: a.value.trim() }]
+          : []),
         replenishmentGapKey: item.replenishmentGapKey ?? null,
       }
       return [{
@@ -485,7 +524,8 @@ export function useRequestForm({
     itemsError, requiredDateError, submitMessage, submitOk,
     canDeleteRequest, canCancelRequest, deleteConfirmOpen, setDeleteConfirmOpen,
     isSaving, isSubmitting, isDeleting, draftPending,
-    addItem, removeItem, updateItem, selectProduct, selectFreeProduct, clearProduct, updateItemWorker, updateAttr,
+    addItem, removeItem, updateItem, selectProduct, selectFreeProduct, clearProduct,
+    updateItemWorker, updateItemEquipment, updateAttr,
     buildDraftFormData, draftAction, submitAction, cancelAction, deleteAction,
     startSaveTransition, startSubmitTransition, startDeleteTransition, silentNavBack,
     pendingHref, setPendingHref, confirmLeave,

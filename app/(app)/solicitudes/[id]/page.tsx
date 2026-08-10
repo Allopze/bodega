@@ -3,7 +3,7 @@ import { notFound, redirect } from "next/navigation"
 import { db } from "@/db"
 import {
   purchaseRequests,
-  worksites, products, productAttributes, workers,
+  worksites, products, productAttributes, workers, serviceEquipment,
   statusHistory, users, suppliers, productSuppliers,
   approvalDecisions, purchaseRequestItems,
   repuestoQuotations, serviceQuotations,
@@ -138,6 +138,21 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
     referencedWorkers.map((worker) => [worker.id, `${worker.firstName} ${worker.lastName}`]),
   )
 
+  // Mismo criterio para el equipo: la ficha debe decir sobre qué instrumento es
+  // el servicio, sin cargar el registro completo.
+  const referencedEquipmentIds = [...new Set(
+    request.items.map((i) => i.equipmentId).filter((id): id is string => id != null),
+  )]
+  const referencedEquipment = referencedEquipmentIds.length === 0
+    ? []
+    : await db
+        .select({ id: serviceEquipment.id, code: serviceEquipment.code, name: serviceEquipment.name })
+        .from(serviceEquipment)
+        .where(inArray(serviceEquipment.id, referencedEquipmentIds))
+  const equipmentLabelById = new Map(
+    referencedEquipment.map((equipment) => [equipment.id, `${equipment.code} · ${equipment.name}`]),
+  )
+
   const [allWorksites, allProducts, allAttrs, productSupplierRows, timelineEvents, approvalDecisionRows, allSuppliers, maxFileSizeMb] = await Promise.all([
     db.select().from(worksites).where(eq(worksites.isActive, true)).orderBy(asc(worksites.name)),
     canEditItems
@@ -236,6 +251,7 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
     isEpp:          p.isEpp,
     isService:      p.isService,
     requiresWorker: p.requiresWorker,
+    equipmentKind:  p.equipmentKind,
     unitOfMeasure:  p.unitOfMeasure,
     categoryName:   p.categoryId,
     referencePrice: p.referencePrice,
@@ -244,7 +260,7 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
     preferredSupplierId: preferredSupplierByProduct.get(p.id) ?? null,
     attributes:     allAttrs
       .filter((a) => a.productId === p.id)
-      .map((a) => ({ id: a.id, name: a.name, type: a.type, isRequired: a.isRequired, options: a.options })),
+      .map((a) => ({ id: a.id, name: a.name, type: a.type, isRequired: a.isRequired, drivesQuantity: a.drivesQuantity, options: a.options })),
   }))
 
   const supplierOptions = allSuppliers.map((s) => ({
@@ -357,6 +373,8 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
       status:              item.status,
       workerId:            item.workerId,
       workerName:          item.workerId ? (workerNameById.get(item.workerId) ?? null) : null,
+      equipmentId:         item.equipmentId,
+      equipmentLabel:      item.equipmentId ? (equipmentLabelById.get(item.equipmentId) ?? null) : null,
       attributes:          item.attributes.map((a) => ({
         attributeId:   a.attributeId,
         attributeName: a.attributeName,

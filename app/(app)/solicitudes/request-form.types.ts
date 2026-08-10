@@ -13,13 +13,15 @@ export interface ProductOption {
   isService:       boolean
   /** El ítem se pide para una persona concreta (vacunas, exámenes). */
   requiresWorker:  boolean
+  /** Familia de equipos que atiende el servicio ('monogas', 'alcotest'). */
+  equipmentKind:   string | null
   unitOfMeasure:   string
   categoryName:    string
   referencePrice:  number | null
   isInactive?:     boolean
   familyId:        string | null
   preferredSupplierId: string | null
-  attributes:      { id: string; name: string; type: string; isRequired: boolean; options: string | null }[]
+  attributes:      { id: string; name: string; type: string; isRequired: boolean; options: string | null; drivesQuantity: boolean }[]
 }
 
 export interface WorksiteOption {
@@ -30,6 +32,15 @@ export interface WorksiteOption {
 export interface SupplierOption {
   id:   string
   name: string
+}
+
+/** Instrumento del registro que un servicio puede atender. */
+export interface EquipmentOption {
+  id:         string
+  code:       string
+  name:       string
+  kind:       string
+  worksiteId: string
 }
 
 export interface WorkerOption {
@@ -71,6 +82,9 @@ export interface EditItem {
   /** Colaborador del ítem (EPP nominado, vacunas). */
   workerId:            string | null
   workerName:          string | null
+  /** Equipo del registro (mantención de monogás, calibración de alcotest). */
+  equipmentId:         string | null
+  equipmentLabel:      string | null
   attributes:          { attributeId: string | null; attributeName: string; value: string }[]
 }
 
@@ -92,6 +106,8 @@ export interface ItemRow {
   variantQuantities:   Record<string, number>
   workerId:            string
   workerName:          string
+  equipmentId:         string
+  equipmentLabel:      string
   isEpp:               boolean
   productName:         string
   showAttrs:           boolean
@@ -121,9 +137,13 @@ export interface PrefillItem {
   notes:                string
   workerId?:            string | null
   workerName?:          string | null
+  equipmentId?:         string | null
+  equipmentLabel?:      string | null
   suggestedSupplierId?: string | null
   supplierHint?:        string | null
   replenishmentGapKey?: string
+  /** Atributos ya cargados (copia de otra solicitud), por nombre y valor. */
+  attributes?:          { attributeId: string | null; attributeName: string; value: string }[]
 }
 
 export interface PendingCotizacion {
@@ -146,4 +166,6 @@ export interface AttrRow {
   isRequired:    boolean
   type:          string
   options:       string[]
+  /** Su valor es la cantidad del ítem; el campo Cantidad pasa a ser de lectura. */
+  drivesQuantity: boolean
 }

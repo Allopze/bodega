@@ -22,7 +22,7 @@ import { URGENCY_OPTS, UNIT_OF_MEASURE_OPTIONS } from "./request-form.constants"
 import { formatDate, formatDateTime } from "@/lib/utils"
 import { QUOTATION_TYPES } from "@/lib/request-types"
 import type { RequestType } from "@/lib/request-types"
-import type { ItemRow, ProductOption, WorksiteOption, SupplierOption, WorkerOption, EditRequest, PrefillItem } from "./request-form.types"
+import type { ItemRow, ProductOption, WorksiteOption, SupplierOption, WorkerOption, EquipmentOption, EditRequest, PrefillItem } from "./request-form.types"
 import { useRequestForm } from "./use-request-form"
 
 function SummaryLine({ label, value, muted = false }: { label: string; value: string; muted?: boolean }) {
@@ -41,6 +41,7 @@ interface RequestFormProps {
   products: ProductOption[]
   suppliers: SupplierOption[]
   workers?: WorkerOption[]
+  equipment?: EquipmentOption[]
   editRequest?: EditRequest
   maxFileSizeMb: number
   userRoles?: string[]
@@ -126,15 +127,18 @@ function RequestFormHeader({
 
 function ItemsSection({
   items, requestType, requestTypeLabel: _requestTypeLabel, readOnly, savedId, itemsError,
-  products, suppliers, workers, maxFileSizeMb,
+  products, suppliers, workers, equipment, maxFileSizeMb,
   onAdd, onRemove, onUpdate, onSelectProduct, onSelectFreeProduct, onClearProduct, onUpdateAttr, onUpdateWorker,
+  onUpdateEquipment,
 }: {
   items: ItemRow[]; requestType: string; requestTypeLabel?: string; readOnly: boolean; savedId?: string
-  itemsError?: string; products: ProductOption[]; suppliers: SupplierOption[]; workers?: WorkerOption[]; maxFileSizeMb: number
+  itemsError?: string; products: ProductOption[]; suppliers: SupplierOption[]; workers?: WorkerOption[]
+  equipment?: EquipmentOption[]; maxFileSizeMb: number
   onAdd: () => void; onRemove: (key: string) => void; onUpdate: (key: string, patch: Partial<ItemRow>) => void
   onSelectProduct: (key: string, pid: string) => void; onSelectFreeProduct: (key: string, name: string) => void
   onClearProduct: (key: string) => void; onUpdateAttr: (itemKey: string, attrIdx: number, value: string) => void
   onUpdateWorker: (itemKey: string, workerId: string) => void
+  onUpdateEquipment: (itemKey: string, equipmentId: string) => void
 }) {
   return (
     <section className="space-y-3">
@@ -160,7 +164,7 @@ function ItemsSection({
       </datalist>
       <div className="space-y-2">
         {items.map((item, idx) => (
-          <ItemEditor key={item._key} item={item} idx={idx} products={products} suppliers={suppliers} workers={workers}
+          <ItemEditor key={item._key} item={item} idx={idx} products={products} suppliers={suppliers} workers={workers} equipment={equipment}
             readOnly={readOnly} requestType={requestType} maxFileSizeMb={maxFileSizeMb}
             onUpdate={(patch) => onUpdate(item._key, patch)}
             onSelectProduct={(pid) => onSelectProduct(item._key, pid)}
@@ -168,6 +172,7 @@ function ItemsSection({
             onClearProduct={() => onClearProduct(item._key)}
             onUpdateAttr={(i, v) => onUpdateAttr(item._key, i, v)}
             onUpdateWorker={(workerId) => onUpdateWorker(item._key, workerId)}
+            onUpdateEquipment={(equipmentId) => onUpdateEquipment(item._key, equipmentId)}
             onRemove={() => onRemove(item._key)} canRemove={items.length > 1}
           />
         ))}
@@ -237,6 +242,7 @@ export function RequestForm({
   products,
   suppliers,
   workers,
+  equipment,
   editRequest,
   maxFileSizeMb,
   userPermissions = [],
@@ -250,6 +256,7 @@ export function RequestForm({
     products,
     suppliers,
     workers,
+    equipment,
     editRequest,
     maxFileSizeMb,
     userPermissions,
@@ -313,11 +320,12 @@ export function RequestForm({
           <ItemsSection
             items={form.items} requestType={form.requestType} requestTypeLabel={form.requestTypeLabel}
             readOnly={form.readOnly} savedId={form.savedId} itemsError={form.itemsError}
-            products={products} suppliers={suppliers} workers={workers} maxFileSizeMb={maxFileSizeMb}
+            products={products} suppliers={suppliers} workers={workers} equipment={equipment} maxFileSizeMb={maxFileSizeMb}
             onAdd={form.addItem} onRemove={form.removeItem} onUpdate={form.updateItem}
             onSelectProduct={form.selectProduct} onSelectFreeProduct={form.selectFreeProduct}
             onClearProduct={form.clearProduct} onUpdateAttr={form.updateAttr}
             onUpdateWorker={form.updateItemWorker}
+            onUpdateEquipment={form.updateItemEquipment}
           />
           {form.isDraft && (
             <div className="flex items-center justify-between gap-3 pt-2 border-t border-[var(--color-border)]">
