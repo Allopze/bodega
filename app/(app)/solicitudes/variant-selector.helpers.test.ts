@@ -8,6 +8,7 @@ function variant(id: string, size: string, attributeName = "Talla calzado"): Pro
     sku: `BOT-${size}`,
     name: "Botín de seguridad",
     isEpp: true,
+    isService: false, requiresWorker: false,
     unitOfMeasure: "par",
     categoryName: "Calzado",
     referencePrice: null,

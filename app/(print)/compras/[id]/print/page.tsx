@@ -5,7 +5,7 @@ import { PrintTrigger } from "./print-trigger"
 import { loadOcPrintData } from "./oc-print-data"
 import { OC_PRINT_STYLES } from "./oc-print-styles"
 import { FieldLine, TotalLine } from "./oc-print-components"
-import { formatOrderNumber, formatPlainCLP, formatDecimal, formatDiscount, formatUnit } from "./oc-print-formatters"
+import { formatOrderNumber, formatPlainCLP, formatDecimal, formatDiscount, formatPrintAmount, formatUnit } from "./oc-print-formatters"
 import { MobileDocumentSummary } from "@/components/print/mobile-document-summary"
 
 export const dynamic = "force-dynamic"
@@ -18,6 +18,9 @@ export default async function PrintOcPage({ params }: { params: Promise<{ id: st
   const { id } = await params
   const data = await loadOcPrintData(id, session)
   const { order, company, productMap, issuedDate, authorizedByName, authorizedDate, orderDetailLines, totalInWords } = data
+  // Las líneas sin precio no suman al neto: el documento tiene que decirlo, o el
+  // proveedor lee un total que no incluye lo que todavía no está cotizado.
+  const pendingCostLines = order.items.filter((item) => item.unitPrice === null).length
 
   return (
     <>
@@ -45,9 +48,9 @@ export default async function PrintOcPage({ params }: { params: Promise<{ id: st
           {
             title: "Total",
             fields: [
-              { label: "Neto", value: formatPlainCLP(order.netAmount) },
+              { label: pendingCostLines > 0 ? "Neto conocido" : "Neto", value: formatPlainCLP(order.netAmount) },
               { label: "IVA", value: formatPlainCLP(order.taxAmount) },
-              { label: "Total", value: formatPlainCLP(order.totalAmount) },
+              { label: pendingCostLines > 0 ? "Total conocido" : "Total", value: formatPlainCLP(order.totalAmount) },
             ],
           },
         ]}
@@ -100,6 +103,12 @@ export default async function PrintOcPage({ params }: { params: Promise<{ id: st
         <section className="items-wrap" aria-label="Ítems de la orden de compra">
           <table>
             <thead>
+              <tr className="items-caption">
+                <th scope="colgroup" colSpan={8}>
+                  Orden de Compra Nº {formatOrderNumber(order.code)}
+                  {order.supplier?.name ? ` · ${order.supplier.name}` : ""}
+                </th>
+              </tr>
               <tr>
                 <th scope="col" style={{ width: 18 }}>N°</th>
                 <th scope="col" style={{ width: 68 }}>Cod. Articulo</th>
@@ -135,9 +144,9 @@ export default async function PrintOcPage({ params }: { params: Promise<{ id: st
                     </td>
                     <td className="text-right mono">{formatDecimal(item.quantity)}</td>
                     <td className="text-center mono">{formatUnit(item.unitOfMeasure)}</td>
-                    <td className="text-right mono">{formatDecimal(item.unitPrice)}</td>
+                    <td className="text-right mono">{formatPrintAmount(item.unitPrice, formatDecimal)}</td>
                     <td className="text-right mono">{formatDiscount(item.discount)}</td>
-                    <td className="text-right mono">{formatPlainCLP(item.subtotal)}</td>
+                    <td className="text-right mono">{formatPrintAmount(item.subtotal, formatPlainCLP)}</td>
                   </tr>
                 )
               })}
@@ -158,12 +167,19 @@ export default async function PrintOcPage({ params }: { params: Promise<{ id: st
               </>
             )}
             <div className="amount-words">{totalInWords}</div>
+            {pendingCostLines > 0 && (
+              <div className="amount-words">
+                {pendingCostLines === 1
+                  ? "1 servicio con costo por definir, no incluido en los totales."
+                  : `${pendingCostLines} servicios con costo por definir, no incluidos en los totales.`}
+              </div>
+            )}
           </div>
 
           <div className="totals" aria-label="Totales">
-            <TotalLine label="Neto" value={formatPlainCLP(order.netAmount)} />
+            <TotalLine label={pendingCostLines > 0 ? "Neto conocido" : "Neto"} value={formatPlainCLP(order.netAmount)} />
             <TotalLine label="IVA (19%)" value={formatPlainCLP(order.taxAmount)} />
-            <TotalLine label="Total" value={formatPlainCLP(order.totalAmount)} final />
+            <TotalLine label={pendingCostLines > 0 ? "Total conocido" : "Total"} value={formatPlainCLP(order.totalAmount)} final />
           </div>
         </section>
 
@@ -191,10 +207,6 @@ export default async function PrintOcPage({ params }: { params: Promise<{ id: st
             )}
           </div>
         </section>
-
-        <footer className="footer">
-          <span className="mono">{order.code}</span>
-        </footer>
       </main>
     </>
   )

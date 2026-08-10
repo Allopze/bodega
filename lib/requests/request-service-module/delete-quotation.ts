@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm"
+import { and, eq } from "drizzle-orm"
 import { db } from "@/db"
 import { purchaseRequests } from "@/db/schema"
 import { recordAudit } from "@/lib/audit"
@@ -32,8 +32,19 @@ export async function deleteQuotation(
     elevatedPermission: input.elevatedPermission,
   })
 
-  await db.delete(qt).where(eq(qt.id, input.quotationId))
+  // La guarda `status = 'pending'` va en el propio DELETE: los chequeos de
+  // arriba corren fuera de transacción, así que entre la lectura y el borrado la
+  // solicitud podía enviarse y adjudicarse esta misma cotización — y el DELETE
+  // por id se llevaba la evidencia de la adjudicación junto con su PDF.
+  const deleted = await db
+    .delete(qt)
+    .where(and(eq(qt.id, input.quotationId), eq(qt.status, "pending")))
+    .returning({ id: qt.id })
+  if (deleted.length === 0) {
+    throw new Error("La cotización ya fue procesada: posible concurrencia")
+  }
 
+  // El archivo se borra sólo después de que la fila se fue de verdad.
   const absolutePath = config.storage.resolveFile(quotation.filePath)
   if (absolutePath) {
     await removeFile(absolutePath).catch(() => { /* ignore */ })

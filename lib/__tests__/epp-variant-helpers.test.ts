@@ -26,7 +26,7 @@ describe("parseAttributeOptions", () => {
 
 describe("buildAttrsFromProduct", () => {
   const makeProduct = (attrs: ProductOption["attributes"]): ProductOption => ({
-    id: "p-1", sku: "SKU-1", name: "Test", isEpp: true,
+    id: "p-1", sku: "SKU-1", name: "Test", isEpp: true, isService: false, requiresWorker: false,
     unitOfMeasure: "unidad", categoryName: "EPP", referencePrice: null, familyId: null,
     preferredSupplierId: null, attributes: attrs,
   })
@@ -70,8 +70,8 @@ describe("formatProductVariant", () => {
 describe("groupProductVariants", () => {
   it("groups differently-named products sharing the same familyId", () => {
     const products: ProductOption[] = [
-      { id: "p-1", sku: "C-M", name: "Casco M", isEpp: true, unitOfMeasure: "unidad", categoryName: "EPP", referencePrice: null, familyId: "family-casco", preferredSupplierId: null, attributes: [] },
-      { id: "p-2", sku: "C-L", name: "Casco L", isEpp: true, unitOfMeasure: "unidad", categoryName: "EPP", referencePrice: null, familyId: "family-casco", preferredSupplierId: null, attributes: [] },
+      { id: "p-1", sku: "C-M", name: "Casco M", isEpp: true, isService: false, requiresWorker: false, unitOfMeasure: "unidad", categoryName: "EPP", referencePrice: null, familyId: "family-casco", preferredSupplierId: null, attributes: [] },
+      { id: "p-2", sku: "C-L", name: "Casco L", isEpp: true, isService: false, requiresWorker: false, unitOfMeasure: "unidad", categoryName: "EPP", referencePrice: null, familyId: "family-casco", preferredSupplierId: null, attributes: [] },
     ]
     const groups = groupProductVariants(products)
     expect(groups).toHaveLength(1)
@@ -80,9 +80,9 @@ describe("groupProductVariants", () => {
 
   it("falls back to normalized name grouping when familyId is null", () => {
     const products: ProductOption[] = [
-      { id: "p-1", sku: "C-1", name: "Casco", isEpp: true, unitOfMeasure: "unidad", categoryName: "EPP", referencePrice: null, familyId: null, preferredSupplierId: null, attributes: [] },
-      { id: "p-2", sku: "C-2", name: "casco", isEpp: true, unitOfMeasure: "unidad", categoryName: "EPP", referencePrice: null, familyId: null, preferredSupplierId: null, attributes: [] },
-      { id: "p-3", sku: "G-1", name: "Guante", isEpp: true, unitOfMeasure: "unidad", categoryName: "EPP", referencePrice: null, familyId: null, preferredSupplierId: null, attributes: [] },
+      { id: "p-1", sku: "C-1", name: "Casco", isEpp: true, isService: false, requiresWorker: false, unitOfMeasure: "unidad", categoryName: "EPP", referencePrice: null, familyId: null, preferredSupplierId: null, attributes: [] },
+      { id: "p-2", sku: "C-2", name: "casco", isEpp: true, isService: false, requiresWorker: false, unitOfMeasure: "unidad", categoryName: "EPP", referencePrice: null, familyId: null, preferredSupplierId: null, attributes: [] },
+      { id: "p-3", sku: "G-1", name: "Guante", isEpp: true, isService: false, requiresWorker: false, unitOfMeasure: "unidad", categoryName: "EPP", referencePrice: null, familyId: null, preferredSupplierId: null, attributes: [] },
     ]
     const groups = groupProductVariants(products)
     expect(groups).toHaveLength(2)

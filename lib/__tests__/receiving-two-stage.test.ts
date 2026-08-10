@@ -40,6 +40,7 @@ vi.mock("@/lib/services/notifications", async (importOriginal) => ({
 await migratePGlite(pg, path.resolve(process.cwd(), "db/migrations"))
 
 import { registerReceipt } from "@/lib/services/receiving"
+import { closeOrder } from "@/lib/services/purchasing"
 import { getOcReconciliation } from "@/lib/services/oc-reconciliation"
 import { notifyManyUser } from "@/lib/services/notifications"
 
@@ -212,6 +213,129 @@ describe("two-stage receiving gating", () => {
       purchaseOrderId: orderId, receivedBy: USER_ID, stage: "office",
       items: [{ purchaseOrderItemId: itemIds[0]!, quantityReceived: 0, quantityDamaged: 3 }],
     })).rejects.toThrow(/exceeds pending/i)
+  })
+})
+
+describe("cierre de OC con mercadería descartada en faena", () => {
+  it("permite cerrar cuando el saldo de oficina se rechazó/dañó al llegar a faena", async () => {
+    const { orderId, itemIds } = await makeOrder([10])
+    await registerReceipt({
+      purchaseOrderId: orderId, receivedBy: USER_ID, stage: "office",
+      items: [{ purchaseOrderItemId: itemIds[0]!, quantityReceived: 10 }],
+    })
+    // Llegan las 10 a faena pero 2 vienen dañadas: quantityReceived queda en 8
+    // y la disposición de la etapa se agota. Antes esto dejaba la OC sin
+    // ninguna salida (no se podía recibir más, ni cerrar, ni anular).
+    await registerReceipt({
+      purchaseOrderId: orderId, receivedBy: USER_ID, stage: "faena", worksiteId: WS_ID,
+      items: [{ purchaseOrderItemId: itemIds[0]!, quantityReceived: 8, quantityDamaged: 2 }],
+    })
+    expect(await status(orderId)).toBe("partially_received")
+
+    await closeOrder(orderId, USER_ID, "Saldo dañado en el traslado")
+    expect(await status(orderId)).toBe("closed")
+  })
+
+  it("sigue bloqueando el cierre cuando el saldo está realmente en oficina", async () => {
+    const { orderId, itemIds } = await makeOrder([10])
+    await registerReceipt({
+      purchaseOrderId: orderId, receivedBy: USER_ID, stage: "office",
+      items: [{ purchaseOrderItemId: itemIds[0]!, quantityReceived: 10 }],
+    })
+    await registerReceipt({
+      purchaseOrderId: orderId, receivedBy: USER_ID, stage: "faena", worksiteId: WS_ID,
+      items: [{ purchaseOrderItemId: itemIds[0]!, quantityReceived: 6 }],
+    })
+    await expect(closeOrder(orderId, USER_ID, "Cierre prematuro"))
+      .rejects.toThrow(/aún no llega a faena/i)
+  })
+})
+
+describe("ítems sin producto de catálogo", () => {
+  it("cierra el ítem y la solicitud al llegar completo a faena (no hay entrega posible)", async () => {
+    const now = new Date().toISOString()
+    const requestId = `req-free-${++ocCounter}`
+    const requestItemId = `item-free-${ocCounter}`
+    await inMemoryDb.insert(schema.purchaseRequests).values({
+      id: requestId, code: `SOL-FREE-${ocCounter}`, worksiteId: WS_ID, requesterId: USER_ID,
+      requestType: "servicios", urgency: "normal", status: "in_purchasing",
+      createdAt: now, updatedAt: now,
+    })
+    // productId null: texto libre, no genera stock al recibirse, así que
+    // ninguna pantalla de entrega puede despacharlo.
+    await inMemoryDb.insert(schema.purchaseRequestItems).values({
+      id: requestItemId, requestId, productId: null, productNameFree: "Mantención generador",
+      quantity: 1, unitOfMeasure: "unidad", status: "purchased", urgency: "normal",
+      sortOrder: 0, createdAt: now, updatedAt: now,
+    })
+    const orderId = `oc-free-${ocCounter}`
+    const ocItemId = nanoid()
+    await inMemoryDb.insert(schema.purchaseOrders).values({
+      id: orderId, code: `OC-FREE-${ocCounter}`, worksiteId: WS_ID, supplierId: SUP_ID,
+      createdBy: USER_ID, status: "sent", deliveryMode: "directo_faena", createdAt: now, updatedAt: now,
+    })
+    await inMemoryDb.insert(schema.purchaseOrderItems).values({
+      id: ocItemId, purchaseOrderId: orderId, requestItemId, productId: null,
+      quantity: 1, unitOfMeasure: "unidad", sortOrder: 0,
+    })
+
+    await registerReceipt({
+      purchaseOrderId: orderId, receivedBy: USER_ID, stage: "faena", worksiteId: WS_ID,
+      items: [{ purchaseOrderItemId: ocItemId, quantityReceived: 1 }],
+    })
+
+    const item = await inMemoryDb.query.purchaseRequestItems.findFirst({
+      where: eq(schema.purchaseRequestItems.id, requestItemId),
+    })
+    expect(item!.status).toBe("delivered")
+    const request = await inMemoryDb.query.purchaseRequests.findFirst({
+      where: eq(schema.purchaseRequests.id, requestId),
+    })
+    expect(request!.status).toBe("closed")
+  })
+
+  it("un ítem con producto de catálogo sigue quedando en 'received' a la espera de entrega", async () => {
+    const now = new Date().toISOString()
+    const requestId = `req-cat-${++ocCounter}`
+    const requestItemId = `item-cat-${ocCounter}`
+    const productId = `prod-cat-${ocCounter}`
+    const categoryId = `cat-${ocCounter}`
+    await inMemoryDb.insert(schema.productCategories).values({
+      id: categoryId, name: `Categoría ${ocCounter}`, slug: `cat-${ocCounter}`,
+    })
+    await inMemoryDb.insert(schema.products).values({
+      id: productId, name: "Guante", sku: `SKU-${ocCounter}`, categoryId, unitOfMeasure: "unidad",
+      isEpp: true, isActive: true, createdAt: now, updatedAt: now,
+    })
+    await inMemoryDb.insert(schema.purchaseRequests).values({
+      id: requestId, code: `SOL-CAT-${ocCounter}`, worksiteId: WS_ID, requesterId: USER_ID,
+      requestType: "epp", urgency: "normal", status: "in_purchasing",
+      createdAt: now, updatedAt: now,
+    })
+    await inMemoryDb.insert(schema.purchaseRequestItems).values({
+      id: requestItemId, requestId, productId, quantity: 1, unitOfMeasure: "unidad",
+      status: "purchased", urgency: "normal", sortOrder: 0, createdAt: now, updatedAt: now,
+    })
+    const orderId = `oc-cat-${ocCounter}`
+    const ocItemId = nanoid()
+    await inMemoryDb.insert(schema.purchaseOrders).values({
+      id: orderId, code: `OC-CAT-${ocCounter}`, worksiteId: WS_ID, supplierId: SUP_ID,
+      createdBy: USER_ID, status: "sent", deliveryMode: "directo_faena", createdAt: now, updatedAt: now,
+    })
+    await inMemoryDb.insert(schema.purchaseOrderItems).values({
+      id: ocItemId, purchaseOrderId: orderId, requestItemId, productId,
+      quantity: 1, unitOfMeasure: "unidad", sortOrder: 0,
+    })
+
+    await registerReceipt({
+      purchaseOrderId: orderId, receivedBy: USER_ID, stage: "faena", worksiteId: WS_ID,
+      items: [{ purchaseOrderItemId: ocItemId, quantityReceived: 1 }],
+    })
+
+    const item = await inMemoryDb.query.purchaseRequestItems.findFirst({
+      where: eq(schema.purchaseRequestItems.id, requestItemId),
+    })
+    expect(item!.status).toBe("received")
   })
 })
 

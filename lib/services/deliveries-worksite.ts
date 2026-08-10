@@ -9,6 +9,7 @@ import { nextCodeTx } from "@/lib/code-sequences"
 import { recordAudit } from "@/lib/audit"
 import { deliverItemTx } from "@/lib/services/item-state"
 import { applyMovementTx } from "@/lib/services/stock"
+import { getTraceableDeliveryBalance } from "@/lib/services/delivery-eligibility"
 import type { RegisterWorksiteDeliveryInput } from "./deliveries.types"
 
 export async function registerWorksiteDelivery(
@@ -72,8 +73,12 @@ export async function registerWorksiteDelivery(
       const receivedAtFaena = Number(receivedRow?.received ?? 0)
 
       if (lockedRequestItem.quantity <= alreadyDelivered) throw new Error("El ítem ya fue entregado completamente")
-      if (receivedAtFaena <= alreadyDelivered) throw new Error("No hay saldo recibido en faena pendiente de entregar")
-      const pending = Math.min(lockedRequestItem.quantity, receivedAtFaena) - alreadyDelivered
+      const pending = getTraceableDeliveryBalance({
+        requestedQuantity: lockedRequestItem.quantity,
+        receivedAtFaena,
+        deliveredQuantity: alreadyDelivered,
+      })
+      if (pending <= 0) throw new Error("No hay saldo recibido en faena pendiente de entregar")
       if (input.quantity > pending) {
         throw new Error(`La cantidad excede el saldo pendiente de entrega (${pending})`)
       }

@@ -21,7 +21,7 @@ const FILTER_ESTADOS = [
   { value: "pending_purchase", label: "Pendiente compra" },
   { value: "in_purchase_order", label: "En OC" },
   { value: "purchased", label: "Comprado" },
-  { value: "partially_received", label: "Rec. parcial" },
+  { value: "partially_received", label: "Recibido parcial" },
   { value: "received", label: "Recibido" },
   { value: "rejected", label: "Rechazado" },
 ]

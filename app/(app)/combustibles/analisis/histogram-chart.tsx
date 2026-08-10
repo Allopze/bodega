@@ -4,7 +4,6 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import { ChartLineUp } from "@phosphor-icons/react"
 import type { HistogramBin } from "@/lib/combustibles/performance-statistics"
 import { countOf } from "@/lib/utils"
-import { ChartDataTable } from "@/components/ui/chart-data-table"
 
 const BAR_COLOR = "var(--color-primary)"
 const MEAN_COLOR = "var(--color-warning-ink)"
@@ -26,22 +25,9 @@ function EmptyHistogram() {
 export function HistogramChart({ bins, mean, unitLabel }: { bins: HistogramBin[]; mean: number; unitLabel: string }) {
   if (bins.length === 0) return <EmptyHistogram />
   const chartData = bins.map((b) => ({ ...b }))
-  // El eje X oculta etiquetas cuando hay más de ocho tramos (`interval`), así
-  // que parte de la distribución no se puede leer en el propio gráfico.
-  const total = bins.reduce((sum, bin) => sum + bin.count, 0)
-  const moda = bins.reduce((current, bin) => bin.count > current.count ? bin : current, bins[0]!)
 
   return (
     <>
-      <ChartDataTable
-        title={`Histograma de rendimientos en ${unitLabel}`}
-        groupLabel={`Tramo (${unitLabel})`}
-        columns={["Observaciones", "Del total"]}
-        rows={bins.map((bin) => ({ label: bin.label, values: [bin.count, total === 0 ? "0%" : `${Math.round((bin.count / total) * 100)}%`] }))}
-        conclusion={`El tramo más frecuente es ${moda.label} ${unitLabel} con ${countOf(moda.count, "observación")}. Media: ${mean.toFixed(1)} ${unitLabel}.`}
-        caption={`${countOf(total, "observación")} en ${bins.length} tramos. Con más de ocho tramos el gráfico oculta parte de las etiquetas del eje.`}
-        className="mb-4 mt-0 border-b border-t-0 pb-3 pt-0"
-      />
     <div className="h-72" aria-label={`Histograma de rendimientos en ${unitLabel}`}>
       <ResponsiveContainer width="100%" height="100%" debounce={80}>
         <BarChart data={chartData} margin={{ top: 4, right: 12, left: -8, bottom: 40 }}>

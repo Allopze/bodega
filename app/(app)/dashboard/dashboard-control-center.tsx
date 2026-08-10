@@ -61,10 +61,11 @@ const SEVERITY_META = {
 /**
  * Cuerpo de la vista Resumen: KPIs de ranura, alertas y lecturas de apoyo.
  *
- * Era `DashboardControlCenter` y montaba también el saludo (que se fue a
- * `dashboard-header.tsx`, sobre las pestañas) y la cola de trabajo (que se fue a
- * `views/trabajo-view.tsx`, su propia vista). Lo que queda es lo transversal:
- * una cifra por dominio y lo que requiere atención ahora.
+ * Era `DashboardControlCenter` y montaba también el saludo (que pasó por un
+ * `dashboard-header.tsx` intermedio y hoy es el título que emite `PageHeader`
+ * hacia la TopBar) y la cola de trabajo (que se fue a `views/trabajo-view.tsx`,
+ * su propia vista). Lo que queda es lo transversal: una cifra por dominio y lo
+ * que requiere atención ahora.
  *
  * Deja de ser `"use client"`: sin la cola no queda estado ni handler, sólo
  * enlaces.

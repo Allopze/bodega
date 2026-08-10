@@ -7,10 +7,12 @@ import { purchaseRequests, purchaseRequestItems, requestItemAttributes } from "@
 import { nanoid } from "@/lib/id"
 import { nextCodeTx } from "@/lib/code-sequences"
 import { recordAudit } from "@/lib/audit"
-import { canAccessWorksite, requirePermission } from "@/lib/auth/can"
+import { can, canAccessWorksite, requirePermission } from "@/lib/auth/can"
 import { type ActionState } from "@/lib/validation/operations"
-import { QUOTATION_TYPES } from "@/lib/request-types"
+import { QUOTATION_TYPES, permissionForRequestType, isRequestType } from "@/lib/request-types"
 import { revalidateOperationalViews } from "@/lib/services/operational-cache"
+import { logger } from "@/lib/logger"
+import { safeActionMessage } from "@/lib/action-error"
 
 const REVALIDATE = "/solicitudes"
 
@@ -37,6 +39,14 @@ export async function duplicateRequest(_prev: ActionState, formData: FormData): 
     return { ok: false, message: "No tienes acceso a la faena de la solicitud original" }
   }
 
+  // El permiso se verifica contra el TIPO que se va a crear, no contra
+  // `requests:create` a secas: duplicar una solicitud de repuestos crea un
+  // borrador de repuestos, así que exigir sólo el permiso genérico era una
+  // puerta lateral al gate por tipo que usa el creador normal.
+  if (!isRequestType(source.requestType) || !can(session, permissionForRequestType(source.requestType, "create"))) {
+    return { ok: false, message: "No tienes permisos para crear este tipo de solicitud" }
+  }
+
   // EPP/otro ya no tienen borrador: duplicar es precargar el creador, para que
   // la copia pase por la revisión de una persona antes de entrar a aprobación.
   if (!QUOTATION_TYPES.has(source.requestType)) {
@@ -44,64 +54,71 @@ export async function duplicateRequest(_prev: ActionState, formData: FormData): 
   }
 
   let newId!: string
-  await db.transaction(async (tx) => {
-    const code = await nextCodeTx(tx, "SOL")
-    newId = nanoid()
+  try {
+    await db.transaction(async (tx) => {
+      const code = await nextCodeTx(tx, "SOL")
+      newId = nanoid()
 
-    await tx.insert(purchaseRequests).values({
-      id:           newId,
-      code,
-      worksiteId:   source.worksiteId,
-      requesterId:  session.user.id,
-      requestType:  source.requestType,
-      urgency:      source.urgency,
-      requiredDate: source.requiredDate ?? source.items.find((item) => item.requiredDate)?.requiredDate ?? null,
-      status:       "draft",
-      notes:        source.notes ? `[Duplicada de ${source.code}] ${source.notes}` : `[Duplicada de ${source.code}]`,
-    })
-
-    await recordAudit({
-      userId:     session.user.id,
-      userEmail:  session.user.email ?? undefined,
-      action:     "create",
-      entityType: "purchase_request",
-      entityId:   newId,
-      entityCode: code,
-      newState:   { status: "draft", duplicatedFrom: sourceId, worksiteId: source.worksiteId },
-    }, tx)
-
-    for (const [i, item] of source.items.entries()) {
-      const itemId = nanoid()
-      await tx.insert(purchaseRequestItems).values({
-        id:                  itemId,
-        requestId:           newId,
-        productId:           item.productId ?? null,
-        productNameFree:     item.productNameFree ?? null,
-        quantity:            item.quantity,
-        unitOfMeasure:       item.unitOfMeasure,
-        status:              "draft",
-        urgency:             item.urgency,
-        requiredDate:        source.requiredDate ?? item.requiredDate ?? null,
-        workerId:            null,
-        suggestedSupplierId: item.suggestedSupplierId ?? null,
-        supplierHint:        item.supplierHint ?? null,
-        sortOrder:           i,
-        notes:               item.notes ?? null,
+      await tx.insert(purchaseRequests).values({
+        id:           newId,
+        code,
+        worksiteId:   source.worksiteId,
+        requesterId:  session.user.id,
+        requestType:  source.requestType,
+        urgency:      source.urgency,
+        requiredDate: source.requiredDate ?? source.items.find((item) => item.requiredDate)?.requiredDate ?? null,
+        status:       "draft",
+        notes:        source.notes ? `[Duplicada de ${source.code}] ${source.notes}` : `[Duplicada de ${source.code}]`,
       })
 
-      if (item.attributes.length > 0) {
-        await tx.insert(requestItemAttributes).values(
-          item.attributes.map((a) => ({
-            id:            nanoid(),
-            requestItemId: itemId,
-            attributeId:   a.attributeId ?? null,
-            attributeName: a.attributeName,
-            value:         a.value,
-          })),
-        )
+      await recordAudit({
+        userId:     session.user.id,
+        userEmail:  session.user.email ?? undefined,
+        action:     "create",
+        entityType: "purchase_request",
+        entityId:   newId,
+        entityCode: code,
+        newState:   { status: "draft", duplicatedFrom: sourceId, worksiteId: source.worksiteId },
+      }, tx)
+
+      for (const [i, item] of source.items.entries()) {
+        const itemId = nanoid()
+        await tx.insert(purchaseRequestItems).values({
+          id:                  itemId,
+          requestId:           newId,
+          productId:           item.productId ?? null,
+          productNameFree:     item.productNameFree ?? null,
+          quantity:            item.quantity,
+          unitOfMeasure:       item.unitOfMeasure,
+          status:              "draft",
+          urgency:             item.urgency,
+          requiredDate:        source.requiredDate ?? item.requiredDate ?? null,
+          workerId:            null,
+          suggestedSupplierId: item.suggestedSupplierId ?? null,
+          supplierHint:        item.supplierHint ?? null,
+          sortOrder:           i,
+          notes:               item.notes ?? null,
+        })
+
+        if (item.attributes.length > 0) {
+          await tx.insert(requestItemAttributes).values(
+            item.attributes.map((a) => ({
+              id:            nanoid(),
+              requestItemId: itemId,
+              attributeId:   a.attributeId ?? null,
+              attributeName: a.attributeName,
+              value:         a.value,
+            })),
+          )
+        }
       }
-    }
-  })
+    })
+  } catch (e) {
+    // Única action del módulo cuya transacción escapaba sin capturar: un error
+    // de BD llevaba al error boundary genérico en vez de devolver ActionState.
+    logger.error("[duplicateRequest]", e)
+    return { ok: false, message: safeActionMessage(e, "Error al duplicar la solicitud") }
+  }
 
   revalidateOperationalViews([REVALIDATE, `${REVALIDATE}/${newId!}`])
   redirect(`${REVALIDATE}/${newId!}`)

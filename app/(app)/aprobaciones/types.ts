@@ -7,15 +7,12 @@ import type { OperationalWorkItem } from "@/lib/services/operational-work-queue"
 export const URGENCY_OPTIONS: FilterOption[] = CANONICAL_URGENCY_OPTIONS.map((o) => ({ value: o.value, label: o.label }))
 
 
-export const REQUEST_TYPE_LABELS: Record<string, string> = {
-  epp:  "EPP",
-  otro: "Otro",
-}
-
-export const REQUEST_TYPE_VARIANTS: Record<string, "info" | "success" | "warning" | "default"> = {
-  epp:  "info",
-  otro: "default",
-}
+// Re-export del diccionario canónico (lib/request-types.ts) en vez de una copia
+// local: la copia sólo tenía epp/otro —los tipos que esta cola atiende— pero ya
+// había divergido en el label ("Otro" acá, "Otros" en /solicitudes) para el
+// mismo estado. Un diccionario por pantalla es el mecanismo exacto que produjo
+// A-8/H-1.
+export { REQUEST_TYPE_LABELS, REQUEST_TYPE_VARIANTS } from "@/lib/request-types"
 
 export const URGENCY_LABEL: Record<string, string> = URGENCY_LABELS
 

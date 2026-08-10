@@ -15,6 +15,7 @@ import { createSubmittedRequest } from "@/lib/services/requests-draft"
 import { persistDraft } from "./draft"
 import { parseRequestForm } from "./parse-request-form"
 import { revalidateOperationalViews } from "@/lib/services/operational-cache"
+import { safeActionMessage } from "@/lib/action-error"
 
 const REVALIDATE = "/solicitudes"
 
@@ -112,7 +113,7 @@ export async function submitRequest(_prev: ActionState, formData: FormData): Pro
     })
   } catch (e) {
     logger.error("[submitRequest:quotation]", e)
-    return { ok: false, message: e instanceof Error ? e.message : "Error al enviar la solicitud" }
+    return { ok: false, message: safeActionMessage(e, "Error al enviar la solicitud") }
   }
 
   notifyApprovers({
@@ -144,7 +145,7 @@ async function createAndSubmit(
     created = await createSubmittedRequest(session.user.id, session.user.email ?? undefined, data)
   } catch (e) {
     logger.error("[submitRequest:create]", e)
-    return { ok: false, message: e instanceof Error ? e.message : "Error al crear la solicitud" }
+    return { ok: false, message: safeActionMessage(e, "Error al crear la solicitud") }
   }
 
   notifyApprovers({

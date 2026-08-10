@@ -35,6 +35,7 @@ async function main() {
   await setupDb.execute(sql`DROP SCHEMA IF EXISTS drizzle CASCADE`)
   await setupDb.execute(sql`DROP SCHEMA IF EXISTS public CASCADE`)
   await setupDb.execute(sql`CREATE SCHEMA public`)
+  await setupDb.execute(sql`CREATE SCHEMA drizzle`)
   await setupDb.execute(sql`GRANT ALL ON SCHEMA public TO PUBLIC`)
   await setupClient.end()
 
@@ -433,6 +434,124 @@ async function main() {
     updatedAt: now,
   })
 
+  // Estas entregas E2E deben seguir el mismo circuito que producción: solicitud
+  // → OC → recepción en faena → entrega. Marcar sólo la solicitud como
+  // "received" hacía que el formulario la ofreciera pero el servicio la
+  // rechazara, porque no existía evidencia de recepción trazable.
+  await db.insert(schema.purchaseOrders).values({
+    id: "oc-delivery-e2e",
+    code: "OC-2026-0088",
+    worksiteId: "ws-e2e",
+    supplierId: "sup-e2e",
+    createdBy: "user-admin-e2e",
+    status: "received",
+    deliveryMode: "directo_faena",
+    issuedAt: now,
+    sentAt: now,
+    estimatedDelivery: "2026-07-15",
+    netAmount: 17500,
+    taxAmount: 3325,
+    totalAmount: 20825,
+    notes: "Fixture E2E para entregas trazables de EPP",
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.purchaseOrderItems).values([
+    {
+      id: "oc-item-delivery-e2e",
+      purchaseOrderId: "oc-delivery-e2e",
+      requestItemId: "req-item-delivery-e2e",
+      productId: "prod-epp-e2e",
+      productNameFree: null,
+      quantity: 4,
+      unitOfMeasure: "unidad",
+      unitPrice: 2500,
+      discount: 0,
+      subtotal: 10000,
+      quantityReceived: 4,
+      status: "issued",
+      sortOrder: 1,
+      notes: null,
+    },
+    {
+      id: "oc-item-delivery-invalid-file-e2e",
+      purchaseOrderId: "oc-delivery-e2e",
+      requestItemId: "req-item-delivery-invalid-file-e2e",
+      productId: "prod-epp-e2e",
+      productNameFree: null,
+      quantity: 1,
+      unitOfMeasure: "unidad",
+      unitPrice: 2500,
+      discount: 0,
+      subtotal: 2500,
+      quantityReceived: 1,
+      status: "issued",
+      sortOrder: 2,
+      notes: null,
+    },
+    {
+      id: "oc-item-delivery-attachment-e2e",
+      purchaseOrderId: "oc-delivery-e2e",
+      requestItemId: "req-item-delivery-attachment-e2e",
+      productId: "prod-epp-e2e",
+      productNameFree: null,
+      quantity: 2,
+      unitOfMeasure: "unidad",
+      unitPrice: 2500,
+      discount: 0,
+      subtotal: 5000,
+      quantityReceived: 2,
+      status: "issued",
+      sortOrder: 3,
+      notes: null,
+    },
+  ])
+  await db.insert(schema.receipts).values({
+    id: "rec-delivery-e2e",
+    code: "REC-2026-0088",
+    purchaseOrderId: "oc-delivery-e2e",
+    receivedBy: "user-admin-e2e",
+    receivedAt: now,
+    locationType: "faena",
+    worksiteId: "ws-e2e",
+    dispatchGuideNo: "GD-EPP-E2E",
+    status: "closed",
+    notes: "Fixture E2E para entregas trazables de EPP",
+    createdAt: now,
+  })
+  await db.insert(schema.receiptItems).values([
+    {
+      id: "rec-item-delivery-e2e",
+      receiptId: "rec-delivery-e2e",
+      purchaseOrderItemId: "oc-item-delivery-e2e",
+      quantityReceived: 4,
+      quantityRejected: 0,
+      quantityDamaged: 0,
+      status: "received",
+      notes: null,
+    },
+    {
+      id: "rec-item-delivery-invalid-file-e2e",
+      receiptId: "rec-delivery-e2e",
+      purchaseOrderItemId: "oc-item-delivery-invalid-file-e2e",
+      quantityReceived: 1,
+      quantityRejected: 0,
+      quantityDamaged: 0,
+      status: "received",
+      notes: null,
+    },
+    {
+      id: "rec-item-delivery-attachment-e2e",
+      receiptId: "rec-delivery-e2e",
+      purchaseOrderItemId: "oc-item-delivery-attachment-e2e",
+      quantityReceived: 2,
+      quantityRejected: 0,
+      quantityDamaged: 0,
+      status: "received",
+      notes: null,
+    },
+  ])
+
   const bulkRequests = Array.from({ length: 120 }, (_, index) => {
     const number = String(index + 1).padStart(3, "0")
     return {
@@ -576,6 +695,50 @@ async function main() {
     notes: "Consultoría de implementación",
   })
 
+  // OC con suficientes ítems para que el PDF pase de una hoja (pdf-exports.spec.ts
+  // verifica numeración, encabezado repetido y que el bloque de firma no se
+  // duplique). Va en estado cerrado a propósito: queda fuera de las colas de
+  // pendientes y aprobaciones, así no mueve los conteos de otros specs.
+  await db.insert(schema.purchaseOrders).values({
+    id: "oc-multipagina-e2e",
+    code: "OC-2026-0077",
+    worksiteId: "ws-e2e",
+    supplierId: "sup-e2e",
+    createdBy: "user-admin-e2e",
+    status: "closed",
+    deliveryMode: "directo_faena",
+    issuedAt: now,
+    sentAt: now,
+    estimatedDelivery: "2026-07-20",
+    paymentTerms: "30 días",
+    netAmount: 120000,
+    taxAmount: 22800,
+    totalAmount: 142800,
+    notes: "Fixture E2E para PDF multipágina",
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.purchaseOrderItems).values(
+    Array.from({ length: 40 }, (_, index) => ({
+      id: `oc-item-multipagina-e2e-${String(index + 1).padStart(2, "0")}`,
+      purchaseOrderId: "oc-multipagina-e2e",
+      requestItemId: null,
+      productId: null,
+      productNameFree: `Insumo multipágina ${index + 1} de línea extendida`,
+      quantity: 2,
+      unitOfMeasure: "unidad",
+      unitPrice: 1500,
+      discount: 0,
+      subtotal: 3000,
+      quantityReceived: 2,
+      // El estado de línea sólo distingue activa/anulada (ARQ-12): la recepción
+      // se trackea con los contadores numéricos.
+      status: "issued",
+      sortOrder: index + 1,
+      notes: "Detalle largo para que la fila ocupe dos líneas en la hoja A4.",
+    })),
+  )
+
   // OC dedicada al flujo completo enviada → oficina → faena → recibida → cerrada
   // (oc-flow.spec.ts). Es propia porque ese spec avanza el estado y no puede
   // pisar a `oc-e2e`, que otros specs leen esperando una OC recién emitida.
@@ -639,6 +802,77 @@ async function main() {
     unitPrice: 1000,
     discount: 0,
     subtotal: 10000,
+    status: "issued",
+    sortOrder: 1,
+    notes: null,
+  })
+
+  // OC de despacho DIRECTO A FAENA para el camino alternativo completo
+  // (directo-faena-flow.spec.ts): sin checkpoint de oficina, `sent` pasa
+  // directo a `partially_received` y luego a `received`/`closed`. Ese camino
+  // no tenía ninguna cobertura, incluida la guarda que rechaza registrar
+  // oficina sobre una OC directa.
+  await db.insert(schema.purchaseRequests).values({
+    id: "req-directo-faena-e2e",
+    code: "SOL-DIRECTO-E2E",
+    worksiteId: "ws-e2e",
+    requesterId: "user-admin-e2e",
+    requestType: "otro",
+    urgency: "high",
+    deliveryMode: "directo_faena",
+    requiredDate: "2026-07-15",
+    status: "approved",
+    submittedAt: now,
+    notes: "Fixture E2E para el flujo directo a faena",
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.purchaseRequestItems).values({
+    id: "req-item-directo-faena-e2e",
+    requestId: "req-directo-faena-e2e",
+    productId: "prod-e2e",
+    productNameFree: null,
+    quantity: 8,
+    unitOfMeasure: "unidad",
+    status: "in_purchase_order",
+    urgency: "high",
+    requiredDate: "2026-07-15",
+    workerId: null,
+    suggestedSupplierId: "sup-e2e",
+    sortOrder: 1,
+    notes: null,
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.purchaseOrders).values({
+    id: "oc-directo-faena-e2e",
+    code: "OC-2026-0092",
+    worksiteId: "ws-e2e",
+    supplierId: "sup-e2e",
+    createdBy: "user-admin-e2e",
+    status: "draft",
+    deliveryMode: "directo_faena",
+    estimatedDelivery: "2026-07-20",
+    deliveryAddress: "Faena E2E",
+    paymentTerms: "30 días",
+    netAmount: 8000,
+    taxAmount: 1520,
+    totalAmount: 9520,
+    notes: "Fixture E2E para el flujo directo a faena",
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.purchaseOrderItems).values({
+    id: "oc-item-directo-faena-e2e",
+    purchaseOrderId: "oc-directo-faena-e2e",
+    requestItemId: "req-item-directo-faena-e2e",
+    productId: "prod-e2e",
+    productNameFree: null,
+    quantity: 8,
+    unitOfMeasure: "unidad",
+    unitPrice: 1000,
+    discount: 0,
+    subtotal: 8000,
     status: "issued",
     sortOrder: 1,
     notes: null,
@@ -752,6 +986,84 @@ async function main() {
   // so the first UI-created delivery gets the next unique code.
   await db.execute(sql`SELECT next_document_code('ENT', 2026)`)
 
+  // Historical exception used by the integrity E2E: delivery tied to a request
+  // item before any receipt in faena. The cancelled OC is context only; the
+  // detector must still report the delivery excess, never the cancellation.
+  await db.insert(schema.purchaseRequests).values({
+    id: "req-integrity-e2e",
+    code: "SOL-INTEGRITY-E2E",
+    worksiteId: "ws-e2e",
+    requesterId: "user-admin-e2e",
+    requestType: "epp",
+    urgency: "normal",
+    status: "approved",
+    deliveryMode: "directo_faena",
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.purchaseRequestItems).values({
+    id: "req-item-integrity-e2e",
+    requestId: "req-integrity-e2e",
+    productId: "prod-epp-e2e",
+    quantity: 1,
+    unitOfMeasure: "unidad",
+    status: "received",
+  })
+  await db.insert(schema.purchaseOrders).values({
+    id: "oc-integrity-e2e",
+    code: "OC-INTEGRITY-E2E",
+    worksiteId: "ws-e2e",
+    supplierId: "sup-e2e",
+    createdBy: "user-admin-e2e",
+    status: "cancelled",
+    deliveryMode: "directo_faena",
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.purchaseOrderItems).values({
+    id: "oc-item-integrity-e2e",
+    purchaseOrderId: "oc-integrity-e2e",
+    requestItemId: "req-item-integrity-e2e",
+    productId: "prod-epp-e2e",
+    quantity: 1,
+    unitOfMeasure: "unidad",
+    status: "cancelled",
+  })
+  await db.insert(schema.deliveries).values({
+    id: "del-integrity-e2e",
+    code: "ENT-2026-0002",
+    deliveredBy: "user-admin-e2e",
+    deliveredAt: now,
+    destinationType: "worker",
+    worksiteId: "ws-e2e",
+    workerId: "worker-e2e",
+    receiverName: "Trabajador E2E",
+    notes: "Entrega histórica para revisar integridad",
+    createdAt: now,
+  })
+  await db.insert(schema.deliveryItems).values({
+    id: "del-item-integrity-e2e",
+    deliveryId: "del-integrity-e2e",
+    requestItemId: "req-item-integrity-e2e",
+    productId: "prod-epp-e2e",
+    quantity: 1,
+    unitOfMeasure: "unidad",
+  })
+  await db.insert(schema.inventoryMovements).values({
+    id: "adjustment-integrity-e2e",
+    worksiteId: "ws-e2e",
+    productId: "prod-epp-e2e",
+    type: "ajuste",
+    quantity: 1,
+    stockBefore: 10,
+    stockAfter: 11,
+    performedBy: "user-admin-e2e",
+    performedAt: now,
+    reason: "Ajuste compensatorio E2E",
+  })
+  // The extra historical fixture occupies ENT-2026-0002 too.
+  await db.execute(sql`SELECT next_document_code('ENT', 2026)`)
+
   // Maintenance fixture — for mantenciones E2E spec
   await db.insert(schema.maintenanceRecords).values({
     id: "mant-e2e",
@@ -790,9 +1102,9 @@ async function main() {
     .set({ quantityOfficeReceived: 10, quantityReceived: 5 })
     .where(eq(schema.purchaseOrderItems.id, "oc-item-e2e-01"))
 
-  // The "Conciliación por ítem" panel on the OC detail page only renders when
-  // the OC has at least one invoice attached (see invoices-section.tsx) — it
-  // reconciles invoiced quantity vs. OC quantity, not received quantity.
+  // El panel "Conciliación por línea" del detalle OC sólo se muestra cuando la
+  // orden tiene factura: separa el total monetario de la evidencia por línea,
+  // nunca de la cantidad recibida.
   await db.insert(schema.purchaseOrderInvoices).values({
     id: "oc-invoice-e2e",
     purchaseOrderId: "oc-e2e",
@@ -812,6 +1124,20 @@ async function main() {
     quantity: 10,
     unitPrice: 1000,
     subtotal: 10000,
+  })
+  // The invoice total exactly completes the OC total but deliberately carries
+  // no line items. This proves that monetary reconciliation never invents
+  // documentary evidence by line.
+  await db.insert(schema.purchaseOrderInvoices).values({
+    id: "oc-invoice-no-lines-e2e",
+    purchaseOrderId: "oc-e2e",
+    invoiceNumber: "FAC-E2E-SIN-LINEAS",
+    amount: 3566,
+    issueDate: "2026-07-16",
+    fileName: "factura-e2e-sin-lineas.pdf",
+    filePath: "storage/purchase-orders/factura-e2e-sin-lineas-fixture.pdf",
+    uploadedBy: "user-admin-e2e",
+    uploadedAt: now,
   })
 
   // ── DTE fixture: portal DTE FacturaEnLínea (Bandeja de Entrada) ──────────────
@@ -1204,6 +1530,9 @@ async function main() {
     createdAt: now,
     updatedAt: now,
   })
+  await db.update(schema.products)
+    .set({ familyId: "family-epp-e2e", updatedAt: now })
+    .where(eq(schema.products.id, "prod-epp-e2e"))
   await db.insert(schema.products).values([
     {
       id: "prod-epp-var-s", sku: "E2E-CASCO-S", name: "Casco E2E S",

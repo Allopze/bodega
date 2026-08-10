@@ -100,6 +100,13 @@ export default async function DeliveryPrintPage({ params }: PageProps) {
           },
           { title: "Productos entregados", fields: deliveryItems },
           ...(returnedItems.length > 0 ? [{ title: "Devolución de EPP", fields: returnedItems }] : []),
+          {
+            title: "Evidencia de firma",
+            fields: [{
+              label: "Archivo de firma",
+              value: delivery.signaturePath ? "Archivo de firma adjunto" : "Sin archivo de firma",
+            }],
+          },
         ]}
       />
 
@@ -131,11 +138,11 @@ export default async function DeliveryPrintPage({ params }: PageProps) {
             </div>
             <div className="field">
               <dt>RUT</dt>
-              <dd>{workerRut}</dd>
+              <dd className="document-value-nowrap">{workerRut}</dd>
             </div>
             <div className="field">
               <dt>Fecha</dt>
-              <dd>{formatDate(delivery.deliveredAt)}</dd>
+              <dd className="document-value-nowrap">{formatDate(delivery.deliveredAt)}</dd>
             </div>
             <div className="field">
               <dt>Tipo</dt>
@@ -195,16 +202,26 @@ export default async function DeliveryPrintPage({ params }: PageProps) {
           </div>
         )}
 
-        <div className="signature">
+        <div className="signature" aria-label="Evidencia de firma">
           <div className="sig-box">
-            <div className="sig-line" />
-            <p className="sig-label">Recibido conforme</p>
+            {delivery.signaturePath ? (
+              <>
+                <p className="sig-label">Archivo de firma adjunto</p>
+                <p style={{ fontSize: 9, color: "#6b7280", marginTop: 2 }}>La evidencia se conserva como archivo; este PDF no dibuja una firma.</p>
+              </>
+            ) : (
+              <>
+                <p className="sig-label">Sin archivo de firma</p>
+                <div className="sig-line" aria-hidden="true" />
+                <p className="sig-label">Espacio de firma manual no registrado</p>
+              </>
+            )}
             <p style={{ fontSize: 9, color: "#9ca3af", marginTop: 2 }}>{workerName}</p>
             <p style={{ fontSize: 9, color: "#9ca3af" }}>RUT: {workerRut}</p>
           </div>
           <div className="sig-box">
             <div className="sig-line" />
-            <p className="sig-label">Quien entrega</p>
+            <p className="sig-label">Espacio de firma manual no registrado · quien entrega</p>
             <p style={{ fontSize: 9, color: "#9ca3af", marginTop: 2 }}>{delivery.deliveredBy?.name ?? delivery.deliveredBy?.email ?? "—"}</p>
           </div>
         </div>

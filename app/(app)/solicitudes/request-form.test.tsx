@@ -88,6 +88,7 @@ const products: ProductOption[] = [
     sku: "EPP-001",
     unitOfMeasure: "unidad",
     isEpp: true,
+    isService: false, requiresWorker: false,
     categoryName: "EPP",
     referencePrice: null,
     familyId: null,
@@ -100,6 +101,7 @@ const products: ProductOption[] = [
     sku: "EPP-002",
     unitOfMeasure: "par",
     isEpp: true,
+    isService: false, requiresWorker: false,
     categoryName: "EPP",
     referencePrice: null,
     familyId: null,
@@ -114,6 +116,7 @@ const products: ProductOption[] = [
     sku: "INS-001",
     unitOfMeasure: "litro",
     isEpp: false,
+    isService: false, requiresWorker: false,
     categoryName: "Insumos",
     referencePrice: null,
     familyId: null,
@@ -126,6 +129,7 @@ const products: ProductOption[] = [
     sku: "INS-002",
     unitOfMeasure: "kg",
     isEpp: false,
+    isService: false, requiresWorker: false,
     categoryName: "Insumos",
     referencePrice: null,
     familyId: null,
@@ -243,12 +247,31 @@ describe("RequestForm", () => {
         resolveSubmit = () => resolve(INITIAL_STATE)
       }))
 
+      // El formulario tiene que estar completo: desde el fix de la cantidad
+      // vacía, el envío se corta en cliente si el panel lateral lista algún
+      // problema (antes salía igual y el servidor recibía cantidad 1).
       render(
         <RequestForm
           worksites={worksites}
           products={products}
           suppliers={suppliers}
           maxFileSizeMb={10}
+          editRequest={{
+            id: "req-pending",
+            code: "SOL-PENDING",
+            status: "draft",
+            worksiteId: "ws-1",
+            requestType: "epp",
+            urgency: "normal",
+            requiredDate: "2026-12-01",
+            notes: "",
+            items: [{
+              id: "it-1", productId: "prod-1", productNameFree: null,
+              quantity: 2, unitOfMeasure: "unidad", urgency: "normal",
+              suggestedSupplierId: null, supplierHint: null, notes: null,
+              status: "draft", workerId: null, workerName: null, attributes: [],
+            }],
+          }}
         />,
       )
       const button = screen.getByText("Crear y enviar a aprobación").closest("button")!

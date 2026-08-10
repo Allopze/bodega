@@ -36,7 +36,7 @@ const ACTION_ICONS = {
 } as const
 
 /** Menú cliente aislado: recibe sólo destinos ya filtrados por permisos. */
-export function DashboardActionMenu({ secondary, actions }: { secondary?: Action; actions: Action[] }) {
+export function DashboardActionMenu({ actions }: { actions: Action[] }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -46,7 +46,6 @@ export function DashboardActionMenu({ secondary, actions }: { secondary?: Action
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
-        {secondary && <ActionItem action={secondary} className="sm:hidden" />}
         {actions.map((action) => <ActionItem key={action.key} action={action} />)}
       </DropdownMenuContent>
     </DropdownMenu>

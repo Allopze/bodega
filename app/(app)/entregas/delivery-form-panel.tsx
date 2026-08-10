@@ -3,6 +3,7 @@
 import * as React from "react"
 import { CaretDown, Plus } from "@phosphor-icons/react"
 import { cn } from "@/lib/utils"
+import { Button } from "@/components/ui/button"
 import { OPEN_DELIVERY_FORM_EVENT } from "./delivery-form-trigger"
 
 const STORAGE_KEY = "entregas:form-open"
@@ -50,18 +51,20 @@ export function DeliveryFormPanel({ children }: { children: React.ReactNode }) {
             Asigna EPP recibido a un trabajador y descuenta el stock de la faena.
           </p>
         </div>
-        <button
+        <Button
           type="button"
+          variant="secondary"
+          size="sm"
           onClick={toggle}
           aria-expanded={open}
-          className="inline-flex shrink-0 items-center gap-1.5 rounded-(--radius) border border-(--color-border) px-3 py-1.5 text-sm font-medium text-(--color-text-muted) transition-colors hover:bg-(--color-surface-2) hover:text-(--color-text)"
+          className="shrink-0 text-sm text-(--color-text-muted)"
         >
           {open ? (
             <>Ocultar<CaretDown className="h-4 w-4" /></>
           ) : (
             <><Plus className="h-4 w-4" />Registrar entrega</>
           )}
-        </button>
+        </Button>
       </div>
       <div className={cn(!open && "hidden")}>{children}</div>
     </section>

@@ -32,11 +32,18 @@ export async function receiveItemTx(
       throw new Error(`Cannot receive item in state '${item.status}'`)
     }
 
+    // Un ítem sin producto de catálogo (servicios, repuestos y todo texto libre)
+    // no genera stock al recibirse, así que ninguna pantalla de entrega puede
+    // despacharlo: la llegada completa a faena ES su estado terminal. Sin esto
+    // quedaba en 'received' para siempre, el padre nunca llegaba a 'closed' y la
+    // solicitud dejaba una fila perpetua en /pendientes.
+    const fullyReceivedTarget: ItemStatus = item.productId ? "received" : "delivered"
+
     // Un ítem que ya salió en entrega parcial no retrocede cuando llega el saldo a
     // faena: conserva 'partially_delivered' y sólo se registra el ingreso.
     const targetStatus: ItemStatus = item.status === "partially_delivered"
       ? "partially_delivered"
-      : opts?.fullReceived === false ? "partially_received" : "received"
+      : opts?.fullReceived === false ? "partially_received" : fullyReceivedTarget
 
     // Mismo guardia que deliverItemTx: la segunda recepción parcial apunta al estado
     // que el ítem ya tiene ('partially_received' → 'partially_received') y eso no es

@@ -6,6 +6,7 @@ import { canAccessWorksite } from "@/lib/auth/scope"
 import { encodeContentDisposition } from "@/lib/utils"
 import { withBrowserContext } from "@/lib/pdf/browser-pool"
 import { resolvePdfRenderOrigin } from "@/lib/pdf/render-origin"
+import { a4PdfOptions } from "@/lib/pdf/page-options"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -35,7 +36,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     async (context) => {
       const page = await context.newPage()
       await page.goto(`${origin}/entregas/${id}/print`, { waitUntil: "domcontentloaded", timeout: 30_000 })
-      return page.pdf({ format: "A4", printBackground: true })
+      // El comprobante tiene su propia caja (más angosta): debe coincidir con el
+      // @page de delivery-print-styles.ts.
+      return page.pdf(a4PdfOptions({ top: "12mm", right: "14mm", bottom: "20mm", left: "14mm" }))
     },
   )
 

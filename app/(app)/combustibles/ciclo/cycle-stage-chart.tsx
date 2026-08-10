@@ -2,7 +2,6 @@
 
 import { BarChart, Bar, Cell, LabelList, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts"
 import { ChartLineUp } from "@phosphor-icons/react"
-import { ChartDataTable } from "@/components/ui/chart-data-table"
 
 const STAGE_COLOR = "var(--color-primary)"
 const UNAVAILABLE_COLOR = "var(--color-border-strong)"
@@ -27,42 +26,9 @@ export function CycleStageChart({ stages }: { stages: CycleStagePoint[] }) {
   if (!hasAnyData) return <EmptyChart label="No hay ninguna etapa con fuente disponible en este filtro." />
 
   const chartData = stages.map((s) => ({ ...s, value: s.liters ?? 0 }))
-  // La pregunta del gráfico es "¿dónde se pierde combustible?", y la respuesta
-  // es la caída más grande entre dos barras contiguas. Leerla exige comparar
-  // alturas; aquí se dice. Las etapas sin fuente se distinguían sólo por color
-  // de barra, así que la tabla las nombra "sin fuente" en texto.
-  const conMedida = chartData.filter((point) => point.liters != null)
-  let mayorCaida: { desde: string; hasta: string; delta: number } | null = null
-  for (let i = 1; i < chartData.length; i++) {
-    const previa = chartData[i - 1]!
-    const actual = chartData[i]!
-    if (previa.liters == null || actual.liters == null) continue
-    const delta = previa.liters - actual.liters
-    if (delta > 0 && (!mayorCaida || delta > mayorCaida.delta)) {
-      mayorCaida = { desde: previa.stage, hasta: actual.stage, delta }
-    }
-  }
-  const sinFuente = chartData.filter((point) => point.liters == null).map((point) => point.stage)
-  const conclusion = mayorCaida
-    ? `La mayor pérdida está entre ${mayorCaida.desde} y ${mayorCaida.hasta}: ${liters.format(mayorCaida.delta)} L.`
-    : conMedida.length <= 1
-      ? "Sólo una etapa tiene fuente disponible: aún no hay diferencia que comparar."
-      : "Ninguna etapa pierde litros respecto de la anterior."
 
   return (
     <>
-      <ChartDataTable
-        title="Litros por etapa del ciclo"
-        groupLabel="Etapa"
-        columns={["Litros", "Registros"]}
-        rows={chartData.map((point) => ({
-          label: point.stage,
-          values: point.liters == null ? ["Sin fuente", "—"] : [`${liters.format(point.liters)} L`, point.records ?? "—"],
-        }))}
-        conclusion={conclusion}
-        caption={sinFuente.length > 0 ? `Sin fuente disponible: ${sinFuente.join(", ")}.` : "Orden físico: recibido → registrado → entregado → consumido."}
-        className="mb-4 mt-0 border-b border-t-0 pb-3 pt-0"
-      />
     <div className="h-64" aria-label="Litros por etapa del ciclo físico, en orden recibido → registrado → entregado → consumido">
       <ResponsiveContainer width="100%" height="100%" debounce={80}>
         <BarChart data={chartData} margin={{ top: 20, right: 12, left: 4, bottom: 4 }} title="Litros por etapa del ciclo. Una caída entre barras es la diferencia entre esas dos etapas.">

@@ -49,7 +49,10 @@ const ACTIONS: ActionDef[] = [
   { key: "analytics",   label: "Analítica",            href: "/analitica",         permission: "analytics:view",              Icon: ChartLine },
   { key: "prevention",  label: "Prevención",           href: "/prevencion",        permission: "prevention:pdtp:view",        Icon: ShieldCheck },
   { key: "receiving",   label: "Recepción",            href: "/recepcion",         permission: "receiving:view",              Icon: Truck },
-  { key: "delivery",    label: "Entregas",             href: "/entregas",          permission: "warehouse:register_movement", Icon: Warehouse },
+  // El permiso tiene que ser el que exige la página destino (`deliveries:view`),
+  // no el de bodega: un grant directo de movimientos sin entregas mostraba un
+  // atajo que aterrizaba en /forbidden.
+  { key: "delivery",    label: "Entregas",             href: "/entregas",          permission: "deliveries:view",             Icon: Warehouse },
   { key: "warehouse",   label: "Bodega",               href: "/bodega",            permission: "warehouse:view_stock",        Icon: Package },
   { key: "reports",     label: "Reportes",             href: "/reportes",          permission: "reports:view",                Icon: ChartBar },
 ]
@@ -60,7 +63,7 @@ const ACTIONS: ActionDef[] = [
  */
 export function QuickActions({ session }: { session: Session }) {
   const actions = ACTIONS.filter((action) => can(session, action.permission))
-  const [primary, secondary, ...overflow] = actions
+  const [primary, ...overflow] = actions
   if (!primary) return null
 
   return (
@@ -71,19 +74,13 @@ export function QuickActions({ session }: { session: Session }) {
           {primary.label}
         </Link>
       </Button>
-      {secondary && (
-        <Button asChild size="sm" variant="secondary" className="hidden sm:inline-flex">
-          <Link href={secondary.href}>
-            <secondary.Icon size={15} />
-            {secondary.label}
-          </Link>
-        </Button>
-      )}
-      {(overflow.length > 0 || secondary) && (
-        <DashboardActionMenu
-          secondary={secondary ? { key: secondary.key, label: secondary.label, href: secondary.href } : undefined}
-          actions={overflow.map(({ key, label, href }) => ({ key, label, href }))}
-        />
+      {/* Una sola acción visible. La segunda tenía botón propio en desktop, así
+          que el header ofrecía tres afordancias de acción antes del primer dato;
+          y como el resto de la lista ya vive en el menú, sacarla del botón no le
+          quita ni un acceso. Cuál es la primaria lo sigue decidiendo el orden de
+          `ACTIONS` (y con él el permiso), no este render. */}
+      {overflow.length > 0 && (
+        <DashboardActionMenu actions={overflow.map(({ key, label, href }) => ({ key, label, href }))} />
       )}
     </div>
   )

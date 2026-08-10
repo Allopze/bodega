@@ -117,6 +117,7 @@ describe("getTrazabilidadMatrix", () => {
         quantity: 10,
         unitOfMeasure: "par",
         unitPrice: 1000,
+        subtotal: 10000,
         status: "cancelled",
       },
       {
@@ -126,6 +127,7 @@ describe("getTrazabilidadMatrix", () => {
         quantity: 10,
         unitOfMeasure: "par",
         unitPrice: 1000,
+        subtotal: 10000,
       },
     ])
 

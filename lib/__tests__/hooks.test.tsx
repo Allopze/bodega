@@ -1,8 +1,7 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
+import { describe, it, expect, vi, beforeEach } from "vitest"
 import { renderHook, act } from "@testing-library/react"
 import { useClientValidation } from "@/lib/hooks/use-client-validation"
-import { useHideOnScroll } from "@/lib/hooks/use-hide-on-scroll"
 import { z } from "zod"
 
 // Mock window.matchMedia
@@ -89,101 +88,5 @@ describe("useClientValidation", () => {
       singleResult.current.validate("name", "John")
     })
     expect(singleResult.current.fieldError("name")).toBeUndefined()
-  })
-})
-
-describe("useHideOnScroll", () => {
-  let el: HTMLDivElement
-
-  beforeEach(() => {
-    vi.useFakeTimers()
-    el = document.createElement("div")
-    Object.defineProperty(el, "scrollTop", {
-      writable: true,
-      value: 0,
-    })
-  })
-
-  afterEach(() => {
-    vi.useRealTimers()
-  })
-
-  it("always shows when scrollTop is at the top (<= 8)", () => {
-    const containerRef = { current: el }
-    const { result } = renderHook(() => useHideOnScroll(containerRef))
-
-    expect(result.current).toBe(false)
-
-    // Trigger scroll at top
-    el.scrollTop = 5
-    act(() => {
-      el.dispatchEvent(new Event("scroll"))
-    })
-    expect(result.current).toBe(false)
-  })
-
-  it("hides header when scrolling down past threshold", () => {
-    const containerRef = { current: el }
-    const { result } = renderHook(() => useHideOnScroll(containerRef))
-
-    // Initial scroll down (intentionally large delta)
-    el.scrollTop = 50
-    act(() => {
-      el.dispatchEvent(new Event("scroll"))
-    })
-    expect(result.current).toBe(true)
-
-    // Scroll up (intentionally large delta)
-    el.scrollTop = 20
-    act(() => {
-      el.dispatchEvent(new Event("scroll"))
-    })
-    expect(result.current).toBe(false)
-  })
-
-  it("shows header again after scroll idle timeout", () => {
-    const containerRef = { current: el }
-    const { result } = renderHook(() => useHideOnScroll(containerRef))
-
-    // Scroll down to hide
-    el.scrollTop = 50
-    act(() => {
-      el.dispatchEvent(new Event("scroll"))
-    })
-    expect(result.current).toBe(true)
-
-    // Fast-forward timers by idle timeout (150ms)
-    act(() => {
-      vi.advanceTimersByTime(150)
-    })
-    expect(result.current).toBe(false)
-  })
-
-  it("respects prefers-reduced-motion: reduce by never hiding", () => {
-    Object.defineProperty(window, "matchMedia", {
-      writable: true,
-      value: vi.fn().mockImplementation((query) => ({
-        matches: query === "(prefers-reduced-motion: reduce)",
-        media: query,
-        onchange: null,
-        addListener: vi.fn(),
-        removeListener: vi.fn(),
-      })),
-    })
-
-    const containerRef = { current: el }
-    const { result } = renderHook(() => useHideOnScroll(containerRef))
-
-    el.scrollTop = 100
-    act(() => {
-      el.dispatchEvent(new Event("scroll"))
-    })
-    expect(result.current).toBe(false)
-  })
-
-  it("does not bind events when element ref is null", () => {
-    const containerRef = { current: null }
-    const { result } = renderHook(() => useHideOnScroll(containerRef))
-    expect(result.current).toBe(false)
   })
 })

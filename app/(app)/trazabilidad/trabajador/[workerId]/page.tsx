@@ -41,6 +41,7 @@ export default async function WorkerEppTraceabilityPage({
   // 1. Fetch delivery history for this worker
   const deliveryRows = await db
     .select({
+      deliveryItemId: deliveryItems.id,
       deliveryId: deliveries.id,
       code: deliveries.code,
       deliveredAt: deliveries.deliveredAt,
@@ -165,7 +166,8 @@ export default async function WorkerEppTraceabilityPage({
             Sin entregas de EPP registradas para este trabajador.
           </div>
         ) : (
-          <div className="overflow-x-auto rounded-lg border border-[var(--color-border)]">
+          <>
+          <div className="hidden overflow-x-auto rounded-lg border border-[var(--color-border)] md:block">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -178,17 +180,17 @@ export default async function WorkerEppTraceabilityPage({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {deliveryRows.map((r, i) => (
-                  <TableRow key={`${r.deliveryId}-${i}`}>
+                {deliveryRows.map((r) => (
+                  <TableRow key={r.deliveryItemId}>
                     <TableCell className="font-mono text-xs text-[var(--color-text)]">{r.code}</TableCell>
                     <TableCell className="text-xs text-[var(--color-text-subtle)]">{r.deliveredAt ? formatDate(r.deliveredAt) : ""}</TableCell>
                     <TableCell className="text-sm font-medium text-[var(--color-text)]">{r.productName ?? "EPP"}</TableCell>
                     <TableCell className="text-xs font-mono">{formatQty(Number(r.quantity), r.unitOfMeasure ?? undefined)}</TableCell>
                     <TableCell className="text-xs">
                       {r.hasSig ? (
-                        <span className="text-[var(--color-success)] font-medium">Firmado ✓</span>
+                        <span className="font-medium text-[var(--color-success)]">Archivo de firma adjunto</span>
                       ) : (
-                        <span className="text-[var(--color-text-subtle)]">Sin firma</span>
+                        <span className="text-[var(--color-text-subtle)]">Sin archivo de firma</span>
                       )}
                     </TableCell>
                     <TableCell className="text-xs text-[var(--color-text-subtle)]">
@@ -199,6 +201,32 @@ export default async function WorkerEppTraceabilityPage({
               </TableBody>
             </Table>
           </div>
+          <div className="grid gap-3 md:hidden">
+            {deliveryRows.map((row) => (
+              <article key={row.deliveryItemId} className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="font-mono text-xs text-[var(--color-text)]">{row.code}</p>
+                    <p className="mt-0.5 text-xs text-[var(--color-text-subtle)]">{row.deliveredAt ? formatDate(row.deliveredAt) : "Sin fecha"}</p>
+                  </div>
+                  <span className={`text-xs font-medium ${row.hasSig ? "text-[var(--color-success)]" : "text-[var(--color-text-subtle)]"}`}>
+                    {row.hasSig ? "Archivo de firma adjunto" : "Sin archivo de firma"}
+                  </span>
+                </div>
+                <dl className="mt-3 grid gap-2 text-xs">
+                  <div>
+                    <dt className="text-[var(--color-text-subtle)]">EPP entregado</dt>
+                    <dd className="mt-0.5 font-medium text-[var(--color-text)]">{row.productName ?? "EPP"} · {formatQty(Number(row.quantity), row.unitOfMeasure ?? undefined)}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-[var(--color-text-subtle)]">Devolución de EPP antiguo</dt>
+                    <dd className="mt-0.5 text-[var(--color-text)]">{row.returnQuantity ? `${row.returnProductName ?? "EPP"} (${formatQty(Number(row.returnQuantity), row.unitOfMeasure ?? undefined)})` : "Sin devolución registrada"}</dd>
+                  </div>
+                </dl>
+              </article>
+            ))}
+          </div>
+          </>
         )}
       </section>
     </PageContainer>

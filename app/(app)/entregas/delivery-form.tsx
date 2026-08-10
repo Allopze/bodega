@@ -16,6 +16,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select"
 import { SignaturePad } from "@/components/ui/signature-pad"
+import { Button } from "@/components/ui/button"
 import { formatQty } from "@/lib/utils"
 import type { ActionState } from "@/lib/validation/operations"
 import { registerWorkerDeliveryAction } from "./actions"
@@ -159,7 +160,7 @@ export function DeliveryForm({
             </div>
 
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <Field label="EPP recibido pendiente" htmlFor="deliveryRequestItemId" required error={state.fieldErrors?.requestItemId?.[0]}>
+              <Field label="Equipo de protección personal (EPP) recibido pendiente" htmlFor="deliveryRequestItemId" required error={state.fieldErrors?.requestItemId?.[0]}>
                 <Select searchable value={requestItemId} onValueChange={setRequestItemId} disabled={!worksiteId}>
                   <SelectTrigger id="deliveryRequestItemId" error={!!state.fieldErrors?.requestItemId}>
                     <SelectValue placeholder={worksiteId ? "Selecciona EPP pendiente" : "Elige faena primero"} />
@@ -177,7 +178,7 @@ export function DeliveryForm({
                 </Select>
                 {selectedItem && (
                   <p className="mt-1.5 text-xs text-[var(--color-text-subtle)]">
-                    Stock disponible: {formatQty(selectedItem.stockQuantity, selectedItem.unitOfMeasure)}. Saldo pendiente: {formatQty(selectedItem.remainingQuantity, selectedItem.unitOfMeasure)}.
+                    Recibido en faena: {formatQty(selectedItem.receivedAtFaena, selectedItem.unitOfMeasure)}. Stock disponible: {formatQty(selectedItem.stockQuantity, selectedItem.unitOfMeasure)}. Saldo trazable: {formatQty(selectedItem.remainingQuantity, selectedItem.unitOfMeasure)}.
                   </p>
                 )}
               </Field>
@@ -223,7 +224,7 @@ export function DeliveryForm({
               </Field>
             </div>
 
-            <Field label="Firma del trabajador" helper="Opcional. Firma digital de recepción en terreno.">
+            <Field label="Firma del trabajador" helper="Opcional. Se guarda como archivo de firma adjunto; su evidencia no se verifica como firma.">
               <SignaturePad name="signatureFile" disabled={!selectedItem} />
             </Field>
 
@@ -242,19 +243,21 @@ export function DeliveryForm({
             </Field>
 
             {/* ── Devolver EPP antiguo ── */}
-            <button
+            <Button
               type="button"
+              variant="secondary"
+              size="sm"
               onClick={() => {
                 setShowReturn(!showReturn)
                 if (showReturn) setReturnProductId("")
               }}
-              className="flex items-center gap-2 self-start rounded-[var(--radius)] border border-dashed border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-text-muted)] transition-[color,border-color,background-color] duration-[var(--duration-default)] hover:border-[var(--color-primary-line)] hover:bg-[var(--color-primary-tint)] hover:text-[var(--color-primary-ink)]"
+              className="self-start border-dashed text-sm text-[var(--color-text-muted)] hover:border-[var(--color-primary-line)] hover:bg-[var(--color-primary-tint)] hover:text-[var(--color-primary-ink)]"
             >
               <span>Devolver EPP antiguo</span>
               {showReturn
                 ? <CaretUp size={14} weight="bold" />
                 : <CaretDown size={14} weight="bold" />}
-            </button>
+            </Button>
           </div>
 
           {/* ── Columna derecha: devolución (con morph) ── */}

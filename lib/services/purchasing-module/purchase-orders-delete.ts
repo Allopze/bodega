@@ -9,9 +9,14 @@ import { eq, and, inArray, isNull } from "drizzle-orm"
 import { db } from "@/db"
 import { purchaseOrders, purchaseOrderItems, purchaseRequestItems } from "@/db/schema"
 import { nanoid } from "@/lib/id"
-import { recordAudit, recordStatusChange } from "@/lib/audit"
+import { recordAudit, recordStatusChange, recordStatusChanges } from "@/lib/audit"
 import { isOrderDeletable } from "@/lib/services/purchasing.constants"
 import { rollupRequestStatus } from "@/lib/services/item-state-module/rollup"
+import {
+  getActiveOrderedQuantitiesTx,
+  lockPurchaseRequestItemsTx,
+  PURCHASE_COVERAGE_EPSILON,
+} from "./purchasable-coverage"
 
 export async function deleteOrder(
   orderId: string,
@@ -36,49 +41,14 @@ export async function deleteOrder(
     const now = new Date().toISOString()
 
     const ocItems = await tx
-      .select({ id: purchaseOrderItems.id, requestItemId: purchaseOrderItems.requestItemId, currentStatus: purchaseRequestItems.status, requestId: purchaseRequestItems.requestId })
+      .select({ requestItemId: purchaseOrderItems.requestItemId })
       .from(purchaseOrderItems)
-      .leftJoin(purchaseRequestItems, eq(purchaseOrderItems.requestItemId, purchaseRequestItems.id))
       .where(eq(purchaseOrderItems.purchaseOrderId, orderId))
 
     const requestItemIds = ocItems
       .map((i) => i.requestItemId)
       .filter((id): id is string => id !== null)
-
-    if (requestItemIds.length > 0) {
-      await tx
-        .update(purchaseRequestItems)
-        .set({ status: "pending_purchase", updatedAt: now })
-        .where(
-          and(
-            inArray(purchaseRequestItems.id, requestItemIds),
-            inArray(purchaseRequestItems.status, ["in_purchase_order", "purchased"]),
-          ),
-        )
-
-      for (const item of ocItems) {
-        if (!item.requestItemId || !item.currentStatus || !["in_purchase_order", "purchased"].includes(item.currentStatus)) continue
-        await recordStatusChange(
-          {
-            entityType: "request_item",
-            entityId:   item.requestItemId,
-            fromStatus: item.currentStatus,
-            toStatus:   "pending_purchase",
-            changedBy:  userId,
-          },
-          tx,
-        )
-      }
-    }
-
-    const affectedRequestIds = [...new Set(
-      ocItems
-        .filter((i): i is typeof i & { requestId: string } => Boolean(i.requestId))
-        .map((i) => i.requestId),
-    )]
-    for (const rid of affectedRequestIds) {
-      await rollupRequestStatus(rid, tx, userId)
-    }
+    const lockedRequestItems = await lockPurchaseRequestItemsTx(tx, requestItemIds)
 
     await tx
       .update(purchaseOrderItems)
@@ -90,6 +60,51 @@ export async function deleteOrder(
       .update(purchaseOrders)
       .set({ status: "cancelled", code: deletedCode, deletedAt: now, updatedAt: now })
       .where(eq(purchaseOrders.id, orderId))
+
+    const activeCoverageByRequestItem = await getActiveOrderedQuantitiesTx(
+      tx,
+      lockedRequestItems.map((item) => item.id),
+    )
+    const uncoveredRequestItemIds: string[] = []
+    for (const item of lockedRequestItems) {
+      if ((activeCoverageByRequestItem.get(item.id) ?? 0) <= PURCHASE_COVERAGE_EPSILON) {
+        uncoveredRequestItemIds.push(item.id)
+      }
+    }
+
+    if (uncoveredRequestItemIds.length > 0) {
+      const updatedItems = await tx
+        .update(purchaseRequestItems)
+        .set({ status: "pending_purchase", updatedAt: now })
+        .where(
+          and(
+            inArray(purchaseRequestItems.id, uncoveredRequestItemIds),
+            inArray(purchaseRequestItems.status, ["in_purchase_order", "purchased"]),
+          ),
+        )
+        .returning({ id: purchaseRequestItems.id })
+      const updatedIds = new Set(updatedItems.map((item) => item.id))
+
+      await recordStatusChanges(
+        lockedRequestItems
+          .filter((item) => updatedIds.has(item.id))
+          .map((item) => ({
+            entityType: "request_item" as const,
+            entityId: item.id,
+            fromStatus: item.status,
+            toStatus: "pending_purchase",
+            changedBy: userId,
+          })),
+        tx,
+      )
+    }
+
+    const affectedRequestIds = [...new Set(
+      lockedRequestItems.map((item) => item.requestId),
+    )]
+    for (const rid of affectedRequestIds) {
+      await rollupRequestStatus(rid, tx, userId)
+    }
 
     await recordStatusChange({
       entityType: "purchase_order",

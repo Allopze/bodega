@@ -41,10 +41,13 @@ export interface PendingItemOption {
   suggestedSupplierId?: string | null
   supplierHint?:        string | null
   deliveryMode:        "via_oficina" | "directo_faena"
+  /** Servicio del catálogo: puede comprarse con el costo aún por definir. */
+  isService:           boolean
 }
 
 export interface OcItemRow extends PendingItemOption {
-  unitPrice:        number
+  /** `null` = costo pendiente. Sólo lo admiten los ítems de servicio. */
+  unitPrice:        number | null
   discount:         number
   targetSupplierId: string
   /** Per-item supplier override set by the user. When empty, falls back to suggestedSupplierId or global supplierId. */

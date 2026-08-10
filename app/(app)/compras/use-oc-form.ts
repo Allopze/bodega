@@ -37,7 +37,8 @@ export function useOcForm({
   const [selectedItems, setSelectedItems] = React.useState<Set<string>>(
     () => new Set(initialItemId && pendingItems.some((i) => i.id === initialItemId) ? [initialItemId] : []),
   )
-  const [unitPrices,   setUnitPrices]   = React.useState<Record<string, number>>({})
+  // `null` = costo pendiente elegido explícitamente (campo vaciado en un servicio).
+  const [unitPrices,   setUnitPrices]   = React.useState<Record<string, number | null>>({})
   const [discounts,    setDiscounts]    = React.useState<Record<string, number>>({})
   const [quantities,   setQuantities]   = React.useState<Record<string, number>>({})
   const [itemSuppliers, setItemSuppliers] = React.useState<Record<string, string>>({})
@@ -102,9 +103,18 @@ export function useOcForm({
     ))
   }
 
-  function itemPrice(item: PendingItemOption) {
-    const supplierForItem = resolveItemSupplierId(item)
-    return unitPrices[item.id] ?? suggestedPrice(item, supplierForItem) ?? 0
+  /**
+   * Precio de la línea. `null` significa **costo pendiente**, y sólo puede
+   * pasarle a un servicio: un ítem normal sin precio cargado sigue valiendo 0,
+   * que es el comportamiento de siempre. Un 0 explícito en un servicio también
+   * se respeta (servicio sin costo), por eso se distingue `null` de `0`.
+   */
+  function itemPrice(item: PendingItemOption): number | null {
+    const explicit = unitPrices[item.id]
+    if (explicit !== undefined) return explicit
+    const suggested = suggestedPrice(item, resolveItemSupplierId(item))
+    if (suggested !== undefined) return suggested
+    return item.isService ? null : 0
   }
 
   function itemDiscount(itemId: string) {
@@ -118,6 +128,13 @@ export function useOcForm({
   }
 
   function setItemPrice(itemId: string, value: string) {
+    // Vaciar el campo de un servicio es la forma de decir "todavía no se sabe";
+    // en cualquier otro ítem sigue significando 0, como antes.
+    if (value.trim() === "") {
+      const item = pendingItems.find((i) => i.id === itemId)
+      setUnitPrices((p) => ({ ...p, [itemId]: item?.isService ? null : 0 }))
+      return
+    }
     setUnitPrices((p) => ({ ...p, [itemId]: parseFloat(value) || 0 }))
   }
 
@@ -126,6 +143,14 @@ export function useOcForm({
   }
 
   function setItemQuantity(item: PendingItemOption, value: string) {
+    // Vaciar el campo dejaba la cantidad completa de vuelta, así que para
+    // escribir "5" sobre "10" había que seleccionar todo y sobreescribir: el
+    // primer borrado se deshacía solo. Un campo vacío se conserva vacío (0) y
+    // el resto de la validación decide si se puede enviar.
+    if (value.trim() === "") {
+      setQuantities((p) => ({ ...p, [item.id]: 0 }))
+      return
+    }
     const parsed = parseFloat(value)
     const clamped = Number.isFinite(parsed) ? Math.min(Math.max(parsed, 0), item.quantity) : item.quantity
     setQuantities((p) => ({ ...p, [item.id]: clamped }))

@@ -4,7 +4,6 @@ import { useRouter } from "next/navigation"
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts"
 import { ChartLineUp } from "@phosphor-icons/react"
 import type { TaeGroupRow } from "@/lib/combustibles/tae-dashboard"
-import { ChartDataTable } from "@/components/ui/chart-data-table"
 import { buildTaeGroupDrilldownHref } from "./tae-group-chart-url"
 
 const BAR_COLOR = "var(--color-primary)"
@@ -23,24 +22,9 @@ export function TaeGroupChart({ data, drilldownBaseHref }: { data: TaeGroupRow[]
   if (data.length === 0) return <EmptyChart label="No hay cargas TAE en este filtro." />
 
   const chartData = data.slice(0, 10).map((row) => ({ name: truncate(row.group, 16), fullName: row.group, liters: row.liters, count: row.count }))
-  // El eje truncaba los nombres a 16 caracteres: dos conductores del mismo
-  // apellido quedaban indistinguibles en el gráfico. La tabla los nombra enteros.
-  const lider = chartData.reduce((current, row) => row.liters > current.liters ? row : current, chartData[0]!)
-  const totalLitros = chartData.reduce((sum, row) => sum + row.liters, 0)
 
   return (
     <>
-      <ChartDataTable
-        title="Litros TAE por grupo"
-        groupLabel="Grupo"
-        columns={["Litros", "Cargas"]}
-        rows={chartData.map((row) => ({ label: row.fullName, values: [`${liters.format(row.liters)} L`, row.count] }))}
-        conclusion={chartData.length === 1
-          ? `Único grupo con cargas: ${lider.fullName}, ${liters.format(lider.liters)} L en ${lider.count} cargas.`
-          : `${lider.fullName} encabeza con ${liters.format(lider.liters)} L de ${liters.format(totalLitros)} L visibles.`}
-        caption={data.length > chartData.length ? `Se muestran los ${chartData.length} grupos de mayor consumo de ${data.length}.` : undefined}
-        className="mb-4 mt-0 border-b border-t-0 pb-3 pt-0"
-      />
     <div className="h-64" aria-label="Litros TAE por grupo">
       <ResponsiveContainer width="100%" height="100%" debounce={80}>
         <BarChart data={chartData} layout="vertical" margin={{ top: 4, right: 12, left: 0, bottom: 2 }} title="Litros TAE por grupo. Selecciona una barra para ver esas cargas en la bitácora.">

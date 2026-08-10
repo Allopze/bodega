@@ -323,6 +323,7 @@ describe("trazabilidad export scoping and filter tests", () => {
       quantity: 6,
       unitOfMeasure: "par",
       unitPrice: 15000,
+      subtotal: 90000,
     })
 
     // Seed receipts at faena
@@ -425,6 +426,7 @@ describe("trazabilidad export scoping and filter tests", () => {
         quantity: 10,
         unitOfMeasure: "par",
         unitPrice: 1000,
+        subtotal: 10000,
         status: "cancelled",
       },
       {
@@ -434,6 +436,7 @@ describe("trazabilidad export scoping and filter tests", () => {
         quantity: 10,
         unitOfMeasure: "par",
         unitPrice: 1000,
+        subtotal: 10000,
       },
     ])
 

@@ -1,15 +1,16 @@
 import { SkeletonPage } from "@/components/ui/skeleton"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
+import { PageContainer } from "@/components/ui/page-container"
 
 /** Mantiene contexto y geometría de la tabla durante filtros o paginación. */
 export default function LoadingPendingWork() {
   return (
-    <>
+    <PageContainer>
       <PageHeader
         title="Mis pendientes"
         breadcrumb={<Breadcrumbs items={[{ label: "Inicio", href: "/dashboard" }, { label: "Mis pendientes" }]} />}
       />
       <SkeletonPage rows={8} />
-    </>
+    </PageContainer>
   )
 }

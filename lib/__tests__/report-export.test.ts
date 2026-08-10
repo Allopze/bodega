@@ -219,12 +219,17 @@ describe("report export helpers", () => {
     const session = { user: { id: "user-1", email: "admin@test.com" } } as Session
     const data = await getReportData("oc_por_estado", session, {})
     expect(data.filenameBase).toBe("oc-por-estado")
-    expect(data.headers).toEqual(["OC", "Estado", "Faena", "Total", "Emitida", "Enviada", "Confirmada"])
+    // "Total conocido" + el conteo de servicios pendientes: el total de la OC
+    // excluye las líneas cuyo costo aún no se conoce, así que el reporte lo dice.
+    expect(data.headers).toEqual([
+      "OC", "Estado", "Faena", "Total conocido", "Servicios con costo pendiente",
+      "Emitida", "Enviada", "Confirmada",
+    ])
     expect(data.rows).toHaveLength(2)
-    expect(data.rows[0]).toEqual(["OC-1", "Pendiente de recepción", "Faena Uno", 1000, "01-01-2026", "02-01-2026", ""])
+    expect(data.rows[0]).toEqual(["OC-1", "Pendiente de recepción", "Faena Uno", 1000, 0, "01-01-2026", "02-01-2026", ""])
     // `confirmed` no está en el catálogo vigente: el helper devuelve el valor tal
     // cual a propósito, para que un estado nuevo se vea en vez de silenciarse.
-    expect(data.rows[1]).toEqual(["OC-2", "confirmed", "Faena Dos", 2000, "03-01-2026", "04-01-2026", "05-01-2026"])
+    expect(data.rows[1]).toEqual(["OC-2", "confirmed", "Faena Dos", 2000, 0, "03-01-2026", "04-01-2026", "05-01-2026"])
   })
 
   it("defaults to gasto_faena for other values", async () => {
@@ -444,9 +449,11 @@ describe("report export helpers", () => {
   it("oc_por_estado with null confirmedAt renders empty string", async () => {
     const session = { user: { id: "user-1", email: "admin@test.com" } } as Session
     const data = await getReportData("oc_por_estado", session, {})
-    // PO-1 has confirmedAt: null, PO-2 has confirmedAt set
-    expect(data.rows[0]?.[6]).toBe("") // confirmedAt empty for PO-1
-    expect(data.rows[1]?.[6]).toBe("05-01-2026") // confirmedAt for PO-2
+    // PO-1 has confirmedAt: null, PO-2 has confirmedAt set.
+    // La columna 4 es "Servicios con costo pendiente", así que confirmedAt es la 7.
+    const confirmedAtIndex = data.headers.indexOf("Confirmada")
+    expect(data.rows[0]?.[confirmedAtIndex]).toBe("") // confirmedAt empty for PO-1
+    expect(data.rows[1]?.[confirmedAtIndex]).toBe("05-01-2026") // confirmedAt for PO-2
   })
 
   // ── Scoped session edge cases ────────────────────────────────────────

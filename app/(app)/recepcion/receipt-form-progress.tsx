@@ -42,24 +42,26 @@ export function TwoStageProgress({
   const faenaComplete    = officeComplete && pendingDispatch === 0
 
   return (
-    <div className="flex items-center gap-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-4 py-3 text-xs">
+    <div className="grid gap-2 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-4 py-3 text-xs sm:grid-cols-[1fr_auto_1fr] sm:items-center">
       {/* Step 1 */}
       <div className="flex items-center gap-2 min-w-0">
         <span
-          aria-hidden="true"
+          aria-label={officeComplete ? "Paso 1 completado" : officeInProgress ? "Paso 1 en curso" : "Paso 1 pendiente"}
           className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold ${
-            officeComplete || officeInProgress
+            officeComplete
               ? "bg-[var(--color-success)] text-white"
+              : officeInProgress
+                ? "border-2 border-[var(--color-primary-line)] bg-[var(--color-primary-tint)] text-[var(--color-primary-ink)]"
               : "border-2 border-[var(--color-border)] text-[var(--color-text-muted)]"
           }`}
         >
-          {officeComplete || officeInProgress ? <CheckCircle size={14} weight="fill" /> : "1"}
+          {officeComplete ? <CheckCircle size={14} weight="fill" /> : "1"}
         </span>
         <div>
           <p className="font-medium text-[var(--color-text)]">Llegada a oficina</p>
           <p className="text-[var(--color-text-subtle)]">
             {officeComplete
-              ? `${qty(totalOfficeReceived, linesInOffice)} completo`
+              ? `${qty(totalOfficeReceived, linesInOffice)} completado`
               : officeInProgress
               ? unit
                 ? `${totalOfficeReceived} / ${totalOrdered} ${unit}`
@@ -70,12 +72,12 @@ export function TwoStageProgress({
       </div>
 
       {/* Connector */}
-      <span className="shrink-0 text-[var(--color-text-subtle)]">→</span>
+      <span className="hidden shrink-0 text-[var(--color-text-subtle)] sm:inline" aria-hidden="true">→</span>
 
       {/* Step 2 */}
       <div className="flex items-center gap-2 min-w-0">
         <span
-          aria-hidden="true"
+          aria-label={faenaComplete ? "Paso 2 completado" : pendingDispatch > 0 ? "Paso 2 en curso" : "Paso 2 pendiente"}
           className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold ${
             faenaComplete
               ? "bg-[var(--color-success)] text-white"

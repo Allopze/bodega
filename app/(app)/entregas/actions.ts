@@ -13,6 +13,7 @@ import { workerDeliverySchema, type ActionState } from "@/lib/validation/operati
 
 import { createDeliveryAttachmentPath, resolveDeliveriesDir } from "@/lib/storage/config"
 import { validateFileBuffer, MimeType } from "@/lib/file-validation"
+import { safeActionMessage } from "@/lib/action-error"
 
 export async function registerWorkerDeliveryAction(
   _prev: ActionState,
@@ -78,7 +79,7 @@ export async function registerWorkerDeliveryAction(
     }, serviceWorksiteScope(session))
 
     revalidateOperationalViews(["/entregas", "/bodega", "/trazabilidad", "/solicitudes"])
-    return { ok: true, message: `Entrega registrada: ${quantity} unidades` }
+    return { ok: true, message: `Entrega registrada: ${quantity} ${quantity === 1 ? "unidad" : "unidades"}` }
   } catch (e) {
     if (proofResult.absolutePath) {
       await fs.unlink(proofResult.absolutePath).catch(() => undefined)
@@ -87,7 +88,7 @@ export async function registerWorkerDeliveryAction(
       await fs.unlink(sigResult.absolutePath).catch(() => undefined)
     }
     logger.error("[registerWorkerDeliveryAction]", e)
-    return { ok: false, message: e instanceof Error ? e.message : "Error al registrar entrega" }
+    return { ok: false, message: safeActionMessage(e, "Error al registrar entrega") }
   }
 }
 

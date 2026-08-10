@@ -68,6 +68,7 @@ test("entregas: registra comprobante y permite descargarlo", async ({ page }) =>
     buffer: Buffer.from("%PDF-1.4\ncomprobante adjunto e2e\n%%EOF\n"),
   })
   await page.locator("form").getByRole("button", { name: "Registrar entrega" }).click()
+  await expect(page.locator("#deliveryQuantity")).toBeDisabled({ timeout: 30_000 })
 
   await page.goto("/dashboard")
   await page.goto("/entregas")
@@ -98,6 +99,7 @@ test("entregas: registra EPP recibido a trabajador", async ({ page }) => {
   await page.locator("#deliveryQuantity").fill("2")
   await page.getByLabel("Recibido por").fill("Supervisor E2E")
   await page.locator("form").getByRole("button", { name: "Registrar entrega" }).click()
+  await expect(page.locator("#deliveryQuantity")).toBeDisabled({ timeout: 30_000 })
 
   await page.goto("/dashboard")
   await page.goto("/entregas")

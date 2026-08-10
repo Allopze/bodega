@@ -18,11 +18,13 @@ test.describe("Conciliación OC-factura-recepción", () => {
     // which isn't the default active tab, and only renders once the OC has
     // an invoice attached.
     await page.getByRole("tab", { name: "Facturación" }).click()
-    const conciliacion = page.getByText("Conciliación por ítem")
+    const conciliacion = page.getByText("Conciliación por línea")
     await expect(conciliacion).toBeVisible({ timeout: 10_000 })
     // `exact`: la advertencia de conciliación del rail ("Total facturado difiere
     // del total OC") también contiene el texto desde que se muestra antes del cierre.
-    await expect(page.getByText("Total facturado", { exact: true })).toBeVisible()
+    await expect(page.getByText("Total facturado (CLP)", { exact: true })).toBeVisible()
+    await expect(page.getByText("Monetariamente conciliada (tolerancia: $1)", { exact: true })).toBeVisible()
+    await expect(page.getByText("Cobertura parcial de líneas", { exact: true })).toBeVisible()
   })
 
   // Antes había que saber que existía la pestaña "Facturación" y bajar hasta el

@@ -3,7 +3,7 @@ import { notFound, redirect } from "next/navigation"
 import { db } from "@/db"
 import {
   purchaseRequests,
-  worksites, products, productAttributes,
+  worksites, products, productAttributes, workers,
   statusHistory, users, suppliers, productSuppliers,
   approvalDecisions, purchaseRequestItems,
   repuestoQuotations, serviceQuotations,
@@ -123,6 +123,21 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
   // activo completo.
   const canEditItems = request.status === "draft"
 
+  // Sólo los colaboradores que los ítems ya nombran: la ficha es de consulta y
+  // no ofrece el padrón completo, pero sí tiene que decir para quién es cada ítem.
+  const referencedWorkerIds = [...new Set(
+    request.items.map((i) => i.workerId).filter((id): id is string => id != null),
+  )]
+  const referencedWorkers = referencedWorkerIds.length === 0
+    ? []
+    : await db
+        .select({ id: workers.id, firstName: workers.firstName, lastName: workers.lastName })
+        .from(workers)
+        .where(inArray(workers.id, referencedWorkerIds))
+  const workerNameById = new Map(
+    referencedWorkers.map((worker) => [worker.id, `${worker.firstName} ${worker.lastName}`]),
+  )
+
   const [allWorksites, allProducts, allAttrs, productSupplierRows, timelineEvents, approvalDecisionRows, allSuppliers, maxFileSizeMb] = await Promise.all([
     db.select().from(worksites).where(eq(worksites.isActive, true)).orderBy(asc(worksites.name)),
     canEditItems
@@ -219,6 +234,8 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
     sku:            p.sku,
     name:           p.name,
     isEpp:          p.isEpp,
+    isService:      p.isService,
+    requiresWorker: p.requiresWorker,
     unitOfMeasure:  p.unitOfMeasure,
     categoryName:   p.categoryId,
     referencePrice: p.referencePrice,
@@ -321,6 +338,9 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
     worksiteId:   request.worksiteId,
     requestType:  request.requestType,
     urgency:      request.urgency,
+    // Sin esto la ficha mostraba siempre "Vía oficina", aunque la jefatura ya
+    // hubiera cambiado el despacho al aprobar.
+    deliveryMode: request.deliveryMode,
     requiredDate: request.requiredDate ?? request.items.find((item) => item.requiredDate)?.requiredDate ?? null,
     status:       request.status,
     notes:        request.notes,
@@ -335,6 +355,8 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
       supplierHint:        item.supplierHint,
       notes:               item.notes,
       status:              item.status,
+      workerId:            item.workerId,
+      workerName:          item.workerId ? (workerNameById.get(item.workerId) ?? null) : null,
       attributes:          item.attributes.map((a) => ({
         attributeId:   a.attributeId,
         attributeName: a.attributeName,

@@ -5,7 +5,7 @@ import {
   purchaseOrders, purchaseOrderItems, worksites, suppliers,
 } from "@/db/schema"
 import { and, or, ilike, eq, inArray, desc, count, sql } from "drizzle-orm"
-import { requirePermission, canAny } from "@/lib/auth/can"
+import { requirePermission, can } from "@/lib/auth/can"
 import { worksiteScopeSql } from "@/lib/auth/scope"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { ExportExcelButton } from "@/components/adquisiciones/export-excel-button"
@@ -29,6 +29,10 @@ const STAGE_GROUPS = [
   { value: "partially_received",                        label: "Recibido en faena (parcial)" },
 ] as const
 
+function escapeLikeLocal(value: string) {
+  return value.replace(/[\\%_]/g, (character) => `\\${character}`)
+}
+
 export default async function RecepcionPage({
   searchParams,
 }: {
@@ -48,7 +52,6 @@ export default async function RecepcionPage({
   const listParams = parseListParams(sp)
 
   // Extended text search: match OC code OR supplier name via EXISTS subquery.
-  function escapeLikeLocal(v: string) { return v.replace(/[\\%_]/g, (c) => `\\${c}`) }
   const q = listParams.q.trim()
   const likePattern = q ? `%${escapeLikeLocal(q)}%` : null
   const textCondition = likePattern
@@ -98,6 +101,7 @@ export default async function RecepcionPage({
         worksiteId:  purchaseOrders.worksiteId,
         supplierId:  purchaseOrders.supplierId,
         status:      purchaseOrders.status,
+        deliveryMode: purchaseOrders.deliveryMode,
         sentAt:      purchaseOrders.sentAt,
         createdAt:   purchaseOrders.createdAt,
       })
@@ -122,6 +126,8 @@ export default async function RecepcionPage({
   const pageHref = (page: number) => buildPaginationHref("/recepcion", sp, page)
   const worksiteOptions = worksiteOptionRows.map((w) => ({ value: w.id, label: w.name }))
   const supplierOptions = supplierOptionRows.map((s) => ({ value: s.id, label: s.name }))
+  const worksiteScopeLabel = worksiteOptions.find((worksite) => worksite.value === listParams.faena)?.label
+    ?? "todas las faenas permitidas"
 
   const wsIds       = [...new Set(visible.map((o) => o.worksiteId))]
   const supplierIds = [...new Set(visible.map((o) => o.supplierId))]
@@ -154,7 +160,8 @@ export default async function RecepcionPage({
     }
   }
 
-  const canRegister = canAny(session, "receiving:register_office", "receiving:register_faena")
+  const canOffice = can(session, "receiving:register_office")
+  const canFaena = can(session, "receiving:register_faena")
 
   const headerSignals: HeaderSignal[] = [
     { key: "to-receive", label: "Por recibir", value: stageCountRows.reduce((sum, row) => sum + row.total, 0) },
@@ -163,7 +170,6 @@ export default async function RecepcionPage({
   return (
     <PageContainer>
       <PageHeader
-        newShortcutHref="/recepcion/nueva"
         title="Recepción"
         description="Registra llegada a oficina Chome y posterior recepción en faena."
         breadcrumb={
@@ -176,13 +182,17 @@ export default async function RecepcionPage({
         // A-18: la exportación va en el top bar, igual que en compras y solicitudes.
         actions={<ExportExcelButton tipo="recepcion" />}
       />
+      <p className="mb-3 text-xs text-(--color-text-subtle)" aria-live="polite">
+        Alcance de faena: <span className="font-medium text-(--color-text-muted)">{worksiteScopeLabel}</span>
+      </p>
 
       <RecepcionTable
         orders={visible}
         wsMap={wsMap}
         supMap={supMap}
         gapMap={gapMap}
-        canRegister={canRegister}
+        canOffice={canOffice}
+        canFaena={canFaena}
         worksiteOptions={worksiteOptions}
         supplierOptions={supplierOptions}
         stageTabs={stageTabs}

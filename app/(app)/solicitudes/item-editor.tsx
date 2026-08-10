@@ -4,9 +4,12 @@ import * as React from "react"
 import { Package, Trash } from "@phosphor-icons/react"
 import { Input } from "@/components/ui/input"
 import { Field } from "@/components/ui/field"
+import { Badge } from "@/components/ui/badge"
+import { Combobox } from "@/components/ui/combobox"
 import {
   Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
 } from "@/components/ui/select"
+import { COST_PENDING_LABEL } from "@/lib/products/service-items"
 import { ProductPicker } from "./product-picker"
 import type { ItemRow, ProductOption, SupplierOption, WorkerOption } from "./request-form.types"
 import { QUOTATION_TYPES } from "@/lib/request-types"
@@ -17,7 +20,7 @@ import { VariantSelector } from "./variant-selector"
 import { getSizeVariantPicker } from "./variant-selector.helpers"
 import { ItemEditorAttributes } from "./item-editor-attributes"
 import { groupProductVariants } from "@/lib/products/variant-grouping"
-import { URGENCY_OPTS, UNIT_OF_MEASURE_OPTIONS } from "./request-form.constants"
+import { URGENCY_OPTS } from "./request-form.constants"
 import { getWorkerEppStatusAction, type WorkerEppStatusResult } from "./actions"
 import { formatDate } from "@/lib/utils"
 
@@ -54,6 +57,23 @@ export function ItemEditor({
     ? groupProductVariants(products).find((group) => group.variants.some((variant) => variant.id === selectedProduct.id))?.variants ?? []
     : []
   const sizeVariantPicker = getSizeVariantPicker(variants)
+
+  const workerRequired = selectedProduct?.requiresWorker ?? false
+  // En consulta el bloque se muestra si el ítem tiene colaborador, aunque la
+  // pantalla no cargue el padrón de trabajadores (la ficha de detalle no lo pasa).
+  const showWorkerPicker = !isQuotationType && (
+    workerRequired
+    || (requestType === "epp" && !!workers?.length)
+    || (readOnly && !!item.workerId)
+  )
+  const workerOptions = React.useMemo(
+    () => (workers ?? []).map((worker) => ({
+      value: worker.id,
+      label: `${worker.firstName} ${worker.lastName}`,
+      hint:  worker.rut ?? undefined,
+    })),
+    [workers],
+  )
 
   const [statusInfo, setStatusInfo] = React.useState<WorkerEppStatusResult | null>(null)
 
@@ -93,6 +113,15 @@ export function ItemEditor({
               <Package size={14} className="text-(--color-text-subtle) shrink-0" />
               <span className="flex-1 text-sm font-medium text-(--color-text)">
                 {item.productName}
+                {selectedProduct?.isService && (
+                  <Badge
+                    variant="outline" size="sm"
+                    className="ml-1.5 font-normal align-middle"
+                    title="El precio de este servicio se conoce al ejecutarlo o facturarlo; se registra sobre la orden de compra."
+                  >
+                    {COST_PENDING_LABEL}
+                  </Badge>
+                )}
                 {selectedProduct?.isInactive && (
                   <span className="ml-1.5 inline-flex items-center rounded-full bg-(--color-warning-tint) border border-(--color-warning-line) px-1.5 py-px text-[10px] font-medium text-(--color-warning-ink)" title="Este producto fue desactivado del catálogo">
                     inactivo
@@ -162,29 +191,40 @@ export function ItemEditor({
         </div>
       )}
 
-      {/* Worker picker — visible for EPP type requests */}
-      {requestType === "epp" && !isQuotationType && workers && workers.length > 0 && (
+      {/* Colaborador — para EPP (opcional, sugiere tallas) y para cualquier
+          producto que lo exija (`requiresWorker`: vacunas y lo que venga).
+          Se muestra también en consulta: la ficha de una solicitud enviada tiene
+          que decir para quién es. */}
+      {showWorkerPicker && (
         <div className="ml-8 max-w-sm">
-          <Field label="Trabajador" htmlFor={`worker-${item._key}`} helper="Opcional. Si se asigna, las tallas se sugerirán automáticamente.">
-            <Select
-              value={item.workerId || "none"}
-              onValueChange={(v) => onUpdateWorker(v === "none" ? "" : v)}
-              disabled={readOnly}
-            >
-              <SelectTrigger id={`worker-${item._key}`} className="h-8 text-sm">
-                <SelectValue placeholder="Sin asignar..." />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">Sin asignar</SelectItem>
-                {workers.map((w) => (
-                  <SelectItem key={w.id} value={w.id}>
-                    {w.firstName} {w.lastName}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          <Field
+            label="Colaborador"
+            required={workerRequired}
+            htmlFor={`worker-${item._key}`}
+            helper={readOnly ? undefined : workerRequired
+              ? `Obligatorio para ${selectedProduct?.name ?? "este ítem"}. Busca por nombre o RUT.`
+              : "Opcional. Si se asigna, las tallas se sugerirán automáticamente."}
+          >
+            {readOnly ? (
+              <Input
+                id={`worker-${item._key}`}
+                className="h-8 text-sm disabled:opacity-100 disabled:cursor-default"
+                value={item.workerName || "Sin asignar"}
+                disabled
+                readOnly
+              />
+            ) : (
+              <Combobox
+                id={`worker-${item._key}`}
+                options={workerOptions}
+                value={item.workerId}
+                onChange={onUpdateWorker}
+                placeholder="Buscar colaborador..."
+                clearLabel={workerRequired ? undefined : "Sin asignar"}
+              />
+            )}
           </Field>
-          {item.workerId && item.workerName && (
+          {!readOnly && item.workerId && item.workerName && !workerRequired && (
             <p className="mt-1 text-[11px] text-(--color-text-subtle)">
               Usando tallas registradas para {item.workerName}
             </p>
@@ -236,9 +276,6 @@ export function ItemEditor({
             onChange={(e) => onUpdate({ unitOfMeasure: e.target.value })}
             disabled={readOnly}
           />
-          <datalist id="unit-of-measure-options">
-            {UNIT_OF_MEASURE_OPTIONS.map((unit) => <option key={unit} value={unit} />)}
-          </datalist>
         </Field>
 
         {!isQuotationType && (

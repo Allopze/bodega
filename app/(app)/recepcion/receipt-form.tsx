@@ -46,7 +46,12 @@ export function ReceiptForm({
   }, [deliveryMode])
 
   // A stage is offered only when the user can perform it AND there is something left to receive.
-  const officeAvailable = canOffice && items.some((i) => getRemaining(i, "office") > 0)
+  // Las OC de despacho directo nunca pasan por oficina. El permiso de oficina
+  // no cambia ese contrato: mostrar ese botón enviaba al usuario por un camino
+  // que `registerReceipt` debía rechazar en el servidor.
+  const officeAvailable = deliveryMode !== "directo_faena"
+    && canOffice
+    && items.some((i) => getRemaining(i, "office") > 0)
   const faenaAvailable  = canFaena  && items.some((i) => getRemaining(i, "faena")  > 0)
 
   const [guideNo, setGuideNo] = React.useState<string>("")
@@ -104,6 +109,7 @@ export function ReceiptForm({
       return total > getRemaining(item, stage)
     })
     .map((item) => item.id)
+  const overBookedItemIdSet = new Set(overBookedItemIds)
   const hasOverBooked = overBookedItemIds.length > 0
 
   return (
@@ -120,7 +126,11 @@ export function ReceiptForm({
           vuelve a vivir dentro de la tabla (auditoría UI/UX 2026-07-29, A-02). */}
       <div className="min-w-0 space-y-6">
         {/* Two-stage pipeline indicator — shows progress for dual-role users */}
-        <TwoStageProgress items={items} canOffice={canOffice} canFaena={canFaena} />
+        <TwoStageProgress
+          items={items}
+          canOffice={deliveryMode !== "directo_faena" && canOffice}
+          canFaena={canFaena}
+        />
 
         {/* Header */}
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
@@ -137,7 +147,7 @@ export function ReceiptForm({
 
         <Field label="Tipo de recepción" className="md:col-span-2" error={state.fieldErrors?.stage?.[0]}>
           <div className="grid gap-2 sm:grid-cols-2">
-            {canOffice && (
+            {deliveryMode !== "directo_faena" && canOffice && (
               <button
                 type="button"
                 onClick={() => setStage("office")}
@@ -173,8 +183,12 @@ export function ReceiptForm({
                 </p>
                 <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">
                   {faenaAvailable
-                    ? `Oficina distribuye a ${orderWorksiteName}. Actualiza stock y trazabilidad.`
-                    : "Disponible una vez registrada la llegada a oficina."}
+                    ? deliveryMode === "directo_faena"
+                      ? `Proveedor entrega directamente en ${orderWorksiteName}. Actualiza stock y trazabilidad.`
+                      : `Oficina distribuye a ${orderWorksiteName}. Actualiza stock y trazabilidad.`
+                    : deliveryMode === "directo_faena"
+                      ? "No quedan ítems pendientes de recepción en faena."
+                      : "Disponible una vez registrada la llegada a oficina."}
                 </p>
               </button>
             )}
@@ -188,7 +202,7 @@ export function ReceiptForm({
             Ítems de la OC {orderCode}
           </h2>
 
-        <div className="border border-[var(--color-border)] rounded-[var(--radius-lg)] divide-y divide-[var(--color-border)] overflow-x-auto">
+        <div className="hidden overflow-x-auto rounded-[var(--radius-lg)] border border-[var(--color-border)] divide-y divide-[var(--color-border)] md:block">
           {/* Header */}
           <div className="grid min-w-[440px] grid-cols-[minmax(0,1fr)_84px_84px_84px] gap-3 px-4 py-2 bg-[var(--color-surface-2)] text-xs font-medium text-[var(--color-text-muted)]">
             <span>Producto</span>
@@ -200,7 +214,7 @@ export function ReceiptForm({
           {items.map((item) => {
             const remaining = getRemaining(item, stage)
             const pending   = remaining > 0
-            const overBooked = overBookedItemIds.includes(item.id)
+            const overBooked = overBookedItemIdSet.has(item.id)
 
             return (
               <div key={item.id} className={`grid min-w-[440px] grid-cols-[minmax(0,1fr)_84px_84px_84px] gap-3 px-4 py-3 ${!pending ? "opacity-50" : ""}`}>
@@ -227,7 +241,6 @@ export function ReceiptForm({
                 </div>
 
                 <Input
-                  id={`receiptQty-${item.id}`}
                   type="number"
                   step="0.01"
                   min="0"
@@ -241,7 +254,6 @@ export function ReceiptForm({
                 />
 
                 <Input
-                  id={`receiptRej-${item.id}`}
                   type="number"
                   step="0.01"
                   min="0"
@@ -255,7 +267,6 @@ export function ReceiptForm({
                 />
 
                 <Input
-                  id={`receiptDmg-${item.id}`}
                   type="number"
                   step="0.01"
                   min="0"
@@ -268,6 +279,40 @@ export function ReceiptForm({
                   aria-label={`Cantidad dañada de ${item.productName}`}
                 />
               </div>
+            )
+          })}
+        </div>
+        <div className="grid gap-3 md:hidden">
+          {items.map((item) => {
+            const remaining = getRemaining(item, stage)
+            const pending = remaining > 0
+            const overBooked = overBookedItemIdSet.has(item.id)
+            return (
+              <fieldset key={item.id} disabled={!pending} className={`rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3 ${!pending ? "opacity-60" : ""}`}>
+                <legend className="sr-only">Recepción de {item.productName}</legend>
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-[var(--color-text)]">{item.productName}</p>
+                    <p className="mt-0.5 text-xs text-[var(--color-text-subtle)]">
+                      Pedido: {formatQty(item.quantity, item.unitOfMeasure)} · pendiente: {formatQty(remaining, item.unitOfMeasure)}
+                    </p>
+                  </div>
+                  {item.productSku && <span className="rounded bg-[var(--color-surface-2)] px-1.5 py-0.5 font-mono text-[11px] text-[var(--color-text-subtle)]">{item.productSku}</span>}
+                </div>
+                <div className="mt-3 grid grid-cols-3 gap-2">
+                  <Field label="Recibido">
+                    <Input type="number" inputMode="decimal" step="0.01" min="0" max={remaining} value={qtys[item.id] ?? remaining} onChange={(event) => setQtys((current) => ({ ...current, [item.id]: parseFloat(event.target.value) || 0 }))} error={overBooked} aria-label={`Cantidad recibida de ${item.productName}`} />
+                  </Field>
+                  <Field label="Rechazado">
+                    <Input type="number" inputMode="decimal" step="0.01" min="0" max={remaining} value={rejs[item.id] ?? 0} onChange={(event) => setRejs((current) => ({ ...current, [item.id]: parseFloat(event.target.value) || 0 }))} error={overBooked} aria-label={`Cantidad rechazada de ${item.productName}`} />
+                  </Field>
+                  <Field label="Dañado">
+                    <Input type="number" inputMode="decimal" step="0.01" min="0" max={remaining} value={dmgs[item.id] ?? 0} onChange={(event) => setDmgs((current) => ({ ...current, [item.id]: parseFloat(event.target.value) || 0 }))} error={overBooked} aria-label={`Cantidad dañada de ${item.productName}`} />
+                  </Field>
+                </div>
+                {overBooked && <p className="mt-2 text-xs text-[var(--color-danger)]">La suma supera el saldo pendiente de {formatQty(remaining, item.unitOfMeasure)}.</p>}
+                {!pending && <p className="mt-2 text-xs text-[var(--color-text-subtle)]">Completamente recibido en esta etapa.</p>}
+              </fieldset>
             )
           })}
         </div>

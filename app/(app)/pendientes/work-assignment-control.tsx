@@ -3,7 +3,7 @@
 import * as React from "react"
 import { UserPlus } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { DatePicker } from "@/components/ui/date-picker"
 import { Field } from "@/components/ui/field"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -41,18 +41,23 @@ export function WorkAssignmentControl({ item, showAssignee = false }: { item: Op
 
   return (
     <Dialog open={open} onOpenChange={loadCandidates}>
-      <Button
-        type="button"
-        size="sm"
-        variant="ghost"
-        onClick={() => void loadCandidates(true)}
-        aria-label={`${item.assignee?.source === "assignment" ? "Reasignar" : "Asignar"} responsable para ${item.title}`}
-      >
-        <UserPlus size={15} />
-        {showAssignee && item.assignee?.source === "assignment"
-          ? `Responsable: ${item.assignee.name}`
-          : item.assignee?.source === "assignment" ? "Reasignar" : "Asignar"}
-      </Button>
+      {/* Como DialogTrigger, no con un onClick suelto: sin trigger registrado
+          Radix no sabe a qué devolver el foco al cerrar y quedaba en el <body>,
+          obligando a tabular desde el principio de la página. La carga de
+          candidatos la dispara igual `onOpenChange`. */}
+      <DialogTrigger asChild>
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          aria-label={`${item.assignee?.source === "assignment" ? "Reasignar" : "Asignar"} responsable para ${item.title}`}
+        >
+          <UserPlus size={15} />
+          {showAssignee && item.assignee?.source === "assignment"
+            ? `Responsable: ${item.assignee.name}`
+            : item.assignee?.source === "assignment" ? "Reasignar" : "Asignar"}
+        </Button>
+      </DialogTrigger>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Asignar pendiente</DialogTitle>

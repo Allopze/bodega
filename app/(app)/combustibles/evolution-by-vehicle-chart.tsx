@@ -3,7 +3,6 @@
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts"
 import { ChartLineUp } from "@phosphor-icons/react"
 import type { VehicleEvolutionPoint } from "@/lib/combustibles/consumption-dashboard"
-import { ChartDataTable } from "@/components/ui/chart-data-table"
 
 const COLORS = [
   "var(--color-primary)", "var(--color-info)", "var(--color-success)", "var(--color-warning-ink)", "var(--color-signal-ink)",
@@ -68,38 +67,8 @@ export function EvolutionByVehicleChart({ points, maxSeries = 8 }: { points: Veh
   const { data, plates } = pivotByPeriod(points, maxSeries)
   if (data.length === 0 || plates.length === 0) return <EmptyEvolution />
 
-  // Ocho líneas del mismo grosor separadas sólo por color, y la leyenda
-  // **desaparece** por encima de seis series: sin tabla no hay forma de saber
-  // qué equipo es cada línea, ni con vista perfecta.
-  const litros = (value: number) => `${Math.round(value).toLocaleString("es-CL")} L`
-  const primerPeriodo = data[0]?.periodo
-  const ultimoPeriodo = data[data.length - 1]?.periodo
-  const filas = plates.map((plate) => {
-    const inicio = Number(data[0]?.[plate.key] ?? 0)
-    const fin = Number(data[data.length - 1]?.[plate.key] ?? 0)
-    return { plate, inicio, fin, delta: fin - inicio }
-  })
-  const mayorAlza = filas.reduce((current, row) => row.delta > current.delta ? row : current, filas[0]!)
-  const lider = filas.reduce((current, row) => row.plate.total > current.plate.total ? row : current, filas[0]!)
-
   return (
     <>
-      <ChartDataTable
-        title="Evolución de consumo por equipo"
-        groupLabel="Equipo"
-        columns={["Total", `Inicio (${formatPeriod(primerPeriodo)})`, `Fin (${formatPeriod(ultimoPeriodo)})`, "Variación"]}
-        rows={filas.map((row) => ({
-          label: row.plate.label,
-          values: [litros(row.plate.total), litros(row.inicio), litros(row.fin), `${row.delta >= 0 ? "+" : "−"}${litros(Math.abs(row.delta))}`],
-        }))}
-        conclusion={filas.length === 1
-          ? `Único equipo en el período: ${lider.plate.label}, ${litros(lider.plate.total)}.`
-          : `${lider.plate.label} es el de mayor consumo total (${litros(lider.plate.total)}); el mayor aumento entre extremos es ${mayorAlza.plate.label}.`}
-        caption={plates.length > 6
-          ? "Con más de seis equipos el gráfico oculta su leyenda: esta tabla es la única forma de identificar cada línea."
-          : "Comparación entre el primer y el último período del filtro."}
-        className="mb-4 mt-0 border-b border-t-0 pb-3 pt-0"
-      />
     <div className="h-80" aria-label="Evolución de consumo por equipo">
       <ResponsiveContainer width="100%" height="100%" debounce={200}>
         <LineChart data={data} margin={{ top: 8, right: 12, left: 0, bottom: 20 }}>

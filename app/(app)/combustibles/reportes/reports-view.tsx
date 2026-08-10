@@ -9,8 +9,7 @@ import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ChartBar, Truck, Buildings, GasPump, CalendarBlank } from "@phosphor-icons/react"
 import { MonthlyEvolutionChart, CategoryBarChart } from "../fuel-charts-lazy"
-import { ChartDataSummary } from "../chart-data-summary"
-import { formatCLP, formatDate } from "@/lib/utils"
+import { formatCLP } from "@/lib/utils"
 
 interface ReportRow {
   group: string | null
@@ -39,17 +38,9 @@ interface ReportsViewProps {
 const LITERS_FORMAT = new Intl.NumberFormat("es-CL", { maximumFractionDigits: 0 })
 const formatLiters = (n: number) => LITERS_FORMAT.format(n)
 
-function getPeriodLabel({ startDate, endDate }: ReportsViewProps["currentFilters"]) {
-  if (startDate && endDate) return `${formatDate(startDate)} a ${formatDate(endDate)}`
-  if (startDate) return `desde ${formatDate(startDate)}`
-  if (endDate) return `hasta ${formatDate(endDate)}`
-  return "todos los registros"
-}
-
 export function ReportsView({ byMonth, byWeek, byWorksite, byVehicle, bySupplier, byProduct, currentFilters }: ReportsViewProps) {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const periodLabel = getPeriodLabel(currentFilters)
 
   function setDateFilter(key: string, value: string) {
     const params = new URLSearchParams(searchParams.toString())
@@ -83,7 +74,6 @@ export function ReportsView({ byMonth, byWeek, byWorksite, byVehicle, bySupplier
         <Card className="lg:col-span-2">
           <CardHeader><CardTitle className="text-base">Evolución mensual</CardTitle></CardHeader>
           <CardContent>
-            <ChartDataSummary title="Evolución mensual" data={byMonth} periodLabel={periodLabel} groupLabel="Meses" className="mb-4 mt-0 border-b border-t-0 pb-3 pt-0" />
             <MonthlyEvolutionChart data={byMonth} />
           </CardContent>
         </Card>
@@ -91,7 +81,6 @@ export function ReportsView({ byMonth, byWeek, byWorksite, byVehicle, bySupplier
           <CardHeader><CardTitle className="text-base">Por producto</CardTitle></CardHeader>
           {/* Barra, no torta: con pocos productos el gasto se compara con precisión (dataviz: "donut para comparar valores cercanos → barra"). */}
           <CardContent>
-            <ChartDataSummary title="Productos" data={byProduct} periodLabel={periodLabel} groupLabel="Productos" visibleLimit={8} className="mb-4 mt-0 border-b border-t-0 pb-3 pt-0" />
             <CategoryBarChart data={byProduct} title="Productos" />
           </CardContent>
         </Card>
@@ -113,19 +102,19 @@ export function ReportsView({ byMonth, byWeek, byWorksite, byVehicle, bySupplier
         <TabsContent value="monthly"><ReportCard title="Consumo mensual" icon={<ChartBar className="h-5 w-5" />} rows={byMonth} /></TabsContent>
         <TabsContent value="worksite">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <ChartWithSummary title="Faenas" data={byWorksite} periodLabel={periodLabel} groupLabel="Faenas" />
+            <ChartWithSummary title="Faenas" data={byWorksite} />
             <ReportCard title="Por faena" icon={<Buildings className="h-5 w-5" />} rows={byWorksite} />
           </div>
         </TabsContent>
         <TabsContent value="vehicle">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <ChartWithSummary title="Vehículos" data={byVehicle} periodLabel={periodLabel} groupLabel="Vehículos" />
+            <ChartWithSummary title="Vehículos" data={byVehicle} />
             <ReportCard title="Por vehículo" icon={<Truck className="h-5 w-5" />} rows={byVehicle} />
           </div>
         </TabsContent>
         <TabsContent value="supplier">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <ChartWithSummary title="Proveedores" data={bySupplier} periodLabel={periodLabel} groupLabel="Proveedores" />
+            <ChartWithSummary title="Proveedores" data={bySupplier} />
             <ReportCard title="Por proveedor" icon={<GasPump className="h-5 w-5" />} rows={bySupplier} />
           </div>
         </TabsContent>
@@ -134,12 +123,11 @@ export function ReportsView({ byMonth, byWeek, byWorksite, byVehicle, bySupplier
   )
 }
 
-function ChartWithSummary({ title, data, periodLabel, groupLabel }: { title: string; data: ChartDataPoint[]; periodLabel: string; groupLabel: string }) {
+function ChartWithSummary({ title, data }: { title: string; data: ChartDataPoint[] }) {
   return (
     <Card>
       <CardHeader><CardTitle className="text-base">{title}</CardTitle></CardHeader>
       <CardContent>
-        <ChartDataSummary title={title} data={data} periodLabel={periodLabel} groupLabel={groupLabel} visibleLimit={8} className="mb-4 mt-0 border-b border-t-0 pb-3 pt-0" />
         <CategoryBarChart data={data} title={title} />
       </CardContent>
     </Card>

@@ -60,7 +60,7 @@ export default async function NuevaSolicitudPage({
       .where(eq(suppliers.isActive, true))
       .orderBy(asc(suppliers.name)),
     db.select({
-      id: workers.id, firstName: workers.firstName, lastName: workers.lastName,
+      id: workers.id, firstName: workers.firstName, lastName: workers.lastName, rut: workers.rut,
       sizeTop: workers.sizeTop, sizeBottom: workers.sizeBottom, sizeShoe: workers.sizeShoe,
       sizeGloves: workers.sizeGloves, sizeHelmet: workers.sizeHelmet, worksiteId: workers.worksiteId,
     }).from(workers)
@@ -99,6 +99,8 @@ export default async function NuevaSolicitudPage({
     sku:            p.sku,
     name:           p.name,
     isEpp:          p.isEpp,
+    isService:      p.isService,
+    requiresWorker: p.requiresWorker,
     unitOfMeasure:  p.unitOfMeasure,
     categoryName:   p.categoryId,
     referencePrice: p.referencePrice,
@@ -127,6 +129,7 @@ export default async function NuevaSolicitudPage({
       id:         w.id,
       firstName:  w.firstName,
       lastName:   w.lastName,
+      rut:        w.rut,
       sizeTop:    w.sizeTop,
       sizeBottom: w.sizeBottom,
       sizeShoe:   w.sizeShoe,

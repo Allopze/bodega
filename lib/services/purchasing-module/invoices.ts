@@ -7,6 +7,11 @@ import { db } from "@/db"
 import { purchaseOrders, purchaseOrderInvoices, purchaseOrderInvoiceItems, purchaseOrderItems } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { recordAudit } from "@/lib/audit"
+import {
+  reconcileInvoiceEvidence,
+  type ReconciledOrderItem,
+  type InvoiceReconciliationEvidence,
+} from "./invoice-reconciliation"
 
 /* ── Purchase Order Invoices ─────────────────────────────────────────────────── */
 
@@ -53,10 +58,13 @@ export async function createPurchaseOrderInvoice(
       throw new Error("Monto de factura inválido")
     }
     const invoiceItems = normalizeInvoiceItems(input.items)
-    const order = await tx.query.purchaseOrders.findFirst({
-      where: eq(purchaseOrders.id, input.purchaseOrderId),
-      columns: { id: true, status: true, code: true, worksiteId: true },
-    })
+    // Lock de la OC: sin él, una anulación concurrente commiteaba entre esta
+    // lectura y el insert, y la factura quedaba adjunta a una OC ya `cancelled`.
+    const [order] = await tx
+      .select({ id: purchaseOrders.id, status: purchaseOrders.status, code: purchaseOrders.code, worksiteId: purchaseOrders.worksiteId })
+      .from(purchaseOrders)
+      .where(eq(purchaseOrders.id, input.purchaseOrderId))
+      .for("update")
     if (worksiteIds !== 'all' && !worksiteIds.includes(order?.worksiteId ?? '')) {
       throw new Error("No tienes acceso a esta faena")
     }
@@ -192,13 +200,22 @@ export async function deletePurchaseOrderInvoice(
       throw new Error("Factura no encontrada")
     }
 
-    const order = await tx.query.purchaseOrders.findFirst({
-      where: eq(purchaseOrders.id, invoice.purchaseOrderId),
-      columns: { id: true, code: true, worksiteId: true },
-    })
+    const [order] = await tx
+      .select({ id: purchaseOrders.id, code: purchaseOrders.code, worksiteId: purchaseOrders.worksiteId, status: purchaseOrders.status })
+      .from(purchaseOrders)
+      .where(eq(purchaseOrders.id, invoice.purchaseOrderId))
+      .for("update")
     if (!order) throw new Error("Orden de compra no encontrada")
     if (worksiteIds !== 'all' && !worksiteIds.includes(order.worksiteId)) {
       throw new Error("No tienes acceso a esta faena")
+    }
+    // Se puede quitar una factura exactamente donde se podría haber adjuntado:
+    // antes no había ninguna restricción de estado y sólo el permiso frenaba el
+    // borrado sobre una OC anulada. `closed` sigue permitido a propósito — una OC
+    // se auto-cierra al recibirse completa, así que bloquearlo dejaría una
+    // factura equivocada pegada para siempre y sin forma de corregirla.
+    if (!INVOICE_ALLOWED_STATUSES.has(order.status)) {
+      throw new Error(`No se puede eliminar la factura de una OC en estado '${order.status}'`)
     }
 
     await tx.delete(purchaseOrderInvoices).where(eq(purchaseOrderInvoices.id, invoiceId))
@@ -223,20 +240,9 @@ export async function deletePurchaseOrderInvoice(
 
 /* ── Invoice Reconciliation ──────────────────────────────────────────────── */
 
-export interface InvoiceReconciliationItem {
-  ocItemId:       string
-  productName:    string
-  ocQuantity:     number
-  invoicedQty:    number
-  matched:        boolean
-  difference:     number
-}
+export type InvoiceReconciliationItem = ReconciledOrderItem
 
-export interface InvoiceReconciliationResult {
-  hasInvoices:       boolean
-  totalInvoiced:     number
-  totalOC:           number
-  items:             InvoiceReconciliationItem[]
+export interface InvoiceReconciliationResult extends InvoiceReconciliationEvidence {
   uncoveredItems:    Array<{ ocItemId: string; productName: string; ocQuantity: number }>
   warnings:          string[]
 }
@@ -268,51 +274,30 @@ export async function reconcileOrderInvoices(
     }),
   ])
 
-  const totalOC = order?.totalAmount ?? 0
-  const totalInvoiced = invoices.reduce((sum, inv) => sum + (inv.amount ?? 0), 0)
-  const hasInvoices = invoices.length > 0
-
-  // Build a map: ocItemId → invoiced quantity (from invoice items linked to OC items)
-  const invoicedQtyMap = new Map<string, number>()
-  for (const invoice of invoices) {
-    for (const item of invoice.items) {
-      if (item.purchaseOrderItemId) {
-        const current = invoicedQtyMap.get(item.purchaseOrderItemId) ?? 0
-        invoicedQtyMap.set(item.purchaseOrderItemId, current + item.quantity)
-      }
-    }
-  }
-
-  // Also handle invoices without line items (legacy) — treat total as matching if amount matches
-  const hasLineItems = invoices.some((inv) => inv.items.length > 0)
-
-  const items: InvoiceReconciliationItem[] = ocItems.map((ocItem) => {
-    const invoicedQty = invoicedQtyMap.get(ocItem.id) ?? 0
-    const difference = ocItem.quantity - invoicedQty
-    const matched = Math.abs(difference) < 0.01 // floating point tolerance
-    const productName = ocItem.productNameFree ?? ocItem.productId ?? "Ítem"
-    return {
-      ocItemId: ocItem.id,
-      productName,
-      ocQuantity: ocItem.quantity,
-      invoicedQty,
-      matched,
-      difference,
-    }
+  const evidence = reconcileInvoiceEvidence({
+    totalOC: order?.totalAmount ?? 0,
+    orderItems: ocItems.map((item) => ({
+      id: item.id,
+      productName: item.productNameFree ?? item.productId ?? "Ítem",
+      quantity: item.quantity,
+    })),
+    invoices,
   })
 
-  const uncoveredItems = items
-    .filter((item) => item.invoicedQty === 0)
+  const uncoveredItems = evidence.items
+    .filter((item) => item.status === "not_covered")
     .map(({ ocItemId, productName, ocQuantity }) => ({ ocItemId, productName, ocQuantity }))
 
   const warnings: string[] = []
-  if (!hasInvoices) {
+  if (!evidence.hasInvoices) {
     warnings.push("No hay facturas adjuntadas a esta orden.")
-  } else if (!hasLineItems) {
-    warnings.push("Las facturas adjuntadas no tienen ítems detallados. Se recomienda agregar ítems para conciliación precisa.")
+  } else if (evidence.lines.status === "not_evaluable") {
+    warnings.push("Las facturas adjuntadas no tienen líneas asociadas; la conciliación por ítem no es evaluable.")
+  } else if (evidence.lines.unlinkedLineCount > 0) {
+    warnings.push(`${evidence.lines.unlinkedLineCount} línea(s) de factura no están vinculadas a un ítem de la OC.`)
   }
 
-  const mismatchedItems = items.filter((item) => !item.matched && item.invoicedQty > 0)
+  const mismatchedItems = evidence.items.filter((item) => item.status === "partial" || item.status === "over_invoiced")
   for (const item of mismatchedItems) {
     if (item.difference > 0) {
       warnings.push(`"${item.productName}": cant. OC (${item.ocQuantity}) > cant. facturada (${item.invoicedQty}).`)
@@ -325,15 +310,12 @@ export async function reconcileOrderInvoices(
     warnings.push(`${uncoveredItems.length} ítem(s) de OC sin factura asociada.`)
   }
 
-  if (hasInvoices && Math.abs(totalInvoiced - totalOC) > 1) {
-    warnings.push(`Total facturado (${totalInvoiced.toLocaleString("es-CL")}) difiere del total OC (${totalOC.toLocaleString("es-CL")}).`)
+  if (evidence.money.status === "mismatch") {
+    warnings.push(`Total facturado (${evidence.totalInvoiced.toLocaleString("es-CL")}) difiere del total OC (${evidence.totalOC.toLocaleString("es-CL")}).`)
   }
 
   return {
-    hasInvoices,
-    totalInvoiced,
-    totalOC,
-    items,
+    ...evidence,
     uncoveredItems,
     warnings,
   }

@@ -37,6 +37,15 @@ export async function submitRequest(
         eq(qt.status, "pending"),
       ))
 
+    // Sin ninguna cotización la solicitud nace sin salida: aprobar estos tipos
+    // sólo ocurre al seleccionar una ganadora, y adjuntarlas exige estado
+    // 'draft', al que ya no se vuelve (el flujo lineal retiró "devolver a
+    // borrador"). La justificación en notas releva del mínimo de 3, no de
+    // tener alguna.
+    if (quotations.length === 0) {
+      throw new Error("Adjunta al menos una cotización antes de enviar la solicitud.")
+    }
+
     if (quotations.length < 3 && !request.notes?.trim()) {
       throw new Error(
         "Se requieren al menos 3 cotizaciones. Si no es posible, agrega una justificación en las notas de la solicitud.",

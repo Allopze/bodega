@@ -31,6 +31,8 @@ export interface RequestServiceInput {
   id?:            string
   worksiteId:     string
   urgency:        "normal" | "high" | "critical"
+  /** Despacho sugerido por el solicitante; la jefatura lo confirma al aprobar. */
+  deliveryMode?:  string
   requiredDate:   string
   justification?: string | null
   items:          RequestItemInput[]

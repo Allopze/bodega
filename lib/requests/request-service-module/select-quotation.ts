@@ -18,12 +18,18 @@ export async function selectQuotation(
   const qt = config.quotationsTable
 
   await db.transaction(async (tx) => {
-    const request = await tx.query.purchaseRequests.findFirst({
-      where: and(
+    // Mismo patrón que submitRequest: sin lock del padre, un cancelRequest
+    // concurrente commiteaba entremedio y el UPDATE final (sin guarda) pisaba
+    // 'cancelled' con 'approved', dejando la solicitud cerrada y aprobada a la
+    // vez, con cero ítems aprobados y sin forma de corregirla.
+    const [request] = await tx
+      .select()
+      .from(purchaseRequests)
+      .where(and(
         eq(purchaseRequests.id, input.requestId),
         eq(purchaseRequests.requestType, config.requestType),
-      ),
-    })
+      ))
+      .for("update")
     if (!request) throw new Error(`Solicitud de ${requestTypeLabel} no encontrada`)
     if (!["submitted", "in_review"].includes(request.status)) {
       throw new Error("La solicitud no está pendiente de aprobación")
@@ -113,10 +119,14 @@ export async function selectQuotation(
       }, tx)
     }
 
-    await tx.update(purchaseRequests).set({
+    const [updatedRequest] = await tx.update(purchaseRequests).set({
       status:    "approved",
       updatedAt: now,
-    }).where(eq(purchaseRequests.id, input.requestId))
+    }).where(and(
+      eq(purchaseRequests.id, input.requestId),
+      eq(purchaseRequests.status, request.status),
+    )).returning({ id: purchaseRequests.id })
+    if (!updatedRequest) throw new Error("La solicitud ya no está disponible: posible concurrencia")
 
     await recordStatusChange({
       entityType: "purchase_request",

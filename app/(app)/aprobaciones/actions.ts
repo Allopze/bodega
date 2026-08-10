@@ -10,6 +10,7 @@ import { logger } from "@/lib/logger"
 import { revalidateOperationalViews } from "@/lib/services/operational-cache"
 import type { ActionState } from "@/lib/validation/operations"
 import { canApproveEpp, DISPATCH_DECIDER_ROLES } from "./roles"
+import { safeActionMessage } from "@/lib/action-error"
 
 const REVALIDATE = "/aprobaciones"
 
@@ -95,7 +96,7 @@ export async function approveItemAction(
     return { ok: true, message: "Ítem aprobado" }
   } catch (e) {
     logger.error("[approveItemAction]", e)
-    return { ok: false, message: e instanceof Error ? e.message : "Error al aprobar ítem" }
+    return { ok: false, message: safeActionMessage(e, "Error al aprobar ítem") }
   }
 }
 
@@ -156,7 +157,7 @@ export async function rejectItemAction(
     return { ok: true, message: "Ítem rechazado" }
   } catch (e) {
     logger.error("[rejectItemAction]", e)
-    return { ok: false, message: e instanceof Error ? e.message : "Error al rechazar ítem" }
+    return { ok: false, message: safeActionMessage(e, "Error al rechazar ítem") }
   }
 }
 
@@ -172,6 +173,12 @@ export async function bulkApproveRequestAction(
 
   const itemIds = (formData.get("itemIds") as string | null)?.split(",").filter(Boolean)
   if (!itemIds?.length) return { ok: false, message: "No hay ítems para aprobar" }
+  // Cota antes de cualquier consulta: sin ella, un POST con decenas de miles de
+  // ids armaba un `inArray` gigante antes de validar nada. Una tanda real de
+  // aprobación no pasa de unas pocas decenas.
+  if (itemIds.length > 200) {
+    return { ok: false, message: "Demasiados ítems en una sola tanda (máximo 200)" }
+  }
   const uniqueItemIds = [...new Set(itemIds)]
   if (uniqueItemIds.length !== itemIds.length) {
     return { ok: false, message: "La selección contiene ítems duplicados" }
@@ -203,7 +210,7 @@ export async function bulkApproveRequestAction(
     }))
   } catch (error) {
     logger.error("[bulkApproveRequestAction]", error)
-    return { ok: false, message: error instanceof Error ? error.message : "No se pudieron aprobar los ítems" }
+    return { ok: false, message: safeActionMessage(error, "No se pudieron aprobar los ítems") }
   }
 
   revalidateOperationalViews([REVALIDATE])
@@ -262,7 +269,7 @@ export async function updateDeliveryModeAction(
         .where(eq(purchaseRequests.id, requestId))
     })
   } catch (e) {
-    return { ok: false, message: e instanceof Error ? e.message : "Error al cambiar el modo de despacho" }
+    return { ok: false, message: safeActionMessage(e, "Error al cambiar el modo de despacho") }
   }
 
   revalidateOperationalViews([REVALIDATE, `/solicitudes/${requestId}`])

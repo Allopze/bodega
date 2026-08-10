@@ -318,7 +318,7 @@ describe("getItemDetail", () => {
       await inMemoryDb.insert(schema.purchaseOrderItems).values({
         id: "poi-tz-1", purchaseOrderId: "oc-tz-1", requestItemId: ITEM,
         productId: PROD_1, quantity: 8, unitOfMeasure: "par",
-        unitPrice: 5000, quantityReceived: 8, quantityOfficeReceived: 8,
+        unitPrice: 5000, subtotal: 40000, quantityReceived: 8, quantityOfficeReceived: 8,
       })
 
       const result = await getItemDetail(globalSession(), ITEM)

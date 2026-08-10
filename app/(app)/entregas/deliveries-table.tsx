@@ -4,6 +4,7 @@ import { FileText, User } from "@phosphor-icons/react"
 import { DataTable } from "@/components/admin/data-table"
 import { HISTORY_PAGE_SIZE } from "@/lib/constants"
 import { TableCell, TableRow } from "@/components/ui/table"
+import { Button } from "@/components/ui/button"
 import { formatDate } from "@/lib/utils"
 
 export type DeliveryRow = {
@@ -23,7 +24,7 @@ const COLUMNS = [
   { key: "code", label: "Entrega", sortable: true, width: "w-36" },
   { key: "workerName", label: "Trabajador", sortable: true },
   { key: "worksiteName", label: "Faena", sortable: true },
-  { key: "itemSummary", label: "EPP", sortable: true },
+  { key: "itemSummary", label: "Equipo de protección personal (EPP)", sortable: true },
   { key: "deliveredAt", label: "Fecha", sortable: true, width: "w-36" },
   { key: "attachmentId", label: "Comprobante", sortable: false, width: "w-32" },
 ]
@@ -56,48 +57,50 @@ export function DeliveriesTable({ deliveries, canViewTraceability = false }: { d
                   {delivery.workerId && canViewTraceability ? (
                     <a
                       href={`/trazabilidad/trabajador/${delivery.workerId}`}
-                      className="mt-0.5 block truncate text-sm font-medium text-[var(--color-primary)] hover:underline"
+                      className="mt-0.5 block break-words text-sm font-medium text-[var(--color-primary)] hover:underline"
                     >
                       {delivery.workerName}
                     </a>
                   ) : (
-                    <p title={delivery.workerName} className="mt-0.5 truncate text-sm font-medium text-[var(--color-text)]">{delivery.workerName}</p>
+                    <p className="mt-0.5 break-words text-sm font-medium text-[var(--color-text)]">{delivery.workerName}</p>
                   )}
                   {delivery.receiverName && delivery.receiverName !== delivery.workerName && (
                     <p className="text-[11px] text-[var(--color-text-subtle)]">Recibido por: {delivery.receiverName}</p>
                   )}
-                  <p className="mt-0.5 truncate text-xs text-[var(--color-text-muted)]">{delivery.worksiteName}</p>
+                  <p className="mt-0.5 break-words text-xs text-[var(--color-text-muted)]">{delivery.worksiteName}</p>
                 </div>
               </div>
               <div className="flex items-center gap-1.5">
-                <a
-                  href={`/entregas/${delivery.id}/print`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex h-6 items-center gap-1 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 text-xs text-[var(--color-text-muted)] transition-colors hover:text-[var(--color-text)]"
-                  aria-label={`Comprobante de entrega ${delivery.code}`}
-                >
-                  <FileText size={12} />
-                  Comprobante
-                </a>
-                {delivery.attachmentId && (
+                <Button variant="secondary" size="sm" asChild className="shrink-0 gap-1">
                   <a
-                    href={`/api/attachments/${delivery.attachmentId}`}
+                    href={`/entregas/${delivery.id}/print`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex h-6 items-center gap-1 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 text-xs text-[var(--color-text-muted)] transition-colors hover:text-[var(--color-text)]"
+                    aria-label={`Comprobante de entrega ${delivery.code}`}
                   >
-                    <FileText size={12} />
-                    Archivo
+                    <FileText size={12} aria-hidden />
+                    Comprobante
                   </a>
+                </Button>
+                {delivery.attachmentId && (
+                  <Button variant="secondary" size="sm" asChild className="shrink-0 gap-1">
+                    <a
+                      href={`/api/attachments/${delivery.attachmentId}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      <FileText size={12} aria-hidden />
+                      Archivo
+                    </a>
+                  </Button>
                 )}
               </div>
             </div>
 
             <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
               <div>
-                <dt className="text-[var(--color-text-subtle)]">EPP</dt>
-                <dd className="truncate text-[var(--color-text-muted)]">{delivery.itemSummary}</dd>
+                <dt className="text-[var(--color-text-subtle)]">Equipo de protección personal (EPP)</dt>
+                <dd className="break-words text-[var(--color-text-muted)]">{delivery.itemSummary}</dd>
               </div>
               <div className="text-right">
                 <dt className="text-[var(--color-text-subtle)]">Fecha</dt>
@@ -148,26 +151,28 @@ export function DeliveriesTable({ deliveries, canViewTraceability = false }: { d
             </TableCell>
             <TableCell>
               <div className="flex items-center gap-2">
-                <a
-                  href={`/entregas/${delivery.id}/print`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex h-6 items-center gap-1 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 text-xs text-[var(--color-text-muted)] transition-colors hover:text-[var(--color-text)]"
-                  aria-label={`Comprobante de entrega ${delivery.code}`}
-                >
-                  <FileText size={12} />
-                  Comprobante
-                </a>
-                {delivery.attachmentId && (
+                <Button variant="secondary" size="sm" asChild className="gap-1">
                   <a
-                    href={`/api/attachments/${delivery.attachmentId}`}
+                    href={`/entregas/${delivery.id}/print`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex h-6 items-center gap-1 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 text-xs text-[var(--color-text-muted)] transition-colors hover:text-[var(--color-text)]"
+                    aria-label={`Comprobante de entrega ${delivery.code}`}
                   >
-                    <FileText size={12} />
-                    Archivo
+                    <FileText size={12} aria-hidden />
+                    Comprobante
                   </a>
+                </Button>
+                {delivery.attachmentId && (
+                  <Button variant="secondary" size="sm" asChild className="gap-1">
+                    <a
+                      href={`/api/attachments/${delivery.attachmentId}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      <FileText size={12} aria-hidden />
+                      Archivo
+                    </a>
+                  </Button>
                 )}
               </div>
             </TableCell>

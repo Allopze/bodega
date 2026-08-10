@@ -14,10 +14,12 @@ import { formatCLP, formatDate, pluralize } from "@/lib/utils"
 import { issueAndSendOrderAction } from "./actions/order-status"
 import { deleteOrderAction } from "./actions/order-cancel"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
+import { Button } from "@/components/ui/button"
 import { DELETABLE_ORDER_STATUSES } from "@/lib/services/purchasing.constants"
 import { INVOICE_DUE_ORDER_STATUSES } from "@/lib/work-queue-labels"
 import type { ActionState } from "@/lib/validation/operations"
 import type { OcRow } from "./oc-list.types"
+import { ocDisplayDate } from "./oc-list.types"
 
 /** La factura ya corresponde: llegó mercadería y la OC sigue abierta. */
 function invoiceDue(status: string) {
@@ -53,19 +55,19 @@ export function OcTableRow({ row, canDelete = false, canSend = false }: { row: O
   return (
     <TableRow
       className="cursor-pointer hover:bg-[var(--color-primary-tint)]"
-      role="link"
-      tabIndex={0}
-      aria-label={`Ver OC ${row.code}`}
+      /* La fila conserva su rol implícito `row`: con role="link" encima, sus
+         celdas quedaban sin padre `row` (axe aria-required-parents) y la tabla
+         dejaba de anunciarse como tabla. El clic sigue como comodidad de
+         mouse; el destino accesible por teclado es el enlace del código. */
       onClick={() => router.push(href)}
-      onKeyDown={(event) => {
-        if (event.key === "Enter" || event.key === " ") {
-          event.preventDefault()
-          router.push(href)
-        }
-      }}
     >
       <TableCell>
-        <span className="font-mono text-xs text-[var(--color-text)]">{row.code}</span>
+        <Link
+          href={href}
+          aria-label={`Ver OC ${row.code}`}
+                onClick={(e) => e.stopPropagation()}
+                className="font-mono text-xs text-(--color-text) hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-primary)"
+                >{row.code}</Link>
       </TableCell>
       <TableCell className="text-sm text-[var(--color-text-muted)]">
         {row.worksiteName}
@@ -81,6 +83,14 @@ export function OcTableRow({ row, canDelete = false, canSend = false }: { row: O
       </TableCellNum>
       <TableCellNum className="font-medium">
         {formatCLP(row.totalAmount)}
+        {row.pendingCostLines > 0 && (
+          <span
+            className="ml-1 text-[10px] font-normal text-[var(--color-warning-ink)]"
+            title={`${row.pendingCostLines} servicio(s) con costo pendiente, no incluidos en el total`}
+          >
+            +{row.pendingCostLines} pend.
+          </span>
+        )}
       </TableCellNum>
       <TableCell onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center gap-2">
@@ -150,7 +160,7 @@ export function OcTableRow({ row, canDelete = false, canSend = false }: { row: O
         )}
       </TableCellNum>
       <TableCell className="text-xs text-[var(--color-text-subtle)]">
-        {formatDate(row.sentAt ?? row.issuedAt ?? row.createdAt)}
+        {formatDate(ocDisplayDate(row))}
       </TableCell>
     </TableRow>
   )
@@ -162,28 +172,66 @@ export function OcTableRow({ row, canDelete = false, canSend = false }: { row: O
  * una OC sin ellos (Heurística #6). La tarjeta prioriza código, proveedor,
  * estado y total; la emisión y el envío se resuelven en el detalle.
  */
-export function OcMobileCard({ row }: { row: OcRow }) {
+export function OcMobileCard({
+  row,
+  canDelete = false,
+  canSend = false,
+}: {
+  row: OcRow
+  canDelete?: boolean
+  canSend?: boolean
+}) {
+  const [issueState, issueAction] = useActionState<ActionState, FormData>(
+    issueAndSendOrderAction, INITIAL_STATE,
+  )
+  const [deleteState, deleteAction] = useActionState<ActionState, FormData>(
+    deleteOrderAction, INITIAL_STATE,
+  )
+  const [deletePending, startDeleteTransition] = useTransition()
+  const [deleteOpen, setDeleteOpen] = React.useState(false)
+
+  React.useEffect(() => {
+    if (!issueState.message) return
+    if (issueState.ok) toast.success(issueState.message)
+    else toast.error(issueState.message)
+  }, [issueState])
+
+  React.useEffect(() => {
+    if (!deleteState.message) return
+    if (deleteState.ok) toast.success(deleteState.message)
+    else toast.error(deleteState.message)
+  }, [deleteState])
+
   return (
-    <Link
-      href={`/compras/${row.id}`}
-      className="block rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition-colors duration-[var(--duration-fast)] hover:bg-[var(--color-primary-tint)]"
-    >
+    <article className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="font-mono text-sm font-semibold text-[var(--color-text)]">{row.code}</p>
-          <p title={row.supplierName} className="mt-0.5 truncate text-xs text-[var(--color-text-muted)]">{row.supplierName}</p>
+          <Link
+            href={`/compras/${row.id}`}
+            className="font-mono text-sm font-semibold text-[var(--color-text)] hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-primary)"
+          >
+            {row.code}
+          </Link>
+          <p className="mt-0.5 break-words text-xs text-[var(--color-text-muted)]">{row.supplierName}</p>
         </div>
         <StateBadge state={row.status} entity="oc" size="sm" />
       </div>
       <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
         <dt className="text-[var(--color-text-subtle)]">Total</dt>
-        <dd className="text-right font-mono font-semibold tabular-nums text-[var(--color-text)]">{formatCLP(row.totalAmount)}</dd>
+        <dd className="text-right font-mono font-semibold tabular-nums text-[var(--color-text)]">
+          {formatCLP(row.totalAmount)}
+          {row.pendingCostLines > 0 && (
+            <span className="ml-1 font-sans text-[10px] font-normal text-[var(--color-warning-ink)]">
+              +{row.pendingCostLines} pend.
+            </span>
+          )}
+        </dd>
         <dt className="text-[var(--color-text-subtle)]">Ítems</dt>
         <dd className="text-right font-mono tabular-nums text-[var(--color-text)]">{row.itemCount}</dd>
         <dt className="text-[var(--color-text-subtle)]">Faena</dt>
-        <dd className="truncate text-right text-[var(--color-text)]">{row.worksiteName}</dd>
+        <dd className="min-w-0 break-words text-right text-[var(--color-text)]">{row.worksiteName}</dd>
         <dt className="text-[var(--color-text-subtle)]">Fecha</dt>
-        <dd className="text-right font-mono tabular-nums text-[var(--color-text)]">{formatDate(row.createdAt)}</dd>
+        <dd className="text-right font-mono tabular-nums text-[var(--color-text)]">{formatDate(ocDisplayDate(row))}</dd>
       </dl>
       {row.invoiceCount > 0 ? (
         <p className="mt-2 text-xs text-[var(--color-text-muted)]">
@@ -192,6 +240,51 @@ export function OcMobileCard({ row }: { row: OcRow }) {
       ) : invoiceDue(row.status) && (
         <p className="mt-2 text-xs font-medium text-signal-ink">Sin factura</p>
       )}
-    </Link>
+      {(row.status === "draft" && canSend) || (canDelete && (DELETABLE_ORDER_STATUSES as readonly string[]).includes(row.status)) ? (
+        <div className="mt-3 flex flex-wrap gap-2 border-t border-[var(--color-border)] pt-3">
+          {row.status === "draft" && canSend && (
+            <form action={issueAction}>
+              <input type="hidden" name="orderId" value={row.id} />
+              <SubmitButton
+                label="Emitir y enviar"
+                loadingLabel="Enviando…"
+                variant="secondary"
+                size="sm"
+              />
+            </form>
+          )}
+          {canDelete && (DELETABLE_ORDER_STATUSES as readonly string[]).includes(row.status) && (
+            <>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                disabled={deletePending}
+                onClick={() => setDeleteOpen(true)}
+                className="text-[var(--color-danger)] hover:bg-[var(--color-danger-tint)] hover:text-[var(--color-danger)]"
+              >
+                <Trash size={15} aria-hidden />
+                Eliminar OC
+              </Button>
+              <ConfirmDialog
+                open={deleteOpen}
+                onOpenChange={setDeleteOpen}
+                title="¿Eliminar orden de compra?"
+                description={`La orden ${row.code} se conserva como anulada para auditoría y sus ítems sólo volverán a compra si no tienen otra OC activa.`}
+                confirmLabel="Eliminar"
+                variant="destructive"
+                loading={deletePending}
+                onConfirm={() => {
+                  const fd = new FormData()
+                  fd.set("orderId", row.id)
+                  startDeleteTransition(() => deleteAction(fd))
+                  setDeleteOpen(false)
+                }}
+              />
+            </>
+          )}
+        </div>
+      ) : null}
+    </article>
   )
 }

@@ -2,7 +2,6 @@
 
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts"
 import { chartTooltipStyle } from "@/lib/chart-palette"
-import { ChartDataTable } from "@/components/ui/chart-data-table"
 
 const STATUS_LABELS: Record<string, string> = {
   open: "Abierto",
@@ -87,13 +86,6 @@ export function AnomalyDistributionChart({ distribution }: { distribution: Distr
     .slice(0, 8)
     .map((d, i) => ({ name: d.ruleName ?? d.ruleCode, value: d.count, fill: RULE_COLORS[i % RULE_COLORS.length] }))
 
-  // El donut de severidad es el caso extremo que la auditoría describe: el color
-  // es el único canal, y las porciones por debajo del 8 % ni siquiera llevan
-  // etiqueta. Sin tabla, "cuántos casos críticos hay" no tiene respuesta.
-  const share = (value: number) => `${Math.round((value / distribution.total) * 100)}%`
-  const mayorEstado = statusData.reduce((current, row) => row.value > current.value ? row : current, statusData[0] ?? { name: "—", value: 0, fill: "" })
-  const mayorSeveridad = severityData.reduce((current, row) => row.value > current.value ? row : current, severityData[0] ?? { name: "—", value: 0 })
-  const mayorRegla = ruleData.reduce((current, row) => row.value > current.value ? row : current, ruleData[0] ?? { name: "—", value: 0, fill: "" })
 
   return (
     <div className="grid gap-5 lg:grid-cols-3">
@@ -101,14 +93,6 @@ export function AnomalyDistributionChart({ distribution }: { distribution: Distr
       <div className="border border-(--color-border) bg-(--color-surface) p-4">
         <h3 className="mb-3 text-sm font-medium">Casos por estado</h3>
         <p className="mb-2 text-xs text-(--color-text-muted)">{distribution.total} total</p>
-        <ChartDataTable
-          title="Casos por estado"
-          groupLabel="Estado"
-          columns={["Casos", "Del total"]}
-          rows={statusData.map((row) => ({ label: row.name, values: [row.value, share(row.value)] }))}
-          conclusion={`El estado más frecuente es ${mayorEstado.name}: ${mayorEstado.value} de ${distribution.total} casos.`}
-          className="mb-3 mt-0 border-b border-t-0 pb-3 pt-0"
-        />
         <div className="h-48">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={statusData} margin={{ top: 5, right: 8, left: 0, bottom: 5 }}>
@@ -127,15 +111,6 @@ export function AnomalyDistributionChart({ distribution }: { distribution: Distr
       {/* Casos por severidad — donut */}
       <div className="border border-(--color-border) bg-(--color-surface) p-4">
         <h3 className="mb-3 text-sm font-medium">Casos por severidad</h3>
-        <ChartDataTable
-          title="Casos por severidad"
-          groupLabel="Severidad"
-          columns={["Casos", "Del total"]}
-          rows={severityData.map((row) => ({ label: row.name, values: [row.value, share(row.value)] }))}
-          conclusion={`Predomina la severidad ${mayorSeveridad.name}: ${mayorSeveridad.value} de ${distribution.total} casos.`}
-          caption="Las porciones bajo el 8 % no llevan etiqueta en el gráfico."
-          className="mb-3 mt-0 border-b border-t-0 pb-3 pt-0"
-        />
         <div className="h-48">
           <ResponsiveContainer width="100%" height="100%">
             <PieChart>
@@ -167,15 +142,6 @@ export function AnomalyDistributionChart({ distribution }: { distribution: Distr
       {/* Top reglas de anomalía — bar chart horizontal */}
       <div className="border border-(--color-border) bg-(--color-surface) p-4">
         <h3 className="mb-3 text-sm font-medium">Top reglas activas</h3>
-        <ChartDataTable
-          title="Top reglas activas"
-          groupLabel="Regla"
-          columns={["Casos", "Del total"]}
-          rows={ruleData.map((row) => ({ label: row.name, values: [row.value, share(row.value)] }))}
-          conclusion={`La regla que más dispara es ${mayorRegla.name}: ${mayorRegla.value} casos.`}
-          caption={distribution.byRuleCode.length > ruleData.length ? `Se muestran las ${ruleData.length} reglas más frecuentes de ${distribution.byRuleCode.length}.` : undefined}
-          className="mb-3 mt-0 border-b border-t-0 pb-3 pt-0"
-        />
         <div className="h-48">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={ruleData} layout="vertical" margin={{ top: 5, right: 8, left: 0, bottom: 5 }}>

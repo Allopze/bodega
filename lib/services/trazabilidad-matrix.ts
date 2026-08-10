@@ -11,6 +11,7 @@ import {
   TRACEABILITY_PAGE_SIZE as PAGE_SIZE,
   TRACEABILITY_ALERT_SCAN_LIMIT as ALERT_SCAN_LIMIT,
 } from "@/lib/constants"
+import { getPurchasableCoverage } from "@/lib/services/purchasing-module/purchasable-coverage"
 import type { Session } from "next-auth"
 
 export interface MatrixRow {
@@ -153,6 +154,9 @@ export async function getTrazabilidadMatrix(
         purchaseOrderId: purchaseOrderItems.purchaseOrderId,
         requestItemId:  purchaseOrderItems.requestItemId,
         quantity:       purchaseOrderItems.quantity,
+        orderStatus:    purchaseOrders.status,
+        orderItemStatus: purchaseOrderItems.status,
+        deletedAt:      purchaseOrders.deletedAt,
       })
         .from(purchaseOrderItems)
         .innerJoin(purchaseOrders, eq(purchaseOrderItems.purchaseOrderId, purchaseOrders.id))
@@ -211,6 +215,9 @@ export async function getTrazabilidadMatrix(
   }
 
   const rows: MatrixRow[] = []
+  const coverageByItemId = new Map(
+    getPurchasableCoverage(itemRows, allOcItems).map((coverage) => [coverage.requestItemId, coverage]),
+  )
 
   for (const item of itemRows) {
     const ocItems = ocByItemId.get(item.id) ?? []
@@ -224,7 +231,12 @@ export async function getTrazabilidadMatrix(
       approved = mod !== undefined ? (mod ?? item.quantity) : item.quantity
     }
 
-    const alert = isApproved && approved !== null && inOc < approved
+    const coverage = coverageByItemId.get(item.id)
+    // La alerta no usa sólo el estado: un registro legado puede conservar
+    // "aprobado" después de haber quedado cubierto por una OC. La cobertura
+    // activa determina si falta compra; una cobertura parcial sigue visible
+    // para que se regularice, pero no vuelve al selector de Nueva OC.
+    const alert = isApproved && approved !== null && (coverage?.remainingQuantity ?? approved) > 0.000_001
 
     const productName = item.productName ?? item.productNameFree ?? "—"
     const productSku = item.productSku ?? null

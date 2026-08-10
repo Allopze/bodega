@@ -136,7 +136,7 @@ export default async function NuevaRecepcionPage({
   return (
     <PageContainer width="workbench">
       <PageHeader
-        title={`Recepción OC ${order.code}`}
+        title={`Recepción ${order.code}`}
         description={order.deliveryMode === "directo_faena"
           ? "Los productos se reciben directamente en faena; no requieren paso por oficina."
           : "Registra primero la llegada a oficina Chome y luego la recepción en faena."}

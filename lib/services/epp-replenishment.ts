@@ -69,7 +69,13 @@ export async function listReplenishmentSuggestions(
       gapVersion:    eppReplenishmentLinks.gapVersion,
     })
     .from(eppReplenishmentLinks)
-    .where(isNull(eppReplenishmentLinks.resolvedAt))
+    // Acotado a las faenas de las brechas que estamos evaluando: el camino feliz
+    // (entrega) nunca escribe `resolvedAt`, así que los links abiertos crecen sin
+    // cota y traerlos todos para filtrar en memoria empeora con el tiempo.
+    .where(and(
+      isNull(eppReplenishmentLinks.resolvedAt),
+      inArray(eppReplenishmentLinks.worksiteId, [...new Set(scoped.map((gap) => gap.worksiteId))]),
+    ))
   const reserved = new Set(openLinks.map((link) => [
     link.worksiteId, link.workerId, link.eppTypeId, link.requirementId, link.gapVersion,
   ].join(KEY_SEPARATOR)))
@@ -115,10 +121,17 @@ export async function listReplenishmentSuggestions(
 export async function reserveReplenishmentGapsTx(
   tx: Tx,
   entries: Array<{ gapKey: string; requestItemId: string }>,
+  /**
+   * Faena de la solicitud que origina la reserva. El `gapKey` viaja desde el
+   * navegador, así que sin esta comprobación un usuario podía fabricar claves de
+   * otra faena y suprimir sus sugerencias de reposición mientras su ítem viviera.
+   */
+  requestWorksiteId?: string,
 ): Promise<void> {
   for (const entry of entries) {
     const parsed = parseGapKey(entry.gapKey)
     if (!parsed) continue
+    if (requestWorksiteId && parsed.worksiteId !== requestWorksiteId) continue
     await tx.insert(eppReplenishmentLinks).values({
       id:            nanoid(),
       ...parsed,

@@ -1,6 +1,8 @@
 /** Styles shared by the delivery preview and its server-side A4 PDF. */
 export const DELIVERY_PRINT_STYLES = `
-  @page { size: A4; margin: 12mm 14mm; }
+  /* 20mm abajo reservan la banda del pie numerado. Debe coincidir con el margen
+     que pasa la ruta a a4PdfOptions(). */
+  @page { size: A4; margin: 12mm 14mm 20mm; }
 
   *, *::before, *::after { box-sizing: border-box; }
 
@@ -70,6 +72,7 @@ export const DELIVERY_PRINT_STYLES = `
   .delivery-sheet .field { display: flex; padding: 6px 0; border-bottom: 1px solid #f3f4f6; }
   .delivery-sheet .field dt { width: 110px; flex-shrink: 0; color: #6b7280; font-weight: 500; }
   .delivery-sheet .field dd { flex: 1; margin: 0; font-weight: 400; }
+  .delivery-sheet .field dd.document-value-nowrap { white-space: nowrap; }
   .delivery-sheet table { width: 100%; margin-top: 8px; border-collapse: collapse; }
   .delivery-sheet th { padding: 6px 4px; border-bottom: 2px solid #e5e7eb; color: #6b7280; font-size: 10px; font-weight: 600; text-align: left; text-transform: uppercase; }
   .delivery-sheet td { padding: 6px 4px; border-bottom: 1px solid #f3f4f6; font-size: 11px; }
@@ -80,7 +83,10 @@ export const DELIVERY_PRINT_STYLES = `
   .delivery-sheet .sig-label { margin: 0; color: #6b7280; font-size: 10px; }
   .delivery-sheet .footer { margin-top: 40px; padding-top: 12px; border-top: 1px solid #e5e7eb; color: #9ca3af; font-size: 9px; text-align: center; }
 
-  @media (max-width: 760px) {
+  /* "screen and" es obligatorio: al imprimir, el ancho de la media query es el
+     de la caja de página, así que sin esto la rama móvil oculta la hoja y
+     @media print oculta el resumen — el PDF sale en blanco. */
+  @media screen and (max-width: 760px) {
     .print-toolbar, .mobile-document-summary { width: calc(100vw - 24px); }
     .print-toolbar { position: sticky; top: 0; z-index: 1; flex-wrap: wrap; padding: 8px 0; background: #e9eeeb; }
     .print-action { min-height: 44px; }

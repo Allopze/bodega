@@ -1,12 +1,13 @@
 "use server"
 
-import { revalidatePath } from "next/cache"
+import { revalidateOperationalViews } from "@/lib/services/operational-cache"
 import { promises as fs } from "node:fs"
 import path from "node:path"
 import { eq } from "drizzle-orm"
 import { db } from "@/db"
 import { purchaseOrderInvoices } from "@/db/schema"
 import { requirePermission } from "@/lib/auth/can"
+import { serviceWorksiteScope } from "@/lib/auth/scope"
 import { createPurchaseOrderInvoice, deletePurchaseOrderInvoice } from "@/lib/services/purchasing"
 import { nanoid } from "@/lib/id"
 import { getPdfMaxSizeMb } from "@/lib/services/system-settings"
@@ -14,12 +15,7 @@ import { createInvoiceAttachmentPath, resolvePurchaseOrdersDir } from "@/lib/sto
 import { invoiceSchema, type ActionState } from "@/lib/validation/operations"
 import { logger } from "@/lib/logger"
 
-function dbErrMsg(e: unknown, fallback: string): string {
-  if (!(e instanceof Error)) return fallback
-  const cause = (e as { cause?: unknown }).cause
-  if (cause instanceof Error && cause.message) return cause.message
-  return e.message
-}
+import { safeActionMessage as dbErrMsg } from "@/lib/action-error"
 import { assertOrderAccess } from "./actions.helpers"
 import { validateFileBuffer, MimeType } from "@/lib/file-validation"
 
@@ -188,8 +184,10 @@ export async function addInvoiceAction(
       userEmail:  session.user.email ?? undefined,
       items: items.length > 0 ? items : undefined,
     })
-    revalidatePath("/compras")
-    revalidatePath(`/compras/${purchaseOrderId}`)
+    // La cola operacional tiene el pendiente "Adjuntar factura": sin esto el
+    // usuario lo resolvía y seguía viéndolo (con su badge) hasta que otra
+    // mutación cualquiera revalidara.
+    revalidateOperationalViews(["/compras", `/compras/${purchaseOrderId}`])
     return { ok: true, message: `Factura ${invoiceNumber} adjuntada correctamente` }
   } catch (e) {
     if (fileResult.absolutePath) {
@@ -234,7 +232,10 @@ export async function deleteInvoiceAction(
   }
 
   try {
-    const { filePath } = await deletePurchaseOrderInvoice(invoiceId, session.user.id, "all", {
+    // Scope de la sesión, no "all": `assertOrderAccess` ya validó el acceso,
+    // pero era el único camino de compras que soltaba el cinturón dentro de la
+    // transacción — el resto (cancelar, cerrar, borrar, recibir) lo pasa.
+    const { filePath } = await deletePurchaseOrderInvoice(invoiceId, session.user.id, serviceWorksiteScope(session), {
       userEmail: session.user.email ?? undefined,
     })
 
@@ -245,8 +246,10 @@ export async function deleteInvoiceAction(
       await fs.unlink(absolutePath).catch(() => undefined)
     }
 
-    revalidatePath("/compras")
-    revalidatePath(`/compras/${purchaseOrderId}`)
+    // La cola operacional tiene el pendiente "Adjuntar factura": sin esto el
+    // usuario lo resolvía y seguía viéndolo (con su badge) hasta que otra
+    // mutación cualquiera revalidara.
+    revalidateOperationalViews(["/compras", `/compras/${purchaseOrderId}`])
     return { ok: true, message: "Factura eliminada correctamente" }
   } catch (e) {
     logger.error("[deleteInvoiceAction]", e)

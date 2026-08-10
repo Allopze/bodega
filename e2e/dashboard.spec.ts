@@ -36,34 +36,20 @@ test.describe("Dashboard operacional", () => {
   }
 
   /*
-   * El saludo declara **una sola** cifra: el total de la cola.
+   * El saludo no declara **ninguna** cifra, y es el único título de la página.
    *
-   * Antes enumeraba total + críticas + vencidas + entregas, y cada una de esas
-   * tres ya vivía en su chip de atajo y en su tarjeta de alerta — "críticas"
-   * aparecía cuatro veces en la misma pantalla contando el tile (G-02/A5).
+   * Antes enumeraba total + críticas + vencidas + entregas; luego sólo el total,
+   * que aun así lo repetía la insignia de "Mi trabajo" a cien píxeles (G-02/A5).
+   * Ahora la cifra vive una vez, en la insignia, que además navega hasta la cola.
+   * Y el saludo es el `h1`: convivía con un "Inicio" en la TopBar, dos
+   * identidades para la misma página.
    */
-  test("el saludo declara una sola cifra y coincide con el atajo Todas", async ({ page }) => {
-    const greeting = page.getByText(/No tienes acciones pendientes|Tienes \d+ tareas? pendientes?/)
-    await expect(greeting).toBeVisible()
+  test("el saludo es el único título y no repite el total de la cola", async ({ page }) => {
+    await expect(page.getByRole("heading", { level: 1 })).toHaveCount(1)
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText(/^Hola, /)
 
-    const greetingText = (await greeting.textContent()) ?? ""
-    expect(greetingText).not.toMatch(/crítica/i)
-    expect(greetingText).not.toMatch(/vencida/i)
-    expect(greetingText).not.toMatch(/entrega/i)
-
-    const total = /^No tienes/.test(greetingText)
-      ? "0"
-      : greetingText.match(/Tienes (\d+) tareas? pendientes?/)?.[1]
-    expect(total).toBeTruthy()
-
-    // El atajo "Todas" es la otra representación legítima del mismo total
-    // (acceso, no estado). Si hay cola, tiene que coincidir — y vive en la
-    // pestaña Mi trabajo, mientras el saludo es de la cabecera, común a todas.
-    if (total !== "0") {
-      await page.goto("/dashboard?vista=trabajo")
-      const shortcuts = page.getByRole("navigation", { name: "Atajos a la cola completa" })
-      await expect(shortcuts.getByRole("link", { name: new RegExp(`Todas\\s*${total}$`) })).toBeVisible()
-    }
+    await expect(page.getByText(/Tienes \d+ tareas? pendientes?/)).toHaveCount(0)
+    await expect(page.getByText(/No tienes acciones pendientes/)).toHaveCount(0)
   })
 
   // D-01: los atajos anuncian el backlog completo y navegan a /pendientes; no
@@ -90,10 +76,12 @@ test.describe("Dashboard operacional", () => {
 
     const counts = ((await visibleCount.textContent()) ?? "").match(/(\d+) de (\d+)/)
     const loaded = Number(counts?.[2] ?? 0)
-    const total = Number(
-      ((await page.getByText(/Tienes (\d+) tareas? pendientes?/).textContent().catch(() => "")) ?? "")
-        .match(/Tienes (\d+)/)?.[1] ?? loaded,
-    )
+    // El total vive en la insignia de "Mi trabajo" —su única representación en la
+    // cabecera desde que el saludo dejó de repetirlo—. Sin cola no hay insignia,
+    // y ahí `loaded` es el total.
+    const badge = ((await page.getByRole("navigation", { name: "Vistas del tablero" })
+      .getByRole("link", { name: /Mi trabajo/ }).textContent()) ?? "")
+    const total = Number(badge.match(/(\d+)$/)?.[1] ?? loaded)
 
     if (total > loaded) await expect(notice).toBeVisible()
     else await expect(notice).toHaveCount(0)
@@ -188,8 +176,9 @@ test.describe("Dashboard operacional", () => {
     await firstWorksite.click()
 
     await expect(page).toHaveURL(/faena=/)
-    // El alcance se declara en el saludo y en el rótulo de contexto.
-    await expect(page.getByText(new RegExp(`pendientes en ${worksiteName}|No tienes acciones pendientes en ${worksiteName}`))).toBeVisible()
+    // El alcance lo declara el **propio selector**. Antes lo repetían además el
+    // saludo y una línea de contexto: tres veces la misma palabra.
+    await expect(picker).toHaveText(new RegExp(worksiteName))
 
     // Está en la URL, así que un recargue no lo pierde (a diferencia del estado
     // en React, que `loading.tsx` + `router.refresh()` borraban).
@@ -221,14 +210,23 @@ test.describe("Dashboard operacional", () => {
    * El selector de vistas: una a la vez. Sustituye al índice de anclas, que
    * navegaba con scroll sobre una página con las seis secciones ya montadas.
    */
-  test("el admin ve Resumen, Mi trabajo y sus dominios, con la plata primero", async ({ page }) => {
+  /*
+   * Dos taxonomías, dos niveles: `Resumen` y `Mi trabajo` son modos de mirar,
+   * los dominios son lugares. Como nueve pestañas hermanas había que leerlas
+   * todas para descubrir que no eran comparables.
+   */
+  test("el admin ve dos modos como pestañas y sus dominios en el desplegable", async ({ page }) => {
     const tabs = page.getByRole("navigation", { name: "Vistas del tablero" })
     await expect(tabs).toBeVisible()
 
     // La insignia de "Mi trabajo" pega el conteo al rótulo; se recorta.
-    const titles = (await tabs.getByRole("link").allTextContents()).map((t) => t.replace(/\d+$/, "").trim())
+    const modos = (await tabs.getByRole("link").allTextContents()).map((t) => t.replace(/\d+$/, "").trim())
+    expect(modos).toEqual(["Resumen", "Mi trabajo"])
+
+    await tabs.getByRole("button").click()
+    const dominios = await page.getByRole("menuitem").allTextContents()
     // Finanzas al frente: es el dominio que abre para quien mira la plata.
-    expect(titles.slice(0, 4)).toEqual(["Resumen", "Mi trabajo", "Finanzas", "Adquisiciones"])
+    expect(dominios.slice(0, 2)).toEqual(["Finanzas", "Adquisiciones"])
   })
 
   test("Inicio abre en Resumen y sólo esa vista está montada", async ({ page }) => {
@@ -241,24 +239,35 @@ test.describe("Dashboard operacional", () => {
 
   test("elegir una vista la pinta y deja las otras fuera del DOM", async ({ page }) => {
     const tabs = page.getByRole("navigation", { name: "Vistas del tablero" })
-    await tabs.getByRole("link", { name: "Prevención" }).click()
+    // El disparador es el único `button` de la barra: sin hidratar no abre nada,
+    // así que la espera del `menuitem` es la que hace determinista el clic.
+    await tabs.getByRole("button").click()
+    await page.getByRole("menuitem", { name: "Prevención" }).click()
 
     await expect(page).toHaveURL(/vista=prevencion/)
     await expect(page.getByRole("region", { name: "Prevención y SST" })).toBeVisible()
     await expect(page.getByRole("region", { name: "Adquisiciones" })).toHaveCount(0)
-    await expect(tabs.getByRole("link", { name: "Prevención" })).toHaveAttribute("aria-current", "page")
+    // El desplegable se rotula con el dominio activo: la vista sigue siendo
+    // legible sin abrirlo, que es lo que una pestaña daba gratis.
+    await expect(tabs.getByRole("button")).toHaveText(/Prevención/)
   })
 
-  test("Mi trabajo es la cola completa y su insignia cuadra con el saludo", async ({ page }) => {
+  test("Mi trabajo es la cola completa y su insignia cuadra con el atajo Todas", async ({ page }) => {
     const tabs = page.getByRole("navigation", { name: "Vistas del tablero" })
-    const saludo = (await page.getByText(/Tienes (\d+) tareas? pendientes?/).textContent().catch(() => "")) ?? ""
-    const total = saludo.match(/Tienes (\d+)/)?.[1]
+    const trabajo = tabs.getByRole("link", { name: /Mi trabajo/ })
+    // La insignia es ahora la **única** representación del total en la cabecera.
+    const total = ((await trabajo.textContent()) ?? "").match(/(\d+)$/)?.[1]
 
-    if (total) await expect(tabs.getByRole("link", { name: /Mi trabajo/ })).toContainText(total)
-    await tabs.getByRole("link", { name: /Mi trabajo/ }).click()
-
+    await trabajo.click()
     await expect(page).toHaveURL(/vista=trabajo/)
     await expect(page.getByRole("region", { name: "Cola de trabajo" })).toBeVisible()
+
+    // El atajo "Todas" es la otra representación legítima del mismo total
+    // (acceso, no estado). Si hay cola, tienen que coincidir.
+    if (total) {
+      const shortcuts = page.getByRole("navigation", { name: "Atajos a la cola completa" })
+      await expect(shortcuts.getByRole("link", { name: new RegExp(`Todas\\s*${total}$`) })).toBeVisible()
+    }
   })
 
   test("cambiar de vista no reinicia la faena", async ({ page }) => {
@@ -269,8 +278,8 @@ test.describe("Dashboard operacional", () => {
     await page.getByRole("option").filter({ hasNotText: "Todas las faenas" }).first().click()
     await expect(page).toHaveURL(/faena=/)
 
-    await page.getByRole("navigation", { name: "Vistas del tablero" })
-      .getByRole("link", { name: "Flota" }).click()
+    await page.getByRole("navigation", { name: "Vistas del tablero" }).getByRole("button").click()
+    await page.getByRole("menuitem", { name: "Flota" }).click()
 
     // Las tres dimensiones conviven en la URL: sin esto, elegir vista tras
     // elegir faena devolvía el tablero a "todas".
@@ -363,7 +372,13 @@ test.describe("Dashboard operacional", () => {
     await page.goto("/dashboard?faena=ws-que-no-existe")
 
     await expect(page.getByRole("region", { name: "Indicadores Operacionales" })).toBeVisible()
-    await expect(page.getByText(/Todas las faenas activas|Todas mis faenas autorizadas/)).toBeVisible()
+    // "Todas" lo declara el selector, que es el único sitio donde el alcance se
+    // puede además cambiar. La etiqueta distingue el caso en que "todas" no son
+    // todas —un rol con faenas acotadas—, que es lo único que aportaba la línea
+    // de contexto que antes lo repetía al lado.
+    const picker = await worksitePicker(page)
+    if ((await picker.count()) === 0) test.skip(true, "El usuario tiene una sola faena autorizada")
+    await expect(picker).toHaveText(/Todas las faenas|Todas mis faenas autorizadas/)
   })
 })
 
@@ -436,9 +451,10 @@ test.describe("Dashboard con rol restringido", () => {
    * que no abre por gasto, y no tiene prevención ni combustibles: esas
    * secciones no existen —no se consultan ni aparecen en el índice—.
    */
-  test("el rol restringido no ve las pestañas que su permiso no autoriza", async ({ page }) => {
+  test("el rol restringido no ve los dominios que su permiso no autoriza", async ({ page }) => {
     const tabs = page.getByRole("navigation", { name: "Vistas del tablero" })
-    const titles = (await tabs.getByRole("link").allTextContents()).map((t) => t.replace(/\d+$/, "").trim())
+    await tabs.getByRole("button").click()
+    const titles = await page.getByRole("menuitem").allTextContents()
 
     expect(titles).toContain("Adquisiciones")
     expect(titles).toContain("Bodega")

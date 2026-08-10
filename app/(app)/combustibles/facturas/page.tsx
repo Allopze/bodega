@@ -18,7 +18,6 @@ import { FuelDashboardKpis } from "../fuel-kpis"
 import { FuelFilters } from "../fuel-filters"
 import { MonthlyEvolutionChart, CategoryBarChart } from "../fuel-charts-lazy"
 import { ExportXlsxButton } from "../export-button"
-import { ChartDataSummary } from "../chart-data-summary"
 
 export const metadata: Metadata = { title: "Facturas de combustible" }
 
@@ -211,7 +210,6 @@ export default async function CombustiblesFacturasPage({
           <CardHeader><CardTitle className="text-base">Evolución mensual</CardTitle></CardHeader>
           <CardContent>
             <MonthlyEvolutionChart data={chartByMonth} />
-            <ChartDataSummary title="Evolución mensual" data={chartByMonth} periodLabel={periodLabel} groupLabel="Meses" />
           </CardContent>
         </Card>
         <Card>
@@ -219,7 +217,6 @@ export default async function CombustiblesFacturasPage({
           <CardContent>
             {/* Barra, no torta: con 2-3 productos el gasto se compara con precisión, y una torta oculta justo esa comparación (dataviz: "donut para comparar valores cercanos → barra"). */}
             <CategoryBarChart data={chartByProduct} title="Productos" />
-            <ChartDataSummary title="Productos" data={chartByProduct} periodLabel={periodLabel} groupLabel="Productos" visibleLimit={8} />
           </CardContent>
         </Card>
       </div>
@@ -229,14 +226,12 @@ export default async function CombustiblesFacturasPage({
           <CardHeader><CardTitle className="text-base">Top faenas por gasto</CardTitle></CardHeader>
           <CardContent>
             <CategoryBarChart data={chartByWorksite} title="Faenas" />
-            <ChartDataSummary title="Top faenas por gasto" data={chartByWorksite} periodLabel={periodLabel} groupLabel="Faenas" visibleLimit={8} />
           </CardContent>
         </Card>
         <Card>
           <CardHeader><CardTitle className="text-base">Top vehículos por gasto</CardTitle></CardHeader>
           <CardContent>
             <CategoryBarChart data={chartByVehicle} title="Vehículos" />
-            <ChartDataSummary title="Top vehículos por gasto" data={chartByVehicle} periodLabel={periodLabel} groupLabel="Vehículos" visibleLimit={8} />
           </CardContent>
         </Card>
       </div>

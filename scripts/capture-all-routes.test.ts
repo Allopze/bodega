@@ -13,6 +13,7 @@ import {
   reconcileCaptureArtifacts,
   requireCaptureDatabaseUrl,
   resolveServerLaunch,
+  shouldUseProductionCaptureServer,
 } from "./capture-all-routes"
 
 const root = process.cwd()
@@ -263,6 +264,12 @@ describe("capture-all-routes server launch (C1/C2)", () => {
     })
     expect(launch.command).toBe(process.execPath)
     expect(launch.args).toEqual([baseInput.standaloneServer])
+  })
+
+  it("reserves the standalone production server for parallel viewport runs", () => {
+    expect(shouldUseProductionCaptureServer(false)).toBe(false)
+    expect(shouldUseProductionCaptureServer(true)).toBe(true)
+    expect(shouldUseProductionCaptureServer(false, true)).toBe(true)
   })
 
   it("passes the per-server port (not the base port) to `next start`", () => {

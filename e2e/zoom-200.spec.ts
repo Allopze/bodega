@@ -18,6 +18,8 @@ const DENSE_PAGES = [
   { path: "/aprobaciones",                 name: "Aprobaciones" },
   { path: "/compras",                      name: "Compras" },
   { path: "/recepcion",                    name: "Recepción" },
+  { path: "/entregas",                     name: "Entregas" },
+  { path: "/trazabilidad",                 name: "Trazabilidad" },
   { path: "/bodega",                       name: "Bodega" },
   { path: "/prevencion/indicadores",       name: "Indicadores SST" },
   { path: "/prevencion/pdtp",              name: "PDTP Programas" },

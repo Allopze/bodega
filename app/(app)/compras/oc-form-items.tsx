@@ -17,6 +17,11 @@ const MODE_LABELS: Record<string, string> = {
   directo_faena: "Directo a faena",
 }
 
+const URGENCY_LABELS: Record<string, string> = {
+  high: "Urgencia alta",
+  critical: "Urgencia crítica",
+}
+
 interface OcFormItemsProps {
   filteredItems:      PendingItemOption[]
   filteredByWorksite: PendingItemOption[]
@@ -30,7 +35,7 @@ interface OcFormItemsProps {
   onToggle:           (itemId: string) => void
   onToggleAll:        () => void
   onSearchChange:     (value: string) => void
-  itemPrice:          (item: PendingItemOption) => number
+  itemPrice:          (item: PendingItemOption) => number | null
   itemDiscount:       (itemId: string) => number
   setItemPrice:       (itemId: string, value: string) => void
   setItemDiscount:    (itemId: string, value: string) => void
@@ -107,7 +112,8 @@ export function OcFormItems({
             const disc         = itemDiscount(item.id)
             const qty          = itemQuantity(item)
             const isPartial    = qty < item.quantity
-            const subtotal     = qty * price * (1 - disc / 100)
+            const costPending  = price === null
+            const subtotal     = costPending ? null : qty * price! * (1 - disc / 100)
             const supplierForItem = resolveItemSupplierId(item)
             const hint         = priceHint(item, supplierForItem)
             const supLabel     = suggestedSupplierLabel(item, suppliers)
@@ -143,9 +149,19 @@ export function OcFormItems({
                     <Badge variant="outline" size="sm" className="font-normal shrink-0 text-[11px]">
                       {MODE_LABELS[item.deliveryMode] ?? item.deliveryMode}
                     </Badge>
+                    {URGENCY_LABELS[item.urgency] && (
+                      <Badge variant="warning" size="sm" className="font-normal shrink-0">
+                        {URGENCY_LABELS[item.urgency]}
+                      </Badge>
+                    )}
                     {supLabel && (
                       <Badge variant="warning" size="sm" className="font-normal shrink-0">
                         Sugerido: {supLabel}
+                      </Badge>
+                    )}
+                    {item.isService && (
+                      <Badge variant="outline" size="sm" className="font-normal shrink-0">
+                        Servicio
                       </Badge>
                     )}
                   </div>
@@ -196,15 +212,21 @@ export function OcFormItems({
                       <Input
                         id={`price-${item.id}`}
                         type="number" step="1" min="0"
-                        value={price || ""}
+                        // `price || ""` mostraba un 0 explícito como campo
+                        // vacío, así que una OC en $0 se veía igual que una sin
+                        // precio cargado. Y en un servicio el campo vacío es un
+                        // dato: significa que el costo aún no se conoce.
+                        value={price === null ? "" : String(price)}
                         onChange={(e) => setItemPrice(item.id, e.target.value)}
                         className="h-7 w-28 text-sm tabular-nums"
-                        placeholder="0"
-                        title={hint ?? undefined}
+                        placeholder={item.isService ? "Por definir" : "0"}
+                        title={hint ?? (item.isService ? "Déjalo vacío si el costo aún no se conoce" : undefined)}
                       />
-                      {hint && (
+                      {hint ? (
                         <span className="text-[10px] text-[var(--color-text-subtle)]">catálogo</span>
-                      )}
+                      ) : item.isService && costPending ? (
+                        <span className="text-[10px] text-[var(--color-warning-ink)]">se registra después</span>
+                      ) : null}
                     </div>
                     <div className="flex flex-col gap-1">
                       <label htmlFor={`disc-${item.id}`} className="text-[10px] text-[var(--color-text-subtle)]">
@@ -221,8 +243,8 @@ export function OcFormItems({
                     </div>
                     <div className="flex flex-col gap-1 min-w-[80px] text-right">
                       <span className="text-[10px] text-[var(--color-text-subtle)]">Subtotal</span>
-                      <span className="text-sm tabular-nums font-medium text-[var(--color-text)]">
-                        {formatCLP(subtotal)}
+                      <span className={`text-sm font-medium ${subtotal === null ? "text-[var(--color-warning-ink)]" : "tabular-nums text-[var(--color-text)]"}`}>
+                        {subtotal === null ? "Costo pendiente" : formatCLP(subtotal)}
                       </span>
                     </div>
                   </div>

@@ -26,6 +26,10 @@ export function parseRequestForm(
     worksiteId:   formData.get("worksiteId"),
     requestType:  requestTypeRaw,
     urgency:      formData.get("urgency") || "normal",
+    // El formulario lo manda desde siempre, pero no se leía acá: el esquema
+    // lo defaulteaba y TODA solicitud nacía 'via_oficina', ignorando el
+    // despacho que el solicitante había elegido.
+    deliveryMode: formData.get("deliveryMode") || "via_oficina",
     requiredDate: String(formData.get("requiredDate") ?? ""),
     notes:        formData.get("notes") || "",
     items:        itemsRaw,

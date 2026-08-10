@@ -26,7 +26,7 @@ vi.mock("@/db", () => ({
 
 const migrationsFolder = path.resolve(process.cwd(), "db/migrations")
 
-import { getOperationalWorkQueue } from "@/lib/services/operational-work-queue"
+import { getOperationalWorkQueue, getOperationalWorkCount } from "@/lib/services/operational-work-queue"
 
 describe("operational work queue — cotización ganadora (repuestos/servicios)", () => {
   const now = "2026-08-08T12:00:00.000Z"
@@ -83,5 +83,21 @@ describe("operational work queue — cotización ganadora (repuestos/servicios)"
     const result = await getOperationalWorkQueue(makeSession(["approvals:approve"]), { module: "aprobaciones" })
     expect(result.items.some((i) => i.sourceId === "req-owq-repuesto")).toBe(false)
     expect(result.items.some((i) => i.sourceId === "req-owq-servicio")).toBe(false)
+  })
+
+  // El badge del rail es un espejo de estas mismas fuentes. Le faltaba la rama
+  // de cotizaciones: quien sólo tenía ese trabajo veía 0 mientras /pendientes
+  // listaba la tarea.
+  it("el contador del badge cuenta lo mismo que la cola", async () => {
+    const session = makeSession(["repuestos:approve", "servicios:approve"])
+    const queue = await getOperationalWorkQueue(session, { module: "aprobaciones" })
+    const count = await getOperationalWorkCount(session)
+    expect(queue.items.length).toBe(2)
+    expect(count).toBe(2)
+  })
+
+  it("el contador respeta el permiso por tipo", async () => {
+    expect(await getOperationalWorkCount(makeSession(["repuestos:approve"]))).toBe(1)
+    expect(await getOperationalWorkCount(makeSession(["approvals:approve"]))).toBe(0)
   })
 })

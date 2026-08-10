@@ -62,10 +62,22 @@ function useDraftPersistence({
       setDirty(false)
       setLastSavedAt(new Date())
       if (draftState.requestId) setSavedId(draftState.requestId)
-      if (autoSaveRef.current) autoSaveRef.current = false
-      else toast.success(draftState.message ?? "Borrador guardado")
+      // Archivos que el servidor rechazó: se conservan en el formulario para
+      // que el usuario pueda corregirlos, y el aviso va como error persistente
+      // aunque el borrador se haya guardado. El autosave silencia el toast de
+      // éxito, pero nunca este: perder cotizaciones en silencio era el peor caso.
+      const wasAutoSave = autoSaveRef.current
+      autoSaveRef.current = false
+      const failedFiles = (draftState.data?.failedFiles as string[] | undefined) ?? []
+      if (failedFiles.length > 0) toast.error(draftState.message ?? "Algunas cotizaciones no se subieron")
+      else if (!wasAutoSave) toast.success(draftState.message ?? "Borrador guardado")
       if (QUOTATION_TYPES.has(requestType)) {
-        setItems((prev: ItemRow[]) => prev.map((item) => item.cotizaciones.length > 0 ? { ...item, cotizaciones: [] } : item))
+        const failed = new Set(failedFiles)
+        setItems((prev: ItemRow[]) => prev.map((item) => {
+          if (item.cotizaciones.length === 0) return item
+          const kept = item.cotizaciones.filter((c) => failed.has(c.fileName))
+          return kept.length === item.cotizaciones.length ? item : { ...item, cotizaciones: kept }
+        }))
       }
     } else if (draftState.message && !draftState.ok && draftState.message !== "Sin permisos para crear solicitudes") {
       if (autoSaveRef.current) autoSaveRef.current = false
@@ -187,7 +199,9 @@ export function useRequestForm({
           urgency: item.urgency, suggestedSupplierId: item.suggestedSupplierId ?? "",
           supplierHint: item.supplierHint ?? "", notes: item.notes ?? "", status: item.status,
           isEpp: prod?.isEpp ?? false, productName: prod?.name ?? item.productNameFree ?? "",
-          variantQuantities: {}, workerId: "", workerName: "",
+          // Sin esto la ficha de una solicitud ya enviada mostraba el selector de
+          // colaborador vacío aunque el ítem sí tuviera uno asignado.
+          variantQuantities: {}, workerId: item.workerId ?? "", workerName: item.workerName ?? "",
           showAttrs: !isQuotation && item.attributes.length > 0, cotizaciones: [],
           ...equipmentFromAttributes(editRequest.requestType, item.attributes),
           attributes: isQuotation ? [] : item.attributes.map((a) => {
@@ -202,11 +216,14 @@ export function useRequestForm({
       })
     }
     if (prefillItems && prefillItems.length > 0) {
-      return prefillItems.map((prefill) => {
+      return prefillItems.map((prefill, index) => {
         const prod = prefill.productId ? products.find((p) => p.id === prefill.productId) : null
         const attrs = prod ? buildAttrsFromProduct(prod) : []
         return {
-          ...blankItemForType(crypto.randomUUID(), requestType),
+          // Esta llave llega a los id/htmlFor de los controles. Debe ser idéntica
+          // durante SSR e hidratación; los UUID quedan reservados para ítems que
+          // el usuario agrega después de montar el formulario.
+          ...blankItemForType(`prefill-${index}`, requestType),
           productId:           prefill.productId,
           productNameFree:     prefill.productNameFree,
           productName:         prod?.name ?? prefill.productNameFree,
@@ -225,7 +242,9 @@ export function useRequestForm({
         }
       })
     }
-    return [blankItemForType(crypto.randomUUID(), requestType)]
+    // La primera fila se renderiza también en el servidor. Una clave estable
+    // evita IDs distintos entre el HTML inicial y el primer render del cliente.
+    return [blankItemForType("new-0", requestType)]
   })
 
   const [dirty, setDirty] = useState(false)
@@ -260,7 +279,20 @@ export function useRequestForm({
     setItems((prev) => prev.map((i) => {
       if (i._key !== key) return i
       const attrs = buildAttrsFromProduct(prod)
-      return { ...i, productId: prod.id, productNameFree: "", productName: prod.name, unitOfMeasure: prod.unitOfMeasure, isEpp: prod.isEpp, suggestedSupplierId: prod.preferredSupplierId ?? "", supplierHint: "", attributes: attrs, variantQuantities: {}, showAttrs: attrs.length > 0 }
+      // Cambiar de concepto no puede arrastrar datos del anterior: los atributos
+      // se reconstruyen desde el producto nuevo (así el "Número de dosis" de una
+      // vacuna desaparece) y el colaborador se descarta salvo que el nuevo
+      // producto también lo pida (o sea EPP, donde es opcional).
+      const keepsWorker = prod.requiresWorker || prod.isEpp
+      return {
+        ...i,
+        productId: prod.id, productNameFree: "", productName: prod.name,
+        unitOfMeasure: prod.unitOfMeasure, isEpp: prod.isEpp,
+        suggestedSupplierId: prod.preferredSupplierId ?? "", supplierHint: "",
+        attributes: attrs, variantQuantities: {}, showAttrs: attrs.length > 0,
+        workerId: keepsWorker ? i.workerId : "",
+        workerName: keepsWorker ? i.workerName : "",
+      }
     }))
   }, [products])
 
@@ -268,7 +300,9 @@ export function useRequestForm({
     const trimmed = name.trim()
     if (!trimmed) return
     setItems((prev) => prev.map((i) =>
-      i._key !== key ? i : { ...i, productId: null, productNameFree: trimmed, productName: trimmed, isEpp: false, unitOfMeasure: i.unitOfMeasure || "unidad", suggestedSupplierId: "", supplierHint: "", attributes: [], showAttrs: false }
+      // Un ítem fuera de catálogo no tiene reglas de producto: pierde también el
+      // colaborador que hubiera quedado de la selección anterior.
+      i._key !== key ? i : { ...i, productId: null, productNameFree: trimmed, productName: trimmed, isEpp: false, unitOfMeasure: i.unitOfMeasure || "unidad", suggestedSupplierId: "", supplierHint: "", attributes: [], showAttrs: false, workerId: "", workerName: "" }
     ))
   }, [])
 
@@ -279,6 +313,12 @@ export function useRequestForm({
   }, [])
 
   const updateItemWorker = useCallback((key: string, workerId: string) => {
+    // Limpiar la selección es un caso legítimo (el combobox manda ""), y antes
+    // el early-return por "no encontré el trabajador" lo hacía imposible.
+    if (!workerId) {
+      setItems((prev) => prev.map((i) => i._key === key ? { ...i, workerId: "", workerName: "" } : i))
+      return
+    }
     if (!workers) return
     const worker = workers.find((w) => w.id === workerId)
     if (!worker) return
@@ -338,7 +378,10 @@ export function useRequestForm({
       }
       return [{
         ...base,
-        quantity: Number(item.quantity) || 1,
+        // Sin fallback: un campo vacío daba NaN y el `|| 1` lo convertía en una
+        // cantidad de 1 que nadie escribió. NaN se serializa como null y el
+        // esquema lo rechaza con "Cantidad debe ser mayor a 0".
+        quantity: Number(item.quantity),
       }]
     })),
     [items, requiredDate],
@@ -380,13 +423,56 @@ export function useRequestForm({
     window.history.back()
   }, [])
 
+  /**
+   * Guard de navegación interna.
+   *
+   * `beforeunload` sólo cubre cerrar o recargar la pestaña, y el botón "Volver"
+   * tiene su propio diálogo: un clic en el rail, el breadcrumb o el TopBar
+   * descartaba una solicitud a medio llenar sin preguntar nada. El App Router no
+   * expone un hook de "antes de cambiar de ruta", así que se intercepta el clic
+   * en el enlace en fase de captura — que es por donde pasa toda la navegación
+   * interna— y se difiere hasta que la persona confirme.
+   */
+  const [pendingHref, setPendingHref] = useState<string | null>(null)
+  useEffect(() => {
+    if (!isDraft || !dirty || !hasRealContent) return
+    const onClick = (event: MouseEvent) => {
+      // Respeta abrir en pestaña nueva, descargas y clics ya manejados.
+      if (event.defaultPrevented || event.button !== 0) return
+      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+      const target = event.target as HTMLElement | null
+      const anchor = target?.closest?.("a[href]") as HTMLAnchorElement | null
+      if (!anchor || anchor.target === "_blank" || anchor.hasAttribute("download")) return
+      const url = new URL(anchor.href, window.location.href)
+      if (url.origin !== window.location.origin) return
+      // Un enlace a la misma ruta (anclas, filtros de la propia pantalla) no
+      // desmonta el formulario, así que no hay nada que perder.
+      if (url.pathname === window.location.pathname) return
+      event.preventDefault()
+      setPendingHref(url.pathname + url.search)
+    }
+    document.addEventListener("click", onClick, true)
+    return () => document.removeEventListener("click", onClick, true)
+  }, [isDraft, dirty, hasRealContent])
+
+  function confirmLeave() {
+    const href = pendingHref
+    setPendingHref(null)
+    if (!href) return
+    if (beforeUnloadRef.current) {
+      window.removeEventListener("beforeunload", beforeUnloadRef.current)
+      beforeUnloadRef.current = null
+    }
+    router.push(href)
+  }
+
   const readOnly = !isDraft
   const itemsError = draftState.fieldErrors?.items?.[0] ?? submitState.fieldErrors?.items?.[0]
   const requiredDateError = draftState.fieldErrors?.requiredDate?.[0] ?? submitState.fieldErrors?.requiredDate?.[0]
   const requestTypeLabel = requestTypeOpts.find((o) => o.value === requestType)?.label ?? requestType
   const urgencyLabel = URGENCY_OPTS.find((o) => o.value === urgency)?.label ?? urgency
   const worksiteLabel = worksites.find((w) => w.id === worksiteId)?.name ?? "Sin faena"
-  const missingItems = buildRequestSummaryIssues({ worksiteId, requiredDate, items, requestType, notes })
+  const missingItems = buildRequestSummaryIssues({ worksiteId, requiredDate, items, requestType, notes, products })
   const statusLabel = editRequest ? requestStatusLabel(editRequest.status) : "Borrador"
   const submitMessage = submitState.message
   const submitOk = submitState.ok
@@ -402,5 +488,6 @@ export function useRequestForm({
     addItem, removeItem, updateItem, selectProduct, selectFreeProduct, clearProduct, updateItemWorker, updateAttr,
     buildDraftFormData, draftAction, submitAction, cancelAction, deleteAction,
     startSaveTransition, startSubmitTransition, startDeleteTransition, silentNavBack,
+    pendingHref, setPendingHref, confirmLeave,
   }
 }

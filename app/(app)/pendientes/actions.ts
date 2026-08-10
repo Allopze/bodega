@@ -8,6 +8,7 @@ import {
 } from "@/lib/services/operational-assignments"
 import { logger } from "@/lib/logger"
 import { revalidateOperationalViews } from "@/lib/services/operational-cache"
+import { safeActionMessage } from "@/lib/action-error"
 
 function sourcePaths(input: Pick<OperationalAssignmentInput, "sourceType" | "sourceId">) {
   if (input.sourceType === "purchase_request") return ["/solicitudes", `/solicitudes/${input.sourceId}`]
@@ -37,6 +38,6 @@ export async function saveOperationalAssignmentAction(input: OperationalAssignme
     return { ok: true as const, message: input.assigneeUserId ? "Responsable actualizado." : "Pendiente sin responsable complementario." }
   } catch (error) {
     logger.warn("[saveOperationalAssignmentAction]", error)
-    return { ok: false as const, message: error instanceof Error ? error.message : "No fue posible actualizar la asignación." }
+    return { ok: false as const, message: safeActionMessage(error, "No fue posible actualizar la asignación.") }
   }
 }

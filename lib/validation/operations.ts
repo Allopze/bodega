@@ -16,7 +16,8 @@ function todayInChile(): string {
   return `${value("year")}-${value("month")}-${value("day")}`
 }
 
-function isRealIsoDate(value: string): boolean {
+/** Exportada para que los servicios validen fechas con el mismo criterio que los formularios. */
+export function isRealIsoDate(value: string): boolean {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false
   const date = new Date(`${value}T00:00:00.000Z`)
   return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value
@@ -100,6 +101,17 @@ const nonNegativeQuantitySchema = z.coerce
   .refine(Number.isFinite, "Cantidad inválida")
   .min(0, "Cantidad no puede ser negativa")
 
+/**
+ * `null` = costo pendiente: el ítem es un servicio cuyo precio todavía no se
+ * conoce. `z.coerce.number()` convierte `""` en 0, que es justo la confusión
+ * que hay que evitar (0 significa "sin costo"), así que el vacío se normaliza
+ * a `null` antes de coercionar.
+ */
+const pendingOrKnownMoneySchema = z.preprocess(
+  (value) => (value === "" || value === undefined ? null : value),
+  finiteMoneySchema.nullable(),
+)
+
 export const createOrderItemSchema = z.object({
   requestItemId:   z.string().min(1, "Ítem requerido"),
   supplierId:      z.string().nullable().optional(),
@@ -108,19 +120,37 @@ export const createOrderItemSchema = z.object({
   productNameFree: z.string().nullable().optional(),
   quantity:        z.coerce.number().refine(Number.isFinite, "Cantidad inválida").positive("Cantidad debe ser mayor a 0"),
   unitOfMeasure:   z.string().min(1, "Unidad requerida").max(20),
-  unitPrice:       finiteMoneySchema,
+  unitPrice:       pendingOrKnownMoneySchema,
   discount:        z.coerce.number().refine(Number.isFinite, "Descuento inválido").min(0).max(100).default(0),
   notes:           z.string().max(300).nullable().optional().or(z.literal("")),
 })
+
+/**
+ * Registro posterior del costo real de una línea de OC que nació con costo
+ * pendiente. Sólo el precio: cantidad, producto y descuento ya están fijados
+ * por la orden y no se reescriben desde aquí.
+ */
+export const recordItemCostSchema = z.object({
+  purchaseOrderItemId: z.string().min(1, "Ítem de la orden requerido"),
+  unitPrice:           finiteMoneySchema,
+  notes:               z.string().max(300).nullable().optional().or(z.literal("")),
+})
+
+export type RecordItemCostFormData = z.infer<typeof recordItemCostSchema>
 
 export const createOrderSchema = z.object({
   worksiteId:        z.string().min(1, "Selecciona una faena"),
   supplierId:        z.string().optional().or(z.literal("")),
   paymentTerms:      z.string().max(120).nullable().optional().or(z.literal("")),
-  estimatedDelivery: z.string().nullable().optional().or(z.literal("")),
+  // Misma razón que `issueDate`: columna text sin CHECK. Vacío sigue valiendo
+  // (la fecha estimada es opcional), pero un valor presente debe ser una fecha.
+  estimatedDelivery: z.string().nullable().optional()
+                      .refine((v) => !v || isRealIsoDate(v), "Fecha estimada inválida"),
   deliveryAddress:   z.string().max(240).nullable().optional().or(z.literal("")),
   notes:             z.string().max(500).nullable().optional().or(z.literal("")),
-  items:             z.array(createOrderItemSchema).min(1, "Selecciona al menos un ítem para la orden"),
+  items:             z.array(createOrderItemSchema)
+                      .min(1, "Selecciona al menos un ítem para la orden")
+                      .max(200, "Demasiados ítems para una sola orden"),
 })
 
 export type CreateOrderFormData = z.infer<typeof createOrderSchema>
@@ -172,7 +202,16 @@ export const workerDeliverySchema = z.object({
   returnQuantity:        positiveQuantitySchema.nullable().optional(),
   returnReason:          z.string().trim().max(30).nullable().optional().or(z.literal("")),
   returnNotes:           z.string().trim().max(300).nullable().optional().or(z.literal("")),
-})
+}).refine(
+  // Los cuatro campos eran opcionales de forma independiente, así que una
+  // cantidad sin producto quedaba registrada como "devolución de nada" (y sin
+  // mover stock). Si se declara una devolución, tiene que decir qué y por qué.
+  (d) => !d.returnQuantity || Boolean(d.returnProductId || d.returnProductNameFree?.trim()),
+  { message: "Indica qué producto se devuelve", path: ["returnProductId"] },
+).refine(
+  (d) => !d.returnQuantity || Boolean(d.returnReason?.trim()),
+  { message: "Indica el motivo de la devolución", path: ["returnReason"] },
+)
 
 // ── Stock min threshold ─────────────────────────────────────────────────────
 export const setMinStockSchema = z.object({
@@ -203,7 +242,11 @@ export const invoiceSchema = z.object({
   purchaseOrderId: z.string().min(1, "ID de OC requerido"),
   invoiceNumber:   z.string().trim().min(1, "N° de factura requerido").max(60, "N° de factura demasiado largo"),
   amount:          finiteMoneySchema,
-  issueDate:       z.string().trim().min(1, "Fecha de emisión requerida"),
+  // Fecha real, no cualquier string: la columna es `text` sin CHECK (a
+  // diferencia de billing_invoices), así que "hola" se persistía y la ficha de
+  // la OC mostraba basura. No se exige que sea futura: una factura se emite antes.
+  issueDate:       z.string().trim().min(1, "Fecha de emisión requerida")
+                    .refine(isRealIsoDate, "Fecha de emisión inválida"),
 })
 
 export type InvoiceFormData = z.infer<typeof invoiceSchema>

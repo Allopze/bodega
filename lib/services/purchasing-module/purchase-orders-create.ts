@@ -2,14 +2,15 @@
  * Purchase order creation service.
  */
 
-import { and, eq } from "drizzle-orm"
+import { and, eq, inArray } from "drizzle-orm"
 import { db } from "@/db"
-import { purchaseOrders, purchaseOrderItems, purchaseRequestItems, purchaseRequests, requestItemAttributes, suppliers } from "@/db/schema"
+import { products, purchaseOrders, purchaseOrderItems, purchaseRequestItems, purchaseRequests, requestItemAttributes, suppliers } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { nextCodeTx } from "@/lib/code-sequences"
 import { recordAudit } from "@/lib/audit"
-import { computeOrderTotals } from "@/lib/order-totals"
+import { computeLineSubtotal, computeOrderTotals } from "@/lib/order-totals"
 import { addItemToPurchaseOrderTx } from "../item-state"
+import { getActiveOrderedQuantityTx, PURCHASE_COVERAGE_EPSILON } from "./purchasable-coverage"
 
 export interface CreateOrderItemInput {
   requestItemId: string
@@ -17,7 +18,8 @@ export interface CreateOrderItemInput {
   productNameFree: string | null
   quantity:      number
   unitOfMeasure: string
-  unitPrice:     number
+  /** `null` = costo pendiente; sólo lo admiten los ítems de servicio del catálogo. */
+  unitPrice:     number | null
   discount?:     number
   notes?:        string | null
   sortOrder?:    number
@@ -70,6 +72,21 @@ export async function createOrdersBySupplier(input: CreateOrdersBySupplierInput)
     throw new Error("No se puede crear una OC sin ítems")
   }
 
+  // Una compra consolidada puede crear varias OC (una por proveedor). Todas
+  // comparten la misma transacción, de modo que la validación de duplicados y
+  // el orden de sus locks debe abarcar *todos* los grupos, no sólo las líneas
+  // de cada proveedor. De otro modo dos consolidaciones con los proveedores en
+  // orden inverso podían bloquear A→B y B→A respectivamente.
+  const allInputItems = input.orders.flatMap((order) => order.items)
+  const seenRequestItemIds = new Set<string>()
+  for (const item of allInputItems) {
+    if (seenRequestItemIds.has(item.requestItemId)) {
+      throw new Error("No se puede incluir el mismo ítem de solicitud más de una vez")
+    }
+    seenRequestItemIds.add(item.requestItemId)
+  }
+  const requestItemIdsInLockOrder = [...seenRequestItemIds].sort((a, b) => a.localeCompare(b))
+
   const now       = new Date().toISOString()
   const year      = new Date().getFullYear()
   const orderIds: string[] = []
@@ -78,7 +95,77 @@ export async function createOrdersBySupplier(input: CreateOrdersBySupplierInput)
     : null
 
   await db.transaction(async (tx) => {
-    const seenRequestItemIds = new Set<string>()
+    // DAT-18: el bloqueo es global a todos los grupos de proveedor. Cancelar y
+    // eliminar ya usan el mismo orden léxico en `lockPurchaseRequestItemsTx`,
+    // así que cualquier carrera sobre los mismos ítems se serializa sin un
+    // ciclo de locks entre dos OC consolidadas.
+    const lockedSourcesByRequestItemId = new Map<string, {
+      requestItem: typeof purchaseRequestItems.$inferSelect
+      costCenterId: string | null
+      deliveryMode: string
+    }>()
+
+    // The request and its parent are locked and resolved inside this transaction:
+    // client data may choose an item, never its worksite, product, unit or cost centre.
+    // `ORDER BY` keeps the same deterministic lock order as cancellation and
+    // deletion without a query per item.
+    const lockedSources = await tx
+      .select({
+        requestItem: purchaseRequestItems,
+        worksiteId: purchaseRequests.worksiteId,
+        costCenterId: purchaseRequests.costCenterId,
+        deliveryMode: purchaseRequests.deliveryMode,
+      })
+      .from(purchaseRequestItems)
+      .innerJoin(purchaseRequests, eq(purchaseRequestItems.requestId, purchaseRequests.id))
+      .where(inArray(purchaseRequestItems.id, requestItemIdsInLockOrder))
+      .orderBy(purchaseRequestItems.id)
+      .for("update")
+    const sourceByRequestItemId = new Map(
+      lockedSources.map((source) => [source.requestItem.id, source]),
+    )
+
+    // Un costo pendiente (`unitPrice: null`) es una propiedad del catálogo, no
+    // una opción del comprador: sólo los productos marcados `is_service` pueden
+    // entrar a la OC sin precio. Se resuelve contra la BD dentro de la
+    // transacción para que el cliente no pueda declararlo por su cuenta.
+    const pricelessProductIds = [...new Set(allInputItems.flatMap((item) => {
+      if (item.unitPrice !== null && item.unitPrice !== undefined) return []
+      const productId = sourceByRequestItemId.get(item.requestItemId)?.requestItem.productId
+      return productId ? [productId] : [null]
+    }))]
+    if (pricelessProductIds.some((id) => id === null)) {
+      throw new Error("Solo los servicios del catálogo pueden comprarse con costo pendiente")
+    }
+    if (pricelessProductIds.length > 0) {
+      const serviceProducts = await tx
+        .select({ id: products.id })
+        .from(products)
+        .where(and(
+          inArray(products.id, pricelessProductIds as string[]),
+          eq(products.isService, true),
+        ))
+      if (serviceProducts.length !== pricelessProductIds.length) {
+        throw new Error("Solo los servicios del catálogo pueden comprarse con costo pendiente")
+      }
+    }
+
+    for (const requestItemId of requestItemIdsInLockOrder) {
+      const source = sourceByRequestItemId.get(requestItemId)
+      if (!source) throw new Error(`Item ${requestItemId} not found`)
+      if (source.worksiteId !== input.worksiteId) {
+        throw new Error("El ítem de solicitud pertenece a otra faena")
+      }
+      if (scopedWorksiteIds && !scopedWorksiteIds.has(source.worksiteId)) {
+        throw new Error("No tienes acceso a la faena de este ítem")
+      }
+
+      lockedSourcesByRequestItemId.set(requestItemId, {
+        requestItem: source.requestItem,
+        costCenterId: source.costCenterId,
+        deliveryMode: source.deliveryMode,
+      })
+    }
 
     for (const orderInput of input.orders) {
       const [activeSupplier] = await tx
@@ -94,38 +181,21 @@ export async function createOrdersBySupplier(input: CreateOrdersBySupplierInput)
         deliveryMode: string
       }> = []
 
-      // DAT-18: lockea los ítems del grupo en orden estable — igual que
-      // bulkApproveItems — para que dos llamadas concurrentes con ítems
-      // solapados en distinto orden no se deadlockeen entre sí.
-      const sortedItems = [...orderInput.items].sort((a, b) => a.requestItemId.localeCompare(b.requestItemId))
-      for (const item of sortedItems) {
-        if (seenRequestItemIds.has(item.requestItemId)) {
-          throw new Error("No se puede incluir el mismo ítem de solicitud más de una vez")
-        }
-        seenRequestItemIds.add(item.requestItemId)
-
-        // The request and its parent are locked and resolved inside this transaction:
-        // client data may choose an item, never its worksite, product, unit or cost centre.
-        const [source] = await tx
-          .select({
-            requestItem: purchaseRequestItems,
-            worksiteId: purchaseRequests.worksiteId,
-            costCenterId: purchaseRequests.costCenterId,
-            deliveryMode: purchaseRequests.deliveryMode,
-          })
-          .from(purchaseRequestItems)
-          .innerJoin(purchaseRequests, eq(purchaseRequestItems.requestId, purchaseRequests.id))
-          .where(eq(purchaseRequestItems.id, item.requestItemId))
-          .for("update")
+      for (const item of orderInput.items) {
+        const source = lockedSourcesByRequestItemId.get(item.requestItemId)
+        // La tabla de fuentes se llena sobre el mismo conjunto exacto de ids
+        // validado antes de abrir la transacción; la guarda conserva el error
+        // útil si la implementación evoluciona y pierde esa correspondencia.
         if (!source) throw new Error(`Item ${item.requestItemId} not found`)
-        if (source.worksiteId !== input.worksiteId) {
-          throw new Error("El ítem de solicitud pertenece a otra faena")
-        }
-        if (scopedWorksiteIds && !scopedWorksiteIds.has(source.worksiteId)) {
-          throw new Error("No tienes acceso a la faena de este ítem")
-        }
-
         const requestItem = source.requestItem
+        // La misma regla que alimenta el selector se reafirma dentro de la
+        // transacción. Las compras parciales válidas se representan como un
+        // ítem hermano; por eso una línea activa sobre este mismo ítem nunca se
+        // puede abrir de nuevo como si fuese saldo disponible.
+        const activeOrderedQuantity = await getActiveOrderedQuantityTx(tx, requestItem.id)
+        if (activeOrderedQuantity > PURCHASE_COVERAGE_EPSILON) {
+          throw new Error("El ítem ya tiene cobertura en una orden de compra activa")
+        }
         if (item.quantity > requestItem.quantity) {
           throw new Error("La cantidad a comprar no puede superar la cantidad aprobada del ítem")
         }
@@ -230,9 +300,7 @@ export async function createOrdersBySupplier(input: CreateOrdersBySupplierInput)
 
       for (const [i, source] of sourceItems.entries()) {
         const { inputItem: item, requestItem } = source
-        const subtotal = Math.round(
-          item.quantity * item.unitPrice * (1 - (item.discount ?? 0) / 100)
-        )
+        const subtotal = computeLineSubtotal(item.quantity, item.unitPrice ?? null, item.discount ?? 0)
         await tx.insert(purchaseOrderItems).values({
           id:              nanoid(),
           purchaseOrderId: orderId,

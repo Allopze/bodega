@@ -31,6 +31,7 @@ import {
   createOrdersBySupplier,
   issueAndSendOrder,
   cancelOrder,
+  deleteOrder,
   closeOrder,
   createPurchaseOrderInvoice,
   deletePurchaseOrderInvoice,
@@ -91,6 +92,26 @@ describe("Purchasing service — edge cases", () => {
           orders: [{ supplierId: "sup-purch", items: [] }],
         })
       ).rejects.toThrow("sin ítems")
+    })
+
+    it("rejects the same request item across supplier groups before opening a partial purchase", async () => {
+      const repeatedItem = {
+        requestItemId: "item-duplicated-across-suppliers",
+        productId: "prod-purch",
+        productNameFree: null,
+        quantity: 1,
+        unitOfMeasure: "unidad",
+        unitPrice: 1_000,
+      }
+
+      await expect(createOrdersBySupplier({
+        worksiteId: "ws-purch",
+        createdBy: userId,
+        orders: [
+          { supplierId: "sup-purch", items: [repeatedItem] },
+          { supplierId: "sup-purch", items: [repeatedItem] },
+        ],
+      })).rejects.toThrow("mismo ítem de solicitud más de una vez")
     })
 
     it("rejects buying more than the approved quantity", async () => {
@@ -445,6 +466,42 @@ describe("Purchasing service — edge cases", () => {
       ]))
     })
 
+    it("does not reopen an item while a different active OC still covers it", async () => {
+      const requestId = "req-cancel-covered-elsewhere"
+      const requestItemId = "item-cancel-covered-elsewhere"
+      await inMemoryDb.insert(schema.purchaseRequests).values({
+        id: requestId, code: "SOL-CANCEL-COVERED", worksiteId: "ws-purch",
+        requesterId: userId, requestType: "epp", urgency: "normal", status: "approved", createdAt: now, updatedAt: now,
+      })
+      await inMemoryDb.insert(schema.purchaseRequestItems).values({
+        id: requestItemId, requestId, productId: "prod-purch", quantity: 5,
+        unitOfMeasure: "unidad", status: "pending_purchase", createdAt: now, updatedAt: now,
+      })
+      const cancelledOrderId = await createOrder({
+        worksiteId: "ws-purch", supplierId: "sup-purch", createdBy: userId,
+        items: [{ requestItemId, productId: "prod-purch", productNameFree: null, quantity: 5, unitOfMeasure: "unidad", unitPrice: 1000 }],
+      })
+      // Historical duplicate coverage is possible in data imported before the
+      // new create guard. Cancellation must not compound that inconsistency by
+      // advertising the item as available again.
+      await inMemoryDb.insert(schema.purchaseOrders).values({
+        id: "po-other-active-coverage", code: "OC-OTHER-ACTIVE", worksiteId: "ws-purch", supplierId: "sup-purch",
+        createdBy: userId, status: "draft", netAmount: 0, taxAmount: 0, totalAmount: 0, createdAt: now, updatedAt: now,
+      })
+      await inMemoryDb.insert(schema.purchaseOrderItems).values({
+        id: "poi-other-active-coverage", purchaseOrderId: "po-other-active-coverage", requestItemId,
+        productId: "prod-purch", quantity: 5, unitOfMeasure: "unidad", unitPrice: 1000, discount: 0, subtotal: 5000,
+        status: "issued", sortOrder: 1,
+      })
+
+      await cancelOrder(cancelledOrderId, userId, "La otra OC sigue vigente")
+
+      const itemAfter = await inMemoryDb.query.purchaseRequestItems.findFirst({
+        where: eq(schema.purchaseRequestItems.id, requestItemId),
+      })
+      expect(itemAfter?.status).toBe("in_purchase_order")
+    })
+
     it("throws if order is already received (cannot cancel)", async () => {
       // Create a fresh order, issue it, send it, then set to 'received' status
       const reqId = "req-no-cancel"
@@ -483,6 +540,41 @@ describe("Purchasing service — edge cases", () => {
       await expect(
         cancelOrder("nonexistent", userId, "test")
       ).rejects.toThrow("not found")
+    })
+  })
+
+  describe("deleteOrder", () => {
+    it("does not return a request item to purchase when another active OC covers it", async () => {
+      const requestId = "req-delete-covered-elsewhere"
+      const requestItemId = "item-delete-covered-elsewhere"
+      await inMemoryDb.insert(schema.purchaseRequests).values({
+        id: requestId, code: "SOL-DELETE-COVERED", worksiteId: "ws-purch",
+        requesterId: userId, requestType: "epp", urgency: "normal", status: "approved", createdAt: now, updatedAt: now,
+      })
+      await inMemoryDb.insert(schema.purchaseRequestItems).values({
+        id: requestItemId, requestId, productId: "prod-purch", quantity: 2,
+        unitOfMeasure: "unidad", status: "pending_purchase", createdAt: now, updatedAt: now,
+      })
+      const deletedOrderId = await createOrder({
+        worksiteId: "ws-purch", supplierId: "sup-purch", createdBy: userId,
+        items: [{ requestItemId, productId: "prod-purch", productNameFree: null, quantity: 2, unitOfMeasure: "unidad", unitPrice: 1000 }],
+      })
+      await inMemoryDb.insert(schema.purchaseOrders).values({
+        id: "po-delete-other-active", code: "OC-DELETE-OTHER-ACTIVE", worksiteId: "ws-purch", supplierId: "sup-purch",
+        createdBy: userId, status: "draft", netAmount: 0, taxAmount: 0, totalAmount: 0, createdAt: now, updatedAt: now,
+      })
+      await inMemoryDb.insert(schema.purchaseOrderItems).values({
+        id: "poi-delete-other-active", purchaseOrderId: "po-delete-other-active", requestItemId,
+        productId: "prod-purch", quantity: 2, unitOfMeasure: "unidad", unitPrice: 1000, discount: 0, subtotal: 2000,
+        status: "issued", sortOrder: 1,
+      })
+
+      await deleteOrder(deletedOrderId, userId)
+
+      const itemAfter = await inMemoryDb.query.purchaseRequestItems.findFirst({
+        where: eq(schema.purchaseRequestItems.id, requestItemId),
+      })
+      expect(itemAfter?.status).toBe("in_purchase_order")
     })
   })
 

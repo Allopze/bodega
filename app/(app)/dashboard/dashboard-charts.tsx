@@ -30,7 +30,6 @@ import {
 } from "@/components/ui/chart"
 import { formatCLP } from "@/lib/utils"
 import { CHART_COLORS, CHART_SERIES } from "@/lib/chart-palette"
-import { ChartDataTable } from "@/components/ui/chart-data-table"
 
 // ── Configuration for Charts ──────────────────────────────────────────────────
 
@@ -120,17 +119,6 @@ const materialEnvConfig = {
  * Formato compacto para ejes de dinero: `formatCLP` completo no cabe en un tick
  * de 52px y obliga a rotarlo. El valor exacto vive en el tooltip.
  */
-/**
- * Lectura equivalente de los gráficos del tablero (TASK-UI-015).
- *
- * Todas estas series se distinguen sólo por color de línea o de segmento, y en
- * 320 px las etiquetas del eje desaparecen. La tabla va bajo la cabecera de
- * cada tarjeta, antes del gráfico.
- */
-function maxBy<T>(rows: T[], value: (row: T) => number): T {
-  return rows.reduce((current, row) => value(row) > value(current) ? row : current, rows[0]!)
-}
-
 function compactCLPTick(value: number) {
   if (Math.abs(value) >= 1_000_000) return `$${(value / 1_000_000).toFixed(1)}M`
   if (Math.abs(value) >= 1_000) return `$${Math.round(value / 1_000)}k`
@@ -203,15 +191,6 @@ export function OperationalTrendChart({ data }: { data: Array<{ month: string; r
         <p className="text-xs text-[var(--color-text-muted)]">Solicitudes, órdenes y recepciones (últimos 6 meses)</p>
       </div>
 
-      <ChartDataTable
-        title="Tendencia operativa"
-        groupLabel="Mes"
-        columns={["Solicitudes", "Órdenes", "Recepciones"]}
-        rows={data.map((row) => ({ label: row.month, values: [row.requests, row.orders, row.receipts] }))}
-        conclusion={`El mes de mayor actividad es ${maxBy(data, (row) => row.requests + row.orders + row.receipts).month}.`}
-        className="mb-3 mt-0 border-b border-t-0 pb-3 pt-0"
-      />
-
       <ChartContainer config={trendChartConfig} className="h-48 w-full">
         <AreaChart data={data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
           <defs>
@@ -273,15 +252,6 @@ export function ModuleWorkloadChart({ data, total }: { data: ModuleWorkloadPoint
         </span>
       </div>
 
-      <ChartDataTable
-        title="Distribución por módulo"
-        groupLabel="Módulo"
-        columns={["Tareas", "Del backlog"]}
-        rows={counts.map((row) => ({ label: row.module, values: [row.count, total === 0 ? "0%" : `${Math.round((row.count / total) * 100)}%`] }))}
-        conclusion={`${maxBy(counts, (row) => row.count).module} concentra el mayor backlog: ${maxBy(counts, (row) => row.count).count} de ${total} tareas.`}
-        className="mb-3 mt-0 border-b border-t-0 pb-3 pt-0"
-      />
-
       <ChartContainer config={workloadChartConfig} className="h-48 w-full">
         <BarChart data={counts} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
           <CartesianGrid strokeDasharray="3 3" vertical={false} />
@@ -316,16 +286,6 @@ export function SstTrendChart({ data }: { data: SstMonthlyPoint[] }) {
         <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--color-text-muted)]">Tasas de Siniestralidad SST</h3>
         <p className="text-xs text-[var(--color-text-muted)]">Tasa de Frecuencia (izq.) y Tasa de Gravedad (der.), cada una en su escala</p>
       </div>
-
-      <ChartDataTable
-        title="Tasas de siniestralidad SST"
-        groupLabel="Mes"
-        columns={["Tasa de frecuencia", "Tasa de gravedad"]}
-        rows={data.map((row) => ({ label: row.month, values: [row.tasaFrecuencia, row.tasaGravedad] }))}
-        conclusion={`La gravedad más alta se registró en ${maxBy(data, (row) => row.tasaGravedad).month}: ${maxBy(data, (row) => row.tasaGravedad).tasaGravedad}.`}
-        caption="Dos escalas distintas: la de gravedad cuenta días perdidos, la de frecuencia cuenta personas lesionadas. Comparar las líneas entre sí induce a error."
-        className="mb-3 mt-0 border-b border-t-0 pb-3 pt-0"
-      />
 
       <ChartContainer config={sstChartConfig} className="h-48 w-full">
         <LineChart data={data} margin={{ top: 10, right: 6, left: -20, bottom: 0 }}>
@@ -369,18 +329,6 @@ export function SstAccidentChart({ data }: { data: SstMonthlyPoint[] }) {
         </p>
       </div>
 
-      <ChartDataTable
-        title="Accidentes por estado de calificación"
-        groupLabel="Mes"
-        columns={["Confirmados", "Por calificar", "Total provisional"]}
-        rows={data.map((row) => ({ label: row.month, values: [row.confirmados, row.porCalificar, row.confirmados + row.porCalificar] }))}
-        conclusion={hasPending
-          ? `Quedan ${data.reduce((sum, row) => sum + row.porCalificar, 0)} accidentes por calificar en el período.`
-          : "Todos los accidentes del período están confirmados."}
-        caption="Barras apiladas: el alto de la columna es el total provisional del mes."
-        className="mb-3 mt-0 border-b border-t-0 pb-3 pt-0"
-      />
-
       <ChartContainer config={sstAccidentConfig} className="h-48 w-full">
         <BarChart data={data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
           <CartesianGrid strokeDasharray="3 3" vertical={false} />
@@ -409,15 +357,6 @@ export function MaterialEnvironmentalChart({ data }: { data: MaterialEnvironment
         <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--color-text-muted)]">Impacto Material y Ambiental</h3>
         <p className="text-xs text-[var(--color-text-muted)]">Incidentes peligrosos, daños materiales y derrames ambientales</p>
       </div>
-
-      <ChartDataTable
-        title="Impacto material y ambiental"
-        groupLabel="Mes"
-        columns={["Inc. peligrosos", "Daño material", "Daño ambiental"]}
-        rows={data.map((row) => ({ label: row.month, values: [row.dangerousIncidents, row.materialDamage, row.environmentalSpills] }))}
-        conclusion={`El mes con más eventos es ${maxBy(data, (row) => row.dangerousIncidents + row.materialDamage + row.environmentalSpills).month}.`}
-        className="mb-3 mt-0 border-b border-t-0 pb-3 pt-0"
-      />
 
       <ChartContainer config={materialEnvConfig} className="h-48 w-full">
         <BarChart data={data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
@@ -463,16 +402,6 @@ export function WorksiteActivityChart({
         <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--color-text-muted)]">Inversión por Faena</h3>
         <p className="text-xs text-[var(--color-text-muted)]">Monto comprometido por centro de costos (acumulado histórico)</p>
       </div>
-
-      <ChartDataTable
-        title="Inversión por faena"
-        groupLabel="Faena"
-        columns={["Inversión acumulada"]}
-        rows={data.map((row) => ({ label: row.name, values: [formatCLP(row.totalCost)] }))}
-        conclusion={`${maxBy(data, (row) => row.totalCost).name} concentra la mayor inversión: ${formatCLP(maxBy(data, (row) => row.totalCost).totalCost)}.`}
-        caption={worksites.length > data.length ? `Se muestran las ${data.length} faenas de mayor inversión de ${worksites.length}. El eje abrevia a miles; los montos exactos están en esta tabla.` : "El eje abrevia a miles; los montos exactos están en esta tabla."}
-        className="mb-3 mt-0 border-b border-t-0 pb-3 pt-0"
-      />
 
       <ChartContainer config={worksiteChartConfig} className="h-56 w-full">
         <BarChart data={data} layout="vertical" margin={{ top: 10, right: 15, left: 10, bottom: 0 }}>
@@ -538,16 +467,6 @@ export function FuelConsumptionChart({ data }: { data: FuelMonthlyChartPoint[] }
         </div>
       </div>
 
-      <ChartDataTable
-        title="Consumo de combustibles"
-        groupLabel="Mes"
-        columns={["Litros", "Costo", "Cargas"]}
-        rows={data.map((row) => ({ label: row.month, values: [row.liters.toLocaleString("es-CL"), formatCLP(row.amount), row.loads] }))}
-        conclusion={`El mayor costo se registró en ${maxBy(data, (row) => row.amount).month}: ${formatCLP(maxBy(data, (row) => row.amount).amount)}.`}
-        caption="Litros en el eje izquierdo y costo en el derecho: son dos escalas y no se comparan entre sí. Las cargas sólo aparecían en el tooltip."
-        className="mb-3 mt-0 border-b border-t-0 pb-3 pt-0"
-      />
-
       <ChartContainer config={fuelChartConfig} className="h-48 w-full">
         <ComposedChart data={data} margin={{ top: 10, right: 6, left: -20, bottom: 0 }}>
           <CartesianGrid strokeDasharray="3 3" vertical={false} />
@@ -591,18 +510,6 @@ export function MaintenanceTrendChart({ data }: { data: MaintenanceMonthlyChartP
       </div>
 
       {/* Era el único gráfico del tablero sin lectura equivalente (I-15). */}
-      <ChartDataTable
-        title="Mantención de flota"
-        groupLabel="Mes"
-        columns={["Completadas", "Programadas", "Costo"]}
-        rows={data.map((row) => ({ label: row.month, values: [row.completed, row.scheduled, formatCLP(row.amount)] }))}
-        conclusion={data.some((row) => row.amount > 0)
-          ? `El mayor costo se registró en ${maxBy(data, (row) => row.amount).month}: ${formatCLP(maxBy(data, (row) => row.amount).amount)}.`
-          : `Sin costos de mantención registrados en el período.`}
-        caption="Conteos en el eje izquierdo y costo en el derecho: dos escalas, no se comparan entre sí."
-        className="mb-3 mt-0 border-b border-t-0 pb-3 pt-0"
-      />
-
       <ChartContainer config={maintenanceChartConfig} className="h-48 w-full">
         <ComposedChart data={data} margin={{ top: 10, right: 6, left: -20, bottom: 0 }}>
           <CartesianGrid strokeDasharray="3 3" vertical={false} />
@@ -682,18 +589,6 @@ export function CompositionDonutChart({ data, title, description, totalLabel, fo
         <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--color-text-muted)]">{title}</h3>
         <p className="text-xs text-[var(--color-text-muted)]">{description}</p>
       </div>
-
-      <ChartDataTable
-        title={title}
-        groupLabel="Categoría"
-        columns={[totalLabel, "Del total"]}
-        rows={slices.map((slice) => ({ label: slice.label, values: [formatted(slice.value), `${Math.round((slice.value / total) * 100)}%`] }))}
-        conclusion={slices.length === 1
-          ? `Una sola categoría: ${slices[0]!.label}, ${formatted(total)}.`
-          : `${slices[0]!.label} es la mayor: ${formatted(slices[0]!.value)} de ${formatted(total)}.`}
-        caption="Los arcos se distinguen sólo por color; los valores exactos están aquí."
-        className="mb-3 mt-0 border-b border-t-0 pb-3 pt-0"
-      />
 
       {slices.length <= 2 ? (
         /* I-09: una dona de 1-2 categorías es decoración (Tufte) — la misma
@@ -799,32 +694,6 @@ export function ThresholdRankingChart({ data, title, description, unit = "%", fo
         <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--color-text-muted)]">{title}</h3>
         <p className="text-xs text-[var(--color-text-muted)]">{description}</p>
       </div>
-
-      <ChartDataTable
-        title={title}
-        groupLabel="Elemento"
-        columns={[format === "clp" ? "Monto" : "Valor", "Detalle"]}
-        rows={rows.map((row) => ({
-          label: row.name,
-          values: [format === "clp" ? formatCLP(row.value) : `${row.value}${unit}`, row.detail ?? "—"],
-        }))}
-        conclusion={(() => {
-          const critico = invert
-            ? rows.reduce((current, row) => row.value > current.value ? row : current, rows[0]!)
-            : rows.reduce((current, row) => row.value < current.value ? row : current, rows[0]!)
-          const valor = format === "clp" ? formatCLP(critico.value) : `${critico.value}${unit}`
-          // Con todos los valores iguales no hay rezagado que nombrar: "el más
-          // rezagado es Procesos: 100%" era una conclusión absurda (I-03).
-          if (rows.every((row) => row.value === rows[0]!.value)) {
-            return rows.length === 1 ? `Un solo caso: ${critico.name}, ${valor}.` : `Sin diferencias: todos en ${valor}.`
-          }
-          return invert
-            ? `El caso más crítico es ${critico.name}: ${valor}.`
-            : `El más rezagado es ${critico.name}: ${valor}.`
-        })()}
-        caption={`El color de la barra codifica el umbral (${invert ? "más alto es peor" : "más alto es mejor"}); esta columna lo dice sin depender del color.`}
-        className="mb-3 mt-0 border-b border-t-0 pb-3 pt-0"
-      />
 
       {rows.length <= 2 ? (
         /* I-09: 1-2 barras dentro de un plot de 224 px eran una tarjeta casi
@@ -957,24 +826,12 @@ export function BillingFlowChart({ data }: {
   // ("el mayor facturado se registró en Mar: $0") es peor que nada (I-03).
   if (!data.some((row) => row.invoiced + row.collected > 0)) return null
 
-  const peak = maxBy(data, (row) => row.invoiced)
-
   return (
     <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-xs">
       <div className="mb-3">
         <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--color-text-muted)]">Facturado y cobrado</h3>
         <p className="text-xs text-[var(--color-text-muted)]">Emisión contra pagos confirmados, por mes</p>
       </div>
-
-      <ChartDataTable
-        title="Facturado y cobrado"
-        groupLabel="Mes"
-        columns={["Facturado", "Cobrado"]}
-        rows={data.map((row) => ({ label: row.period, values: [formatCLP(row.invoiced), formatCLP(row.collected)] }))}
-        conclusion={`El mayor facturado se registró en ${peak.period}: ${formatCLP(peak.invoiced)}.`}
-        caption="Las dos series se distinguen sólo por color; los valores exactos están aquí."
-        className="mb-3 mt-0 border-b border-t-0 pb-3 pt-0"
-      />
 
       <ChartContainer config={billingFlowConfig} className="h-56 w-full">
         <LineChart data={data} margin={{ left: 4, right: 8, top: 8, bottom: 0 }}>
@@ -1034,7 +891,17 @@ export function RadialGaugeChart({ title, description, percent, targetPercent, f
             fill={belowTarget ? CHART_COLORS.signal : CHART_COLORS.brand}
             isAnimationActive={false}
           />
-          <text x="50%" y="78%" textAnchor="middle" className="fill-[var(--color-text)] font-mono text-3xl font-bold">
+          {/* Centrado en el hueco del arco, no en la abertura de abajo.
+              Con `y="78%"` la cifra caía entre las dos puntas del arco —que
+              están a ~67% de la altura— y el texto mide 30px **fijos** mientras
+              la geometría escala con el ancho de la columna: en la retícula de
+              dos columnas el arco se encoge, la cifra no, y se solapaban. El
+              interior (innerRadius 72%) es la zona ancha y vacía, así que
+              centrarla ahí no puede chocar con nada a ningún ancho. */}
+          <text
+            x="50%" y="50%" textAnchor="middle" dominantBaseline="middle"
+            className="fill-[var(--color-text)] font-mono text-3xl font-bold"
+          >
             {`${value}%`}
           </text>
         </RadialBarChart>

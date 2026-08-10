@@ -1,8 +1,10 @@
 "use client"
 
 import * as React from "react"
-import { CheckCircle } from "@phosphor-icons/react"
-import { ListFilters, type FilterOption } from "@/components/adquisiciones/list-filters"
+import Link from "next/link"
+import { usePathname, useSearchParams } from "next/navigation"
+import { CheckCircle, MagnifyingGlass } from "@phosphor-icons/react"
+import { ListFilters, LIST_FILTER_PARAMS, type FilterOption } from "@/components/adquisiciones/list-filters"
 import { OnboardingHint } from "@/components/ui/onboarding-hint"
 import { RequestGroup } from "./request-group"
 import { BulkApproveBar } from "./bulk-approve-bar"
@@ -27,6 +29,10 @@ export function ApprovalPanel({
   // ítem, así que cruzar solicitudes es seguro.
   const [selectedIds, setSelectedIds] = React.useState<string[]>([])
   const clearSelection = React.useCallback(() => setSelectedIds([]), [])
+
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
+  const hasActiveFilters = LIST_FILTER_PARAMS.some((key) => searchParams.get(key))
 
   const toggleItem = React.useCallback((id: string) => {
     setSelectedIds((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id])
@@ -64,13 +70,33 @@ export function ApprovalPanel({
       />
 
       {requests.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-16 text-center">
-          <CheckCircle size={36} weight="light" className="text-[var(--color-success)] mb-3" />
-          <p className="text-sm font-medium text-[var(--color-text)]">Sin ítems pendientes</p>
-          <p className="text-sm text-[var(--color-text-muted)] mt-1 max-w-xs">
-            Todas las solicitudes enviadas han sido revisadas. Bien hecho.
-          </p>
-        </div>
+        // A4: "Bien hecho" sólo es cierto sin filtros. Con la cola acotada
+        // (típicamente por `solicitud=` desde /pendientes) la pantalla afirmaba
+        // que no quedaba nada por revisar mientras el resto seguía esperando.
+        hasActiveFilters ? (
+          <div className="flex flex-col items-center justify-center py-16 text-center">
+            <MagnifyingGlass size={36} weight="light" className="text-text-subtle mb-3" />
+            <p className="text-sm font-medium text-(--color-text)">Sin resultados para estos filtros</p>
+            <p className="text-sm text-(--color-text-muted) mt-1 max-w-xs">
+              Puede haber ítems esperando aprobación fuera de lo que estás filtrando.
+            </p>
+            <Link
+              href={pathname}
+              scroll={false}
+              className="mt-4 inline-flex h-8 items-center rounded-(--radius) border border-border px-3 text-xs font-medium text-(--color-text) transition-colors hover:bg-surface-2"
+            >
+              Ver toda la cola
+            </Link>
+          </div>
+        ) : (
+          <div className="flex flex-col items-center justify-center py-16 text-center">
+            <CheckCircle size={36} weight="light" className="text-[var(--color-success)] mb-3" />
+            <p className="text-sm font-medium text-[var(--color-text)]">Sin ítems pendientes</p>
+            <p className="text-sm text-[var(--color-text-muted)] mt-1 max-w-xs">
+              Todas las solicitudes enviadas han sido revisadas. Bien hecho.
+            </p>
+          </div>
+        )
       ) : (
         requests.map((req) => (
           <RequestGroup

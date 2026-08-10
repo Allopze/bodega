@@ -37,7 +37,7 @@ export async function createSubmittedRequest(
       const requestItemId = itemIds[i]
       return key && requestItemId ? [{ gapKey: key, requestItemId }] : []
     })
-    if (reservations.length > 0) await reserveReplenishmentGapsTx(tx, reservations)
+    if (reservations.length > 0) await reserveReplenishmentGapsTx(tx, reservations, data.worksiteId)
 
     return { requestId, code }
   })

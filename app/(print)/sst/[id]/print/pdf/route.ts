@@ -3,6 +3,7 @@ import { encodeContentDisposition } from "@/lib/utils"
 import { loadActaData } from "../document"
 import { withBrowserContext } from "@/lib/pdf/browser-pool"
 import { resolvePdfRenderOrigin } from "@/lib/pdf/render-origin"
+import { a4PdfOptions } from "@/lib/pdf/page-options"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -43,7 +44,8 @@ export async function GET(
     async (ctx) => {
       const page = await ctx.newPage()
       await page.goto(printUrl, { waitUntil: "domcontentloaded", timeout: 30_000 })
-      return page.pdf({ format: "A4", printBackground: true })
+      // Márgenes idénticos al @page de acta-styles.ts; el pie numera las hojas.
+      return page.pdf(a4PdfOptions())
     },
   )
 

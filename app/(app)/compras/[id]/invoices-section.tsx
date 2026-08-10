@@ -12,9 +12,14 @@ import { Input } from "@/components/ui/input"
 import { OptionSelect } from "@/components/ui/option-select"
 import { FileInput } from "@/components/ui/file-input"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
+import { Button } from "@/components/ui/button"
 import { formatCLP, formatDate } from "@/lib/utils"
 import type { ActionState } from "@/lib/validation/operations"
 import { matchInvoiceItemsToPurchaseOrderItems } from "@/lib/services/purchasing-module/invoice-item-matching"
+import {
+  reconcileInvoiceEvidence,
+  type InvoiceEvidenceStatus,
+} from "@/lib/services/purchasing-module/invoice-reconciliation"
 import { addInvoiceAction, deleteInvoiceAction } from "../invoice-actions"
 
 export interface OcItem {
@@ -23,8 +28,9 @@ export interface OcItem {
   productCode: string | null
   unitOfMeasure: string
   quantity: number
-  unitPrice: number
-  subtotal: number
+  /** `null` is a service whose purchase cost is still pending, never $0. */
+  unitPrice: number | null
+  subtotal: number | null
 }
 
 export interface InvoiceRow {
@@ -63,19 +69,20 @@ export function InvoicesSection({
   /** N° de guía/factura traído desde una recepción (`?nro=`) para no retipearlo. */
   defaultInvoiceNumber?: string
 }) {
-  const totalInvoiced = invoices.reduce((sum, inv) => sum + (inv.amount ?? 0), 0)
-  const exceeds = totalInvoiced > totalAmount
-
-  // Calculate per-item invoiced quantities
-  const invoicedQtyMap = new Map<string, number>()
-  for (const inv of invoices) {
-    for (const item of inv.items ?? []) {
-      if (item.purchaseOrderItemId) {
-        const current = invoicedQtyMap.get(item.purchaseOrderItemId) ?? 0
-        invoicedQtyMap.set(item.purchaseOrderItemId, current + item.quantity)
-      }
-    }
-  }
+  const reconciliation = reconcileInvoiceEvidence({
+    totalOC: totalAmount,
+    orderItems: ocItems.map((item) => ({ id: item.id, productName: item.productName, quantity: item.quantity })),
+    invoices,
+  })
+  const itemReconciliation = new Map(reconciliation.items.map((item) => [item.ocItemId, item]))
+  const invoiceReconciliation = new Map(reconciliation.invoices.map((invoice) => [invoice.invoiceId, invoice]))
+  const moneyMismatch = reconciliation.money.status === "mismatch"
+  const lineStatusLabel = {
+    not_evaluable: "Líneas no evaluables: faltan líneas en las facturas",
+    unlinked: "Líneas sin vínculo a la OC",
+    partial: "Cobertura parcial de líneas",
+    covered: "Líneas conciliadas",
+  }[reconciliation.lines.status]
 
   return (
     <section className="rounded-(--radius-2xl) bg-(--color-surface) shadow-(--shadow-card) p-4">
@@ -94,22 +101,27 @@ export function InvoicesSection({
       {/* Reconciliation summary */}
       {invoices.length > 0 && (
         <div className={`mb-3 rounded-(--radius-lg) px-3 py-2 text-xs ${
-          exceeds
-            ? "bg-[var(--color-danger-50)] border border-[var(--color-danger-200)] text-[var(--color-danger-700)]"
+          moneyMismatch
+            ? "border border-[var(--color-danger-line)] bg-[var(--color-danger-tint)] text-[var(--color-danger-ink)]"
             : "bg-surface-2 text-(--color-text-muted)"
         }`}>
           <div className="flex items-center justify-between gap-2">
-            <span>Total facturado</span>
-            <span className="font-mono font-semibold tabular-nums">{formatCLP(totalInvoiced)}</span>
+            <span>Total facturado (CLP)</span>
+            <span className="font-mono font-semibold tabular-nums">{formatCLP(reconciliation.totalInvoiced)}</span>
           </div>
           <div className="flex items-center justify-between gap-2 mt-1 pt-1 border-t border-current/10">
             <span>Total OC</span>
             <span className="font-mono tabular-nums">{formatCLP(totalAmount)}</span>
           </div>
-          {exceeds && (
+          {moneyMismatch && (
             <p className="mt-1.5 flex items-center gap-1 font-medium">
               <Warning size={12} weight="bold" />
-              Lo facturado supera el total de la OC
+              El total difiere de la OC (tolerancia: $1)
+            </p>
+          )}
+          {!moneyMismatch && (
+            <p className="mt-1.5 font-medium text-[var(--color-success-ink)]">
+              Monetariamente conciliada (tolerancia: $1)
             </p>
           )}
         </div>
@@ -118,22 +130,30 @@ export function InvoicesSection({
       {/* Per-item reconciliation */}
       {invoices.length > 0 && ocItems.length > 0 && (
         <div className="mb-3 rounded-(--radius-lg) bg-surface-2 px-3 py-2 text-xs">
-          <p className="font-medium text-(--color-text-muted) mb-1.5">Conciliación por ítem</p>
+          <div className="mb-1.5 flex flex-wrap items-center justify-between gap-1">
+            <p className="font-medium text-(--color-text-muted)">Conciliación por línea</p>
+            <span className="text-[11px] text-(--color-text-subtle)">{lineStatusLabel}</span>
+          </div>
           <ul className="space-y-1">
             {ocItems.map((ocItem) => {
-              const invoicedQty = invoicedQtyMap.get(ocItem.id) ?? 0
-              const diff = ocItem.quantity - invoicedQty
-              const isMatched = Math.abs(diff) < 0.01
+              const item = itemReconciliation.get(ocItem.id)
+              const isEvaluable = item?.status !== "not_evaluable"
+              const isMatched = item?.status === "covered"
               return (
                 <li key={ocItem.id} className="flex items-center justify-between gap-2">
                   <span title={ocItem.productName} className="truncate min-w-0 text-text-subtle">{ocItem.productName}</span>
-                  <span className={`font-mono tabular-nums shrink-0 ${isMatched ? "text-[var(--color-success)]" : "text-[var(--color-warning-ink)]"}`}>
-                    {invoicedQty}/{ocItem.quantity}
+                  <span className={`font-mono tabular-nums shrink-0 ${isMatched ? "text-[var(--color-success)]" : isEvaluable ? "text-[var(--color-warning-ink)]" : "text-(--color-text-subtle)"}`}>
+                    {isEvaluable ? `${item?.invoicedQty ?? 0}/${ocItem.quantity}` : "No evaluable"}
                   </span>
                 </li>
               )
             })}
           </ul>
+          <p className="mt-2 text-[11px] text-(--color-text-subtle)">
+            {reconciliation.lines.invoicesWithoutLines > 0 && `${reconciliation.lines.invoicesWithoutLines} factura(s) sin líneas. `}
+            {reconciliation.lines.unlinkedLineCount > 0 && `${reconciliation.lines.unlinkedLineCount} línea(s) sin vínculo. `}
+            El total monetario no sustituye la evidencia por línea.
+          </p>
         </div>
       )}
 
@@ -151,6 +171,7 @@ export function InvoicesSection({
               invoice={inv}
               purchaseOrderId={purchaseOrderId}
               canManage={canManage}
+              lineEvidence={invoiceReconciliation.get(inv.id)}
             />
           ))}
         </ul>
@@ -230,10 +251,12 @@ function InvoiceItem({
   invoice,
   purchaseOrderId,
   canManage,
+  lineEvidence,
 }: {
   invoice: InvoiceRow
   purchaseOrderId: string
   canManage: boolean
+  lineEvidence?: InvoiceEvidenceStatus
 }) {
   const [state, action] = useActionState<ActionState, FormData>(deleteInvoiceAction, INITIAL_STATE)
   const [pending, startTransition] = React.useTransition()
@@ -257,6 +280,13 @@ function InvoiceItem({
     setConfirmOpen(false)
   }
 
+  const lineEvidenceLabel = lineEvidence && {
+    without_lines: "Líneas no evaluables",
+    unlinked_lines: "Líneas sin vínculo a la OC",
+    partial: "Líneas parcialmente vinculadas",
+    linked_lines: "Líneas vinculadas a la OC",
+  }[lineEvidence.status]
+
   return (
     <li className="flex items-start justify-between gap-3 py-2.5">
       <div className="flex items-start gap-2 min-w-0">
@@ -274,6 +304,17 @@ function InvoiceItem({
             {invoice.amount != null ? formatCLP(invoice.amount) : "—"}
             {invoice.issueDate ? ` · ${formatDate(invoice.issueDate)}` : ""}
           </p>
+          {lineEvidenceLabel && (
+            <p className={`mt-1 text-[11px] ${
+              lineEvidence?.status === "linked_lines"
+                ? "text-[var(--color-success-ink)]"
+                : lineEvidence?.status === "without_lines"
+                  ? "text-(--color-text-subtle)"
+                  : "text-[var(--color-warning-ink)]"
+            }`}>
+              {lineEvidenceLabel}
+            </p>
+          )}
           {invoice.items && invoice.items.length > 0 && (
             <ul className="mt-1 space-y-0.5">
               {invoice.items.map((item) => (
@@ -288,15 +329,17 @@ function InvoiceItem({
       </div>
       {canManage && (
         <>
-          <button
+          <Button
             type="button"
+            variant="ghost"
+            size="icon-sm"
             disabled={pending}
             aria-label={`Eliminar factura ${invoice.invoiceNumber}`}
             onClick={() => setConfirmOpen(true)}
-            className="shrink-0 p-1 rounded text-text-subtle hover:text-[var(--color-danger)] hover:bg-[var(--color-danger-50)] transition-colors disabled:opacity-40"
+            className="shrink-0 text-[var(--color-text-subtle)] hover:bg-[var(--color-danger-tint)] hover:text-[var(--color-danger)]"
           >
-            <Trash size={14} />
-          </button>
+            <Trash size={14} aria-hidden />
+          </Button>
           <ConfirmDialog
             open={confirmOpen}
             onOpenChange={setConfirmOpen}
@@ -356,6 +399,13 @@ function AddInvoiceForm({
   // suma. El total declarado en el documento sólo se usa si la extracción no
   // produjo líneas; si no, el campo mostraría un número que la base no guarda.
   const [extractedTotal, setExtractedTotal] = React.useState<number | null>(null)
+  // El monto necesita estado propio: cuando la extracción trae total pero no
+  // líneas, el campo llevaba `value` sin `onChange` y React lo volvía inmutable,
+  // justo en el caso en que el propio flujo pide "corrige los montos".
+  const [amount, setAmount] = React.useState("")
+  React.useEffect(() => {
+    setAmount(extractedTotal != null ? String(extractedTotal) : "")
+  }, [extractedTotal])
   // Estado controlado en vez de ref imperativo: DatePicker guarda el valor en
   // React, así que form.reset() del navegador no lo limpiaría solo.
   const [issueDate, setIssueDate] = React.useState("")
@@ -365,6 +415,7 @@ function AddInvoiceForm({
       toast.success(state.message)
       formRef.current?.reset()
       setIssueDate("")
+      setAmount("")
       setLineItems([])
       setExtractedTotal(null)
       setDteParsed(false)
@@ -388,7 +439,7 @@ function AddInvoiceForm({
           productCode: nextItem.productCode ?? "",
           unitOfMeasure: nextItem.unitOfMeasure,
           quantity: String(nextItem.quantity),
-          unitPrice: String(nextItem.unitPrice),
+          unitPrice: nextItem.unitPrice === null ? "" : String(nextItem.unitPrice),
           resolution: "matched",
         },
       ])
@@ -556,13 +607,13 @@ function AddInvoiceForm({
       )}
 
       {dteParsed && !extracting && (
-        <p className="text-[11px] text-[var(--color-success)] flex items-center gap-1">
+        <p className="flex items-center gap-1 text-[11px] text-[var(--color-success-ink)]">
           ✓ Datos extraídos del archivo: campos auto-completados
         </p>
       )}
 
       {extractionWarnings.length > 0 && !extracting && (
-        <div role="alert" className="rounded border border-[var(--color-warning)] bg-[var(--color-warning-50)] px-2 py-1.5 text-[11px] text-(--color-text)">
+        <div role="alert" className="rounded border border-[var(--color-warning-line)] bg-[var(--color-warning-tint)] px-2 py-1.5 text-[11px] text-[var(--color-warning-ink)]">
           <p className="font-medium">Revisión requerida</p>
           <ul className="mt-0.5 list-disc pl-4">
             {extractionWarnings.map((warning) => <li key={warning}>{warning}</li>)}
@@ -598,7 +649,8 @@ function AddInvoiceForm({
             min="0"
             step="1"
             placeholder="0"
-            value={lineItems.length > 0 ? String(Math.round(totalItems)) : extractedTotal != null ? String(extractedTotal) : undefined}
+            value={lineItems.length > 0 ? String(Math.round(totalItems)) : amount}
+            onChange={(e) => setAmount(e.target.value)}
             readOnly={lineItems.length > 0}
             className={lineItems.length > 0 ? "bg-surface-2" : ""}
           />
@@ -625,13 +677,15 @@ function AddInvoiceForm({
           <div className="flex items-center justify-between">
             <p className="text-xs font-medium text-(--color-text-muted)">Ítems de factura</p>
             {lineItems.length < ocItems.length && (
-              <button
+              <Button
                 type="button"
+                variant="secondary"
+                size="sm"
                 onClick={addLineItem}
-                className="text-[11px] text-(--color-primary) hover:underline flex items-center gap-0.5"
+                className="shrink-0"
               >
-                <Plus size={11} /> Agregar ítem
-              </button>
+                <Plus size={12} aria-hidden /> Agregar ítem
+              </Button>
             )}
           </div>
 
@@ -651,7 +705,7 @@ function AddInvoiceForm({
                       ...ocItems.map((item) => ({ value: item.id, label: item.productName })),
                       { value: "__unlinked", label: "Mantener sin asociar a la OC" },
                     ]}
-                    className={`mb-1 h-8 sm:h-8 px-1.5 text-[11px] ${li.resolution === "needs_review" ? "border-[var(--color-warning)]" : ""}`}
+                    className={`mb-1 h-11 min-w-0 px-1.5 text-[11px] sm:h-8 ${li.resolution === "needs_review" ? "border-[var(--color-warning)]" : ""}`}
                   />
                   {li.resolution === "needs_review" && (
                     <p className="mb-1 text-[10px] text-[var(--color-warning-ink)]">Esta línea no se asociará hasta que selecciones un ítem de la OC o confirmes que queda sin asociar.</p>
@@ -665,7 +719,7 @@ function AddInvoiceForm({
                       value={li.quantity}
                       onChange={(e) => updateLineItem(index, "quantity", e.target.value)}
                       placeholder="Cant."
-                      className="text-xs h-7"
+                      className="h-11 text-xs sm:h-7"
                     />
                     <Input
                       name={`item_price_${index}`}
@@ -674,10 +728,15 @@ function AddInvoiceForm({
                       step="1"
                       value={li.unitPrice}
                       onChange={(e) => updateLineItem(index, "unitPrice", e.target.value)}
-                      placeholder="Precio"
-                      className="text-xs h-7"
+                      placeholder={ocItem?.unitPrice === null ? "Precio documento" : "Precio"}
+                      className="h-11 text-xs sm:h-7"
                     />
                   </div>
+                  {ocItem?.unitPrice === null && (
+                    <p className="mt-1 text-[10px] text-[var(--color-warning-ink)]">
+                      Costo de OC pendiente: ingresa el precio indicado por la factura.
+                    </p>
+                  )}
                   <p className="mt-1 text-[10px] text-text-subtle">
                     Unidad documento: <span className="font-medium text-(--color-text)">{li.unitOfMeasure || "no declarada"}</span>
                     {ocItem && <> · OC: {ocItem.unitOfMeasure}</>}
@@ -690,14 +749,16 @@ function AddInvoiceForm({
                   <input type="hidden" name={`item_unitOfMeasure_${index}`} value={li.unitOfMeasure} />
                   <input type="hidden" name={`item_subtotal_${index}`} value={String(Math.round((parseFloat(li.quantity) || 0) * (parseFloat(li.unitPrice) || 0)))} />
                 </div>
-                <button
+                <Button
                   type="button"
+                  variant="ghost"
+                  size="icon-sm"
                   aria-label={`Quitar ítem ${ocItem?.productName ?? index + 1}`}
                   onClick={() => removeLineItem(index)}
-                  className="shrink-0 p-1 rounded text-text-subtle hover:text-[var(--color-danger)] hover:bg-[var(--color-danger-50)] transition-colors"
+                  className="shrink-0 text-[var(--color-text-subtle)] hover:bg-[var(--color-danger-tint)] hover:text-[var(--color-danger)]"
                 >
-                  <X size={12} />
-                </button>
+                  <X size={14} aria-hidden />
+                </Button>
               </div>
             )
           })}

@@ -180,6 +180,24 @@ export default async function OcDetailPage({
 
   const canManage      = session.user.permissions.includes("purchasing:create_order")
   const canSend        = session.user.permissions.includes("purchasing:send_order")
+  // Registrar el costo real de un servicio es la misma decisión que ponerle
+  // precio a la OC al crearla, sólo que más tarde; mientras la orden no esté
+  // anulada, la línea sigue siendo priceable.
+  const canRecordCost  = canManage && order.status !== "cancelled"
+  const pendingCostLines = order.items.filter((item) => item.unitPrice === null && item.status !== "cancelled").length
+  // Nombres para la traza "registrado por…"; se resuelven aparte porque la
+  // relación no viaja en la consulta principal de la OC.
+  const costRecorderIds = [...new Set(
+    order.items.map((i) => i.costRecordedBy).filter((userId): userId is string => userId != null),
+  )]
+  const costRecorderNameById = new Map(
+    costRecorderIds.length === 0
+      ? []
+      : (await db.select({ id: users.id, name: users.name, email: users.email })
+          .from(users)
+          .where(inArray(users.id, costRecorderIds))
+        ).map((user) => [user.id, user.name ?? user.email ?? user.id] as const),
+  )
   const canDeleteOrder = can(session, "purchasing:delete_order")
   const canInvoice     = canSend   // purchasing:send_order gate for invoice management
   const canRegisterFaenaReception  = session.user.permissions.includes("receiving:register_faena")
@@ -355,12 +373,15 @@ export default async function OcDetailPage({
                       unitPrice: i.unitPrice,
                       subtotal: i.subtotal,
                       notes: i.notes,
+                      costRecordedAt: i.costRecordedAt,
+                      costRecordedByName: i.costRecordedBy ? (costRecorderNameById.get(i.costRecordedBy) ?? null) : null,
                     })),
                     worksite: order.worksite ? { name: order.worksite.name } : null,
                     supplier: order.supplier ? { name: order.supplier.name } : null,
                   }}
                   reqItemMap={reqItemMap as unknown as Record<string, { request: { code: string } }>}
                   productMap={productMap as unknown as Record<string, { name: string; sku: string | null }>}
+                  canRecordCost={canRecordCost}
                 />
                 {order.notes && (
                   <div className="p-4 rounded-(--radius-xl) bg-(--color-surface-2)">
@@ -442,12 +463,19 @@ export default async function OcDetailPage({
           <section className="rounded-(--radius-2xl) bg-(--color-surface) shadow-(--shadow-card) p-4">
             <h2 className="text-sm font-semibold text-(--color-text)">Totales</h2>
             <dl className="mt-3 space-y-2 text-sm">
-              <AmountLine label="Neto" value={formatCLP(order.netAmount)} />
+              <AmountLine label={pendingCostLines > 0 ? "Neto conocido" : "Neto"} value={formatCLP(order.netAmount)} />
               <AmountLine label="IVA (19%)" value={formatCLP(order.taxAmount)} muted />
               <div className="flex items-center justify-between gap-3 border-t border-(--color-border) pt-3">
-                <dt className="font-semibold text-(--color-text)">Total</dt>
+                <dt className="font-semibold text-(--color-text)">{pendingCostLines > 0 ? "Total conocido" : "Total"}</dt>
                 <dd className="font-mono font-bold tabular-nums text-(--color-text)">{formatCLP(order.totalAmount)}</dd>
               </div>
+              {/* Nunca se representa el costo desconocido como $0: se cuenta aparte. */}
+              {pendingCostLines > 0 && (
+                <div className="flex items-center justify-between gap-3 pt-1">
+                  <dt className="text-xs text-(--color-warning-ink)">Servicios con costo pendiente</dt>
+                  <dd className="text-xs font-medium text-(--color-warning-ink)">{pendingCostLines}</dd>
+                </div>
+              )}
             </dl>
           </section>
 

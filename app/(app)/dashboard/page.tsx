@@ -18,7 +18,7 @@ import {
   type DashboardScopeSearchParams,
 } from "./dashboard-scope"
 import { availableDashboardViews } from "./dashboard-views"
-import { DashboardHeader, buildOperationalSummary } from "./dashboard-header"
+import { DashboardScopeControls } from "./dashboard-scope-controls"
 import { DashboardViewTabs } from "./dashboard-view-tabs"
 import { DashboardDomainSection } from "./dashboard-domain-sections"
 import { DomainSectionFallback } from "./dashboard-domain-shell"
@@ -139,13 +139,13 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const refreshedAt = new Date().toISOString()
 
   /*
-   * El rótulo declara el alcance **elegido**, que es lo que las cifras
-   * responden. Antes describía la faena principal del usuario incluso cuando el
-   * tablero mostraba todas — con un selector de faena arriba eso sería una
-   * contradicción visible.
+   * El alcance elegido se declara **en el propio selector**, no en una línea
+   * aparte: ésta decía "Todas las faenas activas" justo al lado de un select que
+   * ya decía "Todas las faenas", o repetía el nombre de la faena elegida. Sólo
+   * informaba de algo cuando "todas" no son todas, y eso cabe en la etiqueta de
+   * esa opción.
    */
-  const contextLabel = scope.worksiteName
-    ?? (roleScope.mode === "all" ? "Todas las faenas activas" : "Todas mis faenas autorizadas")
+  const allWorksitesLabel = roleScope.mode === "all" ? "Todas las faenas" : "Todas mis faenas autorizadas"
 
   // Población completa del alcance, no las filas cargadas (D-02). La consume el
   // gráfico de distribución por módulo de Adquisiciones.
@@ -155,18 +155,29 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
 
   return (
     <PageContainer>
-      <PageHeader title="Inicio" actions={<QuickActions session={session} />} />
-      <div className="animate-in fade-in duration-[var(--duration-default)]">
-        <DashboardHeader
-          firstName={session.user.name?.split(" ")[0] ?? "usuario"}
-          summary={buildOperationalSummary(queue.total, scope.worksiteName)}
-          contextLabel={contextLabel}
-          refreshedAt={refreshedAt}
-          scope={scope}
-          worksiteOptions={authorizedWorksites}
-        />
-
-        <DashboardViewTabs views={views} scope={scope} workCount={queue.total} />
+      {/* El saludo **es** el título de la página: lo emite el shell, que ya tiene
+          la ranura (y el `h1`). Antes convivían dos identidades — un "Inicio" en
+          la TopBar y un "Hola, …" en `text-3xl` debajo, más grande que el `h1`
+          real— y la segunda costaba una banda entera antes del primer dato.
+          Ninguna cifra en el saludo: el total de la cola ya está en la insignia
+          de "Mi trabajo", que además navega hasta ella (§A5). */}
+      <PageHeader
+        title={`Hola, ${session.user.name?.split(" ")[0] ?? "usuario"}`}
+        actions={<QuickActions session={session} />}
+      />
+      <div className="animate-in fade-in duration-(--duration-default)">
+        {/* Modos y filtros comparten fila: son las dos preguntas del encuadre
+            ("qué miro" / "de qué"). En bandas separadas eran dos líneas. */}
+        <div className="mb-5 flex flex-wrap items-end justify-between gap-x-6 gap-y-2 border-b border-border">
+          <DashboardViewTabs views={views} scope={scope} workCount={queue.total} />
+          <div className="pb-2">
+            <DashboardScopeControls
+              scope={scope}
+              worksites={authorizedWorksites}
+              allWorksitesLabel={allWorksitesLabel}
+            />
+          </div>
+        </div>
 
         {/* El `key` con el alcance completo es necesario: sin él, cambiar de
             faena reusaba el árbol suspendido y la vista mostraba los datos de la

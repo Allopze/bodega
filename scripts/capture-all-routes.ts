@@ -926,10 +926,11 @@ async function main() {
   // Cuando hay más de1 viewport, lanzamos un servidor por viewport
   // para que desktop y mobile corran simultáneamente.
   const needsParallel = viewports.length > 1
+  const useProductionServer = shouldUseProductionCaptureServer(needsParallel)
   // C1: los servidores paralelos deben servirse desde un build de producción;
   // dos `next dev` sobre el mismo `.next` se pisan (chunks text/plain → 500
   // en rutas autenticadas). Con un solo viewport `next dev` es seguro.
-  if (needsParallel) {
+  if (useProductionServer) {
     await ensureProductionBuild(captureDbUrl)
   }
   const serverPortBase = port
@@ -938,7 +939,7 @@ async function main() {
 
   const serverInfos = await Promise.all(
     viewports.map((vp, idx) =>
-      startServer(captureDbUrl, needsParallel ? serverPortBase + idx : serverPortBase)
+      startServer(captureDbUrl, needsParallel ? serverPortBase + idx : serverPortBase, useProductionServer)
     )
   )
   serversToStop.push(...serverInfos.map((s) => s.server))
@@ -1072,6 +1073,7 @@ async function prepareDatabase(captureDbUrl: string) {
   await setupDb.execute(sql`DROP SCHEMA IF EXISTS drizzle CASCADE`)
   await setupDb.execute(sql`DROP SCHEMA IF EXISTS public CASCADE`)
   await setupDb.execute(sql`CREATE SCHEMA public`)
+  await setupDb.execute(sql`CREATE SCHEMA drizzle`)
   await setupDb.execute(sql`GRANT ALL ON SCHEMA public TO PUBLIC`)
 
   await migrate(drizzle(pgClient), { migrationsFolder: path.join(root, "db", "migrations") })
@@ -4039,6 +4041,19 @@ export type ServerLaunchInput = {
 }
 
 /**
+ * Una corrida de un viewport puede usar `next dev` de forma segura. Reservar
+ * el artefacto standalone para los viewports simultáneos evita que un
+ * standalone viejo sobreviva a una corrida dev y se mezcle con sus manifests
+ * de cliente (Next responde 500 en rutas que aún no existen en ese build).
+ */
+export function shouldUseProductionCaptureServer(
+  needsParallel: boolean,
+  forceProduction: boolean = process.env.CAPTURE_USE_PRODUCTION_SERVER === "true",
+): boolean {
+  return needsParallel || forceProduction
+}
+
+/**
  * Decide cómo lanzar el servidor Next.js de la captura. Aislada y exportada
  * para poder testearla: el bug histórico (dos `next dev` compitiendo por el
  * mismo `.next`, chunks servidos como `text/plain` → 500 en rutas autenticadas)
@@ -4095,12 +4110,16 @@ function buildCaptureEnv(captureDbUrl: string, serverBaseUrl?: string): NodeJS.D
   }
 }
 
-async function startServer(captureDbUrl: string, serverPort: number = port) {
+async function startServer(
+  captureDbUrl: string,
+  serverPort: number = port,
+  useProductionServer: boolean = false,
+) {
   const serverBaseUrl = `http://127.0.0.1:${serverPort}`
   const env = buildCaptureEnv(captureDbUrl, serverBaseUrl)
   const standaloneServer = path.join(root, ".next", "standalone", "server.js")
-  const hasProductionBuild = fs.existsSync(path.join(root, ".next", "BUILD_ID"))
-  const useStandalone = fs.existsSync(standaloneServer)
+  const hasProductionBuild = useProductionServer && fs.existsSync(path.join(root, ".next", "BUILD_ID"))
+  const useStandalone = useProductionServer && fs.existsSync(standaloneServer)
   if (useStandalone) {
     const standaloneStatic = path.join(root, ".next", "standalone", ".next", "static")
     if (!fs.existsSync(standaloneStatic)) {

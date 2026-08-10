@@ -9,6 +9,10 @@ export interface ProductOption {
   sku:             string
   name:            string
   isEpp:           boolean
+  /** Servicio: se solicita sin precio y su costo se registra al facturarlo. */
+  isService:       boolean
+  /** El ítem se pide para una persona concreta (vacunas, exámenes). */
+  requiresWorker:  boolean
   unitOfMeasure:   string
   categoryName:    string
   referencePrice:  number | null
@@ -32,6 +36,7 @@ export interface WorkerOption {
   id:         string
   firstName:  string
   lastName:   string
+  rut?:       string | null
   sizeTop:    string | null
   sizeBottom: string | null
   sizeShoe:   string | null
@@ -63,6 +68,9 @@ export interface EditItem {
   supplierHint:        string | null
   notes:               string | null
   status:              string
+  /** Colaborador del ítem (EPP nominado, vacunas). */
+  workerId:            string | null
+  workerName:          string | null
   attributes:          { attributeId: string | null; attributeName: string; value: string }[]
 }
 

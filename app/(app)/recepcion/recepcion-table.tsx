@@ -1,10 +1,11 @@
 "use client"
 
+import * as React from "react"
 import Link from "next/link"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import { DataTable } from "@/components/admin/data-table"
 import { RECEPCION_PAGE_SIZE } from "@/lib/constants"
-import { ListFilters, type FilterOption } from "@/components/adquisiciones/list-filters"
+import { ListFilters, LIST_FILTER_PARAMS, type FilterOption } from "@/components/adquisiciones/list-filters"
 import { StageTabs, type StageTab } from "@/components/adquisiciones/stage-tabs"
 import { OnboardingHint } from "@/components/ui/onboarding-hint"
 import { TableRow, TableCell } from "@/components/ui/table"
@@ -13,6 +14,7 @@ import { StateLegend } from "@/components/states/state-legend"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { formatDate } from "@/lib/utils"
+import { canRegisterReceiptForOrder } from "./recepcion-table.helpers"
 
 type OrderRow = {
   id:          string
@@ -20,6 +22,7 @@ type OrderRow = {
   worksiteId:  string
   supplierId:  string
   status:      string
+  deliveryMode: string
   sentAt:      string | null
   createdAt:   string
 }
@@ -29,7 +32,8 @@ interface RecepcionTableProps {
   wsMap:            Record<string, string>
   supMap:           Record<string, string>
   gapMap:           Record<string, number>
-  canRegister:      boolean
+  canOffice:        boolean
+  canFaena:         boolean
   worksiteOptions?: FilterOption[]
   supplierOptions?: FilterOption[]
   stageTabs?:       StageTab[]
@@ -40,8 +44,11 @@ interface RecepcionTableProps {
 // vocabulario distinto del encabezado. Los nombres dicen ahora qué contienen.
 const COLUMNS = [
   { key: "code",         label: "OC",             sortable: true,  width: "w-36" },
-  { key: "worksiteId",   label: "Faena",          sortable: true  },
-  { key: "supplierId",   label: "Proveedor",      sortable: true  },
+  // Se ordena por el nombre resuelto, no por el id: la fila lleva el UUID y el
+  // nombre se resuelve al pintar, así que ordenar por `worksiteId` daba un orden
+  // sin relación con lo que se ve en pantalla.
+  { key: "worksiteName", label: "Faena",          sortable: true  },
+  { key: "supplierName", label: "Proveedor",      sortable: true  },
   { key: "status",       label: "Estado",         sortable: true,  width: "w-40" },
   { key: "transit",      label: "Pend. de faena", sortable: false, width: "w-32" },
   { key: "sentAt",       label: "Fecha de envío", sortable: true,  width: "w-32" },
@@ -49,16 +56,32 @@ const COLUMNS = [
   // Las acciones van al final de la fila, que es donde se las busca.
   { key: "actions",      label: "",               sortable: false, width: "w-28" },
 ]
+const EMPTY_FILTER_OPTIONS: FilterOption[] = []
+const EMPTY_STAGE_TABS: StageTab[] = []
 
-export function RecepcionTable({ orders, wsMap, supMap, gapMap, canRegister, worksiteOptions = [], supplierOptions = [], stageTabs = [] }: RecepcionTableProps) {
+export function RecepcionTable({ orders, wsMap, supMap, gapMap, canOffice, canFaena, worksiteOptions = EMPTY_FILTER_OPTIONS, supplierOptions = EMPTY_FILTER_OPTIONS, stageTabs = EMPTY_STAGE_TABS }: RecepcionTableProps) {
   const router = useRouter()
+
+  const searchParams = useSearchParams()
+  const hasActiveFilters = LIST_FILTER_PARAMS.some((key) => searchParams.get(key))
+
+  // Nombres resueltos en la fila para que el orden de esas columnas coincida con
+  // lo que se lee (ver COLUMNS).
+  const rows = React.useMemo(
+    () => orders.map((o) => ({
+      ...o,
+      worksiteName: wsMap[o.worksiteId] ?? o.worksiteId,
+      supplierName: supMap[o.supplierId] ?? o.supplierId,
+    })),
+    [orders, wsMap, supMap],
+  )
 
   return (
     <div className="flex flex-col gap-4">
     <OnboardingHint
       storageKey="hint_recepcion_v1"
       title="Recepción de órdenes de compra"
-      body="Registra la llegada en dos pasos cuando la entrega es vía oficina: primero en oficina Chome (botón 'Recibir'), luego la recepción en faena. Las OC de despacho directo a faena se reciben en un solo paso. El badge 'pend. faena' indica ítems que ya llegaron a oficina pero aún no se despacharon."
+        body="Registra la llegada en dos pasos cuando la entrega es vía oficina: primero en oficina Chome (botón 'Recibir'), luego la recepción en faena. Las OC de despacho directo a faena se reciben en un solo paso. El indicador «Pendiente de recepción en faena» muestra ítems que ya llegaron a oficina pero aún no se despacharon."
     />
     <StateLegend />
     {stageTabs.length > 0 && <StageTabs tabs={stageTabs} ariaLabel="Etapa de la recepción" />}
@@ -70,31 +93,39 @@ export function RecepcionTable({ orders, wsMap, supMap, gapMap, canRegister, wor
     <DataTable
       caption="Órdenes de Compra Pendientes de Recepción"
       columns={COLUMNS}
-      rows={orders}
+      rows={rows}
       searchKeys={["code"]}
       disableInternalSearch
       pageSize={RECEPCION_PAGE_SIZE}
       emptyTitle="Sin OCs pendientes de recepción"
-      emptyDescription="No hay órdenes que coincidan con los filtros."
+      emptyDescription={hasActiveFilters
+        ? "No hay órdenes que coincidan con los filtros aplicados."
+        : "No hay órdenes esperando recepción."}
+      emptyAction={hasActiveFilters ? (
+        <Button type="button" size="sm" variant="secondary" onClick={() => router.replace("/recepcion", { scroll: false })}>
+          Limpiar filtros
+        </Button>
+      ) : undefined}
       renderRow={(o) => {
         const href = `/compras/${o.id}`
+        const canRegisterOrder = canRegisterReceiptForOrder(o.deliveryMode, o.status, canOffice, canFaena)
         return (
           <TableRow
             key={o.id}
             className="cursor-pointer hover:bg-[var(--color-primary-tint)]"
-            role="link"
-            tabIndex={0}
-            aria-label={`Ver OC ${o.code}`}
+            /* La fila conserva su rol implícito `row`: con role="link" encima, sus
+               celdas quedaban sin padre `row` (axe aria-required-parents) y la tabla
+               dejaba de anunciarse como tabla. El clic sigue como comodidad de
+               mouse; el destino accesible por teclado es el enlace del código. */
             onClick={() => router.push(href)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" || event.key === " ") {
-                event.preventDefault()
-                router.push(href)
-              }
-            }}
           >
             <TableCell>
-              <span className="font-mono text-xs">{o.code}</span>
+              <Link
+                href={href}
+                aria-label={`Ver OC ${o.code}`}
+                onClick={(e) => e.stopPropagation()}
+                className="font-mono text-xs text-(--color-text) hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-primary)"
+                >{o.code}</Link>
             </TableCell>
             <TableCell className="text-sm text-[var(--color-text-muted)]">
               {wsMap[o.worksiteId] ?? o.worksiteId}
@@ -114,7 +145,7 @@ export function RecepcionTable({ orders, wsMap, supMap, gapMap, canRegister, wor
               {o.sentAt ? formatDate(o.sentAt) : "—"}
             </TableCell>
             <TableCell onClick={(e) => e.stopPropagation()} className="text-right">
-              {canRegister && (
+              {canRegisterOrder && (
                 <Button variant="secondary" size="sm" asChild>
                   <Link href={`/recepcion/nueva?oc=${o.id}`}>Recibir</Link>
                 </Button>
@@ -128,12 +159,13 @@ export function RecepcionTable({ orders, wsMap, supMap, gapMap, canRegister, wor
       renderMobileCard={(o) => {
         const href = `/compras/${o.id}`
         const gap = gapMap[o.id] ?? 0
+        const canRegisterOrder = canRegisterReceiptForOrder(o.deliveryMode, o.status, canOffice, canFaena)
         return (
           <article className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
             <div className="flex items-start justify-between gap-3">
               <Link href={href} className="min-w-0">
                 <p className="font-mono text-sm font-semibold text-[var(--color-text)]">{o.code}</p>
-                <p title={supMap[o.supplierId] ?? o.supplierId} className="mt-0.5 truncate text-xs text-[var(--color-text-muted)]">
+                <p className="mt-0.5 break-words text-xs text-[var(--color-text-muted)]">
                   {supMap[o.supplierId] ?? o.supplierId}
                 </p>
               </Link>
@@ -141,16 +173,18 @@ export function RecepcionTable({ orders, wsMap, supMap, gapMap, canRegister, wor
             </div>
             <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
               <dt className="text-[var(--color-text-subtle)]">Faena</dt>
-              <dd className="text-right text-[var(--color-text)]">{wsMap[o.worksiteId] ?? o.worksiteId}</dd>
+              <dd className="min-w-0 break-words text-right text-[var(--color-text)]">{wsMap[o.worksiteId] ?? o.worksiteId}</dd>
               <dt className="text-[var(--color-text-subtle)]">Enviada</dt>
               <dd className="text-right font-mono tabular-nums text-[var(--color-text)]">{o.sentAt ? formatDate(o.sentAt) : "—"}</dd>
             </dl>
             {gap > 0 && (
               <div className="mt-2">
-                <Badge variant="warning" size="sm">{gap} pend. faena</Badge>
+                <Badge variant="warning" size="sm">
+                  {gap} {gap === 1 ? "ítem pendiente de recepción en faena" : "ítems pendientes de recepción en faena"}
+                </Badge>
               </div>
             )}
-            {canRegister && (
+            {canRegisterOrder && (
               <Button variant="primary" size="sm" asChild className="mt-3 w-full">
                 <Link href={`/recepcion/nueva?oc=${o.id}`}>Recibir</Link>
               </Button>

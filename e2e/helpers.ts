@@ -179,3 +179,64 @@ export function listRecord(page: Page, text: RegExp | string) {
   const filter = typeof text === "string" ? { hasText: text } : { hasText: text }
   return page.getByRole("row").filter(filter).or(page.getByRole("article").filter(filter))
 }
+
+/** PDF mínimo válido: `validateFileBuffer` valida por magic bytes, no por extensión. */
+export const QUOTATION_PDF = Buffer.from("%PDF-1.4\n1 0 obj\n<<>>\nendobj\ntrailer\n<<>>\n%%EOF\n", "latin1")
+
+/**
+ * Adjunta una cotización al primer ítem del formulario de solicitud.
+ *
+ * Enviar repuestos/servicios exige **al menos una** cotización: sin ninguna, la
+ * solicitud quedaba sin salida (aprobar exige elegir una ganadora y adjuntarlas
+ * exige estado borrador, al que ya no se vuelve). La justificación en notas sólo
+ * releva del mínimo de 3.
+ *
+ * `persistDraft` descarta en silencio los archivos sin proveedor o sin monto, así
+ * que ambos campos se llenan aquí.
+ */
+export async function attachQuotation(page: Page, amount: string, supplier = "Proveedor E2E") {
+  await page.locator('input[type="file"][id^="cot-"]').first().setInputFiles({
+    name: "cotizacion-e2e.pdf",
+    mimeType: "application/pdf",
+    buffer: QUOTATION_PDF,
+  })
+  // La fila recién agregada es la última. Con proveedores sembrados el campo es
+  // un Select de Radix (un <button>, no un input), así que se elige del listado.
+  const supplierField = page.locator('[id^="cot-sup-"]').last()
+  await expect(supplierField).toBeVisible()
+  await supplierField.click()
+  await page.getByRole("option", { name: supplier, exact: true }).click()
+  await expect(supplierField).toContainText(supplier)
+  await page.locator('[id^="cot-amt-"]').last().fill(amount)
+}
+
+/**
+ * Espera a que el borrador termine de guardar. Los archivos se suben en ese
+ * paso, así que continuar antes dejaría la solicitud sin cotizaciones.
+ *
+ * La señal es la desaparición de la cotización pendiente del formulario: al
+ * guardar con éxito el servidor se queda con el archivo y el cliente lo saca de
+ * la lista (y, si además el árbol se remonta por la revalidación, tampoco está).
+ * El indicador "Guardado HH:MM" no sirve: es efímero y depende del reloj.
+ */
+export async function waitForDraftSaved(page: Page) {
+  await expect(page.getByText("cotizacion-e2e.pdf")).toBeHidden({ timeout: 30_000 })
+}
+
+/**
+ * Abre el borrador más reciente del tipo indicado desde el listado.
+ *
+ * Con reintento porque el clic puede caer antes de que la lista hidrate y
+ * entonces no navega (la causa recurrente de fallas sólo-en-CI de este repo), y
+ * porque el server action que crea el borrador puede no haber commiteado cuando
+ * llegamos al listado.
+ */
+export async function openLatestDraft(page: Page, prefix: "REP" | "SER") {
+  const link = page.getByRole("link", { name: new RegExp(`^Ver solicitud ${prefix}-`) })
+  await expect(async () => {
+    await page.goto("/solicitudes?estado=draft")
+    await expect(link.first()).toBeVisible({ timeout: 5_000 })
+    await link.first().click()
+    await expect(page).toHaveURL(/\/solicitudes\/(?!nueva$)[^/]+$/, { timeout: 5_000 })
+  }).toPass({ timeout: 60_000 })
+}

@@ -49,9 +49,10 @@ export function DomainSection({ domain, kpis, kpiGroups, summary, charts, links,
   note?: string
 }) {
   const groups: DomainKpiGroup[] = kpiGroups ?? (kpis ? [{ key: "default", label: null, content: kpis }] : [])
-  // scroll-mt = TopBar (3.5rem) + barra de pestañas sticky (~2.75rem) + aire.
+  // Ya no hay capas sticky sobre el pozo: sólo aire para que el ancla no quede
+  // pegada al borde superior.
   return (
-    <section id={domain.anchor} aria-labelledby={`${domain.anchor}-titulo`} className="scroll-mt-28 2xl:scroll-mt-20">
+    <section id={domain.anchor} aria-labelledby={`${domain.anchor}-titulo`} className="scroll-mt-4">
       <div className="mb-3 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 border-b border-[var(--color-border)] pb-2">
         {/* Un escalón sobre los títulos de tarjeta (eyebrow uppercase): los
             dominios son el nivel de navegación de la mitad inferior y a la

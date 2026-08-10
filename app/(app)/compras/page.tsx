@@ -6,7 +6,8 @@ import {
   worksites, suppliers,
   purchaseRequests,
 } from "@/db/schema"
-import { and, or, ilike, inArray, count, desc, eq, sql } from "drizzle-orm"
+import { and, or, ilike, inArray, notInArray, count, desc, eq, sql } from "drizzle-orm"
+import { TERMINAL_REQUEST_STATUSES } from "@/lib/approvals-queue"
 import { requirePermission } from "@/lib/auth/can"
 import { can } from "@/lib/auth/can"
 import { isGlobalRole, visibleWorksiteIds } from "@/lib/auth/scope"
@@ -125,6 +126,11 @@ export default async function ComprasPage({
       .innerJoin(purchaseRequests, eq(purchaseRequestItems.requestId, purchaseRequests.id))
       .where(and(
         inArray(purchaseRequestItems.status, ["approved", "pending_purchase"]),
+        // Mismo predicado que la fuente `compras` de la cola: un ítem colgando
+        // de una solicitud terminal no es trabajo pendiente. Hoy no hay forma
+        // de producir ese huérfano, pero tener el criterio en dos formas es
+        // como empezaron A-03/A-13.
+        notInArray(purchaseRequests.status, [...TERMINAL_REQUEST_STATUSES]),
         requestWorksiteScope,
       )),
     db.select({ total: count() }).from(purchaseOrders).where(ordersWhere),
@@ -166,6 +172,8 @@ export default async function ComprasPage({
   })
   const worksiteOptions = worksiteOptionRows.map((w) => ({ value: w.id, label: w.name }))
   const supplierOptions = supplierOptionRows.map((s) => ({ value: s.id, label: s.name }))
+  const worksiteScopeLabel = worksiteOptions.find((worksite) => worksite.value === listParams.faena)?.label
+    ?? "todas las faenas permitidas"
 
   // ── Purchase orders ──────────────────────────────────────────────────────────
   const visibleOrders = await db
@@ -222,6 +230,9 @@ export default async function ComprasPage({
           headerActions={<HeaderSignals signals={headerSignals} />}
           actions={<ComprasActions canCreate={canCreateOrder} exportHref={exportHref} />}
         />
+        <p className="mb-3 text-xs text-(--color-text-subtle)" aria-live="polite">
+          Alcance de faena: <span className="font-medium text-(--color-text-muted)">{worksiteScopeLabel}</span>
+        </p>
         <OcList orders={[]} pendingCount={0} stageTabs={stageTabs} canCreate={canCreateOrder} canDelete={canDeleteOrder} canSend={canSendOrder} createdCount={createdCount} noPendingItems={noPendingItems} worksiteOptions={worksiteOptions} supplierOptions={supplierOptions} />
 
         <ServerPagination pagination={pagination} hrefForPage={pageHref} />
@@ -250,7 +261,13 @@ export default async function ComprasPage({
 
     orderIds.length > 0
       ? db
-          .select({ purchaseOrderId: purchaseOrderItems.purchaseOrderId, total: count() })
+          .select({
+            purchaseOrderId: purchaseOrderItems.purchaseOrderId,
+            total: count(),
+            // Las líneas con costo pendiente no suman al total de la OC; sin
+            // este conteo la lista mostraría un monto que parece completo.
+            pendingCost: sql<number>`count(*) filter (where ${purchaseOrderItems.unitPrice} is null)`,
+          })
           .from(purchaseOrderItems)
           .where(inArray(purchaseOrderItems.purchaseOrderId, orderIds))
           .groupBy(purchaseOrderItems.purchaseOrderId)
@@ -269,6 +286,7 @@ export default async function ComprasPage({
   const wsMap  = Object.fromEntries(wsRows.map((w) => [w.id, w.name]))
   const supMap = Object.fromEntries(supplierRows.map((s) => [s.id, s.name]))
   const cntMap = Object.fromEntries(itemCounts.map((c) => [c.purchaseOrderId, c.total]))
+  const pendingCostMap = Object.fromEntries(itemCounts.map((c) => [c.purchaseOrderId, Number(c.pendingCost)]))
   const invMap = Object.fromEntries(invoiceCounts.map((c) => [c.purchaseOrderId, c.total]))
 
   const rows: OcRow[] = visibleOrders.map((o) => ({
@@ -279,6 +297,7 @@ export default async function ComprasPage({
     status:       o.status,
     itemCount:    cntMap[o.id] ?? 0,
     totalAmount:  o.totalAmount,
+    pendingCostLines: pendingCostMap[o.id] ?? 0,
     invoiceCount: invMap[o.id] ?? 0,
     issuedAt:     o.issuedAt,
     sentAt:       o.sentAt,
@@ -299,6 +318,9 @@ export default async function ComprasPage({
         headerActions={<HeaderSignals signals={headerSignals} />}
         actions={<ComprasActions canCreate={canCreateOrder} exportHref={exportHref} />}
       />
+      <p className="mb-3 text-xs text-(--color-text-subtle)" aria-live="polite">
+        Alcance de faena: <span className="font-medium text-(--color-text-muted)">{worksiteScopeLabel}</span>
+      </p>
       <OcList
         orders={rows}
         pendingCount={pendingCount}

@@ -7,6 +7,7 @@ import {
   deliveries,
   deliveryItems,
   products,
+  purchaseOrderItems,
   purchaseRequestItems,
   purchaseRequests,
   workers,
@@ -22,15 +23,15 @@ import { ServerPagination } from "@/components/ui/server-pagination"
 import { buildPaginationHref, resolvePagination } from "@/lib/pagination"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Button } from "@/components/ui/button"
-import { Package, User } from "@phosphor-icons/react/dist/ssr"
-import { and, asc, desc, eq, inArray, isNotNull, count } from "drizzle-orm"
+import { DownloadSimple, Package, User } from "@phosphor-icons/react/dist/ssr"
+import { and, asc, desc, eq, inArray, isNotNull, count, sql } from "drizzle-orm"
 import { DeliveriesTable, type DeliveryRow } from "./deliveries-table"
 import { DeliveryForm, type DeliverableEppOption } from "./delivery-form"
 import { DeliveryFormPanel } from "./delivery-form-panel"
-import { DeliveryFormTrigger } from "./delivery-form-trigger"
 import { WorkAssignmentControl } from "../pendientes/work-assignment-control"
 import { getOperationalAssignmentRecords } from "@/lib/services/operational-assignments"
 import { buildOperationalWorkItem, operationalAssignmentKey } from "@/lib/services/operational-work-queue"
+import { getTraceableDeliveryBalance } from "@/lib/services/delivery-eligibility"
 
 export const metadata: Metadata = { title: "Entregas" }
 
@@ -170,12 +171,22 @@ export default async function Page({
   }
 
   const receivedItemIds = receivedItems.map((item) => item.id)
-  const deliveredRows = receivedItemIds.length > 0
-    ? await db
-        .select({ requestItemId: deliveryItems.requestItemId, quantity: deliveryItems.quantity })
-        .from(deliveryItems)
-        .where(inArray(deliveryItems.requestItemId, receivedItemIds))
-    : []
+  const [deliveredRows, faenaReceiptRows] = receivedItemIds.length > 0
+    ? await Promise.all([
+        db
+          .select({ requestItemId: deliveryItems.requestItemId, quantity: deliveryItems.quantity })
+          .from(deliveryItems)
+          .where(inArray(deliveryItems.requestItemId, receivedItemIds)),
+        db
+          .select({
+            requestItemId: purchaseOrderItems.requestItemId,
+            receivedAtFaena: sql<number>`coalesce(sum(${purchaseOrderItems.quantityReceived}), 0)`,
+          })
+          .from(purchaseOrderItems)
+          .where(inArray(purchaseOrderItems.requestItemId, receivedItemIds))
+          .groupBy(purchaseOrderItems.requestItemId),
+      ])
+    : [[], []]
 
   const deliveredByItem = new Map<string, number>()
   for (const row of deliveredRows) {
@@ -183,10 +194,21 @@ export default async function Page({
     deliveredByItem.set(row.requestItemId, (deliveredByItem.get(row.requestItemId) ?? 0) + row.quantity)
   }
 
+  const receivedAtFaenaByItem = new Map<string, number>()
+  for (const row of faenaReceiptRows) {
+    if (!row.requestItemId) continue
+    receivedAtFaenaByItem.set(row.requestItemId, Number(row.receivedAtFaena ?? 0))
+  }
+
   const deliverableItems: DeliverableEppOption[] = receivedItems
     .map((item) => {
       const deliveredQuantity = deliveredByItem.get(item.id) ?? 0
-      const remainingQuantity = Math.max(0, item.quantity - deliveredQuantity)
+      const receivedAtFaena = receivedAtFaenaByItem.get(item.id) ?? 0
+      const remainingQuantity = getTraceableDeliveryBalance({
+        requestedQuantity: item.quantity,
+        receivedAtFaena,
+        deliveredQuantity,
+      })
       const stockQuantity = stockByWorksiteProduct.get(`${item.requestWorksiteId}:${item.productId}`) ?? 0
       return {
         requestItemId: item.id,
@@ -196,6 +218,7 @@ export default async function Page({
         productSku: item.productSku,
         quantity: item.quantity,
         deliveredQuantity,
+        receivedAtFaena,
         remainingQuantity,
         stockQuantity,
         unitOfMeasure: item.unitOfMeasure,
@@ -213,6 +236,9 @@ export default async function Page({
   const initialDeliverySource = initialDeliverable
     ? receivedItems.find((item) => item.id === initialDeliverable.requestItemId)
     : undefined
+  const worksiteScopeLabel = requestedWorksiteId && visibleWorksiteIds.has(requestedWorksiteId)
+    ? worksiteNameById.get(requestedWorksiteId) ?? "faena seleccionada"
+    : "todas las faenas permitidas"
   const deliveryAssignmentRecords = canAssignWork && initialDeliverySource
     ? await getOperationalAssignmentRecords([{
         sourceType: "purchase_request_item",
@@ -311,18 +337,17 @@ export default async function Page({
       <PageContainer>
         <PageHeader
           title="Entregas"
-          description="Asignación de EPP recibido a trabajadores."
+          description="Asignación de equipo de protección personal (EPP) recibido a trabajadores."
           breadcrumb={<Breadcrumbs items={[{ label: "Inicio", href: "/dashboard" }, { label: "Entregas" }]} />}
         />
         <EmptyState
           icon={<User size={24} />}
           title="Sin faenas asignadas"
-          description="No tienes faenas activas disponibles para registrar entregas."
-          action={
-            <Button asChild variant="secondary" size="sm">
-              <Link href="/admin/usuarios">Solicitar acceso a faenas</Link>
-            </Button>
-          }
+          // El CTA anterior enlazaba a /admin/usuarios: quien no tiene faenas
+          // casi por definición tampoco es administrador, así que el botón
+          // rebotaba en /forbidden. Sin acción posible, el texto dice a quién
+          // acudir en vez de ofrecer una puerta cerrada.
+          description="No tienes faenas activas disponibles para registrar entregas. Pide a un administrador que te asigne una faena."
         />
       </PageContainer>
     )
@@ -332,7 +357,7 @@ export default async function Page({
     <PageContainer>
       <PageHeader
         title="Entregas"
-        description="Asignación de EPP recibido a trabajadores."
+        description="Asignación de equipo de protección personal (EPP) recibido a trabajadores."
         breadcrumb={
           <Breadcrumbs items={[
             { label: "Inicio", href: "/dashboard" },
@@ -343,13 +368,16 @@ export default async function Page({
           <div className="flex items-center gap-2">
             <Button asChild variant="secondary" size="sm">
               <a href="/api/entregas/export" download>
+                <DownloadSimple size={15} aria-hidden />
                 Exportar Excel
               </a>
             </Button>
-            {deliverableItems.length > 0 ? <DeliveryFormTrigger /> : null}
           </div>
         }
       />
+      <p className="mb-3 text-xs text-(--color-text-subtle)" aria-live="polite">
+        Alcance de faena: <span className="font-medium text-(--color-text-muted)">{worksiteScopeLabel}</span>
+      </p>
 
       <div className="flex flex-col gap-6">
         {/* ── Registrar entrega ── */}
@@ -358,7 +386,7 @@ export default async function Page({
             <div>
               <h2 className="text-base font-semibold text-(--color-text)">Registrar entrega de EPP</h2>
               <p className="mt-1 text-sm text-(--color-text-muted)">
-                Asigna EPP recibido a un trabajador y descuenta el stock de la faena.
+                Asigna equipo de protección personal (EPP) recibido a un trabajador y descuenta el stock de la faena.
               </p>
             </div>
             <div className="rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)]">
@@ -404,7 +432,7 @@ export default async function Page({
           <div>
             <h2 className="text-base font-semibold text-(--color-text)">Historial de entregas</h2>
             <p className="mt-1 text-sm text-(--color-text-muted)">
-              Registro nominal de EPP entregado a trabajadores.
+              Registro nominal de equipo de protección personal (EPP) entregado a trabajadores.
             </p>
           </div>
 

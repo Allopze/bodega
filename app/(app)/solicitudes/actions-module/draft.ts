@@ -11,6 +11,7 @@ import { getPdfMaxSizeMb } from "@/lib/services/system-settings"
 import { revalidateOperationalViews } from "@/lib/services/operational-cache"
 import { validateFileBuffer, MimeType } from "@/lib/file-validation"
 import { parseRequestForm } from "./parse-request-form"
+import { safeActionMessage } from "@/lib/action-error"
 
 const REVALIDATE = "/solicitudes"
 
@@ -31,7 +32,16 @@ export async function saveDraft(
   if (!result.ok) return result
 
   revalidateOperationalViews([REVALIDATE, `${REVALIDATE}/${result.requestId}`])
-  return { ok: true, message: "Borrador guardado", requestId: result.requestId, lastSavedAt: new Date().toISOString() }
+  // Se reenvían `message` y `data` de persistDraft: cuando algún archivo se
+  // rechaza, ahí viaja el detalle y la lista `failedFiles`. Reconstruir el
+  // estado acá con un "Borrador guardado" fijo se comía ese aviso entero.
+  return {
+    ok: true,
+    message: result.message ?? "Borrador guardado",
+    data: result.data,
+    requestId: result.requestId,
+    lastSavedAt: new Date().toISOString(),
+  }
 }
 
 export async function persistDraft(
@@ -64,6 +74,7 @@ export async function persistDraft(
     id:            d.id,
     worksiteId:    d.worksiteId,
     urgency:       d.urgency,
+    deliveryMode:  d.deliveryMode,
     requiredDate:  d.requiredDate,
     justification: d.notes || null,
     items,
@@ -127,16 +138,21 @@ export async function persistDraft(
     }
 
     if (failedFiles.length > 0) {
+      // `failedFiles` viaja aparte para que el cliente pueda conservar esas
+      // cotizaciones en el formulario (antes las vaciaba todas y los archivos
+      // rechazados desaparecían sin dejar rastro) y avisar con un toast de
+      // error, no de éxito.
       return {
         ok: true,
         requestId: reqId,
         message: `Borrador guardado, pero ${failedFiles.length} archivo(s) no se subieron: ${failedFiles.join(", ")}`,
+        data: { failedFiles },
       }
     }
 
     return { ok: true, message: "Borrador guardado", requestId: reqId }
   } catch (e) {
     logger.error("[persistDraft:quotation]", e)
-    return { ok: false, message: e instanceof Error ? e.message : "Error al guardar la solicitud" }
+    return { ok: false, message: safeActionMessage(e, "Error al guardar la solicitud") }
   }
 }

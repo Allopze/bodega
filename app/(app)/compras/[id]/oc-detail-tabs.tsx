@@ -3,6 +3,7 @@
 import * as React from "react"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
+import { OptionSelect } from "@/components/ui/option-select"
 
 /**
  * Contenedor de pestañas del detalle de OC. Recibe los nodos ya renderizados en
@@ -62,7 +63,21 @@ export function OcDetailTabs({
 
   return (
     <Tabs value={tab} onValueChange={handleChange}>
-      <TabsList className="flex-nowrap">
+      <div className="mb-3 md:hidden">
+        <label htmlFor="oc-detail-section" className="mb-1 block text-xs font-medium text-(--color-text-muted)">Sección de la orden</label>
+        <OptionSelect
+          id="oc-detail-section"
+          value={tab}
+          onValueChange={handleChange}
+          options={[
+            { value: "items", label: `Ítems (${itemsCount})` },
+            ...(facturacion != null ? [{ value: "facturacion", label: invoicesCount > 0 ? `Facturación (${invoicesCount})` : "Facturación · sin facturas" }] : []),
+            ...(avance != null ? [{ value: "avance", label: "Avance" }] : []),
+            { value: "historial", label: historyCount > 0 ? `Historial (${historyCount})` : "Historial" },
+          ]}
+        />
+      </div>
+      <TabsList className="hidden flex-nowrap md:inline-flex">
         <TabsTrigger value="items">
           Ítems
           <Count>{itemsCount}</Count>

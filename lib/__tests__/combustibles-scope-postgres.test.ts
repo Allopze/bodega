@@ -308,6 +308,7 @@ async function resetPublicSchema(url: string) {
     await setupDb.execute(sql`DROP SCHEMA IF EXISTS drizzle CASCADE`)
     await setupDb.execute(sql`DROP SCHEMA IF EXISTS public CASCADE`)
     await setupDb.execute(sql`CREATE SCHEMA public`)
+    await setupDb.execute(sql`CREATE SCHEMA drizzle`)
     await setupDb.execute(sql`GRANT ALL ON SCHEMA public TO PUBLIC`)
   } finally {
     await setupClient.end()

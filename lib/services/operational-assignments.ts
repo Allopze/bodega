@@ -5,6 +5,7 @@ import { purchaseOrders, purchaseRequestItems, purchaseRequests, users, workItem
 import { recordAudit } from "@/lib/audit"
 import { canAccessWorksite } from "@/lib/auth/scope"
 import { nanoid } from "@/lib/id"
+import { isRealIsoDate } from "@/lib/validation/operations"
 import { getUserIdsWithPermissionForWorksite } from "@/lib/services/notifications"
 import { recordOperationalActivity } from "@/lib/services/operational-activity"
 import {
@@ -18,7 +19,11 @@ const assignmentSchema = z.object({
   sourceId: z.string().min(1).max(200),
   actionKey: z.enum(["complete", "follow_up", "approve", "create_order", "issue", "send", "receive_office", "receive_worksite", "deliver"]),
   assigneeUserId: z.string().min(1).max(200).nullable(),
-  committedDueAt: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Fecha de compromiso inválida").nullable(),
+  // El regex por sí solo deja pasar 2026-99-99, que se persistía como fecha de
+  // compromiso y ordenaba mal el índice por vencimiento.
+  committedDueAt: z.string()
+    .refine(isRealIsoDate, "Fecha de compromiso inválida")
+    .nullable(),
 })
 
 export type OperationalAssignmentInput = z.infer<typeof assignmentSchema>

@@ -9,7 +9,7 @@ interface OcFormSummaryProps {
   worksiteId:          string
   supplierId:          string
   supplierGroupCount:  number
-  totals:              { netAmount: number; taxAmount: number; totalAmount: number }
+  totals:              { netAmount: number; taxAmount: number; totalAmount: number; pendingCostLines: number }
 }
 
 export function OcFormSummary({
@@ -40,7 +40,7 @@ export function OcFormSummary({
 
       <div className="mt-5 space-y-2 border-b border-[var(--color-border)] pb-4">
         <div className="flex justify-between text-sm text-[var(--color-text-muted)]">
-          <span>Neto</span>
+          <span>{totals.pendingCostLines > 0 ? "Neto conocido" : "Neto"}</span>
           <span className="tabular-nums">{formatCLP(totals.netAmount)}</span>
         </div>
         <div className="flex justify-between text-sm text-[var(--color-text-muted)]">
@@ -48,9 +48,17 @@ export function OcFormSummary({
           <span className="tabular-nums">{formatCLP(totals.taxAmount)}</span>
         </div>
         <div className="flex justify-between text-base font-semibold text-[var(--color-text)] pt-2 border-t border-[var(--color-border)]">
-          <span>Total</span>
+          <span>{totals.pendingCostLines > 0 ? "Total conocido" : "Total"}</span>
           <span className="tabular-nums">{formatCLP(totals.totalAmount)}</span>
         </div>
+        {/* Un servicio sin precio no puede sumar 0: eso diría que salió gratis.
+            Se cuenta aparte para que el total siga siendo verdadero. */}
+        {totals.pendingCostLines > 0 && (
+          <p className="flex justify-between gap-3 text-xs text-[var(--color-warning-ink)]">
+            <span>{countOf(totals.pendingCostLines, "servicio")} con costo pendiente</span>
+            <span className="shrink-0">por definir</span>
+          </p>
+        )}
       </div>
 
       <div className="mt-4 space-y-2 text-sm">

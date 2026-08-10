@@ -4,6 +4,7 @@ import * as React from "react"
 import { useState } from "react"
 import { ArrowLeft, Info, Plus, Warning } from "@phosphor-icons/react"
 import { SubmitButton } from "@/components/admin/submit-button"
+import { toast } from "@/lib/toast"
 import { Button } from "@/components/ui/button"
 import { Field } from "@/components/ui/field"
 import { DatePicker } from "@/components/ui/date-picker"
@@ -17,7 +18,7 @@ import {
 } from "@/components/ui/dialog"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { ItemEditor } from "./item-editor"
-import { URGENCY_OPTS } from "./request-form.constants"
+import { URGENCY_OPTS, UNIT_OF_MEASURE_OPTIONS } from "./request-form.constants"
 import { formatDate, formatDateTime } from "@/lib/utils"
 import { QUOTATION_TYPES } from "@/lib/request-types"
 import type { RequestType } from "@/lib/request-types"
@@ -151,6 +152,12 @@ function ItemsSection({
           Los archivos que adjuntes se suben al guardar el borrador.
         </p>
       )}
+      {/* Un solo datalist para todos los ítems: estaba dentro de ItemEditor, así
+          que con 2+ ítems el DOM quedaba con IDs repetidos (inválido, y axe lo
+          marca como duplicate-id). Los inputs lo referencian por ese id. */}
+      <datalist id="unit-of-measure-options">
+        {UNIT_OF_MEASURE_OPTIONS.map((unit) => <option key={unit} value={unit} />)}
+      </datalist>
       <div className="space-y-2">
         {items.map((item, idx) => (
           <ItemEditor key={item._key} item={item} idx={idx} products={products} suppliers={suppliers} workers={workers}
@@ -258,7 +265,15 @@ export function RequestForm({
           onSubmit={(e) => {
             e.preventDefault()
             if (form.isQuotation) {
+              // Guardar borrador sí acepta datos incompletos: es el punto del borrador.
               form.startSaveTransition(() => form.draftAction(form.buildDraftFormData()))
+              return
+            }
+            // El panel lateral ya listaba estos problemas, pero el envío no los
+            // miraba: una cantidad vacía se enviaba igual (y llegaba al servidor
+            // como 1). El envío es un acto único para EPP/otro, así que se corta acá.
+            if (form.missingItems.length > 0) {
+              toast.error(form.missingItems[0]!)
               return
             }
             // EPP/otro: un solo acto. La solicitud nace enviada a aprobación.
@@ -343,6 +358,10 @@ export function RequestForm({
         {form.isDraft && form.isQuotation && (
           <form onSubmit={(e) => {
             e.preventDefault()
+            if (form.missingItems.length > 0) {
+              toast.error(form.missingItems[0]!)
+              return
+            }
             const fd = form.buildDraftFormData()
             fd.set("requestId", form.savedId ?? "")
             form.startSubmitTransition(() => form.submitAction(fd))
@@ -418,9 +437,16 @@ export function RequestForm({
         )}
 
         {form.isDraft && (
+          // El mismo diálogo cubre las dos salidas: el botón "Volver" y un clic
+          // en cualquier enlace interno (rail, breadcrumb, TopBar), que antes
+          // descartaba el formulario sin preguntar.
           <ConfirmDialog
-            open={leaveConfirmOpen}
-            onOpenChange={setLeaveConfirmOpen}
+            open={leaveConfirmOpen || form.pendingHref !== null}
+            onOpenChange={(open) => {
+              if (open) return
+              setLeaveConfirmOpen(false)
+              form.setPendingHref(null)
+            }}
             title="¿Salir sin guardar?"
             description={form.isQuotation
               ? "Tienes cambios sin guardar. Si sales ahora, se perderán. Guarda el borrador antes de salir si quieres conservarlos."
@@ -428,6 +454,10 @@ export function RequestForm({
             confirmLabel="Salir sin guardar"
             variant="warning"
             onConfirm={() => {
+              if (form.pendingHref !== null) {
+                form.confirmLeave()
+                return
+              }
               setLeaveConfirmOpen(false)
               form.silentNavBack()
             }}

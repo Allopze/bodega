@@ -37,7 +37,10 @@ export const ALLOWED_TRANSITIONS: Record<ItemStatus, ItemStatus[]> = {
   rejected:           [],
   pending_purchase:   ["in_purchase_order"],
   in_purchase_order:  ["purchased", "pending_purchase"],
-  purchased:          ["partially_received", "received"],
+  // `delivered` directo desde compra/recepción parcial es el cierre de los ítems
+  // sin producto de catálogo: no generan stock, así que la llegada a faena agota
+  // su ciclo (ver receiveItemTx).
+  purchased:          ["partially_received", "received", "delivered"],
   partially_received: ["received", "partially_delivered", "delivered"],
   received:           ["partially_delivered", "delivered"],
   partially_delivered:["delivered"],

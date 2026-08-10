@@ -1,6 +1,6 @@
 "use server"
 
-import { redirect } from "next/navigation"
+import { redirect, unstable_rethrow } from "next/navigation"
 import { db } from "@/db"
 import { canAccessWorksite, requirePermission, visibleWorksiteIds } from "@/lib/auth/can"
 import { isGlobalRole } from "@/lib/auth/scope"
@@ -165,7 +165,12 @@ ${supplierMismatches.map((m) => `  • ${m}`).join("\n")}`,
     if (orderIds.length === 1) redirect(`/compras/${orderIds[0]}?actualizada=creada`)
     redirect(`${REVALIDATE}?creadas=${orderIds.length}`)
   } catch (e) {
-    if (e instanceof Error && e.message.includes("NEXT_REDIRECT")) throw e
+    // `unstable_rethrow` reconoce los errores de control de flujo de Next por su
+    // digest, no por el texto del mensaje: con el match por `"NEXT_REDIRECT"`,
+    // un cambio de formato haría que este catch se tragara el redirect con la OC
+    // ya creada — el usuario vería "Error al crear la orden", reintentaría y
+    // quedarían dos.
+    unstable_rethrow(e)
     logger.error("[createOrderAction]", e)
     return { ok: false, message: dbErrMsg(e, "Error al crear la orden") }
   }

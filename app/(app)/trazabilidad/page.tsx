@@ -1,7 +1,7 @@
 import type { Metadata } from "next"
 import { redirect } from "next/navigation"
 import Link from "next/link"
-import { requirePermission } from "@/lib/auth/can"
+import { can, requirePermission } from "@/lib/auth/can"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { Button } from "@/components/ui/button"
 import { PageContainer } from "@/components/ui/page-container"
@@ -11,6 +11,11 @@ import { TrazabilidadFilters } from "./trazabilidad-filters"
 import { getTrazabilidadMatrix } from "@/lib/services/trazabilidad-matrix"
 import { TrazabilidadMatrixCard } from "./_components/trazabilidad-matrix-card"
 import { TrazabilidadMatrixTable } from "./_components/trazabilidad-matrix-table"
+import { TraceabilityIntegrityCases } from "./_components/traceability-integrity-cases"
+import {
+  listTraceabilityIntegrityAdjustmentOptions,
+  listTraceabilityIntegrityCases,
+} from "@/lib/services/traceability-integrity-cases"
 import {
   TRACEABILITY_PAGE_SIZE as PAGE_SIZE,
   TRACEABILITY_ALERT_SCAN_LIMIT as ALERT_SCAN_LIMIT,
@@ -42,6 +47,14 @@ export default async function TrazabilidadPage({
     totalRows,
     isAlertFilter,
   } = await getTrazabilidadMatrix(sp, session)
+  const canReconcileIntegrity = can(session, "traceability:reconcile_integrity")
+  const [integrityCases, integrityAdjustmentOptions] = canReconcileIntegrity
+    ? await Promise.all([
+      listTraceabilityIntegrityCases(session),
+      listTraceabilityIntegrityAdjustmentOptions(session),
+    ])
+    : [[], []]
+  const activeWorksite = visibleWorksites.find((worksite) => worksite.id === filterFaenaId)
 
   return (
     <PageContainer>
@@ -56,17 +69,27 @@ export default async function TrazabilidadPage({
         }
       />
 
+      <p className="mb-3 text-xs text-(--color-text-subtle)" aria-live="polite">
+        Alcance de faena: <span className="font-medium text-(--color-text-muted)">{activeWorksite?.name ?? "todas las faenas permitidas"}</span>
+      </p>
+
+      <TraceabilityIntegrityCases
+        cases={integrityCases}
+        canReconcile={canReconcileIntegrity}
+        adjustmentOptions={integrityAdjustmentOptions}
+      />
+
       {/* ── Alert summary ─────────────────────────────────────────────── */}
       {alertCount > 0 && (
         <div className="mb-4 flex items-center gap-2 rounded-[var(--radius)] border border-[var(--color-signal-line)] bg-[var(--color-signal-tint)] px-4 py-3">
           <Warning weight="fill" className="h-4 w-4 shrink-0 text-[var(--color-signal-ink)]" aria-hidden />
           <p className="text-sm font-medium text-[var(--color-signal-ink)]">
-            {alertCount} {alertCount === 1 ? "ítem aprobado falta" : "ítems aprobados faltan"} en órdenes de compra
+            {alertCount} {alertCount === 1 ? "ítem aprobado sin orden de compra" : "ítems aprobados sin orden de compra"}
           </p>
           {filterEstado !== "alert" && (
             <a
               href={`/trazabilidad?estado=alert${filterFaenaId ? `&faena=${filterFaenaId}` : ""}`}
-              className="ml-auto text-xs font-medium text-[var(--color-signal-ink)] underline underline-offset-2"
+              className="ml-auto inline-flex min-h-11 items-center text-xs font-medium text-[var(--color-signal-ink)] underline underline-offset-2 sm:min-h-0"
             >
               Ver solo alertas
             </a>
@@ -80,19 +103,20 @@ export default async function TrazabilidadPage({
         current={{ faena: filterFaenaId, estado: filterEstado }}
       />
       <div className="mb-4 flex flex-wrap items-end gap-3">
-        <Link
-          href={`/api/trazabilidad/export${filterFaenaId ? `?faena=${filterFaenaId}` : ""}`}
-          prefetch={false}
-          className="inline-flex h-9 items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] px-3 text-sm font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-2)] transition-[color,background-color,transform] duration-[var(--duration-fast)] ease-[var(--ease-out)] "
-          aria-label="Exportar trazabilidad a Excel"
-        >
-          <DownloadSimple className="h-3.5 w-3.5" aria-hidden />
-          Exportar Excel
-        </Link>
+        <Button asChild variant="secondary" size="sm">
+          <Link
+            href={`/api/trazabilidad/export${filterFaenaId ? `?faena=${filterFaenaId}` : ""}`}
+            prefetch={false}
+            aria-label="Exportar trazabilidad a Excel"
+          >
+            <DownloadSimple className="h-3.5 w-3.5" aria-hidden />
+            Exportar Excel
+          </Link>
+        </Button>
         {(filterFaenaId || filterEstado) && (
           <Link
             href="/trazabilidad"
-            className="inline-flex h-9 items-center text-sm text-[var(--color-text-muted)] hover:text-[var(--color-text)] underline underline-offset-2"
+            className="inline-flex min-h-11 items-center text-sm text-[var(--color-text-muted)] underline underline-offset-2 hover:text-[var(--color-text)] sm:min-h-0"
           >
             Quitar filtros
           </Link>
@@ -175,7 +199,7 @@ export default async function TrazabilidadPage({
       {/* ── Legend ────────────────────────────────────────────────────── */}
       <p className="mt-4 text-xs text-[var(--color-text-subtle)]">
         Las filas resaltadas indican ítems aprobados cuya cantidad en órdenes de compra es inferior a la aprobada.
-        La recepción en bodega/faena cierra el seguimiento operativo del ítem; la llegada a oficina queda como paso previo.
+        La recepción en faena habilita la entrega trazable; la llegada a oficina es sólo un paso previo y no libera stock en faena.
       </p>
     </PageContainer>
   )

@@ -9,6 +9,8 @@
  * se borraron en vez de mantenerlas sincronizadas a mano.
  */
 import { revalidatePath } from "next/cache"
+import { revalidateOperationalViews } from "@/lib/services/operational-cache"
+import { safeActionMessage } from "@/lib/action-error"
 import { eq } from "drizzle-orm"
 
 import { canAccessWorksite, requirePermission } from "@/lib/auth/can"
@@ -97,7 +99,7 @@ export async function uploadQuotationActionImpl(
     return { ok: true, message: "Cotización agregada" }
   } catch (e) {
     logger.error(`[${logPrefix}/uploadQuotationAction]`, e)
-    return { ok: false, message: e instanceof Error ? e.message : "Error al subir cotización" }
+    return { ok: false, message: safeActionMessage(e, "Error al subir cotización") }
   }
 }
 
@@ -129,7 +131,7 @@ export async function deleteQuotationActionImpl(
     return { ok: true, message: "Cotización eliminada" }
   } catch (e) {
     logger.error(`[${logPrefix}/deleteQuotationAction]`, e)
-    return { ok: false, message: e instanceof Error ? e.message : "Error al eliminar cotización" }
+    return { ok: false, message: safeActionMessage(e, "Error al eliminar cotización") }
   }
 }
 
@@ -186,11 +188,20 @@ export async function selectQuotationActionImpl(
       entityHref: `${routePrefix}/${d.requestId}`,
     })
 
-    revalidatePath(`${routePrefix}/${d.requestId}`)
-    revalidatePath(routePrefix)
+    // Adjudicar deja los ítems `approved`, es decir: trabajo nuevo para Compras
+    // y una tarea menos en la cola. Sin esto, el comprador no veía el ítem en
+    // /compras/nueva hasta que otra mutación cualquiera revalidara.
+    revalidateOperationalViews([
+      `${routePrefix}/${d.requestId}`,
+      routePrefix,
+      "/solicitudes",
+      `/solicitudes/${d.requestId}`,
+      "/compras",
+      "/compras/nueva",
+    ])
     return { ok: true, message: "Cotización aprobada. Ítems listos para orden de compra." }
   } catch (e) {
     logger.error(`[${logPrefix}/selectQuotationAction]`, e)
-    return { ok: false, message: e instanceof Error ? e.message : "Error al seleccionar cotización" }
+    return { ok: false, message: safeActionMessage(e, "Error al seleccionar cotización") }
   }
 }

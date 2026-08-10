@@ -105,6 +105,8 @@ export async function approveItem(
     const [locked] = await tx
       .select({
         id: purchaseRequestItems.id, status: purchaseRequestItems.status, requestId: purchaseRequestItems.requestId,
+        // Necesaria para topear `modifiedQty` contra lo solicitado bajo el lock.
+        quantity: purchaseRequestItems.quantity,
       })
       .from(purchaseRequestItems)
       .where(eq(purchaseRequestItems.id, itemId))
@@ -116,6 +118,17 @@ export async function approveItem(
     }
     if (opts?.modifiedQty !== undefined && !opts?.reason) {
       throw new Error("Se requiere un motivo al modificar la cantidad aprobada")
+    }
+    // El tope vivía sólo en la action: cualquier otro caller (script, API, una
+    // action futura) podía escribir 0, negativo o más de lo solicitado. La regla
+    // del motivo ya había migrado acá; ésta faltaba.
+    if (opts?.modifiedQty !== undefined) {
+      if (!Number.isFinite(opts.modifiedQty) || opts.modifiedQty <= 0) {
+        throw new Error("La cantidad aprobada debe ser mayor a 0")
+      }
+      if (opts.modifiedQty > locked.quantity) {
+        throw new Error("La cantidad aprobada no puede superar la solicitada")
+      }
     }
 
     const now = new Date().toISOString()

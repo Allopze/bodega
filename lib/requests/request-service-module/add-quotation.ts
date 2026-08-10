@@ -38,35 +38,50 @@ export async function addQuotation(
   const quotationId = nanoid()
 
   try {
-    await db.insert(qt).values({
-      id:               quotationId,
-      requestId:        input.requestId,
-      supplierId:       input.supplierId ?? null,
-      supplierNameFree: input.supplierNameFree ?? null,
-      fileName:         input.fileName,
-      filePath,
-      fileSize:         input.fileSize ? String(input.fileSize) : null,
-      uploadedBy:       input.uploadedBy,
-      totalAmount:      input.totalAmount,
-      status:           "pending",
-      notes:            input.notes ?? null,
-      decidedBy:        null,
-      selectedAt:       null,
-      createdAt:        now,
-      updatedAt:        now,
-    })
+    // Insert y auditoría en una transacción, y el estado `draft` re-verificado
+    // bajo lock adentro: el pre-check de arriba corre fuera de la transacción,
+    // así que entre ese chequeo y el insert la solicitud podía enviarse y quedaba
+    // una cotización `pending` colgando de una solicitud ya enviada.
+    await db.transaction(async (tx) => {
+      const [locked] = await tx
+        .select({ status: purchaseRequests.status })
+        .from(purchaseRequests)
+        .where(eq(purchaseRequests.id, input.requestId))
+        .for("update")
+      if (!locked || locked.status !== "draft") {
+        throw new Error("Solo se pueden agregar cotizaciones a solicitudes en borrador")
+      }
 
-    await recordAudit({
-      userId:     input.uploadedBy,
-      userEmail:  input.userEmail,
-      action:     "create",
-      entityType: config.quotationEntityType,
-      entityId:   quotationId,
-      newState:   {
-        requestId:   input.requestId,
-        totalAmount: input.totalAmount,
-        fileName:    input.fileName,
-      },
+      await tx.insert(qt).values({
+        id:               quotationId,
+        requestId:        input.requestId,
+        supplierId:       input.supplierId ?? null,
+        supplierNameFree: input.supplierNameFree ?? null,
+        fileName:         input.fileName,
+        filePath,
+        fileSize:         input.fileSize ? String(input.fileSize) : null,
+        uploadedBy:       input.uploadedBy,
+        totalAmount:      input.totalAmount,
+        status:           "pending",
+        notes:            input.notes ?? null,
+        decidedBy:        null,
+        selectedAt:       null,
+        createdAt:        now,
+        updatedAt:        now,
+      })
+
+      await recordAudit({
+        userId:     input.uploadedBy,
+        userEmail:  input.userEmail,
+        action:     "create",
+        entityType: config.quotationEntityType,
+        entityId:   quotationId,
+        newState:   {
+          requestId:   input.requestId,
+          totalAmount: input.totalAmount,
+          fileName:    input.fileName,
+        },
+      }, tx)
     })
   } catch (err) {
     await removeFile(absolutePath).catch(() => { /* ignore */ })

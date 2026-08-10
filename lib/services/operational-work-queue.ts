@@ -631,8 +631,13 @@ function operationalSourceBranches(session: Session, scope: WorksiteScope): Oper
         ELSE ${purchaseRequestItems.status} END AS status_label, ${itemPriority} AS priority, false AS blocked,
       ${purchaseRequestItems.createdAt}::text AS created_at, LEFT((${itemDue})::text, 10) AS source_due_at,
       ${emptyAssignee} AS native_assignee_user_id, ${emptyAssignee} AS native_assignee_name,
-      CONCAT('/entregas?faena=', ${purchaseRequests.worksiteId}, '&item=', ${purchaseRequestItems.id}) AS href,
-      'Registrar entrega'::text AS cta_label, true AS assignable
+      -- /entregas sólo lista EPP de catálogo: un ítem no-EPP mandaba al usuario
+      -- a una página que respondía "Sin EPP pendiente de entrega". Su despacho
+      -- real vive en /bodega, así que la tarea apunta ahí.
+      CASE WHEN ${products.isEpp} THEN
+        CONCAT('/entregas?faena=', ${purchaseRequests.worksiteId}, '&item=', ${purchaseRequestItems.id})
+      ELSE CONCAT('/bodega?faena=', ${purchaseRequests.worksiteId}) END AS href,
+      CASE WHEN ${products.isEpp} THEN 'Registrar entrega' ELSE 'Despachar desde bodega' END::text AS cta_label, true AS assignable
     ${itemBase} AND ${purchaseRequestItems.status} IN ('partially_received', 'received', 'partially_delivered')
       AND EXISTS (
         SELECT 1 FROM ${worksiteStock}
@@ -1146,6 +1151,24 @@ export async function getOperationalWorkCount(session: Session) {
         )),
     ))
   }
+  // Espejo de la fuente `select_quotation`: repuestos y servicios se aprueban
+  // eligiendo la cotización ganadora, no ítem a ítem. Sin esta rama, quien sólo
+  // tuviera ese trabajo veía el badge en 0 mientras /pendientes listaba tareas.
+  const quotationApprovalTypes: string[] = []
+  if (hasPermission(session, "repuestos:approve")) quotationApprovalTypes.push("repuestos")
+  if (hasPermission(session, "servicios:approve")) quotationApprovalTypes.push("servicios")
+  if (quotationApprovalTypes.length > 0) {
+    counts.push(countRows(
+      db.select({ total: count() })
+        .from(purchaseRequests)
+        .where(and(
+          requestScope,
+          inArray(purchaseRequests.requestType, quotationApprovalTypes),
+          inArray(purchaseRequests.status, ["submitted", "in_review"]),
+        )),
+    ))
+  }
+
   if (hasPermission(session, "purchasing:create_order")) {
     counts.push(countRows(
       db.select({ total: count() })

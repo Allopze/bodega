@@ -11,6 +11,7 @@ import { issueAndSendOrderAction } from "../actions/order-status"
 import { cancelOrderAction, closeOrderAction, deleteOrderAction } from "../actions/order-cancel"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { Checkbox } from "@/components/ui/checkbox"
+import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
@@ -133,7 +134,7 @@ export function OcActions({
         className="flex flex-col gap-2 mt-2 max-w-md border border-(--color-border) p-3.5 rounded-(--radius) bg-surface-2"
       >
         <input type="hidden" name="orderId" value={orderId} />
-        <label className="text-xs font-semibold text-(--color-text)">
+        <label htmlFor="close-reason" className="text-xs font-semibold text-(--color-text)">
           Motivo de finalización <span className="text-danger">*</span>
         </label>
         <p className="text-xs text-(--color-text-muted)">
@@ -142,6 +143,7 @@ export function OcActions({
             : "Indica el motivo por el que se finaliza la orden (ítems rechazados, dañados, etc.)."}
         </p>
         <Textarea
+          id="close-reason"
           name="reason"
           placeholder="Ej: ítems dañados no serán repuestos, acuerdo con proveedor..."
           required
@@ -171,13 +173,14 @@ export function OcActions({
           />
         )}
         <div className="flex items-center justify-end gap-2 mt-1">
-          <button
+          <Button
             type="button"
+            variant="ghost"
+            size="sm"
             onClick={() => setShowCloseForm(false)}
-            className="text-xs px-2.5 py-1.5 rounded hover:bg-surface-3 transition-colors cursor-pointer"
           >
             Volver
-          </button>
+          </Button>
           <SubmitButton
             label="Finalizar OC"
             loadingLabel="Finalizando..."
@@ -197,8 +200,9 @@ export function OcActions({
         className="flex flex-col gap-2 mt-2 max-w-md border border-danger p-3.5 rounded-(--radius) bg-surface-2"
       >
         <input type="hidden" name="orderId" value={orderId} />
-        <label className="text-xs font-semibold text-danger">Motivo de anulación (obligatorio)</label>
+        <label htmlFor="cancel-reason" className="text-xs font-semibold text-danger">Motivo de anulación (obligatorio)</label>
         <Textarea
+          id="cancel-reason"
           name="reason"
           placeholder="Explique el motivo por el cual se anula esta orden de compra..."
           required
@@ -212,13 +216,14 @@ export function OcActions({
           </p>
         )}
         <div className="flex items-center justify-end gap-2 mt-1">
-          <button
+          <Button
             type="button"
+            variant="ghost"
+            size="sm"
             onClick={() => setShowCancelForm(false)}
-            className="text-xs px-2.5 py-1.5 rounded hover:bg-surface-3 transition-colors cursor-pointer"
           >
             Volver
-          </button>
+          </Button>
           <SubmitButton
             label="Confirmar anulación"
             loadingLabel="Anulando..."
@@ -250,13 +255,15 @@ export function OcActions({
         )}
 
         {CLOSEABLE_STATUSES.has(status) && canManage && (
-          <button
+          <Button
             type="button"
+            variant="secondary"
+            size="sm"
             onClick={() => setShowCloseForm(true)}
-            className="flex-1 text-xs font-medium text-(--color-text) border border-(--color-border) hover:bg-surface-2 px-3.5 py-2 rounded-(--radius) transition-colors cursor-pointer"
+            className="flex-1"
           >
             Finalizar orden
-          </button>
+          </Button>
         )}
 
         {/* ── Destructivas: menú overflow, separadas de la primaria ─────────── */}
@@ -264,9 +271,9 @@ export function OcActions({
           <DropdownMenu>
             <DropdownMenuTrigger
               aria-label="Más acciones"
-              className="inline-flex items-center justify-center rounded-(--radius) border border-(--color-border) p-2 text-(--color-text-muted) hover:bg-surface-2 transition-colors cursor-pointer"
+              className="inline-flex h-11 w-11 items-center justify-center rounded-(--radius) border border-(--color-border) text-(--color-text-muted) transition-colors hover:bg-surface-2 sm:h-8 sm:w-8"
             >
-              <DotsThree size={16} weight="bold" />
+              <DotsThree size={16} weight="bold" aria-hidden />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               {canCancel && (

@@ -68,11 +68,18 @@ test.describe("Densidad — máximo cuatro KPI y seis filtros", () => {
     await page.goto("/dashboard")
     await page.waitForLoadState("networkidle").catch(() => undefined)
 
-    // Se recorren las pestañas reales, no una lista fija: una vista nueva no
-    // puede quedar fuera de la guarda por olvido.
-    const hrefs = await page.getByRole("navigation", { name: "Vistas del tablero" })
-      .getByRole("link").evaluateAll((links) => links.map((link) => (link as HTMLAnchorElement).href))
-    expect(hrefs.length).toBeGreaterThan(1)
+    // Se recorren las vistas reales, no una lista fija: una vista nueva no puede
+    // quedar fuera de la guarda por olvido. Los dominios ya no son pestañas sino
+    // items de un desplegable, así que hay que abrirlo — sin eso la guarda
+    // seguiría pasando en verde cubriendo sólo dos de las nueve vistas.
+    const tabs = page.getByRole("navigation", { name: "Vistas del tablero" })
+    await tabs.getByRole("button").click()
+    const toHref = (links: Element[]) => links.map((link) => (link as HTMLAnchorElement).href)
+    const hrefs = [
+      ...await tabs.getByRole("link").evaluateAll(toHref),
+      ...await page.getByRole("menuitem").evaluateAll(toHref),
+    ]
+    expect(hrefs.length).toBeGreaterThan(2)
 
     const excedidas: string[] = []
     const sinAgrupar: string[] = []

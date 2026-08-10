@@ -3,9 +3,10 @@ import { redirect }      from "next/navigation"
 import { db }            from "@/db"
 import {
   purchaseRequestItems, purchaseRequests,
-  worksites, suppliers, products, productSuppliers,
+  worksites, suppliers, products, productSuppliers, purchaseOrders, purchaseOrderItems,
 } from "@/db/schema"
-import { eq, inArray, asc, and } from "drizzle-orm"
+import { eq, inArray, notInArray, asc, and } from "drizzle-orm"
+import { TERMINAL_REQUEST_STATUSES } from "@/lib/approvals-queue"
 import { requirePermission } from "@/lib/auth/can"
 import { canAccessWorksite }  from "@/lib/auth/can"
 import { worksiteScopeSql } from "@/lib/auth/scope"
@@ -13,6 +14,11 @@ import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { OcForm } from "../oc-form"
 import type { PendingItemOption, SupplierOption, WorksiteOption } from "../oc-form"
+import Link from "next/link"
+import { getPurchasableCoverage } from "@/lib/services/purchasing-module/purchasable-coverage"
+
+/** Tope del selector de ítems; +1 en la consulta para detectar que hay más. */
+const PICKER_ITEM_LIMIT = 500
 
 export const metadata: Metadata = { title: "Nueva orden de compra" }
 
@@ -48,9 +54,15 @@ export default async function NuevaOcPage({
     })
     .from(purchaseRequestItems)
     .innerJoin(purchaseRequests, eq(purchaseRequestItems.requestId, purchaseRequests.id))
-    .where(and(statusFilter, scopeFilter ? scopeFilter : undefined))
+    .where(and(
+      statusFilter,
+      // Ver el comentario gemelo en /compras: el picker usa el mismo criterio
+      // que la cola, no uno propio.
+      notInArray(purchaseRequests.status, [...TERMINAL_REQUEST_STATUSES]),
+      scopeFilter ? scopeFilter : undefined,
+    ))
     .orderBy(asc(purchaseRequestItems.requestId))
-    .limit(501)
+    .limit(PICKER_ITEM_LIMIT + 1)
 
   // UX-7: "Nueva OC" con la cola vacía rebotaba a /compras en silencio — el
   // botón parecía no haber hecho nada. El parámetro deja que la lista
@@ -59,10 +71,18 @@ export default async function NuevaOcPage({
     redirect("/compras?sin_pendientes=1")
   }
 
+  // El +1 de la consulta es el centinela de "hay más": antes existía como 501
+  // pero nadie lo miraba, así que
+  // con la cola muy larga, los ítems sobrantes simplemente no aparecían en el
+  // selector y nada lo decía. Se avisa en pantalla en vez de truncar en silencio.
+  const truncatedItems = rawItems.length > PICKER_ITEM_LIMIT
+  if (truncatedItems) rawItems.length = PICKER_ITEM_LIMIT
+
   const requestIds = [...new Set(rawItems.map((i) => i.requestId))]
+  const requestItemIds = rawItems.map((item) => item.id)
   const productIds = [...new Set(rawItems.flatMap((i) => i.productId ? [i.productId] : []))]
 
-  const [requestRows, productRows, supplierPriceRows, allSuppliers, allWorksites] = await Promise.all([
+  const [requestRows, productRows, supplierPriceRows, allSuppliers, allWorksites, coverageLines] = await Promise.all([
     db
       .select({
         id: purchaseRequests.id, code: purchaseRequests.code, worksiteId: purchaseRequests.worksiteId,
@@ -73,7 +93,7 @@ export default async function NuevaOcPage({
 
     productIds.length > 0
       ? db
-          .select({ id: products.id, sku: products.sku, name: products.name })
+          .select({ id: products.id, sku: products.sku, name: products.name, isService: products.isService })
           .from(products)
           .where(inArray(products.id, productIds))
       : Promise.resolve([]),
@@ -100,6 +120,20 @@ export default async function NuevaOcPage({
       .from(worksites)
       .where(eq(worksites.isActive, true))
       .orderBy(asc(worksites.name)),
+
+    requestItemIds.length > 0
+      ? db
+          .select({
+            requestItemId: purchaseOrderItems.requestItemId,
+            quantity: purchaseOrderItems.quantity,
+            orderStatus: purchaseOrders.status,
+            orderItemStatus: purchaseOrderItems.status,
+            deletedAt: purchaseOrders.deletedAt,
+          })
+          .from(purchaseOrderItems)
+          .innerJoin(purchaseOrders, eq(purchaseOrderItems.purchaseOrderId, purchaseOrders.id))
+          .where(inArray(purchaseOrderItems.requestItemId, requestItemIds))
+      : Promise.resolve([]),
   ])
 
   const reqMap     = Object.fromEntries(requestRows.map((r) => [r.id, r]))
@@ -114,6 +148,10 @@ export default async function NuevaOcPage({
   // Scope worksites
   const scopedWs = allWorksites.filter((w) => canAccessWorksite(session, w.id))
 
+  const coverageByItemId = new Map(
+    getPurchasableCoverage(rawItems, coverageLines).map((coverage) => [coverage.requestItemId, coverage]),
+  )
+
   const pendingItems: PendingItemOption[] = rawItems
     .flatMap((item): PendingItemOption[] => {
       const req     = reqMap[item.requestId]
@@ -121,6 +159,7 @@ export default async function NuevaOcPage({
       if (!req) return []
       // Only show items from worksites this user can access
       if (!canAccessWorksite(session, req.worksiteId)) return []
+      if (!coverageByItemId.get(item.id)?.isPurchasable) return []
       return [{
         id:              item.id,
         requestId:       item.requestId,
@@ -130,6 +169,8 @@ export default async function NuevaOcPage({
         productName:     product?.name ?? item.productNameFree ?? "(sin nombre)",
         productSku:      product?.sku ?? null,
         productId:       item.productId,
+        // Un servicio entra a la OC sin precio si todavía no se conoce.
+        isService:       product?.isService ?? false,
         productNameFree: item.productNameFree,
         quantity:        item.quantity,
         unitOfMeasure:   item.unitOfMeasure,
@@ -141,6 +182,10 @@ export default async function NuevaOcPage({
         deliveryMode:    req.deliveryMode as "via_oficina" | "directo_faena",
       }]
     })
+
+  if (pendingItems.length === 0) {
+    redirect("/compras?sin_pendientes=1")
+  }
 
   const supplierOptions: SupplierOption[] = allSuppliers.map((s) => ({
     id:           s.id,
@@ -170,6 +215,12 @@ export default async function NuevaOcPage({
           ]} />
         }
       />
+      {truncatedItems && (
+        <div role="status" className="rounded-(--radius) border border-warning-line bg-warning-tint px-4 py-3 text-sm text-warning-ink">
+          Hay más de {PICKER_ITEM_LIMIT} ítems aprobados esperando compra. Se muestran los {PICKER_ITEM_LIMIT} más antiguos;
+          filtra por faena desde <Link href="/compras" className="underline">Órdenes de compra</Link> para ver el resto.
+        </div>
+      )}
       <OcForm
         suppliers={supplierOptions}
         worksites={worksiteOptions}

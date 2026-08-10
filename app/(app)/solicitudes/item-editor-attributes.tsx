@@ -31,6 +31,28 @@ function AttrInput({
   onUpdateAttr: (i: number, v: string) => void
   readOnly: boolean
 }) {
+  // `integer` es un conteo (nº de dosis, de sesiones): entero, mínimo 1. El
+  // teclado numérico y los spinners salen gratis; la validación real —que
+  // rechaza "2.5", "-1" y "dos"— la hace `attributeValueIssue` en el resumen y
+  // otra vez en el servidor, porque el `min` del input no obliga a nada.
+  if (attr.attribute.type === "integer" || attr.attribute.type === "number") {
+    const isInteger = attr.attribute.type === "integer"
+    return (
+      <Input
+        id={htmlFor}
+        type="number"
+        inputMode={isInteger ? "numeric" : "decimal"}
+        min={isInteger ? 1 : undefined}
+        step={isInteger ? 1 : "any"}
+        className="h-8 text-sm tabular-nums"
+        placeholder={isInteger ? "1" : `${attr.attribute.attributeName}...`}
+        value={attr.attribute.value}
+        onChange={(e) => onUpdateAttr(index, e.target.value)}
+        disabled={readOnly}
+      />
+    )
+  }
+
   return attr.attribute.type === "select" && attr.attribute.options.length > 0 ? (
     <Select
       value={attr.attribute.value}

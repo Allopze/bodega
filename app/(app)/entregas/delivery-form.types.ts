@@ -19,6 +19,7 @@ export interface DeliverableEppOption {
   productSku: string | null
   quantity: number
   deliveredQuantity: number
+  receivedAtFaena: number
   remainingQuantity: number
   stockQuantity: number
   unitOfMeasure: string

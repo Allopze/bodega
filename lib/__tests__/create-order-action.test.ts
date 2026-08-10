@@ -13,8 +13,20 @@ import { describe, it, expect, vi, beforeEach } from "vitest"
 import { redirect } from "next/navigation"
 import type { Session } from "next-auth"
 
+// El mock reproduce el contrato real: `redirect` lanza y `unstable_rethrow`
+// re-lanza los errores de control de flujo de Next (por digest, no por texto),
+// dejando pasar los demás para que el catch de la action los convierta en
+// ActionState. La action ya no compara `e.message` con "NEXT_REDIRECT".
 vi.mock("next/navigation", () => ({
-  redirect: vi.fn(() => { throw new Error("NEXT_REDIRECT") }),
+  redirect: vi.fn(() => {
+    const error = new Error("NEXT_REDIRECT") as Error & { digest?: string }
+    error.digest = "NEXT_REDIRECT;replace;/compras;307;"
+    throw error
+  }),
+  unstable_rethrow: vi.fn((e: unknown) => {
+    const digest = (e as { digest?: unknown } | null)?.digest
+    if (typeof digest === "string" && digest.startsWith("NEXT_REDIRECT")) throw e
+  }),
 }))
 
 const mockAuthFn = vi.hoisted(() => vi.fn())
@@ -73,7 +85,14 @@ function makeFormData(overrides: Record<string, string> = {}): FormData {
 describe("createOrderAction", () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    vi.mocked(redirect).mockImplementation(() => { throw new Error("NEXT_REDIRECT") })
+    vi.mocked(redirect).mockImplementation(() => {
+      // Con digest: es lo que mira `unstable_rethrow` para distinguir el
+      // control de flujo de Next de un error real. Sin él, la action trataría
+      // el redirect como fallo y devolvería ActionState con la OC ya creada.
+      const error = new Error("NEXT_REDIRECT") as Error & { digest?: string }
+      error.digest = "NEXT_REDIRECT;replace;/compras;307;"
+      throw error
+    })
     // Default: items and suppliers found
     mockFindManyItems.mockResolvedValue([{
       id: "ri-1",

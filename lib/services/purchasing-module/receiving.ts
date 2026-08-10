@@ -4,7 +4,7 @@
 
 import { and, eq, inArray, sql } from "drizzle-orm"
 import { db } from "@/db"
-import { purchaseOrderItems, purchaseOrders, purchaseRequestItems, requestItemAttributes } from "@/db/schema"
+import { purchaseOrderItems, purchaseOrders, purchaseRequestItems, receiptItems, receipts, requestItemAttributes } from "@/db/schema"
 import { recordAudit, recordStatusChange } from "@/lib/audit"
 import { nanoid } from "@/lib/id"
 import { rollupRequestStatus } from "@/lib/services/item-state-module/rollup"
@@ -39,12 +39,24 @@ export async function closeOrder(
     // físicamente en la oficina— y en el cierre parcial el excedente se
     // recortaba con LEAST sin dejar rastro. Hay que registrar la llegada a
     // faena (o gestionar el excedente) antes de poder cerrar.
+    // El saldo que sigue en oficina se mide contra lo DISPUESTO en faena
+    // (recibido + rechazado + dañado), no contra `quantityReceived`: lo que se
+    // rechaza o llega dañado en el traslado consume el cupo de la etapa faena
+    // sin subir ese contador, y comparar contra él dejaba la OC sin ninguna
+    // salida (no se podía recibir más, ni cerrar, ni anular).
+    const faenaDiscarded = sql<number>`coalesce((
+      select sum(${receiptItems.quantityRejected} + ${receiptItems.quantityDamaged})
+      from ${receiptItems}
+      join ${receipts} on ${receipts.id} = ${receiptItems.receiptId}
+      where ${receiptItems.purchaseOrderItemId} = ${purchaseOrderItems.id}
+        and ${receipts.locationType} = 'faena'
+    ), 0)`
     const [officePending] = await tx
       .select({ n: sql<number>`count(*)` })
       .from(purchaseOrderItems)
       .where(and(
         eq(purchaseOrderItems.purchaseOrderId, orderId),
-        sql`${purchaseOrderItems.quantityOfficeReceived} > ${purchaseOrderItems.quantityReceived}`,
+        sql`${purchaseOrderItems.quantityOfficeReceived} > ${purchaseOrderItems.quantityReceived} + ${faenaDiscarded}`,
       ))
     if (Number(officePending?.n ?? 0) > 0) {
       throw new Error("No se puede cerrar: hay mercadería recibida en oficina que aún no llega a faena. Registra la llegada a faena antes de cerrar la orden.")

@@ -4,7 +4,7 @@
 
 import { describe, it, expect } from "vitest"
 
-import { computeOrderTotals } from "@/lib/order-totals"
+import { computeLineSubtotal, computeOrderTotals } from "@/lib/order-totals"
 
 describe("computeOrderTotals", () => {
   it("calculates totals for single item", () => {
@@ -73,5 +73,64 @@ describe("computeOrderTotals", () => {
     // 9999 * 0.19 = 1899.81 → rounded to 1900
     expect(result.taxAmount).toBe(1900)
     expect(result.totalAmount).toBe(11899)
+  })
+
+  // ── Costo pendiente (servicios sin precio conocido) ─────────────────────────
+
+  it("no suma las líneas con costo pendiente y las cuenta aparte", () => {
+    const result = computeOrderTotals([
+      { quantity: 10, unitPrice: 5000 },
+      { quantity: 1, unitPrice: null },
+      { quantity: 2, unitPrice: null },
+    ])
+    // El total conocido es el del EPP: un servicio sin precio no suma 0,
+    // porque 0 significaría que salió gratis.
+    expect(result.netAmount).toBe(50000)
+    expect(result.taxAmount).toBe(9500)
+    expect(result.totalAmount).toBe(59500)
+    expect(result.pendingCostLines).toBe(2)
+  })
+
+  it("una OC de puros servicios pendientes queda en 0 pero declara las líneas", () => {
+    const result = computeOrderTotals([{ quantity: 1, unitPrice: null }])
+    expect(result.totalAmount).toBe(0)
+    expect(result.pendingCostLines).toBe(1)
+  })
+
+  it("distingue el costo cero real del costo desconocido", () => {
+    const gratis = computeOrderTotals([{ quantity: 1, unitPrice: 0 }])
+    expect(gratis.pendingCostLines).toBe(0)
+    expect(gratis.totalAmount).toBe(0)
+
+    const desconocido = computeOrderTotals([{ quantity: 1, unitPrice: null }])
+    expect(desconocido.pendingCostLines).toBe(1)
+  })
+
+  it("recalcula los totales cuando el costo real se registra después", () => {
+    const antes = computeOrderTotals([
+      { quantity: 10, unitPrice: 5000 },
+      { quantity: 2, unitPrice: null },
+    ])
+    expect(antes.totalAmount).toBe(59500)
+
+    const despues = computeOrderTotals([
+      { quantity: 10, unitPrice: 5000 },
+      { quantity: 2, unitPrice: 15000 },
+    ])
+    expect(despues.netAmount).toBe(80000)
+    expect(despues.totalAmount).toBe(95200)
+    expect(despues.pendingCostLines).toBe(0)
+  })
+})
+
+describe("computeLineSubtotal", () => {
+  it("devuelve null mientras el costo siga pendiente", () => {
+    expect(computeLineSubtotal(3, null)).toBeNull()
+  })
+
+  it("aplica cantidad y descuento con el mismo redondeo que la OC", () => {
+    expect(computeLineSubtotal(1, 1990, 15)).toBe(1692)
+    expect(computeLineSubtotal(2, 15000)).toBe(30000)
+    expect(computeLineSubtotal(2, 0)).toBe(0)
   })
 })

@@ -35,8 +35,12 @@ export function BulkApproveBar({
   const prevMessage = React.useRef<string | undefined>(undefined)
 
   React.useEffect(() => {
+    // La guarda de "mismo mensaje" existe para no repetir el toast cuando el
+    // efecto se re-dispara sin que haya un envío nuevo. En un fallo se limpia,
+    // porque reintentar y volver a fallar con el mismo texto se veía como que
+    // el botón no hacía nada.
     if (!state.message || state.message === prevMessage.current) return
-    prevMessage.current = state.message
+    prevMessage.current = state.ok ? state.message : undefined
     if (state.ok) {
       toast.success(state.message)
       onClear()

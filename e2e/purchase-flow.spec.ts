@@ -36,7 +36,10 @@ test("flujo solicitud, aprobación, OC, recepción y trazabilidad", async ({ pag
   await ownItemRow.getByLabel(/Incluir Guante E2E/).check()
   await page.getByRole("button", { name: /Crear OC \(1 ítem\)/ }).click()
   await expect(page).toHaveURL(/\/compras\/(?!nueva$)[^/]+$/, { timeout: 15_000 })
-  const orderId = page.url().split("/").pop()
+  // El redirect trae `?actualizada=creada` y la ficha puede limpiarlo después:
+  // tomar el id del pathname evita que quede pegado (o no, según la carrera) al
+  // identificador y que `/compras/<id>?...=.../print` dé 404.
+  const orderId = new URL(page.url()).pathname.split("/").pop()
   expect(orderId).toBeTruthy()
 
   await page.goto(`/compras/${orderId}/print`)
@@ -207,7 +210,7 @@ async function createCatalogRequest(
 }
 
 async function submitReceiptForm(page: Page, expectedQuantity: string) {
-  await expect(page.locator('input[id^="receiptQty-"]').first()).toHaveValue(expectedQuantity)
+  await expect(page.getByRole("spinbutton", { name: /Cantidad a recibir de/i }).first()).toHaveValue(expectedQuantity)
   await page.getByRole("button", { name: "Marcar como recibido" }).click()
   await expect(page).toHaveURL(/\/recepcion\/(?!nueva(?:\?|$))[^/?]+$/)
 }

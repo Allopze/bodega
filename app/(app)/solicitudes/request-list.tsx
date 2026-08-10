@@ -7,7 +7,7 @@ import { Plus, Trash } from "@phosphor-icons/react"
 import { DataTable } from "@/components/admin/data-table"
 import { SOLICITUDES_PAGE_SIZE } from "@/lib/constants"
 import { StateBadge } from "@/components/states/state-badge"
-import { ListFilters, type FilterOption } from "@/components/adquisiciones/list-filters"
+import { ListFilters, LIST_FILTER_PARAMS, type FilterOption } from "@/components/adquisiciones/list-filters"
 import { StageTabs, type StageTab } from "@/components/adquisiciones/stage-tabs"
 import { OnboardingHint } from "@/components/ui/onboarding-hint"
 import { TableRow, TableCell, TableCellNum } from "@/components/ui/table"
@@ -75,16 +75,18 @@ function DeleteRequestButton({ requestId, code }: { requestId: string; code: str
 
   return (
     <>
-      <button
+      <Button
         type="button"
+        variant="ghost"
+        size="icon-sm"
         disabled={pending}
         onClick={(e) => { e.stopPropagation(); setOpen(true) }}
-        className="rounded p-1 text-[var(--color-text-subtle)] transition-colors hover:bg-[var(--color-surface-2)] hover:text-[var(--color-danger)] disabled:opacity-50"
+        className="text-[var(--color-text-subtle)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-danger)]"
         title="Eliminar solicitud"
         aria-label={`Eliminar solicitud ${code}`}
       >
-        <Trash size={16} />
-      </button>
+        <Trash size={16} aria-hidden />
+      </Button>
       <ConfirmDialog
         open={open}
         onOpenChange={setOpen}
@@ -115,11 +117,9 @@ export function RequestList({
   const router = useRouter()
   const searchParams = useSearchParams()
 
-  const currentQ = searchParams.get("q")
-  const currentEstado = searchParams.get("estado")
-  const currentFaena = searchParams.get("faena")
-  const currentUrgencia = searchParams.get("urgencia")
-  const hasActiveFilters = Boolean(currentQ || currentEstado || currentFaena || currentUrgencia)
+  // Lista compartida con la barra de filtros: la copia local se quedaba corta
+  // cada vez que aparecía un filtro sin control propio.
+  const hasActiveFilters = LIST_FILTER_PARAMS.some((key) => searchParams.get(key))
 
   return (
     <div className="flex flex-col gap-4">
@@ -242,19 +242,21 @@ export function RequestList({
             <TableRow
               key={r.id}
               className="cursor-pointer hover:bg-[var(--color-primary-tint)]"
-              role="link"
-              tabIndex={0}
-              aria-label={`Ver solicitud ${r.code}`}
+              /* La fila conserva su rol implícito `row`: con role="link" encima,
+                 sus celdas quedaban sin padre `row` (axe aria-required-parents)
+                 y la tabla dejaba de anunciarse como tabla. El clic en la fila
+                 sigue como comodidad de mouse; el destino accesible por teclado
+                 es el enlace del código. La tarjeta móvil es un <article>, no
+                 una fila, así que ahí el patrón role="link" sigue siendo válido. */
               onClick={() => router.push(href)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" || event.key === " ") {
-                  event.preventDefault()
-                  router.push(href)
-                }
-              }}
             >
               <TableCell>
-                <span className="font-mono text-xs text-[var(--color-text)]">{r.code}</span>
+                <Link
+                  href={href}
+                  aria-label={`Ver solicitud ${r.code}`}
+                  onClick={(e) => e.stopPropagation()}
+                  className="font-mono text-xs text-(--color-text) hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-primary)"
+                >{r.code}</Link>
               </TableCell>
               <TableCell>
                 <Badge variant={REQUEST_TYPE_VARIANTS[r.requestType] ?? "default"} size="sm">

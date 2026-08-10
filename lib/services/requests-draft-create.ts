@@ -7,8 +7,11 @@ import {
   purchaseRequests,
   purchaseRequestItems,
   requestItemAttributes,
+  productAttributes,
+  products,
   workers,
 } from "@/db/schema"
+import { catalogItemIssues, type CatalogProductRules } from "@/lib/products/service-items"
 import type { RequestFormData, RequestItemFormData } from "@/lib/validation/operations"
 
 /**
@@ -72,6 +75,53 @@ export async function createRequest(
   return { requestId, code, itemIds }
 }
 
+/**
+ * Reglas que el catálogo impone al ítem: colaborador obligatorio
+ * (`requires_worker`) y atributos declarados —presencia y tipo, incluido el
+ * conteo entero de `integer`—. El formulario ya las avisa, pero la fuente de
+ * verdad es esta: el payload llega como JSON y `isRequired`/`type` se releen
+ * del catálogo, nunca de lo que mandó el cliente.
+ */
+async function assertCatalogItemRules(tx: Tx, items: RequestItemFormData[]): Promise<void> {
+  const productIds = [...new Set(items.flatMap((item) => (item.productId ? [item.productId] : [])))]
+  if (productIds.length === 0) return
+
+  const [productRows, attributeRows] = await Promise.all([
+    tx.select({ id: products.id, name: products.name, requiresWorker: products.requiresWorker })
+      .from(products)
+      .where(inArray(products.id, productIds)),
+    tx.select({
+      id:         productAttributes.id,
+      productId:  productAttributes.productId,
+      name:       productAttributes.name,
+      type:       productAttributes.type,
+      isRequired: productAttributes.isRequired,
+    })
+      .from(productAttributes)
+      .where(inArray(productAttributes.productId, productIds)),
+  ])
+
+  const rulesByProductId = new Map<string, CatalogProductRules>(
+    productRows.map((product) => [product.id, {
+      name:           product.name,
+      requiresWorker: product.requiresWorker,
+      attributes:     attributeRows
+        .filter((attribute) => attribute.productId === product.id)
+        .map((attribute) => ({
+          id: attribute.id, name: attribute.name, type: attribute.type, isRequired: attribute.isRequired,
+        })),
+    }]),
+  )
+
+  for (const [index, item] of items.entries()) {
+    if (!item.productId) continue
+    const rules = rulesByProductId.get(item.productId)
+    if (!rules) continue
+    const issues = catalogItemIssues(rules, item)
+    if (issues.length > 0) throw new Error(`Ítem ${index + 1}: ${issues.join("; ")}`)
+  }
+}
+
 async function insertAllItems(
   tx: Tx,
   requestId: string,
@@ -79,6 +129,8 @@ async function insertAllItems(
   items: RequestItemFormData[],
   opts: { sessionUserId: string; worksiteId: string },
 ): Promise<string[]> {
+  await assertCatalogItemRules(tx, items)
+
   // SEC-1: workerId no se valida contra la faena de la solicitud en ningún
   // otro punto de la creación — sin esto, un solicitante puede colocar el id
   // de un trabajador de otra faena en itemsJson. La entrega ya bloquea el

@@ -10,6 +10,7 @@ import { registerReceipt } from "@/lib/services/receiving"
 import { receiptSchema, type ActionState } from "@/lib/validation/operations"
 import { logger } from "@/lib/logger"
 import { revalidateOperationalViews } from "@/lib/services/operational-cache"
+import { safeActionMessage } from "@/lib/action-error"
 
 const REVALIDATE = "/recepcion"
 
@@ -97,7 +98,7 @@ export async function registerReceiptAction(
     revalidateOperationalViews([REVALIDATE, "/compras", `/compras/${purchaseOrderId}`, "/bodega"])
   } catch (e) {
     logger.error("[registerReceiptAction]", e)
-    return { ok: false, message: e instanceof Error ? e.message : "Error al registrar recepción" }
+    return { ok: false, message: safeActionMessage(e, "Error al registrar recepción") }
   }
   redirect(`/recepcion/${receiptId}`)
 }

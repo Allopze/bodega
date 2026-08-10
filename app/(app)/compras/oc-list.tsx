@@ -1,15 +1,16 @@
 "use client"
 
 import Link from "next/link"
+import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { CheckCircle, Plus, Warning } from "@phosphor-icons/react"
 import { DataTable } from "@/components/admin/data-table"
 import { ORDERS_PAGE_SIZE } from "@/lib/constants"
-import { ListFilters, type FilterOption } from "@/components/adquisiciones/list-filters"
+import { ListFilters, LIST_FILTER_PARAMS, type FilterOption } from "@/components/adquisiciones/list-filters"
 import { StageTabs, type StageTab } from "@/components/adquisiciones/stage-tabs"
 import { OnboardingHint } from "@/components/ui/onboarding-hint"
 import { Button } from "@/components/ui/button"
 import { OcTableRow, OcMobileCard } from "./oc-list-rows"
-import type { OcRow } from "./oc-list.types"
+import { ocDisplayDate, type OcRow } from "./oc-list.types"
 
 export type { OcRow } from "./oc-list.types"
 
@@ -21,7 +22,7 @@ const COLUMNS = [
   { key: "totalAmount",   label: "Total",      sortable: true,  numeric: true, width: "w-32" },
   { key: "status",        label: "Estado",     sortable: true,  width: "w-36" },
   { key: "invoiceCount",  label: "Facturas",   sortable: false, numeric: true, width: "w-24" },
-  { key: "createdAt",     label: "Fecha",      sortable: true,  width: "w-32" },
+  { key: "displayDate",   label: "Fecha",      sortable: true,  width: "w-32" },
 ]
 
 /* ── OC List component ───────────────────────────────────────────────────────── */
@@ -50,6 +51,12 @@ export function OcList({
   worksiteOptions?: FilterOption[]
   supplierOptions?: FilterOption[]
 }) {
+  const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
+  const hasActiveFilters = LIST_FILTER_PARAMS.some((key) => searchParams.get(key))
+  const rowsWithDate = orders.map((o) => ({ ...o, displayDate: ocDisplayDate(o) }))
+
   return (
     <div className="flex flex-col gap-4">
       <OnboardingHint
@@ -111,14 +118,25 @@ export function OcList({
         viewKey="oc"
         stickyFirstColumn
         columns={COLUMNS}
-        rows={orders}
+        rows={rowsWithDate}
         searchKeys={["code", "worksiteName", "supplierName", "status"]}
         disableInternalSearch
         pageSize={ORDERS_PAGE_SIZE}
         emptyTitle="Sin órdenes de compra"
-        emptyDescription="No hay órdenes que coincidan con los filtros."
+        emptyDescription={hasActiveFilters
+          ? "No hay órdenes que coincidan con los filtros aplicados."
+          : "No hay órdenes de compra registradas aún."}
+        // A4: sin salida, el estado vacío dejaba al usuario adivinando que la
+        // lista estaba recortada por un filtro.
+        emptyAction={hasActiveFilters ? (
+          <Button type="button" size="sm" variant="secondary" onClick={() => router.replace(pathname, { scroll: false })}>
+            Limpiar filtros
+          </Button>
+        ) : undefined}
         renderRow={(row) => <OcTableRow key={row.id} row={row} canDelete={canDelete} canSend={canSend} />}
-        renderMobileCard={(row) => <OcMobileCard key={row.id} row={row} />}
+        renderMobileCard={(row) => (
+          <OcMobileCard key={row.id} row={row} canDelete={canDelete} canSend={canSend} />
+        )}
       />
     </div>
   )

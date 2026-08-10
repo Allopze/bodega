@@ -285,8 +285,16 @@ export default async function AprobacionesPage({
 
   function buildDescription() {
     if (displayedRows.length === 0) return "Revisión y aprobación de ítems solicitados por faena."
+    // El total de solicitudes sale del count de la consulta, no de las filas de
+    // esta página: con 35 en cola y páginas de 20, la cabecera afirmaba
+    // "… en 20 solicitudes". Los ítems y faenas sí son de la página visible, y
+    // el texto ahora lo dice.
+    const totalRequests = totalRequestsRow?.total ?? displayedRows.length
+    const reqs = `${totalRequests} solicitud${totalRequests !== 1 ? "es" : ""}`
+    if (totalRequests > displayedRows.length) {
+      return `${reqs} en cola · ${totalPending} ítem${totalPending !== 1 ? "s" : ""} en esta página`
+    }
     const items = `${totalPending} ítem${totalPending !== 1 ? "s" : ""}`
-    const reqs  = `${displayedRows.length} solicitud${displayedRows.length !== 1 ? "es" : ""}`
     const faenas = uniqueFaenas > 1 ? ` de ${uniqueFaenas} faenas` : ""
     return `${items} en ${reqs}${faenas}`
   }

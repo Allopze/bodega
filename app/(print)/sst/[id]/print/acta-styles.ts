@@ -3,9 +3,12 @@
  * for the SST Acta document.
  */
 export const ACTA_STYLES = `
+  /* El margen vive acá y no en el padding de .sheet: el padding vertical de un
+     bloque fragmentado sólo se pinta en la primera y última hoja. Debe coincidir
+     con A4_MARGIN de lib/pdf/page-options.ts. */
   @page {
     size: A4;
-    margin: 12mm;
+    margin: 12mm 12mm 20mm;
   }
 
   *, *::before, *::after {
@@ -307,7 +310,10 @@ export const ACTA_STYLES = `
     page-break-inside: avoid;
   }
 
-  @media (max-width: 760px) {
+  /* "screen and" es obligatorio: al imprimir, el ancho de la media query es el
+     de la caja de página, así que sin esto la rama móvil oculta la hoja y
+     @media print oculta el resumen — el PDF sale en blanco. */
+  @media screen and (max-width: 760px) {
     .print-toolbar, .mobile-document-summary {
       width: calc(100vw - 24px);
     }
@@ -350,8 +356,8 @@ export const ACTA_STYLES = `
     html, body { background: #ffffff; }
     .print-toolbar, .mobile-document-summary { display: none; }
     .sheet {
-      width: 186mm;
-      padding: 12mm;
+      width: auto;
+      padding: 0;
       min-height: auto;
       margin: 0;
       border: 0;

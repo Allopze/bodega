@@ -7,6 +7,7 @@ import { eq } from "drizzle-orm"
 import { canAccessWorksite, requirePermission } from "@/lib/auth/can"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
+import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { StateBadge } from "@/components/states/state-badge"
 import { RequestProgressPanel } from "@/components/states/request-progress-panel"
@@ -236,29 +237,27 @@ export default async function RecepcionDetallePage({
               <DetailLine label="Faena" value={receipt.purchaseOrder.worksite?.name ?? "—"} />
               <DetailLine label="Total OC" value={formatCLP(receipt.purchaseOrder.totalAmount)} mono />
             </dl>
-            <Link
-              href={`/compras/${receipt.purchaseOrderId}`}
-              // Sin borde y sobre un fondo gris tenue se leía como un botón
-              // deshabilitado, no como el enlace activo que es (A-34).
-              className="mt-3 inline-flex h-8 w-full items-center justify-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border-control)] bg-[var(--color-surface)] px-3 text-xs font-medium text-[var(--color-text)] shadow-[var(--shadow-xs)] transition-colors duration-[var(--duration-fast)] hover:border-[var(--color-border-control-hover)] hover:bg-[var(--color-surface-2)]"
-            >
-              Ver OC
-              <ArrowSquareOut size={13} />
-            </Link>
+            <Button asChild variant="secondary" size="sm" className="mt-3 w-full">
+              <Link href={`/compras/${receipt.purchaseOrderId}`}>
+                Ver OC
+                <ArrowSquareOut size={13} aria-hidden />
+              </Link>
+            </Button>
             {/* El número de guía/factura se tipeó aquí, con el documento en la
                 mano, y ahí moría: adjuntarlo exigía ir a buscar la pestaña de
                 facturación de la OC. Se ofrece el atajo con el número ya puesto. */}
             {invoiceMissing && (
               canAttachInvoice ? (
-                <Link
-                  href={`/compras/${receipt.purchaseOrderId}?tab=facturacion${
-                    receipt.dispatchGuideNo ? `&nro=${encodeURIComponent(receipt.dispatchGuideNo)}` : ""
-                  }`}
-                  className="mt-2 inline-flex h-8 w-full items-center justify-center gap-1.5 rounded-[var(--radius)] bg-signal-tint px-3 text-xs font-medium text-signal-ink transition-colors duration-[var(--duration-fast)] hover:bg-[var(--color-signal-line)]"
-                >
-                  Adjuntar factura
-                  <ArrowSquareOut size={13} />
-                </Link>
+                <Button asChild variant="signal" size="sm" className="mt-2 w-full">
+                  <Link
+                    href={`/compras/${receipt.purchaseOrderId}?tab=facturacion${
+                      receipt.dispatchGuideNo ? `&nro=${encodeURIComponent(receipt.dispatchGuideNo)}` : ""
+                    }`}
+                  >
+                    Adjuntar factura
+                    <ArrowSquareOut size={13} aria-hidden />
+                  </Link>
+                </Button>
               ) : (
                 <p className="mt-2 text-xs text-[var(--color-text-muted)]">
                   Esta OC todavía no tiene factura. La adjunta quien compra.

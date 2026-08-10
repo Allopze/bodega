@@ -5,9 +5,13 @@ export interface OcDetailItem {
   productNameFree: string | null
   quantity: number
   unitOfMeasure: string
-  unitPrice: number
-  subtotal: number
+  /** `null` means the service cost is still pending; it is not a zero-price line. */
+  unitPrice: number | null
+  subtotal: number | null
   notes: string | null
+  /** Traza del costo registrado a posteriori: cuándo y quién. */
+  costRecordedAt: string | null
+  costRecordedByName: string | null
 }
 
 export interface OcDetailOrder {

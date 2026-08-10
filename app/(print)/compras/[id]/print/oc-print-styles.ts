@@ -3,9 +3,13 @@
  * Extracted from page.tsx to keep components under 200 lines.
  */
 export const OC_PRINT_STYLES = `
+  /* El margen vive acá y no en el padding de .sheet: el padding vertical de un
+     bloque fragmentado sólo se pinta en la primera y última hoja, así que la
+     página 2 arrancaba más arriba que la 1. Debe coincidir con A4_MARGIN de
+     lib/pdf/page-options.ts. */
   @page {
     size: A4;
-    margin: 12mm;
+    margin: 12mm 12mm 20mm;
   }
 
   *, *::before, *::after {
@@ -190,7 +194,7 @@ export const OC_PRINT_STYLES = `
     margin-top: 6mm;
     border: 1px solid #b8c6bd;
     display: grid;
-    grid-template-columns: 1fr 48mm;
+    grid-template-columns: minmax(0, 1fr) 60mm;
     min-height: 28mm;
   }
 
@@ -214,7 +218,7 @@ export const OC_PRINT_STYLES = `
   }
 
   .supplier-right .field-row {
-    grid-template-columns: 21mm 1fr;
+    grid-template-columns: minmax(0, 23mm) minmax(30mm, 1fr);
   }
 
   .field-label {
@@ -227,11 +231,20 @@ export const OC_PRINT_STYLES = `
 
   .field-value {
     color: #17221b;
+    min-width: 0;
+  }
+
+  .field-value-nowrap {
+    white-space: nowrap;
   }
 
   .items-wrap {
     border: 1px solid #b8c6bd;
     border-top: 0;
+    /* Cada fragmento dibuja sus cuatro bordes; con el "slice" por defecto la
+       tabla quedaba abierta abajo en el corte de página. */
+    -webkit-box-decoration-break: clone;
+    box-decoration-break: clone;
   }
 
   table {
@@ -250,11 +263,26 @@ export const OC_PRINT_STYLES = `
     border-bottom: 1px solid #b8c6bd;
   }
 
+  /* Título de la tabla. Va dentro del thead a propósito: Chromium lo repite en
+     cada hoja, así que una página suelta sigue diciendo de qué OC es. */
+  .items-caption th {
+    background: #f1f5f3;
+    color: #17422b;
+    font-size: 7.5pt;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+  }
+
   tbody td {
     padding: 4px 5px;
     vertical-align: top;
     color: #232b25;
     font-size: 7.8pt;
+    border-bottom: 1px solid #e6ece8;
+  }
+
+  tbody tr:last-child td {
+    border-bottom: 0;
   }
 
   thead {
@@ -440,18 +468,10 @@ export const OC_PRINT_STYLES = `
     max-width: 80mm;
   }
 
-  .footer {
-    margin-top: 7mm;
-    padding-top: 4mm;
-    border-top: 1px solid #d8dfda;
-    display: flex;
-    justify-content: flex-end;
-    gap: 8px;
-    color: #6a746d;
-    font-size: 7.8pt;
-  }
-
-  @media (max-width: 760px) {
+  /* "screen and" es obligatorio: al imprimir, el ancho de la media query es el
+     de la caja de página (162mm ≈ 612px), así que sin esto la rama móvil oculta
+     la hoja y @media print oculta el resumen — el PDF sale en blanco. */
+  @media screen and (max-width: 760px) {
     .print-toolbar,
     .mobile-document-summary {
       width: calc(100vw - 24px);
@@ -512,9 +532,11 @@ export const OC_PRINT_STYLES = `
       display: none;
     }
 
+    /* Sin ancho ni padding propios: la caja de texto la define el @page, igual
+       en todas las hojas. 210mm − 12mm − 12mm = 186mm, la columna de siempre. */
     .sheet {
-      width: 186mm;
-      padding: 12mm;
+      width: auto;
+      padding: 0;
       margin: 0;
       border: 0;
       box-shadow: none;

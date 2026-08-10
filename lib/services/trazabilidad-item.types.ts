@@ -40,7 +40,8 @@ export interface ItemDetailData {
     ocStatus: string
     supplierName: string
     quantity: number
-    unitPrice: number
+    /** Puede no existir aún para un servicio cuyo costo se registra después. */
+    unitPrice: number | null
     receivedAtFaena: number
     receivedAtOffice: number
   }>

@@ -23,7 +23,6 @@ import { ConsumptionAlerts } from "./consumption-alerts"
 import { ConsumptionDetailTable } from "./consumption-detail-table"
 import { EvolutionChart, PriceEvolutionChart, PatenteRankingChart, RendimientoChart } from "./consumption-charts-lazy"
 import { CategoryBarChart } from "./fuel-charts-lazy"
-import { ChartDataSummary } from "./chart-data-summary"
 import { OperationsProveedorChart } from "./operations-category-chart"
 import { EvolutionByVehicleChart, LitersVsHourMeterChart, LitersVsKmChart } from "./operations-charts-lazy"
 import { WorksiteEquipmentHeatmap } from "./worksite-equipment-heatmap"
@@ -343,14 +342,6 @@ export default async function CombustiblesPage({
               <CardDescription>¿Qué tipo de equipo consume la mayor parte del combustible?</CardDescription>
             </CardHeader>
             <CardContent>
-              <ChartDataSummary
-                title="Tipo de equipo"
-                data={byEquipmentType.map((row) => ({ group: row.equipmentTypeName, totalLiters: row.totalLiters, totalAmount: row.totalAmount, count: row.uniqueVehicles }))}
-                periodLabel={chartPeriodLabel}
-                groupLabel="Tipos de equipo"
-                visibleLimit={8}
-                className="mb-4 mt-0 border-b border-t-0 pb-3 pt-0"
-              />
               <ChartErrorBoundary chartName="Consumo por tipo de equipo">
                 <CategoryBarChart
                   data={byEquipmentType.map((r) => ({ group: r.equipmentTypeName, totalLiters: r.totalLiters, totalAmount: r.totalAmount, count: r.uniqueVehicles }))}
@@ -558,14 +549,6 @@ export default async function CombustiblesPage({
                 <CardDescription>¿Qué faena concentra el gasto de combustible del log operacional?</CardDescription>
               </CardHeader>
               <CardContent>
-                <ChartDataSummary
-                  title="Faenas"
-                  data={operationsSummary.porFaena.map((worksite) => ({ group: worksite.faena, totalLiters: worksite.litros, totalAmount: worksite.monto, count: worksite.equipos }))}
-                  periodLabel={chartPeriodLabel}
-                  groupLabel="Faenas"
-                  visibleLimit={8}
-                  className="mb-4 mt-0 border-b border-t-0 pb-3 pt-0"
-                />
                 <CategoryBarChart data={operationsSummary.porFaena.map((f) => ({ group: f.faena, totalLiters: f.litros, totalAmount: f.monto, count: f.equipos }))} title="Faenas" />
               </CardContent>
             </Card>
@@ -575,14 +558,6 @@ export default async function CombustiblesPage({
                 <CardDescription>¿Con qué proveedor se concentra el volumen y el gasto?</CardDescription>
               </CardHeader>
               <CardContent>
-                <ChartDataSummary
-                  title="Proveedores"
-                  data={operationsSummary.porProveedor.map((supplier) => ({ group: supplier.proveedor, totalLiters: supplier.litros, totalAmount: supplier.monto, count: supplier.transacciones }))}
-                  periodLabel={chartPeriodLabel}
-                  groupLabel="Proveedores"
-                  visibleLimit={8}
-                  className="mb-4 mt-0 border-b border-t-0 pb-3 pt-0"
-                />
                 <OperationsProveedorChart data={operationsSummary.porProveedor.map((p) => ({ group: p.proveedor, totalLiters: p.litros, totalAmount: p.monto, count: p.transacciones }))} />
               </CardContent>
             </Card>

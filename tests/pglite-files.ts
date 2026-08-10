@@ -49,6 +49,7 @@ export const pgliteTestFiles = [
   "lib/__tests__/prevention-documents-persistence.test.ts",
   "lib/__tests__/prevention-ppa-workflow-persistence.test.ts",
   "lib/__tests__/purchasing-service.test.ts",
+  "lib/__tests__/service-items-flow.test.ts",
   "lib/__tests__/receiving-two-stage.test.ts",
   "lib/__tests__/registro-action.test.ts",
   "lib/__tests__/requests-delete.test.ts",
@@ -61,5 +62,6 @@ export const pgliteTestFiles = [
   "lib/__tests__/trabajadores-scope.test.ts",
   "lib/__tests__/trazabilidad-export-scope.test.ts",
   "lib/__tests__/trazabilidad-item.test.ts",
+  "lib/__tests__/traceability-integrity-cases.test.ts",
   "lib/__tests__/trazabilidad-matrix.test.ts",
 ]

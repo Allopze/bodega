@@ -8,6 +8,7 @@ import { can, canAccessWorksite, requireAuth } from "@/lib/auth/can"
 import { type ActionState } from "@/lib/validation/operations"
 import { revalidateOperationalViews } from "@/lib/services/operational-cache"
 import { cancelRequest as cancelRequestTx } from "@/lib/requests/request-service-module/cancel-request"
+import { safeActionMessage } from "@/lib/action-error"
 
 const REVALIDATE = "/solicitudes"
 
@@ -45,7 +46,7 @@ export async function cancelRequest(_prev: ActionState, formData: FormData): Pro
       userEmail: session.user.email ?? undefined,
     })
   } catch (e) {
-    return { ok: false, message: e instanceof Error ? e.message : "Error al cancelar la solicitud" }
+    return { ok: false, message: safeActionMessage(e, "Error al cancelar la solicitud") }
   }
 
   revalidateOperationalViews([REVALIDATE, `${REVALIDATE}/${requestId}`])

@@ -1,15 +1,36 @@
-import { formatCLP, formatQty } from "@/lib/utils"
-import type { OcDetailOrder } from "./oc-detail.types"
+import { countOf, formatCLP, formatDateTime, formatQty } from "@/lib/utils"
+import { OcItemCostForm } from "./oc-item-cost-form"
+import type { OcDetailItem, OcDetailOrder } from "./oc-detail.types"
+
+function formatLineAmount(amount: number | null) {
+  return amount === null ? "Costo pendiente" : formatCLP(amount)
+}
+
+/** Traza del costo que se registró después de emitir la orden. */
+function CostTrace({ item }: { item: OcDetailItem }) {
+  if (!item.costRecordedAt) return null
+  return (
+    <p className="mt-0.5 text-[11px] text-[var(--color-text-subtle)]">
+      Costo registrado el {formatDateTime(item.costRecordedAt)}
+      {item.costRecordedByName ? ` por ${item.costRecordedByName}` : ""}
+    </p>
+  )
+}
 
 export function OcDetailItems({
   order,
   reqItemMap,
   productMap,
+  canRecordCost = false,
 }: {
   order: OcDetailOrder
   reqItemMap: Record<string, { request: { code: string } }>
   productMap: Record<string, { name: string; sku: string | null }>
+  /** `purchasing:create_order` — quien pone precio al crear la OC lo pone después. */
+  canRecordCost?: boolean
 }) {
+  const pendingCostLines = order.items.filter((item) => item.unitPrice === null).length
+
   return (
     <>
       {/* Mobile cards */}
@@ -42,15 +63,23 @@ export function OcDetailItems({
                 </div>
                 <div className="text-right">
                   <dt className="text-[var(--color-text-subtle)]">Precio unit.</dt>
-                  <dd className="font-mono tabular-nums text-[var(--color-text)]">{formatCLP(item.unitPrice)}</dd>
+                  <dd className="font-mono tabular-nums text-[var(--color-text)]">{formatLineAmount(item.unitPrice)}</dd>
                 </div>
                 <div className="col-span-2 border-t border-[var(--color-border)] pt-2 text-right">
                   <dt className="text-[var(--color-text-subtle)]">Subtotal</dt>
                   <dd className="font-mono text-sm font-semibold tabular-nums text-[var(--color-text)]">
-                    {formatCLP(item.subtotal)}
+                    {formatLineAmount(item.subtotal)}
                   </dd>
                 </div>
               </dl>
+              <CostTrace item={item} />
+              {item.unitPrice === null && canRecordCost && (
+                <OcItemCostForm
+                  purchaseOrderItemId={item.id}
+                  quantity={item.quantity}
+                  unitOfMeasure={item.unitOfMeasure}
+                />
+              )}
             </article>
           )
         })}
@@ -65,9 +94,15 @@ export function OcDetailItems({
             <dd className="font-mono tabular-nums text-[var(--color-text-subtle)]">{formatCLP(order.taxAmount)}</dd>
           </div>
           <div className="mt-2 flex items-center justify-between gap-3 border-t border-[var(--color-border)] pt-3">
-            <dt className="font-semibold text-[var(--color-text)]">Total</dt>
+            <dt className="font-semibold text-[var(--color-text)]">{pendingCostLines > 0 ? "Total conocido" : "Total"}</dt>
             <dd className="font-mono font-bold tabular-nums text-[var(--color-text)]">{formatCLP(order.totalAmount)}</dd>
           </div>
+          {pendingCostLines > 0 && (
+            <div className="flex items-center justify-between gap-3 pt-2">
+              <dt className="text-xs text-[var(--color-warning-ink)]">{countOf(pendingCostLines, "servicio")} con costo pendiente</dt>
+              <dd className="text-xs text-[var(--color-warning-ink)]">por definir</dd>
+            </div>
+          )}
         </dl>
       </div>
 
@@ -101,15 +136,23 @@ export function OcDetailItems({
                     </div>
                     {reqCode && <p className="text-xs text-[var(--color-text-subtle)] mt-0.5">Solicitud: {reqCode}</p>}
                     {item.notes && <p className="text-xs text-[var(--color-text-subtle)] italic mt-0.5">{item.notes}</p>}
+                    <CostTrace item={item} />
+                    {item.unitPrice === null && canRecordCost && (
+                      <OcItemCostForm
+                        purchaseOrderItemId={item.id}
+                        quantity={item.quantity}
+                        unitOfMeasure={item.unitOfMeasure}
+                      />
+                    )}
                   </td>
                   <td className="px-4 py-3 text-right tabular-nums text-[var(--color-text-muted)]">
                     {formatQty(item.quantity, item.unitOfMeasure)}
                   </td>
                   <td className="px-4 py-3 text-right tabular-nums text-[var(--color-text-muted)]">
-                    {formatCLP(item.unitPrice)}
+                    {formatLineAmount(item.unitPrice)}
                   </td>
                   <td className="px-4 py-3 text-right tabular-nums font-medium text-[var(--color-text)]">
-                    {formatCLP(item.subtotal)}
+                    {formatLineAmount(item.subtotal)}
                   </td>
                 </tr>
               )

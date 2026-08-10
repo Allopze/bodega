@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test"
-import { login, pickCurrentMonthDate, selectRadixById } from "./helpers"
+import { attachQuotation, login, pickCurrentMonthDate, selectRadixById, waitForDraftSaved, openLatestDraft } from "./helpers"
 
 test("repuestos: crea borrador y envia solicitud a aprobacion", async ({ page }) => {
   await login(page)
@@ -17,14 +17,18 @@ test("repuestos: crea borrador y envia solicitud a aprobacion", async ({ page })
   await page.getByPlaceholder("OEM o fabricante").fill("OEM-E2E-001")
   await page.getByPlaceholder("Ej: Retroexcavadora, Camión grúa...").fill("Excavadora E2E")
   await page.getByPlaceholder("Ej: ABCD-12").fill("REP-E2E")
-  // submitRequest exige >= 3 cotizaciones o una justificación en notas.
+  // Enviar exige al menos una cotización; con menos de 3, además, justificación.
+  await attachQuotation(page, "150000")
   await page.getByPlaceholder("Observaciones, contexto de la solicitud...").fill("E2E: menos de 3 cotizaciones, justificado en la prueba")
 
   await page.getByRole("button", { name: /Guardar borrador/ }).click()
-  await expect(page.locator("#requestType")).toContainText("Repuestos")
+  await waitForDraftSaved(page)
+
+  // Guardar revalida y remonta el árbol, así que el creador vuelve a su estado
+  // inicial: se continúa desde la ficha del borrador, que ya existe en servidor.
+  await openLatestDraft(page, "REP")
 
   await page.getByRole("button", { name: /Enviar a aprobación/ }).click()
-  await expect(page).toHaveURL(/\/solicitudes\/(?!nueva$)[^/]+$/, { timeout: 15_000 })
   await expect(page.getByRole("heading", { level: 1 })).toBeVisible()
   await expect(page.getByText("Filtro hidraulico E2E").first()).toBeVisible()
 })
@@ -44,14 +48,18 @@ test("servicios: crea borrador y envia solicitud a aprobacion", async ({ page })
   await page.getByPlaceholder("Ej: Sector norte, sala de máquinas...").fill("Sala de maquinas E2E")
   await page.getByPlaceholder("Ej: Retroexcavadora, Generador...").fill("Generador E2E")
   await page.getByPlaceholder("Ej: ABCD-12").fill("SER-E2E")
-  // submitRequest exige >= 3 cotizaciones o una justificación en notas.
+  // Enviar exige al menos una cotización; con menos de 3, además, justificación.
+  await attachQuotation(page, "150000")
   await page.getByPlaceholder("Observaciones, contexto de la solicitud...").fill("E2E: menos de 3 cotizaciones, justificado en la prueba")
 
   await page.getByRole("button", { name: /Guardar borrador/ }).click()
-  await expect(page.locator("#requestType")).toContainText("Servicios")
+  await waitForDraftSaved(page)
+
+  // Guardar revalida y remonta el árbol, así que el creador vuelve a su estado
+  // inicial: se continúa desde la ficha del borrador, que ya existe en servidor.
+  await openLatestDraft(page, "SER")
 
   await page.getByRole("button", { name: /Enviar a aprobación/ }).click()
-  await expect(page).toHaveURL(/\/solicitudes\/(?!nueva$)[^/]+$/, { timeout: 15_000 })
   await expect(page.getByRole("heading", { level: 1 })).toBeVisible()
   await expect(page.getByText("Mantencion generador E2E").first()).toBeVisible()
 })

@@ -44,6 +44,7 @@ export async function persistDraft(
       await tx.update(purchaseRequests).set({
         worksiteId:   data.worksiteId,
         urgency:      data.urgency,
+        deliveryMode: data.deliveryMode ?? "via_oficina",
         requiredDate: data.requiredDate,
         notes:        data.justification || null,
         updatedAt:    now,
@@ -63,6 +64,7 @@ export async function persistDraft(
         requesterId: session.user.id,
         requestType: config.requestType,
         urgency:     data.urgency,
+        deliveryMode: data.deliveryMode ?? "via_oficina",
         requiredDate: data.requiredDate,
         notes:       data.justification || null,
         status:      "draft",

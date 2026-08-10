@@ -226,8 +226,15 @@ describe("persistDraft", () => {
 describe("addQuotation", () => {
   it("adds a quotation successfully", async () => {
     mockDbQuery.purchaseRequests.findFirst.mockResolvedValue({ id: "req-1", status: "draft", requesterId: "user-1" })
-    const mockChain = chainMock()
-    mockDbInsert.mockReturnValue({ values: vi.fn().mockReturnValue(mockChain) })
+    // El insert y su auditoría van en una transacción que re-verifica el estado
+    // 'draft' bajo lock: el pre-check de arriba corre fuera de la transacción.
+    mockDbTransaction.mockImplementation(async (fn: (tx: Record<string, unknown>) => Promise<unknown>) => {
+      const tx = {
+        select: vi.fn().mockReturnValue(requestSelectChain([{ status: "draft" }])),
+        insert: vi.fn().mockReturnValue({ values: vi.fn().mockResolvedValue(undefined) }),
+      }
+      return fn(tx as never)
+    })
 
     const result = await svc.addQuotation({
       requestId: "req-1",
@@ -294,7 +301,9 @@ describe("deleteQuotation", () => {
     const quotation = { id: "q-1", requestId: "req-1", status: "pending", filePath: "storage/f.pdf", fileName: "f.pdf" }
     mockDbSelect.mockReturnValue({ from: vi.fn().mockReturnValue({ where: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([quotation]) }) }) })
     mockDbQuery.purchaseRequests.findFirst.mockResolvedValue({ id: "req-1", status: "draft", requesterId: "user-1", worksiteId: "ws-1" })
-    mockDbDelete.mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) })
+    // El DELETE lleva guarda `status = 'pending'` y `.returning()`: los chequeos
+    // previos corren fuera de transacción, así que la guarda va en el statement.
+    mockDbDelete.mockReturnValue({ where: vi.fn().mockReturnValue({ returning: vi.fn().mockResolvedValue([{ id: "q-1" }]) }) })
     // removeFile returns a Promise (code calls .catch() on it)
     vi.mocked(removeFile).mockResolvedValue(undefined as never)
 
@@ -308,6 +317,24 @@ describe("deleteQuotation", () => {
     expect(assertCanDeleteQuotation).toHaveBeenCalled()
     expect(mockDbDelete).toHaveBeenCalled()
     expect(removeFile).toHaveBeenCalled()
+  })
+
+  it("no borra el archivo si la fila ya no estaba pendiente (carrera)", async () => {
+    const quotation = { id: "q-1", requestId: "req-1", status: "pending", filePath: "storage/f.pdf", fileName: "f.pdf" }
+    mockDbSelect.mockReturnValue({ from: vi.fn().mockReturnValue({ where: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([quotation]) }) }) })
+    mockDbQuery.purchaseRequests.findFirst.mockResolvedValue({ id: "req-1", status: "draft", requesterId: "user-1", worksiteId: "ws-1" })
+    // La guarda del DELETE no matchea: otro proceso ya adjudicó la cotización.
+    mockDbDelete.mockReturnValue({ where: vi.fn().mockReturnValue({ returning: vi.fn().mockResolvedValue([]) }) })
+    vi.mocked(removeFile).mockResolvedValue(undefined as never)
+
+    await expect(svc.deleteQuotation({
+      quotationId: "q-1",
+      expectedRequestId: "req-1",
+      session: makeSession(),
+      elevatedPermission: "requests:create",
+    })).rejects.toThrow("posible concurrencia")
+
+    expect(removeFile).not.toHaveBeenCalled()
   })
 })
 
@@ -341,6 +368,19 @@ describe("submitRequest", () => {
       return fn(tx as never)
     })
     await expect(svc.submitRequest({ requestId: "req-1", userId: "user-1" })).rejects.toThrow("al menos 3 cotizaciones")
+  })
+
+  it("throws if there are no quotations at all, even with notes", async () => {
+    // Enviar sin ninguna cotización dejaba la solicitud sin salida: aprobar
+    // exige seleccionar una ganadora y adjuntarlas exige estado 'draft'.
+    mockDbTransaction.mockImplementation(async (fn: (tx: Record<string, unknown>) => Promise<unknown>) => {
+      const mockSelect = vi.fn()
+        .mockReturnValueOnce(requestSelectChain([{ id: "req-1", status: "draft", code: "REP-001", notes: "Proveedor único" }]))
+        .mockReturnValueOnce(plainSelectChain([]))
+      const tx = { select: mockSelect }
+      return fn(tx as never)
+    })
+    await expect(svc.submitRequest({ requestId: "req-1", userId: "user-1" })).rejects.toThrow("al menos una cotización")
   })
 
   it("submits successfully with 3 quotations", async () => {
@@ -381,10 +421,17 @@ describe("submitRequest", () => {
 
 // ── selectQuotation ──────────────────────────────────────────────────────────
 
+// El padre se lee con `select().for("update")` igual que en submitRequest: sin
+// ese lock, un cancelRequest concurrente commiteaba entremedio y el UPDATE
+// final —que antes no llevaba guarda— pisaba 'cancelled' con 'approved'.
+const quotationSelectChain = (rows: unknown[]) => ({
+  from: vi.fn().mockReturnValue({ where: vi.fn().mockReturnValue({ for: vi.fn().mockResolvedValue(rows) }) }),
+})
+
 describe("selectQuotation", () => {
   it("throws if request not found", async () => {
     mockDbTransaction.mockImplementation(async (fn: (tx: Record<string, unknown>) => Promise<unknown>) => {
-      const tx = { query: { purchaseRequests: { findFirst: vi.fn().mockResolvedValue(null) } } }
+      const tx = { select: vi.fn().mockReturnValueOnce(requestSelectChain([])) }
       return fn(tx as never)
     })
     await expect(svc.selectQuotation({ requestId: "req-1", quotationId: "q-1", userId: "user-1" })).rejects.toThrow("no encontrada")
@@ -392,7 +439,7 @@ describe("selectQuotation", () => {
 
   it("throws if request not in submitted/in_review", async () => {
     mockDbTransaction.mockImplementation(async (fn: (tx: Record<string, unknown>) => Promise<unknown>) => {
-      const tx = { query: { purchaseRequests: { findFirst: vi.fn().mockResolvedValue({ id: "req-1", status: "draft", code: "REP-001", worksiteId: "ws-1" }) } } }
+      const tx = { select: vi.fn().mockReturnValueOnce(requestSelectChain([{ id: "req-1", status: "draft", code: "REP-001", worksiteId: "ws-1" }])) }
       return fn(tx as never)
     })
     await expect(svc.selectQuotation({ requestId: "req-1", quotationId: "q-1", userId: "user-1" })).rejects.toThrow("no está pendiente")
@@ -400,7 +447,7 @@ describe("selectQuotation", () => {
 
   it("throws if scope check fails", async () => {
     mockDbTransaction.mockImplementation(async (fn: (tx: Record<string, unknown>) => Promise<unknown>) => {
-      const tx = { query: { purchaseRequests: { findFirst: vi.fn().mockResolvedValue({ id: "req-1", status: "submitted", code: "REP-001", worksiteId: "ws-2" }) } } }
+      const tx = { select: vi.fn().mockReturnValueOnce(requestSelectChain([{ id: "req-1", status: "submitted", code: "REP-001", worksiteId: "ws-2" }])) }
       return fn(tx as never)
     })
     await expect(svc.selectQuotation({ requestId: "req-1", quotationId: "q-1", userId: "user-1", worksiteIds: ["ws-1"] })).rejects.toThrow("No tienes acceso")
@@ -409,10 +456,9 @@ describe("selectQuotation", () => {
   it("throws if quotation not found", async () => {
     mockDbTransaction.mockImplementation(async (fn: (tx: Record<string, unknown>) => Promise<unknown>) => {
       const tx = {
-        query: { purchaseRequests: { findFirst: vi.fn().mockResolvedValue({ id: "req-1", status: "submitted", code: "REP-001", worksiteId: "ws-1" }) } },
-        select: vi.fn().mockReturnValue({
-          from: vi.fn().mockReturnValue({ where: vi.fn().mockReturnValue({ for: vi.fn().mockResolvedValue([]) }) }),
-        }),
+        select: vi.fn()
+          .mockReturnValueOnce(requestSelectChain([{ id: "req-1", status: "submitted", code: "REP-001", worksiteId: "ws-1" }]))
+          .mockReturnValueOnce(quotationSelectChain([])),
       }
       return fn(tx as never)
     })
@@ -422,10 +468,9 @@ describe("selectQuotation", () => {
   it("throws if quotation already processed", async () => {
     mockDbTransaction.mockImplementation(async (fn: (tx: Record<string, unknown>) => Promise<unknown>) => {
       const tx = {
-        query: { purchaseRequests: { findFirst: vi.fn().mockResolvedValue({ id: "req-1", status: "submitted", code: "REP-001", worksiteId: "ws-1" }) } },
-        select: vi.fn().mockReturnValue({
-          from: vi.fn().mockReturnValue({ where: vi.fn().mockReturnValue({ for: vi.fn().mockResolvedValue([{ id: "q-1", requestId: "req-1", status: "selected", supplierId: null, supplierNameFree: null }]) }) }),
-        }),
+        select: vi.fn()
+          .mockReturnValueOnce(requestSelectChain([{ id: "req-1", status: "submitted", code: "REP-001", worksiteId: "ws-1" }]))
+          .mockReturnValueOnce(quotationSelectChain([{ id: "q-1", requestId: "req-1", status: "selected", supplierId: null, supplierNameFree: null }])),
       }
       return fn(tx as never)
     })
@@ -437,19 +482,15 @@ describe("selectQuotation", () => {
       const mockUpdate = vi.fn().mockReturnValue({
         set: vi.fn().mockReturnValue({ where: vi.fn().mockReturnValue({ returning: vi.fn().mockResolvedValue([{ id: "q-1" }]) }) }),
       })
-      // Dos llamadas a select en el servicio real: la cotización (con
-      // `.for("update")`, lock LOG-4/DAT-4) y los ítems `requested` de la
-      // solicitud (lectura simple, sin lock). El mock debe distinguirlas en
-      // orden en vez de compartir una sola forma.
+      // Tres llamadas a select en el servicio real: el padre (lockeado), la
+      // cotización (con `.for("update")`, lock LOG-4/DAT-4) y los ítems
+      // `requested` de la solicitud (lectura simple). El mock debe
+      // distinguirlas en orden en vez de compartir una sola forma.
       const mockSelect = vi.fn()
-        .mockReturnValueOnce({
-          from: vi.fn().mockReturnValue({ where: vi.fn().mockReturnValue({ for: vi.fn().mockResolvedValue([{ id: "q-1", requestId: "req-1", status: "pending", supplierId: "sup-1", supplierNameFree: null }]) }) }),
-        })
-        .mockReturnValueOnce({
-          from: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([]) }),
-        })
+        .mockReturnValueOnce(requestSelectChain([{ id: "req-1", status: "submitted", code: "REP-001", worksiteId: "ws-1" }]))
+        .mockReturnValueOnce(quotationSelectChain([{ id: "q-1", requestId: "req-1", status: "pending", supplierId: "sup-1", supplierNameFree: null }]))
+        .mockReturnValueOnce(plainSelectChain([]))
       const tx = {
-        query: { purchaseRequests: { findFirst: vi.fn().mockResolvedValue({ id: "req-1", status: "submitted", code: "REP-001", worksiteId: "ws-1" }) } },
         select: mockSelect,
         update: mockUpdate,
         insert: vi.fn().mockReturnValue({ values: vi.fn().mockResolvedValue(undefined) }),
@@ -459,6 +500,30 @@ describe("selectQuotation", () => {
 
     await svc.selectQuotation({ requestId: "req-1", quotationId: "q-1", userId: "user-1" })
     expect(recordStatusChange).toHaveBeenCalled()
+  })
+
+  it("aborts if the parent request changed status mid-transaction (cancelada en carrera)", async () => {
+    mockDbTransaction.mockImplementation(async (fn: (tx: Record<string, unknown>) => Promise<unknown>) => {
+      // La guarda del UPDATE final no matchea porque otro proceso ya movió la
+      // solicitud a 'cancelled': el servicio debe abortar, no estampar
+      // 'approved' encima.
+      const mockUpdate = vi.fn()
+        .mockReturnValueOnce({ set: vi.fn().mockReturnValue({ where: vi.fn().mockReturnValue({ returning: vi.fn().mockResolvedValue([{ id: "q-1" }]) }) }) })
+        .mockReturnValueOnce({ set: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }) })
+        .mockReturnValueOnce({ set: vi.fn().mockReturnValue({ where: vi.fn().mockReturnValue({ returning: vi.fn().mockResolvedValue([]) }) }) })
+      const tx = {
+        select: vi.fn()
+          .mockReturnValueOnce(requestSelectChain([{ id: "req-1", status: "submitted", code: "REP-001", worksiteId: "ws-1" }]))
+          .mockReturnValueOnce(quotationSelectChain([{ id: "q-1", requestId: "req-1", status: "pending", supplierId: "sup-1", supplierNameFree: null }]))
+          .mockReturnValueOnce(plainSelectChain([])),
+        update: mockUpdate,
+        insert: vi.fn().mockReturnValue({ values: vi.fn().mockResolvedValue(undefined) }),
+      }
+      return fn(tx as never)
+    })
+
+    await expect(svc.selectQuotation({ requestId: "req-1", quotationId: "q-1", userId: "user-1" }))
+      .rejects.toThrow("posible concurrencia")
   })
 })
 

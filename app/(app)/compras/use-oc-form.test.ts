@@ -32,6 +32,7 @@ function makeItem(overrides: Partial<PendingItemOption>): PendingItemOption {
     notes: null,
     supplierPrices: {},
     deliveryMode: "via_oficina",
+    isService: false,
     ...overrides,
   }
 }

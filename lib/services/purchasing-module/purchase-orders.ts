@@ -26,6 +26,12 @@ export {
   cancelOrder,
 } from "./purchase-orders-status"
 
+export { recordOrderItemCost } from "./purchase-orders-item-cost"
+export type {
+  RecordOrderItemCostInput,
+  RecordOrderItemCostResult,
+} from "./purchase-orders-item-cost"
+
 export {
   deleteOrder,
 } from "./purchase-orders-delete"

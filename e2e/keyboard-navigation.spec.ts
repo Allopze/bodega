@@ -22,6 +22,7 @@ const CRITICAL_ROUTES = [
   { path: "/recepcion",        name: "Recepción" },
   { path: "/bodega",           name: "Bodega" },
   { path: "/entregas",         name: "Entregas" },
+  { path: "/trazabilidad",     name: "Trazabilidad" },
   { path: "/combustibles",     name: "Combustibles" },
   { path: "/combustibles/reportes", name: "Reportes de combustibles" },
   { path: "/prevencion/pdtp",  name: "PDTP" },
@@ -156,20 +157,5 @@ test.describe("Keyboard navigation — Escape closes overlays", () => {
         expect(optionsAfterEscape).toBeFalsy()
       }
     }
-  })
-})
-
-test.describe("Keyboard navigation — chart data alternatives", () => {
-  test("la tabla equivalente de Reportes se abre con teclado", async ({ page }) => {
-    await login(page)
-    await page.goto("/combustibles/reportes")
-    await page.waitForLoadState("networkidle")
-
-    const summary = page.locator("summary").first()
-    await expect(summary).toBeVisible()
-    await summary.focus()
-    await page.keyboard.press("Enter")
-
-    await expect(summary.locator("xpath=..")).toHaveAttribute("open", "")
   })
 })

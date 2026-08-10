@@ -13,12 +13,14 @@ const bars = (count: number) =>
 
 describe("ThresholdRankingChart (I-09)", () => {
   it("con ≤2 filas rinde el medidor compacto, sin plot recharts", () => {
-    const { container, getAllByText } = render(
+    const { container, getByText } = render(
       <ThresholdRankingChart title="Cobertura" description="d" data={bars(2)} />,
     )
-    // El nombre y el detalle aparecen en la tabla equivalente Y en el medidor.
-    expect(getAllByText("Item 1").length).toBeGreaterThanOrEqual(2)
-    expect(getAllByText("0 de 10").length).toBeGreaterThanOrEqual(2)
+    // Una sola vez cada uno: antes aparecían dos porque la tabla equivalente
+    // los repetía bajo el medidor, y el `>= 2` afirmaba esa duplicación.
+    // `getByText` es más estricto que el conteo: falla también si hay dos.
+    expect(getByText("Item 1")).toBeDefined()
+    expect(getByText("0 de 10")).toBeDefined()
     expect(container.querySelector("[data-chart]")).toBeNull()
   })
 
@@ -34,10 +36,10 @@ describe("CompositionDonutChart (I-09)", () => {
   const slice = (key: string, value: number) => ({ key, label: key, value })
 
   it("con ≤2 porciones rinde la barra de composición, sin dona", () => {
-    const { container, getAllByText } = render(
+    const { container, getByText } = render(
       <CompositionDonutChart title="Gasto" description="d" totalLabel="del período" data={[slice("EPP", 80), slice("Combustible", 20)]} />,
     )
-    expect(getAllByText(/EPP/).length).toBeGreaterThanOrEqual(2)
+    expect(getByText(/EPP/)).toBeDefined()
     expect(container.querySelector("[data-chart]")).toBeNull()
   })
 

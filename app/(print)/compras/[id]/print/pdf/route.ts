@@ -5,6 +5,7 @@ import { requirePermission, canAccessWorksite } from "@/lib/auth/can"
 import { encodeContentDisposition } from "@/lib/utils"
 import { withBrowserContext } from "@/lib/pdf/browser-pool"
 import { resolvePdfRenderOrigin } from "@/lib/pdf/render-origin"
+import { a4PdfOptions } from "@/lib/pdf/page-options"
 import { ocPdfFilename } from "../filename"
 
 export const runtime = "nodejs"
@@ -53,14 +54,10 @@ export async function GET(
     async (ctx) => {
       const page = await ctx.newPage()
       await page.goto(printUrl, { waitUntil: "domcontentloaded", timeout: 30_000 })
-      // Generate A4 PDF.  The @page CSS sets 12mm page margins; the sheet is
-      // 186mm wide (210mm − 24mm) in print media, so it fits exactly inside
-      // the content area — no right-side clipping, no content flush to edges.
-      return page.pdf({
-        printBackground: true,
-        format: "A4",
-        margin: { top: "0", right: "0", bottom: "0", left: "0" },
-      })
+      // A4 con pie corrido numerado. Los márgenes salen de A4_MARGIN y son los
+      // mismos que declara el @page de oc-print-styles.ts: la hoja no lleva
+      // ancho ni padding propios, la caja de texto la define la página.
+      return page.pdf(a4PdfOptions())
     },
   )
 

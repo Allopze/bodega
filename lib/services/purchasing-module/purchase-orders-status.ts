@@ -8,6 +8,11 @@ import { db } from "@/db"
 import { purchaseOrders, purchaseOrderItems, purchaseRequestItems } from "@/db/schema"
 import { recordAudit, recordStatusChange, recordStatusChanges } from "@/lib/audit"
 import { rollupRequestStatus } from "@/lib/services/item-state-module/rollup"
+import {
+  getActiveOrderedQuantitiesTx,
+  lockPurchaseRequestItemsTx,
+  PURCHASE_COVERAGE_EPSILON,
+} from "./purchasable-coverage"
 
 /* ── Emitir y enviar (draft → sent) ─────────────────────────────────────────────
  * Fusión 2026-08-07: "emitir" y "enviar al proveedor" eran dos pasos (draft →
@@ -120,33 +125,48 @@ export async function cancelOrder(
     }
 
     const now = new Date().toISOString()
-    await tx
-      .update(purchaseOrders)
-      .set({ status: "cancelled", updatedAt: now })
-      .where(eq(purchaseOrders.id, orderId))
 
-    // Move associated request items back to "pending_purchase" status
+    // Lock the same source rows as createOrder, in a stable order, before
+    // removing coverage. Otherwise a concurrent create could legitimately
+    // cover the item and this cancellation would still reopen it afterwards.
     const ocItems = await tx
-      .select({ id: purchaseOrderItems.id, requestItemId: purchaseOrderItems.requestItemId, currentStatus: purchaseRequestItems.status, requestId: purchaseRequestItems.requestId })
+      .select({ requestItemId: purchaseOrderItems.requestItemId })
       .from(purchaseOrderItems)
-      .leftJoin(purchaseRequestItems, eq(purchaseOrderItems.requestItemId, purchaseRequestItems.id))
       .where(eq(purchaseOrderItems.purchaseOrderId, orderId))
 
     const requestItemIds = ocItems
       .map((i) => i.requestItemId)
       .filter((id): id is string => id !== null)
+    const lockedRequestItems = await lockPurchaseRequestItemsTx(tx, requestItemIds)
 
-    if (requestItemIds.length > 0) {
-      // DAT-10: `ocItems.currentStatus` se leyó antes de esta guarda — sin
-      // `.returning()`, un ítem que cambió de estado entre esa lectura y este
-      // UPDATE (la guarda no lo habría tocado) igual quedaría trazado como si
-      // se hubiera movido a 'pending_purchase'.
+    await tx
+      .update(purchaseOrders)
+      .set({ status: "cancelled", updatedAt: now })
+      .where(eq(purchaseOrders.id, orderId))
+
+    await tx
+      .update(purchaseOrderItems)
+      .set({ status: "cancelled" })
+      .where(eq(purchaseOrderItems.purchaseOrderId, orderId))
+
+    const activeCoverageByRequestItem = await getActiveOrderedQuantitiesTx(
+      tx,
+      lockedRequestItems.map((item) => item.id),
+    )
+    const uncoveredRequestItemIds: string[] = []
+    for (const item of lockedRequestItems) {
+      if ((activeCoverageByRequestItem.get(item.id) ?? 0) <= PURCHASE_COVERAGE_EPSILON) {
+        uncoveredRequestItemIds.push(item.id)
+      }
+    }
+
+    if (uncoveredRequestItemIds.length > 0) {
       const updatedItems = await tx
         .update(purchaseRequestItems)
         .set({ status: "pending_purchase", updatedAt: now })
         .where(
           and(
-            inArray(purchaseRequestItems.id, requestItemIds),
+            inArray(purchaseRequestItems.id, uncoveredRequestItemIds),
             inArray(purchaseRequestItems.status, ["in_purchase_order", "purchased"])
           )
         )
@@ -154,13 +174,12 @@ export async function cancelOrder(
       const updatedIds = new Set(updatedItems.map((item) => item.id))
 
       await recordStatusChanges(
-        ocItems
-          .filter((item): item is typeof item & { requestItemId: string; currentStatus: string } =>
-            Boolean(item.requestItemId && item.currentStatus && updatedIds.has(item.requestItemId)))
+        lockedRequestItems
+          .filter((item) => updatedIds.has(item.id))
           .map((item) => ({
           entityType: "request_item" as const,
-          entityId:   item.requestItemId,
-          fromStatus: item.currentStatus,
+          entityId:   item.id,
+          fromStatus: item.status,
           toStatus:   "pending_purchase",
           changedBy:  userId,
         })),
@@ -169,19 +188,11 @@ export async function cancelOrder(
     }
 
     const affectedRequestIds = [...new Set(
-      ocItems
-        .filter((i): i is typeof i & { requestId: string } => Boolean(i.requestId))
-        .map((i) => i.requestId),
+      lockedRequestItems.map((item) => item.requestId),
     )]
     for (const rid of affectedRequestIds) {
       await rollupRequestStatus(rid, tx, userId)
     }
-
-    // Update purchaseOrderItems status to cancelled
-    await tx
-      .update(purchaseOrderItems)
-      .set({ status: "cancelled" })
-      .where(eq(purchaseOrderItems.purchaseOrderId, orderId))
 
     await recordStatusChange({
       entityType: "purchase_order",
@@ -204,4 +215,3 @@ export async function cancelOrder(
     }, tx)
   })
 }
-

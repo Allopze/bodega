@@ -3,6 +3,7 @@ import { REPUESTO_ATTRIBUTE_NAMES } from "@/lib/validation/repuestos"
 import { SERVICE_ATTRIBUTE_NAMES } from "@/lib/validation/servicios"
 import { REQUEST_STATE_META } from "@/components/states/state-badge"
 import { QUOTATION_TYPES } from "@/lib/request-types"
+import { catalogItemIssues } from "@/lib/products/service-items"
 
 export function equipmentFromAttributes(
   requestType: string,
@@ -68,11 +69,13 @@ export function requestStatusLabel(status: string): string {
 }
 
 export function buildRequestSummaryIssues({
-  worksiteId, requiredDate, items, requestType, notes,
+  worksiteId, requiredDate, items, requestType, notes, products = [],
 }: {
   worksiteId: string; requiredDate: string; items: ItemRow[]
   /** Repuestos/servicios exigen ≥3 cotizaciones o justificación (LOG-9/UX-2). */
   requestType?: string; notes?: string
+  /** Catálogo, para evaluar las reglas del producto elegido (colaborador, dosis). */
+  products?: ProductOption[]
 }): string[] {
   const issues: string[] = []
   if (!worksiteId) issues.push("Selecciona una faena.")
@@ -81,8 +84,25 @@ export function buildRequestSummaryIssues({
     const label = `Ítem ${index + 1}`
     if (!item.productId && !item.productNameFree.trim()) issues.push(`${label}: selecciona o describe un producto.`)
     if (!Number.isFinite(Number(item.quantity)) || Number(item.quantity) <= 0) issues.push(`${label}: ingresa una cantidad válida.`)
-    const missingAttrs = item.attributes.filter((attr) => attr.isRequired && !attr.value.trim())
-    if (missingAttrs.length > 0) issues.push(`${label}: completa ${missingAttrs.map((attr) => attr.attributeName).join(", ")}.`)
+    // Mismas reglas que reevalúa el servidor al crear (colaborador obligatorio,
+    // atributos requeridos y tipados). Aquí sólo para avisar antes de enviar.
+    const product = item.productId ? products.find((p) => p.id === item.productId) : undefined
+    if (product) {
+      const catalogIssues = catalogItemIssues(
+        {
+          name: product.name,
+          requiresWorker: product.requiresWorker,
+          attributes: product.attributes.map((a) => ({
+            id: a.id, name: a.name, type: a.type, isRequired: a.isRequired,
+          })),
+        },
+        item,
+      )
+      for (const issue of catalogIssues) issues.push(`${label}: ${issue}.`)
+    } else {
+      const missingAttrs = item.attributes.filter((attr) => attr.isRequired && !attr.value.trim())
+      if (missingAttrs.length > 0) issues.push(`${label}: completa ${missingAttrs.map((attr) => attr.attributeName).join(", ")}.`)
+    }
   })
   if (requestType && QUOTATION_TYPES.has(requestType)) {
     const totalCotizaciones = items.reduce((sum, item) => sum + (item.cotizaciones?.length ?? 0), 0)
