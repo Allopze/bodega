@@ -8,6 +8,7 @@ import {
 } from "@/db/schema"
 import { requirePermission } from "@/lib/auth/can"
 import { isGlobalRole, visibleWorksiteIds } from "@/lib/auth/can"
+import { pendingPurchaseWhere } from "@/lib/adquisiciones/pending-purchase"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { Badge } from "@/components/ui/badge"
@@ -103,7 +104,11 @@ export default async function Page() {
       .select({ worksiteId: purchaseRequests.worksiteId, total: count() })
       .from(purchaseRequestItems)
       .innerJoin(purchaseRequests, eqRequestItemRequest())
-      .where(and(requestWsFilter, inArray(purchaseRequestItems.status, ["approved", "pending_purchase"])))
+      // "Ítems sin OC por faena" es la misma pregunta que responde la cola de
+      // Compras, así que usa su predicado: contaba ítems de solicitudes ya
+      // cerradas y con cobertura activa, y su enlace ("Generar orden de compra")
+      // aterrizaba en un selector que no los tenía.
+      .where(pendingPurchaseWhere(requestWsFilter))
       .groupBy(purchaseRequests.worksiteId),
 
     db

@@ -8,7 +8,7 @@ import { PageContainer } from "@/components/ui/page-container"
 const RECOVERY_LINKS = [
   { href: "/dashboard",   label: "Inicio",          description: "Resumen y cola de trabajo",   icon: <House size={18} /> },
   { href: "/solicitudes", label: "Solicitudes",        description: "Repuestos, servicios y EPP",  icon: <ClipboardText size={18} /> },
-  { href: "/compras",     label: "Órdenes de compra",  description: "Generación y seguimiento",    icon: <ShoppingCart size={18} /> },
+  { href: "/compras",     label: "Compras",            description: "Solicitudes por comprar y OC",    icon: <ShoppingCart size={18} /> },
   { href: "/recepcion",   label: "Recepción",          description: "Ingreso de mercadería",       icon: <Truck size={18} /> },
   { href: "/bodega",      label: "Bodega",             description: "Stock, kardex y devoluciones", icon: <Warehouse size={18} /> },
   { href: "/reportes",    label: "Reportes",           description: "Resumen y exportaciones",     icon: <ChartBar size={18} /> },

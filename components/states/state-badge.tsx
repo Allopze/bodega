@@ -128,8 +128,18 @@ const FUEL_STATE_META: Record<string, StateMeta> = {
   cancelled:   { label: "Anulada",     variant: "danger",  family: "danger"  },
 }
 
+/* ── Guía de Despacho Interna (GDI) states ───────────────────────────────── */
+export type DispatchGuideStatus = "draft" | "dispatched" | "received" | "cancelled"
+
+const DISPATCH_GUIDE_STATE_META: Record<DispatchGuideStatus, StateMeta> = {
+  draft:      { label: "Borrador",   variant: "default", family: "neutral", description: "Guía en preparación: se puede editar y todavía no descontó stock de la oficina." },
+  dispatched: { label: "Despachada", variant: "info",    family: "info",    description: "Los bienes salieron de la oficina hacia la faena; el stock ya se movió." },
+  received:   { label: "Recibida",   variant: "success", family: "success", description: "La faena confirmó la recepción de los bienes. No vuelve a mover stock." },
+  cancelled:  { label: "Anulada",    variant: "danger",  family: "danger",  description: "Guía anulada con motivo registrado; si había salida de stock, se revirtió con movimientos nuevos." },
+}
+
 /* ── StateBadge component ────────────────────────────────────────────────── */
-type EntityType = "item" | "request" | "oc" | "feedback" | "ppa" | "fuel_log" | "fleet" | "prevention"
+type EntityType = "item" | "request" | "oc" | "feedback" | "ppa" | "fuel_log" | "fleet" | "prevention" | "dispatch_guide"
 
 interface StateBadgeProps {
   state:      string
@@ -146,6 +156,7 @@ function getStateMeta(state: string, entity: EntityType): StateMeta {
     case "feedback": return FEEDBACK_ESTADO_META[state as FeedbackEstado] ?? { label: state, variant: "default", family: "neutral" }
     case "ppa":      return PPA_STATE_META[state]                        ?? { label: state, variant: "default", family: "neutral" }
     case "fuel_log": return FUEL_STATE_META[state]                       ?? { label: state, variant: "default", family: "neutral" }
+    case "dispatch_guide": return DISPATCH_GUIDE_STATE_META[state as DispatchGuideStatus] ?? { label: state, variant: "default", family: "neutral" }
     default:         return ITEM_STATE_META[state as ItemStatus]          ?? { label: state, variant: "default", family: "neutral" }
   }
 }
@@ -175,4 +186,4 @@ export function StateBadge({
 }
 
 /* ── Exports for external use ─────────────────────────────────────────────── */
-export { ITEM_STATE_META, REQUEST_STATE_META, OC_STATE_META, PPA_STATE_META, FUEL_STATE_META }
+export { ITEM_STATE_META, REQUEST_STATE_META, OC_STATE_META, PPA_STATE_META, FUEL_STATE_META, DISPATCH_GUIDE_STATE_META }

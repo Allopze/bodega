@@ -48,6 +48,18 @@ function createSelectHandler(setParam: (key: string, value: string) => void, key
  * mantenían su propia lista y se desincronizaban cada vez que aparecía un
  * filtro nuevo sin control propio (`factura`, el período, `solicitud`).
  */
+/**
+ * Los paginadores que un cambio de filtro devuelve a la primera página.
+ * `pendientes` es el de la cola de Compras, que comparte pantalla con el de las
+ * OC: sin resetearlo, filtrar con la cola en la página 3 dejaba una lista vacía
+ * cuyo filtro sí tenía resultados en la primera.
+ */
+const PAGE_PARAMS = ["page", "pendientes"] as const
+
+function resetPagination(params: URLSearchParams) {
+  for (const key of PAGE_PARAMS) params.delete(key)
+}
+
 export const LIST_FILTER_PARAMS = [
   "q", "estado", "urgencia", "faena", "proveedor", "factura", "desde", "hasta", "solicitud",
 ] as const
@@ -108,7 +120,7 @@ const ListFiltersInner = React.memo(function ListFiltersInner({
       const params = new URLSearchParams(Array.from(searchParams.entries()))
       if (value) params.set(key, value)
       else params.delete(key)
-      params.delete("page") // any filter change returns to the first page
+      resetPagination(params) // any filter change returns to the first page
       const qs = params.toString()
       router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false })
     },
@@ -118,7 +130,7 @@ const ListFiltersInner = React.memo(function ListFiltersInner({
   const withoutFacturaHref = React.useMemo(() => {
     const params = new URLSearchParams(Array.from(searchParams.entries()))
     params.delete("factura")
-    params.delete("page")
+    resetPagination(params)
     const qs = params.toString()
     return qs ? `${pathname}?${qs}` : pathname
   }, [pathname, searchParams])
@@ -126,7 +138,7 @@ const ListFiltersInner = React.memo(function ListFiltersInner({
   const withoutSolicitudHref = React.useMemo(() => {
     const params = new URLSearchParams(Array.from(searchParams.entries()))
     params.delete("solicitud")
-    params.delete("page")
+    resetPagination(params)
     const qs = params.toString()
     return qs ? `${pathname}?${qs}` : pathname
   }, [pathname, searchParams])
@@ -135,7 +147,7 @@ const ListFiltersInner = React.memo(function ListFiltersInner({
     const params = new URLSearchParams(Array.from(searchParams.entries()))
     params.delete("desde")
     params.delete("hasta")
-    params.delete("page")
+    resetPagination(params)
     const qs = params.toString()
     return qs ? `${pathname}?${qs}` : pathname
   }, [pathname, searchParams])
@@ -174,7 +186,7 @@ const ListFiltersInner = React.memo(function ListFiltersInner({
   function clearAll() {
     const params = new URLSearchParams(Array.from(searchParams.entries()))
     for (const key of LIST_FILTER_PARAMS) params.delete(key)
-    params.delete("page")
+    resetPagination(params)
     const qs = params.toString()
     router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false })
   }

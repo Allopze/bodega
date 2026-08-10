@@ -3,6 +3,7 @@ import { and, eq, inArray } from "drizzle-orm"
 import { db } from "@/db"
 import { purchaseRequests, purchaseRequestItems, products, worksites } from "@/db/schema"
 import { formatDate } from "@/lib/utils"
+import { pendingPurchaseWhere } from "@/lib/adquisiciones/pending-purchase"
 import { buildWorksiteFilter, buildDateFilter } from "./utils"
 import type { ReportData, ExportFilters } from "./types"
 
@@ -25,7 +26,14 @@ export async function itemsSinOc(session: Session | null, filters: ExportFilters
     })
     .from(purchaseRequestItems)
     .innerJoin(purchaseRequests, eq(purchaseRequestItems.requestId, purchaseRequests.id))
-    .where(and(inArray(purchaseRequestItems.status, alertStates), requestFilter, dateFilter, wsFilter))
+    // Sin `status` explícito el reporte responde la misma pregunta que la cola
+    // de Compras, así que usa su predicado y no un criterio propio: exportaba
+    // ítems de solicitudes cerradas y con cobertura activa, o sea más filas que
+    // el panel de /reportes que enlaza a esta descarga. Con `status` explícito
+    // el usuario pidió otro corte y sólo se mantiene el suyo.
+    .where(filters.status
+      ? and(inArray(purchaseRequestItems.status, alertStates), requestFilter, dateFilter, wsFilter)
+      : pendingPurchaseWhere(requestFilter, dateFilter, wsFilter))
     .limit(limit + 1)
 
   const rowLimitApplied = items.length > limit

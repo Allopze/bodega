@@ -62,21 +62,27 @@ export function buildPageWindow(current: number, total: number): PageWindowItem[
   return pages
 }
 
+/**
+ * `pageParamName` existe porque una pantalla puede tener dos listas paginadas
+ * independientes (Compras: la cola de solicitudes por comprar y el registro de
+ * OC). Con un solo `page` compartido, avanzar en una reiniciaba la otra.
+ */
 export function buildPaginationHref(
   pathname: string,
   searchParams: Record<string, string | string[] | undefined>,
   page: number,
+  pageParamName = "page",
 ) {
   const params = new URLSearchParams()
   for (const [key, value] of Object.entries(searchParams)) {
-    if (key === "page" || value === undefined) continue
+    if (key === pageParamName || value === undefined) continue
     if (Array.isArray(value)) {
       for (const item of value) params.append(key, item)
     } else {
       params.set(key, value)
     }
   }
-  if (page > 1) params.set("page", String(page))
+  if (page > 1) params.set(pageParamName, String(page))
   const query = params.toString()
   return query ? `${pathname}?${query}` : pathname
 }

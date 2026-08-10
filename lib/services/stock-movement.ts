@@ -18,6 +18,8 @@ export type MovementType =
   | "egreso_desecho"       // - : discarded from worksite stock
   | "retiro_epp_trabajador" // 0 : retired used EPP from a worker, audit only
   | "ajuste"               // +/-: manual inventory adjustment with mandatory reason
+  | "egreso_traslado"      // - : salida por guía de despacho interna (oficina → faena)
+  | "ingreso_traslado"     // + : entrada por guía de despacho interna en la faena destino
 
 /* ── Apply movement ─────────────────────────────────────────────────────────── */
 

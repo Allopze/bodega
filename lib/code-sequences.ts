@@ -1,7 +1,7 @@
 import { sql } from "drizzle-orm"
 import type { DB } from "@/db"
 import { db } from "@/db"
-import { generateCode } from "@/lib/id"
+import { generateCode, isContinuousCodePrefix } from "@/lib/id"
 
 type Tx = Parameters<Parameters<DB["transaction"]>[0]>[0]
 
@@ -10,9 +10,9 @@ function driverRows<T>(result: unknown): T[] {
   return (Array.isArray(result) ? result : (result as { rows?: T[] }).rows) ?? []
 }
 
-/** Mismo mapeo que `nextCodeTx`: SOL tiene una sola serie, sin año. */
+/** Mismo mapeo que `nextCodeTx`: SOL y GDI tienen una sola serie, sin año. */
 function sequenceNameFor(prefix: string, year: number) {
-  const sequenceYear = prefix === "SOL" ? 0 : year
+  const sequenceYear = isContinuousCodePrefix(prefix) ? 0 : year
   return { sequenceYear, sequenceName: `code_seq_${prefix.toLowerCase()}_${sequenceYear}` }
 }
 
@@ -34,7 +34,7 @@ function sequenceNameFor(prefix: string, year: number) {
  * talks to the native sequences), so it can be dropped in its own migration.
  */
 export async function nextCodeTx(tx: Tx, prefix: string, year = new Date().getFullYear()) {
-  const sequenceYear = prefix === "SOL" ? 0 : year
+  const sequenceYear = isContinuousCodePrefix(prefix) ? 0 : year
   const result = await tx.execute<{ next_document_code: number }>(
     sql`SELECT next_document_code(${prefix}, ${sequenceYear})`
   )

@@ -32,6 +32,7 @@ import {
   worksites,
 } from "@/db/schema"
 import { approvalQueueFilter, TERMINAL_REQUEST_STATUSES } from "@/lib/approvals-queue"
+import { itemHasNoActiveOrderSql, pendingPurchaseWhere } from "@/lib/adquisiciones/pending-purchase"
 import { resolveWorksiteScope, type WorksiteScope } from "@/lib/auth/scope"
 import { logger } from "@/lib/logger"
 import { sentry } from "@/lib/sentry"
@@ -617,6 +618,11 @@ function operationalSourceBranches(session: Session, scope: WorksiteScope): Oper
       ${emptyAssignee} AS native_assignee_user_id, ${emptyAssignee} AS native_assignee_name,
       CONCAT('/compras/nueva?faena=', ${purchaseRequests.worksiteId}, '&item=', ${purchaseRequestItems.id}) AS href, 'Crear orden de compra'::text AS cta_label, true AS assignable
     ${itemBase} AND ${purchaseRequestItems.status} IN ('approved', 'pending_purchase')
+      -- El predicado canónico de la cola de Compras. Sin él esta fuente ofrecía
+      -- "Comprar …" sobre un ítem que ya tenía cobertura activa y el selector de
+      -- destino lo descartaba: el CTA aterrizaba en una pantalla que decía que
+      -- no había nada pendiente.
+      AND ${itemHasNoActiveOrderSql}
   `)
 
   if (hasPermission(session, "deliveries:create")) add("entregas", sql`
@@ -1170,11 +1176,14 @@ export async function getOperationalWorkCount(session: Session) {
   }
 
   if (hasPermission(session, "purchasing:create_order")) {
+    // `pendingPurchaseWhere` ya trae los estados, la guarda de solicitud
+    // terminal y la exclusión por cobertura activa: el mismo predicado que la
+    // fuente `create_order` de la cola y que el resumen y la tabla de /compras.
     counts.push(countRows(
       db.select({ total: count() })
         .from(purchaseRequestItems)
         .innerJoin(purchaseRequests, eq(purchaseRequestItems.requestId, purchaseRequests.id))
-        .where(and(requestScope, liveRequest, inArray(purchaseRequestItems.status, ["approved", "pending_purchase"]))),
+        .where(pendingPurchaseWhere(requestScope)),
     ))
   }
   if (hasPermission(session, "deliveries:create")) {

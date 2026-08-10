@@ -32,6 +32,14 @@ export const KARDEX_PAGE_SIZE = 25
 /** Receiving list */
 export const RECEPCION_PAGE_SIZE = 25
 
+/**
+ * Cola de Compras: solicitudes aprobadas pendientes de OC. Más corta que el
+ * resto porque cada fila se despliega con el desglose de sus ítems, y /compras
+ * la muestra arriba del registro de OC — con 25 la segunda lista quedaba fuera
+ * de la primera pantalla.
+ */
+export const PENDING_PURCHASE_PAGE_SIZE = 10
+
 /** Traceability matrix — larger page size for data-density */
 export const TRACEABILITY_PAGE_SIZE = 50
 

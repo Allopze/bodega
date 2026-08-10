@@ -3,7 +3,8 @@ import { Clock, ArrowRight, User } from "@phosphor-icons/react/dist/ssr"
 import { formatDate } from "@/lib/utils"
 import {
   REQUEST_STATE_META, OC_STATE_META, ITEM_STATE_META, PPA_STATE_META, FUEL_STATE_META,
-  type RequestStatus, type OcStatus,
+  DISPATCH_GUIDE_STATE_META,
+  type RequestStatus, type OcStatus, type DispatchGuideStatus,
 } from "./state-badge"
 import type { ItemStatus } from "@/lib/services/item-state"
 
@@ -18,7 +19,7 @@ export interface TimelineEvent {
   userEmail:  string | null
 }
 
-export type TimelineEntityType = "request" | "oc" | "item" | "ppa" | "fuel_log" | "prevention" | "generic"
+export type TimelineEntityType = "request" | "oc" | "item" | "ppa" | "fuel_log" | "prevention" | "dispatch_guide" | "generic"
 
 interface EntityTimelineProps {
   entityType: TimelineEntityType
@@ -35,6 +36,7 @@ function getStatusLabel(status: string, entityType: TimelineEntityType) {
     case "ppa":      return PPA_STATE_META[status]?.label ?? status
     case "fuel_log": return FUEL_STATE_META[status]?.label ?? status
     case "item":     return ITEM_STATE_META[status as ItemStatus]?.label ?? status
+    case "dispatch_guide": return DISPATCH_GUIDE_STATE_META[status as DispatchGuideStatus]?.label ?? status
     default:         return status
   }
 }
