@@ -35,6 +35,26 @@ export async function login(page: Page, email = "admin@e2e.chome.cl", password =
 }
 
 /**
+ * El id del recurso en la URL actual, tomado del **pathname**.
+ *
+ * `page.url().split("/").pop()` parece equivalente y no lo es. Varias acciones
+ * redirigen con un query param —`/compras/<id>?actualizada=creada` en
+ * `create-order.ts`, `?actualizada=enviada` en `order-status.ts`— y la ficha
+ * puede limpiarlo después de montar, así que la última porción de la URL cruda
+ * sale a veces como `<id>?actualizada=creada`. El regex de `toHaveURL` que
+ * precede a la lectura no lo detiene: `[^/]+$` acepta la query.
+ *
+ * Con ese id contaminado la petición siguiente da 404, y el test no se cae ahí:
+ * se cae mucho más abajo, esperando un control de una página que nunca cargó.
+ * Y como el limpiado del param es una carrera, falla de forma intermitente. Ya
+ * costó una vez en `correlativos-secciones.spec.ts`, que pasó 150 s esperando un
+ * botón de recepción con un "Recurso no encontrado" en pantalla.
+ */
+export function idFromUrl(page: Page): string {
+  return new URL(page.url()).pathname.split("/").pop() ?? ""
+}
+
+/**
  * Asserts the page title, siempre acotado al `h1`.
  *
  * `getByRole("heading", { name })` a secas es ambiguo en cualquier pantalla del

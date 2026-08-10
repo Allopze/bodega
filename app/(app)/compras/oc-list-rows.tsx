@@ -19,12 +19,13 @@ import { DELETABLE_ORDER_STATUSES } from "@/lib/services/purchasing.constants"
 import { INVOICE_DUE_ORDER_STATUSES } from "@/lib/work-queue-labels"
 import type { ActionState } from "@/lib/validation/operations"
 import type { OcRow } from "./oc-list.types"
-import { ocDisplayDate } from "./oc-list.types"
+import { ocDeleteConfirmDescription, ocDisplayDate } from "./oc-list.types"
 
 /** La factura ya corresponde: llegó mercadería y la OC sigue abierta. */
 function invoiceDue(status: string) {
   return INVOICE_DUE_ORDER_STATUSES.includes(status)
 }
+
 
 export function OcTableRow({ row, canDelete = false, canSend = false }: { row: OcRow; canDelete?: boolean; canSend?: boolean }) {
   const router = useRouter()
@@ -126,7 +127,7 @@ export function OcTableRow({ row, canDelete = false, canSend = false }: { row: O
                 open={deleteOpen}
                 onOpenChange={setDeleteOpen}
                 title="¿Eliminar orden de compra?"
-                description={`La orden ${row.code} será eliminada permanentemente junto con sus ítems y facturas adjuntas. Los ítems de la solicitud original volverán a estado pendiente. Esta acción no se puede deshacer.`}
+                description={ocDeleteConfirmDescription(row.code)}
                 confirmLabel="Eliminar"
                 variant="destructive"
                 loading={deletePending}
@@ -270,7 +271,7 @@ export function OcMobileCard({
                 open={deleteOpen}
                 onOpenChange={setDeleteOpen}
                 title="¿Eliminar orden de compra?"
-                description={`La orden ${row.code} se conserva como anulada para auditoría y sus ítems sólo volverán a compra si no tienen otra OC activa.`}
+                description={ocDeleteConfirmDescription(row.code)}
                 confirmLabel="Eliminar"
                 variant="destructive"
                 loading={deletePending}

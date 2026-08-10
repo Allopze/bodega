@@ -19,6 +19,7 @@ import {
 import { Trash, DotsThree } from "@phosphor-icons/react"
 import { useTransition } from "react"
 import { DELETABLE_ORDER_STATUSES } from "@/lib/services/purchasing.constants"
+import { ocDeleteConfirmDescription } from "../oc-list.types"
 import { useRouter } from "next/navigation"
 import type { ActionState } from "@/lib/validation/operations"
 
@@ -302,7 +303,7 @@ export function OcActions({
             open={deleteOpen}
             onOpenChange={setDeleteOpen}
             title="¿Eliminar orden de compra?"
-            description={`La orden ${orderCode} será eliminada permanentemente junto con sus ítems y facturas adjuntas. Los ítems de la solicitud original volverán a estado pendiente. Esta acción no se puede deshacer.`}
+            description={ocDeleteConfirmDescription(orderCode)}
             confirmLabel="Eliminar"
             variant="destructive"
             loading={deletePending}

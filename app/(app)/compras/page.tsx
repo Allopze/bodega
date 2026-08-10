@@ -17,9 +17,10 @@ import { HeaderSignals, type HeaderSignal } from "@/components/ui/header-signals
 import { ServerPagination } from "@/components/ui/server-pagination"
 import { buildPaginationHref, resolvePagination } from "@/lib/pagination"
 import { parseListParams, periodSql, statusSql, eqFilter, worksiteEqSql } from "@/lib/adquisiciones/list-query"
-import { COMPLETED_RECEIPT_ORDER_STATUSES, INVOICE_DUE_ORDER_STATUSES } from "@/lib/work-queue"
+import { INVOICE_DUE_ORDER_STATUSES } from "@/lib/work-queue"
 import { orderHasNoInvoice } from "@/lib/services/operational-work-queue"
 import type { StageTab } from "@/components/adquisiciones/stage-tabs"
+import { comprasInboxSql } from "./list-scope"
 import { ComprasActions } from "./compras-actions"
 import { OcList } from "./oc-list"
 import type { OcRow } from "./oc-list"
@@ -31,14 +32,27 @@ import { ORDERS_PAGE_SIZE } from "@/lib/constants"
 
 /**
  * Etapas visibles del ciclo de una OC (A5: el estado se representa una sola vez,
- * aquí). Los parciales acompañan a su etapa en vez de abrir una tab propia.
+ * aquí). Compras tiene tres: antes de emitir, después de emitir, y anulada.
+ *
+ * Las etapas de recepción se agrupan bajo "Emitidas" en vez de tener una tab
+ * cada una: eran las mismas etiquetas que las tabs de /recepcion —"Pendiente de
+ * recepción" era literalmente el mismo string— con los mismos conteos, así que
+ * Compras se leía como una segunda bandeja de recepción. Lo que le queda a
+ * Compras sobre una OC emitida no es recibirla: es anularla mientras aún no
+ * llegue nada, y perseguir su factura. La etapa exacta sigue visible en la
+ * columna Estado, que es donde el usuario la busca fila por fila.
+ *
+ * `received` entra en el grupo por el filtro de factura pendiente, el único
+ * modo en que una OC ya recibida vuelve a esta bandeja (ver `comprasInboxSql`);
+ * fuera de ese modo el scope la excluye y no altera ningún conteo.
  */
 const STAGE_GROUPS = [
-  { value: "draft",                                        label: "Borrador" },
-  { value: "sent",                                         label: "Pendiente de recepción" },
-  { value: "partially_office_received,office_received",    label: "En oficina" },
-  { value: "partially_received",                           label: "En faena (parcial)" },
-  { value: "cancelled",                                    label: "Anuladas" },
+  { value: "draft", label: "Borrador" },
+  {
+    value: "sent,partially_office_received,office_received,partially_received,received",
+    label: "Emitidas",
+  },
+  { value: "cancelled", label: "Anuladas" },
 ] as const
 
 export default async function ComprasPage({
@@ -95,6 +109,7 @@ export default async function ComprasPage({
   // Se aplica en SQL antes de contar y paginar, como el resto de los filtros:
   // filtrar la página ya traída dejaría el clásico "sin resultados" con la OC
   // buscada viviendo en otra página.
+  const invoicePendingOnly = listParams.factura === "pendiente"
   const invoicePendingCondition = and(
     inArray(purchaseOrders.status, INVOICE_DUE_ORDER_STATUSES),
     orderHasNoInvoice,
@@ -104,13 +119,11 @@ export default async function ComprasPage({
   // anuncia lo que entregaría al pulsarla, no lo que ya está en pantalla.
   const scopeWhere = and(
     worksiteScope,
-    // Una vez finalizada la recepción, la OC vive en /recepcion para que la
-    // bandeja de Compras sólo muestre trabajo de abastecimiento pendiente.
-    notInArray(purchaseOrders.status, COMPLETED_RECEIPT_ORDER_STATUSES),
+    comprasInboxSql({ invoicePendingOnly }),
     textCondition,
     worksiteEqSql(purchaseOrders.worksiteId, listParams.faena),
     eqFilter(purchaseOrders.supplierId, listParams.proveedor),
-    listParams.factura === "pendiente" ? invoicePendingCondition : undefined,
+    invoicePendingOnly ? invoicePendingCondition : undefined,
     // El KPI "Inversión" del dashboard cuenta OC emitidas en su ventana; este
     // filtro es el destino equivalente: reproduce esa ventana en la lista.
     periodSql(purchaseOrders.issuedAt, listParams.desde, listParams.hasta),
@@ -137,10 +150,13 @@ export default async function ComprasPage({
       )),
     db.select({ total: count() }).from(purchaseOrders).where(ordersWhere),
     // La señal anuncia el atraso completo de la faena visible, no el de la vista
-    // filtrada: si dependiera de los filtros, se apagaría justo al filtrar.
+    // filtrada: si dependiera de los filtros, se apagaría justo al filtrar. Va
+    // con el scope en modo factura —igual que el destino de su enlace— porque
+    // antes descontaba las OC ya recibidas: anunciaba menos atraso del que hay,
+    // y del que reporta la cola operacional con el mismo predicado.
     db.select({ total: count() }).from(purchaseOrders).where(and(
       worksiteScope,
-      notInArray(purchaseOrders.status, COMPLETED_RECEIPT_ORDER_STATUSES),
+      comprasInboxSql({ invoicePendingOnly: true }),
       invoicePendingCondition,
     )),
     db.select({ status: purchaseOrders.status, total: count() }).from(purchaseOrders).where(scopeWhere).groupBy(purchaseOrders.status),
@@ -196,7 +212,13 @@ export default async function ComprasPage({
     })
     .from(purchaseOrders)
     .where(ordersWhere)
-    .orderBy(desc(purchaseOrders.createdAt))
+    // El código desempata, y no por estética: las OC creadas en un mismo lote
+    // comparten `createdAt` al milisegundo, así que el orden entre ellas lo
+    // decidía el plan de la consulta. En pantalla se veía como 0011 delante de
+    // 0012; en el paginador es peor, porque un orden inestable puede repetir
+    // una fila en una página y saltársela en la otra. `code` es UNIQUE: basta
+    // él para que el orden total sea determinista.
+    .orderBy(desc(purchaseOrders.createdAt), desc(purchaseOrders.code))
     .limit(pagination.limit)
     .offset(pagination.offset)
   const pageHref = (page: number) => buildPaginationHref("/compras", sp, page)

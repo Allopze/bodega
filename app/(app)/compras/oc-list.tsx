@@ -21,7 +21,7 @@ const COLUMNS = [
   { key: "itemCount",     label: "Ítems",      sortable: true,  numeric: true, width: "w-20" },
   { key: "totalAmount",   label: "Total",      sortable: true,  numeric: true, width: "w-32" },
   { key: "status",        label: "Estado",     sortable: true,  width: "w-36" },
-  { key: "invoiceCount",  label: "Facturas",   sortable: false, numeric: true, width: "w-24" },
+  { key: "invoiceCount",  label: "Facturas",   sortable: true,  numeric: true, width: "w-24" },
   { key: "displayDate",   label: "Fecha",      sortable: true,  width: "w-32" },
 ]
 

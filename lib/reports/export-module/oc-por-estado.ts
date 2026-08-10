@@ -1,5 +1,5 @@
 import type { Session } from "next-auth"
-import { and, eq, inArray, sql } from "drizzle-orm"
+import { and, eq, inArray, isNull, sql } from "drizzle-orm"
 import { db } from "@/db"
 import { purchaseOrderItems, purchaseOrders, worksites } from "@/db/schema"
 import { formatDate } from "@/lib/utils"
@@ -31,7 +31,11 @@ export async function ocPorEstado(session: Session | null, filters: ExportFilter
       confirmedAt: purchaseOrders.confirmedAt,
     })
     .from(purchaseOrders)
-    .where(and(orderFilter, dateFilter, statusFilter, wsFilter))
+    // Mismo corte que DAT-16 le puso a gasto-faena, por el mismo motivo: una OC
+    // eliminada sigue con status "cancelled" y el código mutado a
+    // `-DELETED-<id>`, así que exportar por estado="cancelled" mezclaba las
+    // anuladas de verdad con las eliminadas y publicaba ese código interno.
+    .where(and(isNull(purchaseOrders.deletedAt), orderFilter, dateFilter, statusFilter, wsFilter))
     .limit(limit + 1)
 
   const rowLimitApplied = orders.length > limit

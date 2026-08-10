@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test"
-import { login, selectRadixById, pickCurrentMonthDate } from "./helpers"
+import { login, selectRadixById, pickCurrentMonthDate, idFromUrl } from "./helpers"
 
 
 test("flujo solicitud, aprobación, OC, recepción y trazabilidad", async ({ page }) => {
@@ -36,10 +36,10 @@ test("flujo solicitud, aprobación, OC, recepción y trazabilidad", async ({ pag
   await ownItemRow.getByLabel(/Incluir Guante E2E/).check()
   await page.getByRole("button", { name: /Crear OC \(1 ítem\)/ }).click()
   await expect(page).toHaveURL(/\/compras\/(?!nueva$)[^/]+$/, { timeout: 15_000 })
-  // El redirect trae `?actualizada=creada` y la ficha puede limpiarlo después:
-  // tomar el id del pathname evita que quede pegado (o no, según la carrera) al
-  // identificador y que `/compras/<id>?...=.../print` dé 404.
-  const orderId = new URL(page.url()).pathname.split("/").pop()
+  // `idFromUrl` y no la última porción de la URL cruda: el redirect trae
+  // `?actualizada=creada` y quedaría pegado al identificador, dejando que
+  // `/compras/<id>?...=.../print` dé 404. El helper documenta la carrera.
+  const orderId = idFromUrl(page)
   expect(orderId).toBeTruthy()
 
   await page.goto(`/compras/${orderId}/print`)

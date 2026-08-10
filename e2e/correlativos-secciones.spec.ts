@@ -1,5 +1,5 @@
 import { expect, test, type Locator, type Page } from "@playwright/test"
-import { login, selectRadixById, pickCurrentMonthDate } from "./helpers"
+import { login, selectRadixById, pickCurrentMonthDate, idFromUrl } from "./helpers"
 
 /**
  * El correlativo como identidad: SOL y OC a través de las secciones, y frente a
@@ -212,7 +212,7 @@ test.describe.serial("Correlativos entre secciones", () => {
     await createEppProduct(page, EPP_NAME)
 
     requestCode = await createEppRequest(page, EPP_NAME, "6")
-    requestId = page.url().split("/").pop() ?? ""
+    requestId = idFromUrl(page)
     expect(requestId).toBeTruthy()
 
     // ── Sección 1: detalle ──────────────────────────────────────────────────
@@ -258,7 +258,7 @@ test.describe.serial("Correlativos entre secciones", () => {
     await page.getByRole("button", { name: /Crear OC \(1 ítem\)/ }).click()
     await expect(page).toHaveURL(/\/compras\/(?!nueva$)[^/]+$/, { timeout: 20_000 })
 
-    orderId = page.url().split("/").pop() ?? ""
+    orderId = idFromUrl(page)
     expect(orderId).toBeTruthy()
     const orderHeading = page.getByRole("heading", { level: 1 }).first()
     await expect(orderHeading).toHaveText(/^OC-\d{4}-\d{4,}$/, { timeout: 20_000 })
@@ -316,7 +316,7 @@ test.describe.serial("Correlativos entre secciones", () => {
 
     await page.getByRole("link", { name: new RegExp(escapeRegExp(EPP_NAME)) }).first().click()
     await expect(page).toHaveURL(/\/trazabilidad\/[^/?]+$/, { timeout: 15_000 })
-    traceItemId = page.url().split("/").pop() ?? ""
+    traceItemId = idFromUrl(page)
     expect(traceItemId).toBeTruthy()
     // El detalle del ítem sólo publica el correlativo de la OC: el de la
     // solicitud se queda en la matriz, que es de donde venimos. No se afirma
@@ -342,7 +342,14 @@ test.describe.serial("Correlativos entre secciones", () => {
     // El vínculo OC → solicitud tampoco se movió.
     await expectCode(page, requestCode)
 
-    await page.goto(`/compras?q=${orderCode}`)
+    // El listado que corresponde acá es el de Recepción, no el de Compras: a
+    // esta altura la OC ya se cerró, y una OC con la recepción terminada sale de
+    // la bandeja de Compras —que muestra trabajo de abastecimiento pendiente— y
+    // vive en Recepción, bajo su tab "Completadas". Buscarla en /compras probaba
+    // la pertenencia a una bandeja, no la estabilidad del correlativo, que es el
+    // asunto de esta prueba; la sección Compras ya quedó cubierta arriba con su
+    // ficha. La prueba 2 sí la busca en /compras, con la OC recién emitida.
+    await page.goto(`/recepcion?q=${orderCode}`)
     await expect(page.getByRole("link", { name: `Ver OC ${orderCode}`, exact: true })).toHaveCount(1)
 
     // La trazabilidad del ítem, que es la vista histórica del recorrido.
@@ -368,7 +375,7 @@ test.describe.serial("Correlativos entre secciones", () => {
     // así que el número de OC no se deriva del de la solicitud y A no reserva
     // nada en la serie de compras — simplemente no participa de ella.
     const solA = await createEppRequest(page, EPP_RENAMED, "3")
-    const requestAId = page.url().split("/").pop() ?? ""
+    const requestAId = idFromUrl(page)
     expect(requestAId).toBeTruthy()
 
     const solB = await createEppRequest(page, EPP_RENAMED, "4")
