@@ -314,6 +314,20 @@ async function main() {
     isPreferred: true,
     lastUpdated: now,
   })
+  // Instrumento del registro para el flujo de servicios (mantención de monogás).
+  await db.insert(schema.serviceEquipment).values({
+    id: "eq-monogas-e2e",
+    code: "MG-E2E",
+    name: "Monogás E2E",
+    kind: "monogas",
+    brand: "Dräger",
+    model: "Pac 6500",
+    serialNumber: "E2E-0001",
+    worksiteId: "ws-e2e",
+    isActive: true,
+    createdAt: now,
+    updatedAt: now,
+  })
   await db.insert(schema.workers).values({
     id: "worker-e2e",
     rut: "11111111-1",

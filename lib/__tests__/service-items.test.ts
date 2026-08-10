@@ -7,6 +7,7 @@ import { describe, it, expect } from "vitest"
 import {
   attributeValueIssue,
   catalogItemIssues,
+  quantityFromAttributes,
   COST_PENDING_LABEL,
   type CatalogProductRules,
 } from "@/lib/products/service-items"
@@ -14,7 +15,7 @@ import {
 const VACUNA: CatalogProductRules = {
   name: "Vacuna",
   requiresWorker: true,
-  attributes: [{ id: "pa-dosis", name: "Número de dosis", type: "integer", isRequired: true }],
+  attributes: [{ id: "pa-dosis", name: "Número de dosis", type: "integer", isRequired: true, drivesQuantity: true }],
 }
 
 const MONOGAS: CatalogProductRules = {
@@ -90,6 +91,35 @@ describe("catalogItemIssues", () => {
       { name: "Casco", requiresWorker: false, attributes: [] },
       { workerId: null, attributes: [] },
     )).toEqual([])
+  })
+})
+
+describe("quantityFromAttributes", () => {
+  it("la cantidad del ítem la manda el nº de dosis", () => {
+    expect(quantityFromAttributes(VACUNA, {
+      workerId: "w-1",
+      attributes: [{ attributeId: "pa-dosis", attributeName: "Número de dosis", value: "3" }],
+    })).toBe(3)
+  })
+
+  it("resuelve el atributo por nombre cuando no viene el id", () => {
+    expect(quantityFromAttributes(VACUNA, {
+      attributes: [{ attributeId: null, attributeName: "número de dosis", value: "2" }],
+    })).toBe(2)
+  })
+
+  it("no impone cantidad si el valor no es un entero ≥ 1", () => {
+    for (const value of ["", "0", "-1", "2.5", "tres"]) {
+      expect(quantityFromAttributes(VACUNA, {
+        attributes: [{ attributeId: "pa-dosis", attributeName: "Número de dosis", value }],
+      })).toBeNull()
+    }
+  })
+
+  it("un producto sin atributo gobernante deja la cantidad al solicitante", () => {
+    expect(quantityFromAttributes(MONOGAS, {
+      attributes: [{ attributeId: "pa-serie", attributeName: "Código interno / N° de serie", value: "MG-1" }],
+    })).toBeNull()
   })
 })
 

@@ -17,6 +17,7 @@ import {
   FAENA_RECEIVABLE_STATUSES,
   DIRECT_FAENA_RECEIVABLE_STATUSES,
   RECEIVABLE_ORDER_STATUSES,
+  COMPLETED_RECEIPT_ORDER_STATUSES,
 } from "@/lib/work-queue"
 import type { OcProgressItem } from "@/lib/work-queue"
 
@@ -218,6 +219,15 @@ describe("RECEIVABLE_ORDER_STATUSES", () => {
   it("no se solapa con los estados de OC ya cerrados para recepción", () => {
     for (const closed of ["draft", "received", "closed", "cancelled"]) {
       expect(RECEIVABLE_ORDER_STATUSES).not.toContain(closed)
+    }
+  })
+})
+
+describe("COMPLETED_RECEIPT_ORDER_STATUSES", () => {
+  it("separa las OC con recepción finalizada de Compras y de la bandeja activa", () => {
+    expect(COMPLETED_RECEIPT_ORDER_STATUSES).toEqual(["received", "closed"])
+    for (const status of COMPLETED_RECEIPT_ORDER_STATUSES) {
+      expect(RECEIVABLE_ORDER_STATUSES).not.toContain(status)
     }
   })
 })

@@ -129,6 +129,43 @@ async function main() {
   }))
   await db.insert(schema.costCenters).values(costCenters).onConflictDoNothing()
 
+  // ── Equipos de servicio: monogás y alcotest por faena ─────────────────────
+  // Sin ellos, "Mantención de monogás" y "Calibración de alcotest" no se pueden
+  // solicitar: el ítem exige un equipo del registro.
+  const equipmentRows: (typeof schema.serviceEquipment.$inferInsert)[] = []
+  for (const [index, ws] of worksites.entries()) {
+    equipmentRows.push(
+      {
+        id: id("eq"),
+        code: `MG-${String(index + 1).padStart(3, "0")}`,
+        name: `Detector monogás H2S ${ws.name}`,
+        kind: "monogas",
+        brand: "Dräger",
+        model: "Pac 6500",
+        serialNumber: `MG${String(index + 1).padStart(4, "0")}-DEMO`,
+        worksiteId: ws.id,
+        isActive: true,
+        createdAt: iso(daysAgo(180)),
+        updatedAt: iso(daysAgo(180)),
+      },
+      {
+        id: id("eq"),
+        code: `ALC-${String(index + 1).padStart(3, "0")}`,
+        name: `Alcotest de bolsillo ${ws.name}`,
+        kind: "alcotest",
+        brand: "Dräger",
+        model: "Alcotest 3820",
+        serialNumber: `ALC${String(index + 1).padStart(4, "0")}-DEMO`,
+        worksiteId: ws.id,
+        isActive: true,
+        createdAt: iso(daysAgo(180)),
+        updatedAt: iso(daysAgo(180)),
+      },
+    )
+  }
+  await db.insert(schema.serviceEquipment).values(equipmentRows).onConflictDoNothing()
+  console.log(`  Equipos de servicio: ${equipmentRows.length}`)
+
   // ── Stock por faena, con mínimos y algunos bajo el mínimo ─────────────────
   const stockRows: (typeof schema.worksiteStock.$inferInsert)[] = []
   for (const ws of worksites) {

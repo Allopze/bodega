@@ -45,6 +45,8 @@ type BootstrapResult = {
   contentDigest?: string
   unchanged?: boolean
   pendingClassifications?: number
+  /** Resultado crudo del apply del lote: la evidencia de qué se insertó. */
+  applyResult?: Record<string, unknown>
 }
 
 function fail(step: string, error: unknown): BootstrapResult {
@@ -272,6 +274,9 @@ async function bootstrapBase2026(programId: string): Promise<BootstrapResult> {
     batchId: staged.batch.id,
     templateId: template && !template.unchanged ? template.template.id : undefined,
     templateVersionId: template && !template.unchanged ? template.version.id : undefined,
+    // El resultado del apply se estaba descartando: en un bootstrap que sólo
+    // imprime JSON, es la única evidencia de qué se insertó realmente.
+    applyResult: applied,
     templateVersion: template && !template.unchanged ? template.version.version : undefined,
     contentDigest: template && !template.unchanged ? template.version.contentDigest : undefined,
     unchanged: template?.unchanged,

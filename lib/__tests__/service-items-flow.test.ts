@@ -29,6 +29,7 @@ vi.mock("@/db", () => ({
 const migrationsFolder = path.resolve(process.cwd(), "db/migrations")
 
 import { createSubmittedRequest } from "@/lib/services/requests-draft"
+import { getEquipmentServiceHistory } from "@/lib/services/service-equipment-history"
 import { createOrder, recordOrderItemCost } from "@/lib/services/purchasing"
 import { approveItem } from "@/lib/services/item-state"
 
@@ -50,15 +51,24 @@ describe("servicios con costo pendiente — flujo completo", () => {
       id: userId, name: "Operador Servicios", email: "srv-test@chome.cl",
       hashedPassword: "hash", isActive: true, createdAt: now, updatedAt: now,
     })
-    await inMemoryDb.insert(schema.worksites).values({
-      id: worksiteId, name: "Faena Servicios", code: "SRV-TEST", isActive: true, createdAt: now, updatedAt: now,
-    })
+    await inMemoryDb.insert(schema.worksites).values([
+      { id: worksiteId, name: "Faena Servicios", code: "SRV-TEST", isActive: true, createdAt: now, updatedAt: now },
+      { id: "ws-srv-otra", name: "Faena Ajena", code: "SRV-OTRA", isActive: true, createdAt: now, updatedAt: now },
+    ])
     await inMemoryDb.insert(schema.workers).values({
       id: workerId, firstName: "Ana", lastName: "Colaboradora", worksiteId, isActive: true, createdAt: now,
     })
     await inMemoryDb.insert(schema.suppliers).values({
       id: supplierId, name: "Proveedor Servicios", isActive: true, createdAt: now, updatedAt: now,
     })
+    // Instrumentos del registro: el servicio apunta a ellos en vez de copiar su
+    // código a mano.
+    await inMemoryDb.insert(schema.serviceEquipment).values([
+      { id: "eq-mg-1", code: "MG-014", name: "Detector monogás H2S", kind: "monogas", worksiteId, isActive: true, createdAt: now, updatedAt: now },
+      { id: "eq-alc-1", code: "ALC-002", name: "Alcotest de bolsillo", kind: "alcotest", worksiteId, isActive: true, createdAt: now, updatedAt: now },
+      { id: "eq-mg-baja", code: "MG-999", name: "Monogás de baja", kind: "monogas", worksiteId, isActive: false, createdAt: now, updatedAt: now },
+      { id: "eq-otra-faena", code: "MG-777", name: "Monogás de otra faena", kind: "monogas", worksiteId: "ws-srv-otra", isActive: true, createdAt: now, updatedAt: now },
+    ])
     // EPP normal para las solicitudes mixtas.
     await inMemoryDb.insert(schema.productCategories).values({
       id: "cat-epp-srv-test", name: "EPP", slug: "epp-srv-test", isEpp: true, requiresPrevencion: false, sortOrder: 0,
@@ -85,9 +95,8 @@ describe("servicios con costo pendiente — flujo completo", () => {
     }
   }
 
-  const serie = (attributeId: string, value = "MG-014") => ([
-    { attributeId, attributeName: "Código interno / N° de serie", value },
-  ])
+  // Los servicios sobre instrumentos referencian el equipo del registro; el
+  // atributo de texto libre "Código interno / N° de serie" se retiró en 0149.
 
   // ── 1-3. Creación sin precio ────────────────────────────────────────────────
 
@@ -111,7 +120,7 @@ describe("servicios con costo pendiente — flujo completo", () => {
 
   it("crea una solicitud de mantención de monogás sin precio", async () => {
     const { requestId } = await createSubmittedRequest(userId, undefined, requestData([
-      { productId: MONOGAS, attributes: serie("pa-srv-monogas-serie") },
+      { productId: MONOGAS, equipmentId: "eq-mg-1" },
     ]))
 
     const items = await inMemoryDb.select().from(schema.purchaseRequestItems)
@@ -124,12 +133,26 @@ describe("servicios con costo pendiente — flujo completo", () => {
 
   it("crea una solicitud de calibración de alcotest sin precio", async () => {
     const { requestId } = await createSubmittedRequest(userId, undefined, requestData([
-      { productId: ALCOTEST, attributes: serie("pa-srv-alcotest-serie", "ALC-002") },
+      { productId: ALCOTEST, equipmentId: "eq-alc-1" },
     ]))
     const items = await inMemoryDb.select().from(schema.purchaseRequestItems)
       .where(eq(schema.purchaseRequestItems.requestId, requestId))
     expect(items[0]!.productId).toBe(ALCOTEST)
     expect(items[0]!.status).toBe("requested")
+  })
+
+  it("la cantidad del ítem la deriva el servidor del número de dosis", async () => {
+    // El cliente manda quantity: 1 (el default del formulario) y 3 dosis: gana
+    // el catálogo, para que la OC no pida 1 unidad de una vacuna de 3 dosis.
+    const { requestId } = await createSubmittedRequest(userId, undefined, requestData([
+      {
+        productId: VACUNA, workerId, quantity: 1, unitOfMeasure: "dosis",
+        attributes: [{ attributeId: "pa-srv-vacuna-dosis", attributeName: "Número de dosis", value: "3" }],
+      },
+    ]))
+    const [item] = await inMemoryDb.select().from(schema.purchaseRequestItems)
+      .where(eq(schema.purchaseRequestItems.requestId, requestId))
+    expect(item!.quantity).toBe(3)
   })
 
   it("crea una solicitud de vacuna con colaborador y dosis, sin precio", async () => {
@@ -178,10 +201,34 @@ describe("servicios con costo pendiente — flujo completo", () => {
     }
   })
 
-  it("rechaza un monogás sin el código interno del equipo", async () => {
+  it("rechaza un monogás sin equipo asociado", async () => {
     await expect(createSubmittedRequest(userId, undefined, requestData([
-      { productId: MONOGAS, attributes: [] },
-    ]))).rejects.toThrow("completa Código interno / N° de serie")
+      { productId: MONOGAS },
+    ]))).rejects.toThrow("selecciona el equipo para Mantención de monogás")
+  })
+
+  it("rechaza un equipo de otra familia, de baja o de otra faena", async () => {
+    // Un alcotest no se manda a la mantención de monogás.
+    await expect(createSubmittedRequest(userId, undefined, requestData([
+      { productId: MONOGAS, equipmentId: "eq-alc-1" },
+    ]))).rejects.toThrow("no corresponde a este servicio")
+
+    await expect(createSubmittedRequest(userId, undefined, requestData([
+      { productId: MONOGAS, equipmentId: "eq-mg-baja" },
+    ]))).rejects.toThrow("no existe, está inactivo o es de otra faena")
+
+    await expect(createSubmittedRequest(userId, undefined, requestData([
+      { productId: MONOGAS, equipmentId: "eq-otra-faena" },
+    ]))).rejects.toThrow("no existe, está inactivo o es de otra faena")
+  })
+
+  it("guarda la referencia al equipo, no una copia de sus datos", async () => {
+    const { requestId } = await createSubmittedRequest(userId, undefined, requestData([
+      { productId: MONOGAS, equipmentId: "eq-mg-1" },
+    ]))
+    const [item] = await inMemoryDb.select().from(schema.purchaseRequestItems)
+      .where(eq(schema.purchaseRequestItems.requestId, requestId))
+    expect(item!.equipmentId).toBe("eq-mg-1")
   })
 
   // ── 12. Compatibilidad con lo existente ─────────────────────────────────────
@@ -211,7 +258,7 @@ describe("servicios con costo pendiente — flujo completo", () => {
     // Solicitud mixta: EPP con precio conocido + servicio con costo pendiente.
     const { requestId } = await createSubmittedRequest(userId, undefined, requestData([
       { productId: "prod-casco-srv", quantity: 2, unitOfMeasure: "unidad" },
-      { productId: MONOGAS, attributes: serie("pa-srv-monogas-serie", "MG-777") },
+      { productId: MONOGAS, equipmentId: "eq-mg-1" },
     ]))
     const items = await inMemoryDb.select().from(schema.purchaseRequestItems)
       .where(eq(schema.purchaseRequestItems.requestId, requestId))
@@ -330,7 +377,7 @@ describe("servicios con costo pendiente — flujo completo", () => {
 
   it("rechaza registrar el costo fuera del alcance de faenas del actor", async () => {
     const { requestId } = await createSubmittedRequest(userId, undefined, requestData([
-      { productId: ALCOTEST, attributes: serie("pa-srv-alcotest-serie", "ALC-909") },
+      { productId: ALCOTEST, equipmentId: "eq-alc-1" },
     ]))
     const [item] = await inMemoryDb.select().from(schema.purchaseRequestItems)
       .where(eq(schema.purchaseRequestItems.requestId, requestId))
@@ -355,6 +402,29 @@ describe("servicios con costo pendiente — flujo completo", () => {
       purchaseOrderItemId: line!.id, unitPrice: 30_000, userId,
       worksiteScope: [worksiteId],
     })).resolves.toMatchObject({ pendingCostLines: 0 })
+  })
+
+  it("el historial del equipo reúne sus intervenciones, con y sin costo", async () => {
+    // A esta altura el monogás eq-mg-1 ya pasó por varias solicitudes del resto
+    // de la suite; el historial es lo que el registro existe para responder.
+    const history = await getEquipmentServiceHistory("eq-mg-1")
+    expect(history.length).toBeGreaterThan(0)
+    expect(history.every((record) => record.serviceName === "Mantención de monogás")).toBe(true)
+    expect(history.every((record) => record.requestCode.startsWith("SOL-"))).toBe(true)
+
+    // La que llegó a OC y se le registró el costo aparece con su monto.
+    const conCosto = history.find((record) => record.costRecordedAt !== null)
+    expect(conCosto?.subtotal).toBe(45_000)
+    expect(conCosto?.orderCode).toMatch(/^OC-/)
+
+    // Las que nunca llegaron a OC no inventan un costo de 0.
+    const sinOc = history.filter((record) => record.orderId === null)
+    expect(sinOc.every((record) => record.subtotal === null)).toBe(true)
+  })
+
+  it("un equipo sin intervenciones devuelve un historial vacío, no un error", async () => {
+    expect(await getEquipmentServiceHistory("eq-alc-1")).toBeInstanceOf(Array)
+    expect(await getEquipmentServiceHistory("eq-inexistente")).toEqual([])
   })
 
   it("la base rechaza un precio sin subtotal (o al revés)", async () => {

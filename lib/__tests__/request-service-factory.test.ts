@@ -53,7 +53,7 @@ vi.mock("@/lib/requests/quotation-access", () => ({
 
 // ── Helper: build chain mock ─────────────────────────────────────────────────
 
-function chainMock(result: unknown = []) {
+function _chainMock(result: unknown = []) {
   const chain: Record<string, unknown> = {}
   chain.set = vi.fn(() => chain)
   chain.where = vi.fn(() => chain)
