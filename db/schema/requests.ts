@@ -5,6 +5,7 @@ import { worksites, workers, suppliers } from "./worksites"
 import { products, productAttributes } from "./products"
 import { costCenters } from "./cost-centers"
 import { eppTypes } from "./epp-types"
+import { serviceEquipment } from "./service-equipment"
 
 /* ── Purchase Request States ─────────────────────────────────────────────── */
 // draft | submitted | in_review | partially_approved | approved
@@ -66,6 +67,9 @@ export const purchaseRequestItems = pgTable("purchase_request_items", {
   urgency:         text("urgency"),
   requiredDate:    text("required_date"),
   workerId:        text("worker_id").references(() => workers.id),  // EPP → specific worker
+  // Servicios sobre un instrumento del registro (monogás, alcotest): la
+  // solicitud apunta al equipo en vez de copiar su código y número de serie.
+  equipmentId:     text("equipment_id").references(() => serviceEquipment.id),
   // Supplier hint (mirrors productId / productNameFree pattern)
   suggestedSupplierId: text("suggested_supplier_id").references(() => suppliers.id),
   supplierHint:    text("supplier_hint"),                           // free-text fallback
@@ -93,6 +97,8 @@ export const purchaseRequestItems = pgTable("purchase_request_items", {
     AND (${table.urgency} IS NULL OR ${table.urgency} IN ('normal', 'high', 'critical'))
   `),
   index("purchase_request_items_request_id_status_idx").on(table.requestId, table.status),
+  // Historial por equipo: "qué mantenciones lleva este monogás".
+  index("purchase_request_items_equipment_idx").on(table.equipmentId),
 ])
 
 /* ── Request Item Attributes (talla, color, medida, etc.) ────────────────── */
@@ -159,6 +165,7 @@ export const purchaseRequestItemsRelations = relations(purchaseRequestItems, ({ 
   request:           one(purchaseRequests, { fields: [purchaseRequestItems.requestId], references: [purchaseRequests.id] }),
   product:           one(products, { fields: [purchaseRequestItems.productId], references: [products.id] }),
   worker:            one(workers, { fields: [purchaseRequestItems.workerId], references: [workers.id] }),
+  equipment:         one(serviceEquipment, { fields: [purchaseRequestItems.equipmentId], references: [serviceEquipment.id] }),
   suggestedSupplier: one(suppliers, { fields: [purchaseRequestItems.suggestedSupplierId], references: [suppliers.id] }),
   attributes:        many(requestItemAttributes),
   approvalDecisions: many(approvalDecisions),

@@ -1037,6 +1037,20 @@
       "when": 1786332408865,
       "tag": "0147_service_items_pending_cost",
       "breakpoints": true
+    },
+    {
+      "idx": 148,
+      "version": "7",
+      "when": 1786338122950,
+      "tag": "0148_attribute_drives_quantity",
+      "breakpoints": true
+    },
+    {
+      "idx": 149,
+      "version": "7",
+      "when": 1786339047022,
+      "tag": "0149_service_equipment_registry",
+      "breakpoints": true
     }
   ]
 }

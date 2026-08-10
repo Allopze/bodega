@@ -56,6 +56,12 @@ export const products = pgTable("products", {
    * — no se guarda el nombre suelto.
    */
   requiresWorker:      boolean("requires_worker").notNull().default(false),
+  /**
+   * Slug de la familia de equipos que este servicio atiende ('monogas',
+   * 'alcotest'). Cuando está presente, el ítem debe apuntar a un equipo del
+   * registro (`service_equipment`) en vez de re-escribir su código a mano.
+   */
+  equipmentKind:       text("equipment_kind"),
   referencePrice:      numeric("reference_price", { precision: 12, scale: 2, mode: "number" }),
   isActive:            boolean("is_active").notNull().default(true),
   notes:               text("notes"),
@@ -76,8 +82,21 @@ export const productAttributes = pgTable("product_attributes", {
   isRequired:    boolean("is_required").notNull().default(false),
   options:       text("options"),                  // JSON array for select type
   sizeFamily:    text("size_family"),              // canonical family: 'ropa' | 'calzado' | 'guantes' | 'casco'
+  /**
+   * El valor de este atributo **es** la cantidad del ítem.
+   *
+   * Existe porque el "Número de dosis" de una vacuna y la cantidad a comprar son
+   * el mismo número: como campos independientes podían contradecirse y la OC
+   * terminaba pidiendo 1 unidad de una vacuna de 3 dosis. Sólo tiene sentido en
+   * atributos `integer`, y a lo sumo uno por producto.
+   */
+  drivesQuantity: boolean("drives_quantity").notNull().default(false),
   sortOrder:     integer("sort_order").notNull().default(0),
-})
+}, (table) => [
+  uniqueIndex("product_attributes_one_quantity_driver")
+    .on(table.productId)
+    .where(sql`${table.drivesQuantity} = true`),
+])
 
 /* ── Product ↔ Supplier (preferred suppliers + price history) ────────────── */
 export const productSuppliers = pgTable("product_suppliers", {
