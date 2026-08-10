@@ -1051,6 +1051,13 @@
       "when": 1786339047022,
       "tag": "0149_service_equipment_registry",
       "breakpoints": true
+    },
+    {
+      "idx": 150,
+      "version": "7",
+      "when": 1786384006264,
+      "tag": "0150_absurd_emma_frost",
+      "breakpoints": true
     }
   ]
 }
