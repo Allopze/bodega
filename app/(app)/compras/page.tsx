@@ -34,27 +34,19 @@ export const metadata: Metadata = { title: "Compras" }
 import { ORDERS_PAGE_SIZE, PENDING_PURCHASE_PAGE_SIZE } from "@/lib/constants"
 
 /**
- * Etapas visibles del ciclo de una OC (A5: el estado se representa una sola vez,
- * aquí). Compras tiene tres: antes de emitir, después de emitir, y anulada.
+ * Etapas propias de Compras (A5: el estado se representa una sola vez, aquí).
+ * Una vez emitida, la OC pasa a Recepción; por eso Compras sólo ofrece sus
+ * estados de abastecimiento y su historial de anuladas.
  *
- * Las etapas de recepción se agrupan bajo "Emitidas" en vez de tener una tab
- * cada una: eran las mismas etiquetas que las tabs de /recepcion —"Pendiente de
- * recepción" era literalmente el mismo string— con los mismos conteos, así que
- * Compras se leía como una segunda bandeja de recepción. Lo que le queda a
- * Compras sobre una OC emitida no es recibirla: es anularla mientras aún no
- * llegue nada, y perseguir su factura. La etapa exacta sigue visible en la
- * columna Estado, que es donde el usuario la busca fila por fila.
+ * Las etapas de recepción no se incluyen ni siquiera como tabs vacías: son la
+ * cola de /recepcion. Una OC completamente recibida sólo vuelve a Compras
+ * mediante `factura=pendiente`, para que el trabajo tributario no desaparezca.
  *
- * `received` entra en el grupo por el filtro de factura pendiente, el único
- * modo en que una OC ya recibida vuelve a esta bandeja (ver `comprasInboxSql`);
- * fuera de ese modo el scope la excluye y no altera ningún conteo.
+ * El alcance efectivo lo impone `comprasInboxSql`; estas tabs sólo representan
+ * los estados que la bandeja puede mostrar de forma operativa.
  */
 const STAGE_GROUPS = [
   { value: "draft", label: "Borrador" },
-  {
-    value: "sent,partially_office_received,office_received,partially_received,received",
-    label: "Emitidas",
-  },
   { value: "cancelled", label: "Anuladas" },
 ] as const
 

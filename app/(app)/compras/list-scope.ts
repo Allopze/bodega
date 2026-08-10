@@ -1,10 +1,14 @@
-import { and, inArray, isNull, notInArray } from "drizzle-orm"
+import { and, inArray, isNull } from "drizzle-orm"
 import { purchaseOrders } from "@/db/schema"
 import { COMPLETED_RECEIPT_ORDER_STATUSES, INVOICE_DUE_ORDER_STATUSES } from "@/lib/work-queue-labels"
 
 /**
- * Qué OC pertenecen a la bandeja de Compras. Dos exclusiones, por razones
- * distintas, y una excepción.
+ * Qué OC pertenecen a la bandeja de Compras.
+ *
+ * Compras conserva sólo el trabajo de abastecimiento (borradores) y su
+ * historial de anuladas. Una OC emitida pasa a ser responsabilidad de
+ * Recepción mientras tenga cualquier saldo físico pendiente; esos estados no
+ * deben volver a aparecer en esta bandeja.
  *
  * **Eliminadas.** `deleteOrder` no borra la fila: le pone `deletedAt` y le muta
  * el código a `OC-…-DELETED-<id>` para liberar el UNIQUE. Sin este corte el
@@ -15,27 +19,21 @@ import { COMPLETED_RECEIPT_ORDER_STATUSES, INVOICE_DUE_ORDER_STATUSES } from "@/
  * listado se había quedado sin él. Vive acá, y no inline en la página, para que
  * el próximo consumidor lo reutilice en vez de reinventarlo por tercera vez.
  *
- * **Recepción terminada.** Una vez recibida, la OC vive en /recepcion y no
- * vuelve a la bandeja de trabajo de Compras.
+ * **Factura pendiente.** Una OC cuya recepción ya terminó puede volver sólo
+ * bajo `factura=pendiente`: recibir sin factura sigue siendo trabajo de
+ * Compras. Las OC con recepción activa quedan fuera incluso en ese modo.
  *
- * La excepción es la factura: una OC ya recibida y sin factura sigue siendo
- * trabajo de Compras —la señal "Sin factura" la anunciaba y el listado no podía
- * mostrarla— así que bajo `factura=pendiente` la exclusión de recepción
- * terminada cede el paso a `INVOICE_DUE_ORDER_STATUSES`, que admite `received` y
- * sigue excluyendo `closed`.
- *
- * Ese cambio de acotación va acá y no en el llamador aunque el llamador ya ANDee
- * el mismo `inArray`: si el modo factura sólo relajara la exclusión, el scope
- * dependería de que quien lo use recuerde reponer el límite, y olvidarlo deja
- * entrar las cerradas sin ninguna señal. Acotado acá, el predicado es correcto
- * por sí solo en los dos modos y el llamador sólo agrega lo ortogonal (que la
- * factura falte). La redundancia es un AND del mismo predicado: cuesta nada.
+ * El predicado vive aquí y no en el llamador para que ambos modos respeten la
+ * misma frontera de módulo.
  */
 export function comprasInboxSql({ invoicePendingOnly }: { invoicePendingOnly: boolean }) {
   return and(
     isNull(purchaseOrders.deletedAt),
     invoicePendingOnly
-      ? inArray(purchaseOrders.status, INVOICE_DUE_ORDER_STATUSES)
-      : notInArray(purchaseOrders.status, COMPLETED_RECEIPT_ORDER_STATUSES),
+      ? inArray(
+          purchaseOrders.status,
+          COMPLETED_RECEIPT_ORDER_STATUSES.filter((status) => INVOICE_DUE_ORDER_STATUSES.includes(status)),
+        )
+      : inArray(purchaseOrders.status, ["draft", "cancelled"]),
   )
 }
