@@ -10,23 +10,28 @@ import { itemSupplierId, suggestedPrice, applySuggestedPrices } from "./oc-form.
 import type { ActionState } from "@/lib/validation/operations"
 import type { SupplierOption, WorksiteOption, PendingItemOption, OcItemRow } from "./oc-form.types"
 
+/** Identidad estable: un `[]` nuevo por render reiniciaría los inicializadores. */
+const EMPTY_ITEM_IDS: string[] = []
+
 export function useOcForm({
   suppliers,
   worksites,
   pendingItems,
   initialWorksiteId,
-  initialItemId,
+  initialItemIds = EMPTY_ITEM_IDS,
 }: {
   suppliers:    SupplierOption[]
   worksites:    WorksiteOption[]
   pendingItems: PendingItemOption[]
   initialWorksiteId?: string
   /**
-   * Ítem que traía el CTA de "Mis pendientes" (`/compras/nueva?item=…`). Llegar
-   * con la lista entera sin marcar obligaba a reencontrar a mano el ítem por el
-   * que se hizo clic (auditoría UI/UX 2026-07-29, A-06).
+   * Ítems que trae el CTA de origen. Uno cuando viene de una tarea de "Mis
+   * pendientes" (`?item=…`), todos los pendientes de una solicitud cuando viene
+   * de "Generar OC" en la cola de Compras (`?solicitud=…`). Llegar con la lista
+   * entera sin marcar obligaba a reencontrar a mano lo que se acababa de pulsar
+   * (auditoría UI/UX 2026-07-29, A-06).
    */
-  initialItemId?: string
+  initialItemIds?: string[]
 }) {
   const [supplierId,   setSupplierId]   = React.useState<string>("")
   const [worksiteId,   setWorksiteId]   = React.useState<string>(initialWorksiteId ?? worksites[0]?.id ?? "")
@@ -35,7 +40,7 @@ export function useOcForm({
   const [address,      setAddress]      = React.useState<string>("")
   const [notes,        setNotes]        = React.useState<string>("")
   const [selectedItems, setSelectedItems] = React.useState<Set<string>>(
-    () => new Set(initialItemId && pendingItems.some((i) => i.id === initialItemId) ? [initialItemId] : []),
+    () => new Set(initialItemIds.filter((id) => pendingItems.some((item) => item.id === id))),
   )
   // `null` = costo pendiente elegido explícitamente (campo vaciado en un servicio).
   const [unitPrices,   setUnitPrices]   = React.useState<Record<string, number | null>>({})
@@ -173,7 +178,9 @@ export function useOcForm({
   // traía el CTA: si no, el efecto de abajo elegiría `worksiteModes[0]` y el
   // ítem preseleccionado quedaría filtrado fuera de la vista (A-06).
   const [modeFilter, setModeFilter] = React.useState<PendingItemOption["deliveryMode"] | null>(
-    () => pendingItems.find((i) => i.id === initialItemId)?.deliveryMode ?? null,
+    // Todos los ítems preseleccionados vienen de la misma solicitud, así que
+    // comparten modo de despacho: basta el primero.
+    () => pendingItems.find((i) => initialItemIds.includes(i.id))?.deliveryMode ?? null,
   )
   React.useEffect(() => {
     if (worksiteModes.length <= 1) { setModeFilter(null); return }

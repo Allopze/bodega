@@ -95,7 +95,7 @@ export default async function DteListPage({
         breadcrumb={
           <Breadcrumbs items={[
             { label: "Inicio", href: "/dashboard" },
-            { label: "Órdenes de compra", href: "/compras" },
+            { label: "Compras", href: "/compras" },
             { label: "Documentos DTE" },
           ]} />
         }

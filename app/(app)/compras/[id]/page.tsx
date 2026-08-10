@@ -73,7 +73,7 @@ export default async function OcDetailPage({
             auditoría para poder rastrearla, pero ya no forma parte del flujo de adquisiciones.
           </p>
           <div className="mt-6">
-            <Button asChild><Link href="/compras">Volver a Órdenes de compra</Link></Button>
+            <Button asChild><Link href="/compras">Volver a Compras</Link></Button>
           </div>
         </div>
       </PageContainer>
@@ -314,7 +314,7 @@ export default async function OcDetailPage({
         breadcrumb={
           <Breadcrumbs items={[
             { label: "Inicio", href: "/dashboard" },
-            { label: "Órdenes de compra", href: "/compras" },
+            { label: "Compras", href: "/compras" },
             { label: order.code                       },
           ]} />
         }

@@ -1,8 +1,6 @@
 "use client"
 
-import Link from "next/link"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
-import { CheckCircle, Plus, Warning } from "@phosphor-icons/react"
 import { DataTable } from "@/components/admin/data-table"
 import { ORDERS_PAGE_SIZE } from "@/lib/constants"
 import { ListFilters, LIST_FILTER_PARAMS, type FilterOption } from "@/components/adquisiciones/list-filters"
@@ -27,27 +25,25 @@ const COLUMNS = [
 
 /* ── OC List component ───────────────────────────────────────────────────────── */
 
+/**
+ * El registro de OC. La cola de trabajo de Compras —solicitudes aprobadas sin
+ * OC— vive en `PendingPurchaseList`, arriba de esta tabla: el aviso "N ítems
+ * aprobados sin incluir en ninguna OC" que vivía acá era el único rastro de
+ * esos pendientes y no llevaba a ningún registro. Este componente quedó con lo
+ * que sí es de la orden.
+ */
 export function OcList({
   orders,
-  pendingCount,
   stageTabs = [],
-  canCreate,
   canDelete = false,
   canSend = false,
-  createdCount = 0,
-  noPendingItems = false,
   worksiteOptions = [],
   supplierOptions = [],
 }: {
   orders:       OcRow[]
-  pendingCount: number
   stageTabs?:   StageTab[]
-  canCreate:    boolean
   canDelete?:   boolean
   canSend?:     boolean
-  createdCount?: number
-  /** "Nueva OC" rebotó aquí porque no hay ítems aprobados sin OC (UX-7). */
-  noPendingItems?: boolean
   worksiteOptions?: FilterOption[]
   supplierOptions?: FilterOption[]
 }) {
@@ -60,46 +56,10 @@ export function OcList({
   return (
     <div className="flex flex-col gap-4">
       <OnboardingHint
-        storageKey="hint_compras_v1"
-        title="Órdenes de compra"
-        body="Aquí se generan las OC a partir de los ítems aprobados. El sistema las agrupa automáticamente por proveedor. Revisa el borrador y pulsa «Emitir y enviar» para que pase a Recepción."
+        storageKey="hint_compras_v2"
+        title="Cómo avanza una OC"
+        body="Arriba está la cola: las solicitudes aprobadas que todavía necesitan una OC. Acá quedan las ya generadas — el sistema las agrupa por proveedor. Revisa el borrador y pulsa «Emitir y enviar» para que pase a Recepción."
       />
-      {createdCount > 1 && (
-        <div className="flex items-center gap-3 px-4 py-3 rounded-[var(--radius)] bg-[var(--color-success-tint)] border border-[var(--color-success-line)]">
-          <CheckCircle size={16} className="text-[var(--color-success-ink)] shrink-0" />
-          <p className="text-sm text-[var(--color-success-ink)] flex-1">
-            Se crearon <span className="font-semibold">{createdCount} órdenes de compra</span>, separadas por proveedor.
-          </p>
-        </div>
-      )}
-
-      {noPendingItems && (
-        <div className="flex items-center gap-3 px-4 py-3 rounded-[var(--radius)] bg-[var(--color-signal-tint)] border border-[var(--color-signal-line)]">
-          <Warning size={16} className="text-[var(--color-signal-ink)] shrink-0" />
-          <p className="text-sm text-[var(--color-signal-ink)] flex-1">
-            No hay ítems aprobados pendientes de compra por ahora.
-          </p>
-        </div>
-      )}
-
-      {/* Never-miss alert for approved items not on any OC */}
-      {pendingCount > 0 && (
-        <div className="flex items-center gap-3 px-4 py-3 rounded-[var(--radius)] bg-[var(--color-signal-tint)] border border-[var(--color-signal-line)]">
-          <Warning size={16} className="text-[var(--color-signal-ink)] shrink-0" />
-          <p className="text-sm text-[var(--color-signal-ink)] flex-1">
-            <span className="font-semibold">{pendingCount} ítem{pendingCount !== 1 ? "s" : ""}</span>
-            {" "}aprobado{pendingCount !== 1 ? "s" : ""} sin incluir en ninguna OC.
-          </p>
-          {canCreate && (
-            <Button variant="signal" size="sm" asChild>
-              <Link href="/compras/nueva">
-                <Plus weight="bold" size={14} />
-                Crear OC
-              </Link>
-            </Button>
-          )}
-        </div>
-      )}
 
       {/* A5: el estado vive en las tabs, así que la barra no repite su select. */}
       {stageTabs.length > 0 && <StageTabs tabs={stageTabs} ariaLabel="Etapa de la orden de compra" />}

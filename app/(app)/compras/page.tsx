@@ -1,4 +1,5 @@
 import type { Metadata } from "next"
+import Link from "next/link"
 import { redirect } from "next/navigation"
 import { db }       from "@/db"
 import {
@@ -6,8 +7,7 @@ import {
   worksites, suppliers,
   purchaseRequests,
 } from "@/db/schema"
-import { and, or, ilike, inArray, notInArray, count, desc, eq, sql } from "drizzle-orm"
-import { TERMINAL_REQUEST_STATUSES } from "@/lib/approvals-queue"
+import { and, or, ilike, inArray, count, desc, eq, sql } from "drizzle-orm"
 import { requirePermission } from "@/lib/auth/can"
 import { can } from "@/lib/auth/can"
 import { isGlobalRole, visibleWorksiteIds } from "@/lib/auth/scope"
@@ -24,11 +24,14 @@ import { comprasInboxSql } from "./list-scope"
 import { ComprasActions } from "./compras-actions"
 import { OcList } from "./oc-list"
 import type { OcRow } from "./oc-list"
-import { purchaseRequestItems } from "@/db/schema"
+import { PendingPurchaseList } from "./pending-purchase-list"
+import {
+  countPendingPurchaseItems, countPendingPurchaseRequests, listPendingPurchaseRequests,
+} from "@/lib/services/purchasing"
 
-export const metadata: Metadata = { title: "Órdenes de compra" }
+export const metadata: Metadata = { title: "Compras" }
 
-import { ORDERS_PAGE_SIZE } from "@/lib/constants"
+import { ORDERS_PAGE_SIZE, PENDING_PURCHASE_PAGE_SIZE } from "@/lib/constants"
 
 /**
  * Etapas visibles del ciclo de una OC (A5: el estado se representa una sola vez,
@@ -130,24 +133,20 @@ export default async function ComprasPage({
   )
   const ordersWhere = and(scopeWhere, statusSql(purchaseOrders.status, listParams.estados))
 
-  // ARQ-10: ninguna de estas 6 consultas depende del resultado de otra —
+  // La cola de Compras: solicitudes aprobadas que todavía necesitan OC. El
+  // contador y la tabla salen del MISMO predicado compartido
+  // (`pendingPurchaseWhere`), así que el resumen no puede anunciar 8 con 5
+  // filas debajo. Los filtros de OC (estado de la orden, factura, período) no
+  // se le aplican: son propiedades de la orden, y esta cola es de solicitudes
+  // que todavía no tienen ninguna.
+  const pendingFilters = { q: listParams.q, worksiteId: listParams.faena, supplierId: listParams.proveedor }
+
+  // ARQ-10: ninguna de estas consultas depende del resultado de otra —
   // todas cuelgan sólo de los filtros/scope ya resueltos arriba — así que van
-  // en un solo Promise.all en vez de 4 round-trips secuenciales.
-  const [[pendingRow], [totalOrdersRow], [invoicePendingRow], stageCountRows, worksiteOptionRows, supplierOptionRows] = await Promise.all([
-    // Approved / pending_purchase items (never-miss alert)
-    db
-      .select({ total: count() })
-      .from(purchaseRequestItems)
-      .innerJoin(purchaseRequests, eq(purchaseRequestItems.requestId, purchaseRequests.id))
-      .where(and(
-        inArray(purchaseRequestItems.status, ["approved", "pending_purchase"]),
-        // Mismo predicado que la fuente `compras` de la cola: un ítem colgando
-        // de una solicitud terminal no es trabajo pendiente. Hoy no hay forma
-        // de producir ese huérfano, pero tener el criterio en dos formas es
-        // como empezaron A-03/A-13.
-        notInArray(purchaseRequests.status, [...TERMINAL_REQUEST_STATUSES]),
-        requestWorksiteScope,
-      )),
+  // en un solo Promise.all en vez de round-trips secuenciales.
+  const [pendingCount, pendingRequestCount, [totalOrdersRow], [invoicePendingRow], stageCountRows, worksiteOptionRows, supplierOptionRows] = await Promise.all([
+    countPendingPurchaseItems(requestWorksiteScope, pendingFilters),
+    countPendingPurchaseRequests(requestWorksiteScope, pendingFilters),
     db.select({ total: count() }).from(purchaseOrders).where(ordersWhere),
     // La señal anuncia el atraso completo de la faena visible, no el de la vista
     // filtrada: si dependiera de los filtros, se apagaría justo al filtrar. Va
@@ -176,7 +175,6 @@ export default async function ComprasPage({
       .where(eq(suppliers.isActive, true))
       .orderBy(suppliers.name),
   ])
-  const pendingCount = pendingRow?.total ?? 0
   const invoicePendingCount = invoicePendingRow?.total ?? 0
   const countByStatus = Object.fromEntries(stageCountRows.map((row) => [row.status, row.total]))
   const stageTabs: StageTab[] = [
@@ -192,6 +190,20 @@ export default async function ComprasPage({
     totalItems: totalOrdersRow?.total ?? 0,
     pageSize: ORDERS_PAGE_SIZE,
   })
+  // La cola de pendientes pagina con su propio parámetro: con `page` compartido,
+  // avanzar en el registro de OC reiniciaba la cola y al revés.
+  const pendingPagination = resolvePagination({
+    pageParam: sp.pendientes,
+    totalItems: pendingRequestCount,
+    pageSize: PENDING_PURCHASE_PAGE_SIZE,
+  })
+  const pendingRequests = pendingRequestCount > 0
+    ? await listPendingPurchaseRequests(requestWorksiteScope, pendingFilters, {
+        limit: pendingPagination.limit,
+        offset: pendingPagination.offset,
+      })
+    : []
+  const pendingPageHref = (page: number) => buildPaginationHref("/compras", sp, page, "pendientes")
   const worksiteOptions = worksiteOptionRows.map((w) => ({ value: w.id, label: w.name }))
   const supplierOptions = supplierOptionRows.map((s) => ({ value: s.id, label: s.name }))
   const worksiteScopeLabel = worksiteOptions.find((worksite) => worksite.value === listParams.faena)?.label
@@ -240,32 +252,6 @@ export default async function ComprasPage({
       tone: "signal",
       href: "/compras?factura=pendiente",
     })
-  }
-
-  if (visibleOrders.length === 0 && pendingCount === 0) {
-    return (
-      <PageContainer>
-        <PageHeader
-        newShortcutHref="/compras/nueva"
-          title="Órdenes de compra"
-          description="Órdenes de compra y bandeja de ítems aprobados."
-          breadcrumb={
-            <Breadcrumbs items={[
-              { label: "Inicio", href: "/dashboard" },
-              { label: "Órdenes de compra" },
-            ]} />
-          }
-          headerActions={<HeaderSignals signals={headerSignals} />}
-          actions={<ComprasActions canCreate={canCreateOrder} exportHref={exportHref} />}
-        />
-        <p className="mb-3 text-xs text-(--color-text-subtle)" aria-live="polite">
-          Alcance de faena: <span className="font-medium text-(--color-text-muted)">{worksiteScopeLabel}</span>
-        </p>
-        <OcList orders={[]} pendingCount={0} stageTabs={stageTabs} canCreate={canCreateOrder} canDelete={canDeleteOrder} canSend={canSendOrder} createdCount={createdCount} noPendingItems={noPendingItems} worksiteOptions={worksiteOptions} supplierOptions={supplierOptions} />
-
-        <ServerPagination pagination={pagination} hrefForPage={pageHref} />
-      </PageContainer>
-    )
   }
 
   const orderIds    = visibleOrders.map((o) => o.id)
@@ -335,12 +321,13 @@ export default async function ComprasPage({
   return (
     <PageContainer>
       <PageHeader
-        title="Órdenes de compra"
-        description="Órdenes de compra y bandeja de ítems aprobados."
+        newShortcutHref="/compras/nueva"
+        title="Compras"
+        description="Solicitudes aprobadas que esperan orden de compra, y el registro de las OC generadas."
         breadcrumb={
           <Breadcrumbs items={[
             { label: "Inicio", href: "/dashboard" },
-            { label: "Órdenes de compra" },
+            { label: "Compras" },
           ]} />
         }
         headerActions={<HeaderSignals signals={headerSignals} />}
@@ -349,19 +336,40 @@ export default async function ComprasPage({
       <p className="mb-3 text-xs text-(--color-text-subtle)" aria-live="polite">
         Alcance de faena: <span className="font-medium text-(--color-text-muted)">{worksiteScopeLabel}</span>
       </p>
-      <OcList
-        orders={rows}
-        pendingCount={pendingCount}
-        stageTabs={stageTabs}
+
+      {/* El trabajo activo del módulo va primero: qué solicitudes aprobadas
+          siguen esperando una OC. El registro de OC queda debajo, para el
+          seguimiento (emitir un borrador, perseguir su factura, anularla). */}
+      <PendingPurchaseList
+        requests={pendingRequests}
+        pendingItemCount={pendingCount}
+        requestCount={pendingRequestCount}
         canCreate={canCreateOrder}
-        canDelete={canDeleteOrder}
-        canSend={canSendOrder}
         createdCount={createdCount}
         noPendingItems={noPendingItems}
-        worksiteOptions={worksiteOptions}
-        supplierOptions={supplierOptions}
+        hasActiveFilters={Boolean(listParams.q || listParams.faena || listParams.proveedor)}
       />
-      <ServerPagination pagination={pagination} hrefForPage={pageHref} />
+      <ServerPagination pagination={pendingPagination} hrefForPage={pendingPageHref} />
+
+      <div className="mt-8 flex flex-col gap-3">
+        <div>
+          <h2 className="text-h2">Órdenes de compra generadas</h2>
+          <p className="mt-1 text-sm text-(--color-text-muted)">
+            Registro y seguimiento. Una OC emitida se recibe en{" "}
+            <Link href="/recepcion" className="underline underline-offset-2">Recepción</Link>;
+            acá queda para emitir su borrador, adjuntar la factura o anularla.
+          </p>
+        </div>
+        <OcList
+          orders={rows}
+          stageTabs={stageTabs}
+          canDelete={canDeleteOrder}
+          canSend={canSendOrder}
+          worksiteOptions={worksiteOptions}
+          supplierOptions={supplierOptions}
+        />
+        <ServerPagination pagination={pagination} hrefForPage={pageHref} />
+      </div>
     </PageContainer>
   )
 }

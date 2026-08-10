@@ -123,6 +123,22 @@ export async function closeOrderTx(
         inArray(purchaseRequestItems.status, ["in_purchase_order", "purchased"]),
       ))
 
+    // La línea de OC que no recibió nada queda anulada junto con la devolución
+    // del ítem a la cola de compra. Sin esto la línea seguía en 'issued' sobre
+    // una OC cerrada, o sea contaba como cobertura activa
+    // (`getPurchasableCoverage` / `itemHasNoActiveOrderSql`): el ítem volvía a
+    // 'pending_purchase' y la bandeja lo contaba, pero el selector de
+    // /compras/nueva lo descartaba por "ya tiene cobertura". El contador decía
+    // 8 y "Crear OC" rebotaba con "no hay ítems pendientes". Anularla deja el
+    // estado del ítem y la cobertura de acuerdo por construcción.
+    await tx
+      .update(purchaseOrderItems)
+      .set({ status: "cancelled" })
+      .where(and(
+        eq(purchaseOrderItems.purchaseOrderId, orderId),
+        inArray(purchaseOrderItems.id, unresolvedItems.map((item) => item.orderItemId)),
+      ))
+
     for (const item of unresolvedItems) {
       await recordStatusChange({
         entityType: "request_item",

@@ -5,8 +5,8 @@ import {
   purchaseRequestItems, purchaseRequests,
   worksites, suppliers, products, productSuppliers, purchaseOrders, purchaseOrderItems,
 } from "@/db/schema"
-import { eq, inArray, notInArray, asc, and } from "drizzle-orm"
-import { TERMINAL_REQUEST_STATUSES } from "@/lib/approvals-queue"
+import { eq, inArray, asc } from "drizzle-orm"
+import { pendingPurchaseWhere } from "@/lib/adquisiciones/pending-purchase"
 import { requirePermission } from "@/lib/auth/can"
 import { canAccessWorksite }  from "@/lib/auth/can"
 import { worksiteScopeSql } from "@/lib/auth/scope"
@@ -34,9 +34,12 @@ export default async function NuevaOcPage({
   const requestedWorksiteId = typeof sp.faena === "string" ? sp.faena : ""
   // El CTA "Crear orden de compra" de /pendientes trae el ítem que originó la tarea.
   const requestedItemId = typeof sp.item === "string" ? sp.item : ""
+  // "Generar OC" de la cola de Compras trae la solicitud completa: se
+  // preseleccionan todos sus ítems aprobados sin OC, que es exactamente lo que
+  // la fila anunciaba tener pendiente.
+  const requestedRequestId = typeof sp.solicitud === "string" ? sp.solicitud : ""
 
   const scopeFilter = worksiteScopeSql(session, purchaseRequests.worksiteId)
-  const statusFilter = inArray(purchaseRequestItems.status, ["approved", "pending_purchase"])
 
   const rawItems = await db
     .select({
@@ -54,13 +57,11 @@ export default async function NuevaOcPage({
     })
     .from(purchaseRequestItems)
     .innerJoin(purchaseRequests, eq(purchaseRequestItems.requestId, purchaseRequests.id))
-    .where(and(
-      statusFilter,
-      // Ver el comentario gemelo en /compras: el picker usa el mismo criterio
-      // que la cola, no uno propio.
-      notInArray(purchaseRequests.status, [...TERMINAL_REQUEST_STATUSES]),
-      scopeFilter ? scopeFilter : undefined,
-    ))
+    // El mismo predicado canónico que el contador y la tabla de /compras: el
+    // selector ya filtraba la cobertura activa por su cuenta (más abajo, con
+    // `getPurchasableCoverage`) y ése era justamente el criterio que la bandeja
+    // no aplicaba — el contador decía 8 y acá aparecían 7.
+    .where(pendingPurchaseWhere(scopeFilter))
     .orderBy(asc(purchaseRequestItems.requestId))
     .limit(PICKER_ITEM_LIMIT + 1)
 
@@ -202,6 +203,14 @@ export default async function NuevaOcPage({
     ? requestedWorksiteId
     : firstPendingWorksiteId ?? worksiteOptions[0]?.id
 
+  // `?item=` (una tarea de /pendientes) y `?solicitud=` (una fila de la cola de
+  // Compras) son la misma preselección con distinta granularidad.
+  const initialItemIds = requestedRequestId
+    ? pendingItems.filter((item) => item.requestId === requestedRequestId).map((item) => item.id)
+    : requestedItemId
+      ? [requestedItemId]
+      : []
+
   return (
     <PageContainer width="workbench">
       <PageHeader
@@ -210,7 +219,7 @@ export default async function NuevaOcPage({
         breadcrumb={
           <Breadcrumbs items={[
             { label: "Inicio", href: "/dashboard" },
-            { label: "Órdenes de compra", href: "/compras" },
+            { label: "Compras", href: "/compras" },
             { label: "Nueva OC"                       },
           ]} />
         }
@@ -226,7 +235,7 @@ export default async function NuevaOcPage({
         worksites={worksiteOptions}
         pendingItems={pendingItems}
         initialWorksiteId={initialWorksiteId}
-        initialItemId={requestedItemId || undefined}
+        initialItemIds={initialItemIds}
       />
     </PageContainer>
   )

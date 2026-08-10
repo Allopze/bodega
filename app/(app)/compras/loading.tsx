@@ -6,11 +6,11 @@ export default function Loading() {
   return (
     <PageContainer>
       <PageHeader
-        title="Órdenes de compra"
+        title="Compras"
         breadcrumb={
           <Breadcrumbs items={[
             { label: "Inicio", href: "/dashboard" },
-            { label: "Órdenes de compra" },
+            { label: "Compras" },
           ]} />
         }
       />

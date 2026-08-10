@@ -25,15 +25,15 @@ export function OcForm({
   worksites,
   pendingItems,
   initialWorksiteId,
-  initialItemId,
+  initialItemIds,
 }: {
   suppliers:    SupplierOption[]
   worksites:    WorksiteOption[]
   pendingItems: PendingItemOption[]
   initialWorksiteId?: string
-  initialItemId?: string
+  initialItemIds?: string[]
 }) {
-  const f = useOcForm({ suppliers, worksites, pendingItems, initialWorksiteId, initialItemId })
+  const f = useOcForm({ suppliers, worksites, pendingItems, initialWorksiteId, initialItemIds })
 
   return (
     <form action={f.action} className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_21rem]">
