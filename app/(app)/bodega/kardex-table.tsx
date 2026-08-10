@@ -3,11 +3,16 @@ import { formatDate } from "@/lib/utils"
 import { KardexExportButton } from "./kardex-export-button"
 
 const MOVEMENT_TYPE_LABELS: Record<string, string> = {
-  ingreso_oc:         "Ingreso OC",
-  egreso_entrega:     "Entrega",
-  ingreso_devolucion: "Devolución",
-  egreso_desecho:     "Retiro",
-  ajuste:             "Ajuste",
+  ingreso_oc:            "Ingreso OC",
+  egreso_entrega:        "Entrega",
+  ingreso_devolucion:    "Devolución",
+  egreso_desecho:        "Retiro",
+  ajuste:                "Ajuste",
+  egreso_traslado:       "Salida por guía",
+  ingreso_traslado:      "Ingreso por guía",
+  // Faltaba: la entrega EPP con retiro de equipo usado pintaba el enum crudo
+  // en la tabla (regla A6).
+  retiro_epp_trabajador: "Retiro EPP usado",
 }
 
 const MOVEMENT_QTY_CLASS: Record<string, string> = {
@@ -15,6 +20,8 @@ const MOVEMENT_QTY_CLASS: Record<string, string> = {
   egreso_entrega:     "text-[var(--color-danger)]",
   ingreso_devolucion: "text-[var(--color-success)]",
   egreso_desecho:     "text-[var(--color-warning-ink)]",
+  egreso_traslado:    "text-[var(--color-danger)]",
+  ingreso_traslado:   "text-[var(--color-success)]",
 }
 
 interface WorksiteOption {
