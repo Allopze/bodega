@@ -3,7 +3,6 @@
 import * as React from "react"
 import type { Session } from "next-auth"
 import { cn } from "@/lib/utils"
-import { useHideOnScroll } from "@/lib/hooks/use-hide-on-scroll"
 import { DesktopNav } from "./desktop-nav"
 import { MobileNav } from "./mobile-nav"
 import { TopBar } from "./top-bar"
@@ -64,8 +63,6 @@ const AppShellInner = React.memo(function AppShellInner({ session, worksiteName,
   }, [])
 
   const showDrawer = mobileOpen || isClosing
-  const mainRef = React.useRef<HTMLElement>(null)
-  const headerHidden = useHideOnScroll(mainRef)
 
   return (
     <div className="h-[100dvh] bg-(--color-chrome) text-text overflow-hidden">
@@ -129,20 +126,18 @@ const AppShellInner = React.memo(function AppShellInner({ session, worksiteName,
                 contiene el resto. Las tablas anchas no se ven afectadas: siguen
                 desplazándose dentro de su propio `TableRoot`. */}
             <main
-              ref={mainRef}
               className="relative flex-1 min-w-0 overflow-y-auto overflow-x-hidden bg-[var(--color-surface)] lg:rounded-tl-[36px] lg:shadow-well"
               id="main-content"
               tabIndex={-1}
             >
-              {/* TopBar sticky dentro del pozo — se mantiene al top mientras el
-                  contenido scrollea. En desktop, lg: overrides bloquean el auto-hide. */}
+              {/* La TopBar scrollea con el contenido: nada se queda pegado
+                  dentro del pozo. Sin `sticky` tampoco necesita fondo opaco,
+                  y sin fondo opaco la sombra `inset` del pozo la cruza. */}
               <TopBar
                 session={session}
                 onMenuToggle={mobileOpen ? closeDrawer : openDrawer}
                 worksiteName={worksiteName}
                 isMenuOpen={mobileOpen}
-                hidden={headerHidden}
-                className="sticky top-0 z-10"
               />
               {children}
             </main>

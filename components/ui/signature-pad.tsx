@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { Button } from "@/components/ui/button"
 
 interface SignaturePadProps {
   name?: string
@@ -14,7 +15,9 @@ export function SignaturePad({
   onSignatureChange,
 }: SignaturePadProps) {
   const canvasRef = React.useRef<HTMLCanvasElement | null>(null)
-  const [isDrawing, setIsDrawing] = React.useState(false)
+  // El trazo no altera la UI hasta que termina; un ref evita renders por cada
+  // inicio/fin y está disponible de inmediato para el primer mousemove/touchmove.
+  const isDrawingRef = React.useRef(false)
   const [isEmpty, setIsEmpty] = React.useState(true)
   const fileInputRef = React.useRef<HTMLInputElement | null>(null)
 
@@ -68,7 +71,7 @@ export function SignaturePad({
 
   function startDrawing(e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) {
     if (disabled) return
-    setIsDrawing(true)
+    isDrawingRef.current = true
     const ctx = canvasRef.current?.getContext("2d")
     if (!ctx) return
     const pos = getPos(e)
@@ -77,7 +80,7 @@ export function SignaturePad({
   }
 
   function draw(e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) {
-    if (!isDrawing || disabled) return
+    if (!isDrawingRef.current || disabled) return
     const ctx = canvasRef.current?.getContext("2d")
     if (!ctx) return
     const pos = getPos(e)
@@ -89,8 +92,8 @@ export function SignaturePad({
   }
 
   function stopDrawing() {
-    if (!isDrawing) return
-    setIsDrawing(false)
+    if (!isDrawingRef.current) return
+    isDrawingRef.current = false
     updateFileInput()
   }
 
@@ -127,14 +130,16 @@ export function SignaturePad({
       </div>
       <div className="flex items-center justify-between">
         <input ref={fileInputRef} type="file" name={name} className="hidden" accept="image/png" />
-        <button
+        <Button
           type="button"
+          variant="ghost"
+          size="sm"
           onClick={handleClear}
           disabled={isEmpty || disabled}
-          className="text-xs text-[var(--color-text-subtle)] hover:text-[var(--color-danger)] disabled:opacity-40"
+          className="px-2 text-[var(--color-text-subtle)] hover:text-[var(--color-danger)]"
         >
           Limpiar firma
-        </button>
+        </Button>
         {!isEmpty && <span className="text-xs text-[var(--color-success)] font-medium">Firma capturada ✓</span>}
       </div>
     </div>

@@ -35,7 +35,7 @@ const ITEM_STATE_META: Record<ItemStatus | RetiredItemStatus, StateMeta> = {
   pending_purchase:    { label: "Pendiente compra",    variant: "signal",   family: "signal"   },
   in_purchase_order:   { label: "En OC",               variant: "info",     family: "info"     },
   purchased:           { label: "Comprado",            variant: "info",     family: "info"     },
-  partially_received:  { label: "Rec. parcial",        variant: "warning",  family: "warning"  },
+  partially_received:  { label: "Recibido parcial",    variant: "warning",  family: "warning"  },
   received:            { label: "Recibido",            variant: "success",  family: "success"  },
   partially_delivered: { label: "Entrega parcial",     variant: "warning",  family: "warning"  },
   delivered:           { label: "Entregado",           variant: "success",  family: "success"  },

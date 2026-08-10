@@ -5,6 +5,7 @@ import Link from "next/link"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { DownloadSimple, MagnifyingGlass, X } from "@phosphor-icons/react"
 import { Input } from "@/components/ui/input"
+import { Button } from "@/components/ui/button"
 import {
   Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
 } from "@/components/ui/select"
@@ -41,6 +42,17 @@ function createSelectHandler(setParam: (key: string, value: string) => void, key
 }
 
 /**
+ * Todos los parámetros de URL que recortan un listado de Adquisiciones. Es la
+ * fuente única de "¿hay filtros activos?": la usan el botón "Limpiar", el
+ * indicador de filtros activos y los estados vacíos de las páginas, que antes
+ * mantenían su propia lista y se desincronizaban cada vez que aparecía un
+ * filtro nuevo sin control propio (`factura`, el período, `solicitud`).
+ */
+export const LIST_FILTER_PARAMS = [
+  "q", "estado", "urgencia", "faena", "proveedor", "factura", "desde", "hasta", "solicitud",
+] as const
+
+/**
  * URL-synced filter bar for the Adquisiciones list screens. Writes `q`,
  * `estado` and `faena` to the URL (resetting `page`) so the server query
  * applies the filters. The free-text input is debounced; selects update
@@ -74,6 +86,11 @@ const ListFiltersInner = React.memo(function ListFiltersInner({
   // `factura`: chip removible para que se lea y se pueda quitar.
   const currentDesde = searchParams.get("desde") ?? ""
   const currentHasta = searchParams.get("hasta") ?? ""
+  // `solicitud=<id>` (Aprobaciones) llega desde el CTA de /pendientes y acota la
+  // cola a una sola solicitud. Sin chip ni "Limpiar" que lo tocara, aprobar ese
+  // ítem dejaba la pantalla vacía diciendo "Bien hecho" con el resto de la cola
+  // escondida detrás de un parámetro que nada mostraba.
+  const currentSolicitud = searchParams.get("solicitud") ?? ""
 
   const [q, setQ] = React.useState(currentQ)
 
@@ -106,6 +123,14 @@ const ListFiltersInner = React.memo(function ListFiltersInner({
     return qs ? `${pathname}?${qs}` : pathname
   }, [pathname, searchParams])
 
+  const withoutSolicitudHref = React.useMemo(() => {
+    const params = new URLSearchParams(Array.from(searchParams.entries()))
+    params.delete("solicitud")
+    params.delete("page")
+    const qs = params.toString()
+    return qs ? `${pathname}?${qs}` : pathname
+  }, [pathname, searchParams])
+
   const withoutPeriodHref = React.useMemo(() => {
     const params = new URLSearchParams(Array.from(searchParams.entries()))
     params.delete("desde")
@@ -131,7 +156,7 @@ const ListFiltersInner = React.memo(function ListFiltersInner({
   const handleFaenaChange = React.useMemo(() => createSelectHandler(setParam, "faena"), [setParam])
   const handleProveedorChange = React.useMemo(() => createSelectHandler(setParam, "proveedor"), [setParam])
 
-  const hasActiveFilters = Boolean(currentQ || currentEstado || currentUrgencia || currentFaena || currentProveedor || currentFactura || currentDesde || currentHasta)
+  const hasActiveFilters = LIST_FILTER_PARAMS.some((key) => searchParams.get(key))
 
   // Export URL respects the active filters (estado→status, q/faena/proveedor passthrough).
   // Note: the URL param is "estado" for page-level filtering but "status" for the export
@@ -148,18 +173,7 @@ const ListFiltersInner = React.memo(function ListFiltersInner({
 
   function clearAll() {
     const params = new URLSearchParams(Array.from(searchParams.entries()))
-    params.delete("q")
-    params.delete("estado")
-    params.delete("urgencia")
-    params.delete("faena")
-    params.delete("proveedor")
-    // `factura=pendiente` (Compras) se activa desde el chip "Sin factura" del
-    // header, no desde esta barra, así que no tiene control visible que lo
-    // apague: sin borrarlo aquí, "Limpiar" dejaba la lista filtrada sin que
-    // nada en pantalla lo explicara.
-    params.delete("factura")
-    params.delete("desde")
-    params.delete("hasta")
+    for (const key of LIST_FILTER_PARAMS) params.delete(key)
     params.delete("page")
     const qs = params.toString()
     router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false })
@@ -262,11 +276,23 @@ const ListFiltersInner = React.memo(function ListFiltersInner({
           <Link
             href={withoutFacturaHref}
             scroll={false}
-            className="inline-flex h-8 items-center gap-1 rounded-full bg-signal-tint px-2.5 text-xs font-medium text-signal-ink transition-colors hover:bg-[var(--color-signal-line)]"
+            className="inline-flex h-11 items-center gap-1 rounded-full bg-signal-tint px-2.5 text-xs font-medium text-signal-ink transition-colors hover:bg-[var(--color-signal-line)] sm:h-8"
           >
             Sólo sin factura
             <X size={12} weight="bold" aria-hidden />
             <span className="sr-only">Quitar filtro de facturas pendientes</span>
+          </Link>
+        )}
+
+        {currentSolicitud && (
+          <Link
+            href={withoutSolicitudHref}
+            scroll={false}
+            className="inline-flex h-11 items-center gap-1 rounded-full bg-signal-tint px-2.5 text-xs font-medium text-signal-ink transition-colors hover:bg-[var(--color-signal-line)] sm:h-8"
+          >
+            Sólo una solicitud
+            <X size={12} weight="bold" aria-hidden />
+            <span className="sr-only">Ver toda la cola, no sólo esta solicitud</span>
           </Link>
         )}
 
@@ -276,7 +302,7 @@ const ListFiltersInner = React.memo(function ListFiltersInner({
           <Link
             href={withoutPeriodHref}
             scroll={false}
-            className="inline-flex h-8 items-center gap-1 rounded-full bg-[var(--color-info-tint)] px-2.5 text-xs font-medium text-[var(--color-info-ink)] transition-colors hover:bg-[var(--color-info-line)]"
+            className="inline-flex h-11 items-center gap-1 rounded-full bg-[var(--color-info-tint)] px-2.5 text-xs font-medium text-[var(--color-info-ink)] transition-colors hover:bg-[var(--color-info-line)] sm:h-8"
           >
             Período {currentDesde || "…"} → {currentHasta || "…"}
             <X size={12} weight="bold" aria-hidden />
@@ -285,14 +311,16 @@ const ListFiltersInner = React.memo(function ListFiltersInner({
         )}
 
         {hasActiveFilters && (
-          <button
+          <Button
             type="button"
+            variant="ghost"
+            size="sm"
             onClick={clearAll}
-            className="inline-flex h-8 items-center gap-1 rounded-[var(--radius)] px-2 text-xs font-medium text-[var(--color-text-muted)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)] transition-colors"
+            className="gap-1 text-[var(--color-text-muted)]"
           >
-            <X size={12} weight="bold" />
+            <X size={12} weight="bold" aria-hidden />
             Limpiar
-          </button>
+          </Button>
         )}
 
         {/* E-2: scopeKey = pathname. Estas rutas son listados sin segmento

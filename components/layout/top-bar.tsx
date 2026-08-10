@@ -18,8 +18,6 @@ interface TopBarProps {
   className?:    string
   isMenuOpen?:   boolean
   worksiteName?: string
-  /** When true, slides the bar out of view above the viewport clip. */
-  hidden?:       boolean
 }
 
 // `/combustibles` no construye ningún input propio en ninguna de sus
@@ -37,7 +35,6 @@ const TopBarInner = React.memo(function TopBarInner({
   className,
   isMenuOpen = false,
   worksiteName,
-  hidden = false,
 }: TopBarProps) {
   const pathname = usePathname()
   const { header } = useShellHeader()
@@ -74,18 +71,17 @@ const TopBarInner = React.memo(function TopBarInner({
 
   return (
     <header className={cn(
-      "flex items-center h-[3.5rem] px-4 md:px-6 gap-3",
-      // Opaca también en desktop: la barra es `sticky` dentro del pozo de
-      // scroll, así que con fondo transparente el contenido se veía POR DEBAJO
-      // del título y las migas al scrollear (texto sobre texto). El color es el
-      // mismo del `<main>`, así que al tope del scroll se ve idéntica.
-      "bg-(--color-surface) border-b border-(--color-border) lg:border-b-0",
-      // Auto-hide on mobile: slide out above the sticky clip, fade to 0.
-      // Desktop: always visible (lg: overrides hide regardless of scroll).
-      "transition-[transform,opacity] duration-(--duration-default) ease-(--ease-out)",
-      hidden
-        ? "-translate-y-full opacity-0 pointer-events-none lg:translate-y-0 lg:opacity-100 lg:pointer-events-auto"
-        : "translate-y-0 opacity-100",
+      // 4.5rem en desktop y no 3.5: el pozo redondea 36px la esquina superior
+      // izquierda, así que con 56px de alto el título se centraba a 28px —dentro
+      // de la curva— y toda la fila quedaba pegada al borde. A 72px el centro
+      // cae justo en los 36px del radio y la fila respira por arriba y por abajo.
+      // Móvil no tiene pozo ni curva: se queda en 3.5rem.
+      "flex items-center h-[3.5rem] lg:h-[4.5rem] px-4 md:px-6 gap-3",
+      // Sin fondo propio: la barra scrollea con el contenido (no es `sticky`),
+      // así que hereda el del `<main>` y con él la sombra `inset` del pozo —
+      // header y zona de trabajo quedan indistinguibles, sin costura ni
+      // franja sin sombra. Un fondo opaco aquí rompía las dos cosas.
+      "border-b border-(--color-border) lg:border-b-0",
       className,
     )}>
       <div className="flex items-center gap-2 lg:hidden">

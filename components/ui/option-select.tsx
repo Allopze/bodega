@@ -53,6 +53,9 @@ export interface OptionSelectProps {
   error?: boolean
   className?: string
   "aria-label"?: string
+  "aria-labelledby"?: string
+  "aria-describedby"?: string
+  "aria-invalid"?: boolean
 }
 
 export function OptionSelect({
@@ -68,6 +71,9 @@ export function OptionSelect({
   error,
   className,
   "aria-label": ariaLabel,
+  "aria-labelledby": ariaLabelledBy,
+  "aria-describedby": ariaDescribedBy,
+  "aria-invalid": ariaInvalid,
 }: OptionSelectProps) {
   const [uncontrolled, setUncontrolled] = React.useState(defaultValue ?? "")
   const current = value ?? uncontrolled
@@ -87,7 +93,15 @@ export function OptionSelect({
         onValueChange={handleValueChange}
         disabled={disabled}
       >
-        <SelectTrigger id={id} className={className} error={error} aria-label={ariaLabel}>
+        <SelectTrigger
+          id={id}
+          className={className}
+          error={error}
+          aria-label={ariaLabel}
+          aria-labelledby={ariaLabelledBy}
+          aria-describedby={ariaDescribedBy}
+          aria-invalid={ariaInvalid}
+        >
           <SelectValue placeholder={placeholder} />
         </SelectTrigger>
         <SelectContent>
