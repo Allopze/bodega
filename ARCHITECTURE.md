@@ -77,7 +77,7 @@ Permisos, sidebar y seed RBAC se derivan automáticamente del registry.
 | `approvals` | 1 | Aprobaciones de ítems |
 | `purchasing` | 5 | Órdenes de compra |
 | `receiving` | 3 | Recepción de mercadería |
-| `warehouse` | 3 | Stock y movimientos |
+| `warehouse` | 8 | Stock, movimientos y guías de despacho internas (Oficina → Faena) |
 | `deliveries` | 2 | Entregas |
 | `traceability` | 1 | Vista de trazabilidad |
 | `reports` | 1 | Reportes y exportaciones |
@@ -94,7 +94,7 @@ Permisos, sidebar y seed RBAC se derivan automáticamente del registry.
 | `mantenciones` | 3 | Mantención de flota/equipos |
 | `prevention` | 17 | Documentación SST, capacitaciones, incidentes, inspecciones, PDTP, indicadores |
 
-**Total: 217 permisos**, derivados automáticamente. Recalcular con:
+**Total: 223 permisos**, derivados automáticamente. Recalcular con:
 
 ```bash
 npx tsx -e "import { registry } from './modules/registry'; \
@@ -119,6 +119,7 @@ plataforma-chome/
 │   │   ├── compras/                  # Órdenes de compra
 │   │   ├── recepcion/                # Recepción de mercadería
 │   │   ├── bodega/                   # Stock, kardex, devoluciones
+│   │   │   └── guias/                # Guías de despacho internas (Oficina → Faena)
 │   │   ├── entregas/                 # Entregas a faena/trabajador
 │   │   ├── trazabilidad/             # Matriz de trazabilidad
 │   │   ├── reportes/                 # Reportes + exportación Excel
@@ -131,7 +132,8 @@ plataforma-chome/
 │   │   ├── perfil/                   # Perfil de usuario
 │   │   ├── admin/                    # Usuarios, faenas, trabajadores, productos, proveedores, config, auditoría
 │   │   └── forbidden/                # Página 403
-│   ├── (print)/                      # Rutas de impresión A4 (OC), con auth check, sin AppShell
+│   ├── (print)/                      # Rutas de impresión A4 (OC, acta SST, comprobante de entrega,
+│   │                                 #   guía de despacho interna), con auth check, sin AppShell
 │   └── api/                          # API routes (ver abajo)
 ├── components/
 │   ├── ui/                           # ~32 componentes del design system (Radix + Tailwind)
@@ -200,6 +202,7 @@ singleton Drizzle previene múltiples clientes en HMR de desarrollo.
 | `purchasing.ts` | Órdenes de compra, líneas, cotizaciones, aprobaciones |
 | `receiving.ts` | Recepciones y líneas de recepción |
 | `stock.ts` | `worksite_stock` (stock por faena), `inventory_movements` (kardex), entregas |
+| `dispatch-guides.ts` | Guías de Despacho Internas (GDI): `dispatch_guides`, `dispatch_guide_items` — traslado Oficina → Faena, documento interno **no tributario** |
 | `repuestos.ts` / `servicios.ts` | Solicitudes unificadas de repuestos y servicios |
 | `sst.ts` / `ppa.ts` | Evaluaciones SST y Prevención de Peligros en el Área |
 | `maintenance.ts` | Mantención de flota/equipos |
@@ -212,8 +215,13 @@ singleton Drizzle previene múltiples clientes en HMR de desarrollo.
 | `billing.ts` (12) | Facturación y cobranza: facturas normalizadas, ítems, referencias externas, vínculos operacionales, pagos, movimientos bancarios, gestiones de cobranza, propuestas, corridas de sincronización, eventos y candidatos a duplicado |
 | `cost-centers.ts`, `email-templates.ts`, `code-sequences.ts`, `rate-limits.ts` | Soporte transversal |
 
-Tipos de movimiento de kardex: `receipt`, `delivery`, `adjustment`, `transfer`,
-`return`, `rejection`, `loss`.
+Tipos de movimiento de kardex (CHECK en `inventory_movements`): `ingreso_oc`,
+`egreso_entrega`, `ingreso_devolucion`, `egreso_desecho`,
+`retiro_epp_trabajador`, `ajuste`, `egreso_traslado`, `ingreso_traslado`. Los
+dos últimos son las patas de una Guía de Despacho Interna: el despacho
+descuenta en la oficina (`egreso_traslado`) y abona en la faena de destino
+(`ingreso_traslado`) en la misma transacción, ambos con
+`reference_type = 'dispatch_guide'`.
 
 > **Migraciones (regla crítica):** nunca editar `meta/_journal.json` a mano ni
 > una migración `.sql` ya creada. Cambiar `db/schema/*.ts` y correr
@@ -248,6 +256,14 @@ Las etapas de oficina sólo aplican a las OC `via_oficina`; una OC
 `directo_faena` va de `sent` a `partially_received`/`received`. El estado
 `supplier_confirmed` se retiró en 2026-07-30: dejaba la OC fuera del conjunto
 recibible y era imposible avanzarla (migración `0132`).
+
+**Guía de Despacho Interna (GDI):** `draft → dispatched → received`, con
+`cancelled` alcanzable desde los tres. No hay retorno faena → oficina: para eso
+existiría otro documento. El despacho es el único paso que mueve stock
+(descuenta en la oficina, abona en la faena); la recepción sólo sella quién
+recibió y cuándo. La anulación de una guía que ya despachó agrega los
+movimientos de reversa —nunca borra los originales— y se rechaza si la faena ya
+consumió los bienes, para no dejar stock negativo.
 
 ---
 
@@ -322,6 +338,10 @@ No hay API REST para mutaciones (solo Server Actions). No hay estado global
 Formato `{PREFIJO}-{AÑO}-{SECUENCIA}` (`SOL-2026-0042`, `OC-2026-0017`,
 `REC-2026-0005`, `ENT-2026-0003`), generados con transacción atómica en
 `lib/code-sequences.ts`.
+
+Excepción: los prefijos de serie continua (`CONTINUOUS_CODE_PREFIXES` en
+`lib/id.ts`) no llevan año — `SOL-0042` y `GDI-000001`. Su SEQUENCE nativa se
+crea con año `0`, así que el folio nunca se reinicia.
 
 ### Auditoría
 

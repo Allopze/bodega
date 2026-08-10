@@ -12,6 +12,8 @@ const CRITICAL_PAGES = [
   { path: "/compras/nueva",    name: "Nueva compra" },
   { path: "/recepcion",        name: "Recepción" },
   { path: "/bodega",           name: "Bodega" },
+  { path: "/bodega/guias",     name: "Guías de despacho internas" },
+  { path: "/bodega/guias/nueva", name: "Nueva guía de despacho" },
   { path: "/entregas",         name: "Entregas" },
   { path: "/entregas/del-e2e/print", name: "Comprobante de entrega" },
   { path: "/compras/oc-e2e/print", name: "Orden de compra" },

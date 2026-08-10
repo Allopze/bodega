@@ -7,6 +7,7 @@ import {
   RECEPCION_PAGE_SIZE,
   HISTORY_PAGE_SIZE,
   APPROVAL_REQUESTS_PAGE_SIZE,
+  PENDING_PURCHASE_PAGE_SIZE,
 } from "@/lib/constants"
 
 /**
@@ -29,10 +30,12 @@ const PAGE_SIZE_CONSTANTS: Record<string, number> = {
   RECEPCION_PAGE_SIZE,
   HISTORY_PAGE_SIZE,
   APPROVAL_REQUESTS_PAGE_SIZE,
+  PENDING_PURCHASE_PAGE_SIZE,
 }
 
 const LISTS: { file: string; server: number }[] = [
   { file: "app/(app)/compras/oc-list.tsx",            server: ORDERS_PAGE_SIZE },
+  { file: "app/(app)/compras/pending-purchase-list.tsx", server: PENDING_PURCHASE_PAGE_SIZE },
   { file: "app/(app)/solicitudes/request-list.tsx",   server: SOLICITUDES_PAGE_SIZE },
   { file: "app/(app)/recepcion/recepcion-table.tsx",  server: RECEPCION_PAGE_SIZE },
   { file: "app/(app)/entregas/deliveries-table.tsx",  server: HISTORY_PAGE_SIZE },

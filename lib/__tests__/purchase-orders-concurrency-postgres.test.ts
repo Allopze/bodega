@@ -55,7 +55,10 @@ describeIf("purchase-order lifecycle concurrency on real Postgres", () => {
     process.env.DATABASE_URL = databaseUrl
     vi.resetModules()
     await seedSharedFixture(getTestDb())
-  })
+    // El hook reconstruye el esquema y aplica las ~150 migraciones sobre TCP: el
+    // `hookTimeout` global de 30 s no alcanza fuera de un runner con la base al
+    // lado, y el fallo se leía como "Hook timed out", no como "es lento".
+  }, 300_000)
 
   afterAll(async () => {
     const globalWithDb = globalThis as typeof globalThis & { __db?: unknown }
@@ -82,6 +85,34 @@ describeIf("purchase-order lifecycle concurrency on real Postgres", () => {
       requestItemId: fixture.requestItemId,
       results,
     })
+  })
+
+  it("two simultaneous orders over the same approved item produce exactly one", async () => {
+    // Dos compradores viendo la misma fila de la cola de Compras y pulsando
+    // "Generar OC" a la vez. El lock de `createOrdersBySupplier` y la
+    // re-verificación de cobertura bajo ese lock tienen que dejar UNA sola OC
+    // activa: dos dejarían el ítem comprado el doble sin que nada lo señale.
+    const fixture = await seedPendingItemFixture(getTestDb(), "double-create")
+    const { createOrder } = await import("@/lib/services/purchasing-module/purchase-orders-create")
+
+    const results = await Promise.allSettled([
+      createOrder(createOrderInput(fixture.requestItemId)),
+      createOrder(createOrderInput(fixture.requestItemId)),
+    ])
+
+    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1)
+    expect(results.filter((result) => result.status === "rejected")).toHaveLength(1)
+    await expectCoverageInvariant({
+      db: getTestDb(),
+      requestItemId: fixture.requestItemId,
+      results,
+    })
+    const activeLines = await getTestDb()
+      .select({ id: schema.purchaseOrderItems.id })
+      .from(schema.purchaseOrderItems)
+      .innerJoin(schema.purchaseOrders, eq(schema.purchaseOrderItems.purchaseOrderId, schema.purchaseOrders.id))
+      .where(eq(schema.purchaseOrderItems.requestItemId, fixture.requestItemId))
+    expect(activeLines).toHaveLength(1)
   })
 
   it("never leaves an item pending while a concurrent replacement order remains active after deletion", async () => {
@@ -259,6 +290,36 @@ async function seedOrderFixture(
   })
 
   return { requestItemId, orderId }
+}
+
+/** Un ítem aprobado y sin ninguna OC: la fila que la cola de Compras ofrece. */
+async function seedPendingItemFixture(
+  db: ReturnType<typeof drizzle<typeof schema>>,
+  scenario: string,
+) {
+  const now = new Date().toISOString()
+  const requestId = `pr-oc-concurrency-${scenario}`
+  const requestItemId = `pri-oc-concurrency-${scenario}`
+
+  await db.insert(schema.purchaseRequests).values({
+    id: requestId,
+    code: `SOL-OC-CONC-${scenario.toUpperCase()}`,
+    worksiteId: "ws-oc-concurrency",
+    requesterId: "user-oc-concurrency",
+    status: "approved",
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.purchaseRequestItems).values({
+    id: requestItemId,
+    requestId,
+    productId: "prod-oc-concurrency",
+    quantity: 10,
+    unitOfMeasure: "unidad",
+    status: "approved",
+  })
+
+  return { requestItemId }
 }
 
 async function resetPublicSchema(url: string) {

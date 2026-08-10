@@ -349,7 +349,10 @@ test.describe.serial("Correlativos entre secciones", () => {
     // la pertenencia a una bandeja, no la estabilidad del correlativo, que es el
     // asunto de esta prueba; la sección Compras ya quedó cubierta arriba con su
     // ficha. La prueba 2 sí la busca en /compras, con la OC recién emitida.
-    await page.goto(`/recepcion?q=${orderCode}`)
+    // Con `estado` explícito: la lista de Recepción es una cola de trabajo y su
+    // defecto es lo que falta recibir, así que una OC ya cerrada se consulta en
+    // su tab "Completadas" (que es lo que dice el párrafo de arriba).
+    await page.goto(`/recepcion?estado=received,closed&q=${orderCode}`)
     await expect(page.getByRole("link", { name: `Ver OC ${orderCode}`, exact: true })).toHaveCount(1)
 
     // La trazabilidad del ítem, que es la vista histórica del recorrido.

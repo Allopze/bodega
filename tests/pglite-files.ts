@@ -24,7 +24,11 @@ export const pgliteTestFiles = [
   "lib/__tests__/operational-work-queue-quotation-source.test.ts",
   "lib/__tests__/combustibles-scope.test.ts",
   "lib/__tests__/compras-export-invoice-filter.test.ts",
+  // Faltaba desde que se escribió: instancia PGlite y migra, así que corriendo
+  // en el proyecto paralelo competía por CPU con los demás.
+  "lib/__tests__/compras-inbox-scope.test.ts",
   "lib/__tests__/code-sequences.test.ts",
+  "lib/__tests__/dispatch-guides.test.ts",
   "lib/__tests__/document-chain.test.ts",
   "lib/__tests__/equipment-performance-integration.test.ts",
   "lib/__tests__/feedback.test.ts",
@@ -37,6 +41,7 @@ export const pgliteTestFiles = [
   "lib/__tests__/notification-permission-targeting.test.ts",
   "lib/__tests__/notification-service.test.ts",
   "lib/__tests__/operational-assignments.test.ts",
+  "lib/__tests__/pending-purchase-queue.test.ts",
   "lib/__tests__/pdtp-coverage-r2.test.ts",
   "lib/__tests__/pdtp-coverage-sources.test.ts",
   "lib/__tests__/pdtp-evidence-gc.test.ts",

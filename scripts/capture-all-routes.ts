@@ -519,6 +519,8 @@ const routeTargets: RouteTarget[] = [
       { slug: "movimiento", triggerSelector: 'button:has-text("Movimiento"), button:has-text("Registrar")', notes: "Sheet de movimiento de bodega" },
     ],
   },
+  { slug: "bodega-guias", path: "/bodega/guias", auth: true, notes: "Listado de guías de despacho internas" },
+  { slug: "bodega-guias-nueva", path: "/bodega/guias/nueva", auth: true, notes: "Formulario de guía (origen fijo Oficina CHOME)" },
   { slug: "entregas", path: "/entregas", auth: true },
   { slug: "entregas-print", path: "/entregas/del-audit-1/print", auth: true },
   { slug: "trazabilidad", path: "/trazabilidad", auth: true },

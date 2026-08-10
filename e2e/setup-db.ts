@@ -448,6 +448,49 @@ async function main() {
     updatedAt: now,
   })
 
+  /*
+   * Bodega de la oficina para las Guías de Despacho Internas (GDI).
+   *
+   * Es una faena aparte —el origen del traslado— y se declara explícitamente en
+   * `system_settings`, no por su nombre: así el fixture ejercita el mismo camino
+   * de resolución que usa producción cuando la oficina está configurada.
+   */
+  await db.insert(schema.worksites).values({
+    id: "ws-oficina-e2e",
+    name: "Oficina Central E2E",
+    code: "E2E-OFI",
+    address: "Casa Matriz E2E",
+    region: "Testing",
+    isActive: true,
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.systemSettings).values({
+    key: "warehouse.office_worksite_id",
+    value: "ws-oficina-e2e",
+    updatedAt: now,
+  })
+  await db.insert(schema.worksiteStock).values([
+    {
+      id: "stock-oficina-epp-e2e",
+      worksiteId: "ws-oficina-e2e",
+      productId: "prod-epp-e2e",
+      quantity: 25,
+      minStock: 0,
+      lastMovementAt: now,
+      updatedAt: now,
+    },
+    {
+      id: "stock-oficina-e2e",
+      worksiteId: "ws-oficina-e2e",
+      productId: "prod-e2e",
+      quantity: 40,
+      minStock: 0,
+      lastMovementAt: now,
+      updatedAt: now,
+    },
+  ])
+
   // Estas entregas E2E deben seguir el mismo circuito que producción: solicitud
   // → OC → recepción en faena → entrega. Marcar sólo la solicitud como
   // "received" hacía que el formulario la ofreciera pero el servicio la
