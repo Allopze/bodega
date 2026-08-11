@@ -21,6 +21,22 @@ import {
   type InvoiceEvidenceStatus,
 } from "@/lib/services/purchasing-module/invoice-reconciliation"
 import { addInvoiceAction, deleteInvoiceAction } from "../invoice-actions"
+import { prefillInvoiceFromDte } from "../actions/dte-prefill-invoice"
+import { dteTipoLabel } from "@/lib/services/dte-portal/labels"
+
+/**
+ * DTE del proveedor de esta OC que aún no cuelga de ninguna factura.
+ * Es la lista de documentos que la plataforma ya tiene y que, hasta ahora,
+ * había que volver a bajar del portal y subir a mano.
+ */
+export interface DteCandidate {
+  id: string
+  tipoDte: string
+  folio: number
+  razonSocialEmisor: string
+  montoTotal: number
+  fechaEmision: string
+}
 
 export interface OcItem {
   id: string
@@ -60,6 +76,7 @@ export function InvoicesSection({
   totalAmount,
   canManage,
   defaultInvoiceNumber,
+  dteCandidates = [],
 }: {
   purchaseOrderId: string
   invoices: InvoiceRow[]
@@ -68,6 +85,8 @@ export function InvoicesSection({
   canManage: boolean
   /** N° de guía/factura traído desde una recepción (`?nro=`) para no retipearlo. */
   defaultInvoiceNumber?: string
+  /** DTE del proveedor sin vincular, ofrecidos como precarga del formulario. */
+  dteCandidates?: DteCandidate[]
 }) {
   const reconciliation = reconcileInvoiceEvidence({
     totalOC: totalAmount,
@@ -186,6 +205,7 @@ export function InvoicesSection({
               ocItems={ocItems}
               defaultInvoiceNumber={defaultInvoiceNumber}
               separated={false}
+              dteCandidates={dteCandidates}
             />
           )
           : (
@@ -200,6 +220,7 @@ export function InvoicesSection({
                 defaultInvoiceNumber={defaultInvoiceNumber}
                 separated={false}
                 heading={false}
+                dteCandidates={dteCandidates}
               />
             </CollapsedInvoiceForm>
           )
@@ -379,6 +400,7 @@ function AddInvoiceForm({
   defaultInvoiceNumber,
   separated = true,
   heading = true,
+  dteCandidates = [],
 }: {
   purchaseOrderId: string
   ocItems: OcItem[]
@@ -387,6 +409,7 @@ function AddInvoiceForm({
   separated?: boolean
   /** Plegado, el rótulo lo pone el `<summary>`: repetirlo dejaba dos títulos. */
   heading?: boolean
+  dteCandidates?: DteCandidate[]
 }) {
   const [state, action] = useActionState<ActionState, FormData>(addInvoiceAction, INITIAL_STATE)
   const formRef = React.useRef<HTMLFormElement>(null)
@@ -506,53 +529,109 @@ function AddInvoiceForm({
       }
 
       const { data, method, quality } = result
-      const warnings = Array.isArray(result.warnings)
+      const warnings: string[] = Array.isArray(result.warnings)
         ? result.warnings.filter((warning: unknown): warning is string => typeof warning === "string")
         : []
-      setExtractionWarnings(warnings)
 
-      // Auto-fill form fields
-      if (data.invoiceNumber && invoiceNumberRef.current) {
-        invoiceNumberRef.current.value = data.invoiceNumber
-      }
-      setExtractedTotal(typeof data.totalAmount === "number" ? data.totalAmount : null)
-      if (data.issueDate) {
-        setIssueDate(data.issueDate)
-      }
-
-      // Auto-match items to OC items
-      if (data.items && data.items.length > 0) {
-        const matched = matchInvoiceItemsToPurchaseOrderItems(data.items, ocItems)
-        setLineItems(matched.map((m) => ({
-          id: createInvoiceLineId(),
-          ocItemId: m.ocItemId ?? "",
-          productName: m.item.productName,
-          productCode: m.item.productCode ?? "",
-          unitOfMeasure: m.item.unitOfMeasure ?? "",
-          quantity: String(m.item.quantity),
-          unitPrice: String(m.item.unitPrice),
-          resolution: m.ocItemId ? "matched" : "needs_review",
-        })))
-      } else {
-        setLineItems([])
-      }
-
-      setDteParsed(true)
-
-      const methodLabel = method === "dte_xml" ? "DTE XML" : method === "pdf_text" ? "PDF" : method === "pdf_text_ocr" ? "PDF + OCR" : method === "ocr" ? "OCR" : ""
-      // Antes decía "95% confianza" sobre un puntaje que sólo contaba campos
-      // presentes: un folio mal leído puntuaba igual que uno correcto y el
-      // número invitaba a firmar sin mirar. Ahora se nombra lo que se midió y se
-      // pide revisión explícita cuando el documento no cuadra consigo mismo.
-      const itemCount = data.items?.length ?? 0
-      toast.success(
-        `Datos leídos del documento (${methodLabel}): ${itemCount} ítem(s). Revisa montos y líneas antes de adjuntar.`,
-      )
-      if (quality?.totalsConsistent === false) {
-        toast.error("Neto + IVA no cuadra con el total leído: corrige los montos antes de adjuntar.")
-      }
+      applyExtraction({ data, method, quality, warnings })
     } catch {
       toast.error("Error al procesar el archivo")
+    } finally {
+      setExtracting(false)
+    }
+  }
+
+  /**
+   * Vuelca en el formulario los datos leídos de un documento, vengan del
+   * archivo que subió el operador o del DTE que la plataforma ya tenía.
+   *
+   * Es una sola función y no dos porque el resultado debe ser idéntico por
+   * ambos caminos: mismo cruce de ítems, mismo aviso, misma exigencia de
+   * revisión. Duplicarla era garantizar que con el tiempo divergieran.
+   */
+  function applyExtraction({
+    data,
+    method,
+    quality,
+    warnings,
+  }: {
+    data: {
+      invoiceNumber?: string | null
+      issueDate?: string | null
+      totalAmount?: number | null
+      items?: Array<{
+        productName: string
+        productCode: string | null
+        unitOfMeasure: string | null
+        quantity: number
+        unitPrice: number
+      }>
+    }
+    method: string
+    quality?: { totalsConsistent?: boolean }
+    warnings: string[]
+  }) {
+    setExtractionWarnings(warnings)
+
+    // Auto-fill form fields
+    if (data.invoiceNumber && invoiceNumberRef.current) {
+      invoiceNumberRef.current.value = data.invoiceNumber
+    }
+    setExtractedTotal(typeof data.totalAmount === "number" ? data.totalAmount : null)
+    if (data.issueDate) {
+      setIssueDate(data.issueDate)
+    }
+
+    // Auto-match items to OC items
+    if (data.items && data.items.length > 0) {
+      const matched = matchInvoiceItemsToPurchaseOrderItems(data.items, ocItems)
+      setLineItems(matched.map((m) => ({
+        id: createInvoiceLineId(),
+        ocItemId: m.ocItemId ?? "",
+        productName: m.item.productName,
+        productCode: m.item.productCode ?? "",
+        unitOfMeasure: m.item.unitOfMeasure ?? "",
+        quantity: String(m.item.quantity),
+        unitPrice: String(m.item.unitPrice),
+        resolution: m.ocItemId ? "matched" : "needs_review",
+      })))
+    } else {
+      setLineItems([])
+    }
+
+    setDteParsed(true)
+
+    const methodLabel = method === "dte_xml" ? "DTE XML"
+      : method === "dte_portal" ? "DTE del portal"
+      : method === "pdf_text" ? "PDF"
+      : method === "pdf_text_ocr" ? "PDF + OCR"
+      : method === "ocr" ? "OCR" : ""
+    // Antes decía "95% confianza" sobre un puntaje que sólo contaba campos
+    // presentes: un folio mal leído puntuaba igual que uno correcto y el
+    // número invitaba a firmar sin mirar. Ahora se nombra lo que se midió y se
+    // pide revisión explícita cuando el documento no cuadra consigo mismo.
+    const itemCount = data.items?.length ?? 0
+    toast.success(
+      `Datos leídos del documento (${methodLabel}): ${itemCount} ítem(s). Revisa montos y líneas antes de adjuntar.`,
+    )
+    if (quality?.totalsConsistent === false) {
+      toast.error("Neto + IVA no cuadra con el total leído: corrige los montos antes de adjuntar.")
+    }
+  }
+
+  /** Precarga desde un DTE ya sincronizado, sin volver a subir el archivo. */
+  async function handlePrefillFromDte(dteDocumentId: string) {
+    setExtracting(true)
+    try {
+      const response = await prefillInvoiceFromDte(dteDocumentId)
+      if (!response.ok) {
+        toast.error(response.error)
+        return
+      }
+      const { data, method, quality } = response.result
+      applyExtraction({ data, method, quality, warnings: [] })
+    } catch {
+      toast.error("No se pudo leer el DTE desde el portal")
     } finally {
       setExtracting(false)
     }
@@ -579,6 +658,45 @@ function AddInvoiceForm({
           <Warning size={12} weight="bold" />
           {state.message}
         </p>
+      )}
+
+      {/* Va antes del campo de archivo porque es el atajo: si el documento ya
+          está en la plataforma, bajarlo del portal para volver a subirlo es
+          trabajo que la máquina ya hizo. Subir el archivo sigue disponible
+          abajo para lo que no llega por el portal. */}
+      {dteCandidates.length > 0 && (
+        <div className="rounded-(--radius-lg) border border-(--color-border) bg-(--color-surface-2) p-3">
+          <p className="text-xs font-medium text-(--color-text)">
+            DTE de este proveedor sin registrar ({dteCandidates.length})
+          </p>
+          <p className="mt-0.5 text-xs text-(--color-text-subtle)">
+            Llegaron por el portal tributario. Usa uno para llenar el formulario sin volver a subir el archivo.
+          </p>
+          <ul className="mt-2 space-y-1">
+            {dteCandidates.map((doc) => (
+              <li
+                key={doc.id}
+                className="flex flex-wrap items-center justify-between gap-2 rounded-(--radius-md) bg-(--color-surface) px-2.5 py-1.5"
+              >
+                <span className="text-xs text-(--color-text)">
+                  <span className="font-medium">{dteTipoLabel(doc.tipoDte)} N° {doc.folio}</span>
+                  <span className="text-(--color-text-subtle)">
+                    {" · "}{formatDate(doc.fechaEmision)}{" · "}{formatCLP(doc.montoTotal)}
+                  </span>
+                </span>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  disabled={extracting}
+                  onClick={() => handlePrefillFromDte(doc.id)}
+                >
+                  Usar este DTE
+                </Button>
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
 
       {/* El archivo va primero porque es lo que rellena todo lo de abajo (DTE/OCR):

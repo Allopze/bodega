@@ -4,7 +4,8 @@ import { notFound, redirect } from "next/navigation"
 import { CheckCircle } from "@phosphor-icons/react/dist/ssr"
 import { db }                  from "@/db"
 import { dteDocuments, purchaseOrderInvoices, purchaseOrders, statusHistory, users } from "@/db/schema"
-import { and, desc, eq, inArray } from "drizzle-orm"
+import { and, desc, eq, inArray, isNull } from "drizzle-orm"
+import { cleanRut } from "@/lib/rut"
 import { requirePermission, can } from "@/lib/auth/can"
 import { canAccessWorksite }  from "@/lib/auth/can"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
@@ -161,6 +162,40 @@ export default async function OcDetailPage({
           orderBy: (d, { desc: descOrder }) => [descOrder(d.fechaEmision)],
         }),
       ])
+
+  // DTE del proveedor de esta OC que todavía no cuelgan de ninguna factura:
+  // son los candidatos a registrar sin volver a subir un archivo que la
+  // plataforma ya tiene. Es la contracara de `dteRows` —que muestra los ya
+  // vinculados— y existe porque el vínculo automático sólo ocurre DESPUÉS de
+  // que alguien tipeó el folio a mano (ver reconciliation.ts): sin esta lista,
+  // para ver el DTE en la OC había que tener ya la factura cargada.
+  //
+  // Sólo 33 y 34, igual que el conciliador: el folio de una NC/ND viene de una
+  // secuencia distinta del SII y ofrecerla acá invitaría a colgarla de la OC
+  // equivocada.
+  //
+  // El RUT se compara en memoria con cleanRut() y no en SQL, para usar
+  // exactamente la misma normalización que el conciliador — `suppliers.rut` se
+  // ingresa a mano y no siempre trae el mismo formato que el portal.
+  // ponytail: filtra en memoria sobre los DTE sin vincular; con volúmenes de
+  // años convendría un índice sobre el RUT normalizado.
+  const supplierRut = order.supplier?.rut ? cleanRut(order.supplier.rut) : null
+  const unlinkedDtes = supplierRut
+    ? await db.query.dteDocuments.findMany({
+        where: and(
+          isNull(dteDocuments.purchaseOrderInvoiceId),
+          inArray(dteDocuments.tipoDte, ["33", "34"]),
+        ),
+        columns: {
+          id: true, tipoDte: true, folio: true, rutEmisor: true,
+          razonSocialEmisor: true, montoTotal: true, fechaEmision: true, estadoSii: true,
+        },
+        orderBy: (d, { desc: descOrder }) => [descOrder(d.fechaEmision)],
+      })
+    : []
+  const candidateDtes = unlinkedDtes
+    .filter((doc) => cleanRut(doc.rutEmisor) === supplierRut)
+    .slice(0, 20)
 
   // Attach items to invoices
   const invoicesWithItems = orderInvoices.map((inv) => ({
@@ -424,6 +459,14 @@ export default async function OcDetailPage({
                   totalAmount={order.totalAmount}
                   canManage={canInvoice}
                   defaultInvoiceNumber={defaultInvoiceNumber}
+                  dteCandidates={candidateDtes.map((doc) => ({
+                    id: doc.id,
+                    tipoDte: doc.tipoDte,
+                    folio: doc.folio,
+                    razonSocialEmisor: doc.razonSocialEmisor,
+                    montoTotal: doc.montoTotal,
+                    fechaEmision: doc.fechaEmision,
+                  }))}
                 />
                 <DteReceivedCard docs={dteRows} />
               </div>
