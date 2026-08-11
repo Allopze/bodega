@@ -12,14 +12,15 @@ import { analyticsFilters } from "./shared"
 
 // ── Bodega y entregas ────────────────────────────────────────────────────────
 
-export async function WarehouseSection({ session, scope }: DomainSectionsProps) {
+export async function WarehouseSection({ session, scope, worksiteIds }: DomainSectionsProps) {
+  const selectedWorksiteId = scopedWorksiteId(scope)
+  const alertScope = selectedWorksiteId ? [selectedWorksiteId] : worksiteIds
   const [analytics, alerts] = await Promise.all([
     getAnalyticsDashboard(session, analyticsFilters(scope)),
-    getStockAlerts(),
+    getStockAlerts(alertScope),
   ])
 
-  const worksiteId = scopedWorksiteId(scope)
-  const scoped = worksiteId ? alerts.filter((alert) => alert.worksiteId === worksiteId) : alerts
+  const scoped = alerts
   const critical = scoped.filter((alert) => alert.severity === "critical")
   const periodo = periodScopeLabel(scope.period).toLocaleLowerCase("es-CL")
 

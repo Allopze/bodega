@@ -11,6 +11,7 @@ import {
   dispatchGuides,
   purchaseOrders, purchaseOrderItems,
   purchaseRequestItems,
+  products,
 } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { nextCodeTx } from "@/lib/code-sequences"
@@ -269,6 +270,13 @@ export async function registerReceipt(
 
         const stockWorksiteId = input.stage === "office" ? office?.id : worksiteId
         if (stockWorksiteId && lockedOcItem.productId) {
+          const product = await tx.query.products.findFirst({
+            where: eq(products.id, lockedOcItem.productId),
+          })
+          // A catalog service is evidence/cost work, not a physical unit. It
+          // keeps its receipt history but never creates a stock balance or a
+          // kardex movement that an operator could later deliver.
+          if (product?.isService) continue
           await applyMovementTx(tx, {
             worksiteId: stockWorksiteId,
             productId:   lockedOcItem.productId,

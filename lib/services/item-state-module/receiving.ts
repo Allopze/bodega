@@ -1,6 +1,6 @@
 import { and, eq } from "drizzle-orm"
 import { type Tx } from "@/db"
-import { purchaseRequestItems } from "@/db/schema"
+import { products, purchaseRequestItems } from "@/db/schema"
 import { recordAudit, recordStatusChange } from "@/lib/audit"
 import { canTransition, getDeliveryTargetStatus, type ItemStatus } from "./types"
 import { lockRequestsForRollupTx, rollupRequestStatus } from "./rollup"
@@ -40,12 +40,16 @@ export async function receiveItemTx(
       throw new Error(`Cannot receive item in state '${item.status}'`)
     }
 
-    // Un ítem sin producto de catálogo (servicios, repuestos y todo texto libre)
-    // no genera stock al recibirse, así que ninguna pantalla de entrega puede
-    // despacharlo: la llegada completa a faena ES su estado terminal. Sin esto
-    // quedaba en 'received' para siempre, el padre nunca llegaba a 'closed' y la
-    // solicitud dejaba una fila perpetua en /pendientes.
-    const fullyReceivedTarget: ItemStatus = item.productId ? "received" : "delivered"
+    const product = item.productId
+      ? await tx.query.products.findFirst({ where: eq(products.id, item.productId) })
+      : null
+    // Texto libre y productos de servicio no generan stock al recibirse, por lo
+    // que no tienen una entrega posterior desde Bodega. Al completarse la
+    // recepción llegan directamente al estado terminal; los productos físicos
+    // de catálogo sí quedan "received" para su posterior entrega.
+    const fullyReceivedTarget: ItemStatus = !item.productId || product?.isService
+      ? "delivered"
+      : "received"
 
     // Un ítem que ya salió en entrega parcial no retrocede cuando llega el saldo a
     // faena: conserva 'partially_delivered' y sólo se registra el ingreso.

@@ -79,7 +79,7 @@ export async function getEppDeliveryExport(
       "Código", "Fecha entrega", "Faena",
       "Trabajador", "RUT", "Cargo",
       "EPP entregado", "SKU", "Cantidad", "U/M",
-      "Solicitud origen", "Firmado",
+      "Solicitud origen", "Evidencia de firma histórica",
     ],
     rows: limited.map((r) => [
       r.code,
@@ -93,7 +93,7 @@ export async function getEppDeliveryExport(
       r.quantity,
       r.unitOfMeasure,
       r.requestCode ?? "",
-      r.hasSig ? "Sí" : "No",
+      r.hasSig ? "Sí" : "—",
     ]),
   })
 

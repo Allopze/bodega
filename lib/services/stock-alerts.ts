@@ -22,7 +22,18 @@ export interface StockAlert {
 
 const WARNING_RATIO = 1.5
 
-export async function getStockAlerts(): Promise<StockAlert[]> {
+/**
+ * Lista alertas sólo dentro del alcance ya resuelto por el caller. El stock es
+ * un dato por faena: nunca se debe consultar globalmente para luego ocultar
+ * filas en la UI de un usuario acotado.
+ */
+export async function getStockAlerts(worksiteIds: string[] | "all" = "all"): Promise<StockAlert[]> {
+  const scopeFilter = worksiteIds === "all"
+    ? undefined
+    : worksiteIds.length > 0
+      ? inArray(worksiteStock.worksiteId, worksiteIds)
+      : sql`false`
+
   const rows = await db
     .select({
       worksiteId:   worksiteStock.worksiteId,
@@ -36,10 +47,11 @@ export async function getStockAlerts(): Promise<StockAlert[]> {
     .from(worksiteStock)
     .innerJoin(worksites, eq(worksiteStock.worksiteId, worksites.id))
     .innerJoin(products, eq(worksiteStock.productId, products.id))
-    .where(
+    .where(and(
+      scopeFilter,
       sql`${worksiteStock.minStock} > 0
           AND ${worksiteStock.quantity} <= ${worksiteStock.minStock} * 2.0`,
-    )
+    ))
 
   return rows
     .filter((row) => row.currentQty < row.minStock * WARNING_RATIO)

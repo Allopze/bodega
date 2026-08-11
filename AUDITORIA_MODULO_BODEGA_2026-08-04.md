@@ -127,3 +127,14 @@ En mobile, `KardexTable` renderiza `movements.slice(0, 10)` mientras el desktop 
 | Deuda menor | 🔸 3 (enum crudo, alerts sin scope, kardex móvil) |
 
 **Prioridad recomendada:** resolver la brecha de `dispatchAction` (§3) — conectar la acción existente o retirarla — y luego los fixes menores de §4.
+
+---
+
+## Addendum de remediación — 2026-08-11
+
+La alternativa 2 de §3 quedó aplicada:
+
+- Se retiraron `dispatchAction`, `dispatchSchema` y `registerWorksiteDelivery`, que no tenían consumidor de UI y duplicaban el traslado real por guía interna.
+- El traslado Oficina → Faena permanece exclusivamente en el flujo de guía interna, iniciado desde Compras/Recepción. La ruta técnica histórica `/bodega/guias` se conserva para enlaces y documentos existentes, pero no tiene ítem de navegación en Bodega.
+- Las entregas nuevas se registran desde `/entregas` contra stock físico, con una cabecera por trabajador y múltiples productos; cada línea produce su movimiento `egreso_entrega` en una única transacción.
+- La cola operacional ahora indica la entrega al trabajador, no una inexistente entrega manual a faena.

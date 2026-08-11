@@ -97,7 +97,7 @@ export function KardexTable({ movements, worksites = [], canExport = false }: Ka
       </div>
 
       <div className="grid gap-3 p-5 md:hidden">
-        {movements.slice(0, 10).map((m) => {
+        {movements.map((m) => {
           const isPositive = m.quantity > 0
           return (
             <article
@@ -127,11 +127,6 @@ export function KardexTable({ movements, worksites = [], canExport = false }: Ka
             </article>
           )
         })}
-        {movements.length > 10 && (
-          <p className="text-center text-xs text-[var(--color-text-subtle)]">
-            Mostrando 10 de {movements.length} movimientos
-          </p>
-        )}
       </div>
     </section>
   )

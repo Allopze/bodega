@@ -101,7 +101,7 @@ export function requestNextAction(requestStatus: string, statuses: string[]): st
   if (statuses.some((status) => status === "in_purchase_order")) return "En una orden de compra, pendiente de emitir y enviar al proveedor."
   if (statuses.some((status) => ["purchased", "partially_received"].includes(status))) return "Esperando recepción en oficina o bodega."
   if (statuses.some((status) => ["partially_office_received", "office_received"].includes(status))) return "Preparar el despacho pendiente a faena."
-  if (statuses.some((status) => ["received", "partially_delivered"].includes(status))) return "Bodega debe registrar la entrega a faena."
+  if (statuses.some((status) => ["received", "partially_delivered"].includes(status))) return "Registra la entrega al trabajador desde el stock disponible."
   if (CLOSED_REQUEST_STATUSES.has(requestStatus)) return "La solicitud ya no requiere acciones."
   return "Revisa el detalle para ver el siguiente paso."
 }

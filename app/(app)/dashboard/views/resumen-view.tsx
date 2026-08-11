@@ -532,7 +532,7 @@ export function buildOperationalAlerts(input: {
     input.canViewCapa && input.overdueCapa > 0 ? { key: "capa", title: "acciones correctivas vencidas", description: "Su plazo de cierre comprometido ya venció.", count: input.overdueCapa, severity: "critical", href: href({ module: "capa" }) } : null,
     input.canApprove && input.pendingApprovals > 0 ? { key: "approvals", title: "ítems esperan aprobación", description: "Una decisión de aprobación desbloquea el siguiente paso de compra.", count: input.pendingApprovals, severity: "warning", href: href({ module: "aprobaciones" }) } : null,
     input.canReceive && input.ordersPendingReceipt > 0 ? { key: "receipts", title: "órdenes pendientes de recepción", description: "Registra la llegada para que la operación pueda avanzar.", count: input.ordersPendingReceipt, severity: "warning", href: href({ module: "recepciones" }) } : null,
-    input.canDeliver && input.deliveries > 0 ? { key: "deliveries", title: "entregas por registrar", description: "Hay ítems disponibles para confirmar entrega a faena o trabajador.", count: input.deliveries, severity: "info", href: href({ module: "entregas" }) } : null,
+    input.canDeliver && input.deliveries > 0 ? { key: "deliveries", title: "entregas por registrar", description: "Hay ítems disponibles para confirmar entrega a trabajadores desde stock físico.", count: input.deliveries, severity: "info", href: href({ module: "entregas" }) } : null,
     input.canViewEpp && input.eppGaps > 0 ? { key: "epp", title: "brechas preventivas de EPP", description: "Existen brechas bloqueantes que requieren gestión preventiva.", count: input.eppGaps, severity: "warning", href: "/prevencion/epp-preventivo" } : null,
   ]
 

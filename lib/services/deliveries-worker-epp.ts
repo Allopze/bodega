@@ -126,10 +126,11 @@ export async function registerWorkerEppDelivery(
       deliveredBy: input.deliveredBy,
       deliveredAt: now,
       destinationType: "worker",
+      sourceWorksiteId: input.worksiteId,
       worksiteId: input.worksiteId,
       workerId: input.workerId,
       receiverName,
-      signaturePath: input.signatureAttachment?.filePath ?? null,
+      signaturePath: null,
       notes,
       createdAt: now,
     })
@@ -176,20 +177,6 @@ export async function registerWorkerEppDelivery(
         filePath: input.proofAttachment.filePath,
         fileSize: input.proofAttachment.fileSize,
         mimeType: input.proofAttachment.mimeType,
-        uploadedBy: input.deliveredBy,
-        uploadedAt: now,
-      })
-    }
-
-    if (input.signatureAttachment) {
-      await tx.insert(attachments).values({
-        id: nanoid(),
-        entityType: "delivery",
-        entityId: deliveryId,
-        fileName: input.signatureAttachment.fileName,
-        filePath: input.signatureAttachment.filePath,
-        fileSize: input.signatureAttachment.fileSize,
-        mimeType: input.signatureAttachment.mimeType,
         uploadedBy: input.deliveredBy,
         uploadedAt: now,
       })

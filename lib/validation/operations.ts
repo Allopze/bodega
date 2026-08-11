@@ -180,17 +180,6 @@ export const receiptSchema = z.object({
   items:            z.array(receiptItemSchema).min(1, "Ingresa las cantidades recibidas"),
 })
 
-// ── Stock dispatch ──────────────────────────────────────────────────────────
-export const dispatchSchema = z.object({
-  worksiteId:     z.string().min(1, "Selecciona una faena"),
-  productId:      z.string().min(1, "Selecciona un producto"),
-  requestItemId:  z.string().nullable().optional().or(z.literal("")),
-  quantity:       positiveQuantitySchema,
-  unitOfMeasure:  z.string().min(1, "Unidad requerida").max(20).default("unidad"),
-  receiverName:   z.string().trim().min(1, "Indica quién recibió").max(120),
-  notes:          z.string().trim().max(500).nullable().optional().or(z.literal("")),
-})
-
 export const workerDeliverySchema = z.object({
   worksiteId:    z.string().min(1, "Selecciona una faena"),
   workerId:      z.string().min(1, "Selecciona un trabajador"),
@@ -219,6 +208,52 @@ export const workerDeliverySchema = z.object({
 export const setMinStockSchema = z.object({
   stockId:   z.string().min(1),
   minStock:  z.coerce.number().refine(Number.isFinite, "Valor inválido").min(0, "No puede ser negativo"),
+})
+
+// ── Physical stock delivery to worker ───────────────────────────────────────
+// The browser sends `items` as JSON because one delivery can contain several
+// products. Validate the complete nested shape again at the action boundary;
+// the service repeats the business invariants under its transaction.
+export const workerStockDeliveryItemSchema = z.object({
+  productId: z.string().min(1, "Selecciona un producto"),
+  quantity: positiveQuantitySchema,
+  requestItemId: z.string().nullable().optional().or(z.literal("")),
+  notes: z.string().trim().max(300).nullable().optional().or(z.literal("")),
+})
+
+export const workerStockDeliverySchema = z.object({
+  sourceWorksiteId: z.string().min(1, "Selecciona la bodega de origen"),
+  workerId: z.string().min(1, "Selecciona un trabajador"),
+  receiverName: z.string().trim().max(120).nullable().optional().or(z.literal("")),
+  notes: z.string().trim().max(500).nullable().optional().or(z.literal("")),
+  items: z.array(workerStockDeliveryItemSchema)
+    .min(1, "Agrega al menos un producto")
+    .max(50, "Máximo 50 productos por entrega"),
+}).superRefine((data, context) => {
+  const productIds = new Set<string>()
+  const requestItemIds = new Set<string>()
+
+  data.items.forEach((item, index) => {
+    if (productIds.has(item.productId)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["items", index, "productId"],
+        message: "No repitas un producto en la entrega",
+      })
+    }
+    productIds.add(item.productId)
+
+    if (item.requestItemId) {
+      if (requestItemIds.has(item.requestItemId)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["items", index, "requestItemId"],
+          message: "No repitas un ítem de solicitud en la entrega",
+        })
+      }
+      requestItemIds.add(item.requestItemId)
+    }
+  })
 })
 
 // ── Stock adjust ────────────────────────────────────────────────────────────
@@ -254,8 +289,8 @@ export const invoiceSchema = z.object({
 export type InvoiceFormData = z.infer<typeof invoiceSchema>
 
 export type ReceiptFormData = z.infer<typeof receiptSchema>
-export type DispatchFormData = z.infer<typeof dispatchSchema>
 export type WorkerDeliveryFormData = z.infer<typeof workerDeliverySchema>
+export type WorkerStockDeliveryFormData = z.infer<typeof workerStockDeliverySchema>
 export type AdjustStockFormData = z.infer<typeof adjustStockSchema>
 export type SetMinStockFormData = z.infer<typeof setMinStockSchema>
 export type ReturnStockFormData = z.infer<typeof returnStockSchema>
