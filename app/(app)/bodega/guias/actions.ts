@@ -10,6 +10,7 @@ import {
   confirmDispatchGuideReceipt,
   createDispatchGuide,
   dispatchDispatchGuide,
+  prepareAdditionalDispatchGuideForOfficeReceipt,
   updateDispatchGuide,
 } from "@/lib/services/dispatch-guides"
 import {
@@ -25,6 +26,9 @@ function revalidateGuideViews(guideId?: string) {
   revalidateOperationalViews([
     GUIDES_PATH,
     ...(guideId ? [`${GUIDES_PATH}/${guideId}`] : []),
+    "/recepcion",
+    "/compras",
+    "/solicitudes",
     "/bodega",
     "/trazabilidad",
   ])
@@ -135,18 +139,47 @@ export async function dispatchGuideAction(guideId: string): Promise<ActionState>
   }
 }
 
-export async function receiveGuideAction(guideId: string, receivedByWorkerId?: string | null): Promise<ActionState> {
+/** Prepara el saldo de una recepción para un segundo despacho parcial. */
+export async function prepareAdditionalGuideAction(receiptId: string): Promise<ActionState> {
+  let session
+  try { session = await requirePermission("warehouse:create_guide") }
+  catch { return { ok: false, message: "Sin permisos para preparar guías de despacho" } }
+  if (!receiptId?.trim()) return { ok: false, message: "Recepción no indicada" }
+
+  try {
+    const result = await prepareAdditionalDispatchGuideForOfficeReceipt(
+      receiptId,
+      { userId: session.user.id, userEmail: session.user.email ?? undefined },
+      serviceWorksiteScope(session),
+    )
+    revalidateGuideViews(result.id)
+    return { ok: true, message: `Guía ${result.code} preparada.`, data: { guideId: result.id } }
+  } catch (error) {
+    logger.error("[prepareAdditionalGuideAction]", error)
+    return { ok: false, message: error instanceof Error ? error.message : "No se pudo preparar el despacho" }
+  }
+}
+
+export async function receiveGuideAction(
+  guideId: string,
+  receivedByWorkerId?: string | null,
+  items?: Array<{ guideItemId: string; quantityReceived: number; differenceReason?: string | null }>,
+): Promise<ActionState> {
   let session
   try { session = await requirePermission("warehouse:receive_guide") }
   catch { return { ok: false, message: "Sin permisos para confirmar recepciones" } }
 
-  const parsed = receiveDispatchGuideSchema.safeParse({ guideId, receivedByWorkerId: receivedByWorkerId ?? "" })
+  const parsed = receiveDispatchGuideSchema.safeParse({
+    guideId,
+    receivedByWorkerId: receivedByWorkerId ?? "",
+    items,
+  })
   if (!parsed.success) return { ok: false, message: "Revisa los datos de la recepción" }
 
   try {
     const result = await confirmDispatchGuideReceipt(
       parsed.data.guideId,
-      { receivedByWorkerId: parsed.data.receivedByWorkerId },
+      { receivedByWorkerId: parsed.data.receivedByWorkerId, items: parsed.data.items },
       { userId: session.user.id, userEmail: session.user.email ?? undefined },
       serviceWorksiteScope(session),
     )

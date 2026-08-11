@@ -65,6 +65,9 @@ export default async function DispatchGuidePrintPage({ params }: PageProps) {
     ? [guide.vehicle.brand, guide.vehicle.model].filter(Boolean).join(" ") || guide.vehicle.plate
     : null
   const totalQuantity = guide.items.reduce((sum, item) => sum + item.quantity, 0)
+  const requestCodes = [...new Set(
+    (guide.purchaseOrder?.items ?? []).flatMap((item) => item.requestItem?.request?.code ? [item.requestItem.request.code] : []),
+  )]
   const suggestedFilename = guidePdfFilename(guide.code)
 
   return (
@@ -89,6 +92,9 @@ export default async function DispatchGuidePrintPage({ params }: PageProps) {
               { label: "Destino", value: guide.destinationWorksite?.name ?? "—" },
               { label: "Estado", value: stateMeta?.label ?? guide.status },
               { label: "Emisión", value: formatDateTime(guide.issuedAt) },
+              ...(guide.purchaseOrder ? [{ label: "Orden de compra", value: guide.purchaseOrder.code }] : []),
+              ...(requestCodes.length > 0 ? [{ label: "Solicitud(es)", value: requestCodes.join(", ") }] : []),
+              ...(guide.receipt ? [{ label: "Recepción en oficina", value: guide.receipt.code }] : []),
               { label: "Responsable del despacho", value: dispatcher ?? "—" },
               { label: "Responsable de recepción", value: receiver ?? "—" },
               ...(guide.vehicle ? [{ label: "Vehículo", value: `${guide.vehicle.plate}${vehicleLabel ? ` · ${vehicleLabel}` : ""}` }] : []),
@@ -160,6 +166,9 @@ export default async function DispatchGuidePrintPage({ params }: PageProps) {
           <div className="fields">
             <FieldCell label="Responsable del despacho" value={dispatcher} />
             <FieldCell label="Responsable de recepción" value={receiver} />
+            <FieldCell label="Orden de compra" value={guide.purchaseOrder?.code} mono />
+            <FieldCell label="Solicitud(es)" value={requestCodes.length > 0 ? requestCodes.join(", ") : null} mono />
+            <FieldCell label="Recepción en oficina" value={guide.receipt?.code} mono />
             <FieldCell label="Vehículo" value={vehicleLabel} />
             <FieldCell label="Patente" value={guide.vehicle?.plate} mono />
             <FieldCell label="Código interno" value={guide.vehicle?.code} mono />
@@ -180,14 +189,16 @@ export default async function DispatchGuidePrintPage({ params }: PageProps) {
           <table>
             <thead>
               <tr className="items-caption">
-                <th scope="colgroup" colSpan={4}>
+                <th scope="colgroup" colSpan={6}>
                   Guía de Despacho Interna Nº {guide.code} · {guide.destinationWorksite?.name}
                 </th>
               </tr>
               <tr>
                 <th scope="col" style={{ width: "32mm" }}>Código</th>
                 <th scope="col">Descripción</th>
-                <th scope="col" className="text-right" style={{ width: "22mm" }}>Cantidad</th>
+                <th scope="col" className="text-right" style={{ width: "20mm" }}>Despachada</th>
+                <th scope="col" className="text-right" style={{ width: "20mm" }}>Recibida</th>
+                <th scope="col" className="text-right" style={{ width: "18mm" }}>Dif.</th>
                 <th scope="col" style={{ width: "24mm" }}>Unidad</th>
               </tr>
             </thead>
@@ -200,6 +211,8 @@ export default async function DispatchGuidePrintPage({ params }: PageProps) {
                     {item.notes && <div className="item-note">{item.notes}</div>}
                   </td>
                   <td className="text-right mono">{formatQty(item.quantity)}</td>
+                  <td className="text-right mono">{item.quantityReceived == null ? "" : formatQty(item.quantityReceived)}</td>
+                  <td className="text-right mono">{item.quantityReceived == null ? "" : formatQty(Math.max(0, item.quantity - item.quantityReceived))}</td>
                   <td>{item.unitOfMeasure}</td>
                 </tr>
               ))}
@@ -210,7 +223,7 @@ export default async function DispatchGuidePrintPage({ params }: PageProps) {
                   Total: {guide.items.length} {guide.items.length === 1 ? "línea" : "líneas"}
                 </td>
                 <td className="text-right mono">{formatQty(totalQuantity)}</td>
-                <td />
+                <td /><td /><td />
               </tr>
             </tfoot>
           </table>

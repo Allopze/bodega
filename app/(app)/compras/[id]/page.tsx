@@ -230,6 +230,12 @@ export default async function OcDetailPage({
     getOcReconciliation(order.id, orderItemIds),
     getDocumentChain(session, { kind: "order", id: order.id }),
   ])
+  const activeGuideDocument = documentChain.dispatchGuides.find((guide) =>
+    guide.status !== null && ["draft", "dispatched", "partially_received"].includes(guide.status),
+  )
+  const activeDispatchGuide = activeGuideDocument
+    ? { id: activeGuideDocument.id, code: activeGuideDocument.code, status: activeGuideDocument.status! }
+    : undefined
 
   // Calculate invoice reconciliation warnings for the close form
   const hasLineItems = invoiceItemRows.length > 0
@@ -457,6 +463,7 @@ export default async function OcDetailPage({
               worksiteName={order.worksite?.name ?? "la faena"}
               canRegisterOffice={canRegisterOfficeReception}
               canRegisterFaena={canRegisterFaenaReception}
+              activeDispatchGuide={activeDispatchGuide}
             />
             {showInvoicing && (
               <OcInvoiceCta

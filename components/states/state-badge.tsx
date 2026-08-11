@@ -35,6 +35,8 @@ const ITEM_STATE_META: Record<ItemStatus | RetiredItemStatus, StateMeta> = {
   pending_purchase:    { label: "Pendiente compra",    variant: "signal",   family: "signal"   },
   in_purchase_order:   { label: "En OC",               variant: "info",     family: "info"     },
   purchased:           { label: "Comprado",            variant: "info",     family: "info"     },
+  partially_office_received: { label: "Recibido en oficina (parcial)", variant: "warning", family: "warning" },
+  office_received:     { label: "Recibido en oficina", variant: "info",     family: "info"     },
   partially_received:  { label: "Recibido parcial",    variant: "warning",  family: "warning"  },
   received:            { label: "Recibido",            variant: "success",  family: "success"  },
   partially_delivered: { label: "Entrega parcial",     variant: "warning",  family: "warning"  },
@@ -129,11 +131,12 @@ const FUEL_STATE_META: Record<string, StateMeta> = {
 }
 
 /* ── Guía de Despacho Interna (GDI) states ───────────────────────────────── */
-export type DispatchGuideStatus = "draft" | "dispatched" | "received" | "cancelled"
+export type DispatchGuideStatus = "draft" | "dispatched" | "partially_received" | "received" | "cancelled"
 
 const DISPATCH_GUIDE_STATE_META: Record<DispatchGuideStatus, StateMeta> = {
   draft:      { label: "Borrador",   variant: "default", family: "neutral", description: "Guía en preparación: se puede editar y todavía no descontó stock de la oficina." },
   dispatched: { label: "Despachada", variant: "info",    family: "info",    description: "Los bienes salieron de la oficina hacia la faena; el stock ya se movió." },
+  partially_received: { label: "Recibida con diferencia", variant: "warning", family: "warning", description: "La faena cotejó la guía, pero una o más cantidades no coinciden con lo despachado." },
   received:   { label: "Recibida",   variant: "success", family: "success", description: "La faena confirmó la recepción de los bienes. No vuelve a mover stock." },
   cancelled:  { label: "Anulada",    variant: "danger",  family: "danger",  description: "Guía anulada con motivo registrado; si había salida de stock, se revirtió con movimientos nuevos." },
 }

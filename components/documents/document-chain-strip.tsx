@@ -4,7 +4,7 @@ import { CaretRight, Path } from "@phosphor-icons/react/dist/ssr"
 import { cn } from "@/lib/utils"
 import { auth } from "@/lib/auth/auth"
 import { can } from "@/lib/auth/can"
-import { OC_STATE_META, REQUEST_STATE_META } from "@/components/states/state-badge"
+import { DISPATCH_GUIDE_STATE_META, OC_STATE_META, REQUEST_STATE_META } from "@/components/states/state-badge"
 import {
   chainDocuments,
   isChainEmpty,
@@ -28,6 +28,7 @@ export const KIND_LABEL: Record<DocumentKind, string> = {
   request:  "Solicitud",
   order:    "Orden de compra",
   receipt:  "Recepción",
+  dispatchGuide: "GDI",
   delivery: "Entrega",
 }
 
@@ -56,6 +57,7 @@ export function documentStatusLabel(doc: ChainDocument): string | null {
     case "order":    return OC_STATE_META[doc.status as keyof typeof OC_STATE_META]?.label ?? doc.status
     case "receipt":
     case "delivery": return PLACE_LABEL[doc.status] ?? doc.status
+    case "dispatchGuide": return DISPATCH_GUIDE_STATE_META[doc.status as keyof typeof DISPATCH_GUIDE_STATE_META]?.label ?? doc.status
   }
 }
 
@@ -102,7 +104,7 @@ interface DocumentChainStripProps {
 export async function DocumentChainStrip({ chain, current, currentCode, className }: DocumentChainStripProps) {
   if (isChainEmpty(chain)) return null
 
-  const groups = [chain.requests, chain.orders, chain.receipts, chain.deliveries].filter((g) => g.length > 0)
+  const groups = [chain.requests, chain.orders, chain.receipts, chain.dispatchGuides, chain.deliveries].filter((g) => g.length > 0)
 
   // Un solo documento y es el que ya estás mirando: la miga no aporta nada.
   const total = chainDocuments(chain).length

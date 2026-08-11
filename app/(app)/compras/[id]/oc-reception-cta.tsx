@@ -26,6 +26,12 @@ export interface OcReceptionStageInput {
   pendingFaenaQuantity: number
 }
 
+export interface ActiveDispatchGuide {
+  id: string
+  code: string
+  status: string
+}
+
 /**
  * Etapa de recepción pendiente, o null si no queda ninguna.
  *
@@ -53,6 +59,7 @@ export function OcReceptionCta({
   worksiteName,
   canRegisterOffice,
   canRegisterFaena,
+  activeDispatchGuide,
 }: {
   orderId: string
   status: string
@@ -62,6 +69,7 @@ export function OcReceptionCta({
   worksiteName: string
   canRegisterOffice: boolean
   canRegisterFaena: boolean
+  activeDispatchGuide?: ActiveDispatchGuide
 }) {
   // La oficina va primero: mientras quede saldo por llegar ahí, ése es el paso.
   const stage = pendingReceptionStage({ status, deliveryMode, pendingOfficeQuantity, pendingFaenaQuantity })
@@ -74,6 +82,44 @@ export function OcReceptionCta({
     ? `${QUANTITY_FORMAT.format(quantity)} unidades por llegar a oficina`
     : `${QUANTITY_FORMAT.format(quantity)} unidades pendientes para ${worksiteName}`
   const actionLabel = stage === "office" ? "Registrar llegada a oficina" : "Recepcionar en faena"
+
+  if (stage === "faena" && deliveryMode !== "directo_faena") {
+    if (activeDispatchGuide) {
+      return (
+        <div className="mt-4 border-t border-[var(--color-border)] pt-4">
+          <p className="text-xs font-medium text-[var(--color-text)]">
+            El despacho a faena continúa en la guía {activeDispatchGuide.code}.
+          </p>
+          <Button asChild variant="primary" size="sm" className="mt-3 w-full">
+            <Link href={`/bodega/guias/${activeDispatchGuide.id}`}>
+              {activeDispatchGuide.status === "draft" ? "Completar despacho" : "Cotejar entrega en faena"}
+              <ArrowRight size={14} aria-hidden />
+            </Link>
+          </Button>
+        </div>
+      )
+    }
+
+    return (
+      <div className="mt-4 border-t border-[var(--color-border)] pt-4">
+        <p className="text-xs font-medium text-[var(--color-text)]">
+          La OC ya llegó a oficina y queda pendiente preparar el despacho a faena.
+        </p>
+        {canRegisterFaena ? (
+          <Button asChild variant="secondary" size="sm" className="mt-3 w-full">
+            <Link href="/recepcion">
+              Continuar en Recepciones
+              <ArrowRight size={14} aria-hidden />
+            </Link>
+          </Button>
+        ) : (
+          <p className="mt-1.5 text-xs text-[var(--color-text-muted)]">
+            Siguiente paso: preparar el despacho desde Recepciones.
+          </p>
+        )}
+      </div>
+    )
+  }
 
   return (
     <div className="mt-4 border-t border-[var(--color-border)] pt-4">

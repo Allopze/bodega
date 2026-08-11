@@ -2,9 +2,9 @@ import type { Metadata } from "next"
 import { redirect } from "next/navigation"
 import { db } from "@/db"
 import {
-  purchaseOrders, purchaseOrderItems, worksites, suppliers,
+  purchaseOrders, purchaseOrderItems, worksites, suppliers, dispatchGuides, dispatchGuideItems,
 } from "@/db/schema"
-import { and, or, ilike, eq, inArray, desc, count, sql } from "drizzle-orm"
+import { and, or, ilike, eq, inArray, desc, count, ne, sql } from "drizzle-orm"
 import { requirePermission, can } from "@/lib/auth/can"
 import { worksiteScopeSql } from "@/lib/auth/scope"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
@@ -16,7 +16,7 @@ import { buildPaginationHref, resolvePagination } from "@/lib/pagination"
 import { parseListParams, eqFilter, statusSql, worksiteEqSql } from "@/lib/adquisiciones/list-query"
 import type { StageTab } from "@/components/adquisiciones/stage-tabs"
 import { COMPLETED_RECEIPT_ORDER_STATUSES, RECEIVABLE_ORDER_STATUSES } from "@/lib/work-queue"
-import { RecepcionTable } from "./recepcion-table"
+import { RecepcionTable, type ReceiptGuideRow } from "./recepcion-table"
 
 export const metadata: Metadata = { title: "Recepción" }
 
@@ -156,7 +156,7 @@ export default async function RecepcionPage({
   const supplierIds = [...new Set(visible.map((o) => o.supplierId))]
   const orderIds    = visible.map((o) => o.id)
 
-  const [wsRows, supplierRows, itemRows] = await Promise.all([
+  const [wsRows, supplierRows, itemRows, guideRows] = await Promise.all([
     wsIds.length > 0
       ? db.select({ id: worksites.id, name: worksites.name }).from(worksites).where(inArray(worksites.id, wsIds))
       : Promise.resolve([]),
@@ -170,6 +170,23 @@ export default async function RecepcionPage({
           quantityReceived:       purchaseOrderItems.quantityReceived,
         }).from(purchaseOrderItems).where(inArray(purchaseOrderItems.purchaseOrderId, orderIds))
       : Promise.resolve([]),
+    orderIds.length > 0
+      ? db.select({
+          purchaseOrderId: dispatchGuides.purchaseOrderId,
+          id: dispatchGuides.id,
+          code: dispatchGuides.code,
+          status: dispatchGuides.status,
+          totalQuantity: sql<number>`coalesce(sum(${dispatchGuideItems.quantity}), 0)`,
+          receivedQuantity: sql<number>`coalesce(sum(${dispatchGuideItems.quantityReceived}), 0)`,
+        })
+          .from(dispatchGuides)
+          .leftJoin(dispatchGuideItems, eq(dispatchGuideItems.guideId, dispatchGuides.id))
+          .where(and(
+            inArray(dispatchGuides.purchaseOrderId, orderIds),
+            ne(dispatchGuides.status, "cancelled"),
+          ))
+          .groupBy(dispatchGuides.id, dispatchGuides.purchaseOrderId, dispatchGuides.code, dispatchGuides.status)
+      : Promise.resolve([]),
   ])
 
   const wsMap  = Object.fromEntries(wsRows.map((w) => [w.id, w.name]))
@@ -181,6 +198,18 @@ export default async function RecepcionPage({
     if ((it.quantityOfficeReceived ?? 0) - (it.quantityReceived ?? 0) > 0) {
       gapMap[it.purchaseOrderId] = (gapMap[it.purchaseOrderId] ?? 0) + 1
     }
+  }
+  const guideMap: Record<string, ReceiptGuideRow[]> = {}
+  for (const guide of guideRows) {
+    if (!guide.purchaseOrderId) continue
+    const summary: ReceiptGuideRow = {
+      id: guide.id,
+      code: guide.code,
+      status: guide.status,
+      totalQuantity: Number(guide.totalQuantity),
+      receivedQuantity: Number(guide.receivedQuantity),
+    }
+    guideMap[guide.purchaseOrderId] = [...(guideMap[guide.purchaseOrderId] ?? []), summary]
   }
 
   const canOffice = can(session, "receiving:register_office")
@@ -220,6 +249,7 @@ export default async function RecepcionPage({
         wsMap={wsMap}
         supMap={supMap}
         gapMap={gapMap}
+        guideMap={guideMap}
         canOffice={canOffice}
         canFaena={canFaena}
         worksiteOptions={worksiteOptions}

@@ -1,5 +1,6 @@
 import type { Metadata } from "next"
 import type { ReactNode } from "react"
+import Link from "next/link"
 import { notFound, redirect } from "next/navigation"
 import { and, asc, desc, eq } from "drizzle-orm"
 import { db } from "@/db"
@@ -99,6 +100,12 @@ export default async function DispatchGuideDetailPage({ params }: { params: Prom
     ?? guide.issuedByUser?.email
     ?? "—"
   const totalQuantity = guide.items.reduce((sum, item) => sum + item.quantity, 0)
+  const requestAnchors = [...new Map(
+    (guide.purchaseOrder?.items ?? [])
+      .map((item) => item.requestItem?.request)
+      .filter((request): request is NonNullable<typeof request> => Boolean(request))
+      .map((request) => [request.id, request]),
+  ).values()]
 
   return (
     <PageContainer width="workbench">
@@ -121,6 +128,15 @@ export default async function DispatchGuideDetailPage({ params }: { params: Prom
             destinationWorksiteName={guide.destinationWorksite?.name ?? "la faena"}
             itemCount={guide.items.length}
             defaultReceiverWorkerId={guide.receiverWorkerId ?? ""}
+            reconciliationItems={guide.purchaseOrderId
+              ? guide.items.map((item) => ({
+                  id: item.id,
+                  name: item.product?.name ?? "Producto",
+                  quantity: item.quantity,
+                  unitOfMeasure: item.unitOfMeasure,
+                  receivedQuantity: item.quantityReceived,
+                }))
+              : []}
             receiverOptions={receiverOptions}
             permissions={{
               edit:     can(session, "warehouse:create_guide"),
@@ -213,6 +229,26 @@ export default async function DispatchGuideDetailPage({ params }: { params: Prom
               />
             )}
           </dl>
+          {(guide.purchaseOrder || guide.receipt) && (
+            <div className="mt-4 flex flex-wrap gap-2 border-t border-[var(--color-border)] pt-3 text-xs">
+              {guide.purchaseOrder && (
+                <Link href={`/compras/${guide.purchaseOrder.id}`} className="font-mono text-[var(--color-primary)] hover:underline">
+                  {guide.purchaseOrder.code}
+                </Link>
+              )}
+              {guide.receipt && (
+                <Link href={`/recepcion/${guide.receipt.id}`} className="font-mono text-[var(--color-primary)] hover:underline">
+                  {guide.receipt.code}
+                </Link>
+              )}
+              {requestAnchors.map((request) => (
+                <Link key={request.id} href={`/solicitudes/${request.id}`} className="font-mono text-[var(--color-primary)] hover:underline">
+                  {request.code}
+                </Link>
+              ))}
+              <span className="text-[var(--color-text-muted)]">· Trazabilidad de adquisición</span>
+            </div>
+          )}
           {guide.notes && (
             <div className="mt-4 border-t border-[var(--color-border)] pt-3">
               <p className="text-[11px] uppercase tracking-[0.06em] text-[var(--color-text-subtle)]">Observaciones</p>
@@ -234,7 +270,9 @@ export default async function DispatchGuideDetailPage({ params }: { params: Prom
                 <TableRow>
                   <TableHead className="w-32">Código</TableHead>
                   <TableHead>Descripción</TableHead>
-                  <TableHead className="w-28 text-right">Cantidad</TableHead>
+                  <TableHead className="w-28 text-right">Despachada</TableHead>
+                  <TableHead className="w-28 text-right">Cotejada</TableHead>
+                  <TableHead className="w-28 text-right">Diferencia</TableHead>
                   <TableHead className="w-28">Unidad</TableHead>
                   <TableHead>Observación</TableHead>
                 </TableRow>
@@ -245,6 +283,13 @@ export default async function DispatchGuideDetailPage({ params }: { params: Prom
                     <TableCell className="font-mono text-xs">{item.product?.sku ?? "—"}</TableCell>
                     <TableCell className="text-sm">{item.product?.name ?? "Producto"}</TableCell>
                     <TableCell className="text-right font-mono text-sm">{formatQty(item.quantity)}</TableCell>
+                    <TableCell className="text-right font-mono text-sm">
+                      {item.quantityReceived == null ? "—" : formatQty(item.quantityReceived)}
+                    </TableCell>
+                    <TableCell className={`text-right font-mono text-sm ${item.quantityReceived != null && item.quantityReceived < item.quantity ? "text-[var(--color-warning-ink)]" : "text-[var(--color-text-muted)]"}`}>
+                      {item.quantityReceived == null ? "—" : formatQty(Math.max(0, item.quantity - item.quantityReceived))}
+                      {item.differenceReason && <span className="block max-w-28 truncate text-[10px] font-sans text-[var(--color-text-muted)]" title={item.differenceReason}>{item.differenceReason}</span>}
+                    </TableCell>
                     <TableCell className="text-sm text-[var(--color-text-muted)]">{item.unitOfMeasure}</TableCell>
                     <TableCell className="text-xs text-[var(--color-text-muted)]">{item.notes ?? "—"}</TableCell>
                   </TableRow>

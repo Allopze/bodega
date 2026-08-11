@@ -4,7 +4,7 @@ import { notFound, redirect } from "next/navigation"
 import { db } from "@/db"
 import { receipts } from "@/db/schema"
 import { eq } from "drizzle-orm"
-import { canAccessWorksite, requirePermission } from "@/lib/auth/can"
+import { can, canAccessWorksite, requirePermission } from "@/lib/auth/can"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { Button } from "@/components/ui/button"
@@ -17,9 +17,11 @@ import {
   TableRow, TableHead, TableCell, TableCellNum,
 } from "@/components/ui/table"
 import { getDocumentChain } from "@/lib/services/document-chain"
+import { listDispatchGuidesForReceipt } from "@/lib/services/dispatch-guides"
 import { DocumentChainStrip } from "@/components/documents/document-chain-strip"
 import { cn, formatCLP, formatDateTime, formatQty, formatWorksiteLabel } from "@/lib/utils"
 import { ArrowSquareOut } from "@phosphor-icons/react/dist/ssr"
+import { ReceiptGuideActions } from "./receipt-guide-actions"
 
 export const metadata: Metadata = { title: "Detalle de recepción" }
 
@@ -52,7 +54,11 @@ export default async function RecepcionDetallePage({
 
   if (!receipt) notFound()
 
-  const worksiteId = receipt.worksiteId ?? receipt.purchaseOrder.worksiteId
+  // Una recepción de proveedor se guarda en la bodega real de Oficina CHOME,
+  // pero su alcance operativo sigue siendo el de la faena de la OC.
+  const worksiteId = receipt.locationType === "office"
+    ? receipt.purchaseOrder.worksiteId
+    : receipt.worksiteId ?? receipt.purchaseOrder.worksiteId
   if (!canAccessWorksite(session, worksiteId)) notFound()
 
   const productIds = receipt.items
@@ -66,7 +72,10 @@ export default async function RecepcionDetallePage({
       })
     : []
 
-  const documentChain = await getDocumentChain(session, { kind: "receipt", id: receipt.id })
+  const [documentChain, acquisitionGuides] = await Promise.all([
+    getDocumentChain(session, { kind: "receipt", id: receipt.id }),
+    listDispatchGuidesForReceipt(receipt.id),
+  ])
 
   const productMap = Object.fromEntries(productRows.map((product) => [product.id, product]))
   const destinationLabel = receipt.locationType === "office"
@@ -191,6 +200,68 @@ export default async function RecepcionDetallePage({
                 </TableBody>
               </Table>
             </TableRoot>
+          </section>
+
+          <section className="rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] p-5">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="text-h2 text-[var(--color-text)]">Despacho Oficina CHOME → Faena</h2>
+                <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+                  La guía se prepara desde esta recepción y se coteja aquí mismo como segundo evento físico.
+                </p>
+              </div>
+              <span className="font-mono text-xs text-[var(--color-text-subtle)]">
+                {acquisitionGuides.length} {acquisitionGuides.length === 1 ? "guía" : "guías"}
+              </span>
+              <ReceiptGuideActions
+                receiptId={receipt.id}
+                canPrepare={receipt.locationType === "office"
+                  && can(session, "warehouse:create_guide")
+                  && acquisitionGuides.some((guide) => ["dispatched", "partially_received", "received"].includes(guide.status))}
+              />
+            </div>
+            {acquisitionGuides.length === 0 ? (
+              <p className="mt-4 rounded-[var(--radius-lg)] border border-dashed border-[var(--color-border)] px-3 py-3 text-sm text-[var(--color-text-muted)]">
+                {receipt.locationType === "office"
+                  ? "No hay bienes catalogados trasladables en esta recepción; los servicios y las compras destinadas a oficina no generan GDI."
+                  : "Esta recepción no tiene una GDI asociada."}
+              </p>
+            ) : (
+              <div className="mt-4 divide-y divide-[var(--color-border)] rounded-[var(--radius-lg)] border border-[var(--color-border)]">
+                {acquisitionGuides.map((guide) => {
+                  const active = ["dispatched", "partially_received", "received"].includes(guide.status)
+                  const progressLabel = guide.status === "draft"
+                    ? `${formatQty(guide.totalQuantity)} disponibles para despachar`
+                    : `${formatQty(guide.totalQuantity)} despachadas · ${formatQty(guide.receivedQuantity)} cotejadas`
+                  return (
+                    <div key={guide.id} className="flex flex-wrap items-center justify-between gap-3 px-3 py-3">
+                      <div className="min-w-0">
+                        <Link href={`/bodega/guias/${guide.id}`} className="font-mono text-sm font-semibold text-[var(--color-text)] hover:underline">
+                          {guide.code}
+                        </Link>
+                        <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+                          {guide.destinationWorksiteName} · {guide.itemCount} {guide.itemCount === 1 ? "línea" : "líneas"} · {progressLabel}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <StateBadge state={guide.status} entity="dispatch_guide" size="sm" />
+                        {(guide.status === "draft" || guide.status === "dispatched") && (
+                          <Button asChild size="sm" variant="secondary">
+                            <Link href={`/bodega/guias/${guide.id}`}>
+                              {guide.status === "draft" ? "Completar despacho" : "Cotejar en faena"}
+                              <ArrowSquareOut size={13} aria-hidden />
+                            </Link>
+                          </Button>
+                        )}
+                        {active && guide.status === "partially_received" && (
+                          <span className="sr-only">La guía tiene diferencias registradas</span>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
           </section>
 
           {receipt.notes && (

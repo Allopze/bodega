@@ -1,15 +1,13 @@
 import type { Metadata } from "next"
-import Link from "next/link"
 import { redirect } from "next/navigation"
 import { and, asc, eq } from "drizzle-orm"
 import { Truck } from "@phosphor-icons/react/dist/ssr"
 import { db } from "@/db"
 import { dispatchGuides, worksites } from "@/db/schema"
-import { can, requirePermission } from "@/lib/auth/can"
+import { requirePermission } from "@/lib/auth/can"
 import { worksiteScopeSql } from "@/lib/auth/scope"
 import { PageContainer } from "@/components/ui/page-container"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
-import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
 import { ServerPagination } from "@/components/ui/server-pagination"
 import { buildPaginationHref, resolvePagination } from "@/lib/pagination"
@@ -25,7 +23,7 @@ import { DispatchGuidesTable } from "./guides-table"
 
 export const metadata: Metadata = { title: "Guías de despacho internas" }
 
-const STATUSES: DispatchGuideStatus[] = ["draft", "dispatched", "received", "cancelled"]
+const STATUSES: DispatchGuideStatus[] = ["draft", "dispatched", "partially_received", "received", "cancelled"]
 
 function readParam(value: string | string[] | undefined): string {
   return typeof value === "string" ? value : ""
@@ -69,13 +67,11 @@ export default async function DispatchGuidesPage({
       .orderBy(asc(worksites.name)),
   ])
 
-  const canCreate = can(session, "warehouse:create_guide")
-
   return (
     <PageContainer>
       <PageHeader
-        title="Guías de despacho internas"
-        description={`Traslados de bienes desde ${OFFICE_ORIGIN_LABEL} hacia faena. Documento interno, no tributario.`}
+        title="Historial de guías internas"
+        description={`Consulta histórica de traslados desde ${OFFICE_ORIGIN_LABEL} hacia faena. Los nuevos despachos se preparan desde Recepciones.`}
         breadcrumb={
           <Breadcrumbs items={[
             { label: "Inicio", href: "/dashboard" },
@@ -83,14 +79,6 @@ export default async function DispatchGuidesPage({
             { label: "Guías de despacho" },
           ]} />
         }
-        actions={canCreate ? (
-          <Button asChild>
-            <Link href="/bodega/guias/nueva">
-              <Truck size={15} aria-hidden />
-              Nueva guía
-            </Link>
-          </Button>
-        ) : undefined}
       />
 
       <GuideFilters worksites={worksiteOptions} current={{ estado: estadoParam, faena, desde, hasta }} />
@@ -100,12 +88,7 @@ export default async function DispatchGuidesPage({
           <EmptyState
             icon={<Truck size={24} />}
             title="Todavía no hay guías de despacho"
-            description={`Una guía documenta y respalda la salida de materiales, EPP, herramientas o equipos desde ${OFFICE_ORIGIN_LABEL} hacia una faena, y descuenta el stock al despacharla.`}
-            action={canCreate ? (
-              <Button asChild>
-                <Link href="/bodega/guias/nueva">Crear la primera guía</Link>
-              </Button>
-            ) : undefined}
+            description={`Las guías se crean automáticamente desde una recepción en oficina cuando hay bienes que deben continuar hacia una faena.`}
           />
         </div>
       ) : (

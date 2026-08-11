@@ -27,11 +27,20 @@ type OrderRow = {
   createdAt:   string
 }
 
+export type ReceiptGuideRow = {
+  id: string
+  code: string
+  status: string
+  totalQuantity: number
+  receivedQuantity: number
+}
+
 interface RecepcionTableProps {
   orders:           OrderRow[]
   wsMap:            Record<string, string>
   supMap:           Record<string, string>
   gapMap:           Record<string, number>
+  guideMap:         Record<string, ReceiptGuideRow[]>
   canOffice:        boolean
   canFaena:         boolean
   worksiteOptions?: FilterOption[]
@@ -59,7 +68,7 @@ const COLUMNS = [
 const EMPTY_FILTER_OPTIONS: FilterOption[] = []
 const EMPTY_STAGE_TABS: StageTab[] = []
 
-export function RecepcionTable({ orders, wsMap, supMap, gapMap, canOffice, canFaena, worksiteOptions = EMPTY_FILTER_OPTIONS, supplierOptions = EMPTY_FILTER_OPTIONS, stageTabs = EMPTY_STAGE_TABS }: RecepcionTableProps) {
+export function RecepcionTable({ orders, wsMap, supMap, gapMap, guideMap, canOffice, canFaena, worksiteOptions = EMPTY_FILTER_OPTIONS, supplierOptions = EMPTY_FILTER_OPTIONS, stageTabs = EMPTY_STAGE_TABS }: RecepcionTableProps) {
   const router = useRouter()
 
   const searchParams = useSearchParams()
@@ -109,6 +118,8 @@ export function RecepcionTable({ orders, wsMap, supMap, gapMap, canOffice, canFa
       renderRow={(o) => {
         const href = `/compras/${o.id}`
         const canRegisterOrder = canRegisterReceiptForOrder(o.deliveryMode, o.status, canOffice, canFaena)
+        const guides = guideMap[o.id] ?? []
+        const activeGuide = guides.find((guide) => ["draft", "dispatched", "partially_received"].includes(guide.status))
         return (
           <TableRow
             key={o.id}
@@ -137,15 +148,27 @@ export function RecepcionTable({ orders, wsMap, supMap, gapMap, canOffice, canFa
               <StateBadge state={o.status} entity="oc" size="sm" />
             </TableCell>
             <TableCell>
-              {(gapMap[o.id] ?? 0) > 0
-                ? <Badge variant="warning" size="sm">{gapMap[o.id]} {gapMap[o.id] === 1 ? "ítem" : "ítems"}</Badge>
-                : <span className="text-xs text-[var(--color-text-subtle)]">—</span>}
+              {activeGuide?.status === "draft"
+                ? <Badge variant="warning" size="sm">Pendiente de despacho</Badge>
+                : activeGuide?.status === "dispatched"
+                  ? <Badge variant="info" size="sm">En traslado</Badge>
+                  : activeGuide?.status === "partially_received"
+                    ? <Badge variant="danger" size="sm">Diferencia en faena</Badge>
+                    : (gapMap[o.id] ?? 0) > 0
+                      ? <Badge variant="warning" size="sm">{gapMap[o.id]} {gapMap[o.id] === 1 ? "ítem" : "ítems"}</Badge>
+                      : <span className="text-xs text-[var(--color-text-subtle)]">—</span>}
             </TableCell>
             <TableCell className="text-xs text-[var(--color-text-subtle)]">
               {o.sentAt ? formatDate(o.sentAt) : "—"}
             </TableCell>
             <TableCell onClick={(e) => e.stopPropagation()} className="text-right">
-              {canRegisterOrder && (
+              {activeGuide ? (
+                <Button variant="secondary" size="sm" asChild>
+                  <Link href={`/bodega/guias/${activeGuide.id}`}>
+                    {activeGuide.status === "draft" ? "Completar guía" : "Cotejar"}
+                  </Link>
+                </Button>
+              ) : canRegisterOrder && (
                 <Button variant="secondary" size="sm" asChild>
                   <Link href={`/recepcion/nueva?oc=${o.id}`}>Recibir</Link>
                 </Button>
@@ -160,6 +183,8 @@ export function RecepcionTable({ orders, wsMap, supMap, gapMap, canOffice, canFa
         const href = `/compras/${o.id}`
         const gap = gapMap[o.id] ?? 0
         const canRegisterOrder = canRegisterReceiptForOrder(o.deliveryMode, o.status, canOffice, canFaena)
+        const guides = guideMap[o.id] ?? []
+        const activeGuide = guides.find((guide) => ["draft", "dispatched", "partially_received"].includes(guide.status))
         return (
           <article className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
             <div className="flex items-start justify-between gap-3">
@@ -184,7 +209,13 @@ export function RecepcionTable({ orders, wsMap, supMap, gapMap, canOffice, canFa
                 </Badge>
               </div>
             )}
-            {canRegisterOrder && (
+            {activeGuide ? (
+              <Button variant="primary" size="sm" asChild className="mt-3 w-full">
+                <Link href={`/bodega/guias/${activeGuide.id}`}>
+                  {activeGuide.status === "draft" ? "Completar despacho" : "Cotejar entrega en faena"}
+                </Link>
+              </Button>
+            ) : canRegisterOrder && (
               <Button variant="primary" size="sm" asChild className="mt-3 w-full">
                 <Link href={`/recepcion/nueva?oc=${o.id}`}>Recibir</Link>
               </Button>
