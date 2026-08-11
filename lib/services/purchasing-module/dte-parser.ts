@@ -77,8 +77,7 @@ export function parseDteXml(xmlString: string): DteData | null {
 
     const items: DteItem[] = rawItems.map((itemNode, index) => {
       const nroLinea = num(child(itemNode, "NroLinDet", "NroLinea")) || index + 1
-      const cdgItem = childRecord(itemNode, "CdgItem")
-      const productCode = cdgItem ? field(cdgItem, "VlrCod", "VlrCodigo") : null
+      const productCode = extractProductCode(itemNode)
       const nmItem = field(itemNode, "NmbItem", "NmItem") ?? ""
       const dscItem = field(itemNode, "DscItem")
       const qtyItem = num(child(itemNode, "QtyItem"))
@@ -163,6 +162,47 @@ function str(value: unknown): string | null {
 
 function localName(key: string) {
   return key.includes(":") ? key.slice(key.lastIndexOf(":") + 1) : key
+}
+
+/**
+ * Extrae el código de producto de una línea de detalle.
+ *
+ * El SII permite **varios** `CdgItem` por línea, cada uno con su `TpoCodigo`, y
+ * los proveedores lo usan: TRECK manda dos en cada línea — `INT` con su código
+ * real ("06-08-001-T-XL") y `QBLI` con el valor "0".
+ *
+ * La versión anterior hacía `childRecord(itemNode, "CdgItem")`, y `asRecord`
+ * devuelve null ante un array: con dos códigos el resultado era `productCode:
+ * null`. O sea, del único proveedor que sí manda código, se descartaba. El
+ * cruce de ítems caía siempre al nombre sin que nada lo dijera.
+ *
+ * Preferencia: `INT` (código interno del emisor, el que sirve para cruzar),
+ * después cualquiera con valor útil. Se descartan los vacíos y el "0", que no
+ * identifican nada y podrían cruzar con un producto ajeno.
+ */
+function extractProductCode(itemNode: Record<string, unknown>): string | null {
+  const nodes = asArray(child(itemNode, "CdgItem")).map(asRecord).filter(Boolean) as Record<string, unknown>[]
+  if (nodes.length === 0) return null
+
+  const readCode = (node: Record<string, unknown>) => {
+    const value = field(node, "VlrCod", "VlrCodigo")
+    if (!value) return null
+    const trimmed = value.trim()
+    // "0" es relleno, no un identificador.
+    return trimmed && trimmed !== "0" ? trimmed : null
+  }
+
+  const preferred = nodes.find((node) => {
+    const tipo = field(node, "TpoCodigo", "TpoCod")?.trim().toUpperCase()
+    return tipo === "INT" && readCode(node) !== null
+  })
+  if (preferred) return readCode(preferred)
+
+  for (const node of nodes) {
+    const code = readCode(node)
+    if (code) return code
+  }
+  return null
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {

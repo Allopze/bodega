@@ -13,6 +13,7 @@ import { OptionSelect } from "@/components/ui/option-select"
 import { FileInput } from "@/components/ui/file-input"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
 import { formatCLP, formatDate } from "@/lib/utils"
 import type { ActionState } from "@/lib/validation/operations"
 import { matchInvoiceItemsToPurchaseOrderItems } from "@/lib/services/purchasing-module/invoice-item-matching"
@@ -36,6 +37,12 @@ export interface DteCandidate {
   razonSocialEmisor: string
   montoTotal: number
   fechaEmision: string
+  /**
+   * El monto del documento calza con lo que la OC espera facturar. La operación
+   * factura una OC por DTE, así que esto identifica al candidato correcto casi
+   * siempre — pero es una señal, no un filtro: la lista igual muestra los demás.
+   */
+  amountMatches: boolean
 }
 
 export interface OcItem {
@@ -684,6 +691,12 @@ function AddInvoiceForm({
                   <span className="text-(--color-text-subtle)">
                     {" · "}{formatDate(doc.fechaEmision)}{" · "}{formatCLP(doc.montoTotal)}
                   </span>
+                  {/* La marca va sobre el monto, que es lo que la distingue.
+                      Se nombra lo que se comparó en vez de decir "sugerido":
+                      el operador tiene que poder discutirla. */}
+                  {doc.amountMatches && (
+                    <Badge variant="success" className="ml-2">Calza con el saldo</Badge>
+                  )}
                 </span>
                 <Button
                   type="button"

@@ -200,9 +200,16 @@ export default async function OcDetailPage({
         orderBy: (d, { desc: descOrder }) => [descOrder(d.fechaEmision)],
       })
     : []
+  // Monto que la orden espera facturar: su total menos lo ya facturado. La
+  // operación factura una OC por DTE, así que el documento correcto trae esta
+  // cifra — sirve para ordenar y marcar, no para filtrar.
+  const alreadyInvoiced = orderInvoices.reduce((sum, inv) => sum + (inv.amount ?? 0), 0)
+  const expectedAmount = Math.max(0, (order.totalAmount ?? 0) - alreadyInvoiced)
+
   const candidateDtes = selectDteCandidates(unlinkedDtes, {
     supplierRut: order.supplier?.rut ?? null,
     createdOn: candidateFloor,
+    expectedAmount,
   })
 
   // Attach items to invoices
@@ -467,13 +474,14 @@ export default async function OcDetailPage({
                   totalAmount={order.totalAmount}
                   canManage={canInvoice}
                   defaultInvoiceNumber={defaultInvoiceNumber}
-                  dteCandidates={candidateDtes.map((doc) => ({
+                  dteCandidates={candidateDtes.map(({ doc, amountMatches }) => ({
                     id: doc.id,
                     tipoDte: doc.tipoDte,
                     folio: doc.folio,
                     razonSocialEmisor: doc.razonSocialEmisor,
                     montoTotal: doc.montoTotal,
                     fechaEmision: doc.fechaEmision,
+                    amountMatches,
                   }))}
                 />
                 <DteReceivedCard docs={dteRows} />

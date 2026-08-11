@@ -21,6 +21,7 @@ export interface DteCandidateInput {
   rutEmisor: string
   /** 'YYYY-MM-DD' — el portal la entrega así y la columna es texto. */
   fechaEmision: string
+  montoTotal: number
 }
 
 export interface DteCandidateFilter {
@@ -34,11 +35,29 @@ export interface DteCandidateFilter {
    * orden se crea y se emite formalmente.
    */
   createdOn: string
+  /**
+   * Monto que la OC espera facturar (su total menos lo ya facturado).
+   *
+   * La operación factura **una OC por DTE**, así que el documento correcto debe
+   * traer ese monto. Se usa para ordenar y para marcar la coincidencia exacta;
+   * NO para filtrar: un flete, un redondeo o una factura parcial legítima no
+   * pueden desaparecer de la lista por no cuadrar al peso.
+   */
+  expectedAmount?: number | null
   /** Tope de la lista, para que un proveedor muy activo no la vuelva un muro. */
   limit?: number
 }
 
 const DEFAULT_LIMIT = 20
+
+/** Diferencia máxima, en pesos, para dar el monto por coincidente. */
+const AMOUNT_TOLERANCE_CLP = 1
+
+export interface DteCandidate<T> {
+  doc: T
+  /** True si el monto del DTE calza con lo que la OC espera facturar. */
+  amountMatches: boolean
+}
 
 /**
  * Devuelve, del conjunto ya acotado a documentos sin vincular, los que pueden
@@ -51,13 +70,29 @@ const DEFAULT_LIMIT = 20
  */
 export function selectDteCandidates<T extends DteCandidateInput>(
   unlinkedDocs: T[],
-  { supplierRut, createdOn, limit = DEFAULT_LIMIT }: DteCandidateFilter,
-): T[] {
+  { supplierRut, createdOn, expectedAmount, limit = DEFAULT_LIMIT }: DteCandidateFilter,
+): DteCandidate<T>[] {
   if (!supplierRut) return []
   const normalized = cleanRut(supplierRut)
   if (!normalized) return []
 
-  return unlinkedDocs
-    .filter((doc) => cleanRut(doc.rutEmisor) === normalized && doc.fechaEmision >= createdOn)
-    .slice(0, limit)
+  const eligible = unlinkedDocs.filter(
+    (doc) => cleanRut(doc.rutEmisor) === normalized && doc.fechaEmision >= createdOn,
+  )
+
+  const target = typeof expectedAmount === "number" && expectedAmount > 0 ? expectedAmount : null
+  const distance = (doc: T) => (target === null ? null : Math.abs(doc.montoTotal - target))
+
+  // Orden: primero el monto que calza, después por cercanía, y a igualdad por
+  // fecha descendente (el orden en que llegaron de la consulta). Con un
+  // proveedor recurrente eso pone arriba el documento que se está buscando en
+  // vez de obligar a leer quince líneas.
+  const sorted = target === null
+    ? eligible
+    : [...eligible].sort((a, b) => (distance(a)! - distance(b)!))
+
+  return sorted.slice(0, limit).map((doc) => ({
+    doc,
+    amountMatches: target !== null && Math.abs(doc.montoTotal - target) <= AMOUNT_TOLERANCE_CLP,
+  }))
 }

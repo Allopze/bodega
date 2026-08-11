@@ -100,3 +100,43 @@ describe("matchDteItemsToOcItems", () => {
     expect(result[0]?.matchType).toBe("none")
   })
 })
+
+describe("extracción del código de producto (CdgItem)", () => {
+  const wrap = (detalle: string) => `<?xml version="1.0" encoding="ISO-8859-1"?><EnvioDTE><SetDTE><DTE><Documento><Encabezado>
+<IdDoc><TipoDTE>33</TipoDTE><Folio>1</Folio><FchEmis>2026-07-21</FchEmis></IdDoc>
+<Emisor><RUTEmisor>96542490-3</RUTEmisor><RznSoc>TRECK S A</RznSoc></Emisor>
+<Totales><MntNeto>100</MntNeto><IVA>19</IVA><MntTotal>119</MntTotal></Totales></Encabezado>
+${detalle}</Documento></DTE></SetDTE></EnvioDTE>`
+
+  const linea = (cdg: string) => wrap(`<Detalle><NroLinDet>1</NroLinDet>${cdg}
+    <NmbItem>Buzo Dupont Tyvek</NmbItem><QtyItem>1</QtyItem><PrcItem>100</PrcItem><MontoItem>100</MontoItem></Detalle>`)
+
+  // Regresión real: TRECK manda dos CdgItem por línea y el código se perdía
+  // entero porque asRecord() devuelve null ante un array.
+  it("toma el código INT cuando el proveedor manda varios CdgItem", () => {
+    const xml = linea(`<CdgItem><TpoCodigo>INT</TpoCodigo><VlrCodigo>06-08-001-T-XL</VlrCodigo></CdgItem>
+      <CdgItem><TpoCodigo>QBLI</TpoCodigo><VlrCodigo>0</VlrCodigo></CdgItem>`)
+    expect(parseDteXml(xml)?.items[0]?.productCode).toBe("06-08-001-T-XL")
+  })
+
+  it("sigue funcionando con un solo CdgItem", () => {
+    const xml = linea(`<CdgItem><TpoCodigo>INT</TpoCodigo><VlrCodigo>ABC-1</VlrCodigo></CdgItem>`)
+    expect(parseDteXml(xml)?.items[0]?.productCode).toBe("ABC-1")
+  })
+
+  it("descarta el relleno \"0\" en vez de usarlo como código", () => {
+    const xml = linea(`<CdgItem><TpoCodigo>QBLI</TpoCodigo><VlrCodigo>0</VlrCodigo></CdgItem>`)
+    expect(parseDteXml(xml)?.items[0]?.productCode).toBeNull()
+  })
+
+  it("cae a cualquier código útil si ninguno es INT", () => {
+    const xml = linea(`<CdgItem><TpoCodigo>QBLI</TpoCodigo><VlrCodigo>0</VlrCodigo></CdgItem>
+      <CdgItem><TpoCodigo>EAN</TpoCodigo><VlrCodigo>7801234567890</VlrCodigo></CdgItem>`)
+    expect(parseDteXml(xml)?.items[0]?.productCode).toBe("7801234567890")
+  })
+
+  it("devuelve null cuando la línea no trae CdgItem (caso APRO)", () => {
+    const xml = linea("")
+    expect(parseDteXml(xml)?.items[0]?.productCode).toBeNull()
+  })
+})
