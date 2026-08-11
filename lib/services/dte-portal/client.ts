@@ -18,6 +18,8 @@
 
 import { Agent } from "undici"
 import { DtePortalError, type DtePortalClientConfig, type DtePortalCredentials } from "./types"
+import { withDtePortalOperationLease } from "./operation-lease"
+import { DtePortalOriginError, assertDtePortalBaseUrl, resolveDtePortalResourceUrl } from "./portal-origin"
 
 const CREDENTIAL_KEYS = ["rut_usr", "rut_emp", "clave"] as const
 
@@ -49,6 +51,7 @@ export class DtePortalClient {
       delayMs: 500,
       requestTimeoutMs: 120_000, // Bandeja de Entrada puede tardar ~80s, ver config.ts
       ...config,
+      baseUrl: assertDtePortalBaseUrl(config.baseUrl),
     }
   }
 
@@ -93,46 +96,56 @@ export class DtePortalClient {
    * codificación original del XML y luego aplicar decodeXmlBuffer().
    */
   async downloadBinary(url: string): Promise<Buffer> {
-    await this.throttle()
-
-    const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), this.config.requestTimeoutMs)
-
+    let safeUrl: string
     try {
-      const response = await fetch(url, {
-        signal: controller.signal,
-        headers: { "Accept": "application/pdf, application/xml, */*" },
-        // Igual que en fetchWithTimeout: un redirect seguido devolvería el HTML
-        // del login y `downloadDteXml` lo rechazaría con "no parece un XML DTE",
-        // culpando al documento en vez de a la sesión.
-        redirect: "manual",
-        dispatcher: LEGACY_TLS_DISPATCHER,
-      } as RequestInit)
-
-      if (response.status >= 300 && response.status < 400) {
-        throw new DtePortalError(
-          `El portal redirigió la descarga (HTTP ${response.status}). Suele significar sesión o credenciales rechazadas.`,
-          "AUTH_FAILED",
-          response.status,
-        )
-      }
-
-      if (!response.ok) {
-        throw new DtePortalError(
-          `El portal respondió con HTTP ${response.status}`,
-          response.status === 403 ? "AUTH_FAILED" : "INVALID_RESPONSE",
-          response.status,
-        )
-      }
-
-      const buffer = Buffer.from(await response.arrayBuffer())
-      return buffer
+      safeUrl = resolveDtePortalResourceUrl(url, this.config.baseUrl)
     } catch (error) {
-      if (error instanceof DtePortalError) throw error
-      throw this.normalizeError(error)
-    } finally {
-      clearTimeout(timer)
+      if (error instanceof DtePortalOriginError) {
+        throw new DtePortalError("La descarga DTE apunta fuera del origen permitido", "INVALID_RESPONSE")
+      }
+      throw error
     }
+    return withDtePortalOperationLease("download", this.operationLeaseMs(), async () => {
+      await this.throttle()
+
+      const controller = new AbortController()
+      const timer = setTimeout(() => controller.abort(), this.config.requestTimeoutMs)
+
+      try {
+        const response = await fetch(safeUrl, {
+          signal: controller.signal,
+          headers: { "Accept": "application/pdf, application/xml, */*" },
+          // Igual que en fetchWithTimeout: un redirect seguido devolvería el HTML
+          // del login y `downloadDteXml` lo rechazaría con "no parece un XML DTE",
+          // culpando al documento en vez de a la sesión.
+          redirect: "manual",
+          dispatcher: LEGACY_TLS_DISPATCHER,
+        } as RequestInit)
+
+        if (response.status >= 300 && response.status < 400) {
+          throw new DtePortalError(
+            `El portal redirigió la descarga (HTTP ${response.status}). Suele significar sesión o credenciales rechazadas.`,
+            "AUTH_FAILED",
+            response.status,
+          )
+        }
+
+        if (!response.ok) {
+          throw new DtePortalError(
+            `El portal respondió con HTTP ${response.status}`,
+            response.status === 403 ? "AUTH_FAILED" : "INVALID_RESPONSE",
+            response.status,
+          )
+        }
+
+        return Buffer.from(await response.arrayBuffer())
+      } catch (error) {
+        if (error instanceof DtePortalError) throw error
+        throw this.normalizeError(error)
+      } finally {
+        clearTimeout(timer)
+      }
+    })
   }
 
   /** Lee el status de la configuración (sin exponer credenciales) */
@@ -148,8 +161,15 @@ export class DtePortalClient {
   // ── Privado ───────────────────────────────────────────────────────────────
 
   private buildUrl(path: string, extraParams?: Record<string, string>): URL {
-    const base = this.config.baseUrl.replace(/\/+$/, "")
-    const url = new URL(`${base}${path.startsWith("/") ? path : `/${path}`}`)
+    let url: URL
+    try {
+      url = new URL(resolveDtePortalResourceUrl(path, this.config.baseUrl))
+    } catch (error) {
+      if (error instanceof DtePortalOriginError) {
+        throw new DtePortalError("La consulta DTE apunta fuera del origen permitido", "INVALID_RESPONSE")
+      }
+      throw error
+    }
 
     // Credenciales viajan en toda request (patrón del portal § 2)
     const { rutUsr, rutEmp, clave } = this.config.credentials
@@ -175,66 +195,74 @@ export class DtePortalClient {
   }
 
   private async fetchWithTimeout(url: string, init: RequestInit): Promise<string> {
-    await this.throttle()
+    return withDtePortalOperationLease("query", this.operationLeaseMs(), async () => {
+      await this.throttle()
 
-    const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), this.config.requestTimeoutMs)
+      const controller = new AbortController()
+      const timer = setTimeout(() => controller.abort(), this.config.requestTimeoutMs)
 
-    try {
-      const response = await fetch(url, {
-        ...init,
-        signal: controller.signal,
-        // `manual`: sin esto, fetch sigue el redirect y devuelve el HTML de la
-        // página de destino —típicamente un login— como si fuera la respuesta
-        // pedida. El parser falla después con "el HTML del portal cambió o las
-        // credenciales son inválidas", que manda a investigar lo que no es.
-        // Mismo criterio que el cliente de Chipax.
-        redirect: "manual",
-        dispatcher: LEGACY_TLS_DISPATCHER,
-      } as RequestInit)
+      try {
+        const response = await fetch(url, {
+          ...init,
+          signal: controller.signal,
+          // `manual`: sin esto, fetch sigue el redirect y devuelve el HTML de la
+          // página de destino —típicamente un login— como si fuera la respuesta
+          // pedida. El parser falla después con "el HTML del portal cambió o las
+          // credenciales son inválidas", que manda a investigar lo que no es.
+          // Mismo criterio que el cliente de Chipax.
+          redirect: "manual",
+          dispatcher: LEGACY_TLS_DISPATCHER,
+        } as RequestInit)
 
-      if (response.status >= 300 && response.status < 400) {
-        throw new DtePortalError(
-          `El portal redirigió la consulta (HTTP ${response.status}). Suele significar sesión o credenciales rechazadas.`,
-          "AUTH_FAILED",
-          response.status,
-        )
+        if (response.status >= 300 && response.status < 400) {
+          throw new DtePortalError(
+            `El portal redirigió la consulta (HTTP ${response.status}). Suele significar sesión o credenciales rechazadas.`,
+            "AUTH_FAILED",
+            response.status,
+          )
+        }
+
+        if (!response.ok) {
+          throw new DtePortalError(
+            `El portal respondió con HTTP ${response.status}`,
+            response.status === 403 ? "AUTH_FAILED" : "INVALID_RESPONSE",
+            response.status,
+          )
+        }
+
+        const arrayBuffer = await response.arrayBuffer()
+        const contentType = response.headers.get("content-type") ?? ""
+        const isXml = contentType.includes("application/xml") || contentType.includes("text/xml") || url.endsWith(".xml")
+
+        const buffer = Buffer.from(arrayBuffer)
+
+        if (isXml) {
+          return decodeXmlBuffer(buffer)
+        }
+
+        // HTML: detectar encoding desde meta tag, XML declaration, o default latin1
+        const raw = buffer.toString("latin1")
+        const metaEncoding = raw.match(/<meta[^>]*charset=["']?([^"'\s>]+)/i)?.[1]?.toLowerCase()
+        const xmlDeclEncoding = raw.match(/<\?xml[^>]*encoding=["']([^"']+)/i)?.[1]?.toLowerCase()
+
+        if (metaEncoding === "utf-8" || xmlDeclEncoding === "utf-8") {
+          return buffer.toString("utf8")
+        }
+        // Por defecto, el portal sirve en ISO-8859-1
+        return raw
+      } catch (error) {
+        if (error instanceof DtePortalError) throw error
+        throw this.normalizeError(error)
+      } finally {
+        clearTimeout(timer)
       }
+    })
+  }
 
-      if (!response.ok) {
-        throw new DtePortalError(
-          `El portal respondió con HTTP ${response.status}`,
-          response.status === 403 ? "AUTH_FAILED" : "INVALID_RESPONSE",
-          response.status,
-        )
-      }
-
-      const arrayBuffer = await response.arrayBuffer()
-      const contentType = response.headers.get("content-type") ?? ""
-      const isXml = contentType.includes("application/xml") || contentType.includes("text/xml") || url.endsWith(".xml")
-
-      const buffer = Buffer.from(arrayBuffer)
-
-      if (isXml) {
-        return decodeXmlBuffer(buffer)
-      }
-
-      // HTML: detectar encoding desde meta tag, XML declaration, o default latin1
-      const raw = buffer.toString("latin1")
-      const metaEncoding = raw.match(/<meta[^>]*charset=["']?([^"'\s>]+)/i)?.[1]?.toLowerCase()
-      const xmlDeclEncoding = raw.match(/<\?xml[^>]*encoding=["']([^"']+)/i)?.[1]?.toLowerCase()
-
-      if (metaEncoding === "utf-8" || xmlDeclEncoding === "utf-8") {
-        return buffer.toString("utf8")
-      }
-      // Por defecto, el portal sirve en ISO-8859-1
-      return raw
-    } catch (error) {
-      if (error instanceof DtePortalError) throw error
-      throw this.normalizeError(error)
-    } finally {
-      clearTimeout(timer)
-    }
+  private operationLeaseMs(): number {
+    // Deja un margen sólo para finalizar lectura y liberar el lease tras el
+    // timeout de red. No es una fuente de liveness: el expiry siempre es finito.
+    return this.config.requestTimeoutMs + 30_000
   }
 
   private normalizeError(error: unknown): DtePortalError {
@@ -273,16 +301,11 @@ export class DtePortalClient {
     return sanitized
   }
 
-  private sanitizeErrorMessage(msg: string): string {
-    for (const key of CREDENTIAL_KEYS) {
-      if (msg.includes(key)) return "[credenciales omitidas]"
-    }
-    // También sanitizar si alguna credencial aparece literalmente en el mensaje
-    const { rutUsr, rutEmp, clave } = this.config.credentials
-    if (rutUsr && msg.includes(rutUsr)) return "[credenciales omitidas]"
-    if (rutEmp && msg.includes(rutEmp)) return "[credenciales omitidas]"
-    if (clave && msg.includes(clave)) return "[credenciales omitidas]"
-    return msg.slice(0, 500)
+  private sanitizeErrorMessage(_msg: string): string {
+    // Fetch/undici errors can embed a complete request URL or a proxy response.
+    // Codes above preserve the actionable class; do not persist or forward raw
+    // transport text to a route, logger, audit record, or Sentry.
+    return "[detalle técnico omitido]"
   }
 }
 

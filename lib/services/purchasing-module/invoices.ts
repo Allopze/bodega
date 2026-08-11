@@ -7,6 +7,7 @@ import { db } from "@/db"
 import { purchaseOrders, purchaseOrderInvoices, purchaseOrderInvoiceItems, purchaseOrderItems } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { recordAudit } from "@/lib/audit"
+import { logger } from "@/lib/logger"
 import {
   reconcileInvoiceEvidence,
   type ReconciledOrderItem,
@@ -66,8 +67,13 @@ export async function createPurchaseOrderInvoice(
   try {
     const { matchInvoiceToDteDocument } = await import("@/lib/services/dte-portal/reconciliation")
     await matchInvoiceToDteDocument(invoiceId)
-  } catch (err) {
-    console.error(`[invoices] No se pudo cruzar la factura ${invoiceId} con el DTE: ${err instanceof Error ? err.message : String(err)}`)
+  } catch {
+    // The invoice is already durable. Reconciliation is best-effort, and its
+    // failure must not serialize a database/provider error into process logs.
+    logger.error("[invoices] conciliación DTE no disponible", {
+      code: "DTE_RECONCILIATION_FAILED",
+      invoiceId,
+    })
   }
 
   return invoiceId

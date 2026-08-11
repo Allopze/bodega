@@ -139,6 +139,12 @@ export interface ProviderPage<T> {
   nextCursor: string | null
   /** Total declarado por el proveedor, si lo informa. Sirve para detectar pérdidas. */
   reportedTotal: number | null
+  /** Cursor logical managed by the provider, not normal HTTP pagination. */
+  managedCursor?: boolean
+  /** Stop this sync after the page; the next cron resumes from nextCursor. */
+  deferred?: boolean
+  /** A selected XML was not durable/resolved; do not advance its cursor. */
+  retryRequired?: boolean
 }
 
 export interface ProviderHealth {

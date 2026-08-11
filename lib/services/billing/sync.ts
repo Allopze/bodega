@@ -28,9 +28,13 @@ import { db } from "@/db"
 import { billingBankTransactions, billingSyncRuns, type BillingProviderId } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { logger } from "@/lib/logger"
+import { readSalesXmlCursor, usesSalesXmlCursor, writeSalesXmlCursor } from "./sales-xml-cursor"
 import { readSalesSyncConfig } from "./config"
+import { chilePeriod, previousChilePeriod } from "../dte-portal/chile-time"
+import { classifyDteFailure } from "../dte-portal/failure"
+import { DtePortalError } from "../dte-portal/types"
 import { upsertProviderInvoice } from "./invoices"
-import { assertCapability, getBillingProvider, isProviderEnabled } from "./providers"
+import { assertCapability, BillingProviderError, getBillingProvider, isProviderEnabled } from "./providers"
 import type { BillingProvider } from "./providers/types"
 
 /** Corridas `running` más viejas que esto quedaron colgadas (proceso muerto). */
@@ -53,6 +57,8 @@ export interface BillingSyncOptions {
   triggeredBy?: string | null
   /** Reanudar desde este cursor. */
   cursor?: string | null
+  /** Batch compartido cuando un cron cubre varios períodos o dominios. */
+  correlationId?: string
 }
 
 export interface BillingSyncResult {
@@ -71,6 +77,8 @@ export interface BillingSyncResult {
   conflictsDetected: number
   errorsCount: number
   errorSummary: string | null
+  /** Machine-readable reason when a run never started. */
+  skipReason?: "provider_disabled" | "not_configured" | "active_run" | "unsupported"
 }
 
 /**
@@ -82,7 +90,7 @@ export async function syncBillingInvoices(options: BillingSyncOptions): Promise<
   const period = options.period ?? currentPeriod()
   const trigger = options.trigger ?? "manual"
   const dryRun = options.dryRun ?? false
-  const correlationId = nanoid(12)
+  const correlationId = options.correlationId ?? nanoid(12)
 
   assertPeriodFormat(period)
   assertPeriodFloor(period)
@@ -90,7 +98,7 @@ export async function syncBillingInvoices(options: BillingSyncOptions): Promise<
   if (!isProviderEnabled(options.provider)) {
     return skipped({
       runId: "", correlationId, provider: options.provider, scope: options.scope, period, dryRun,
-      reason: "El proveedor está deshabilitado por configuración.",
+      reason: "El proveedor está deshabilitado por configuración.", skipReason: "provider_disabled",
     })
   }
 
@@ -98,11 +106,19 @@ export async function syncBillingInvoices(options: BillingSyncOptions): Promise<
   if (!(await provider.isConfigured())) {
     return skipped({
       runId: "", correlationId, provider: options.provider, scope: options.scope, period, dryRun,
-      reason: "El proveedor no está configurado en este servidor.",
+      reason: "El proveedor no está configurado en este servidor.", skipReason: "not_configured",
     })
   }
 
   await markStaleRunsAsFailed(options.provider, options.scope)
+
+  // FacturaEnLínea's sales list is one large HTML response. Its XML-enrichment
+  // cursor lives independently of transient run rows so a crash resumes the
+  // same deterministic batch instead of silently abandoning documents >120.
+  const managedCursor = usesSalesXmlCursor(options.provider, options.scope)
+  const initialCursor = options.cursor ?? (managedCursor
+    ? await readSalesXmlCursor(options.provider, options.scope, period)
+    : null)
 
   const runId = nanoid()
   try {
@@ -115,7 +131,7 @@ export async function syncBillingInvoices(options: BillingSyncOptions): Promise<
       dryRun,
       periodFrom: period,
       periodTo: period,
-      cursor: options.cursor ?? null,
+      cursor: initialCursor,
       correlationId,
       triggeredBy: options.triggeredBy ?? null,
     })
@@ -127,7 +143,7 @@ export async function syncBillingInvoices(options: BillingSyncOptions): Promise<
     if (!isSingleActiveRunConflict(error)) throw error
     return skipped({
       runId: "", correlationId, provider: options.provider, scope: options.scope, period, dryRun,
-      reason: "Ya hay una sincronización en curso para este período.",
+      reason: "Ya hay una sincronización en curso para este período.", skipReason: "active_run",
     })
   }
 
@@ -142,7 +158,7 @@ export async function syncBillingInvoices(options: BillingSyncOptions): Promise<
   }
   const errors: string[] = []
   let status: BillingSyncResult["status"] = "success"
-  let cursor: string | null = options.cursor ?? null
+  let cursor: string | null = initialCursor
 
   try {
     const seenExternalIds = new Set<string>()
@@ -152,6 +168,7 @@ export async function syncBillingInvoices(options: BillingSyncOptions): Promise<
       const page = await fetchPage(provider, options.scope, { period, cursor })
       pages++
       metrics.recordsFetched += page.items.length
+      const errorsBeforePage = metrics.errorsCount
 
       if (page.reportedTotal !== null && pages === 1 && page.reportedTotal !== page.items.length && page.nextCursor === null) {
         // El proveedor declaró un total distinto al que entregó en una sola
@@ -199,7 +216,20 @@ export async function syncBillingInvoices(options: BillingSyncOptions): Promise<
         }
       }
 
-      cursor = page.nextCursor
+      const mustRetryPage = Boolean(page.retryRequired) || metrics.errorsCount > errorsBeforePage
+      cursor = mustRetryPage ? cursor : page.nextCursor
+      if (page.managedCursor) {
+        // All selected invoice writes above completed (or we deliberately keep
+        // the old cursor), so this cursor cannot skip an unpersisted XML.
+        await writeSalesXmlCursor(options.provider, options.scope, period, cursor)
+      }
+      if (page.deferred || mustRetryPage) {
+        errors.push(mustRetryPage
+          ? "Quedan XML pendientes de reintento; el cursor no avanzó."
+          : "Quedan XML por enriquecer; la siguiente corrida retoma el cursor.")
+        status = "partial"
+        break
+      }
       if (pages >= MAX_PAGES_PER_RUN && cursor) {
         errors.push(`Se alcanzó el tope de ${MAX_PAGES_PER_RUN} páginas; la corrida queda reanudable por cursor.`)
         status = "partial"
@@ -275,14 +305,14 @@ export async function syncBankTransactions(options: {
   }
 
   if (!isProviderEnabled(options.provider)) {
-    return skipped({ ...base, reason: "El proveedor está deshabilitado por configuración." })
+    return skipped({ ...base, reason: "El proveedor está deshabilitado por configuración.", skipReason: "provider_disabled" })
   }
   const provider = getBillingProvider(options.provider)
   if (!provider.capabilities.canListBankTransactions) {
-    return skipped({ ...base, reason: `${provider.label} no entrega movimientos bancarios.` })
+    return skipped({ ...base, reason: `${provider.label} no entrega movimientos bancarios.`, skipReason: "unsupported" })
   }
   if (!(await provider.isConfigured())) {
-    return skipped({ ...base, reason: "El proveedor no está configurado en este servidor." })
+    return skipped({ ...base, reason: "El proveedor no está configurado en este servidor.", skipReason: "not_configured" })
   }
 
   // Sin esto, una corrida de cartolas cuyo proceso murió deja una fila
@@ -300,7 +330,7 @@ export async function syncBankTransactions(options: {
     })
   } catch (error) {
     if (!isSingleActiveRunConflict(error)) throw error
-    return skipped({ ...base, reason: "Ya hay una sincronización en curso para este período." })
+    return skipped({ ...base, reason: "Ya hay una sincronización en curso para este período.", skipReason: "active_run" })
   }
 
   const metrics = {
@@ -430,6 +460,7 @@ function skipped(input: {
   period: string
   dryRun: boolean
   reason: string
+  skipReason: NonNullable<BillingSyncResult["skipReason"]>
 }): BillingSyncResult {
   return {
     runId: input.runId,
@@ -447,12 +478,17 @@ function skipped(input: {
     conflictsDetected: 0,
     errorsCount: 0,
     errorSummary: input.reason,
+    skipReason: input.skipReason,
   }
 }
 
 export function currentPeriod(): string {
-  const now = new Date()
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`
+  return chilePeriod()
+}
+
+/** Previous calendar month, crossing year boundaries. */
+export function previousBillingPeriod(period: string): string {
+  return previousChilePeriod(period)
 }
 
 function assertPeriodFormat(period: string): void {
@@ -541,8 +577,9 @@ function truncateSummary(errors: string[]): string {
 }
 
 function redact(error: unknown): string {
-  const message = error instanceof Error ? error.message : String(error)
-  return /clave|rut_usr|password|token|authorization/i.test(message)
-    ? "Error del proveedor [detalle omitido por contener credenciales]"
-    : message
+  if (error instanceof DtePortalError) return classifyDteFailure(error).summary
+  // ProviderError messages are constructed by our adapters as operational
+  // summaries (HTTP status/capability), never raw response bodies.
+  if (error instanceof BillingProviderError) return error.message.slice(0, 500)
+  return "El proveedor no completó la sincronización [detalle técnico omitido]."
 }

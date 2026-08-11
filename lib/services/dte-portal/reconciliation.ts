@@ -14,6 +14,7 @@ import { eq, and, isNull, sql, inArray } from "drizzle-orm"
 import { db } from "@/db"
 import { dteDocuments, purchaseOrderInvoices, fuelLoads } from "@/db/schema"
 import { cleanRut } from "@/lib/rut"
+import { logger } from "@/lib/logger"
 import { normalizeFolio, folioRutKey } from "./folio-match"
 
 // ── Tipos de resultado ──────────────────────────────────────────────────────
@@ -146,7 +147,7 @@ export async function matchToPurchaseOrderInvoices(
   }
   for (const key of ambiguous) {
     invoiceByFolioAndRut.delete(key)
-    console.warn(`[dte-reconciliation] ${key.split("|")[0]} calza con más de una factura del mismo proveedor: se deja sin vincular.`)
+    logger.warn("[dte-reconciliation] coincidencia ambigua", { code: "DTE_RECONCILIATION_AMBIGUOUS_PURCHASE_ORDER" })
   }
 
   for (const doc of unmatchedDocs) {
@@ -239,7 +240,7 @@ export async function matchInvoiceToDteDocument(
   // inconsistente del portal; elegir uno colgaría el documento equivocado.
   if (matching.length !== 1) {
     if (matching.length > 1) {
-      console.warn(`[dte-reconciliation] folio ${folio} tiene ${matching.length} DTE sin vincular del mismo proveedor: se deja sin vincular.`)
+      logger.warn("[dte-reconciliation] coincidencia ambigua", { code: "DTE_RECONCILIATION_AMBIGUOUS_DOCUMENT", matches: matching.length })
     }
     return null
   }
@@ -334,7 +335,7 @@ export async function matchToFuelLoads(
   }
   for (const key of ambiguousLoads) {
     loadByReceiptAndRut.delete(key)
-    console.warn(`[dte-reconciliation] ${key.split("|")[0]} calza con más de una carga del mismo proveedor: se deja sin vincular.`)
+    logger.warn("[dte-reconciliation] coincidencia ambigua", { code: "DTE_RECONCILIATION_AMBIGUOUS_FUEL_LOAD" })
   }
 
   for (const doc of unmatchedDocs) {

@@ -25,10 +25,14 @@ import { eq, and, lt } from "drizzle-orm"
 import { db } from "@/db"
 import { dteDocuments, dteSyncRuns, users } from "@/db/schema"
 import { nanoid } from "@/lib/id"
+import { logger } from "@/lib/logger"
 import { DtePortalClient } from "./client"
 import { fetchBandejaEntrada } from "./bandeja-entrada"
 import { matchToPurchaseOrderInvoices, matchToFuelLoads } from "./reconciliation"
 import type { DteBandejaRow } from "./types"
+import { classifyDteFailure } from "./failure"
+import { chilePeriod, previousChilePeriod } from "./chile-time"
+import { claimDteSyncStart } from "./sync-start-gate"
 
 /** Corridas "running" más viejas que esto se consideran colgadas (proceso muerto a medio camino). */
 const STALE_RUN_THRESHOLD_MS = 60 * 60 * 1000
@@ -44,6 +48,10 @@ export interface DteSyncOptions {
   force?: boolean
   /** Usuario que dispara la corrida manual (de la sesión autenticada). */
   importerId?: string
+  /** Email técnico ya resuelto desde la configuración segura, solo para cron. */
+  importerEmail?: string | null
+  /** Batch compartido por los períodos actual/anterior de una invocación automática. */
+  correlationId?: string
 }
 
 export interface DteSyncResult {
@@ -54,7 +62,10 @@ export interface DteSyncResult {
   rowsSeen: number
   rowsInserted: number
   rowsUpdated: number
+  correlationId: string
   error?: string
+  /** Why a non-started run was skipped; never contains provider details. */
+  skipReason?: "disabled" | "invalid_barrier" | "active_run"
 }
 
 /**
@@ -75,6 +86,7 @@ export async function syncDteDocuments(
   const codEmp = options.codEmp ?? client.credentials.codEmp
   const trigger = options.trigger ?? "manual"
   const runId = nanoid()
+  const correlationId = options.correlationId ?? nanoid(12)
 
   assertSyncablePeriodo(periodo)
 
@@ -109,30 +121,27 @@ export async function syncDteDocuments(
         rowsSeen: 0,
         rowsInserted: 0,
         rowsUpdated: 0,
+        correlationId,
         error: "Ya existe una corrida exitosa para este período cerrado. Use force=true para re-sincronizar.",
       }
     }
   }
 
-  const importerId = options.importerId ?? await resolveImporterId()
+  const importerId = options.importerId ?? await resolveImporterId(options.importerEmail)
 
-  // 1. Registrar la corrida. El índice único parcial
-  // `dte_sync_runs_single_active_unique` deja una sola `running` por
-  // (empresa, período): si el cron y el botón se disparan a la vez, la
-  // segunda choca en la base en vez de raspar el portal por duplicado
-  // (H-10, AUDITORIA_BUGS_2026-08-05.md).
-  try {
-    await db.insert(dteSyncRuns).values({
-      id: runId,
-      periodo,
-      codEmp,
-      trigger,
-      importerId,
-      status: "running",
-      startedAt: new Date().toISOString(),
-    })
-  } catch (error) {
-    if (!isSingleActiveRunConflict(error)) throw error
+  // 1. Reclamar la corrida bajo el mismo lock que usa la conversión cifrada.
+  // Si ésta ya pausó inicios, no se alcanza el portal con una configuración
+  // leída antes del corte. Si la corrida ganó la carrera, su fila `running`
+  // queda visible para que conversión espere a que termine.
+  const start = await claimDteSyncStart({
+    runId,
+    periodo,
+    codEmp,
+    trigger,
+    importerId,
+    correlationId,
+  })
+  if (!start.allowed) {
     return {
       runId: "",
       periodo,
@@ -141,7 +150,13 @@ export async function syncDteDocuments(
       rowsSeen: 0,
       rowsInserted: 0,
       rowsUpdated: 0,
-      error: "Ya hay una sincronización en curso para este período.",
+      correlationId,
+      skipReason: start.reason,
+      error: start.reason === "disabled"
+        ? "DTE_SYNC_DISABLED: La sincronización está pausada por configuración."
+        : start.reason === "invalid_barrier"
+          ? "DTE_SETTINGS_BARRIER_INVALID: El cerco de sincronización requiere revisión."
+          : "DTE_SYNC_ACTIVE_RUN: Ya hay una sincronización en curso para este período.",
     }
   }
 
@@ -183,8 +198,8 @@ export async function syncDteDocuments(
         else if (result === "updated") rowsUpdated++
       } catch (err) {
         failures++
-        // No abortar por un documento individual
-        console.error(`[dte-sync] Error al procesar folio ${row.folio} tipo ${row.tipoDoc}: ${err instanceof Error ? err.message : String(err)}`)
+        const failure = classifyDteFailure(err, Object.values(client.credentials))
+        logger.error({ correlationId }, "[dte-sync] documento no persistido", { code: failure.code, periodo })
       }
     }
 
@@ -200,7 +215,9 @@ export async function syncDteDocuments(
     }
   } catch (err) {
     finalStatus = "failed"
-    errorMsg = sanitizeSyncError(err, client)
+    const failure = classifyDteFailure(err, Object.values(client.credentials))
+    errorMsg = `${failure.code}: ${failure.summary}`
+    logger.error({ correlationId }, "[dte-sync] consulta falló", { code: failure.code, periodo })
   }
 
   // 4. Conciliar contra OC y combustible ANTES de cerrar la corrida.
@@ -222,9 +239,9 @@ export async function syncDteDocuments(
     if (withDiscrepancy.length > 0) {
       reconciliationNote = `${withDiscrepancy.length} de ${ocMatches.length + fuelMatches.length} vínculos con diferencia de monto.`
     }
-  } catch (err) {
-    reconciliationNote = `La conciliación falló: ${err instanceof Error ? err.message : String(err)}`
-    console.error(`[dte-sync] Error al conciliar el período ${periodo}: ${reconciliationNote}`)
+  } catch (_err) {
+    reconciliationNote = "DTE_RECONCILIATION_FAILED: La conciliación posterior no se pudo completar."
+    logger.error({ correlationId }, "[dte-sync] conciliación falló", { code: "DTE_RECONCILIATION_FAILED", periodo })
   }
 
   const finalError = [errorMsg, reconciliationNote].filter(Boolean).join(" ") || null
@@ -235,6 +252,7 @@ export async function syncDteDocuments(
     rowsSeen,
     rowsInserted,
     rowsUpdated,
+    correlationId,
     error: finalError,
     finishedAt: new Date().toISOString(),
   }).where(eq(dteSyncRuns.id, runId))
@@ -249,6 +267,7 @@ export async function syncDteDocuments(
     rowsSeen,
     rowsInserted,
     rowsUpdated,
+    correlationId,
     error: errorMsg,
   }
 }
@@ -271,32 +290,12 @@ async function markStaleRunsAsFailed(codEmp: string): Promise<void> {
   ))
 }
 
-/** Índice parcial: una sola corrida `running` por (empresa, período). */
-const SINGLE_ACTIVE_RUN_INDEX = "dte_sync_runs_single_active_unique"
-
-/**
- * ¿El error viene del índice único parcial de corridas activas?
- *
- * Drizzle envuelve el error del driver, así que el SQLSTATE y el nombre de la
- * restricción viven en la cadena de `cause`. Se exige el nombre del índice: no
- * cualquier violación de unicidad de esta tabla significa "ya hay una corrida".
- */
-function isSingleActiveRunConflict(error: unknown): boolean {
-  for (let current: unknown = error, depth = 0; current && depth < 5; depth++) {
-    const candidate = current as { code?: string; constraint?: string; detail?: string; cause?: unknown }
-    if (candidate.code === "23505" && candidate.constraint === SINGLE_ACTIVE_RUN_INDEX) return true
-    if (typeof candidate.detail === "string" && candidate.detail.includes(SINGLE_ACTIVE_RUN_INDEX)) return true
-    current = candidate.cause
-  }
-  return String((error as { message?: string })?.message ?? "").includes(SINGLE_ACTIVE_RUN_INDEX)
-}
-
 /**
  * Resuelve el usuario técnico para corridas sin sesión (cron), vía
  * DTE_SYNC_IMPORTER_EMAIL. Patrón: lib/combustibles/copec-sync.ts.
  */
-async function resolveImporterId(): Promise<string | undefined> {
-  const email = process.env.DTE_SYNC_IMPORTER_EMAIL?.trim()
+async function resolveImporterId(configuredEmail?: string | null): Promise<string | undefined> {
+  const email = configuredEmail?.trim()
   if (!email) return undefined
   const user = await db.query.users.findFirst({
     where: and(eq(users.email, email), eq(users.isActive, true)),
@@ -398,10 +397,7 @@ async function upsertDteDocument(
 }
 
 function currentPeriodo(): string {
-  const now = new Date()
-  const year = now.getFullYear()
-  const month = String(now.getMonth() + 1).padStart(2, "0")
-  return `${year}-${month}`
+  return chilePeriod()
 }
 
 /**
@@ -427,33 +423,9 @@ export function assertSyncablePeriodo(periodo: string): void {
   }
 }
 
-/**
- * Mensaje de error de una corrida, sin credenciales.
- *
- * La versión anterior buscaba las palabras "clave" y "rut_usr". Eso deja pasar
- * un mensaje que traiga la contraseña sin nombrarla, que es precisamente el
- * caso peligroso: el error se guarda en `dte_sync_runs.error` y se muestra en
- * la pantalla de administración. Acá se comparan los VALORES.
- */
-function sanitizeSyncError(err: unknown, client: DtePortalClient): string {
-  const raw = err instanceof Error ? err.message : String(err)
-  const { rutUsr, rutEmp, clave } = client.credentials
-  const secrets = [clave, rutUsr, rutEmp].filter((v) => v && v.length >= 4)
-  if (secrets.some((v) => raw.includes(v))) {
-    return "Error de conexión con el portal DTE [credenciales omitidas]"
-  }
-  if (/clave|rut_usr|rut_emp/i.test(raw)) {
-    return "Error de conexión con el portal DTE [credenciales omitidas]"
-  }
-  return raw.slice(0, 500)
-}
-
 /** Período anterior a `periodo` ("YYYY-MM"), cruzando el año. */
 export function previousPeriodo(periodo: string): string {
-  const [year, month] = periodo.split("-").map(Number) as [number, number]
-  const prevMonth = month === 1 ? 12 : month - 1
-  const prevYear = month === 1 ? year - 1 : year
-  return `${prevYear}-${String(prevMonth).padStart(2, "0")}`
+  return previousChilePeriod(periodo)
 }
 
 /**
@@ -474,8 +446,6 @@ export function previousPeriodo(periodo: string): string {
  * `force`— pero cubre el retraso normal en vez de no cubrir ninguno.
  */
 export function rollingSyncPeriods(today = new Date()): string[] {
-  const year = today.getFullYear()
-  const month = String(today.getMonth() + 1).padStart(2, "0")
-  const current = `${year}-${month}`
+  const current = chilePeriod(today)
   return [current, previousPeriodo(current)]
 }

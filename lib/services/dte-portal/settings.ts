@@ -1,29 +1,25 @@
 /**
- * lib/services/dte-portal/settings.ts
+ * Configuración persistida del portal DTE.
  *
- * Credenciales y configuración del portal DTE guardadas en `system_settings`
- * desde Administración › Sincronización DTE — "lo que hoy hace el .env",
- * sin tocar el servidor.
- *
- * Precedencia (ver `readDtePortalConfig` en config.ts):
- *   lo guardado aquí > variable de entorno (DTE_PORTAL_*) > default.
- * Dejar un campo en blanco borra el valor guardado y vuelve a caer al .env.
- * La contraseña es la excepción: un campo vacío la conserva; solo se borra
- * con `clearClave` explícito, para que un guardado accidental no la pierda.
- *
- * NOTA DE SEGURIDAD: `dte.clave` queda en texto plano en `system_settings`
- * (la tabla KV del sistema), igual que el resto de la configuración. La
- * auditoría jamás registra la clave — solo una máscara. Quien tenga acceso a
- * la base de datos puede leerla; es el trade-off pedido para gestionar las
- * credenciales desde el panel sin tocar el servidor.
+ * Los secretos no salen de esta capa: los valores sensibles se cifran con el
+ * keyring de la aplicación cuando está configurado y el DTO para Admin sólo
+ * expone banderas. `compat` permite leer registros legacy temporalmente;
+ * `encrypted_only` nunca vuelve a usar DTE_PORTAL_* como fallback.
  */
 
 import { db } from "@/db"
-import { systemSettings } from "@/db/schema"
-import { eq, like } from "drizzle-orm"
+import { dtePortalOperationLeases, systemSettings } from "@/db/schema"
+import { eq, gte, like, sql } from "drizzle-orm"
 import { recordAudit } from "@/lib/audit"
+import {
+  decryptDteSetting,
+  encryptDteSetting,
+  isEncryptedDteSetting,
+  readDteSettingsKeyring,
+  type DteSettingsEncryptionMode,
+} from "./settings-crypto"
 
-/** Claves en `system_settings` para cada campo de la configuración DTE. */
+/** Keys in `system_settings`. `baseUrl` is retained only to clean legacy data. */
 export const DTE_SETTING_KEYS = {
   baseUrl:       "dte.base_url",
   rutUsr:        "dte.rut_usr",
@@ -31,57 +27,55 @@ export const DTE_SETTING_KEYS = {
   clave:         "dte.clave",
   codEmp:        "dte.cod_emp",
   syncEnabled:   "dte.sync_enabled",
+  /** Independent fence used only while conversion/keyring re-cipher is in progress. */
+  syncStartBarrier: "dte.sync_start_barrier",
   delayMs:       "dte.sync_delay_ms",
   importerEmail: "dte.sync_importer_email",
+  /** Durable cutover barrier; only the controlled conversion may write it. */
+  encryptionMode: "dte.encryption_mode",
 } as const
 
 export type DteSettingField = keyof typeof DTE_SETTING_KEYS
+export type DteSensitiveSettingField = "rutUsr" | "rutEmp" | "clave" | "codEmp" | "importerEmail"
 
 const DTE_KEY_PREFIX = "dte.%"
-
-/** Lee todos los valores guardados (dte.*) como un mapa campo → valor crudo. */
-export async function readStoredDteSettings(): Promise<Partial<Record<DteSettingField, string>>> {
-  try {
-    const rows = await db
-      .select({ key: systemSettings.key, value: systemSettings.value })
-      .from(systemSettings)
-      .where(like(systemSettings.key, DTE_KEY_PREFIX))
-
-    const byField: Partial<Record<DteSettingField, string>> = {}
-    for (const row of rows) {
-      const field = (Object.keys(DTE_SETTING_KEYS) as DteSettingField[]).find(
-        (f) => DTE_SETTING_KEYS[f] === row.key,
-      )
-      if (field) byField[field] = row.value
-    }
-    return byField
-  } catch {
-    // Un fallo de lectura no debe tumbar al dashboard ni a la pantalla admin:
-    // se comporta como si no hubiera nada guardado (cae al .env).
-    return {}
-  }
-}
-
-/** True si existe al menos un valor DTE guardado en la base de datos. */
-export async function hasStoredDteSettings(): Promise<boolean> {
-  const stored = await readStoredDteSettings()
-  return Object.keys(stored).length > 0
-}
+const ENCRYPTED_ONLY = "encrypted_only"
+export const DTE_SYNC_START_BARRIER_PAUSED = "paused"
+/** Transient, non-resumable state while conversion/keyring re-cipher owns the fence. */
+export const DTE_SYNC_START_BARRIER_CUTOVER = "cutover"
+export const DTE_SYNC_START_BARRIER_ACTIVE = "active"
+/** Shared fence for conversion, settings writes, and sync starts. */
+export const DTE_SETTINGS_ADVISORY_LOCK = "dte_settings_conversion_v1"
+const SENSITIVE_FIELDS: readonly DteSensitiveSettingField[] = [
+  "rutUsr",
+  "rutEmp",
+  "clave",
+  "codEmp",
+  "importerEmail",
+]
+const REQUIRED_CREDENTIAL_FIELDS: readonly DteSensitiveSettingField[] = [
+  "rutUsr",
+  "rutEmp",
+  "clave",
+  "codEmp",
+]
 
 export interface DtePortalSettingsInput {
-  /** URL base. '' borra el valor guardado (vuelve a DTE_PORTAL_BASE_URL). */
-  baseUrl?: string
+  /** Empty fields preserve their stored secret; removal must be explicit. */
   rutUsr?: string
   rutEmp?: string
-  /** Contraseña. '' conserva la actual; usar `clearClave` para borrarla. */
   clave?: string
   codEmp?: string
-  syncEnabled?: boolean
-  /** Milisegundos entre requests. Validado 0–10.000. */
-  delayMs?: number
   importerEmail?: string
-  /** Borra la contraseña guardada (vuelve a DTE_PORTAL_CLAVE del .env). */
+  syncEnabled?: boolean
+  /** Milliseconds between requests, 0–10,000. */
+  delayMs?: number
+  clearRutUsr?: boolean
+  clearRutEmp?: boolean
   clearClave?: boolean
+  clearCodEmp?: boolean
+  clearImporterEmail?: boolean
+  clearDelayMs?: boolean
 }
 
 export interface DteSettingsActor {
@@ -89,121 +83,666 @@ export interface DteSettingsActor {
   userEmail?: string
 }
 
+export type DteSettingsFieldSource = "system_settings" | "environment" | "missing"
+export type DteSettingsEncryptionStatus =
+  | "not_configured"
+  | "legacy"
+  | "migration_required"
+  | "encrypted"
+  | "encrypted_only"
+  | "configuration_error"
+
+/** Safe to serialize through an RSC or a Server Action. It intentionally has no values. */
+export interface DtePortalAdminStatus {
+  configured: boolean
+  syncEnabled: boolean
+  hasStoredSettings: boolean
+  /** True only once the one-way marker is persisted in system_settings. */
+  cutoverComplete: boolean
+  source: "system_settings" | "environment" | "mixed" | "none"
+  encryptionMode: DteSettingsEncryptionMode | "configuration_error"
+  encryptionStatus: DteSettingsEncryptionStatus
+  /** Historical name: also true for already-enveloped compat settings that need the durable cutover. */
+  canMigrateLegacy: boolean
+  fields: Record<DteSensitiveSettingField, { configured: boolean; source: DteSettingsFieldSource }>
+}
+
+export class DteSettingsConversionError extends Error {
+  constructor(readonly code:
+    | "DTE_SETTINGS_ACTIVE_RUN"
+    | "DTE_SETTINGS_INCOMPLETE_LEGACY"
+    | "DTE_SETTINGS_LEGACY_PRESENT"
+    | "DTE_SETTINGS_ENCRYPTED_ONLY_REQUIRED"
+    | "DTE_SETTINGS_CUTOVER_IN_PROGRESS"
+    | "DTE_SETTINGS_KEYRING_REQUIRED",
+  ) {
+    super(code)
+    this.name = "DteSettingsConversionError"
+  }
+}
+
+/** Safe runtime failure: never turn a DB outage into an env-secret fallback. */
+export class DteSettingsReadError extends Error {
+  readonly code = "DTE_SETTINGS_READ_FAILED"
+
+  constructor() {
+    super("DTE_SETTINGS_READ_FAILED")
+    this.name = "DteSettingsReadError"
+  }
+}
+
 /**
- * Guarda (o borra) los campos provistos de la configuración DTE.
- *
- * - Campos de texto: `''` borra la clave guardada.
- * - `clave`: `''` la conserva; solo `clearClave: true` la borra.
- * - Solo escribe los campos definidos (no toca el resto).
+ * Reads plaintext only within the server process. In encrypted_only a legacy
+ * sensitive row is rejected rather than falling back to environment values.
+ */
+export async function readStoredDteSettings(): Promise<Partial<Record<DteSettingField, string>>> {
+  const raw = await readRawDteSettings()
+  return decodeStoredDteSettings(raw)
+}
+
+/**
+ * Runtime-only settings read. Unlike the Admin/status helper, this fails
+ * closed if PostgreSQL is unavailable so `config.ts` cannot accidentally use
+ * legacy environment credentials without knowing whether a cutover happened.
+ */
+export async function readStoredDteSettingsStrict(): Promise<Partial<Record<DteSettingField, string>>> {
+  let raw: Partial<Record<DteSettingField, string>>
+  try {
+    raw = await readRawDteSettingsStrict()
+  } catch {
+    throw new DteSettingsReadError()
+  }
+  return decodeStoredDteSettings(raw)
+}
+
+function decodeStoredDteSettings(
+  raw: Partial<Record<DteSettingField, string>>,
+): Partial<Record<DteSettingField, string>> {
+  const keyring = readDteSettingsKeyring()
+  const mode = effectiveEncryptionMode(raw, keyring.mode)
+  const values: Partial<Record<DteSettingField, string>> = {}
+
+  for (const [field, value] of Object.entries(raw) as [DteSettingField, string | undefined][]) {
+    if (value === undefined) continue
+    if (!isSensitiveField(field)) {
+      values[field] = value
+      continue
+    }
+    if (isEncryptedDteSetting(value)) {
+      values[field] = decryptDteSetting(value, DTE_SETTING_KEYS[field], keyring)
+      continue
+    }
+    if (mode === "encrypted_only") {
+      // Do not make a plaintext env credential a surprise fallback after the
+      // cutover. The caller sees a redacted configuration error instead.
+      throw new Error("DTE_SETTINGS_ENVELOPE_INVALID")
+    }
+    values[field] = value
+  }
+
+  return values
+}
+
+/** True if at least one DTE key exists, including a legacy base-url key. */
+export async function hasStoredDteSettings(): Promise<boolean> {
+  return Object.keys(await readRawDteSettings()).length > 0
+}
+
+/**
+ * Builds the only configuration object allowed to cross to the Admin client
+ * component. It reads raw values solely to answer presence/source questions.
+ */
+export async function readDtePortalAdminStatus(): Promise<DtePortalAdminStatus> {
+  let raw: Partial<Record<DteSettingField, string>>
+  try {
+    // Unlike a generic compatibility helper, the Admin DTO must not claim
+    // environment credentials are usable while the durable settings source is
+    // unavailable. It is the operator's control plane for a cutover.
+    raw = await readRawDteSettingsStrict()
+  } catch {
+    return dteAdminConfigurationError()
+  }
+  const hasStoredSettings = Object.keys(raw).length > 0
+  const cutoverComplete = raw.encryptionMode === ENCRYPTED_ONLY
+  let keyring: ReturnType<typeof readDteSettingsKeyring> | null = null
+  let encryptionMode: DtePortalAdminStatus["encryptionMode"] = "configuration_error"
+
+  try {
+    keyring = readDteSettingsKeyring()
+    encryptionMode = effectiveEncryptionMode(raw, keyring.mode)
+  } catch {
+    // Do not serialize the configuration error: an operator only needs to know
+    // that the keyring must be repaired on the host.
+    keyring = null
+  }
+  if (!keyring) return dteAdminConfigurationError(hasStoredSettings)
+
+  const fields = Object.fromEntries(SENSITIVE_FIELDS.map((field) => {
+    const stored = raw[field]
+    const envValue = environmentValueFor(field)
+    const canUseEnvironment = encryptionMode !== "encrypted_only"
+    const configured = stored !== undefined
+      ? Boolean(stored)
+      : canUseEnvironment && Boolean(envValue)
+    const source: DteSettingsFieldSource = stored !== undefined
+      ? "system_settings"
+      : canUseEnvironment && envValue ? "environment" : "missing"
+    return [field, { configured, source }]
+  })) as DtePortalAdminStatus["fields"]
+
+  const sources = new Set<DteSettingsFieldSource>()
+  for (const field of Object.values(fields)) {
+    if (field.source !== "missing") sources.add(field.source)
+  }
+  const source = sources.size === 0
+    ? "none"
+    : sources.size === 1
+      ? sources.has("system_settings") ? "system_settings" : "environment"
+      : "mixed"
+  const storedSensitive = SENSITIVE_FIELDS
+    .map((field) => raw[field])
+    .filter((value): value is string => value !== undefined)
+  const legacySensitive = storedSensitive.filter((value) => !isEncryptedDteSetting(value))
+  const encryptionStatus = encryptionMode === "configuration_error"
+    ? "configuration_error"
+    : cutoverComplete
+      ? "encrypted_only"
+      : storedSensitive.length === 0
+        ? "not_configured"
+        : legacySensitive.length > 0
+          ? keyring?.activeKeyId ? "migration_required" : "legacy"
+          : "encrypted"
+  const requestedSyncEnabled = raw.syncEnabled !== undefined
+    ? raw.syncEnabled === "true"
+    : encryptionMode !== "encrypted_only" && process.env.DTE_SYNC_ENABLED?.trim().toLowerCase() === "true"
+  const syncEnabled = requestedSyncEnabled && !isDtePortalStartBarrierPaused(raw.syncStartBarrier)
+
+  return {
+    // `importerEmail` improves downstream attribution but the portal itself
+    // only authenticates with these four credentials. Do not report the whole
+    // integration as unconfigured when that optional enrichment is absent.
+    configured: REQUIRED_CREDENTIAL_FIELDS.every((field) => fields[field].configured),
+    syncEnabled,
+    hasStoredSettings,
+    source,
+    encryptionMode,
+    encryptionStatus,
+    // The compatible release can already have encrypted values before the
+    // one-way marker is activated. Those values are safe to verify/rewrap and
+    // cut over too; requiring a remaining plaintext field would strand them.
+    canMigrateLegacy: !cutoverComplete && Boolean(keyring?.activeKeyId) &&
+      REQUIRED_CREDENTIAL_FIELDS.every((field) => Boolean(raw[field])),
+    cutoverComplete,
+    fields,
+  }
+}
+
+function dteAdminConfigurationError(hasStoredSettings = false): DtePortalAdminStatus {
+  return {
+    configured: false,
+    syncEnabled: false,
+    hasStoredSettings,
+    cutoverComplete: false,
+    source: "none",
+    encryptionMode: "configuration_error",
+    encryptionStatus: "configuration_error",
+    canMigrateLegacy: false,
+    fields: Object.fromEntries(SENSITIVE_FIELDS.map((field) => [
+      field,
+      { configured: false, source: "missing" as const },
+    ])) as DtePortalAdminStatus["fields"],
+  }
+}
+
+/**
+ * Writes just the fields submitted by Admin. When a keyring exists, every new
+ * sensitive value is stored encrypted. A blank sensitive field is a no-op;
+ * clear flags are the sole deletion mechanism.
  */
 export async function saveDtePortalSettings(
   input: DtePortalSettingsInput,
   actor: DteSettingsActor,
 ): Promise<void> {
-  const before = await readStoredDteSettings()
-  const now = new Date().toISOString()
-
-  const writes: { key: string; value: string }[] = []
-  const deletes: string[] = []
-
-  const applyText = (field: DteSettingField, value: string | undefined) => {
-    if (value === undefined) return
-    if (value === "") {
-      deletes.push(DTE_SETTING_KEYS[field])
-    } else {
-      writes.push({ key: DTE_SETTING_KEYS[field], value })
-    }
-  }
-
-  applyText("baseUrl", input.baseUrl?.trim())
-  applyText("rutUsr", input.rutUsr?.trim())
-  applyText("rutEmp", input.rutEmp?.trim())
-  applyText("codEmp", input.codEmp?.trim())
-  applyText("importerEmail", input.importerEmail?.trim())
-
   if (input.delayMs !== undefined) {
     if (!Number.isFinite(input.delayMs) || input.delayMs < 0 || input.delayMs > 10_000) {
-      throw new Error("El intervalo entre consultas debe estar entre 0 y 10.000 ms")
+      throw new Error("DTE_SETTINGS_DELAY_INVALID")
     }
-    applyText("delayMs", String(Math.trunc(input.delayMs)))
   }
 
-  if (input.syncEnabled !== undefined) {
-    applyText("syncEnabled", input.syncEnabled ? "true" : "false")
-  }
+  const result = await db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${DTE_SETTINGS_ADVISORY_LOCK}))`)
+    const rows = await tx
+      .select({ key: systemSettings.key, value: systemSettings.value })
+      .from(systemSettings)
+      .where(like(systemSettings.key, DTE_KEY_PREFIX))
+      .for("update")
+    const before = rawDteSettingsFromRows(rows)
+    const keyring = readDteSettingsKeyring()
+    const encryptionMode = effectiveEncryptionMode(before, keyring.mode)
+    if (encryptionMode === "encrypted_only" && !keyring.activeKeyId) {
+      throw new DteSettingsConversionError("DTE_SETTINGS_KEYRING_REQUIRED")
+    }
 
-  // La clave no se normaliza (ni trim ni lower): es texto que va tal cual al portal.
-  if (input.clave !== undefined && input.clave !== "") {
-    writes.push({ key: DTE_SETTING_KEYS.clave, value: input.clave })
-  } else if (input.clearClave) {
-    deletes.push(DTE_SETTING_KEYS.clave)
-  }
+    const now = new Date().toISOString()
+    const writes: { key: string; value: string }[] = []
+    const deletes: string[] = []
+    const after = { ...before }
 
-  const touched = writes.length > 0 || deletes.length > 0
-  if (!touched) return
+    const applySensitive = (
+      field: DteSensitiveSettingField,
+      value: string | undefined,
+      clear: boolean | undefined,
+    ) => {
+      if (value !== undefined && value !== "") {
+        const key = DTE_SETTING_KEYS[field]
+        const encrypted = keyring.activeKeyId
+          ? encryptDteSetting(value, key, keyring)
+          : value
+        writes.push({ key, value: encrypted })
+        after[field] = encrypted
+        return
+      }
+      if (clear) {
+        deletes.push(DTE_SETTING_KEYS[field])
+        delete after[field]
+      }
+    }
 
-  for (const write of writes) {
-    await db
-      .insert(systemSettings)
-      .values({ key: write.key, value: write.value, updatedAt: now })
-      .onConflictDoUpdate({
+    applySensitive("rutUsr", input.rutUsr?.trim(), input.clearRutUsr)
+    applySensitive("rutEmp", input.rutEmp?.trim(), input.clearRutEmp)
+    // The password intentionally is not trimmed.
+    applySensitive("clave", input.clave, input.clearClave)
+    applySensitive("codEmp", input.codEmp?.trim(), input.clearCodEmp)
+    applySensitive("importerEmail", input.importerEmail?.trim(), input.clearImporterEmail)
+
+    if (input.delayMs !== undefined) {
+      const value = String(Math.trunc(input.delayMs))
+      writes.push({ key: DTE_SETTING_KEYS.delayMs, value })
+      after.delayMs = value
+    } else if (input.clearDelayMs) {
+      deletes.push(DTE_SETTING_KEYS.delayMs)
+      delete after.delayMs
+    }
+    if (input.syncEnabled !== undefined) {
+      // Conversion/keyring re-cipher owns the fence until it has atomically verified
+      // all envelopes. A concurrent Admin save may update missing credentials,
+      // but it must not reopen portal I/O halfway through that operation.
+      if (input.syncEnabled && before.syncStartBarrier === DTE_SYNC_START_BARRIER_CUTOVER) {
+        throw new DteSettingsConversionError("DTE_SETTINGS_CUTOVER_IN_PROGRESS")
+      }
+      const value = input.syncEnabled ? "true" : "false"
+      writes.push({ key: DTE_SETTING_KEYS.syncEnabled, value })
+      after.syncEnabled = value
+      // Only an explicit re-enable after a completed cutover releases the
+      // durable pause. Ordinary edits and `syncEnabled=false` leave it alone.
+      if (input.syncEnabled && before.syncStartBarrier === DTE_SYNC_START_BARRIER_PAUSED) {
+        writes.push({ key: DTE_SETTING_KEYS.syncStartBarrier, value: DTE_SYNC_START_BARRIER_ACTIVE })
+        after.syncStartBarrier = DTE_SYNC_START_BARRIER_ACTIVE
+      }
+    }
+
+    if (writes.length === 0 && deletes.length === 0) return null
+
+    for (const write of writes) {
+      await tx.insert(systemSettings).values({ key: write.key, value: write.value, updatedAt: now }).onConflictDoUpdate({
         target: systemSettings.key,
         set: { value: write.value, updatedAt: now },
       })
-  }
-  for (const key of deletes) {
-    await db.delete(systemSettings).where(eq(systemSettings.key, key))
-  }
+    }
+    for (const key of new Set(deletes)) {
+      await tx.delete(systemSettings).where(eq(systemSettings.key, key))
+    }
+    return { before, after }
+  })
 
-  const after = await readStoredDteSettings()
+  if (!result) return
   await recordAudit({
     userId: actor.userId,
     userEmail: actor.userEmail,
     action: "update",
     entityType: "dte_portal_settings",
     entityId: "batch",
-    oldState: summarizeSettings(before),
-    newState: summarizeSettings(after),
+    oldState: summarizeSettings(result.before),
+    newState: summarizeSettings(result.after),
   })
 }
 
 /**
- * Borra TODA la configuración DTE guardada: la app vuelve a leer solo las
- * variables de entorno (DTE_PORTAL_*). Útil para "restaurar el .env".
+ * Removes persisted DTE settings. In encrypted_only this intentionally leaves
+ * DTE disabled because config.ts will not fall back to plaintext env values.
  */
 export async function clearStoredDteSettings(actor: DteSettingsActor): Promise<void> {
-  const before = await readStoredDteSettings()
-  if (Object.keys(before).length === 0) return
+  const result = await db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${DTE_SETTINGS_ADVISORY_LOCK}))`)
+    const rows = await tx
+      .select({ key: systemSettings.key, value: systemSettings.value })
+      .from(systemSettings)
+      .where(like(systemSettings.key, DTE_KEY_PREFIX))
+      .for("update")
+    const before = rawDteSettingsFromRows(rows)
+    if (Object.keys(before).length === 0) return null
 
-  await db.delete(systemSettings).where(like(systemSettings.key, DTE_KEY_PREFIX))
+    const keyring = readDteSettingsKeyring()
+    const encryptedOnly = effectiveEncryptionMode(before, keyring.mode) === "encrypted_only"
+    if (encryptedOnly) {
+      // Preserve the durable barrier. A clear/reset after cutover must not make
+      // a stale DTE_PORTAL_* environment variable usable again.
+      for (const key of Object.values(DTE_SETTING_KEYS)) {
+        if (key === DTE_SETTING_KEYS.encryptionMode || key === DTE_SETTING_KEYS.syncStartBarrier) continue
+        await tx.delete(systemSettings).where(eq(systemSettings.key, key))
+      }
+      const now = new Date().toISOString()
+      await tx.insert(systemSettings).values({
+        key: DTE_SETTING_KEYS.syncStartBarrier,
+        value: DTE_SYNC_START_BARRIER_PAUSED,
+        updatedAt: now,
+      }).onConflictDoUpdate({
+        target: systemSettings.key,
+        set: { value: DTE_SYNC_START_BARRIER_PAUSED, updatedAt: now },
+      })
+    } else {
+      await tx.delete(systemSettings).where(like(systemSettings.key, DTE_KEY_PREFIX))
+    }
+    return { before, encryptedOnly }
+  })
 
+  if (!result) return
   await recordAudit({
     userId: actor.userId,
     userEmail: actor.userEmail,
     action: "delete",
     entityType: "dte_portal_settings",
     entityId: "batch",
-    oldState: summarizeSettings(before),
-    newState: {},
+    oldState: summarizeSettings(result.before),
+    newState: result.encryptedOnly ? { encryptedOnly: true } : {},
   })
 }
 
-/** Nunca se registra la contraseña en la auditoría. */
-function summarizeSettings(
-  stored: Partial<Record<DteSettingField, string>>,
-): Record<string, string | boolean | number> {
-  const summary: Record<string, string | boolean | number> = {}
-  for (const [field, value] of Object.entries(stored) as [DteSettingField, string | undefined][]) {
-    if (value === undefined) continue
-    if (field === "clave") {
-      summary.clave = value ? "••••••••" : ""
-    } else if (field === "syncEnabled") {
-      summary.syncEnabled = value === "true"
-    } else if (field === "delayMs") {
-      summary.delayMs = Number(value)
-    } else {
-      summary[field] = value
-    }
+/**
+ * One-way controlled conversion. It first pauses new portal starts, waits for
+ * bounded request leases that prove credential-bearing I/O may still be on the
+ * wire, then holds a PostgreSQL transaction advisory lock while it converts
+ * every sensitive field and enables the durable encrypted-only barrier. It
+ * preserves the exact provider values; no portal credential is changed. Any
+ * failure leaves synchronization paused.
+ */
+export async function convertLegacyDteSettings(actor: DteSettingsActor): Promise<{ converted: number; keyId: string }> {
+  if (!readDteSettingsKeyring().activeKeyId) {
+    throw new DteSettingsConversionError("DTE_SETTINGS_KEYRING_REQUIRED")
   }
+
+  // Stop new cron/manual starts before waiting. Existing in-flight requests
+  // are detected below; a failure intentionally does not silently re-enable.
+  await pauseDteSyncStarts()
+  await waitForNoActivePortalOperations()
+
+  const result = await db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${DTE_SETTINGS_ADVISORY_LOCK}))`)
+    const rows = await tx
+      .select({ key: systemSettings.key, value: systemSettings.value })
+      .from(systemSettings)
+      .where(like(systemSettings.key, DTE_KEY_PREFIX))
+      .for("update")
+    const before = rawDteSettingsFromRows(rows)
+    // Re-read while holding the lock: a host keyring change must not make this
+    // transaction encrypt under a stale `kid` selected before the cutover.
+    const keyring = readDteSettingsKeyring()
+    if (!keyring.activeKeyId) throw new DteSettingsConversionError("DTE_SETTINGS_KEYRING_REQUIRED")
+    if (before.encryptionMode === ENCRYPTED_ONLY) {
+      return { converted: 0, before, after: before, keyId: keyring.activeKeyId }
+    }
+
+    const missingRequired = REQUIRED_CREDENTIAL_FIELDS.filter((field) => !before[field])
+    if (missingRequired.length > 0) {
+      // Conversion must not promote a half-persisted setup into a state where
+      // plaintext env fields silently complement encrypted database fields.
+      throw new DteSettingsConversionError("DTE_SETTINGS_INCOMPLETE_LEGACY")
+    }
+
+    const legacy = SENSITIVE_FIELDS.filter((field) => {
+      const value = before[field]
+      return value !== undefined && !isEncryptedDteSetting(value)
+    })
+
+    const encrypted: Array<{ key: string; value: string }> = []
+    for (const field of SENSITIVE_FIELDS) {
+      const value = before[field]
+      if (value === undefined) continue
+      const plaintext = isEncryptedDteSetting(value)
+        ? decryptDteSetting(value, DTE_SETTING_KEYS[field], keyring)
+        : value
+      const envelope = encryptDteSetting(plaintext, DTE_SETTING_KEYS[field], keyring)
+      // Verify the newly written material before committing any setting.
+      if (decryptDteSetting(envelope, DTE_SETTING_KEYS[field], keyring) !== plaintext) {
+        throw new Error("DTE_SETTINGS_ENCRYPTION_VERIFY_FAILED")
+      }
+      encrypted.push({ key: DTE_SETTING_KEYS[field], value: envelope })
+    }
+
+    const now = new Date().toISOString()
+    for (const setting of encrypted) {
+      await tx.insert(systemSettings).values({ ...setting, updatedAt: now }).onConflictDoUpdate({
+        target: systemSettings.key,
+        set: { value: setting.value, updatedAt: now },
+      })
+    }
+    await tx.insert(systemSettings).values({ key: DTE_SETTING_KEYS.syncEnabled, value: "false", updatedAt: now }).onConflictDoUpdate({
+      target: systemSettings.key,
+      set: { value: "false", updatedAt: now },
+    })
+    await tx.insert(systemSettings).values({ key: DTE_SETTING_KEYS.syncStartBarrier, value: DTE_SYNC_START_BARRIER_PAUSED, updatedAt: now }).onConflictDoUpdate({
+      target: systemSettings.key,
+      set: { value: DTE_SYNC_START_BARRIER_PAUSED, updatedAt: now },
+    })
+    await tx.insert(systemSettings).values({ key: DTE_SETTING_KEYS.encryptionMode, value: ENCRYPTED_ONLY, updatedAt: now }).onConflictDoUpdate({
+      target: systemSettings.key,
+      set: { value: ENCRYPTED_ONLY, updatedAt: now },
+    })
+    await tx.delete(systemSettings).where(eq(systemSettings.key, DTE_SETTING_KEYS.baseUrl))
+
+    const after = {
+      ...before,
+      syncEnabled: "false",
+      syncStartBarrier: DTE_SYNC_START_BARRIER_PAUSED,
+      encryptionMode: ENCRYPTED_ONLY,
+    }
+    for (const setting of encrypted) {
+      const field = (Object.keys(DTE_SETTING_KEYS) as DteSettingField[]).find((candidate) => DTE_SETTING_KEYS[candidate] === setting.key)
+      if (field) after[field] = setting.value
+    }
+    delete after.baseUrl
+    return { converted: legacy.length, before, after, keyId: keyring.activeKeyId }
+  })
+
+  await recordAudit({
+    userId: actor.userId,
+    userEmail: actor.userEmail,
+    action: "update",
+    entityType: "dte_portal_settings_encryption",
+    entityId: "conversion",
+    oldState: summarizeSettings(result.before),
+    newState: { ...summarizeSettings(result.after), encryptedOnly: true, convertedFields: result.converted },
+  })
+  return { converted: result.converted, keyId: result.keyId }
+}
+
+/**
+ * Re-wraps every encrypted setting under the active key ID. It decrypts and
+ * re-encrypts the same plaintext; it never changes a FacturaEnLínea credential.
+ * The caller keeps both key IDs in the app keyring until this verifies
+ * successfully; only then may the retired key leave the host configuration.
+ */
+export async function rotateDteSettingsKeyring(actor: DteSettingsActor): Promise<{ rewrapped: number; keyId: string }> {
+  if (!readDteSettingsKeyring().activeKeyId) {
+    throw new DteSettingsConversionError("DTE_SETTINGS_KEYRING_REQUIRED")
+  }
+
+  await pauseDteSyncStarts()
+  await waitForNoActivePortalOperations()
+  const result = await db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${DTE_SETTINGS_ADVISORY_LOCK}))`)
+    const rows = await tx
+      .select({ key: systemSettings.key, value: systemSettings.value })
+      .from(systemSettings)
+      .where(like(systemSettings.key, DTE_KEY_PREFIX))
+      .for("update")
+    const before = rawDteSettingsFromRows(rows)
+    const keyring = readDteSettingsKeyring()
+    if (!keyring.activeKeyId) throw new DteSettingsConversionError("DTE_SETTINGS_KEYRING_REQUIRED")
+    if (before.encryptionMode !== ENCRYPTED_ONLY) {
+      throw new DteSettingsConversionError("DTE_SETTINGS_ENCRYPTED_ONLY_REQUIRED")
+    }
+    const legacy = SENSITIVE_FIELDS.some((field) => {
+      const value = before[field]
+      return value !== undefined && !isEncryptedDteSetting(value)
+    })
+    if (legacy) throw new DteSettingsConversionError("DTE_SETTINGS_LEGACY_PRESENT")
+
+    const now = new Date().toISOString()
+    let rewrapped = 0
+    const after = { ...before, syncEnabled: "false" }
+    for (const field of SENSITIVE_FIELDS) {
+      const value = before[field]
+      if (value === undefined) continue
+      const plaintext = decryptDteSetting(value, DTE_SETTING_KEYS[field], keyring)
+      const envelope = encryptDteSetting(plaintext, DTE_SETTING_KEYS[field], keyring)
+      if (decryptDteSetting(envelope, DTE_SETTING_KEYS[field], keyring) !== plaintext) {
+        throw new Error("DTE_SETTINGS_ROTATION_VERIFY_FAILED")
+      }
+      await tx.insert(systemSettings).values({ key: DTE_SETTING_KEYS[field], value: envelope, updatedAt: now }).onConflictDoUpdate({
+        target: systemSettings.key,
+        set: { value: envelope, updatedAt: now },
+      })
+      after[field] = envelope
+      rewrapped += 1
+    }
+    await tx.insert(systemSettings).values({ key: DTE_SETTING_KEYS.syncEnabled, value: "false", updatedAt: now }).onConflictDoUpdate({
+      target: systemSettings.key,
+      set: { value: "false", updatedAt: now },
+    })
+    await tx.insert(systemSettings).values({ key: DTE_SETTING_KEYS.syncStartBarrier, value: DTE_SYNC_START_BARRIER_PAUSED, updatedAt: now }).onConflictDoUpdate({
+      target: systemSettings.key,
+      set: { value: DTE_SYNC_START_BARRIER_PAUSED, updatedAt: now },
+    })
+    return { rewrapped, before, after, keyId: keyring.activeKeyId }
+  })
+
+  await recordAudit({
+    userId: actor.userId,
+    userEmail: actor.userEmail,
+    action: "update",
+    entityType: "dte_portal_settings_encryption",
+    entityId: "rotation",
+    oldState: summarizeSettings(result.before),
+    newState: { ...summarizeSettings(result.after), rewrappedFields: result.rewrapped },
+  })
+  return { rewrapped: result.rewrapped, keyId: result.keyId }
+}
+
+async function readRawDteSettings(): Promise<Partial<Record<DteSettingField, string>>> {
+  try {
+    return await readRawDteSettingsStrict()
+  } catch {
+    // A DB read failure disables the encrypted-only config downstream rather
+    // than leaking into a browser or using an unintended plaintext fallback.
+    return {}
+  }
+}
+
+async function readRawDteSettingsStrict(): Promise<Partial<Record<DteSettingField, string>>> {
+  const rows = await db
+    .select({ key: systemSettings.key, value: systemSettings.value })
+    .from(systemSettings)
+    .where(like(systemSettings.key, DTE_KEY_PREFIX))
+  return rawDteSettingsFromRows(rows)
+}
+
+function rawDteSettingsFromRows(rows: Array<{ key: string; value: string }>): Partial<Record<DteSettingField, string>> {
+  const values: Partial<Record<DteSettingField, string>> = {}
+  for (const row of rows) {
+    const field = (Object.keys(DTE_SETTING_KEYS) as DteSettingField[]).find((candidate) => DTE_SETTING_KEYS[candidate] === row.key)
+    if (field) values[field] = row.value
+  }
+  return values
+}
+
+function effectiveEncryptionMode(
+  stored: Partial<Record<DteSettingField, string>>,
+  configured: DteSettingsEncryptionMode,
+): DteSettingsEncryptionMode {
+  return stored.encryptionMode === ENCRYPTED_ONLY ? "encrypted_only" : configured
+}
+
+/** Missing means legacy-compatible active; any unknown persisted value fails closed. */
+export function isDtePortalStartBarrierPaused(value: string | undefined): boolean {
+  return value !== undefined && value !== DTE_SYNC_START_BARRIER_ACTIVE
+}
+
+/** Only these persisted values represent an operator-owned, temporary pause. */
+export function isDtePortalStartBarrierIntentionalPause(value: string | undefined): boolean {
+  return value === DTE_SYNC_START_BARRIER_PAUSED || value === DTE_SYNC_START_BARRIER_CUTOVER
+}
+
+/** Atomically fence new starts before conversion waits for active work. */
+async function pauseDteSyncStarts(): Promise<void> {
+  const now = new Date().toISOString()
+  await db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${DTE_SETTINGS_ADVISORY_LOCK}))`)
+    await tx.insert(systemSettings).values({
+      key: DTE_SETTING_KEYS.syncEnabled,
+      value: "false",
+      updatedAt: now,
+    }).onConflictDoUpdate({
+      target: systemSettings.key,
+      set: { value: "false", updatedAt: now },
+    })
+    await tx.insert(systemSettings).values({
+      key: DTE_SETTING_KEYS.syncStartBarrier,
+      value: DTE_SYNC_START_BARRIER_CUTOVER,
+      updatedAt: now,
+    }).onConflictDoUpdate({
+      target: systemSettings.key,
+      set: { value: DTE_SYNC_START_BARRIER_CUTOVER, updatedAt: now },
+    })
+  })
+}
+
+async function waitForNoActivePortalOperations(timeoutMs = 120_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs
+  while (true) {
+    const active = await db
+      .select({ id: dtePortalOperationLeases.id })
+      .from(dtePortalOperationLeases)
+      .where(gte(dtePortalOperationLeases.leaseExpiresAt, new Date().toISOString()))
+      .limit(1)
+    if (active.length === 0) return
+    if (Date.now() >= deadline) throw new DteSettingsConversionError("DTE_SETTINGS_ACTIVE_RUN")
+    await new Promise<void>((resolve) => setTimeout(resolve, 1_000))
+  }
+}
+
+function isSensitiveField(field: DteSettingField): field is DteSensitiveSettingField {
+  return (SENSITIVE_FIELDS as readonly string[]).includes(field)
+}
+
+function environmentValueFor(field: DteSensitiveSettingField): string | undefined {
+  const byField: Record<DteSensitiveSettingField, string | undefined> = {
+    rutUsr: process.env.DTE_PORTAL_RUT_USR?.trim(),
+    rutEmp: process.env.DTE_PORTAL_RUT_EMP?.trim(),
+    clave: process.env.DTE_PORTAL_CLAVE,
+    codEmp: process.env.DTE_PORTAL_CODEMP?.trim(),
+    importerEmail: process.env.DTE_SYNC_IMPORTER_EMAIL?.trim(),
+  }
+  return byField[field]
+}
+
+/** Audit data deliberately records only state transitions, never PII/secrets. */
+function summarizeSettings(stored: Partial<Record<DteSettingField, string>>): Record<string, boolean> {
+  const summary: Record<string, boolean> = {}
+  for (const field of SENSITIVE_FIELDS) {
+    summary[`${field}Configured`] = Boolean(stored[field])
+  }
+  summary.syncEnabled = stored.syncEnabled === "true"
+  summary.delayConfigured = Boolean(stored.delayMs)
   return summary
 }

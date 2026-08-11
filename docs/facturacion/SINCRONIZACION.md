@@ -6,7 +6,7 @@
 |---|---|
 | **Idempotente** | Identidad tributaria + `(provider, external_id)`. Dos corridas iguales dejan la base igual. Probado en `sync-integration.test.ts`. |
 | **Segura ante concurrencia** | Índice único parcial: una sola corrida `running` por (proveedor, alcance, período). La segunda se salta, no compite. |
-| **Reanudable** | El `cursor` de la última página queda en la corrida. |
+| **Reanudable** | Ventas FacturaEnLínea guarda un cursor durable por proveedor/alcance/período; el cursor avanza solo después de persistir el lote XML. |
 | **Observable** | Cada corrida registra leídos/creados/actualizados/sin cambios, duplicados, conflictos, errores y un `correlation_id`. |
 | **Acotada** | Siempre por período, con piso histórico (`BILLING_HISTORY_FLOOR`). Rechaza períodos futuros. |
 | **Con modo simulación** | `dryRun` consulta y cuenta sin escribir nada. |
@@ -57,7 +57,10 @@ aparte para no hacerla pasar por un proveedor degradado.
 GET /api/cron/billing-sales-sync
 Authorization: Bearer $CRON_SECRET
 ```
-Sincroniza el **mes en curso**. Requiere `BILLING_SALES_SYNC_ENABLED=true`.
+Sincroniza el **mes en curso y el anterior** bajo el mismo `correlation_id`.
+Requiere `BILLING_SALES_SYNC_ENABLED=true`. El cron interno usa un runner Node
+con timeout, redirects manuales y contrato JSON acotado; no imprime token ni
+cuerpos de respuesta.
 Endpoint separado del de compras (`/api/cron/dte-portal-sync`) a propósito: son
 alcances distintos y un fallo de uno no debe apagar el otro.
 
@@ -87,7 +90,7 @@ dispare una descarga de años.
 | Estado | Significa |
 |---|---|
 | `success` | Todo lo que llegó se procesó. |
-| `partial` | Terminó, pero algo no se pudo procesar: revisar `error_summary`. Las causas típicas son documentos sin RUT resuelto o un total declarado distinto al recibido. |
+| `partial` | Terminó, pero algo no se pudo procesar: revisar `error_summary`. Las causas típicas son documentos sin RUT resuelto, XML pendientes/reintentables o un total declarado distinto al recibido. |
 | `failed` | La corrida no pudo completarse. |
 | `skipped` | No se ejecutó: proveedor deshabilitado, sin configurar, o ya había una corrida activa del período. |
 

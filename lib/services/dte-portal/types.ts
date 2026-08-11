@@ -246,7 +246,6 @@ export class DtePortalError extends Error {
     message: string,
     public readonly code: DteErrorCode,
     public readonly statusCode?: number,
-    public readonly rawBody?: string,
   ) {
     super(message)
     this.name = "DtePortalError"

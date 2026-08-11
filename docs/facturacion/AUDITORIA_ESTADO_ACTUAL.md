@@ -125,14 +125,14 @@ tienen fixture y pruebas (`__tests__/fixtures/paneldte-compras-periodo.html.ts`,
 | Campos **no** obtenidos | neto, IVA y exento por documento (la bandeja solo trae total; quedan `null` hasta descargar el XML bajo demanda), ítems, fecha de vencimiento, condición de pago |
 | Identificador estable | `(tipo_dte, folio, rut_emisor, cod_emp)` — correcto: el folio no es único global |
 | Período histórico | Completo, filtrable por `mes` + `anio`. El filtro `peri=YYYY-MM` es derivado y se ignora |
-| Frecuencia | Cron `GET /api/cron/dte-portal-sync` (mes actual) + botón manual en `/admin/dte`. `DTE_SYNC_ENABLED` la apaga |
+| Frecuencia | Cron `GET /api/cron/dte-portal-sync` (mes actual y anterior) + botón manual en `/admin/dte`. `DTE_SYNC_ENABLED` la apaga |
 | Paginación | **No la hay**: el portal devuelve todo el período en una respuesta (verificado con 681 documentos). `parseDteTable` avisa por consola si el total declarado no cuadra con las filas parseadas — es el detector de que la suposición dejó de valer |
 | Manejo de errores | `DtePortalError` con taxonomía (`AUTH_FAILED`, `PARSE_FAILED`, `RATE_LIMITED`, `TIMEOUT`…). Timeout 120 s (la bandeja tarda ~80 s en meses grandes) |
 | Reintentos | Un fallo por documento no aborta la corrida (`failures` → `partial`); no hay reintento de la consulta completa |
-| Concurrencia | Corridas `running` de más de 1 h se marcan `failed` (`markStaleRunsAsFailed`). **No hay lock**: dos disparos simultáneos del mismo período pueden solaparse; el upsert por clave única evita duplicados, pero las estadísticas de la corrida quedan repartidas |
+| Concurrencia | Índice único parcial por empresa/período evita dos corridas `running`; las corridas colgadas de más de 1 h se marcan `failed`. La conversión y el re-cifrado del keyring toman lock transaccional y pausan sync, preservando las mismas credenciales del portal. |
 | Reanudable | Parcialmente: se re-corre el período completo (idempotente), no hay cursor intra-período |
-| Credenciales | `system_settings` (panel `/admin/dte`) con precedencia sobre `DTE_PORTAL_*` del entorno. **`dte.clave` queda en texto plano en la BD** — decisión consciente y documentada en `settings.ts`. La auditoría solo guarda `••••••••` |
-| Fugas en logs | `sync.ts` y el cron sanitizan mensajes que contengan `clave`/`rut_usr` |
+| Credenciales | `system_settings` cifra campos sensibles con AES-256-GCM / AAD por setting; keyring versionado sólo en `app`. El modo `encrypted_only` no permite fallback plaintext. |
+| Fugas en logs | Rutas, logs, auditoría y Sentry reciben códigos/resúmenes redactados; el runner cron no imprime token ni cuerpo crudo. |
 | Pruebas | 7 suites (`client`, `parser`, `sync`, `settings`, `config`, `bandeja-entrada`, `reconciliation`) con fixtures HTML reales |
 | Estado real | **Activa y funcionando.** Verificada contra el portal real: 681/681 documentos sincronizados |
 

@@ -43,6 +43,7 @@ import {
   splitTopLevelTdCells,
 } from "./parser"
 import { DtePortalError, type DteBandejaFilter, type DteBandejaResult, type DteBandejaRow } from "./types"
+import { logger } from "@/lib/logger"
 
 /** Marca exclusiva de cada fila real (verificado 681/681 contra tbxTotalRegistros). */
 const ROW_DATA_MARKER = "dtepdfX.php?post="
@@ -88,14 +89,12 @@ export function parseBandejaResult(html: string): DteBandejaResult {
       "No se encontró tbxTotalRegistros ni filas de documentos en el HTML de la Bandeja de Entrada. " +
       "Es posible que el HTML del portal haya cambiado o que las credenciales sean inválidas.",
       "PARSE_FAILED",
-      undefined,
-      html.slice(0, 2000),
     )
   }
 
   const totalRegistros = declaredTotal ?? rows.length
   if (totalRegistros !== rows.length) {
-    console.warn(`[dte-bandeja] tbxTotalRegistros declara ${totalRegistros} pero se parsearon ${rows.length} filas. La Bandeja de Entrada podría estar paginando resultados que este parser no está siguiendo.`)
+    logger.warn("[dte-bandeja] total declarado no coincide", { code: "DTE_BANDEJA_TOTAL_MISMATCH", declared: totalRegistros, parsed: rows.length })
   }
 
   return { rows, totalRegistros }
@@ -139,31 +138,31 @@ function parseBandejaRow(rowHtml: string): DteBandejaRow | null {
 
   const fecha = parseFechaPortal(cellTexts[7] ?? "")
   if (!fecha) {
-    console.warn(`[dte-bandeja] Fecha no reconocida, fila descartada: "${cellTexts[7]}"`)
+    logger.warn("[dte-bandeja] fila descartada", { code: "DTE_BANDEJA_DATE_INVALID" })
     return null
   }
 
   const folio = parseFolio(cellTexts[9] ?? "")
   if (!folio) {
-    console.warn(`[dte-bandeja] Folio no reconocido, fila descartada: "${cellTexts[9]}"`)
+    logger.warn("[dte-bandeja] fila descartada", { code: "DTE_BANDEJA_FOLIO_INVALID" })
     return null
   }
 
   const tipoDoc = resolveTipoDocFromText(cellTexts[8] ?? "")
   if (!tipoDoc) {
-    console.warn(`[dte-bandeja] Tipo de documento no reconocido, fila descartada (folio ${folio}): "${cellTexts[8]}"`)
+    logger.warn("[dte-bandeja] fila descartada", { code: "DTE_BANDEJA_DOCUMENT_TYPE_INVALID" })
     return null
   }
 
   const rutEmisor = (cellTexts[10] ?? "").trim()
   if (!rutEmisor) {
-    console.warn(`[dte-bandeja] RUT emisor no reconocido, fila descartada (folio ${folio})`)
+    logger.warn("[dte-bandeja] fila descartada", { code: "DTE_BANDEJA_ISSUER_RUT_INVALID" })
     return null
   }
 
   const montoTotal = parseMonto(cellTexts[13] ?? "")
   if (montoTotal === null) {
-    console.warn(`[dte-bandeja] Monto total no reconocido, fila descartada (folio ${folio}): "${cellTexts[13]}"`)
+    logger.warn("[dte-bandeja] fila descartada", { code: "DTE_BANDEJA_AMOUNT_INVALID" })
     return null
   }
 

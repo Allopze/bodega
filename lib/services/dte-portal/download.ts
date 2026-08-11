@@ -12,6 +12,7 @@
 
 import { DtePortalClient, decodeXmlBuffer } from "./client"
 import { DtePortalError } from "./types"
+import { resolveDtePortalResourceUrl } from "./portal-origin"
 
 /**
  * Descarga el XML de un DTE y lo retorna como string decodificado.
@@ -36,8 +37,6 @@ export async function downloadDteXml(
     throw new DtePortalError(
       "El contenido descargado no parece ser un XML DTE válido",
       "INVALID_RESPONSE",
-      undefined,
-      head.slice(0, 200),
     )
   }
 
@@ -72,8 +71,6 @@ export async function downloadDtePdf(
     throw new DtePortalError(
       "El contenido descargado no es un PDF válido",
       "INVALID_RESPONSE",
-      undefined,
-      header.slice(0, 100),
     )
   }
 
@@ -82,8 +79,9 @@ export async function downloadDtePdf(
 
 /** Resuelve una URL relativa contra la base del cliente. */
 function resolveUrl(client: DtePortalClient, relativeUrl: string): string {
-  if (relativeUrl.startsWith("http://") || relativeUrl.startsWith("https://")) {
-    return relativeUrl
+  try {
+    return resolveDtePortalResourceUrl(relativeUrl, client.baseUrl)
+  } catch {
+    throw new DtePortalError("La descarga DTE apunta fuera del origen permitido", "INVALID_RESPONSE")
   }
-  return `${client.baseUrl}/${relativeUrl.replace(/^\/+/, "")}`
 }

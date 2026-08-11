@@ -43,9 +43,11 @@ documento** y lo lee con `lib/services/billing/dte-xml.ts`. El XML aporta ademá
 - `MntExe` — monto exento, que el listado no separa.
 - Los ítems reales de la factura.
 
-Tope de 120 descargas por corrida (un mes de ventas son ~45 documentos). Lo que
-quede sin resolver **no se inserta con un RUT inventado**: se cuenta como
-conflicto y se reporta en la corrida.
+Tope de 120 descargas por corrida (un mes de ventas son ~45 documentos). El
+adaptador ordena candidatos por una clave determinista y persiste un cursor por
+`provider/scope/período`; el siguiente cron retoma la cola sin perder el
+documento 121 ni avanzar tras una persistencia fallida. Lo que quede sin
+resolver **no se inserta con un RUT inventado**: la corrida queda `partial`.
 
 ## Fragilidad inherente — y qué la contiene
 
@@ -61,16 +63,19 @@ El scraping depende del HTML del portal. Cualquier rediseño lo rompe. Mitigacio
 
 ## Credenciales
 
-Se leen con precedencia: `system_settings` (panel `/admin/dte`) > `DTE_PORTAL_*`
-del entorno > default.
+Los campos sensibles de `system_settings` se guardan en sobres
+`enc:v1:<kid>:<iv>:<tag>:<ciphertext>` con AES-256-GCM, IV aleatorio de 96 bits
+y AAD ligada a la clave del setting. El keyring vive sólo en `app` mediante
+`DTE_SETTINGS_KEYRING` / `DTE_SETTINGS_ACTIVE_KEY_ID`; Administración recibe
+solamente presencia, origen y estado de cifrado, nunca valores efectivos.
 
-> **Salvedad de seguridad heredada:** `dte.clave` queda **en texto plano** en
-> `system_settings`. Es una decisión previa, documentada en
-> `lib/services/dte-portal/settings.ts`, tomada para poder gestionar credenciales
-> desde el panel sin tocar el servidor. La auditoría nunca registra la clave
-> (solo `••••••••`), pero quien tenga acceso a la base puede leerla. Este módulo
-> **no la empeoró ni la corrigió**: cifrarla es un cambio que afecta al módulo de
-> Compras y merece su propia decisión. Está anotado como P-2 en la auditoría.
+Durante el release compatible puede existir fallback `DTE_PORTAL_*`. La acción
+confirmada de conversión deja una barrera durable `encrypted_only`, deshabilita
+la sincronización y evita que un clear/reset reviva plaintext. La conversión y
+el re-cifrado del keyring conservan los mismos RUT, contraseña, CodEmp e
+importer; no cambian credenciales en FacturaEnLínea. El procedimiento de
+producción está en
+[DTE_SYNC_OPERACION_SEGURA.md](DTE_SYNC_OPERACION_SEGURA.md).
 
 ## ¿Puede Chipax reemplazarlo?
 

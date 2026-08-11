@@ -30,6 +30,7 @@
  */
 
 import { DtePortalError, type DteDocumentRow, type DteEstadoSii, type DteEstadoIntercambio, type DtePageResult } from "./types"
+import { logger } from "@/lib/logger"
 
 // ── Mapa de iconos de estado SII (§ 19) ──────────────────────────────────────
 
@@ -122,13 +123,11 @@ export function parseDteTable(html: string, codEmp: string): DtePageResult {
       "No se encontraron filas de documentos ni el marcador de resultado vacío en el HTML del portal DTE. " +
       "Es posible que el HTML del portal haya cambiado o que las credenciales sean inválidas.",
       "PARSE_FAILED",
-      undefined,
-      html.slice(0, 2000),
     )
   }
 
   if (totalDocs !== null && totalDocs !== docs.length) {
-    console.warn(`[dte-parser] tbxTotalDocumentos declara ${totalDocs} pero se parsearon ${docs.length} filas. El portal podría estar paginando resultados que este parser no está siguiendo.`)
+    logger.warn("[dte-parser] total declarado no coincide", { code: "DTE_PARSE_TOTAL_MISMATCH", declared: totalDocs, parsed: docs.length })
   }
 
   return {
@@ -378,26 +377,26 @@ function parseRow(cells: string[], codEmp: string): DteDocumentRow | null {
 
   const fecha = parseFechaPortal(cellTexts[2] ?? "")
   if (!fecha) {
-    console.warn(`[dte-parser] Fecha no reconocida, fila descartada: "${cellTexts[2]}"`)
+    logger.warn("[dte-parser] fila descartada", { code: "DTE_PARSE_DATE_INVALID" })
     return null
   }
 
   const folio = parseFolio(cellTexts[4] ?? "")
   if (!folio) {
-    console.warn(`[dte-parser] Folio no reconocido, fila descartada: "${cellTexts[4]}"`)
+    logger.warn("[dte-parser] fila descartada", { code: "DTE_PARSE_FOLIO_INVALID" })
     return null
   }
 
   const tipoDoc = resolveTipoDocFromText(cellTexts[3] ?? "")
   if (!tipoDoc) {
-    console.warn(`[dte-parser] Tipo de documento no reconocido, fila descartada (folio ${folio}): "${cellTexts[3]}"`)
+    logger.warn("[dte-parser] fila descartada", { code: "DTE_PARSE_DOCUMENT_TYPE_INVALID" })
     return null
   }
 
   const montoNeto = parseMonto(cellTexts[7] ?? "")
   const montoTotal = parseMonto(cellTexts[8] ?? "")
   if (montoTotal === null) {
-    console.warn(`[dte-parser] Monto total no reconocido, fila descartada (folio ${folio}): "${cellTexts[8]}"`)
+    logger.warn("[dte-parser] fila descartada", { code: "DTE_PARSE_AMOUNT_INVALID" })
     return null
   }
 

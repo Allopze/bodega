@@ -24,9 +24,10 @@
  */
 
 import type { DtePortalClientConfig, DtePortalCredentials } from "./types"
-import { readStoredDteSettings } from "./settings"
+import { readStoredDteSettingsStrict } from "./settings"
+import { DTE_PORTAL_BASE_URL, assertDtePortalBaseUrl } from "./portal-origin"
+import { readDteSettingsKeyring } from "./settings-crypto"
 
-const DEFAULT_BASE_URL = "https://clientes.dtefacturaenlinea.cl/facturaenlinea"
 const DEFAULT_DELAY_MS = 500
 // La Bandeja de Entrada (PNC_PanelCorreo.php) puede tardar ~80s en responder
 // para un mes de alto volumen (verificado: 681 documentos); 30s cortaba la
@@ -51,7 +52,7 @@ export interface DtePortalEnvConfig {
  */
 export function readDtePortalEnv(): DtePortalEnvConfig {
   return {
-    baseUrl: process.env.DTE_PORTAL_BASE_URL?.trim() || DEFAULT_BASE_URL,
+    baseUrl: assertDtePortalBaseUrl(process.env.DTE_PORTAL_BASE_URL),
     credentials: {
       rutUsr: process.env.DTE_PORTAL_RUT_USR?.trim() ?? "",
       rutEmp: process.env.DTE_PORTAL_RUT_EMP?.trim() ?? "",
@@ -78,21 +79,38 @@ function parseIntStrict(value: string | undefined, fallback: number): number {
  */
 export async function readDtePortalConfig(): Promise<DtePortalEnvConfig> {
   const env = readDtePortalEnv()
-  const stored = await readStoredDteSettings()
+  // A runtime read must fail closed. Falling back to DTE_PORTAL_* after an
+  // unknown database outage could resurrect an old plaintext credential after
+  // the durable encrypted-only cutover.
+  const stored = await readStoredDteSettingsStrict()
+  const keyring = readDteSettingsKeyring()
+  // The controlled conversion persists a one-way cutover barrier in addition
+  // to the host mode. That means a later clear/reset can never revive a stale
+  // plaintext DTE_PORTAL_* value while an operator is rotating credentials.
+  const allowEnvironmentFallback = keyring.mode === "compat" && stored.encryptionMode !== "encrypted_only"
+
+  const storedOrEnvironment = (storedValue: string | undefined, environmentValue: string) =>
+    storedValue !== undefined ? storedValue : allowEnvironmentFallback ? environmentValue : ""
 
   return {
-    baseUrl: stored.baseUrl?.trim() || env.baseUrl,
+    // `dte.base_url` can exist from legacy releases, but it is never used as
+    // an override: the portal origin is one fixed, centrally checked value.
+    baseUrl: assertDtePortalBaseUrl(DTE_PORTAL_BASE_URL),
     credentials: {
-      rutUsr: stored.rutUsr?.trim() || env.credentials.rutUsr,
-      rutEmp: stored.rutEmp?.trim() || env.credentials.rutEmp,
-      clave: stored.clave?.trim() || env.credentials.clave,
-      codEmp: stored.codEmp?.trim() || env.credentials.codEmp,
+      rutUsr: storedOrEnvironment(stored.rutUsr?.trim(), env.credentials.rutUsr),
+      rutEmp: storedOrEnvironment(stored.rutEmp?.trim(), env.credentials.rutEmp),
+      clave: storedOrEnvironment(stored.clave, env.credentials.clave),
+      codEmp: storedOrEnvironment(stored.codEmp?.trim(), env.credentials.codEmp),
     },
     delayMs: parseIntStrict(stored.delayMs, env.delayMs),
     requestTimeoutMs: env.requestTimeoutMs,
     syncEnabled:
-      stored.syncEnabled !== undefined ? stored.syncEnabled === "true" : env.syncEnabled,
-    importerEmail: stored.importerEmail?.trim() || env.importerEmail,
+      stored.syncEnabled !== undefined
+        ? stored.syncEnabled === "true"
+        : allowEnvironmentFallback && env.syncEnabled,
+    importerEmail: stored.importerEmail !== undefined
+      ? stored.importerEmail.trim() || null
+      : allowEnvironmentFallback ? env.importerEmail : null,
   }
 }
 

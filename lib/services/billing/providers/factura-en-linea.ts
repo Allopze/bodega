@@ -24,11 +24,16 @@
  */
 
 import type { BillingProviderId } from "@/db/schema"
+import { billingExternalRefs, billingInvoices } from "@/db/schema"
+import { db } from "@/db"
+import { and, eq, inArray } from "drizzle-orm"
 import { DtePortalClient } from "@/lib/services/dte-portal/client"
 import { buildDtePortalClientConfig, readDtePortalConfig } from "@/lib/services/dte-portal/config"
 import { queryByPeriodo } from "@/lib/services/dte-portal/query"
 import { fetchBandejaEntrada } from "@/lib/services/dte-portal/bandeja-entrada"
 import { downloadDteXml } from "@/lib/services/dte-portal/download"
+import { classifyDteFailure } from "@/lib/services/dte-portal/failure"
+import { chilePeriod } from "@/lib/services/dte-portal/chile-time"
 import type { DteDocumentRow, DteBandejaRow, DteEstadoSii } from "@/lib/services/dte-portal/types"
 import { logger } from "@/lib/logger"
 import { cleanRut } from "@/lib/rut"
@@ -44,6 +49,7 @@ import {
   type ProviderPeriodQuery,
 } from "./types"
 import { parseSaleDteXml } from "../dte-xml"
+import { chooseSalesXmlCandidates } from "../sales-xml-cursor"
 
 const PROVIDER_ID: BillingProviderId = "factura_en_linea"
 
@@ -93,7 +99,7 @@ export class FacturaEnLineaProvider implements BillingProvider {
       await queryByPeriodo(client, {
         tipo: "periodo",
         rlib: "ven",
-        periodo: currentPeriod() as `${number}-${string}`,
+        periodo: chilePeriod() as `${number}-${string}`,
         dia: "00",
       })
       return { ok: true, detail: "Portal accesible y respuesta parseable.", checkedAt }
@@ -123,21 +129,31 @@ export class FacturaEnLineaProvider implements BillingProvider {
       dia: "00",
     })
 
-    const invoices: ProviderInvoice[] = []
-    let enrichments = 0
+    const invoices = result.docs.map((row) => this.mapSaleRow(row, issuerTaxId, accountRef))
+    await this.hydrateKnownSales(invoices)
 
-    for (const row of result.docs) {
-      const invoice = this.mapSaleRow(row, issuerTaxId, accountRef)
-      // El listado no trae el RUT del cliente: se resuelve desde el XML, que
-      // además aporta vencimiento, exento e ítems reales.
-      if (!invoice.receiverTaxId && invoice.xmlUrl && enrichments < MAX_XML_ENRICHMENTS_PER_RUN) {
-        enrichments++
-        await this.enrichFromXml(client, invoice)
-      }
-      invoices.push(invoice)
+    // The remote list has no customer RUT. Only the selected batch is allowed
+    // to fetch XML; the generic sync commits the returned cursor only after
+    // every invoice write has completed durably.
+    const selection = chooseSalesXmlCandidates(
+      invoices
+        .filter((invoice) => !invoice.receiverTaxId && invoice.xmlUrl)
+        .map((invoice) => ({ key: saleXmlCandidateKey(invoice), invoice })),
+      query.cursor,
+      MAX_XML_ENRICHMENTS_PER_RUN,
+    )
+    for (const candidate of selection.items) {
+      await this.enrichFromXml(client, candidate.invoice)
     }
 
-    return { items: invoices, nextCursor: null, reportedTotal: result.totalDocs }
+    return {
+      items: invoices,
+      nextCursor: selection.nextCursor,
+      reportedTotal: result.totalDocs,
+      managedCursor: true,
+      deferred: selection.deferred,
+      retryRequired: selection.items.some((candidate) => !candidate.invoice.receiverTaxId),
+    }
   }
 
   /**
@@ -231,6 +247,39 @@ export class FacturaEnLineaProvider implements BillingProvider {
     }
   }
 
+  /** Reuse the durable XML-enriched identity so resolved rows are not re-fetched. */
+  private async hydrateKnownSales(invoices: ProviderInvoice[]): Promise<void> {
+    const externalIds = invoices.map((invoice) => invoice.externalId)
+    if (externalIds.length === 0) return
+    const known = await db
+      .select({
+        externalId: billingExternalRefs.externalId,
+        receiverTaxId: billingInvoices.receiverTaxId,
+        receiverName: billingInvoices.receiverName,
+        dueDate: billingInvoices.dueDate,
+        netAmount: billingInvoices.netAmount,
+        taxAmount: billingInvoices.taxAmount,
+        exemptAmount: billingInvoices.exemptAmount,
+      })
+      .from(billingExternalRefs)
+      .innerJoin(billingInvoices, eq(billingExternalRefs.invoiceId, billingInvoices.id))
+      .where(and(
+        eq(billingExternalRefs.provider, PROVIDER_ID),
+        inArray(billingExternalRefs.externalId, externalIds),
+      ))
+    const byExternalId = new Map(known.map((invoice) => [invoice.externalId, invoice]))
+    for (const invoice of invoices) {
+      const persisted = byExternalId.get(invoice.externalId)
+      if (!persisted) continue
+      invoice.receiverTaxId = persisted.receiverTaxId
+      invoice.receiverName = persisted.receiverName
+      invoice.dueDate = persisted.dueDate
+      invoice.netAmount = persisted.netAmount
+      invoice.taxAmount = persisted.taxAmount
+      invoice.exemptAmount = persisted.exemptAmount
+    }
+  }
+
   /** Fila del libro de ventas → documento normalizado. Emisor = Chome. */
   private mapSaleRow(row: DteDocumentRow, issuerTaxId: string, accountRef: string): ProviderInvoice {
     return {
@@ -294,6 +343,16 @@ export class FacturaEnLineaProvider implements BillingProvider {
 
 /* ── Helpers ─────────────────────────────────────────────────────────────── */
 
+/** Stable order survives changed portal row order and is safe to persist as a cursor. */
+function saleXmlCandidateKey(invoice: ProviderInvoice): string {
+  return [
+    invoice.issueDate,
+    invoice.docType.padStart(3, "0"),
+    String(invoice.folio).padStart(12, "0"),
+    invoice.externalId,
+  ].join("|")
+}
+
 /**
  * Clave natural estable para un proveedor que no entrega id propio.
  * Determinista: la misma fila produce siempre el mismo `externalId`, que es lo
@@ -342,15 +401,7 @@ function assertPeriod(period: string): `${number}-${string}` {
   return period as `${number}-${string}`
 }
 
-function currentPeriod(): string {
-  const now = new Date()
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`
-}
-
-/** Mensaje de error sin credenciales. Mismo criterio que el sync de compras. */
+/** External portal errors never become persisted billing detail or logs. */
 function redact(error: unknown): string {
-  const message = error instanceof Error ? error.message : String(error)
-  return /clave|rut_usr|rut_emp|password/i.test(message)
-    ? "Error de conexión con el portal DTE [detalle omitido por contener credenciales]"
-    : message
+  return classifyDteFailure(error).summary
 }
