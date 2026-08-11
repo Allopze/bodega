@@ -670,7 +670,8 @@ function AddInvoiceForm({
             DTE de este proveedor sin registrar ({dteCandidates.length})
           </p>
           <p className="mt-0.5 text-xs text-(--color-text-subtle)">
-            Llegaron por el portal tributario. Usa uno para llenar el formulario sin volver a subir el archivo.
+            Llegaron por el portal tributario desde que se creó esta orden. Usa uno para llenar el
+            formulario sin volver a subir el archivo, y revisa que el monto corresponda.
           </p>
           <ul className="mt-2 space-y-1">
             {dteCandidates.map((doc) => (

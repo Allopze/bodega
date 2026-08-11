@@ -4,8 +4,9 @@ import { notFound, redirect } from "next/navigation"
 import { CheckCircle } from "@phosphor-icons/react/dist/ssr"
 import { db }                  from "@/db"
 import { dteDocuments, purchaseOrderInvoices, purchaseOrders, statusHistory, users } from "@/db/schema"
-import { and, desc, eq, inArray, isNull } from "drizzle-orm"
-import { cleanRut } from "@/lib/rut"
+import { and, desc, eq, gte, inArray, isNull } from "drizzle-orm"
+import { localDateToISO } from "@/lib/sst/date"
+import { selectDteCandidates } from "@/lib/services/purchasing-module/dte-candidates"
 import { requirePermission, can } from "@/lib/auth/can"
 import { canAccessWorksite }  from "@/lib/auth/can"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
@@ -177,14 +178,20 @@ export default async function OcDetailPage({
   // El RUT se compara en memoria con cleanRut() y no en SQL, para usar
   // exactamente la misma normalización que el conciliador — `suppliers.rut` se
   // ingresa a mano y no siempre trae el mismo formato que el portal.
-  // ponytail: filtra en memoria sobre los DTE sin vincular; con volúmenes de
-  // años convendría un índice sobre el RUT normalizado.
-  const supplierRut = order.supplier?.rut ? cleanRut(order.supplier.rut) : null
-  const unlinkedDtes = supplierRut
+  // El acotado por proveedor y por fecha vive en `selectDteCandidates`, con sus
+  // pruebas: la primera versión filtraba sólo por RUT y ofrecía documentos que
+  // no podían pertenecer a la orden. Acá sólo se estrecha lo barato en SQL.
+  // `createdAt` se guarda como texto UTC (mode: "string"). Se convierte a la
+  // fecha CALENDARIO chilena antes de comparar contra `fechaEmision`, que el
+  // portal entrega en hora local: comparar el texto UTC directamente corría el
+  // piso un día para las órdenes creadas después de las 20:00.
+  const candidateFloor = localDateToISO(new Date(order.createdAt))
+  const unlinkedDtes = order.supplier?.rut
     ? await db.query.dteDocuments.findMany({
         where: and(
           isNull(dteDocuments.purchaseOrderInvoiceId),
           inArray(dteDocuments.tipoDte, ["33", "34"]),
+          gte(dteDocuments.fechaEmision, candidateFloor),
         ),
         columns: {
           id: true, tipoDte: true, folio: true, rutEmisor: true,
@@ -193,9 +200,10 @@ export default async function OcDetailPage({
         orderBy: (d, { desc: descOrder }) => [descOrder(d.fechaEmision)],
       })
     : []
-  const candidateDtes = unlinkedDtes
-    .filter((doc) => cleanRut(doc.rutEmisor) === supplierRut)
-    .slice(0, 20)
+  const candidateDtes = selectDteCandidates(unlinkedDtes, {
+    supplierRut: order.supplier?.rut ?? null,
+    createdOn: candidateFloor,
+  })
 
   // Attach items to invoices
   const invoicesWithItems = orderInvoices.map((inv) => ({
