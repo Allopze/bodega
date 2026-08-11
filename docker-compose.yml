@@ -147,6 +147,78 @@ services:
       - bodega-backups:/data/backups
     command: ["bash", "/app/scripts/backup-scheduler.sh"]
 
+  # Scheduler de los endpoints /api/cron/*.
+  #
+  # Por qué vive DENTRO de la red de Docker y no en GitHub Actions: la entrada
+  # pública es un túnel de Cloudflare, que corta la respuesta del origen a los
+  # 100 s (error 524) y no es configurable fuera de Enterprise. Una corrida de
+  # `dte-portal-sync` a fin de mes se acerca a eso — la Bandeja de Entrada tarda
+  # ~80 s con 681 documentos y el cliente fija su propio timeout en 120 s
+  # (lib/services/dte-portal/config.ts). Pegándole a `http://app:3000` no hay
+  # proxy de por medio y el límite desaparece.
+  #
+  # Por qué `user: "0:0"`: la imagen corre como `nextjs` (uid 1001), y el crond
+  # de busybox arranca sin root pero NO ejecuta los trabajos (necesita setuid al
+  # dueño del crontab). Verificado: como nextjs el job nunca corre. Este
+  # contenedor no publica puertos ni monta volúmenes; sólo dispara wget.
+  #
+  # El crontab se escribe al arrancar en vez de venir en la imagen para que los
+  # horarios se cambien acá, versionados, sin reconstruir ni volver a publicar.
+  # CRON_SECRET se expande en ese momento: busybox crond no propaga el entorno
+  # del contenedor a los trabajos.
+  #
+  # El montaje de /usr/share/zoneinfo NO es decorativo: la imagen no trae tzdata.
+  # Node resuelve America/Santiago por ICU (por eso `app` no lo necesita), pero
+  # busybox usa los archivos de musl y sin ellos cae a UTC — crond habría
+  # programado estos horarios en UTC, corriendo las 07:00 a las 03:00 de Chile.
+  # Montarlo desde el host además trae los cambios de horario de verano.
+  cron:
+    image: ghcr.io/${GITHUB_REPOSITORY:-chome/bodega}:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    user: "0:0"
+    depends_on:
+      app:
+        condition: service_healthy
+    environment:
+      - TZ=America/Santiago
+      - CRON_SECRET=${CRON_SECRET:-}
+    volumes:
+      - /usr/share/zoneinfo:/usr/share/zoneinfo:ro
+    entrypoint: ["sh", "-c"]
+    command:
+      - |
+        set -eu
+        # Sin secreto los trabajos sólo cosecharían 401 en silencio: mejor que
+        # el contenedor no arranque y se vea en `docker compose ps`.
+        if [ -z "$$CRON_SECRET" ]; then
+          echo "[cron] ERROR: CRON_SECRET vacío. Revisa el .env de producción." >&2
+          exit 1
+        fi
+        # `--tries=1`: el default de wget son 20 reintentos; una corrida lenta se
+        # convertiría en 20 scrapings encadenados del mismo mes.
+        # `--max-redirect=0`: si el proxy vuelve a mandar /api/cron/* al login,
+        # wget seguiría el 307 y guardaría el HTML de la pantalla de acceso como
+        # si fuera una respuesta buena. Sin redirecciones, falla y se ve.
+        # `>/proc/1/fd/1`: manda la respuesta al log del contenedor (crond
+        # descarta la salida de los trabajos si no hay sendmail).
+        W='wget -qO- --tries=1 --max-redirect=0 --timeout=300 --header="Authorization: Bearer '"$$CRON_SECRET"'"'
+        cat > /etc/crontabs/root <<EOF
+        # Compras DTE — 07:00, 13:00 y 19:00 (America/Santiago).
+        # Cada corrida baja el mes completo: el portal sólo filtra por mes/año,
+        # no por día (lib/services/dte-portal/bandeja-entrada.ts). Por eso son
+        # 3 al día y no una por hora.
+        0 7,13,19 * * * $$W http://app:3000/api/cron/dte-portal-sync >/proc/1/fd/1 2>&1
+        # Ventas — una vez al día, desfasada del primer run de compras para no
+        # abrir dos sesiones simultáneas contra el mismo portal.
+        30 7 * * * $$W http://app:3000/api/cron/billing-sales-sync >/proc/1/fd/1 2>&1
+        EOF
+        # Si el montaje de zoneinfo se rompe, esto lo delata: debe decir -04 o
+        # -03, nunca UTC. Los horarios de abajo se leen contra esta hora.
+        echo "[cron] hora local del scheduler: $$(date)"
+        echo "[cron] horarios cargados:"
+        sed 's/Bearer [^"]*/Bearer ***/' /etc/crontabs/root
+        exec crond -f -l 8
+
   # One-shot: applies Drizzle migrations, then exits 0. Runs the same image as
   # `app` but with the standalone migrate runner (scripts/migrate.mjs).
   migrate:

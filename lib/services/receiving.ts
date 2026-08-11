@@ -8,14 +8,16 @@ import { eq, and, notInArray, ne } from "drizzle-orm"
 import { db } from "@/db"
 import {
   receipts, receiptItems,
+  dispatchGuides,
   purchaseOrders, purchaseOrderItems,
   purchaseRequestItems,
 } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { nextCodeTx } from "@/lib/code-sequences"
 import { recordAudit } from "@/lib/audit"
-import { receiveItemTx } from "./item-state"
+import { receiveItemTx, receiveOfficeItemTx } from "./item-state"
 import { applyMovementTx } from "./stock"
+import { prepareDispatchGuideForOfficeReceiptTx, resolveOfficeWorksite } from "./dispatch-guides"
 import { notifyManyUser, notifyAfterCommit } from "./notifications"
 import { closeOrderTx } from "./purchasing-module/receiving"
 import { RECEIVABLE_ORDER_STATUSES } from "@/lib/work-queue-labels"
@@ -82,11 +84,26 @@ export async function registerReceipt(
     if (!directFaena && input.stage === "faena" && order.status === "sent") {
       throw new Error("Debes registrar primero la llegada a oficina antes de recibir en faena")
     }
+    if (!directFaena && input.stage === "faena") {
+      const [guide] = await tx
+        .select({ id: dispatchGuides.id, code: dispatchGuides.code, status: dispatchGuides.status })
+        .from(dispatchGuides)
+        .where(and(
+          eq(dispatchGuides.purchaseOrderId, input.purchaseOrderId),
+          notInArray(dispatchGuides.status, ["cancelled"]),
+        ))
+        .limit(1)
+      if (guide) {
+        throw new Error(`La recepción final debe cotejarse con la guía ${guide.code} desde Recepciones`)
+      }
+    }
 
     const worksiteId = order.worksiteId
     if (input.worksiteId && input.worksiteId !== worksiteId) {
       throw new Error("La faena de recepción debe coincidir con la OC")
     }
+    const office = input.stage === "office" ? await resolveOfficeWorksite(tx) : null
+    const receiptWorksiteId = office?.id ?? worksiteId
     const txCode = await nextCodeTx(tx, "REC", year)
 
     await tx.insert(receipts).values({
@@ -96,7 +113,7 @@ export async function registerReceipt(
       receivedBy:      input.receivedBy,
       receivedAt:      now,
       locationType:    input.stage,
-      worksiteId,
+      worksiteId: receiptWorksiteId,
       dispatchGuideNo: input.dispatchGuideNo ?? null,
       status:          "closed",
       notes:           input.notes ?? null,
@@ -215,6 +232,13 @@ export async function registerReceipt(
           }
         }
 
+        if (input.stage === "office" && lockedOcItem.requestItemId) {
+          await receiveOfficeItemTx(tx, lockedOcItem.requestItemId, input.receivedBy, {
+            fullReceived: totalNowReceived >= lockedOcItem.quantity,
+            userEmail: input.userEmail,
+          })
+        }
+
         if (input.stage === "faena" && lockedOcItem.requestItemId) {
           const fullReceived = totalNowReceived >= lockedOcItem.quantity
           await receiveItemTx(tx, lockedOcItem.requestItemId, input.receivedBy, {
@@ -241,21 +265,32 @@ export async function registerReceipt(
             }
         }
 
-          if (worksiteId && lockedOcItem.productId) {
-            await applyMovementTx(tx, {
-              worksiteId,
-              productId:   lockedOcItem.productId,
-              type:        "ingreso_oc",
-              quantity:    qtyRec,
-              referenceType: "purchase_order",
-              referenceId: input.purchaseOrderId,
-              performedBy: input.receivedBy,
-              userEmail:   input.userEmail,
-              notes:       `Recepción ${txCode}, guía ${input.dispatchGuideNo ?? "s/n"}`,
-            })
-          }
+        }
+
+        const stockWorksiteId = input.stage === "office" ? office?.id : worksiteId
+        if (stockWorksiteId && lockedOcItem.productId) {
+          await applyMovementTx(tx, {
+            worksiteId: stockWorksiteId,
+            productId:   lockedOcItem.productId,
+            type:        "ingreso_oc",
+            quantity:    qtyRec,
+            referenceType: "receipt",
+            referenceId: receiptId,
+            performedBy: input.receivedBy,
+            userEmail:   input.userEmail,
+            notes:       `Recepción ${txCode}, ${input.stage === "office" ? "ingreso en Oficina CHOME" : `guía ${input.dispatchGuideNo ?? "s/n"}`}`,
+          })
         }
       }
+    }
+
+    if (input.stage === "office") {
+      await prepareDispatchGuideForOfficeReceiptTx(tx, {
+        receiptId,
+        purchaseOrderId: input.purchaseOrderId,
+        preparedBy: input.receivedBy,
+        userEmail: input.userEmail,
+      })
     }
 
     const rolledUpStatus = await rollupOrderReceiptStatus(input.purchaseOrderId, tx, order.deliveryMode)

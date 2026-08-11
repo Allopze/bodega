@@ -34,14 +34,18 @@
  * (`AJU-*`), que ya exige motivo y queda en el kardex.
  */
 
-import { and, asc, count, desc, eq, gte, inArray, lte, sql, type SQL } from "drizzle-orm"
+import { and, asc, count, desc, eq, gt, gte, inArray, lte, ne, notInArray, sql, type SQL } from "drizzle-orm"
 import { db, type DB, type Tx } from "@/db"
 import {
   dispatchGuideItems,
   dispatchGuides,
   fuelVehicles,
   inventoryMovements,
+  purchaseOrderItems,
+  purchaseOrders,
   products,
+  receiptItems,
+  receipts,
   systemSettings,
   users,
   workers,
@@ -51,7 +55,10 @@ import {
 import { nanoid } from "@/lib/id"
 import { nextCodeTx } from "@/lib/code-sequences"
 import { recordAudit, recordStatusChange } from "@/lib/audit"
+import { recordOperationalActivity } from "@/lib/services/operational-activity"
 import { applyMovementTx } from "@/lib/services/stock"
+import { closeOrderTx } from "@/lib/services/purchasing-module/receiving"
+import { receiveItemTx } from "@/lib/services/item-state"
 import type { DispatchGuideInput } from "@/lib/validation/dispatch-guides"
 
 /* ── Constantes de dominio ──────────────────────────────────────────────── */
@@ -68,9 +75,9 @@ export const OFFICE_WORKSITE_SETTING_KEY = "warehouse.office_worksite_id"
 /** Fallback por nombre cuando no hay ajuste explícito. */
 const OFFICE_WORKSITE_NAME_FALLBACKS = ["administracion", "oficina", "oficina chome", "casa matriz"]
 
-export type DispatchGuideStatus = "draft" | "dispatched" | "received" | "cancelled"
+export type DispatchGuideStatus = "draft" | "dispatched" | "partially_received" | "received" | "cancelled"
 
-const CANCELLABLE_STATUSES: DispatchGuideStatus[] = ["draft", "dispatched", "received"]
+const CANCELLABLE_STATUSES: DispatchGuideStatus[] = ["draft", "dispatched", "partially_received", "received"]
 
 /* ── Origen: la bodega de la oficina ────────────────────────────────────── */
 
@@ -216,6 +223,225 @@ function itemRows(guideId: string, items: DispatchGuideInput["items"]) {
   }))
 }
 
+export interface PreparedDispatchGuide {
+  id: string
+  code: string
+  itemCount: number
+}
+
+/**
+ * Prepara la GDI desde una recepción de proveedor ya confirmada en oficina.
+ *
+ * Esta función corre dentro de la misma transacción que inserta la recepción:
+ * si falla, no queda una recepción sin su siguiente paso. Sólo toma bienes de
+ * catálogo, omite servicios y usa la cantidad buena de ese comprobante. La
+ * faena de la OC es la única destination; los históricos sin estas FK siguen
+ * siendo válidos y no entran por este camino.
+ */
+export async function prepareDispatchGuideForOfficeReceiptTx(
+  tx: Tx,
+  input: { receiptId: string; purchaseOrderId: string; preparedBy: string; userEmail?: string },
+): Promise<PreparedDispatchGuide | null> {
+  const [receipt] = await tx
+    .select({
+      id: receipts.id,
+      locationType: receipts.locationType,
+      purchaseOrderId: receipts.purchaseOrderId,
+    })
+    .from(receipts)
+    .where(eq(receipts.id, input.receiptId))
+    .limit(1)
+  if (!receipt || receipt.purchaseOrderId !== input.purchaseOrderId) {
+    throw new Error("La recepción no pertenece a la orden de compra")
+  }
+  if (receipt.locationType !== "office") return null
+
+  const [order] = await tx
+    .select({ id: purchaseOrders.id, deliveryMode: purchaseOrders.deliveryMode, worksiteId: purchaseOrders.worksiteId })
+    .from(purchaseOrders)
+    .where(eq(purchaseOrders.id, input.purchaseOrderId))
+    .limit(1)
+  if (!order || order.deliveryMode !== "via_oficina") return null
+
+  const office = await resolveOfficeWorksite(tx)
+  if (order.worksiteId === office.id) return null
+
+  // A retried transaction/action must not mint a second document for the same
+  // receipt. A later partial dispatch can create another draft explicitly with
+  // the remaining quantities; this automatic preparation is idempotent.
+  const [existing] = await tx
+    .select({ id: dispatchGuides.id, code: dispatchGuides.code })
+    .from(dispatchGuides)
+    .where(and(eq(dispatchGuides.receiptId, input.receiptId), ne(dispatchGuides.status, "cancelled")))
+    .limit(1)
+  if (existing) return { ...existing, itemCount: 0 }
+
+  const rows = await tx
+    .select({
+      purchaseOrderItemId: purchaseOrderItems.id,
+      receiptItemId: receiptItems.id,
+      productId: products.id,
+      quantity: receiptItems.quantityReceived,
+      unitOfMeasure: purchaseOrderItems.unitOfMeasure,
+      notes: receiptItems.notes,
+    })
+    .from(receiptItems)
+    .innerJoin(receipts, eq(receiptItems.receiptId, receipts.id))
+    .innerJoin(purchaseOrders, eq(receipts.purchaseOrderId, purchaseOrders.id))
+    .innerJoin(purchaseOrderItems, eq(receiptItems.purchaseOrderItemId, purchaseOrderItems.id))
+    .innerJoin(products, eq(purchaseOrderItems.productId, products.id))
+    .where(and(
+      eq(receiptItems.receiptId, input.receiptId),
+      eq(receipts.purchaseOrderId, input.purchaseOrderId),
+      eq(purchaseOrderItems.purchaseOrderId, input.purchaseOrderId),
+      eq(products.isService, false),
+      gt(receiptItems.quantityReceived, 0),
+    ))
+    .orderBy(asc(receiptItems.id))
+
+  if (rows.length === 0) return null
+
+  const id = nanoid()
+  const now = new Date().toISOString()
+  const code = await nextCodeTx(tx, "GDI")
+  await tx.insert(dispatchGuides).values({
+    id,
+    code,
+    status: "draft",
+    originWorksiteId: office.id,
+    destinationWorksiteId: order.worksiteId,
+    purchaseOrderId: input.purchaseOrderId,
+    receiptId: input.receiptId,
+    issuedBy: input.preparedBy,
+    issuedAt: now,
+    createdAt: now,
+    updatedAt: now,
+  })
+  await tx.insert(dispatchGuideItems).values(rows.map((row, index) => ({
+    id: nanoid(),
+    guideId: id,
+    productId: row.productId,
+    purchaseOrderItemId: row.purchaseOrderItemId,
+    receiptItemId: row.receiptItemId,
+    quantity: row.quantity,
+    unitOfMeasure: row.unitOfMeasure,
+    notes: row.notes,
+    sortOrder: index,
+  })))
+
+  await recordStatusChange({
+    entityType: "dispatch_guide",
+    entityId: id,
+    fromStatus: null,
+    toStatus: "draft",
+    changedBy: input.preparedBy,
+  }, tx)
+  await recordAudit({
+    userId: input.preparedBy,
+    userEmail: input.userEmail,
+    action: "create",
+    entityType: "dispatch_guide",
+    entityId: id,
+    entityCode: code,
+    newState: {
+      source: "office_receipt",
+      receiptId: input.receiptId,
+      purchaseOrderId: input.purchaseOrderId,
+      destinationWorksiteId: order.worksiteId,
+      itemCount: rows.length,
+    },
+  }, tx)
+
+  return { id, code, itemCount: rows.length }
+}
+
+/** Crea otra GDI para el saldo de una recepción que se despacha por partes. */
+export async function prepareAdditionalDispatchGuideForOfficeReceipt(
+  receiptId: string,
+  actor: DispatchGuideActor,
+  scope: WorksiteScope = "all",
+): Promise<PreparedDispatchGuide> {
+  return db.transaction(async (tx) => {
+    const [receipt] = await tx
+      .select({ id: receipts.id, purchaseOrderId: receipts.purchaseOrderId, locationType: receipts.locationType })
+      .from(receipts)
+      .where(eq(receipts.id, receiptId))
+      .for("update")
+    if (!receipt || receipt.locationType !== "office") throw new Error("La recepción de origen no es una recepción en oficina")
+
+    const [order] = await tx
+      .select({ id: purchaseOrders.id, worksiteId: purchaseOrders.worksiteId, deliveryMode: purchaseOrders.deliveryMode })
+      .from(purchaseOrders)
+      .where(eq(purchaseOrders.id, receipt.purchaseOrderId))
+      .for("update")
+    if (!order || order.deliveryMode !== "via_oficina") throw new Error("La OC no requiere traslado Oficina → Faena")
+    const office = await resolveOfficeWorksite(tx)
+    if (order.worksiteId === office.id) throw new Error("La OC tiene destino final en oficina")
+    assertWorksiteScope(scope, order.worksiteId)
+
+    const rows = await tx
+      .select({
+        receiptItemId: receiptItems.id,
+        purchaseOrderItemId: purchaseOrderItems.id,
+        productId: products.id,
+        quantity: receiptItems.quantityReceived,
+        unitOfMeasure: purchaseOrderItems.unitOfMeasure,
+        notes: receiptItems.notes,
+      })
+      .from(receiptItems)
+      .innerJoin(purchaseOrderItems, eq(receiptItems.purchaseOrderItemId, purchaseOrderItems.id))
+      .innerJoin(products, eq(purchaseOrderItems.productId, products.id))
+      .where(and(
+        eq(receiptItems.receiptId, receiptId),
+        eq(purchaseOrderItems.purchaseOrderId, order.id),
+        eq(products.isService, false),
+        gt(receiptItems.quantityReceived, 0),
+      ))
+      .orderBy(asc(receiptItems.id))
+    const activeIds = rows.map((row) => row.receiptItemId)
+    if (activeIds.length === 0) throw new Error("Esta recepción no tiene bienes trasladables")
+
+    const allocated = await tx
+      .select({ receiptItemId: dispatchGuideItems.receiptItemId, quantity: sql<number>`coalesce(sum(${dispatchGuideItems.quantity}), 0)` })
+      .from(dispatchGuideItems)
+      .innerJoin(dispatchGuides, eq(dispatchGuideItems.guideId, dispatchGuides.id))
+      .where(and(inArray(dispatchGuideItems.receiptItemId, activeIds), ne(dispatchGuides.status, "cancelled")))
+      .groupBy(dispatchGuideItems.receiptItemId)
+    const allocatedByReceiptItem = new Map(allocated.map((row) => [row.receiptItemId, Number(row.quantity)]))
+    const remaining = rows.flatMap((row) => {
+      const quantity = row.quantity - (allocatedByReceiptItem.get(row.receiptItemId) ?? 0)
+      return quantity > 1e-9 ? [{ ...row, quantity }] : []
+    })
+    if (remaining.length === 0) throw new Error("No quedan cantidades recibidas disponibles para otro despacho")
+
+    const [existingDraft] = await tx
+      .select({ id: dispatchGuides.id, code: dispatchGuides.code })
+      .from(dispatchGuides)
+      .where(and(eq(dispatchGuides.receiptId, receiptId), eq(dispatchGuides.status, "draft")))
+      .limit(1)
+    if (existingDraft) return { ...existingDraft, itemCount: 0 }
+
+    const id = nanoid()
+    const now = new Date().toISOString()
+    const code = await nextCodeTx(tx, "GDI")
+    await tx.insert(dispatchGuides).values({
+      id, code, status: "draft", originWorksiteId: office.id, destinationWorksiteId: order.worksiteId,
+      purchaseOrderId: order.id, receiptId, issuedBy: actor.userId, issuedAt: now, createdAt: now, updatedAt: now,
+    })
+    await tx.insert(dispatchGuideItems).values(remaining.map((row, index) => ({
+      id: nanoid(), guideId: id, productId: row.productId, purchaseOrderItemId: row.purchaseOrderItemId,
+      receiptItemId: row.receiptItemId, quantity: row.quantity, unitOfMeasure: row.unitOfMeasure,
+      notes: row.notes, sortOrder: index,
+    })))
+    await recordStatusChange({ entityType: "dispatch_guide", entityId: id, fromStatus: null, toStatus: "draft", changedBy: actor.userId }, tx)
+    await recordAudit({
+      userId: actor.userId, userEmail: actor.userEmail, action: "create", entityType: "dispatch_guide", entityId: id, entityCode: code,
+      newState: { source: "office_receipt_remainder", receiptId, purchaseOrderId: order.id, itemCount: remaining.length },
+    }, tx)
+    return { id, code, itemCount: remaining.length }
+  })
+}
+
 /**
  * Crea la guía en estado borrador con su correlativo definitivo.
  *
@@ -295,6 +521,9 @@ export async function updateDispatchGuide(
     }
     assertWorksiteScope(scope, guide.destinationWorksiteId)
     const destination = await assertDestination(tx, guide.originWorksiteId, input.destinationWorksiteId, scope)
+    if (guide.purchaseOrderId && destination.id !== guide.destinationWorksiteId) {
+      throw new Error("La faena de una GDI de adquisiciones se hereda de la OC y no puede cambiarse")
+    }
     await assertItemProducts(tx, input.items)
     await assertWorkerRefs(tx, [input.dispatcherWorkerId, input.receiverWorkerId, input.driverWorkerId])
     await assertVehicleRef(tx, input.vehicleId)
@@ -309,6 +538,53 @@ export async function updateDispatchGuide(
       notes:                 input.notes ?? null,
       updatedAt:             now,
     }).where(and(eq(dispatchGuides.id, guideId), eq(dispatchGuides.status, "draft")))
+
+    if (guide.purchaseOrderId) {
+      // Una GDI nacida de una recepción no puede cambiar de OC, faena ni
+      // producto. Sí puede seleccionar menos cantidad/líneas para un despacho
+      // parcial; las FK hacia OC/recepción se conservan al reemplazar sólo el
+      // borrador, antes de que exista un hecho histórico.
+      const existingItems = await tx
+        .select({
+          id: dispatchGuideItems.id,
+          productId: dispatchGuideItems.productId,
+          purchaseOrderItemId: dispatchGuideItems.purchaseOrderItemId,
+          receiptItemId: dispatchGuideItems.receiptItemId,
+        })
+        .from(dispatchGuideItems)
+        .where(eq(dispatchGuideItems.guideId, guideId))
+      const existingByProduct = new Map(existingItems.map((item) => [item.productId, item]))
+      if (input.items.some((item) => !existingByProduct.has(item.productId))) {
+        throw new Error("Una GDI de adquisiciones sólo puede usar bienes de su recepción de origen")
+      }
+      await tx.delete(dispatchGuideItems).where(eq(dispatchGuideItems.guideId, guideId))
+      await tx.insert(dispatchGuideItems).values(input.items.map((item, index) => {
+        const source = existingByProduct.get(item.productId)!
+        return {
+          id: nanoid(),
+          guideId,
+          productId: item.productId,
+          purchaseOrderItemId: source.purchaseOrderItemId,
+          receiptItemId: source.receiptItemId,
+          quantity: item.quantity,
+          unitOfMeasure: item.unitOfMeasure,
+          notes: item.notes ?? null,
+          sortOrder: index,
+        }
+      }))
+
+      await recordAudit({
+        userId: actor.userId,
+        userEmail: actor.userEmail,
+        action: "update",
+        entityType: "dispatch_guide",
+        entityId: guideId,
+        entityCode: guide.code,
+        oldState: { destinationWorksiteId: guide.destinationWorksiteId, source: "office_receipt" },
+        newState: { destinationWorksiteId: destination.id, items: input.items.length, source: "office_receipt" },
+      }, tx)
+      return
+    }
 
     await tx.delete(dispatchGuideItems).where(eq(dispatchGuideItems.guideId, guideId))
     await tx.insert(dispatchGuideItems).values(itemRows(guideId, input.items))
@@ -343,13 +619,97 @@ async function guideItemsTx(tx: Tx, guideId: string) {
     .select({
       id:        dispatchGuideItems.id,
       productId: dispatchGuideItems.productId,
+      purchaseOrderItemId: dispatchGuideItems.purchaseOrderItemId,
+      receiptItemId: dispatchGuideItems.receiptItemId,
       quantity:  dispatchGuideItems.quantity,
+      quantityReceived: dispatchGuideItems.quantityReceived,
+      differenceReason: dispatchGuideItems.differenceReason,
       name:      products.name,
+      isService: products.isService,
     })
     .from(dispatchGuideItems)
     .innerJoin(products, eq(dispatchGuideItems.productId, products.id))
     .where(eq(dispatchGuideItems.guideId, guideId))
     .orderBy(asc(dispatchGuideItems.sortOrder))
+}
+
+/**
+ * Serializes each OC line and proves that all active guides together fit inside
+ * what arrived in office. Drafts reserve their selected quantity as well, so a
+ * second operator cannot prepare two documents for the same units and rely on
+ * the stock check alone.
+ */
+async function assertGuideQuantitiesWithinOfficeReceipt(
+  tx: Tx,
+  guide: { id: string; purchaseOrderId: string | null; destinationWorksiteId: string },
+  items: Array<{
+    purchaseOrderItemId: string | null
+    quantity: number
+    isService: boolean
+  }>,
+) {
+  if (!guide.purchaseOrderId) return
+  if (items.some((item) => !item.purchaseOrderItemId)) {
+    throw new Error("La guía asociada a adquisiciones tiene una línea sin trazabilidad de OC")
+  }
+
+  const poItemIds = items.map((item) => item.purchaseOrderItemId as string)
+  const lockedItems = await tx
+    .select({
+      id: purchaseOrderItems.id,
+      quantity: purchaseOrderItems.quantity,
+      quantityOfficeReceived: purchaseOrderItems.quantityOfficeReceived,
+      productId: purchaseOrderItems.productId,
+      purchaseOrderId: purchaseOrderItems.purchaseOrderId,
+    })
+    .from(purchaseOrderItems)
+    .where(inArray(purchaseOrderItems.id, poItemIds))
+    .orderBy(asc(purchaseOrderItems.id))
+    .for("update")
+  if (lockedItems.length !== poItemIds.length || lockedItems.some((item) => item.purchaseOrderId !== guide.purchaseOrderId)) {
+    throw new Error("La guía contiene una línea que ya no pertenece a su orden de compra")
+  }
+  if (lockedItems.some((item) => !item.productId)) {
+    throw new Error("Los servicios no pueden formar parte de una Guía de Despacho Interna")
+  }
+
+  const allocations = await tx
+    .select({
+      purchaseOrderItemId: dispatchGuideItems.purchaseOrderItemId,
+      quantity: sql<number>`coalesce(sum(${dispatchGuideItems.quantity}), 0)`,
+    })
+    .from(dispatchGuideItems)
+    .innerJoin(dispatchGuides, eq(dispatchGuideItems.guideId, dispatchGuides.id))
+    .where(and(
+      inArray(dispatchGuideItems.purchaseOrderItemId, poItemIds),
+      ne(dispatchGuides.status, "cancelled"),
+    ))
+    .groupBy(dispatchGuideItems.purchaseOrderItemId)
+  const allocatedByItem = new Map(allocations.map((row) => [row.purchaseOrderItemId, Number(row.quantity)]))
+
+  const order = lockedItems[0]
+  if (!order || order.purchaseOrderId !== guide.purchaseOrderId) {
+    throw new Error("La guía no tiene una OC válida")
+  }
+  const [purchaseOrder] = await tx
+    .select({ worksiteId: purchaseOrders.worksiteId })
+    .from(purchaseOrders)
+    .where(eq(purchaseOrders.id, guide.purchaseOrderId))
+    .limit(1)
+  if (!purchaseOrder || purchaseOrder.worksiteId !== guide.destinationWorksiteId) {
+    throw new Error("La faena de la guía no coincide con la faena de su orden de compra")
+  }
+
+  const shortages = lockedItems.flatMap((poItem) => {
+    const allocated = allocatedByItem.get(poItem.id) ?? 0
+    const received = poItem.quantityOfficeReceived ?? 0
+    return allocated > received + 1e-9
+      ? [`OC ${poItem.id}: recibidas ${received}, comprometidas ${allocated}`]
+      : []
+  })
+  if (shortages.length > 0) {
+    throw new Error(`No se puede despachar más de lo recibido en oficina: ${shortages.join("; ")}`)
+  }
 }
 
 /**
@@ -404,6 +764,10 @@ export async function dispatchDispatchGuide(
 
     const items = await guideItemsTx(tx, guideId)
     if (items.length === 0) throw new Error("La guía no tiene elementos que despachar")
+    await assertGuideQuantitiesWithinOfficeReceipt(tx, guide, items)
+    if (items.some((item) => item.isService)) {
+      throw new Error("Los servicios no pueden formar parte de una Guía de Despacho Interna")
+    }
 
     const [destination] = await tx
       .select({ name: worksites.name })
@@ -472,17 +836,62 @@ export async function dispatchDispatchGuide(
   })
 }
 
-/** Confirma la llegada a faena. No vuelve a mover stock. */
+export interface DispatchGuideReceiptLineInput {
+  guideItemId: string
+  quantityReceived: number
+  differenceReason?: string | null
+}
+
+interface LinkedGuideReceiptContext {
+  order: typeof purchaseOrders.$inferSelect
+  guideItems: Awaited<ReturnType<typeof guideItemsTx>>
+}
+
+async function loadLinkedGuideReceiptContext(tx: Tx, guide: typeof dispatchGuides.$inferSelect): Promise<LinkedGuideReceiptContext | null> {
+  if (!guide.purchaseOrderId) return null
+  const [order] = await tx
+    .select()
+    .from(purchaseOrders)
+    .where(eq(purchaseOrders.id, guide.purchaseOrderId))
+    .for("update")
+  if (!order) throw new Error("La orden de compra de la guía no existe")
+  if (order.worksiteId !== guide.destinationWorksiteId || order.deliveryMode !== "via_oficina") {
+    throw new Error("La guía no corresponde al destino de su orden de compra")
+  }
+  const guideItems = await guideItemsTx(tx, guide.id)
+  if (guideItems.length === 0 || guideItems.some((item) => !item.purchaseOrderItemId || !item.receiptItemId || item.isService)) {
+    throw new Error("La guía no tiene líneas de bienes trazables para cotejar")
+  }
+  return { order, guideItems }
+}
+
+async function rollupOrderAfterGuideReceiptTx(tx: Tx, orderId: string): Promise<string | null> {
+  const items = await tx
+    .select({ quantity: purchaseOrderItems.quantity, received: purchaseOrderItems.quantityReceived })
+    .from(purchaseOrderItems)
+    .where(and(eq(purchaseOrderItems.purchaseOrderId, orderId), ne(purchaseOrderItems.status, "cancelled")))
+  if (items.length === 0) return null
+  const allReceived = items.every((item) => (item.received ?? 0) >= item.quantity)
+  const anyReceived = items.some((item) => (item.received ?? 0) > 0)
+  const nextStatus = allReceived ? "received" : anyReceived ? "partially_received" : null
+  if (!nextStatus) return null
+  await tx.update(purchaseOrders).set({ status: nextStatus, updatedAt: new Date().toISOString() }).where(
+    and(eq(purchaseOrders.id, orderId), notInArray(purchaseOrders.status, ["closed", "cancelled"])),
+  )
+  return nextStatus
+}
+
+/** Confirma y coteja la llegada a faena. No vuelve a mover stock. */
 export async function confirmDispatchGuideReceipt(
   guideId: string,
-  input: { receivedByWorkerId?: string | null },
+  input: { receivedByWorkerId?: string | null; items?: DispatchGuideReceiptLineInput[]; notes?: string | null },
   actor: DispatchGuideActor,
   scope: WorksiteScope = "all",
 ): Promise<{ code: string }> {
   return db.transaction(async (tx) => {
     const guide = await lockGuide(tx, guideId)
     if (guide.status === "received") throw new Error("La recepción de esta guía ya fue confirmada")
-    if (guide.status !== "dispatched") {
+    if (guide.status !== "dispatched" && guide.status !== "partially_received") {
       throw new Error(
         guide.status === "draft"
           ? "La guía todavía no ha sido despachada"
@@ -491,8 +900,157 @@ export async function confirmDispatchGuideReceipt(
     }
     assertWorksiteScope(scope, guide.destinationWorksiteId)
     await assertWorkerRefs(tx, [input.receivedByWorkerId])
-
     const now = new Date().toISOString()
+
+    const linked = await loadLinkedGuideReceiptContext(tx, guide)
+    if (linked) {
+      const lines = input.items ?? []
+      const expectedIds = new Set(linked.guideItems.map((item) => item.id))
+      if (lines.length !== expectedIds.size || new Set(lines.map((line) => line.guideItemId)).size !== lines.length || lines.some((line) => !expectedIds.has(line.guideItemId))) {
+        throw new Error("Debes cotejar todas las líneas de la guía exactamente una vez")
+      }
+
+      const poItemIds = linked.guideItems.map((item) => item.purchaseOrderItemId as string)
+      const lockedPoItems = await tx
+        .select()
+        .from(purchaseOrderItems)
+        .where(inArray(purchaseOrderItems.id, poItemIds))
+        .orderBy(asc(purchaseOrderItems.id))
+        .for("update")
+      if (lockedPoItems.length !== poItemIds.length) throw new Error("Una línea de la OC ya no está disponible")
+      const poItemById = new Map(lockedPoItems.map((item) => [item.id, item]))
+      const lineById = new Map(lines.map((line) => [line.guideItemId, line]))
+      const normalized = linked.guideItems.map((guideItem) => {
+        const line = lineById.get(guideItem.id)!
+        const quantityReceived = Number(line.quantityReceived)
+        if (!Number.isFinite(quantityReceived) || quantityReceived < 0 || quantityReceived > guideItem.quantity) {
+          throw new Error(`La cantidad recibida en faena para ${guideItem.name} no es válida`)
+        }
+        const alreadyReceived = guideItem.quantityReceived ?? 0
+        const remaining = guideItem.quantity - alreadyReceived
+        if (quantityReceived > remaining + 1e-9) {
+          throw new Error(`La cantidad recibida en faena para ${guideItem.name} supera el saldo pendiente`)
+        }
+        const nextGuideItemReceived = alreadyReceived + quantityReceived
+        const difference = remaining - quantityReceived
+        const differenceReason = line.differenceReason?.trim() || null
+        if (difference > 1e-9 && (!differenceReason || differenceReason.length < 5)) {
+          throw new Error(`Indica el motivo de la diferencia para ${guideItem.name}`)
+        }
+        const poItem = poItemById.get(guideItem.purchaseOrderItemId as string)
+        if (!poItem) throw new Error("La línea de la OC no existe")
+        const nextReceived = (poItem.quantityReceived ?? 0) + quantityReceived
+        if (nextReceived > poItem.quantity + 1e-9) {
+          throw new Error(`La recepción en faena excede la cantidad comprada de ${guideItem.name}`)
+        }
+        return { guideItem, quantityReceived, difference, differenceReason, poItem, nextReceived, nextGuideItemReceived }
+      })
+
+      const receiptId = nanoid()
+      const receiptCode = await nextCodeTx(tx, "REC", new Date().getFullYear())
+      await tx.insert(receipts).values({
+        id: receiptId,
+        code: receiptCode,
+        purchaseOrderId: linked.order.id,
+        receivedBy: actor.userId,
+        receivedAt: now,
+        locationType: "faena",
+        worksiteId: guide.destinationWorksiteId,
+        dispatchGuideNo: guide.code,
+        status: "closed",
+        notes: input.notes ?? null,
+        createdAt: now,
+      })
+      await recordOperationalActivity({
+        eventType: "receipt.registered",
+        module: "recepciones",
+        entityType: "receipt",
+        entityId: receiptId,
+        entityCode: receiptCode,
+        worksiteId: guide.destinationWorksiteId,
+        actorUserId: actor.userId,
+        payload: {
+          stage: "faena",
+          dispatchGuideId: guide.id,
+          differences: normalized.filter((line) => line.difference > 1e-9).length,
+        },
+      }, tx)
+
+      for (const line of normalized) {
+        await tx.insert(receiptItems).values({
+          id: nanoid(),
+          receiptId,
+          purchaseOrderItemId: line.poItem.id,
+          quantityReceived: line.quantityReceived,
+          quantityRejected: 0,
+          quantityDamaged: 0,
+          quantityDifference: line.difference,
+          status: line.difference > 1e-9 ? "partially_received" : "received",
+          notes: line.differenceReason,
+        })
+        await tx.update(purchaseOrderItems)
+          .set({ quantityReceived: line.nextReceived })
+          .where(eq(purchaseOrderItems.id, line.poItem.id))
+        if (line.poItem.requestItemId) {
+          await receiveItemTx(tx, line.poItem.requestItemId, actor.userId, {
+            fullReceived: line.nextReceived >= line.poItem.quantity,
+            userEmail: actor.userEmail,
+          })
+        }
+        await tx.update(dispatchGuideItems)
+          .set({
+            quantityReceived: line.nextGuideItemReceived,
+            differenceReason: line.differenceReason ?? line.guideItem.differenceReason,
+          })
+          .where(eq(dispatchGuideItems.id, line.guideItem.id))
+      }
+
+      const complete = normalized.every((line) => line.difference <= 1e-9)
+      const nextGuideStatus: DispatchGuideStatus = complete ? "received" : "partially_received"
+      await tx.update(dispatchGuides).set({
+        status: nextGuideStatus,
+        receivedAt: now,
+        receivedBy: actor.userId,
+        receivedByWorkerId: input.receivedByWorkerId ?? guide.receiverWorkerId ?? null,
+        updatedAt: now,
+      }).where(and(
+        eq(dispatchGuides.id, guideId),
+        inArray(dispatchGuides.status, ["dispatched", "partially_received"]),
+      ))
+
+      const orderStatus = await rollupOrderAfterGuideReceiptTx(tx, linked.order.id)
+      if (orderStatus === "received") {
+        await closeOrderTx(tx, { ...linked.order, status: "received" }, actor.userId, "Cierre automático: cotejo completo de GDI", { userEmail: actor.userEmail })
+      }
+
+      if (guide.status !== nextGuideStatus) {
+        await recordStatusChange({
+          entityType: "dispatch_guide",
+          entityId: guideId,
+          fromStatus: guide.status,
+          toStatus: nextGuideStatus,
+          changedBy: actor.userId,
+        }, tx)
+      }
+      await recordAudit({
+        userId: actor.userId,
+        userEmail: actor.userEmail,
+        action: "status_change",
+        entityType: "dispatch_guide",
+        entityId: guideId,
+        entityCode: guide.code,
+        oldState: { status: guide.status },
+        newState: {
+          status: nextGuideStatus,
+          receiptId,
+          receiptCode,
+          complete,
+          differences: normalized.filter((line) => line.difference > 1e-9).length,
+        },
+      }, tx)
+      return { code: guide.code }
+    }
+
     const updated = await tx
       .update(dispatchGuides)
       .set({
@@ -554,7 +1112,15 @@ export async function cancelDispatchGuide(
     }
     assertWorksiteScope(scope, guide.destinationWorksiteId)
 
-    const hadStockEgress = guide.status === "dispatched" || guide.status === "received"
+    // Una GDI enlazada ya cotejada también puede estar parcialmente recibida,
+    // pero anularla en ese punto dejaría desfasados los acumuladores de la OC.
+    // El histórico se conserva y la corrección se realiza mediante un ajuste
+    // explícito, no borrando ni retrocediendo eventos de recepción.
+    if (guide.purchaseOrderId && (guide.status === "partially_received" || guide.status === "received")) {
+      throw new Error("Una guía enlazada no puede anularse después del cotejo; registra una corrección de recepción")
+    }
+
+    const hadStockEgress = guide.status === "dispatched" || guide.status === "partially_received" || guide.status === "received"
     const items = hadStockEgress ? await guideItemsTx(tx, guideId) : []
 
     if (hadStockEgress) {
@@ -727,6 +1293,60 @@ export async function listDispatchGuides(filters: DispatchGuideListFilters): Pro
   })
 }
 
+export type AcquisitionDispatchGuideSummary = {
+  id: string
+  code: string
+  status: string
+  destinationWorksiteId: string
+  destinationWorksiteName: string
+  receiptId: string | null
+  purchaseOrderId: string | null
+  issuedAt: string
+  itemCount: number
+  totalQuantity: number
+  receivedQuantity: number
+}
+
+async function listAcquisitionGuidesWhere(predicate: SQL) {
+  return db
+    .select({
+      id: dispatchGuides.id,
+      code: dispatchGuides.code,
+      status: dispatchGuides.status,
+      destinationWorksiteId: dispatchGuides.destinationWorksiteId,
+      destinationWorksiteName: worksites.name,
+      receiptId: dispatchGuides.receiptId,
+      purchaseOrderId: dispatchGuides.purchaseOrderId,
+      issuedAt: dispatchGuides.issuedAt,
+      itemCount: count(dispatchGuideItems.id),
+      totalQuantity: sql<number>`coalesce(sum(${dispatchGuideItems.quantity}), 0)`,
+      receivedQuantity: sql<number>`coalesce(sum(${dispatchGuideItems.quantityReceived}), 0)`,
+    })
+    .from(dispatchGuides)
+    .innerJoin(worksites, eq(dispatchGuides.destinationWorksiteId, worksites.id))
+    .leftJoin(dispatchGuideItems, eq(dispatchGuideItems.guideId, dispatchGuides.id))
+    .where(predicate)
+    .groupBy(
+      dispatchGuides.id,
+      dispatchGuides.code,
+      dispatchGuides.status,
+      dispatchGuides.destinationWorksiteId,
+      worksites.name,
+      dispatchGuides.receiptId,
+      dispatchGuides.purchaseOrderId,
+      dispatchGuides.issuedAt,
+    )
+    .orderBy(desc(dispatchGuides.issuedAt))
+}
+
+export function listDispatchGuidesForReceipt(receiptId: string): Promise<AcquisitionDispatchGuideSummary[]> {
+  return listAcquisitionGuidesWhere(eq(dispatchGuides.receiptId, receiptId))
+}
+
+export function listDispatchGuidesForPurchaseOrder(purchaseOrderId: string): Promise<AcquisitionDispatchGuideSummary[]> {
+  return listAcquisitionGuidesWhere(eq(dispatchGuides.purchaseOrderId, purchaseOrderId))
+}
+
 /** Ficha completa: cabecera con relaciones, líneas y movimientos de kardex. */
 export async function getDispatchGuideDetail(guideId: string) {
   const guide = await db.query.dispatchGuides.findFirst({
@@ -743,6 +1363,16 @@ export async function getDispatchGuideDetail(guideId: string) {
       receivedByWorker:    true,
       driverWorker:        true,
       vehicle:             true,
+      purchaseOrder:       {
+        columns: { id: true, code: true, status: true, deliveryMode: true },
+        with: {
+          items: {
+            columns: { requestItemId: true },
+            with: { requestItem: { columns: { requestId: true }, with: { request: { columns: { id: true, code: true } } } } },
+          },
+        },
+      },
+      receipt:             { columns: { id: true, code: true, locationType: true, receivedAt: true } },
       items: {
         orderBy: (item, { asc: ascending }) => [ascending(item.sortOrder)],
         with: { product: { columns: { id: true, sku: true, name: true, unitOfMeasure: true } } },

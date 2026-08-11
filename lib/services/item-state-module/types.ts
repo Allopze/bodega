@@ -7,6 +7,8 @@ export type ItemStatus =
   | "pending_purchase"
   | "in_purchase_order"
   | "purchased"
+  | "partially_office_received"
+  | "office_received"
   | "partially_received"
   | "received"
   | "partially_delivered"
@@ -40,7 +42,9 @@ export const ALLOWED_TRANSITIONS: Record<ItemStatus, ItemStatus[]> = {
   // `delivered` directo desde compra/recepción parcial es el cierre de los ítems
   // sin producto de catálogo: no generan stock, así que la llegada a faena agota
   // su ciclo (ver receiveItemTx).
-  purchased:          ["partially_received", "received", "delivered"],
+  purchased:          ["partially_office_received", "office_received", "partially_received", "received", "delivered"],
+  partially_office_received: ["office_received", "partially_received", "received", "delivered"],
+  office_received:    ["partially_received", "received", "delivered"],
   partially_received: ["received", "partially_delivered", "delivered"],
   received:           ["partially_delivered", "delivered"],
   partially_delivered:["delivered"],

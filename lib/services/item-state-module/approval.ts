@@ -7,7 +7,7 @@ import { nanoid } from "@/lib/id"
 import { recordAudit, recordStatusChange } from "@/lib/audit"
 import { resolveReplenishmentLinksTx } from "@/lib/services/epp-replenishment"
 import { canTransition, type ItemStatus } from "./types"
-import { rollupRequestStatus } from "./rollup"
+import { lockRequestsForRollupTx, rollupRequestStatus } from "./rollup"
 
 /**
  * Bulk-approve multiple items in a single transaction.
@@ -47,6 +47,11 @@ export async function bulkApproveItems(
       }
       lockedItems.push({ ...locked, status: locked.status as ItemStatus })
     }
+
+    // DAT-1: los padres, después de los ítems y antes de tocar nada — el insert
+    // en `approval_decisions` de más abajo referencia la solicitud, y hacerlo
+    // primero obligaría a subir de FOR KEY SHARE a FOR UPDATE (deadlock).
+    await lockRequestsForRollupTx(tx, lockedItems.map((item) => item.requestId))
 
     for (const locked of lockedItems) {
       const [updated] = await tx
@@ -113,6 +118,9 @@ export async function approveItem(
       .for("update")
 
     if (!locked) throw new Error(`Item ${itemId} not found`)
+    // DAT-1: el padre, después del ítem y antes del UPDATE y del insert en
+    // `approval_decisions` (que lo referencia).
+    await lockRequestsForRollupTx(tx, [locked.requestId])
     if (!canTransition(locked.status as ItemStatus, "approved")) {
       throw new Error(`Cannot approve item in state '${locked.status}'`)
     }
@@ -205,6 +213,8 @@ export async function rejectItem(
       .where(eq(purchaseRequestItems.id, itemId))
       .for("update")
     if (!item) throw new Error(`Item ${itemId} not found`)
+    // DAT-1: mismo orden que approveItem — ítem, padre, y recién ahí mutar.
+    await lockRequestsForRollupTx(tx, [item.requestId])
     if (!canTransition(item.status as ItemStatus, "rejected")) {
       throw new Error(`Cannot reject item in state '${item.status}'`)
     }

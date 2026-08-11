@@ -3,4 +3,4 @@ export { ALLOWED_TRANSITIONS, canTransition, getDeliveryTargetStatus } from "./t
 export { submitItemTx } from "./submit"
 export { approveItem, bulkApproveItems, rejectItem } from "./approval"
 export { addItemToPurchaseOrderTx } from "./purchase-order"
-export { receiveItemTx, deliverItemTx } from "./receiving"
+export { receiveItemTx, receiveOfficeItemTx, deliverItemTx } from "./receiving"

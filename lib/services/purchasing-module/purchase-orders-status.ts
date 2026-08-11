@@ -7,7 +7,7 @@ import { eq, and, inArray } from "drizzle-orm"
 import { db } from "@/db"
 import { purchaseOrders, purchaseOrderItems, purchaseRequestItems } from "@/db/schema"
 import { recordAudit, recordStatusChange, recordStatusChanges } from "@/lib/audit"
-import { rollupRequestStatus } from "@/lib/services/item-state-module/rollup"
+import { lockRequestsForRollupTx, rollupRequestStatus } from "@/lib/services/item-state-module/rollup"
 import {
   getActiveOrderedQuantitiesTx,
   lockPurchaseRequestItemsTx,
@@ -138,6 +138,8 @@ export async function cancelOrder(
       .map((i) => i.requestItemId)
       .filter((id): id is string => id !== null)
     const lockedRequestItems = await lockPurchaseRequestItemsTx(tx, requestItemIds)
+    // DAT-1: los padres, después de sus ítems y antes de devolverlos a la cola.
+    await lockRequestsForRollupTx(tx, lockedRequestItems.map((item) => item.requestId))
 
     await tx
       .update(purchaseOrders)

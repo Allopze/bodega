@@ -4,37 +4,68 @@ import { purchaseRequests, purchaseRequestItems } from "@/db/schema"
 import { recordStatusChange } from "@/lib/audit"
 
 /**
+ * Lockea las solicitudes cuyo estado derivado va a recalcular `rollupRequestStatus`.
+ *
+ * Es la mitad que faltaba de DAT-1. El rollup lee los ítems hermanos para
+ * derivar el estado del padre; sin serializar a los escritores, dos
+ * transacciones sobre ítems distintos de la misma solicitud leen cada una un
+ * hermano sin commitear y la última en escribir deja al padre obsoleto.
+ *
+ * **Dónde va la llamada:** después de lockear los ítems y ANTES de la primera
+ * mutación o de cualquier INSERT que referencie al padre. Ese "antes" no es
+ * estilo: `approval_decisions.request_id` tiene FK a `purchase_requests`, así
+ * que insertarlo primero toma un FOR KEY SHARE sobre el padre, y dos
+ * transacciones que ya lo tienen e intentan subir a FOR UPDATE se deadlockean
+ * (40P01). Ese fue el primer intento fallido de arreglo; tomar el lock fuerte
+ * antes del insert lo evita porque nunca hay que subir de nivel.
+ *
+ * **Orden:** ítems primero, padre después — el mismo que ya usa `cancelRequest`
+ * (DAT-2). Entre solicitudes, orden lexicográfico, para que dos consolidados
+ * que tocan las mismas dos solicitudes en distinto orden se serialicen en vez
+ * de trabarse.
+ */
+export async function lockRequestsForRollupTx(
+  tx: Tx,
+  requestIds: readonly (string | null | undefined)[],
+): Promise<void> {
+  const ids = [...new Set(requestIds.filter((id): id is string => Boolean(id)))]
+    .sort((a, b) => a.localeCompare(b))
+  if (ids.length === 0) return
+
+  await tx
+    .select({ id: purchaseRequests.id })
+    .from(purchaseRequests)
+    .where(inArray(purchaseRequests.id, ids))
+    .orderBy(purchaseRequests.id)
+    .for("update")
+}
+
+/**
  * Roll up purchase request status based on current item statuses.
  * Called inside transactions after each item transition.
  *
- * DAT-1 (conocido, no resuelto): sin lock, dos mutaciones concurrentes de
- * ítems distintos de la misma solicitud pueden leer hermanos sin commitear y
- * dejar el padre en un estado obsoleto — reproducido de forma confiable
- * contra Postgres real (dos aprobaciones concurrentes dejan el padre en
- * 'in_review' con cero ítems pendientes). Se auto-corrige en la siguiente
- * transición sobre la misma solicitud; hasta entonces la UI muestra un
- * estado derivado incorrecto (los ítems en sí nunca quedan mal).
+ * **DAT-1, cerrado.** Esta función NO lockea: la serialización la aporta el
+ * caller con `lockRequestsForRollupTx`, tomado después de los ítems y antes de
+ * la primera mutación. Todo caller que llegue hasta acá tiene que haberlo
+ * llamado; si aparece uno nuevo que no lo haga, vuelve la carrera —el padre
+ * queda en un estado derivado obsoleto hasta la siguiente transición— y la
+ * cubre `lib/__tests__/rollup-concurrency-postgres.test.ts`.
  *
- * Dos intentos de arreglo se probaron contra Postgres real y ambos
- * fallaron — documentado para no repetirlos sin la re-derivación completa:
- *  1. `SELECT ... FOR UPDATE` sobre el padre al inicio de esta función:
+ * Por qué el lock vive en el caller y no acá, que es lo que se intentó dos
+ * veces y falló (documentado para no repetirlo):
+ *  1. `SELECT ... FOR UPDATE` sobre el padre al inicio de ESTA función:
  *     deadlockea. `approveItem`/`rejectItem` insertan en `approval_decisions`
- *     (FK a `purchase_requests`) ANTES de llegar aquí, lo que toma un lock
- *     débil (FOR KEY SHARE) sobre el padre; dos transacciones que ya tienen
- *     esa lock débil e intentan subir a FOR UPDATE al mismo tiempo se traban
- *     entre sí (error 40P01, reproducido en
- *     `lib/__tests__/rollup-concurrency-postgres.test.ts`).
+ *     (FK a `purchase_requests`) antes de llegar aquí, lo que toma un lock
+ *     débil (FOR KEY SHARE) sobre el padre; dos transacciones que ya lo tienen
+ *     e intentan subir a FOR UPDATE se traban entre sí (40P01). Tomándolo
+ *     antes del insert nunca hay que subir de nivel, que es justamente lo que
+ *     hace `lockRequestsForRollupTx` en su sitio correcto.
  *  2. UPDATE atómico con el estado recalculado en una subquery dentro del
  *     mismo SET (sin lock nuevo): tampoco alcanza. Cuando el UPDATE se
  *     bloquea esperando la fila del padre y luego se desbloquea, Postgres
  *     sólo refresca la fila objetivo (EvalPlanQual) — las subqueries contra
  *     `purchase_request_items` siguen usando el snapshot de antes de
  *     bloquearse, así que ven el ítem hermano todavía sin commitear.
- *
- * Una solución real existe (mover el lock del padre a ANTES del insert en
- * `approval_decisions`/`status_history`, en cada uno de los ~8 callers), pero
- * es un cambio mucho más grande que este fix puntual — pendiente como deuda
- * conocida, no como bug silencioso.
  */
 export async function rollupRequestStatus(
   requestId: string,
@@ -57,10 +88,10 @@ export async function rollupRequestStatus(
   const statuses = items.map((i) => i.status)
 
   const pendingReview = ["requested"].some((s) => statuses.includes(s))
-  const anyApproved   = statuses.some((s) => ["approved", "pending_purchase", "in_purchase_order", "purchased", "partially_received", "received", "partially_delivered", "delivered"].includes(s))
+  const anyApproved   = statuses.some((s) => ["approved", "pending_purchase", "in_purchase_order", "purchased", "partially_office_received", "office_received", "partially_received", "received", "partially_delivered", "delivered"].includes(s))
   const allRejected   = statuses.every((s) => s === "rejected")
   const allClosed     = statuses.every((s) => ["rejected", "delivered"].includes(s))
-  const anyPurchasing = statuses.some((s) => ["in_purchase_order", "purchased", "partially_received", "received", "partially_delivered"].includes(s))
+  const anyPurchasing = statuses.some((s) => ["in_purchase_order", "purchased", "partially_office_received", "office_received", "partially_received", "received", "partially_delivered"].includes(s))
   const allResolved   = !pendingReview
 
   let newStatus: string
@@ -75,7 +106,7 @@ export async function rollupRequestStatus(
   } else if (allResolved && anyApproved) {
     const allApprovedOrBeyond = statuses.every((s) =>
       ["approved", "pending_purchase", "in_purchase_order", "purchased",
-       "partially_received", "received", "partially_delivered", "delivered",
+       "partially_office_received", "office_received", "partially_received", "received", "partially_delivered", "delivered",
        "rejected"].includes(s)
     )
     newStatus = allApprovedOrBeyond ? "approved" : "partially_approved"

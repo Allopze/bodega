@@ -2,7 +2,7 @@ import { eq, and, inArray } from "drizzle-orm"
 import { type Tx } from "@/db"
 import { purchaseRequestItems } from "@/db/schema"
 import { recordAudit, recordStatusChange } from "@/lib/audit"
-import { rollupRequestStatus } from "./rollup"
+import { lockRequestsForRollupTx, rollupRequestStatus } from "./rollup"
 
 /**
  * Add an approved (or pending_purchase) item to a purchase order.
@@ -31,6 +31,10 @@ export async function addItemToPurchaseOrderTx(
     if (!locked) {
       throw new Error(`Item ${itemId} not found`)
     }
+    // DAT-1: el padre después del ítem. `createOrdersBySupplier` ya lockeó
+    // ambos en bloque; re-tomarlo acá no cuesta nada y deja la función correcta
+    // por sí sola si algún día la llama otro camino.
+    await lockRequestsForRollupTx(tx, [locked.requestId])
     if (!["approved", "pending_purchase"].includes(locked.status)) {
       throw new Error(
         `El ítem ya no está disponible (estado: ${locked.status}): posible concurrencia`,

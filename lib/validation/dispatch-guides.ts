@@ -58,6 +58,12 @@ export const cancelDispatchGuideSchema = z.object({
 export const receiveDispatchGuideSchema = z.object({
   guideId:            z.string().trim().min(1),
   receivedByWorkerId: optionalId,
+  items: z.array(z.object({
+    guideItemId:       z.string().trim().min(1),
+    quantityReceived:  z.coerce.number().finite().min(0, "La cantidad no puede ser negativa"),
+    differenceReason:  optionalText(500),
+  })).max(200).optional(),
+  notes: optionalText(1000),
 })
 
 export type DispatchGuideInput = z.infer<typeof dispatchGuideInputSchema>

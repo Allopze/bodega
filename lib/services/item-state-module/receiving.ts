@@ -3,10 +3,10 @@ import { type Tx } from "@/db"
 import { purchaseRequestItems } from "@/db/schema"
 import { recordAudit, recordStatusChange } from "@/lib/audit"
 import { canTransition, getDeliveryTargetStatus, type ItemStatus } from "./types"
-import { rollupRequestStatus } from "./rollup"
+import { lockRequestsForRollupTx, rollupRequestStatus } from "./rollup"
 
 /**
- * Transition a purchased item to received or partially_received.
+ * Transition a purchased item to received or partially_received at faena.
  * Called from lib/services/receiving.ts after creating a receipt item.
  * fullReceived = true → "received", false → "partially_received"
  */
@@ -26,8 +26,16 @@ export async function receiveItemTx(
       .where(eq(purchaseRequestItems.id, itemId))
       .for("update")
     if (!item) throw new Error(`Item ${itemId} not found`)
+    // DAT-1: el padre después del ítem, antes de mutar.
+    await lockRequestsForRollupTx(tx, [item.requestId])
 
-    const allowedFrom: ItemStatus[] = ["purchased", "partially_received", "partially_delivered"]
+    const allowedFrom: ItemStatus[] = [
+      "purchased",
+      "partially_office_received",
+      "office_received",
+      "partially_received",
+      "partially_delivered",
+    ]
     if (!allowedFrom.includes(item.status as ItemStatus)) {
       throw new Error(`Cannot receive item in state '${item.status}'`)
     }
@@ -84,6 +92,65 @@ export async function receiveItemTx(
 }
 
 /**
+ * Mark the supplier checkpoint without pretending that the item is already at
+ * its final faena. The counters on the PO are the source for `fullReceived`;
+ * this transition only projects that checkpoint onto the request timeline.
+ */
+export async function receiveOfficeItemTx(
+  tx: Tx,
+  itemId: string,
+  userId: string,
+  opts: { fullReceived: boolean; userEmail?: string },
+): Promise<void> {
+  const [item] = await tx
+    .select()
+    .from(purchaseRequestItems)
+    .where(eq(purchaseRequestItems.id, itemId))
+    .for("update")
+  if (!item) throw new Error(`Item ${itemId} not found`)
+  await lockRequestsForRollupTx(tx, [item.requestId])
+
+  const allowedFrom: ItemStatus[] = ["purchased", "partially_office_received", "office_received"]
+  if (!allowedFrom.includes(item.status as ItemStatus)) {
+    throw new Error(`Cannot receive item in office from state '${item.status}'`)
+  }
+
+  const targetStatus: ItemStatus = opts.fullReceived ? "office_received" : "partially_office_received"
+  const statusChanged = item.status !== targetStatus
+  if (statusChanged && !canTransition(item.status as ItemStatus, targetStatus)) {
+    throw new Error(`Cannot transition item from '${item.status}' to '${targetStatus}'`)
+  }
+
+  if (statusChanged) {
+    const now = new Date().toISOString()
+    await tx
+      .update(purchaseRequestItems)
+      .set({ status: targetStatus, updatedAt: now })
+      .where(and(eq(purchaseRequestItems.id, itemId), eq(purchaseRequestItems.status, item.status)))
+
+    await recordStatusChange({
+      entityType: "request_item",
+      entityId: itemId,
+      fromStatus: item.status,
+      toStatus: targetStatus,
+      changedBy: userId,
+    }, tx)
+  }
+
+  await recordAudit({
+    userId,
+    userEmail: opts.userEmail,
+    action: "status_change",
+    entityType: "request_item",
+    entityId: itemId,
+    oldState: { status: item.status },
+    newState: { status: targetStatus, checkpoint: "office" },
+  }, tx)
+
+  await rollupRequestStatus(item.requestId, tx, userId)
+}
+
+/**
  * Mark an item as delivered to faena (from warehouse dispatch).
  * Transitions received → delivered.
  */
@@ -93,10 +160,17 @@ export async function deliverItemTx(
   userId: string,
   opts?: { userEmail?: string; deliveredQuantity?: number; totalDelivered?: number },
 ): Promise<void> {
-    const item = await tx.query.purchaseRequestItems.findFirst({
-      where: eq(purchaseRequestItems.id, itemId),
-    })
+    // El lock del ítem es el mismo que toma `receiveItemTx` y por el mismo
+    // motivo (LOG-6/DAT-1): sin él, una entrega y una recepción concurrentes
+    // sobre el MISMO ítem leen el estado obsoleto la una de la otra. Faltaba
+    // en esta mitad del par.
+    const [item] = await tx
+      .select()
+      .from(purchaseRequestItems)
+      .where(eq(purchaseRequestItems.id, itemId))
+      .for("update")
     if (!item) throw new Error(`Item ${itemId} not found`)
+    await lockRequestsForRollupTx(tx, [item.requestId])
 
     const targetStatus = getDeliveryTargetStatus(item.quantity, opts?.totalDelivered)
 

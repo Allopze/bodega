@@ -11,7 +11,7 @@ import { purchaseOrders, purchaseOrderItems, purchaseRequestItems } from "@/db/s
 import { nanoid } from "@/lib/id"
 import { recordAudit, recordStatusChange, recordStatusChanges } from "@/lib/audit"
 import { isOrderDeletable } from "@/lib/services/purchasing.constants"
-import { rollupRequestStatus } from "@/lib/services/item-state-module/rollup"
+import { lockRequestsForRollupTx, rollupRequestStatus } from "@/lib/services/item-state-module/rollup"
 import {
   getActiveOrderedQuantitiesTx,
   lockPurchaseRequestItemsTx,
@@ -49,6 +49,8 @@ export async function deleteOrder(
       .map((i) => i.requestItemId)
       .filter((id): id is string => id !== null)
     const lockedRequestItems = await lockPurchaseRequestItemsTx(tx, requestItemIds)
+    // DAT-1: los padres, después de sus ítems y antes de devolverlos a la cola.
+    await lockRequestsForRollupTx(tx, lockedRequestItems.map((item) => item.requestId))
 
     await tx
       .update(purchaseOrderItems)

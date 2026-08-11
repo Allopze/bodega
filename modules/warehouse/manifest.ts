@@ -38,12 +38,6 @@ export const warehouseModule = {
           permissions: ["warehouse:view_stock"],
           badge:       "count" as const,
         },
-        {
-          label:       "Guías de despacho",
-          href:        "/bodega/guias",
-          iconName:    "Truck",
-          permissions: ["warehouse:view_guides"],
-        },
       ],
     },
   ],

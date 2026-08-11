@@ -10,6 +10,7 @@ import { nextCodeTx } from "@/lib/code-sequences"
 import { recordAudit } from "@/lib/audit"
 import { computeLineSubtotal, computeOrderTotals } from "@/lib/order-totals"
 import { addItemToPurchaseOrderTx } from "../item-state"
+import { lockRequestsForRollupTx } from "../item-state-module/rollup"
 import { getActiveOrderedQuantityTx, PURCHASE_COVERAGE_EPSILON } from "./purchasable-coverage"
 
 export interface CreateOrderItemInput {
@@ -124,6 +125,12 @@ export async function createOrdersBySupplier(input: CreateOrdersBySupplierInput)
     const sourceByRequestItemId = new Map(
       lockedSources.map((source) => [source.requestItem.id, source]),
     )
+
+    // DAT-1: los padres en bloque y en orden léxico, después de sus ítems. Va
+    // acá y no dentro de `addItemToPurchaseOrderTx` —que se llama una vez por
+    // ítem, en el orden que mandó el cliente— porque dos consolidados que tocan
+    // las mismas dos solicitudes en distinto orden se trabarían entre sí.
+    await lockRequestsForRollupTx(tx, lockedSources.map((source) => source.requestItem.requestId))
 
     // Un costo pendiente (`unitPrice: null`) es una propiedad del catálogo, no
     // una opción del comprador: sólo los productos marcados `is_service` pueden

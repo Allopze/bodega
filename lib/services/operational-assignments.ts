@@ -2,6 +2,7 @@ import { and, eq, inArray, or } from "drizzle-orm"
 import { z } from "zod"
 import { db } from "@/db"
 import { purchaseOrders, purchaseRequestItems, purchaseRequests, users, workItemAssignments } from "@/db/schema"
+import { itemHasNoActiveOrderSql } from "@/lib/adquisiciones/pending-purchase"
 import { recordAudit } from "@/lib/audit"
 import { canAccessWorksite } from "@/lib/auth/scope"
 import { nanoid } from "@/lib/id"
@@ -35,6 +36,15 @@ export type OperationalAssignmentReference = Pick<
 
 type Source = { worksiteId: string; permission: string; active: boolean; entityCode: string | null }
 
+/** El mismo criterio de cobertura activa que usa la cola de Compras. */
+async function hasNoActiveOrderCoverage(requestItemId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ id: purchaseRequestItems.id })
+    .from(purchaseRequestItems)
+    .where(and(eq(purchaseRequestItems.id, requestItemId), itemHasNoActiveOrderSql))
+  return Boolean(row)
+}
+
 async function resolveSource(input: OperationalAssignmentInput): Promise<Source> {
   if (input.sourceType === "purchase_request") {
     const request = await db.query.purchaseRequests.findFirst({
@@ -61,7 +71,19 @@ async function resolveSource(input: OperationalAssignmentInput): Promise<Source>
     }
     const rule = expected[input.actionKey]
     if (!rule) throw new Error("Etapa de ítem no asignable")
-    return { worksiteId: row.request.worksiteId, permission: rule.permission, active: rule.statuses.includes(row.status), entityCode: row.request.code }
+    // `create_order` es la única etapa cuya vigencia no se agota en el estado
+    // del ítem: "aprobado" deja de ser trabajo de Compras en cuanto una OC
+    // activa lo cubre. La fuente de la cola ya lo descuenta con el mismo
+    // predicado, así que sin esto se podía asignar —y quedar asignada— una
+    // tarea que /pendientes ya no ofrece.
+    const stillPurchasable = input.actionKey !== "create_order"
+      || await hasNoActiveOrderCoverage(input.sourceId)
+    return {
+      worksiteId: row.request.worksiteId,
+      permission: rule.permission,
+      active: rule.statuses.includes(row.status) && stillPurchasable,
+      entityCode: row.request.code,
+    }
   }
   const order = await db.query.purchaseOrders.findFirst({
     where: eq(purchaseOrders.id, input.sourceId),

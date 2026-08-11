@@ -1,4 +1,4 @@
-import { and, eq, inArray } from "drizzle-orm"
+import { and, eq, inArray, or } from "drizzle-orm"
 import type { Session } from "next-auth"
 import { db } from "@/db"
 import {
@@ -10,6 +10,7 @@ import {
   purchaseRequests,
   receiptItems,
   receipts,
+  dispatchGuides,
 } from "@/db/schema"
 import { can, canAny } from "@/lib/auth/can"
 import { canAccessWorksite } from "@/lib/auth/scope"
@@ -34,7 +35,7 @@ import { canAccessWorksite } from "@/lib/auth/scope"
  * pantalla es la forma segura de que tres pantallas cuenten historias distintas.
  */
 
-export const DOCUMENT_KINDS = ["request", "order", "receipt", "delivery"] as const
+export const DOCUMENT_KINDS = ["request", "order", "receipt", "dispatchGuide", "delivery"] as const
 export type DocumentKind = (typeof DOCUMENT_KINDS)[number]
 
 export interface ChainDocument {
@@ -53,6 +54,7 @@ export interface DocumentChain {
   requests:   ChainDocument[]
   orders:     ChainDocument[]
   receipts:   ChainDocument[]
+  dispatchGuides: ChainDocument[]
   deliveries: ChainDocument[]
 }
 
@@ -61,7 +63,7 @@ export type ChainAnchor =
   | { kind: DocumentKind; id: string }
   | { kind: "item"; id: string }
 
-export const EMPTY_CHAIN: DocumentChain = { requests: [], orders: [], receipts: [], deliveries: [] }
+export const EMPTY_CHAIN: DocumentChain = { requests: [], orders: [], receipts: [], dispatchGuides: [], deliveries: [] }
 
 /**
  * Techo por consulta. Una solicitud masiva puede tener cientos de líneas, y la
@@ -74,12 +76,13 @@ export function isChainEmpty(chain: DocumentChain): boolean {
   return chain.requests.length === 0
     && chain.orders.length === 0
     && chain.receipts.length === 0
+    && chain.dispatchGuides.length === 0
     && chain.deliveries.length === 0
 }
 
 /** Todos los documentos de la cadena en orden de flujo. */
 export function chainDocuments(chain: DocumentChain): ChainDocument[] {
-  return [...chain.requests, ...chain.orders, ...chain.receipts, ...chain.deliveries]
+  return [...chain.requests, ...chain.orders, ...chain.receipts, ...chain.dispatchGuides, ...chain.deliveries]
 }
 
 /**
@@ -95,16 +98,18 @@ export async function findDocumentByCode(code: string): Promise<ChainAnchor | nu
   const normalized = code.trim().toUpperCase()
   if (!normalized) return null
 
-  const [request, order, receipt, delivery] = await Promise.all([
+  const [request, order, receipt, dispatchGuide, delivery] = await Promise.all([
     db.select({ id: purchaseRequests.id }).from(purchaseRequests).where(eq(purchaseRequests.code, normalized)).limit(1),
     db.select({ id: purchaseOrders.id }).from(purchaseOrders).where(eq(purchaseOrders.code, normalized)).limit(1),
     db.select({ id: receipts.id }).from(receipts).where(eq(receipts.code, normalized)).limit(1),
+    db.select({ id: dispatchGuides.id }).from(dispatchGuides).where(eq(dispatchGuides.code, normalized)).limit(1),
     db.select({ id: deliveries.id }).from(deliveries).where(eq(deliveries.code, normalized)).limit(1),
   ])
 
   if (request[0]) return { kind: "request",  id: request[0].id }
   if (order[0])   return { kind: "order",    id: order[0].id }
   if (receipt[0]) return { kind: "receipt",  id: receipt[0].id }
+  if (dispatchGuide[0]) return { kind: "dispatchGuide", id: dispatchGuide[0].id }
   if (delivery[0]) return { kind: "delivery", id: delivery[0].id }
   return null
 }
@@ -117,10 +122,10 @@ export async function findDocumentByCode(code: string): Promise<ChainAnchor | nu
  * la entrega referencia. Las recepciones son la excepción —cuelgan de la OC, no
  * de la línea—, por eso también se arrastran los ids de orden.
  */
-async function seedFromAnchor(anchor: ChainAnchor): Promise<{ itemIds: string[]; orderIds: string[] }> {
+async function seedFromAnchor(anchor: ChainAnchor): Promise<{ itemIds: string[]; orderIds: string[]; guideIds: string[] }> {
   switch (anchor.kind) {
     case "item":
-      return { itemIds: [anchor.id], orderIds: [] }
+      return { itemIds: [anchor.id], orderIds: [], guideIds: [] }
 
     case "request": {
       const rows = await db
@@ -128,7 +133,7 @@ async function seedFromAnchor(anchor: ChainAnchor): Promise<{ itemIds: string[];
         .from(purchaseRequestItems)
         .where(eq(purchaseRequestItems.requestId, anchor.id))
         .limit(MAX_ROWS)
-      return { itemIds: rows.map((row) => row.id), orderIds: [] }
+      return { itemIds: rows.map((row) => row.id), orderIds: [], guideIds: [] }
     }
 
     case "order": {
@@ -142,6 +147,7 @@ async function seedFromAnchor(anchor: ChainAnchor): Promise<{ itemIds: string[];
       return {
         itemIds:  rows.flatMap((row) => (row.requestItemId ? [row.requestItemId] : [])),
         orderIds: [anchor.id],
+        guideIds: [],
       }
     }
 
@@ -158,6 +164,7 @@ async function seedFromAnchor(anchor: ChainAnchor): Promise<{ itemIds: string[];
       return {
         itemIds:  rows.flatMap((row) => (row.requestItemId ? [row.requestItemId] : [])),
         orderIds: rows.map((row) => row.orderId),
+        guideIds: [],
       }
     }
 
@@ -170,6 +177,27 @@ async function seedFromAnchor(anchor: ChainAnchor): Promise<{ itemIds: string[];
       return {
         itemIds:  rows.flatMap((row) => (row.requestItemId ? [row.requestItemId] : [])),
         orderIds: [],
+        guideIds: [],
+      }
+    }
+
+    case "dispatchGuide": {
+      const [guide] = await db
+        .select({ id: dispatchGuides.id, purchaseOrderId: dispatchGuides.purchaseOrderId })
+        .from(dispatchGuides)
+        .where(eq(dispatchGuides.id, anchor.id))
+        .limit(1)
+      if (!guide) return { itemIds: [], orderIds: [], guideIds: [anchor.id] }
+      const rows = guide.purchaseOrderId
+        ? await db.select({ requestItemId: purchaseOrderItems.requestItemId })
+            .from(purchaseOrderItems)
+            .where(eq(purchaseOrderItems.purchaseOrderId, guide.purchaseOrderId))
+            .limit(MAX_ROWS)
+        : []
+      return {
+        itemIds: rows.flatMap((row) => row.requestItemId ? [row.requestItemId] : []),
+        orderIds: guide.purchaseOrderId ? [guide.purchaseOrderId] : [],
+        guideIds: [anchor.id],
       }
     }
   }
@@ -202,6 +230,7 @@ export async function getDocumentChain(session: Session, anchor: ChainAnchor): P
   const canSeeAllRequests = can(session, "requests:view_all")
   const canSeeOrders      = can(session, "purchasing:view")
   const canSeeReceipts    = can(session, "receiving:view")
+  const canSeeGuides      = can(session, "warehouse:view_guides")
   const canSeeDeliveries  = can(session, "deliveries:view")
 
   // ARQ-10: las 3 consultas de este primer nivel sólo dependen de `itemIds` —
@@ -257,7 +286,12 @@ export async function getDocumentChain(session: Session, anchor: ChainAnchor): P
 
   // Segundo nivel: ambas dependen de `orderIds` (recién resuelto arriba) pero
   // no una de la otra, así que también van en paralelo entre sí.
-  const [orderRows, receiptRows] = await Promise.all([
+  const guidePredicates = [
+    seed.guideIds.length > 0 ? inArray(dispatchGuides.id, seed.guideIds) : undefined,
+    orderIds.length > 0 ? inArray(dispatchGuides.purchaseOrderId, orderIds) : undefined,
+  ].filter((predicate): predicate is NonNullable<typeof predicate> => predicate !== undefined)
+
+  const [orderRows, receiptRows, guideRows] = await Promise.all([
     canSeeOrders && orderIds.length > 0
       ? db
           .select({
@@ -289,6 +323,20 @@ export async function getDocumentChain(session: Session, anchor: ChainAnchor): P
           })
           .from(receipts)
           .where(inArray(receipts.purchaseOrderId, orderIds))
+          .limit(MAX_ROWS)
+      : Promise.resolve([]),
+
+    canSeeGuides && guidePredicates.length > 0
+      ? db
+          .select({
+            id: dispatchGuides.id,
+            code: dispatchGuides.code,
+            status: dispatchGuides.status,
+            worksiteId: dispatchGuides.destinationWorksiteId,
+            issuedAt: dispatchGuides.issuedAt,
+          })
+          .from(dispatchGuides)
+          .where(or(...guidePredicates))
           .limit(MAX_ROWS)
       : Promise.resolve([]),
   ])
@@ -336,6 +384,15 @@ export async function getDocumentChain(session: Session, anchor: ChainAnchor): P
       status: row.locationType,
       at: row.receivedAt,
       worksiteId: row.worksiteId ?? orderWorksite.get(row.purchaseOrderId) ?? null,
+    }))),
+    dispatchGuides: collect(guideRows.map((row) => ({
+      kind: "dispatchGuide" as const,
+      id: row.id,
+      code: row.code,
+      href: `/bodega/guias/${row.id}`,
+      status: row.status,
+      at: row.issuedAt,
+      worksiteId: row.worksiteId,
     }))),
     deliveries: collect(deliveryRows.map((row) => ({
       kind: "delivery" as const,
