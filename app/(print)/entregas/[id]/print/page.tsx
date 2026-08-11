@@ -28,7 +28,7 @@ export default async function DeliveryPrintPage({ params }: PageProps) {
   const { id } = await params
   const delivery = await db.query.deliveries.findFirst({
     where: eq(deliveries.id, id),
-    with: { worker: true, worksite: true, deliveredBy: true, items: true },
+    with: { worker: true, worksite: true, sourceWorksite: true, deliveredBy: true, items: true },
   })
   if (!delivery) notFound()
   if (!delivery.worksiteId || !canAccessWorksite(session, delivery.worksiteId)) notFound()
@@ -56,8 +56,8 @@ export default async function DeliveryPrintPage({ params }: PageProps) {
   const generatedAt = new Date().toISOString()
   const suggestedFilename = `comprobante-entrega-${delivery.code}.pdf`
   const deliveryItems = delivery.items.map((item, index) => ({
-    label: `EPP ${index + 1}`,
-    value: `${productMap.get(item.productId ?? "") ?? item.productNameFree ?? "EPP"} · ${formatQty(item.quantity, item.unitOfMeasure)}`,
+    label: `Producto ${index + 1}`,
+    value: `${productMap.get(item.productId ?? "") ?? item.productNameFree ?? "Producto"} · ${formatQty(item.quantity, item.unitOfMeasure)}`,
   }))
   const returnedItems = delivery.items.reduce<Array<{ label: string; value: string }>>((items, item) => {
     if (item.returnQuantity) {
@@ -93,6 +93,7 @@ export default async function DeliveryPrintPage({ params }: PageProps) {
             title: "Entrega",
             fields: [
               { label: "Faena", value: delivery.worksite?.name ?? "Sin faena" },
+              { label: "Bodega origen", value: delivery.sourceWorksite?.name ?? delivery.worksite?.name ?? "Sin registro" },
               { label: "Fecha", value: formatDate(delivery.deliveredAt) },
               { label: "Entregado por", value: delivery.deliveredBy?.name ?? delivery.deliveredBy?.email ?? "Sin registro" },
               { label: "Tipo", value: delivery.destinationType === "faena" ? "Entrega a faena" : "Entrega a trabajador" },
@@ -100,20 +101,20 @@ export default async function DeliveryPrintPage({ params }: PageProps) {
           },
           { title: "Productos entregados", fields: deliveryItems },
           ...(returnedItems.length > 0 ? [{ title: "Devolución de EPP", fields: returnedItems }] : []),
-          {
-            title: "Evidencia de firma",
+          ...(delivery.signaturePath ? [{
+            title: "Evidencia histórica",
             fields: [{
               label: "Archivo de firma",
-              value: delivery.signaturePath ? "Archivo de firma adjunto" : "Sin archivo de firma",
+              value: "Archivo de firma histórico conservado",
             }],
-          },
+          }] : []),
         ]}
       />
 
       <main className="delivery-sheet" aria-label={`Comprobante de entrega ${delivery.code}`}>
         <div className="header">
           <div>
-            <h1>Comprobante de Entrega EPP</h1>
+            <h1>Comprobante de Entrega</h1>
             <p className="code">{delivery.code}</p>
           </div>
           <div style={{ textAlign: "right" }}>
@@ -127,6 +128,10 @@ export default async function DeliveryPrintPage({ params }: PageProps) {
             <div className="field">
               <dt>Faena</dt>
               <dd>{delivery.worksite?.name ?? "—"}</dd>
+            </div>
+            <div className="field">
+              <dt>Bodega origen</dt>
+              <dd>{delivery.sourceWorksite?.name ?? delivery.worksite?.name ?? "—"}</dd>
             </div>
             <div className="field">
               <dt>Entregado por</dt>
@@ -152,7 +157,7 @@ export default async function DeliveryPrintPage({ params }: PageProps) {
         </div>
 
         <div className="section">
-          <h2>EPP Entregado</h2>
+          <h2>Productos entregados</h2>
           <table>
             <thead>
               <tr>
@@ -164,7 +169,7 @@ export default async function DeliveryPrintPage({ params }: PageProps) {
             <tbody>
               {delivery.items.map((item) => (
                 <tr key={item.id}>
-                  <td>{productMap.get(item.productId ?? "") ?? item.productNameFree ?? "EPP"}</td>
+                  <td>{productMap.get(item.productId ?? "") ?? item.productNameFree ?? "Producto"}</td>
                   <td style={{ textAlign: "right" }} className="total">{item.quantity}</td>
                   <td>{item.unitOfMeasure}</td>
                 </tr>
@@ -202,29 +207,14 @@ export default async function DeliveryPrintPage({ params }: PageProps) {
           </div>
         )}
 
-        <div className="signature" aria-label="Evidencia de firma">
-          <div className="sig-box">
-            {delivery.signaturePath ? (
-              <>
-                <p className="sig-label">Archivo de firma adjunto</p>
-                <p style={{ fontSize: 9, color: "#6b7280", marginTop: 2 }}>La evidencia se conserva como archivo; este PDF no dibuja una firma.</p>
-              </>
-            ) : (
-              <>
-                <p className="sig-label">Sin archivo de firma</p>
-                <div className="sig-line" aria-hidden="true" />
-                <p className="sig-label">Espacio de firma manual no registrado</p>
-              </>
-            )}
-            <p style={{ fontSize: 9, color: "#9ca3af", marginTop: 2 }}>{workerName}</p>
-            <p style={{ fontSize: 9, color: "#9ca3af" }}>RUT: {workerRut}</p>
+        {delivery.signaturePath && (
+          <div className="section" aria-label="Evidencia histórica">
+            <h2>Evidencia histórica</h2>
+            <p style={{ fontSize: 11, color: "#6b7280" }}>
+              Este comprobante conserva que el registro histórico tiene un archivo de firma adjunto. Las entregas nuevas no solicitan firma.
+            </p>
           </div>
-          <div className="sig-box">
-            <div className="sig-line" />
-            <p className="sig-label">Espacio de firma manual no registrado · quien entrega</p>
-            <p style={{ fontSize: 9, color: "#9ca3af", marginTop: 2 }}>{delivery.deliveredBy?.name ?? delivery.deliveredBy?.email ?? "—"}</p>
-          </div>
-        </div>
+        )}
 
         <div className="footer">
           Documento generado por Plataforma Chome el {formatDate(generatedAt)}

@@ -3,288 +3,341 @@
 import * as React from "react"
 import { useActionState } from "react"
 import { useRouter } from "next/navigation"
+import { Plus, Trash, Warning } from "@phosphor-icons/react"
 import { toast } from "@/lib/toast"
 import { useEnterAdvancesFields } from "@/lib/hooks/use-enter-advances-fields"
-import { Warning, CaretDown, CaretUp } from "@phosphor-icons/react"
 import { INITIAL_STATE } from "@/components/admin/form-state"
 import { SubmitButton } from "@/components/admin/submit-button"
-import { Field } from "@/components/ui/field"
-import { Input } from "@/components/ui/input"
-import { FileInput } from "@/components/ui/file-input"
-import { Textarea } from "@/components/ui/textarea"
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "@/components/ui/select"
-import { SignaturePad } from "@/components/ui/signature-pad"
 import { Button } from "@/components/ui/button"
+import { Field } from "@/components/ui/field"
+import { FileInput } from "@/components/ui/file-input"
+import { Input } from "@/components/ui/input"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import { Textarea } from "@/components/ui/textarea"
 import { formatQty } from "@/lib/utils"
 import type { ActionState } from "@/lib/validation/operations"
 import { registerWorkerDeliveryAction } from "./actions"
 import type {
-  DeliveryWorksiteOption,
-  DeliveryWorkerOption,
   DeliverableEppOption,
-  DeliveryReturnProductOption,
+  DeliveryStockProductOption,
+  DeliveryWorkerOption,
+  DeliveryWorksiteOption,
 } from "./delivery-form.types"
-import { DeliveryFormReturn } from "./delivery-form-return"
-
-function handleNotesInput(event: React.FormEvent<HTMLTextAreaElement>) {
-  const el = event.currentTarget
-  el.style.height = "auto"
-  el.style.height = `${el.scrollHeight}px`
-}
 
 export type {
-  DeliveryWorksiteOption,
-  DeliveryWorkerOption,
   DeliverableEppOption,
-  DeliveryReturnProductOption,
+  DeliveryStockProductOption,
+  DeliveryWorkerOption,
+  DeliveryWorksiteOption,
 } from "./delivery-form.types"
+
+type DeliveryLine = {
+  productId: string
+  quantity: number
+  requestItemId: string | null
+  notes: string | null
+}
 
 export function DeliveryForm({
   worksites,
   workers,
-  deliverableItems,
-  returnProducts,
-  initialWorksiteId,
+  stockProducts,
+  traceableItems = [],
+  initialSourceWorksiteId,
   initialRequestItemId,
+  onSuccess,
 }: {
   worksites: DeliveryWorksiteOption[]
   workers: DeliveryWorkerOption[]
-  deliverableItems: DeliverableEppOption[]
-  returnProducts?: DeliveryReturnProductOption[]
-  initialWorksiteId?: string
+  stockProducts: DeliveryStockProductOption[]
+  traceableItems?: DeliverableEppOption[]
+  initialSourceWorksiteId?: string
   initialRequestItemId?: string
+  onSuccess?: () => void
 }) {
   const router = useRouter()
   const [state, action] = useActionState<ActionState, FormData>(registerWorkerDeliveryAction, INITIAL_STATE)
-  const defaultWorksiteId = initialWorksiteId ?? worksites[0]?.id ?? ""
-  const [worksiteId, setWorksiteId] = React.useState(defaultWorksiteId)
+  const initialTraceItem = traceableItems.find((item) => item.requestItemId === initialRequestItemId)
+  const defaultSourceWorksiteId = initialSourceWorksiteId
+    ?? initialTraceItem?.worksiteId
+    ?? stockProducts[0]?.sourceWorksiteId
+    ?? worksites[0]?.id
+    ?? ""
+  const [sourceWorksiteId, setSourceWorksiteId] = React.useState(defaultSourceWorksiteId)
   const [workerId, setWorkerId] = React.useState("")
-  const [requestItemId, setRequestItemId] = React.useState(initialRequestItemId ?? "")
-  const [showReturn, setShowReturn] = React.useState(false)
-  const [returnProductId, setReturnProductId] = React.useState("")
+  const [pendingProductId, setPendingProductId] = React.useState(initialTraceItem?.productId ?? "")
+  const [pendingQuantity, setPendingQuantity] = React.useState("")
+  const [pendingRequestItemId, setPendingRequestItemId] = React.useState(initialTraceItem?.requestItemId ?? "")
+  const [lines, setLines] = React.useState<DeliveryLine[]>([])
   const formRef = React.useRef<HTMLFormElement>(null)
-  const returnSectionRef = React.useRef<HTMLDivElement>(null)
-  // E-5: entregas es una estación de captura repetitiva — Enter avanza de campo
-  // en vez de enviar, y el envío queda para el último campo o el botón.
   useEnterAdvancesFields(formRef)
-  const notesRef = React.useRef<HTMLTextAreaElement>(null)
+
+  const availableStock = React.useMemo(
+    () => stockProducts.filter((product) => product.sourceWorksiteId === sourceWorksiteId && product.stockQuantity > 0),
+    [sourceWorksiteId, stockProducts],
+  )
+  const selectedWorker = workers.find((worker) => worker.id === workerId)
+  const selectableProducts = availableStock.filter((product) => !lines.some((line) => line.productId === product.productId))
+  const selectedPendingProduct = availableStock.find((product) => product.productId === pendingProductId)
+  const traceOptions = traceableItems.filter((item) => (
+    item.worksiteId === sourceWorksiteId
+    && item.productId === pendingProductId
+    && selectedWorker?.worksiteId === sourceWorksiteId
+  ))
 
   React.useEffect(() => {
     if (state.ok && state.message) {
       toast.success(state.message)
-      formRef.current?.reset()
-      if (notesRef.current) notesRef.current.style.height = ""
-      setWorkerId("")
-      setRequestItemId("")
-      setShowReturn(false)
-      setReturnProductId("")
       router.refresh()
-      window.setTimeout(() => {
-        document.getElementById("delivery-history")?.scrollIntoView({ behavior: "smooth", block: "start" })
-      }, 250)
+      formRef.current?.reset()
+      setWorkerId("")
+      setLines([])
+      setPendingProductId("")
+      setPendingQuantity("")
+      setPendingRequestItemId("")
+      onSuccess?.()
     } else if (state.ok === false && state.message && state !== INITIAL_STATE) {
       toast.error(state.message)
     }
-  }, [router, state])
+  }, [onSuccess, router, state])
 
-  React.useEffect(() => {
-    if (showReturn) {
-      returnSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" })
+  function changeSource(nextSourceWorksiteId: string) {
+    setSourceWorksiteId(nextSourceWorksiteId)
+    setLines([])
+    setPendingProductId("")
+    setPendingQuantity("")
+    setPendingRequestItemId("")
+  }
+
+  function changeWorker(nextWorkerId: string) {
+    setWorkerId(nextWorkerId)
+    // A named request item is traceable only at its worker's faena. Keep the
+    // physical product lines but unlink them if the recipient changes.
+    setLines((current) => current.map((line) => ({ ...line, requestItemId: null })))
+    setPendingRequestItemId("")
+  }
+
+  function addLine() {
+    const quantity = Number(pendingQuantity)
+    if (!selectedPendingProduct || !Number.isFinite(quantity) || quantity <= 0) return
+    if (quantity > selectedPendingProduct.stockQuantity) {
+      toast.error(`Stock disponible: ${formatQty(selectedPendingProduct.stockQuantity, selectedPendingProduct.unitOfMeasure)}`)
+      return
     }
-  }, [showReturn])
+    const selectedTrace = traceOptions.find((item) => item.requestItemId === pendingRequestItemId)
+    if (selectedTrace && quantity > selectedTrace.remainingQuantity) {
+      toast.error(`Saldo trazable: ${formatQty(selectedTrace.remainingQuantity, selectedTrace.unitOfMeasure)}`)
+      return
+    }
+    setLines((current) => [
+      ...current,
+      {
+        productId: selectedPendingProduct.productId,
+        quantity,
+        requestItemId: selectedTrace?.requestItemId ?? null,
+        notes: null,
+      },
+    ])
+    setPendingProductId("")
+    setPendingQuantity("")
+    setPendingRequestItemId("")
+  }
 
-  const availableWorkers = workers.filter((worker) => worker.worksiteId === worksiteId)
-  const availableItems = deliverableItems.filter((item) => item.worksiteId === worksiteId)
-  const selectedItem = availableItems.find((item) => item.requestItemId === requestItemId)
-  const quantityMax = selectedItem
-    ? Math.min(selectedItem.remainingQuantity, selectedItem.stockQuantity)
-    : undefined
-
-  function handleWorksiteChange(nextWorksiteId: string) {
-    setWorksiteId(nextWorksiteId)
-    setWorkerId("")
-    setRequestItemId("")
+  function updateLineQuantity(productId: string, value: string) {
+    const quantity = Number(value)
+    const product = availableStock.find((candidate) => candidate.productId === productId)
+    setLines((current) => current.map((line) => {
+      if (line.productId !== productId) return line
+      const maxQuantity = product?.stockQuantity ?? line.quantity
+      const nextQuantity = Number.isFinite(quantity) ? Math.min(Math.max(quantity, 0), maxQuantity) : 0
+      return { ...line, quantity: nextQuantity }
+    }))
   }
 
   return (
-    <div className="rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] p-5">
-      <form ref={formRef} action={action} className="flex flex-col gap-4">
-        <input type="hidden" name="worksiteId" value={worksiteId} />
-        <input type="hidden" name="workerId" value={workerId} />
-        <input type="hidden" name="requestItemId" value={requestItemId} />
+    <form ref={formRef} action={action} className="flex flex-col gap-5">
+      <input type="hidden" name="sourceWorksiteId" value={sourceWorksiteId} />
+      <input type="hidden" name="workerId" value={workerId} />
+      <input type="hidden" name="itemsJson" value={JSON.stringify(lines)} />
 
-        <div className="grid gap-6 transition-[grid-template-columns] duration-300 ease-[var(--ease-out)] lg:grid-cols-2" style={!showReturn ? { gridTemplateColumns: "1fr" } : undefined}>
-          {/* ── Columna izquierda: datos de entrega ── */}
-          <div className="flex flex-col gap-4">
-            {showReturn && (
-              <div className="hidden lg:block">
-                <h2 className="text-base font-semibold text-(--color-text)">Registrar entrega de EPP</h2>
-                <p className="mt-1 text-sm text-(--color-text-muted)">
-                  Asigna EPP recibido a un trabajador y descuenta el stock de la faena.
-                </p>
-              </div>
-            )}
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <Field label="Faena" htmlFor="deliveryWorksiteId" required error={state.fieldErrors?.worksiteId?.[0]}>
-                <Select value={worksiteId} onValueChange={handleWorksiteChange}>
-                  <SelectTrigger id="deliveryWorksiteId" error={!!state.fieldErrors?.worksiteId}>
-                    <SelectValue placeholder="Selecciona faena" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {worksites.map((worksite) => (
-                      <SelectItem key={worksite.id} value={worksite.id}>{worksite.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </Field>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field label="Bodega de origen" htmlFor="deliverySourceWorksite" required error={state.fieldErrors?.sourceWorksiteId?.[0]}>
+          <Select value={sourceWorksiteId} onValueChange={changeSource}>
+            <SelectTrigger id="deliverySourceWorksite" error={!!state.fieldErrors?.sourceWorksiteId}>
+              <SelectValue placeholder="Selecciona bodega" />
+            </SelectTrigger>
+            <SelectContent>
+              {worksites.map((worksite) => (
+                <SelectItem key={worksite.id} value={worksite.id}>{worksite.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </Field>
 
-              <Field label="Trabajador" htmlFor="deliveryWorkerId" required error={state.fieldErrors?.workerId?.[0]}>
-                <Select value={workerId} onValueChange={setWorkerId} disabled={!worksiteId}>
-                  <SelectTrigger id="deliveryWorkerId" error={!!state.fieldErrors?.workerId}>
-                    <SelectValue placeholder={worksiteId ? "Selecciona trabajador" : "Elige faena primero"} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {availableWorkers.map((worker) => (
-                      <SelectItem key={worker.id} value={worker.id}>
-                        {worker.name}{worker.position ? ` · ${worker.position}` : ""}
-                      </SelectItem>
-                    ))}
-                    {availableWorkers.length === 0 && (
-                      <SelectItem value="__none_worker__" disabled>Sin trabajadores activos</SelectItem>
-                    )}
-                  </SelectContent>
-                </Select>
-              </Field>
-            </div>
+        <Field label="Trabajador" htmlFor="deliveryWorker" required error={state.fieldErrors?.workerId?.[0]}>
+          <Select searchable value={workerId} onValueChange={changeWorker}>
+            <SelectTrigger id="deliveryWorker" error={!!state.fieldErrors?.workerId}>
+              <SelectValue placeholder="Busca por nombre, cargo o faena" />
+            </SelectTrigger>
+            <SelectContent>
+              {workers.map((worker) => (
+                <SelectItem
+                  key={worker.id}
+                  value={worker.id}
+                  textValue={`${worker.name} ${worker.position ?? ""} ${worker.worksiteName}`}
+                >
+                  {worker.name} · {worker.worksiteName}{worker.position ? ` · ${worker.position}` : ""}
+                </SelectItem>
+              ))}
+              {workers.length === 0 && (
+                <SelectItem value="__no-active-workers" disabled>Sin trabajadores activos en tu alcance</SelectItem>
+              )}
+            </SelectContent>
+          </Select>
+          <p className="mt-1.5 text-xs text-[var(--color-text-subtle)]">
+            La faena visible junto al nombre es el destino de la entrega; no limita la bodega de origen.
+          </p>
+        </Field>
+      </div>
 
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <Field label="Equipo de protección personal (EPP) recibido pendiente" htmlFor="deliveryRequestItemId" required error={state.fieldErrors?.requestItemId?.[0]}>
-                <Select searchable value={requestItemId} onValueChange={setRequestItemId} disabled={!worksiteId}>
-                  <SelectTrigger id="deliveryRequestItemId" error={!!state.fieldErrors?.requestItemId}>
-                    <SelectValue placeholder={worksiteId ? "Selecciona EPP pendiente" : "Elige faena primero"} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {availableItems.map((item) => (
-                      <SelectItem key={item.requestItemId} value={item.requestItemId}>
-                        {item.requestCode} · {item.productName} · pendiente {formatQty(item.remainingQuantity, item.unitOfMeasure)}
-                      </SelectItem>
-                    ))}
-                    {availableItems.length === 0 && (
-                      <SelectItem value="__none_item__" disabled>Sin EPP pendiente con stock</SelectItem>
-                    )}
-                  </SelectContent>
-                </Select>
-                {selectedItem && (
-                  <p className="mt-1.5 text-xs text-[var(--color-text-subtle)]">
-                    Recibido en faena: {formatQty(selectedItem.receivedAtFaena, selectedItem.unitOfMeasure)}. Stock disponible: {formatQty(selectedItem.stockQuantity, selectedItem.unitOfMeasure)}. Saldo trazable: {formatQty(selectedItem.remainingQuantity, selectedItem.unitOfMeasure)}.
-                  </p>
-                )}
-              </Field>
-
-              <Field
-                label={quantityMax ? `Cantidad (máx. ${formatQty(quantityMax, selectedItem?.unitOfMeasure ?? "unidad")})` : "Cantidad"}
-                htmlFor="deliveryQuantity"
-                required
-                error={state.fieldErrors?.quantity?.[0]}
-              >
-                <Input
-                  id="deliveryQuantity"
-                  name="quantity"
-                  type="number"
-                  min="0.01"
-                  step="0.01"
-                  max={quantityMax}
-                  disabled={!selectedItem}
-                  required
-                  className="tabular-nums"
-                  error={!!state.fieldErrors?.quantity}
-                />
-              </Field>
-            </div>
-
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <Field label="Comprobante" htmlFor="deliveryProofFile" helper="PDF, JPG o PNG. Opcional.">
-                <FileInput
-                  id="deliveryProofFile"
-                  name="proofFile"
-                  accept="application/pdf,image/jpeg,image/png"
-                  disabled={!selectedItem}
-                />
-              </Field>
-
-              <Field label="Recibido por" htmlFor="deliveryReceiverName" helper="Persona que recibe el EPP. Si se omite, se usa el nombre del trabajador.">
-                <Input
-                  id="deliveryReceiverName"
-                  name="receiverName"
-                  placeholder="Ej: Supervisor de terreno"
-                  disabled={!selectedItem}
-                />
-              </Field>
-            </div>
-
-            <Field label="Firma del trabajador" helper="Opcional. Se guarda como archivo de firma adjunto; su evidencia no se verifica como firma.">
-              <SignaturePad name="signatureFile" disabled={!selectedItem} />
-            </Field>
-
-            <Field label="Notas" htmlFor="deliveryNotes" error={state.fieldErrors?.notes?.[0]}>
-              <Textarea
-                id="deliveryNotes"
-                name="notes"
-                ref={notesRef}
-                rows={1}
-                onInput={handleNotesInput}
-                placeholder="Condición del EPP, observaciones..."
-                disabled={!selectedItem}
-                error={!!state.fieldErrors?.notes}
-                className="h-9 min-h-9 resize-none overflow-hidden py-1.5"
-              />
-            </Field>
-
-            {/* ── Devolver EPP antiguo ── */}
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              onClick={() => {
-                setShowReturn(!showReturn)
-                if (showReturn) setReturnProductId("")
-              }}
-              className="self-start border-dashed text-sm text-[var(--color-text-muted)] hover:border-[var(--color-primary-line)] hover:bg-[var(--color-primary-tint)] hover:text-[var(--color-primary-ink)]"
-            >
-              <span>Devolver EPP antiguo</span>
-              {showReturn
-                ? <CaretUp size={14} weight="bold" />
-                : <CaretDown size={14} weight="bold" />}
-            </Button>
+      <section className="rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-surface-2)] p-4" aria-labelledby="delivery-products-title">
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <div>
+            <h2 id="delivery-products-title" className="text-base font-semibold text-[var(--color-text)]">Productos a entregar</h2>
+            <p className="mt-0.5 text-sm text-[var(--color-text-muted)]">Cada línea descuenta el stock físico de la bodega seleccionada.</p>
           </div>
-
-          {/* ── Columna derecha: devolución (con morph) ── */}
-          <DeliveryFormReturn
-            showReturn={showReturn}
-            returnProductId={returnProductId}
-            setReturnProductId={setReturnProductId}
-            returnProducts={returnProducts}
-            returnSectionRef={returnSectionRef}
-          />
+          <span className="rounded-[var(--radius-full)] bg-[var(--color-surface)] px-2.5 py-1 text-xs font-medium text-[var(--color-text-muted)]">
+            {lines.length} {lines.length === 1 ? "producto" : "productos"}
+          </span>
         </div>
 
-        {state.ok === false && state.message && state !== INITIAL_STATE && (
-          <p className="flex items-center gap-1.5 text-sm text-[var(--color-danger)]">
-            <Warning size={14} /> {state.message}
-          </p>
+        <div className="mt-4 grid gap-3 sm:grid-cols-[minmax(0,1fr)_9rem_auto]">
+          <Field label="Producto con stock" htmlFor="deliveryProduct">
+            <Select searchable value={pendingProductId} onValueChange={(value) => {
+              setPendingProductId(value)
+              setPendingRequestItemId("")
+            }} disabled={!sourceWorksiteId || selectableProducts.length === 0}>
+              <SelectTrigger id="deliveryProduct">
+                <SelectValue placeholder={sourceWorksiteId ? "Busca producto o SKU" : "Elige una bodega"} />
+              </SelectTrigger>
+              <SelectContent>
+                {selectableProducts.map((product) => (
+                  <SelectItem key={product.productId} value={product.productId} textValue={`${product.productName} ${product.productSku ?? ""}`}>
+                    {product.productName}{product.productSku ? ` · ${product.productSku}` : ""} · {formatQty(product.stockQuantity, product.unitOfMeasure)}
+                  </SelectItem>
+                ))}
+                {selectableProducts.length === 0 && (
+                  <SelectItem value="__no-stock-products" disabled>Sin productos físicos disponibles</SelectItem>
+                )}
+              </SelectContent>
+            </Select>
+          </Field>
+
+          <Field label={selectedPendingProduct ? `Cantidad (máx. ${formatQty(selectedPendingProduct.stockQuantity, selectedPendingProduct.unitOfMeasure)})` : "Cantidad"} htmlFor="deliveryPendingQuantity">
+            <Input
+              id="deliveryPendingQuantity"
+              type="number"
+              min="0.01"
+              step="0.01"
+              max={selectedPendingProduct?.stockQuantity}
+              value={pendingQuantity}
+              onChange={(event) => setPendingQuantity(event.target.value)}
+              disabled={!selectedPendingProduct}
+              className="tabular-nums"
+            />
+          </Field>
+
+          <Button type="button" variant="secondary" onClick={addLine} disabled={!selectedPendingProduct || !pendingQuantity} className="self-end">
+            <Plus size={16} weight="bold" /> Agregar
+          </Button>
+        </div>
+
+        {selectedPendingProduct && traceOptions.length > 0 && (
+          <Field label="Vincular a solicitud recibida (opcional)" htmlFor="deliveryTraceItem" helper="Sólo aplica cuando el trabajador pertenece a la misma faena de la bodega origen.">
+            <Select searchable value={pendingRequestItemId} onValueChange={(value) => setPendingRequestItemId(value === "__none_trace" ? "" : value)}>
+              <SelectTrigger id="deliveryTraceItem"><SelectValue placeholder="Sin vínculo de solicitud" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none_trace">Sin vínculo de solicitud</SelectItem>
+                {traceOptions.map((item) => (
+                  <SelectItem key={item.requestItemId} value={item.requestItemId}>
+                    {item.requestCode} · saldo {formatQty(item.remainingQuantity, item.unitOfMeasure)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
         )}
 
-        <div className="flex items-center justify-end">
-          <SubmitButton
-            label="Registrar entrega"
-            loadingLabel="Guardando..."
-            variant="primary"
-            disabled={!worksiteId || !workerId || !requestItemId}
-          />
-        </div>
-      </form>
-    </div>
+        {lines.length === 0 ? (
+          <p className="mt-4 rounded-[var(--radius-lg)] border border-dashed border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-3 text-sm text-[var(--color-text-muted)]">
+            Agrega uno o más productos con stock para continuar.
+          </p>
+        ) : (
+          <ul className="mt-4 divide-y divide-[var(--color-border)] overflow-hidden rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)]">
+            {lines.map((line) => {
+              const product = availableStock.find((candidate) => candidate.productId === line.productId)
+              return (
+                <li key={line.productId} className="flex items-center gap-3 px-3 py-3">
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium text-[var(--color-text)]">{product?.productName ?? line.productId}</p>
+                    <p className="mt-0.5 text-xs text-[var(--color-text-subtle)]">
+                      {product?.productSku ? `${product.productSku} · ` : ""}Disponible: {formatQty(product?.stockQuantity ?? 0, product?.unitOfMeasure ?? "unidad")}
+                      {line.requestItemId ? " · Vinculado a solicitud" : ""}
+                    </p>
+                  </div>
+                  <Input
+                    aria-label={`Cantidad de ${product?.productName ?? line.productId}`}
+                    type="number"
+                    min="0.01"
+                    step="0.01"
+                    max={product?.stockQuantity}
+                    value={line.quantity || ""}
+                    onChange={(event) => updateLineQuantity(line.productId, event.target.value)}
+                    className="w-24 tabular-nums"
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-mobile-sm"
+                    aria-label={`Quitar ${product?.productName ?? "producto"}`}
+                    onClick={() => setLines((current) => current.filter((candidate) => candidate.productId !== line.productId))}
+                    className="text-[var(--color-danger)] hover:text-[var(--color-danger)]"
+                  >
+                    <Trash size={16} weight="bold" />
+                  </Button>
+                </li>
+              )
+            })}
+          </ul>
+        )}
+      </section>
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field label="Comprobante" htmlFor="deliveryProofFile" helper="PDF, JPG o PNG. Opcional.">
+          <FileInput id="deliveryProofFile" name="proofFile" accept="application/pdf,image/jpeg,image/png" disabled={lines.length === 0} />
+        </Field>
+        <Field label="Recibido por" htmlFor="deliveryReceiverName" helper="Si se omite, se registra el nombre del trabajador.">
+          <Input id="deliveryReceiverName" name="receiverName" placeholder="Ej: supervisor de terreno" disabled={lines.length === 0} />
+        </Field>
+      </div>
+
+      <Field label="Notas" htmlFor="deliveryNotes" error={state.fieldErrors?.notes?.[0]}>
+        <Textarea id="deliveryNotes" name="notes" rows={2} placeholder="Observaciones de la entrega…" disabled={lines.length === 0} error={!!state.fieldErrors?.notes} />
+      </Field>
+
+      {state.ok === false && state.message && state !== INITIAL_STATE && (
+        <p className="flex items-center gap-1.5 text-sm text-[var(--color-danger)]"><Warning size={15} /> {state.message}</p>
+      )}
+
+      <div className="flex justify-end border-t border-[var(--color-border)] pt-4">
+        <SubmitButton label="Registrar entrega" loadingLabel="Guardando…" variant="primary" disabled={!sourceWorksiteId || !workerId || lines.length === 0 || lines.some((line) => line.quantity <= 0)} />
+      </div>
+    </form>
   )
 }

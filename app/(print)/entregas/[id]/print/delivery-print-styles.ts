@@ -77,10 +77,6 @@ export const DELIVERY_PRINT_STYLES = `
   .delivery-sheet th { padding: 6px 4px; border-bottom: 2px solid #e5e7eb; color: #6b7280; font-size: 10px; font-weight: 600; text-align: left; text-transform: uppercase; }
   .delivery-sheet td { padding: 6px 4px; border-bottom: 1px solid #f3f4f6; font-size: 11px; }
   .delivery-sheet .total { font-weight: 700; }
-  .delivery-sheet .signature { display: flex; gap: 40px; justify-content: space-between; margin-top: 60px; }
-  .delivery-sheet .sig-box { flex: 1; }
-  .delivery-sheet .sig-line { margin-top: 48px; margin-bottom: 4px; border-bottom: 1px solid #111827; }
-  .delivery-sheet .sig-label { margin: 0; color: #6b7280; font-size: 10px; }
   .delivery-sheet .footer { margin-top: 40px; padding-top: 12px; border-top: 1px solid #e5e7eb; color: #9ca3af; font-size: 9px; text-align: center; }
 
   /* "screen and" es obligatorio: al imprimir, el ancho de la media query es el

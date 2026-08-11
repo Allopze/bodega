@@ -10,6 +10,7 @@ import { formatDate } from "@/lib/utils"
 export type DeliveryRow = {
   id:           string
   code:         string
+  sourceWorksiteName: string
   worksiteName: string
   workerId?:    string | null
   workerName:   string
@@ -23,8 +24,9 @@ export type DeliveryRow = {
 const COLUMNS = [
   { key: "code", label: "Entrega", sortable: true, width: "w-36" },
   { key: "workerName", label: "Trabajador", sortable: true },
+  { key: "sourceWorksiteName", label: "Bodega origen", sortable: true },
   { key: "worksiteName", label: "Faena", sortable: true },
-  { key: "itemSummary", label: "Equipo de protección personal (EPP)", sortable: true },
+  { key: "itemSummary", label: "Productos", sortable: true },
   { key: "deliveredAt", label: "Fecha", sortable: true, width: "w-36" },
   { key: "attachmentId", label: "Comprobante", sortable: false, width: "w-32" },
 ]
@@ -41,11 +43,11 @@ export function DeliveriesTable({ deliveries, canViewTraceability = false }: { d
       caption="Entregas"
       columns={COLUMNS}
       rows={deliveries}
-      searchKeys={["code", "workerName", "worksiteName", "itemSummary"]}
+      searchKeys={["code", "workerName", "sourceWorksiteName", "worksiteName", "itemSummary"]}
       pageSize={HISTORY_PAGE_SIZE}
 
       emptyTitle="Sin entregas"
-      emptyDescription="No hay entregas de EPP que coincidan con la búsqueda."
+      emptyDescription="No hay entregas que coincidan con la búsqueda."
       renderMobileCard={(delivery) => {
         return (
           <article className="rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] p-4">
@@ -99,8 +101,12 @@ export function DeliveriesTable({ deliveries, canViewTraceability = false }: { d
 
             <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
               <div>
-                <dt className="text-[var(--color-text-subtle)]">Equipo de protección personal (EPP)</dt>
+                <dt className="text-[var(--color-text-subtle)]">Productos</dt>
                 <dd className="break-words text-[var(--color-text-muted)]">{delivery.itemSummary}</dd>
+              </div>
+              <div>
+                <dt className="text-[var(--color-text-subtle)]">Bodega origen</dt>
+                <dd className="break-words text-[var(--color-text-muted)]">{delivery.sourceWorksiteName}</dd>
               </div>
               <div className="text-right">
                 <dt className="text-[var(--color-text-subtle)]">Fecha</dt>
@@ -139,6 +145,9 @@ export function DeliveriesTable({ deliveries, canViewTraceability = false }: { d
                   <p className="font-mono text-[11px] text-[var(--color-text-subtle)]">{delivery.requestCode}</p>
                 )}
               </div>
+            </TableCell>
+            <TableCell className="text-sm text-[var(--color-text-muted)]">
+              {delivery.sourceWorksiteName}
             </TableCell>
             <TableCell className="text-sm text-[var(--color-text-muted)]">
               {delivery.worksiteName}

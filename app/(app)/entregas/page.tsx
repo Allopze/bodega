@@ -24,10 +24,10 @@ import { buildPaginationHref, resolvePagination } from "@/lib/pagination"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Button } from "@/components/ui/button"
 import { DownloadSimple, Package, User } from "@phosphor-icons/react/dist/ssr"
-import { and, asc, desc, eq, inArray, isNotNull, count, sql } from "drizzle-orm"
+import { and, asc, count, desc, eq, gt, inArray, isNotNull, sql } from "drizzle-orm"
 import { DeliveriesTable, type DeliveryRow } from "./deliveries-table"
-import { DeliveryForm, type DeliverableEppOption } from "./delivery-form"
-import { DeliveryFormPanel } from "./delivery-form-panel"
+import { type DeliverableEppOption, type DeliveryStockProductOption } from "./delivery-form"
+import { DeliveryFormSheet } from "./delivery-form-sheet"
 import { WorkAssignmentControl } from "../pendientes/work-assignment-control"
 import { getOperationalAssignmentRecords } from "@/lib/services/operational-assignments"
 import { buildOperationalWorkItem, operationalAssignmentKey } from "@/lib/services/operational-work-queue"
@@ -47,6 +47,7 @@ export default async function Page({
   catch { redirect("/forbidden") }
   const canAssignWork = session.user.permissions.includes("operations:assign_work")
   const canViewTraceability = session.user.permissions.includes("traceability:view")
+  const canCreateDelivery = session.user.permissions.includes("deliveries:create")
 
   const sp = await searchParams
   const requestedWorksiteId = typeof sp.faena === "string" ? sp.faena : ""
@@ -71,7 +72,7 @@ export default async function Page({
 
   const pageHref = (page: number) => buildPaginationHref("/entregas", sp, page)
 
-  const [allWorksites, allWorkers, stockRows, receivedItems, historyRows, catalogProducts] = await Promise.all([
+  const [allWorksites, allWorkers, stockRows, receivedItems, historyRows] = await Promise.all([
     db
       .select({ id: worksites.id, name: worksites.name })
       .from(worksites)
@@ -89,16 +90,25 @@ export default async function Page({
       .from(workers)
       .where(and(eq(workers.isActive, true), worksiteScopeSql(session, workers.worksiteId)))
       .orderBy(asc(workers.lastName), asc(workers.firstName)),
-    // ARQ-9: sólo se leen estas 3 columnas más abajo (stockByWorksiteProduct) —
-    // el join a products vía `with` cargaba el catálogo entero sin usarlo.
+    // Fuente de verdad de entregas: saldo físico de productos de catálogo. Los
+    // servicios no producen ni consumen stock.
     db
       .select({
         worksiteId: worksiteStock.worksiteId,
         productId:  worksiteStock.productId,
         quantity:   worksiteStock.quantity,
+        productName: products.name,
+        productSku: products.sku,
+        unitOfMeasure: products.unitOfMeasure,
       })
       .from(worksiteStock)
-      .where(worksiteScopeSql(session, worksiteStock.worksiteId)),
+      .innerJoin(products, eq(worksiteStock.productId, products.id))
+      .where(and(
+        worksiteScopeSql(session, worksiteStock.worksiteId),
+        gt(worksiteStock.quantity, 0),
+        eq(products.isActive, true),
+        eq(products.isService, false),
+      )),
     db
       .select({
         id:              purchaseRequestItems.id,
@@ -128,6 +138,7 @@ export default async function Page({
       .select({
         id: deliveries.id,
         code: deliveries.code,
+        sourceWorksiteId: deliveries.sourceWorksiteId,
         worksiteId: deliveries.worksiteId,
         workerId: deliveries.workerId,
         receiverName: deliveries.receiverName,
@@ -138,18 +149,6 @@ export default async function Page({
       .orderBy(desc(deliveries.deliveredAt))
       .limit(historyPagination.limit)
       .offset(historyPagination.offset),
-    // ARQ-9: returnProducts alimenta el picker de "producto de reemplazo" en
-    // una devolución EPP — nunca un producto no-EPP, igual que receivedItems.
-    db
-      .select({
-        id: products.id,
-        name: products.name,
-        sku: products.sku,
-        unitOfMeasure: products.unitOfMeasure,
-      })
-      .from(products)
-      .where(and(eq(products.isActive, true), eq(products.isEpp, true)))
-      .orderBy(asc(products.name)),
   ])
 
   const worksiteOptions = allWorksites.map((worksite) => ({ id: worksite.id, name: worksite.name }))
@@ -160,6 +159,7 @@ export default async function Page({
     .map((worker) => ({
       id: worker.id,
       worksiteId: worker.worksiteId,
+      worksiteName: worksiteNameById.get(worker.worksiteId) ?? "Faena",
       name: `${worker.firstName} ${worker.lastName}`,
       rut: worker.rut,
       position: worker.position,
@@ -169,6 +169,15 @@ export default async function Page({
   for (const row of stockRows) {
     stockByWorksiteProduct.set(`${row.worksiteId}:${row.productId}`, row.quantity)
   }
+
+  const stockProducts: DeliveryStockProductOption[] = stockRows.map((row) => ({
+    sourceWorksiteId: row.worksiteId,
+    productId: row.productId,
+    productName: row.productName,
+    productSku: row.productSku,
+    unitOfMeasure: row.unitOfMeasure,
+    stockQuantity: row.quantity,
+  }))
 
   const receivedItemIds = receivedItems.map((item) => item.id)
   const [deliveredRows, faenaReceiptRows] = receivedItemIds.length > 0
@@ -214,6 +223,7 @@ export default async function Page({
         requestItemId: item.id,
         requestCode: item.requestCode,
         worksiteId: item.requestWorksiteId,
+        productId: item.productId!,
         productName: item.productName ?? item.productNameFree ?? "EPP recibido",
         productSku: item.productSku,
         quantity: item.quantity,
@@ -231,7 +241,7 @@ export default async function Page({
     : undefined
   const initialWorksiteId = initialDeliverable?.worksiteId
     ?? (requestedWorksiteId && visibleWorksiteIds.has(requestedWorksiteId) ? requestedWorksiteId : undefined)
-    ?? deliverableItems[0]?.worksiteId
+    ?? stockProducts[0]?.sourceWorksiteId
     ?? worksiteOptions[0]?.id
   const initialDeliverySource = initialDeliverable
     ? receivedItems.find((item) => item.id === initialDeliverable.requestItemId)
@@ -321,6 +331,9 @@ export default async function Page({
     return {
       id: delivery.id,
       code: delivery.code,
+      sourceWorksiteName: delivery.sourceWorksiteId
+        ? (worksiteNameById.get(delivery.sourceWorksiteId) ?? "Bodega")
+        : (delivery.worksiteId ? (worksiteNameById.get(delivery.worksiteId) ?? "Faena") : "Sin registro"),
       worksiteName: delivery.worksiteId ? (worksiteNameById.get(delivery.worksiteId) ?? "Faena") : "Faena",
       workerId: delivery.workerId ?? null,
       workerName: delivery.workerId ? (workerNameById.get(delivery.workerId) ?? "Trabajador") : "Trabajador",
@@ -337,7 +350,7 @@ export default async function Page({
       <PageContainer>
         <PageHeader
           title="Entregas"
-          description="Asignación de equipo de protección personal (EPP) recibido a trabajadores."
+          description="Entrega de productos físicos desde bodega a trabajadores."
           breadcrumb={<Breadcrumbs items={[{ label: "Inicio", href: "/dashboard" }, { label: "Entregas" }]} />}
         />
         <EmptyState
@@ -357,7 +370,7 @@ export default async function Page({
     <PageContainer>
       <PageHeader
         title="Entregas"
-        description="Asignación de equipo de protección personal (EPP) recibido a trabajadores."
+        description="Entrega de productos físicos desde bodega a trabajadores."
         breadcrumb={
           <Breadcrumbs items={[
             { label: "Inicio", href: "/dashboard" },
@@ -366,6 +379,16 @@ export default async function Page({
         }
         actions={
           <div className="flex items-center gap-2">
+            {canCreateDelivery && (
+              <DeliveryFormSheet
+                worksites={worksiteOptions}
+                workers={workerOptions}
+                stockProducts={stockProducts}
+                traceableItems={deliverableItems}
+                initialSourceWorksiteId={initialWorksiteId}
+                initialRequestItemId={initialDeliverable?.requestItemId}
+              />
+            )}
             <Button asChild variant="secondary" size="sm">
               <a href="/api/entregas/export" download>
                 <DownloadSimple size={15} aria-hidden />
@@ -380,20 +403,22 @@ export default async function Page({
       </p>
 
       <div className="flex flex-col gap-6">
-        {/* ── Registrar entrega ── */}
-        {deliverableItems.length === 0 ? (
+        {/* La captura depende de stock físico, no de una solicitud EPP
+            pendiente: así el selector de trabajadores no desaparece por una
+            condición ajena al padrón de trabajadores. */}
+        {stockProducts.length === 0 ? (
           <section className="flex flex-col gap-3">
             <div>
-              <h2 className="text-base font-semibold text-(--color-text)">Registrar entrega de EPP</h2>
+              <h2 className="text-base font-semibold text-(--color-text)">Sin stock físico para entregar</h2>
               <p className="mt-1 text-sm text-(--color-text-muted)">
-                Asigna equipo de protección personal (EPP) recibido a un trabajador y descuenta el stock de la faena.
+                No hay productos físicos con saldo en las bodegas a las que tienes acceso.
               </p>
             </div>
             <div className="rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)]">
               <EmptyState
                 icon={<Package size={24} />}
-                title="Sin EPP pendiente de entrega"
-                description="Recepciona EPP en el módulo de Recepción para que aparezca aquí disponible para asignar."
+                title="Aún no hay stock disponible"
+                description="Registra la recepción física de una OC o confirma la guía a faena. Los servicios no se incorporan al stock."
                 action={
                   <Button asChild variant="secondary">
                     <Link href="/recepcion">Ir a Recepción</Link>
@@ -403,16 +428,12 @@ export default async function Page({
             </div>
           </section>
         ) : (
-          <DeliveryFormPanel>
-            <DeliveryForm
-              worksites={worksiteOptions}
-              workers={workerOptions}
-              deliverableItems={deliverableItems}
-              returnProducts={catalogProducts}
-              initialWorksiteId={initialWorksiteId}
-              initialRequestItemId={initialDeliverable?.requestItemId}
-            />
-          </DeliveryFormPanel>
+          <section className="rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3">
+            <h2 className="text-base font-semibold text-[var(--color-text)]">Entrega desde stock real</h2>
+            <p className="mt-0.5 text-sm text-[var(--color-text-muted)]">
+              Selecciona “Registrar entrega” para entregar uno o más productos. El trabajador se busca en el padrón activo y su faena se muestra junto a su nombre.
+            </p>
+          </section>
         )}
 
         {deliveryAssignmentItem && (
@@ -432,7 +453,7 @@ export default async function Page({
           <div>
             <h2 className="text-base font-semibold text-(--color-text)">Historial de entregas</h2>
             <p className="mt-1 text-sm text-(--color-text-muted)">
-              Registro nominal de equipo de protección personal (EPP) entregado a trabajadores.
+              Registro nominal de productos físicos entregados a trabajadores.
             </p>
           </div>
 
@@ -441,7 +462,7 @@ export default async function Page({
               <EmptyState
                 icon={<User size={22} />}
                 title="Sin entregas registradas"
-                description="Cuando registres una entrega de EPP, quedará disponible en este historial."
+                description="Cuando registres una entrega, quedará disponible en este historial."
                 compact
               />
             </div>

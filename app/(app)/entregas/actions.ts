@@ -8,8 +8,8 @@ import { nanoid } from "@/lib/id"
 import { logger } from "@/lib/logger"
 import { revalidateOperationalViews } from "@/lib/services/operational-cache"
 import { getPdfMaxSizeMb } from "@/lib/services/system-settings"
-import { registerWorkerEppDelivery, type DeliveryAttachmentInput } from "@/lib/services/deliveries"
-import { workerDeliverySchema, type ActionState } from "@/lib/validation/operations"
+import { registerWorkerStockDelivery, type DeliveryAttachmentInput } from "@/lib/services/deliveries"
+import { workerStockDeliverySchema, type ActionState } from "@/lib/validation/operations"
 
 import { createDeliveryAttachmentPath, resolveDeliveriesDir } from "@/lib/storage/config"
 import { validateFileBuffer, MimeType } from "@/lib/file-validation"
@@ -23,18 +23,19 @@ export async function registerWorkerDeliveryAction(
   try { session = await requirePermission("deliveries:create") }
   catch { return { ok: false, message: "Sin permisos para registrar entregas" } }
 
-  const parsed = workerDeliverySchema.safeParse({
-    worksiteId:           formData.get("worksiteId"),
-    workerId:             formData.get("workerId"),
-    requestItemId:        formData.get("requestItemId"),
-    quantity:             formData.get("quantity"),
-    receiverName:         formData.get("receiverName") || null,
-    notes:                formData.get("notes"),
-    returnProductId:      formData.get("returnProductId"),
-    returnProductNameFree: formData.get("returnProductNameFree"),
-    returnQuantity:       formData.get("returnQuantity") || null,
-    returnReason:         formData.get("returnReason"),
-    returnNotes:          formData.get("returnNotes"),
+  const rawItems = formData.get("itemsJson")
+  let items: unknown = []
+  if (typeof rawItems === "string") {
+    try { items = JSON.parse(rawItems) }
+    catch { items = [] }
+  }
+
+  const parsed = workerStockDeliverySchema.safeParse({
+    sourceWorksiteId: formData.get("sourceWorksiteId"),
+    workerId: formData.get("workerId"),
+    receiverName: formData.get("receiverName") || null,
+    notes: formData.get("notes"),
+    items,
   })
 
   if (!parsed.success) {
@@ -45,47 +46,39 @@ export async function registerWorkerDeliveryAction(
     }
   }
 
-  const {
-    worksiteId, workerId, requestItemId, quantity, receiverName, notes,
-    returnProductId, returnProductNameFree, returnQuantity, returnReason, returnNotes,
-  } = parsed.data
-  if (!canAccessWorksite(session, worksiteId)) {
-    return { ok: false, message: "No tienes acceso a la faena seleccionada" }
+  const { sourceWorksiteId, workerId, receiverName, notes, items: deliveryItems } = parsed.data
+  if (!canAccessWorksite(session, sourceWorksiteId)) {
+    return { ok: false, message: "No tienes acceso a la bodega seleccionada" }
   }
 
   const proofResult = await persistProofFile(formData.get("proofFile"))
   if (!proofResult.ok) return { ok: false, message: proofResult.message }
 
-  const sigResult = await persistProofFile(formData.get("signatureFile"))
-  if (!sigResult.ok) return { ok: false, message: sigResult.message }
-
   try {
-    await registerWorkerEppDelivery({
-      worksiteId,
+    await registerWorkerStockDelivery({
+      sourceWorksiteId,
       workerId,
-      requestItemId,
-      quantity,
       deliveredBy: session.user.id,
       userEmail: session.user.email ?? undefined,
       receiverName: receiverName?.trim() || null,
       notes: notes || null,
       proofAttachment: proofResult.attachment,
-      signatureAttachment: sigResult.attachment,
-      returnProductId: returnProductId || null,
-      returnProductNameFree: returnProductNameFree || null,
-      returnQuantity: returnQuantity || null,
-      returnReason: returnReason || null,
-      returnNotes: returnNotes || null,
+      items: deliveryItems.map((item) => ({
+        productId: item.productId,
+        quantity: item.quantity,
+        requestItemId: item.requestItemId || null,
+        notes: item.notes || null,
+      })),
     }, serviceWorksiteScope(session))
 
     revalidateOperationalViews(["/entregas", "/bodega", "/trazabilidad", "/solicitudes"])
-    return { ok: true, message: `Entrega registrada: ${quantity} ${quantity === 1 ? "unidad" : "unidades"}` }
+    return {
+      ok: true,
+      message: `Entrega registrada: ${deliveryItems.length} ${deliveryItems.length === 1 ? "producto" : "productos"}`,
+    }
   } catch (e) {
     if (proofResult.absolutePath) {
       await fs.unlink(proofResult.absolutePath).catch(() => undefined)
-    }
-    if (sigResult.absolutePath) {
-      await fs.unlink(sigResult.absolutePath).catch(() => undefined)
     }
     logger.error("[registerWorkerDeliveryAction]", e)
     return { ok: false, message: safeActionMessage(e, "Error al registrar entrega") }

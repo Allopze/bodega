@@ -6,15 +6,26 @@ export interface DeliveryWorksiteOption {
 export interface DeliveryWorkerOption {
   id: string
   worksiteId: string
+  worksiteName: string
   name: string
   rut: string | null
   position: string | null
+}
+
+export interface DeliveryStockProductOption {
+  sourceWorksiteId: string
+  productId: string
+  productName: string
+  productSku: string | null
+  unitOfMeasure: string
+  stockQuantity: number
 }
 
 export interface DeliverableEppOption {
   requestItemId: string
   requestCode: string
   worksiteId: string
+  productId: string
   productName: string
   productSku: string | null
   quantity: number
@@ -22,12 +33,5 @@ export interface DeliverableEppOption {
   receivedAtFaena: number
   remainingQuantity: number
   stockQuantity: number
-  unitOfMeasure: string
-}
-
-export interface DeliveryReturnProductOption {
-  id: string
-  name: string
-  sku: string | null
   unitOfMeasure: string
 }
