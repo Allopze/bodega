@@ -4,6 +4,8 @@ import { users } from "./users"
 import { worksites, workers } from "./worksites"
 import { products } from "./products"
 import { fuelVehicles } from "./fuel-vehicles"
+import { purchaseOrders, purchaseOrderItems } from "./purchasing"
+import { receipts, receiptItems } from "./receiving"
 
 /* ── Guías de Despacho Internas (GDI) ─────────────────────────────────────────
  *
@@ -19,9 +21,12 @@ import { fuelVehicles } from "./fuel-vehicles"
 export const dispatchGuides = pgTable("dispatch_guides", {
   id:                    text("id").primaryKey(),
   code:                  text("code").notNull().unique(),          // "GDI-000001"
-  status:                text("status").notNull().default("draft"), // draft | dispatched | received | cancelled
+  status:                text("status").notNull().default("draft"), // draft | dispatched | partially_received | received | cancelled
   originWorksiteId:      text("origin_worksite_id").notNull().references(() => worksites.id),
   destinationWorksiteId: text("destination_worksite_id").notNull().references(() => worksites.id),
+  /** Relaciones opcionales para conservar guías históricas creadas fuera de adquisiciones. */
+  purchaseOrderId:       text("purchase_order_id").references(() => purchaseOrders.id),
+  receiptId:             text("receipt_id").references(() => receipts.id),
   /** Quién emitió el documento en la plataforma (fecha/hora la fija el backend). */
   issuedBy:              text("issued_by").notNull().references(() => users.id),
   issuedAt:              timestamp("issued_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
@@ -50,7 +55,7 @@ export const dispatchGuides = pgTable("dispatch_guides", {
   updatedAt:             timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [
   check("dispatch_guides_status_valid", sql`
-    ${table.status} IN ('draft', 'dispatched', 'received', 'cancelled')
+    ${table.status} IN ('draft', 'dispatched', 'partially_received', 'received', 'cancelled')
   `),
   // Oficina → Faena: un traslado sobre sí mismo no es un traslado.
   check("dispatch_guides_origin_differs_destination", sql`
@@ -61,11 +66,11 @@ export const dispatchGuides = pgTable("dispatch_guides", {
   // si se anuló siendo borrador): anular no reescribe la historia.
   check("dispatch_guides_dispatch_stamp_valid", sql`
     (${table.status} = 'draft' AND ${table.dispatchedAt} IS NULL AND ${table.dispatchedBy} IS NULL)
-    OR (${table.status} IN ('dispatched', 'received') AND ${table.dispatchedAt} IS NOT NULL AND ${table.dispatchedBy} IS NOT NULL)
+    OR (${table.status} IN ('dispatched', 'partially_received', 'received') AND ${table.dispatchedAt} IS NOT NULL AND ${table.dispatchedBy} IS NOT NULL)
     OR ${table.status} = 'cancelled'
   `),
   check("dispatch_guides_receipt_stamp_valid", sql`
-    (${table.status} = 'received' AND ${table.receivedAt} IS NOT NULL AND ${table.receivedBy} IS NOT NULL)
+    (${table.status} IN ('partially_received', 'received') AND ${table.receivedAt} IS NOT NULL AND ${table.receivedBy} IS NOT NULL)
     OR (${table.status} IN ('draft', 'dispatched') AND ${table.receivedAt} IS NULL AND ${table.receivedBy} IS NULL)
     OR ${table.status} = 'cancelled'
   `),
@@ -82,6 +87,8 @@ export const dispatchGuides = pgTable("dispatch_guides", {
   index("dispatch_guides_destination_issued_at_idx").on(table.destinationWorksiteId, table.issuedAt),
   index("dispatch_guides_status_idx").on(table.status),
   index("dispatch_guides_origin_idx").on(table.originWorksiteId),
+  index("dispatch_guides_purchase_order_idx").on(table.purchaseOrderId),
+  index("dispatch_guides_receipt_idx").on(table.receiptId),
 ])
 
 /* ── Líneas de la guía ────────────────────────────────────────────────────────
@@ -96,7 +103,11 @@ export const dispatchGuideItems = pgTable("dispatch_guide_items", {
   id:            text("id").primaryKey(),
   guideId:       text("guide_id").notNull().references(() => dispatchGuides.id, { onDelete: "cascade" }),
   productId:     text("product_id").notNull().references(() => products.id),
+  purchaseOrderItemId: text("purchase_order_item_id").references(() => purchaseOrderItems.id),
+  receiptItemId:       text("receipt_item_id").references(() => receiptItems.id),
   quantity:      real("quantity").notNull(),
+  quantityReceived: real("quantity_received"),
+  differenceReason: text("difference_reason"),
   unitOfMeasure: text("unit_of_measure").notNull().default("unidad"),
   notes:         text("notes"),
   sortOrder:     integer("sort_order").notNull().default(0),
@@ -104,6 +115,8 @@ export const dispatchGuideItems = pgTable("dispatch_guide_items", {
   check("dispatch_guide_items_quantity_positive", sql`${table.quantity} > 0`),
   uniqueIndex("dispatch_guide_items_guide_product_unique").on(table.guideId, table.productId),
   index("dispatch_guide_items_guide_idx").on(table.guideId),
+  index("dispatch_guide_items_po_item_idx").on(table.purchaseOrderItemId),
+  index("dispatch_guide_items_receipt_item_idx").on(table.receiptItemId),
 ])
 
 /* ── Relations ───────────────────────────────────────────────────────────── */
@@ -119,10 +132,14 @@ export const dispatchGuidesRelations = relations(dispatchGuides, ({ one, many })
   receivedByWorker:    one(workers, { relationName: "dispatch_guide_received_by_worker", fields: [dispatchGuides.receivedByWorkerId], references: [workers.id] }),
   driverWorker:        one(workers, { relationName: "dispatch_guide_driver",       fields: [dispatchGuides.driverWorkerId],     references: [workers.id] }),
   vehicle:             one(fuelVehicles, { fields: [dispatchGuides.vehicleId], references: [fuelVehicles.id] }),
+  purchaseOrder:       one(purchaseOrders, { fields: [dispatchGuides.purchaseOrderId], references: [purchaseOrders.id] }),
+  receipt:             one(receipts, { fields: [dispatchGuides.receiptId], references: [receipts.id] }),
   items:               many(dispatchGuideItems),
 }))
 
 export const dispatchGuideItemsRelations = relations(dispatchGuideItems, ({ one }) => ({
   guide:   one(dispatchGuides, { fields: [dispatchGuideItems.guideId], references: [dispatchGuides.id] }),
   product: one(products, { fields: [dispatchGuideItems.productId], references: [products.id] }),
+  purchaseOrderItem: one(purchaseOrderItems, { fields: [dispatchGuideItems.purchaseOrderItemId], references: [purchaseOrderItems.id] }),
+  receiptItem: one(receiptItems, { fields: [dispatchGuideItems.receiptItemId], references: [receiptItems.id] }),
 }))

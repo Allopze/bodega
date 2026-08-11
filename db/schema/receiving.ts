@@ -14,7 +14,7 @@ export const receipts = pgTable("receipts", {
   purchaseOrderId:    text("purchase_order_id").notNull().references(() => purchaseOrders.id),
   receivedBy:         text("received_by").notNull().references(() => users.id),
   receivedAt:         timestamp("received_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
-  // office: arrival at Chome office (checkpoint, no stock); faena: receipt at worksite (generates stock)
+  // office: arrival at Chome office; faena: final receipt at destination worksite
   locationType:       text("location_type").notNull().default("office"),
   worksiteId:         text("worksite_id").references(() => worksites.id),
   dispatchGuideNo:    text("dispatch_guide_no"),
@@ -37,6 +37,8 @@ export const receiptItems = pgTable("receipt_items", {
   quantityReceived:     real("quantity_received").notNull().default(0),
   quantityRejected:     real("quantity_rejected").notNull().default(0),
   quantityDamaged:      real("quantity_damaged").notNull().default(0),
+  /** Faltante/diferencia detectada al cotejar una GDI en faena. */
+  quantityDifference:   real("quantity_difference").notNull().default(0),
   status:               text("status").notNull().default("received"),
   // received | partially_received | rejected | damaged | pending
   notes:                text("notes"),
@@ -51,7 +53,8 @@ export const receiptItems = pgTable("receipt_items", {
     ${table.quantityReceived} >= 0
     AND ${table.quantityRejected} >= 0
     AND ${table.quantityDamaged} >= 0
-    AND (${table.quantityReceived} + ${table.quantityRejected} + ${table.quantityDamaged}) > 0
+    AND ${table.quantityDifference} >= 0
+    AND (${table.quantityReceived} + ${table.quantityRejected} + ${table.quantityDamaged} + ${table.quantityDifference}) > 0
   `),
   index("idx_receipt_items_po_item").on(table.purchaseOrderItemId),
   // DAT-11: FK caliente sin índice — CASCADE de receipts.

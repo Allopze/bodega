@@ -14,7 +14,8 @@ import { serviceEquipment } from "./service-equipment"
 /* ── Request Item States (the core lifecycle) ────────────────────────────── */
 // draft | requested | approved | rejected | returned | postponed
 // pending_purchase | in_purchase_order | purchased
-// partially_received | received | partially_delivered | delivered
+// partially_office_received | office_received | partially_received | received
+// | partially_delivered | delivered
 
 /* ── Purchase Requests ───────────────────────────────────────────────────── */
 export const purchaseRequests = pgTable("purchase_requests", {
@@ -92,7 +93,8 @@ export const purchaseRequestItems = pgTable("purchase_request_items", {
     ${table.status} IN (
       'draft', 'requested', 'approved', 'rejected',
       'pending_purchase', 'in_purchase_order', 'purchased',
-      'partially_received', 'received', 'partially_delivered', 'delivered'
+      'partially_office_received', 'office_received', 'partially_received',
+      'received', 'partially_delivered', 'delivered'
     )
     AND (${table.urgency} IS NULL OR ${table.urgency} IN ('normal', 'high', 'critical'))
   `),
