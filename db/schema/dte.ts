@@ -33,6 +33,8 @@ export const dteSyncRuns = pgTable("dte_sync_runs", {
   rowsUpdated:   integer("rows_updated").notNull().default(0),
   /** Usuario técnico resuelto para la corrida (sesión del botón manual, o DTE_SYNC_IMPORTER_EMAIL en cron) */
   importerId:    text("importer_id").references(() => users.id),
+  /** Batch ID shared by the current/prior periods of one automatic invocation. */
+  correlationId: text("correlation_id"),
   error:         text("error"),
   startedAt:     timestamp("started_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   finishedAt:    timestamp("finished_at", { withTimezone: true, mode: "string" }),
@@ -42,6 +44,7 @@ export const dteSyncRuns = pgTable("dte_sync_runs", {
   index("dte_sync_runs_periodo_idx").on(table.periodo),
   index("dte_sync_runs_status_idx").on(table.status),
   index("dte_sync_runs_started_idx").on(table.startedAt),
+  index("dte_sync_runs_correlation_idx").on(table.correlationId),
   // Una sola corrida `running` por (empresa, período): el cron y el botón de
   // administración disparándose a la vez raspaban el portal dos veces y la
   // segunda contabilizaba fallos falsos al chocar con `dte_documents_unique_key`.
@@ -50,6 +53,23 @@ export const dteSyncRuns = pgTable("dte_sync_runs", {
   uniqueIndex("dte_sync_runs_single_active_unique")
     .on(table.codEmp, table.periodo)
     .where(sql`${table.status} = 'running'`),
+])
+
+/* ── DTE Portal Operation Leases ────────────────────────────────────────── */
+
+/**
+ * Short-lived proof that a request carrying DTE credentials may be on the
+ * wire. Unlike a historical sync row, this lease covers every client request
+ * (purchases, sales XML/PDF, and health checks) and expires conservatively if
+ * the process dies before it can release it.
+ */
+export const dtePortalOperationLeases = pgTable("dte_portal_operation_leases", {
+  id:             text("id").primaryKey(),
+  operation:      text("operation").notNull(),
+  startedAt:      timestamp("started_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+  leaseExpiresAt: timestamp("lease_expires_at", { withTimezone: true, mode: "string" }).notNull(),
+}, (table) => [
+  index("dte_portal_operation_leases_expiry_idx").on(table.leaseExpiresAt),
 ])
 
 /* ── DTE Documents (documentos tributarios sincronizados) ─────────────────── */
