@@ -58,6 +58,17 @@ describe("parseDteTable", () => {
     expect(result.totalDocs).toBe(0)
   })
 
+  // El libro de ventas vacío no trae la frase "No se encontraron documentos":
+  // sólo declara tbxTotalDocumentos="0". Verificado contra el portal real el
+  // 2026-08-11 (2026-08 sin ventas). Antes de contemplarlo, todo mes sin
+  // ventas emitidas reventaba con PARSE_FAILED culpando a las credenciales.
+  it("returns empty docs when tbxTotalDocumentos is 0 without the text marker", () => {
+    const html = `<html><body><input type="hidden" id="tbxTotalDocumentos" value="0"></body></html>`
+    const result = parseDteTable(html, "433")
+    expect(result.docs).toHaveLength(0)
+    expect(result.totalDocs).toBe(0)
+  })
+
   it("throws DtePortalError when there are no rows and no empty-result marker", () => {
     expect(() => parseDteTable("<html><body>Sin filas ni marcador</body></html>", "433"))
       .toThrow("No se encontraron filas de documentos")

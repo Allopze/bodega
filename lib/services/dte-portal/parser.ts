@@ -107,7 +107,17 @@ export function parseDteTable(html: string, codEmp: string): DtePageResult {
     if (doc) docs.push(doc)
   }
 
-  if (docs.length === 0 && rows.length === 0 && !hasEmptyResultMarker(html)) {
+  const totalDocs = extractTotalDocumentos(html)
+
+  // Un período sin documentos es un resultado válido, no un fallo de parseo.
+  // El libro de ventas NO emite "No se encontraron documentos" cuando está
+  // vacío: lo señala con `tbxTotalDocumentos="0"`. Verificado 2026-08-11
+  // contra el portal real — 2026-08 sin ventas devuelve 58 KB con total "0" y
+  // cero filas, mientras 2026-07 devuelve 288 KB con total "47" y 47 filas.
+  // Sin este caso, todo mes sin ventas emitidas fallaba con un error que
+  // además culpaba a las credenciales, mandando a buscar un problema
+  // inexistente el primer día de cada mes.
+  if (docs.length === 0 && rows.length === 0 && totalDocs !== 0 && !hasEmptyResultMarker(html)) {
     throw new DtePortalError(
       "No se encontraron filas de documentos ni el marcador de resultado vacío en el HTML del portal DTE. " +
       "Es posible que el HTML del portal haya cambiado o que las credenciales sean inválidas.",
@@ -117,7 +127,6 @@ export function parseDteTable(html: string, codEmp: string): DtePageResult {
     )
   }
 
-  const totalDocs = extractTotalDocumentos(html)
   if (totalDocs !== null && totalDocs !== docs.length) {
     console.warn(`[dte-parser] tbxTotalDocumentos declara ${totalDocs} pero se parsearon ${docs.length} filas. El portal podría estar paginando resultados que este parser no está siguiendo.`)
   }
