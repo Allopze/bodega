@@ -42,6 +42,59 @@ describe("matchToPurchaseOrderInvoices", () => {
     expect(mockUpdateSet).toHaveBeenCalled()
   })
 
+  // `invoiceNumber` lo tipea una persona: antes de normalizar, ninguna de estas
+  // formas cruzaba con el folio del DTE y el documento quedaba sin vincular sin
+  // explicación. Ver lib/services/dte-portal/folio-match.ts.
+  it.each([
+    ["ceros a la izquierda", "0000100"],
+    ["separador de miles", "1.00"],
+    ["prefijo de serie", "F-100"],
+    ["rótulo copiado del documento", "N° 100"],
+    ["espacios del pegado", " 100 "],
+  ])("cruza un número de factura escrito con %s", async (_caso, escrito) => {
+    mockDteDocumentsFindMany.mockResolvedValue([
+      { id: "dte-1", tipoDte: "33", folio: 100, rutEmisor: "11.111.111-1", montoTotal: 50000 },
+    ])
+    mockInvoicesFindMany.mockResolvedValue([
+      { id: "inv-1", invoiceNumber: escrito, amount: 50000, purchaseOrderId: "oc-1", purchaseOrder: { supplier: { rut: "11111111-1" } } },
+    ])
+
+    const matches = await matchToPurchaseOrderInvoices("2026-06", "433")
+
+    expect(matches).toHaveLength(1)
+    expect(matches[0]).toMatchObject({ dteDocumentId: "dte-1", matchedEntityId: "inv-1" })
+  })
+
+  // Adivinar cuál de las dos vale vincularía el documento a la compra
+  // equivocada, y desde ahí alimentaría la conciliación de montos.
+  it("deja sin vincular cuando dos facturas del mismo proveedor normalizan al mismo folio", async () => {
+    mockDteDocumentsFindMany.mockResolvedValue([
+      { id: "dte-1", tipoDte: "33", folio: 100, rutEmisor: "11111111-1", montoTotal: 50000 },
+    ])
+    mockInvoicesFindMany.mockResolvedValue([
+      { id: "inv-1", invoiceNumber: "100", amount: 50000, purchaseOrderId: "oc-1", purchaseOrder: { supplier: { rut: "11111111-1" } } },
+      { id: "inv-2", invoiceNumber: "0100", amount: 50000, purchaseOrderId: "oc-2", purchaseOrder: { supplier: { rut: "11111111-1" } } },
+    ])
+
+    const matches = await matchToPurchaseOrderInvoices("2026-06", "433")
+
+    expect(matches).toEqual([])
+    expect(mockUpdateSet).not.toHaveBeenCalled()
+  })
+
+  it("no cruza una factura sin número aunque el proveedor calce", async () => {
+    mockDteDocumentsFindMany.mockResolvedValue([
+      { id: "dte-1", tipoDte: "33", folio: 100, rutEmisor: "11111111-1", montoTotal: 50000 },
+    ])
+    mockInvoicesFindMany.mockResolvedValue([
+      { id: "inv-1", invoiceNumber: "sin número", amount: 50000, purchaseOrderId: "oc-1", purchaseOrder: { supplier: { rut: "11111111-1" } } },
+    ])
+
+    const matches = await matchToPurchaseOrderInvoices("2026-06", "433")
+
+    expect(matches).toEqual([])
+  })
+
   it("does NOT match when the folio coincides but the rut is different (regression: el folio no es unico global)", async () => {
     mockDteDocumentsFindMany.mockResolvedValue([
       { id: "dte-1", tipoDte: "33", folio: 100, rutEmisor: "22222222-2", montoTotal: 50000 },

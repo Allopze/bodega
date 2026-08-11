@@ -102,8 +102,20 @@ export class DtePortalClient {
       const response = await fetch(url, {
         signal: controller.signal,
         headers: { "Accept": "application/pdf, application/xml, */*" },
+        // Igual que en fetchWithTimeout: un redirect seguido devolvería el HTML
+        // del login y `downloadDteXml` lo rechazaría con "no parece un XML DTE",
+        // culpando al documento en vez de a la sesión.
+        redirect: "manual",
         dispatcher: LEGACY_TLS_DISPATCHER,
       } as RequestInit)
+
+      if (response.status >= 300 && response.status < 400) {
+        throw new DtePortalError(
+          `El portal redirigió la descarga (HTTP ${response.status}). Suele significar sesión o credenciales rechazadas.`,
+          "AUTH_FAILED",
+          response.status,
+        )
+      }
 
       if (!response.ok) {
         throw new DtePortalError(
@@ -172,8 +184,22 @@ export class DtePortalClient {
       const response = await fetch(url, {
         ...init,
         signal: controller.signal,
+        // `manual`: sin esto, fetch sigue el redirect y devuelve el HTML de la
+        // página de destino —típicamente un login— como si fuera la respuesta
+        // pedida. El parser falla después con "el HTML del portal cambió o las
+        // credenciales son inválidas", que manda a investigar lo que no es.
+        // Mismo criterio que el cliente de Chipax.
+        redirect: "manual",
         dispatcher: LEGACY_TLS_DISPATCHER,
       } as RequestInit)
+
+      if (response.status >= 300 && response.status < 400) {
+        throw new DtePortalError(
+          `El portal redirigió la consulta (HTTP ${response.status}). Suele significar sesión o credenciales rechazadas.`,
+          "AUTH_FAILED",
+          response.status,
+        )
+      }
 
       if (!response.ok) {
         throw new DtePortalError(

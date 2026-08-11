@@ -53,6 +53,30 @@ export async function createPurchaseOrderInvoice(
   input: CreateInvoiceInput,
   worksiteIds: string[] | 'all' = 'all',
 ): Promise<string> {
+  const invoiceId = await insertPurchaseOrderInvoice(input, worksiteIds)
+
+  // Cruce con el DTE que ya llegó del portal. Va FUERA de la transacción y con
+  // su propio try/catch a propósito: la factura ya está guardada y el vínculo
+  // es un enriquecimiento. Un portal caído o un dato raro no puede voltear el
+  // registro que la persona acaba de hacer.
+  //
+  // Sin esto el cruce sólo ocurría durante la sincronización, así que la
+  // secuencia normal —el proveedor emite, el DTE llega, y días después Compras
+  // registra la factura— no se vinculaba nunca.
+  try {
+    const { matchInvoiceToDteDocument } = await import("@/lib/services/dte-portal/reconciliation")
+    await matchInvoiceToDteDocument(invoiceId)
+  } catch (err) {
+    console.error(`[invoices] No se pudo cruzar la factura ${invoiceId} con el DTE: ${err instanceof Error ? err.message : String(err)}`)
+  }
+
+  return invoiceId
+}
+
+async function insertPurchaseOrderInvoice(
+  input: CreateInvoiceInput,
+  worksiteIds: string[] | 'all' = 'all',
+): Promise<string> {
   return await db.transaction(async (tx) => {
     if (!Number.isFinite(input.amount) || input.amount < 0) {
       throw new Error("Monto de factura inválido")

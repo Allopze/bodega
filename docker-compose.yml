@@ -201,16 +201,20 @@ services:
         # si fuera una respuesta buena. Sin redirecciones, falla y se ve.
         # `>/proc/1/fd/1`: manda la respuesta al log del contenedor (crond
         # descarta la salida de los trabajos si no hay sendmail).
+        # El `echo` final no es cosmético: las respuestas JSON no traen salto de
+        # línea, así que sin él dos corridas consecutivas quedan pegadas en una
+        # sola línea del log. Pasó durante la auditoría del 2026-08-11 y me hizo
+        # leer mal el log: parecía que el cron no había corrido.
         W='wget -qO- --tries=1 --max-redirect=0 --timeout=300 --header="Authorization: Bearer '"$$CRON_SECRET"'"'
         cat > /etc/crontabs/root <<EOF
         # Compras DTE — 07:00, 13:00 y 19:00 (America/Santiago).
         # Cada corrida baja el mes completo: el portal sólo filtra por mes/año,
         # no por día (lib/services/dte-portal/bandeja-entrada.ts). Por eso son
         # 3 al día y no una por hora.
-        0 7,13,19 * * * $$W http://app:3000/api/cron/dte-portal-sync >/proc/1/fd/1 2>&1
+        0 7,13,19 * * * $$W http://app:3000/api/cron/dte-portal-sync >/proc/1/fd/1 2>&1; echo >/proc/1/fd/1
         # Ventas — una vez al día, desfasada del primer run de compras para no
         # abrir dos sesiones simultáneas contra el mismo portal.
-        30 7 * * * $$W http://app:3000/api/cron/billing-sales-sync >/proc/1/fd/1 2>&1
+        30 7 * * * $$W http://app:3000/api/cron/billing-sales-sync >/proc/1/fd/1 2>&1; echo >/proc/1/fd/1
         EOF
         # Si el montaje de zoneinfo se rompe, esto lo delata: debe decir -04 o
         # -03, nunca UTC. Los horarios de abajo se leen contra esta hora.

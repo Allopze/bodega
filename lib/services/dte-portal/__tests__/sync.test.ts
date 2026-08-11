@@ -54,7 +54,7 @@ vi.mock("../reconciliation", () => ({
   matchToFuelLoads: (...args: unknown[]) => mockMatchToFuelLoads(...args),
 }))
 
-const { syncDteDocuments, computeDocumentHash } = await import("../sync")
+const { syncDteDocuments, computeDocumentHash, previousPeriodo, rollingSyncPeriods, assertSyncablePeriodo } = await import("../sync")
 const { DtePortalClient } = await import("../client")
 
 function makeClient() {
@@ -83,6 +83,54 @@ describe("computeDocumentHash", () => {
     // numeración. El hash (y el upsert) deben distinguirlos por RUT.
     const otherSupplier: DteBandejaRow = { ...BASE_ROW, rutEmisor: "11111111-1", razonSocial: "Otro Proveedor" }
     expect(computeDocumentHash(BASE_ROW)).not.toBe(computeDocumentHash(otherSupplier))
+  })
+})
+
+describe("previousPeriodo", () => {
+  it("retrocede un mes dentro del mismo año", () => {
+    expect(previousPeriodo("2026-08")).toBe("2026-07")
+  })
+
+  // El caso que rompe cualquier resta ingenua de meses.
+  it("cruza el año hacia atrás en enero", () => {
+    expect(previousPeriodo("2026-01")).toBe("2025-12")
+  })
+})
+
+describe("rollingSyncPeriods", () => {
+  // Los proveedores entregan con retraso: verificado en producción el
+  // 2026-08-11, el portal tenía 578 documentos de julio y la plataforma 575.
+  // Sin la ventana, esos 3 eran inalcanzables para siempre.
+  it("cubre el mes en curso y el anterior", () => {
+    expect(rollingSyncPeriods(new Date(2026, 7, 11))).toEqual(["2026-08", "2026-07"])
+  })
+
+  it("cruza el año en enero", () => {
+    expect(rollingSyncPeriods(new Date(2026, 0, 3))).toEqual(["2026-01", "2025-12"])
+  })
+})
+
+describe("assertSyncablePeriodo", () => {
+  it("acepta un período válido", () => {
+    expect(() => assertSyncablePeriodo("2026-08")).not.toThrow()
+  })
+
+  // La validación anterior vivía en la ruta API y comprobaba \d{4}-\d{2},
+  // así que estas dos pasaban.
+  it.each(["2026-13", "2026-00", "2026-8", "202608", "abcd-ef"])(
+    "rechaza el período malformado %s",
+    (periodo) => {
+      expect(() => assertSyncablePeriodo(periodo)).toThrow(/Período/)
+    },
+  )
+
+  it("rechaza un período anterior al piso histórico", () => {
+    expect(() => assertSyncablePeriodo("1990-01")).toThrow(/mínimo permitido/)
+  })
+
+  it("rechaza un período futuro", () => {
+    const nextYear = new Date().getFullYear() + 1
+    expect(() => assertSyncablePeriodo(`${nextYear}-01`)).toThrow(/futuro/)
   })
 })
 

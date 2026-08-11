@@ -76,13 +76,21 @@ export async function syncDteDocuments(
   const trigger = options.trigger ?? "manual"
   const runId = nanoid()
 
+  assertSyncablePeriodo(periodo)
+
   await markStaleRunsAsFailed(codEmp)
 
   // El mes en curso sigue recibiendo documentos de los proveedores hasta que
   // termina: saltar por "ya sincronizado" ahí dejaba el libro de compras
   // congelado en la foto del primer día del mes (H-03, AUDITORIA_BUGS_2026-08-05.md).
-  // Sólo un período ya cerrado puede darse por sincronizado.
-  const periodoCerrado = periodo < currentPeriodo()
+  //
+  // El mes ANTERIOR tampoco puede darse por cerrado. Verificado el 2026-08-11:
+  // el portal declaraba 578 documentos de julio y la plataforma tenía 575,
+  // porque 3 llegaron después de la corrida de julio. Con el corte anterior
+  // —cualquier período pasado con una corrida exitosa se saltaba— esos 3 eran
+  // inalcanzables para siempre. Un período sólo se da por cerrado cuando sale
+  // de la ventana móvil; más atrás sigue exigiendo `force`.
+  const periodoCerrado = periodo < currentPeriodo() && !rollingSyncPeriods().includes(periodo)
   if (!options.force && periodoCerrado) {
     const priorSuccess = await db.query.dteSyncRuns.findFirst({
       where: and(
@@ -146,7 +154,7 @@ export async function syncDteDocuments(
   try {
     // 2. Consultar la Bandeja de Entrada (sin paginación, ver bandeja-entrada.ts)
     const [anio, mes] = periodo.split("-") as [string, string]
-    const { rows: docs } = await fetchBandejaEntrada(client, {
+    const { rows: docs, totalRegistros } = await fetchBandejaEntrada(client, {
       mes,
       anio,
       codEmp,
@@ -155,6 +163,16 @@ export async function syncDteDocuments(
     })
 
     rowsSeen = docs.length
+
+    // El portal declara cuántos documentos tiene el período. Si parseamos menos,
+    // se perdieron filas —fecha o folio irreconocibles descartan la fila con un
+    // console.warn— y la corrida NO puede reportarse como exitosa: es un libro
+    // de compras al que le faltan documentos. Antes esto sólo advertía por
+    // consola y la corrida quedaba en `success`.
+    if (totalRegistros > docs.length) {
+      finalStatus = "partial"
+      errorMsg = `El portal declara ${totalRegistros} documentos y se pudieron leer ${docs.length}: faltan ${totalRegistros - docs.length}.`
+    }
 
     // 3. Upsert cada documento, cada uno en su propia transacción
     let failures = 0
@@ -170,40 +188,58 @@ export async function syncDteDocuments(
       }
     }
 
+    // Se ACUMULA con el descuadre de total declarado en vez de reemplazarlo:
+    // que fallen documentos y además falten filas son dos problemas distintos y
+    // perder uno de los dos mensajes deja el diagnóstico a medias.
     if (failures > 0 && failures < docs.length) {
       finalStatus = "partial"
-      errorMsg = `${failures} de ${docs.length} documentos fallaron`
+      errorMsg = [errorMsg, `${failures} de ${docs.length} documentos fallaron`].filter(Boolean).join(" ")
     } else if (failures > 0 && failures === docs.length) {
       finalStatus = "failed"
-      errorMsg = `Todos los ${docs.length} documentos fallaron`
+      errorMsg = [errorMsg, `Todos los ${docs.length} documentos fallaron`].filter(Boolean).join(" ")
     }
   } catch (err) {
     finalStatus = "failed"
-    errorMsg = err instanceof Error ? err.message : String(err)
-    // No exponer credenciales en el error
-    if (errorMsg.includes("clave") || errorMsg.includes("rut_usr")) {
-      errorMsg = "Error de conexión con el portal DTE [credenciales omitidas]"
-    }
+    errorMsg = sanitizeSyncError(err, client)
   }
 
-  // 4. Cerrar la corrida
+  // 4. Conciliar contra OC y combustible ANTES de cerrar la corrida.
+  //
+  // Un fallo acá no cambia el estado del sync —los documentos sí se
+  // sincronizaron— pero tiene que quedar registrado. Antes corría después del
+  // cierre y su error sólo iba a `console.error`, así que una conciliación roña
+  // de forma sistemática dejaba la corrida en `success` sin un solo vínculo y
+  // sin rastro de por qué.
+  let reconciliationNote: string | undefined
+  try {
+    const ocMatches = await matchToPurchaseOrderInvoices(periodo, codEmp)
+    const fuelMatches = await matchToFuelLoads(periodo, codEmp)
+
+    // Las discrepancias de monto se calculaban y se tiraban. Acá al menos se
+    // cuentan y quedan en la corrida; el detalle por documento sigue
+    // pendiente (necesita una columna).
+    const withDiscrepancy = [...ocMatches, ...fuelMatches].filter((m) => m.discrepancy > 0)
+    if (withDiscrepancy.length > 0) {
+      reconciliationNote = `${withDiscrepancy.length} de ${ocMatches.length + fuelMatches.length} vínculos con diferencia de monto.`
+    }
+  } catch (err) {
+    reconciliationNote = `La conciliación falló: ${err instanceof Error ? err.message : String(err)}`
+    console.error(`[dte-sync] Error al conciliar el período ${periodo}: ${reconciliationNote}`)
+  }
+
+  const finalError = [errorMsg, reconciliationNote].filter(Boolean).join(" ") || null
+
+  // 5. Cerrar la corrida
   await db.update(dteSyncRuns).set({
     status: finalStatus,
     rowsSeen,
     rowsInserted,
     rowsUpdated,
-    error: errorMsg ?? null,
+    error: finalError,
     finishedAt: new Date().toISOString(),
   }).where(eq(dteSyncRuns.id, runId))
 
-  // 5. Conciliar contra OC y combustible. Un fallo acá no debe cambiar el
-  // resultado del sync (ya cerrado arriba) — solo se loguea.
-  try {
-    await matchToPurchaseOrderInvoices(periodo, codEmp)
-    await matchToFuelLoads(periodo, codEmp)
-  } catch (err) {
-    console.error(`[dte-sync] Error al conciliar el período ${periodo}: ${err instanceof Error ? err.message : String(err)}`)
-  }
+  errorMsg = finalError ?? undefined
 
   return {
     runId,
@@ -366,4 +402,80 @@ function currentPeriodo(): string {
   const year = now.getFullYear()
   const month = String(now.getMonth() + 1).padStart(2, "0")
   return `${year}-${month}`
+}
+
+/**
+ * Piso histórico: el período más antiguo que una corrida puede alcanzar.
+ *
+ * Existe por el mismo motivo que `BILLING_HISTORY_FLOOR` en facturación: que un
+ * error de tipeo no dispare un raspado de años contra el portal de un tercero.
+ * La validación anterior vivía sólo en la ruta API y aceptaba `2026-13` y
+ * `2026-00` porque comprobaba `\d{4}-\d{2}` sin mirar el rango del mes.
+ */
+const DTE_HISTORY_FLOOR = "2024-01"
+
+/** @throws Error si el período no es sincronizable. */
+export function assertSyncablePeriodo(periodo: string): void {
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(periodo)) {
+    throw new Error(`Período inválido: "${periodo}". Use YYYY-MM con un mes entre 01 y 12.`)
+  }
+  if (periodo < DTE_HISTORY_FLOOR) {
+    throw new Error(`Período ${periodo} anterior al mínimo permitido (${DTE_HISTORY_FLOOR}).`)
+  }
+  if (periodo > currentPeriodo()) {
+    throw new Error(`Período ${periodo} es futuro: el portal no tiene documentos todavía.`)
+  }
+}
+
+/**
+ * Mensaje de error de una corrida, sin credenciales.
+ *
+ * La versión anterior buscaba las palabras "clave" y "rut_usr". Eso deja pasar
+ * un mensaje que traiga la contraseña sin nombrarla, que es precisamente el
+ * caso peligroso: el error se guarda en `dte_sync_runs.error` y se muestra en
+ * la pantalla de administración. Acá se comparan los VALORES.
+ */
+function sanitizeSyncError(err: unknown, client: DtePortalClient): string {
+  const raw = err instanceof Error ? err.message : String(err)
+  const { rutUsr, rutEmp, clave } = client.credentials
+  const secrets = [clave, rutUsr, rutEmp].filter((v) => v && v.length >= 4)
+  if (secrets.some((v) => raw.includes(v))) {
+    return "Error de conexión con el portal DTE [credenciales omitidas]"
+  }
+  if (/clave|rut_usr|rut_emp/i.test(raw)) {
+    return "Error de conexión con el portal DTE [credenciales omitidas]"
+  }
+  return raw.slice(0, 500)
+}
+
+/** Período anterior a `periodo` ("YYYY-MM"), cruzando el año. */
+export function previousPeriodo(periodo: string): string {
+  const [year, month] = periodo.split("-").map(Number) as [number, number]
+  const prevMonth = month === 1 ? 12 : month - 1
+  const prevYear = month === 1 ? year - 1 : year
+  return `${prevYear}-${String(prevMonth).padStart(2, "0")}`
+}
+
+/**
+ * Períodos que una corrida automática debe cubrir: el mes en curso y el
+ * anterior.
+ *
+ * ## Por qué dos y no uno
+ *
+ * Los proveedores entregan documentos con retraso. Verificado en producción el
+ * 2026-08-11: el portal declaraba 578 documentos de julio y la plataforma tenía
+ * 575 — los 3 restantes llegaron después de la corrida de julio. Como
+ * `syncDteDocuments` da por cerrado un período que ya tuvo una corrida exitosa,
+ * y el cron sólo pedía el mes en curso, esos 3 documentos eran inalcanzables
+ * para siempre: quedaban fuera del libro de compras sin que nada lo dijera.
+ *
+ * Con la ventana, el mes anterior se re-sincroniza hasta que deja de estar en
+ * ella. Sigue habiendo un límite —un documento que llega dos meses tarde exige
+ * `force`— pero cubre el retraso normal en vez de no cubrir ninguno.
+ */
+export function rollingSyncPeriods(today = new Date()): string[] {
+  const year = today.getFullYear()
+  const month = String(today.getMonth() + 1).padStart(2, "0")
+  const current = `${year}-${month}`
+  return [current, previousPeriodo(current)]
 }

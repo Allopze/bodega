@@ -14,6 +14,7 @@ import { eq, and, isNull, sql, inArray } from "drizzle-orm"
 import { db } from "@/db"
 import { dteDocuments, purchaseOrderInvoices, fuelLoads } from "@/db/schema"
 import { cleanRut } from "@/lib/rut"
+import { normalizeFolio, folioRutKey } from "./folio-match"
 
 // ── Tipos de resultado ──────────────────────────────────────────────────────
 
@@ -99,10 +100,18 @@ export async function matchToPurchaseOrderInvoices(
 
   // Buscar invoices que coincidan por folio, trayendo el RUT del proveedor
   // de la OC en la misma consulta (join vía la relación purchaseOrder→supplier).
-  const folios = unmatchedDocs.map((d) => String(d.folio))
+  //
+  // El folio del DTE es un entero; `invoiceNumber` lo tipea una persona. Se
+  // compara por la forma normalizada (sólo dígitos, sin ceros a la izquierda),
+  // así que "0045678", "45.678" y "F-45678" cruzan con el folio 45678 — antes
+  // ninguna de las tres lo hacía y el documento quedaba sin vincular sin decir
+  // por qué. El SQL es sólo un prefiltro: la comparación que decide es la de
+  // `normalizeFolio` unas líneas más abajo.
+  const folios = [...new Set(unmatchedDocs.map((d) => normalizeFolio(d.folio)).filter(Boolean))]
+  if (folios.length === 0) return matches
 
   const invoices = await db.query.purchaseOrderInvoices.findMany({
-    where: inArray(purchaseOrderInvoices.invoiceNumber, folios),
+    where: sql`ltrim(regexp_replace(coalesce(${purchaseOrderInvoices.invoiceNumber}, ''), '[^0-9]', '', 'g'), '0') IN ${folios}`,
     columns: {
       id: true,
       invoiceNumber: true,
@@ -117,16 +126,31 @@ export async function matchToPurchaseOrderInvoices(
     },
   })
 
-  // Mapa (folio|RUT normalizado) → invoice, para exigir ambos en el match.
+  // Mapa (folio normalizado|RUT normalizado) → invoice, para exigir ambos.
+  //
+  // Si dos facturas del MISMO proveedor normalizan al mismo folio, no se elige
+  // una: se descarta el par. Es un dato inconsistente del lado interno (la
+  // misma factura cargada dos veces, o un número mal tipeado) y adivinar cuál
+  // vale vincularía el documento tributario a la compra equivocada.
   const invoiceByFolioAndRut = new Map<string, (typeof invoices)[number]>()
+  const ambiguous = new Set<string>()
   for (const inv of invoices) {
     const rut = inv.purchaseOrder?.supplier?.rut
     if (!rut) continue
-    invoiceByFolioAndRut.set(`${inv.invoiceNumber}|${cleanRut(rut)}`, inv)
+    const key = folioRutKey(inv.invoiceNumber, cleanRut(rut))
+    if (!key.startsWith("|") && invoiceByFolioAndRut.has(key)) {
+      ambiguous.add(key)
+      continue
+    }
+    invoiceByFolioAndRut.set(key, inv)
+  }
+  for (const key of ambiguous) {
+    invoiceByFolioAndRut.delete(key)
+    console.warn(`[dte-reconciliation] ${key.split("|")[0]} calza con más de una factura del mismo proveedor: se deja sin vincular.`)
   }
 
   for (const doc of unmatchedDocs) {
-    const invoice = invoiceByFolioAndRut.get(`${doc.folio}|${cleanRut(doc.rutEmisor)}`)
+    const invoice = invoiceByFolioAndRut.get(folioRutKey(doc.folio, cleanRut(doc.rutEmisor)))
     if (!invoice) continue
 
     const dteTotal = doc.montoTotal ?? 0
@@ -153,6 +177,93 @@ export async function matchToPurchaseOrderInvoices(
   }
 
   return matches
+}
+
+/**
+ * Cruce en la dirección inversa: una factura recién registrada contra los DTE
+ * que ya llegaron y siguen sin vincular.
+ *
+ * ## Por qué hace falta
+ *
+ * `matchToPurchaseOrderInvoices` corre **sólo durante la sincronización** y
+ * acotado al período que se está sincronizando. Eso deja un hueco temporal
+ * completo: si el DTE llega antes de que alguien registre la factura —el caso
+ * normal, porque el proveedor emite y después Compras carga— el cruce ya pasó y
+ * no vuelve a intentarlo. Con la ventana móvil del cron el DTE se re-evalúa
+ * mientras el período siga abierto, pero un período cerrado no vuelve nunca.
+ *
+ * Se llama al registrar la factura, y su fallo no debe voltear el registro: la
+ * factura ya está guardada y el vínculo es un enriquecimiento, no un requisito.
+ *
+ * @returns El vínculo creado, o `null` si no hubo coincidencia inequívoca.
+ */
+export async function matchInvoiceToDteDocument(
+  invoiceId: string,
+): Promise<DteReconciliationMatch | null> {
+  const invoice = await db.query.purchaseOrderInvoices.findFirst({
+    where: eq(purchaseOrderInvoices.id, invoiceId),
+    columns: { id: true, invoiceNumber: true, amount: true },
+    with: {
+      purchaseOrder: {
+        columns: {},
+        with: { supplier: { columns: { rut: true } } },
+      },
+    },
+  })
+  if (!invoice) return null
+
+  const supplierRut = invoice.purchaseOrder?.supplier?.rut
+  if (!supplierRut) return null
+
+  // El folio del DTE es un entero, así que su forma normalizada es su propio
+  // valor: se compara numéricamente y se aprovecha `dte_documents_rut_emisor_idx`
+  // en vez de aplicar una regexp sobre toda la tabla.
+  const normalized = normalizeFolio(invoice.invoiceNumber)
+  if (!normalized) return null
+  const folio = Number(normalized)
+  if (!Number.isSafeInteger(folio)) return null
+
+  const candidates = await db.query.dteDocuments.findMany({
+    where: and(
+      eq(dteDocuments.folio, folio),
+      isNull(dteDocuments.purchaseOrderInvoiceId),
+      inArray(dteDocuments.tipoDte, ["33", "34"]),
+    ),
+    columns: { id: true, folio: true, rutEmisor: true, montoTotal: true },
+  })
+
+  const cleaned = cleanRut(supplierRut)
+  const matching = candidates.filter((doc) => cleanRut(doc.rutEmisor) === cleaned)
+
+  // Más de un DTE sin vincular con el mismo folio y proveedor es un dato
+  // inconsistente del portal; elegir uno colgaría el documento equivocado.
+  if (matching.length !== 1) {
+    if (matching.length > 1) {
+      console.warn(`[dte-reconciliation] folio ${folio} tiene ${matching.length} DTE sin vincular del mismo proveedor: se deja sin vincular.`)
+    }
+    return null
+  }
+
+  const doc = matching[0]!
+  const dteTotal = doc.montoTotal ?? 0
+  const entityTotal = invoice.amount ?? 0
+  const discrepancy = Math.abs(dteTotal - entityTotal)
+
+  await db.update(dteDocuments)
+    .set({ purchaseOrderInvoiceId: invoice.id })
+    .where(eq(dteDocuments.id, doc.id))
+
+  return {
+    dteDocumentId: doc.id,
+    matchedEntityId: invoice.id,
+    matchType: "purchase_order_invoice",
+    dteTotal,
+    entityTotal,
+    discrepancy,
+    discrepancyPercent: entityTotal !== 0
+      ? (discrepancy / Math.abs(entityTotal)) * 100
+      : (discrepancy > 0 ? 100 : 0),
+  }
 }
 
 // ── Conciliación con cargas de combustible ───────────────────────────────────
@@ -193,11 +304,14 @@ export async function matchToFuelLoads(
 
   if (unmatchedDocs.length === 0) return matches
 
-  const folios = unmatchedDocs.map((d) => String(d.folio))
+  // `receiptNumber` también lo tipea una persona: se normaliza igual que el
+  // número de factura de OC (ver folio-match.ts).
+  const folios = [...new Set(unmatchedDocs.map((d) => normalizeFolio(d.folio)).filter(Boolean))]
+  if (folios.length === 0) return matches
 
   // Buscar cargas por receiptNumber, trayendo el RUT del proveedor de combustible.
   const loads = await db.query.fuelLoads.findMany({
-    where: inArray(fuelLoads.receiptNumber, folios),
+    where: sql`ltrim(regexp_replace(coalesce(${fuelLoads.receiptNumber}, ''), '[^0-9]', '', 'g'), '0') IN ${folios}`,
     columns: {
       id: true,
       receiptNumber: true,
@@ -207,13 +321,24 @@ export async function matchToFuelLoads(
   })
 
   const loadByReceiptAndRut = new Map<string, (typeof loads)[number]>()
+  const ambiguousLoads = new Set<string>()
   for (const load of loads) {
     if (!load.receiptNumber || !load.supplier?.rut) continue
-    loadByReceiptAndRut.set(`${load.receiptNumber}|${cleanRut(load.supplier.rut)}`, load)
+    const key = folioRutKey(load.receiptNumber, cleanRut(load.supplier.rut))
+    if (key.startsWith("|")) continue
+    if (loadByReceiptAndRut.has(key)) {
+      ambiguousLoads.add(key)
+      continue
+    }
+    loadByReceiptAndRut.set(key, load)
+  }
+  for (const key of ambiguousLoads) {
+    loadByReceiptAndRut.delete(key)
+    console.warn(`[dte-reconciliation] ${key.split("|")[0]} calza con más de una carga del mismo proveedor: se deja sin vincular.`)
   }
 
   for (const doc of unmatchedDocs) {
-    const load = loadByReceiptAndRut.get(`${doc.folio}|${cleanRut(doc.rutEmisor)}`)
+    const load = loadByReceiptAndRut.get(folioRutKey(doc.folio, cleanRut(doc.rutEmisor)))
     if (!load) continue
 
     const dteTotal = doc.montoTotal ?? 0
