@@ -744,6 +744,140 @@ describe("Purchasing service — edge cases", () => {
       expect(splitItem?.attributes[0]).toMatchObject({ attributeName: "Talla", value: "L" })
     })
 
+    it("splits the remainder even if the item never left the purchase stage", async () => {
+      // El hueco: la clasificación del cierre eran dos `filter` con listas de
+      // estado escritas a mano, y una línea con recepción parcial cuyo ítem
+      // siguiera en 'purchased' no caía en ninguna. Ni se dividía ni se
+      // liberaba: el saldo desaparecía y la línea quedaba viva sobre una OC
+      // cerrada, o sea cobertura fantasma sobre un ítem que nadie iba a
+      // comprar. Ahora el destino lo decide sólo cuánto llegó.
+      const requestId = "req-close-stuck"
+      const requestItemId = "item-close-stuck"
+
+      await inMemoryDb.insert(schema.purchaseRequests).values({
+        id: requestId, code: "SOL-CLOSE-STUCK", worksiteId: "ws-purch",
+        requesterId: userId, requestType: "epp", urgency: "normal",
+        status: "in_purchasing", createdAt: now, updatedAt: now,
+      })
+      await inMemoryDb.insert(schema.purchaseRequestItems).values({
+        id: requestItemId, requestId, productId: "prod-purch",
+        quantity: 10, unitOfMeasure: "unidad", status: "pending_purchase",
+        createdAt: now, updatedAt: now,
+      })
+
+      const orderId = await createOrder({
+        worksiteId: "ws-purch",
+        supplierId: "sup-purch",
+        createdBy: userId,
+        items: [{
+          requestItemId, productId: "prod-purch", productNameFree: null,
+          quantity: 10, unitOfMeasure: "unidad", unitPrice: 1000,
+        }],
+      })
+
+      await inMemoryDb
+        .update(schema.purchaseOrders)
+        .set({ status: "partially_received" })
+        .where(eq(schema.purchaseOrders.id, orderId))
+      await inMemoryDb
+        .update(schema.purchaseOrderItems)
+        .set({ quantityOfficeReceived: 4, quantityReceived: 4 })
+        .where(eq(schema.purchaseOrderItems.purchaseOrderId, orderId))
+      // El ítem se quedó en 'purchased': llegó mercadería pero su transición
+      // no corrió (una recepción a medio camino, un dato migrado).
+      await inMemoryDb
+        .update(schema.purchaseRequestItems)
+        .set({ status: "purchased" })
+        .where(eq(schema.purchaseRequestItems.id, requestItemId))
+
+      await closeOrder(orderId, userId, "Proveedor no despachará saldo")
+
+      const originalItem = await inMemoryDb.query.purchaseRequestItems.findFirst({
+        where: eq(schema.purchaseRequestItems.id, requestItemId),
+      })
+      expect(originalItem?.quantity).toBe(4)
+
+      const requestItems = await inMemoryDb.query.purchaseRequestItems.findMany({
+        where: eq(schema.purchaseRequestItems.requestId, requestId),
+      })
+      const splitItem = requestItems.find((item) => item.id !== requestItemId)
+      expect(splitItem, "el saldo de 6 tiene que volver a la cola, no desaparecer").toBeDefined()
+      expect(splitItem).toMatchObject({ quantity: 6, status: "pending_purchase" })
+    })
+
+    it("releases a not-received line whose item is no longer purchasable without faking history", async () => {
+      // Cierre de una OC cuyo ítem ya fue rechazado (la solicitud se canceló
+      // mientras la orden seguía abierta). La línea no recibió nada, así que se
+      // anula; el ítem no se toca —sigue rechazado— y por lo tanto tampoco se
+      // escribe una transición que nunca ocurrió.
+      const requestId = "req-close-rejected"
+      const keptItemId = "item-close-kept"
+      const rejectedItemId = "item-close-rejected"
+
+      await inMemoryDb.insert(schema.purchaseRequests).values({
+        id: requestId, code: "SOL-CLOSE-REJ", worksiteId: "ws-purch",
+        requesterId: userId, requestType: "epp", urgency: "normal",
+        status: "in_purchasing", createdAt: now, updatedAt: now,
+      })
+      await inMemoryDb.insert(schema.purchaseRequestItems).values([
+        {
+          id: keptItemId, requestId, productId: "prod-purch",
+          quantity: 2, unitOfMeasure: "unidad", status: "pending_purchase",
+          createdAt: now, updatedAt: now,
+        },
+        {
+          id: rejectedItemId, requestId, productId: "prod-purch",
+          quantity: 3, unitOfMeasure: "unidad", status: "pending_purchase",
+          createdAt: now, updatedAt: now,
+        },
+      ])
+
+      const orderId = await createOrder({
+        worksiteId: "ws-purch",
+        supplierId: "sup-purch",
+        createdBy: userId,
+        items: [
+          { requestItemId: keptItemId, productId: "prod-purch", productNameFree: null, quantity: 2, unitOfMeasure: "unidad", unitPrice: 1000 },
+          { requestItemId: rejectedItemId, productId: "prod-purch", productNameFree: null, quantity: 3, unitOfMeasure: "unidad", unitPrice: 1000 },
+        ],
+      })
+
+      await inMemoryDb
+        .update(schema.purchaseOrders)
+        .set({ status: "partially_received" })
+        .where(eq(schema.purchaseOrders.id, orderId))
+      await inMemoryDb
+        .update(schema.purchaseRequestItems)
+        .set({ status: "received" })
+        .where(eq(schema.purchaseRequestItems.id, keptItemId))
+      await inMemoryDb
+        .update(schema.purchaseRequestItems)
+        .set({ status: "rejected" })
+        .where(eq(schema.purchaseRequestItems.id, rejectedItemId))
+
+      await closeOrder(orderId, userId, "Solicitud cancelada")
+
+      const rejectedItem = await inMemoryDb.query.purchaseRequestItems.findFirst({
+        where: eq(schema.purchaseRequestItems.id, rejectedItemId),
+      })
+      expect(rejectedItem?.status).toBe("rejected")
+
+      // Su línea queda anulada: nada llegó y la OC está cerrada, así que no
+      // puede seguir contando como cobertura activa.
+      const lines = await inMemoryDb.query.purchaseOrderItems.findMany({
+        where: eq(schema.purchaseOrderItems.purchaseOrderId, orderId),
+      })
+      expect(lines.find((line) => line.requestItemId === rejectedItemId)?.status).toBe("cancelled")
+
+      const history = await inMemoryDb.query.statusHistory.findMany({
+        where: eq(schema.statusHistory.entityId, rejectedItemId),
+      })
+      expect(
+        history.some((row) => row.toStatus === "pending_purchase"),
+        "no se debe trazar una transición que el WHERE no aplicó",
+      ).toBe(false)
+    })
+
     it("blocks closing an order with merchandise received at office but not yet at faena (LOG-7/DAT-17)", async () => {
       const requestId = "req-close-office-excess"
       const requestItemId = "item-close-office-excess"

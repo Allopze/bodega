@@ -10,7 +10,7 @@ import { PGlite } from "@electric-sql/pglite"
 import { drizzle } from "drizzle-orm/pglite"
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest"
 import path from "node:path"
-import { and, eq } from "drizzle-orm"
+import { and, eq, inArray } from "drizzle-orm"
 import * as schema from "@/db/schema"
 import type { DB } from "@/db"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
@@ -24,6 +24,10 @@ vi.mock("@/db", () => ({
   get db() { return testGlobal.__db },
 }))
 vi.mock("@/lib/auth/auth", () => ({ auth: vi.fn() }))
+vi.mock("@/lib/services/notifications", () => ({
+  notifyManyUser: vi.fn(async () => {}),
+  notifyAfterCommit: vi.fn((callback: () => unknown) => { void callback() }),
+}))
 
 import {
   cancelDispatchGuide,
@@ -34,10 +38,13 @@ import {
   listDispatchGuides,
   countDispatchGuides,
   listOfficeStockOptions,
+  prepareAdditionalDispatchGuideForOfficeReceipt,
   resolveOfficeWorksite,
+  updateDispatchGuide,
   OFFICE_WORKSITE_SETTING_KEY,
 } from "@/lib/services/dispatch-guides"
 import { dispatchGuideInputSchema } from "@/lib/validation/dispatch-guides"
+import { registerReceipt } from "@/lib/services/receiving"
 
 const now = new Date().toISOString()
 const OFFICE = "ws-oficina"
@@ -49,9 +56,13 @@ const FAENA_ACTOR = { userId: "u-faena", userEmail: "faena@chome.cl" }
 const migrationsFolder = path.resolve(process.cwd(), "db/migrations")
 
 async function setOfficeStock(productId: string, quantity: number) {
+  await setStockAt(OFFICE, productId, quantity)
+}
+
+async function setStockAt(worksiteId: string, productId: string, quantity: number) {
   await inMemoryDb
     .insert(schema.worksiteStock)
-    .values({ id: `stk-${OFFICE}-${productId}`, worksiteId: OFFICE, productId, quantity, minStock: 0, updatedAt: now })
+    .values({ id: `stk-${worksiteId}-${productId}`, worksiteId, productId, quantity, minStock: 0, updatedAt: now })
     .onConflictDoUpdate({
       target: [schema.worksiteStock.worksiteId, schema.worksiteStock.productId],
       set: { quantity },
@@ -79,6 +90,32 @@ function guideInput(overrides: Partial<Parameters<typeof createDispatchGuide>[0]
   } as Parameters<typeof createDispatchGuide>[0]
 }
 
+let acquisitionCounter = 0
+async function makeAcquisitionOrder(quantity: number, productId = "p-gdi") {
+  const suffix = ++acquisitionCounter
+  const requestId = `req-gdi-${suffix}`
+  const requestItemId = `reqi-gdi-${suffix}`
+  const orderId = `oc-gdi-${suffix}`
+  const orderItemId = `oci-gdi-${suffix}`
+  await inMemoryDb.insert(schema.purchaseRequests).values({
+    id: requestId, code: `SOL-GDI-${suffix}`, worksiteId: FAENA, requesterId: ISSUER.userId,
+    requestType: "epp", urgency: "normal", status: "in_purchasing", createdAt: now, updatedAt: now,
+  })
+  await inMemoryDb.insert(schema.purchaseRequestItems).values({
+    id: requestItemId, requestId, productId, quantity, unitOfMeasure: "unidad", status: "purchased",
+    createdAt: now, updatedAt: now,
+  })
+  await inMemoryDb.insert(schema.purchaseOrders).values({
+    id: orderId, code: `OC-GDI-${suffix}`, worksiteId: FAENA, supplierId: "sup-gdi", createdBy: ISSUER.userId,
+    status: "sent", deliveryMode: "via_oficina", createdAt: now, updatedAt: now,
+  })
+  await inMemoryDb.insert(schema.purchaseOrderItems).values({
+    id: orderItemId, purchaseOrderId: orderId, requestItemId, productId, quantity, unitOfMeasure: "unidad",
+    status: "issued",
+  })
+  return { requestId, requestItemId, orderId, orderItemId }
+}
+
 describe("Guías de Despacho Internas", () => {
   beforeAll(async () => {
     await migratePGlite(pg, migrationsFolder)
@@ -98,8 +135,11 @@ describe("Guías de Despacho Internas", () => {
       { id: "p-casco", sku: "EPP-001", name: "Casco de seguridad", categoryId: "cat-1", unitOfMeasure: "unidad", isActive: true, createdAt: now, updatedAt: now },
       { id: "p-guantes", sku: "EPP-002", name: "Guantes de cabritilla", categoryId: "cat-1", unitOfMeasure: "par", isActive: true, createdAt: now, updatedAt: now },
       { id: "p-monogas", sku: "EQ-001", name: "Detector monogás", categoryId: "cat-1", unitOfMeasure: "unidad", isActive: true, createdAt: now, updatedAt: now },
+      { id: "p-gdi", sku: "EPP-003", name: "Lentes de seguridad", categoryId: "cat-1", unitOfMeasure: "unidad", isActive: true, createdAt: now, updatedAt: now },
       { id: "p-inactivo", sku: "EPP-999", name: "Producto descontinuado", categoryId: "cat-1", unitOfMeasure: "unidad", isActive: false, createdAt: now, updatedAt: now },
+      { id: "p-servicio", sku: "SER-001", name: "Calibración de equipo", categoryId: "cat-1", unitOfMeasure: "servicio", isService: true, isActive: true, createdAt: now, updatedAt: now },
     ])
+    await inMemoryDb.insert(schema.suppliers).values({ id: "sup-gdi", name: "Proveedor GDI", isActive: true, createdAt: now, updatedAt: now })
     await inMemoryDb.insert(schema.workers).values([
       { id: "w-despacha", firstName: "Ana", lastName: "Bodega", rut: "11111111-1", worksiteId: OFFICE, isActive: true, createdAt: now },
       { id: "w-recibe", firstName: "Luis", lastName: "Faena", rut: "22222222-2", worksiteId: FAENA, isActive: true, createdAt: now },
@@ -123,6 +163,7 @@ describe("Guías de Despacho Internas", () => {
     await setOfficeStock("p-casco", 100)
     await setOfficeStock("p-guantes", 50)
     await setOfficeStock("p-monogas", 3)
+    await setStockAt(FAENA, "p-gdi", 0)
   })
 
   /* ── Creación ─────────────────────────────────────────────────────────── */
@@ -421,6 +462,201 @@ describe("Guías de Despacho Internas", () => {
     const { id } = await createDispatchGuide(guideInput(), ISSUER)
     await cancelDispatchGuide(id, { reason: "Se cayó el traslado" }, ISSUER)
     await expect(dispatchDispatchGuide(id, ISSUER)).rejects.toThrow(/anulada/i)
+  })
+
+  /* ── Integración con adquisiciones ───────────────────────────────────── */
+
+  it("prepara la GDI con lo realmente recibido, mueve stock una sola vez y coteja en faena", async () => {
+    const { orderId, orderItemId, requestItemId } = await makeAcquisitionOrder(10)
+    await setOfficeStock("p-gdi", 0)
+
+    const receiptId = await registerReceipt({
+      purchaseOrderId: orderId,
+      receivedBy: ISSUER.userId,
+      stage: "office",
+      items: [{ purchaseOrderItemId: orderItemId, quantityReceived: 8 }],
+    })
+    const [guide] = await inMemoryDb.select().from(schema.dispatchGuides)
+      .where(eq(schema.dispatchGuides.receiptId, receiptId))
+    expect(guide?.purchaseOrderId).toBe(orderId)
+    expect(guide?.status).toBe("draft")
+    const [guideItem] = await inMemoryDb.select().from(schema.dispatchGuideItems)
+      .where(eq(schema.dispatchGuideItems.guideId, guide!.id))
+    expect(guideItem?.purchaseOrderItemId).toBe(orderItemId)
+    expect(guideItem?.receiptItemId).toBeTruthy()
+    expect(guideItem?.quantity).toBe(8)
+    expect(await stockAt(OFFICE, "p-gdi")).toBe(8)
+    expect(await stockAt(FAENA, "p-gdi")).toBe(0)
+
+    await dispatchDispatchGuide(guide!.id, ISSUER)
+    expect(await stockAt(OFFICE, "p-gdi")).toBe(0)
+    expect(await stockAt(FAENA, "p-gdi")).toBe(8)
+    const movementsAfterDispatch = await inMemoryDb.query.inventoryMovements.findMany({
+      where: eq(schema.inventoryMovements.referenceId, guide!.id),
+    })
+    expect(movementsAfterDispatch).toHaveLength(2)
+
+    const dispatchedDetail = await getDispatchGuideDetail(guide!.id)
+    await confirmDispatchGuideReceipt(guide!.id, {
+      receivedByWorkerId: "w-recibe",
+      items: [{ guideItemId: dispatchedDetail!.guide.items[0]!.id, quantityReceived: 8 }],
+    }, FAENA_ACTOR)
+
+    const [poItem] = await inMemoryDb.select().from(schema.purchaseOrderItems)
+      .where(eq(schema.purchaseOrderItems.id, orderItemId))
+    const [requestItem] = await inMemoryDb.select().from(schema.purchaseRequestItems)
+      .where(eq(schema.purchaseRequestItems.id, requestItemId))
+    expect(poItem?.quantityOfficeReceived).toBe(8)
+    expect(poItem?.quantityReceived).toBe(8)
+    expect(requestItem?.status).toBe("partially_received")
+    expect(await inMemoryDb.query.inventoryMovements.findMany({ where: eq(schema.inventoryMovements.referenceId, guide!.id) })).toHaveLength(2)
+  })
+
+  it("permite despacho parcial y prepara una segunda GDI con el saldo de la recepción", async () => {
+    const { orderId, orderItemId } = await makeAcquisitionOrder(8)
+    await setOfficeStock("p-gdi", 0)
+    const receiptId = await registerReceipt({
+      purchaseOrderId: orderId, receivedBy: ISSUER.userId, stage: "office",
+      items: [{ purchaseOrderItemId: orderItemId, quantityReceived: 8 }],
+    })
+    const [first] = await inMemoryDb.select().from(schema.dispatchGuides)
+      .where(eq(schema.dispatchGuides.receiptId, receiptId))
+    const firstDetail = await getDispatchGuideDetail(first!.id)
+    await updateDispatchGuide(first!.id, {
+      destinationWorksiteId: FAENA,
+      dispatcherWorkerId: null,
+      receiverWorkerId: null,
+      vehicleId: null,
+      driverWorkerId: null,
+      notes: "Despacho sobredimensionado",
+      items: [{ productId: "p-gdi", quantity: 9, unitOfMeasure: "unidad", notes: null }],
+    }, ISSUER)
+    await expect(dispatchDispatchGuide(first!.id, ISSUER))
+      .rejects.toThrow(/más de lo recibido en oficina/i)
+
+    await updateDispatchGuide(first!.id, {
+      destinationWorksiteId: FAENA,
+      dispatcherWorkerId: null,
+      receiverWorkerId: null,
+      vehicleId: null,
+      driverWorkerId: null,
+      notes: "Primer despacho parcial",
+      items: [{ productId: "p-gdi", quantity: 4, unitOfMeasure: "unidad", notes: null }],
+    }, ISSUER)
+    await dispatchDispatchGuide(first!.id, ISSUER)
+
+    const second = await prepareAdditionalDispatchGuideForOfficeReceipt(receiptId, ISSUER)
+    expect(second.id).not.toBe(first!.id)
+    const secondDetail = await getDispatchGuideDetail(second.id)
+    expect(secondDetail!.guide.items[0]!.quantity).toBe(4)
+    await dispatchDispatchGuide(second.id, ISSUER)
+
+    expect(await stockAt(OFFICE, "p-gdi")).toBe(0)
+    expect(await stockAt(FAENA, "p-gdi")).toBe(8)
+    expect(firstDetail!.guide.items[0]!.quantity).toBe(8)
+  })
+
+  it("protege el despacho enlazado frente a dos confirmaciones concurrentes", async () => {
+    const { orderId, orderItemId } = await makeAcquisitionOrder(3)
+    await setOfficeStock("p-gdi", 0)
+    const receiptId = await registerReceipt({
+      purchaseOrderId: orderId, receivedBy: ISSUER.userId, stage: "office",
+      items: [{ purchaseOrderItemId: orderItemId, quantityReceived: 3 }],
+    })
+    const [guide] = await inMemoryDb.select().from(schema.dispatchGuides)
+      .where(eq(schema.dispatchGuides.receiptId, receiptId))
+
+    const results = await Promise.allSettled([
+      dispatchDispatchGuide(guide!.id, ISSUER),
+      dispatchDispatchGuide(guide!.id, ISSUER),
+    ])
+    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1)
+    expect(await inMemoryDb.query.inventoryMovements.findMany({
+      where: eq(schema.inventoryMovements.referenceId, guide!.id),
+    })).toHaveLength(2)
+  })
+
+  it("registra diferencias de cotejo sin alterar la cantidad originalmente despachada", async () => {
+    const { orderId, orderItemId } = await makeAcquisitionOrder(5)
+    await setOfficeStock("p-gdi", 0)
+    const receiptId = await registerReceipt({
+      purchaseOrderId: orderId, receivedBy: ISSUER.userId, stage: "office",
+      items: [{ purchaseOrderItemId: orderItemId, quantityReceived: 5 }],
+    })
+    const [guide] = await inMemoryDb.select().from(schema.dispatchGuides)
+      .where(eq(schema.dispatchGuides.receiptId, receiptId))
+    await dispatchDispatchGuide(guide!.id, ISSUER)
+    const detail = await getDispatchGuideDetail(guide!.id)
+    await confirmDispatchGuideReceipt(guide!.id, {
+      items: [{ guideItemId: detail!.guide.items[0]!.id, quantityReceived: 3, differenceReason: "Faltaron dos unidades" }],
+    }, FAENA_ACTOR)
+
+    const [updatedGuideItem] = await inMemoryDb.select().from(schema.dispatchGuideItems)
+      .where(eq(schema.dispatchGuideItems.guideId, guide!.id))
+    const [faenaReceipt] = await inMemoryDb.select().from(schema.receipts)
+      .where(eq(schema.receipts.dispatchGuideNo, guide!.code))
+    const [faenaReceiptItem] = await inMemoryDb.select().from(schema.receiptItems)
+      .where(eq(schema.receiptItems.receiptId, faenaReceipt!.id))
+    expect(updatedGuideItem?.quantity).toBe(5)
+    expect(updatedGuideItem?.quantityReceived).toBe(3)
+    expect(updatedGuideItem?.differenceReason).toBe("Faltaron dos unidades")
+    expect(faenaReceiptItem?.quantityReceived).toBe(3)
+    expect(faenaReceiptItem?.quantityDifference).toBe(2)
+    expect((await getDispatchGuideDetail(guide!.id))!.guide.status).toBe("partially_received")
+
+    const partialDetail = await getDispatchGuideDetail(guide!.id)
+    await confirmDispatchGuideReceipt(guide!.id, {
+      items: [{ guideItemId: partialDetail!.guide.items[0]!.id, quantityReceived: 2 }],
+    }, FAENA_ACTOR)
+    const completedDetail = await getDispatchGuideDetail(guide!.id)
+    expect(completedDetail!.guide.status).toBe("received")
+    expect(completedDetail!.guide.items[0]!.quantityReceived).toBe(5)
+    await expect(cancelDispatchGuide(guide!.id, { reason: "Corrección tardía" }, FAENA_ACTOR))
+      .rejects.toThrow(/no puede anularse después del cotejo/i)
+  })
+
+  it("no prepara GDI para servicios no trasladables", async () => {
+    const { orderId, orderItemId } = await makeAcquisitionOrder(1, "p-servicio")
+    const receiptId = await registerReceipt({
+      purchaseOrderId: orderId, receivedBy: ISSUER.userId, stage: "office",
+      items: [{ purchaseOrderItemId: orderItemId, quantityReceived: 1 }],
+    })
+    expect(await inMemoryDb.select().from(schema.dispatchGuides).where(eq(schema.dispatchGuides.receiptId, receiptId))).toHaveLength(0)
+  })
+
+  it("conserva recepciones parciales del proveedor y prepara una GDI por recepción", async () => {
+    const { orderId, orderItemId } = await makeAcquisitionOrder(10)
+    await setOfficeStock("p-gdi", 0)
+    const firstReceiptId = await registerReceipt({
+      purchaseOrderId: orderId, receivedBy: ISSUER.userId, stage: "office",
+      items: [{ purchaseOrderItemId: orderItemId, quantityReceived: 6 }],
+    })
+    const secondReceiptId = await registerReceipt({
+      purchaseOrderId: orderId, receivedBy: ISSUER.userId, stage: "office",
+      items: [{ purchaseOrderItemId: orderItemId, quantityReceived: 4 }],
+    })
+
+    const guides = await inMemoryDb.select().from(schema.dispatchGuides)
+      .where(eq(schema.dispatchGuides.purchaseOrderId, orderId))
+    expect(guides).toHaveLength(2)
+    expect(new Set(guides.map((guide) => guide.receiptId))).toEqual(new Set([firstReceiptId, secondReceiptId]))
+    const guideItems = await inMemoryDb.select().from(schema.dispatchGuideItems)
+      .where(inArray(schema.dispatchGuideItems.guideId, guides.map((guide) => guide.id)))
+    expect(guideItems.map((item) => item.quantity).sort((a, b) => a - b)).toEqual([4, 6])
+    expect(await stockAt(OFFICE, "p-gdi")).toBe(10)
+  })
+
+  it("no prepara GDI cuando la OC tiene destino final en Oficina CHOME", async () => {
+    const { orderId, orderItemId } = await makeAcquisitionOrder(2)
+    await inMemoryDb.update(schema.purchaseOrders)
+      .set({ worksiteId: OFFICE })
+      .where(eq(schema.purchaseOrders.id, orderId))
+    const receiptId = await registerReceipt({
+      purchaseOrderId: orderId, receivedBy: ISSUER.userId, stage: "office",
+      items: [{ purchaseOrderItemId: orderItemId, quantityReceived: 2 }],
+    })
+    expect(await inMemoryDb.select().from(schema.dispatchGuides)
+      .where(eq(schema.dispatchGuides.receiptId, receiptId))).toHaveLength(0)
   })
 
   /* ── Consulta histórica ───────────────────────────────────────────────── */

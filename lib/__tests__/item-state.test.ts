@@ -135,6 +135,7 @@ describe("Item State Machine", () => {
     const allStates: ItemStatus[] = [
       "draft", "requested", "approved", "rejected",
       "pending_purchase", "in_purchase_order", "purchased",
+      "partially_office_received", "office_received",
       "partially_received", "received", "partially_delivered", "delivered",
     ]
 

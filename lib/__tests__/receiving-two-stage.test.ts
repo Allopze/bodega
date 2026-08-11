@@ -46,6 +46,7 @@ import { notifyManyUser } from "@/lib/services/notifications"
 
 const USER_ID = "u-test"
 const WS_ID   = "ws-test"
+const OFFICE_ID = "ws-office-test"
 const SUP_ID  = "sup-test"
 
 beforeAll(async () => {
@@ -56,6 +57,9 @@ beforeAll(async () => {
   })
   await inMemoryDb.insert(schema.worksites).values({
     id: WS_ID, name: "Faena Test", code: "FN-TEST", isActive: true, createdAt: now, updatedAt: now,
+  })
+  await inMemoryDb.insert(schema.worksites).values({
+    id: OFFICE_ID, name: "Oficina CHOME", code: "OF-TEST", isActive: true, createdAt: now, updatedAt: now,
   })
   await inMemoryDb.insert(schema.worksites).values({
     id: "ws-other", name: "Faena Ajena", code: "FN-OTHER", isActive: true, createdAt: now, updatedAt: now,

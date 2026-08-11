@@ -130,6 +130,51 @@ describe("operational work assignments", () => {
     }, assignerSession)).rejects.toThrow("La etapa ya no está pendiente")
   })
 
+  it("no deja asignar «comprar» sobre un ítem que ya tiene una OC activa", async () => {
+    // El estado del ítem no basta para decidir si "comprar" sigue pendiente:
+    // un ítem aprobado deja de ser trabajo de Compras en cuanto una OC activa
+    // lo cubre. La cola ya lo descuenta con ese predicado; la validación de la
+    // asignación usaba sólo el estado y dejaba asignar una tarea inexistente.
+    const supplierId = nanoid()
+    const orderId = nanoid()
+    await inMemoryDb.insert(schema.suppliers).values({
+      id: supplierId, name: "Proveedor cobertura", isActive: true, createdAt: now, updatedAt: now,
+    })
+    await inMemoryDb.update(schema.purchaseRequestItems)
+      .set({ status: "approved", updatedAt: now })
+      .where(eq(schema.purchaseRequestItems.id, requestItemId))
+
+    const asignarCompra = () => upsertOperationalAssignment({
+      sourceType: "purchase_request_item",
+      sourceId: requestItemId,
+      actionKey: "create_order",
+      assigneeUserId: eligibleId,
+      committedDueAt: null,
+    }, assignerSession)
+
+    // Sin OC la etapa SÍ está vigente: la asignación falla más adelante, por el
+    // permiso del destinatario (el fixture sólo le da `approvals:approve`), no
+    // por la etapa. Se afirma el error concreto para que la mitad negativa de
+    // abajo pruebe la cobertura y no otra cosa.
+    await expect(asignarCompra()).rejects.toThrow(/no está activa, no tiene acceso/)
+
+    await inMemoryDb.insert(schema.purchaseOrders).values({
+      id: orderId, code: `OC-COB-${nanoid()}`, worksiteId, supplierId,
+      createdBy: assignerId, status: "draft", createdAt: now, updatedAt: now,
+    })
+    await inMemoryDb.insert(schema.purchaseOrderItems).values({
+      id: nanoid(), purchaseOrderId: orderId, requestItemId,
+      quantity: 1, unitOfMeasure: "unidad", status: "issued",
+    })
+
+    // Con la OC activa cubriéndolo, la validación corta antes: la etapa ya no
+    // existe, sin importar quién sea el destinatario.
+    await expect(asignarCompra()).rejects.toThrow("La etapa ya no está pendiente")
+
+    await inMemoryDb.delete(schema.purchaseOrderItems).where(eq(schema.purchaseOrderItems.purchaseOrderId, orderId))
+    await inMemoryDb.delete(schema.purchaseOrders).where(eq(schema.purchaseOrders.id, orderId))
+  })
+
   it("returns only permitted activity before limiting and keeps the actor snapshot", async () => {
     // `recordOperationalActivity` no setea `occurredAt`: lo pone el default de la
     // columna, o sea la hora real. Los tests de arriba dejan eventos con fecha de

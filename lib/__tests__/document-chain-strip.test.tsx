@@ -12,6 +12,7 @@ const CHAIN: DocumentChain = {
   requests: [{ kind: "request", id: "req-1", code: "SOL-0001", href: "/solicitudes/req-1", status: "approved", at: null, worksiteId: "ws-1" }],
   orders: [{ kind: "order", id: "oc-1", code: "OC-2026-0001", href: "/compras/oc-1", status: "issued", at: null, worksiteId: "ws-1" }],
   receipts: [],
+  dispatchGuides: [],
   deliveries: [],
 }
 

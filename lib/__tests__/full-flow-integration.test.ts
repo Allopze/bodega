@@ -48,6 +48,7 @@ await migratePGlite(pg, migrationsFolder)
 import { submitItemTx, approveItem } from "@/lib/services/item-state"
 import { createOrder, createOrdersBySupplier, issueAndSendOrder } from "@/lib/services/purchasing"
 import { registerReceipt } from "@/lib/services/receiving"
+import { confirmDispatchGuideReceipt, dispatchDispatchGuide, getDispatchGuideDetail } from "@/lib/services/dispatch-guides"
 import { registerWorkerEppDelivery } from "@/lib/services/deliveries"
 
 describe("Full procurement workflow integration", () => {
@@ -79,6 +80,20 @@ describe("Full procurement workflow integration", () => {
       region: "Valparaiso",
       isActive: true,
       createdAt: now,
+      updatedAt: now,
+    })
+    const officeWorksiteId = "ws-office-1"
+    await inMemoryDb.insert(schema.worksites).values({
+      id: officeWorksiteId,
+      name: "Oficina CHOME",
+      code: "OF-CHOME",
+      isActive: true,
+      createdAt: now,
+      updatedAt: now,
+    })
+    await inMemoryDb.insert(schema.systemSettings).values({
+      key: "warehouse.office_worksite_id",
+      value: officeWorksiteId,
       updatedAt: now,
     })
 
@@ -240,7 +255,7 @@ describe("Full procurement workflow integration", () => {
     })
     expect(purchasedReq?.items[0]?.status).toBe("purchased")
 
-    // 9a. Stage 1 — arrival at Chome office (mandatory first step, no stock).
+    // 9a. Stage 1 — arrival at Chome office (mandatory first step, office stock).
     const ocItemId = order?.items[0]?.id ?? ""
     await registerReceipt({
       purchaseOrderId: orderId,
@@ -261,21 +276,23 @@ describe("Full procurement workflow integration", () => {
     })
     expect(officeOrder?.status).toBe("office_received")
 
-    // 9b. Stage 2 — receipt at worksite (generates stock).
-    const receiptId = await registerReceipt({
-      purchaseOrderId: orderId,
-      receivedBy: userId,
-      userEmail: "juan@chome.cl",
-      stage: "faena",
-      worksiteId: worksiteId,
-      dispatchGuideNo: "GUIA-999",
-      items: [
-        {
-          purchaseOrderItemId: ocItemId,
-          quantityReceived: 10,
-        },
-      ],
-    })
+    // 9b. Stage 2 — the office receipt prepares the GDI; dispatch is the only
+    // operation that moves stock to faena, and the later cotejo creates the
+    // final receipt without duplicating that movement.
+    const [guide] = await inMemoryDb.select().from(schema.dispatchGuides)
+      .where(eq(schema.dispatchGuides.purchaseOrderId, orderId))
+    expect(guide?.receiptId).toBeTruthy()
+    await dispatchDispatchGuide(guide!.id, { userId, userEmail: "juan@chome.cl" })
+    const guideDetail = await getDispatchGuideDetail(guide!.id)
+    await confirmDispatchGuideReceipt(guide!.id, {
+      receivedByWorkerId: workerId,
+      items: [{ guideItemId: guideDetail!.guide.items[0]!.id, quantityReceived: 10 }],
+    }, { userId, userEmail: "juan@chome.cl" })
+
+    const [faenaReceiptRow] = await inMemoryDb.select({ id: schema.receipts.id })
+      .from(schema.receipts)
+      .where(eq(schema.receipts.dispatchGuideNo, guide!.code))
+    const receiptId = faenaReceiptRow!.id
 
     const receipt = await inMemoryDb.query.receipts.findFirst({
       where: eq(schema.receipts.id, receiptId),

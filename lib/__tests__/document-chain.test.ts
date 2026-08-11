@@ -20,7 +20,7 @@ const { findDocumentByCode, getDocumentChain, getDocumentChainByCode } =
   await import("@/lib/services/document-chain")
 
 const now = new Date().toISOString()
-const ALL_PERMISSIONS = ["requests:view_all", "purchasing:view", "receiving:view", "deliveries:view"]
+const ALL_PERMISSIONS = ["requests:view_all", "purchasing:view", "receiving:view", "warehouse:view_guides", "deliveries:view"]
 
 function session(overrides: {
   permissions?: string[]
@@ -63,6 +63,7 @@ describe("expediente de documentos", () => {
     await inMemoryDb.insert(schema.worksites).values([
       { id: "ws-norte", name: "Faena Norte", code: "FN", createdAt: now, updatedAt: now },
       { id: "ws-sur",   name: "Faena Sur",   code: "FS", createdAt: now, updatedAt: now },
+      { id: "ws-office", name: "Oficina CHOME", code: "OF", createdAt: now, updatedAt: now },
     ])
     await inMemoryDb.insert(schema.suppliers).values({
       id: "sup-1", name: "Proveedor", rut: "76000000-0", createdAt: now, updatedAt: now,
@@ -102,6 +103,24 @@ describe("expediente de documentos", () => {
       { id: "reci-2", receiptId: "rec-2", purchaseOrderItemId: "oci-x", quantityReceived: 1, status: "received" },
     ])
 
+    await inMemoryDb.insert(schema.dispatchGuides).values({
+      id: "gdi-chain-1",
+      code: "GDI-2026-0001",
+      status: "received",
+      originWorksiteId: "ws-office",
+      destinationWorksiteId: "ws-norte",
+      purchaseOrderId: "oc-1",
+      receiptId: "rec-1",
+      issuedBy: "user-chain",
+      issuedAt: now,
+      dispatchedAt: now,
+      dispatchedBy: "user-chain",
+      receivedAt: now,
+      receivedBy: "user-chain",
+      createdAt: now,
+      updatedAt: now,
+    })
+
     await inMemoryDb.insert(schema.deliveries).values({
       id: "ent-1", code: "ENT-2026-0001", deliveredBy: "user-chain", deliveredAt: now,
       destinationType: "faena", worksiteId: "ws-norte", createdAt: now,
@@ -117,6 +136,7 @@ describe("expediente de documentos", () => {
     await expect(findDocumentByCode("SOL-0001")).resolves.toEqual({ kind: "request", id: "req-1" })
     await expect(findDocumentByCode("OC-2026-0001")).resolves.toEqual({ kind: "order", id: "oc-1" })
     await expect(findDocumentByCode("REC-2026-0001")).resolves.toEqual({ kind: "receipt", id: "rec-1" })
+    await expect(findDocumentByCode("GDI-2026-0001")).resolves.toEqual({ kind: "dispatchGuide", id: "gdi-chain-1" })
     await expect(findDocumentByCode("ENT-2026-0001")).resolves.toEqual({ kind: "delivery", id: "ent-1" })
     // Sin prefijo conocido y con espacios/minúsculas: se normaliza igual.
     await expect(findDocumentByCode("  oc-2026-0001 ")).resolves.toEqual({ kind: "order", id: "oc-1" })
@@ -129,6 +149,7 @@ describe("expediente de documentos", () => {
     expect(codes(chain.requests)).toEqual(["SOL-0001", "SOL-0002"])
     expect(codes(chain.orders)).toEqual(["OC-2026-0001"])
     expect(codes(chain.receipts)).toEqual(["REC-2026-0001"])
+    expect(codes(chain.dispatchGuides)).toEqual(["GDI-2026-0001"])
     expect(codes(chain.deliveries)).toEqual(["ENT-2026-0001"])
   })
 
@@ -137,6 +158,7 @@ describe("expediente de documentos", () => {
     expect(codes(chain.requests)).toEqual(["SOL-0001"])
     expect(codes(chain.orders)).toEqual(["OC-2026-0001"])
     expect(codes(chain.receipts)).toEqual(["REC-2026-0001"])
+    expect(codes(chain.dispatchGuides)).toEqual(["GDI-2026-0001"])
     expect(codes(chain.deliveries)).toEqual(["ENT-2026-0001"])
   })
 
@@ -160,6 +182,15 @@ describe("expediente de documentos", () => {
     expect(codes(chain.requests)).toEqual(["SOL-0001"])
     expect(codes(chain.orders)).toEqual(["OC-2026-0001"])
     expect(codes(chain.receipts)).toEqual(["REC-2026-0001"])
+    expect(codes(chain.dispatchGuides)).toEqual(["GDI-2026-0001"])
+  })
+
+  it("desde la GDI conserva el vínculo con la recepción y la OC de origen", async () => {
+    const chain = await getDocumentChain(session(), { kind: "dispatchGuide", id: "gdi-chain-1" })
+    expect(codes(chain.requests)).toEqual(["SOL-0001", "SOL-0002"])
+    expect(codes(chain.orders)).toEqual(["OC-2026-0001"])
+    expect(codes(chain.receipts)).toEqual(["REC-2026-0001"])
+    expect(codes(chain.dispatchGuides)).toEqual(["GDI-2026-0001"])
   })
 
   it("desde la entrega reconstruye la cadena hacia arriba", async () => {

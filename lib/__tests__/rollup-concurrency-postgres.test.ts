@@ -75,14 +75,13 @@ describeIf("rollup and cancellation concurrency on real Postgres", () => {
     await db.delete(schema.purchaseRequests)
   })
 
-  // DAT-1, conocido y NO resuelto (ver el comentario largo en rollup.ts: dos
-  // intentos de arreglo — lock explícito y UPDATE atómico con subquery —
-  // deadlockearon o no cerraron la carrera contra Postgres real). `it.fails`
-  // documenta el límite actual: si algún día se mueve el lock del padre a
-  // antes del insert en approval_decisions en los ~8 callers y esto empieza a
-  // pasar, este test fallará-al-no-fallar y avisará que ya se puede
-  // convertir en un test normal.
-  it.fails("two concurrent approvals of different items in the same request never leave the parent stale (DAT-1, abierto)", async () => {
+  // DAT-1, cerrado: el lock del padre se movió a los callers, tomado después
+  // del ítem y ANTES del insert en `approval_decisions` (ver
+  // `lockRequestsForRollupTx`). Era `it.fails` mientras la carrera estaba
+  // abierta; el día que pasó, falló-al-no-fallar y avisó que ya tocaba
+  // convertirlo en un test normal. Ahora custodia el arreglo: si un caller
+  // nuevo llega al rollup sin lockear su padre, esto vuelve a rojo.
+  it("two concurrent approvals of different items in the same request never leave the parent stale (DAT-1)", async () => {
     const db = getTestDb()
     await seedRequestWithItems(db, ["item-a", "item-b"])
 

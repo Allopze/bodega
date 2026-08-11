@@ -27,7 +27,7 @@ describe("OcReceptionCta", () => {
     expect(screen.getByText(/20 unidades por llegar a oficina/i)).toBeInTheDocument()
   })
 
-  it("links to faena reception when office stock is pending worksite receipt", () => {
+  it("continues in Recepciones when office stock is pending dispatch to faena", () => {
     render(
       <OcReceptionCta
         {...base}
@@ -38,9 +38,9 @@ describe("OcReceptionCta", () => {
       />,
     )
 
-    const link = screen.getByRole("link", { name: /recepcionar en faena/i })
-    expect(link).toHaveAttribute("href", "/recepcion/nueva?oc=oc-123")
-    expect(screen.getByText(/20 unidades pendientes para Biodiversa/i)).toBeInTheDocument()
+    const link = screen.getByRole("link", { name: /continuar en recepciones/i })
+    expect(link).toHaveAttribute("href", "/recepcion")
+    expect(screen.getByText(/queda pendiente preparar el despacho a faena/i)).toBeInTheDocument()
   })
 
   it("skips the office stage entirely for a directo_faena order", () => {
@@ -85,7 +85,7 @@ describe("OcReceptionCta", () => {
     )
 
     expect(screen.queryByRole("link")).not.toBeInTheDocument()
-    expect(screen.getByText(/siguiente paso: recepcionar en faena/i)).toBeInTheDocument()
+    expect(screen.getByText(/siguiente paso: preparar el despacho desde recepciones/i)).toBeInTheDocument()
   })
 })
 
