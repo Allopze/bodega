@@ -24,8 +24,17 @@ export default auth((req) => {
   // Las rutas API públicas del formulario se listan explícitas (no "/api/tae"
   // completo) para que "/api/tae/evidence/[id]" —lectura privada de fotos—
   // siga exigiendo sesión también a nivel de proxy, no solo dentro del handler.
+  // NOTE: "/api/cron" es público *para este proxy*, no para el mundo: cada una
+  // de las 15 rutas bajo ese prefijo empieza verificando CRON_SECRET con
+  // comparación en tiempo constante (lib/security/cron-auth.ts) y responde 401
+  // sin él. Sin esta línea el proxy las redirige al login con un 307 antes de
+  // que el handler corra, y como un 307 no es error para `curl --fail` ni para
+  // `wget` con redirecciones, los schedulers reportaban éxito sin ejecutar
+  // nada. Al agregar una ruta nueva bajo /api/cron, verificar el secreto es
+  // obligatorio: acá ya no hay sesión que la proteja.
   const publicPaths = [
     "/login", "/registro", "/recuperar", "/api/auth", "/api/health",
+    "/api/cron",
     "/ppa",
     "/tae", "/api/tae/access", "/api/tae/submit", "/api/tae/identity",
   ]
