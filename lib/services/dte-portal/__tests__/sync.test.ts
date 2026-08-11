@@ -27,6 +27,7 @@ const mockTxUpdateSet = vi.fn()
 const mockFetchBandejaEntrada = vi.fn()
 const mockMatchToPurchaseOrderInvoices = vi.fn()
 const mockMatchToFuelLoads = vi.fn()
+const mockClaimDteSyncStart = vi.fn()
 
 vi.mock("@/db", () => ({
   db: {
@@ -52,6 +53,9 @@ vi.mock("../bandeja-entrada", () => ({
 vi.mock("../reconciliation", () => ({
   matchToPurchaseOrderInvoices: (...args: unknown[]) => mockMatchToPurchaseOrderInvoices(...args),
   matchToFuelLoads: (...args: unknown[]) => mockMatchToFuelLoads(...args),
+}))
+vi.mock("../sync-start-gate", () => ({
+  claimDteSyncStart: (...args: unknown[]) => mockClaimDteSyncStart(...args),
 }))
 
 const { syncDteDocuments, computeDocumentHash, previousPeriodo, rollingSyncPeriods, assertSyncablePeriodo } = await import("../sync")
@@ -143,6 +147,7 @@ describe("syncDteDocuments", () => {
     mockTxUpdateSet.mockResolvedValue(undefined)
     mockMatchToPurchaseOrderInvoices.mockResolvedValue([])
     mockMatchToFuelLoads.mockResolvedValue([])
+    mockClaimDteSyncStart.mockResolvedValue({ allowed: true })
   })
 
   it("inserts new documents on first sync (no prior success, no existing rows)", async () => {
@@ -158,6 +163,23 @@ describe("syncDteDocuments", () => {
     expect(result.rowsUpdated).toBe(0)
     expect(mockTxInsertValues).toHaveBeenCalledTimes(1)
     expect(mockFetchBandejaEntrada).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ mes: "06", anio: "2026", codEmp: "433" }))
+  })
+
+  it("persists the cron batch correlation id with the DTE run", async () => {
+    mockSyncRunsFindFirst.mockResolvedValue(undefined)
+    mockDocumentsFindFirst.mockResolvedValue(undefined)
+    mockFetchBandejaEntrada.mockResolvedValue({ rows: [], totalRegistros: 0 })
+
+    const result = await syncDteDocuments(makeClient(), {
+      periodo: "2026-06",
+      trigger: "cron",
+      correlationId: "batch-2026-06",
+    })
+
+    expect(result.correlationId).toBe("batch-2026-06")
+    expect(mockClaimDteSyncStart).toHaveBeenCalledWith(expect.objectContaining({
+      correlationId: "batch-2026-06",
+    }))
   })
 
   it("is idempotent: re-running with the same data marks documents unchanged, no writes", async () => {
@@ -206,7 +228,7 @@ describe("syncDteDocuments", () => {
     mockDocumentsFindFirst.mockResolvedValue(undefined)
     mockFetchBandejaEntrada.mockResolvedValue({ rows: [BASE_ROW], totalRegistros: 1 })
 
-    const currentPeriodo = new Date().toISOString().slice(0, 7)
+    const currentPeriodo = rollingSyncPeriods()[0]!
     const result = await syncDteDocuments(makeClient(), { periodo: currentPeriodo, importerId: "user-1" })
 
     expect(result.status).toBe("success")
@@ -225,28 +247,50 @@ describe("syncDteDocuments", () => {
     expect(mockFetchBandejaEntrada).toHaveBeenCalled()
   })
 
+  it("does not reach the portal when conversion has durably paused new starts", async () => {
+    mockSyncRunsFindFirst.mockResolvedValue(undefined)
+    mockClaimDteSyncStart.mockResolvedValue({ allowed: false, reason: "disabled" })
+
+    const result = await syncDteDocuments(makeClient(), { periodo: "2026-06", importerId: "user-1" })
+
+    expect(result.status).toBe("skipped")
+    expect(result.skipReason).toBe("disabled")
+    expect(mockFetchBandejaEntrada).not.toHaveBeenCalled()
+  })
+
+  it("surfaces a malformed cutover barrier without reaching the portal", async () => {
+    mockSyncRunsFindFirst.mockResolvedValue(undefined)
+    mockClaimDteSyncStart.mockResolvedValue({ allowed: false, reason: "invalid_barrier" })
+
+    const result = await syncDteDocuments(makeClient(), { periodo: "2026-06", importerId: "user-1" })
+
+    expect(result).toMatchObject({
+      status: "skipped",
+      skipReason: "invalid_barrier",
+      error: "DTE_SETTINGS_BARRIER_INVALID: El cerco de sincronización requiere revisión.",
+    })
+    expect(mockFetchBandejaEntrada).not.toHaveBeenCalled()
+  })
+
   // H-10 (AUDITORIA_BUGS_2026-08-05.md): sin índice único parcial, el cron y
   // el botón de administración disparándose a la vez raspaban el portal dos
   // veces y la segunda contabilizaba fallos falsos al chocar con
   // `dte_documents_unique_key`.
   it("skips instead of scraping twice when another run is already active", async () => {
     mockSyncRunsFindFirst.mockResolvedValue(undefined)
-    // El índice único parcial rechaza la segunda corrida `running`.
-    const conflict = Object.assign(new Error("Failed query: insert into dte_sync_runs"), {
-      cause: { code: "23505", constraint: "dte_sync_runs_single_active_unique" },
-    })
-    mockInsertValues.mockRejectedValueOnce(conflict)
+    mockClaimDteSyncStart.mockResolvedValue({ allowed: false, reason: "active_run" })
 
     const result = await syncDteDocuments(makeClient(), { periodo: "2026-06", importerId: "user-1" })
 
     expect(result.status).toBe("skipped")
+    expect(result.skipReason).toBe("active_run")
     expect(result.error).toMatch(/en curso/i)
     expect(mockFetchBandejaEntrada).not.toHaveBeenCalled()
   })
 
   it("propagates a real database failure instead of reporting it as 'already running'", async () => {
     mockSyncRunsFindFirst.mockResolvedValue(undefined)
-    mockInsertValues.mockRejectedValueOnce(new Error("connection terminated unexpectedly"))
+    mockClaimDteSyncStart.mockRejectedValueOnce(new Error("connection terminated unexpectedly"))
 
     await expect(syncDteDocuments(makeClient(), { periodo: "2026-06", importerId: "user-1" }))
       .rejects.toThrow(/connection terminated/i)

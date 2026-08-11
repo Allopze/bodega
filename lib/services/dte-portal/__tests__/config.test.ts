@@ -2,11 +2,11 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
 import { readDtePortalEnv, readDtePortalConfig, buildDtePortalClientConfig, isDteSyncEnabled } from "../config"
 
 vi.mock("../settings", () => ({
-  readStoredDteSettings: vi.fn(),
+  readStoredDteSettingsStrict: vi.fn(),
 }))
 
-import { readStoredDteSettings } from "../settings"
-const mockReadStored = vi.mocked(readStoredDteSettings)
+import { readStoredDteSettingsStrict } from "../settings"
+const mockReadStored = vi.mocked(readStoredDteSettingsStrict)
 
 describe("dte-portal config", () => {
   const originalEnv = process.env
@@ -53,6 +53,12 @@ describe("dte-portal config", () => {
       expect(env.credentials.codEmp).toBe("433")
       expect(env.syncEnabled).toBe(true)
     })
+
+    it("rejects a portal origin outside the fixed canonical URL", () => {
+      process.env.DTE_PORTAL_BASE_URL = "https://evil.example/facturaenlinea"
+
+      expect(() => readDtePortalEnv()).toThrow("DTE_PORTAL_ORIGIN_INVALID")
+    })
   })
 
   describe("readDtePortalConfig (efectiva: base de datos > .env)", () => {
@@ -76,6 +82,54 @@ describe("dte-portal config", () => {
       expect(config.credentials.codEmp).toBe("433")        // del .env
       expect(config.syncEnabled).toBe(true)
       expect(config.delayMs).toBe(750)
+    })
+
+    it("does not reactivate plaintext environment credentials in encrypted_only", async () => {
+      process.env.DTE_PORTAL_RUT_USR = "env-user"
+      process.env.DTE_PORTAL_RUT_EMP = "env-company"
+      process.env.DTE_PORTAL_CLAVE = "env-password"
+      process.env.DTE_PORTAL_CODEMP = "433"
+      process.env.DTE_SYNC_ENABLED = "true"
+      process.env.DTE_SETTINGS_MODE = "encrypted_only"
+      process.env.DTE_SETTINGS_ACTIVE_KEY_ID = "active"
+      process.env.DTE_SETTINGS_KEYRING = JSON.stringify({ active: Buffer.alloc(32, 4).toString("base64url") })
+      mockReadStored.mockResolvedValue({})
+
+      const config = await readDtePortalConfig()
+
+      expect(config.credentials).toEqual({ rutUsr: "", rutEmp: "", clave: "", codEmp: "" })
+      expect(config.syncEnabled).toBe(false)
+    })
+
+    it("honors the durable cutover barrier even while the host remains in compat", async () => {
+      process.env.DTE_PORTAL_RUT_USR = "env-user"
+      process.env.DTE_PORTAL_RUT_EMP = "env-company"
+      process.env.DTE_PORTAL_CLAVE = "env-password"
+      process.env.DTE_PORTAL_CODEMP = "433"
+      process.env.DTE_SYNC_ENABLED = "true"
+      process.env.DTE_SETTINGS_MODE = "compat"
+      process.env.DTE_SETTINGS_ACTIVE_KEY_ID = "active"
+      process.env.DTE_SETTINGS_KEYRING = JSON.stringify({ active: Buffer.alloc(32, 4).toString("base64url") })
+      mockReadStored.mockResolvedValue({ encryptionMode: "encrypted_only", syncEnabled: "false" })
+
+      const config = await readDtePortalConfig()
+
+      expect(config.credentials).toEqual({ rutUsr: "", rutEmp: "", clave: "", codEmp: "" })
+      expect(config.syncEnabled).toBe(false)
+    })
+
+    it("does not use plaintext environment credentials after a settings read failure", async () => {
+      process.env.DTE_PORTAL_RUT_USR = "old-env-user"
+      process.env.DTE_PORTAL_RUT_EMP = "old-env-company"
+      process.env.DTE_PORTAL_CLAVE = "old-env-password"
+      process.env.DTE_PORTAL_CODEMP = "433"
+      mockReadStored.mockRejectedValue(Object.assign(new Error("safe"), {
+        code: "DTE_SETTINGS_READ_FAILED",
+      }))
+
+      await expect(readDtePortalConfig()).rejects.toMatchObject({
+        code: "DTE_SETTINGS_READ_FAILED",
+      })
     })
   })
 

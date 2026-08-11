@@ -16,7 +16,7 @@ import { afterAll, beforeEach, describe, expect, it, vi } from "vitest"
 import { and, eq } from "drizzle-orm"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
 import * as schema from "@/db/schema"
-import type { BillingProvider, ProviderBankTransaction, ProviderInvoice, ProviderPage } from "../providers/types"
+import type { BillingProvider, ProviderBankTransaction, ProviderInvoice, ProviderPage, ProviderPeriodQuery } from "../providers/types"
 
 const pg = new PGlite()
 const inMemoryDb = drizzle(pg, { schema })
@@ -29,6 +29,7 @@ await migratePGlite(pg, path.resolve(process.cwd(), "db/migrations"))
 /* ── Proveedor falso, controlado por la prueba ────────────────────────────── */
 
 let issuedPages: ProviderPage<ProviderInvoice>[] = []
+let issuedPageFactory: ((query: ProviderPeriodQuery) => ProviderPage<ProviderInvoice>) | null = null
 let bankPages: ProviderPage<ProviderBankTransaction>[] = []
 let configured = true
 
@@ -51,7 +52,7 @@ function fakeProvider(id: "factura_en_linea" | "chipax"): BillingProvider {
     },
     isConfigured: async () => configured,
     healthCheck: async () => ({ ok: true, detail: "fake", checkedAt: new Date().toISOString() }),
-    listIssuedInvoices: async () => issuedPages[call++] ?? { items: [], nextCursor: null, reportedTotal: 0 },
+    listIssuedInvoices: async (query) => issuedPageFactory?.(query) ?? issuedPages[call++] ?? { items: [], nextCursor: null, reportedTotal: 0 },
     listBankTransactions: async () => bankPages[bankCall++] ?? { items: [], nextCursor: null, reportedTotal: 0 },
   }
 }
@@ -88,6 +89,7 @@ afterAll(async () => {
 
 beforeEach(async () => {
   issuedPages = []
+  issuedPageFactory = null
   bankPages = []
   configured = true
   await inMemoryDb.delete(schema.billingInvoicePayments)
@@ -98,6 +100,7 @@ beforeEach(async () => {
   await inMemoryDb.delete(schema.billingInvoiceEvents)
   await inMemoryDb.delete(schema.billingInvoices)
   await inMemoryDb.delete(schema.billingSyncRuns)
+  await inMemoryDb.delete(schema.systemSettings)
   await inMemoryDb.delete(schema.contracts)
   await inMemoryDb.delete(schema.clients)
   await inMemoryDb.delete(schema.users)
@@ -146,6 +149,29 @@ describe("syncBillingInvoices — idempotencia", () => {
     expect(second.recordsCreated).toBe(0)
     expect(second.recordsUnchanged).toBe(1)
     expect(await countInvoices()).toBe(1)
+  })
+
+  it("converge 121+ XML candidates in resumable runs without losing the tail", async () => {
+    const all = Array.from({ length: 121 }, (_, index) => sale({
+      externalId: `fel:sale:433:33:${String(index + 1).padStart(4, "0")}:78023530-6`,
+      folio: index + 1,
+    }))
+    issuedPageFactory = (query) => query.cursor === "120"
+      ? { items: [all[120]!], nextCursor: null, reportedTotal: null, managedCursor: true, deferred: false }
+      : { items: all.slice(0, 120), nextCursor: "120", reportedTotal: 121, managedCursor: true, deferred: true }
+
+    const first = await syncBillingInvoices({ provider: "factura_en_linea", scope: "sales_invoices", period: "2026-07" })
+    expect(first.status).toBe("partial")
+    expect(await countInvoices()).toBe(120)
+    const [cursor] = await inMemoryDb.select().from(schema.systemSettings)
+      .where(eq(schema.systemSettings.key, "billing.sync_cursor.factura_en_linea.sales_invoices.2026-07"))
+    expect(cursor?.value).toBe("120")
+
+    const second = await syncBillingInvoices({ provider: "factura_en_linea", scope: "sales_invoices", period: "2026-07" })
+    expect(second.status).toBe("success")
+    expect(await countInvoices()).toBe(121)
+    expect(await inMemoryDb.select().from(schema.systemSettings)
+      .where(eq(schema.systemSettings.key, "billing.sync_cursor.factura_en_linea.sales_invoices.2026-07"))).toHaveLength(0)
   })
 
   it("un cambio de estado en la fuente actualiza sin duplicar", async () => {

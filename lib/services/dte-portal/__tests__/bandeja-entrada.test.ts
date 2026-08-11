@@ -90,19 +90,34 @@ describe("parseBandejaResult", () => {
     expect(result.totalRegistros).toBe(3)
   })
 
-  it("warns when tbxTotalRegistros does not match parsed rows (possible pagination)", () => {
+  it("emits a redacted structured warning when declared total does not match rows", () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {})
     const result = parseBandejaResult(PANELCORREO_BANDEJA_DISCREPANCIA_FIXTURE)
 
     expect(result.rows).toHaveLength(3)
     expect(result.totalRegistros).toBe(5)
-    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("declara 5 pero se parsearon 3"))
+    const output = String(warnSpy.mock.calls[0]?.[0])
+    expect(output).toContain("DTE_BANDEJA_TOTAL_MISMATCH")
+    expect(output).toContain('"declared":5')
+    expect(output).toContain('"parsed":3')
+    expect(output).not.toContain("PANELCORREO")
     warnSpy.mockRestore()
   })
 
   it("throws DtePortalError when there are no rows and no tbxTotalRegistros", () => {
-    expect(() => parseBandejaResult("<html><body>Sin filas ni marcador</body></html>"))
-      .toThrow("No se encontró tbxTotalRegistros")
+    const rawPortalHtml = "<html><body>Sin filas ni marcador clave=secret-never-persist</body></html>"
+    const error = (() => {
+      try {
+        parseBandejaResult(rawPortalHtml)
+      } catch (caught) {
+        return caught
+      }
+      throw new Error("Expected DtePortalError")
+    })()
+
+    expect(error).toBeInstanceOf(Error)
+    expect(JSON.stringify(error)).not.toContain("secret-never-persist")
+    expect(() => { throw error }).toThrow("No se encontró tbxTotalRegistros")
   })
 
   it("does not throw for a genuinely empty period (tbxTotalRegistros=0)", () => {

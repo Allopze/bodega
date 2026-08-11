@@ -2,6 +2,12 @@ import { describe, it, expect, vi, beforeEach } from "vitest"
 import { DtePortalClient } from "../client"
 import { DtePortalError, type DtePortalClientConfig } from "../types"
 
+const mockWithDtePortalOperationLease = vi.hoisted(() => vi.fn())
+
+vi.mock("../operation-lease", () => ({
+  withDtePortalOperationLease: (...args: unknown[]) => mockWithDtePortalOperationLease(...args),
+}))
+
 const TEST_CREDENTIALS = {
   rutUsr: "11111111-1",
   rutEmp: "22222222-2",
@@ -35,6 +41,11 @@ function lastCalledBody(): string {
 describe("DtePortalClient", () => {
   beforeEach(() => {
     vi.restoreAllMocks()
+    mockWithDtePortalOperationLease.mockImplementation((
+      _operation: string,
+      _leaseMs: number,
+      work: () => Promise<unknown>,
+    ) => work())
   })
 
   describe("getStatus", () => {
@@ -55,6 +66,19 @@ describe("DtePortalClient", () => {
   })
 
   describe("GET request", () => {
+    it("acquires a bounded cutover lease before sending credentials to the portal", async () => {
+      const client = createTestClient({ requestTimeoutMs: 5_000 })
+      vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("<html/>", { headers: { "content-type": "text/html" } }))
+
+      await client.get("paneldte.php")
+
+      expect(mockWithDtePortalOperationLease).toHaveBeenCalledWith(
+        "query",
+        35_000,
+        expect.any(Function),
+      )
+    })
+
     it("builds URL with credentials and extra params", async () => {
       const client = createTestClient()
       const mockResponse = new Response("<html><body>OK</body></html>", {
@@ -81,6 +105,20 @@ describe("DtePortalClient", () => {
       expect(error).toBeInstanceOf(DtePortalError)
       expect(error).toMatchObject({ code: "AUTH_FAILED" })
     })
+
+    it("does not fetch a foreign or traversal endpoint", async () => {
+      const client = createTestClient()
+      const fetchSpy = vi.spyOn(globalThis, "fetch")
+
+      await expect(client.get("https://evil.example/metadata")).rejects.toMatchObject({
+        code: "INVALID_RESPONSE",
+      })
+      await expect(client.get("../private.php")).rejects.toMatchObject({
+        code: "INVALID_RESPONSE",
+      })
+
+      expect(fetchSpy).not.toHaveBeenCalled()
+    })
   })
 
   describe("POST request", () => {
@@ -104,6 +142,23 @@ describe("DtePortalClient", () => {
       expect(lastCalledUrl()).toContain("fil=3")
       expect(lastCalledBody()).toContain("TipDoc=33")
       expect(lastCalledBody()).toContain("NumFac1=12715")
+    })
+  })
+
+  describe("binary downloads", () => {
+    it("acquires the same cutover fence before fetching an XML/PDF URL", async () => {
+      const client = createTestClient({ requestTimeoutMs: 5_000 })
+      vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(Buffer.from("<xml/>"), {
+        headers: { "content-type": "application/xml" },
+      }))
+
+      await expect(client.downloadBinary("download.php?type=xml")).resolves.toEqual(Buffer.from("<xml/>"))
+
+      expect(mockWithDtePortalOperationLease).toHaveBeenCalledWith(
+        "download",
+        35_000,
+        expect.any(Function),
+      )
     })
   })
 
