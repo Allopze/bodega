@@ -78,6 +78,11 @@ services:
       - DTE_SYNC_IMPORTER_EMAIL=${DTE_SYNC_IMPORTER_EMAIL:-}
       - DTE_SYNC_DELAY_MS=${DTE_SYNC_DELAY_MS:-500}
       - DTE_SYNC_ENABLED=${DTE_SYNC_ENABLED:-false}
+      # Keyring de sobres AES-GCM. Estas claves sólo entran al proceso app;
+      # cron nunca recibe DTE_SETTINGS_* ni credenciales del portal.
+      - DTE_SETTINGS_KEYRING=${DTE_SETTINGS_KEYRING:-}
+      - DTE_SETTINGS_ACTIVE_KEY_ID=${DTE_SETTINGS_ACTIVE_KEY_ID:-}
+      - DTE_SETTINGS_MODE=${DTE_SETTINGS_MODE:-compat}
       - BILLING_SALES_SYNC_ENABLED=${BILLING_SALES_SYNC_ENABLED:-false}
       - BILLING_HISTORY_FLOOR=${BILLING_HISTORY_FLOOR:-2024-01}
       - BILLING_MATCH_AMOUNT_TOLERANCE_CLP=${BILLING_MATCH_AMOUNT_TOLERANCE_CLP:-1000}
@@ -92,6 +97,7 @@ services:
       # Outbound mail runs on Resend (lib/email/smtp.ts). Without this key the app
       # boots fine but stays silent (no emails: invitations, password reset, etc.).
       - RESEND_API_KEY=${RESEND_API_KEY:-}
+      - SENTRY_DSN=${SENTRY_DSN:-}
       - STORAGE_PATH=${STORAGE_PATH:-/data/storage}
       - BACKUP_DIR=${BACKUP_DIR:-/data/backups}
       - GDRIVE_BACKUPS_DEST=${GDRIVE_BACKUPS_DEST:-}
@@ -160,12 +166,14 @@ services:
   # Por qué `user: "0:0"`: la imagen corre como `nextjs` (uid 1001), y el crond
   # de busybox arranca sin root pero NO ejecuta los trabajos (necesita setuid al
   # dueño del crontab). Verificado: como nextjs el job nunca corre. Este
-  # contenedor no publica puertos ni monta volúmenes; sólo dispara wget.
+  # contenedor no publica puertos ni monta volúmenes; sólo ejecuta el runner
+  # Node interno (sin pasar URL, respuesta o token a la salida del shell).
   #
   # El crontab se escribe al arrancar en vez de venir en la imagen para que los
   # horarios se cambien acá, versionados, sin reconstruir ni volver a publicar.
-  # CRON_SECRET se expande en ese momento: busybox crond no propaga el entorno
-  # del contenedor a los trabajos.
+  # CRON_SECRET se materializa sólo en el crontab al arrancar porque busybox
+  # crond no propaga el entorno del contenedor a los trabajos. El runner nunca
+  # lo imprime y el keyring DTE jamás se inyecta en este servicio.
   #
   # El montaje de /usr/share/zoneinfo NO es decorativo: la imagen no trae tzdata.
   # Node resuelve America/Santiago por ICU (por eso `app` no lo necesita), pero
@@ -194,34 +202,31 @@ services:
           echo "[cron] ERROR: CRON_SECRET vacío. Revisa el .env de producción." >&2
           exit 1
         fi
-        # `--tries=1`: el default de wget son 20 reintentos; una corrida lenta se
-        # convertiría en 20 scrapings encadenados del mismo mes.
-        # `--max-redirect=0`: si el proxy vuelve a mandar /api/cron/* al login,
-        # wget seguiría el 307 y guardaría el HTML de la pantalla de acceso como
-        # si fuera una respuesta buena. Sin redirecciones, falla y se ve.
-        # `>/proc/1/fd/1`: manda la respuesta al log del contenedor (crond
-        # descarta la salida de los trabajos si no hay sendmail).
-        # El `echo` final no es cosmético: las respuestas JSON no traen salto de
-        # línea, así que sin él dos corridas consecutivas quedan pegadas en una
-        # sola línea del log. Pasó durante la auditoría del 2026-08-11 y me hizo
-        # leer mal el log: parecía que el cron no había corrido.
-        W='wget -qO- --tries=1 --max-redirect=0 --timeout=300 --header="Authorization: Bearer '"$$CRON_SECRET"'"'
         cat > /etc/crontabs/root <<EOF
         # Compras DTE — 07:00, 13:00 y 19:00 (America/Santiago).
         # Cada corrida baja el mes completo: el portal sólo filtra por mes/año,
         # no por día (lib/services/dte-portal/bandeja-entrada.ts). Por eso son
         # 3 al día y no una por hora.
-        0 7,13,19 * * * $$W http://app:3000/api/cron/dte-portal-sync >/proc/1/fd/1 2>&1; echo >/proc/1/fd/1
+        0 7,13,19 * * * CRON_SECRET="$$CRON_SECRET" node /app/scripts/cron-runner.mjs dte >/proc/1/fd/1 2>&1
         # Ventas — una vez al día, desfasada del primer run de compras para no
         # abrir dos sesiones simultáneas contra el mismo portal.
-        30 7 * * * $$W http://app:3000/api/cron/billing-sales-sync >/proc/1/fd/1 2>&1; echo >/proc/1/fd/1
+        30 7 * * * CRON_SECRET="$$CRON_SECRET" node /app/scripts/cron-runner.mjs sales >/proc/1/fd/1 2>&1
+        # Liveness de crond y conectividad/auth contra el evaluador. Un estado
+        # DTE degradado responde 200 y alerta; no debe reiniciar el scheduler.
+        */5 * * * * CRON_SECRET="$$CRON_SECRET" node /app/scripts/cron-runner.mjs health >/proc/1/fd/1 2>&1
         EOF
         # Si el montaje de zoneinfo se rompe, esto lo delata: debe decir -04 o
         # -03, nunca UTC. Los horarios de abajo se leen contra esta hora.
         echo "[cron] hora local del scheduler: $$(date)"
         echo "[cron] horarios cargados:"
-        sed 's/Bearer [^"]*/Bearer ***/' /etc/crontabs/root
+        sed -E 's/(CRON_SECRET=)[^[:space:]]+/\1***/' /etc/crontabs/root
         exec crond -f -l 8
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep crond >/dev/null && CRON_SECRET=$$CRON_SECRET node /app/scripts/cron-runner.mjs health >/dev/null 2>&1"]
+      interval: 5m
+      timeout: 30s
+      retries: 2
+      start_period: 30s
 
   # One-shot: applies Drizzle migrations, then exits 0. Runs the same image as
   # `app` but with the standalone migrate runner (scripts/migrate.mjs).

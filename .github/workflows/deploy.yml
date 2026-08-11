@@ -136,6 +136,7 @@ jobs:
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           script: |
+            set -eu
             cd ${{ secrets.DEPLOY_PATH || '/srv/bodega' }}
             if [ -f docker-compose.yml ]; then
               mkdir -p backups
@@ -159,47 +160,115 @@ jobs:
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           script: |
+            set -euo pipefail
             cd ${{ secrets.DEPLOY_PATH || '/srv/bodega' }}
             export GITHUB_REPOSITORY=${{ github.repository }}
             export IMAGE_TAG=${{ env.RELEASE_SHA }}
             # Save the exact image reference before replacing the container.
-            CURRENT_CONTAINER=$(docker compose ps -q app 2>/dev/null || true)
+            CURRENT_CONTAINER=$(docker compose ps -q app 2>/dev/null | sed -n '1p' || true)
             PREVIOUS_IMAGE=$(test -n "$CURRENT_CONTAINER" && docker inspect --format '{{.Config.Image}}' "$CURRENT_CONTAINER" 2>/dev/null || true)
             PREVIOUS_TAG=""
+            PREVIOUS_COMPOSE="backups/docker-compose-predeploy-${IMAGE_TAG}.yml"
             if [ -n "$PREVIOUS_IMAGE" ]; then
               PREVIOUS_TAG="rollback-${IMAGE_TAG}"
               docker tag "$PREVIOUS_IMAGE" "ghcr.io/${GITHUB_REPOSITORY}:${PREVIOUS_TAG}"
             fi
+            # A legacy image can read or write plaintext settings. Once the
+            # durable cutover marker exists, never select the immediately
+            # previous tag automatically: only an operator can choose a known
+            # compatible rollback floor with the same keyring. If the state
+            # cannot be proved (for example, DB diagnostics are unavailable),
+            # choose the same safe/manual path.
+            CUTOVER_STATE="$(docker compose exec -T db psql -U "${POSTGRES_USER:-bodega}" -d "${POSTGRES_DB:-bodega}" -tAc "SELECT CASE WHEN EXISTS (SELECT 1 FROM system_settings WHERE key = 'dte.encryption_mode' AND value = 'encrypted_only') THEN 'encrypted_only' ELSE 'compat' END" 2>/dev/null | tr -d '[:space:]' || true)"
+            if [ "$CUTOVER_STATE" != "compat" ] && [ "$CUTOVER_STATE" != "encrypted_only" ]; then
+              CUTOVER_STATE="unknown"
+            fi
             echo "Deploying tag: ${IMAGE_TAG}"
             echo "Previous image: ${PREVIOUS_IMAGE:-none}"
+            echo "DTE cutover state: ${CUTOVER_STATE}"
 
-            # Pull the specific SHA tag (not latest)
-            docker compose pull app
-            docker compose up -d --no-deps --force-recreate app
-            CONFIGURED_IMAGE=$(docker inspect --format '{{.Config.Image}}' "$(docker compose ps -q app)")
-            test "$CONFIGURED_IMAGE" = "ghcr.io/${GITHUB_REPOSITORY}:${IMAGE_TAG}"
-            sleep 15
+            # Arm rollback only once a replacement can have changed runtime
+            # state. Every later command (cron recreation, image assertion or
+            # authenticated smoke) is covered; not only the first app curl.
+            ROLLBACK_ARMED=0
+            rollback_release() {
+              deploy_status=$?
+              trap - EXIT
+              if [ "$deploy_status" -eq 0 ] || [ "$ROLLBACK_ARMED" -ne 1 ]; then
+                exit "$deploy_status"
+              fi
 
-            # Health check with rollback on failure
-            if curl -sf http://localhost:3000/api/health; then
-              echo "Healthcheck passed. Deploy successful."
-            else
-              echo "Healthcheck failed. Rolling back to previous version..."
-              docker compose logs --tail=50 app
-
-              if [ -n "$PREVIOUS_TAG" ] && [ "$PREVIOUS_TAG" != "" ]; then
+              set +e
+              echo "Release verification failed. Rolling back app and cron..."
+              docker compose logs --tail=50 app cron
+              if [ "$CUTOVER_STATE" = "encrypted_only" ]; then
+                echo "Encrypted-only DTE cutover detected. Automatic rollback to the previous image is refused; deploy a pinned compatible rollback floor with the keyring retained."
+              elif [ "$CUTOVER_STATE" = "unknown" ]; then
+                echo "DTE cutover state could not be verified. Automatic rollback is refused; choose a compatible rollback floor manually."
+              elif [ -n "$PREVIOUS_TAG" ]; then
                 export IMAGE_TAG="$PREVIOUS_TAG"
+                if [ -f "$PREVIOUS_COMPOSE" ]; then
+                  cp "$PREVIOUS_COMPOSE" docker-compose.yml
+                fi
                 docker compose up -d --no-deps --force-recreate app
+                docker compose up -d --no-deps --force-recreate cron
                 sleep 15
                 if curl -sf http://localhost:3000/api/health; then
-                  echo "Rollback successful. Container restored to previous version: ${PREVIOUS_TAG}"
+                  echo "Rollback successful. Restored ${PREVIOUS_TAG}."
                 else
-                  echo "Rollback also failed. Manual intervention required."
-                  docker compose logs --tail=50 app
-                  exit 1
+                  echo "Rollback healthcheck also failed. Manual intervention required."
+                  docker compose logs --tail=50 app cron
                 fi
               else
                 echo "No previous tag found for rollback. Manual intervention required."
-                exit 1
               fi
-            fi
+              exit "$deploy_status"
+            }
+            trap rollback_release EXIT
+
+            # Pull and recreate both long-lived consumers of the release. The
+            # cron runner is application code too; leaving it on a prior image
+            # produces an invisible split-brain deployment.
+            docker compose pull app cron
+            ROLLBACK_ARMED=1
+            docker compose up -d --no-deps --force-recreate app
+            sleep 15
+
+            curl -sf http://localhost:3000/api/health
+            docker compose up -d --no-deps --force-recreate cron
+            APP_CONTAINERS="$(docker compose ps -q app)"
+            CRON_CONTAINERS="$(docker compose ps -q cron)"
+            test -n "$APP_CONTAINERS"
+            test -n "$CRON_CONTAINERS"
+            # App may be scaled; every replica must understand the compatible
+            # encrypted-settings release before any later credential cutover.
+            for APP_CONTAINER in $APP_CONTAINERS; do
+              test "$(docker inspect --format '{{.Config.Image}}' "$APP_CONTAINER")" = "ghcr.io/${GITHUB_REPOSITORY}:${IMAGE_TAG}"
+            done
+            # Scaling cron would duplicate every scheduled portal request.
+            set -- $CRON_CONTAINERS
+            test "$#" -eq 1
+            CRON_CONTAINER="$1"
+            test "$(docker inspect --format '{{.Config.Image}}' "$CRON_CONTAINER")" = "ghcr.io/${GITHUB_REPOSITORY}:${IMAGE_TAG}"
+            for attempt in $(seq 1 12); do
+              if [ "$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$CRON_CONTAINER")" = "healthy" ]; then
+                break
+              fi
+              sleep 5
+            done
+            test "$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$CRON_CONTAINER")" = "healthy"
+            # Authenticated evaluator smoke only: it reads state and never
+            # invokes a portal synchronization or prints CRON_SECRET.
+            docker compose exec -T app node -e '
+              const secret = process.env.CRON_SECRET
+              if (!secret) process.exit(1)
+              fetch("http://127.0.0.1:3000/api/cron/dte-sync-health", { headers: { Authorization: `Bearer ${secret}` } })
+                .then(async (response) => {
+                  const body = await response.json().catch(() => null)
+                  if (!response.ok || !body || typeof body.code !== "string") process.exit(1)
+                })
+                .catch(() => process.exit(1))
+            '
+            ROLLBACK_ARMED=0
+            trap - EXIT
+            echo "App and cron healthchecks passed. Deploy successful."

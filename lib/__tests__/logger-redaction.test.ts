@@ -33,6 +33,22 @@ describe("logger PII redaction and formatting", () => {
     expect(out).toContain("[rut]")
   })
 
+  it("redacts DTE key material in objects, error messages, and envelopes", () => {
+    vi.spyOn(console, "error").mockImplementation(() => {})
+    const envelope = "enc:v1:2026-08:MTIzNDU2Nzg5MDEy:YWJjZGVmZ2hpamtsbW5vcA:YWJjZA"
+    logger.error(
+      new Error(`portal rejected clave=super-secret ${envelope}`),
+      { clave: "super-secret", dteSettingsKeyring: "key-material", ciphertext: "cipher" },
+    )
+    const out = lastConsoleOutput("error")
+    expect(out).not.toContain("super-secret")
+    expect(out).not.toContain("key-material")
+    expect(out).not.toContain("cipher")
+    expect(out).not.toContain(envelope)
+    expect(out).toContain("[redacted]")
+    expect(out).toContain("[encrypted]")
+  })
+
   it("serializes objects usefully instead of [object Object]", () => {
     vi.spyOn(console, "error").mockImplementation(() => {})
     logger.error({ status: "draft", count: 3 })

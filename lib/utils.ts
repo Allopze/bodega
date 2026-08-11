@@ -216,6 +216,42 @@ export function formatDateSafe(input: string | null | undefined): string {
 }
 
 /**
+ * Distancia en días civiles chilenos: "hoy", "ayer", "hace 21 días".
+ *
+ * Acompaña a `formatDate` donde la fecha exacta no es la pregunta: en una columna
+ * de "último movimiento" el operador quiere saber si algo está quieto, y "hace 21
+ * días" se lee sin restar mentalmente contra el calendario.
+ *
+ * Se cuenta por día civil chileno, no por horas transcurridas: a un movimiento de
+ * ayer a las 23:00 le corresponde "ayer", no "hace 6 horas" ni "hoy". Igual que
+ * el resto de los formateadores de fecha, una entrada ausente o corrupta se dice
+ * con `VALUE_MISSING` en vez de inventar un valor o tumbar la pantalla.
+ */
+export function formatDateRelative(
+  date: Date | string | number | null | undefined,
+  now: Date | string | number = new Date(),
+): string {
+  const day = chileCivilDay(date)
+  const today = chileCivilDay(now)
+  if (!day || !today) return VALUE_MISSING
+  const diff = Math.round((Date.parse(`${day}T00:00:00Z`) - Date.parse(`${today}T00:00:00Z`)) / 86_400_000)
+  if (diff === 0) return "hoy"
+  if (diff === -1) return "ayer"
+  if (diff === 1) return "mañana"
+  return diff < 0 ? `hace ${-diff} días` : `en ${diff} días`
+}
+
+/** "YYYY-MM-DD" chileno, o null si la entrada no es una fecha representable. */
+function chileCivilDay(date: Date | string | number | null | undefined): string | null {
+  if (date === null || date === undefined || date === "") return null
+  const plain = plainDateParts(date)
+  if (plain) return `${plain[0]}-${plain[1]}-${plain[2]}`
+  const parsed = new Date(date)
+  if (Number.isNaN(parsed.getTime())) return null
+  return todayInChile(parsed)
+}
+
+/**
  * Año/mes/día en hora de Chile continental.
  *
  * `getFullYear()`/`getMonth()`/`getDate()` leen la zona del proceso, que en

@@ -111,6 +111,10 @@ COPY --from=build /app/node_modules/drizzle-orm ./node_modules/drizzle-orm
 COPY --from=build /app/node_modules/postgres ./node_modules/postgres
 
 COPY --from=build /tmp/sync-rbac.mjs ./scripts/sync-rbac.mjs
+# Cron service uses this bounded internal HTTP runner instead of an inline
+# wget command. It is copied explicitly because Next standalone does not trace
+# scripts invoked only by Compose.
+COPY --from=build /app/scripts/cron-runner.mjs ./scripts/cron-runner.mjs
 
 # Backup scripts (orquestador, verificación, storage, scheduler)
 COPY scripts/backup-orchestrator.sh  ./scripts/backup-orchestrator.sh

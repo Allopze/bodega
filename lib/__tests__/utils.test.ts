@@ -13,6 +13,7 @@ import {
   pluralize,
   toCode,
   formatDate,
+  formatDateRelative,
   formatDateTime,
   toTitleCase,
   getInitials,
@@ -165,6 +166,33 @@ describe("formatDate()", () => {
 
   it("formats a timestamp number", () => {
     expect(formatDate(Date.parse("2026-12-25T15:00:00Z"))).toBe("25-12-2026")
+  })
+})
+
+describe("formatDateRelative()", () => {
+  // 03:00Z = 00:00 en Santiago (verano, UTC-3), así que el corte del día chileno
+  // cae 3 horas después que el de UTC.
+  const now = new Date("2026-01-15T06:00:00Z")
+
+  it("cuenta días civiles chilenos, no horas transcurridas", () => {
+    // 03:30Z ya es el 15 en Chile; 02:00Z sigue siendo el 14 a las 23:00, aunque
+    // los separen 90 minutos y ambos caigan el día 15 en UTC.
+    expect(formatDateRelative(new Date("2026-01-15T03:30:00Z"), now)).toBe("hoy")
+    expect(formatDateRelative(new Date("2026-01-15T02:00:00Z"), now)).toBe("ayer")
+  })
+
+  it("pluraliza en días para lo que quedó atrás", () => {
+    expect(formatDateRelative("2025-12-25", now)).toBe("hace 21 días")
+  })
+
+  it("nombra el futuro sin decir 'hace'", () => {
+    expect(formatDateRelative("2026-01-16", now)).toBe("mañana")
+    expect(formatDateRelative("2026-01-20", now)).toBe("en 5 días")
+  })
+
+  it("dice el dato ausente o corrupto en vez de inventarlo", () => {
+    expect(formatDateRelative(null, now)).toBe("—")
+    expect(formatDateRelative("basura", now)).toBe("—")
   })
 })
 

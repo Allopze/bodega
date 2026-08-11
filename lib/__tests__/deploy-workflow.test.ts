@@ -27,10 +27,23 @@ const BILLING_RUNTIME_ENV_KEYS = [
   "CHIPAX_REQUEST_TIMEOUT_MS",
 ] as const
 
+const DTE_KEYRING_RUNTIME_ENV_KEYS = [
+  "DTE_SETTINGS_KEYRING",
+  "DTE_SETTINGS_ACTIVE_KEY_ID",
+  "DTE_SETTINGS_MODE",
+  "SENTRY_DSN",
+] as const
+
 function appServiceFromCompose(compose: string): string {
   const appService = compose.match(/\n  app:\n([\s\S]*?)(?=\n  [a-z][a-z-]*:\n|$)/)?.[0]
   if (!appService) throw new Error("No se encontró el servicio app en docker-compose.yml")
   return appService
+}
+
+function cronServiceFromCompose(compose: string): string {
+  const cronService = compose.match(/\n  cron:\n([\s\S]*?)(?=\n  [a-z][a-z-]*:\n|$)/)?.[0]
+  if (!cronService) throw new Error("No se encontró el servicio cron en docker-compose.yml")
+  return cronService
 }
 
 describe("deploy workflow", () => {
@@ -64,6 +77,68 @@ describe("deploy workflow", () => {
 
     for (const key of BILLING_RUNTIME_ENV_KEYS) {
       expect(appService).toMatch(new RegExp(`\\n\\s+- ${key}=\\$\\{${key}(?::-[^}]*)?\\}`))
+    }
+    for (const key of DTE_KEYRING_RUNTIME_ENV_KEYS) {
+      expect(appService).toMatch(new RegExp(`\\n\\s+- ${key}=\\$\\{${key}(?::-[^}]*)?\\}`))
+    }
+  })
+
+  it("keeps encryption material out of cron and uses the bounded Node runner", () => {
+    const compose = readFileSync(path.join(repoRoot, "docker-compose.yml"), "utf8")
+    const dockerfile = readFileSync(path.join(repoRoot, "Dockerfile"), "utf8")
+    const cronService = cronServiceFromCompose(compose)
+
+    expect(cronService).toContain("cron-runner.mjs dte")
+    expect(cronService).toContain("cron-runner.mjs sales")
+    expect(cronService).toContain("cron-runner.mjs health")
+    expect(cronService).toContain('interval: 5m')
+    expect(cronService).not.toContain("DTE_SETTINGS_KEYRING=")
+    expect(cronService).not.toContain("DTE_PORTAL_CLAVE=")
+    expect(dockerfile).toContain("COPY --from=build /app/scripts/cron-runner.mjs")
+  })
+
+  it("releases app before cron and verifies both images plus a protected smoke", () => {
+    const workflow = readFileSync(path.join(repoRoot, ".github/workflows/deploy.yml"), "utf8")
+    const deployScript = readFileSync(path.join(repoRoot, "scripts/deploy-prod.sh"), "utf8")
+
+    expect(workflow).toContain("docker compose pull app cron")
+    expect(workflow).toContain("docker compose up -d --no-deps --force-recreate app")
+    expect(workflow).toContain("docker compose up -d --no-deps --force-recreate cron")
+    expect(workflow).toContain("/api/cron/dte-sync-health")
+    expect(workflow).toContain("for APP_CONTAINER in $APP_CONTAINERS")
+    expect(workflow).toContain("test \"$#\" -eq 1")
+    expect(deployScript).toContain("--force-recreate app")
+    expect(deployScript).toContain("--force-recreate cron")
+    expect(deployScript).toContain("/api/cron/dte-sync-health")
+    expect(deployScript).toContain("for app_container in $app_containers")
+    expect(deployScript).toContain("test \"$#\" -eq 1")
+  })
+
+  it("rolls back app and cron when any post-replacement verification fails before encrypted cutover", () => {
+    const workflow = readFileSync(path.join(repoRoot, ".github/workflows/deploy.yml"), "utf8")
+    const deployScript = readFileSync(path.join(repoRoot, "scripts/deploy-prod.sh"), "utf8")
+
+    expect(workflow).toContain("trap rollback_release EXIT")
+    expect(workflow).toContain("ROLLBACK_ARMED=1")
+    expect(workflow).toContain("PREVIOUS_COMPOSE")
+    expect(workflow).toContain("docker compose up -d --no-deps --force-recreate app")
+    expect(workflow).toContain("docker compose up -d --no-deps --force-recreate cron")
+    expect(deployScript).toContain("trap rollback_release EXIT")
+    expect(deployScript).toContain("ROLLBACK_ARMED=1")
+    expect(deployScript).toContain("HAS_PREVIOUS_IMAGE")
+    expect(deployScript).toContain("compose_backup")
+  })
+
+  it("refuses an automatic legacy rollback after encrypted-only cutover or an unknown cutover state", () => {
+    const workflow = readFileSync(path.join(repoRoot, ".github/workflows/deploy.yml"), "utf8")
+    const deployScript = readFileSync(path.join(repoRoot, "scripts/deploy-prod.sh"), "utf8")
+
+    for (const source of [workflow, deployScript]) {
+      expect(source).toContain("dte.encryption_mode")
+      expect(source).toContain("CUTOVER_STATE")
+      expect(source).toContain('CUTOVER_STATE" = "encrypted_only"')
+      expect(source).toContain('CUTOVER_STATE" = "unknown"')
+      expect(source).toMatch(/[Aa]utomatic rollback/)
     }
   })
 })

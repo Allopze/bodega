@@ -18,14 +18,30 @@ import { sentry } from "@/lib/sentry"
 
 const LEVEL = process.env.NODE_ENV === "production" ? "warn" : "debug"
 
-const SENSITIVE_KEY = /^(password|hashed_?password|token|token_?hash|secret|authorization|cookie|rut|email|phone|telefono)$/i
+// Match both generic secrets and the DTE key-material vocabulary.  Keep this
+// deliberately broad: the logger is the last boundary before stdout/Sentry,
+// so a false positive is preferable to a credential leaving the process.
+const SENSITIVE_KEY = /(?:password|passphrase|hashed_?password|token|token_?hash|secret|authorization|cookie|rut(?:_?(?:usr|emp))?|email|importer_?email|phone|telefono|clave|cod_?emp|keyring|(?:private|encryption)_?key|ciphertext|envelope|(?:auth_)?tag|(?:initialization_?)?iv)/i
 
 const EMAIL_RE = /[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/gi
 // Chilean RUT: 7-8 digits + dash + check digit (with or without dots).
 const RUT_RE = /\b\d{1,2}\.?\d{3}\.?\d{3}-[\dkK]\b/g
+const DTE_ENVELOPE_RE = /\benc:v1:[A-Za-z0-9_-]+:[A-Za-z0-9_-]+:[A-Za-z0-9_-]+:[A-Za-z0-9_-]+\b/g
+const SECRET_ASSIGNMENT_RE = /(["']?(?:password|passphrase|token|secret|authorization|cookie|clave|rut(?:_?(?:usr|emp))?|email|importer_?email|cod_?emp|keyring|(?:private|encryption)_?key|ciphertext|envelope|(?:auth_)?tag|(?:initialization_?)?iv)["']?\s*[:=]\s*)(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|[^\s,}&]+)/gi
 
 function redactString(value: string): string {
-  return value.replace(EMAIL_RE, "[email]").replace(RUT_RE, "[rut]")
+  return value
+    .replace(DTE_ENVELOPE_RE, "[encrypted]")
+    .replace(SECRET_ASSIGNMENT_RE, "$1[redacted]")
+    .replace(EMAIL_RE, "[email]")
+    .replace(RUT_RE, "[rut]")
+}
+
+function redactError(error: Error): Error {
+  const safeError = new Error(redactString(error.message))
+  safeError.name = error.name
+  safeError.stack = redactString(error.stack ?? error.message)
+  return safeError
 }
 
 function redact(value: unknown, depth = 0, seen = new WeakSet<object>()): unknown {
@@ -127,9 +143,13 @@ export const logger = {
     // is a no-op when SENTRY_DSN is not set or NODE_ENV !== "production".
     const firstError = args.find((a) => a instanceof Error) as Error | undefined
     if (firstError) {
-      sentry.captureException(firstError)
+      // Do not hand the original Error to Sentry: its message/stack can contain
+      // a portal URL, credentials, or an encrypted envelope.
+      sentry.captureException(redactError(firstError))
     } else {
-      const msg = args.map((a) => (typeof a === "string" ? a : JSON.stringify(redact(a)))).join(" ")
+      // `writeLog` already redacts stdout; Sentry is a separate sink and must
+      // receive the exact same safe representation rather than raw strings.
+      const msg = args.map((a) => (typeof a === "string" ? redactString(a) : JSON.stringify(redact(a)))).join(" ")
       sentry.captureMessage(msg, "error")
     }
   },
