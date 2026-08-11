@@ -7,7 +7,7 @@ import type { AttributeMultiValues } from "./product-form.types"
 // ── Attribute presets for quick-add ────────────────────────────────────────────
 
 const EPP_ATTRIBUTE_PRESETS: Array<{ name: string; options: string[]; sizeFamily?: string }> = [
-  { name: "Talla",          options: ["XS", "S", "M", "L", "XL", "2XL", "3XL"], sizeFamily: "ropa" },
+  { name: "Talla",          options: ["XS", "S", "M", "L", "XL", "2XL", "3XL", "4XL"], sizeFamily: "ropa" },
   { name: "Talla calzado",  options: ["36", "37", "38", "39", "40", "41", "42", "43", "44", "45", "46"], sizeFamily: "calzado" },
   { name: "Talla guantes",  options: ["XS", "S", "M", "L", "XL", "2XL"], sizeFamily: "guantes" },
   { name: "Color",          options: ["Amarillo", "Azul", "Blanco", "Gris", "Negro", "Naranja", "Rojo", "Verde"] },

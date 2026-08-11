@@ -11,7 +11,7 @@ import {
 import { createWorker, updateWorker } from "./actions"
 
 const SIZE_PRESETS = {
-  top:    ["XS", "S", "M", "L", "XL", "2XL", "3XL"],
+  top:    ["XS", "S", "M", "L", "XL", "2XL", "3XL", "4XL"],
   bottom: ["28","30","32","34","36","38","40","42","44","46","48"],
   shoe:   ["36","37","38","39","40","41","42","43","44","45","46"],
   gloves: ["XS","S","M","L","XL","2XL"],

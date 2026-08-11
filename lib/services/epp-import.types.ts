@@ -185,7 +185,7 @@ function canonicalColor(value: string | undefined) {
 }
 
 function extractSize(value: string) {
-  return value.match(/\b(?:XS|S|M|L|XL|2XL|3XL|[3-5]\d)\b/i)?.[0] ?? null
+  return value.match(/\b(?:XS|S|M|L|XL|2XL|3XL|4XL|[3-5]\d)\b/i)?.[0] ?? null
 }
 
 function normalizeSize(value: string) { return value.toUpperCase() }
