@@ -341,6 +341,58 @@ describe("ítems sin producto de catálogo", () => {
     })
     expect(item!.status).toBe("received")
   })
+
+  it("recepcionar un producto de servicio no crea stock ni movimiento de inventario", async () => {
+    const now = new Date().toISOString()
+    const suffix = ++ocCounter
+    const categoryId = `cat-service-${suffix}`
+    const productId = `prod-service-${suffix}`
+    const requestId = `req-service-${suffix}`
+    const requestItemId = `req-item-service-${suffix}`
+    const orderId = `oc-service-${suffix}`
+    const orderItemId = `oci-service-${suffix}`
+
+    await inMemoryDb.insert(schema.productCategories).values({
+      id: categoryId, name: `Servicios ${suffix}`, slug: `services-${suffix}`,
+    })
+    await inMemoryDb.insert(schema.products).values({
+      id: productId, sku: `SRV-${suffix}`, name: "Calibración", categoryId,
+      unitOfMeasure: "servicio", isService: true, isActive: true, createdAt: now, updatedAt: now,
+    })
+    await inMemoryDb.insert(schema.purchaseRequests).values({
+      id: requestId, code: `SOL-SERVICE-${suffix}`, worksiteId: WS_ID, requesterId: USER_ID,
+      urgency: "normal", status: "in_purchasing", createdAt: now, updatedAt: now,
+    })
+    await inMemoryDb.insert(schema.purchaseRequestItems).values({
+      id: requestItemId, requestId, productId, quantity: 1, unitOfMeasure: "servicio",
+      status: "purchased", urgency: "normal", sortOrder: 0, createdAt: now, updatedAt: now,
+    })
+    await inMemoryDb.insert(schema.purchaseOrders).values({
+      id: orderId, code: `OC-SERVICE-${suffix}`, worksiteId: WS_ID, supplierId: SUP_ID,
+      createdBy: USER_ID, status: "sent", deliveryMode: "directo_faena", createdAt: now, updatedAt: now,
+    })
+    await inMemoryDb.insert(schema.purchaseOrderItems).values({
+      id: orderItemId, purchaseOrderId: orderId, requestItemId, productId,
+      quantity: 1, unitOfMeasure: "servicio", sortOrder: 0,
+    })
+
+    await registerReceipt({
+      purchaseOrderId: orderId, receivedBy: USER_ID, stage: "faena", worksiteId: WS_ID,
+      items: [{ purchaseOrderItemId: orderItemId, quantityReceived: 1 }],
+    })
+
+    const stock = await inMemoryDb.query.worksiteStock.findFirst({
+      where: eq(schema.worksiteStock.productId, productId),
+    })
+    const movements = await inMemoryDb.select().from(schema.inventoryMovements)
+      .where(eq(schema.inventoryMovements.productId, productId))
+    const requestItem = await inMemoryDb.query.purchaseRequestItems.findFirst({
+      where: eq(schema.purchaseRequestItems.id, requestItemId),
+    })
+    expect(stock).toBeUndefined()
+    expect(movements).toHaveLength(0)
+    expect(requestItem?.status).toBe("delivered")
+  })
 })
 
 describe("direct-to-faena receiving", () => {

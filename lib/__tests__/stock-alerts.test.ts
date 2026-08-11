@@ -75,4 +75,11 @@ describe("stock alerts", () => {
     await expect(getCriticalStockAlertCount([worksiteId])).resolves.toBe(1)
     await expect(getCriticalStockAlertCount([])).resolves.toBe(0)
   })
+
+  it("does not query alerts outside the resolved worksite scope", async () => {
+    const scopedAlerts = await getStockAlerts([worksiteId])
+    expect(scopedAlerts).toHaveLength(1)
+    expect(scopedAlerts[0]?.worksiteId).toBe(worksiteId)
+    await expect(getStockAlerts([])).resolves.toEqual([])
+  })
 })

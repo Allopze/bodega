@@ -64,6 +64,7 @@ export const pgliteTestFiles = [
   "lib/__tests__/stock-alerts.test.ts",
   "lib/__tests__/stock-export.test.ts",
   "lib/__tests__/stock-service.test.ts",
+  "lib/__tests__/worker-stock-delivery.test.ts",
   "lib/__tests__/trabajadores-scope.test.ts",
   "lib/__tests__/trazabilidad-export-scope.test.ts",
   "lib/__tests__/trazabilidad-item.test.ts",

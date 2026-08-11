@@ -12,6 +12,7 @@ import { DeliveriesTable, type DeliveryRow } from "./deliveries-table"
 const row: DeliveryRow = {
   id: "del-1",
   code: "ENT-2026-0001",
+  sourceWorksiteName: "Oficina CHOME",
   worksiteName: "Faena E2E",
   workerName: "Trabajador E2E",
   receiverName: null,

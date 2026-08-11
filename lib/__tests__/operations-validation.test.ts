@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest"
-import { createOrderSchema, dispatchSchema, receiptSchema, requestSchema, workerDeliverySchema } from "@/lib/validation/operations"
+import {
+  createOrderSchema,
+  receiptSchema,
+  requestSchema,
+  workerDeliverySchema,
+  workerStockDeliverySchema,
+} from "@/lib/validation/operations"
 
 const validRequest = {
   worksiteId: "worksite-1",
@@ -168,30 +174,6 @@ describe("receiptSchema", () => {
   })
 })
 
-describe("dispatchSchema", () => {
-  const validDispatch = {
-    worksiteId: "worksite-1",
-    productId: "product-1",
-    requestItemId: "",
-    quantity: "3.5",
-    unitOfMeasure: "unidad",
-    receiverName: "Camila Torres",
-    notes: "",
-  }
-
-  it("accepts a complete dispatch payload", () => {
-    const result = dispatchSchema.safeParse(validDispatch)
-    expect(result.success).toBe(true)
-    expect(result.data?.quantity).toBe(3.5)
-  })
-
-  it("rejects missing receiver and invalid quantities", () => {
-    expect(dispatchSchema.safeParse({ ...validDispatch, receiverName: "" }).success).toBe(false)
-    expect(dispatchSchema.safeParse({ ...validDispatch, quantity: "0" }).success).toBe(false)
-    expect(dispatchSchema.safeParse({ ...validDispatch, quantity: Number.NaN }).success).toBe(false)
-  })
-})
-
 describe("workerDeliverySchema", () => {
   const validDelivery = {
     worksiteId: "worksite-1",
@@ -244,5 +226,37 @@ describe("workerDeliverySchema", () => {
     const result = workerDeliverySchema.safeParse(validDelivery)
     expect(result.success).toBe(true)
     expect(result.data?.returnQuantity).toBeUndefined()
+  })
+})
+
+describe("workerStockDeliverySchema", () => {
+  const validDelivery = {
+    sourceWorksiteId: "bodega-1",
+    workerId: "worker-1",
+    items: [
+      { productId: "product-1", quantity: "2" },
+      { productId: "product-2", quantity: "1", requestItemId: "request-item-2" },
+    ],
+  }
+
+  it("accepts a multi-item delivery from physical stock", () => {
+    const result = workerStockDeliverySchema.safeParse(validDelivery)
+    expect(result.success).toBe(true)
+    expect(result.data?.items[0]?.quantity).toBe(2)
+  })
+
+  it("rejects empty, repeated and non-positive product lines", () => {
+    expect(workerStockDeliverySchema.safeParse({ ...validDelivery, items: [] }).success).toBe(false)
+    expect(workerStockDeliverySchema.safeParse({
+      ...validDelivery,
+      items: [
+        { productId: "product-1", quantity: 1 },
+        { productId: "product-1", quantity: 1 },
+      ],
+    }).success).toBe(false)
+    expect(workerStockDeliverySchema.safeParse({
+      ...validDelivery,
+      items: [{ productId: "product-1", quantity: 0 }],
+    }).success).toBe(false)
   })
 })
