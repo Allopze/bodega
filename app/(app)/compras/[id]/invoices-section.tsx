@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { useActionState } from "react"
-import { Trash, FilePdf, Warning, Plus, X } from "@phosphor-icons/react"
+import { Trash, FilePdf, Warning, Plus, X, Eye } from "@phosphor-icons/react"
 import { toast } from "@/lib/toast"
 import { INITIAL_STATE } from "@/components/admin/form-state"
 import { SubmitButton } from "@/components/admin/submit-button"
@@ -23,6 +23,8 @@ import {
 } from "@/lib/services/purchasing-module/invoice-reconciliation"
 import { addInvoiceAction, deleteInvoiceAction } from "../invoice-actions"
 import { prefillInvoiceFromDte } from "../actions/dte-prefill-invoice"
+import { downloadDteDocumentXml, type DteXmlDetail } from "../actions/dte-download-xml"
+import { DteXmlDetailPanel } from "./dte-xml-detail"
 import { dteTipoLabel } from "@/lib/services/dte-portal/labels"
 
 /**
@@ -682,32 +684,12 @@ function AddInvoiceForm({
           </p>
           <ul className="mt-2 space-y-1">
             {dteCandidates.map((doc) => (
-              <li
+              <DteCandidateRow
                 key={doc.id}
-                className="flex flex-wrap items-center justify-between gap-2 rounded-(--radius-md) bg-(--color-surface) px-2.5 py-1.5"
-              >
-                <span className="text-xs text-(--color-text)">
-                  <span className="font-medium">{dteTipoLabel(doc.tipoDte)} N° {doc.folio}</span>
-                  <span className="text-(--color-text-subtle)">
-                    {" · "}{formatDate(doc.fechaEmision)}{" · "}{formatCLP(doc.montoTotal)}
-                  </span>
-                  {/* La marca va sobre el monto, que es lo que la distingue.
-                      Se nombra lo que se comparó en vez de decir "sugerido":
-                      el operador tiene que poder discutirla. */}
-                  {doc.amountMatches && (
-                    <Badge variant="success" className="ml-2">Calza con el saldo</Badge>
-                  )}
-                </span>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  disabled={extracting}
-                  onClick={() => handlePrefillFromDte(doc.id)}
-                >
-                  Usar este DTE
-                </Button>
-              </li>
+                doc={doc}
+                useDisabled={extracting}
+                onUse={() => handlePrefillFromDte(doc.id)}
+              />
             ))}
           </ul>
         </div>
@@ -911,5 +893,87 @@ function AddInvoiceForm({
         disabled={unresolvedLineCount > 0}
       />
     </form>
+  )
+}
+
+/* ── DTE candidate row ──────────────────────────────────────────────────────── */
+
+/**
+ * Un DTE del proveedor todavía sin registrar, con su detalle a la vista antes
+ * de usarlo.
+ *
+ * El folio y el monto de la lista no alcanzan para decidir: dos documentos del
+ * mismo proveedor pueden sumar parecido, y el operador quedaba eligiendo a
+ * ciegas o yendo al portal a mirar el documento — justo el viaje que este
+ * atajo venía a ahorrar. "Ver factura" baja el XML (el mismo camino con caché
+ * que usa el DTE ya vinculado) y muestra neto, IVA y las líneas del proveedor.
+ */
+function DteCandidateRow({
+  doc,
+  onUse,
+  useDisabled,
+}: {
+  doc: DteCandidate
+  onUse: () => void
+  useDisabled: boolean
+}) {
+  const [detail, setDetail] = React.useState<DteXmlDetail | null>(null)
+  const [loading, startTransition] = React.useTransition()
+
+  function handleToggleDetail() {
+    if (detail) {
+      setDetail(null)
+      return
+    }
+    startTransition(async () => {
+      const result = await downloadDteDocumentXml(doc.id)
+      if (!result.ok) {
+        toast.error(result.error)
+        return
+      }
+      setDetail(result.detail)
+    })
+  }
+
+  return (
+    <li className="rounded-(--radius-md) bg-(--color-surface) px-2.5 py-1.5">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="text-xs text-(--color-text)">
+          <span className="font-medium">{dteTipoLabel(doc.tipoDte)} N° {doc.folio}</span>
+          <span className="text-(--color-text-subtle)">
+            {" · "}{formatDate(doc.fechaEmision)}{" · "}{formatCLP(doc.montoTotal)}
+          </span>
+          {/* La marca va sobre el monto, que es lo que la distingue.
+              Se nombra lo que se comparó en vez de decir "sugerido":
+              el operador tiene que poder discutirla. */}
+          {doc.amountMatches && (
+            <Badge variant="success" className="ml-2">Calza con el saldo</Badge>
+          )}
+        </span>
+        <div className="flex items-center gap-1.5">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            loading={loading}
+            aria-expanded={detail !== null}
+            onClick={handleToggleDetail}
+          >
+            {!loading && <Eye size={14} aria-hidden />}
+            {loading ? "Leyendo…" : detail ? "Ocultar detalle" : "Ver factura"}
+          </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            disabled={useDisabled}
+            onClick={onUse}
+          >
+            Usar este DTE
+          </Button>
+        </div>
+      </div>
+      {detail && <DteXmlDetailPanel detail={detail} />}
+    </li>
   )
 }

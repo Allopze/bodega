@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache"
 import { requirePermission } from "@/lib/auth/can"
 import { DtePortalClient } from "@/lib/services/dte-portal/client"
 import { buildDtePortalClientConfig, isDteSyncEnabled } from "@/lib/services/dte-portal/config"
+import { classifyDteFailure } from "@/lib/services/dte-portal/failure"
 import { syncDteDocuments } from "@/lib/services/dte-portal/sync"
 
 export interface DteSyncActionResult {
@@ -53,19 +54,22 @@ async function runDteSync(options: { periodo?: string; force?: boolean }): Promi
     revalidatePath("/admin/dte")
 
     if (result.status === "failed") {
-      return { ok: false, message: result.error ?? "La sincronización falló" }
+      return { ok: false, message: "La sincronización DTE falló. Revise el historial de corridas para el código seguro." }
     }
     if (result.status === "skipped") {
+      if (result.skipReason === "disabled") {
+        return { ok: false, message: "La sincronización está pausada temporalmente por un cambio seguro de credenciales." }
+      }
+      if (result.skipReason === "active_run") {
+        return { ok: false, message: "Ya hay una sincronización DTE activa para este período. Espere a que termine." }
+      }
       return { ok: true, message: "Ya existe una corrida exitosa para este período cerrado. Usa \"Forzar\" para re-sincronizarlo." }
     }
 
-    const suffix = result.status === "partial" ? ` (${result.error})` : ""
+    const suffix = result.status === "partial" ? " Se detectaron pendientes; revise el historial de corridas." : ""
     return { ok: true, message: `Sincronizado ${result.periodo}: ${result.rowsInserted} nuevos, ${result.rowsUpdated} actualizados de ${result.rowsSeen} vistos${suffix}` }
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Error de sincronización DTE"
-    const safeMessage = message.includes("clave") || message.includes("rut_usr")
-      ? "Error de configuración del portal DTE"
-      : message
-    return { ok: false, message: safeMessage }
+    const failure = classifyDteFailure(error)
+    return { ok: false, message: failure.summary }
   }
 }

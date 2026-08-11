@@ -32,8 +32,12 @@ export default function GlobalError({
   reset: () => void
 }) {
   useEffect(() => {
-    Sentry.captureException(error)
-  }, [error])
+    // A global boundary can receive errors from arbitrary server/client paths.
+    // The detailed failure is captured at its server boundary with redaction;
+    // never forward a potentially credential-bearing message or stack from the
+    // browser to Sentry here.
+    Sentry.captureMessage("CHOME_GLOBAL_ERROR", "error")
+  }, [error.digest])
 
   return (
     <html lang="es">

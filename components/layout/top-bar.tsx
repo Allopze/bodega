@@ -140,10 +140,17 @@ const TopBarInner = React.memo(function TopBarInner({
             </div>
           )}
         </div>
+        {/* Es la faena de la sesión, no un filtro de la vista. Sin la etiqueta se
+            leía como "estoy viendo sólo esta faena" en páginas que listan varias
+            (Bodega agrupa por faena y la de la sesión puede no aparecer). */}
         {worksiteName && (
-          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-(--radius) bg-(--color-surface-2) border border-(--color-border)">
-            <MapPin size={13} weight="bold" className="text-(--color-primary) shrink-0" />
+          <div
+            title={`Tu faena: ${worksiteName}`}
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-(--radius) bg-(--color-surface-2) border border-(--color-border)"
+          >
+            <MapPin size={13} weight="bold" className="text-(--color-primary) shrink-0" aria-hidden />
             <span className="text-xs font-medium text-(--color-text-muted) truncate max-w-[16rem] 2xl:max-w-[20rem]">
+              <span className="text-(--color-text-subtle)">Tu faena: </span>
               {worksiteName}
             </span>
           </div>

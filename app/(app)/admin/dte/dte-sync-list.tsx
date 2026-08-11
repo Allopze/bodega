@@ -11,7 +11,6 @@ export interface DteSyncRunRow {
   rowsSeen: number
   rowsInserted: number
   rowsUpdated: number
-  error: string | null
   startedAt: string
   finishedAt: string | null
 }
@@ -56,9 +55,7 @@ export function DteSyncList({ runs }: { runs: DteSyncRunRow[] }) {
                   <td className="whitespace-nowrap px-4 py-2.5 font-medium text-[var(--color-text)]">{run.periodo}</td>
                   <td className="whitespace-nowrap px-4 py-2.5 text-[var(--color-text-muted)]">{formatDateTime(run.startedAt)}</td>
                   <td className="whitespace-nowrap px-4 py-2.5">
-                    <span title={run.error ?? undefined}>
-                      <Badge variant={statusInfo.tone}>{statusInfo.label}</Badge>
-                    </span>
+                    <Badge variant={statusInfo.tone}>{statusInfo.label}</Badge>
                   </td>
                   <td className="whitespace-nowrap px-4 py-2.5 text-[var(--color-text-muted)]">{TRIGGER_LABELS[run.trigger]}</td>
                   <td className="whitespace-nowrap px-4 py-2.5 font-mono tabular-nums text-[var(--color-text-muted)]">{run.rowsSeen}</td>

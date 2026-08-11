@@ -1,83 +1,121 @@
 import { NextRequest, NextResponse } from "next/server"
+import { nanoid } from "@/lib/id"
+import { logger } from "@/lib/logger"
 import { verifyCronSecret } from "@/lib/security/cron-auth"
 import { DtePortalClient } from "@/lib/services/dte-portal/client"
-import { buildDtePortalClientConfig, isDteSyncEnabled } from "@/lib/services/dte-portal/config"
-import { syncDteDocuments, rollingSyncPeriods } from "@/lib/services/dte-portal/sync"
-import { logger } from "@/lib/logger"
+import { readDtePortalConfig } from "@/lib/services/dte-portal/config"
+import { cronContractFor } from "@/lib/services/dte-portal/cron-contract"
+import { classifyDteFailure } from "@/lib/services/dte-portal/failure"
+import { rollingSyncPeriods, syncDteDocuments } from "@/lib/services/dte-portal/sync"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
+interface DteCronPeriodResult {
+  period: string
+  status: "success" | "partial" | "failed" | "skipped"
+  runId: string
+  code?: string
+  skipReason?: "disabled" | "invalid_barrier" | "active_run"
+}
+
+function wasStoppedByCutover(result: DteCronPeriodResult): boolean {
+  return result.skipReason === "disabled"
+}
+
 /**
  * GET /api/cron/dte-portal-sync
  *
- * Sincronización automática del libro de compras DTE.
- *
- * Cubre el mes en curso **y el anterior** (ver `rollingSyncPeriods`): los
- * proveedores entregan con retraso y el corte por "período cerrado" dejaba
- * fuera del libro, de forma permanente, todo documento que llegara después de
- * la primera corrida exitosa del mes.
- *
- * Protegido por CRON_SECRET.
+ * A single invocation owns one correlation ID across the current and previous
+ * month. The response is deliberately a small, redacted contract for the
+ * internal Node runner; it never includes portal messages or credential data.
  */
 export async function GET(request: NextRequest) {
   const secret = process.env.CRON_SECRET
   if (!secret || !verifyCronSecret(request.headers.get("authorization"), secret)) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    return response(cronContractFor({ unauthorized: true }))
   }
 
-  if (!(await isDteSyncEnabled())) {
-    return NextResponse.json({ ok: true, skipped: true, reason: "DTE sync not enabled" })
-  }
-
-  let client: DtePortalClient
+  const correlationId = nanoid(16)
+  let config
   try {
-    client = new DtePortalClient(await buildDtePortalClientConfig())
+    config = await readDtePortalConfig()
   } catch (error) {
-    return NextResponse.json({ ok: false, error: sanitize(error) }, { status: 500 })
+    const failure = classifyDteFailure(error)
+    logger.error({ correlationId }, "[cron/dte-portal-sync] configuración inválida", { code: failure.code })
+    return response(cronContractFor({ statuses: ["failed"] }), correlationId)
   }
 
-  // Un período que falla no debe impedir el otro: el mes en curso es el que
-  // más importa y no puede quedar rehén de un timeout leyendo el anterior.
+  if (!config.syncEnabled) {
+    return response(cronContractFor({ disabled: true }), correlationId)
+  }
+  if (!Object.values(config.credentials).every(Boolean)) {
+    logger.error({ correlationId }, "[cron/dte-portal-sync] credenciales incompletas", { code: "DTE_SETTINGS_INVALID" })
+    return response(cronContractFor({ statuses: ["failed"] }), correlationId)
+  }
+
+  const client = new DtePortalClient({
+    baseUrl: config.baseUrl,
+    credentials: config.credentials,
+    delayMs: config.delayMs,
+    requestTimeoutMs: config.requestTimeoutMs,
+  })
   const periods = rollingSyncPeriods()
-  const results = []
-  let anyFailed = false
+  const results: DteCronPeriodResult[] = []
 
   for (const periodo of periods) {
     try {
-      const result = await syncDteDocuments(client, { periodo, trigger: "cron" })
-      results.push(result)
-      if (result.status === "failed") anyFailed = true
+      const result = await syncDteDocuments(client, {
+        periodo,
+        trigger: "cron",
+        importerEmail: config.importerEmail,
+        correlationId,
+      })
+      results.push({
+        period: periodo,
+        status: result.status,
+        runId: result.runId,
+        code: result.error?.split(":", 1)[0],
+        skipReason: result.skipReason,
+      })
     } catch (error) {
-      anyFailed = true
-      const message = sanitize(error)
-      logger.error("[cron/dte-portal-sync] período falló", { periodo, message })
-      results.push({ periodo, status: "failed" as const, error: message })
+      const failure = classifyDteFailure(error, Object.values(config.credentials))
+      logger.error({ correlationId }, "[cron/dte-portal-sync] período falló", { code: failure.code, periodo })
+      results.push({ period: periodo, status: "failed", runId: "", code: failure.code })
     }
   }
 
-  // `ok:false` cuando cualquiera de los dos falló: el scheduler usa el código
-  // HTTP para que la falla se vea, y un 200 con un período roto adentro es
-  // exactamente el tipo de éxito aparente que ya nos costó meses.
-  return NextResponse.json({ ok: !anyFailed, periods, results }, { status: anyFailed ? 500 : 200 })
+  const cutoverStopped = results.filter(wasStoppedByCutover)
+  const invalidBarrier = results.some((result) => result.skipReason === "invalid_barrier")
+  // A conversion pause before either period starts is intentional and must not
+  // page operators. If it races after a period already completed, report a
+  // partial batch: calling it disabled would falsely certify both periods.
+  const allStoppedByCutover = results.length > 0 && cutoverStopped.length === results.length
+  const contract = cronContractFor({
+    disabled: allStoppedByCutover,
+    conflict: !invalidBarrier && results.some((result) => result.status === "skipped" && result.skipReason === "active_run"),
+    statuses: allStoppedByCutover
+      ? undefined
+      : results.map((result) => wasStoppedByCutover(result)
+        ? "partial"
+        : result.skipReason === "invalid_barrier"
+          ? "failed"
+          : result.status),
+  })
+  return response(contract, correlationId, results)
 }
 
-/**
- * Nunca dejar salir una credencial en el mensaje de error.
- *
- * Se comparan los VALORES además de los nombres: la versión anterior sólo
- * buscaba las palabras "clave" y "rut_usr", así que un mensaje que trajera la
- * contraseña sin nombrarla pasaba intacto.
- */
-function sanitize(error: unknown): string {
-  const message = error instanceof Error ? error.message : "DTE portal sync failed"
-  const secrets = [
-    process.env.DTE_PORTAL_CLAVE,
-    process.env.DTE_PORTAL_RUT_USR,
-    process.env.DTE_PORTAL_RUT_EMP,
-  ].filter((value): value is string => Boolean(value && value.length >= 4))
-
-  if (secrets.some((value) => message.includes(value))) return "DTE portal configuration error"
-  if (/clave|rut_usr|rut_emp/i.test(message)) return "DTE portal configuration error"
-  return message.slice(0, 500)
+function response(
+  contract: ReturnType<typeof cronContractFor>,
+  correlationId?: string,
+  periods?: Array<{ period: string; status: string; runId: string; code?: string }>,
+) {
+  return NextResponse.json({
+    ok: contract.ok,
+    outcome: contract.outcome,
+    code: contract.code,
+    health: contract.health,
+    correlationId,
+    periods,
+  }, { status: contract.httpStatus })
 }

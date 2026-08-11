@@ -9,6 +9,7 @@ import { formatCLP } from "@/lib/utils"
 import { toast } from "@/lib/toast"
 import { dteTipoLabel } from "@/lib/services/dte-portal/labels"
 import { downloadDteDocumentXml, type DteXmlDetail } from "../actions/dte-download-xml"
+import { DteXmlDetailPanel } from "./dte-xml-detail"
 
 export interface DteReceivedRow {
   id: string
@@ -103,25 +104,7 @@ function DteReceivedRow({ doc }: { doc: DteReceivedRow }) {
         </div>
       </div>
 
-      {detail && (
-        <div className="mt-3 rounded-(--radius-lg) bg-(--color-surface-2) p-3 text-xs">
-          <div className="flex flex-wrap gap-x-6 gap-y-1 font-mono tabular-nums text-(--color-text-muted)">
-            <span>Neto: {formatCLP(detail.netAmount)}</span>
-            <span>IVA: {formatCLP(detail.taxAmount)}</span>
-            <span>Total: {formatCLP(detail.totalAmount)}</span>
-          </div>
-          {detail.items.length > 0 && (
-            <ul className="mt-2 space-y-1 text-(--color-text-subtle)">
-              {detail.items.map((item) => (
-                <li key={item.lineNumber} className="flex justify-between gap-3">
-                  <span className="truncate">{item.productName}</span>
-                  <span className="shrink-0 font-mono tabular-nums">{item.quantity} × {formatCLP(item.unitPrice)}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      )}
+      {detail && <DteXmlDetailPanel detail={detail} />}
     </li>
   )
 }

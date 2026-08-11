@@ -169,16 +169,19 @@ export default async function BodegaPage({
   const worksitesWithStock = new Set(stockWithQuantity.map((item) => item.worksiteId))
   const productsWithStock = new Set(stockWithQuantity.map((item) => item.productId))
   const lowStockRows = visibleStockRows.filter((item) => item.minStock > 0 && item.quantity <= item.minStock)
+  const minStockDefinedCount = visibleStockRows.filter((item) => item.minStock > 0).length
 
   const returnProducts: ReturnPanelStockOption[] = returnDeliveryRows.map((item) => ({
     ...item,
     remainingQuantity: Number(item.remainingQuantity),
   }))
 
-  const firstStockWorksiteId = visibleStockRows.find((item) => item.quantity > 0)?.worksiteId
-  const initialWorksiteId = (requestedWorksiteId && worksiteOptions.some((w) => w.id === requestedWorksiteId) ? requestedWorksiteId : undefined)
-    ?? firstStockWorksiteId
-    ?? worksiteOptions[0]?.id
+  // Sólo la faena pedida explícitamente por `?faena=` se fija arriba: el fallback
+  // anterior ("la primera con stock") dejaba una faena arbitraria en cabeza y el
+  // orden se leía como aleatorio. El resto lo ordena StockSection por criticidad.
+  const pinnedWorksiteId = requestedWorksiteId && worksiteOptions.some((w) => w.id === requestedWorksiteId)
+    ? requestedWorksiteId
+    : undefined
   const adjustProducts: AdjustPanelStockOption[] = visibleStockRows.map((item) => ({
     worksiteId: item.worksiteId,
     worksiteName: item.worksite?.name ?? item.worksiteId,
@@ -207,6 +210,7 @@ export default async function BodegaPage({
             worksitesWithStock={worksitesWithStock.size}
             productsWithStock={productsWithStock.size}
             lowStockCount={lowStockRows.length}
+            minStockDefinedCount={minStockDefinedCount}
             movementCount={kardexPagination.totalItems}
           />
         )}
@@ -226,7 +230,7 @@ export default async function BodegaPage({
         <StockSection
           worksites={worksiteOptions}
           stockByWorksite={stockByWorksite}
-          initialWorksiteId={initialWorksiteId}
+          pinnedWorksiteId={pinnedWorksiteId}
           receivingHref={canViewReceiving ? "/recepcion" : undefined}
           canExportStock={canExportStock}
           lowStockOnly={sp.stock === "low"}

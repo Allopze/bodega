@@ -18,6 +18,7 @@ export function SummaryBarCompactStrip({ stats, className }: { stats: SummarySta
               "font-mono font-semibold tabular-nums",
               signalActive ? "text-[var(--color-signal-ink)]" : isZero ? "text-[var(--color-text-faint)]" : "text-[var(--color-text)]",
             )}>{stat.value}</span>
+            {stat.hint && <span className="text-text-subtle">{stat.hint}</span>}
           </>
         )
         return (

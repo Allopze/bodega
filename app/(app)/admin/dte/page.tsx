@@ -4,8 +4,7 @@ import { desc } from "drizzle-orm"
 import { db } from "@/db"
 import { dteSyncRuns } from "@/db/schema"
 import { requirePermission } from "@/lib/auth/can"
-import { readDtePortalConfig } from "@/lib/services/dte-portal/config"
-import { hasStoredDteSettings } from "@/lib/services/dte-portal/settings"
+import { readDtePortalAdminStatus } from "@/lib/services/dte-portal/settings"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { DteCredentialsForm } from "./credentials-form"
@@ -29,13 +28,26 @@ export default async function DtePage() {
   try { await requirePermission("admin:dte_sync") }
   catch { redirect("/forbidden") }
 
-  const [runs, config, hasStored] = await Promise.all([
+  const [runs, status] = await Promise.all([
     db.query.dteSyncRuns.findMany({
       orderBy: [desc(dteSyncRuns.startedAt)],
       limit: 30,
+      // Historical rows may predate redacted summaries. Never select the raw
+      // error column for this RSC/client-facing screen: status and counters
+      // are sufficient for an operator and old portal payloads stay in DB.
+      columns: {
+        id: true,
+        periodo: true,
+        trigger: true,
+        status: true,
+        rowsSeen: true,
+        rowsInserted: true,
+        rowsUpdated: true,
+        startedAt: true,
+        finishedAt: true,
+      },
     }),
-    readDtePortalConfig(),
-    hasStoredDteSettings(),
+    readDtePortalAdminStatus(),
   ])
 
   return (
@@ -47,14 +59,14 @@ export default async function DtePage() {
         actions={DTE_ACTIONS}
       />
 
-      {!config.syncEnabled && (
+      {!status.syncEnabled && (
         <section role="alert" className="mb-5 rounded-[var(--radius-xl)] border border-[var(--color-warning)] bg-[var(--color-warning-tint)] p-4 text-[var(--color-warning-ink)]">
           <h2 className="font-semibold">La sincronización no está habilitada</h2>
-          <p className="mt-1 text-sm">Configure las credenciales del portal abajo y active la sincronización, o use las variables de entorno (<code>DTE_PORTAL_*</code> y <code>DTE_SYNC_ENABLED=true</code>).</p>
+          <p className="mt-1 text-sm">Configure los campos faltantes abajo y active la sincronización. Los valores ya existentes no se exponen en esta pantalla.</p>
         </section>
       )}
 
-      <DteCredentialsForm initial={config} hasStored={hasStored} />
+      <DteCredentialsForm status={status} />
 
       <div className="mt-8">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">

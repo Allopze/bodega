@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { requirePermission } from "@/lib/auth/can"
 import { DtePortalClient } from "@/lib/services/dte-portal/client"
 import { buildDtePortalClientConfig, isDteSyncEnabled } from "@/lib/services/dte-portal/config"
+import { classifyDteFailure } from "@/lib/services/dte-portal/failure"
 import { syncDteDocuments } from "@/lib/services/dte-portal/sync"
 
 export const runtime = "nodejs"
@@ -24,13 +25,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Sin permisos" }, { status: 403 })
   }
 
-  if (!(await isDteSyncEnabled())) {
-    return NextResponse.json(
-      { error: "La sincronización DTE no está habilitada. Configúrela en Administración › Sincronización DTE o con DTE_SYNC_ENABLED=true." },
-      { status: 400 },
-    )
-  }
-
   let body: { periodo?: string; force?: boolean } = {}
   try {
     body = await request.json()
@@ -47,6 +41,13 @@ export async function POST(request: NextRequest) {
   }
 
   try {
+    if (!(await isDteSyncEnabled())) {
+      return NextResponse.json(
+        { error: "La sincronización DTE no está habilitada. Configúrela en Administración › Sincronización DTE o con DTE_SYNC_ENABLED=true." },
+        { status: 400 },
+      )
+    }
+
     const config = await buildDtePortalClientConfig()
     const client = new DtePortalClient(config)
 
@@ -57,13 +58,21 @@ export async function POST(request: NextRequest) {
       importerId: session.user.id,
     })
 
-    return NextResponse.json({ ok: true, ...result })
+    return NextResponse.json({
+      ok: true,
+      runId: result.runId,
+      periodo: result.periodo,
+      status: result.status,
+      rowsSeen: result.rowsSeen,
+      rowsInserted: result.rowsInserted,
+      rowsUpdated: result.rowsUpdated,
+      correlationId: result.correlationId,
+      // Sync persists a redacted summary for the admin history. The API keeps
+      // the wire contract even narrower: callers get a stable code only.
+      code: result.error?.split(":", 1)[0] ?? null,
+    })
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Error de sincronización DTE"
-    // No exponer detalles técnicos de credenciales
-    const safeMessage = message.includes("clave") || message.includes("rut_usr")
-      ? "Error de configuración del portal DTE"
-      : message
-    return NextResponse.json({ ok: false, error: safeMessage }, { status: 500 })
+    const failure = classifyDteFailure(error)
+    return NextResponse.json({ ok: false, code: failure.code, error: failure.summary }, { status: 500 })
   }
 }

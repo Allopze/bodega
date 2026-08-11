@@ -2,7 +2,12 @@
 
 import { revalidatePath } from "next/cache"
 import { requirePermission } from "@/lib/auth/can"
-import { clearStoredDteSettings, saveDtePortalSettings } from "@/lib/services/dte-portal/settings"
+import {
+  clearStoredDteSettings,
+  convertLegacyDteSettings,
+  rotateDteSettingsKeyring,
+  saveDtePortalSettings,
+} from "@/lib/services/dte-portal/settings"
 import type { ActionState } from "@/lib/validation/masters"
 
 const REVALIDATE = "/admin/dte"
@@ -20,8 +25,8 @@ function formTextRaw(formData: FormData, name: string): string | undefined {
 
 /**
  * Guarda la configuración del portal DTE desde Administración › Sincronización
- * DTE. Los campos en blanco borran el valor guardado (vuelven al .env); la
- * contraseña en blanco se conserva (solo se borra con el checkbox dedicado).
+ * DTE. Los campos sensibles vacíos preservan su valor: borrar siempre exige
+ * un checkbox explícito, para que el navegador jamás reciba valores actuales.
  */
 export async function saveDteSettingsAction(
   _prev: ActionState,
@@ -29,11 +34,6 @@ export async function saveDteSettingsAction(
 ): Promise<ActionState> {
   try {
     const session = await requirePermission("admin:dte_sync")
-
-    const baseUrl = formText(formData, "baseUrl")
-    if (baseUrl !== undefined && baseUrl !== "" && !/^https?:\/\/.+/i.test(baseUrl)) {
-      return { ok: false, message: "La URL base debe ser una dirección http(s) válida" }
-    }
 
     const delayRaw = formText(formData, "delayMs")
     let delayMs: number | undefined
@@ -47,12 +47,16 @@ export async function saveDteSettingsAction(
 
     await saveDtePortalSettings(
       {
-        baseUrl,
         rutUsr: formText(formData, "rutUsr"),
         rutEmp: formText(formData, "rutEmp"),
         codEmp: formText(formData, "codEmp"),
         clave: formTextRaw(formData, "clave"),
         clearClave: formData.get("clearClave") === "on",
+        clearRutUsr: formData.get("clearRutUsr") === "on",
+        clearRutEmp: formData.get("clearRutEmp") === "on",
+        clearCodEmp: formData.get("clearCodEmp") === "on",
+        clearImporterEmail: formData.get("clearImporterEmail") === "on",
+        clearDelayMs: formData.get("clearDelayMs") === "on",
         syncEnabled: formData.get("syncEnabled") === "on",
         delayMs,
         importerEmail: formText(formData, "importerEmail"),
@@ -62,28 +66,55 @@ export async function saveDteSettingsAction(
 
     revalidatePath(REVALIDATE)
     return { ok: true, message: "Credenciales del portal DTE guardadas" }
-  } catch (error) {
+  } catch {
     return {
       ok: false,
-      message: error instanceof Error ? error.message : "Error al guardar las credenciales del portal DTE",
+      message: "No fue posible guardar la configuración DTE. Revise el estado del keyring y los datos ingresados.",
     }
   }
 }
 
 /**
- * Borra toda la configuración DTE guardada: desde ese momento la app vuelve a
- * leer solo las variables de entorno (DTE_PORTAL_*).
+ * Borra toda la configuración DTE guardada. En encrypted_only esto deja la
+ * sincronización deshabilitada: nunca revive un secreto de entorno en texto.
  */
 export async function clearDteSettingsAction(): Promise<{ ok: boolean; message: string }> {
   try {
     const session = await requirePermission("admin:dte_sync")
     await clearStoredDteSettings({ userId: session.user.id, userEmail: session.user.email ?? undefined })
     revalidatePath(REVALIDATE)
-    return { ok: true, message: "Configuración DTE restaurada a las variables de entorno" }
-  } catch (error) {
+    return { ok: true, message: "Configuración DTE eliminada; la sincronización permanece deshabilitada hasta configurarla nuevamente." }
+  } catch {
     return {
       ok: false,
-      message: error instanceof Error ? error.message : "Error al restaurar la configuración DTE",
+      message: "No fue posible actualizar la configuración DTE.",
     }
+  }
+}
+
+/** One-way, confirmed cutover to envelopes that preserves the portal credential values. */
+export async function convertLegacyDteSettingsAction(): Promise<{ ok: boolean; message: string }> {
+  try {
+    const session = await requirePermission("admin:dte_sync")
+    await convertLegacyDteSettings({ userId: session.user.id, userEmail: session.user.email ?? undefined })
+    revalidatePath(REVALIDATE)
+    return {
+      ok: true,
+      message: "Corte cifrado verificado con las mismas credenciales del portal. La sincronización quedó pausada hasta revisar y habilitarla.",
+    }
+  } catch {
+    return { ok: false, message: "No fue posible completar la conversión cifrada. La sincronización quedó pausada; revise solicitudes activas al portal y el keyring del host." }
+  }
+}
+
+/** Re-wraps the same credential plaintext only after a new active key is in app. */
+export async function rotateDteSettingsKeyringAction(): Promise<{ ok: boolean; message: string }> {
+  try {
+    const session = await requirePermission("admin:dte_sync")
+    const result = await rotateDteSettingsKeyring({ userId: session.user.id, userEmail: session.user.email ?? undefined })
+    revalidatePath(REVALIDATE)
+    return { ok: true, message: `Re-cifrado del keyring verificado en ${result.rewrapped} campo(s); las credenciales del portal no cambiaron. La sincronización quedó pausada para revisión.` }
+  } catch {
+    return { ok: false, message: "No fue posible completar el re-cifrado del keyring. La sincronización quedó pausada; conserve todas las claves del keyring y revise las solicitudes activas al portal." }
   }
 }

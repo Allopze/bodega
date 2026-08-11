@@ -16,10 +16,11 @@ interface WorksiteOption {
   name: string
 }
 
-export function StockSection({ worksites, stockByWorksite, initialWorksiteId, receivingHref, canExportStock, lowStockOnly = false }: {
+export function StockSection({ worksites, stockByWorksite, pinnedWorksiteId, receivingHref, canExportStock, lowStockOnly = false }: {
   worksites: WorksiteOption[]
   stockByWorksite: Record<string, WorksiteStockWithProduct[]>
-  initialWorksiteId?: string
+  /** Faena pedida por `?faena=`; se fija arriba. Sin ella manda la criticidad. */
+  pinnedWorksiteId?: string
   receivingHref?: string
   canExportStock?: boolean
   /** Sólo ítems bajo su mínimo definido — destino del KPI "Stock crítico". */
@@ -27,12 +28,24 @@ export function StockSection({ worksites, stockByWorksite, initialWorksiteId, re
 }) {
   const { searchQuery } = useSafeShellHeader()
   const isLowStock = (item: WorksiteStockWithProduct) => item.minStock > 0 && item.quantity <= item.minStock
+  // En modo "sólo bajo mínimo" también entran las líneas agotadas (cantidad 0)
+  // con mínimo definido: son exactamente las que cuenta el KPI del encabezado y
+  // antes quedaban invisibles, así que el KPI mostraba N y la vista "nada bajo el
+  // mínimo".
+  const isVisibleItem = (item: WorksiteStockWithProduct) =>
+    lowStockOnly ? isLowStock(item) : item.quantity > 0
 
   const sortedWorksites = [...worksites].sort((a, b) => {
-    const aHasStock = (stockByWorksite[a.id] ?? []).some((item) => item.quantity > 0 && (!lowStockOnly || isLowStock(item)))
-    const bHasStock = (stockByWorksite[b.id] ?? []).some((item) => item.quantity > 0 && (!lowStockOnly || isLowStock(item)))
-    if (a.id === initialWorksiteId) return -1
-    if (b.id === initialWorksiteId) return 1
+    if (a.id === pinnedWorksiteId) return -1
+    if (b.id === pinnedWorksiteId) return 1
+    const aItems = stockByWorksite[a.id] ?? []
+    const bItems = stockByWorksite[b.id] ?? []
+    // Criticidad antes que alfabético: la faena con algo bajo mínimo va arriba.
+    const aLow = aItems.some(isLowStock)
+    const bLow = bItems.some(isLowStock)
+    if (aLow !== bLow) return aLow ? -1 : 1
+    const aHasStock = aItems.some(isVisibleItem)
+    const bHasStock = bItems.some(isVisibleItem)
     if (aHasStock !== bHasStock) return aHasStock ? -1 : 1
     return a.name.localeCompare(b.name, "es")
   })
