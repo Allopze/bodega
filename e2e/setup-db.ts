@@ -609,6 +609,18 @@ async function main() {
     },
   ])
 
+  /**
+   * 120 solicitudes aprobadas sin OC. NO es relleno: son exactamente el
+   * conjunto que mide `export-volume.spec.ts`, que exige `rowCount >= 121` en
+   * el export `items_sin_oc`. Bajar el número rompe esa prueba.
+   *
+   * El efecto colateral es que la cola de Compras (`/compras`) llega con ~12
+   * páginas en la BD E2E, y como está ordenada FIFO —lo que lleva más tiempo
+   * esperando va primero— cualquier solicitud que cree un test cae en la
+   * última. Los specs que persiguen la suya la buscan con `/compras?q=<código>`
+   * en vez de asumir que está en la primera página (ver
+   * `flujo-cuatro-modulos.spec.ts`); es además lo que hace un comprador real.
+   */
   const bulkRequests = Array.from({ length: 120 }, (_, index) => {
     const number = String(index + 1).padStart(3, "0")
     return {
@@ -859,6 +871,75 @@ async function main() {
     unitPrice: 1000,
     discount: 0,
     subtotal: 10000,
+    status: "issued",
+    sortOrder: 1,
+    notes: null,
+  })
+
+  // OC dedicada al E2E de la GDI integrada: llega primero a Oficina CHOME,
+  // prepara automáticamente el documento y permite probar despacho/PDF/cotejo
+  // sin competir con el spec que recorre `oc-flow-e2e`.
+  await db.insert(schema.purchaseRequests).values({
+    id: "req-gdi-e2e",
+    code: "SOL-GDI-E2E",
+    worksiteId: "ws-e2e",
+    requesterId: "user-admin-e2e",
+    requestType: "epp",
+    urgency: "normal",
+    requiredDate: "2026-07-20",
+    status: "in_purchasing",
+    submittedAt: now,
+    notes: "Fixture E2E para la Guía de Despacho Interna integrada",
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.purchaseRequestItems).values({
+    id: "req-item-gdi-e2e",
+    requestId: "req-gdi-e2e",
+    productId: "prod-e2e",
+    productNameFree: null,
+    quantity: 6,
+    unitOfMeasure: "unidad",
+    status: "purchased",
+    urgency: "normal",
+    requiredDate: "2026-07-20",
+    workerId: null,
+    suggestedSupplierId: "sup-e2e",
+    sortOrder: 1,
+    notes: null,
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.purchaseOrders).values({
+    id: "oc-gdi-e2e",
+    code: "OC-2026-0093",
+    worksiteId: "ws-e2e",
+    supplierId: "sup-e2e",
+    createdBy: "user-admin-e2e",
+    status: "sent",
+    deliveryMode: "via_oficina",
+    issuedAt: now,
+    sentAt: now,
+    estimatedDelivery: "2026-07-22",
+    deliveryAddress: "Oficina CHOME",
+    netAmount: 6000,
+    taxAmount: 1140,
+    totalAmount: 7140,
+    notes: "Fixture E2E para GDI integrada",
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.purchaseOrderItems).values({
+    id: "oc-item-gdi-e2e",
+    purchaseOrderId: "oc-gdi-e2e",
+    requestItemId: "req-item-gdi-e2e",
+    productId: "prod-e2e",
+    productNameFree: null,
+    quantity: 6,
+    unitOfMeasure: "unidad",
+    unitPrice: 1000,
+    discount: 0,
+    subtotal: 6000,
     status: "issued",
     sortOrder: 1,
     notes: null,

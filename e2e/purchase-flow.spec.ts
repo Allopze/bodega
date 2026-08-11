@@ -82,24 +82,19 @@ test("flujo solicitud, aprobación, OC, recepción y trazabilidad", async ({ pag
   await expect(page.getByRole("button", { name: "Recepción en oficina" })).toBeVisible()
   await submitReceiptForm(page, "5")
 
-  // Stage 2 — receipt at the worksite from the transit queue (generates stock + traceability).
-  await expect.poll(async () => {
-    await page.goto("/recepcion")
-    return receptionRow.count()
-  }, { timeout: 30_000 }).toBeGreaterThan(0)
-  const transitReceptionRow = receptionRow.first()
-  // El badge de la columna "Pend. de faena" cuenta LÍNEAS pendientes de despacho
-  // (una acá), y dice sólo el número: antes repetía el nombre de la columna
-  // ("N pend. faena"), jerga duplicada (auditoría UI/UX 2026-07-29, A-35).
-  await expect(transitReceptionRow.getByText(/^1 ítem$/)).toBeVisible()
-  await transitReceptionRow.getByRole("link", { name: "Recibir" }).click()
-  // A-35 reescribió "En oficina: N" como "Llegó antes a oficina: N", porque bajo
-  // un título "Ítems recibidos en faena" se leía como contradicción.
-  await expect(page.getByText(/(En oficina|Llegó antes a oficina): 5/)).toBeVisible()
-  const worksiteReceiptButton = page.getByRole("button", { name: /Recepción en faena/ })
-  await expect(worksiteReceiptButton).toBeEnabled()
-  await worksiteReceiptButton.click()
-  await submitReceiptForm(page, "5")
+  // Stage 2 — la llegada a faena se coteja contra la GDI preparada desde la
+  // recepción anterior. El formulario genérico de recepción ya no se ofrece
+  // para una OC vía oficina, porque permitiría saltarse el documento y duplicar
+  // el movimiento de inventario.
+  const guideLink = page.getByRole("link", { name: /^GDI-\d{6}$/ }).first()
+  await expect(guideLink).toBeVisible()
+  await guideLink.click()
+  await page.getByRole("button", { name: /^Despachar$/ }).click()
+  await page.getByRole("dialog").getByRole("button", { name: /^Despachar$/ }).click()
+  await expect(page.getByText("Despachada").first()).toBeVisible({ timeout: 15_000 })
+  await page.getByRole("button", { name: /Confirmar recepción/i }).click()
+  await page.getByRole("dialog").getByRole("button", { name: /Confirmar recepción/i }).click()
+  await expect(page.getByText("Recibida").first()).toBeVisible({ timeout: 15_000 })
   // Acotado a la tabla: el nombre del producto también aparece en el panel de
   // seguimiento de la misma página, así que un `getByText` suelto era ambiguo.
   await expect(page.getByRole("table").getByText("Guante E2E").first()).toBeVisible()

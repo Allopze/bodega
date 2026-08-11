@@ -3,8 +3,8 @@ import { login } from "./helpers"
 
 /**
  * Camino completo de una OC por oficina, que es el flujo del negocio:
- * emitida → enviada → llegada a oficina (parcial y total) → recepción en faena
- * (parcial y total) → recibida → cerrada.
+ * emitida → enviada → llegada a oficina (parcial y total) → GDI por cada
+ * recepción → despacho/cotejo en faena → recibida → cerrada.
  *
  * Existe porque el estado `supplier_confirmed` sacaba la OC del conjunto
  * recibible y la dejaba imposible de recibir: ningún test recorría el camino
@@ -26,6 +26,16 @@ async function registerReception(page: Page, stage: "Oficina" | "Faena", quantit
   // máquina cargada (2 workers) eso fallaba de forma reproducible. Esperar el
   // código de la recepción creada ancla la espera al efecto real.
   await expect(page.getByRole("heading", { name: /^REC-/ })).toBeVisible({ timeout: 30_000 })
+}
+
+async function dispatchAndReceiveGuide(page: Page, guideHref: string) {
+  await page.goto(guideHref)
+  await page.getByRole("button", { name: /^Despachar$/ }).click()
+  await page.getByRole("dialog").getByRole("button", { name: /^Despachar$/ }).click()
+  await expect(page.getByText("Despachada").first()).toBeVisible({ timeout: 15_000 })
+  await page.getByRole("button", { name: /Confirmar recepción/i }).click()
+  await page.getByRole("dialog").getByRole("button", { name: /Confirmar recepción/i }).click()
+  await expect(page.getByText("Recibida").first()).toBeVisible({ timeout: 15_000 })
 }
 
 async function expectOcState(page: Page, state: RegExp) {
@@ -53,28 +63,27 @@ test.describe("Flujo OC por oficina", () => {
 
     // ── Llegada a oficina: parcial y luego el saldo ───────────────────────────
     await registerReception(page, "Oficina", 4)
+    const firstGuideHref = await page.getByRole("link", { name: /^GDI-\d{6}$/ }).first().getAttribute("href")
+    expect(firstGuideHref).toBeTruthy()
     await expectOcState(page, /Recibido en oficina \(parcial\)/)
     await expect(page.getByText(/6 unidades por llegar a oficina/)).toBeVisible()
 
     await registerReception(page, "Oficina", 6)
+    // El expediente de la segunda recepción también muestra la GDI anterior;
+    // la última es la que acaba de preparar esta recepción.
+    const secondGuideHref = await page.getByRole("link", { name: /^GDI-\d{6}$/ }).last().getAttribute("href")
+    expect(secondGuideHref).toBeTruthy()
     await expectOcState(page, /Recibido en oficina/)
-    // Todo en oficina: ahora el paso es faena.
-    await expect(page.getByRole("link", { name: /Recepcionar en faena/i })).toBeVisible()
-
-    // ── Recepción en faena: parcial y luego el saldo ──────────────────────────
-    await registerReception(page, "Faena", 4)
+    // Todo en oficina: las dos GDIs quedan listas para despacho, sin saltar al
+    // formulario genérico de recepción en faena.
+    await dispatchAndReceiveGuide(page, secondGuideHref!)
     await expectOcState(page, /Recibido en faena \(parcial\)/)
-    await expect(page.getByText(/6 unidades pendientes/)).toBeVisible()
 
-    // ── Recepción completa → cierre automático ───────────────────────────────
-    // Recibir el saldo cierra la orden en la misma transacción
-    // (`closeOrderTx` desde `rollupOrderReceiptStatus`): "Recibido en faena" es un
-    // estado transitorio que la interfaz nunca llega a mostrar, y por eso no
-    // hay un paso manual de cierre una vez que todo llegó.
-    await registerReception(page, "Faena", 6)
+    // ── Segundo cotejo completa la OC y cierra automáticamente ───────────────
+    await dispatchAndReceiveGuide(page, firstGuideHref!)
     await expectOcState(page, /Completada/)
     // Nada pendiente: el CTA de recepción desaparece.
-    await expect(page.getByRole("link", { name: /Recepcionar en faena/i })).toHaveCount(0)
+    await expect(page.getByRole("link", { name: /Recepcionar en faena|Continuar en Recepciones/i })).toHaveCount(0)
     // Y tampoco se ofrece cerrar algo que ya está cerrado.
     await expect(page.getByRole("button", { name: "Cerrar orden" })).toHaveCount(0)
   })
