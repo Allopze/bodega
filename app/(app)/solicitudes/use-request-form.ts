@@ -2,6 +2,7 @@ import { useActionState, useEffect, useRef, useState, useCallback, useMemo, star
 import { useRouter } from "next/navigation"
 import { toast } from "@/lib/toast"
 import { DELETABLE_REQUEST_STATUSES } from "@/lib/services/requests-delete.constants"
+import { isRequestCancellable } from "@/lib/services/requests-cancel.constants"
 import { INITIAL_STATE } from "@/components/admin/form-state"
 import { useActionWatchers } from "@/lib/hooks/use-action-watchers"
 import { URGENCY_OPTS } from "./request-form.constants"
@@ -169,7 +170,7 @@ export function useRequestForm({
     && (DELETABLE_REQUEST_STATUSES as readonly string[]).includes(editRequest.status)
     && (userPermissions.includes("requests:delete") || userPermissions.includes("requests:view_own"))
   const canCancelRequest = isEdit
-    && ["draft", "submitted", "in_review", "partially_approved"].includes(editRequest.status)
+    && isRequestCancellable(editRequest.status)
     && (userPermissions.includes("requests:create") || userPermissions.includes("requests:view_all"))
 
   const [draftState, draftAction, draftPending] = useActionState<ActionState & { requestId?: string }, FormData>(saveDraft, INITIAL_STATE)

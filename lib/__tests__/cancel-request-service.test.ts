@@ -82,8 +82,36 @@ describe("cancelRequest — DB integration", () => {
   })
 
   it("rechaza un estado no cancelable", async () => {
-    await makeRequest({ id: "req-approved", status: "approved" })
-    await expect(cancelRequest("req-approved", userId, "motivo")).rejects.toThrow("No se puede cancelar una solicitud en estado 'approved'")
+    await makeRequest({ id: "req-in-purchasing", status: "in_purchasing" })
+    await expect(cancelRequest("req-in-purchasing", userId, "motivo")).rejects.toThrow("No se puede cancelar una solicitud en estado 'in_purchasing'")
+  })
+
+  // Antes era el caso "no cancelable" de arriba, y ése era el bug: una solicitud
+  // aprobada a la que nunca se le emitió OC no tenía salida — ni cancelar, ni
+  // eliminar, ni rechazar ítem por ítem (la cola de aprobaciones ya no la lista).
+  it("cancela una aprobada que todavía no tiene OC", async () => {
+    await makeRequest({
+      id: "req-approved-sin-oc", status: "approved",
+      items: [
+        { id: "item-aprobado", status: "approved" },
+        { id: "item-pend-compra", status: "pending_purchase" },
+      ],
+    })
+    const { rejectedItemIds } = await cancelRequest("req-approved-sin-oc", userId, "La faena anuló la necesidad")
+
+    expect(new Set(rejectedItemIds)).toEqual(new Set(["item-aprobado", "item-pend-compra"]))
+    const [request] = await inMemoryDb.select().from(schema.purchaseRequests).where(eq(schema.purchaseRequests.id, "req-approved-sin-oc"))
+    expect(request!.status).toBe("cancelled")
+    expect(request!.closedAt).toBeTruthy()
+  })
+
+  it("no cancela una aprobada a la que ya se le emitió OC", async () => {
+    await makeRequest({
+      id: "req-approved-con-oc", status: "approved",
+      items: [{ id: "item-en-oc", status: "in_purchase_order" }],
+    })
+    await expect(cancelRequest("req-approved-con-oc", userId, "motivo"))
+      .rejects.toThrow("No se puede cancelar: la solicitud ya tiene ítems en compra, recepción o entrega")
   })
 
   it("rechaza si ya tiene ítems en compra, recepción o entrega", async () => {

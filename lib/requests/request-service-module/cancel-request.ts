@@ -3,16 +3,16 @@ import { db } from "@/db"
 import { purchaseRequests, purchaseRequestItems } from "@/db/schema"
 import { recordAudit, recordStatusChange } from "@/lib/audit"
 import { resolveReplenishmentLinksTx } from "@/lib/services/epp-replenishment"
+import { isRequestCancellable } from "@/lib/services/requests-cancel.constants"
 import type { RequestModuleConfig } from "../request-config"
 
-const CANCELLABLE_STATUSES = ["draft", "submitted", "in_review", "partially_approved"]
 const LOCKED_ITEM_STATUSES = ["in_purchase_order", "purchased", "partially_received", "received", "partially_delivered", "delivered"]
 const REJECTABLE_ITEM_STATUSES = ["draft", "requested", "approved", "pending_purchase"]
 
 type LoadedRequest = { id: string; status: string; code: string; requestType: string }
 
 function assertCancellable(request: LoadedRequest, reason: string): void {
-  if (!CANCELLABLE_STATUSES.includes(request.status)) {
+  if (!isRequestCancellable(request.status)) {
     throw new Error(`No se puede cancelar una solicitud en estado '${request.status}'`)
   }
   if (request.status !== "draft" && !reason?.trim()) {
