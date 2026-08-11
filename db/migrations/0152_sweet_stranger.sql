@@ -1,0 +1,3 @@
+ALTER TABLE "deliveries" ADD COLUMN "source_worksite_id" text;--> statement-breakpoint
+ALTER TABLE "deliveries" ADD CONSTRAINT "deliveries_source_worksite_id_worksites_id_fk" FOREIGN KEY ("source_worksite_id") REFERENCES "public"."worksites"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+CREATE INDEX "idx_deliveries_source_worksite_date" ON "deliveries" USING btree ("source_worksite_id","delivered_at");

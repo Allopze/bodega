@@ -68,6 +68,9 @@ export const deliveries = pgTable("deliveries", {
   deliveredBy:     text("delivered_by").notNull().references(() => users.id),
   deliveredAt:     timestamp("delivered_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   destinationType: text("destination_type").notNull(),  // "faena" | "worker"
+  // The stock location from which the goods actually leave. Historical
+  // deliveries keep this null because their source cannot be inferred safely.
+  sourceWorksiteId: text("source_worksite_id").references(() => worksites.id),
   worksiteId:      text("worksite_id").references(() => worksites.id),
   costCenterId:    text("cost_center_id").references(() => costCenters.id),
   workerId:        text("worker_id").references(() => workers.id),
@@ -81,6 +84,7 @@ export const deliveries = pgTable("deliveries", {
 }, (table) => [
   check("deliveries_destination_type_valid", sql`${table.destinationType} IN ('faena', 'worker')`),
   index("idx_deliveries_worksite_date").on(table.worksiteId, table.deliveredAt),
+  index("idx_deliveries_source_worksite_date").on(table.sourceWorksiteId, table.deliveredAt),
 ])
 
 /* ── Delivery Items ───────────────────────────────────────────────────────── */
@@ -166,7 +170,16 @@ export const receiptItemsRelations = relations(receiptItems, ({ one }) => ({
 
 export const deliveriesRelations = relations(deliveries, ({ one, many }) => ({
   deliveredBy: one(users, { fields: [deliveries.deliveredBy], references: [users.id] }),
-  worksite:    one(worksites, { fields: [deliveries.worksiteId], references: [worksites.id] }),
+  worksite:    one(worksites, {
+    relationName: "delivery_destination_worksite",
+    fields: [deliveries.worksiteId],
+    references: [worksites.id],
+  }),
+  sourceWorksite: one(worksites, {
+    relationName: "delivery_source_worksite",
+    fields: [deliveries.sourceWorksiteId],
+    references: [worksites.id],
+  }),
   costCenter:  one(costCenters, { fields: [deliveries.costCenterId], references: [costCenters.id] }),
   worker:      one(workers, { fields: [deliveries.workerId], references: [workers.id] }),
   items:       many(deliveryItems),
