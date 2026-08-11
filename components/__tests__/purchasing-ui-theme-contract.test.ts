@@ -19,10 +19,10 @@ describe("contrato de tema de Adquisiciones", () => {
     expect(staleScaleReferences).toEqual([])
   })
 
-  it("describe la firma como archivo adjunto y no como firma digital verificable", () => {
+  it("no solicita firma en las entregas nuevas", () => {
     const source = readFileSync(join(ROOT, "app/(app)/entregas/delivery-form.tsx"), "utf8")
 
-    expect(source).toContain("archivo de firma adjunto")
-    expect(source).not.toMatch(/firma digital/i)
+    expect(source).toContain("Comprobante")
+    expect(source).not.toMatch(/firma|signature/i)
   })
 })

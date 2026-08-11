@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { readFileSync } from "node:fs"
+import { existsSync, readFileSync } from "node:fs"
 import { execFileSync } from "node:child_process"
 import path from "node:path"
 
@@ -38,7 +38,11 @@ interface Hallazgo {
 
 function archivosDeInterfaz(): string[] {
   const out = execFileSync("git", ["ls-files", "app", "components"], { cwd: REPO, encoding: "utf-8" })
-  return out.split("\n").filter((f) => f.endsWith(".tsx") && !f.includes(".test."))
+  return out.split("\n").filter((f) => (
+    f.endsWith(".tsx")
+    && !f.includes(".test.")
+    && existsSync(path.join(REPO, f))
+  ))
 }
 
 /**
