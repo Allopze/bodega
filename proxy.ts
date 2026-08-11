@@ -32,9 +32,15 @@ export default auth((req) => {
   // `wget` con redirecciones, los schedulers reportaban éxito sin ejecutar
   // nada. Al agregar una ruta nueva bajo /api/cron, verificar el secreto es
   // obligatorio: acá ya no hay sesión que la proteja.
+  // NOTE: se lista "/api/backups/config" y NO "/api/backups". El cotejo es por
+  // prefijo, así que el prefijo corto habría abierto también `/status` y
+  // `/drive-health`, que se protegen por sesión y permiso. Sólo `config` se
+  // autentica con CRON_SECRET —la consume el backup-scheduler—, así que sólo
+  // ella puede prescindir de la sesión.
   const publicPaths = [
     "/login", "/registro", "/recuperar", "/api/auth", "/api/health",
     "/api/cron",
+    "/api/backups/config",
     "/ppa",
     "/tae", "/api/tae/access", "/api/tae/submit", "/api/tae/identity",
   ]

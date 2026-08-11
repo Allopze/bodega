@@ -142,14 +142,31 @@ export default async function BillingSyncPage() {
         </p>
       </section>
 
-      {/* ── Ejecución manual ─────────────────────────────────────────────── */}
+      {/* ── Ejecución manual ─────────────────────────────────────────────────
+          El filtro de proveedores mira las tres capacidades de listado, no sólo
+          `canListIssuedInvoices`: eso último venía de cuando el control tenía el
+          alcance cableado a ventas, y dejaba invisible a un proveedor que sólo
+          entrega cartolas o sólo facturas de proveedor. */}
       <SyncControls
         defaultPeriod={todayIso().slice(0, 7)}
         historyFloor={salesConfig.historyFloor}
         cronEnabled={salesConfig.enabled}
         providers={cards
-          .filter((card) => card.enabled && card.capabilities.canListIssuedInvoices)
-          .map((card) => ({ id: card.id, label: card.label, configured: card.configured }))}
+          .filter((card) => card.enabled && (
+            card.capabilities.canListIssuedInvoices ||
+            card.capabilities.canListReceivedInvoices ||
+            card.capabilities.canListBankTransactions
+          ))
+          .map((card) => ({
+            id: card.id,
+            label: card.label,
+            configured: card.configured,
+            capabilities: {
+              canListIssuedInvoices: card.capabilities.canListIssuedInvoices,
+              canListReceivedInvoices: card.capabilities.canListReceivedInvoices,
+              canListBankTransactions: card.capabilities.canListBankTransactions,
+            },
+          }))}
       />
 
       {/* ── Historial ────────────────────────────────────────────────────── */}
