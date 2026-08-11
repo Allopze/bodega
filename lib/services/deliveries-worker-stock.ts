@@ -157,13 +157,11 @@ export async function registerWorkerStockDelivery(
     )) {
       throw new Error("No tienes acceso a la bodega o faena de esta entrega")
     }
-
-    const targetWorksite = worker.worksiteId === sourceWorksite.id
-      ? sourceWorksite
-      : await tx.query.worksites.findFirst({ where: eq(worksites.id, worker.worksiteId) })
-    if (!targetWorksite || !targetWorksite.isActive) {
-      throw new Error("La faena del trabajador no está disponible")
+    if (worker.worksiteId !== sourceWorksite.id) {
+      throw new Error("El trabajador no pertenece a la faena seleccionada")
     }
+
+    const targetWorksite = sourceWorksite
 
     const code = await nextCodeTx(tx, "ENT", year)
     const workerName = `${worker.firstName} ${worker.lastName}`.trim()

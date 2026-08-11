@@ -29,11 +29,12 @@ import { registerWorkerStockDelivery } from "@/lib/services/deliveries"
 const USER_ID = "user-worker-stock"
 let scenarioNumber = 0
 
-async function makeScenario() {
+async function makeScenario({ workerAtSource = true }: { workerAtSource?: boolean } = {}) {
   const suffix = String(++scenarioNumber)
   const now = new Date().toISOString()
   const sourceWorksiteId = `ws-office-${suffix}`
   const targetWorksiteId = `ws-faena-${suffix}`
+  const workerWorksiteId = workerAtSource ? sourceWorksiteId : targetWorksiteId
   const workerId = `worker-${suffix}`
   const categoryId = `cat-worker-stock-${suffix}`
   const firstProductId = `prod-worker-stock-a-${suffix}`
@@ -48,7 +49,7 @@ async function makeScenario() {
     id: workerId,
     firstName: "Andrea",
     lastName: `Operadora ${suffix}`,
-    worksiteId: targetWorksiteId,
+    worksiteId: workerWorksiteId,
     isActive: true,
     createdAt: now,
   })
@@ -86,7 +87,15 @@ async function makeScenario() {
     },
   ])
 
-  return { sourceWorksiteId, targetWorksiteId, workerId, firstProductId, secondProductId, serviceProductId }
+  return {
+    sourceWorksiteId,
+    targetWorksiteId,
+    workerWorksiteId,
+    workerId,
+    firstProductId,
+    secondProductId,
+    serviceProductId,
+  }
 }
 
 beforeAll(async () => {
@@ -123,13 +132,13 @@ describe("registerWorkerStockDelivery", () => {
     expect(delivery).toMatchObject({
       destinationType: "worker",
       sourceWorksiteId: scenario.sourceWorksiteId,
-      worksiteId: scenario.targetWorksiteId,
+      worksiteId: scenario.sourceWorksiteId,
       workerId: scenario.workerId,
       signaturePath: null,
     })
     expect(delivery?.items).toHaveLength(2)
     expect(delivery?.sourceWorksite?.id).toBe(scenario.sourceWorksiteId)
-    expect(delivery?.worksite?.id).toBe(scenario.targetWorksiteId)
+    expect(delivery?.worksite?.id).toBe(scenario.sourceWorksiteId)
     expect(delivery?.items.map((item) => [item.productId, item.quantity]).sort()).toEqual([
       [scenario.firstProductId, 3],
       [scenario.secondProductId, 2],
@@ -197,8 +206,27 @@ describe("registerWorkerStockDelivery", () => {
     })).rejects.toThrow("Los servicios no se entregan desde bodega")
   })
 
+  it("rejects a worker assigned to a different worksite than the selected source", async () => {
+    const scenario = await makeScenario({ workerAtSource: false })
+
+    await expect(registerWorkerStockDelivery({
+      sourceWorksiteId: scenario.sourceWorksiteId,
+      workerId: scenario.workerId,
+      deliveredBy: USER_ID,
+      items: [{ productId: scenario.firstProductId, quantity: 1 }],
+    })).rejects.toThrow("El trabajador no pertenece a la faena seleccionada")
+
+    const stock = await inMemoryDb.query.worksiteStock.findFirst({
+      where: and(
+        eq(schema.worksiteStock.worksiteId, scenario.sourceWorksiteId),
+        eq(schema.worksiteStock.productId, scenario.firstProductId),
+      ),
+    })
+    expect(stock?.quantity).toBe(10)
+  })
+
   it("keeps the named-request traceability cap when the source is the worker's faena", async () => {
-    const scenario = await makeScenario()
+    const scenario = await makeScenario({ workerAtSource: false })
     const now = new Date().toISOString()
     const suffix = String(scenarioNumber)
     const requestId = `req-trace-${suffix}`

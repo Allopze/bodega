@@ -82,7 +82,11 @@ export function DeliveryForm({
     () => stockProducts.filter((product) => product.sourceWorksiteId === sourceWorksiteId && product.stockQuantity > 0),
     [sourceWorksiteId, stockProducts],
   )
-  const selectedWorker = workers.find((worker) => worker.id === workerId)
+  const availableWorkers = React.useMemo(
+    () => workers.filter((worker) => worker.worksiteId === sourceWorksiteId),
+    [sourceWorksiteId, workers],
+  )
+  const selectedWorker = availableWorkers.find((worker) => worker.id === workerId)
   const selectableProducts = availableStock.filter((product) => !lines.some((line) => line.productId === product.productId))
   const selectedPendingProduct = availableStock.find((product) => product.productId === pendingProductId)
   const traceOptions = traceableItems.filter((item) => (
@@ -109,6 +113,7 @@ export function DeliveryForm({
 
   function changeSource(nextSourceWorksiteId: string) {
     setSourceWorksiteId(nextSourceWorksiteId)
+    setWorkerId("")
     setLines([])
     setPendingProductId("")
     setPendingQuantity("")
@@ -186,7 +191,7 @@ export function DeliveryForm({
               <SelectValue placeholder="Busca por nombre, cargo o faena" />
             </SelectTrigger>
             <SelectContent>
-              {workers.map((worker) => (
+              {availableWorkers.map((worker) => (
                 <SelectItem
                   key={worker.id}
                   value={worker.id}
@@ -195,13 +200,13 @@ export function DeliveryForm({
                   {worker.name} · {worker.worksiteName}{worker.position ? ` · ${worker.position}` : ""}
                 </SelectItem>
               ))}
-              {workers.length === 0 && (
-                <SelectItem value="__no-active-workers" disabled>Sin trabajadores activos en tu alcance</SelectItem>
+              {availableWorkers.length === 0 && (
+                <SelectItem value="__no-active-workers" disabled>Sin trabajadores activos en esta faena</SelectItem>
               )}
             </SelectContent>
           </Select>
           <p className="mt-1.5 text-xs text-[var(--color-text-subtle)]">
-            La faena visible junto al nombre es el destino de la entrega; no limita la bodega de origen.
+            Sólo se muestran trabajadores activos de la faena seleccionada.
           </p>
         </Field>
       </div>

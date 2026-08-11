@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { cleanup, render, screen } from "@testing-library/react"
+import { cleanup, fireEvent, render, screen } from "@testing-library/react"
 import type { PropsWithChildren } from "react"
 import { INITIAL_STATE } from "@/components/admin/form-state"
 
@@ -23,13 +23,26 @@ vi.mock("@/components/admin/submit-button", () => ({
 }))
 
 vi.mock("@/components/ui/select", () => ({
-  Select: ({ children, searchable }: PropsWithChildren<{ searchable?: boolean }>) => (
-    <div data-testid="select" data-searchable={String(searchable)}>{children}</div>
+  Select: ({ children, searchable, value, onValueChange }: PropsWithChildren<{
+    searchable?: boolean
+    value?: string
+    onValueChange?: (value: string) => void
+  }>) => (
+    <select
+      data-testid="select"
+      data-searchable={String(searchable)}
+      value={value}
+      onChange={(event) => onValueChange?.(event.target.value)}
+    >
+      {children}
+    </select>
   ),
-  SelectTrigger: ({ children }: PropsWithChildren) => <div>{children}</div>,
-  SelectValue: ({ placeholder }: { placeholder?: string }) => <span>{placeholder}</span>,
-  SelectContent: ({ children }: PropsWithChildren) => <div>{children}</div>,
-  SelectItem: ({ children, value }: PropsWithChildren<{ value: string }>) => <div data-value={value}>{children}</div>,
+  SelectTrigger: () => null,
+  SelectValue: () => null,
+  SelectContent: ({ children }: PropsWithChildren) => <>{children}</>,
+  SelectItem: ({ children, value, disabled }: PropsWithChildren<{ value: string; disabled?: boolean }>) => (
+    <option value={value} disabled={disabled}>{children}</option>
+  ),
 }))
 
 afterEach(cleanup)
@@ -37,20 +50,33 @@ afterEach(cleanup)
 import { DeliveryForm } from "./delivery-form"
 
 describe("DeliveryForm", () => {
-  it("muestra trabajadores reales y buscables aunque no haya EPP pendiente", () => {
+  it("muestra sólo trabajadores de la faena seleccionada aunque no haya EPP pendiente", () => {
     render(
       <DeliveryForm
-        worksites={[{ id: "office", name: "Oficina CHOME" }]}
-        workers={[{
-          id: "worker-1",
-          name: "Andrea Rojas",
-          worksiteId: "faena-1",
-          worksiteName: "Faena Santa Fe",
-          position: "Operaria",
-          rut: "12.345.678-9",
-        }]}
+        worksites={[
+          { id: "faena-1", name: "Faena Santa Fe" },
+          { id: "faena-2", name: "Faena Arauco" },
+        ]}
+        workers={[
+          {
+            id: "worker-1",
+            name: "Andrea Rojas",
+            worksiteId: "faena-1",
+            worksiteName: "Faena Santa Fe",
+            position: "Operaria",
+            rut: "12.345.678-9",
+          },
+          {
+            id: "worker-2",
+            name: "Bruno Soto",
+            worksiteId: "faena-2",
+            worksiteName: "Faena Arauco",
+            position: "Supervisor",
+            rut: "11.111.111-1",
+          },
+        ]}
         stockProducts={[{
-          sourceWorksiteId: "office",
+          sourceWorksiteId: "faena-1",
           productId: "helmet",
           productName: "Casco dieléctrico",
           productSku: "EPP-001",
@@ -58,13 +84,18 @@ describe("DeliveryForm", () => {
           stockQuantity: 4,
         }]}
         traceableItems={[]}
-        initialSourceWorksiteId="office"
+        initialSourceWorksiteId="faena-1"
       />,
     )
 
     expect(screen.getByText("Andrea Rojas · Faena Santa Fe · Operaria")).toBeDefined()
-    expect(screen.getByText("Busca por nombre, cargo o faena")).toBeDefined()
+    expect(screen.queryByText("Bruno Soto · Faena Arauco · Supervisor")).toBeNull()
     expect(screen.getAllByTestId("select").some((select) => select.dataset.searchable === "true")).toBe(true)
     expect(screen.queryByText(/firma/i)).toBeNull()
+
+    fireEvent.change(screen.getAllByTestId("select")[0]!, { target: { value: "faena-2" } })
+
+    expect(screen.queryByText("Andrea Rojas · Faena Santa Fe · Operaria")).toBeNull()
+    expect(screen.getByText("Bruno Soto · Faena Arauco · Supervisor")).toBeDefined()
   })
 })
