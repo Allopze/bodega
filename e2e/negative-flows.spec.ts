@@ -10,7 +10,7 @@
  */
 
 import { test, expect } from "@playwright/test"
-import { clearRateLimits, login } from "./helpers"
+import { clearRateLimits, login, receiptSubmitName } from "./helpers"
 
 // ── Rate-limit on login ────────────────────────────────────────────────────────
 
@@ -118,12 +118,21 @@ test("double-receipt: Receive button disabled after first submission", async ({ 
 
   await receiveLink.click()
 
-  // Find the submit button and click it twice rapidly
-  const submitButton = page.getByRole("button", { name: /Confirmar|Recibir|Guardar/ }).first()
+  // El envío se rotula según la etapa (`receiptSubmitName`), y al entrar por
+  // "Recibir" la etapa inicial es oficina. El regex suelto de antes
+  // —/Confirmar|Recibir|Guardar/— no calzaba con ningún rótulo real: el test
+  // sólo pasaba porque se saltaba antes de llegar hasta aquí.
+  const submitButton = page.getByRole("button", { name: receiptSubmitName("Oficina") })
   await expect(submitButton).toBeVisible({ timeout: 10_000 })
   await submitButton.click()
 
-  // After first submission the button should be disabled or show a loading state.
-  // This prevents double submissions.
-  await expect(submitButton).toBeDisabled({ timeout: 5_000 })
+  // No se asserta contra el mismo localizador: al enviarse, `SubmitButton` pasa
+  // a `pending` y **cambia el rótulo** a "Guardando…", así que el botón por
+  // nombre deja de existir justo cuando queremos comprobarlo. Se mira lo que sí
+  // sobrevive: o el submit está deshabilitado mientras la acción viaja, o ya
+  // navegamos al comprobante. Cualquiera de las dos cierra la ventana a un
+  // segundo envío.
+  const enCurso = page.locator('form button[type="submit"][disabled]')
+  const comprobante = page.getByRole("heading", { name: /^REC-/ })
+  await expect(enCurso.or(comprobante).first()).toBeVisible({ timeout: 30_000 })
 })
