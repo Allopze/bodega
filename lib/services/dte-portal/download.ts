@@ -14,6 +14,11 @@ import { DtePortalClient, decodeXmlBuffer } from "./client"
 import { DtePortalError } from "./types"
 import { resolveDtePortalResourceUrl } from "./portal-origin"
 
+export interface DtePdfDownloadOptions {
+  cedible?: boolean
+  maxBytes?: number
+}
+
 /**
  * Descarga el XML de un DTE y lo retorna como string decodificado.
  *
@@ -52,18 +57,24 @@ export async function downloadDteXml(
 export async function downloadDtePdf(
   client: DtePortalClient,
   pdfUrl: string,
-  cedible = false,
+  options: DtePdfDownloadOptions | boolean = {},
 ): Promise<Buffer> {
   if (!pdfUrl) {
     throw new DtePortalError("No se proporcionó URL de PDF", "INVALID_RESPONSE")
   }
+
+  // Conserva compatibilidad con quien usaba el tercer parámetro booleano para
+  // pedir la copia cedible, mientras el flujo nuevo puede imponer su límite.
+  const { cedible = false, maxBytes } = typeof options === "boolean"
+    ? { cedible: options }
+    : options
 
   let fullUrl = resolveUrl(client, pdfUrl)
   if (cedible && !fullUrl.includes("Ced=")) {
     fullUrl += (fullUrl.includes("?") ? "&" : "?") + "Ced=1"
   }
 
-  const buffer = await client.downloadBinary(fullUrl)
+  const buffer = await client.downloadBinary(fullUrl, { maxBytes })
 
   // Verificar cabecera PDF
   const header = buffer.toString("latin1", 0, Math.min(buffer.length, 10))

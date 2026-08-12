@@ -23,6 +23,11 @@ import { DtePortalOriginError, assertDtePortalBaseUrl, resolveDtePortalResourceU
 
 const CREDENTIAL_KEYS = ["rut_usr", "rut_emp", "clave"] as const
 
+export interface DteBinaryDownloadOptions {
+  /** Límite duro antes de acumular la respuesta completa en memoria. */
+  maxBytes?: number
+}
+
 /**
  * El portal es un servidor legacy que solo negocia TLS 1.2 con ciphers
  * SECLEVEL 0 — verificado 2026-08-04: el `fetch` nativo de Node falla con
@@ -95,10 +100,18 @@ export class DtePortalClient {
    * Descarga un XML o PDF como buffer binario. Útil para preservar la
    * codificación original del XML y luego aplicar decodeXmlBuffer().
    */
-  async downloadBinary(url: string): Promise<Buffer> {
+  async downloadBinary(url: string, options: DteBinaryDownloadOptions = {}): Promise<Buffer> {
+    const maxBytes = options.maxBytes
+    if (maxBytes !== undefined && (!Number.isSafeInteger(maxBytes) || maxBytes < 1)) {
+      throw new DtePortalError("El límite de descarga DTE no es válido", "INVALID_RESPONSE")
+    }
+
     let safeUrl: string
     try {
-      safeUrl = resolveDtePortalResourceUrl(url, this.config.baseUrl)
+      // El portal aplica las mismas credenciales GET a enlaces binarios. Sin
+      // ellas el PDF puede redirigir al login y terminar pareciendo un archivo
+      // corrupto, aun cuando el post= sea válido.
+      safeUrl = this.buildUrl(url).toString()
     } catch (error) {
       if (error instanceof DtePortalOriginError) {
         throw new DtePortalError("La descarga DTE apunta fuera del origen permitido", "INVALID_RESPONSE")
@@ -138,7 +151,12 @@ export class DtePortalClient {
           )
         }
 
-        return Buffer.from(await response.arrayBuffer())
+        const contentLength = response.headers.get("content-length")
+        if (maxBytes !== undefined && contentLengthExceedsLimit(contentLength, maxBytes)) {
+          throw new DtePortalError("La descarga DTE supera el límite permitido", "INVALID_RESPONSE")
+        }
+
+        return await readBinaryResponse(response, maxBytes)
       } catch (error) {
         if (error instanceof DtePortalError) throw error
         throw this.normalizeError(error)
@@ -307,6 +325,38 @@ export class DtePortalClient {
     // transport text to a route, logger, audit record, or Sentry.
     return "[detalle técnico omitido]"
   }
+}
+
+function contentLengthExceedsLimit(contentLength: string | null, maxBytes: number): boolean {
+  if (!contentLength || !/^\d+$/.test(contentLength)) return false
+  return Number(contentLength) > maxBytes
+}
+
+async function readBinaryResponse(response: Response, maxBytes: number | undefined): Promise<Buffer> {
+  if (!response.body) return Buffer.alloc(0)
+
+  const reader = response.body.getReader()
+  const chunks: Buffer[] = []
+  let total = 0
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      if (!value) continue
+
+      total += value.byteLength
+      if (maxBytes !== undefined && total > maxBytes) {
+        await reader.cancel().catch(() => undefined)
+        throw new DtePortalError("La descarga DTE supera el límite permitido", "INVALID_RESPONSE")
+      }
+      chunks.push(Buffer.from(value))
+    }
+  } finally {
+    reader.releaseLock()
+  }
+
+  return Buffer.concat(chunks, total)
 }
 
 /**

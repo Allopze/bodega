@@ -82,6 +82,7 @@ export async function matchToPurchaseOrderInvoices(
       eq(dteDocuments.periodo, periodo),
       eq(dteDocuments.codEmp, codEmp),
       isNull(dteDocuments.purchaseOrderInvoiceId),
+      isNull(dteDocuments.fuelLoadId),
       // Solo facturas (33, 34): el folio de una NC/ND (61, 56) viene de una
       // secuencia SII independiente, así que su igualdad numérica con el
       // invoiceNumber de una OC es coincidencia, no identidad — auto-vincular
@@ -162,9 +163,14 @@ export async function matchToPurchaseOrderInvoices(
       : (discrepancy > 0 ? 100 : 0)
 
     // Vincular el DTE con la factura de OC
-    await db.update(dteDocuments).set({
+    const linked = await db.update(dteDocuments).set({
       purchaseOrderInvoiceId: invoice.id,
-    }).where(eq(dteDocuments.id, doc.id))
+    }).where(and(
+      eq(dteDocuments.id, doc.id),
+      isNull(dteDocuments.purchaseOrderInvoiceId),
+      isNull(dteDocuments.fuelLoadId),
+    )).returning({ id: dteDocuments.id })
+    if (linked.length !== 1) continue
 
     matches.push({
       dteDocumentId: doc.id,
@@ -228,6 +234,7 @@ export async function matchInvoiceToDteDocument(
     where: and(
       eq(dteDocuments.folio, folio),
       isNull(dteDocuments.purchaseOrderInvoiceId),
+      isNull(dteDocuments.fuelLoadId),
       inArray(dteDocuments.tipoDte, ["33", "34"]),
     ),
     columns: { id: true, folio: true, rutEmisor: true, montoTotal: true },
@@ -250,9 +257,15 @@ export async function matchInvoiceToDteDocument(
   const entityTotal = invoice.amount ?? 0
   const discrepancy = Math.abs(dteTotal - entityTotal)
 
-  await db.update(dteDocuments)
+  const linked = await db.update(dteDocuments)
     .set({ purchaseOrderInvoiceId: invoice.id })
-    .where(eq(dteDocuments.id, doc.id))
+    .where(and(
+      eq(dteDocuments.id, doc.id),
+      isNull(dteDocuments.purchaseOrderInvoiceId),
+      isNull(dteDocuments.fuelLoadId),
+    ))
+    .returning({ id: dteDocuments.id })
+  if (linked.length !== 1) return null
 
   return {
     dteDocumentId: doc.id,
@@ -290,6 +303,7 @@ export async function matchToFuelLoads(
       eq(dteDocuments.periodo, periodo),
       eq(dteDocuments.codEmp, codEmp),
       isNull(dteDocuments.fuelLoadId),
+      isNull(dteDocuments.purchaseOrderInvoiceId),
       // Solo facturas (33, 34): mismo motivo que en matchToPurchaseOrderInvoices
       // — el folio de una NC/ND no comparte secuencia con el receiptNumber.
       sql`${dteDocuments.tipoDte} IN ('33', '34')`,
@@ -349,9 +363,14 @@ export async function matchToFuelLoads(
       ? (discrepancy / Math.abs(entityTotal)) * 100
       : (discrepancy > 0 ? 100 : 0)
 
-    await db.update(dteDocuments).set({
+    const linked = await db.update(dteDocuments).set({
       fuelLoadId: load.id,
-    }).where(eq(dteDocuments.id, doc.id))
+    }).where(and(
+      eq(dteDocuments.id, doc.id),
+      isNull(dteDocuments.purchaseOrderInvoiceId),
+      isNull(dteDocuments.fuelLoadId),
+    )).returning({ id: dteDocuments.id })
+    if (linked.length !== 1) continue
 
     matches.push({
       dteDocumentId: doc.id,

@@ -160,6 +160,32 @@ describe("DtePortalClient", () => {
         expect.any(Function),
       )
     })
+
+    it("adds portal credentials to a binary download URL", async () => {
+      const client = createTestClient()
+      vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(Buffer.from("%PDF-1.7"), {
+        headers: { "content-type": "application/pdf" },
+      }))
+
+      await client.downloadBinary("dtepdfX.php?post=abc")
+
+      expect(lastCalledUrl()).toContain("rut_usr=11111111-1")
+      expect(lastCalledUrl()).toContain("rut_emp=22222222-2")
+      expect(lastCalledUrl()).toContain("clave=test-clave-123")
+    })
+
+    it("cuts off a binary response that exceeds its caller-provided limit even without Content-Length", async () => {
+      const client = createTestClient()
+      const downloadWithLimit = client.downloadBinary.bind(client) as unknown as (
+        url: string,
+        options: { maxBytes: number },
+      ) => Promise<Buffer>
+      vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(new Uint8Array(5)))
+
+      await expect(downloadWithLimit("dtepdfX.php?post=abc", { maxBytes: 4 })).rejects.toMatchObject({
+        code: "INVALID_RESPONSE",
+      })
+    })
   })
 
   describe("error handling", () => {

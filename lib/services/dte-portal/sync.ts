@@ -352,17 +352,23 @@ async function upsertDteDocument(
       eq(dteDocuments.rutEmisor, row.rutEmisor),
       eq(dteDocuments.codEmp, codEmp),
     ),
-    columns: { id: true, rawHash: true },
+    columns: { id: true, rawHash: true, portalRecordId: true },
   })
 
   if (existing) {
-    if (existing.rawHash === rawHash) return "unchanged"
+    const needsPortalRecordBackfill = Boolean(
+      row.nreguist && existing.portalRecordId !== row.nreguist,
+    )
+    if (existing.rawHash === rawHash && !needsPortalRecordBackfill) return "unchanged"
 
     // Actualizar el registro existente (estado en plataforma puede haber cambiado)
+    // y completar Nreguist incluso si el contenido tributario no cambió. Sin
+    // este segundo caso los DTE históricos quedaban sin ruta PDF para siempre.
     await tx.update(dteDocuments).set({
       montoTotal: row.montoTotal,
       estadoPlataforma: row.estadoPlataforma,
       rawHash,
+      portalRecordId: row.nreguist ?? existing.portalRecordId,
       syncRunId,
       syncedAt: new Date().toISOString(),
     }).where(eq(dteDocuments.id, existing.id))
@@ -388,6 +394,7 @@ async function upsertDteDocument(
     estadoPlataforma: row.estadoPlataforma,
     codEmp,
     periodo,
+    portalRecordId: row.nreguist,
     rawHash,
     syncRunId,
     syncedAt: new Date().toISOString(),

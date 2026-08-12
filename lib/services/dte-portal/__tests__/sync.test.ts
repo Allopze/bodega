@@ -162,6 +162,9 @@ describe("syncDteDocuments", () => {
     expect(result.rowsInserted).toBe(1)
     expect(result.rowsUpdated).toBe(0)
     expect(mockTxInsertValues).toHaveBeenCalledTimes(1)
+    expect(mockTxInsertValues).toHaveBeenCalledWith(expect.objectContaining({
+      portalRecordId: "9000001",
+    }))
     expect(mockFetchBandejaEntrada).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ mes: "06", anio: "2026", codEmp: "433" }))
   })
 
@@ -186,7 +189,11 @@ describe("syncDteDocuments", () => {
     mockSyncRunsFindFirst.mockResolvedValue(undefined)
     mockFetchBandejaEntrada.mockResolvedValue({ rows: [BASE_ROW], totalRegistros: 1 })
     // Simula que la corrida anterior ya insertó este documento con el mismo hash.
-    mockDocumentsFindFirst.mockResolvedValue({ id: "existing-1", rawHash: computeDocumentHash(BASE_ROW) })
+    mockDocumentsFindFirst.mockResolvedValue({
+      id: "existing-1",
+      rawHash: computeDocumentHash(BASE_ROW),
+      portalRecordId: BASE_ROW.nreguist,
+    })
 
     const result = await syncDteDocuments(makeClient(), { periodo: "2026-06", force: true, importerId: "user-1" })
 
@@ -194,6 +201,24 @@ describe("syncDteDocuments", () => {
     expect(result.rowsInserted).toBe(0)
     expect(result.rowsUpdated).toBe(0)
     expect(mockTxInsertValues).not.toHaveBeenCalled()
+  })
+
+  it("backfills the portal record id even when the document hash did not change", async () => {
+    mockSyncRunsFindFirst.mockResolvedValue(undefined)
+    mockFetchBandejaEntrada.mockResolvedValue({ rows: [BASE_ROW], totalRegistros: 1 })
+    mockDocumentsFindFirst.mockResolvedValue({
+      id: "existing-1",
+      rawHash: computeDocumentHash(BASE_ROW),
+      portalRecordId: null,
+    })
+
+    const result = await syncDteDocuments(makeClient(), { periodo: "2026-06", force: true, importerId: "user-1" })
+
+    expect(result.rowsUpdated).toBe(1)
+    expect(mockTxUpdateSet).toHaveBeenCalledWith(
+      expect.objectContaining({ portalRecordId: "9000001" }),
+      expect.anything(),
+    )
   })
 
   it("updates the existing document when its hash changed (e.g. estadoPlataforma)", async () => {

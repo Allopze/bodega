@@ -12,7 +12,13 @@ vi.mock("@/db", () => ({
       purchaseOrderInvoices: { findMany: (...args: unknown[]) => mockInvoicesFindMany(...args) },
       fuelLoads: { findMany: (...args: unknown[]) => mockFuelLoadsFindMany(...args) },
     },
-    update: () => ({ set: (...args: unknown[]) => ({ where: (...whereArgs: unknown[]) => mockUpdateSet(...args, ...whereArgs) }) }),
+    update: () => ({
+      set: (...args: unknown[]) => ({
+        where: (...whereArgs: unknown[]) => ({
+          returning: (...returningArgs: unknown[]) => mockUpdateSet(...args, ...whereArgs, ...returningArgs),
+        }),
+      }),
+    }),
   },
 }))
 vi.mock("@/db/schema", () => ({
@@ -24,7 +30,7 @@ const { matchToPurchaseOrderInvoices, matchToFuelLoads, computeHealthStats } = a
 describe("matchToPurchaseOrderInvoices", () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mockUpdateSet.mockResolvedValue(undefined)
+    mockUpdateSet.mockResolvedValue([{ id: "dte-1" }])
   })
 
   it("matches a DTE to an OC invoice by folio AND rut", async () => {
@@ -40,6 +46,19 @@ describe("matchToPurchaseOrderInvoices", () => {
     expect(matches).toHaveLength(1)
     expect(matches[0]).toMatchObject({ dteDocumentId: "dte-1", matchedEntityId: "inv-1", discrepancy: 0 })
     expect(mockUpdateSet).toHaveBeenCalled()
+  })
+
+  it("does not report a purchase match if fuel or another invoice wins the guarded update", async () => {
+    mockDteDocumentsFindMany.mockResolvedValue([
+      { id: "dte-1", tipoDte: "33", folio: 100, rutEmisor: "11.111.111-1", montoTotal: 50000 },
+    ])
+    mockInvoicesFindMany.mockResolvedValue([
+      { id: "inv-1", invoiceNumber: "100", amount: 50000, purchaseOrderId: "oc-1", purchaseOrder: { supplier: { rut: "11111111-1" } } },
+    ])
+    // La fila quedó vinculada entre la lectura y el UPDATE condicional.
+    mockUpdateSet.mockResolvedValue([])
+
+    await expect(matchToPurchaseOrderInvoices("2026-06", "433")).resolves.toEqual([])
   })
 
   // `invoiceNumber` lo tipea una persona: antes de normalizar, ninguna de estas
@@ -146,7 +165,7 @@ describe("matchToPurchaseOrderInvoices", () => {
 describe("matchToFuelLoads", () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mockUpdateSet.mockResolvedValue(undefined)
+    mockUpdateSet.mockResolvedValue([{ id: "dte-1" }])
   })
 
   it("matches a DTE to a fuel load by receiptNumber AND supplier rut", async () => {
