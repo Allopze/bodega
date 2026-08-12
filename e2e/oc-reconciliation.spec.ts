@@ -78,7 +78,10 @@ test.describe("Conciliación OC-factura-recepción", () => {
     // pasa a Recepción). Antes esto afirmaba que reaparecía OC-2026-0001, que
     // por ser `sent` no está en esta bandeja con filtro ni sin él.
     await expect(page.getByRole("link", { name: /Ver OC OC-2026-0091/ })).toHaveCount(0, { timeout: 10_000 })
-    await expect(page.getByRole("link", { name: /Ver OC OC-2026-0092/ })).toBeVisible()
+    // La anulada y no un borrador: `directo-faena-flow` emite OC-2026-0092 y la
+    // saca de esta bandeja, así que en la suite completa la aserción dependía
+    // de qué worker corriera antes.
+    await expect(page.getByRole("link", { name: /Ver OC OC-INTEGRITY-E2E/ })).toBeVisible()
 
     // Y "Limpiar" —que sólo aparece con filtros activos— también lo apaga.
     // Este sí es un <button> con onClick: sin hidratar no hace absolutamente
