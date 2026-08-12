@@ -87,9 +87,18 @@ test.describe("Navegación — rol restringido", () => {
 
     // En móvil la navegación vive tras un disparador; lo que importa es que
     // exista y abra el catálogo completo, no que el panel esté siempre visible.
+    // El panel móvil es cliente puro: un clic anterior a la hidratación mueve el
+    // foco pero no corre ningún manejador, así que la hoja no abre nunca y el
+    // fallo aparece más abajo, en un enlace que jamás se montó. Playwright no
+    // reintenta un clic ya entregado. Es la falla recurrente de este repo bajo
+    // carga —reproducible con la suite completa, verde en aislado—, y se trata
+    // como en `correlativos-secciones`: reintentando el clic.
     const opener = page.getByRole("button", { name: "Abrir menú" })
     await expect(opener).toBeVisible()
-    await opener.click()
+    await expect(async () => {
+      await opener.click()
+      await expect(page.getByRole("link", { name: "Inicio" })).toBeVisible({ timeout: 5_000 })
+    }).toPass({ timeout: 60_000 })
 
     // No se afirma qué contenedor lo aloja —el catálogo móvil vive en su propia
     // hoja—, sino que el usuario alcanza sus destinos: eso es lo que el
