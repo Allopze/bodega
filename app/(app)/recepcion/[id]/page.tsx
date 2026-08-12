@@ -17,7 +17,7 @@ import {
   TableRow, TableHead, TableCell, TableCellNum,
 } from "@/components/ui/table"
 import { getDocumentChain } from "@/lib/services/document-chain"
-import { listDispatchGuidesForReceipt } from "@/lib/services/dispatch-guides"
+import { listDispatchGuidesForReceipt, officeWorksiteLabel } from "@/lib/services/dispatch-guides"
 import { DocumentChainStrip } from "@/components/documents/document-chain-strip"
 import { cn, formatCLP, formatDateTime, formatQty, formatWorksiteLabel } from "@/lib/utils"
 import { ArrowSquareOut } from "@phosphor-icons/react/dist/ssr"
@@ -54,7 +54,7 @@ export default async function RecepcionDetallePage({
 
   if (!receipt) notFound()
 
-  // Una recepción de proveedor se guarda en la bodega real de Oficina CHOME,
+  // Una recepción de proveedor se guarda en la bodega real de la oficina,
   // pero su alcance operativo sigue siendo el de la faena de la OC.
   const worksiteId = receipt.locationType === "office"
     ? receipt.purchaseOrder.worksiteId
@@ -72,14 +72,15 @@ export default async function RecepcionDetallePage({
       })
     : []
 
-  const [documentChain, acquisitionGuides] = await Promise.all([
+  const [documentChain, acquisitionGuides, officeLabel] = await Promise.all([
     getDocumentChain(session, { kind: "receipt", id: receipt.id }),
     listDispatchGuidesForReceipt(receipt.id),
+    officeWorksiteLabel(),
   ])
 
   const productMap = Object.fromEntries(productRows.map((product) => [product.id, product]))
   const destinationLabel = receipt.locationType === "office"
-    ? "Oficina Chome"
+    ? officeLabel
     : formatWorksiteLabel(receipt.worksite?.name ?? receipt.purchaseOrder.worksite?.name ?? "").trim()
 
   const invoiceMissing = receipt.purchaseOrder.invoices.length === 0
@@ -205,7 +206,7 @@ export default async function RecepcionDetallePage({
           <section className="rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] p-5">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <h2 className="text-h2 text-[var(--color-text)]">Despacho Oficina CHOME → Faena</h2>
+                <h2 className="text-h2 text-[var(--color-text)]">Despacho {officeLabel} → Faena</h2>
                 <p className="mt-1 text-xs text-[var(--color-text-muted)]">
                   La guía se prepara desde esta recepción y se coteja aquí mismo como segundo evento físico.
                 </p>

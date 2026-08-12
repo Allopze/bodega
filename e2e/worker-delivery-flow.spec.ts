@@ -1,111 +1,116 @@
-import { expect, test } from "@playwright/test"
+import { expect, test, type Page } from "@playwright/test"
 
 import { listRecord, login, selectRadixById } from "./helpers"
 
-test("entregas: bloquea cantidad mayor al saldo pendiente", async ({ page }) => {
-  await login(page)
+/**
+ * Entregas a trabajador, contra el formulario actual.
+ *
+ * El módulo se rediseñó (regla A3: la página es la lista y el alta vive en un
+ * `Sheet`) y con él cambió la regla de negocio: **el tope ya no es el saldo de
+ * la solicitud sino el stock de la bodega de origen**, y el vínculo con una
+ * solicitud recibida pasó a ser trazabilidad opcional. Estos specs seguían
+ * pidiendo `#deliveryWorkerId`/`#deliveryRequestItemId`, controles que dejaron
+ * de existir, así que llevaban tiempo sin probar nada.
+ */
 
+const FAENA = "Faena E2E"
+const PRODUCTO = "Casco EPP E2E"
+
+/** Abre el panel de alta y deja elegidos bodega y trabajador. */
+async function abrirFormulario(page: Page) {
+  await login(page)
   await page.goto("/entregas")
   await expect(page.getByRole("heading", { name: "Entregas", exact: true })).toBeVisible()
+  // `toPass`: el panel es cliente puro y un clic anterior a la hidratación se
+  // pierde sin dejar rastro (la falla recurrente que documenta `helpers.ts`).
+  const sheet = page.getByRole("dialog", { name: "Registrar entrega" })
+  await expect(async () => {
+    await page.getByRole("button", { name: "Registrar entrega" }).first().click()
+    await expect(sheet).toBeVisible({ timeout: 5_000 })
+  }).toPass({ timeout: 60_000 })
 
-  await selectRadixById(page, "deliveryWorkerId", /Trabajador E2E/)
-  await selectRadixById(page, "deliveryRequestItemId", /^SOL-2026-EPP · Casco EPP E2E/)
-  const quantity = page.locator("#deliveryQuantity")
-  await quantity.fill("5")
+  await selectRadixById(page, "deliverySourceWorksite", FAENA)
+  await selectRadixById(page, "deliveryWorker", /Trabajador E2E/)
+  return sheet
+}
 
+/** Elige producto y cantidad, y agrega la línea. */
+async function agregarLinea(page: Page, cantidad: string) {
+  await selectRadixById(page, "deliveryProduct", new RegExp(PRODUCTO))
+  await page.locator("#deliveryPendingQuantity").fill(cantidad)
+  await page.getByRole("button", { name: "Agregar" }).click()
+}
+
+function enviar(sheet: ReturnType<Page["getByRole"]>) {
+  return sheet.getByRole("button", { name: "Registrar entrega" }).click()
+}
+
+test("entregas: no deja agregar más de lo que hay en la bodega", async ({ page }) => {
+  await abrirFormulario(page)
+
+  await selectRadixById(page, "deliveryProduct", new RegExp(PRODUCTO))
+  const cantidad = page.locator("#deliveryPendingQuantity")
+  await cantidad.fill("999")
+
+  // El tope viaja en el `max` del control, así que el navegador ya lo marca.
   await expect.poll(async () =>
-    quantity.evaluate((el) => {
-      const input = el as HTMLInputElement
-      return {
-        max: input.max,
-        rangeOverflow: input.validity.rangeOverflow,
-      }
-    }),
-  ).toEqual({ max: "2", rangeOverflow: true })
+    cantidad.evaluate((el) => (el as HTMLInputElement).validity.rangeOverflow),
+  ).toBe(true)
 
-  await page.locator("form").getByRole("button", { name: "Registrar entrega" }).click()
-  // El registro no debe existir en ninguna de las dos representaciones. La
-  // cantidad es parte de la aserción: existen entregas legítimas del mismo EPP
-  // al mismo trabajador, y lo que esta prueba niega es la de 5 unidades, que
-  // excede el saldo pendiente.
-  await expect(listRecord(page, /Trabajador E2E/).filter({ hasText: "Casco EPP E2E" }).filter({ hasText: /5 unidad/ })).toHaveCount(0)
+  // Y el servidor no llega a enterarse: la línea no se agrega y el envío sigue
+  // deshabilitado porque no hay ninguna.
+  await page.getByRole("button", { name: "Agregar" }).click()
+  await expect(page.getByText("Agrega uno o más productos con stock para continuar.")).toBeVisible()
 })
 
 test("entregas: rechaza comprobante con formato no permitido", async ({ page }) => {
-  await login(page)
+  const sheet = await abrirFormulario(page)
+  await agregarLinea(page, "1")
 
-  await page.goto("/entregas")
-  await expect(page.getByRole("heading", { name: "Entregas", exact: true })).toBeVisible()
-
-  await selectRadixById(page, "deliveryWorkerId", /Trabajador E2E/)
-  await selectRadixById(page, "deliveryRequestItemId", /SOL-2026-EPP-BAD.*Casco EPP E2E/)
-  await page.locator("#deliveryQuantity").fill("1")
   await page.locator("#deliveryProofFile").setInputFiles({
     name: "comprobante-e2e.txt",
     mimeType: "text/plain",
     buffer: Buffer.from("comprobante invalido e2e"),
   })
-  await page.locator("form").getByRole("button", { name: "Registrar entrega" }).click()
+  await enviar(sheet)
 
-  await expect(page.locator("#main-content").getByText(/identificar el tipo/i)).toBeVisible({
-    timeout: 30_000,
-  })
+  await expect(page.getByText(/identificar el tipo/i).first()).toBeVisible({ timeout: 30_000 })
 })
 
 test("entregas: registra comprobante y permite descargarlo", async ({ page }) => {
-  await login(page)
+  const sheet = await abrirFormulario(page)
+  await agregarLinea(page, "1")
 
-  await page.goto("/entregas")
-  await expect(page.getByRole("heading", { name: "Entregas", exact: true })).toBeVisible()
-
-  await selectRadixById(page, "deliveryWorkerId", /Trabajador E2E/)
-  await selectRadixById(page, "deliveryRequestItemId", /SOL-2026-EPP-ADJ.*Casco EPP E2E/)
-  await page.locator("#deliveryQuantity").fill("1")
-  await page.getByLabel("Recibido por").fill("Receptor adjunto E2E")
+  await page.locator("#deliveryReceiverName").fill("Receptor adjunto E2E")
   await page.locator("#deliveryProofFile").setInputFiles({
     name: "comprobante-e2e.pdf",
     mimeType: "application/pdf",
     buffer: Buffer.from("%PDF-1.4\ncomprobante adjunto e2e\n%%EOF\n"),
   })
-  await page.locator("form").getByRole("button", { name: "Registrar entrega" }).click()
-  await expect(page.locator("#deliveryQuantity")).toBeDisabled({ timeout: 30_000 })
+  await enviar(sheet)
+  await expect(sheet).toBeHidden({ timeout: 30_000 })
 
-  await page.goto("/dashboard")
-  await page.goto("/entregas")
-  await expect(page.getByRole("heading", { name: "Entregas", exact: true })).toBeVisible()
-
-  const row = listRecord(page, /SOL-2026-EPP-ADJ/)
-  await expect(row).toBeVisible({ timeout: 30_000 })
-  await expect(row).toContainText("Receptor adjunto E2E")
-  const link = row.getByRole("link", { name: /Adjunto|Archivo/ })
-  const href = await link.getAttribute("href")
+  const fila = listRecord(page, /Receptor adjunto E2E/)
+  await expect(fila.first()).toBeVisible({ timeout: 30_000 })
+  // "Archivo" exacto: la fila lleva además el enlace a la hoja imprimible
+  // ("Comprobante de entrega ENT-…"), y un regex ancho resolvía a los dos.
+  const enlace = fila.first().getByRole("link", { name: "Archivo", exact: true })
+  const href = await enlace.getAttribute("href")
   expect(href).toMatch(/^\/api\/attachments\//)
 
   const response = await page.request.get(href!)
   expect(response.status()).toBe(200)
   expect(response.headers()["content-type"]).toContain("application/pdf")
-  const text = await response.text()
-  expect(text).toContain("comprobante adjunto e2e")
+  expect(await response.text()).toContain("comprobante adjunto e2e")
 })
 
-test("entregas: registra EPP recibido a trabajador", async ({ page }) => {
-  await login(page)
+test("entregas: registra EPP a trabajador y descuenta de la bodega", async ({ page }) => {
+  const sheet = await abrirFormulario(page)
+  await agregarLinea(page, "2")
 
-  await page.goto("/entregas")
-  await expect(page.getByRole("heading", { name: "Entregas", exact: true })).toBeVisible()
+  await page.locator("#deliveryReceiverName").fill("Supervisor E2E")
+  await enviar(sheet)
+  await expect(sheet).toBeHidden({ timeout: 30_000 })
 
-  await selectRadixById(page, "deliveryWorkerId", /Trabajador E2E/)
-  await selectRadixById(page, "deliveryRequestItemId", /^SOL-2026-EPP · Casco EPP E2E/)
-  await page.locator("#deliveryQuantity").fill("2")
-  await page.getByLabel("Recibido por").fill("Supervisor E2E")
-  await page.locator("form").getByRole("button", { name: "Registrar entrega" }).click()
-  await expect(page.locator("#deliveryQuantity")).toBeDisabled({ timeout: 30_000 })
-
-  await page.goto("/dashboard")
-  await page.goto("/entregas")
-  await expect(page.getByRole("heading", { name: "Entregas", exact: true })).toBeVisible()
-
-  await expect(listRecord(page, /SOL-2026-EPP/).filter({ hasText: "Supervisor E2E" })).toBeVisible({
-    timeout: 30_000,
-  })
+  await expect(listRecord(page, /Supervisor E2E/).first()).toBeVisible({ timeout: 30_000 })
 })

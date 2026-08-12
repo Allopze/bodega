@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Field, FieldGroup } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
+import { OptionSelect } from "@/components/ui/option-select"
 import { SubmitButton } from "@/components/admin/submit-button"
 import { toast } from "@/lib/toast"
 import { INITIAL_STATE, type ActionState } from "@/components/admin/form-state"
@@ -19,9 +20,15 @@ interface OpsSettingsFormProps {
     pdtpEvidenceRetentionDays: number
   }
   defaults: typeof import("@/lib/services/system-settings").DEFAULT_OPS_SETTINGS
+  office: {
+    worksites: { id: string; name: string; code: string }[]
+    configuredId: string
+    resolvedId: string | null
+  }
 }
 
-export function OpsSettingsForm({ current, defaults }: OpsSettingsFormProps) {
+export function OpsSettingsForm({ current, defaults, office }: OpsSettingsFormProps) {
+  const resuelta = office.worksites.find((w) => w.id === office.resolvedId)
   const [state, formAction] = useActionState<ActionState, FormData>(
     async (prev, formData) => {
       const result = await saveOperationalSettingsAction(prev, formData)
@@ -42,6 +49,34 @@ export function OpsSettingsForm({ current, defaults }: OpsSettingsFormProps) {
           {state.message}
         </div>
       )}
+
+      <Section
+        title="Bodega de origen"
+        description="Qué faena representa la oficina central: de ahí sale el stock de toda guía de despacho interna y ahí se registra la llegada del proveedor."
+      >
+        <Field
+          label="Faena que hace de oficina"
+          htmlFor="officeWorksiteId"
+          helper={
+            office.configuredId
+              ? "Fijada explícitamente: sobrevive a que renombren la faena."
+              : `Hoy se deduce del nombre y da ${resuelta ? `“${resuelta.name}”` : "ninguna faena — por eso la recepción en oficina falla"}. Elígela para dejar de depender del nombre.`
+          }
+          error={state.fieldErrors?.officeWorksiteId?.[0]}
+        >
+          <OptionSelect
+            id="officeWorksiteId"
+            name="officeWorksiteId"
+            defaultValue={office.configuredId}
+            emptyLabel="Deducir por el nombre de la faena"
+            options={office.worksites.map((worksite) => ({
+              value: worksite.id,
+              label: `${worksite.name} · ${worksite.code}`,
+            }))}
+            error={!!state.fieldErrors?.officeWorksiteId}
+          />
+        </Field>
+      </Section>
 
       <Section title="Exportaciones" description="Tope de filas por archivo al exportar listados.">
         <Field

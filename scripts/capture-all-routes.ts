@@ -499,7 +499,9 @@ const routeTargets: RouteTarget[] = [
     path: "/recepcion",
     auth: true,
     modals: [
-      { slug: "leyenda", triggerSelector: 'summary:has-text("Qué significa cada estado")', waitForSelector: 'text=llegaron a oficina Chome', notes: "Leyenda de estados de recepción expandida" },
+      /* Anclado a una descripción SIN nombre propio: las de oficina resuelven el
+         nombre real de la faena, que cambia por despliegue. */
+      { slug: "leyenda", triggerSelector: 'summary:has-text("Qué significa cada estado")', waitForSelector: 'text=a la espera de que llegue la mercadería', notes: "Leyenda de estados de recepción expandida" },
     ],
   },
   { slug: "recepcion-nueva", path: "/recepcion/nueva?oc=po-audit-1", auth: true },
@@ -520,7 +522,10 @@ const routeTargets: RouteTarget[] = [
     ],
   },
   { slug: "bodega-guias", path: "/bodega/guias", auth: true, notes: "Listado de guías de despacho internas" },
-  { slug: "bodega-guias-nueva", path: "/bodega/guias/nueva", auth: true, notes: "Formulario de guía (origen fijo Oficina CHOME)" },
+  /* `/bodega/guias/nueva` no se captura: desde que la GDI nace de la recepción
+     en oficina, esa ruta redirige a `/recepcion` y no existe alta independiente
+     (lo fija `e2e/guias-despacho.spec.ts`). Como entrada de captura sólo
+     producía un ✗ por "URL final no declarada". */
   { slug: "entregas", path: "/entregas", auth: true },
   { slug: "entregas-print", path: "/entregas/del-audit-1/print", auth: true },
   { slug: "trazabilidad", path: "/trazabilidad", auth: true },

@@ -15,6 +15,21 @@ interface StateMeta {
 }
 
 /**
+ * Marcador para el nombre de la faena-oficina dentro de una descripción.
+ *
+ * Estos mapas son constantes que consumen ~30 archivos; volverlos funciones para
+ * que un tooltip diga el nombre real obligaría a enhebrar ese dato por todos.
+ * Con un marcador, quien lo tenga a mano lo sustituye (`describeState`) y el
+ * resto lee un genérico correcto en vez de un literal que envejece.
+ */
+const OFFICE_TOKEN = "{oficina}"
+
+/** La descripción con el nombre real de la oficina si se conoce, o genérica. */
+export function describeState(description: string | undefined, officeName?: string): string | undefined {
+  return description?.replaceAll(OFFICE_TOKEN, officeName ?? "la oficina")
+}
+
+/**
  * Estados de ítem retirados del flujo: ninguno se produce ya, pero el historial
  * (`status_history`, EntityTimeline) conserva transiciones antiguas y debe
  * seguir legible. Mismo trato que `supplier_confirmed` en las OC. `returned`
@@ -78,8 +93,8 @@ export type OcStatus =
 const OC_STATE_META: Record<OcStatus, StateMeta> = {
   draft:              { label: "Borrador",             variant: "default",  family: "neutral", description: "OC en preparación: se puede revisar e imprimir antes de emitirla y enviarla." },
   sent:               { label: "Pendiente de recepción", variant: "info",   family: "info",    description: "OC emitida y enviada al proveedor; a la espera de que llegue la mercadería." },
-  partially_office_received: { label: "Recibido en oficina (parcial)", variant: "warning", family: "warning", description: "Parte de los ítems llegó a oficina Chome; falta el saldo." },
-  office_received:    { label: "Recibido en oficina",  variant: "info",     family: "info",    description: "Los ítems llegaron a oficina Chome, aún no despachados a faena." },
+  partially_office_received: { label: "Recibido en oficina (parcial)", variant: "warning", family: "warning", description: `Parte de los ítems llegó a ${OFFICE_TOKEN}; falta el saldo.` },
+  office_received:    { label: "Recibido en oficina",  variant: "info",     family: "info",    description: `Los ítems llegaron a ${OFFICE_TOKEN}, aún no despachados a faena.` },
   partially_received: { label: "Recibido en faena (parcial)", variant: "warning", family: "warning", description: "Parte de los ítems se recibió en faena; falta el saldo." },
   received:           { label: "Recibido en faena",    variant: "success",  family: "success", description: "Todos los ítems recibidos en faena." },
   closed:             { label: "Completada",           variant: "success",  family: "success", description: "OC completada: recepción finalizada, sin acciones pendientes." },
@@ -150,6 +165,8 @@ interface StateBadgeProps {
   size?:      "sm" | "default" | "lg"
   className?: string
   dot?:       boolean
+  /** Nombre real de la faena-oficina, si quien renderiza lo tiene resuelto. */
+  officeName?: string
 }
 
 function getStateMeta(state: string, entity: EntityType): StateMeta {
@@ -170,6 +187,7 @@ export function StateBadge({
   size = "default",
   className,
   dot = true,
+  officeName,
 }: StateBadgeProps) {
   const meta = getStateMeta(state, entity)
   return (
@@ -177,7 +195,7 @@ export function StateBadge({
       variant={meta.variant}
       size={size}
       dot={dot}
-      title={meta.description}
+      title={describeState(meta.description, officeName)}
       className={cn(
         meta.family === "signal" && "border-[1.5px]",
         className,

@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 /**
  * El invariante de interfaz de la Guía de Despacho Interna: **el origen no es
- * elegible**. Se muestra como dato fijo ("Oficina CHOME") y no existe ningún
- * control que permita cambiarlo, invertir el traslado (faena → oficina) ni
- * elegir otra oficina.
+ * elegible**. Se muestra como dato fijo —el nombre real de la faena-oficina, no
+ * un literal— y no existe ningún control que permita cambiarlo, invertir el
+ * traslado (faena → oficina) ni elegir otra oficina.
  */
 import { fireEvent, render, screen, within } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest"
@@ -40,7 +40,6 @@ const PRODUCTS = [
 function renderForm() {
   return render(
     <GuideForm
-      originLabel="Oficina CHOME"
       originWorksiteName="Administración"
       currentUserName="Bodeguero"
       worksites={WORKSITES}
@@ -58,8 +57,10 @@ describe("GuideForm — origen fijo", () => {
 
     const origin = screen.getByTestId("guide-origin")
     expect(origin).toHaveTextContent("Origen")
-    expect(origin).toHaveTextContent("Oficina CHOME")
     expect(origin).toHaveTextContent("Administración")
+    // Un solo nombre: antes el literal "Oficina CHOME" iba encima del nombre
+    // real de la faena, una línea más arriba y contradiciéndolo.
+    expect(origin).not.toHaveTextContent(/Chome/i)
     // Ningún control dentro del bloque de origen: es texto.
     expect(within(origin).queryAllByRole("combobox")).toHaveLength(0)
     expect(within(origin).queryAllByRole("textbox")).toHaveLength(0)

@@ -18,7 +18,7 @@ import { nextCodeTx } from "@/lib/code-sequences"
 import { recordAudit } from "@/lib/audit"
 import { receiveItemTx, receiveOfficeItemTx } from "./item-state"
 import { applyMovementTx } from "./stock"
-import { prepareDispatchGuideForOfficeReceiptTx, resolveOfficeWorksite } from "./dispatch-guides"
+import { OFFICE_ORIGIN_LABEL, prepareDispatchGuideForOfficeReceiptTx, resolveOfficeWorksite } from "./dispatch-guides"
 import { notifyManyUser, notifyAfterCommit } from "./notifications"
 import { closeOrderTx } from "./purchasing-module/receiving"
 import { RECEIVABLE_ORDER_STATUSES } from "@/lib/work-queue-labels"
@@ -224,8 +224,8 @@ export async function registerReceipt(
           if (requesterId) {
             pendingNotifications.push(() => notifyManyUser([requesterId], {
               type: "receipt_done",
-              title: "Pedido recibido en Oficina Chome",
-              body: `El ítem de tu solicitud ${request?.code ?? ""} llegó al checkpoint de Oficina Chome y se prepara su traslado a faena.`,
+              title: `Pedido recibido en ${office?.name ?? OFFICE_ORIGIN_LABEL}`,
+              body: `El ítem de tu solicitud ${request?.code ?? ""} llegó al checkpoint de ${office?.name ?? OFFICE_ORIGIN_LABEL} y se prepara su traslado a faena.`,
               entityType: "purchase_request",
               entityId: request?.id ?? "",
               entityHref: `/solicitudes/${request?.id ?? ""}`,
@@ -286,7 +286,7 @@ export async function registerReceipt(
             referenceId: receiptId,
             performedBy: input.receivedBy,
             userEmail:   input.userEmail,
-            notes:       `Recepción ${txCode}, ${input.stage === "office" ? "ingreso en Oficina CHOME" : `guía ${input.dispatchGuideNo ?? "s/n"}`}`,
+            notes:       `Recepción ${txCode}, ${input.stage === "office" ? `ingreso en ${office?.name ?? OFFICE_ORIGIN_LABEL}` : `guía ${input.dispatchGuideNo ?? "s/n"}`}`,
           })
         }
       }

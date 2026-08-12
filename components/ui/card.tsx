@@ -50,9 +50,18 @@ const CardHeader = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDiv
 )
 CardHeader.displayName = "CardHeader"
 
-const CardTitle = React.forwardRef<HTMLParagraphElement, React.HTMLAttributes<HTMLParagraphElement>>(
-  ({ className, ...props }, ref) => (
-    <p
+/**
+ * Título de tarjeta. Por defecto es un `<p>` —hay tarjetas decorativas cuyo
+ * título no pertenece al esquema de encabezados—, pero cuando la tarjeta ES una
+ * sección de la página debe pasar `as="h2"`/`"h3"`: si no, el lector de pantalla
+ * no puede navegarla y la pantalla queda sin más encabezado que su `h1`.
+ */
+const CardTitle = React.forwardRef<
+  HTMLParagraphElement,
+  React.HTMLAttributes<HTMLParagraphElement> & { as?: "p" | "h2" | "h3" | "h4" }
+>(
+  ({ className, as: Tag = "p", ...props }, ref) => (
+    <Tag
       ref={ref}
       className={cn("text-h3 text-[var(--color-text)]", className)}
       {...props}

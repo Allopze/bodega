@@ -1,6 +1,6 @@
 import * as React from "react"
 import { CaretDown } from "@phosphor-icons/react/dist/ssr"
-import { StateBadge, OC_STATE_META, type OcStatus } from "./state-badge"
+import { StateBadge, describeState, OC_STATE_META, type OcStatus } from "./state-badge"
 
 /** Estados de recepción que aparecen en la bandeja, en orden de flujo. */
 const RECEPTION_STATES: OcStatus[] = [
@@ -16,7 +16,7 @@ const RECEPTION_STATES: OcStatus[] = [
  * (pendiente / oficina / faena) y sus parciales sin obligar a memorizarlas.
  * Usa <details> nativo: sin JS ni estado de cliente.
  */
-export function StateLegend() {
+export function StateLegend({ officeName }: { officeName?: string }) {
   return (
     <details className="group rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)]">
       <summary className="flex cursor-pointer items-center gap-2 px-4 py-2.5 text-xs font-medium text-[var(--color-text-muted)] select-none">
@@ -27,10 +27,10 @@ export function StateLegend() {
         {RECEPTION_STATES.map((state) => (
           <li key={state} className="flex items-start gap-3">
             <span className="shrink-0">
-              <StateBadge state={state} entity="oc" size="sm" />
+              <StateBadge state={state} entity="oc" size="sm" officeName={officeName} />
             </span>
             <span className="text-xs text-[var(--color-text-muted)]">
-              {OC_STATE_META[state].description}
+              {describeState(OC_STATE_META[state].description, officeName)}
             </span>
           </li>
         ))}

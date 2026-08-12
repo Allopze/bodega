@@ -7,7 +7,7 @@
  */
 import { expect, test } from "@playwright/test"
 import AxeBuilder from "@axe-core/playwright"
-import { login } from "./helpers"
+import { login, receiptSubmitName, receiptStageCard } from "./helpers"
 
 const OFFICE_LABEL = "Oficina CHOME"
 const OC_ID = "oc-gdi-e2e"
@@ -34,9 +34,9 @@ test.describe("Guías de despacho internas", () => {
 
     // 1. La primera acción es la recepción del proveedor en Oficina CHOME.
     await page.goto(`/recepcion/nueva?oc=${OC_ID}`)
-    await page.getByRole("button", { name: /Recepción en oficina/i }).click()
+    await receiptStageCard(page, "Oficina").click()
     await page.getByLabel("Cantidad a recibir de Guante E2E").fill("6")
-    await page.getByRole("button", { name: "Marcar como recibido" }).click()
+    await page.getByRole("button", { name: receiptSubmitName("Oficina") }).click()
     await expect(page.getByRole("heading", { name: /^REC-/ })).toBeVisible({ timeout: 30_000 })
 
     // 2. La recepción ya trae la GDI preparada: no se vuelve a ingresar OC,

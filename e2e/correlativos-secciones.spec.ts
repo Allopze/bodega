@@ -1,5 +1,5 @@
 import { expect, test, type Locator, type Page } from "@playwright/test"
-import { login, selectRadixById, pickCurrentMonthDate, idFromUrl } from "./helpers"
+import { login, selectRadixById, pickCurrentMonthDate, idFromUrl, receiptSubmitName, receiptStageCard, dispatchAndReceiveGuide } from "./helpers"
 
 /**
  * El correlativo como identidad: SOL y OC a través de las secciones, y frente a
@@ -186,9 +186,9 @@ function ocFormItemRow(page: Page, productName: string, code: string) {
 /** Registra una recepción de la OC en la etapa indicada. */
 async function registerReception(page: Page, orderId: string, stage: "Oficina" | "Faena", quantity: string) {
   await page.goto(`/recepcion/nueva?oc=${orderId}`)
-  await page.getByRole("button", { name: new RegExp(`Recepción en ${stage}`, "i") }).click()
+  await receiptStageCard(page, stage).click()
   await page.getByLabel(`Cantidad a recibir de ${EPP_NAME}`, { exact: true }).fill(quantity)
-  await page.getByRole("button", { name: "Marcar como recibido" }).click()
+  await page.getByRole("button", { name: receiptSubmitName(stage) }).click()
   // Anclar en el código de la recepción creada y no en la URL: `/recepcion/[id]`
   // también matchea `/recepcion/nueva`, y la espera se cumpliría sola antes de
   // que el server action commiteara (misma trampa documentada en oc-flow).
@@ -302,10 +302,14 @@ test.describe.serial("Correlativos entre secciones", () => {
     await expect(page.getByRole("heading", { level: 1, name: orderCode })).toBeVisible()
     await expect(page.getByText(/Recibido en oficina/).first()).toBeVisible()
 
-    await registerReception(page, orderId, "Faena", "6")
+    // La etapa de faena se cierra por la guía, no repitiendo el formulario de
+    // recepción: la llegada a oficina ya dejó preparada la GDI y el servidor
+    // rechaza el atajo. El correlativo de la OC tiene que sobrevivir también a
+    // esos dos eventos, que es lo que este test vigila.
+    await dispatchAndReceiveGuide(page)
     await page.goto(`/compras/${orderId}`)
     await expect(page.getByRole("heading", { level: 1, name: orderCode })).toBeVisible()
-    await expect(page.getByText(/Completada/).first()).toBeVisible()
+    await expect(page.getByText(/Completada|Recibido en faena/).first()).toBeVisible()
 
     // ── Sección: trazabilidad ───────────────────────────────────────────────
     // Acotado por estado: la matriz pagina de a bloques y ordena por fecha, así

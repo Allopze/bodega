@@ -55,7 +55,7 @@ export default async function FlotaVehiclePage({
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <Card>
-          <CardHeader><CardTitle className="text-base">Operación</CardTitle></CardHeader>
+          <CardHeader><CardTitle as="h2" className="text-base">Operación</CardTitle></CardHeader>
           <CardContent className="space-y-3 text-sm">
             <Fact label="Faena" value={vehicle.worksite?.name ?? "Sin faena"} />
             <Fact label="Tipo" value={vehicle.equipmentType?.name ?? vehicle.type} />
@@ -69,7 +69,7 @@ export default async function FlotaVehiclePage({
         </Card>
 
         <Card>
-          <CardHeader><CardTitle className="text-base">Vencimientos</CardTitle></CardHeader>
+          <CardHeader><CardTitle as="h2" className="text-base">Vencimientos</CardTitle></CardHeader>
           <CardContent className="space-y-3 text-sm">
             <Fact label="SOAP" value={vehicle.soapExpiresAt ? formatDate(vehicle.soapExpiresAt) : "—"} />
             <Fact label="Revisión técnica" value={vehicle.technicalReviewExpiresAt ? formatDate(vehicle.technicalReviewExpiresAt) : "—"} />
@@ -79,7 +79,7 @@ export default async function FlotaVehiclePage({
         </Card>
 
         <Card>
-          <CardHeader><CardTitle className="text-base">Seguro</CardTitle></CardHeader>
+          <CardHeader><CardTitle as="h2" className="text-base">Seguro</CardTitle></CardHeader>
           <CardContent className="space-y-3 text-sm">
             <Fact label="Póliza" value={vehicle.insurancePolicyNumber ?? "—"} />
             <Fact label="Estado catálogo" value={vehicle.isActive ? "Activo" : "Inactivo"} />
@@ -90,7 +90,7 @@ export default async function FlotaVehiclePage({
 
       {(detail.currentReading || detail.topOperators.length > 0) && (
         <Card>
-          <CardHeader><CardTitle className="text-base">Uso operacional</CardTitle></CardHeader>
+          <CardHeader><CardTitle as="h2" className="text-base">Uso operacional</CardTitle></CardHeader>
           <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="space-y-3 text-sm">
               <Fact label="Código interno" value={vehicle.code ?? "—"} />
@@ -127,7 +127,7 @@ export default async function FlotaVehiclePage({
       )}
 
       <Card>
-        <CardHeader><CardTitle className="text-base">Historial de estado operacional</CardTitle></CardHeader>
+        <CardHeader><CardTitle as="h2" className="text-base">Historial de estado operacional</CardTitle></CardHeader>
         <CardContent>
           {detail.operationalIntervals.length === 0 ? (
             <p className="text-sm text-[var(--color-text-muted)]">Sin intervalos históricos registrados.</p>
@@ -155,7 +155,7 @@ export default async function FlotaVehiclePage({
 
       {detail.recentMaintenance.length > 0 && (
         <Card>
-          <CardHeader><CardTitle className="text-base">Mantenciones y su efecto en el rendimiento</CardTitle></CardHeader>
+          <CardHeader><CardTitle as="h2" className="text-base">Mantenciones y su efecto en el rendimiento</CardTitle></CardHeader>
           <CardContent>
             <p className="mb-3 text-xs text-[var(--color-text-muted)]">Rendimiento promedio del log operacional 30 días antes vs. 30 días después de cada mantención.</p>
             <ol className="divide-y divide-[var(--color-border)]">
@@ -182,7 +182,7 @@ export default async function FlotaVehiclePage({
       )}
 
       <Card>
-        <CardHeader><CardTitle className="text-base">Documentos del vehículo</CardTitle></CardHeader>
+        <CardHeader><CardTitle as="h2" className="text-base">Documentos del vehículo</CardTitle></CardHeader>
         <CardContent>
           <FleetDocumentsPanel
             vehicleId={vehicle.id}

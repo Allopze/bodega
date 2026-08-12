@@ -13,7 +13,7 @@ import { registerReceiptAction } from "./actions"
 import { formatQty } from "@/lib/utils"
 import type { ActionState } from "@/lib/validation/operations"
 import Link from "next/link"
-import { TwoStageProgress } from "./receipt-form-progress"
+import { describeStageProgress } from "./receipt-form-progress"
 import type { ReceiptOcItem, ReceiptStage } from "./receipt-form.types"
 
 export type { ReceiptOcItem } from "./receipt-form.types"
@@ -24,18 +24,24 @@ export function ReceiptForm({
   purchaseOrderId,
   orderCode,
   orderWorksiteName,
+  officeName,
   items,
   canOffice,
   canFaena,
   deliveryMode = "via_oficina",
+  assignment,
 }: {
   purchaseOrderId: string
   orderCode:       string
   orderWorksiteName: string
+  /** Nombre real de la faena-oficina; nunca un literal (ver officeWorksiteLabel). */
+  officeName:      string
   items:           ReceiptOcItem[]
   canOffice:       boolean
   canFaena:        boolean
   deliveryMode?:   "via_oficina" | "directo_faena"
+  /** Bloque opcional de asignación, servido por la página y pintado junto al envío. */
+  assignment?:     React.ReactNode
 }) {
   const getRemaining = React.useCallback((item: ReceiptOcItem, stage: ReceiptStage) => {
     if (stage === "office") return Math.max(0, item.quantity - item.quantityOfficeReceived)
@@ -96,7 +102,8 @@ export function ReceiptForm({
       notes:               null,
     }))
   )
-  const stageLabel = stage === "office" ? "Oficina" : "Faena"
+  const progress = describeStageProgress(items, deliveryMode)
+  const submitLabel = stage === "office" ? "Registrar llegada a oficina" : "Registrar recepción en faena"
   const pendingLineCount = items.filter((item) => getRemaining(item, stage) > 0).length
   const receivingLineCount = items.filter(
     (item) => ((qtys[item.id] ?? getRemaining(item, stage)) + (rejs[item.id] ?? 0) + (dmgs[item.id] ?? 0)) > 0,
@@ -125,16 +132,18 @@ export function ReceiptForm({
           inalcanzable. Con el mínimo en 0 la columna cabe y el scroll horizontal
           vuelve a vivir dentro de la tabla (auditoría UI/UX 2026-07-29, A-02). */}
       <div className="min-w-0 space-y-6">
-        {/* Two-stage pipeline indicator — shows progress for dual-role users */}
-        <TwoStageProgress
-          items={items}
-          canOffice={deliveryMode !== "directo_faena" && canOffice}
-          canFaena={canFaena}
-        />
-
         {/* Header */}
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-          <Field label="Guía o factura" htmlFor="receiptDispatchGuideNo" error={state.fieldErrors?.dispatchGuideNo?.[0]}>
+          <Field
+            label="Guía o factura"
+            htmlFor="receiptDispatchGuideNo"
+            /* El aviso vivía en la barra lateral, al otro extremo de la pantalla
+               del campo que explica. */
+            helper={guideNo.trim()
+              ? "La guía queda asociada a esta recepción."
+              : "Puedes registrar la recepción sin guía si la operación aún no la entrega."}
+            error={state.fieldErrors?.dispatchGuideNo?.[0]}
+          >
             <Input
               id="receiptDispatchGuideNo"
               name="dispatchGuideNo"
@@ -157,10 +166,13 @@ export function ReceiptForm({
               >
                 <p className="flex items-center gap-1.5 text-sm font-medium text-[var(--color-text)]">
                   {stage === "office" && <CheckCircle size={14} weight="fill" className="shrink-0 text-[var(--color-primary)]" />}
-                  Recepción en oficina
+                  <span className="min-w-0 flex-1">Recepción en oficina</span>
+                  <span className={`shrink-0 text-xs font-normal tabular-nums ${progress.officeComplete ? "text-[var(--color-success)]" : "text-[var(--color-text-subtle)]"}`}>
+                    {progress.office}
+                  </span>
                 </p>
                 <p className="mt-0.5 text-xs text-[var(--color-text-subtle)]">
-                  Proveedor entrega en oficina Chome. No suma stock ni cierra ítems.
+                  Proveedor entrega en {officeName}. No suma stock ni cierra ítems.
                 </p>
               </button>
             )}
@@ -179,7 +191,10 @@ export function ReceiptForm({
               >
                 <p className={`flex items-center gap-1.5 text-sm font-medium ${faenaAvailable ? "text-[var(--color-text)]" : "text-[var(--color-text-muted)]"}`}>
                   {stage === "faena" && <CheckCircle size={14} weight="fill" className="shrink-0 text-[var(--color-primary)]" />}
-                  Recepción en faena
+                  <span className="min-w-0 flex-1">Recepción en faena</span>
+                  <span className={`shrink-0 text-xs font-normal tabular-nums ${progress.faenaComplete ? "text-[var(--color-success)]" : "text-[var(--color-text-subtle)]"}`}>
+                    {progress.faena}
+                  </span>
                 </p>
                 <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">
                   {faenaAvailable
@@ -341,6 +356,8 @@ export function ReceiptForm({
           </p>
         )}
 
+        {assignment}
+
         {/* Submit */}
         <div className="flex items-center justify-end gap-3 pt-2 border-t border-[var(--color-border)]">
           <Link
@@ -349,8 +366,11 @@ export function ReceiptForm({
           >
             Cancelar
           </Link>
+          {/* El rótulo sigue a la etapa: en oficina nada "se recibe" —la propia
+              tarjeta dice que no suma stock ni cierra ítems—, sólo se registra
+              que llegó. Mismo vocabulario que el CTA de la cola de pendientes. */}
           <SubmitButton
-            label="Marcar como recibido"
+            label={submitLabel}
             loadingLabel="Guardando..."
             variant="primary"
             disabled={hasOverBooked}
@@ -359,16 +379,10 @@ export function ReceiptForm({
       </div>
 
       <aside className="h-fit rounded-[var(--radius-2xl)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-[var(--shadow-card)] xl:sticky xl:top-6">
+        {/* Sólo lo que no está en ningún otro control de la pantalla: la orden
+            está en el título y la etapa en el selector (A5). */}
         <p className="text-xs font-medium uppercase tracking-wide text-[var(--color-text-subtle)]">Resumen recepción</p>
-        <div className="mt-3 rounded-[var(--radius)] bg-[var(--color-surface-2)] px-3 py-2">
-          <p className="text-xs text-[var(--color-text-muted)]">Orden</p>
-          <p className="mt-0.5 text-sm font-medium text-[var(--color-text)]">{orderCode}</p>
-        </div>
-        <div className="mt-4 space-y-2 border-b border-[var(--color-border)] pb-4 text-sm">
-          <div className="flex items-center justify-between gap-3">
-            <span className="text-[var(--color-text-muted)]">Etapa</span>
-            <span className="font-medium text-[var(--color-text)]">{stageLabel}</span>
-          </div>
+        <div className="mt-3 space-y-2 text-sm">
           <div className="flex items-center justify-between gap-3">
             <span className="text-[var(--color-text-muted)]">Líneas pendientes</span>
             <span className="tabular-nums text-[var(--color-text)]">{pendingLineCount}</span>
@@ -384,9 +398,6 @@ export function ReceiptForm({
             </div>
           )}
         </div>
-        <p className="mt-4 rounded-[var(--radius)] bg-[var(--color-primary-tint)] px-3 py-2 text-xs leading-relaxed text-[var(--color-primary-ink)]">
-          {guideNo.trim() ? "La guía queda asociada a esta recepción." : "Puedes registrar la recepción sin guía si la operación aún no la entrega."}
-        </p>
       </aside>
     </form>
   )

@@ -228,9 +228,12 @@ test.describe("PDF exports — content integrity", () => {
     const { pageCount, text } = await parsePdf(body)
     expect(pageCount).toBeGreaterThanOrEqual(1)
     expect(pageCount).toBeLessThanOrEqual(2)
-    expect(text).toContain("Comprobante de Entrega EPP")
+    expect(text).toContain("Comprobante de Entrega")
     expect(text).toContain("11111111-1")
-    expect(text).toContain("Sin archivo de firma")
-    expect(text).toContain("Espacio de firma manual no registrado")
+    // Las entregas nuevas ya no piden firma: la sección "Evidencia histórica"
+    // sólo aparece en registros antiguos con `signaturePath`. Este fixture no
+    // lo tiene, así que el comprobante no debe inventar un espacio de firma.
+    expect(text).not.toContain("Evidencia histórica")
+    expect(text).not.toContain("firma")
   })
 })

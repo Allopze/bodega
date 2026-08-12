@@ -305,9 +305,27 @@ async function main() {
 
       // Las viejas cerraron; las nuevas están en tránsito. Sin este reparto,
       // "OC activas" y "Por recibir" quedarían en cero o en todo.
-      const status = d < 15 ? pick(["draft", "sent", "sent", "partially_office_received"] as const)
+      let status: string = d < 15 ? pick(["draft", "sent", "sent", "partially_office_received"] as const)
         : d < 45 ? pick(["sent", "partially_received", "office_received", "received"] as const)
         : pick(["received", "closed", "closed"] as const)
+
+      // El estado y las cantidades tienen que contar la misma historia. Se
+      // derivan con la MISMA regla que `rollupOrderReceiptStatus`: todas las
+      // líneas ≥ quantity ⇒ etapa completa, alguna > 0 ⇒ parcial. Antes el
+      // estado se sorteaba aparte y quedaban OC en `partially_office_received`
+      // sin una sola unidad en oficina, un estado que la aplicación no produce.
+      //
+      // Una parcial se representa con líneas enteras pendientes, no con
+      // fracciones: así ninguna línea queda corta por merma y el rollup
+      // devuelve exactamente el estado sembrado. Con una sola línea no existe
+      // el "a medias", así que ese lote baja al estado completo anterior.
+      if (lote.length === 1) {
+        if (status === "partially_office_received") status = "sent"
+        if (status === "partially_received")        status = "office_received"
+      }
+      const llegoAOficina = !["draft", "sent"].includes(status)
+      const llegoAFaena   = ["partially_received", "received", "closed"].includes(status)
+      const lineaPendiente = status === "partially_office_received" || status === "partially_received" ? 0 : -1
 
       let net = 0
       const itemsDeOc: typeof orderItems = []
@@ -322,12 +340,16 @@ async function main() {
         const quantity = item.quantity as number
         const subtotal = unitPrice * quantity
         net += subtotal
-        const recibidoBruto = status === "closed" || status === "received"
-          ? quantity
-          : status === "partially_received" ? Math.floor(quantity / 2) : 0
-        const rechazado = recibidoBruto > 0 && chance(0.06) ? int(1, Math.max(1, Math.floor(recibidoBruto * 0.2))) : 0
-        const danado = recibidoBruto > 0 && chance(0.04) ? int(1, Math.max(1, Math.floor(recibidoBruto * 0.15))) : 0
-        const recibido = Math.max(0, recibidoBruto - rechazado - danado)
+        const pendiente = k === lineaPendiente
+        // En `partially_office_received` la línea pendiente ni siquiera llegó a
+        // oficina; en `partially_received` llegó y aún no baja a faena.
+        const enOficina = llegoAOficina && !(pendiente && status === "partially_office_received") ? quantity : 0
+        const recibido  = llegoAFaena && !pendiente ? quantity : 0
+        // La merma sólo cabe en la línea que quedó corta: una unidad rechazada
+        // deja la línea bajo `quantity`, y con eso el rollup nunca diría
+        // "received". Por eso una OC completa se siembra sin merma.
+        const rechazado = pendiente && chance(0.3)  ? int(1, Math.max(1, Math.floor(quantity * 0.2)))  : 0
+        const danado    = pendiente && chance(0.2)  ? int(1, Math.max(1, Math.floor(quantity * 0.15))) : 0
         const itemId = id("oci")
         disposicionByItemId.set(itemId, { rechazado, danado })
         itemsDeOc.push({
@@ -338,7 +360,7 @@ async function main() {
           quantity,
           unitPrice,
           subtotal,
-          quantityOfficeReceived: recibido,
+          quantityOfficeReceived: enOficina,
           quantityReceived: recibido,
           // ARQ-12: purchase_order_items.status sólo es 'issued'/'cancelled' —
           // la recepción ya la representan quantityOfficeReceived/quantityReceived.
@@ -371,22 +393,28 @@ async function main() {
       orderItems.push(...itemsDeOc)
 
       // Recepción de las que ya llegaron, con merma real: ~6% rechazado o dañado.
-      if (["partially_received", "office_received", "received", "closed"].includes(status)) {
+      if (llegoAOficina) {
         const receiptId = id("rec")
         const recibidoAt = daysAgo(Math.max(0, d - int(2, 12)))
+        // La etapa se deduce del estado, no se sortea: una OC que sólo llegó a
+        // oficina no puede tener su comprobante marcado como recepción en faena.
+        const etapa = llegoAFaena ? "faena" : "office"
         receipts.push({
           id: receiptId,
           code: `REC-2026-${String(ocSeq).padStart(4, "0")}`,
           purchaseOrderId: orderId,
           receivedBy: admin,
           receivedAt: iso(recibidoAt),
-          locationType: chance(0.5) ? "office" : "faena",
+          locationType: etapa,
           worksiteId,
           status: status === "closed" ? "closed" : "open",
           createdAt: iso(recibidoAt),
         })
         for (const oci of itemsDeOc) {
-          const q = oci.quantityReceived as number
+          // El comprobante cuenta lo de SU etapa: si aún no baja a faena, lo
+          // que documenta es la llegada a oficina (DAT-12: la suma de sus
+          // receipt_items y el contador de la línea son la misma cifra).
+          const q = (etapa === "faena" ? oci.quantityReceived : oci.quantityOfficeReceived) as number
           const { rechazado, danado } = disposicionByItemId.get(oci.id!)!
           if (q <= 0 && rechazado <= 0 && danado <= 0) continue
           receiptItems.push({
@@ -656,7 +684,13 @@ async function main() {
 
   // ── Control preventivo en terreno ────────────────────────────────────────
   const plantilla = {
-    id: id("itpl"), code: "INSP-DEMO", versionLabel: "v1", name: "Inspección planeada",
+    // Id fijo, NO del contador: esta tabla no está en `TABLAS_DEMO`, así que la
+    // fila sobrevive entre corridas y `(code, version_label)` es única. Con un
+    // id de contador, cualquier cambio en el número de ids generados antes daba
+    // un id distinto, el INSERT chocaba contra el índice único, el
+    // `onConflictDoNothing` lo descartaba en silencio y las 48 inspecciones
+    // caían por FK contra una plantilla que nunca llegó a insertarse.
+    id: "demo-itpl-inspeccion-planeada", code: "INSP-DEMO", versionLabel: "v1", name: "Inspección planeada",
     kind: "inspection", definitionSnapshot: { items: [] }, contentHash: "d".repeat(64),
     authorUserId: admin, status: "approved" as const,
     // La plantilla aprobada exige quién y cuándo, o la restricción la rechaza.
@@ -701,7 +735,9 @@ async function main() {
   if (findings.length > 0) await db.insert(schema.preventionInspectionFindings).values(findings)
 
   const tipoPermiso = {
-    id: id("ptype"), code: "ALTURA", name: "Trabajo en altura",
+    // Id fijo por el mismo motivo que la plantilla de inspección: la tabla no
+    // se vacía entre corridas y `code` es único.
+    id: "demo-ptype-altura", code: "ALTURA", name: "Trabajo en altura",
     legalBasis: "DS 44", createdByUserId: admin, isActive: true,
     createdAt: iso(daysAgo(300)), updatedAt: iso(daysAgo(300)),
   }
@@ -731,7 +767,9 @@ async function main() {
   await db.insert(schema.preventionWorkPermits).values(permits)
 
   const plan = {
-    id: id("eplan"), code: "PE-DEMO", worksiteId: worksites[0]!.id, title: "Plan de emergencia",
+    // Id fijo: ver la plantilla de inspección. Aquí además hay un único activo
+    // por faena, así que un id nuevo chocaría aunque cambiara el `code`.
+    id: "demo-eplan-principal", code: "PE-DEMO", worksiteId: worksites[0]!.id, title: "Plan de emergencia",
     status: "approved" as const, createdByUserId: admin,
     approvedByUserId: admin, approvedAt: iso(daysAgo(299)),
     createdAt: iso(daysAgo(300)), updatedAt: iso(daysAgo(300)),

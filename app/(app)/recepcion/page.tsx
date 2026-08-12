@@ -16,6 +16,7 @@ import { buildPaginationHref, resolvePagination } from "@/lib/pagination"
 import { parseListParams, eqFilter, statusSql, worksiteEqSql } from "@/lib/adquisiciones/list-query"
 import type { StageTab } from "@/components/adquisiciones/stage-tabs"
 import { COMPLETED_RECEIPT_ORDER_STATUSES, RECEIVABLE_ORDER_STATUSES } from "@/lib/work-queue"
+import { officeWorksiteLabel } from "@/lib/services/dispatch-guides"
 import { RecepcionTable, type ReceiptGuideRow } from "./recepcion-table"
 
 export const metadata: Metadata = { title: "Recepción" }
@@ -156,7 +157,7 @@ export default async function RecepcionPage({
   const supplierIds = [...new Set(visible.map((o) => o.supplierId))]
   const orderIds    = visible.map((o) => o.id)
 
-  const [wsRows, supplierRows, itemRows, guideRows] = await Promise.all([
+  const [wsRows, supplierRows, itemRows, guideRows, officeName] = await Promise.all([
     wsIds.length > 0
       ? db.select({ id: worksites.id, name: worksites.name }).from(worksites).where(inArray(worksites.id, wsIds))
       : Promise.resolve([]),
@@ -187,6 +188,7 @@ export default async function RecepcionPage({
           ))
           .groupBy(dispatchGuides.id, dispatchGuides.purchaseOrderId, dispatchGuides.code, dispatchGuides.status)
       : Promise.resolve([]),
+    officeWorksiteLabel(),
   ])
 
   const wsMap  = Object.fromEntries(wsRows.map((w) => [w.id, w.name]))
@@ -252,6 +254,7 @@ export default async function RecepcionPage({
         guideMap={guideMap}
         canOffice={canOffice}
         canFaena={canFaena}
+        officeName={officeName}
         worksiteOptions={worksiteOptions}
         supplierOptions={supplierOptions}
         stageTabs={stageTabs}

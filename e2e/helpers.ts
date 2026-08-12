@@ -200,6 +200,93 @@ export function listRecord(page: Page, text: RegExp | string) {
   return page.getByRole("row").filter(filter).or(page.getByRole("article").filter(filter))
 }
 
+/**
+ * Rótulo del envío en `/recepcion/nueva`, que sigue a la etapa elegida.
+ *
+ * En oficina nada "se recibe" —esa etapa no suma stock ni cierra ítems—, así
+ * que el botón dice qué hace de verdad. Cada spec debe pedir el rótulo de *su*
+ * etapa: un texto único para las dos volvería a dejar pasar un clic en la etapa
+ * equivocada.
+ */
+export function receiptSubmitName(stage: "Oficina" | "Faena"): string {
+  return stage === "Oficina" ? "Registrar llegada a oficina" : "Registrar recepción en faena"
+}
+
+/**
+ * La tarjeta que elige la etapa en `/recepcion/nueva`.
+ *
+ * El regex va anclado al inicio del nombre accesible por dos razones: la tarjeta
+ * ahora incluye su avance en el nombre ("Recepción en faena 6 unidad"), y sin
+ * ancla "Recepción en faena" es subcadena del rótulo del envío ("Registrar
+ * recepción en faena"), que resolvía a dos elementos en modo estricto.
+ */
+export function receiptStageCard(page: Page, stage: "Oficina" | "Faena") {
+  return page.getByRole("button", { name: new RegExp(`^Recepción en ${stage}`, "i") })
+}
+
+/** Los toast de Sonner tapan botones; esperar a que se vayan evita clics perdidos. */
+export async function waitForToastsToClear(page: Page) {
+  await expect(page.locator("[data-sonner-toast]")).toHaveCount(0, { timeout: 15_000 })
+}
+
+/**
+ * Cierra la etapa de faena de una OC `via_oficina` por su guía de despacho.
+ *
+ * Desde que existe la GDI, esa etapa **ya no se registra desde
+ * `/recepcion/nueva`**: la recepción en oficina prepara la guía y el servidor
+ * rechaza el atajo con "La recepción final debe cotejarse con la guía X". Son
+ * dos eventos físicos distintos —el despacho saca stock de oficina, el cotejo
+ * lo ingresa en faena— y esta función recorre ambos.
+ *
+ * Se entra desde la página que muestre el enlace `GDI-…`: el comprobante de la
+ * recepción en oficina, o la fila de `/recepcion` con su botón "Completar
+ * guía"/"Cotejar".
+ */
+export async function dispatchAndReceiveGuide(page: Page) {
+  const guideLink = page.getByRole("link", { name: /^GDI-\d{6}$/ }).first()
+  await expect(guideLink).toBeVisible({ timeout: 30_000 })
+  await guideLink.click()
+  await expect(page).toHaveURL(/\/bodega\/guias\/[^/?]+$/, { timeout: 15_000 })
+  await dispatchGuideAndConfirm(page)
+}
+
+/** Los dos eventos, ya estando en `/bodega/guias/<id>`. */
+export async function dispatchGuideAndConfirm(page: Page) {
+  await waitForToastsToClear(page)
+  await page.getByRole("button", { name: /^Despachar$/ }).click()
+  await page.getByRole("dialog").getByRole("button", { name: /^Despachar$/ }).click()
+  await expect(page.getByText("Despachada").first()).toBeVisible({ timeout: 15_000 })
+
+  await waitForToastsToClear(page)
+  await page.getByRole("button", { name: /Confirmar recepción/i }).click()
+  await page.getByRole("dialog").getByRole("button", { name: /Confirmar recepción/i }).click()
+  await expect(page.getByText("Recibida").first()).toBeVisible({ timeout: 15_000 })
+}
+
+/**
+ * Coteja **todas** las guías activas de una OC entrando desde `/recepcion`.
+ *
+ * Cada recepción en oficina prepara su propia GDI, así que una entrega parcial
+ * más su saldo dejan dos, y la OC no abandona la cola hasta cerrarlas ambas.
+ * Mientras haya guía activa la fila ofrece "Completar guía"/"Cotejar" en lugar
+ * de "Recibir".
+ */
+export async function clearGuidesFromReceptionQueue(page: Page, orderCode: string, guias: number) {
+  for (let vuelta = 1; vuelta <= guias; vuelta++) {
+    await page.goto(`/recepcion?q=${orderCode}`)
+    const accion = page.getByRole("link", { name: /Completar guía|Cotejar/ }).first()
+    // `toBeVisible` y no `count()`: la tabla la pinta un componente de cliente,
+    // así que `page.goto` resuelve antes de que existan las filas. Un `count()`
+    // ahí devuelve 0 y el bucle se saltaba las guías **en silencio**, dejándolas
+    // en borrador; el test moría mucho después, en una aserción de historial.
+    await expect(accion, `sin guía activa de ${orderCode} en la vuelta ${vuelta} de ${guias}`)
+      .toBeVisible({ timeout: 30_000 })
+    await accion.click()
+    await expect(page).toHaveURL(/\/bodega\/guias\/[^/?]+$/, { timeout: 15_000 })
+    await dispatchGuideAndConfirm(page)
+  }
+}
+
 /** PDF mínimo válido: `validateFileBuffer` valida por magic bytes, no por extensión. */
 export const QUOTATION_PDF = Buffer.from("%PDF-1.4\n1 0 obj\n<<>>\nendobj\ntrailer\n<<>>\n%%EOF\n", "latin1")
 

@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test"
-import { login, selectRadixById, pickCurrentMonthDate, idFromUrl } from "./helpers"
+import { login, selectRadixById, pickCurrentMonthDate, idFromUrl, receiptSubmitName, receiptStageCard } from "./helpers"
 
 
 test("flujo solicitud, aprobación, OC, recepción y trazabilidad", async ({ page }) => {
@@ -79,7 +79,7 @@ test("flujo solicitud, aprobación, OC, recepción y trazabilidad", async ({ pag
   // `statusLabel` en la sección "Responsables de la recepción", así que un
   // `getByText` suelto cae en strict mode. Nunca se había notado porque el bug de
   // `pickCurrentMonthDate` cortaba este spec antes de llegar acá.
-  await expect(page.getByRole("button", { name: "Recepción en oficina" })).toBeVisible()
+  await expect(receiptStageCard(page, "Oficina")).toBeVisible()
   await submitReceiptForm(page, "5")
 
   // Stage 2 — la llegada a faena se coteja contra la GDI preparada desde la
@@ -206,6 +206,6 @@ async function createCatalogRequest(
 
 async function submitReceiptForm(page: Page, expectedQuantity: string) {
   await expect(page.getByRole("spinbutton", { name: /Cantidad a recibir de/i }).first()).toHaveValue(expectedQuantity)
-  await page.getByRole("button", { name: "Marcar como recibido" }).click()
+  await page.getByRole("button", { name: receiptSubmitName("Oficina") }).click()
   await expect(page).toHaveURL(/\/recepcion\/(?!nueva(?:\?|$))[^/?]+$/)
 }

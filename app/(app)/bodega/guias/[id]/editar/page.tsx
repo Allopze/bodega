@@ -5,7 +5,7 @@ import { canAccessWorksite } from "@/lib/auth/scope"
 import { PageContainer } from "@/components/ui/page-container"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { EmptyState } from "@/components/ui/empty-state"
-import { getDispatchGuideDetail, OFFICE_ORIGIN_LABEL } from "@/lib/services/dispatch-guides"
+import { getDispatchGuideDetail } from "@/lib/services/dispatch-guides"
 import { loadGuideFormData } from "../../guide-form-data"
 import { GuideForm } from "../../guide-form"
 import { updateGuideAction } from "../../actions"
@@ -26,6 +26,9 @@ export default async function EditDispatchGuidePage({ params }: { params: Promis
   if (!detail) notFound()
   const { guide } = detail
   if (!canAccessWorksite(session, guide.destinationWorksiteId)) notFound()
+  // La guía guarda su faena de origen: una histórica conserva el nombre con que
+  // se emitió aunque después renombren la oficina.
+  const originWorksiteName = guide.originWorksite?.name ?? data.office.name
 
   const breadcrumb = (
     <Breadcrumbs items={[
@@ -71,12 +74,11 @@ export default async function EditDispatchGuidePage({ params }: { params: Promis
     <PageContainer width="workbench">
       <PageHeader
         title={`Editar guía ${guide.code}`}
-        description={`Traslado desde ${OFFICE_ORIGIN_LABEL}. Solo los borradores pueden modificarse.`}
+        description={`Traslado desde ${originWorksiteName}. Solo los borradores pueden modificarse.`}
         breadcrumb={breadcrumb}
       />
       <GuideForm
-        originLabel={OFFICE_ORIGIN_LABEL}
-        originWorksiteName={guide.originWorksite?.name ?? data.office.name}
+        originWorksiteName={originWorksiteName}
         currentUserName={session.user.name ?? session.user.email ?? "el emisor"}
         worksites={data.worksites}
         workers={data.workers}

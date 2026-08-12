@@ -63,7 +63,10 @@ import type { DispatchGuideInput } from "@/lib/validation/dispatch-guides"
 
 /* ── Constantes de dominio ──────────────────────────────────────────────── */
 
-/** Rótulo del origen en el documento. La entidad real es la faena-oficina. */
+/**
+ * Respaldo del rótulo de origen cuando la faena-oficina no se puede resolver.
+ * El nombre real sale de `officeWorksiteLabel`; esto es sólo la última carta.
+ */
 export const OFFICE_ORIGIN_LABEL = "Oficina CHOME"
 
 /** Referencia de kardex que une guía ↔ movimiento en los dos sentidos. */
@@ -143,6 +146,84 @@ export async function resolveOfficeWorksite(client: Reader = db): Promise<Office
     "No se pudo determinar la bodega de la oficina para el despacho. " +
     `Configura el ajuste "${OFFICE_WORKSITE_SETTING_KEY}" con el id de la faena que representa la oficina.`,
   )
+}
+
+/**
+ * El nombre de la oficina para mostrar en pantalla.
+ *
+ * Nunca lanza: un rótulo no puede voltear una página. `resolveOfficeWorksite`
+ * sí lanza, y debe seguir haciéndolo donde vamos a mover stock —equivocarse de
+ * bodega corrompe el kardex—, pero una lista o un subtítulo prefieren un
+ * respaldo antes que un 500.
+ */
+export async function officeWorksiteLabel(client: Reader = db): Promise<string> {
+  try {
+    return (await resolveOfficeWorksite(client)).name
+  } catch {
+    return OFFICE_ORIGIN_LABEL
+  }
+}
+
+/**
+ * Fija (o borra) la faena que representa la oficina.
+ *
+ * Un id vacío borra el ajuste y devuelve el control al calce por nombre. La
+ * faena tiene que existir y estar activa: guardar un id muerto convertiría cada
+ * despacho en el error que motivó esta pantalla.
+ */
+export async function setOfficeWorksite(worksiteId: string, actor: DispatchGuideActor): Promise<void> {
+  const target = worksiteId.trim()
+  const now = new Date().toISOString()
+
+  if (target) {
+    const [worksite] = await db
+      .select({ id: worksites.id, name: worksites.name, isActive: worksites.isActive })
+      .from(worksites)
+      .where(eq(worksites.id, target))
+      .limit(1)
+    if (!worksite) throw new Error("La faena indicada no existe")
+    if (!worksite.isActive) throw new Error(`La faena "${worksite.name}" no está activa`)
+  }
+
+  const [previous] = await db
+    .select({ value: systemSettings.value })
+    .from(systemSettings)
+    .where(eq(systemSettings.key, OFFICE_WORKSITE_SETTING_KEY))
+    .limit(1)
+
+  if (target) {
+    await db.insert(systemSettings)
+      .values({ key: OFFICE_WORKSITE_SETTING_KEY, value: target, updatedAt: now })
+      .onConflictDoUpdate({ target: systemSettings.key, set: { value: target, updatedAt: now } })
+  } else {
+    await db.delete(systemSettings).where(eq(systemSettings.key, OFFICE_WORKSITE_SETTING_KEY))
+  }
+
+  await recordAudit({
+    userId:     actor.userId,
+    userEmail:  actor.userEmail,
+    action:     "update",
+    entityType: "system_settings",
+    entityId:   OFFICE_WORKSITE_SETTING_KEY,
+    oldState:   { worksiteId: previous?.value ?? null },
+    newState:   { worksiteId: target || null },
+  })
+}
+
+/** Faenas activas ofrecibles como oficina, y cuál rige hoy. */
+export async function officeWorksiteOptions(): Promise<{
+  worksites: OfficeWorksite[]
+  configuredId: string
+  resolvedId: string | null
+}> {
+  const [rows, setting] = await Promise.all([
+    db.select({ id: worksites.id, name: worksites.name, code: worksites.code })
+      .from(worksites).where(eq(worksites.isActive, true)).orderBy(asc(worksites.code)),
+    db.select({ value: systemSettings.value }).from(systemSettings)
+      .where(eq(systemSettings.key, OFFICE_WORKSITE_SETTING_KEY)).limit(1),
+  ])
+  const resolved = await resolveOfficeWorksite().catch(() => null)
+  return { worksites: rows, configuredId: setting[0]?.value?.trim() ?? "", resolvedId: resolved?.id ?? null }
 }
 
 /* ── Altas y edición ────────────────────────────────────────────────────── */

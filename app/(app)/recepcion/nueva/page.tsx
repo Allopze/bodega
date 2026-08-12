@@ -12,6 +12,7 @@ import { ReceiptForm } from "../receipt-form"
 import type { ReceiptOcItem } from "../receipt-form"
 import { WorkAssignmentControl } from "../../pendientes/work-assignment-control"
 import { getOperationalAssignmentRecords } from "@/lib/services/operational-assignments"
+import { officeWorksiteLabel } from "@/lib/services/dispatch-guides"
 import { buildOperationalWorkItem, operationalAssignmentKey } from "@/lib/services/operational-work-queue"
 import {
   RECEIVABLE_ORDER_STATUSES,
@@ -72,6 +73,7 @@ export default async function NuevaRecepcionPage({
     : []
 
   const productMap = Object.fromEntries(productRows.map((p) => [p.id, p]))
+  const officeName = await officeWorksiteLabel()
 
   const assignableReceiptStages = [
     ...(canOfficeForOrder && OFFICE_RECEIVABLE_STATUSES.has(order.status)
@@ -139,7 +141,7 @@ export default async function NuevaRecepcionPage({
         title={`Recepción ${order.code}`}
         description={order.deliveryMode === "directo_faena"
           ? "Los productos se reciben directamente en faena; no requieren paso por oficina."
-          : "Registra primero la llegada a oficina Chome y luego la recepción en faena."}
+          : `Registra primero la llegada a ${officeName} y luego la recepción en faena.`}
         breadcrumb={
           <Breadcrumbs items={[
             { label: "Inicio",  href: "/dashboard" },
@@ -148,38 +150,35 @@ export default async function NuevaRecepcionPage({
           ]} />
         }
       />
-      {/* A-32: iba **después** del submit primario ("Marcar como recibido"), así
-          que quien quisiera asignar ya había enviado. Asignar es un paso previo
-          al registro, y con esto el submit vuelve a ser lo último de la página. */}
-      {receiptAssignmentItems.length > 0 && (
-        <section className="mb-5 border-b border-[var(--color-border)] pb-4" aria-labelledby="receipt-assignment-title">
-          <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <h2 id="receipt-assignment-title" className="text-base font-semibold text-[var(--color-text)]">Responsables de la recepción</h2>
-              <p className="text-sm text-[var(--color-text-muted)]">La asignación complementa la etapa seleccionada y no altera el estado de la orden.</p>
-            </div>
-          </div>
-          <div className="mt-3 divide-y divide-[var(--color-border)] rounded-[var(--radius-lg)] border border-[var(--color-border)]">
-            {receiptAssignmentItems.map((item) => (
-              <div key={item.id} className="flex flex-col gap-2 px-3 py-3 sm:flex-row sm:items-center sm:justify-between">
-                <div className="min-w-0">
-                  <p className="text-sm font-medium text-[var(--color-text)]">{item.statusLabel}</p>
-                  <p className="text-xs text-[var(--color-text-muted)]">{item.sourceDueAt ? `Fecha estimada de entrega: ${item.sourceDueAt.slice(0, 10)}` : "Sin fecha nativa de vencimiento"}</p>
-                </div>
-                <WorkAssignmentControl item={item} showAssignee />
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
       <ReceiptForm
         purchaseOrderId={order.id}
         orderCode={order.code}
         orderWorksiteName={order.worksite?.name ?? "faena de la OC"}
+        officeName={officeName}
         items={items}
         canOffice={canOfficeForOrder}
         canFaena={canFaena}
         deliveryMode={order.deliveryMode as "via_oficina" | "directo_faena"}
+        assignment={receiptAssignmentItems.length > 0 && (
+          /* A-32: iba **después** del submit, así que quien quisiera asignar ya
+             había enviado. Sigue siendo previo al envío, pero como paso opcional
+             va junto al botón y no delante de la tarea real (contar lo que llegó). */
+          <section aria-labelledby="receipt-assignment-title">
+            <h2 id="receipt-assignment-title" className="text-base font-semibold text-[var(--color-text)]">Responsables de la recepción</h2>
+            <p className="text-sm text-[var(--color-text-muted)]">La asignación complementa la etapa seleccionada y no altera el estado de la orden.</p>
+            <div className="mt-3 divide-y divide-[var(--color-border)] rounded-[var(--radius-lg)] border border-[var(--color-border)]">
+              {receiptAssignmentItems.map((item) => (
+                <div key={item.id} className="flex flex-col gap-2 px-3 py-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-[var(--color-text)]">{item.statusLabel}</p>
+                    <p className="text-xs text-[var(--color-text-muted)]">{item.sourceDueAt ? `Fecha estimada de entrega: ${item.sourceDueAt.slice(0, 10)}` : "Sin fecha de entrega comprometida"}</p>
+                  </div>
+                  <WorkAssignmentControl item={item} showAssignee />
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
       />
     </PageContainer>
   )

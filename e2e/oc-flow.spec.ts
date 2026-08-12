@@ -1,5 +1,5 @@
 import { test, expect, type Page } from "@playwright/test"
-import { login } from "./helpers"
+import { login, receiptSubmitName, receiptStageCard } from "./helpers"
 
 /**
  * Camino completo de una OC por oficina, que es el flujo del negocio:
@@ -16,10 +16,10 @@ const ITEM_LABEL = "Cantidad a recibir de Guante E2E"
 
 async function registerReception(page: Page, stage: "Oficina" | "Faena", quantity: number) {
   await page.goto(`/recepcion/nueva?oc=${OC_ID}`)
-  await page.getByRole("button", { name: new RegExp(`Recepción en ${stage}`, "i") }).click()
+  await receiptStageCard(page, stage).click()
   const qty = page.getByLabel(ITEM_LABEL)
   await qty.fill(String(quantity))
-  await page.getByRole("button", { name: "Marcar como recibido" }).click()
+  await page.getByRole("button", { name: receiptSubmitName(stage) }).click()
   // `/\/recepcion\/[^/]+$/` también matchea `/recepcion/nueva`, que es la URL en
   // la que ya estamos: la espera se cumplía sola y el test seguía a la OC antes
   // de que el server action commiteara, leyendo el estado anterior. Con la

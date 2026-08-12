@@ -7,6 +7,7 @@ import {
   updateOperationalSettings,
   type OperationalSettings,
 } from "@/lib/services/system-settings"
+import { setOfficeWorksite } from "@/lib/services/dispatch-guides"
 import type { ActionState } from "@/lib/validation/masters"
 
 const REVALIDATE = "/admin/parametros-operativos"
@@ -35,6 +36,17 @@ export async function saveOperationalSettingsAction(_prev: ActionState, formData
   }
 
   try {
+    // Va aparte de los numéricos: `updateOperationalSettings` sólo conoce
+    // enteros con rango, y esta clave es una FK a `worksites` que se valida
+    // contra la tabla. Primero, porque es la que puede rechazar el envío.
+    const officeWorksiteId = formData.get("officeWorksiteId")
+    if (typeof officeWorksiteId === "string") {
+      await setOfficeWorksite(officeWorksiteId, {
+        userId:    session.user.id,
+        userEmail: session.user.email ?? undefined,
+      })
+    }
+
     await updateOperationalSettings({
       exportMaxRows:              readNumber(formData, "exportMaxRows"),
       notificationRetentionDays:  readNumber(formData, "notificationRetentionDays"),
@@ -47,6 +59,9 @@ export async function saveOperationalSettingsAction(_prev: ActionState, formData
     })
 
     revalidatePath(REVALIDATE)
+    // La bodega de origen la leen Recepción y Guías, no sólo esta pantalla.
+    revalidatePath("/recepcion")
+    revalidatePath("/bodega/guias")
     return { ok: true, message: "Parámetros operativos guardados" }
   } catch (err) {
     return { ok: false, message: (err as Error).message }

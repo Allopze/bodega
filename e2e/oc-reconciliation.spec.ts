@@ -72,7 +72,13 @@ test.describe("Conciliación OC-factura-recepción", () => {
       if (await chip.count()) await chip.click({ timeout: 2_000 }).catch(() => undefined)
       return page.url()
     }, { timeout: 15_000 }).not.toMatch(/factura=pendiente/)
-    await expect(page.getByRole("link", { name: /Ver OC OC-2026-0001/ })).toBeVisible({ timeout: 10_000 })
+    // Sin el filtro, Compras vuelve a su bandeja de abastecimiento y la OC
+    // recibida se va: `factura=pendiente` es su ÚNICA puerta de vuelta acá (lo
+    // fija `STAGE_GROUPS` en `compras/page.tsx` — emitida la OC, el trabajo
+    // pasa a Recepción). Antes esto afirmaba que reaparecía OC-2026-0001, que
+    // por ser `sent` no está en esta bandeja con filtro ni sin él.
+    await expect(page.getByRole("link", { name: /Ver OC OC-2026-0091/ })).toHaveCount(0, { timeout: 10_000 })
+    await expect(page.getByRole("link", { name: /Ver OC OC-2026-0092/ })).toBeVisible()
 
     // Y "Limpiar" —que sólo aparece con filtros activos— también lo apaga.
     // Este sí es un <button> con onClick: sin hidratar no hace absolutamente

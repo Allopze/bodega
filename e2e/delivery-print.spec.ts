@@ -13,7 +13,7 @@ test.describe("Entregas — comprobante firmado", () => {
     // `mobile-safari` buscaba el A4 en la vista que lo esconde a propósito.
     await page.setViewportSize({ width: 1280, height: 900 })
     await page.goto("/entregas/del-e2e/print")
-    await expect(page.getByText("Comprobante de Entrega EPP")).toBeVisible()
+    await expect(page.getByRole("heading", { name: "Comprobante de Entrega", exact: true })).toBeVisible()
     // El comprobante muestra el folio en tres lugares por diseño —nombre de
     // archivo, resumen móvil y código del documento—, así que el selector
     // apunta al código en sí y no a cualquier mención.
@@ -25,7 +25,10 @@ test.describe("Entregas — comprobante firmado", () => {
     await page.goto("/entregas/del-e2e/print")
 
     await expect(page.getByRole("main", { name: /Resumen de/i })).toBeVisible()
-    await expect(page.getByText("Productos entregados")).toBeVisible()
+    // La hoja monta las dos representaciones —móvil y escritorio— y oculta una
+    // por CSS, así que un `getByText` suelto resuelve a dos y cae por strict mode
+    // (mismo contrato de TASK-UI-004 que motiva `listRecord` en helpers).
+    await expect(page.getByRole("heading", { name: "Productos entregados" }).first()).toBeVisible()
     await expect(page.getByRole("button", { name: "Descargar PDF" })).toBeVisible()
 
     await page.route("**/entregas/del-e2e/print/pdf", (route) => route.fulfill({ status: 503 }))

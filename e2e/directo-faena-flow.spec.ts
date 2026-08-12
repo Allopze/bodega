@@ -1,5 +1,5 @@
 import { test, expect, type Page } from "@playwright/test"
-import { login } from "./helpers"
+import { login, receiptSubmitName, receiptStageCard } from "./helpers"
 
 /**
  * Camino alternativo de despacho: **directo a faena**, sin checkpoint de
@@ -20,7 +20,7 @@ async function registerFaenaReception(page: Page, quantity: number) {
   await page.goto(`/recepcion/nueva?oc=${OC_ID}`)
   const qty = page.getByLabel(ITEM_LABEL)
   await qty.fill(String(quantity))
-  await page.getByRole("button", { name: "Marcar como recibido" }).click()
+  await page.getByRole("button", { name: receiptSubmitName("Faena") }).click()
   // Anclar la espera al efecto real (el correlativo de la recepción creada):
   // `/\/recepcion\/[^/]+$/` también matchea `/recepcion/nueva`, la URL en la que
   // ya estamos, así que la espera se cumpliría sola.
@@ -48,7 +48,7 @@ test.describe("Flujo OC directo a faena", () => {
     // Y el formulario tampoco ofrece la etapa oficina: si la ofreciera, el
     // servicio rechazaría el envío y quedaría un camino muerto en pantalla.
     await page.goto(`/recepcion/nueva?oc=${OC_ID}`)
-    await expect(page.getByRole("button", { name: /Recepción en oficina/i })).toHaveCount(0)
+    await expect(receiptStageCard(page, "Oficina")).toHaveCount(0)
     await expect(page.getByLabel(ITEM_LABEL)).toBeVisible()
 
     // Recepción parcial: el saldo se mide contra lo pedido, no contra oficina

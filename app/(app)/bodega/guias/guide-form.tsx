@@ -23,7 +23,6 @@ import type {
 
 interface GuideFormProps {
   /** Nombre de la bodega de origen (la faena que representa la oficina). */
-  originLabel: string
   originWorksiteName: string
   /** Nombre del usuario autenticado: responsable por defecto del despacho. */
   currentUserName: string
@@ -57,7 +56,6 @@ interface ItemRow {
  * ni desviar el traslado desde la interfaz.
  */
 export function GuideForm({
-  originLabel,
   originWorksiteName,
   currentUserName,
   worksites,
@@ -145,7 +143,7 @@ export function GuideForm({
         <EmptyState
           icon={<Truck size={24} />}
           title="La bodega de la oficina no tiene stock disponible"
-          description={`Una guía traslada bienes que ya están en ${originLabel}. Recepciona mercadería o ajusta el inventario en Bodega para poder despachar.`}
+          description={`Una guía traslada bienes que ya están en ${originWorksiteName}. Recepciona mercadería o ajusta el inventario en Bodega para poder despachar.`}
           action={<Button asChild variant="secondary"><Link href="/bodega">Ir a Bodega</Link></Button>}
         />
       </div>
@@ -173,9 +171,9 @@ export function GuideForm({
             <Buildings size={16} className="mt-0.5 shrink-0 text-[var(--color-text-subtle)]" aria-hidden />
             <div>
               <p className="text-[11px] uppercase tracking-[0.06em] text-[var(--color-text-subtle)]">Origen</p>
-              <p className="text-sm font-semibold text-[var(--color-text)]">{originLabel}</p>
+              <p className="text-sm font-semibold text-[var(--color-text)]">{originWorksiteName}</p>
               <p className="text-xs text-[var(--color-text-muted)]">
-                Bodega {originWorksiteName} · fijo para toda guía de despacho interna
+                Fijo para toda guía de despacho interna
               </p>
             </div>
           </div>

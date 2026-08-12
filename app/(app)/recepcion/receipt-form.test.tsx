@@ -62,14 +62,15 @@ describe("ReceiptForm", () => {
           purchaseOrderId="po-1"
           orderCode="OC-001"
           orderWorksiteName="Faena Norte"
+          officeName="Administración"
           items={[makeItem()]}
           canOffice={true}
           canFaena={false}
         />,
       )
-      // Order code appears in both items header and sidebar; use getAllByText
-      const orderCodeElements = screen.getAllByText("OC-001")
-      expect(orderCodeElements.length).toBeGreaterThanOrEqual(1)
+      // El código sólo va en la cabecera de ítems: la barra lateral dejó de
+      // repetirlo (A5), porque ya está en el título de la página.
+      expect(screen.getByText(/Ítems de la OC OC-001/)).toBeDefined()
     })
 
     it("renders items table with product name", () => {
@@ -78,6 +79,7 @@ describe("ReceiptForm", () => {
           purchaseOrderId="po-1"
           orderCode="OC-001"
           orderWorksiteName="Faena Norte"
+          officeName="Administración"
           items={[makeItem({ productName: "Guantes" })]}
           canOffice={true}
           canFaena={false}
@@ -94,6 +96,7 @@ describe("ReceiptForm", () => {
           purchaseOrderId="po-1"
           orderCode="OC-001"
           orderWorksiteName="Faena Norte"
+          officeName="Administración"
           items={[makeItem()]}
           canOffice={true}
           canFaena={false}
@@ -109,12 +112,13 @@ describe("ReceiptForm", () => {
           purchaseOrderId="po-1"
           orderCode="OC-001"
           orderWorksiteName="Faena Norte"
+          officeName="Administración"
           items={[makeItem()]}
           canOffice={true}
           canFaena={false}
         />,
       )
-      expect(screen.getByText("Marcar como recibido")).toBeDefined()
+      expect(screen.getByText("Registrar llegada a oficina")).toBeDefined()
       expect(screen.getByText("Cancelar")).toBeDefined()
     })
   })
@@ -126,6 +130,7 @@ describe("ReceiptForm", () => {
           purchaseOrderId="po-1"
           orderCode="OC-001"
           orderWorksiteName="Faena Norte"
+          officeName="Administración"
           items={[makeItem()]}
           canOffice={true}
           canFaena={false}
@@ -140,6 +145,7 @@ describe("ReceiptForm", () => {
           purchaseOrderId="po-1"
           orderCode="OC-001"
           orderWorksiteName="Faena Norte"
+          officeName="Administración"
           items={[makeItem()]}
           canOffice={true}
           canFaena={true}
@@ -155,6 +161,7 @@ describe("ReceiptForm", () => {
           purchaseOrderId="po-1"
           orderCode="OC-001"
           orderWorksiteName="Faena Norte"
+          officeName="Administración"
           items={[makeItem({ quantityOfficeReceived: 0 })]}
           canOffice={true}
           canFaena={true}
@@ -170,6 +177,7 @@ describe("ReceiptForm", () => {
           purchaseOrderId="po-1"
           orderCode="OC-001"
           orderWorksiteName="Faena Norte"
+          officeName="Administración"
           items={[makeItem({ quantityOfficeReceived: 5 })]}
           // Aunque el actor también tenga permiso de oficina, una OC de
           // despacho directo no debe ofrecer una etapa que el servidor prohíbe.
@@ -187,6 +195,7 @@ describe("ReceiptForm", () => {
           purchaseOrderId="oc-1"
           orderCode="OC-1"
           orderWorksiteName="Faena X"
+          officeName="Administración"
           items={[{ id: "i1", requestItemId: "ri1", productName: "P", productSku: null,
                     quantity: 10, quantityOfficeReceived: 0, quantityReceived: 0,
                     unitOfMeasure: "unidad", notes: null }]}
@@ -203,6 +212,58 @@ describe("ReceiptForm", () => {
       const faenaButton = queryByText("Recepción en faena")?.closest("button")
       expect(faenaButton).not.toHaveAttribute("disabled")
     })
+
+    it("el rótulo del envío sigue a la etapa elegida", () => {
+      render(
+        <ReceiptForm
+          purchaseOrderId="po-1"
+          orderCode="OC-001"
+          orderWorksiteName="Faena Norte"
+          officeName="Administración"
+          items={[makeItem({ quantityOfficeReceived: 5 })]}
+          canOffice={true}
+          canFaena={true}
+        />,
+      )
+      // En oficina nada se "recibe": la propia tarjeta dice que no suma stock.
+      expect(screen.getByText("Registrar llegada a oficina")).toBeDefined()
+
+      fireEvent.click(screen.getByText("Recepción en faena").closest("button")!)
+      expect(screen.getByText("Registrar recepción en faena")).toBeDefined()
+      expect(screen.queryByText("Registrar llegada a oficina")).toBeNull()
+    })
+
+    it("las tarjetas muestran el avance que antes pintaba el stepper", () => {
+      render(
+        <ReceiptForm
+          purchaseOrderId="po-1"
+          orderCode="OC-001"
+          orderWorksiteName="Faena Norte"
+          officeName="Administración"
+          items={[makeItem({ quantity: 10, quantityOfficeReceived: 4 })]}
+          canOffice={true}
+          canFaena={true}
+        />,
+      )
+      expect(screen.getByText("4 / 10 unidad")).toBeDefined()
+      expect(screen.getByText("4 unidad por despachar")).toBeDefined()
+    })
+
+    it("nombra la oficina que llega por prop, no un literal", () => {
+      render(
+        <ReceiptForm
+          purchaseOrderId="po-1"
+          orderCode="OC-001"
+          orderWorksiteName="Faena Norte"
+          officeName="Oficina Central"
+          items={[makeItem()]}
+          canOffice={true}
+          canFaena={false}
+        />,
+      )
+      expect(screen.getByText(/Proveedor entrega en Oficina Central/)).toBeDefined()
+      expect(screen.queryByText(/Chome/i)).toBeNull()
+    })
   })
 
   describe("item display", () => {
@@ -212,6 +273,7 @@ describe("ReceiptForm", () => {
           purchaseOrderId="po-1"
           orderCode="OC-001"
           orderWorksiteName="Faena Norte"
+          officeName="Administración"
           items={[makeItem({ productSku: "EPP-001" })]}
           canOffice={true}
           canFaena={false}
@@ -226,6 +288,7 @@ describe("ReceiptForm", () => {
           purchaseOrderId="po-1"
           orderCode="OC-001"
           orderWorksiteName="Faena Norte"
+          officeName="Administración"
           items={[makeItem({ productSku: null })]}
           canOffice={true}
           canFaena={false}
@@ -240,6 +303,7 @@ describe("ReceiptForm", () => {
           purchaseOrderId="po-1"
           orderCode="OC-001"
           orderWorksiteName="Faena Norte"
+          officeName="Administración"
           items={[makeItem({ quantityOfficeReceived: 10, quantity: 10 })]}
           canOffice={true}
           canFaena={false}
@@ -258,6 +322,7 @@ describe("ReceiptForm", () => {
           purchaseOrderId="po-1"
           orderCode="OC-001"
           orderWorksiteName="Faena Norte"
+          officeName="Administración"
           items={[makeItem(), makeItem({ id: "oci-2", productName: "Guantes" })]}
           canOffice={true}
           canFaena={false}
@@ -268,21 +333,6 @@ describe("ReceiptForm", () => {
       expect(pendingElements.length).toBe(1)
     })
 
-    it("displays order code in sidebar", () => {
-      render(
-        <ReceiptForm
-          purchaseOrderId="po-1"
-          orderCode="OC-002"
-          orderWorksiteName="Faena Norte"
-          items={[makeItem()]}
-          canOffice={true}
-          canFaena={false}
-        />,
-      )
-      // OC-002 appears in items header and sidebar
-      const orderCodeElements = screen.getAllByText("OC-002")
-      expect(orderCodeElements.length).toBeGreaterThanOrEqual(1)
-    })
   })
 
   describe("guide number hint", () => {
@@ -292,6 +342,7 @@ describe("ReceiptForm", () => {
           purchaseOrderId="po-1"
           orderCode="OC-001"
           orderWorksiteName="Faena Norte"
+          officeName="Administración"
           items={[makeItem()]}
           canOffice={true}
           canFaena={false}
@@ -308,6 +359,7 @@ describe("ReceiptForm", () => {
           purchaseOrderId="po-hidden"
           orderCode="OC-001"
           orderWorksiteName="Faena Norte"
+          officeName="Administración"
           items={[makeItem()]}
           canOffice={true}
           canFaena={false}
@@ -327,6 +379,7 @@ describe("ReceiptForm", () => {
           purchaseOrderId="po-1"
           orderCode="OC-001"
           orderWorksiteName="Faena Norte"
+          officeName="Administración"
           items={[makeItem({ quantity: 5 })]}
           canOffice={true}
           canFaena={false}
@@ -335,7 +388,7 @@ describe("ReceiptForm", () => {
       const dmgInput = screen.getAllByLabelText("Cantidad dañada de Casco Seguridad")[0]!
       fireEvent.change(dmgInput, { target: { value: "3" } }) // recibido(5) + dañado(3) > 5
       expect(screen.getByText(/supera lo pendiente/)).toBeDefined()
-      const submitButton = screen.getByText("Marcar como recibido").closest("button")
+      const submitButton = screen.getByText("Registrar llegada a oficina").closest("button")
       expect(submitButton).toHaveAttribute("disabled")
     })
 
@@ -345,6 +398,7 @@ describe("ReceiptForm", () => {
           purchaseOrderId="po-1"
           orderCode="OC-001"
           orderWorksiteName="Faena Norte"
+          officeName="Administración"
           items={[makeItem({ quantity: 5 })]}
           canOffice={true}
           canFaena={false}
@@ -355,7 +409,7 @@ describe("ReceiptForm", () => {
       fireEvent.change(qtyInput, { target: { value: "2" } })
       fireEvent.change(dmgInput, { target: { value: "3" } }) // 2 + 3 = 5, exacto
       expect(screen.queryByText(/supera lo pendiente/)).toBeNull()
-      const submitButton = screen.getByText("Marcar como recibido").closest("button")
+      const submitButton = screen.getByText("Registrar llegada a oficina").closest("button")
       expect(submitButton).not.toHaveAttribute("disabled")
     })
   })
@@ -374,6 +428,7 @@ describe("ReceiptForm", () => {
           purchaseOrderId="po-1"
           orderCode="OC-001"
           orderWorksiteName="Faena Norte"
+          officeName="Administración"
           items={[makeItem({ quantity: 10, quantityOfficeReceived: 0 })]}
           canOffice={true}
           canFaena={false}
@@ -393,6 +448,7 @@ describe("ReceiptForm", () => {
           purchaseOrderId="po-1"
           orderCode="OC-001"
           orderWorksiteName="Faena Norte"
+          officeName="Administración"
           items={[makeItem({ quantity: 10, quantityOfficeReceived: 0 })]}
           canOffice={true}
           canFaena={false}
@@ -412,6 +468,7 @@ describe("ReceiptForm", () => {
           purchaseOrderId="po-1"
           orderCode="OC-001"
           orderWorksiteName="Faena Norte"
+          officeName="Administración"
           items={[
             makeItem({ id: "oci-1", productName: "Casco" }),
             makeItem({ id: "oci-2", productName: "Guantes" }),

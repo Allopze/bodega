@@ -1668,9 +1668,12 @@ async function main() {
     createdAt: now,
     updatedAt: now,
   })
-  await db.update(schema.products)
-    .set({ familyId: "family-epp-e2e", updatedAt: now })
-    .where(eq(schema.products.id, "prod-epp-e2e"))
+  // `prod-epp-e2e` NO entra a la familia: es el casco genérico de los fixtures
+  // de recepción y entrega, y no tiene atributo "Talla". `getSizeVariantPicker`
+  // anula la familia entera si **algún** miembro carece de talla, así que
+  // meterlo aquí dejaba al `VariantSelector` sin renderizar y a
+  // `epp-variant-request-flow` sin nada que probar — el mismo síntoma que ya
+  // documenta el comentario de más abajo, por otra causa.
   await db.insert(schema.products).values([
     {
       id: "prod-epp-var-s", sku: "E2E-CASCO-S", name: "Casco E2E S",

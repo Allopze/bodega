@@ -43,6 +43,7 @@ interface RecepcionTableProps {
   guideMap:         Record<string, ReceiptGuideRow[]>
   canOffice:        boolean
   canFaena:         boolean
+  officeName:       string
   worksiteOptions?: FilterOption[]
   supplierOptions?: FilterOption[]
   stageTabs?:       StageTab[]
@@ -68,7 +69,7 @@ const COLUMNS = [
 const EMPTY_FILTER_OPTIONS: FilterOption[] = []
 const EMPTY_STAGE_TABS: StageTab[] = []
 
-export function RecepcionTable({ orders, wsMap, supMap, gapMap, guideMap, canOffice, canFaena, worksiteOptions = EMPTY_FILTER_OPTIONS, supplierOptions = EMPTY_FILTER_OPTIONS, stageTabs = EMPTY_STAGE_TABS }: RecepcionTableProps) {
+export function RecepcionTable({ orders, wsMap, supMap, gapMap, guideMap, canOffice, canFaena, officeName, worksiteOptions = EMPTY_FILTER_OPTIONS, supplierOptions = EMPTY_FILTER_OPTIONS, stageTabs = EMPTY_STAGE_TABS }: RecepcionTableProps) {
   const router = useRouter()
 
   const searchParams = useSearchParams()
@@ -90,9 +91,9 @@ export function RecepcionTable({ orders, wsMap, supMap, gapMap, guideMap, canOff
     <OnboardingHint
       storageKey="hint_recepcion_v1"
       title="Recepción de órdenes de compra"
-        body="Registra la llegada en dos pasos cuando la entrega es vía oficina: primero en oficina Chome (botón 'Recibir'), luego la recepción en faena. Las OC de despacho directo a faena se reciben en un solo paso. El indicador «Pendiente de recepción en faena» muestra ítems que ya llegaron a oficina pero aún no se despacharon."
+        body={`Registra la llegada en dos pasos cuando la entrega es vía oficina: primero en ${officeName} (botón 'Recibir'), luego la recepción en faena. Las OC de despacho directo a faena se reciben en un solo paso. El indicador «Pendiente de recepción en faena» muestra ítems que ya llegaron a oficina pero aún no se despacharon.`}
     />
-    <StateLegend />
+    <StateLegend officeName={officeName} />
     {stageTabs.length > 0 && <StageTabs tabs={stageTabs} ariaLabel="Etapa de la recepción" />}
     <ListFilters
       searchPlaceholder="Buscar por código o proveedor..."

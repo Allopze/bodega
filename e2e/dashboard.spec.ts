@@ -300,7 +300,7 @@ test.describe("Dashboard operacional", () => {
   test("el dinero vive en Finanzas y no se repite en Adquisiciones ni Flota", async ({ page }) => {
     await page.goto("/dashboard?vista=finanzas")
     const finanzas = page.getByRole("region", { name: "Finanzas" })
-    await expect(finanzas.getByText("Egresos — compra y consumo")).toBeVisible()
+    await expect(finanzas.getByText("Egresos (compra y consumo)")).toBeVisible()
     await expect(finanzas.getByText("Gasto en OC", { exact: true })).toBeVisible()
 
     await page.goto("/dashboard?vista=adquisiciones")
@@ -319,7 +319,7 @@ test.describe("Dashboard operacional", () => {
     await page.goto("/dashboard?vista=finanzas")
     const finanzas = page.getByRole("region", { name: "Finanzas" })
 
-    await expect(finanzas.getByText("Ingresos — facturación de venta")).toBeVisible()
+    await expect(finanzas.getByText("Ingresos (facturación de venta)")).toBeVisible()
     await expect(finanzas.getByText("Pendiente de cobro", { exact: true })).toBeVisible()
     await expect(finanzas.getByRole("link", { name: "Facturación" })).toHaveAttribute("href", "/facturacion")
   })

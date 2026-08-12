@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test"
-import { login, selectRadixById, pickCurrentMonthDate, idFromUrl } from "./helpers"
+import { login, selectRadixById, pickCurrentMonthDate, idFromUrl, receiptSubmitName, receiptStageCard, clearGuidesFromReceptionQueue } from "./helpers"
 
 /**
  * El flujo completo dentro de los cuatro módulos que existen —Solicitudes,
@@ -133,6 +133,10 @@ test.describe("Solicitudes → Aprobaciones → Compras → Recepción", () => {
   })
 
   test("generar la OC saca la solicitud de Compras y la deja en Recepción sin pasos manuales", async ({ page }) => {
+    // Recorre los cuatro módulos y además coteja las dos GDI que dejan las dos
+    // llegadas a oficina: son ~15 navegaciones más que cualquier otro test de
+    // este archivo, y con la máquina cargada no cabía en los 150 s por defecto.
+    test.setTimeout(300_000)
     await login(page)
     const requestCode = await crearSolicitud(page, [
       { nombre: PRODUCTO, cantidad: "6" },
@@ -186,29 +190,37 @@ test.describe("Solicitudes → Aprobaciones → Compras → Recepción", () => {
     await emitir.click()
     await expect(emitir).toBeHidden({ timeout: 30_000 })
 
-    const filaRecepcion = page.locator("tbody tr").filter({ has: page.locator(`a[href*="oc=${orderId}"]`) })
+    // Estar "en la cola" es tener acción pendiente, no sólo figurar: `/recepcion`
+    // sin filtro lista también las completadas. Antes eso quedaba tapado porque
+    // el localizador exigía el enlace `?oc=`, que sólo existe mientras la OC es
+    // recibible; en cuanto la GDI cambia la acción a "Completar guía" ese
+    // localizador daba la OC por desaparecida de la cola.
+    const filaRecepcion = page.locator("tbody tr").filter({ hasText: orderCode })
+    const accionPendiente = filaRecepcion.getByRole("link", { name: /Recibir|Completar guía|Cotejar/ })
     await expect.poll(async () => {
       await page.goto("/recepcion")
-      return filaRecepcion.count()
+      return accionPendiente.count()
     }, { timeout: 30_000 }).toBe(1)
 
     // ── Recepción parcial: la OC se queda en la cola ───────────────────────
     await filaRecepcion.first().getByRole("link", { name: "Recibir" }).click()
-    await page.getByRole("button", { name: /Recepción en oficina/i }).click()
+    await receiptStageCard(page, "Oficina").click()
     await registrarRecepcion(page, "2")
 
     await expect.poll(async () => {
       await page.goto("/recepcion")
-      return filaRecepcion.count()
+      return accionPendiente.count()
     }, { timeout: 30_000 }).toBe(1)
 
     // ── Recepción completa: sale de la cola activa y queda en Completadas ──
-    await recibirTodo(page, orderId, "Oficina", "4")
-    await recibirTodo(page, orderId, "Faena", "6")
+    // El saldo entra por oficina; la faena ya no se registra en el formulario,
+    // se cierra cotejando las guías que dejó cada llegada.
+    await recibirTodo(page, orderId, "4")
+    await clearGuidesFromReceptionQueue(page, orderCode, 2)
 
     await expect.poll(async () => {
       await page.goto("/recepcion")
-      return filaRecepcion.count()
+      return accionPendiente.count()
     }, { timeout: 30_000 }).toBe(0)
 
     // El historial no se pierde: sale de la cola activa y vive en su tab.
@@ -289,14 +301,15 @@ async function registrarRecepcion(page: Page, cantidad: string) {
   await page.getByRole("spinbutton", { name: new RegExp(`Cantidad a recibir de ${PRODUCTO}`, "i") })
     .first()
     .fill(cantidad)
-  await page.getByRole("button", { name: "Marcar como recibido" }).click()
+  await page.getByRole("button", { name: receiptSubmitName("Oficina") }).click()
   // Anclado al efecto real: `/recepcion/[id]` también matchea `/recepcion/nueva`,
   // que es la URL en la que ya estamos, así que esa espera se cumplía sola.
   await expect(page.getByRole("heading", { name: /^REC-/ })).toBeVisible({ timeout: 30_000 })
 }
 
-async function recibirTodo(page: Page, orderId: string, etapa: "Oficina" | "Faena", cantidad: string) {
+/** La faena ya no se registra aquí: se cierra cotejando la guía. */
+async function recibirTodo(page: Page, orderId: string, cantidad: string) {
   await page.goto(`/recepcion/nueva?oc=${orderId}`)
-  await page.getByRole("button", { name: new RegExp(`Recepción en ${etapa}`, "i") }).click()
+  await receiptStageCard(page, "Oficina").click()
   await registrarRecepcion(page, cantidad)
 }

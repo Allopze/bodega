@@ -7,6 +7,7 @@ import {
 } from "@/lib/services/system-settings"
 import { PageHeader } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
+import { officeWorksiteOptions } from "@/lib/services/dispatch-guides"
 import { OpsSettingsForm } from "./ops-settings-form"
 
 export const metadata: Metadata = { title: "Parámetros operativos" }
@@ -18,20 +19,23 @@ export default async function OpsSettingsPage() {
     redirect("/forbidden")
   }
 
-  const current = await getOperationalSettings()
+  const [current, office] = await Promise.all([
+    getOperationalSettings(),
+    officeWorksiteOptions(),
+  ])
 
   return (
     <PageContainer width="form">
       <PageHeader
         title="Parámetros operativos"
-        description="Ajustes avanzados que gobiernan exportaciones, retención de notificaciones y límites de adjuntos."
+        description="Ajustes avanzados que gobiernan la bodega de origen, exportaciones, retención de notificaciones y límites de adjuntos."
         breadcrumb={[
           { label: "Inicio", href: "/dashboard" },
           { label: "Administración", href: "/admin" },
           { label: "Parámetros operativos" },
         ]}
       />
-      <OpsSettingsForm current={current} defaults={DEFAULT_OPS_SETTINGS} />
+      <OpsSettingsForm current={current} defaults={DEFAULT_OPS_SETTINGS} office={office} />
     </PageContainer>
   )
 }

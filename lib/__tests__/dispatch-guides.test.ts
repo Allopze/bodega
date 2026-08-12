@@ -40,6 +40,7 @@ import {
   listOfficeStockOptions,
   prepareAdditionalDispatchGuideForOfficeReceipt,
   resolveOfficeWorksite,
+  setOfficeWorksite,
   updateDispatchGuide,
   OFFICE_WORKSITE_SETTING_KEY,
 } from "@/lib/services/dispatch-guides"
@@ -702,6 +703,20 @@ describe("Guías de Despacho Internas", () => {
       expect((await resolveOfficeWorksite()).id).toBe(OFFICE)
     }
     await inMemoryDb.update(schema.worksites).set({ name: "Administración" }).where(eq(schema.worksites.id, OFFICE))
+  })
+
+  it("la pantalla de admin fija y libera la oficina, y rechaza faenas inválidas", async () => {
+    const actor = { userId: ISSUER.userId }
+    await setOfficeWorksite(OTHER_FAENA, actor)
+    expect((await resolveOfficeWorksite()).id).toBe(OTHER_FAENA)
+
+    await expect(setOfficeWorksite("ws-fantasma", actor)).rejects.toThrow(/no existe/i)
+    // El rechazo no debe dejar el ajuste a medias.
+    expect((await resolveOfficeWorksite()).id).toBe(OTHER_FAENA)
+
+    // Vaciar devuelve el control al calce por nombre.
+    await setOfficeWorksite("", actor)
+    expect((await resolveOfficeWorksite()).id).toBe(OFFICE)
   })
 
   it("prefiere el ajuste explícito sobre el nombre y avisa si apunta a una faena inválida", async () => {
