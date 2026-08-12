@@ -73,7 +73,9 @@ export const DISPATCH_GUIDE_REFERENCE_TYPE = "dispatch_guide"
 export const OFFICE_WORKSITE_SETTING_KEY = "warehouse.office_worksite_id"
 
 /** Fallback por nombre cuando no hay ajuste explícito. */
-const OFFICE_WORKSITE_NAME_FALLBACKS = ["administracion", "oficina", "oficina chome", "casa matriz"]
+const OFFICE_WORKSITE_NAME_FALLBACKS = [
+  "administracion", "oficina", "oficina central", "oficina chome", "casa matriz",
+]
 
 export type DispatchGuideStatus = "draft" | "dispatched" | "partially_received" | "received" | "cancelled"
 
@@ -98,7 +100,7 @@ function normalizeName(value: string): string {
  *
  * 1. `system_settings['warehouse.office_worksite_id']`, si está configurado.
  * 2. Si no, la faena activa cuyo nombre corresponda a la oficina
- *    ("Administración", "Oficina", "Casa Matriz").
+ *    ("Administración", "Oficina", "Oficina Central", "Casa Matriz").
  *
  * Nunca devuelve un texto: la guía guarda la FK a `worksites`, que es la que
  * permite descontar su stock.

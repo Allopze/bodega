@@ -696,6 +696,14 @@ describe("Guías de Despacho Internas", () => {
     expect(office.id).toBe(OFFICE)
   })
 
+  it("reconoce las variantes de nombre con que se bautiza la oficina", async () => {
+    for (const name of ["Oficina Central", "Oficina", "Casa Matriz", "Oficina CHOME"]) {
+      await inMemoryDb.update(schema.worksites).set({ name }).where(eq(schema.worksites.id, OFFICE))
+      expect((await resolveOfficeWorksite()).id).toBe(OFFICE)
+    }
+    await inMemoryDb.update(schema.worksites).set({ name: "Administración" }).where(eq(schema.worksites.id, OFFICE))
+  })
+
   it("prefiere el ajuste explícito sobre el nombre y avisa si apunta a una faena inválida", async () => {
     await inMemoryDb.insert(schema.systemSettings).values({
       key: OFFICE_WORKSITE_SETTING_KEY, value: OTHER_FAENA, updatedAt: now,
