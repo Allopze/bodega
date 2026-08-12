@@ -31,6 +31,12 @@ describe("parseDteXml", () => {
     expect(items[1]!.quantity).toBe(5)
   })
 
+  it("preserves a missing document unit as unknown instead of inventing UN", () => {
+    const xmlWithoutUnit = SAMPLE_DTE.replaceAll("<UnmdItem>UN</UnmdItem>", "")
+
+    expect(parseDteXml(xmlWithoutUnit)?.items[0]?.unitOfMeasure).toBeNull()
+  })
+
   it("returns null for invalid XML", () => {
     expect(parseDteXml("not xml")).toBeNull()
   })

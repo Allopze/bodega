@@ -2,17 +2,20 @@
  * Invoice management for purchase orders.
  */
 
-import { and, eq, inArray } from "drizzle-orm"
+import { and, eq, inArray, isNull } from "drizzle-orm"
 import { db } from "@/db"
-import { purchaseOrders, purchaseOrderInvoices, purchaseOrderInvoiceItems, purchaseOrderItems } from "@/db/schema"
+import { dteDocuments, products, purchaseOrders, purchaseOrderInvoices, purchaseOrderInvoiceItems, purchaseOrderItems, suppliers } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { recordAudit } from "@/lib/audit"
 import { logger } from "@/lib/logger"
+import { cleanRut } from "@/lib/rut"
+import { localDateToISO } from "@/lib/sst/date"
 import {
   reconcileInvoiceEvidence,
   type ReconciledOrderItem,
   type InvoiceReconciliationEvidence,
 } from "./invoice-reconciliation"
+import { matchInvoiceItemsToPurchaseOrderItems } from "./invoice-item-matching"
 
 /* ── Purchase Order Invoices ─────────────────────────────────────────────────── */
 
@@ -44,6 +47,23 @@ export interface CreateInvoiceInput {
   uploadedBy:      string
   userEmail?:      string
   items?:          CreateInvoiceItemInput[]
+  /** Manual uploads keep their line-total guard; DTE uses MntTotal as authority. */
+  amountAuthority?: "line_items" | "document_header"
+}
+
+export interface DteInvoiceIdentity {
+  tipoDte: string | null
+  invoiceNumber: string
+  issueDate: string | null
+  supplierRut: string | null
+  totalAmount: number
+}
+
+export interface CreateInvoiceFromDteInput extends CreateInvoiceInput {
+  dteDocumentId: string
+  dteIdentity: DteInvoiceIdentity
+  amountAuthority: "document_header"
+  items: CreateInvoiceItemInput[]
 }
 
 export interface DeleteInvoiceResult {
@@ -79,19 +99,49 @@ export async function createPurchaseOrderInvoice(
   return invoiceId
 }
 
+/**
+ * Registra una factura creada desde un DTE ya sincronizado. A diferencia de la
+ * conciliación best-effort de una carga manual, insertar la factura y marcar
+ * el DTE ocurren en la misma transacción: un documento tributario no queda
+ * disponible para dos órdenes ni para combustible a la vez.
+ */
+export async function createPurchaseOrderInvoiceFromDte(
+  input: CreateInvoiceFromDteInput,
+  worksiteIds: string[] | "all" = "all",
+): Promise<string> {
+  return insertPurchaseOrderInvoice(input, worksiteIds, {
+    dteDocumentId: input.dteDocumentId,
+    dteIdentity: input.dteIdentity,
+  })
+}
+
 async function insertPurchaseOrderInvoice(
   input: CreateInvoiceInput,
   worksiteIds: string[] | 'all' = 'all',
+  dteAttachment?: {
+    dteDocumentId: string
+    dteIdentity: DteInvoiceIdentity
+  },
 ): Promise<string> {
   return await db.transaction(async (tx) => {
     if (!Number.isFinite(input.amount) || input.amount < 0) {
       throw new Error("Monto de factura inválido")
     }
-    const invoiceItems = normalizeInvoiceItems(input.items)
+    let invoiceItems = normalizeInvoiceItems(
+      input.items,
+      input.amountAuthority === "document_header",
+    )
     // Lock de la OC: sin él, una anulación concurrente commiteaba entre esta
     // lectura y el insert, y la factura quedaba adjunta a una OC ya `cancelled`.
     const [order] = await tx
-      .select({ id: purchaseOrders.id, status: purchaseOrders.status, code: purchaseOrders.code, worksiteId: purchaseOrders.worksiteId })
+      .select({
+        id: purchaseOrders.id,
+        status: purchaseOrders.status,
+        code: purchaseOrders.code,
+        worksiteId: purchaseOrders.worksiteId,
+        supplierId: purchaseOrders.supplierId,
+        createdAt: purchaseOrders.createdAt,
+      })
       .from(purchaseOrders)
       .where(eq(purchaseOrders.id, input.purchaseOrderId))
       .for("update")
@@ -105,6 +155,11 @@ async function insertPurchaseOrderInvoice(
       throw new Error(
         `No se puede adjuntar factura a una OC en estado '${order.status}'`
       )
+    }
+
+    if (dteAttachment) {
+      await validateDteForInvoiceTx(tx, order, input, dteAttachment)
+      invoiceItems = await linkDteItemsToOrderTx(tx, input.purchaseOrderId, invoiceItems)
     }
 
     const invoiceNumber = input.invoiceNumber.trim()
@@ -140,8 +195,12 @@ async function insertPurchaseOrderInvoice(
 
     const invoiceId = nanoid()
 
-    // Calculate total from items if provided, otherwise use the provided amount
-    const totalAmount = invoiceItems.length > 0
+    // Una carga manual recalcula desde líneas para no confiar en el navegador.
+    // Un DTE validado conserva MntTotal: las líneas suelen ser netas y pueden
+    // incluir descuentos/exentos que no suman el total tributario.
+    const totalAmount = input.amountAuthority === "document_header"
+      ? input.amount
+      : invoiceItems.length > 0
       ? invoiceItems.reduce((sum, item) => sum + item.subtotal, 0)
       : input.amount
 
@@ -175,6 +234,20 @@ async function insertPurchaseOrderInvoice(
       )
     }
 
+    if (dteAttachment) {
+      const linked = await tx.update(dteDocuments)
+        .set({ purchaseOrderInvoiceId: invoiceId })
+        .where(and(
+          eq(dteDocuments.id, dteAttachment.dteDocumentId),
+          isNull(dteDocuments.purchaseOrderInvoiceId),
+          isNull(dteDocuments.fuelLoadId),
+        ))
+        .returning({ id: dteDocuments.id })
+      if (linked.length !== 1) {
+        throw new Error("Este DTE ya fue usado por otra operación")
+      }
+    }
+
     await recordAudit({
       userId:     input.uploadedBy,
       userEmail:  input.userEmail,
@@ -187,6 +260,7 @@ async function insertPurchaseOrderInvoice(
         purchaseOrderCode: order.code,
         amount: totalAmount,
         issueDate: input.issueDate,
+        dteDocumentId: dteAttachment?.dteDocumentId ?? null,
       },
     }, tx)
 
@@ -194,22 +268,125 @@ async function insertPurchaseOrderInvoice(
   })
 }
 
-function normalizeInvoiceItems(items: CreateInvoiceItemInput[] | undefined) {
+function normalizeInvoiceItems(
+  items: CreateInvoiceItemInput[] | undefined,
+  preserveDocumentSubtotal = false,
+) {
   return (items ?? []).map((item, index) => {
     if (!item.productName.trim()) throw new Error(`La línea ${index + 1} no tiene descripción`)
     if (!Number.isFinite(item.quantity) || item.quantity <= 0) throw new Error(`Cantidad inválida en la línea ${index + 1}`)
     if (!Number.isFinite(item.unitPrice) || item.unitPrice < 0) throw new Error(`Precio inválido en la línea ${index + 1}`)
+
+    if (preserveDocumentSubtotal && (!Number.isFinite(item.subtotal) || item.subtotal < 0)) {
+      throw new Error(`Monto inválido en la línea ${index + 1}`)
+    }
 
     return {
       ...item,
       productName: item.productName.trim(),
       productCode: item.productCode?.trim() || null,
       unitOfMeasure: item.unitOfMeasure?.trim() || null,
-      // Ignore any browser-provided subtotal. This service is also called by
-      // non-UI flows, so the invariant belongs at the transactional boundary.
-      subtotal: roundMoney(item.quantity * item.unitPrice),
+      // Las cargas manuales ignoran el subtotal del navegador. El flujo DTE
+      // llega desde XML validado y conserva MontoItem como evidencia fiscal.
+      subtotal: preserveDocumentSubtotal
+        ? roundMoney(item.subtotal)
+        : roundMoney(item.quantity * item.unitPrice),
     }
   })
+}
+
+async function validateDteForInvoiceTx(
+  tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+  order: {
+    id: string
+    supplierId: string
+    createdAt: string
+  },
+  input: CreateInvoiceInput,
+  attachment: { dteDocumentId: string; dteIdentity: DteInvoiceIdentity },
+): Promise<void> {
+  const [[supplier], [dte]] = await Promise.all([
+    tx
+      .select({ rut: suppliers.rut })
+      .from(suppliers)
+      .where(eq(suppliers.id, order.supplierId)),
+    tx
+      .select({
+        id: dteDocuments.id,
+        tipoDte: dteDocuments.tipoDte,
+        folio: dteDocuments.folio,
+        rutEmisor: dteDocuments.rutEmisor,
+        fechaEmision: dteDocuments.fechaEmision,
+        montoTotal: dteDocuments.montoTotal,
+        purchaseOrderInvoiceId: dteDocuments.purchaseOrderInvoiceId,
+        fuelLoadId: dteDocuments.fuelLoadId,
+      })
+      .from(dteDocuments)
+      .where(eq(dteDocuments.id, attachment.dteDocumentId))
+      .for("update"),
+  ])
+
+  if (!dte || !supplier?.rut) throw new Error("El DTE o proveedor ya no está disponible")
+  if (!['33', '34'].includes(dte.tipoDte)) throw new Error("Este tipo de DTE no puede registrarse como factura de OC")
+  if (dte.purchaseOrderInvoiceId || dte.fuelLoadId) throw new Error("Este DTE ya fue usado por otra operación")
+  if (cleanRut(dte.rutEmisor) !== cleanRut(supplier.rut)) {
+    throw new Error("El emisor del DTE no corresponde al proveedor de esta OC")
+  }
+  if (dte.fechaEmision < localDateToISO(new Date(order.createdAt))) {
+    throw new Error("El DTE fue emitido antes de crear esta orden")
+  }
+
+  const xmlFolio = parseDteFolio(attachment.dteIdentity.invoiceNumber)
+  const hasSameIdentity = (
+    attachment.dteIdentity.tipoDte === dte.tipoDte
+    && xmlFolio === dte.folio
+    && attachment.dteIdentity.issueDate === dte.fechaEmision
+    && cleanRut(attachment.dteIdentity.supplierRut ?? "") === cleanRut(dte.rutEmisor)
+    && Math.abs(attachment.dteIdentity.totalAmount - dte.montoTotal) <= 1
+    && Math.abs(input.amount - attachment.dteIdentity.totalAmount) <= 1
+  )
+  if (!hasSameIdentity) {
+    throw new Error("El XML descargado no corresponde al DTE seleccionado")
+  }
+}
+
+async function linkDteItemsToOrderTx(
+  tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+  purchaseOrderId: string,
+  invoiceItems: ReturnType<typeof normalizeInvoiceItems>,
+) {
+  const orderItems = await tx
+    .select({
+      id: purchaseOrderItems.id,
+      productNameFree: purchaseOrderItems.productNameFree,
+      productName: products.name,
+      productCode: products.sku,
+      unitOfMeasure: purchaseOrderItems.unitOfMeasure,
+    })
+    .from(purchaseOrderItems)
+    .leftJoin(products, eq(purchaseOrderItems.productId, products.id))
+    .where(eq(purchaseOrderItems.purchaseOrderId, purchaseOrderId))
+
+  const matches = matchInvoiceItemsToPurchaseOrderItems(
+    invoiceItems,
+    orderItems.map((item) => ({
+      id: item.id,
+      productName: item.productNameFree ?? item.productName ?? item.id,
+      productCode: item.productCode ?? null,
+      unitOfMeasure: item.unitOfMeasure,
+    })),
+  )
+  return matches.map((match) => ({
+    ...match.item,
+    purchaseOrderItemId: match.ocItemId,
+  }))
+}
+
+function parseDteFolio(value: string): number | null {
+  const normalized = value.trim()
+  if (!/^\d+$/.test(normalized)) return null
+  const folio = Number(normalized)
+  return Number.isSafeInteger(folio) ? folio : null
 }
 
 function roundMoney(value: number) {
@@ -247,6 +424,13 @@ export async function deletePurchaseOrderInvoice(
     if (!INVOICE_ALLOWED_STATUSES.has(order.status)) {
       throw new Error(`No se puede eliminar la factura de una OC en estado '${order.status}'`)
     }
+
+    // La FK DTE → factura es NO ACTION por trazabilidad. Se desvincula dentro
+    // de la misma transacción antes de borrar, para que una factura creada
+    // desde DTE pueda corregirse sin dejar evidencia colgada.
+    await tx.update(dteDocuments)
+      .set({ purchaseOrderInvoiceId: null })
+      .where(eq(dteDocuments.purchaseOrderInvoiceId, invoiceId))
 
     await tx.delete(purchaseOrderInvoices).where(eq(purchaseOrderInvoices.id, invoiceId))
 

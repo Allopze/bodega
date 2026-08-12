@@ -11,13 +11,16 @@ export interface DteItem {
   productName:  string
   description:  string | null
   quantity:     number
-  unitOfMeasure: string
+  /** Unidad textual declarada por el proveedor; null si el XML no la informa. */
+  unitOfMeasure: string | null
   unitPrice:    number
   discount:     number
   amount:       number
 }
 
 export interface DteData {
+  /** Tipo declarado dentro del XML DTE (33, 34, etc.). */
+  tipoDte:       string | null
   invoiceNumber: string
   issueDate:     string | null
   supplierRut:   string | null
@@ -55,6 +58,7 @@ export function parseDteXml(xmlString: string): DteData | null {
     const emisor = childRecord(encabezado, "Emisor") ?? {}
     const totales = childRecord(encabezado, "Totales") ?? {}
 
+    const tipoDte = field(idDoc, "TipoDTE")
     const folio = field(idDoc, "Folio")
     const fechaEmision = field(idDoc, "FchEmis", "FechaEmision")
     const rutEmisor = field(emisor, "RUTEmisor")
@@ -81,7 +85,9 @@ export function parseDteXml(xmlString: string): DteData | null {
       const nmItem = field(itemNode, "NmbItem", "NmItem") ?? ""
       const dscItem = field(itemNode, "DscItem")
       const qtyItem = num(child(itemNode, "QtyItem"))
-      const unmdItem = field(itemNode, "UnmdItem") ?? "UN"
+      // La ausencia de UnmdItem es información: no se reemplaza por una
+      // unidad inventada porque podría parecer conciliada con la OC.
+      const unmdItem = field(itemNode, "UnmdItem")
       const prcItem = num(child(itemNode, "PrcItem"))
       const montoItem = num(child(itemNode, "MontoItem"))
       const descuentoMonto = num(child(itemNode, "DescuentoMonto"))
@@ -108,6 +114,7 @@ export function parseDteXml(xmlString: string): DteData | null {
     }
 
     return {
+      tipoDte,
       invoiceNumber: folio ?? "",
       issueDate:     fechaEmision ?? null,
       supplierRut:   rutEmisor ?? null,

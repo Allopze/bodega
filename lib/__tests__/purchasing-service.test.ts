@@ -11,8 +11,9 @@ import { drizzle } from "drizzle-orm/pglite"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
 import { describe, it, expect, vi, afterAll, beforeAll } from "vitest"
 import path from "node:path"
-import { eq, ne } from "drizzle-orm"
+import { and, eq, ne } from "drizzle-orm"
 import * as schema from "@/db/schema"
+import * as audit from "@/lib/audit"
 import type { DB } from "@/db"
 
 const pg = new PGlite()
@@ -34,6 +35,7 @@ import {
   deleteOrder,
   closeOrder,
   createPurchaseOrderInvoice,
+  createPurchaseOrderInvoiceFromDte,
   deletePurchaseOrderInvoice,
 } from "@/lib/services/purchasing"
 
@@ -1004,6 +1006,183 @@ describe("Purchasing service — edge cases", () => {
           uploadedBy: userId,
         })
       ).rejects.toThrow("no encontrada")
+    })
+
+    it("creates a DTE-backed invoice atomically, preserves its header total and unlinks it on deletion", async () => {
+      const orderId = "oc-dte-auto-invoice-1"
+      const dteId = "dte-auto-invoice-1"
+      const issueDate = now.slice(0, 10)
+      await inMemoryDb.insert(schema.purchaseOrders).values({
+        id: orderId,
+        code: "OC-DTE-AUTO-1",
+        worksiteId: "ws-purch",
+        supplierId: "sup-purch",
+        createdBy: userId,
+        status: "sent",
+        netAmount: 100000,
+        taxAmount: 19000,
+        totalAmount: 119000,
+        createdAt: now,
+        updatedAt: now,
+      })
+      await inMemoryDb.insert(schema.purchaseOrderItems).values({
+        id: "oc-dte-auto-item-1",
+        purchaseOrderId: orderId,
+        productId: "prod-purch",
+        productNameFree: null,
+        quantity: 10,
+        unitOfMeasure: "unidad",
+        unitPrice: 10000,
+        subtotal: 100000,
+        status: "issued",
+      })
+      await inMemoryDb.insert(schema.dteDocuments).values({
+        id: dteId,
+        tipoDte: "33",
+        folio: 456789,
+        rutEmisor: "76.000.001-1",
+        razonSocialEmisor: "Proveedor Purch",
+        fechaEmision: issueDate,
+        montoTotal: 119000,
+        codEmp: "433",
+        periodo: issueDate.slice(0, 7),
+        portalRecordId: "9000001",
+        rawHash: "dte-auto-invoice-1-hash",
+      })
+
+      const invoiceId = await createPurchaseOrderInvoiceFromDte({
+        purchaseOrderId: orderId,
+        dteDocumentId: dteId,
+        invoiceNumber: "456789",
+        amount: 119000,
+        amountAuthority: "document_header",
+        issueDate,
+        fileName: "DTE-33-456789.pdf",
+        filePath: "storage/purchase-orders/dte-33-456789.pdf",
+        fileSize: 8,
+        mimeType: "application/pdf",
+        uploadedBy: userId,
+        dteIdentity: {
+          tipoDte: "33",
+          invoiceNumber: "456789",
+          issueDate,
+          supplierRut: "76.000.001-1",
+          totalAmount: 119000,
+        },
+        items: [{
+          productName: "Producto Purch",
+          productCode: "P-001",
+          unitOfMeasure: "UN",
+          quantity: 10,
+          unitPrice: 10000,
+          // Neto de la línea: no debe reemplazar MntTotal ($119.000 con IVA).
+          subtotal: 100000,
+        }],
+      })
+
+      const invoice = await inMemoryDb.query.purchaseOrderInvoices.findFirst({
+        where: eq(schema.purchaseOrderInvoices.id, invoiceId),
+        with: { items: true },
+      })
+      const dte = await inMemoryDb.query.dteDocuments.findFirst({
+        where: eq(schema.dteDocuments.id, dteId),
+      })
+      expect(invoice?.amount).toBe(119000)
+      expect(invoice?.items).toHaveLength(1)
+      expect(invoice?.items[0]?.purchaseOrderItemId).toBeTruthy()
+      expect(dte?.purchaseOrderInvoiceId).toBe(invoiceId)
+
+      await expect(createPurchaseOrderInvoiceFromDte({
+        purchaseOrderId: orderId,
+        dteDocumentId: dteId,
+        invoiceNumber: "456790",
+        amount: 119000,
+        amountAuthority: "document_header",
+        issueDate,
+        fileName: "DTE-33-456789-copy.pdf",
+        filePath: "storage/purchase-orders/dte-33-456789-copy.pdf",
+        uploadedBy: userId,
+        dteIdentity: {
+          tipoDte: "33",
+          invoiceNumber: "456789",
+          issueDate,
+          supplierRut: "76.000.001-1",
+          totalAmount: 119000,
+        },
+        items: [{
+          productName: "Producto Purch",
+          productCode: "P-001",
+          unitOfMeasure: "UN",
+          quantity: 10,
+          unitPrice: 10000,
+          subtotal: 100000,
+        }],
+      })).rejects.toThrow("ya fue usado")
+
+      await deletePurchaseOrderInvoice(invoiceId, userId)
+      const unlinked = await inMemoryDb.query.dteDocuments.findFirst({
+        where: eq(schema.dteDocuments.id, dteId),
+      })
+      expect(unlinked?.purchaseOrderInvoiceId).toBeNull()
+
+      // Fail after the invoice, its lines, and the guarded DTE update have all
+      // been issued. The transaction must roll every one of them back.
+      const auditFailure = vi.spyOn(audit, "recordAudit")
+        .mockRejectedValueOnce(new Error("fallo de auditoría simulado"))
+      try {
+        await expect(createPurchaseOrderInvoiceFromDte({
+          purchaseOrderId: orderId,
+          dteDocumentId: dteId,
+          invoiceNumber: "456791",
+          amount: 119000,
+          amountAuthority: "document_header",
+          issueDate,
+          fileName: "DTE-33-456791.pdf",
+          filePath: "storage/purchase-orders/dte-33-456791.pdf",
+          uploadedBy: userId,
+          dteIdentity: {
+            tipoDte: "33",
+            invoiceNumber: "456789",
+            issueDate,
+            supplierRut: "76.000.001-1",
+            totalAmount: 119000,
+          },
+          items: [{
+            productName: "Producto Purch",
+            productCode: "P-001",
+            unitOfMeasure: "UN",
+            quantity: 10,
+            unitPrice: 10000,
+            subtotal: 100000,
+          }],
+        })).rejects.toThrow("fallo de auditoría simulado")
+      } finally {
+        auditFailure.mockRestore()
+      }
+
+      const rolledBackInvoice = await inMemoryDb.query.purchaseOrderInvoices.findFirst({
+        where: and(
+          eq(schema.purchaseOrderInvoices.purchaseOrderId, orderId),
+          eq(schema.purchaseOrderInvoices.invoiceNumber, "456791"),
+        ),
+      })
+      const rolledBackItems = await inMemoryDb
+        .select({ id: schema.purchaseOrderInvoiceItems.id })
+        .from(schema.purchaseOrderInvoiceItems)
+        .innerJoin(
+          schema.purchaseOrderInvoices,
+          eq(schema.purchaseOrderInvoiceItems.invoiceId, schema.purchaseOrderInvoices.id),
+        )
+        .where(and(
+          eq(schema.purchaseOrderInvoices.purchaseOrderId, orderId),
+          eq(schema.purchaseOrderInvoices.invoiceNumber, "456791"),
+        ))
+      const dteAfterRollback = await inMemoryDb.query.dteDocuments.findFirst({
+        where: eq(schema.dteDocuments.id, dteId),
+      })
+      expect(rolledBackInvoice).toBeUndefined()
+      expect(rolledBackItems).toEqual([])
+      expect(dteAfterRollback?.purchaseOrderInvoiceId).toBeNull()
     })
   })
 
