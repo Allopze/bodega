@@ -95,20 +95,23 @@ test.describe("Navegación — rol restringido", () => {
     // como en `correlativos-secciones`: reintentando el clic.
     const opener = page.getByRole("button", { name: "Abrir menú" })
     await expect(opener).toBeVisible()
-    // El reintento se ancla en un destino **filtrado por permisos**, no en
-    // "Inicio": esa es una entrada fija del rail y aparece de inmediato, así que
-    // anclarla ahí daba el panel por abierto mientras la navegación derivada del
-    // registry todavía no se había pintado — y la aserción siguiente fallaba a
-    // los 5 s sin reintentar el clic.
+    // El panel agrupa por área: cada área es un disclosure (`button`) y sus
+    // destinos viven dentro; sólo "Inicio" es enlace directo. Antes esto pedía
+    // un `link` "Mis pendientes", que el panel NO renderiza mientras el área
+    // está colapsada —y en `/dashboard` ninguna lo está—. Lo que hacía pasar la
+    // prueba era un enlace homónimo del tablero de fondo: verificaba la
+    // pantalla equivocada, y se caía en cuanto la cola de ese usuario quedaba
+    // vacía y el tablero dejaba de pintarlo.
+    const panel = page.getByRole("navigation")
     await expect(async () => {
       await opener.click()
-      await expect(page.getByRole("link", { name: "Mis pendientes" })).toBeVisible({ timeout: 5_000 })
+      await expect(panel.getByRole("button", { name: "Mis pendientes" })).toBeVisible({ timeout: 5_000 })
     }).toPass({ timeout: 60_000 })
 
-    // No se afirma qué contenedor lo aloja —el catálogo móvil vive en su propia
-    // hoja—, sino que el usuario alcanza sus destinos: eso es lo que el
-    // criterio de 320/390 px pide de verdad.
-    await expect(page.getByRole("link", { name: "Inicio" })).toBeVisible()
-    await expect(page.getByRole("link", { name: "Mis pendientes" })).toBeVisible()
+    // Alcanzar los destinos es lo que pide el criterio de 320/390 px: el enlace
+    // fijo, y el área que se despliega hasta el suyo.
+    await expect(panel.getByRole("link", { name: "Inicio" })).toBeVisible()
+    await panel.getByRole("button", { name: "Mis pendientes" }).click()
+    await expect(panel.getByRole("link", { name: "Mis pendientes" })).toBeVisible()
   })
 })
