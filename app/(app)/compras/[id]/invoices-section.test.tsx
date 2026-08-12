@@ -1,22 +1,26 @@
 // @vitest-environment jsdom
 import { fireEvent, render, screen, waitFor } from "@testing-library/react"
-import { describe, expect, it, vi } from "vitest"
+import { beforeEach, describe, expect, it, vi } from "vitest"
 
+const mockAddInvoiceAction = vi.fn()
 vi.mock("../invoice-actions", () => ({
-  addInvoiceAction: vi.fn(),
+  addInvoiceAction: (...args: unknown[]) => mockAddInvoiceAction(...args),
   deleteInvoiceAction: vi.fn(),
 }))
 
-const mockDownloadDteDocumentXml = vi.fn()
-vi.mock("../actions/dte-download-xml", () => ({
-  downloadDteDocumentXml: (...args: unknown[]) => mockDownloadDteDocumentXml(...args),
+const mockUseDteAsInvoice = vi.fn()
+vi.mock("../actions/dte-use-invoice", () => ({
+  attachDteAsInvoice: (...args: unknown[]) => mockUseDteAsInvoice(...args),
 }))
-vi.mock("../actions/dte-prefill-invoice", () => ({ prefillInvoiceFromDte: vi.fn() }))
 vi.mock("@/lib/toast", () => ({ toast: { error: vi.fn(), success: vi.fn() } }))
 
 import { InvoicesSection } from "./invoices-section"
 
 describe("InvoicesSection", () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
   it("does not serialise a pending OC cost as the string null when adding an invoice line", () => {
     render(
       <InvoicesSection
@@ -43,21 +47,7 @@ describe("InvoicesSection", () => {
     expect(screen.getByText(/costo de oc pendiente/i)).toBeInTheDocument()
   })
 
-  it("shows the DTE detail on demand before using it, and hides it again", async () => {
-    mockDownloadDteDocumentXml.mockResolvedValue({
-      ok: true,
-      detail: {
-        netAmount: 100000,
-        taxAmount: 19000,
-        totalAmount: 119000,
-        items: [{
-          lineNumber: 1, productCode: null, productName: "Casco",
-          description: null, quantity: 10, unitOfMeasure: "UN",
-          unitPrice: 5000, discount: 0, amount: 50000,
-        }],
-      },
-    })
-
+  it("opens the supplier PDF when the operator chooses Ver factura", () => {
     render(
       <InvoicesSection
         purchaseOrderId="oc-1"
@@ -77,13 +67,80 @@ describe("InvoicesSection", () => {
       />,
     )
 
-    fireEvent.click(screen.getByRole("button", { name: /ver factura/i }))
+    const link = screen.getByRole("link", { name: /ver factura/i })
+    expect(link).toHaveAttribute("href", "/api/purchase-orders/dtes/dte-1/pdf")
+    expect(link).toHaveAttribute("target", "_blank")
+  })
 
-    await waitFor(() => expect(mockDownloadDteDocumentXml).toHaveBeenCalledWith("dte-1"))
-    expect(await screen.findByText(/casco/i)).toBeInTheDocument()
-    expect(screen.getByText(/neto: \$100\.000/i)).toBeInTheDocument()
+  it("uses the one-step DTE action instead of only pre-filling a manual upload", async () => {
+    mockUseDteAsInvoice.mockResolvedValue({ ok: true, message: "Factura 3692684 adjuntada correctamente" })
+    render(
+      <InvoicesSection
+        purchaseOrderId="oc-1"
+        invoices={[]}
+        totalAmount={119000}
+        canManage
+        ocItems={[]}
+        dteCandidates={[{
+          id: "dte-1",
+          tipoDte: "33",
+          folio: 3692684,
+          razonSocialEmisor: "Proveedor Ficticio SpA",
+          montoTotal: 119000,
+          fechaEmision: "2026-07-09",
+          amountMatches: true,
+        }]}
+      />,
+    )
 
-    fireEvent.click(screen.getByRole("button", { name: /ocultar detalle/i }))
-    expect(screen.queryByText(/casco/i)).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: /usar este dte/i }))
+
+    await waitFor(() => expect(mockUseDteAsInvoice).toHaveBeenCalledWith({
+      purchaseOrderId: "oc-1",
+      dteDocumentId: "dte-1",
+    }))
+  })
+
+  it("does not submit the manual invoice form when using a DTE", async () => {
+    mockUseDteAsInvoice.mockResolvedValue({ ok: true, message: "Factura 3692684 adjuntada correctamente" })
+    render(
+      <InvoicesSection
+        purchaseOrderId="oc-1"
+        invoices={[]}
+        totalAmount={119000}
+        canManage
+        ocItems={[]}
+        dteCandidates={[{
+          id: "dte-1",
+          tipoDte: "33",
+          folio: 3692684,
+          razonSocialEmisor: "Proveedor Ficticio SpA",
+          montoTotal: 119000,
+          fechaEmision: "2026-07-09",
+          amountMatches: true,
+        }]}
+      />,
+    )
+
+    // Satisfy the form's native required-file constraint: a button without an
+    // explicit type would otherwise hide its accidental submit behind browser
+    // validation and miss the exact regression we are protecting.
+    const fileInput = screen.getByLabelText("Archivo")
+    fireEvent.change(fileInput, {
+      target: { files: [new File(["%PDF-1.7"], "manual.pdf", { type: "application/pdf" })] },
+    })
+
+    const useDteButton = screen.getByRole("button", { name: /usar este dte/i })
+    const form = useDteButton.closest("form")
+    expect(form).not.toBeNull()
+    const onSubmit = vi.fn((event: SubmitEvent) => event.preventDefault())
+    form!.addEventListener("submit", onSubmit)
+
+    fireEvent.click(useDteButton)
+
+    await waitFor(() => expect(mockUseDteAsInvoice).toHaveBeenCalledOnce())
+    expect(useDteButton).toHaveAttribute("type", "button")
+    expect(onSubmit).not.toHaveBeenCalled()
+    expect(mockAddInvoiceAction).not.toHaveBeenCalled()
   })
 })

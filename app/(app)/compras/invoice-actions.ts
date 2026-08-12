@@ -1,83 +1,18 @@
 "use server"
 
 import { revalidateOperationalViews } from "@/lib/services/operational-cache"
-import { promises as fs } from "node:fs"
-import path from "node:path"
 import { eq } from "drizzle-orm"
 import { db } from "@/db"
 import { purchaseOrderInvoices } from "@/db/schema"
 import { requirePermission } from "@/lib/auth/can"
 import { serviceWorksiteScope } from "@/lib/auth/scope"
 import { createPurchaseOrderInvoice, deletePurchaseOrderInvoice } from "@/lib/services/purchasing"
-import { nanoid } from "@/lib/id"
-import { getPdfMaxSizeMb } from "@/lib/services/system-settings"
-import { createInvoiceAttachmentPath, resolvePurchaseOrdersDir } from "@/lib/storage/config"
 import { invoiceSchema, type ActionState } from "@/lib/validation/operations"
 import { logger } from "@/lib/logger"
 
 import { safeActionMessage as dbErrMsg } from "@/lib/action-error"
 import { assertOrderAccess } from "./actions.helpers"
-import { validateFileBuffer, MimeType } from "@/lib/file-validation"
-
-// ── File helpers ───────────────────────────────────────────────────────────────
-
-type InvoiceAttachment = {
-  fileName: string
-  filePath: string
-  fileSize: number
-  mimeType: string
-}
-
-async function persistInvoiceFile(value: FormDataEntryValue | null): Promise<
-  | { ok: true; attachment: InvoiceAttachment | null; absolutePath?: string }
-  | { ok: false; message: string }
-> {
-  if (!(value instanceof File) || value.size === 0) {
-    return { ok: true, attachment: null }
-  }
-
-  const maxMb = await getPdfMaxSizeMb()
-  const maxBytes = maxMb * 1024 * 1024
-  if (value.size > maxBytes) {
-    return { ok: false, message: `El archivo supera el límite de ${maxMb} MB` }
-  }
-
-  // Read file once, validate magic bytes, then write to disk
-  const fileBuf = new Uint8Array(await value.arrayBuffer())
-  const validation = validateFileBuffer(fileBuf, value.size, MimeType.INVOICE)
-  if (validation.error) {
-    return { ok: false, message: validation.error }
-  }
-
-  const safeName = sanitizeFileName(value.name || "factura")
-  const storageName = `${Date.now()}-${nanoid()}-${safeName}`
-  const storageDir = resolvePurchaseOrdersDir()
-  const relativePath = createInvoiceAttachmentPath(storageName)
-  const absolutePath = path.join(storageDir, storageName)
-
-  await fs.mkdir(storageDir, { recursive: true })
-  await fs.writeFile(absolutePath, Buffer.from(fileBuf))
-
-  return {
-    ok: true,
-    absolutePath,
-    attachment: {
-      fileName: safeName,
-      filePath: relativePath,
-      fileSize: value.size,
-      mimeType: validation.mimeType,
-    },
-  }
-}
-
-function sanitizeFileName(name: string) {
-  return name
-    .normalize("NFKD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-zA-Z0-9._-]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 120) || "factura"
-}
+import { persistInvoiceFile, removeInvoiceAttachment } from "./invoice-attachments"
 
 // ── Add Invoice ───────────────────────────────────────────────────────────────
 
@@ -176,10 +111,10 @@ export async function addInvoiceAction(
       invoiceNumber,
       amount,
       issueDate: issueDate || null,
-      fileName:  fileResult.attachment.fileName,
-      filePath:  fileResult.attachment.filePath,
-      fileSize:  fileResult.attachment.fileSize,
-      mimeType:  fileResult.attachment.mimeType,
+      fileName:  fileResult.attachment.attachment.fileName,
+      filePath:  fileResult.attachment.attachment.filePath,
+      fileSize:  fileResult.attachment.attachment.fileSize,
+      mimeType:  fileResult.attachment.attachment.mimeType,
       uploadedBy: session.user.id,
       userEmail:  session.user.email ?? undefined,
       items: items.length > 0 ? items : undefined,
@@ -190,9 +125,7 @@ export async function addInvoiceAction(
     revalidateOperationalViews(["/compras", `/compras/${purchaseOrderId}`])
     return { ok: true, message: `Factura ${invoiceNumber} adjuntada correctamente` }
   } catch (e) {
-    if (fileResult.absolutePath) {
-      await fs.unlink(fileResult.absolutePath).catch(() => undefined)
-    }
+    await removeInvoiceAttachment(fileResult.attachment.absolutePath)
     logger.error("[addInvoiceAction]", e)
     return { ok: false, message: dbErrMsg(e, "Error al adjuntar factura") }
   }
@@ -242,9 +175,7 @@ export async function deleteInvoiceAction(
     // Remove the file from disk (best-effort — don't fail if already gone)
     const { resolveInvoiceAttachmentFile } = await import("@/lib/storage/config")
     const absolutePath = resolveInvoiceAttachmentFile(filePath)
-    if (absolutePath) {
-      await fs.unlink(absolutePath).catch(() => undefined)
-    }
+    await removeInvoiceAttachment(absolutePath ?? undefined)
 
     // La cola operacional tiene el pendiente "Adjuntar factura": sin esto el
     // usuario lo resolvía y seguía viéndolo (con su badge) hasta que otra

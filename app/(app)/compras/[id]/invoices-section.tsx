@@ -16,21 +16,19 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { formatCLP, formatDate } from "@/lib/utils"
 import type { ActionState } from "@/lib/validation/operations"
-import { matchInvoiceItemsToPurchaseOrderItems } from "@/lib/services/purchasing-module/invoice-item-matching"
+import { areEquivalentUnits, matchInvoiceItemsToPurchaseOrderItems } from "@/lib/services/purchasing-module/invoice-item-matching"
+import { useOperation } from "@/lib/hooks/use-operation"
 import {
   reconcileInvoiceEvidence,
   type InvoiceEvidenceStatus,
 } from "@/lib/services/purchasing-module/invoice-reconciliation"
 import { addInvoiceAction, deleteInvoiceAction } from "../invoice-actions"
-import { prefillInvoiceFromDte } from "../actions/dte-prefill-invoice"
-import { downloadDteDocumentXml, type DteXmlDetail } from "../actions/dte-download-xml"
-import { DteXmlDetailPanel } from "./dte-xml-detail"
+import { attachDteAsInvoice } from "../actions/dte-use-invoice"
 import { dteTipoLabel } from "@/lib/services/dte-portal/labels"
 
 /**
  * DTE del proveedor de esta OC que aún no cuelga de ninguna factura.
- * Es la lista de documentos que la plataforma ya tiene y que, hasta ahora,
- * había que volver a bajar del portal y subir a mano.
+ * Son documentos que la plataforma puede registrar y adjuntar de una vez.
  */
 export interface DteCandidate {
   id: string
@@ -94,7 +92,7 @@ export function InvoicesSection({
   canManage: boolean
   /** N° de guía/factura traído desde una recepción (`?nro=`) para no retipearlo. */
   defaultInvoiceNumber?: string
-  /** DTE del proveedor sin vincular, ofrecidos como precarga del formulario. */
+  /** DTE del proveedor sin vincular, ofrecidos para registro directo. */
   dteCandidates?: DteCandidate[]
 }) {
   const reconciliation = reconcileInvoiceEvidence({
@@ -441,6 +439,7 @@ function AddInvoiceForm({
   // Estado controlado en vez de ref imperativo: DatePicker guarda el valor en
   // React, así que form.reset() del navegador no lo limpiaría solo.
   const [issueDate, setIssueDate] = React.useState("")
+  const dteOperation = useOperation()
 
   React.useEffect(() => {
     if (state.ok && state.message) {
@@ -628,22 +627,14 @@ function AddInvoiceForm({
     }
   }
 
-  /** Precarga desde un DTE ya sincronizado, sin volver a subir el archivo. */
-  async function handlePrefillFromDte(dteDocumentId: string) {
-    setExtracting(true)
-    try {
-      const response = await prefillInvoiceFromDte(dteDocumentId)
-      if (!response.ok) {
-        toast.error(response.error)
-        return
-      }
-      const { data, method, quality } = response.result
-      applyExtraction({ data, method, quality, warnings: [] })
-    } catch {
-      toast.error("No se pudo leer el DTE desde el portal")
-    } finally {
-      setExtracting(false)
-    }
+  function handleUseDte(dteDocumentId: string, folio: number) {
+    dteOperation.run(async () => {
+      const result = await attachDteAsInvoice({ purchaseOrderId, dteDocumentId })
+      if (!result.ok) toast.error(result.message)
+      return result
+    }, () => {
+      toast.success(`Factura ${folio} adjuntada correctamente`)
+    })
   }
 
   const totalItems = lineItems.reduce((sum, li) => {
@@ -679,16 +670,16 @@ function AddInvoiceForm({
             DTE de este proveedor sin registrar ({dteCandidates.length})
           </p>
           <p className="mt-0.5 text-xs text-(--color-text-subtle)">
-            Llegaron por el portal tributario desde que se creó esta orden. Usa uno para llenar el
-            formulario sin volver a subir el archivo, y revisa que el monto corresponda.
+            Llegaron por el portal tributario desde que se creó esta orden. Usa uno para registrar la
+            factura y adjuntar su PDF sin volver a subir el archivo.
           </p>
           <ul className="mt-2 space-y-1">
             {dteCandidates.map((doc) => (
               <DteCandidateRow
                 key={doc.id}
                 doc={doc}
-                useDisabled={extracting}
-                onUse={() => handlePrefillFromDte(doc.id)}
+                usePending={dteOperation.pending}
+                onUse={() => handleUseDte(doc.id, doc.folio)}
               />
             ))}
           </ul>
@@ -709,7 +700,7 @@ function AddInvoiceForm({
           accept="application/pdf,image/jpeg,image/png,application/xml,text/xml"
           required
           onChange={handleFileChange}
-          disabled={extracting}
+          disabled={extracting || dteOperation.pending}
         />
       </Field>
 
@@ -805,7 +796,11 @@ function AddInvoiceForm({
 
           {lineItems.map((li, index) => {
             const ocItem = ocItems.find((oci) => oci.id === li.ocItemId)
-            const unitMismatch = Boolean(li.unitOfMeasure && ocItem && li.unitOfMeasure.trim().toLowerCase() !== ocItem.unitOfMeasure.trim().toLowerCase())
+            const unitMismatch = Boolean(
+              li.unitOfMeasure
+              && ocItem
+              && !areEquivalentUnits(li.unitOfMeasure, ocItem.unitOfMeasure),
+            )
             return (
               <div key={li.id} className="flex items-end gap-1.5 rounded border border-(--color-border) p-2 bg-surface-2">
                 <div className="flex-1 min-w-0">
@@ -899,42 +894,18 @@ function AddInvoiceForm({
 /* ── DTE candidate row ──────────────────────────────────────────────────────── */
 
 /**
- * Un DTE del proveedor todavía sin registrar, con su detalle a la vista antes
- * de usarlo.
- *
- * El folio y el monto de la lista no alcanzan para decidir: dos documentos del
- * mismo proveedor pueden sumar parecido, y el operador quedaba eligiendo a
- * ciegas o yendo al portal a mirar el documento — justo el viaje que este
- * atajo venía a ahorrar. "Ver factura" baja el XML (el mismo camino con caché
- * que usa el DTE ya vinculado) y muestra neto, IVA y las líneas del proveedor.
+ * Un DTE del proveedor todavía sin registrar. "Ver factura" abre el PDF real
+ * desde una ruta autenticada; no reemplaza el documento con el detalle XML.
  */
 function DteCandidateRow({
   doc,
   onUse,
-  useDisabled,
+  usePending,
 }: {
   doc: DteCandidate
   onUse: () => void
-  useDisabled: boolean
+  usePending: boolean
 }) {
-  const [detail, setDetail] = React.useState<DteXmlDetail | null>(null)
-  const [loading, startTransition] = React.useTransition()
-
-  function handleToggleDetail() {
-    if (detail) {
-      setDetail(null)
-      return
-    }
-    startTransition(async () => {
-      const result = await downloadDteDocumentXml(doc.id)
-      if (!result.ok) {
-        toast.error(result.error)
-        return
-      }
-      setDetail(result.detail)
-    })
-  }
-
   return (
     <li className="rounded-(--radius-md) bg-(--color-surface) px-2.5 py-1.5">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -951,29 +922,28 @@ function DteCandidateRow({
           )}
         </span>
         <div className="flex items-center gap-1.5">
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            loading={loading}
-            aria-expanded={detail !== null}
-            onClick={handleToggleDetail}
-          >
-            {!loading && <Eye size={14} aria-hidden />}
-            {loading ? "Leyendo…" : detail ? "Ocultar detalle" : "Ver factura"}
+          <Button asChild variant="ghost" size="sm">
+            <a
+              href={`/api/purchase-orders/dtes/${doc.id}/pdf`}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <Eye size={14} aria-hidden />
+              Ver factura
+            </a>
           </Button>
           <Button
             type="button"
             variant="secondary"
             size="sm"
-            disabled={useDisabled}
+            loading={usePending}
+            disabled={usePending}
             onClick={onUse}
           >
-            Usar este DTE
+            {usePending ? "Adjuntando…" : "Usar este DTE"}
           </Button>
         </div>
       </div>
-      {detail && <DteXmlDetailPanel detail={detail} />}
     </li>
   )
 }

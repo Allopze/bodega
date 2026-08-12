@@ -9,6 +9,7 @@ const mockDownloadDteXml = vi.fn()
 const mockMkdirp = vi.fn()
 const mockWriteBuffer = vi.fn()
 const mockReadBuffer = vi.fn()
+const mockUnlink = vi.fn()
 
 vi.mock("@/lib/auth/can", () => ({
   requirePermission: (...args: unknown[]) => mockRequirePermission(...args),
@@ -34,6 +35,9 @@ vi.mock("@/lib/storage/helpers", () => ({
   writeBuffer: (...args: unknown[]) => mockWriteBuffer(...args),
   readBuffer: (...args: unknown[]) => mockReadBuffer(...args),
 }))
+vi.mock("node:fs", () => ({
+  promises: { unlink: (...args: unknown[]) => mockUnlink(...args) },
+}))
 
 const { downloadDteDocumentXml } = await import("./dte-download-xml")
 
@@ -51,6 +55,7 @@ describe("downloadDteDocumentXml", () => {
     mockRequirePermission.mockResolvedValue({ user: { id: "user-1" } })
     mockMkdirp.mockResolvedValue(undefined)
     mockWriteBuffer.mockResolvedValue(undefined)
+    mockUnlink.mockResolvedValue(undefined)
   })
 
   it("returns an explicit error when the document does not exist", async () => {
@@ -114,6 +119,17 @@ describe("downloadDteDocumentXml", () => {
 
     const result = await downloadDteDocumentXml("dte-1")
 
-    expect(result).toEqual({ ok: false, error: "timeout" })
+    expect(result).toEqual({ ok: false, error: "No se pudo descargar el XML del portal DTE" })
+  })
+
+  it("returns an explicit error and cleans the partial file when XML persistence fails", async () => {
+    mockFindFirst.mockResolvedValue({ ...BASE_DOC })
+    mockDownloadDteXml.mockResolvedValue({ xml: SII_DTE, buffer: Buffer.from(SII_DTE, "latin1") })
+    mockWriteBuffer.mockRejectedValue(new Error("disk full"))
+
+    const result = await downloadDteDocumentXml("dte-1")
+
+    expect(result).toEqual({ ok: false, error: "No se pudo guardar el XML del DTE" })
+    expect(mockUnlink).toHaveBeenCalledTimes(1)
   })
 })

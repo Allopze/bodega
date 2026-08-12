@@ -190,6 +190,7 @@ export default async function OcDetailPage({
     ? await db.query.dteDocuments.findMany({
         where: and(
           isNull(dteDocuments.purchaseOrderInvoiceId),
+          isNull(dteDocuments.fuelLoadId),
           inArray(dteDocuments.tipoDte, ["33", "34"]),
           gte(dteDocuments.fechaEmision, candidateFloor),
         ),

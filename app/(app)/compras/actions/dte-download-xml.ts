@@ -13,6 +13,7 @@
  */
 
 import path from "node:path"
+import { promises as fs } from "node:fs"
 import { eq } from "drizzle-orm"
 import { db } from "@/db"
 import { dteDocuments } from "@/db/schema"
@@ -26,6 +27,10 @@ import { downloadDteXml } from "@/lib/services/dte-portal/download"
 import { parseDteXml, type DteItem } from "@/lib/services/purchasing-module/dte-parser"
 
 export interface DteXmlDetail {
+  tipoDte: string | null
+  invoiceNumber: string
+  issueDate: string | null
+  supplierRut: string | null
   netAmount: number
   taxAmount: number
   totalAmount: number
@@ -71,8 +76,11 @@ export async function downloadDteDocumentXml(dteDocumentId: string): Promise<Dte
     const downloaded = await downloadDteXml(client, relativeUrl)
     xml = downloaded.xml
     buffer = downloaded.buffer
-  } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : "No se pudo descargar el XML del portal DTE" }
+  } catch {
+    // Nunca propagar detalles del proveedor: pueden incluir URLs legacy o
+    // parámetros operativos. La acción de adjuntar ya presenta este error en
+    // lenguaje de usuario.
+    return { ok: false, error: "No se pudo descargar el XML del portal DTE" }
   }
 
   const parsed = parseDteXml(xml)
@@ -80,14 +88,20 @@ export async function downloadDteDocumentXml(dteDocumentId: string): Promise<Dte
 
   const storageName = `${Date.now()}-${nanoid()}-${doc.tipoDte}-${doc.folio}.xml`
   const storageDir = resolveDteDir()
-  await mkdirp(storageDir)
-  await writeBuffer(path.join(storageDir, storageName), buffer)
+  const absolutePath = path.join(storageDir, storageName)
+  try {
+    await mkdirp(storageDir)
+    await writeBuffer(absolutePath, buffer)
 
-  await db.update(dteDocuments).set({
-    montoNeto: parsed.netAmount,
-    iva: parsed.taxAmount,
-    xmlPath: createDtePath(storageName),
-  }).where(eq(dteDocuments.id, dteDocumentId))
+    await db.update(dteDocuments).set({
+      montoNeto: parsed.netAmount,
+      iva: parsed.taxAmount,
+      xmlPath: createDtePath(storageName),
+    }).where(eq(dteDocuments.id, dteDocumentId))
+  } catch {
+    await fs.unlink(absolutePath).catch(() => undefined)
+    return { ok: false, error: "No se pudo guardar el XML del DTE" }
+  }
 
   return {
     ok: true,
@@ -95,6 +109,10 @@ export async function downloadDteDocumentXml(dteDocumentId: string): Promise<Dte
       netAmount: parsed.netAmount,
       taxAmount: parsed.taxAmount,
       totalAmount: parsed.totalAmount,
+      tipoDte: parsed.tipoDte,
+      invoiceNumber: parsed.invoiceNumber,
+      issueDate: parsed.issueDate,
+      supplierRut: parsed.supplierRut,
       items: parsed.items,
     },
   }
@@ -109,6 +127,10 @@ async function readCachedXml(xmlPath: string): Promise<DteXmlDetail | null> {
     const parsed = parseDteXml(decodeXmlBuffer(buffer))
     if (!parsed) return null
     return {
+      tipoDte: parsed.tipoDte,
+      invoiceNumber: parsed.invoiceNumber,
+      issueDate: parsed.issueDate,
+      supplierRut: parsed.supplierRut,
       netAmount: parsed.netAmount,
       taxAmount: parsed.taxAmount,
       totalAmount: parsed.totalAmount,
