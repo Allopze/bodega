@@ -95,9 +95,14 @@ test.describe("Navegación — rol restringido", () => {
     // como en `correlativos-secciones`: reintentando el clic.
     const opener = page.getByRole("button", { name: "Abrir menú" })
     await expect(opener).toBeVisible()
+    // El reintento se ancla en un destino **filtrado por permisos**, no en
+    // "Inicio": esa es una entrada fija del rail y aparece de inmediato, así que
+    // anclarla ahí daba el panel por abierto mientras la navegación derivada del
+    // registry todavía no se había pintado — y la aserción siguiente fallaba a
+    // los 5 s sin reintentar el clic.
     await expect(async () => {
       await opener.click()
-      await expect(page.getByRole("link", { name: "Inicio" })).toBeVisible({ timeout: 5_000 })
+      await expect(page.getByRole("link", { name: "Mis pendientes" })).toBeVisible({ timeout: 5_000 })
     }).toPass({ timeout: 60_000 })
 
     // No se afirma qué contenedor lo aloja —el catálogo móvil vive en su propia

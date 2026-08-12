@@ -50,6 +50,14 @@ test.describe("Module toggles", () => {
     await login(page)
   })
 
+  // El `beforeEach` protege a las pruebas de este archivo, pero no a las que
+  // vienen después: si la última muere con Flota apagada, el ajuste es global y
+  // los specs siguientes del mismo shard ven una navegación mutilada — y fallan
+  // lejos de la causa. Restaurar al final cierra esa dependencia de orden.
+  test.afterAll(async () => {
+    await resetFlotaToggles()
+  })
+
   test("admin/modulos page loads and shows module list", async ({ page }) => {
     await page.goto("/admin/modulos")
     await expect(page.getByRole("heading", { name: "Módulos del sistema" })).toBeVisible()
