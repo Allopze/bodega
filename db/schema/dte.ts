@@ -120,6 +120,8 @@ export const dteDocuments = pgTable("dte_documents", {
   xmlPath:                text("xml_path"),
   /** Ruta al archivo PDF descargado (relativa a storage/) — nullable, se llena on-demand */
   pdfPath:                text("pdf_path"),
+  /** Id Nreguist del portal, necesario para reconstruir el enlace PDF autenticado. */
+  portalRecordId:         text("portal_record_id"),
 
   /** SHA-256 del contenido clave para deduplicación (tipoDte+folio+rutEmisor+montoTotal+fecha) */
   rawHash:                text("raw_hash").notNull(),
@@ -146,11 +148,17 @@ export const dteDocuments = pgTable("dte_documents", {
       'pendiente', 'aceptado', 'rechazado'
     )
   `),
+  // Un DTE representa una sola evidencia tributaria: nunca puede quedar
+  // simultáneamente conciliado contra una factura de OC y una carga TAE.
+  check("dte_documents_single_business_link", sql`
+    ${table.purchaseOrderInvoiceId} IS NULL OR ${table.fuelLoadId} IS NULL
+  `),
   index("dte_documents_periodo_idx").on(table.periodo),
   index("dte_documents_estado_sii_idx").on(table.estadoSii),
   index("dte_documents_rut_emisor_idx").on(table.rutEmisor),
   index("dte_documents_purchase_invoice_idx").on(table.purchaseOrderInvoiceId),
   index("dte_documents_fuel_load_idx").on(table.fuelLoadId),
+  index("dte_documents_portal_record_idx").on(table.portalRecordId),
   index("dte_documents_raw_hash_idx").on(table.rawHash),
   index("dte_documents_sync_run_idx").on(table.syncRunId),
 ])
