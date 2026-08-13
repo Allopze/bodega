@@ -135,6 +135,23 @@ async function renameProduct(page: Page, from: string, to: string) {
   await expectProductInCatalog(page, to)
 }
 
+/**
+ * Aprueba el grupo de una solicitud reintentando el clic.
+ *
+ * El diálogo de aprobación es Radix, o sea cliente puro: un clic anterior a la
+ * hidratación mueve el foco pero no abre nada, y Playwright no reintenta un clic
+ * ya entregado. El test se queda esperando "Confirmar aprobación" hasta agotar
+ * sus 150 s. Mismo patrón —y mismo remedio— que `openCatalogSheet`.
+ */
+async function approveGroup(page: Page, group: Locator) {
+  const confirmar = page.getByRole("button", { name: "Confirmar aprobación" })
+  await expect(async () => {
+    await group.getByRole("button", { name: "Aprobar", exact: true }).click()
+    await expect(confirmar).toBeVisible({ timeout: 5_000 })
+  }).toPass({ timeout: 60_000 })
+  await confirmar.click()
+}
+
 /** Crea una solicitud de EPP de un ítem y devuelve su correlativo. */
 async function createEppRequest(page: Page, productName: string, quantity: string) {
   await page.goto("/solicitudes/nueva")
@@ -233,8 +250,7 @@ test.describe.serial("Correlativos entre secciones", () => {
 
     const ownGroup = page.locator("div:has(> ul)").filter({ hasText: requestCode })
     await expect(ownGroup).toHaveCount(1)
-    await ownGroup.getByRole("button", { name: "Aprobar", exact: true }).click()
-    await page.getByRole("button", { name: "Confirmar aprobación" }).click()
+    await approveGroup(page, ownGroup)
     await expect(ownGroup).toHaveCount(0, { timeout: 30_000 })
 
     // ── Sección 5: selector de ítems de una OC nueva ────────────────────────
@@ -394,8 +410,7 @@ test.describe.serial("Correlativos entre secciones", () => {
     await page.goto(`/aprobaciones?q=${solB}`)
     const groupB = page.locator("div:has(> ul)").filter({ hasText: solB })
     await expect(groupB).toHaveCount(1)
-    await groupB.getByRole("button", { name: "Aprobar", exact: true }).click()
-    await page.getByRole("button", { name: "Confirmar aprobación" }).click()
+    await approveGroup(page, groupB)
     await expect(groupB).toHaveCount(0, { timeout: 30_000 })
 
     await page.goto("/compras/nueva")
