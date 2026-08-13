@@ -122,11 +122,17 @@ async function submitStoppedPpa(page: Page) {
 async function goToStoppedPpaDetail(page: Page) {
   await login(page)
   await gotoWithRetry(page, "/prevencion/ppa")
-  await page.getByRole("button", { name: "Detenidos" }).click()
   // El clic en la pestaña cambia la URL y re-renderiza la lista. Sin esperar a
   // que se asiente, el clic siguiente cae sobre el DOM viejo y se pierde: la
   // URL quedaba en la lista filtrada y el test fallaba mucho más abajo.
-  await expect(page).toHaveURL(/estado=detenido/)
+  //
+  // Y se reintenta, no se clica una sola vez: la pestaña es cliente puro, así
+  // que un clic anterior a la hidratación no ejecuta su manejador y la URL no
+  // cambia nunca — Playwright no reintenta un clic ya entregado.
+  await expect(async () => {
+    await page.getByRole("button", { name: "Detenidos" }).click()
+    await expect(page).toHaveURL(/estado=detenido/, { timeout: 5_000 })
+  }).toPass({ timeout: 60_000 })
   const detailLink = page.getByRole("link", { name: /Trabajador E2E/ }).first()
   await expect(detailLink).toBeVisible()
   await detailLink.click()

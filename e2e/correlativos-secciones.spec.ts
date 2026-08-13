@@ -425,8 +425,13 @@ test.describe.serial("Correlativos entre secciones", () => {
     await page.getByRole("button", { name: /Crear OC \(1 ítem\)/ }).click()
     await expect(page).toHaveURL(/\/compras\/(?!nueva$)[^/]+$/, { timeout: 20_000 })
 
-    const orderB = (await page.getByRole("heading", { level: 1 }).first().textContent())?.trim() ?? ""
-    expect(orderB).toMatch(/^OC-\d{4}-\d{4,}$/)
+    // Se espera a que el encabezado SEA el correlativo antes de leerlo: la URL
+    // cambia en cuanto el router navega, pero la ficha todavía pinta el título
+    // genérico ("Orden de compra"), y esa cadena es lo que quedaba capturado.
+    // Mismo orden que la captura de `orderCode` más arriba.
+    const orderHeadingB = page.getByRole("heading", { level: 1 }).first()
+    await expect(orderHeadingB).toHaveText(/^OC-\d{4}-\d{4,}$/, { timeout: 20_000 })
+    const orderB = (await orderHeadingB.textContent())?.trim() ?? ""
     expect(orderB).not.toBe(orderCode)
 
     // La OC enlaza a B y en ninguna parte a A: el correlativo de la solicitud
