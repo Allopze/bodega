@@ -39,6 +39,8 @@ export type PdtpAccreditationSourceType =
   | "emergencia"
   | "campana"
   | "incident"
+  /** El propio ciclo de aprobación del programa (N°1: "Aprobar el Programa"). */
+  | "aprobacion_programa"
 
 export type AccreditationResult = {
   /** Ejecuciones creadas o actualizadas (una por actividad acreditada). */

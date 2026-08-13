@@ -11,8 +11,14 @@ import type { AnyPgColumn } from "drizzle-orm/pg-core"
 import { db } from "@/db"
 import {
   pdtpActionPlan,
+  pdtpActivities,
+  pdtpActivitySchedule,
+  pdtpActivityWorksiteExclusions,
   pdtpExecutions,
   pdtpObligations,
+  pdtpProgramWorksites,
+  pdtpPrograms,
+  pdtpResponsibleCatalog,
   ppaSubmissions,
   preventionCapaActions,
   preventionInspectionRuns,
@@ -693,6 +699,105 @@ function operationalSourceBranches(session: Session, scope: WorksiteScope): Oper
   `)
 
   if (hasPermission(session, "prevention:pdtp:view")) {
+    // Actividades programadas que le tocan a ESTE usuario (D1 + D3 del diseño
+    // 2026-08-12). Hasta ahora la cola sólo traía obligaciones y acciones
+    // correctivas: las 65 actividades `scheduled` del programa no producían
+    // tarea en ninguna parte, y la planilla se la mostraba igual a todos, así
+    // que un jefe de terreno tenía que buscar a ojo cuáles de las 87 filas
+    // eran suyas.
+    //
+    // El dueño sale de `pdtp_responsible_catalog`, que ya mapeaba cada
+    // responsable del programa a un rol RBAC pero sólo se usaba para dibujar
+    // chips de colores. Si los roles del usuario no mapean a ningún slug, no
+    // ve ninguna actividad — que es lo correcto para una cola de "qué debo yo".
+    //
+    // La ocurrencia es derivada (D2): misma regla que `deriveActivityStatus`
+    // en lib/services/pdtp/period.ts — vencida si hay un mes anterior
+    // planificado sin ejecutar, pendiente si es el mes en curso. Se emite una
+    // fila por (actividad, faena) anclada al primer mes impago, no una por mes
+    // vencido, para no inundar la cola con la misma deuda repetida.
+    //
+    // ponytail: el cierre sigue siendo compartido — cualquier ejecución saca
+    // la actividad de la cola de todos sus responsables. El cierre por
+    // responsable que pide D3 necesita resolver antes C5 (el motor de
+    // acreditación crea ejecuciones sin dueño).
+    if (session.user.roles.length > 0) {
+      const chileNow = sql`(now() AT TIME ZONE 'America/Santiago')`
+      const currentYear = sql`EXTRACT(YEAR FROM ${chileNow})::int`
+      const currentMonth = sql`EXTRACT(MONTH FROM ${chileNow})::int`
+      add("pdtp", sql`
+        SELECT 'pdtp_activity'::text AS source_type,
+          CONCAT(${pdtpActivities.id}, ':', ${worksites.id}) AS source_id,
+          'execute'::text AS action_key, 'pdtp'::text AS module,
+          CONCAT('N°', ${pdtpActivities.n}) AS code,
+          LEFT(${pdtpActivities.activity}, 120) AS title,
+          ${pdtpActivities.responsibleDisplay} AS subtitle,
+          ${worksites.id} AS worksite_id, ${worksites.name} AS worksite_name,
+          CASE WHEN impago.mes < ${currentMonth} THEN 'overdue' ELSE 'pending' END AS status,
+          CASE WHEN impago.mes < ${currentMonth} THEN 'Vencida' ELSE 'Pendiente' END AS status_label,
+          CASE WHEN impago.mes < ${currentMonth} THEN 'high' ELSE 'normal' END AS priority,
+          false AS blocked,
+          ${pdtpActivities.createdAt}::text AS created_at,
+          TO_CHAR((make_date(${currentYear}, impago.mes, 1) + INTERVAL '1 month' - INTERVAL '1 day')::date, 'YYYY-MM-DD') AS source_due_at,
+          ${emptyAssignee} AS native_assignee_user_id, ${emptyAssignee} AS native_assignee_name,
+          CONCAT('/prevencion/pdtp/actividades?faena=', ${worksites.id}, '&vista=semana') AS href,
+          'Registrar cumplimiento'::text AS cta_label, false AS assignable
+        FROM ${pdtpActivities}
+        INNER JOIN ${pdtpPrograms} ON ${pdtpPrograms.id} = ${pdtpActivities.programId}
+        -- Misma regla que resolveProgramWorksiteIds: sin membresía declarada el
+        -- programa aplica a todas las faenas del alcance; con membresía, sólo a
+        -- la intersección. Un INNER JOIN contra pdtp_program_worksites dejaría
+        -- la cola muda mientras la planilla muestra todo, que es justo el caso
+        -- hoy: esa tabla está vacía.
+        INNER JOIN ${worksites} ON ${worksites.isActive} AND (
+          NOT EXISTS (
+            SELECT 1 FROM ${pdtpProgramWorksites}
+            WHERE ${pdtpProgramWorksites.programId} = ${pdtpPrograms.id} AND ${pdtpProgramWorksites.isActive}
+          )
+          OR EXISTS (
+            SELECT 1 FROM ${pdtpProgramWorksites}
+            WHERE ${pdtpProgramWorksites.programId} = ${pdtpPrograms.id} AND ${pdtpProgramWorksites.isActive}
+              AND ${pdtpProgramWorksites.worksiteId} = ${worksites.id}
+          )
+        )
+        CROSS JOIN LATERAL (
+          SELECT MIN(${pdtpActivitySchedule.month}) AS mes
+          FROM ${pdtpActivitySchedule}
+          WHERE ${pdtpActivitySchedule.activityId} = ${pdtpActivities.id}
+            AND ${pdtpActivitySchedule.year} = ${currentYear}
+            AND ${pdtpActivitySchedule.month} <= ${currentMonth}
+            AND ${pdtpActivitySchedule.plannedQuantity} > 0
+            AND NOT EXISTS (
+              SELECT 1 FROM ${pdtpExecutions}
+              WHERE ${pdtpExecutions.activityId} = ${pdtpActivities.id}
+                AND ${pdtpExecutions.worksiteId} = ${worksites.id}
+                AND ${pdtpExecutions.year} = ${pdtpActivitySchedule.year}
+                AND ${pdtpExecutions.month} = ${pdtpActivitySchedule.month}
+                AND ${pdtpExecutions.executedQuantity} > 0
+                AND ${pdtpExecutions.status} IN ('submitted', 'approved')
+            )
+        ) impago
+        WHERE impago.mes IS NOT NULL
+          AND ${pdtpPrograms.status} = 'active'
+          AND ${pdtpPrograms.year} = ${currentYear}
+          AND ${pdtpActivities.status} = 'active'
+          AND ${pdtpActivities.scheduleMode} = 'scheduled'
+          AND ${inScope(worksites.id)}
+          AND NOT EXISTS (
+            SELECT 1 FROM ${pdtpActivityWorksiteExclusions}
+            WHERE ${pdtpActivityWorksiteExclusions.activityId} = ${pdtpActivities.id}
+              AND ${pdtpActivityWorksiteExclusions.worksiteId} = ${worksites.id}
+          )
+          AND EXISTS (
+            SELECT 1 FROM jsonb_array_elements_text(${pdtpActivities.responsibleSlugs}) AS slug
+            WHERE slug.value IN (
+              SELECT ${pdtpResponsibleCatalog.slug} FROM ${pdtpResponsibleCatalog}
+              WHERE ${pdtpResponsibleCatalog.isActive}
+                AND ${inArray(pdtpResponsibleCatalog.roleName, session.user.roles)}
+            )
+          )
+      `)
+    }
     add("pdtp", sql`
       SELECT 'pdtp_obligation'::text AS source_type, ${pdtpObligations.id} AS source_id, 'execute'::text AS action_key,
         'pdtp'::text AS module, NULL::text AS code, 'Cumplir obligación PDTP'::text AS title, ''::text AS subtitle,

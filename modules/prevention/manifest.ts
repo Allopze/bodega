@@ -457,6 +457,13 @@ export const preventionModule = {
     { roleSlug: "gerente_legal_rrhh",  permission: "prevention:pdtp:execute" },
     { roleSlug: "subgerente_operaciones", permission: "prevention:pdtp:view" },
     { roleSlug: "subgerente_operaciones", permission: "prevention:pdtp:execute" },
+    // El jefe de mantención es responsable de tres actividades del programa
+    // (plan de emergencia por amenaza, simulacros, y el cierre de inspecciones
+    // de equipos) y hasta 2026-08-13 no podía ni abrir el módulo.
+    { roleSlug: "jefe_mantencion",     permission: "prevention:pdtp:view" },
+    { roleSlug: "jefe_mantencion",     permission: "prevention:pdtp:execute" },
+    // El CPHS sólo mira: sus actividades salieron del PDTP al programa propio
+    // del comité (D5), así que no le queda nada que ejecutar acá.
     { roleSlug: "cphs",                permission: "prevention:pdtp:view" },
     { roleSlug: "administrador",       permission: "prevention:pdtp:view" },
     { roleSlug: "administrador",       permission: "prevention:pdtp:execute" },

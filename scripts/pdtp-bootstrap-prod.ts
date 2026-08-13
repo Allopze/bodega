@@ -229,9 +229,9 @@ async function bootstrapBase2026(programId: string): Promise<BootstrapResult> {
     return fail("apply", e)
   }
 
-  // Ensure checklist templates
+  // Ensure checklist templates (D10: viven en el motor de inspecciones)
   try {
-    await service.ensurePdtp2026ChecklistTemplates({ programId })
+    await service.ensurePdtp2026InspectionTemplates({ actorUserId: BOOTSTRAP_USER_ID })
   } catch (e) {
     return fail("checklists", e)
   }

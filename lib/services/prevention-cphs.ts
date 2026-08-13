@@ -24,7 +24,7 @@ import {
 } from "@/lib/prevention/cphs"
 import { createCapaActionWithClient } from "@/lib/services/prevention-capa"
 import { getUserIdsWithPermission } from "@/lib/services/notification-targeting"
-import { onCphsMeetingClosed, onManagementReviewClosed } from "@/lib/services/pdtp-adapters/pdtp-accreditation-connectors"
+import { onCphsCommitteeConstituted, onManagementReviewClosed } from "@/lib/services/pdtp-adapters/pdtp-accreditation-connectors"
 
 type Client = DB | Tx
 
@@ -114,6 +114,14 @@ export async function constituteCommittee(input: unknown, access: CphsAccess) {
   }).returning()
   if (!created) throw new Error("No se pudo constituir el comité.")
   await history(db, { entityType: "committee", entityId: created.id, worksiteId: data.worksiteId, changeType: "constituted", reason: `Comité constituido con mandato hasta ${data.mandateEndsOn}`, afterState: created, actorUserId: access.userId })
+
+  // Acredita la N°11 del PDTP en esta faena. Fuera de la transacción y sin
+  // propagar el error: el comité ya existe y la acreditación puede reintentarse.
+  await onCphsCommitteeConstituted({
+    committeeId: created.id,
+    worksiteId: data.worksiteId,
+    constitutedOn: data.constitutedOn,
+  })
   return created
 }
 
@@ -280,7 +288,6 @@ const closeMeetingSchema = z.object({
  */
 export async function closeCommitteeMeeting(input: unknown, access: CphsAccess) {
   const data = closeMeetingSchema.parse(input)
-  let accreditation: Parameters<typeof onCphsMeetingClosed>[0] | null = null
   const result = await db.transaction(async (tx) => {
     const [row] = await tx.select({ meeting: preventionCommitteeMeetings, committee: preventionCommittees })
       .from(preventionCommitteeMeetings)
@@ -361,17 +368,11 @@ export async function closeCommitteeMeeting(input: unknown, access: CphsAccess) 
     if (!updated) throw new Error("La sesión cambió mientras la editabas. Recarga y reintenta.")
     await history(tx, { entityType: "meeting", entityId: row.meeting.id, worksiteId: row.committee.worksiteId, changeType: "closed", reason: `Acta cerrada con ${data.agreements.length} acuerdo(s)`, beforeState: row.meeting, afterState: updated, actorUserId: access.userId })
 
-    // Auto-acreditación PDTP (CPHS 11/12/13/14): se dispara DESPUÉS del commit.
-    accreditation = {
-      meetingId: row.meeting.id,
-      worksiteId: row.committee.worksiteId,
-      heldAt: data.heldAt,
-    }
+    // Sin acreditación PDTP: la reunión mensual del comité (antes N°13) salió
+    // del programa al del propio CPHS (D5 del diseño 2026-08-12).
 
     return { meeting: updated, agreementsCreated: data.agreements.length, quorum }
   })
-
-  if (accreditation) await onCphsMeetingClosed(accreditation)
 
   return result
 }

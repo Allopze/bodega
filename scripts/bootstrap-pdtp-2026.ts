@@ -226,7 +226,12 @@ async function main() {
     acceptanceReason: options.reason,
     scope,
   })
-  const checklists = await service.ensurePdtp2026ChecklistTemplates({ programId: program.id })
+  // D10 (diseño 2026-08-12): las 10 definiciones de checklist se instalan en el
+  // motor de inspecciones, no en el propio de PDTP. Son plantillas compartidas
+  // entre programas, así que no entran en los artefactos de rollback del
+  // arranque — a diferencia de los `pdtpActivityChecklists`, que sí eran del
+  // programa y por eso se enumeraban en `checklistIdsCreated`.
+  const checklists = await service.ensurePdtp2026InspectionTemplates({ actorUserId: actor.id })
   const activities = await service.listPdtpProgramActivities(program.id)
   const pendingClassifications = activities.filter((activity) => activity.scheduleClassificationStatus === "needs_review").length
   const template = options.publishReference
@@ -240,7 +245,7 @@ async function main() {
   const bootstrapArtifacts = await service.finalizePdtpImportBootstrap({
     batchId: staged.batch.id,
     userId: actor.id,
-    checklistIdsCreated: checklists.createdChecklistIds,
+    checklistIdsCreated: [],
     templateIdCreated: template && !template.unchanged ? template.template.id : undefined,
     templateVersionIdCreated: template && !template.unchanged ? template.version.id : undefined,
   })

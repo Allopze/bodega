@@ -2,6 +2,7 @@ import { and, asc, eq } from "drizzle-orm"
 import { db, type Tx } from "@/db"
 import { pdtpApprovalDecisions, pdtpApprovalSteps, pdtpPrograms } from "@/db/schema"
 import { ALL_MODULE_PERMISSIONS } from "@/modules/permissions"
+import { onPdtpProgramLegallyApproved } from "@/lib/services/pdtp-adapters/pdtp-accreditation-connectors"
 import { addPdtpChangeLogEntry, assertPdtpProgramEditableState, isUniqueViolation } from "./helpers"
 import { computePdtpProgramContentDigest } from "./content-digest"
 
@@ -197,8 +198,13 @@ export async function decidePdtpApprovalStep(args: {
   const actorUserId = args.actorUserId ?? args.userId
   if (!actorUserId) throw new Error("Usuario decisor requerido.")
   if (!args.stepId && !args.stepCode) throw new Error("Paso de aprobación requerido.")
+  // La N°1 del programa ("Aprobar el Programa de Prevención de Riesgos") se
+  // cumple con la firma de Legal y RRHH sobre este mismo programa. Se acredita
+  // DESPUÉS del commit para no dejar ejecuciones huérfanas si la decisión se
+  // revierte.
+  let programApproved: { programId: string; approvedAt: string } | null = null
   try {
-    return await db.transaction(async (tx) => {
+    const result = await db.transaction(async (tx) => {
       const [program] = await tx.select().from(pdtpPrograms).where(eq(pdtpPrograms.id, args.programId)).limit(1)
       if (!program) throw new Error("Programa PDTP no encontrado.")
       const [step] = await tx.select().from(pdtpApprovalSteps).where(and(
@@ -268,6 +274,7 @@ export async function decidePdtpApprovalStep(args: {
       } else if (step.code === "legal") {
         programUpdates.approvedByLegalUserId = actorUserId
         programUpdates.approvedByLegalAt = now
+        programApproved = { programId: args.programId, approvedAt: now }
       }
 
       const [updated] = await tx.update(pdtpPrograms).set(programUpdates).where(and(
@@ -309,6 +316,8 @@ export async function decidePdtpApprovalStep(args: {
       )
       return { program: updated, step, decision: created }
     })
+    if (programApproved) await onPdtpProgramLegallyApproved(programApproved)
+    return result
   } catch (error) {
     if (isUniqueViolation(error)) throw new Error("Este paso ya fue resuelto por otra solicitud.")
     throw error

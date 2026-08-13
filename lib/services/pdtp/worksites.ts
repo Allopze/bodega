@@ -195,7 +195,15 @@ export async function includeActivityForWorksite(
  * exclusiones forman parte del contenido firmado; `excludeActivityForWorksite`
  * ya rechaza mutar un programa que salió de borrador.
  */
-export const PDTP_CPHS_ACTIVITY_NUMBERS = [11, 12, 13, 14] as const
+/**
+ * Sólo la N°11 ("constituir el o los Comités Paritarios cuando proceda"). Las
+ * N°12/13/14 —cursos de los integrantes, reunión mensual y plan de trabajo del
+ * comité— salieron del PDTP al programa propio del CPHS (D5 del diseño
+ * 2026-08-12): son actividades *del* comité, no *sobre* el comité. Constituirlo
+ * sí es obligación de la empresa, porque el comité no puede constituirse a sí
+ * mismo.
+ */
+export const PDTP_CPHS_ACTIVITY_NUMBERS = [11] as const
 export const PDTP_CPHS_MIN_HEADCOUNT = 25
 
 export async function syncPdtpCphsHeadcountExclusion(

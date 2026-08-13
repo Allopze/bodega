@@ -14,7 +14,9 @@
  *   pasados explícitamente por el caller.
  * - EPP (entrega de equipo) → actividades declaradas en el tipo de EPP o
  *   pasadas explícitamente.
- * - CPHS → actividades 11, 12, 13, 14 (constante PDTP_CPHS_ACTIVITY_NUMBERS).
+ * - CPHS → constituir el comité acredita la N°11 (PDTP_CPHS_ACTIVITY_NUMBERS).
+ * - Revisión por la dirección → N°9.
+ * - Aprobación del programa → N°1, en todas las faenas del programa.
  * - Emergencia/Simulacro → actividades pasadas explícitamente o configuradas
  *   en el plan de emergencia.
  *
@@ -24,6 +26,9 @@
  * reintentarse; el evento real ya ocurrió.
  */
 
+import { and, eq } from "drizzle-orm"
+import { db } from "@/db"
+import { pdtpProgramWorksites, worksites } from "@/db/schema"
 import { logger } from "@/lib/logger"
 import {
   accreditPdtpFromEvent,
@@ -31,6 +36,11 @@ import {
   type AccreditationInput,
 } from "@/lib/services/pdtp/accreditation"
 import { PDTP_CPHS_ACTIVITY_NUMBERS } from "@/lib/services/pdtp/worksites"
+
+/** N°9: "Reunión revisión gestión preventiva SG-SST". */
+const PDTP_MANAGEMENT_REVIEW_ACTIVITY_NUMBER = 9
+/** N°1: "Aprobar el Programa de Prevención de Riesgos". */
+const PDTP_PROGRAM_APPROVAL_ACTIVITY_NUMBER = 1
 
 // ── Helper ────────────────────────────────────────────────────────────────────
 
@@ -188,29 +198,38 @@ export async function onEppDeliveryCompleted(input: {
 // ── Conector: CPHS ────────────────────────────────────────────────────────────
 
 /**
- * Llama desde `closeCommitteeMeeting` cuando el acta queda `closed`.
- * Acredita todas las actividades CPHS (11, 12, 13, 14) que no estén
- * excluidas de la faena.
+ * Llama desde `constituteCommittee`: la N°11 del PDTP ("constituir el o los
+ * Comités Paritarios cuando proceda") se cumple al crear el comité en la faena.
+ *
+ * Antes esto colgaba del cierre de un acta (`closeCommitteeMeeting`), que es
+ * otra cosa: un acta cerrada prueba que el comité sesionó, no que exista. La
+ * reunión mensual además ya no es actividad del PDTP — pasó al programa propio
+ * del comité (D5 del diseño 2026-08-12).
  */
-export async function onCphsMeetingClosed(input: {
-  meetingId: string
+export async function onCphsCommitteeConstituted(input: {
+  committeeId: string
   worksiteId: string
-  heldAt: string
+  constitutedOn: string
 }): Promise<void> {
   await safeAccredit({
     sourceType: "cphs",
-    sourceId: input.meetingId,
+    sourceId: input.committeeId,
     worksiteId: input.worksiteId,
     activityNumbers: [...PDTP_CPHS_ACTIVITY_NUMBERS],
-    occurredAt: input.heldAt,
+    occurredAt: input.constitutedOn,
     executedQuantity: 1,
-    evidenceRef: `Acta de comité CPHS cerrada: ${input.meetingId}`,
+    evidenceRef: `Comité paritario constituido: ${input.committeeId}`,
   })
 }
 
 /**
  * Llama desde `closeManagementReview` cuando la revisión por la dirección
- * queda registrada. Acredita actividad 14 (revisión por la dirección / CPHS).
+ * queda registrada. Acredita la N°9 ("Reunión revisión gestión preventiva
+ * SG-SST", responsable Gerencia Legal y RRHH + JDPR + PRF).
+ *
+ * Apuntaba a la N°14, que es el plan de trabajo del comité paritario y salió
+ * del PDTP al programa propio del CPHS (D5). La reunión de revisión de la
+ * gestión que registra este módulo es la N°9, no la 14.
  */
 export async function onManagementReviewClosed(input: {
   reviewId: string
@@ -221,8 +240,7 @@ export async function onManagementReviewClosed(input: {
     sourceType: "cphs",
     sourceId: input.reviewId,
     worksiteId: input.worksiteId,
-    // La revisión por la dirección corresponde a la actividad 14
-    activityNumbers: [14],
+    activityNumbers: [PDTP_MANAGEMENT_REVIEW_ACTIVITY_NUMBER],
     occurredAt: input.heldAt,
     executedQuantity: 1,
     evidenceRef: `Revisión por la dirección cerrada: ${input.reviewId}`,
@@ -255,4 +273,49 @@ export async function onEmergencyDrillCompleted(input: {
     executedQuantity: Math.max(1, input.participantCount),
     evidenceRef: `Simulacro completado: ${input.drillId}`,
   })
+}
+
+// ── Conector: aprobación del propio programa ──────────────────────────────────
+
+/**
+ * Llama desde `recordPdtpApprovalDecision` cuando el paso `legal` queda
+ * aprobado. La N°1 del programa —"Aprobar el Programa de Prevención de
+ * Riesgos"— es autorreferente: se cumple con la firma de Legal y RRHH sobre
+ * este mismo programa, así que nadie tiene que marcarla a mano.
+ *
+ * Acredita en **todas** las faenas del programa, no en una sola: la planilla y
+ * el % de cumplimiento son por faena, y un programa aprobado lo está para
+ * todas. Sin membresía declarada aplica a todas las faenas activas, misma
+ * regla que `resolveProgramWorksiteIds`.
+ *
+ * Idempotente por construcción: la clave del motor incluye `sourceId`, que acá
+ * es el id del programa.
+ */
+export async function onPdtpProgramLegallyApproved(input: {
+  programId: string
+  approvedAt: string
+}): Promise<void> {
+  const members = await db.select({ worksiteId: pdtpProgramWorksites.worksiteId })
+    .from(pdtpProgramWorksites)
+    .where(and(
+      eq(pdtpProgramWorksites.programId, input.programId),
+      eq(pdtpProgramWorksites.isActive, true),
+    ))
+
+  const worksiteIds = members.length > 0
+    ? members.map((row) => row.worksiteId)
+    : (await db.select({ id: worksites.id }).from(worksites).where(eq(worksites.isActive, true))).map((row) => row.id)
+
+  for (const worksiteId of worksiteIds) {
+    await safeAccredit({
+      sourceType: "aprobacion_programa",
+      sourceId: input.programId,
+      worksiteId,
+      programId: input.programId,
+      activityNumbers: [PDTP_PROGRAM_APPROVAL_ACTIVITY_NUMBER],
+      occurredAt: input.approvedAt,
+      executedQuantity: 1,
+      evidenceRef: `Programa aprobado por Legal y RRHH: ${input.programId}`,
+    })
+  }
 }

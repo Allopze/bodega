@@ -112,6 +112,7 @@ export { stagePdtpXlsxImport, applyPdtpImportBatch, cancelPdtpImportBatch, final
 export type { PdtpImportPreview } from "./imports"
 export { getPdtpDocumentMetadata, listPdtpReconciliationCandidates, reconcilePdtpDeclaredActor } from "./document-metadata"
 export { ensurePdtp2026ChecklistTemplates } from "@/lib/services/pdtp-adapters/checklist-templates-2026"
+export { ensurePdtp2026InspectionTemplates, PDTP_2026_INSPECTION_SPECS } from "@/lib/services/pdtp-adapters/inspection-templates-2026"
 export {
   createPdtpObligation,
   reportPdtpObligation,

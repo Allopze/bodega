@@ -1,6 +1,8 @@
 import type { Metadata } from "next"
+import Link from "next/link"
 import { redirect, notFound } from "next/navigation"
 import { and, eq } from "drizzle-orm"
+import { ClipboardText } from "@phosphor-icons/react/dist/ssr"
 import { requireAuth, can } from "@/lib/auth/can"
 import { canAccessWorksite } from "@/lib/auth/scope"
 import { db } from "@/db"
@@ -12,8 +14,11 @@ import {
   listActionPlanItems,
   listFollowups,
 } from "@/lib/services/prevention-pdtp"
+import { findInspectionTemplateForPdtpActivity } from "@/lib/services/pdtp-adapters/inspection-templates-2026"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
+import { Button } from "@/components/ui/button"
+import { EmptyState } from "@/components/ui/empty-state"
 import { ExecutionChecklistPanel } from "./execution-checklist-panel"
 import { ExecutionActionPlanPanel } from "./execution-action-plan-panel"
 
@@ -38,8 +43,13 @@ export default async function PdtpExecutionDetailPage({ params }: Props) {
   const [activity] = await db.select().from(pdtpActivities).where(eq(pdtpActivities.id, execution.activityId)).limit(1)
   if (!activity || activity.programId !== programId) notFound()
 
+  // D10 (diseño 2026-08-12): las actividades de inspección se ejecutan en el
+  // módulo Inspecciones, que acredita el PDTP solo al completar el run. Si la
+  // actividad tiene plantilla ahí, esta página no ofrece checklist propio.
+  const inspectionTemplate = await findInspectionTemplateForPdtpActivity(activity.n)
+
   const [instances, actionItems] = await Promise.all([
-    listExecutionChecklists(executionId),
+    inspectionTemplate ? Promise.resolve([]) : listExecutionChecklists(executionId),
     listActionPlanItems(executionId),
   ])
   const responseLists = await Promise.all(instances.map((inst) => getChecklistResponses(inst.id)))
@@ -90,15 +100,28 @@ export default async function PdtpExecutionDetailPage({ params }: Props) {
       />
 
       <div className="space-y-8">
-        <ExecutionChecklistPanel
-          executionId={executionId}
-          programId={programId}
-          instances={instances}
-          responsesByInstance={responsesByInstance}
-          canFill={canFill}
-          vehicles={vehicles}
-          worksiteWorkers={worksiteWorkers}
-        />
+        {inspectionTemplate ? (
+          <EmptyState
+            icon={<ClipboardText size={20} />}
+            title="Esta actividad se ejecuta en Inspecciones"
+            description={`Usa la plantilla «${inspectionTemplate.name}». Al completar la inspección, esta actividad del programa queda acreditada sola, con sus hallazgos y su plan de acción.`}
+            action={
+              <Button asChild size="sm">
+                <Link href="/prevencion/inspecciones">Ir a Inspecciones</Link>
+              </Button>
+            }
+          />
+        ) : (
+          <ExecutionChecklistPanel
+            executionId={executionId}
+            programId={programId}
+            instances={instances}
+            responsesByInstance={responsesByInstance}
+            canFill={canFill}
+            vehicles={vehicles}
+            worksiteWorkers={worksiteWorkers}
+          />
+        )}
 
         <ExecutionActionPlanPanel
           executionId={executionId}

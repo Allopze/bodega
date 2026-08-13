@@ -947,7 +947,7 @@ describe("prevention PDTP service", () => {
     expect(scoped!.perWorksite[1]!.indicators!.annual.executed).toBe(2)
   })
 
-  it("aplica la regla de dotación CPHS (<25 excluye 11-14) y el cumplimiento respeta la exclusión (R4)", async () => {
+  it("aplica la regla de dotación CPHS (<25 excluye la N°11) y el cumplimiento respeta la exclusión (R4)", async () => {
     const { syncPdtpCphsHeadcountExclusion, getPdtpComplianceIndicators } = await import("@/lib/services/prevention-pdtp")
     const { program } = await loadCatalog()
     await inMemoryDb.insert(schema.worksites).values({ id: "ws-2", name: "Faena B", code: "FB", isActive: true })
@@ -962,16 +962,24 @@ describe("prevention PDTP service", () => {
     const result = await syncPdtpCphsHeadcountExclusion(program.id, "ws-1", "user-1")
     expect(result.headcount).toBe(10)
     expect(result.cphsApplies).toBe(false)
-    expect(result.changed).toBe(4) // 11, 12, 13 y 14 excluidas
+    // D5 (diseño 2026-08-12): sólo queda la N°11 ("constituir el comité"). Las
+    // N°12/13/14 —cursos, reunión mensual y plan de trabajo del comité— pasaron
+    // al programa propio del CPHS, así que ya no son del PDTP y no se excluyen
+    // desde acá.
+    expect(result.changed).toBe(1)
     const exclusions = await inMemoryDb.select().from(schema.pdtpActivityWorksiteExclusions)
       .where(eq(schema.pdtpActivityWorksiteExclusions.worksiteId, "ws-1"))
-    expect(exclusions).toHaveLength(4)
+    expect(exclusions).toHaveLength(1)
+    const [excludedActivity] = await inMemoryDb.select({ n: schema.pdtpActivities.n })
+      .from(schema.pdtpActivities).where(eq(schema.pdtpActivities.id, exclusions[0]!.activityId))
+    expect(excludedActivity!.n).toBe(11)
 
-    // La única actividad CPHS con plan numérico es la 13 (reunión mensual: 12 u/año).
-    // ws-1 la deja fuera del denominador; ws-2 (sin sync) conserva el plan completo.
+    // La N°11 es `on_demand`: su denominador son los casos reales, no un plan
+    // numérico. Excluirla no mueve el planificado — antes sí lo movía porque la
+    // N°13 (reunión mensual, 12 u/año) entraba en el mismo grupo.
     const excluded = await getPdtpComplianceIndicators(program.id, "ws-1")
     const full = await getPdtpComplianceIndicators(program.id, "ws-2")
-    expect(excluded!.annual.planned).toBe(full!.annual.planned - 12)
+    expect(excluded!.annual.planned).toBe(full!.annual.planned)
   })
 
   it("program lifecycle freezes a digest and segregates draft → review → active", async () => {

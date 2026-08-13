@@ -11,7 +11,11 @@ import { logger } from "@/lib/logger"
 import { deliverItemTx } from "@/lib/services/item-state"
 import { applyMovementTx } from "@/lib/services/stock"
 import { getTraceableDeliveryBalance } from "@/lib/services/delivery-eligibility"
+import { onEppDeliveryCompleted } from "@/lib/services/pdtp-adapters/pdtp-accreditation-connectors"
 import type { RegisterWorkerEppDeliveryInput } from "./deliveries.types"
+
+/** N°62: "Registrar la entrega de los EPP y dejar documentada su entrega". */
+const PDTP_EPP_DELIVERY_ACTIVITY_NUMBER = 62
 
 export async function registerWorkerEppDelivery(
   input: RegisterWorkerEppDeliveryInput,
@@ -222,6 +226,21 @@ export async function registerWorkerEppDelivery(
         returnReason: input.returnReason ?? null,
       },
     }, tx)
+  })
+
+  // N°62 del PDTP ("Registrar la entrega de los EPP y dejar documentada su
+  // entrega a los trabajadores"). El conector existía desde la fase 2 del motor
+  // de acreditación y nunca tuvo llamador. Va fuera de la transacción y no
+  // propaga error: la entrega ya está registrada y la acreditación se reintenta.
+  //
+  // Es una entrega por trabajador, así que `workerCount` es 1. La N°23 —entrega
+  // inicial al ingresar— se cuenta aparte desde Habilitación del trabajador.
+  await onEppDeliveryCompleted({
+    deliveryId,
+    worksiteId: input.worksiteId,
+    deliveredAt: now,
+    workerCount: 1,
+    activityNumbers: [PDTP_EPP_DELIVERY_ACTIVITY_NUMBER],
   })
 
   return deliveryId
