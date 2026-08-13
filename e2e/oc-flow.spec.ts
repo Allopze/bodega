@@ -39,9 +39,16 @@ async function dispatchAndReceiveGuide(page: Page, guideHref: string) {
 }
 
 async function expectOcState(page: Page, state: RegExp) {
-  await page.goto(`/compras/${OC_ID}`)
-  await expect(page.getByRole("heading", { name: /OC-2026-0090/ })).toBeVisible({ timeout: 15_000 })
-  await expect(page.getByText(state).first()).toBeVisible()
+  // Con re-navegación, no con un `goto` único: la ficha se arma en el servidor,
+  // así que pedirla antes de que el commit de la recepción sea visible devuelve
+  // el estado anterior y ninguna espera de Playwright lo refresca. Es la misma
+  // trampa que ya documentan `flujo-cuatro-modulos` y `correlativos-secciones`
+  // para sus listados.
+  await expect.poll(async () => {
+    await page.goto(`/compras/${OC_ID}`)
+    await expect(page.getByRole("heading", { name: /OC-2026-0090/ })).toBeVisible({ timeout: 15_000 })
+    return page.getByText(state).count()
+  }, { timeout: 30_000 }).toBeGreaterThan(0)
 }
 
 test.describe("Flujo OC por oficina", () => {

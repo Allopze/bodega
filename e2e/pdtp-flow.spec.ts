@@ -33,7 +33,10 @@ test.describe("PDTP — Creación y edición de programas", () => {
     await expect.poll(async () => {
       await page.getByLabel("Año del programa").fill("2027")
       return page.getByRole("button", { name: "Abrir programa anual" }).count()
-    }, { timeout: 15_000 }).toBeGreaterThan(0)
+      // 45 s y no 15: el fixture de 2027 no lo borra nadie —otros specs sólo lo
+      // leen—, así que cuando esto agota su presupuesto es la hidratación, que
+      // con la máquina cargada tarda más que el margen original.
+    }, { timeout: 45_000 }).toBeGreaterThan(0)
     await page.getByRole("button", { name: "Abrir programa anual" }).click()
     await expect(page).toHaveURL(/\/prevencion\/pdtp\/pdtp-draft-e2e\/editar/, { timeout: 15_000 })
   })
