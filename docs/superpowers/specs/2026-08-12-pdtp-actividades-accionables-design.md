@@ -111,6 +111,69 @@ Todas tomadas con la jefa de prevención el 2026-08-12.
   una constancia simple. Requiere sumar `documento` al vocabulario del motor.
 - **D10 · Unificación de motores de inspección**: manda el módulo
   Inspecciones. Ver §7.
+- **D14 · La clasificación vive en la base**, no sólo en este documento.
+  `pdtp_activities.mechanism` (`enganche` / `constancia` / `formulario` /
+  `compuesta` / `sin_definir`), migración `0158`, poblado por
+  `npm run pdtp:apply-mechanisms` desde la clasificación de §5.
+
+  Sin esto el submódulo Constancias no puede saber qué actividades le tocan y
+  la cola no puede enrutar. Reparto sobre las 82 activas: **60 enganche, 14
+  constancia, 6 compuesta, 2 formulario** — ninguna sin clasificar.
+
+  El script falla si un número aparece en dos listas y avisa de las que quedan
+  sin clasificar; esa segunda guarda destapó que faltaba todo el bloque 6.
+- **D12 · La cola avisa, Constancias marca** (resuelve A4). `/pendientes` es
+  la superficie de aviso: dice qué le toca a cada responsable y cuándo vence.
+  El acto de marcar vive en el submódulo **Constancias**. En consecuencia, el
+  `href` de la fuente `pdtp_activity` de la cola debe apuntar a Constancias y
+  no a la planilla de actividades, que es donde apunta hoy.
+- **D13 · Pacífico se cierra** (resuelve A6). La faena deja de operar, así que
+  no constituir su comité paritario no es un incumplimiento pese a sus 35
+  trabajadores. ⚠️ Arrastra **7 acciones CAPA abiertas** que hay que cerrar,
+  cancelar o traspasar: la FK de `prevention_capa_actions.worksite_id` es
+  `ON DELETE RESTRICT`, o sea que la faena no se puede borrar mientras existan.
+  También quedan 6 inspecciones y 4 incidentes con historial.
+- **D11 · Acciones correctivas: CAPA guarda, PDTP muestra**. La acción vive en
+  `prevention_capa_actions` y se ve en el panel de la ejecución del PDTP, donde
+  nació. Para el usuario no cambia la pantalla.
+
+  El argumento decisivo salió del esquema: `pdtp_action_plan.execution_id` va a
+  `pdtp_executions` **ON DELETE CASCADE**, y de ahí a `pdtp_activities` y
+  `pdtp_programs` con la misma cascada — borrar un programa anual borraría
+  hallazgos reales con responsable y plazo. Hacia CAPA, en cambio, la FK es
+  **ON DELETE RESTRICT**: el esquema ya trataba a la CAPA como el registro que
+  perdura y al plan del PDTP como lo desechable.
+
+  A eso se suma el alcance: `source_type` de CAPA admite 14 orígenes (PPA,
+  evaluaciones SST, requisitos legales, permisos, gestión del cambio, higiene,
+  capacitación…) de los cuales PDTP es sólo uno, y ya tiene acciones vivas de
+  cuatro. Una acción nacida de una evaluación de trabajador no tiene actividad
+  del programa anual de la cual colgar.
+
+  **Corrección sobre lo que se estimó primero**: no hay nada que "mover". La
+  acción **ya vive en CAPA**. `generateActionPlanFromChecklist` y
+  `createActionPlanItem` llaman los dos a `createCapaActionWithClient` con
+  `sourceType: 'pdtp'`, guardan el `capaActionId`, y cada transición del PDTP
+  propaga a `transitionCapaActionWithClient`. Hay guardas explícitas —"La acción
+  no tiene CAPA vinculada y requiere conciliación"— o sea que el sistema ya
+  **exige** la CAPA.
+
+  `pdtp_action_plan` es hoy un **espejo sincronizado**, no un sistema paralelo.
+  D11 no es una migración: es quitar el espejo.
+
+  Por lo mismo cae el riesgo del formulario de seguimiento en tres pasos: el
+  formulario unificado de PDTP (`ActionFollowupTimeline` — observación, estado y
+  fotos juntos) ya existe y ya escribe a CAPA a través de la sincronización.
+  Se conserva tal cual, apuntando directo a CAPA.
+
+  Trabajo real:
+  1. El panel de la ejecución lista desde `prevention_capa_actions`
+     (`sourceType='pdtp'`, `sourceId=executionId`) en vez del espejo.
+  2. Dejar de escribir `pdtp_action_plan` en creación y transiciones.
+  3. Migración que borra `pdtp_action_plan` y `pdtp_action_plan_followups`
+     (0 filas), junto con las tres tablas del motor de checklists.
+  4. La fuente `pdtp_action` de `/pendientes` se apaga: esas filas ya las trae
+     la fuente `capa`, que existe desde antes.
 
 ## 3. Vocabulario de mecanismos
 
@@ -483,6 +546,33 @@ comité a **Cholguán (41) y Pacífico (35)**; el resto queda bajo el umbral.
 | A2 | Estado de la N°11 en las 8 faenas sin CPHS: "no aplica" vs "pendiente" (C3) | Aplicabilidad por faena |
 | A3 | Si la N°21 sobrevive o se disuelve en el bloque 66–78 (C6) | Bloque 6 |
 | A4 | Relación exacta entre `/pendientes` (D1) y el submódulo Constancias (D6): la cola avisa y Constancias es donde se marca, o el marcado vive en los dos | Ambos submódulos |
+| A12 | `pdtp_action_plan` guarda cuatro campos que CAPA no tiene: `dano_potencial`, `normativa_legal`, `origen` y `seccion_id`/`item_id`. ¿Se suman como columnas a CAPA, se guardan en su `legacy_snapshot`, o se pierden? | **Resuelto** — ver abajo |
+
+**Sobre A12** — al implementar D11 se descubrió que el espejo no es puro.
+`dano_potencial` (módulo 04: deriva prioridad y plazo, y marca la detención
+inmediata) y `normativa_legal` (Anexo 8) son atributos legítimos de cualquier
+acción correctiva, no sólo de las del PDTP; `origen` y `seccion_id`/`item_id`
+en cambio quedan sin sentido al retirar el motor de checklists.
+
+**Resolución (2026-08-13).** Los cuatro campos se reparten según lo que son, y
+ninguno se pierde:
+
+| Campo | Dónde queda | Por qué |
+|---|---|---|
+| `dano_potencial` | columna de `prevention_capa_actions` (migración 0157) | atributo de cualquier acción correctiva: un hallazgo de inspección o de permiso de trabajo tiene daño potencial igual |
+| `normativa_legal` | columna de `prevention_capa_actions` (migración 0158) | ídem — Anexo 8 no es exclusivo del programa anual |
+| `seccion_id`/`item_id` | `legacy_snapshot` jsonb, que ya existía y nadie escribía | es procedencia, no estado: no se consulta ni se filtra por él, así que no gana nada siendo columna |
+| `origen` | **no se persiste** | es derivable — una acción viene de un ítem si y sólo si trae `seccionId`. Materializarlo crearía un tercer sitio donde el mismo hecho puede desincronizarse |
+
+Escrito por `generateActionPlanFromChecklist` y `createActionPlanItem`;
+`npm run capa:backfill-provenance` cubre las filas anteriores. **A12 deja de
+bloquear D11.**
+
+La duplicación de la cola tampoco bloquea ya: se resolvió unificando las dos
+fuentes contra CAPA en vez de apagar una — `jefe_terreno`, `admin_contrato` y
+`supervisor_terreno` tienen `prevention:pdtp:view` y
+`prevention:pdtp:action:manage` pero no `prevention:capa:view`, así que apagar
+la fuente PDTP les habría borrado el trabajo de la cola.
 
 ### B · Diseño: clasificar las 65 actividades restantes
 

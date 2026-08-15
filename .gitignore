@@ -80,5 +80,8 @@ next-env.d.ts
 # Planillas y documentos de calibración/auditoría
 /docs/planillas/
 
+# Documentos de la operación (SGI) — no se versionan
+/docs/SGI Chome_2026/
+
 .agents
 /checklists
