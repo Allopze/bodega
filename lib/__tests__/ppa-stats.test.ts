@@ -162,13 +162,7 @@ function getPpaRow(submission: Record<string, unknown>) {
   mockSelect.mockReturnValueOnce({ from: fromMock })
 }
 
-function getCorrectiveActionRow(capaActionId: string | null) {
-  const limitMock = vi.fn().mockResolvedValue(capaActionId ? [{ id: "legacy-1", capaActionId }] : [])
-  const whereMock = vi.fn().mockReturnValue({ limit: limitMock })
-  const fromMock = vi.fn().mockReturnValue({ where: whereMock })
-  mockSelect.mockReturnValueOnce({ from: fromMock })
-}
-
+/** D11: un solo select — la CAPA de origen `ppa` con ese `sourceId`. */
 function getCapaRow(status: string | null) {
   const limitMock = vi.fn().mockResolvedValue(status ? [{ id: "capa-1", status, version: 3 }] : [])
   const whereMock = vi.fn().mockReturnValue({ limit: limitMock })
@@ -182,7 +176,6 @@ const closeInput = { ppaId: "p1", expectedPpaVersion: 2, comment: "Cierre verifi
 describe("closePpa", () => {
   it("cierra un caso autorizado con acción verificada", async () => {
     getPpaRow({ id: "p1", worksiteId: "ws1", estado: "autorizado", version: 2 })
-    getCorrectiveActionRow("capa-1")
     getCapaRow("verified")
     const closedRow = { id: "p1", worksiteId: "ws1", estado: "cerrado" }
     const returningMock = vi.fn().mockResolvedValue([closedRow])
@@ -203,7 +196,6 @@ describe("closePpa", () => {
 
   it("rechaza cerrar un caso autorizado con acción pendiente", async () => {
     getPpaRow({ id: "p1", worksiteId: "ws1", estado: "autorizado", version: 2 })
-    getCorrectiveActionRow("capa-1")
     getCapaRow("pending")
 
     await expect(closePpa(closeInput, closeAccess)).rejects.toThrow(/acción correctiva.*verificada/i)
