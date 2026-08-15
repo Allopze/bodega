@@ -18,6 +18,9 @@ export const riskMatrixDraftSchema = z.object({
   methodologyId: z.string().min(1),
   revisionReason: reason,
   participationSummary: z.string().trim().min(10).max(5000),
+  /* Sesión del comité que revisó la matriz. Vuelve verificable la participación
+   * del CPHS que `participationSummary` sólo describe en prosa. */
+  committeeMeetingId: z.string().min(1).nullable().optional(),
   consultationEvidenceReference: z.string().trim().min(3).max(2000),
   sourceMatrixId: z.string().min(1).optional(),
   sourceImportBatchId: z.string().min(1).optional(),
@@ -97,7 +100,7 @@ export const legalRequirementDraftSchema = z.object({
   authority: z.string().trim().min(2).max(300),
   sourceTitle: z.string().trim().min(3).max(1000),
   sourceReference: z.string().trim().min(2).max(500),
-  sourceUrl: z.string().url().max(3000).nullable().optional(),
+  sourceUrl: z.url().max(3000).nullable().optional(),
   article: z.string().trim().min(1).max(500),
   requirement: z.string().trim().min(10).max(5000),
   versionLabel: z.string().trim().min(1).max(100),

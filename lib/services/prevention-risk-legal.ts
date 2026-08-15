@@ -118,10 +118,18 @@ async function history(client: Client, args: {
   })
 }
 
+async function assertActiveUsers(client: Client, userIds: readonly (string | null | undefined)[]) {
+  const uniqueIds = [...new Set(userIds.filter((userId): userId is string => Boolean(userId)))]
+  if (uniqueIds.length === 0) return
+  const activeUsers = await client.select({ id: users.id }).from(users).where(and(
+    inArray(users.id, uniqueIds),
+    eq(users.isActive, true),
+  ))
+  if (activeUsers.length !== uniqueIds.length) throw new Error("La persona responsable no existe o está inactiva.")
+}
+
 async function assertActiveUser(client: Client, userId: string | null | undefined) {
-  if (!userId) return
-  const [user] = await client.select({ id: users.id }).from(users).where(and(eq(users.id, userId), eq(users.isActive, true))).limit(1)
-  if (!user) throw new Error("La persona responsable no existe o está inactiva.")
+  await assertActiveUsers(client, [userId])
 }
 
 export async function createRiskMethodology(input: unknown, access: RiskLegalAccess) {
@@ -196,6 +204,7 @@ export async function createRiskMatrixDraftWithClient(
     methodologySnapshot: { code: methodology.code, name: methodology.name, versionLabel: methodology.versionLabel, kind: methodology.kind, authoritySource: methodology.authoritySource, configuration: methodology.configuration },
     revisionReason: data.revisionReason,
     participationSummary: data.participationSummary,
+    committeeMeetingId: data.committeeMeetingId ?? null,
     consultationEvidenceReference: data.consultationEvidenceReference,
     sourceImportBatchId: data.sourceImportBatchId ?? null,
     supersedesMatrixId: source?.id ?? null,
@@ -207,26 +216,27 @@ export async function createRiskMatrixDraftWithClient(
 
   if (source) {
     const entries = await client.select().from(preventionRiskEntries).where(eq(preventionRiskEntries.matrixId, source.id)).orderBy(asc(preventionRiskEntries.createdAt))
-    for (const entry of entries) {
-      const newEntryId = `riskentry-${nanoid()}`
-      await client.insert(preventionRiskEntries).values({
+    if (entries.length > 0) {
+      const newEntryIdBySource = new Map(entries.map((entry) => [entry.id, `riskentry-${nanoid()}`]))
+      const controls = await client.select().from(preventionRiskControls)
+        .where(inArray(preventionRiskControls.riskEntryId, entries.map((entry) => entry.id)))
+      await client.insert(preventionRiskEntries).values(entries.map((entry) => ({
         ...entry,
-        id: newEntryId,
+        id: newEntryIdBySource.get(entry.id)!,
         matrixId: matrix.id,
         version: 1,
         createdAt: now,
         updatedAt: now,
-      })
-      const controls = await client.select().from(preventionRiskControls).where(eq(preventionRiskControls.riskEntryId, entry.id))
-      for (const control of controls) {
-        await client.insert(preventionRiskControls).values({
+      })))
+      if (controls.length > 0) {
+        await client.insert(preventionRiskControls).values(controls.map((control) => ({
           ...control,
           id: `riskcontrol-${nanoid()}`,
-          riskEntryId: newEntryId,
+          riskEntryId: newEntryIdBySource.get(control.riskEntryId)!,
           version: 1,
           createdAt: now,
           updatedAt: now,
-        })
+        })))
       }
     }
   }
@@ -270,8 +280,10 @@ export async function addRiskEntryWithClient(
   if (!matrix) throw new Error("MIPER no encontrada o fuera de alcance.")
   requireAccess(access, "prevention:risk:edit", matrix.worksiteId)
   if (matrix.status !== "draft") throw new Error("Sólo una versión MIPER en borrador admite cambios.")
-  await assertActiveUser(client, data.responsibleUserId)
-  for (const control of data.controls) await assertActiveUser(client, control.responsibleUserId)
+  await assertActiveUsers(client, [
+    data.responsibleUserId,
+    ...data.controls.map((control) => control.responsibleUserId),
+  ])
   const hierarchy = await resolveHierarchy(client, matrix.worksiteId, data)
   const now = new Date().toISOString()
   const [entry] = await client.insert(preventionRiskEntries).values({
@@ -307,9 +319,9 @@ export async function addRiskEntryWithClient(
     updatedAt: now,
   }).returning()
   if (!entry) throw new Error("No se pudo agregar el peligro a la MIPER.")
-  const controls = []
-  for (const control of data.controls) {
-    const [created] = await client.insert(preventionRiskControls).values({
+  const controls = data.controls.length === 0
+    ? []
+    : await client.insert(preventionRiskControls).values(data.controls.map((control) => ({
       id: `riskcontrol-${nanoid()}`,
       riskEntryId: entry.id,
       description: control.description,
@@ -328,9 +340,7 @@ export async function addRiskEntryWithClient(
       lastVerifiedAt: control.status === "verified" ? now : null,
       createdAt: now,
       updatedAt: now,
-    }).returning()
-    if (created) controls.push(created)
-  }
+    }))).returning()
   await history(client, { domain: "risk", entityType: "entry", entityId: entry.id, worksiteId: matrix.worksiteId, changeType: "created", reason: "Peligro y controles agregados a versión borrador", afterState: { entry, controlIds: controls.map((item) => item.id) }, actorUserId: access.userId })
   return { entry, controls }
 }
@@ -354,8 +364,10 @@ const MATRIX_PERMISSION: Record<string, string> = {
 }
 
 async function matrixSourceHash(client: Client, matrixId: string) {
-  const [matrix] = await client.select().from(preventionRiskMatrices).where(eq(preventionRiskMatrices.id, matrixId)).limit(1)
-  const entries = await client.select().from(preventionRiskEntries).where(eq(preventionRiskEntries.matrixId, matrixId)).orderBy(asc(preventionRiskEntries.id))
+  const [[matrix], entries] = await Promise.all([
+    client.select().from(preventionRiskMatrices).where(eq(preventionRiskMatrices.id, matrixId)).limit(1),
+    client.select().from(preventionRiskEntries).where(eq(preventionRiskEntries.matrixId, matrixId)).orderBy(asc(preventionRiskEntries.id)),
+  ])
   const controls = entries.length ? await client.select().from(preventionRiskControls).where(inArray(preventionRiskControls.riskEntryId, entries.map((item) => item.id))).orderBy(asc(preventionRiskControls.id)) : []
   return sha256({ matrix: matrix && { id: matrix.id, worksiteId: matrix.worksiteId, matrixVersion: matrix.matrixVersion, methodologySnapshot: matrix.methodologySnapshot }, entries, controls })
 }
@@ -663,7 +675,7 @@ export async function assessLegalCompliance(input: unknown, access: RiskLegalAcc
       const created = await createCapaActionWithClient(tx, {
         sourceType: "legal_requirement",
         sourceId: item.requirementId,
-        sourceLegacyActionId: item.id,
+        sourceItemId: item.id,
         worksiteId: item.worksiteId,
         finding: data.finding,
         actionDescription: capa.actionDescription,
@@ -815,7 +827,10 @@ export async function getRiskDashboard(access: RiskLegalAccess) {
   const controlByEntry = new Map<string, typeof controls>()
   for (const control of controls) controlByEntry.set(control.riskEntryId, [...(controlByEntry.get(control.riskEntryId) ?? []), control])
   const linkedControlIds = new Set(links.map((item) => item.sourceId))
-  const publishedIds = new Set(matrices.filter((item) => item.status === "published").map((item) => item.id))
+  const publishedIds = new Set<string>()
+  for (const matrix of matrices) {
+    if (matrix.status === "published") publishedIds.add(matrix.id)
+  }
   const criticalBlockers = entries.filter(({ entry }) => {
     if (!publishedIds.has(entry.matrixId) || !entry.isCritical) return false
     const entryControls = controlByEntry.get(entry.id) ?? []
@@ -844,12 +859,12 @@ export async function getRiskDashboard(access: RiskLegalAccess) {
 
 export async function getLegalDashboard(access: RiskLegalAccess) {
   requireAccess(access, "prevention:legal:view")
-  const [requirements, visibleWorksites, processes] = await Promise.all([
+  const [requirements, visibleWorksites, processes, applicabilities] = await Promise.all([
     db.select().from(preventionLegalRequirements).orderBy(asc(preventionLegalRequirements.code), desc(preventionLegalRequirements.requirementVersion)),
     db.select({ id: worksites.id, name: worksites.name }).from(worksites).where(and(eq(worksites.isActive, true), scopeCondition(access.scope, worksites.id))).orderBy(asc(worksites.name)),
     db.select({ id: preventionRiskProcesses.id, worksiteId: preventionRiskProcesses.worksiteId, name: preventionRiskProcesses.name }).from(preventionRiskProcesses).where(and(eq(preventionRiskProcesses.isActive, true), scopeCondition(access.scope, preventionRiskProcesses.worksiteId))).orderBy(asc(preventionRiskProcesses.name)),
+    db.select({ applicability: preventionLegalApplicabilities, requirement: preventionLegalRequirements, worksiteName: worksites.name }).from(preventionLegalApplicabilities).innerJoin(preventionLegalRequirements, eq(preventionLegalRequirements.id, preventionLegalApplicabilities.requirementId)).innerJoin(worksites, eq(worksites.id, preventionLegalApplicabilities.worksiteId)).where(scopeCondition(access.scope, preventionLegalApplicabilities.worksiteId)).orderBy(asc(worksites.name), asc(preventionLegalRequirements.code)),
   ])
-  const applicabilities = await db.select({ applicability: preventionLegalApplicabilities, requirement: preventionLegalRequirements, worksiteName: worksites.name }).from(preventionLegalApplicabilities).innerJoin(preventionLegalRequirements, eq(preventionLegalRequirements.id, preventionLegalApplicabilities.requirementId)).innerJoin(worksites, eq(worksites.id, preventionLegalApplicabilities.worksiteId)).where(scopeCondition(access.scope, preventionLegalApplicabilities.worksiteId)).orderBy(asc(worksites.name), asc(preventionLegalRequirements.code))
   const appIds = applicabilities.map((item) => item.applicability.id)
   const assessments = appIds.length ? await db.select().from(preventionLegalAssessments).where(inArray(preventionLegalAssessments.applicabilityId, appIds)).orderBy(desc(preventionLegalAssessments.assessedAt)) : []
   const gaps = applicabilities.filter(({ applicability }) => applicability.applicabilityStatus === "applicable" && (applicability.complianceStatus !== "compliant" || !applicability.evidenceReference))
@@ -861,86 +876,100 @@ export async function getPdtpCoverage(programId: string, access: RiskLegalAccess
   await refreshPdtpUpdateObligationDeadlines()
   const [program] = await db.select().from(pdtpPrograms).where(eq(pdtpPrograms.id, programId)).limit(1)
   if (!program) throw new Error("Programa PDTP no encontrado.")
-  const activities = await db.select().from(pdtpActivities).where(eq(pdtpActivities.programId, programId)).orderBy(asc(pdtpActivities.n))
+  const [
+    activities,
+    obligations,
+    worksiteRows,
+    riskSources,
+    legalSources,
+    capaSources,
+    trainingSources,
+    inspectionSources,
+    cphsSources,
+    eppSources,
+    emergencySources,
+  ] = await Promise.all([
+    db.select().from(pdtpActivities).where(eq(pdtpActivities.programId, programId)).orderBy(asc(pdtpActivities.n)),
+    db.select().from(preventionPdtpUpdateObligations).where(and(scopeCondition(access.scope, preventionPdtpUpdateObligations.worksiteId), inArray(preventionPdtpUpdateObligations.status, ["pending", "overdue"]))).orderBy(asc(preventionPdtpUpdateObligations.dueAt)),
+    db.select({ id: worksites.id, name: worksites.name }).from(worksites).where(and(eq(worksites.isActive, true), scopeCondition(access.scope, worksites.id))).orderBy(asc(worksites.name)),
+    db.select({
+      id: preventionRiskControls.id,
+      worksiteId: preventionRiskMatrices.worksiteId,
+      hazard: preventionRiskEntries.hazard,
+      description: preventionRiskControls.description,
+    }).from(preventionRiskControls)
+      .innerJoin(preventionRiskEntries, eq(preventionRiskEntries.id, preventionRiskControls.riskEntryId))
+      .innerJoin(preventionRiskMatrices, eq(preventionRiskMatrices.id, preventionRiskEntries.matrixId))
+      .where(and(eq(preventionRiskMatrices.status, "published"), scopeCondition(access.scope, preventionRiskMatrices.worksiteId)))
+      .orderBy(asc(preventionRiskEntries.hazard)),
+    db.select({
+      id: preventionLegalRequirements.id,
+      worksiteId: preventionLegalApplicabilities.worksiteId,
+      code: preventionLegalRequirements.code,
+      article: preventionLegalRequirements.article,
+    }).from(preventionLegalApplicabilities)
+      .innerJoin(preventionLegalRequirements, eq(preventionLegalRequirements.id, preventionLegalApplicabilities.requirementId))
+      .where(and(eq(preventionLegalApplicabilities.applicabilityStatus, "applicable"), eq(preventionLegalRequirements.status, "published"), scopeCondition(access.scope, preventionLegalApplicabilities.worksiteId)))
+      .orderBy(asc(preventionLegalRequirements.code)),
+    db.select({
+      id: preventionCapaActions.id,
+      worksiteId: preventionCapaActions.worksiteId,
+      code: preventionCapaActions.code,
+      finding: preventionCapaActions.finding,
+    }).from(preventionCapaActions)
+      .where(and(scopeCondition(access.scope, preventionCapaActions.worksiteId), ne(preventionCapaActions.status, "cancelled")))
+      .orderBy(asc(preventionCapaActions.code)),
+    db.select({
+      id: preventionTrainingSessions.id,
+      worksiteId: preventionTrainingSessions.worksiteId,
+      code: preventionTrainingSessions.code,
+      courseName: preventionTrainingCourses.name,
+    }).from(preventionTrainingSessions)
+      .innerJoin(preventionTrainingCourseVersions, eq(preventionTrainingCourseVersions.id, preventionTrainingSessions.courseVersionId))
+      .innerJoin(preventionTrainingCourses, eq(preventionTrainingCourses.id, preventionTrainingCourseVersions.courseId))
+      .where(and(scopeCondition(access.scope, preventionTrainingSessions.worksiteId), ne(preventionTrainingSessions.status, "cancelled")))
+      .orderBy(asc(preventionTrainingSessions.code)),
+    db.select({
+      id: preventionInspectionRuns.id,
+      worksiteId: preventionInspectionRuns.worksiteId,
+      code: preventionInspectionRuns.code,
+      templateName: preventionInspectionTemplates.name,
+      subjectLabel: preventionInspectionRuns.subjectLabel,
+    }).from(preventionInspectionRuns)
+      .innerJoin(preventionInspectionTemplates, eq(preventionInspectionTemplates.id, preventionInspectionRuns.templateId))
+      .where(and(scopeCondition(access.scope, preventionInspectionRuns.worksiteId), ne(preventionInspectionRuns.status, "cancelled")))
+      .orderBy(asc(preventionInspectionRuns.code)),
+    db.select({
+      id: preventionCommittees.id,
+      worksiteId: preventionCommittees.worksiteId,
+      name: preventionCommittees.name,
+    }).from(preventionCommittees)
+      .where(and(scopeCondition(access.scope, preventionCommittees.worksiteId), eq(preventionCommittees.status, "active")))
+      .orderBy(asc(preventionCommittees.name)),
+    db.select({
+      id: preventionEppRequirements.id,
+      worksiteId: preventionEppRequirements.worksiteId,
+      typeLabel: eppTypes.label,
+      reason: preventionEppRequirements.reason,
+    }).from(preventionEppRequirements)
+      .innerJoin(eppTypes, eq(eppTypes.id, preventionEppRequirements.eppTypeId))
+      .where(and(
+        isNotNull(preventionEppRequirements.worksiteId),
+        scopeCondition(access.scope, preventionEppRequirements.worksiteId),
+        eq(preventionEppRequirements.isActive, true),
+      ))
+      .orderBy(asc(eppTypes.label)),
+    db.select({
+      id: preventionEmergencyPlans.id,
+      worksiteId: preventionEmergencyPlans.worksiteId,
+      code: preventionEmergencyPlans.code,
+      title: preventionEmergencyPlans.title,
+    }).from(preventionEmergencyPlans)
+      .where(and(scopeCondition(access.scope, preventionEmergencyPlans.worksiteId), eq(preventionEmergencyPlans.status, "approved")))
+      .orderBy(asc(preventionEmergencyPlans.code)),
+  ])
   const activityIds = activities.map((item) => item.id)
   const links = activityIds.length ? await db.select().from(preventionPdtpSourceLinks).where(and(inArray(preventionPdtpSourceLinks.activityId, activityIds), eq(preventionPdtpSourceLinks.isActive, true), scopeCondition(access.scope, preventionPdtpSourceLinks.worksiteId))).orderBy(asc(preventionPdtpSourceLinks.createdAt)) : []
-  const obligations = await db.select().from(preventionPdtpUpdateObligations).where(and(scopeCondition(access.scope, preventionPdtpUpdateObligations.worksiteId), inArray(preventionPdtpUpdateObligations.status, ["pending", "overdue"]))).orderBy(asc(preventionPdtpUpdateObligations.dueAt))
-  const worksiteRows = await db.select({ id: worksites.id, name: worksites.name }).from(worksites).where(and(eq(worksites.isActive, true), scopeCondition(access.scope, worksites.id))).orderBy(asc(worksites.name))
-  const riskSources = await db.select({
-    id: preventionRiskControls.id,
-    worksiteId: preventionRiskMatrices.worksiteId,
-    hazard: preventionRiskEntries.hazard,
-    description: preventionRiskControls.description,
-  }).from(preventionRiskControls)
-    .innerJoin(preventionRiskEntries, eq(preventionRiskEntries.id, preventionRiskControls.riskEntryId))
-    .innerJoin(preventionRiskMatrices, eq(preventionRiskMatrices.id, preventionRiskEntries.matrixId))
-    .where(and(eq(preventionRiskMatrices.status, "published"), scopeCondition(access.scope, preventionRiskMatrices.worksiteId)))
-    .orderBy(asc(preventionRiskEntries.hazard))
-  const legalSources = await db.select({
-    id: preventionLegalRequirements.id,
-    worksiteId: preventionLegalApplicabilities.worksiteId,
-    code: preventionLegalRequirements.code,
-    article: preventionLegalRequirements.article,
-  }).from(preventionLegalApplicabilities)
-    .innerJoin(preventionLegalRequirements, eq(preventionLegalRequirements.id, preventionLegalApplicabilities.requirementId))
-    .where(and(eq(preventionLegalApplicabilities.applicabilityStatus, "applicable"), eq(preventionLegalRequirements.status, "published"), scopeCondition(access.scope, preventionLegalApplicabilities.worksiteId)))
-    .orderBy(asc(preventionLegalRequirements.code))
-  const capaSources = await db.select({
-    id: preventionCapaActions.id,
-    worksiteId: preventionCapaActions.worksiteId,
-    code: preventionCapaActions.code,
-    finding: preventionCapaActions.finding,
-  }).from(preventionCapaActions)
-    .where(and(scopeCondition(access.scope, preventionCapaActions.worksiteId), ne(preventionCapaActions.status, "cancelled")))
-    .orderBy(asc(preventionCapaActions.code))
-  const trainingSources = await db.select({
-    id: preventionTrainingSessions.id,
-    worksiteId: preventionTrainingSessions.worksiteId,
-    code: preventionTrainingSessions.code,
-    courseName: preventionTrainingCourses.name,
-  }).from(preventionTrainingSessions)
-    .innerJoin(preventionTrainingCourseVersions, eq(preventionTrainingCourseVersions.id, preventionTrainingSessions.courseVersionId))
-    .innerJoin(preventionTrainingCourses, eq(preventionTrainingCourses.id, preventionTrainingCourseVersions.courseId))
-    .where(and(scopeCondition(access.scope, preventionTrainingSessions.worksiteId), ne(preventionTrainingSessions.status, "cancelled")))
-    .orderBy(asc(preventionTrainingSessions.code))
-  const inspectionSources = await db.select({
-    id: preventionInspectionRuns.id,
-    worksiteId: preventionInspectionRuns.worksiteId,
-    code: preventionInspectionRuns.code,
-    templateName: preventionInspectionTemplates.name,
-    subjectLabel: preventionInspectionRuns.subjectLabel,
-  }).from(preventionInspectionRuns)
-    .innerJoin(preventionInspectionTemplates, eq(preventionInspectionTemplates.id, preventionInspectionRuns.templateId))
-    .where(and(scopeCondition(access.scope, preventionInspectionRuns.worksiteId), ne(preventionInspectionRuns.status, "cancelled")))
-    .orderBy(asc(preventionInspectionRuns.code))
-  const cphsSources = await db.select({
-    id: preventionCommittees.id,
-    worksiteId: preventionCommittees.worksiteId,
-    name: preventionCommittees.name,
-  }).from(preventionCommittees)
-    .where(and(scopeCondition(access.scope, preventionCommittees.worksiteId), eq(preventionCommittees.status, "active")))
-    .orderBy(asc(preventionCommittees.name))
-  const eppSources = await db.select({
-    id: preventionEppRequirements.id,
-    worksiteId: preventionEppRequirements.worksiteId,
-    typeLabel: eppTypes.label,
-    reason: preventionEppRequirements.reason,
-  }).from(preventionEppRequirements)
-    .innerJoin(eppTypes, eq(eppTypes.id, preventionEppRequirements.eppTypeId))
-    .where(and(
-      isNotNull(preventionEppRequirements.worksiteId),
-      scopeCondition(access.scope, preventionEppRequirements.worksiteId),
-      eq(preventionEppRequirements.isActive, true),
-    ))
-    .orderBy(asc(eppTypes.label))
-  const emergencySources = await db.select({
-    id: preventionEmergencyPlans.id,
-    worksiteId: preventionEmergencyPlans.worksiteId,
-    code: preventionEmergencyPlans.code,
-    title: preventionEmergencyPlans.title,
-  }).from(preventionEmergencyPlans)
-    .where(and(scopeCondition(access.scope, preventionEmergencyPlans.worksiteId), eq(preventionEmergencyPlans.status, "approved")))
-    .orderBy(asc(preventionEmergencyPlans.code))
   const linksByActivity = new Map<string, typeof links>()
   for (const link of links) linksByActivity.set(link.activityId, [...(linksByActivity.get(link.activityId) ?? []), link])
   return {
