@@ -93,7 +93,9 @@ export function WorksiteForm({ open, onClose, editWorksite }: WorksiteFormProps)
             </datalist>
           </Field>
 
-          <Checkbox id="ws-isActive" name="isActive" value="on" defaultChecked={editWorksite?.isActive ?? true} label="Faena activa" />
+          {!isEdit ? (
+            <Checkbox id="ws-isActive" name="isActive" value="on" defaultChecked label="Faena activa" />
+          ) : null}
         </FieldGroup>
       )}
     </CatalogFormSheet>

@@ -10,7 +10,9 @@ const mockResolveWorksiteScope = vi.hoisted(() => vi.fn(() => ({ mode: "all" as 
 const mockFindFirstWorksite = vi.hoisted(() => vi.fn())
 const mockInsert = vi.hoisted(() => vi.fn())
 const mockUpdate = vi.hoisted(() => vi.fn())
+const mockSet = vi.hoisted(() => vi.fn())
 const mockRecordAudit = vi.hoisted(() => vi.fn())
+const mockSetWorksiteActive = vi.hoisted(() => vi.fn())
 
 vi.mock("@/lib/auth/can", () => ({
   requirePermission: mockRequirePermission,
@@ -30,6 +32,9 @@ vi.mock("@/db", () => ({
 }))
 vi.mock("@/lib/audit", () => ({
   recordAudit: mockRecordAudit,
+}))
+vi.mock("@/lib/services/worksite-lifecycle", () => ({
+  setWorksiteActive: mockSetWorksiteActive,
 }))
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), revalidateTag: vi.fn() }))
 
@@ -65,9 +70,10 @@ function makeFormData(fields: Record<string, string> = {}): FormData {
 function setupDbMocks() {
   const whereFn = vi.fn().mockResolvedValue(undefined)
   const setChain = { where: whereFn }
-  const setFn = vi.fn().mockReturnValue(setChain)
+  mockSet.mockReturnValue(setChain)
   mockInsert.mockReturnValue({ values: vi.fn().mockResolvedValue(undefined) })
-  mockUpdate.mockReturnValue({ set: setFn })
+  mockUpdate.mockReturnValue({ set: mockSet })
+  mockSetWorksiteActive.mockResolvedValue({ programsDropped: 0, capaCancelled: 0, obligationsCancelled: 0 })
 }
 
 describe("createWorksite", () => {
@@ -151,6 +157,16 @@ describe("updateWorksite", () => {
     const res = await updateWorksite(prevState, makeFormData({ id: "ws-1" }))
     expect(res.ok).toBe(true)
     expect(res.message).toContain("actualizada")
+  })
+
+  it("no cambia el estado operativo desde la edición general", async () => {
+    mockRequirePermission.mockResolvedValueOnce(makeSession())
+    mockFindFirstWorksite.mockResolvedValueOnce(null)
+    mockFindFirstWorksite.mockResolvedValueOnce({ id: "ws-1", name: "Test", code: "F-TEST", isActive: true })
+
+    await updateWorksite(prevState, makeFormData({ id: "ws-1", isActive: "" }))
+
+    expect(mockSet).toHaveBeenCalledWith(expect.not.objectContaining({ isActive: expect.anything() }))
   })
 })
 

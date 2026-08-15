@@ -6,6 +6,10 @@ import { useCatalogSheet } from "@/components/admin/use-catalog-sheet"
 import { CatalogRowActions } from "@/components/admin/catalog-row-actions"
 import { WorksiteForm } from "./worksite-form"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Field } from "@/components/ui/field"
+import { Textarea } from "@/components/ui/textarea"
 import { TableRow, TableCell } from "@/components/ui/table"
 import { toggleWorksiteActive } from "./actions"
 import { COLUMNS as WS_COLUMNS, CONTRACT } from "./catalog-contract"
@@ -36,6 +40,12 @@ export function FaenasList({
   } = useCatalogSheet<WorksiteRow>(toggleWorksiteActive)
 
   const rows = worksites as (WorksiteRow & Record<string, unknown>)[]
+
+  // Cerrar una faena cancela sus acciones correctivas y obligaciones abiertas
+  // con este motivo escrito en cada una, así que se pide antes de ejecutar y no
+  // como una confirmación genérica.
+  const [closing, setClosing] = React.useState<WorksiteRow | null>(null)
+  const [motivo, setMotivo] = React.useState("")
 
   return (
     <>
@@ -76,6 +86,7 @@ export function FaenasList({
                   label={`faena ${ws.name}`}
                   onEdit={() => openEditWs(ws)}
                   toggleAction={wsToggleAction}
+                  onDeactivateRequest={() => { setMotivo(""); setClosing(ws) }}
                 />
               </div>
             </article>
@@ -104,6 +115,7 @@ export function FaenasList({
                       label={`faena ${ws.name}`}
                       onEdit={() => openEditWs(ws)}
                       toggleAction={wsToggleAction}
+                      onDeactivateRequest={() => { setMotivo(""); setClosing(ws) }}
                     />
                   </div>
                 </TableCell>
@@ -119,6 +131,43 @@ export function FaenasList({
         onClose={closeSheet}
         editWorksite={editWs}
       />
+
+      <Dialog open={closing !== null} onOpenChange={(open) => { if (!open) setClosing(null) }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Cerrar la faena {closing?.name}</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-(--color-text-muted)">
+            La faena sale del programa preventivo y sus acciones correctivas y obligaciones
+            pendientes se cancelan con este motivo escrito en cada una. Las verificadas y
+            cerradas conservan su historial.
+          </p>
+          <form action={wsToggleAction}>
+            <input type="hidden" name="id" value={closing?.id ?? ""} />
+            <input type="hidden" name="activate" value="false" />
+            <Field label="Motivo del cierre" htmlFor="motivo-cierre-faena" required>
+              <Textarea
+                id="motivo-cierre-faena"
+                name="motivo"
+                value={motivo}
+                onChange={(event) => setMotivo(event.target.value)}
+                rows={3}
+                minLength={10}
+                maxLength={2000}
+                required
+                placeholder="Término de contrato, traslado de la operación, etc."
+              />
+            </Field>
+            <DialogFooter>
+              <Button type="button" variant="ghost" onClick={() => setClosing(null)}>Cancelar</Button>
+              <Button type="submit" variant="destructive" disabled={motivo.trim().length < 10}
+                onClick={() => setClosing(null)}>
+                Cerrar faena
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </>
   )
 }
