@@ -13,6 +13,7 @@ import {
 } from "drizzle-orm/pg-core"
 import { users } from "../users"
 import { worksites } from "../worksites"
+import { preventionCommitteeMeetings } from "./cphs"
 import { preventionCapaActions } from "./capa"
 import { pdtpActivities, pdtpPrograms } from "./pdtp"
 
@@ -82,6 +83,10 @@ export const preventionRiskMatrices = pgTable("prevention_risk_matrices", {
   methodologySnapshot: jsonb("methodology_snapshot").notNull(),
   revisionReason: text("revision_reason").notNull(),
   participationSummary: text("participation_summary").notNull(),
+  /* Sesión del comité paritario donde se revisó esta matriz. `participation_summary`
+   * es texto libre y sirve para describir; esto la vuelve verificable, que es lo
+   * que exige la certificación Mutual para acreditar participación del CPHS. */
+  committeeMeetingId: text("committee_meeting_id").references(() => preventionCommitteeMeetings.id, { onDelete: "set null" }),
   consultationEvidenceReference: text("consultation_evidence_reference").notNull(),
   effectiveFrom: text("effective_from"),
   reviewDueAt: text("review_due_at"),
@@ -144,6 +149,45 @@ export const preventionRiskEntries = pgTable("prevention_risk_entries", {
   index("prevention_risk_entries_matrix_level_idx").on(table.matrixId, table.residualLevel),
   check("prevention_risk_entries_exposed_count_valid", sql`${table.exposedPeopleCount} IS NULL OR ${table.exposedPeopleCount} >= 0`),
   check("prevention_risk_entries_version_positive", sql`${table.version} > 0`),
+])
+
+/* ── Mapa de riesgos espacial ─────────────────────────────────────────────
+ * Plano de planta por faena con marcadores ubicados sobre la imagen (no una
+ * matriz tabular ni un heatmap): requisito Oro de la certificación Mutual.
+ * No hay librería de mapas en el repo; el marcador se guarda como porcentaje
+ * de la imagen (0-100), y el overlay se dibuja con CSS puro en el cliente.
+ */
+export const preventionRiskMapLayouts = pgTable("prevention_risk_map_layouts", {
+  id: text("id").primaryKey(),
+  worksiteId: text("worksite_id").notNull().references(() => worksites.id, { onDelete: "restrict" }),
+  title: text("title").notNull(),
+  imagePath: text("image_path").notNull(),
+  imageMimeType: text("image_mime_type").notNull(),
+  status: text("status").notNull().default("active"),
+  version: integer("version").notNull().default(1),
+  createdByUserId: text("created_by_user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex("prevention_risk_map_layout_active_unique").on(table.worksiteId)
+    .where(sql`${table.status} = 'active'`),
+  check("prevention_risk_map_layout_status_valid", sql`${table.status} IN ('active', 'archived')`),
+  check("prevention_risk_map_layout_version_positive", sql`${table.version} >= 1`),
+])
+
+export const preventionRiskMapMarkers = pgTable("prevention_risk_map_markers", {
+  id: text("id").primaryKey(),
+  layoutId: text("layout_id").notNull().references(() => preventionRiskMapLayouts.id, { onDelete: "cascade" }),
+  riskEntryId: text("risk_entry_id").notNull().references(() => preventionRiskEntries.id, { onDelete: "restrict" }),
+  xPct: numeric("x_pct", { precision: 5, scale: 2, mode: "number" }).notNull(),
+  yPct: numeric("y_pct", { precision: 5, scale: 2, mode: "number" }).notNull(),
+  label: text("label"),
+  createdByUserId: text("created_by_user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+}, (table) => [
+  index("prevention_risk_map_marker_layout_idx").on(table.layoutId),
+  check("prevention_risk_map_marker_x_valid", sql`${table.xPct} BETWEEN 0 AND 100`),
+  check("prevention_risk_map_marker_y_valid", sql`${table.yPct} BETWEEN 0 AND 100`),
 ])
 
 export const preventionRiskControls = pgTable("prevention_risk_controls", {

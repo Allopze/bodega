@@ -1,0 +1,3 @@
+ALTER TABLE "prevention_capa_actions" ADD COLUMN "dano_potencial" text;--> statement-breakpoint
+ALTER TABLE "prevention_capa_actions" ADD COLUMN "normativa_legal" text;--> statement-breakpoint
+ALTER TABLE "prevention_capa_actions" ADD CONSTRAINT "prevention_capa_dano_potencial_valid" CHECK ("prevention_capa_actions"."dano_potencial" IS NULL OR "prevention_capa_actions"."dano_potencial" IN ('leve', 'moderado', 'grave', 'fatal'));

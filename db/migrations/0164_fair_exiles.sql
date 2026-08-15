@@ -1,0 +1,4 @@
+ALTER TABLE "prevention_risk_matrices" ADD COLUMN "committee_meeting_id" text;--> statement-breakpoint
+ALTER TABLE "prevention_inspection_runs" ADD COLUMN "origin" text DEFAULT 'prevencion' NOT NULL;--> statement-breakpoint
+ALTER TABLE "prevention_risk_matrices" ADD CONSTRAINT "prevention_risk_matrices_committee_meeting_id_prevention_committee_meetings_id_fk" FOREIGN KEY ("committee_meeting_id") REFERENCES "public"."prevention_committee_meetings"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "prevention_inspection_runs" ADD CONSTRAINT "prevention_inspection_run_origin_valid" CHECK ("prevention_inspection_runs"."origin" IN ('prevencion', 'cphs', 'mandante'));

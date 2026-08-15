@@ -1,0 +1,2 @@
+ALTER TABLE "pdtp_activities" ADD COLUMN "mechanism" text DEFAULT 'sin_definir' NOT NULL;--> statement-breakpoint
+ALTER TABLE "pdtp_activities" ADD CONSTRAINT "pdtp_activities_mechanism_check" CHECK ("pdtp_activities"."mechanism" IN ('enganche', 'constancia', 'formulario', 'compuesta', 'sin_definir'));

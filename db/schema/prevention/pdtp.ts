@@ -3,7 +3,6 @@ import { boolean, check, date, index, integer, jsonb, numeric, real, text, times
 import { pgTable } from "drizzle-orm/pg-core"
 import { users } from "../users"
 import { worksites } from "../worksites"
-import { preventionCapaActions } from "./capa"
 
 export const pdtpPrograms = pgTable("pdtp_programs", {
   id:                    text("id").primaryKey(),
@@ -283,6 +282,19 @@ export const pdtpActivities = pgTable("pdtp_activities", {
   triggerDescription:  text("trigger_description"),
   dueDays:             integer("due_days"),
   evidenceRequirement: text("evidence_requirement"),
+  /**
+   * Cómo se cumple esta actividad (D4 del diseño 2026-08-12). Hasta ahora la
+   * clasificación vivía sólo en el documento y el código no podía consultarla:
+   *
+   *   `enganche`   un registro de otro módulo la cierra; nadie marca en PDTP
+   *   `constancia` se hizo o no se hizo + evidencia u observación
+   *   `formulario` hay que crear el registro dentro de PDTP
+   *   `compuesta`  se cumple cuando sus componentes están completos (N°52)
+   *   `sin_definir` todavía no clasificada
+   *
+   * El submódulo Constancias lista exactamente las `constancia`.
+   */
+  mechanism:           text("mechanism").notNull().default("sin_definir"),
   indicatorMode:       text("indicator_mode").notNull().default("planned_vs_completed"),
   targetValue:         numeric("target_value", { precision: 10, scale: 2, mode: "number" }),
   targetUnit:          text("target_unit"),
@@ -304,6 +316,7 @@ export const pdtpActivities = pgTable("pdtp_activities", {
   check("pdtp_activities_schedule_mode_check", sql`${table.scheduleMode} IN ('scheduled', 'on_demand', 'triggered')`),
   check("pdtp_activities_schedule_classification_check", sql`${table.scheduleClassificationStatus} IN ('confirmed', 'needs_review')`),
   check("pdtp_activities_due_days_check", sql`${table.dueDays} IS NULL OR ${table.dueDays} >= 0`),
+  check("pdtp_activities_mechanism_check", sql`${table.mechanism} IN ('enganche', 'constancia', 'formulario', 'compuesta', 'sin_definir')`),
   check("prevention_pdtp_activity_indicator_mode_valid", sql`${table.indicatorMode} IN ('planned_vs_completed', 'closed_on_time', 'completed_count', 'not_applicable', 'coverage')`),
   check("pdtp_activities_target_value_check", sql`${table.targetValue} IS NULL OR ${table.targetValue} >= 0`),
 ])
@@ -549,51 +562,6 @@ export const pdtpExecutionChecklistResponses = pgTable("pdtp_execution_checklist
   uniqueIndex("pdtp_exec_responses_instance_section_item_unique").on(table.checklistInstanceId, table.seccionId, table.itemId),
 ])
 
-/* ── PDTP Action Plan (plan de acción correctivo por ejecución) ───────────── */
-export const pdtpActionPlan = pgTable("pdtp_action_plan", {
-  id:                 text("id").primaryKey(),
-  executionId:        text("execution_id").notNull().references(() => pdtpExecutions.id, { onDelete: "cascade" }),
-  capaActionId:       text("capa_action_id").references(() => preventionCapaActions.id, { onDelete: "restrict" }),
-  n:                  integer("n").notNull(),
-  origen:             text("origen").notNull().default("manual"),
-  seccionId:          text("seccion_id"),
-  itemId:             text("item_id"),
-  hallazgo:           text("hallazgo").notNull(),
-  /**
-   * Daño potencial del hallazgo (Anexo 8, columna "DAÑO POTENCIAL").
-   * Deriva prioridad y plazo, pero se persiste aparte porque la derivación es
-   * lossy: grave y fatal colapsan ambos en prioridad alta, así que sin esta
-   * columna el dato del anexo no se puede reconstruir para el auditor.
-   */
-  danoPotencial:      text("dano_potencial"),
-  /** Anexo 8, columna "NORMATIVA LEGAL APLICABLE". Texto libre. */
-  normativaLegal:     text("normativa_legal"),
-  accion:             text("accion").notNull(),
-  responsableRole:    text("responsable_role").notNull(),
-  responsable:        text("responsable").notNull(),
-  responsableUserId:  text("responsable_user_id").references(() => users.id),
-  plazo:              text("plazo").notNull(),
-  prioridad:          text("prioridad").notNull().default("media"),
-  estado:             text("estado").notNull().default("pendiente"),
-  createdByUserId:    text("created_by_user_id").notNull().references(() => users.id),
-  closedAt:           timestamp("closed_at", { withTimezone: true, mode: "string" }),
-  verifiedByUserId:   text("verified_by_user_id").references(() => users.id),
-  verifiedAt:         timestamp("verified_at", { withTimezone: true, mode: "string" }),
-  rejectionReason:    text("rejection_reason"),
-  createdAt:          timestamp("created_at", { withTimezone: true, mode: "string" }).notNull(),
-  updatedAt:          timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull(),
-}, (table) => [
-  uniqueIndex("pdtp_action_plan_execution_n_unique").on(table.executionId, table.n),
-  uniqueIndex("pdtp_action_plan_capa_unique").on(table.capaActionId),
-  index("pdtp_action_plan_execution_idx").on(table.executionId),
-  index("pdtp_action_plan_estado_idx").on(table.estado),
-  index("pdtp_action_plan_plazo_idx").on(table.plazo),
-  check("pdtp_action_plan_origen_check", sql`${table.origen} IN ('checklist_item', 'manual')`),
-  check("pdtp_action_plan_prioridad_check", sql`${table.prioridad} IN ('alta', 'media', 'baja')`),
-  check("pdtp_action_plan_dano_potencial_check", sql`${table.danoPotencial} IS NULL OR ${table.danoPotencial} IN ('leve', 'moderado', 'grave', 'fatal')`),
-  check("pdtp_action_plan_estado_check", sql`${table.estado} IN ('pendiente', 'en_proceso', 'completado', 'verificado', 'reabierto', 'cancelado')`),
-])
-
 /**
  * Membresía de faenas de un programa. Sin filas para un `programId`, el
  * programa aplica a todas las faenas del scope del usuario (comportamiento
@@ -655,22 +623,6 @@ export const pdtpActivityWorksiteParams = pgTable("pdtp_activity_worksite_params
     AND length(trim(COALESCE(${table.responsibleDisplay}, ''))) > 0
     AND length(trim(COALESCE(${table.responsibleReason}, ''))) >= 10
   )`),
-])
-
-/* ── PDTP Action Plan Followups (bitácora de seguimiento) ────────────────── */
-export const pdtpActionPlanFollowups = pgTable("pdtp_action_plan_followups", {
-  id:               text("id").primaryKey(),
-  actionPlanItemId: text("action_plan_item_id").notNull().references(() => pdtpActionPlan.id, { onDelete: "cascade" }),
-  fecha:            text("fecha").notNull(),
-  estadoAnterior:   text("estado_anterior"),
-  estadoNuevo:      text("estado_nuevo").notNull(),
-  observacion:      text("observacion"),
-  evidenciaUrl:     text("evidencia_url"),
-  evidenciaPhotos:  jsonb("evidencia_photos").notNull().default([]),
-  updatedByUserId:  text("updated_by_user_id").notNull().references(() => users.id),
-  createdAt:        timestamp("created_at", { withTimezone: true, mode: "string" }).notNull(),
-}, (table) => [
-  index("pdtp_action_plan_followups_item_fecha_idx").on(table.actionPlanItemId, table.fecha),
 ])
 
 /* ── Relations ───────────────────────────────────────────────────────────── */
@@ -759,14 +711,13 @@ export const pdtpActivityScheduleRelations = relations(pdtpActivitySchedule, ({ 
   activity: one(pdtpActivities, { fields: [pdtpActivitySchedule.activityId], references: [pdtpActivities.id] }),
 }))
 
-export const pdtpExecutionsRelations = relations(pdtpExecutions, ({ one, many }) => ({
+export const pdtpExecutionsRelations = relations(pdtpExecutions, ({ one }) => ({
   activity: one(pdtpActivities, { fields: [pdtpExecutions.activityId], references: [pdtpActivities.id] }),
   worksite: one(worksites, { fields: [pdtpExecutions.worksiteId], references: [worksites.id] }),
   obligation: one(pdtpObligations, { fields: [pdtpExecutions.obligationId], references: [pdtpObligations.id] }),
   executedByUser: one(users, { fields: [pdtpExecutions.executedByUserId], references: [users.id] }),
   approvedByUser: one(users, { fields: [pdtpExecutions.approvedByUserId], references: [users.id] }),
   checklistInstance: one(pdtpExecutionChecklists),
-  actionPlan: many(pdtpActionPlan),
 }))
 
 export const pdtpObligationsRelations = relations(pdtpObligations, ({ one, many }) => ({
@@ -823,19 +774,6 @@ export const pdtpExecutionChecklistResponsesRelations = relations(pdtpExecutionC
   respondedByUser: one(users, { fields: [pdtpExecutionChecklistResponses.respondedByUserId], references: [users.id] }),
 }))
 
-export const pdtpActionPlanRelations = relations(pdtpActionPlan, ({ one, many }) => ({
-  execution: one(pdtpExecutions, { fields: [pdtpActionPlan.executionId], references: [pdtpExecutions.id] }),
-  responsableUser: one(users, { fields: [pdtpActionPlan.responsableUserId], references: [users.id] }),
-  createdByUser: one(users, { fields: [pdtpActionPlan.createdByUserId], references: [users.id] }),
-  verifiedByUser: one(users, { fields: [pdtpActionPlan.verifiedByUserId], references: [users.id] }),
-  followups: many(pdtpActionPlanFollowups),
-}))
-
-export const pdtpActionPlanFollowupsRelations = relations(pdtpActionPlanFollowups, ({ one }) => ({
-  actionPlanItem: one(pdtpActionPlan, { fields: [pdtpActionPlanFollowups.actionPlanItemId], references: [pdtpActionPlan.id] }),
-  updatedByUser: one(users, { fields: [pdtpActionPlanFollowups.updatedByUserId], references: [users.id] }),
-}))
-
 /* ── Relations (extiende pdtpExecutions y pdtpActivities con las nuevas tablas) ─ */
 
 /* ── Types ───────────────────────────────────────────────────────────────── */
@@ -884,10 +822,6 @@ export type PdtpExecutionChecklist = typeof pdtpExecutionChecklists.$inferSelect
 export type NewPdtpExecutionChecklist = typeof pdtpExecutionChecklists.$inferInsert
 export type PdtpExecutionChecklistResponse = typeof pdtpExecutionChecklistResponses.$inferSelect
 export type NewPdtpExecutionChecklistResponse = typeof pdtpExecutionChecklistResponses.$inferInsert
-export type PdtpActionPlanItem = typeof pdtpActionPlan.$inferSelect
-export type NewPdtpActionPlanItem = typeof pdtpActionPlan.$inferInsert
-export type PdtpActionPlanFollowup = typeof pdtpActionPlanFollowups.$inferSelect
-export type NewPdtpActionPlanFollowup = typeof pdtpActionPlanFollowups.$inferInsert
 
 /* ── Enums de dominio PDTP Checklist/Plan de acción ───────────────────────── */
 export type PdtpChecklistStatus = "pendiente" | "en_proceso" | "completado"

@@ -6,6 +6,7 @@ import { users } from "./users"
 
 /* ── DTE Sync Run States ─────────────────────────────────────────────────── */
 // running | success | partial | failed
+// reconciliation: not_run | success | partial | failed
 
 /* ── DTE Document SII States ─────────────────────────────────────────────── */
 // pendiente_envio | enviado | aceptado | rechazado | anulado | manual
@@ -36,13 +37,20 @@ export const dteSyncRuns = pgTable("dte_sync_runs", {
   /** Batch ID shared by the current/prior periods of one automatic invocation. */
   correlationId: text("correlation_id"),
   error:         text("error"),
+  /** Estado de conciliación separado de la ingesta del portal. */
+  reconciliationStatus: text("reconciliation_status").notNull()
+    .$type<"not_run" | "success" | "partial" | "failed">().default("not_run"),
+  /** Resumen redactado de diferencias/ambigüedades o fallo técnico. */
+  reconciliationError: text("reconciliation_error"),
   startedAt:     timestamp("started_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   finishedAt:    timestamp("finished_at", { withTimezone: true, mode: "string" }),
 }, (table) => [
   check("dte_sync_runs_trigger_valid", sql`${table.trigger} IN ('manual', 'cron')`),
   check("dte_sync_runs_status_valid", sql`${table.status} IN ('running', 'success', 'partial', 'failed')`),
+  check("dte_sync_runs_reconciliation_status_valid", sql`${table.reconciliationStatus} IN ('not_run', 'success', 'partial', 'failed')`),
   index("dte_sync_runs_periodo_idx").on(table.periodo),
   index("dte_sync_runs_status_idx").on(table.status),
+  index("dte_sync_runs_reconciliation_status_idx").on(table.reconciliationStatus),
   index("dte_sync_runs_started_idx").on(table.startedAt),
   index("dte_sync_runs_correlation_idx").on(table.correlationId),
   // Una sola corrida `running` por (empresa, período): el cron y el botón de
@@ -153,6 +161,11 @@ export const dteDocuments = pgTable("dte_documents", {
   check("dte_documents_single_business_link", sql`
     ${table.purchaseOrderInvoiceId} IS NULL OR ${table.fuelLoadId} IS NULL
   `),
+  // Una factura de OC sólo puede conservar un DTE. El índice es la última
+  // barrera frente a carreras entre conciliación automática y vínculo manual.
+  uniqueIndex("dte_documents_purchase_invoice_single_unique")
+    .on(table.purchaseOrderInvoiceId)
+    .where(sql`${table.purchaseOrderInvoiceId} IS NOT NULL`),
   index("dte_documents_periodo_idx").on(table.periodo),
   index("dte_documents_estado_sii_idx").on(table.estadoSii),
   index("dte_documents_rut_emisor_idx").on(table.rutEmisor),

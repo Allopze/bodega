@@ -1,0 +1,2 @@
+ALTER TABLE "prevention_competency_requirements" DROP CONSTRAINT "prevention_competency_requirement_scope_valid";--> statement-breakpoint
+ALTER TABLE "prevention_competency_requirements" ADD CONSTRAINT "prevention_competency_requirement_scope_valid" CHECK ("prevention_competency_requirements"."scope_type" IN ('global', 'worksite', 'position', 'task', 'committee'));

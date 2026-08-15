@@ -9,7 +9,13 @@ export const preventionCapaActions = pgTable("prevention_capa_actions", {
   code:                  text("code").notNull().unique(),
   sourceType:            text("source_type").notNull(),
   sourceId:              text("source_id").notNull(),
-  sourceLegacyActionId:  text("source_legacy_action_id"),
+  /**
+   * Qué parte de la fuente produjo la acción, cuando `sourceId` no alcanza: el
+   * id de la aplicabilidad legal, no del requisito. Se llamaba
+   * `source_legacy_action_id` porque los espejos retirados lo usaban para
+   * apuntar a su propia fila; nunca fue un dato heredado.
+   */
+  sourceItemId:          text("source_item_id"),
   worksiteId:            text("worksite_id").notNull().references(() => worksites.id, { onDelete: "restrict" }),
   finding:               text("finding").notNull(),
   immediateMeasure:      text("immediate_measure"),
@@ -27,6 +33,19 @@ export const preventionCapaActions = pgTable("prevention_capa_actions", {
   // pero cerrar la acción con evidencia toma otro tiempo. Antes ambas cosas
   // se expresaban con un plazo "hoy", que sólo producía acciones vencidas.
   requiresImmediateStop: boolean("requires_immediate_stop").notNull().default(false),
+  /**
+   * Daño potencial del hallazgo (módulo 04). Deriva la prioridad y el plazo, y
+   * `fatal` además exige detención inmediata — ver `PDTP_DANO_POTENCIAL_*` en
+   * `lib/services/pdtp/checklist-domain.ts`.
+   *
+   * Vivía sólo en `pdtp_action_plan`, que era el espejo del plan del PDTP.
+   * Sube a CAPA porque es un atributo de cualquier acción correctiva, no del
+   * programa anual: un hallazgo de una inspección o de un permiso de trabajo
+   * tiene daño potencial igual (D11 / A12 del diseño 2026-08-12).
+   */
+  danoPotencial:         text("dano_potencial"),
+  /** Anexo 8, "Normativa legal aplicable" (p. ej. "Ley 21.512 art. 32, DS 40"). */
+  normativaLegal:        text("normativa_legal"),
   createdByUserId:       text("created_by_user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
   startedByUserId:       text("started_by_user_id").references(() => users.id, { onDelete: "restrict" }),
   startedAt:             timestamp("started_at", { withTimezone: true, mode: "string" }),
@@ -47,12 +66,28 @@ export const preventionCapaActions = pgTable("prevention_capa_actions", {
   cancelledAt:           timestamp("cancelled_at", { withTimezone: true, mode: "string" }),
   cancellationReason:    text("cancellation_reason"),
   reconciliationStatus:  text("reconciliation_status").notNull().default("reconciled"),
-  legacySnapshot:        jsonb("legacy_snapshot"),
+  /**
+   * Procedencia dentro de la fuente: `{seccionId,itemId}` para un hallazgo de
+   * checklist del PDTP, `{n}` para la fila del acta de una evaluación SST.
+   * Se llamaba `legacy_snapshot` y no se escribía desde ninguna parte; hoy es
+   * el único lugar donde vive ese dato (D11).
+   */
+  sourceRef:             jsonb("source_ref"),
   version:               integer("version").notNull().default(1),
   createdAt:             timestamp("created_at", { withTimezone: true, mode: "string" }).notNull(),
   updatedAt:             timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull(),
 }, (table) => [
-  uniqueIndex("prevention_capa_legacy_source_unique").on(table.sourceType, table.sourceLegacyActionId),
+  uniqueIndex("prevention_capa_source_item_unique").on(table.sourceType, table.sourceItemId),
+  /**
+   * Reemplaza a `sst_action_plan_evaluation_n_unique`, que se fue con el espejo
+   * (D11). En la evaluación SST el `n` es la fila del acta que el evaluador
+   * edita —el upsert es por `(evaluationId, n)`—, no una numeración derivable,
+   * así que sin este índice dos guardados concurrentes crearían dos acciones
+   * para la misma fila.
+   */
+  uniqueIndex("prevention_capa_sst_evaluation_n_unique")
+    .on(table.sourceId, sql`((${table.sourceRef}->>'n')::int)`)
+    .where(sql`${table.sourceType} = 'sst_evaluation'`),
   index("prevention_capa_worksite_status_idx").on(table.worksiteId, table.status),
   index("prevention_capa_source_idx").on(table.sourceType, table.sourceId),
   index("prevention_capa_responsible_status_idx").on(table.responsibleUserId, table.status),
@@ -63,6 +98,7 @@ export const preventionCapaActions = pgTable("prevention_capa_actions", {
   check("prevention_capa_effectiveness_valid", sql`${table.effectivenessStatus} IN ('pending', 'effective', 'ineffective', 'not_required', 'legacy_not_assessed')`),
   check("prevention_capa_reconciliation_valid", sql`${table.reconciliationStatus} IN ('reconciled', 'needs_assignment', 'needs_evidence', 'needs_review')`),
   check("prevention_capa_version_positive", sql`${table.version} >= 1`),
+  check("prevention_capa_dano_potencial_valid", sql`${table.danoPotencial} IS NULL OR ${table.danoPotencial} IN ('leve', 'moderado', 'grave', 'fatal')`),
   check("prevention_capa_reopen_consistent", sql`(${table.reopenedAt} IS NULL AND ${table.reopenedByUserId} IS NULL AND ${table.reopenedReason} IS NULL) OR (${table.reopenedAt} IS NOT NULL AND ${table.reopenedByUserId} IS NOT NULL AND length(${table.reopenedReason}) >= 5)`),
   check("prevention_capa_cancel_consistent", sql`(${table.cancelledAt} IS NULL AND ${table.cancelledByUserId} IS NULL AND ${table.cancellationReason} IS NULL) OR (${table.cancelledAt} IS NOT NULL AND ${table.cancelledByUserId} IS NOT NULL AND length(${table.cancellationReason}) >= 5)`),
 ])

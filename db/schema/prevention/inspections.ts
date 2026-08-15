@@ -77,6 +77,10 @@ export const preventionInspectionRuns = pgTable("prevention_inspection_runs", {
   worksiteId:        text("worksite_id").notNull().references(() => worksites.id, { onDelete: "restrict" }),
   subjectType:       text("subject_type"),
   subjectLabel:      text("subject_label"),
+  /* Quién origina la inspección. La certificación Mutual distingue las del
+   * comité paritario de las del Departamento de Prevención, y las del mandante
+   * no son ni una ni otra. Por defecto Prevención, que es el caso histórico. */
+  origin:            text("origin").notNull().default("prevencion"),
   scheduledFor:      text("scheduled_for"),
   status:            text("status").notNull().default("planned"),
   assignedToUserId:  text("assigned_to_user_id").references(() => users.id, { onDelete: "restrict" }),
@@ -107,6 +111,7 @@ export const preventionInspectionRuns = pgTable("prevention_inspection_runs", {
   index("prevention_inspection_run_worksite_idx").on(table.worksiteId, table.status),
   index("prevention_inspection_run_template_idx").on(table.templateId, table.executedAt),
   check("prevention_inspection_run_status_valid", sql`${table.status} IN ('planned', 'in_progress', 'completed', 'reviewed', 'cancelled')`),
+  check("prevention_inspection_run_origin_valid", sql`${table.origin} IN ('prevencion', 'cphs', 'mandante')`),
   check("prevention_inspection_run_compliance_valid", sql`${table.compliancePercent} IS NULL OR ${table.compliancePercent} BETWEEN 0 AND 100`),
   check("prevention_inspection_run_counts_nonnegative", sql`${table.conformingCount} >= 0 AND ${table.partialCount} >= 0 AND ${table.nonConformingCount} >= 0 AND ${table.notApplicableCount} >= 0`),
   check("prevention_inspection_run_cancel_consistent", sql`(${table.cancelledAt} IS NULL AND ${table.cancelledByUserId} IS NULL) OR (${table.cancelledAt} IS NOT NULL AND ${table.cancelledByUserId} IS NOT NULL AND length(${table.cancellationReason}) >= 5)`),

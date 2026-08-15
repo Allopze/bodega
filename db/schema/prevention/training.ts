@@ -213,7 +213,10 @@ export const preventionCompetencyRequirements = pgTable("prevention_competency_r
 }, (table) => [
   index("prevention_competency_requirement_scope_idx").on(table.scopeType, table.isActive),
   index("prevention_competency_requirement_worksite_idx").on(table.worksiteId, table.isActive),
-  check("prevention_competency_requirement_scope_valid", sql`${table.scopeType} IN ('global', 'worksite', 'position', 'task')`),
+  // `committee` lleva el id del comité en `scope_value`: permite declarar
+  // "los integrantes del CPHS requieren este curso" (orientación en prevención,
+  // curso de 20 horas), que es requisito de la certificación Mutual.
+  check("prevention_competency_requirement_scope_valid", sql`${table.scopeType} IN ('global', 'worksite', 'position', 'task', 'committee')`),
   check("prevention_competency_requirement_enforcement_valid", sql`${table.enforcement} IN ('blocking', 'warning')`),
   check("prevention_competency_requirement_reason_valid", sql`length(${table.reason}) >= 10`),
   check("prevention_competency_requirement_scope_value_present", sql`${table.scopeType} IN ('global', 'worksite') OR length(${table.scopeValue}) >= 1`),

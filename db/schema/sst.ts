@@ -2,7 +2,6 @@ import { relations, sql } from "drizzle-orm"
 import { pgTable, text, timestamp, real, boolean, integer, jsonb, uniqueIndex, index, check } from "drizzle-orm/pg-core"
 import { worksites, workers } from "./worksites"
 import { users } from "./users"
-import { preventionCapaActions } from "./prevention/capa"
 
 /* ── SST Evaluation Visits ───────────────────────────────────────────────── */
 // A visit is the durable parent for the three possible evaluator-role
@@ -95,23 +94,6 @@ export const sstScheduledFollowups = pgTable("sst_scheduled_followups", {
   index("idx_sst_followup_eval").on(table.evaluationId),
 ])
 
-/* ── SST Action Plan ─────────────────────────────────────────────────────── */
-// Corrective action items per evaluation.
-export const sstActionPlan = pgTable("sst_action_plan", {
-  id:           text("id").primaryKey(),
-  evaluationId: text("evaluation_id").notNull().references(() => sstEvaluations.id, { onDelete: "cascade" }),
-  capaActionId: text("capa_action_id").references(() => preventionCapaActions.id, { onDelete: "restrict" }),
-  n:            integer("n").notNull(),
-  hallazgo:     text("hallazgo").notNull(),
-  accion:       text("accion").notNull(),
-  responsable:  text("responsable").notNull(),
-  plazo:        text("plazo").notNull(),
-  estado:       text("estado").notNull(),
-}, (table) => [
-  uniqueIndex("sst_action_plan_evaluation_n_unique").on(table.evaluationId, table.n),
-  uniqueIndex("sst_action_plan_capa_unique").on(table.capaActionId),
-])
-
 /* ── SST Weekly Evaluations ──────────────────────────────────────────────── */
 // 4 hitos semanales creados cuando conductor_lider inicia evaluación de trabajador_nuevo.
 // Cada semana tiene sus propias respuestas en sstResponses con seccionId = 'acompanamiento_terreno_sN'.
@@ -134,7 +116,6 @@ export const sstEvaluationsRelations = relations(sstEvaluations, ({ one, many })
   createdByUser:   one(users,      { fields: [sstEvaluations.createdBy],  references: [users.id] }),
   responses:       many(sstResponses),
   followups:       many(sstScheduledFollowups),
-  actionPlan:      many(sstActionPlan),
   weeklyEvals:     many(sstWeeklyEvaluations),
 }))
 
@@ -153,10 +134,6 @@ export const sstScheduledFollowupsRelations = relations(sstScheduledFollowups, (
   evaluation: one(sstEvaluations, { fields: [sstScheduledFollowups.evaluationId], references: [sstEvaluations.id] }),
 }))
 
-export const sstActionPlanRelations = relations(sstActionPlan, ({ one }) => ({
-  evaluation: one(sstEvaluations, { fields: [sstActionPlan.evaluationId], references: [sstEvaluations.id] }),
-}))
-
 export const sstWeeklyEvaluationsRelations = relations(sstWeeklyEvaluations, ({ one }) => ({
   evaluation: one(sstEvaluations, { fields: [sstWeeklyEvaluations.evaluationId], references: [sstEvaluations.id] }),
 }))
@@ -170,7 +147,5 @@ export type SstResponse             = typeof sstResponses.$inferSelect
 export type NewSstResponse          = typeof sstResponses.$inferInsert
 export type SstScheduledFollowup    = typeof sstScheduledFollowups.$inferSelect
 export type NewSstScheduledFollowup = typeof sstScheduledFollowups.$inferInsert
-export type SstActionPlan           = typeof sstActionPlan.$inferSelect
-export type NewSstActionPlan        = typeof sstActionPlan.$inferInsert
 export type SstWeeklyEvaluation     = typeof sstWeeklyEvaluations.$inferSelect
 export type NewSstWeeklyEvaluation  = typeof sstWeeklyEvaluations.$inferInsert
