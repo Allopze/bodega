@@ -20,6 +20,7 @@ const BILLING_RUNTIME_ENV_KEYS = [
   "BILLING_MATCH_DATE_WINDOW_DAYS",
   "BILLING_COMPANY_TAX_ID",
   "BILLING_CHIPAX_ENABLED",
+  "BILLING_CHIPAX_SYNC_ENABLED",
   "CHIPAX_OPENAPI_URL",
   "CHIPAX_API_BASE_URL",
   "CHIPAX_APP_ID",
@@ -71,6 +72,19 @@ describe("deploy workflow", () => {
     expect(deployScript).toContain("docker-compose-predeploy-")
   })
 
+  it("runs the same fail-closed migration preflight in the standalone image", () => {
+    const dockerfile = readFileSync(path.join(repoRoot, "Dockerfile"), "utf8")
+    const migrateRunner = readFileSync(path.join(repoRoot, "scripts/migrate.mjs"), "utf8")
+    const packageJson = JSON.parse(readFileSync(path.join(repoRoot, "package.json"), "utf8")) as {
+      scripts: Record<string, string>
+    }
+
+    expect(dockerfile).toContain("migration-preflight.mjs")
+    expect(migrateRunner).toContain('from "./migration-preflight.mjs"')
+    expect(migrateRunner).toContain("await runMigrationPreflight(sql)")
+    expect(packageJson.scripts["db:migrate"]).toContain("db:preflight-migrations")
+  })
+
   it("injects the DTE, billing, and cron runtime configuration into app", () => {
     const compose = readFileSync(path.join(repoRoot, "docker-compose.yml"), "utf8")
     const appService = appServiceFromCompose(compose)
@@ -90,7 +104,9 @@ describe("deploy workflow", () => {
 
     expect(cronService).toContain("cron-runner.mjs dte")
     expect(cronService).toContain("cron-runner.mjs sales")
+    expect(cronService).toContain("cron-runner.mjs chipax")
     expect(cronService).toContain("cron-runner.mjs health")
+    expect(cronService).toContain("0 9 * * *")
     expect(cronService).toContain('interval: 5m')
     expect(cronService).not.toContain("DTE_SETTINGS_KEYRING=")
     expect(cronService).not.toContain("DTE_PORTAL_CLAVE=")

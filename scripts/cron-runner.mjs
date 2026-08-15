@@ -20,6 +20,11 @@ const JOBS = Object.freeze({
     timeoutMs: 5 * 60 * 1_000,
     kind: "sync",
   },
+  chipax: {
+    url: "http://app:3000/api/cron/chipax-sync",
+    timeoutMs: 10 * 60 * 1_000,
+    kind: "sync",
+  },
   health: {
     url: "http://app:3000/api/cron/dte-sync-health",
     timeoutMs: 20 * 1_000,

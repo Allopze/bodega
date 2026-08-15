@@ -11,6 +11,7 @@
 import postgres from "postgres"
 import { drizzle } from "drizzle-orm/postgres-js"
 import { migrate } from "drizzle-orm/postgres-js/migrator"
+import { runMigrationPreflight } from "./migration-preflight.mjs"
 
 const url = process.env.DATABASE_URL
 if (!url) {
@@ -27,6 +28,8 @@ const isConnRefused = (err) =>
 for (let attempt = 1; attempt <= RETRIES; attempt++) {
   const sql = postgres(url, { max: 1 })
   try {
+    console.log(`[migrate] checking migration preconditions… (attempt ${attempt}/${RETRIES})`)
+    await runMigrationPreflight(sql)
     console.log(`[migrate] applying migrations… (attempt ${attempt}/${RETRIES})`)
     await migrate(drizzle(sql), { migrationsFolder: "./db/migrations" })
     console.log("[migrate] done")

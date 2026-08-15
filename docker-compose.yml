@@ -89,6 +89,7 @@ services:
       - BILLING_MATCH_DATE_WINDOW_DAYS=${BILLING_MATCH_DATE_WINDOW_DAYS:-60}
       - BILLING_COMPANY_TAX_ID=${BILLING_COMPANY_TAX_ID:-}
       - BILLING_CHIPAX_ENABLED=${BILLING_CHIPAX_ENABLED:-false}
+      - BILLING_CHIPAX_SYNC_ENABLED=${BILLING_CHIPAX_SYNC_ENABLED:-false}
       - CHIPAX_OPENAPI_URL=${CHIPAX_OPENAPI_URL:-https://api.chipax.com/v2/swagger-docs/}
       - CHIPAX_API_BASE_URL=${CHIPAX_API_BASE_URL:-}
       - CHIPAX_APP_ID=${CHIPAX_APP_ID:-}
@@ -211,6 +212,9 @@ services:
         # Ventas — una vez al día, desfasada del primer run de compras para no
         # abrir dos sesiones simultáneas contra el mismo portal.
         30 7 * * * CRON_SECRET="$$CRON_SECRET" node /app/scripts/cron-runner.mjs sales >/proc/1/fd/1 2>&1
+        # Chipax — ventas del mes actual/anterior y cartolas del mes actual,
+        # una vez al día a las 09:00 America/Santiago.
+        0 9 * * * CRON_SECRET="$$CRON_SECRET" node /app/scripts/cron-runner.mjs chipax >/proc/1/fd/1 2>&1
         # Liveness de crond y conectividad/auth contra el evaluador. Un estado
         # DTE degradado responde 200 y alerta; no debe reiniciar el scheduler.
         */5 * * * * CRON_SECRET="$$CRON_SECRET" node /app/scripts/cron-runner.mjs health >/proc/1/fd/1 2>&1
