@@ -64,6 +64,7 @@ export const COMPETENCY_SCOPE_LABELS: Record<string, string> = {
   worksite: "Faena",
   position: "Cargo",
   task: "Tarea",
+  committee: "Integrantes del comité paritario",
 }
 
 
@@ -174,7 +175,11 @@ function normalize(value: string | null | undefined) {
   return (value ?? "").trim().toLocaleLowerCase("es-CL")
 }
 
-function requirementApplies(requirement: CompetencyRequirementRow, worker: WorkerRow) {
+function requirementApplies(
+  requirement: CompetencyRequirementRow,
+  worker: WorkerRow,
+  committeeMembers?: ReadonlyMap<string, ReadonlySet<string>>,
+) {
   if (!requirement.isActive) return false
   switch (requirement.scopeType) {
     case "global":
@@ -183,6 +188,10 @@ function requirementApplies(requirement: CompetencyRequirementRow, worker: Worke
       return requirement.worksiteId === worker.worksiteId
     case "position":
       return normalize(requirement.scopeValue) !== "" && normalize(requirement.scopeValue) === normalize(worker.position)
+    case "committee":
+      // `scope_value` es el id del comité; aplica sólo a sus integrantes activos.
+      // Sin el padrón cargado no se inventa una brecha: se omite.
+      return committeeMembers?.get(requirement.scopeValue ?? "")?.has(worker.id) ?? false
     default:
       // `task` se resuelve al asignar la tarea, no por dotación.
       return false
@@ -200,6 +209,9 @@ export function computeCompetencyGaps(args: {
   requirements: CompetencyRequirementRow[]
   competencies: CompetencyRow[]
   asOf: string
+  /** Padrón por comité (`committeeId` → ids de integrantes activos). Sólo lo
+   *  necesitan los requisitos de alcance `committee`; sin él se omiten. */
+  committeeMembers?: ReadonlyMap<string, ReadonlySet<string>>
 }): CompetencyGap[] {
   const byWorker = new Map<string, CompetencyRow[]>()
   for (const item of args.competencies) {
@@ -213,7 +225,7 @@ export function computeCompetencyGaps(args: {
     if (!worker.isActive) continue
     const held = byWorker.get(worker.id) ?? []
     for (const requirement of args.requirements) {
-      if (!requirementApplies(requirement, worker)) continue
+      if (!requirementApplies(requirement, worker, args.committeeMembers)) continue
       const matches = held.filter((item) => item.courseId === requirement.courseId)
       const active = matches.find((item) => item.status === "valid" && (item.expiresAt === null || item.expiresAt >= args.asOf))
       if (active) continue

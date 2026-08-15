@@ -251,6 +251,8 @@ function CourseDialog() {
     event.preventDefault()
     const form = new FormData(event.currentTarget)
     const validity = String(form.get("validityMonths") ?? "").trim()
+    const pdtpActivityNumbers = String(form.get("pdtpActivityNumbers") ?? "")
+      .split(",").map((item) => item.trim()).filter(Boolean).map(Number).filter((n) => Number.isInteger(n) && n > 0)
     operation.run(() => createTrainingCourseAction({
       code: form.get("code"),
       name: form.get("name"),
@@ -262,6 +264,7 @@ function CourseDialog() {
       passingScore: Number(form.get("passingScore")),
       legalBasis: String(form.get("legalBasis") ?? "") || null,
       riskEntryId: String(form.get("riskEntryId") ?? "") || null,
+      pdtpActivityNumbers,
     }), () => setOpen(false))
   }
 
@@ -319,6 +322,9 @@ function CourseDialog() {
             </Field>
           )}
           <Field label="Descripción"><Textarea name="description" maxLength={3000} /></Field>
+          <Field label="Actividades PDTP que acredita" hint="Números separados por coma. Opcional — el motor de acreditación las cierra al cerrar una sesión de este curso.">
+            <Input name="pdtpActivityNumbers" placeholder="54, 56" />
+          </Field>
           {operation.message && <p role="status" className="text-sm">{operation.message}</p>}
           <DialogFooter><Button type="submit" disabled={operation.pending}>Crear curso</Button></DialogFooter>
         </form>

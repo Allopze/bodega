@@ -4,6 +4,7 @@ import type { AnyPgColumn } from "drizzle-orm/pg-core"
 import { db, type DB, type Tx } from "@/db"
 import {
   preventionCapaActions,
+  preventionCommitteeMembers,
   preventionCompetencyRequirements,
   preventionTrainingAttendance,
   preventionTrainingCourseVersions,
@@ -130,6 +131,7 @@ export async function createTrainingCourse(input: unknown, access: TrainingAcces
     legalRequirementId: data.legalRequirementId ?? null,
     riskEntryId: data.riskEntryId ?? null,
     legalBasis: data.legalBasis ?? null,
+    pdtpActivityNumbers: data.pdtpActivityNumbers,
     createdByUserId: access.userId,
   }).returning()
   if (!created) throw new Error("No se pudo crear el curso.")
@@ -400,16 +402,16 @@ export async function closeTrainingSession(input: unknown, access: TrainingAcces
     const grantedAt = data.endedAt.slice(0, 10)
     const expiresAt = competencyExpiry(grantedAt, course.validityMonths)
 
-    for (const item of granted) {
-      // Una competencia nueva reemplaza la anterior del mismo curso/persona.
+    if (granted.length > 0) {
+      // Las competencias nuevas reemplazan las anteriores del mismo curso/persona.
       await tx.update(preventionWorkerCompetencies)
         .set({ status: "superseded", updatedAt: now })
         .where(and(
-          eq(preventionWorkerCompetencies.workerId, item.workerId),
+          inArray(preventionWorkerCompetencies.workerId, granted.map((item) => item.workerId)),
           eq(preventionWorkerCompetencies.courseId, course.id),
           eq(preventionWorkerCompetencies.status, "valid"),
         ))
-      await tx.insert(preventionWorkerCompetencies).values({
+      await tx.insert(preventionWorkerCompetencies).values(granted.map((item) => ({
         id: `trcomp-${nanoid()}`,
         workerId: item.workerId,
         courseId: course.id,
@@ -421,7 +423,7 @@ export async function closeTrainingSession(input: unknown, access: TrainingAcces
         status: "valid",
         evidenceReference: item.evidenceReference,
         createdByUserId: access.userId,
-      }).onConflictDoNothing()
+      }))).onConflictDoNothing()
     }
 
     const [updated] = await tx.update(preventionTrainingSessions).set({
@@ -676,12 +678,37 @@ export async function listCompetencyGaps(access: TrainingAccess): Promise<Compet
       .where(workerScope),
   ])
 
+  // El padrón de comités sólo se consulta si algún requisito lo necesita: la
+  // gran mayoría de los requisitos son por cargo o faena.
+  const committeeMembers = requirementRows.some((row) => row.scopeType === "committee")
+    ? await loadCommitteeMemberIds()
+    : undefined
+
   return computeCompetencyGaps({
     workers: workerRows,
     requirements: requirementRows,
     competencies: competencyRows,
     asOf: todayInChile(),
+    committeeMembers,
   })
+}
+
+/** `committeeId` → ids de trabajadores que hoy integran ese comité. */
+async function loadCommitteeMemberIds(): Promise<Map<string, Set<string>>> {
+  const rows = await db.select({
+    committeeId: preventionCommitteeMembers.committeeId,
+    workerId: preventionCommitteeMembers.workerId,
+  })
+    .from(preventionCommitteeMembers)
+    .where(eq(preventionCommitteeMembers.status, "active"))
+
+  const byCommittee = new Map<string, Set<string>>()
+  for (const row of rows) {
+    const set = byCommittee.get(row.committeeId)
+    if (set) set.add(row.workerId)
+    else byCommittee.set(row.committeeId, new Set([row.workerId]))
+  }
+  return byCommittee
 }
 
 /**

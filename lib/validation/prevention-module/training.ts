@@ -1,7 +1,7 @@
 import { z } from "zod"
 
 const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Fecha inválida")
-const instant = z.string().datetime({ offset: true })
+const instant = z.iso.datetime({ offset: true })
 const reason = z.string().trim().min(10).max(3000)
 
 export const TRAINING_COURSE_KINDS = [
@@ -39,6 +39,10 @@ export const trainingCourseSchema = z.object({
   legalRequirementId: z.string().min(1).nullable().optional(),
   riskEntryId: z.string().min(1).nullable().optional(),
   legalBasis: z.string().trim().max(2000).nullable().optional(),
+  /* El motor de acreditación (`onTrainingSessionClosed`) ya lee este campo al
+   * cerrar una sesión; hasta ahora no había forma de escribirlo desde la UI de
+   * creación de cursos. */
+  pdtpActivityNumbers: z.array(z.number().int().positive()).default([]),
 }).superRefine((value, ctx) => {
   if (value.kind === "legal_mandatory") {
     if (value.minimumDurationMinutes < DS44_ART16_MIN_DURATION_MINUTES) {
@@ -165,7 +169,7 @@ export const competencyRevocationSchema = z.object({
 
 export const competencyRequirementSchema = z.object({
   courseId: z.string().min(1),
-  scopeType: z.enum(["global", "worksite", "position", "task"]),
+  scopeType: z.enum(["global", "worksite", "position", "task", "committee"]),
   scopeValue: z.string().trim().max(300).nullable().optional(),
   worksiteId: z.string().min(1).nullable().optional(),
   enforcement: z.enum(["blocking", "warning"]).default("warning"),
@@ -175,6 +179,10 @@ export const competencyRequirementSchema = z.object({
 }).superRefine((value, ctx) => {
   if ((value.scopeType === "position" || value.scopeType === "task") && !value.scopeValue?.trim()) {
     ctx.addIssue({ code: "custom", path: ["scopeValue"], message: "Un requisito por cargo o tarea exige indicar cuál." })
+  }
+  // En `committee` el `scopeValue` es el id del comité al que aplica.
+  if (value.scopeType === "committee" && !value.scopeValue?.trim()) {
+    ctx.addIssue({ code: "custom", path: ["scopeValue"], message: "Un requisito por comité exige indicar cuál." })
   }
   if (value.scopeType === "worksite" && !value.worksiteId) {
     ctx.addIssue({ code: "custom", path: ["worksiteId"], message: "Un requisito por faena exige indicar la faena." })

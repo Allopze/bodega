@@ -94,6 +94,45 @@ describe("piso legal DS 44 art. 16", () => {
 describe("motor de brechas de competencia", () => {
   const asOf = "2026-07-19"
 
+  /* Alcance `committee`: la certificación Mutual exige que los integrantes del
+   * comité tengan orientación en prevención y el curso de 20 horas. El padrón
+   * no se deduce de la dotación, se entrega aparte. */
+  describe("alcance por comité paritario", () => {
+    const committeeRequirement = requirement({
+      scopeType: "committee", scopeValue: "cphs-a", courseName: "Orientación en Prevención de Riesgos",
+    })
+
+    it("reporta brecha sólo a quien integra ese comité", () => {
+      const gaps = computeCompetencyGaps({
+        workers: [worker({ id: "w-1" }), worker({ id: "w-2" })],
+        requirements: [committeeRequirement],
+        competencies: [],
+        asOf,
+        committeeMembers: new Map([["cphs-a", new Set(["w-1"])]]),
+      })
+      expect(gaps).toHaveLength(1)
+      expect(gaps[0]).toMatchObject({ workerId: "w-1", gapType: "missing" })
+    })
+
+    it("sin padrón cargado no inventa brechas", () => {
+      const gaps = computeCompetencyGaps({
+        workers: [worker()], requirements: [committeeRequirement], competencies: [], asOf,
+      })
+      expect(gaps).toEqual([])
+    })
+
+    it("no confunde comités entre sí", () => {
+      const gaps = computeCompetencyGaps({
+        workers: [worker({ id: "w-1" })],
+        requirements: [committeeRequirement],
+        competencies: [],
+        asOf,
+        committeeMembers: new Map([["cphs-b", new Set(["w-1"])]]),
+      })
+      expect(gaps).toEqual([])
+    })
+  })
+
   it("detecta una competencia nunca obtenida como brecha bloqueante", () => {
     const gaps = computeCompetencyGaps({ workers: [worker()], requirements: [requirement()], competencies: [], asOf })
     expect(gaps).toHaveLength(1)
