@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { CalendarDots, UsersThree } from "@phosphor-icons/react"
 import { Badge } from "@/components/ui/badge"
 import { DatePicker } from "@/components/ui/date-picker"
 import { Button } from "@/components/ui/button"
@@ -9,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Textarea } from "@/components/ui/textarea"
+import { EmptyState } from "@/components/ui/empty-state"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import {
   assessQuorum,
@@ -20,7 +22,7 @@ import {
   REPRESENTATION_LABELS,
   SEAT_LABELS,
 } from "@/lib/prevention/cphs"
-import { formatDateTime } from "@/lib/utils"
+import { formatDate, formatDateTime, toLocalInputValue } from "@/lib/utils"
 import {
   addCommitteeMemberAction,
   closeCommitteeMeetingAction,
@@ -28,7 +30,18 @@ import {
 } from "../actions"
 import { Field } from "@/components/ui/field"
 import { useOperation } from "@/lib/hooks/use-operation"
-import { toLocalInputValue } from "@/lib/utils"
+import {
+  CancelMeetingDialog,
+  DissolveCommitteeDialog,
+  ReplaceMemberDialog,
+  ResignMemberDialog,
+} from "./committee-lifecycle-dialogs"
+import {
+  AddGuestDialog,
+  MarkAgendaSentButton,
+  MarkMinutesSentButton,
+} from "./committee-maturity-dialogs"
+import { CommitteeCommissions } from "./committee-commissions"
 
 interface CommitteeInfo {
   id: string
@@ -72,8 +85,18 @@ interface MeetingInfo {
   quorumReached: boolean
   convened: number
   attended: number
+  guests: number
   agreements: number
+  agendaSentAt: string | null
+  sentToManagementAt: string | null
   version: number
+}
+
+interface CommissionInfo {
+  id: string
+  name: string
+  purpose: string
+  memberCount: number
 }
 
 interface WorkerOption {
@@ -92,11 +115,12 @@ interface Props {
   meetings: MeetingInfo[]
   eligibleWorkers: WorkerOption[]
   assignees: { id: string; name: string }[]
+  commissions: CommissionInfo[]
   canManage: boolean
 }
 
 export function CommitteeDetail({
-  committee, worksiteName, parity, mandateExpired, cadence, members, meetings, eligibleWorkers, assignees, canManage,
+  committee, worksiteName, parity, mandateExpired, cadence, members, meetings, eligibleWorkers, assignees, commissions, canManage,
 }: Props) {
   const active = committee.status === "active" && !mandateExpired
   const activeMembers = members.filter((item) => item.status === "active")
@@ -104,8 +128,8 @@ export function CommitteeDetail({
   const facts = [
     { label: "Estado", value: COMMITTEE_STATUS_LABELS[mandateExpired ? "expired" : committee.status] ?? committee.status },
     { label: "Faena", value: worksiteName },
-    { label: "Constituido", value: committee.constitutedOn },
-    { label: "Mandato hasta", value: committee.mandateEndsOn },
+    { label: "Constituido", value: formatDate(committee.constitutedOn) },
+    { label: "Mandato hasta", value: formatDate(committee.mandateEndsOn) },
     { label: "Día de sesión", value: committee.meetingDayOfMonth ? `Día ${committee.meetingDayOfMonth} de cada mes` : "Sin declarar" },
     { label: "Cadencia", value: cadence.overdue ? "Sin sesionar (2+ meses)" : "Al día" },
   ]
@@ -133,12 +157,20 @@ export function CommitteeDetail({
       <section className="space-y-3">
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-semibold">Integrantes ({activeMembers.length} activos)</h2>
-          {canManage && active && eligibleWorkers.length > 0 && (
+          {members.length > 0 && canManage && active && eligibleWorkers.length > 0 && (
             <AddMemberDialog committeeId={committee.id} eligibleWorkers={eligibleWorkers} existingMemberNames={activeMembers.map((m) => m.workerName)} />
           )}
         </div>
         {members.length === 0 ? (
-          <p className="rounded-lg border border-[var(--color-border)] p-4 text-sm text-[var(--color-text-subtle)]">Sin integrantes incorporados.</p>
+          <EmptyState
+            icon={<UsersThree size={24} />}
+            title="El comité aún no tiene integrantes"
+            description={eligibleWorkers.length > 0 ? "Incorpora a las personas titulares y suplentes para constituir la representación paritaria." : "No hay personas elegibles en esta faena. Revisa primero la dotación asignada."}
+            action={canManage && active && eligibleWorkers.length > 0 ? (
+              <AddMemberDialog committeeId={committee.id} eligibleWorkers={eligibleWorkers} existingMemberNames={[]} />
+            ) : undefined}
+            compact
+          />
         ) : (
           <div className="overflow-x-auto rounded-lg border border-[var(--color-border)]">
             <Table>
@@ -150,6 +182,7 @@ export function CommitteeDetail({
                   <TableHead>Cargo</TableHead>
                   <TableHead>Fuero</TableHead>
                   <TableHead>Estado</TableHead>
+                  {canManage && <TableHead className="text-right">Acción</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -163,6 +196,21 @@ export function CommitteeDetail({
                     <TableCell className="text-sm">
                       <Badge variant={member.status === "active" ? "success" : "outline"}>{MEMBER_STATUS_LABELS[member.status] ?? member.status}</Badge>
                     </TableCell>
+                    {canManage && (
+                      <TableCell className="text-right">
+                        {member.status === "active" && (
+                          <div className="flex justify-end gap-1">
+                            <ReplaceMemberDialog
+                              memberId={member.id}
+                              workerName={member.workerName}
+                              eligibleWorkers={eligibleWorkers}
+                              existingMemberNames={activeMembers.map((m) => m.workerName)}
+                            />
+                            <ResignMemberDialog memberId={member.id} workerName={member.workerName} />
+                          </div>
+                        )}
+                      </TableCell>
+                    )}
                   </TableRow>
                 ))}
               </TableBody>
@@ -174,10 +222,16 @@ export function CommitteeDetail({
       <section className="space-y-3">
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-semibold">Sesiones ({meetings.length})</h2>
-          {canManage && active && <ScheduleMeetingDialog committeeId={committee.id} />}
+          {meetings.length > 0 && canManage && active && <ScheduleMeetingDialog committeeId={committee.id} />}
         </div>
         {meetings.length === 0 ? (
-          <p className="rounded-lg border border-[var(--color-border)] p-4 text-sm text-[var(--color-text-subtle)]">Sin sesiones convocadas.</p>
+          <EmptyState
+            icon={<CalendarDots size={24} />}
+            title="El comité aún no tiene sesiones"
+            description="Convoca la primera sesión para registrar asistencia, acuerdos y el acta del comité."
+            action={canManage && active ? <ScheduleMeetingDialog committeeId={committee.id} /> : undefined}
+            compact
+          />
         ) : (
           <div className="overflow-x-auto rounded-lg border border-[var(--color-border)]">
             <Table>
@@ -198,6 +252,7 @@ export function CommitteeDetail({
                     <TableCell>
                       <span className="font-mono text-xs">{meeting.code}</span>
                       <span className="block max-w-xs text-xs text-[var(--color-text-subtle)]">{meeting.agenda}</span>
+                      {meeting.agendaSentAt && <span className="block text-xs text-[var(--color-text-subtle)]">Tabla enviada previamente</span>}
                     </TableCell>
                     <TableCell className="text-sm">{MEETING_TYPE_LABELS[meeting.meetingType] ?? meeting.meetingType}</TableCell>
                     <TableCell className="text-sm tabular-nums">{formatDateTime(meeting.scheduledFor)}</TableCell>
@@ -208,14 +263,38 @@ export function CommitteeDetail({
                       {meeting.status === "closed" && !meeting.quorumReached && (
                         <span className="block text-xs text-[var(--color-text-subtle)]">Sin quórum</span>
                       )}
+                      {meeting.status === "closed" && meeting.sentToManagementAt && (
+                        <span className="block text-xs text-[var(--color-text-subtle)]">Enviada a gerencia</span>
+                      )}
                     </TableCell>
-                    <TableCell className="text-right font-mono text-sm tabular-nums">{meeting.attended} / {meeting.convened}</TableCell>
+                    <TableCell className="text-right font-mono text-sm tabular-nums">
+                      {meeting.attended} / {meeting.convened}
+                      {meeting.guests > 0 && <span className="block text-xs text-[var(--color-text-subtle)]">+{meeting.guests} invitado(s)</span>}
+                    </TableCell>
                     <TableCell className="text-right font-mono text-sm tabular-nums">{meeting.agreements}</TableCell>
                     {canManage && (
                       <TableCell className="text-right">
-                        {(meeting.status === "scheduled" || meeting.status === "held") && (
-                          <CloseMeetingDialog meeting={meeting} members={activeMembers} assignees={assignees} />
-                        )}
+                        <div className="flex flex-wrap justify-end gap-1">
+                          {(meeting.status === "scheduled" || meeting.status === "held") && (
+                            <CloseMeetingDialog meeting={meeting} members={activeMembers} assignees={assignees} />
+                          )}
+                          {meeting.status === "scheduled" && (
+                            <>
+                              {!meeting.agendaSentAt && <MarkAgendaSentButton meetingId={meeting.id} />}
+                              <AddGuestDialog meetingId={meeting.id} eligibleWorkers={eligibleWorkers} />
+                              <CancelMeetingDialog meetingId={meeting.id} code={meeting.code} version={meeting.version} />
+                            </>
+                          )}
+                          {meeting.status === "held" && (
+                            <>
+                              <AddGuestDialog meetingId={meeting.id} eligibleWorkers={eligibleWorkers} />
+                              <CancelMeetingDialog meetingId={meeting.id} code={meeting.code} version={meeting.version} />
+                            </>
+                          )}
+                          {meeting.status === "closed" && !meeting.sentToManagementAt && (
+                            <MarkMinutesSentButton meetingId={meeting.id} />
+                          )}
+                        </div>
                       </TableCell>
                     )}
                   </TableRow>
@@ -225,6 +304,23 @@ export function CommitteeDetail({
           </div>
         )}
       </section>
+
+      <CommitteeCommissions
+        committeeId={committee.id}
+        commissions={commissions}
+        members={activeMembers.map((member) => ({ id: member.id, name: member.workerName }))}
+        canManage={canManage}
+      />
+
+      {canManage && active && (
+        <section className="space-y-3 border-t border-[var(--color-border)] pt-6">
+          <h2 className="text-sm font-semibold text-[var(--color-danger-ink)]">Zona de riesgo</h2>
+          <div className="flex items-center justify-between rounded-lg border border-[var(--color-danger-line)] p-4">
+            <p className="text-sm text-[var(--color-text-subtle)]">Disolver el comité es un acto formal, no una eliminación: queda en el historial.</p>
+            <DissolveCommitteeDialog committeeId={committee.id} version={committee.version} />
+          </div>
+        </section>
+      )}
     </div>
   )
 }

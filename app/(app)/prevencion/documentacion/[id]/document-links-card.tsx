@@ -21,6 +21,7 @@ const ENTITY_TYPES = [
   { value: "sst_evaluation", label: "Evaluación SST" },
   { value: "corrective_action", label: "Acción CAPA" },
   { value: "ppa", label: "PPA" },
+  { value: "committee", label: "Comité Paritario" },
 ] as const
 
 const ENTITY_LABELS = Object.fromEntries(ENTITY_TYPES.map((item) => [item.value, item.label]))

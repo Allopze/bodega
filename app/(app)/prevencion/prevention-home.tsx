@@ -35,6 +35,7 @@ export async function PreventionHome() {
     includeActions: can(session, "prevention:pdtp:view"),
     includeEvaluations: can(session, "sst:view"),
     includePpa: can(session, "ppa:view"),
+    includeCphs: can(session, "prevention:cphs:view"),
   })
 
   return (

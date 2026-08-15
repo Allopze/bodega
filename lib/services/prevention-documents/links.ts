@@ -6,6 +6,7 @@ import {
   pdtpExecutions,
   ppaSubmissions,
   preventionCapaActions,
+  preventionCommittees,
   sstDocumentLinks,
   sstDocuments,
   sstEvaluations,
@@ -25,6 +26,10 @@ export const DOCUMENT_LINK_ENTITY_TYPES = [
   "sst_evaluation",
   "corrective_action",
   "ppa",
+  // El acta de constitución y el comprobante de registro ante la Dirección del
+  // Trabajo son documentos del comité: versionados, con checksum y acuse, en vez
+  // de columnas de archivo sueltas en `prevention_committees`.
+  "committee",
 ] as const
 
 export type DocumentLinkEntityType = typeof DOCUMENT_LINK_ENTITY_TYPES[number]
@@ -54,8 +59,9 @@ export async function inspectDocumentLinkTargets(
   const evaluationIds = idsFor("sst_evaluation")
   const actionIds = idsFor("corrective_action")
   const ppaIds = idsFor("ppa")
+  const committeeIds = idsFor("committee")
 
-  const [workerRows, worksiteRows, activityRows, executionRows, checklistRows, evaluationRows, actionRows, ppaRows] = await Promise.all([
+  const [workerRows, worksiteRows, activityRows, executionRows, checklistRows, evaluationRows, actionRows, ppaRows, committeeRows] = await Promise.all([
     workerIds.length ? db.select({ id: workers.id, worksiteId: workers.worksiteId }).from(workers).where(inArray(workers.id, workerIds)) : [],
     worksiteIds.length ? db.select({ id: worksites.id, worksiteId: worksites.id }).from(worksites).where(inArray(worksites.id, worksiteIds)) : [],
     activityIds.length ? db.select({ id: pdtpActivities.id }).from(pdtpActivities).where(inArray(pdtpActivities.id, activityIds)) : [],
@@ -66,6 +72,7 @@ export async function inspectDocumentLinkTargets(
     evaluationIds.length ? db.select({ id: sstEvaluations.id, worksiteId: sstEvaluations.worksiteId }).from(sstEvaluations).where(inArray(sstEvaluations.id, evaluationIds)) : [],
     actionIds.length ? db.select({ id: preventionCapaActions.id, worksiteId: preventionCapaActions.worksiteId }).from(preventionCapaActions).where(inArray(preventionCapaActions.id, actionIds)) : [],
     ppaIds.length ? db.select({ id: ppaSubmissions.id, worksiteId: ppaSubmissions.worksiteId }).from(ppaSubmissions).where(inArray(ppaSubmissions.id, ppaIds)) : [],
+    committeeIds.length ? db.select({ id: preventionCommittees.id, worksiteId: preventionCommittees.worksiteId }).from(preventionCommittees).where(inArray(preventionCommittees.id, committeeIds)) : [],
   ])
 
   const targets = new Map<string, string | null>()
@@ -77,6 +84,7 @@ export async function inspectDocumentLinkTargets(
   for (const row of evaluationRows) targets.set(`sst_evaluation:${row.id}`, row.worksiteId)
   for (const row of actionRows) targets.set(`corrective_action:${row.id}`, row.worksiteId)
   for (const row of ppaRows) targets.set(`ppa:${row.id}`, row.worksiteId)
+  for (const row of committeeRows) targets.set(`committee:${row.id}`, row.worksiteId)
 
   const supportedTypes = new Set<string>(DOCUMENT_LINK_ENTITY_TYPES)
   return links.map((link) => {
@@ -135,6 +143,11 @@ export async function resolveDocumentLinkTarget(entityType: DocumentLinkEntityTy
         .from(ppaSubmissions).where(eq(ppaSubmissions.id, entityId)).limit(1)
       return row ?? null
     }
+    case "committee": {
+      const [row] = await db.select({ id: preventionCommittees.id, worksiteId: preventionCommittees.worksiteId })
+        .from(preventionCommittees).where(eq(preventionCommittees.id, entityId)).limit(1)
+      return row ?? null
+    }
   }
 }
 
@@ -173,4 +186,30 @@ export async function removeDocumentLink(args: { linkId: string; reason: string;
   const now = new Date().toISOString()
   await db.update(sstDocumentLinks).set({ removedByUserId: args.userId, removedAt: now, removalReason: args.reason.trim() }).where(eq(sstDocumentLinks.id, args.linkId))
   await recordAuditEntry({ documentId: row.document.id, userId: args.userId, action: "unlink", comment: args.reason.trim(), metadata: { linkId: args.linkId, entityType: row.link.entityType, entityId: row.link.entityId } })
+}
+
+/**
+ * Documentos vigentes vinculados a una entidad. Es la lectura que permite que
+ * un comité muestre su acta de constitución, el comprobante de la Dirección del
+ * Trabajo y sus difusiones sin que el módulo CPHS tenga que guardar archivos:
+ * los guarda Documentación SST, con su versionado, checksum y acuse.
+ */
+export async function listDocumentsForEntity(entityType: DocumentLinkEntityType, entityId: string) {
+  return db.select({
+    linkId: sstDocumentLinks.id,
+    documentId: sstDocuments.id,
+    title: sstDocuments.title,
+    internalCode: sstDocuments.internalCode,
+    status: sstDocuments.status,
+    confidentiality: sstDocuments.confidentiality,
+    notes: sstDocumentLinks.notes,
+  })
+    .from(sstDocumentLinks)
+    .innerJoin(sstDocuments, eq(sstDocuments.id, sstDocumentLinks.documentId))
+    .where(and(
+      eq(sstDocumentLinks.entityType, entityType),
+      eq(sstDocumentLinks.entityId, entityId),
+      isNull(sstDocumentLinks.removedAt),
+    ))
+    .limit(200)
 }
