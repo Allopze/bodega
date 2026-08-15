@@ -6,7 +6,6 @@
  * PREVENTION_CAPA_ALLOW_DESTRUCTIVE_RESET=true
  */
 import path from "node:path"
-import { readFile } from "node:fs/promises"
 import postgres from "postgres"
 import { drizzle } from "drizzle-orm/postgres-js"
 import { migrate } from "drizzle-orm/postgres-js/migrator"
@@ -57,20 +56,19 @@ describeIf("CAPA backfill and concurrency on real Postgres", () => {
     await client?.end()
   })
 
-  it("backfills a legacy PPA exactly once when rerun", async () => {
+  /**
+   * D11: el test original reproducía el backfill de la migración 0066 contra
+   * `ppa_corrective_actions`. Esa tabla se retiró —era un espejo de CAPA— y con
+   * ella la posibilidad de replayar aquel SQL histórico, que ya corrió en
+   * producción. Queda la verificación del estado que dejaba, que es lo que
+   * asumen los tests siguientes.
+   */
+  it("deja la CAPA histórica del PPA en estado conciliable", async () => {
     const db = getDb()
     await seedLegacyPpa(db)
-    const migration = await readFile(path.resolve(process.cwd(), "db/migrations/0066_fantastic_archangel.sql"), "utf8")
-    const marker = "-- Backfill CAPA aditivo e idempotente."
-    const start = migration.indexOf(marker)
-    expect(start).toBeGreaterThan(-1)
-    const backfillSql = migration.slice(start)
-
-    await client!.unsafe(backfillSql)
-    await client!.unsafe(backfillSql)
 
     const actions = await db.select().from(schema.preventionCapaActions)
-      .where(eq(schema.preventionCapaActions.sourceLegacyActionId, "legacy-capa-test"))
+      .where(eq(schema.preventionCapaActions.sourceItemId, "legacy-capa-test"))
     expect(actions).toHaveLength(1)
     expect(actions[0]).toMatchObject({
       sourceType: "ppa",
@@ -78,20 +76,12 @@ describeIf("CAPA backfill and concurrency on real Postgres", () => {
       status: "pending",
       reconciliationStatus: "needs_assignment",
     })
-
-    const [legacy] = await db.select().from(schema.ppaCorrectiveActions)
-      .where(eq(schema.ppaCorrectiveActions.id, "legacy-capa-test"))
-    expect(legacy!.capaActionId).toBe(actions[0]!.id)
-
-    const transitions = await db.select().from(schema.preventionCapaTransitions)
-      .where(eq(schema.preventionCapaTransitions.actionId, actions[0]!.id))
-    expect(transitions.filter((item) => item.changeType === "backfill")).toHaveLength(1)
   })
 
   it("allows only one concurrent transition for the same CAPA version", async () => {
     const db = getDb()
     const [action] = await db.select().from(schema.preventionCapaActions)
-      .where(eq(schema.preventionCapaActions.sourceLegacyActionId, "legacy-capa-test"))
+      .where(eq(schema.preventionCapaActions.sourceItemId, "legacy-capa-test"))
     expect(action!.version).toBe(1)
 
     const { transitionCapaAction } = await import("@/lib/services/prevention-capa")
@@ -265,17 +255,23 @@ async function seedLegacyPpa(db: ReturnType<typeof drizzle<typeof schema>>) {
     createdAt: now,
     updatedAt: now,
   })
-  await db.insert(schema.ppaCorrectiveActions).values({
-    id: "legacy-capa-test",
-    ppaId: "ppa-capa-test",
+  await db.insert(schema.preventionCapaActions).values({
+    id: "capa-legacy-test",
+    code: "CAPA-LEGACY-TEST",
+    sourceType: "ppa",
+    sourceId: "ppa-capa-test",
+    sourceItemId: "legacy-capa-test",
     worksiteId: "ws-capa-test",
-    description: "Instalar barrera y verificar aislamiento",
+    finding: "Trabajador Legacy · conductor_batea",
+    actionDescription: "Instalar barrera y verificar aislamiento",
+    responsibleSnapshot: "Responsable histórico",
     responsibleRole: "prevencionista_faena",
-    responsible: "Responsable histórico",
-    dueDate: "2026-07-30",
-    priority: "alta",
-    status: "pendiente",
-    createdBy: "user-capa-test",
+    priority: "high",
+    targetDate: "2026-07-30",
+    status: "pending",
+    evidenceRequired: true,
+    reconciliationStatus: "needs_assignment",
+    createdByUserId: "user-capa-test",
     createdAt: now,
     updatedAt: now,
   })
@@ -298,18 +294,11 @@ async function seedPpaWorkflowFixture(db: ReturnType<typeof drizzle<typeof schem
   }])
   await db.insert(schema.preventionCapaActions).values({
     id: "capa-workflow-test", code: "CAPA-WORKFLOW-TEST", sourceType: "ppa",
-    sourceId: "ppa-workflow-test", sourceLegacyActionId: "legacy-workflow-test",
+    sourceId: "ppa-workflow-test", sourceItemId: "legacy-workflow-test",
     worksiteId: "ws-capa-test", finding: "Falta resguardo", actionDescription: "Instalar resguardo físico",
     responsibleUserId: "user-capa-test", priority: "medium", targetDate: "2026-08-01",
     status: "pending", evidenceRequired: true, createdByUserId: "user-capa-test",
     reconciliationStatus: "reconciled", createdAt: now, updatedAt: now,
-  })
-  await db.insert(schema.ppaCorrectiveActions).values({
-    id: "legacy-workflow-test", ppaId: "ppa-workflow-test", capaActionId: "capa-workflow-test",
-    worksiteId: "ws-capa-test", description: "Instalar resguardo físico",
-    responsibleRole: "prevencionista_faena", responsible: "CAPA Test",
-    dueDate: "2026-08-01", priority: "media", status: "pendiente",
-    createdBy: "user-capa-test", createdAt: now, updatedAt: now,
   })
   await db.insert(schema.preventionCapaEvidence).values({
     id: "evidence-workflow-test", actionId: "capa-workflow-test", kind: "photo",

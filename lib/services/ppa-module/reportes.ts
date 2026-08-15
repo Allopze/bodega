@@ -1,7 +1,13 @@
 import { eq, and, asc, inArray, sql } from "drizzle-orm"
 import { db, type Tx } from "@/db"
-import { preventionCapaActions, preventionCapaEvidence, users } from "@/db/schema"
-import { ppaCorrectiveActions, ppaStatusHistory, ppaSubmissions, type PpaCorrectiveAction, type PpaSubmission } from "@/db/schema/ppa"
+import { preventionCapaEvidence, users } from "@/db/schema"
+import { ppaStatusHistory, ppaSubmissions, type PpaSubmission } from "@/db/schema/ppa"
+import {
+  findPpaCapa,
+  getPpaCorrectiveActionView,
+  listPpaCapasByPpaIds,
+  type PpaCorrectiveActionView,
+} from "./capa-view"
 import { worksites } from "@/db/schema/worksites"
 import {
   ppaAuthorizeRestartSchema,
@@ -113,11 +119,9 @@ export async function reviewPpa(
 
     let capaActionId: string | null = null
     if (data.decision !== "rechazado") {
-      const legacyActionId = nanoid()
       const capa = await createCapaActionWithClient(tx, {
         sourceType: "ppa",
         sourceId: current.id,
-        sourceLegacyActionId: legacyActionId,
         worksiteId: current.worksiteId,
         finding: `${current.workerName} · ${current.tipoTrabajo}`,
         immediateMeasure: "Trabajo detenido hasta implementar y verificar controles.",
@@ -130,21 +134,6 @@ export async function reviewPpa(
         reconciliationStatus: "needs_assignment",
       }, userId)
       capaActionId = capa.id
-      await tx.insert(ppaCorrectiveActions).values({
-        id: legacyActionId,
-        ppaId: current.id,
-        capaActionId: capa.id,
-        worksiteId: current.worksiteId,
-        description: data.accionCorrectiva!.trim(),
-        responsibleRole: data.responsibleRole!,
-        responsible: data.responsible!.trim(),
-        dueDate: data.dueDate!,
-        priority: data.priority!,
-        status: "pendiente",
-        createdBy: userId,
-        createdAt: now,
-        updatedAt: now,
-      })
     }
 
     await recordPpaHistory(tx, {
@@ -172,13 +161,9 @@ function requirePpaPermission(access: PpaOperationAccess, permission: string) {
 }
 
 async function loadLinkedCapa(tx: Tx, ppaId: string) {
-  const [legacy] = await tx.select().from(ppaCorrectiveActions)
-    .where(eq(ppaCorrectiveActions.ppaId, ppaId)).limit(1)
-  if (!legacy?.capaActionId) throw new Error("El PPA no tiene una acción CAPA vinculada.")
-  const [capa] = await tx.select().from(preventionCapaActions)
-    .where(eq(preventionCapaActions.id, legacy.capaActionId)).limit(1)
-  if (!capa) throw new Error("La acción CAPA vinculada no existe.")
-  return { legacy, capa }
+  const capa = await findPpaCapa(tx, ppaId)
+  if (!capa) throw new Error("El PPA no tiene una acción CAPA vinculada.")
+  return { capa }
 }
 
 export async function declarePpaCorrection(input: unknown, access: PpaOperationAccess): Promise<PpaSubmission> {
@@ -191,7 +176,7 @@ export async function declarePpaCorrection(input: unknown, access: PpaOperationA
   }
 
   return db.transaction(async (tx) => {
-    const { legacy, capa: initialCapa } = await loadLinkedCapa(tx, current.id)
+    const { capa: initialCapa } = await loadLinkedCapa(tx, current.id)
     if (initialCapa.version !== data.expectedCapaVersion) throw new Error("La acción CAPA cambió. Recarga antes de continuar.")
     let capa = initialCapa
     if (capa.status === "pending" || capa.status === "reopened") {
@@ -223,8 +208,6 @@ export async function declarePpaCorrection(input: unknown, access: PpaOperationA
       eq(ppaSubmissions.version, data.expectedPpaVersion),
     )).returning()
     if (!updated) throw new Error("El PPA fue actualizado concurrentemente. Recarga antes de continuar.")
-    await tx.update(ppaCorrectiveActions).set({ status: "completada", updatedAt: now })
-      .where(eq(ppaCorrectiveActions.id, legacy.id))
     await recordPpaHistory(tx, {
       ppaId: current.id, capaActionId: capa.id, fromStatus: current.estado,
       toStatus: "pendiente_verificacion", reason: "Controles declarados e ingresados a verificación",
@@ -244,7 +227,7 @@ export async function verifyPpaCorrection(input: unknown, access: PpaOperationAc
   }
 
   return db.transaction(async (tx) => {
-    const { legacy, capa } = await loadLinkedCapa(tx, current.id)
+    const { capa } = await loadLinkedCapa(tx, current.id)
     if (capa.version !== data.expectedCapaVersion || capa.status !== "pending_verification") {
       throw new Error("La acción CAPA cambió o no está pendiente de verificación.")
     }
@@ -279,10 +262,6 @@ export async function verifyPpaCorrection(input: unknown, access: PpaOperationAc
       eq(ppaSubmissions.version, data.expectedPpaVersion),
     )).returning()
     if (!updated) throw new Error("El PPA fue actualizado concurrentemente. Recarga antes de continuar.")
-    await tx.update(ppaCorrectiveActions).set({
-      status: data.accepted ? "verificada" : "en_proceso",
-      updatedAt: now,
-    }).where(eq(ppaCorrectiveActions.id, legacy.id))
     await recordPpaHistory(tx, {
       ppaId: current.id, capaActionId: capaUpdated.id, fromStatus: current.estado,
       toStatus, reason: data.comment, actorUserId: access.userId, createdAt: now,
@@ -335,21 +314,13 @@ export async function cancelPpa(input: unknown, access: PpaOperationAccess): Pro
     throw new Error("Este PPA no puede cancelarse en su estado actual o cambió en otra sesión.")
   }
   return db.transaction(async (tx) => {
-    const [legacy] = await tx.select().from(ppaCorrectiveActions)
-      .where(eq(ppaCorrectiveActions.ppaId, current.id)).limit(1)
-    const capaActionId: string | null = legacy?.capaActionId ?? null
-    if (legacy?.capaActionId) {
-      const [capa] = await tx.select().from(preventionCapaActions)
-        .where(eq(preventionCapaActions.id, legacy.capaActionId)).limit(1)
-      if (!capa) throw new Error("La acción CAPA vinculada no existe.")
-      if (["pending", "in_progress", "pending_verification", "reopened"].includes(capa.status)) {
-        if (data.expectedCapaVersion !== capa.version) throw new Error("La acción CAPA cambió. Recarga antes de continuar.")
-        await transitionCapaActionWithClient(tx, {
-          actionId: capa.id, expectedVersion: capa.version, toStatus: "cancelled", reason: data.reason,
-        }, capaAccess(access))
-        await tx.update(ppaCorrectiveActions).set({ status: "cerrada", updatedAt: new Date().toISOString() })
-          .where(eq(ppaCorrectiveActions.id, legacy.id))
-      }
+    const capa = await findPpaCapa(tx, current.id)
+    const capaActionId: string | null = capa?.id ?? null
+    if (capa && ["pending", "in_progress", "pending_verification", "reopened"].includes(capa.status)) {
+      if (data.expectedCapaVersion !== capa.version) throw new Error("La acción CAPA cambió. Recarga antes de continuar.")
+      await transitionCapaActionWithClient(tx, {
+        actionId: capa.id, expectedVersion: capa.version, toStatus: "cancelled", reason: data.reason,
+      }, capaAccess(access))
     }
     const now = new Date().toISOString()
     const [updated] = await tx.update(ppaSubmissions).set({
@@ -399,15 +370,10 @@ export async function closePpa(input: unknown, access: PpaOperationAccess): Prom
 export async function getPpaCorrectiveAction(
   ppaId: string,
   worksiteIds: string[] | "all",
-): Promise<PpaCorrectiveAction | null> {
+): Promise<PpaCorrectiveActionView | null> {
   const current = await getPpa(ppaId, worksiteIds)
   if (!current) return null
-  const [action] = await db
-    .select()
-    .from(ppaCorrectiveActions)
-    .where(eq(ppaCorrectiveActions.ppaId, ppaId))
-    .limit(1)
-  return action ?? null
+  return getPpaCorrectiveActionView(ppaId)
 }
 
 /** Historial persistido del PPA, incluyendo eventos automáticos sin usuario. */
@@ -450,22 +416,16 @@ export async function buildPpaExport(
   const rowLimitApplied = rows.length > maxRows
   const exportRows = rowLimitApplied ? rows.slice(0, maxRows) : rows
   const ppaIds = exportRows.map((row) => row.id)
-  const correctiveActions = ppaIds.length > 0
-    ? await db.select().from(ppaCorrectiveActions).where(inArray(ppaCorrectiveActions.ppaId, ppaIds))
-    : []
-  const capaIds = correctiveActions.flatMap((item) => item.capaActionId ? [item.capaActionId] : [])
-  const [capaActions, evidence, actorRows] = await Promise.all([
-    capaIds.length > 0
-      ? db.select().from(preventionCapaActions).where(inArray(preventionCapaActions.id, capaIds))
-      : Promise.resolve([]),
+  const capaActions = await listPpaCapasByPpaIds(ppaIds)
+  const capaIds = capaActions.map((item) => item.id)
+  const [evidence, actorRows] = await Promise.all([
     capaIds.length > 0
       ? db.select({ actionId: preventionCapaEvidence.actionId, kind: preventionCapaEvidence.kind })
         .from(preventionCapaEvidence).where(inArray(preventionCapaEvidence.actionId, capaIds))
       : Promise.resolve([]),
     db.select({ id: users.id, name: users.name }).from(users),
   ])
-  const correctiveByPpa = new Map(correctiveActions.map((item) => [item.ppaId, item]))
-  const capaById = new Map(capaActions.map((item) => [item.id, item]))
+  const capaByPpa = new Map(capaActions.map((item) => [item.sourceId, item]))
   const actorName = new Map(actorRows.map((item) => [item.id, item.name]))
   const evidenceCount = new Map<string, number>()
   for (const item of evidence) {
@@ -484,8 +444,7 @@ export async function buildPpaExport(
       "Código CAPA", "Estado CAPA", "Evidencias CAPA", "Eficacia CAPA", "Evaluación eficacia", "Conciliación CAPA",
     ],
     rows: exportRows.map((r) => {
-      const legacy = correctiveByPpa.get(r.id)
-      const capa = legacy?.capaActionId ? capaById.get(legacy.capaActionId) : undefined
+      const capa = capaByPpa.get(r.id)
       const actor = (id: string | null) => id ? actorName.get(id) ?? id : ""
       return [
         new Date(r.createdAt).toLocaleString("es-CL"),

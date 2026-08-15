@@ -15,7 +15,7 @@ afterAll(async () => {
 })
 
 beforeEach(async () => {
-  await inMemoryDb.delete(schema.sstActionPlan)
+  await inMemoryDb.delete(schema.preventionCapaActions)
   await inMemoryDb.delete(schema.sstResponses)
   await inMemoryDb.delete(schema.sstEvaluations)
   await inMemoryDb.delete(schema.workers)
@@ -79,27 +79,50 @@ describe("SST database integrity constraints", () => {
     })).rejects.toThrow()
   })
 
+  /**
+   * D11: la garantía se mudó de `sst_action_plan_evaluation_n_unique` al índice
+   * parcial `prevention_capa_sst_evaluation_n_unique`, que la reproduce sobre
+   * `(source_id, (source_ref->>'n')::int)` para las CAPA de origen
+   * `sst_evaluation`. Sin él, dos guardados concurrentes de la misma fila del
+   * acta crearían dos acciones.
+   */
   it("rejects duplicate action plan numbers for the same evaluation", async () => {
-    await inMemoryDb.insert(schema.sstActionPlan).values({
-      id: "plan-1",
-      evaluationId: "sst-1",
-      n: 1,
-      hallazgo: "Hallazgo",
-      accion: "Accion",
-      responsable: "Responsable",
-      plazo: "2026-07-10",
-      estado: "pendiente",
+    const base = {
+      sourceType: "sst_evaluation", sourceId: "sst-1", worksiteId: "ws-1",
+      priority: "medium", status: "pending", evidenceRequired: true,
+      createdByUserId: "user-1",
+      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+    }
+    await inMemoryDb.insert(schema.preventionCapaActions).values({
+      ...base,
+      id: "plan-1", code: "CAPA-SST-INT-001",
+      finding: "Hallazgo", actionDescription: "Accion",
+      responsibleSnapshot: "Responsable", targetDate: "2026-07-10",
+      sourceRef: { n: 1 },
     })
 
-    await expect(inMemoryDb.insert(schema.sstActionPlan).values({
-      id: "plan-2",
-      evaluationId: "sst-1",
-      n: 1,
-      hallazgo: "Hallazgo duplicado",
-      accion: "Otra accion",
-      responsable: "Responsable",
-      plazo: "2026-07-11",
-      estado: "pendiente",
+    await expect(inMemoryDb.insert(schema.preventionCapaActions).values({
+      ...base,
+      id: "plan-2", code: "CAPA-SST-INT-002",
+      finding: "Hallazgo duplicado", actionDescription: "Otra accion",
+      responsibleSnapshot: "Responsable", targetDate: "2026-07-11",
+      sourceRef: { n: 1 },
     })).rejects.toThrow()
+  })
+
+  /** El índice es parcial: otra evaluación puede reusar el mismo `n`. */
+  it("allows the same action plan number in a different evaluation", async () => {
+    const base = {
+      sourceType: "sst_evaluation", worksiteId: "ws-1", finding: "Hallazgo",
+      actionDescription: "Accion", responsibleSnapshot: "Responsable",
+      priority: "medium", targetDate: "2026-07-10", status: "pending",
+      evidenceRequired: true, sourceRef: { n: 1 }, createdByUserId: "user-1",
+      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+    }
+    await inMemoryDb.insert(schema.preventionCapaActions).values([
+      { ...base, id: "plan-a", code: "CAPA-SST-INT-010", sourceId: "sst-1" },
+      { ...base, id: "plan-b", code: "CAPA-SST-INT-011", sourceId: "sst-2" },
+    ])
+    expect(await inMemoryDb.select().from(schema.preventionCapaActions)).toHaveLength(2)
   })
 })

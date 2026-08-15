@@ -171,7 +171,7 @@ export async function deleteEvaluationAction(
   const worksiteIds = scopeToIds(scope)
 
   try {
-    await deleteEvaluation(id, worksiteIds)
+    await deleteEvaluation(id, worksiteIds, session.user.id)
     revalidatePath(REVALIDATE)
     return { ok: true, message: "Evaluación eliminada" }
   } catch (e) {

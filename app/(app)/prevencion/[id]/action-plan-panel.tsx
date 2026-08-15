@@ -11,7 +11,7 @@ import { saveActionPlanItemAction, deleteActionPlanItemAction } from "@/app/(app
 import { Badge } from "@/components/ui/badge"
 import { EmptyState } from "@/components/ui/empty-state"
 import { ESTADO_LABELS, estadoPlanBadgeVariant } from "@/lib/sst/badges"
-import type { SstActionPlan } from "@/db/schema/sst"
+import type { SstActionPlanItemView } from "@/lib/services/sst-module/capa-view"
 import { Trash, Plus, ListBullets } from "@phosphor-icons/react"
 import {
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
@@ -20,9 +20,9 @@ import { formatDateDisplay } from "@/lib/sst/date"
 
 interface Props {
   evaluationId: string
-  items: SstActionPlan[]
+  items: SstActionPlanItemView[]
   readOnly: boolean
-  onUpdate: (items: SstActionPlan[]) => void
+  onUpdate: (items: SstActionPlanItemView[]) => void
 }
 
 interface DraftItem {
@@ -75,10 +75,10 @@ export function ActionPlanPanel({ evaluationId, items, readOnly, onUpdate }: Pro
         toast.error(result.message ?? "Error al guardar")
         return
       }
-      const newItem: SstActionPlan = {
+      const newItem: SstActionPlanItemView = {
         id: result.data?.id ?? `temp-${Date.now()}`,
         evaluationId,
-        capaActionId: result.data?.capaActionId ?? null,
+        capaActionId: result.data?.capaActionId ?? "",
         n,
         hallazgo:    draft.hallazgo,
         accion:      draft.accion,

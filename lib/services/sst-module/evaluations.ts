@@ -1,8 +1,9 @@
 import { z } from "zod"
 import { eq, and, inArray, desc, sql } from "drizzle-orm"
 import { db } from "@/db"
-import { sstEvaluations, sstEvaluationVisits, sstResponses, sstScheduledFollowups, sstWeeklyEvaluations, sstActionPlan, type SstEvaluation } from "@/db/schema/sst"
+import { sstEvaluations, sstEvaluationVisits, sstResponses, sstScheduledFollowups, sstWeeklyEvaluations, type SstEvaluation } from "@/db/schema/sst"
 import { workers, worksites } from "@/db/schema/worksites"
+import { preventionCapaActions } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { addDays } from "@/lib/sst/date"
 import { getDefinition } from "@/lib/sst/definitions/index"
@@ -10,6 +11,7 @@ import { isPersonEvaluationDefinition } from "@/lib/sst/definitions"
 import { calculateCompliance, getAutomaticResultadoFinal, classifyEfficacy, requiresObservation } from "@/lib/sst/compliance"
 import { sstEvaluationCreateSchema, sstCloseEvaluationSchema } from "@/lib/validation/sst"
 import type { StatusValue, EvaluatorRole } from "@/lib/sst/types"
+import { transitionCapaActionWithClient } from "@/lib/services/prevention-capa"
 import { assertEditable, getEvaluationApplicableItems, SECTIONS_EXCLUDED_FROM_PERCENTAGE } from "./helpers"
 
 export async function createEvaluation(input: z.infer<typeof sstEvaluationCreateSchema>, userId: string, evaluatorRole?: EvaluatorRole): Promise<SstEvaluation> {
@@ -53,15 +55,39 @@ export async function createEvaluation(input: z.infer<typeof sstEvaluationCreate
     })
 
     if (data.tipo === "seguimiento") {
-      for (const { instancia, days } of [{ instancia: "dia_0", days: 0 }, { instancia: "dia_7", days: 7 }, { instancia: "dia_15", days: 15 }, { instancia: "dia_30", days: 30 }]) {
-        await tx.insert(sstScheduledFollowups).values({ id: nanoid(), evaluationId: id, instancia, fechaProgramada: addDays(data.fechaEvaluacion, days), cumple: null, observaciones: null, realizado: false })
-      }
+      const followups = [
+        { instancia: "dia_0", days: 0 },
+        { instancia: "dia_7", days: 7 },
+        { instancia: "dia_15", days: 15 },
+        { instancia: "dia_30", days: 30 },
+      ] as const
+      await tx.insert(sstScheduledFollowups).values(followups.map(({ instancia, days }) => ({
+        id: nanoid(),
+        evaluationId: id,
+        instancia,
+        fechaProgramada: addDays(data.fechaEvaluacion, days),
+        cumple: null,
+        observaciones: null,
+        realizado: false,
+      })))
     }
 
     if (resolvedRole === "conductor_lider" && data.definicionCode === "trabajador_nuevo") {
-      for (const { semana, days } of [{ semana: 1, days: 0 }, { semana: 2, days: 7 }, { semana: 3, days: 14 }, { semana: 4, days: 21 }]) {
-        await tx.insert(sstWeeklyEvaluations).values({ id: nanoid(), evaluationId: id, semana, fechaDesbloqueo: addDays(data.fechaEvaluacion, days), estado: "pendiente", fechaCompletada: null, alertSentAt: null })
-      }
+      const weeklyEvaluations = [
+        { semana: 1, days: 0 },
+        { semana: 2, days: 7 },
+        { semana: 3, days: 14 },
+        { semana: 4, days: 21 },
+      ] as const
+      await tx.insert(sstWeeklyEvaluations).values(weeklyEvaluations.map(({ semana, days }) => ({
+        id: nanoid(),
+        evaluationId: id,
+        semana,
+        fechaDesbloqueo: addDays(data.fechaEvaluacion, days),
+        estado: "pendiente" as const,
+        fechaCompletada: null,
+        alertSentAt: null,
+      })))
     }
   })
 
@@ -193,8 +219,13 @@ export async function closeEvaluation(id: string, input: z.infer<typeof sstClose
     })
     if (sinObservacion.length > 0) throw new Error(`No se puede cerrar la evaluación: hay ${sinObservacion.length} ítem(s) con "Regular" o "No cumple" sin observación. Primer pendiente: ${sinObservacion[0]!.seccionId} / ${sinObservacion[0]!.item.label}.`)
 
-    const excludedSections = SECTIONS_EXCLUDED_FROM_PERCENTAGE[evaluation.definicionCode] ?? []
-    const complianceInput = applicableResponses.filter((r) => !excludedSections.includes(r.seccionId)).map((r) => ({ estado: r.estado as StatusValue }))
+    const excludedSections = new Set(SECTIONS_EXCLUDED_FROM_PERCENTAGE[evaluation.definicionCode] ?? [])
+    const complianceInput: Array<{ estado: StatusValue }> = []
+    for (const response of applicableResponses) {
+      if (!excludedSections.has(response.seccionId)) {
+        complianceInput.push({ estado: response.estado as StatusValue })
+      }
+    }
     const { percentage } = calculateCompliance(complianceInput)
     const responsesForResultado = applicableResponses.map((r) => ({ seccionId: r.seccionId, itemId: r.itemId, estado: r.estado as StatusValue }))
     const resultadoFinal = getAutomaticResultadoFinal(evaluation.definicionCode, percentage, responsesForResultado, data.hasCriticalDeviation ?? false, data.hasReincidence ?? false)
@@ -216,12 +247,48 @@ export async function closeEvaluation(id: string, input: z.infer<typeof sstClose
   return updated
 }
 
-export async function deleteEvaluation(id: string, worksiteIds: string[] | "all"): Promise<void> {
-  const evaluation = await getEvaluation(id, worksiteIds)
-  if (!evaluation) throw new Error("Evaluación no encontrada o sin acceso.")
-  if (evaluation.estado === "cerrado") throw new Error("Esta evaluación está cerrada y no puede eliminarse. Usa un flujo de anulación auditada si necesitas invalidarla.")
+export async function deleteEvaluation(id: string, worksiteIds: string[] | "all", actorUserId: string): Promise<void> {
   await db.transaction(async (tx) => {
-    await tx.delete(sstActionPlan).where(eq(sstActionPlan.evaluationId, id))
+    const [evaluation] = await tx.select().from(sstEvaluations)
+      .where(eq(sstEvaluations.id, id))
+      .for("update")
+      .limit(1)
+    if (!evaluation || (worksiteIds !== "all" && !worksiteIds.includes(evaluation.worksiteId))) {
+      throw new Error("Evaluación no encontrada o sin acceso.")
+    }
+    if (evaluation.estado === "cerrado") {
+      throw new Error("Esta evaluación está cerrada y no puede eliminarse. Usa un flujo de anulación auditada si necesitas invalidarla.")
+    }
+
+    // Una CAPA verificada/cerrada ya constituye historial preventivo y no se
+    // puede invalidar borrando su fuente. Las abiertas sí se cancelan usando la
+    // máquina de estados compartida, con actor, versión y transición auditada.
+    const actions = await tx.select().from(preventionCapaActions).where(and(
+      eq(preventionCapaActions.sourceType, "sst_evaluation"),
+      eq(preventionCapaActions.sourceId, id),
+    ))
+    const cancellable = new Set(["pending", "in_progress", "pending_verification", "reopened"])
+    const protectedAction = actions.find((action) => action.status !== "cancelled" && !cancellable.has(action.status))
+    if (protectedAction) {
+      throw new Error(`La CAPA ${protectedAction.code} ya tiene historial verificado o cerrado; la evaluación debe conservarse.`)
+    }
+    const scope = worksiteIds === "all"
+      ? { mode: "all" as const, ids: [] as [] }
+      : worksiteIds.length > 0
+        ? { mode: "some" as const, ids: worksiteIds }
+        : { mode: "none" as const, ids: [] as [] }
+    for (const action of actions.filter((item) => cancellable.has(item.status))) {
+      await transitionCapaActionWithClient(tx, {
+        actionId: action.id,
+        expectedVersion: action.version,
+        toStatus: "cancelled",
+        reason: "La evaluación SST que originó esta acción fue eliminada en borrador.",
+      }, {
+        ctx: { userId: actorUserId },
+        scope,
+        permissions: ["prevention:capa:manage"],
+      })
+    }
     await tx.delete(sstScheduledFollowups).where(eq(sstScheduledFollowups.evaluationId, id))
     await tx.delete(sstResponses).where(eq(sstResponses.evaluationId, id))
     await tx.delete(sstEvaluations).where(eq(sstEvaluations.id, id))

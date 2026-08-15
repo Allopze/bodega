@@ -1,6 +1,7 @@
 import type { Session } from "next-auth"
 import { db } from "@/db"
-import { sstEvaluations, sstResponses, sstScheduledFollowups, sstActionPlan } from "@/db/schema/sst"
+import { sstEvaluations, sstResponses, sstScheduledFollowups } from "@/db/schema/sst"
+import { listSstActionPlan, type SstActionPlanItemView } from "@/lib/services/sst-module/capa-view"
 import { users, userRoles, roles } from "@/db/schema/users"
 import { workers, worksites } from "@/db/schema/worksites"
 import { eq } from "drizzle-orm"
@@ -19,7 +20,7 @@ export type ActaData = {
   definition: ChecklistDefinition
   responses: (typeof sstResponses.$inferSelect)[]
   followups: (typeof sstScheduledFollowups.$inferSelect)[]
-  actionPlan: (typeof sstActionPlan.$inferSelect)[]
+  actionPlan: SstActionPlanItemView[]
   isNuevo: boolean
   isCerrado: boolean
   cargos: string[]
@@ -53,7 +54,7 @@ export async function loadActaData(id: string, session: Session): Promise<ActaDa
       .where(eq(userRoles.userId, evaluation.createdBy)),
     db.select().from(sstResponses).where(eq(sstResponses.evaluationId, id)),
     db.select().from(sstScheduledFollowups).where(eq(sstScheduledFollowups.evaluationId, id)),
-    db.select().from(sstActionPlan).where(eq(sstActionPlan.evaluationId, id)),
+    listSstActionPlan(id, { incluirCanceladas: true }),
   ])
 
   if (!worker || !worksite) return null

@@ -9,14 +9,15 @@ import { EvaluationFollowupsSection } from "./evaluation-detail/evaluation-follo
 import { EvaluationActionPlanSection } from "./evaluation-detail/evaluation-action-plan-section"
 import type { ChecklistDefinition } from "@/lib/sst/types"
 import type { SectionAccess } from "@/lib/sst/checklist"
-import type { SstEvaluation, SstResponse, SstScheduledFollowup, SstActionPlan, SstWeeklyEvaluation } from "@/db/schema/sst"
+import type { SstEvaluation, SstResponse, SstScheduledFollowup, SstWeeklyEvaluation } from "@/db/schema/sst"
+import type { SstActionPlanItemView } from "@/lib/services/sst-module/capa-view"
 
 interface Props {
   evaluation: SstEvaluation
   definition: ChecklistDefinition
   responses: SstResponse[]
   followups: SstScheduledFollowup[]
-  actionPlan: SstActionPlan[]
+  actionPlan: SstActionPlanItemView[]
   workerName: string
   workerRut: string
   worksiteName: string

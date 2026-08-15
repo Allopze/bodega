@@ -73,6 +73,16 @@ function setupSelectChain() {
   })
 }
 
+function transactionQuery(result: unknown) {
+  const chain: Record<string, unknown> = {}
+  for (const method of ["from", "where", "for"]) {
+    chain[method] = vi.fn().mockReturnValue(chain)
+  }
+  chain.limit = vi.fn().mockResolvedValue(result)
+  chain.then = (onfulfilled?: (value: unknown) => unknown) => Promise.resolve(result).then(onfulfilled)
+  return chain
+}
+
 describe("getEvaluation", () => {
   beforeEach(() => vi.clearAllMocks())
 
@@ -199,39 +209,44 @@ describe("getDashboardStats", () => {
 })
 
 describe("deleteEvaluation", () => {
-  beforeEach(() => vi.clearAllMocks())
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockSelect.mockReset()
+    mockTransaction.mockReset()
+  })
 
   it("throws if evaluation not found", async () => {
-    // getEvaluation returns null
-    setupSelectChain()
-    await expect(deleteEvaluation("nonexistent", "all")).rejects.toThrow("Evaluación no encontrada")
+    mockSelect.mockReturnValue(transactionQuery([]))
+    mockTransaction.mockImplementation(async (fn: (tx: Record<string, unknown>) => Promise<unknown>) => fn({
+      select: mockSelect,
+    }))
+    await expect(deleteEvaluation("nonexistent", "all", "actor-1")).rejects.toThrow("Evaluación no encontrada")
   })
 
   it("deletes evaluation and related data in transaction", async () => {
     const evalRow = { id: "eval-1", worksiteId: "ws-1", estado: "borrador" }
-    // First call: getEvaluation
-    mockSelect.mockReturnValueOnce({
-      from: vi.fn().mockReturnValue({
-        where: vi.fn().mockReturnValue({
-          limit: vi.fn().mockResolvedValue([evalRow]),
-        }),
-      }),
-    })
+    mockSelect
+      .mockReturnValueOnce(transactionQuery([evalRow]))
+      .mockReturnValueOnce(transactionQuery([]))
 
     mockTransaction.mockImplementation(async (fn: (tx: Record<string, unknown>) => Promise<unknown>) => {
       const tx = {
+        select: mockSelect,
         delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
       }
       return fn(tx as unknown as Record<string, unknown>)
     })
 
-    await deleteEvaluation("eval-1", "all")
+    await deleteEvaluation("eval-1", "all", "actor-1")
     expect(mockTransaction).toHaveBeenCalled()
   })
 })
 
 describe("markFollowup", () => {
-  beforeEach(() => vi.clearAllMocks())
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockSelect.mockReset()
+  })
 
   it("throws if followup not found", async () => {
     // db.select().from().where().limit() returns empty
@@ -280,18 +295,13 @@ describe("saveActionPlanItem", () => {
         where: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([]) }),
       }),
     })
-    const returning = vi.fn().mockResolvedValue([{ id: "plan-1", evaluationId: "eval-1", n: 1 }])
-    const onConflictDoUpdate = vi.fn().mockReturnValue({ returning })
-    mockInsert.mockReturnValue({
-      values: vi.fn().mockReturnValue({ onConflictDoUpdate }),
-    })
-
     const result = await saveActionPlanItem({
       evaluationId: "eval-1", n: 1, hallazgo: "test", accion: "fix",
       responsable: "admin", plazo: "2026-01-01", estado: "pendiente",
     }, "all", "user-1")
 
-    expect(result.id).toBe("plan-1")
+    // D11: el ítem es su CAPA; ya no hay fila espejo con id propio.
+    expect(result.id).toBe("capa-test")
   })
 })
 

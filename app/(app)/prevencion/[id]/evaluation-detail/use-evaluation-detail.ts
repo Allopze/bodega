@@ -7,7 +7,8 @@ import { markWeekCompletedAction } from "@/app/(app)/prevencion/actions"
 import { calculateCompliance } from "@/lib/sst/compliance"
 import { getApplicableResponseStatuses, sectionAppliesToEvaluatorRole, type SectionAccess } from "@/lib/sst/checklist"
 import type { ChecklistDefinition } from "@/lib/sst/types"
-import type { SstEvaluation, SstResponse, SstScheduledFollowup, SstActionPlan, SstWeeklyEvaluation } from "@/db/schema/sst"
+import type { SstEvaluation, SstResponse, SstScheduledFollowup, SstWeeklyEvaluation } from "@/db/schema/sst"
+import type { SstActionPlanItemView } from "@/lib/services/sst-module/capa-view"
 import { useChecklistResponses } from "./use-checklist-responses"
 import { useEvaluationClose } from "./use-evaluation-close"
 import { useEvaluationNavigation, type NavigationItem } from "./use-evaluation-navigation"
@@ -18,7 +19,7 @@ interface Props {
   definition: ChecklistDefinition
   responses: SstResponse[]
   followups: SstScheduledFollowup[]
-  actionPlan: SstActionPlan[]
+  actionPlan: SstActionPlanItemView[]
   canClose: boolean
   canManage: boolean
   canViewFullEvaluation: boolean

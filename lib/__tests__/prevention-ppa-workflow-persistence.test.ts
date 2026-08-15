@@ -38,7 +38,6 @@ afterAll(async () => {
 
 beforeEach(async () => {
   await inMemoryDb.delete(schema.ppaStatusHistory)
-  await inMemoryDb.delete(schema.ppaCorrectiveActions)
   await inMemoryDb.delete(schema.ppaSubmissions)
   await inMemoryDb.delete(schema.preventionCapaEvidence)
   await inMemoryDb.delete(schema.preventionCapaActions)
@@ -96,9 +95,11 @@ async function reviewToCorreccion(ppaId: string) {
   return reviewPpa(REVIEW_INPUT(ppaId), REVIEWER.userId, REVIEWER.worksiteIds)
 }
 
+/** D11: la acción del PPA es la CAPA de origen `ppa` con ese `sourceId`. */
 async function linkedCapaId(ppaId: string) {
-  const [legacy] = await inMemoryDb.select().from(schema.ppaCorrectiveActions).where(eq(schema.ppaCorrectiveActions.ppaId, ppaId))
-  return legacy!.capaActionId!
+  const [capa] = await inMemoryDb.select().from(schema.preventionCapaActions)
+    .where(eq(schema.preventionCapaActions.sourceId, ppaId))
+  return capa!.id
 }
 
 /** El CAPA nace con evidenceRequired=true; sin evidencia, el paso a pending_verification se rechaza. */
@@ -117,7 +118,7 @@ describe("PPA workflow — persistencia real (PGlite)", () => {
     expect(updated.estado).toBe("rechazado")
     expect(updated.version).toBe(2)
 
-    const capas = await inMemoryDb.select().from(schema.ppaCorrectiveActions)
+    const capas = await inMemoryDb.select().from(schema.preventionCapaActions)
     expect(capas).toHaveLength(0)
   })
 
@@ -127,9 +128,8 @@ describe("PPA workflow — persistencia real (PGlite)", () => {
     expect(updated.estado).toBe("en_correccion")
     expect(updated.version).toBe(2)
 
-    const [legacy] = await inMemoryDb.select().from(schema.ppaCorrectiveActions).where(eq(schema.ppaCorrectiveActions.ppaId, ppaId))
-    expect(legacy?.capaActionId).toBeTruthy()
-    const [capa] = await inMemoryDb.select().from(schema.preventionCapaActions).where(eq(schema.preventionCapaActions.id, legacy!.capaActionId!))
+    const [capa] = await inMemoryDb.select().from(schema.preventionCapaActions)
+      .where(eq(schema.preventionCapaActions.sourceId, ppaId))
     expect(capa?.status).toBe("pending")
     expect(capa?.sourceType).toBe("ppa")
 
@@ -147,7 +147,8 @@ describe("PPA workflow — persistencia real (PGlite)", () => {
       .rejects.toThrow(/ya fue resuelto/i)
 
     // No debe haber creado una segunda acción CAPA ni una segunda entrada de historial.
-    const capas = await inMemoryDb.select().from(schema.ppaCorrectiveActions).where(eq(schema.ppaCorrectiveActions.ppaId, ppaId))
+    const capas = await inMemoryDb.select().from(schema.preventionCapaActions)
+      .where(eq(schema.preventionCapaActions.sourceId, ppaId))
     expect(capas).toHaveLength(1)
     const history = await inMemoryDb.select().from(schema.ppaStatusHistory).where(eq(schema.ppaStatusHistory.ppaId, ppaId))
     expect(history).toHaveLength(1)

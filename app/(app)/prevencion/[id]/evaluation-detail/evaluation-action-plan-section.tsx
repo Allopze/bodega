@@ -4,13 +4,13 @@ import { TabsContent } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
 import { ActionPlanPanel } from "../action-plan-panel"
 import { CaretLeft, CaretRight } from "@phosphor-icons/react"
-import type { SstActionPlan } from "@/db/schema/sst"
+import type { SstActionPlanItemView } from "@/lib/services/sst-module/capa-view"
 
 interface Props {
   evaluationId: string
-  items: SstActionPlan[]
+  items: SstActionPlanItemView[]
   readOnly: boolean
-  onUpdate: (v: SstActionPlan[]) => void
+  onUpdate: (v: SstActionPlanItemView[]) => void
   activeNavigationIndex: number
   navigationItems: { value: string; label: string }[]
   moveActiveSection: (offset: number) => void

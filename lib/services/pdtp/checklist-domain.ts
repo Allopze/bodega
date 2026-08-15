@@ -5,11 +5,16 @@
  * definidos en `db/schema/prevention/pdtp.ts`.
  */
 
-import { nanoid } from "@/lib/id"
 
 export const PDTP_ACTION_ESTADOS = ["pendiente", "en_proceso", "completado", "verificado", "reabierto"] as const
 export const PDTP_ACTION_PRIORIDADES = ["alta", "media", "baja"] as const
 export const PDTP_CHECKLIST_STATUS = ["pendiente", "en_proceso", "completado"] as const
+const CHILE_DATE_FORMATTER = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "America/Santiago",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+})
 
 /** Días de plazo por defecto según prioridad de la acción. */
 export const PDTP_PLAZO_DIAS_POR_PRIORIDAD: Record<string, number> = {
@@ -112,28 +117,13 @@ export function pdtpChecklistResponseId(instanceId: string, seccionId: string, i
   return `${instanceId}-r-${seccionId}-${itemId}`
 }
 
-/** Genera un ID para un ítem del plan de acción. */
-export function pdtpActionPlanItemId(executionId: string, n: number) {
-  return `${executionId}-ap-${String(n).padStart(3, "0")}`
-}
-
-/** Genera un ID para un followup del plan de acción. */
-export function pdtpActionPlanFollowupId() {
-  return nanoid()
-}
-
 /**
  * Día calendario chileno de un instante. toISOString() (UTC) rota 3-4 h antes
  * que el calendario de Chile: marcaba acciones vencidas la tarde previa a su
  * plazo y corría un día los plazos generados de noche.
  */
 function chileDateIso(date: Date): string {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/Santiago",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(date)
+  return CHILE_DATE_FORMATTER.format(date)
 }
 
 /** Suma hoy (ISO date, calendario Chile) para calcular plazo desde prioridad. */

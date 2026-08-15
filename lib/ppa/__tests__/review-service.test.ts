@@ -15,7 +15,7 @@ vi.mock("@/lib/services/ppa-module/calculos", () => ({
 }))
 
 import { reviewPpa } from "@/lib/services/ppa-module/reportes"
-import { ppaCorrectiveActions, preventionCapaActions } from "@/db/schema"
+import { preventionCapaActions } from "@/db/schema"
 
 const currentPpa = {
   id: "ppa-1",
@@ -56,15 +56,18 @@ describe("reviewPpa", () => {
       dueDate: "2026-07-22", priority: "alta",
     }, "user-1", ["faena-1"])
 
+    // D11: la acción se escribe en `prevention_capa_actions`, con su
+    // vocabulario. Antes esto asertaba la fila espejo `ppa_corrective_actions`.
     expect(values).toHaveBeenCalledWith(expect.objectContaining({
-      ppaId: "ppa-1",
+      sourceType: "ppa",
+      sourceId: "ppa-1",
       worksiteId: "faena-1",
-      description: "Bloquear el equipo y reforzar el procedimiento.",
+      actionDescription: "Bloquear el equipo y reforzar el procedimiento.",
       responsibleRole: "admin_contrato",
-      responsible: "Juan Soto",
-      dueDate: "2026-07-22",
-      priority: "alta",
-      status: "pendiente",
+      responsibleSnapshot: "Juan Soto",
+      targetDate: "2026-07-22",
+      priority: "high",
+      status: "pending",
     }))
     expect(set).toHaveBeenCalledWith(expect.objectContaining({
       decision: "autorizado",
@@ -80,7 +83,7 @@ describe("reviewPpa", () => {
     }, "user-1", ["faena-1"])
 
     expect(mockInsert).not.toHaveBeenCalledWith(preventionCapaActions)
-    expect(mockInsert).not.toHaveBeenCalledWith(ppaCorrectiveActions)
+    // Sólo el historial del PPA. D11: ya no hay fila espejo que insertar.
     expect(mockInsert).toHaveBeenCalledTimes(1)
   })
 })

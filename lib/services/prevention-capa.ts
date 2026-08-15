@@ -54,7 +54,7 @@ function capaQuickFilterWhere(filter: CapaQuickFilter | undefined) {
 const capaCreateSchema = z.object({
   sourceType: z.enum(["pdtp", "sst_evaluation", "ppa", "incident", "risk", "legal_requirement", "training", "work_permit", "inspection", "cphs", "emergency", "change", "epp", "manual"]),
   sourceId: z.string().min(1).max(200),
-  sourceLegacyActionId: z.string().min(1).max(300).nullable().optional(),
+  sourceItemId: z.string().min(1).max(300).nullable().optional(),
   worksiteId: z.string().min(1),
   finding: z.string().trim().min(3).max(3000),
   immediateMeasure: z.string().trim().max(3000).nullable().optional(),
@@ -67,8 +67,12 @@ const capaCreateSchema = z.object({
   targetDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Fecha objetivo inválida"),
   evidenceRequired: z.boolean().optional(),
   requiresImmediateStop: z.boolean().optional(),
+  /** Módulo 04: deriva prioridad y plazo; `fatal` exige detención inmediata. */
+  danoPotencial: z.enum(["leve", "moderado", "grave", "fatal"]).nullable().optional(),
+  /** Anexo 8: "Normativa legal aplicable". */
+  normativaLegal: z.string().trim().max(500).nullable().optional(),
   reconciliationStatus: z.enum(["reconciled", "needs_assignment", "needs_evidence", "needs_review"]).optional(),
-  legacySnapshot: z.record(z.string(), z.unknown()).nullable().optional(),
+  sourceRef: z.record(z.string(), z.unknown()).nullable().optional(),
 })
 
 // Exportado para que transitionCapaActionAction (Server Action) pueda
@@ -232,7 +236,7 @@ export async function createCapaActionWithClient(
     code: createCode(),
     sourceType: data.sourceType,
     sourceId: data.sourceId,
-    sourceLegacyActionId: data.sourceLegacyActionId ?? null,
+    sourceItemId: data.sourceItemId ?? null,
     worksiteId: data.worksiteId,
     finding: data.finding,
     immediateMeasure: data.immediateMeasure ?? null,
@@ -246,9 +250,11 @@ export async function createCapaActionWithClient(
     status: "pending",
     evidenceRequired: data.evidenceRequired ?? true,
     requiresImmediateStop: data.requiresImmediateStop ?? false,
+    danoPotencial: data.danoPotencial ?? null,
+    normativaLegal: data.normativaLegal?.trim() || null,
     createdByUserId: actorUserId,
     reconciliationStatus,
-    legacySnapshot: data.legacySnapshot ?? null,
+    sourceRef: data.sourceRef ?? null,
     version: 1,
     createdAt: now,
     updatedAt: now,

@@ -2758,16 +2758,26 @@ async function prepareDatabase(captureDbUrl: string) {
     },
   ])
 
-  await db.insert(schema.sstActionPlan).values([
+  // D11: el plan de acción de la evaluación vive en CAPA; `n` es la fila del
+  // acta y viaja en el `source_ref`.
+  await db.insert(schema.preventionCapaActions).values([
     {
-      id: "sst-action-audit-1",
-      evaluationId: "sst-audit-1",
-      n: 1,
-      hallazgo: "Falta EPP en sector norte",
-      accion: "Entregar kit completo al trabajador",
-      responsable: "Jefe de faena",
-      plazo: "2026-06-15",
-      estado: "completado",
+      id: "capa-sst-audit-1",
+      code: "CAPA-2026-0902",
+      sourceType: "sst_evaluation",
+      sourceId: "sst-audit-1",
+      worksiteId,
+      finding: "Falta EPP en sector norte",
+      actionDescription: "Entregar kit completo al trabajador",
+      responsibleSnapshot: "Jefe de faena",
+      priority: "medium",
+      targetDate: "2026-06-15",
+      status: "pending_verification",
+      evidenceRequired: true,
+      sourceRef: { n: 1 },
+      createdByUserId: userId,
+      createdAt: now,
+      updatedAt: now,
     },
   ])
 
@@ -2924,36 +2934,39 @@ async function prepareDatabase(captureDbUrl: string) {
     { id: "exec-response-audit-1", checklistInstanceId: "exec-audit-1-cli-worker-audit-1", seccionId: "barreras-criticas", itemId: "candado-personal", estado: "cumple", observacion: "Candado personal instalado y etiquetado.", respondedByUserId: "user-audit-prevencion", respondedAt: "2026-06-12T09:45:00.000Z" },
     { id: "exec-response-audit-2", checklistInstanceId: "exec-audit-1-cli-worker-audit-1", seccionId: "barreras-criticas", itemId: "energia-cero", estado: "no_cumple", observacion: "La medición fue realizada, pero el folio no quedó registrado en el permiso.", accionCorrectiva: "Incorporar el folio de energía cero al permiso antes de liberar la intervención.", respondedByUserId: "user-audit-prevencion", respondedAt: "2026-06-12T09:50:00.000Z" },
   ])
-  await db.insert(schema.pdtpActionPlan).values({
-    id: "exec-audit-1-ap-001",
-    executionId: "exec-audit-1",
-    capaActionId: "capa-audit-1",
-    n: 1,
-    origen: "checklist_item",
-    seccionId: "barreras-criticas",
-    itemId: "energia-cero",
-    hallazgo: "Folio de la prueba de energía cero ausente en el permiso de trabajo.",
-    accion: "Actualizar el permiso LOTO y verificar el registro antes de reanudar intervenciones equivalentes.",
-    responsableRole: "Supervisor de mantención",
-    responsable: "Paula Mella",
-    responsableUserId: "user-audit-prevencion",
-    plazo: "2026-06-19",
-    prioridad: "alta",
-    estado: "en_proceso",
+  // D11: la acción correctiva del PDTP vive en CAPA. El seed apuntaba al espejo
+  // y su `capaActionId` colgaba de una CAPA `manual` ajena a esta ejecución.
+  await db.insert(schema.preventionCapaActions).values({
+    id: "capa-pdtp-audit-1",
+    code: "CAPA-2026-0901",
+    sourceType: "pdtp",
+    sourceId: "exec-audit-1",
+    worksiteId,
+    finding: "Folio de la prueba de energía cero ausente en el permiso de trabajo.",
+    actionDescription: "Actualizar el permiso LOTO y verificar el registro antes de reanudar intervenciones equivalentes.",
+    responsibleUserId: "user-audit-prevencion",
+    responsibleSnapshot: "Paula Mella",
+    responsibleRole: "Supervisor de mantención",
+    priority: "high",
+    targetDate: "2026-06-19",
+    status: "in_progress",
+    evidenceRequired: true,
+    // A12: de qué ítem del checklist nació.
+    sourceRef: { seccionId: "barreras-criticas", itemId: "energia-cero" },
     createdByUserId: "user-audit-prevencion",
+    startedByUserId: "user-audit-prevencion",
+    startedAt: "2026-06-15T12:00:00.000Z",
     createdAt: now,
     updatedAt: now,
   })
-  await db.insert(schema.pdtpActionPlanFollowups).values({
-    id: "exec-audit-1-ap-001-followup-1",
-    actionPlanItemId: "exec-audit-1-ap-001",
-    fecha: "2026-06-15",
-    estadoAnterior: "pendiente",
-    estadoNuevo: "en_proceso",
-    observacion: "Formato de permiso actualizado; queda validar en próxima intervención.",
-    evidenciaUrl: "captures/pdtp/exec-audit-1-seguimiento.pdf",
-    evidenciaPhotos: [],
-    updatedByUserId: "user-audit-prevencion",
+  await db.insert(schema.preventionCapaTransitions).values({
+    id: "capat-pdtp-audit-1",
+    actionId: "capa-pdtp-audit-1",
+    changeType: "status",
+    fromStatus: "pending",
+    toStatus: "in_progress",
+    reason: "Formato de permiso actualizado; queda validar en próxima intervención.",
+    actorUserId: "user-audit-prevencion",
     createdAt: now,
   })
 

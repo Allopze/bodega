@@ -5,9 +5,10 @@ import { getSectionAccess } from "@/lib/sst/checklist"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { getEvaluation } from "@/lib/services/sst"
 import { db } from "@/db"
-import { sstResponses, sstScheduledFollowups, sstActionPlan, sstWeeklyEvaluations } from "@/db/schema/sst"
+import { sstResponses, sstScheduledFollowups, sstWeeklyEvaluations } from "@/db/schema/sst"
+import { listSstActionPlan } from "@/lib/services/sst-module/capa-view"
 import { workers, worksites } from "@/db/schema/worksites"
-import { and, eq, ne } from "drizzle-orm"
+import { eq } from "drizzle-orm"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { EvaluationDetail } from "./evaluation-detail"
@@ -42,7 +43,7 @@ export default async function EvaluacionDetailPage({ params }: Props) {
   const [responses, followups, actionPlan, workerRow, worksiteRow, weeklyEvals] = await Promise.all([
     db.select().from(sstResponses).where(eq(sstResponses.evaluationId, id)),
     db.select().from(sstScheduledFollowups).where(eq(sstScheduledFollowups.evaluationId, id)),
-    db.select().from(sstActionPlan).where(and(eq(sstActionPlan.evaluationId, id), ne(sstActionPlan.estado, "cancelado"))),
+    listSstActionPlan(id),
     db.select({ firstName: workers.firstName, lastName: workers.lastName, rut: workers.rut })
       .from(workers).where(eq(workers.id, evaluation.workerId)).limit(1),
     db.select({ name: worksites.name, adminContratoLabel: worksites.adminContratoLabel })

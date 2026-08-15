@@ -82,8 +82,6 @@ async function completeActionForVerification(actionPlanItemId: string) {
 }
 
 beforeEach(async () => {
-  await inMemoryDb.delete(schema.pdtpActionPlanFollowups)
-  await inMemoryDb.delete(schema.pdtpActionPlan)
   await inMemoryDb.delete(schema.preventionCapaEvidence)
   await inMemoryDb.delete(schema.preventionCapaFollowups)
   await inMemoryDb.delete(schema.preventionCapaTransitions)
@@ -225,6 +223,57 @@ describe("pdtp execution checklist → plan de acción handoff", () => {
     // "alta" derivado de daño potencial "grave" = plazo +2 días (vs +7 de "media").
     expect(new Date(conDano.plazo).getTime()).toBeLessThan(new Date(sinDano.plazo).getTime())
   })
+
+  /**
+   * A12 / D11: `seccion_id` e `item_id` eran los dos últimos campos que sólo
+   * vivían en el espejo `pdtp_action_plan` y que impedían retirarlo. No
+   * merecen columnas propias en CAPA —son procedencia, no estado—, así que
+   * viajan en el `source_ref` de la CAPA.
+   * `origen` no se persiste: es derivable de la presencia de `seccionId`.
+   */
+  it("la CAPA guarda de qué ítem del checklist nació, sin columnas nuevas", async () => {
+    const { getOrCreateExecutionChecklist, upsertChecklistResponses } = await import("@/lib/services/pdtp/execution-checklists")
+    const { submitExecutionChecklist } = await import("@/lib/services/pdtp/action-plan")
+
+    await seedChecklistTemplate("act-1", "L1", {
+      code: "c1", version: "01", revisionDate: "2026-01-01", title: "T1", tipo: "nuevo",
+      legalFramework: [], applicableTo: "",
+      sections: [{
+        id: "s-extintores", title: "Extintores",
+        items: [{ id: "i-carga", label: "Carga vigente", kind: "cumple_nocumple_obs" }],
+      }],
+      closingAct: { title: "Cierre", resultOptions: [], signatureRoles: [] },
+    })
+
+    const instance = await getOrCreateExecutionChecklist("exec-1", "u1")
+    await upsertChecklistResponses(instance.id, [
+      { seccionId: "s-extintores", itemId: "i-carga", estado: "no_cumple", observacion: "Sin carga" },
+    ], "u1")
+    await submitExecutionChecklist(instance.id, "u1")
+
+    const [capa] = await inMemoryDb.select().from(schema.preventionCapaActions)
+      .where(eq(schema.preventionCapaActions.sourceType, "pdtp"))
+    expect(capa!.sourceRef).toEqual({
+      checklistInstanceId: instance.id,
+      seccionId: "s-extintores",
+      itemId: "i-carga",
+    })
+  })
+
+  /** Una acción manual no nace de ningún ítem: no debe inventarse procedencia. */
+  it("una acción manual no guarda procedencia de checklist", async () => {
+    const { createActionPlanItem } = await import("@/lib/services/pdtp/action-plan")
+    const item = await createActionPlanItem({
+      executionId: "exec-1", hallazgo: "Hallazgo suelto", accion: "Corregir",
+      responsableRole: "prevencionista_faena", responsable: "PRF",
+      plazo: "2026-12-31",
+    }, "u1")
+
+    const [capa] = await inMemoryDb.select().from(schema.preventionCapaActions)
+      .where(eq(schema.preventionCapaActions.id, item.id))
+    expect(capa!.sourceRef).toBeNull()
+    expect(item.origen).toBe("manual")
+  })
 })
 
 describe("pdtp action plan lifecycle", () => {
@@ -252,9 +301,21 @@ describe("pdtp action plan lifecycle", () => {
     expect(verified.estado).toBe("verificado")
     expect(verified.verifiedByUserId).toBe("u1")
 
+    /**
+     * D11: la bitácora se lee de `prevention_capa_transitions`, que registra
+     * cada hecho por separado —la evidencia, la nota y cada salto de estado—
+     * en vez de colapsarlos en una fila por acción del usuario como hacía el
+     * espejo. La secuencia completa aquí es: creada, evidencia, nota,
+     * en implementación, enviada a verificación, verificada.
+     */
     const followups = await listFollowups(item.id)
-    expect(followups).toHaveLength(2)
     expect(followups[0]!.estadoNuevo).toBe("verificado")
+    expect(followups.map((f) => f.estadoNuevo)).toEqual([
+      "verificado", "completado", "en_proceso", "pendiente", "pendiente", "pendiente",
+    ])
+    // La evidencia sigue colgando de su entrada, no se pierde al desagregar.
+    expect(followups.some((f) => f.evidenciaPhotos.length > 0)).toBe(true)
+    expect(followups.some((f) => f.observacion === "Control implementado con evidencia")).toBe(true)
   })
 
   it("reopenActionPlanItem exige un motivo y solo reabre acciones verificadas", async () => {
@@ -336,10 +397,10 @@ describe("pdtp checklist multi-sujeto", () => {
 
     // Dos sujetos distintos para la MISMA ejecución.
     const ext7 = await getOrCreateExecutionChecklist("exec-1", "u1", {
-      subjectType: "extintor", subjectId: "ext-7", subjectLabel: "Extintor #7",
+      subjectType: "extintor", subjectId: "ext-7", subjectLabel: "Extintor",
     })
     const ext12 = await getOrCreateExecutionChecklist("exec-1", "u1", {
-      subjectType: "extintor", subjectId: "ext-12", subjectLabel: "Extintor #12",
+      subjectType: "extintor", subjectId: "ext-12", subjectLabel: "Extintor",
     })
     expect(ext7.id).not.toBe(ext12.id)
     expect(ext7.subjectId).toBe("ext-7")
@@ -352,7 +413,7 @@ describe("pdtp checklist multi-sujeto", () => {
 
     // Idempotencia por sujeto: recuperar el mismo sujeto devuelve la misma instancia.
     const ext7Again = await getOrCreateExecutionChecklist("exec-1", "u1", {
-      subjectType: "extintor", subjectId: "ext-7", subjectLabel: "Extintor #7",
+      subjectType: "extintor", subjectId: "ext-7", subjectLabel: "Extintor",
     })
     expect(ext7Again.id).toBe(ext7.id)
 
@@ -368,9 +429,12 @@ describe("pdtp checklist multi-sujeto", () => {
     expect(items).toHaveLength(2)
     const hallazgos = items.map((i) => i.hallazgo).sort()
     expect(hallazgos).toEqual([
-      "[Extintor #12] Sello roto",
-      "[Extintor #7] Aguja en rojo",
+      "[Extintor] Aguja en rojo",
+      "[Extintor] Sello roto",
     ])
+    const sourceRefs = (await inMemoryDb.select().from(schema.preventionCapaActions))
+      .map((row) => row.sourceRef as { checklistInstanceId?: string })
+    expect(sourceRefs.map((ref) => ref.checklistInstanceId).sort()).toEqual([ext12.id, ext7.id].sort())
 
     // Rollup condicional: con 2 instancias completadas, executedQuantity = 2.
     const updated = await recalcExecutionQuantityFromInstances("exec-1")

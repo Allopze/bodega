@@ -25,7 +25,8 @@ afterAll(async () => {
 })
 
 beforeEach(async () => {
-  await inMemoryDb.delete(schema.sstActionPlan)
+  await inMemoryDb.delete(schema.preventionCapaTransitions)
+  await inMemoryDb.delete(schema.preventionCapaActions)
   await inMemoryDb.delete(schema.sstScheduledFollowups)
   await inMemoryDb.delete(schema.sstWeeklyEvaluations)
   await inMemoryDb.delete(schema.sstResponses)
@@ -41,6 +42,12 @@ async function seedEvaluation(evaluationId = "sst-1") {
     id: "user-1",
     name: "Admin",
     email: "admin@example.test",
+    hashedPassword: "x",
+  })
+  await inMemoryDb.insert(schema.users).values({
+    id: "deleter-1",
+    name: "Gestor SST",
+    email: "deleter@example.test",
     hashedPassword: "x",
   })
   await inMemoryDb.insert(schema.worksites).values({
@@ -93,15 +100,24 @@ async function seedEvaluation(evaluationId = "sst-1") {
     fechaProgramada: "2026-06-26",
     realizado: false,
   })
-  await inMemoryDb.insert(schema.sstActionPlan).values({
+  // D11: el plan de acción vive en CAPA; `n` es la fila del acta.
+  await inMemoryDb.insert(schema.preventionCapaActions).values({
     id: "plan-1",
-    evaluationId,
-    n: 1,
-    hallazgo: "Hallazgo",
-    accion: "Accion",
-    responsable: "Responsable",
-    plazo: "2026-06-30",
-    estado: "pendiente",
+    code: "CAPA-SST-DEL-001",
+    sourceType: "sst_evaluation",
+    sourceId: evaluationId,
+    worksiteId: "ws-1",
+    finding: "Hallazgo",
+    actionDescription: "Accion",
+    responsibleSnapshot: "Responsable",
+    priority: "medium",
+    targetDate: "2026-06-30",
+    status: "pending",
+    evidenceRequired: true,
+    sourceRef: { n: 1 },
+    createdByUserId: "user-1",
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
   })
 }
 
@@ -184,19 +200,34 @@ describe("deleteEvaluation", () => {
     await seedEvaluation()
     const { deleteEvaluation } = await import("@/lib/services/sst")
 
-    await deleteEvaluation("sst-1", ["ws-1"])
+    await deleteEvaluation("sst-1", ["ws-1"], "deleter-1")
 
     expect(await inMemoryDb.select().from(schema.sstEvaluations)).toHaveLength(0)
     expect(await inMemoryDb.select().from(schema.sstResponses)).toHaveLength(0)
     expect(await inMemoryDb.select().from(schema.sstScheduledFollowups)).toHaveLength(0)
-    expect(await inMemoryDb.select().from(schema.sstActionPlan)).toHaveLength(0)
+    // D11: la acción no se borra, se cancela. Antes se borraba la fila espejo y
+    // la CAPA quedaba abierta apuntando a una evaluación inexistente.
+    const capas = await inMemoryDb.select().from(schema.preventionCapaActions)
+    expect(capas).toHaveLength(1)
+    expect(capas[0]).toMatchObject({
+      status: "cancelled",
+      cancelledByUserId: "deleter-1",
+      version: 2,
+    })
+    const transitions = await inMemoryDb.select().from(schema.preventionCapaTransitions)
+    expect(transitions).toHaveLength(1)
+    expect(transitions[0]).toMatchObject({
+      fromStatus: "pending",
+      toStatus: "cancelled",
+      actorUserId: "deleter-1",
+    })
   })
 
   it("rejects deletion outside the caller worksite scope", async () => {
     await seedEvaluation()
     const { deleteEvaluation } = await import("@/lib/services/sst")
 
-    await expect(deleteEvaluation("sst-1", ["ws-2"]))
+    await expect(deleteEvaluation("sst-1", ["ws-2"], "deleter-1"))
       .rejects.toThrow("Evaluación no encontrada o sin acceso.")
 
     const [evaluation] = await inMemoryDb
@@ -215,13 +246,28 @@ describe("deleteEvaluation", () => {
       .where(eq(schema.sstEvaluations.id, "sst-1"))
     const { deleteEvaluation } = await import("@/lib/services/sst")
 
-    await expect(deleteEvaluation("sst-1", ["ws-1"]))
+    await expect(deleteEvaluation("sst-1", ["ws-1"], "deleter-1"))
       .rejects.toThrow("cerrada")
 
     expect(await inMemoryDb.select().from(schema.sstEvaluations)).toHaveLength(1)
     expect(await inMemoryDb.select().from(schema.sstResponses)).toHaveLength(1)
     expect(await inMemoryDb.select().from(schema.sstScheduledFollowups)).toHaveLength(1)
-    expect(await inMemoryDb.select().from(schema.sstActionPlan)).toHaveLength(1)
+    expect(await inMemoryDb.select().from(schema.preventionCapaActions)).toHaveLength(1)
+  })
+
+  it("preserva la evaluación si una CAPA asociada ya fue verificada", async () => {
+    await seedEvaluation()
+    await inMemoryDb.update(schema.preventionCapaActions)
+      .set({ status: "verified" })
+      .where(eq(schema.preventionCapaActions.id, "plan-1"))
+    const { deleteEvaluation } = await import("@/lib/services/sst")
+
+    await expect(deleteEvaluation("sst-1", ["ws-1"], "deleter-1"))
+      .rejects.toThrow(/CAPA.*verificada|historial/i)
+
+    expect(await inMemoryDb.select().from(schema.sstEvaluations)).toHaveLength(1)
+    const [capa] = await inMemoryDb.select().from(schema.preventionCapaActions)
+    expect(capa?.status).toBe("verified")
   })
 })
 
@@ -290,7 +336,7 @@ describe("saveActionPlanItem", () => {
     }, ["ws-1"], "user-1")
 
     expect(item.id).toBeTruthy()
-    const rows = await inMemoryDb.select().from(schema.sstActionPlan)
+    const rows = await inMemoryDb.select().from(schema.preventionCapaActions)
     expect(rows).toHaveLength(2)
   })
 })
