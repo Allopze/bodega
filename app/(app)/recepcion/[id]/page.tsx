@@ -46,7 +46,13 @@ export default async function RecepcionDetallePage({
       receivedBy: true,
       items: {
         with: {
-          purchaseOrderItem: true,
+          purchaseOrderItem: {
+            with: {
+              requestItem: {
+                with: { attributes: true },
+              },
+            },
+          },
         },
       },
     },
@@ -102,6 +108,10 @@ export default async function RecepcionDetallePage({
         quantity:         ocItem.quantity,
         unitOfMeasure:    ocItem.unitOfMeasure,
         quantityReceived: ocItem.quantityReceived ?? 0,
+        attributes:       ocItem.requestItem?.attributes.map((attribute) => ({
+          name: attribute.attributeName,
+          value: attribute.value,
+        })) ?? [],
       }
     }),
     // A-10: el panel es compartido con /compras/[id]; sin declarar la audiencia

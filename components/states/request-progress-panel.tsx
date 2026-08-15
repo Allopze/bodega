@@ -70,6 +70,18 @@ const RequestProgressPanelInner = React.memo(function RequestProgressPanelInner(
                 <p className="mt-0.5 text-xs text-[var(--color-text-subtle)]">
                   {item.quantityLabel} · {item.stageLabel}
                 </p>
+                {item.attributes.length > 0 && (
+                  <ul
+                    aria-label="Atributos del producto"
+                    className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-[var(--color-text-muted)]"
+                  >
+                    {item.attributes.map((attribute) => (
+                      <li key={`${attribute.name}-${attribute.value}`}>
+                        {attribute.name}: {attribute.value}
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
               <span className="w-fit rounded-[var(--radius-sm)] bg-[var(--color-surface-2)] px-2 py-1 text-xs font-medium text-[var(--color-text-muted)]">
                 {item.statusLabel}

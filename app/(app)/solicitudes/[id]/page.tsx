@@ -279,6 +279,10 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
       status:        item.status,
       quantity:      item.quantity,
       unitOfMeasure: item.unitOfMeasure,
+      attributes:    item.attributes.map((attribute) => ({
+        name: attribute.attributeName,
+        value: attribute.value,
+      })),
     })),
   )
 
