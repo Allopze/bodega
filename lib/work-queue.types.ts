@@ -16,6 +16,7 @@ export type WorkTaskType =
   | "documentation"
   | "ppa"
   | "sst"
+  | "cphs"
 
 export type WorkPriority = "critical" | "high" | "normal" | "low"
 
@@ -36,6 +37,7 @@ export type OperationalModule =
   | "documentacion"
   | "ppa"
   | "sst"
+  | "cphs"
 
 export interface WorkTask {
   id:          string
@@ -54,12 +56,18 @@ export interface WorkTask {
 }
 
 
+export interface RequestProgressAttribute {
+  name:  string
+  value: string
+}
+
 export interface RequestProgressItem {
   id:            string
   productName:   string
   status:        string
   quantity:      number
   unitOfMeasure: string
+  attributes?:   RequestProgressAttribute[]
 }
 
 export interface RequestProgress {
@@ -72,5 +80,6 @@ export interface RequestProgress {
     quantityLabel: string
     statusLabel:   string
     stageLabel:    string
+    attributes:    RequestProgressAttribute[]
   }[]
 }

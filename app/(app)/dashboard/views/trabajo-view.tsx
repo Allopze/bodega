@@ -9,6 +9,7 @@ import {
   FileText,
   ShoppingCart,
   Truck,
+  UsersThree,
   WarningCircle,
   Warehouse,
 } from "@phosphor-icons/react"
@@ -80,6 +81,7 @@ const MODULE_META: Partial<Record<WorkTaskType, ModuleMeta>> = {
   documentation:      { label: "Documentación", Icon: FileText },
   ppa:                { label: "PPA",          Icon: WarningCircle },
   sst:                { label: "SST",          Icon: CheckSquare },
+  cphs:               { label: "Comité Paritario", Icon: UsersThree },
 }
 
 const moduleMeta = (type: WorkTaskType): ModuleMeta => MODULE_META[type] ?? MODULE_FALLBACK

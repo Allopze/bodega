@@ -8,6 +8,7 @@ export type {
   WorkTaskType,
   WorkPriority,
   WorkTask,
+  RequestProgressAttribute,
   RequestProgressItem,
   RequestProgress,
 } from "./work-queue.types"

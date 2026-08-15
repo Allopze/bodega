@@ -151,6 +151,20 @@ describe("buildOcProgress", () => {
     expect(buildOcProgress("received", [item(12)])?.items[0]?.statusLabel).toBe("Recibido")
   })
 
+  it("preserves the selected product attributes in the shared progress item", () => {
+    const itemWithAttributes = {
+      ...item(12),
+      attributes: [
+        { name: "Talla", value: "M" },
+        { name: "Color", value: "Azul" },
+      ],
+    }
+
+    const progress = buildOcProgress("received", [itemWithAttributes])
+
+    expect(progress?.items[0]?.attributes).toEqual(itemWithAttributes.attributes)
+  })
+
   it("asks for the invoice before closing a received order that has none", () => {
     const pending = buildOcProgress("received", [item(12)], "compras", { invoicePending: true })
     expect(pending?.nextAction).toBe("Adjunta la factura y luego cierra la orden.")
@@ -200,6 +214,21 @@ describe("buildRequestProgress", () => {
     const item = result.items[0]!
     expect(item.quantityLabel).toContain("10")
     expect(item.statusLabel).toBe("Solicitado")
+  })
+
+  it("preserves selected attributes for request progress items", () => {
+    const itemWithAttributes = {
+      id: "1",
+      productName: "Guante",
+      status: "requested",
+      quantity: 10,
+      unitOfMeasure: "par",
+      attributes: [{ name: "Talla", value: "L" }],
+    }
+
+    const result = buildRequestProgress("submitted", [itemWithAttributes])
+
+    expect(result.items[0]?.attributes).toEqual(itemWithAttributes.attributes)
   })
 })
 

@@ -26,6 +26,7 @@ export function buildRequestProgress(requestStatus: string, items: RequestProgre
     quantityLabel: formatQuantity(item.quantity, item.unitOfMeasure),
     statusLabel:   itemStatusLabel(item.status),
     stageLabel:    itemStageLabel(item.status),
+    attributes:    item.attributes ?? [],
   }))
 
   const statuses = items.map((item) => item.status)
@@ -46,6 +47,7 @@ export interface OcProgressItem {
   quantity:         number
   unitOfMeasure:    string
   quantityReceived: number
+  attributes?:      RequestProgressItem["attributes"]
 }
 
 /**
@@ -81,6 +83,7 @@ export function buildOcProgress(
       quantityLabel: formatQuantity(item.quantity, item.unitOfMeasure),
       statusLabel:   ocItemStatusLabel(item),
       stageLabel:    currentStage,
+      attributes:    item.attributes ?? [],
     })),
   }
 }

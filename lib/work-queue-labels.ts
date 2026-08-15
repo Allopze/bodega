@@ -17,6 +17,7 @@ export const OPERATIONAL_MODULE_LABELS: Record<OperationalModule, string> = {
   documentacion: "Documentación",
   ppa:           "PPA",
   sst:           "SST",
+  cphs:          "Comité Paritario",
 }
 
 export const STAGES = ["Solicitado", "Aprobación", "Compra", "Recepción", "Entrega"]

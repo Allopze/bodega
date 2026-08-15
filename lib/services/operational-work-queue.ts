@@ -6,11 +6,10 @@
  * serializar una fila; no hay una lista completa enviada al navegador.
  */
 import type { Session } from "next-auth"
-import { and, count, eq, inArray, isNotNull, lte, notInArray, or, sql, type SQL } from "drizzle-orm"
+import { and, count, eq, inArray, isNotNull, lte, ne, notInArray, or, sql, type SQL } from "drizzle-orm"
 import type { AnyPgColumn } from "drizzle-orm/pg-core"
 import { db } from "@/db"
 import {
-  pdtpActionPlan,
   pdtpActivities,
   pdtpActivitySchedule,
   pdtpActivityWorksiteExclusions,
@@ -21,6 +20,10 @@ import {
   pdtpResponsibleCatalog,
   ppaSubmissions,
   preventionCapaActions,
+  preventionCommitteeMeetings,
+  preventionCommitteeProgramActivities,
+  preventionCommitteePrograms,
+  preventionCommittees,
   preventionInspectionRuns,
   preventionInspectionTemplates,
   products,
@@ -55,6 +58,12 @@ import type { OperationalModule } from "@/lib/work-queue.types"
 
 const DEFAULT_PAGE_SIZE = 50
 const MAX_PAGE_SIZE = 100
+const CHILE_DATE_FORMATTER = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "America/Santiago",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+})
 
 /**
  * OC sin ninguna factura adjunta.
@@ -192,9 +201,7 @@ function normalizePriority(value: string | null | undefined): WorkPriority {
 }
 
 function startOfChileDay(now = new Date()) {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/Santiago", year: "numeric", month: "2-digit", day: "2-digit",
-  }).format(now)
+  return CHILE_DATE_FORMATTER.format(now)
 }
 
 function effectiveDue(sourceDueAt: string | null, committedDueAt: string | null): { effectiveDueAt: string | null; dueSource: "origin" | "commitment" | null } {
@@ -507,6 +514,46 @@ export type OperationalSourceBranch = {
   query: SQL
 }
 
+/** Estados de una CAPA que todavía deben trabajo. Único lugar donde se declara. */
+const CAPA_OPEN_STATUSES = ["pending", "in_progress", "pending_verification", "reopened"]
+
+/**
+ * Fuente de acciones correctivas para la cola. Las dos ramas —PDTP y CAPA—
+ * leen la misma tabla `prevention_capa_actions` y se reparten el universo por
+ * `origin`, así que ninguna acción aparece dos veces (D11, 2026-08-12). Sólo
+ * cambian el módulo bajo el que se filtra y la pantalla a la que llevan, para
+ * que quien gestiona la acción desde el PDTP no aterrice en un módulo cuyo
+ * permiso no tiene.
+ */
+function capaQueueSource(
+  inScope: (column: AnyPgColumn) => SQL,
+  opts: { module: OperationalModule; origin: SQL; title: SQL; href: SQL; ctaLabel: SQL },
+): SQL {
+  return sql`
+    SELECT 'capa'::text AS source_type, ${preventionCapaActions.id} AS source_id, 'advance'::text AS action_key,
+      ${opts.module}::text AS module, ${preventionCapaActions.code} AS code, ${opts.title} AS title,
+      ''::text AS subtitle, ${preventionCapaActions.worksiteId} AS worksite_id, ${worksites.name} AS worksite_name,
+      ${preventionCapaActions.status} AS status,
+      -- Espejo de CAPA_STATUS_LABELS (lib/prevention/capa.ts): el REPLACE
+      -- anterior mostraba "in progress" en inglés en la cola (UI/UX 2026-08-05, C2).
+      CASE ${preventionCapaActions.status}
+        WHEN 'pending' THEN 'Pendiente' WHEN 'in_progress' THEN 'En proceso'
+        WHEN 'pending_verification' THEN 'Pendiente de verificación' WHEN 'verified' THEN 'Verificada'
+        WHEN 'closed' THEN 'Cerrada' WHEN 'reopened' THEN 'Reabierta' WHEN 'cancelled' THEN 'Cancelada'
+        ELSE REPLACE(${preventionCapaActions.status}, '_', ' ') END AS status_label,
+      CASE ${preventionCapaActions.priority} WHEN 'critical' THEN 'critical' WHEN 'high' THEN 'high' WHEN 'alta' THEN 'critical' WHEN 'low' THEN 'low' WHEN 'baja' THEN 'low' ELSE 'normal' END AS priority,
+      (${preventionCapaActions.reconciliationStatus} <> 'reconciled') AS blocked, ${preventionCapaActions.createdAt}::text AS created_at,
+      LEFT(${preventionCapaActions.targetDate}::text, 10) AS source_due_at, ${preventionCapaActions.responsibleUserId} AS native_assignee_user_id,
+      (SELECT ${users.name} FROM ${users} WHERE ${users.id} = ${preventionCapaActions.responsibleUserId} LIMIT 1) AS native_assignee_name,
+      ${opts.href} AS href, ${opts.ctaLabel} AS cta_label, false AS assignable
+    FROM ${preventionCapaActions}
+    INNER JOIN ${worksites} ON ${worksites.id} = ${preventionCapaActions.worksiteId}
+    WHERE ${inScope(preventionCapaActions.worksiteId)}
+      AND ${opts.origin}
+      AND ${inArray(preventionCapaActions.status, CAPA_OPEN_STATUSES)}
+  `
+}
+
 /**
  * Cada fuente conserva su identidad para poder diagnosticar una caída aislada.
  * En la ruta normal se vuelven a unir en una única consulta global; las probes
@@ -740,8 +787,20 @@ function operationalSourceBranches(session: Session, scope: WorksiteScope): Oper
           ${pdtpActivities.createdAt}::text AS created_at,
           TO_CHAR((make_date(${currentYear}, impago.mes, 1) + INTERVAL '1 month' - INTERVAL '1 day')::date, 'YYYY-MM-DD') AS source_due_at,
           ${emptyAssignee} AS native_assignee_user_id, ${emptyAssignee} AS native_assignee_name,
-          CONCAT('/prevencion/pdtp/actividades?faena=', ${worksites.id}, '&vista=semana') AS href,
-          'Registrar cumplimiento'::text AS cta_label, false AS assignable
+          -- D12: la cola avisa, Constancias marca. Cada mecanismo manda a donde
+          -- efectivamente se registra: una constancia se marca en su submódulo,
+          -- una actividad de enganche se cumple haciendo el trabajo en el
+          -- módulo que corresponde, y por eso su fila apunta a la planilla
+          -- —que muestra el estado— y no a un formulario que no existe.
+          CASE ${pdtpActivities.mechanism}
+            WHEN 'constancia' THEN CONCAT('/prevencion/constancias?faena=', ${worksites.id})
+            ELSE CONCAT('/prevencion/pdtp/actividades?faena=', ${worksites.id}, '&vista=semana')
+          END AS href,
+          CASE ${pdtpActivities.mechanism}
+            WHEN 'constancia' THEN 'Dejar constancia'
+            WHEN 'enganche' THEN 'Ver cómo se cumple'
+            ELSE 'Registrar cumplimiento'
+          END AS cta_label, false AS assignable
         FROM ${pdtpActivities}
         INNER JOIN ${pdtpPrograms} ON ${pdtpPrograms.id} = ${pdtpActivities.programId}
         -- Misma regla que resolveProgramWorksiteIds: sin membresía declarada el
@@ -811,44 +870,41 @@ function operationalSourceBranches(session: Session, scope: WorksiteScope): Oper
       INNER JOIN ${worksites} ON ${worksites.id} = ${pdtpObligations.worksiteId}
       WHERE ${inScope(pdtpObligations.worksiteId)} AND ${pdtpObligations.status} IN ('pending', 'overdue', 'reported')
     `)
-    add("pdtp", sql`
-      SELECT 'pdtp_action'::text AS source_type, ${pdtpActionPlan.id} AS source_id, 'advance'::text AS action_key,
-        'pdtp'::text AS module, NULL::text AS code, 'Acción correctiva PDTP'::text AS title, ''::text AS subtitle,
-        ${pdtpExecutions.worksiteId} AS worksite_id, ${worksites.name} AS worksite_name, ${pdtpActionPlan.estado} AS status,
-        REPLACE(${pdtpActionPlan.estado}, '_', ' ') AS status_label,
-        CASE ${pdtpActionPlan.prioridad} WHEN 'alta' THEN 'critical' WHEN 'high' THEN 'high' WHEN 'baja' THEN 'low' ELSE 'normal' END AS priority,
-        (${pdtpActionPlan.estado} = 'reabierto') AS blocked, ${pdtpActionPlan.createdAt}::text AS created_at, LEFT(${pdtpActionPlan.plazo}::text, 10) AS source_due_at,
-        ${pdtpActionPlan.responsableUserId} AS native_assignee_user_id,
-        (SELECT ${users.name} FROM ${users} WHERE ${users.id} = ${pdtpActionPlan.responsableUserId} LIMIT 1) AS native_assignee_name,
-        '/prevencion/pdtp/acciones'::text AS href, 'Abrir acción'::text AS cta_label, false AS assignable
-      FROM ${pdtpActionPlan}
-      INNER JOIN ${pdtpExecutions} ON ${pdtpExecutions.id} = ${pdtpActionPlan.executionId}
-      INNER JOIN ${worksites} ON ${worksites.id} = ${pdtpExecutions.worksiteId}
-      WHERE ${inScope(pdtpExecutions.worksiteId)} AND ${pdtpActionPlan.estado} IN ('pendiente', 'en_proceso', 'reabierto')
-    `)
+    // D11 (2026-08-12), Fase 0: la acción correctiva del PDTP se lee de CAPA,
+    // igual que la rama `capa` de más abajo. Antes esta fuente leía el espejo
+    // `pdtp_action_plan` y producía dos consecuencias:
+    //
+    //  1. La misma acción salía dos veces para quien tuviera los dos permisos.
+    //  2. Mostraba el `estado` del espejo, que se congela cuando alguien avanza
+    //     la acción desde `/prevencion/capa/[id]` — la sincronización PDTP→CAPA
+    //     es unidireccional.
+    //
+    // No se apaga la rama, se reapunta: `jefe_terreno`, `admin_contrato` y
+    // `supervisor_terreno` tienen `prevention:pdtp:view` y
+    // `prevention:pdtp:action:manage` pero NO `prevention:capa:view`, así que
+    // apagarla les borraría el trabajo. Las dos ramas se reparten el universo
+    // por `source_type` para que ninguna acción aparezca dos veces.
+    add("pdtp", capaQueueSource(inScope, {
+      module: "pdtp",
+      origin: sql`${preventionCapaActions.sourceType} = 'pdtp'`,
+      title: sql`'Acción correctiva PDTP'::text`,
+      href: sql`'/prevencion/pdtp/acciones'::text`,
+      ctaLabel: sql`'Abrir acción'::text`,
+    }))
   }
 
-  if (hasPermission(session, "prevention:capa:view")) add("capa", sql`
-    SELECT 'capa'::text AS source_type, ${preventionCapaActions.id} AS source_id, 'advance'::text AS action_key,
-      'capa'::text AS module, ${preventionCapaActions.code} AS code, CONCAT('Gestionar ', ${preventionCapaActions.code}) AS title,
-      ''::text AS subtitle, ${preventionCapaActions.worksiteId} AS worksite_id, ${worksites.name} AS worksite_name,
-      ${preventionCapaActions.status} AS status,
-      -- Espejo de CAPA_STATUS_LABELS (lib/prevention/capa.ts): el REPLACE
-      -- anterior mostraba "in progress" en inglés en la cola (UI/UX 2026-08-05, C2).
-      CASE ${preventionCapaActions.status}
-        WHEN 'pending' THEN 'Pendiente' WHEN 'in_progress' THEN 'En proceso'
-        WHEN 'pending_verification' THEN 'Pendiente de verificación' WHEN 'verified' THEN 'Verificada'
-        WHEN 'closed' THEN 'Cerrada' WHEN 'reopened' THEN 'Reabierta' WHEN 'cancelled' THEN 'Cancelada'
-        ELSE REPLACE(${preventionCapaActions.status}, '_', ' ') END AS status_label,
-      CASE ${preventionCapaActions.priority} WHEN 'critical' THEN 'critical' WHEN 'high' THEN 'high' WHEN 'alta' THEN 'critical' WHEN 'low' THEN 'low' WHEN 'baja' THEN 'low' ELSE 'normal' END AS priority,
-      (${preventionCapaActions.reconciliationStatus} <> 'reconciled') AS blocked, ${preventionCapaActions.createdAt}::text AS created_at,
-      LEFT(${preventionCapaActions.targetDate}::text, 10) AS source_due_at, ${preventionCapaActions.responsibleUserId} AS native_assignee_user_id,
-      (SELECT ${users.name} FROM ${users} WHERE ${users.id} = ${preventionCapaActions.responsibleUserId} LIMIT 1) AS native_assignee_name,
-      CONCAT('/prevencion/capa/', ${preventionCapaActions.id}) AS href, 'Abrir CAPA'::text AS cta_label, false AS assignable
-    FROM ${preventionCapaActions}
-    INNER JOIN ${worksites} ON ${worksites.id} = ${preventionCapaActions.worksiteId}
-    WHERE ${inScope(preventionCapaActions.worksiteId)} AND ${preventionCapaActions.status} IN ('pending', 'in_progress', 'pending_verification', 'reopened')
-  `)
+  // Complemento exacto de la rama `pdtp`: si el usuario ve el PDTP, esa rama ya
+  // trajo las de origen `pdtp` y aquí se excluyen. Si no lo ve, aquí entran
+  // todas para que no se le pierda ninguna.
+  if (hasPermission(session, "prevention:capa:view")) add("capa", capaQueueSource(inScope, {
+    module: "capa",
+    origin: hasPermission(session, "prevention:pdtp:view")
+      ? sql`${preventionCapaActions.sourceType} <> 'pdtp'`
+      : sql`true`,
+    title: sql`CONCAT('Gestionar ', ${preventionCapaActions.code})`,
+    href: sql`CONCAT('/prevencion/capa/', ${preventionCapaActions.id})`,
+    ctaLabel: sql`'Abrir CAPA'::text`,
+  }))
 
   if (hasPermission(session, "prevention:inspections:view")) add("inspecciones", sql`
     SELECT 'inspection'::text AS source_type, ${preventionInspectionRuns.id} AS source_id,
@@ -917,6 +973,79 @@ function operationalSourceBranches(session: Session, scope: WorksiteScope): Oper
       AND ${sstScheduledFollowups.fechaProgramada} <= ${startOfChileDay()}
   `)
 
+  /* CPHS. Tres deberes del comité que hoy no avisaban en ninguna parte: sesionar
+   * cada mes, renovar el mandato antes de que venza y ejecutar su programa de
+   * trabajo. Las brechas de acuerdos NO van acá: nacen como CAPA y ya las trae
+   * la fuente `capa`. */
+  if (hasPermission(session, "prevention:cphs:view")) {
+    add("cphs", sql`
+      SELECT 'cphs_cadence'::text AS source_type, ${preventionCommittees.id} AS source_id, 'schedule'::text AS action_key,
+        'cphs'::text AS module, NULL::text AS code, 'El comité lleva dos meses o más sin sesionar'::text AS title,
+        ${preventionCommittees.name} AS subtitle,
+        ${preventionCommittees.worksiteId} AS worksite_id, ${worksites.name} AS worksite_name, 'overdue'::text AS status,
+        'Cadencia vencida'::text AS status_label, 'high'::text AS priority, false AS blocked,
+        ${preventionCommittees.createdAt}::text AS created_at, NULL::text AS source_due_at,
+        ${emptyAssignee} AS native_assignee_user_id, ${emptyAssignee} AS native_assignee_name,
+        CONCAT('/prevencion/cphs/', ${preventionCommittees.id}) AS href, 'Convocar sesión'::text AS cta_label, false AS assignable
+      FROM ${preventionCommittees}
+      INNER JOIN ${worksites} ON ${worksites.id} = ${preventionCommittees.worksiteId}
+      WHERE ${inScope(preventionCommittees.worksiteId)} AND ${preventionCommittees.status} = 'active'
+        AND ${preventionCommittees.mandateEndsOn} >= ${startOfChileDay()}
+        AND COALESCE((
+          SELECT MAX(m.closed_at) FROM ${preventionCommitteeMeetings} m
+          WHERE m.committee_id = ${preventionCommittees.id} AND m.status = 'closed'
+        ), ${preventionCommittees.createdAt}) < (NOW() - INTERVAL '2 months')
+    `)
+
+    add("cphs", sql`
+      SELECT 'cphs_mandate'::text AS source_type, ${preventionCommittees.id} AS source_id, 'renew'::text AS action_key,
+        'cphs'::text AS module, NULL::text AS code,
+        CASE WHEN ${preventionCommittees.mandateEndsOn} < ${startOfChileDay()}
+          THEN 'El mandato del comité está vencido'
+          ELSE 'El mandato del comité vence pronto' END AS title,
+        ${preventionCommittees.name} AS subtitle,
+        ${preventionCommittees.worksiteId} AS worksite_id, ${worksites.name} AS worksite_name, 'pending'::text AS status,
+        CASE WHEN ${preventionCommittees.mandateEndsOn} < ${startOfChileDay()} THEN 'Vencido' ELSE 'Por vencer' END AS status_label,
+        CASE WHEN ${preventionCommittees.mandateEndsOn} < ${startOfChileDay()} THEN 'critical' ELSE 'high' END AS priority,
+        false AS blocked, ${preventionCommittees.createdAt}::text AS created_at,
+        ${preventionCommittees.mandateEndsOn} AS source_due_at,
+        ${emptyAssignee} AS native_assignee_user_id, ${emptyAssignee} AS native_assignee_name,
+        CONCAT('/prevencion/cphs/', ${preventionCommittees.id}) AS href, 'Revisar mandato'::text AS cta_label, false AS assignable
+      FROM ${preventionCommittees}
+      INNER JOIN ${worksites} ON ${worksites.id} = ${preventionCommittees.worksiteId}
+      WHERE ${inScope(preventionCommittees.worksiteId)} AND ${preventionCommittees.status} = 'active'
+        AND ${preventionCommittees.mandateEndsOn} <= TO_CHAR((NOW() + INTERVAL '60 days'), 'YYYY-MM-DD')
+    `)
+
+    // El plazo de una actividad es su `due_on` o el último día del mes
+    // planificado, la misma regla que `activityDeadline` en la lógica pura.
+    add("cphs", sql`
+      SELECT 'cphs_program_activity'::text AS source_type, ${preventionCommitteeProgramActivities.id} AS source_id,
+        'complete'::text AS action_key, 'cphs'::text AS module, NULL::text AS code,
+        ${preventionCommitteeProgramActivities.title} AS title,
+        CONCAT('Programa ', ${preventionCommitteePrograms.year}, ' · ', ${preventionCommittees.name}) AS subtitle,
+        ${preventionCommittees.worksiteId} AS worksite_id, ${worksites.name} AS worksite_name, 'overdue'::text AS status,
+        'Actividad atrasada'::text AS status_label, 'normal'::text AS priority, false AS blocked,
+        ${preventionCommitteeProgramActivities.createdAt}::text AS created_at,
+        COALESCE(${preventionCommitteeProgramActivities.dueOn}, TO_CHAR(
+          (MAKE_DATE(${preventionCommitteePrograms.year}, ${preventionCommitteeProgramActivities.plannedMonth}, 1)
+            + INTERVAL '1 month' - INTERVAL '1 day'), 'YYYY-MM-DD')) AS source_due_at,
+        ${emptyAssignee} AS native_assignee_user_id, ${emptyAssignee} AS native_assignee_name,
+        CONCAT('/prevencion/cphs/', ${preventionCommittees.id}, '/programa?programa=', ${preventionCommitteePrograms.id}) AS href,
+        'Cerrar actividad'::text AS cta_label, false AS assignable
+      FROM ${preventionCommitteeProgramActivities}
+      INNER JOIN ${preventionCommitteePrograms} ON ${preventionCommitteePrograms.id} = ${preventionCommitteeProgramActivities.programId}
+      INNER JOIN ${preventionCommittees} ON ${preventionCommittees.id} = ${preventionCommitteePrograms.committeeId}
+      INNER JOIN ${worksites} ON ${worksites.id} = ${preventionCommittees.worksiteId}
+      WHERE ${inScope(preventionCommittees.worksiteId)}
+        AND ${preventionCommitteePrograms.status} = 'active'
+        AND ${preventionCommitteeProgramActivities.status} = 'planned'
+        AND COALESCE(${preventionCommitteeProgramActivities.dueOn}, TO_CHAR(
+          (MAKE_DATE(${preventionCommitteePrograms.year}, ${preventionCommitteeProgramActivities.plannedMonth}, 1)
+            + INTERVAL '1 month' - INTERVAL '1 day'), 'YYYY-MM-DD')) < ${startOfChileDay()}
+    `)
+  }
+
   return branches
 }
 
@@ -942,10 +1071,15 @@ export async function probeOperationalSourceBranches(
       return { branch, error }
     }
   }))
-  const failingModules = [...new Set(probes.filter((probe) => probe.error).map((probe) => probe.branch.module))]
+  const healthy: OperationalSourceBranch[] = []
+  const failingModules = new Set<OperationalSourceBranch["module"]>()
+  for (const probe of probes) {
+    if (probe.error) failingModules.add(probe.branch.module)
+    else healthy.push(probe.branch)
+  }
   return {
-    healthy: probes.filter((probe) => !probe.error).map((probe) => probe.branch),
-    sourceErrors: failingModules.map((module) => ({
+    healthy,
+    sourceErrors: [...failingModules].map((module) => ({
       module,
       message: `No fue posible cargar las tareas de ${module}. El resto de la cola permanece disponible.`,
     })),
@@ -1351,21 +1485,25 @@ export async function getOperationalWorkCount(session: Session) {
         inArray(pdtpObligations.status, ["pending", "overdue", "reported"]),
       )),
     ))
+    // Mismo reparto por origen que las fuentes de la cola (D11): la acción del
+    // PDTP se cuenta aquí y se excluye de la rama CAPA, así el badge no la
+    // cuenta dos veces para quien tiene los dos permisos.
     counts.push(countRows(
-      db.select({ total: count() })
-        .from(pdtpActionPlan)
-        .innerJoin(pdtpExecutions, eq(pdtpActionPlan.executionId, pdtpExecutions.id))
-        .where(and(
-          scopeCondition(scope, pdtpExecutions.worksiteId),
-          inArray(pdtpActionPlan.estado, ["pendiente", "en_proceso", "reabierto"]),
-        )),
+      db.select({ total: count() }).from(preventionCapaActions).where(and(
+        capaScope,
+        eq(preventionCapaActions.sourceType, "pdtp"),
+        inArray(preventionCapaActions.status, CAPA_OPEN_STATUSES),
+      )),
     ))
   }
   if (hasPermission(session, "prevention:capa:view")) {
     counts.push(countRows(
       db.select({ total: count() }).from(preventionCapaActions).where(and(
         capaScope,
-        inArray(preventionCapaActions.status, ["pending", "in_progress", "pending_verification", "reopened"]),
+        hasPermission(session, "prevention:pdtp:view")
+          ? ne(preventionCapaActions.sourceType, "pdtp")
+          : undefined,
+        inArray(preventionCapaActions.status, CAPA_OPEN_STATUSES),
       )),
     ))
   }
@@ -1422,7 +1560,7 @@ export function parseOperationalQueueFilters(input: Record<string, string | stri
     const value = input[key]
     return Array.isArray(value) ? value[0] : value
   }
-  const allowedModules: OperationalModule[] = ["solicitudes", "aprobaciones", "compras", "recepciones", "entregas", "pdtp", "capa", "inspecciones", "documentacion", "ppa", "sst"]
+  const allowedModules: OperationalModule[] = ["solicitudes", "aprobaciones", "compras", "recepciones", "entregas", "pdtp", "capa", "inspecciones", "documentacion", "ppa", "sst", "cphs"]
   const allowedPriorities: WorkPriority[] = ["critical", "high", "normal", "low"]
   const allowedQuick: OperationalQuickFilter[] = ["all", "critical", "overdue", "today", "blocked", "unassigned", "mine"]
   const allowedSort: OperationalSort[] = ["priority", "due", "oldest", "newest"]
