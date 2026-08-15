@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useState, useTransition, type FormEvent, type ReactNode } from "react"
+import { useCallback, useState, useTransition, type ComponentProps, type FormEvent, type ReactNode } from "react"
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import { Badge } from "@/components/ui/badge"
@@ -29,10 +29,23 @@ import {
   stageRiskImportAction,
   transitionRiskMatrixAction,
 } from "./actions"
+import { RiskMapPanel } from "./risk-map-panel"
 
 type Dashboard = Awaited<ReturnType<typeof getRiskDashboard>>
 type Imports = Awaited<ReturnType<typeof listRiskImportBatchesPage>>["rows"]
 type Result = { ok: boolean; message?: string }
+const MIPER_TABS = new Set(["versions", "reviews", "imports", "riskmap"])
+
+function resolveMiperTab(value: string | null) {
+  return value && MIPER_TABS.has(value) ? value : "versions"
+}
+
+type RiskMatrixPermissions = {
+  canEdit: boolean
+  canReview: boolean
+  canApprove: boolean
+  canPublish: boolean
+}
 
 const STATUS_LABEL: Record<string, string> = { draft: "Borrador", in_review: "En revisión", reviewed: "Revisada", approved: "Aprobada", published: "Vigente", superseded: "Reemplazada", staged: "En revisión", activated: "Activado" }
 
@@ -110,20 +123,29 @@ function ImportDialog({ worksites }: { worksites: Dashboard["worksites"] }) {
   return <Dialog open={open} onOpenChange={setOpen}><DialogTrigger asChild><Button variant="secondary" disabled={!worksites.length}>Importar Excel</Button></DialogTrigger><DialogContent><form onSubmit={submit} className="space-y-4"><DialogHeader><DialogTitle>Importar MIPER</DialogTitle><DialogDescription>El original y su hash se conservan. Las filas observadas no se activan hasta resolverlas.</DialogDescription></DialogHeader><Field label="Faena"><Select value={worksiteId} onValueChange={setWorksiteId}><SelectTrigger><SelectValue placeholder="Selecciona faena" /></SelectTrigger><SelectContent>{worksites.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select><input type="hidden" name="worksiteId" value={worksiteId} /></Field><Field label="Archivo Excel"><Input name="file" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required /></Field>{operation.message && <p role="status" className="text-sm">{operation.message}</p>}<DialogFooter><Button type="submit" disabled={operation.pending}>Cargar lote</Button></DialogFooter></form></DialogContent></Dialog>
 }
 
-export function MiperWorkbench({ dashboard, imports, importsTotal, importsPagination, currentUserId, canEdit, canReview, canApprove, canPublish }: {
+export function MiperWorkbench({ dashboard, imports, importsTotal, importsPagination, currentUserId, permissions, today, riskMap }: {
   dashboard: Dashboard
   imports: Imports
   importsTotal: number
   importsPagination: PaginationState
   currentUserId: string
-  canEdit: boolean
-  canReview: boolean
-  canApprove: boolean
-  canPublish: boolean
+  permissions: RiskMatrixPermissions
+  today: string
+  riskMap: ComponentProps<typeof RiskMapPanel>
 }) {
+  const { canEdit, canReview, canApprove } = permissions
   const published = dashboard.matrices.filter((item) => item.status === "published")
   const router = useRouter()
   const searchParams = useSearchParams()
+  const [activeTab, setActiveTab] = useState(() => resolveMiperTab(searchParams.get("tab")))
+  const navigateTab = useCallback((value: string) => {
+    setActiveTab(value)
+    const params = new URLSearchParams(searchParams.toString())
+    if (value === "versions") params.delete("tab")
+    else params.set("tab", value)
+    const qs = params.toString()
+    router.replace(qs ? `?${qs}` : "", { scroll: false })
+  }, [router, searchParams])
   const navigateImportsPage = useCallback((page: number) => {
     const params = new URLSearchParams(searchParams.toString())
     if (page > 1) params.set("page", String(page))
@@ -140,16 +162,16 @@ export function MiperWorkbench({ dashboard, imports, importsTotal, importsPagina
         <a href="#revisiones" className="px-4 py-3 hover:bg-[var(--color-surface-2)]"><span className="text-eyebrow">Revisiones pendientes</span><strong className="block text-xl">{dashboard.triggers.length}</strong></a>
       </div>
       {published.length === 0 && <div role="status" className="rounded-lg border border-[var(--color-warning-line)] bg-[var(--color-warning-tint)] p-4 text-sm"><strong>No existe una MIPER vigente en las faenas visibles.</strong><p className="mt-1">Crea o importa una versión, incorpora peligros y completa el workflow segregado.</p></div>}
-      <Tabs defaultValue="versions"><TabsList><TabsTrigger value="versions">Versiones</TabsTrigger><TabsTrigger value="reviews">Revisiones ({dashboard.triggers.length})</TabsTrigger><TabsTrigger value="imports">Importaciones ({importsTotal})</TabsTrigger></TabsList>
+      <Tabs value={activeTab} onValueChange={navigateTab}><TabsList><TabsTrigger value="versions">Versiones</TabsTrigger><TabsTrigger value="reviews">Revisiones ({dashboard.triggers.length})</TabsTrigger><TabsTrigger value="imports">Importaciones ({importsTotal})</TabsTrigger><TabsTrigger value="riskmap">Mapa de riesgos</TabsTrigger></TabsList>
         <TabsContent value="versions" id="versiones" className="space-y-3">
           {dashboard.matrices.length === 0 ? <EmptyState title="Sin versiones MIPER" description="Crea la primera versión usando una metodología validada." /> : dashboard.matrices.map((matrix) => {
             const entries = dashboard.entries.filter((item) => item.entry.matrixId === matrix.id)
-            return <section key={matrix.id} className="rounded-lg border p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><div className="flex items-center gap-2"><h2 className="font-semibold">{matrix.title} · v{matrix.matrixVersion}</h2><Badge variant={variant(matrix.status)}>{STATUS_LABEL[matrix.status] ?? matrix.status}</Badge></div><p className="mt-1 text-sm text-[var(--color-text-subtle)]">{entries.length} peligro(s) · {matrix.revisionReason}</p>{matrix.publishedHashSha256 && <p className="mt-1 font-mono text-xs">SHA-256 {matrix.publishedHashSha256.slice(0, 16)}…</p>}</div><div className="flex flex-wrap gap-2">{matrix.status === "draft" && canEdit && <AddRiskDialog matrixId={matrix.id} />}{matrix.status === "published" && <Button variant="secondary" asChild><Link href={`/api/prevencion/miper/${matrix.id}/export`}>Exportar Excel</Link></Button>}<MatrixTransition matrix={matrix} currentUserId={currentUserId} canEdit={canEdit} canReview={canReview} canApprove={canApprove} canPublish={canPublish} /></div></div>
+            return <section key={matrix.id} className="rounded-lg border p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><div className="flex items-center gap-2"><h2 className="font-semibold">{matrix.title} · v{matrix.matrixVersion}</h2><Badge variant={variant(matrix.status)}>{STATUS_LABEL[matrix.status] ?? matrix.status}</Badge></div><p className="mt-1 text-sm text-[var(--color-text-subtle)]">{entries.length} peligro(s) · {matrix.revisionReason}</p>{matrix.publishedHashSha256 && <p className="mt-1 font-mono text-xs">SHA-256 {matrix.publishedHashSha256.slice(0, 16)}…</p>}</div><div className="flex flex-wrap gap-2">{matrix.status === "draft" && canEdit && <AddRiskDialog matrixId={matrix.id} />}{matrix.status === "published" && <Button variant="secondary" asChild><Link href={`/api/prevencion/miper/${matrix.id}/export`}>Exportar Excel</Link></Button>}<MatrixTransition matrix={matrix} currentUserId={currentUserId} permissions={permissions} today={today} /></div></div>
               {entries.length > 0 && <div className="mt-3 grid gap-2 md:grid-cols-2">{entries.slice(0, 8).map(({ entry, process, task, position }) => <div key={entry.id} className="rounded border p-3 text-sm"><div className="flex justify-between gap-2"><strong>{entry.hazardCode} · {entry.hazard}</strong>{entry.isCritical && <Badge variant="danger">Crítico</Badge>}</div><p className="mt-1 text-[var(--color-text-subtle)]">{process.name} → {task.name} → {position.name}</p><p className="mt-1">Residual: {entry.residualLevel}</p></div>)}</div>}
             </section>
           })}
         </TabsContent>
-        <TabsContent value="reviews" id="revisiones" className="space-y-3">{dashboard.triggers.length === 0 ? <EmptyState title="Sin revisiones pendientes" description="La revisión anual y los cambios/incidentes crearán tareas aquí." /> : dashboard.triggers.map((trigger) => <div key={trigger.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-4"><div><div className="flex gap-2"><strong>{trigger.description}</strong><Badge variant={trigger.dueAt < new Date().toISOString().slice(0, 10) ? "danger" : "warning"}>{formatDate(trigger.dueAt)}</Badge></div><p className="text-xs text-[var(--color-text-subtle)]">Origen {trigger.sourceType} · {trigger.sourceId}</p></div>{canReview && <ResolveTriggerDialog triggerId={trigger.id} matrices={published.filter((item) => item.worksiteId === trigger.worksiteId)} />}</div>)}</TabsContent>
+        <TabsContent value="reviews" id="revisiones" className="space-y-3">{dashboard.triggers.length === 0 ? <EmptyState title="Sin revisiones pendientes" description="La revisión anual y los cambios/incidentes crearán tareas aquí." /> : dashboard.triggers.map((trigger) => <div key={trigger.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-4"><div><div className="flex gap-2"><strong>{trigger.description}</strong><Badge variant={trigger.dueAt < today ? "danger" : "warning"}>{formatDate(trigger.dueAt)}</Badge></div><p className="text-xs text-[var(--color-text-subtle)]">Origen {trigger.sourceType} · {trigger.sourceId}</p></div>{canReview && <ResolveTriggerDialog triggerId={trigger.id} matrices={published.filter((item) => item.worksiteId === trigger.worksiteId)} />}</div>)}</TabsContent>
         <TabsContent value="imports" className="space-y-3">
           {imports.length === 0 ? <EmptyState title="Sin importaciones" description="Carga un Excel para conservar el original y revisar su normalización." /> : imports.map((batch) => <ImportBatch key={batch.id} batch={batch} methodologies={dashboard.methodologies} canEdit={canEdit} canApprove={canApprove} currentUserId={currentUserId} />)}
           {importsPagination.totalPages > 1 && (
@@ -157,6 +179,9 @@ export function MiperWorkbench({ dashboard, imports, importsTotal, importsPagina
               <Pagination page={importsPagination.page} total={importsPagination.totalItems} perPage={importsPagination.limit} onPage={navigateImportsPage} />
             </div>
           )}
+        </TabsContent>
+        <TabsContent value="riskmap" className="space-y-3">
+          <RiskMapPanel {...riskMap} />
         </TabsContent>
       </Tabs>
       {dashboard.criticalBlockers.length > 0 && <section id="bloqueos" className="rounded-lg border border-[var(--color-danger-line)] p-4"><h2 className="font-semibold">Bloqueos críticos</h2><p className="text-sm text-[var(--color-text-subtle)]">Un riesgo crítico permanece aquí si no tiene control crítico implementado/verificado o cobertura PDTP.</p><ul className="mt-3 space-y-2">{dashboard.criticalBlockers.map(({ entry, process, task }) => <li key={entry.id} className="text-sm"><strong>{entry.hazard}</strong> · {process.name} / {task.name}</li>)}</ul></section>}
@@ -175,12 +200,13 @@ function AddRiskDialog({ matrixId }: { matrixId: string }) {
   return <Dialog open={open} onOpenChange={setOpen}><DialogTrigger asChild><Button size="sm">Agregar peligro</Button></DialogTrigger><DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto"><form onSubmit={submit} className="space-y-4"><DialogHeader><DialogTitle>Agregar peligro y control</DialogTitle><DialogDescription>La jerarquía y evaluación quedan congeladas en esta versión.</DialogDescription></DialogHeader><div className="grid gap-3 md:grid-cols-3"><Field label="Proceso"><Input name="process" required /></Field><Field label="Código proceso"><Input name="processCode" required /></Field><span /><Field label="Tarea"><Input name="task" required /></Field><Field label="Código tarea"><Input name="taskCode" required /></Field><span /><Field label="Puesto"><Input name="position" required /></Field><Field label="Código puesto"><Input name="positionCode" required /></Field><span /></div><div className="grid gap-3 md:grid-cols-2"><Field label="Código peligro"><Input name="hazardCode" required /></Field><Field label="Peligro"><Input name="hazard" required /></Field><Field label="Factor"><Input name="factor" required /></Field><Field label="Evento o daño"><Input name="damage" required /></Field><Field label="Personas expuestas"><Input name="exposed" required /></Field><Field label="Cantidad"><Input name="count" type="number" min="0" defaultValue="0" /></Field><Field label="Evaluación inherente"><Input name="inherent" required /></Field><Field label="Riesgo residual"><Input name="residual" required /></Field></div><Field label="Enfoque de género"><Textarea name="gender" required minLength={3} /></Field><Field label="Personas especialmente sensibles"><Textarea name="sensitivity" required minLength={3} /></Field><div className="grid gap-3 md:grid-cols-2"><Field label="Responsable"><Input name="responsible" required /></Field><Field label="Evidencia"><Input name="evidence" /></Field></div><Checkbox name="critical" label="Riesgo/control crítico" /><Field label="Control existente o planificado"><Textarea name="control" /></Field><div className="grid gap-3 md:grid-cols-3"><Field label="Jerarquía"><Select value={hierarchy} onValueChange={setHierarchy}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="elimination">Eliminación</SelectItem><SelectItem value="substitution">Sustitución</SelectItem><SelectItem value="engineering">Ingeniería</SelectItem><SelectItem value="administrative">Administrativo</SelectItem><SelectItem value="ppe">EPP</SelectItem></SelectContent></Select><input type="hidden" name="hierarchy" value={hierarchy} /></Field><Field label="Estándar crítico"><Input name="standard" /></Field><Field label="Frecuencia"><Input name="frequency" /></Field></div>{operation.message && <p role="status" className="text-sm">{operation.message}</p>}<DialogFooter><Button type="submit" disabled={operation.pending}>Guardar peligro</Button></DialogFooter></form></DialogContent></Dialog>
 }
 
-function MatrixTransition({ matrix, currentUserId, canEdit, canReview, canApprove, canPublish }: { matrix: Dashboard["matrices"][number]; currentUserId: string; canEdit: boolean; canReview: boolean; canApprove: boolean; canPublish: boolean }) {
+function MatrixTransition({ matrix, currentUserId, permissions, today }: { matrix: Dashboard["matrices"][number]; currentUserId: string; permissions: RiskMatrixPermissions; today: string }) {
+  const { canEdit, canReview, canApprove, canPublish } = permissions
   const next = matrix.status === "draft" && canEdit ? ["in_review", "Enviar a revisión"] : matrix.status === "in_review" && canReview && matrix.createdByUserId !== currentUserId ? ["reviewed", "Revisar"] : matrix.status === "reviewed" && canApprove && matrix.createdByUserId !== currentUserId && matrix.reviewedByUserId !== currentUserId ? ["approved", "Aprobar"] : matrix.status === "approved" && canPublish ? ["published", "Publicar"] : null
   const [open, setOpen] = useState(false); const operation = useOperation()
   if (!next) return null
   function submit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); const v = new FormData(event.currentTarget); operation.run(() => transitionRiskMatrixAction({ matrixId: matrix.id, expectedVersion: matrix.version, toStatus: next![0], reason: v.get("reason"), effectiveFrom: next![0] === "published" ? v.get("effectiveFrom") : undefined }), () => setOpen(false)) }
-  return <Dialog open={open} onOpenChange={setOpen}><DialogTrigger asChild><Button size="sm" variant="secondary">{next[1]}</Button></DialogTrigger><DialogContent><form onSubmit={submit} className="space-y-4"><DialogHeader><DialogTitle>{next[1]} MIPER v{matrix.matrixVersion}</DialogTitle><DialogDescription>La decisión quedará en el historial con actor y fecha.</DialogDescription></DialogHeader><Field label="Fundamento"><Textarea name="reason" required minLength={10} /></Field>{next[0] === "published" && <Field label="Vigente desde"><DatePicker name="effectiveFrom" defaultValue={new Date().toISOString().slice(0, 10)} /></Field>}{operation.message && <p role="status" className="text-sm">{operation.message}</p>}<DialogFooter><Button type="submit" disabled={operation.pending}>{next[1]}</Button></DialogFooter></form></DialogContent></Dialog>
+  return <Dialog open={open} onOpenChange={setOpen}><DialogTrigger asChild><Button size="sm" variant="secondary">{next[1]}</Button></DialogTrigger><DialogContent><form onSubmit={submit} className="space-y-4"><DialogHeader><DialogTitle>{next[1]} MIPER v{matrix.matrixVersion}</DialogTitle><DialogDescription>La decisión quedará en el historial con actor y fecha.</DialogDescription></DialogHeader><Field label="Fundamento"><Textarea name="reason" required minLength={10} /></Field>{next[0] === "published" && <Field label="Vigente desde"><DatePicker name="effectiveFrom" defaultValue={today} /></Field>}{operation.message && <p role="status" className="text-sm">{operation.message}</p>}<DialogFooter><Button type="submit" disabled={operation.pending}>{next[1]}</Button></DialogFooter></form></DialogContent></Dialog>
 }
 
 function ResolveTriggerDialog({ triggerId, matrices }: { triggerId: string; matrices: Dashboard["matrices"] }) {

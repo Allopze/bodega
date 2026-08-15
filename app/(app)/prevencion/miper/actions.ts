@@ -22,6 +22,10 @@ import {
   resolveRiskImportRow,
   stageRiskImport,
 } from "@/lib/services/prevention-risk-import"
+import {
+  addRiskMapMarker,
+  removeRiskMapMarker,
+} from "@/lib/services/prevention-risk-map"
 import type { ActionState } from "@/lib/validation/prevention"
 
 const REVALIDATE = "/prevencion/miper"
@@ -118,4 +122,18 @@ export async function activateRiskImportBatchAction(input: unknown): Promise<Act
   const guard = await guardPermission("prevention:risk:edit")
   if (guard.error) return guard.error
   return run(accessFromSession(guard.session), (access) => activateRiskImportBatch(input, access))
+}
+
+/* ── Mapa de riesgos ───────────────────────────────────────────────────────── */
+
+export async function addRiskMapMarkerAction(input: unknown): Promise<ActionState> {
+  const guard = await guardPermission("prevention:risk:edit")
+  if (guard.error) return guard.error
+  return run(accessFromSession(guard.session), (access) => addRiskMapMarker(input, access))
+}
+
+export async function removeRiskMapMarkerAction(input: unknown): Promise<ActionState> {
+  const guard = await guardPermission("prevention:risk:edit")
+  if (guard.error) return guard.error
+  return run(accessFromSession(guard.session), (access) => removeRiskMapMarker(input, access))
 }
