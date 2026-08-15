@@ -73,6 +73,12 @@ export const CHIPAX_CONTRACT_BLOCKER =
 const REQUEST_SPACING_MS = 1100
 /** Tamaño de página observado en `/dtes`; la API no permite cambiarlo. */
 const DTE_PAGE_SIZE = 50
+/** Límite defensivo para cartolas, cuyo tamaño no está fijado por el contrato. */
+const BANK_PAGE_SIZE = 500
+/** El total declarado no puede abrir una corrida de páginas sin límite. */
+const MAX_DECLARED_PAGES = 10_000
+/** Nunca se obedece un Retry-After arbitrariamente largo. */
+const MAX_RETRY_AFTER_MS = 30_000
 
 interface ChipaxDte {
   id: number
@@ -165,18 +171,15 @@ export class ChipaxProvider implements BillingProvider {
       page: String(page),
     })
 
-    const body = await this.get<{ items?: ChipaxDte[]; paginationAttributes?: { count?: number; totalPages?: number } }>(
-      `/dtes?${params}`,
-    )
-    // El contrato declara un array plano; la API devuelve un envoltorio. Se
-    // aceptan ambos para no romperse si lo corrigen.
-    const items = Array.isArray(body) ? (body as ChipaxDte[]) : body.items ?? []
-    const totalPages = body?.paginationAttributes?.totalPages ?? 1
+    const body = await this.get<unknown>(`/dtes?${params}`)
+    const parsed = parseDteResponse(body, page)
+    const items = parsed.items
+    const totalPages = parsed.totalPages
 
     return {
       items: items.map((dte) => this.mapDte(dte, config.companyTaxId)),
       nextCursor: page < totalPages ? String(page + 1) : null,
-      reportedTotal: body?.paginationAttributes?.count ?? null,
+      reportedTotal: parsed.reportedTotal,
     }
   }
 
@@ -193,15 +196,14 @@ export class ChipaxProvider implements BillingProvider {
       page: String(page),
     })
 
-    const body = await this.get<{ docs?: ChipaxCartola[]; pages?: number; total?: number }>(
-      `/flujo-caja/cartolas?${params}`,
-    )
-    const docs = body.docs ?? []
+    const body = await this.get<unknown>(`/flujo-caja/cartolas?${params}`)
+    const parsed = parseCartolaResponse(body, page)
+    const docs = parsed.items
 
     return {
       items: docs.map(mapCartola),
-      nextCursor: page < (body.pages ?? 1) ? String(page + 1) : null,
-      reportedTotal: body.total ?? null,
+      nextCursor: page < parsed.totalPages ? String(page + 1) : null,
+      reportedTotal: parsed.reportedTotal,
     }
   }
 
@@ -248,8 +250,8 @@ export class ChipaxProvider implements BillingProvider {
     return body.token
   }
 
-  /** GET autenticado, espaciado y con reintento único ante 401 o 429. */
-  private async get<T>(path: string, retry = true): Promise<T> {
+  /** GET autenticado, espaciado y con un reintento único ante 401 y 429. */
+  private async get<T>(path: string, retry401 = true, retry429 = true): Promise<T> {
     const config = readChipaxConfig()
 
     // Autenticar primero y espaciar después: `authenticate()` espacia su
@@ -266,17 +268,23 @@ export class ChipaxProvider implements BillingProvider {
       redirect: "manual",
     })
 
-    if (response.status === 401 && retry) {
+    if (response.status === 401 && retry401) {
       // Token vencido a mitad de camino: se renueva UNA vez y se repite una
       // sola consulta idempotente. Un segundo 401 detiene el flujo.
       this.token = null
-      return this.get<T>(path, false)
+      return this.get<T>(path, false, retry429)
+    }
+
+    if (response.status === 429 && retry429) {
+      const retryAfter = parseRetryAfter(response.headers.get("retry-after"))
+      if (retryAfter > 0) await new Promise((resolve) => setTimeout(resolve, retryAfter))
+      return this.get<T>(path, retry401, false)
     }
 
     if (response.status === 429) {
-      const retryAfter = Number(response.headers.get("retry-after") ?? "0")
+      const retryAfter = parseRetryAfter(response.headers.get("retry-after"))
       throw new BillingProviderError(
-        `Chipax aplicó límite de tasa. Reintenta en ${retryAfter || 60} segundos.`,
+        `Chipax aplicó límite de tasa después del reintento. Reintenta en ${Math.ceil(retryAfter / 1000) || 60} segundos.`,
         "RATE_LIMITED",
         PROVIDER_ID,
       )
@@ -361,7 +369,13 @@ function parseCursor(cursor: string | null | undefined): number {
 }
 
 function isoDay(value: string): string {
-  return String(value).slice(0, 10)
+  const day = String(value).slice(0, 10)
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) invalidResponse("fecha con formato inválido")
+  const parsed = new Date(`${day}T00:00:00.000Z`)
+  if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== day) {
+    invalidResponse("fecha inválida")
+  }
+  return day
 }
 
 function numberOrNull(value: number | null | undefined): number | null {
@@ -381,3 +395,122 @@ function redact(error: unknown): string {
 }
 
 export { DTE_PAGE_SIZE }
+
+function parseDteResponse(body: unknown, page: number): {
+  items: ChipaxDte[]
+  totalPages: number
+  reportedTotal: number | null
+} {
+  const envelope = Array.isArray(body) ? { items: body } : record(body)
+  const items = envelope.items
+  if (!Array.isArray(items) || items.length > DTE_PAGE_SIZE) invalidResponse("/dtes: items inválidos o sobre el límite de 50")
+  const pagination = envelope.paginationAttributes === undefined ? {} : record(envelope.paginationAttributes)
+  const totalPages = positivePageCount(pagination.totalPages ?? 1, page)
+  const reportedTotal = optionalNonNegativeNumber(pagination.count)
+  return { items: items.map(parseDte), totalPages, reportedTotal }
+}
+
+function parseCartolaResponse(body: unknown, page: number): {
+  items: ChipaxCartola[]
+  totalPages: number
+  reportedTotal: number | null
+} {
+  // The published contract has also returned a plain array in older tenants;
+  // accept it as a one-page response while keeping the runtime checks below.
+  const envelope = Array.isArray(body) ? { docs: body } : record(body)
+  const items = envelope.docs
+  if (!Array.isArray(items) || items.length > BANK_PAGE_SIZE) invalidResponse("/flujo-caja/cartolas: docs inválidos o sobre el límite permitido")
+  const totalPages = positivePageCount(envelope.pages ?? 1, page)
+  const reportedTotal = optionalNonNegativeNumber(envelope.total)
+  return { items: items.map(parseCartola), totalPages, reportedTotal }
+}
+
+function parseDte(value: unknown): ChipaxDte {
+  const row = record(value)
+  return {
+    id: positiveInteger(row.id, "id"),
+    tipo: positiveInteger(row.tipo, "tipo"),
+    folio: nonNegativeInteger(row.folio, "folio"),
+    rut: requiredString(row.rut, "rut"),
+    razonSocial: requiredString(row.razonSocial, "razonSocial"),
+    fechaEmision: requiredString(row.fechaEmision, "fechaEmision"),
+    fechaVencimiento: row.fechaVencimiento === null ? null : optionalString(row.fechaVencimiento, "fechaVencimiento"),
+    montoNeto: finiteNumber(row.montoNeto, "montoNeto"),
+    montoExento: finiteNumber(row.montoExento, "montoExento"),
+    montoTotal: finiteNumber(row.montoTotal, "montoTotal"),
+    iva: finiteNumber(row.iva, "iva"),
+  }
+}
+
+function parseCartola(value: unknown): ChipaxCartola {
+  const row = record(value)
+  return {
+    id: positiveInteger(row.id, "id"),
+    fecha: requiredString(row.fecha, "fecha"),
+    abono: finiteNumber(row.abono, "abono"),
+    cargo: finiteNumber(row.cargo, "cargo"),
+    descripcion: row.descripcion === null ? null : optionalString(row.descripcion, "descripcion"),
+    comentario_transferencia: row.comentario_transferencia === null
+      ? null
+      : optionalString(row.comentario_transferencia, "comentario_transferencia"),
+    cuenta_corriente_id: positiveInteger(row.cuenta_corriente_id, "cuenta_corriente_id"),
+  }
+}
+
+function record(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) invalidResponse("respuesta no es un objeto")
+  return value as Record<string, unknown>
+}
+
+function requiredString(value: unknown, field: string): string {
+  if (typeof value !== "string" || value.trim() === "") invalidResponse(`${field} ausente`)
+  return value
+}
+
+function optionalString(value: unknown, field: string): string {
+  if (typeof value !== "string") invalidResponse(`${field} inválido`)
+  return value
+}
+
+function finiteNumber(value: unknown, field: string): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) invalidResponse(`${field} no es numérico`)
+  return value
+}
+
+function positiveInteger(value: unknown, field: string): number {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 1) invalidResponse(`${field} inválido`)
+  return value
+}
+
+function nonNegativeInteger(value: unknown, field: string): number {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) invalidResponse(`${field} inválido`)
+  return value
+}
+
+function optionalNonNegativeNumber(value: unknown): number | null {
+  if (value === undefined || value === null) return null
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) invalidResponse("total declarado inválido")
+  return value
+}
+
+function positivePageCount(value: unknown, page: number): number {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 1 || value > MAX_DECLARED_PAGES || page > value) {
+    invalidResponse("total de páginas inválido")
+  }
+  return value
+}
+
+function parseRetryAfter(value: string | null): number {
+  if (!value) return 0
+  const seconds = Number(value)
+  if (Number.isFinite(seconds) && seconds >= 0) {
+    return Math.min(Math.trunc(seconds * 1000), MAX_RETRY_AFTER_MS)
+  }
+  const retryAt = Date.parse(value)
+  if (!Number.isFinite(retryAt)) return 0
+  return Math.min(Math.max(retryAt - Date.now(), 0), MAX_RETRY_AFTER_MS)
+}
+
+function invalidResponse(detail: string): never {
+  throw new BillingProviderError(`Respuesta inválida de Chipax: ${detail}.`, "INVALID_RESPONSE", PROVIDER_ID)
+}

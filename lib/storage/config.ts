@@ -7,6 +7,7 @@ const SERVICE_QUOTATION_PREFIX = "storage/servicios/"
 const FLEET_DOCUMENT_PREFIX = "storage/flota/"
 const SST_DOCUMENT_PREFIX = "storage/sst-documents/"
 const PDTP_EVIDENCE_PREFIX = "storage/pdtp-evidence/"
+const RISK_MAP_PREFIX = "storage/risk-map/"
 const FUEL_IMPORT_PREFIX = "storage/imports/"
 const FUEL_TAE_EVIDENCE_PREFIX = "storage/fuel-tae/"
 const PREVENTION_SENSITIVE_FILE_PREFIX = "storage/prevention-sensitive/"
@@ -230,6 +231,34 @@ export function resolvePdtpEvidenceFile(filePath: string): string | null {
     return null
   }
   return path.join(/*turbopackIgnore: true*/ resolvePdtpEvidenceDir(), storageName)
+}
+
+/* ── Mapa de riesgos (MIPER) ──────────────────────────────────────────────
+ *
+ * Almacenamiento para el plano de planta de cada faena sobre el que se ubican
+ * los marcadores de riesgo. Un plano por faena a la vez (el anterior se
+ * archiva, no se borra). Mismo criterio anti-traversal que la evidencia PDTP.
+ */
+export function resolveRiskMapDir(): string {
+  return path.join(/*turbopackIgnore: true*/ resolveStorageDir(), "risk-map")
+}
+
+export function createRiskMapPath(storageName: string): string {
+  if (!isSafeStorageName(storageName)) {
+    throw new Error("Invalid risk map storage name")
+  }
+  return `${RISK_MAP_PREFIX}${storageName}`
+}
+
+export function resolveRiskMapFile(filePath: string): string | null {
+  if (!filePath.startsWith(RISK_MAP_PREFIX)) {
+    return null
+  }
+  const storageName = filePath.slice(RISK_MAP_PREFIX.length)
+  if (!isSafeStorageName(storageName)) {
+    return null
+  }
+  return path.join(/*turbopackIgnore: true*/ resolveRiskMapDir(), storageName)
 }
 
 /* ── Importaciones de combustible ────────────────────────────────────────────

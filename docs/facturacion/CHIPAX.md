@@ -2,6 +2,10 @@
 
 ## Estado: IMPLEMENTADO contra el contrato real y verificado en vivo.
 
+La integración es de **solo lectura**. `BILLING_CHIPAX_ENABLED` indica que el
+proveedor está disponible; `BILLING_CHIPAX_SYNC_ENABLED` controla únicamente la
+automatización y puede permanecer apagado para uso manual.
+
 ## Dónde está el contrato
 
 El documento OpenAPI **no** está en `/v2/swagger.json` —eso devuelve 404— sino
@@ -86,6 +90,24 @@ fuente de movimientos en producción.
 
 Una capacidad se activa **después** de verificar su operación, nunca antes.
 
+## Automatización y períodos
+
+El endpoint protegido `/api/cron/chipax-sync` ejecuta una corrida con un único
+`correlationId` para estos tres alcances, en este orden:
+
+1. ventas del mes actual;
+2. ventas del mes anterior;
+3. cartolas del mes actual.
+
+El scheduler interno lo llama una vez al día a las **09:00
+`America/Santiago`**. Una corrida completa elimina el cursor durable; una
+corrida parcial o interrumpida conserva el cursor en
+`system_settings` (`billing.sync_cursor.chipax.<alcance>.<YYYY-MM>`), y
+`billing_sync_runs.cursor` deja la evidencia de la página retomable. Repetir
+una página es seguro porque la identidad `(provider, external_id)` es
+idempotente. El endpoint devuelve `503` degradado para resultados parciales y
+`409` si existe una corrida activa.
+
 ## Configuración
 
 ```bash
@@ -94,6 +116,7 @@ CHIPAX_SECRET_KEY=             # secreto de aplicación
 CHIPAX_API_BASE_URL=           # vacío → https://api.chipax.com/v2
 CHIPAX_REQUEST_TIMEOUT_MS=30000
 BILLING_CHIPAX_ENABLED=true    # feature flag del proveedor
+BILLING_CHIPAX_SYNC_ENABLED=false # automatización diaria a las 09:00 Chile
 BILLING_COMPANY_TAX_ID=        # vacío → usa DTE_PORTAL_RUT_EMP
 ```
 
@@ -112,7 +135,19 @@ el repositorio, nunca con prefijo `NEXT_PUBLIC_`.
 - Ante `401` se renueva **una** vez y se repite **una** consulta idempotente. Un
   segundo `401` detiene el flujo.
 - Las solicitudes se espacian ~1,1 s para no acercarse al límite de 60/min.
-- Ante `429` se informa el `Retry-After` en vez de reintentar a ciegas.
+- Las respuestas se validan en runtime: identificadores, fechas, montos,
+  tamaño de página y total de páginas. Un contrato inválido queda como
+  `INVALID_RESPONSE`, no como una falla de red.
+- Ante `429` se hace **un solo** reintento, respetando `Retry-After` con un
+  máximo de 30 segundos. Un segundo `429` termina como `RATE_LIMITED`.
+- El spacing existente mantiene el límite operativo documentado de **60
+  solicitudes por minuto**; el cron no escribe pagos ni confirma movimientos
+  en Chipax.
+
+## Fuente del límite operativo
+
+El límite y el uso de la API están documentados por Chipax en
+[Cómo y para qué utilizar la API de Chipax](https://ayuda.chipax.com/es/articles/5423394-como-y-para-que-utilizar-la-api-de-chipax).
 
 ## Lo que sigue en manos de una persona
 

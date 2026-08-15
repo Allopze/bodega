@@ -2,25 +2,46 @@
 
 ## Puesta en marcha
 
-1. **Aplicar la migración**
+1. **Ejecutar el preflight y aplicar la migración**
    ```bash
-   npm run db:migrate          # aplica 0136_billing_module
+   npm run db:preflight-dte-single-link
+   npm run db:migrate          # vuelve a ejecutar el preflight antes de migrar
    npm run db:verify-migrations
    ```
-2. **Sincronizar permisos**
+   El preflight bloquea la creación del índice único si encuentra un DTE
+   vinculado simultáneamente a OC y combustible o más de un DTE para la misma
+   factura de OC.
+2. **Si hay duplicados históricos, reparar explícitamente**
+   ```bash
+   npm run db:repair-dte-single-link
+   npm run db:repair-dte-single-link -- --apply --mapping ./mapping-dte.json --actor usuario@chome.cl
+   ```
+   El primer comando sólo reporta. El segundo exige una decisión por cada fila,
+   bloquea y valida que la selección no haya cambiado, desvincula sólo lo
+   indicado y deja auditoría con actor, fecha, DTE conservado y DTE retirado.
+   Nunca elige un ganador automáticamente. Repetir el preflight hasta obtener
+   cero conflictos antes de migrar.
+3. **Sincronizar permisos**
    ```bash
    npm run db:sync-rbac        # crea los 12 permisos billing:* y sus grants
    ```
-3. **Registrar el maestro comercial** en `/facturacion/clientes`: al menos un
+4. **Registrar el maestro comercial** en `/facturacion/clientes`: al menos un
    cliente con su RUT y su plazo de pago. Sin clientes, las facturas se
    sincronizan igual pero no se pueden atribuir.
-4. **Configurar la sincronización de ventas**: usa las mismas credenciales del
+5. **Configurar la sincronización de ventas**: usa las mismas credenciales del
    portal DTE ya configuradas para Compras.
    ```
    BILLING_SALES_SYNC_ENABLED=true
    ```
-5. **Primera corrida**: `/facturacion/sincronizacion` → *Simular* el mes anterior
+6. **Primera corrida**: `/facturacion/sincronizacion` → *Simular* el mes anterior
    → revisar → *Sincronizar*.
+   Para Chipax, separar disponibilidad de automatización:
+   ```
+   BILLING_CHIPAX_ENABLED=true
+   BILLING_CHIPAX_SYNC_ENABLED=true   # 09:00 America/Santiago
+   ```
+   El cron de Chipax cubre ventas del mes actual/anterior y cartolas del mes
+   actual. Conserva cursores durables y es sólo lectura.
 
 ## Uso diario
 
@@ -101,7 +122,11 @@ la lea como un inventario completo del trabajo realizado.
 | Situación | Acción |
 |---|---|
 | Corrida colgada en `running` | Se marca `failed` sola tras 1 h, en la siguiente ejecución del mismo alcance. |
+| Corrida `partial` de Chipax | Revisar el cursor durable y `error_summary`; la siguiente ejecución retoma sin volver silenciosamente a página 1. |
+| Conciliación DTE `partial` o `failed` | Revisar `reconciliation_status`/`reconciliation_error`; no confundirlo con la ingesta y no declarar health operativo. |
 | Facturas sin RUT resuelto | Reintentar la corrida: el XML suele estar disponible después. |
+| Cartola rectificada | Mantener la imputación original; resolver la diferencia de monto/fecha de forma auditada, no sobrescribirla desde el cron. |
+| XML demasiado grande | Se rechaza sobre 10 MiB tanto en descarga como en caché; revisar el documento en origen. |
 | Pago confirmado por error | *Revertir* con motivo. El saldo vuelve y queda registrado quién revirtió. |
 | Vínculo equivocado | *Descartar*. No se borra: queda `rejected` en el historial. |
 | Propuesta aprobada por error | Anular y crear una nueva. Una aprobada no se edita: cambiarle los montos invalidaría la aprobación. |

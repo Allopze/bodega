@@ -6,8 +6,8 @@ import { evaluateDteSyncHealth } from "../health"
 const atSlot = new Date("2026-08-11T11:10:00.000Z") // 07:10 America/Santiago
 const expectedPeriods = ["2026-08", "2026-07"]
 
-function run(period: string, status: "running" | "success" | "partial" | "failed", correlationId = "batch-1", startedAt = "2026-08-11T11:02:00.000Z") {
-  return { period, status, trigger: "cron" as const, correlationId, startedAt }
+function run(period: string, status: "running" | "success" | "partial" | "failed", correlationId = "batch-1", startedAt = "2026-08-11T11:02:00.000Z", extra: Record<string, unknown> = {}) {
+  return { period, status, trigger: "cron" as const, correlationId, startedAt, ...extra }
 }
 
 describe("DTE cron health evaluator", () => {
@@ -42,6 +42,58 @@ describe("DTE cron health evaluator", () => {
     })
     expect(result.status).toBe("healthy")
     expect(result.domains[0]!).toMatchObject({ status: "healthy", code: "DTE_HEALTH_SUCCESS" })
+  })
+
+  it("does not let an older complete batch hide a newer partial batch", () => {
+    const result = evaluateDteSyncHealth({
+      now: atSlot,
+      dteEnabled: true,
+      dteConfigured: true,
+      salesEnabled: false,
+      salesConfigured: false,
+      dteRuns: [
+        run(expectedPeriods[0]!, "success", "batch-old", "2026-08-11T11:02:00.000Z"),
+        run(expectedPeriods[1]!, "success", "batch-old", "2026-08-11T11:03:00.000Z"),
+        run(expectedPeriods[0]!, "partial", "batch-new", "2026-08-11T11:08:00.000Z"),
+      ],
+      salesRuns: [],
+    })
+
+    expect(result.domains[0]).toMatchObject({ status: "degraded", code: "DTE_HEALTH_RUN_PARTIAL" })
+  })
+
+  it("degrades a complete batch when its DTE reconciliation is partial", () => {
+    const result = evaluateDteSyncHealth({
+      now: atSlot,
+      dteEnabled: true,
+      dteConfigured: true,
+      salesEnabled: false,
+      salesConfigured: false,
+      dteRuns: [
+        run(expectedPeriods[0]!, "success", "batch-recon", "2026-08-11T11:02:00.000Z", { reconciliationStatus: "partial" }),
+        run(expectedPeriods[1]!, "success", "batch-recon", "2026-08-11T11:03:00.000Z", { reconciliationStatus: "success" }),
+      ],
+      salesRuns: [],
+    })
+
+    expect(result.domains[0]).toMatchObject({ status: "degraded", code: "DTE_HEALTH_RUN_PARTIAL" })
+  })
+
+  it("marks a complete batch critical when DTE reconciliation fails", () => {
+    const result = evaluateDteSyncHealth({
+      now: atSlot,
+      dteEnabled: true,
+      dteConfigured: true,
+      salesEnabled: false,
+      salesConfigured: false,
+      dteRuns: [
+        run(expectedPeriods[0]!, "success", "batch-recon-failed", "2026-08-11T11:02:00.000Z", { reconciliationStatus: "failed" }),
+        run(expectedPeriods[1]!, "success", "batch-recon-failed", "2026-08-11T11:03:00.000Z", { reconciliationStatus: "success" }),
+      ],
+      salesRuns: [],
+    })
+
+    expect(result.domains[0]).toMatchObject({ status: "critical", code: "DTE_HEALTH_RUN_FAILED" })
   })
 
   it("keeps partial work degraded and ignores manual history", () => {
@@ -98,7 +150,32 @@ describe("DTE cron health evaluator", () => {
       salesRuns: [],
     })
     expect(result.status).toBe("disabled")
-    expect(result.domains.map((domain) => domain.status)).toEqual(["disabled", "disabled"])
+    expect(result.domains.every((domain) => domain.status === "disabled")).toBe(true)
+  })
+
+  it("evaluates Chipax sales and cartolas by scope at the 09:00 slot", () => {
+    const now = new Date("2026-08-11T13:10:00.000Z") // 09:10 Chile
+    const result = evaluateDteSyncHealth({
+      now,
+      dteEnabled: false,
+      dteConfigured: false,
+      salesEnabled: false,
+      salesConfigured: false,
+      dteRuns: [],
+      salesRuns: [],
+      chipaxEnabled: true,
+      chipaxConfigured: true,
+      chipaxSalesRuns: [
+        run("2026-08", "success", "chipax-batch", "2026-08-11T13:02:00.000Z", { scope: "sales_invoices" }),
+        run("2026-07", "success", "chipax-batch", "2026-08-11T13:03:00.000Z", { scope: "sales_invoices" }),
+      ],
+      chipaxBankRuns: [
+        run("2026-08", "success", "chipax-batch", "2026-08-11T13:04:00.000Z", { scope: "bank_transactions" }),
+      ],
+    })
+
+    expect(result.domains.find((domain) => domain.name === "chipax_sales")).toMatchObject({ status: "healthy" })
+    expect(result.domains.find((domain) => domain.name === "chipax_bank")).toMatchObject({ status: "healthy" })
   })
 
   it("reports an enabled but invalid configuration immediately, even outside a due window", () => {

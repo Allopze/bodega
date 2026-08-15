@@ -7,7 +7,7 @@ import { getAllBillingProviders, isProviderEnabled } from "@/lib/services/billin
 import type { BillingProviderCapabilities } from "@/lib/services/billing/providers/types"
 import { deriveProviderStatus, readStoredHealth } from "@/lib/services/billing/health"
 import { listRecentSyncRuns, getLastSuccessfulRuns, todayIso } from "@/lib/services/billing/queries"
-import { readSalesSyncConfig } from "@/lib/services/billing/config"
+import { readChipaxConfig, readSalesSyncConfig } from "@/lib/services/billing/config"
 import {
   formatDateTime,
   providerLabel,
@@ -23,6 +23,14 @@ import { ProviderHealthButton } from "./provider-health-button"
 
 export const dynamic = "force-dynamic"
 export const metadata: Metadata = { title: "Sincronización de facturación" }
+
+const CAPABILITY_CATALOG: [keyof BillingProviderCapabilities, string][] = [
+  ["canListIssuedInvoices", "facturas emitidas"],
+  ["canListReceivedInvoices", "facturas recibidas"],
+  ["canRetrieveXml", "XML del documento"],
+  ["canListBankTransactions", "movimientos bancarios"],
+  ["canListPayments", "pagos"],
+]
 
 /**
  * Centro de sincronización.
@@ -60,6 +68,7 @@ export default async function BillingSyncPage() {
   ])
 
   const salesConfig = readSalesSyncConfig()
+  const chipaxConfig = readChipaxConfig()
   const lastSuccessMap = new Map(lastSuccess.map((row) => [`${row.provider}:${row.scope}`, row.finishedAt]))
 
   const cards = syncProviders.map((provider, index) => ({
@@ -73,6 +82,7 @@ export default async function BillingSyncPage() {
       configured: configured[index]!,
       stored: stored[provider.id] ?? null,
     }),
+    automationEnabled: provider.id === "chipax" ? chipaxConfig.syncEnabled : provider.id === "factura_en_linea" ? salesConfig.enabled : false,
   }))
 
   return (
@@ -118,6 +128,16 @@ export default async function BillingSyncPage() {
                   <dt>Última corrida exitosa (ventas)</dt>
                   <dd>{formatDateTime(lastSuccessMap.get(`${card.id}:sales_invoices`) ?? null)}</dd>
                 </div>
+                {card.id === "chipax" && (
+                  <div className="flex justify-between gap-2">
+                    <dt>Última cartola sincronizada</dt>
+                    <dd>{formatDateTime(lastSuccessMap.get("chipax:bank_transactions") ?? null)}</dd>
+                  </div>
+                )}
+                <div className="flex justify-between gap-2">
+                  <dt>Automatización</dt>
+                  <dd>{card.automationEnabled ? "Activa" : "Inactiva"}</dd>
+                </div>
                 <div className="flex justify-between gap-2">
                   <dt>Estado comprobado</dt>
                   <dd>{card.status.checkedAt ? formatDateTime(card.status.checkedAt) : "nunca"}</dd>
@@ -150,7 +170,7 @@ export default async function BillingSyncPage() {
       <SyncControls
         defaultPeriod={todayIso().slice(0, 7)}
         historyFloor={salesConfig.historyFloor}
-        cronEnabled={salesConfig.enabled}
+        automationEnabledByProvider={Object.fromEntries(cards.map((card) => [card.id, card.automationEnabled]))}
         providers={cards
           .filter((card) => card.enabled && (
             card.capabilities.canListIssuedInvoices ||
@@ -269,16 +289,8 @@ export default async function BillingSyncPage() {
 
 /** Capacidades en positivo; lo que falta se resume en una línea. */
 function Capabilities({ capabilities }: { capabilities: BillingProviderCapabilities }) {
-  const CATALOG: [keyof BillingProviderCapabilities, string][] = [
-    ["canListIssuedInvoices", "facturas emitidas"],
-    ["canListReceivedInvoices", "facturas recibidas"],
-    ["canRetrieveXml", "XML del documento"],
-    ["canListBankTransactions", "movimientos bancarios"],
-    ["canListPayments", "pagos"],
-  ]
-
-  const can = CATALOG.filter(([key]) => capabilities[key]).map(([, label]) => label)
-  const cannot = CATALOG.filter(([key]) => !capabilities[key]).map(([, label]) => label)
+  const can = CAPABILITY_CATALOG.filter(([key]) => capabilities[key]).map(([, label]) => label)
+  const cannot = CAPABILITY_CATALOG.filter(([key]) => !capabilities[key]).map(([, label]) => label)
 
   return (
     <div className="mt-2.5 text-xs">

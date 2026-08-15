@@ -32,6 +32,8 @@ export function readSalesSyncConfig(): BillingSalesSyncConfig {
 export interface ChipaxConfig {
   /** Feature flag. Apagado por defecto. */
   enabled: boolean
+  /** Automatización diaria; puede quedar apagada para uso manual. */
+  syncEnabled: boolean
   /** URL del contrato OpenAPI. */
   openApiUrl: string
   /** URL base de la API. Ver `DEFAULT_CHIPAX_BASE_URL`. */
@@ -75,6 +77,7 @@ export function readChipaxConfig(): ChipaxConfig {
 
   return {
     enabled: process.env.BILLING_CHIPAX_ENABLED?.trim().toLowerCase() === "true",
+    syncEnabled: process.env.BILLING_CHIPAX_SYNC_ENABLED?.trim().toLowerCase() === "true",
     openApiUrl: process.env.CHIPAX_OPENAPI_URL?.trim() || DEFAULT_CHIPAX_OPENAPI_URL,
     baseUrl: (process.env.CHIPAX_API_BASE_URL?.trim() || DEFAULT_CHIPAX_BASE_URL).replace(/\/+$/, ""),
     appId,

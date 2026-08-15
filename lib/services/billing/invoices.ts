@@ -42,6 +42,33 @@ export interface UpsertInvoiceResult {
   changedFields: string[]
 }
 
+export class BillingExternalReferenceConflict extends Error {
+  readonly code = "EXTERNAL_REFERENCE_REASSIGNMENT"
+
+  constructor(
+    readonly provider: BillingProviderId,
+    readonly externalId: string,
+    readonly existingInvoiceId: string,
+    readonly requestedInvoiceId: string,
+  ) {
+    super(
+      `La referencia externa ${provider}/${externalId} ya pertenece a otra factura interna; ` +
+      "se rechaza la reasignación.",
+    )
+    this.name = "BillingExternalReferenceConflict"
+  }
+}
+
+/** A provider document without a stable external identity is not importable. */
+export class BillingExternalReferenceInvalid extends Error {
+  readonly code = "EXTERNAL_REFERENCE_INVALID"
+
+  constructor(readonly provider: BillingProviderId) {
+    super(`El proveedor ${provider} no entregó una referencia externa válida; se rechaza la factura.`)
+    this.name = "BillingExternalReferenceInvalid"
+  }
+}
+
 /* ── Hash del payload ────────────────────────────────────────────────────── */
 
 /**
@@ -183,6 +210,9 @@ export async function upsertProviderInvoice(
   invoice: ProviderInvoice,
   provider: BillingProviderId,
 ): Promise<UpsertInvoiceResult> {
+  if (invoice.externalId.trim() === "") {
+    throw new BillingExternalReferenceInvalid(provider)
+  }
   if (!invoice.issuerTaxId || !invoice.receiverTaxId) {
     throw new Error(
       `Documento ${invoice.docType}/${invoice.folio} sin RUT de emisor o receptor: no se puede identificar.`,
@@ -380,9 +410,7 @@ async function upsertExternalRef(
     documentStatus: invoice.documentStatus,
   }
 
-  await tx
-    .insert(billingExternalRefs)
-    .values({
+  const values = {
       id: nanoid(),
       invoiceId,
       provider,
@@ -395,17 +423,35 @@ async function upsertExternalRef(
       snapshot,
       firstSeenAt: now,
       lastSeenAt: now,
-    })
-    .onConflictDoUpdate({
-      target: [billingExternalRefs.provider, billingExternalRefs.externalId],
-      set: {
-        externalStatus: invoice.externalStatus,
-        documentUrl:    invoice.documentUrl,
-        payloadHash,
-        snapshot,
-        lastSeenAt: now,
-      },
-    })
+    }
+
+  // `ON CONFLICT DO UPDATE` sin esta comprobación podía mover una referencia
+  // externa desde una factura interna a otra cuando el proveedor reutilizaba o
+  // devolvía un id incorrecto. El vínculo es identidad, no un dato editable.
+  const inserted = await tx.insert(billingExternalRefs).values(values)
+    .onConflictDoNothing({ target: [billingExternalRefs.provider, billingExternalRefs.externalId] })
+    .returning({ id: billingExternalRefs.id })
+  if (inserted.length > 0) return
+
+  const [existing] = await tx.select({ id: billingExternalRefs.id, invoiceId: billingExternalRefs.invoiceId })
+    .from(billingExternalRefs)
+    .where(and(
+      eq(billingExternalRefs.provider, provider),
+      eq(billingExternalRefs.externalId, invoice.externalId),
+    ))
+    .limit(1)
+  if (!existing) throw new Error("No se pudo resolver la referencia externa después del conflicto de unicidad.")
+  if (existing.invoiceId !== invoiceId) {
+    throw new BillingExternalReferenceConflict(provider, invoice.externalId, existing.invoiceId, invoiceId)
+  }
+
+  await tx.update(billingExternalRefs).set({
+    externalStatus: invoice.externalStatus,
+    documentUrl:    invoice.documentUrl,
+    payloadHash,
+    snapshot,
+    lastSeenAt: now,
+  }).where(eq(billingExternalRefs.id, existing.id))
 }
 
 /* ── Historial ───────────────────────────────────────────────────────────── */

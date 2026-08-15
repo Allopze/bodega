@@ -28,7 +28,7 @@ import { nanoid } from "@/lib/id"
 import { logger } from "@/lib/logger"
 import { DtePortalClient } from "./client"
 import { fetchBandejaEntrada } from "./bandeja-entrada"
-import { matchToPurchaseOrderInvoices, matchToFuelLoads } from "./reconciliation"
+import { matchToPurchaseOrderInvoices, matchToFuelLoads, summarizeDteReconciliation } from "./reconciliation"
 import type { DteBandejaRow } from "./types"
 import { classifyDteFailure } from "./failure"
 import { chilePeriod, previousChilePeriod } from "./chile-time"
@@ -64,6 +64,14 @@ export interface DteSyncResult {
   rowsUpdated: number
   correlationId: string
   error?: string
+  reconciliationStatus: "not_run" | "success" | "partial" | "failed"
+  reconciliationError?: string
+  reconciliation: {
+    matched: number
+    ambiguous: number
+    unmatched: number
+    discrepancies: number
+  }
   /** Why a non-started run was skipped; never contains provider details. */
   skipReason?: "disabled" | "invalid_barrier" | "active_run"
 }
@@ -121,7 +129,9 @@ export async function syncDteDocuments(
         rowsSeen: 0,
         rowsInserted: 0,
         rowsUpdated: 0,
-        correlationId,
+      correlationId,
+        reconciliationStatus: "not_run",
+        reconciliation: { matched: 0, ambiguous: 0, unmatched: 0, discrepancies: 0 },
         error: "Ya existe una corrida exitosa para este período cerrado. Use force=true para re-sincronizar.",
       }
     }
@@ -151,6 +161,8 @@ export async function syncDteDocuments(
       rowsInserted: 0,
       rowsUpdated: 0,
       correlationId,
+      reconciliationStatus: "not_run",
+      reconciliation: { matched: 0, ambiguous: 0, unmatched: 0, discrepancies: 0 },
       skipReason: start.reason,
       error: start.reason === "disabled"
         ? "DTE_SYNC_DISABLED: La sincronización está pausada por configuración."
@@ -227,24 +239,34 @@ export async function syncDteDocuments(
   // cierre y su error sólo iba a `console.error`, así que una conciliación roña
   // de forma sistemática dejaba la corrida en `success` sin un solo vínculo y
   // sin rastro de por qué.
-  let reconciliationNote: string | undefined
+  let reconciliationStatus: DteSyncResult["reconciliationStatus"] = "not_run"
+  let reconciliationError: string | undefined
+  let reconciliation = { matched: 0, ambiguous: 0, unmatched: 0, discrepancies: 0 }
   try {
+    if (finalStatus === "failed") throw new Error("ingesta fallida; conciliación no ejecutada")
     const ocMatches = await matchToPurchaseOrderInvoices(periodo, codEmp)
     const fuelMatches = await matchToFuelLoads(periodo, codEmp)
-
-    // Las discrepancias de monto se calculaban y se tiraban. Acá al menos se
-    // cuentan y quedan en la corrida; el detalle por documento sigue
-    // pendiente (necesita una columna).
-    const withDiscrepancy = [...ocMatches, ...fuelMatches].filter((m) => m.discrepancy > 0)
-    if (withDiscrepancy.length > 0) {
-      reconciliationNote = `${withDiscrepancy.length} de ${ocMatches.length + fuelMatches.length} vínculos con diferencia de monto.`
+    const allMatches = [...ocMatches, ...fuelMatches]
+    reconciliation = await summarizeDteReconciliation(periodo, codEmp, allMatches)
+    const withIssues = reconciliation.unmatched + reconciliation.ambiguous + reconciliation.discrepancies
+    reconciliationStatus = withIssues > 0 ? "partial" : "success"
+    if (reconciliationStatus === "partial") {
+      reconciliationError = [
+        reconciliation.unmatched > 0 ? `${reconciliation.unmatched} DTE sin vínculo inequívoco` : null,
+        reconciliation.ambiguous > 0 ? `${reconciliation.ambiguous} coincidencias ambiguas` : null,
+        reconciliation.discrepancies > 0 ? `${reconciliation.discrepancies} vínculos con diferencia de monto` : null,
+      ].filter(Boolean).join("; ")
     }
   } catch (_err) {
-    reconciliationNote = "DTE_RECONCILIATION_FAILED: La conciliación posterior no se pudo completar."
+    reconciliationStatus = finalStatus === "failed" ? "not_run" : "failed"
+    reconciliationError = finalStatus === "failed"
+      ? "La ingesta falló antes de ejecutar la conciliación."
+      : "DTE_RECONCILIATION_FAILED: La conciliación posterior no se pudo completar."
+    if (finalStatus === "failed") reconciliationStatus = "not_run"
     logger.error({ correlationId }, "[dte-sync] conciliación falló", { code: "DTE_RECONCILIATION_FAILED", periodo })
   }
 
-  const finalError = [errorMsg, reconciliationNote].filter(Boolean).join(" ") || null
+  const finalError = [errorMsg, reconciliationError].filter(Boolean).join(" ") || null
 
   // 5. Cerrar la corrida
   await db.update(dteSyncRuns).set({
@@ -254,6 +276,8 @@ export async function syncDteDocuments(
     rowsUpdated,
     correlationId,
     error: finalError,
+    reconciliationStatus,
+    reconciliationError: reconciliationError ?? null,
     finishedAt: new Date().toISOString(),
   }).where(eq(dteSyncRuns.id, runId))
 
@@ -269,6 +293,9 @@ export async function syncDteDocuments(
     rowsUpdated,
     correlationId,
     error: errorMsg,
+    reconciliationStatus,
+    reconciliationError,
+    reconciliation,
   }
 }
 
@@ -366,6 +393,8 @@ async function upsertDteDocument(
     // este segundo caso los DTE históricos quedaban sin ruta PDF para siempre.
     await tx.update(dteDocuments).set({
       montoTotal: row.montoTotal,
+      razonSocialEmisor: row.razonSocial,
+      fechaEmision: row.fecha,
       estadoPlataforma: row.estadoPlataforma,
       rawHash,
       portalRecordId: row.nreguist ?? existing.portalRecordId,

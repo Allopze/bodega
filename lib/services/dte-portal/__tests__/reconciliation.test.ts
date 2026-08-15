@@ -4,6 +4,7 @@ const mockDteDocumentsFindMany = vi.fn()
 const mockInvoicesFindMany = vi.fn()
 const mockFuelLoadsFindMany = vi.fn()
 const mockUpdateSet = vi.fn()
+const mockTransaction = vi.fn()
 
 vi.mock("@/db", () => ({
   db: {
@@ -19,18 +20,66 @@ vi.mock("@/db", () => ({
         }),
       }),
     }),
+    transaction: (callback: (tx: unknown) => unknown) => mockTransaction(callback),
   },
 }))
 vi.mock("@/db/schema", () => ({
-  dteDocuments: {}, purchaseOrderInvoices: {}, fuelLoads: {},
+  dteDocuments: { id: "dte.id", purchaseOrderInvoiceId: "dte.purchase_order_invoice_id", fuelLoadId: "dte.fuel_load_id" },
+  purchaseOrderInvoices: { id: "invoice.id" }, fuelLoads: {},
 }))
 
-const { matchToPurchaseOrderInvoices, matchToFuelLoads, computeHealthStats } = await import("../reconciliation")
+const {
+  matchToPurchaseOrderInvoices,
+  matchToFuelLoads,
+  computeHealthStats,
+  summarizeDteReconciliation,
+} = await import("../reconciliation")
+
+describe("summarizeDteReconciliation", () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it("incluye vínculos preexistentes y sus discrepancias en la corrida actual", async () => {
+    mockDteDocumentsFindMany.mockResolvedValue([{
+      id: "dte-linked", tipoDte: "33", folio: 100, rutEmisor: "11.111.111-1",
+      purchaseOrderInvoiceId: "inv-old", fuelLoadId: null, montoTotal: 55_000,
+    }])
+    mockInvoicesFindMany.mockResolvedValue([{ id: "inv-old", amount: 50_000 }])
+    mockFuelLoadsFindMany.mockResolvedValue([])
+
+    await expect(summarizeDteReconciliation("2026-06", "433", [])).resolves.toEqual({
+      matched: 1,
+      ambiguous: 0,
+      unmatched: 0,
+      discrepancies: 1,
+    })
+  })
+})
 
 describe("matchToPurchaseOrderInvoices", () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockUpdateSet.mockResolvedValue([{ id: "dte-1" }])
+    mockTransaction.mockImplementation(async (callback: (tx: unknown) => unknown) => {
+      return callback({
+        select: () => ({
+          from: () => ({
+            where: () => ({
+              for: () => {
+                return { limit: async () => [{ id: "inv-1" }] }
+              },
+              limit: async () => [],
+            }),
+          }),
+        }),
+        update: () => ({
+          set: (...args: unknown[]) => ({
+            where: (...whereArgs: unknown[]) => ({
+              returning: (...returningArgs: unknown[]) => mockUpdateSet(...args, ...whereArgs, ...returningArgs),
+            }),
+          }),
+        }),
+      })
+    })
   })
 
   it("matches a DTE to an OC invoice by folio AND rut", async () => {
@@ -141,6 +190,21 @@ describe("matchToPurchaseOrderInvoices", () => {
     expect(matches).toHaveLength(1)
   })
 
+  it("does not choose between type 33 and 34 with the same folio and supplier", async () => {
+    mockDteDocumentsFindMany.mockResolvedValue([
+      { id: "dte-33", tipoDte: "33", folio: 100, rutEmisor: "11111111-1", montoTotal: 50000 },
+      { id: "dte-34", tipoDte: "34", folio: 100, rutEmisor: "11111111-1", montoTotal: 50000 },
+    ])
+    mockInvoicesFindMany.mockResolvedValue([
+      { id: "inv-1", invoiceNumber: "100", amount: 50000, purchaseOrderId: "oc-1", purchaseOrder: { supplier: { rut: "11111111-1" } } },
+    ])
+
+    const matches = await matchToPurchaseOrderInvoices("2026-06", "433")
+
+    expect(matches).toEqual([])
+    expect(mockUpdateSet).not.toHaveBeenCalled()
+  })
+
   it("reports a discrepancy when amounts differ", async () => {
     mockDteDocumentsFindMany.mockResolvedValue([
       { id: "dte-1", tipoDte: "33", folio: 100, rutEmisor: "11111111-1", montoTotal: 55000 },
@@ -191,6 +255,21 @@ describe("matchToFuelLoads", () => {
 
     const matches = await matchToFuelLoads("2026-06", "433")
     expect(matches).toHaveLength(0)
+  })
+
+  it("does not choose between type 33 and 34 for the same fuel receipt", async () => {
+    mockDteDocumentsFindMany.mockResolvedValue([
+      { id: "dte-33", tipoDte: "33", folio: 200, rutEmisor: "99520000-7", montoTotal: 632180 },
+      { id: "dte-34", tipoDte: "34", folio: 200, rutEmisor: "99520000-7", montoTotal: 632180 },
+    ])
+    mockFuelLoadsFindMany.mockResolvedValue([
+      { id: "load-1", receiptNumber: "200", totalAmount: 632180, supplier: { rut: "99520000-7" } },
+    ])
+
+    const matches = await matchToFuelLoads("2026-06", "433")
+
+    expect(matches).toEqual([])
+    expect(mockUpdateSet).not.toHaveBeenCalled()
   })
 })
 

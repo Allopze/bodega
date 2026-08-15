@@ -4,7 +4,7 @@ import { db } from "@/db"
 import { billingSyncRuns, dteSyncRuns } from "@/db/schema"
 import { logger } from "@/lib/logger"
 import { verifyCronSecret } from "@/lib/security/cron-auth"
-import { readSalesSyncConfig } from "@/lib/services/billing/config"
+import { readChipaxConfig, readSalesSyncConfig } from "@/lib/services/billing/config"
 import { readDtePortalConfig } from "@/lib/services/dte-portal/config"
 import { notifyDteSyncHealthChange } from "@/lib/services/dte-portal/health-alerts"
 import { evaluateDteSyncHealth } from "@/lib/services/dte-portal/health"
@@ -41,6 +41,7 @@ export async function GET(request: NextRequest) {
       dteConfigured = false
     }
     const sales = readSalesSyncConfig()
+    const chipax = readChipaxConfig()
     let cutoverPaused = false
     try {
       await assertDtePortalStartsAllowed()
@@ -56,16 +57,18 @@ export async function GET(request: NextRequest) {
     }
 
     const since = new Date(now.getTime() - LOOKBACK_MS).toISOString()
-    const [dteRuns, salesRuns] = await Promise.all([
+    const [dteRuns, salesRuns, chipaxRuns] = await Promise.all([
       db.select({
         period: dteSyncRuns.periodo,
         status: dteSyncRuns.status,
         trigger: dteSyncRuns.trigger,
         correlationId: dteSyncRuns.correlationId,
+        reconciliationStatus: dteSyncRuns.reconciliationStatus,
         startedAt: dteSyncRuns.startedAt,
       }).from(dteSyncRuns).where(and(eq(dteSyncRuns.trigger, "cron"), gte(dteSyncRuns.startedAt, since))),
       db.select({
         period: billingSyncRuns.periodFrom,
+        scope: billingSyncRuns.scope,
         status: billingSyncRuns.status,
         trigger: billingSyncRuns.trigger,
         correlationId: billingSyncRuns.correlationId,
@@ -74,6 +77,18 @@ export async function GET(request: NextRequest) {
         eq(billingSyncRuns.trigger, "cron"),
         eq(billingSyncRuns.provider, "factura_en_linea"),
         eq(billingSyncRuns.scope, "sales_invoices"),
+        gte(billingSyncRuns.startedAt, since),
+      )),
+      db.select({
+        period: billingSyncRuns.periodFrom,
+        scope: billingSyncRuns.scope,
+        status: billingSyncRuns.status,
+        trigger: billingSyncRuns.trigger,
+        correlationId: billingSyncRuns.correlationId,
+        startedAt: billingSyncRuns.startedAt,
+      }).from(billingSyncRuns).where(and(
+        eq(billingSyncRuns.trigger, "cron"),
+        eq(billingSyncRuns.provider, "chipax"),
         gte(billingSyncRuns.startedAt, since),
       )),
     ])
@@ -87,6 +102,10 @@ export async function GET(request: NextRequest) {
       salesConfigured: dteConfigured,
       dteRuns,
       salesRuns,
+      chipaxEnabled: cutoverPaused ? false : chipax.enabled && chipax.syncEnabled,
+      chipaxConfigured: chipax.hasCredentials && Boolean(chipax.companyTaxId),
+      chipaxSalesRuns: chipaxRuns.filter((run) => run.scope === "sales_invoices"),
+      chipaxBankRuns: chipaxRuns.filter((run) => run.scope === "bank_transactions"),
     })
 
     try {

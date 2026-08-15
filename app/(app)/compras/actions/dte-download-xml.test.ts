@@ -10,6 +10,7 @@ const mockMkdirp = vi.fn()
 const mockWriteBuffer = vi.fn()
 const mockReadBuffer = vi.fn()
 const mockUnlink = vi.fn()
+const mockStat = vi.fn()
 
 vi.mock("@/lib/auth/can", () => ({
   requirePermission: (...args: unknown[]) => mockRequirePermission(...args),
@@ -17,12 +18,19 @@ vi.mock("@/lib/auth/can", () => ({
 vi.mock("@/db", () => ({
   db: {
     query: { dteDocuments: { findFirst: (...args: unknown[]) => mockFindFirst(...args) } },
-    update: () => ({ set: (...args: unknown[]) => ({ where: (...whereArgs: unknown[]) => mockUpdateSet(...args, ...whereArgs) }) }),
+    update: () => ({
+      set: (...args: unknown[]) => ({
+        where: (...whereArgs: unknown[]) => ({
+          returning: (...returningArgs: unknown[]) => mockUpdateSet(...args, ...whereArgs, ...returningArgs),
+        }),
+      }),
+    }),
   },
 }))
-vi.mock("@/db/schema", () => ({ dteDocuments: {} }))
+vi.mock("@/db/schema", () => ({ dteDocuments: { id: "dte.id", xmlPath: "dte.xml_path" } }))
 vi.mock("@/lib/services/dte-portal/download", () => ({
   downloadDteXml: (...args: unknown[]) => mockDownloadDteXml(...args),
+  MAX_DTE_XML_BYTES: 10 * 1024 * 1024,
 }))
 vi.mock("@/lib/services/dte-portal/config", () => ({
   buildDtePortalClientConfig: async () => ({
@@ -36,7 +44,10 @@ vi.mock("@/lib/storage/helpers", () => ({
   readBuffer: (...args: unknown[]) => mockReadBuffer(...args),
 }))
 vi.mock("node:fs", () => ({
-  promises: { unlink: (...args: unknown[]) => mockUnlink(...args) },
+  promises: {
+    unlink: (...args: unknown[]) => mockUnlink(...args),
+    stat: (...args: unknown[]) => mockStat(...args),
+  },
 }))
 
 const { downloadDteDocumentXml } = await import("./dte-download-xml")
@@ -55,7 +66,9 @@ describe("downloadDteDocumentXml", () => {
     mockRequirePermission.mockResolvedValue({ user: { id: "user-1" } })
     mockMkdirp.mockResolvedValue(undefined)
     mockWriteBuffer.mockResolvedValue(undefined)
+    mockUpdateSet.mockResolvedValue([{ id: "dte-1" }])
     mockUnlink.mockResolvedValue(undefined)
+    mockStat.mockResolvedValue({ size: Buffer.byteLength(SII_DTE, "latin1") })
   })
 
   it("returns an explicit error when the document does not exist", async () => {
@@ -70,7 +83,7 @@ describe("downloadDteDocumentXml", () => {
   it("downloads, parses and persists the XML on first view (reusing lib/services/purchasing-module/dte-parser.ts)", async () => {
     mockFindFirst.mockResolvedValue({ ...BASE_DOC })
     mockDownloadDteXml.mockResolvedValue({ xml: SII_DTE, buffer: Buffer.from(SII_DTE, "latin1") })
-    mockUpdateSet.mockResolvedValue(undefined)
+    mockUpdateSet.mockResolvedValue([{ id: "dte-1" }])
 
     const result = await downloadDteDocumentXml("dte-1")
 
@@ -86,6 +99,7 @@ describe("downloadDteDocumentXml", () => {
     expect(mockWriteBuffer).toHaveBeenCalledTimes(1)
     expect(mockUpdateSet).toHaveBeenCalledWith(
       expect.objectContaining({ montoNeto: 100000, iva: 19000, xmlPath: expect.stringContaining("storage/dte/") }),
+      expect.anything(),
       expect.anything(),
     )
   })
@@ -105,12 +119,35 @@ describe("downloadDteDocumentXml", () => {
     mockFindFirst.mockResolvedValue({ ...BASE_DOC, xmlPath: "storage/dte/gone.xml" })
     mockReadBuffer.mockRejectedValue(new Error("ENOENT"))
     mockDownloadDteXml.mockResolvedValue({ xml: SII_DTE, buffer: Buffer.from(SII_DTE, "latin1") })
-    mockUpdateSet.mockResolvedValue(undefined)
+    mockUpdateSet.mockResolvedValue([{ id: "dte-1" }])
 
     const result = await downloadDteDocumentXml("dte-1")
 
     expect(result.ok).toBe(true)
     expect(mockDownloadDteXml).toHaveBeenCalledTimes(1)
+  })
+
+  it("does not parse an oversized cached XML and refreshes it through the bounded downloader", async () => {
+    mockFindFirst.mockResolvedValue({ ...BASE_DOC, xmlPath: "storage/dte/too-large.xml" })
+    mockStat.mockResolvedValue({ size: 10 * 1024 * 1024 + 1 })
+    mockDownloadDteXml.mockResolvedValue({ xml: SII_DTE, buffer: Buffer.from(SII_DTE, "latin1") })
+
+    const result = await downloadDteDocumentXml("dte-1")
+
+    expect(result.ok).toBe(true)
+    expect(mockReadBuffer).not.toHaveBeenCalled()
+    expect(mockDownloadDteXml).toHaveBeenCalledTimes(1)
+  })
+
+  it("keeps the first cache winner and removes a concurrent losing file", async () => {
+    mockFindFirst.mockResolvedValue({ ...BASE_DOC })
+    mockDownloadDteXml.mockResolvedValue({ xml: SII_DTE, buffer: Buffer.from(SII_DTE, "latin1") })
+    mockUpdateSet.mockResolvedValue([])
+
+    const result = await downloadDteDocumentXml("dte-1")
+
+    expect(result.ok).toBe(true)
+    expect(mockUnlink).toHaveBeenCalledTimes(1)
   })
 
   it("returns an explicit error when the portal download fails", async () => {

@@ -28,7 +28,7 @@ import { billingExternalRefs, billingInvoices } from "@/db/schema"
 import { db } from "@/db"
 import { and, eq, inArray } from "drizzle-orm"
 import { DtePortalClient } from "@/lib/services/dte-portal/client"
-import { buildDtePortalClientConfig, readDtePortalConfig } from "@/lib/services/dte-portal/config"
+import { buildDtePortalClientConfig } from "@/lib/services/dte-portal/config"
 import { queryByPeriodo } from "@/lib/services/dte-portal/query"
 import { fetchBandejaEntrada } from "@/lib/services/dte-portal/bandeja-entrada"
 import { downloadDteXml } from "@/lib/services/dte-portal/download"
@@ -83,18 +83,26 @@ export class FacturaEnLineaProvider implements BillingProvider {
   }
 
   async isConfigured(): Promise<boolean> {
-    const config = await readDtePortalConfig()
-    const { rutUsr, rutEmp, clave, codEmp } = config.credentials
-    return Boolean(rutUsr && rutEmp && clave && codEmp)
+    // Resolve the client once so the configuration check and the subsequent
+    // list/download call share the same credential snapshot. A settings edit
+    // racing this check must not make the provider identify the company with
+    // one config and authenticate with another.
+    try {
+      const client = await this.resolveClient()
+      const { rutUsr, rutEmp, clave, codEmp } = client.credentials
+      return Boolean(rutUsr && rutEmp && clave && codEmp)
+    } catch {
+      return false
+    }
   }
 
   async healthCheck(): Promise<ProviderHealth> {
     const checkedAt = new Date().toISOString()
-    if (!(await this.isConfigured())) {
-      return { ok: false, detail: "Faltan credenciales del portal DTE.", checkedAt }
-    }
     try {
       const client = await this.resolveClient()
+      if (!client.credentials.rutUsr || !client.credentials.rutEmp || !client.credentials.clave || !client.credentials.codEmp) {
+        return { ok: false, detail: "Faltan credenciales del portal DTE.", checkedAt }
+      }
       // Consulta barata y de solo lectura: un período del libro de ventas.
       await queryByPeriodo(client, {
         tipo: "periodo",
@@ -115,12 +123,11 @@ export class FacturaEnLineaProvider implements BillingProvider {
    */
   async listIssuedInvoices(query: ProviderPeriodQuery): Promise<ProviderPage<ProviderInvoice>> {
     const client = await this.resolveClient()
-    const config = await readDtePortalConfig()
     // cleanRut: la identidad de factura y el detector de duplicados comparan
     // RUT por igualdad exacta; un rutEmp configurado con puntos crearía una
     // segunda identidad para el mismo documento (Chipax sí normaliza).
-    const issuerTaxId = cleanRut(config.credentials.rutEmp)
-    const accountRef = config.credentials.codEmp
+    const issuerTaxId = cleanRut(client.credentials.rutEmp)
+    const accountRef = client.credentials.codEmp
 
     const result = await queryByPeriodo(client, {
       tipo: "periodo",
@@ -136,9 +143,10 @@ export class FacturaEnLineaProvider implements BillingProvider {
     // to fetch XML; the generic sync commits the returned cursor only after
     // every invoice write has completed durably.
     const selection = chooseSalesXmlCandidates(
-      invoices
-        .filter((invoice) => !invoice.receiverTaxId && invoice.xmlUrl)
-        .map((invoice) => ({ key: saleXmlCandidateKey(invoice), invoice })),
+      invoices.flatMap((invoice) =>
+        !invoice.receiverTaxId && invoice.xmlUrl
+          ? [{ key: saleXmlCandidateKey(invoice), invoice }]
+          : []),
       query.cursor,
       MAX_XML_ENRICHMENTS_PER_RUN,
     )
@@ -162,9 +170,8 @@ export class FacturaEnLineaProvider implements BillingProvider {
    */
   async listReceivedInvoices(query: ProviderPeriodQuery): Promise<ProviderPage<ProviderInvoice>> {
     const client = await this.resolveClient()
-    const config = await readDtePortalConfig()
     const [anio, mes] = assertPeriod(query.period).split("-") as [string, string]
-    const accountRef = config.credentials.codEmp
+    const accountRef = client.credentials.codEmp
 
     const { rows, totalRegistros } = await fetchBandejaEntrada(client, {
       mes,
@@ -175,7 +182,7 @@ export class FacturaEnLineaProvider implements BillingProvider {
     })
 
     return {
-      items: rows.map((row) => this.mapPurchaseRow(row, cleanRut(config.credentials.rutEmp), accountRef)),
+      items: rows.map((row) => this.mapPurchaseRow(row, cleanRut(client.credentials.rutEmp), accountRef)),
       nextCursor: null,
       reportedTotal: totalRegistros,
     }
@@ -257,6 +264,7 @@ export class FacturaEnLineaProvider implements BillingProvider {
         receiverTaxId: billingInvoices.receiverTaxId,
         receiverName: billingInvoices.receiverName,
         dueDate: billingInvoices.dueDate,
+        dueDateSource: billingInvoices.dueDateSource,
         netAmount: billingInvoices.netAmount,
         taxAmount: billingInvoices.taxAmount,
         exemptAmount: billingInvoices.exemptAmount,
@@ -273,7 +281,11 @@ export class FacturaEnLineaProvider implements BillingProvider {
       if (!persisted) continue
       invoice.receiverTaxId = persisted.receiverTaxId
       invoice.receiverName = persisted.receiverName
-      invoice.dueDate = persisted.dueDate
+      // Un vencimiento manual es una decisión interna, no evidencia del
+      // proveedor. Sólo se hidrata el valor persistido cuando su procedencia
+      // fue realmente el XML/proveedor; la resolución posterior mantiene la
+      // precedencia manual > proveedor > contrato > cliente.
+      if (persisted.dueDateSource === "provider") invoice.dueDate = persisted.dueDate
       invoice.netAmount = persisted.netAmount
       invoice.taxAmount = persisted.taxAmount
       invoice.exemptAmount = persisted.exemptAmount

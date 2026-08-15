@@ -99,7 +99,7 @@ export default async function OcDetailPage({
           where: (ri, { inArray }) => inArray(ri.id, requestItemIds),
           // `equipment` y `worker`: la ficha tiene que decir sobre qué
           // instrumento y para quién es cada línea de servicio.
-          with: { request: true, equipment: true, worker: true },
+          with: { request: true, equipment: true, worker: true, attributes: true },
         })
       : Promise.resolve([]),
 
@@ -317,13 +317,20 @@ export default async function OcDetailPage({
   // Stepper de ciclo (reutiliza el panel de solicitudes)
   const progress = buildOcProgress(
     order.status,
-    order.items.map((i) => ({
-      id:               i.id,
-      productName:      i.productNameFree ?? (i.productId ? productMap[i.productId]?.name : null) ?? "Ítem",
-      quantity:         i.quantity,
-      unitOfMeasure:    i.unitOfMeasure,
-      quantityReceived: receivedByItem.get(i.id) ?? i.quantityReceived ?? 0,
-    })),
+    order.items.map((i) => {
+      const requestItem = i.requestItemId ? reqItemMap[i.requestItemId] : null
+      return {
+        id:               i.id,
+        productName:      i.productNameFree ?? (i.productId ? productMap[i.productId]?.name : null) ?? "Ítem",
+        quantity:         i.quantity,
+        unitOfMeasure:    i.unitOfMeasure,
+        quantityReceived: receivedByItem.get(i.id) ?? i.quantityReceived ?? 0,
+        attributes:       requestItem?.attributes.map((attribute) => ({
+          name: attribute.attributeName,
+          value: attribute.value,
+        })) ?? [],
+      }
+    }),
     "compras",
     // `closeWarnings` sólo se llena en estados que ya admiten facturación, así
     // que basta con que tenga contenido.

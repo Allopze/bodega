@@ -28,6 +28,7 @@ import { logger } from "@/lib/logger"
 import type { ProviderHealth } from "./providers/types"
 
 const KEY_PREFIX = "billing.health."
+export const BILLING_HEALTH_TTL_MS = 24 * 60 * 60 * 1_000
 
 function keyFor(provider: BillingProviderId): string {
   return `${KEY_PREFIX}${provider}`
@@ -121,6 +122,7 @@ export type ProviderStatusKind =
   | "disabled"        // apagado por feature flag
   | "unconfigured"    // habilitado pero sin credenciales: falta configurarlo, no está roto
   | "unchecked"       // configurado pero nunca comprobado
+  | "stale"            // la última comprobación excedió el TTL
   | "ok"
   | "failing"
 
@@ -145,6 +147,7 @@ export function deriveProviderStatus(input: {
   enabled: boolean
   configured: boolean
   stored: StoredHealth
+  now?: Date
 }): ProviderStatus {
   if (!input.enabled) {
     return {
@@ -173,6 +176,18 @@ export function deriveProviderStatus(input: {
       tone: "neutral",
       detail: "Todavía nadie probó la conexión con este proveedor.",
       checkedAt: null,
+    }
+  }
+
+  const checkedAtMs = Date.parse(input.stored.checkedAt)
+  const nowMs = (input.now ?? new Date()).getTime()
+  if (input.stored.ok && (!Number.isFinite(checkedAtMs) || nowMs - checkedAtMs > BILLING_HEALTH_TTL_MS)) {
+    return {
+      kind: "stale",
+      label: "Comprobación vencida",
+      tone: "warning",
+      detail: "La última comprobación exitosa tiene más de 24 horas; vuelve a comprobar el proveedor.",
+      checkedAt: input.stored.checkedAt,
     }
   }
 

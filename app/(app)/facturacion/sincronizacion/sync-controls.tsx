@@ -53,7 +53,7 @@ export function SyncControls({
   providers,
   defaultPeriod,
   historyFloor,
-  cronEnabled,
+  automationEnabledByProvider,
 }: {
   providers: {
     id: BillingProviderId
@@ -63,7 +63,7 @@ export function SyncControls({
   }[]
   defaultPeriod: string
   historyFloor: string
-  cronEnabled: boolean
+  automationEnabledByProvider: Record<string, boolean>
 }) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
@@ -73,6 +73,7 @@ export function SyncControls({
   const [lastResult, setLastResult] = useState<string | null>(null)
 
   const selected = providers.find((entry) => entry.id === provider)
+  const automationEnabled = Boolean(provider && automationEnabledByProvider[provider])
   const isCurrentPeriod = period === defaultPeriod
 
   // Sólo los alcances que este proveedor declara. FacturaEnLínea no entrega
@@ -87,7 +88,8 @@ export function SyncControls({
     // El alcance elegido puede no existir en el proveedor nuevo: se cae al
     // primero que sí, en vez de mandar una combinación imposible.
     const nextProvider = providers.find((entry) => entry.id === next)
-    if (nextProvider && !nextProvider.capabilities[SCOPES.find((s) => s.id === scope)!.capability]) {
+    const currentScope = SCOPES.find((entry) => entry.id === scope)
+    if (nextProvider && currentScope && !nextProvider.capabilities[currentScope.capability]) {
       const fallback = SCOPES.find((entry) => nextProvider.capabilities[entry.capability])
       if (fallback) setScope(fallback.id)
     }
@@ -142,9 +144,9 @@ export function SyncControls({
           Ejecutar sincronización
         </h2>
         <p className="text-xs text-[var(--color-text-muted)]">
-          {cronEnabled
-            ? "La sincronización automática del mes en curso está activa. Esta ejecución manual sirve para períodos anteriores o para forzar una actualización."
-            : "La sincronización automática está desactivada (BILLING_SALES_SYNC_ENABLED). Solo se sincroniza desde acá."}
+          {automationEnabled
+            ? "La automatización del proveedor seleccionado está activa. Esta ejecución manual sirve para períodos anteriores o para forzar una actualización."
+            : `La automatización del proveedor seleccionado está desactivada (${provider === "chipax" ? "BILLING_CHIPAX_SYNC_ENABLED" : "BILLING_SALES_SYNC_ENABLED"}). Solo se sincroniza desde acá.`}
         </p>
       </header>
 

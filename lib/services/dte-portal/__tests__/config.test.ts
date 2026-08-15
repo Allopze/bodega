@@ -54,6 +54,16 @@ describe("dte-portal config", () => {
       expect(env.syncEnabled).toBe(true)
     })
 
+    it("preserves password whitespace and an explicit zero delay", () => {
+      process.env.DTE_PORTAL_CLAVE = "  secret with spaces  "
+      process.env.DTE_SYNC_DELAY_MS = "0"
+
+      const env = readDtePortalEnv()
+
+      expect(env.credentials.clave).toBe("  secret with spaces  ")
+      expect(env.delayMs).toBe(0)
+    })
+
     it("rejects a portal origin outside the fixed canonical URL", () => {
       process.env.DTE_PORTAL_BASE_URL = "https://evil.example/facturaenlinea"
 
@@ -82,6 +92,14 @@ describe("dte-portal config", () => {
       expect(config.credentials.codEmp).toBe("433")        // del .env
       expect(config.syncEnabled).toBe(true)
       expect(config.delayMs).toBe(750)
+    })
+
+    it("preserves a stored zero delay", async () => {
+      mockReadStored.mockResolvedValue({ delayMs: "0" })
+
+      const config = await readDtePortalConfig()
+
+      expect(config.delayMs).toBe(0)
     })
 
     it("does not reactivate plaintext environment credentials in encrypted_only", async () => {

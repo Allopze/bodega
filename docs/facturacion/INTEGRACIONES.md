@@ -29,7 +29,7 @@ sin su método es un bug de programación, no una condición de runtime: lo dete
 | Proveedor | Emitidas | Recibidas | XML | Pagos | Banco | Estado |
 |---|:--:|:--:|:--:|:--:|:--:|---|
 | FacturaEnLínea | ✅ | ✅ | ✅ | ❌ | ❌ | Operativo |
-| Chipax | ❌ | ❌ | ❌ | ❌ | ❌ | **Contrato no legible** — ver [CHIPAX.md](CHIPAX.md) |
+| Chipax | ✅ | ❌ | ❌ | ❌ | ✅ | Operativo, solo lectura — ver [CHIPAX.md](CHIPAX.md) |
 | Carga manual | — | — | ✅ | — | — | Siempre disponible |
 
 FacturaEnLínea no declara pagos ni movimientos bancarios porque el portal es un
@@ -46,14 +46,15 @@ emisor de DTE, no un banco. Ningún proveedor declara capacidad de escritura.
 | Ningún reintento ciego en escritura | No hay escrituras externas. |
 | Errores redactados | `redact()` filtra credenciales antes de loguear o mostrar. |
 | Idempotencia | Identidad tributaria + `(provider, external_id)`. |
-| Paginación | `ProviderPage.nextCursor`; tope de 50 páginas por corrida. |
+| Paginación | `ProviderPage.nextCursor`; tope de 50 páginas por corrida y límites runtime por respuesta. |
 | Sincronización incremental | Acotada por período, con piso histórico configurable. |
-| Reanudable | `cursor` persistido en la corrida. |
+| Reanudable | Cursor durable en `system_settings` por proveedor/alcance/período; `billing_sync_runs.cursor` conserva la evidencia. |
 | Métricas | `billing_sync_runs` con desglose completo. |
 | Separación por empresa | `accountRef` (CodEmp del portal) en cada documento y referencia. |
 | Estado de salud | `healthCheck()` sin secretos, visible en `/facturacion/sincronizacion`. |
 | Pruebas con respuestas simuladas | `sync-integration.test.ts` usa un proveedor falso. |
-| Feature flags | `BILLING_SALES_SYNC_ENABLED`, `BILLING_CHIPAX_ENABLED`. |
+| Feature flags | `BILLING_SALES_SYNC_ENABLED`, `BILLING_CHIPAX_ENABLED`, `BILLING_CHIPAX_SYNC_ENABLED`. |
+| Protección de archivos | XML de compras, enriquecimiento de ventas y caché limitados a 10 MiB; guardado condicional y limpieza de perdedores. |
 
 ## Cómo agregar un proveedor
 

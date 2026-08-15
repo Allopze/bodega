@@ -8,6 +8,8 @@ export interface DteSyncRunRow {
   periodo: string
   trigger: "manual" | "cron"
   status: "running" | "success" | "partial" | "failed"
+  reconciliationStatus: "not_run" | "success" | "partial" | "failed"
+  reconciliationError: string | null
   rowsSeen: number
   rowsInserted: number
   rowsUpdated: number
@@ -39,6 +41,7 @@ export function DteSyncList({ runs }: { runs: DteSyncRunRow[] }) {
               <th scope="col" className="px-4 py-2.5 th-type">Período</th>
               <th scope="col" className="px-4 py-2.5 th-type">Fecha</th>
               <th scope="col" className="px-4 py-2.5 th-type">Estado</th>
+              <th scope="col" className="px-4 py-2.5 th-type">Conciliación</th>
               <th scope="col" className="px-4 py-2.5 th-type">Origen</th>
               <th scope="col" className="px-4 py-2.5 th-type">Vistos</th>
               <th scope="col" className="px-4 py-2.5 th-type">Nuevos</th>
@@ -57,6 +60,10 @@ export function DteSyncList({ runs }: { runs: DteSyncRunRow[] }) {
                   <td className="whitespace-nowrap px-4 py-2.5">
                     <Badge variant={statusInfo.tone}>{statusInfo.label}</Badge>
                   </td>
+                  <td className="whitespace-nowrap px-4 py-2.5">
+                    <Badge variant={reconciliationInfo(run.reconciliationStatus).tone}>{reconciliationInfo(run.reconciliationStatus).label}</Badge>
+                    {run.reconciliationError && <p className="mt-1 max-w-[32ch] truncate text-xs text-[var(--color-text-muted)]">{run.reconciliationError}</p>}
+                  </td>
                   <td className="whitespace-nowrap px-4 py-2.5 text-[var(--color-text-muted)]">{TRIGGER_LABELS[run.trigger]}</td>
                   <td className="whitespace-nowrap px-4 py-2.5 font-mono tabular-nums text-[var(--color-text-muted)]">{run.rowsSeen}</td>
                   <td className="whitespace-nowrap px-4 py-2.5 font-mono tabular-nums text-[var(--color-text)]">{run.rowsInserted}</td>
@@ -69,4 +76,13 @@ export function DteSyncList({ runs }: { runs: DteSyncRunRow[] }) {
       </div>
     </section>
   )
+}
+
+function reconciliationInfo(status: DteSyncRunRow["reconciliationStatus"]): { label: string; tone: "neutral" | "success" | "warning" | "danger" } {
+  switch (status) {
+    case "success": return { label: "Conciliada", tone: "success" }
+    case "partial": return { label: "Parcial", tone: "warning" }
+    case "failed": return { label: "Fallida", tone: "danger" }
+    default: return { label: "No ejecutada", tone: "neutral" }
+  }
 }

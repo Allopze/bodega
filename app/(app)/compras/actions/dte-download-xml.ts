@@ -14,7 +14,7 @@
 
 import path from "node:path"
 import { promises as fs } from "node:fs"
-import { eq } from "drizzle-orm"
+import { and, eq, isNull } from "drizzle-orm"
 import { db } from "@/db"
 import { dteDocuments } from "@/db/schema"
 import { requirePermission } from "@/lib/auth/can"
@@ -23,7 +23,7 @@ import { mkdirp, readBuffer, writeBuffer } from "@/lib/storage/helpers"
 import { createDtePath, resolveDteDir, resolveDteFile } from "@/lib/storage/config"
 import { DtePortalClient, decodeXmlBuffer } from "@/lib/services/dte-portal/client"
 import { buildDtePortalClientConfig } from "@/lib/services/dte-portal/config"
-import { downloadDteXml } from "@/lib/services/dte-portal/download"
+import { downloadDteXml, MAX_DTE_XML_BYTES } from "@/lib/services/dte-portal/download"
 import { parseDteXml, type DteItem } from "@/lib/services/purchasing-module/dte-parser"
 
 export interface DteXmlDetail {
@@ -93,11 +93,18 @@ export async function downloadDteDocumentXml(dteDocumentId: string): Promise<Dte
     await mkdirp(storageDir)
     await writeBuffer(absolutePath, buffer)
 
-    await db.update(dteDocuments).set({
+    const cachePredicate = doc.xmlPath
+      ? eq(dteDocuments.xmlPath, doc.xmlPath)
+      : isNull(dteDocuments.xmlPath)
+    const updated = await db.update(dteDocuments).set({
       montoNeto: parsed.netAmount,
       iva: parsed.taxAmount,
       xmlPath: createDtePath(storageName),
-    }).where(eq(dteDocuments.id, dteDocumentId))
+    }).where(and(eq(dteDocuments.id, dteDocumentId), cachePredicate)).returning({ id: dteDocuments.id })
+    if (updated.length === 0) {
+      // Otra descarga ganó la referencia duradera; esta copia es un perdedor.
+      await fs.unlink(absolutePath).catch(() => undefined)
+    }
   } catch {
     await fs.unlink(absolutePath).catch(() => undefined)
     return { ok: false, error: "No se pudo guardar el XML del DTE" }
@@ -123,7 +130,10 @@ async function readCachedXml(xmlPath: string): Promise<DteXmlDetail | null> {
   if (!absolutePath) return null
 
   try {
+    const stat = await fs.stat(absolutePath)
+    if (stat.size > MAX_DTE_XML_BYTES) return null
     const buffer = await readBuffer(absolutePath)
+    if (buffer.length > MAX_DTE_XML_BYTES) return null
     const parsed = parseDteXml(decodeXmlBuffer(buffer))
     if (!parsed) return null
     return {

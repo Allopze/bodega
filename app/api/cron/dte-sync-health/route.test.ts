@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   verifyCronSecret: vi.fn(),
   readDtePortalConfig: vi.fn(),
   readSalesSyncConfig: vi.fn(),
+  readChipaxConfig: vi.fn(),
   selectWhere: vi.fn(),
   evaluateDteSyncHealth: vi.fn(),
   notifyDteSyncHealthChange: vi.fn(),
@@ -20,6 +21,7 @@ vi.mock("@/lib/services/dte-portal/config", () => ({
 }))
 vi.mock("@/lib/services/billing/config", () => ({
   readSalesSyncConfig: (...args: unknown[]) => mocks.readSalesSyncConfig(...args),
+  readChipaxConfig: (...args: unknown[]) => mocks.readChipaxConfig(...args),
 }))
 vi.mock("@/db", () => ({
   db: {
@@ -76,6 +78,7 @@ describe("GET /api/cron/dte-sync-health", () => {
       credentials: { rutUsr: "user", rutEmp: "company", clave: "secret", codEmp: "433" },
     })
     mocks.readSalesSyncConfig.mockReturnValue({ enabled: false })
+    mocks.readChipaxConfig.mockReturnValue({ enabled: false, syncEnabled: false, hasCredentials: false, companyTaxId: "" })
     mocks.selectWhere.mockResolvedValue([])
     mocks.evaluateDteSyncHealth.mockReturnValue(healthy)
     mocks.notifyDteSyncHealthChange.mockResolvedValue(undefined)

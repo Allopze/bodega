@@ -164,6 +164,7 @@ export type BillingProviderErrorCode =
   | "TIMEOUT"
   | "NETWORK_ERROR"
   | "PARSE_FAILED"
+  | "INVALID_RESPONSE"
   | "CONTRACT_UNKNOWN"
   | "UNKNOWN"
 

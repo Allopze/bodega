@@ -19,6 +19,8 @@ export interface DtePdfDownloadOptions {
   maxBytes?: number
 }
 
+export const MAX_DTE_XML_BYTES = 10 * 1024 * 1024
+
 /**
  * Descarga el XML de un DTE y lo retorna como string decodificado.
  *
@@ -34,7 +36,7 @@ export async function downloadDteXml(
   }
 
   const fullUrl = resolveUrl(client, xmlUrl)
-  const buffer = await client.downloadBinary(fullUrl)
+  const buffer = await client.downloadBinary(fullUrl, { maxBytes: MAX_DTE_XML_BYTES })
 
   // Verificar que es XML (buscar declaración <?xml o <DTE o <EnvioDTE)
   const head = buffer.toString("latin1", 0, Math.min(buffer.length, 512)).trim()

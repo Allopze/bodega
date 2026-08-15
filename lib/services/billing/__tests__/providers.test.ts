@@ -247,6 +247,20 @@ describe("Chipax — contrato real", () => {
     expect(page.items[0]!.accountRef).toBe("cc:7")
   })
 
+  it("tolera una respuesta de cartolas en arreglo plano", async () => {
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(respuesta({ token: TOKEN, tokenExpiration: Math.floor(Date.now() / 1000) + 3600 }))
+      .mockResolvedValueOnce(respuesta([
+        { id: 9, fecha: "2026-07-04", abono: 100, cargo: 0, descripcion: "ABONO", comentario_transferencia: null, cuenta_corriente_id: 3 },
+      ]))
+
+    const page = await nuevoProveedor().listBankTransactions({ period: "2026-07" })
+
+    expect(page.items).toHaveLength(1)
+    expect(page.nextCursor).toBeNull()
+    expect(page.items[0]!.externalId).toBe("chipax:cartola:9")
+  })
+
   it("sin RUT de la empresa se niega a mapear ventas en vez de inventar el emisor", async () => {
     vi.stubEnv("BILLING_COMPANY_TAX_ID", "")
     vi.stubEnv("DTE_PORTAL_RUT_EMP", "")
@@ -267,13 +281,33 @@ describe("Chipax — contrato real", () => {
     expect(fetchMock).toHaveBeenCalledTimes(4)
   })
 
-  it("informa el límite de tasa en vez de reintentar a ciegas", async () => {
+  it("reintenta una sola vez ante 429 y falla si el proveedor mantiene el límite", async () => {
     vi.spyOn(globalThis, "fetch")
       .mockResolvedValueOnce(respuesta({ token: TOKEN, tokenExpiration: Math.floor(Date.now() / 1000) + 3600 }))
-      .mockResolvedValueOnce(new Response("{}", { status: 429, headers: { "retry-after": "30" } }))
+      .mockResolvedValueOnce(new Response("{}", { status: 429, headers: { "retry-after": "0" } }))
+      .mockResolvedValueOnce(new Response("{}", { status: 429, headers: { "retry-after": "0" } }))
 
     await expect(nuevoProveedor().listBankTransactions({ period: "2026-07" }))
-      .rejects.toThrow(/límite de tasa.*30/i)
+      .rejects.toThrow(/límite de tasa después del reintento/i)
+  })
+
+  it("acepta una respuesta después de un único 429", async () => {
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(respuesta({ token: TOKEN, tokenExpiration: Math.floor(Date.now() / 1000) + 3600 }))
+      .mockResolvedValueOnce(new Response("{}", { status: 429, headers: { "retry-after": "0" } }))
+      .mockResolvedValueOnce(respuesta({ docs: [], pages: 1, total: 0 }))
+
+    const page = await nuevoProveedor().listBankTransactions({ period: "2026-07" })
+    expect(page.items).toHaveLength(0)
+  })
+
+  it("rechaza respuestas de contrato inválidas antes de mapearlas", async () => {
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(respuesta({ token: TOKEN, tokenExpiration: Math.floor(Date.now() / 1000) + 3600 }))
+      .mockResolvedValueOnce(respuesta({ items: [{ id: 1, tipo: 33 }], paginationAttributes: { totalPages: 1 } }))
+
+    await expect(nuevoProveedor().listIssuedInvoices({ period: "2026-07" }))
+      .rejects.toMatchObject({ code: "INVALID_RESPONSE" })
   })
 
   it("no expone el token ni las credenciales al fallar la autenticación", async () => {

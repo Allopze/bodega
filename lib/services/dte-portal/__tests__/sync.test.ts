@@ -20,6 +20,7 @@ const BASE_ROW: DteBandejaRow = {
 
 const mockSyncRunsFindFirst = vi.fn()
 const mockDocumentsFindFirst = vi.fn()
+const mockDocumentsFindMany = vi.fn()
 const mockInsertValues = vi.fn()
 const mockUpdateSet = vi.fn()
 const mockTxInsertValues = vi.fn()
@@ -27,6 +28,7 @@ const mockTxUpdateSet = vi.fn()
 const mockFetchBandejaEntrada = vi.fn()
 const mockMatchToPurchaseOrderInvoices = vi.fn()
 const mockMatchToFuelLoads = vi.fn()
+const mockSummarizeDteReconciliation = vi.fn()
 const mockClaimDteSyncStart = vi.fn()
 
 vi.mock("@/db", () => ({
@@ -38,7 +40,10 @@ vi.mock("@/db", () => ({
     insert: () => ({ values: (...args: unknown[]) => mockInsertValues(...args) }),
     update: () => ({ set: (...args: unknown[]) => ({ where: (...whereArgs: unknown[]) => mockUpdateSet(...args, ...whereArgs) }) }),
     transaction: async (cb: (tx: unknown) => unknown) => cb({
-      query: { dteDocuments: { findFirst: (...args: unknown[]) => mockDocumentsFindFirst(...args) } },
+      query: { dteDocuments: {
+        findFirst: (...args: unknown[]) => mockDocumentsFindFirst(...args),
+        findMany: (...args: unknown[]) => mockDocumentsFindMany(...args),
+      } },
       insert: () => ({ values: (...args: unknown[]) => mockTxInsertValues(...args) }),
       update: () => ({ set: (...args: unknown[]) => ({ where: (...whereArgs: unknown[]) => mockTxUpdateSet(...args, ...whereArgs) }) }),
     }),
@@ -53,6 +58,7 @@ vi.mock("../bandeja-entrada", () => ({
 vi.mock("../reconciliation", () => ({
   matchToPurchaseOrderInvoices: (...args: unknown[]) => mockMatchToPurchaseOrderInvoices(...args),
   matchToFuelLoads: (...args: unknown[]) => mockMatchToFuelLoads(...args),
+  summarizeDteReconciliation: (...args: unknown[]) => mockSummarizeDteReconciliation(...args),
 }))
 vi.mock("../sync-start-gate", () => ({
   claimDteSyncStart: (...args: unknown[]) => mockClaimDteSyncStart(...args),
@@ -145,8 +151,10 @@ describe("syncDteDocuments", () => {
     mockInsertValues.mockResolvedValue(undefined)
     mockTxInsertValues.mockResolvedValue(undefined)
     mockTxUpdateSet.mockResolvedValue(undefined)
+    mockDocumentsFindMany.mockResolvedValue([])
     mockMatchToPurchaseOrderInvoices.mockResolvedValue([])
     mockMatchToFuelLoads.mockResolvedValue([])
+    mockSummarizeDteReconciliation.mockResolvedValue({ matched: 0, ambiguous: 0, unmatched: 0, discrepancies: 0 })
     mockClaimDteSyncStart.mockResolvedValue({ allowed: true })
   })
 
@@ -231,6 +239,24 @@ describe("syncDteDocuments", () => {
     expect(result.rowsUpdated).toBe(1)
     expect(result.rowsInserted).toBe(0)
     expect(mockTxUpdateSet).toHaveBeenCalledTimes(1)
+  })
+
+  it("updates tax identity fields together with a changed raw hash", async () => {
+    mockSyncRunsFindFirst.mockResolvedValue(undefined)
+    const changed: DteBandejaRow = {
+      ...BASE_ROW,
+      razonSocial: "Proveedor Renombrado SpA",
+      fecha: "2026-06-02",
+    }
+    mockFetchBandejaEntrada.mockResolvedValue({ rows: [changed], totalRegistros: 1 })
+    mockDocumentsFindFirst.mockResolvedValue({ id: "existing-1", rawHash: "hash-antiguo", portalRecordId: changed.nreguist })
+
+    await syncDteDocuments(makeClient(), { periodo: "2026-06", force: true, importerId: "user-1" })
+
+    expect(mockTxUpdateSet).toHaveBeenCalledWith(
+      expect.objectContaining({ razonSocialEmisor: "Proveedor Renombrado SpA", fechaEmision: "2026-06-02" }),
+      expect.anything(),
+    )
   })
 
   it("skips the sync for a CLOSED period when a successful run already exists and force is not set", async () => {
@@ -356,6 +382,24 @@ describe("syncDteDocuments", () => {
     const result = await syncDteDocuments(makeClient(), { periodo: "2026-06", importerId: "user-1" })
 
     expect(result.status).toBe("success")
+    expect(result.reconciliationStatus).toBe("failed")
     expect(result.rowsInserted).toBe(1)
+  })
+
+  it("keeps successful ingestion separate from a partial reconciliation", async () => {
+    mockSyncRunsFindFirst.mockResolvedValue(undefined)
+    mockDocumentsFindFirst.mockResolvedValue(undefined)
+    mockFetchBandejaEntrada.mockResolvedValue({ rows: [BASE_ROW], totalRegistros: 1 })
+    mockSummarizeDteReconciliation.mockResolvedValue({ matched: 1, ambiguous: 1, unmatched: 1, discrepancies: 0 })
+
+    const result = await syncDteDocuments(makeClient(), { periodo: "2026-06", importerId: "user-1" })
+
+    expect(result.status).toBe("success")
+    expect(result.reconciliationStatus).toBe("partial")
+    expect(result.reconciliationError).toMatch(/ambiguas/i)
+    expect(mockUpdateSet).toHaveBeenLastCalledWith(
+      expect.objectContaining({ status: "success", reconciliationStatus: "partial" }),
+      expect.anything(),
+    )
   })
 })

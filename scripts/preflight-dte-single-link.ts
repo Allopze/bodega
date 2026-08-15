@@ -1,4 +1,4 @@
-import { and, isNotNull } from "drizzle-orm"
+import { and, eq, isNotNull, sql } from "drizzle-orm"
 import { fileURLToPath } from "node:url"
 import { resolve } from "node:path"
 import { db } from "@/db"
@@ -8,6 +8,11 @@ export type DteSingleBusinessLinkConflict = {
   id: string
   purchaseOrderInvoiceId: string | null
   fuelLoadId: string | null
+}
+
+export type DtePurchaseInvoiceDuplicateConflict = {
+  purchaseOrderInvoiceId: string
+  dteDocumentIds: string[]
 }
 
 /**
@@ -29,14 +34,37 @@ export async function findDteSingleBusinessLinkConflicts(): Promise<DteSingleBus
 
 export async function assertNoDteSingleBusinessLinkConflicts(): Promise<DteSingleBusinessLinkConflict[]> {
   const conflicts = await findDteSingleBusinessLinkConflicts()
-  if (conflicts.length > 0) {
+  const duplicates = await findDtePurchaseInvoiceDuplicateConflicts()
+  if (conflicts.length > 0 || duplicates.length > 0) {
     throw new Error(
-      "No se puede aplicar la migración de vínculo único DTE: hay documentos " +
-      `conciliados tanto con factura de OC como con carga de combustible. ${JSON.stringify(conflicts)}. ` +
-      "Revise cada DTE y conserve solo el vínculo que corresponda antes de reintentar.",
+      "No se puede aplicar la migración de vínculo único DTE: hay conflictos históricos. " +
+      JSON.stringify({ singleBusinessLink: conflicts, duplicatePurchaseInvoices: duplicates }) + ". " +
+      "Ejecute la reparación explícita con mapping auditado y repita el preflight.",
     )
   }
   return conflicts
+}
+
+/** Detecta todas las facturas de OC con más de un DTE vinculado. */
+export async function findDtePurchaseInvoiceDuplicateConflicts(): Promise<DtePurchaseInvoiceDuplicateConflict[]> {
+  const groups = await db.select({
+    purchaseOrderInvoiceId: dteDocuments.purchaseOrderInvoiceId,
+  }).from(dteDocuments).where(isNotNull(dteDocuments.purchaseOrderInvoiceId))
+    .groupBy(dteDocuments.purchaseOrderInvoiceId)
+    .having(sql`count(*) > 1`)
+
+  const result: DtePurchaseInvoiceDuplicateConflict[] = []
+  for (const group of groups) {
+    if (!group.purchaseOrderInvoiceId) continue
+    const rows = await db.select({ id: dteDocuments.id }).from(dteDocuments).where(
+      eq(dteDocuments.purchaseOrderInvoiceId, group.purchaseOrderInvoiceId),
+    )
+    result.push({
+      purchaseOrderInvoiceId: group.purchaseOrderInvoiceId,
+      dteDocumentIds: rows.map((row) => row.id),
+    })
+  }
+  return result
 }
 
 function getErrorCode(error: unknown): string {
@@ -47,8 +75,12 @@ function getErrorCode(error: unknown): string {
 }
 
 async function main() {
-  const conflicts = await assertNoDteSingleBusinessLinkConflicts()
-  console.log(JSON.stringify({ ok: true, dteSingleBusinessLinkConflicts: conflicts.length }, null, 2))
+  const conflicts = await findDteSingleBusinessLinkConflicts()
+  const duplicates = await findDtePurchaseInvoiceDuplicateConflicts()
+  if (conflicts.length > 0 || duplicates.length > 0) {
+    throw new Error(JSON.stringify({ ok: false, dteSingleBusinessLinkConflicts: conflicts, duplicatePurchaseInvoices: duplicates }))
+  }
+  console.log(JSON.stringify({ ok: true, dteSingleBusinessLinkConflicts: 0, duplicatePurchaseInvoices: 0 }, null, 2))
 }
 
 const invokedPath = process.argv[1]

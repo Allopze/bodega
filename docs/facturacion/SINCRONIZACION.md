@@ -6,9 +6,9 @@
 |---|---|
 | **Idempotente** | Identidad tributaria + `(provider, external_id)`. Dos corridas iguales dejan la base igual. Probado en `sync-integration.test.ts`. |
 | **Segura ante concurrencia** | Índice único parcial: una sola corrida `running` por (proveedor, alcance, período). La segunda se salta, no compite. |
-| **Reanudable** | Ventas FacturaEnLínea guarda un cursor durable por proveedor/alcance/período; el cursor avanza solo después de persistir el lote XML. |
+| **Reanudable** | FacturaEnLínea y Chipax guardan cursor durable por proveedor/alcance/período; avanza sólo después de confirmar el lote y se conserva si la corrida queda parcial o interrumpida. |
 | **Observable** | Cada corrida registra leídos/creados/actualizados/sin cambios, duplicados, conflictos, errores y un `correlation_id`. |
-| **Acotada** | Siempre por período, con piso histórico (`BILLING_HISTORY_FLOOR`). Rechaza períodos futuros. |
+| **Acotada** | Siempre por período, con piso histórico (`BILLING_HISTORY_FLOOR`). Rechaza períodos futuros y limita páginas/respuestas del proveedor. |
 | **Con modo simulación** | `dryRun` consulta y cuenta sin escribir nada. |
 | **Independiente de la sesión web** | No lee la sesión; el actor se pasa como parámetro. Por eso el cron funciona igual. |
 | **Tolerante a fallos parciales** | Un documento que falla no aborta la corrida: se cuenta y se reporta. |
@@ -31,7 +31,7 @@ En su lugar:
   hace una hora, dicho como tal, es más honesto y muchísimo más barato que uno
   fresco que nadie pidió.
 
-### Los cinco estados posibles
+### Los seis estados posibles
 
 | Estado | Cuándo | Tono |
 |---|---|---|
@@ -39,11 +39,12 @@ En su lugar:
 | **Sin configurar** | Habilitado pero sin credenciales | advertencia |
 | **Sin comprobar** | Configurado, nadie probó la conexión todavía | neutro |
 | **Operativo** | Última comprobación exitosa | éxito |
+| **Comprobación vencida** | Última comprobación exitosa tiene más de 24 horas | advertencia |
 | **Con problema** | Última comprobación fallida | peligro |
 
 **«Sin configurar» no es «con problema».** Un proveedor que nunca se configuró
 tiene una tarea pendiente, no una falla; pintarlo de rojo junto a una caída real
-enseña a ignorar el rojo. Los cinco estados se distinguen por **texto**, no solo
+enseña a ignorar el rojo. Los seis estados se distinguen por **texto**, no solo
 por color (verificado en `health.test.ts`).
 
 La carga manual **no aparece** en esta grilla: no es una fuente que se
@@ -63,6 +64,17 @@ con timeout, redirects manuales y contrato JSON acotado; no imprime token ni
 cuerpos de respuesta.
 Endpoint separado del de compras (`/api/cron/dte-portal-sync`) a propósito: son
 alcances distintos y un fallo de uno no debe apagar el otro.
+
+Para Chipax el endpoint es:
+
+```
+GET /api/cron/chipax-sync
+Authorization: Bearer $CRON_SECRET
+```
+
+Cuando `BILLING_CHIPAX_SYNC_ENABLED=true` ejecuta ventas del mes actual y
+anterior más cartolas del mes actual a las 09:00 Chile, bajo una sola
+correlación. `BILLING_CHIPAX_ENABLED=true` por sí solo no activa el scheduler.
 
 ### Manual
 `/facturacion/sincronizacion` → elegir proveedor y período → **Simular** o
@@ -94,11 +106,27 @@ dispare una descarga de años.
 | `failed` | La corrida no pudo completarse. |
 | `skipped` | No se ejecutó: proveedor deshabilitado, sin configurar, o ya había una corrida activa del período. |
 
+La ingesta DTE y su conciliación son estados distintos: `dte_sync_runs.status`
+describe la lectura del portal; `reconciliation_status` puede ser
+`not_run`, `success`, `partial` o `failed`. Una ingesta `success` con
+conciliación `partial` conserva `status=success`, pero degrada health y debe
+revisarse.
+
 | Métrica | Qué mirar |
 |---|---|
 | `conflictsDetected` | Documentos que **no se insertaron** por falta de RUT de contraparte. Suele indicar que el XML no estuvo disponible. |
 | `duplicatesDetected` | El proveedor entregó la misma fila dos veces en una respuesta. |
 | `recordsUnchanged` | Normal en corridas repetidas: la fuente no cambió. |
+
+En cartolas, `partial` también significa que el proveedor rectificó fecha o
+monto de un movimiento ya imputado: se conserva la cartola original y el
+mensaje operativo diferencia **sin RUT**, **conflicto de monto/fecha** y
+**error técnico**. No se sobrescribe una imputación sin decisión humana.
+
+Las respuestas Chipax se validan antes de persistir. Ante `429` se respeta
+`Retry-After` una sola vez, acotado a 30 segundos; un segundo `429` queda como
+`RATE_LIMITED`. Los XML de compras, enriquecimiento de ventas y caché local
+tienen un límite de 10 MiB, también cuando se leen desde disco.
 
 ## Cuando algo falla
 

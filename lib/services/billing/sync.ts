@@ -28,7 +28,7 @@ import { db } from "@/db"
 import { billingBankTransactions, billingSyncRuns, type BillingProviderId } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { logger } from "@/lib/logger"
-import { readSalesXmlCursor, usesSalesXmlCursor, writeSalesXmlCursor } from "./sales-xml-cursor"
+import { readBillingCursor, usesDurableBillingCursor, writeBillingCursor } from "./sales-xml-cursor"
 import { readSalesSyncConfig } from "./config"
 import { chilePeriod, previousChilePeriod } from "../dte-portal/chile-time"
 import { classifyDteFailure } from "../dte-portal/failure"
@@ -110,41 +110,43 @@ export async function syncBillingInvoices(options: BillingSyncOptions): Promise<
     })
   }
 
-  await markStaleRunsAsFailed(options.provider, options.scope)
+  if (!dryRun) await markStaleRunsAsFailed(options.provider, options.scope)
 
   // FacturaEnLínea's sales list is one large HTML response. Its XML-enrichment
   // cursor lives independently of transient run rows so a crash resumes the
   // same deterministic batch instead of silently abandoning documents >120.
-  const managedCursor = usesSalesXmlCursor(options.provider, options.scope)
+  const managedCursor = usesDurableBillingCursor(options.provider, options.scope)
   const initialCursor = options.cursor ?? (managedCursor
-    ? await readSalesXmlCursor(options.provider, options.scope, period)
+    ? await readBillingCursor(options.provider, options.scope, period)
     : null)
 
-  const runId = nanoid()
-  try {
-    await db.insert(billingSyncRuns).values({
-      id: runId,
-      provider: options.provider,
-      scope: options.scope,
-      trigger,
-      status: "running",
-      dryRun,
-      periodFrom: period,
-      periodTo: period,
-      cursor: initialCursor,
-      correlationId,
-      triggeredBy: options.triggeredBy ?? null,
-    })
-  } catch (error) {
-    // Sólo el índice único parcial significa "ya hay una corrida activa". Una
-    // base caída, un timeout o una FK rota son incidentes que deben propagarse:
-    // reportarlos como "ya está corriendo" es un diagnóstico falso justo donde
-    // más se necesita el verdadero (H-09, AUDITORIA_BUGS_2026-08-05.md).
-    if (!isSingleActiveRunConflict(error)) throw error
-    return skipped({
-      runId: "", correlationId, provider: options.provider, scope: options.scope, period, dryRun,
-      reason: "Ya hay una sincronización en curso para este período.", skipReason: "active_run",
-    })
+  const runId = dryRun ? "" : nanoid()
+  if (!dryRun) {
+    try {
+      await db.insert(billingSyncRuns).values({
+        id: runId,
+        provider: options.provider,
+        scope: options.scope,
+        trigger,
+        status: "running",
+        dryRun: false,
+        periodFrom: period,
+        periodTo: period,
+        cursor: initialCursor,
+        correlationId,
+        triggeredBy: options.triggeredBy ?? null,
+      })
+    } catch (error) {
+      // Sólo el índice único parcial significa "ya hay una corrida activa". Una
+      // base caída, un timeout o una FK rota son incidentes que deben propagarse:
+      // reportarlos como "ya está corriendo" es un diagnóstico falso justo donde
+      // más se necesita el verdadero (H-09, AUDITORIA_BUGS_2026-08-05.md).
+      if (!isSingleActiveRunConflict(error)) throw error
+      return skipped({
+        runId: "", correlationId, provider: options.provider, scope: options.scope, period, dryRun,
+        reason: "Ya hay una sincronización en curso para este período.", skipReason: "active_run",
+      })
+    }
   }
 
   const metrics = {
@@ -218,10 +220,10 @@ export async function syncBillingInvoices(options: BillingSyncOptions): Promise<
 
       const mustRetryPage = Boolean(page.retryRequired) || metrics.errorsCount > errorsBeforePage
       cursor = mustRetryPage ? cursor : page.nextCursor
-      if (page.managedCursor) {
+      if (!dryRun && (managedCursor || page.managedCursor)) {
         // All selected invoice writes above completed (or we deliberately keep
         // the old cursor), so this cursor cannot skip an unpersisted XML.
-        await writeSalesXmlCursor(options.provider, options.scope, period, cursor)
+        await writeBillingCursor(options.provider, options.scope, period, cursor)
       }
       if (page.deferred || mustRetryPage) {
         errors.push(mustRetryPage
@@ -249,15 +251,34 @@ export async function syncBillingInvoices(options: BillingSyncOptions): Promise<
     logger.error(`[billing/sync ${correlationId}] corrida falló`, { message: redact(error) })
   }
 
+  if (!dryRun && managedCursor) {
+    // A partial run must remain visibly resumable even when the last page had
+    // no `nextCursor` (for example, a conflict on the final page). Repeating
+    // that page is safe because invoice identity is idempotent; silently
+    // deleting the durable key would make the operator believe the batch was
+    // complete.
+    const durableCursor = resumableCursor(status, initialCursor, cursor, metrics.recordsFetched)
+    try {
+      await writeBillingCursor(options.provider, options.scope, period, durableCursor)
+      cursor = durableCursor
+    } catch (error) {
+      status = "failed"
+      metrics.errorsCount++
+      errors.push(redact(error))
+    }
+  }
+
   const errorSummary = errors.length > 0 ? truncateSummary(errors) : null
 
-  await db.update(billingSyncRuns).set({
-    status,
-    cursor,
-    ...metrics,
-    errorSummary,
-    finishedAt: new Date().toISOString(),
-  }).where(eq(billingSyncRuns.id, runId))
+  if (!dryRun) {
+    await db.update(billingSyncRuns).set({
+      status,
+      cursor,
+      ...metrics,
+      errorSummary,
+      finishedAt: new Date().toISOString(),
+    }).where(eq(billingSyncRuns.id, runId))
+  }
 
   return {
     runId, correlationId, provider: options.provider, scope: options.scope, period,
@@ -293,9 +314,11 @@ export async function syncBankTransactions(options: {
   period?: string
   trigger?: "manual" | "cron" | "backfill"
   triggeredBy?: string | null
+  cursor?: string | null
+  correlationId?: string
 }): Promise<BillingSyncResult> {
   const period = options.period ?? currentPeriod()
-  const correlationId = nanoid(12)
+  const correlationId = options.correlationId ?? nanoid(12)
   assertPeriodFormat(period)
   assertPeriodFloor(period)
 
@@ -320,12 +343,17 @@ export async function syncBankTransactions(options: {
   // queda bloqueado para siempre (H-07, AUDITORIA_BUGS_2026-08-05.md).
   await markStaleRunsAsFailed(options.provider, "bank_transactions")
 
+  const managedCursor = usesDurableBillingCursor(options.provider, "bank_transactions")
+  const initialCursor = options.cursor ?? (managedCursor
+    ? await readBillingCursor(options.provider, "bank_transactions", period)
+    : null)
+
   const runId = nanoid()
   try {
     await db.insert(billingSyncRuns).values({
       id: runId, provider: options.provider, scope: "bank_transactions",
       trigger: options.trigger ?? "manual", status: "running", dryRun: false,
-      periodFrom: period, periodTo: period, correlationId,
+      periodFrom: period, periodTo: period, correlationId, cursor: initialCursor,
       triggeredBy: options.triggeredBy ?? null,
     })
   } catch (error) {
@@ -339,7 +367,7 @@ export async function syncBankTransactions(options: {
   }
   const errors: string[] = []
   let status: BillingSyncResult["status"] = "success"
-  let cursor: string | null = null
+  let cursor: string | null = initialCursor
   let pages = 0
 
   try {
@@ -347,6 +375,7 @@ export async function syncBankTransactions(options: {
       const page = await provider.listBankTransactions!({ period, cursor })
       pages++
       metrics.recordsFetched += page.items.length
+      const errorsBeforePage = metrics.errorsCount
 
       for (const transaction of page.items) {
         try {
@@ -405,7 +434,16 @@ export async function syncBankTransactions(options: {
         }
       }
 
-      cursor = page.nextCursor
+      const mustRetryPage = Boolean(page.retryRequired) || metrics.errorsCount > errorsBeforePage
+      cursor = mustRetryPage ? cursor : page.nextCursor
+      if (managedCursor || page.managedCursor) {
+        await writeBillingCursor(options.provider, "bank_transactions", period, cursor)
+      }
+      if (mustRetryPage) {
+        errors.push("La página de cartolas no se confirmó completamente; el cursor no avanzó.")
+        status = "partial"
+        break
+      }
       if (pages >= MAX_PAGES_PER_RUN && cursor) {
         errors.push(`Se alcanzó el tope de ${MAX_PAGES_PER_RUN} páginas; la corrida queda reanudable por cursor.`)
         status = "partial"
@@ -415,12 +453,26 @@ export async function syncBankTransactions(options: {
 
     if (metrics.errorsCount > 0) {
       status = metrics.errorsCount === metrics.recordsFetched ? "failed" : "partial"
+    } else if (metrics.conflictsDetected > 0 && status === "success") {
+      status = "partial"
     }
   } catch (error) {
     status = "failed"
     metrics.errorsCount++
     errors.push(redact(error))
     logger.error(`[billing/sync ${correlationId}] cartolas fallaron`, { message: redact(error) })
+  }
+
+  if (managedCursor) {
+    const durableCursor = resumableCursor(status, initialCursor, cursor, metrics.recordsFetched)
+    try {
+      await writeBillingCursor(options.provider, "bank_transactions", period, durableCursor)
+      cursor = durableCursor
+    } catch (error) {
+      status = "failed"
+      metrics.errorsCount++
+      errors.push(redact(error))
+    }
   }
 
   const errorSummary = errors.length > 0 ? truncateSummary(errors) : null
@@ -574,6 +626,24 @@ function truncateSummary(errors: string[]): string {
   const joined = lines.join(" | ")
   if (joined.length <= MAX) return joined
   return `${joined.slice(0, MAX - 40)}… (+${errors.length} errores en total)`
+}
+
+/**
+ * Decide what durable cursor remains after a run. A successful run may clear
+ * the key; a partial/failed run keeps the page it started (or page 1 when it
+ * already consumed the only page) so a later invocation cannot mistake a
+ * degraded batch for a completed one.
+ */
+function resumableCursor(
+  status: BillingSyncResult["status"],
+  initialCursor: string | null,
+  cursor: string | null,
+  recordsFetched: number,
+): string | null {
+  if (status === "success") return cursor
+  if (cursor !== null) return cursor
+  if (initialCursor !== null) return initialCursor
+  return recordsFetched > 0 ? "1" : null
 }
 
 function redact(error: unknown): string {

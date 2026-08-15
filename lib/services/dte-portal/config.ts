@@ -56,10 +56,12 @@ export function readDtePortalEnv(): DtePortalEnvConfig {
     credentials: {
       rutUsr: process.env.DTE_PORTAL_RUT_USR?.trim() ?? "",
       rutEmp: process.env.DTE_PORTAL_RUT_EMP?.trim() ?? "",
-      clave: process.env.DTE_PORTAL_CLAVE?.trim() ?? "",
+      // La contraseña es opaca: quitar espacios cambia el secreto. El panel
+      // persistido ya conserva exactamente el valor ingresado.
+      clave: process.env.DTE_PORTAL_CLAVE ?? "",
       codEmp: process.env.DTE_PORTAL_CODEMP?.trim() ?? "",
     },
-    delayMs: parseInt(process.env.DTE_SYNC_DELAY_MS ?? "", 10) || DEFAULT_DELAY_MS,
+    delayMs: parseIntStrict(process.env.DTE_SYNC_DELAY_MS, DEFAULT_DELAY_MS),
     requestTimeoutMs: DEFAULT_TIMEOUT_MS,
     syncEnabled: process.env.DTE_SYNC_ENABLED?.trim().toLowerCase() === "true",
     importerEmail: process.env.DTE_SYNC_IMPORTER_EMAIL?.trim() || null,

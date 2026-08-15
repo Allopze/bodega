@@ -79,8 +79,10 @@ FacturaEnLínea; no ejecuta sincronizaciones ni modifica producción por sí sol
 
 ## Salud, alertas y recuperación de datos
 
-- El scheduler corre compras a las 07:00, 13:00 y 19:00, ventas a las 07:30 y
-  el evaluador cada cinco minutos en `America/Santiago`.
+- El scheduler corre compras a las 07:00, 13:00 y 19:00, ventas a las 07:30,
+  Chipax a las 09:00 y el evaluador cada cinco minutos en
+  `America/Santiago`. Chipax cubre ventas del mes actual/anterior y cartolas
+  del mes actual bajo un `correlationId` común.
 - Durante una ventana de 20 minutos sólo cuentan corridas `cron`; manuales y
   backfills no prueban la automatización. Una fila `running` recibe 10 minutos
   de gracia antes de alertar para no paginar una corrida activa/conflicto recién
@@ -92,6 +94,28 @@ FacturaEnLínea; no ejecuta sincronizaciones ni modifica producción por sí sol
 - Tras el corte, ejecutar backfill controlado únicamente de mes actual y
   anterior, comparar totales con el portal, revisar `partial`, conciliación y
   alertas antes de cerrar el incidente.
+
+## Preflight y reparación del vínculo DTE
+
+Antes de aplicar la migración que crea el índice único parcial de
+`dte_documents.purchase_order_invoice_id`:
+
+1. ejecutar `npm run db:preflight-dte-single-link` en la base objetivo;
+2. si reporta conflictos, generar el informe por defecto con
+   `npm run db:repair-dte-single-link`;
+3. preparar un mapping explícito que conserve exactamente un DTE por factura
+   de OC y elimine o cambie el resto;
+4. ejecutar `npm run db:repair-dte-single-link -- --apply --mapping <archivo>`;
+5. repetir el preflight hasta cero y recién entonces ejecutar `npm run db:migrate`.
+
+La reparación bloquea filas, valida que no hayan cambiado desde el informe y
+registra cada desvinculación en `audit_log`. No selecciona ganadores por
+antigüedad, monto ni orden de consulta.
+
+La ingesta y la conciliación se operan por separado: `status=success` puede
+coexistir con `reconciliation_status=partial`, pero health queda degradado;
+`reconciliation_status=failed` es crítico. Los XML y su caché están acotados a
+10 MiB, incluido el archivo ya persistido.
 
 ## Rollback
 

@@ -40,6 +40,8 @@ export default async function DtePage() {
         periodo: true,
         trigger: true,
         status: true,
+        reconciliationStatus: true,
+        reconciliationError: true,
         rowsSeen: true,
         rowsInserted: true,
         rowsUpdated: true,

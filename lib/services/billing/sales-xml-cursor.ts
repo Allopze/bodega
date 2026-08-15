@@ -12,8 +12,18 @@ export function usesSalesXmlCursor(provider: BillingProviderId, scope: string): 
   return provider === "factura_en_linea" && scope === "sales_invoices"
 }
 
+/** Cursores durables para todas las consultas paginadas que pueden reanudarse. */
+export function usesDurableBillingCursor(provider: BillingProviderId, scope: string): boolean {
+  return usesSalesXmlCursor(provider, scope)
+    || (provider === "chipax" && (scope === "sales_invoices" || scope === "bank_transactions"))
+}
+
 export async function readSalesXmlCursor(provider: BillingProviderId, scope: string, period: string): Promise<string | null> {
-  if (!usesSalesXmlCursor(provider, scope)) return null
+  return readBillingCursor(provider, scope, period)
+}
+
+export async function readBillingCursor(provider: BillingProviderId, scope: string, period: string): Promise<string | null> {
+  if (!usesDurableBillingCursor(provider, scope)) return null
   const key = salesXmlCursorSettingKey(provider, scope, period)
   const rows = await db.select({ value: systemSettings.value }).from(systemSettings).where(eq(systemSettings.key, key)).limit(1)
   return rows[0]?.value ?? null
@@ -26,7 +36,17 @@ export async function writeSalesXmlCursor(
   period: string,
   cursor: string | null,
 ): Promise<void> {
-  if (!usesSalesXmlCursor(provider, scope)) return
+  return writeBillingCursor(provider, scope, period, cursor)
+}
+
+/** Persiste el siguiente cursor sólo después de confirmar la página actual. */
+export async function writeBillingCursor(
+  provider: BillingProviderId,
+  scope: string,
+  period: string,
+  cursor: string | null,
+): Promise<void> {
+  if (!usesDurableBillingCursor(provider, scope)) return
   const key = salesXmlCursorSettingKey(provider, scope, period)
   if (cursor === null) {
     await db.delete(systemSettings).where(eq(systemSettings.key, key))

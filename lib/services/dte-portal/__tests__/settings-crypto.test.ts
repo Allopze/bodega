@@ -36,7 +36,9 @@ describe("DTE settings encryption", () => {
   it("rejects a tampered envelope and a retired key", () => {
     const encrypted = encryptDteSetting("credential-value", "dte.clave", keyring())
     const [, version, kid, iv, tag, ciphertext] = encrypted.split(":")
-    const tampered = `enc:${version}:${kid}:${iv}:${tag}:${ciphertext!.slice(0, -1)}A`
+    const tamperedBytes = Buffer.from(ciphertext!, "base64url")
+    tamperedBytes[0] = tamperedBytes[0]! ^ 0x01
+    const tampered = `enc:${version}:${kid}:${iv}:${tag}:${tamperedBytes.toString("base64url")}`
 
     expect(() => decryptDteSetting(tampered, "dte.clave", keyring())).toThrow("DTE_SETTINGS_DECRYPT_FAILED")
     expect(() => decryptDteSetting(encrypted, "dte.clave", parseDteSettingsKeyring({

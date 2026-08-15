@@ -31,6 +31,7 @@ await migratePGlite(pg, path.resolve(process.cwd(), "db/migrations"))
 let issuedPages: ProviderPage<ProviderInvoice>[] = []
 let issuedPageFactory: ((query: ProviderPeriodQuery) => ProviderPage<ProviderInvoice>) | null = null
 let bankPages: ProviderPage<ProviderBankTransaction>[] = []
+let bankPageFactory: ((query: ProviderPeriodQuery) => ProviderPage<ProviderBankTransaction>) | null = null
 let configured = true
 
 function fakeProvider(id: "factura_en_linea" | "chipax"): BillingProvider {
@@ -53,7 +54,7 @@ function fakeProvider(id: "factura_en_linea" | "chipax"): BillingProvider {
     isConfigured: async () => configured,
     healthCheck: async () => ({ ok: true, detail: "fake", checkedAt: new Date().toISOString() }),
     listIssuedInvoices: async (query) => issuedPageFactory?.(query) ?? issuedPages[call++] ?? { items: [], nextCursor: null, reportedTotal: 0 },
-    listBankTransactions: async () => bankPages[bankCall++] ?? { items: [], nextCursor: null, reportedTotal: 0 },
+    listBankTransactions: async (query) => bankPageFactory?.(query) ?? bankPages[bankCall++] ?? { items: [], nextCursor: null, reportedTotal: 0 },
   }
 }
 
@@ -80,6 +81,8 @@ const { syncBillingInvoices, syncBankTransactions } = await import("../sync")
 const {
   upsertProviderInvoice,
   recomputeInvoicePaymentStatus,
+  BillingExternalReferenceConflict,
+  BillingExternalReferenceInvalid,
 } = await import("../invoices")
 
 afterAll(async () => {
@@ -91,6 +94,7 @@ beforeEach(async () => {
   issuedPages = []
   issuedPageFactory = null
   bankPages = []
+  bankPageFactory = null
   configured = true
   await inMemoryDb.delete(schema.billingInvoicePayments)
   await inMemoryDb.delete(schema.billingBankTransactions)
@@ -205,6 +209,10 @@ describe("syncBillingInvoices — idempotencia", () => {
   })
 
   it("el modo simulación no escribe nada", async () => {
+    await inMemoryDb.insert(schema.systemSettings).values({
+      key: "billing.sync_cursor.factura_en_linea.sales_invoices.2026-07",
+      value: "cursor-previo",
+    })
     issuedPages = [{ items: [sale()], nextCursor: null, reportedTotal: 1 }]
     const result = await syncBillingInvoices({
       provider: "factura_en_linea", scope: "sales_invoices", period: "2026-07", dryRun: true,
@@ -212,9 +220,10 @@ describe("syncBillingInvoices — idempotencia", () => {
     expect(result.recordsFetched).toBe(1)
     expect(result.recordsCreated).toBe(0)
     expect(await countInvoices()).toBe(0)
-
-    const [run] = await inMemoryDb.select().from(schema.billingSyncRuns)
-    expect(run!.dryRun).toBe(true)
+    expect(result.runId).toBe("")
+    expect(await inMemoryDb.select().from(schema.billingSyncRuns)).toHaveLength(0)
+    const [cursor] = await inMemoryDb.select().from(schema.systemSettings)
+    expect(cursor?.value).toBe("cursor-previo")
   })
 
   it("sigue el cursor entre páginas", async () => {
@@ -533,6 +542,25 @@ describe("aislamiento por dirección", () => {
       .where(and(eq(schema.billingInvoices.direction, "sale"), eq(schema.billingInvoices.folio, 1234)))
     expect(sales).toHaveLength(1)
   })
+
+  it("rechaza reasignar un externalId existente a otra factura interna", async () => {
+    await serviceDb.transaction((tx) => upsertProviderInvoice(tx, sale(), "factura_en_linea"))
+
+    await expect(serviceDb.transaction((tx) => upsertProviderInvoice(tx, sale({
+      direction: "purchase",
+      externalId: sale().externalId,
+      issuerTaxId: "76543210-K",
+      receiverTaxId: "78023530-6",
+    }), "factura_en_linea"))).rejects.toBeInstanceOf(BillingExternalReferenceConflict)
+
+    expect(await countInvoices()).toBe(1)
+  })
+
+  it("no crea una factura sin referencia externa estable", async () => {
+    await expect(serviceDb.transaction((tx) => upsertProviderInvoice(tx, sale({ externalId: "   " }), "factura_en_linea")))
+      .rejects.toBeInstanceOf(BillingExternalReferenceInvalid)
+    expect(await countInvoices()).toBe(0)
+  })
 })
 
 describe("sincronización de movimientos bancarios", () => {
@@ -653,5 +681,69 @@ describe("sincronización de movimientos bancarios", () => {
 
     expect(segunda.conflictsDetected).toBe(0)
     expect(segunda.recordsUnchanged).toBe(1)
+  })
+
+  it("marca partial cuando una cartola rectificada genera conflicto", async () => {
+    bankPages = [{ items: [movimiento()], nextCursor: null, reportedTotal: 1 }]
+    await syncBankTransactions({ provider: "chipax", period: "2026-07" })
+
+    bankPages = [{ items: [movimiento({ amount: 4990000 })], nextCursor: null, reportedTotal: 1 }]
+    const result = await syncBankTransactions({ provider: "chipax", period: "2026-07" })
+
+    expect(result.conflictsDetected).toBe(1)
+    expect(result.status).toBe("partial")
+  })
+
+  it("reanuda ventas Chipax desde system_settings después de superar 50 páginas", async () => {
+    const pages = Array.from({ length: 63 }, (_, index) => ({
+      items: [sale({
+        externalId: `chipax:dte:${index + 1}`,
+        folio: index + 1,
+      })],
+      nextCursor: index < 62 ? String(index + 2) : null,
+      reportedTotal: 63,
+    }))
+    issuedPageFactory = (query) => pages[Number(query.cursor ?? "1") - 1]!
+
+    const first = await syncBillingInvoices({ provider: "chipax", scope: "sales_invoices", period: "2026-07" })
+    expect(first.status).toBe("partial")
+    expect(first.recordsCreated).toBe(50)
+    const [cursor] = await inMemoryDb.select().from(schema.systemSettings)
+      .where(eq(schema.systemSettings.key, "billing.sync_cursor.chipax.sales_invoices.2026-07"))
+    expect(cursor?.value).toBe("51")
+
+    const second = await syncBillingInvoices({ provider: "chipax", scope: "sales_invoices", period: "2026-07" })
+    expect(second.status).toBe("success")
+    expect(await countInvoices()).toBe(63)
+    expect(await inMemoryDb.select().from(schema.systemSettings)
+      .where(eq(schema.systemSettings.key, "billing.sync_cursor.chipax.sales_invoices.2026-07"))).toHaveLength(0)
+  })
+
+  it("reanuda cartolas Chipax y conserva el cursor si una página falla", async () => {
+    const pages = Array.from({ length: 55 }, (_, index) => ({
+      items: [movimiento({ externalId: `chipax:cartola:${index + 1}` })],
+      nextCursor: index < 54 ? String(index + 2) : null,
+      reportedTotal: 55,
+    }))
+    let failPage = true
+    bankPageFactory = (query) => {
+      const page = Number(query.cursor ?? "1")
+      if (page === 2 && failPage) {
+        failPage = false
+        throw new Error("interrupción simulada")
+      }
+      return pages[page - 1]!
+    }
+
+    const first = await syncBankTransactions({ provider: "chipax", period: "2026-07" })
+    expect(first.status).toBe("failed")
+    const [cursor] = await inMemoryDb.select().from(schema.systemSettings)
+      .where(eq(schema.systemSettings.key, "billing.sync_cursor.chipax.bank_transactions.2026-07"))
+    expect(cursor?.value).toBe("2")
+    const second = await syncBankTransactions({ provider: "chipax", period: "2026-07" })
+    expect(second.status).toBe("partial")
+    const third = await syncBankTransactions({ provider: "chipax", period: "2026-07" })
+    expect(third.status).toBe("success")
+    expect(await inMemoryDb.select().from(schema.billingBankTransactions)).toHaveLength(55)
   })
 })
