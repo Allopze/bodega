@@ -5,11 +5,10 @@
  * en `pdtp_action_plan_followups`, formando una línea de tiempo.
  */
 
-import { and, desc, eq, notInArray, sql } from "drizzle-orm"
+import { and, eq } from "drizzle-orm"
 import { db } from "@/db"
-import { pdtpActionPlan, pdtpActionPlanFollowups, pdtpExecutions, preventionCapaActions } from "@/db/schema"
-import { nanoid } from "@/lib/id"
-import { isActionVencida, PDTP_ESTADOS_CERRADOS } from "./checklist-domain"
+import { preventionCapaActions } from "@/db/schema"
+import { capaEstado, listPdtpActionFollowups, listPdtpActionsVencidas } from "./capa-view"
 import {
   addCapaEvidenceWithClient,
   addCapaFollowupWithClient,
@@ -38,13 +37,12 @@ export async function addFollowup(input: PdtpFollowupInput, userId: string) {
   const today = now.slice(0, 10)
 
   return db.transaction(async (tx) => {
-    const [current] = await tx.select().from(pdtpActionPlan)
-      .where(eq(pdtpActionPlan.id, input.actionPlanItemId)).limit(1)
-    if (!current) throw new Error("Acción no encontrada.")
-    if (!current.capaActionId) throw new Error("La acción no tiene CAPA vinculada y requiere conciliación.")
     const [initialCapa] = await tx.select().from(preventionCapaActions)
-      .where(eq(preventionCapaActions.id, current.capaActionId)).limit(1)
-    if (!initialCapa) throw new Error("La acción CAPA vinculada no existe.")
+      .where(and(
+        eq(preventionCapaActions.id, input.actionPlanItemId),
+        eq(preventionCapaActions.sourceType, "pdtp"),
+      )).limit(1)
+    if (!initialCapa) throw new Error("Acción no encontrada.")
     let capa = initialCapa
     const access = capaAccess(userId)
 
@@ -77,10 +75,10 @@ export async function addFollowup(input: PdtpFollowupInput, userId: string) {
       capa = result.action!
     }
 
-    const estadoAnterior = current.estado
-    const estadoNuevo = input.estadoNuevo ?? current.estado
+    const estadoAnterior = capaEstado(initialCapa.status)
+    const estadoNuevo = input.estadoNuevo ?? estadoAnterior
 
-    // Si cambió el estado, primero ejecuta la transición CAPA estricta.
+    // Si cambió el estado, ejecuta la transición CAPA estricta.
     if (estadoNuevo !== estadoAnterior) {
       if (estadoNuevo === "en_proceso") {
         if (!["pending", "reopened"].includes(capa.status)) throw new Error("La CAPA no puede pasar a en proceso desde su estado actual.")
@@ -103,57 +101,33 @@ export async function addFollowup(input: PdtpFollowupInput, userId: string) {
       } else {
         throw new Error("Usa los controles dedicados para reabrir, verificar o cancelar una acción.")
       }
-      const set: Record<string, unknown> = {
-        estado: estadoNuevo,
-        updatedAt: now,
-      }
-      if (estadoNuevo === "completado") set.closedAt = now
-      await tx.update(pdtpActionPlan).set(set)
-        .where(eq(pdtpActionPlan.id, input.actionPlanItemId))
     }
 
-    const [followup] = await tx.insert(pdtpActionPlanFollowups).values({
-      id: nanoid(),
+    // La bitácora ya quedó escrita: cada `addCapaEvidence`, `addCapaFollowup` y
+    // transición de arriba insertó su fila en `prevention_capa_transitions`,
+    // que es la línea de tiempo que lee `listFollowups`. Escribir además una
+    // fila propia duplicaba cada entrada.
+    return {
+      id: capa.id,
       actionPlanItemId: input.actionPlanItemId,
       fecha: today,
       estadoAnterior,
       estadoNuevo,
       observacion: input.observacion ?? null,
       evidenciaUrl: input.evidenciaUrl ?? null,
-      evidenciaPhotos: (input.evidenciaPhotos ?? []) as unknown as Record<string, unknown>,
+      evidenciaPhotos: input.evidenciaPhotos ?? [],
       updatedByUserId: userId,
       createdAt: now,
-    }).returning()
-
-    return followup!
+    }
   })
 }
 
 /** Lista la línea de tiempo de seguimiento de una acción. */
 export async function listFollowups(actionPlanItemId: string) {
-  return db.select().from(pdtpActionPlanFollowups)
-    .where(eq(pdtpActionPlanFollowups.actionPlanItemId, actionPlanItemId))
-    .orderBy(desc(pdtpActionPlanFollowups.createdAt))
+  return listPdtpActionFollowups(actionPlanItemId)
 }
 
 /** Lista todas las acciones vencidas (pendiente/en_proceso/reabierto con plazo pasado). */
 export async function listVencidas(programId?: string) {
-  const rows = await db.select({ item: pdtpActionPlan })
-    .from(pdtpActionPlan)
-    .innerJoin(pdtpExecutions, eq(pdtpActionPlan.executionId, pdtpExecutions.id))
-    .where(and(
-      notInArray(pdtpActionPlan.estado, [...PDTP_ESTADOS_CERRADOS]),
-      programId
-        ? sql`EXISTS (
-            SELECT 1 FROM pdtp_activities a
-            WHERE a.id = ${pdtpExecutions.activityId}
-            AND a.program_id = ${programId}
-          )`
-        : sql`true`,
-    ))
-
-  return rows.reduce<typeof pdtpActionPlan.$inferSelect[]>((overdue, row) => {
-    if (isActionVencida(row.item.estado, row.item.plazo)) overdue.push(row.item)
-    return overdue
-  }, [])
+  return listPdtpActionsVencidas(programId)
 }

@@ -31,6 +31,8 @@ const ACT_ID = "pdtp-r2-act-1"
 
 beforeEach(async () => {
   await inMemoryDb.delete(schema.pdtpActivityWorksiteParams)
+  // Antes que las faenas: la FK de CAPA hacia `worksites` es RESTRICT.
+  await inMemoryDb.delete(schema.preventionCapaActions)
   await inMemoryDb.delete(schema.pdtpActivities)
   await inMemoryDb.delete(schema.pdtpPrograms)
   await inMemoryDb.delete(schema.worksites)
@@ -238,11 +240,19 @@ describe("Cumplimiento integral agregado sobre varias faenas", () => {
           porcentajeCumplimiento: pct, createdAt: now, updatedAt: now,
         })),
       )
-      await inMemoryDb.insert(schema.pdtpActionPlan).values(
+      // D11: la acción del PDTP vive en CAPA. Los estados del spec están en
+      // vocabulario PDTP, así que se traducen al insertar.
+      const A_CAPA: Record<string, string> = {
+        pendiente: "pending", en_proceso: "in_progress", completado: "pending_verification",
+        verificado: "verified", reabierto: "reopened", cancelado: "cancelled",
+      }
+      await inMemoryDb.insert(schema.preventionCapaActions).values(
         spec.estados.map((estado, index) => ({
-          id: `act-${spec.execId}-${index}`, executionId: spec.execId, n: index + 1,
-          hallazgo: "Hallazgo", accion: "Acción", responsableRole: "prevencionista",
-          responsable: "Prevencionista", plazo: "2026-02-01", estado,
+          id: `act-${spec.execId}-${index}`, code: `CAPA-R2-${spec.execId}-${index}`,
+          sourceType: "pdtp", sourceId: spec.execId, worksiteId: spec.ws,
+          finding: "Hallazgo", actionDescription: "Acción", responsibleRole: "prevencionista",
+          responsibleSnapshot: "Prevencionista", targetDate: "2026-02-01",
+          priority: "medium", status: A_CAPA[estado] ?? "pending", evidenceRequired: true,
           createdByUserId: USER_ID, createdAt: now, updatedAt: now,
         })),
       )

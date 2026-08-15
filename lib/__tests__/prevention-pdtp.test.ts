@@ -718,16 +718,21 @@ describe("prevention PDTP service", () => {
       activityId: activity!.id, worksiteId: "ws-2", year: 2026, month: 1, week: 1, executedQuantity: 1,
     }, "user-1", "all")
     const now = new Date().toISOString()
-    await inMemoryDb.insert(schema.pdtpActionPlan).values([
+    // D11: la acción del PDTP vive en CAPA; `sourceId` es la ejecución.
+    await inMemoryDb.insert(schema.preventionCapaActions).values([
       {
-        id: "action-ws-1", executionId: executionA.id, n: 1, origen: "manual", hallazgo: "Hallazgo Faena A",
-        accion: "Acción A", responsableRole: "prf", responsable: "Persona A", plazo: "2026-02-01",
-        prioridad: "media", estado: "pendiente", createdByUserId: "user-1", createdAt: now, updatedAt: now,
+        id: "action-ws-1", code: "CAPA-EXP-001", sourceType: "pdtp", sourceId: executionA.id,
+        worksiteId: "ws-1", finding: "Hallazgo Faena A", actionDescription: "Acción A",
+        responsibleSnapshot: "Persona A", responsibleRole: "prf", priority: "medium",
+        targetDate: "2026-02-01", status: "pending", evidenceRequired: true,
+        createdByUserId: "user-1", createdAt: now, updatedAt: now,
       },
       {
-        id: "action-ws-2", executionId: executionB.id, n: 1, origen: "manual", hallazgo: "Hallazgo Faena B",
-        accion: "Acción B", responsableRole: "prf", responsable: "Persona B", plazo: "2026-02-01",
-        prioridad: "media", estado: "pendiente", createdByUserId: "user-1", createdAt: now, updatedAt: now,
+        id: "action-ws-2", code: "CAPA-EXP-002", sourceType: "pdtp", sourceId: executionB.id,
+        worksiteId: "ws-2", finding: "Hallazgo Faena B", actionDescription: "Acción B",
+        responsibleSnapshot: "Persona B", responsibleRole: "prf", priority: "medium",
+        targetDate: "2026-02-01", status: "pending", evidenceRequired: true,
+        createdByUserId: "user-1", createdAt: now, updatedAt: now,
       },
     ])
 
@@ -2189,7 +2194,13 @@ describe("prevention PDTP service", () => {
     expect(dossier!.sourceLinks.some((s) => s.id === "source-link-1")).toBe(true)
     const actionRow = dossier!.actions.find((a) => a.id === action.id)!
     expect(actionRow.worksiteId).toBe("ws-1")
-    expect(dossier!.followupsByActionId[action.id]).toHaveLength(1)
+    // D11: la bitácora del expediente sale de `prevention_capa_transitions`, que
+    // registra cada hecho por separado. `createActionPlanItem` + un
+    // `addFollowup` con observación y cambio de estado dejan tres entradas
+    // (creada, nota, en implementación) donde el espejo guardaba una.
+    const followups = dossier!.followupsByActionId[action.id]!
+    expect(followups.map((f) => f.estadoNuevo)).toEqual(["en_proceso", "pendiente", "pendiente"])
+    expect(followups.some((f) => f.observacion === "Seguimiento inicial")).toBe(true)
     expect(dossier!.importBatches.some((b) => b.id === "batch-dossier-1")).toBe(true)
 
     // Aprobaciones y cambios del programa completo (no dependen de una faena).

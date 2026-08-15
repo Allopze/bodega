@@ -2,7 +2,6 @@ import { and, desc, eq, inArray, sql } from "drizzle-orm"
 import { db } from "@/db"
 import {
   pdtpActivities,
-  pdtpActionPlan,
   pdtpActivityWorksiteParams,
   pdtpExecutions,
   pdtpPrograms,
@@ -12,6 +11,7 @@ import {
   workers,
 } from "@/db/schema"
 import { PDTP_ESTADOS_CERRADOS } from "./checklist-domain"
+import { capaEstado } from "./capa-view"
 import { loadApprovedExecutionsForWorksites, loadProgramScheduleAndExecutions } from "./helpers"
 
 export type PdtpComplianceMonth = {
@@ -341,8 +341,13 @@ async function computeVerificacionYCierre(approvedExecutionIds: string[]): Promi
     db.query.pdtpExecutionChecklists.findMany({
       where: (t, { inArray: ia }) => ia(t.executionId, approvedExecutionIds),
     }),
-    db.select({ estado: pdtpActionPlan.estado })
-      .from(pdtpActionPlan).where(inArray(pdtpActionPlan.executionId, approvedExecutionIds)),
+    // D11: el estado de la acción vive en su CAPA. Leer el espejo daba un %
+    // congelado cuando la acción se avanzaba desde la pantalla de CAPA.
+    db.select({ estado: preventionCapaActions.status })
+      .from(preventionCapaActions).where(and(
+        eq(preventionCapaActions.sourceType, "pdtp"),
+        inArray(preventionCapaActions.sourceId, approvedExecutionIds),
+      )),
     db.select({
       runId: preventionInspectionRuns.id,
       compliancePercent: preventionInspectionRuns.compliancePercent,
@@ -381,7 +386,7 @@ async function computeVerificacionYCierre(approvedExecutionIds: string[]): Promi
   // verificado o cerrado. Un hallazgo sin CAPA enlazada está abierto.
   const findingCerrado = (f: { status: string; capaStatus: string | null }) =>
     f.status === "closed" || f.capaStatus === "closed" || f.capaStatus === "verified"
-  const cerrados = actions.filter((a) => PDTP_ESTADOS_CERRADOS.has(a.estado)).length
+  const cerrados = actions.filter((a) => PDTP_ESTADOS_CERRADOS.has(capaEstado(a.estado))).length
     + findings.filter(findingCerrado).length
   const totalCierre = actions.length + findings.length
   const cierre = totalCierre > 0

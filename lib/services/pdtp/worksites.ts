@@ -13,6 +13,7 @@
 
 import { and, eq, inArray, sql } from "drizzle-orm"
 import { db } from "@/db"
+import { CPHS_MIN_HEADCOUNT, resolvePreventiveOrganization } from "@/lib/prevention/cphs-organization"
 import {
   pdtpActivities,
   pdtpActivityScheduleOverrides,
@@ -71,13 +72,11 @@ export async function setPdtpProgramWorksites(
     const before = await tx.select().from(pdtpProgramWorksites)
       .where(and(eq(pdtpProgramWorksites.programId, programId), eq(pdtpProgramWorksites.isActive, true)))
     await tx.delete(pdtpProgramWorksites).where(eq(pdtpProgramWorksites.programId, programId))
-    const rows: PdtpProgramWorksite[] = []
-    for (const worksiteId of uniqueIds) {
-      const [row] = await tx.insert(pdtpProgramWorksites).values({
+    const rows: PdtpProgramWorksite[] = uniqueIds.length === 0
+      ? []
+      : await tx.insert(pdtpProgramWorksites).values(uniqueIds.map((worksiteId) => ({
         id: nanoid(), programId, worksiteId, isActive: true, addedByUserId: userId, addedAt: now,
-      }).returning()
-      if (row) rows.push(row)
-    }
+      }))).returning()
     await addPdtpChangeLogEntry(
       programId, program.version, userId, "worksites",
       { worksiteIds: before.map((w) => w.worksiteId) },
@@ -204,7 +203,17 @@ export async function includeActivityForWorksite(
  * mismo.
  */
 export const PDTP_CPHS_ACTIVITY_NUMBERS = [11] as const
-export const PDTP_CPHS_MIN_HEADCOUNT = 25
+/**
+ * El umbral vive en `lib/prevention/cphs-organization.ts`, que es también quien
+ * resuelve el tramo del delegado (10-25). Acá sólo se re-exporta para no romper
+ * a los consumidores del PDTP.
+ *
+ * ⚠️ Corrección de borde: este módulo comparaba `headcount >= 25`, pero la
+ * exigencia legal es de MÁS de 25 trabajadores, así que 25 justos corresponden
+ * a delegado y no a comité. Ninguna faena está hoy en ese borde (Cholguán 41,
+ * Pacífico 35), de modo que el cambio no altera ninguna exclusión vigente.
+ */
+export const PDTP_CPHS_MIN_HEADCOUNT = CPHS_MIN_HEADCOUNT
 
 export async function syncPdtpCphsHeadcountExclusion(
   programId: string,
@@ -216,23 +225,30 @@ export async function syncPdtpCphsHeadcountExclusion(
   const [countRow] = await db.select({ count: sql<number>`count(*)::int` })
     .from(workers).where(and(eq(workers.worksiteId, worksiteId), eq(workers.isActive, true)))
   const headcount = countRow?.count ?? 0
-  const cphsApplies = headcount >= PDTP_CPHS_MIN_HEADCOUNT
+  const cphsApplies = resolvePreventiveOrganization(headcount) === "cphs"
 
   const cphsActivities = await db.select().from(pdtpActivities).where(and(
     eq(pdtpActivities.programId, programId),
     inArray(pdtpActivities.n, [...PDTP_CPHS_ACTIVITY_NUMBERS]),
   ))
+  const activityIds = cphsActivities.map((activity) => activity.id)
+  const existingExclusions = activityIds.length === 0
+    ? []
+    : await db.select({ activityId: pdtpActivityWorksiteExclusions.activityId })
+      .from(pdtpActivityWorksiteExclusions)
+      .where(and(
+        inArray(pdtpActivityWorksiteExclusions.activityId, activityIds),
+        eq(pdtpActivityWorksiteExclusions.worksiteId, worksiteId),
+      ))
+  const excludedActivityIds = new Set(existingExclusions.map((row) => row.activityId))
   let changed = 0
   for (const activity of cphsActivities) {
-    const [existing] = await db.select({ id: pdtpActivityWorksiteExclusions.id })
-      .from(pdtpActivityWorksiteExclusions)
-      .where(and(eq(pdtpActivityWorksiteExclusions.activityId, activity.id), eq(pdtpActivityWorksiteExclusions.worksiteId, worksiteId)))
-      .limit(1)
-    if (!cphsApplies && !existing) {
-      await excludeActivityForWorksite(activity.id, worksiteId, `CPHS no aplica: faena con ${headcount} trabajadores (menos de ${PDTP_CPHS_MIN_HEADCOUNT}, DS 44).`, userId, scope)
+    const isExcluded = excludedActivityIds.has(activity.id)
+    if (!cphsApplies && !isExcluded) {
+      await excludeActivityForWorksite(activity.id, worksiteId, `CPHS no aplica: faena con ${headcount} trabajadores (no supera ${PDTP_CPHS_MIN_HEADCOUNT}, DS 44).`, userId, scope)
       changed++
-    } else if (cphsApplies && existing) {
-      await includeActivityForWorksite(activity.id, worksiteId, `CPHS aplica: faena con ${headcount} trabajadores (${PDTP_CPHS_MIN_HEADCOUNT} o más).`, userId, scope)
+    } else if (cphsApplies && isExcluded) {
+      await includeActivityForWorksite(activity.id, worksiteId, `CPHS aplica: faena con ${headcount} trabajadores (más de ${PDTP_CPHS_MIN_HEADCOUNT}).`, userId, scope)
       changed++
     }
   }
@@ -375,7 +391,10 @@ export async function setPdtpActivityWorksiteAdjustment(
     ? undefined
     : input.responsibleSlugs === null
       ? null
-      : [...new Set(input.responsibleSlugs.map((slug) => slug.trim()).filter(Boolean))]
+      : [...new Set(input.responsibleSlugs.flatMap((slug) => {
+          const trimmed = slug.trim()
+          return trimmed ? [trimmed] : []
+        }))]
   if (Array.isArray(responsibleSlugs)) {
     if (responsibleSlugs.length === 0) throw new Error("Selecciona al menos un responsable o usa la herencia global.")
     if (!input.responsibleDisplay?.trim()) throw new Error("Indica el nombre visible del responsable por faena.")

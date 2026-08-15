@@ -29,8 +29,11 @@ test.describe("PDTP — Creación y edición de programas", () => {
     // que el año ya existe, o sea que depende del `onChange` de React: si el
     // `fill` llega antes de hidratar, el valor queda en el DOM pero el handler
     // nunca corre y el botón se queda en "Crear" para siempre. Se reintenta el
-    // fill —idempotente— hasta que el cliente reacciona.
+    // cambio hasta que el cliente reacciona. Se alterna el valor porque volver
+    // a llenar "2027" sobre un DOM que ya dice "2027" no dispara `onChange`
+    // después de una hidratación tardía.
     await expect.poll(async () => {
+      await page.getByLabel("Año del programa").fill("2026")
       await page.getByLabel("Año del programa").fill("2027")
       return page.getByRole("button", { name: "Abrir programa anual" }).count()
       // 45 s y no 15: el fixture de 2027 no lo borra nadie —otros specs sólo lo

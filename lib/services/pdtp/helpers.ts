@@ -1,7 +1,6 @@
 import { and, eq, inArray, isNull, or, sql } from "drizzle-orm"
 import { db, type Tx } from "@/db"
 import {
-  pdtpActionPlan,
   pdtpActivities,
   pdtpActivitySchedule,
   pdtpActivityWorksiteExclusions,
@@ -15,6 +14,7 @@ import {
 import { nanoid } from "@/lib/id"
 import { applyOverridesToSchedule, loadPdtpOverrides } from "./overrides"
 import { isPdtpActivityEffectiveForPeriod } from "./retirement"
+import { getPdtpActionWorksiteId } from "./capa-view"
 
 export type WorksiteScope = string[] | "all"
 
@@ -97,15 +97,14 @@ export async function assertPdtpChecklistInstanceAccess(instanceId: string, scop
   assertWorksiteAccess(instance.worksiteId, scope)
 }
 
-/** Verifica el alcance a partir de una acción correctiva. */
+/**
+ * Verifica el alcance a partir de una acción correctiva. La faena es columna
+ * directa de la CAPA, así que no hace falta pasar por la ejecución (D11).
+ */
 export async function assertPdtpActionPlanItemAccess(itemId: string, scope: WorksiteScope): Promise<void> {
-  const [item] = await db.select({ worksiteId: pdtpExecutions.worksiteId })
-    .from(pdtpActionPlan)
-    .innerJoin(pdtpExecutions, eq(pdtpActionPlan.executionId, pdtpExecutions.id))
-    .where(eq(pdtpActionPlan.id, itemId))
-    .limit(1)
-  if (!item) throw new Error("Acción correctiva PDTP no encontrada.")
-  assertWorksiteAccess(item.worksiteId, scope)
+  const worksiteId = await getPdtpActionWorksiteId(itemId)
+  if (!worksiteId) throw new Error("Acción correctiva PDTP no encontrada.")
+  assertWorksiteAccess(worksiteId, scope)
 }
 
 export function emptyMonthlyTotals() {

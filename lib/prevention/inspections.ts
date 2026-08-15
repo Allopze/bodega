@@ -338,3 +338,72 @@ export function addDays(date: string, days: number): string {
   value.setUTCDate(value.getUTCDate() + days)
   return value.toISOString().slice(0, 10)
 }
+
+/* ── Origen de la inspección y oportunidad del cierre ──────────────────────
+ * La certificación Mutual distingue las inspecciones del comité paritario de
+ * las del Departamento de Prevención, y pide demostrar seguimiento de las
+ * medidas que generan. El indicador de cierre oportuno responde eso: no cuántos
+ * hallazgos hubo, sino cuántos se cerraron dentro del plazo comprometido.
+ */
+
+export const INSPECTION_ORIGIN_LABELS: Record<string, string> = {
+  prevencion: "Departamento de Prevención",
+  cphs: "Comité Paritario",
+  mandante: "Mandante",
+}
+
+export interface FindingClosureRow {
+  /** Plazo comprometido de la acción correctiva, `YYYY-MM-DD`. */
+  targetDate: string | null
+  /** Fecha de cierre efectivo, `YYYY-MM-DD`; `null` si sigue abierto. */
+  closedOn: string | null
+}
+
+export interface TimelyClosureSummary {
+  /** Hallazgos con acción correctiva y plazo comprometido. */
+  tracked: number
+  closedOnTime: number
+  closedLate: number
+  /** Abiertos cuyo plazo ya venció. */
+  overdue: number
+  openOnTime: number
+  /** Porcentaje de cierre oportuno sobre lo ya resuelto o vencido; `null` si nada venció aún. */
+  timelyPct: number | null
+}
+
+/**
+ * Un hallazgo cerrado después de su plazo cuenta como cerrado, pero no como
+ * cerrado a tiempo: si no se distinguen, un módulo que cierra todo con seis
+ * meses de atraso se ve idéntico a uno que cumple.
+ */
+export function summarizeTimelyClosure(findings: FindingClosureRow[], asOf: string): TimelyClosureSummary {
+  const tracked = findings.filter((finding) => finding.targetDate !== null)
+  let closedOnTime = 0
+  let closedLate = 0
+  let overdue = 0
+  let openOnTime = 0
+
+  for (const finding of tracked) {
+    const target = finding.targetDate!
+    if (finding.closedOn) {
+      if (finding.closedOn <= target) closedOnTime++
+      else closedLate++
+    } else if (target < asOf) {
+      overdue++
+    } else {
+      openOnTime++
+    }
+  }
+
+  // El denominador es lo que ya se puede juzgar: cerrado o vencido. Lo que
+  // sigue abierto dentro de plazo no es ni cumplimiento ni incumplimiento.
+  const judged = closedOnTime + closedLate + overdue
+  return {
+    tracked: tracked.length,
+    closedOnTime,
+    closedLate,
+    overdue,
+    openOnTime,
+    timelyPct: judged === 0 ? null : Math.round((closedOnTime / judged) * 100),
+  }
+}

@@ -12,8 +12,6 @@ export type {
   PdtpActivityChecklist, NewPdtpActivityChecklist,
   PdtpExecutionChecklist, NewPdtpExecutionChecklist,
   PdtpExecutionChecklistResponse, NewPdtpExecutionChecklistResponse,
-  PdtpActionPlanItem, NewPdtpActionPlanItem,
-  PdtpActionPlanFollowup, NewPdtpActionPlanFollowup,
   PdtpObligation, NewPdtpObligation,
   PdtpObligationReminder, NewPdtpObligationReminder,
   PdtpDocumentHistoryEntry, NewPdtpDocumentHistoryEntry,
@@ -26,7 +24,6 @@ export {
   PDTP_PLAZO_DIAS_POR_PRIORIDAD, PDTP_ESTADOS_CERRADOS,
   PDTP_DANO_POTENCIAL, PDTP_DANO_POTENCIAL_A_PRIORIDAD,
   pdtpActivityChecklistId, pdtpExecutionChecklistId, pdtpChecklistResponseId,
-  pdtpActionPlanItemId, pdtpActionPlanFollowupId,
   plazoFromPrioridad, plazoFromDañoPotencial, isActionVencida,
   requiereDetencionInmediata, PDTP_DANO_POTENCIAL_DETENCION,
 } from "./checklist-domain"

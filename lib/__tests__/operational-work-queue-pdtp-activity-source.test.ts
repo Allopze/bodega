@@ -83,13 +83,13 @@ describe("cola operacional — actividades programadas del PDTP", () => {
         id: "act-pdtpq-jt", programId, n: 1, displayOrder: 1, status: "active",
         activity: "Actividad del jefe de terreno", program: "Guía",
         responsibleSlugs: ["jt"], responsibleDisplay: "Jefe de terreno PDTPQ",
-        scheduleMode: "scheduled", sourceSheetRow: 1, createdAt: now, updatedAt: now,
+        scheduleMode: "scheduled", mechanism: "constancia", sourceSheetRow: 1, createdAt: now, updatedAt: now,
       },
       {
         id: "act-pdtpq-prf", programId, n: 2, displayOrder: 2, status: "active",
         activity: "Actividad del prevencionista", program: "Guía",
         responsibleSlugs: ["prf"], responsibleDisplay: "Prevencionista PDTPQ",
-        scheduleMode: "scheduled", sourceSheetRow: 2, createdAt: now, updatedAt: now,
+        scheduleMode: "scheduled", mechanism: "enganche", sourceSheetRow: 2, createdAt: now, updatedAt: now,
       },
       {
         id: "act-pdtpq-ondemand", programId, n: 3, displayOrder: 3, status: "active",
@@ -198,6 +198,16 @@ describe("cola operacional — actividades programadas del PDTP", () => {
     expect(items[0]!.statusLabel).toBe("Vencida")
     await inMemoryDb.delete(schema.pdtpActivitySchedule)
       .where(eq(schema.pdtpActivitySchedule.id, "sch-jt-prev"))
+  })
+
+  it("una constancia manda a su submódulo; un enganche, a la planilla (D12)", async () => {
+    const [constancia] = await pdtpItems(makeSession(["jefe_terreno"], [worksiteA]))
+    expect(constancia!.href).toContain("/prevencion/constancias")
+    expect(constancia!.ctaLabel).toBe("Dejar constancia")
+
+    const [enganche] = await pdtpItems(makeSession(["prevencionista_faena"], [worksiteA]))
+    expect(enganche!.href).toContain("/prevencion/pdtp/actividades")
+    expect(enganche!.ctaLabel).toBe("Ver cómo se cumple")
   })
 
   it("lo planificado en el mes en curso sin ejecutar sale como pendiente", async () => {

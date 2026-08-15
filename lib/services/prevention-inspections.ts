@@ -239,10 +239,16 @@ export async function approveInspectionTemplate(input: unknown, access: Inspecti
         eq(preventionInspectionTemplates.code, template.code),
         eq(preventionInspectionTemplates.status, "approved"),
       ))
-    for (const item of previous) {
+    if (previous.length > 0) {
       await tx.update(preventionInspectionTemplates)
-        .set({ status: "superseded", supersededAt: now, supersededByTemplateId: template.id, version: item.version + 1, updatedAt: now })
-        .where(eq(preventionInspectionTemplates.id, item.id))
+        .set({
+          status: "superseded",
+          supersededAt: now,
+          supersededByTemplateId: template.id,
+          version: sql`${preventionInspectionTemplates.version} + 1`,
+          updatedAt: now,
+        })
+        .where(inArray(preventionInspectionTemplates.id, previous.map((item) => item.id)))
     }
 
     const [updated] = await tx.update(preventionInspectionTemplates).set({
@@ -305,6 +311,7 @@ const runSchema = z.object({
   programId: z.string().min(1).nullable().optional(),
   subjectType: z.string().trim().max(120).nullable().optional(),
   subjectLabel: z.string().trim().max(300).nullable().optional(),
+  origin: z.enum(["prevencion", "cphs", "mandante"]).default("prevencion"),
   scheduledFor: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
   assignedToUserId: z.string().min(1).nullable().optional(),
   clientSubmissionId: z.string().trim().min(1).max(200).nullable().optional(),
@@ -335,6 +342,7 @@ export async function createInspectionRun(input: unknown, access: InspectionAcce
     worksiteId: data.worksiteId,
     subjectType: data.subjectType ?? null,
     subjectLabel: data.subjectLabel ?? null,
+    origin: data.origin,
     scheduledFor: data.scheduledFor ?? null,
     status: "planned",
     assignedToUserId: data.assignedToUserId ?? access.userId,
@@ -389,26 +397,28 @@ export async function saveInspectionAnswers(input: unknown, access: InspectionAc
     }
 
     const now = nowIso()
-    for (const answer of data.answers) {
-      const item = items.find((candidate) => candidate.sectionId === answer.sectionId && candidate.itemId === answer.itemId)!
-      await tx.insert(preventionInspectionAnswers).values({
-        id: `insans-${nanoid()}`,
-        runId: run.id,
-        sectionId: answer.sectionId,
-        itemId: answer.itemId,
-        itemLabel: item.label,
-        result: answer.result,
-        value: answer.value ?? null,
-        comment: answer.comment ?? null,
-        evidenceReference: answer.evidenceReference ?? null,
-        danoPotencial: item.danoPotencial ?? null,
-      }).onConflictDoUpdate({
-        target: [preventionInspectionAnswers.runId, preventionInspectionAnswers.sectionId, preventionInspectionAnswers.itemId],
-        set: {
+    if (data.answers.length > 0) {
+      await tx.insert(preventionInspectionAnswers).values(data.answers.map((answer) => {
+        const item = itemBySpec.get(`${answer.sectionId}::${answer.itemId}`)!
+        return {
+          id: `insans-${nanoid()}`,
+          runId: run.id,
+          sectionId: answer.sectionId,
+          itemId: answer.itemId,
+          itemLabel: item.label,
           result: answer.result,
           value: answer.value ?? null,
           comment: answer.comment ?? null,
           evidenceReference: answer.evidenceReference ?? null,
+          danoPotencial: item.danoPotencial ?? null,
+        }
+      })).onConflictDoUpdate({
+        target: [preventionInspectionAnswers.runId, preventionInspectionAnswers.sectionId, preventionInspectionAnswers.itemId],
+        set: {
+          result: sql`excluded.result`,
+          value: sql`excluded.value`,
+          comment: sql`excluded.comment`,
+          evidenceReference: sql`excluded.evidence_reference`,
           updatedAt: now,
         },
       })
@@ -756,13 +766,14 @@ export async function listInspectionAssignees(access: InspectionAccess) {
 /** Catálogo de definiciones SST disponibles para incorporar como plantilla. */
 export function listImportableDefinitions() {
   return Object.entries(CHECKLIST_DEFINITIONS)
-    .filter(([code]) => !isPersonEvaluationDefinition(code))
-    .map(([code, definition]) => ({
-      code,
-      title: definition.title,
-      version: definition.version,
-      sections: definition.sections.length,
-      items: definition.sections.reduce((total, section) => total + section.items.length, 0),
-      coverage: assessEnrichmentCoverage(itemsFromDefinition(definition)),
-    }))
+    .flatMap(([code, definition]) => isPersonEvaluationDefinition(code)
+      ? []
+      : [{
+          code,
+          title: definition.title,
+          version: definition.version,
+          sections: definition.sections.length,
+          items: definition.sections.reduce((total, section) => total + section.items.length, 0),
+          coverage: assessEnrichmentCoverage(itemsFromDefinition(definition)),
+        }])
 }
