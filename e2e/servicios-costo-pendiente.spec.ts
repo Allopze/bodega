@@ -57,7 +57,11 @@ test("solicitar, aprobar y comprar servicios con costo pendiente, y registrar el
   await page.getByRole("button", { name: "Crear y enviar a aprobación" }).click()
   await expect(page).toHaveURL(/\/solicitudes\/(?!nueva$)[^/]+$/, { timeout: 15_000 })
 
-  const requestCode = (await page.getByRole("heading", { level: 1 }).first().textContent())?.trim()
+  // La URL cambia antes de que termine la navegación RSC; esperar el encabezado
+  // de la ficha evita leer el h1 "Solicitud" de la pantalla saliente.
+  const requestHeading = page.getByRole("heading", { level: 1, name: /^SOL-/ }).first()
+  await expect(requestHeading).toBeVisible({ timeout: 15_000 })
+  const requestCode = (await requestHeading.textContent())?.trim()
   expect(requestCode).toMatch(/^SOL-/)
 
   // La ficha dice para quién y sobre qué equipo es, sin re-escribir los datos.

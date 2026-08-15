@@ -188,7 +188,8 @@ test.describe("Solicitudes → Aprobaciones → Compras → Recepción", () => {
     const emitir = page.getByRole("button", { name: "Emitir y enviar" })
     await expect(emitir).toBeVisible({ timeout: 30_000 })
     await emitir.click()
-    await expect(emitir).toBeHidden({ timeout: 30_000 })
+    await expect(page).toHaveURL(new RegExp(`/compras/${orderId}\\?actualizada=enviada$`), { timeout: 30_000 })
+    await expect(page.getByText(/Pendiente de recepción/).first()).toBeVisible({ timeout: 30_000 })
 
     // Estar "en la cola" es tener acción pendiente, no sólo figurar: `/recepcion`
     // sin filtro lista también las completadas. Antes eso quedaba tapado porque

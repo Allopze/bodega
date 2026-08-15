@@ -54,7 +54,8 @@ test("flujo solicitud, aprobación, OC, recepción y trazabilidad", async ({ pag
   const sendButton = page.getByRole("button", { name: "Emitir y enviar" })
   await expect(sendButton).toBeVisible({ timeout: 30_000 })
   await sendButton.click()
-  await expect(sendButton).toBeHidden({ timeout: 30_000 })
+  await expect(page).toHaveURL(new RegExp(`/compras/${orderId}\\?actualizada=enviada$`), { timeout: 30_000 })
+  await expect(page.getByText(/Pendiente de recepción/).first()).toBeVisible({ timeout: 30_000 })
 
   // Stage 1 — arrival at Chome office from the receiving queue.
   // La bandeja se renderiza en el servidor, así que si se pide antes de que el

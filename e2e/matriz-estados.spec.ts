@@ -82,14 +82,24 @@ test.describe("Estados — sesión expirada", () => {
     await expect(page.getByRole("heading", { name: /CAPA/i }).first()).toBeVisible()
 
     // Expirar la sesión sin cerrarla desde la interfaz es el caso real: la
-    // cookie caduca mientras la pestaña sigue abierta.
+    // cookie caduca mientras la pestaña sigue abierta. Se detiene primero la
+    // página autenticada para que una respuesta en vuelo no pueda reescribir la
+    // cookie justo después de `clearCookies()` cuando la suite corre con carga.
+    await page.goto("about:blank")
     await context.clearCookies()
-    await page.goto("/prevencion/capa")
+    await expect.poll(async () => {
+      const cookies = await context.cookies()
+      return cookies.filter((cookie) => cookie.name.includes("authjs.session-token")).length
+    }).toBe(0)
 
-    await expect(page).toHaveURL(/\/login/)
+    const target = `/prevencion/capa?sessionExpired=${Date.now()}`
+    await page.goto(target)
+
+    await expect(page).toHaveURL(/\/login/, { timeout: 15_000 })
     // El criterio pide que el destino se conserve: volver al inicio obliga a
     // rehacer la navegación entera.
-    expect(page.url()).toContain("callbackUrl")
+    const loginUrl = new URL(page.url())
+    expect(loginUrl.searchParams.get("callbackUrl")).toContain("/prevencion/capa")
   })
 })
 

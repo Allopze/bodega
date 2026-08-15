@@ -1280,8 +1280,14 @@ async function main() {
 
   // ── DTE fixture: portal DTE FacturaEnLínea (Bandeja de Entrada) ──────────────
   // Da a e2e/export-volume.spec.ts datos para los 3 reportes de DTE: uno
-  // vinculado sin discrepancia, uno vinculado CON discrepancia (mismo
-  // oc-invoice-e2e, $500 de diferencia) y uno huérfano (sin OC ni combustible).
+  // vinculado sin discrepancia (oc-invoice-e2e, $10.000), uno vinculado CON
+  // discrepancia (oc-invoice-no-lines-e2e, $3.566 → $500 de diferencia) y uno
+  // huérfano (sin OC ni combustible).
+  //
+  // Cada DTE cuelga de una factura distinta a propósito:
+  // `dte_documents_purchase_invoice_single_unique` (migración 0159) admite un
+  // solo DTE por factura de OC. Antes los dos vinculados compartían
+  // oc-invoice-e2e y el sembrado fallaba, dejando el servidor E2E sin arrancar.
   const dtePeriodo = "2026-07"
   await db.insert(schema.dteSyncRuns).values({
     id: "dte-sync-run-e2e",
@@ -1323,14 +1329,15 @@ async function main() {
       rutEmisor: "76000000-0",
       razonSocialEmisor: "Proveedor E2E",
       fechaEmision: "2026-07-16",
-      montoNeto: 8823,
-      iva: 1677,
-      montoTotal: 10500,
+      // $4.066 contra una factura de $3.566: la discrepancia sigue siendo $500.
+      montoNeto: 3417,
+      iva: 649,
+      montoTotal: 4066,
       estadoSii: "aceptado",
       codEmp: "433",
       periodo: dtePeriodo,
       rawHash: "e2e-hash-discrepancia",
-      purchaseOrderInvoiceId: "oc-invoice-e2e",
+      purchaseOrderInvoiceId: "oc-invoice-no-lines-e2e",
       syncRunId: "dte-sync-run-e2e",
       syncedAt: now,
       createdAt: now,
@@ -1728,6 +1735,145 @@ async function main() {
       lastUpdated: now,
     })
   }
+
+  // ── CPHS fixture: comité base con integrantes, sesiones, programa y
+  // comisión, para el flujo CRUD de e2e/prevencion-cphs-*.spec.ts. Sigue la
+  // convención del resto del archivo: cada test destructivo (disolver) recibe
+  // su propio comité dedicado para no interferir con los demás; los que no se
+  // destruyen entre sí (agregar invitado / marcar tabla enviada) comparten
+  // sesión porque ninguno invalida la precondición del otro.
+  await db.insert(schema.workers).values([
+    { id: "worker-cphs-e2e-1", rut: "22222222-2", firstName: "Presidenta", lastName: "CPHS E2E", position: "Prevencionista", worksiteId: "ws-e2e", isActive: true, createdAt: now },
+    { id: "worker-cphs-e2e-2", rut: "33333333-3", firstName: "Secretario", lastName: "CPHS E2E", position: "Operario", worksiteId: "ws-e2e", isActive: true, createdAt: now },
+    { id: "worker-cphs-e2e-3", rut: "44444444-4", firstName: "Suplente Renuncia", lastName: "CPHS E2E", position: "Operario", worksiteId: "ws-e2e", isActive: true, createdAt: now },
+    { id: "worker-cphs-e2e-4", rut: "55555555-5", firstName: "Suplente Reemplazo", lastName: "CPHS E2E", position: "Operario", worksiteId: "ws-e2e", isActive: true, createdAt: now },
+    // Dedicado a "agregar invitado": ni la Etapa lifecycle ni ninguna otra lo
+    // incorpora como integrante, así que no colisiona si los specs corren en
+    // paralelo contra la misma base compartida.
+    { id: "worker-cphs-e2e-guest", rut: "66666666-6", firstName: "Invitado", lastName: "CPHS E2E", position: "Visita técnica", worksiteId: "ws-e2e", isActive: true, createdAt: now },
+  ])
+  await db.insert(schema.preventionCommittees).values({
+    id: "cphs-e2e-base",
+    worksiteId: "ws-e2e",
+    name: "CPHS Faena E2E",
+    constitutedOn: "2026-01-15",
+    mandateEndsOn: "2030-01-15",
+    status: "active",
+    createdByUserId: "user-admin-e2e",
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.preventionCommitteeMembers).values([
+    { id: "cphsm-e2e-presidente", committeeId: "cphs-e2e-base", workerId: "worker-cphs-e2e-1", representation: "company", seat: "titular", role: "presidente", hasFuero: false, status: "active", createdAt: now, updatedAt: now },
+    { id: "cphsm-e2e-secretario", committeeId: "cphs-e2e-base", workerId: "worker-cphs-e2e-2", representation: "workers", seat: "titular", role: "secretario", hasFuero: true, status: "active", createdAt: now, updatedAt: now },
+    { id: "cphsm-e2e-renuncia", committeeId: "cphs-e2e-base", workerId: "worker-cphs-e2e-3", representation: "company", seat: "suplente", role: "integrante", hasFuero: false, status: "active", createdAt: now, updatedAt: now },
+    { id: "cphsm-e2e-reemplazo", committeeId: "cphs-e2e-base", workerId: "worker-cphs-e2e-4", representation: "workers", seat: "suplente", role: "integrante", hasFuero: false, status: "active", createdAt: now, updatedAt: now },
+  ])
+  await db.insert(schema.preventionCommitteeMeetings).values([
+    // Convocada: para "marcar tabla enviada" y "agregar invitado" (ninguna
+    // de las dos cambia el estado que la otra necesita).
+    {
+      id: "cphsmt-e2e-agenda", code: "CPHS-E2E-AGENDA", committeeId: "cphs-e2e-base",
+      meetingType: "ordinary", scheduledFor: now, agenda: "Tabla de sesión ordinaria E2E, mínimo diez caracteres.",
+      status: "scheduled", quorumReached: false, version: 1, createdByUserId: "user-admin-e2e", createdAt: now, updatedAt: now,
+    },
+    // Convocada dedicada: para "cancelar sesión" (destructivo, no comparte).
+    {
+      id: "cphsmt-e2e-cancelar", code: "CPHS-E2E-CANCELAR", committeeId: "cphs-e2e-base",
+      meetingType: "extraordinary", scheduledFor: now, agenda: "Tabla de sesión a cancelar E2E, mínimo diez caracteres.",
+      status: "scheduled", quorumReached: false, version: 1, createdByUserId: "user-admin-e2e", createdAt: now, updatedAt: now,
+    },
+    // Cerrada: para "enviar acta a gerencia".
+    {
+      id: "cphsmt-e2e-cerrada", code: "CPHS-E2E-CERRADA", committeeId: "cphs-e2e-base",
+      meetingType: "ordinary", scheduledFor: now, heldAt: now, agenda: "Tabla de sesión cerrada E2E, mínimo diez caracteres.",
+      minutes: "Acta cerrada de fixture E2E con el mínimo de veinte caracteres exigido.",
+      status: "closed", quorumReached: true, closedByUserId: "user-admin-e2e", closedAt: now,
+      version: 1, createdByUserId: "user-admin-e2e", createdAt: now, updatedAt: now,
+    },
+    // Cerrada dedicada: para "vincular actividad a sesión" (no comparte con
+    // la anterior para no acoplar el orden de los dos tests).
+    {
+      id: "cphsmt-e2e-vincular", code: "CPHS-E2E-VINCULAR", committeeId: "cphs-e2e-base",
+      meetingType: "ordinary", scheduledFor: now, heldAt: now, agenda: "Tabla de sesión para vincular actividad E2E, mínimo diez caracteres.",
+      minutes: "Acta cerrada de fixture E2E con el mínimo de veinte caracteres exigido.",
+      status: "closed", quorumReached: true, closedByUserId: "user-admin-e2e", closedAt: now,
+      version: 1, createdByUserId: "user-admin-e2e", createdAt: now, updatedAt: now,
+    },
+  ])
+  await db.insert(schema.preventionCommitteePrograms).values({
+    id: "cphspg-e2e-base", committeeId: "cphs-e2e-base", year: 2026, status: "active",
+    approvedByUserId: "user-admin-e2e", approvedAt: now,
+    version: 1, createdByUserId: "user-admin-e2e", createdAt: now, updatedAt: now,
+  })
+  await db.insert(schema.preventionCommitteeProgramActivities).values({
+    id: "cphspa-e2e-vincular", programId: "cphspg-e2e-base",
+    title: "Actividad E2E para vincular a sesión", plannedMonth: 6, status: "planned",
+    version: 1, createdByUserId: "user-admin-e2e", createdAt: now, updatedAt: now,
+  })
+  // Sin integrantes: la asignación de integrante a comisión la ejerce el test.
+  await db.insert(schema.preventionCommitteeCommissions).values({
+    id: "cphscom-e2e-base", committeeId: "cphs-e2e-base",
+    name: "Comisión Higiene E2E", purpose: "Comisión de fixture para asignar integrantes en el flujo E2E.",
+    isActive: true, createdByUserId: "user-admin-e2e", createdAt: now, updatedAt: now,
+  })
+
+  // Comité dedicado y desechable para "disolver comité": en una faena
+  // distinta porque sólo puede existir un comité activo por faena.
+  await db.insert(schema.preventionCommittees).values({
+    id: "cphs-e2e-dissolve",
+    worksiteId: "ws-restricted-e2e",
+    name: "CPHS Faena Restringida E2E (a disolver)",
+    constitutedOn: "2026-01-15",
+    mandateEndsOn: "2030-01-15",
+    status: "active",
+    createdByUserId: "user-admin-e2e",
+    createdAt: now,
+    updatedAt: now,
+  })
+
+  // ── MIPER fixture: matriz publicada con un peligro, para
+  // e2e/prevencion-miper-risk-map.spec.ts (necesita un peligro que ubicar).
+  await db.insert(schema.preventionRiskMethodologies).values({
+    id: "riskmethod-e2e", code: "ISP-E2E", name: "Metodología ISP E2E", versionLabel: "v1",
+    kind: "primary", authoritySource: "ISP", configuration: {}, isActive: true,
+    createdByUserId: "user-admin-e2e", createdAt: now,
+  })
+  await db.insert(schema.preventionRiskProcesses).values({
+    id: "riskproc-e2e", worksiteId: "ws-e2e", code: "PROC-E2E", name: "Proceso E2E",
+    isActive: true, createdAt: now, updatedAt: now,
+  })
+  await db.insert(schema.preventionRiskTasks).values({
+    id: "risktask-e2e", processId: "riskproc-e2e", code: "TASK-E2E", name: "Tarea E2E",
+    isRoutine: true, isActive: true, createdAt: now, updatedAt: now,
+  })
+  await db.insert(schema.preventionRiskPositions).values({
+    id: "riskpos-e2e", taskId: "risktask-e2e", code: "POS-E2E", name: "Puesto E2E",
+    isActive: true, createdAt: now, updatedAt: now,
+  })
+  await db.insert(schema.preventionRiskMatrices).values({
+    id: "riskmatrix-e2e", worksiteId: "ws-e2e", matrixVersion: 1, title: "MIPER E2E",
+    status: "published", methodologyId: "riskmethod-e2e", methodologySnapshot: {},
+    revisionReason: "Fixture E2E para el mapa de riesgos espacial, mínimo diez caracteres.",
+    participationSummary: "Participación de fixture E2E, mínimo diez caracteres.",
+    consultationEvidenceReference: "Evidencia de fixture E2E",
+    createdByUserId: "user-admin-e2e",
+    reviewedByUserId: "user-admin-e2e", reviewedAt: now,
+    approvedByUserId: "user-admin-e2e", approvedAt: now,
+    publishedByUserId: "user-admin-e2e", publishedAt: now,
+    version: 1, createdAt: now, updatedAt: now,
+  })
+  await db.insert(schema.preventionRiskEntries).values({
+    id: "riskentry-e2e", matrixId: "riskmatrix-e2e", processId: "riskproc-e2e", taskId: "risktask-e2e", positionId: "riskpos-e2e",
+    hazardCode: "HAZ-E2E", hazard: "Caída de altura E2E", riskFactor: "Trabajo en altura sin arnés",
+    expectedEventOrDamage: "Caída con lesión", exposedPeopleDescription: "Operarios de mantención",
+    exposedPeopleCount: 4, genderConsiderations: "Sin diferencias identificadas.",
+    sensitiveWorkerConsiderations: "Sin trabajadores sensibles identificados.",
+    inherentDimensions: { assessment: "alto" }, inherentLevel: "high",
+    residualDimensions: { assessment: "moderado" }, residualLevel: "moderate",
+    isCritical: false, responsibleSnapshot: "Admin E2E",
+    version: 1, createdAt: now, updatedAt: now,
+  })
 
   await client.end()
 }

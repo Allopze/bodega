@@ -284,19 +284,30 @@ test.describe.serial("Correlativos entre secciones", () => {
     // único punto donde ambas series se leen juntas.
     await expectCode(page, requestCode)
 
+    // Mientras es borrador, la OC todavía pertenece a Compras y conserva su
+    // correlativo en el listado. Al enviarla pasará a Recepción.
+    await page.goto(`/compras?q=${orderCode}`)
+    await expect(page.getByRole("link", { name: `Ver OC ${orderCode}`, exact: true }))
+      .toHaveCount(1, { timeout: 15_000 })
+    await page.goto(`/compras/${orderId}`)
+
     // ── El correlativo sobrevive cada transición ────────────────────────────
     const sendButton = page.getByRole("button", { name: "Emitir y enviar" })
     await expect(sendButton).toBeVisible({ timeout: 30_000 })
     await expect(page.getByRole("heading", { level: 1, name: orderCode })).toBeVisible()
 
     await sendButton.click()
-    await expect(sendButton).toBeHidden({ timeout: 30_000 })
+    await expect(page).toHaveURL(new RegExp(`/compras/${orderId}\\?actualizada=enviada$`), { timeout: 30_000 })
+    await expect(page.getByText(/Pendiente de recepción/).first()).toBeVisible({ timeout: 30_000 })
     await expect(page.getByRole("heading", { level: 1, name: orderCode })).toBeVisible()
 
-    // ── Sección: listado de compras ─────────────────────────────────────────
+    // ── Frontera Compras → Recepción ────────────────────────────────────────
+    // Una OC enviada deja la bandeja de Compras mientras tenga recepción física
+    // pendiente. Su detalle histórico conserva el código y la cola activa vive
+    // exclusivamente en Recepción.
     await page.goto(`/compras?q=${orderCode}`)
     await expect(page.getByRole("link", { name: `Ver OC ${orderCode}`, exact: true }))
-      .toHaveCount(1, { timeout: 15_000 })
+      .toHaveCount(0, { timeout: 15_000 })
 
     // ── Sección: bandeja de recepción ───────────────────────────────────────
     // La bandeja se renderiza en el servidor: si se pide antes de que el commit

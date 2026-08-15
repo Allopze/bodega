@@ -104,9 +104,11 @@ test("exportes: la columna de estado usa lenguaje de negocio, no el enum", async
 
 /**
  * Verifica los 3 reportes de DTE contra el fixture sembrado en setup-db.ts:
- * dte-e2e-matched (folio 900001, sin discrepancia), dte-e2e-discrepancia
- * (folio 900002, $500 de diferencia contra oc-invoice-e2e) y
- * dte-e2e-huerfana (folio 900003, sin vínculo a OC ni combustible).
+ * dte-e2e-matched (folio 900001, sin discrepancia contra oc-invoice-e2e),
+ * dte-e2e-discrepancia (folio 900002, $500 de diferencia contra
+ * oc-invoice-no-lines-e2e) y dte-e2e-huerfana (folio 900003, sin vínculo a OC
+ * ni combustible). Cada uno cuelga de una factura distinta: sólo se admite un
+ * DTE por factura de OC.
  */
 test("exportes: dte_conciliacion calcula la discrepancia real contra la factura de OC", async ({ page }) => {
   await login(page)
