@@ -52,7 +52,7 @@ function capaQuickFilterWhere(filter: CapaQuickFilter | undefined) {
 }
 
 const capaCreateSchema = z.object({
-  sourceType: z.enum(["pdtp", "sst_evaluation", "ppa", "incident", "risk", "legal_requirement", "training", "work_permit", "inspection", "cphs", "emergency", "change", "epp", "manual"]),
+  sourceType: z.enum(["pdtp", "sst_evaluation", "ppa", "incident", "risk", "legal_requirement", "training", "work_permit", "inspection", "cphs", "emergency", "change", "epp", "external_engagement", "manual"]),
   sourceId: z.string().min(1).max(200),
   sourceItemId: z.string().min(1).max(300).nullable().optional(),
   worksiteId: z.string().min(1),

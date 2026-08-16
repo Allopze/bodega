@@ -40,6 +40,7 @@ export const CAPA_SOURCE_LABELS: Record<string, string> = {
   emergency: "Simulacro de emergencia",
   change: "Gestión del cambio",
   epp: "EPP preventivo",
+  external_engagement: "Visita o coordinación externa",
   manual: "Manual",
 }
 
@@ -65,6 +66,7 @@ export function capaSourceHref(sourceType: string, sourceId: string) {
   if (sourceType === "training") return `/prevencion/capacitacion/competencias?workerId=${encodeURIComponent(sourceId)}`
   if (sourceType === "work_permit") return `/prevencion/permisos/${sourceId}`
   if (sourceType === "inspection") return `/prevencion/inspecciones/${sourceId}`
+  if (sourceType === "external_engagement") return `/prevencion/coordinacion/${sourceId}`
   if (sourceType === "change") return `/prevencion/gestion-cambio/${sourceId}`
   if (sourceType === "epp") return `/prevencion/epp-preventivo?workerId=${encodeURIComponent(sourceId.split(":")[0] ?? sourceId)}`
   return null

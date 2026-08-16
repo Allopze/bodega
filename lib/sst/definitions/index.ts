@@ -9,6 +9,7 @@ import { INSPECCION_EQUIPOS_MOVILES } from './inspeccion-equipos-moviles'
 import { INSPECCION_EPP } from './inspeccion-epp'
 import { OBSERVACION_AMPLIROLL } from './observacion-ampliroll'
 import { OBSERVACION_MAQUINARIA } from './observacion-maquinaria'
+import { AUDITORIA_SGSST } from './auditoria-sgsst'
 import type { ChecklistDefinition } from '../types'
 
 /**
@@ -37,6 +38,8 @@ export const CHECKLIST_DEFINITIONS: Record<string, ChecklistDefinition> = {
   'inspeccion_epp': INSPECCION_EPP,
   'observacion_ampliroll': OBSERVACION_AMPLIROLL,
   'observacion_maquinaria': OBSERVACION_MAQUINARIA,
+  // Se importa con kind='audit' en el motor de inspecciones (DS 44 art. 22 n°4).
+  'auditoria_sgsst': AUDITORIA_SGSST,
 }
 
 export function getDefinition(code: string, _version?: string): ChecklistDefinition {
@@ -50,4 +53,5 @@ export {
   INSPECCION_EXTINTORES, INSPECCION_CONTENEDORES, INSPECCION_CARROS,
   INSPECCION_EQUIPOS_MOVILES, INSPECCION_EPP,
   OBSERVACION_AMPLIROLL, OBSERVACION_MAQUINARIA,
+  AUDITORIA_SGSST,
 }

@@ -359,3 +359,57 @@ export async function listDocumentRecipientOptions(scope: WorksiteScope) {
     .from(users)
     .where(and(inArray(users.id, userIds), eq(users.isActive, true)))
 }
+
+
+/**
+ * Asigna la versión vigente a toda la dotación de la faena del documento.
+ *
+ * El RIOHS (DS 44 art. 56) se entrega a **todas** las personas trabajadoras, y
+ * hacerlo de a una es inviable: una faena mediana ya supera el tope de 200 que
+ * impone `assignDocumentVersionRecipients` por operación. Este envoltorio
+ * resuelve la dotación, descarta a quien ya lo tiene asignado y trocea el resto
+ * en lotes que sí caben.
+ *
+ * Devuelve `{ assigned, alreadyAssigned }` en vez de fallar cuando no queda
+ * nadie por asignar: reintentarlo después de incorporar a alguien nuevo es el
+ * caso de uso normal, no un error.
+ */
+export async function assignDocumentVersionToWorkforce(args: DistributionContext & {
+  versionId: string
+  assignmentReason: string
+  dueAt?: string | null
+}) {
+  const { doc } = await getPublishedVersionContext(args.versionId)
+  authorizeDistribution(args, doc)
+  if (doc.confidentiality === "sensible") {
+    throw new Error("Los documentos sensibles sólo admiten distribución nominativa individual.")
+  }
+
+  // Un documento sin faena es corporativo: alcanza a toda la dotación visible.
+  const workerRows = await db.select({ id: workers.id })
+    .from(workers)
+    .where(doc.worksiteId
+      ? and(eq(workers.worksiteId, doc.worksiteId), eq(workers.isActive, true))
+      : eq(workers.isActive, true))
+
+  const existing = await db.select({ workerId: sstDocumentDistributionTargets.workerId })
+    .from(sstDocumentDistributionTargets)
+    .where(eq(sstDocumentDistributionTargets.versionId, args.versionId))
+  const already = new Set(existing.map((row) => row.workerId).filter(Boolean) as string[])
+
+  const pending = workerRows.map((row) => row.id).filter((id) => !already.has(id))
+  if (pending.length === 0) {
+    return { assigned: 0, alreadyAssigned: already.size }
+  }
+
+  // 200 es el tope por operación del servicio subyacente; se respeta troceando,
+  // no subiéndolo: el límite protege la transacción, no es un capricho.
+  const BATCH = 200
+  let assigned = 0
+  for (let index = 0; index < pending.length; index += BATCH) {
+    const batch = pending.slice(index, index + BATCH)
+    await assignDocumentVersionRecipients({ ...args, workerIds: batch })
+    assigned += batch.length
+  }
+  return { assigned, alreadyAssigned: already.size }
+}

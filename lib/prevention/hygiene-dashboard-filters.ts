@@ -1,4 +1,4 @@
-export const HYGIENE_DASHBOARD_TABS = ["groups", "programs", "summary"] as const
+export const HYGIENE_DASHBOARD_TABS = ["groups", "programs", "protocols", "summary"] as const
 export const HYGIENE_QUICK_FILTERS = ["all", "surveillance", "above_limit", "not_comparable", "overdue"] as const
 
 export type HygieneDashboardTab = typeof HYGIENE_DASHBOARD_TABS[number]

@@ -85,6 +85,61 @@ export const DEFAULT_CATEGORIES: Array<{ slug: string; name: string; description
   { slug: "salud_ocupacional", name: "Salud ocupacional", description: "Protocolos MINSAL, aptitudes, restricciones.", sortOrder: 100 },
 ]
 
+/**
+ * Tipos documentales que la normativa exige por nombre, no por conveniencia.
+ *
+ * El RIOHS (DS 44 arts. 56-61) es obligatorio para toda entidad empleadora y
+ * debe entregarse nominativamente a la dotación — de ahí
+ * `requiresAcknowledgment`. Su contenido mínimo lo verifica el gate de
+ * publicación en `workflow.ts`, contra `lib/prevention/riohs.ts`.
+ */
+export const DEFAULT_DOCUMENT_TYPES: Array<{
+  categorySlug: string
+  code: string
+  name: string
+  description: string
+  requiresAcknowledgment: boolean
+  defaultValidityMonths: number | null
+}> = [
+  {
+    categorySlug: "legal_normativa",
+    code: "RIOHS",
+    name: "Reglamento Interno de Higiene y Seguridad",
+    description: "DS 44 arts. 56-61. Contenido mínimo del art. 58, entrega nominativa a toda la dotación.",
+    requiresAcknowledgment: true,
+    defaultValidityMonths: 12,
+  },
+]
+
+export async function seedDefaultDocumentTypes() {
+  const now = new Date().toISOString()
+  for (const type of DEFAULT_DOCUMENT_TYPES) {
+    await db.insert(sstDocumentTypes).values({
+      id: `sstdt-${type.categorySlug}-${type.code.toLowerCase()}`,
+      categorySlug: type.categorySlug,
+      code: type.code,
+      name: type.name,
+      description: type.description,
+      requiresApproval: true,
+      requiresAcknowledgment: type.requiresAcknowledgment,
+      defaultValidityMonths: type.defaultValidityMonths,
+      isActive: true,
+      createdAt: now,
+      updatedAt: now,
+    }).onConflictDoUpdate({
+      target: [sstDocumentTypes.categorySlug, sstDocumentTypes.code],
+      set: {
+        name: type.name,
+        description: type.description,
+        requiresAcknowledgment: type.requiresAcknowledgment,
+        defaultValidityMonths: type.defaultValidityMonths,
+        isActive: true,
+        updatedAt: now,
+      },
+    })
+  }
+}
+
 export async function seedDefaultCategories() {
   const now = new Date().toISOString()
   for (const c of DEFAULT_CATEGORIES) {
@@ -96,6 +151,8 @@ export async function seedDefaultCategories() {
       set: { name: c.name, description: c.description, sortOrder: c.sortOrder, isActive: true, updatedAt: now },
     })
   }
+  // Los tipos referencian `categorySlug`, así que van después de las categorías.
+  await seedDefaultDocumentTypes()
 }
 
 export async function setDocumentCategoryActive(slug: string, isActive: boolean) {

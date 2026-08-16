@@ -658,7 +658,18 @@ export async function reviewInspectionRun(input: unknown, access: InspectionAcce
 
 /* ── Consultas ────────────────────────────────────────────────────────────── */
 
-export async function listInspectionRuns(access: InspectionAccess) {
+/**
+ * Las auditorías del Sistema de Gestión (`kind: 'audit'`) viven en su propia
+ * pantalla, así que cada listado declara qué tipos muestra. Sin el filtro, una
+ * auditoría aparecería a la vez en Inspecciones y en Auditorías.
+ */
+export type InspectionKindFilter = { kinds?: readonly string[] }
+
+function kindCondition({ kinds }: InspectionKindFilter = {}) {
+  return kinds?.length ? inArray(preventionInspectionTemplates.kind, [...kinds]) : undefined
+}
+
+export async function listInspectionRuns(access: InspectionAccess, filter: InspectionKindFilter = {}) {
   requireAccess(access, "prevention:inspections:view")
   return db.select({
     run: preventionInspectionRuns,
@@ -671,7 +682,7 @@ export async function listInspectionRuns(access: InspectionAccess) {
     .from(preventionInspectionRuns)
     .innerJoin(preventionInspectionTemplates, eq(preventionInspectionRuns.templateId, preventionInspectionTemplates.id))
     .innerJoin(worksites, eq(preventionInspectionRuns.worksiteId, worksites.id))
-    .where(scopeCondition(access.scope, preventionInspectionRuns.worksiteId))
+    .where(and(scopeCondition(access.scope, preventionInspectionRuns.worksiteId), kindCondition(filter)))
     .orderBy(desc(preventionInspectionRuns.createdAt))
     .limit(500)
 }
@@ -707,9 +718,10 @@ export async function getInspectionRunDetail(runId: string, access: InspectionAc
   return { ...run, answers, findings }
 }
 
-export async function listInspectionTemplates(access: InspectionAccess) {
+export async function listInspectionTemplates(access: InspectionAccess, filter: InspectionKindFilter = {}) {
   requireAccess(access, "prevention:inspections:view")
   const templates = await db.select().from(preventionInspectionTemplates)
+    .where(kindCondition(filter))
     .orderBy(asc(preventionInspectionTemplates.code), desc(preventionInspectionTemplates.createdAt))
   // Se expone la calibración real de cada plantilla: una sin daño potencial
   // declarado produce hallazgos siempre medios y no bloquea ningún cierre.
@@ -719,7 +731,7 @@ export async function listInspectionTemplates(access: InspectionAccess) {
   }))
 }
 
-export async function listInspectionPrograms(access: InspectionAccess) {
+export async function listInspectionPrograms(access: InspectionAccess, filter: InspectionKindFilter = {}) {
   requireAccess(access, "prevention:inspections:view")
   return db.select({
     program: preventionInspectionPrograms,
@@ -731,7 +743,7 @@ export async function listInspectionPrograms(access: InspectionAccess) {
     .innerJoin(preventionInspectionTemplates, eq(preventionInspectionPrograms.templateId, preventionInspectionTemplates.id))
     .innerJoin(worksites, eq(preventionInspectionPrograms.worksiteId, worksites.id))
     .leftJoin(users, eq(preventionInspectionPrograms.assignedToUserId, users.id))
-    .where(scopeCondition(access.scope, preventionInspectionPrograms.worksiteId))
+    .where(and(scopeCondition(access.scope, preventionInspectionPrograms.worksiteId), kindCondition(filter)))
     .orderBy(asc(preventionInspectionPrograms.nextDueOn))
 }
 

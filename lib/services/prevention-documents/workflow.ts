@@ -3,11 +3,17 @@ import { db, type Tx } from "@/db"
 import {
   sstDocumentAudit,
   sstDocuments,
+  sstDocumentTypes,
   sstDocumentVersions,
 } from "@/db/schema"
 import type { WorksiteScope } from "@/lib/auth/scope"
 import { nanoid } from "@/lib/id"
 import { recordOperationalActivity } from "@/lib/services/operational-activity"
+import {
+  assessRiohsCompleteness,
+  RIOHS_DOCUMENT_TYPE_CODE,
+  type RiohsMetadata,
+} from "@/lib/prevention/riohs"
 import {
   assertConfidentialityAllowed,
   assertScopeAccess,
@@ -244,6 +250,7 @@ export async function publishDocumentVersion(args: WorkflowInput) {
     if (doc.currentVersionId === version.id) {
       throw new Error("La versión ya es la publicación vigente.")
     }
+    await assertRiohsContentComplete(tx, doc)
 
     const now = new Date().toISOString()
     const previousVersionId = doc.currentVersionId
@@ -323,4 +330,35 @@ export async function publishDocumentVersion(args: WorkflowInput) {
     }
     return published
   })
+}
+
+
+/**
+ * Gate de publicación del Reglamento Interno.
+ *
+ * El DS 44 art. 58 fija un contenido mínimo cerrado: publicar un RIOHS al que
+ * le falta un capítulo obligatorio es publicar un documento que no cumple.
+ * Se valida acá, en la transacción de publicación, y no en la UI, porque es
+ * donde el documento pasa a ser el vigente.
+ *
+ * Sólo aplica al tipo documental RIOHS; el resto de la biblioteca no se toca.
+ */
+async function assertRiohsContentComplete(
+  tx: Parameters<typeof lockWorkflowContext>[0],
+  doc: { typeId: string | null; extraMetadata: unknown },
+) {
+  if (!doc.typeId) return
+  const [type] = await tx
+    .select({ code: sstDocumentTypes.code })
+    .from(sstDocumentTypes)
+    .where(eq(sstDocumentTypes.id, doc.typeId))
+  if (type?.code !== RIOHS_DOCUMENT_TYPE_CODE) return
+
+  const metadata = (doc.extraMetadata ?? {}) as RiohsMetadata
+  const completeness = assessRiohsCompleteness(metadata.riohsSections)
+  if (!completeness.complete) {
+    throw new Error(
+      `El Reglamento Interno no declara el contenido mínimo del DS 44 art. 58. Falta: ${completeness.missing.map((section) => section.title).join("; ")}.`,
+    )
+  }
 }

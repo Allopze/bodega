@@ -164,6 +164,7 @@ export const pdtpSourceLinkSchema = z.object({
   sourceType: z.enum([
     "risk_control", "legal_requirement", "incident_capa", "audit", "contractual_obligation",
     "capacitacion", "inspeccion", "cphs", "epp", "emergencia", "campana",
+    "protocolo_minsal",
   ]),
   sourceId: z.string().trim().min(1).max(300),
   justification: reason,

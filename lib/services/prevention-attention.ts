@@ -1,20 +1,23 @@
-import { and, asc, eq, inArray, max, or } from "drizzle-orm"
+import { and, asc, eq, inArray, lte, max, or } from "drizzle-orm"
 import { db } from "@/db"
 import {
   ppaSubmissions,
   preventionCapaActions,
   preventionCommitteeMeetings,
   preventionCommittees,
+  preventionEmergencyResources,
+  preventionProtocolApplicabilities,
   sstEvaluations,
   worksites,
 } from "@/db/schema"
 import { adminContratoLabel } from "@/lib/prevention/admin-contrato-label"
 import { assessMeetingCadence, isMandateExpired } from "@/lib/prevention/cphs"
+import { MINSAL_PROTOCOL_LABELS } from "@/lib/prevention/minsal-protocols"
 import { capaPrioridad } from "@/lib/services/pdtp/capa-view"
 
 export type PreventionAttentionItem = {
   id: string
-  kind: "action" | "evaluation" | "ppa" | "cphs"
+  kind: "action" | "evaluation" | "ppa" | "cphs" | "protocol" | "emergency_resource"
   title: string
   detail: string
   worksiteName: string
@@ -32,6 +35,8 @@ export async function getPreventionAttention(args: {
   includeEvaluations: boolean
   includePpa: boolean
   includeCphs?: boolean
+  /** Vencimientos de higiene y de equipos de emergencia. */
+  includeCompliance?: boolean
   limit?: number
 }): Promise<PreventionAttentionItem[]> {
   if (args.worksiteIds !== "all" && args.worksiteIds.length === 0) return []
@@ -95,6 +100,7 @@ export async function getPreventionAttention(args: {
   })))
 
   if (args.includeCphs) items.push(...await cphsAttentionItems(scope, today, limit))
+  if (args.includeCompliance) items.push(...await complianceAttentionItems(scope, today, limit))
 
   return items
     .sort((a, b) => TONE_RANK[a.tone] - TONE_RANK[b.tone]
@@ -171,4 +177,97 @@ function addDaysIso(date: string, days: number): string {
   const result = new Date(`${date}T00:00:00.000Z`)
   result.setUTCDate(result.getUTCDate() + days)
   return result.toISOString().slice(0, 10)
+}
+
+
+/**
+ * Dos relojes que hasta ahora no miraba nadie.
+ *
+ *  · La reevaluación de un protocolo MINSAL declarado aplicable.
+ *  · El vencimiento o la inspección atrasada de un equipo de emergencia
+ *    (carga del extintor, caducidad del botiquín).
+ *
+ * Ambas fechas existían en la base y ninguna consulta las leía: un extintor
+ * descargado no aparecía en ninguna pantalla.
+ */
+async function complianceAttentionItems(
+  scope: (column: typeof worksites.id) => ReturnType<typeof inArray> | undefined,
+  today: string,
+  limit: number,
+): Promise<PreventionAttentionItem[]> {
+  const soon = addDaysIso(today, 30)
+
+  const [protocols, resources] = await Promise.all([
+    db.select({
+      id: preventionProtocolApplicabilities.id,
+      protocolCode: preventionProtocolApplicabilities.protocolCode,
+      nextAssessmentOn: preventionProtocolApplicabilities.nextAssessmentOn,
+      worksiteName: worksites.name,
+    })
+      .from(preventionProtocolApplicabilities)
+      .innerJoin(worksites, eq(preventionProtocolApplicabilities.worksiteId, worksites.id))
+      .where(and(
+        scope(worksites.id),
+        eq(preventionProtocolApplicabilities.status, "applicable"),
+        lte(preventionProtocolApplicabilities.nextAssessmentOn, soon),
+      ))
+      .orderBy(asc(preventionProtocolApplicabilities.nextAssessmentOn)).limit(limit),
+    db.select({
+      id: preventionEmergencyResources.id,
+      name: preventionEmergencyResources.name,
+      kind: preventionEmergencyResources.kind,
+      location: preventionEmergencyResources.location,
+      nextInspectionAt: preventionEmergencyResources.nextInspectionAt,
+      expiresAt: preventionEmergencyResources.expiresAt,
+      worksiteName: worksites.name,
+    })
+      .from(preventionEmergencyResources)
+      .innerJoin(worksites, eq(preventionEmergencyResources.worksiteId, worksites.id))
+      .where(and(
+        scope(worksites.id),
+        or(
+          lte(preventionEmergencyResources.expiresAt, soon),
+          lte(preventionEmergencyResources.nextInspectionAt, soon),
+        ),
+      ))
+      .orderBy(asc(preventionEmergencyResources.expiresAt)).limit(limit),
+  ])
+
+  const items: PreventionAttentionItem[] = []
+
+  for (const row of protocols) {
+    if (!row.nextAssessmentOn) continue
+    const overdue = row.nextAssessmentOn < today
+    items.push({
+      id: `protocol:${row.id}`, kind: "protocol",
+      title: overdue ? "Reevaluación de protocolo vencida" : "Reevaluación de protocolo por vencer",
+      detail: MINSAL_PROTOCOL_LABELS[row.protocolCode] ?? row.protocolCode,
+      worksiteName: row.worksiteName,
+      dueDate: row.nextAssessmentOn,
+      href: "/prevencion/higiene?tab=protocols",
+      tone: overdue ? "danger" : "warning",
+    })
+  }
+
+  for (const row of resources) {
+    // El vencimiento del equipo manda sobre la inspección: un extintor
+    // inspeccionado pero descargado no sirve.
+    const expired = row.expiresAt !== null && row.expiresAt <= soon
+    const dueDate = expired ? row.expiresAt : row.nextInspectionAt
+    if (!dueDate) continue
+    const overdue = dueDate < today
+    items.push({
+      id: `emergency_resource:${row.id}`, kind: "emergency_resource",
+      title: expired
+        ? (overdue ? "Equipo de emergencia vencido" : "Equipo de emergencia por vencer")
+        : (overdue ? "Inspección de equipo atrasada" : "Inspección de equipo por vencer"),
+      detail: `${row.kind} · ${row.name} · ${row.location}`,
+      worksiteName: row.worksiteName,
+      dueDate,
+      href: "/prevencion/emergencias",
+      tone: overdue ? "danger" : "warning",
+    })
+  }
+
+  return items
 }

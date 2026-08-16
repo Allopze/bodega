@@ -31,6 +31,12 @@ export interface EmergencyAccess {
   permissions: readonly string[]
 }
 
+const CHILE_DATE_FORMAT = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Santiago", year: "numeric", month: "2-digit", day: "2-digit" })
+
+function todayInChile() {
+  return CHILE_DATE_FORMAT.format(new Date())
+}
+
 const NOT_FOUND = "Registro de emergencia no encontrado o fuera de alcance."
 
 function nowIso() {
@@ -188,8 +194,13 @@ const resourceSchema = z.object({
   name: z.string().trim().min(2).max(200),
   kind: z.string().trim().min(2).max(120),
   location: z.string().trim().min(2).max(300),
+  serialNumber: z.string().trim().max(120).nullable().optional(),
   lastInspectedAt: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
   nextInspectionAt: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
+  /** Vencimiento del equipo (carga del extintor, caducidad del botiquín).
+   *  Distinto de la próxima inspección: un extintor recién inspeccionado
+   *  puede estar con la carga vencida. */
+  expiresAt: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
 })
 
 export async function addEmergencyResource(input: unknown, access: EmergencyAccess) {
@@ -202,12 +213,17 @@ export async function addEmergencyResource(input: unknown, access: EmergencyAcce
 
     const [created] = await tx.insert(preventionEmergencyResources).values({
       id: `pemgre-${nanoid()}`,
+      // El equipo pertenece a la faena; el plan es sólo el documento que lo
+      // declara. Archivar un plan ya no borra el inventario.
+      worksiteId: plan.worksiteId,
       planId: data.planId,
       name: data.name,
       kind: data.kind,
       location: data.location,
+      serialNumber: data.serialNumber ?? null,
       lastInspectedAt: data.lastInspectedAt ?? null,
       nextInspectionAt: data.nextInspectionAt ?? null,
+      expiresAt: data.expiresAt ?? null,
     }).returning()
     if (!created) throw new Error("No se pudo agregar el recurso.")
     await history(tx, { entityType: "resource", entityId: created.id, worksiteId: plan.worksiteId, changeType: "added", reason: data.name, afterState: created, actorUserId: access.userId })
@@ -505,7 +521,7 @@ export async function listEmergencyDrills(access: EmergencyAccess, opts?: { quic
 
 export async function getEmergencyDashboardCounts(access: EmergencyAccess) {
   requireAccess(access, "prevention:emergency:view")
-  const [plans, drills] = await Promise.all([
+  const [plans, drills, resources] = await Promise.all([
     db.select({
       totalPlans: sql<number>`count(*)::int`,
       approvedPlans: sql<number>`count(*) filter (where ${preventionEmergencyPlans.status} = 'approved')::int`,
@@ -516,9 +532,19 @@ export async function getEmergencyDashboardCounts(access: EmergencyAccess) {
       completedDrills: sql<number>`count(*) filter (where ${preventionEmergencyDrills.status} = 'completed')::int`,
       needsImprovementDrills: sql<number>`count(*) filter (where ${preventionEmergencyDrills.outcome} = 'needs_improvement')::int`,
     }).from(preventionEmergencyDrills).where(scopeCondition(access.scope, preventionEmergencyDrills.worksiteId)),
+    // Hasta ahora nadie consultaba `nextInspectionAt`: era un campo que se
+    // llenaba y nunca se miraba. Un extintor con la carga vencida no aparecía
+    // en ninguna parte.
+    db.select({
+      totalResources: sql<number>`count(*)::int`,
+      overdueInspection: sql<number>`count(*) filter (where ${preventionEmergencyResources.nextInspectionAt} is not null and ${preventionEmergencyResources.nextInspectionAt} < ${todayInChile()})::int`,
+      expired: sql<number>`count(*) filter (where ${preventionEmergencyResources.expiresAt} is not null and ${preventionEmergencyResources.expiresAt} < ${todayInChile()})::int`,
+      outOfService: sql<number>`count(*) filter (where ${preventionEmergencyResources.status} <> 'operational')::int`,
+    }).from(preventionEmergencyResources).where(scopeCondition(access.scope, preventionEmergencyResources.worksiteId)),
   ])
   const planCounts = plans[0]
   const drillCounts = drills[0]
+  const resourceCounts = resources[0]
   return {
     totalPlans: planCounts?.totalPlans ?? 0,
     approvedPlans: planCounts?.approvedPlans ?? 0,
@@ -526,6 +552,10 @@ export async function getEmergencyDashboardCounts(access: EmergencyAccess) {
     totalDrills: drillCounts?.totalDrills ?? 0,
     completedDrills: drillCounts?.completedDrills ?? 0,
     needsImprovementDrills: drillCounts?.needsImprovementDrills ?? 0,
+    totalResources: resourceCounts?.totalResources ?? 0,
+    resourcesOverdueInspection: resourceCounts?.overdueInspection ?? 0,
+    resourcesExpired: resourceCounts?.expired ?? 0,
+    resourcesOutOfService: resourceCounts?.outOfService ?? 0,
   }
 }
 

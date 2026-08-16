@@ -12,8 +12,10 @@ import {
   preventionCampaigns,
   preventionEmergencyPlans,
   preventionEppRequirements,
+  preventionExternalEngagements,
   preventionInspectionRuns,
   preventionInspectionTemplates,
+  preventionProtocolApplicabilities,
   preventionLegalApplicabilities,
   preventionLegalAssessments,
   preventionLegalRequirements,
@@ -37,6 +39,7 @@ import {
 } from "@/db/schema"
 import type { WorksiteScope } from "@/lib/auth/scope"
 import { nanoid } from "@/lib/id"
+import { MINSAL_PROTOCOL_LABELS } from "@/lib/prevention/minsal-protocols"
 import { createCapaActionWithClient } from "@/lib/services/prevention-capa"
 import {
   legalApplicabilityApprovalSchema,
@@ -743,6 +746,14 @@ export async function linkPdtpActivitySource(input: unknown, access: RiskLegalAc
       const [source] = await tx.select().from(preventionInspectionRuns).where(and(eq(preventionInspectionRuns.id, data.sourceId), eq(preventionInspectionRuns.worksiteId, data.worksiteId), ne(preventionInspectionRuns.status, "cancelled"))).limit(1)
       if (!source) throw new Error("Inspección no encontrada, cancelada o fuera de alcance.")
       sourceVersionSnapshot = source.code
+    } else if (data.sourceType === "audit") {
+      // `audit` ya existía en el enum pero sin rama: caía en "Fuente manual", o
+      // sea sin snapshot de versión y —peor— sin verificar pertenencia a la
+      // faena. Una auditoría es una corrida del motor de inspecciones cuya
+      // plantilla es de tipo 'audit' (DS 44 art. 22 n°4).
+      const [source] = await tx.select({ run: preventionInspectionRuns, template: preventionInspectionTemplates }).from(preventionInspectionRuns).innerJoin(preventionInspectionTemplates, eq(preventionInspectionTemplates.id, preventionInspectionRuns.templateId)).where(and(eq(preventionInspectionRuns.id, data.sourceId), eq(preventionInspectionRuns.worksiteId, data.worksiteId), eq(preventionInspectionTemplates.kind, "audit"), ne(preventionInspectionRuns.status, "cancelled"))).limit(1)
+      if (!source) throw new Error("Auditoría no encontrada, cancelada o fuera de alcance.")
+      sourceVersionSnapshot = `${source.run.code} · ${source.template.code} v${source.template.versionLabel}`
     } else if (data.sourceType === "cphs") {
       const [source] = await tx.select().from(preventionCommittees).where(and(eq(preventionCommittees.id, data.sourceId), eq(preventionCommittees.worksiteId, data.worksiteId), eq(preventionCommittees.status, "active"))).limit(1)
       if (!source) throw new Error("Comité CPHS no encontrado, no activo o fuera de alcance.")
@@ -755,6 +766,18 @@ export async function linkPdtpActivitySource(input: unknown, access: RiskLegalAc
       const [source] = await tx.select().from(preventionEmergencyPlans).where(and(eq(preventionEmergencyPlans.id, data.sourceId), eq(preventionEmergencyPlans.worksiteId, data.worksiteId), eq(preventionEmergencyPlans.status, "approved"))).limit(1)
       if (!source) throw new Error("Plan de emergencia no encontrado, no aprobado o fuera de alcance.")
       sourceVersionSnapshot = `${source.code} v${source.version}`
+    } else if (data.sourceType === "protocolo_minsal") {
+      // Sólo un protocolo declarado aplicable puede cubrir una actividad: uno
+      // descartado o sin pronunciamiento no sostiene nada ante un fiscalizador.
+      const [source] = await tx.select().from(preventionProtocolApplicabilities).where(and(eq(preventionProtocolApplicabilities.id, data.sourceId), eq(preventionProtocolApplicabilities.worksiteId, data.worksiteId), eq(preventionProtocolApplicabilities.status, "applicable"))).limit(1)
+      if (!source) throw new Error("Protocolo MINSAL no encontrado, no declarado aplicable o fuera de alcance.")
+      sourceVersionSnapshot = `${MINSAL_PROTOCOL_LABELS[source.protocolCode] ?? source.protocolCode} v${source.version}`
+    } else if (data.sourceType === "contractual_obligation") {
+      // La obligación contractual del mandante llega por una coordinación del
+      // art. 20: es la interacción registrada la que la acredita.
+      const [source] = await tx.select().from(preventionExternalEngagements).where(and(eq(preventionExternalEngagements.id, data.sourceId), eq(preventionExternalEngagements.worksiteId, data.worksiteId), eq(preventionExternalEngagements.kind, "coordinacion"))).limit(1)
+      if (!source) throw new Error("Coordinación con el mandante no encontrada o fuera de alcance.")
+      sourceVersionSnapshot = `${source.code} · ${source.occurredOn}`
     } else if (data.sourceType === "campana") {
       // Único tipo con catálogo que quedaba sin verificar pertenencia a faena.
       const [source] = await tx.select().from(preventionCampaigns).where(and(eq(preventionCampaigns.id, data.sourceId), eq(preventionCampaigns.worksiteId, data.worksiteId), ne(preventionCampaigns.status, "cancelled"))).limit(1)
@@ -887,6 +910,8 @@ export async function getPdtpCoverage(programId: string, access: RiskLegalAccess
     inspectionSources,
     cphsSources,
     eppSources,
+    protocolSources,
+    coordinationSources,
     emergencySources,
   ] = await Promise.all([
     db.select().from(pdtpActivities).where(eq(pdtpActivities.programId, programId)).orderBy(asc(pdtpActivities.n)),
@@ -934,6 +959,9 @@ export async function getPdtpCoverage(programId: string, access: RiskLegalAccess
       worksiteId: preventionInspectionRuns.worksiteId,
       code: preventionInspectionRuns.code,
       templateName: preventionInspectionTemplates.name,
+      // Se trae el kind para partir el resultado en dos desplegables sin pagar
+      // una segunda consulta: las auditorías del SGSST no son inspecciones.
+      templateKind: preventionInspectionTemplates.kind,
       subjectLabel: preventionInspectionRuns.subjectLabel,
     }).from(preventionInspectionRuns)
       .innerJoin(preventionInspectionTemplates, eq(preventionInspectionTemplates.id, preventionInspectionRuns.templateId))
@@ -960,6 +988,21 @@ export async function getPdtpCoverage(programId: string, access: RiskLegalAccess
       ))
       .orderBy(asc(eppTypes.label)),
     db.select({
+      id: preventionProtocolApplicabilities.id,
+      worksiteId: preventionProtocolApplicabilities.worksiteId,
+      protocolCode: preventionProtocolApplicabilities.protocolCode,
+    }).from(preventionProtocolApplicabilities)
+      .where(and(scopeCondition(access.scope, preventionProtocolApplicabilities.worksiteId), eq(preventionProtocolApplicabilities.status, "applicable")))
+      .orderBy(asc(preventionProtocolApplicabilities.protocolCode)),
+    db.select({
+      id: preventionExternalEngagements.id,
+      worksiteId: preventionExternalEngagements.worksiteId,
+      code: preventionExternalEngagements.code,
+      subject: preventionExternalEngagements.subject,
+    }).from(preventionExternalEngagements)
+      .where(and(scopeCondition(access.scope, preventionExternalEngagements.worksiteId), eq(preventionExternalEngagements.kind, "coordinacion")))
+      .orderBy(desc(preventionExternalEngagements.occurredOn)),
+    db.select({
       id: preventionEmergencyPlans.id,
       worksiteId: preventionEmergencyPlans.worksiteId,
       code: preventionEmergencyPlans.code,
@@ -982,10 +1025,13 @@ export async function getPdtpCoverage(programId: string, access: RiskLegalAccess
       legalRequirements: legalSources.map((item) => ({ id: item.id, worksiteId: item.worksiteId, label: `${item.code} · ${item.article}` })),
       capaActions: capaSources.map((item) => ({ id: item.id, worksiteId: item.worksiteId, label: `${item.code} · ${item.finding}` })),
       trainingSessions: trainingSources.map((item) => ({ id: item.id, worksiteId: item.worksiteId, label: `${item.code} · ${item.courseName}` })),
-      inspectionRuns: inspectionSources.map((item) => ({ id: item.id, worksiteId: item.worksiteId, label: `${item.code} · ${item.templateName}${item.subjectLabel ? ` · ${item.subjectLabel}` : ""}` })),
+      inspectionRuns: inspectionSources.flatMap((item) => item.templateKind === "audit" ? [] : [{ id: item.id, worksiteId: item.worksiteId, label: `${item.code} · ${item.templateName}${item.subjectLabel ? ` · ${item.subjectLabel}` : ""}` }]),
+      audits: inspectionSources.flatMap((item) => item.templateKind === "audit" ? [{ id: item.id, worksiteId: item.worksiteId, label: `${item.code} · ${item.templateName}` }] : []),
       committees: cphsSources.map((item) => ({ id: item.id, worksiteId: item.worksiteId, label: item.name })),
       eppRequirements: eppSources.map((item) => ({ id: item.id, worksiteId: item.worksiteId as string, label: `${item.typeLabel} · ${item.reason}` })),
       emergencyPlans: emergencySources.map((item) => ({ id: item.id, worksiteId: item.worksiteId, label: `${item.code} · ${item.title}` })),
+      minsalProtocols: protocolSources.map((item) => ({ id: item.id, worksiteId: item.worksiteId, label: MINSAL_PROTOCOL_LABELS[item.protocolCode] ?? item.protocolCode })),
+      coordinations: coordinationSources.map((item) => ({ id: item.id, worksiteId: item.worksiteId, label: `${item.code} · ${item.subject}` })),
     },
     coverage: {
       totalActivities: activities.length,

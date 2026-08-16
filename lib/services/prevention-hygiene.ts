@@ -8,6 +8,7 @@ import {
   preventionExposureGroups,
   preventionExposureMeasurements,
   preventionHygieneHistory,
+  preventionProtocolApplicabilities,
   preventionSurveillanceEnrollments,
   preventionSurveillancePrograms,
   workers,
@@ -15,6 +16,8 @@ import {
 } from "@/db/schema"
 import type { WorksiteScope } from "@/lib/auth/scope"
 import { nanoid } from "@/lib/id"
+import { findMinsalProtocol, summarizeProtocolCoverage } from "@/lib/prevention/minsal-protocols"
+import { protocolApplicabilitySchema } from "@/lib/validation/prevention-module/hygiene"
 import {
   assessMeasurement,
   deriveSurveillanceObligation,
@@ -551,4 +554,101 @@ export async function listProgramEnrollments(programId: string, access: HygieneA
       groupName: item.groupName,
     })),
   }
+}
+
+
+/* ── Protocolos MINSAL ────────────────────────────────────────────────────── */
+
+function addMonthsIso(iso: string, months: number) {
+  const [year, month, day] = iso.split("-").map(Number)
+  const date = new Date(Date.UTC(year!, month! - 1, day!))
+  date.setUTCMonth(date.getUTCMonth() + months)
+  return date.toISOString().slice(0, 10)
+}
+
+/**
+ * Estado de los ocho protocolos del catálogo para una faena.
+ *
+ * Devuelve siempre las ocho filas: un protocolo sin pronunciamiento aparece
+ * como "por evaluar", que es distinto de "no aplica" y es lo que un fiscalizador
+ * cuenta.
+ */
+export async function getProtocolCoverage(worksiteId: string, access: HygieneAccess) {
+  requireAccess(access, "prevention:hygiene:view", worksiteId)
+  const rows = await db.select().from(preventionProtocolApplicabilities)
+    .where(eq(preventionProtocolApplicabilities.worksiteId, worksiteId))
+  return summarizeProtocolCoverage(rows, todayInChile())
+}
+
+/** Cobertura de protocolos de todas las faenas visibles, para el dashboard. */
+export async function listProtocolApplicabilities(access: HygieneAccess) {
+  requireAccess(access, "prevention:hygiene:view")
+  return db.select({
+    applicability: preventionProtocolApplicabilities,
+    worksiteName: worksites.name,
+  })
+    .from(preventionProtocolApplicabilities)
+    .innerJoin(worksites, eq(worksites.id, preventionProtocolApplicabilities.worksiteId))
+    .where(scopeCondition(access.scope, preventionProtocolApplicabilities.worksiteId))
+    .orderBy(asc(worksites.name), asc(preventionProtocolApplicabilities.protocolCode))
+}
+
+/**
+ * Declara si un protocolo aplica a una faena. Upsert: el pronunciamiento es uno
+ * por faena y protocolo (índice único), y se reevalúa periódicamente.
+ */
+export async function setProtocolApplicability(input: unknown, access: HygieneAccess) {
+  const data = protocolApplicabilitySchema.parse(input)
+  requireAccess(access, "prevention:hygiene:manage", data.worksiteId)
+
+  const protocol = findMinsalProtocol(data.protocolCode)
+  if (!protocol) throw new Error("Protocolo MINSAL desconocido.")
+
+  return db.transaction(async (tx) => {
+    const [existing] = await tx.select().from(preventionProtocolApplicabilities)
+      .where(and(
+        eq(preventionProtocolApplicabilities.worksiteId, data.worksiteId),
+        eq(preventionProtocolApplicabilities.protocolCode, data.protocolCode),
+      )).limit(1)
+
+    if (existing && data.expectedVersion !== undefined && existing.version !== data.expectedVersion) {
+      throw new Error("El pronunciamiento cambió mientras lo editabas. Recarga y vuelve a intentarlo.")
+    }
+
+    const lastAssessedOn = data.lastAssessedOn ?? todayInChile()
+    const periodicityMonths = data.periodicityMonths ?? protocol.defaultPeriodicityMonths
+    // Un protocolo descartado no lleva reloj: reevaluarlo es una decisión, no
+    // un vencimiento.
+    const nextAssessmentOn = data.status === "applicable" ? addMonthsIso(lastAssessedOn, periodicityMonths) : null
+
+    const values = {
+      status: data.status,
+      justification: data.justification?.trim() || null,
+      periodicityMonths,
+      lastAssessedOn,
+      nextAssessmentOn,
+      assessedByUserId: access.userId,
+      updatedAt: new Date().toISOString(),
+    }
+
+    const [saved] = existing
+      ? await tx.update(preventionProtocolApplicabilities)
+          .set({ ...values, version: existing.version + 1 })
+          .where(eq(preventionProtocolApplicabilities.id, existing.id)).returning()
+      : await tx.insert(preventionProtocolApplicabilities)
+          .values({ id: `pprot-${nanoid()}`, protocolCode: data.protocolCode, worksiteId: data.worksiteId, ...values })
+          .returning()
+
+    await history(tx, {
+      entityType: "protocol_applicability",
+      entityId: saved!.id,
+      worksiteId: data.worksiteId,
+      changeType: existing ? "updated" : "created",
+      reason: data.justification?.trim() || `Protocolo ${protocol.shortName}: ${data.status}`,
+      beforeState: existing ?? null,
+      afterState: saved,
+      actorUserId: access.userId,
+    })
+    return saved
+  })
 }

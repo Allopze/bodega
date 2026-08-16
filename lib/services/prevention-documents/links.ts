@@ -1,12 +1,17 @@
 import { and, eq, inArray, isNull } from "drizzle-orm"
 import { db } from "@/db"
 import {
+  deliveries,
   pdtpActivities,
   pdtpExecutionChecklists,
   pdtpExecutions,
   ppaSubmissions,
   preventionCapaActions,
   preventionCommittees,
+  preventionEmergencyPlans,
+  preventionExternalEngagements,
+  preventionIncidents,
+  preventionTrainingSessions,
   sstDocumentLinks,
   sstDocuments,
   sstEvaluations,
@@ -30,6 +35,19 @@ export const DOCUMENT_LINK_ENTITY_TYPES = [
   // Trabajo son documentos del comité: versionados, con checksum y acuse, en vez
   // de columnas de archivo sueltas en `prevention_committees`.
   "committee",
+  // El acta de fiscalización o de coordinación es el respaldo de la visita:
+  // versionada en la biblioteca, no un archivo suelto en la fila.
+  "external_engagement",
+  // Estos cuatro los aceptaba el check SQL de `sst_document_links` desde
+  // siempre, pero la whitelist de TypeScript no los listaba: la base permitía
+  // el vínculo y la aplicación lo rechazaba antes de llegar a ella. Adjuntar el
+  // informe de investigación de un accidente, el material de una capacitación,
+  // el acta de entrega de EPP o el plano del plan de emergencia son casos
+  // reales, no hipotéticos.
+  "incident",
+  "training",
+  "epp_delivery",
+  "emergency_plan",
 ] as const
 
 export type DocumentLinkEntityType = typeof DOCUMENT_LINK_ENTITY_TYPES[number]
@@ -60,8 +78,13 @@ export async function inspectDocumentLinkTargets(
   const actionIds = idsFor("corrective_action")
   const ppaIds = idsFor("ppa")
   const committeeIds = idsFor("committee")
+  const engagementIds = idsFor("external_engagement")
+  const incidentIds = idsFor("incident")
+  const trainingIds = idsFor("training")
+  const deliveryIds = idsFor("epp_delivery")
+  const emergencyPlanIds = idsFor("emergency_plan")
 
-  const [workerRows, worksiteRows, activityRows, executionRows, checklistRows, evaluationRows, actionRows, ppaRows, committeeRows] = await Promise.all([
+  const [workerRows, worksiteRows, activityRows, executionRows, checklistRows, evaluationRows, actionRows, ppaRows, committeeRows, engagementRows, incidentRows, trainingRows, deliveryRows, emergencyPlanRows] = await Promise.all([
     workerIds.length ? db.select({ id: workers.id, worksiteId: workers.worksiteId }).from(workers).where(inArray(workers.id, workerIds)) : [],
     worksiteIds.length ? db.select({ id: worksites.id, worksiteId: worksites.id }).from(worksites).where(inArray(worksites.id, worksiteIds)) : [],
     activityIds.length ? db.select({ id: pdtpActivities.id }).from(pdtpActivities).where(inArray(pdtpActivities.id, activityIds)) : [],
@@ -73,6 +96,11 @@ export async function inspectDocumentLinkTargets(
     actionIds.length ? db.select({ id: preventionCapaActions.id, worksiteId: preventionCapaActions.worksiteId }).from(preventionCapaActions).where(inArray(preventionCapaActions.id, actionIds)) : [],
     ppaIds.length ? db.select({ id: ppaSubmissions.id, worksiteId: ppaSubmissions.worksiteId }).from(ppaSubmissions).where(inArray(ppaSubmissions.id, ppaIds)) : [],
     committeeIds.length ? db.select({ id: preventionCommittees.id, worksiteId: preventionCommittees.worksiteId }).from(preventionCommittees).where(inArray(preventionCommittees.id, committeeIds)) : [],
+    engagementIds.length ? db.select({ id: preventionExternalEngagements.id, worksiteId: preventionExternalEngagements.worksiteId }).from(preventionExternalEngagements).where(inArray(preventionExternalEngagements.id, engagementIds)) : [],
+    incidentIds.length ? db.select({ id: preventionIncidents.id, worksiteId: preventionIncidents.worksiteId }).from(preventionIncidents).where(inArray(preventionIncidents.id, incidentIds)) : [],
+    trainingIds.length ? db.select({ id: preventionTrainingSessions.id, worksiteId: preventionTrainingSessions.worksiteId }).from(preventionTrainingSessions).where(inArray(preventionTrainingSessions.id, trainingIds)) : [],
+    deliveryIds.length ? db.select({ id: deliveries.id, worksiteId: deliveries.worksiteId }).from(deliveries).where(inArray(deliveries.id, deliveryIds)) : [],
+    emergencyPlanIds.length ? db.select({ id: preventionEmergencyPlans.id, worksiteId: preventionEmergencyPlans.worksiteId }).from(preventionEmergencyPlans).where(inArray(preventionEmergencyPlans.id, emergencyPlanIds)) : [],
   ])
 
   const targets = new Map<string, string | null>()
@@ -85,6 +113,11 @@ export async function inspectDocumentLinkTargets(
   for (const row of actionRows) targets.set(`corrective_action:${row.id}`, row.worksiteId)
   for (const row of ppaRows) targets.set(`ppa:${row.id}`, row.worksiteId)
   for (const row of committeeRows) targets.set(`committee:${row.id}`, row.worksiteId)
+  for (const row of engagementRows) targets.set(`external_engagement:${row.id}`, row.worksiteId)
+  for (const row of incidentRows) targets.set(`incident:${row.id}`, row.worksiteId)
+  for (const row of trainingRows) targets.set(`training:${row.id}`, row.worksiteId)
+  for (const row of deliveryRows) targets.set(`epp_delivery:${row.id}`, row.worksiteId)
+  for (const row of emergencyPlanRows) targets.set(`emergency_plan:${row.id}`, row.worksiteId)
 
   const supportedTypes = new Set<string>(DOCUMENT_LINK_ENTITY_TYPES)
   return links.map((link) => {
@@ -146,6 +179,31 @@ export async function resolveDocumentLinkTarget(entityType: DocumentLinkEntityTy
     case "committee": {
       const [row] = await db.select({ id: preventionCommittees.id, worksiteId: preventionCommittees.worksiteId })
         .from(preventionCommittees).where(eq(preventionCommittees.id, entityId)).limit(1)
+      return row ?? null
+    }
+    case "external_engagement": {
+      const [row] = await db.select({ id: preventionExternalEngagements.id, worksiteId: preventionExternalEngagements.worksiteId })
+        .from(preventionExternalEngagements).where(eq(preventionExternalEngagements.id, entityId)).limit(1)
+      return row ?? null
+    }
+    case "incident": {
+      const [row] = await db.select({ id: preventionIncidents.id, worksiteId: preventionIncidents.worksiteId })
+        .from(preventionIncidents).where(eq(preventionIncidents.id, entityId)).limit(1)
+      return row ?? null
+    }
+    case "training": {
+      const [row] = await db.select({ id: preventionTrainingSessions.id, worksiteId: preventionTrainingSessions.worksiteId })
+        .from(preventionTrainingSessions).where(eq(preventionTrainingSessions.id, entityId)).limit(1)
+      return row ?? null
+    }
+    case "epp_delivery": {
+      const [row] = await db.select({ id: deliveries.id, worksiteId: deliveries.worksiteId })
+        .from(deliveries).where(eq(deliveries.id, entityId)).limit(1)
+      return row ?? null
+    }
+    case "emergency_plan": {
+      const [row] = await db.select({ id: preventionEmergencyPlans.id, worksiteId: preventionEmergencyPlans.worksiteId })
+        .from(preventionEmergencyPlans).where(eq(preventionEmergencyPlans.id, entityId)).limit(1)
       return row ?? null
     }
   }
