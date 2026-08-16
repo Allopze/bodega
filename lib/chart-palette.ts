@@ -30,13 +30,20 @@ export const CHART_COLORS = {
   blue:    "#2563eb",
   violet:  "#7c3aed",
   teal:    "#0891b2",
+  rose:    "#be185d",
+  amber:   "#d97706",
+  indigo:  "#4f46e5",
+  sky:     "#0284c7",
   /** Gris pizarra — acumulados y métricas de referencia, no protagonistas. */
   neutral: "#64748b",
 } as const
 
 /**
- * Orden de asignación para series sin semántica propia (p. ej. las barras de
- * "Distribución por módulo", donde el módulo no implica un color).
+ * Orden de asignación para series y barras categóricas (p. ej. faenas, módulos,
+ * proveedores, clientes) sin semántica de alerta.
+ *
+ * Secuencia balanceada de tonos elegantes sin estridencias, calibrados para
+ * excelente distinción visual y contraste sobre superficies claras.
  */
 export const CHART_SERIES = [
   CHART_COLORS.brand,
@@ -44,7 +51,10 @@ export const CHART_SERIES = [
   CHART_COLORS.signal,
   CHART_COLORS.violet,
   CHART_COLORS.teal,
-  CHART_COLORS.danger,
+  CHART_COLORS.rose,
+  CHART_COLORS.amber,
+  CHART_COLORS.indigo,
+  CHART_COLORS.sky,
   CHART_COLORS.neutral,
 ] as const
 

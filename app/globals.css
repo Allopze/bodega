@@ -330,22 +330,42 @@ body {
 
 /* ─── Sonner: entry, progress bar, exit ────────────────────────── */
 
-/* Keep the toast surface clipped, but keep the close control inside the
- * surface. Sonner's default close control is intentionally translated
- * outside the top-left corner, which collides with the status icon here. */
+/* Keep the toast surface clipped and provide right padding for the close button */
 [data-sonner-toast] {
   overflow: clip;
   box-sizing: border-box;
-  padding-right: 40px;
+  padding-right: 36px;
 }
 
-/* The close action must not compete with the status icon or be clipped at
- * the edge of the toast. This also gives it a stable hit target. */
+/* Botón de cierre: icono X plano, discreto y estilizado dentro de la esquina superior derecha */
 [data-sonner-toast][data-styled="true"] [data-close-button] {
   left: auto;
   right: 8px;
   top: 8px;
   transform: none;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius-sm, 6px);
+  border: none !important;
+  background: transparent !important;
+  color: var(--color-text-muted) !important;
+  opacity: 0.6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: opacity 150ms ease, background-color 150ms ease, color 150ms ease;
+}
+
+[data-sonner-toast][data-styled="true"] [data-close-button]:hover {
+  opacity: 1;
+  background: var(--color-surface-2) !important;
+  color: var(--color-text) !important;
+}
+
+[data-sonner-toast][data-styled="true"] [data-close-button]:focus-visible {
+  opacity: 1;
+  outline: 2px solid var(--color-primary);
+  outline-offset: 1px;
 }
 
 /* ── Entry: fade-in + slide-down ── */

@@ -237,6 +237,7 @@ export interface ModuleWorkloadPoint {
  * población autorizada.
  */
 export function ModuleWorkloadChart({ data, total }: { data: ModuleWorkloadPoint[]; total: number }) {
+  const [activeIndex, setActiveIndex] = React.useState<number | null>(null)
   const counts = React.useMemo(() => [...data].sort((a, b) => b.count - a.count), [data])
   if (counts.length === 0) return null
 
@@ -253,14 +254,40 @@ export function ModuleWorkloadChart({ data, total }: { data: ModuleWorkloadPoint
       </div>
 
       <ChartContainer config={workloadChartConfig} className="h-48 w-full">
-        <BarChart data={counts} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+        <BarChart
+          data={counts}
+          margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
+          onMouseLeave={() => setActiveIndex(null)}
+        >
           <CartesianGrid strokeDasharray="3 3" vertical={false} />
           <XAxis dataKey="module" tickLine={false} axisLine={false} tickMargin={8} />
           <YAxis tickLine={false} axisLine={false} tickMargin={8} allowDecimals={false} />
-          <ChartTooltip content={<ChartTooltipContent hideLabel indicator="line" />} />
-          {/* Una serie = un color (I-10): la rotación por índice teñía la barra
-              de "Aprobaciones" con el rojo de severidad sin que significara nada. */}
-          <Bar dataKey="count" fill={CHART_COLORS.blue} radius={[6, 6, 0, 0]} maxBarSize={48} />
+          <ChartTooltip
+            content={
+              <ChartTooltipContent
+                hideLabel
+                formatter={(value, _name, item) => {
+                  const count = Number(value)
+                  const moduleName = String(item?.payload?.module ?? "")
+                  const share = total > 0 ? ` (${Math.round((count / total) * 100)}%)` : ""
+                  return `${moduleName}: ${count} ${count === 1 ? "tarea" : "tareas"}${share}`
+                }}
+              />
+            }
+          />
+          {/* Cada módulo recibe un color diferenciado y armónico con micro-interacción de foco en hover. */}
+          <Bar dataKey="count" radius={[6, 6, 0, 0]} maxBarSize={48}>
+            {counts.map((entry, index) => (
+              <Cell
+                key={entry.module || index}
+                fill={CHART_SERIES[index % CHART_SERIES.length]}
+                opacity={activeIndex === null || activeIndex === index ? 1 : 0.35}
+                onMouseEnter={() => setActiveIndex(index)}
+                onMouseLeave={() => setActiveIndex(null)}
+                className="cursor-pointer transition-opacity duration-200"
+              />
+            ))}
+          </Bar>
         </BarChart>
       </ChartContainer>
     </div>
@@ -387,6 +414,7 @@ export function WorksiteActivityChart({
 }: {
   worksites: { name: string; totalCost: number }[]
 }) {
+  const [activeIndex, setActiveIndex] = React.useState<number | null>(null)
   if (worksites.length === 0) return null
 
   // `getDashboardData` ya devuelve ordenado por `totalCost` descendente, así que
@@ -396,6 +424,8 @@ export function WorksiteActivityChart({
   const hasCost = data.some((d) => d.totalCost > 0)
   if (!hasCost) return null
 
+  const totalCostSum = data.reduce((sum, d) => sum + d.totalCost, 0)
+
   return (
     <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-xs">
       <div className="mb-4">
@@ -404,7 +434,12 @@ export function WorksiteActivityChart({
       </div>
 
       <ChartContainer config={worksiteChartConfig} className="h-56 w-full">
-        <BarChart data={data} layout="vertical" margin={{ top: 10, right: 15, left: 10, bottom: 0 }}>
+        <BarChart
+          data={data}
+          layout="vertical"
+          margin={{ top: 10, right: 15, left: 10, bottom: 0 }}
+          onMouseLeave={() => setActiveIndex(null)}
+        >
           <CartesianGrid strokeDasharray="3 3" horizontal={false} />
           <XAxis
             type="number"
@@ -423,12 +458,29 @@ export function WorksiteActivityChart({
           <ChartTooltip
             content={
               <ChartTooltipContent
-                formatter={(value) => `Inversión acumulada: ${formatCLP(Number(value))}`}
+                hideLabel
+                formatter={(value, _name, item) => {
+                  const cost = Number(value)
+                  const name = String(item?.payload?.name ?? "")
+                  const share = totalCostSum > 0 ? ` (${Math.round((cost / totalCostSum) * 100)}%)` : ""
+                  return `${name}: ${formatCLP(cost)}${share}`
+                }}
               />
             }
           />
-          {/* barSize acotado: con 1-2 faenas la barra ocupaba ~150px de grosor. */}
-          <Bar dataKey="totalCost" fill={CHART_COLORS.brand} radius={[0, 6, 6, 0]} barSize={22} />
+          {/* barSize acotado: con 1-2 faenas la barra ocupaba ~150px de grosor. Cada faena recibe un color diferenciado con foco en hover. */}
+          <Bar dataKey="totalCost" radius={[0, 6, 6, 0]} barSize={22}>
+            {data.map((entry, index) => (
+              <Cell
+                key={entry.name || index}
+                fill={CHART_SERIES[index % CHART_SERIES.length]}
+                opacity={activeIndex === null || activeIndex === index ? 1 : 0.35}
+                onMouseEnter={() => setActiveIndex(index)}
+                onMouseLeave={() => setActiveIndex(null)}
+                className="cursor-pointer transition-opacity duration-200"
+              />
+            ))}
+          </Bar>
         </BarChart>
       </ChartContainer>
     </div>
@@ -564,6 +616,7 @@ export function CompositionDonutChart({ data, title, description, totalLabel, fo
    * **"Otros" dos veces** con dos colores: dos porciones indistinguibles entre
    * sí. Lo detectó la pasada visual; ningún test lo veía.
    */
+  const [activeIndex, setActiveIndex] = React.useState<number | null>(null)
   const slices = React.useMemo(() => {
     const merged = new Map<string, CompositionSlice>()
     for (const slice of data) {
@@ -615,10 +668,19 @@ export function CompositionDonutChart({ data, title, description, totalLabel, fo
         </div>
       ) : (
         <ChartContainer config={config} className="h-48 w-full">
-          <PieChart>
+          <PieChart onMouseLeave={() => setActiveIndex(null)}>
             <ChartTooltip content={<ChartTooltipContent formatter={(value, name) => [formatted(Number(value)), String(name)]} />} />
             <Pie data={slices} dataKey="value" nameKey="label" innerRadius={52} outerRadius={78} strokeWidth={2} paddingAngle={2}>
-              {slices.map((slice, index) => <Cell key={slice.key} fill={CHART_SERIES[index % CHART_SERIES.length]} />)}
+              {slices.map((slice, index) => (
+                <Cell
+                  key={slice.key}
+                  fill={CHART_SERIES[index % CHART_SERIES.length]}
+                  opacity={activeIndex === null || activeIndex === index ? 1 : 0.4}
+                  onMouseEnter={() => setActiveIndex(index)}
+                  onMouseLeave={() => setActiveIndex(null)}
+                  className="cursor-pointer transition-opacity duration-200"
+                />
+              ))}
               <Label content={({ viewBox }) => {
                 if (!viewBox || !("cx" in viewBox)) return null
                 return (
@@ -654,7 +716,18 @@ export interface ThresholdBar {
  * el largo ordena y el color dice si está bien, en el límite o mal, sin obligar
  * a leer el eje.
  */
-export function ThresholdRankingChart({ data, title, description, unit = "%", format = "plain", goodAtOrAbove = 80, warnAtOrAbove = 50, invert = false, max }: {
+export function ThresholdRankingChart({
+  data,
+  title,
+  description,
+  unit = "%",
+  format = "plain",
+  goodAtOrAbove = 80,
+  warnAtOrAbove = 50,
+  invert = false,
+  max,
+  colorMode,
+}: {
   data: ThresholdBar[]
   title: string
   description: string
@@ -670,22 +743,33 @@ export function ThresholdRankingChart({ data, title, description, unit = "%", fo
   /** `true` cuando más alto es peor (déficit de stock, atrasos). */
   invert?: boolean
   max?: number
+  colorMode?: "threshold" | "palette"
 }) {
+  const [activeIndex, setActiveIndex] = React.useState<number | null>(null)
   const rows = React.useMemo(
     () => [...data].sort((left, right) => (invert ? right.value - left.value : left.value - right.value)).slice(-8),
     [data, invert],
   )
   if (rows.length === 0) return null
 
-  const colorFor = (value: number) => {
-    if (invert) {
-      if (value >= goodAtOrAbove) return CHART_COLORS.danger
+  const isThreshold = colorMode
+    ? colorMode === "threshold"
+    : Number.isFinite(goodAtOrAbove) && Number.isFinite(warnAtOrAbove)
+
+  const totalSum = rows.reduce((sum, r) => sum + r.value, 0)
+
+  const colorFor = (value: number, index: number) => {
+    if (isThreshold) {
+      if (invert) {
+        if (value >= goodAtOrAbove) return CHART_COLORS.danger
+        if (value >= warnAtOrAbove) return CHART_COLORS.signal
+        return CHART_COLORS.brand
+      }
+      if (value >= goodAtOrAbove) return CHART_COLORS.brand
       if (value >= warnAtOrAbove) return CHART_COLORS.signal
-      return CHART_COLORS.brand
+      return CHART_COLORS.danger
     }
-    if (value >= goodAtOrAbove) return CHART_COLORS.brand
-    if (value >= warnAtOrAbove) return CHART_COLORS.signal
-    return CHART_COLORS.danger
+    return CHART_SERIES[index % CHART_SERIES.length]
   }
 
   return (
@@ -704,15 +788,16 @@ export function ThresholdRankingChart({ data, title, description, unit = "%", fo
           {rows.map((row, index) => {
             const shown = format === "clp" ? formatCLP(row.value) : `${row.value}${unit}`
             const scale = max ?? (unit === "%" ? 100 : null)
+            const color = colorFor(row.value, index)
             return (
               <div key={index}>
                 <div className="flex items-baseline justify-between gap-2">
                   <span className="text-sm font-medium text-[var(--color-text)]">{row.name}</span>
-                  <span className="font-mono text-lg font-bold" style={{ color: colorFor(row.value) }}>{shown}</span>
+                  <span className="font-mono text-lg font-bold" style={{ color }}>{shown}</span>
                 </div>
                 {scale !== null && (
                   <div className="mt-1 h-2 w-full overflow-hidden rounded-full bg-[var(--color-surface-2)]" aria-hidden>
-                    <div className="h-full rounded-full" style={{ width: `${Math.min(100, (row.value / scale) * 100)}%`, background: colorFor(row.value) }} />
+                    <div className="h-full rounded-full" style={{ width: `${Math.min(100, (row.value / scale) * 100)}%`, background: color }} />
                   </div>
                 )}
                 {row.detail && <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">{row.detail}</p>}
@@ -722,24 +807,37 @@ export function ThresholdRankingChart({ data, title, description, unit = "%", fo
         </div>
       ) : (
       <ChartContainer config={{ value: { label: title } }} className="h-56 w-full">
-        <BarChart data={rows} layout="vertical" margin={{ top: 4, right: 16, left: 8, bottom: 0 }}>
+        <BarChart
+          data={rows}
+          layout="vertical"
+          margin={{ top: 4, right: 16, left: 8, bottom: 0 }}
+          onMouseLeave={() => setActiveIndex(null)}
+        >
           <CartesianGrid strokeDasharray="3 3" horizontal={false} />
           <XAxis type="number" domain={[0, max ?? (unit === "%" ? 100 : "dataMax")]} tickFormatter={(value) => (format === "clp" ? compactCLPTick(Number(value)) : `${value}${unit}`)} tickLine={false} axisLine={false} tick={{ fontSize: 11 }} />
           <YAxis type="category" dataKey="name" width={116} tickLine={false} axisLine={false} tick={{ fontSize: 11 }} />
           <ChartTooltip content={<ChartTooltipContent hideLabel formatter={(value, _name, item) => {
-            // Un solo string: `ChartTooltipContent` renderiza el retorno tal
-            // cual, y el array anterior concatenaba sin separador ("1 de
-            // 1Procesos").
-            const shown = format === "clp" ? formatCLP(Number(value)) : `${value}${unit}`
+            const val = Number(value)
+            const shown = format === "clp" ? formatCLP(val) : `${val}${unit}`
             const name = String(item?.payload?.name ?? "")
             const detail = item?.payload?.detail ? ` · ${String(item.payload.detail)}` : ""
-            return `${name}: ${shown}${detail}`
+            const share = !isThreshold && totalSum > 0 ? ` (${Math.round((val / totalSum) * 100)}%)` : ""
+            return `${name}: ${shown}${share}${detail}`
           }} />} />
           <Bar dataKey="value" radius={[0, 6, 6, 0]} barSize={18}>
             {/* Key posicional: `row.name` puede repetirse (dos personas con el
                 mismo nombre completo) y React descartaba una barra (UI/UX
                 2026-08-05, C3). Las Cell son 1:1 con `rows`, el índice es estable. */}
-            {rows.map((row, index) => <Cell key={index} fill={colorFor(row.value)} />)}
+            {rows.map((row, index) => (
+              <Cell
+                key={index}
+                fill={colorFor(row.value, index)}
+                opacity={activeIndex === null || activeIndex === index ? 1 : 0.35}
+                onMouseEnter={() => setActiveIndex(index)}
+                onMouseLeave={() => setActiveIndex(null)}
+                className="cursor-pointer transition-opacity duration-200"
+              />
+            ))}
           </Bar>
         </BarChart>
       </ChartContainer>

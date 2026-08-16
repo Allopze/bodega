@@ -109,7 +109,11 @@ export function RankingBarChart({
           <XAxis type="number" tickFormatter={compactCLP} tick={{ fill: "var(--color-text-muted)", fontSize: 11 }} />
           <YAxis type="category" dataKey="name" width={118} tick={{ fill: "var(--color-text-muted)", fontSize: 11 }} />
           <Tooltip contentStyle={chartTooltipStyle()} formatter={(value) => [formatCLP(Number(value)), "Costo"]} />
-          <Bar dataKey="value" radius={[0, 5, 5, 0]} fill="var(--color-primary)" />
+          <Bar dataKey="value" radius={[0, 5, 5, 0]}>
+            {chartData.map((row, index) => (
+              <Cell key={row.name || index} fill={COLORS[index % COLORS.length]} />
+            ))}
+          </Bar>
         </BarChart>
       </ResponsiveContainer>
     </div>

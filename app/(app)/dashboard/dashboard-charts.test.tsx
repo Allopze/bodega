@@ -6,7 +6,12 @@
  */
 import { describe, expect, it } from "vitest"
 import { render } from "@testing-library/react"
-import { CompositionDonutChart, ThresholdRankingChart } from "./dashboard-charts"
+import {
+  CompositionDonutChart,
+  ModuleWorkloadChart,
+  ThresholdRankingChart,
+  WorksiteActivityChart,
+} from "./dashboard-charts"
 
 const bars = (count: number) =>
   Array.from({ length: count }, (_, index) => ({ name: `Item ${index + 1}`, value: 10 + index, detail: `${index} de 10` }))
@@ -16,9 +21,6 @@ describe("ThresholdRankingChart (I-09)", () => {
     const { container, getByText } = render(
       <ThresholdRankingChart title="Cobertura" description="d" data={bars(2)} />,
     )
-    // Una sola vez cada uno: antes aparecían dos porque la tabla equivalente
-    // los repetía bajo el medidor, y el `>= 2` afirmaba esa duplicación.
-    // `getByText` es más estricto que el conteo: falla también si hay dos.
     expect(getByText("Item 1")).toBeDefined()
     expect(getByText("0 de 10")).toBeDefined()
     expect(container.querySelector("[data-chart]")).toBeNull()
@@ -47,6 +49,51 @@ describe("CompositionDonutChart (I-09)", () => {
     const { container } = render(
       <CompositionDonutChart title="Gasto" description="d" totalLabel="del período" data={[slice("A", 50), slice("B", 30), slice("C", 20)]} />,
     )
+    expect(container.querySelector("[data-chart]")).not.toBeNull()
+  })
+})
+
+describe("WorksiteActivityChart", () => {
+  it("renderiza el gráfico de inversión por faena con datos", () => {
+    const { container, getByText } = render(
+      <WorksiteActivityChart
+        worksites={[
+          { name: "Faena Central", totalCost: 1500000 },
+          { name: "Faena Norte", totalCost: 800000 },
+          { name: "Faena Sur", totalCost: 300000 },
+        ]}
+      />,
+    )
+    expect(getByText("Inversión por Faena")).toBeDefined()
+    expect(container.querySelector("[data-chart]")).not.toBeNull()
+  })
+
+  it("retorna null si no hay costos registrados", () => {
+    const { container } = render(
+      <WorksiteActivityChart
+        worksites={[
+          { name: "Faena Central", totalCost: 0 },
+        ]}
+      />,
+    )
+    expect(container.firstChild).toBeNull()
+  })
+})
+
+describe("ModuleWorkloadChart", () => {
+  it("renderiza la distribución por módulo con datos", () => {
+    const { container, getByText } = render(
+      <ModuleWorkloadChart
+        data={[
+          { module: "Compras", count: 12 },
+          { module: "Bodega", count: 8 },
+          { module: "Recepción", count: 5 },
+        ]}
+        total={25}
+      />,
+    )
+    expect(getByText("Distribución por Módulo")).toBeDefined()
+    expect(getByText("25 tareas")).toBeDefined()
     expect(container.querySelector("[data-chart]")).not.toBeNull()
   })
 })
