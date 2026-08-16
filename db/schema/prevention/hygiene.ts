@@ -162,6 +162,42 @@ export const preventionHygieneHistory = pgTable("prevention_hygiene_history", {
   index("prevention_hygiene_history_entity_idx").on(table.entityType, table.entityId, table.createdAt),
 ])
 
+/* ── Aplicabilidad de los protocolos MINSAL por faena ─────────────────────
+ * El catálogo de protocolos (PREXOR, psicosocial, sílice, hiperbaria,
+ * frío/calor, citostáticos, UV, TMERT) es una constante de código —
+ * `lib/prevention/minsal-protocols.ts` — porque sólo cambia cuando cambia una
+ * resolución del MINSAL. Lo que sí es dato de la empresa es el pronunciamiento
+ * de cada faena: aplica, no aplica y por qué, y cuándo toca reevaluarlo.
+ *
+ * Hasta ahora el protocolo era texto libre en `preventionExposureAgents
+ * .surveillanceProtocol` y `preventionSurveillancePrograms.protocol`. Esas
+ * columnas se conservan y siguen sin `check` SQL a propósito: hay datos
+ * legados con texto libre, y la validación contra el catálogo vive en Zod.
+ */
+export const preventionProtocolApplicabilities = pgTable("prevention_protocol_applicabilities", {
+  id:                text("id").primaryKey(),
+  protocolCode:      text("protocol_code").notNull(),
+  worksiteId:        text("worksite_id").notNull().references(() => worksites.id, { onDelete: "restrict" }),
+  status:            text("status").notNull().default("pending_assessment"),
+  /** Por qué se descarta. Obligatoria si `status = 'not_applicable'`. */
+  justification:     text("justification"),
+  periodicityMonths: integer("periodicity_months"),
+  lastAssessedOn:    text("last_assessed_on"),
+  nextAssessmentOn:  text("next_assessment_on"),
+  assessedByUserId:  text("assessed_by_user_id").references(() => users.id, { onDelete: "restrict" }),
+  version:           integer("version").notNull().default(1),
+  createdAt:         timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+  updatedAt:         timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex("prevention_protocol_applicability_unique").on(table.worksiteId, table.protocolCode),
+  index("prevention_protocol_applicability_due_idx").on(table.nextAssessmentOn),
+  check("prevention_protocol_applicability_status_valid", sql`${table.status} IN ('applicable', 'not_applicable', 'pending_assessment')`),
+  // Descartar un protocolo obligatorio sin decir por qué es exactamente lo que
+  // se sanciona en una fiscalización.
+  check("prevention_protocol_applicability_justification_required", sql`${table.status} <> 'not_applicable' OR length(trim(COALESCE(${table.justification}, ''))) >= 10`),
+  check("prevention_protocol_applicability_version_positive", sql`${table.version} >= 1`),
+])
+
 /* ── Relations ────────────────────────────────────────────────────────────── */
 export const preventionExposureGroupsRelations = relations(preventionExposureGroups, ({ one, many }) => ({
   agent: one(preventionExposureAgents, { fields: [preventionExposureGroups.agentId], references: [preventionExposureAgents.id] }),
@@ -196,3 +232,4 @@ export type PreventionExposureGroup = typeof preventionExposureGroups.$inferSele
 export type PreventionExposureMeasurement = typeof preventionExposureMeasurements.$inferSelect
 export type PreventionSurveillanceProgram = typeof preventionSurveillancePrograms.$inferSelect
 export type PreventionSurveillanceEnrollment = typeof preventionSurveillanceEnrollments.$inferSelect
+export type PreventionProtocolApplicability = typeof preventionProtocolApplicabilities.$inferSelect

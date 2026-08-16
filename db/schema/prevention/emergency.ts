@@ -64,19 +64,38 @@ export const preventionEmergencyRoles = pgTable("prevention_emergency_roles", {
   index("prevention_emergency_role_plan_idx").on(table.planId),
 ])
 
+/* ── Inventario de equipos de emergencia ──────────────────────────────────
+ * Extintores, botiquines, camillas, desfibriladores (DS 594).
+ *
+ * El equipo pertenece a la FAENA, no al documento: colgaba de `planId` con
+ * `onDelete: cascade`, así que archivar un plan y emitir el siguiente borraba
+ * el inventario entero. Ahora `worksiteId` es la pertenencia real y `planId`
+ * queda como referencia opcional al plan que lo declara.
+ *
+ * `expiresAt` no es lo mismo que `nextInspectionAt`: la carga de un extintor y
+ * la caducidad de un botiquín vencen aunque la inspección esté al día.
+ */
 export const preventionEmergencyResources = pgTable("prevention_emergency_resources", {
   id:               text("id").primaryKey(),
-  planId:           text("plan_id").notNull().references(() => preventionEmergencyPlans.id, { onDelete: "cascade" }),
+  worksiteId:       text("worksite_id").notNull().references(() => worksites.id, { onDelete: "restrict" }),
+  planId:           text("plan_id").references(() => preventionEmergencyPlans.id, { onDelete: "set null" }),
   name:             text("name").notNull(),
   kind:             text("kind").notNull(),
   location:         text("location").notNull(),
+  serialNumber:     text("serial_number"),
   lastInspectedAt:  text("last_inspected_at"),
   nextInspectionAt: text("next_inspection_at"),
+  /** Vencimiento del equipo (carga, caducidad), distinto de su inspección. */
+  expiresAt:        text("expires_at"),
   status:           text("status").notNull().default("operational"),
   createdAt:        timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   updatedAt:        timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [
   index("prevention_emergency_resource_plan_idx").on(table.planId),
+  index("prevention_emergency_resource_worksite_idx").on(table.worksiteId),
+  // Para la bandeja de vencidos: se consulta por fecha, no por faena.
+  index("prevention_emergency_resource_due_idx").on(table.nextInspectionAt),
+  index("prevention_emergency_resource_expiry_idx").on(table.expiresAt),
   check("prevention_emergency_resource_status_valid", sql`${table.status} IN ('operational', 'needs_maintenance', 'out_of_service')`),
 ])
 

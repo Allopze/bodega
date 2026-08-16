@@ -386,7 +386,11 @@ export const preventionPdtpSourceLinks = pgTable("prevention_pdtp_source_links",
 }, (table) => [
   uniqueIndex("prevention_pdtp_source_links_active_unique").on(table.activityId, table.worksiteId, table.sourceType, table.sourceId).where(sql`${table.isActive} = true`),
   index("prevention_pdtp_source_links_source_idx").on(table.sourceType, table.sourceId),
-  check("prevention_pdtp_source_links_type_valid", sql`${table.sourceType} IN ('risk_control', 'legal_requirement', 'incident', 'incident_capa', 'audit', 'contractual_obligation', 'capacitacion', 'inspeccion', 'cphs', 'epp', 'emergencia', 'campana')`),
+  // 'incident' se retiró: era inalcanzable desde la aplicación (nunca estuvo en
+  // el zod enum) y duplicaba a 'incident_capa', que es el vínculo con sentido —
+  // lo que cubre una actividad del programa es la acción correctiva del
+  // incidente, no el incidente en sí. Ninguna fila puede tenerlo.
+  check("prevention_pdtp_source_links_type_valid", sql`${table.sourceType} IN ('risk_control', 'legal_requirement', 'incident_capa', 'audit', 'contractual_obligation', 'capacitacion', 'inspeccion', 'cphs', 'epp', 'emergencia', 'campana', 'protocolo_minsal')`),
 ])
 
 export const preventionPdtpUpdateObligations = pgTable("prevention_pdtp_update_obligations", {

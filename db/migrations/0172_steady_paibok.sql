@@ -1,0 +1,2 @@
+ALTER TABLE "prevention_pdtp_source_links" DROP CONSTRAINT "prevention_pdtp_source_links_type_valid";--> statement-breakpoint
+ALTER TABLE "prevention_pdtp_source_links" ADD CONSTRAINT "prevention_pdtp_source_links_type_valid" CHECK ("prevention_pdtp_source_links"."source_type" IN ('risk_control', 'legal_requirement', 'incident_capa', 'audit', 'contractual_obligation', 'capacitacion', 'inspeccion', 'cphs', 'epp', 'emergencia', 'campana', 'protocolo_minsal'));
