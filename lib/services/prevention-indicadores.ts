@@ -74,11 +74,6 @@ export interface CanonicalIndicatorYearView {
   snapshots: Array<typeof safetyIndicatorSnapshots.$inferSelect>
 }
 
-export {
-  calcRates, sumCounters, buildMonthlyCounters,
-  type IndicatorCounters,
-} from "@/lib/prevention/safety-indicators-calc"
-
 function scopeAllows(scope: WorksiteScope, worksiteId: string) {
   return scope.mode === "all" || (scope.mode === "some" && scope.ids.includes(worksiteId))
 }

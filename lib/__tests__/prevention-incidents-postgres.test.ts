@@ -311,8 +311,14 @@ describeIf("canonical incident workflow on real PostgreSQL", () => {
         input: { incidentId, expectedVersion: incident.version, notificationType, sentAt, evidenceReference: `folio-${notificationType}`, observations: "Presentación manual registrada" },
       })
     }
-    incident = await incidents.authorizePreventionIncidentRestart({
+    // El reinicio exige un tercero: `manager` investigó y es responsable de la
+    // CAPA, así que la segregación por identidad lo rechaza (F-09).
+    await expect(incidents.authorizePreventionIncidentRestart({
       access: manager,
+      input: { incidentId, expectedVersion: incident.version, reason: "Controles verificados, autoridad notificada y CAPA eficaz" },
+    })).rejects.toThrow(/no participó en la investigación/i)
+    incident = await incidents.authorizePreventionIncidentRestart({
+      access: access("incident-risk-approver", ["prevention:incidents:authorize_restart"]),
       input: { incidentId, expectedVersion: incident.version, reason: "Controles verificados, autoridad notificada y CAPA eficaz" },
     })
     incident = await incidents.transitionPreventionIncident({

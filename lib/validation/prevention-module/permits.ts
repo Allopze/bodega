@@ -4,6 +4,16 @@ const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Fecha inválida")
 const instant = z.string().datetime({ offset: true })
 const reason = z.string().trim().min(10).max(3000)
 
+// Día calendario en Chile: una fecha `YYYY-MM-DD` no es un instante, así que
+// compararla contra UTC adelanta o atrasa el corte según la hora del envío.
+const CHILE_DATE_FORMAT = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Santiago", year: "numeric", month: "2-digit", day: "2-digit" })
+function todayInChile() {
+  return CHILE_DATE_FORMAT.format(new Date())
+}
+
+/** Tolerancia para relojes desincronizados del dispositivo que registra en terreno. */
+const CLOCK_SKEW_MS = 120_000
+
 export const ENERGY_SOURCES = [
   "electrical", "mechanical", "hydraulic", "pneumatic",
   "thermal", "chemical", "gravitational", "other",
@@ -18,6 +28,8 @@ export const permitTypeSchema = z.object({
   requiresMeasurement: z.boolean().default(false),
   requiresJsa: z.boolean().default(true),
   measurementValidityMinutes: z.number().int().positive().max(1440).nullable().optional(),
+  // Opt-in por tipo: ausente = no se exige calibración vigente del instrumento.
+  measurementCalibrationValidityDays: z.number().int().positive().max(3650).nullable().optional(),
   maxDurationHours: z.number().int().positive().max(72).default(12),
   legalBasis: z.string().trim().min(5).max(2000),
 }).superRefine((value, ctx) => {
@@ -104,6 +116,15 @@ export const permitMeasurementSchema = z.object({
   }
   if (value.acceptableMin == null && value.acceptableMax == null) {
     ctx.addIssue({ code: "custom", path: ["acceptableMin"], message: "Una medición debe declarar al menos un límite aceptable." })
+  }
+  // Una medición con hora futura nunca envejece: dejaría el permiso habilitado
+  // indefinidamente por vigencia. `takenAt` es un instante absoluto, así que
+  // `Date.now()` es la comparación correcta (sin husos horarios de por medio).
+  if (Date.parse(value.takenAt) > Date.now() + CLOCK_SKEW_MS) {
+    ctx.addIssue({ code: "custom", path: ["takenAt"], message: "La medición no puede tener una hora futura." })
+  }
+  if (value.calibrationDate && value.calibrationDate > todayInChile()) {
+    ctx.addIssue({ code: "custom", path: ["calibrationDate"], message: "La fecha de calibración no puede estar en el futuro." })
   }
 })
 

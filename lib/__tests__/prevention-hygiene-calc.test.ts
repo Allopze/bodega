@@ -6,6 +6,8 @@ import {
   summarizeExposureAnonymized,
   MIN_ANONYMOUS_GROUP_SIZE,
 } from "@/lib/prevention/hygiene"
+import { exposureMeasurementSchema } from "@/lib/validation/prevention-module/hygiene"
+import { todayInChile } from "@/lib/utils"
 
 const agent = { permissibleLimit: 100, actionLevelFactor: 0.5 }
 
@@ -138,5 +140,29 @@ describe("agregación anonimizada", () => {
   it("un grupo sin expuestos no divide por cero", () => {
     const [summary] = summarizeExposureAnonymized([group({ exposedCount: 0, attendedCount: 0 })])
     expect(summary?.attendanceRate).toBeNull()
+  })
+})
+
+describe("validación de entrada de una medición de exposición", () => {
+  const base = {
+    groupId: "grp-1",
+    measuredOn: "2026-07-19",
+    value: 50,
+    method: "Muestreo de aire personal",
+    equipmentTag: "BOMBA-01",
+  }
+
+  it("acepta una medición sin fecha de calibración declarada", () => {
+    expect(() => exposureMeasurementSchema.parse(base)).not.toThrow()
+  })
+
+  it("acepta la fecha de calibración de hoy en hora de Chile", () => {
+    expect(() => exposureMeasurementSchema.parse({ ...base, calibrationDate: todayInChile() })).not.toThrow()
+  })
+
+  it("rechaza una calibración con fecha futura", () => {
+    const future = new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10)
+    expect(() => exposureMeasurementSchema.parse({ ...base, calibrationDate: future }))
+      .toThrow(/no puede estar en el futuro/i)
   })
 })

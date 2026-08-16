@@ -48,6 +48,7 @@ describe("prevention module RBAC", () => {
       "prevention:incidents:investigate",
       "prevention:incidents:notify",
       "prevention:incidents:authorize_restart",
+      "prevention:incidents:override_segregation",
       "prevention:incidents:close",
       "prevention:incidents:export",
       "prevention:risk:view",
@@ -255,6 +256,9 @@ describe("prevention module RBAC", () => {
     expect(rolesFor("prevention:capa:close")).toEqual(["administrador", "jefa_chome"])
     expect(rolesFor("prevention:capa:override_segregation")).toEqual(["administrador"])
     expect(rolesFor("prevention:capa:reconcile")).toEqual(["administrador"])
+    // Misma política para el reinicio de faena tras un accidente grave: quien
+    // investigó o verificó las medidas no se autoriza a sí mismo el reinicio.
+    expect(rolesFor("prevention:incidents:override_segregation")).toEqual(["administrador"])
   })
 
   it("separates training delivery from content approval and competency override", () => {

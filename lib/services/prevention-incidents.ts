@@ -253,6 +253,7 @@ const restartSchema = z.object({
   incidentId: z.string().min(1),
   expectedVersion: z.number().int().positive(),
   reason: z.string().trim().min(10).max(3000),
+  segregationExceptionReason: z.string().trim().min(10).max(2000).optional(),
 })
 
 const TRANSITIONS: Record<IncidentStatus, readonly IncidentStatus[]> = {
@@ -365,10 +366,18 @@ async function appendHistory(client: IncidentClient, args: {
   })
 }
 
+/**
+ * Loader común de toda mutación del expediente. El cierre exigió investigación
+ * completa, CAPA cerradas y notificaciones con evidencia; permitir escrituras
+ * posteriores corrompería el expediente que sustentó ese cierre, y no existe
+ * transición de reapertura que lo audite. Por eso el guard vive aquí y no en
+ * cada llamador: ninguna mutación necesita legítimamente un incidente cerrado.
+ */
 async function findIncidentForMutation(client: IncidentClient, incidentId: string) {
   const [incident] = await client.select().from(preventionIncidents)
     .where(eq(preventionIncidents.id, incidentId)).limit(1)
   if (!incident) throw new Error("Incidente no encontrado o fuera de alcance.")
+  if (incident.status === "closed") throw new Error("El incidente está cerrado y su expediente es inmutable.")
   return incident
 }
 
@@ -1175,7 +1184,13 @@ export async function recordPreventionIncidentNotification(args: {
       changeType: "notification",
       actorUserId: args.access.ctx.userId,
       reason: wasLate ? "Notificación registrada fuera de plazo" : "Notificación registrada",
-      changeSet: { type: lane.notificationType, sentAt: input.sentAt, deadlineAt: lane.deadlineAt, wasLate },
+      changeSet: {
+        type: lane.notificationType,
+        sentAt: input.sentAt,
+        deadlineAt: lane.deadlineAt,
+        wasLate,
+        before: { sentAt: lane.sentAt, evidenceReference: lane.evidenceReference, evidenceChecksumSha256: lane.evidenceChecksumSha256 },
+      },
       createdAt: now,
     })
     return updated
@@ -1210,6 +1225,20 @@ export async function authorizePreventionIncidentRestart(args: {
     }
     const restart = facts.notifications.find((lane) => lane.notificationType === "restart_authorization")
     if (!restart) throw new Error("No existe carril de autorización de reinicio.")
+    // Segregación por identidad, misma política que CAPA: quien investigó o
+    // implementó/verificó las medidas no puede autorizar su propio reinicio.
+    const conflicted = new Set([
+      ...(facts.investigation?.team ?? []).map((member) => member.userId),
+      ...facts.capa.flatMap((action) => [action.responsibleUserId, action.completedByUserId, action.verifiedByUserId]),
+    ].filter((userId): userId is string => Boolean(userId)))
+    let segregationOverride: { reason: string; actorUserId: string } | null = null
+    if (conflicted.has(args.access.ctx.userId)) {
+      const canOverride = hasPermission(args.access.permissions, "prevention:incidents:override_segregation")
+      if (!canOverride || (input.segregationExceptionReason?.trim().length ?? 0) < 10) {
+        throw new Error("El reinicio debe autorizarlo alguien que no participó en la investigación ni implementó/verificó las medidas.")
+      }
+      segregationOverride = { reason: input.segregationExceptionReason!, actorUserId: args.access.ctx.userId }
+    }
     const now = nowIso()
     await tx.update(preventionIncidentNotifications).set({
       status: "authorized",
@@ -1229,7 +1258,7 @@ export async function authorizePreventionIncidentRestart(args: {
       changeType: "restart",
       actorUserId: args.access.ctx.userId,
       reason: input.reason,
-      changeSet: { restartAuthorizedAt: now },
+      changeSet: { restartAuthorizedAt: now, segregationOverride },
       createdAt: now,
     })
     return updated

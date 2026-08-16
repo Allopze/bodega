@@ -1,0 +1,4 @@
+ALTER TABLE "prevention_work_permits" DROP CONSTRAINT "prevention_work_permit_suspend_consistent";--> statement-breakpoint
+ALTER TABLE "prevention_permit_types" ADD COLUMN "measurement_calibration_validity_days" integer;--> statement-breakpoint
+ALTER TABLE "prevention_permit_types" ADD CONSTRAINT "prevention_permit_type_calibration_validity" CHECK ("prevention_permit_types"."measurement_calibration_validity_days" IS NULL OR "prevention_permit_types"."measurement_calibration_validity_days" > 0);--> statement-breakpoint
+ALTER TABLE "prevention_work_permits" ADD CONSTRAINT "prevention_work_permit_suspend_consistent" CHECK (("prevention_work_permits"."suspended_at" IS NULL AND "prevention_work_permits"."suspended_by_user_id" IS NULL) OR ("prevention_work_permits"."suspended_at" IS NOT NULL AND length("prevention_work_permits"."suspension_reason") >= 10));

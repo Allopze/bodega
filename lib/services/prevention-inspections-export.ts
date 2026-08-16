@@ -9,18 +9,13 @@ import {
   INSPECTION_RUN_STATUS_LABELS,
 } from "@/lib/prevention/inspections"
 import type { ReportCell, ReportData, ReportSheet } from "@/lib/reports/export"
+import { sanitizeCell as safeCell } from "@/lib/reports/export-module/excel-builder"
 import {
   listInspectionPrograms,
   listInspectionRuns,
   listInspectionTemplates,
   type InspectionAccess,
 } from "@/lib/services/prevention-inspections"
-
-function safeCell(value: unknown): string {
-  if (value === null || value === undefined) return ""
-  const text = typeof value === "string" ? value : JSON.stringify(value)
-  return /^[=+\-@]/.test(text) ? `'${text}` : text
-}
 
 function sheet(worksheetName: string, headers: string[], rows: ReportCell[][]): ReportSheet {
   return { worksheetName, headers, rows }

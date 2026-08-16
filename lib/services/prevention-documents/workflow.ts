@@ -40,6 +40,7 @@ interface TransitionOptions {
   requireUploader?: boolean
   requireReviewed?: boolean
   preventUploader?: boolean
+  preventReviewer?: boolean
   versionPatch?: (ctx: RequestContext) => Record<string, unknown>
 }
 
@@ -129,6 +130,9 @@ async function transitionVersion(args: WorkflowInput, options: TransitionOptions
     }
     if (options.requireReviewed && !version.reviewedBy) {
       throw new Error("La versión debe tener una revisión registrada antes de aprobarse.")
+    }
+    if (options.preventReviewer && version.reviewedBy === args.ctx.userId) {
+      throw new Error("Quien revisó la versión no puede aprobarla.")
     }
 
     const now = new Date().toISOString()
@@ -228,6 +232,7 @@ export function approveDocumentVersion(args: WorkflowInput) {
     auditAction: "approve",
     requireReviewed: true,
     preventUploader: true,
+    preventReviewer: true,
     versionPatch: (ctx) => ({ approvedBy: ctx.userId, approvedAt: new Date().toISOString() }),
   })
 }

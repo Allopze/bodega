@@ -831,7 +831,7 @@ function AddMeasurementDialog({ permitId }: { permitId: string }) {
           <div className="grid gap-3 md:grid-cols-3">
             <Field label="Valor"><Input name="value" type="number" step="any" required /></Field>
             <Field label="Unidad"><Input name="unit" required maxLength={40} placeholder="%" /></Field>
-            <Field label="Fecha de calibración" hint="Opcional."><DatePicker name="calibrationDate" /></Field>
+            <Field label="Fecha de calibración" hint="Opcional, salvo que el tipo de permiso exija calibración vigente."><DatePicker name="calibrationDate" /></Field>
           </div>
           <div className="grid gap-3 md:grid-cols-2">
             <Field label="Mínimo aceptable"><Input name="acceptableMin" type="number" step="any" /></Field>

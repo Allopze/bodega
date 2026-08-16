@@ -256,6 +256,22 @@ describeIf("Permisos de trabajo on real PostgreSQL", () => {
     expect(readiness).toEqual({ allowed: true, blockers: [] })
   })
 
+  it("rejects an activation carrying the version read before the field mutations (TOCTOU)", async () => {
+    const service = await import("@/lib/services/prevention-permits")
+    // `permitVersion` es la versión leída al aprobar, antes de verificar
+    // controles y registrar aislamiento y medición: activar con ella habilitaría
+    // el permiso sobre una evaluación que ya no corresponde al expediente.
+    await expect(service.transitionWorkPermit({
+      permitId, expectedVersion: permitVersion, toStatus: "active",
+      reason: "Activación con la versión previa a las mutaciones de terreno.",
+    }, APPROVER)).rejects.toThrow(/cambió mientras/)
+
+    const [current] = await getDb().select().from(schema.preventionWorkPermits)
+      .where(eq(schema.preventionWorkPermits.id, permitId))
+    expect(current!.version).toBeGreaterThan(permitVersion)
+    permitVersion = current!.version
+  })
+
   it("activates the permit once every gate is satisfied", async () => {
     const service = await import("@/lib/services/prevention-permits")
     const activated = await service.transitionWorkPermit({
@@ -294,6 +310,11 @@ describeIf("Permisos de trabajo on real PostgreSQL", () => {
     const [isolation] = await getDb().select().from(schema.preventionPermitIsolations)
       .where(eq(schema.preventionPermitIsolations.permitId, permitId))
     await service.removePermitIsolation({ isolationId: isolation!.id, reason: "Normalización de energía verificada." }, REQUESTER)
+    // Retirar el aislamiento también mueve la versión del permiso.
+    const [afterRemoval] = await getDb().select().from(schema.preventionWorkPermits)
+      .where(eq(schema.preventionWorkPermits.id, permitId))
+    expect(afterRemoval!.version).toBeGreaterThan(permitVersion)
+    permitVersion = afterRemoval!.version
 
     const closed = await service.transitionWorkPermit({
       permitId, expectedVersion: permitVersion, toStatus: "closed",
@@ -342,6 +363,9 @@ describeIf("Permisos de trabajo on real PostgreSQL", () => {
       .where(eq(schema.preventionWorkPermits.id, permit.id))
     expect(after).toMatchObject({ status: "suspended" })
     expect(after!.suspensionReason).toMatch(/venció/)
+    // La suspensión automática no tiene actor humano: atribuírsela al supervisor
+    // falsearía el registro. El CHECK relajado de la base es lo que se prueba acá.
+    expect(after!.suspendedByUserId).toBeNull()
     expect(approved.status).toBe("approved")
   })
 })

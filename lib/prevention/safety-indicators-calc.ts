@@ -62,7 +62,7 @@ export function buildMonthlyCounters(
   })
 }
 
-export const SAFETY_INDICATOR_FORMULA_VERSION = "ds44-art73-2025-v1"
+export const SAFETY_INDICATOR_FORMULA_VERSION = "ds44-art73-2025-v2"
 
 export type IndicatorInclusionStatus = "pending" | "included" | "excluded"
 export type CanonicalIndicatorStatus = "reconciled" | "provisional" | "non_calculable" | "error"
@@ -183,7 +183,7 @@ function metricSet(cases: CanonicalIndicatorCase[], workerAverage: number | null
     injuredPeople,
     absenceDays,
     chargeDays,
-    accidentabilityRate: workerAverage && workerAverage > 0 ? (accidents / workerAverage) * 100 : null,
+    accidentabilityRate: workerAverage && workerAverage > 0 ? (injuredPeople / workerAverage) * 100 : null,
     frequencyRate: workedHours > 0 ? (injuredPeople / workedHours) * 1_000_000 : null,
     severityRate: workedHours > 0 ? ((absenceDays + chargeDays) / workedHours) * 1_000_000 : null,
   }

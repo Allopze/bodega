@@ -139,6 +139,7 @@ export function CampanasClient({
       if (res.ok) {
         setCloseCampaignItem(null)
         setEvidenceUrl("")
+        if (res.data?.pdtpAccredited === false) setError(res.message ?? null)
         router.refresh()
       } else {
         setError(res.message ?? "Ocurrió un error")
@@ -363,7 +364,7 @@ export function CampanasClient({
           <DialogHeader>
             <DialogTitle>Cerrar Campaña Preventiva</DialogTitle>
             <DialogDescription>
-              Al completar la campaña se gatillará automáticamente la auto-acreditación en PDTP acreditando {closeCampaignItem?.attendanceCount} trabajadores.
+              Al completar la campaña se gatillará automáticamente la auto-acreditación en PDTP acreditando {closeCampaignItem?.attendanceCount} trabajadores, si la campaña declara actividades PDTP.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">

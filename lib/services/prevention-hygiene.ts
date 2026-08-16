@@ -17,7 +17,7 @@ import {
 import type { WorksiteScope } from "@/lib/auth/scope"
 import { nanoid } from "@/lib/id"
 import { findMinsalProtocol, summarizeProtocolCoverage } from "@/lib/prevention/minsal-protocols"
-import { protocolApplicabilitySchema } from "@/lib/validation/prevention-module/hygiene"
+import { exposureMeasurementSchema, protocolApplicabilitySchema } from "@/lib/validation/prevention-module/hygiene"
 import {
   assessMeasurement,
   deriveSurveillanceObligation,
@@ -183,18 +183,6 @@ export async function addExposureGroupMember(input: unknown, access: HygieneAcce
 
 /* ── Mediciones ───────────────────────────────────────────────────────────── */
 
-const measurementSchema = z.object({
-  groupId: z.string().min(1),
-  measuredOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  value: z.number().nonnegative(),
-  method: z.string().trim().min(3).max(300),
-  laboratoryName: z.string().trim().max(200).nullable().optional(),
-  equipmentTag: z.string().trim().min(1).max(200),
-  calibrationDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
-  sampleDurationMinutes: z.number().int().positive().max(10_000).nullable().optional(),
-  reportReference: z.string().trim().max(2000).nullable().optional(),
-})
-
 /**
  * Registra una medición y recalcula la obligación de vigilancia del grupo.
  *
@@ -203,7 +191,7 @@ const measurementSchema = z.object({
  * se comparó.
  */
 export async function recordExposureMeasurement(input: unknown, access: HygieneAccess) {
-  const data = measurementSchema.parse(input)
+  const data = exposureMeasurementSchema.parse(input)
 
   return db.transaction(async (tx) => {
     const [row] = await tx.select({ group: preventionExposureGroups, agent: preventionExposureAgents })

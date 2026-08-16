@@ -77,6 +77,26 @@ describe("buildXlsxBuffer", () => {
       expect(cell.type).not.toBe(ExcelJS.ValueType.Formula)
       expect(cell.formula).toBeUndefined()
     }
-    expect(sheet.getCell("A2").value).toBe(maliciousLookingText)
+    // El valor se guarda con un apóstrofe inicial: es el texto literal que ExcelJS/Excel
+    // interpretan como "fuerza texto", nunca la fórmula evaluable original sin marcar.
+    expect(sheet.getCell("A2").value).toBe(`'${maliciousLookingText}`)
+  })
+
+  it("passes numeric cells through unchanged, never coerced to string", async () => {
+    const report: ReportData = {
+      filenameBase: "reporte-numerico",
+      worksheetName: "Datos",
+      headers: ["Cantidad"],
+      rows: [[10]],
+    }
+
+    const buffer = await buildXlsxBuffer(report)
+    const reopened = new ExcelJS.Workbook()
+    await reopened.xlsx.load(buffer)
+    const sheet = reopened.getWorksheet("Datos")!
+
+    const value = sheet.getRow(2).values as unknown[]
+    expect(value[1]).toBe(10)
+    expect(typeof value[1]).toBe("number")
   })
 })

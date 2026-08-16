@@ -84,12 +84,9 @@ export async function queueIncidentReport(payload: OfflineIncidentReport) {
       }
     }
 
-    // FIFO trim: keep MAX_QUEUED - 1 most recent
     const remaining = all.filter((e) => !(e.attempts >= MAX_RETRIES && new Date(e.queuedAt) < cutoff))
-    remaining.sort((a, b) => new Date(a.queuedAt).getTime() - new Date(b.queuedAt).getTime())
-    while (remaining.length >= MAX_QUEUED) {
-      const oldest = remaining.shift()!
-      await transactionPromise(store.delete(oldest.id))
+    if (remaining.length >= MAX_QUEUED) {
+      throw new Error(`La cola offline está llena (${MAX_QUEUED} reportes sin sincronizar). Conéctate y sincroniza antes de registrar otro.`)
     }
 
     const entry: QueueEntry = {

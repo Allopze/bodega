@@ -60,8 +60,10 @@ export interface PermitBlocker {
     | "isolation_missing"
     | "isolation_not_verified"
     | "measurement_missing"
+    | "measurement_invalid"
     | "measurement_stale"
     | "measurement_out_of_range"
+    | "measurement_uncalibrated"
     | "jsa_missing"
     | "crew_empty"
     | "crew_competency"
@@ -74,6 +76,8 @@ export interface PermitTypeSpec {
   requiresMeasurement: boolean
   requiresJsa: boolean
   measurementValidityMinutes: number | null
+  /** `null` = este tipo no exige calibración vigente del instrumento (opt-in). */
+  measurementCalibrationValidityDays: number | null
   maxDurationHours: number
 }
 
@@ -97,6 +101,7 @@ export interface PermitMeasurementRow {
   parameter: string
   withinRange: boolean
   takenAt: string
+  calibrationDate: string | null
 }
 
 export interface PermitCrewRow {
@@ -168,8 +173,28 @@ export function assessPermitActivation(args: {
           continue
         }
         const ageMinutes = (Date.parse(args.now) - Date.parse(measurement.takenAt)) / 60_000
+        // Una hora futura ya la rechaza la validación de entrada; esto atrapa
+        // las filas mal grabadas antes de esa guardia, que de otro modo nunca
+        // vencerían y habilitarían el permiso para siempre.
+        if (ageMinutes < 0) {
+          blockers.push({ kind: "measurement_invalid", detail: `La medición de ${measurement.parameter} tiene hora futura y no es válida.` })
+          continue
+        }
         if (validity > 0 && ageMinutes > validity) {
           blockers.push({ kind: "measurement_stale", detail: `La medición de ${measurement.parameter} venció (${Math.floor(ageMinutes)} min, máximo ${validity}).` })
+        }
+        // Vigencia de calibración del instrumento: opt-in por tipo de permiso.
+        // Una fecha de calibración futura ya la rechaza la validación de entrada.
+        const calDays = args.type.measurementCalibrationValidityDays
+        if (calDays !== null && calDays > 0) {
+          if (!measurement.calibrationDate) {
+            blockers.push({ kind: "measurement_uncalibrated", detail: `La medición de ${measurement.parameter} no declara fecha de calibración del equipo.` })
+            continue
+          }
+          const calAgeDays = (Date.parse(args.now) - Date.parse(`${measurement.calibrationDate}T00:00:00.000Z`)) / 86_400_000
+          if (calAgeDays > calDays) {
+            blockers.push({ kind: "measurement_uncalibrated", detail: `La calibración del equipo de ${measurement.parameter} venció (${Math.floor(calAgeDays)} días, máximo ${calDays}).` })
+          }
         }
       }
     }

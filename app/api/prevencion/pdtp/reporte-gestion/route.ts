@@ -12,6 +12,7 @@ import { auth } from "@/lib/auth/auth"
 import { can } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { addExportMetadataSheet } from "@/lib/reports/export"
+import { sanitizeCell as safe } from "@/lib/reports/export-module/excel-builder"
 import {
   assertWorksiteAccess,
   getPdtpManagementReport,
@@ -36,12 +37,6 @@ function parseFilters(url: URL): PdtpManagementReportFilters {
   const monthTo = Number.parseInt(url.searchParams.get("hasta") ?? "", 10)
   if (Number.isFinite(monthTo) && monthTo >= 1 && monthTo <= 12) filters.monthTo = monthTo
   return filters
-}
-
-function safe(value: unknown) {
-  if (value === null || value === undefined) return ""
-  const text = String(value)
-  return /^[=+\-@]/.test(text) ? `'${text}` : text
 }
 
 export async function GET(request: NextRequest) {

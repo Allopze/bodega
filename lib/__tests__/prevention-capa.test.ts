@@ -57,6 +57,17 @@ describe("CAPA state machine", () => {
     })).not.toThrow()
   })
 
+  it("blocks verification by the responsible or the completer, at any priority", () => {
+    for (const key of ["responsibleUserId", "completedByUserId"] as const) {
+      expect(() => assertCapaTransition({
+        ...base, fromStatus: "pending_verification", toStatus: "verified",
+        priority: "low", [key]: "verifier-1",
+        effectivenessStatus: "effective",
+        effectivenessAssessment: "El control fue observado en terreno.",
+      })).toThrow(/persona distinta/i)
+    }
+  })
+
   it("requires a reason to reopen or cancel and the target-specific permission", () => {
     expect(() => assertCapaTransition({
       ...base,

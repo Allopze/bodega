@@ -8,18 +8,13 @@
 
 import type { Session } from "next-auth"
 import type { ReportCell, ReportData, ReportSheet } from "@/lib/reports/export"
+import { sanitizeCell as safeCell } from "@/lib/reports/export-module/excel-builder"
 import { listInvoices, type InvoiceFilters } from "./queries"
 import { collectionStatusLabel, documentStatusLabel, paymentStatusLabel, providerLabel } from "./labels"
 
 /** Tope de filas del archivo; sobre esto se informa el recorte en el nombre de hoja. */
 const MAX_EXPORT_ROWS = 5000
 const PAGE_SIZE = 200
-
-function safeCell(value: unknown): string {
-  if (value === null || value === undefined) return ""
-  const text = typeof value === "string" ? value : String(value)
-  return /^[=+\-@]/.test(text) ? `'${text}` : text
-}
 
 export async function buildInvoicesExport(session: Session | null, filters: InvoiceFilters): Promise<ReportData> {
   const rows: ReportCell[][] = []

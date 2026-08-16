@@ -56,4 +56,14 @@ describe("incident offline queue", () => {
     const [entry] = await listQueuedIncidentReports()
     expect(entry).toMatchObject({ id: payload.clientSubmissionId, attempts: 1, lastError: "sin red" })
   })
+
+  it("rejects a new report when the queue is full instead of evicting the oldest", async () => {
+    for (let i = 0; i < 25; i++) {
+      await queueIncidentReport({ ...payload, clientSubmissionId: `offline-test-${i}` })
+    }
+    await expect(
+      queueIncidentReport({ ...payload, clientSubmissionId: "offline-test-26" }),
+    ).rejects.toThrow(/llena/i)
+    expect(await listQueuedIncidentReports()).toHaveLength(25)
+  })
 })

@@ -15,6 +15,7 @@ import { nanoid } from "@/lib/id"
 import { recordOperationalActivity } from "@/lib/services/operational-activity"
 import type { RequestContext } from "@/lib/services/prevention-documents/utils"
 import type { ReportData } from "@/lib/reports/export"
+import { sanitizeCell as excelSafe } from "@/lib/reports/export-module/excel-builder"
 import type { CapaQuickFilter } from "@/lib/prevention/capa-list-filters"
 import { chileDateParts } from "@/lib/utils"
 
@@ -177,6 +178,8 @@ export function assertCapaTransition(args: {
   effectivenessStatus?: "effective" | "ineffective" | "not_required"
   effectivenessAssessment?: string
   segregationExceptionReason?: string
+  responsibleUserId?: string | null
+  completedByUserId?: string | null
 }) {
   if (!TRANSITIONS[args.fromStatus].includes(args.toStatus)) {
     throw new Error(`Transición CAPA inválida: ${args.fromStatus} → ${args.toStatus}.`)
@@ -196,11 +199,12 @@ export function assertCapaTransition(args: {
     if ((args.effectivenessAssessment?.trim().length ?? 0) < 5) {
       throw new Error("La verificación exige documentar la evaluación de eficacia.")
     }
-    const highCritical = args.priority === "high" || args.priority === "critical"
-    if (highCritical && args.creatorUserId === args.actorUserId) {
+    const conflicted = [args.creatorUserId, args.responsibleUserId, args.completedByUserId]
+      .includes(args.actorUserId)
+    if (conflicted) {
       const canOverride = hasPermission(args.permissions, "prevention:capa:override_segregation")
       if (!canOverride || (args.segregationExceptionReason?.trim().length ?? 0) < 10) {
-        throw new Error("Una acción alta o crítica debe ser verificada por una persona distinta de su creador.")
+        throw new Error("La verificación debe hacerla una persona distinta de quien creó, ejecutó o completó la acción.")
       }
     }
   }
@@ -429,6 +433,8 @@ export async function transitionCapaActionWithClient(
       effectivenessStatus: input.effectivenessStatus,
       effectivenessAssessment: input.effectivenessAssessment,
       segregationExceptionReason: input.segregationExceptionReason,
+      responsibleUserId: current.responsibleUserId,
+      completedByUserId: current.completedByUserId,
     })
 
     const now = new Date().toISOString()
@@ -803,11 +809,6 @@ function capaStatusLabel(status: string) {
     reopened: "Reabierta",
     cancelled: "Cancelada",
   } as Record<string, string>)[status] ?? status
-}
-
-function excelSafe(value: string | null | undefined) {
-  const text = value ?? ""
-  return /^[=+\-@]/.test(text) ? `'${text}` : text
 }
 
 export async function buildCapaExport(args: {

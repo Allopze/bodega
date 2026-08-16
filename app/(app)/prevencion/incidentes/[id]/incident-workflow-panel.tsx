@@ -239,8 +239,10 @@ export function IncidentWorkflowPanel({ incident, notifications, investigation, 
       )}
 
       {incident.isFatalOrSerious && incident.operationsSuspended && can("prevention:incidents:authorize_restart") && (
-        <form className="flex flex-col gap-3 rounded-xl border border-[var(--color-danger-line)] bg-[var(--color-danger-tint)] p-4 md:flex-row md:items-end" action={(formData) => run(() => authorizePreventionIncidentRestartAction({ incidentId: incident.id, expectedVersion: incident.version, reason: formData.get("reason") }))}>
-          <div className="flex-1 space-y-2"><Label htmlFor="restart-reason">Fundamento de autorización de reinicio</Label><Input id="restart-reason" name="reason" required minLength={10} /></div><Button type="submit" variant="destructive" disabled={pending}>Autorizar reinicio</Button>
+        <form className="flex flex-col gap-3 rounded-xl border border-[var(--color-danger-line)] bg-[var(--color-danger-tint)] p-4 md:flex-row md:items-end" action={(formData) => run(() => authorizePreventionIncidentRestartAction({ incidentId: incident.id, expectedVersion: incident.version, reason: formData.get("reason"), segregationExceptionReason: formData.get("segregationExceptionReason") || undefined }))}>
+          <div className="flex-1 space-y-2"><Label htmlFor="restart-reason">Fundamento de autorización de reinicio</Label><Input id="restart-reason" name="reason" required minLength={10} /></div>
+          <div className="flex-1 space-y-2"><Label htmlFor="restart-segregation-reason">Excepción de segregación (si participaste en la investigación o las medidas)</Label><Input id="restart-segregation-reason" name="segregationExceptionReason" minLength={10} placeholder="Sólo si tienes autorización de excepción" /></div>
+          <Button type="submit" variant="destructive" disabled={pending}>Autorizar reinicio</Button>
         </form>
       )}
 

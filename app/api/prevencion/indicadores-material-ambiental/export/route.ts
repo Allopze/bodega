@@ -9,16 +9,11 @@ import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { recordAudit } from "@/lib/audit"
 import { logger } from "@/lib/logger"
 import { addExportMetadataSheet } from "@/lib/reports/export"
+import { sanitizeCell as safe } from "@/lib/reports/export-module/excel-builder"
 import { getMaterialEnvironmentalEvents } from "@/lib/services/prevention-indicadores"
 import { encodeContentDisposition } from "@/lib/utils"
 
 const MONTHS = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]
-
-function safe(value: unknown) {
-  if (value === null || value === undefined) return ""
-  const text = String(value)
-  return /^[=+\-@]/.test(text) ? `'${text}` : text
-}
 
 function styleHeader(sheet: { getRow: (row: number) => { font: object; fill: object } }) {
   sheet.getRow(1).font = { bold: true, color: { argb: "FFFFFFFF" } }

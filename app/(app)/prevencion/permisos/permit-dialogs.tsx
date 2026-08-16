@@ -49,6 +49,7 @@ export function PermitTypeDialog() {
     event.preventDefault()
     const form = new FormData(event.currentTarget)
     const validity = String(form.get("measurementValidityMinutes") ?? "").trim()
+    const calibration = String(form.get("measurementCalibrationValidityDays") ?? "").trim()
     const taskKey = String(form.get("competencyTaskKey") ?? "").trim()
     operation.run(() => createPermitTypeAction({
       code: form.get("code"),
@@ -59,6 +60,7 @@ export function PermitTypeDialog() {
       requiresMeasurement,
       requiresJsa,
       measurementValidityMinutes: requiresMeasurement && validity ? Number(validity) : null,
+      measurementCalibrationValidityDays: requiresMeasurement && calibration ? Number(calibration) : null,
       maxDurationHours: Number(form.get("maxDurationHours")),
       legalBasis: form.get("legalBasis"),
     }), () => setOpen(false))
@@ -93,9 +95,14 @@ export function PermitTypeDialog() {
             <Checkbox label="Exige mediciones" checked={requiresMeasurement} onChange={(event) => setRequiresMeasurement(event.target.checked)} />
           </div>
           {requiresMeasurement && (
-            <Field label="Vigencia de la medición (minutos)" hint="Una lectura más antigua que esto ya no habilita.">
-              <Input name="measurementValidityMinutes" type="number" min={1} max={1440} defaultValue={60} required />
-            </Field>
+            <div className="grid gap-3 md:grid-cols-2">
+              <Field label="Vigencia de la medición (minutos)" hint="Una lectura más antigua que esto ya no habilita.">
+                <Input name="measurementValidityMinutes" type="number" min={1} max={1440} defaultValue={60} required />
+              </Field>
+              <Field label="Vigencia de la calibración (días)" hint="Opcional. Con un valor, el equipo debe declarar una calibración más reciente que eso para habilitar.">
+                <Input name="measurementCalibrationValidityDays" type="number" min={1} max={3650} />
+              </Field>
+            </div>
           )}
           <Field label="Fundamento normativo" hint="Mínimo 5 caracteres.">
             <Textarea name="legalBasis" required minLength={5} maxLength={2000} placeholder="DS 44/2024 art. 18: tarea crítica" />

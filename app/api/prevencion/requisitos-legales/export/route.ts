@@ -6,10 +6,10 @@ import { can } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { recordAudit } from "@/lib/audit"
 import { addExportMetadataSheet } from "@/lib/reports/export"
+import { sanitizeCell as safe } from "@/lib/reports/export-module/excel-builder"
 import { getLegalDashboard } from "@/lib/services/prevention-risk-legal"
 import { encodeContentDisposition } from "@/lib/utils"
 
-function safe(value: unknown) { const text = value == null ? "" : typeof value === "object" ? JSON.stringify(value) : String(value); return /^[=+\-@]/.test(text) ? `'${text}` : text }
 function style(sheet: { getRow: (row: number) => { font: object; fill: object } }) { sheet.getRow(1).font = { bold: true, color: { argb: "FFFFFFFF" } }; sheet.getRow(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF2563EB" } } }
 
 export async function GET() {

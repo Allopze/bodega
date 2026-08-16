@@ -10,6 +10,7 @@ import {
   type PermitMeasurementRow,
   type PermitTypeSpec,
 } from "@/lib/prevention/permits"
+import { permitMeasurementSchema } from "@/lib/validation/prevention-module/permits"
 
 const NOW = "2026-07-19T12:00:00.000Z"
 
@@ -18,6 +19,7 @@ const type = (over: Partial<PermitTypeSpec> = {}): PermitTypeSpec => ({
   requiresMeasurement: false,
   requiresJsa: true,
   measurementValidityMinutes: null,
+  measurementCalibrationValidityDays: null,
   maxDurationHours: 12,
   ...over,
 })
@@ -51,6 +53,7 @@ const measurement = (over: Partial<PermitMeasurementRow> = {}): PermitMeasuremen
   parameter: "O2",
   withinRange: true,
   takenAt: "2026-07-19T11:50:00.000Z",
+  calibrationDate: null,
   ...over,
 })
 
@@ -176,6 +179,82 @@ describe("mediciones de atmósfera", () => {
       measurements: [measurement({ parameter: "O2" }), measurement({ parameter: "H2S", withinRange: false })],
     })
     expect(result.blockers.filter((b) => b.kind === "measurement_out_of_range")).toHaveLength(1)
+  })
+
+  it("trata una medición con hora futura como inválida, nunca como vigente", () => {
+    // Una hora futura da edad negativa: sin esta guardia jamás vence y el
+    // permiso queda habilitado indefinidamente.
+    const result = assess({ type: measured, measurements: [measurement({ takenAt: "2026-07-19T18:00:00.000Z" })] })
+    expect(result.blockers.some((b) => b.kind === "measurement_invalid")).toBe(true)
+    expect(result.blockers.some((b) => b.kind === "measurement_stale")).toBe(false)
+    expect(result.allowed).toBe(false)
+  })
+
+  it("un tipo sin vigencia de calibración ignora la calibración ausente o antigua", () => {
+    expect(assess({ type: measured, measurements: [measurement({ calibrationDate: null })] }).allowed).toBe(true)
+    expect(assess({ type: measured, measurements: [measurement({ calibrationDate: "2019-01-01" })] }).allowed).toBe(true)
+  })
+
+  it("bloquea si el tipo exige calibración vigente y la medición no la declara", () => {
+    const calibrated = type({ requiresMeasurement: true, measurementValidityMinutes: 30, measurementCalibrationValidityDays: 365 })
+    const result = assess({ type: calibrated, measurements: [measurement({ calibrationDate: null })] })
+    expect(result.blockers.some((b) => b.kind === "measurement_uncalibrated")).toBe(true)
+    expect(result.allowed).toBe(false)
+  })
+
+  it("bloquea si la calibración del equipo venció, y habilita si sigue vigente", () => {
+    const calibrated = type({ requiresMeasurement: true, measurementValidityMinutes: 30, measurementCalibrationValidityDays: 365 })
+    const expired = assess({ type: calibrated, measurements: [measurement({ calibrationDate: "2025-01-01" })] })
+    expect(expired.blockers.some((b) => b.kind === "measurement_uncalibrated")).toBe(true)
+    expect(assess({ type: calibrated, measurements: [measurement({ calibrationDate: "2026-07-01" })] }).allowed).toBe(true)
+  })
+})
+
+describe("validación de entrada de una medición", () => {
+  const CHILE_DATE_FORMAT = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Santiago", year: "numeric", month: "2-digit", day: "2-digit" })
+  const chileDate = (offsetDays = 0) => CHILE_DATE_FORMAT.format(new Date(Date.now() + offsetDays * 86_400_000))
+
+  const input = (over: Record<string, unknown> = {}) => ({
+    permitId: "permit-1",
+    parameter: "O2",
+    value: 20.9,
+    unit: "%",
+    acceptableMin: 19.5,
+    acceptableMax: 23.5,
+    equipmentTag: "GAS-07",
+    takenAt: new Date(Date.now() - 60_000).toISOString(),
+    ...over,
+  })
+
+  it("acepta una medición tomada hace un momento", () => {
+    expect(permitMeasurementSchema.safeParse(input()).success).toBe(true)
+  })
+
+  it("rechaza una medición con hora futura", () => {
+    const result = permitMeasurementSchema.safeParse(input({ takenAt: new Date(Date.now() + 3_600_000).toISOString() }))
+    expect(result.success).toBe(false)
+    expect(result.error?.issues.some((issue) => issue.path[0] === "takenAt" && /futura/i.test(issue.message))).toBe(true)
+  })
+
+  it("tolera el desfase de reloj del equipo que registra en terreno", () => {
+    expect(permitMeasurementSchema.safeParse(input({ takenAt: new Date(Date.now() + 30_000).toISOString() })).success).toBe(true)
+  })
+
+  it("rechaza una fecha de calibración futura", () => {
+    const result = permitMeasurementSchema.safeParse(input({ calibrationDate: chileDate(2) }))
+    expect(result.success).toBe(false)
+    expect(result.error?.issues.some((issue) => issue.path[0] === "calibrationDate" && /futuro/i.test(issue.message))).toBe(true)
+  })
+
+  it("acepta una calibración de hoy en Chile, no de hoy en UTC", () => {
+    // El corte es el día calendario chileno: entre las 21:00 y las 24:00 de
+    // Chile, UTC ya está en el día siguiente y rechazaría una fecha válida.
+    expect(permitMeasurementSchema.safeParse(input({ calibrationDate: chileDate() })).success).toBe(true)
+    expect(permitMeasurementSchema.safeParse(input({ calibrationDate: chileDate(-30) })).success).toBe(true)
+  })
+
+  it("una medición sin fecha de calibración sigue siendo válida", () => {
+    expect(permitMeasurementSchema.safeParse(input({ calibrationDate: null })).success).toBe(true)
   })
 })
 

@@ -4,18 +4,13 @@ import { auth } from "@/lib/auth/auth"
 import { can } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { getDocumentBundle, recordDocumentDownload } from "@/lib/services/prevention-documents-library"
+import { sanitizeCell as safeCell } from "@/lib/reports/export-module/excel-builder"
 import { encodeContentDisposition } from "@/lib/utils"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
 
 interface RouteContext { params: Promise<{ id: string }> }
-
-function safeCell(value: unknown) {
-  if (value === null || value === undefined) return ""
-  const text = typeof value === "object" ? JSON.stringify(value) : String(value)
-  return /^[=+\-@]/.test(text) ? `'${text}` : text
-}
 
 function style(sheet: ExcelJS.Worksheet, lastColumn: string) {
   const header = sheet.getRow(1)

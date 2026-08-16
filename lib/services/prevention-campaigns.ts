@@ -1,12 +1,10 @@
-import { desc, eq, sql } from "drizzle-orm"
+import { and, eq, inArray } from "drizzle-orm"
 import { z } from "zod"
 import { db } from "@/db"
 import {
   preventionCampaignAttendance,
   preventionCampaigns,
-  users,
   workers,
-  worksites,
 } from "@/db/schema"
 import type { WorksiteScope } from "@/lib/auth/scope"
 import { nanoid } from "@/lib/id"
@@ -86,6 +84,19 @@ export async function recordCampaignAttendance(input: unknown, access: CampaignA
   if (!campaign) throw new CampaignDomainError(NOT_FOUND)
   requireAccess(access, "prevention:campaign:manage", campaign.worksiteId)
 
+  if (data.workerIds.length > 0) {
+    const valid = await db.select({ id: workers.id }).from(workers).where(and(
+      inArray(workers.id, data.workerIds),
+      eq(workers.worksiteId, campaign.worksiteId),
+      eq(workers.isActive, true),
+    ))
+    const ok = new Set(valid.map((w) => w.id))
+    const rejected = data.workerIds.filter((id) => !ok.has(id))
+    if (rejected.length > 0) {
+      throw new CampaignDomainError(`${rejected.length} persona(s) no pertenecen a la faena de la campaña o están inactivas.`)
+    }
+  }
+
   const now = new Date().toISOString()
   const rows = data.workerIds.map((workerId) => ({
     id: `cmpatt-${nanoid()}`,
@@ -142,6 +153,7 @@ export async function closeCampaign(input: unknown, access: CampaignAccess) {
   // Auto-acreditación PDTP (safe). Sin actividades declaradas en la campaña es
   // no-op: no inventamos un número por defecto para no acreditar una actividad
   // ajena a la campaña.
+  let pdtpAccredited = false
   const activityNumbers = Array.isArray(campaign.pdtpActivityNumbers) ? campaign.pdtpActivityNumbers : []
   if (activityNumbers.length > 0) {
     try {
@@ -154,58 +166,11 @@ export async function closeCampaign(input: unknown, access: CampaignAccess) {
         executedQuantity: Math.max(1, attendance.length),
         evidenceRef: data.evidenceUrl ?? `Campaña preventiva: ${campaign.code}`,
       })
+      pdtpAccredited = true
     } catch (err) {
       logger.error({ err, campaignId: campaign.id }, "[closeCampaign] Error en auto-acreditación PDTP de campaña")
     }
   }
 
-  return { campaign: updated, reachedWorkers: attendance.length }
-}
-
-export async function listCampaigns(access: CampaignAccess, worksiteId?: string) {
-  requireAccess(access, "prevention:campaign:view")
-  const targetWorksiteId = worksiteId ?? (access.scope.mode === "some" ? access.scope.ids[0] : undefined)
-
-  const query = db.select({
-    campaign: preventionCampaigns,
-    worksiteName: worksites.name,
-    createdByName: users.name,
-    attendanceCount: sql<number>`(SELECT COUNT(*)::int FROM prevention_campaign_attendance a WHERE a.campaign_id = ${preventionCampaigns.id})`,
-  })
-    .from(preventionCampaigns)
-    .innerJoin(worksites, eq(preventionCampaigns.worksiteId, worksites.id))
-    .innerJoin(users, eq(preventionCampaigns.createdByUserId, users.id))
-    .orderBy(desc(preventionCampaigns.createdAt))
-
-  if (targetWorksiteId) {
-    return query.where(eq(preventionCampaigns.worksiteId, targetWorksiteId))
-  }
-  return query
-}
-
-export async function getCampaignDetail(campaignId: string, access: CampaignAccess) {
-  requireAccess(access, "prevention:campaign:view")
-  const [campaign] = await db.select({
-    campaign: preventionCampaigns,
-    worksiteName: worksites.name,
-    createdByName: users.name,
-  })
-    .from(preventionCampaigns)
-    .innerJoin(worksites, eq(preventionCampaigns.worksiteId, worksites.id))
-    .innerJoin(users, eq(preventionCampaigns.createdByUserId, users.id))
-    .where(eq(preventionCampaigns.id, campaignId))
-    .limit(1)
-
-  if (!campaign) throw new CampaignDomainError(NOT_FOUND)
-
-  const attendance = await db.select({
-    record: preventionCampaignAttendance,
-    workerName: sql<string>`${workers.firstName} || ' ' || ${workers.lastName}`,
-    workerRut: workers.rut,
-  })
-    .from(preventionCampaignAttendance)
-    .innerJoin(workers, eq(preventionCampaignAttendance.workerId, workers.id))
-    .where(eq(preventionCampaignAttendance.campaignId, campaignId))
-
-  return { ...campaign, attendance }
+  return { campaign: updated, reachedWorkers: attendance.length, pdtpAccredited }
 }

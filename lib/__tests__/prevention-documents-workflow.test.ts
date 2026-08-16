@@ -118,6 +118,13 @@ describe("document version workflow", () => {
     expect(state.updates).toHaveLength(0)
   })
 
+  it("prevents the reviewer from approving their own review", async () => {
+    queueContext(documentRow(), versionRow({ reviewedBy: "approver-1" }))
+
+    await expect(approveDocumentVersion(baseArgs)).rejects.toThrow(/revisó.*no puede aprobar/i)
+    expect(state.updates).toHaveLength(0)
+  })
+
   it("requires a recorded review before approval", async () => {
     queueContext(documentRow(), versionRow({ reviewedBy: null }))
 

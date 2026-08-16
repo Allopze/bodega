@@ -19,10 +19,18 @@ export async function buildXlsxBuffer(report: ReportData): Promise<ArrayBuffer> 
   return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer
 }
 
+/** Neutraliza inyección de fórmulas (CSV injection) sin tocar números. Idempotente. */
+export function sanitizeCell(value: unknown): string | number | boolean {
+  if (value === null || value === undefined) return ""
+  if (typeof value === "number" || typeof value === "boolean") return value
+  const text = typeof value === "object" ? JSON.stringify(value) : String(value)
+  return /^[=+\-@]/.test(text) ? `'${text}` : text
+}
+
 function addWorksheet(workbook: ExcelJS.Workbook, sheet: ReportSheet) {
   const worksheet = workbook.addWorksheet(sheet.worksheetName)
   worksheet.addRow(sheet.headers)
-  for (const row of sheet.rows) worksheet.addRow(row.map((cell) => cell ?? ""))
+  for (const row of sheet.rows) worksheet.addRow(row.map(sanitizeCell))
 
   const headerRow = worksheet.getRow(1)
   headerRow.font = { bold: true }

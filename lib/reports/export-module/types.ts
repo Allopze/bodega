@@ -1,4 +1,6 @@
-export type ReportCell = string | number | null | undefined
+// `boolean` cubre el retorno de `sanitizeCell` (excel-builder.ts) — sigue pasando
+// booleanos reales sin convertirlos a texto.
+export type ReportCell = string | number | boolean | null | undefined
 
 export interface ExportFilters {
   fromDate?:  string

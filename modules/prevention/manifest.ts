@@ -59,6 +59,7 @@ export const preventionModule = {
     "prevention:incidents:investigate",
     "prevention:incidents:notify",
     "prevention:incidents:authorize_restart",
+    "prevention:incidents:override_segregation",
     "prevention:incidents:close",
     "prevention:incidents:view_sensitive",
     "prevention:incidents:export",
@@ -169,6 +170,7 @@ export const preventionModule = {
     "prevention:incidents:investigate": { id: "p-prev-inc-invest", description: "Investigar incidentes y vincular evidencia y CAPA" },
     "prevention:incidents:notify": { id: "p-prev-inc-notify", description: "Registrar DIAT, DIEP y notificaciones fatal/grave con evidencia" },
     "prevention:incidents:authorize_restart": { id: "p-prev-inc-restart", description: "Autorizar de forma segregada el reinicio de una operación suspendida" },
+    "prevention:incidents:override_segregation": { id: "p-prev-inc-override", description: "Autorizar excepción fundamentada a la segregación de reinicio tras accidente" },
     "prevention:incidents:close": { id: "p-prev-inc-close", description: "Aprobar lotes históricos y cerrar incidentes que cumplan todos los gates" },
     "prevention:incidents:view_sensitive": { id: "p-prev-inc-sensitive", description: "Acceder nominativamente a identidad, lesión y evidencia sensible de incidentes por propósito" },
     "prevention:incidents:export": { id: "p-prev-inc-export", description: "Exportar registro y expediente Excel de incidentes dentro del alcance" },
@@ -735,6 +737,7 @@ export const preventionModule = {
     { roleSlug: "administrador",        permission: "prevention:incidents:investigate" },
     { roleSlug: "administrador",        permission: "prevention:incidents:notify" },
     { roleSlug: "administrador",        permission: "prevention:incidents:authorize_restart" },
+    { roleSlug: "administrador",        permission: "prevention:incidents:override_segregation" },
     { roleSlug: "administrador",        permission: "prevention:incidents:close" },
     { roleSlug: "administrador",        permission: "prevention:incidents:export" },
     // Capacitación, ODI y competencias. `convalidate` y `revoke` alteran la

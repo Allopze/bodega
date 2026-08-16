@@ -1,5 +1,6 @@
 import { z } from "zod"
 import { MINSAL_PROTOCOL_CODES, PROTOCOL_APPLICABILITY_STATUSES } from "@/lib/prevention/minsal-protocols"
+import { todayInChile } from "@/lib/utils"
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
 
@@ -26,3 +27,21 @@ export const protocolApplicabilitySchema = z.object({
 })
 
 export type ProtocolApplicabilityInput = z.infer<typeof protocolApplicabilitySchema>
+
+export const exposureMeasurementSchema = z.object({
+  groupId: z.string().min(1),
+  measuredOn: z.string().regex(ISO_DATE),
+  value: z.number().nonnegative(),
+  method: z.string().trim().min(3).max(300),
+  laboratoryName: z.string().trim().max(200).nullable().optional(),
+  equipmentTag: z.string().trim().min(1).max(200),
+  // Una calibración futura no acredita nada: es un dato mal digitado o la
+  // trampa de declarar vigente un equipo que no lo está.
+  calibrationDate: z.string().regex(ISO_DATE)
+    .refine((value) => value <= todayInChile(), "La fecha de calibración no puede estar en el futuro.")
+    .nullable().optional(),
+  sampleDurationMinutes: z.number().int().positive().max(10_000).nullable().optional(),
+  reportReference: z.string().trim().max(2000).nullable().optional(),
+})
+
+export type ExposureMeasurementInput = z.infer<typeof exposureMeasurementSchema>

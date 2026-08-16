@@ -90,7 +90,13 @@ export async function closeCampaignAction(formData: unknown): Promise<ActionStat
     const parsed = closeCampaignSchema.parse(formData)
     const result = await closeCampaign(parsed, access)
     revalidatePath("/prevencion/campanas")
-    return { ok: true, message: `Campaña cerrada con ${result.reachedWorkers} trabajador(es) alcanzado(s).` }
+    return {
+      ok: true,
+      message: result.pdtpAccredited
+        ? `Campaña cerrada con ${result.reachedWorkers} trabajador(es) alcanzado(s).`
+        : `Campaña cerrada con ${result.reachedWorkers} trabajador(es), pero NO se acreditó en PDTP. Acredita manualmente la(s) actividad(es) del programa.`,
+      data: { pdtpAccredited: result.pdtpAccredited },
+    }
   } catch (err: unknown) {
     return campaignFailure(err, "closeCampaign")
   }

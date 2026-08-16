@@ -20,6 +20,7 @@ export const preventionPermitTypes = pgTable("prevention_permit_types", {
   requiresMeasurement:    boolean("requires_measurement").notNull().default(false),
   requiresJsa:            boolean("requires_jsa").notNull().default(true),
   measurementValidityMinutes: integer("measurement_validity_minutes"),
+  measurementCalibrationValidityDays: integer("measurement_calibration_validity_days"),
   maxDurationHours:       integer("max_duration_hours").notNull().default(12),
   legalBasis:             text("legal_basis").notNull(),
   isActive:               boolean("is_active").notNull().default(true),
@@ -30,6 +31,12 @@ export const preventionPermitTypes = pgTable("prevention_permit_types", {
   index("prevention_permit_type_active_idx").on(table.isActive),
   check("prevention_permit_type_duration_valid", sql`${table.maxDurationHours} > 0 AND ${table.maxDurationHours} <= 72`),
   check("prevention_permit_type_measurement_validity", sql`${table.requiresMeasurement} = false OR ${table.measurementValidityMinutes} > 0`),
+  // Permisiva a propósito: `NULL` = este tipo de permiso no exige la regla de
+  // vigencia de calibración (opt-in por tipo). Copiar la forma de
+  // `requiresMeasurement` (`... OR columna > 0`) evaluaría a NULL, no a false,
+  // sobre las filas ya existentes con la columna vacía, y Postgres rechaza un
+  // CHECK que no se satisface al migrar.
+  check("prevention_permit_type_calibration_validity", sql`${table.measurementCalibrationValidityDays} IS NULL OR ${table.measurementCalibrationValidityDays} > 0`),
   check("prevention_permit_type_basis_valid", sql`length(${table.legalBasis}) >= 5`),
 ])
 
@@ -79,7 +86,10 @@ export const preventionWorkPermits = pgTable("prevention_work_permits", {
   check("prevention_work_permit_window_valid", sql`${table.plannedEndAt} > ${table.plannedStartAt}`),
   check("prevention_work_permit_extension_valid", sql`${table.extendedUntilAt} IS NULL OR (${table.extendedUntilAt} > ${table.plannedEndAt} AND length(${table.extensionReason}) >= 10)`),
   check("prevention_work_permit_reject_consistent", sql`${table.status} <> 'rejected' OR length(${table.rejectionReason}) >= 10`),
-  check("prevention_work_permit_suspend_consistent", sql`(${table.suspendedAt} IS NULL AND ${table.suspendedByUserId} IS NULL) OR (${table.suspendedAt} IS NOT NULL AND ${table.suspendedByUserId} IS NOT NULL AND length(${table.suspensionReason}) >= 10)`),
+  // Sin exigir `suspendedByUserId`: la suspensión automática por vencimiento de
+  // ventana no tiene actor humano. El FK es `onDelete: "restrict"`, así que NULL
+  // nunca puede significar "usuario borrado" — significa "sistema".
+  check("prevention_work_permit_suspend_consistent", sql`(${table.suspendedAt} IS NULL AND ${table.suspendedByUserId} IS NULL) OR (${table.suspendedAt} IS NOT NULL AND length(${table.suspensionReason}) >= 10)`),
   check("prevention_work_permit_cancel_consistent", sql`(${table.cancelledAt} IS NULL AND ${table.cancelledByUserId} IS NULL) OR (${table.cancelledAt} IS NOT NULL AND ${table.cancelledByUserId} IS NOT NULL AND length(${table.cancellationReason}) >= 10)`),
   check("prevention_work_permit_close_consistent", sql`(${table.closedAt} IS NULL AND ${table.closedByUserId} IS NULL) OR (${table.closedAt} IS NOT NULL AND ${table.closedByUserId} IS NOT NULL AND length(${table.closureSummary}) >= 10)`),
   check("prevention_work_permit_version_positive", sql`${table.version} >= 1`),

@@ -1,17 +1,12 @@
 import { createHash } from "node:crypto"
 import ExcelJS from "exceljs"
 import type { WorksiteScope } from "@/lib/auth/scope"
+import { sanitizeCell as safeCell } from "@/lib/reports/export-module/excel-builder"
 import type { RequestContext } from "@/lib/services/prevention-documents/utils"
 import {
   getPreventionPrivacyExportDataset,
   recordPreventionPrivacyDelivery,
 } from "@/lib/services/prevention-privacy"
-
-function safeCell(value: unknown): string {
-  if (value === null || value === undefined) return ""
-  const text = String(value)
-  return /^[=+\-@]/.test(text) ? `'${text}` : text
-}
 
 function styleSheet(sheet: ExcelJS.Worksheet, lastColumn: string) {
   const header = sheet.getRow(1)
@@ -24,7 +19,7 @@ function styleSheet(sheet: ExcelJS.Worksheet, lastColumn: string) {
   })
 }
 
-function flattenJson(value: unknown, path = "$"): Array<{ path: string; value: string }> {
+function flattenJson(value: unknown, path = "$"): Array<{ path: string; value: string | number | boolean }> {
   if (value === null || typeof value !== "object") return [{ path, value: safeCell(value) }]
   if (Array.isArray(value)) {
     if (value.length === 0) return [{ path, value: "[]" }]

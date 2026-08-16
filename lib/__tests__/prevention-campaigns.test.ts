@@ -124,7 +124,7 @@ describe("Prevention Campaigns Service (R9)", () => {
   }
 
   it("crea una campaña preventiva activa", async () => {
-    const { createCampaign, listCampaigns } = await import("@/lib/services/prevention-campaigns")
+    const { createCampaign } = await import("@/lib/services/prevention-campaigns")
 
     const created = await createCampaign({
       worksiteId: WS_ID,
@@ -136,9 +136,10 @@ describe("Prevention Campaigns Service (R9)", () => {
     expect(created!.id).toBeDefined()
     expect(created!.status).toBe("active")
 
-    const list = await listCampaigns(access, WS_ID)
-    expect(list).toHaveLength(1)
-    expect(list[0]!.campaign.title).toBe("Campaña Uso Correcto de EPP")
+    const rows = await inMemoryDb.select().from(schema.preventionCampaigns)
+      .where(eq(schema.preventionCampaigns.worksiteId, WS_ID))
+    expect(rows).toHaveLength(1)
+    expect(rows[0]!.title).toBe("Campaña Uso Correcto de EPP")
   })
 
   it("registra asistencia y al cerrar la campaña auto-acredita en PDTP (R9)", async () => {
@@ -161,6 +162,7 @@ describe("Prevention Campaigns Service (R9)", () => {
 
     expect(result.campaign!.status).toBe("completed")
     expect(result.reachedWorkers).toBe(2)
+    expect(result.pdtpAccredited).toBe(true)
 
     // Verificar auto-acreditación PDTP
     const executions = await inMemoryDb.select().from(schema.pdtpExecutions)
@@ -170,5 +172,62 @@ describe("Prevention Campaigns Service (R9)", () => {
     expect(executions[0]!.origin).toBe("integration")
     expect(executions[0]!.sourceType).toBe("campana")
     expect(executions[0]!.executedQuantity).toBe(2) // 2 trabajadores alcanzados
+  })
+
+  it("cierra la campaña sin acreditar PDTP cuando no declara actividades (F-14)", async () => {
+    const { createCampaign, closeCampaign } = await import("@/lib/services/prevention-campaigns")
+
+    const campaign = await createCampaign({
+      worksiteId: WS_ID,
+      title: "Campaña sin actividades PDTP",
+      pdtpActivityNumbers: [],
+    }, access)
+
+    const result = await closeCampaign({
+      campaignId: campaign!.id,
+    }, access)
+
+    expect(result.campaign!.status).toBe("completed")
+    expect(result.pdtpAccredited).toBe(false)
+
+    const executions = await inMemoryDb.select().from(schema.pdtpExecutions)
+      .where(eq(schema.pdtpExecutions.sourceId, campaign!.id))
+    expect(executions).toHaveLength(0)
+  })
+
+  it("rechaza asistencia de un trabajador de otra faena o inactivo (F-06)", async () => {
+    const { createCampaign, recordCampaignAttendance } = await import("@/lib/services/prevention-campaigns")
+
+    const OTHER_WS_ID = "ws-cmp-other"
+    const OTHER_WORKER_ID = "wrk-cmp-other"
+    await inMemoryDb.insert(schema.worksites).values({
+      id: OTHER_WS_ID,
+      name: "Otra Faena",
+      code: "FOTRA",
+      isActive: true,
+    })
+    await inMemoryDb.insert(schema.workers).values({
+      id: OTHER_WORKER_ID,
+      worksiteId: OTHER_WS_ID,
+      rut: "33.333.333-3",
+      firstName: "Pedro",
+      lastName: "Soto",
+      isActive: true,
+    })
+
+    const campaign = await createCampaign({
+      worksiteId: WS_ID,
+      title: "Campaña con trabajador ajeno",
+      pdtpActivityNumbers: [85],
+    }, access)
+
+    await expect(recordCampaignAttendance({
+      campaignId: campaign!.id,
+      workerIds: [WORKER_1, OTHER_WORKER_ID],
+    }, access)).rejects.toThrow(/no pertenecen a la faena/i)
+
+    const attendance = await inMemoryDb.select().from(schema.preventionCampaignAttendance)
+      .where(eq(schema.preventionCampaignAttendance.campaignId, campaign!.id))
+    expect(attendance).toHaveLength(0)
   })
 })

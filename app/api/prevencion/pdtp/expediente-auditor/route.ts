@@ -14,16 +14,11 @@ import { auth } from "@/lib/auth/auth"
 import { can } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { addExportMetadataSheet } from "@/lib/reports/export"
+import { sanitizeCell as safe } from "@/lib/reports/export-module/excel-builder"
 import { assertWorksiteAccess, getPdtpAuditDossier, isActivePdtpWorksite } from "@/lib/services/prevention-pdtp"
 import { encodeContentDisposition } from "@/lib/utils"
 import { logger } from "@/lib/logger"
 import { recordAudit } from "@/lib/audit"
-
-function safe(value: unknown) {
-  if (value === null || value === undefined) return ""
-  const text = String(value)
-  return /^[=+\-@]/.test(text) ? `'${text}` : text
-}
 
 function styleHeader(sheet: { getRow: (row: number) => { font: object; fill: object } }) {
   sheet.getRow(1).font = { bold: true, color: { argb: "FFFFFFFF" } }

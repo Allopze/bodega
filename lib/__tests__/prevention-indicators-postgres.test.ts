@@ -104,7 +104,7 @@ describeIf("canonical prevention indicators on real PostgreSQL", () => {
     const closed = await indicators.closeSafetyIndicatorPeriod({
       worksiteId: "ws-indicators", year: 2026, month: 1, reason: "Fuentes canónicas conciliadas y casos calificados",
     }, "indicator-approver", { mode: "some", ids: ["ws-indicators"] })
-    expect(closed.snapshot).toMatchObject({ status: "approved", formulaVersion: "ds44-art73-2025-v1", reconciliationStatus: "matched" })
+    expect(closed.snapshot).toMatchObject({ status: "approved", formulaVersion: "ds44-art73-2025-v2", reconciliationStatus: "matched" })
     expect(closed.snapshot.sourceHashSha256).toMatch(/^[a-f0-9]{64}$/)
     expect(closed.legacyComparison.status).toBe("difference")
     const [legacy] = await getDb().select().from(schema.safetyIndicators).where(eq(schema.safetyIndicators.id, "legacy-indicator-jan"))
@@ -114,6 +114,7 @@ describeIf("canonical prevention indicators on real PostgreSQL", () => {
   it("requires privileged reason for a closed-period qualification change and preserves both snapshots", async () => {
     const incidents = await import("@/lib/services/prevention-incidents")
     const indicators = await import("@/lib/services/prevention-indicadores")
+    const [originalSnapshot] = await getDb().select().from(schema.safetyIndicatorSnapshots).where(eq(schema.safetyIndicatorSnapshots.worksiteId, "ws-indicators"))
     const [incident] = await getDb().select().from(schema.preventionIncidents).where(eq(schema.preventionIncidents.clientSubmissionId, "indicator-golden-002"))
     const [person] = await getDb().select().from(schema.preventionIncidentPeople).where(eq(schema.preventionIncidentPeople.incidentId, incident!.id))
     await expect(incidents.classifyIncidentPersonForIndicators({
@@ -141,6 +142,14 @@ describeIf("canonical prevention indicators on real PostgreSQL", () => {
     expect(snapshots.filter((item) => item.status === "approved")).toHaveLength(1)
     expect(snapshots.filter((item) => item.status === "superseded")).toHaveLength(1)
     expect(new Set(snapshots.map((item) => item.sourceHashSha256)).size).toBe(2)
+    // Un snapshot superseded conserva byte a byte la fórmula y el resultado con que se cerró
+    // originalmente: cerrar de nuevo inserta una fila nueva, nunca reescribe la anterior. Esto es
+    // lo que permite reconstruir qué versión de fórmula regía en cada cierre histórico.
+    const supersededSnapshot = snapshots.find((item) => item.status === "superseded")!
+    expect(supersededSnapshot.id).toBe(originalSnapshot!.id)
+    expect(supersededSnapshot.formulaVersion).toBe(originalSnapshot!.formulaVersion)
+    expect(supersededSnapshot.resultSnapshot).toEqual(originalSnapshot!.resultSnapshot)
+    expect(supersededSnapshot.sourceHashSha256).toBe(originalSnapshot!.sourceHashSha256)
     const history = await getDb().select().from(schema.safetyIndicatorHistory).where(eq(schema.safetyIndicatorHistory.worksiteId, "ws-indicators"))
     expect(history.map((item) => item.changeType)).toEqual(expect.arrayContaining(["denominator_created", "denominator_approved", "closed", "corrected", "superseded"]))
   })

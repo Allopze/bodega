@@ -120,6 +120,14 @@ describeIf("Higiene industrial on real PostgreSQL", () => {
     expect(result.measurement.actionLevelSnapshot).toBe("0.0400")
   })
 
+  it("rejects a measurement whose equipment is calibrated in the future", async () => {
+    const service = await import("@/lib/services/prevention-hygiene")
+    await expect(service.recordExposureMeasurement({
+      groupId, measuredOn: "2026-08-05", value: 0.02, method: "NIOSH 7500",
+      equipmentTag: "BOMBA-01", calibrationDate: "2099-01-01",
+    }, HYGIENIST)).rejects.toThrow(/calibración no puede estar en el futuro/)
+  })
+
   it("a measurement over the limit puts the group under surveillance with a stated basis", async () => {
     const service = await import("@/lib/services/prevention-hygiene")
     const result = await service.recordExposureMeasurement({

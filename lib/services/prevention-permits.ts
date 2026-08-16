@@ -105,6 +105,20 @@ async function history(client: Client, args: {
   })
 }
 
+/**
+ * Toda mutación hija (controles, aislamientos, mediciones) es una entrada de la
+ * habilitación: si no mueve `version`, el CAS de `transitionWorkPermit` no ve el
+ * cambio y activa el permiso con una evaluación ya obsoleta.
+ *
+ * Se incrementa en SQL, no con `version + 1` leído en memoria, para no perder el
+ * bump si dos mutaciones hijas corren a la vez.
+ */
+async function bumpPermitVersion(client: Client, permitId: string, now: string) {
+  await client.update(preventionWorkPermits)
+    .set({ version: sql`${preventionWorkPermits.version} + 1`, updatedAt: now })
+    .where(eq(preventionWorkPermits.id, permitId))
+}
+
 /* ── Catálogo ─────────────────────────────────────────────────────────────── */
 
 export async function createPermitType(input: unknown, access: PermitAccess) {
@@ -120,6 +134,7 @@ export async function createPermitType(input: unknown, access: PermitAccess) {
     requiresMeasurement: data.requiresMeasurement,
     requiresJsa: data.requiresJsa,
     measurementValidityMinutes: data.measurementValidityMinutes ?? null,
+    measurementCalibrationValidityDays: data.measurementCalibrationValidityDays ?? null,
     maxDurationHours: data.maxDurationHours,
     legalBasis: data.legalBasis,
     createdByUserId: access.userId,
@@ -254,6 +269,7 @@ export async function verifyPermitControl(input: unknown, access: PermitAccess) 
       notApplicableReason: data.verified ? null : data.notApplicableReason ?? null,
     }).where(eq(preventionPermitControls.id, data.controlId)).returning()
     if (!updated) throw new Error("No se pudo registrar la verificación.")
+    await bumpPermitVersion(tx, row.permit.id, now)
     return updated
   })
 }
@@ -274,6 +290,7 @@ export async function addPermitIsolation(input: unknown, access: PermitAccess) {
       lockTagId: data.lockTagId,
     }).returning()
     if (!created) throw new Error("No se pudo registrar el aislamiento.")
+    await bumpPermitVersion(tx, permit.id, nowIso())
     await history(tx, { permitId: permit.id, changeType: "isolation_added", reason: `Aislamiento ${data.lockTagId} en ${data.equipmentTag}`, actorUserId: access.userId })
     return created
   })
@@ -297,6 +314,7 @@ export async function applyPermitIsolation(input: unknown, access: PermitAccess)
       verifiedZeroEnergy: data.verifiedZeroEnergy,
     }).where(eq(preventionPermitIsolations.id, data.isolationId)).returning()
     if (!updated) throw new Error("No se pudo aplicar el aislamiento.")
+    await bumpPermitVersion(tx, row.permit.id, now)
     await history(tx, { permitId: row.permit.id, changeType: "isolation_applied", reason: `Aislamiento ${row.isolation.lockTagId} aplicado${data.verifiedZeroEnergy ? " con energía cero verificada" : ""}`, actorUserId: access.userId })
     return updated
   })
@@ -327,6 +345,7 @@ export async function removePermitIsolation(input: unknown, access: PermitAccess
       removedAt: now,
     }).where(eq(preventionPermitIsolations.id, data.isolationId)).returning()
     if (!updated) throw new Error("No se pudo retirar el aislamiento.")
+    await bumpPermitVersion(tx, row.permit.id, now)
     await history(tx, { permitId: row.permit.id, changeType: "isolation_removed", reason: data.reason, actorUserId: access.userId })
     return updated
   })
@@ -360,6 +379,7 @@ export async function addPermitMeasurement(input: unknown, access: PermitAccess)
       takenAt: data.takenAt,
     }).returning()
     if (!created) throw new Error("No se pudo registrar la medición.")
+    await bumpPermitVersion(tx, permit.id, nowIso())
     await history(tx, { permitId: permit.id, changeType: "measurement", reason: `${data.parameter} = ${data.value} ${data.unit} (${withinRange ? "en rango" : "fuera de rango"})`, actorUserId: access.userId })
     return created
   })
@@ -455,6 +475,7 @@ export async function evaluatePermitReadiness(permitId: string, access: PermitAc
       requiresMeasurement: type.requiresMeasurement,
       requiresJsa: type.requiresJsa,
       measurementValidityMinutes: type.measurementValidityMinutes,
+      measurementCalibrationValidityDays: type.measurementCalibrationValidityDays,
       maxDurationHours: type.maxDurationHours,
     },
     controls: controls.map((control) => ({
@@ -475,6 +496,7 @@ export async function evaluatePermitReadiness(permitId: string, access: PermitAc
       parameter: item.parameter,
       withinRange: item.withinRange,
       takenAt: item.takenAt,
+      calibrationDate: item.calibrationDate,
     })),
     jsaStepCount: jsaCount[0]?.count ?? 0,
     crew: eligibility.crew,
@@ -641,7 +663,13 @@ export async function suspendExpiredPermits() {
       const [updated] = await tx.update(preventionWorkPermits).set({
         status: "suspended",
         suspendedAt: now,
-        suspendedByUserId: permit.supervisorUserId,
+        // NULL = suspensión del sistema, no de una persona. Atribuírsela al
+        // supervisor falsearía el registro: él no ejecutó el acto. El FK es
+        // `onDelete: "restrict"`, así que NULL nunca puede significar "usuario
+        // borrado" — acá es inequívoco. Si algún día aparece un tercer tipo de
+        // actor (integración externa, mandante), migrar al discriminador
+        // `actorType` que ya usa `ppa.ts:98`.
+        suspendedByUserId: null,
         suspensionReason: "Suspensión automática: la ventana autorizada del permiso venció.",
         version: permit.version + 1,
         updatedAt: now,

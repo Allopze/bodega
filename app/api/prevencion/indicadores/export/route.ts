@@ -9,6 +9,7 @@ import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { recordAudit } from "@/lib/audit"
 import { logger } from "@/lib/logger"
 import { addExportMetadataSheet } from "@/lib/reports/export"
+import { sanitizeCell as safe } from "@/lib/reports/export-module/excel-builder"
 import { getCanonicalSafetyIndicatorYear } from "@/lib/services/prevention-indicadores"
 import { encodeContentDisposition } from "@/lib/utils"
 
@@ -17,12 +18,6 @@ const FORMULAS = {
   accidentability: "Accidentes del trabajo incluidos / dotación promedio del período × 100",
   frequency: "Personas lesionadas incluidas / horas trabajadas × 1.000.000",
   severity: "(Días de ausencia + días de cargo) / horas trabajadas × 1.000.000",
-}
-
-function safe(value: unknown) {
-  if (value === null || value === undefined) return ""
-  const text = String(value)
-  return /^[=+\-@]/.test(text) ? `'${text}` : text
 }
 
 function displayRate(value: number | null) {
