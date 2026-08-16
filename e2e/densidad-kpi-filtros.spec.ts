@@ -23,7 +23,7 @@ const SINGLE_STRIP_PAGES = [
   { path: "/prevencion/incidentes", name: "Incidentes" },
   { path: "/prevencion/capacitacion", name: "Capacitacion" },
   { path: "/prevencion/permisos", name: "Permisos de trabajo" },
-  { path: "/prevencion/higiene", name: "Higiene ocupacional" },
+  { path: "/prevencion/higiene", name: "Higiene y vigilancia" },
   { path: "/prevencion/emergencias", name: "Emergencias" },
 ]
 

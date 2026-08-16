@@ -25,6 +25,7 @@
     "db:push": "drizzle-kit push",
     "db:seed": "tsx --env-file=.env.local db/seed.ts",
     "db:seed-pdtp-inspection-templates": "tsx --env-file=.env.local scripts/seed-pdtp-inspection-templates-2026.ts",
+    "db:seed-document-root-folders": "tsx --env-file=.env.local scripts/seed-document-root-folders.ts",
     "db:seed-cphs-orientation-course": "tsx --env-file=.env.local scripts/seed-prevention-cphs-orientation-course.ts",
     "pdtp:apply-catalog-decisions": "tsx --env-file=.env.local scripts/apply-pdtp-2026-catalog-decisions.ts",
     "pdtp:apply-mechanisms": "tsx --env-file=.env.local scripts/apply-pdtp-2026-mechanisms.ts",

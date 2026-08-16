@@ -17,7 +17,7 @@ test.describe("PDTP — Plan de acción y hallazgos", () => {
     await page.goto("/prevencion/pdtp/acciones")
 
     // Page header
-    await expect(page.getByRole("heading", { name: "Plan de acción PDTP" })).toBeVisible()
+    await expect(page.getByRole("heading", { name: "Medidas del programa" })).toBeVisible()
   })
 
   test("el plan de acción muestra la tabla de acciones o el estado de programa no activo", async ({ page }) => {

@@ -2204,6 +2204,7 @@ async function prepareDatabase(captureDbUrl: string) {
   ])
   await db.insert(schema.preventionEmergencyResources).values({
     id: "emergency-resource-audit-1",
+    worksiteId: "worksite-audit-1",
     planId: "plan-audit-1",
     name: "Extintor PQS 10 kg",
     kind: "Extintor",

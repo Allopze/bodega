@@ -8,7 +8,7 @@
 
 import type { Session } from "next-auth"
 import { registry } from "@/modules/registry"
-import { AREAS } from "./areas"
+import { AREAS, NAV_GROUP_ORDER } from "./areas"
 
 export interface NavChild {
   label:        string
@@ -57,9 +57,21 @@ function buildAreaTree(): AreaNode[] {
   const areas: AreaNode[] = []
   for (const area of [...AREAS].sort((left, right) => left.order - right.order)) {
     const items = itemsByArea.get(area.id) ?? []
-    if (items.length > 0) areas.push({ ...area, items })
+    if (items.length > 0) areas.push({ ...area, items: sortByGroup(items) })
   }
   return areas
+}
+
+/**
+ * Agrupa por NAV_GROUP_ORDER dejando contiguos los ítems del mismo grupo —
+ * `nav-rows.tsx` pinta el encabezado cuando el grupo cambia, así que un grupo
+ * partido en dos bloques se dibuja dos veces. El sort de V8 es estable, de modo
+ * que dentro del grupo manda el orden de declaración del manifest.
+ */
+function sortByGroup(items: NavItem[]): NavItem[] {
+  return [...items].sort(
+    (left, right) => NAV_GROUP_ORDER.indexOf(left.group ?? "") - NAV_GROUP_ORDER.indexOf(right.group ?? ""),
+  )
 }
 
 export const AREA_TREE: AreaNode[] = buildAreaTree()

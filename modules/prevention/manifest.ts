@@ -20,6 +20,8 @@ export const preventionModule = {
     "prevention:pdtp:obligation:cancel",
     "prevention:campaign:view",
     "prevention:campaign:manage",
+    "prevention:engagement:view",
+    "prevention:engagement:manage",
     "prevention:docs:view",
     "prevention:docs:manage",
     "prevention:docs:submit_review",
@@ -128,6 +130,8 @@ export const preventionModule = {
     "prevention:pdtp:obligation:cancel": { id: "p-prev-pdtp-obl-cancel", description: "Cancelar necesidades y eventos del PDTP" },
     "prevention:campaign:view":         { id: "p-prev-camp-v",    description: "Ver campañas preventivas" },
     "prevention:campaign:manage":       { id: "p-prev-camp-m",    description: "Crear, registrar asistencia y cerrar campañas preventivas" },
+    "prevention:engagement:view":       { id: "p-prev-engage-v", description: "Ver coordinaciones con el mandante, fiscalizaciones y visitas del organismo administrador" },
+    "prevention:engagement:manage":     { id: "p-prev-engage-m", description: "Registrar interacciones externas, sus medidas prescritas y cerrarlas" },
     "prevention:docs:view":               { id: "p-prev-docs-v",    description: "Ver la documentación preventiva" },
     "prevention:docs:manage":             { id: "p-prev-docs-m",    description: "Subir archivos, crear carpetas y crear versiones de documentos" },
     "prevention:docs:submit_review":      { id: "p-prev-docs-submit", description: "Enviar versiones documentales a revisión" },
@@ -223,27 +227,15 @@ export const preventionModule = {
     {
       areaId: "prevencion",
       items: [
+        // ── Programa ────────────────────────────────────────────────────────
         {
-          label: "Matriz de riesgos",
-          href: "/prevencion/miper",
-          iconName: "ShieldWarning",
-          group: "Planificación",
-          permissions: ["prevention:risk:view"],
-        },
-        {
-          label: "Requisitos legales",
-          href: "/prevencion/requisitos-legales",
-          iconName: "Scales",
-          group: "Planificación",
-          permissions: ["prevention:legal:view"],
-        },
-        {
-          // "Programa preventivo" se truncaba a "Programa prev…" en el sidebar
-          // (UI/UX 2026-08-05, B2); PDTP es el nombre con que se usa el módulo.
-          label: "Programa PDTP",
+          // DS 44 art. 8 lo llama "programa de trabajo preventivo" y no define
+          // sigla; "PDTP" es vocabulario interno. El encabezado del grupo ya da
+          // el contexto, así que la etiqueta no necesita repetir "preventivo".
+          label: "Programa de trabajo",
           href: "/prevencion/pdtp",
           iconName: "ClipboardText",
-          group: "Planificación",
+          group: "Programa",
           permissions: ["prevention:pdtp:view"],
           // El item padre ya lleva al dashboard: un hijo "Dashboard" con la misma
           // href duplicaba la fila y dejaba padre e hijo resaltados a la vez.
@@ -254,23 +246,26 @@ export const preventionModule = {
               permissions: ["prevention:pdtp:view"],
             },
             {
-              label: "Programas",
+              // "Programas" repetía el sustantivo del padre.
+              label: "Programas anuales",
               href: "/prevencion/pdtp/programas",
               permissions: ["prevention:pdtp:view"],
             },
             {
-              label: "Aprobaciones",
-              href: "/prevencion/pdtp/aprobaciones",
-              permissions: ["prevention:pdtp:approve"],
-            },
-            {
-              label: "Acciones",
-              href: "/prevencion/pdtp/acciones",
+              // Las actividades con scheduleMode on_demand/triggered: no tienen
+              // cuota anual, se llevan por casos. "Eventos" solo nombraba la
+              // mitad triggered, y "obligaciones" (el href) choca con Requisitos
+              // legales, que es lo que "obligación" significa en SST.
+              label: "A demanda y por evento",
+              href: "/prevencion/pdtp/obligaciones",
               permissions: ["prevention:pdtp:view"],
             },
             {
-              label: "Eventos",
-              href: "/prevencion/pdtp/obligaciones",
+              // "Acciones" se confundía con el módulo Acciones correctivas.
+              // DS 44 art. 8: el programa contiene "medidas preventivas y
+              // correctivas".
+              label: "Medidas",
+              href: "/prevencion/pdtp/acciones",
               permissions: ["prevention:pdtp:view"],
             },
             {
@@ -278,34 +273,65 @@ export const preventionModule = {
               href: "/prevencion/pdtp/cobertura",
               permissions: ["prevention:pdtp:view"],
             },
-          ],
-        },
-        {
-          label: "Acciones correctivas",
-          href: "/prevencion/capa",
-          iconName: "CheckSquare",
-          group: "Gestión en terreno",
-          permissions: ["prevention:capa:view"],
-        },
-        {
-          label: "Incidentes",
-          href: "/prevencion/incidentes",
-          iconName: "Siren",
-          group: "Gestión en terreno",
-          permissions: ["prevention:incidents:view", "prevention:incidents:report"],
-          children: [
             {
-              label: "Reportar incidente",
-              href: "/prevencion/incidentes/reportar",
-              permissions: ["prevention:incidents:report"],
+              label: "Aprobaciones",
+              href: "/prevencion/pdtp/aprobaciones",
+              permissions: ["prevention:pdtp:approve"],
             },
           ],
         },
         {
+          // DS 44 art. 7: "matriz de identificación de peligros y evaluación de
+          // riesgos". IPER es la sigla que usan SUSESO, IST y ACHS; "matriz de
+          // riesgos" a secas es un término genérico de gestión, no el instrumento.
+          label: "Matriz IPER",
+          href: "/prevencion/miper",
+          iconName: "ShieldWarning",
+          group: "Programa",
+          permissions: ["prevention:risk:view"],
+        },
+        {
+          // DS 44 art. 62: instrumento distinto de la matriz IPER (art. 7), con
+          // exigibilidad, contenido y visibilidad propios. El fiscalizador los
+          // pide por separado, así que no puede vivir como pestaña de la MIPER.
+          label: "Mapa de riesgos",
+          href: "/prevencion/miper/mapa",
+          iconName: "MapPin",
+          group: "Programa",
+          permissions: ["prevention:risk:view"],
+        },
+        {
+          label: "Requisitos legales",
+          href: "/prevencion/requisitos-legales",
+          iconName: "Scales",
+          group: "Programa",
+          permissions: ["prevention:legal:view"],
+        },
+
+        // ── Cumplimiento del programa ───────────────────────────────────────
+        // Los sourceType que reconoce prevention_pdtp_source_links: lo que puede
+        // colgar de una actividad del programa y generar su evidencia.
+        {
+          label: "Inspecciones",
+          href: "/prevencion/inspecciones",
+          iconName: "MagnifyingGlass",
+          group: "Cumplimiento del programa",
+          permissions: ["prevention:inspections:view"],
+          children: [
+            {
+              label: "Catálogo y programación",
+              href: "/prevencion/inspecciones/catalogo",
+              permissions: ["prevention:inspections:view"],
+            },
+          ],
+        },
+        {
+          // La página se llama "Capacitación y competencias"; en el sidebar no
+          // cabe, y truncarla es peor que acortarla a su prefijo.
           label: "Capacitación",
           href: "/prevencion/capacitacion",
           iconName: "Certificate",
-          group: "Gestión en terreno",
+          group: "Cumplimiento del programa",
           permissions: ["prevention:training:view"],
           children: [
             {
@@ -326,93 +352,153 @@ export const preventionModule = {
           ],
         },
         {
-          label: "Permisos de trabajo",
-          href: "/prevencion/permisos",
-          iconName: "ShieldCheck",
-          group: "Gestión en terreno",
-          permissions: ["prevention:permits:view"],
+          label: "Acciones correctivas",
+          href: "/prevencion/capa",
+          iconName: "CheckSquare",
+          group: "Cumplimiento del programa",
+          permissions: ["prevention:capa:view"],
         },
         {
-          label: "Inspecciones",
-          href: "/prevencion/inspecciones",
-          iconName: "MagnifyingGlass",
-          group: "Gestión en terreno",
-          permissions: ["prevention:inspections:view"],
+          // eventType cubre incidentes peligrosos, accidentes del trabajo y de
+          // trayecto, y sospecha de enfermedad profesional: "Incidentes" solo
+          // nombraba la primera categoría.
+          label: "Incidentes y accidentes",
+          href: "/prevencion/incidentes",
+          iconName: "Siren",
+          group: "Cumplimiento del programa",
+          permissions: ["prevention:incidents:view", "prevention:incidents:report"],
           children: [
             {
-              label: "Catálogo y programación",
-              href: "/prevencion/inspecciones/catalogo",
-              permissions: ["prevention:inspections:view"],
+              label: "Reportar incidente",
+              href: "/prevencion/incidentes/reportar",
+              permissions: ["prevention:incidents:report"],
             },
           ],
         },
         {
-          label: "Comités paritarios",
-          href: "/prevencion/cphs",
-          iconName: "UsersThree",
-          group: "Preparación y gobernanza",
-          permissions: ["prevention:cphs:view"],
-        },
-        {
-          // Ficha preventiva por faena: dotación, órgano exigible (comité sobre
-          // 25 trabajadores, delegado entre 10 y 25) y qué está constituido.
-          label: "Organización por faena",
-          href: "/prevencion/faenas",
-          iconName: "MapPin",
-          group: "Preparación y gobernanza",
-          permissions: ["prevention:cphs:view"],
-        },
-        {
-          label: "Higiene ocupacional",
-          href: "/prevencion/higiene",
-          iconName: "Heartbeat",
-          group: "Preparación y gobernanza",
-          permissions: ["prevention:hygiene:view"],
-        },
-        {
-          label: "Emergencias",
-          href: "/prevencion/emergencias",
-          iconName: "Siren",
-          group: "Preparación y gobernanza",
-          permissions: ["prevention:emergency:view"],
-        },
-        {
-          label: "Gestión del cambio",
-          href: "/prevencion/gestion-cambio",
-          iconName: "GearSix",
-          group: "Preparación y gobernanza",
-          permissions: ["prevention:change:view"],
-        },
-        {
-          label: "EPP obligatorio",
+          // El módulo compara requisitos por cargo/faena contra las entregas de
+          // Bodega. "Obligatorio"/"preventivo" eran adjetivos de relleno que
+          // además diferían entre sidebar y página.
+          label: "Requisitos de EPP",
           href: "/prevencion/epp-preventivo",
           iconName: "HardHat",
-          group: "Gestión en terreno",
+          group: "Cumplimiento del programa",
           permissions: ["prevention:epp:view"],
         },
         {
           label: "Campañas preventivas",
           href: "/prevencion/campanas",
           iconName: "MegaphoneSimple",
-          group: "Gestión en terreno",
+          group: "Cumplimiento del programa",
           permissions: ["prevention:campaign:view"],
         },
         {
-          label: "Documentos SST",
+          label: "Emergencias",
+          href: "/prevencion/emergencias",
+          iconName: "Siren",
+          group: "Cumplimiento del programa",
+          permissions: ["prevention:emergency:view"],
+        },
+        {
+          label: "Comités paritarios",
+          href: "/prevencion/cphs",
+          iconName: "UsersThree",
+          group: "Cumplimiento del programa",
+          permissions: ["prevention:cphs:view"],
+        },
+
+        // ── En terreno ──────────────────────────────────────────────────────
+        // Evidencia del día a día que no cuelga de una actividad del programa.
+        // Evaluaciones SST y PPA entran acá desde sus propios manifests.
+        {
+          label: "Permisos de trabajo",
+          href: "/prevencion/permisos",
+          iconName: "ShieldCheck",
+          group: "En terreno",
+          permissions: ["prevention:permits:view"],
+        },
+        {
+          // DS 44 título V: "vigilancia del ambiente de trabajo y de la salud".
+          // Alineado con el título de la página.
+          label: "Higiene y vigilancia",
+          href: "/prevencion/higiene",
+          iconName: "Heartbeat",
+          group: "En terreno",
+          permissions: ["prevention:hygiene:view"],
+        },
+        {
+          label: "Gestión del cambio",
+          href: "/prevencion/gestion-cambio",
+          iconName: "GearSix",
+          group: "En terreno",
+          permissions: ["prevention:change:view"],
+        },
+
+        // ── Seguimiento ─────────────────────────────────────────────────────
+        {
+          // DS 44 art. 20 (coordinación con quien comparte el centro de trabajo)
+          // y art. 70 (medidas prescritas por el organismo administrador). Las
+          // tres formas comparten tabla porque comparten formulario.
+          label: "Visitas y coordinación",
+          href: "/prevencion/coordinacion",
+          iconName: "UsersThree",
+          group: "Seguimiento",
+          permissions: ["prevention:engagement:view"],
+        },
+        {
+          // DS 44 art. 22 n°4: auditoría del desempeño del Sistema de Gestión.
+          // No es lo mismo que /pdtp/cobertura, que cubre el art. 14 (evaluación
+          // del cumplimiento del programa). Reusa el motor de inspecciones con
+          // kind='audit', por eso comparte permisos con Inspecciones.
+          label: "Auditorías del SGSST",
+          href: "/prevencion/auditorias",
+          iconName: "ClipboardText",
+          group: "Seguimiento",
+          permissions: ["prevention:inspections:view"],
+        },
+        {
+          label: "Indicadores SST",
+          href: "/prevencion/indicadores",
+          iconName: "ChartLineUp",
+          group: "Seguimiento",
+          permissions: ["prevention:indicadores:view"],
+        },
+        {
+          // Cuenta incidentes peligrosos, daño material y derrames: "Indicadores
+          // ambientales" dejaba fuera la mitad material.
+          label: "Daño material y ambiental",
+          href: "/prevencion/indicadores-material-ambiental",
+          iconName: "TreeStructure",
+          group: "Seguimiento",
+          permissions: ["prevention:indicadores:view"],
+        },
+        {
+          // DS 44 art. 72: "Registro documental de la actividad preventiva".
+          label: "Registro documental",
           href: "/prevencion/documentacion",
           iconName: "FolderOpen",
-          group: "Información y cumplimiento",
+          group: "Seguimiento",
           permissions: ["prevention:docs:view"],
         },
         {
-          label: "Privacidad",
+          // DS 44 título III / art. 21: "estructura preventiva". La ficha por
+          // faena resuelve qué órgano es exigible según dotación.
+          label: "Estructura preventiva",
+          href: "/prevencion/faenas",
+          iconName: "MapPin",
+          group: "Seguimiento",
+          permissions: ["prevention:cphs:view"],
+        },
+        {
+          // Ley 21.719: el término legal es protección de datos personales.
+          label: "Datos personales",
           href: "/prevencion/privacidad",
           iconName: "LockKey",
-          group: "Información y cumplimiento",
+          group: "Seguimiento",
           permissions: ["prevention:privacy:audit", "prevention:privacy:manage_requests"],
           children: [
             {
-              label: "Solicitudes de derechos",
+              label: "Derechos del titular",
               href: "/prevencion/privacidad/solicitudes",
               permissions: ["prevention:privacy:manage_requests"],
             },
@@ -422,20 +508,6 @@ export const preventionModule = {
               permissions: ["prevention:privacy:audit"],
             },
           ],
-        },
-        {
-          label: "Indicadores SST",
-          href: "/prevencion/indicadores",
-          iconName: "ChartLineUp",
-          group: "Indicadores",
-          permissions: ["prevention:indicadores:view"],
-        },
-        {
-          label: "Indicadores ambientales",
-          href: "/prevencion/indicadores-material-ambiental",
-          iconName: "TreeStructure",
-          group: "Indicadores",
-          permissions: ["prevention:indicadores:view"],
         },
       ],
     },
@@ -510,6 +582,16 @@ export const preventionModule = {
     { roleSlug: "prevencionista_faena", permission: "prevention:campaign:manage" },
     { roleSlug: "administrador",       permission: "prevention:campaign:view" },
     { roleSlug: "administrador",       permission: "prevention:campaign:manage" },
+    // Interacciones con externos (DS 44 arts. 20 y 70). La faena registra y
+    // consulta; cerrar exige que toda medida prescrita esté verificada, así que
+    // el permiso de gestión no se acota a jefatura.
+    { roleSlug: "prevencionista",      permission: "prevention:engagement:view" },
+    { roleSlug: "prevencionista",      permission: "prevention:engagement:manage" },
+    { roleSlug: "prevencionista_faena", permission: "prevention:engagement:view" },
+    { roleSlug: "prevencionista_faena", permission: "prevention:engagement:manage" },
+    { roleSlug: "jefa_chome",          permission: "prevention:engagement:view" },
+    { roleSlug: "administrador",       permission: "prevention:engagement:view" },
+    { roleSlug: "administrador",       permission: "prevention:engagement:manage" },
     // Documentación
     { roleSlug: "prevencionista",      permission: "prevention:docs:view" },
     { roleSlug: "prevencionista",      permission: "prevention:docs:manage" },

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import type { Session } from "next-auth"
 import { AREA_TREE, flattenNavTargets, getVisibleAreas, isHrefActive } from "@/components/layout/nav-items"
+import { NAV_GROUP_ORDER } from "@/components/layout/areas"
 import { safeInternalPath } from "@/lib/navigation"
 
 describe("safeInternalPath", () => {
@@ -96,24 +97,27 @@ describe("sidebar navigation", () => {
     } satisfies Session
 
     const prevention = getVisibleAreas(session).find((area) => area.id === "prevencion")
+    // El orden lo fija NAV_GROUP_ORDER, no el orden de registro de los módulos:
+    // "Programa de trabajo" (módulo prevention) va antes que Evaluaciones SST y
+    // PPA aunque sst/ppa se registren primero en modules/registry.ts.
     expect(prevention?.items.map((item) => item.label)).toEqual([
+      "Programa de trabajo",
       "Evaluaciones SST",
       "Para, Piensa y Actúa",
-      "Programa PDTP",
-      "Documentos SST",
       "Indicadores SST",
-      "Indicadores ambientales",
+      "Daño material y ambiental",
+      "Registro documental",
     ])
     expect(prevention?.items.map((item) => item.href)).not.toContain("/prevencion")
 
     const pdtp = prevention?.items.find((item) => item.href === "/prevencion/pdtp")
     expect(pdtp?.children?.map((item) => item.label)).toEqual([
       "Actividades",
-      "Programas",
-      "Aprobaciones",
-      "Acciones",
-      "Eventos",
+      "Programas anuales",
+      "A demanda y por evento",
+      "Medidas",
       "Cobertura",
+      "Aprobaciones",
     ])
     // El item padre ya lleva al dashboard: ningún hijo debe repetir su href, o el
     // sidebar pinta la fila dos veces y resalta padre e hijo a la vez.
@@ -147,6 +151,39 @@ describe("sidebar navigation", () => {
     expect(isHrefActive("/prevencion/evaluaciones", "/prevencion/privacidad/solicitudes")).toBe(false)
     expect(isHrefActive("/prevencion/privacidad", "/prevencion/privacidad/solicitudes")).toBe(false)
     expect(isHrefActive("/prevencion/privacidad/solicitudes", "/prevencion/privacidad/solicitudes")).toBe(true)
+  })
+
+  // nav-rows.tsx pinta el encabezado de grupo cuando el grupo cambia respecto
+  // al ítem anterior: un grupo partido en dos bloques se dibuja dos veces. Pasó
+  // con "Gestión en terreno" al agregar ítems al final del manifest sin mirar
+  // dónde caían. Este check falla apenas se reintroduce.
+  it("keeps every nav group contiguous and in NAV_GROUP_ORDER", () => {
+    for (const area of AREA_TREE) {
+      const groups = area.items.map((item) => item.group ?? "")
+      // Un área agrupa o no agrupa; a medias, los ítems sin grupo se van todos
+      // al tope y el área queda con un bloque mudo antes del primer encabezado.
+      if (groups.every((group) => group === "")) continue
+      expect(groups.filter((group) => !NAV_GROUP_ORDER.includes(group)), `${area.id} usa grupos ausentes de NAV_GROUP_ORDER`).toEqual([])
+
+      const blocks = groups.filter((group, index) => group !== groups[index - 1])
+      expect(new Set(blocks).size, `${area.id} repite un encabezado de grupo`).toBe(blocks.length)
+
+      const ranks = blocks.map((group) => NAV_GROUP_ORDER.indexOf(group))
+      expect(ranks, `${area.id} tiene sus grupos fuera de NAV_GROUP_ORDER`)
+        .toEqual([...ranks].sort((left, right) => left - right))
+    }
+  })
+
+  // El mapa de riesgos (DS 44 art. 62) cuelga de la ruta de la MIPER (art. 7)
+  // pero es un destino propio: sin el desempate por prefijo más largo, entrar al
+  // mapa dejaría las dos filas resaltadas.
+  it("keeps Matriz IPER and Mapa de riesgos as distinct destinations", () => {
+    expect(isHrefActive("/prevencion/miper", "/prevencion/miper")).toBe(true)
+    expect(isHrefActive("/prevencion/miper", "/prevencion/miper/mapa")).toBe(false)
+    expect(isHrefActive("/prevencion/miper/mapa", "/prevencion/miper/mapa")).toBe(true)
+    expect(isHrefActive("/prevencion/miper/mapa", "/prevencion/miper")).toBe(false)
+    // Las subrutas que no son el mapa siguen perteneciendo a la MIPER.
+    expect(isHrefActive("/prevencion/miper", "/prevencion/miper/controles/ctl-1")).toBe(true)
   })
 
   it("hides the Prevención area when no prevention module is visible", () => {

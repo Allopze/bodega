@@ -31,7 +31,7 @@ export const ppaModule = {
           label: "Para, Piensa y Actúa",
           href: "/prevencion/ppa",
           iconName: "ShieldCheck",
-          group: "Evaluación en terreno",
+          group: "En terreno",
           permissions: ["ppa:view"],
         },
       ],

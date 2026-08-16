@@ -20,6 +20,27 @@ export interface AreaDef {
   order:    number
 }
 
+/**
+ * Orden canónico de los grupos dentro de un área.
+ *
+ * Sin esto el orden lo decide la posición del módulo en `modules/registry.ts`,
+ * y un área alimentada por varios módulos (Prevención: sst + ppa + prevention)
+ * no puede ordenarse: los ítems de sst salen siempre primero. Peor, un mismo
+ * grupo puede quedar partido en bloques no contiguos y `nav-rows.tsx` repite su
+ * encabezado (pasaba con "Gestión en terreno").
+ *
+ * Los ítems sin `group` dan índice -1 y quedan antes que cualquier grupo, así
+ * las áreas que no usan grupos conservan su orden de declaración.
+ */
+export const NAV_GROUP_ORDER: string[] = [
+  // Prevención — el ciclo del programa: qué se planifica, qué lo cumple,
+  // qué ocurre en terreno y con qué se verifica.
+  "Programa",
+  "Cumplimiento del programa",
+  "En terreno",
+  "Seguimiento",
+]
+
 export const AREAS: AreaDef[] = [
   // "Mis pendientes" colgaba de Adquisiciones, pero su cola agrega PDTP, CAPA,
   // inspecciones, documentación, PPA y SST: es una bandeja transversal, no un
