@@ -8,7 +8,7 @@ import { PageContainer } from "@/components/ui/page-container"
 export default function Loading() {
   return (
     <PageContainer>
-      <PageHeader title="Trabajo por necesidad y eventos" />
+      <PageHeader title="Actividades a demanda y por evento" />
       <SkeletonPage rows={6} />
     </PageContainer>
   )

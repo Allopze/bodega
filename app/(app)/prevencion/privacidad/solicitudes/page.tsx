@@ -12,7 +12,7 @@ import { listPreventionPrivacyRequestsPage } from "@/lib/services/prevention-pri
 import { PrivacyRequestCreateButton } from "./privacy-request-create-button"
 import { PrivacyRequestsWorkbench } from "./privacy-requests-workbench"
 
-export const metadata: Metadata = { title: "Solicitudes de privacidad" }
+export const metadata: Metadata = { title: "Derechos del titular" }
 
 type SearchParams = { page?: string }
 
@@ -47,11 +47,11 @@ export default async function PreventionPrivacyRequestsPage({ searchParams }: { 
   return (
     <PageContainer>
       <PageHeader
-        title="Solicitudes de privacidad"
+        title="Derechos del titular"
         description="Gestiona derechos del titular, validación de identidad, retenciones y entregas auditadas."
         breadcrumb={<Breadcrumbs items={[
           { label: "Prevención", href: "/prevencion" },
-          { label: "Privacidad", href: "/prevencion/privacidad" },
+          { label: "Datos personales", href: "/prevencion/privacidad" },
           { label: "Solicitudes" },
         ]} />}
         actions={<PrivacyRequestCreateButton workers={workerRows.map((worker) => ({

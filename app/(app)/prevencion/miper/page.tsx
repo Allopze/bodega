@@ -5,7 +5,6 @@ import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { resolvePagination } from "@/lib/pagination"
 import { getRiskDashboard } from "@/lib/services/prevention-risk-legal"
 import { listRiskImportBatchesPage } from "@/lib/services/prevention-risk-import"
-import { listRiskMapsForScope } from "@/lib/services/prevention-risk-map"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { MiperHeaderActions, MiperWorkbench } from "./miper-workbench"
@@ -36,16 +35,6 @@ export default async function MiperPage({ searchParams }: { searchParams: Promis
     canPublish: can(session, "prevention:risk:publish"),
   }
 
-  // El panel del mapa de riesgos reusa lo que el dashboard ya cargó (matrices
-  // y entradas publicadas) en vez de volver a consultar la MIPER.
-  const riskMapLayouts = await listRiskMapsForScope(dashboard.worksites.map((item) => item.id), access)
-  const publishedMatrixWorksite = new Map(dashboard.matrices.filter((m) => m.status === "published").map((m) => [m.id, m.worksiteId]))
-  const entriesByWorksite: Record<string, { id: string; hazard: string; residualLevel: string }[]> = {}
-  for (const { entry } of dashboard.entries) {
-    const worksiteId = publishedMatrixWorksite.get(entry.matrixId)
-    if (!worksiteId) continue
-    ;(entriesByWorksite[worksiteId] ??= []).push({ id: entry.id, hazard: entry.hazard, residualLevel: entry.residualLevel })
-  }
   return (
     <PageContainer width="wide">
       <PageHeader
@@ -62,25 +51,6 @@ export default async function MiperPage({ searchParams }: { searchParams: Promis
         currentUserId={session.user.id}
         permissions={permissions}
         today={today}
-        riskMap={{
-          worksites: dashboard.worksites,
-          layouts: dashboard.worksites
-            .map((worksite) => {
-              const view = riskMapLayouts.get(worksite.id)
-              if (!view) return null
-              return {
-                worksiteId: worksite.id,
-                worksiteName: worksite.name,
-                layoutId: view.layout.id,
-                imagePath: view.layout.imagePath,
-                title: view.layout.title,
-                markers: view.markers,
-              }
-            })
-            .filter((item) => item !== null),
-          entriesByWorksite,
-          canEdit: permissions.canEdit,
-        }}
       />
     </PageContainer>
   )

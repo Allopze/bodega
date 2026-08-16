@@ -6,11 +6,14 @@ import { requireAuth, can } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { getDocumentBundle, listDocumentRecipientOptions } from "@/lib/services/prevention-documents-library"
 import { db } from "@/db"
-import { users, worksites } from "@/db/schema"
+import { sstDocumentTypes, users, worksites } from "@/db/schema"
 import { PageContainer } from "@/components/ui/page-container"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { Button } from "@/components/ui/button"
 import { DocumentDetailView } from "./document-detail-view"
+import { RiohsChecklist } from "./riohs-checklist"
+import { RIOHS_DOCUMENT_TYPE_CODE, type RiohsMetadata } from "@/lib/prevention/riohs"
+import { eq } from "drizzle-orm"
 
 export const metadata: Metadata = { title: "Detalle documental SST" }
 
@@ -53,6 +56,14 @@ export default async function DocumentDetailPage({ params }: Props) {
   const userMap = Object.fromEntries(userRows.map((u) => [u.id, u]))
   const worksiteMap = Object.fromEntries(worksiteRows.map((w) => [w.id, w]))
 
+  // El Reglamento Interno tiene un contenido mínimo exigido (DS 44 art. 58) que
+  // el gate de publicación verifica; acá se declara.
+  const [docType] = bundle.doc.typeId
+    ? await db.select({ code: sstDocumentTypes.code }).from(sstDocumentTypes).where(eq(sstDocumentTypes.id, bundle.doc.typeId))
+    : [undefined]
+  const isRiohs = docType?.code === RIOHS_DOCUMENT_TYPE_CODE
+  const riohsSections = ((bundle.doc.extraMetadata ?? {}) as RiohsMetadata).riohsSections ?? []
+
   const canManage = can(session, "prevention:docs:manage")
   const canArchive = can(session, "prevention:docs:archive")
   const currentVersion = bundle.versions.find((version) => version.id === bundle.doc.currentVersionId) ?? null
@@ -69,6 +80,9 @@ export default async function DocumentDetailPage({ params }: Props) {
         ]} />}
         actions={<Button asChild size="sm" variant="secondary"><Link href={`/api/prevencion/documentacion/${id}/expediente`}>Exportar expediente Excel</Link></Button>}
       />
+      {isRiohs && (
+        <RiohsChecklist documentId={id} currentVersionId={bundle.doc.currentVersionId} sections={riohsSections} canManage={canManage} canDistribute={canDistribute} />
+      )}
       <DocumentDetailView
         bundle={bundle}
         userMap={userMap}

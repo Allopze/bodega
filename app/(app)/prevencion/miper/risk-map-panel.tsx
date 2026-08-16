@@ -158,16 +158,23 @@ function RiskMapImage({ layout, entries, canEdit }: { layout: RiskMapLayout; ent
           className="block w-full select-none"
           draggable={false}
         />
-        {layout.markers.map((marker) => (
-          <button
-            key={marker.id}
-            type="button"
-            className="absolute size-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white shadow"
-            style={{ left: `${marker.xPct}%`, top: `${marker.yPct}%`, backgroundColor: RISK_LEVEL_COLOR[marker.residualLevel] ?? "var(--color-text-subtle)" }}
-            title={`${marker.hazard} · ${RISK_LEVEL_LABEL[marker.residualLevel] ?? marker.residualLevel}`}
-            onClick={(event) => { event.stopPropagation(); setSelectedMarker(marker) }}
-          />
-        ))}
+        {layout.markers.map((marker) => {
+          // El marcador es un punto de color sin texto: el `title` solo lo
+          // nombraba al pasar el mouse, así que con lector de pantalla o con
+          // teclado era un botón anónimo. `aria-label` lo nombra en serio.
+          const nombre = `${marker.hazard} · ${RISK_LEVEL_LABEL[marker.residualLevel] ?? marker.residualLevel}`
+          return (
+            <button
+              key={marker.id}
+              type="button"
+              className="absolute size-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white shadow"
+              style={{ left: `${marker.xPct}%`, top: `${marker.yPct}%`, backgroundColor: RISK_LEVEL_COLOR[marker.residualLevel] ?? "var(--color-text-subtle)" }}
+              aria-label={`Marcador de riesgo: ${nombre}`}
+              title={nombre}
+              onClick={(event) => { event.stopPropagation(); setSelectedMarker(marker) }}
+            />
+          )
+        })}
       </div>
       {canEdit && (
         <p className="text-xs text-[var(--color-text-subtle)]">Clic sobre el plano para ubicar un marcador nuevo; clic sobre un marcador para verlo o quitarlo.</p>

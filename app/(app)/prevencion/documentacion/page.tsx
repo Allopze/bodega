@@ -20,7 +20,7 @@ import { DocumentacionHeaderActions } from "./documentacion-header-actions"
 import { DocumentacionView } from "./documentacion-view"
 import { expiryFilterInput, parseExpiryFilter } from "./expiry-filter"
 
-export const metadata: Metadata = { title: "Documentación" }
+export const metadata: Metadata = { title: "Registro documental" }
 
 export default async function DocumentacionPage({
   searchParams,
@@ -103,7 +103,7 @@ export default async function DocumentacionPage({
   return (
     <PageContainer width="workbench">
       <PageHeader
-        title="Documentación"
+        title="Registro documental"
         description="Biblioteca de archivos y carpetas preventivas."
         breadcrumb={<Breadcrumbs items={breadcrumbs} />}
         actions={canManage || canRegularize ? (

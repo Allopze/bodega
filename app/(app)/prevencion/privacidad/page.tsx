@@ -6,7 +6,7 @@ import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { can, requireAuth } from "@/lib/auth/can"
 
-export const metadata: Metadata = { title: "Privacidad | Prevención" }
+export const metadata: Metadata = { title: "Datos personales | Prevención" }
 
 export default async function PreventionPrivacyPage() {
   let session
@@ -20,9 +20,9 @@ export default async function PreventionPrivacyPage() {
   return (
     <PageContainer width="form">
       <PageHeader
-        title="Privacidad"
+        title="Datos personales"
         description="Gestiona derechos del titular y revisa accesos sensibles sin exponer información clínica o reservada."
-        breadcrumb={<Breadcrumbs items={[{ label: "Inicio", href: "/dashboard" }, { label: "Prevención", href: "/prevencion" }, { label: "Privacidad" }]} />}
+        breadcrumb={<Breadcrumbs items={[{ label: "Inicio", href: "/dashboard" }, { label: "Prevención", href: "/prevencion" }, { label: "Datos personales" }]} />}
       />
 
       <div className="grid gap-3 sm:grid-cols-2">

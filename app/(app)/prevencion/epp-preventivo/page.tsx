@@ -15,7 +15,7 @@ import { EppTabs } from "./epp-tabs"
 
 import { Button } from "@/components/ui/button"
 
-export const metadata: Metadata = { title: "EPP preventivo" }
+export const metadata: Metadata = { title: "Requisitos de EPP" }
 
 export default async function EppPreventivoPage() {
   let session
@@ -40,12 +40,12 @@ export default async function EppPreventivoPage() {
   return (
     <PageContainer>
       <PageHeader
-        title="EPP preventivo"
+        title="Requisitos de EPP"
         description="Requisitos de EPP obligatorio por cargo o faena, comparados contra las entregas reales de Bodega para detectar cobertura faltante o vencida."
         breadcrumb={<Breadcrumbs items={[
           { label: "Inicio", href: "/dashboard" },
           { label: "Prevención" },
-          { label: "EPP preventivo" },
+          { label: "Requisitos de EPP" },
         ]} />}
         actions={
           <Button asChild variant="secondary" size="sm">

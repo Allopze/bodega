@@ -87,7 +87,7 @@ describe("PdtpCoverageWorkbench", () => {
 
     expect(screen.getByRole("option", { name: "CAPA-001 · Hallazgo en faena 1" })).toBeDefined()
     expect(screen.queryByRole("option", { name: "CAPA-002 · Hallazgo en faena 2" })).toBeNull()
-    expect(screen.queryByPlaceholderText("ID CAPA, auditoría o contrato")).toBeNull()
+    expect(screen.queryByPlaceholderText("Identificador de la fuente")).toBeNull()
   })
 
   it("offers a populated picker for the newer source domains (capacitación) scoped by faena", () => {
@@ -120,7 +120,11 @@ describe("PdtpCoverageWorkbench", () => {
     expect(screen.queryByRole("option", { name: "SES-002 · Espacios confinados" })).toBeNull()
   })
 
-  it("falls back to a free-text source id for types without a populated picker (auditoría)", () => {
+  // Ya no queda ningún sourceType sin rama de resolución en el servidor: todos
+  // validan pertenencia a faena contra su catálogo. El campo de texto libre
+  // sobrevive sólo para cuando la pantalla no recibió opciones cargadas, y en
+  // ese caso el identificador es obligatorio igual.
+  it("requires a source id even when the picker has no loaded options", () => {
     const coverage = {
       program: { id: "program-1", year: 2026, version: 3 },
       coverage: { sourcedActivities: 0, totalActivities: 1, unsourcedActivities: 1, pendingUpdates: 0 },
@@ -132,8 +136,10 @@ describe("PdtpCoverageWorkbench", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Vincular fuente" }))
     fireEvent.click(screen.getByRole("combobox", { name: "Tipo" }))
-    fireEvent.click(screen.getByRole("option", { name: "Auditoría" }))
+    fireEvent.click(screen.getByRole("option", { name: "Obligación contractual (coordinación)" }))
 
-    expect(screen.getByPlaceholderText("ID CAPA, auditoría o contrato")).toBeDefined()
+    const input = screen.getByPlaceholderText("Identificador de la fuente")
+    expect(input).toBeDefined()
+    expect(input).toBeRequired()
   })
 })

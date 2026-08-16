@@ -11,6 +11,7 @@ import {
   enrollGroupInSurveillance,
   recordExposureMeasurement,
   recordSurveillanceOutcome,
+  setProtocolApplicability,
   type HygieneAccess,
 } from "@/lib/services/prevention-hygiene"
 import type { ActionState } from "@/lib/validation/prevention"
@@ -78,4 +79,11 @@ export async function recordSurveillanceOutcomeAction(input: unknown): Promise<A
   const guard = await guardPermission("prevention:hygiene:manage")
   if (guard.error) return guard.error
   return run(accessFromSession(guard.session), (access) => recordSurveillanceOutcome(input, access))
+}
+
+/** Declara si un protocolo MINSAL aplica a una faena (DS 44 título V). */
+export async function setProtocolApplicabilityAction(input: unknown): Promise<ActionState> {
+  const guard = await guardPermission("prevention:hygiene:manage")
+  if (guard.error) return guard.error
+  return run(accessFromSession(guard.session), (access) => setProtocolApplicability(input, access))
 }

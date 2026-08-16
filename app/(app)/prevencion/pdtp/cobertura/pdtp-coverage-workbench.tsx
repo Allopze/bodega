@@ -16,7 +16,7 @@ import { linkPdtpActivitySourceAction, resolvePdtpUpdateObligationAction } from 
 type Coverage = Awaited<ReturnType<typeof getPdtpCoverage>>
 type Source = { id: string; worksiteId: string; label: string }
 type Result = { ok: boolean; message?: string }
-/** Opciones seleccionables por `sourceType`; auditorías, obligaciones contractuales y campañas usan identificador de texto libre. */
+/** Opciones seleccionables por `sourceType`. Los tipos sin catálogo cargado caen a un identificador de texto libre. */
 type SourceOptionsByType = Partial<Record<string, Source[]>>
 
 function useOperation() {
@@ -31,12 +31,17 @@ const SOURCE_LABELS: Record<string, string> = {
   risk_control: "Control MIPER", legal_requirement: "Requisito legal", incident_capa: "Incidente/CAPA",
   audit: "Auditoría", contractual_obligation: "Obligación contractual",
   capacitacion: "Capacitación", inspeccion: "Inspección", cphs: "CPHS", epp: "EPP", emergencia: "Emergencia", campana: "Campaña",
+  protocolo_minsal: "Protocolo MINSAL",
 }
 
 function sourceHref(sourceType: string, sourceId: string) {
   if (sourceType === "risk_control") return `/prevencion/miper/controles/${sourceId}`
   if (sourceType === "legal_requirement") return `/prevencion/requisitos-legales/${sourceId}`
   if (sourceType === "incident_capa") return `/prevencion/capa/${sourceId}`
+  // Una auditoría es una corrida del motor de inspecciones; su detalle vive ahí.
+  if (sourceType === "audit" || sourceType === "inspeccion") return `/prevencion/inspecciones/${sourceId}`
+  if (sourceType === "protocolo_minsal") return "/prevencion/higiene?tab=protocols"
+  if (sourceType === "contractual_obligation") return `/prevencion/coordinacion/${sourceId}`
   return null
 }
 
@@ -60,7 +65,7 @@ function LinkSourceDialog({ activityId, worksites, sourceOptions }: { activityId
   return <Dialog open={open} onOpenChange={setOpen}><DialogTrigger asChild><Button size="sm">Vincular fuente</Button></DialogTrigger><DialogContent><form onSubmit={submit} className="space-y-4"><DialogHeader><DialogTitle>Vincular origen de la medida</DialogTitle><DialogDescription>El vínculo no cierra el requisito ni reduce el riesgo; sólo demuestra cobertura programática.</DialogDescription></DialogHeader>{/* Cambiar faena o tipo invalida la fuente elegida: sin el reset, el hidden
     input enviaba un sourceId de otra faena y el servidor lo rechazaba con un
     "fuera de alcance" difícil de interpretar. */}
-<Field label="Faena"><Select value={worksiteId} onValueChange={(value) => { setWorksiteId(value); setSourceId("") }}><SelectTrigger><SelectValue placeholder="Selecciona faena" /></SelectTrigger><SelectContent>{worksites.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select><input type="hidden" name="worksiteId" value={worksiteId} /></Field><Field label="Tipo"><Select value={sourceType} onValueChange={(value) => { setSourceType(value); setSourceId("") }}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="risk_control">Control MIPER</SelectItem><SelectItem value="legal_requirement">Requisito legal</SelectItem><SelectItem value="incident_capa">Incidente / CAPA</SelectItem><SelectItem value="capacitacion">Capacitación</SelectItem><SelectItem value="inspeccion">Inspección</SelectItem><SelectItem value="cphs">CPHS</SelectItem><SelectItem value="epp">EPP</SelectItem><SelectItem value="emergencia">Emergencia</SelectItem><SelectItem value="campana">Campaña</SelectItem><SelectItem value="audit">Auditoría</SelectItem><SelectItem value="contractual_obligation">Obligación contractual</SelectItem></SelectContent></Select><input type="hidden" name="sourceType" value={sourceType} /></Field>{options.length > 0 ? <Field label="Fuente"><Select value={sourceId} onValueChange={setSourceId}><SelectTrigger><SelectValue placeholder="Selecciona fuente" /></SelectTrigger><SelectContent>{options.map((item) => <SelectItem key={item.id} value={item.id}>{item.label}</SelectItem>)}</SelectContent></Select><input type="hidden" name="sourceId" value={sourceId} /></Field> : <Field label="Identificador de fuente"><Input name="sourceId" required={!["audit", "contractual_obligation"].includes(sourceType)} placeholder="ID CAPA, auditoría o contrato" /></Field>}<Field label="Justificación"><Textarea name="justification" required minLength={10} /></Field>{operation.message && <p role="status" className="text-sm">{operation.message}</p>}<DialogFooter><Button type="submit" disabled={operation.pending}>Crear vínculo</Button></DialogFooter></form></DialogContent></Dialog>
+<Field label="Faena"><Select value={worksiteId} onValueChange={(value) => { setWorksiteId(value); setSourceId("") }}><SelectTrigger><SelectValue placeholder="Selecciona faena" /></SelectTrigger><SelectContent>{worksites.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select><input type="hidden" name="worksiteId" value={worksiteId} /></Field><Field label="Tipo"><Select value={sourceType} onValueChange={(value) => { setSourceType(value); setSourceId("") }}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="risk_control">Control MIPER</SelectItem><SelectItem value="legal_requirement">Requisito legal</SelectItem><SelectItem value="incident_capa">Incidente / CAPA</SelectItem><SelectItem value="capacitacion">Capacitación</SelectItem><SelectItem value="inspeccion">Inspección</SelectItem><SelectItem value="cphs">CPHS</SelectItem><SelectItem value="epp">EPP</SelectItem><SelectItem value="emergencia">Emergencia</SelectItem><SelectItem value="campana">Campaña</SelectItem><SelectItem value="protocolo_minsal">Protocolo MINSAL</SelectItem><SelectItem value="audit">Auditoría</SelectItem><SelectItem value="contractual_obligation">Obligación contractual (coordinación)</SelectItem></SelectContent></Select><input type="hidden" name="sourceType" value={sourceType} /></Field>{options.length > 0 ? <Field label="Fuente"><Select value={sourceId} onValueChange={setSourceId}><SelectTrigger><SelectValue placeholder="Selecciona fuente" /></SelectTrigger><SelectContent>{options.map((item) => <SelectItem key={item.id} value={item.id}>{item.label}</SelectItem>)}</SelectContent></Select><input type="hidden" name="sourceId" value={sourceId} /></Field> : <Field label="Identificador de fuente"><Input name="sourceId" required placeholder="Identificador de la fuente" /></Field>}<Field label="Justificación"><Textarea name="justification" required minLength={10} /></Field>{operation.message && <p role="status" className="text-sm">{operation.message}</p>}<DialogFooter><Button type="submit" disabled={operation.pending}>Crear vínculo</Button></DialogFooter></form></DialogContent></Dialog>
 }
 
 function ResolveObligationDialog({ obligationId, programId }: { obligationId: string; programId: string }) {

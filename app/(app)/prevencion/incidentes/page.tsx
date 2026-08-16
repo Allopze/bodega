@@ -10,7 +10,7 @@ import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { getIncidentDashboardCounts, listIncidentWorksites, listPreventionIncidents } from "@/lib/services/prevention-incidents"
 import { IncidentList } from "./incident-list"
 
-export const metadata: Metadata = { title: "Incidentes y denuncias" }
+export const metadata: Metadata = { title: "Incidentes y accidentes" }
 
 const INDICATOR_LABELS: Record<string, string> = {
   accidentability: "accidentabilidad",
@@ -54,7 +54,7 @@ export default async function IncidentsPage({ searchParams }: { searchParams: Pr
   return (
     <PageContainer>
       <PageHeader
-        title="Incidentes y denuncias"
+        title="Incidentes y accidentes"
         description="Fuente canónica de eventos, plazos DIAT/DIEP, investigación, CAPA y autorización de reinicio."
         breadcrumb={<Breadcrumbs items={[{ label: "Inicio", href: "/dashboard" }, { label: "Prevención" }, { label: "Incidentes" }]} />}
         actions={<div className="flex gap-2">

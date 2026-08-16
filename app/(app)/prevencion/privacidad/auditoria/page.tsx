@@ -32,7 +32,7 @@ export default async function PreventionPrivacyAuditPage() {
         description="Revisión de accesos, denegaciones y descargas sin exponer contenido clínico o testimonios."
         breadcrumb={<Breadcrumbs items={[
           { label: "Prevención", href: "/prevencion" },
-          { label: "Privacidad", href: "/prevencion/privacidad" },
+          { label: "Datos personales", href: "/prevencion/privacidad" },
           { label: "Auditoría de accesos" },
         ]} />}
         actions={can(session, "prevention:privacy:manage_requests")

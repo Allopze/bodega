@@ -16,7 +16,7 @@ import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { AccionesTable } from "./acciones-table"
 
-export const metadata: Metadata = { title: "Plan de acción PDTP" }
+export const metadata: Metadata = { title: "Medidas del programa" }
 
 type Props = {
   searchParams: Promise<{
@@ -78,7 +78,7 @@ export default async function PdtpAccionesPage({ searchParams }: Props) {
   return (
     <PageContainer>
       <PageHeader
-        title="Plan de acción PDTP"
+        title="Medidas del programa"
         description="Vista transversal de acciones correctivas de todas las actividades del programa activo."
         breadcrumb={
           <Breadcrumbs items={[

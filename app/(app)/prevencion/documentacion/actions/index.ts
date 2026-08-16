@@ -19,6 +19,7 @@ export {
 
 export {
   assignSstDocumentRecipientsAction,
+  assignSstDocumentToWorkforceAction,
   acknowledgeSstDocumentVersionAction,
   exemptSstDocumentRecipientAction,
 } from "./distribution"
@@ -38,3 +39,5 @@ export {
   archiveSstDocumentFolderAction,
   restoreSstDocumentFolderAction,
 } from "./folders"
+
+export { setRiohsSectionsAction } from "./riohs"

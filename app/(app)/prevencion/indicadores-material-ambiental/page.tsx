@@ -8,7 +8,7 @@ import { MaterialEnvironmentalDashboard } from "./material-environmental-dashboa
 import { ExportMaterialAmbientalButton } from "./material-environmental-export-button"
 import { getMaterialEnvironmentalEvents } from "@/lib/services/prevention-indicadores"
 
-export const metadata: Metadata = { title: "Indicadores material y ambiental" }
+export const metadata: Metadata = { title: "Daño material y ambiental" }
 
 type PageProps = {
   searchParams: Promise<{ year?: string }>
@@ -29,13 +29,13 @@ export default async function MaterialAmbientalPage({ searchParams }: PageProps)
   return (
     <PageContainer>
       <PageHeader
-        title="Indicadores material y ambiental"
+        title="Daño material y ambiental"
         description="Conteo canónico de incidentes peligrosos, daños materiales y derrames ambientales por faena."
         breadcrumb={
           <Breadcrumbs items={[
             { label: "Inicio", href: "/dashboard" },
             { label: "Prevención", href: "/prevencion" },
-            { label: "Indicadores material y ambiental" },
+            { label: "Daño material y ambiental" },
           ]} />
         }
         actions={<ExportMaterialAmbientalButton year={year} />}

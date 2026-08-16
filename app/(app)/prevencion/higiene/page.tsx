@@ -9,6 +9,7 @@ import {
   listExposureAgents,
   listExposureGroups,
   listHygieneWorksites,
+  listProtocolApplicabilities,
   listSurveillancePrograms,
 } from "@/lib/services/prevention-hygiene"
 import { HygieneDashboard } from "./hygiene-dashboard"
@@ -27,13 +28,20 @@ export default async function HigienePage() {
   }
   const canManage = session.user.permissions.includes("prevention:hygiene:manage")
 
-  const [groups, programs, summary, agents, worksites] = await Promise.all([
+  const [groups, programs, summary, agents, worksites, applicabilities] = await Promise.all([
     listExposureGroups(access),
     listSurveillancePrograms(access),
     getAnonymizedExposureSummary(access),
     canManage ? listExposureAgents(access) : Promise.resolve([]),
     canManage ? listHygieneWorksites(access) : Promise.resolve([]),
+    listProtocolApplicabilities(access),
   ])
+  // La pestaña de protocolos necesita todas las faenas visibles, no sólo las
+  // gestionables: quien sólo mira igual tiene que poder revisar la cobertura.
+  const protocolWorksites = [...new Map(
+    [...worksites.map((item) => [item.id, item.name] as const),
+     ...applicabilities.map((row) => [row.applicability.worksiteId, row.worksiteName] as const)],
+  ).entries()].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name, "es-CL"))
 
   return (
     <PageContainer>
@@ -76,6 +84,17 @@ export default async function HigienePage() {
         summary={summary}
         agents={agents.map((item) => ({ id: item.id, code: item.code, name: item.name, unit: item.unit }))}
         worksites={worksites}
+        protocolWorksites={protocolWorksites}
+        applicabilities={applicabilities.map((row) => ({
+          worksiteId: row.applicability.worksiteId,
+          worksiteName: row.worksiteName,
+          protocolCode: row.applicability.protocolCode,
+          status: row.applicability.status,
+          justification: row.applicability.justification,
+          nextAssessmentOn: row.applicability.nextAssessmentOn,
+          version: row.applicability.version,
+        }))}
+        today={new Intl.DateTimeFormat("en-CA", { timeZone: "America/Santiago", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date())}
         canManage={canManage}
       />
     </PageContainer>

@@ -14,7 +14,7 @@ import { PdtpYearPicker } from "../pdtp-sheet-table-ui"
 import { pdtpProgramStatusLabel } from "@/lib/prevention/pdtp"
 import { pluralize } from "@/lib/utils"
 
-export const metadata: Metadata = { title: "Listado de programas preventivos SG-SST" }
+export const metadata: Metadata = { title: "Programas anuales" }
 
 type PdtpProgramasListPageProps = {
   searchParams: Promise<{ hoja?: string; faena?: string; vista?: string; anio?: string }>
@@ -53,7 +53,7 @@ export default async function PdtpProgramasListPage({ searchParams }: PdtpProgra
   return (
     <PageContainer>
       <PageHeader
-        title="Listado de programas preventivos SG-SST"
+        title="Programas anuales"
         description={`Programas anuales ${year}: gestiona versiones, plantillas y accesos por faena.`}
         breadcrumb={
           <Breadcrumbs items={[

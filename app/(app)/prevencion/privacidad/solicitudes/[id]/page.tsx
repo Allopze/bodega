@@ -41,7 +41,7 @@ export default async function PrivacyRequestDetailPage({ params }: Props) {
         description="Inventario del titular y ejecución auditable por dominio, sin copiar contenido sensible a la bitácora."
         breadcrumb={<Breadcrumbs items={[
           { label: "Prevención", href: "/prevencion" },
-          { label: "Privacidad", href: "/prevencion/privacidad/auditoria" },
+          { label: "Datos personales", href: "/prevencion/privacidad/auditoria" },
           { label: "Solicitudes", href: "/prevencion/privacidad/solicitudes" },
           { label: id },
         ]} />}

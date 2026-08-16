@@ -5,6 +5,7 @@ import { guardPermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import {
   assignDocumentVersionRecipients,
+  assignDocumentVersionToWorkforce,
   acknowledgeDocumentVersion,
   exemptDocumentDistributionTarget,
 } from "@/lib/services/prevention-documents-library"
@@ -32,6 +33,43 @@ export async function assignSstDocumentRecipientsAction(input: {
     revalidatePath(REVALIDATE)
     revalidatePath(`${REVALIDATE}/${input.documentId}`)
     return { ok: true, message: `${inserted.length} destinatario(s) asignado(s).` }
+  } catch (error) {
+    return fail(error)
+  }
+}
+
+/**
+ * Asigna la versión vigente a toda la dotación de la faena.
+ *
+ * Existe por el RIOHS, que el DS 44 art. 56 obliga a entregar a todas las
+ * personas trabajadoras: hacerlo con el selector nominativo, de a 200 y sacando
+ * a mano a quien ya lo tiene, no es un flujo que alguien complete.
+ */
+export async function assignSstDocumentToWorkforceAction(input: {
+  documentId: string
+  versionId: string
+  assignmentReason: string
+  dueAt?: string | null
+}) {
+  const guard = await guardPermission("prevention:docs:distribute")
+  if (guard.error) return guard.error
+  try {
+    const result = await assignDocumentVersionToWorkforce({
+      versionId: input.versionId,
+      assignmentReason: input.assignmentReason,
+      dueAt: input.dueAt,
+      ctx: await clientCtx(guard.session),
+      scope: resolveWorksiteScope(guard.session),
+      permissions: guard.session.user.permissions,
+    })
+    revalidatePath(REVALIDATE)
+    revalidatePath(`${REVALIDATE}/${input.documentId}`)
+    return {
+      ok: true,
+      message: result.assigned === 0
+        ? `Toda la dotación ya tenía el documento asignado (${result.alreadyAssigned}).`
+        : `${result.assigned} destinatario(s) asignado(s); ${result.alreadyAssigned} ya lo tenían.`,
+    }
   } catch (error) {
     return fail(error)
   }

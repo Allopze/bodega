@@ -1,6 +1,7 @@
 "use client"
 import Link from "next/link"
 import { Heartbeat } from "@phosphor-icons/react"
+import { ProtocolsPanel, type ApplicabilityRow } from "./protocols-panel"
 import { useSafeShellHeader } from "@/components/layout/header-context"
 import { Badge } from "@/components/ui/badge"
 import { EmptyState } from "@/components/ui/empty-state"
@@ -60,12 +61,15 @@ interface AgentOption {
   unit: string
 }
 
-export function HygieneDashboard({ groups, programs, summary, agents, worksites, canManage }: {
+export function HygieneDashboard({ groups, programs, summary, agents, worksites, protocolWorksites, applicabilities, today, canManage }: {
   groups: GroupItem[]
   programs: ProgramItem[]
   summary: AnonymizedExposureSummary[]
   agents: AgentOption[]
   worksites: { id: string; name: string }[]
+  protocolWorksites: { id: string; name: string }[]
+  applicabilities: ApplicabilityRow[]
+  today: string
   canManage: boolean
 }) {
   const { searchQuery } = useSafeShellHeader()
@@ -133,7 +137,7 @@ export function HygieneDashboard({ groups, programs, summary, agents, worksites,
         )}
       >
         <div role="tablist" aria-label="Vista de higiene" className="flex gap-1 rounded-md border border-[var(--color-border)] p-1 w-fit">
-          {([["groups", `Grupos (${groups.length})`], ["programs", `Vigilancia (${programs.length})`], ["summary", "Panel anonimizado"]] as const).map(([value, label]) => (
+          {([["groups", `Grupos (${groups.length})`], ["programs", `Vigilancia (${programs.length})`], ["protocols", "Protocolos MINSAL"], ["summary", "Panel anonimizado"]] as const).map(([value, label]) => (
             <button key={value} type="button" role="tab" onClick={() => setFilters({ tab: value, vista: null })} aria-selected={tab === value}
               className="rounded px-3 py-1 text-sm aria-selected:bg-[var(--color-primary-tint)]">
               {label}
@@ -141,6 +145,15 @@ export function HygieneDashboard({ groups, programs, summary, agents, worksites,
           ))}
         </div>
       </FilterToolbar>
+
+      {tab === "protocols" && (
+        <ProtocolsPanel
+          worksites={protocolWorksites}
+          applicabilities={applicabilities}
+          today={today}
+          canManage={canManage}
+        />
+      )}
 
       {tab === "groups" && (filteredGroups.length === 0 ? (
         <EmptyState

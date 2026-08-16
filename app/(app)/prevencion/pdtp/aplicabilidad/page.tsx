@@ -98,7 +98,7 @@ export default async function PdtpAplicabilidadPage() {
           <Breadcrumbs items={[
             { label: "Inicio", href: "/dashboard" },
             { label: "Prevención", href: "/prevencion" },
-            { label: "Programa PDTP", href: "/prevencion/pdtp" },
+            { label: "Programa de trabajo", href: "/prevencion/pdtp" },
             { label: "Aplicabilidad por Faena" },
           ]} />
         }

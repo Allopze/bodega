@@ -3,12 +3,13 @@ import Link from "next/link"
 import { redirect } from "next/navigation"
 import { requireAuth, can } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
-import { listPendingPdtpExecutions, getPdtpProgram } from "@/lib/services/prevention-pdtp"
+import { findPdtpWeeklyPending, listPendingPdtpExecutions, getPdtpProgram } from "@/lib/services/prevention-pdtp"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
 import { PdtpApprovalButtons } from "../pdtp-approval-buttons"
 import { PdtpEvidenceThumbs } from "../pdtp-evidence-thumbs"
+import { WeeklyScheduledSection } from "./weekly-scheduled-section"
 
 export const metadata: Metadata = { title: "Aprobaciones PDTP" }
 
@@ -33,6 +34,10 @@ export default async function PdtpApprovalsPage({ searchParams }: PdtpApprovalsP
   // aparecía. Con programId filtra por ese programa sin importar su año;
   // sin programId muestra pendientes de todos los años/programas.
   const pending = await listPendingPdtpExecutions(worksiteIds, program ? { programId: program.id } : {})
+  // findPdtpWeeklyPending() recorre TODAS las faenas activas (lo necesita el
+  // cron); acá se filtra al alcance real del usuario antes de mostrarlo.
+  const weeklyPendingAll = await findPdtpWeeklyPending()
+  const weeklyPending = worksiteIds === "all" ? weeklyPendingAll : weeklyPendingAll.filter((target) => worksiteIds.includes(target.worksiteId))
   // H-M4: el description debe reflejar el scope real del usuario para
   // no inducir a error (un usuario de faena solo ve sus faenas).
   const scopeDescription =
@@ -95,7 +100,7 @@ export default async function PdtpApprovalsPage({ searchParams }: PdtpApprovalsP
           <Breadcrumbs items={[
             { label: "Inicio", href: "/dashboard" },
             { label: "Prevención", href: "/prevencion" },
-            { label: "Programa de trabajo (PDTP)", href: "/prevencion/pdtp" },
+            { label: "Programa de trabajo", href: "/prevencion/pdtp" },
             ...(program ? [{ label: program.title, href: `/prevencion/pdtp/${program.id}` }] : []),
             { label: "Aprobaciones" },
           ]} />
@@ -159,6 +164,8 @@ export default async function PdtpApprovalsPage({ searchParams }: PdtpApprovalsP
           </Table>
         </TableRoot>
       )}
+
+      <WeeklyScheduledSection targets={weeklyPending} />
     </PageContainer>
   )
 }

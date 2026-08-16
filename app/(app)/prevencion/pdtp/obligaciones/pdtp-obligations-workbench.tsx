@@ -1,7 +1,6 @@
 "use client"
 
 import * as React from "react"
-import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useSafeShellHeader } from "@/components/layout/header-context"
 import { Badge } from "@/components/ui/badge"
@@ -14,7 +13,7 @@ import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
-import type { PdtpPendingTarget, PendingPdtpExecution, listPdtpDemandActivities, listPdtpObligations } from "@/lib/services/prevention-pdtp"
+import type { listPdtpDemandActivities, listPdtpObligations } from "@/lib/services/prevention-pdtp"
 import { cancelPdtpObligationAction, createPdtpObligationAction, reportPdtpObligationAction } from "./actions"
 
 type DemandActivity = Awaited<ReturnType<typeof listPdtpDemandActivities>>[number]
@@ -49,13 +48,11 @@ function clientRequestId() {
 }
 
 export function PdtpObligationsWorkbench({
-  worksites, activities, initialObligations, weeklyPending, pendingApproval, canExecute, canCancel,
+  worksites, activities, initialObligations, canExecute, canCancel,
 }: {
   worksites: Worksite[]
   activities: DemandActivity[]
   initialObligations: ObligationRow[]
-  weeklyPending: PdtpPendingTarget[]
-  pendingApproval: PendingPdtpExecution[]
   canExecute: boolean
   /** Cancelar es gestión, no trabajo de terreno: permiso propio. */
   canCancel: boolean
@@ -73,10 +70,7 @@ export function PdtpObligationsWorkbench({
     pending: initialObligations.filter((row) => row.effectiveStatus === "pending").length,
     overdue: initialObligations.filter((row) => row.effectiveStatus === "overdue").length,
     reported: initialObligations.filter((row) => row.effectiveStatus === "reported").length,
-    scheduled: weeklyPending.reduce((sum, target) => sum + target.activityIds.length, 0),
-  }), [initialObligations, weeklyPending])
-  const scheduledFiltered = worksiteId === "all" ? weeklyPending : weeklyPending.filter((t) => t.worksiteId === worksiteId)
-  const pendingApprovalFiltered = worksiteId === "all" ? pendingApproval : pendingApproval.filter((e) => e.worksiteId === worksiteId)
+  }), [initialObligations])
   const rows = initialObligations.filter((row) => {
     if (status !== "open" && row.effectiveStatus !== status) return false
     if (worksiteId !== "all" && row.obligation.worksiteId !== worksiteId) return false
@@ -92,9 +86,9 @@ export function PdtpObligationsWorkbench({
   return (
     <PageContainer width="wide">
       <PageHeader
-        title="Trabajo por necesidad y eventos"
+        title="Actividades a demanda y por evento"
         description="Gestiona casos reales, plazos y evidencias sin inventar cuotas para actividades que no son calendarizadas."
-        breadcrumb={<Breadcrumbs items={[{ label: "Inicio", href: "/dashboard" }, { label: "Programa de trabajo (PDTP)", href: "/prevencion/pdtp" }, { label: "Trabajo por eventos" }]} />}
+        breadcrumb={<Breadcrumbs items={[{ label: "Inicio", href: "/dashboard" }, { label: "Programa de trabajo", href: "/prevencion/pdtp" }, { label: "A demanda y por evento" }]} />}
         actions={canExecute ? <Button type="button" onClick={openCreate} disabled={activities.length === 0 || worksites.length === 0}>Registrar necesidad o evento</Button> : undefined}
       />
 
@@ -110,11 +104,6 @@ export function PdtpObligationsWorkbench({
             <span className="text-xs text-[var(--color-text-subtle)]">{metric.detail}</span>
           </button>
         ))}
-        <a href="#programadas-semana" className="border-r border-[var(--color-border)] px-4 py-3 text-left last:border-r-0 hover:bg-[var(--color-surface-2)]">
-          <span className="text-eyebrow">Programadas esta semana</span>
-          <strong className="mt-1 block font-mono text-xl tabular-nums">{counts.scheduled}</strong>
-          <span className="text-xs text-[var(--color-text-subtle)]">Calendarizadas, sin ejecutar</span>
-        </a>
       </div>
 
       <div className="mt-4 flex flex-wrap gap-2">
@@ -175,8 +164,6 @@ export function PdtpObligationsWorkbench({
         </div>
       )}
 
-      <WeeklyScheduledSection targets={scheduledFiltered} />
-      <PendingApprovalSection executions={pendingApprovalFiltered} canExecute={canExecute} />
 
       <CreateObligationDialog open={createOpen} onOpenChange={setCreateOpen} activities={activities} worksites={worksites} onSaved={() => router.refresh()} />
       <ReportObligationDialog row={reporting} onClose={() => setReporting(null)} onSaved={() => router.refresh()} />
@@ -185,59 +172,7 @@ export function PdtpObligationsWorkbench({
   )
 }
 
-export function WeeklyScheduledSection({ targets }: { targets: PdtpPendingTarget[] }) {
-  return (
-    <section id="programadas-semana" className="mt-6 scroll-mt-4">
-      <h2 className="text-sm font-semibold text-[var(--color-text)]">Programadas esta semana</h2>
-      <p className="mt-1 text-xs text-[var(--color-text-muted)]">Actividades calendarizadas con plan esta semana que aún no registran ejecución.</p>
-      {targets.length === 0 ? (
-        <EmptyState compact title="Sin pendientes calendarizados" description="No hay actividades programadas sin ejecutar para las faenas visibles." />
-      ) : (
-        <div className="mt-3 divide-y divide-[var(--color-border)] overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]">
-          {targets.map((target) => (
-            <div key={target.worksiteId} className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
-              <div>
-                <p className="text-sm font-medium text-[var(--color-text)]">{target.worksiteName}</p>
-                <p className="text-xs text-[var(--color-text-muted)]">{target.activityIds.length} actividad(es) sin ejecutar esta semana</p>
-              </div>
-              <Button asChild size="sm" variant="secondary">
-                <Link href={`/prevencion/pdtp?faena=${target.worksiteId}`}>Ver programa</Link>
-              </Button>
-            </div>
-          ))}
-        </div>
-      )}
-    </section>
-  )
-}
 
-export function PendingApprovalSection({ executions, canExecute }: { executions: PendingPdtpExecution[]; canExecute: boolean }) {
-  return (
-    <section className="mt-6">
-      <h2 className="text-sm font-semibold text-[var(--color-text)]">Pendientes de evidencia o aprobación</h2>
-      <p className="mt-1 text-xs text-[var(--color-text-muted)]">Ejecuciones calendarizadas ya reportadas que todavía no quedan aprobadas.</p>
-      {executions.length === 0 ? (
-        <EmptyState compact title="Sin ejecuciones pendientes de aprobación" description="No hay ejecuciones esperando revisión para las faenas visibles." />
-      ) : (
-        <div className="mt-3 divide-y divide-[var(--color-border)] overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]">
-          {executions.map((execution) => (
-            <div key={execution.id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
-              <div className="min-w-0">
-                <p className="text-sm font-medium text-[var(--color-text)]">N°{execution.activityN} · {execution.activityName}</p>
-                <p className="text-xs text-[var(--color-text-muted)]">{execution.worksiteName} · {execution.evidenceUrl || execution.evidenceText || execution.evidencePhotos.length > 0 ? "Con evidencia" : "Sin evidencia adjunta"}</p>
-              </div>
-              {canExecute && (
-                <Button asChild size="sm" variant="secondary">
-                  <Link href="/prevencion/pdtp/aprobaciones">Ir a aprobación</Link>
-                </Button>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
-    </section>
-  )
-}
 
 function CreateObligationDialog({ open, onOpenChange, activities, worksites, onSaved }: { open: boolean; onOpenChange: (open: boolean) => void; activities: DemandActivity[]; worksites: Worksite[]; onSaved: () => void }) {
   const [activityId, setActivityId] = React.useState(activities[0]?.id ?? "")

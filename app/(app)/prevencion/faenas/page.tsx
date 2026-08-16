@@ -7,7 +7,7 @@ import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { listWorksiteOrganizations } from "@/lib/services/prevention-cphs-organization"
 import { WorksiteOrganizationList } from "./worksite-organization-list"
 
-export const metadata: Metadata = { title: "Organización preventiva por faena" }
+export const metadata: Metadata = { title: "Estructura preventiva" }
 
 export default async function PrevencionFaenasPage() {
   let session
@@ -23,12 +23,12 @@ export default async function PrevencionFaenasPage() {
   return (
     <PageContainer>
       <PageHeader
-        title="Organización preventiva por faena"
+        title="Estructura preventiva"
         description="Qué órgano exige la dotación de cada faena y cuál está efectivamente constituido: comité sobre 25 trabajadores, delegado entre 10 y 25."
         breadcrumb={<Breadcrumbs items={[
           { label: "Inicio", href: "/dashboard" },
           { label: "Prevención" },
-          { label: "Organización por faena" },
+          { label: "Estructura preventiva" },
         ]} />}
       />
       <WorksiteOrganizationList worksites={worksites} />

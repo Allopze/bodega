@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useState, useTransition, type ComponentProps, type FormEvent, type ReactNode } from "react"
+import { useCallback, useState, useTransition, type FormEvent, type ReactNode } from "react"
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import { Badge } from "@/components/ui/badge"
@@ -29,12 +29,11 @@ import {
   stageRiskImportAction,
   transitionRiskMatrixAction,
 } from "./actions"
-import { RiskMapPanel } from "./risk-map-panel"
 
 type Dashboard = Awaited<ReturnType<typeof getRiskDashboard>>
 type Imports = Awaited<ReturnType<typeof listRiskImportBatchesPage>>["rows"]
 type Result = { ok: boolean; message?: string }
-const MIPER_TABS = new Set(["versions", "reviews", "imports", "riskmap"])
+const MIPER_TABS = new Set(["versions", "reviews", "imports"])
 
 function resolveMiperTab(value: string | null) {
   return value && MIPER_TABS.has(value) ? value : "versions"
@@ -123,7 +122,7 @@ function ImportDialog({ worksites }: { worksites: Dashboard["worksites"] }) {
   return <Dialog open={open} onOpenChange={setOpen}><DialogTrigger asChild><Button variant="secondary" disabled={!worksites.length}>Importar Excel</Button></DialogTrigger><DialogContent><form onSubmit={submit} className="space-y-4"><DialogHeader><DialogTitle>Importar MIPER</DialogTitle><DialogDescription>El original y su hash se conservan. Las filas observadas no se activan hasta resolverlas.</DialogDescription></DialogHeader><Field label="Faena"><Select value={worksiteId} onValueChange={setWorksiteId}><SelectTrigger><SelectValue placeholder="Selecciona faena" /></SelectTrigger><SelectContent>{worksites.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select><input type="hidden" name="worksiteId" value={worksiteId} /></Field><Field label="Archivo Excel"><Input name="file" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required /></Field>{operation.message && <p role="status" className="text-sm">{operation.message}</p>}<DialogFooter><Button type="submit" disabled={operation.pending}>Cargar lote</Button></DialogFooter></form></DialogContent></Dialog>
 }
 
-export function MiperWorkbench({ dashboard, imports, importsTotal, importsPagination, currentUserId, permissions, today, riskMap }: {
+export function MiperWorkbench({ dashboard, imports, importsTotal, importsPagination, currentUserId, permissions, today }: {
   dashboard: Dashboard
   imports: Imports
   importsTotal: number
@@ -131,7 +130,6 @@ export function MiperWorkbench({ dashboard, imports, importsTotal, importsPagina
   currentUserId: string
   permissions: RiskMatrixPermissions
   today: string
-  riskMap: ComponentProps<typeof RiskMapPanel>
 }) {
   const { canEdit, canReview, canApprove } = permissions
   const published = dashboard.matrices.filter((item) => item.status === "published")
@@ -162,7 +160,7 @@ export function MiperWorkbench({ dashboard, imports, importsTotal, importsPagina
         <a href="#revisiones" className="px-4 py-3 hover:bg-[var(--color-surface-2)]"><span className="text-eyebrow">Revisiones pendientes</span><strong className="block text-xl">{dashboard.triggers.length}</strong></a>
       </div>
       {published.length === 0 && <div role="status" className="rounded-lg border border-[var(--color-warning-line)] bg-[var(--color-warning-tint)] p-4 text-sm"><strong>No existe una MIPER vigente en las faenas visibles.</strong><p className="mt-1">Crea o importa una versión, incorpora peligros y completa el workflow segregado.</p></div>}
-      <Tabs value={activeTab} onValueChange={navigateTab}><TabsList><TabsTrigger value="versions">Versiones</TabsTrigger><TabsTrigger value="reviews">Revisiones ({dashboard.triggers.length})</TabsTrigger><TabsTrigger value="imports">Importaciones ({importsTotal})</TabsTrigger><TabsTrigger value="riskmap">Mapa de riesgos</TabsTrigger></TabsList>
+      <Tabs value={activeTab} onValueChange={navigateTab}><TabsList><TabsTrigger value="versions">Versiones</TabsTrigger><TabsTrigger value="reviews">Revisiones ({dashboard.triggers.length})</TabsTrigger><TabsTrigger value="imports">Importaciones ({importsTotal})</TabsTrigger></TabsList>
         <TabsContent value="versions" id="versiones" className="space-y-3">
           {dashboard.matrices.length === 0 ? <EmptyState title="Sin versiones MIPER" description="Crea la primera versión usando una metodología validada." /> : dashboard.matrices.map((matrix) => {
             const entries = dashboard.entries.filter((item) => item.entry.matrixId === matrix.id)
@@ -179,9 +177,6 @@ export function MiperWorkbench({ dashboard, imports, importsTotal, importsPagina
               <Pagination page={importsPagination.page} total={importsPagination.totalItems} perPage={importsPagination.limit} onPage={navigateImportsPage} />
             </div>
           )}
-        </TabsContent>
-        <TabsContent value="riskmap" className="space-y-3">
-          <RiskMapPanel {...riskMap} />
         </TabsContent>
       </Tabs>
       {dashboard.criticalBlockers.length > 0 && <section id="bloqueos" className="rounded-lg border border-[var(--color-danger-line)] p-4"><h2 className="font-semibold">Bloqueos críticos</h2><p className="text-sm text-[var(--color-text-subtle)]">Un riesgo crítico permanece aquí si no tiene control crítico implementado/verificado o cobertura PDTP.</p><ul className="mt-3 space-y-2">{dashboard.criticalBlockers.map(({ entry, process, task }) => <li key={entry.id} className="text-sm"><strong>{entry.hazard}</strong> · {process.name} / {task.name}</li>)}</ul></section>}

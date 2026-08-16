@@ -44,7 +44,7 @@ export default async function FichaPreventivaPage({ params }: { params: Promise<
         breadcrumb={<Breadcrumbs items={[
           { label: "Inicio", href: "/dashboard" },
           { label: "Prevención" },
-          { label: "Organización por faena", href: "/prevencion/faenas" },
+          { label: "Estructura preventiva", href: "/prevencion/faenas" },
           { label: profile.worksiteName },
         ]} />}
       />

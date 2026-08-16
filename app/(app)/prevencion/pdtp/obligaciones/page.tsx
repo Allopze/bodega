@@ -4,14 +4,12 @@ import { can, requireAuth } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { listScopedWorksites } from "@/lib/services/ppa"
 import {
-  findPdtpWeeklyPending,
   listPdtpDemandActivities,
   listPdtpObligations,
-  listPendingPdtpExecutions,
 } from "@/lib/services/prevention-pdtp"
 import { PdtpObligationsWorkbench } from "./pdtp-obligations-workbench"
 
-export const metadata: Metadata = { title: "Trabajo por necesidad y eventos" }
+export const metadata: Metadata = { title: "Actividades a demanda y por evento" }
 
 export default async function PdtpObligationsPage() {
   let session
@@ -21,24 +19,20 @@ export default async function PdtpObligationsPage() {
 
   const resolved = resolveWorksiteScope(session)
   const scope: string[] | "all" = resolved.mode === "all" ? "all" : resolved.mode === "some" ? resolved.ids : []
-  const [worksites, activities, obligations, weeklyPendingAll, submittedExecutions] = await Promise.all([
+  // Esta pantalla es sólo de las actividades no calendarizadas. Las bandejas de
+  // trabajo calendarizado (programadas de la semana y ejecuciones por aprobar)
+  // se movieron a /prevencion/pdtp/aprobaciones, donde ya vivía la misma cola.
+  const [worksites, activities, obligations] = await Promise.all([
     listScopedWorksites(scope),
     listPdtpDemandActivities(),
     listPdtpObligations({ scope, statuses: ["pending", "overdue", "reported"] }),
-    // findPdtpWeeklyPending() recorre TODAS las faenas activas (lo necesita
-    // el cron); acá se filtra al alcance real del usuario antes de mostrarlo.
-    findPdtpWeeklyPending(),
-    listPendingPdtpExecutions(scope),
   ])
-  const weeklyPending = scope === "all" ? weeklyPendingAll : weeklyPendingAll.filter((target) => scope.includes(target.worksiteId))
 
   return (
     <PdtpObligationsWorkbench
       worksites={worksites}
       activities={activities}
       initialObligations={obligations}
-      weeklyPending={weeklyPending}
-      pendingApproval={submittedExecutions}
       canExecute={can(session, "prevention:pdtp:execute")}
       canCancel={can(session, "prevention:pdtp:obligation:cancel")}
     />

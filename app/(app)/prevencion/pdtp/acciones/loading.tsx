@@ -8,7 +8,7 @@ import { PageContainer } from "@/components/ui/page-container"
 export default function Loading() {
   return (
     <PageContainer>
-      <PageHeader title="Plan de acción PDTP" />
+      <PageHeader title="Medidas del programa" />
       <SkeletonPage rows={6} />
     </PageContainer>
   )
