@@ -189,10 +189,19 @@ export async function recordExposureMeasurement(input: unknown, access: HygieneA
   const data = exposureMeasurementSchema.parse(input)
 
   return db.transaction(async (tx) => {
+    // `FOR UPDATE` sobre el GES: la obligación de vigilancia se deriva del
+    // historial COMPLETO de mediciones, así que dos registros concurrentes
+    // recalculaban cada uno sin ver la medición del otro. Con una medición
+    // sobre el límite y otra bajo el nivel de acción, el que commiteaba
+    // segundo dejaba el grupo con `surveillanceRequired = false` pese a estar
+    // sobre el LPP. Serializar por grupo es lo único que cierra esa ventana;
+    // mover el `version` a SQL arreglaría el contador, no el recálculo.
     const [row] = await tx.select({ group: preventionExposureGroups, agent: preventionExposureAgents })
       .from(preventionExposureGroups)
       .innerJoin(preventionExposureAgents, eq(preventionExposureGroups.agentId, preventionExposureAgents.id))
-      .where(eq(preventionExposureGroups.id, data.groupId)).limit(1)
+      .where(eq(preventionExposureGroups.id, data.groupId))
+      .for("update", { of: preventionExposureGroups })
+      .limit(1)
     if (!row) throw new Error(NOT_FOUND)
     requireAccess(access, "prevention:hygiene:measure", row.group.worksiteId)
 
@@ -614,13 +623,23 @@ export async function setProtocolApplicability(input: unknown, access: HygieneAc
       updatedAt: new Date().toISOString(),
     }
 
+    // El `version` va en el WHERE, no sólo en la comparación en memoria de más
+    // arriba: entre aquel SELECT y este UPDATE otra transacción puede haber
+    // cambiado la fila, y perder un pronunciamiento es perder la justificación
+    // de por qué se descartó un protocolo MINSAL obligatorio.
     const [saved] = existing
       ? await tx.update(preventionProtocolApplicabilities)
-          .set({ ...values, version: existing.version + 1 })
-          .where(eq(preventionProtocolApplicabilities.id, existing.id)).returning()
+          .set({ ...values, version: sql`${preventionProtocolApplicabilities.version} + 1` })
+          .where(and(
+            eq(preventionProtocolApplicabilities.id, existing.id),
+            eq(preventionProtocolApplicabilities.version, existing.version),
+          )).returning()
       : await tx.insert(preventionProtocolApplicabilities)
           .values({ id: `pprot-${nanoid()}`, protocolCode: data.protocolCode, worksiteId: data.worksiteId, ...values })
           .returning()
+    if (existing && !saved) {
+      throw new Error("El pronunciamiento cambió mientras lo editabas. Recarga y vuelve a intentarlo.")
+    }
 
     await history(tx, {
       entityType: "protocol_applicability",

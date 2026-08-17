@@ -25,6 +25,8 @@ let tempDir: string
 let originalStoragePath: string | undefined
 
 beforeEach(async () => {
+  await inMemoryDb.delete(schema.preventionCapaEvidence)
+  await inMemoryDb.delete(schema.preventionCapaActions)
   await inMemoryDb.delete(schema.pdtpExecutions)
   await inMemoryDb.delete(schema.worksites)
   await inMemoryDb.delete(schema.users)
@@ -101,6 +103,49 @@ describe("cleanupPdtpEvidenceOrphans", () => {
     expect(existsSync(join(tempDir, "pdtp-evidence", orphanOldName))).toBe(false)
     expect(existsSync(join(tempDir, "pdtp-evidence", referencedName))).toBe(true)
     expect(existsSync(join(tempDir, "pdtp-evidence", orphanRecentName))).toBe(true)
+  })
+
+  it("conserva la evidencia referenciada SÓLO desde prevention_capa_evidence", async () => {
+    // Regresión GC-01: el directorio tiene dos productores. La evidencia de
+    // cierre de una acción correctiva se sube por el mismo endpoint pero se
+    // vincula a `prevention_capa_evidence`, no a `pdtp_executions`. Antes se
+    // borraba una hora después de subirla.
+    const capaPhotoName = "abc-capa-evidence.jpg"
+    const orphanName = "abc-orphan.pdf"
+    for (const name of [capaPhotoName, orphanName]) {
+      writeFileSync(join(tempDir, "pdtp-evidence", name), "DATA")
+    }
+    const oldTime = new Date(Date.now() - 2 * 60 * 60 * 1000)
+    const { utimesSync } = await import("node:fs")
+    for (const name of [capaPhotoName, orphanName]) {
+      utimesSync(join(tempDir, "pdtp-evidence", name), oldTime, oldTime)
+    }
+
+    const now = new Date().toISOString()
+    await inMemoryDb.insert(schema.users).values({
+      id: "u1", name: "U1", email: "u1@test", hashedPassword: "x", isActive: true,
+    })
+    await inMemoryDb.insert(schema.worksites).values({
+      id: "w1", name: "W1", code: "W1", isActive: true,
+    })
+    await inMemoryDb.insert(schema.preventionCapaActions).values({
+      id: "capa-1", code: "CAPA-2026-0001", sourceType: "pdtp", sourceId: "exec-1",
+      worksiteId: "w1", finding: "Hallazgo", actionDescription: "Acción",
+      targetDate: "2026-09-01", createdByUserId: "u1", createdAt: now, updatedAt: now,
+    })
+    await inMemoryDb.insert(schema.preventionCapaEvidence).values({
+      id: "capaev-1", actionId: "capa-1", kind: "photo",
+      reference: `storage/pdtp-evidence/${capaPhotoName}`,
+      uploadedByUserId: "u1", createdAt: now,
+    })
+
+    const { cleanupPdtpEvidenceOrphans } = await import("@/lib/services/pdtp/evidence-gc")
+    const result = await cleanupPdtpEvidenceOrphans({ olderThanMs: 60 * 60 * 1000 })
+
+    expect(result.deletedNames).toEqual([orphanName])
+    const { existsSync } = await import("node:fs")
+    expect(existsSync(join(tempDir, "pdtp-evidence", capaPhotoName))).toBe(true)
+    expect(existsSync(join(tempDir, "pdtp-evidence", orphanName))).toBe(false)
   })
 
   it("dryRun=true no elimina archivos", async () => {

@@ -151,6 +151,15 @@ export function PrivacyRightExecutionWorkbench({ bundle }: { bundle: Bundle }) {
               </Table>
             </div>
           )}
+          {bundle.restrictedReservedCaseCount > 0 ? (
+            // El inventario no puede mentir por omisión: quien atiende la
+            // solicitud tiene que saber que existen expedientes reservados
+            // aunque no pueda identificarlos ni actuar sobre ellos.
+            <p className="mt-3 text-xs text-(--color-text-muted)">
+              {bundle.restrictedReservedCaseCount} expediente(s) reservado(s) vinculado(s) al titular no se muestran:
+              requieren acceso nominativo al caso. Derívalo a quien integre el comité investigador.
+            </p>
+          ) : null}
         </CardContent>
       </Card>
 

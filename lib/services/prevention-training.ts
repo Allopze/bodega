@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto"
-import { and, asc, desc, eq, inArray, notInArray, sql } from "drizzle-orm"
+import { and, asc, desc, eq, inArray, ne, notInArray, sql } from "drizzle-orm"
 import type { AnyPgColumn } from "drizzle-orm/pg-core"
 import { db, type DB, type Tx } from "@/db"
 import {
@@ -343,6 +343,15 @@ export async function recordTrainingAttendance(input: unknown, access: TrainingA
       if (updated) results.push(updated)
     }
 
+    // NO mueve `version` a propósito, a diferencia de `bumpPermitVersion`. Se
+    // evaluó hacerlo (auditoría 2026-08-17, HIG-08) y se descartó por ahora: el
+    // formulario de asistencia no refresca la sesión tras guardar, así que el
+    // bump convertía el flujo normal de un solo usuario —registrar asistencia y
+    // luego cerrar— en un falso "la sesión cambió mientras la editabas".
+    // Además el caso no es análogo al permiso: `closeTrainingSession` recalcula
+    // sobre la asistencia vigente, así que no hay lost update, sólo la
+    // posibilidad de aprobar sin haber visto un cambio ajeno. Si se retoma,
+    // hay que mover el bump Y refrescar la sesión en la UI a la vez.
     await tx.update(preventionTrainingSessions)
       .set({ status: session.status === "planned" ? "in_progress" : session.status, updatedAt: now })
       .where(eq(preventionTrainingSessions.id, session.id))
@@ -611,14 +620,21 @@ export async function revokeCompetency(input: unknown, access: TrainingAccess) {
     if (row.competency.status === "revoked") throw new Error("La competencia ya está revocada.")
 
     const now = nowIso()
+    // El estado va también en el WHERE (ver el `!updated` de más abajo): la
+    // guarda en memoria no impide que dos revocaciones concurrentes pisen
+    // `revokedByUserId`/`revokedAt`, que es la autoría del retiro de una
+    // habilitación.
     const [updated] = await tx.update(preventionWorkerCompetencies).set({
       status: "revoked",
       revokedByUserId: access.userId,
       revokedAt: now,
       revocationReason: data.reason,
       updatedAt: now,
-    }).where(eq(preventionWorkerCompetencies.id, data.competencyId)).returning()
-    if (!updated) throw new Error("No se pudo revocar la competencia.")
+    }).where(and(
+      eq(preventionWorkerCompetencies.id, data.competencyId),
+      ne(preventionWorkerCompetencies.status, "revoked"),
+    )).returning()
+    if (!updated) throw new Error("La competencia ya está revocada.")
     await history(tx, { entityType: "competency", entityId: data.competencyId, worksiteId: row.worksiteId, changeType: "revoked", reason: data.reason, beforeState: row.competency, afterState: updated, actorUserId: access.userId })
     return updated
   })

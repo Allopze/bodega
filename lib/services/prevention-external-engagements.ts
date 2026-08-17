@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, sql } from "drizzle-orm"
+import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm"
 import type { AnyPgColumn } from "drizzle-orm/pg-core"
 import { db, type DB, type Tx } from "@/db"
 import {
@@ -169,8 +169,12 @@ export async function closeExternalEngagement(input: unknown, access: Engagement
   const data = externalEngagementCloseSchema.parse(input)
 
   return db.transaction(async (tx) => {
+    // `FOR UPDATE`: el gate de medidas abiertas de más abajo se evalúa contra un
+    // conteo que `addPrescribedMeasure` puede estar cambiando en paralelo, y sin
+    // el lock quedaba una medida prescrita viva bajo una interacción ya cerrada
+    // — el estado que ese gate existe para impedir.
     const [engagement] = await tx.select().from(preventionExternalEngagements)
-      .where(eq(preventionExternalEngagements.id, data.engagementId)).limit(1)
+      .where(eq(preventionExternalEngagements.id, data.engagementId)).for("update").limit(1)
     if (!engagement) throw new Error(NOT_FOUND)
     requireAccess(access, "prevention:engagement:manage", engagement.worksiteId)
     if (engagement.version !== data.expectedVersion) {
@@ -196,9 +200,14 @@ export async function closeExternalEngagement(input: unknown, access: Engagement
       outcome: data.outcome,
       closedAt: new Date().toISOString(),
       closedByUserId: access.userId,
-      version: engagement.version + 1,
+      version: sql`${preventionExternalEngagements.version} + 1`,
       updatedAt: new Date().toISOString(),
-    }).where(eq(preventionExternalEngagements.id, engagement.id)).returning()
+    }).where(and(
+      eq(preventionExternalEngagements.id, engagement.id),
+      eq(preventionExternalEngagements.version, data.expectedVersion),
+      isNull(preventionExternalEngagements.closedAt),
+    )).returning()
+    if (!updated) throw new Error("La interacción cambió mientras la editabas. Recarga y vuelve a intentarlo.")
 
     await history(tx, {
       engagementId: engagement.id,

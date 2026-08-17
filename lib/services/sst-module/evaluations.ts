@@ -1,6 +1,6 @@
 import { z } from "zod"
 import { eq, and, inArray, desc, sql } from "drizzle-orm"
-import { db } from "@/db"
+import { db, type Tx } from "@/db"
 import { sstEvaluations, sstEvaluationVisits, sstResponses, sstScheduledFollowups, sstWeeklyEvaluations, type SstEvaluation } from "@/db/schema/sst"
 import { workers, worksites } from "@/db/schema/worksites"
 import { preventionCapaActions } from "@/db/schema"
@@ -96,9 +96,17 @@ export async function createEvaluation(input: z.infer<typeof sstEvaluationCreate
   return evaluation
 }
 
-export async function getEvaluation(id: string, worksiteIds: string[] | "all"): Promise<SstEvaluation | null> {
+/**
+ * `tx` es obligatorio cuando se llama desde dentro de una transacción: con el
+ * `db` de nivel superior se toma una SEGUNDA conexión del pool mientras la
+ * transacción retiene la primera (autodeadlock bajo PGlite, presión de pool
+ * bajo Postgres) y además el control de acceso se evalúa sobre un snapshot
+ * distinto del que se escribe. Mismo contrato que `assertEditable`.
+ */
+export async function getEvaluation(id: string, worksiteIds: string[] | "all", tx?: Tx): Promise<SstEvaluation | null> {
   if (worksiteIds !== "all" && worksiteIds.length === 0) return null
-  const [evaluation] = await db.select().from(sstEvaluations).where(eq(sstEvaluations.id, id)).limit(1)
+  const client = tx ?? db
+  const [evaluation] = await client.select().from(sstEvaluations).where(eq(sstEvaluations.id, id)).limit(1)
   if (!evaluation) return null
   if (worksiteIds !== "all" && !worksiteIds.includes(evaluation.worksiteId)) return null
   return evaluation

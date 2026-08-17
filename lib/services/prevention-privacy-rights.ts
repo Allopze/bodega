@@ -354,12 +354,25 @@ export async function executePreventionPrivacyRight(args: {
   })
 }
 
+/**
+ * Atender una solicitud ARCO no da acceso a los dominios reservados del titular.
+ * `prevention:privacy:manage_requests` está concedido a roles que NO tienen
+ * `reserved_case:view/investigate` ni `health:view_restrictions`: sin este gate,
+ * el inventario revelaba que una persona es parte de un expediente Ley Karin
+ * (código, categoría y estado) y su aptitud ocupacional, que es justamente lo
+ * que la reserva protege. El resto del módulo exige membresía nominativa en
+ * cada lectura; aquí se aplica el mismo criterio.
+ */
 export async function getPreventionPrivacyRequestWorkbench(args: {
   requestId: string
+  ctx: RequestContext
   scope: WorksiteScope
   permissions: readonly string[]
 }) {
   requireManagePermission(args.permissions)
+  const canSeeReserved = args.permissions.includes("prevention:reserved_case:view")
+    || args.permissions.includes("prevention:reserved_case:investigate")
+  const canSeeFitness = args.permissions.includes("prevention:health:view_restrictions")
   const [requestRow] = await db.select().from(preventionPrivacyRequests)
     .where(eq(preventionPrivacyRequests.id, args.requestId)).limit(1)
   if (!requestRow) return null
@@ -381,8 +394,14 @@ export async function getPreventionPrivacyRequestWorkbench(args: {
       code: preventionReservedCases.code,
       category: preventionReservedCases.category,
       status: preventionReservedCases.status,
+      worksiteId: preventionReservedCases.worksiteId,
+      memberUserId: preventionReservedCaseMembers.userId,
     }).from(preventionReservedCaseSubjects)
       .innerJoin(preventionReservedCases, eq(preventionReservedCaseSubjects.caseId, preventionReservedCases.id))
+      .leftJoin(preventionReservedCaseMembers, and(
+        eq(preventionReservedCaseMembers.caseId, preventionReservedCases.id),
+        eq(preventionReservedCaseMembers.userId, args.ctx.userId),
+      ))
       .where(and(eq(preventionReservedCaseSubjects.workerId, subject.id), isNull(preventionReservedCaseSubjects.removedAt))),
     db.select({ id: ppaSubmissions.id, estado: ppaSubmissions.estado, createdAt: ppaSubmissions.createdAt })
       .from(ppaSubmissions).where(eq(ppaSubmissions.workerId, subject.id)).orderBy(desc(ppaSubmissions.createdAt)),
@@ -403,6 +422,15 @@ export async function getPreventionPrivacyRequestWorkbench(args: {
       .where(eq(preventionPrivacyDeliveries.requestId, requestRow.id)).orderBy(desc(preventionPrivacyDeliveries.deliveredAt)),
   ])
 
+  // Sólo los expedientes donde el actor es miembro nominado y tiene el permiso
+  // reservado. Los demás se reportan como un contador, sin código ni categoría:
+  // quien atiende la solicitud necesita saber que existen para no declarar el
+  // inventario completo, pero no puede identificarlos.
+  const visibleReservedCases = canSeeReserved
+    ? reservedCases.filter((row) => row.memberUserId !== null && scopeAllows(args.scope, row.worksiteId))
+    : []
+  const restrictedReservedCaseCount = reservedCases.length - visibleReservedCases.length
+
   return {
     request: requestRow,
     subject: {
@@ -412,7 +440,18 @@ export async function getPreventionPrivacyRequestWorkbench(args: {
       worksiteId: subject.worksiteId,
     },
     worksite: worksite[0] ?? null,
-    inventory: { healthRecords, reservedCases, ppas, documentLinks },
+    inventory: {
+      healthRecords: healthRecords.map((row) => ({
+        ...row,
+        // La aptitud ocupacional es dato de salud: la protege
+        // `health:view_restrictions`, no el permiso de privacidad.
+        fitnessStatus: canSeeFitness ? row.fitnessStatus : null,
+      })),
+      reservedCases: visibleReservedCases,
+      ppas,
+      documentLinks,
+    },
+    restrictedReservedCaseCount,
     executions,
     restrictions,
     history,

@@ -214,11 +214,18 @@ export async function resignCommitteeMember(input: unknown, access: CphsAccess) 
     requireAccess(access, "prevention:cphs:manage", context.worksiteId)
     if (context.member.status !== "active") throw new Error("El integrante ya no está activo.")
 
+    // El estado va en el WHERE, no sólo en la guarda de arriba: sin esto,
+    // `replaceCommitteeMember` podía ganar la carrera y dejar al integrante en
+    // `replaced` con `replacedByMemberId` apuntando al reemplazante, mientras
+    // la renuncia quedaba registrada en el historial como si hubiera ocurrido.
     const [updated] = await tx.update(preventionCommitteeMembers).set({
       status: "resigned",
       updatedAt: nowIso(),
-    }).where(eq(preventionCommitteeMembers.id, data.memberId)).returning()
-    if (!updated) throw new Error(NOT_FOUND)
+    }).where(and(
+      eq(preventionCommitteeMembers.id, data.memberId),
+      eq(preventionCommitteeMembers.status, "active"),
+    )).returning()
+    if (!updated) throw new Error("El integrante cambió mientras registrabas la renuncia. Recarga y vuelve a intentarlo.")
 
     await history(tx, { entityType: "member", entityId: updated.id, worksiteId: context.worksiteId, changeType: "resigned", reason: data.reason, beforeState: context.member, afterState: updated, actorUserId: access.userId })
     return updated
@@ -356,10 +363,15 @@ export async function markAgendaSent(input: unknown, access: CphsAccess) {
     }
     if (context.meeting.agendaSentAt) throw new Error("La tabla ya fue enviada.")
 
+    // `agendaSentAt IS NULL` en el WHERE: dos envíos concurrentes pisaban el
+    // timestamp del primero, que es la evidencia de convocatoria en plazo.
     const [updated] = await tx.update(preventionCommitteeMeetings)
       .set({ agendaSentAt: nowIso(), updatedAt: nowIso() })
-      .where(eq(preventionCommitteeMeetings.id, data.meetingId)).returning()
-    if (!updated) throw new Error(NOT_FOUND)
+      .where(and(
+        eq(preventionCommitteeMeetings.id, data.meetingId),
+        isNull(preventionCommitteeMeetings.agendaSentAt),
+      )).returning()
+    if (!updated) throw new Error("La tabla ya fue enviada.")
     await history(tx, { entityType: "meeting", entityId: updated.id, worksiteId: context.worksiteId, changeType: "agenda_sent", reason: "Tabla enviada a los integrantes antes de la sesión", actorUserId: access.userId })
     return updated
   })

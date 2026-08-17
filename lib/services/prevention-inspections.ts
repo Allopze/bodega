@@ -419,6 +419,10 @@ export async function saveInspectionAnswers(input: unknown, access: InspectionAc
       })
     }
 
+    // NO mueve `version`: ver la nota equivalente en `recordTrainingAttendance`
+    // (auditoría 2026-08-17, HIG-08). `inspection-run-detail.tsx` toma
+    // `expectedVersion` de sus props y no refresca tras guardar respuestas, así
+    // que el bump rompería el flujo normal de guardar y luego completar.
     await tx.update(preventionInspectionRuns).set({
       status: run.status === "planned" ? "in_progress" : run.status,
       locationLatitude: data.locationLatitude ?? run.locationLatitude,

@@ -33,10 +33,15 @@ function capaAccess(userId: string, worksiteIds: string[] | "all") {
  */
 export async function saveActionPlanItem(input: z.infer<typeof sstActionPlanItemSchema>, worksiteIds: string[] | "all", userId: string) {
   const data = sstActionPlanItemSchema.parse(input)
-  const evaluation = await getEvaluation(data.evaluationId, worksiteIds)
-  if (!evaluation) throw new Error("Evaluación no encontrada o sin acceso.")
 
   return db.transaction(async (tx) => {
+    const evaluation = await getEvaluation(data.evaluationId, worksiteIds, tx)
+    if (!evaluation) throw new Error("Evaluación no encontrada o sin acceso.")
+    // NO lleva `assertEditable`, a diferencia de `saveResponses`: lo inmutable
+    // al cerrar es el acta (respuestas y hallazgos), no el plan de acción, que
+    // se sigue trabajando después del cierre. Cubierto por el test
+    // "allows continuing the corrective action plan after the evaluation is
+    // closed" en `sst-delete-evaluation.test.ts`.
     const existing = await findSstActionPlanItem(tx, data.evaluationId, data.n)
     const estadoActual = existing ? sstEstado(existing.status) : "pendiente"
     if (data.estado !== estadoActual) {
@@ -77,7 +82,7 @@ export async function deleteActionPlanItem(id: string, worksiteIds: string[] | "
   await db.transaction(async (tx) => {
     const capa = await loadSstCapa(tx, id)
     if (!capa) throw new Error("Ítem del plan de acción no encontrado.")
-    const evaluation = await getEvaluation(capa.sourceId, worksiteIds)
+    const evaluation = await getEvaluation(capa.sourceId, worksiteIds, tx)
     if (!evaluation) throw new Error("Evaluación no encontrada o sin acceso.")
     if (capa.status === "cancelled") return
     await transitionCapaActionWithClient(tx, {

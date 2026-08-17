@@ -3,8 +3,16 @@
  *
  * Recolector de archivos huérfanos en `storage/pdtp-evidence/`. Un archivo
  * se considera huérfano cuando su `name` (el nombre generado por
- * `nanoid`) no aparece en `pdtp_executions.evidence_url` ni en
- * `pdtp_executions.evidence_photos` de ninguna fila.
+ * `nanoid`) no aparece en `pdtp_executions.evidence_url`, en
+ * `pdtp_executions.evidence_photos` ni en `prevention_capa_evidence.reference`
+ * de ninguna fila.
+ *
+ * El directorio tiene DOS productores, no uno: `pdtp-execution-form.tsx` (que
+ * vincula el archivo a `pdtp_executions`) y `execution-action-plan-panel.tsx`
+ * (que lo vincula a `prevention_capa_evidence` vía `addPdtpFollowupAction`).
+ * Ambos suben por el mismo endpoint. Consultar sólo la primera tabla borraba la
+ * evidencia de cierre de acciones correctivas una hora después de subirla.
+ * Cualquier consumidor nuevo del endpoint debe sumarse aquí.
  *
  * Por seguridad, sólo se eliminan archivos más viejos que `olderThanMs`
  * (default 1 hora) para no borrar archivos recién subidos que aún no
@@ -20,7 +28,7 @@
  */
 import { promises as fs } from "node:fs"
 import { db } from "@/db"
-import { pdtpExecutions } from "@/db/schema"
+import { pdtpExecutions, preventionCapaEvidence } from "@/db/schema"
 import { resolvePdtpEvidenceDir } from "@/lib/storage/config"
 import { logger } from "@/lib/logger"
 
@@ -66,30 +74,36 @@ export async function cleanupPdtpEvidenceOrphans(
   }
   result.scanned = files.length
 
-  // Carga todos los `evidence_url` y `evidence_photos` conocidos de la DB.
-  // Construimos un set de nombres referenciados para detectar orphans.
+  // Carga todas las referencias conocidas de la DB, de los DOS productores del
+  // directorio. Construimos un set de nombres referenciados para detectar orphans.
   const referenced = new Set<string>()
-  const rows = await db
-    .select({
-      evidenceUrl: pdtpExecutions.evidenceUrl,
-      evidencePhotos: pdtpExecutions.evidencePhotos,
-    })
-    .from(pdtpExecutions)
+  const addReference = (value: unknown) => {
+    if (typeof value !== "string" || value.length === 0) return
+    const name = value.split("/").pop()
+    if (name) referenced.add(name)
+  }
+
+  const [rows, capaRows] = await Promise.all([
+    db
+      .select({
+        evidenceUrl: pdtpExecutions.evidenceUrl,
+        evidencePhotos: pdtpExecutions.evidencePhotos,
+      })
+      .from(pdtpExecutions),
+    // Evidencia de seguimiento de acciones correctivas: vive en otra tabla pero
+    // en el mismo directorio. `kind` puede ser 'url'/'note', cuyo `reference` no
+    // es un archivo; extraer su basename sólo puede añadir un nombre de más al
+    // set, que es el lado seguro (conserva, nunca borra de más).
+    db.select({ reference: preventionCapaEvidence.reference }).from(preventionCapaEvidence),
+  ])
 
   for (const row of rows) {
-    if (row.evidenceUrl) {
-      const name = row.evidenceUrl.split("/").pop()
-      if (name) referenced.add(name)
-    }
+    addReference(row.evidenceUrl)
     if (Array.isArray(row.evidencePhotos)) {
-      for (const p of row.evidencePhotos) {
-        if (typeof p === "string" && p.length > 0) {
-          const name = p.split("/").pop()
-          if (name) referenced.add(name)
-        }
-      }
+      for (const p of row.evidencePhotos) addReference(p)
     }
   }
+  for (const row of capaRows) addReference(row.reference)
 
   const cutoff = Date.now() - olderThanMs
 

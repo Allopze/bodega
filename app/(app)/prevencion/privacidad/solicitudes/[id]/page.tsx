@@ -29,6 +29,7 @@ export default async function PrivacyRequestDetailPage({ params }: Props) {
   const { id } = await params
   const bundle = await getPreventionPrivacyRequestWorkbench({
     requestId: id,
+    ctx: { userId: session.user.id },
     scope: resolveWorksiteScope(session),
     permissions: session.user.permissions,
   })

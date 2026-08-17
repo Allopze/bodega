@@ -35,9 +35,13 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     logger.info('[cron/sst-weekly-alerts] Completed', result)
     return NextResponse.json({ ok: true, ...result })
   } catch (err) {
+    // H-B11: en producción no se expone `err.message` al cliente porque puede
+    // filtrar paths internos y fragmentos de SQL. Mismo criterio que los otros
+    // siete crons; éste era el único que quedaba sin el gate.
     logger.error('[cron/sst-weekly-alerts] Fatal error', err)
+    const isProd = process.env.NODE_ENV === 'production'
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'Unknown error' },
+      { error: isProd ? 'Internal cron error' : (err instanceof Error ? err.message : 'Unknown error') },
       { status: 500 }
     )
   }
