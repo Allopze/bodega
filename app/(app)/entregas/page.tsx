@@ -239,10 +239,13 @@ export default async function Page({
   const initialDeliverable = requestedItemId
     ? deliverableItems.find((item) => item.requestItemId === requestedItemId)
     : undefined
+  // Sólo la intención explícita del operador (item de solicitud o ?faena=).
+  // El fallback lo decide el formulario, que es quien conoce la dotación: caer
+  // en `stockProducts[0]` elegía una bodega arbitraria (la consulta de stock no
+  // lleva ORDER BY) y en la práctica abría en la bodega de oficina, que tiene
+  // stock pero no trabajadores de faena.
   const initialWorksiteId = initialDeliverable?.worksiteId
     ?? (requestedWorksiteId && visibleWorksiteIds.has(requestedWorksiteId) ? requestedWorksiteId : undefined)
-    ?? stockProducts[0]?.sourceWorksiteId
-    ?? worksiteOptions[0]?.id
   const initialDeliverySource = initialDeliverable
     ? receivedItems.find((item) => item.id === initialDeliverable.requestItemId)
     : undefined

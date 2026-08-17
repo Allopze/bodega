@@ -64,8 +64,16 @@ export function DeliveryForm({
   const router = useRouter()
   const [state, action] = useActionState<ActionState, FormData>(registerWorkerDeliveryAction, INITIAL_STATE)
   const initialTraceItem = traceableItems.find((item) => item.requestItemId === initialRequestItemId)
+  // Sin intención explícita, se abre en la primera bodega (ordenadas por nombre)
+  // que tenga stock **y** dotación activa. Elegir sólo por stock caía en la
+  // bodega de oficina, que casi nunca tiene trabajadores de faena, y dejaba el
+  // selector de trabajador vacío como si el padrón no existiera.
   const defaultSourceWorksiteId = initialSourceWorksiteId
     ?? initialTraceItem?.worksiteId
+    ?? worksites.find((worksite) => (
+      stockProducts.some((product) => product.sourceWorksiteId === worksite.id)
+      && workers.some((worker) => worker.worksiteId === worksite.id)
+    ))?.id
     ?? stockProducts[0]?.sourceWorksiteId
     ?? worksites[0]?.id
     ?? ""
@@ -201,12 +209,14 @@ export function DeliveryForm({
                 </SelectItem>
               ))}
               {availableWorkers.length === 0 && (
-                <SelectItem value="__no-active-workers" disabled>Sin trabajadores activos en esta faena</SelectItem>
+                <SelectItem value="__no-active-workers" disabled>Esta bodega no tiene trabajadores activos</SelectItem>
               )}
             </SelectContent>
           </Select>
           <p className="mt-1.5 text-xs text-[var(--color-text-subtle)]">
-            Sólo se muestran trabajadores activos de la faena seleccionada.
+            {availableWorkers.length === 0
+              ? "La bodega de origen elegida no tiene dotación activa. Cámbiala por la faena del trabajador: sólo se entrega desde el stock de su propia faena."
+              : "Sólo se muestran trabajadores activos de la bodega de origen seleccionada."}
           </p>
         </Field>
       </div>
