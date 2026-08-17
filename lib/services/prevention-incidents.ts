@@ -1373,8 +1373,13 @@ export async function listIncidentNotificationResponsibles(access: IncidentAcces
  * sustentó el cierre (y re-dispararía acreditaciones PDTP), sin transición de
  * reapertura que lo audite.
  */
-async function getInvestigableIncident(incidentId: string, access: IncidentAccess) {
-  const [incident] = await db.select().from(preventionIncidents).where(eq(preventionIncidents.id, incidentId)).limit(1)
+async function getInvestigableIncident(incidentId: string, access: IncidentAccess, client: IncidentClient = db) {
+  // Con `client = tx` la comprobación de "no cerrado" queda dentro de la misma
+  // unidad de trabajo que la escritura y bloquea la fila: sin eso, cerrar el
+  // incidente entre esta lectura y el insert dejaba entrar una declaración o
+  // difusión sobre el expediente que ya había sustentado el cierre.
+  const [incident] = await client.select().from(preventionIncidents)
+    .where(eq(preventionIncidents.id, incidentId)).for("update").limit(1)
   if (!incident) throw new Error("Incidente no encontrado.")
   requireAccess(access, "prevention:incidents:investigate", incident.worksiteId)
   if (incident.status === "closed") throw new Error("El incidente está cerrado y su expediente de investigación es inmutable.")
@@ -1386,22 +1391,16 @@ export async function createPreliminaryReport(args: {
   preliminaryReportText: string
   access: IncidentAccess
 }) {
-  const incident = await getInvestigableIncident(args.incidentId, args.access)
-
   const now = new Date().toISOString()
-  const [investigation] = await db.select().from(preventionIncidentInvestigations)
-    .where(eq(preventionIncidentInvestigations.incidentId, incident.id)).limit(1)
-
-  if (investigation) {
-    await db.update(preventionIncidentInvestigations).set({
-      preliminaryReportText: args.preliminaryReportText,
-      preliminaryReportAt: now,
-      updatedAt: now,
-    }).where(eq(preventionIncidentInvestigations.id, investigation.id))
-  } else {
-    await db.insert(preventionIncidentInvestigations).values({
+  // `onConflictDoUpdate` sobre el único de `incidentId` en vez de leer-y-decidir:
+  // dos personas registrando el informe preliminar (SLA de 3 h) leían ambas
+  // "no existe investigación" y la segunda chocaba con el índice único, con un
+  // error crudo de Postgres.
+  const incident = await db.transaction(async (tx) => {
+    const found = await getInvestigableIncident(args.incidentId, args.access, tx)
+    await tx.insert(preventionIncidentInvestigations).values({
       id: `incinv-${nanoid()}`,
-      incidentId: incident.id,
+      incidentId: found.id,
       status: "in_progress",
       methodology: "5_whys",
       preliminaryReportText: args.preliminaryReportText,
@@ -1409,10 +1408,19 @@ export async function createPreliminaryReport(args: {
       startedByUserId: args.access.ctx.userId,
       startedAt: now,
       updatedAt: now,
+    }).onConflictDoUpdate({
+      target: preventionIncidentInvestigations.incidentId,
+      set: {
+        preliminaryReportText: args.preliminaryReportText,
+        preliminaryReportAt: now,
+        updatedAt: now,
+      },
     })
-  }
+    return found
+  })
 
-  // Auto-acreditación PDTP: Actividades 68, 70 (preliminar ≤3h)
+  // Auto-acreditación PDTP: Actividades 68, 70 (preliminar ≤3h). Fuera de la
+  // transacción, como el resto del archivo.
   await onIncidentPreliminaryReported({ incidentId: incident.id, worksiteId: incident.worksiteId, reportedAt: now })
 
   return { incidentId: incident.id, preliminaryReportAt: now }
@@ -1426,20 +1434,22 @@ export async function recordIncidentStatement(args: {
   statementText: string
   access: IncidentAccess
 }) {
-  const incident = await getInvestigableIncident(args.incidentId, args.access)
-
   const now = new Date().toISOString()
-  const [created] = await db.insert(preventionIncidentStatements).values({
-    id: `incstmt-${nanoid()}`,
-    incidentId: incident.id,
-    kind: args.kind,
-    deponentName: args.deponentName,
-    deponentRole: args.deponentRole ?? null,
-    statementText: args.statementText,
-    signedAt: now,
-    createdByUserId: args.access.ctx.userId,
-    createdAt: now,
-  }).returning()
+  const { incident, created } = await db.transaction(async (tx) => {
+    const found = await getInvestigableIncident(args.incidentId, args.access, tx)
+    const [row] = await tx.insert(preventionIncidentStatements).values({
+      id: `incstmt-${nanoid()}`,
+      incidentId: found.id,
+      kind: args.kind,
+      deponentName: args.deponentName,
+      deponentRole: args.deponentRole ?? null,
+      statementText: args.statementText,
+      signedAt: now,
+      createdByUserId: args.access.ctx.userId,
+      createdAt: now,
+    }).returning()
+    return { incident: found, created: row }
+  })
 
   // Auto-acreditación PDTP: Actividad 69 (declaración ≤24h)
   await onIncidentStatementRecorded({ incidentId: incident.id, worksiteId: incident.worksiteId, recordedAt: now })
@@ -1455,20 +1465,22 @@ export async function publishOnePageDiffusion(args: {
   evidenceRef?: string
   access: IncidentAccess
 }) {
-  const incident = await getInvestigableIncident(args.incidentId, args.access)
-
   const now = new Date().toISOString()
-  const [created] = await db.insert(preventionIncidentDiffusion).values({
-    id: `incdif-${nanoid()}`,
-    incidentId: incident.id,
-    onePageSummary: args.onePageSummary,
-    rootCauseText: args.rootCauseText,
-    actionPlanSummary: args.actionPlanSummary,
-    evidenceRef: args.evidenceRef ?? null,
-    diffusedAt: now,
-    createdByUserId: args.access.ctx.userId,
-    createdAt: now,
-  }).returning()
+  const { incident, created } = await db.transaction(async (tx) => {
+    const found = await getInvestigableIncident(args.incidentId, args.access, tx)
+    const [row] = await tx.insert(preventionIncidentDiffusion).values({
+      id: `incdif-${nanoid()}`,
+      incidentId: found.id,
+      onePageSummary: args.onePageSummary,
+      rootCauseText: args.rootCauseText,
+      actionPlanSummary: args.actionPlanSummary,
+      evidenceRef: args.evidenceRef ?? null,
+      diffusedAt: now,
+      createdByUserId: args.access.ctx.userId,
+      createdAt: now,
+    }).returning()
+    return { incident: found, created: row }
+  })
 
   // Auto-acreditación PDTP: Actividad 78 (ONE PAGE ≤24h)
   await onIncidentOnePageDiffused({ incidentId: incident.id, worksiteId: incident.worksiteId, diffusedAt: now })
@@ -1483,21 +1495,22 @@ export async function recordBiweeklyFollowup(args: {
   evidenceRef?: string
   access: IncidentAccess
 }) {
-  const incident = await getInvestigableIncident(args.incidentId, args.access)
-
   const now = new Date().toISOString()
-  const [created] = await db.insert(preventionIncidentFollowups).values({
-    id: `incflw-${nanoid()}`,
-    incidentId: incident.id,
-    followupDate: args.followupDate,
-    note: args.note,
-    evidenceRef: args.evidenceRef ?? null,
-    status: "completed",
-    createdByUserId: args.access.ctx.userId,
-    createdAt: now,
-  }).returning()
-
-  if (!created) throw new Error("No se pudo registrar el seguimiento quincenal.")
+  const { incident, created } = await db.transaction(async (tx) => {
+    const found = await getInvestigableIncident(args.incidentId, args.access, tx)
+    const [row] = await tx.insert(preventionIncidentFollowups).values({
+      id: `incflw-${nanoid()}`,
+      incidentId: found.id,
+      followupDate: args.followupDate,
+      note: args.note,
+      evidenceRef: args.evidenceRef ?? null,
+      status: "completed",
+      createdByUserId: args.access.ctx.userId,
+      createdAt: now,
+    }).returning()
+    if (!row) throw new Error("No se pudo registrar el seguimiento quincenal.")
+    return { incident: found, created: row }
+  })
 
   // Auto-acreditación PDTP: Actividad 76 (seguimiento quincenal)
   await onIncidentFollowupRecorded({
@@ -1533,22 +1546,24 @@ export async function markIncidentDiffusion(args: {
   access: IncidentAccess
 }) {
   if (args.summary.trim().length < 3) throw new Error("La difusión requiere un resumen de lo comunicado.")
-  const incident = await getInvestigableIncident(args.incidentId, args.access)
 
   const now = new Date().toISOString()
-  const [created] = await db.insert(preventionIncidentShiftDiffusions).values({
-    id: `incsdif-${nanoid()}`,
-    incidentId: incident.id,
-    kind: args.kind,
-    summary: args.summary.trim(),
-    evidenceRef: args.evidenceRef ?? null,
-    status: "pending_confirmation",
-    markedByUserId: args.access.ctx.userId,
-    markedAt: now,
-    createdAt: now,
-  }).returning()
-  if (!created) throw new Error("No se pudo registrar la difusión.")
-  return created
+  return db.transaction(async (tx) => {
+    const incident = await getInvestigableIncident(args.incidentId, args.access, tx)
+    const [created] = await tx.insert(preventionIncidentShiftDiffusions).values({
+      id: `incsdif-${nanoid()}`,
+      incidentId: incident.id,
+      kind: args.kind,
+      summary: args.summary.trim(),
+      evidenceRef: args.evidenceRef ?? null,
+      status: "pending_confirmation",
+      markedByUserId: args.access.ctx.userId,
+      markedAt: now,
+      createdAt: now,
+    }).returning()
+    if (!created) throw new Error("No se pudo registrar la difusión.")
+    return created
+  })
 }
 
 export async function confirmIncidentDiffusion(args: {

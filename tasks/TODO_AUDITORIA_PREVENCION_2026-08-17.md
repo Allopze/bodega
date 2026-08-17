@@ -78,27 +78,63 @@ prevención y 76 de Postgres real (higiene, capacitación, inspecciones, CPHS, p
       refrescar la UI en el mismo cambio**, con cuidado del footgun `router.refresh` +
       `loading.tsx`. Queda comentario en ambos servicios explicando por qué no lo llevan.
 
-## Fase 3 — Atomicidad (transacción ausente)
+## Fase 3 — Atomicidad (transacción ausente) ✅ COMPLETA
 
-- [ ] **SST-01** `archiveEvaluationPdf`: una transacción (incluye dar `client` a `recordAuditEntry`).
-- [ ] **DATA-03** Cinco escrituras RE-20 con el loader transaccional.
-- [ ] **PDTP-02** `updatePdtpActivity`: delete+insert del calendario en una tx.
-- [ ] **PDTP-03** `addPdtpActivity`: validar hojas antes de escribir + tx.
-- [ ] **PDTP-05** `submitExecutionChecklist`: tx común, en secuencia.
-- [ ] **PDTP-06** `rollbackPdtpImportBatch`: guarda + locks dentro de la tx.
-- [ ] **PDTP-01** `accreditPdtpFromEvent`: suma en SQL o `FOR UPDATE`.
-- [ ] **SST-06** `archiveDocument`: los dos UPDATEs en una tx.
-- [ ] **PDTP-08** Nueve changelog sin `tx`.
-- [ ] **HIG-11** EPP: fila + historial en una tx (y `updatedAt` con timestamp, no fecha).
-- [ ] **DATA-02** `createPreliminaryReport`: tx + `onConflictDoUpdate`.
+Verificación: `typecheck` + `lint` limpios; 4.183 tests de la suite rápida, 107 PGlite de
+PDTP/prevención y **176 de Postgres real (las 13 suites `prevention-*-postgres`)** en verde.
+
+- [x] **SST-01** `archiveEvaluationPdf`: las cinco escrituras en una transacción. Causa raíz
+      compartida resuelta: `recordAuditEntry` acepta ahora `client` (como
+      `recordOperationalActivity`), que era lo que mantenía dos convenciones para la misma
+      tabla de auditoría.
+- [x] **DATA-03** Las cinco escrituras RE-20 en transacción, con `getInvestigableIncident`
+      aceptando cliente y tomando `FOR UPDATE` sobre el incidente. La acreditación PDTP
+      queda post-commit, que es el patrón deliberado del archivo.
+- [x] **DATA-02** `createPreliminaryReport`: transacción + `onConflictDoUpdate` sobre el
+      único de `incidentId`, en vez de leer-y-decidir.
+- [x] **PDTP-02** `updatePdtpActivity`: actividad + calendario + changelog en una tx.
+- [x] **PDTP-03** `addPdtpActivity`: hojas resueltas ANTES de escribir + todo en una tx.
+- [x] **PDTP-05** `submitExecutionChecklist`: una transacción y **en secuencia**, sin
+      `Promise.all`. Ver la trampa de abajo.
+- [x] **PDTP-06** `rollbackPdtpImportBatch`: carga, chequeo de alcance y guarda de "cambios
+      posteriores" dentro de la tx, con `FOR UPDATE` de batch y programa en el mismo orden
+      que `applyPdtpImportBatch` (para no invertir el orden de bloqueo).
+- [x] **PDTP-01** `accreditPdtpFromEvent`: suma y append de la clave **en SQL**
+      (`jsonb_set` + `||`), con `NOT (accreditedKeys @> clave)` en el `WHERE` para que la
+      idempotencia sea atómica y no dependa del `includes` en memoria.
+- [x] **SST-06** `archiveDocument`: documento + versiones + auditoría en una tx.
+- [x] **PDTP-08** Changelog dentro de su transacción en `batchUpdatePdtpActivities`,
+      `duplicatePdtpActivity`, `reorderPdtpActivities`, `createPdtpObligation`,
+      `excludeActivityForWorksite`, `includeActivityForWorksite` y los dos de `overrides.ts`.
+- [x] **HIG-11** EPP: las tres mutaciones con su historial en una tx, `updatedAt` con
+      timestamp real (era `todayInChile()` sobre una columna `timestamptz`, perdía la hora)
+      y `isActive` en el `WHERE` de la desactivación.
+
+### ⚠️ Trampa vivida en esta fase (documentar, no repetir)
+
+Al compartir la transacción en `submitExecutionChecklist` **introduje el mismo anti-patrón
+que la auditoría reporta**: `getNonCompliantItems` usaba el `db` de nivel superior y pasó a
+ejecutarse dentro de una `tx`. Bajo PGlite (una sola conexión) eso es un **autodeadlock**: la
+suite se colgó >15 min sin fallar, que es la peor forma de romperse. Corregido threading el
+cliente. **Antes de meter una función existente dentro de una transacción, hay que revisar
+qué usa por dentro**, no sólo su firma.
+
+### Extra adelantado de la Fase 4
+
+- [x] **SST-02** Id determinista (`sdoc-eval-<evaluationId>`) + `onConflictDoNothing` para el
+      acta SST archivada, con comprobación previa para no re-renderizar el PDF. Vive en el
+      mismo bloque que SST-01, así que se hizo junto.
+- [x] **PDTP-04** `sourceItemId` = `<instanceId>:<seccionId>:<itemId>` en el generador de plan
+      de acción, para que el unique ya existente respalde la deduplicación; la violación de
+      unique se traduce a `existentes++` en vez de reventar. Cero migraciones.
 
 ## Fase 4 — Idempotencia sin respaldo
 
-- [ ] **PDTP-04** `sourceItemId` en el generador de plan de acción (usa el unique existente).
-- [ ] **SST-02** Id determinista para el acta SST archivada.
-- [ ] **SST-09** `NULLS NOT DISTINCT` en el unique de carpetas.
-- [ ] **DATA-04** Unique/FK de `sourceImportBatchId` en matrices MIPER.
-- [ ] **HIG-07** `escalateBlockingGapsToCapa`: el `SELECT` dentro de la tx.
+- [x] **PDTP-04** Hecho en la Fase 3 (mismo camino de código).
+- [x] **SST-02** Hecho en la Fase 3 (mismo bloque que SST-01).
+- [ ] **SST-09** `NULLS NOT DISTINCT` en el unique de carpetas. **Requiere migración.**
+- [ ] **DATA-04** Unique/FK de `sourceImportBatchId` en matrices MIPER. **Requiere migración.**
+- [ ] **HIG-07** `escalateBlockingGapsToCapa`: el `SELECT` dentro de la tx (capacitación y EPP).
 
 ## Fase 5 — Colas offline
 

@@ -103,22 +103,27 @@ export async function createEppRequirement(input: unknown, access: EppAccess) {
   const data = requirementSchema.parse(input)
   requireAccess(access, "prevention:epp:manage", data.worksiteId ?? undefined)
 
-  const [created] = await db.insert(preventionEppRequirements).values({
-    id: `peppr-${nanoid()}`,
-    eppTypeId: data.eppTypeId,
-    scopeType: data.scopeType,
-    scopeValue: data.scopeValue ?? null,
-    worksiteId: data.worksiteId ?? null,
-    enforcement: data.enforcement,
-    reason: data.reason,
-    legalRequirementId: data.legalRequirementId ?? null,
-    riskEntryId: data.riskEntryId ?? null,
-    preferredFamilyId: data.preferredFamilyId ?? null,
-    createdByUserId: access.userId,
-  }).returning()
-  if (!created) throw new Error("No se pudo crear el requisito de EPP.")
-  await history(db, { entityType: "requirement", entityId: created.id, worksiteId: data.worksiteId ?? null, changeType: "created", reason: data.reason, afterState: created, actorUserId: access.userId })
-  return created
+  // Fila + historial en la misma transacción: `prevention_epp_history` es el
+  // registro inmutable del dominio, y si su insert fallaba tras el de la fila
+  // quedaba un cambio de obligatoriedad de EPP sin traza.
+  return db.transaction(async (tx) => {
+    const [created] = await tx.insert(preventionEppRequirements).values({
+      id: `peppr-${nanoid()}`,
+      eppTypeId: data.eppTypeId,
+      scopeType: data.scopeType,
+      scopeValue: data.scopeValue ?? null,
+      worksiteId: data.worksiteId ?? null,
+      enforcement: data.enforcement,
+      reason: data.reason,
+      legalRequirementId: data.legalRequirementId ?? null,
+      riskEntryId: data.riskEntryId ?? null,
+      preferredFamilyId: data.preferredFamilyId ?? null,
+      createdByUserId: access.userId,
+    }).returning()
+    if (!created) throw new Error("No se pudo crear el requisito de EPP.")
+    await history(tx, { entityType: "requirement", entityId: created.id, worksiteId: data.worksiteId ?? null, changeType: "created", reason: data.reason, afterState: created, actorUserId: access.userId })
+    return created
+  })
 }
 
 // Exported so the Server Action can validate at the boundary with parseZ
@@ -141,30 +146,34 @@ export async function updateEppRequirement(input: unknown, access: EppAccess) {
   if (!existing) throw new Error(NOT_FOUND)
   if (existing.worksiteId) requireAccess(access, "prevention:epp:manage", existing.worksiteId)
 
-  const patch: Partial<typeof preventionEppRequirements.$inferInsert> = { updatedAt: todayInChile() }
+  // `updatedAt` es timestamptz: con `todayInChile()` se guardaba "2026-08-17"
+  // y se perdía la hora del cambio.
+  const patch: Partial<typeof preventionEppRequirements.$inferInsert> = { updatedAt: new Date().toISOString() }
   if (data.enforcement        !== undefined) patch.enforcement        = data.enforcement
   if (data.reason             !== undefined) patch.reason             = data.reason
   if (data.preferredFamilyId  !== undefined) patch.preferredFamilyId  = data.preferredFamilyId
   if (data.legalRequirementId !== undefined) patch.legalRequirementId = data.legalRequirementId
   if (data.riskEntryId        !== undefined) patch.riskEntryId        = data.riskEntryId
 
-  const [updated] = await db
-    .update(preventionEppRequirements)
-    .set(patch)
-    .where(eq(preventionEppRequirements.id, data.id))
-    .returning()
-  if (!updated) throw new Error("No se pudo actualizar el requisito.")
+  return db.transaction(async (tx) => {
+    const [updated] = await tx
+      .update(preventionEppRequirements)
+      .set(patch)
+      .where(eq(preventionEppRequirements.id, data.id))
+      .returning()
+    if (!updated) throw new Error("No se pudo actualizar el requisito.")
 
-  await history(db, {
-    entityType:  "requirement",
-    entityId:    data.id,
-    worksiteId:  existing.worksiteId,
-    changeType:  "updated",
-    reason:      data.reason ?? existing.reason,
-    afterState:  updated,
-    actorUserId: access.userId,
+    await history(tx, {
+      entityType:  "requirement",
+      entityId:    data.id,
+      worksiteId:  existing.worksiteId,
+      changeType:  "updated",
+      reason:      data.reason ?? existing.reason,
+      afterState:  updated,
+      actorUserId: access.userId,
+    })
+    return updated
   })
-  return updated
 }
 
 // Exported so the Server Action can validate at the boundary with parseZ
@@ -184,22 +193,28 @@ export async function deactivateEppRequirement(input: unknown, access: EppAccess
   if (existing.worksiteId) requireAccess(access, "prevention:epp:manage", existing.worksiteId)
   if (!existing.isActive) throw new Error("El requisito ya está desactivado.")
 
-  const [deactivated] = await db
-    .update(preventionEppRequirements)
-    .set({ isActive: false, updatedAt: todayInChile() })
-    .where(eq(preventionEppRequirements.id, data.id))
-    .returning()
+  return db.transaction(async (tx) => {
+    const [deactivated] = await tx
+      .update(preventionEppRequirements)
+      .set({ isActive: false, updatedAt: new Date().toISOString() })
+      .where(and(
+        eq(preventionEppRequirements.id, data.id),
+        eq(preventionEppRequirements.isActive, true),
+      ))
+      .returning()
+    if (!deactivated) throw new Error("El requisito ya está desactivado.")
 
-  await history(db, {
-    entityType:  "requirement",
-    entityId:    data.id,
-    worksiteId:  existing.worksiteId,
-    changeType:  "deactivated",
-    reason:      data.reason,
-    afterState:  deactivated,
-    actorUserId: access.userId,
+    await history(tx, {
+      entityType:  "requirement",
+      entityId:    data.id,
+      worksiteId:  existing.worksiteId,
+      changeType:  "deactivated",
+      reason:      data.reason,
+      afterState:  deactivated,
+      actorUserId: access.userId,
+    })
+    return deactivated
   })
-  return deactivated
 }
 
 /* ── Cobertura y escalamiento ─────────────────────────────────────────────── */

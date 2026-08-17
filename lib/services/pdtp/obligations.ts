@@ -119,34 +119,41 @@ export async function createPdtpObligation(input: {
   }
 
   const now = new Date().toISOString()
-  const [created] = await db.insert(pdtpObligations).values({
-    id: `pdtp-obligation-${nanoid()}`,
-    programId: program.id,
-    activityId: activity.id,
-    worksiteId: input.worksiteId,
-    mode: activity.scheduleMode,
-    status: "pending",
-    triggerType: activity.triggerType,
-    sourceType,
-    sourceId,
-    sourceOccurredAt: occurredAt.toISOString(),
-    dueAt: dueDate(occurredAt, activity.dueDays),
-    plannedQuantity,
-    completedQuantity: 0,
-    idempotencyKey,
-    origin: input.origin,
-    manualReason,
-    sourceMetadataJson: input.sourceMetadata ?? {},
-    createdByUserId: input.userId,
-    createdAt: now,
-    updatedAt: now,
-  }).onConflictDoNothing({ target: pdtpObligations.idempotencyKey }).returning()
+  // Obligación y changelog en la misma transacción.
+  const created = await db.transaction(async (tx) => {
+    const [row] = await tx.insert(pdtpObligations).values({
+      id: `pdtp-obligation-${nanoid()}`,
+      programId: program.id,
+      activityId: activity.id,
+      worksiteId: input.worksiteId,
+      mode: activity.scheduleMode,
+      status: "pending",
+      triggerType: activity.triggerType,
+      sourceType,
+      sourceId,
+      sourceOccurredAt: occurredAt.toISOString(),
+      dueAt: dueDate(occurredAt, activity.dueDays),
+      plannedQuantity,
+      completedQuantity: 0,
+      idempotencyKey,
+      origin: input.origin,
+      manualReason,
+      sourceMetadataJson: input.sourceMetadata ?? {},
+      createdByUserId: input.userId,
+      createdAt: now,
+      updatedAt: now,
+    }).onConflictDoNothing({ target: pdtpObligations.idempotencyKey }).returning()
+    if (row) {
+      await addPdtpChangeLogEntry(
+        program.id, program.version, input.userId, `obligation:${row.id}`, null,
+        { obligationId: row.id, mode: row.mode, worksiteId: row.worksiteId, sourceType: row.sourceType, sourceId: row.sourceId, dueAt: row.dueAt },
+        "Obligación preventiva generada desde una necesidad o evento real.",
+        tx,
+      )
+    }
+    return row
+  })
   if (created) {
-    await addPdtpChangeLogEntry(
-      program.id, program.version, input.userId, `obligation:${created.id}`, null,
-      { obligationId: created.id, mode: created.mode, worksiteId: created.worksiteId, sourceType: created.sourceType, sourceId: created.sourceId, dueAt: created.dueAt },
-      "Obligación preventiva generada desde una necesidad o evento real.",
-    )
     return { obligation: created, created: true }
   }
   const [concurrent] = await db.select().from(pdtpObligations).where(eq(pdtpObligations.idempotencyKey, idempotencyKey)).limit(1)

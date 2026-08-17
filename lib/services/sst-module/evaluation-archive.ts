@@ -51,6 +51,17 @@ export async function archiveEvaluationPdf(evaluationId: string, session: Sessio
     if (!worker) return
     const suggestedFilename = buildActaFilename({ tipo: evaluation.tipo, workerName: `${worker.firstName} ${worker.lastName}` })
 
+    // El id del documento se deriva de la evaluación, no de un `nanoid()`: el
+    // cierre es idempotente pero esta función corre DESPUÉS del cierre, así que
+    // un doble clic (o el reintento de un server action) archivaba dos actas
+    // legales distintas, ambas vigentes, para la misma evaluación. Se comprueba
+    // antes de renderizar porque el PDF cuesta un navegador headless.
+    const docId = `sdoc-eval-${evaluationId}`
+    const versionId = `sdv-eval-${evaluationId}`
+    const [alreadyArchived] = await db.select({ id: sstDocuments.id }).from(sstDocuments)
+      .where(eq(sstDocuments.id, docId)).limit(1)
+    if (alreadyArchived) return
+
     const h = await headers()
     const cookie = h.get("cookie") ?? ""
     const origin = process.env.APP_URL ?? `${h.get("x-forwarded-proto") ?? "http"}://${h.get("host") ?? "localhost:3000"}`
@@ -78,39 +89,50 @@ export async function archiveEvaluationPdf(evaluationId: string, session: Sessio
     const storageName = generateStorageName(suggestedFilename)
     const relativePath = await persistFileOnDisk(storageName, pdfBuffer)
 
-    const docId = `sdoc-${nanoid()}`
-    await db.insert(sstDocuments).values({
-      id: docId, categorySlug: "salud_ocupacional", typeId: null, folderId: folder.id,
-      internalCode: null, title: suggestedFilename.replace(/\.pdf$/i, ""),
-      description: "Copia automática de la evaluación SST generada al cerrarse.",
-      worksiteId: evaluation.worksiteId, status: "vigente", confidentiality: "restringido",
-      currentVersionId: null, effectiveFrom: now.slice(0, 10), expiresAt: null,
-      responsibleUserId: null, uploadedBy: session.user.id, reviewedBy: null,
-      approvedBy: session.user.id, approvedAt: now, requiresAcknowledgment: false,
-      tags: ["evaluacion-sst"], extraMetadata: { evaluationId }, checksum,
-      createdAt: now, updatedAt: now,
-    })
+    // Las cinco escrituras van en una transacción: el documento nace con
+    // `currentVersionId = NULL` y sólo el UPDATE posterior lo apunta, así que un
+    // fallo entremedio dejaba exactamente los estados que `integrity.ts`
+    // clasifica como CRÍTICOS (`CURRENT_VERSION_NOT_PUBLISHED` /
+    // `DRAFT_WITH_PUBLISHED_VERSION`), que exigen regularización manual — y en
+    // silencio, porque esta función es best-effort y el caller traga el error.
+    await db.transaction(async (tx) => {
+      const [created] = await tx.insert(sstDocuments).values({
+        id: docId, categorySlug: "salud_ocupacional", typeId: null, folderId: folder.id,
+        internalCode: null, title: suggestedFilename.replace(/\.pdf$/i, ""),
+        description: "Copia automática de la evaluación SST generada al cerrarse.",
+        worksiteId: evaluation.worksiteId, status: "vigente", confidentiality: "restringido",
+        currentVersionId: null, effectiveFrom: now.slice(0, 10), expiresAt: null,
+        responsibleUserId: null, uploadedBy: session.user.id, reviewedBy: null,
+        approvedBy: session.user.id, approvedAt: now, requiresAcknowledgment: false,
+        tags: ["evaluacion-sst"], extraMetadata: { evaluationId }, checksum,
+        createdAt: now, updatedAt: now,
+      }).onConflictDoNothing().returning()
+      // Perdió la carrera contra otro cierre simultáneo: el documento ya existe.
+      // ponytail: deja el PDF recién escrito huérfano en disco, que es la
+      // opción barata frente a orquestar un borrado compensatorio por un caso
+      // que la comprobación de más arriba ya cubre salvo empate exacto.
+      if (!created) return
 
-    const versionId = `sdv-${nanoid()}`
-    await db.insert(sstDocumentVersions).values({
-      id: versionId, documentId: docId, version: 1, status: "vigente",
-      fileName: suggestedFilename, storageName, filePath: relativePath,
-      mimeType: "application/pdf", fileSize: pdfBuffer.length, checksum,
-      effectiveFrom: now.slice(0, 10), effectiveTo: null,
-      changelog: "Generado automáticamente al cerrar la evaluación.",
-      uploadedBy: session.user.id, reviewedBy: null, approvedBy: session.user.id, approvedAt: now,
-      supersedesId: null, createdAt: now, updatedAt: now,
-    })
-    await db.update(sstDocuments).set({ currentVersionId: versionId, updatedAt: now }).where(eq(sstDocuments.id, docId))
+      await tx.insert(sstDocumentVersions).values({
+        id: versionId, documentId: docId, version: 1, status: "vigente",
+        fileName: suggestedFilename, storageName, filePath: relativePath,
+        mimeType: "application/pdf", fileSize: pdfBuffer.length, checksum,
+        effectiveFrom: now.slice(0, 10), effectiveTo: null,
+        changelog: "Generado automáticamente al cerrar la evaluación.",
+        uploadedBy: session.user.id, reviewedBy: null, approvedBy: session.user.id, approvedAt: now,
+        supersedesId: null, createdAt: now, updatedAt: now,
+      })
+      await tx.update(sstDocuments).set({ currentVersionId: versionId, updatedAt: now }).where(eq(sstDocuments.id, docId))
 
-    await db.insert(sstDocumentLinks).values({
-      id: `sdlink-${nanoid()}`, documentId: docId, entityType: "worker",
-      entityId: evaluation.workerId, notes: "Evaluación SST", createdByUserId: session.user.id, createdAt: now,
-    }).onConflictDoNothing()
+      await tx.insert(sstDocumentLinks).values({
+        id: `sdlink-${nanoid()}`, documentId: docId, entityType: "worker",
+        entityId: evaluation.workerId, notes: "Evaluación SST", createdByUserId: session.user.id, createdAt: now,
+      }).onConflictDoNothing()
 
-    await recordAuditEntry({
-      documentId: docId, versionId, userId: session.user.id, action: "create",
-      toStatus: "vigente", metadata: { source: "sst_evaluation_close", evaluationId },
+      await recordAuditEntry({
+        documentId: docId, versionId, userId: session.user.id, action: "create",
+        toStatus: "vigente", metadata: { source: "sst_evaluation_close", evaluationId },
+      }, tx)
     })
   } catch (err) {
     logger.error("[evaluation-archive] no se pudo guardar copia de la evaluación en la biblioteca documental", err)

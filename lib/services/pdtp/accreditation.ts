@@ -319,13 +319,22 @@ export async function accreditPdtpFromEvent(
           "[accreditPdtpFromEvent] La celda del período ya tiene una ejecución aprobada; no se suma el evento.",
         )
       } else {
+        // La suma y el append de la clave se hacen EN SQL, no con los valores
+        // leídos arriba: dos eventos distintos de la misma celda leían ambos
+        // `executedQuantity = n` y escribían `n + 1`, perdiendo un evento y su
+        // clave — con lo que un reintento posterior volvía a sumarlo. El
+        // `NOT (... @> clave)` del WHERE hace que la idempotencia también sea
+        // atómica en vez de depender del `contributed.includes` de arriba.
+        const keyJson = sql`to_jsonb(${idempotencyKey}::text)`
+        const currentKeys = sql`coalesce(${pdtpExecutions.sourceMetadataJson}->'accreditedKeys', '[]'::jsonb)`
         await db.update(pdtpExecutions).set({
-          executedQuantity: periodRow.executedQuantity + executedQuantity,
-          sourceMetadataJson: { ...meta, accreditedKeys: [...contributed, idempotencyKey] },
+          executedQuantity: sql`${pdtpExecutions.executedQuantity} + ${executedQuantity}`,
+          sourceMetadataJson: sql`jsonb_set(coalesce(${pdtpExecutions.sourceMetadataJson}, '{}'::jsonb), '{accreditedKeys}', ${currentKeys} || ${keyJson})`,
           updatedAt: now,
         }).where(and(
           eq(pdtpExecutions.id, periodRow.id),
           sql`${pdtpExecutions.status} <> 'approved'`,
+          sql`NOT (${currentKeys} @> ${keyJson})`,
         ))
         accredited.push({ activityId: activity.id, activityN: activity.n, executionId: periodRow.id, created: false })
       }

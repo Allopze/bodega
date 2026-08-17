@@ -667,34 +667,43 @@ export async function finalizePdtpImportBootstrap(input: {
 
 export async function rollbackPdtpImportBatch(input: { batchId: string; userId: string; reason: string; scope: WorksiteScope }) {
   if (input.reason.trim().length < 10) throw new Error("Indica un motivo de rollback de al menos 10 caracteres.")
-  const [batch] = await db.select().from(pdtpImportBatches).where(eq(pdtpImportBatches.id, input.batchId)).limit(1)
-  if (!batch || batch.status !== "applied" || !batch.appliedAt || !batch.preApplySnapshotJson) throw new Error("El lote no está aplicado o no tiene snapshot de rollback.")
-  if (batch.targetWorksiteId) assertWorksiteAccess(batch.targetWorksiteId, input.scope)
-  const applyResult = (batch.applyResultJson ?? {}) as Record<string, unknown>
-  const artifacts = (applyResult.bootstrapArtifacts ?? {}) as Partial<BootstrapArtifacts>
-  const laterChanges = await db.select({
-    id: pdtpChangeLog.id,
-    changedAt: pdtpChangeLog.changedAt,
-    section: pdtpChangeLog.section,
-    after: pdtpChangeLog.after,
-  }).from(pdtpChangeLog).where(and(
-    eq(pdtpChangeLog.programId, batch.programId),
-    ne(pdtpChangeLog.section, "import:apply"),
-  ))
-  const appliedMs = new Date(batch.appliedAt).getTime()
-  const hasLaterChange = laterChanges.some((change) => {
-    if (new Date(change.changedAt).getTime() <= appliedMs) return false
-    const after = (change.after ?? {}) as Record<string, unknown>
-    if (change.section === "import:bootstrap" && after.batchId === batch.id) return false
-    if (change.section === "template:publish" && artifacts.templateVersionIdCreated
-      && after.templateVersionId === artifacts.templateVersionIdCreated) return false
-    return true
-  })
-  if (hasLaterChange) throw new Error("No se puede revertir: el programa tiene cambios posteriores al lote.")
-
-  const snapshot = batch.preApplySnapshotJson as ImportSnapshot
   const now = new Date().toISOString()
+  // Todo dentro de la transacción y con los mismos locks que `applyPdtpImportBatch`
+  // (batch y luego programa, en ese orden para no invertir el orden de bloqueo):
+  // la guarda de "cambios posteriores" se evaluaba fuera, así que entre ella y
+  // el restore alguien podía editar una actividad y el rollback la pisaba sin
+  // dejar rastro. Dos rollbacks concurrentes también entraban ambos.
   await db.transaction(async (tx) => {
+    const [batch] = await tx.select().from(pdtpImportBatches)
+      .where(eq(pdtpImportBatches.id, input.batchId)).for("update").limit(1)
+    if (!batch || batch.status !== "applied" || !batch.appliedAt || !batch.preApplySnapshotJson) throw new Error("El lote no está aplicado o no tiene snapshot de rollback.")
+    if (batch.targetWorksiteId) assertWorksiteAccess(batch.targetWorksiteId, input.scope)
+    await tx.select({ id: pdtpPrograms.id }).from(pdtpPrograms)
+      .where(eq(pdtpPrograms.id, batch.programId)).for("update").limit(1)
+
+    const applyResult = (batch.applyResultJson ?? {}) as Record<string, unknown>
+    const artifacts = (applyResult.bootstrapArtifacts ?? {}) as Partial<BootstrapArtifacts>
+    const laterChanges = await tx.select({
+      id: pdtpChangeLog.id,
+      changedAt: pdtpChangeLog.changedAt,
+      section: pdtpChangeLog.section,
+      after: pdtpChangeLog.after,
+    }).from(pdtpChangeLog).where(and(
+      eq(pdtpChangeLog.programId, batch.programId),
+      ne(pdtpChangeLog.section, "import:apply"),
+    ))
+    const appliedMs = new Date(batch.appliedAt).getTime()
+    const hasLaterChange = laterChanges.some((change) => {
+      if (new Date(change.changedAt).getTime() <= appliedMs) return false
+      const after = (change.after ?? {}) as Record<string, unknown>
+      if (change.section === "import:bootstrap" && after.batchId === batch.id) return false
+      if (change.section === "template:publish" && artifacts.templateVersionIdCreated
+        && after.templateVersionId === artifacts.templateVersionIdCreated) return false
+      return true
+    })
+    if (hasLaterChange) throw new Error("No se puede revertir: el programa tiene cambios posteriores al lote.")
+
+    const snapshot = batch.preApplySnapshotJson as ImportSnapshot
     const checklistIds = artifacts.checklistIdsCreated ?? []
     if (checklistIds.length > 0) {
       const instances = await tx.select({ id: pdtpExecutionChecklists.id }).from(pdtpExecutionChecklists)

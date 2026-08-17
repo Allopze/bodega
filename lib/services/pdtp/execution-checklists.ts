@@ -13,7 +13,7 @@
  */
 
 import { and, eq, inArray } from "drizzle-orm"
-import { db } from "@/db"
+import { db, type Tx } from "@/db"
 import {
   pdtpExecutionChecklistResponses,
   pdtpExecutionChecklists,
@@ -218,17 +218,19 @@ export async function upsertChecklistResponses(
 export async function completeExecutionChecklist(
   instanceId: string,
   userId: string,
+  tx?: Tx,
 ): Promise<{ porcentajeCumplimiento: number | null }> {
-  const instance = await getExecutionChecklistInstanceOnly(instanceId)
+  const client = tx ?? db
+  const instance = await getExecutionChecklistInstanceOnly(instanceId, client)
   if (!instance) throw new Error("Instancia de checklist no encontrada.")
   const definition = instance.definitionSnapshotJson as unknown as ChecklistDefinition
   const now = new Date().toISOString()
 
-  const allResponses = await db.select().from(pdtpExecutionChecklistResponses)
+  const allResponses = await client.select().from(pdtpExecutionChecklistResponses)
     .where(eq(pdtpExecutionChecklistResponses.checklistInstanceId, instanceId))
   const porcentaje = calculateInstanceCompliance(definition, allResponses)
 
-  await db.update(pdtpExecutionChecklists).set({
+  await client.update(pdtpExecutionChecklists).set({
     overallStatus: "completado",
     porcentajeCumplimiento: porcentaje,
     completedByUserId: userId,
@@ -239,8 +241,8 @@ export async function completeExecutionChecklist(
   return { porcentajeCumplimiento: porcentaje }
 }
 
-async function getExecutionChecklistInstanceOnly(instanceId: string) {
-  const [row] = await db.select().from(pdtpExecutionChecklists)
+async function getExecutionChecklistInstanceOnly(instanceId: string, client: Tx | typeof db = db) {
+  const [row] = await client.select().from(pdtpExecutionChecklists)
     .where(eq(pdtpExecutionChecklists.id, instanceId)).limit(1)
   return row ?? null
 }
@@ -286,10 +288,10 @@ export function calculateInstanceCompliance(
 /**
  * Obtiene los ítems marcados como 'no_cumple' (generadores de acciones).
  */
-export async function getNonCompliantItems(instanceId: string): Promise<
+export async function getNonCompliantItems(instanceId: string, client: Tx | typeof db = db): Promise<
   Array<{ seccionId: string; itemId: string; observacion: string | null; accionCorrectiva: string | null }>
 > {
-  const rows = await db.select().from(pdtpExecutionChecklistResponses)
+  const rows = await client.select().from(pdtpExecutionChecklistResponses)
     .where(and(
       eq(pdtpExecutionChecklistResponses.checklistInstanceId, instanceId),
       eq(pdtpExecutionChecklistResponses.estado, "no_cumple"),

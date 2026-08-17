@@ -38,7 +38,7 @@ import {
   listPdtpActionsByProgram,
 } from "./capa-view"
 import type { ChecklistDefinition } from "@/lib/sst/types"
-import type { WorksiteScope } from "./helpers"
+import { isUniqueViolation, type WorksiteScope } from "./helpers"
 import {
   createCapaActionWithClient,
   transitionCapaActionWithClient,
@@ -169,12 +169,18 @@ async function getInstanceDefinition(instanceId: string): Promise<ChecklistDefin
 
 export async function submitExecutionChecklist(instanceId: string, userId: string) {
   await assertNonConformingItemsHaveObservation(instanceId)
-  const [completion, actionPlan] = await Promise.all([
-    completeExecutionChecklist(instanceId, userId),
-    generateActionPlanFromChecklist(instanceId, userId),
-  ])
-  const { porcentajeCumplimiento } = completion
-  const { generadas, existentes } = actionPlan
+  // Una sola transacción y en SECUENCIA, no `Promise.all`: cerrar el checklist
+  // y generar su plan de acción son una única unidad de trabajo. Con dos
+  // caminos independientes, un fallo a mitad de la generación dejaba el
+  // checklist en `completado` con ítems `no_cumple` sin acción correctiva —
+  // incumplimiento silencioso del Anexo 8, y con el checklist ya cerrado para
+  // el usuario. El paralelismo tampoco aportaba: ambas tocan el mismo
+  // `instanceId`.
+  const { porcentajeCumplimiento, generadas, existentes } = await db.transaction(async (tx) => {
+    const completion = await completeExecutionChecklist(instanceId, userId, tx)
+    const actionPlan = await generateActionPlanFromChecklist(instanceId, userId, tx)
+    return { ...completion, ...actionPlan }
+  })
   // Recálculo best-effort: no falla el submit si la ejecución desaparece.
   try {
     const [inst] = await db.select({ executionId: pdtpExecutionChecklists.executionId })
@@ -197,15 +203,17 @@ export async function submitExecutionChecklist(instanceId: string, userId: strin
 export async function generateActionPlanFromChecklist(
   instanceId: string,
   userId: string,
+  tx?: Tx,
 ): Promise<{ generadas: number; existentes: number }> {
-  const instance = await db.select().from(pdtpExecutionChecklists)
+  const client = tx ?? db
+  const instance = await client.select().from(pdtpExecutionChecklists)
     .where(eq(pdtpExecutionChecklists.id, instanceId)).limit(1)
   const inst = instance[0]
   if (!inst) throw new Error("Instancia de checklist no encontrada.")
   const executionId = inst.executionId
   const subjectLabel = inst.subjectLabel?.trim() || ""
 
-  const nonCompliant = await getNonCompliantItems(instanceId)
+  const nonCompliant = await getNonCompliantItems(instanceId, client)
   if (nonCompliant.length === 0) return { generadas: 0, existentes: 0 }
 
   const definition = inst.definitionSnapshotJson as unknown as ChecklistDefinition
@@ -214,7 +222,7 @@ export async function generateActionPlanFromChecklist(
   const prefix = subjectLabel ? `[${subjectLabel}] ` : ""
 
   // Ejecución para obtener fecha de referencia del plazo
-  const [execution] = await db.select().from(pdtpExecutions)
+  const [execution] = await client.select().from(pdtpExecutions)
     .where(eq(pdtpExecutions.id, executionId)).limit(1)
   if (!execution) throw new Error("Ejecución PDTP no encontrada.")
   const refDate = execution?.executedAt ? new Date(execution.executedAt) : new Date()
@@ -233,7 +241,7 @@ export async function generateActionPlanFromChecklist(
     // Buscar si ya existe una acción para este ítem de ESTA instancia. El id de
     // instancia es la identidad durable del sujeto; la etiqueta visible puede
     // repetirse o cambiar y por eso nunca sirve como clave de deduplicación.
-    const [existing] = await db.select().from(preventionCapaActions)
+    const [existing] = await client.select().from(preventionCapaActions)
       .where(and(
         eq(preventionCapaActions.sourceType, "pdtp"),
         eq(preventionCapaActions.sourceId, executionId),
@@ -266,10 +274,16 @@ export async function generateActionPlanFromChecklist(
     // La urgencia de terreno viaja como bandera, no como plazo imposible.
     const detencionInmediata = requiereDetencionInmediata(danoPotencial)
 
-    await db.transaction(async (tx) => {
-      const capa = await createCapaActionWithClient(tx, {
+    // `sourceItemId` con la identidad del ítem para que el unique ya existente
+    // (`prevention_capa_source_item_unique`) respalde la deduplicación: el
+    // pre-chequeo de arriba es una carrera, y un doble clic creaba dos acciones
+    // para el mismo hallazgo, duplicando el % de cierre y los badges.
+    const sourceItemId = `${instanceId}:${item.seccionId}:${item.itemId}`
+    const writeAction = async (client: Tx) => {
+      const capa = await createCapaActionWithClient(client, {
         sourceType: "pdtp",
         sourceId: executionId,
+        sourceItemId,
         worksiteId: execution.worksiteId,
         finding: hallazgo,
         actionDescription: accion,
@@ -297,9 +311,21 @@ export async function generateActionPlanFromChecklist(
         worksiteId: execution.worksiteId,
         actorUserId: userId,
         payload: { status: "pendiente", priority: prioridad },
-      }, tx)
-    })
-    generadas++
+      }, client)
+    }
+
+    try {
+      // Con `tx` compartida el lote entero es atómico; sin ella se conserva el
+      // comportamiento anterior de una transacción por ítem.
+      if (tx) await writeAction(tx)
+      else await db.transaction(writeAction)
+      generadas++
+    } catch (error) {
+      // Perdió la carrera contra otra generación simultánea: el unique la
+      // atrapó, así que el ítem ya tiene su acción.
+      if (!tx && isUniqueViolation(error)) { existentes++; continue }
+      throw error
+    }
   }
 
   return { generadas, existentes }

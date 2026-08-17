@@ -199,10 +199,17 @@ export async function archiveDocument(args: {
   assertScopeAccess(doc.worksiteId, args.scope)
 
   const now = new Date().toISOString()
-  const [updated] = await db.update(sstDocuments).set({ status: "archivado", updatedAt: now }).where(eq(sstDocuments.id, data.documentId)).returning()
-  if (!updated) throw new Error("No se pudo archivar el documento.")
-  await db.update(sstDocumentVersions).set({ status: "archivado", updatedAt: now }).where(and(eq(sstDocumentVersions.documentId, data.documentId), ne(sstDocumentVersions.status, "vigente"), ne(sstDocumentVersions.status, "aprobado")))
-  await recordAuditEntry({ documentId: data.documentId, userId: args.ctx.userId, userEmail: args.ctx.userEmail, action: "archive", comment: data.comment || null, ip: args.ctx.ip })
+  // Documento y versiones en la misma transacción: un fallo entremedio dejaba
+  // el documento `archivado` con versiones en `borrador`/`en_revision` activas,
+  // y `authorizeWorkflowContext` bloquea operar sobre documento archivado — o
+  // sea que esas versiones quedaban congeladas sin transición posible.
+  const updated = await db.transaction(async (tx) => {
+    const [row] = await tx.update(sstDocuments).set({ status: "archivado", updatedAt: now }).where(eq(sstDocuments.id, data.documentId)).returning()
+    if (!row) throw new Error("No se pudo archivar el documento.")
+    await tx.update(sstDocumentVersions).set({ status: "archivado", updatedAt: now }).where(and(eq(sstDocumentVersions.documentId, data.documentId), ne(sstDocumentVersions.status, "vigente"), ne(sstDocumentVersions.status, "aprobado")))
+    await recordAuditEntry({ documentId: data.documentId, userId: args.ctx.userId, userEmail: args.ctx.userEmail, action: "archive", comment: data.comment || null, ip: args.ctx.ip }, tx)
+    return row
+  })
   return updated
 }
 

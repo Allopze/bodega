@@ -82,7 +82,10 @@ export async function setPdtpActivityOverride(
     ))
     .limit(1)
 
-  const [row] = await db
+  // Override y changelog en la misma transacción: el motivo es parte del
+  // contenido firmable del programa, igual que en las exclusiones por faena.
+  return db.transaction(async (tx) => {
+  const [row] = await tx
     .insert(pdtpActivityScheduleOverrides)
     .values({
       id,
@@ -133,8 +136,10 @@ export async function setPdtpActivityOverride(
       reason: input.reason,
     },
     `Meta por faena ${before ? "actualizada" : "creada"} para actividad ${activity.n}. Motivo: ${input.reason}`,
+    tx,
   )
   return row
+  })
 }
 
 /**
@@ -179,7 +184,8 @@ export async function deletePdtpActivityOverride(
     throw new Error("Solo se pueden eliminar overrides de programas PDTP en estado activo.")
   }
 
-  await db
+  await db.transaction(async (tx) => {
+  await tx
     .delete(pdtpActivityScheduleOverrides)
     .where(and(
       eq(pdtpActivityScheduleOverrides.activityId, input.activityId),
@@ -200,7 +206,9 @@ export async function deletePdtpActivityOverride(
     },
     { reason: input.reason },
     `Meta por faena eliminada para actividad ${activity.n}. Motivo: ${input.reason}`,
+    tx,
   )
+  })
 }
 
 /**

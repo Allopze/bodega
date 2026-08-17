@@ -142,20 +142,26 @@ export async function excludeActivityForWorksite(
   if (reason.trim().length < 10) throw new Error("El motivo de la exclusión debe tener al menos 10 caracteres.")
 
   const now = new Date().toISOString()
-  const [row] = await db.insert(pdtpActivityWorksiteExclusions).values({
-    id: nanoid(), activityId, worksiteId, reason: reason.trim(), createdByUserId: userId, createdAt: now,
-  }).onConflictDoUpdate({
-    target: [pdtpActivityWorksiteExclusions.activityId, pdtpActivityWorksiteExclusions.worksiteId],
-    set: { reason: reason.trim(), createdByUserId: userId, createdAt: now },
-  }).returning()
-  if (!row) throw new Error("No se pudo registrar la exclusión.")
+  // Exclusión y changelog en la misma transacción: el motivo forma parte del
+  // contenido firmable del programa (`content-digest`), así que aplicar la
+  // exclusión sin registrarla dejaba el documento firmado sin su justificación.
+  return db.transaction(async (tx) => {
+    const [row] = await tx.insert(pdtpActivityWorksiteExclusions).values({
+      id: nanoid(), activityId, worksiteId, reason: reason.trim(), createdByUserId: userId, createdAt: now,
+    }).onConflictDoUpdate({
+      target: [pdtpActivityWorksiteExclusions.activityId, pdtpActivityWorksiteExclusions.worksiteId],
+      set: { reason: reason.trim(), createdByUserId: userId, createdAt: now },
+    }).returning()
+    if (!row) throw new Error("No se pudo registrar la exclusión.")
 
-  await addPdtpChangeLogEntry(
-    activity.programId, program.version, userId, `worksite_exclusion:${activity.n}`,
-    null, { worksiteId, reason: reason.trim() },
-    `Actividad ${activity.n} excluida de una faena. Motivo: ${reason.trim()}`,
-  )
-  return row
+    await addPdtpChangeLogEntry(
+      activity.programId, program.version, userId, `worksite_exclusion:${activity.n}`,
+      null, { worksiteId, reason: reason.trim() },
+      `Actividad ${activity.n} excluida de una faena. Motivo: ${reason.trim()}`,
+      tx,
+    )
+    return row
+  })
 }
 
 /** Revierte una exclusión: la faena vuelve a heredar la actividad. */
@@ -175,14 +181,17 @@ export async function includeActivityForWorksite(
     .limit(1)
   if (!existing) throw new Error("Esta actividad no tiene una exclusión registrada para esa faena.")
 
-  await db.delete(pdtpActivityWorksiteExclusions)
-    .where(and(eq(pdtpActivityWorksiteExclusions.activityId, activityId), eq(pdtpActivityWorksiteExclusions.worksiteId, worksiteId)))
+  await db.transaction(async (tx) => {
+    await tx.delete(pdtpActivityWorksiteExclusions)
+      .where(and(eq(pdtpActivityWorksiteExclusions.activityId, activityId), eq(pdtpActivityWorksiteExclusions.worksiteId, worksiteId)))
 
-  await addPdtpChangeLogEntry(
-    activity.programId, program.version, userId, `worksite_exclusion:${activity.n}`,
-    { worksiteId, reason: existing.reason }, null,
-    `Actividad ${activity.n} vuelve a incluirse para una faena. Motivo: ${reason.trim()}`,
-  )
+    await addPdtpChangeLogEntry(
+      activity.programId, program.version, userId, `worksite_exclusion:${activity.n}`,
+      { worksiteId, reason: existing.reason }, null,
+      `Actividad ${activity.n} vuelve a incluirse para una faena. Motivo: ${reason.trim()}`,
+      tx,
+    )
+  })
 }
 
 /**

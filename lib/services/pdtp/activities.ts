@@ -84,18 +84,25 @@ export async function batchUpdatePdtpActivities(input: PdtpActivityBatchUpdateIn
   if (input.evidenceRequirement !== undefined) updates.evidenceRequirement = input.evidenceRequirement
   if (Object.keys(updates).length === 1) throw new Error("Selecciona al menos un cambio para aplicar.")
 
-  const changed = await db.update(pdtpActivities).set(updates)
-    .where(and(eq(pdtpActivities.programId, input.programId), inArray(pdtpActivities.id, uniqueIds)))
-    .returning({ id: pdtpActivities.id })
-  await addPdtpChangeLogEntry(
-    input.programId,
-    program.version,
-    userId,
-    "activity:batch",
-    { activityIds: uniqueIds },
-    { activityIds: uniqueIds, ...updates },
-    `${changed.length} actividad(es) actualizadas en lote; calendario, vistas y checklist preservados.`,
-  )
+  // Cambio + changelog en la misma transacción: `pdtp_change_log` es el control
+  // de cambios del documento que firman los aprobadores, y sin esto un lote
+  // podía aplicarse sin quedar registrado.
+  const changed = await db.transaction(async (tx) => {
+    const rows = await tx.update(pdtpActivities).set(updates)
+      .where(and(eq(pdtpActivities.programId, input.programId), inArray(pdtpActivities.id, uniqueIds)))
+      .returning({ id: pdtpActivities.id })
+    await addPdtpChangeLogEntry(
+      input.programId,
+      program.version,
+      userId,
+      "activity:batch",
+      { activityIds: uniqueIds },
+      { activityIds: uniqueIds, ...updates },
+      `${rows.length} actividad(es) actualizadas en lote; calendario, vistas y checklist preservados.`,
+      tx,
+    )
+    return rows
+  })
   return { updatedCount: changed.length }
 }
 
@@ -142,9 +149,6 @@ export async function updatePdtpActivity(input: PdtpActivityUpdateInput, userId:
     }
   }
 
-  const [updated] = await db.update(pdtpActivities).set(updates).where(eq(pdtpActivities.id, input.activityId)).returning()
-  if (!updated) throw new Error("No se pudo actualizar la actividad PDTP.")
-
   const effectiveSchedule = input.scheduleOverrides !== undefined
     ? input.scheduleOverrides
     : (input.scheduleMode !== undefined || input.recurrenceRule !== undefined)
@@ -153,36 +157,46 @@ export async function updatePdtpActivity(input: PdtpActivityUpdateInput, userId:
           : [])
       : undefined
 
-  if (effectiveSchedule !== undefined) {
-    before.scheduleOverrides = "see after"; after.scheduleOverrides = effectiveSchedule
-    // El set entrante es autoritativo para el año del programa: borra
-    // celdas existentes que ya no aparecen (semana quitada en la UI) antes
-    // de upsertear las que sí. Antes esto solo insertaba/actualizaba y
-    // dejaba cantidades planificadas obsoletas en la DB.
-    const keptIds = effectiveSchedule.map((cell) => pdtpScheduleId(input.activityId, program.year, cell.month, cell.week))
-    await db.delete(pdtpActivitySchedule).where(keptIds.length === 0
-      ? and(eq(pdtpActivitySchedule.activityId, input.activityId), eq(pdtpActivitySchedule.year, program.year))
-      : and(
-          eq(pdtpActivitySchedule.activityId, input.activityId),
-          eq(pdtpActivitySchedule.year, program.year),
-          notInArray(pdtpActivitySchedule.id, keptIds),
-        ))
-    for (const cell of effectiveSchedule) {
-      await db.insert(pdtpActivitySchedule).values({
-        id: pdtpScheduleId(input.activityId, program.year, cell.month, cell.week),
-        activityId: input.activityId, year: program.year, month: cell.month, week: cell.week,
-        plannedQuantity: cell.plannedQuantity, sourceColumn: "manual",
-      }).onConflictDoUpdate({
-        target: [pdtpActivitySchedule.activityId, pdtpActivitySchedule.year, pdtpActivitySchedule.month, pdtpActivitySchedule.week],
-        set: { plannedQuantity: cell.plannedQuantity, sourceColumn: "manual" },
-      })
-    }
-  }
+  // Actividad + calendario + changelog en una sola transacción. El borrado de
+  // celdas obsoletas es autoritativo, así que si commiteaba y los inserts
+  // fallaban después quedaba la actividad con un calendario TRUNCADO —pérdida
+  // silenciosa de cantidad planificada, que es el denominador del indicador—
+  // y sin entrada de changelog que lo dejara trazado.
+  return db.transaction(async (tx) => {
+    const [updated] = await tx.update(pdtpActivities).set(updates).where(eq(pdtpActivities.id, input.activityId)).returning()
+    if (!updated) throw new Error("No se pudo actualizar la actividad PDTP.")
 
-  if (Object.keys(after).length > 0) {
-    await addPdtpChangeLogEntry(activity.programId, program.version, userId, `activity:${activity.n}`, before, after, `Actividad ${activity.n} actualizada.`)
-  }
-  return updated
+    if (effectiveSchedule !== undefined) {
+      before.scheduleOverrides = "see after"; after.scheduleOverrides = effectiveSchedule
+      // El set entrante es autoritativo para el año del programa: borra
+      // celdas existentes que ya no aparecen (semana quitada en la UI) antes
+      // de upsertear las que sí. Antes esto solo insertaba/actualizaba y
+      // dejaba cantidades planificadas obsoletas en la DB.
+      const keptIds = effectiveSchedule.map((cell) => pdtpScheduleId(input.activityId, program.year, cell.month, cell.week))
+      await tx.delete(pdtpActivitySchedule).where(keptIds.length === 0
+        ? and(eq(pdtpActivitySchedule.activityId, input.activityId), eq(pdtpActivitySchedule.year, program.year))
+        : and(
+            eq(pdtpActivitySchedule.activityId, input.activityId),
+            eq(pdtpActivitySchedule.year, program.year),
+            notInArray(pdtpActivitySchedule.id, keptIds),
+          ))
+      for (const cell of effectiveSchedule) {
+        await tx.insert(pdtpActivitySchedule).values({
+          id: pdtpScheduleId(input.activityId, program.year, cell.month, cell.week),
+          activityId: input.activityId, year: program.year, month: cell.month, week: cell.week,
+          plannedQuantity: cell.plannedQuantity, sourceColumn: "manual",
+        }).onConflictDoUpdate({
+          target: [pdtpActivitySchedule.activityId, pdtpActivitySchedule.year, pdtpActivitySchedule.month, pdtpActivitySchedule.week],
+          set: { plannedQuantity: cell.plannedQuantity, sourceColumn: "manual" },
+        })
+      }
+    }
+
+    if (Object.keys(after).length > 0) {
+      await addPdtpChangeLogEntry(activity.programId, program.version, userId, `activity:${activity.n}`, before, after, `Actividad ${activity.n} actualizada.`, tx)
+    }
+    return updated
+  })
 }
 
 export async function addPdtpActivity(input: PdtpActivityAddInput, userId: string) {
@@ -199,49 +213,57 @@ export async function addPdtpActivity(input: PdtpActivityAddInput, userId: strin
   const now = new Date().toISOString()
   const activityId = pdtpActivityId(input.programId, newN)
 
-  const [created] = await db.insert(pdtpActivities).values({
-    id: activityId, programId: input.programId, n: newN, displayOrder: maxDisplayOrder + 1,
-    activity: input.activity, program: input.program,
-    responsibleSlugs: input.responsibleSlugs, responsibleDisplay: input.responsibleDisplay,
-    audienceRoles: input.audienceRoles ?? [], scheduleMode: input.scheduleMode ?? "scheduled",
-    scheduleClassificationStatus: input.scheduleClassificationStatus ?? "confirmed",
-    recurrenceRule: input.recurrenceRule ?? null, triggerType: input.triggerType ?? null,
-    triggerDescription: input.triggerDescription ?? null, dueDays: input.dueDays ?? null,
-    evidenceRequirement: input.evidenceRequirement ?? null, indicatorMode: input.indicatorMode ?? "planned_vs_completed",
-    targetValue: input.targetValue ?? null, targetUnit: input.targetUnit ?? null,
-    sourceSheetRow: 0, notes: input.notes ?? null, createdAt: now, updatedAt: now,
-  }).returning()
-  if (!created) throw new Error("No se pudo crear la actividad PDTP.")
+  // Las hojas se resuelven ANTES de escribir nada: al validarlas dentro del
+  // bucle final, un `sheetCode` inexistente lanzaba con la actividad y su
+  // calendario ya commiteados, dejando una actividad sin membresía —invisible
+  // en la vista donde el usuario la pidió— y sin entrada de changelog.
+  const sheets = await Promise.all(input.sheetCodes.map(async (sheetCode) => {
+    const sheet = await resolveSheetForProgram(input.programId, sheetCode)
+    if (!sheet) throw new Error(`Hoja PDTP no encontrada: ${sheetCode}.`)
+    return { sheetCode, sheet }
+  }))
 
   const schedule = input.schedule ?? ((input.scheduleMode ?? "scheduled") === "scheduled" && input.recurrenceRule
     ? projectRecurrenceToLegacySchedule(input.recurrenceRule, deriveScheduleHorizon(program))
     : [])
-  if (schedule.length > 0) {
+
+  return db.transaction(async (tx) => {
+    const [created] = await tx.insert(pdtpActivities).values({
+      id: activityId, programId: input.programId, n: newN, displayOrder: maxDisplayOrder + 1,
+      activity: input.activity, program: input.program,
+      responsibleSlugs: input.responsibleSlugs, responsibleDisplay: input.responsibleDisplay,
+      audienceRoles: input.audienceRoles ?? [], scheduleMode: input.scheduleMode ?? "scheduled",
+      scheduleClassificationStatus: input.scheduleClassificationStatus ?? "confirmed",
+      recurrenceRule: input.recurrenceRule ?? null, triggerType: input.triggerType ?? null,
+      triggerDescription: input.triggerDescription ?? null, dueDays: input.dueDays ?? null,
+      evidenceRequirement: input.evidenceRequirement ?? null, indicatorMode: input.indicatorMode ?? "planned_vs_completed",
+      targetValue: input.targetValue ?? null, targetUnit: input.targetUnit ?? null,
+      sourceSheetRow: 0, notes: input.notes ?? null, createdAt: now, updatedAt: now,
+    }).returning()
+    if (!created) throw new Error("No se pudo crear la actividad PDTP.")
+
     for (const cell of schedule) {
-      await db.insert(pdtpActivitySchedule).values({
+      await tx.insert(pdtpActivitySchedule).values({
         id: pdtpScheduleId(activityId, program.year, cell.month, cell.week), activityId,
         year: program.year, month: cell.month, week: cell.week, plannedQuantity: cell.plannedQuantity, sourceColumn: "manual",
       })
     }
-  }
 
-  for (const sheetCode of input.sheetCodes) {
-    const sheet = await resolveSheetForProgram(input.programId, sheetCode)
-    if (!sheet) throw new Error(`Hoja PDTP no encontrada: ${sheetCode}.`)
+    for (const { sheetCode, sheet } of sheets) {
+      const [{ maxOrder } = { maxOrder: 0 }] = await tx
+        .select({ maxOrder: sql<number>`COALESCE(MAX(${pdtpSheetActivities.displayOrder}), 0)` })
+        .from(pdtpSheetActivities)
+        .where(eq(pdtpSheetActivities.sheetId, sheet.id))
+      const nextOrder = Number(maxOrder) + 1
+      await tx.insert(pdtpSheetActivities).values({
+        id: pdtpSheetActivityId(input.programId, sheetCode, newN), sheetId: sheet.id, sheetCode, activityId,
+        sheetRow: nextOrder, displayOrder: nextOrder,
+      }).onConflictDoNothing()
+    }
 
-    const [{ maxOrder } = { maxOrder: 0 }] = await db
-      .select({ maxOrder: sql<number>`COALESCE(MAX(${pdtpSheetActivities.displayOrder}), 0)` })
-      .from(pdtpSheetActivities)
-      .where(eq(pdtpSheetActivities.sheetId, sheet.id))
-    const nextOrder = Number(maxOrder) + 1
-    await db.insert(pdtpSheetActivities).values({
-      id: pdtpSheetActivityId(input.programId, sheetCode, newN), sheetId: sheet.id, sheetCode, activityId,
-      sheetRow: nextOrder, displayOrder: nextOrder,
-    }).onConflictDoNothing()
-  }
-
-  await addPdtpChangeLogEntry(input.programId, program.version, userId, `activity:${newN}`, null, { n: newN, activity: input.activity, sheetCodes: input.sheetCodes }, `Actividad ${newN} agregada manualmente.`)
-  return created
+    await addPdtpChangeLogEntry(input.programId, program.version, userId, `activity:${newN}`, null, { n: newN, activity: input.activity, sheetCodes: input.sheetCodes }, `Actividad ${newN} agregada manualmente.`, tx)
+    return created
+  })
 }
 
 export async function retirePdtpActivity(input: {
@@ -374,18 +396,22 @@ export async function duplicatePdtpActivity(activityId: string, userId: string) 
       createdAt: now,
       updatedAt: now,
     })))
+    // Dentro de la misma tx que la copia: si el changelog fallaba después del
+    // commit, la actividad duplicada existía sin quedar registrada en el
+    // control de cambios del programa.
+    await addPdtpChangeLogEntry(
+      source.programId,
+      program.version,
+      userId,
+      `activity:${copy.n}`,
+      null,
+      { sourceActivityId: source.id, n: copy.n, activity: copy.activity },
+      `Actividad ${source.n} duplicada como actividad ${copy.n}; sin ejecuciones ni firmas.`,
+      tx,
+    )
     return copy
   })
 
-  await addPdtpChangeLogEntry(
-    source.programId,
-    program.version,
-    userId,
-    `activity:${created.n}`,
-    null,
-    { sourceActivityId: source.id, n: created.n, activity: created.activity },
-    `Actividad ${source.n} duplicada como actividad ${created.n}; sin ejecuciones ni firmas.`,
-  )
   return created
 }
 
@@ -410,7 +436,6 @@ export async function reorderPdtpActivities(programId: string, orderedIds: strin
         .set({ displayOrder: i + 1, updatedAt: now })
         .where(eq(pdtpActivities.id, orderedIds[i]!))
     }
+    await addPdtpChangeLogEntry(programId, program.version, userId, "activity:reorder", null, { orderedIds }, "Actividades reordenadas.", tx)
   })
-
-  await addPdtpChangeLogEntry(programId, program.version, userId, "activity:reorder", null, { orderedIds }, "Actividades reordenadas.")
 }

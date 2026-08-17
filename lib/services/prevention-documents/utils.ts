@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto"
 import { join, extname } from "node:path"
-import { db } from "@/db"
+import { db, type DB } from "@/db"
 import {
   sstDocumentAudit,
   type SstDocument,
@@ -228,6 +228,13 @@ export async function persistFileOnDisk(
   return createSstDocumentPath(storageName)
 }
 
+/**
+ * `client` permite que la traza comparta la transacción de la escritura que
+ * audita. Sin él convivían dos convenciones para la misma tabla —este helper
+ * con `db` suelto, e inserts directos con `tx` en `workflow.ts`/`integrity.ts`/
+ * `distribution.ts`— y cada camino nuevo elegía al azar si su traza era
+ * atómica: un fallo tras el UPDATE dejaba el cambio sin registro.
+ */
 export async function recordAuditEntry(args: {
   documentId: string
   versionId?: string | null
@@ -239,9 +246,9 @@ export async function recordAuditEntry(args: {
   comment?: string | null
   metadata?: Record<string, unknown> | null
   ip?: string | null
-}) {
+}, client: Pick<DB, "insert"> = db) {
   const now = new Date().toISOString()
-  await db.insert(sstDocumentAudit).values({
+  await client.insert(sstDocumentAudit).values({
     id: `sda-${nanoid()}`,
     documentId: args.documentId,
     versionId: args.versionId ?? null,
