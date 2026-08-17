@@ -31,6 +31,10 @@ beforeEach(async () => {
   await inMemoryDb.delete(schema.pdtpProgramWorksites)
   await inMemoryDb.delete(schema.pdtpPrograms)
   await inMemoryDb.delete(schema.inventoryMovements)
+  // Antes de `worksites`, que la referencia por FK. Sin esta línea un
+  // trabajador sembrado por un test bloquea el cierre de faena de los
+  // siguientes, que es justo lo que la guarda nueva impide.
+  await inMemoryDb.delete(schema.workers)
   await inMemoryDb.delete(schema.worksiteStock)
   await inMemoryDb.delete(schema.products)
   await inMemoryDb.delete(schema.productCategories)
@@ -148,6 +152,47 @@ describe("worksite lifecycle", () => {
     expect(worksite?.isActive).toBe(true)
     expect(membership?.isActive).toBe(true)
     expect(capa?.status).toBe("in_progress")
+  })
+
+  it("rechaza el cierre si la faena todavía tiene dotación activa, sin cancelar nada", async () => {
+    await inMemoryDb.insert(schema.workers).values({
+      id: "wk-life", firstName: "Ana", lastName: "Pérez", rut: "11.111.111-1",
+      worksiteId: "ws-life", isActive: true,
+    })
+
+    const { setWorksiteActive } = await import("@/lib/services/worksite-lifecycle")
+    await expect(setWorksiteActive({
+      worksiteId: "ws-life",
+      activate: false,
+      reason: "Término definitivo del contrato principal.",
+      actorUserId: "actor-1",
+      scope: { mode: "all", ids: [] },
+    })).rejects.toThrow(/trabajador activo|trabajadores activos/i)
+
+    // Así llegó producción a tener 146 trabajadores colgando de faenas
+    // cerradas: seguían activos, pero su faena ya no aparecía en ningún
+    // selector, así que no se les podía entregar nada.
+    const [worksite] = await inMemoryDb.select().from(schema.worksites).where(eq(schema.worksites.id, "ws-life"))
+    const [capa] = await inMemoryDb.select().from(schema.preventionCapaActions)
+      .where(eq(schema.preventionCapaActions.id, "capa-life-open"))
+    expect(worksite?.isActive).toBe(true)
+    expect(capa?.status).toBe("in_progress")
+  })
+
+  it("un trabajador dado de baja no bloquea el cierre de su faena", async () => {
+    await inMemoryDb.insert(schema.workers).values({
+      id: "wk-life-baja", firstName: "Luis", lastName: "Soto", rut: "22.222.222-2",
+      worksiteId: "ws-life", isActive: false,
+    })
+
+    const { setWorksiteActive } = await import("@/lib/services/worksite-lifecycle")
+    await expect(setWorksiteActive({
+      worksiteId: "ws-life",
+      activate: false,
+      reason: "Término definitivo del contrato principal.",
+      actorUserId: "actor-1",
+      scope: { mode: "all", ids: [] },
+    })).resolves.toMatchObject({ programsDropped: 1 })
   })
 
   it("una fila de stock en cero es historial y no bloquea el cierre", async () => {

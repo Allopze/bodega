@@ -4,6 +4,7 @@ import {
   pdtpObligations,
   pdtpProgramWorksites,
   preventionCapaActions,
+  workers,
   worksiteStock,
   worksites,
 } from "@/db/schema"
@@ -70,6 +71,33 @@ async function assertWorksiteHasNoStock(tx: Tx, worksiteId: string, worksiteName
     `${balance.products === 1 ? "producto" : "productos"} con existencias (${units} en total). ` +
     "Marca \"Devolver el saldo a Oficina\" al cerrarla, o vacíala antes en Bodega: " +
     "una faena inactiva no admite movimientos de stock.",
+  )
+}
+
+/**
+ * Cerrar una faena con dotación deja a esos trabajadores inalcanzables sin
+ * desactivarlos: siguen `is_active`, pero su `worksite_id` apunta a una faena
+ * que ya no aparece en ningún selector de faena, así que no se les puede
+ * entregar EPP —`registerWorkerStockDelivery` exige que la faena del trabajador
+ * sea la de la bodega—, ni asignarlos, ni verlos en los padrones por faena.
+ *
+ * Es el mismo criterio que `assertWorksiteHasNoStock`: vaciar la faena es
+ * requisito del cierre. Aquí no se puede ofrecer un equivalente a "devolver a
+ * Oficina" porque a qué faena se traslada cada persona es una decisión de
+ * negocio, no un default: se exige reasignarlos o darlos de baja antes.
+ */
+async function assertWorksiteHasNoActiveWorkers(tx: Tx, worksiteId: string, worksiteName: string) {
+  const [dotacion] = await tx.select({ total: sql<number>`count(*)::int` })
+    .from(workers)
+    .where(and(eq(workers.worksiteId, worksiteId), eq(workers.isActive, true)))
+
+  if (!dotacion || dotacion.total === 0) return
+
+  throw new Error(
+    `No se puede cerrar la faena "${worksiteName}": quedan ${dotacion.total} ` +
+    `${dotacion.total === 1 ? "trabajador activo" : "trabajadores activos"} en su dotación. ` +
+    "Reasígnalos a otra faena o dalos de baja en Trabajadores antes de cerrarla: " +
+    "un trabajador en faena inactiva no puede recibir entregas ni aparecer en los padrones por faena.",
   )
 }
 
@@ -167,6 +195,7 @@ export async function setWorksiteActive(input: SetWorksiteActiveInput): Promise<
         })
       }
       await assertWorksiteHasNoStock(tx, current.id, current.name)
+      await assertWorksiteHasNoActiveWorkers(tx, current.id, current.name)
     }
 
     const closureReason = `Cierre de faena: ${reason}`
