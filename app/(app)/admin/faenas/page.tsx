@@ -2,7 +2,7 @@ import type { Metadata } from "next"
 import { redirect } from "next/navigation"
 import { db } from "@/db"
 import { worksites } from "@/db/schema"
-import { requirePermission } from "@/lib/auth/can"
+import { can, requirePermission } from "@/lib/auth/can"
 import { resolveWorksiteScope, worksiteScopeSql } from "@/lib/auth/scope"
 import { PageHeader } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
@@ -54,6 +54,7 @@ export default async function FaenasPage() {
           isActive: w.isActive, createdAt: w.createdAt, updatedAt: w.updatedAt,
         }))}
         canCreateWorksites={canCreateWorksites}
+        canReturnStock={can(session, "warehouse:adjust_stock")}
       />
     </PageContainer>
   )

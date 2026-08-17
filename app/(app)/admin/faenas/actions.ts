@@ -6,7 +6,7 @@ import { db } from "@/db"
 import { worksites } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { recordAudit } from "@/lib/audit"
-import { canAccessWorksite, requirePermission } from "@/lib/auth/can"
+import { can, canAccessWorksite, requirePermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { worksiteSchema, type ActionState } from "@/lib/validation/masters"
 import { setWorksiteActive } from "@/lib/services/worksite-lifecycle"
@@ -104,20 +104,41 @@ export async function toggleWorksiteActive(_prev: ActionState, formData: FormDat
     return { ok: false, message: "No tienes acceso a esta faena" }
   }
 
-  const result = await setWorksiteActive({
-    worksiteId: id,
-    activate,
-    reason: motivo,
-    actorUserId: session.user.id,
-    actorEmail: session.user.email ?? undefined,
-    scope: resolveWorksiteScope(session),
-  })
+  // Devolver el saldo mueve inventario real: administrar faenas no lo autoriza
+  // por sí solo. Quien no tenga el permiso de bodega vacía la faena por el
+  // camino normal y después la cierra.
+  const returnStockToOffice = !activate && formData.get("returnStock") === "on"
+  if (returnStockToOffice && !can(session, "warehouse:adjust_stock")) {
+    return { ok: false, message: "Sin permisos para mover inventario: pide a bodega que vacíe la faena antes de cerrarla" }
+  }
+
+  // El servicio rechaza con mensaje accionable (saldo en bodega, fuera de
+  // alcance): sin este catch el throw revienta la server action y el usuario ve
+  // el error genérico de Next en vez del motivo.
+  let result
+  try {
+    result = await setWorksiteActive({
+      worksiteId: id,
+      activate,
+      reason: motivo,
+      actorUserId: session.user.id,
+      actorEmail: session.user.email ?? undefined,
+      scope: resolveWorksiteScope(session),
+      returnStockToOffice,
+    })
+  } catch (e) {
+    return { ok: false, message: e instanceof Error ? e.message : "No se pudo cambiar el estado de la faena" }
+  }
 
   revalidatePath(REVALIDATE)
   revalidatePath("/prevencion/pdtp")
   if (!activate) {
     revalidatePath("/prevencion/capa")
+    if (result.stockReturned) revalidatePath("/bodega")
     const partes = [
+      result.stockReturned
+        ? `${result.stockReturned.products} producto(s) devueltos a ${result.stockReturned.officeName}`
+        : null,
       result.programsDropped > 0 ? `retirada de ${result.programsDropped} programa(s)` : null,
       result.capaCancelled > 0 ? `${result.capaCancelled} CAPA cancelada(s)` : null,
       result.obligationsCancelled > 0 ? `${result.obligationsCancelled} obligación(es) cancelada(s)` : null,

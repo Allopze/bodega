@@ -7,6 +7,7 @@ import { CatalogRowActions } from "@/components/admin/catalog-row-actions"
 import { WorksiteForm } from "./worksite-form"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Field } from "@/components/ui/field"
 import { Textarea } from "@/components/ui/textarea"
@@ -29,14 +30,16 @@ interface WorksiteRow {
 export function FaenasList({
   worksites,
   canCreateWorksites,
+  canReturnStock,
 }: {
   worksites: WorksiteRow[]
   canCreateWorksites: boolean
+  canReturnStock: boolean
 }) {
   const {
     sheetOpen, editRow: editWs,
     openEdit: openEditWs, closeSheet,
-    toggleAction: wsToggleAction,
+    toggleAction: wsToggleAction, toggleState,
   } = useCatalogSheet<WorksiteRow>(toggleWorksiteActive)
 
   const rows = worksites as (WorksiteRow & Record<string, unknown>)[]
@@ -46,6 +49,13 @@ export function FaenasList({
   // como una confirmación genérica.
   const [closing, setClosing] = React.useState<WorksiteRow | null>(null)
   const [motivo, setMotivo] = React.useState("")
+
+  // El servidor puede rechazar el cierre (saldo en bodega, permisos): el
+  // diálogo sólo se cierra cuando el cierre ocurrió de verdad, para no dejar al
+  // usuario con un toast de error y sin el formulario que debe corregir.
+  React.useEffect(() => {
+    if (toggleState.ok) { setClosing(null); setMotivo("") }
+  }, [toggleState])
 
   return (
     <>
@@ -140,11 +150,25 @@ export function FaenasList({
           <p className="text-sm text-(--color-text-muted)">
             La faena sale del programa preventivo y sus acciones correctivas y obligaciones
             pendientes se cancelan con este motivo escrito en cada una. Las verificadas y
-            cerradas conservan su historial.
+            cerradas conservan su historial. Una faena cerrada no admite movimientos de
+            stock, así que su bodega debe quedar en cero.
           </p>
           <form action={wsToggleAction}>
             <input type="hidden" name="id" value={closing?.id ?? ""} />
             <input type="hidden" name="activate" value="false" />
+            {canReturnStock && (
+              <div className="mb-4">
+                <Checkbox
+                  name="returnStock"
+                  defaultChecked
+                  label="Devolver el saldo a Oficina"
+                />
+                <p className="mt-1 pl-6 text-xs text-(--color-text-muted)">
+                  Traslada las existencias que queden a la bodega de Oficina y lo deja
+                  escrito en el kardex de ambas.
+                </p>
+              </div>
+            )}
             <Field label="Motivo del cierre" htmlFor="motivo-cierre-faena" required>
               <Textarea
                 id="motivo-cierre-faena"
@@ -160,8 +184,7 @@ export function FaenasList({
             </Field>
             <DialogFooter>
               <Button type="button" variant="ghost" onClick={() => setClosing(null)}>Cancelar</Button>
-              <Button type="submit" variant="destructive" disabled={motivo.trim().length < 10}
-                onClick={() => setClosing(null)}>
+              <Button type="submit" variant="destructive" disabled={motivo.trim().length < 10}>
                 Cerrar faena
               </Button>
             </DialogFooter>

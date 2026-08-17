@@ -61,7 +61,10 @@ export async function getStockExport(
     .from(worksiteStock)
     .innerJoin(worksites, eq(worksiteStock.worksiteId, worksites.id))
     .innerJoin(products, eq(worksiteStock.productId, products.id))
-    .where(and(wsScope, wsFilter))
+    // Es la foto de las existencias de hoy y debe cuadrar con lo que muestra
+    // Bodega, que sólo lista faenas activas. El kardex de más abajo sí conserva
+    // las faenas cerradas: un movimiento pasado es información válida.
+    .where(and(wsScope, wsFilter, eq(worksites.isActive, true)))
     .orderBy(worksites.name, products.name)
     .limit(maxRows + 1)
 

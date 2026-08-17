@@ -1,17 +1,23 @@
-import { and, eq, inArray } from "drizzle-orm"
-import { db } from "@/db"
+import { and, eq, gt, inArray, sql } from "drizzle-orm"
+import { db, type Tx } from "@/db"
 import {
   pdtpObligations,
   pdtpProgramWorksites,
   preventionCapaActions,
+  worksiteStock,
   worksites,
 } from "@/db/schema"
 import { recordAudit } from "@/lib/audit"
 import type { WorksiteScope } from "@/lib/auth/scope"
 import { transitionCapaActionWithClient } from "@/lib/services/prevention-capa"
+import { resolveOfficeWorksite } from "@/lib/services/dispatch-guides"
+import { applyMovementTx } from "@/lib/services/stock-movement"
 
 const OPEN_CAPA_STATUSES = ["pending", "in_progress", "pending_verification", "reopened"] as const
 const OPEN_OBLIGATION_STATUSES = ["pending", "overdue"] as const
+
+/** Referencia de kardex de los traslados que genera el cierre de una faena. */
+const CLOSURE_REFERENCE_TYPE = "worksite_closure"
 
 interface SetWorksiteActiveInput {
   worksiteId: string
@@ -20,16 +26,110 @@ interface SetWorksiteActiveInput {
   actorUserId: string
   actorEmail?: string
   scope: WorksiteScope
+  /**
+   * Devolver el saldo de bodega a Oficina como parte del cierre. Exige
+   * `warehouse:adjust_stock` en el caller: mueve inventario real.
+   */
+  returnStockToOffice?: boolean
 }
 
 export interface WorksiteLifecycleResult {
   programsDropped: number
   capaCancelled: number
   obligationsCancelled: number
+  stockReturned?: { products: number; units: number; officeName: string }
 }
 
 function scopeAllows(scope: WorksiteScope, worksiteId: string) {
   return scope.mode === "all" || (scope.mode === "some" && scope.ids.includes(worksiteId))
+}
+
+/**
+ * Cerrar una faena con saldo lo deja atrapado: desaparece de Bodega (la vista
+ * filtra faenas activas) y `applyMovementTx` rechaza todo movimiento sobre
+ * faena inactiva, así que ni siquiera se puede ajustar a cero. Vaciarla es
+ * requisito del cierre, no una recomendación.
+ *
+ * Las filas en cero son historial de un producto que estuvo ahí, no
+ * existencias: no bloquean.
+ */
+async function assertWorksiteHasNoStock(tx: Tx, worksiteId: string, worksiteName: string) {
+  const [balance] = await tx.select({
+    products: sql<number>`count(*)::int`,
+    units: sql<number>`coalesce(sum(${worksiteStock.quantity}), 0)::float`,
+  }).from(worksiteStock).where(and(
+    eq(worksiteStock.worksiteId, worksiteId),
+    gt(worksiteStock.quantity, 0),
+  ))
+
+  if (!balance || balance.products === 0) return
+
+  const units = Math.round(balance.units * 100) / 100
+  throw new Error(
+    `No se puede cerrar la faena "${worksiteName}": quedan ${balance.products} ` +
+    `${balance.products === 1 ? "producto" : "productos"} con existencias (${units} en total). ` +
+    "Marca \"Devolver el saldo a Oficina\" al cerrarla, o vacíala antes en Bodega: " +
+    "una faena inactiva no admite movimientos de stock.",
+  )
+}
+
+/**
+ * Devuelve todo el saldo de la faena a la bodega de Oficina, en las dos patas
+ * de kardex que ya usa la guía de despacho interna: sale de la faena y entra en
+ * Oficina. Vaciar con entregas ficticias o desechos también destraba el cierre,
+ * pero deja escrito en el kardex algo que no ocurrió.
+ *
+ * Va en la misma transacción que el cierre: si la faena no llega a cerrarse, el
+ * material no se movió.
+ */
+async function returnStockToOfficeTx(
+  tx: Tx,
+  worksite: { id: string; name: string },
+  actor: { userId: string; userEmail?: string },
+): Promise<WorksiteLifecycleResult["stockReturned"]> {
+  const office = await resolveOfficeWorksite(tx)
+  if (office.id === worksite.id) {
+    throw new Error("La bodega de Oficina no puede devolverse el saldo a sí misma.")
+  }
+
+  // FOR UPDATE al leer: sin el lock, una recepción concurrente cambia la
+  // cantidad entre esta lectura y el movimiento, y el traslado se emite por un
+  // saldo que ya no existe.
+  const rows = await tx
+    .select({ productId: worksiteStock.productId, quantity: worksiteStock.quantity })
+    .from(worksiteStock)
+    .where(and(eq(worksiteStock.worksiteId, worksite.id), gt(worksiteStock.quantity, 0)))
+    .for("update")
+
+  if (rows.length === 0) return undefined
+
+  for (const row of rows) {
+    await applyMovementTx(tx, {
+      worksiteId:    worksite.id,
+      productId:     row.productId,
+      type:          "egreso_traslado",
+      quantity:      -row.quantity,
+      referenceType: CLOSURE_REFERENCE_TYPE,
+      referenceId:   worksite.id,
+      performedBy:   actor.userId,
+      userEmail:     actor.userEmail,
+      reason:        `Cierre de faena ${worksite.name} · devolución a ${office.name}`,
+    })
+    await applyMovementTx(tx, {
+      worksiteId:    office.id,
+      productId:     row.productId,
+      type:          "ingreso_traslado",
+      quantity:      row.quantity,
+      referenceType: CLOSURE_REFERENCE_TYPE,
+      referenceId:   worksite.id,
+      performedBy:   actor.userId,
+      userEmail:     actor.userEmail,
+      reason:        `Cierre de faena ${worksite.name} · ingreso desde la faena`,
+    })
+  }
+
+  const units = rows.reduce((total, row) => total + row.quantity, 0)
+  return { products: rows.length, units: Math.round(units * 100) / 100, officeName: office.name }
 }
 
 /**
@@ -53,6 +153,20 @@ export async function setWorksiteActive(input: SetWorksiteActiveInput): Promise<
     }
     if (current.isActive === input.activate) {
       return { programsDropped: 0, capaCancelled: 0, obligationsCancelled: 0 }
+    }
+
+    // Antes de cancelar nada: si el cierre se va a rechazar, que no haya CAPA ni
+    // obligaciones que deshacer. La devolución va primero, porque su propósito
+    // es justamente dejar la faena en cero.
+    let stockReturned: WorksiteLifecycleResult["stockReturned"]
+    if (!input.activate) {
+      if (input.returnStockToOffice) {
+        stockReturned = await returnStockToOfficeTx(tx, current, {
+          userId: input.actorUserId,
+          userEmail: input.actorEmail,
+        })
+      }
+      await assertWorksiteHasNoStock(tx, current.id, current.name)
     }
 
     const closureReason = `Cierre de faena: ${reason}`
@@ -121,6 +235,7 @@ export async function setWorksiteActive(input: SetWorksiteActiveInput): Promise<
           : {}),
         ...(capaCancelled.length > 0 ? { capaCancelled } : {}),
         ...(obligationsCancelled > 0 ? { pdtpObligationsCancelled: obligationsCancelled } : {}),
+        ...(stockReturned ? { stockReturnedToOffice: stockReturned } : {}),
       },
     }, tx)
 
@@ -128,6 +243,7 @@ export async function setWorksiteActive(input: SetWorksiteActiveInput): Promise<
       programsDropped: programsDropped.length,
       capaCancelled: capaCancelled.length,
       obligationsCancelled,
+      stockReturned,
     }
   })
 }

@@ -30,15 +30,25 @@ beforeEach(async () => {
   await inMemoryDb.delete(schema.preventionCapaActions)
   await inMemoryDb.delete(schema.pdtpProgramWorksites)
   await inMemoryDb.delete(schema.pdtpPrograms)
+  await inMemoryDb.delete(schema.inventoryMovements)
+  await inMemoryDb.delete(schema.worksiteStock)
+  await inMemoryDb.delete(schema.products)
+  await inMemoryDb.delete(schema.productCategories)
   await inMemoryDb.delete(schema.worksites)
   await inMemoryDb.delete(schema.users)
 
   await inMemoryDb.insert(schema.users).values({
     id: "actor-1", name: "Admin", email: "admin@example.test", hashedPassword: "x",
   })
-  await inMemoryDb.insert(schema.worksites).values({
-    id: "ws-life", name: "Faena a cerrar", code: "LIFE", isActive: true,
+  await inMemoryDb.insert(schema.productCategories).values({ id: "cat-life", name: "General", slug: "general" })
+  await inMemoryDb.insert(schema.products).values({
+    id: "prod-life", sku: "SKU-LIFE", name: "Guante", categoryId: "cat-life", unitOfMeasure: "par",
   })
+  await inMemoryDb.insert(schema.worksites).values([
+    { id: "ws-life", name: "Faena a cerrar", code: "LIFE", isActive: true },
+    // `resolveOfficeWorksite` la reconoce por nombre cuando no hay ajuste.
+    { id: "ws-oficina", name: "Oficina Central", code: "OFI", isActive: true },
+  ])
   await inMemoryDb.insert(schema.pdtpPrograms).values({
     id: "prog-life", year: 2026, version: 1, title: "Programa", status: "active",
     elaboratedByName: "Test", elaboratedByTitle: "Prevención", createdAt: now, updatedAt: now,
@@ -111,5 +121,133 @@ describe("worksite lifecycle", () => {
     expect(worksite?.isActive).toBe(true)
     expect(membership?.isActive).toBe(true)
     expect(capa?.status).toBe("in_progress")
+  })
+
+  it("rechaza el cierre si la faena todavía tiene existencias, sin cancelar nada", async () => {
+    await inMemoryDb.insert(schema.worksiteStock).values({
+      id: "stock-life", worksiteId: "ws-life", productId: "prod-life", quantity: 7,
+    })
+
+    const { setWorksiteActive } = await import("@/lib/services/worksite-lifecycle")
+    await expect(setWorksiteActive({
+      worksiteId: "ws-life",
+      activate: false,
+      reason: "Término definitivo del contrato principal.",
+      actorUserId: "actor-1",
+      scope: { mode: "all", ids: [] },
+    })).rejects.toThrow(/existencias/i)
+
+    // El saldo atrapado sería irrecuperable, así que el cierre no puede dejar a
+    // medias las cancelaciones que ya hacía.
+    const [worksite] = await inMemoryDb.select().from(schema.worksites).where(eq(schema.worksites.id, "ws-life"))
+    const [membership] = await inMemoryDb.select().from(schema.pdtpProgramWorksites)
+      .where(eq(schema.pdtpProgramWorksites.worksiteId, "ws-life"))
+    const [capa] = await inMemoryDb.select().from(schema.preventionCapaActions)
+      .where(eq(schema.preventionCapaActions.id, "capa-life-open"))
+
+    expect(worksite?.isActive).toBe(true)
+    expect(membership?.isActive).toBe(true)
+    expect(capa?.status).toBe("in_progress")
+  })
+
+  it("una fila de stock en cero es historial y no bloquea el cierre", async () => {
+    await inMemoryDb.insert(schema.worksiteStock).values({
+      id: "stock-life-zero", worksiteId: "ws-life", productId: "prod-life", quantity: 0,
+    })
+
+    const { setWorksiteActive } = await import("@/lib/services/worksite-lifecycle")
+    await expect(setWorksiteActive({
+      worksiteId: "ws-life",
+      activate: false,
+      reason: "Término definitivo del contrato principal.",
+      actorUserId: "actor-1",
+      scope: { mode: "all", ids: [] },
+    })).resolves.toMatchObject({ programsDropped: 1 })
+  })
+
+  it("devuelve el saldo a Oficina y cierra la faena en la misma operación", async () => {
+    await inMemoryDb.insert(schema.worksiteStock).values({
+      id: "stock-life-devolver", worksiteId: "ws-life", productId: "prod-life", quantity: 4,
+    })
+
+    const { setWorksiteActive } = await import("@/lib/services/worksite-lifecycle")
+    const result = await setWorksiteActive({
+      worksiteId: "ws-life",
+      activate: false,
+      reason: "Término definitivo del contrato principal.",
+      actorUserId: "actor-1",
+      scope: { mode: "all", ids: [] },
+      returnStockToOffice: true,
+    })
+
+    expect(result.stockReturned).toMatchObject({ products: 1, units: 4, officeName: "Oficina Central" })
+
+    const stock = await inMemoryDb.select().from(schema.worksiteStock)
+    expect(stock.find((row) => row.worksiteId === "ws-life")?.quantity).toBe(0)
+    expect(stock.find((row) => row.worksiteId === "ws-oficina")?.quantity).toBe(4)
+
+    // Las dos patas quedan en el kardex: sin ellas la devolución sería un
+    // ajuste sin contraparte y Oficina cuadraría por casualidad.
+    const movements = await inMemoryDb.select().from(schema.inventoryMovements)
+    expect(movements.map((row) => row.type).sort()).toEqual(["egreso_traslado", "ingreso_traslado"])
+
+    const [worksite] = await inMemoryDb.select().from(schema.worksites).where(eq(schema.worksites.id, "ws-life"))
+    expect(worksite?.isActive).toBe(false)
+  })
+
+  it("no mueve nada si el cierre falla después de devolver el saldo", async () => {
+    await inMemoryDb.insert(schema.worksiteStock).values({
+      id: "stock-life-rollback", worksiteId: "ws-life", productId: "prod-life", quantity: 4,
+    })
+
+    const { setWorksiteActive } = await import("@/lib/services/worksite-lifecycle")
+    await expect(setWorksiteActive({
+      worksiteId: "ws-life",
+      activate: false,
+      reason: "Término definitivo del contrato principal.",
+      actorUserId: "actor-inexistente", // revienta el audit log al final
+      scope: { mode: "all", ids: [] },
+      returnStockToOffice: true,
+    })).rejects.toThrow()
+
+    const stock = await inMemoryDb.select().from(schema.worksiteStock)
+    expect(stock.find((row) => row.worksiteId === "ws-life")?.quantity).toBe(4)
+    expect(stock.find((row) => row.worksiteId === "ws-oficina")).toBeUndefined()
+    await expect(inMemoryDb.select().from(schema.inventoryMovements)).resolves.toHaveLength(0)
+  })
+
+  it("no devuelve el saldo si no se pidió, y el cierre sigue bloqueado", async () => {
+    await inMemoryDb.insert(schema.worksiteStock).values({
+      id: "stock-life-sin-devolucion", worksiteId: "ws-life", productId: "prod-life", quantity: 4,
+    })
+
+    const { setWorksiteActive } = await import("@/lib/services/worksite-lifecycle")
+    await expect(setWorksiteActive({
+      worksiteId: "ws-life",
+      activate: false,
+      reason: "Término definitivo del contrato principal.",
+      actorUserId: "actor-1",
+      scope: { mode: "all", ids: [] },
+    })).rejects.toThrow(/existencias/i)
+
+    await expect(inMemoryDb.select().from(schema.inventoryMovements)).resolves.toHaveLength(0)
+  })
+
+  it("reactivar una faena con saldo atrapado no se bloquea a sí mismo", async () => {
+    await inMemoryDb.update(schema.worksites).set({ isActive: false }).where(eq(schema.worksites.id, "ws-life"))
+    await inMemoryDb.insert(schema.worksiteStock).values({
+      id: "stock-life-huerfano", worksiteId: "ws-life", productId: "prod-life", quantity: 3,
+    })
+
+    const { setWorksiteActive } = await import("@/lib/services/worksite-lifecycle")
+    await expect(setWorksiteActive({
+      worksiteId: "ws-life",
+      activate: true,
+      actorUserId: "actor-1",
+      scope: { mode: "all", ids: [] },
+    })).resolves.toBeTruthy()
+
+    const [worksite] = await inMemoryDb.select().from(schema.worksites).where(eq(schema.worksites.id, "ws-life"))
+    expect(worksite?.isActive).toBe(true)
   })
 })

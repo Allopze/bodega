@@ -145,9 +145,17 @@ export async function registerStockReturn(
 }
 
 export async function applyMovementTx(tx: Tx, input: ApplyMovementInput): Promise<number> {
-  const ws = await tx.query.worksites.findFirst({
-    where: eq(worksites.id, input.worksiteId),
-  })
+  // Lock compartido y no exclusivo: los movimientos concurrentes de una misma
+  // faena siguen corriendo en paralelo entre sí, y sólo el cierre de faena —que
+  // pide el lock exclusivo— espera a que terminen. Sin este lock, una recepción
+  // podía colarse entre el conteo de saldo del cierre y la desactivación, y
+  // dejar existencias atrapadas en una faena inactiva.
+  const [ws] = await tx
+    .select({ name: worksites.name, isActive: worksites.isActive })
+    .from(worksites)
+    .where(eq(worksites.id, input.worksiteId))
+    .for("share")
+    .limit(1)
   if (!ws) {
     throw new Error(`Worksite ${input.worksiteId} not found`)
   }

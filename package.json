@@ -35,6 +35,7 @@
     "db:preflight-migrations": "node --env-file-if-exists=.env.local scripts/migration-preflight.mjs",
     "db:preflight-dte-single-link": "tsx --env-file-if-exists=.env.local scripts/preflight-dte-single-link.ts",
     "db:repair-dte-single-link": "tsx --env-file-if-exists=.env.local scripts/repair-dte-single-link.ts",
+    "db:diagnose-orphan-stock": "tsx --env-file=.env.local scripts/diagnose-orphan-stock.ts",
     "db:normalize-epp-families": "tsx --env-file=.env.local scripts/normalize-epp-families.ts",
     "db:normalize-fuel-suppliers": "tsx --env-file=.env.local scripts/normalize-fuel-suppliers.ts",
     "db:sync-rbac": "tsx --env-file=.env.local scripts/sync-rbac.ts",

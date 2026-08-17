@@ -23,6 +23,12 @@ export interface StockAlert {
 const WARNING_RATIO = 1.5
 
 /**
+ * Una faena cerrada no admite movimientos de stock: su saldo no se puede
+ * reponer ni consumir, así que una alerta sobre él no es accionable por nadie.
+ */
+const ACTIVE_WORKSITE = eq(worksites.isActive, true)
+
+/**
  * Lista alertas sólo dentro del alcance ya resuelto por el caller. El stock es
  * un dato por faena: nunca se debe consultar globalmente para luego ocultar
  * filas en la UI de un usuario acotado.
@@ -49,6 +55,7 @@ export async function getStockAlerts(worksiteIds: string[] | "all" = "all"): Pro
     .innerJoin(products, eq(worksiteStock.productId, products.id))
     .where(and(
       scopeFilter,
+      ACTIVE_WORKSITE,
       sql`${worksiteStock.minStock} > 0
           AND ${worksiteStock.quantity} <= ${worksiteStock.minStock} * 2.0`,
     ))
@@ -84,10 +91,12 @@ export async function getCriticalStockAlertCount(worksiteIds: string[] | "all" =
       : sql`false`
 
   const [row] = await db
-    .select({ n: sql<number>`count(*)` })
+    .select({ n: sql<number>`count(*)::int` })
     .from(worksiteStock)
+    .innerJoin(worksites, eq(worksiteStock.worksiteId, worksites.id))
     .where(and(
       scopeFilter,
+      ACTIVE_WORKSITE,
       sql`${worksiteStock.minStock} > 0
           AND ${worksiteStock.quantity} < ${worksiteStock.minStock}`,
     ))

@@ -82,4 +82,19 @@ describe("stock alerts", () => {
     expect(scopedAlerts[0]?.worksiteId).toBe(worksiteId)
     await expect(getStockAlerts([])).resolves.toEqual([])
   })
+
+  it("ignora el saldo de faenas cerradas, que nadie puede reponer", async () => {
+    const now = new Date().toISOString()
+    const closedWorksiteId = nanoid()
+    await inMemoryDb.insert(schema.worksites)
+      .values({ id: closedWorksiteId, name: "Faena Cerrada", code: `FC-${nanoid().slice(0, 8)}`, isActive: false, createdAt: now, updatedAt: now })
+    await inMemoryDb.insert(schema.worksiteStock)
+      .values({ id: nanoid(), worksiteId: closedWorksiteId, productId: alertProductId, quantity: 1, minStock: 10, updatedAt: now })
+
+    const alerts = await getStockAlerts()
+    expect(alerts.some((alert) => alert.worksiteId === closedWorksiteId)).toBe(false)
+    await expect(getCriticalStockAlertCount([closedWorksiteId])).resolves.toBe(0)
+    // El alcance explícito tampoco la resucita, ni siquiera pidiéndola por id.
+    await expect(getStockAlerts([closedWorksiteId])).resolves.toEqual([])
+  })
 })

@@ -27,5 +27,8 @@ export function useCatalogSheet<T>(toggleAction: ToggleAction) {
   function openEdit(row: T) { setEditRow(row); setSheetOpen(true) }
   function closeSheet() { setSheetOpen(false) }
 
-  return { sheetOpen, editRow, openCreate, openEdit, closeSheet, toggleAction: toggleFormAction, togglePending }
+  // `toggleState` se expone para los catálogos cuyo diálogo de confirmación
+  // puede ser rechazado por el servidor: cerrarlo al enviar deja al usuario sin
+  // el formulario que tiene que corregir.
+  return { sheetOpen, editRow, openCreate, openEdit, closeSheet, toggleAction: toggleFormAction, togglePending, toggleState }
 }

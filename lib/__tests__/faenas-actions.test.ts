@@ -6,6 +6,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest"
 
 const mockRequirePermission = vi.hoisted(() => vi.fn())
 const mockCanAccessWorksite = vi.hoisted(() => vi.fn(() => true))
+const mockCan = vi.hoisted(() => vi.fn(() => true))
 const mockResolveWorksiteScope = vi.hoisted(() => vi.fn(() => ({ mode: "all" as "all" | "some" | "none", ids: [] as string[] })))
 const mockFindFirstWorksite = vi.hoisted(() => vi.fn())
 const mockInsert = vi.hoisted(() => vi.fn())
@@ -17,6 +18,7 @@ const mockSetWorksiteActive = vi.hoisted(() => vi.fn())
 vi.mock("@/lib/auth/can", () => ({
   requirePermission: mockRequirePermission,
   canAccessWorksite: mockCanAccessWorksite,
+  can: mockCan,
 }))
 vi.mock("@/lib/auth/scope", () => ({
   resolveWorksiteScope: mockResolveWorksiteScope,
@@ -175,6 +177,8 @@ describe("toggleWorksiteActive", () => {
     vi.clearAllMocks()
     setupDbMocks()
     mockCanAccessWorksite.mockReturnValue(true)
+    mockCan.mockReturnValue(true)
+    mockSetWorksiteActive.mockResolvedValue({ programsDropped: 0, capaCancelled: 0, obligationsCancelled: 0 })
   })
 
   it("returns error if permission denied", async () => {
@@ -209,5 +213,52 @@ describe("toggleWorksiteActive", () => {
     const res = await toggleWorksiteActive(prevState, fd)
     expect(res.ok).toBe(true)
     expect(res.message).toContain("activada")
+  })
+
+  it("no deja devolver el saldo a quien sólo administra faenas", async () => {
+    mockRequirePermission.mockResolvedValueOnce(makeSession())
+    mockFindFirstWorksite.mockResolvedValueOnce({ id: "ws-1", isActive: true })
+    mockCan.mockReturnValue(false) // sin warehouse:adjust_stock
+    const fd = new FormData()
+    fd.set("id", "ws-1"); fd.set("activate", "false")
+    fd.set("motivo", "Término del contrato principal"); fd.set("returnStock", "on")
+
+    const res = await toggleWorksiteActive(prevState, fd)
+
+    expect(res.ok).toBe(false)
+    expect(mockSetWorksiteActive).not.toHaveBeenCalled()
+  })
+
+  it("traslada la devolución de saldo al servicio cuando hay permiso de bodega", async () => {
+    mockRequirePermission.mockResolvedValueOnce(makeSession())
+    mockFindFirstWorksite.mockResolvedValueOnce({ id: "ws-1", isActive: true })
+    mockSetWorksiteActive.mockResolvedValueOnce({
+      programsDropped: 0, capaCancelled: 0, obligationsCancelled: 0,
+      stockReturned: { products: 2, units: 9, officeName: "Oficina Central" },
+    })
+    const fd = new FormData()
+    fd.set("id", "ws-1"); fd.set("activate", "false")
+    fd.set("motivo", "Término del contrato principal"); fd.set("returnStock", "on")
+
+    const res = await toggleWorksiteActive(prevState, fd)
+
+    expect(mockSetWorksiteActive).toHaveBeenCalledWith(expect.objectContaining({ returnStockToOffice: true }))
+    expect(res.ok).toBe(true)
+    expect(res.message).toContain("Oficina Central")
+  })
+
+  it("devuelve el motivo del rechazo del servicio en vez de reventar la action", async () => {
+    mockRequirePermission.mockResolvedValueOnce(makeSession())
+    mockFindFirstWorksite.mockResolvedValueOnce({ id: "ws-1", isActive: true })
+    mockSetWorksiteActive.mockRejectedValueOnce(
+      new Error('No se puede cerrar la faena "Faena 1": quedan 2 productos con existencias (7 en total).'),
+    )
+    const fd = new FormData()
+    fd.set("id", "ws-1"); fd.set("activate", "false"); fd.set("motivo", "Término del contrato principal")
+
+    const res = await toggleWorksiteActive(prevState, fd)
+
+    expect(res.ok).toBe(false)
+    expect(res.message).toContain("existencias")
   })
 })
