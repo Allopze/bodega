@@ -9,6 +9,7 @@ import {
   deletePpa,
   countPendingPpas,
   getAllPpas,
+  recoverStalePpas,
 } from "./offline-queue"
 
 beforeEach(async () => {
@@ -27,7 +28,8 @@ describe("offline-queue", () => {
       const item = await enqueuePpa({ test: "data" })
       expect(item.status).toBe("pending")
       expect(item.attempts).toBe(0)
-      expect(item.payload).toEqual({ test: "data" })
+      // enqueuePpa inyecta la clave de idempotencia si el payload no la trae.
+      expect(item.payload).toEqual({ test: "data", clientSubmissionId: item.id })
 
       const count = await countPendingPpas()
       expect(count).toBe(1)
@@ -57,7 +59,7 @@ describe("offline-queue", () => {
       const item = await enqueuePpa({ id: "test" })
       const found = await getPpaById(item.id)
       expect(found).toBeDefined()
-      expect(found!.payload).toEqual({ id: "test" })
+      expect(found!.payload).toEqual({ id: "test", clientSubmissionId: item.id })
     })
 
     it("returns undefined for unknown ID", async () => {
@@ -89,7 +91,7 @@ describe("offline-queue", () => {
 
       const updated = await getPpaById(item.id)
       expect(updated!.status).toBe("syncing")
-      expect(updated!.payload).toEqual({ orig: true })
+      expect(updated!.payload).toEqual({ orig: true, clientSubmissionId: item.id })
       expect(updated!.attempts).toBe(0)
     })
 
@@ -131,6 +133,57 @@ describe("offline-queue", () => {
       const all = await getAllPpas()
       expect(all).toHaveLength(1)
       expect(all[0]!.status).toBe("synced")
+    })
+  })
+
+  describe("clave de idempotencia", () => {
+    it("adopta el clientSubmissionId del payload como id de la entrada", async () => {
+      const item = await enqueuePpa({ clientSubmissionId: "ppa-abc-123", worksiteId: "ws-1" })
+      expect(item.id).toBe("ppa-abc-123")
+    })
+
+    it("reencolar el mismo envío no crea una segunda entrada", async () => {
+      const payload = { clientSubmissionId: "ppa-abc-123", worksiteId: "ws-1" }
+      await enqueuePpa(payload)
+      await enqueuePpa(payload)
+
+      expect(await getAllPpas()).toHaveLength(1)
+      expect(await countPendingPpas()).toBe(1)
+    })
+
+    it("genera y persiste una clave cuando el payload no la trae", async () => {
+      const item = await enqueuePpa({ worksiteId: "ws-1" })
+      expect(item.payload.clientSubmissionId).toBe(item.id)
+    })
+  })
+
+  describe("recoverStalePpas", () => {
+    it("devuelve a pending un envío que quedó en syncing y lo deja re-entregable", async () => {
+      const item = await enqueuePpa({ worksiteId: "ws-1" })
+      await updatePpaStatus(item.id, { status: "syncing", attempts: 1 })
+      // Mientras está en "syncing" no lo ve nadie: getPendingPpas sólo lee "pending".
+      expect(await countPendingPpas()).toBe(0)
+      expect(await getPendingPpas()).toHaveLength(0)
+
+      // Diez minutos después nadie confirmó la sincronización.
+      const recovered = await recoverStalePpas(Date.now() + 10 * 60 * 1000)
+      expect(recovered).toBe(1)
+
+      const pending = await getPendingPpas()
+      expect(pending).toHaveLength(1)
+      expect(pending[0]!.id).toBe(item.id)
+      expect(pending[0]!.attempts).toBe(1)
+      // Se re-entrega con la MISMA clave: el servidor recupera la fila original
+      // en vez de crear un segundo PPA (ver prevention-ppa-workflow-persistence).
+      expect(pending[0]!.payload.clientSubmissionId).toBe(item.id)
+    })
+
+    it("no interrumpe un envío que acaba de empezar a sincronizar", async () => {
+      const item = await enqueuePpa({ worksiteId: "ws-1" })
+      await updatePpaStatus(item.id, { status: "syncing" })
+
+      expect(await recoverStalePpas()).toBe(0)
+      expect(await countPendingPpas()).toBe(0)
     })
   })
 })

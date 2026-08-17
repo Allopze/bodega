@@ -13,6 +13,7 @@ import { PROGRAM_STATUS_LABELS, SURVEILLANCE_STATUS_LABELS } from "@/lib/prevent
 import { enrollGroupInSurveillanceAction, recordSurveillanceOutcomeAction } from "../../actions"
 import { Field } from "@/components/ui/field"
 import { useOperation } from "@/lib/hooks/use-operation"
+import { todayInChile } from "@/lib/utils"
 
 interface ProgramInfo {
   id: string
@@ -55,7 +56,7 @@ export function ProgramDetail({ program, enrollments, eligibleGroups, canManage 
   eligibleGroups: GroupOption[]
   canManage: boolean
 }) {
-  const overdue = enrollments.filter((item) => ["pending", "summoned"].includes(item.status) && item.dueOn < new Date().toISOString().slice(0, 10)).length
+  const overdue = enrollments.filter((item) => ["pending", "summoned"].includes(item.status) && item.dueOn < todayInChile()).length
 
   const facts = [
     { label: "Protocolo", value: program.protocol },
@@ -151,7 +152,7 @@ function EnrollGroupDialog({ programId, eligibleGroups }: { programId: string; e
   }
 
   return (
-    <Dialog open={open} onOpenChange={(value) => { if (value) setDefaultValue(new Date().toISOString().slice(0, 10)); setOpen(value) }}>
+    <Dialog open={open} onOpenChange={(value) => { if (value) setDefaultValue(todayInChile()); setOpen(value) }}>
       <DialogTrigger asChild><Button size="sm">Matricular grupo</Button></DialogTrigger>
       <DialogContent>
         <form onSubmit={submit} className="space-y-4">
@@ -186,7 +187,7 @@ function OutcomeDialog({ enrollment }: { enrollment: EnrollmentInfo }) {
   const [open, setOpen] = React.useState(false)
   const [status, setStatus] = React.useState<SurveillanceOutcomeStatus>("summoned")
   const operation = useOperation()
-  const defaultAttendedOn = React.useMemo(() => new Date().toISOString().slice(0, 10), [])
+  const defaultAttendedOn = React.useMemo(() => todayInChile(), [])
 
   function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()

@@ -8,6 +8,7 @@ import type { PpaAnswers, PpaStopReason } from "@/lib/ppa/types"
 import { ppaSubmitSchema } from "@/lib/validation/ppa"
 import { submitPpaAction } from "./actions"
 import { usePpaOfflineQueue } from "@/lib/pwa/hooks"
+import { createPpaSubmissionId } from "@/lib/pwa/offline-queue"
 import { usePpaIdentity } from "./use-ppa-identity"
 import type { PpaFormProps } from "./ppa-form.types"
 
@@ -125,6 +126,10 @@ export function usePpaForm({
     const name = identity.manual ? identity.workerName.trim() : (identity.matchedWorker?.name ?? "")
     const rut = identity.manual ? identity.workerRut.trim() : identity.rutSearch.trim()
     return {
+      // Clave de idempotencia por intento de envío: la comparte el envío
+      // directo y el respaldo en la cola offline, así un fallo de red tras el
+      // commit del servidor reenvía el MISMO PPA en vez de duplicarlo.
+      clientSubmissionId: createPpaSubmissionId(),
       worksiteId,
       workPermitId: workPermitId || undefined,
       workerId: identity.manual ? undefined : identity.workerId || undefined,

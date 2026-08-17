@@ -13,7 +13,7 @@ import { afterAll, beforeEach, describe, expect, it, vi } from "vitest"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
 import * as schema from "@/db/schema"
 import type { WorksiteScope } from "@/lib/auth/scope"
-import { todayInChile } from "@/lib/services/prevention-cphs-access"
+import { todayInChile } from "@/lib/utils"
 
 const pg = new PGlite()
 const inMemoryDb = drizzle(pg, { schema })
@@ -136,6 +136,56 @@ describe("expediente de certificación · ciclo completo", () => {
     }, MANAGER)).rejects.toThrow(/no admite declaración manual/i)
   })
 
+  it("un requisito manual de otro nivel no entra al expediente", async () => {
+    const { db } = await import("@/db")
+    const { createCertificationDossier, recordManualEvaluation } = await import("@/lib/services/prevention-cphs-certification")
+    const dossier = await createCertificationDossier({ committeeId: "cphs-cert-a", level: "bronce", periodYear: 2026 }, MANAGER)
+
+    // `shared_safety_action` es manual, pero de Plata; `road_safety`, de Oro.
+    for (const code of ["shared_safety_action", "road_safety"]) {
+      await expect(recordManualEvaluation({
+        dossierId: dossier.id, expectedVersion: dossier.version,
+        requirementCode: code, status: "met",
+        detail: "Declaración de un requisito que no corresponde a este nivel.",
+        evidenceReference: "DOC-SST-2026-0099",
+      }, MANAGER)).rejects.toThrow(/nivel/i)
+    }
+
+    // Ni se guardó la fila ni se movió la versión del expediente.
+    const rows = await db.select().from(schema.preventionCertificationEvaluations)
+      .where(eq(schema.preventionCertificationEvaluations.dossierId, dossier.id))
+    expect(rows).toHaveLength(0)
+    const [reloaded] = await db.select().from(schema.preventionCertificationDossiers)
+      .where(eq(schema.preventionCertificationDossiers.id, dossier.id))
+    expect(reloaded!.version).toBe(dossier.version)
+  })
+
+  it("el requisito manual del nivel del expediente sí se acepta", async () => {
+    const { createCertificationDossier, getCertificationDossier, recordManualEvaluation } = await import("@/lib/services/prevention-cphs-certification")
+    const plata = await createCertificationDossier({ committeeId: "cphs-cert-a", level: "plata", periodYear: 2026 }, MANAGER)
+
+    await recordManualEvaluation({
+      dossierId: plata.id, expectedVersion: plata.version,
+      requirementCode: "shared_safety_action", status: "met",
+      detail: "Jornada conjunta con Operaciones en el primer trimestre.",
+      evidenceReference: "DOC-SST-2026-0101",
+    }, MANAGER)
+
+    const status = await getCertificationDossier(plata.id, MANAGER)
+    expect(status?.requirements.find((r) => r.code === "shared_safety_action")).toMatchObject({
+      status: "met",
+      evidenceReference: "DOC-SST-2026-0101",
+    })
+    // Y el mismo código sigue rechazado en un expediente Bronce del mismo comité.
+    const bronce = await createCertificationDossier({ committeeId: "cphs-cert-a", level: "bronce", periodYear: 2026 }, MANAGER)
+    await expect(recordManualEvaluation({
+      dossierId: bronce.id, expectedVersion: bronce.version,
+      requirementCode: "shared_safety_action", status: "met",
+      detail: "El mismo respaldo, en el expediente equivocado.",
+      evidenceReference: "DOC-SST-2026-0101",
+    }, MANAGER)).rejects.toThrow(/nivel/i)
+  })
+
   it("presentar congela el snapshot y abre una CAPA por cada brecha a 60 días", async () => {
     const { db } = await import("@/db")
     const { createCertificationDossier, getCertificationDossier, submitCertificationDossier } = await import("@/lib/services/prevention-cphs-certification")
@@ -221,6 +271,94 @@ describe("expediente de certificación · ciclo completo", () => {
     }, MANAGER)
     expect(rejected.status).toBe("rejected")
     expect(rejected.validUntilOn).toBeNull()
+  })
+
+  it("un expediente rechazado se reabre, se corrige y se vuelve a presentar", async () => {
+    const { db } = await import("@/db")
+    const {
+      createCertificationDossier, getCertificationDossier, recordAuditResult,
+      reopenCertificationDossier, submitCertificationDossier,
+    } = await import("@/lib/services/prevention-cphs-certification")
+    const dossier = await createCertificationDossier({ committeeId: "cphs-cert-a", level: "bronce", periodYear: 2026 }, MANAGER)
+    const submitted = await submitCertificationDossier({ dossierId: dossier.id, expectedVersion: dossier.version }, MANAGER)
+    const rejected = await recordAuditResult({
+      dossierId: dossier.id, expectedVersion: submitted.version,
+      outcome: "rejected", auditedOn: "2026-09-01", auditResult: "Falta el registro del acta ante la Dirección del Trabajo.",
+    }, MANAGER)
+
+    const capaBefore = await db.select().from(schema.preventionCapaActions)
+      .where(and(eq(schema.preventionCapaActions.sourceType, "cphs"), eq(schema.preventionCapaActions.sourceId, dossier.id)))
+    expect(capaBefore.length).toBeGreaterThan(0)
+
+    const reopened = await reopenCertificationDossier({
+      dossierId: dossier.id, expectedVersion: rejected.version,
+      reason: "Mutual devolvió el expediente: se corrige el registro DT y se re-presenta.",
+    }, MANAGER)
+    expect(reopened.status).toBe("draft")
+    expect(reopened.version).toBe(rejected.version + 1)
+    // El resultado de la auditoría queda a la vista: es la lista de lo que hay
+    // que corregir, no un dato que se borra al reabrir.
+    expect(reopened.auditResult).toBe("Falta el registro del acta ante la Dirección del Trabajo.")
+
+    // Vuelve a evaluar en vivo: el congelamiento sólo vale mientras está presentado.
+    const live = await getCertificationDossier(dossier.id, MANAGER)
+    expect(live?.frozen).toBe(false)
+    expect(live?.requirements.find((r) => r.code === "dt_registered")).toMatchObject({ status: "not_met" })
+
+    await inMemoryDb.update(schema.preventionCommittees).set({
+      dtRegisteredOn: "2026-06-01", dtRegistrationReference: "DT-1234",
+    }).where(eq(schema.preventionCommittees.id, "cphs-cert-a"))
+
+    const resubmitted = await submitCertificationDossier({ dossierId: dossier.id, expectedVersion: reopened.version }, MANAGER)
+    expect(resubmitted.status).toBe("submitted")
+
+    const after = await getCertificationDossier(dossier.id, MANAGER)
+    expect(after?.frozen).toBe(true)
+    expect(after?.requirements.find((r) => r.code === "dt_registered")).toMatchObject({ status: "met" })
+
+    // La brecha ya tenía CAPA abierta: re-presentar no la duplica.
+    const capaAfter = await db.select().from(schema.preventionCapaActions)
+      .where(and(eq(schema.preventionCapaActions.sourceType, "cphs"), eq(schema.preventionCapaActions.sourceId, dossier.id)))
+    expect(capaAfter).toHaveLength(capaBefore.length)
+
+    const history = await db.select().from(schema.preventionGovernanceHistory)
+      .where(and(
+        eq(schema.preventionGovernanceHistory.entityId, dossier.id),
+        eq(schema.preventionGovernanceHistory.changeType, "reopened"),
+      ))
+    expect(history).toHaveLength(1)
+    expect(history[0]?.reason).toContain("Mutual devolvió el expediente")
+  })
+
+  it("un expediente certificado no se reabre", async () => {
+    const { createCertificationDossier, recordAuditResult, reopenCertificationDossier, submitCertificationDossier } =
+      await import("@/lib/services/prevention-cphs-certification")
+    const dossier = await createCertificationDossier({ committeeId: "cphs-cert-a", level: "bronce", periodYear: 2026 }, MANAGER)
+    const submitted = await submitCertificationDossier({ dossierId: dossier.id, expectedVersion: dossier.version }, MANAGER)
+    const certified = await recordAuditResult({
+      dossierId: dossier.id, expectedVersion: submitted.version,
+      outcome: "certified", auditedOn: "2026-09-01", auditResult: "Cumple lo presentado, sin observaciones adicionales.",
+    }, MANAGER)
+
+    await expect(reopenCertificationDossier({
+      dossierId: dossier.id, expectedVersion: certified.version,
+      reason: "Intento de reabrir un expediente ya certificado.",
+    }, MANAGER)).rejects.toThrow(/certificado no se reabre/i)
+  })
+
+  it("sólo un expediente rechazado vuelve a preparación", async () => {
+    const { createCertificationDossier, reopenCertificationDossier, submitCertificationDossier } =
+      await import("@/lib/services/prevention-cphs-certification")
+    const dossier = await createCertificationDossier({ committeeId: "cphs-cert-a", level: "bronce", periodYear: 2026 }, MANAGER)
+
+    await expect(reopenCertificationDossier({
+      dossierId: dossier.id, expectedVersion: dossier.version, reason: "Reapertura de algo que nunca se presentó.",
+    }, MANAGER)).rejects.toThrow(/sólo un expediente rechazado/i)
+
+    const submitted = await submitCertificationDossier({ dossierId: dossier.id, expectedVersion: dossier.version }, MANAGER)
+    await expect(reopenCertificationDossier({
+      dossierId: dossier.id, expectedVersion: submitted.version, reason: "Reapertura de un expediente aún en auditoría.",
+    }, MANAGER)).rejects.toThrow(/sólo un expediente rechazado/i)
   })
 
   it("no se puede auditar un expediente que sigue en preparación", async () => {

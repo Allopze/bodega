@@ -13,7 +13,7 @@ import {
 import { isGlobalRole, visibleWorksiteIds } from "@/lib/auth/scope"
 import { buildXlsxBuffer } from "@/lib/reports/export"
 import type { Session } from "next-auth"
-import { formatDate } from "@/lib/utils"
+import { formatDate, todayInChile} from "@/lib/utils"
 
 export interface EppDeliveryExportFilters {
   worksiteId?: string
@@ -71,7 +71,7 @@ export async function getEppDeliveryExport(
   const truncated = rows.length > maxRows
   const limited = truncated ? rows.slice(0, maxRows) : rows
 
-  const filename = `entregas-epp-${new Date().toISOString().slice(0, 10)}.xlsx`
+  const filename = `entregas-epp-${todayInChile()}.xlsx`
   const buffer = await buildXlsxBuffer({
     filenameBase:  "entregas-epp",
     worksheetName: "Entregas EPP",

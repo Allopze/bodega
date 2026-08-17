@@ -1,4 +1,4 @@
-import { eq, and, or } from "drizzle-orm"
+import { eq, and, isNull } from "drizzle-orm"
 import { db } from "@/db"
 import { ppaStatusHistory, ppaSubmissions, type PpaSubmission } from "@/db/schema/ppa"
 import { preventionWorkPermits } from "@/db/schema/prevention/permits"
@@ -19,7 +19,7 @@ import {
 } from "@/lib/services/notifications"
 import { logger } from "@/lib/logger"
 import { recordOperationalActivity } from "@/lib/services/operational-activity"
-import { hashPpaPublicToken } from "./public-token"
+import { derivePpaPublicToken, hashPpaPublicToken, resolvePpaPublicToken } from "./public-token"
 
 export type PpaRow = Omit<PpaSubmission, "publicToken"> & {
   worksiteName: string | null
@@ -96,11 +96,16 @@ export async function createPpaSubmission(
   const estado: EstadoPpa = evaluation.stop ? "detenido" : "aprobado_auto"
 
   const id = nanoid()
-  const token = nanoid(32)
+  // Sin clave del cliente (cliente antiguo servido desde el caché del Service
+  // Worker) se genera una del servidor: ese envío no es idempotente, pero el
+  // token se deriva por el mismo camino y la columna queda poblada.
+  const clientSubmissionId = data.clientSubmissionId || `srv-${nanoid()}`
+  const token = derivePpaPublicToken(clientSubmissionId)
   const now = new Date().toISOString()
 
   const row: typeof ppaSubmissions.$inferInsert = {
     id,
+    clientSubmissionId,
     worksiteId:           data.worksiteId,
     workerId,
     workerName,
@@ -126,8 +131,37 @@ export async function createPpaSubmission(
     updatedAt:            now,
   }
 
-  await db.transaction(async (tx) => {
-    await tx.insert(ppaSubmissions).values(row)
+  const { submission, replayed, linkToken } = await db.transaction(async (tx) => {
+    const [created] = await tx.insert(ppaSubmissions).values(row)
+      .onConflictDoNothing({ target: ppaSubmissions.clientSubmissionId })
+      .returning()
+
+    // Reenvío de la cola offline: el primer intento sí llegó a commitear y se
+    // perdió la confirmación al cliente. Devolvemos la fila original —y, por
+    // derivación, el mismo token— sin duplicar historial ni volver a notificar.
+    if (!created) {
+      const [existing] = await tx.select().from(ppaSubmissions)
+        .where(eq(ppaSubmissions.clientSubmissionId, clientSubmissionId)).limit(1)
+      if (!existing) throw new Error("No se pudo recuperar el PPA ya registrado con esta clave de envío.")
+      // Si `AUTH_SECRET` rotó entre el primer intento y el reenvío, `token` ya
+      // no es el que abre esta fila: se recupera el que sí, probando los
+      // secretos anteriores contra el hash guardado. Sin esto el reenvío
+      // devolvía la fila correcta con un enlace muerto (404).
+      const recovered = resolvePpaPublicToken(clientSubmissionId, existing.publicToken)
+      if (!recovered) {
+        // Rotación fuera de ventana: el secreto que emitió este enlace ya no
+        // está ni en `AUTH_SECRET` ni en `AUTH_SECRET_PREVIOUS`, y el valor en
+        // claro no se persiste, así que desde acá es irrecuperable. El enlace
+        // que tiene el trabajador SIGUE VIVO (la base guarda su hash, que no
+        // cambia al rotar): lo único perdido es poder re-entregarlo. Se
+        // devuelve el derivado con el secreto vigente —que dará 404— en vez de
+        // fallar el reenvío, porque fallar dejaría a la cola offline
+        // reintentando para siempre un envío que ya está registrado.
+        logger.warn("[ppa] reenvío sin enlace recuperable: ningún secreto vigente abre el hash guardado", { ppaId: existing.id })
+      }
+      return { submission: existing, replayed: true, linkToken: recovered ?? token }
+    }
+
     await tx.insert(ppaStatusHistory).values({
       id: `ppah-${nanoid()}`,
       ppaId: id,
@@ -152,9 +186,10 @@ export async function createPpaSubmission(
       actorSnapshot: null,
       payload: { status: estado, critical: isTareaCritica(data.tipoTrabajo) },
     }, tx)
+    return { submission: created, replayed: false, linkToken: token }
   })
 
-  if (evaluation.stop) {
+  if (!replayed && evaluation.stop) {
     notifyAfterCommit(async () => {
       try {
         const reviewerIds = await getUserIdsWithPermissionForWorksite("ppa:review", data.worksiteId)
@@ -174,13 +209,11 @@ export async function createPpaSubmission(
     })
   }
 
-  const submission = await db.query.ppaSubmissions.findFirst({ where: eq(ppaSubmissions.id, id) })
-  return { submission: submission!, token }
+  return { submission, token: linkToken }
 }
 
 export async function getPpaByToken(token: string): Promise<PpaTokenResult | null> {
   if (!token) return null
-  const tokenHash = hashPpaPublicToken(token)
   const rows = await db
     .select({
       submission: ppaSubmissions,
@@ -191,19 +224,17 @@ export async function getPpaByToken(token: string): Promise<PpaTokenResult | nul
     .from(ppaSubmissions)
     .leftJoin(worksites, eq(ppaSubmissions.worksiteId, worksites.id))
     .leftJoin(workers, eq(ppaSubmissions.workerId, workers.id))
-    // El segundo término mantiene válidos enlaces emitidos antes de la
-    // migración. Al primer uso se convierten a hash en la misma aplicación.
-    .where(or(eq(ppaSubmissions.publicToken, tokenHash), eq(ppaSubmissions.publicToken, token)))
+    // SÓLO por hash. Comparar además contra el valor almacenado en claro
+    // convertía la propia fila en credencial: quien viera `public_token` en la
+    // base entraba al PPA, y al entrar destruía el enlace legítimo del
+    // trabajador (lo reescribía con su hash). Los seeds guardan el hash igual
+    // que `createPpaSubmission`, así que no queda nada en claro que rescatar.
+    .where(eq(ppaSubmissions.publicToken, hashPpaPublicToken(token)))
     .limit(1)
 
   if (rows.length === 0) return null
   const r = rows[0]!
   if (r.submission.publicTokenRevokedAt) return null
-  if (r.submission.publicToken === token) {
-    await db.update(ppaSubmissions)
-      .set({ publicToken: tokenHash, updatedAt: new Date().toISOString() })
-      .where(and(eq(ppaSubmissions.id, r.submission.id), eq(ppaSubmissions.publicToken, token)))
-  }
   const { publicToken: _publicToken, ...submission } = r.submission
   return {
     ...submission,
@@ -226,10 +257,35 @@ export async function revokePpaToken(
   }
   if (existing.publicTokenRevokedAt) throw new Error("El acceso público ya está revocado")
 
-  await db.update(ppaSubmissions).set({
-    publicTokenRevokedAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  }).where(eq(ppaSubmissions.id, id))
+  const now = new Date().toISOString()
+  await db.transaction(async (tx) => {
+    // El WHERE con `IS NULL` deja la revocación idempotente frente a dos
+    // responsables simultáneos: sólo una gana y sólo una deja traza.
+    const [updated] = await tx.update(ppaSubmissions).set({
+      publicTokenRevokedAt: now,
+      updatedAt: now,
+    }).where(and(
+      eq(ppaSubmissions.id, id),
+      isNull(ppaSubmissions.publicTokenRevokedAt),
+    )).returning()
+    if (!updated) throw new Error("El acceso público ya está revocado")
+
+    // Cortar el enlace del trabajador es una decisión de un responsable, no un
+    // efecto del sistema: sin actor no se sabe quién la tomó. Va al historial
+    // del PPA (visible en la ficha) y no sólo al log. El estado no cambia —
+    // cambia el acceso—, por eso `from` y `to` son el mismo.
+    await tx.insert(ppaStatusHistory).values({
+      id: `ppah-${nanoid()}`,
+      ppaId: id,
+      capaActionId: null,
+      fromStatus: updated.estado,
+      toStatus: updated.estado,
+      reason: "Acceso público revocado",
+      actorType: "user",
+      actorUserId: userId,
+      createdAt: now,
+    })
+  })
 }
 
 export async function listWorksitesForPublicForm(): Promise<{ id: string; name: string }[]> {

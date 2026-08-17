@@ -9,6 +9,7 @@ import { execFile } from "node:child_process"
 import { promisify } from "node:util"
 import path from "node:path"
 import fs from "node:fs/promises"
+import { todayInChile } from "@/lib/utils"
 
 const execFileAsync = promisify(execFile)
 
@@ -22,7 +23,7 @@ export async function triggerManualBackupAction(): Promise<BackupActionResult> {
 
   try {
     const session = await requirePermission("admin:backups")
-    const today = new Date().toISOString().slice(0, 10)
+    const today = todayInChile()
 
     // ── 1. Registrar inicio en la BD ──────────────────────────────────────
     const log = await createBackupLog({

@@ -29,6 +29,7 @@ import {
   activateProgramAction,
   addProgramActivityAction,
   cancelProgramActivityAction,
+  closeProgramAction,
   completeProgramActivityAction,
   createProgramAction,
   linkActivityToMeetingAction,
@@ -93,6 +94,9 @@ export function ProgramHeaderActions({ committeeId, committeeActive, selected, m
       )}
       {selected?.status === "draft" && selected.activities.length > 0 && (
         <ActivateProgramButton programId={selected.id} version={selected.version} />
+      )}
+      {selected?.status === "active" && (
+        <CloseProgramDialog programId={selected.id} year={selected.year} version={selected.version} summary={selected.summary} />
       )}
     </>
   )
@@ -297,6 +301,50 @@ function ActivateProgramButton({ programId, version }: { programId: string; vers
     >
       Aprobar programa
     </Button>
+  )
+}
+
+/**
+ * Cerrar el año es terminal y no hay forma de reabrirlo, así que confirma en
+ * vez de disparar al primer clic — y muestra con qué cumplimiento queda.
+ */
+function CloseProgramDialog({ programId, year, version, summary }: {
+  programId: string
+  year: number
+  version: number
+  summary: ProgramComplianceSummary
+}) {
+  const [open, setOpen] = React.useState(false)
+  const operation = useOperation()
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild><Button size="sm" variant="secondary">Cerrar programa</Button></DialogTrigger>
+      <DialogContent>
+        <div className="space-y-4">
+          <DialogHeader>
+            <DialogTitle>Cerrar el programa {year}</DialogTitle>
+            <DialogDescription>
+              El año queda congelado: no admite actividades nuevas ni cambios en las existentes, y deja de
+              generar avisos por actividades atrasadas. No se puede reabrir.
+            </DialogDescription>
+          </DialogHeader>
+          <p className="text-sm">
+            Cierra con <strong>{summary.done} de {summary.total}</strong> actividad(es) realizada(s)
+            {summary.overdue > 0 && <> y <strong>{summary.overdue} atrasada(s)</strong> que quedarán así en el registro</>}.
+          </p>
+          {operation.message && <p role="status" className="text-sm">{operation.message}</p>}
+          <DialogFooter>
+            <Button
+              disabled={operation.pending}
+              onClick={() => operation.run(() => closeProgramAction({ programId, expectedVersion: version }), () => setOpen(false))}
+            >
+              Cerrar programa
+            </Button>
+          </DialogFooter>
+        </div>
+      </DialogContent>
+    </Dialog>
   )
 }
 

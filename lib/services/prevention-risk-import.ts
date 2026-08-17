@@ -2,11 +2,12 @@ import { createHash } from "node:crypto"
 import path from "node:path"
 import ExcelJS from "exceljs"
 import { and, asc, eq, inArray, sql } from "drizzle-orm"
-import { z } from "zod"
+import { z, ZodError } from "zod"
 import { db } from "@/db"
 import {
   preventionRiskImportBatches,
   preventionRiskImportRows,
+  preventionRiskLegalHistory,
   preventionRiskMatrices,
   worksites,
 } from "@/db/schema"
@@ -19,9 +20,20 @@ import {
 import { mkdirp, removeFile, writeBuffer } from "@/lib/storage/helpers"
 import { resolveStorageDir } from "@/lib/storage/config"
 import { riskEntrySchema } from "@/lib/validation/prevention-module/risk-legal"
+import { validateLoadedWorkbook, validateXlsxEnvelope } from "@/lib/services/xlsx-security"
 
-const MAX_BYTES = 20 * 1024 * 1024
+export const RISK_IMPORT_MAX_BYTES = 20 * 1024 * 1024
 const MAX_ROWS = 5_000
+/* Los topes de expansión del validador compartido están calibrados para los
+ * 15 MB de PDTP (80 MB descomprimidos, 20 MB por entrada). MIPER admite 20 MB
+ * de archivo y 5.000 filas: con los defaults, un libro legítimo cerca de su
+ * techo se rechazaba por expansión —o su `sheet1.xml`, por entrada— antes de
+ * leer una fila. Se sube en la misma proporción (≈5,3x el tamaño declarado),
+ * no se desactiva: el tope es lo que frena una zip bomb. */
+const RISK_IMPORT_LIMITS = {
+  maxUncompressedBytes: 107 * 1024 * 1024,
+  maxSingleEntryBytes:   27 * 1024 * 1024,
+}
 const STORAGE_PREFIX = "storage/risk-imports/"
 
 const COLUMN_ALIASES: Record<string, string[]> = {
@@ -201,6 +213,22 @@ function normalizeRow(original: Record<string, string>, rowNumber: number): Norm
   }
 }
 
+/* El contrato real de una fila es `riskEntrySchema` — es lo que corre
+ * `addRiskEntryWithClient` al activar el lote. Comprobar sólo la lista de
+ * mínimos de abajo dejaba filas marcadas `ready` que después no parseaban
+ * (nivel de riesgo fuera del vocabulario, jerarquía de control desconocida,
+ * campos que superan el máximo…), y como la activación corre en una sola
+ * transacción, UNA de esas filas abortaba el lote entero: aprobado, no
+ * activable y —porque `resolveRiskImportRow` exige `staged`— tampoco
+ * corregible. MIPER-04. */
+const riskEntryContract = riskEntrySchema.omit({ matrixId: true, sourceRowNumber: true, sourceOriginal: true, sourceNormalized: true, normalizationDecision: true })
+
+function contractIssues(row: NormalizedRiskImportRow) {
+  const parsed = riskEntryContract.safeParse(row)
+  if (parsed.success) return []
+  return parsed.error.issues.map((issue) => `${issue.path.join(".") || "fila"}: ${issue.message}`)
+}
+
 function issuesFor(row: NormalizedRiskImportRow) {
   const issues: string[] = []
   if (!row.process.name) issues.push("Proceso vacío")
@@ -213,11 +241,17 @@ function issuesFor(row: NormalizedRiskImportRow) {
   if (!row.residualLevel) issues.push("Nivel residual vacío")
   if (row.responsibleSnapshot.length < 2) issues.push("Responsable vacío")
   if (row.isCritical && row.controls.length === 0) issues.push("Riesgo crítico sin control")
-  return issues
+  return issues.length ? issues : contractIssues(row)
 }
 
+/* La identidad de una entrada MIPER es la tupla del índice único
+ * `prevention_risk_entries_matrix_identity_unique`: proceso, tarea, puesto y
+ * código de peligro. El texto del peligro NO entra — incluirlo hacía que dos
+ * filas con el mismo código y distinta redacción pasaran el filtro de
+ * duplicados del archivo y después chocaran contra el índice al activar,
+ * matando el lote completo. */
 function fingerprint(row: NormalizedRiskImportRow) {
-  return createHash("sha256").update(JSON.stringify({ process: row.process.code, task: row.task.code, position: row.position.code, hazardCode: row.hazardCode, hazard: normalize(row.hazard) })).digest("hex")
+  return createHash("sha256").update(JSON.stringify({ process: row.process.code, task: row.task.code, position: row.position.code, hazardCode: row.hazardCode })).digest("hex")
 }
 
 function assertPermission(access: RiskLegalAccess, permission: string, worksiteId?: string) {
@@ -229,11 +263,18 @@ export async function stageRiskImport(args: {
   worksiteId: string
   fileName: string
   buffer: Buffer
+  mimeType?: string
   access: RiskLegalAccess
 }) {
   assertPermission(args.access, "prevention:risk:edit", args.worksiteId)
-  if (!args.fileName.toLowerCase().endsWith(".xlsx")) throw new Error("La importación MIPER exige un archivo Excel.")
-  if (!args.buffer.length || args.buffer.length > MAX_BYTES) throw new Error("El Excel MIPER está vacío o supera 20 MB.")
+  // Envolvente ZIP antes de que el buffer toque ExcelJS: firma, expansión,
+  // cifrado y rutas internas (mismo orden que la importación PDTP).
+  validateXlsxEnvelope({
+    name: args.fileName,
+    type: args.mimeType ?? "",
+    size: args.buffer.length,
+    buffer: args.buffer,
+  }, RISK_IMPORT_MAX_BYTES, RISK_IMPORT_LIMITS)
   const checksum = createHash("sha256").update(args.buffer).digest("hex")
   const [existing] = await db.select().from(preventionRiskImportBatches).where(and(eq(preventionRiskImportBatches.worksiteId, args.worksiteId), eq(preventionRiskImportBatches.sourceChecksumSha256, checksum))).limit(1)
   if (existing) return { batch: existing, idempotentReplay: true }
@@ -243,18 +284,40 @@ export async function stageRiskImport(args: {
   const workbook = new ExcelJS.Workbook()
   try { await workbook.xlsx.load(args.buffer as never, { ignoreNodes: ["dataValidations", "conditionalFormatting", "hyperlinks"] }) }
   catch { throw new Error("El archivo no es un Excel válido.") }
-  const sheet = workbook.worksheets[0]
-  if (!sheet) throw new Error("El Excel no contiene hojas.")
-  if (sheet.rowCount - 1 > MAX_ROWS) throw new Error(`El Excel supera ${MAX_ROWS} filas.`)
+  validateLoadedWorkbook(workbook, MAX_ROWS, RISK_IMPORT_LIMITS)
+  const sheet = workbook.worksheets[0]!
   const columns = buildColumnMap(sheet.getRow(1))
   const rows: Array<{ rowNumber: number; original: Record<string, string>; normalized: NormalizedRiskImportRow; issues: string[]; fingerprint: string }> = []
   const seen = new Set<string>()
+  /* `resolveHierarchy` reutiliza proceso/tarea/puesto por código y revienta si
+   * el mismo código llega con otro nombre. Detectarlo acá convierte lo que era
+   * un lote muerto en una fila observada que se corrige antes de aprobar.
+   *
+   * ponytail: sólo mira el archivo. El choque contra un código ya existente en
+   * la faena (de otro lote o de una MIPER previa) sigue apareciendo al activar,
+   * pero ahora con `Fila N` y con `reopenRiskImportBatch` para arreglarlo. Si se
+   * vuelve frecuente, la consulta que lo adelantaría es una sola contra
+   * `prevention_risk_processes` de la faena. */
+  const namesByCode = new Map<string, string>()
+  function nameConflicts(kind: string, code: string, name: string) {
+    const previous = namesByCode.get(code)
+    if (previous === undefined) { namesByCode.set(code, name); return null }
+    return previous === name ? null : `El código de ${kind} "${code}" ya aparece en el archivo con otro nombre ("${previous}")`
+  }
   sheet.eachRow((row, rowNumber) => {
     if (rowNumber === 1) return
     const original = readOriginal(row, columns)
     if (!Object.values(original).some(Boolean)) return
     const normalized = normalizeRow(original, rowNumber)
     const rowIssues = issuesFor(normalized)
+    const processKey = `proceso:${normalized.process.code}`
+    const taskKey = `tarea:${normalized.process.code}|${normalized.task.code}`
+    const positionKey = `puesto:${taskKey}|${normalized.position.code}`
+    for (const conflict of [
+      nameConflicts("proceso", processKey, normalized.process.name),
+      nameConflicts("tarea", taskKey, normalized.task.name),
+      nameConflicts("puesto", positionKey, normalized.position.name),
+    ]) if (conflict) rowIssues.push(conflict)
     const rowFingerprint = fingerprint(normalized)
     if (seen.has(rowFingerprint)) rowIssues.push("Duplicado dentro del archivo")
     seen.add(rowFingerprint)
@@ -323,8 +386,8 @@ export async function resolveRiskImportRow(input: unknown, access: RiskLegalAcce
     let normalized: NormalizedRiskImportRow | Record<string, unknown> = data.normalized
     let issues: string[] = []
     if (!data.reject) {
-      const parsed = riskEntrySchema.omit({ matrixId: true, sourceRowNumber: true, sourceOriginal: true, sourceNormalized: true, normalizationDecision: true }).safeParse(data.normalized)
-      if (!parsed.success) throw new Error("La normalización corregida no cumple el contrato MIPER.")
+      const parsed = riskEntryContract.safeParse(data.normalized)
+      if (!parsed.success) throw new Error(`La normalización corregida no cumple el contrato MIPER: ${parsed.error.issues.map((issue) => `${issue.path.join(".") || "fila"}: ${issue.message}`).join("; ")}.`)
       normalized = parsed.data as unknown as NormalizedRiskImportRow
       issues = issuesFor(normalized as NormalizedRiskImportRow)
       if (issues.length) throw new Error(`La fila aún tiene observaciones: ${issues.join("; ")}.`)
@@ -352,7 +415,58 @@ export async function approveRiskImportBatch(batchId: string, access: RiskLegalA
     if (counts[0]?.blocking) throw new Error("Debes resolver todas las filas observadas antes de aprobar.")
     const now = new Date().toISOString()
     const [updated] = await tx.update(preventionRiskImportBatches).set({ status: "approved", approvedByUserId: access.userId, approvedAt: now }).where(and(eq(preventionRiskImportBatches.id, batch.id), eq(preventionRiskImportBatches.status, "staged"))).returning()
-    return updated!
+    // MIPER-11: el predicado `status = 'staged'` es el CAS que evita la doble
+    // aprobación, pero `updated!` mentía sobre su resultado. Con dos
+    // aprobaciones simultáneas la segunda no actualizaba ninguna fila y aun así
+    // devolvía "aprobado" —con `undefined` disfrazado de lote por el `!`—, así
+    // que la pantalla mostraba éxito y el aprobador quedaba registrado como
+    // otro. Mismo `if (!updated) throw` que `reopenRiskImportBatch` y el resto
+    // del módulo.
+    if (!updated) throw new Error("El lote cambió mientras lo aprobabas. Recarga antes de continuar.")
+    return updated
+  })
+}
+
+/**
+ * Devuelve un lote aprobado a revisión para poder corregirlo o rechazar sus
+ * filas (MIPER-04).
+ *
+ * Sin esto un lote aprobado que no activa no tenía salida desde la aplicación:
+ * `resolveRiskImportRow` sólo admite lotes `staged` y `stageRiskImport` devuelve
+ * el mismo lote si vuelves a subir el archivo (índice único por checksum). Pide
+ * `prevention:risk:edit` y no `:approve` porque reabrir sólo QUITA una
+ * aprobación: para volver a avanzar hace falta que otra persona apruebe otra
+ * vez, así que quien corrige puede desatascarse solo sin saltarse a nadie.
+ */
+export async function reopenRiskImportBatch(input: unknown, access: RiskLegalAccess) {
+  const data = z.object({ batchId: z.string().min(1), reason: z.string().trim().min(10).max(3000) }).parse(input)
+  return db.transaction(async (tx) => {
+    const [batch] = await tx.select().from(preventionRiskImportBatches).where(eq(preventionRiskImportBatches.id, data.batchId)).limit(1)
+    if (!batch) throw new Error("Lote MIPER no encontrado o fuera de alcance.")
+    assertPermission(access, "prevention:risk:edit", batch.worksiteId)
+    if (batch.status !== "approved") throw new Error("Sólo un lote aprobado y aún sin activar puede reabrirse.")
+    const [matrix] = await tx.select({ id: preventionRiskMatrices.id, status: preventionRiskMatrices.status }).from(preventionRiskMatrices).where(eq(preventionRiskMatrices.sourceImportBatchId, batch.id)).limit(1)
+    // Si ya nació la versión borrador desde este lote, reabrirlo dejaría dos
+    // orígenes de verdad para el mismo peligro. Se corrige en la MIPER.
+    if (matrix) throw new Error("El lote ya generó una versión MIPER: corrige el peligro en la versión borrador.")
+    const [updated] = await tx.update(preventionRiskImportBatches)
+      .set({ status: "staged", approvedByUserId: null, approvedAt: null })
+      .where(and(eq(preventionRiskImportBatches.id, batch.id), eq(preventionRiskImportBatches.status, "approved")))
+      .returning()
+    if (!updated) throw new Error("El lote cambió mientras lo reabrías. Recarga antes de continuar.")
+    await tx.insert(preventionRiskLegalHistory).values({
+      id: `prlh-${nanoid()}`,
+      domain: "import",
+      entityType: "import_batch",
+      entityId: batch.id,
+      worksiteId: batch.worksiteId,
+      changeType: "reopened",
+      reason: data.reason,
+      beforeState: { status: batch.status, approvedByUserId: batch.approvedByUserId },
+      afterState: { status: updated.status },
+      actorUserId: access.userId,
+    })
+    return updated
   })
 }
 
@@ -364,6 +478,11 @@ export async function activateRiskImportBatch(input: unknown, access: RiskLegalA
     revisionReason: z.string().trim().min(10).max(3000),
     participationSummary: z.string().trim().min(10).max(5000),
     consultationEvidenceReference: z.string().trim().min(3).max(2000),
+    // Una MIPER nacida de un Excel acredita la participación del comité igual que
+    // una creada a mano: sin esto, las importadas no podían alimentar el crédito
+    // Oro `iper_committee_participation` y ese camino quedaba a medias.
+    // `createRiskMatrixDraftWithClient` valida faena y estado de la sesión.
+    committeeMeetingId: z.string().min(1).nullable().optional(),
   }).parse(input)
 
   return db.transaction(async (tx) => {
@@ -381,6 +500,7 @@ export async function activateRiskImportBatch(input: unknown, access: RiskLegalA
         revisionReason: data.revisionReason,
         participationSummary: data.participationSummary,
         consultationEvidenceReference: data.consultationEvidenceReference,
+        committeeMeetingId: data.committeeMeetingId ?? null,
         sourceImportBatchId: batch.id,
       }, access)
     }
@@ -389,15 +509,26 @@ export async function activateRiskImportBatch(input: unknown, access: RiskLegalA
     const rows = await tx.select().from(preventionRiskImportRows).where(and(eq(preventionRiskImportRows.batchId, batch.id), eq(preventionRiskImportRows.status, "ready"))).orderBy(asc(preventionRiskImportRows.rowNumber))
     for (const row of rows) {
       const normalized = row.normalized as NormalizedRiskImportRow
-      const { entry } = await addRiskEntryWithClient(tx, {
-        matrixId: matrix.id,
-        ...normalized,
-        sourceRowNumber: row.rowNumber,
-        sourceOriginal: row.original,
-        sourceNormalized: row.normalized as Record<string, unknown>,
-        normalizationDecision: row.resolution ?? "Normalización automática pendiente de aprobación de la versión MIPER",
-      }, access)
-      await tx.update(preventionRiskImportRows).set({ status: "activated", riskEntryId: entry.id }).where(eq(preventionRiskImportRows.id, row.id))
+      /* La activación es una sola transacción: si una fila revienta se pierde
+       * el lote entero, así que el error tiene que decir CUÁL fila. Antes
+       * llegaba como un ZodError anónimo y no había forma de saber dónde
+       * mirar — ni de reabrir el lote para arreglarla (`reopenRiskImportBatch`). */
+      try {
+        const { entry } = await addRiskEntryWithClient(tx, {
+          matrixId: matrix.id,
+          ...normalized,
+          sourceRowNumber: row.rowNumber,
+          sourceOriginal: row.original,
+          sourceNormalized: row.normalized as Record<string, unknown>,
+          normalizationDecision: row.resolution ?? "Normalización automática pendiente de aprobación de la versión MIPER",
+        }, access)
+        await tx.update(preventionRiskImportRows).set({ status: "activated", riskEntryId: entry.id }).where(eq(preventionRiskImportRows.id, row.id))
+      } catch (error) {
+        const detail = error instanceof ZodError
+          ? error.issues.map((issue) => `${issue.path.join(".") || "fila"}: ${issue.message}`).join("; ")
+          : error instanceof Error ? error.message : String(error)
+        throw new Error(`Fila ${row.rowNumber}: ${detail} Reabre el lote para corregirla o rechazarla.`)
+      }
     }
 
     const counts = await tx.select({ remaining: sql<number>`count(*) filter (where ${preventionRiskImportRows.status} IN ('ready', 'needs_review'))::int` }).from(preventionRiskImportRows).where(eq(preventionRiskImportRows.batchId, batch.id))

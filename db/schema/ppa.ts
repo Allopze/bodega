@@ -40,6 +40,15 @@ export const ppaSubmissions = pgTable("ppa_submissions", {
   publicToken:        text("public_token").notNull().unique(),
   publicTokenRevokedAt: timestamp("public_token_revoked_at", { withTimezone: true, mode: "string" }),
 
+  // Clave de idempotencia del envío (misma pauta que incidentes, TAE e
+  // inspecciones). La cola offline reenvía cuando la sincronización se
+  // interrumpe entre el commit y la confirmación al cliente: el UNIQUE hace
+  // que ese reenvío recupere la fila original en vez de duplicar el PPA.
+  // Nullable porque las filas anteriores a la migración no la tienen; en
+  // Postgres los NULL no colisionan entre sí, así que el UNIQUE convive con
+  // ellas sin backfill.
+  clientSubmissionId: text("client_submission_id").unique(),
+
   // Intervención del responsable de revisión.
   reviewedBy:         text("reviewed_by").references(() => users.id),
   fuiAlLugar:         boolean("fui_al_lugar"),
@@ -79,6 +88,17 @@ export const ppaSubmissions = pgTable("ppa_submissions", {
   check("ppa_submissions_estado_check", sql`${table.estado} IN ('aprobado_auto', 'detenido', 'en_correccion', 'pendiente_verificacion', 'autorizado', 'rechazado', 'cancelado', 'cerrado')`),
   check("ppa_submissions_version_check", sql`${table.version} >= 1`),
   check("ppa_submissions_cancel_check", sql`(${table.cancelledAt} IS NULL AND ${table.cancelledByUserId} IS NULL AND ${table.cancellationReason} IS NULL) OR (${table.cancelledAt} IS NOT NULL AND ${table.cancelledByUserId} IS NOT NULL AND length(${table.cancellationReason}) >= 5)`),
+  // Cada paso del flujo escribe su fecha JUNTO a su actor; una fecha sin actor
+  // (o al revés) es un estado que ninguna transición puede producir, y sin CHECK
+  // el esquema lo aceptaba igual. El trío de cancelación ya estaba cubierto
+  // arriba; estos cuatro pares cierran la simetría.
+  // `verification_comment` queda FUERA a propósito: una verificación rechazada
+  // guarda el comentario con verified_at/verified_by en NULL (ver
+  // verifyPpaCorrection), así que no es parte del par.
+  check("ppa_submissions_correction_declared_check", sql`(${table.correctionDeclaredAt} IS NULL AND ${table.correctionDeclaredByUserId} IS NULL) OR (${table.correctionDeclaredAt} IS NOT NULL AND ${table.correctionDeclaredByUserId} IS NOT NULL)`),
+  check("ppa_submissions_verified_check", sql`(${table.verifiedAt} IS NULL AND ${table.verifiedByUserId} IS NULL) OR (${table.verifiedAt} IS NOT NULL AND ${table.verifiedByUserId} IS NOT NULL)`),
+  check("ppa_submissions_authorized_check", sql`(${table.authorizedAt} IS NULL AND ${table.authorizedByUserId} IS NULL) OR (${table.authorizedAt} IS NOT NULL AND ${table.authorizedByUserId} IS NOT NULL)`),
+  check("ppa_submissions_closed_check", sql`(${table.closedAt} IS NULL AND ${table.closedByUserId} IS NULL) OR (${table.closedAt} IS NOT NULL AND ${table.closedByUserId} IS NOT NULL)`),
 ])
 
 export const ppaStatusHistory = pgTable("ppa_status_history", {

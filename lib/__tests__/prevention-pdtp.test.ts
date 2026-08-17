@@ -69,6 +69,12 @@ beforeEach(async () => {
   await inMemoryDb.delete(schema.pdtpActivities)
   await inMemoryDb.delete(schema.pdtpResponsibleCatalog)
   await inMemoryDb.delete(schema.pdtpPrograms)
+  // Las corridas y plantillas de inspección referencian `users` y `worksites` con
+  // onDelete: "restrict" (la plantilla, por su `authorUserId`), así que se borran
+  // antes o el DELETE de usuarios queda bloqueado. Las usa el caso de
+  // `sourceType: "audit"`, que exige una auditoría real de la faena.
+  await inMemoryDb.delete(schema.preventionInspectionRuns)
+  await inMemoryDb.delete(schema.preventionInspectionTemplates)
   await inMemoryDb.delete(schema.workers)
   await inMemoryDb.delete(schema.worksites)
   await inMemoryDb.delete(schema.users)
@@ -1226,6 +1232,25 @@ describe("prevention PDTP service", () => {
       scope: { mode: "some" as const, ids: ["ws-1"] },
       permissions: ["prevention:pdtp:program:manage"],
     }
+    // `sourceType: "audit"` exige una corrida real del motor de inspecciones cuya
+    // plantilla sea de tipo `audit` (DS 44 art. 22 n°4): `linkPdtpActivitySource`
+    // resuelve la fuente y verifica pertenencia a la faena, así que un id suelto
+    // ya no basta.
+    await inMemoryDb.insert(schema.preventionInspectionTemplates).values({
+      id: "tpl-auditoria-interna", code: "AUD-INT", versionLabel: "01",
+      name: "Auditoría interna del SGSST", kind: "audit",
+      definitionSnapshot: {},
+      // El CHECK exige exactamente 64 caracteres (SHA-256 en hexadecimal).
+      contentHash: "a".repeat(64),
+      // `draft` es el estado por defecto y basta: la consulta de `linkPdtpActivitySource`
+      // filtra por `kind = 'audit'`, no por el estado de la plantilla.
+      authorUserId: "user-1",
+    })
+    await inMemoryDb.insert(schema.preventionInspectionRuns).values({
+      id: "auditoria-interna-1", code: "AUD-2026-0001",
+      templateId: "tpl-auditoria-interna", worksiteId: "ws-1", status: "planned",
+      createdByUserId: "user-1",
+    })
     await linkPdtpActivitySource({
       activityId: activity!.id,
       worksiteId: "ws-1",

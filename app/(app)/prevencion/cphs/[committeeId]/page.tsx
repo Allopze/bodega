@@ -94,7 +94,6 @@ export default async function ComitePage({ params }: { params: Promise<{ committ
           status: member.status,
           hasFuero: member.hasFuero,
           electedOn: member.electedOn,
-          termEndsOn: member.termEndsOn,
         }))}
         meetings={meetings.map((row) => ({
           id: row.meeting.id,

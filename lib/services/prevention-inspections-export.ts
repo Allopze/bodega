@@ -16,6 +16,7 @@ import {
   listInspectionTemplates,
   type InspectionAccess,
 } from "@/lib/services/prevention-inspections"
+import { todayInChile } from "@/lib/utils"
 
 function sheet(worksheetName: string, headers: string[], rows: ReportCell[][]): ReportSheet {
   return { worksheetName, headers, rows }
@@ -96,7 +97,7 @@ export async function buildInspectionExport(access: InspectionAccess): Promise<R
   ]
 
   return {
-    filenameBase: `inspecciones_${new Date().toISOString().slice(0, 10)}`,
+    filenameBase: `inspecciones_${todayInChile()}`,
     worksheetName: sheets[0]!.worksheetName,
     headers: sheets[0]!.headers,
     rows: sheets[0]!.rows,

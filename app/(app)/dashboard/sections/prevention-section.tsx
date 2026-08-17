@@ -63,11 +63,12 @@ export async function PreventionSection({ session, worksiteScope, worksiteIds, c
   // que ya consulta las faenas visibles del alcance.
   const worksiteNames = new Map((legal?.worksites ?? risk?.worksites ?? []).map((w) => [w.id, w.name]))
   const pdtpPercent = pdtpByWorksite?.annual.percent ?? null
-  // `getLegalDashboard` entrega las aplicabilidades crudas y la lista de brechas;
-  // el porcentaje se deriva acá sobre el denominador correcto —sólo las
-  // marcadas "applicable"—, no sobre el total de requisitos del catálogo.
-  const applicableCount = legal?.applicabilities.filter((item) => item.applicability.applicabilityStatus === "applicable").length ?? 0
-  const legalGaps = legal?.gaps.length ?? 0
+  // El denominador correcto no es el catálogo ni todas las "applicable": es el
+  // de `counts`, que descuenta las aplicabilidades colgadas de un requisito
+  // reemplazado o con vigencia terminada (LEGAL-01/03). Filtrarlo acá a mano
+  // volvía a contar obligaciones derogadas.
+  const applicableCount = legal?.counts.applicable ?? 0
+  const legalGaps = legal?.counts.gaps ?? 0
   const legalCompliance = applicableCount > 0
     ? Math.round(((applicableCount - legalGaps) / applicableCount) * 100)
     : null

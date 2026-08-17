@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm"
 import {
+  type AnyPgColumn,
   boolean,
   check,
   index,
@@ -147,6 +148,13 @@ export const preventionRiskEntries = pgTable("prevention_risk_entries", {
 }, (table) => [
   uniqueIndex("prevention_risk_entries_matrix_identity_unique").on(table.matrixId, table.processId, table.taskId, table.positionId, table.hazardCode),
   index("prevention_risk_entries_matrix_level_idx").on(table.matrixId, table.residualLevel),
+  /* MIPER-01: el nivel era texto libre al escribir y un enum inglés al leer, así
+   * que convivían "Alto", "critico", "moderate" y "high" en la misma columna y la
+   * UI pintaba en gris todo lo que no fuera inglés. La fuente de verdad es
+   * lib/prevention/risk-levels (`RISK_LEVELS`); esto la vuelve exigible también
+   * para lo que entra por seeds y scripts, que no pasan por Zod. */
+  check("prevention_risk_entries_inherent_level_valid", sql`${table.inherentLevel} IN ('low', 'medium', 'high', 'critical')`),
+  check("prevention_risk_entries_residual_level_valid", sql`${table.residualLevel} IN ('low', 'medium', 'high', 'critical')`),
   check("prevention_risk_entries_exposed_count_valid", sql`${table.exposedPeopleCount} IS NULL OR ${table.exposedPeopleCount} >= 0`),
   check("prevention_risk_entries_version_positive", sql`${table.version} > 0`),
 ])
@@ -304,7 +312,25 @@ export const preventionLegalRequirements = pgTable("prevention_legal_requirement
   evidenceRequired: text("evidence_required").notNull(),
   frequency: text("frequency").notNull(),
   status: text("status").notNull().default("draft"),
-  supersedesRequirementId: text("supersedes_requirement_id"),
+  /* Registro —no control— de qué requisito reemplazó este al publicarse. El
+   * control es la supersesión por código de `transitionLegalRequirement`
+   * (LEGAL-02) más el índice parcial de un solo publicado por código; esta
+   * columna deja el enlace consultable en la fila.
+   *
+   * A propósito NO exige el mismo código: el enlace explícito existe para la
+   * renumeración normativa, donde el artículo nuevo lleva otro código y es el
+   * único modo de retirar el antiguo. `restrict` porque el registro legal es
+   * oponible: no se borra un requisito que otro declara haber reemplazado.
+   *
+   * El nombre que Drizzle le genera a esta FK mide 90 caracteres y Postgres lo
+   * guarda truncado a 63 —`prevention_legal_requirements_supersedes_requirement_id_prevent`—
+   * emitiendo un NOTICE 42622 al aplicar la migración 0176. No se renombra a
+   * propósito: Postgres trunca los identificadores también al LEERLOS, así que
+   * un `DROP CONSTRAINT` escrito con el nombre largo encuentra igual la
+   * constraint (verificado con ALTER TABLE ... DROP CONSTRAINT + ROLLBACK
+   * contra una base real). Renombrarla costaría una migración de puro
+   * cosmético sobre una tabla ya desplegada. */
+  supersedesRequirementId: text("supersedes_requirement_id").references((): AnyPgColumn => preventionLegalRequirements.id, { onDelete: "restrict" }),
   publishedHashSha256: text("published_hash_sha256"),
   createdByUserId: text("created_by_user_id").notNull().references(() => users.id),
   reviewedByUserId: text("reviewed_by_user_id").references(() => users.id),
@@ -319,6 +345,12 @@ export const preventionLegalRequirements = pgTable("prevention_legal_requirement
 }, (table) => [
   uniqueIndex("prevention_legal_requirements_code_version_unique").on(table.code, table.requirementVersion),
   index("prevention_legal_requirements_status_topic_idx").on(table.status, table.topic),
+  /* Un solo texto vigente por código, igual que la MIPER
+   * (`prevention_risk_matrices_one_published_scope_unique`): dos versiones
+   * publicadas del mismo artículo son dos obligaciones contradictorias y el
+   * registro legal deja de ser oponible. La supersesión automática al publicar
+   * (`transitionLegalRequirement`) es lo que evita chocar contra este índice. */
+  uniqueIndex("prevention_legal_requirements_one_published_code_unique").on(table.code).where(sql`${table.status} = 'published'`),
   check("prevention_legal_requirements_source_type_valid", sql`${table.sourceType} IN ('legal', 'regulatory', 'contractual', 'standard', 'internal')`),
   check("prevention_legal_requirements_status_valid", sql`${table.status} IN ('draft', 'in_review', 'reviewed', 'approved', 'published', 'superseded')`),
   check("prevention_legal_requirements_publish_evidence", sql`${table.status} NOT IN ('approved', 'published', 'superseded') OR (${table.reviewedByUserId} IS NOT NULL AND ${table.approvedByUserId} IS NOT NULL)`),
@@ -346,6 +378,19 @@ export const preventionLegalApplicabilities = pgTable("prevention_legal_applicab
   updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [
   uniqueIndex("prevention_legal_applicabilities_requirement_scope_unique").on(table.requirementId, table.worksiteId, table.processId),
+  /* LEGAL-04: el índice de arriba no cubre el caso más común. En SQL
+   * `NULL != NULL`, así que con proceso nulo —"toda la faena", lo que envía el
+   * formulario por defecto— no restringe nada: dos `proposeLegalApplicability`
+   * simultáneos leen "no existe" y ambos insertan, y la faena queda con dos
+   * pronunciamientos sobre el mismo requisito. Se agrega el índice parcial en
+   * vez de `NULLS NOT DISTINCT` (Postgres 15+, y sólo lo expone
+   * `unique()`, no `uniqueIndex()`) o de `COALESCE`: es el mismo efecto sin
+   * reescribir el índice existente ni depender de la versión del motor.
+   * `scripts/migration-preflight.mjs` bloquea el despliegue si la base ya
+   * traía duplicados, porque un índice que falla al crearse rompe la migración. */
+  uniqueIndex("prevention_legal_applicabilities_requirement_scope_null_process_unique")
+    .on(table.requirementId, table.worksiteId)
+    .where(sql`${table.processId} IS NULL`),
   index("prevention_legal_applicabilities_scope_status_idx").on(table.worksiteId, table.applicabilityStatus, table.complianceStatus),
   check("prevention_legal_applicabilities_status_valid", sql`${table.applicabilityStatus} IN ('pending', 'proposed_applicable', 'proposed_not_applicable', 'applicable', 'not_applicable')`),
   check("prevention_legal_applicabilities_compliance_valid", sql`${table.complianceStatus} IN ('not_assessed', 'compliant', 'partial', 'noncompliant', 'not_applicable')`),

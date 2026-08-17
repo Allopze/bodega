@@ -9,6 +9,7 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import { redirect } from "next/navigation"
+import { addDaysToPlainDate, todayInChile } from "@/lib/utils"
 
 vi.mock("next/navigation", () => ({
   redirect: vi.fn(() => { throw new Error("NEXT_REDIRECT") }),
@@ -72,12 +73,20 @@ function makeSession(overrides: Record<string, unknown> = {}) {
 }
 
 /** Formulario de creación directa (sin `requestId`). */
+/**
+ * `requestSchema` rechaza una fecha requerida en el pasado contra el día civil de
+ * Chile, así que esta fecha **no puede estar quemada**: cuando lo estuvo
+ * (`2026-08-15`) la suite entera se puso roja sola al día siguiente, sin que
+ * cambiara una línea de código. Se calcula relativa a hoy por esa razón.
+ */
+const REQUIRED_DATE = addDaysToPlainDate(todayInChile(), 30)
+
 function makeCreateFormData(overrides: Record<string, string> = {}): FormData {
   const fd = new FormData()
   fd.set("worksiteId", "ws-1")
   fd.set("requestType", "epp")
   fd.set("urgency", "normal")
-  fd.set("requiredDate", "2026-08-15")
+  fd.set("requiredDate", REQUIRED_DATE)
   fd.set("notes", "")
   fd.set("itemsJson", JSON.stringify([{
     productId: null, productNameFree: "Guantes de cabritilla", quantity: 2,
@@ -105,7 +114,7 @@ describe("submitRequest — creación directa (EPP/otro)", () => {
     expect(mockCreateSubmitted).toHaveBeenCalledWith("user-1", "user@test.cl", expect.objectContaining({
       worksiteId: "ws-1",
       requestType: "epp",
-      requiredDate: "2026-08-15",
+      requiredDate: REQUIRED_DATE,
     }))
     expect(redirect).toHaveBeenCalledWith("/solicitudes/req-nueva")
   })
@@ -149,7 +158,7 @@ describe("submitRequest — creación directa (EPP/otro)", () => {
     mockPersistRepuestoDraft.mockResolvedValueOnce("req-repuesto")
     mockFindFirst.mockResolvedValueOnce({
       id: "req-repuesto", status: "draft", worksiteId: "ws-1", requesterId: "user-1",
-      requestType: "repuestos", code: "SOL-2026-0009", requiredDate: "2026-08-15",
+      requestType: "repuestos", code: "SOL-2026-0009", requiredDate: REQUIRED_DATE,
       items: [{ id: "item-1", status: "draft", productId: null }],
     })
     mockSubmitRepuesto.mockResolvedValueOnce(undefined)
@@ -177,7 +186,7 @@ describe("submitRequest — creación directa (EPP/otro)", () => {
     mockPersistRepuestoDraft.mockResolvedValueOnce("req-repuesto")
     mockFindFirst.mockResolvedValueOnce({
       id: "req-repuesto", status: "draft", worksiteId: "ws-1", requesterId: "user-1",
-      requestType: "repuestos", code: "SOL-2026-0009", requiredDate: "2026-08-15",
+      requestType: "repuestos", code: "SOL-2026-0009", requiredDate: REQUIRED_DATE,
       items: [{ id: "item-1", status: "draft", productId: null }],
     })
     mockSubmitRepuesto.mockResolvedValueOnce(undefined)
@@ -200,7 +209,7 @@ describe("submitRequest — envío de un borrador (repuestos/servicios)", () => 
       requesterId: "user-1",
       requestType: "repuestos",
       code: "SOL-2026-0001",
-      requiredDate: "2026-08-15",
+      requiredDate: REQUIRED_DATE,
       items: [{ id: "item-1", status: "draft", productId: null }],
     })
     mockSubmitRepuesto.mockResolvedValue(undefined)
@@ -253,7 +262,7 @@ describe("submitRequest — envío de un borrador (repuestos/servicios)", () => 
     mockAuthFn.mockResolvedValueOnce(makeSession({ permissions: ["repuestos:submit"] }))
     mockFindFirst.mockResolvedValueOnce({
       id: "req-1", status: "draft", worksiteId: "ws-1", requesterId: "otro-user",
-      requestType: "repuestos", code: "SOL-2026-0001", requiredDate: "2026-08-15",
+      requestType: "repuestos", code: "SOL-2026-0001", requiredDate: REQUIRED_DATE,
       items: [{ id: "item-1", status: "draft", productId: null }],
     })
     const res = await submitRequest(prevState, draftFormData())

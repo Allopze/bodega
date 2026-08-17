@@ -176,3 +176,46 @@ export const CONTRACTOR_DOCUMENT_STATUS_VARIANTS: Record<string, BadgeVariant> =
   vigente: "success",
   vencido: "danger",
 }
+
+/* ── Requisitos legales ──────────────────────────────────────────────────────
+ * LEGAL-09: la ficha del requisito pintaba el enum crudo ("not_applicable") y
+ * la mesa de trabajo tenía su propio diccionario incompleto, con una sola
+ * entrada para dos vocabularios distintos: en aplicabilidad 'not_applicable'
+ * es "No aplicable" (la faena no está alcanzada) y en cumplimiento es "No
+ * aplica" (no hay nada que evaluar). Estos tres mapas cubren exactamente los
+ * valores de las restricciones `prevention_legal_requirements_status_valid`,
+ * `prevention_legal_applicabilities_status_valid` y
+ * `..._compliance_valid`; `lib/__tests__/prevention-risk-legal.test.ts` lo
+ * verifica contra el esquema para que un valor nuevo no llegue crudo a la UI. */
+export const LEGAL_REQUIREMENT_STATUS_LABELS: Record<string, string> = {
+  draft: "Borrador",
+  in_review: "En revisión",
+  reviewed: "Revisado",
+  approved: "Aprobado",
+  published: "Vigente",
+  superseded: "Reemplazado",
+}
+
+export const LEGAL_APPLICABILITY_STATUS_LABELS: Record<string, string> = {
+  pending: "Pendiente",
+  proposed_applicable: "Aplicable propuesto",
+  proposed_not_applicable: "No aplicable propuesto",
+  applicable: "Aplicable",
+  not_applicable: "No aplicable",
+}
+
+export const LEGAL_COMPLIANCE_STATUS_LABELS: Record<string, string> = {
+  not_assessed: "Sin evaluar",
+  compliant: "Cumple",
+  partial: "Cumplimiento parcial",
+  noncompliant: "No cumple",
+  not_applicable: "No aplica",
+}
+
+export function legalStatusVariant(status: string): BadgeVariant {
+  if (["published", "approved", "applicable", "compliant"].includes(status)) return "success"
+  if (status === "noncompliant") return "danger"
+  // 'superseded' y 'not_applicable' no son un problema: son historia y alcance.
+  if (["superseded", "not_applicable", "draft"].includes(status)) return "outline"
+  return "warning"
+}

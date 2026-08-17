@@ -153,6 +153,46 @@ describe("notification service", () => {
     expect(recipients).toHaveLength(2)
   })
 
+  it("createNotifications con dedupeKey sólo escribe y sólo envía correo a quien aún no lo tenía", async () => {
+    await insertUser("u-dedup-1")
+    await insertUser("u-dedup-2")
+
+    const payload = {
+      type: "system_alert" as const,
+      title: "Mandato del comité por vencer",
+      body: "Convoca la elección antes de la fecha.",
+      dedupeKey: "cphs-mandate:cphs-1:2026-09-01:30",
+    }
+    await createNotifications(["u-dedup-1"], payload)
+    expect(mocks.sendBatchEmails).toHaveBeenCalledTimes(1)
+    expect(mocks.sendBatchEmails.mock.calls[0]?.[0]).toHaveLength(1)
+
+    // Segunda corrida del mismo job: u-dedup-1 ya la tiene, u-dedup-2 no.
+    mocks.sendBatchEmails.mockClear()
+    await createNotifications(["u-dedup-1", "u-dedup-2"], payload)
+
+    const rows = await inMemoryDb.query.notifications.findMany()
+    expect(rows).toHaveLength(2)
+    // El correo se arma sobre lo realmente insertado, no sobre la lista
+    // completa: u-dedup-1 no puede recibirlo de nuevo.
+    const recipients = (mocks.sendBatchEmails.mock.calls[0]?.[0] ?? []) as { to: string }[]
+    expect(recipients.map((message) => message.to)).toEqual(["u-dedup-2@chome.cl"])
+  })
+
+  it("createNotifications con dedupeKey no manda ningún correo si nadie es nuevo", async () => {
+    await insertUser("u-dedup-3")
+    const payload = {
+      type: "system_alert" as const,
+      title: "Aviso repetido",
+      dedupeKey: "cphs-cadence:cphs-1:2026-08",
+    }
+    await createNotifications(["u-dedup-3"], payload)
+    mocks.sendBatchEmails.mockClear()
+
+    await createNotifications(["u-dedup-3"], payload)
+    expect(mocks.sendBatchEmails).not.toHaveBeenCalled()
+  })
+
   it("createNotifications accepts an empty user list", async () => {
     await expect(
       createNotifications([], {

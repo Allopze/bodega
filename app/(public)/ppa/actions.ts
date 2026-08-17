@@ -6,8 +6,25 @@ import { ppaSubmitSchema, type ActionState } from "@/lib/validation/ppa"
 import { z } from "zod"
 import { logger } from "@/lib/logger"
 import { headers } from "next/headers"
-import { checkRateLimit, recordFailure, recordSuccessForTelemetry } from "@/lib/services/rate-limit"
+import { checkRateLimit, consumeFixedWindowLimit, recordFailure, recordSuccessForTelemetry } from "@/lib/services/rate-limit"
 import { cleanRut, validateRut } from "@/lib/rut"
+
+/**
+ * Cuotas del envío público (S-PPA-01). Son DOS y hay que pasar las dos:
+ *
+ * - Identidad (workerId / RUT normalizado): buena para la UX, porque aísla a
+ *   cada trabajador de sus compañeros tras un NAT compartido. Pero es el propio
+ *   cliente quien la declara — `workerId` es opcional y libre —, así que por sí
+ *   sola no limita nada: rotarla da escrituras ilimitadas sin autenticación.
+ * - IP: es la única que el cliente no puede rotar. Umbral holgado a propósito
+ *   (30 envíos / 5 min = 360 por hora) para que una faena entera detrás de una
+ *   sola IP siga enviando, acotando igual la escritura masiva.
+ *
+ * Ambas usan `consumeFixedWindowLimit`, que cuenta también los envíos exitosos
+ * (`recordFailure` sólo servía cuando el "intento" era un fallo de login).
+ */
+const SUBMIT_IDENTITY_QUOTA = { maxAttempts: 5, lockMs: 15 * 60 * 1000 }
+const SUBMIT_IP_QUOTA = { maxAttempts: 30, lockMs: 5 * 60 * 1000 }
 
 /**
  * Acción PÚBLICA (sin login). El trabajador envía el PPA. No usa guardPermission:
@@ -19,24 +36,13 @@ export async function submitPpaAction(
   const h = await headers()
   const clientIp = h.get("x-forwarded-for")?.split(",")[0]?.trim() || "127.0.0.1"
 
-  // Pre-parse para escopar el rate limit por trabajador (UX-01). Preferimos una
-  // identidad estable (id de la lista controlada, luego RUT normalizado) para que
-  // un NAT compartido no bloquee a trabajadores legítimos distintos. Caemos a IP
-  // solo cuando el envío no trae ninguna identidad.
-  const preParsed = ppaSubmitSchema.safeParse(input)
-  const rateLimitIdentity = preParsed.success
-    ? (preParsed.data.workerId
-        || (preParsed.data.workerRut ? cleanRut(preParsed.data.workerRut) : "")
-        || clientIp)
-    : clientIp
-  const rateLimitKey = `ppa:${rateLimitIdentity}`
-
-  const limitRes = await checkRateLimit(rateLimitKey)
-  if (!limitRes.allowed) {
-    const minutes = Math.ceil(limitRes.waitTimeRemainingMs / 60000)
+  // La cuota por IP se consume SIEMPRE y antes de validar: un payload basura
+  // repetido también es escritura no autenticada contra la base.
+  const ipQuota = await consumeFixedWindowLimit(`ppa-ip:${clientIp}`, SUBMIT_IP_QUOTA)
+  if (!ipQuota.allowed) {
     return {
       ok: false,
-      message: `Has enviado demasiados formularios. Por favor, intenta de nuevo en ${minutes} minutos.`,
+      message: `Se alcanzó el límite de envíos desde esta conexión. Intenta de nuevo en ${SUBMIT_IP_QUOTA.lockMs / 60000} minutos.`,
     }
   }
 
@@ -49,8 +55,19 @@ export async function submitPpaAction(
     }
   }
 
-  // Registramos el intento (tanto si resulta aprobado como detenido, contamos el envío)
-  await recordFailure(rateLimitKey)
+  // Identidad estable (id de la lista controlada, luego RUT normalizado —ya
+  // validado con dígito verificador por el schema—). Caemos a IP sólo cuando el
+  // envío no trae ninguna identidad.
+  const identity = parsed.data.workerId
+    || (parsed.data.workerRut ? cleanRut(parsed.data.workerRut) : "")
+    || clientIp
+  const identityQuota = await consumeFixedWindowLimit(`ppa:${identity}`, SUBMIT_IDENTITY_QUOTA)
+  if (!identityQuota.allowed) {
+    return {
+      ok: false,
+      message: `Has enviado demasiados formularios. Por favor, intenta de nuevo en ${SUBMIT_IDENTITY_QUOTA.lockMs / 60000} minutos.`,
+    }
+  }
 
   try {
     const { token, submission } = await createPpaSubmission(parsed.data)

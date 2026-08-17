@@ -1823,10 +1823,10 @@ async function prepareDatabase(captureDbUrl: string) {
     sensitiveWorkerConsiderations: "Restringir la intervención a personal competente y autorizado.",
     inherentDimensions: { probability: 4, consequence: 5 },
     inherentScore: 20,
-    inherentLevel: "critico",
+    inherentLevel: "critical",
     residualDimensions: { probability: 1, consequence: 5 },
     residualScore: 5,
-    residualLevel: "medio",
+    residualLevel: "medium",
     isCritical: true,
     responsibleUserId: "user-audit-prevencion",
     responsibleSnapshot: "Equipo de mantención y Prevención",
@@ -2096,7 +2096,6 @@ async function prepareDatabase(captureDbUrl: string) {
     criticality: "high",
     immediateMeasure: "Se delimitó el acceso y se instaló señal temporal mientras se repone la definitiva.",
     capaActionId: "capa-audit-1",
-    status: "capa_linked",
     createdAt: now,
     updatedAt: now,
   })
@@ -2352,8 +2351,8 @@ async function prepareDatabase(captureDbUrl: string) {
     updatedAt: now,
   })
   await db.insert(schema.preventionCommitteeMembers).values([
-    { id: "committee-member-audit-1", committeeId: "comite-audit-1", workerId: "worker-audit-1", representation: "workers", seat: "titular", role: "presidente", electedOn: "2026-01-15", termEndsOn: "2028-01-14", hasFuero: true, status: "active", createdAt: now, updatedAt: now },
-    { id: "committee-member-audit-2", committeeId: "comite-audit-1", workerId: "worker-audit-2", representation: "company", seat: "titular", role: "secretario", electedOn: "2026-01-15", termEndsOn: "2028-01-14", hasFuero: false, status: "active", createdAt: now, updatedAt: now },
+    { id: "committee-member-audit-1", committeeId: "comite-audit-1", workerId: "worker-audit-1", representation: "workers", seat: "titular", role: "presidente", electedOn: "2026-01-15", hasFuero: true, status: "active", createdAt: now, updatedAt: now },
+    { id: "committee-member-audit-2", committeeId: "comite-audit-1", workerId: "worker-audit-2", representation: "company", seat: "titular", role: "secretario", electedOn: "2026-01-15", hasFuero: false, status: "active", createdAt: now, updatedAt: now },
   ])
   await db.insert(schema.preventionCommitteeMeetings).values({
     id: "committee-meeting-audit-1",
@@ -2382,7 +2381,6 @@ async function prepareDatabase(captureDbUrl: string) {
     meetingId: "committee-meeting-audit-1",
     description: "Verificar eficacia de la guarda lateral y su pauta de inspección antes del siguiente turno.",
     capaActionId: "capa-audit-1",
-    status: "capa_linked",
     createdAt: now,
     updatedAt: now,
   })

@@ -41,6 +41,7 @@ import {
   permitTypeSchema,
   workPermitSchema,
 } from "@/lib/validation/prevention-module/permits"
+import { codeYear, todayInChile } from "@/lib/utils"
 
 type Client = DB | Tx
 
@@ -51,12 +52,6 @@ export interface PermitAccess {
 }
 
 const NOT_FOUND = "Permiso de trabajo no encontrado o fuera de alcance."
-
-const CHILE_DATE_FORMAT = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Santiago", year: "numeric", month: "2-digit", day: "2-digit" })
-
-function todayInChile() {
-  return CHILE_DATE_FORMAT.format(new Date())
-}
 
 function nowIso() {
   return new Date().toISOString()
@@ -79,7 +74,7 @@ function scopeCondition(scope: WorksiteScope, column: AnyPgColumn) {
 }
 
 function permitCode() {
-  return `PT-${new Date().getUTCFullYear()}-${nanoid(8).toUpperCase()}`
+  return `PT-${codeYear()}-${nanoid(8).toUpperCase()}`
 }
 
 async function history(client: Client, args: {

@@ -21,7 +21,10 @@ test.describe("PDTP — Ciclo de vida y aprobaciones", () => {
     await expect(page.getByRole("heading", { name: "Aprobaciones PDTP" })).toBeVisible()
 
     // Breadcrumbs
-    await expect(page.getByRole("link", { name: "Programa de trabajo (PDTP)" })).toBeVisible()
+    // La reorganización del sidebar (4 grupos, renombres canónicos DS 44) dejó
+    // la etiqueta en "Programa de trabajo": el grupo "Programa" ya da el
+    // contexto y no necesita repetir la sigla.
+    await expect(page.getByRole("link", { name: "Programa de trabajo" })).toBeVisible()
   })
 
   test("la página de aprobaciones muestra la tabla o el estado sin pendientes", async ({ page }) => {

@@ -30,6 +30,7 @@ import { listPpa, getPpa } from "./calculos"
 import { nanoid } from "@/lib/id"
 import { createCapaActionWithClient, transitionCapaActionWithClient } from "@/lib/services/prevention-capa"
 import type { WorksiteScope } from "@/lib/auth/scope"
+import { todayInChile } from "@/lib/utils"
 
 interface PpaOperationAccess {
   userId: string
@@ -187,13 +188,20 @@ export async function declarePpaCorrection(input: unknown, access: PpaOperationA
         reason: "Implementación de controles PPA iniciada.",
       }, capaAccess(access))
     }
-    if (capa.status !== "in_progress") throw new Error("La acción CAPA no está disponible para declarar implementación.")
-    capa = await transitionCapaActionWithClient(tx, {
-      actionId: capa.id,
-      expectedVersion: capa.version,
-      toStatus: "pending_verification",
-      reason: "Controles PPA declarados como implementados.",
-    }, capaAccess(access))
+    // Idempotente a propósito: si el CAPA ya quedó en verificación (filas
+    // anteriores al guardia de origen en `transitionCapaAction`, que impide que
+    // el motor genérico las mueva), el PPA avanza igual en vez de quedar
+    // detenido sin salida. Re-transicionar sería el error, no avanzar.
+    if (capa.status === "in_progress") {
+      capa = await transitionCapaActionWithClient(tx, {
+        actionId: capa.id,
+        expectedVersion: capa.version,
+        toStatus: "pending_verification",
+        reason: "Controles PPA declarados como implementados.",
+      }, capaAccess(access))
+    } else if (capa.status !== "pending_verification") {
+      throw new Error("La acción CAPA no está disponible para declarar implementación.")
+    }
 
     const now = new Date().toISOString()
     const [updated] = await tx.update(ppaSubmissions).set({
@@ -228,10 +236,13 @@ export async function verifyPpaCorrection(input: unknown, access: PpaOperationAc
 
   return db.transaction(async (tx) => {
     const { capa } = await loadLinkedCapa(tx, current.id)
-    if (capa.version !== data.expectedCapaVersion || capa.status !== "pending_verification") {
+    // Misma red de seguridad que en declarePpaCorrection: un CAPA ya verificado
+    // no vuelve a transicionarse, pero tampoco bloquea la verificación del PPA.
+    const alreadyVerified = data.accepted && capa.status === "verified"
+    if (capa.version !== data.expectedCapaVersion || (!alreadyVerified && capa.status !== "pending_verification")) {
       throw new Error("La acción CAPA cambió o no está pendiente de verificación.")
     }
-    const capaUpdated = await transitionCapaActionWithClient(tx, data.accepted ? {
+    const capaUpdated = alreadyVerified ? capa : await transitionCapaActionWithClient(tx, data.accepted ? {
       actionId: capa.id,
       expectedVersion: capa.version,
       toStatus: "verified",
@@ -432,7 +443,7 @@ export async function buildPpaExport(
     if (item.kind !== "note") evidenceCount.set(item.actionId, (evidenceCount.get(item.actionId) ?? 0) + 1)
   }
   return {
-    filenameBase: `ppa_digital_${new Date().toISOString().slice(0, 10)}`,
+    filenameBase: `ppa_digital_${todayInChile()}`,
     worksheetName: "PPA Digital",
     headers: [
       "Fecha", "Trabajador", "RUT", "Identificación manual", "Faena", "Tarea",

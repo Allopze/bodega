@@ -9,11 +9,11 @@ import {
 import { assessMeetingCadence, isMandateExpired } from "@/lib/prevention/cphs"
 import { activityDeadline } from "@/lib/prevention/cphs-program"
 import { expireLapsedCommittees } from "@/lib/services/prevention-cphs"
-import { todayInChile } from "@/lib/services/prevention-cphs-access"
 import {
   createNotifications,
   getUserIdsWithPermissionForWorksite,
 } from "@/lib/services/notifications"
+import { todayInChile } from "@/lib/utils"
 
 export interface CphsReminderResult {
   expiredCommittees: number
@@ -77,9 +77,13 @@ export async function runPreventionCphsReminders(): Promise<CphsReminderResult> 
   }))
 
   const [lastMeetings, activities] = await Promise.all([
+    // `heldAt` y no `closedAt`: la cadencia mide cuándo SESIONÓ el comité, no
+    // cuándo se firmó el acta. Con `closedAt` este job y la pantalla (que ya
+    // usaba `heldAt`) contestaban distinto sobre el mismo comité — el acta de
+    // enero firmada en marzo lo daba al día en marzo.
     db.select({
       committeeId: preventionCommitteeMeetings.committeeId,
-      lastClosedAt: max(preventionCommitteeMeetings.closedAt),
+      lastHeldAt: max(preventionCommitteeMeetings.heldAt),
     })
       .from(preventionCommitteeMeetings)
       .where(and(
@@ -100,7 +104,7 @@ export async function runPreventionCphsReminders(): Promise<CphsReminderResult> 
         eq(preventionCommitteeProgramActivities.status, "planned"),
       )),
   ])
-  const lastBy = new Map(lastMeetings.map((row) => [row.committeeId, row.lastClosedAt]))
+  const lastBy = new Map(lastMeetings.map((row) => [row.committeeId, row.lastHeldAt]))
   const committeeById = new Map(committees.map((committee) => [committee.id, committee]))
 
   for (const committee of committees) {

@@ -1,7 +1,7 @@
 /** Real PostgreSQL proof for CPHS governance: parity, quorum, minutes and management review. */
 import path from "node:path"
 import postgres from "postgres"
-import { eq, sql } from "drizzle-orm"
+import { and, eq, sql } from "drizzle-orm"
 import { drizzle } from "drizzle-orm/postgres-js"
 import { migrate } from "drizzle-orm/postgres-js/migrator"
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest"
@@ -35,6 +35,8 @@ describeIf("CPHS y gobernanza on real PostgreSQL", () => {
   let committeeId = ""
   let meetingId = ""
   let meetingVersion = 1
+  let secondMeetingId = ""
+  let secondMeetingVersion = 1
   const memberIds: Record<string, string> = {}
 
   beforeAll(async () => {
@@ -176,9 +178,11 @@ describeIf("CPHS y gobernanza on real PostgreSQL", () => {
     expect(capa).toHaveLength(2)
     expect(capa.every((action) => action.worksiteId === "ws-cp-a")).toBe(true)
 
+    // El acuerdo ya no tiene columna `status`: su estado es el de la CAPA a la
+    // que apunta, así que lo único que hay que probar acá es el vínculo.
     const agreements = await getDb().select().from(schema.preventionCommitteeAgreements)
       .where(eq(schema.preventionCommitteeAgreements.meetingId, meetingId))
-    expect(agreements.every((row) => row.status === "capa_linked" && row.capaActionId)).toBe(true)
+    expect(agreements.every((row) => row.capaActionId !== null)).toBe(true)
 
     const excused = await getDb().select().from(schema.preventionCommitteeAttendance)
       .where(eq(schema.preventionCommitteeAttendance.memberId, memberIds.c2!))
@@ -200,16 +204,119 @@ describeIf("CPHS y gobernanza on real PostgreSQL", () => {
     expect(status?.cadence.monthsWithoutMeeting).toBeLessThan(2)
   })
 
-  it("expires a committee whose mandate has passed and blocks new meetings", async () => {
+  it("refuses to close a session held by a single representation", async () => {
+    const service = await import("@/lib/services/prevention-cphs")
+    const meeting = await service.scheduleCommitteeMeeting({
+      committeeId, scheduledFor: "2026-08-12T14:00:00.000Z",
+      agenda: "Segunda sesión: seguimiento de acuerdos y revisión del programa del comité.",
+    }, MANAGER)
+    secondMeetingId = meeting.id
+    secondMeetingVersion = meeting.version
+
+    // c1 y c2 son la mayoría de titulares (2 de 4), pero ambos representan a la
+    // empresa: el comité es paritario y no sesiona sin la otra representación.
+    await expect(service.closeCommitteeMeeting({
+      meetingId: secondMeetingId, expectedVersion: secondMeetingVersion, heldAt: "2026-08-12T14:00:00.000Z",
+      minutes: "Sesión con la sola representación del empleador que se intenta cerrar igualmente.",
+      attendedMemberIds: [memberIds.c1!, memberIds.c2!],
+    }, MANAGER)).rejects.toThrow(/no alcanzó quórum: no hubo representante de las personas trabajadoras presente/)
+  })
+
+  it("refuses attendance from someone who does not belong to the committee", async () => {
+    const service = await import("@/lib/services/prevention-cphs")
+    await expect(service.closeCommitteeMeeting({
+      meetingId: secondMeetingId, expectedVersion: secondMeetingVersion, heldAt: "2026-08-12T14:00:00.000Z",
+      minutes: "Acta que nombra en la asistencia a alguien que no integra el comité.",
+      attendedMemberIds: [memberIds.c1!, memberIds.w1!, "cphsm-de-otro-comite"],
+    }, MANAGER)).rejects.toThrow(/sólo admite integrantes de este comité/)
+  })
+
+  it("refuses minutes dated in the future or before the committee existed", async () => {
+    const service = await import("@/lib/services/prevention-cphs")
+    const base = {
+      meetingId: secondMeetingId, expectedVersion: secondMeetingVersion,
+      minutes: "Acta con una fecha de realización que el comité no puede sostener.",
+      attendedMemberIds: [memberIds.c1!, memberIds.w1!, memberIds.w2!],
+    }
+    // Un acta futura silenciaba el aviso de cadencia para siempre: la última
+    // sesión "cerrada" quedaba adelantada y `assessMeetingCadence` no reclamaba.
+    const future = new Date(Date.now() + 86_400_000).toISOString()
+    // Lo rechaza el esquema, así que llega como ZodError: su mensaje serializa
+    // los issues y contiene el texto de la regla.
+    await expect(service.closeCommitteeMeeting({ ...base, heldAt: future }, MANAGER))
+      .rejects.toThrow(/no puede realizarse en el futuro/)
+    // El comité se constituyó el 2026-08-01.
+    await expect(service.closeCommitteeMeeting({ ...base, heldAt: "2026-07-20T14:00:00.000Z" }, MANAGER))
+      .rejects.toThrow(/anterior a la constitución del comité/)
+  })
+
+  it("reconciles nominal attendance with the roster in force when closing", async () => {
+    const service = await import("@/lib/services/prevention-cphs")
+    // El padrón cambia DESPUÉS de convocar: se reemplaza a c2, así que su fila
+    // de asistencia sobra y la del reemplazante no existe.
+    const replacement = await service.replaceCommitteeMember({
+      memberId: memberIds.c2!, workerId: "wk-a6",
+      reason: "Cambio de faena de la persona titular durante el período del mandato.",
+    }, MANAGER)
+    memberIds.c2b = replacement.id
+
+    const beforeClose = await getDb().select().from(schema.preventionCommitteeAttendance)
+      .where(eq(schema.preventionCommitteeAttendance.meetingId, secondMeetingId))
+    expect(beforeClose.map((row) => row.memberId)).toContain(memberIds.c2)
+    expect(beforeClose.map((row) => row.memberId)).not.toContain(memberIds.c2b)
+
+    const closed = await service.closeCommitteeMeeting({
+      meetingId: secondMeetingId, expectedVersion: secondMeetingVersion, heldAt: "2026-08-12T14:00:00.000Z",
+      minutes: "Se revisó el avance de los acuerdos anteriores y el programa anual del comité.",
+      attendedMemberIds: [memberIds.c1!, memberIds.c2b!, memberIds.w1!, memberIds.w2!],
+    }, MANAGER)
+    expect(closed.quorum.reached).toBe(true)
+
+    const attendance = await getDb().select().from(schema.preventionCommitteeAttendance)
+      .where(eq(schema.preventionCommitteeAttendance.meetingId, secondMeetingId))
+    const byMember = new Map(attendance.map((row) => [row.memberId, row]))
+    // El padrón vigente son los cinco integrantes activos, ni uno más.
+    expect(attendance).toHaveLength(5)
+    expect(byMember.has(memberIds.c2!)).toBe(false)
+    expect(byMember.get(memberIds.c2b!)?.attended).toBe(true)
+    expect(byMember.get(memberIds.s1!)?.attended).toBe(false)
+  })
+
+  it("expires a committee whose mandate has passed, leaving history, and blocks new meetings", async () => {
     const service = await import("@/lib/services/prevention-cphs")
     // El constraint exige mandato posterior a la constitución, así que se
     // retrocede el par completo para simular un mandato ya vencido.
     await getDb().update(schema.preventionCommittees)
       .set({ constitutedOn: "2019-01-01", mandateEndsOn: "2020-01-01" })
       .where(eq(schema.preventionCommittees.id, committeeId))
+    const [before] = await getDb().select().from(schema.preventionCommittees)
+      .where(eq(schema.preventionCommittees.id, committeeId))
 
     const result = await service.expireLapsedCommittees()
     expect(result.expired).toBe(1)
+
+    // Era la única transición del comité que cambiaba estado sin dejar rastro.
+    const [after] = await getDb().select().from(schema.preventionCommittees)
+      .where(eq(schema.preventionCommittees.id, committeeId))
+    expect(after?.status).toBe("expired")
+    expect(after?.version).toBe(before!.version + 1)
+
+    const expiredHistory = await getDb().select().from(schema.preventionGovernanceHistory)
+      .where(and(
+        eq(schema.preventionGovernanceHistory.entityId, committeeId),
+        eq(schema.preventionGovernanceHistory.changeType, "expired"),
+      ))
+    expect(expiredHistory).toHaveLength(1)
+    expect(expiredHistory[0]?.worksiteId).toBe("ws-cp-a")
+
+    // Idempotente: la segunda corrida no reexpira ni duplica el historial.
+    expect((await service.expireLapsedCommittees()).expired).toBe(0)
+    const afterSecondRun = await getDb().select().from(schema.preventionGovernanceHistory)
+      .where(and(
+        eq(schema.preventionGovernanceHistory.entityId, committeeId),
+        eq(schema.preventionGovernanceHistory.changeType, "expired"),
+      ))
+    expect(afterSecondRun).toHaveLength(1)
 
     await expect(service.scheduleCommitteeMeeting({
       committeeId, scheduledFor: "2026-09-10T14:00:00.000Z",
@@ -243,6 +350,33 @@ describeIf("CPHS y gobernanza on real PostgreSQL", () => {
     expect(capa).toHaveLength(1)
   })
 
+  it("scopes management reviews by worksite, keeping the corporate ones visible", async () => {
+    const service = await import("@/lib/services/prevention-cphs")
+    // Sin faena = revisión corporativa: la ve cualquiera que pueda revisar.
+    await service.createManagementReview({
+      periodLabel: "2026-CORP", heldAt: "2026-07-31T15:00:00.000Z",
+      inputs: { alcance: "toda la empresa" },
+    }, DIRECTOR)
+
+    // Un revisor acotado a ws-cp-b no puede ver ni cerrar la de ws-cp-a. Hoy el
+    // permiso lo tienen roles globales; el alcance tiene que sostenerse igual.
+    const SCOPED_REVIEWER = {
+      userId: "cp-outsider",
+      scope: { mode: "some", ids: ["ws-cp-b"] } as WorksiteScope,
+      permissions: ["prevention:cphs:view", "prevention:governance:review"],
+    }
+    const visible = await service.listManagementReviews(SCOPED_REVIEWER)
+    expect(visible.map((row) => row.review.periodLabel)).toEqual(["2026-CORP"])
+    expect(await service.listManagementReviews(DIRECTOR)).toHaveLength(2)
+
+    const [foreign] = await getDb().select().from(schema.preventionManagementReviews)
+      .where(eq(schema.preventionManagementReviews.worksiteId, "ws-cp-a"))
+    await expect(service.closeManagementReview({
+      reviewId: foreign!.id, expectedVersion: foreign!.version,
+      conclusions: "Intento de cerrar la revisión de una faena fuera del alcance del revisor.",
+    }, SCOPED_REVIEWER)).rejects.toThrow(/fuera de alcance/)
+  })
+
   it("does not leak committees of another worksite", async () => {
     const service = await import("@/lib/services/prevention-cphs")
     expect(await service.listCommittees(OUTSIDER)).toEqual([])
@@ -262,6 +396,7 @@ async function seedFixture(database: ReturnType<typeof drizzle<typeof schema>>) 
     { id: "wk-a3", rut: "33333333-3", firstName: "Carla", lastName: "Díaz", worksiteId: "ws-cp-a", createdAt: now },
     { id: "wk-a4", rut: "44444444-4", firstName: "Diego", lastName: "Rojas", worksiteId: "ws-cp-a", createdAt: now },
     { id: "wk-a5", rut: "55555555-5", firstName: "Elena", lastName: "Muñoz", worksiteId: "ws-cp-a", createdAt: now },
+    { id: "wk-a6", rut: "77777777-7", firstName: "Gabriel", lastName: "Toro", worksiteId: "ws-cp-a", createdAt: now },
     { id: "wk-b1", rut: "66666666-6", firstName: "Felipe", lastName: "Vera", worksiteId: "ws-cp-b", createdAt: now },
   ])
   await database.insert(schema.users).values([

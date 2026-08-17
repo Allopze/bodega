@@ -7,6 +7,7 @@ import { getRiskDashboard } from "@/lib/services/prevention-risk-legal"
 import { listRiskImportBatchesPage } from "@/lib/services/prevention-risk-import"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
+import { todayInChile } from "@/lib/utils"
 import { MiperHeaderActions, MiperWorkbench } from "./miper-workbench"
 
 export const metadata: Metadata = { title: "MIPER y controles" }
@@ -27,7 +28,11 @@ export default async function MiperPage({ searchParams }: { searchParams: Promis
     listRiskImportBatchesPage(access, { limit: pageSize, offset: pagination.offset }),
   ])
   const importsPagination = resolvePagination({ pageParam: raw.page, totalItems: importsTotal, pageSize })
-  const today = new Date().toISOString().slice(0, 10)
+  // Se resuelve acá, en el servidor, y baja como prop: el workbench es cliente y
+  // si calculara la fecha por su cuenta el HTML servido y el hidratado podrían
+  // diferir. `todayInChile` además la fija a America/Santiago, así que tampoco
+  // depende de la zona del navegador. Contrato cubierto por miper-ui-contract.
+  const today = todayInChile()
   const permissions = {
     canEdit: can(session, "prevention:risk:edit"),
     canReview: can(session, "prevention:risk:review"),
@@ -41,7 +46,7 @@ export default async function MiperPage({ searchParams }: { searchParams: Promis
         title="MIPER y controles"
         description="Versiona peligros, riesgos y controles por proceso, tarea y puesto de trabajo."
         breadcrumb={<Breadcrumbs items={[{ label: "Inicio", href: "/dashboard" }, { label: "Prevención", href: "/prevencion" }, { label: "MIPER" }]} />}
-        actions={<MiperHeaderActions worksites={dashboard.worksites} methodologies={dashboard.methodologies} canEdit={permissions.canEdit} />}
+        actions={<MiperHeaderActions worksites={dashboard.worksites} methodologies={dashboard.methodologies} matrices={dashboard.matrices} committeeMeetings={dashboard.committeeMeetings} canEdit={permissions.canEdit} />}
       />
       <MiperWorkbench
         dashboard={dashboard}

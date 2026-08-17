@@ -12,6 +12,7 @@ import {
   listInspectionWorksites,
 } from "@/lib/services/prevention-inspections"
 import { InspectionRunList } from "./inspection-run-list"
+import { todayInChile } from "@/lib/utils"
 
 /**
  * Pantalla del motor de inspecciones, parametrizada por los `kind` que muestra.
@@ -91,7 +92,7 @@ export async function InspectionsScreen({
           openFindings: row.openFindings,
           criticalFindings: row.criticalFindings,
         }))}
-        overdueProgramCount={programs.filter((row) => row.program.isActive && row.program.nextDueOn < new Date().toISOString().slice(0, 10)).length}
+        overdueProgramCount={programs.filter((row) => row.program.isActive && row.program.nextDueOn < todayInChile()).length}
         canExecute={canExecute}
         templates={templates.flatMap((item) => item.status === "approved"
           ? [{ id: item.id, name: item.name, versionLabel: item.versionLabel }]

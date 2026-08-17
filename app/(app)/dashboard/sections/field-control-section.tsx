@@ -99,7 +99,7 @@ function fieldControlSummaryStats(field: Awaited<ReturnType<typeof getFieldContr
       key: "committee-agreements",
       label: "Acuerdos del comité abiertos",
       value: field.committeeAgreementsOpen,
-      secondary: "Sin cerrar ni derivar a CAPA · ahora",
+      secondary: "Con acción CAPA sin cerrar · ahora",
       href: "/prevencion/cphs",
       tone: "signal",
     },

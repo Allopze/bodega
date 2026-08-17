@@ -45,6 +45,7 @@ import type { RequestContext } from "@/lib/services/prevention-documents/utils"
 import { getUserIdsWithPermissionForWorksite } from "@/lib/services/notifications"
 import { invalidateClosedIndicatorPeriodWithClient } from "@/lib/services/prevention-indicadores"
 import { createRiskReviewTriggerWithClient } from "@/lib/services/prevention-risk-legal"
+import { codeYear } from "@/lib/utils"
 
 const CHILE_YEAR_FORMAT = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Santiago", year: "numeric" })
 const CHILE_MONTH_FORMAT = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Santiago", month: "numeric" })
@@ -336,7 +337,7 @@ export function incidentRequiresCapa(incident: {
 }
 
 function createIncidentCode() {
-  return `INC-${new Date().getUTCFullYear()}-${nanoid(10).toUpperCase()}`
+  return `INC-${codeYear()}-${nanoid(10).toUpperCase()}`
 }
 
 function nowIso() {

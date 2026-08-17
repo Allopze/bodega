@@ -17,6 +17,7 @@ import {
 import { addExposureGroupMemberAction, recordExposureMeasurementAction } from "../../actions"
 import { Field } from "@/components/ui/field"
 import { useOperation } from "@/lib/hooks/use-operation"
+import { todayInChile } from "@/lib/utils"
 
 interface GroupInfo {
   id: string
@@ -209,7 +210,7 @@ function AddMemberDialog({ groupId, eligibleWorkers, existingNames }: {
   }
 
   return (
-    <Dialog open={open} onOpenChange={(value) => { if (value) setDefaultValue(new Date().toISOString().slice(0, 10)); setOpen(value) }}>
+    <Dialog open={open} onOpenChange={(value) => { if (value) setDefaultValue(todayInChile()); setOpen(value) }}>
       <DialogTrigger asChild><Button size="sm">Agregar integrante</Button></DialogTrigger>
       <DialogContent>
         <form onSubmit={submit} className="space-y-4">
@@ -271,7 +272,7 @@ function AddMeasurementDialog({ groupId, agent }: { groupId: string; agent: Agen
   }
 
   return (
-    <Dialog open={open} onOpenChange={(value) => { if (value) setDefaultValue(new Date().toISOString().slice(0, 10)); setOpen(value) }}>
+    <Dialog open={open} onOpenChange={(value) => { if (value) setDefaultValue(todayInChile()); setOpen(value) }}>
       <DialogTrigger asChild><Button size="sm" variant="secondary">Registrar medición</Button></DialogTrigger>
       <DialogContent>
         <form onSubmit={submit} className="space-y-4">

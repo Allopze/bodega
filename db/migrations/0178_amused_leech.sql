@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "prevention_legal_applicabilities_requirement_scope_null_process_unique" ON "prevention_legal_applicabilities" USING btree ("requirement_id","worksite_id") WHERE "prevention_legal_applicabilities"."process_id" IS NULL;

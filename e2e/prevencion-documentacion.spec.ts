@@ -17,7 +17,7 @@ test.describe("Documentación SST", () => {
   test("el listado de documentación carga (no /forbidden)", async ({ page }) => {
     await page.goto("/prevencion/documentacion")
     await expect(page).toHaveURL(/\/prevencion\/documentacion/)
-    await expect(page.getByRole("heading", { name: "Documentación" })).toBeVisible()
+    await expect(page.getByRole("heading", { name: "Registro documental", level: 1 })).toBeVisible()
     // La vista cliente hidrató: el control para crear carpeta está presente.
     await expect(page.getByRole("button", { name: "Nueva carpeta" })).toBeVisible()
   })

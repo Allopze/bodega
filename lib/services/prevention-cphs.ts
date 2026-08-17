@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm"
+import { and, asc, desc, eq, inArray, isNull, or, sql } from "drizzle-orm"
 import { z } from "zod"
 import { db } from "@/db"
 import {
@@ -22,7 +22,6 @@ import {
   recordGovernanceHistory,
   requireCphsAccess,
   scopeAllows,
-  todayInChile,
   type CphsAccess,
   type CphsClient,
 } from "@/lib/services/prevention-cphs-access"
@@ -31,10 +30,12 @@ import {
   assessMeetingCadence,
   assessQuorum,
   isMandateExpired,
+  REPRESENTATION_LABELS,
 } from "@/lib/prevention/cphs"
 import { createCapaActionWithClient } from "@/lib/services/prevention-capa"
 import { getUserIdsWithPermission } from "@/lib/services/notification-targeting"
 import { onCphsCommitteeConstituted, onManagementReviewClosed } from "@/lib/services/pdtp-adapters/pdtp-accreditation-connectors"
+import { codeYear, todayInChile } from "@/lib/utils"
 
 const NOT_FOUND = CPHS_NOT_FOUND
 const requireAccess = requireCphsAccess
@@ -90,7 +91,6 @@ const memberSchema = z.object({
   seat: z.enum(["titular", "suplente"]),
   role: z.enum(["presidente", "secretario", "integrante"]).nullable().optional(),
   electedOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
-  termEndsOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
   hasFuero: z.boolean().default(false),
 })
 
@@ -117,7 +117,6 @@ export async function addCommitteeMember(input: unknown, access: CphsAccess) {
       seat: data.seat,
       role: data.role ?? "integrante",
       electedOn: data.electedOn ?? null,
-      termEndsOn: data.termEndsOn ?? null,
       hasFuero: data.hasFuero,
     }).returning()
     if (!created) throw new Error("No se pudo incorporar al integrante.")
@@ -231,7 +230,6 @@ const replaceMemberSchema = z.object({
   workerId: z.string().min(1),
   reason: z.string().trim().min(10).max(1000),
   electedOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
-  termEndsOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
 })
 
 /**
@@ -278,7 +276,6 @@ export async function replaceCommitteeMember(input: unknown, access: CphsAccess)
       seat: context.member.seat,
       role: context.member.role,
       electedOn: data.electedOn ?? null,
-      termEndsOn: data.termEndsOn ?? context.member.termEndsOn,
       hasFuero: false,
     }).returning()
     if (!created) throw new Error("No se pudo incorporar al reemplazante.")
@@ -604,7 +601,7 @@ export async function scheduleCommitteeMeeting(input: unknown, access: CphsAcces
     const id = `cphsmt-${nanoid()}`
     const [created] = await tx.insert(preventionCommitteeMeetings).values({
       id,
-      code: `CPHS-${new Date().getUTCFullYear()}-${nanoid(8).toUpperCase()}`,
+      code: `CPHS-${codeYear()}-${nanoid(8).toUpperCase()}`,
       committeeId: data.committeeId,
       meetingType: data.meetingType,
       scheduledFor: data.scheduledFor,
@@ -647,10 +644,18 @@ const closeMeetingSchema = z.object({
     priority: z.enum(["low", "medium", "high", "critical"]).default("medium"),
     targetDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   })).default([]),
+}).superRefine((value, ctx) => {
+  // Una sesión no se realiza en el futuro. Sin esta cota, un acta fechada en
+  // 2030 dejaba la cadencia "al día" para siempre: `assessMeetingCadence` mide
+  // contra la última sesión cerrada y nunca vuelve a reclamar.
+  if (new Date(value.heldAt).getTime() > Date.now()) {
+    ctx.addIssue({ code: "custom", path: ["heldAt"], message: "La sesión no puede realizarse en el futuro." })
+  }
 })
 
 /**
- * Cierra el acta. Exige quórum real: sin él la sesión no produce acuerdos
+ * Cierra el acta. Exige quórum real —mayoría de titulares Y presencia de ambas
+ * representaciones, ver `assessQuorum`—: sin él la sesión no produce acuerdos
  * válidos, así que el cierre se rechaza en vez de registrar una reunión que
  * el DS 44 no reconocería. Cada acuerdo se deriva a CAPA común.
  */
@@ -666,9 +671,23 @@ export async function closeCommitteeMeeting(input: unknown, access: CphsAccess) 
     if (row.meeting.version !== data.expectedVersion) throw new Error("La sesión cambió mientras la editabas. Recarga y reintenta.")
     if (row.meeting.status === "closed") throw new Error("El acta de esta sesión ya fue cerrada.")
     if (row.meeting.status === "cancelled") throw new Error("Una sesión cancelada no puede cerrarse.")
+    // La cota inferior necesita el comité, así que va acá y no en el esquema.
+    if (todayInChile(data.heldAt) < row.committee.constitutedOn) {
+      throw new Error("La sesión no puede ser anterior a la constitución del comité.")
+    }
 
     const members = await tx.select().from(preventionCommitteeMembers)
       .where(eq(preventionCommitteeMembers.committeeId, row.committee.id))
+
+    // La asistencia es nominativa: un id ajeno al comité no es una omisión, es
+    // un acta que nombra a quien no integra el órgano.
+    const committeeMemberIds = new Set(members.map((member) => member.id))
+    const reportedMemberIds = [...data.attendedMemberIds, ...data.excuses.map((excuse) => excuse.memberId)]
+    const foreignMemberId = reportedMemberIds.find((memberId) => !committeeMemberIds.has(memberId))
+    if (foreignMemberId) {
+      throw new Error("La asistencia sólo admite integrantes de este comité.")
+    }
+
     const quorum = assessQuorum({
       members: members.map((member) => ({
         id: member.id,
@@ -680,7 +699,54 @@ export async function closeCommitteeMeeting(input: unknown, access: CphsAccess) 
       attendedMemberIds: data.attendedMemberIds,
     })
     if (!quorum.reached) {
-      throw new Error(`La sesión no alcanzó quórum: ${quorum.effective} de ${quorum.required} requeridos. No puede cerrarse como sesión válida.`)
+      // Nombrar la representación ausente: "3 de 3 presentes pero sin quórum"
+      // es incomprensible sin decir qué falta.
+      const missing = quorum.missingRepresentations
+        .map((representation) => (REPRESENTATION_LABELS[representation] ?? representation).toLowerCase())
+        .join(" ni ")
+      throw new Error(missing
+        ? `La sesión no alcanzó quórum: no hubo ${missing} presente. El comité es paritario y sesiona con ambas representaciones. No puede cerrarse como sesión válida.`
+        : `La sesión no alcanzó quórum: ${quorum.effective} de ${quorum.required} requeridos. No puede cerrarse como sesión válida.`)
+    }
+
+    // La asistencia se materializa al convocar, así que el padrón pudo cambiar
+    // después: quien se incorporó luego no tiene fila y quien fue reemplazado
+    // conserva la suya. Se reconcilia contra el padrón vigente antes de
+    // escribir, para que el acta nombre a quienes integran hoy el comité.
+    // Quien ya no integra pero sí fue reportado (asistió o se excusó antes de
+    // salir) conserva su fila: reconciliar no borra hechos registrados.
+    const rosterMemberIds = new Set([
+      ...members.filter((member) => member.status === "active").map((member) => member.id),
+      ...reportedMemberIds,
+    ])
+    const attendanceRows = await tx.select({
+      id: preventionCommitteeAttendance.id,
+      memberId: preventionCommitteeAttendance.memberId,
+      attended: preventionCommitteeAttendance.attended,
+      excuseReason: preventionCommitteeAttendance.excuseReason,
+    })
+      .from(preventionCommitteeAttendance)
+      .where(eq(preventionCommitteeAttendance.meetingId, row.meeting.id))
+
+    const staleRowIds = attendanceRows
+      .filter((attendance) => attendance.memberId !== null
+        && !rosterMemberIds.has(attendance.memberId)
+        && !attendance.attended
+        && attendance.excuseReason === null)
+      .map((attendance) => attendance.id)
+    if (staleRowIds.length > 0) {
+      await tx.delete(preventionCommitteeAttendance)
+        .where(inArray(preventionCommitteeAttendance.id, staleRowIds))
+    }
+
+    const convenedMemberIds = new Set(attendanceRows.flatMap((attendance) => attendance.memberId ? [attendance.memberId] : []))
+    const missingRows = [...rosterMemberIds].filter((memberId) => !convenedMemberIds.has(memberId))
+    if (missingRows.length > 0) {
+      await tx.insert(preventionCommitteeAttendance).values(missingRows.map((memberId) => ({
+        id: `cphsa-${nanoid()}`,
+        meetingId: row.meeting.id,
+        memberId,
+      })))
     }
 
     const now = nowIso()
@@ -711,12 +777,13 @@ export async function closeCommitteeMeeting(input: unknown, access: CphsAccess) 
         targetDate: agreement.targetDate,
         evidenceRequired: true,
       }, access.userId)
+      // Sin columna `status`: el estado del acuerdo ES el de su CAPA. Ver la
+      // decisión "CAPA motor único" — un espejo acá se desincroniza y miente.
       await tx.insert(preventionCommitteeAgreements).values({
         id: `cphsag-${nanoid()}`,
         meetingId: row.meeting.id,
         description: agreement.description,
         capaActionId: capa.id,
-        status: "capa_linked",
       })
     }
 
@@ -760,7 +827,7 @@ export async function createManagementReview(input: unknown, access: CphsAccess)
 
   const [created] = await db.insert(preventionManagementReviews).values({
     id: `mgmtrev-${nanoid()}`,
-    code: `RD-${new Date().getUTCFullYear()}-${nanoid(6).toUpperCase()}`,
+    code: `RD-${codeYear()}-${nanoid(6).toUpperCase()}`,
     worksiteId: data.worksiteId ?? null,
     periodLabel: data.periodLabel,
     heldAt: data.heldAt,
@@ -801,6 +868,11 @@ export async function closeManagementReview(input: unknown, access: CphsAccess) 
     const [review] = await tx.select().from(preventionManagementReviews)
       .where(eq(preventionManagementReviews.id, data.reviewId)).limit(1)
     if (!review) throw new Error(NOT_FOUND)
+    // La faena de la revisión sólo se conoce después de cargarla. Hoy el
+    // permiso lo tienen roles globales, pero el alcance tiene que aplicarse
+    // igual: si mañana se le da a un rol por faena, cerrar la revisión de otra
+    // no puede quedar permitido por omisión.
+    requireAccess(access, "prevention:governance:review", review.worksiteId ?? undefined)
     if (review.version !== data.expectedVersion) throw new Error("La revisión cambió mientras la editabas. Recarga y reintenta.")
     if (review.status === "closed") throw new Error("La revisión ya fue cerrada.")
 
@@ -853,17 +925,42 @@ export async function closeManagementReview(input: unknown, access: CphsAccess) 
   return result
 }
 
-/** Marca vencidos los comités cuyo mandato ya pasó. Idempotente. */
+/**
+ * Marca vencidos los comités cuyo mandato ya pasó.
+ *
+ * Deja traza como las otras tres transiciones del comité (constitución,
+ * disolución, registro DT): un órgano que deja de ser válido sin una línea en
+ * el historial es un cambio de estado que nadie puede explicar después. Sube
+ * `version` porque la pantalla edita con concurrencia optimista y el comité
+ * cambió de verdad.
+ *
+ * Idempotente: sólo toma filas `active`, así que una segunda corrida el mismo
+ * día no encuentra nada que expirar ni duplica el historial.
+ */
 export async function expireLapsedCommittees() {
   const today = todayInChile()
-  const updated = await db.update(preventionCommittees)
-    .set({ status: "expired", updatedAt: nowIso() })
-    .where(and(
-      eq(preventionCommittees.status, "active"),
-      sql`${preventionCommittees.mandateEndsOn} < ${today}`,
-    ))
-    .returning({ id: preventionCommittees.id })
-  return { expired: updated.length }
+  return db.transaction(async (tx) => {
+    const updated = await tx.update(preventionCommittees)
+      .set({ status: "expired", version: sql`${preventionCommittees.version} + 1`, updatedAt: nowIso() })
+      .where(and(
+        eq(preventionCommittees.status, "active"),
+        sql`${preventionCommittees.mandateEndsOn} < ${today}`,
+      ))
+      .returning()
+
+    for (const committee of updated) {
+      await history(tx, {
+        entityType: "committee",
+        entityId: committee.id,
+        worksiteId: committee.worksiteId,
+        changeType: "expired",
+        reason: `Mandato vencido el ${committee.mandateEndsOn}`,
+        afterState: committee,
+        actorUserId: null,
+      })
+    }
+    return { expired: updated.length }
+  })
 }
 
 /* ── Consultas ────────────────────────────────────────────────────────────── */
@@ -907,9 +1004,15 @@ export async function listCommitteeMeetings(access: CphsAccess) {
 
 export async function listManagementReviews(access: CphsAccess) {
   requireAccess(access, "prevention:governance:review")
+  // Una revisión sin faena es corporativa y la ve todo el que puede revisar;
+  // la de una faena, sólo quien la tiene en su alcance. Con `mode: "all"` la
+  // condición es `undefined` y no hay que envolverla: `or(isNull(x), undefined)`
+  // colapsaría a `isNull(x)` y escondería justamente las revisiones por faena.
+  const scoped = cphsScopeCondition(access.scope, preventionManagementReviews.worksiteId)
   return db.select({ review: preventionManagementReviews, worksiteName: worksites.name })
     .from(preventionManagementReviews)
     .leftJoin(worksites, eq(preventionManagementReviews.worksiteId, worksites.id))
+    .where(scoped ? or(isNull(preventionManagementReviews.worksiteId), scoped) : undefined)
     .orderBy(desc(preventionManagementReviews.heldAt))
     .limit(200)
 }

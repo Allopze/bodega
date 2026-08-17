@@ -5,6 +5,7 @@ import {
   createNotifications,
   getUserIdsWithPermissionForWorksite,
 } from "@/lib/services/notifications"
+import { todayInChile } from "@/lib/utils"
 
 export interface CapaReminderResult {
   assignedActions: number
@@ -21,7 +22,10 @@ export interface CapaReminderResult {
 export async function runPreventionCapaReminders(): Promise<CapaReminderResult> {
   const actions = await db.select().from(preventionCapaActions)
     .where(notInArray(preventionCapaActions.status, ["closed", "cancelled"]))
-  const today = new Date().toISOString().slice(0, 10)
+  // Día civil chileno: `today` decide si la acción está vencida y cuántos días
+  // lleva. En UTC, entre las 20:00 y medianoche una acción que vence hoy se
+  // notificaba como atrasada.
+  const today = todayInChile()
   const notified = new Set<string>()
   let assignedActions = 0
   let overdueActions = 0

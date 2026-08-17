@@ -14,7 +14,7 @@ import { logger } from "@/lib/logger"
 import { nanoid } from "@/lib/id"
 import { addExportMetadataSheet } from "@/lib/combustibles/xlsx-utils"
 import { taeStatusLabel, taeMeterSourceLabel } from "@/lib/combustibles/labels"
-import { formatDateTime } from "@/lib/utils"
+import { formatDateTime, todayInChile} from "@/lib/utils"
 
 const MAX_TAE_EXPORT_ROWS = 10_000
 
@@ -247,7 +247,7 @@ export async function exportTaeSubmissionsXlsxAction(filters: TaeExportFilters =
     ok: true as const,
     data: {
       base64,
-      filename: `control_tae_${new Date().toISOString().split("T")[0]}.xlsx`,
+      filename: `control_tae_${todayInChile()}.xlsx`,
       truncated,
       rowLimit: MAX_TAE_EXPORT_ROWS,
     },

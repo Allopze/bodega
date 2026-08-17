@@ -72,7 +72,6 @@ interface MemberInfo {
   status: string
   hasFuero: boolean
   electedOn: string | null
-  termEndsOn: string | null
 }
 
 interface MeetingInfo {
@@ -275,18 +274,10 @@ export function CommitteeDetail({
                     {canManage && (
                       <TableCell className="text-right">
                         <div className="flex flex-wrap justify-end gap-1">
-                          {(meeting.status === "scheduled" || meeting.status === "held") && (
-                            <CloseMeetingDialog meeting={meeting} members={activeMembers} assignees={assignees} />
-                          )}
                           {meeting.status === "scheduled" && (
                             <>
+                              <CloseMeetingDialog meeting={meeting} members={activeMembers} assignees={assignees} />
                               {!meeting.agendaSentAt && <MarkAgendaSentButton meetingId={meeting.id} />}
-                              <AddGuestDialog meetingId={meeting.id} eligibleWorkers={eligibleWorkers} />
-                              <CancelMeetingDialog meetingId={meeting.id} code={meeting.code} version={meeting.version} />
-                            </>
-                          )}
-                          {meeting.status === "held" && (
-                            <>
                               <AddGuestDialog meetingId={meeting.id} eligibleWorkers={eligibleWorkers} />
                               <CancelMeetingDialog meetingId={meeting.id} code={meeting.code} version={meeting.version} />
                             </>
@@ -346,7 +337,6 @@ function AddMemberDialog({ committeeId, eligibleWorkers, existingMemberNames }: 
     const form = new FormData(event.currentTarget)
     const role = String(form.get("role") ?? "").trim()
     const electedOn = String(form.get("electedOn") ?? "").trim()
-    const termEndsOn = String(form.get("termEndsOn") ?? "").trim()
     operation.run(() => addCommitteeMemberAction({
       committeeId,
       workerId: form.get("workerId"),
@@ -354,7 +344,6 @@ function AddMemberDialog({ committeeId, eligibleWorkers, existingMemberNames }: 
       seat: form.get("seat"),
       role: role || null,
       electedOn: electedOn || null,
-      termEndsOn: termEndsOn || null,
       hasFuero: form.get("hasFuero") === "on",
     }), () => setOpen(false))
   }
@@ -389,10 +378,9 @@ function AddMemberDialog({ committeeId, eligibleWorkers, existingMemberNames }: 
                 </Field>
                 <div className="mt-6"><Checkbox name="hasFuero" label="Tiene fuero sindical" /></div>
               </div>
-              <div className="grid gap-3 md:grid-cols-2">
-                <Field label="Electo el" hint="Opcional."><DatePicker name="electedOn" /></Field>
-                <Field label="Término del período" hint="Opcional."><DatePicker name="termEndsOn" /></Field>
-              </div>
+              {/* El período del integrante es el mandato del comité (DS 54): no
+                  se pide aparte porque no habría regla que lo aplicara. */}
+              <Field label="Electo el" hint="Opcional."><DatePicker name="electedOn" /></Field>
             </>
           )}
           {operation.message && <p role="status" className="text-sm">{operation.message}</p>}
@@ -513,13 +501,19 @@ function CloseMeetingDialog({ meeting, members, assignees }: {
           <DialogHeader>
             <DialogTitle>Cerrar acta {meeting.code}</DialogTitle>
             <DialogDescription>
-              Sin quórum el cierre se rechaza: un suplente presente cubre a un titular ausente de su misma representación.
+              Sin quórum el cierre se rechaza: un suplente presente cubre a un titular ausente de su misma
+              representación, y la sesión exige presencia de ambas representaciones.
             </DialogDescription>
           </DialogHeader>
 
           <p className="text-sm">
             Quórum: <strong>{quorum.effective} de {quorum.required} requeridos</strong>
             {" "}{quorum.reached ? <Badge variant="success">Alcanzado</Badge> : <Badge variant="warning">No alcanzado</Badge>}
+            {quorum.missingRepresentations.length > 0 && (
+              <span className="mt-1 block text-xs text-[var(--color-text-subtle)]">
+                Sin {quorum.missingRepresentations.map((item) => (REPRESENTATION_LABELS[item] ?? item).toLowerCase()).join(" ni ")} presente.
+              </span>
+            )}
           </p>
 
           <Field label="Realizada el"><Input type="datetime-local" required value={heldAt} onChange={(event) => setHeldAt(event.target.value)} /></Field>

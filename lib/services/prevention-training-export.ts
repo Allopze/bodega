@@ -25,6 +25,7 @@ import {
   listWorkerCompetencies,
   type TrainingAccess,
 } from "@/lib/services/prevention-training"
+import { todayInChile } from "@/lib/utils"
 
 function sheet(worksheetName: string, headers: string[], rows: ReportCell[][]): ReportSheet {
   return { worksheetName, headers, rows }
@@ -180,7 +181,7 @@ export async function buildTrainingExport(access: TrainingAccess): Promise<Repor
   ]
 
   return {
-    filenameBase: `capacitacion_competencias_${new Date().toISOString().slice(0, 10)}`,
+    filenameBase: `capacitacion_competencias_${todayInChile()}`,
     worksheetName: sheets[0]!.worksheetName,
     headers: sheets[0]!.headers,
     rows: sheets[0]!.rows,

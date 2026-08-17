@@ -36,9 +36,12 @@ export async function PreventionHome() {
     includeEvaluations: can(session, "sst:view"),
     includePpa: can(session, "ppa:view"),
     includeCphs: can(session, "prevention:cphs:view"),
-    // Reevaluaciones de protocolos MINSAL y equipos de emergencia vencidos:
-    // fechas que ya existían en la base y que ninguna pantalla leía.
-    includeCompliance: can(session, "prevention:hygiene:view") || can(session, "prevention:emergency:view"),
+    // Fechas que ya existían en la base y que ninguna pantalla leía. Cada fuente
+    // con SU permiso: era un solo interruptor y ver higiene abría también los
+    // equipos de emergencia, y al revés (EMERGENCIAS-08).
+    includeProtocols: can(session, "prevention:hygiene:view"),
+    includeEmergencyResources: can(session, "prevention:emergency:view"),
+    includeChangeReviews: can(session, "prevention:change:view"),
   })
 
   return (

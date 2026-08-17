@@ -1,5 +1,7 @@
 "use client"
 
+import { todayInChile } from "@/lib/utils"
+
 export interface Worker {
   id: string
   firstName: string
@@ -37,4 +39,4 @@ export const MOTIVO_OPTIONS = [
   { value: "otro",                           label: "Otro" },
 ]
 
-export const todayStr = new Date().toISOString().slice(0, 10)
+export const todayStr = todayInChile()

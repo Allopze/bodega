@@ -34,6 +34,7 @@ import { createCapaActionWithClient } from "@/lib/services/prevention-capa"
 import { CHECKLIST_DEFINITIONS, isPersonEvaluationDefinition } from "@/lib/sst/definitions"
 import type { ChecklistDefinition } from "@/lib/sst/types"
 import { onInspectionCompleted } from "@/lib/services/pdtp-adapters/pdtp-accreditation-connectors"
+import { codeYear, todayInChile } from "@/lib/utils"
 
 type Client = DB | Tx
 
@@ -44,12 +45,6 @@ export interface InspectionAccess {
 }
 
 const NOT_FOUND = "Inspección no encontrada o fuera de alcance."
-
-const CHILE_DATE_FORMAT = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Santiago", year: "numeric", month: "2-digit", day: "2-digit" })
-
-function todayInChile() {
-  return CHILE_DATE_FORMAT.format(new Date())
-}
 
 function nowIso() {
   return new Date().toISOString()
@@ -336,7 +331,7 @@ export async function createInspectionRun(input: unknown, access: InspectionAcce
 
   const [created] = await db.insert(preventionInspectionRuns).values({
     id: `insrun-${nanoid()}`,
-    code: `INSP-${new Date().getUTCFullYear()}-${nanoid(8).toUpperCase()}`,
+    code: `INSP-${codeYear()}-${nanoid(8).toUpperCase()}`,
     templateId: data.templateId,
     programId: data.programId ?? null,
     worksiteId: data.worksiteId,

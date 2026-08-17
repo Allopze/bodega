@@ -277,6 +277,19 @@ export function todayInChile(date: Date | string | number = new Date()): string 
   return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`
 }
 
+/**
+ * Año civil chileno, para los correlativos de código (`GC-2026-…`, `PE-2026-…`,
+ * `INC-2026-…`).
+ *
+ * `getUTCFullYear()` mide el año en UTC: entre las 21:00 del 31 de diciembre y
+ * la medianoche chilena ya es 1 de enero en UTC, así que un registro creado en
+ * 2026 nacía con código de 2027. El correlativo es lo que se cita ante una
+ * fiscalización, y tiene que cuadrar con la fecha del hecho.
+ */
+export function codeYear(date: Date | string | number = new Date()): number {
+  return chileDateParts(date).year
+}
+
 /** Desplaza `days` días sobre una fecha civil "YYYY-MM-DD" sin que la mueva el cambio de hora. */
 export function addDaysToPlainDate(plainDate: string, days: number): string {
   return new Date(Date.parse(`${plainDate}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10)

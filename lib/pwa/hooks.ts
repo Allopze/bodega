@@ -16,6 +16,7 @@ import {
   deletePpa,
   countPendingPpas,
   getAllPpas,
+  recoverStalePpas,
   type QueuedPpa,
 } from "./offline-queue"
 import { showSyncNotification } from "./notifications"
@@ -145,7 +146,9 @@ export function usePpaOfflineQueue() {
 
   // Refresh count on mount + cleanup old synced/failed items
   React.useEffect(() => {
-    refreshCount()
+    // Antes de contar: un ítem que quedó en "syncing" porque la app se cerró a
+    // mitad de envío no aparece en ningún listado y nunca se reintenta.
+    recoverStalePpas().then(refreshCount).catch(() => { refreshCount() })
     // Cleanup items synced or failed more than 7 days ago
     getAllPpas().then((items) => {
       const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000

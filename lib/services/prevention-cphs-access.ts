@@ -27,12 +27,6 @@ export interface CphsAccess {
 /** Un solo mensaje para "no existe" y "no tienes acceso": no filtra existencia. */
 export const CPHS_NOT_FOUND = "Registro de comité no encontrado o fuera de alcance."
 
-const CHILE_DATE_FORMAT = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Santiago", year: "numeric", month: "2-digit", day: "2-digit" })
-
-export function todayInChile() {
-  return CHILE_DATE_FORMAT.format(new Date())
-}
-
 export function nowIso() {
   return new Date().toISOString()
 }

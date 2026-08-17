@@ -12,6 +12,7 @@ import {
   listProtocolApplicabilities,
   listSurveillancePrograms,
 } from "@/lib/services/prevention-hygiene"
+import { todayInChile } from "@/lib/utils"
 import { HygieneDashboard } from "./hygiene-dashboard"
 
 export const metadata: Metadata = { title: "Higiene y vigilancia" }
@@ -94,7 +95,7 @@ export default async function HigienePage() {
           nextAssessmentOn: row.applicability.nextAssessmentOn,
           version: row.applicability.version,
         }))}
-        today={new Intl.DateTimeFormat("en-CA", { timeZone: "America/Santiago", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date())}
+        today={todayInChile()}
         canManage={canManage}
       />
     </PageContainer>

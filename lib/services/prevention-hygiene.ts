@@ -24,6 +24,7 @@ import {
   nextSurveillanceDate,
   summarizeExposureAnonymized,
 } from "@/lib/prevention/hygiene"
+import { todayInChile } from "@/lib/utils"
 
 type Client = DB | Tx
 
@@ -34,12 +35,6 @@ export interface HygieneAccess {
 }
 
 const NOT_FOUND = "Registro de higiene no encontrado o fuera de alcance."
-
-const CHILE_DATE_FORMAT = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Santiago", year: "numeric", month: "2-digit", day: "2-digit" })
-
-function todayInChile() {
-  return CHILE_DATE_FORMAT.format(new Date())
-}
 
 function nowIso() {
   return new Date().toISOString()

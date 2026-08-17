@@ -20,7 +20,7 @@ test.describe("Prevención — Incidentes y denuncias RE-20", () => {
     await expect(page).toHaveURL(/\/prevencion\/incidentes/)
 
     // Título y contenedor principal
-    await expectPageTitle(page, "Incidentes y denuncias")
+    await expectPageTitle(page, "Incidentes y accidentes")
 
     // Botones de acción en el header, acotados a #main-content: el sidebar tiene
     // su propio link "Reportar incidente".

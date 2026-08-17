@@ -19,6 +19,7 @@ import { ArrowUp, ArrowDown, DotsSixVertical, Trash, Plus, Copy } from "@phospho
 import type { ChecklistDefinition, ChecklistItem, ChecklistSection, FieldKind, ClosingActDefinition } from "@/lib/sst/types"
 import { nanoid } from "@/lib/id"
 import { PDTP_BUILDER_ROLE_LABELS } from "@/lib/services/pdtp/checklist-domain"
+import { todayInChile } from "@/lib/utils"
 
 const FIELD_KIND_OPTIONS: Array<{ value: FieldKind; label: string }> = [
   { value: "cumple_nocumple_obs", label: "Cumple / No cumple + observación" },
@@ -65,7 +66,7 @@ export function buildSkeletonDefinition(activityId: string, title: string): Chec
   return {
     code: `pdtp_${activityId}`,
     version: "01",
-    revisionDate: new Date().toISOString().slice(0, 10),
+    revisionDate: todayInChile(),
     title,
     tipo: "nuevo",
     legalFramework: [],
@@ -176,7 +177,7 @@ export function cloneDefinitionForActivity(source: ChecklistDefinition, activity
   return {
     ...source,
     code: `pdtp_${activityId}`,
-    revisionDate: new Date().toISOString().slice(0, 10),
+    revisionDate: todayInChile(),
     sections: source.sections.map((s) => ({ ...s, id: nanoid(), items: s.items.map((i) => ({ ...i, id: nanoid() })) })),
   }
 }

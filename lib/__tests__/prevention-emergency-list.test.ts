@@ -98,6 +98,9 @@ describe("emergency list quick filters — persistence", () => {
     expect(approvedPlans).toMatchObject({ total: 1, limit: 1, offset: 0 })
     expect(approvedPlans.rows.map((row) => row.plan.id)).toEqual(["emergency-list-approved"])
     expect(improvementDrills.map((row) => row.drill.id)).toEqual(["emergency-list-needs-improvement"])
+    // Los cuatro contadores de recursos van en cero porque la fixture no siembra
+    // inventario de emergencia; se afirman explícitamente para que el `toEqual`
+    // siga siendo exacto y detecte cualquier contador nuevo que se agregue sin test.
     expect(counts).toEqual({
       totalPlans: 2,
       approvedPlans: 1,
@@ -105,6 +108,10 @@ describe("emergency list quick filters — persistence", () => {
       totalDrills: 2,
       completedDrills: 2,
       needsImprovementDrills: 1,
+      totalResources: 0,
+      resourcesExpired: 0,
+      resourcesOutOfService: 0,
+      resourcesOverdueInspection: 0,
     })
   })
 })

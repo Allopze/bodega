@@ -57,6 +57,33 @@ describe("createEmergencyPlanAction", () => {
     expect(mockCreateEmergencyPlan).not.toHaveBeenCalled()
   })
 
+  // Fase 7 punto 3: `EmergencyDomainError` prometía en su JSDoc que la capa de
+  // acciones la distinguiría de un fallo inesperado, pero `run()` devolvía el
+  // `message` de cualquier Error. Estas dos pruebas fijan las dos mitades del
+  // contrato para que no vuelva a quedar en prosa.
+  it("passes a domain error message through to the user", async () => {
+    const { EmergencyDomainError } = await import("@/lib/services/prevention-emergency")
+    mockCreateEmergencyPlan.mockRejectedValue(new EmergencyDomainError("La faena ya tiene el plan PE-2026-ABC vigente."))
+    const { createEmergencyPlanAction } = await import("@/app/(app)/prevencion/emergencias/actions")
+
+    const res = await createEmergencyPlanAction({ worksiteId: "ws-1", title: "Plan válido de emergencia" })
+
+    expect(res).toMatchObject({ ok: false, message: "La faena ya tiene el plan PE-2026-ABC vigente." })
+  })
+
+  it("hides an unexpected error behind the generic message", async () => {
+    // Un error de driver trae texto de infraestructura (tabla, columna,
+    // constraint): eso no puede llegar al navegador.
+    mockCreateEmergencyPlan.mockRejectedValue(new Error('duplicate key value violates unique constraint "prevention_emergency_plans_pkey"'))
+    const { createEmergencyPlanAction } = await import("@/app/(app)/prevencion/emergencias/actions")
+
+    const res = await createEmergencyPlanAction({ worksiteId: "ws-1", title: "Plan válido de emergencia" })
+
+    expect(res.ok).toBe(false)
+    expect(res.message).toBe("No se pudo completar la acción. Intenta nuevamente.")
+    expect(res.message).not.toContain("constraint")
+  })
+
   it("rejects when the permission guard fails, without reaching parseZ or the service", async () => {
     mockGuardPermission.mockResolvedValue({
       session: null,

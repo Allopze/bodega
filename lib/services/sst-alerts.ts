@@ -13,6 +13,7 @@ import { worksites } from '@/db/schema/worksites'
 import { userRoles, worksiteUsers } from '@/db/schema'
 import { notifyManyUser, getUserIdsWithPermission } from '@/lib/services/notifications'
 import { logger } from '@/lib/logger'
+import { addDaysToPlainDate, todayInChile } from '@/lib/utils'
 
 /**
  * Revisa todas las semanas pendientes cuya fecha de desbloqueo + 3 días ≤ hoy
@@ -25,11 +26,11 @@ import { logger } from '@/lib/logger'
  * 4. Marca alertSentAt = now()
  */
 export async function checkOverdueWeeklyAlerts(): Promise<{ processed: number; errors: number }> {
-  const today = new Date()
-  // Threshold date: 3 days ago
-  const threshold = new Date(today)
-  threshold.setDate(threshold.getDate() - 3)
-  const thresholdStr = threshold.toISOString().slice(0, 10)
+  // Umbral: hace 3 días en día civil chileno. `fechaDesbloqueo` es una fecha de
+  // calendario, no un instante: restar sobre un Date y leerlo con toISOString()
+  // lo medía en UTC y adelantaba el corte 3–4 horas, así que entre las 21:00 y
+  // la medianoche chilena la alerta salía un día antes de tiempo.
+  const thresholdStr = addDaysToPlainDate(todayInChile(), -3)
 
   // Find overdue pending weeks that haven't been alerted yet
   const overdueWeeks = await db

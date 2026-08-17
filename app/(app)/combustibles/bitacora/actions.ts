@@ -20,6 +20,7 @@ import {
 } from "@/lib/services/notifications"
 import { getFuelLogExportRows, getFuelLogRowsBySelection, FUEL_LOG_SOURCE_LABEL, fuelLogEntityType, type FuelLogFilters, type FuelLogRow, type FuelLogSource } from "@/lib/combustibles/fuel-log"
 import { addExportMetadataSheet } from "@/lib/combustibles/xlsx-utils"
+import { todayInChile } from "@/lib/utils"
 
 /** Resuelve el worksiteId y un label descriptivo para una entidad de la bitácora.
  *  Exportada: también la usa el historial de auditoría para acotar por faena. */
@@ -200,7 +201,7 @@ async function buildWorkbook(rows: FuelLogRow[]) {
 }
 
 function exportFileName(prefix: string) {
-  return `${prefix}_${new Date().toISOString().slice(0, 10)}.xlsx`
+  return `${prefix}_${todayInChile()}.xlsx`
 }
 
 export async function exportFuelLogAction(filters: FuelLogFilters) {

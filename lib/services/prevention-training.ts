@@ -38,6 +38,7 @@ import { competencyConvalidationSchema,
   trainingVersionTransitionSchema,
 } from "@/lib/validation/prevention-module/training"
 import { onTrainingSessionCancelled, onTrainingSessionClosed } from "@/lib/services/pdtp-adapters/pdtp-accreditation-connectors"
+import { codeYear, todayInChile } from "@/lib/utils"
 
 type Client = DB | Tx
 
@@ -65,12 +66,6 @@ function scopeCondition(scope: WorksiteScope, column: AnyPgColumn) {
   return inArray(column, scope.ids)
 }
 
-const CHILE_DATE_FORMAT = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Santiago", year: "numeric", month: "2-digit", day: "2-digit" })
-
-function todayInChile() {
-  return CHILE_DATE_FORMAT.format(new Date())
-}
-
 function nowIso() {
   return new Date().toISOString()
 }
@@ -80,7 +75,7 @@ function sha256(value: unknown) {
 }
 
 function sessionCode() {
-  return `CAP-${new Date().getUTCFullYear()}-${nanoid(10).toUpperCase()}`
+  return `CAP-${codeYear()}-${nanoid(10).toUpperCase()}`
 }
 
 async function history(client: Client, args: {

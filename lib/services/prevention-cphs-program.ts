@@ -28,10 +28,10 @@ import {
   nowIso,
   recordGovernanceHistory,
   requireCphsAccess,
-  todayInChile,
   type CphsAccess,
   type CphsClient,
 } from "@/lib/services/prevention-cphs-access"
+import { todayInChile } from "@/lib/utils"
 
 const RISK_TOPICS = ["vial", "higiene", "ergonomia", "psicosocial", "silice", "otro"] as const
 
@@ -51,6 +51,12 @@ async function loadProgramContext(client: CphsClient, programId: string) {
   return row
 }
 
+/**
+ * Contexto de una actividad para **mutarla**. Rechaza las de un programa
+ * cerrado acá y no en cada mutación: cerrar el año congela lo ejecutado, y una
+ * guarda por llamador es una guarda que el próximo llamador olvida. Los tres
+ * usos —completar, cancelar y vincular a sesión— son mutaciones.
+ */
 async function loadActivityContext(client: CphsClient, activityId: string) {
   const [row] = await client.select({
     activity: preventionCommitteeProgramActivities,
@@ -66,6 +72,9 @@ async function loadActivityContext(client: CphsClient, activityId: string) {
     .where(eq(preventionCommitteeProgramActivities.id, activityId))
     .limit(1)
   if (!row) throw new Error(CPHS_NOT_FOUND)
+  if (row.programStatus === "closed") {
+    throw new Error("El programa está cerrado: sus actividades ya no admiten cambios.")
+  }
   return row
 }
 
@@ -158,6 +167,60 @@ export async function activateProgram(input: unknown, access: CphsAccess) {
       worksiteId: context.worksiteId,
       changeType: "activated",
       reason: `Programa ${context.program.year} aprobado`,
+      beforeState: context.program,
+      afterState: updated,
+      actorUserId: access.userId,
+    })
+    return updated
+  })
+}
+
+const closeProgramSchema = z.object({
+  programId: z.string().min(1),
+  expectedVersion: z.number().int().positive(),
+})
+
+/**
+ * Cierra el año del programa: es su estado terminal.
+ *
+ * Sin esto el programa de 2026 seguía "vigente" en 2027 y el job de
+ * recordatorios —que mira los programas `active`— reclamaba para siempre las
+ * actividades que quedaron sin ejecutar. Cerrar no las borra ni las da por
+ * hechas: congela el año con el cumplimiento que alcanzó.
+ *
+ * Sólo desde `active`. Un borrador nunca aprobado no tiene nada que cerrar, y
+ * el CHECK `..._approval_consistent` exige aprobador en todo estado que no sea
+ * `draft`.
+ */
+export async function closeProgram(input: unknown, access: CphsAccess) {
+  const data = closeProgramSchema.parse(input)
+
+  return db.transaction(async (tx) => {
+    const context = await loadProgramContext(tx, data.programId)
+    requireCphsAccess(access, "prevention:cphs:manage", context.worksiteId)
+    if (context.program.status !== "active") {
+      throw new Error("Sólo un programa vigente puede cerrarse.")
+    }
+    if (context.program.version !== data.expectedVersion) {
+      throw new Error("El programa cambió mientras lo editabas. Recarga y reintenta.")
+    }
+
+    const [updated] = await tx.update(preventionCommitteePrograms).set({
+      status: "closed",
+      version: context.program.version + 1,
+      updatedAt: nowIso(),
+    }).where(and(
+      eq(preventionCommitteePrograms.id, data.programId),
+      eq(preventionCommitteePrograms.version, data.expectedVersion),
+    )).returning()
+    if (!updated) throw new Error("El programa cambió mientras lo editabas. Recarga y reintenta.")
+
+    await recordGovernanceHistory(tx, {
+      entityType: "committee_program",
+      entityId: updated.id,
+      worksiteId: context.worksiteId,
+      changeType: "closed",
+      reason: `Programa ${context.program.year} cerrado`,
       beforeState: context.program,
       afterState: updated,
       actorUserId: access.userId,

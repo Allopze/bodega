@@ -6,7 +6,7 @@ import { guardPermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { applyPdtpImportBatch, cancelPdtpImportBatch, stagePdtpXlsxImport } from "@/lib/services/prevention-pdtp"
 import { logger } from "@/lib/logger"
-import { PDTP_XLSX_MAX_BYTES } from "@/lib/services/pdtp/xlsx-security"
+import { XLSX_MAX_BYTES } from "@/lib/services/xlsx-security"
 
 function scopeToIds(scope: ReturnType<typeof resolveWorksiteScope>): string[] | "all" {
   if (scope.mode === "all") return "all"
@@ -80,9 +80,9 @@ export async function POST(request: Request) {
   if (!(file instanceof File) || file.size === 0) {
     return NextResponse.json({ error: "Selecciona un archivo Excel (.xlsx)." }, { status: 400 })
   }
-  if (file.size > PDTP_XLSX_MAX_BYTES) {
+  if (file.size > XLSX_MAX_BYTES) {
     return NextResponse.json({
-      error: `El archivo supera el límite de ${Math.round(PDTP_XLSX_MAX_BYTES / 1024 / 1024)} MB.`,
+      error: `El archivo supera el límite de ${Math.round(XLSX_MAX_BYTES / 1024 / 1024)} MB.`,
     }, { status: 400 })
   }
   if (!/\.xlsx$/i.test(file.name)) {

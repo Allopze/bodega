@@ -1,5 +1,6 @@
 import { z } from "zod"
 import { PPA_TIPO_TRABAJO_KEYS } from "@/lib/ppa/types"
+import { validateRut } from "@/lib/rut"
 
 // ── Re-export shared ActionState ──────────────────────────────────────────────
 export type { ActionState } from "./masters"
@@ -10,6 +11,12 @@ const siNo = z.enum(["si", "no"], { error: "Respuesta requerida" })
 export const ppaSubmitSchema = z.object({
   worksiteId: z.string().min(1, "Faena requerida"),
 
+  // Clave de idempotencia generada en el cliente (createPpaSubmissionId en
+  // lib/pwa/offline-queue.ts). Opcional: un cliente antiguo cacheado por el
+  // Service Worker puede seguir enviando sin ella y el servidor genera la
+  // suya — pierde la idempotencia, no el envío.
+  clientSubmissionId: z.string().trim().min(12).max(100).optional(),
+
   // Enlace opcional al permiso de trabajo bajo el cual se ejecuta la tarea.
   // El PPA es la verificación breve dentro del permiso, no un registro
   // desconectado — ver el comentario en `ppa_submissions.work_permit_id`.
@@ -18,7 +25,13 @@ export const ppaSubmitSchema = z.object({
   // Identificación del trabajador.
   workerId:   z.string().min(1).optional(),          // de la lista controlada
   workerName: z.string().trim().min(2, "Indica tu nombre").max(120),
-  workerRut:  z.string().trim().max(20).optional().or(z.literal("")),
+  // El RUT es la identidad del trabajador cuando no viene de la lista
+  // controlada, y con ella se escopa el límite de envíos del formulario público
+  // (ver submitPpaAction). Sin dígito verificador válido sería una cadena libre,
+  // es decir una identidad que el cliente puede inventar a voluntad.
+  workerRut:  z.string().trim().max(20)
+    .refine((value) => value === "" || validateRut(value), "RUT inválido")
+    .optional(),
   workerCompany: z.string().trim().max(120).optional().or(z.literal("")),
 
   // Tarea — lista cerrada de cargos (sin conductor_general).

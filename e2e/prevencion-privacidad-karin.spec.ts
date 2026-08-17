@@ -19,6 +19,6 @@ test.describe("Prevención — Privacidad y Casos Reservados (Ley Karín)", () =
     await page.goto("/prevencion/privacidad/solicitudes")
     await expect(page).toHaveURL(/\/prevencion\/privacidad\/solicitudes/)
 
-    await expectPageTitle(page, "Solicitudes de privacidad")
+    await expectPageTitle(page, "Derechos del titular")
   })
 })

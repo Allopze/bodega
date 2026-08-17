@@ -17,9 +17,12 @@ const MINIMAL_PNG_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lE
 test.describe("Prevención — MIPER: mapa de riesgos espacial", () => {
   test.beforeEach(async ({ page }) => {
     await login(page)
-    await page.goto("/prevencion/miper")
-    await expect(page.getByRole("heading", { level: 1, name: "MIPER y controles" })).toBeVisible()
-    await page.getByRole("tab", { name: "Mapa de riesgos" }).click()
+    // El mapa no es una pestaña del workbench: es su propia página
+    // (`/prevencion/miper/mapa`). El test navegaba a `/prevencion/miper` y
+    // buscaba un `tab` que no existe, así que agotaba el timeout del
+    // `beforeEach` sin llegar a ejercitar nada.
+    await page.goto("/prevencion/miper/mapa")
+    await expect(page.getByRole("heading", { level: 1, name: "Mapa de riesgos" })).toBeVisible()
   })
 
   test("carga un plano, ubica un marcador y lo quita", async ({ page }) => {

@@ -57,6 +57,35 @@ describe("CAPA state machine", () => {
     })).not.toThrow()
   })
 
+  /**
+   * El PPA conduce su propia CAPA y su segregación es por PERMISO, no por
+   * persona (decisión registrada): en terreno, quien declara la corrección es
+   * quien la verifica. Exigir dos identidades ahí dejaba el caso detenido sin
+   * salida — lo destapó el e2e (`ppa-flow.spec.ts`), no las pruebas unitarias,
+   * porque éstas usaban usuarios distintos.
+   *
+   * Es seguro por exclusividad: `assertNotPpaDriven` impide que el motor
+   * genérico de CAPA toque una acción de origen `ppa`, así que el único
+   * conductor es el PPA. Si alguien retira ese guard, esta excepción deja de
+   * serlo y hay que revisar las dos cosas juntas.
+   */
+  it("no aplica la segregación por identidad a una acción conducida por el PPA", () => {
+    const ppaVerification = {
+      ...base,
+      fromStatus: "pending_verification" as const,
+      toStatus: "verified" as const,
+      priority: "high" as const,
+      actorUserId: "creator-1",
+      completedByUserId: "creator-1",
+      effectivenessStatus: "effective" as const,
+      effectivenessAssessment: "Cable retirado y zona despejada, verificado en terreno.",
+    }
+    expect(() => assertCapaTransition({ ...ppaVerification, sourceType: "ppa" })).not.toThrow()
+    // Control: el mismo caso en cualquier otro origen sí se rechaza.
+    expect(() => assertCapaTransition({ ...ppaVerification, sourceType: "inspection" }))
+      .toThrow(/persona distinta/i)
+  })
+
   it("blocks verification by the responsible or the completer, at any priority", () => {
     for (const key of ["responsibleUserId", "completedByUserId"] as const) {
       expect(() => assertCapaTransition({

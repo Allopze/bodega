@@ -78,10 +78,19 @@ describeIf("CAPA backfill and concurrency on real Postgres", () => {
     })
   })
 
-  it("allows only one concurrent transition for the same CAPA version", async () => {
+  /**
+   * PPA-03: la expectativa cambió de sitio, no de fondo. Antes el candado
+   * optimista se probaba moviendo la CAPA HISTÓRICA DEL PPA desde el motor
+   * genérico; eso es justo lo que ahora se rechaza, porque una acción de origen
+   * `ppa` la conduce el flujo del PPA (declarar → verificar → autorizar) y
+   * moverla por fuera deja el caso detenido en un bloqueo sin salida. El candado
+   * se sigue probando —con una acción de origen `manual`— y se añade acá la
+   * comprobación del rechazo por origen, que es la conducta nueva.
+   */
+  it("allows only one concurrent transition for the same CAPA version, and none at all for a PPA-sourced action", async () => {
     const db = getDb()
     const [action] = await db.select().from(schema.preventionCapaActions)
-      .where(eq(schema.preventionCapaActions.sourceItemId, "legacy-capa-test"))
+      .where(eq(schema.preventionCapaActions.sourceItemId, "manual-capa-test"))
     expect(action!.version).toBe(1)
 
     const { transitionCapaAction } = await import("@/lib/services/prevention-capa")
@@ -100,6 +109,18 @@ describeIf("CAPA backfill and concurrency on real Postgres", () => {
     const [updated] = await db.select().from(schema.preventionCapaActions)
       .where(eq(schema.preventionCapaActions.id, action!.id))
     expect(updated).toMatchObject({ status: "in_progress", version: 2 })
+
+    // Origen `ppa`: el motor genérico no la mueve ni una sola vez, y el mensaje
+    // remite al PPA donde sí se gestiona.
+    const [ppaAction] = await db.select().from(schema.preventionCapaActions)
+      .where(eq(schema.preventionCapaActions.sourceItemId, "legacy-capa-test"))
+    await expect(transitionCapaAction({
+      ...access,
+      input: { actionId: ppaAction!.id, expectedVersion: 1, toStatus: "in_progress" },
+    })).rejects.toThrow("/prevencion/ppa/ppa-capa-test")
+    const [ppaAfter] = await db.select().from(schema.preventionCapaActions)
+      .where(eq(schema.preventionCapaActions.id, ppaAction!.id))
+    expect(ppaAfter).toMatchObject({ status: "pending", version: 1 })
   })
 
   it("enforces the complete PPA workflow, concurrency and failed verification rollback", async () => {
@@ -206,6 +227,54 @@ describeIf("CAPA backfill and concurrency on real Postgres", () => {
       userId: "user-capa-verifier", worksiteIds: [], permissions: ["ppa:close"],
     })).rejects.toThrow(/no encontrado o fuera de tu alcance/i)
   })
+
+  /**
+   * PPA-08: los cuatro CHECK de simetría fecha↔actor de la migración 0179. El
+   * flujo nunca escribe una mitad sola, así que ningún test de servicio los
+   * ejercita: la única prueba de que hacen algo es intentar el estado imposible
+   * por SQL directo, saltándose el código de aplicación.
+   */
+  it("rejects half-written date/actor pairs on ppa_submissions", async () => {
+    const sqlClient = client!
+    const pairs = [
+      ["correction_declared_at", "correction_declared_by_user_id", "ppa_submissions_correction_declared_check"],
+      ["verified_at",            "verified_by_user_id",            "ppa_submissions_verified_check"],
+      ["authorized_at",          "authorized_by_user_id",          "ppa_submissions_authorized_check"],
+      ["closed_at",              "closed_by_user_id",              "ppa_submissions_closed_check"],
+    ] as const
+
+    let index = 0
+    for (const [dateColumn, actorColumn, constraint] of pairs) {
+      // Fecha sin actor y actor sin fecha: las dos mitades de cada par.
+      for (const [column, value] of [[dateColumn, "now()"], [actorColumn, "'user-capa-test'"]] as const) {
+        index += 1
+        const id = `ppa-check-${index}`
+        await expect(sqlClient.unsafe(`
+          INSERT INTO ppa_submissions
+            (id, worksite_id, worker_name, tipo_trabajo, answers_json, resultado,
+             triggered_reasons, estado, public_token, created_at, updated_at, ${column})
+          VALUES
+            ('${id}', 'ws-capa-test', 'Trabajador Check', 'conductor_batea', '{}'::jsonb, 'detenido',
+             '[]'::jsonb, 'detenido', 'token-${id}', now(), now(), ${value})
+        `)).rejects.toThrow(new RegExp(constraint))
+      }
+    }
+
+    // Control positivo: el par COMPLETO sí entra, así que lo que rechaza el
+    // CHECK es la asimetría y no la forma del INSERT de arriba.
+    await sqlClient.unsafe(`
+      INSERT INTO ppa_submissions
+        (id, worksite_id, worker_name, tipo_trabajo, answers_json, resultado,
+         triggered_reasons, estado, public_token, created_at, updated_at,
+         closed_at, closed_by_user_id)
+      VALUES
+        ('ppa-check-ok', 'ws-capa-test', 'Trabajador Check', 'conductor_batea', '{}'::jsonb, 'detenido',
+         '[]'::jsonb, 'cerrado', 'token-ppa-check-ok', now(), now(), now(), 'user-capa-test')
+    `)
+    const [inserted] = await getDb().select().from(schema.ppaSubmissions)
+      .where(eq(schema.ppaSubmissions.id, "ppa-check-ok"))
+    expect(inserted).toBeDefined()
+  })
 })
 
 function getDb() {
@@ -267,6 +336,28 @@ async function seedLegacyPpa(db: ReturnType<typeof drizzle<typeof schema>>) {
     responsibleSnapshot: "Responsable histórico",
     responsibleRole: "prevencionista_faena",
     priority: "high",
+    targetDate: "2026-07-30",
+    status: "pending",
+    evidenceRequired: true,
+    reconciliationStatus: "needs_assignment",
+    createdByUserId: "user-capa-test",
+    createdAt: now,
+    updatedAt: now,
+  })
+  // Acción sin origen PPA: el candado optimista se prueba sobre ésta, porque
+  // el motor genérico ya no conduce las de origen `ppa` (PPA-03).
+  await db.insert(schema.preventionCapaActions).values({
+    id: "capa-manual-test",
+    code: "CAPA-MANUAL-TEST",
+    sourceType: "manual",
+    sourceId: "ronda-2026-07",
+    sourceItemId: "manual-capa-test",
+    worksiteId: "ws-capa-test",
+    finding: "Señalética faltante en acceso norte",
+    actionDescription: "Reponer señalética de acceso",
+    responsibleSnapshot: "Responsable de ronda",
+    responsibleRole: "prevencionista_faena",
+    priority: "medium",
     targetDate: "2026-07-30",
     status: "pending",
     evidenceRequired: true,

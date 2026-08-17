@@ -87,13 +87,66 @@ describe("quórum de la sesión", () => {
 
   it("un suplente no cubre a un titular de la otra representación", () => {
     const members = [...validCommittee(), member({ id: "s1", representation: "workers", seat: "suplente" })]
-    // Sólo w1 titular presente más un suplente de trabajadores: no cubre a los de empresa.
+    // w1 titular presente y s1 suplente cubriendo a w2: dos efectivos, pero
+    // ninguno de la empresa. La mayoría numérica sola daba esto por alcanzado.
     const result = assessQuorum({ members, attendedMemberIds: ["w1", "s1"] })
     expect(result.effective).toBe(2)
-    expect(result.reached).toBe(true)
+    expect(result.reached).toBe(false)
+    expect(result.missingRepresentations).toEqual(["company"])
     const insufficient = assessQuorum({ members, attendedMemberIds: ["s1"] })
     expect(insufficient.effective).toBe(1)
     expect(insufficient.reached).toBe(false)
+  })
+
+  it("no hay quórum sin representación de las personas trabajadoras", () => {
+    // 3+3 titulares: la mayoría (3) se completa sólo con la representación del
+    // empleador. Sin este resguardo el acta se cerraba como sesión válida.
+    const members = [
+      member({ id: "c1", representation: "company", role: "presidente" }),
+      member({ id: "c2", representation: "company" }),
+      member({ id: "c3", representation: "company" }),
+      member({ id: "w1", representation: "workers", role: "secretario" }),
+      member({ id: "w2", representation: "workers" }),
+      member({ id: "w3", representation: "workers" }),
+    ]
+    const onlyCompany = assessQuorum({ members, attendedMemberIds: ["c1", "c2", "c3"] })
+    expect(onlyCompany).toMatchObject({ reached: false, required: 3, effective: 3 })
+    expect(onlyCompany.missingRepresentations).toEqual(["workers"])
+
+    // Simétrico: tampoco sesiona el comité sin la representación del empleador.
+    const onlyWorkers = assessQuorum({ members, attendedMemberIds: ["w1", "w2", "w3"] })
+    expect(onlyWorkers.reached).toBe(false)
+    expect(onlyWorkers.missingRepresentations).toEqual(["company"])
+
+    // Con una persona de cada lado el quórum sí se alcanza.
+    const mixed = assessQuorum({ members, attendedMemberIds: ["c1", "c2", "w1"] })
+    expect(mixed).toMatchObject({ reached: true, effective: 3, missingRepresentations: [] })
+  })
+
+  /**
+   * DS 54 art. 17: «podrá funcionar siempre que concurran un representante
+   * patronal y un representante de los trabajadores». Uno de cada parte basta;
+   * la norma NO exige mayoría, y resuelve la asimetría por los votos —los
+   * asistentes disponen de todos los votos de su representación—, no negando
+   * el quórum.
+   *
+   * Es el caso corriente de un comité de 3+3 que junta 1+1. La primera pasada
+   * exigía además mayoría (3 de 6) y lo habría rechazado: un guard más estricto
+   * que la ley no protege, impide sesionar y empuja a registrar por fuera.
+   */
+  it("un representante de cada parte basta, aunque no haya mayoría (DS 54 art. 17)", () => {
+    const members = [
+      member({ id: "c1", representation: "company", role: "presidente" }),
+      member({ id: "c2", representation: "company" }),
+      member({ id: "c3", representation: "company" }),
+      member({ id: "w1", representation: "workers", role: "secretario" }),
+      member({ id: "w2", representation: "workers" }),
+      member({ id: "w3", representation: "workers" }),
+    ]
+    const minimo = assessQuorum({ members, attendedMemberIds: ["c1", "w1"] })
+    expect(minimo.effective).toBe(2)
+    expect(minimo.required).toBe(3) // se informa en el acta, pero no decide
+    expect(minimo).toMatchObject({ reached: true, missingRepresentations: [] })
   })
 
   it("un comité sin titulares nunca alcanza quórum", () => {

@@ -61,6 +61,13 @@ interface Props {
     totalDrills: number
     completedDrills: number
     needsImprovementDrills: number
+    // El servicio ya calculaba estos cuatro y se perdían al bajar a la UI: el
+    // tipado estructural acepta el objeto más ancho sin avisar, así que el
+    // inventario de emergencia no se veía en ninguna pantalla del módulo.
+    totalResources: number
+    resourcesExpired: number
+    resourcesOverdueInspection: number
+    resourcesOutOfService: number
   }
 }
 
@@ -98,12 +105,32 @@ export function EmergencyList({ plans, drills, worksites, canManage, plansPagina
     ...item,
   }))
 
+  // EMERGENCIAS-09: el rótulo decía "Vigentes" y el contador no sabe nada de
+  // vigencia — cuenta planes aprobados y sin archivar, y un plan aprobado hace
+  // tres años sigue ahí. La periodicidad NO se agrega acá: ya vive en el
+  // programa anual, que calendariza el plan de emergencia (N°83) y los
+  // simulacros (N°84, dos veces al año) y los clasifica como `enganche`. Un
+  // reloj propio en este módulo sería un segundo calendario con otro período,
+  // compitiendo con el del PDTP. Lo que faltaba era el cable que cierra esas
+  // actividades cuando el simulacro ocurre, y eso es EMERGENCIAS-05.
   const metrics = [
-    { id: "approved", key: "approved" as const, tab: "plans" as const, label: "Planes aprobados", value: counts.approvedPlans, detail: "Vigentes" },
+    { id: "approved", key: "approved" as const, tab: "plans" as const, label: "Planes aprobados", value: counts.approvedPlans, detail: "Sin archivar" },
     { id: "draft", key: "draft" as const, tab: "plans" as const, label: "En preparación", value: counts.draftPlans, detail: "Sin aprobar" },
     { id: "drills", key: "completed" as const, tab: "drills" as const, label: "Simulacros realizados", value: counts.completedDrills, detail: "Con resultado registrado" },
     { id: "needs_improvement", key: "needs_improvement" as const, tab: "drills" as const, label: "Requieren mejora", value: counts.needsImprovementDrills, detail: "Derivados a CAPA" },
   ]
+  // Inventario de equipos de emergencia: es de faena, no de plan ni de
+  // simulacro, así que no filtra ninguna de las dos pestañas. Se muestra como
+  // resumen y no como botón para no fingir un filtro que no existe; el detalle
+  // de cada equipo vive en el plan que lo declara y los vencimientos llegan a
+  // la bandeja de Prevención.
+  const resourceFacts = [
+    { label: "Equipos", value: counts.totalResources },
+    { label: "Vencidos", value: counts.resourcesExpired },
+    { label: "Inspección atrasada", value: counts.resourcesOverdueInspection },
+    { label: "Fuera de servicio", value: counts.resourcesOutOfService },
+  ]
+
   const activeChips: ActiveFilterChip[] = quickFilter === "all" ? [] : [{
     key: "vista",
     label: "Vista",
@@ -128,6 +155,22 @@ export function EmergencyList({ plans, drills, worksites, canManage, plansPagina
           </button>
         ))}
       </div>
+
+      {counts.totalResources > 0 && (
+        <div className="flex flex-wrap items-baseline gap-x-6 gap-y-1 border-b border-[var(--color-border)] px-4 pb-3 text-sm">
+          <span className="text-eyebrow">Inventario de emergencia</span>
+          {/* El `<dl>` sólo admite dt/dd (o div) como hijos directos: el rótulo
+              va fuera para no romper la regla `definition-list` de axe. */}
+          <dl className="flex flex-wrap items-baseline gap-x-6 gap-y-1">
+            {resourceFacts.map((fact) => (
+              <div key={fact.label} className="flex items-baseline gap-2">
+                <dt className="text-xs text-[var(--color-text-subtle)]">{fact.label}</dt>
+                <dd className="font-mono tabular-nums">{fact.value}</dd>
+              </div>
+            ))}
+          </dl>
+        </div>
+      )}
 
       <FilterToolbar
         activeChips={activeChips}

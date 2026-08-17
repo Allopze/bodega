@@ -26,9 +26,10 @@ export const MEMBER_STATUS_LABELS: Record<string, string> = {
   resigned: "Renunció",
 }
 
+/* Sin `held`: el CHECK ya no lo admite. La sesión va de convocada a acta
+ * cerrada, o se cancela. */
 export const COMMITTEE_MEETING_STATUS_LABELS: Record<string, string> = {
   scheduled: "Convocada",
-  held: "Realizada",
   closed: "Acta cerrada",
   cancelled: "Cancelada",
 }
@@ -97,28 +98,64 @@ export function assessCommitteeParity(members: CommitteeMemberRow[]): { valid: b
 }
 
 /**
- * Quórum: mayoría de titulares activos presentes. Un suplente presente cubre
- * al titular ausente de su misma representación, que es la razón de existir de
- * la suplencia.
+ * Quórum según el **DS 54 art. 17**: «El Comité Paritario de Higiene y Seguridad
+ * podrá funcionar siempre que concurran un representante patronal y un
+ * representante de los trabajadores».
+ *
+ * O sea: basta UNO por cada parte. **No hay exigencia de mayoría** — y el mismo
+ * artículo lo confirma al resolver la asimetría por la vía de los votos y no del
+ * quórum: «cuando a las sesiones no concurran todos los representantes
+ * patronales o de los trabajadores, se entenderá que los asistentes disponen de
+ * la totalidad de los votos de su respectiva representación».
+ *
+ * Exigir además mayoría de titulares —como se hizo en una primera pasada, por
+ * criterio conservador y sin el texto a la vista— **bloqueaba sesiones que la
+ * norma declara válidas**: un comité de 3+3 que junta 1+1, que es el caso
+ * corriente, no habría podido cerrar acta. Un guard más estricto que la ley no
+ * es más seguro: impide operar y empuja a registrar fuera del sistema.
+ *
+ * `required`/`effective` se conservan porque el acta los informa, pero **no
+ * deciden** el quórum: lo decide `missingRepresentations`.
+ *
+ * El quórum se calcula sobre INTEGRANTES, no sobre filas de asistencia: un
+ * invitado nunca lo altera. Un suplente presente cubre al titular ausente de su
+ * misma representación, que es la razón de existir de la suplencia.
  */
 export function assessQuorum(args: {
   members: CommitteeMemberRow[]
   attendedMemberIds: string[]
-}): { reached: boolean; required: number; effective: number } {
+}): {
+  reached: boolean
+  required: number
+  effective: number
+  /** Representaciones sin ningún presente efectivo, para poder nombrarlas. */
+  missingRepresentations: Array<"company" | "workers">
+} {
   const active = args.members.filter((member) => member.status === "active")
   const titulars = active.filter((member) => member.seat === "titular")
   const attended = new Set(args.attendedMemberIds)
   const required = Math.ceil(titulars.length / 2)
 
-  let effective = titulars.filter((member) => attended.has(member.id)).length
+  let effective = 0
+  const missingRepresentations: Array<"company" | "workers"> = []
   for (const representation of ["company", "workers"] as const) {
-    const absentTitulars = titulars.filter((member) => member.representation === representation && !attended.has(member.id)).length
+    const ownTitulars = titulars.filter((member) => member.representation === representation)
+    const presentTitulars = ownTitulars.filter((member) => attended.has(member.id)).length
     const presentSubstitutes = active.filter((member) =>
       member.seat === "suplente" && member.representation === representation && attended.has(member.id)).length
-    effective += Math.min(absentTitulars, presentSubstitutes)
+    const covered = presentTitulars + Math.min(ownTitulars.length - presentTitulars, presentSubstitutes)
+    if (covered === 0) missingRepresentations.push(representation)
+    effective += covered
   }
 
-  return { reached: titulars.length > 0 && effective >= required, required, effective }
+  return {
+    // DS 54 art. 17: concurriendo un representante de cada parte, el comité sesiona.
+    // `effective >= required` (mayoría) queda deliberadamente FUERA de la condición.
+    reached: titulars.length > 0 && missingRepresentations.length === 0,
+    required,
+    effective,
+    missingRepresentations,
+  }
 }
 
 export interface MeetingCadenceStatus {

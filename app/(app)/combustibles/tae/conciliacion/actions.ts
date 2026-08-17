@@ -5,6 +5,7 @@ import { recordAudit } from "@/lib/audit"
 import { nanoid } from "@/lib/id"
 import { getTaeCopecReconciliation, type TaeCopecFilters } from "@/lib/combustibles/tae-copec-reconciliation"
 import { addExportMetadataSheet } from "@/lib/combustibles/xlsx-utils"
+import { todayInChile } from "@/lib/utils"
 
 const MAX_EXPORT_ROWS = 10_000
 
@@ -44,5 +45,5 @@ export async function exportTaeCopecReconciliationAction(filters: TaeCopecFilter
     entityType: "fuel_reconciliation_export", entityId: nanoid(),
     newState: { rowCount: rows.length, truncated: result.rows.length > MAX_EXPORT_ROWS, filters: filters as Record<string, unknown> },
   })
-  return { ok: true as const, data: { base64: Buffer.from(buffer).toString("base64"), filename: `conciliacion_tae_tct_${new Date().toISOString().slice(0, 10)}.xlsx`, truncated: result.rows.length > MAX_EXPORT_ROWS } }
+  return { ok: true as const, data: { base64: Buffer.from(buffer).toString("base64"), filename: `conciliacion_tae_tct_${todayInChile()}.xlsx`, truncated: result.rows.length > MAX_EXPORT_ROWS } }
 }

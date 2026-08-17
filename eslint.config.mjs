@@ -87,6 +87,36 @@ const noBareToLocale = {
   },
 };
 
+/** Grupo B de la auditoría 2026-08-16: calcular HOY en UTC.
+ *
+ *  Se restringe a la forma "ahora mismo" (`new Date()` sin argumentos) y no a
+ *  `getUTCFullYear()`/`toISOString().slice(0,10)` en general: sobre una fecha ya
+ *  normalizada con `Date.UTC(...)` esos métodos son la aritmética correcta (ver
+ *  `addDaysToPlainDate` en lib/utils.ts) y prohibirlos obligaría a ~40
+ *  excepciones por ruta, que es una regla apagada donde importa. Lo que nunca
+ *  es correcto es preguntarle a UTC qué día es hoy: entre las 20:00 y la
+ *  medianoche chilena contesta mañana. Usa todayInChile()/codeYear(). */
+const UTC_TODAY_RESTRICTIONS = [
+  {
+    selector:
+      "CallExpression[callee.property.name='slice'][callee.object.callee.property.name='toISOString'][callee.object.callee.object.type='NewExpression'][callee.object.callee.object.callee.name='Date'][callee.object.callee.object.arguments.length=0]",
+    message:
+      "new Date().toISOString().slice(0,10) es el día en UTC: entre las 20:00 y la medianoche chilena adelanta la fecha. Usa todayInChile() de @/lib/utils.",
+  },
+  {
+    selector:
+      "MemberExpression[object.callee.property.name='split'][object.callee.object.callee.property.name='toISOString'][object.callee.object.callee.object.type='NewExpression'][object.callee.object.callee.object.callee.name='Date'][object.callee.object.callee.object.arguments.length=0]",
+    message:
+      'new Date().toISOString().split("T")[0] es el día en UTC: entre las 20:00 y la medianoche chilena adelanta la fecha. Usa todayInChile() de @/lib/utils.',
+  },
+  {
+    selector:
+      "CallExpression[callee.property.name='getUTCFullYear'][callee.object.type='NewExpression'][callee.object.callee.name='Date'][callee.object.arguments.length=0]",
+    message:
+      "new Date().getUTCFullYear() es el año en UTC: la noche del 31 de diciembre chileno ya es el año siguiente. Usa codeYear() de @/lib/utils.",
+  },
+]
+
 const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
@@ -114,6 +144,7 @@ const eslintConfig = defineConfig([
     rules: {
       "local/no-sql-alias-order-by": "error",
       "local/no-bare-to-locale": "error",
+      "no-restricted-syntax": ["error", ...UTC_TODAY_RESTRICTIONS],
       "@typescript-eslint/no-unused-vars": [
         "warn",
         {
@@ -124,6 +155,23 @@ const eslintConfig = defineConfig([
       ],
       "react-hooks/set-state-in-effect": "off",
     },
+  },
+  // ── Excepciones del día civil (UTC_TODAY_RESTRICTIONS) ────────────────────
+  // Tests: varios usan la forma UTC como CONTROL —`prevention-dia-civil-chileno`
+  // afirma que a las 23:00 de Chile `new Date().toISOString().slice(0,10)` da el
+  // día siguiente, que es justo el bug que la regla previene—. Prohibirla ahí
+  // borraría la prueba de que el bug existía.
+  // scripts/: herramientas fuera de la aplicación (mantención puntual, nombre
+  // del directorio de capturas); no escriben datos que un fiscalizador lea.
+  {
+    files: [
+      "**/*.test.ts",
+      "**/*.test.tsx",
+      "**/__tests__/**/*.{ts,tsx}",
+      "scripts/**/*.{ts,tsx,mjs}",
+      "e2e/**/*.{ts,tsx}",
+    ],
+    rules: { "no-restricted-syntax": "off" },
   },
   // ── Freeze: prevent importing stale module scaffolding ─────────────────────
   // app/, lib/, components/ are the source of truth. The old copies in

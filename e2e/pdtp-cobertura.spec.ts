@@ -31,9 +31,18 @@ test.describe("PDTP — Cobertura MIPER y legal", () => {
 
     const dialog = page.getByRole("dialog")
     await expect(dialog.getByRole("heading", { name: "Vincular origen de la medida" })).toBeVisible()
+    // La faena se elige explícitamente y no se deja en la primera de la lista:
+    // las fuentes se filtran por faena, y en la suite completa otros specs crean
+    // faenas que alteran ese orden — el test pasaba aislado y fallaba en conjunto.
+    await dialog.getByLabel("Faena").click()
+    await page.getByRole("option", { name: "Faena E2E", exact: true }).click()
     await dialog.getByLabel("Tipo").click()
     await page.getByRole("option", { name: "Auditoría" }).click()
-    await dialog.getByLabel("Identificador de fuente").fill("audit-e2e-1")
+    // Con la auditoría sembrada, el diálogo ofrece el selector "Fuente"; el
+    // campo libre "Identificador de fuente" sólo aparece cuando el tipo no
+    // tiene ninguna fuente elegible en la faena.
+    await dialog.getByLabel("Fuente").click()
+    await page.getByRole("option", { name: /AUD-E2E-2026-0001/ }).click()
     await dialog.getByLabel("Justificación").fill("Cubre la charla de seguridad mediante la auditoría preventiva E2E.")
     await dialog.getByRole("button", { name: "Crear vínculo" }).click()
 

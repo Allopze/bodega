@@ -17,9 +17,12 @@ const STORE_NAME = "submissions"
 let dbConnection: IDBDatabase | null = null
 
 export interface QueuedPpa {
+  /** Clave de idempotencia: es también `payload.clientSubmissionId`. */
   id: string
   /** ISO timestamp when the submission was queued. */
   createdAt: string
+  /** ISO timestamp del último cambio de estado (base de recoverStalePpas). */
+  updatedAt?: string
   /** The full PPA form payload (matches ppaSubmitSchema). */
   payload: Record<string, unknown>
   /** "pending" | "syncing" | "synced" | "failed" */
@@ -92,20 +95,39 @@ function withTx<T>(
 
 /* ── Public API ───────────────────────────────────────────────────────────── */
 
+/**
+ * Clave de idempotencia del envío. Se genera ANTES de intentar enviar (no al
+ * encolar) para que el camino online y su respaldo offline compartan la misma:
+ * si la acción falla por red DESPUÉS de que el servidor ya commiteó, el reenvío
+ * desde la cola recupera esa fila en vez de crear un PPA duplicado.
+ */
+export function createPpaSubmissionId(): string {
+  return typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? `ppa-${crypto.randomUUID()}`
+    : `ppa-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+}
+
 /** Add a PPA submission to the offline queue. */
 export async function enqueuePpa(
   payload: Record<string, unknown>,
 ): Promise<QueuedPpa> {
+  // La clave del payload manda: reencolar el mismo envío tiene que sobrescribir
+  // su entrada, no crear una segunda con otra clave.
+  const id = typeof payload.clientSubmissionId === "string" && payload.clientSubmissionId
+    ? payload.clientSubmissionId
+    : createPpaSubmissionId()
+  const now = new Date().toISOString()
   const item: QueuedPpa = {
-    id: `ppa-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-    createdAt: new Date().toISOString(),
-    payload,
+    id,
+    createdAt: now,
+    updatedAt: now,
+    payload: payload.clientSubmissionId === id ? payload : { ...payload, clientSubmissionId: id },
     status: "pending",
     attempts: 0,
   }
   return withTx("readwrite", (store) =>
     new Promise<QueuedPpa>((resolve, reject) => {
-      const req = store.add(item)
+      const req = store.put(item)
       req.onsuccess = () => resolve(item)
       req.onerror = () => reject(req.error)
     }),
@@ -147,7 +169,7 @@ export async function updatePpaStatus(
       getReq.onsuccess = () => {
         const existing = getReq.result as QueuedPpa | undefined
         if (!existing) { resolve(); return }
-        const merged = { ...existing, ...update }
+        const merged = { ...existing, ...update, updatedAt: new Date().toISOString() }
         const putReq = store.put(merged)
         putReq.onsuccess = () => resolve()
         putReq.onerror = () => reject(putReq.error)
@@ -155,6 +177,41 @@ export async function updatePpaStatus(
       getReq.onerror = () => reject(getReq.error)
     }),
   )
+}
+
+/**
+ * Recupera envíos que quedaron en `syncing` porque la app se cerró a mitad de
+ * la sincronización. Sin esto el ítem no vuelve a aparecer nunca en
+ * `getPendingPpas` (que sólo lee "pending") y la evaluación se pierde en
+ * silencio. Reenviar es seguro: `clientSubmissionId` hace idempotente el envío
+ * en el servidor. Mismo patrón que `recoverStaleTaeSubmissions`.
+ */
+export async function recoverStalePpas(
+  now = Date.now(),
+  staleMs = 5 * 60 * 1000,
+): Promise<number> {
+  return withTx("readwrite", (store) => {
+    const index = store.index("status")
+    return new Promise<number>((resolve, reject) => {
+      const req = index.getAll("syncing")
+      req.onerror = () => reject(req.error)
+      req.onsuccess = () => {
+        const stale = (req.result as QueuedPpa[]).filter((item) => {
+          const at = new Date(item.updatedAt ?? item.createdAt).getTime()
+          return !Number.isFinite(at) || now - at >= staleMs
+        })
+        for (const item of stale) {
+          store.put({
+            ...item,
+            status: "pending",
+            updatedAt: new Date(now).toISOString(),
+            lastError: "Sincronización interrumpida; se reintentará.",
+          })
+        }
+        resolve(stale.length)
+      }
+    })
+  })
 }
 
 /** Delete a synced or failed submission. */

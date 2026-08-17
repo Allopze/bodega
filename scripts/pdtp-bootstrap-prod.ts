@@ -121,33 +121,24 @@ async function bootstrapBase2026(programId: string): Promise<BootstrapResult> {
 
   const checksumSha256 = createHash("sha256").update(bytes).digest("hex")
 
-  // Validate XLSX structure
-  let workbook: ExcelJS.Workbook
-  try {
-    workbook = new ExcelJS.Workbook()
-    await workbook.xlsx.load(bytes as never)
-  } catch (e) {
-    return fail("parse-xlsx", e)
-  }
-
   // Dynamic imports: only load the full bootstrap chain when needed
   const [
     { PDTP_2026_INVARIANTS, PDTP_2026_PROGRAM_SOURCE },
     { extractPdtpCatalogFromWorkbook },
-    { validateLoadedPdtpWorkbook, validatePdtpXlsxEnvelope },
+    { validateLoadedWorkbook, validateXlsxEnvelope },
     { getUserRbacById },
     service,
   ] = await Promise.all([
     import("../lib/services/pdtp-adapters/contract-2026"),
     import("../lib/services/prevention-pdtp-catalog"),
-    import("../lib/services/pdtp/xlsx-security"),
+    import("../lib/services/xlsx-security"),
     import("../lib/auth/rbac"),
     import("../lib/services/prevention-pdtp"),
   ])
 
   // Validate XLSX envelope
   try {
-    validatePdtpXlsxEnvelope({
+    validateXlsxEnvelope({
       name: path.basename(filePath),
       type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       size: bytes.length,
@@ -157,6 +148,15 @@ async function bootstrapBase2026(programId: string): Promise<BootstrapResult> {
     return fail("validate-xlsx", e)
   }
 
+  // Parse recién ahora: el buffer no llega a ExcelJS sin envolvente validada.
+  let workbook: ExcelJS.Workbook
+  try {
+    workbook = new ExcelJS.Workbook()
+    await workbook.xlsx.load(bytes as never)
+  } catch (e) {
+    return fail("parse-xlsx", e)
+  }
+
   const sourceOfficial = checksumSha256 === PDTP_2026_PROGRAM_SOURCE.sha256
   if (!sourceOfficial) {
     return fail("checksum", `SHA-256 del XLSX (${checksumSha256}) no coincide con la fuente oficial congelada (${PDTP_2026_PROGRAM_SOURCE.sha256}).`)
@@ -164,7 +164,7 @@ async function bootstrapBase2026(programId: string): Promise<BootstrapResult> {
 
   // Validate workbook structure
   try {
-    validateLoadedPdtpWorkbook(workbook)
+    validateLoadedWorkbook(workbook)
   } catch (e) {
     return fail("validate-workbook", e)
   }

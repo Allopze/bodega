@@ -133,7 +133,10 @@ export function PpaIdentityStep({
           <Field label="Nombre completo" htmlFor="wname" required error={err("workerName")}>
             <Input id="wname" value={workerName} onChange={(event) => setWorkerName(event.target.value)} />
           </Field>
-          <Field label="RUT (opcional)" htmlFor="wrut">
+          {/* El RUT es opcional, pero si se escribe tiene que ser válido (el
+              schema exige dígito verificador): sin `error` el trabajador veía
+              "faltan respuestas" sin saber en qué campo. */}
+          <Field label="RUT (opcional)" htmlFor="wrut" error={err("workerRut")}>
             <Input id="wrut" value={workerRut} onChange={(event) => setWorkerRut(event.target.value)} />
           </Field>
           <Field label="Empresa (opcional)" htmlFor="wcompany">

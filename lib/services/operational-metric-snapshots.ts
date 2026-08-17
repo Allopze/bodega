@@ -5,6 +5,7 @@ import { db } from "@/db"
 import { operationalMetricSnapshots, pdtpObligations, preventionCapaActions, purchaseOrders, purchaseRequests, worksiteStock, worksites } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
+import { todayInChile } from "@/lib/utils"
 
 const BACKLOG_METRICS = ["backlog_requests", "backlog_orders", "backlog_capa", "backlog_pdtp"] as const
 
@@ -26,10 +27,6 @@ export interface OperationalBacklogComparison {
   current: number
   previous: number | null
   snapshotDate: string | null
-}
-
-function todayInChile(now = new Date()) {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Santiago", year: "numeric", month: "2-digit", day: "2-digit" }).format(now)
 }
 
 function monthStartInChile(now = new Date()) {

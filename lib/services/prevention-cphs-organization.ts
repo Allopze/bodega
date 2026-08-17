@@ -30,9 +30,9 @@ import {
   nowIso,
   recordGovernanceHistory,
   requireCphsAccess,
-  todayInChile,
   type CphsAccess,
 } from "@/lib/services/prevention-cphs-access"
+import { todayInChile } from "@/lib/utils"
 
 /** Trabajadores propios activos de la faena. Los de contratistas no cuentan. */
 export async function getWorksiteHeadcount(worksiteId: string): Promise<number> {

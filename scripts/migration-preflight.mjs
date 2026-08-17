@@ -14,6 +14,7 @@ export const LEGACY_ACTION_TABLES = Object.freeze([
  * @property {Record<(typeof LEGACY_ACTION_TABLES)[number], number>} legacyActionRows
  * @property {{ dualBusinessLinks: number, duplicatePurchaseInvoices: number }} dte
  * @property {{ legacyObjectiveLinks: number, duplicateYears: number }} pdtp
+ * @property {{ duplicateApplicabilities: number }} legal
  * @property {string[]} skippedRelations
  */
 
@@ -40,6 +41,13 @@ export function assertMigrationPreflightReport(report) {
     blockers.push(
       `PDTP legacyObjectiveLinks=${report.pdtp.legacyObjectiveLinks} duplicateYears=${report.pdtp.duplicateYears}`,
     )
+  }
+  // LEGAL-04: el índice único parcial sobre (requisito, faena) con proceso nulo
+  // no puede crearse si la base ya trae dos pronunciamientos para el mismo
+  // requisito y faena. Cuál sobrevive es una decisión de prevención —una es la
+  // decisión vigente y la otra un duplicado de una carrera—, no de la migración.
+  if (report.legal.duplicateApplicabilities > 0) {
+    blockers.push(`LEGAL duplicateApplicabilities=${report.legal.duplicateApplicabilities}`)
   }
   if (blockers.length > 0) {
     throw new Error(
@@ -75,6 +83,7 @@ export async function inspectMigrationPreconditions(sql) {
     },
     dte: { dualBusinessLinks: 0, duplicatePurchaseInvoices: 0 },
     pdtp: { legacyObjectiveLinks: 0, duplicateYears: 0 },
+    legal: { duplicateApplicabilities: 0 },
     skippedRelations: [],
   }
 
@@ -128,6 +137,21 @@ export async function inspectMigrationPreconditions(sql) {
     `)
   } else {
     report.skippedRelations.push("pdtp_programs")
+  }
+
+  if (await relationExists(sql, "prevention_legal_applicabilities")) {
+    report.legal.duplicateApplicabilities = await countUnsafe(sql, `
+      select count(*)::int as total
+      from (
+        select requirement_id, worksite_id
+        from prevention_legal_applicabilities
+        where process_id is null
+        group by requirement_id, worksite_id
+        having count(*) > 1
+      ) duplicates
+    `)
+  } else {
+    report.skippedRelations.push("prevention_legal_applicabilities")
   }
 
   return report

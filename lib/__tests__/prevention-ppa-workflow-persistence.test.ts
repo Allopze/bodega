@@ -258,3 +258,254 @@ describe("PPA workflow — persistencia real (PGlite)", () => {
     expect(cancelled.cancelledByUserId).toBe("user-jefe")
   })
 })
+
+/**
+ * PPA-03: la misma fila CAPA tenía dos conductores. El módulo CAPA genérico
+ * podía cerrarla, cancelarla o reabrirla sin mirar su origen, y el PPA quedaba
+ * detenido esperando un estado del CAPA que ya no existía.
+ */
+describe("PPA-03 — el motor CAPA genérico no conduce acciones de origen ppa (PGlite)", () => {
+  const CAPA_ACCESS = {
+    ctx: { userId: "user-prev" },
+    scope: { mode: "some" as const, ids: ["ws-1"] },
+    permissions: ["prevention:capa:complete", "prevention:capa:manage", "prevention:capa:verify", "prevention:capa:close"],
+  }
+
+  it("transitionCapaAction y updateCapaAction rechazan el origen ppa sin mutar la fila", async () => {
+    const ppaId = await insertPpaFixture()
+    await reviewToCorreccion(ppaId)
+    const capaId = await linkedCapaId(ppaId)
+
+    const { transitionCapaAction, updateCapaAction } = await import("@/lib/services/prevention-capa")
+
+    await expect(transitionCapaAction({
+      ...CAPA_ACCESS,
+      input: { actionId: capaId, expectedVersion: 1, toStatus: "in_progress" },
+    })).rejects.toThrow(`/prevencion/ppa/${ppaId}`)
+
+    await expect(updateCapaAction({
+      ...CAPA_ACCESS,
+      input: { actionId: capaId, expectedVersion: 1, priority: "critical" },
+    })).rejects.toThrow(`/prevencion/ppa/${ppaId}`)
+
+    const [capa] = await inMemoryDb.select().from(schema.preventionCapaActions)
+      .where(eq(schema.preventionCapaActions.id, capaId))
+    expect(capa?.status).toBe("pending")
+    expect(capa?.priority).toBe("medium")
+    expect(capa?.version).toBe(1)
+
+    // Sólo queda la transición de creación: ninguna de las dos llamadas escribió.
+    const transitions = await inMemoryDb.select().from(schema.preventionCapaTransitions)
+      .where(eq(schema.preventionCapaTransitions.actionId, capaId))
+    expect(transitions.map((item) => item.changeType)).toEqual(["created"])
+  })
+
+  it("una acción de otro origen sigue pasando por el motor genérico", async () => {
+    const { createCapaAction, transitionCapaAction } = await import("@/lib/services/prevention-capa")
+    const created = await createCapaAction({
+      ...CAPA_ACCESS,
+      permissions: ["prevention:capa:manage"],
+      input: {
+        sourceType: "manual", sourceId: "libre-1", worksiteId: "ws-1",
+        finding: "Hallazgo de ronda", actionDescription: "Reponer señalética faltante.",
+        priority: "medium", targetDate: "2026-09-01", evidenceRequired: false,
+      },
+    })
+    const moved = await transitionCapaAction({
+      ...CAPA_ACCESS,
+      input: { actionId: created.id, expectedVersion: 1, toStatus: "in_progress" },
+    })
+    expect(moved.status).toBe("in_progress")
+  })
+
+  it("red de seguridad: un CAPA ya en verificación no deja el PPA sin salida", async () => {
+    const ppaId = await insertPpaFixture()
+    await reviewToCorreccion(ppaId)
+    const capaId = await linkedCapaId(ppaId)
+    await attachCapaEvidence(capaId)
+    // Fila heredada: el CAPA fue empujado fuera del flujo PPA antes de que
+    // existiera el guardia de origen. Antes, declarePpaCorrection lanzaba
+    // "no está disponible" y el caso quedaba detenido para siempre.
+    await inMemoryDb.update(schema.preventionCapaActions)
+      .set({ status: "pending_verification" })
+      .where(eq(schema.preventionCapaActions.id, capaId))
+
+    const { declarePpaCorrection } = await import("@/lib/services/ppa-module/reportes")
+    const declared = await declarePpaCorrection({ ppaId, expectedPpaVersion: 2, expectedCapaVersion: 1 }, REVIEWER)
+    expect(declared.estado).toBe("pendiente_verificacion")
+
+    // Idempotente: no vuelve a transicionar el CAPA que ya estaba en destino.
+    const [capa] = await inMemoryDb.select().from(schema.preventionCapaActions)
+      .where(eq(schema.preventionCapaActions.id, capaId))
+    expect(capa?.version).toBe(1)
+  })
+})
+
+/**
+ * PPA-06: revocar el enlace público es una decisión de un responsable. La
+ * función recibía `userId` y lo descartaba, así que el corte quedaba sin autor.
+ */
+describe("revokePpaToken — traza del actor (PGlite)", () => {
+  it("deja una fila de historial con el usuario que revocó", async () => {
+    const ppaId = await insertPpaFixture()
+    const { revokePpaToken } = await import("@/lib/services/ppa-module/evaluaciones")
+
+    await revokePpaToken(ppaId, "user-jefe", ["ws-1"])
+
+    const [row] = await inMemoryDb.select().from(schema.ppaSubmissions).where(eq(schema.ppaSubmissions.id, ppaId))
+    expect(row?.publicTokenRevokedAt).toBeTruthy()
+
+    const history = await inMemoryDb.select().from(schema.ppaStatusHistory)
+      .where(eq(schema.ppaStatusHistory.ppaId, ppaId))
+    expect(history).toHaveLength(1)
+    expect(history[0]?.actorUserId).toBe("user-jefe")
+    expect(history[0]?.actorType).toBe("user")
+    expect(history[0]?.reason).toBe("Acceso público revocado")
+    // El acceso cambia, el estado del caso no.
+    expect(history[0]?.fromStatus).toBe("detenido")
+    expect(history[0]?.toStatus).toBe("detenido")
+  })
+
+  it("una segunda revocación no duplica la traza", async () => {
+    const ppaId = await insertPpaFixture()
+    const { revokePpaToken } = await import("@/lib/services/ppa-module/evaluaciones")
+    await revokePpaToken(ppaId, "user-jefe", ["ws-1"])
+
+    await expect(revokePpaToken(ppaId, "user-prev", ["ws-1"])).rejects.toThrow(/ya está revocado/i)
+    const history = await inMemoryDb.select().from(schema.ppaStatusHistory)
+      .where(eq(schema.ppaStatusHistory.ppaId, ppaId))
+    expect(history).toHaveLength(1)
+  })
+})
+
+/**
+ * PPA-04: la cola offline reenvía cuando la sincronización se interrumpe entre
+ * el commit del servidor y la confirmación al cliente. Sin clave de
+ * idempotencia ese reenvío duplicaba la evaluación (o la perdía si el cliente
+ * la daba por fallida). Mismo patrón que incidentes y TAE.
+ */
+describe("createPpaSubmission — idempotencia del reenvío offline (PGlite)", () => {
+  // derivePpaPublicToken firma el enlace público con el secreto del servidor,
+  // que en producción exige validateEnv() y aquí no está.
+  const previousSecret = process.env.AUTH_SECRET
+  beforeEach(() => { process.env.AUTH_SECRET = "test-auth-secret" })
+  afterAll(() => { process.env.AUTH_SECRET = previousSecret })
+
+  /** Respuestas que NO detienen el trabajo: evita el camino de notificaciones. */
+  const payload = (clientSubmissionId?: string) => ({
+    clientSubmissionId,
+    worksiteId: "ws-1",
+    workerName: "Juan Pérez",
+    workerRut: "11.111.111-1",
+    tipoTrabajo: "conductor_batea",
+    cambioPlanificado: "no" as const,
+    peligroNoControlado: "no" as const,
+    controles: ["epp", "herramientas"],
+    seguroComenzar: "si" as const,
+    complementarias: {},
+  })
+
+  it("dos entregas con la misma clave producen UNA fila y el MISMO token", async () => {
+    const { createPpaSubmission, getPpaByToken } = await import("@/lib/services/ppa-module/evaluaciones")
+    const input = payload("ppa-8f2b1c44-0d3e-4a91-b7c6-59ee12ab3d70")
+
+    const first = await createPpaSubmission(input)
+    // Segunda entrega: el cliente nunca recibió la confirmación de la primera.
+    const second = await createPpaSubmission(input)
+
+    expect(second.submission.id).toBe(first.submission.id)
+    expect(second.token).toBe(first.token)
+
+    const rows = await inMemoryDb.select().from(schema.ppaSubmissions)
+    expect(rows).toHaveLength(1)
+    // El reenvío tampoco duplica la historia de estados.
+    const history = await inMemoryDb.select().from(schema.ppaStatusHistory)
+    expect(history).toHaveLength(1)
+
+    // El token devuelto en el reenvío sigue abriendo la fila original.
+    const byToken = await getPpaByToken(second.token)
+    expect(byToken?.id).toBe(first.submission.id)
+  })
+
+  it("claves distintas siguen creando PPA distintos", async () => {
+    const { createPpaSubmission } = await import("@/lib/services/ppa-module/evaluaciones")
+    const first = await createPpaSubmission(payload("ppa-11111111-1111-4111-8111-111111111111"))
+    const second = await createPpaSubmission(payload("ppa-22222222-2222-4222-8222-222222222222"))
+
+    expect(second.submission.id).not.toBe(first.submission.id)
+    expect(second.token).not.toBe(first.token)
+    expect(await inMemoryDb.select().from(schema.ppaSubmissions)).toHaveLength(2)
+  })
+
+  it("sin clave del cliente el servidor genera una y el envío sigue funcionando", async () => {
+    const { createPpaSubmission } = await import("@/lib/services/ppa-module/evaluaciones")
+    const first = await createPpaSubmission(payload())
+    const second = await createPpaSubmission(payload())
+
+    expect(first.submission.clientSubmissionId).toMatch(/^srv-/)
+    expect(second.submission.id).not.toBe(first.submission.id)
+    expect(await inMemoryDb.select().from(schema.ppaSubmissions)).toHaveLength(2)
+  })
+})
+
+/**
+ * PPA-08: cada paso del flujo escribe su fecha JUNTO a su actor. Los cuatro
+ * CHECK de la migración 0179 son lo único que impide la mitad huérfana —fecha
+ * sin actor, o actor sin fecha—, un estado que ninguna transición produce pero
+ * que sí puede dejar un backfill, un script de corrección o un servicio futuro.
+ * Se prueba por inserción directa a la tabla justamente porque ningún servicio
+ * intenta ese estado: sin esto nada demuestra que la base los esté aplicando.
+ */
+describe("PPA-08 — simetría fecha↔actor en ppa_submissions (PGlite)", () => {
+  const AT = "2026-08-16T12:00:00.000Z"
+  type Overrides = Partial<typeof schema.ppaSubmissions.$inferInsert>
+  const PARES: Array<{ check: string; soloFecha: Overrides; soloActor: Overrides }> = [
+    { check: "ppa_submissions_correction_declared_check", soloFecha: { correctionDeclaredAt: AT }, soloActor: { correctionDeclaredByUserId: "user-prev" } },
+    { check: "ppa_submissions_verified_check",            soloFecha: { verifiedAt: AT },           soloActor: { verifiedByUserId: "user-prev" } },
+    { check: "ppa_submissions_authorized_check",          soloFecha: { authorizedAt: AT },         soloActor: { authorizedByUserId: "user-jefe" } },
+    { check: "ppa_submissions_closed_check",              soloFecha: { closedAt: AT },             soloActor: { closedByUserId: "user-jefe" } },
+  ]
+
+  /**
+   * Mensaje completo del rechazo, o "" si la inserción pasó. Drizzle envuelve
+   * el error de Postgres: el nombre de la constraint viaja en `cause`, que
+   * `.rejects.toThrow()` no inspecciona (mismo motivo que el helper de
+   * db/__tests__/pdtp-check-constraints.test.ts). Afirmar sobre el nombre —y no
+   * sobre /violates check/— es lo que distingue "la base rechazó" de "la base
+   * rechazó POR ESTE check".
+   */
+  async function violationMessage(promise: Promise<unknown>): Promise<string> {
+    try {
+      await promise
+      return ""
+    } catch (error) {
+      const cause = (error as { cause?: { message?: string } }).cause
+      return `${(error as Error).message}\n${cause?.message ?? ""}`
+    }
+  }
+
+  it("rechaza la fecha sin su actor", async () => {
+    for (const { check, soloFecha } of PARES) {
+      expect(await violationMessage(insertPpaFixture(soloFecha))).toMatch(check)
+    }
+  })
+
+  it("rechaza el actor sin su fecha", async () => {
+    for (const { check, soloActor } of PARES) {
+      expect(await violationMessage(insertPpaFixture(soloActor))).toMatch(check)
+    }
+  })
+
+  it("acepta los cuatro pares completos: lo prohibido es la mitad, no el paso", async () => {
+    const id = await insertPpaFixture({
+      estado: "cerrado",
+      correctionDeclaredAt: AT, correctionDeclaredByUserId: "user-prev",
+      verifiedAt:           AT, verifiedByUserId:           "user-prev",
+      authorizedAt:         AT, authorizedByUserId:         "user-jefe",
+      closedAt:             AT, closedByUserId:             "user-jefe",
+    })
+    const [row] = await inMemoryDb.select().from(schema.ppaSubmissions).where(eq(schema.ppaSubmissions.id, id))
+    expect(row?.closedByUserId).toBe("user-jefe")
+    expect(row?.verifiedAt).toBeTruthy()
+  })
+})

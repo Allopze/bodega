@@ -1,0 +1,1 @@
+ALTER TABLE "prevention_legal_requirements" ADD CONSTRAINT "prevention_legal_requirements_supersedes_requirement_id_prevention_legal_requirements_id_fk" FOREIGN KEY ("supersedes_requirement_id") REFERENCES "public"."prevention_legal_requirements"("id") ON DELETE restrict ON UPDATE no action;

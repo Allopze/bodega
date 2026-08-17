@@ -1,7 +1,7 @@
 /** Real PostgreSQL proof for Emergencias: disponibilidad del plan, segregación de aprobación y cierre de simulacro derivando a CAPA. */
 import path from "node:path"
 import postgres from "postgres"
-import { eq, sql } from "drizzle-orm"
+import { asc, eq, sql } from "drizzle-orm"
 import { drizzle } from "drizzle-orm/postgres-js"
 import { migrate } from "drizzle-orm/postgres-js/migrator"
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest"
@@ -21,6 +21,17 @@ const previousDatabaseUrl = process.env.DATABASE_URL
 let client: postgres.Sql | undefined
 let testDb: ReturnType<typeof drizzle<typeof schema>> | undefined
 
+/**
+ * EMERGENCIAS-05: sin programa PDTP activo `accreditPdtpFromEvent` se traga el
+ * evento y no deja rastro en ninguna tabla, así que la única forma de probar que
+ * el cable entre el simulacro y el programa anual EXISTE es observar la llamada
+ * al conector. Se sustituye sólo ese export; el resto del módulo queda intacto.
+ */
+vi.mock("@/lib/services/pdtp-adapters/pdtp-accreditation-connectors", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/services/pdtp-adapters/pdtp-accreditation-connectors")>()),
+  onEmergencyDrillCompleted: vi.fn(async () => {}),
+}))
+
 const scopeA = { mode: "some", ids: ["ws-em-a"] } as WorksiteScope
 const MANAGER = { userId: "em-manager", scope: scopeA, permissions: ["prevention:emergency:view", "prevention:emergency:manage"] }
 const APPROVER = { userId: "em-approver", scope: { mode: "all", ids: [] } as WorksiteScope, permissions: ["prevention:emergency:view", "prevention:emergency:approve"] }
@@ -36,11 +47,27 @@ function getDb() {
   return testDb
 }
 
+/**
+ * EMERGENCIAS-06: `executedAt` quedó acotado entre la fecha programada y ahora,
+ * así que el calendario fijo del fixture (simulacros programados y "realizados"
+ * en septiembre y noviembre de 2026) dejaba de ser válido con sólo mirar el
+ * reloj. Las fechas pasan a ser relativas a la corrida: los simulacros ocurren
+ * en el pasado reciente, que es lo que un simulacro completado siempre es.
+ */
+const iso = (offsetMs: number) => new Date(Date.now() + offsetMs).toISOString()
+const HORA = 3_600_000
+const DIA = 24 * HORA
+const DRILL_SCHEDULED_FOR = iso(-2 * DIA)
+const DRILL_EXECUTED_AT = iso(-2 * DIA + 20 * 60_000)
+const SECOND_DRILL_SCHEDULED_FOR = iso(-1 * DIA)
+const SECOND_DRILL_EXECUTED_AT = iso(-1 * DIA + 20 * 60_000)
+
 describeIf("Emergencias on real PostgreSQL", () => {
   let planId = ""
   let planVersion = 1
   let drillId = ""
   let drillVersion = 1
+  let resourceId = ""
 
   beforeAll(async () => {
     assertSafeDestructiveDatabase({ databaseUrl: databaseUrl!, allowDestructiveReset: canReset, context: "PREVENTION_EMERGENCY" })
@@ -104,6 +131,21 @@ describeIf("Emergencias on real PostgreSQL", () => {
     }, MANAGER)
   })
 
+  // El equipo se registra con el plan todavía en borrador: una vez aprobado, el
+  // contenido queda congelado (ver la prueba de más abajo). Nace vencido para
+  // que la bandeja de Prevención lo levante y se pueda comprobar que la
+  // actualización lo apaga.
+  it("registers an expired resource while the plan is still a draft", async () => {
+    const service = await import("@/lib/services/prevention-emergency")
+    const resource = await service.addEmergencyResource({
+      planId, name: "Extintor PQS 10 kg", kind: "Extintor", location: "Portería",
+      expiresAt: "2020-01-01", nextInspectionAt: "2020-01-01",
+    }, MANAGER)
+    resourceId = resource.id
+    expect(resource.worksiteId).toBe("ws-em-a")
+    expect(resource.status).toBe("operational")
+  })
+
   it("refuses approval by the plan's own creator, even holding the approve permission", async () => {
     const service = await import("@/lib/services/prevention-emergency")
     await expect(service.approveEmergencyPlan({
@@ -121,10 +163,53 @@ describeIf("Emergencias on real PostgreSQL", () => {
     expect(approved.approvedByUserId).toBe("em-approver")
   })
 
+  // EMERGENCIAS-01: el plan aprobado es el documento que se ejecuta. Si se le
+  // siguen colgando escenarios, roles, recursos y contactos, lo aprobado deja de
+  // ser lo vigente. La vía para cambiarlo es archivarlo y emitir el siguiente.
+  it("freezes the content of an approved plan: no scenario, role, resource nor contact can be added", async () => {
+    const service = await import("@/lib/services/prevention-emergency")
+    const congelado = /aprobado y su contenido quedó congelado/
+
+    await expect(service.addEmergencyScenario({
+      planId, type: "sismo", title: "Sismo de gran magnitud",
+      responseProcedure: "Evacuar a zona de seguridad y esperar réplicas antes de reingresar.",
+    }, MANAGER)).rejects.toThrow(congelado)
+
+    await expect(service.addEmergencyRole({
+      planId, roleName: "Encargado de evacuación", assigneeWorkerId: "wk-a2",
+    }, MANAGER)).rejects.toThrow(congelado)
+
+    await expect(service.addEmergencyResource({
+      planId, name: "Botiquín", kind: "Botiquín", location: "Oficina técnica",
+    }, MANAGER)).rejects.toThrow(congelado)
+
+    await expect(service.addEmergencyContact({
+      planId, name: "Mutual", org: "Mutual de Seguridad", phone: "1407",
+    }, MANAGER)).rejects.toThrow(congelado)
+
+    // El rechazo es de dominio, no un error de infraestructura filtrado.
+    await expect(service.addEmergencyScenario({
+      planId, type: "sismo", title: "Sismo de gran magnitud",
+      responseProcedure: "Evacuar a zona de seguridad y esperar réplicas antes de reingresar.",
+    }, MANAGER)).rejects.toThrow(service.EmergencyDomainError)
+
+    // Y nada se coló: siguen el escenario y el rol del borrador, y un solo recurso.
+    const [scenarios, roles, resources, contacts] = await Promise.all([
+      getDb().select().from(schema.preventionEmergencyScenarios).where(eq(schema.preventionEmergencyScenarios.planId, planId)),
+      getDb().select().from(schema.preventionEmergencyRoles).where(eq(schema.preventionEmergencyRoles.planId, planId)),
+      getDb().select().from(schema.preventionEmergencyResources).where(eq(schema.preventionEmergencyResources.planId, planId)),
+      getDb().select().from(schema.preventionEmergencyContacts).where(eq(schema.preventionEmergencyContacts.planId, planId)),
+    ])
+    expect(scenarios).toHaveLength(1)
+    expect(roles).toHaveLength(1)
+    expect(resources).toHaveLength(1)
+    expect(contacts).toHaveLength(0)
+  })
+
   it("schedules a drill only once the plan is approved", async () => {
     const service = await import("@/lib/services/prevention-emergency")
     const drill = await service.scheduleEmergencyDrill({
-      planId, scenarioType: "incendio", scheduledFor: "2026-09-10T14:00:00.000Z",
+      planId, scenarioType: "incendio", scheduledFor: DRILL_SCHEDULED_FOR,
     }, EXECUTOR)
     drillId = drill.id
     drillVersion = drill.version
@@ -135,17 +220,65 @@ describeIf("Emergencias on real PostgreSQL", () => {
     const service = await import("@/lib/services/prevention-emergency")
     await expect(service.completeEmergencyDrill({
       drillId, expectedVersion: drillVersion,
-      executedAt: "2026-09-10T14:20:00.000Z",
+      executedAt: DRILL_EXECUTED_AT,
       outcome: "satisfactory",
       participants: [{ workerId: "wk-a1", present: false }],
     }, EXECUTOR)).rejects.toThrow(/participante/)
+  })
+
+  // EMERGENCIAS-03: los participantes se validan contra la faena del simulacro y
+  // su vigencia, igual que el titular de un rol del organigrama. El rechazo es
+  // todo-o-nada: la transacción no deja ninguna fila de asistencia.
+  async function expectParticipantsRejected(
+    participants: { workerId: string; present: boolean }[],
+    message: RegExp,
+  ) {
+    const service = await import("@/lib/services/prevention-emergency")
+    const attempt = service.completeEmergencyDrill({
+      drillId, expectedVersion: drillVersion,
+      executedAt: DRILL_EXECUTED_AT,
+      outcome: "satisfactory",
+      participants,
+    }, EXECUTOR)
+    await expect(attempt).rejects.toThrow(service.EmergencyDomainError)
+    await expect(attempt).rejects.toThrow(message)
+    const rows = await getDb().select().from(schema.preventionEmergencyDrillParticipants)
+    expect(rows).toHaveLength(0)
+  }
+
+  it("rejects a drill participant from another worksite", async () => {
+    await expectParticipantsRejected(
+      [{ workerId: "wk-a1", present: true }, { workerId: "wk-b1", present: true }],
+      /^1 participante\(s\) no existen, están inactivos o no pertenecen a la faena del simulacro\.$/,
+    )
+  })
+
+  it("rejects an inactive drill participant", async () => {
+    await expectParticipantsRejected(
+      [{ workerId: "wk-a1", present: true }, { workerId: "wk-a4", present: true }],
+      /1 participante\(s\) no existen, están inactivos/,
+    )
+  })
+
+  it("rejects an unknown drill participant", async () => {
+    await expectParticipantsRejected(
+      [{ workerId: "wk-a1", present: true }, { workerId: "wk-fantasma", present: false }],
+      /1 participante\(s\) no existen, están inactivos/,
+    )
+  })
+
+  it("rejects a repeated drill participant", async () => {
+    await expectParticipantsRejected(
+      [{ workerId: "wk-a1", present: true }, { workerId: "wk-a1", present: false }],
+      /^1 participante\(s\) vienen repetidos en la lista\.$/,
+    )
   })
 
   it("completes a drill that needs improvement, deriving a CAPA action with responsible and target date", async () => {
     const service = await import("@/lib/services/prevention-emergency")
     const completed = await service.completeEmergencyDrill({
       drillId, expectedVersion: drillVersion,
-      executedAt: "2026-09-10T14:20:00.000Z",
+      executedAt: DRILL_EXECUTED_AT,
       durationMinutes: 12,
       evacuationSeconds: 240,
       observations: "La ruta de evacuación del sector B estaba parcialmente obstruida.",
@@ -173,7 +306,7 @@ describeIf("Emergencias on real PostgreSQL", () => {
     const service = await import("@/lib/services/prevention-emergency")
     await expect(service.completeEmergencyDrill({
       drillId, expectedVersion: 99,
-      executedAt: "2026-09-10T14:20:00.000Z",
+      executedAt: DRILL_EXECUTED_AT,
       outcome: "satisfactory",
       participants: [{ workerId: "wk-a1", present: true }],
     }, EXECUTOR)).rejects.toThrow()
@@ -183,6 +316,324 @@ describeIf("Emergencias on real PostgreSQL", () => {
     const service = await import("@/lib/services/prevention-emergency")
     expect(await service.listEmergencyPlans(OUTSIDER)).toEqual([])
     expect(await service.getEmergencyPlanDetail(planId, OUTSIDER)).toBeNull()
+  })
+
+  /* ── EMERGENCIAS-06 · el simulacro se realizó, no se realizará ───────────── */
+
+  it("refuses a drill executed in the future or before the date it was scheduled for", async () => {
+    const service = await import("@/lib/services/prevention-emergency")
+    const scheduledFor = iso(-3 * HORA)
+    const drill = await service.scheduleEmergencyDrill({
+      planId, scenarioType: "derrame", scheduledFor,
+    }, EXECUTOR)
+
+    const base = {
+      drillId: drill.id, expectedVersion: drill.version,
+      outcome: "satisfactory" as const,
+      participants: [{ workerId: "wk-a1", present: true }],
+    }
+
+    // Antes se aceptaba cualquier instante: un simulacro "realizado" el año que
+    // viene acreditaba una actividad del PDTP con fecha futura.
+    await expect(service.completeEmergencyDrill({ ...base, executedAt: iso(30 * DIA) }, EXECUTOR))
+      .rejects.toThrow(/no puede haberse realizado en el futuro/)
+
+    // Y tampoco antes de la fecha para la que se programó.
+    await expect(service.completeEmergencyDrill({ ...base, executedAt: iso(-4 * HORA) }, EXECUTOR))
+      .rejects.toThrow(/antes de la fecha para la que fue programado/)
+
+    // Nada de eso dejó el simulacro tocado.
+    const [pendiente] = await getDb().select().from(schema.preventionEmergencyDrills)
+      .where(eq(schema.preventionEmergencyDrills.id, drill.id))
+    expect(pendiente?.status).toBe("scheduled")
+    expect(pendiente?.executedAt).toBeNull()
+
+    // El borde de abajo es inclusivo: realizarlo justo a la hora programada vale.
+    const completado = await service.completeEmergencyDrill({ ...base, executedAt: scheduledFor }, EXECUTOR)
+    expect(completado.status).toBe("completed")
+  })
+
+  /* ── EMERGENCIAS-05 · el simulacro acredita el programa anual ────────────── */
+
+  it("declares which PDTP activities the drills accredit, deduplicated and sorted, and carries them to the connector", async () => {
+    const service = await import("@/lib/services/prevention-emergency")
+    const connectors = await import("@/lib/services/pdtp-adapters/pdtp-accreditation-connectors")
+    const accredit = vi.mocked(connectors.onEmergencyDrillCompleted)
+    accredit.mockClear()
+
+    // Estado previo: la columna existía y nadie la escribía nunca.
+    const [antes] = await getDb().select().from(schema.preventionEmergencyPlans)
+      .where(eq(schema.preventionEmergencyPlans.id, planId))
+    expect(antes?.pdtpActivityNumbers).toBeNull()
+
+    await expect(service.setEmergencyPlanPdtpActivities({
+      planId, expectedVersion: 99, pdtpActivityNumbers: [84],
+    }, MANAGER)).rejects.toThrow(/cambió mientras/)
+
+    // El plan está APROBADO y aun así admite el cableado: los simulacros sólo
+    // existen sobre un plan aprobado, y esto no es contenido del documento.
+    const conCableado = await service.setEmergencyPlanPdtpActivities({
+      planId, expectedVersion: planVersion, pdtpActivityNumbers: [84, 83, 84],
+    }, MANAGER)
+    planVersion = conCableado.version
+    expect(conCableado.status).toBe("approved")
+    expect(conCableado.pdtpActivityNumbers).toEqual([83, 84])
+
+    const historia = await getDb().select().from(schema.preventionEmergencyHistory)
+      .where(eq(schema.preventionEmergencyHistory.entityId, planId))
+      .orderBy(asc(schema.preventionEmergencyHistory.createdAt))
+    expect(historia.map((row) => row.changeType)).toContain("pdtp_activities_set")
+
+    // La prueba del hallazgo: completar un simulacro ahora SÍ llega al motor de
+    // acreditación. Antes el conector era código inalcanzable.
+    const drill = await service.scheduleEmergencyDrill({
+      planId, scenarioType: "sismo", scheduledFor: iso(-2 * HORA),
+    }, EXECUTOR)
+    await service.completeEmergencyDrill({
+      drillId: drill.id, expectedVersion: drill.version, executedAt: iso(-1 * HORA),
+      outcome: "satisfactory",
+      participants: [{ workerId: "wk-a1", present: true }, { workerId: "wk-a2", present: true }],
+    }, EXECUTOR)
+
+    expect(accredit).toHaveBeenCalledTimes(1)
+    expect(accredit.mock.calls[0]![0]).toMatchObject({
+      drillId: drill.id, worksiteId: "ws-em-a", activityNumbers: [83, 84], participantCount: 2,
+    })
+
+    // Y vaciarlo vuelve a apagar la acreditación, sin dejar un array vacío.
+    const sinCableado = await service.setEmergencyPlanPdtpActivities({
+      planId, expectedVersion: planVersion, pdtpActivityNumbers: [],
+    }, MANAGER)
+    planVersion = sinCableado.version
+    expect(sinCableado.pdtpActivityNumbers).toBeNull()
+
+    accredit.mockClear()
+    const mudo = await service.scheduleEmergencyDrill({
+      planId, scenarioType: "clima", scheduledFor: iso(-2 * HORA),
+    }, EXECUTOR)
+    await service.completeEmergencyDrill({
+      drillId: mudo.id, expectedVersion: mudo.version, executedAt: iso(-1 * HORA),
+      outcome: "satisfactory", participants: [{ workerId: "wk-a1", present: true }],
+    }, EXECUTOR)
+    expect(accredit).not.toHaveBeenCalled()
+
+    // Se restituye para que el resto de la suite vea el plan cableado.
+    const restituido = await service.setEmergencyPlanPdtpActivities({
+      planId, expectedVersion: planVersion, pdtpActivityNumbers: [84],
+    }, MANAGER)
+    planVersion = restituido.version
+  })
+
+  /* ── EMERGENCIAS-11 · el tope se aplica después del filtro por faena ─────── */
+
+  it("scopes the drill roster to the plan's worksite in SQL, not in memory", async () => {
+    const service = await import("@/lib/services/prevention-emergency")
+    const GLOBAL = { userId: "em-approver", scope: { mode: "all", ids: [] } as WorksiteScope, permissions: ["prevention:emergency:view"] }
+
+    // Con alcance global y sin faena, la consulta trae toda la dotación activa:
+    // es ahí donde el tope truncaba a unas faenas y a otras no.
+    const todas = await service.listEmergencyWorkers(GLOBAL)
+    expect(todas.map((worker) => worker.worksiteId)).toContain("ws-em-b")
+
+    const deLaFaena = await service.listEmergencyWorkers(GLOBAL, "ws-em-a")
+    expect(deLaFaena.map((worker) => worker.id).sort()).toEqual(["wk-a1", "wk-a2", "wk-a3"])
+
+    // Una faena fuera del alcance no devuelve dotación ajena.
+    expect(await service.listEmergencyWorkers(MANAGER, "ws-em-b")).toEqual([])
+  })
+
+  /* ── EMERGENCIAS-04 · el inventario deja de ser de sólo alta ─────────────── */
+
+  async function emergencyAttention() {
+    const { getPreventionAttention } = await import("@/lib/services/prevention-attention")
+    const items = await getPreventionAttention({
+      worksiteIds: ["ws-em-a"],
+      includeActions: false,
+      includeEvaluations: false,
+      includePpa: false,
+      includeEmergencyResources: true,
+    })
+    return items.filter((item) => item.id === `emergency_resource:${resourceId}`)
+  }
+
+  /**
+   * EMERGENCIAS-08: el bloque de vencimientos era todo-o-nada. `includeCompliance`
+   * mezclaba dos fuentes con permisos distintos, así que quien sólo veía Higiene
+   * recibía además el inventario de emergencia de la faena — y al revés.
+   */
+  it("keeps each expiry source behind its own permission flag", async () => {
+    const { getPreventionAttention } = await import("@/lib/services/prevention-attention")
+    const base = {
+      worksiteIds: ["ws-em-a"],
+      includeActions: false, includeEvaluations: false, includePpa: false,
+    }
+
+    // El equipo está vencido y aun así no aparece si sólo se encendió higiene.
+    const soloHigiene = await getPreventionAttention({ ...base, includeProtocols: true })
+    expect(soloHigiene.filter((item) => item.kind === "emergency_resource")).toEqual([])
+
+    const soloEmergencias = await getPreventionAttention({ ...base, includeEmergencyResources: true })
+    expect(soloEmergencias.filter((item) => item.kind === "emergency_resource")).toHaveLength(1)
+    expect(soloEmergencias.filter((item) => item.kind === "protocol")).toEqual([])
+
+    // Sin ninguna fuente encendida no se consulta nada.
+    expect(await getPreventionAttention(base)).toEqual([])
+  })
+
+  it("updating a resource takes it out of the prevention attention inbox", async () => {
+    const service = await import("@/lib/services/prevention-emergency")
+
+    // Antes: el equipo vencido no tenía forma de actualizarse, así que el aviso
+    // se quedaba encendido para siempre.
+    expect(await emergencyAttention()).toHaveLength(1)
+
+    // El plan ya está aprobado y aun así el equipo se mantiene: pertenece a la
+    // faena, no al documento.
+    const updated = await service.updateEmergencyResource({
+      resourceId,
+      name: "Extintor PQS 10 kg", kind: "Extintor", location: "Portería",
+      lastInspectedAt: "2026-08-01", nextInspectionAt: "2030-01-01", expiresAt: "2030-01-01",
+      status: "operational",
+    }, MANAGER)
+    expect(updated.expiresAt).toBe("2030-01-01")
+
+    expect(await emergencyAttention()).toEqual([])
+
+    const historia = await getDb().select().from(schema.preventionEmergencyHistory)
+      .where(eq(schema.preventionEmergencyHistory.entityId, resourceId))
+      .orderBy(asc(schema.preventionEmergencyHistory.createdAt))
+    expect(historia.map((row) => row.changeType)).toEqual(["added", "updated"])
+  })
+
+  it("decommissioning a resource keeps it out of the inbox and counts it as out of service", async () => {
+    const service = await import("@/lib/services/prevention-emergency")
+    await service.updateEmergencyResource({
+      resourceId,
+      name: "Extintor PQS 10 kg", kind: "Extintor", location: "Portería",
+      // Vuelve a quedar vencido: sin la baja, esto lo devolvería a la bandeja.
+      nextInspectionAt: "2020-01-01", expiresAt: "2020-01-01",
+      status: "out_of_service",
+    }, MANAGER)
+
+    expect(await emergencyAttention()).toEqual([])
+
+    const counts = await service.getEmergencyDashboardCounts(APPROVER)
+    expect(counts.totalResources).toBe(1)
+    expect(counts.resourcesOutOfService).toBe(1)
+
+    const historia = await getDb().select().from(schema.preventionEmergencyHistory)
+      .where(eq(schema.preventionEmergencyHistory.entityId, resourceId))
+      .orderBy(asc(schema.preventionEmergencyHistory.createdAt))
+    expect(historia.map((row) => row.changeType)).toEqual(["added", "updated", "decommissioned"])
+  })
+
+  it("refuses to update a resource of a worksite outside the scope", async () => {
+    const service = await import("@/lib/services/prevention-emergency")
+    await expect(service.updateEmergencyResource({
+      resourceId, name: "Extintor ajeno", kind: "Extintor", location: "Portería", status: "operational",
+    }, OUTSIDER)).rejects.toThrow(/fuera de alcance/)
+  })
+
+  /* ── EMERGENCIAS-10 · cancelar un simulacro programado ───────────────────── */
+
+  it("cancels a scheduled drill with a reason, bumping its version and leaving history", async () => {
+    const service = await import("@/lib/services/prevention-emergency")
+    const programado = await service.scheduleEmergencyDrill({
+      planId, scenarioType: "sismo", scheduledFor: SECOND_DRILL_SCHEDULED_FOR,
+    }, EXECUTOR)
+    expect(programado.version).toBe(1)
+
+    await expect(service.cancelEmergencyDrill({
+      drillId: programado.id, expectedVersion: 99, reason: "Se suspendió por alerta meteorológica.",
+    }, EXECUTOR)).rejects.toThrow(/cambió mientras/)
+
+    const cancelado = await service.cancelEmergencyDrill({
+      drillId: programado.id, expectedVersion: programado.version,
+      reason: "Se suspendió por alerta meteorológica en la faena.",
+    }, EXECUTOR)
+    expect(cancelado.status).toBe("cancelled")
+    expect(cancelado.version).toBe(programado.version + 1)
+
+    const historia = await getDb().select().from(schema.preventionEmergencyHistory)
+      .where(eq(schema.preventionEmergencyHistory.entityId, programado.id))
+      .orderBy(asc(schema.preventionEmergencyHistory.createdAt))
+    expect(historia.map((row) => row.changeType)).toEqual(["scheduled", "cancelled"])
+    expect(historia[1]?.reason).toBe("Se suspendió por alerta meteorológica en la faena.")
+
+    // Un simulacro cancelado ya no vuelve a cancelarse ni a completarse.
+    await expect(service.cancelEmergencyDrill({
+      drillId: programado.id, expectedVersion: cancelado.version, reason: "Motivo suficientemente largo.",
+    }, EXECUTOR)).rejects.toThrow(/programado puede cancelarse/)
+    await expect(service.completeEmergencyDrill({
+      drillId: programado.id, expectedVersion: cancelado.version,
+      executedAt: SECOND_DRILL_EXECUTED_AT, outcome: "satisfactory",
+      participants: [{ workerId: "wk-a1", present: true }],
+    }, EXECUTOR)).rejects.toThrow(/programado puede completarse/)
+  })
+
+  /* ── EMERGENCIAS-02 · archivar libera la faena para el plan siguiente ────── */
+
+  it("blocks a second live plan for the worksite while the first one is not archived", async () => {
+    const service = await import("@/lib/services/prevention-emergency")
+    // Con mensaje de dominio, no el error crudo del índice único.
+    const attempt = service.createEmergencyPlan({
+      worksiteId: "ws-em-a", title: "Plan de emergencia 2027",
+    }, MANAGER)
+    await expect(attempt).rejects.toThrow(service.EmergencyDomainError)
+    await expect(attempt).rejects.toThrow(/ya tiene el plan PE-\d{4}-\w+ vigente/)
+  })
+
+  it("archives the plan with a reason and frees the worksite for the next plan", async () => {
+    const service = await import("@/lib/services/prevention-emergency")
+
+    await expect(service.archiveEmergencyPlan({
+      planId, expectedVersion: planVersion, reason: "Corto",
+    }, APPROVER)).rejects.toThrow()
+
+    await expect(service.archiveEmergencyPlan({
+      planId, expectedVersion: 99, reason: "Cierre del período anual del plan.",
+    }, APPROVER)).rejects.toThrow(/cambió mientras/)
+
+    // Archivar pesa lo mismo que aprobar: administrar el plan no alcanza.
+    await expect(service.archiveEmergencyPlan({
+      planId, expectedVersion: planVersion, reason: "Cierre del período anual del plan.",
+    }, MANAGER)).rejects.toThrow(/fuera de alcance/)
+
+    const archivado = await service.archiveEmergencyPlan({
+      planId, expectedVersion: planVersion, reason: "Cierre del período anual del plan.",
+    }, APPROVER)
+    expect(archivado.status).toBe("archived")
+    expect(archivado.version).toBe(planVersion + 1)
+
+    const historia = await getDb().select().from(schema.preventionEmergencyHistory)
+      .where(eq(schema.preventionEmergencyHistory.entityId, planId))
+      .orderBy(asc(schema.preventionEmergencyHistory.createdAt))
+    // El ciclo de vida del plan, aislado de las entradas de cableado al PDTP
+    // que EMERGENCIAS-05 intercala en medio (`pdtp_activities_set`): lo que esta
+    // prueba fija es que archivar deja su marca al final, no el largo total del
+    // historial.
+    expect(historia.map((row) => row.changeType).filter((type) => type !== "pdtp_activities_set"))
+      .toEqual(["created", "approved", "archived"])
+    expect(historia.at(-1)?.changeType).toBe("archived")
+    expect(historia.at(-1)?.reason).toBe("Cierre del período anual del plan.")
+
+    // La prueba del hallazgo: el índice parcial quedó libre y la faena puede
+    // emitir el plan del período siguiente.
+    const siguiente = await service.createEmergencyPlan({
+      worksiteId: "ws-em-a", title: "Plan de emergencia 2027",
+    }, MANAGER)
+    expect(siguiente.status).toBe("draft")
+    expect(siguiente.worksiteId).toBe("ws-em-a")
+    expect(siguiente.id).not.toBe(planId)
+
+    // Y el inventario de la faena sobrevivió al cambio de plan.
+    const resources = await getDb().select().from(schema.preventionEmergencyResources)
+    expect(resources).toHaveLength(1)
+    expect(resources[0]?.worksiteId).toBe("ws-em-a")
+
+    await expect(service.archiveEmergencyPlan({
+      planId, expectedVersion: archivado.version, reason: "Cierre del período anual del plan.",
+    }, APPROVER)).rejects.toThrow(/ya está archivado/)
   })
 })
 
@@ -196,6 +647,9 @@ async function seedFixture(database: ReturnType<typeof drizzle<typeof schema>>) 
     { id: "wk-a1", rut: "11111111-1", firstName: "Ana", lastName: "Pérez", worksiteId: "ws-em-a", createdAt: now },
     { id: "wk-a2", rut: "22222222-2", firstName: "Bruno", lastName: "Soto", worksiteId: "ws-em-a", createdAt: now },
     { id: "wk-a3", rut: "33333333-3", firstName: "Carla", lastName: "Díaz", worksiteId: "ws-em-a", createdAt: now },
+    // Pertenece a la faena A pero está inactivo: aísla la vigencia de la
+    // pertenencia a la faena como motivo de rechazo.
+    { id: "wk-a4", rut: "44444444-4", firstName: "Diego", lastName: "Rojas", worksiteId: "ws-em-a", isActive: false, createdAt: now },
     { id: "wk-b1", rut: "66666666-6", firstName: "Felipe", lastName: "Vera", worksiteId: "ws-em-b", createdAt: now },
   ])
   await database.insert(schema.users).values([

@@ -13,6 +13,7 @@ import {
 } from "@/lib/services/prevention-cphs"
 import { assessMeetingCadence, isMandateExpired } from "@/lib/prevention/cphs"
 import { CommitteeList } from "./committee-list"
+import { todayInChile } from "@/lib/utils"
 
 export const metadata: Metadata = { title: "CPHS y gobernanza" }
 
@@ -36,7 +37,7 @@ export default async function CphsPage() {
     canReview ? listManagementReviews(access) : Promise.resolve([]),
     canManage || canReview ? listCommitteeAssignees(access) : Promise.resolve([]),
   ])
-  const today = new Date().toISOString().slice(0, 10)
+  const today = todayInChile()
   const now = new Date().toISOString()
 
   return (

@@ -5,16 +5,11 @@
  * definidos en `db/schema/prevention/pdtp.ts`.
  */
 
+import { todayInChile } from "@/lib/utils"
 
 export const PDTP_ACTION_ESTADOS = ["pendiente", "en_proceso", "completado", "verificado", "reabierto"] as const
 export const PDTP_ACTION_PRIORIDADES = ["alta", "media", "baja"] as const
 export const PDTP_CHECKLIST_STATUS = ["pendiente", "en_proceso", "completado"] as const
-const CHILE_DATE_FORMATTER = new Intl.DateTimeFormat("en-CA", {
-  timeZone: "America/Santiago",
-  year: "numeric",
-  month: "2-digit",
-  day: "2-digit",
-})
 
 /** Días de plazo por defecto según prioridad de la acción. */
 export const PDTP_PLAZO_DIAS_POR_PRIORIDAD: Record<string, number> = {
@@ -123,7 +118,7 @@ export function pdtpChecklistResponseId(instanceId: string, seccionId: string, i
  * plazo y corría un día los plazos generados de noche.
  */
 function chileDateIso(date: Date): string {
-  return CHILE_DATE_FORMATTER.format(date)
+  return todayInChile(date)
 }
 
 /** Suma hoy (ISO date, calendario Chile) para calcular plazo desde prioridad. */

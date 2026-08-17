@@ -4,7 +4,7 @@ import path from "node:path"
 import ExcelJS from "exceljs"
 import { PDTP_2026_INVARIANTS, PDTP_2026_PROGRAM_SOURCE } from "../lib/services/pdtp-adapters/contract-2026"
 import { extractPdtpCatalogFromWorkbook } from "../lib/services/prevention-pdtp-catalog"
-import { validateLoadedPdtpWorkbook, validatePdtpXlsxEnvelope } from "../lib/services/pdtp/xlsx-security"
+import { validateLoadedWorkbook, validateXlsxEnvelope } from "../lib/services/xlsx-security"
 
 type Strategy = "dry-run" | "stage" | "apply" | "rollback"
 type WorksiteStrategy = "none" | "single"
@@ -126,7 +126,7 @@ function assertReferenceCounts(catalog: ReturnType<typeof extractPdtpCatalogFrom
 async function inspectSource(options: CliOptions) {
   const filePath = path.resolve(process.cwd(), options.file!)
   const bytes = await readFile(filePath)
-  validatePdtpXlsxEnvelope({
+  validateXlsxEnvelope({
     name: path.basename(filePath),
     type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     size: bytes.length,
@@ -139,7 +139,7 @@ async function inspectSource(options: CliOptions) {
   }
   const workbook = new ExcelJS.Workbook()
   await workbook.xlsx.load(bytes as never)
-  validateLoadedPdtpWorkbook(workbook)
+  validateLoadedWorkbook(workbook)
   const catalog = extractPdtpCatalogFromWorkbook(workbook)
   return { filePath, bytes, checksumSha256, sourceOfficial, catalog, counts: assertReferenceCounts(catalog) }
 }

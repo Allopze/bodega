@@ -1,15 +1,11 @@
 import { z } from "zod"
+// Día calendario en Chile: una fecha `YYYY-MM-DD` no es un instante, así que
+// compararla contra UTC adelanta o atrasa el corte según la hora del envío.
+import { todayInChile } from "@/lib/utils"
 
 const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Fecha inválida")
 const instant = z.string().datetime({ offset: true })
 const reason = z.string().trim().min(10).max(3000)
-
-// Día calendario en Chile: una fecha `YYYY-MM-DD` no es un instante, así que
-// compararla contra UTC adelanta o atrasa el corte según la hora del envío.
-const CHILE_DATE_FORMAT = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Santiago", year: "numeric", month: "2-digit", day: "2-digit" })
-function todayInChile() {
-  return CHILE_DATE_FORMAT.format(new Date())
-}
 
 /** Tolerancia para relojes desincronizados del dispositivo que registra en terreno. */
 const CLOCK_SKEW_MS = 120_000

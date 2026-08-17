@@ -8,7 +8,30 @@ import { recordAudit } from "@/lib/audit"
 import { addExportMetadataSheet } from "@/lib/reports/export"
 import { sanitizeCell as safe } from "@/lib/reports/export-module/excel-builder"
 import { getPublishedRiskMatrix } from "@/lib/services/prevention-risk-legal"
+import { riskLevelLabel } from "@/lib/prevention/risk-levels"
 import { encodeContentDisposition } from "@/lib/utils"
+
+/**
+ * El nivel se almacena normalizado en inglés (`high`), pero este archivo lo lee
+ * un fiscalizador: sale como "Alto", igual que en pantalla. Es el único lector
+ * del nivel que no pasaba por `riskLevelLabel()`.
+ */
+function level(value: unknown) {
+  return value ? riskLevelLabel(String(value)) : ""
+}
+
+/**
+ * Las dimensiones son un JSON (`{"assessment":"high"}`): volcarlo crudo entrega
+ * una celda ilegible con el nivel en inglés dentro. Se traduce el nivel y se
+ * aplana a "clave: valor".
+ */
+function dimensions(value: unknown) {
+  if (!value) return ""
+  if (typeof value !== "object") return String(value)
+  return Object.entries(value as Record<string, unknown>)
+    .map(([key, raw]) => `${key}: ${key === "assessment" ? level(raw) : String(raw ?? "")}`)
+    .join(" · ")
+}
 
 function style(sheet: { getRow: (row: number) => { font: object; fill: object } }) {
   sheet.getRow(1).font = { bold: true, color: { argb: "FFFFFFFF" } }
@@ -36,7 +59,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
       { header: "Evaluación residual", key: "residual", width: 28 }, { header: "Nivel residual", key: "residualLevel", width: 16 }, { header: "Crítico", key: "critical", width: 10 },
       { header: "Responsable", key: "responsible", width: 24 }, { header: "Evidencia", key: "evidence", width: 34 }, { header: "Metodología especial", key: "special", width: 28 },
     ]
-    for (const row of detail.entries) matrix.addRow({ worksite: safe(detail.worksiteName), version: detail.matrix.matrixVersion, process: safe(row.process.name), task: safe(row.task.name), position: safe(row.position.name), code: safe(row.entry.hazardCode), hazard: safe(row.entry.hazard), factor: safe(row.entry.riskFactor), damage: safe(row.entry.expectedEventOrDamage), exposed: safe(row.entry.exposedPeopleDescription), count: row.entry.exposedPeopleCount ?? "", gender: safe(row.entry.genderConsiderations), sensitivity: safe(row.entry.sensitiveWorkerConsiderations), inherent: safe(row.entry.inherentDimensions), inherentLevel: safe(row.entry.inherentLevel), residual: safe(row.entry.residualDimensions), residualLevel: safe(row.entry.residualLevel), critical: row.entry.isCritical ? "Sí" : "No", responsible: safe(row.entry.responsibleSnapshot), evidence: safe(row.entry.evidenceReference), special: safe(row.entry.specialMethodologyReference) })
+    for (const row of detail.entries) matrix.addRow({ worksite: safe(detail.worksiteName), version: detail.matrix.matrixVersion, process: safe(row.process.name), task: safe(row.task.name), position: safe(row.position.name), code: safe(row.entry.hazardCode), hazard: safe(row.entry.hazard), factor: safe(row.entry.riskFactor), damage: safe(row.entry.expectedEventOrDamage), exposed: safe(row.entry.exposedPeopleDescription), count: row.entry.exposedPeopleCount ?? "", gender: safe(row.entry.genderConsiderations), sensitivity: safe(row.entry.sensitiveWorkerConsiderations), inherent: safe(dimensions(row.entry.inherentDimensions)), inherentLevel: level(row.entry.inherentLevel), residual: safe(dimensions(row.entry.residualDimensions)), residualLevel: level(row.entry.residualLevel), critical: row.entry.isCritical ? "Sí" : "No", responsible: safe(row.entry.responsibleSnapshot), evidence: safe(row.entry.evidenceReference), special: safe(row.entry.specialMethodologyReference) })
     style(matrix); matrix.autoFilter = { from: "A1", to: "U1" }
     const controls = workbook.addWorksheet("Controles")
     controls.columns = [{ header: "Peligro ID", key: "risk", width: 26 }, { header: "Descripción", key: "description", width: 44 }, { header: "Jerarquía", key: "hierarchy", width: 18 }, { header: "Existente", key: "existing", width: 12 }, { header: "Crítico", key: "critical", width: 12 }, { header: "Estándar de desempeño", key: "standard", width: 42 }, { header: "Frecuencia", key: "frequency", width: 18 }, { header: "Responsable", key: "responsible", width: 24 }, { header: "Estado", key: "status", width: 16 }, { header: "Eficacia", key: "effectiveness", width: 16 }, { header: "Evidencia", key: "evidence", width: 36 }]

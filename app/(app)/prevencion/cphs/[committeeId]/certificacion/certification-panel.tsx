@@ -30,6 +30,7 @@ import {
   createCertificationDossierAction,
   recordAuditResultAction,
   recordManualEvaluationAction,
+  reopenCertificationDossierAction,
   submitCertificationDossierAction,
   updateDossierAdministrativeDataAction,
 } from "../../actions"
@@ -81,6 +82,7 @@ export function CertificationHeaderActions({ committeeId, selected }: {
       {selected?.status === "draft" && <AdministrativeDialog dossier={selected} />}
       {selected?.status === "draft" && <SubmitDossierDialog dossier={selected} />}
       {selected?.status === "submitted" && <AuditResultDialog dossier={selected} />}
+      {selected?.status === "rejected" && <ReopenDossierDialog dossier={selected} />}
     </>
   )
 }
@@ -449,6 +451,44 @@ function selectedSummary(dossier: Dossier) {
   if (dossier.summary.gaps === 0) return "El expediente cumple todos los requisitos aplicables."
   const titles = dossier.gaps.map((gap) => gap.title).join("; ")
   return `Se presentará con ${dossier.summary.gaps} brecha(s): ${titles}.`
+}
+
+function ReopenDossierDialog({ dossier }: { dossier: Dossier }) {
+  const [open, setOpen] = React.useState(false)
+  const operation = useOperation()
+
+  function submit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const form = new FormData(event.currentTarget)
+    operation.run(() => reopenCertificationDossierAction({
+      dossierId: dossier.id,
+      expectedVersion: dossier.version,
+      reason: form.get("reason"),
+    }), () => setOpen(false))
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild><Button size="sm">Reabrir expediente</Button></DialogTrigger>
+      <DialogContent>
+        <form onSubmit={submit} className="space-y-4">
+          <DialogHeader>
+            <DialogTitle>Reabrir el expediente rechazado</DialogTitle>
+            <DialogDescription>
+              Vuelve a preparación para corregir y re-presentar. Los requisitos automáticos se evalúan
+              otra vez en vivo, las declaraciones manuales se conservan y las acciones correctivas ya
+              abiertas por cada brecha no se duplican.
+            </DialogDescription>
+          </DialogHeader>
+          <Field label="Motivo" hint="Mínimo 10 caracteres. Queda en el historial del expediente.">
+            <Textarea name="reason" required minLength={10} maxLength={1000} rows={3} />
+          </Field>
+          {operation.message && <p role="status" className="text-sm">{operation.message}</p>}
+          <DialogFooter><Button type="submit" disabled={operation.pending}>Reabrir</Button></DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
 }
 
 function AuditResultDialog({ dossier }: { dossier: Dossier }) {

@@ -35,6 +35,7 @@ import { nanoid } from "@/lib/id"
 import { cleanRut } from "@/lib/rut"
 import { absAmount, amountsWithinTolerance, compareAmounts } from "./money"
 import { daysOverdue, recomputeInvoicePaymentStatus, recordInvoiceEvent } from "./invoices"
+import { todayInChile } from "@/lib/utils"
 
 export type DuplicateClassification = "probable" | "possible" | "conflict"
 
@@ -411,7 +412,7 @@ export async function mergeDuplicate(input: {
     // La descartada queda anulada: sale de toda agregación sin desaparecer.
     await tx.update(billingInvoices).set({
       documentStatus: "void",
-      notes: sql`coalesce(${billingInvoices.notes} || E'\n', '') || ${`Fusionada con el documento ${keep.docType}/${keep.folio} el ${new Date().toISOString().slice(0, 10)}.`}`,
+      notes: sql`coalesce(${billingInvoices.notes} || E'\n', '') || ${`Fusionada con el documento ${keep.docType}/${keep.folio} el ${todayInChile()}.`}`,
       updatedAt: new Date().toISOString(),
     }).where(eq(billingInvoices.id, input.dropId))
 

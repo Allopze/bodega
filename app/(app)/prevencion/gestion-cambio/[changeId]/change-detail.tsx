@@ -23,6 +23,7 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Field } from "@/components/ui/field"
 import { useOperation } from "@/lib/hooks/use-operation"
+import { addDaysToPlainDate, todayInChile } from "@/lib/utils"
 
 interface RequestInfo {
   id: string
@@ -198,7 +199,11 @@ function EvaluateDialog({ changeRequestId, assessment, assignees }: {
           </DialogHeader>
           <Checkbox label="El cambio impacta esta dimensión" checked={impacted} onChange={(event) => setImpacted(event.target.checked)} />
           <Field label="Notas" hint="Opcional."><Textarea name="notes" defaultValue={assessment.notes ?? ""} maxLength={3000} /></Field>
-          <Checkbox label="Requiere una acción correctiva o preventiva nueva" checked={actionRequired} onChange={(event) => setActionRequired(event.target.checked)} />
+          {/* Requerir una acción implica declarar la dimensión impactada: es lo
+              que exige `prevention_change_assessment_impact_consistent` y lo que
+              valida `evaluateSchema`. Marcarla aquí evita ofrecer una
+              combinación que el servidor va a rechazar igual. */}
+          <Checkbox label="Requiere una acción correctiva o preventiva nueva" checked={actionRequired} onChange={(event) => { setActionRequired(event.target.checked); if (event.target.checked) setImpacted(true) }} />
           {actionRequired && (
             <div className="space-y-3 rounded-lg border border-[var(--color-border)] p-3">
               <Field label="Descripción de la acción">
@@ -262,7 +267,18 @@ function ApproveDialog({ changeRequestId, version, ready }: { changeRequestId: s
             <DialogTitle>Aprobar cambio</DialogTitle>
             <DialogDescription>Declara cuándo se revisará si la evaluación siguió siendo válida.</DialogDescription>
           </DialogHeader>
-          <Field label="Fecha de revisión posterior" required><DatePicker name="plannedReviewDate" /></Field>
+          {/* Acotada entre mañana y 24 meses, que es lo mismo que valida
+              `approveSchema`: no ofrecer una fecha que el servidor rechaza, y
+              tampoco el "año 2199" con el que se cumplía el requisito sin
+              comprometerse a nada (MOC-05). Desde que la fecha alimenta la
+              bandeja de Prevención, elegirla tiene consecuencias. */}
+          <Field label="Fecha de revisión posterior" required hint="Entre mañana y 24 meses. Llegado el día, el cambio aparece en la bandeja de Prevención.">
+            <DatePicker
+              name="plannedReviewDate"
+              min={addDaysToPlainDate(todayInChile(), 1)}
+              max={addDaysToPlainDate(todayInChile(), 730)}
+            />
+          </Field>
           {operation.message && <p role="status" className="text-sm">{operation.message}</p>}
           <DialogFooter><Button type="submit" disabled={operation.pending}>Aprobar</Button></DialogFooter>
         </form>

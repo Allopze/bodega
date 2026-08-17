@@ -140,6 +140,8 @@ export default async function CapaDetailPage({ params }: { params: Promise<{ id:
             targetDate: bundle.action.targetDate,
             responsibleUserId: bundle.action.responsibleUserId,
             reconciliationStatus: bundle.action.reconciliationStatus,
+            sourceType: bundle.action.sourceType,
+            sourceId: bundle.action.sourceId,
           }}
           users={users}
           permissions={{

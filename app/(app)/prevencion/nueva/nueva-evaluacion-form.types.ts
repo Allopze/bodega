@@ -1,6 +1,7 @@
 "use client"
 
 import type { SelectOption } from "@/lib/sst/types"
+import { todayInChile } from "@/lib/utils"
 
 export interface WorkerOption {
   id: string
@@ -39,7 +40,7 @@ export const MOTIVO_OPTIONS = [
   { value: "otro",                           label: "Otro" },
 ]
 
-export const today = new Date().toISOString().slice(0, 10)
+export const today = todayInChile()
 
 export function getEvaluationTypeLabel(def: DefinicionOption) {
   if (def.tipo === "seguimiento") return "Control de seguimiento"

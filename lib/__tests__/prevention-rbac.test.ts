@@ -56,6 +56,7 @@ describe("prevention module RBAC", () => {
       "prevention:risk:review",
       "prevention:risk:approve",
       "prevention:risk:publish",
+      "prevention:risk:override_segregation",
       "prevention:legal:view",
       "prevention:legal:assess",
       "prevention:legal:approve_applicability",
@@ -255,6 +256,14 @@ describe("prevention module RBAC", () => {
     expect(rolesFor("prevention:capa:verify")).toEqual(["administrador", "jefa_chome", "prevencionista"])
     expect(rolesFor("prevention:capa:close")).toEqual(["administrador", "jefa_chome"])
     expect(rolesFor("prevention:capa:override_segregation")).toEqual(["administrador"])
+    // MIPER-08: verificar un control MIPER se segrega por identidad igual que
+    // CAPA, así que su escape vive en el mismo lugar y con los mismos roles.
+    for (const permission of ["prevention:risk:override_segregation"]) {
+      expect(preventionModule.permissions).toContain(permission)
+      expect(Object.keys(preventionModule.permissionMeta)).toContain(permission)
+      expect(ALL_MODULE_PERMISSIONS).toContain(permission)
+    }
+    expect(rolesFor("prevention:risk:override_segregation")).toEqual(["administrador"])
     expect(rolesFor("prevention:capa:reconcile")).toEqual(["administrador"])
     // Misma política para el reinicio de faena tras un accidente grave: quien
     // investigó o verificó las medidas no se autoriza a sí mismo el reinicio.

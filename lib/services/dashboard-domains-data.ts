@@ -10,7 +10,8 @@ import type { Session } from "next-auth"
 import { db } from "@/db"
 import {
   fleetVehicleDocuments, fuelMonthlyStatements, fuelVehicles, purchaseOrders, receiptItems, receipts,
-  preventionChangeRequests, preventionCommitteeAgreements, preventionCommitteeMeetings,
+  preventionCapaActions, preventionChangeRequests, preventionCommitteeAgreements,
+  preventionCommitteeMeetings,
   preventionCommittees, preventionEmergencyDrills, preventionExposureGroups,
   preventionExposureMeasurements, preventionInspectionFindings,
   preventionInspectionRuns, preventionWorkPermits,
@@ -197,11 +198,15 @@ export async function getFieldControlSummary(
       completed: sql<number>`COUNT(*) FILTER (WHERE ${preventionEmergencyDrills.status} = 'completed')::int`,
     }).from(preventionEmergencyDrills).where(drillScope),
 
+    // Un acuerdo está abierto cuando su CAPA lo está: el acuerdo ya no guarda
+    // estado propio (era un espejo que nadie actualizaba, y esta cifra daba
+    // cero siempre). Mismo predicado de "abierta" que el filtro `open` de CAPA.
     db.select({ value: count() })
       .from(preventionCommitteeAgreements)
       .innerJoin(preventionCommitteeMeetings, eq(preventionCommitteeAgreements.meetingId, preventionCommitteeMeetings.id))
       .innerJoin(preventionCommittees, eq(preventionCommitteeMeetings.committeeId, preventionCommittees.id))
-      .where(and(committeeScope, eq(preventionCommitteeAgreements.status, "open"))),
+      .innerJoin(preventionCapaActions, eq(preventionCommitteeAgreements.capaActionId, preventionCapaActions.id))
+      .where(and(committeeScope, sql`${preventionCapaActions.status} NOT IN ('closed', 'cancelled')`)),
 
     db.select({ value: count() })
       .from(preventionExposureMeasurements)

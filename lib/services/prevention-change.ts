@@ -3,6 +3,7 @@ import { z } from "zod"
 import type { AnyPgColumn } from "drizzle-orm/pg-core"
 import { db, type DB, type Tx } from "@/db"
 import {
+  preventionCapaActions,
   preventionChangeAssessments,
   preventionChangeHistory,
   preventionChangeRequests,
@@ -12,8 +13,13 @@ import {
 import type { WorksiteScope } from "@/lib/auth/scope"
 import { nanoid } from "@/lib/id"
 import { assessChangeReadiness, CHANGE_DIMENSIONS } from "@/lib/prevention/change"
-import { createCapaActionWithClient } from "@/lib/services/prevention-capa"
+import {
+  createCapaActionWithClient,
+  transitionCapaActionWithClient,
+  updateCapaActionWithClient,
+} from "@/lib/services/prevention-capa"
 import { getUserIdsWithPermission } from "@/lib/services/notification-targeting"
+import { addDaysToPlainDate, codeYear, todayInChile } from "@/lib/utils"
 
 type Client = DB | Tx
 
@@ -70,6 +76,39 @@ async function history(client: Client, args: {
 
 const OPEN_STATUSES = ["draft", "under_evaluation"]
 
+/** Estados de una acción CAPA que todavía se pueden reconducir o cancelar. */
+const OPEN_CAPA_STATUSES = ["pending", "in_progress", "pending_verification", "reopened"]
+
+/**
+ * Reconducir la CAPA derivada de una dimensión es parte del acto de reevaluarla:
+ * quien puede declarar que el cambio ya no exige acción es quien puede retirarla.
+ * Por eso el permiso lo aporta la operación y no el actor, igual que
+ * `worksite-lifecycle.ts` al cerrar una faena o `capaAccess` en el plan de acción
+ * del PDTP. El alcance sí es el del actor: no se toca una acción de otra faena.
+ */
+function capaAccessFor(access: ChangeAccess) {
+  return { ctx: { userId: access.userId }, scope: access.scope, permissions: ["prevention:capa:manage"] }
+}
+
+/**
+ * Toda mutación hija (evaluación de una dimensión de impacto) es una entrada
+ * del expediente del cambio: si no mueve `version`, el CAS de
+ * `approveChangeRequest` no ve la reevaluación y aprueba sobre una evaluación
+ * ya obsoleta. Mismo patrón que `bumpPermitVersion` en prevention-permits.ts.
+ *
+ * Se incrementa en SQL, no con `version + 1` leído en memoria, para no perder
+ * el bump si dos mutaciones hijas corren a la vez.
+ */
+async function bumpChangeVersion(client: Client, changeRequestId: string, now: string, status?: string) {
+  await client.update(preventionChangeRequests)
+    .set({
+      ...(status ? { status } : {}),
+      version: sql`${preventionChangeRequests.version} + 1`,
+      updatedAt: now,
+    })
+    .where(eq(preventionChangeRequests.id, changeRequestId))
+}
+
 /* ── Solicitud de cambio ──────────────────────────────────────────────────── */
 
 // Exportado para que createChangeRequestAction (Server Action) pueda
@@ -93,7 +132,7 @@ export async function createChangeRequest(input: unknown, access: ChangeAccess) 
     const [created] = await tx.insert(preventionChangeRequests).values({
       id: `pchg-${nanoid()}`,
       worksiteId: data.worksiteId,
-      code: `GC-${new Date().getUTCFullYear()}-${nanoid(6).toUpperCase()}`,
+      code: `GC-${codeYear()}-${nanoid(6).toUpperCase()}`,
       title: data.title,
       changeType: data.changeType,
       description: data.description,
@@ -127,6 +166,14 @@ export const evaluateSchema = z.object({
   priority: z.enum(["low", "medium", "high", "critical"]).default("medium"),
   targetDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
 }).superRefine((value, ctx) => {
+  // El CHECK `prevention_change_assessment_impact_consistent` ya rechaza la
+  // combinación, pero como error de base: llega a la pantalla como fallo de
+  // infraestructura y sin campo al que apuntar. Aquí se pinta en `impacted`,
+  // que es lo que el evaluador tiene que corregir. El CHECK sigue siendo la
+  // garantía; esto es sólo el mensaje.
+  if (!value.impacted && value.actionRequired) {
+    ctx.addIssue({ code: "custom", path: ["impacted"], message: "Una dimensión que requiere acción tiene que declararse impactada." })
+  }
   if (value.actionRequired && !value.actionDescription) {
     ctx.addIssue({ code: "custom", path: ["actionDescription"], message: "Una dimensión que requiere acción necesita describirla." })
   }
@@ -140,11 +187,33 @@ export const evaluateSchema = z.object({
  * común en la misma transacción (sourceType = 'change', sourceId = el
  * propio cambio): la acción correctiva es un prerrequisito para implementar
  * el cambio, no una consecuencia posterior a su aprobación.
+ *
+ * MOC-03 — reevaluar RECONCILIA la acción, no la duplica. Antes cada llamada
+ * creaba una CAPA nueva y pisaba `capaActionId`: reevaluar tres veces dejaba
+ * tres acciones vivas para el mismo hallazgo y dos de ellas huérfanas, sin nadie
+ * que las cerrara y contando de a tres en los tableros. Ahora:
+ *
+ *  · sigue requiriendo acción y la anterior está abierta → se conserva y se
+ *    actualiza con lo reevaluado (`updateCapaActionWithClient` no escribe si
+ *    nada cambió, así que reevaluar dos veces igual es un no-op);
+ *  · sigue requiriendo acción y la anterior está cerrada o cancelada → nace una
+ *    nueva, porque la exigencia sobrevivió a la acción que la atendía;
+ *  · se desmarca y la anterior está abierta → se cancela con motivo (nunca se
+ *    borra) y la dimensión queda sin acción.
  */
 export async function evaluateChangeDimension(input: unknown, access: ChangeAccess) {
   const data = evaluateSchema.parse(input)
   return db.transaction(async (tx) => {
-    const [request] = await tx.select().from(preventionChangeRequests).where(eq(preventionChangeRequests.id, data.changeRequestId)).limit(1)
+    // `for("update")` y no sólo el bump de versión: el bump cierra el orden
+    // "evalúo y después corre el CAS de la aprobación" (el CAS ya no calza),
+    // pero no el inverso — una aprobación que confirma mientras esta
+    // transacción está entre su lectura y sus escrituras. Sin el lock, bajo
+    // READ COMMITTED el UPDATE del bump no lleva predicado de estado, espera a
+    // que la aprobación libere la fila y escribe igual, dejando una dimensión
+    // con `evaluatedAt` posterior a `approvedAt` sobre un cambio ya decidido.
+    // Con el lock, la relectura ve `approved` y la guarda de abajo rechaza.
+    const [request] = await tx.select().from(preventionChangeRequests)
+      .where(eq(preventionChangeRequests.id, data.changeRequestId)).for("update").limit(1)
     if (!request) throw new Error(NOT_FOUND)
     requireAccess(access, "prevention:change:evaluate", request.worksiteId)
     if (!OPEN_STATUSES.includes(request.status)) throw new Error("Un cambio ya decidido no admite nuevas evaluaciones.")
@@ -156,20 +225,50 @@ export async function evaluateChangeDimension(input: unknown, access: ChangeAcce
       )).limit(1)
     if (!assessment) throw new Error(NOT_FOUND)
 
+    // La acción que esta dimensión ya derivó, si es que derivó alguna. Se relee
+    // en vez de confiar en `capaActionId` a secas porque lo que decide si se
+    // reutiliza es su ESTADO, no su existencia.
+    const [previousCapa] = assessment.capaActionId
+      ? await tx.select().from(preventionCapaActions)
+          .where(eq(preventionCapaActions.id, assessment.capaActionId)).limit(1)
+      : []
+    const previousOpen = previousCapa && OPEN_CAPA_STATUSES.includes(previousCapa.status) ? previousCapa : null
+
+    const finding = `${data.dimension}: ${data.notes?.trim() || "impacto detectado en la evaluación del cambio"}`
     let capaActionId: string | null = null
     if (data.actionRequired) {
-      const capa = await createCapaActionWithClient(tx, {
-        sourceType: "change",
-        sourceId: request.id,
-        worksiteId: request.worksiteId,
-        finding: `${data.dimension}: ${data.notes?.trim() || "impacto detectado en la evaluación del cambio"}`,
-        actionDescription: data.actionDescription!,
-        responsibleUserId: data.responsibleUserId ?? null,
-        priority: data.priority,
-        targetDate: data.targetDate!,
-        evidenceRequired: true,
-      }, access.userId)
-      capaActionId = capa.id
+      if (previousOpen) {
+        await updateCapaActionWithClient(tx, {
+          actionId: previousOpen.id,
+          expectedVersion: previousOpen.version,
+          finding,
+          actionDescription: data.actionDescription!,
+          responsibleUserId: data.responsibleUserId ?? null,
+          priority: data.priority,
+          targetDate: data.targetDate!,
+        }, capaAccessFor(access))
+        capaActionId = previousOpen.id
+      } else {
+        const capa = await createCapaActionWithClient(tx, {
+          sourceType: "change",
+          sourceId: request.id,
+          worksiteId: request.worksiteId,
+          finding,
+          actionDescription: data.actionDescription!,
+          responsibleUserId: data.responsibleUserId ?? null,
+          priority: data.priority,
+          targetDate: data.targetDate!,
+          evidenceRequired: true,
+        }, access.userId)
+        capaActionId = capa.id
+      }
+    } else if (previousOpen) {
+      await transitionCapaActionWithClient(tx, {
+        actionId: previousOpen.id,
+        expectedVersion: previousOpen.version,
+        toStatus: "cancelled",
+        reason: `La reevaluación del cambio retiró la acción de la dimensión ${data.dimension}.`,
+      }, capaAccessFor(access))
     }
 
     const now = nowIso()
@@ -185,10 +284,7 @@ export async function evaluateChangeDimension(input: unknown, access: ChangeAcce
     }).where(eq(preventionChangeAssessments.id, assessment.id)).returning()
     if (!updated) throw new Error("No se pudo registrar la evaluación.")
 
-    if (request.status === "draft") {
-      await tx.update(preventionChangeRequests).set({ status: "under_evaluation", updatedAt: now })
-        .where(eq(preventionChangeRequests.id, request.id))
-    }
+    await bumpChangeVersion(tx, request.id, now, request.status === "draft" ? "under_evaluation" : undefined)
 
     await history(tx, { entityType: "assessment", entityId: updated.id, worksiteId: request.worksiteId, changeType: "evaluated", reason: `Dimensión ${data.dimension} evaluada`, beforeState: assessment, afterState: updated, actorUserId: access.userId })
     return updated
@@ -197,10 +293,30 @@ export async function evaluateChangeDimension(input: unknown, access: ChangeAcce
 
 // Exportado para que approveChangeRequestAction (Server Action) pueda
 // validar en el boundary con `parseZ`.
+/**
+ * MOC-05: la "fecha de revisión posterior" no se validaba como posterior ni
+ * tenía tope, así que la de ayer y la del año 2199 pasaban igual —y la del año
+ * 2199 es la forma cómoda de cumplir el requisito sin comprometerse a nada—.
+ * Se compara contra el día civil chileno, que es el mismo "hoy" con el que
+ * `getPreventionAttention` decide si la revisión está vencida; con el día UTC,
+ * entre las 20:00 y la medianoche de Chile "mañana" ya se rechazaba por pasada.
+ *
+ * El tope de 24 meses es holgado a propósito: el DS 44 no fija el plazo, y la
+ * regla sólo existe para que la fecha siga siendo una fecha y no un "nunca".
+ */
+const MAX_REVIEW_HORIZON_DAYS = 730
+
 export const approveSchema = z.object({
   changeRequestId: z.string().min(1),
   expectedVersion: z.number().int().positive(),
   plannedReviewDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+}).superRefine((value, ctx) => {
+  const today = todayInChile()
+  if (value.plannedReviewDate <= today) {
+    ctx.addIssue({ code: "custom", path: ["plannedReviewDate"], message: "La revisión posterior tiene que quedar después de la fecha de aprobación." })
+  } else if (value.plannedReviewDate > addDaysToPlainDate(today, MAX_REVIEW_HORIZON_DAYS)) {
+    ctx.addIssue({ code: "custom", path: ["plannedReviewDate"], message: "La revisión posterior no puede quedar a más de 24 meses de la aprobación." })
+  }
 })
 
 /**
@@ -208,6 +324,10 @@ export const approveSchema = z.object({
  * posterior (assessChangeReadiness), y que quien aprueba no sea quien
  * solicitó el cambio — misma segregación que permisos de trabajo, plantillas
  * de inspección y planes de emergencia.
+ *
+ * Esa fecha ya no es decorativa: `getPreventionAttention` levanta el cambio
+ * aprobado cuando se acerca o pasa (MOC-05), igual que hace con la reevaluación
+ * de un protocolo MINSAL o la carga de un extintor.
  */
 export async function approveChangeRequest(input: unknown, access: ChangeAccess) {
   const data = approveSchema.parse(input)

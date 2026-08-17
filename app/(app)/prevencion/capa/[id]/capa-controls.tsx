@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { DatePicker } from "@/components/ui/date-picker"
@@ -27,6 +28,8 @@ interface Props {
     targetDate: string
     responsibleUserId: string | null
     reconciliationStatus: string
+    sourceType: string
+    sourceId: string
   }
   users: { id: string; name: string }[]
   permissions: {
@@ -144,6 +147,11 @@ export function CapaControls({ action, users, permissions }: Props) {
   }
 
   const terminal = action.status === "closed" || action.status === "cancelled"
+  // El avance de una acción nacida de un PPA lo conduce el PPA (declarar →
+  // verificar → autorizar → cerrar). El servidor rechaza transiciones y
+  // ediciones sobre este origen; ocultamos los controles para no ofrecer un
+  // botón que sólo puede fallar. Evidencia, seguimiento y conciliación siguen.
+  const ppaDriven = action.sourceType === "ppa"
 
   return (
     <section className="space-y-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] p-4">
@@ -152,7 +160,16 @@ export function CapaControls({ action, users, permissions }: Props) {
         <p className="mt-1 text-xs text-[var(--color-text-subtle)]">Cada cambio vuelve a validar permiso, faena, estado y versión en el servidor.</p>
       </div>
 
-      {!terminal && (
+      {ppaDriven && (
+        <p className="rounded-md border border-[var(--color-border)] p-3 text-xs text-[var(--color-text-subtle)]">
+          El avance y la asignación de esta acción se gestionan desde su PPA de origen:{" "}
+          <Link href={`/prevencion/ppa/${action.sourceId}`} className="text-[var(--color-primary-ink)] hover:underline">
+            ver el PPA
+          </Link>.
+        </p>
+      )}
+
+      {!terminal && !ppaDriven && (
         <div className="space-y-3 border-t border-[var(--color-border)] pt-3">
           <Field label="Motivo / resultado de la transición" htmlFor="capa-transition-reason">
             <Textarea id="capa-transition-reason" rows={2} value={transitionReason} onChange={(event) => setTransitionReason(event.target.value)} maxLength={2000} />
@@ -180,7 +197,7 @@ export function CapaControls({ action, users, permissions }: Props) {
         </div>
       )}
 
-      {permissions.verify && action.status === "pending_verification" && (
+      {permissions.verify && !ppaDriven && action.status === "pending_verification" && (
         <details className="border-t border-[var(--color-border)] pt-3" open>
           <summary className="cursor-pointer text-sm font-medium">Evaluación de eficacia</summary>
           <div className="mt-3 space-y-3">
@@ -235,7 +252,7 @@ export function CapaControls({ action, users, permissions }: Props) {
         </details>
       )}
 
-      {permissions.manage && !terminal && (
+      {permissions.manage && !terminal && !ppaDriven && (
         <details className="border-t border-[var(--color-border)] pt-3">
           <summary className="cursor-pointer text-sm font-medium">Asignación y plazo</summary>
           <div className="mt-3 grid gap-3 sm:grid-cols-2">

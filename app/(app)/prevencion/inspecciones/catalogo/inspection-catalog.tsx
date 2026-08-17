@@ -20,6 +20,7 @@ import {
 } from "../actions"
 import { Field } from "@/components/ui/field"
 import { useOperation } from "@/lib/hooks/use-operation"
+import { todayInChile } from "@/lib/utils"
 
 interface Coverage {
   totalItems: number
@@ -386,7 +387,7 @@ function ProgramDialog({ templates, worksites, assignees }: {
   }
 
   return (
-    <Dialog open={open} onOpenChange={(value) => { if (value) setDefaultStart(new Date().toISOString().slice(0, 10)); setOpen(value) }}>
+    <Dialog open={open} onOpenChange={(value) => { if (value) setDefaultStart(todayInChile()); setOpen(value) }}>
       <DialogTrigger asChild><Button size="sm">Nuevo programa</Button></DialogTrigger>
       <DialogContent>
         <form onSubmit={submit} className="space-y-4">

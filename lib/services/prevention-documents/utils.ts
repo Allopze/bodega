@@ -10,6 +10,7 @@ import { nanoid } from "@/lib/id"
 import { mkdirp, writeBuffer } from "@/lib/storage/helpers"
 import { resolveSstDocumentsDir, createSstDocumentPath } from "@/lib/storage/config"
 import { type WorksiteScope } from "@/lib/auth/scope"
+import { todayInChile } from "@/lib/utils"
 import { buildFolderOptionLabels } from "./labels"
 
 export type {
@@ -174,12 +175,7 @@ export function todayIso(): string {
   // Día calendario de Chile continental: toISOString() daría el día UTC, que
   // rota 3-4 h antes que el chileno y desalineaba estos cálculos del filtro
   // "vencidos" (que ya usaba hora de Chile).
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/Santiago",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(new Date())
+  return todayInChile()
 }
 
 export function daysUntil(dateIso: string | null | undefined): number | null {

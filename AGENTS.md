@@ -367,5 +367,6 @@ calculaba y se descartaba en los dos gráficos de flota. Derivada de la auditor�
 ## 3. Date Formatting
 - ALWAYS use `formatDate` or `formatDateTime` from `@/lib/utils`.
 - NEVER use `toLocaleDateString()` directly in `.tsx` components to prevent locale mismatch inconsistencies across browsers.
+- El día de HOY sale de `todayInChile()` y el año de `codeYear()` (`@/lib/utils`). `new Date().toISOString().slice(0,10)` y `new Date().getUTCFullYear()` miden en UTC: entre las 20:00 y la medianoche chilena contestan el día —y el 31 de diciembre, el año— siguiente. La regla `no-restricted-syntax` de `eslint.config.mjs` lo impide fuera de tests y `scripts/`. Sobre una fecha ya normalizada (`new Date(Date.UTC(...))`, un plain date) esos mismos métodos SÍ son correctos y no se marcan: lo prohibido es preguntarle a UTC qué día es hoy.
 <!-- END:form-export-patterns -->
 

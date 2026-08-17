@@ -129,6 +129,80 @@ describe("programa de trabajo del comité", () => {
     }, MANAGER)).rejects.toThrow(/ya fue cerrada/i)
   })
 
+  it("cierra el año del programa y lo deja congelado", async () => {
+    const {
+      addProgramActivity, activateProgram, cancelProgramActivity, closeProgram,
+      completeProgramActivity, createProgram,
+    } = await import("@/lib/services/prevention-cphs-program")
+    const program = await createProgram({ committeeId: "cphs-a", year: 2026 }, MANAGER)
+    const activity = await addProgramActivity({
+      programId: program.id, title: "Inspección planificada del comité", plannedMonth: 5,
+    }, MANAGER)
+
+    // Un borrador no tiene nada que cerrar: sólo se cierra lo que estuvo vigente.
+    await expect(closeProgram({ programId: program.id, expectedVersion: program.version }, MANAGER))
+      .rejects.toThrow(/vigente puede cerrarse/i)
+
+    const active = await activateProgram({ programId: program.id, expectedVersion: program.version }, MANAGER)
+    const closed = await closeProgram({ programId: program.id, expectedVersion: active.version }, MANAGER)
+    expect(closed.status).toBe("closed")
+    expect(closed.version).toBe(active.version + 1)
+
+    // Congelado: ni actividades nuevas ni cambios en las que ya tenía.
+    await expect(addProgramActivity({
+      programId: program.id, title: "Actividad agregada después del cierre", plannedMonth: 6,
+    }, MANAGER)).rejects.toThrow(/cerrado/i)
+    await expect(completeProgramActivity({
+      activityId: activity.id, expectedVersion: activity.version,
+      completionNote: "Cierre tardío de una actividad de un año ya cerrado.",
+    }, MANAGER)).rejects.toThrow(/cerrado/i)
+    await expect(cancelProgramActivity({
+      activityId: activity.id, expectedVersion: activity.version,
+      reason: "Cancelación tardía de una actividad de un año ya cerrado.",
+    }, MANAGER)).rejects.toThrow(/cerrado/i)
+
+    // Y el cierre deja traza, como el resto de las transiciones del programa.
+    const history = await inMemoryDb.select().from(schema.preventionGovernanceHistory)
+      .where(eq(schema.preventionGovernanceHistory.entityId, program.id))
+    expect(history.map((row) => row.changeType)).toEqual(["created", "activated", "closed"])
+  })
+
+  it("el cierre del programa respeta la concurrencia optimista", async () => {
+    const { addProgramActivity, activateProgram, closeProgram, createProgram } =
+      await import("@/lib/services/prevention-cphs-program")
+    const program = await createProgram({ committeeId: "cphs-a", year: 2027 }, MANAGER)
+    await addProgramActivity({
+      programId: program.id, title: "Difusión anual del programa", plannedMonth: 1,
+    }, MANAGER)
+    const active = await activateProgram({ programId: program.id, expectedVersion: program.version }, MANAGER)
+
+    await expect(closeProgram({ programId: program.id, expectedVersion: program.version }, MANAGER))
+      .rejects.toThrow(/cambió mientras lo editabas/i)
+    await expect(closeProgram({ programId: program.id, expectedVersion: active.version }, MANAGER))
+      .resolves.toMatchObject({ status: "closed" })
+  })
+
+  it("un programa cerrado deja de generar avisos de actividad atrasada", async () => {
+    const { addProgramActivity, activateProgram, closeProgram, createProgram } =
+      await import("@/lib/services/prevention-cphs-program")
+    const program = await createProgram({ committeeId: "cphs-a", year: 2026 }, MANAGER)
+    await addProgramActivity({
+      programId: program.id, title: "Actividad vencida sin ejecutar", plannedMonth: 1,
+    }, MANAGER)
+    const active = await activateProgram({ programId: program.id, expectedVersion: program.version }, MANAGER)
+
+    // El job sólo mira programas `active`: ése era el punto de tener un estado
+    // terminal, que el año viejo dejara de acumular atrasos para siempre.
+    const stillActive = await inMemoryDb.select().from(schema.preventionCommitteePrograms)
+      .where(eq(schema.preventionCommitteePrograms.status, "active"))
+    expect(stillActive).toHaveLength(1)
+
+    await closeProgram({ programId: program.id, expectedVersion: active.version }, MANAGER)
+    const afterClose = await inMemoryDb.select().from(schema.preventionCommitteePrograms)
+      .where(eq(schema.preventionCommitteePrograms.status, "active"))
+    expect(afterClose).toHaveLength(0)
+  })
+
   it("niega el programa de una faena fuera de alcance sin filtrar su existencia", async () => {
     const { createProgram } = await import("@/lib/services/prevention-cphs-program")
     await expect(createProgram({ committeeId: "cphs-a", year: 2027 }, OUTSIDER))
@@ -228,6 +302,28 @@ describe("inmutabilidad y reemplazos del comité", () => {
 
     await expect(addMeetingGuest({ meetingId: meeting.id, guestName: "Invitado tardío" }, MANAGER))
       .rejects.toThrow(/cerrada|no admite cambios/i)
+  })
+
+  it("acota la fecha de realización del acta entre la constitución y hoy", async () => {
+    const { closeCommitteeMeeting, scheduleCommitteeMeeting } = await import("@/lib/services/prevention-cphs")
+    const meeting = await scheduleCommitteeMeeting({
+      committeeId: "cphs-a",
+      scheduledFor: "2026-08-10T14:00:00.000Z",
+      agenda: "Sesión para probar la cota de la fecha de realización.",
+    }, MANAGER)
+    const base = {
+      meetingId: meeting.id, expectedVersion: meeting.version,
+      minutes: "Acta con una fecha de realización que el comité no puede sostener.",
+      attendedMemberIds: ["cphsm-1"],
+    }
+
+    // Un acta futura dejaba la cadencia "al día" para siempre.
+    const future = new Date(Date.now() + 86_400_000).toISOString()
+    await expect(closeCommitteeMeeting({ ...base, heldAt: future }, MANAGER))
+      .rejects.toThrow(/no puede realizarse en el futuro/)
+    // El comité se constituyó el 2026-01-15: antes de eso no existía.
+    await expect(closeCommitteeMeeting({ ...base, heldAt: "2025-12-20T14:00:00.000Z" }, MANAGER))
+      .rejects.toThrow(/anterior a la constitución del comité/)
   })
 
   it("un integrante reemplazado no puede volver a reemplazarse", async () => {

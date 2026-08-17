@@ -14,13 +14,16 @@ import {
   ensureIspRiskMethodology,
   resolveRiskReviewTrigger,
   transitionRiskMatrix,
+  verifyRiskControl,
   type RiskLegalAccess,
 } from "@/lib/services/prevention-risk-legal"
 import {
   activateRiskImportBatch,
   approveRiskImportBatch,
+  reopenRiskImportBatch,
   resolveRiskImportRow,
   stageRiskImport,
+  RISK_IMPORT_MAX_BYTES,
 } from "@/lib/services/prevention-risk-import"
 import {
   addRiskMapMarker,
@@ -73,7 +76,9 @@ export async function addRiskEntryAction(input: unknown): Promise<ActionState> {
 
 export async function transitionRiskMatrixAction(input: unknown): Promise<ActionState> {
   const toStatus = typeof input === "object" && input && "toStatus" in input ? String(input.toStatus) : ""
-  const permission: Permission = toStatus === "reviewed" ? "prevention:risk:review" : toStatus === "approved" ? "prevention:risk:approve" : toStatus === "published" ? "prevention:risk:publish" : "prevention:risk:edit"
+  // 'draft' es la devolución del revisor (MIPER-10): mismo permiso que revisar,
+  // no el de editar — devolver es una decisión de revisión, no una corrección.
+  const permission: Permission = toStatus === "reviewed" || toStatus === "draft" ? "prevention:risk:review" : toStatus === "approved" ? "prevention:risk:approve" : toStatus === "published" ? "prevention:risk:publish" : "prevention:risk:edit"
   const guard = await guardPermission(permission)
   if (guard.error) return guard.error
   return run(accessFromSession(guard.session), (access) => transitionRiskMatrix(input, access))
@@ -97,8 +102,14 @@ export async function stageRiskImportAction(formData: FormData): Promise<ActionS
   try {
     const file = formData.get("file")
     const worksiteId = String(formData.get("worksiteId") ?? "")
-    if (!(file instanceof File)) return { ok: false, message: "Selecciona un archivo Excel." }
-    await stageRiskImport({ worksiteId, fileName: file.name, buffer: Buffer.from(await file.arrayBuffer()), access: accessFromSession(guard.session) })
+    if (!(file instanceof File) || file.size === 0) return { ok: false, message: "Selecciona un archivo Excel." }
+    // Corta antes de bufferizar: `unexpectedActionError` oculta el detalle del
+    // servicio, así que el límite se explica aquí como en la ruta PDTP.
+    if (file.size > RISK_IMPORT_MAX_BYTES) {
+      return { ok: false, message: `El archivo supera el límite de ${Math.round(RISK_IMPORT_MAX_BYTES / 1024 / 1024)} MB.` }
+    }
+    if (!/\.xlsx$/i.test(file.name)) return { ok: false, message: "El archivo debe ser .xlsx; .xls no está permitido." }
+    await stageRiskImport({ worksiteId, fileName: file.name, buffer: Buffer.from(await file.arrayBuffer()), mimeType: file.type, access: accessFromSession(guard.session) })
     revalidatePath(REVALIDATE)
     return { ok: true }
   } catch (error) {
@@ -122,6 +133,21 @@ export async function activateRiskImportBatchAction(input: unknown): Promise<Act
   const guard = await guardPermission("prevention:risk:edit")
   if (guard.error) return guard.error
   return run(accessFromSession(guard.session), (access) => activateRiskImportBatch(input, access))
+}
+
+export async function reopenRiskImportBatchAction(input: unknown): Promise<ActionState> {
+  const guard = await guardPermission("prevention:risk:edit")
+  if (guard.error) return guard.error
+  return run(accessFromSession(guard.session), (access) => reopenRiskImportBatch(input, access))
+}
+
+export async function verifyRiskControlAction(input: unknown): Promise<ActionState> {
+  const guard = await guardPermission("prevention:risk:edit")
+  if (guard.error) return guard.error
+  const state = await run(accessFromSession(guard.session), (access) => verifyRiskControl(input, access))
+  // La ficha del control es una ruta dinámica: `run` sólo revalida el listado.
+  revalidatePath(`${REVALIDATE}/controles/[id]`, "page")
+  return state
 }
 
 /* ── Mapa de riesgos ───────────────────────────────────────────────────────── */

@@ -41,7 +41,7 @@ import {
   pdtpSheetActivityId,
   type WorksiteScope,
 } from "./helpers"
-import { validateLoadedPdtpWorkbook, validatePdtpXlsxEnvelope } from "./xlsx-security"
+import { validateLoadedWorkbook, validateXlsxEnvelope } from "@/lib/services/xlsx-security"
 
 type ImportSnapshot = {
   program: Record<string, unknown>
@@ -154,7 +154,7 @@ export async function stagePdtpXlsxImport(input: {
   userId: string
 }): Promise<{ batch: typeof pdtpImportBatches.$inferSelect; preview: PdtpImportPreview }> {
   const buffer = Buffer.from(input.bytes)
-  validatePdtpXlsxEnvelope({
+  validateXlsxEnvelope({
     name: input.fileName,
     type: input.mimeType,
     size: buffer.length,
@@ -179,7 +179,7 @@ export async function stagePdtpXlsxImport(input: {
 
   const workbook = new ExcelJS.Workbook()
   await workbook.xlsx.load(input.bytes as never)
-  validateLoadedPdtpWorkbook(workbook)
+  validateLoadedWorkbook(workbook)
   const catalog = extractPdtpCatalogFromWorkbook(workbook)
   const existingActivities = await db.select().from(pdtpActivities).where(eq(pdtpActivities.programId, input.programId))
   const existingByNumber = new Map(existingActivities.map((activity) => [activity.n, activity]))

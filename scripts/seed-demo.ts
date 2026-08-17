@@ -815,14 +815,18 @@ async function main() {
       meetings.push({
         id: meetingId, code: `ACT-${comite.id.slice(-4)}-${m + 1}`, committeeId: comite.id,
         scheduledFor: day(daysAgo(d)), agenda: "Revisión mensual del comité.",
-        status: "closed", closedAt: iso(daysAgo(d)),
+        // `heldAt` es la fecha del hecho y la que mide la cadencia (pantalla y
+        // job). Sin ella el comité aparecía "sin sesionar" pese a tener actas.
+        status: "closed", heldAt: iso(daysAgo(d)), closedAt: iso(daysAgo(d)),
         createdByUserId: admin, createdAt: iso(daysAgo(d)), updatedAt: iso(daysAgo(d)),
       })
       for (let a = 0; a < int(1, 3); a++) {
+        // El acuerdo ya no guarda estado: se lee el de su CAPA, así que sin
+        // vincularlo el tablero de "acuerdos abiertos" quedaría en cero.
         agreements.push({
           id: id("cagr"), meetingId,
           description: "Acuerdo del comité paritario.",
-          status: chance(0.4) ? "open" : pick(["capa_linked", "closed"] as const),
+          capaActionId: pick(capas).id!,
           createdAt: iso(daysAgo(d)), updatedAt: iso(daysAgo(d)),
         })
       }

@@ -6,7 +6,7 @@
 import { listEppCoverageGaps, type EppAccess } from "./prevention-epp"
 import { buildXlsxBuffer } from "@/lib/reports/export"
 import { EPP_GAP_TYPE_LABELS } from "@/lib/prevention/epp"
-import { formatDate } from "@/lib/utils"
+import { formatDate, todayInChile} from "@/lib/utils"
 
 export async function getEppCoverageExport(
   access: EppAccess,
@@ -17,7 +17,7 @@ export async function getEppCoverageExport(
   const truncated = gaps.length > maxRows
   const limited = truncated ? gaps.slice(0, maxRows) : gaps
 
-  const filename = `cobertura-epp-brechas-${new Date().toISOString().slice(0, 10)}.xlsx`
+  const filename = `cobertura-epp-brechas-${todayInChile()}.xlsx`
   const buffer = await buildXlsxBuffer({
     filenameBase: "cobertura-epp-brechas",
     worksheetName: "Brechas Cobertura EPP",

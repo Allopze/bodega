@@ -1,20 +1,8 @@
 import { z } from "zod"
+import { todayInChile } from "@/lib/utils"
 
 // ── Re-export shared ActionState ──────────────────────────────────────────────
 export type { ActionState } from "./masters"
-
-const CHILE_DATE_FORMATTER = new Intl.DateTimeFormat("en-US", {
-  timeZone: "America/Santiago",
-  year: "numeric",
-  month: "2-digit",
-  day: "2-digit",
-})
-
-function todayInChile(): string {
-  const parts = CHILE_DATE_FORMATTER.formatToParts(new Date())
-  const value = (part: Intl.DateTimeFormatPartTypes) => parts.find((item) => item.type === part)?.value
-  return `${value("year")}-${value("month")}-${value("day")}`
-}
 
 /** Exportada para que los servicios validen fechas con el mismo criterio que los formularios. */
 export function isRealIsoDate(value: string): boolean {

@@ -1,13 +1,14 @@
 /** Real PostgreSQL proof for Gestión del cambio: disponibilidad, segregación de aprobación y derivación a CAPA por dimensión. */
 import path from "node:path"
 import postgres from "postgres"
-import { eq, sql } from "drizzle-orm"
+import { and, eq, sql } from "drizzle-orm"
 import { drizzle } from "drizzle-orm/postgres-js"
 import { migrate } from "drizzle-orm/postgres-js/migrator"
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest"
 import * as schema from "@/db/schema"
 import type { WorksiteScope } from "@/lib/auth/scope"
 import { CHANGE_DIMENSIONS } from "@/lib/prevention/change"
+import { addDaysToPlainDate, todayInChile } from "@/lib/utils"
 import {
   assertSafeDestructiveDatabase,
   getDatabaseNameFromUrl,
@@ -33,9 +34,22 @@ function getDb() {
   return testDb
 }
 
+/**
+ * MOC-05: la fecha de revisión posterior ahora se valida contra el día de la
+ * aprobación y tiene tope de 24 meses, así que una fecha fija en el calendario
+ * dejaba de ser válida con sólo mirar el reloj. Relativa a la corrida.
+ */
+const REVIEW_DATE = addDaysToPlainDate(todayInChile(), 90)
+
+/** La versión se relee siempre: evaluar una dimensión la incrementa (MOC-02). */
+async function readVersion(changeId: string) {
+  const [row] = await getDb().select().from(schema.preventionChangeRequests)
+    .where(eq(schema.preventionChangeRequests.id, changeId))
+  return row!.version
+}
+
 describeIf("Gestión del cambio on real PostgreSQL", () => {
   let changeId = ""
-  let changeVersion = 1
 
   beforeAll(async () => {
     assertSafeDestructiveDatabase({ databaseUrl: databaseUrl!, allowDestructiveReset: canReset, context: "PREVENTION_CHANGE" })
@@ -76,7 +90,6 @@ describeIf("Gestión del cambio on real PostgreSQL", () => {
       riskLevel: "high",
     }, MANAGER)
     changeId = request.id
-    changeVersion = request.version
     expect(request.status).toBe("draft")
 
     const assessments = await getDb().select().from(schema.preventionChangeAssessments)
@@ -88,12 +101,13 @@ describeIf("Gestión del cambio on real PostgreSQL", () => {
   it("refuses to approve a change with no dimension evaluated", async () => {
     const service = await import("@/lib/services/prevention-change")
     await expect(service.approveChangeRequest({
-      changeRequestId: changeId, expectedVersion: changeVersion, plannedReviewDate: "2026-12-01",
+      changeRequestId: changeId, expectedVersion: await readVersion(changeId), plannedReviewDate: REVIEW_DATE,
     }, APPROVER)).rejects.toThrow(/Faltan por evaluar/)
   })
 
-  it("evaluating a dimension moves the request to under_evaluation", async () => {
+  it("evaluating a dimension moves the request to under_evaluation and bumps its version", async () => {
     const service = await import("@/lib/services/prevention-change")
+    const before = await readVersion(changeId)
     await service.evaluateChangeDimension({
       changeRequestId: changeId, dimension: "training", impacted: true,
       notes: "Se requiere reentrenar en el uso del nuevo candado.", actionRequired: false,
@@ -101,6 +115,7 @@ describeIf("Gestión del cambio on real PostgreSQL", () => {
 
     const [request] = await getDb().select().from(schema.preventionChangeRequests).where(eq(schema.preventionChangeRequests.id, changeId))
     expect(request?.status).toBe("under_evaluation")
+    expect(request?.version).toBe(before + 1)
   })
 
   it("deriving an action from a dimension links a CAPA action with responsible and target date", async () => {
@@ -121,10 +136,35 @@ describeIf("Gestión del cambio on real PostgreSQL", () => {
     expect(capa[0]?.targetDate).toBe("2026-11-01")
   })
 
+  /**
+   * MOC-04: la combinación "no impacta pero requiere acción" la rechaza el
+   * borde con un error de campo, y el CHECK sigue siendo la garantía — una
+   * escritura que se salte el servicio tampoco puede dejarla en la tabla.
+   */
+  it("refuses an action on a non-impacted dimension at the edge and keeps the CHECK underneath", async () => {
+    const service = await import("@/lib/services/prevention-change")
+    await expect(service.evaluateChangeDimension({
+      changeRequestId: changeId, dimension: "document", impacted: false,
+      actionRequired: true, actionDescription: "Acción sobre una dimensión declarada sin impacto.",
+      targetDate: "2026-11-01",
+    }, MANAGER)).rejects.toThrow(/declararse impactada/)
+
+    // La dimensión `permit` quedó con acción y CAPA: bajarle `impacted` deja
+    // exactamente la combinación prohibida sin tocar el otro CHECK.
+    const [assessment] = await getDb().select().from(schema.preventionChangeAssessments)
+      .where(and(
+        eq(schema.preventionChangeAssessments.changeRequestId, changeId),
+        eq(schema.preventionChangeAssessments.dimension, "permit"),
+      ))
+    const failure = await client!`UPDATE prevention_change_assessments SET impacted = false WHERE id = ${assessment!.id}`
+      .then(() => null, (error: Error) => error)
+    expect(String(failure)).toMatch(/prevention_change_assessment_impact_consistent/)
+  })
+
   it("still refuses approval while four dimensions remain unevaluated", async () => {
     const service = await import("@/lib/services/prevention-change")
     await expect(service.approveChangeRequest({
-      changeRequestId: changeId, expectedVersion: changeVersion, plannedReviewDate: "2026-12-01",
+      changeRequestId: changeId, expectedVersion: await readVersion(changeId), plannedReviewDate: REVIEW_DATE,
     }, APPROVER)).rejects.toThrow(/Faltan por evaluar/)
   })
 
@@ -140,21 +180,71 @@ describeIf("Gestión del cambio on real PostgreSQL", () => {
     expect(detail?.assessments.every((row) => row.evaluated)).toBe(true)
   })
 
+  /**
+   * MOC-02: la aprobación viaja con la versión leída al abrir la pantalla. Si
+   * entremedio se reevalúa una dimensión, el expediente ya no es el que se
+   * revisó y el compare-and-swap debe rechazarla — no aprobar sobre una
+   * evaluación obsoleta.
+   */
+  it("refuses approval carrying the version read before a re-evaluation (TOCTOU)", async () => {
+    const service = await import("@/lib/services/prevention-change")
+    const staleVersion = await readVersion(changeId)
+    await service.evaluateChangeDimension({
+      changeRequestId: changeId, dimension: "risk", impacted: true,
+      notes: "El candado del nuevo proveedor obliga a revisar el riesgo eléctrico.", actionRequired: false,
+    }, MANAGER)
+    expect(await readVersion(changeId)).toBeGreaterThan(staleVersion)
+
+    await expect(service.approveChangeRequest({
+      changeRequestId: changeId, expectedVersion: staleVersion, plannedReviewDate: REVIEW_DATE,
+    }, APPROVER)).rejects.toThrow(/cambió mientras/)
+  })
+
   it("refuses approval by the requester, even holding the approve permission", async () => {
     const service = await import("@/lib/services/prevention-change")
     await expect(service.approveChangeRequest({
-      changeRequestId: changeId, expectedVersion: changeVersion, plannedReviewDate: "2026-12-01",
+      changeRequestId: changeId, expectedVersion: await readVersion(changeId), plannedReviewDate: REVIEW_DATE,
     }, MANAGER_WITH_APPROVE)).rejects.toThrow(/no puede aprobarlo/)
   })
 
   it("approves the change once every dimension is evaluated and a review date is set", async () => {
     const service = await import("@/lib/services/prevention-change")
     const approved = await service.approveChangeRequest({
-      changeRequestId: changeId, expectedVersion: changeVersion, plannedReviewDate: "2026-12-01",
+      changeRequestId: changeId, expectedVersion: await readVersion(changeId), plannedReviewDate: REVIEW_DATE,
     }, APPROVER)
     expect(approved.status).toBe("approved")
-    expect(approved.plannedReviewDate).toBe("2026-12-01")
+    expect(approved.plannedReviewDate).toBe(REVIEW_DATE)
     expect(approved.approvedByUserId).toBe("chg-approver")
+  })
+
+  /**
+   * MOC-05: la fecha de revisión se guardaba y no la leía nadie, así que llegado
+   * el día no pasaba nada. Ahora alimenta la bandeja de Prevención, tras SU
+   * propio permiso — no el de higiene ni el de emergencias (EMERGENCIAS-08).
+   */
+  it("surfaces the approved change in the prevention inbox when its review date comes due", async () => {
+    const { getPreventionAttention } = await import("@/lib/services/prevention-attention")
+    const base = {
+      worksiteIds: ["ws-chg-a"],
+      includeActions: false, includeEvaluations: false, includePpa: false,
+    }
+
+    // A 90 días todavía no molesta: la ventana de la bandeja es de 30.
+    expect(await getPreventionAttention({ ...base, includeChangeReviews: true })).toEqual([])
+
+    // Se adelanta la fecha a ayer, que es lo que hace el calendario solo.
+    await client!`UPDATE prevention_change_requests SET planned_review_date = ${addDaysToPlainDate(todayInChile(), -1)} WHERE id = ${changeId}`
+
+    const conPermiso = await getPreventionAttention({ ...base, includeChangeReviews: true })
+    const aviso = conPermiso.find((item) => item.id === `change_review:${changeId}`)
+    expect(aviso?.title).toBe("Revisión de cambio vencida")
+    expect(aviso?.tone).toBe("danger")
+    expect(aviso?.href).toBe(`/prevencion/gestion-cambio/${changeId}`)
+
+    // Sin el permiso de cambios, el mismo aviso no existe.
+    expect(await getPreventionAttention({ ...base, includeProtocols: true, includeEmergencyResources: true })).toEqual([])
+
+    await client!`UPDATE prevention_change_requests SET planned_review_date = ${REVIEW_DATE} WHERE id = ${changeId}`
   })
 
   it("rejects evaluating a dimension once the change is already decided", async () => {
@@ -162,6 +252,131 @@ describeIf("Gestión del cambio on real PostgreSQL", () => {
     await expect(service.evaluateChangeDimension({
       changeRequestId: changeId, dimension: "risk", impacted: false, actionRequired: false,
     }, MANAGER)).rejects.toThrow(/ya decidido/)
+  })
+
+  /**
+   * MOC-02, el orden inverso: la aprobación ya tomó la fila del cambio y
+   * confirma mientras la evaluación está en vuelo. Sin `for("update")` la
+   * evaluación leería el estado abierto, esperaría el lock en el bump y
+   * escribiría igual, dejando un `evaluatedAt` posterior al `approvedAt` de un
+   * cambio ya decidido.
+   */
+  it("rejects an evaluation started while an approval holds the change row", async () => {
+    const service = await import("@/lib/services/prevention-change")
+    const request = await service.createChangeRequest({
+      worksiteId: "ws-chg-a", title: "Cambio con aprobación en vuelo", changeType: "equipo",
+      description: "Reemplazo del tablero eléctrico de la sala de bombas.",
+      reason: "El tablero actual quedó fuera de norma.",
+    }, MANAGER)
+
+    let release = () => {}
+    const holdReleased = new Promise<void>((resolve) => { release = resolve })
+    const approval = client!.begin(async (tx) => {
+      await tx`SELECT id FROM prevention_change_requests WHERE id = ${request.id} FOR UPDATE`
+      await holdReleased
+      await tx`UPDATE prevention_change_requests
+               SET status = 'approved', approved_by_user_id = 'chg-approver', approved_at = now(),
+                   planned_review_date = '2026-12-01', version = version + 1
+               WHERE id = ${request.id}`
+    })
+
+    // El rechazo se materializa de inmediato para no dejar una promesa sin
+    // manejar mientras esperamos a que la aprobación suelte el lock.
+    const evaluation = service.evaluateChangeDimension({
+      changeRequestId: request.id, dimension: "risk", impacted: false, actionRequired: false,
+    }, MANAGER).then(() => null, (error: Error) => error)
+
+    await new Promise((resolve) => setTimeout(resolve, 250))
+    release()
+    await approval
+
+    const outcome = await evaluation
+    expect(outcome).toBeInstanceOf(Error)
+    expect(outcome?.message).toMatch(/ya decidido/)
+
+    const [assessment] = await getDb().select().from(schema.preventionChangeAssessments)
+      .where(and(
+        eq(schema.preventionChangeAssessments.changeRequestId, request.id),
+        eq(schema.preventionChangeAssessments.dimension, "risk"),
+      ))
+    expect(assessment?.evaluatedAt).toBeNull()
+  })
+
+  /**
+   * MOC-03: reevaluar una dimensión creaba una CAPA nueva cada vez y pisaba
+   * `capaActionId`, dejando la anterior viva, sin dueño que la cerrara y
+   * contando de a una por reevaluación en los tableros.
+   */
+  it("reconciles the derived CAPA on re-evaluation instead of duplicating it", async () => {
+    const service = await import("@/lib/services/prevention-change")
+    const request = await service.createChangeRequest({
+      worksiteId: "ws-chg-a", title: "Cambio con dimensión reevaluada", changeType: "sustancia",
+      description: "Reemplazo del desengrasante por uno de base acuosa.",
+      reason: "El actual quedó fuera de la política de sustancias peligrosas.",
+    }, MANAGER)
+
+    const capasDelCambio = () => getDb().select().from(schema.preventionCapaActions)
+      .where(eq(schema.preventionCapaActions.sourceId, request.id))
+
+    const primera = await service.evaluateChangeDimension({
+      changeRequestId: request.id, dimension: "risk", impacted: true,
+      notes: "Cambia el riesgo químico del área de lavado.",
+      actionRequired: true, actionDescription: "Actualizar la hoja de datos de seguridad del área.",
+      responsibleUserId: "chg-manager", priority: "medium", targetDate: addDaysToPlainDate(todayInChile(), 30),
+    }, MANAGER)
+    expect(primera.capaActionId).toBeTruthy()
+    expect(await capasDelCambio()).toHaveLength(1)
+
+    // Reevaluar manteniendo la exigencia CONSERVA la acción y le traslada lo
+    // reevaluado, en vez de abrir otra y abandonar ésta.
+    const segunda = await service.evaluateChangeDimension({
+      changeRequestId: request.id, dimension: "risk", impacted: true,
+      notes: "Cambia el riesgo químico del área de lavado y también el de la bodega.",
+      actionRequired: true, actionDescription: "Actualizar la hoja de datos de seguridad del área y de la bodega.",
+      responsibleUserId: "chg-manager", priority: "high", targetDate: addDaysToPlainDate(todayInChile(), 45),
+    }, MANAGER)
+    expect(segunda.capaActionId).toBe(primera.capaActionId)
+    expect(await capasDelCambio()).toHaveLength(1)
+
+    const [reconducida] = await capasDelCambio()
+    expect(reconducida?.priority).toBe("high")
+    expect(reconducida?.targetDate).toBe(addDaysToPlainDate(todayInChile(), 45))
+    expect(reconducida?.actionDescription).toContain("bodega")
+    expect(reconducida?.status).toBe("pending")
+
+    // Idempotente: una tercera reevaluación idéntica a la segunda no crea nada.
+    await service.evaluateChangeDimension({
+      changeRequestId: request.id, dimension: "risk", impacted: true,
+      notes: "Cambia el riesgo químico del área de lavado y también el de la bodega.",
+      actionRequired: true, actionDescription: "Actualizar la hoja de datos de seguridad del área y de la bodega.",
+      responsibleUserId: "chg-manager", priority: "high", targetDate: addDaysToPlainDate(todayInChile(), 45),
+    }, MANAGER)
+    expect(await capasDelCambio()).toHaveLength(1)
+
+    // Desmarcar la exigencia cancela la acción con motivo — no la borra ni la
+    // deja colgando — y la dimensión queda sin acción.
+    const desmarcada = await service.evaluateChangeDimension({
+      changeRequestId: request.id, dimension: "risk", impacted: true,
+      notes: "El control existente ya cubre el riesgo: no hace falta acción nueva.",
+      actionRequired: false,
+    }, MANAGER)
+    expect(desmarcada.capaActionId).toBeNull()
+    expect(desmarcada.actionRequired).toBe(false)
+
+    const [cancelada] = await capasDelCambio()
+    expect(await capasDelCambio()).toHaveLength(1)
+    expect(cancelada?.status).toBe("cancelled")
+    expect(cancelada?.cancellationReason).toContain("retiró la acción")
+
+    // Y si la exigencia vuelve, nace una acción nueva: la anterior ya no sirve.
+    const revivida = await service.evaluateChangeDimension({
+      changeRequestId: request.id, dimension: "risk", impacted: true,
+      notes: "Con la sustancia nueva sí cambia el control.",
+      actionRequired: true, actionDescription: "Reemplazar la ficha de control del área de lavado.",
+      responsibleUserId: "chg-manager", priority: "medium", targetDate: addDaysToPlainDate(todayInChile(), 60),
+    }, MANAGER)
+    expect(revivida.capaActionId).not.toBe(primera.capaActionId)
+    expect(await capasDelCambio()).toHaveLength(2)
   })
 
   it("does not leak change requests of another worksite", async () => {

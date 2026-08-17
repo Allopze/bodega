@@ -18,6 +18,7 @@ import { sql } from "drizzle-orm"
 import { createHash } from "node:crypto"
 import { loadEnvConfig } from "@next/env"
 import * as schema from "../db/schema"
+import { hashPpaPublicToken } from "@/lib/services/ppa-module/public-token"
 
 loadEnvConfig(process.cwd())
 
@@ -251,7 +252,10 @@ async function main() {
       resultado: detenido ? "detenido" : "autorizado_auto",
       triggeredReasons: detenido ? [pick(STOP_REASONS), ...(chance(0.4) ? [pick(STOP_REASONS)] : [])] : [],
       estado,
-      publicToken: id("tok"),
+      // `public_token` guarda el HASH del enlace, nunca el valor en claro
+      // (misma regla que createPpaSubmission). Estos PPA de demo no entregan
+      // enlace a nadie, pero la columna tiene que verse como en producción.
+      publicToken: hashPpaPublicToken(id("tok")),
       reviewedBy: reviewedAt ? pick([admin, jefa]) : null,
       reviewedAt,
       createdAt: iso(ocurrio),
@@ -471,7 +475,9 @@ async function main() {
   const publishedMatrices = matrices.filter((m) => m.status === "published")
   const entries: (typeof schema.preventionRiskEntries.$inferInsert)[] = []
   const controls: (typeof schema.preventionRiskControls.$inferInsert)[] = []
-  const NIVELES = ["Bajo", "Medio", "Alto", "Crítico"] as const
+  // Vocabulario canónico de lib/prevention/risk-levels: la columna tiene un
+  // CHECK y la UI sólo sabe etiquetar estas cuatro claves.
+  const NIVELES = ["low", "medium", "high", "critical"] as const
 
   for (const matrix of publishedMatrices) {
     const procesosFaena = processes.filter((p) => p.worksiteId === matrix.worksiteId)

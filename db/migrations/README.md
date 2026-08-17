@@ -54,7 +54,29 @@ El 2026-06-25 se saneó todo colapsando el historial en un **baseline único**
    `CREATE TRIGGER`, `UPDATE ... WHERE ... IS NULL`, FK dentro de
    `DO $$ ... EXCEPTION WHEN duplicate_object THEN NULL; END $$`).
 
-6. **El RBAC (roles/permisos) NO va en migraciones.** Se siembra con
+6. **Los nombres de constraint del `.sql` pueden NO ser los de la base.**
+   Postgres trunca todo identificador a 63 bytes (`NAMEDATALEN-1`) y avisa con
+   un `NOTICE 42622` al aplicar. Los nombres que genera Drizzle
+   (`{tabla}_{columna}_{tabla_referida}_{columna}_fk`) pasan de 63 con
+   facilidad: hoy hay ~200 así en el historial (p. ej.
+   `prevention_legal_requirements_supersedes_requirement_id_prevention_legal_requirements_id_fk`,
+   de 91 caracteres, que en la base se llama
+   `prevention_legal_requirements_supersedes_requirement_id_prevent`).
+   Consecuencia: **un `DROP`/`RENAME CONSTRAINT` copiado del `.sql` falla**, y
+   lo mismo vale para el `DROP` que `drizzle-kit generate` emite solo si algún
+   día cambias esa FK — hay que acortarlo a 63 a mano antes de aplicarlo.
+   El nombre real se consulta en la base, no en el archivo:
+
+   ```bash
+   PGHOST=/var/run/postgresql psql -d <bd> -tA \
+     -c "select conname from pg_constraint where conrelid = '<tabla>'::regclass;"
+   ```
+
+   No se renombran: son ~200 y el truncamiento es determinista (la misma
+   migración produce el mismo nombre en toda base), así que el arreglo sería
+   ruido de historial sin cambiar ninguna conducta.
+
+7. **El RBAC (roles/permisos) NO va en migraciones.** Se siembra con
    `npm run db:seed` desde `lib/auth/system-rbac.ts` + los `defaultGrants` de
    los manifests de módulo.
 

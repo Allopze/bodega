@@ -33,11 +33,13 @@ export default async function PlanEmergenciaPage({ params }: { params: Promise<{
   const canApprove = auth.user.permissions.includes("prevention:emergency:approve")
   const canExecuteDrill = auth.user.permissions.includes("prevention:emergency:drill_execute")
 
-  const [allWorkers, assignees] = await Promise.all([
-    canManage || canExecuteDrill ? listEmergencyWorkers(access) : Promise.resolve([]),
+  // La faena del plan se pasa al servicio, no se filtra después: el tope de la
+  // consulta se aplicaba antes del filtro y truncaba dotación arbitrariamente
+  // (EMERGENCIAS-11).
+  const [eligibleWorkers, assignees] = await Promise.all([
+    canManage || canExecuteDrill ? listEmergencyWorkers(access, detail.plan.worksiteId) : Promise.resolve([]),
     canExecuteDrill ? listEmergencyAssignees(access) : Promise.resolve([]),
   ])
-  const eligibleWorkers = allWorkers.filter((worker) => worker.worksiteId === detail.plan.worksiteId)
 
   return (
     <PageContainer>
@@ -60,6 +62,7 @@ export default async function PlanEmergenciaPage({ params }: { params: Promise<{
           description: detail.plan.description,
           createdByUserId: detail.plan.createdByUserId,
           version: detail.plan.version,
+          pdtpActivityNumbers: detail.plan.pdtpActivityNumbers ?? [],
         }}
         worksiteName={detail.worksiteName}
         readiness={detail.readiness}

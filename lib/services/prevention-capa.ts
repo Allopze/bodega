@@ -17,7 +17,7 @@ import type { RequestContext } from "@/lib/services/prevention-documents/utils"
 import type { ReportData } from "@/lib/reports/export"
 import { sanitizeCell as excelSafe } from "@/lib/reports/export-module/excel-builder"
 import type { CapaQuickFilter } from "@/lib/prevention/capa-list-filters"
-import { chileDateParts } from "@/lib/utils"
+import { chileDateParts, codeYear, todayInChile} from "@/lib/utils"
 
 export const CAPA_STATUSES = [
   "pending",
@@ -180,6 +180,8 @@ export function assertCapaTransition(args: {
   segregationExceptionReason?: string
   responsibleUserId?: string | null
   completedByUserId?: string | null
+  /** Origen de la acción: `ppa` se gobierna por su propio flujo (ver el bloque de segregación). */
+  sourceType?: string
 }) {
   if (!TRANSITIONS[args.fromStatus].includes(args.toStatus)) {
     throw new Error(`Transición CAPA inválida: ${args.fromStatus} → ${args.toStatus}.`)
@@ -199,8 +201,20 @@ export function assertCapaTransition(args: {
     if ((args.effectivenessAssessment?.trim().length ?? 0) < 5) {
       throw new Error("La verificación exige documentar la evaluación de eficacia.")
     }
-    const conflicted = [args.creatorUserId, args.responsibleUserId, args.completedByUserId]
-      .includes(args.actorUserId)
+    /* La segregación por identidad NO aplica a las acciones que conduce el PPA.
+     * El PPA tiene su propio modelo —segregación por PERMISO y no por persona,
+     * decisión registrada y probada— y su CAPA es un detalle de implementación
+     * de ese flujo: quien declara la corrección en terreno es quien la verifica,
+     * y exigir dos identidades ahí deja el caso detenido sin salida.
+     *
+     * Es seguro porque el gobierno es exclusivo: `assertNotPpaDriven` impide que
+     * el motor genérico toque una acción de origen `ppa`, así que el único
+     * conductor es el propio PPA y sus reglas son las que rigen. Sin esta
+     * excepción, la SoD de CAPA rompía `verifyPpaCorrection` — lo destapó el
+     * e2e, no las pruebas unitarias, porque éstas usaban usuarios distintos. */
+    const conflicted = args.sourceType !== "ppa"
+      && [args.creatorUserId, args.responsibleUserId, args.completedByUserId]
+        .includes(args.actorUserId)
     if (conflicted) {
       const canOverride = hasPermission(args.permissions, "prevention:capa:override_segregation")
       if (!canOverride || (args.segregationExceptionReason?.trim().length ?? 0) < 10) {
@@ -221,7 +235,7 @@ async function assertActiveResponsible(client: CapaClient, userId: string | null
 }
 
 function createCode() {
-  return `CAPA-${new Date().getUTCFullYear()}-${nanoid(10).toUpperCase()}`
+  return `CAPA-${codeYear()}-${nanoid(10).toUpperCase()}`
 }
 
 export async function createCapaActionWithClient(
@@ -300,13 +314,38 @@ export async function createCapaAction(args: {
   return db.transaction((tx) => createCapaActionWithClient(tx, data, args.ctx.userId))
 }
 
+/**
+ * Las acciones nacidas de un PPA las conduce el flujo del PPA (declarar →
+ * verificar → autorizar → cerrar), que mueve el CAPA dentro de su propia
+ * transacción vía los `*WithClient`. Si el motor CAPA genérico las mueve por su
+ * cuenta —cerrarlas, cancelarlas, reabrirlas—, el caso PPA queda detenido en un
+ * bloqueo sin salida: su paso siguiente exige un estado del CAPA que ya no está.
+ *
+ * El guardia va acá, en los dos envoltorios de nivel petición, porque son los
+ * únicos que usa el módulo CAPA (`app/(app)/prevencion/capa/actions.ts`); el
+ * PPA entra por los `*WithClient`, que quedan intactos.
+ */
+async function assertNotPpaDriven(client: CapaClient, actionId: string) {
+  const [row] = await client
+    .select({ sourceType: preventionCapaActions.sourceType, sourceId: preventionCapaActions.sourceId })
+    .from(preventionCapaActions)
+    .where(eq(preventionCapaActions.id, actionId))
+    .limit(1)
+  if (row?.sourceType === "ppa") {
+    throw new Error(`Esta acción se gestiona desde su PPA de origen: /prevencion/ppa/${row.sourceId}`)
+  }
+}
+
 export async function transitionCapaAction(args: {
   input: unknown
   ctx: RequestContext
   scope: WorksiteScope
   permissions: readonly string[]
 }) {
-  return db.transaction((tx) => transitionCapaActionWithClient(tx, args.input, args))
+  return db.transaction(async (tx) => {
+    await assertNotPpaDriven(tx, capaTransitionSchema.parse(args.input).actionId)
+    return transitionCapaActionWithClient(tx, args.input, args)
+  })
 }
 
 export async function updateCapaActionWithClient(
@@ -400,7 +439,10 @@ export async function updateCapaAction(args: {
   scope: WorksiteScope
   permissions: readonly string[]
 }) {
-  return db.transaction((tx) => updateCapaActionWithClient(tx, args.input, args))
+  return db.transaction(async (tx) => {
+    await assertNotPpaDriven(tx, capaUpdateSchema.parse(args.input).actionId)
+    return updateCapaActionWithClient(tx, args.input, args)
+  })
 }
 
 export async function transitionCapaActionWithClient(
@@ -427,6 +469,7 @@ export async function transitionCapaActionWithClient(
       evidenceRequired: current.evidenceRequired,
       evidenceCount: qualifyingEvidenceCount,
       creatorUserId: current.createdByUserId,
+      sourceType: current.sourceType,
       actorUserId: access.ctx.userId,
       permissions: access.permissions,
       reason: input.reason,
@@ -820,7 +863,7 @@ export async function buildCapaExport(args: {
   const rowLimitApplied = actions.length > 10_000
   if (actionIds.length === 0) {
     return {
-      filenameBase: `capa_${new Date().toISOString().slice(0, 10)}`,
+      filenameBase: `capa_${todayInChile()}`,
       worksheetName: "Acciones CAPA",
       headers: ["Código", "Fuente", "Estado"],
       rows: [],
@@ -845,7 +888,7 @@ export async function buildCapaExport(args: {
     if (item.kind !== "note") evidenceCount.set(item.actionId, (evidenceCount.get(item.actionId) ?? 0) + 1)
   }
   return {
-    filenameBase: `capa_${new Date().toISOString().slice(0, 10)}`,
+    filenameBase: `capa_${todayInChile()}`,
     worksheetName: "Acciones CAPA",
     headers: [
       "Código", "Fuente", "ID fuente", "Faena", "Hallazgo", "Medida inmediata", "Causa raíz",

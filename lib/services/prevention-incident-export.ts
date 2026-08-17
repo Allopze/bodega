@@ -23,6 +23,7 @@ import {
   type IncidentAccess,
   type IncidentStatus,
 } from "@/lib/services/prevention-incidents"
+import { todayInChile } from "@/lib/utils"
 
 function sheet(worksheetName: string, headers: string[], rows: ReportCell[][]): ReportSheet {
   return { worksheetName, headers, rows }
@@ -63,7 +64,7 @@ export async function buildIncidentRegisterExport(access: IncidentAccess): Promi
     ipAddress: access.ctx.ip,
   })
   return {
-    filenameBase: `registro-incidentes-${new Date().toISOString().slice(0, 10)}`,
+    filenameBase: `registro-incidentes-${todayInChile()}`,
     worksheetName: sheets[0]!.worksheetName,
     headers: sheets[0]!.headers,
     rows: sheets[0]!.rows,

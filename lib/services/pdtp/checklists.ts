@@ -12,6 +12,7 @@ import { pdtpActivities, pdtpActivityChecklists } from "@/db/schema"
 import type { ChecklistDefinition } from "@/lib/sst/types"
 import { nanoid } from "@/lib/id"
 import { assertPdtpProgramEditable, isUniqueViolation } from "./helpers"
+import { todayInChile } from "@/lib/utils"
 
 export type PdtpChecklistTemplateInput = {
   activityId: string
@@ -140,7 +141,7 @@ export async function ensureDefaultChecklist(
   const defaultDefinition: ChecklistDefinition = {
     code: `pdtp_${activityId}`,
     version: "01",
-    revisionDate: new Date().toISOString().slice(0, 10),
+    revisionDate: todayInChile(),
     title: label,
     tipo: "nuevo",
     legalFramework: [],

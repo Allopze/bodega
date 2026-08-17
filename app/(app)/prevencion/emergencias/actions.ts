@@ -5,16 +5,22 @@ import { ZodError } from "zod"
 import { guardPermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { parseZ } from "@/lib/actions/parse-z"
+import { unexpectedActionError } from "@/lib/actions/safe-server-action"
 import {
   addEmergencyContact,
   addEmergencyResource,
   addEmergencyRole,
   addEmergencyScenario,
   approveEmergencyPlan,
+  archiveEmergencyPlan,
+  cancelEmergencyDrill,
   completeEmergencyDrill,
   createEmergencyPlan,
+  EmergencyDomainError,
   planSchema,
   scheduleEmergencyDrill,
+  setEmergencyPlanPdtpActivities,
+  updateEmergencyResource,
   type EmergencyAccess,
 } from "@/lib/services/prevention-emergency"
 import type { ActionState } from "@/lib/validation/prevention"
@@ -27,7 +33,14 @@ function accessFromSession(session: Awaited<ReturnType<typeof guardPermission>>[
 }
 
 // La autorización se resuelve en cada acción, no dentro de este helper.
-async function run(access: EmergencyAccess, operation: (access: EmergencyAccess) => Promise<unknown>): Promise<ActionState> {
+//
+// Fase 7: antes se devolvía `error.message` de CUALQUIER Error, así que el
+// contrato que `EmergencyDomainError` prometía —no filtrar detalles de
+// infraestructura al navegador— no lo cumplía nadie. Ahora sólo el error de
+// dominio viaja con su mensaje; el resto pasa por `unexpectedActionError`, que
+// loguea y responde genérico. Mismo criterio que `campaignFailure` en
+// prevencion/campanas/actions.ts.
+async function run(access: EmergencyAccess, action: string, operation: (access: EmergencyAccess) => Promise<unknown>): Promise<ActionState> {
   try {
     await operation(access)
     revalidatePath(BASE)
@@ -35,7 +48,8 @@ async function run(access: EmergencyAccess, operation: (access: EmergencyAccess)
     return { ok: true }
   } catch (error) {
     if (error instanceof ZodError) return { ok: false, message: "Revisa los campos marcados.", fieldErrors: error.flatten().fieldErrors as Record<string, string[]> }
-    return { ok: false, message: error instanceof Error ? error.message : "No se pudo completar la operación." }
+    if (error instanceof EmergencyDomainError) return { ok: false, message: error.message }
+    return unexpectedActionError(error, `prevencion/emergencias/${action}`)
   }
 }
 
@@ -49,47 +63,71 @@ export async function createEmergencyPlanAction(input: unknown): Promise<ActionS
   // en el camino exitoso.
   const parsed = parseZ(planSchema, input)
   if (!parsed.ok) return parsed
-  return run(accessFromSession(guard.session), (access) => createEmergencyPlan(parsed.data, access))
+  return run(accessFromSession(guard.session), "createEmergencyPlan", (access) => createEmergencyPlan(parsed.data, access))
 }
 
 export async function addEmergencyScenarioAction(input: unknown): Promise<ActionState> {
   const guard = await guardPermission("prevention:emergency:manage")
   if (guard.error) return guard.error
-  return run(accessFromSession(guard.session), (access) => addEmergencyScenario(input, access))
+  return run(accessFromSession(guard.session), "addEmergencyScenario", (access) => addEmergencyScenario(input, access))
 }
 
 export async function addEmergencyRoleAction(input: unknown): Promise<ActionState> {
   const guard = await guardPermission("prevention:emergency:manage")
   if (guard.error) return guard.error
-  return run(accessFromSession(guard.session), (access) => addEmergencyRole(input, access))
+  return run(accessFromSession(guard.session), "addEmergencyRole", (access) => addEmergencyRole(input, access))
 }
 
 export async function addEmergencyResourceAction(input: unknown): Promise<ActionState> {
   const guard = await guardPermission("prevention:emergency:manage")
   if (guard.error) return guard.error
-  return run(accessFromSession(guard.session), (access) => addEmergencyResource(input, access))
+  return run(accessFromSession(guard.session), "addEmergencyResource", (access) => addEmergencyResource(input, access))
 }
 
 export async function addEmergencyContactAction(input: unknown): Promise<ActionState> {
   const guard = await guardPermission("prevention:emergency:manage")
   if (guard.error) return guard.error
-  return run(accessFromSession(guard.session), (access) => addEmergencyContact(input, access))
+  return run(accessFromSession(guard.session), "addEmergencyContact", (access) => addEmergencyContact(input, access))
+}
+
+export async function updateEmergencyResourceAction(input: unknown): Promise<ActionState> {
+  const guard = await guardPermission("prevention:emergency:manage")
+  if (guard.error) return guard.error
+  return run(accessFromSession(guard.session), "updateEmergencyResource", (access) => updateEmergencyResource(input, access))
+}
+
+export async function setEmergencyPlanPdtpActivitiesAction(input: unknown): Promise<ActionState> {
+  const guard = await guardPermission("prevention:emergency:manage")
+  if (guard.error) return guard.error
+  return run(accessFromSession(guard.session), "setEmergencyPlanPdtpActivities", (access) => setEmergencyPlanPdtpActivities(input, access))
 }
 
 export async function approveEmergencyPlanAction(input: unknown): Promise<ActionState> {
   const guard = await guardPermission("prevention:emergency:approve")
   if (guard.error) return guard.error
-  return run(accessFromSession(guard.session), (access) => approveEmergencyPlan(input, access))
+  return run(accessFromSession(guard.session), "approveEmergencyPlan", (access) => approveEmergencyPlan(input, access))
+}
+
+export async function archiveEmergencyPlanAction(input: unknown): Promise<ActionState> {
+  const guard = await guardPermission("prevention:emergency:approve")
+  if (guard.error) return guard.error
+  return run(accessFromSession(guard.session), "archiveEmergencyPlan", (access) => archiveEmergencyPlan(input, access))
 }
 
 export async function scheduleEmergencyDrillAction(input: unknown): Promise<ActionState> {
   const guard = await guardPermission("prevention:emergency:drill_execute")
   if (guard.error) return guard.error
-  return run(accessFromSession(guard.session), (access) => scheduleEmergencyDrill(input, access))
+  return run(accessFromSession(guard.session), "scheduleEmergencyDrill", (access) => scheduleEmergencyDrill(input, access))
 }
 
 export async function completeEmergencyDrillAction(input: unknown): Promise<ActionState> {
   const guard = await guardPermission("prevention:emergency:drill_execute")
   if (guard.error) return guard.error
-  return run(accessFromSession(guard.session), (access) => completeEmergencyDrill(input, access))
+  return run(accessFromSession(guard.session), "completeEmergencyDrill", (access) => completeEmergencyDrill(input, access))
+}
+
+export async function cancelEmergencyDrillAction(input: unknown): Promise<ActionState> {
+  const guard = await guardPermission("prevention:emergency:drill_execute")
+  if (guard.error) return guard.error
+  return run(accessFromSession(guard.session), "cancelEmergencyDrill", (access) => cancelEmergencyDrill(input, access))
 }

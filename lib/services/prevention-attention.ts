@@ -1,8 +1,9 @@
-import { and, asc, eq, inArray, lte, max, or } from "drizzle-orm"
+import { and, asc, eq, inArray, lte, max, ne, or } from "drizzle-orm"
 import { db } from "@/db"
 import {
   ppaSubmissions,
   preventionCapaActions,
+  preventionChangeRequests,
   preventionCommitteeMeetings,
   preventionCommittees,
   preventionEmergencyResources,
@@ -14,10 +15,11 @@ import { adminContratoLabel } from "@/lib/prevention/admin-contrato-label"
 import { assessMeetingCadence, isMandateExpired } from "@/lib/prevention/cphs"
 import { MINSAL_PROTOCOL_LABELS } from "@/lib/prevention/minsal-protocols"
 import { capaPrioridad } from "@/lib/services/pdtp/capa-view"
+import { todayInChile } from "@/lib/utils"
 
 export type PreventionAttentionItem = {
   id: string
-  kind: "action" | "evaluation" | "ppa" | "cphs" | "protocol" | "emergency_resource"
+  kind: "action" | "evaluation" | "ppa" | "cphs" | "protocol" | "emergency_resource" | "change_review"
   title: string
   detail: string
   worksiteName: string
@@ -35,14 +37,27 @@ export async function getPreventionAttention(args: {
   includeEvaluations: boolean
   includePpa: boolean
   includeCphs?: boolean
-  /** Vencimientos de higiene y de equipos de emergencia. */
-  includeCompliance?: boolean
+  /**
+   * EMERGENCIAS-08: eran un solo `includeCompliance`, así que
+   * `prevention:hygiene:view` a secas abría también los equipos de emergencia y
+   * `prevention:emergency:view` a secas abría los protocolos MINSAL. Cada
+   * fuente lleva su propio permiso; el llamador decide cuál enciende.
+   */
+  /** Reevaluación de protocolos MINSAL — `prevention:hygiene:view`. */
+  includeProtocols?: boolean
+  /** Vencimiento e inspección de equipos de emergencia — `prevention:emergency:view`. */
+  includeEmergencyResources?: boolean
+  /** Fecha de revisión de un cambio aprobado — `prevention:change:view`. */
+  includeChangeReviews?: boolean
   limit?: number
 }): Promise<PreventionAttentionItem[]> {
   if (args.worksiteIds !== "all" && args.worksiteIds.length === 0) return []
   const scope = (column: typeof worksites.id) => args.worksiteIds === "all" ? undefined : inArray(column, args.worksiteIds)
   const limit = args.limit ?? 12
-  const today = new Date().toISOString().slice(0, 10)
+  // Día civil chileno, no UTC: `today` decide el tono `danger` de cada aviso y
+  // el corte de la ventana de 30 días. Con `toISOString()` un extintor que vence
+  // hoy aparecía vencido desde las 20:00 de la víspera.
+  const today = todayInChile()
 
   const [actionRows = [], evalRows = [], ppaRows = []] = await Promise.all([
     args.includeActions
@@ -100,7 +115,11 @@ export async function getPreventionAttention(args: {
   })))
 
   if (args.includeCphs) items.push(...await cphsAttentionItems(scope, today, limit))
-  if (args.includeCompliance) items.push(...await complianceAttentionItems(scope, today, limit))
+  items.push(...await complianceAttentionItems(scope, today, limit, {
+    protocols: args.includeProtocols ?? false,
+    emergencyResources: args.includeEmergencyResources ?? false,
+    changeReviews: args.includeChangeReviews ?? false,
+  }))
 
   return items
     .sort((a, b) => TONE_RANK[a.tone] - TONE_RANK[b.tone]
@@ -181,24 +200,32 @@ function addDaysIso(date: string, days: number): string {
 
 
 /**
- * Dos relojes que hasta ahora no miraba nadie.
+ * Tres relojes que hasta ahora no miraba nadie.
  *
  *  · La reevaluación de un protocolo MINSAL declarado aplicable.
  *  · El vencimiento o la inspección atrasada de un equipo de emergencia
  *    (carga del extintor, caducidad del botiquín).
+ *  · La fecha de revisión posterior de un cambio aprobado (MOC-05): se exigía
+ *    para aprobar (`assessChangeReadiness`), se guardaba y nadie la leía nunca,
+ *    así que llegado el día no pasaba nada.
  *
- * Ambas fechas existían en la base y ninguna consulta las leía: un extintor
+ * Las tres fechas existían en la base y ninguna consulta las leía: un extintor
  * descargado no aparecía en ninguna pantalla.
+ *
+ * Cada fuente lleva su propio interruptor porque cada una responde a un permiso
+ * distinto (EMERGENCIAS-08). Se consultan sólo las encendidas.
  */
 async function complianceAttentionItems(
   scope: (column: typeof worksites.id) => ReturnType<typeof inArray> | undefined,
   today: string,
   limit: number,
+  include: { protocols: boolean; emergencyResources: boolean; changeReviews: boolean },
 ): Promise<PreventionAttentionItem[]> {
+  if (!include.protocols && !include.emergencyResources && !include.changeReviews) return []
   const soon = addDaysIso(today, 30)
 
-  const [protocols, resources] = await Promise.all([
-    db.select({
+  const [protocols, resources, changes] = await Promise.all([
+    include.protocols ? db.select({
       id: preventionProtocolApplicabilities.id,
       protocolCode: preventionProtocolApplicabilities.protocolCode,
       nextAssessmentOn: preventionProtocolApplicabilities.nextAssessmentOn,
@@ -211,8 +238,8 @@ async function complianceAttentionItems(
         eq(preventionProtocolApplicabilities.status, "applicable"),
         lte(preventionProtocolApplicabilities.nextAssessmentOn, soon),
       ))
-      .orderBy(asc(preventionProtocolApplicabilities.nextAssessmentOn)).limit(limit),
-    db.select({
+      .orderBy(asc(preventionProtocolApplicabilities.nextAssessmentOn)).limit(limit) : [],
+    include.emergencyResources ? db.select({
       id: preventionEmergencyResources.id,
       name: preventionEmergencyResources.name,
       kind: preventionEmergencyResources.kind,
@@ -225,12 +252,33 @@ async function complianceAttentionItems(
       .innerJoin(worksites, eq(preventionEmergencyResources.worksiteId, worksites.id))
       .where(and(
         scope(worksites.id),
+        // Un equipo dado de baja ya no se inspecciona ni se recarga: seguir
+        // pidiéndole inspección es ruido. Su ausencia no lo esconde — el
+        // contador `resourcesOutOfService` del panel de Emergencias lo cuenta.
+        ne(preventionEmergencyResources.status, "out_of_service"),
         or(
           lte(preventionEmergencyResources.expiresAt, soon),
           lte(preventionEmergencyResources.nextInspectionAt, soon),
         ),
       ))
-      .orderBy(asc(preventionEmergencyResources.expiresAt)).limit(limit),
+      .orderBy(asc(preventionEmergencyResources.expiresAt)).limit(limit) : [],
+    include.changeReviews ? db.select({
+      id: preventionChangeRequests.id,
+      code: preventionChangeRequests.code,
+      title: preventionChangeRequests.title,
+      plannedReviewDate: preventionChangeRequests.plannedReviewDate,
+      worksiteName: worksites.name,
+    })
+      .from(preventionChangeRequests)
+      .innerJoin(worksites, eq(preventionChangeRequests.worksiteId, worksites.id))
+      .where(and(
+        scope(worksites.id),
+        // Sólo `approved`: implementado y cerrado ya pasaron por su revisión, y
+        // rechazado nunca la tuvo.
+        eq(preventionChangeRequests.status, "approved"),
+        lte(preventionChangeRequests.plannedReviewDate, soon),
+      ))
+      .orderBy(asc(preventionChangeRequests.plannedReviewDate)).limit(limit) : [],
   ])
 
   const items: PreventionAttentionItem[] = []
@@ -265,6 +313,20 @@ async function complianceAttentionItems(
       worksiteName: row.worksiteName,
       dueDate,
       href: "/prevencion/emergencias",
+      tone: overdue ? "danger" : "warning",
+    })
+  }
+
+  for (const row of changes) {
+    if (!row.plannedReviewDate) continue
+    const overdue = row.plannedReviewDate < today
+    items.push({
+      id: `change_review:${row.id}`, kind: "change_review",
+      title: overdue ? "Revisión de cambio vencida" : "Revisión de cambio por vencer",
+      detail: `${row.code} · ${row.title}`,
+      worksiteName: row.worksiteName,
+      dueDate: row.plannedReviewDate,
+      href: `/prevencion/gestion-cambio/${row.id}`,
       tone: overdue ? "danger" : "warning",
     })
   }

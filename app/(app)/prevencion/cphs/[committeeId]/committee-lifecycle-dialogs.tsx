@@ -112,13 +112,11 @@ export function ReplaceMemberDialog({ memberId, workerName, eligibleWorkers, exi
     event.preventDefault()
     const form = new FormData(event.currentTarget)
     const electedOn = String(form.get("electedOn") ?? "").trim()
-    const termEndsOn = String(form.get("termEndsOn") ?? "").trim()
     operation.run(() => replaceCommitteeMemberAction({
       memberId,
       workerId: form.get("workerId"),
       reason: form.get("reason"),
       electedOn: electedOn || null,
-      termEndsOn: termEndsOn || null,
     }), () => { setOpen(false); setWorkerId("") })
   }
 
@@ -148,10 +146,9 @@ export function ReplaceMemberDialog({ memberId, workerName, eligibleWorkers, exi
                   }))}
                 />
               </Field>
-              <div className="grid gap-3 md:grid-cols-2">
-                <Field label="Electo el" hint="Opcional."><DatePicker name="electedOn" /></Field>
-                <Field label="Término del período" hint="Opcional."><DatePicker name="termEndsOn" /></Field>
-              </div>
+              {/* El reemplazante hereda el mandato del comité, que es el
+                  período del integrante bajo el DS 54. */}
+              <Field label="Electo el" hint="Opcional."><DatePicker name="electedOn" /></Field>
             </>
           )}
           <Field label="Motivo" htmlFor="replace-reason" hint="Mínimo 10 caracteres.">

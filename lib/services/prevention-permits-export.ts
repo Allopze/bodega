@@ -16,6 +16,7 @@ import {
 import type { ReportCell, ReportData, ReportSheet } from "@/lib/reports/export"
 import { sanitizeCell as safeCell } from "@/lib/reports/export-module/excel-builder"
 import { listWorkPermits, type PermitAccess } from "@/lib/services/prevention-permits"
+import { todayInChile } from "@/lib/utils"
 
 function sheet(worksheetName: string, headers: string[], rows: ReportCell[][]): ReportSheet {
   return { worksheetName, headers, rows }
@@ -143,7 +144,7 @@ export async function buildPermitExport(access: PermitAccess): Promise<ReportDat
   ]
 
   return {
-    filenameBase: `permisos_trabajo_${new Date().toISOString().slice(0, 10)}`,
+    filenameBase: `permisos_trabajo_${todayInChile()}`,
     worksheetName: sheets[0]!.worksheetName,
     headers: sheets[0]!.headers,
     rows: sheets[0]!.rows,

@@ -9,6 +9,7 @@ import { nanoid } from "@/lib/id"
 import { buildFuelLoadsWhere } from "@/lib/combustibles/queries"
 import { addExportMetadataSheet } from "@/lib/combustibles/xlsx-utils"
 import { fuelLoadStatusLabel } from "@/lib/combustibles/labels"
+import { todayInChile } from "@/lib/utils"
 
 const MAX_FUEL_EXPORT_ROWS = 10_000
 
@@ -118,7 +119,7 @@ export async function exportFuelLoadsXlsxAction(filters?: {
     ok: true as const,
     data: {
       base64,
-      filename: `combustibles_${new Date().toISOString().split("T")[0]}.xlsx`,
+      filename: `combustibles_${todayInChile()}.xlsx`,
       truncated,
       rowLimit: MAX_FUEL_EXPORT_ROWS,
     },

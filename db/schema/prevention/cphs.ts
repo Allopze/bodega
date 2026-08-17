@@ -135,7 +135,11 @@ export const preventionCommitteeMembers = pgTable("prevention_committee_members"
   seat:           text("seat").notNull(),
   role:           text("role"),
   electedOn:      text("elected_on"),
-  termEndsOn:     text("term_ends_on"),
+  /* Sin `term_ends_on`: bajo el DS 54 el período del integrante ES el mandato
+   * del comité, que ya vence por `mandate_ends_on` vía `expireLapsedCommittees`.
+   * La columna se capturaba, viajaba al cliente y no la leía ninguna regla:
+   * sugería un control por persona que no existe. (La del delegado sí se aplica
+   * y por eso sigue.) */
   hasFuero:       boolean("has_fuero").notNull().default(false),
   status:         text("status").notNull().default("active"),
   replacedByMemberId: text("replaced_by_member_id"),
@@ -178,7 +182,11 @@ export const preventionCommitteeMeetings = pgTable("prevention_committee_meeting
 }, (table) => [
   index("prevention_committee_meeting_committee_idx").on(table.committeeId, table.scheduledFor),
   check("prevention_committee_meeting_type_valid", sql`${table.meetingType} IN ('ordinary', 'extraordinary')`),
-  check("prevention_committee_meeting_status_valid", sql`${table.status} IN ('scheduled', 'held', 'closed', 'cancelled')`),
+  /* Sin `held`: nada lo escribía nunca. La sesión pasa de `scheduled` a
+   * `closed` cuando se cierra el acta, y una convocatoria que no se realizó se
+   * cancela. Un estado intermedio inalcanzable sólo servía para ramas de UI
+   * muertas. */
+  check("prevention_committee_meeting_status_valid", sql`${table.status} IN ('scheduled', 'closed', 'cancelled')`),
   check("prevention_committee_meeting_closed_has_minutes", sql`${table.status} <> 'closed' OR length(${table.minutes}) >= 20`),
   check("prevention_committee_meeting_cancel_consistent", sql`${table.status} <> 'cancelled' OR length(${table.cancellationReason}) >= 10`),
   check("prevention_committee_meeting_version_positive", sql`${table.version} >= 1`),
@@ -238,18 +246,21 @@ export const preventionCommitteeCommissionMembers = pgTable("prevention_committe
 /* ── Acuerdos ─────────────────────────────────────────────────────────────
  * Todo acuerdo con responsable y plazo se deriva a CAPA común: un acuerdo sin
  * acción trazable no es seguimiento, es una nota.
+ *
+ * Sin columna `status`: el único INSERT la fijaba en 'capa_linked' y ningún
+ * UPDATE la movía, así que 'open' y 'closed' eran inalcanzables y el tablero
+ * que contaba 'open' era estructuralmente cero. El estado de un acuerdo es el
+ * de su CAPA — decisión "CAPA motor único", que prohíbe el espejo.
  */
 export const preventionCommitteeAgreements = pgTable("prevention_committee_agreements", {
   id:             text("id").primaryKey(),
   meetingId:      text("meeting_id").notNull().references(() => preventionCommitteeMeetings.id, { onDelete: "cascade" }),
   description:    text("description").notNull(),
   capaActionId:   text("capa_action_id").references(() => preventionCapaActions.id, { onDelete: "set null" }),
-  status:         text("status").notNull().default("open"),
   createdAt:      timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   updatedAt:      timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [
-  index("prevention_committee_agreement_meeting_idx").on(table.meetingId, table.status),
-  check("prevention_committee_agreement_status_valid", sql`${table.status} IN ('open', 'capa_linked', 'closed')`),
+  index("prevention_committee_agreement_meeting_idx").on(table.meetingId),
 ])
 
 /* ── Revisión por la dirección ────────────────────────────────────────────

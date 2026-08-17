@@ -129,6 +129,11 @@ export async function createNotifications(
     dedupeKey:  input.dedupeKey ?? null,
   }))
 
+  // Destinatarios del correo = a quienes REALMENTE se les insertó la
+  // notificación. Con `dedupeKey`, el INSERT ya deduplicaba pero el correo se
+  // armaba sobre la lista completa: correr dos veces un job diario mandaba el
+  // correo dos veces aunque no naciera ninguna notificación nueva.
+  let recipientIds = userIds
   if (input.dedupeKey) {
     const existing = await db
       .selectDistinct({ userId: notifications.userId })
@@ -141,6 +146,7 @@ export async function createNotifications(
     const toInsert = values.filter((v) => !skipUserIds.has(v.userId))
     if (toInsert.length === 0) return
     await db.insert(notifications).values(toInsert)
+    recipientIds = toInsert.map((v) => v.userId)
   } else {
     await db.insert(notifications).values(values)
   }
@@ -149,7 +155,7 @@ export async function createNotifications(
   const targetUsers = await db
     .select({ id: users.id, email: users.email, name: users.name, emailNotifications: users.emailNotifications })
     .from(users)
-    .where(inArray(users.id, userIds))
+    .where(inArray(users.id, recipientIds))
 
   const appUrl = getAppBaseUrl()
   const emailMessages: Array<{ to: string; subject: string; text: string; html: string }> = []

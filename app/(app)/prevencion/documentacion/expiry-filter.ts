@@ -7,6 +7,8 @@
  * mismos que calcula `getDashboardCounters`, de modo que el número del
  * indicador y el de la lista filtrada no pueden discrepar.
  */
+import { addDaysToPlainDate, todayInChile } from "@/lib/utils"
+
 export type ExpiryFilter = "7" | "30" | "vencidos"
 
 export const EXPIRY_FILTER_LABELS: Record<ExpiryFilter, string> = {
@@ -18,22 +20,6 @@ export const EXPIRY_FILTER_LABELS: Record<ExpiryFilter, string> = {
 export function parseExpiryFilter(value: string | undefined): ExpiryFilter | null {
   if (value === "7" || value === "30" || value === "vencidos") return value
   return null
-}
-
-/** Fecha de hoy en hora de Chile continental, en `YYYY-MM-DD`. */
-function todayInChile(): string {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/Santiago",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(new Date())
-}
-
-function plusDays(isoDate: string, days: number): string {
-  const next = new Date(`${isoDate}T00:00:00Z`)
-  next.setUTCDate(next.getUTCDate() + days)
-  return next.toISOString().slice(0, 10)
 }
 
 /**
@@ -49,6 +35,6 @@ export function expiryFilterInput(filter: ExpiryFilter | null): { expiresBefore?
   // "Ya vencidos" excluye lo que vence hoy: `effectiveStatus` recién marca
   // "vencido" al día siguiente, y un documento listado como vencido con badge
   // "Vigente" era una contradicción visible.
-  if (filter === "vencidos") return { expiresBefore: plusDays(today, -1) }
-  return { expiresAfter: today, expiresBefore: plusDays(today, Number(filter)) }
+  if (filter === "vencidos") return { expiresBefore: addDaysToPlainDate(today, -1) }
+  return { expiresAfter: today, expiresBefore: addDaysToPlainDate(today, Number(filter)) }
 }

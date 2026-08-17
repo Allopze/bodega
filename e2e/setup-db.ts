@@ -1491,6 +1491,30 @@ async function main() {
     createdAt: now,
     updatedAt: now,
   })
+  /* `sourceType: "audit"` de `linkPdtpActivitySource` no acepta un id suelto:
+   * resuelve la fuente contra una corrida real del motor de inspecciones cuya
+   * plantilla sea de tipo `audit` (DS 44 art. 22 n°4) y verifica que pertenezca
+   * a la faena. Sin este fixture, `pdtp-cobertura.spec.ts` fallaba con
+   * "Auditoría no encontrada" y el diálogo se quedaba abierto. */
+  await db.insert(schema.preventionInspectionTemplates).values({
+    id: "insptpl-audit-e2e",
+    code: "AUD-E2E",
+    versionLabel: "01",
+    name: "Auditoría interna del SGSST E2E",
+    kind: "audit",
+    definitionSnapshot: {},
+    // El CHECK exige exactamente 64 caracteres (SHA-256 en hexadecimal).
+    contentHash: "e".repeat(64),
+    authorUserId: "user-admin-e2e",
+  })
+  await db.insert(schema.preventionInspectionRuns).values({
+    id: "audit-e2e-1",
+    code: "AUD-E2E-2026-0001",
+    templateId: "insptpl-audit-e2e",
+    worksiteId: "ws-e2e",
+    status: "planned",
+    createdByUserId: "user-admin-e2e",
+  })
   await db.insert(schema.pdtpSheets).values({
     id: "pdtp-sheet-e2e",
     code: "s1",
@@ -1870,7 +1894,7 @@ async function main() {
     exposedPeopleCount: 4, genderConsiderations: "Sin diferencias identificadas.",
     sensitiveWorkerConsiderations: "Sin trabajadores sensibles identificados.",
     inherentDimensions: { assessment: "alto" }, inherentLevel: "high",
-    residualDimensions: { assessment: "moderado" }, residualLevel: "moderate",
+    residualDimensions: { assessment: "moderado" }, residualLevel: "medium",
     isCritical: false, responsibleSnapshot: "Admin E2E",
     version: 1, createdAt: now, updatedAt: now,
   })

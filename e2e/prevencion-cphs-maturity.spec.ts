@@ -81,7 +81,10 @@ test.describe("Prevención — CPHS: madurez Plata y Oro", () => {
   })
 
   test("vincular una actividad del programa a la sesión que la revisó", async ({ page }) => {
-    await page.getByRole("link", { name: "Programa de trabajo" }).click()
+    // Acotado a `main`: tras el renombre del sidebar hay DOS enlaces con este
+    // nombre —el del comité y el de PDTP en la navegación—, y sin acotar
+    // Playwright tomaba el del sidebar y aterrizaba en /prevencion/pdtp.
+    await page.getByRole("main").getByRole("link", { name: "Programa de trabajo" }).click()
     await expect(page).toHaveURL(/\/prevencion\/cphs\/cphs-e2e-base\/programa/)
     await expect(page.getByText("Actividad E2E para vincular a sesión")).toBeVisible()
 

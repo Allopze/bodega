@@ -12,6 +12,7 @@ import {
   getUserIdsWithPermissionForWorksite,
 } from "@/lib/services/notifications"
 import { expireLapsedCompetencies } from "@/lib/services/prevention-training"
+import { todayInChile } from "@/lib/utils"
 
 export interface TrainingReminderResult {
   expiredCompetencies: number
@@ -25,12 +26,6 @@ export interface TrainingReminderResult {
  * sesión de 8 horas y convocar dotación sin que la competencia caduque.
  */
 const EXPIRY_WARNING_DAYS = 60
-
-const CHILE_DATE_FORMAT = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Santiago", year: "numeric", month: "2-digit", day: "2-digit" })
-
-function todayInChile() {
-  return CHILE_DATE_FORMAT.format(new Date())
-}
 
 function addDays(date: string, days: number) {
   const value = new Date(`${date}T12:00:00.000Z`)

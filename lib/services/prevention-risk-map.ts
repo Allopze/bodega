@@ -117,14 +117,18 @@ export async function addRiskMapMarker(input: unknown, access: RiskLegalAccess) 
     if (!layout) throw new Error(NOT_FOUND)
     requireAccess(access, "prevention:risk:edit", layout.worksiteId)
 
-    // El peligro debe venir de una matriz de la MISMA faena que el plano: un
-    // marcador no puede apuntar al riesgo de otro centro de trabajo.
+    // El peligro debe venir de la matriz VIGENTE de la MISMA faena que el plano:
+    // un marcador no puede apuntar al riesgo de otro centro de trabajo, ni a un
+    // borrador o a una versión reemplazada. El picker ya sólo ofrece entradas
+    // publicadas; esto lo vuelve la regla y no una cortesía de la UI (y es la
+    // otra mitad del reapuntado de MIPER-05: sin esto un marcador podía nacer
+    // sobre una entrada `superseded`).
     const [entry] = await tx.select({ id: preventionRiskEntries.id, worksiteId: preventionRiskMatrices.worksiteId })
       .from(preventionRiskEntries)
       .innerJoin(preventionRiskMatrices, eq(preventionRiskMatrices.id, preventionRiskEntries.matrixId))
-      .where(eq(preventionRiskEntries.id, data.riskEntryId)).limit(1)
+      .where(and(eq(preventionRiskEntries.id, data.riskEntryId), eq(preventionRiskMatrices.status, "published"))).limit(1)
     if (!entry || entry.worksiteId !== layout.worksiteId) {
-      throw new Error("El peligro debe pertenecer a la matriz MIPER de esta misma faena.")
+      throw new Error("El peligro debe pertenecer a la matriz MIPER vigente de esta misma faena.")
     }
 
     const [created] = await tx.insert(preventionRiskMapMarkers).values({
@@ -193,7 +197,17 @@ export async function listRiskMapsForScope(worksiteIds: string[], access: RiskLe
   })
     .from(preventionRiskMapMarkers)
     .innerJoin(preventionRiskEntries, eq(preventionRiskEntries.id, preventionRiskMapMarkers.riskEntryId))
-    .where(inArray(preventionRiskMapMarkers.layoutId, layouts.map((layout) => layout.id)))
+    // El mapa nunca sirve un peligro de una matriz que ya no rige. Al publicar una
+    // revisión, `repointRiskMapMarkers` reapunta los marcadores, y `addRiskMapMarker`
+    // exige matriz publicada al crearlos; este filtro cubre la tercera vía: filas
+    // históricas anteriores a ambas reglas, que de otro modo seguirían pintándose.
+    // Se filtra en lectura en vez de borrarlas por migración: un marcador es trabajo
+    // manual de posicionamiento y no se destruye sin que alguien lo decida.
+    .innerJoin(preventionRiskMatrices, eq(preventionRiskMatrices.id, preventionRiskEntries.matrixId))
+    .where(and(
+      inArray(preventionRiskMapMarkers.layoutId, layouts.map((layout) => layout.id)),
+      eq(preventionRiskMatrices.status, "published"),
+    ))
 
   const markersByLayout = new Map<string, RiskMapView["markers"]>()
   for (const row of markerRows) {

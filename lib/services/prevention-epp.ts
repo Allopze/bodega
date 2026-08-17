@@ -18,6 +18,7 @@ import type { WorksiteScope } from "@/lib/auth/scope"
 import { nanoid } from "@/lib/id"
 import { computeEppCoverageGaps, type EppCoverageGap } from "@/lib/prevention/epp"
 import { createCapaActionWithClient } from "@/lib/services/prevention-capa"
+import { todayInChile } from "@/lib/utils"
 
 type Client = DB | Tx
 
@@ -28,12 +29,6 @@ export interface EppAccess {
 }
 
 const NOT_FOUND = "Registro de EPP preventivo no encontrado o fuera de alcance."
-
-const CHILE_DATE_FORMAT = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Santiago", year: "numeric", month: "2-digit", day: "2-digit" })
-
-function todayInChile() {
-  return CHILE_DATE_FORMAT.format(new Date())
-}
 
 function scopeCondition(scope: WorksiteScope, column: AnyPgColumn) {
   if (scope.mode === "all") return undefined

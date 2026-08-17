@@ -8,6 +8,7 @@ import {
   activateProgram,
   addProgramActivity,
   cancelProgramActivity,
+  closeProgram,
   completeProgramActivity,
   createProgram,
   linkActivityToMeeting,
@@ -16,6 +17,7 @@ import {
   createCertificationDossier,
   recordAuditResult,
   recordManualEvaluation,
+  reopenCertificationDossier,
   submitCertificationDossier,
   updateDossierAdministrativeData,
 } from "@/lib/services/prevention-cphs-certification"
@@ -140,6 +142,12 @@ export async function activateProgramAction(input: unknown): Promise<ActionState
   return run(accessFromSession(guard.session), (access) => activateProgram(input, access))
 }
 
+export async function closeProgramAction(input: unknown): Promise<ActionState> {
+  const guard = await guardPermission("prevention:cphs:manage")
+  if (guard.error) return guard.error
+  return run(accessFromSession(guard.session), (access) => closeProgram(input, access))
+}
+
 export async function addProgramActivityAction(input: unknown): Promise<ActionState> {
   const guard = await guardPermission("prevention:cphs:manage")
   if (guard.error) return guard.error
@@ -194,6 +202,12 @@ export async function recordAuditResultAction(input: unknown): Promise<ActionSta
   const guard = await guardPermission("prevention:cphs:certify")
   if (guard.error) return guard.error
   return run(accessFromSession(guard.session), (access) => recordAuditResult(input, access))
+}
+
+export async function reopenCertificationDossierAction(input: unknown): Promise<ActionState> {
+  const guard = await guardPermission("prevention:cphs:certify")
+  if (guard.error) return guard.error
+  return run(accessFromSession(guard.session), (access) => reopenCertificationDossier(input, access))
 }
 
 /* ── Prácticas de madurez (Plata y Oro) ───────────────────────────────────── */

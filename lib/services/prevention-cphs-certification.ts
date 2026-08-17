@@ -53,9 +53,11 @@ import {
   nowIso,
   recordGovernanceHistory,
   requireCphsAccess,
-  todayInChile,
   type CphsAccess,
 } from "@/lib/services/prevention-cphs-access"
+// La copia de `prevention-cphs-access` no admite argumento: acá hay que fechar
+// timestamps ajenos (`heldAt`, `executedAt`), no sólo "ahora".
+import { todayInChile } from "@/lib/utils"
 
 const LEVELS = ["bronce", "plata", "oro"] as const
 
@@ -82,6 +84,22 @@ function indexCertificationEvaluations(rows: readonly StoredCertificationEvaluat
   }
 
   return { byRequirement, manual }
+}
+
+/**
+ * Año y mes civiles chilenos de un timestamp.
+ *
+ * Los `timestamptz` se guardan en UTC, así que cortarlos con `.slice(0, 7)`
+ * mide el mes en UTC: lo ocurrido después de las 21:00 del último día del mes
+ * se contaba en el mes siguiente —y el 31 de diciembre, en el año siguiente—.
+ * Sobre un requisito de "N meses con sesión" eso cambia el resultado.
+ */
+function chileYear(timestamp: string): string {
+  return todayInChile(timestamp).slice(0, 4)
+}
+
+function chileMonth(timestamp: string): string {
+  return todayInChile(timestamp).slice(0, 7)
 }
 
 function addDays(date: string, days: number): string {
@@ -143,6 +161,7 @@ export async function gatherCertificationEvidence(args: {
       .where(eq(preventionCommitteeMembers.committeeId, args.committeeId)),
     client.select({
       closedAt: preventionCommitteeMeetings.closedAt,
+      heldAt: preventionCommitteeMeetings.heldAt,
       scheduledFor: preventionCommitteeMeetings.scheduledFor,
       status: preventionCommitteeMeetings.status,
       agendaSentAt: preventionCommitteeMeetings.agendaSentAt,
@@ -246,30 +265,41 @@ export async function gatherCertificationEvidence(args: {
   const inspectionMonths = new Set<string>()
   const committeeInspectionMonths = new Set<string>()
   for (const row of inspectionRows) {
-    if (row.executedAt === null || row.executedAt.slice(0, 4) !== periodYear) continue
-    const month = row.executedAt.slice(0, 7)
+    if (row.executedAt === null || chileYear(row.executedAt) !== periodYear) continue
+    const month = chileMonth(row.executedAt)
     inspectionMonths.add(month)
     if (row.origin === "cphs") committeeInspectionMonths.add(month)
   }
   const monthsWithInspection = inspectionMonths.size
   const monthsWithCommitteeInspection = committeeInspectionMonths.size
-  const periodIper = iperRows.filter((row) => row.createdAt.slice(0, 4) === String(args.periodYear))
+  const periodIper = iperRows.filter((row) => chileYear(row.createdAt) === periodYear)
 
   const monthsWithGuest = new Set<string>()
   for (const row of guestRows) {
-    if (row.scheduledFor.slice(0, 4) === periodYear) {
-      monthsWithGuest.add(row.scheduledFor.slice(0, 7))
+    if (chileYear(row.scheduledFor) === periodYear) {
+      monthsWithGuest.add(chileMonth(row.scheduledFor))
     }
   }
 
-  const closedInPeriod = meetingRows.filter((row) =>
-    row.status === "closed" && row.closedAt !== null && row.closedAt.slice(0, 4) === String(args.periodYear))
-  const monthsWithClosedMeeting = new Set(closedInPeriod.map((row) => row.closedAt!.slice(0, 7))).size
+  // Una sesión cuenta en el mes en que OCURRIÓ, no en el que se firmó el acta.
+  // Con `closedAt`, el acta de la sesión de enero cerrada el 3 de febrero
+  // contaba como febrero: un comité que sesionó los doce meses podía quedar
+  // bajo el requisito de "N meses con sesión" —y sobra un mes duplicado donde
+  // se cerraron dos actas juntas—. `heldAt` es la fecha del hecho y
+  // `closeCommitteeMeeting` siempre la exige; `closedAt` sólo queda de respaldo
+  // por si alguna fila antigua la tuviera nula, para no descontar la sesión.
+  const closedInPeriod = meetingRows.flatMap((row) => {
+    if (row.status !== "closed") return []
+    const occurredAt = row.heldAt ?? row.closedAt
+    if (occurredAt === null || chileYear(occurredAt) !== periodYear) return []
+    return [{ ...row, heldOn: chileMonth(occurredAt) }]
+  })
+  const monthsWithClosedMeeting = new Set(closedInPeriod.map((row) => row.heldOn)).size
   // Las canceladas no cuentan como sesión convocada para la tabla previa.
   const convenedInPeriod = meetingRows.filter((row) =>
-    row.status !== "cancelled" && row.scheduledFor.slice(0, 4) === String(args.periodYear))
+    row.status !== "cancelled" && chileYear(row.scheduledFor) === periodYear)
 
-  const periodAgreements = agreementRows.filter((row) => row.createdAt.slice(0, 4) === String(args.periodYear))
+  const periodAgreements = agreementRows.filter((row) => chileYear(row.createdAt) === periodYear)
   const activeProgram = programRows.find((row) => row.status === "active")
 
   const requiredCourseIds = [...new Set(requirementRows.map((row) => row.courseId))]
@@ -414,9 +444,14 @@ export async function getCertificationDossier(dossierId: string, access: CphsAcc
 
   let requirements: EvaluatedRequirement[]
   if (frozen) {
-    requirements = stored.map((row) => {
+    // Una fila de otro nivel no es parte de este expediente: se ignora en vez de
+    // contarla como requisito (filas así sólo pueden venir de antes de que
+    // `recordManualEvaluation` validara el nivel). Un código que ya no está en
+    // el catálogo sí se muestra: era válido cuando se congeló.
+    requirements = stored.flatMap((row) => {
       const definition = findRequirement(row.requirementCode)
-      return {
+      if (definition && definition.level !== context.dossier.level) return []
+      return [{
         code: row.requirementCode,
         title: definition?.title ?? row.requirementCode,
         description: definition?.description ?? "",
@@ -424,7 +459,7 @@ export async function getCertificationDossier(dossierId: string, access: CphsAcc
         status: row.status as EvaluatedRequirement["status"],
         detail: row.detail ?? "",
         evidenceReference: row.evidenceReference,
-      }
+      }]
     })
   } else {
     const evidence = await gatherCertificationEvidence({
@@ -480,6 +515,13 @@ export async function recordManualEvaluation(input: unknown, access: CphsAccess)
   return db.transaction(async (tx) => {
     const context = await loadDossier(data.dossierId, tx)
     requireCphsAccess(access, "prevention:cphs:certify", context.worksiteId)
+    // El nivel sólo se conoce con el expediente cargado: sin esto se podía
+    // declarar un requisito de Plata u Oro dentro de un expediente Bronce y la
+    // fila quedaba guardada sin pertenecer al nivel auditado.
+    const dossierLevel = context.dossier.level as CertificationLevel
+    if (definition.level !== dossierLevel) {
+      throw new Error(`El requisito «${definition.title}» es del nivel ${CERTIFICATION_LEVEL_LABELS[definition.level]} y este expediente audita ${CERTIFICATION_LEVEL_LABELS[dossierLevel]}.`)
+    }
     if (context.dossier.status !== "draft") {
       throw new Error("El expediente ya fue presentado: no admite cambios.")
     }
@@ -712,6 +754,69 @@ export async function recordAuditResult(input: unknown, access: CphsAccess) {
       worksiteId: context.worksiteId,
       changeType: data.outcome,
       reason: data.auditResult,
+      beforeState: context.dossier,
+      afterState: updated,
+      actorUserId: access.userId,
+    })
+    return updated
+  })
+}
+
+const reopenSchema = z.object({
+  dossierId: z.string().min(1),
+  expectedVersion: z.number().int().positive(),
+  reason: z.string().trim().min(10).max(1000),
+})
+
+/**
+ * Devuelve a preparación un expediente rechazado. El rechazo de Mutual abre el
+ * ciclo de corrección, no lo cierra: sin esto el expediente quedaba en un
+ * callejón sin salida y la única salida era crear otro para el mismo período,
+ * que el índice único ya impide.
+ *
+ * Un expediente `certified` NO se reabre: su contenido es la evidencia de lo
+ * que se auditó y su vigencia anual depende de ella. Para otro período o nivel
+ * se crea un expediente nuevo.
+ *
+ * Las evaluaciones guardadas se conservan a propósito: las manuales siguen
+ * valiendo, lo automático vuelve a evaluarse en vivo mientras el expediente
+ * esté en preparación —el congelamiento se rehace al re-presentar— y la CAPA
+ * abierta por cada brecha se reutiliza en vez de duplicarse. El resultado de la
+ * auditoría tampoco se borra: es la lista de lo que hay que corregir.
+ */
+export async function reopenCertificationDossier(input: unknown, access: CphsAccess) {
+  const data = reopenSchema.parse(input)
+
+  return db.transaction(async (tx) => {
+    const context = await loadDossier(data.dossierId, tx)
+    requireCphsAccess(access, "prevention:cphs:certify", context.worksiteId)
+    if (context.dossier.status === "certified") {
+      throw new Error("Un expediente certificado no se reabre: es la evidencia de lo auditado. Crea un expediente nuevo para el período o nivel que corresponda.")
+    }
+    if (context.dossier.status !== "rejected") {
+      throw new Error("Sólo un expediente rechazado vuelve a preparación.")
+    }
+    if (context.dossier.version !== data.expectedVersion) {
+      throw new Error("El expediente cambió mientras lo editabas. Recarga y reintenta.")
+    }
+
+    const [updated] = await tx.update(preventionCertificationDossiers).set({
+      status: "draft",
+      version: context.dossier.version + 1,
+      updatedAt: nowIso(),
+    }).where(and(
+      eq(preventionCertificationDossiers.id, data.dossierId),
+      eq(preventionCertificationDossiers.status, "rejected"),
+      eq(preventionCertificationDossiers.version, data.expectedVersion),
+    )).returning()
+    if (!updated) throw new Error("El expediente cambió mientras lo editabas. Recarga y reintenta.")
+
+    await recordGovernanceHistory(tx, {
+      entityType: "certification_dossier",
+      entityId: updated.id,
+      worksiteId: context.worksiteId,
+      changeType: "reopened",
+      reason: data.reason,
       beforeState: context.dossier,
       afterState: updated,
       actorUserId: access.userId,

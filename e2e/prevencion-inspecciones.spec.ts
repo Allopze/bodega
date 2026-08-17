@@ -18,6 +18,6 @@ test.describe("Prevención — Inspecciones y auditorías", () => {
     await expect(page).toHaveURL(/\/prevencion\/inspecciones/)
 
     // Título de la página
-    await expectPageTitle(page, "Inspecciones y auditorías")
+    await expectPageTitle(page, "Inspecciones")
   })
 })

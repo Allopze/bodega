@@ -11,6 +11,7 @@ function cleanReport(): MigrationPreflightReport {
     },
     dte: { dualBusinessLinks: 0, duplicatePurchaseInvoices: 0 },
     pdtp: { legacyObjectiveLinks: 0, duplicateYears: 0 },
+    legal: { duplicateApplicabilities: 0 },
     skippedRelations: [],
   }
 }
@@ -42,6 +43,16 @@ describe("migration preflight", () => {
     report.pdtp = { legacyObjectiveLinks: 1, duplicateYears: 2 }
 
     expect(() => assertMigrationPreflightReport(report)).toThrow(/PDTP.*1.*2/)
+  })
+
+  // LEGAL-04: el índice único parcial de aplicabilidad con proceso nulo no se
+  // puede crear sobre una base que ya trae dos pronunciamientos para el mismo
+  // requisito y faena, y una migración que falla a medias rompe el despliegue.
+  it("bloquea aplicabilidades legales duplicadas antes de crear el índice único", () => {
+    const report = cleanReport()
+    report.legal = { duplicateApplicabilities: 3 }
+
+    expect(() => assertMigrationPreflightReport(report)).toThrow(/LEGAL.*3/)
   })
 
   it("acepta una base nueva o una base sin conflictos", () => {

@@ -8,6 +8,7 @@ import { worksites, worksiteStock, inventoryMovements, products, users } from "@
 import { isGlobalRole, visibleWorksiteIds } from "@/lib/auth/scope"
 import { buildXlsxBuffer, type ReportData } from "@/lib/reports/export"
 import type { Session } from "next-auth"
+import { todayInChile } from "@/lib/utils"
 
 export interface StockExportFilters {
   worksiteId?: string
@@ -92,7 +93,7 @@ export async function getStockExport(
   }
 
   const buffer = await buildXlsxBuffer(report)
-  const now = new Date().toISOString().slice(0, 10)
+  const now = todayInChile()
   const filename = `${report.filenameBase}-${now}.xlsx`
 
   return { buffer, filename, truncated }
@@ -188,7 +189,7 @@ export async function getKardexExport(
   }
 
   const buffer = await buildXlsxBuffer(report)
-  const now = new Date().toISOString().slice(0, 10)
+  const now = todayInChile()
   const filename = `${report.filenameBase}-${now}.xlsx`
 
   return { buffer, filename, truncated }

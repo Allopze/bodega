@@ -22,6 +22,7 @@ import type { EmergencyQuickFilter } from "@/lib/prevention/emergency-list-filte
 import { createCapaActionWithClient } from "@/lib/services/prevention-capa"
 import { onEmergencyDrillCompleted } from "@/lib/services/pdtp-adapters/pdtp-accreditation-connectors"
 import { getUserIdsWithPermission } from "@/lib/services/notification-targeting"
+import { codeYear, todayInChile } from "@/lib/utils"
 
 type Client = DB | Tx
 
@@ -31,10 +32,24 @@ export interface EmergencyAccess {
   permissions: readonly string[]
 }
 
-const CHILE_DATE_FORMAT = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Santiago", year: "numeric", month: "2-digit", day: "2-digit" })
-
-function todayInChile() {
-  return CHILE_DATE_FORMAT.format(new Date())
+/**
+ * Error de dominio con mensaje pensado para el usuario: `run()` en
+ * `app/(app)/prevencion/emergencias/actions.ts` devuelve SU mensaje tal cual y
+ * manda cualquier otro error a `unexpectedActionError`, que loguea y responde
+ * genérico para no filtrar detalles de driver o SQL al navegador. Mismo
+ * contrato que `CampaignDomainError` en prevention-campaigns.ts.
+ *
+ * La regla para elegir cuál lanzar: si el mensaje le dice al usuario qué hacer
+ * (no encontrado, versión desactualizada, estado que no admite la operación,
+ * datos que no cumplen una regla), es de dominio. Si describe algo que no
+ * debería poder ocurrir —un INSERT ... RETURNING que no devuelve fila—, es un
+ * `Error` común: al usuario no le sirve el detalle y al operador sí el log.
+ */
+export class EmergencyDomainError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = "EmergencyDomainError"
+  }
 }
 
 const NOT_FOUND = "Registro de emergencia no encontrado o fuera de alcance."
@@ -49,7 +64,7 @@ function scopeAllows(scope: WorksiteScope, worksiteId: string) {
 
 function requireAccess(access: EmergencyAccess, permission: string, worksiteId?: string) {
   if (!access.permissions.includes(permission) || (worksiteId && !scopeAllows(access.scope, worksiteId))) {
-    throw new Error(NOT_FOUND)
+    throw new EmergencyDomainError(NOT_FOUND)
   }
 }
 
@@ -109,10 +124,22 @@ export async function createEmergencyPlan(input: unknown, access: EmergencyAcces
   const data = planSchema.parse(input)
   requireAccess(access, "prevention:emergency:manage", data.worksiteId)
 
+  // La faena admite un solo plan no archivado. El índice parcial
+  // `prevention_emergency_plan_active_worksite_unique` es quien lo sostiene y
+  // sigue siendo la red de seguridad ante una carrera, pero fallaría con un
+  // error del driver: aquí se traduce a un mensaje que dice qué hacer.
+  const [vigente] = await db.select({ code: preventionEmergencyPlans.code })
+    .from(preventionEmergencyPlans)
+    .where(and(
+      eq(preventionEmergencyPlans.worksiteId, data.worksiteId),
+      sql`${preventionEmergencyPlans.status} <> 'archived'`,
+    )).limit(1)
+  if (vigente) throw new EmergencyDomainError(`La faena ya tiene el plan ${vigente.code} vigente. Archívalo para emitir el siguiente.`)
+
   const [created] = await db.insert(preventionEmergencyPlans).values({
     id: `pemgp-${nanoid()}`,
     worksiteId: data.worksiteId,
-    code: `PE-${new Date().getUTCFullYear()}-${nanoid(6).toUpperCase()}`,
+    code: `PE-${codeYear()}-${nanoid(6).toUpperCase()}`,
     title: data.title,
     description: data.description ?? null,
     createdByUserId: access.userId,
@@ -120,6 +147,34 @@ export async function createEmergencyPlan(input: unknown, access: EmergencyAcces
   if (!created) throw new Error("No se pudo crear el plan de emergencia.")
   await history(db, { entityType: "plan", entityId: created.id, worksiteId: data.worksiteId, changeType: "created", reason: `Plan creado: ${data.title}`, afterState: created, actorUserId: access.userId })
   return created
+}
+
+/**
+ * Carga el plan y exige que siga abierto a cambios.
+ *
+ * Un plan aprobado es el documento que se ejecuta: si se le siguen agregando
+ * escenarios, roles, recursos y contactos, lo aprobado deja de ser lo vigente.
+ * Se congela con la misma regla que `publishDocumentVersion` —inmutable una vez
+ * publicado, se cambia emitiendo la versión siguiente— y no con el
+ * `contentDigest` del PDTP: esa huella existe para proteger la ventana de
+ * revisión multipaso (in_review → JDPR → legal → active) donde el contenido
+ * debe quedar clavado entre firmas. Aquí la aprobación es un solo acto
+ * (draft → approved) y no hay ventana que proteger; una huella sería una
+ * columna y un hash defendiendo un hueco inexistente.
+ *
+ * La "versión nueva" es el plan siguiente: se archiva el vigente
+ * (`archiveEmergencyPlan`), lo que libera el índice parcial de un plan activo
+ * por faena, y se crea el que lo reemplaza.
+ */
+async function loadEditablePlan(tx: Tx, planId: string, access: EmergencyAccess) {
+  const [plan] = await tx.select().from(preventionEmergencyPlans).where(eq(preventionEmergencyPlans.id, planId)).limit(1)
+  if (!plan) throw new EmergencyDomainError(NOT_FOUND)
+  requireAccess(access, "prevention:emergency:manage", plan.worksiteId)
+  if (plan.status === "approved") {
+    throw new EmergencyDomainError("El plan está aprobado y su contenido quedó congelado. Archívalo y emite el plan siguiente para modificarlo.")
+  }
+  if (plan.status !== "draft") throw new EmergencyDomainError("Un plan archivado no admite cambios.")
+  return plan
 }
 
 const scenarioSchema = z.object({
@@ -133,10 +188,7 @@ const scenarioSchema = z.object({
 export async function addEmergencyScenario(input: unknown, access: EmergencyAccess) {
   const data = scenarioSchema.parse(input)
   return db.transaction(async (tx) => {
-    const [plan] = await tx.select().from(preventionEmergencyPlans).where(eq(preventionEmergencyPlans.id, data.planId)).limit(1)
-    if (!plan) throw new Error(NOT_FOUND)
-    requireAccess(access, "prevention:emergency:manage", plan.worksiteId)
-    if (plan.status === "archived") throw new Error("Un plan archivado no admite cambios.")
+    const plan = await loadEditablePlan(tx, data.planId, access)
 
     const [created] = await tx.insert(preventionEmergencyScenarios).values({
       id: `pemgs-${nanoid()}`,
@@ -162,18 +214,15 @@ const roleSchema = z.object({
 export async function addEmergencyRole(input: unknown, access: EmergencyAccess) {
   const data = roleSchema.parse(input)
   return db.transaction(async (tx) => {
-    const [plan] = await tx.select().from(preventionEmergencyPlans).where(eq(preventionEmergencyPlans.id, data.planId)).limit(1)
-    if (!plan) throw new Error(NOT_FOUND)
-    requireAccess(access, "prevention:emergency:manage", plan.worksiteId)
-    if (plan.status === "archived") throw new Error("Un plan archivado no admite cambios.")
+    const plan = await loadEditablePlan(tx, data.planId, access)
 
     const [assignee] = await tx.select().from(workers).where(eq(workers.id, data.assigneeWorkerId)).limit(1)
-    if (!assignee || !assignee.isActive) throw new Error("La persona titular no existe o está inactiva.")
-    if (assignee.worksiteId !== plan.worksiteId) throw new Error("El titular del rol debe pertenecer a la faena del plan.")
+    if (!assignee || !assignee.isActive) throw new EmergencyDomainError("La persona titular no existe o está inactiva.")
+    if (assignee.worksiteId !== plan.worksiteId) throw new EmergencyDomainError("El titular del rol debe pertenecer a la faena del plan.")
     if (data.backupWorkerId) {
       const [backup] = await tx.select().from(workers).where(eq(workers.id, data.backupWorkerId)).limit(1)
-      if (!backup || !backup.isActive) throw new Error("La persona de reemplazo no existe o está inactiva.")
-      if (backup.worksiteId !== plan.worksiteId) throw new Error("El reemplazo del rol debe pertenecer a la faena del plan.")
+      if (!backup || !backup.isActive) throw new EmergencyDomainError("La persona de reemplazo no existe o está inactiva.")
+      if (backup.worksiteId !== plan.worksiteId) throw new EmergencyDomainError("El reemplazo del rol debe pertenecer a la faena del plan.")
     }
 
     const [created] = await tx.insert(preventionEmergencyRoles).values({
@@ -206,10 +255,7 @@ const resourceSchema = z.object({
 export async function addEmergencyResource(input: unknown, access: EmergencyAccess) {
   const data = resourceSchema.parse(input)
   return db.transaction(async (tx) => {
-    const [plan] = await tx.select().from(preventionEmergencyPlans).where(eq(preventionEmergencyPlans.id, data.planId)).limit(1)
-    if (!plan) throw new Error(NOT_FOUND)
-    requireAccess(access, "prevention:emergency:manage", plan.worksiteId)
-    if (plan.status === "archived") throw new Error("Un plan archivado no admite cambios.")
+    const plan = await loadEditablePlan(tx, data.planId, access)
 
     const [created] = await tx.insert(preventionEmergencyResources).values({
       id: `pemgre-${nanoid()}`,
@@ -231,6 +277,63 @@ export async function addEmergencyResource(input: unknown, access: EmergencyAcce
   })
 }
 
+const updateResourceSchema = resourceSchema.omit({ planId: true }).extend({
+  resourceId: z.string().min(1),
+  status: z.enum(["operational", "needs_maintenance", "out_of_service"]),
+})
+
+/**
+ * El inventario era de sólo alta: no había forma de registrar que el extintor
+ * se recargó ni de dar de baja el que se retiró, así que el módulo no podía
+ * apagar sus propias alertas y un equipo vencido quedaba para siempre en
+ * `getPreventionAttention`.
+ *
+ * Se actualiza contra la FAENA del equipo, no contra el plan: el equipo
+ * pertenece a la faena (ver el comentario de la tabla) y mantenerlo no cambia
+ * el documento aprobado, así que esto sigue disponible con el plan aprobado o
+ * archivado. Dar de baja es `status: "out_of_service"`, no borrar la fila: la
+ * ficha y su historial se conservan.
+ *
+ * Sin CAS: la tabla no tiene `version` y una ficha de inventario la edita una
+ * persona a la vez. Si dos ediciones simultáneas llegaran a importar, se agrega
+ * `version` y se sigue el patrón de planes y simulacros.
+ */
+export async function updateEmergencyResource(input: unknown, access: EmergencyAccess) {
+  const data = updateResourceSchema.parse(input)
+  return db.transaction(async (tx) => {
+    const [resource] = await tx.select().from(preventionEmergencyResources).where(eq(preventionEmergencyResources.id, data.resourceId)).limit(1)
+    if (!resource) throw new EmergencyDomainError(NOT_FOUND)
+    requireAccess(access, "prevention:emergency:manage", resource.worksiteId)
+
+    const now = nowIso()
+    const [updated] = await tx.update(preventionEmergencyResources).set({
+      name: data.name,
+      kind: data.kind,
+      location: data.location,
+      serialNumber: data.serialNumber ?? null,
+      lastInspectedAt: data.lastInspectedAt ?? null,
+      nextInspectionAt: data.nextInspectionAt ?? null,
+      expiresAt: data.expiresAt ?? null,
+      status: data.status,
+      updatedAt: now,
+    }).where(eq(preventionEmergencyResources.id, resource.id)).returning()
+    if (!updated) throw new Error("No se pudo actualizar el recurso.")
+
+    const decommissioned = data.status === "out_of_service" && resource.status !== "out_of_service"
+    await history(tx, {
+      entityType: "resource",
+      entityId: resource.id,
+      worksiteId: resource.worksiteId,
+      changeType: decommissioned ? "decommissioned" : "updated",
+      reason: decommissioned ? `Baja del equipo: ${data.name}` : `Actualización del equipo: ${data.name}`,
+      beforeState: resource,
+      afterState: updated,
+      actorUserId: access.userId,
+    })
+    return updated
+  })
+}
+
 const contactSchema = z.object({
   planId: z.string().min(1),
   name: z.string().trim().min(2).max(200),
@@ -242,10 +345,7 @@ const contactSchema = z.object({
 export async function addEmergencyContact(input: unknown, access: EmergencyAccess) {
   const data = contactSchema.parse(input)
   return db.transaction(async (tx) => {
-    const [plan] = await tx.select().from(preventionEmergencyPlans).where(eq(preventionEmergencyPlans.id, data.planId)).limit(1)
-    if (!plan) throw new Error(NOT_FOUND)
-    requireAccess(access, "prevention:emergency:manage", plan.worksiteId)
-    if (plan.status === "archived") throw new Error("Un plan archivado no admite cambios.")
+    const plan = await loadEditablePlan(tx, data.planId, access)
 
     const [created] = await tx.insert(preventionEmergencyContacts).values({
       id: `pemgc-${nanoid()}`,
@@ -276,19 +376,19 @@ export async function approveEmergencyPlan(input: unknown, access: EmergencyAcce
   const data = approvePlanSchema.parse(input)
   return db.transaction(async (tx) => {
     const [plan] = await tx.select().from(preventionEmergencyPlans).where(eq(preventionEmergencyPlans.id, data.planId)).limit(1)
-    if (!plan) throw new Error(NOT_FOUND)
+    if (!plan) throw new EmergencyDomainError(NOT_FOUND)
     requireAccess(access, "prevention:emergency:approve", plan.worksiteId)
-    if (plan.version !== data.expectedVersion) throw new Error("El plan cambió mientras lo editabas. Recarga y reintenta.")
-    if (plan.status === "approved") throw new Error("El plan ya está aprobado.")
-    if (plan.status === "archived") throw new Error("Un plan archivado no puede aprobarse.")
-    if (plan.createdByUserId === access.userId) throw new Error("Quien crea el plan no puede aprobarlo.")
+    if (plan.version !== data.expectedVersion) throw new EmergencyDomainError("El plan cambió mientras lo editabas. Recarga y reintenta.")
+    if (plan.status === "approved") throw new EmergencyDomainError("El plan ya está aprobado.")
+    if (plan.status === "archived") throw new EmergencyDomainError("Un plan archivado no puede aprobarse.")
+    if (plan.createdByUserId === access.userId) throw new EmergencyDomainError("Quien crea el plan no puede aprobarlo.")
 
     const [scenarios, roles] = await Promise.all([
       tx.select({ id: preventionEmergencyScenarios.id }).from(preventionEmergencyScenarios).where(eq(preventionEmergencyScenarios.planId, plan.id)),
       tx.select({ id: preventionEmergencyRoles.id }).from(preventionEmergencyRoles).where(eq(preventionEmergencyRoles.planId, plan.id)),
     ])
     const readiness = assessPlanReadiness({ scenarios, roles })
-    if (!readiness.ready) throw new Error(readiness.blockers.join(" "))
+    if (!readiness.ready) throw new EmergencyDomainError(readiness.blockers.join(" "))
 
     const now = nowIso()
     const [updated] = await tx.update(preventionEmergencyPlans).set({
@@ -301,13 +401,113 @@ export async function approveEmergencyPlan(input: unknown, access: EmergencyAcce
       eq(preventionEmergencyPlans.id, plan.id),
       eq(preventionEmergencyPlans.version, data.expectedVersion),
     )).returning()
-    if (!updated) throw new Error("El plan cambió mientras lo editabas. Recarga y reintenta.")
+    if (!updated) throw new EmergencyDomainError("El plan cambió mientras lo editabas. Recarga y reintenta.")
     await history(tx, { entityType: "plan", entityId: plan.id, worksiteId: plan.worksiteId, changeType: "approved", reason: "Plan aprobado", beforeState: plan, afterState: updated, actorUserId: access.userId })
     return updated
   })
 }
 
+/**
+ * Declara qué actividades del programa anual acredita un simulacro de este plan
+ * (EMERGENCIAS-05).
+ *
+ * `pdtpActivityNumbers` existía en la tabla desde el principio pero NADIE lo
+ * escribía: `completeEmergencyDrill` lo leía, encontraba `null` y salía por la
+ * rama vacía, así que ningún simulacro acreditó jamás la N°84 del catálogo 2026
+ * ("Simulacros", clasificada `enganche`). Mismo defecto y misma cura que en
+ * plantillas de inspección (`setInspectionTemplatePdtpActivities`): se cablea el
+ * escritor, no se borra el conector.
+ *
+ * A diferencia de las plantillas, esto NO se restringe al borrador. El plan se
+ * congela al aprobarse (`loadEditablePlan`), pero los simulacros sólo existen
+ * sobre un plan APROBADO: limitar el cableado al borrador dejaría el conector
+ * muerto justo en los planes que ejecutan simulacros. Y vale el mismo argumento
+ * que en inspecciones —el cableado al PDTP no es contenido del documento: no
+ * cambia qué escenarios, roles ni contactos declara el plan aprobado—. Un plan
+ * archivado sí queda fuera: ya no ejecuta nada.
+ */
+const setPlanPdtpActivitiesSchema = z.object({
+  planId: z.string().min(1),
+  expectedVersion: z.number().int().positive(),
+  pdtpActivityNumbers: z.array(z.number().int().positive()).max(20),
+})
+
+export async function setEmergencyPlanPdtpActivities(input: unknown, access: EmergencyAccess) {
+  const data = setPlanPdtpActivitiesSchema.parse(input)
+  return db.transaction(async (tx) => {
+    const [plan] = await tx.select().from(preventionEmergencyPlans).where(eq(preventionEmergencyPlans.id, data.planId)).limit(1)
+    if (!plan) throw new Error(NOT_FOUND)
+    requireAccess(access, "prevention:emergency:manage", plan.worksiteId)
+    if (plan.version !== data.expectedVersion) throw new Error("El plan cambió mientras lo editabas. Recarga y reintenta.")
+    if (plan.status === "archived") throw new EmergencyDomainError("Un plan archivado no admite cambios.")
+
+    const numbers = data.pdtpActivityNumbers.length > 0
+      ? [...new Set(data.pdtpActivityNumbers)].sort((a, b) => a - b)
+      : null
+    const now = nowIso()
+    const [updated] = await tx.update(preventionEmergencyPlans).set({
+      pdtpActivityNumbers: numbers,
+      version: plan.version + 1,
+      updatedAt: now,
+    }).where(and(
+      eq(preventionEmergencyPlans.id, plan.id),
+      eq(preventionEmergencyPlans.version, data.expectedVersion),
+    )).returning()
+    if (!updated) throw new Error("El plan cambió mientras lo editabas. Recarga y reintenta.")
+    await history(tx, {
+      entityType: "plan", entityId: plan.id, worksiteId: plan.worksiteId, changeType: "pdtp_activities_set",
+      reason: numbers ? `Los simulacros acreditan las actividades PDTP ${numbers.join(", ")}` : "Los simulacros no acreditan ninguna actividad PDTP",
+      beforeState: plan, afterState: updated, actorUserId: access.userId,
+    })
+    return updated
+  })
+}
+
+const archivePlanSchema = z.object({
+  planId: z.string().min(1),
+  expectedVersion: z.number().int().positive(),
+  reason: z.string().trim().min(10).max(1000),
+})
+
+/**
+ * Sin archivado, el índice parcial `prevention_emergency_plan_active_worksite_unique`
+ * (un plan no archivado por faena) dejaba a la faena con su primer plan para
+ * siempre: no había forma de emitir el del año siguiente. Archivar libera el
+ * índice y, junto con el congelamiento del plan aprobado, es el camino de
+ * versión nueva del módulo.
+ *
+ * Exige el permiso de aprobar, no el de administrar: retirar de vigencia el
+ * plan de emergencia de una faena pesa lo mismo que ponerlo en vigencia, y no
+ * hace falta inventar un permiso nuevo para eso.
+ */
+export async function archiveEmergencyPlan(input: unknown, access: EmergencyAccess) {
+  const data = archivePlanSchema.parse(input)
+  return db.transaction(async (tx) => {
+    const [plan] = await tx.select().from(preventionEmergencyPlans).where(eq(preventionEmergencyPlans.id, data.planId)).limit(1)
+    if (!plan) throw new EmergencyDomainError(NOT_FOUND)
+    requireAccess(access, "prevention:emergency:approve", plan.worksiteId)
+    if (plan.version !== data.expectedVersion) throw new EmergencyDomainError("El plan cambió mientras lo editabas. Recarga y reintenta.")
+    if (plan.status === "archived") throw new EmergencyDomainError("El plan ya está archivado.")
+
+    const now = nowIso()
+    const [updated] = await tx.update(preventionEmergencyPlans).set({
+      status: "archived",
+      version: plan.version + 1,
+      updatedAt: now,
+    }).where(and(
+      eq(preventionEmergencyPlans.id, plan.id),
+      eq(preventionEmergencyPlans.version, data.expectedVersion),
+    )).returning()
+    if (!updated) throw new EmergencyDomainError("El plan cambió mientras lo editabas. Recarga y reintenta.")
+    await history(tx, { entityType: "plan", entityId: plan.id, worksiteId: plan.worksiteId, changeType: "archived", reason: data.reason, beforeState: plan, afterState: updated, actorUserId: access.userId })
+    return updated
+  })
+}
+
 /* ── Simulacros ───────────────────────────────────────────────────────────── */
+
+/** Tolerancia de reloj para `executedAt` (ver `completeDrillSchema`). */
+const FUTURE_CLOCK_SKEW_MS = 5 * 60 * 1000
 
 const scheduleDrillSchema = z.object({
   planId: z.string().min(1),
@@ -319,9 +519,9 @@ export async function scheduleEmergencyDrill(input: unknown, access: EmergencyAc
   const data = scheduleDrillSchema.parse(input)
   return db.transaction(async (tx) => {
     const [plan] = await tx.select().from(preventionEmergencyPlans).where(eq(preventionEmergencyPlans.id, data.planId)).limit(1)
-    if (!plan) throw new Error(NOT_FOUND)
+    if (!plan) throw new EmergencyDomainError(NOT_FOUND)
     requireAccess(access, "prevention:emergency:drill_execute", plan.worksiteId)
-    if (plan.status !== "approved") throw new Error("Sólo un plan aprobado puede programar simulacros.")
+    if (plan.status !== "approved") throw new EmergencyDomainError("Sólo un plan aprobado puede programar simulacros.")
 
     const [created] = await tx.insert(preventionEmergencyDrills).values({
       id: `pemgd-${nanoid()}`,
@@ -356,6 +556,18 @@ const completeDrillSchema = z.object({
   if (value.outcome === "needs_improvement" && !value.targetDate) {
     ctx.addIssue({ code: "custom", path: ["targetDate"], message: "Un simulacro que requiere mejora necesita un plazo para la acción correctiva." })
   }
+  // EMERGENCIAS-06: `executedAt` no tenía cota superior, así que un simulacro
+  // podía quedar "realizado" el año que viene y acreditar una actividad del
+  // PDTP con fecha futura (el motor usa `occurredAt` para ubicarla en el
+  // período). Se compara como instante y no como texto: el schema admite
+  // offset, y "…T20:00:00+02:00" es lexicográficamente mayor que "…T19:00:00Z"
+  // siendo una hora ANTERIOR. La holgura absorbe el desfase entre el reloj del
+  // navegador —que es quien calcula el instante— y el del servidor; no alcanza
+  // para colar una fecha inventada. La cota inferior no se puede ver desde acá
+  // —depende de la fila del simulacro— y va en el servicio.
+  if (new Date(value.executedAt).getTime() > Date.now() + FUTURE_CLOCK_SKEW_MS) {
+    ctx.addIssue({ code: "custom", path: ["executedAt"], message: "Un simulacro no puede haberse realizado en el futuro." })
+  }
 })
 
 /**
@@ -369,17 +581,57 @@ export async function completeEmergencyDrill(input: unknown, access: EmergencyAc
   let accreditation: Parameters<typeof onEmergencyDrillCompleted>[0] | null = null
   const result = await db.transaction(async (tx) => {
     const [drill] = await tx.select().from(preventionEmergencyDrills).where(eq(preventionEmergencyDrills.id, data.drillId)).limit(1)
-    if (!drill) throw new Error(NOT_FOUND)
+    if (!drill) throw new EmergencyDomainError(NOT_FOUND)
     requireAccess(access, "prevention:emergency:drill_execute", drill.worksiteId)
-    if (drill.version !== data.expectedVersion) throw new Error("El simulacro cambió mientras lo editabas. Recarga y reintenta.")
-    if (drill.status !== "scheduled") throw new Error("Sólo un simulacro programado puede completarse.")
+    if (drill.version !== data.expectedVersion) throw new EmergencyDomainError("El simulacro cambió mientras lo editabas. Recarga y reintenta.")
+    if (drill.status !== "scheduled") throw new EmergencyDomainError("Sólo un simulacro programado puede completarse.")
+
+    // EMERGENCIAS-06, cota inferior: el simulacro no pudo realizarse antes de la
+    // fecha para la que se programó. Se elige `scheduledFor` y no `createdAt`
+    // porque `scheduledFor` es libre —un simulacro ya ocurrido se registra
+    // programándolo con su fecha real y completándolo—, así que `createdAt`
+    // rechazaría el registro retroactivo legítimo. Y si el simulacro se adelantó
+    // respecto de lo programado, el camino del módulo ya está decidido:
+    // cancelar con motivo y volver a programar (ver `cancelEmergencyDrill`),
+    // que deja traza de que la fecha se movió en vez de borrarla.
+    if (new Date(data.executedAt).getTime() < new Date(drill.scheduledFor).getTime()) {
+      throw new EmergencyDomainError("El simulacro no pudo realizarse antes de la fecha para la que fue programado. Si se adelantó, cancélalo con su motivo y prográmalo en la fecha real.")
+    }
+
+    // Los participantes no se validaban: entraba gente de otra faena, inactiva,
+    // inexistente o repetida. Misma regla de pertenencia que `addEmergencyRole`,
+    // pero en UNA consulta en lote (patrón de `recordCampaignAttendance`), no N+1.
+    // Va antes de assessDrillCompletion porque un duplicado inflaría el conteo
+    // de presentes que decide si el simulacro puede cerrarse.
+    const participantIds = data.participants.map((item) => item.workerId)
+    if (participantIds.length > 0) {
+      const duplicated = participantIds.length - new Set(participantIds).size
+      if (duplicated > 0) {
+        // Se rechaza en vez de deduplicar: dos filas del mismo trabajador pueden
+        // traer `present` contradictorio y no hay criterio para elegir cuál vale;
+        // además el conteo de asistentes acredita actividades PDTP. El UNIQUE
+        // (drill_id, worker_id) sigue como red de seguridad en la base, pero
+        // fallaría con un error de driver en vez de un mensaje de dominio.
+        throw new EmergencyDomainError(`${duplicated} participante(s) vienen repetidos en la lista.`)
+      }
+      const valid = await tx.select({ id: workers.id }).from(workers).where(and(
+        inArray(workers.id, participantIds),
+        eq(workers.worksiteId, drill.worksiteId),
+        eq(workers.isActive, true),
+      ))
+      const ok = new Set(valid.map((worker) => worker.id))
+      const rejected = participantIds.filter((id) => !ok.has(id))
+      if (rejected.length > 0) {
+        throw new EmergencyDomainError(`${rejected.length} participante(s) no existen, están inactivos o no pertenecen a la faena del simulacro.`)
+      }
+    }
 
     const readiness = assessDrillCompletion({
       participants: data.participants,
       evacuationSeconds: data.evacuationSeconds ?? null,
       outcome: data.outcome,
     })
-    if (!readiness.ready) throw new Error(readiness.blockers.join(" "))
+    if (!readiness.ready) throw new EmergencyDomainError(readiness.blockers.join(" "))
 
     if (data.participants.length > 0) {
       await tx.insert(preventionEmergencyDrillParticipants).values(data.participants.map((item) => ({
@@ -422,7 +674,7 @@ export async function completeEmergencyDrill(input: unknown, access: EmergencyAc
       eq(preventionEmergencyDrills.id, drill.id),
       eq(preventionEmergencyDrills.version, data.expectedVersion),
     )).returning()
-    if (!updated) throw new Error("El simulacro cambió mientras lo editabas. Recarga y reintenta.")
+    if (!updated) throw new EmergencyDomainError("El simulacro cambió mientras lo editabas. Recarga y reintenta.")
     await history(tx, { entityType: "drill", entityId: drill.id, worksiteId: drill.worksiteId, changeType: "completed", reason: `Resultado: ${data.outcome}`, beforeState: drill, afterState: updated, actorUserId: access.userId })
 
     // Auto-acreditación PDTP: actividades del plan de emergencia. Se dispara
@@ -447,6 +699,46 @@ export async function completeEmergencyDrill(input: unknown, access: EmergencyAc
   if (accreditation) await onEmergencyDrillCompleted(accreditation)
 
   return result
+}
+
+const cancelDrillSchema = z.object({
+  drillId: z.string().min(1),
+  expectedVersion: z.number().int().positive(),
+  reason: z.string().trim().min(10).max(1000),
+})
+
+/**
+ * Un simulacro programado que no se realizó quedaba colgado como "programado"
+ * para siempre: no se podía cancelar ni reprogramar. Se cancela con motivo y no
+ * se borra, igual que una convocatoria de CPHS (`cancelCommitteeMeeting`), para
+ * que el simulacro fallido siga contando como hecho ocurrido.
+ *
+ * Reprogramar es cancelar y volver a programar: el estado "cancelled" con su
+ * motivo deja la traza de por qué se movió, cosa que editar la fecha en su
+ * lugar borraría.
+ */
+export async function cancelEmergencyDrill(input: unknown, access: EmergencyAccess) {
+  const data = cancelDrillSchema.parse(input)
+  return db.transaction(async (tx) => {
+    const [drill] = await tx.select().from(preventionEmergencyDrills).where(eq(preventionEmergencyDrills.id, data.drillId)).limit(1)
+    if (!drill) throw new EmergencyDomainError(NOT_FOUND)
+    requireAccess(access, "prevention:emergency:drill_execute", drill.worksiteId)
+    if (drill.version !== data.expectedVersion) throw new EmergencyDomainError("El simulacro cambió mientras lo editabas. Recarga y reintenta.")
+    if (drill.status !== "scheduled") throw new EmergencyDomainError("Sólo un simulacro programado puede cancelarse.")
+
+    const now = nowIso()
+    const [updated] = await tx.update(preventionEmergencyDrills).set({
+      status: "cancelled",
+      version: drill.version + 1,
+      updatedAt: now,
+    }).where(and(
+      eq(preventionEmergencyDrills.id, drill.id),
+      eq(preventionEmergencyDrills.version, data.expectedVersion),
+    )).returning()
+    if (!updated) throw new EmergencyDomainError("El simulacro cambió mientras lo editabas. Recarga y reintenta.")
+    await history(tx, { entityType: "drill", entityId: drill.id, worksiteId: drill.worksiteId, changeType: "cancelled", reason: data.reason, beforeState: drill, afterState: updated, actorUserId: access.userId })
+    return updated
+  })
 }
 
 /* ── Consultas ────────────────────────────────────────────────────────────── */
@@ -625,12 +917,24 @@ export async function listEmergencyWorksites(access: EmergencyAccess) {
 
 /**
  * Dotación activa dentro del alcance, para organigrama y participantes de
- * simulacro. Devuelve `worksiteId` porque el servicio rechaza personas de
- * otra faena: el formulario filtra por la faena del plan antes de enviar.
+ * simulacro. Devuelve `worksiteId` porque el servicio rechaza personas de otra
+ * faena.
+ *
+ * EMERGENCIAS-11: `worksiteId` filtra en SQL, ANTES del tope de 2000. El único
+ * llamador siempre quiere la dotación de UNA faena (la del plan) y filtraba en
+ * memoria después de traer las 2000 primeras del alcance ordenadas por
+ * apellido: con alcance global y dotación grande, unas faenas llegaban
+ * completas y otras truncadas según dónde cayera el corte alfabético — y la
+ * gente que faltaba no se podía marcar presente en su propio simulacro. El tope
+ * sigue existiendo como red contra una faena desmedida, pero ahora se aplica
+ * sobre el conjunto que realmente se va a mostrar.
  */
-export async function listEmergencyWorkers(access: EmergencyAccess) {
+export async function listEmergencyWorkers(access: EmergencyAccess, worksiteId?: string) {
   requireAccess(access, "prevention:emergency:view")
   if (access.scope.mode === "none") return []
+  // Una faena fuera del alcance no devuelve dotación ajena, devuelve nada:
+  // mismo criterio que `scopeCondition`, sin filtrar en memoria después.
+  if (worksiteId && !scopeAllows(access.scope, worksiteId)) return []
   return db.select({
     id: workers.id,
     firstName: workers.firstName,
@@ -641,6 +945,7 @@ export async function listEmergencyWorkers(access: EmergencyAccess) {
     .from(workers)
     .where(and(
       eq(workers.isActive, true),
+      worksiteId ? eq(workers.worksiteId, worksiteId) : undefined,
       access.scope.mode === "some" ? inArray(workers.worksiteId, access.scope.ids) : undefined,
     ))
     .orderBy(asc(workers.lastName), asc(workers.firstName))

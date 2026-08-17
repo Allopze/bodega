@@ -26,8 +26,12 @@ import {
   addEmergencyRoleAction,
   addEmergencyScenarioAction,
   approveEmergencyPlanAction,
+  archiveEmergencyPlanAction,
+  cancelEmergencyDrillAction,
   completeEmergencyDrillAction,
   scheduleEmergencyDrillAction,
+  setEmergencyPlanPdtpActivitiesAction,
+  updateEmergencyResourceAction,
 } from "../actions"
 import { Field } from "@/components/ui/field"
 import { useOperation } from "@/lib/hooks/use-operation"
@@ -43,11 +47,13 @@ interface PlanInfo {
   description: string | null
   createdByUserId: string
   version: number
+  /** Actividades del PDTP que acredita cada simulacro de este plan. */
+  pdtpActivityNumbers: number[]
 }
 
 interface ScenarioInfo { id: string; type: string; title: string; description: string | null; responseProcedure: string }
 interface RoleInfo { id: string; roleName: string; assigneeName: string; backupName: string | null }
-interface ResourceInfo { id: string; name: string; kind: string; location: string; lastInspectedAt: string | null; nextInspectionAt: string | null; status: string }
+interface ResourceInfo { id: string; name: string; kind: string; location: string; serialNumber: string | null; lastInspectedAt: string | null; nextInspectionAt: string | null; expiresAt: string | null; status: string }
 interface ContactInfo { id: string; name: string; org: string; role: string | null; phone: string }
 interface DrillInfo { id: string; scenarioType: string; scheduledFor: string; status: string; outcome: string | null; version: number }
 interface WorkerOption { id: string; name: string; position: string | null }
@@ -82,6 +88,12 @@ export function PlanDetail({
     { label: "Estado", value: EMERGENCY_PLAN_STATUS_LABELS[plan.status] ?? plan.status },
     { label: "Faena", value: worksiteName },
     { label: "Código", value: plan.code },
+    // Sin actividades declaradas, completar un simulacro no acredita nada en el
+    // programa anual: el conector es un no-op (EMERGENCIAS-05).
+    {
+      label: "Acreditación PDTP",
+      value: plan.pdtpActivityNumbers.length > 0 ? `N° ${plan.pdtpActivityNumbers.join(", ")}` : "No acredita",
+    },
   ]
 
   function approve() {
@@ -110,12 +122,24 @@ export function PlanDetail({
         </div>
       )}
 
-      {isDraft && (
-        <div className="flex items-center gap-3">
+      {isApproved && (
+        <p className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] p-4 text-sm text-[var(--color-text-subtle)]">
+          El plan está aprobado: su contenido quedó congelado. Para cambiarlo, archívalo y emite el plan siguiente de la faena.
+          El inventario de equipos sí se mantiene, porque pertenece a la faena y no al documento.
+        </p>
+      )}
+
+      {plan.status !== "archived" && (
+        <div className="flex flex-wrap items-center gap-3">
           <Badge variant={emergencyPlanStatusBadgeVariant(plan.status)}>{EMERGENCY_PLAN_STATUS_LABELS[plan.status]}</Badge>
           {canApproveThis && (
             <Button size="sm" disabled={!readiness.ready || approveOperation.pending} onClick={approve}>Aprobar plan</Button>
           )}
+          {/* Disponible con el plan aprobado, no sólo en borrador: los simulacros
+              sólo existen sobre un plan aprobado, y el cableado al programa
+              anual no es contenido del documento congelado. */}
+          {canManage && <PdtpActivitiesDialog planId={plan.id} code={plan.code} version={plan.version} current={plan.pdtpActivityNumbers} />}
+          {canApprove && <ArchivePlanDialog planId={plan.id} code={plan.code} version={plan.version} />}
           {approveOperation.message && <p role="status" className="text-sm">{approveOperation.message}</p>}
         </div>
       )}
@@ -123,7 +147,7 @@ export function PlanDetail({
       <section className="space-y-3">
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-semibold">Escenarios ({scenarios.length})</h2>
-          {canManage && plan.status !== "archived" && <AddScenarioDialog planId={plan.id} />}
+          {canManage && isDraft && <AddScenarioDialog planId={plan.id} />}
         </div>
         {scenarios.length === 0 ? (
           <p className="rounded-lg border border-[var(--color-border)] p-4 text-sm text-[var(--color-text-subtle)]">Sin escenarios declarados.</p>
@@ -154,7 +178,7 @@ export function PlanDetail({
       <section className="space-y-3">
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-semibold">Organigrama de emergencia ({roles.length})</h2>
-          {canManage && plan.status !== "archived" && eligibleWorkers.length > 0 && <AddRoleDialog planId={plan.id} eligibleWorkers={eligibleWorkers} />}
+          {canManage && isDraft && eligibleWorkers.length > 0 && <AddRoleDialog planId={plan.id} eligibleWorkers={eligibleWorkers} />}
         </div>
         {roles.length === 0 ? (
           <p className="rounded-lg border border-[var(--color-border)] p-4 text-sm text-[var(--color-text-subtle)]">Sin roles designados.</p>
@@ -185,7 +209,7 @@ export function PlanDetail({
       <section className="space-y-3">
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-semibold">Recursos ({resources.length})</h2>
-          {canManage && plan.status !== "archived" && <AddResourceDialog planId={plan.id} />}
+          {canManage && isDraft && <AddResourceDialog planId={plan.id} />}
         </div>
         {resources.length === 0 ? (
           <p className="rounded-lg border border-[var(--color-border)] p-4 text-sm text-[var(--color-text-subtle)]">Sin recursos declarados.</p>
@@ -198,7 +222,9 @@ export function PlanDetail({
                   <TableHead>Tipo</TableHead>
                   <TableHead>Ubicación</TableHead>
                   <TableHead>Próxima inspección</TableHead>
+                  <TableHead>Vence</TableHead>
                   <TableHead>Estado</TableHead>
+                  {canManage && <TableHead className="text-right">Acción</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -208,11 +234,17 @@ export function PlanDetail({
                     <TableCell className="text-sm">{resource.kind}</TableCell>
                     <TableCell className="text-sm">{resource.location}</TableCell>
                     <TableCell className="text-sm tabular-nums">{resource.nextInspectionAt ?? "—"}</TableCell>
+                    <TableCell className="text-sm tabular-nums">{resource.expiresAt ?? "—"}</TableCell>
                     <TableCell>
                       <Badge variant={resource.status === "operational" ? "success" : resource.status === "out_of_service" ? "danger" : "warning"}>
                         {EMERGENCY_RESOURCE_STATUS_LABELS[resource.status] ?? resource.status}
                       </Badge>
                     </TableCell>
+                    {canManage && (
+                      <TableCell className="text-right">
+                        <EditResourceDialog resource={resource} />
+                      </TableCell>
+                    )}
                   </TableRow>
                 ))}
               </TableBody>
@@ -224,7 +256,7 @@ export function PlanDetail({
       <section className="space-y-3">
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-semibold">Contactos ({contacts.length})</h2>
-          {canManage && plan.status !== "archived" && <AddContactDialog planId={plan.id} />}
+          {canManage && isDraft && <AddContactDialog planId={plan.id} />}
         </div>
         {contacts.length === 0 ? (
           <p className="rounded-lg border border-[var(--color-border)] p-4 text-sm text-[var(--color-text-subtle)]">Sin contactos registrados.</p>
@@ -293,7 +325,10 @@ export function PlanDetail({
                     {canExecuteDrill && (
                       <TableCell className="text-right">
                         {drill.status === "scheduled" && (
-                          <CompleteDrillDialog drill={drill} eligibleWorkers={eligibleWorkers} assignees={assignees} />
+                          <div className="flex justify-end gap-2">
+                            <CompleteDrillDialog drill={drill} eligibleWorkers={eligibleWorkers} assignees={assignees} />
+                            <CancelDrillDialog drill={drill} />
+                          </div>
                         )}
                       </TableCell>
                     )}
@@ -446,6 +481,163 @@ function AddResourceDialog({ planId }: { planId: string }) {
   )
 }
 
+/* ── Mantención y baja de un recurso ──────────────────────────────────────────
+ * El equipo pertenece a la faena, no al documento: se mantiene aunque el plan
+ * esté aprobado o archivado. Actualizar las fechas es lo que apaga el aviso de
+ * vencimiento en la bandeja de Prevención; darlo de baja lo saca del control de
+ * inspecciones y lo deja contado como fuera de servicio.
+ */
+
+const RESOURCE_STATUSES = Object.keys(EMERGENCY_RESOURCE_STATUS_LABELS)
+
+function EditResourceDialog({ resource }: { resource: ResourceInfo }) {
+  const [open, setOpen] = React.useState(false)
+  const [status, setStatus] = React.useState(resource.status)
+  const operation = useOperation()
+
+  function submit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const form = new FormData(event.currentTarget)
+    const optional = (key: string) => String(form.get(key) ?? "").trim() || null
+    operation.run(() => updateEmergencyResourceAction({
+      resourceId: resource.id,
+      name: form.get("name"),
+      kind: form.get("kind"),
+      location: form.get("location"),
+      serialNumber: optional("serialNumber"),
+      lastInspectedAt: optional("lastInspectedAt"),
+      nextInspectionAt: optional("nextInspectionAt"),
+      expiresAt: optional("expiresAt"),
+      status,
+    }), () => setOpen(false))
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild><Button size="sm" variant="ghost">Editar</Button></DialogTrigger>
+      <DialogContent>
+        <form onSubmit={submit} className="max-h-[75vh] space-y-4 overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Editar {resource.name}</DialogTitle>
+            <DialogDescription>
+              Registra la recarga, la inspección o la baja del equipo. Actualizar las fechas retira el aviso de vencimiento.
+            </DialogDescription>
+          </DialogHeader>
+          <Field label="Nombre"><Input name="name" required minLength={2} maxLength={200} defaultValue={resource.name} /></Field>
+          <div className="grid gap-3 md:grid-cols-2">
+            <Field label="Tipo"><Input name="kind" required minLength={2} maxLength={120} defaultValue={resource.kind} /></Field>
+            <Field label="Ubicación"><Input name="location" required minLength={2} maxLength={300} defaultValue={resource.location} /></Field>
+          </div>
+          <Field label="Número de serie" hint="Opcional."><Input name="serialNumber" maxLength={120} defaultValue={resource.serialNumber ?? ""} /></Field>
+          <div className="grid gap-3 md:grid-cols-3">
+            <Field label="Última inspección" hint="Opcional."><DatePicker name="lastInspectedAt" defaultValue={resource.lastInspectedAt ?? ""} /></Field>
+            <Field label="Próxima inspección" hint="Opcional."><DatePicker name="nextInspectionAt" defaultValue={resource.nextInspectionAt ?? ""} /></Field>
+            <Field label="Vencimiento" hint="Carga o caducidad."><DatePicker name="expiresAt" defaultValue={resource.expiresAt ?? ""} /></Field>
+          </div>
+          <Field label="Estado" hint="Fuera de servicio da de baja el equipo.">
+            <Select value={status} onValueChange={setStatus}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{RESOURCE_STATUSES.map((value) => <SelectItem key={value} value={value}>{EMERGENCY_RESOURCE_STATUS_LABELS[value]}</SelectItem>)}</SelectContent></Select>
+          </Field>
+          {operation.message && <p role="status" className="text-sm">{operation.message}</p>}
+          <DialogFooter><Button type="submit" disabled={operation.pending}>Guardar</Button></DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+/* ── Acreditación PDTP de los simulacros ──────────────────────────────────────
+ * `pdtpActivityNumbers` del plan no tenía escritor: `completeEmergencyDrill` lo
+ * leía, encontraba vacío y salía sin acreditar, así que ningún simulacro cerró
+ * jamás la N°84 del programa anual. Mismo cableado y mismo formulario que el
+ * catálogo de inspecciones (EMERGENCIAS-05).
+ */
+
+function PdtpActivitiesDialog({ planId, code, version, current }: {
+  planId: string
+  code: string
+  version: number
+  current: number[]
+}) {
+  const [open, setOpen] = React.useState(false)
+  const operation = useOperation()
+
+  function submit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const raw = String(new FormData(event.currentTarget).get("numbers") ?? "")
+    const pdtpActivityNumbers = raw
+      .split(/[\s,]+/)
+      .map((token) => Number(token.trim()))
+      .filter((value) => Number.isInteger(value) && value > 0)
+    operation.run(
+      () => setEmergencyPlanPdtpActivitiesAction({ planId, expectedVersion: version, pdtpActivityNumbers }),
+      () => setOpen(false),
+    )
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild><Button size="sm" variant="ghost">Acreditación PDTP</Button></DialogTrigger>
+      <DialogContent>
+        <form onSubmit={submit} className="space-y-4">
+          <DialogHeader>
+            <DialogTitle>Acreditación PDTP · {code}</DialogTitle>
+            <DialogDescription>
+              Números de actividad del programa anual que acredita cada simulacro completado de este plan.
+              Vacío = no acredita nada.
+            </DialogDescription>
+          </DialogHeader>
+          <Field label="Números de actividad" hint="Separados por coma o espacio. En el catálogo 2026, los simulacros son la N° 84.">
+            <Input name="numbers" defaultValue={current.join(", ")} maxLength={120} />
+          </Field>
+          {operation.message && <p role="status" className="text-sm">{operation.message}</p>}
+          <DialogFooter><Button type="submit" disabled={operation.pending}>Guardar</Button></DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+/* ── Archivo del plan ─────────────────────────────────────────────────────────
+ * Sólo un plan no archivado por faena: archivar el vigente es lo que habilita
+ * emitir el siguiente, y también la vía para cambiar un plan ya aprobado.
+ */
+
+function ArchivePlanDialog({ planId, code, version }: { planId: string; code: string; version: number }) {
+  const [open, setOpen] = React.useState(false)
+  const operation = useOperation()
+
+  function submit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const form = new FormData(event.currentTarget)
+    operation.run(() => archiveEmergencyPlanAction({
+      planId,
+      expectedVersion: version,
+      reason: form.get("reason"),
+    }), () => setOpen(false))
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild><Button size="sm" variant="ghost">Archivar plan</Button></DialogTrigger>
+      <DialogContent>
+        <form onSubmit={submit} className="space-y-4">
+          <DialogHeader>
+            <DialogTitle>Archivar {code}</DialogTitle>
+            <DialogDescription>
+              El plan deja de estar vigente y la faena queda libre para emitir el siguiente. El inventario de equipos se conserva.
+            </DialogDescription>
+          </DialogHeader>
+          <Field label="Motivo" htmlFor="archive-plan-reason" hint="Mínimo 10 caracteres.">
+            <Textarea id="archive-plan-reason" name="reason" required minLength={10} maxLength={1000} rows={3} />
+          </Field>
+          {operation.message && <p role="status" className="text-sm">{operation.message}</p>}
+          <DialogFooter><Button type="submit" disabled={operation.pending}>Archivar</Button></DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 /* ── Alta de contacto ─────────────────────────────────────────────────────── */
 
 function AddContactDialog({ planId }: { planId: string }) {
@@ -591,7 +783,16 @@ function CompleteDrillDialog({ drill, eligibleWorkers, assignees }: {
             <p className="text-sm text-[var(--color-warning-ink)]">{readiness.blockers.join(" ")}</p>
           )}
 
-          <Field label="Realizado el"><Input type="datetime-local" required value={executedAt} onChange={(event) => setExecutedAt(event.target.value)} /></Field>
+          {/* Acotado entre la fecha programada y ahora, que es lo mismo que
+              valida el servicio: no ofrecer una fecha que va a rechazar. */}
+          <Field label="Realizado el" hint="Entre la fecha programada y ahora.">
+            <Input
+              type="datetime-local" required value={executedAt}
+              min={toLocalInputValue(new Date(drill.scheduledFor))}
+              max={toLocalInputValue(new Date())}
+              onChange={(event) => setExecutedAt(event.target.value)}
+            />
+          </Field>
 
           <div className="space-y-2">
             <span className="text-sm font-medium">Participantes</span>
@@ -635,6 +836,47 @@ function CompleteDrillDialog({ drill, eligibleWorkers, assignees }: {
 
           {operation.message && <p role="status" className="text-sm">{operation.message}</p>}
           <DialogFooter><Button type="submit" disabled={operation.pending || !readiness.ready}>Completar</Button></DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+/* ── Cancelación de simulacro ─────────────────────────────────────────────────
+ * Reprogramar es cancelar con motivo y volver a programar: mover la fecha en su
+ * lugar borraría que el simulacro anterior no se realizó.
+ */
+
+function CancelDrillDialog({ drill }: { drill: DrillInfo }) {
+  const [open, setOpen] = React.useState(false)
+  const operation = useOperation()
+
+  function submit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const form = new FormData(event.currentTarget)
+    operation.run(() => cancelEmergencyDrillAction({
+      drillId: drill.id,
+      expectedVersion: drill.version,
+      reason: form.get("reason"),
+    }), () => setOpen(false))
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild><Button size="sm" variant="ghost">Cancelar</Button></DialogTrigger>
+      <DialogContent>
+        <form onSubmit={submit} className="space-y-4">
+          <DialogHeader>
+            <DialogTitle>Cancelar simulacro</DialogTitle>
+            <DialogDescription>
+              El simulacro queda cancelado con su motivo, no se borra. Para reprogramarlo, cancélalo y programa uno nuevo.
+            </DialogDescription>
+          </DialogHeader>
+          <Field label="Motivo" htmlFor="cancel-drill-reason" hint="Mínimo 10 caracteres.">
+            <Textarea id="cancel-drill-reason" name="reason" required minLength={10} maxLength={1000} rows={3} />
+          </Field>
+          {operation.message && <p role="status" className="text-sm">{operation.message}</p>}
+          <DialogFooter><Button type="submit" disabled={operation.pending}>Cancelar simulacro</Button></DialogFooter>
         </form>
       </DialogContent>
     </Dialog>

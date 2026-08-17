@@ -5,12 +5,15 @@ import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { listIncidentWorksites } from "@/lib/services/prevention-incidents"
+import { todayInChile } from "@/lib/utils"
 import { IncidentReportForm } from "./incident-report-form"
 
 export const metadata: Metadata = { title: "Reportar incidente" }
 
-const CHILE_DATE_FORMAT = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Santiago", year: "numeric", month: "2-digit", day: "2-digit" })
-const CHILE_TIME_FORMAT = new Intl.DateTimeFormat("es-CL", { timeZone: "America/Santiago", hour: "2-digit", minute: "2-digit", hour12: false })
+// hourCycle h23 y no hour12:false — con es-CL este último rinde "24:15" a las
+// 00:15 de Chile, y `<input type="time">` descarta ese valor: el formulario
+// nacía con la hora vacía durante la primera hora de cada día.
+const CHILE_TIME_FORMAT = new Intl.DateTimeFormat("es-CL", { timeZone: "America/Santiago", hour: "2-digit", minute: "2-digit", hourCycle: "h23" })
 
 export default async function ReportIncidentPage() {
   let session
@@ -22,7 +25,7 @@ export default async function ReportIncidentPage() {
     permissions: session.user.permissions,
   }, "prevention:incidents:report")
   const now = new Date()
-  const defaultDate = CHILE_DATE_FORMAT.format(now)
+  const defaultDate = todayInChile(now)
   const defaultTime = CHILE_TIME_FORMAT.format(now)
 
   return (

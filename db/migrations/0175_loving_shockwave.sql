@@ -1,0 +1,2 @@
+ALTER TABLE "ppa_submissions" ADD COLUMN "client_submission_id" text;--> statement-breakpoint
+ALTER TABLE "ppa_submissions" ADD CONSTRAINT "ppa_submissions_client_submission_id_unique" UNIQUE("client_submission_id");

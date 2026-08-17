@@ -22,7 +22,7 @@ import {
   recordBiweeklyFollowupAction,
   recordIncidentStatementAction,
 } from "../actions"
-import { formatDateTime } from "@/lib/utils"
+import { formatDateTime, todayInChile } from "@/lib/utils"
 
 interface IncidentDiffusion {
   id: string
@@ -69,7 +69,7 @@ export function RE20Panel({
   const [onePageActionPlan, setOnePageActionPlan] = useState("")
 
   // 4. Seguimiento
-  const [followupDate, setFollowupDate] = useState(new Date().toISOString().slice(0, 10))
+  const [followupDate, setFollowupDate] = useState(todayInChile())
   const [followupNote, setFollowupNote] = useState("")
 
   // 5. Difusiones (turnos / medidas correctivas)

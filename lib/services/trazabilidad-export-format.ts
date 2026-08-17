@@ -1,4 +1,5 @@
 import type { ReportData } from "@/lib/reports/export"
+import { todayInChile } from "@/lib/utils"
 
 export interface TrazabilidadExportRow {
   productName: string
@@ -15,7 +16,7 @@ export interface TrazabilidadExportRow {
 
 export function buildTrazabilidadReportData(rows: TrazabilidadExportRow[]): ReportData {
   return {
-    filenameBase: `trazabilidad-${new Date().toISOString().slice(0, 10)}`,
+    filenameBase: `trazabilidad-${todayInChile()}`,
     worksheetName: "Trazabilidad",
     headers: [
       "Producto",

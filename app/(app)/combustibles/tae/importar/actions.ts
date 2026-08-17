@@ -12,6 +12,7 @@ import { importTaeLegacyWorkbook, reprocessTaeImportRejectedRows, type TaeImport
 import { nanoid } from "@/lib/id"
 import { recordAudit, recordStatusChange } from "@/lib/audit"
 import { logger } from "@/lib/logger"
+import { todayInChile } from "@/lib/utils"
 
 const MAX_IMPORT_FILE_BYTES = 20 * 1024 * 1024
 
@@ -58,7 +59,7 @@ export async function generateTaeImportReportAction(formData: FormData) {
       ok: true as const,
       data: {
         base64: report.toString("base64"),
-        filename: `tae_reporte_mapeo_${new Date().toISOString().split("T")[0]}.xlsx`,
+        filename: `tae_reporte_mapeo_${todayInChile()}.xlsx`,
         preview,
       },
     }

@@ -1,7 +1,17 @@
 import { z } from "zod"
+import { normalizeRiskLevel } from "@/lib/prevention/risk-levels"
 
 const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Fecha inválida")
 const reason = z.string().trim().min(10).max(3000)
+
+/* MIPER-01: el nivel de riesgo era `z.string().min(1)` al escribir y un enum
+ * inglés al leer, así que "Alto" o "critico" se guardaban tal cual y la UI los
+ * pintaba en gris. Acá se normaliza contra el vocabulario único de
+ * lib/prevention/risk-levels y se rechaza lo que no corresponda a un nivel:
+ * lo almacenable pasa a ser exactamente lo que la UI sabe etiquetar. */
+export const riskLevelSchema = z.string().trim().min(1).max(100)
+  .refine((value) => normalizeRiskLevel(value) !== null, { message: "Nivel de riesgo desconocido: usa bajo, medio, alto o crítico." })
+  .transform((value) => normalizeRiskLevel(value)!)
 
 export const riskMethodologySchema = z.object({
   code: z.string().trim().min(2).max(60),
@@ -36,7 +46,11 @@ export const riskControlSchema = z.object({
   responsibleUserId: z.string().min(1).nullable().optional(),
   responsibleSnapshot: z.string().trim().min(2).max(300),
   dueDate: date.nullable().optional(),
-  status: z.enum(["proposed", "implemented", "verified", "ineffective"]).default("proposed"),
+  /* MIPER-08: 'verified' salió del enum. Un control no nace verificado — quien
+   * escribía el peligro declaraba verificado su propio control, sin evidencia y
+   * sin que nadie más lo mirara. La verificación es un acto posterior y
+   * segregado: `verifyRiskControl` en lib/services/prevention-risk-legal.ts. */
+  status: z.enum(["proposed", "implemented", "ineffective"]).default("proposed"),
   evidenceReference: z.string().trim().max(3000).nullable().optional(),
 }).superRefine((value, ctx) => {
   if (value.isCritical && (value.performanceStandard?.length ?? 0) < 5) ctx.addIssue({ code: "custom", path: ["performanceStandard"], message: "Un control crítico exige estándar de desempeño." })
@@ -59,10 +73,10 @@ export const riskEntrySchema = z.object({
   specialMethodologyReference: z.string().trim().max(1000).nullable().optional(),
   inherentDimensions: z.record(z.string(), z.unknown()),
   inherentScore: z.coerce.number().min(0).nullable().optional(),
-  inherentLevel: z.string().trim().min(1).max(100),
+  inherentLevel: riskLevelSchema,
   residualDimensions: z.record(z.string(), z.unknown()),
   residualScore: z.coerce.number().min(0).nullable().optional(),
-  residualLevel: z.string().trim().min(1).max(100),
+  residualLevel: riskLevelSchema,
   isCritical: z.boolean().default(false),
   responsibleUserId: z.string().min(1).nullable().optional(),
   responsibleSnapshot: z.string().trim().min(2).max(300),
@@ -77,9 +91,25 @@ export const riskEntrySchema = z.object({
 export const riskMatrixTransitionSchema = z.object({
   matrixId: z.string().min(1),
   expectedVersion: z.coerce.number().int().positive(),
-  toStatus: z.enum(["in_review", "reviewed", "approved", "published"]),
+  /* 'draft' es el retorno del revisor (MIPER-10): la máquina sólo avanzaba, así
+   * que una versión enviada a revisión con un error se quedaba trabada ahí. El
+   * motivo ya es obligatorio para toda transición y queda en el historial. */
+  toStatus: z.enum(["draft", "in_review", "reviewed", "approved", "published"]),
   reason,
   effectiveFrom: date.optional(),
+})
+
+/* MIPER-08: verificar un control es un acto separado de escribirlo, con
+ * evidencia obligatoria y segregación por identidad —mismo contrato que la
+ * verificación CAPA (`capaTransitionSchema`), incluida la excepción
+ * fundamentada para quien tenga el permiso de override. */
+export const riskControlVerificationSchema = z.object({
+  controlId: z.string().min(1),
+  expectedVersion: z.coerce.number().int().positive(),
+  effectivenessStatus: z.enum(["effective", "ineffective"]),
+  evidenceReference: z.string().trim().min(5).max(3000),
+  verificationNote: z.string().trim().min(5).max(3000),
+  segregationExceptionReason: z.string().trim().max(2000).optional(),
 })
 
 export const riskReviewTriggerSchema = z.object({

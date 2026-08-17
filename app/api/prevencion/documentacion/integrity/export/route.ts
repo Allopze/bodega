@@ -7,6 +7,7 @@ import { auth } from "@/lib/auth/auth"
 import { can } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { getDocumentIntegrityFindings } from "@/lib/services/prevention-documents-library"
+import { todayInChile } from "@/lib/utils"
 
 export async function GET() {
   const session = await auth()
@@ -60,7 +61,7 @@ export async function GET() {
   return new Response(bytes as ArrayBuffer, {
     headers: {
       "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      "Content-Disposition": `attachment; filename="regularizacion-documental-${new Date().toISOString().slice(0, 10)}.xlsx"`,
+      "Content-Disposition": `attachment; filename="regularizacion-documental-${todayInChile()}.xlsx"`,
       "Cache-Control": "private, max-age=0, no-store",
     },
   })
