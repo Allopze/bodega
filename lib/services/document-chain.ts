@@ -1,4 +1,4 @@
-import { and, eq, inArray, or } from "drizzle-orm"
+import { and, eq, inArray, ne, or } from "drizzle-orm"
 import type { Session } from "next-auth"
 import { db } from "@/db"
 import {
@@ -228,7 +228,10 @@ export async function getDocumentChain(session: Session, anchor: ChainAnchor): P
   // y la fecha de la solicitud de un compañero.
   const canSeeRequests    = canAny(session, "requests:view_own", "requests:view_all")
   const canSeeAllRequests = can(session, "requests:view_all")
-  const canSeeOrders      = can(session, "purchasing:view")
+  // Mismo criterio que el detalle de la OC: quien puede ver su recepción puede
+  // ver la orden de la que cuelga, salvo mientras es borrador.
+  const canSeeOrders      = canAny(session, "purchasing:view", "receiving:view")
+  const canSeeDraftOrders = can(session, "purchasing:view")
   const canSeeReceipts    = can(session, "receiving:view")
   const canSeeGuides      = can(session, "warehouse:view_guides")
   const canSeeDeliveries  = can(session, "deliveries:view")
@@ -303,7 +306,15 @@ export async function getDocumentChain(session: Session, anchor: ChainAnchor): P
             createdAt:  purchaseOrders.createdAt,
           })
           .from(purchaseOrders)
-          .where(inArray(purchaseOrders.id, orderIds))
+          .where(
+            // El borrador es la OC que todavía se está armando: el detalle se lo
+            // niega a quien sólo tiene `receiving:view`, así que la tira tampoco
+            // se lo ofrece — un chip que lleva a un 404 es peor que no estar.
+            and(
+              inArray(purchaseOrders.id, orderIds),
+              canSeeDraftOrders ? undefined : ne(purchaseOrders.status, "draft"),
+            ),
+          )
           .limit(MAX_ROWS)
       : Promise.resolve([]),
 

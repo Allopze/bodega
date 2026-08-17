@@ -347,9 +347,13 @@ export async function getOperationalDetailWorkItem(
   const stage = order.status === "draft" && hasPermission(session, "purchasing:send_order")
     ? { actionKey: "issue" as const, module: "compras" as const, statusLabel: "OC en borrador", title: `Emitir y enviar ${order.code}`, ctaLabel: "Emitir y enviar", createdAt: order.createdAt }
     : OFFICE_RECEIVABLE_STATUSES.has(order.status) && order.deliveryMode !== "directo_faena" && hasPermission(session, "receiving:register_office")
-        ? { actionKey: "receive_office" as const, module: "recepciones" as const, statusLabel: "Recepción en oficina", title: `Registrar llegada de ${order.code}`, ctaLabel: "Registrar llegada", createdAt: order.sentAt ?? order.createdAt }
+        // El href de las etapas de recepción es el formulario, no la OC: quien
+        // recibe puede no tener `purchasing:view` (roles de faena), y la rama SQL
+        // de la cola ya apuntaba aquí — el detalle mandaba a /compras y por eso
+        // el mismo pendiente llevaba a /forbidden al abrirlo.
+        ? { actionKey: "receive_office" as const, module: "recepciones" as const, statusLabel: "Recepción en oficina", title: `Registrar llegada de ${order.code}`, ctaLabel: "Registrar llegada", createdAt: order.sentAt ?? order.createdAt, href: `/recepcion/nueva?oc=${order.id}` }
         : ((order.deliveryMode === "directo_faena" ? DIRECT_FAENA_RECEIVABLE_STATUSES.has(order.status) : FAENA_RECEIVABLE_STATUSES.has(order.status)) && hasPermission(session, "receiving:register_faena"))
-          ? { actionKey: "receive_worksite" as const, module: "recepciones" as const, statusLabel: "Pendiente de faena", title: `Recibir ${order.code} en faena`, ctaLabel: "Registrar recepción", createdAt: order.sentAt ?? order.createdAt }
+          ? { actionKey: "receive_worksite" as const, module: "recepciones" as const, statusLabel: "Pendiente de faena", title: `Recibir ${order.code} en faena`, ctaLabel: "Registrar recepción", createdAt: order.sentAt ?? order.createdAt, href: `/recepcion/nueva?oc=${order.id}` }
           : invoicePending
             ? { actionKey: "invoice" as const, module: "compras" as const, statusLabel: "Sin factura", title: `Adjuntar factura de ${order.code}`, ctaLabel: "Adjuntar factura", createdAt: order.sentAt ?? order.createdAt, href: `/compras/${order.id}?tab=facturacion` }
             : null

@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm"
 import { db } from "@/db"
 import { purchaseOrders } from "@/db/schema"
-import { requirePermission, canAccessWorksite } from "@/lib/auth/can"
+import { requireAuth, canAny, canAccessWorksite } from "@/lib/auth/can"
 import { encodeContentDisposition } from "@/lib/utils"
 import { withBrowserContext } from "@/lib/pdf/browser-pool"
 import { resolvePdfRenderOrigin } from "@/lib/pdf/render-origin"
@@ -26,10 +26,14 @@ export async function GET(
   req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  // Mismo gate que el detalle y la página de impresión que este PDF renderiza.
   let session
   try {
-    session = await requirePermission("purchasing:view")
+    session = await requireAuth()
   } catch {
+    return new Response("No autorizado", { status: 403 })
+  }
+  if (!canAny(session, "purchasing:view", "receiving:view")) {
     return new Response("No autorizado", { status: 403 })
   }
 

@@ -52,6 +52,36 @@ test.describe("Restricted roles — faena scope enforcement", () => {
     expect(pageText).not.toContain("E2E-RESTR")
   })
 
+  /**
+   * `solicitante_faena` recibe en faena pero no tiene `purchasing:view`: hasta
+   * ahora, abrir una OC desde /recepcion lo mandaba a /forbidden. Ve la orden y
+   * sus montos —lo que tiene que cotejar contra lo que llega— pero no la
+   * facturación, que sigue siendo materia de Compras.
+   */
+  test("un receptor sin permiso de Compras abre la OC, sin su facturación", async ({ page }) => {
+    await clearRateLimits()
+    await page.goto("/login")
+    await page.getByLabel("Correo electrónico").fill("scoped@e2e.chome.cl")
+    await page.getByLabel("Contraseña").fill("scoped2026")
+    await page.getByRole("button", { name: "Ingresar" }).click()
+    await expect(page).toHaveURL(/\/dashboard/)
+
+    await page.goto("/compras/oc-e2e")
+    await expect(page).not.toHaveURL(/\/forbidden|\/login/)
+
+    const body = await page.textContent("body")
+    expect(body).toContain("OC-2026-0001")
+    expect(body).toContain("13.566")
+    expect(body).not.toContain("Facturación")
+    // El panel habla con la voz de quien recibe, no con la de quien compra
+    // ("Registra la recepción cuando lleguen los ítems" es la otra audiencia).
+    expect(body).toContain("Recepción parcial registrada. Queda saldo por recibir.")
+
+    // Un borrador no le corresponde: todavía se está armando en Compras.
+    await page.goto("/compras/oc-flow-e2e")
+    expect(await page.textContent("body")).not.toContain("OC-2026-0090")
+  })
+
   test("admin user can see all worksites across the system", async ({ page }) => {
     // Log in as admin
     await clearRateLimits()

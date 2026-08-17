@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation"
 import Image from "next/image"
-import { requirePermission } from "@/lib/auth/can"
+import { requireAuth, canAny } from "@/lib/auth/can"
 import { PrintTrigger } from "./print-trigger"
 import { loadOcPrintData } from "./oc-print-data"
 import { OC_PRINT_STYLES } from "./oc-print-styles"
@@ -11,9 +11,11 @@ import { MobileDocumentSummary } from "@/components/print/mobile-document-summar
 export const dynamic = "force-dynamic"
 
 export default async function PrintOcPage({ params }: { params: Promise<{ id: string }> }) {
+  // Mismo gate que el detalle: quien recibe la OC puede imprimirla.
   let session
-  try { session = await requirePermission("purchasing:view") }
+  try { session = await requireAuth() }
   catch { redirect("/login") }
+  if (!canAny(session, "purchasing:view", "receiving:view")) redirect("/login")
 
   const { id } = await params
   const data = await loadOcPrintData(id, session)

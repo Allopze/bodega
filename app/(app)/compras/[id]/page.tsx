@@ -7,7 +7,7 @@ import { dteDocuments, purchaseOrderInvoices, purchaseOrders, statusHistory, use
 import { and, desc, eq, gte, inArray, isNull } from "drizzle-orm"
 import { localDateToISO } from "@/lib/sst/date"
 import { selectDteCandidates } from "@/lib/services/purchasing-module/dte-candidates"
-import { requirePermission, can } from "@/lib/auth/can"
+import { requireAuth, can, canAny } from "@/lib/auth/can"
 import { canAccessWorksite }  from "@/lib/auth/can"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
@@ -40,9 +40,19 @@ export default async function OcDetailPage({
   params: Promise<{ id: string }>
   searchParams: Promise<{ tab?: string; nro?: string; actualizada?: string }>
 }) {
+  // Quien recibe la OC necesita leerla —ítems, cantidades, montos— y los roles de
+  // faena (prevencionista_faena, solicitante_faena, prevencionista) tienen
+  // `receiving:view` pero no `purchasing:view`: con el gate en un solo permiso,
+  // abrir una fila de /recepcion terminaba en /forbidden. El alcance de faena
+  // sigue mandando más abajo, y lo tributario (facturación, avance) queda
+  // reservado a Compras vía `canViewPurchasing`.
   let session
-  try { session = await requirePermission("purchasing:view") }
+  try { session = await requireAuth() }
   catch { redirect(`/forbidden?desde=${encodeURIComponent("/compras")}`) }
+  if (!canAny(session, "purchasing:view", "receiving:view")) {
+    redirect(`/forbidden?desde=${encodeURIComponent("/compras")}`)
+  }
+  const canViewPurchasing = can(session, "purchasing:view")
 
   const [{ id }, { tab, nro, actualizada }] = await Promise.all([params, searchParams])
 
@@ -57,6 +67,10 @@ export default async function OcDetailPage({
 
   if (!order) notFound()
   if (!canAccessWorksite(session, order.worksiteId)) notFound()
+  // Un borrador no existe todavía para quien recibe: no entra en la cola de
+  // recepción y sus precios siguen en negociación. El camino hasta acá era la
+  // tira de documentos desde la solicitud propia, que ahora tampoco lo ofrece.
+  if (!canViewPurchasing && order.status === "draft") notFound()
 
   // Estado "eliminado" (TASK-UI-002). Borrar una OC no borra la fila: le pone
   // `deletedAt` y le muta el código a `OC-…-DELETED-<id>` para liberar el
@@ -75,7 +89,13 @@ export default async function OcDetailPage({
             auditoría para poder rastrearla, pero ya no forma parte del flujo de adquisiciones.
           </p>
           <div className="mt-6">
-            <Button asChild><Link href="/compras">Volver a Compras</Link></Button>
+            {/* La salida es a la lista de la que vino: /compras exige su propio
+                permiso y para un receptor era otro callejón sin salida. */}
+            <Button asChild>
+              {canViewPurchasing
+                ? <Link href="/compras">Volver a Compras</Link>
+                : <Link href="/recepcion">Volver a Recepción</Link>}
+            </Button>
           </div>
         </div>
       </PageContainer>
@@ -131,19 +151,23 @@ export default async function OcDetailPage({
       )
       .orderBy(desc(statusHistory.changedAt)),
 
-    db
-      .select({
-        id:            purchaseOrderInvoices.id,
-        invoiceNumber: purchaseOrderInvoices.invoiceNumber,
-        amount:        purchaseOrderInvoices.amount,
-        issueDate:     purchaseOrderInvoices.issueDate,
-        fileName:      purchaseOrderInvoices.fileName,
-        mimeType:      purchaseOrderInvoices.mimeType,
-        uploadedAt:    purchaseOrderInvoices.uploadedAt,
-      })
-      .from(purchaseOrderInvoices)
-      .where(eq(purchaseOrderInvoices.purchaseOrderId, order.id))
-      .orderBy(desc(purchaseOrderInvoices.uploadedAt)),
+    // Las facturas —y con ellas sus ítems y sus DTE, que cuelgan de estos ids—
+    // sólo alimentan pestañas y avisos que un receptor no ve.
+    canViewPurchasing
+      ? db
+          .select({
+            id:            purchaseOrderInvoices.id,
+            invoiceNumber: purchaseOrderInvoices.invoiceNumber,
+            amount:        purchaseOrderInvoices.amount,
+            issueDate:     purchaseOrderInvoices.issueDate,
+            fileName:      purchaseOrderInvoices.fileName,
+            mimeType:      purchaseOrderInvoices.mimeType,
+            uploadedAt:    purchaseOrderInvoices.uploadedAt,
+          })
+          .from(purchaseOrderInvoices)
+          .where(eq(purchaseOrderInvoices.purchaseOrderId, order.id))
+          .orderBy(desc(purchaseOrderInvoices.uploadedAt))
+      : Promise.resolve([]),
   ])
 
   // ARQ-10: ambas cuelgan sólo de `invoiceIds` — ninguna espera a la otra.
@@ -186,7 +210,9 @@ export default async function OcDetailPage({
   // portal entrega en hora local: comparar el texto UTC directamente corría el
   // piso un día para las órdenes creadas después de las 20:00.
   const candidateFloor = localDateToISO(new Date(order.createdAt))
-  const unlinkedDtes = order.supplier?.rut
+  // Sin `purchasing:view` la pestaña de facturación no se dibuja, así que esta
+  // consulta —la más cara de la página— no tiene a quién servir.
+  const unlinkedDtes = canViewPurchasing && order.supplier?.rut
     ? await db.query.dteDocuments.findMany({
         where: and(
           isNull(dteDocuments.purchaseOrderInvoiceId),
@@ -331,7 +357,10 @@ export default async function OcDetailPage({
         })) ?? [],
       }
     }),
-    "compras",
+    // El panel tiene dos voces (A-10) y quien entra por recepción lee la suya:
+    // con la de compras, una OC recibida sin factura le pedía "Adjunta la
+    // factura y luego cierra la orden", que es trabajo de otro.
+    canViewPurchasing ? "compras" : "recepcion",
     // `closeWarnings` sólo se llena en estados que ya admiten facturación, así
     // que basta con que tenga contenido.
     { invoicePending: closeWarnings.length > 0 },
@@ -347,7 +376,9 @@ export default async function OcDetailPage({
     invoiced:      invoicedByItem.get(i.id) ?? 0,
   }))
 
-  const showInvoicing = !["draft", "cancelled"].includes(order.status)
+  // Facturas, DTE y avance facturado son materia de Compras: quien entra por
+  // recepción ve la orden y sus montos, no lo tributario.
+  const showInvoicing = !["draft", "cancelled"].includes(order.status) && canViewPurchasing
 
   // Pestaña inicial desde ?tab= (validada contra las disponibles) para deep-link
   const availableTabs = ["items", ...(showInvoicing ? ["facturacion", "avance"] : []), "historial"]
@@ -378,7 +409,11 @@ export default async function OcDetailPage({
         breadcrumb={
           <Breadcrumbs items={[
             { label: "Inicio", href: "/dashboard" },
-            { label: "Compras", href: "/compras" },
+            // Quien llega desde recepción no puede abrir el listado de Compras:
+            // la miga lo nombra, pero no ofrece un enlace que termina en 403.
+            canViewPurchasing
+              ? { label: "Compras", href: "/compras" }
+              : { label: "Recepción", href: "/recepcion" },
             { label: order.code                       },
           ]} />
         }
