@@ -40,4 +40,26 @@ describe("Select", () => {
     expect(screen.getByText("Rene Mauricio Sandoval Urbina")).toBeVisible()
     expect(screen.getByText("Ramon Ernesto Mena Cid")).not.toBeVisible()
   })
+
+  // El trigger tiene una línea y trunca: cuando el label de la opción es una
+  // frase larga (el nombre completo de una metodología MIPER) se corta a media
+  // palabra. Pasarle hijos a SelectValue muestra ahí una forma corta sin perder
+  // el label largo en la lista; el diálogo de nueva versión MIPER depende de eso.
+  it("prefers the children of SelectValue over the selected option's label", () => {
+    render(
+      <Select value="miper-5x5">
+        <SelectTrigger aria-label="Metodología">
+          <SelectValue placeholder="Selecciona metodología">MIPER-5X5 · 2026.1</SelectValue>
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="miper-5x5">Matriz de probabilidad y consecuencia 5×5 · 2026.1</SelectItem>
+        </SelectContent>
+      </Select>,
+    )
+
+    const trigger = screen.getByRole("combobox", { name: "Metodología" })
+
+    expect(trigger).toHaveTextContent("MIPER-5X5 · 2026.1")
+    expect(trigger).not.toHaveTextContent("Matriz de probabilidad")
+  })
 })
