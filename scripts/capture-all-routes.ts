@@ -494,6 +494,10 @@ const routeTargets: RouteTarget[] = [
   { slug: "compras-detalle-facturacion", path: "/compras/po-audit-1?tab=facturacion", auth: true, notes: "Detalle OC — pestaña Facturación" },
   { slug: "compras-detalle-avance", path: "/compras/po-audit-1?tab=avance", auth: true, notes: "Detalle OC — pestaña Avance por ítem" },
   { slug: "compras-print", path: "/compras/po-audit-1/print", auth: true },
+  /* El período va explícito porque la bandeja aterriza en el mes corriente (hora
+     de Chile) y el fixture vive en el mes del seed: sin el parámetro la captura
+     documentaría un estado vacío que no dice nada del módulo. */
+  { slug: "compras-dte", path: "/compras/dte?periodo=2026-06", auth: true, notes: "Bandeja de entrada DTE del período sembrado." },
   {
     slug: "recepcion",
     path: "/recepcion",
@@ -522,17 +526,37 @@ const routeTargets: RouteTarget[] = [
     ],
   },
   { slug: "bodega-guias", path: "/bodega/guias", auth: true, notes: "Listado de guías de despacho internas" },
-  /* `/bodega/guias/nueva` no se captura: desde que la GDI nace de la recepción
-     en oficina, esa ruta redirige a `/recepcion` y no existe alta independiente
-     (lo fija `e2e/guias-despacho.spec.ts`). Como entrada de captura sólo
-     producía un ✗ por "URL final no declarada". */
+  { slug: "bodega-guia-detalle", path: "/bodega/guias/gdi-audit-1", auth: true },
+  { slug: "bodega-guia-print", path: "/bodega/guias/gdi-audit-1/print", auth: true },
+  { slug: "bodega-guia-editar", path: "/bodega/guias/gdi-audit-2/editar", auth: true, notes: "El editor sólo abre borradores; una guía despachada muestra el aviso en su lugar." },
+  /* Desde que la GDI nace de la recepción en oficina, `/bodega/guias/nueva` sólo
+     redirige a `/recepcion` (lo fija `e2e/guias-despacho.spec.ts`). Se declara
+     como redirección — igual que los catálogos legados de combustibles — para
+     que la ruta quede cubierta sin producir un ✗ por "URL final no declarada". */
+  { slug: "bodega-guias-nueva-legacy", path: "/bodega/guias/nueva", auth: true, allowedPaths: ["/recepcion"], captureView: false, notes: "Compatibilidad: no existe alta independiente de GDI." },
   { slug: "entregas", path: "/entregas", auth: true },
   { slug: "entregas-print", path: "/entregas/del-audit-1/print", auth: true },
   { slug: "trazabilidad", path: "/trazabilidad", auth: true },
   { slug: "trazabilidad-detalle", path: "/trazabilidad/req-item-audit-1", auth: true },
   { slug: "trazabilidad-trabajador", path: "/trazabilidad/trabajador/worker-audit-1", auth: true },
+  { slug: "trazabilidad-documento", path: "/trazabilidad/documento", auth: true, notes: "Buscador por código, sin consulta" },
+  { slug: "trazabilidad-documento-resultado", path: "/trazabilidad/documento?codigo=OC-2026-0001", auth: true, notes: "Expediente resuelto desde el código de la OC" },
   { slug: "reportes", path: "/reportes", auth: true },
   { slug: "analitica", path: "/analitica", auth: true },
+  // ── Facturación y cobranza ────────────────────────────────────────────
+  // El módulo entero faltaba en esta lista: nueve pantallas sin línea base con
+  // la que comparar entre auditorías. El resumen filtra por período y aterriza
+  // en el mes corriente, así que su captura lo declara explícito.
+  { slug: "facturacion", path: "/facturacion?periodo=2026-06", auth: true, notes: "Resumen del período sembrado." },
+  { slug: "facturacion-facturas", path: "/facturacion/facturas", auth: true },
+  { slug: "facturacion-facturas-vencidas", path: "/facturacion/facturas?vencidas=1", auth: true, notes: "Listado filtrado por vencidas" },
+  { slug: "facturacion-factura-detalle", path: "/facturacion/facturas/inv-audit-1", auth: true },
+  { slug: "facturacion-clientes", path: "/facturacion/clientes", auth: true },
+  { slug: "facturacion-cobranza", path: "/facturacion/cobranza", auth: true },
+  { slug: "facturacion-pendientes", path: "/facturacion/pendientes", auth: true },
+  { slug: "facturacion-propuestas", path: "/facturacion/propuestas", auth: true },
+  { slug: "facturacion-duplicados", path: "/facturacion/duplicados", auth: true },
+  { slug: "facturacion-sincronizacion", path: "/facturacion/sincronizacion", auth: true },
   { slug: "flota", path: "/flota", auth: true },
   { slug: "flota-detalle", path: "/flota/fuel-veh-audit-1", auth: true },
   { slug: "mantenciones", path: "/mantenciones", auth: true },
@@ -606,8 +630,10 @@ const routeTargets: RouteTarget[] = [
   { slug: "prevencion-incidentes-procedimiento", path: "/prevencion/incidentes/inc-audit-1/procedimiento", auth: true, expectedStatus: 404, captureView: false, notes: "No existe página App Router para este subpath: la investigación RE-20 se gestiona dentro del detalle canónico del incidente." },
   { slug: "prevencion-miper", path: "/prevencion/miper", auth: true },
   { slug: "prevencion-miper-control", path: "/prevencion/miper/controles/risk-control-audit-1", auth: true },
+  { slug: "prevencion-miper-mapa", path: "/prevencion/miper/mapa", auth: true, notes: "Mapa de riesgos: instrumento propio del DS 44 art. 62, ya no una pestaña de la MIPER." },
   { slug: "prevencion-requisitos-legales", path: "/prevencion/requisitos-legales", auth: true },
   { slug: "prevencion-requisito-legal", path: "/prevencion/requisitos-legales/legal-requirement-audit-1", auth: true },
+  { slug: "prevencion-privacidad", path: "/prevencion/privacidad", auth: true },
   { slug: "prevencion-privacidad-auditoria", path: "/prevencion/privacidad/auditoria", auth: true },
   { slug: "prevencion-privacidad-solicitudes", path: "/prevencion/privacidad/solicitudes", auth: true },
   { slug: "prevencion-privacidad-solicitud", path: "/prevencion/privacidad/solicitudes/privacy-request-audit-1", auth: true },
@@ -622,13 +648,20 @@ const routeTargets: RouteTarget[] = [
   { slug: "prevencion-inspecciones", path: "/prevencion/inspecciones", auth: true },
   { slug: "prevencion-inspecciones-catalogo", path: "/prevencion/inspecciones/catalogo", auth: true },
   { slug: "prevencion-inspeccion-detalle", path: "/prevencion/inspecciones/insp-audit-1", auth: true },
+  { slug: "prevencion-auditorias", path: "/prevencion/auditorias", auth: true, notes: "DS 44 art. 22 n°4: la misma pantalla de inspecciones acotada a kind=audit." },
   { slug: "prevencion-cphs", path: "/prevencion/cphs", auth: true },
   { slug: "prevencion-cphs-comite-detalle", path: "/prevencion/cphs/comite-audit-1", auth: true },
+  { slug: "prevencion-cphs-programa", path: "/prevencion/cphs/comite-audit-1/programa", auth: true },
+  { slug: "prevencion-cphs-certificacion", path: "/prevencion/cphs/comite-audit-1/certificacion", auth: true },
+  { slug: "prevencion-faenas", path: "/prevencion/faenas", auth: true, notes: "Estructura preventiva por faena (órgano exigible según dotación)." },
+  { slug: "prevencion-faenas-detalle", path: "/prevencion/faenas/ws-audit-1", auth: true },
   { slug: "prevencion-higiene", path: "/prevencion/higiene", auth: true },
   { slug: "prevencion-higiene-grupo-detalle", path: "/prevencion/higiene/grupos/grupo-audit-1", auth: true },
   { slug: "prevencion-higiene-programa-detalle", path: "/prevencion/higiene/programas/programa-audit-1", auth: true },
   { slug: "prevencion-emergencias", path: "/prevencion/emergencias", auth: true },
   { slug: "prevencion-emergencias-plan-detalle", path: "/prevencion/emergencias/plan-audit-1", auth: true },
+  { slug: "prevencion-coordinacion", path: "/prevencion/coordinacion", auth: true, notes: "Visitas, fiscalizaciones y coordinación del DS 44 art. 20." },
+  { slug: "prevencion-coordinacion-detalle", path: "/prevencion/coordinacion/eng-audit-1", auth: true },
   { slug: "prevencion-gestion-cambio", path: "/prevencion/gestion-cambio", auth: true },
   { slug: "prevencion-gestion-cambio-detalle", path: "/prevencion/gestion-cambio/cambio-audit-1", auth: true },
   { slug: "prevencion-epp-preventivo", path: "/prevencion/epp-preventivo", auth: true },
@@ -653,6 +686,9 @@ const routeTargets: RouteTarget[] = [
   { slug: "admin-centros-costo", path: "/admin/centros-costo", auth: true },
   { slug: "admin-configuracion", path: "/admin/configuracion", auth: true },
   { slug: "admin-correo-smtp", path: "/admin/correo-smtp", auth: true },
+  { slug: "admin-dte", path: "/admin/dte", auth: true, notes: "Credenciales del portal DTE e historial de corridas." },
+  { slug: "admin-equipos", path: "/admin/equipos", auth: true },
+  { slug: "admin-equipo-detalle", path: "/admin/equipos/equip-audit-1", auth: true, notes: "Ficha del instrumento con su historial de intervenciones." },
   { slug: "admin-faenas", path: "/admin/faenas", auth: true },
   { slug: "admin-flotas-catalogos", path: "/admin/flota-catalogos", auth: true },
   { slug: "admin-flota-vehiculos", path: "/admin/flota-catalogos/vehiculos", auth: true },
@@ -705,18 +741,21 @@ const seedCoverage: CaptureSeedArea[] = [
   { section: "aprobaciones", fixtures: ["ítems requested en cola de aprobación"] },
   { section: "compras", fixtures: ["OC enviada", "OC recibida parcialmente", "factura asociada", "ítems aprobados sin OC"] },
   { section: "recepcion", fixtures: ["OC pendiente de recepción", "OC con brecha oficina-faena"] },
-  { section: "bodega", fixtures: ["stock con mínimo crítico", "kardex ingreso OC", "kardex entrega a trabajador"] },
+  { section: "bodega", fixtures: ["stock con mínimo crítico", "kardex ingreso OC", "kardex entrega a trabajador", "guía de despacho interna despachada con sus dos patas de kardex", "guía de despacho interna en borrador"] },
   { section: "entregas", fixtures: ["trabajadores activos", "EPP recibido pendiente de entrega", "historial de entregas"] },
   { section: "trazabilidad", fixtures: ["ítems aprobados", "ítems en OC", "ítems recibidos", "alerta sin OC"] },
   { section: "reportes", fixtures: ["solicitudes", "ítems", "OC", "recepciones", "estados variados"] },
+  { section: "facturacion", fixtures: ["cliente con contrato mensual y contacto de cobranza", "factura parcialmente pagada con compromiso de pago", "factura pagada", "factura vencida con gestión sin respuesta", "nota de crédito con total negativo", "factura sin vínculo a cliente", "factura de compra", "par candidato a duplicado entre dos fuentes", "propuesta en revisión", "propuesta aprobada con antecedente faltante", "corrida de sincronización exitosa y una fallida"] },
+  { section: "dte", fixtures: ["documento conciliado con factura de OC", "documento sin vínculo interno", "nota de crédito recibida", "corrida de sincronización con conciliación parcial"] },
   { section: "analitica", fixtures: ["compras", "combustible", "flota", "stock crítico", "EPP"] },
   { section: "flota", fixtures: ["vehículos activos", "cargas de combustible", "mantenciones"] },
   { section: "mantenciones", fixtures: ["vehículos", "proveedores", "mantenciones registradas"] },
   { section: "combustibles", fixtures: ["cargas de combustible", "lote de consumos con registros asociados y sin asociar", "lote de log operacional con faena pendiente de asociar", "carga TAE con resultado público", "lote TAE histórico con carga observada y rechazo", "vehículos de combustible", "proveedores de combustible", "cuentas corrientes", "reportes mensuales"] },
   { section: "repuestos", fixtures: ["solicitud de repuestos", "ítem libre", "cotización pendiente"] },
   { section: "servicios", fixtures: ["solicitud de servicios", "ítem libre", "cotización pendiente"] },
-  { section: "prevencion", fixtures: ["evaluación nueva", "evaluación seguimiento", "plan de acción", "acción CAPA en progreso con evidencia y seguimiento", "requisito legal publicado con aplicabilidad por faena", "solicitud de privacidad con identidad verificada", "incidente en investigación con evidencia y difusión RE-20", "inspección revisada con hallazgo CAPA", "ejecución PDTP aprobada con checklist y plan de acción", "sesión de capacitación cerrada con asistencia", "gestión de cambio evaluada con CAPA", "plan de emergencia con simulacro y roles", "permiso activo con AST, medición y aislamiento", "comité CPHS paritario con acta", "grupo de exposición con medición", "programa de vigilancia con matrículas", "documento vigente distribuido con acuse", "control MIPER crítico verificado", "indicadores mensuales de seguridad y salud en el trabajo", "indicadores material y ambiental"] },
-  { section: "admin-faenas", fixtures: ["faenas activas"] },
+  { section: "prevencion", fixtures: ["fiscalización de la Dirección del Trabajo con medida prescrita", "coordinación de información entregada al mandante", "evaluación nueva", "evaluación seguimiento", "plan de acción", "acción CAPA en progreso con evidencia y seguimiento", "requisito legal publicado con aplicabilidad por faena", "solicitud de privacidad con identidad verificada", "incidente en investigación con evidencia y difusión RE-20", "inspección revisada con hallazgo CAPA", "ejecución PDTP aprobada con checklist y plan de acción", "sesión de capacitación cerrada con asistencia", "gestión de cambio evaluada con CAPA", "plan de emergencia con simulacro y roles", "permiso activo con AST, medición y aislamiento", "comité CPHS paritario con acta", "grupo de exposición con medición", "programa de vigilancia con matrículas", "documento vigente distribuido con acuse", "control MIPER crítico verificado", "indicadores mensuales de seguridad y salud en el trabajo", "indicadores material y ambiental"] },
+  { section: "admin-faenas", fixtures: ["faenas activas", "faena que representa la bodega de la oficina central"] },
+  { section: "admin-equipos", fixtures: ["detector monogás con historial de calibración", "alcotest en otra faena"] },
   { section: "admin-plantillas", fixtures: ["plantillas de correo del sistema"] },
   { section: "admin-productos", fixtures: ["categorías", "productos EPP", "productos insumo", "proveedores preferidos", "lote EPP pendiente de revisión"] },
   { section: "admin-proveedores", fixtures: ["proveedores activos con contacto"] },
@@ -736,6 +775,11 @@ const moduleAliases: Record<string, string[]> = {
   combustible: ["combustibles"],
   combustibles: ["combustibles"],
   inventario: ["bodega", "entregas", "trazabilidad"],
+  // Las dos pantallas del portal DTE viven en módulos distintos; sin este alias
+  // `--module dte` no devolvía ninguna ruta.
+  dte: ["compras-dte", "admin-dte"],
+  guias: ["bodega-guia"],
+  facturacion: ["facturacion"],
 }
 
 export function getCaptureRoutes(filter?: string) {
@@ -1091,6 +1135,7 @@ async function prepareDatabase(captureDbUrl: string) {
   const password = await bcrypt.hash("chome2026", 10)
   const userId = "user-audit-admin"
   const worksiteId = "ws-audit-1"
+  const officeWorksiteId = "ws-audit-office"
   const supplierId = "sup-audit-1"
   const productId = "prod-audit-1"
   const deliverableProductId = "prod-audit-3"
@@ -1255,6 +1300,24 @@ async function prepareDatabase(captureDbUrl: string) {
       createdAt: now,
       updatedAt: now,
     },
+    /*
+     * La bodega de la oficina central. No es decorativa: `resolveOfficeWorksite`
+     * (lib/services/dispatch-guides.ts) la busca por el ajuste
+     * `warehouse.office_worksite_id` o por nombre y **lanza** si no encuentra
+     * ninguna, así que sin esta fila el editor de una GDI devuelve 500 y el
+     * origen de toda guía queda sin resolver. El nombre está en la lista de
+     * fallbacks a propósito: así el fixture no depende del ajuste.
+     */
+    {
+      id: officeWorksiteId,
+      name: "Oficina Central",
+      code: "OFI-000",
+      address: "Av. Alemania 0450, Temuco",
+      region: "Araucanía",
+      isActive: true,
+      createdAt: now,
+      updatedAt: now,
+    },
   ])
   await db.insert(schema.worksiteUsers).values([
     { userId, worksiteId, isPrimary: true },
@@ -1262,6 +1325,7 @@ async function prepareDatabase(captureDbUrl: string) {
     { userId: "user-audit-jefa", worksiteId, isPrimary: true },
     { userId: "user-audit-prevencion", worksiteId, isPrimary: true },
     { userId: "user-audit-bodega", worksiteId, isPrimary: true },
+    { userId: "user-audit-bodega", worksiteId: officeWorksiteId, isPrimary: false },
     { userId: "user-audit-inactive", worksiteId: "ws-audit-2", isPrimary: true },
   ])
 
@@ -2203,7 +2267,9 @@ async function prepareDatabase(captureDbUrl: string) {
   ])
   await db.insert(schema.preventionEmergencyResources).values({
     id: "emergency-resource-audit-1",
-    worksiteId: "worksite-audit-1",
+    // Era "worksite-audit-1", un id que nunca existió: la FK abortaba el seed
+    // completo acá, así que ninguna corrida de capturas llegaba al navegador.
+    worksiteId,
     planId: "plan-audit-1",
     name: "Extintor PQS 10 kg",
     kind: "Extintor",
@@ -2991,7 +3057,10 @@ async function prepareDatabase(captureDbUrl: string) {
       resultado: "autorizado_auto",
       triggeredReasons: [],
       estado: "aprobado_auto",
-      publicToken: "capture-ppa-token",
+      // La columna guarda el HASH: `getPpaByToken` compara sólo contra
+      // sha256(token), así que sembrar el token en claro dejaba la ruta
+      // pública del resultado en 404 en toda captura.
+      publicToken: crypto.createHash("sha256").update("capture-ppa-token").digest("hex"),
       createdAt: now,
       updatedAt: now,
     },
@@ -3529,6 +3598,26 @@ async function prepareDatabase(captureDbUrl: string) {
       lastMovementAt: now,
       updatedAt: now,
     },
+    // Saldos que sostienen la GDI despachada: 20 en oficina menos las 4 que
+    // salieron, y las mismas 4 abonadas en la faena de destino.
+    {
+      id: "stock-audit-office",
+      worksiteId: officeWorksiteId,
+      productId: "prod-audit-2",
+      quantity: 16,
+      minStock: 8,
+      lastMovementAt: now,
+      updatedAt: now,
+    },
+    {
+      id: "stock-audit-4",
+      worksiteId,
+      productId: "prod-audit-2",
+      quantity: 4,
+      minStock: 2,
+      lastMovementAt: now,
+      updatedAt: now,
+    },
   ])
   // `inventoryMovements.quantity` es un delta CON SIGNO (ver lib/services/stock-movement.ts):
   // positivo = ingreso, negativo = egreso. Este seed escribe filas directas sin pasar por
@@ -3576,6 +3665,50 @@ async function prepareDatabase(captureDbUrl: string) {
       performedBy: "user-audit-bodega",
       performedAt: now,
       reason: "Entrega parcial a trabajador",
+    },
+    {
+      // Saldo inicial de la oficina. Sin esta fila el kardex de la oficina
+      // sumaba -4: el egreso del traslado sin el ingreso que lo financió.
+      id: "mov-audit-office-ajuste",
+      worksiteId: officeWorksiteId,
+      productId: "prod-audit-2",
+      type: "ajuste",
+      quantity: 20,
+      referenceType: "manual",
+      referenceId: "carga-inicial-oficina",
+      stockBefore: 0,
+      stockAfter: 20,
+      performedBy: "user-audit-bodega",
+      performedAt: now,
+      reason: "Carga inicial de bodega de oficina",
+    },
+    {
+      id: "mov-audit-4",
+      worksiteId: officeWorksiteId,
+      productId: "prod-audit-2",
+      type: "egreso_traslado",
+      quantity: -4,
+      referenceType: "dispatch_guide",
+      referenceId: "gdi-audit-1",
+      stockBefore: 20,
+      stockAfter: 16,
+      performedBy: "user-audit-bodega",
+      performedAt: now,
+      reason: "Guía GDI-000001 · salida a Faena Mininco",
+    },
+    {
+      id: "mov-audit-5",
+      worksiteId,
+      productId: "prod-audit-2",
+      type: "ingreso_traslado",
+      quantity: 4,
+      referenceType: "dispatch_guide",
+      referenceId: "gdi-audit-1",
+      stockBefore: 0,
+      stockAfter: 4,
+      performedBy: "user-audit-bodega",
+      performedAt: now,
+      reason: "Guía GDI-000001 · ingreso desde Oficina CHOME",
     },
   ]
   for (const m of auditMovements) {
@@ -3850,6 +3983,598 @@ async function prepareDatabase(captureDbUrl: string) {
       updatedAt: now,
     },
   ])
+  // ── Guías de Despacho Internas (Oficina → Faena) ─────────────────────────
+  // Una guía despachada (con sus dos patas de kardex más arriba) y un borrador,
+  // que es el único estado en que el editor abre.
+  await db.insert(schema.dispatchGuides).values([
+    {
+      id: "gdi-audit-1",
+      code: "GDI-000001",
+      status: "dispatched",
+      originWorksiteId: officeWorksiteId,
+      destinationWorksiteId: worksiteId,
+      issuedBy: "user-audit-bodega",
+      issuedAt: now,
+      dispatcherWorkerId: "worker-audit-2",
+      receiverWorkerId: "worker-audit-1",
+      notes: "Traslado de insumos de señalización para el frente de mantención.",
+      dispatchedAt: now,
+      dispatchedBy: "user-audit-bodega",
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: "gdi-audit-2",
+      code: "GDI-000002",
+      status: "draft",
+      originWorksiteId: officeWorksiteId,
+      destinationWorksiteId: "ws-audit-2",
+      issuedBy: "user-audit-bodega",
+      issuedAt: now,
+      dispatcherWorkerId: "worker-audit-2",
+      notes: "Preparación pendiente de confirmar con la faena.",
+      createdAt: now,
+      updatedAt: now,
+    },
+  ])
+  await db.insert(schema.dispatchGuideItems).values([
+    { id: "gdi-item-audit-1", guideId: "gdi-audit-1", productId: "prod-audit-2", quantity: 4, unitOfMeasure: "rollo", sortOrder: 0 },
+    { id: "gdi-item-audit-2", guideId: "gdi-audit-2", productId: "prod-audit-2", quantity: 2, unitOfMeasure: "rollo", sortOrder: 0 },
+  ])
+  await db.insert(schema.statusHistory).values([
+    { id: "status-audit-gdi-1", entityType: "dispatch_guide", entityId: "gdi-audit-1", fromStatus: null, toStatus: "draft", changedBy: "user-audit-bodega", changedAt: now },
+    { id: "status-audit-gdi-2", entityType: "dispatch_guide", entityId: "gdi-audit-1", fromStatus: "draft", toStatus: "dispatched", changedBy: "user-audit-bodega", reason: "Despacho confirmado en oficina.", changedAt: now },
+    { id: "status-audit-gdi-3", entityType: "dispatch_guide", entityId: "gdi-audit-2", fromStatus: null, toStatus: "draft", changedBy: "user-audit-bodega", changedAt: now },
+  ])
+
+  // ── Equipos de servicio (instrumentos que se mandan a calibrar) ───────────
+  await db.insert(schema.serviceEquipment).values([
+    {
+      id: "equip-audit-1",
+      code: "MG-014",
+      name: "Detector monogás H2S",
+      kind: "monogas",
+      brand: "Draeger",
+      model: "Pac 6500",
+      serialNumber: "ARJH-0142",
+      worksiteId,
+      isActive: true,
+      notes: "Calibración anual vigente; se envía a laboratorio cada 12 meses.",
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: "equip-audit-2",
+      code: "ALC-003",
+      name: "Alcotest de control de acceso",
+      kind: "alcotest",
+      brand: "Draeger",
+      model: "Alcotest 6820",
+      serialNumber: "ARBB-0031",
+      worksiteId: "ws-audit-2",
+      isActive: true,
+      createdAt: now,
+      updatedAt: now,
+    },
+  ])
+
+  // ── Visitas, fiscalizaciones y coordinación (DS 44 art. 20 y 70) ──────────
+  await db.insert(schema.preventionExternalEngagements).values([
+    {
+      id: "eng-audit-1",
+      code: "VIS-2026-001",
+      worksiteId,
+      kind: "fiscalizacion",
+      direction: "received",
+      counterpartyType: "direccion_trabajo",
+      counterpartyName: "Inspección Provincial del Trabajo de Concepción",
+      counterpartyRut: "61.502.000-9",
+      occurredOn: "2026-06-04",
+      subject: "Fiscalización programada de condiciones sanitarias y ambientales básicas.",
+      summary: "Se revisaron servicios higiénicos, comedor y registro de entrega de EPP.",
+      outcome: "Dos observaciones sin multa; plazo de 15 días para acreditar corrección.",
+      officialReference: "F-8.1-2026-1174",
+      createdByUserId: userId,
+      version: 1,
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: "eng-audit-2",
+      code: "VIS-2026-002",
+      worksiteId,
+      kind: "coordinacion",
+      direction: "delivered",
+      counterpartyType: "mandante",
+      counterpartyName: "Forestal Arauco S.A.",
+      occurredOn: "2026-05-28",
+      subject: "Entrega de información preventiva al mandante del centro de trabajo.",
+      summary: "Se entregó matriz de riesgos, programa de trabajo y nómina de trabajadores.",
+      infoTypes: ["riesgos", "programa_preventivo", "dotacion"],
+      createdByUserId: "user-audit-prevencion",
+      version: 1,
+      createdAt: now,
+      updatedAt: now,
+    },
+  ])
+  // Medida prescrita por la fiscalización: el detalle de la visita se lee como
+  // el acta que originó la acción correctiva, no como una lista suelta.
+  await db.insert(schema.preventionCapaActions).values({
+    id: "capa-audit-engagement",
+    code: "CAPA-2026-014",
+    sourceType: "external_engagement",
+    sourceId: "eng-audit-1",
+    worksiteId,
+    finding: "Comedor sin lavamanos habilitado durante el turno de tarde.",
+    immediateMeasure: "Se habilitó un lavamanos portátil el mismo día de la visita.",
+    actionDescription: "Instalar lavamanos fijo y dejar registro de mantención semanal.",
+    responsibleUserId: "user-audit-prevencion",
+    responsibleSnapshot: "Prevencionista Faena",
+    responsibleRole: "prevencionista",
+    priority: "high",
+    targetDate: "2026-06-19",
+    status: "in_progress",
+    evidenceRequired: true,
+    requiresImmediateStop: false,
+    createdByUserId: userId,
+    startedByUserId: "user-audit-prevencion",
+    startedAt: now,
+    reconciliationStatus: "reconciled",
+    effectivenessStatus: "pending",
+    version: 1,
+    createdAt: now,
+    updatedAt: now,
+  })
+
+  // ── Facturación y cobranza ───────────────────────────────────────────────
+  /*
+   * El módulo se capturaba en blanco porque este seed nunca lo pobló. Lo que
+   * sigue cubre los estados que sus nueve pantallas existen para mostrar: una
+   * factura parcialmente pagada con gestión de cobranza, una pagada, una
+   * vencida, una nota de crédito, una sin vínculo (la cola del resumen), una de
+   * compra, un par candidato a duplicado, propuestas en revisión y aprobada, y
+   * corridas de sincronización con y sin error.
+   *
+   * `paidAmount`/`paymentStatus` son caché derivada de los pagos confirmados
+   * (`recomputeInvoicePaymentStatus`): acá se escriben a mano, así que tienen
+   * que cuadrar con los pagos insertados más abajo o la captura mostraría un
+   * estado que el servicio nunca produce.
+   */
+  const chomeTaxId = "76.099.887-1"
+  const chomeName = "Chome SpA"
+  await db.insert(schema.clients).values([
+    {
+      id: "cl-audit-1",
+      rut: "76.541.220-4",
+      name: "Forestal Arauco S.A.",
+      tradeName: "Arauco",
+      businessActivity: "Explotación forestal",
+      email: "pagos@arauco.example",
+      phone: "+56 41 240 0000",
+      address: "Av. El Golf 150",
+      commune: "Las Condes",
+      city: "Santiago",
+      paymentTermsDays: 30,
+      defaultCurrency: "CLP",
+      ownerUserId: userId,
+      isActive: true,
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: "cl-audit-2",
+      rut: "77.310.905-6",
+      name: "Constructora Andes SpA",
+      businessActivity: "Obras civiles",
+      email: "finanzas@andes.example",
+      paymentTermsDays: 45,
+      defaultCurrency: "CLP",
+      ownerUserId: "user-audit-jefa",
+      isActive: true,
+      createdAt: now,
+      updatedAt: now,
+    },
+  ])
+  await db.insert(schema.clientContacts).values([
+    { id: "cl-contact-audit-1", clientId: "cl-audit-1", name: "Verónica Paredes", role: "Jefa de pagos", email: "vparedes@arauco.example", phone: "+56 9 7412 8890", isBilling: true, isActive: true, createdAt: now, updatedAt: now },
+    { id: "cl-contact-audit-2", clientId: "cl-audit-2", name: "Rodrigo Cifuentes", role: "Administrador de contrato", email: "rcifuentes@andes.example", isBilling: true, isActive: true, createdAt: now, updatedAt: now },
+  ])
+  await db.insert(schema.contracts).values([
+    {
+      id: "ctr-audit-1",
+      code: "CTR-2026-0001",
+      clientId: "cl-audit-1",
+      name: "Servicios de prevención y bodega — Faena Mininco",
+      worksiteId,
+      clientPoNumber: "OC-ARAUCO-88120",
+      startDate: "2026-01-01",
+      endDate: "2026-12-31",
+      currency: "CLP",
+      paymentTermsDays: 30,
+      billingCycle: "monthly",
+      periodAmount: 1000000,
+      ownerUserId: userId,
+      status: "active",
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: "ctr-audit-2",
+      code: "CTR-2026-0002",
+      clientId: "cl-audit-2",
+      name: "Habilitación de instalaciones — por hitos",
+      worksiteId: "ws-audit-2",
+      startDate: "2026-03-01",
+      currency: "CLP",
+      paymentTermsDays: 45,
+      billingCycle: "milestone",
+      ownerUserId: "user-audit-jefa",
+      status: "active",
+      createdAt: now,
+      updatedAt: now,
+    },
+  ])
+  await db.insert(schema.billingInvoices).values([
+    {
+      id: "inv-audit-1",
+      direction: "sale",
+      docType: "33",
+      folio: 1041,
+      issuerTaxId: chomeTaxId,
+      issuerName: chomeName,
+      receiverTaxId: "76.541.220-4",
+      receiverName: "Forestal Arauco S.A.",
+      issueDate: "2026-06-05",
+      dueDate: "2026-07-05",
+      dueDateSource: "contract",
+      currency: "CLP",
+      netAmount: 1000000,
+      taxAmount: 190000,
+      totalAmount: 1190000,
+      documentStatus: "accepted",
+      paymentStatus: "partial",
+      collectionStatus: "committed",
+      paidAmount: 500000,
+      source: "factura_en_linea",
+      sourceLastSyncedAt: now,
+      ownerUserId: userId,
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: "inv-audit-2",
+      direction: "sale",
+      docType: "33",
+      folio: 1040,
+      issuerTaxId: chomeTaxId,
+      issuerName: chomeName,
+      receiverTaxId: "76.541.220-4",
+      receiverName: "Forestal Arauco S.A.",
+      issueDate: "2026-05-05",
+      dueDate: "2026-06-04",
+      dueDateSource: "contract",
+      currency: "CLP",
+      netAmount: 1000000,
+      taxAmount: 190000,
+      totalAmount: 1190000,
+      documentStatus: "accepted",
+      paymentStatus: "paid",
+      collectionStatus: "closed",
+      paidAmount: 1190000,
+      source: "factura_en_linea",
+      sourceLastSyncedAt: now,
+      ownerUserId: userId,
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: "inv-audit-3",
+      direction: "sale",
+      docType: "33",
+      folio: 1038,
+      issuerTaxId: chomeTaxId,
+      issuerName: chomeName,
+      receiverTaxId: "77.310.905-6",
+      receiverName: "Constructora Andes SpA",
+      issueDate: "2026-04-02",
+      dueDate: "2026-05-17",
+      dueDateSource: "client",
+      currency: "CLP",
+      netAmount: 720000,
+      taxAmount: 136800,
+      totalAmount: 856800,
+      documentStatus: "accepted",
+      paymentStatus: "unpaid",
+      collectionStatus: "in_progress",
+      paidAmount: 0,
+      source: "factura_en_linea",
+      sourceLastSyncedAt: now,
+      ownerUserId: "user-audit-jefa",
+      notes: "Cliente pidió reemitir con la orden de compra en el detalle.",
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      // Nota de crédito: total negativo. Es el caso que rompe cualquier
+      // agregación que asuma montos positivos.
+      id: "inv-audit-4",
+      direction: "sale",
+      docType: "61",
+      folio: 214,
+      issuerTaxId: chomeTaxId,
+      issuerName: chomeName,
+      receiverTaxId: "77.310.905-6",
+      receiverName: "Constructora Andes SpA",
+      issueDate: "2026-05-20",
+      currency: "CLP",
+      netAmount: -120000,
+      taxAmount: -22800,
+      totalAmount: -142800,
+      documentStatus: "accepted",
+      paymentStatus: "unpaid",
+      collectionStatus: "none",
+      paidAmount: 0,
+      source: "factura_en_linea",
+      sourceLastSyncedAt: now,
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      // Sin vínculo a cliente/contrato: alimenta la cola "por atribuir" del
+      // resumen, que era la mitad de esa pantalla sin evidencia.
+      id: "inv-audit-5",
+      direction: "sale",
+      docType: "33",
+      folio: 1042,
+      issuerTaxId: chomeTaxId,
+      issuerName: chomeName,
+      receiverTaxId: "76.541.220-4",
+      receiverName: "Forestal Arauco S A",
+      issueDate: "2026-06-11",
+      dueDate: "2026-07-11",
+      dueDateSource: "provider",
+      currency: "CLP",
+      netAmount: 350000,
+      taxAmount: 66500,
+      totalAmount: 416500,
+      documentStatus: "issued",
+      paymentStatus: "unpaid",
+      collectionStatus: "none",
+      paidAmount: 0,
+      source: "factura_en_linea",
+      sourceLastSyncedAt: now,
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: "inv-audit-6",
+      direction: "purchase",
+      docType: "33",
+      folio: 88231,
+      issuerTaxId: "76.123.456-7",
+      issuerName: "TRECK Seguridad Industrial",
+      receiverTaxId: chomeTaxId,
+      receiverName: chomeName,
+      issueDate: "2026-06-18",
+      dueDate: "2026-07-18",
+      dueDateSource: "provider",
+      currency: "CLP",
+      netAmount: 142800,
+      taxAmount: 27132,
+      totalAmount: 169932,
+      documentStatus: "accepted",
+      paymentStatus: "unpaid",
+      collectionStatus: "none",
+      paidAmount: 0,
+      source: "factura_en_linea",
+      sourceLastSyncedAt: now,
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      // Par candidato a duplicado: mismo folio y monto, RUT receptor con el
+      // dígito verificador distinto. La identidad tributaria no colisiona, así
+      // que la deduplicación exacta no lo resuelve y queda para ojo humano.
+      id: "inv-audit-dup",
+      direction: "sale",
+      docType: "33",
+      folio: 1041,
+      issuerTaxId: chomeTaxId,
+      issuerName: chomeName,
+      receiverTaxId: "76.541.220-K",
+      receiverName: "Forestal Arauco SA",
+      issueDate: "2026-06-05",
+      dueDate: "2026-07-05",
+      dueDateSource: "provider",
+      currency: "CLP",
+      netAmount: 1000000,
+      taxAmount: 190000,
+      totalAmount: 1190000,
+      documentStatus: "unknown",
+      paymentStatus: "unpaid",
+      collectionStatus: "none",
+      paidAmount: 0,
+      source: "chipax",
+      sourceLastSyncedAt: now,
+      createdAt: now,
+      updatedAt: now,
+    },
+  ])
+  await db.insert(schema.billingInvoiceItems).values([
+    { id: "inv-item-audit-1", invoiceId: "inv-audit-1", description: "Servicio de prevención de riesgos — junio 2026", quantity: 1, unit: "mes", unitPrice: 1000000, netAmount: 1000000, taxAmount: 190000, totalAmount: 1190000, sortOrder: 0 },
+    { id: "inv-item-audit-2", invoiceId: "inv-audit-3", description: "Habilitación de instalaciones — hito 1", quantity: 1, unit: "hito", unitPrice: 720000, netAmount: 720000, taxAmount: 136800, totalAmount: 856800, sortOrder: 0 },
+  ])
+  await db.insert(schema.billingExternalRefs).values([
+    { id: "inv-ref-audit-1", invoiceId: "inv-audit-1", provider: "factura_en_linea", externalId: "FEL-1041", externalFolio: "1041", externalStatus: "aceptado", accountRef: "433", payloadHash: "capture-fel-1041", snapshot: { folio: 1041, total: 1190000 }, firstSeenAt: now, lastSeenAt: now },
+    { id: "inv-ref-audit-2", invoiceId: "inv-audit-dup", provider: "chipax", externalId: "CHX-556120", externalFolio: "1041", accountRef: "chome", payloadHash: "capture-chx-556120", snapshot: { folio: 1041, total: 1190000 }, firstSeenAt: now, lastSeenAt: now },
+  ])
+  await db.insert(schema.billingInvoiceLinks).values([
+    { id: "inv-link-audit-1", invoiceId: "inv-audit-1", clientId: "cl-audit-1", contractId: "ctr-audit-1", worksiteId, servicePeriod: "2026-06", clientPoNumber: "OC-ARAUCO-88120", status: "confirmed", matchedBy: "user", confirmedBy: userId, confirmedAt: now, createdBy: userId, createdAt: now, updatedAt: now },
+    { id: "inv-link-audit-2", invoiceId: "inv-audit-2", clientId: "cl-audit-1", contractId: "ctr-audit-1", worksiteId, servicePeriod: "2026-05", status: "confirmed", matchedBy: "auto", confidence: "high", confirmedBy: userId, confirmedAt: now, createdBy: userId, createdAt: now, updatedAt: now },
+    { id: "inv-link-audit-3", invoiceId: "inv-audit-3", clientId: "cl-audit-2", contractId: "ctr-audit-2", worksiteId: "ws-audit-2", servicePeriod: "2026-04", status: "confirmed", matchedBy: "user", confirmedBy: "user-audit-jefa", confirmedAt: now, createdBy: "user-audit-jefa", createdAt: now, updatedAt: now },
+    // Sugerencia sin confirmar: el vínculo propuesto por el match automático.
+    { id: "inv-link-audit-4", invoiceId: "inv-audit-4", clientId: "cl-audit-2", status: "suggested", matchedBy: "auto", confidence: "medium", evidence: { rut: "coincide", monto: "no aplica" }, createdBy: userId, createdAt: now, updatedAt: now },
+  ])
+  await db.insert(schema.billingInvoicePayments).values([
+    { id: "pay-audit-1", invoiceId: "inv-audit-1", paymentDate: "2026-06-28", amount: 500000, currency: "CLP", method: "transferencia", source: "manual", verificationStatus: "confirmed", matchedBy: "user", confirmedBy: userId, confirmedAt: now, createdBy: userId, createdAt: now, updatedAt: now },
+    { id: "pay-audit-2", invoiceId: "inv-audit-2", paymentDate: "2026-06-02", amount: 1190000, currency: "CLP", method: "transferencia", source: "manual", verificationStatus: "confirmed", matchedBy: "user", confirmedBy: userId, confirmedAt: now, createdBy: userId, createdAt: now, updatedAt: now },
+    // Pago sugerido y sin confirmar: no suma a `paidAmount` a propósito.
+    { id: "pay-audit-3", invoiceId: "inv-audit-3", paymentDate: "2026-06-30", amount: 300000, currency: "CLP", method: "transferencia", source: "manual", verificationStatus: "suggested", confidence: "medium", matchedBy: "auto", evidence: { glosa: "folio 1038 en el detalle" }, createdBy: userId, createdAt: now, updatedAt: now },
+  ])
+  await db.insert(schema.billingCollectionActions).values([
+    { id: "coll-audit-1", invoiceId: "inv-audit-1", contactName: "Verónica Paredes", actionDate: "2026-06-20", actionType: "commitment", channel: "phone", outcome: "promised_payment", commitmentDate: "2026-07-05", commitmentAmount: 690000, nextActionDate: "2026-07-06", notes: "Compromete el saldo con la liberación del estado de pago.", assigneeUserId: userId, createdBy: userId, createdAt: now },
+    { id: "coll-audit-2", invoiceId: "inv-audit-3", contactName: "Rodrigo Cifuentes", actionDate: "2026-06-16", actionType: "call", channel: "phone", outcome: "no_answer", nextActionDate: "2026-06-23", assigneeUserId: "user-audit-jefa", createdBy: "user-audit-jefa", createdAt: now },
+  ])
+  await db.insert(schema.billingProposals).values([
+    {
+      id: "prop-audit-1",
+      code: "PF-2026-0011",
+      clientId: "cl-audit-1",
+      contractId: "ctr-audit-1",
+      worksiteId,
+      servicePeriod: "2026-07",
+      currency: "CLP",
+      estimatedNet: 1000000,
+      estimatedTax: 190000,
+      estimatedTotal: 1190000,
+      clientPoNumber: "OC-ARAUCO-88120",
+      status: "in_review",
+      ownerUserId: userId,
+      submittedBy: userId,
+      submittedAt: now,
+      createdBy: userId,
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: "prop-audit-2",
+      code: "PF-2026-0010",
+      clientId: "cl-audit-2",
+      contractId: "ctr-audit-2",
+      worksiteId: "ws-audit-2",
+      servicePeriod: "2026-06",
+      currency: "CLP",
+      estimatedNet: 480000,
+      estimatedTax: 91200,
+      estimatedTotal: 571200,
+      missingDocuments: "Falta el acta de recepción del hito firmada por el mandante.",
+      status: "approved",
+      ownerUserId: "user-audit-jefa",
+      submittedBy: "user-audit-jefa",
+      submittedAt: now,
+      reviewedBy: userId,
+      reviewedAt: now,
+      approvedBy: userId,
+      approvedAt: now,
+      createdBy: "user-audit-jefa",
+      createdAt: now,
+      updatedAt: now,
+    },
+  ])
+  await db.insert(schema.billingProposalItems).values([
+    { id: "prop-item-audit-1", proposalId: "prop-audit-1", description: "Servicio de prevención de riesgos — julio 2026", quantity: 1, unit: "mes", unitPrice: 1000000, netAmount: 1000000, sortOrder: 0 },
+    { id: "prop-item-audit-2", proposalId: "prop-audit-2", description: "Habilitación de instalaciones — hito 2", quantity: 1, unit: "hito", unitPrice: 480000, netAmount: 480000, sortOrder: 0 },
+  ])
+  await db.insert(schema.billingDuplicateCandidates).values({
+    id: "dup-audit-1",
+    invoiceId: "inv-audit-1",
+    otherInvoiceId: "inv-audit-dup",
+    classification: "probable",
+    evidence: { folio: "coincide", total: "coincide", receptor: "difiere el dígito verificador", fuente: "factura_en_linea vs chipax" },
+    status: "open",
+    createdAt: now,
+  })
+  await db.insert(schema.billingInvoiceEvents).values([
+    { id: "inv-event-audit-1", invoiceId: "inv-audit-1", eventType: "invoice_imported", actorKind: "provider", detail: { proveedor: "factura_en_linea", folio: 1041 }, occurredAt: now },
+    { id: "inv-event-audit-2", invoiceId: "inv-audit-1", eventType: "link_confirmed", actorKind: "user", actorUserId: userId, detail: { cliente: "Forestal Arauco S.A.", periodo: "2026-06" }, occurredAt: now },
+    { id: "inv-event-audit-3", invoiceId: "inv-audit-1", eventType: "payment_confirmed", actorKind: "user", actorUserId: userId, detail: { monto: 500000, estado: "partial" }, occurredAt: now },
+  ])
+  await db.insert(schema.billingSyncRuns).values([
+    { id: "sync-audit-1", provider: "factura_en_linea", scope: "sales_invoices", trigger: "cron", status: "success", dryRun: false, periodFrom: "2026-06", periodTo: "2026-06", recordsFetched: 6, recordsCreated: 5, recordsUpdated: 1, recordsUnchanged: 0, duplicatesDetected: 1, conflictsDetected: 0, errorsCount: 0, correlationId: "capture-sync-0001", triggeredBy: userId, startedAt: now, finishedAt: now },
+    { id: "sync-audit-2", provider: "chipax", scope: "bank_transactions", trigger: "manual", status: "failed", dryRun: false, periodFrom: "2026-06", periodTo: "2026-06", recordsFetched: 0, errorsCount: 1, errorSummary: "El proveedor respondió 401: credenciales rechazadas.", correlationId: "capture-sync-0002", triggeredBy: userId, startedAt: now, finishedAt: now },
+  ])
+
+  // ── Portal DTE (Bandeja de Entrada y corridas de sincronización) ─────────
+  /*
+   * `codEmp` tiene que coincidir con la configuración efectiva del portal o la
+   * bandeja filtra por una empresa distinta y sale vacía: `buildCaptureEnv`
+   * fija `DTE_PORTAL_CODEMP` con este mismo valor.
+   */
+  const captureCodEmp = "433"
+  await db.insert(schema.dteSyncRuns).values([
+    { id: "dte-run-audit-1", periodo: "2026-06", codEmp: captureCodEmp, trigger: "cron", status: "success", rowsSeen: 3, rowsInserted: 3, rowsUpdated: 0, importerId: userId, correlationId: "capture-dte-0001", reconciliationStatus: "success", startedAt: now, finishedAt: now },
+    { id: "dte-run-audit-2", periodo: "2026-05", codEmp: captureCodEmp, trigger: "manual", status: "partial", rowsSeen: 4, rowsInserted: 2, rowsUpdated: 1, importerId: userId, correlationId: "capture-dte-0002", error: "Una fila del panel no traía folio legible.", reconciliationStatus: "partial", reconciliationError: "Un documento quedó sin factura de OC candidata.", startedAt: now, finishedAt: now },
+  ])
+  await db.insert(schema.dteDocuments).values([
+    {
+      // Conciliado contra la factura de la OC. El monto calza al peso: una
+      // diferencia acá se rendereaba como discrepancia y no lo es.
+      id: "dte-doc-audit-1",
+      tipoDte: "33",
+      folio: 12715,
+      rutEmisor: "76.123.456-7",
+      razonSocialEmisor: "TRECK Seguridad Industrial",
+      fechaEmision: "2026-06-18",
+      montoNeto: 142800,
+      iva: 27132,
+      montoTotal: 169932,
+      estadoSii: "aceptado",
+      estadoIntercambio: "aceptado",
+      estadoPlataforma: "Recibido",
+      codEmp: captureCodEmp,
+      periodo: "2026-06",
+      portalRecordId: "918234",
+      rawHash: "capture-dte-33-12715",
+      purchaseOrderInvoiceId: "invoice-audit-1",
+      syncRunId: "dte-run-audit-1",
+      syncedAt: now,
+      createdAt: now,
+    },
+    {
+      id: "dte-doc-audit-2",
+      tipoDte: "33",
+      folio: 12980,
+      rutEmisor: "77.845.120-2",
+      razonSocialEmisor: "Ferretería Industrial Biobío Ltda",
+      fechaEmision: "2026-06-22",
+      montoNeto: 84000,
+      iva: 15960,
+      montoTotal: 99960,
+      estadoSii: "aceptado",
+      estadoIntercambio: "pendiente",
+      estadoPlataforma: "Recibido",
+      codEmp: captureCodEmp,
+      periodo: "2026-06",
+      portalRecordId: "918470",
+      rawHash: "capture-dte-33-12980",
+      syncRunId: "dte-run-audit-1",
+      syncedAt: now,
+      createdAt: now,
+    },
+    {
+      // Nota de crédito: monto negativo y sin vínculo interno.
+      id: "dte-doc-audit-3",
+      tipoDte: "61",
+      folio: 4412,
+      rutEmisor: "76.123.456-7",
+      razonSocialEmisor: "TRECK Seguridad Industrial",
+      fechaEmision: "2026-06-25",
+      montoNeto: -18000,
+      iva: -3420,
+      montoTotal: -21420,
+      estadoSii: "aceptado",
+      estadoIntercambio: "aceptado",
+      estadoPlataforma: "Recibido",
+      codEmp: captureCodEmp,
+      periodo: "2026-06",
+      portalRecordId: "918602",
+      rawHash: "capture-dte-61-4412",
+      syncRunId: "dte-run-audit-1",
+      syncedAt: now,
+      createdAt: now,
+    },
+  ])
+
   await db.insert(schema.systemSettings).values([
     { key: "company_name", value: "Chome Operaciones", updatedAt: now },
     { key: "company_rut", value: "76.000.000-0", updatedAt: now },
@@ -3897,6 +4622,14 @@ async function prepareDatabase(captureDbUrl: string) {
       PERFORM setval('code_seq_ent_' || yr, GREATEST(
         1,
         (SELECT COALESCE(MAX(CAST(split_part(code,'-',3) AS int)),0) FROM deliveries WHERE code ~ ('^ENT-' || yr || '-'))
+      ));
+
+      -- GDI usa serie continua (year=0), igual que SOL, y su correlativo va en
+      -- el segundo segmento: "GDI-000002".
+      PERFORM next_document_code('GDI', 0);
+      PERFORM setval('code_seq_gdi_0', GREATEST(
+        2,
+        (SELECT COALESCE(MAX(CAST(split_part(code,'-',2) AS int)),0) FROM dispatch_guides WHERE code ~ '^GDI-')
       ));
     END;
     $$
@@ -4126,6 +4859,16 @@ function buildCaptureEnv(captureDbUrl: string, serverBaseUrl?: string): NodeJS.D
     SMTP_FROM: "",
     SMTP_DISABLED: "true",
     SMTP_TIMEOUT_MS: "1000",
+    // Portal DTE: sólo el código de empresa, que es por lo que filtra la Bandeja
+    // de Entrada (y que el seed replica en `dte_documents.cod_emp`). Las
+    // credenciales van vacías y la sincronización apagada para que ninguna
+    // captura pueda golpear el portal real, ni herede las credenciales del
+    // `.env` de quien corre el script.
+    DTE_PORTAL_CODEMP: "433",
+    DTE_PORTAL_RUT_USR: "",
+    DTE_PORTAL_RUT_EMP: "",
+    DTE_PORTAL_CLAVE: "",
+    DTE_SYNC_ENABLED: "false",
   }
 }
 
