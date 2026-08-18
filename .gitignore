@@ -85,3 +85,8 @@ next-env.d.ts
 
 .agents
 /checklists
+# Volcados de pg_dump. Traen datos personales de producción (nombres y RUT de
+# la dotación): en el repositorio quedarían en el historial para siempre y
+# rehacerlo exige reescribirlo. Los respaldos van por /admin/backups, no por git.
+backup-*.sql
+*.dump

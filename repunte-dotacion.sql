@@ -48,7 +48,10 @@ UPDATE workers wk
      ('Teno',           'Teno - Arauco'),
      ('Biodiversa',     'Biodiversa'),
      ('Masisa',         'Masisa'),
-     ('Administración', 'Oficina Central')
+     ('Administración', 'Oficina Central'),
+     -- Depende de que `Horcones` esté activa. Si el preflight la muestra como
+     -- inactiva este par no aplica y sus 2 quedan huérfanos: lo delata el paso 4.
+     ('Arauco Horcones', 'Horcones')
    );
 
 -- ── 3. Verificación: dotación por faena ─────────────────────────────────────
@@ -63,9 +66,8 @@ SELECT w.name,
  ORDER BY w.name;
 
 -- ── 4. Verificación: quién sigue huérfano ───────────────────────────────────
--- Esperado: sólo `Arauco Horcones` (2), que quedó sin destino definido.
--- Cualquier otro nombre aquí significa que el mapeo dejó a alguien fuera —
--- no hagas COMMIT sin resolverlo.
+-- Esperado: CERO filas. Cualquier nombre aquí significa que el mapeo dejó a
+-- alguien fuera — no hagas COMMIT sin resolverlo.
 SELECT viejo.name AS faena_inactiva, count(*) AS trabajadores_activos_huerfanos
   FROM workers wk
   JOIN worksites viejo ON viejo.id = wk.worksite_id
