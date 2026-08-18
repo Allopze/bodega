@@ -12,6 +12,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { Field } from "@/components/ui/field"
 import { Textarea } from "@/components/ui/textarea"
 import { TableRow, TableCell } from "@/components/ui/table"
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { toggleWorksiteActive } from "./actions"
 import { COLUMNS as WS_COLUMNS, CONTRACT } from "./catalog-contract"
 
@@ -44,6 +45,10 @@ export function FaenasList({
 
   const rows = worksites as (WorksiteRow & Record<string, unknown>)[]
 
+  const [tab, setTab] = React.useState<"active" | "inactive">("active")
+  const activeRows   = React.useMemo(() => rows.filter((ws) => ws.isActive),  [rows])
+  const inactiveRows = React.useMemo(() => rows.filter((ws) => !ws.isActive), [rows])
+
   // Cerrar una faena cancela sus acciones correctivas y obligaciones abiertas
   // con este motivo escrito en cada una, así que se pide antes de ejecutar y no
   // como una confirmación genérica.
@@ -57,83 +62,115 @@ export function FaenasList({
     if (toggleState.ok) { setClosing(null); setMotivo("") }
   }, [toggleState])
 
+  const renderMobileCard = (row: Record<string, unknown>) => {
+    const ws = row as unknown as WorksiteRow
+    return (
+      <article className="rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h2 title={ws.name} className="text-sm font-medium text-[var(--color-text)] truncate">{ws.name}</h2>
+            <p className="mt-0.5 font-mono text-xs text-[var(--color-text-subtle)]">{ws.code}</p>
+          </div>
+          <Badge variant={ws.isActive ? "success" : "default"} dot>
+            {ws.isActive ? "Activa" : "Inactiva"}
+          </Badge>
+        </div>
+
+        <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
+          <div>
+            <dt className="text-[var(--color-text-subtle)]">Región</dt>
+            <dd className="text-[var(--color-text-muted)]">{ws.region ?? "—"}</dd>
+          </div>
+        </dl>
+
+        <div className="mt-3 flex items-center justify-end gap-2 border-t border-[var(--color-border)] pt-2">
+          <CatalogRowActions
+            id={ws.id}
+            isActive={ws.isActive}
+            label={`faena ${ws.name}`}
+            onEdit={() => openEditWs(ws)}
+            toggleAction={wsToggleAction}
+            onDeactivateRequest={() => { setMotivo(""); setClosing(ws) }}
+          />
+        </div>
+      </article>
+    )
+  }
+
+  const renderRow = (row: Record<string, unknown>) => {
+    const ws = row as unknown as WorksiteRow
+    return (
+      <React.Fragment key={ws.id}>
+        <TableRow>
+          <TableCell>
+            <span title={ws.name} className="text-sm font-medium text-text truncate">{ws.name}</span>
+          </TableCell>
+          <TableCell><span className="font-mono text-xs">{ws.code}</span></TableCell>
+          <TableCell className="text-sm text-text-muted">{ws.region ?? "—"}</TableCell>
+          <TableCell>
+            <Badge variant={ws.isActive ? "success" : "default"} dot className="w-20 justify-center">
+              {ws.isActive ? "Activa" : "Inactiva"}
+            </Badge>
+          </TableCell>
+          <TableCell>
+            <div className="flex items-center gap-2 justify-end">
+              <CatalogRowActions
+                id={ws.id}
+                isActive={ws.isActive}
+                label={`faena ${ws.name}`}
+                onEdit={() => openEditWs(ws)}
+                toggleAction={wsToggleAction}
+                onDeactivateRequest={() => { setMotivo(""); setClosing(ws) }}
+              />
+            </div>
+          </TableCell>
+        </TableRow>
+      </React.Fragment>
+    )
+  }
+
   return (
     <>
-      <DataTable
-        caption="Faenas"
-        columns={WS_COLUMNS}
-        rows={rows}
-        searchKeys={CONTRACT.searchKeys}
-        pageSize={20}
+      <Tabs value={tab} onValueChange={(v) => setTab(v as "active" | "inactive")}>
+        <TabsList className="mb-3">
+          <TabsTrigger value="active">
+            Activas
+            <span className="ml-1.5 text-xs text-text-subtle">{activeRows.length}</span>
+          </TabsTrigger>
+          <TabsTrigger value="inactive">
+            Cerradas
+            <span className="ml-1.5 text-xs text-text-subtle">{inactiveRows.length}</span>
+          </TabsTrigger>
+        </TabsList>
 
-        emptyTitle="Sin faenas"
-        emptyDescription={canCreateWorksites ? "Crea la primera faena para comenzar." : "No hay faenas dentro de tu alcance."}
-        renderMobileCard={(row) => {
-          const ws = row as unknown as WorksiteRow
-          return (
-            <article className="rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] p-4">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <h2 title={ws.name} className="text-sm font-medium text-[var(--color-text)] truncate">{ws.name}</h2>
-                  <p className="mt-0.5 font-mono text-xs text-[var(--color-text-subtle)]">{ws.code}</p>
-                </div>
-                <Badge variant={ws.isActive ? "success" : "default"} dot>
-                  {ws.isActive ? "Activa" : "Inactiva"}
-                </Badge>
-              </div>
+        <TabsContent value="active">
+          <DataTable
+            caption="Faenas activas"
+            columns={WS_COLUMNS}
+            rows={activeRows}
+            searchKeys={CONTRACT.searchKeys}
+            pageSize={20}
+            emptyTitle="Sin faenas activas"
+            emptyDescription={canCreateWorksites ? "Crea la primera faena para comenzar." : "No hay faenas dentro de tu alcance."}
+            renderMobileCard={renderMobileCard}
+            renderRow={renderRow}
+          />
+        </TabsContent>
 
-              <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
-                <div>
-                  <dt className="text-[var(--color-text-subtle)]">Región</dt>
-                  <dd className="text-[var(--color-text-muted)]">{ws.region ?? "—"}</dd>
-                </div>
-              </dl>
-
-              <div className="mt-3 flex items-center justify-end gap-2 border-t border-[var(--color-border)] pt-2">
-                <CatalogRowActions
-                  id={ws.id}
-                  isActive={ws.isActive}
-                  label={`faena ${ws.name}`}
-                  onEdit={() => openEditWs(ws)}
-                  toggleAction={wsToggleAction}
-                  onDeactivateRequest={() => { setMotivo(""); setClosing(ws) }}
-                />
-              </div>
-            </article>
-          )
-        }}
-        renderRow={(row) => {
-          const ws = row as unknown as WorksiteRow
-          return (
-            <React.Fragment key={ws.id}>
-              <TableRow>
-                <TableCell>
-                  <span title={ws.name} className="text-sm font-medium text-text truncate">{ws.name}</span>
-                </TableCell>
-                <TableCell><span className="font-mono text-xs">{ws.code}</span></TableCell>
-                <TableCell className="text-sm text-text-muted">{ws.region ?? "—"}</TableCell>
-                <TableCell>
-                  <Badge variant={ws.isActive ? "success" : "default"} dot className="w-20 justify-center">
-                    {ws.isActive ? "Activa" : "Inactiva"}
-                  </Badge>
-                </TableCell>
-                <TableCell>
-                  <div className="flex items-center gap-2 justify-end">
-                    <CatalogRowActions
-                      id={ws.id}
-                      isActive={ws.isActive}
-                      label={`faena ${ws.name}`}
-                      onEdit={() => openEditWs(ws)}
-                      toggleAction={wsToggleAction}
-                      onDeactivateRequest={() => { setMotivo(""); setClosing(ws) }}
-                    />
-                  </div>
-                </TableCell>
-              </TableRow>
-            </React.Fragment>
-          )
-        }}
-      />
+        <TabsContent value="inactive">
+          <DataTable
+            caption="Faenas cerradas"
+            columns={WS_COLUMNS}
+            rows={inactiveRows}
+            searchKeys={CONTRACT.searchKeys}
+            pageSize={20}
+            emptyTitle="Sin faenas cerradas"
+            emptyDescription="Ninguna faena cerrada. Al cerrar una, su historial de bodega, prevención y programa se conserva aquí."
+            renderMobileCard={renderMobileCard}
+            renderRow={renderRow}
+          />
+        </TabsContent>
+      </Tabs>
 
       <WorksiteForm
         key={editWs?.id ?? "nuevo"}

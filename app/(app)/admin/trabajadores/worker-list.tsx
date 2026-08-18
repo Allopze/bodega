@@ -7,6 +7,7 @@ import { CatalogRowActions } from "@/components/admin/catalog-row-actions"
 import { WorkerForm } from "./worker-form"
 import { Badge } from "@/components/ui/badge"
 import { TableRow, TableCell } from "@/components/ui/table"
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { toggleWorkerActive } from "./actions"
 import { COLUMNS, CONTRACT } from "./catalog-contract"
 
@@ -40,94 +41,131 @@ export function WorkerList({
     openEdit, closeSheet, toggleAction,
   } = useCatalogSheet<WorkerRow>(toggleWorkerActive)
 
+  const [tab, setTab] = React.useState<"active" | "inactive">("active")
+  const activeWorkers   = React.useMemo(() => workers.filter((w) => w.isActive),  [workers])
+  const inactiveWorkers = React.useMemo(() => workers.filter((w) => !w.isActive), [workers])
+
+  const renderMobileCard = (w: WorkerRow) => {
+    return (
+      <article className="rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h2 className="text-sm font-medium text-[var(--color-text)] truncate">
+              {w.firstName} {w.lastName}
+            </h2>
+            <p className="mt-0.5 font-mono text-xs text-[var(--color-text-subtle)]">{w.rut ?? "—"}</p>
+          </div>
+          <Badge variant={w.isActive ? "success" : "default"} dot>
+            {w.isActive ? "Activo" : "Inactivo"}
+          </Badge>
+        </div>
+  
+        <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
+          <div>
+            <dt className="text-[var(--color-text-subtle)]">Cargo</dt>
+            <dd className="text-[var(--color-text-muted)] truncate">{w.position ?? "—"}</dd>
+          </div>
+          <div className="text-right">
+            <dt className="text-[var(--color-text-subtle)]">Faena</dt>
+            <dd className="text-[var(--color-text-muted)] truncate">{w.worksiteName}</dd>
+          </div>
+        </dl>
+  
+        <div className="mt-3 flex items-center justify-end gap-2 border-t border-[var(--color-border)] pt-2">
+          <CatalogRowActions
+            id={w.id}
+            isActive={w.isActive}
+            label={`trabajador ${w.firstName} ${w.lastName}`}
+            onEdit={() => openEdit(w)}
+            toggleAction={toggleAction}
+          />
+        </div>
+      </article>
+    )
+  }
+
+  const renderRow = (w: WorkerRow) => {
+    return (
+      <TableRow key={w.id}>
+        <TableCell>
+          <p className="text-sm font-medium text-[var(--color-text)]">
+            {w.firstName} {w.lastName}
+          </p>
+        </TableCell>
+        <TableCell>
+          <span className="font-mono text-xs text-[var(--color-text-muted)]">
+            {w.rut ?? "—"}
+          </span>
+        </TableCell>
+        <TableCell className="text-sm text-[var(--color-text-muted)]">
+          {w.position ?? "—"}
+        </TableCell>
+        <TableCell className="text-sm text-[var(--color-text-muted)]">
+          {w.worksiteName}
+        </TableCell>
+        <TableCell>
+          <Badge variant={w.isActive ? "success" : "default"} dot className="w-20 justify-center">
+            {w.isActive ? "Activo" : "Inactivo"}
+          </Badge>
+        </TableCell>
+        <TableCell>
+          <div className="flex items-center gap-2 justify-end">
+            <CatalogRowActions
+              id={w.id}
+              isActive={w.isActive}
+              label={`trabajador ${w.firstName} ${w.lastName}`}
+              onEdit={() => openEdit(w)}
+              toggleAction={toggleAction}
+            />
+          </div>
+        </TableCell>
+      </TableRow>
+    )
+  }
+
   return (
     <>
-      <DataTable
-        caption="Trabajadores"
-        columns={COLUMNS}
-        rows={workers}
-        searchKeys={CONTRACT.searchKeys as (keyof WorkerRow)[]}
-        pageSize={25}
+      <Tabs value={tab} onValueChange={(v) => setTab(v as "active" | "inactive")}>
+        <TabsList className="mb-3">
+          <TabsTrigger value="active">
+            Activos
+            <span className="ml-1.5 text-xs text-text-subtle">{activeWorkers.length}</span>
+          </TabsTrigger>
+          <TabsTrigger value="inactive">
+            Inactivos
+            <span className="ml-1.5 text-xs text-text-subtle">{inactiveWorkers.length}</span>
+          </TabsTrigger>
+        </TabsList>
 
-        emptyTitle="Sin trabajadores"
-        emptyDescription="Registra el primer trabajador para gestionar entregas de EPP."
-        renderMobileCard={(w) => {
-          return (
-            <article className="rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] p-4">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <h2 className="text-sm font-medium text-[var(--color-text)] truncate">
-                    {w.firstName} {w.lastName}
-                  </h2>
-                  <p className="mt-0.5 font-mono text-xs text-[var(--color-text-subtle)]">{w.rut ?? "—"}</p>
-                </div>
-                <Badge variant={w.isActive ? "success" : "default"} dot>
-                  {w.isActive ? "Activo" : "Inactivo"}
-                </Badge>
-              </div>
+        <TabsContent value="active">
+          <DataTable
+            caption="Trabajadores activos"
+            columns={COLUMNS}
+            rows={activeWorkers}
+            searchKeys={CONTRACT.searchKeys as (keyof WorkerRow)[]}
+            pageSize={25}
+            emptyTitle="Sin trabajadores activos"
+            emptyDescription="Registra el primer trabajador para gestionar entregas de EPP."
+            renderMobileCard={renderMobileCard}
+            renderRow={renderRow}
+          />
+        </TabsContent>
 
-              <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
-                <div>
-                  <dt className="text-[var(--color-text-subtle)]">Cargo</dt>
-                  <dd className="text-[var(--color-text-muted)] truncate">{w.position ?? "—"}</dd>
-                </div>
-                <div className="text-right">
-                  <dt className="text-[var(--color-text-subtle)]">Faena</dt>
-                  <dd className="text-[var(--color-text-muted)] truncate">{w.worksiteName}</dd>
-                </div>
-              </dl>
+        <TabsContent value="inactive">
+          <DataTable
+            caption="Trabajadores inactivos"
+            columns={COLUMNS}
+            rows={inactiveWorkers}
+            searchKeys={CONTRACT.searchKeys as (keyof WorkerRow)[]}
+            pageSize={25}
+            emptyTitle="Sin trabajadores inactivos"
+            emptyDescription="Nadie dado de baja. Su historial de entregas y capacitaciones se conserva al desactivarlos."
+            renderMobileCard={renderMobileCard}
+            renderRow={renderRow}
+          />
+        </TabsContent>
+      </Tabs>
 
-              <div className="mt-3 flex items-center justify-end gap-2 border-t border-[var(--color-border)] pt-2">
-                <CatalogRowActions
-                  id={w.id}
-                  isActive={w.isActive}
-                  label={`trabajador ${w.firstName} ${w.lastName}`}
-                  onEdit={() => openEdit(w)}
-                  toggleAction={toggleAction}
-                />
-              </div>
-            </article>
-          )
-        }}
-        renderRow={(w) => {
-          return (
-            <TableRow key={w.id}>
-              <TableCell>
-                <p className="text-sm font-medium text-[var(--color-text)]">
-                  {w.firstName} {w.lastName}
-                </p>
-              </TableCell>
-              <TableCell>
-                <span className="font-mono text-xs text-[var(--color-text-muted)]">
-                  {w.rut ?? "—"}
-                </span>
-              </TableCell>
-              <TableCell className="text-sm text-[var(--color-text-muted)]">
-                {w.position ?? "—"}
-              </TableCell>
-              <TableCell className="text-sm text-[var(--color-text-muted)]">
-                {w.worksiteName}
-              </TableCell>
-              <TableCell>
-                <Badge variant={w.isActive ? "success" : "default"} dot className="w-20 justify-center">
-                  {w.isActive ? "Activo" : "Inactivo"}
-                </Badge>
-              </TableCell>
-              <TableCell>
-                <div className="flex items-center gap-2 justify-end">
-                  <CatalogRowActions
-                    id={w.id}
-                    isActive={w.isActive}
-                    label={`trabajador ${w.firstName} ${w.lastName}`}
-                    onEdit={() => openEdit(w)}
-                    toggleAction={toggleAction}
-                  />
-                </div>
-              </TableCell>
-            </TableRow>
-          )
-        }}
-      />
       <WorkerForm
         open={sheetOpen}
         onClose={closeSheet}
