@@ -4,6 +4,22 @@ import * as React from "react"
 import { getSession, signOut } from "next-auth/react"
 
 /**
+ * Vacía las colas offline del dispositivo. Import dinámico para no arrastrar
+ * IndexedDB ni el árbol de Prevención al bundle de la barra superior.
+ */
+async function clearOfflineQueues() {
+  try {
+    const [{ clearIncidentReportQueue }, { clearPpaQueue }] = await Promise.all([
+      import("@/app/(app)/prevencion/incidentes/reportar/offline-incident-queue"),
+      import("@/lib/pwa/offline-queue"),
+    ])
+    await Promise.allSettled([clearIncidentReportQueue(), clearPpaQueue()])
+  } catch {
+    /* no-op: cerrar sesión nunca se bloquea por la limpieza local */
+  }
+}
+
+/**
  * Cierre de sesión compartido por la barra superior y el perfil del panel
  * lateral.
  *
@@ -29,6 +45,11 @@ export function useSignOut() {
   const handleSignOut = React.useCallback(async () => {
     setIsSigningOut(true)
     try {
+      // Las colas offline guardan datos personales en claro en IndexedDB (relato
+      // de incidentes con personas, RUT y nombre en los PPA). En un dispositivo
+      // de faena compartido no pueden sobrevivir al cambio de usuario. Es
+      // best-effort: si falla, no bloquea el cierre de sesión.
+      await clearOfflineQueues()
       await signOut({ redirect: false })
       // Tercera lección (2026-08-06): el middleware re-emite la cookie de
       // sesión (JWT rolling) en CADA respuesta, y las páginas con muchos

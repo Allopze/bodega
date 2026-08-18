@@ -135,6 +135,13 @@ const reportIncidentSchema = z.object({
   evacuated: z.boolean().default(false),
   isFatalOrSerious: z.boolean().default(false),
   offlineSync: z.boolean().default(false),
+  // Momento del encolado en el dispositivo. No se persiste en columna propia:
+  // basta con dejarlo en el historial para poder distinguir "reportó tarde" de
+  // "sincronizó tarde" cuando la banda DIAT/DIEP nace vencida. Acotado a no
+  // futuro por la deriva de reloj del dispositivo.
+  queuedAt: z.string().datetime({ offset: true })
+    .refine((value) => Date.parse(value) <= Date.now() + 5 * 60_000, "Fecha de encolado en el futuro")
+    .optional(),
   people: z.array(incidentPersonSchema).max(100).default([]),
 }).superRefine((value, ctx) => {
   if (new Date(value.knownAt).getTime() < new Date(value.occurredAt).getTime()) {
@@ -215,6 +222,45 @@ const indicatorClassificationSchema = z.object({
     ctx.addIssue({ code: "custom", path: ["absenceDays"], message: "Registra al menos un día de ausencia." })
   }
 })
+
+/**
+ * RE-20: estas seis entradas viajaban como tipos de TypeScript, que no validan
+ * nada en runtime. `followupDate` entraba sin comprobar formato y los textos
+ * largos sin cota, directo al insert.
+ */
+const re20TextSchemas = {
+  preliminary: z.object({
+    incidentId: z.string().min(1),
+    preliminaryReportText: z.string().trim().min(10).max(10000),
+  }),
+  statement: z.object({
+    incidentId: z.string().min(1),
+    kind: z.enum(["involved", "witness", "cphs"]),
+    deponentName: z.string().trim().min(3).max(200),
+    deponentRole: z.string().trim().max(200).optional(),
+    statementText: z.string().trim().min(10).max(10000),
+  }),
+  onePage: z.object({
+    incidentId: z.string().min(1),
+    onePageSummary: z.string().trim().min(10).max(5000),
+    rootCauseText: z.string().trim().min(10).max(5000),
+    actionPlanSummary: z.string().trim().min(10).max(5000),
+    evidenceRef: z.string().trim().max(4000).optional(),
+  }),
+  followup: z.object({
+    incidentId: z.string().min(1),
+    followupDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Fecha de seguimiento inválida"),
+    note: z.string().trim().min(5).max(5000),
+    evidenceRef: z.string().trim().max(4000).optional(),
+  }),
+  diffusion: z.object({
+    incidentId: z.string().min(1),
+    kind: z.enum(["shift", "corrective_measures"]),
+    summary: z.string().trim().min(3).max(5000),
+    evidenceRef: z.string().trim().max(4000).optional(),
+  }),
+  confirmDiffusion: z.object({ diffusionId: z.string().min(1) }),
+} as const
 
 const evidenceSchema = z.object({
   incidentId: z.string().min(1),
@@ -534,6 +580,9 @@ export async function reportPreventionIncident(args: {
         source: input.offlineSync ? "offline_sync" : "platform",
         peopleCount: input.people.length,
         fatalOrSerious,
+        // Sin esto, un reporte encolado en terreno y sincronizado días después
+        // era indistinguible de un incumplimiento real del plazo de 24 h.
+        ...(input.queuedAt ? { queuedAt: input.queuedAt } : {}),
       },
       createdAt: now,
     })
@@ -1391,6 +1440,7 @@ export async function createPreliminaryReport(args: {
   preliminaryReportText: string
   access: IncidentAccess
 }) {
+  const input = re20TextSchemas.preliminary.parse(args)
   const now = new Date().toISOString()
   // `onConflictDoUpdate` sobre el único de `incidentId` en vez de leer-y-decidir:
   // dos personas registrando el informe preliminar (SLA de 3 h) leían ambas
@@ -1403,7 +1453,7 @@ export async function createPreliminaryReport(args: {
       incidentId: found.id,
       status: "in_progress",
       methodology: "5_whys",
-      preliminaryReportText: args.preliminaryReportText,
+      preliminaryReportText: input.preliminaryReportText,
       preliminaryReportAt: now,
       startedByUserId: args.access.ctx.userId,
       startedAt: now,
@@ -1411,7 +1461,7 @@ export async function createPreliminaryReport(args: {
     }).onConflictDoUpdate({
       target: preventionIncidentInvestigations.incidentId,
       set: {
-        preliminaryReportText: args.preliminaryReportText,
+        preliminaryReportText: input.preliminaryReportText,
         preliminaryReportAt: now,
         updatedAt: now,
       },
@@ -1434,16 +1484,17 @@ export async function recordIncidentStatement(args: {
   statementText: string
   access: IncidentAccess
 }) {
+  const input = re20TextSchemas.statement.parse(args)
   const now = new Date().toISOString()
   const { incident, created } = await db.transaction(async (tx) => {
-    const found = await getInvestigableIncident(args.incidentId, args.access, tx)
+    const found = await getInvestigableIncident(input.incidentId, args.access, tx)
     const [row] = await tx.insert(preventionIncidentStatements).values({
       id: `incstmt-${nanoid()}`,
       incidentId: found.id,
-      kind: args.kind,
-      deponentName: args.deponentName,
-      deponentRole: args.deponentRole ?? null,
-      statementText: args.statementText,
+      kind: input.kind,
+      deponentName: input.deponentName,
+      deponentRole: input.deponentRole ?? null,
+      statementText: input.statementText,
       signedAt: now,
       createdByUserId: args.access.ctx.userId,
       createdAt: now,
@@ -1465,16 +1516,17 @@ export async function publishOnePageDiffusion(args: {
   evidenceRef?: string
   access: IncidentAccess
 }) {
+  const input = re20TextSchemas.onePage.parse(args)
   const now = new Date().toISOString()
   const { incident, created } = await db.transaction(async (tx) => {
-    const found = await getInvestigableIncident(args.incidentId, args.access, tx)
+    const found = await getInvestigableIncident(input.incidentId, args.access, tx)
     const [row] = await tx.insert(preventionIncidentDiffusion).values({
       id: `incdif-${nanoid()}`,
       incidentId: found.id,
-      onePageSummary: args.onePageSummary,
-      rootCauseText: args.rootCauseText,
-      actionPlanSummary: args.actionPlanSummary,
-      evidenceRef: args.evidenceRef ?? null,
+      onePageSummary: input.onePageSummary,
+      rootCauseText: input.rootCauseText,
+      actionPlanSummary: input.actionPlanSummary,
+      evidenceRef: input.evidenceRef ?? null,
       diffusedAt: now,
       createdByUserId: args.access.ctx.userId,
       createdAt: now,
@@ -1495,15 +1547,16 @@ export async function recordBiweeklyFollowup(args: {
   evidenceRef?: string
   access: IncidentAccess
 }) {
+  const input = re20TextSchemas.followup.parse(args)
   const now = new Date().toISOString()
   const { incident, created } = await db.transaction(async (tx) => {
-    const found = await getInvestigableIncident(args.incidentId, args.access, tx)
+    const found = await getInvestigableIncident(input.incidentId, args.access, tx)
     const [row] = await tx.insert(preventionIncidentFollowups).values({
       id: `incflw-${nanoid()}`,
       incidentId: found.id,
-      followupDate: args.followupDate,
-      note: args.note,
-      evidenceRef: args.evidenceRef ?? null,
+      followupDate: input.followupDate,
+      note: input.note,
+      evidenceRef: input.evidenceRef ?? null,
       status: "completed",
       createdByUserId: args.access.ctx.userId,
       createdAt: now,
@@ -1545,17 +1598,17 @@ export async function markIncidentDiffusion(args: {
   evidenceRef?: string
   access: IncidentAccess
 }) {
-  if (args.summary.trim().length < 3) throw new Error("La difusión requiere un resumen de lo comunicado.")
+  const input = re20TextSchemas.diffusion.parse(args)
 
   const now = new Date().toISOString()
   return db.transaction(async (tx) => {
-    const incident = await getInvestigableIncident(args.incidentId, args.access, tx)
+    const incident = await getInvestigableIncident(input.incidentId, args.access, tx)
     const [created] = await tx.insert(preventionIncidentShiftDiffusions).values({
       id: `incsdif-${nanoid()}`,
       incidentId: incident.id,
-      kind: args.kind,
-      summary: args.summary.trim(),
-      evidenceRef: args.evidenceRef ?? null,
+      kind: input.kind,
+      summary: input.summary,
+      evidenceRef: input.evidenceRef ?? null,
       status: "pending_confirmation",
       markedByUserId: args.access.ctx.userId,
       markedAt: now,
@@ -1570,10 +1623,11 @@ export async function confirmIncidentDiffusion(args: {
   diffusionId: string
   access: IncidentAccess
 }) {
+  const input = re20TextSchemas.confirmDiffusion.parse(args)
   const [row] = await db.select({ diffusion: preventionIncidentShiftDiffusions, worksiteId: preventionIncidents.worksiteId })
     .from(preventionIncidentShiftDiffusions)
     .innerJoin(preventionIncidents, eq(preventionIncidentShiftDiffusions.incidentId, preventionIncidents.id))
-    .where(eq(preventionIncidentShiftDiffusions.id, args.diffusionId)).limit(1)
+    .where(eq(preventionIncidentShiftDiffusions.id, input.diffusionId)).limit(1)
   if (!row) throw new Error("Difusión no encontrada.")
   // El supervisor de faena confirma (permiso de cierre, distinto de quien la marcó).
   requireAccess(args.access, "prevention:incidents:close", row.worksiteId)

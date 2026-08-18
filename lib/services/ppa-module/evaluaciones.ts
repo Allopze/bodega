@@ -127,6 +127,9 @@ export async function createPpaSubmission(
     reviewNota:           null,
     reviewedAt:           null,
     workPermitId,
+    // Fecha de terreno cuando el cliente la manda (envío encolado offline);
+    // en línea coincide con `createdAt` y se deja nula para no duplicar el dato.
+    filledAt:             data.filledAt ?? null,
     createdAt:            now,
     updatedAt:            now,
   }

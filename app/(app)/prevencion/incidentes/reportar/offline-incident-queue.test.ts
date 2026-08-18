@@ -45,14 +45,14 @@ describe("incident offline queue", () => {
       expect(sent.clientSubmissionId).toBe(payload.clientSubmissionId)
       return { ok: true }
     })
-    expect(result).toEqual({ synchronized: 1, pending: 0 })
+    expect(result).toEqual({ synchronized: 1, pending: 0, rejected: 0 })
     expect(calls).toBe(1)
     expect(await listQueuedIncidentReports()).toHaveLength(0)
   })
 
   it("preserves a rejected report for a later retry", async () => {
     await queueIncidentReport(payload)
-    expect(await flushIncidentReportQueue(async () => ({ ok: false, message: "sin red" }))).toEqual({ synchronized: 0, pending: 1 })
+    expect(await flushIncidentReportQueue(async () => ({ ok: false, message: "sin red" }))).toEqual({ synchronized: 0, pending: 1, rejected: 0 })
     const [entry] = await listQueuedIncidentReports()
     expect(entry).toMatchObject({ id: payload.clientSubmissionId, attempts: 1, lastError: "sin red" })
   })

@@ -142,7 +142,7 @@ export function PrivacyRightExecutionWorkbench({ bundle }: { bundle: Bundle }) {
                   const rectificationUnsupported = operation === "rectification" && row.domain === "document"
                   return <TableRow key={`${row.domain}:${row.id}`}>
                     <TableCell><p className="font-medium">{row.label}</p><p className="font-mono text-[10px] text-(--color-text-muted)">{row.id}</p></TableCell>
-                    <TableCell><Badge variant="outline">{row.status}</Badge></TableCell>
+                    <TableCell><Badge variant="outline">{row.status || "Sin estado"}</Badge></TableCell>
                     <TableCell className="text-right">
                       {executable && !rectificationUnsupported ? <Button type="button" size="sm" variant="secondary" onClick={() => openExecution(row)}>Ejecutar</Button> : null}
                     </TableCell>

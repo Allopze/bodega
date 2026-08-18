@@ -1,4 +1,6 @@
 import { and, eq, sql } from "drizzle-orm"
+import { todayInChile } from "@/lib/utils"
+import { logger } from "@/lib/logger"
 import { db } from "@/db"
 import {
   sstDocumentDistributionTargets,
@@ -14,6 +16,8 @@ export interface DocumentAckReminderResult {
   overdueTargets: number
   escalatedTargets: number
   notifiedUsers: number
+  /** Entidades omitidas por error, para que una corrida degradada sea visible. */
+  errors: number
 }
 
 export function shouldSendDocumentAckReminder(args: {
@@ -28,6 +32,9 @@ export function shouldSendDocumentAckReminder(args: {
 }
 
 export async function runPreventionDocumentAckReminders(now = new Date()): Promise<DocumentAckReminderResult> {
+  // Contador de entidades omitidas por error: viaja en el JSON del cron para
+  // que una corrida degradada sea visible en vez de parecer exitosa.
+  let errors = 0
   const rows = await db.select({
     target: sstDocumentDistributionTargets,
     documentId: sstDocuments.id,
@@ -48,7 +55,9 @@ export async function runPreventionDocumentAckReminders(now = new Date()): Promi
   let remindersSent = 0
   let overdueTargets = 0
   let escalatedTargets = 0
-  const today = now.toISOString().slice(0, 10)
+  // Día civil chileno (ver la nota equivalente en prevention-incident-reminders):
+  // en UTC el acuse vencido perdía un ciclo de escalamiento a jefatura.
+  const today = todayInChile(now)
 
   // Pre-resolver managers de distribución por faena
   const worksiteIds = [...new Set(rows.map((r) => r.target.worksiteId ?? r.documentWorksiteId).filter((id): id is string => id !== null && id !== undefined))]
@@ -58,58 +67,63 @@ export async function runPreventionDocumentAckReminders(now = new Date()): Promi
   }))
 
   for (const row of rows) {
-    const target = row.target
-    const overdue = Boolean(target.dueAt && Date.parse(target.dueAt) < now.getTime())
-    if (overdue) overdueTargets++
-    if (!shouldSendDocumentAckReminder({ now, lastReminderAt: target.lastReminderAt, dueAt: target.dueAt })) continue
+    try {
+      const target = row.target
+      const overdue = Boolean(target.dueAt && Date.parse(target.dueAt) < now.getTime())
+      if (overdue) overdueTargets++
+      if (!shouldSendDocumentAckReminder({ now, lastReminderAt: target.lastReminderAt, dueAt: target.dueAt })) continue
 
-    let recipientIds = target.userId ? [target.userId] : []
-    if (recipientIds.length === 0 && target.workerId) {
-      const linkedUsers = await db.select({ id: users.id }).from(users)
-        .where(and(eq(users.workerId, target.workerId), eq(users.isActive, true)))
-      recipientIds = linkedUsers.map((user) => user.id)
-    }
-    const worksiteId = target.worksiteId ?? row.documentWorksiteId
-    const managers = worksiteId
-      ? (managersByWs.get(worksiteId) ?? [])
-      : []
-    if (recipientIds.length === 0) recipientIds = managers
-    const href = `/prevencion/documentacion/${row.documentId}`
-    const recipients = Array.from(new Set(recipientIds))
-    recipients.forEach((id) => notified.add(id))
-    await createNotifications(recipients, {
-      type: "system_alert",
-      title: `${overdue ? "Acuse vencido" : "Acuse pendiente"}: ${row.documentTitle}`,
-      body: `Debes revisar y acusar la versión asignada. El acuse quedará firmado contra el checksum ${row.checksum.slice(0, 12)}…${target.dueAt ? ` Plazo: ${target.dueAt.slice(0, 10)}.` : ""}`,
-      entityType: "sst_document_distribution",
-      entityId: target.id,
-      entityHref: href,
-      dedupeKey: `document-ack-reminder:${target.id}:${today}`,
-    })
-    remindersSent++
-
-    if (overdue && managers.length > 0) {
-      managers.forEach((id) => notified.add(id))
-      await createNotifications(managers, {
+      let recipientIds = target.userId ? [target.userId] : []
+      if (recipientIds.length === 0 && target.workerId) {
+        const linkedUsers = await db.select({ id: users.id }).from(users)
+          .where(and(eq(users.workerId, target.workerId), eq(users.isActive, true)))
+        recipientIds = linkedUsers.map((user) => user.id)
+      }
+      const worksiteId = target.worksiteId ?? row.documentWorksiteId
+      const managers = worksiteId
+        ? (managersByWs.get(worksiteId) ?? [])
+        : []
+      if (recipientIds.length === 0) recipientIds = managers
+      const href = `/prevencion/documentacion/${row.documentId}`
+      const recipients = Array.from(new Set(recipientIds))
+      recipients.forEach((id) => notified.add(id))
+      await createNotifications(recipients, {
         type: "system_alert",
-        title: `Escalamiento de acuse: ${row.documentTitle}`,
-        body: `La asignación ${target.id} sigue pendiente después del plazo. Revisa vigencia del destinatario, exención o redistribución.`,
+        title: `${overdue ? "Acuse vencido" : "Acuse pendiente"}: ${row.documentTitle}`,
+        body: `Debes revisar y acusar la versión asignada. El acuse quedará firmado contra el checksum ${row.checksum.slice(0, 12)}…${target.dueAt ? ` Plazo: ${target.dueAt.slice(0, 10)}.` : ""}`,
         entityType: "sst_document_distribution",
         entityId: target.id,
         entityHref: href,
-        dedupeKey: `document-ack-overdue:${target.id}:${today}`,
+        dedupeKey: `document-ack-reminder:${target.id}:${today}`,
       })
-      escalatedTargets++
-    }
+      remindersSent++
 
-    await db.update(sstDocumentDistributionTargets).set({
-      lastReminderAt: now.toISOString(),
-      reminderCount: sql`${sstDocumentDistributionTargets.reminderCount} + 1`,
-      updatedAt: now.toISOString(),
-    }).where(and(
-      eq(sstDocumentDistributionTargets.id, target.id),
-      eq(sstDocumentDistributionTargets.status, "pendiente"),
-    ))
+      if (overdue && managers.length > 0) {
+        managers.forEach((id) => notified.add(id))
+        await createNotifications(managers, {
+          type: "system_alert",
+          title: `Escalamiento de acuse: ${row.documentTitle}`,
+          body: `La asignación ${target.id} sigue pendiente después del plazo. Revisa vigencia del destinatario, exención o redistribución.`,
+          entityType: "sst_document_distribution",
+          entityId: target.id,
+          entityHref: href,
+          dedupeKey: `document-ack-overdue:${target.id}:${today}`,
+        })
+        escalatedTargets++
+      }
+
+      await db.update(sstDocumentDistributionTargets).set({
+        lastReminderAt: now.toISOString(),
+        reminderCount: sql`${sstDocumentDistributionTargets.reminderCount} + 1`,
+        updatedAt: now.toISOString(),
+      }).where(and(
+        eq(sstDocumentDistributionTargets.id, target.id),
+        eq(sstDocumentDistributionTargets.status, "pendiente"),
+      ))
+    } catch (error) {
+      errors++
+      logger.error("[prevention-document-ack-reminders] entidad omitida por error", error)
+    }
   }
 
   return {
@@ -118,5 +132,6 @@ export async function runPreventionDocumentAckReminders(now = new Date()): Promi
     overdueTargets,
     escalatedTargets,
     notifiedUsers: notified.size,
+    errors
   }
 }

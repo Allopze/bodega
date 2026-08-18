@@ -1,4 +1,5 @@
 import { and, eq, inArray, max } from "drizzle-orm"
+import { logger } from "@/lib/logger"
 import { db } from "@/db"
 import {
   preventionCommitteeMeetings,
@@ -21,6 +22,8 @@ export interface CphsReminderResult {
   cadenceWarnings: number
   overdueActivities: number
   notifiedUsers: number
+  /** Entidades omitidas por error, para que una corrida degradada sea visible. */
+  errors: number
 }
 
 /** Avisos escalonados: a 60, 30 y 7 días el mensaje cambia y el dedupe también. */
@@ -48,6 +51,9 @@ export function selectMandateWarningThreshold(mandateEndsOn: string, today: stri
  * quedaba en `active` para siempre.
  */
 export async function runPreventionCphsReminders(): Promise<CphsReminderResult> {
+  // Contador de entidades omitidas por error: viaja en el JSON del cron para
+  // que una corrida degradada sea visible en vez de parecer exitosa.
+  let errors = 0
   const { expired } = await expireLapsedCommittees()
 
   const committees = await db.select({
@@ -65,7 +71,7 @@ export async function runPreventionCphsReminders(): Promise<CphsReminderResult> 
   let overdueActivities = 0
 
   if (committees.length === 0) {
-    return { expiredCommittees: expired, mandateWarnings, cadenceWarnings, overdueActivities, notifiedUsers: 0 }
+    return { expiredCommittees: expired, mandateWarnings, cadenceWarnings, overdueActivities, notifiedUsers: 0, errors }
   }
 
   const committeeIds = committees.map((row) => row.id)
@@ -108,61 +114,71 @@ export async function runPreventionCphsReminders(): Promise<CphsReminderResult> 
   const committeeById = new Map(committees.map((committee) => [committee.id, committee]))
 
   for (const committee of committees) {
-    const managers = managersByWorksite.get(committee.worksiteId) ?? []
-    if (managers.length === 0) continue
-    const href = `/prevencion/cphs/${committee.id}`
+    try {
+      const managers = managersByWorksite.get(committee.worksiteId) ?? []
+      if (managers.length === 0) continue
+      const href = `/prevencion/cphs/${committee.id}`
 
-    // El umbral más cercano que ya se cruzó manda: a 25 días avisa "30", no "60".
-    const threshold = selectMandateWarningThreshold(committee.mandateEndsOn, today)
-    if (threshold && !isMandateExpired(committee.mandateEndsOn, today)) {
-      mandateWarnings++
-      managers.forEach((id) => notified.add(id))
-      await createNotifications(managers, {
-        type: "system_alert",
-        title: `Mandato del comité por vencer: ${committee.name}`,
-        body: `El mandato termina el ${committee.mandateEndsOn}. Convoca la elección de la nueva directiva antes de esa fecha.`,
-        entityType: "prevention_committee",
-        entityId: committee.id,
-        entityHref: href,
-        dedupeKey: `cphs-mandate:${committee.id}:${committee.mandateEndsOn}:${threshold}`,
-      })
-    }
+      // El umbral más cercano que ya se cruzó manda: a 25 días avisa "30", no "60".
+      const threshold = selectMandateWarningThreshold(committee.mandateEndsOn, today)
+      if (threshold && !isMandateExpired(committee.mandateEndsOn, today)) {
+        mandateWarnings++
+        managers.forEach((id) => notified.add(id))
+        await createNotifications(managers, {
+          type: "system_alert",
+          title: `Mandato del comité por vencer: ${committee.name}`,
+          body: `El mandato termina el ${committee.mandateEndsOn}. Convoca la elección de la nueva directiva antes de esa fecha.`,
+          entityType: "prevention_committee",
+          entityId: committee.id,
+          entityHref: href,
+          dedupeKey: `cphs-mandate:${committee.id}:${committee.mandateEndsOn}:${threshold}`,
+        })
+      }
 
-    const cadence = assessMeetingCadence(lastBy.get(committee.id) ?? null, now)
-    if (cadence.overdue) {
-      cadenceWarnings++
-      managers.forEach((id) => notified.add(id))
-      await createNotifications(managers, {
-        type: "system_alert",
-        title: `El comité no sesiona hace dos meses o más: ${committee.name}`,
-        body: "El comité debe sesionar al menos una vez al mes. Convoca la sesión ordinaria pendiente.",
-        entityType: "prevention_committee",
-        entityId: committee.id,
-        entityHref: href,
-        // Por mes: reavisa cada mes que siga sin sesionar, no todos los días.
-        dedupeKey: `cphs-cadence:${committee.id}:${today.slice(0, 7)}`,
-      })
+      const cadence = assessMeetingCadence(lastBy.get(committee.id) ?? null, now)
+      if (cadence.overdue) {
+        cadenceWarnings++
+        managers.forEach((id) => notified.add(id))
+        await createNotifications(managers, {
+          type: "system_alert",
+          title: `El comité no sesiona hace dos meses o más: ${committee.name}`,
+          body: "El comité debe sesionar al menos una vez al mes. Convoca la sesión ordinaria pendiente.",
+          entityType: "prevention_committee",
+          entityId: committee.id,
+          entityHref: href,
+          // Por mes: reavisa cada mes que siga sin sesionar, no todos los días.
+          dedupeKey: `cphs-cadence:${committee.id}:${today.slice(0, 7)}`,
+        })
+      }
+    } catch (error) {
+      errors++
+      logger.error("[prevention-cphs-reminders] entidad omitida por error", error)
     }
   }
 
   for (const row of activities) {
-    if (activityDeadline(row.activity, row.programYear) >= today) continue
-    const committee = committeeById.get(row.committeeId)
-    if (!committee) continue
-    const managers = managersByWorksite.get(committee.worksiteId) ?? []
-    if (managers.length === 0) continue
+    try {
+      if (activityDeadline(row.activity, row.programYear) >= today) continue
+      const committee = committeeById.get(row.committeeId)
+      if (!committee) continue
+      const managers = managersByWorksite.get(committee.worksiteId) ?? []
+      if (managers.length === 0) continue
 
-    overdueActivities++
-    managers.forEach((id) => notified.add(id))
-    await createNotifications(managers, {
-      type: "system_alert",
-      title: `Actividad del programa atrasada: ${row.activity.title}`,
-      body: `La actividad venció el ${activityDeadline(row.activity, row.programYear)} y sigue planificada. Ciérrala con su evidencia o cancélala con motivo.`,
-      entityType: "prevention_committee_program_activity",
-      entityId: row.activity.id,
-      entityHref: `/prevencion/cphs/${committee.id}/programa?programa=${row.activity.programId}`,
-      dedupeKey: `cphs-activity:${row.activity.id}:${today.slice(0, 7)}`,
-    })
+      overdueActivities++
+      managers.forEach((id) => notified.add(id))
+      await createNotifications(managers, {
+        type: "system_alert",
+        title: `Actividad del programa atrasada: ${row.activity.title}`,
+        body: `La actividad venció el ${activityDeadline(row.activity, row.programYear)} y sigue planificada. Ciérrala con su evidencia o cancélala con motivo.`,
+        entityType: "prevention_committee_program_activity",
+        entityId: row.activity.id,
+        entityHref: `/prevencion/cphs/${committee.id}/programa?programa=${row.activity.programId}`,
+        dedupeKey: `cphs-activity:${row.activity.id}:${today.slice(0, 7)}`,
+      })
+    } catch (error) {
+      errors++
+      logger.error("[prevention-cphs-reminders] entidad omitida por error", error)
+    }
   }
 
   return {
@@ -171,5 +187,6 @@ export async function runPreventionCphsReminders(): Promise<CphsReminderResult> 
     cadenceWarnings,
     overdueActivities,
     notifiedUsers: notified.size,
+    errors
   }
 }

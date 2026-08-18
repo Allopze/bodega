@@ -19,6 +19,7 @@ import {
   recoverStalePpas,
   type QueuedPpa,
 } from "./offline-queue"
+import { ppaSubmitSchema } from "@/lib/validation/ppa"
 import { showSyncNotification } from "./notifications"
 
 /* ── useOnlineStatus ─────────────────────────────────────────────────────── */
@@ -54,6 +55,21 @@ async function syncOne(item: QueuedPpa): Promise<{ ok: boolean; token?: string; 
     "@/app/(public)/ppa/actions"
   )
 
+  // El almacenamiento local ES una frontera de confianza: lo que hay dentro lo
+  // escribió otra versión del cliente (el Service Worker sirve JS cacheado). Un
+  // payload con la forma antigua era rechazado por el servidor, gastaba los tres
+  // reintentos y se borraba a los 7 días sin que nadie viera el motivo.
+  const shape = ppaSubmitSchema.safeParse(item.payload)
+  if (!shape.success) {
+    const detalle = shape.error.issues.map((issue) => issue.message).join("; ")
+    await updatePpaStatus(item.id, {
+      status: "failed",
+      attempts: MAX_SYNC_ATTEMPTS,
+      lastError: `Este registro no se puede enviar: ${detalle}`,
+    })
+    return { ok: false, message: `Este registro no se puede enviar: ${detalle}` }
+  }
+
   await updatePpaStatus(item.id, {
     status: "syncing",
     attempts: item.attempts + 1,
@@ -70,11 +86,11 @@ async function syncOne(item: QueuedPpa): Promise<{ ok: boolean; token?: string; 
       return { ok: true, token: res.data.token }
     }
 
+    // `ok: false` del servidor es un rechazo permanente (validación, alcance,
+    // permiso): reintentarlo no lo arregla. Se marca `failed` de una vez, con el
+    // motivo visible, en vez de agotar reintentos en silencio.
     const msg = res.message ?? "Error al sincronizar"
-    await updatePpaStatus(item.id, {
-      status: item.attempts + 1 >= MAX_SYNC_ATTEMPTS ? "failed" : "pending",
-      lastError: msg,
-    })
+    await updatePpaStatus(item.id, { status: "failed", attempts: MAX_SYNC_ATTEMPTS, lastError: msg })
     return { ok: false, message: msg }
   } catch (e) {
     // P2-3: detect network errors more accurately — Safari sometimes
@@ -153,7 +169,11 @@ export function usePpaOfflineQueue() {
     getAllPpas().then((items) => {
       const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000
       for (const item of items) {
-        if (item.status === "synced" || (item.status === "failed" && item.attempts >= 3)) {
+        // Sólo se borra lo ya sincronizado. Un `failed` conserva su motivo para
+        // que el usuario pueda verlo y rehacerlo: borrarlo automáticamente era
+        // perder en silencio una evaluación de terreno. La expiración por edad
+        // de los no sincronizados vive en `purgeExpiredPpas` (30 días).
+        if (item.status === "synced") {
           if (new Date(item.createdAt).getTime() < cutoff) {
             deletePpa(item.id).catch(() => {})
           }

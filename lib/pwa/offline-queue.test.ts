@@ -29,7 +29,7 @@ describe("offline-queue", () => {
       expect(item.status).toBe("pending")
       expect(item.attempts).toBe(0)
       // enqueuePpa inyecta la clave de idempotencia si el payload no la trae.
-      expect(item.payload).toEqual({ test: "data", clientSubmissionId: item.id })
+      expect(item.payload).toEqual({ test: "data", clientSubmissionId: item.id, filledAt: expect.any(String) })
 
       const count = await countPendingPpas()
       expect(count).toBe(1)
@@ -59,7 +59,7 @@ describe("offline-queue", () => {
       const item = await enqueuePpa({ id: "test" })
       const found = await getPpaById(item.id)
       expect(found).toBeDefined()
-      expect(found!.payload).toEqual({ id: "test", clientSubmissionId: item.id })
+      expect(found!.payload).toEqual({ id: "test", clientSubmissionId: item.id, filledAt: expect.any(String) })
     })
 
     it("returns undefined for unknown ID", async () => {
@@ -91,7 +91,7 @@ describe("offline-queue", () => {
 
       const updated = await getPpaById(item.id)
       expect(updated!.status).toBe("syncing")
-      expect(updated!.payload).toEqual({ orig: true, clientSubmissionId: item.id })
+      expect(updated!.payload).toEqual({ orig: true, clientSubmissionId: item.id, filledAt: expect.any(String) })
       expect(updated!.attempts).toBe(0)
     })
 

@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { addDaysToPlainDate, todayInChile } from "@/lib/utils"
 import Link from "next/link"
 import { HardHat } from "@phosphor-icons/react"
 import { useSafeShellHeader } from "@/components/layout/header-context"
@@ -22,9 +23,10 @@ interface Props {
 }
 
 function defaultTargetDate() {
-  const value = new Date()
-  value.setUTCDate(value.getUTCDate() + 30)
-  return value.toISOString().slice(0, 10)
+  // Desde el día civil chileno: `new Date()` + `toISOString()` mide en UTC, así
+  // que después de las 20:00 de Chile sugería hoy+31. Esquivaba la regla de
+  // ESLint porque el `.toISOString()` va sobre un `Date` ya mutado.
+  return addDaysToPlainDate(todayInChile(), 30)
 }
 
 export function EppGapList({ gaps, canEscalate }: Props) {

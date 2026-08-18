@@ -14,12 +14,16 @@
  * Devuelve: `{ ok, scanned, deleted, kept, failed, deletedNames, dryRun }`.
  */
 export const dynamic = "force-dynamic"
+// Techo explícito: estos jobs recorren tablas que crecen y sin cota un
+// corte por timeout de plataforma deja estado parcial sin señal accionable.
+export const maxDuration = 300
 export const runtime = "nodejs"
 
 import { type NextRequest, NextResponse } from "next/server"
 import { cleanupPdtpEvidenceOrphans } from "@/lib/services/pdtp/evidence-gc"
 import { logger } from "@/lib/logger"
 import { verifyCronSecret } from "@/lib/security/cron-auth"
+import { withCronLock } from "@/lib/services/cron-lock"
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
   const secret = process.env.CRON_SECRET
@@ -43,7 +47,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   }
 
   try {
-    const result = await cleanupPdtpEvidenceOrphans({ dryRun, olderThanMs })
+    const result = await withCronLock("pdtp-evidence-gc", () => cleanupPdtpEvidenceOrphans({ dryRun, olderThanMs }))
     return NextResponse.json({ ok: true, ...result })
   } catch (err) {
     logger.error("[cron/pdtp-evidence-gc] Fatal error", err)

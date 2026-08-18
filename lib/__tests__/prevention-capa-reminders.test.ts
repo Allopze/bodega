@@ -13,8 +13,14 @@ vi.mock("@/lib/services/notifications", () => ({
 import { runPreventionCapaReminders } from "@/lib/services/prevention-capa-reminders"
 
 function selectRows(rows: unknown[]) {
+  // La consulta lleva `orderBy` + `limit` (cota por corrida): el mock encadena
+  // hasta el final en vez de resolver en `where`.
   mockSelect.mockReturnValue({
-    from: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(rows) }),
+    from: vi.fn().mockReturnValue({
+      where: vi.fn().mockReturnValue({
+        orderBy: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue(rows) }),
+      }),
+    }),
   })
 }
 
@@ -36,7 +42,7 @@ describe("CAPA reminders", () => {
       targetDate: "2099-01-01", version: 4, priority: "medium", responsibleUserId: "owner-1",
     }])
     const result = await runPreventionCapaReminders()
-    expect(result).toEqual({ assignedActions: 1, overdueActions: 0, pendingVerificationActions: 1, notifiedUsers: 2 })
+    expect(result).toEqual({ assignedActions: 1, overdueActions: 0, pendingVerificationActions: 1, notifiedUsers: 2, errors: 0 })
     expect(mockCreateNotifications).toHaveBeenCalledWith(["owner-1"], expect.objectContaining({
       dedupeKey: "capa-assigned:c1:owner-1:2099-01-01",
     }))

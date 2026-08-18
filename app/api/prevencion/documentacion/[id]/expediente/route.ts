@@ -71,7 +71,12 @@ export async function GET(_request: Request, context: RouteContext) {
     { header: "Fecha", key: "acknowledgedAt", width: 24 }, { header: "Checksum versión", key: "checksum", width: 66 },
   ]
   const checksumByVersion = new Map(bundle.versions.map((version) => [version.id, version.checksum]))
-  bundle.acks.forEach((row) => acknowledgments.addRow({ ...row, checksum: checksumByVersion.get(row.versionId) ?? "" }))
+  // `safeCell` como el resto de las hojas del archivo: era la única excepción y
+  // cualquier columna de texto libre que se agregue después entraría cruda.
+  bundle.acks.forEach((row) => acknowledgments.addRow(Object.fromEntries(
+    Object.entries({ ...row, checksum: checksumByVersion.get(row.versionId) ?? "" })
+      .map(([key, value]) => [key, safeCell(value)]),
+  )))
   style(acknowledgments, "F")
 
   const links = workbook.addWorksheet("Vínculos")

@@ -1,4 +1,5 @@
 import { and, eq, sql } from "drizzle-orm"
+import { logger } from "@/lib/logger"
 import { db } from "@/db"
 import {
   preventionCompetencyRequirements,
@@ -19,6 +20,8 @@ export interface TrainingReminderResult {
   expiringSoon: number
   blockingGaps: number
   notifiedUsers: number
+  /** Entidades omitidas por error, para que una corrida degradada sea visible. */
+  errors: number
 }
 
 /**
@@ -40,6 +43,9 @@ function addDays(date: string, days: number) {
  * renovar la competencia genera una alerta nueva en vez de silenciarse.
  */
 export async function runPreventionTrainingReminders(): Promise<TrainingReminderResult> {
+  // Contador de entidades omitidas por error: viaja en el JSON del cron para
+  // que una corrida degradada sea visible en vez de parecer exitosa.
+  let errors = 0
   const today = todayInChile()
   const horizon = addDays(today, EXPIRY_WARNING_DAYS)
   const notified = new Set<string>()
@@ -81,18 +87,23 @@ export async function runPreventionTrainingReminders(): Promise<TrainingReminder
     ))
 
   for (const row of expiring) {
-    const managers = await managersFor(row.worksiteId)
-    const audience = [...new Set([...managers, ...(row.workerUserId ? [row.workerUserId] : [])])]
-    audience.forEach((id) => notified.add(id))
-    await createNotifications(audience, {
-      type: "system_alert",
-      title: `Competencia por vencer: ${row.courseName}`,
-      body: `${row.firstName} ${row.lastName} pierde la habilitación el ${row.expiresAt}. Programa la reinducción antes de esa fecha.`,
-      entityType: "prevention_training",
-      entityId: row.competencyId,
-      entityHref: `/prevencion/capacitacion/competencias?workerId=${row.workerId}`,
-      dedupeKey: `training-expiring:${row.competencyId}:${row.expiresAt}`,
-    })
+    try {
+      const managers = await managersFor(row.worksiteId)
+      const audience = [...new Set([...managers, ...(row.workerUserId ? [row.workerUserId] : [])])]
+      audience.forEach((id) => notified.add(id))
+      await createNotifications(audience, {
+        type: "system_alert",
+        title: `Competencia por vencer: ${row.courseName}`,
+        body: `${row.firstName} ${row.lastName} pierde la habilitación el ${row.expiresAt}. Programa la reinducción antes de esa fecha.`,
+        entityType: "prevention_training",
+        entityId: row.competencyId,
+        entityHref: `/prevencion/capacitacion/competencias?workerId=${row.workerId}`,
+        dedupeKey: `training-expiring:${row.competencyId}:${row.expiresAt}`,
+      })
+    } catch (error) {
+      errors++
+      logger.error("[prevention-training-reminders] entidad omitida por error", error)
+    }
   }
 
   // Brechas bloqueantes: alguien exigido por un requisito activo sin ninguna
@@ -130,17 +141,22 @@ export async function runPreventionTrainingReminders(): Promise<TrainingReminder
     ))
 
   for (const gap of blocking) {
-    const managers = await managersFor(gap.worksiteId)
-    managers.forEach((id) => notified.add(id))
-    await createNotifications(managers, {
-      type: "system_alert",
-      title: `Brecha bloqueante de competencia: ${gap.courseName}`,
-      body: `${gap.firstName} ${gap.lastName} (${gap.position ?? "sin cargo"}) no está habilitado y el requisito es bloqueante. No debe asignarse a la tarea hasta regularizar.`,
-      entityType: "prevention_training",
-      entityId: gap.requirementId,
-      entityHref: "/prevencion/capacitacion/brechas",
-      dedupeKey: `training-blocking-gap:${gap.workerId}:${gap.courseId}:${today}`,
-    })
+    try {
+      const managers = await managersFor(gap.worksiteId)
+      managers.forEach((id) => notified.add(id))
+      await createNotifications(managers, {
+        type: "system_alert",
+        title: `Brecha bloqueante de competencia: ${gap.courseName}`,
+        body: `${gap.firstName} ${gap.lastName} (${gap.position ?? "sin cargo"}) no está habilitado y el requisito es bloqueante. No debe asignarse a la tarea hasta regularizar.`,
+        entityType: "prevention_training",
+        entityId: gap.requirementId,
+        entityHref: "/prevencion/capacitacion/brechas",
+        dedupeKey: `training-blocking-gap:${gap.workerId}:${gap.courseId}:${today}`,
+      })
+    } catch (error) {
+      errors++
+      logger.error("[prevention-training-reminders] entidad omitida por error", error)
+    }
   }
 
   return {
@@ -148,5 +164,6 @@ export async function runPreventionTrainingReminders(): Promise<TrainingReminder
     expiringSoon: expiring.length,
     blockingGaps: blocking.length,
     notifiedUsers: notified.size,
+    errors
   }
 }

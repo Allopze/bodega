@@ -17,7 +17,24 @@ export async function POST(request: Request, context: RouteContext) {
     return NextResponse.json({ error: "Se requiere el header Idempotency-Key (8-64 caracteres)" }, { status: 400 })
   }
 
-  const cached = idempotencyCache.get(idempotencyKey)
+  // La caché se consulta DESPUÉS de autenticar y autorizar: antes, un no
+  // autenticado que adivinara u observara una clave recibía el resultado
+  // cacheado sin pasar por `auth()`.
+  const session = await auth()
+  if (!session) return NextResponse.json({ error: "No autenticado" }, { status: 401 })
+  if (!session.user.permissions.includes("prevention:privacy:manage_requests")) {
+    return NextResponse.json({ error: "Sin permisos" }, { status: 403 })
+  }
+  let body: Record<string, unknown>
+  try { body = await request.json() as Record<string, unknown> }
+  catch { return NextResponse.json({ error: "Body JSON inválido" }, { status: 400 }) }
+  const { id } = await context.params
+
+  // La clave se namespacea por usuario y solicitud: sin eso, reutilizar la misma
+  // `Idempotency-Key` en OTRA solicitud devolvía el resultado de la primera y la
+  // segunda ejecución del derecho se omitía en silencio.
+  const cacheKey = `${session.user.id}:${id}:${idempotencyKey}`
+  const cached = idempotencyCache.get(cacheKey)
   if (cached && Date.now() - cached.timestamp < IDEMPOTENCY_TTL_MS) {
     return NextResponse.json(cached.result, {
       status: 200,
@@ -29,15 +46,6 @@ export async function POST(request: Request, context: RouteContext) {
   for (const [key, value] of idempotencyCache) {
     if (Date.now() - value.timestamp > IDEMPOTENCY_TTL_MS) idempotencyCache.delete(key)
   }
-  const session = await auth()
-  if (!session) return NextResponse.json({ error: "No autenticado" }, { status: 401 })
-  if (!session.user.permissions.includes("prevention:privacy:manage_requests")) {
-    return NextResponse.json({ error: "Sin permisos" }, { status: 403 })
-  }
-  let body: Record<string, unknown>
-  try { body = await request.json() as Record<string, unknown> }
-  catch { return NextResponse.json({ error: "Body JSON inválido" }, { status: 400 }) }
-  const { id } = await context.params
   try {
     const execution = await executePreventionPrivacyRight({
       input: { ...body, requestId: id },
@@ -51,7 +59,7 @@ export async function POST(request: Request, context: RouteContext) {
       permissions: session.user.permissions,
     })
     const result = { execution: { id: execution.id, outcome: execution.outcome } }
-    idempotencyCache.set(idempotencyKey, { result, timestamp: Date.now() })
+    idempotencyCache.set(cacheKey, { result, timestamp: Date.now() })
     return NextResponse.json(result, {
       status: 201,
       headers: { "Cache-Control": "private, max-age=0, no-store" },

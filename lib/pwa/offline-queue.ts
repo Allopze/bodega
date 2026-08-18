@@ -117,14 +117,21 @@ export async function enqueuePpa(
     ? payload.clientSubmissionId
     : createPpaSubmissionId()
   const now = new Date().toISOString()
+  // `filledAt` viaja EN el payload: es el único rastro de cuándo se llenó el PPA
+  // en terreno. Sin él, un envío encolado el lunes y sincronizado el viernes se
+  // archivaba como del viernes, y un PPA fechado después de la tarea que
+  // pretendía prevenir no prueba nada ante una fiscalización.
+  const basePayload = payload.clientSubmissionId === id ? payload : { ...payload, clientSubmissionId: id }
   const item: QueuedPpa = {
     id,
     createdAt: now,
     updatedAt: now,
-    payload: payload.clientSubmissionId === id ? payload : { ...payload, clientSubmissionId: id },
+    payload: typeof basePayload.filledAt === "string" ? basePayload : { ...basePayload, filledAt: now },
     status: "pending",
     attempts: 0,
   }
+  await purgeExpiredPpas()
+  await assertPpaQueueHasRoom(id)
   return withTx("readwrite", (store) =>
     new Promise<QueuedPpa>((resolve, reject) => {
       const req = store.put(item)
@@ -132,6 +139,42 @@ export async function enqueuePpa(
       req.onerror = () => reject(req.error)
     }),
   )
+}
+
+/**
+ * Tope de entradas sin sincronizar. Era la única de las tres colas del repo sin
+ * política de retención: una faena sin señal durante un turno podía encolar
+ * cientos de PPA hasta reventar la cuota de IndexedDB, y ahí `store.put` empieza
+ * a rechazar — se pierde el PPA justo cuando la cola importa. Se rechaza en vez
+ * de desalojar: descartar en silencio un registro con valor probatorio sería
+ * peor que negarse a aceptar uno nuevo.
+ */
+export const MAX_QUEUED_PPAS = 100
+/** Un PPA sin sincronizar más viejo que esto ya no describe la tarea en curso. */
+export const MAX_PPA_AGE_DAYS = 30
+
+async function assertPpaQueueHasRoom(incomingId: string) {
+  const all = await getAllPpas()
+  const unsynced = all.filter((item) => item.status !== "synced" && item.id !== incomingId)
+  if (unsynced.length >= MAX_QUEUED_PPAS) {
+    throw new Error(
+      `La cola offline está llena (${MAX_QUEUED_PPAS} evaluaciones sin sincronizar). ` +
+      "Conéctate y sincroniza antes de registrar otra.",
+    )
+  }
+}
+
+/**
+ * Expira por EDAD, con independencia de los reintentos. La limpieza previa
+ * exigía `status === "failed" && attempts >= 3`, así que un `pending` viejo o un
+ * `failed` con un intento eran residentes permanentes.
+ */
+export async function purgeExpiredPpas(): Promise<number> {
+  const cutoff = Date.now() - MAX_PPA_AGE_DAYS * 86_400_000
+  const all = await getAllPpas()
+  const expired = all.filter((item) => Date.parse(item.createdAt) < cutoff)
+  for (const item of expired) await deletePpa(item.id)
+  return expired.length
 }
 
 /** Get all pending (unsynced) submissions. */
@@ -246,4 +289,16 @@ export async function getAllPpas(): Promise<QueuedPpa[]> {
       req.onerror = () => reject(req.error)
     }),
   )
+}
+
+/**
+ * Descarta los PPA locales al cerrar sesión. El payload lleva nombre, RUT y
+ * empresa del trabajador: datos personales que no deben sobrevivir al cambio de
+ * usuario en un dispositivo de faena compartido.
+ */
+export async function clearPpaQueue(): Promise<number> {
+  if (typeof indexedDB === "undefined") return 0
+  const all = await getAllPpas()
+  for (const item of all) await deletePpa(item.id)
+  return all.length
 }

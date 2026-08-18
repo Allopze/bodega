@@ -148,7 +148,10 @@ export async function GET(request: NextRequest) {
       { header: "Indicador", key: "label", width: 28 },
       { header: "Fórmula", key: "formula", width: 90 },
     ]
-    for (const definition of report.indicatorDefinitions) indicators.addRow(definition)
+    // `safe` como las otras hojas del archivo (ver la nota en el expediente).
+    for (const definition of report.indicatorDefinitions) {
+      indicators.addRow(Object.fromEntries(Object.entries(definition).map(([key, value]) => [key, safe(value)])))
+    }
     indicators.getRow(1).font = { bold: true, color: { argb: "FFFFFFFF" } }
     indicators.getRow(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF2563EB" } }
     indicators.addRow({})

@@ -150,9 +150,13 @@ async function cphsAttentionItems(
     .limit(limit)
   if (committees.length === 0) return []
 
+  // `heldAt` y no `closedAt`: la cadencia legal cuenta desde que el comité
+  // SESIONÓ, no desde que se firmó el acta. El cron y la ficha del comité ya
+  // usaban `heldAt`; esta cola quedó atrás y contradecía a las otras dos sobre
+  // el mismo comité (un acta de enero firmada en marzo la dejaba "al día").
   const lastMeetings = await db.select({
     committeeId: preventionCommitteeMeetings.committeeId,
-    lastClosedAt: max(preventionCommitteeMeetings.closedAt),
+    lastClosedAt: max(preventionCommitteeMeetings.heldAt),
   })
     .from(preventionCommitteeMeetings)
     .where(and(

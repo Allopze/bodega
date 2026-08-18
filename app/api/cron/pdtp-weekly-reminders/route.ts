@@ -13,9 +13,13 @@ import { type NextRequest, NextResponse } from "next/server"
 import { runPdtpWeeklyReminders, runPdtpActionPlanVencidasReminders, runPdtpObligationReminders } from "@/lib/services/prevention-pdtp"
 import { logger } from "@/lib/logger"
 import { verifyCronSecret } from "@/lib/security/cron-auth"
+import { withCronLock } from "@/lib/services/cron-lock"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
+// Techo explícito: estos jobs recorren tablas que crecen y sin cota un
+// corte por timeout de plataforma deja estado parcial sin señal accionable.
+export const maxDuration = 300
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
   const secret = process.env.CRON_SECRET
@@ -31,9 +35,15 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   }
 
   try {
-    const result = await runPdtpWeeklyReminders()
-    const vencidas = await runPdtpActionPlanVencidasReminders()
-    const obligations = await runPdtpObligationReminders()
+    // Un solo lock para los tres: corren encadenados en el mismo request, así
+    // que solapar la corrida solaparía los tres a la vez.
+    const chained = await withCronLock("pdtp-weekly-reminders", async () => ({
+      result: await runPdtpWeeklyReminders(),
+      vencidas: await runPdtpActionPlanVencidasReminders(),
+      obligations: await runPdtpObligationReminders(),
+    }))
+    if ("skipped" in chained) return NextResponse.json({ ok: true, ...chained })
+    const { result, vencidas, obligations } = chained
     logger.info("[cron/pdtp-weekly-reminders] Completed", { ...result, vencidas, obligations })
     return NextResponse.json({ ok: true, ...result, vencidas, obligations })
   } catch (err) {

@@ -77,11 +77,23 @@ export function IncidentReportForm({ worksites, defaultDate, defaultTime }: { wo
   const [hasPerson, setHasPerson] = useState(false)
   const [queued, setQueued] = useState(0)
 
+  const [rejected, setRejected] = useState(0)
+
   const synchronize = useCallback(async () => {
     if (!navigator.onLine) return
-    const result = await flushIncidentReportQueue(async (payload) => reportPreventionIncidentAction(payload))
+    const result = await flushIncidentReportQueue(async (payload) => {
+      // `ok: false` del servidor es un rechazo permanente (validación, alcance,
+      // clave ya usada): la cola no debe gastar reintentos ni dejarlo como
+      // pendiente eterno. `retriable: false` lo marca para que se muestre.
+      const res = await reportPreventionIncidentAction(payload)
+      return res.ok ? res : { ...res, retriable: false }
+    })
     setQueued(result.pending)
+    setRejected(result.rejected)
     if (result.synchronized > 0) toast.success(`${result.synchronized} reporte(s) offline sincronizado(s)`)
+    if (result.rejected > 0) {
+      toast.error(`${result.rejected} reporte(s) offline no se pudieron enviar y quedaron rechazados. Revísalos y vuelve a registrarlos.`)
+    }
   }, [])
 
   useEffect(() => {
@@ -166,7 +178,17 @@ export function IncidentReportForm({ worksites, defaultDate, defaultTime }: { wo
           form.reset()
           toast.success(result.message)
           if (result.incidentId) router.push(`/prevencion/incidentes/${result.incidentId}`)
-        } catch {
+        } catch (error) {
+          // Sólo se encola ante un fallo de RED. El `catch` era ciego, así que
+          // una excepción del servidor dejaba encolado un reporte que iba a ser
+          // rechazado en cada reintento. Mismo predicado que el camino PPA.
+          const message = error instanceof Error ? error.message : typeof error === "string" ? error : ""
+          const isNetworkError = !navigator.onLine
+            || /failed to fetch|networkerror|network request failed|load failed/i.test(message)
+          if (!isNetworkError) {
+            toast.error(message || "No se pudo enviar el reporte")
+            return
+          }
           await queueIncidentReport({ ...payload, offlineSync: true })
           setQueued((count) => count + 1)
           form.reset()
@@ -191,6 +213,12 @@ export function IncidentReportForm({ worksites, defaultDate, defaultTime }: { wo
           </Button>
         )}
       </div>
+      {rejected > 0 && (
+        <p className="rounded-lg border border-[var(--color-danger-line)] bg-[var(--color-danger-tint)] px-4 py-3 text-sm">
+          {rejected} reporte(s) guardado(s) en este dispositivo fueron rechazados por el servidor y no se
+          enviarán. Vuelve a registrarlos con los datos corregidos.
+        </p>
+      )}
 
       <section className="grid gap-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 md:grid-cols-2">
         <div className="space-y-2">

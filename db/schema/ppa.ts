@@ -78,6 +78,14 @@ export const ppaSubmissions = pgTable("ppa_submissions", {
   // funcionando de forma autónoma donde no se exige permiso.
   workPermitId:       text("work_permit_id"),
 
+  /**
+   * Momento en que el trabajador llenó el PPA en terreno, tomado del cliente.
+   * `createdAt` es cuándo llegó al servidor: para un envío encolado offline
+   * pueden ser días distintos, y el valor probatorio del PPA depende de haber
+   * sido llenado ANTES de la tarea. Nulo en envíos en línea (donde coincide con
+   * `createdAt`) y en clientes viejos que no lo mandan.
+   */
+  filledAt:           timestamp("filled_at", { withTimezone: true, mode: "string" }),
   createdAt:          timestamp("created_at", { withTimezone: true, mode: "string" }).notNull(),
   updatedAt:          timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull(),
 }, (table) => [

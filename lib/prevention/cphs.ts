@@ -1,3 +1,4 @@
+import { chileDateParts } from "@/lib/utils"
 export const COMMITTEE_STATUS_LABELS: Record<string, string> = {
   active: "Vigente",
   dissolved: "Disuelto",
@@ -170,9 +171,13 @@ export interface MeetingCadenceStatus {
  */
 export function assessMeetingCadence(lastClosedMeetingAt: string | null, asOf: string): MeetingCadenceStatus {
   if (!lastClosedMeetingAt) return { monthsWithoutMeeting: Number.POSITIVE_INFINITY, overdue: true }
-  const last = new Date(lastClosedMeetingAt)
-  const now = new Date(asOf)
-  const months = (now.getUTCFullYear() - last.getUTCFullYear()) * 12 + (now.getUTCMonth() - last.getUTCMonth())
+  // Meses del calendario CHILENO. Con `getUTC*` una sesión del 1 de febrero a
+  // las 21:00 de Chile se contaba como de febrero UTC y una evaluación del 31 de
+  // marzo a las 21:00 como de abril: daba 2 meses y emitía un aviso falso de
+  // "el comité no sesiona hace dos meses o más" con el comité al día.
+  const last = chileDateParts(lastClosedMeetingAt)
+  const now = chileDateParts(asOf)
+  const months = (now.year - last.year) * 12 + (now.month - last.month)
   return { monthsWithoutMeeting: months, overdue: months >= 2 }
 }
 

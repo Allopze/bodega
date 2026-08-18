@@ -132,40 +132,63 @@ qué usa por dentro**, no sólo su firma.
 
 - [x] **PDTP-04** Hecho en la Fase 3 (mismo camino de código).
 - [x] **SST-02** Hecho en la Fase 3 (mismo bloque que SST-01).
-- [ ] **SST-09** `NULLS NOT DISTINCT` en el unique de carpetas. **Requiere migración.**
-- [ ] **DATA-04** Unique/FK de `sourceImportBatchId` en matrices MIPER. **Requiere migración.**
-- [ ] **HIG-07** `escalateBlockingGapsToCapa`: el `SELECT` dentro de la tx (capacitación y EPP).
+- [x] **SST-09** `NULLS NOT DISTINCT` en el unique de carpetas (migración 0181). Drizzle 0.45
+      no sabe expresarlo para `uniqueIndex` (sólo para `unique()`), así que vive en el SQL con
+      una nota en el esquema para que no se pierda al regenerar.
+- [x] **DATA-04 + DATA-05** Unique parcial de `sourceImportBatchId` y las dos FK
+      (`sourceImportBatchId` y auto-FK `supersedesMatrixId`, ambas `restrict`) en la 0181.
+- [x] **HIG-07** El `SELECT` de acciones abiertas dentro de la tx, en capacitación y EPP.
 
-## Fase 5 — Colas offline
+## Fase 5 — Colas offline ✅ COMPLETA
 
-- [ ] **OFF-01** Marca temporal del cliente en ambos payloads.
-- [ ] **OFF-02** Validación Zod al desencolar + estado `failed` visible.
-- [ ] **OFF-03/04** Políticas de retención unificadas.
-- [ ] **OFF-05** Limpieza de la cola en el logout.
+- [x] **OFF-01** `filledAt` en el PPA (columna nueva + Zod, acotado a no futuro) y `queuedAt`
+      en el incidente, que se registra en el historial en vez de una columna: `occurredAt`/
+      `knownAt` ya venían del terreno, lo que faltaba era distinguir "reportó tarde" de
+      "sincronizó tarde" cuando la banda DIAT nace vencida.
+- [x] **OFF-02** `ppaSubmitSchema.safeParse` al desencolar; un rechazo permanente del servidor
+      marca `failed` de una vez con el motivo, en vez de gastar reintentos en silencio. En
+      incidentes, `retriable: false` y contador de rechazados visible en el formulario.
+- [x] **OFF-03/04** Cola PPA con tope (100) y expiración por edad (30 días); la limpieza ya no
+      borra los `failed` (perdía la evaluación y su motivo), sólo lo sincronizado. En
+      incidentes, la purga pasó de `attempts>=8 && >30 días` a dos políticas independientes:
+      25 reportes viejos nunca reintentados bloqueaban el formulario para siempre.
+- [x] **OFF-05** `clearIncidentReportQueue` + `clearPpaQueue` invocadas desde `useSignOut`.
 
-## Fase 6 — Cron
+## Fase 6 — Cron ✅ COMPLETA
 
-- [ ] **CRON-03** Advisory lock por job + `onConflictDoNothing().returning()`.
-- [ ] **CRON-04** `try/catch` por iteración en los cinco `prevention-*`.
-- [ ] **CRON-02** `maxDuration` + paginación en los dos recorridos completos.
+- [x] **CRON-03** `withCronLock` (`pg_try_advisory_lock`) en los 8; el que encadena tres jobs
+      PDTP toma un solo lock para los tres. `try` y no `advisory_lock`: la corrida solapada se
+      salta en vez de encolarse y agotar el timeout.
+- [x] **CRON-04** `try/catch` por entidad en los 7 bucles de los cinco servicios, con contador
+      `errors` en el resultado para que una corrida degradada sea visible en el JSON del cron.
+- [x] **CRON-02** `maxDuration = 300` en los 8, y proyección + `limit` en el recorrido de CAPA
+      abiertas (traía la fila entera de todas).
 
-## Fase 7 — Fechas, API, UX, seguridad menor
+## Fase 7 — Fechas, API, UX, seguridad menor ✅ COMPLETA
 
-- [ ] **DATE-01/02** `todayInChile` en los dos `dedupeKey`.
-- [ ] **DATE-03** `chileDateParts` en la cadencia CPHS + `heldAt` en la cola de atención.
-- [ ] **DATE-04** `defaultTargetDate` desde `todayInChile` (helper compartido).
-- [ ] **API-01** Schema Zod para los filtros del export PPA.
-- [ ] **API-02** `safeCell` en las dos hojas que faltan.
-- [ ] **API-04** Zod en las 6 actions RE-20.
-- [ ] **SEC-01** `bulk-download`: auditar lo entregado, no lo leído.
-- [ ] **PRIV-03** `bulk-download`: tope agregado antes de leer a memoria.
-- [ ] **PRIV-05** Idempotencia ARCO después de `auth()` y con clave namespaced.
-- [ ] **UX-01/02** Enums en español en indicadores y ARCO.
+- [x] **DATE-01/02** `todayInChile(now)` en los dos `dedupeKey`.
+- [x] **DATE-03** `chileDateParts` en `assessMeetingCadence` (arregla los 4 llamadores de una) y
+      `heldAt` en vez de `closedAt` en la cola de atención, que contradecía al cron y a la ficha.
+- [x] **DATE-04** `addDaysToPlainDate(todayInChile(), 30)` en las dos listas de brechas.
+- [x] **API-01** `ppaExportFiltersSchema` + `safeParse` con 400 y `fieldErrors`.
+- [x] **API-02** `safeCell` en las hojas "Acuses" e "Indicadores".
+- [x] **API-04** `re20TextSchemas` para las seis entradas del expediente RE-20.
+- [x] **SEC-01** Se audita `delivered`, no `loaded`.
+- [x] **PRIV-03** El tope agregado se decide con `stat` antes de leer a memoria.
+- [x] **PRIV-05** Caché de idempotencia después de `auth()` y con clave `userId:requestId:key`.
+- [x] **UX-01/02** Catálogos en español para conciliación y estado de denominadores; fallback
+      explícito en el badge del inventario ARCO.
 
-## Fase 8 — Pruebas que faltan
+## Fase 8 — Pruebas que faltan ✅ COMPLETA
 
-- [ ] **TEST-01** Concurrencia de incidentes y PPA (con sus env vars en CI).
-- [ ] **TEST-02** Cinco `expect` sobre el scoring B/R/M.
+- [x] **TEST-01** `prevention-incidents-concurrency-postgres.test.ts`: dos reportes con la misma
+      clave en `Promise.allSettled` → un solo incidente y exactamente un `idempotentReplay`.
+      **Con sus dos variables en `ci.yml`**, o el `describeIf` lo saltaba en verde (la trampa que
+      el propio workflow documenta que ya ocurrió con `PURCHASE_ORDERS_CONCURRENCY_*`). Entra al
+      job existente por el glob `prevention-*-postgres`.
+- [x] **TEST-02** `pdtp-checklist-scoring.test.ts`: 6 casos sobre la fórmula B/R/M (regular=0,5;
+      `na`/`no_tiene` fuera del denominador; sólo excluidos → null; los 4 sinónimos de
+      conformidad; sin responder no cuenta; redondeo a 2 decimales).
 
 ## Requiere decisión de Prevención (NO implementar a ciegas)
 

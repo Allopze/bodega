@@ -278,18 +278,21 @@ export async function escalateBlockingEppGapsToCapa(access: EppAccess, args: { t
   if (gaps.length === 0) return { created: 0, skipped: 0 }
 
   const sourceIds = gaps.map((gap) => `${gap.workerId}:${gap.eppTypeId}`)
-  const openActions = await db.select({ sourceId: preventionCapaActions.sourceId })
-    .from(preventionCapaActions)
-    .where(and(
-      eq(preventionCapaActions.sourceType, "epp"),
-      inArray(preventionCapaActions.sourceId, sourceIds),
-      sql`${preventionCapaActions.status} NOT IN ('closed', 'cancelled')`,
-    ))
-  const alreadyOpen = new Set(openActions.map((item) => item.sourceId))
 
   let created = 0
   let skipped = 0
   await db.transaction(async (tx) => {
+    // Dentro de la transacción: ver la nota equivalente en
+    // `escalateBlockingGapsToCapa` de capacitación.
+    const openActions = await tx.select({ sourceId: preventionCapaActions.sourceId })
+      .from(preventionCapaActions)
+      .where(and(
+        eq(preventionCapaActions.sourceType, "epp"),
+        inArray(preventionCapaActions.sourceId, sourceIds),
+        sql`${preventionCapaActions.status} NOT IN ('closed', 'cancelled')`,
+      ))
+    const alreadyOpen = new Set(openActions.map((item) => item.sourceId))
+
     for (const gap of gaps) {
       const sourceId = `${gap.workerId}:${gap.eppTypeId}`
       if (alreadyOpen.has(sourceId)) { skipped += 1; continue }

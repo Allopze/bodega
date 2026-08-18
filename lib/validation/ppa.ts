@@ -17,6 +17,13 @@ export const ppaSubmitSchema = z.object({
   // suya — pierde la idempotencia, no el envío.
   clientSubmissionId: z.string().trim().min(12).max(100).optional(),
 
+  // Momento del llenado en terreno, para no archivar un PPA encolado offline
+  // con la fecha en que se sincronizó. Se acota a futuro con tolerancia de
+  // deriva de reloj del dispositivo: un cliente no puede fecharse por delante.
+  filledAt: z.string().datetime({ offset: true })
+    .refine((value) => Date.parse(value) <= Date.now() + 5 * 60_000, "Fecha de llenado en el futuro")
+    .optional(),
+
   // Enlace opcional al permiso de trabajo bajo el cual se ejecuta la tarea.
   // El PPA es la verificación breve dentro del permiso, no un registro
   // desconectado — ver el comentario en `ppa_submissions.work_permit_id`.
@@ -141,3 +148,17 @@ export const ppaCloseSchema = z.object({
   comment: z.string().trim().min(5).max(2000),
 })
 export type PpaCloseInput = z.infer<typeof ppaCloseSchema>
+
+/**
+ * Filtros del export de PPA. Llegaban crudos del query string hasta un
+ * `gte`/`lte` contra `created_at`: `dateFrom=no-es-fecha` reventaba en 500 y
+ * `dateFrom=99999-01-01` devolvía un Excel silenciosamente vacío, que es peor —
+ * una planilla incompleta entregada a un fiscalizador parece completa.
+ */
+export const ppaExportFiltersSchema = z.object({
+  estado: z.string().trim().min(1).max(40).optional(),
+  worksiteId: z.string().trim().min(1).max(100).optional(),
+  dateFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Fecha desde inválida").optional(),
+  dateTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Fecha hasta inválida").optional(),
+  search: z.string().trim().max(200).optional(),
+})

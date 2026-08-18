@@ -12,9 +12,13 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { checkOverdueWeeklyAlerts } from '@/lib/services/sst-alerts'
 import { logger } from '@/lib/logger'
 import { verifyCronSecret } from '@/lib/security/cron-auth'
+import { withCronLock } from '@/lib/services/cron-lock'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
+// Techo explícito: estos jobs recorren tablas que crecen y sin cota un
+// corte por timeout de plataforma deja estado parcial sin señal accionable.
+export const maxDuration = 300
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
   // Validate CRON_SECRET to prevent unauthorized invocations
@@ -31,7 +35,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   }
 
   try {
-    const result = await checkOverdueWeeklyAlerts()
+    const result = await withCronLock("sst-weekly-alerts", () => checkOverdueWeeklyAlerts())
     logger.info('[cron/sst-weekly-alerts] Completed', result)
     return NextResponse.json({ ok: true, ...result })
   } catch (err) {

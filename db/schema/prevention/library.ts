@@ -42,6 +42,14 @@ export const sstDocumentFolders = pgTable("sst_document_folders", {
   createdAt:   timestamp("created_at", { withTimezone: true, mode: "string" }).notNull(),
   updatedAt:   timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull(),
 }, (table) => [
+  /**
+   * Este índice se crea con `NULLS NOT DISTINCT` en la migración 0181, propiedad
+   * que drizzle 0.45 no sabe expresar para `uniqueIndex` (sólo para `unique()`).
+   * Sin ella el índice NO aplica a las carpetas raíz (`parent_id IS NULL`),
+   * porque en Postgres dos NULL no colisionan: `getOrCreateSystemFolder` podía
+   * crear dos "Evaluaciones SST" para la misma faena y las actas se repartían
+   * entre ambas. No la quites de la migración al regenerar el esquema.
+   */
   uniqueIndex("sst_document_folders_parent_slug_unique").on(table.parentId, table.slug),
   index("sst_document_folders_parent_idx").on(table.parentId),
   index("sst_document_folders_worksite_idx").on(table.worksiteId),

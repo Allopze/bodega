@@ -328,6 +328,11 @@ jobs:
           PREVENTION_EMERGENCY_DATABASE_URL: postgres://postgres:postgres@localhost:5432/bodega_e2e
           PREVENTION_CHANGE_DATABASE_URL: postgres://postgres:postgres@localhost:5432/bodega_e2e
           PREVENTION_EPP_DATABASE_URL: postgres://postgres:postgres@localhost:5432/bodega_e2e
+          # Sin estas dos, `prevention-incidents-concurrency-postgres` se salta
+          # en VERDE por su `describeIf` — el mismo fallo silencioso que ya
+          # ocurrió con PURCHASE_ORDERS_CONCURRENCY_*.
+          PREVENTION_CONCURRENCY_DATABASE_URL: postgres://postgres:postgres@localhost:5432/bodega_e2e
+          PREVENTION_CONCURRENCY_ALLOW_DESTRUCTIVE_RESET: "true"
           PREVENTION_CAPA_ALLOW_DESTRUCTIVE_RESET: "true"
           PREVENTION_INCIDENTS_ALLOW_DESTRUCTIVE_RESET: "true"
           PREVENTION_INDICATORS_ALLOW_DESTRUCTIVE_RESET: "true"

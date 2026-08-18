@@ -52,34 +52,53 @@ export async function GET(request: Request) {
     const absolutePath = resolveSstDocumentFile(row.filePath)
     return absolutePath ? [{ row, absolutePath }] : []
   })
-  const loadedRows = await Promise.all(readableRows.map(async ({ row, absolutePath }) => {
+  // El tope agregado se decide con `stat`, ANTES de leer los archivos a memoria.
+  // Leyendo primero (50 × 25 MB) el pico eran ~1,25 GB de Buffers, que el
+  // `Buffer.concat` del ZIP volvía a duplicar, para después descartar lo que
+  // sobraba del límite: se pagaba la memoria de todo lo que no se iba a entregar.
+  const sized: Array<{ row: (typeof readableRows)[number]["row"]; absolutePath: string; size: number }> = []
+  let plannedBytes = 0
+  for (const { row, absolutePath } of readableRows) {
+    let size: number
     try {
-      const stat = await fs.stat(absolutePath)
-      if (stat.size > MAX_BULK_BYTES) {
-        logger.warn("[documentacion/bulk-download] archivo excede el límite individual", { documentId: row.documentId, size: stat.size })
-        return null
-      }
-      return { row, data: await fs.readFile(absolutePath), size: stat.size }
+      size = (await fs.stat(absolutePath)).size
     } catch (err) {
       logger.warn("[documentacion/bulk-download] no se pudo incluir archivo", { documentId: row.documentId, err })
-      return null
+      continue
     }
-  }))
-  const files: Array<{ name: string; data: Buffer }> = []
-  const usedNames = new Set<string>()
-  const loaded = loadedRows.filter((entry): entry is NonNullable<typeof entry> => entry !== null)
-  let totalBytes = 0
-  for (const { row, data, size } of loaded) {
-    totalBytes += size ?? data.length
-    if (totalBytes > MAX_BULK_BYTES) {
-      logger.warn("[documentacion/bulk-download] límite agregado de bytes excedido", { totalBytes, max: MAX_BULK_BYTES })
+    if (size > MAX_BULK_BYTES) {
+      logger.warn("[documentacion/bulk-download] archivo excede el límite individual", { documentId: row.documentId, size })
+      continue
+    }
+    if (plannedBytes + size > MAX_BULK_BYTES) {
+      logger.warn("[documentacion/bulk-download] límite agregado de bytes excedido", { plannedBytes, max: MAX_BULK_BYTES })
       break
     }
-    const name = uniqueZipName(usedNames, row.title, row.fileName)
+    plannedBytes += size
+    sized.push({ row, absolutePath, size })
+  }
+
+  const files: Array<{ name: string; data: Buffer }> = []
+  const usedNames = new Set<string>()
+  const delivered: typeof sized = []
+  for (const entry of sized) {
+    let data: Buffer
+    try {
+      data = await fs.readFile(entry.absolutePath)
+    } catch (err) {
+      logger.warn("[documentacion/bulk-download] no se pudo leer archivo", { documentId: entry.row.documentId, err })
+      continue
+    }
+    const name = uniqueZipName(usedNames, entry.row.title, entry.row.fileName)
     usedNames.add(name)
     files.push({ name, data })
+    delivered.push(entry)
   }
-  await Promise.all(loaded.map(({ row }) => recordDocumentDownload({
+
+  // Se audita lo ENTREGADO, no lo leído: antes se registraban como descargados
+  // los documentos descartados por el límite, así que la bitácora documental
+  // —evidencia DS 44 de distribución— afirmaba entregas que nunca ocurrieron.
+  await Promise.all(delivered.map(({ row }) => recordDocumentDownload({
     documentId: row.documentId,
     versionId: row.versionId,
     userId: session.user.id,

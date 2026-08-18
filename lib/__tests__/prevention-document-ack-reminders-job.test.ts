@@ -48,7 +48,7 @@ describe("document acknowledgment reminder job", () => {
 
     const result = await runPreventionDocumentAckReminders(new Date("2026-07-18T12:00:00.000Z"))
 
-    expect(result).toEqual({ pendingTargets: 1, remindersSent: 1, overdueTargets: 1, escalatedTargets: 1, notifiedUsers: 2 })
+    expect(result).toEqual({ pendingTargets: 1, remindersSent: 1, overdueTargets: 1, escalatedTargets: 1, notifiedUsers: 2, errors: 0 })
     expect(mockCreateNotifications).toHaveBeenCalledWith(["recipient-1"], expect.objectContaining({
       dedupeKey: "document-ack-reminder:target-1:2026-07-18",
     }))

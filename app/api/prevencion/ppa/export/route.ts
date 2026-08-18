@@ -6,6 +6,7 @@
 export const dynamic = "force-dynamic"
 
 import { NextResponse } from "next/server"
+import { ppaExportFiltersSchema } from "@/lib/validation/ppa"
 import { auth } from "@/lib/auth/auth"
 import { can } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
@@ -24,13 +25,20 @@ export async function GET(request: Request) {
     scope.mode === "all" ? "all" : scope.mode === "some" ? scope.ids : []
 
   const { searchParams } = new URL(request.url)
-  const filters = {
+  const parsed = ppaExportFiltersSchema.safeParse({
     estado:    searchParams.get("estado")    || undefined,
     worksiteId: searchParams.get("worksiteId") || undefined,
     dateFrom:  searchParams.get("dateFrom")  || undefined,
     dateTo:    searchParams.get("dateTo")    || undefined,
     search:    searchParams.get("search")    || undefined,
+  })
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: "Filtros inválidos", fieldErrors: parsed.error.flatten().fieldErrors },
+      { status: 400 },
+    )
   }
+  const filters = parsed.data
 
   try {
     const report = await buildPpaExport(worksiteIds, filters)

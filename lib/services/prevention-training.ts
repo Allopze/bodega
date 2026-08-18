@@ -732,18 +732,23 @@ export async function escalateBlockingGapsToCapa(access: TrainingAccess, args: {
   if (gaps.length === 0) return { created: 0, skipped: 0 }
 
   const sourceIds = gaps.map((gap) => `${gap.workerId}:${gap.courseId}`)
-  const openActions = await db.select({ sourceId: preventionCapaActions.sourceId })
-    .from(preventionCapaActions)
-    .where(and(
-      eq(preventionCapaActions.sourceType, "training"),
-      inArray(preventionCapaActions.sourceId, sourceIds),
-      notInArray(preventionCapaActions.status, ["closed", "cancelled"]),
-    ))
-  const alreadyOpen = new Set(openActions.map((item) => item.sourceId))
 
   let created = 0
   let skipped = 0
   await db.transaction(async (tx) => {
+    // La lectura de "ya abiertas" va DENTRO de la transacción: leída fuera, dos
+    // escalamientos concurrentes (o un doble clic) veían ambos el conjunto vacío
+    // y creaban dos CAPA para la misma brecha. No hay unique que lo impida
+    // porque estas acciones no llevan `sourceItemId`.
+    const openActions = await tx.select({ sourceId: preventionCapaActions.sourceId })
+      .from(preventionCapaActions)
+      .where(and(
+        eq(preventionCapaActions.sourceType, "training"),
+        inArray(preventionCapaActions.sourceId, sourceIds),
+        notInArray(preventionCapaActions.status, ["closed", "cancelled"]),
+      ))
+    const alreadyOpen = new Set(openActions.map((item) => item.sourceId))
+
     for (const gap of gaps) {
       const sourceId = `${gap.workerId}:${gap.courseId}`
       if (alreadyOpen.has(sourceId)) { skipped += 1; continue }

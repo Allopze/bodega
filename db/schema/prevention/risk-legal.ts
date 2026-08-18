@@ -91,8 +91,14 @@ export const preventionRiskMatrices = pgTable("prevention_risk_matrices", {
   consultationEvidenceReference: text("consultation_evidence_reference").notNull(),
   effectiveFrom: text("effective_from"),
   reviewDueAt: text("review_due_at"),
-  sourceImportBatchId: text("source_import_batch_id"),
-  supersedesMatrixId: text("supersedes_matrix_id"),
+  // Un lote de importación genera a lo más una matriz (unique parcial más
+  // abajo). Sin FK ni unique, dos activaciones concurrentes podían dejar dos
+  // matrices apuntando al mismo lote, cada una con parte de las filas.
+  sourceImportBatchId: text("source_import_batch_id").references((): AnyPgColumn => preventionRiskImportBatches.id, { onDelete: "restrict" }),
+  // Auto-FK con `restrict`, mismo criterio que `supersedesRequirementId`: la
+  // cadena de supersesión es la evidencia de qué matriz reemplazó a cuál
+  // (DS 44 art. 62) y no puede quedar apuntando a un id inexistente.
+  supersedesMatrixId: text("supersedes_matrix_id").references((): AnyPgColumn => preventionRiskMatrices.id, { onDelete: "restrict" }),
   publishedHashSha256: text("published_hash_sha256"),
   createdByUserId: text("created_by_user_id").notNull().references(() => users.id),
   reviewedByUserId: text("reviewed_by_user_id").references(() => users.id),
@@ -108,6 +114,9 @@ export const preventionRiskMatrices = pgTable("prevention_risk_matrices", {
   uniqueIndex("prevention_risk_matrices_scope_version_unique").on(table.worksiteId, table.matrixVersion),
   index("prevention_risk_matrices_scope_status_idx").on(table.worksiteId, table.status),
   uniqueIndex("prevention_risk_matrices_one_published_scope_unique").on(table.worksiteId).where(sql`${table.status} = 'published'`),
+  // Un lote de importación genera a lo más una matriz: es el invariante que
+  // `activateRiskImportBatch` comprobaba sólo en aplicación.
+  uniqueIndex("prevention_risk_matrices_source_batch_unique").on(table.sourceImportBatchId).where(sql`${table.sourceImportBatchId} IS NOT NULL`),
   check("prevention_risk_matrices_status_valid", sql`${table.status} IN ('draft', 'in_review', 'reviewed', 'approved', 'published', 'superseded')`),
   check("prevention_risk_matrices_version_positive", sql`${table.matrixVersion} > 0 AND ${table.version} > 0`),
   check("prevention_risk_matrices_publish_evidence", sql`${table.status} NOT IN ('approved', 'published', 'superseded') OR (${table.reviewedByUserId} IS NOT NULL AND ${table.approvedByUserId} IS NOT NULL)`),

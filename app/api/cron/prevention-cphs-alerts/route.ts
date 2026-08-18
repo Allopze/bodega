@@ -1,10 +1,14 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { logger } from "@/lib/logger"
 import { verifyCronSecret } from "@/lib/security/cron-auth"
+import { withCronLock } from "@/lib/services/cron-lock"
 import { runPreventionCphsReminders } from "@/lib/services/prevention-cphs-reminders"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
+// Techo explícito: estos jobs recorren tablas que crecen y sin cota un
+// corte por timeout de plataforma deja estado parcial sin señal accionable.
+export const maxDuration = 300
 
 export async function GET(request: NextRequest) {
   const secret = process.env.CRON_SECRET
@@ -16,7 +20,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
   try {
-    const result = await runPreventionCphsReminders()
+    const result = await withCronLock("prevention-cphs-alerts", () => runPreventionCphsReminders())
     logger.info("[cron/prevention-cphs-alerts] completed", result)
     return NextResponse.json({ ok: true, ...result })
   } catch (error) {

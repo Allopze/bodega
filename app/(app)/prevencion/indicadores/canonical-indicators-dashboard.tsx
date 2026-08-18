@@ -15,6 +15,32 @@ import { denominatorDialogLabel, IndicatorDenominatorDialog } from "./indicator-
 import { IndicatorPeriodCloseButton } from "./indicator-period-close-button"
 
 const MONTHS = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]
+/**
+ * La tabla de denominadores pintaba `reconciliationStatus` y `status` crudos
+ * mientras el fallback textual sí estaba en español: la misma columna alternaba
+ * idioma según hubiera registro o no, en la pantalla de indicadores DS 44.
+ */
+const RECONCILIATION_LABELS: Record<string, string> = {
+  pending: "Pendiente",
+  matched: "Conciliado",
+  mismatched: "Con diferencia",
+  missing_legacy: "Sin dato anterior",
+  difference: "Con diferencia",
+  match: "Coincide",
+}
+
+const DENOMINATOR_STATUS_LABELS: Record<string, string> = {
+  draft: "Borrador",
+  submitted: "Enviado",
+  approved: "Aprobado",
+  rejected: "Rechazado",
+}
+
+function labelOrRaw(catalog: Record<string, string>, value: string | null | undefined) {
+  if (!value) return "—"
+  return catalog[value] ?? value
+}
+
 const STATUS_LABELS: Record<string, string> = { reconciled: "Conciliado", provisional: "Provisional", non_calculable: "No calculable", error: "Error de conciliación" }
 
 function rate(value: number | null) {
@@ -147,7 +173,7 @@ export function CanonicalIndicatorsDashboard({ view, currentYear, canManage, can
         </TabsContent>
 
         <TabsContent value="denominators">
-          {selectedIsTotal ? <EmptyState title="Selecciona una faena" description="La fuente y aprobación se gestionan por faena y mes; la vista total sólo agrega resultados autorizados." /> : <div className="overflow-x-auto rounded-lg border border-[var(--color-border)]"><Table><TableHeader><TableRow><TableHead>Mes</TableHead><TableHead className="text-right">Dotación</TableHead><TableHead className="text-right">HH</TableHead><TableHead>Fuente</TableHead><TableHead>Conciliación</TableHead><TableHead>Estado</TableHead><TableHead className="text-right">Acción</TableHead></TableRow></TableHeader><TableBody>{MONTHS.map((month, index) => { const item = denominatorByPeriod.get(`${group.worksiteId}:${index + 1}`) ?? null; return <TableRow key={month}><TableCell>{month}</TableCell><TableCell className="text-right font-mono tabular-nums">{item?.workerCount ?? "—"}</TableCell><TableCell className="text-right font-mono tabular-nums">{item?.workedHours?.toLocaleString("es-CL") ?? "—"}</TableCell><TableCell>{item?.sourceReference ?? "Sin fuente"}</TableCell><TableCell><Badge variant={statusVariant(item?.reconciliationStatus ?? "pending")}>{item?.reconciliationStatus ?? "Pendiente"}</Badge></TableCell><TableCell><Badge variant={statusVariant(item?.status ?? "draft")}>{item?.status ?? "Sin registro"}</Badge></TableCell><TableCell className="text-right"><Button type="button" size="sm" variant="ghost" onClick={() => setEditingMonth(index + 1)}>{denominatorDialogLabel(item)}</Button></TableCell></TableRow> })}</TableBody></Table></div>}
+          {selectedIsTotal ? <EmptyState title="Selecciona una faena" description="La fuente y aprobación se gestionan por faena y mes; la vista total sólo agrega resultados autorizados." /> : <div className="overflow-x-auto rounded-lg border border-[var(--color-border)]"><Table><TableHeader><TableRow><TableHead>Mes</TableHead><TableHead className="text-right">Dotación</TableHead><TableHead className="text-right">HH</TableHead><TableHead>Fuente</TableHead><TableHead>Conciliación</TableHead><TableHead>Estado</TableHead><TableHead className="text-right">Acción</TableHead></TableRow></TableHeader><TableBody>{MONTHS.map((month, index) => { const item = denominatorByPeriod.get(`${group.worksiteId}:${index + 1}`) ?? null; return <TableRow key={month}><TableCell>{month}</TableCell><TableCell className="text-right font-mono tabular-nums">{item?.workerCount ?? "—"}</TableCell><TableCell className="text-right font-mono tabular-nums">{item?.workedHours?.toLocaleString("es-CL") ?? "—"}</TableCell><TableCell>{item?.sourceReference ?? "Sin fuente"}</TableCell><TableCell><Badge variant={statusVariant(item?.reconciliationStatus ?? "pending")}>{item ? labelOrRaw(RECONCILIATION_LABELS, item.reconciliationStatus) : "Pendiente"}</Badge></TableCell><TableCell><Badge variant={statusVariant(item?.status ?? "draft")}>{item ? labelOrRaw(DENOMINATOR_STATUS_LABELS, item.status) : "Sin registro"}</Badge></TableCell><TableCell className="text-right"><Button type="button" size="sm" variant="ghost" onClick={() => setEditingMonth(index + 1)}>{denominatorDialogLabel(item)}</Button></TableCell></TableRow> })}</TableBody></Table></div>}
         </TabsContent>
 
         <TabsContent value="reconciliation">

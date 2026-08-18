@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { addDaysToPlainDate, todayInChile } from "@/lib/utils"
 import Link from "next/link"
 import { DataTable } from "@/components/admin/data-table"
 import { Badge } from "@/components/ui/badge"
@@ -23,9 +24,10 @@ const GAP_TYPE_LABELS: Record<CompetencyGap["gapType"], string> = {
 }
 
 function defaultTargetDate() {
-  const value = new Date()
-  value.setUTCDate(value.getUTCDate() + 30)
-  return value.toISOString().slice(0, 10)
+  // Desde el día civil chileno: `new Date()` + `toISOString()` mide en UTC, así
+  // que después de las 20:00 de Chile sugería hoy+31. Esquivaba la regla de
+  // ESLint porque el `.toISOString()` va sobre un `Date` ya mutado.
+  return addDaysToPlainDate(todayInChile(), 30)
 }
 
 const COLUMNS = [
