@@ -15,7 +15,13 @@ import { worksites } from "./worksites"
  *
  * `kind` es un slug libre ('monogas', 'alcotest', …) y no un enum: sumar una
  * familia de equipos es un dato nuevo, no una migración. `products.equipment_kind`
- * apunta a este mismo slug para saber qué equipos ofrecer en cada servicio.
+ * apunta a este mismo slug para saber a qué familia pertenece cada servicio.
+ *
+ * El registro no se llena por adelantado: se forma con las solicitudes de
+ * mantención, que dan de alta el equipo por su código si no estaba
+ * (lib/services/requests-draft-create.ts). `code` viaja normalizado —
+ * `normalizeEquipmentCode`— para que el índice único alcance a impedir que el
+ * mismo aparato entre dos veces escrito distinto.
  */
 export const serviceEquipment = pgTable("service_equipment", {
   id:           text("id").primaryKey(),
@@ -28,6 +34,12 @@ export const serviceEquipment = pgTable("service_equipment", {
   serialNumber: text("serial_number"),
   worksiteId:   text("worksite_id").notNull().references(() => worksites.id),
   isActive:     boolean("is_active").notNull().default(true),
+  /**
+   * Ficha creada sola al pedir su mantención: tiene código y faena, pero el
+   * nombre es autogenerado y le faltan marca, modelo y serie. Administración la
+   * completa desde /admin/equipos y con eso se apaga.
+   */
+  needsReview:  boolean("needs_review").notNull().default(false),
   notes:        text("notes"),
   createdAt:    timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   updatedAt:    timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),

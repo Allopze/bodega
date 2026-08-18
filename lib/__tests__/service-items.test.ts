@@ -7,6 +7,7 @@ import { describe, it, expect } from "vitest"
 import {
   attributeValueIssue,
   catalogItemIssues,
+  normalizeEquipmentCode,
   quantityFromAttributes,
   COST_PENDING_LABEL,
   type CatalogProductRules,
@@ -21,8 +22,8 @@ const VACUNA: CatalogProductRules = {
 const MONOGAS: CatalogProductRules = {
   name: "Mantención de monogás",
   requiresWorker: false,
+  equipmentKind: "monogas",
   attributes: [
-    { id: "pa-serie", name: "Código interno / N° de serie", type: "text", isRequired: true },
     { id: "pa-marca", name: "Marca", type: "text", isRequired: false },
   ],
 }
@@ -76,14 +77,20 @@ describe("catalogItemIssues", () => {
     })).toEqual(["Número de dosis debe ser un número entero mayor o igual a 1"])
   })
 
-  it("un servicio sin colaborador sólo exige lo que su catálogo declara", () => {
-    expect(catalogItemIssues(MONOGAS, {
-      workerId: null,
-      attributes: [{ attributeId: "pa-serie", attributeName: "Código interno / N° de serie", value: "MG-014" }],
-    })).toEqual([])
+  it("un servicio sobre un equipo exige su código, no que esté en el registro", () => {
+    expect(catalogItemIssues(MONOGAS, { workerId: null, equipmentCode: "MG-014", attributes: [] }))
+      .toEqual([])
+
+    // Un código cualquiera vale: el registro de equipos se forma con estas
+    // solicitudes, no al revés.
+    expect(catalogItemIssues(MONOGAS, { workerId: null, equipmentCode: "000123456789", attributes: [] }))
+      .toEqual([])
+
+    expect(catalogItemIssues(MONOGAS, { workerId: null, equipmentCode: "  ", attributes: [] }))
+      .toEqual(["indica el código del equipo para Mantención de monogás"])
 
     expect(catalogItemIssues(MONOGAS, { workerId: null, attributes: [] }))
-      .toEqual(["completa Código interno / N° de serie"])
+      .toEqual(["indica el código del equipo para Mantención de monogás"])
   })
 
   it("un producto sin reglas (EPP corriente) nunca reporta problemas", () => {
@@ -118,8 +125,22 @@ describe("quantityFromAttributes", () => {
 
   it("un producto sin atributo gobernante deja la cantidad al solicitante", () => {
     expect(quantityFromAttributes(MONOGAS, {
-      attributes: [{ attributeId: "pa-serie", attributeName: "Código interno / N° de serie", value: "MG-1" }],
+      attributes: [{ attributeId: "pa-marca", attributeName: "Marca", value: "Dräger" }],
     })).toBeNull()
+  })
+})
+
+describe("normalizeEquipmentCode", () => {
+  it("lleva a la misma forma el mismo código escrito distinto", () => {
+    for (const value of [" mg-014 ", "MG-014", "mg-014", "Mg-014"]) {
+      expect(normalizeEquipmentCode(value)).toBe("MG-014")
+    }
+    expect(normalizeEquipmentCode("mg  014")).toBe("MG 014")
+  })
+
+  it("no impone formato: hay códigos numéricos largos y alfanuméricos", () => {
+    expect(normalizeEquipmentCode("000123456789")).toBe("000123456789")
+    expect(normalizeEquipmentCode("")).toBe("")
   })
 })
 

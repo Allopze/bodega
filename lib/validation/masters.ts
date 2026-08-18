@@ -1,5 +1,6 @@
 import { z } from "zod"
 import { cleanRut, validateRut } from "@/lib/rut"
+import { normalizeEquipmentCode } from "@/lib/products/service-items"
 
 // ── Chilean RUT helper ────────────────────────────────────────────────────────
 // Canonical cleaning/validation lives in @/lib/rut (audit A-15).
@@ -131,7 +132,10 @@ export const productAttributeSchema = z.object({
 // ── Equipo de servicio (instrumentos: monogás, alcotest, …) ──────────────────
 export const serviceEquipmentSchema = z.object({
   id:           z.string().optional(),
-  code:         z.string().trim().min(1, "Código interno requerido").max(40),
+  // Formato libre (numérico largo o alfanumérico según el fabricante), pero
+  // normalizado: es la llave con la que las solicitudes encuentran el equipo.
+  code:         z.string().trim().min(1, "Código interno requerido").max(40)
+                  .transform(normalizeEquipmentCode),
   name:         z.string().trim().min(2, "Nombre requerido").max(120),
   // Slug normalizado: la BD exige minúsculas sin espacios para que el match
   // contra `products.equipment_kind` no dependa de cómo se escribió.

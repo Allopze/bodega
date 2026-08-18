@@ -9,7 +9,7 @@ import { describe, it, expect, vi, afterEach } from "vitest"
 import { cleanup, render, screen } from "@testing-library/react"
 import { ItemEditor } from "./item-editor"
 import { blankItem } from "./request-form.helpers"
-import type { ItemRow, ProductOption, WorkerOption } from "./request-form.types"
+import type { ItemRow, ProductOption, WorkerOption, EquipmentOption } from "./request-form.types"
 
 vi.mock("./actions", () => ({
   getWorkerEppStatusAction: vi.fn(async () => ({ activeRequest: null, lastDelivery: null })),
@@ -41,8 +41,8 @@ const VACUNA = product({
 
 const MONOGAS = product({
   id: "prod-srv-monogas", sku: "SRV-MONOGAS", name: "Mantención de monogás",
-  isService: true, unitOfMeasure: "servicio",
-  attributes: [{ id: "pa-serie", name: "Código interno / N° de serie", type: "text", isRequired: true, drivesQuantity: false, options: null }],
+  isService: true, unitOfMeasure: "servicio", equipmentKind: "monogas",
+  attributes: [{ id: "pa-marca", name: "Marca", type: "text", isRequired: false, drivesQuantity: false, options: null }],
 })
 
 const CASCO = product({ id: "prod-casco", sku: "EPP-1", name: "Casco", isEpp: true })
@@ -63,7 +63,11 @@ function itemFor(prod: ProductOption, overrides: Partial<ItemRow> = {}): ItemRow
   }
 }
 
-function renderItem(prod: ProductOption, overrides: Partial<ItemRow> = {}, props: { readOnly?: boolean } = {}) {
+function renderItem(
+  prod: ProductOption,
+  overrides: Partial<ItemRow> = {},
+  props: { readOnly?: boolean; equipment?: EquipmentOption[] } = {},
+) {
   return render(
     <ItemEditor
       item={itemFor(prod, overrides)}
@@ -71,6 +75,7 @@ function renderItem(prod: ProductOption, overrides: Partial<ItemRow> = {}, props
       products={[CASCO, MONOGAS, VACUNA]}
       suppliers={[]}
       workers={WORKERS}
+      equipment={props.equipment}
       readOnly={props.readOnly ?? false}
       requestType="otro"
       maxFileSizeMb={10}
@@ -80,7 +85,6 @@ function renderItem(prod: ProductOption, overrides: Partial<ItemRow> = {}, props
       onClearProduct={vi.fn()}
       onUpdateAttr={vi.fn()}
       onUpdateWorker={vi.fn()}
-      onUpdateEquipment={vi.fn()}
       onRemove={vi.fn()}
       canRemove={false}
     />,
@@ -105,7 +109,30 @@ describe("ItemEditor — campos condicionales de servicio", () => {
 
     expect(screen.queryByLabelText(/Colaborador/)).not.toBeInTheDocument()
     expect(screen.queryByLabelText(/Número de dosis/)).not.toBeInTheDocument()
-    expect(screen.getByLabelText(/Código interno/)).toBeInTheDocument()
+    expect(screen.getByLabelText(/Código del equipo/)).toBeInTheDocument()
+  })
+
+  it("el equipo se identifica por código escrito, no eligiéndolo de una lista", () => {
+    renderItem(MONOGAS)
+    const campo = screen.getByLabelText(/Código del equipo/)
+
+    // Campo de texto libre: sin él, un monogás que nadie dio de alta antes
+    // dejaba la mantención imposible de pedir.
+    expect(campo.tagName).toBe("INPUT")
+    expect(campo).not.toHaveAttribute("role", "combobox")
+    // Los códigos ya conocidos se ofrecen como sugerencias, no como opciones.
+    expect(campo).toHaveAttribute("list")
+  })
+
+  it("avisa si el código escrito dará de alta un equipo nuevo", () => {
+    renderItem(MONOGAS, { equipmentCode: "mg-014" }, {
+      equipment: [{ id: "eq-1", code: "MG-014", name: "Detector monogás H2S", kind: "monogas", worksiteId: "ws-1" }],
+    })
+    expect(screen.getByText(/Ya está en el catálogo: Detector monogás H2S/)).toBeInTheDocument()
+
+    cleanup()
+    renderItem(MONOGAS, { equipmentCode: "000123456789" })
+    expect(screen.getByText(/se dará de alta/i)).toBeInTheDocument()
   })
 
   it("un EPP corriente en una solicitud 'otro' no muestra ninguno de los dos", () => {

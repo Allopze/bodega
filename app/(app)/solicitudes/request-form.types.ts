@@ -83,7 +83,7 @@ export interface EditItem {
   workerId:            string | null
   workerName:          string | null
   /** Equipo del registro (mantención de monogás, calibración de alcotest). */
-  equipmentId:         string | null
+  equipmentCode:       string | null
   equipmentLabel:      string | null
   attributes:          { attributeId: string | null; attributeName: string; value: string }[]
 }
@@ -106,7 +106,8 @@ export interface ItemRow {
   variantQuantities:   Record<string, number>
   workerId:            string
   workerName:          string
-  equipmentId:         string
+  /** Código interno del equipo; el registro lo da de alta si no lo tenía. */
+  equipmentCode:       string
   equipmentLabel:      string
   isEpp:               boolean
   productName:         string
@@ -137,7 +138,7 @@ export interface PrefillItem {
   notes:                string
   workerId?:            string | null
   workerName?:          string | null
-  equipmentId?:         string | null
+  equipmentCode?:       string | null
   equipmentLabel?:      string | null
   suggestedSupplierId?: string | null
   supplierHint?:        string | null

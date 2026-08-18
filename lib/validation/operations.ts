@@ -1,5 +1,6 @@
 import { z } from "zod"
 import { todayInChile } from "@/lib/utils"
+import { normalizeEquipmentCode } from "@/lib/products/service-items"
 
 // ── Re-export shared ActionState ──────────────────────────────────────────────
 export type { ActionState } from "./masters"
@@ -33,8 +34,13 @@ export const requestItemSchema = z.object({
   urgency:             z.enum(["normal", "high", "critical"]).default("normal"),
   requiredDate:        requiredOperationalDate.optional().nullable(),
   workerId:            z.string().optional().nullable(),
-  /** Equipo del registro al que apunta el servicio (monogás, alcotest). */
-  equipmentId:         z.string().optional().nullable(),
+  /**
+   * Código interno del equipo al que apunta el servicio (monogás, alcotest).
+   * Es un código, no un id: si el equipo no está en el registro se da de alta
+   * al crear la solicitud, en la faena de quien la pide.
+   */
+  equipmentCode:       z.string().trim().max(40).transform(normalizeEquipmentCode)
+                         .optional().nullable(),
   suggestedSupplierId: z.string().nullable().optional(),
   supplierHint:        z.string().max(100).nullable().optional().or(z.literal("")),
   sortOrder:           z.coerce.number().int().default(0),

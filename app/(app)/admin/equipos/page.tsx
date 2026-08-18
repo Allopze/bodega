@@ -28,6 +28,7 @@ export default async function EquiposPage() {
       kind: serviceEquipment.kind, brand: serviceEquipment.brand, model: serviceEquipment.model,
       serialNumber: serviceEquipment.serialNumber, worksiteId: serviceEquipment.worksiteId,
       notes: serviceEquipment.notes, isActive: serviceEquipment.isActive,
+      needsReview: serviceEquipment.needsReview,
       worksiteName: worksites.name,
     })
       .from(serviceEquipment)
@@ -41,14 +42,19 @@ export default async function EquiposPage() {
 
   const equipment: EquipmentRow[] = rows
   const inactiveCount = equipment.filter((e) => !e.isActive).length
+  // Fichas que dio de alta una solicitud de mantención y que aún nadie completó.
+  const needsReviewCount = equipment.filter((e) => e.needsReview).length
   const kindCount = new Set(equipment.map((e) => e.kind)).size
 
   const headerSignals: HeaderSignal[] = [
-    { key: "inactive", label: "De baja", value: inactiveCount, tone: "signal" },
+    // Lo accionable es completar las fichas que dio de alta una solicitud; las
+    // de baja son informativas.
+    { key: "needsReview", label: "Por completar", value: needsReviewCount, tone: "signal" },
+    { key: "inactive", label: "De baja", value: inactiveCount },
   ]
   const description = equipment.length > 0
     ? `${equipment.length} ${pluralize(equipment.length, "equipo")} · ${kindCount} ${pluralize(kindCount, "tipo")}`
-    : "Monogás, alcotest y otros instrumentos que se mandan a mantener o calibrar."
+    : "El registro se llena solo: pedir la mantención de un monogás da de alta su ficha."
 
   return (
     <PageContainer>

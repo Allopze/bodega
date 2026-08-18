@@ -9,7 +9,7 @@ import { Combobox } from "@/components/ui/combobox"
 import {
   Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
 } from "@/components/ui/select"
-import { COST_PENDING_LABEL } from "@/lib/products/service-items"
+import { COST_PENDING_LABEL, normalizeEquipmentCode } from "@/lib/products/service-items"
 import { ProductPicker } from "./product-picker"
 import type { ItemRow, ProductOption, SupplierOption, WorkerOption, EquipmentOption } from "./request-form.types"
 import { QUOTATION_TYPES } from "@/lib/request-types"
@@ -42,7 +42,6 @@ interface ItemEditorProps {
   onClearProduct:  () => void
   onUpdateAttr:    (i: number, v: string) => void
   onUpdateWorker:  (workerId: string) => void
-  onUpdateEquipment: (equipmentId: string) => void
   onRemove:        () => void
   canRemove:       boolean
 }
@@ -52,7 +51,7 @@ interface ItemEditorProps {
 export function ItemEditor({
   item, idx, products, suppliers, workers, equipment, readOnly, requestType, maxFileSizeMb,
   onUpdate, onSelectProduct, onSelectFreeProduct, onClearProduct, onUpdateAttr, onUpdateWorker,
-  onUpdateEquipment, onRemove, canRemove,
+  onRemove, canRemove,
 }: ItemEditorProps) {
   const isQuotationType    = QUOTATION_TYPES.has(requestType ?? "")
   const selectedProduct = item.productId ? products.find((product) => product.id === item.productId) : null
@@ -64,16 +63,21 @@ export function ItemEditor({
   const workerRequired = selectedProduct?.requiresWorker ?? false
   const quantityDriver = item.attributes.find((attribute) => attribute.drivesQuantity)
 
-  // El servicio declara qué familia de equipos atiende; el selector ofrece sólo
-  // los instrumentos de esa familia, para no pedir calibrar un monogás.
+  // El servicio declara qué familia de equipos atiende. El equipo se identifica
+  // por su código interno y no eligiéndolo de una lista: el registro de
+  // instrumentos se forma con estas solicitudes, y exigir que el aparato ya
+  // estuviera dado de alta dejaba el servicio imposible de pedir. Los códigos ya
+  // conocidos se ofrecen como sugerencias, no como opciones cerradas.
   const equipmentKind = selectedProduct?.equipmentKind ?? null
-  const showEquipmentPicker = !isQuotationType && (!!equipmentKind || (readOnly && !!item.equipmentId))
-  const equipmentOptions = React.useMemo(
-    () => (equipment ?? [])
-      .filter((option) => !equipmentKind || option.kind === equipmentKind)
-      .map((option) => ({ value: option.id, label: `${option.code} · ${option.name}`, hint: option.kind })),
+  const showEquipmentPicker = !isQuotationType && (!!equipmentKind || (readOnly && !!item.equipmentCode))
+  const knownEquipment = React.useMemo(
+    () => (equipment ?? []).filter((option) => !equipmentKind || option.kind === equipmentKind),
     [equipment, equipmentKind],
   )
+  const matchedEquipment = React.useMemo(() => {
+    const code = normalizeEquipmentCode(item.equipmentCode)
+    return code ? knownEquipment.find((option) => option.code === code) : undefined
+  }, [knownEquipment, item.equipmentCode])
   // En consulta el bloque se muestra si el ítem tiene colaborador, aunque la
   // pantalla no cargue el padrón de trabajadores (la ficha de detalle no lo pasa).
   const showWorkerPicker = !isQuotationType && (
@@ -267,32 +271,43 @@ export function ItemEditor({
       {showEquipmentPicker && (
         <div className="ml-8 max-w-sm">
           <Field
-            label="Equipo"
+            label="Código del equipo"
             required={!!equipmentKind}
             htmlFor={`equipment-${item._key}`}
-            helper={readOnly ? undefined : "Busca por código interno o nombre. Se registra el equipo, no una copia de sus datos."}
+            helper={readOnly ? undefined : "El código interno grabado en el aparato. Se registra el equipo, no una copia de sus datos."}
           >
             {readOnly ? (
               <Input
                 id={`equipment-${item._key}`}
                 className="h-8 text-sm disabled:opacity-100 disabled:cursor-default"
-                value={item.equipmentLabel || "Sin asignar"}
+                value={item.equipmentLabel || item.equipmentCode || "Sin asignar"}
                 disabled
                 readOnly
               />
             ) : (
-              <Combobox
-                id={`equipment-${item._key}`}
-                options={equipmentOptions}
-                value={item.equipmentId}
-                onChange={onUpdateEquipment}
-                placeholder="Buscar equipo..."
-              />
+              <>
+                <Input
+                  id={`equipment-${item._key}`}
+                  className="h-8 text-sm font-mono"
+                  list={`equipment-codes-${item._key}`}
+                  autoComplete="off"
+                  placeholder="Ej: MG-014 o 000123456789"
+                  value={item.equipmentCode}
+                  onChange={(e) => onUpdate({ equipmentCode: e.target.value })}
+                />
+                <datalist id={`equipment-codes-${item._key}`}>
+                  {knownEquipment.map((option) => (
+                    <option key={option.id} value={option.code}>{option.name}</option>
+                  ))}
+                </datalist>
+              </>
             )}
           </Field>
-          {!readOnly && equipmentOptions.length === 0 && (
-            <p className="mt-1 text-[11px] text-(--color-warning-ink)">
-              No hay equipos registrados de este tipo en el catálogo. Pídele a Administración que lo dé de alta.
+          {!readOnly && item.equipmentCode.trim() !== "" && (
+            <p className="mt-1 text-[11px] text-(--color-text-subtle)">
+              {matchedEquipment
+                ? `Ya está en el catálogo: ${matchedEquipment.name}.`
+                : "No está en el catálogo: se dará de alta con este código en la faena de la solicitud."}
             </p>
           )}
         </div>

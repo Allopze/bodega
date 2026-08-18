@@ -7,7 +7,7 @@ import { INITIAL_STATE } from "@/components/admin/form-state"
 import { useActionWatchers } from "@/lib/hooks/use-action-watchers"
 import { URGENCY_OPTS } from "./request-form.constants"
 import type { ActionState } from "@/lib/validation/operations"
-import type { ItemRow, ProductOption, WorksiteOption, SupplierOption, WorkerOption, EquipmentOption, EditRequest, PrefillItem } from "./request-form.types"
+import type { ItemRow, ProductOption, WorksiteOption, SupplierOption, WorkerOption, EditRequest, PrefillItem } from "./request-form.types"
 import { QUOTATION_TYPES, visibleRequestTypeOptions } from "@/lib/request-types"
 import type { RequestType } from "@/lib/request-types"
 import { saveDraft, submitRequest, cancelRequest, deleteRequestAction } from "./actions"
@@ -151,11 +151,10 @@ function useDraftPersistence({
 }
 
 export function useRequestForm({
-  worksites, products, workers, equipment: equipmentOptions, editRequest,
+  worksites, products, workers, editRequest,
   userPermissions = [], initialRequestType, prefillItems,
 }: {
   worksites: WorksiteOption[]; products: ProductOption[]; suppliers: SupplierOption[]; workers?: WorkerOption[]
-  equipment?: EquipmentOption[]
   editRequest?: EditRequest; maxFileSizeMb: number; userRoles?: string[]; userPermissions?: string[]
   initialRequestType?: RequestType; prefillItems?: PrefillItem[]
 }) {
@@ -205,7 +204,7 @@ export function useRequestForm({
           // Sin esto la ficha de una solicitud ya enviada mostraba el selector de
           // colaborador vacío aunque el ítem sí tuviera uno asignado.
           variantQuantities: {}, workerId: item.workerId ?? "", workerName: item.workerName ?? "",
-          equipmentId: item.equipmentId ?? "", equipmentLabel: item.equipmentLabel ?? "",
+          equipmentCode: item.equipmentCode ?? "", equipmentLabel: item.equipmentLabel ?? "",
           showAttrs: !isQuotation && item.attributes.length > 0, cotizaciones: [],
           ...equipmentFromAttributes(editRequest.requestType, item.attributes),
           attributes: isQuotation ? [] : item.attributes.map((a) => {
@@ -238,7 +237,7 @@ export function useRequestForm({
           notes:               prefill.notes,
           workerId:            prefill.workerId ?? "",
           workerName:          prefill.workerName ?? "",
-          equipmentId:         prefill.equipmentId ?? "",
+          equipmentCode:       prefill.equipmentCode ?? "",
           equipmentLabel:      prefill.equipmentLabel ?? "",
           suggestedSupplierId: prefill.suggestedSupplierId ?? "",
           supplierHint:        prefill.supplierHint ?? "",
@@ -304,7 +303,7 @@ export function useRequestForm({
         attributes: attrs, variantQuantities: {}, showAttrs: attrs.length > 0,
         workerId: keepsWorker ? i.workerId : "",
         workerName: keepsWorker ? i.workerName : "",
-        equipmentId: keepsEquipment ? i.equipmentId : "",
+        equipmentCode: keepsEquipment ? i.equipmentCode : "",
         equipmentLabel: keepsEquipment ? i.equipmentLabel : "",
       }
     }))
@@ -316,13 +315,13 @@ export function useRequestForm({
     setItems((prev) => prev.map((i) =>
       // Un ítem fuera de catálogo no tiene reglas de producto: pierde también el
       // colaborador que hubiera quedado de la selección anterior.
-      i._key !== key ? i : { ...i, productId: null, productNameFree: trimmed, productName: trimmed, isEpp: false, unitOfMeasure: i.unitOfMeasure || "unidad", suggestedSupplierId: "", supplierHint: "", attributes: [], showAttrs: false, workerId: "", workerName: "", equipmentId: "", equipmentLabel: "" }
+      i._key !== key ? i : { ...i, productId: null, productNameFree: trimmed, productName: trimmed, isEpp: false, unitOfMeasure: i.unitOfMeasure || "unidad", suggestedSupplierId: "", supplierHint: "", attributes: [], showAttrs: false, workerId: "", workerName: "", equipmentCode: "", equipmentLabel: "" }
     ))
   }, [])
 
   const clearProduct = useCallback((key: string) => {
     setItems((prev) => prev.map((i) =>
-      i._key !== key ? i : { ...i, productId: null, productNameFree: "", productName: "", isEpp: false, suggestedSupplierId: "", supplierHint: "", attributes: [], showAttrs: false, workerId: "", workerName: "", equipmentId: "", equipmentLabel: "" }
+      i._key !== key ? i : { ...i, productId: null, productNameFree: "", productName: "", isEpp: false, suggestedSupplierId: "", supplierHint: "", attributes: [], showAttrs: false, workerId: "", workerName: "", equipmentCode: "", equipmentLabel: "" }
     ))
   }, [])
 
@@ -368,17 +367,6 @@ export function useRequestForm({
     }))
   }, [products, workers])
 
-  const updateItemEquipment = useCallback((key: string, equipmentId: string) => {
-    const equipment = equipmentId ? (equipmentOptions ?? []).find((e) => e.id === equipmentId) : undefined
-    setItems((prev) => prev.map((i) => i._key === key
-      ? {
-          ...i,
-          equipmentId: equipment?.id ?? "",
-          equipmentLabel: equipment ? `${equipment.code} · ${equipment.name}` : "",
-        }
-      : i))
-  }, [equipmentOptions])
-
   const updateAttr = useCallback((itemKey: string, attrIdx: number, value: string) => {
     setItems((prev) => prev.map((i) => {
       if (i._key !== itemKey) return i
@@ -402,7 +390,7 @@ export function useRequestForm({
         requiredDate: requiredDate || null, suggestedSupplierId: item.suggestedSupplierId || null,
         supplierHint: item.supplierHint || null, notes: item.notes || null,
         workerId: item.workerId || null,
-        equipmentId: item.equipmentId || null,
+        equipmentCode: item.equipmentCode || null,
         partNumber: item.partNumber || null, location: item.location || null,
         equipmentName: item.equipmentName || null, patent: item.patent || null,
         brand: item.brand || null, model: item.model || null,
@@ -526,7 +514,7 @@ export function useRequestForm({
     canDeleteRequest, canCancelRequest, deleteConfirmOpen, setDeleteConfirmOpen,
     isSaving, isSubmitting, isDeleting, draftPending,
     addItem, removeItem, updateItem, selectProduct, selectFreeProduct, clearProduct,
-    updateItemWorker, updateItemEquipment, updateAttr,
+    updateItemWorker, updateAttr,
     buildDraftFormData, draftAction, submitAction, cancelAction, deleteAction,
     startSaveTransition, startSubmitTransition, startDeleteTransition, silentNavBack,
     pendingHref, setPendingHref, confirmLeave,

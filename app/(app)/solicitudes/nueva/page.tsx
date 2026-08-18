@@ -254,6 +254,15 @@ async function buildPrefill({
           .where(inArray(workers.id, workerIds))
     const workerNameById = new Map(workerRows.map((w) => [w.id, `${w.firstName} ${w.lastName}`]))
 
+    const equipmentIds = [...new Set(source.items.flatMap((item) => item.equipmentId ? [item.equipmentId] : []))]
+    const equipmentRows = equipmentIds.length === 0
+      ? []
+      : await db
+          .select({ id: serviceEquipment.id, code: serviceEquipment.code })
+          .from(serviceEquipment)
+          .where(inArray(serviceEquipment.id, equipmentIds))
+    const equipmentCodeById = new Map(equipmentRows.map((e) => [e.id, e.code]))
+
     return {
       prefillItems: source.items.map((item) => ({
         productId:           item.productId,
@@ -266,6 +275,7 @@ async function buildPrefill({
         supplierHint:        item.supplierHint,
         workerId:            item.workerId,
         workerName:          item.workerId ? (workerNameById.get(item.workerId) ?? null) : null,
+        equipmentCode:       item.equipmentId ? (equipmentCodeById.get(item.equipmentId) ?? null) : null,
         attributes:          item.attributes.map((a) => ({
           attributeId: a.attributeId, attributeName: a.attributeName, value: a.value,
         })),

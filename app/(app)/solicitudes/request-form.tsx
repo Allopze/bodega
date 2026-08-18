@@ -129,7 +129,6 @@ function ItemsSection({
   items, requestType, requestTypeLabel: _requestTypeLabel, readOnly, savedId, itemsError,
   products, suppliers, workers, equipment, maxFileSizeMb,
   onAdd, onRemove, onUpdate, onSelectProduct, onSelectFreeProduct, onClearProduct, onUpdateAttr, onUpdateWorker,
-  onUpdateEquipment,
 }: {
   items: ItemRow[]; requestType: string; requestTypeLabel?: string; readOnly: boolean; savedId?: string
   itemsError?: string; products: ProductOption[]; suppliers: SupplierOption[]; workers?: WorkerOption[]
@@ -138,7 +137,6 @@ function ItemsSection({
   onSelectProduct: (key: string, pid: string) => void; onSelectFreeProduct: (key: string, name: string) => void
   onClearProduct: (key: string) => void; onUpdateAttr: (itemKey: string, attrIdx: number, value: string) => void
   onUpdateWorker: (itemKey: string, workerId: string) => void
-  onUpdateEquipment: (itemKey: string, equipmentId: string) => void
 }) {
   return (
     <section className="space-y-3">
@@ -172,7 +170,6 @@ function ItemsSection({
             onClearProduct={() => onClearProduct(item._key)}
             onUpdateAttr={(i, v) => onUpdateAttr(item._key, i, v)}
             onUpdateWorker={(workerId) => onUpdateWorker(item._key, workerId)}
-            onUpdateEquipment={(equipmentId) => onUpdateEquipment(item._key, equipmentId)}
             onRemove={() => onRemove(item._key)} canRemove={items.length > 1}
           />
         ))}
@@ -256,7 +253,6 @@ export function RequestForm({
     products,
     suppliers,
     workers,
-    equipment,
     editRequest,
     maxFileSizeMb,
     userPermissions,
@@ -325,7 +321,6 @@ export function RequestForm({
             onSelectProduct={form.selectProduct} onSelectFreeProduct={form.selectFreeProduct}
             onClearProduct={form.clearProduct} onUpdateAttr={form.updateAttr}
             onUpdateWorker={form.updateItemWorker}
-            onUpdateEquipment={form.updateItemEquipment}
           />
           {form.isDraft && (
             <div className="flex items-center justify-between gap-3 pt-2 border-t border-[var(--color-border)]">

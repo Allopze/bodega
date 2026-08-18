@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache"
 import { eq, inArray } from "drizzle-orm"
 import { db } from "@/db"
-import { products, productAttributes, productSuppliers, productCategories, eppProductFamilies, serviceEquipment } from "@/db/schema"
+import { products, productAttributes, productSuppliers, productCategories, eppProductFamilies } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { recordAudit } from "@/lib/audit"
 import { requirePermission } from "@/lib/auth/can"
@@ -20,28 +20,10 @@ import { productVariantBatchSchema, type ProductVariantBatchInput } from "./prod
 
 // ── Product CRUD ──────────────────────────────────────────────────────────────
 
-/**
- * La familia de equipos que un servicio dice atender tiene que existir en el
- * registro. Es texto libre a propósito (sumar una familia es un dato, no una
- * migración), pero un typo dejaba el servicio sin ningún equipo que ofrecer y
- * el formulario de solicitud sin forma de completarse.
- */
-async function unknownEquipmentKindError(kind: string | undefined): Promise<ActionState | null> {
-  const normalized = kind?.trim()
-  if (!normalized) return null
-  const [match] = await db
-    .select({ kind: serviceEquipment.kind })
-    .from(serviceEquipment)
-    .where(eq(serviceEquipment.kind, normalized))
-    .limit(1)
-  if (match) return null
-  return {
-    ok: false,
-    fieldErrors: {
-      equipmentKind: [`No hay equipos registrados del tipo «${normalized}». Créalos primero en Equipos de servicio.`],
-    },
-  }
-}
+// La familia de equipos que un servicio dice atender ya no tiene que existir en
+// el registro: desde que la solicitud da de alta el equipo por su código, el
+// primer instrumento de una familia nace de pedir su mantención. Exigirlo antes
+// dejaba el servicio imposible de guardar y de pedir a la vez.
 
 export async function createProduct(_prev: ActionState, formData: FormData): Promise<ActionState> {
   let session
@@ -72,9 +54,6 @@ export async function createProduct(_prev: ActionState, formData: FormData): Pro
   })
   if (!parsed.success) return { ok: false, fieldErrors: parsed.error.flatten().fieldErrors as Record<string, string[]> }
   const d = parsed.data
-
-  const kindError = await unknownEquipmentKindError(d.equipmentKind)
-  if (kindError) return kindError
 
   const id = nanoid()
   const sku = await generateUniqueProductSku(d.isEpp)
@@ -160,9 +139,6 @@ export async function updateProduct(_prev: ActionState, formData: FormData): Pro
   const d = parsed.data
   if (!d.id) return { ok: false, message: "ID requerido" }
   const productId = d.id
-
-  const kindError = await unknownEquipmentKindError(d.equipmentKind)
-  if (kindError) return kindError
 
   const current = await db.query.products.findFirst({ where: eq(products.id, productId) })
   if (!current) return { ok: false, message: "Producto no encontrado" }

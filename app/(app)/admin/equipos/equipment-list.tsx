@@ -10,7 +10,20 @@ import { toggleServiceEquipmentActive } from "./actions"
 import { EquipmentForm, type EquipmentForEdit } from "./equipment-form"
 import { COLUMNS, CONTRACT, equipmentKindLabel } from "./catalog-contract"
 
-export type EquipmentRow = EquipmentForEdit & { worksiteName: string }
+export type EquipmentRow = EquipmentForEdit & { worksiteName: string; needsReview: boolean }
+
+/**
+ * Ficha que nació sola al pedir una mantención: tiene código y faena, pero el
+ * nombre es autogenerado y le faltan marca, modelo y serie. Se apaga al
+ * editarla.
+ */
+function NeedsReviewBadge() {
+  return (
+    <Badge variant="warning" size="sm" className="font-normal" title="Se dio de alta sola desde una solicitud: revisa nombre, marca, modelo y número de serie.">
+      Por completar
+    </Badge>
+  )
+}
 
 export function EquipmentList({
   equipment, worksites,
@@ -36,6 +49,7 @@ export function EquipmentList({
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <h2 title={e.name} className="text-sm font-medium text-[var(--color-text)] truncate">{e.name}</h2>
+                {e.needsReview && <div className="mt-1"><NeedsReviewBadge /></div>}
                 <Link href={`/admin/equipos/${e.id}`} className="mt-0.5 block font-mono text-xs text-[var(--color-primary)] hover:underline">
                   {e.code}
                 </Link>
@@ -84,7 +98,10 @@ export function EquipmentList({
               </Link>
             </TableCell>
             <TableCell>
-              <p className="text-sm font-medium text-[var(--color-text)]">{e.name}</p>
+              <p className="flex items-center gap-1.5 text-sm font-medium text-[var(--color-text)]">
+                {e.name}
+                {e.needsReview && <NeedsReviewBadge />}
+              </p>
               {(e.brand || e.model) && (
                 <p className="text-xs text-[var(--color-text-subtle)]">{[e.brand, e.model].filter(Boolean).join(" ")}</p>
               )}

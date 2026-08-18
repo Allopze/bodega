@@ -130,8 +130,8 @@ async function main() {
   await db.insert(schema.costCenters).values(costCenters).onConflictDoNothing()
 
   // ── Equipos de servicio: monogás y alcotest por faena ─────────────────────
-  // Sin ellos, "Mantención de monogás" y "Calibración de alcotest" no se pueden
-  // solicitar: el ítem exige un equipo del registro.
+  // La demo parte con parque conocido; en producción el registro se forma solo,
+  // porque pedir la mantención da de alta el equipo por su código.
   const equipmentRows: (typeof schema.serviceEquipment.$inferInsert)[] = []
   for (const [index, ws] of worksites.entries()) {
     equipmentRows.push(

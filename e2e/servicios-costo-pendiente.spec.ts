@@ -11,6 +11,8 @@ import { login, selectRadixById, pickCurrentMonthDate } from "./helpers"
 
 const VACUNA = "Vacuna"
 const MONOGAS = "Mantención de monogás"
+/** Código que no está en el registro: la solicitud tiene que darlo de alta. */
+const EQUIPO_NUEVO = "000998877E2E"
 
 async function pickProduct(page: Page, name: string) {
   await page.getByPlaceholder("Buscar en catálogo o escribir producto...").fill(name)
@@ -45,14 +47,16 @@ test("solicitar, aprobar y comprar servicios con costo pendiente, y registrar el
   await dosis.fill("2")
   await expect(page.getByLabel("Cantidad")).toHaveValue("2")
 
-  // Segundo ítem: mantención de monogás sobre un equipo del registro.
+  // Segundo ítem: mantención de monogás sobre un equipo que NO está en el
+  // registro. El código lo da de alta al crear la solicitud: exigir la ficha
+  // previa dejaba el servicio imposible de pedir.
   await page.getByRole("button", { name: "Agregar ítem" }).click()
   const secondItem = page.locator("form").getByText("2", { exact: true }).first()
   await expect(secondItem).toBeVisible()
   await page.getByPlaceholder("Buscar en catálogo o escribir producto...").fill(MONOGAS)
   await page.getByRole("option", { name: new RegExp(MONOGAS) }).first().click()
-  await page.getByLabel(/^Equipo/).fill("MG-E2E")
-  await page.getByRole("option", { name: /MG-E2E/ }).click()
+  await page.getByLabel(/Código del equipo/).fill(EQUIPO_NUEVO)
+  await expect(page.getByText(/se dará de alta/i)).toBeVisible()
 
   await page.getByRole("button", { name: "Crear y enviar a aprobación" }).click()
   await expect(page).toHaveURL(/\/solicitudes\/(?!nueva$)[^/]+$/, { timeout: 15_000 })
@@ -66,7 +70,14 @@ test("solicitar, aprobar y comprar servicios con costo pendiente, y registrar el
 
   // La ficha dice para quién y sobre qué equipo es, sin re-escribir los datos.
   await expect(page.getByLabel(/Colaborador/).first()).toHaveValue(/Trabajador E2E/)
-  await expect(page.getByLabel(/^Equipo/).first()).toHaveValue(/MG-E2E/)
+  await expect(page.getByLabel(/Código del equipo/).first()).toHaveValue(new RegExp(EQUIPO_NUEVO))
+
+  // El registro de equipos se formó solo: la ficha quedó en Administración, en
+  // la faena de la solicitud y marcada para completar.
+  await page.goto("/admin/equipos")
+  const nuevaFicha = page.getByRole("row").filter({ hasText: EQUIPO_NUEVO })
+  await expect(nuevaFicha).toContainText("Faena E2E")
+  await expect(nuevaFicha).toContainText("Por completar")
 
   // ── Aprobación: un ítem sin precio se aprueba igual que uno con precio ──────
   await page.goto("/aprobaciones")

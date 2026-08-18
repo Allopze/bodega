@@ -16,6 +16,33 @@
 /** Un servicio se solicita sin precio; su costo se conoce al facturarlo. */
 export const COST_PENDING_LABEL = "Costo pendiente"
 
+/**
+ * Familias de equipos que el catálogo ya usa, con su etiqueta legible. Viven
+ * acá y no en la pantalla de Administración porque el alta automática (que
+ * corre en el servidor) nombra las fichas nuevas con ellas.
+ */
+export const EQUIPMENT_KIND_LABELS: Record<string, string> = {
+  monogas:  "Monogás",
+  alcotest: "Alcotest",
+}
+
+export function equipmentKindLabel(kind: string): string {
+  return EQUIPMENT_KIND_LABELS[kind] ?? kind
+}
+
+/**
+ * Forma canónica del código interno de un equipo: sin espacios sobrantes y en
+ * mayúsculas. El catálogo de instrumentos se va formando con lo que escribe
+ * quien solicita la mantención, así que "mg-014", " MG-014 " y "mg 014" tienen
+ * que caer en la misma ficha o el registro se bifurca solo.
+ *
+ * No valida el formato a propósito: los códigos son numéricos largos en unos
+ * equipos y alfanuméricos en otros.
+ */
+export function normalizeEquipmentCode(code: string): string {
+  return code.trim().replace(/\s+/g, " ").toLocaleUpperCase("es-CL")
+}
+
 /** Atributo declarado por el catálogo para un producto. */
 export interface DeclaredAttribute {
   id:         string | null
@@ -37,8 +64,9 @@ export interface CatalogProductRules {
 
 /** Lo que el ítem trae desde el formulario. */
 export interface SubmittedItemValues {
-  workerId?:    string | null
-  equipmentId?: string | null
+  workerId?:      string | null
+  /** Código interno del equipo, tal como lo escribió quien solicita. */
+  equipmentCode?: string | null
   attributes: readonly { attributeId?: string | null; attributeName: string; value: string }[]
 }
 
@@ -86,8 +114,11 @@ export function catalogItemIssues(
     issues.push(`selecciona el colaborador para ${product.name}`)
   }
 
-  if (product.equipmentKind && !item.equipmentId?.trim()) {
-    issues.push(`selecciona el equipo para ${product.name}`)
+  // El equipo se identifica por su código y no por una fila del registro: el
+  // catálogo de instrumentos se forma con estas solicitudes, así que exigir que
+  // el equipo ya estuviera dado de alta dejaba el servicio imposible de pedir.
+  if (product.equipmentKind && !item.equipmentCode?.trim()) {
+    issues.push(`indica el código del equipo para ${product.name}`)
   }
 
   const byId = new Map(

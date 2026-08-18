@@ -91,10 +91,13 @@ export async function updateServiceEquipment(_prev: ActionState, formData: FormD
     return { ok: false, fieldErrors: { code: ["Ese código interno ya está registrado"] } }
   }
 
+  // Editar la ficha *es* completarla: la marca de "por completar" sólo existe
+  // para las que nacieron solas al pedir una mantención.
   await db.update(serviceEquipment).set({
     code: d.code, name: d.name, kind: d.kind,
     brand: d.brand || null, model: d.model || null, serialNumber: d.serialNumber || null,
     worksiteId: d.worksiteId, notes: d.notes || null, isActive: d.isActive,
+    needsReview: false,
     updatedAt: new Date().toISOString(),
   }).where(eq(serviceEquipment.id, d.id))
 

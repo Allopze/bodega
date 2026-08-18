@@ -152,6 +152,9 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
   const equipmentLabelById = new Map(
     referencedEquipment.map((equipment) => [equipment.id, `${equipment.code} · ${equipment.name}`]),
   )
+  const equipmentCodeById = new Map(
+    referencedEquipment.map((equipment) => [equipment.id, equipment.code]),
+  )
 
   const [allWorksites, allProducts, allAttrs, productSupplierRows, timelineEvents, approvalDecisionRows, allSuppliers, maxFileSizeMb] = await Promise.all([
     db.select().from(worksites).where(eq(worksites.isActive, true)).orderBy(asc(worksites.name)),
@@ -377,7 +380,7 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
       status:              item.status,
       workerId:            item.workerId,
       workerName:          item.workerId ? (workerNameById.get(item.workerId) ?? null) : null,
-      equipmentId:         item.equipmentId,
+      equipmentCode:       item.equipmentId ? (equipmentCodeById.get(item.equipmentId) ?? null) : null,
       equipmentLabel:      item.equipmentId ? (equipmentLabelById.get(item.equipmentId) ?? null) : null,
       attributes:          item.attributes.map((a) => ({
         attributeId:   a.attributeId,

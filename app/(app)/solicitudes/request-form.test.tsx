@@ -270,7 +270,7 @@ describe("RequestForm", () => {
               quantity: 2, unitOfMeasure: "unidad", urgency: "normal",
               suggestedSupplierId: null, supplierHint: null, notes: null,
               status: "draft", workerId: null, workerName: null,
-              equipmentId: null, equipmentLabel: null, attributes: [],
+              equipmentCode: null, equipmentLabel: null, attributes: [],
             }],
           }}
         />,

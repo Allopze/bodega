@@ -21,11 +21,7 @@ export const CONTRACT = {
  */
 export const KNOWN_EQUIPMENT_KINDS = ["monogas", "alcotest"] as const
 
-export const EQUIPMENT_KIND_LABELS: Record<string, string> = {
-  monogas:  "Monogás",
-  alcotest: "Alcotest",
-}
-
-export function equipmentKindLabel(kind: string): string {
-  return EQUIPMENT_KIND_LABELS[kind] ?? kind
-}
+// Las etiquetas viven en lib/products/service-items.ts: el alta automática de
+// equipos (servidor) nombra las fichas nuevas con ellas y no puede importar
+// desde app/.
+export { EQUIPMENT_KIND_LABELS, equipmentKindLabel } from "@/lib/products/service-items"

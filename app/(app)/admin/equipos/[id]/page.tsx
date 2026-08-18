@@ -42,7 +42,8 @@ export default async function EquipoDetailPage({ params }: { params: Promise<{ i
       id: serviceEquipment.id, code: serviceEquipment.code, name: serviceEquipment.name,
       kind: serviceEquipment.kind, brand: serviceEquipment.brand, model: serviceEquipment.model,
       serialNumber: serviceEquipment.serialNumber, notes: serviceEquipment.notes,
-      isActive: serviceEquipment.isActive, createdAt: serviceEquipment.createdAt,
+      isActive: serviceEquipment.isActive, needsReview: serviceEquipment.needsReview,
+      createdAt: serviceEquipment.createdAt,
       worksiteName: worksites.name,
     })
     .from(serviceEquipment)
@@ -68,9 +69,16 @@ export default async function EquipoDetailPage({ params }: { params: Promise<{ i
           ]} />
         }
         actions={
-          <Badge variant={equipment.isActive ? "success" : "default"} dot>
-            {equipment.isActive ? "Activo" : "De baja"}
-          </Badge>
+          <div className="flex items-center gap-2">
+            {/* La ficha la dio de alta una solicitud: le falta nombre real,
+                marca, modelo y serie. Se apaga al editarla desde la lista. */}
+            {equipment.needsReview && (
+              <Badge variant="warning">Por completar</Badge>
+            )}
+            <Badge variant={equipment.isActive ? "success" : "default"} dot>
+              {equipment.isActive ? "Activo" : "De baja"}
+            </Badge>
+          </div>
         }
       />
 
