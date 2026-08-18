@@ -58,6 +58,8 @@ interface IncidentPersonForIndicators {
   displayLabel: string
   absenceAtLeastNormalShift: boolean
   absenceDays: number
+  absenceStartDate?: string | null
+  returnToWorkDate?: string | null
   chargeDays: number
   administratorQualification: string | null
   indicatorInclusionStatus: string
@@ -200,7 +202,7 @@ export function IncidentWorkflowPanel({ incident, notifications, investigation, 
       {people.length > 0 && can("prevention:incidents:investigate") && (
         <details className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
           <summary className="cursor-pointer font-semibold">Clasificación para indicadores DS 44</summary>
-          <p className="mt-2 text-xs text-[var(--color-text-subtle)]">La inclusión es una decisión explícita y trazable. Frecuencia y gravedad exigen ausencia igual o superior a una jornada normal; un período cerrado exige permiso de Jefatura y se reabre con historial.</p>
+          <p className="mt-2 text-xs text-[var(--color-text-subtle)]">La inclusión es una decisión explícita y trazable. Se incluye por ausencia con tiempo perdido o por días de cargo (una fatalidad tiene 6.000 días de cargo y cero de ausencia). Registrar las fechas de reposo permite atribuir los días al período en que realmente hubo incapacidad, que es lo que exige el DS 44 para la gravedad semestral. Un período cerrado exige permiso de Jefatura y se reabre con historial.</p>
           <div className="mt-4 space-y-4">{people.map((person) => (
             <form key={person.id} className="grid gap-3 rounded-lg border border-[var(--color-border)] p-3 md:grid-cols-2 lg:grid-cols-4" action={(formData) => run(() => classifyIncidentPersonForIndicatorsAction({
               incidentId: incident.id,
@@ -213,11 +215,22 @@ export function IncidentWorkflowPanel({ incident, notifications, investigation, 
               administratorQualification: formData.get("administratorQualification") || null,
               inclusionStatus: formData.get("inclusionStatus"),
               reason: formData.get("reason"),
+              // NORM-07: con fechas reales los días se reparten por el mes en
+              // que hubo reposo (la gravedad es semestral). Sin ellas, el
+              // registro conserva la imputación al mes del accidente.
+              absencePeriods: formData.get("absenceStartDate")
+                ? [{
+                    startDate: formData.get("absenceStartDate"),
+                    endDate: formData.get("returnToWorkDate") || null,
+                  }]
+                : undefined,
             }))}>
               <div className="md:col-span-2 lg:col-span-4"><p className="font-medium">{person.displayLabel}</p><p className="text-xs text-[var(--color-text-subtle)]">Estado actual: {person.indicatorInclusionStatus === "included" ? "Incluida" : person.indicatorInclusionStatus === "excluded" ? "Excluida" : "Pendiente"}</p></div>
               <div className="space-y-2"><Label>Decisión</Label><Select name="inclusionStatus" defaultValue={person.indicatorInclusionStatus}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="pending">Pendiente / provisional</SelectItem><SelectItem value="included">Incluida</SelectItem><SelectItem value="excluded">Excluida</SelectItem></SelectContent></Select></div>
               <div className="space-y-2"><Label>Calificación administrador</Label><Input name="administratorQualification" defaultValue={person.administratorQualification ?? ""} placeholder="Resolución o calificación" /></div>
-              <div className="space-y-2"><Label>Días de ausencia</Label><Input name="absenceDays" type="number" min={0} defaultValue={person.absenceDays} /></div>
+              <div className="space-y-2"><Label>Inicio del reposo</Label><Input name="absenceStartDate" type="date" defaultValue={person.absenceStartDate ?? ""} /></div>
+              <div className="space-y-2"><Label>Reintegro (vacío = reposo vigente)</Label><Input name="returnToWorkDate" type="date" defaultValue={person.returnToWorkDate ?? ""} /></div>
+              <div className="space-y-2"><Label>Días de ausencia</Label><Input name="absenceDays" type="number" min={0} defaultValue={person.absenceDays} disabled={Boolean(person.absenceStartDate)} /><p className="text-xs text-[var(--color-text-subtle)]">{person.absenceStartDate ? "Se calcula desde las fechas de reposo." : "Sin fechas de reposo: se imputa al mes del accidente."}</p></div>
               <div className="space-y-2"><Label>Días de cargo</Label><Input name="chargeDays" type="number" min={0} defaultValue={person.chargeDays} /></div>
               <div className="md:col-span-2"><Checkbox name="absenceAtLeastNormalShift" defaultChecked={person.absenceAtLeastNormalShift} label="Ausencia igual o superior a una jornada normal" /></div>
               <div className="space-y-2 md:col-span-2"><Label>Fundamento de inclusión/exclusión</Label><Input name="reason" required minLength={10} placeholder="Resolución revisada y criterio aplicado" /></div>
@@ -239,9 +252,43 @@ export function IncidentWorkflowPanel({ incident, notifications, investigation, 
       )}
 
       {incident.isFatalOrSerious && incident.operationsSuspended && can("prevention:incidents:authorize_restart") && (
-        <form className="flex flex-col gap-3 rounded-xl border border-[var(--color-danger-line)] bg-[var(--color-danger-tint)] p-4 md:flex-row md:items-end" action={(formData) => run(() => authorizePreventionIncidentRestartAction({ incidentId: incident.id, expectedVersion: incident.version, reason: formData.get("reason"), segregationExceptionReason: formData.get("segregationExceptionReason") || undefined }))}>
-          <div className="flex-1 space-y-2"><Label htmlFor="restart-reason">Fundamento de autorización de reinicio</Label><Input id="restart-reason" name="reason" required minLength={10} /></div>
-          <div className="flex-1 space-y-2"><Label htmlFor="restart-segregation-reason">Excepción de segregación (si participaste en la investigación o las medidas)</Label><Input id="restart-segregation-reason" name="segregationExceptionReason" minLength={10} placeholder="Sólo si tienes autorización de excepción" /></div>
+        <form
+          className="space-y-3 rounded-xl border border-[var(--color-danger-line)] bg-[var(--color-danger-tint)] p-4"
+          action={(formData) => run(() => authorizePreventionIncidentRestartAction({
+            incidentId: incident.id,
+            expectedVersion: incident.version,
+            reason: formData.get("reason"),
+            authorityName: formData.get("authorityName"),
+            authorizationReference: formData.get("authorizationReference"),
+            authorizationDate: formData.get("authorizationDate"),
+            evidenceReference: formData.get("evidenceReference"),
+            evidenceChecksumSha256: formData.get("evidenceChecksumSha256") || undefined,
+            segregationExceptionReason: formData.get("segregationExceptionReason") || undefined,
+          }))}
+        >
+          <div>
+            <p className="text-sm font-medium">Levantamiento de la suspensión</p>
+            {/* Ley 16.744 art. 76: la faena reanuda cuando lo autoriza el
+                organismo fiscalizador. La autorización interna no lo reemplaza,
+                por eso estos datos son obligatorios para reanudar. */}
+            <p className="mt-1 text-xs text-[var(--color-text-subtle)]">
+              La faena sólo puede reanudar operaciones con la autorización del organismo fiscalizador.
+              Registra la resolución que levanta la suspensión.
+            </p>
+          </div>
+          <div className="grid gap-3 md:grid-cols-3">
+            <div className="space-y-2"><Label htmlFor="restart-authority">Organismo que autoriza</Label><Input id="restart-authority" name="authorityName" required minLength={3} placeholder="DT, SEREMI de Salud, SERNAGEOMIN…" /></div>
+            <div className="space-y-2"><Label htmlFor="restart-reference">Folio o resolución</Label><Input id="restart-reference" name="authorizationReference" required minLength={3} /></div>
+            <div className="space-y-2"><Label htmlFor="restart-date">Fecha de la autorización</Label><Input id="restart-date" name="authorizationDate" type="date" required /></div>
+          </div>
+          <div className="grid gap-3 md:grid-cols-2">
+            <div className="space-y-2"><Label htmlFor="restart-evidence">Documento de respaldo</Label><Input id="restart-evidence" name="evidenceReference" required minLength={3} placeholder="Referencia verificable del documento" /></div>
+            <div className="space-y-2"><Label htmlFor="restart-checksum">Checksum SHA-256 (opcional)</Label><Input id="restart-checksum" name="evidenceChecksumSha256" pattern="[a-f0-9]{64}" placeholder="64 caracteres hexadecimales" /></div>
+          </div>
+          <div className="grid gap-3 md:grid-cols-2">
+            <div className="space-y-2"><Label htmlFor="restart-reason">Fundamento de autorización de reinicio</Label><Input id="restart-reason" name="reason" required minLength={10} /></div>
+            <div className="space-y-2"><Label htmlFor="restart-segregation-reason">Excepción de segregación (si participaste en la investigación o las medidas)</Label><Input id="restart-segregation-reason" name="segregationExceptionReason" minLength={10} placeholder="Sólo si tienes autorización de excepción" /></div>
+          </div>
           <Button type="submit" variant="destructive" disabled={pending}>Autorizar reinicio</Button>
         </form>
       )}

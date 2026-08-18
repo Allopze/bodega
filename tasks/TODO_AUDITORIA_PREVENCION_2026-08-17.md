@@ -190,11 +190,72 @@ qué usa por dentro**, no sólo su firma.
       `na`/`no_tiene` fuera del denominador; sólo excluidos → null; los 4 sinónimos de
       conformidad; sin responder no cuenta; redondeo a 2 decimales).
 
-## Requiere decisión de Prevención (NO implementar a ciegas)
+## Decisiones de Prevención — RESUELTAS E IMPLEMENTADAS (2026-08-18)
 
-- [ ] **NORM-01** Convención de 6.000 días de cargo por muerte (bloquea el fix del fatal).
-- [ ] **NORM-02** ¿Accidentabilidad con accidentes o con lesionados?
-- [ ] **NORM-04** ¿Bloquear o advertir un CPHS que no sea 3+3?
-- [ ] **NORM-06** ¿Exigir resolución de la autoridad para reiniciar faena?
-- [ ] **NORM-07** ¿Prorratear días perdidos entre meses?
-- [ ] **NORM-08** ¿Calcular siniestralidad o quitarla del checklist?
+Resolución normativa recibida del área. Tres de las seis **cambiaron la recomendación
+técnica original**, y esos cambios están anotados porque son la parte que no se deduce
+del código.
+
+- [x] **NORM-01 · Días de cargo por muerte.** APROBADO. Tabla normativa versionada en
+      `lib/prevention/charge-days.ts` (`isp-2026-v1`): muerte e incapacidad permanente
+      total = 6.000 días. **Los días de cargo se fijan automáticamente**, no los teclea
+      quien clasifica: es cifra reglamentaria, no juicio. El gate de inclusión pasó a
+      "ausencia con tiempo perdido **O** días de cargo", y el motor dejó de filtrar por
+      `absenceAtLeastNormalShift`, que expulsaba fatalidades e incapacidades permanentes
+      de TODAS las tasas. Las parciales quedan manuales: `actualSeverity` no distingue
+      incapacidad permanente y el modelo no captura el porcentaje — la tabla tiene el
+      punto de extensión documentado, sin inventar cifras.
+- [x] **NORM-02 · Numerador de accidentabilidad.** APROBADO. `accidents`, no
+      `injuredPeople`. Ambos numeradores se mantienen separados en el `metricSet`: la
+      frecuencia sigue contando personas. El rótulo de la UI ya decía "Accidentes", así
+      que era el motor el que mentía.
+- [x] **NORM-04 · Composición del CPHS.** APROBADO CON MODIFICACIONES. Ya no se resuelve
+      con una bandera de paridad: `assessCommitteeParity` devuelve
+      `legalCompositionComplete` / `sessionQuorumValid` / `vacanciesPendingReplacement`.
+      Un comité bien constituido que pierde un integrante queda incompleto y con vacancia
+      pendiente, **pero puede seguir sesionando**. Un 2+2 es paritario y NO está
+      legalmente constituido. El requisito de certificación conserva su `code` por
+      compatibilidad de expedientes, pero evalúa composición legal. Referencias
+      normativas actualizadas: la materia del DS 54 quedó incorporada al DS 44.
+- [x] **NORM-06 · Reinicio de faena.** **RECOMENDACIÓN ORIGINAL RECHAZADA.** Yo había
+      propuesto no bloquear el reinicio y exigir la resolución sólo al cerrar; Prevención
+      corrigió que el riesgo se materializa en el instante en que la faena vuelve a
+      operar, no al cerrar el expediente. Ahora `authorizePreventionIncidentRestart`
+      exige organismo, folio, fecha y documento de respaldo para levantar la suspensión,
+      y el carril dejó de estar exento del gate de evidencia del cierre. El flujo
+      normativo (SUSPENDED → CORRECTIVE_ACTIONS_COMPLETED → RESTART_REQUESTED →
+      AUTHORITY_AUTHORIZED → OPERATIONS_RESUMED) se cumple con los gates que ya existían
+      más este bloque; está documentado en el schema para que se lea como máquina de
+      estados aunque no sea una columna.
+- [x] **NORM-07 · Distribución de días perdidos.** **RECOMENDACIÓN ORIGINAL RECHAZADA.**
+      Yo había propuesto dejarlo como estaba; el argumento decisivo fue el corte
+      SEMESTRAL de la gravedad, no la estética mensual. Tabla nueva
+      `prevention_incident_absence_periods` (períodos sucesivos, `end_date` nulo = reposo
+      vigente) y columna `absence_allocation`. Los días se reparten por el mes real de
+      incapacidad; `absenceDays` se DERIVA de las fechas. Los registros antiguos quedan
+      como `legacy_unallocated` y conservan el algoritmo histórico: **no se les inventan
+      fechas**. Los días de CARGO siguen en el mes del evento, que es donde pertenecen.
+- [x] **NORM-08 · Tasa de siniestralidad.** **RECOMENDACIÓN ORIGINAL RECHAZADA.** Yo
+      había propuesto calcularla con `días perdidos / dotación × 100`; Prevención corrigió
+      que eso NO es la siniestralidad del DS 67 —que suma incapacidades temporales más
+      invalideces y muertes, sobre períodos anuales— y que rotularlo así sería
+      técnicamente incorrecto. Se corrigió el checklist para preguntar por las tasas del
+      DS 44 (accidentabilidad, frecuencia y gravedad). Un módulo DS 67 real queda como
+      trabajo independiente, no mezclado con estos indicadores.
+
+**Versión de fórmula:** `SAFETY_INDICATOR_FORMULA_VERSION` pasó de `ds44-art73-2025-v2` a
+`ds44-art73-2026-v3`. NORM-01 y NORM-02 alteran cifras históricas y cada cálculo guarda
+con qué fórmula se produjo, para poder reproducirlo y auditarlo.
+
+**Migraciones:** `0181` (integridad) y `0182` (períodos de ausencia). Al desplegar:
+`db:migrate`.
+
+## Pendiente real tras esta tanda
+
+- [ ] **Incapacidades permanentes parciales:** para derivar sus días de cargo hace falta
+      capturar el porcentaje de incapacidad; `actualSeverity` no lo distingue. Hoy se
+      ingresan a mano. Requiere decisión de modelo antes de implementarse.
+- [ ] **Módulo DS 67** independiente, si se quiere estimar siniestralidad para cotización
+      adicional (metodología completa, no la fórmula simple).
+- [ ] **HIG-08** sigue diferido (ver Fase 2): exige mover el bump de `version` y refrescar
+      la UI en el mismo cambio.

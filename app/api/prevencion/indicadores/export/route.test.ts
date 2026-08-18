@@ -15,7 +15,7 @@ vi.mock("@/lib/logger", () => ({ logger: { error: vi.fn() } }))
 
 function result(month: number) {
   return {
-    formulaVersion: "ds44-art73-2025-v2",
+    formulaVersion: "ds44-art73-2026-v3",
     year: 2026, startMonth: month, endMonth: month, status: "non_calculable",
     confirmed: { accidents: 0, injuredPeople: 0, absenceDays: 0, chargeDays: 0, accidentabilityRate: null, frequencyRate: null, severityRate: null },
     provisional: { accidents: 0, injuredPeople: 0, absenceDays: 0, chargeDays: 0, accidentabilityRate: null, frequencyRate: null, severityRate: null },

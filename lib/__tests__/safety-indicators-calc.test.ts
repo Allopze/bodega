@@ -21,6 +21,7 @@ function indicatorCase(overrides: Partial<CanonicalIndicatorCase> = {}): Canonic
     absenceAtLeastNormalShift: true,
     absenceDays: 0,
     chargeDays: 0,
+    absenceAllocation: "legacy_unallocated",
     inclusionStatus: "included",
     sex: "female",
     ...overrides,
@@ -166,7 +167,7 @@ describe("calculateCanonicalIndicatorPeriod", () => {
     expect(result.sexBreakdown).toEqual([{ sex: "female", value: null, suppressed: true }])
   })
 
-  it("derives accidentability from the same injured-person count as frequency and severity (F-07)", () => {
+  it("separa el numerador de accidentabilidad (accidentes) del de frecuencia y gravedad (personas)", () => {
     const threeInjured = [
       indicatorCase({ workerId: "worker-3a", personId: "person-3a", absenceDays: 10 }),
       indicatorCase({ workerId: "worker-3b", personId: "person-3b", absenceDays: 10 }),
@@ -184,8 +185,11 @@ describe("calculateCanonicalIndicatorPeriod", () => {
     // Un solo evento distinto, pero tres personas lesionadas.
     expect(result.confirmed.accidents).toBe(1)
     expect(result.confirmed.injuredPeople).toBe(3)
-    // Las tres tasas comparten el numerador de personas (3), no el de eventos (1).
-    expect(result.confirmed.accidentabilityRate).toBe(3) // (3 / 100) * 100
+    // NORM-02: la accidentabilidad cuenta ACCIDENTES; frecuencia y gravedad
+    // cuentan personas. Antes las tres compartían el numerador de personas, lo
+    // que sobreestimaba la accidentabilidad en eventos multivíctima y
+    // contradecía el rótulo de la propia pantalla.
+    expect(result.confirmed.accidentabilityRate).toBe(1) // (1 / 100) * 100
     expect(result.confirmed.frequencyRate).toBe(10) // (3 / 300_000) * 1_000_000
     expect(result.confirmed.severityRate).toBe(100) // (30 / 300_000) * 1_000_000
   })

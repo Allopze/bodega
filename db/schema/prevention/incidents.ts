@@ -73,6 +73,18 @@ export const preventionIncidentPeople = pgTable("prevention_incident_people", {
   absenceAtLeastNormalShift: boolean("absence_at_least_normal_shift").notNull().default(false),
   absenceDays: integer("absence_days").notNull().default(0),
   chargeDays: integer("charge_days").notNull().default(0),
+  /**
+   * Cómo se atribuyen los días perdidos a los períodos del indicador.
+   *
+   * `periods`: hay fechas reales en `prevention_incident_absence_periods` y los
+   * días se reparten por el mes en que efectivamente hubo incapacidad — que es
+   * lo que exige el DS 44, sobre todo para la gravedad, que es semestral.
+   * `legacy_unallocated`: registro antiguo del que sólo se conoce el total.
+   * Conserva el algoritmo histórico (todo al mes de ocurrencia) porque no hay
+   * información para distribuirlo, y queda explícito que es dato heredado: no
+   * se inventan fechas.
+   */
+  absenceAllocation: text("absence_allocation").notNull().default("legacy_unallocated"),
   administratorQualification: text("administrator_qualification"),
   indicatorInclusionStatus: text("indicator_inclusion_status").notNull().default("pending"),
   indicatorInclusionReason: text("indicator_inclusion_reason"),
@@ -90,6 +102,33 @@ export const preventionIncidentPeople = pgTable("prevention_incident_people", {
   check("prevention_incident_person_indicator_status_valid", sql`${table.indicatorInclusionStatus} IN ('pending', 'included', 'excluded')`),
   check("prevention_incident_person_indicator_classification_consistent", sql`${table.indicatorInclusionStatus} = 'pending' OR (${table.indicatorInclusionReason} IS NOT NULL AND ${table.indicatorClassifiedByUserId} IS NOT NULL AND ${table.indicatorClassifiedAt} IS NOT NULL)`),
   check("prevention_incident_person_version_positive", sql`${table.version} >= 1`),
+  check("prevention_incident_person_absence_allocation_valid", sql`${table.absenceAllocation} IN ('periods', 'legacy_unallocated')`),
+])
+
+/**
+ * Períodos efectivos de incapacidad laboral de una persona accidentada.
+ *
+ * El total en `absence_days` no basta: el DS 44 atribuye los días perdidos al
+ * período en que existió la incapacidad, y la gravedad se calcula por semestre.
+ * Un accidente del 25 de junio con 45 días de reposo cargaba los 45 al primer
+ * semestre y dejaba el segundo en cero.
+ *
+ * Es una tabla y no dos columnas porque el reposo se prolonga: una licencia
+ * inicial y sus extensiones son períodos sucesivos del mismo caso.
+ * `end_date` nulo = reposo vigente.
+ */
+export const preventionIncidentAbsencePeriods = pgTable("prevention_incident_absence_periods", {
+  id: text("id").primaryKey(),
+  personId: text("person_id").notNull().references(() => preventionIncidentPeople.id, { onDelete: "cascade" }),
+  startDate: text("start_date").notNull(),
+  endDate: text("end_date"),
+  note: text("note"),
+  createdByUserId: text("created_by_user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull(),
+}, (table) => [
+  index("prevention_incident_absence_period_person_idx").on(table.personId, table.startDate),
+  check("prevention_incident_absence_period_range_valid", sql`${table.endDate} IS NULL OR ${table.endDate} >= ${table.startDate}`),
 ])
 
 export const preventionIncidentPersonSensitivePayloads = pgTable("prevention_incident_person_sensitive_payloads", {

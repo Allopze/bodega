@@ -16,19 +16,63 @@ const member = (over: Partial<CommitteeMemberRow> = {}): CommitteeMemberRow => (
   ...over,
 })
 
-/** Comité paritario mínimo válido: 2 titulares por lado, con presidencia y secretaría. */
+/**
+ * Comité legalmente constituido según el DS 44: 3 titulares por representación,
+ * un suplente por cada titular, con presidencia y secretaría. Un 2+2 es
+ * paritario pero NO está legalmente constituido — esa es justamente la
+ * distinción que el modelo tiene que sostener.
+ */
 function validCommittee(): CommitteeMemberRow[] {
   return [
     member({ id: "c1", representation: "company", role: "presidente" }),
     member({ id: "c2", representation: "company" }),
+    member({ id: "c3", representation: "company" }),
     member({ id: "w1", representation: "workers", role: "secretario" }),
     member({ id: "w2", representation: "workers" }),
+    member({ id: "w3", representation: "workers" }),
+    member({ id: "cs1", representation: "company", seat: "suplente" }),
+    member({ id: "cs2", representation: "company", seat: "suplente" }),
+    member({ id: "cs3", representation: "company", seat: "suplente" }),
+    member({ id: "ws1", representation: "workers", seat: "suplente" }),
+    member({ id: "ws2", representation: "workers", seat: "suplente" }),
+    member({ id: "ws3", representation: "workers", seat: "suplente" }),
   ]
 }
 
 describe("paridad del comité", () => {
-  it("acepta un comité paritario con presidencia y secretaría", () => {
-    expect(assessCommitteeParity(validCommittee())).toEqual({ valid: true, issues: [] })
+  it("acepta un comité legalmente constituido", () => {
+    expect(assessCommitteeParity(validCommittee())).toMatchObject({
+      valid: true,
+      issues: [],
+      legalCompositionComplete: true,
+      sessionQuorumValid: true,
+      vacanciesPendingReplacement: false,
+    })
+  })
+
+  it("un 2+2 es paritario pero NO tiene composición legal completa", () => {
+    const members = validCommittee().filter((item) => !["c3", "w3", "cs3", "ws3"].includes(item.id))
+    const result = assessCommitteeParity(members)
+    expect(result.issues.some((issue) => issue.kind === "parity_mismatch")).toBe(false)
+    expect(result.legalCompositionComplete).toBe(false)
+    expect(result.issues.some((issue) => issue.kind === "incomplete_legal_composition")).toBe(true)
+  })
+
+  it("una vacancia sobrevenida no impide sesionar, pero exige reemplazo", () => {
+    // El caso que motivó separar las tres dimensiones: un comité bien
+    // constituido pierde un integrante y debe poder seguir funcionando.
+    const members = validCommittee().filter((item) => item.id !== "w3")
+    const result = assessCommitteeParity(members)
+    expect(result.legalCompositionComplete).toBe(false)
+    expect(result.vacanciesPendingReplacement).toBe(true)
+    expect(result.sessionQuorumValid).toBe(true)
+  })
+
+  it("exige un suplente por cada titular", () => {
+    const members = validCommittee().filter((item) => item.id !== "ws3")
+    const result = assessCommitteeParity(members)
+    expect(result.issues.some((issue) => issue.kind === "missing_substitutes")).toBe(true)
+    expect(result.legalCompositionComplete).toBe(false)
   })
 
   it("rechaza un comité sin titulares activos", () => {
@@ -37,20 +81,20 @@ describe("paridad del comité", () => {
   })
 
   it("detecta desbalance entre representaciones", () => {
-    const members = [...validCommittee(), member({ id: "c3", representation: "company" })]
+    const members = [...validCommittee(), member({ id: "c4", representation: "company" })]
     const result = assessCommitteeParity(members)
     expect(result.valid).toBe(false)
     expect(result.issues[0]).toMatchObject({ kind: "parity_mismatch" })
-    expect(result.issues[0]?.detail).toContain("3 titular")
+    expect(result.issues[0]?.detail).toContain("4 titular")
   })
 
   it("no cuenta a los integrantes reemplazados o renunciados", () => {
-    const members = [...validCommittee(), member({ id: "c3", representation: "company", status: "replaced" })]
+    const members = [...validCommittee(), member({ id: "c4", representation: "company", status: "replaced" })]
     expect(assessCommitteeParity(members).valid).toBe(true)
   })
 
-  it("los suplentes no alteran la paridad de titulares", () => {
-    const members = [...validCommittee(), member({ id: "s1", representation: "company", seat: "suplente" })]
+  it("los suplentes de más no alteran la paridad de titulares", () => {
+    const members = [...validCommittee(), member({ id: "s9", representation: "company", seat: "suplente" })]
     expect(assessCommitteeParity(members).valid).toBe(true)
   })
 
@@ -70,7 +114,9 @@ describe("paridad del comité", () => {
 describe("quórum de la sesión", () => {
   it("alcanza quórum con la mayoría de titulares presentes", () => {
     const result = assessQuorum({ members: validCommittee(), attendedMemberIds: ["c1", "w1"] })
-    expect(result).toMatchObject({ reached: true, required: 2, effective: 2 })
+    // `required` es informativo (el acta lo muestra): con 3+3 titulares la
+    // mayoría son 3, pero el quórum lo decide la presencia de ambas partes.
+    expect(result).toMatchObject({ reached: true, required: 3, effective: 2 })
   })
 
   it("no alcanza quórum con un solo titular", () => {

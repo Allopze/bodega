@@ -125,7 +125,13 @@ describeIf("CPHS y gobernanza on real PostgreSQL", () => {
     memberIds.s1 = (await service.addCommitteeMember({ committeeId, workerId: "wk-a5", representation: "company", seat: "suplente" }, MANAGER)).id
 
     const status = await service.getCommitteeStatus(committeeId, MANAGER)
-    expect(status?.parity).toEqual({ valid: true, issues: [] })
+    // NORM-04: con 2+2 hay paridad pero NO composición legal completa (el DS 44
+    // exige 3 titulares por parte y un suplente por titular). El comité igual
+    // puede sesionar: por eso las tres dimensiones se reportan por separado.
+    expect(status?.parity.issues.some((issue) => issue.kind === "parity_mismatch")).toBe(false)
+    expect(status?.parity.legalCompositionComplete).toBe(false)
+    expect(status?.parity.sessionQuorumValid).toBe(true)
+    expect(status?.parity.vacanciesPendingReplacement).toBe(true)
     expect(status?.mandateExpired).toBe(false)
     // Sin sesiones cerradas todavía, la cadencia se reporta vencida.
     expect(status?.cadence.overdue).toBe(true)

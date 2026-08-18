@@ -1,4 +1,6 @@
 import { and, asc, desc, eq, inArray, lte, sql } from "drizzle-orm"
+import { automaticChargeDaysForSeverity } from "@/lib/prevention/charge-days"
+import { totalAbsenceDays } from "@/lib/prevention/absence-allocation"
 import { z } from "zod"
 import { db, type DB, type Tx } from "@/db"
 import {
@@ -7,6 +9,7 @@ import {
   preventionIncidentHistory,
   preventionIncidentInvestigations,
   preventionIncidentNotifications,
+  preventionIncidentAbsencePeriods,
   preventionIncidentPeople,
   preventionIncidentPersonSensitivePayloads,
   preventionIncidents,
@@ -45,7 +48,7 @@ import type { RequestContext } from "@/lib/services/prevention-documents/utils"
 import { getUserIdsWithPermissionForWorksite } from "@/lib/services/notifications"
 import { invalidateClosedIndicatorPeriodWithClient } from "@/lib/services/prevention-indicadores"
 import { createRiskReviewTriggerWithClient } from "@/lib/services/prevention-risk-legal"
-import { codeYear } from "@/lib/utils"
+import { codeYear, todayInChile } from "@/lib/utils"
 
 const CHILE_YEAR_FORMAT = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Santiago", year: "numeric" })
 const CHILE_MONTH_FORMAT = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Santiago", month: "numeric" })
@@ -214,9 +217,33 @@ const indicatorClassificationSchema = z.object({
   administratorQualification: z.string().trim().min(2).max(500).nullable().optional(),
   inclusionStatus: z.enum(["pending", "included", "excluded"]),
   reason: z.string().trim().min(10).max(3000),
+  /**
+   * NORM-07: períodos efectivos de incapacidad. Si vienen, mandan sobre
+   * `absenceDays` (se deriva de las fechas) y los días se atribuyen al mes en
+   * que realmente hubo reposo. Si no vienen, la persona conserva la imputación
+   * heredada al mes de ocurrencia.
+   */
+  absencePeriods: z.array(z.object({
+    startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Fecha de inicio inválida"),
+    endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Fecha de término inválida").nullable().optional(),
+    note: z.string().trim().max(500).nullable().optional(),
+  })).max(50).optional(),
 }).superRefine((value, ctx) => {
-  if (value.inclusionStatus === "included" && !value.absenceAtLeastNormalShift) {
-    ctx.addIssue({ code: "custom", path: ["absenceAtLeastNormalShift"], message: "Una persona incluida debe tener ausencia igual o superior a una jornada normal." })
+  for (const [index, period] of (value.absencePeriods ?? []).entries()) {
+    if (period.endDate && period.endDate < period.startDate) {
+      ctx.addIssue({ code: "custom", path: ["absencePeriods", index, "endDate"], message: "El término del reposo no puede ser anterior a su inicio." })
+    }
+  }
+  // NORM-01: una persona entra al indicador por ausencia con tiempo perdido O
+  // por días de cargo. Un fallecido tiene `absenceDays = 0` y `chargeDays =
+  // 6000`: exigir ausencia obligaba a dejar el fatal fuera de las tasas o a
+  // inventarle días perdidos.
+  if (value.inclusionStatus === "included" && !value.absenceAtLeastNormalShift && value.chargeDays < 1) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["absenceAtLeastNormalShift"],
+      message: "Una persona incluida debe tener ausencia igual o superior a una jornada normal, o días de cargo por incapacidad permanente o muerte.",
+    })
   }
   if (value.absenceAtLeastNormalShift && value.absenceDays < 1) {
     ctx.addIssue({ code: "custom", path: ["absenceDays"], message: "Registra al menos un día de ausencia." })
@@ -296,11 +323,37 @@ const transitionSchema = z.object({
   reason: z.string().trim().min(5).max(2000),
 })
 
+/**
+ * NORM-06: la faena sólo vuelve a operar con autorización del ORGANISMO
+ * FISCALIZADOR (Ley 16.744 art. 76). La autorización interna de Prevención o
+ * Gerencia no la reemplaza, así que estos datos son obligatorios: sin ellos no
+ * se levanta la suspensión.
+ *
+ * El flujo normativo se cumple con los gates que ya existían más este bloque:
+ *   SUSPENDED                     → `operationsSuspended = true` al reportar
+ *   CORRECTIVE_ACTIONS_COMPLETED  → investigación completa + CAPA verificada
+ *   RESTART_REQUESTED             → DT y SEREMI notificadas con evidencia
+ *   AUTHORITY_AUTHORIZED          → los campos de autoridad de este schema
+ *   OPERATIONS_RESUMED            → `operationsSuspended = false`
+ */
 const restartSchema = z.object({
   incidentId: z.string().min(1),
   expectedVersion: z.number().int().positive(),
   reason: z.string().trim().min(10).max(3000),
+  /** Organismo que autorizó (DT, SEREMI de Salud, SERNAGEOMIN…). */
+  authorityName: z.string().trim().min(3).max(300),
+  /** Folio, número de resolución u oficio con que se levantó la suspensión. */
+  authorizationReference: z.string().trim().min(3).max(300),
+  /** Fecha de la autorización, no la del registro en el sistema. */
+  authorizationDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Fecha de autorización inválida"),
+  /** Documento verificable de respaldo. */
+  evidenceReference: z.string().trim().min(3).max(4000),
+  evidenceChecksumSha256: z.string().regex(/^[a-f0-9]{64}$/).nullable().optional(),
   segregationExceptionReason: z.string().trim().min(10).max(2000).optional(),
+}).superRefine((value, ctx) => {
+  if (Date.parse(`${value.authorizationDate}T00:00:00Z`) > Date.now() + 86_400_000) {
+    ctx.addIssue({ code: "custom", path: ["authorizationDate"], message: "La autorización no puede tener fecha futura." })
+  }
 })
 
 const TRANSITIONS: Record<IncidentStatus, readonly IncidentStatus[]> = {
@@ -624,6 +677,37 @@ export async function classifyIncidentPersonForIndicators(args: {
     if (input.inclusionStatus === "included" && current.incident.eventType !== "work_accident") {
       throw new Error("Sólo un accidente del trabajo puede incluirse en estas tasas; registra una exclusión fundamentada para trayecto, enfermedad u otro evento.")
     }
+    // Los días de cargo por muerte los fija la tabla normativa, no el usuario:
+    // es una cifra reglamentaria, no un juicio de quien clasifica. Se aplica
+    // siempre que la severidad del incidente sea fatal, incluso si el
+    // formulario mandó otra cosa.
+    const automaticCharge = automaticChargeDaysForSeverity(current.incident.actualSeverity)
+    const chargeDays = automaticCharge ?? input.chargeDays
+
+    // NORM-07: con fechas reales, `absenceDays` se DERIVA de ellas y la persona
+    // pasa a repartir sus días por mes. Sin fechas, conserva la atribución
+    // heredada: no se inventan períodos para un registro del que sólo se conoce
+    // el total.
+    const periods = input.absencePeriods ?? []
+    const hasPeriods = periods.length > 0
+    if (hasPeriods) {
+      await tx.delete(preventionIncidentAbsencePeriods)
+        .where(eq(preventionIncidentAbsencePeriods.personId, input.personId))
+      await tx.insert(preventionIncidentAbsencePeriods).values(periods.map((period) => ({
+        id: `incabs-${nanoid()}`,
+        personId: input.personId,
+        startDate: period.startDate,
+        endDate: period.endDate ?? null,
+        note: period.note ?? null,
+        createdByUserId: args.access.ctx.userId,
+        createdAt: nowIso(),
+        updatedAt: nowIso(),
+      })))
+    }
+    const absenceDays = hasPeriods
+      ? totalAbsenceDays(periods.map((period) => ({ startDate: period.startDate, endDate: period.endDate ?? null })), todayInChile())
+      : input.absenceDays
+    const absenceAllocation = hasPeriods ? "periods" : current.person.absenceAllocation
     await invalidateClosedIndicatorPeriodWithClient(tx, {
       worksiteId: current.incident.worksiteId,
       occurredAt: current.incident.occurredAt,
@@ -634,8 +718,9 @@ export async function classifyIncidentPersonForIndicators(args: {
     const now = nowIso()
     const [person] = await tx.update(preventionIncidentPeople).set({
       absenceAtLeastNormalShift: input.absenceAtLeastNormalShift,
-      absenceDays: input.absenceDays,
-      chargeDays: input.chargeDays,
+      absenceDays,
+      absenceAllocation,
+      chargeDays,
       administratorQualification: input.administratorQualification ?? null,
       indicatorInclusionStatus: input.inclusionStatus,
       indicatorInclusionReason: input.reason,
@@ -799,14 +884,28 @@ export async function getPreventionIncidentDetail(args: {
     .limit(1)
   if (!incident) return null
 
-  const [people, notifications, investigation, evidence, history, capa] = await Promise.all([
+  const [people, notifications, investigation, evidence, history, capa, absencePeriods] = await Promise.all([
     db.select().from(preventionIncidentPeople).where(eq(preventionIncidentPeople.incidentId, args.incidentId)).orderBy(asc(preventionIncidentPeople.createdAt)),
     db.select().from(preventionIncidentNotifications).where(eq(preventionIncidentNotifications.incidentId, args.incidentId)).orderBy(asc(preventionIncidentNotifications.notificationType)),
     db.select().from(preventionIncidentInvestigations).where(eq(preventionIncidentInvestigations.incidentId, args.incidentId)).limit(1),
     db.select().from(preventionIncidentEvidence).where(eq(preventionIncidentEvidence.incidentId, args.incidentId)).orderBy(asc(preventionIncidentEvidence.createdAt)),
     db.select().from(preventionIncidentHistory).where(eq(preventionIncidentHistory.incidentId, args.incidentId)).orderBy(asc(preventionIncidentHistory.createdAt)),
     db.select().from(preventionCapaActions).where(and(eq(preventionCapaActions.sourceType, "incident"), eq(preventionCapaActions.sourceId, args.incidentId))).orderBy(asc(preventionCapaActions.createdAt)),
+    // Períodos de reposo, para que el formulario de clasificación muestre las
+    // fechas ya registradas en vez de pedirlas de nuevo.
+    db.select({
+      personId: preventionIncidentAbsencePeriods.personId,
+      startDate: preventionIncidentAbsencePeriods.startDate,
+      endDate: preventionIncidentAbsencePeriods.endDate,
+    }).from(preventionIncidentAbsencePeriods)
+      .innerJoin(preventionIncidentPeople, eq(preventionIncidentPeople.id, preventionIncidentAbsencePeriods.personId))
+      .where(eq(preventionIncidentPeople.incidentId, args.incidentId))
+      .orderBy(asc(preventionIncidentAbsencePeriods.startDate)),
   ])
+  const absenceByPerson = new Map<string, { startDate: string; endDate: string | null }>()
+  for (const period of absencePeriods) {
+    if (!absenceByPerson.has(period.personId)) absenceByPerson.set(period.personId, period)
+  }
 
   let sensitivePeople: Array<{ personId: string; payload: Record<string, unknown> }> = []
   if (args.includeSensitive) {
@@ -849,7 +948,11 @@ export async function getPreventionIncidentDetail(args: {
 
   return {
     ...incident,
-    people,
+    people: people.map((person) => ({
+      ...person,
+      absenceStartDate: absenceByPerson.get(person.id)?.startDate ?? null,
+      returnToWorkDate: absenceByPerson.get(person.id)?.endDate ?? null,
+    })),
     sensitivePeople,
     notifications,
     investigation: investigation[0] ?? null,
@@ -964,7 +1067,10 @@ export function assertIncidentTransition(args: {
     if (args.capaStatuses.some((status) => status !== "closed")) throw new Error("Todas las acciones CAPA deben estar cerradas.")
     const blocked = args.notificationLanes.filter((lane) => !["sent", "acknowledged", "not_required", "authorized"].includes(lane.status))
     if (blocked.length > 0) throw new Error("No se puede cerrar con denuncias, notificaciones o reinicio pendientes/atrasados.")
-    const missingEvidence = args.notificationLanes.filter((lane) => lane.notificationType !== "restart_authorization" && lane.status !== "not_required" && !lane.evidenceReference)
+    // El carril de reinicio YA NO está exento: desde NORM-06 su autorización
+    // exige evidencia de la autoridad, así que el cierre puede verificarla como
+    // a cualquier otro carril.
+    const missingEvidence = args.notificationLanes.filter((lane) => lane.status !== "not_required" && !lane.evidenceReference)
     if (missingEvidence.length > 0) throw new Error("Las denuncias/notificaciones requieren evidencia antes del cierre.")
   }
 }
@@ -1290,11 +1396,17 @@ export async function authorizePreventionIncidentRestart(args: {
       segregationOverride = { reason: input.segregationExceptionReason!, actorUserId: args.access.ctx.userId }
     }
     const now = nowIso()
+    // La evidencia de la autoridad se persiste en el propio carril: es lo que un
+    // fiscalizador pedirá para validar que la reanudación fue autorizada.
     await tx.update(preventionIncidentNotifications).set({
       status: "authorized",
+      administratorName: input.authorityName,
+      evidenceReference: input.evidenceReference,
+      evidenceChecksumSha256: input.evidenceChecksumSha256 ?? null,
+      sentAt: `${input.authorizationDate}T00:00:00.000Z`,
       restartAuthorizedAt: now,
       restartAuthorizedByUserId: args.access.ctx.userId,
-      restartAuthorizationReason: input.reason,
+      restartAuthorizationReason: `${input.reason} · ${input.authorityName} ${input.authorizationReference} (${input.authorizationDate})`,
       updatedAt: now,
     }).where(eq(preventionIncidentNotifications.id, restart.id))
     const [updated] = await tx.update(preventionIncidents).set({
@@ -1308,7 +1420,13 @@ export async function authorizePreventionIncidentRestart(args: {
       changeType: "restart",
       actorUserId: args.access.ctx.userId,
       reason: input.reason,
-      changeSet: { restartAuthorizedAt: now, segregationOverride },
+      changeSet: {
+        restartAuthorizedAt: now,
+        segregationOverride,
+        authorityName: input.authorityName,
+        authorizationReference: input.authorizationReference,
+        authorizationDate: input.authorizationDate,
+      },
       createdAt: now,
     })
     return updated

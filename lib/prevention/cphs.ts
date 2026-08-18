@@ -61,20 +61,54 @@ export interface CommitteeMemberRow {
 
 export interface ParityIssue {
   kind: "no_titulars" | "parity_mismatch" | "missing_role" | "duplicate_role"
+    | "incomplete_legal_composition" | "missing_substitutes"
   detail: string
 }
 
 /**
- * Un Comité Paritario exige igual número de titulares por representación.
- * La cifra exacta de integrantes depende de la dotación del centro de trabajo
- * y la define Prevención; lo que el software sí puede sostener es la paridad
- * y la existencia de presidencia y secretaría.
+ * Composición legal del CPHS según el **DS 44** (que incorporó esta materia y
+ * derogó el DS 54 desde el 1 de febrero de 2025): tres representantes titulares
+ * del empleador, tres de las personas trabajadoras, y un suplente por titular.
  */
-export function assessCommitteeParity(members: CommitteeMemberRow[]): { valid: boolean; issues: ParityIssue[] } {
+export const CPHS_TITULARS_PER_REPRESENTATION = 3
+
+export interface CommitteeCompositionAssessment {
+  /** Compatibilidad: `valid` sigue significando "sin ningún hallazgo". */
+  valid: boolean
+  issues: ParityIssue[]
+  /** El comité alcanza la composición reglamentaria completa (3+3 con suplentes). */
+  legalCompositionComplete: boolean
+  /** Hay paridad y al menos un titular: puede sesionar aunque falten cupos. */
+  sessionQuorumValid: boolean
+  /** Faltan integrantes respecto de la composición legal: hay que reemplazar. */
+  vacanciesPendingReplacement: boolean
+}
+
+/**
+ * Evalúa la composición del comité en TRES dimensiones que la ley distingue y
+ * que antes se resolvían con una sola bandera de paridad:
+ *
+ * 1. **Composición legal** (DS 44): 3 titulares por representación y un suplente
+ *    por titular. Un comité constituido con 1+1 y sin suplentes NO está
+ *    legalmente constituido, aunque sea paritario.
+ * 2. **Quórum de funcionamiento**: basta representación de ambas partes, así que
+ *    un comité con vacancias sobrevinientes SIGUE pudiendo sesionar. Bloquearlo
+ *    empujaría a registrar las sesiones fuera del sistema.
+ * 3. **Vacancias pendientes**: faltan cupos respecto de la composición legal y
+ *    corresponde iniciar el reemplazo.
+ *
+ * Un comité correctamente constituido que pierde un integrante queda con
+ * `legalCompositionComplete = false`, `sessionQuorumValid = true` y
+ * `vacanciesPendingReplacement = true`: incumplimiento visible, operación viva.
+ */
+export function assessCommitteeParity(members: CommitteeMemberRow[]): CommitteeCompositionAssessment {
   const active = members.filter((member) => member.status === "active")
   const titulars = active.filter((member) => member.seat === "titular")
+  const substitutes = active.filter((member) => member.seat === "suplente")
   const companyTitulars = titulars.filter((member) => member.representation === "company").length
   const workerTitulars = titulars.filter((member) => member.representation === "workers").length
+  const companySubstitutes = substitutes.filter((member) => member.representation === "company").length
+  const workerSubstitutes = substitutes.filter((member) => member.representation === "workers").length
   const issues: ParityIssue[] = []
 
   if (titulars.length === 0) {
@@ -83,6 +117,23 @@ export function assessCommitteeParity(members: CommitteeMemberRow[]): { valid: b
     issues.push({
       kind: "parity_mismatch",
       detail: `El comité no es paritario: ${companyTitulars} titular(es) de la empresa contra ${workerTitulars} de las personas trabajadoras.`,
+    })
+  }
+
+  const expected = CPHS_TITULARS_PER_REPRESENTATION
+  const titularsComplete = companyTitulars === expected && workerTitulars === expected
+  if (titulars.length > 0 && !titularsComplete) {
+    issues.push({
+      kind: "incomplete_legal_composition",
+      detail: `La composición legal exige ${expected} titulares por representación (DS 44); hay ${companyTitulars} de la empresa y ${workerTitulars} de las personas trabajadoras.`,
+    })
+  }
+
+  const substitutesComplete = companySubstitutes >= companyTitulars && workerSubstitutes >= workerTitulars
+  if (titulars.length > 0 && !substitutesComplete) {
+    issues.push({
+      kind: "missing_substitutes",
+      detail: `Falta un suplente por cada titular: ${companySubstitutes} suplente(s) de la empresa para ${companyTitulars} titular(es), y ${workerSubstitutes} para ${workerTitulars}.`,
     })
   }
 
@@ -95,11 +146,22 @@ export function assessCommitteeParity(members: CommitteeMemberRow[]): { valid: b
     }
   }
 
-  return { valid: issues.length === 0, issues }
+  const legalCompositionComplete = titularsComplete && substitutesComplete
+  return {
+    valid: issues.length === 0,
+    issues,
+    legalCompositionComplete,
+    // Sesiona con ambas representaciones presentes en el padrón, aunque falten
+    // cupos: es la diferencia entre "no puede funcionar" y "debe recomponerse".
+    sessionQuorumValid: companyTitulars > 0 && workerTitulars > 0,
+    vacanciesPendingReplacement: titulars.length > 0 && !legalCompositionComplete,
+  }
 }
 
 /**
- * Quórum según el **DS 54 art. 17**: «El Comité Paritario de Higiene y Seguridad
+ * Quórum del comité. La regla proviene del DS 54 art. 17, cuya materia quedó
+ * incorporada al **DS 44** (vigente desde el 1 de febrero de 2025): «El Comité
+ * Paritario de Higiene y Seguridad
  * podrá funcionar siempre que concurran un representante patronal y un
  * representante de los trabajadores».
  *
@@ -150,7 +212,8 @@ export function assessQuorum(args: {
   }
 
   return {
-    // DS 54 art. 17: concurriendo un representante de cada parte, el comité sesiona.
+    // Concurriendo un representante de cada parte, el comité sesiona (regla del
+    // DS 54 art. 17, hoy incorporada al DS 44).
     // `effective >= required` (mayoría) queda deliberadamente FUERA de la condición.
     reached: titulars.length > 0 && missingRepresentations.length === 0,
     required,

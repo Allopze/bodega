@@ -125,13 +125,18 @@ export const CERTIFICATION_REQUIREMENTS: readonly CertificationRequirement[] = [
       : { met: false, detail: "No hay fecha ni folio de registro ante la Dirección del Trabajo." }),
   },
   {
+    // El `code` se conserva por compatibilidad con los expedientes ya
+    // presentados, pero el requisito evalúa la COMPOSICIÓN LEGAL completa del
+    // DS 44 (3 titulares por parte + un suplente por titular), no sólo que los
+    // dos lados tengan el mismo número: un comité de 1+1 era paritario y no
+    // está legalmente constituido.
     code: "parity_valid",
     level: "bronce",
-    title: "Representación paritaria",
-    description: "Igual número de titulares de la empresa y de las personas trabajadoras.",
+    title: "Composición legal del comité",
+    description: "Tres titulares por representación y un suplente por titular, conforme al DS 44.",
     check: auto((evidence) => evidence.parityValid
-      ? { met: true, detail: "La composición del comité es paritaria." }
-      : { met: false, detail: evidence.parityIssues.join(" ") || "El comité no cumple la paridad exigida." }),
+      ? { met: true, detail: "La composición del comité cumple lo exigido por el DS 44." }
+      : { met: false, detail: evidence.parityIssues.join(" ") || "El comité no cumple la composición exigida." }),
   },
   {
     code: "roles_assigned",

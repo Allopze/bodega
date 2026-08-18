@@ -824,6 +824,36 @@ propósito; y la ausencia de modo oscuro.
 
 ---
 
+## Estado de remediación (actualizado 2026-08-18)
+
+Los 61 hallazgos están cerrados. Las seis decisiones normativas que este informe dejó
+abiertas fueron resueltas por Prevención el 2026-08-18 e implementadas; **tres cambiaron
+la recomendación técnica de este informe** y conviene leerlas como corrección a él:
+
+- **NORM-06** — el informe proponía no bloquear el reinicio y exigir la resolución sólo al
+  cerrar el expediente. Es incorrecto: el riesgo se materializa cuando la faena vuelve a
+  operar, no cuando se cierra el papel. Hoy no se levanta la suspensión sin registrar
+  organismo, folio, fecha y documento de respaldo.
+- **NORM-07** — el informe proponía conservar la imputación al mes de ocurrencia. El
+  argumento decisivo que faltaba es que la tasa de gravedad se calcula por SEMESTRE: un
+  accidente de junio con 45 días cargaba todo al primer semestre. Ahora los días se
+  reparten por el mes real de incapacidad; los registros sin fechas quedan marcados como
+  heredados en vez de inventarles períodos.
+- **NORM-08** — el informe proponía calcular la siniestralidad como
+  `días perdidos / dotación × 100`. Eso NO es la siniestralidad del DS 67, que suma
+  incapacidades temporales más invalideces y muertes sobre períodos anuales; rotularlo así
+  habría sido técnicamente incorrecto. Se corrigió el checklist para preguntar por las
+  tasas del DS 44 y el DS 67 queda como módulo independiente.
+
+Las otras tres (NORM-01 días de cargo, NORM-02 numerador de accidentabilidad, NORM-04
+composición del CPHS) se aprobaron con precisiones que también están implementadas. Dos
+hallazgos del informe cayeron al implementarlos y **no deben re-reportarse**: **SST-04**
+era un falso positivo (el plan de acción sí continúa tras cerrar el acta) y **HIG-08**
+quedó diferido con causa. El detalle por fase está en
+`tasks/TODO_AUDITORIA_PREVENCION_2026-08-17.md`.
+
+---
+
 ## Zonas no cubiertas (para la próxima pasada)
 
 Se declaran explícitamente para que nadie las lea como "revisado y limpio":

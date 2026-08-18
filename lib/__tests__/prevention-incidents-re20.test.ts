@@ -362,7 +362,15 @@ describe("Expediente cerrado e independencia del reinicio (F-04, F-09)", () => {
 
     await expect(incidents.authorizePreventionIncidentRestart({
       access: restartAccess(USER_ID),
-      input: { incidentId: incident.id, expectedVersion: incident.version, reason: "Autorizo el reinicio de la operación." },
+      input: {
+        incidentId: incident.id,
+        expectedVersion: incident.version,
+        reason: "Autorizo el reinicio de la operación.",
+        authorityName: "SEREMI de Salud",
+        authorizationReference: "Res. Ex. 1234/2026",
+        authorizationDate: "2026-08-10",
+        evidenceReference: "storage/resoluciones/levantamiento-1234.pdf",
+      },
     })).rejects.toThrow(/no participó en la investigación/i)
 
     const authorized = await incidents.authorizePreventionIncidentRestart({
@@ -371,6 +379,10 @@ describe("Expediente cerrado e independencia del reinicio (F-04, F-09)", () => {
         incidentId: incident.id,
         expectedVersion: incident.version,
         reason: "Autorizo el reinicio de la operación.",
+        authorityName: "SEREMI de Salud",
+        authorizationReference: "Res. Ex. 1234/2026",
+        authorizationDate: "2026-08-10",
+        evidenceReference: "storage/resoluciones/levantamiento-1234.pdf",
         segregationExceptionReason: "Faena aislada sin otra persona habilitada; excepción visada por gerencia.",
       },
     })
@@ -390,7 +402,15 @@ describe("Expediente cerrado e independencia del reinicio (F-04, F-09)", () => {
 
     const authorized = await incidents.authorizePreventionIncidentRestart({
       access: restartAccess(OTHER_USER_ID),
-      input: { incidentId: incident.id, expectedVersion: incident.version, reason: "Controles verificados y autoridad notificada." },
+      input: {
+        incidentId: incident.id,
+        expectedVersion: incident.version,
+        reason: "Controles verificados y autoridad notificada.",
+        authorityName: "SEREMI de Salud",
+        authorizationReference: "Res. Ex. 1234/2026",
+        authorizationDate: "2026-08-10",
+        evidenceReference: "storage/resoluciones/levantamiento-1234.pdf",
+      },
     })
     expect(authorized.operationsSuspended).toBe(false)
     const [lane] = await inMemoryDb.select().from(schema.preventionIncidentNotifications)
@@ -398,6 +418,12 @@ describe("Expediente cerrado e independencia del reinicio (F-04, F-09)", () => {
         eq(schema.preventionIncidentNotifications.incidentId, incident.id),
         eq(schema.preventionIncidentNotifications.notificationType, "restart_authorization"),
       ))
-    expect(lane).toMatchObject({ status: "authorized", restartAuthorizedByUserId: OTHER_USER_ID })
+    expect(lane).toMatchObject({
+      status: "authorized",
+      restartAuthorizedByUserId: OTHER_USER_ID,
+      // NORM-06: la faena no reanuda sin la resolución del organismo fiscalizador.
+      administratorName: "SEREMI de Salud",
+      evidenceReference: "storage/resoluciones/levantamiento-1234.pdf",
+    })
   })
 })

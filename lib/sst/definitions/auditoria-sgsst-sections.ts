@@ -206,7 +206,7 @@ export const AUDITORIA_SGSST_SECTIONS: ChecklistSection[] = [
       { id: 'registro_accidentes', label: 'Existe registro de accidentes del trabajo, de trayecto y enfermedades profesionales', kind: 'cumple_nocumple_na_obs' },
       { id: 'registro_vigilancia', label: 'Existe registro actualizado de las personas en vigilancia de la salud', kind: 'cumple_nocumple_na_obs' },
       { id: 'registro_desagregacion', label: 'Las estadísticas están desagregadas por sexo', kind: 'cumple_nocumple_na_obs' },
-      { id: 'registro_tasas', label: 'Se calculan y siguen las tasas de frecuencia, gravedad y siniestralidad', kind: 'cumple_nocumple_na_obs' },
+      { id: 'registro_tasas', label: '¿Se calculan y mantienen actualizadas las tasas de accidentabilidad, frecuencia y gravedad conforme al DS N°44?', kind: 'cumple_nocumple_na_obs' },
     ],
   },
   {

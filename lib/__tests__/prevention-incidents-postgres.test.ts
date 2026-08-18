@@ -315,11 +315,26 @@ describeIf("canonical incident workflow on real PostgreSQL", () => {
     // CAPA, así que la segregación por identidad lo rechaza (F-09).
     await expect(incidents.authorizePreventionIncidentRestart({
       access: manager,
-      input: { incidentId, expectedVersion: incident.version, reason: "Controles verificados, autoridad notificada y CAPA eficaz" },
+      input: {
+        incidentId, expectedVersion: incident.version,
+        reason: "Controles verificados, autoridad notificada y CAPA eficaz",
+        authorityName: "SEREMI de Salud",
+        authorizationReference: "Res. Ex. 4321/2026",
+        authorizationDate: "2026-08-10",
+        evidenceReference: "storage/resoluciones/levantamiento-4321.pdf",
+      },
     })).rejects.toThrow(/no participó en la investigación/i)
+    // NORM-06: sin la resolución del organismo fiscalizador la faena no reanuda.
     incident = await incidents.authorizePreventionIncidentRestart({
       access: access("incident-risk-approver", ["prevention:incidents:authorize_restart"]),
-      input: { incidentId, expectedVersion: incident.version, reason: "Controles verificados, autoridad notificada y CAPA eficaz" },
+      input: {
+        incidentId, expectedVersion: incident.version,
+        reason: "Controles verificados, autoridad notificada y CAPA eficaz",
+        authorityName: "SEREMI de Salud",
+        authorizationReference: "Res. Ex. 4321/2026",
+        authorizationDate: "2026-08-10",
+        evidenceReference: "storage/resoluciones/levantamiento-4321.pdf",
+      },
     })
     incident = await incidents.transitionPreventionIncident({
       access: manager,

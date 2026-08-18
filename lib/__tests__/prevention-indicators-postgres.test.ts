@@ -104,7 +104,7 @@ describeIf("canonical prevention indicators on real PostgreSQL", () => {
     const closed = await indicators.closeSafetyIndicatorPeriod({
       worksiteId: "ws-indicators", year: 2026, month: 1, reason: "Fuentes canónicas conciliadas y casos calificados",
     }, "indicator-approver", { mode: "some", ids: ["ws-indicators"] })
-    expect(closed.snapshot).toMatchObject({ status: "approved", formulaVersion: "ds44-art73-2025-v2", reconciliationStatus: "matched" })
+    expect(closed.snapshot).toMatchObject({ status: "approved", formulaVersion: "ds44-art73-2026-v3", reconciliationStatus: "matched" })
     expect(closed.snapshot.sourceHashSha256).toMatch(/^[a-f0-9]{64}$/)
     expect(closed.legacyComparison.status).toBe("difference")
     const [legacy] = await getDb().select().from(schema.safetyIndicators).where(eq(schema.safetyIndicators.id, "legacy-indicator-jan"))

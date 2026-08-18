@@ -43,7 +43,7 @@ function result(month: number, overrides: Partial<CanonicalIndicatorResult> = {}
     severityRate: null,
   }
   return {
-    formulaVersion: "ds44-art73-2025-v2",
+    formulaVersion: "ds44-art73-2026-v3",
     year: 2026,
     startMonth: month,
     endMonth: month,

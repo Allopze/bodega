@@ -62,7 +62,15 @@ export function buildMonthlyCounters(
   })
 }
 
-export const SAFETY_INDICATOR_FORMULA_VERSION = "ds44-art73-2025-v2"
+/**
+ * v3 (auditoría 2026-08-17):
+ *  - La accidentabilidad pasa a contar ACCIDENTES, no lesionados (NORM-02).
+ *  - Las fatalidades e incapacidades permanentes entran por días de CARGO
+ *    aunque no tengan días de ausencia (NORM-01).
+ * Ambos cambian cifras históricas, por eso la versión sube: cada cálculo
+ * guarda con qué fórmula se produjo, para poder reproducir y auditar.
+ */
+export const SAFETY_INDICATOR_FORMULA_VERSION = "ds44-art73-2026-v3"
 
 export type IndicatorInclusionStatus = "pending" | "included" | "excluded"
 export type CanonicalIndicatorStatus = "reconciled" | "provisional" | "non_calculable" | "error"
@@ -86,8 +94,24 @@ export interface CanonicalIndicatorCase {
   absenceAtLeastNormalShift: boolean
   absenceDays: number
   chargeDays: number
+  /**
+   * `periods` = sus días vienen repartidos en `absenceAllocations`.
+   * `legacy_unallocated` = sólo se conoce el total y se mantiene el algoritmo
+   * histórico (todo al mes de ocurrencia): no hay información para distribuirlo.
+   */
+  absenceAllocation: "periods" | "legacy_unallocated"
   inclusionStatus: IndicatorInclusionStatus
   sex: string | null
+}
+
+/** Días de ausencia de un caso imputados a un mes concreto (NORM-07). */
+export interface CanonicalAbsenceAllocation {
+  incidentId: string
+  personId: string
+  worksiteId: string
+  year: number
+  month: number
+  days: number
 }
 
 export interface ControlledIndicatorDenominator {
@@ -167,23 +191,47 @@ function deduplicateCases(items: CanonicalIndicatorCase[]) {
       absenceAtLeastNormalShift: current.absenceAtLeastNormalShift || item.absenceAtLeastNormalShift,
       absenceDays: Math.max(current.absenceDays, item.absenceDays),
       chargeDays: Math.max(current.chargeDays, item.chargeDays),
+      absenceAllocation: current.absenceAllocation === "periods" || item.absenceAllocation === "periods"
+        ? "periods" : "legacy_unallocated",
       sex: current.sex ?? item.sex,
     })
   }
   return [...grouped.values()]
 }
 
-function metricSet(cases: CanonicalIndicatorCase[], workerAverage: number | null, workedHours: number): IndicatorMetricSet {
+/**
+ * @param cases Casos cuyo ACCIDENTE ocurrió en el período: definen accidentes,
+ *   lesionados y días de cargo (el cargo pertenece al evento, no se reparte).
+ * @param allocatedAbsenceDays Días de ausencia que caen DENTRO del período,
+ *   vengan del mes que vengan: un reposo iniciado en junio aporta sus días de
+ *   julio al segundo semestre. Ya viene filtrado a los casos elegibles.
+ */
+function metricSet(
+  cases: CanonicalIndicatorCase[],
+  allocatedAbsenceDays: number,
+  workerAverage: number | null,
+  workedHours: number,
+): IndicatorMetricSet {
   const accidents = new Set(cases.map((item) => item.incidentId)).size
   const injuredPeople = cases.length
-  const absenceDays = cases.reduce((total, item) => total + item.absenceDays, 0)
+  // Los heredados no tienen fechas: conservan la imputación al mes de
+  // ocurrencia. Los que sí las tienen ya vienen sumados en `allocatedAbsenceDays`.
+  const legacyAbsenceDays = cases.reduce(
+    (total, item) => item.absenceAllocation === "legacy_unallocated" ? total + item.absenceDays : total,
+    0,
+  )
+  const absenceDays = legacyAbsenceDays + allocatedAbsenceDays
   const chargeDays = cases.reduce((total, item) => total + item.chargeDays, 0)
   return {
     accidents,
     injuredPeople,
     absenceDays,
     chargeDays,
-    accidentabilityRate: workerAverage && workerAverage > 0 ? (injuredPeople / workerAverage) * 100 : null,
+    // NORM-02: la accidentabilidad cuenta ACCIDENTES (eventos), no lesionados.
+    // Un accidente con 3 lesionados en 100 trabajadores es 1,0 — no 3,0. La
+    // frecuencia sí usa lesionados: son indicadores distintos y por eso ambos
+    // numeradores se mantienen separados en el `metricSet`.
+    accidentabilityRate: workerAverage && workerAverage > 0 ? (accidents / workerAverage) * 100 : null,
     frequencyRate: workedHours > 0 ? (injuredPeople / workedHours) * 1_000_000 : null,
     severityRate: workedHours > 0 ? ((absenceDays + chargeDays) / workedHours) * 1_000_000 : null,
   }
@@ -199,6 +247,8 @@ export function calculateCanonicalIndicatorPeriod(args: {
   endMonth: number
   events: CanonicalIndicatorEvent[]
   cases: CanonicalIndicatorCase[]
+  /** Días de ausencia repartidos por mes real (NORM-07). Vacío = todo heredado. */
+  absenceAllocations?: CanonicalAbsenceAllocation[]
   denominators: ControlledIndicatorDenominator[]
   expectedDenominatorSlots?: number
   smallGroupThreshold?: number
@@ -209,14 +259,41 @@ export function calculateCanonicalIndicatorPeriod(args: {
   }
 
   const events = args.events.filter((item) => inPeriod(item, args.year, args.startMonth, args.endMonth))
+  // NORM-01: un fallecido no tiene días de AUSENCIA, tiene días de CARGO. El
+  // filtro exigía `absenceAtLeastNormalShift` y dejaba fuera de todas las tasas
+  // las fatalidades y las incapacidades permanentes, que son justamente los
+  // casos que más pesan en la gravedad.
   const periodCases = deduplicateCases(args.cases.filter((item) => (
     inPeriod(item, args.year, args.startMonth, args.endMonth)
     && item.eventType === "work_accident"
-    && item.absenceAtLeastNormalShift
+    && (item.absenceAtLeastNormalShift || item.chargeDays > 0)
   )))
   const confirmedCases = periodCases.filter((item) => item.inclusionStatus === "included")
   const pendingCases = periodCases.filter((item) => item.inclusionStatus === "pending")
   const provisionalCases = [...confirmedCases, ...pendingCases]
+
+  // Para los días de ausencia importa el mes en que hubo incapacidad, no el mes
+  // del accidente: hay que mirar los casos elegibles de TODO el año, no sólo los
+  // que ocurrieron dentro del período.
+  const yearCases = deduplicateCases(args.cases.filter((item) => (
+    item.year === args.year
+    && item.eventType === "work_accident"
+    && (item.absenceAtLeastNormalShift || item.chargeDays > 0)
+  )))
+  const caseIdentity = (item: { incidentId: string; personId: string }) => `${item.incidentId}::${item.personId}`
+  const confirmedKeys = new Set(yearCases.filter((item) => item.inclusionStatus === "included").map(caseIdentity))
+  const provisionalKeys = new Set(
+    yearCases.filter((item) => item.inclusionStatus === "included" || item.inclusionStatus === "pending").map(caseIdentity),
+  )
+  const allocationsInPeriod = (args.absenceAllocations ?? []).filter((item) => (
+    item.year === args.year && item.month >= args.startMonth && item.month <= args.endMonth
+  ))
+  const sumAllocated = (keys: Set<string>) => allocationsInPeriod.reduce(
+    (total, item) => keys.has(caseIdentity(item)) ? total + item.days : total,
+    0,
+  )
+  const confirmedAllocatedDays = sumAllocated(confirmedKeys)
+  const provisionalAllocatedDays = sumAllocated(provisionalKeys)
   const denominators = args.denominators.filter((item) => inPeriod(item, args.year, args.startMonth, args.endMonth) && item.status !== "rejected")
   const monthGroups = new Map<number, { workers: number; hours: number }>()
   for (const denominator of denominators) {
@@ -235,14 +312,14 @@ export function calculateCanonicalIndicatorPeriod(args: {
   if (denominators.some((item) => item.status !== "approved")) reconciliationIssues.push("Existen denominadores sin aprobación.")
   if (denominators.some((item) => item.reconciliationStatus !== "matched")) reconciliationIssues.push("Existen denominadores no conciliados.")
   const errors: string[] = []
-  if (workedHours === 0 && (provisionalCases.length > 0 || provisionalCases.some((item) => item.absenceDays + item.chargeDays > 0))) {
+  if (workedHours === 0 && (provisionalCases.length > 0 || provisionalAllocatedDays > 0 || provisionalCases.some((item) => item.absenceDays + item.chargeDays > 0))) {
     errors.push("Hay numeradores de frecuencia/gravedad sin horas trabajadas.")
   }
   if ((!workerAverage || workerAverage === 0) && new Set(provisionalCases.map((item) => item.incidentId)).size > 0) {
     errors.push("Hay accidentes incluidos sin dotación del período.")
   }
-  const confirmed = metricSet(confirmedCases, workerAverage, workedHours)
-  const provisional = metricSet(provisionalCases, workerAverage, workedHours)
+  const confirmed = metricSet(confirmedCases, confirmedAllocatedDays, workerAverage, workedHours)
+  const provisional = metricSet(provisionalCases, provisionalAllocatedDays, workerAverage, workedHours)
   const status: CanonicalIndicatorStatus = errors.length > 0
     ? "error"
     : workedHours === 0 || !workerAverage

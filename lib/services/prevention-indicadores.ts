@@ -1,7 +1,10 @@
 import { createHash } from "node:crypto"
+import { allocateAbsenceDaysByMonth } from "@/lib/prevention/absence-allocation"
+import { todayInChile } from "@/lib/utils"
 import { and, asc, eq, inArray, sql } from "drizzle-orm"
 import { db, type DB, type Tx } from "@/db"
 import {
+  preventionIncidentAbsencePeriods,
   preventionIncidentPeople,
   preventionIncidents,
   safetyIndicatorDenominators,
@@ -20,6 +23,7 @@ import {
   type CanonicalIndicatorEvent,
   type CanonicalIndicatorResult,
   type ControlledIndicatorDenominator,
+  type CanonicalAbsenceAllocation,
 } from "@/lib/prevention/safety-indicators-calc"
 import {
   approveSafetyIndicatorDenominatorSchema,
@@ -46,6 +50,7 @@ export interface IndicatorAccess {
 interface CanonicalSourceRows {
   events: CanonicalIndicatorEvent[]
   cases: CanonicalIndicatorCase[]
+  absenceAllocations: CanonicalAbsenceAllocation[]
   denominators: ControlledIndicatorDenominator[]
   legacyRows: Array<typeof safetyIndicators.$inferSelect>
 }
@@ -139,11 +144,45 @@ function periodExpressions() {
   }
 }
 
+/**
+ * Convierte los períodos de reposo en días por mes. Un reposo abierto se corta
+ * en el día de hoy (hora chilena): sigue creciendo en cada corrida, que es el
+ * comportamiento correcto para alguien todavía con incapacidad.
+ */
+function buildAbsenceAllocations(rows: Array<{
+  incidentId: string
+  personId: string
+  worksiteId: string
+  startDate: string
+  endDate: string | null
+}>): CanonicalAbsenceAllocation[] {
+  const byPerson = new Map<string, { incidentId: string; personId: string; worksiteId: string; periods: Array<{ startDate: string; endDate: string | null }> }>()
+  for (const row of rows) {
+    const current = byPerson.get(row.personId)
+    if (current) current.periods.push({ startDate: row.startDate, endDate: row.endDate })
+    else byPerson.set(row.personId, {
+      incidentId: row.incidentId,
+      personId: row.personId,
+      worksiteId: row.worksiteId,
+      periods: [{ startDate: row.startDate, endDate: row.endDate }],
+    })
+  }
+  const today = todayInChile()
+  return [...byPerson.values()].flatMap((entry) =>
+    allocateAbsenceDaysByMonth(entry.periods, today).map((allocation) => ({
+      incidentId: entry.incidentId,
+      personId: entry.personId,
+      worksiteId: entry.worksiteId,
+      ...allocation,
+    })),
+  )
+}
+
 async function loadCanonicalSourceRows(client: IndicatorClient, year: number, scope: WorksiteScope): Promise<CanonicalSourceRows> {
-  if (scope.mode !== "all" && scope.ids.length === 0) return { events: [], cases: [], denominators: [], legacyRows: [] }
+  if (scope.mode !== "all" && scope.ids.length === 0) return { events: [], cases: [], absenceAllocations: [], denominators: [], legacyRows: [] }
   const period = periodExpressions()
   const incidentScope = scopeCondition(scope, preventionIncidents.worksiteId)
-  const [eventRows, caseRows, denominators, legacyRows] = await Promise.all([
+  const [eventRows, caseRows, denominators, legacyRows, absenceRows] = await Promise.all([
     client.select({
       incidentId: preventionIncidents.id,
       worksiteId: preventionIncidents.worksiteId,
@@ -162,6 +201,7 @@ async function loadCanonicalSourceRows(client: IndicatorClient, year: number, sc
       absenceAtLeastNormalShift: preventionIncidentPeople.absenceAtLeastNormalShift,
       absenceDays: preventionIncidentPeople.absenceDays,
       chargeDays: preventionIncidentPeople.chargeDays,
+      absenceAllocation: preventionIncidentPeople.absenceAllocation,
       inclusionStatus: preventionIncidentPeople.indicatorInclusionStatus,
       sex: preventionIncidentPeople.sex,
     }).from(preventionIncidentPeople)
@@ -175,6 +215,20 @@ async function loadCanonicalSourceRows(client: IndicatorClient, year: number, sc
       eq(safetyIndicators.year, year),
       scopeCondition(scope, safetyIndicators.worksiteId),
     )),
+    // NORM-07: los períodos reales de incapacidad. Se traen por incidente del
+    // año, pero un reposo puede empezar el año anterior y seguir en éste: el
+    // filtro por año se aplica al ACCIDENTE, y el reparto por mes decide después
+    // qué días caen dentro del período consultado.
+    client.select({
+      incidentId: preventionIncidents.id,
+      personId: preventionIncidentPeople.id,
+      worksiteId: preventionIncidents.worksiteId,
+      startDate: preventionIncidentAbsencePeriods.startDate,
+      endDate: preventionIncidentAbsencePeriods.endDate,
+    }).from(preventionIncidentAbsencePeriods)
+      .innerJoin(preventionIncidentPeople, eq(preventionIncidentPeople.id, preventionIncidentAbsencePeriods.personId))
+      .innerJoin(preventionIncidents, eq(preventionIncidents.id, preventionIncidentPeople.incidentId))
+      .where(and(sql`${period.year} = ${year}`, incidentScope)),
   ])
   return {
     events: eventRows.map((item) => ({ ...item, year: Number(item.year), month: Number(item.month) })),
@@ -182,8 +236,10 @@ async function loadCanonicalSourceRows(client: IndicatorClient, year: number, sc
       ...item,
       year: Number(item.year),
       month: Number(item.month),
+      absenceAllocation: item.absenceAllocation as CanonicalIndicatorCase["absenceAllocation"],
       inclusionStatus: item.inclusionStatus as CanonicalIndicatorCase["inclusionStatus"],
     })),
+    absenceAllocations: buildAbsenceAllocations(absenceRows),
     denominators: denominators.map((item) => ({
       id: item.id,
       worksiteId: item.worksiteId,
@@ -213,6 +269,7 @@ function calculateGroup(args: {
     endMonth: args.endMonth,
     events: args.source.events.filter((item) => selected.has(item.worksiteId)),
     cases: args.source.cases.filter((item) => selected.has(item.worksiteId)),
+    absenceAllocations: args.source.absenceAllocations.filter((item) => selected.has(item.worksiteId)),
     denominators: args.source.denominators.filter((item) => selected.has(item.worksiteId)),
     expectedDenominatorSlots: (args.endMonth - args.startMonth + 1) * args.worksiteIds.length,
   })
