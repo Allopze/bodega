@@ -88,6 +88,7 @@ function makeCreateFormData(overrides: Record<string, string> = {}): FormData {
   fd.set("urgency", "normal")
   fd.set("requiredDate", REQUIRED_DATE)
   fd.set("notes", "")
+  fd.set("submissionKey", "submission-key-123456")
   fd.set("itemsJson", JSON.stringify([{
     productId: null, productNameFree: "Guantes de cabritilla", quantity: 2,
     unitOfMeasure: "par", urgency: "normal", attributes: [],
@@ -105,18 +106,57 @@ describe("submitRequest — creación directa (EPP/otro)", () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.mocked(redirect).mockImplementation(() => { throw new Error("NEXT_REDIRECT") })
-    mockCreateSubmitted.mockResolvedValue({ requestId: "req-nueva", code: "SOL-2026-0007" })
+    mockCreateSubmitted.mockResolvedValue({ kind: "created", requestId: "req-nueva", code: "SOL-2026-0007", replayed: false })
   })
 
   it("crea la solicitud ya enviada y redirige a su detalle", async () => {
     mockAuthFn.mockResolvedValueOnce(makeSession())
     await expect(submitRequest(prevState, makeCreateFormData())).rejects.toThrow("NEXT_REDIRECT")
-    expect(mockCreateSubmitted).toHaveBeenCalledWith("user-1", "user@test.cl", expect.objectContaining({
-      worksiteId: "ws-1",
-      requestType: "epp",
-      requiredDate: REQUIRED_DATE,
-    }))
+    expect(mockCreateSubmitted).toHaveBeenCalledWith(
+      "user-1",
+      "user@test.cl",
+      expect.objectContaining({ worksiteId: "ws-1", requestType: "epp", requiredDate: REQUIRED_DATE }),
+      { submissionKey: "submission-key-123456", confirmationToken: undefined },
+    )
     expect(redirect).toHaveBeenCalledWith("/solicitudes/req-nueva")
+  })
+
+  it("returns a structured stock warning before creating or notifying", async () => {
+    const { getUserIdsWithPermission } = await import("@/lib/services/notifications")
+    mockAuthFn.mockResolvedValueOnce(makeSession())
+    mockCreateSubmitted.mockResolvedValueOnce({
+      kind: "epp-stock-warning",
+      confirmationToken: "signed-stock-confirmation",
+      worksiteName: "Faena Norte",
+      items: [{
+        productId: "prod-epp", productName: "Casco", requestedQuantity: 3,
+        availableQuantity: 2, locationName: "Faena Norte", coverage: "partial",
+      }],
+    })
+
+    const result = await submitRequest(prevState, makeCreateFormData())
+
+    expect(result).toEqual({
+      ok: true,
+      data: expect.objectContaining({
+        kind: "epp-stock-warning",
+        confirmationToken: "signed-stock-confirmation",
+        worksiteName: "Faena Norte",
+      }),
+    })
+    expect(redirect).not.toHaveBeenCalled()
+    expect(getUserIdsWithPermission).not.toHaveBeenCalled()
+  })
+
+  it("redirects an idempotent replay without duplicating approver notifications", async () => {
+    const { getUserIdsWithPermission } = await import("@/lib/services/notifications")
+    mockAuthFn.mockResolvedValueOnce(makeSession())
+    mockCreateSubmitted.mockResolvedValueOnce({ kind: "created", requestId: "req-nueva", code: "SOL-2026-0007", replayed: true })
+
+    await expect(submitRequest(prevState, makeCreateFormData())).rejects.toThrow("NEXT_REDIRECT")
+
+    expect(redirect).toHaveBeenCalledWith("/solicitudes/req-nueva")
+    expect(getUserIdsWithPermission).not.toHaveBeenCalled()
   })
 
   it("rechaza a quien no puede crear ese tipo de solicitud", async () => {

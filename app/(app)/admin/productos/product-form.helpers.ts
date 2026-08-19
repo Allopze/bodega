@@ -1,4 +1,5 @@
 import type { AttributeRow, SupplierRow, AttributeMultiValues, VariantCombo, WizardStep, WizardGeneralState, WizardCloseAction } from "./product-form.types"
+import { nanoid } from "@/lib/id"
 
 // ── Text helpers ─────────────────────────────────────────────────────────────
 
@@ -34,7 +35,7 @@ export function mergeProductAttribute(rows: AttributeRow[], next: AttributeRow):
   const existing = existingIndex >= 0 ? rows[existingIndex] : undefined
   const merged = {
     ...next,
-    id: existing?.id ?? next.id ?? crypto.randomUUID(),
+    id: existing?.id ?? next.id ?? nanoid(),
     sortOrder: existing?.sortOrder ?? next.sortOrder ?? rows.length,
   }
 

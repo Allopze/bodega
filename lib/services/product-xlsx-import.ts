@@ -1,5 +1,5 @@
 import ExcelJS from "exceljs"
-import { eq, sql } from "drizzle-orm"
+import { asc, eq, inArray, sql } from "drizzle-orm"
 import { db, type Tx } from "@/db"
 import { productAttributes, productCategories, products, productSuppliers, suppliers } from "@/db/schema"
 import { nanoid } from "@/lib/id"
@@ -149,6 +149,19 @@ export async function importProductsFromXlsx(buffer: Buffer): Promise<ProductImp
   await db.transaction(async (tx) => {
     const categoryCache = new Map<string, { id: string; created: boolean }>()
     const supplierCache = new Map<string, { id: string; created: boolean }>()
+    const importSkus = [...new Set(parsed.items.map((item) => item.sku))]
+    // This import mutates a batch one row at a time, but it first locks all
+    // existing targets in the same database order as EPP request preflight.
+    // That removes a multi-product lock cycle regardless of Excel row order.
+    const existingBySku = new Map(
+      (await tx
+        .select({ id: products.id, sku: products.sku })
+        .from(products)
+        .where(inArray(products.sku, importSkus))
+        .orderBy(asc(products.id))
+        .for("update"))
+        .map((product) => [product.sku, product] as const),
+    )
 
     for (const item of parsed.items) {
       const category = await resolveCategory(tx, item.categoryName, categoryCache)
@@ -159,7 +172,7 @@ export async function importProductsFromXlsx(buffer: Buffer): Promise<ProductImp
         : null
       if (supplier?.created) result.suppliersCreated += 1
 
-      const existing = await tx.query.products.findFirst({ where: eq(products.sku, item.sku) })
+      let existing = existingBySku.get(item.sku)
       const productId = existing?.id ?? nanoid()
       const notes = [
         item.notes,
@@ -195,6 +208,10 @@ export async function importProductsFromXlsx(buffer: Buffer): Promise<ProductImp
           notes,
           isActive: true,
         })
+        // Preserve the historical behavior for a repeated SKU within the same
+        // workbook: subsequent rows update the row created by the first one.
+        existing = { id: productId, sku: item.sku }
+        existingBySku.set(item.sku, existing)
       }
 
       await tx.delete(productAttributes).where(eq(productAttributes.productId, productId))

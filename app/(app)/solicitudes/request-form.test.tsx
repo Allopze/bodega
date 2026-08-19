@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi, afterEach } from "vitest"
-import { cleanup, fireEvent, render, screen } from "@testing-library/react"
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react"
 import { INITIAL_STATE } from "@/components/admin/form-state"
 import type { PropsWithChildren } from "react"
 import type { ProductOption } from "./request-form.types"
@@ -37,13 +37,13 @@ vi.mock("@/components/ui/select", () => ({
 }))
 
 vi.mock("@/components/ui/dialog", () => ({
-  Dialog: ({ children }: PropsWithChildren) => <div>{children}</div>,
+  Dialog: ({ children, open }: PropsWithChildren<{ open?: boolean }>) => <div>{open === false ? null : children}</div>,
   DialogTrigger: ({ children }: PropsWithChildren) => <div>{children}</div>,
-  DialogContent: ({ children }: PropsWithChildren) => <div>{children}</div>,
+  DialogContent: ({ children }: PropsWithChildren) => <div role="dialog">{children}</div>,
   DialogHeader: ({ children }: PropsWithChildren) => <div>{children}</div>,
   DialogTitle: ({ children }: PropsWithChildren) => <div>{children}</div>,
   DialogDescription: ({ children }: PropsWithChildren) => <div>{children}</div>,
-  DialogFooter: ({ children }: PropsWithChildren) => <div>{children}</div>,
+  DialogFooter: ({ children, className }: PropsWithChildren<{ className?: string }>) => <div className={className}>{children}</div>,
   DialogClose: ({ children }: PropsWithChildren) => <div>{children}</div>,
 }))
 
@@ -72,7 +72,10 @@ vi.mock("./item-editor", () => ({
   ],
 }))
 
-afterEach(() => cleanup())
+afterEach(() => {
+  cleanup()
+  vi.clearAllMocks()
+})
 
 // ── Test data ───────────────────────────────────────────────────────────────
 
@@ -142,13 +145,37 @@ const suppliers = [
   { id: "sup-1", name: "Proveedor A" },
 ]
 
+const editableEppRequest = {
+  id: "req-epp",
+  code: "SOL-EPP",
+  status: "draft" as const,
+  worksiteId: "ws-1",
+  requestType: "epp" as const,
+  urgency: "normal",
+  requiredDate: "2026-12-01",
+  notes: "",
+  items: [{
+    id: "it-epp", productId: "prod-1", productNameFree: null,
+    quantity: 2, unitOfMeasure: "unidad", urgency: "normal",
+    suggestedSupplierId: null, supplierHint: null, notes: null,
+    status: "draft", workerId: null, workerName: null,
+    equipmentCode: null, equipmentLabel: null, attributes: [],
+  }],
+}
+
 // ── Import after mocks ──────────────────────────────────────────────────────
 
 import { RequestForm } from "./request-form"
+import { submitRequest } from "./actions"
 
 // ── Tests ───────────────────────────────────────────────────────────────────
 
 describe("RequestForm", () => {
+  beforeEach(() => {
+    vi.mocked(submitRequest).mockReset()
+    vi.mocked(submitRequest).mockResolvedValue(INITIAL_STATE)
+  })
+
   describe("rendering", () => {
     it("renders the form header", () => {
       render(
@@ -444,6 +471,144 @@ describe("RequestForm", () => {
       fireEvent.click(screen.getByRole("button", { name: "Elegir insumo sin proveedor" }))
 
       expect(screen.getByTestId("item-supplier-0").textContent).toBe("")
+    })
+  })
+
+  describe("EPP stock preflight", () => {
+    const stockWarning = {
+      ok: true,
+      data: {
+        kind: "epp-stock-warning",
+        confirmationToken: "stock-confirmation-token",
+        worksiteName: "Faena Norte",
+        items: [
+          {
+            productId: "prod-1",
+            productName: "Casco Seguridad",
+            requestedQuantity: 2,
+            availableQuantity: 5,
+            locationName: "Bodega Faena Norte",
+            coverage: "total" as const,
+          },
+          {
+            productId: "prod-2",
+            productName: "Guantes",
+            requestedQuantity: 4,
+            availableQuantity: 1,
+            locationName: "Bodega Faena Norte",
+            coverage: "partial" as const,
+          },
+        ],
+      },
+    }
+
+    function renderEppForm() {
+      return render(
+        <RequestForm
+          worksites={worksites}
+          products={products}
+          suppliers={suppliers}
+          maxFileSizeMb={10}
+          editRequest={editableEppRequest}
+        />,
+      )
+    }
+
+    it("shows every available EPP and never resubmits automatically", async () => {
+      const { submitRequest } = await import("./actions")
+      vi.mocked(submitRequest).mockResolvedValueOnce(stockWarning)
+      renderEppForm()
+
+      fireEvent.submit(screen.getByRole("button", { name: "Crear y enviar a aprobación" }).closest("form")!)
+
+      const dialog = await screen.findByRole("dialog")
+      expect(within(dialog).getByText("Hay EPP disponible en bodega")).toBeDefined()
+      expect(within(dialog).getByText("Casco Seguridad")).toBeDefined()
+      expect(within(dialog).getByText("Guantes")).toBeDefined()
+      expect(within(dialog).getAllByText("Solicitado: 2").length).toBeGreaterThan(0)
+      expect(within(dialog).getByText("Disponible: 5")).toBeDefined()
+      expect(within(dialog).getByText("Cobertura total")).toBeDefined()
+      expect(within(dialog).getByText("Cobertura parcial")).toBeDefined()
+      expect(within(dialog).getAllByText("Ubicación: Bodega Faena Norte").length).toBeGreaterThanOrEqual(2)
+      expect(vi.mocked(submitRequest)).toHaveBeenCalledTimes(1)
+      expect(vi.mocked(submitRequest).mock.calls[0]?.[1].get("eppStockConfirmation")).toBeNull()
+    })
+
+    it("renders stacked full-width warning actions for narrow screens", async () => {
+      vi.mocked(submitRequest).mockResolvedValueOnce(stockWarning)
+      renderEppForm()
+
+      fireEvent.submit(screen.getByRole("button", { name: "Crear y enviar a aprobación" }).closest("form")!)
+
+      const dialog = await screen.findByRole("dialog")
+      const cancel = within(dialog).getByRole("button", { name: "Cancelar y volver al formulario" })
+      const continueRequest = within(dialog).getByRole("button", { name: "Continuar con la solicitud" })
+      const footer = continueRequest.parentElement
+
+      expect(footer).toHaveClass("flex-col", "items-stretch", "sm:flex-row")
+      expect(cancel).toHaveClass("w-full", "sm:w-auto")
+      expect(continueRequest).toHaveClass("w-full", "sm:w-auto")
+    })
+
+    it("closes on cancel without creating and only continues with the issued confirmation", async () => {
+      const { submitRequest } = await import("./actions")
+      vi.mocked(submitRequest)
+        .mockResolvedValueOnce(stockWarning)
+        .mockResolvedValueOnce({ ...stockWarning, data: { ...stockWarning.data } })
+        .mockResolvedValueOnce(INITIAL_STATE)
+      renderEppForm()
+
+      fireEvent.submit(screen.getByRole("button", { name: "Crear y enviar a aprobación" }).closest("form")!)
+      await screen.findByRole("dialog")
+      const firstCall = vi.mocked(submitRequest).mock.calls[0]
+      if (!firstCall) throw new Error("Expected first direct submission")
+      const firstFormData = firstCall[1]
+
+      fireEvent.click(screen.getByRole("button", { name: "Cancelar y volver al formulario" }))
+      expect(screen.queryByRole("dialog")).toBeNull()
+      expect(vi.mocked(submitRequest)).toHaveBeenCalledTimes(1)
+
+      // A new preflight can still be started after cancelling the warning.
+      fireEvent.submit(screen.getByRole("button", { name: "Crear y enviar a aprobación" }).closest("form")!)
+      await screen.findByRole("dialog")
+      fireEvent.click(screen.getByRole("button", { name: "Continuar con la solicitud" }))
+
+      await vi.waitFor(() => expect(vi.mocked(submitRequest)).toHaveBeenCalledTimes(3))
+      const confirmationCall = vi.mocked(submitRequest).mock.calls[2]
+      if (!confirmationCall) throw new Error("Expected confirmed direct submission")
+      const confirmationFormData = confirmationCall[1]
+      expect(confirmationFormData.get("submissionKey")).toBe(firstFormData.get("submissionKey"))
+      expect(confirmationFormData.get("eppStockConfirmation")).toBe("stock-confirmation-token")
+    })
+
+    it("invalidates a displayed warning after the requester changes an item", async () => {
+      const { submitRequest } = await import("./actions")
+      vi.mocked(submitRequest).mockResolvedValueOnce(stockWarning)
+      renderEppForm()
+
+      fireEvent.submit(screen.getByRole("button", { name: "Crear y enviar a aprobación" }).closest("form")!)
+      await screen.findByRole("dialog")
+      fireEvent.click(screen.getByRole("button", { name: "Elegir insumo" }))
+
+      await vi.waitFor(() => expect(screen.queryByRole("dialog")).toBeNull())
+      fireEvent.submit(screen.getByRole("button", { name: "Crear y enviar a aprobación" }).closest("form")!)
+      await vi.waitFor(() => expect(vi.mocked(submitRequest)).toHaveBeenCalledTimes(2))
+      expect(vi.mocked(submitRequest).mock.calls[1]?.[1].get("eppStockConfirmation")).toBeNull()
+    })
+
+    it("keeps a continuation error visible in the warning dialog", async () => {
+      const { submitRequest } = await import("./actions")
+      vi.mocked(submitRequest)
+        .mockResolvedValueOnce(stockWarning)
+        .mockResolvedValueOnce({ ok: false, message: "No se pudo consultar el inventario." })
+      renderEppForm()
+
+      fireEvent.submit(screen.getByRole("button", { name: "Crear y enviar a aprobación" }).closest("form")!)
+      await screen.findByRole("dialog")
+      fireEvent.click(screen.getByRole("button", { name: "Continuar con la solicitud" }))
+
+      await vi.waitFor(() => expect(vi.mocked(submitRequest)).toHaveBeenCalledTimes(2))
+      expect(await screen.findByRole("alert")).toHaveTextContent("No se pudo consultar el inventario.")
     })
   })
 })

@@ -8,6 +8,7 @@ import { useActionWatchers } from "@/lib/hooks/use-action-watchers"
 import { URGENCY_OPTS } from "./request-form.constants"
 import type { ActionState } from "@/lib/validation/operations"
 import type { ItemRow, ProductOption, WorksiteOption, SupplierOption, WorkerOption, EditRequest, PrefillItem } from "./request-form.types"
+import { nanoid } from "@/lib/id"
 import { QUOTATION_TYPES, visibleRequestTypeOptions } from "@/lib/request-types"
 import type { RequestType } from "@/lib/request-types"
 import { saveDraft, submitRequest, cancelRequest, deleteRequestAction } from "./actions"
@@ -18,6 +19,52 @@ import {
 import { groupProductVariants } from "@/lib/products/variant-grouping"
 
 const AUTOSAVE_INTERVAL_MS = 60_000
+
+type EppStockWarningItem = {
+  productId: string
+  productName: string
+  requestedQuantity: number
+  availableQuantity: number
+  locationName: string
+  coverage: "total" | "partial"
+}
+
+type EppStockWarning = {
+  kind: "epp-stock-warning"
+  confirmationToken: string
+  worksiteName: string
+  items: EppStockWarningItem[]
+}
+
+/**
+ * ActionState.data crosses the server/client boundary as untrusted data. Keep
+ * this guard here instead of letting a malformed response control the dialog or
+ * carry a confirmation token into a later request.
+ */
+function isEppStockWarning(value: ActionState["data"]): value is EppStockWarning {
+  if (!value
+    || value.kind !== "epp-stock-warning"
+    || typeof value.confirmationToken !== "string"
+    || value.confirmationToken.length === 0
+    || typeof value.worksiteName !== "string"
+    || !Array.isArray(value.items)
+    || value.items.length === 0) return false
+
+  return value.items.every((item) => {
+    if (!item || typeof item !== "object") return false
+    const line = item as Partial<EppStockWarningItem>
+    return typeof line.productId === "string"
+      && typeof line.productName === "string"
+      && typeof line.locationName === "string"
+      && typeof line.requestedQuantity === "number"
+      && Number.isFinite(line.requestedQuantity)
+      && typeof line.availableQuantity === "number"
+      && Number.isFinite(line.availableQuantity)
+      && line.requestedQuantity > 0
+      && line.availableQuantity >= 0
+      && (line.coverage === "total" || line.coverage === "partial")
+  })
+}
 
 const SIZE_FIELD_MAP: Record<string, keyof Pick<WorkerOption, "sizeTop" | "sizeBottom" | "sizeShoe" | "sizeGloves" | "sizeHelmet">> = {
   Talla:              "sizeTop",
@@ -152,11 +199,15 @@ function useDraftPersistence({
 
 export function useRequestForm({
   worksites, products, workers, editRequest,
-  userPermissions = [], initialRequestType, prefillItems,
+  userPermissions = [], initialRequestType, prefillItems, initialWorksiteId,
 }: {
   worksites: WorksiteOption[]; products: ProductOption[]; suppliers: SupplierOption[]; workers?: WorkerOption[]
   editRequest?: EditRequest; maxFileSizeMb: number; userRoles?: string[]; userPermissions?: string[]
   initialRequestType?: RequestType; prefillItems?: PrefillItem[]
+  /** Faena sugerida por el enlace de entrada (ya validada contra el alcance en
+   *  el servidor). Sin esto, "Reponer" desde Bodega abría la solicitud en la
+   *  primera faena de la lista, que casi nunca es la que tiene el quiebre. */
+  initialWorksiteId?: string
 }) {
   const router = useRouter()
   const isEdit = !!editRequest
@@ -180,14 +231,31 @@ export function useRequestForm({
   const [isDeleting, startDeleteTransition] = useTransition()
   const [isSaving, startSaveTransition] = useTransition()
   const [isSubmitting, startSubmitTransition] = useTransition()
+  // La misma clave acompaña el primer preflight y la decisión posterior. Así el
+  // servidor puede hacer idempotente un doble clic o un reintento de red.
+  const [submissionKey] = useState(() => nanoid())
+  const [stockWarning, setStockWarning] = useState<EppStockWarning | null>(null)
+  const submittedSnapshotRef = useRef<string | null>(null)
+  const invalidateStockWarning = useCallback(() => {
+    // También invalida una respuesta que siga en vuelo: si llega después de
+    // editar el formulario, no puede abrir un diálogo para el payload anterior.
+    submittedSnapshotRef.current = null
+    setStockWarning(null)
+  }, [])
 
   const [savedId, setSavedId] = useState(editRequest?.id)
-  const [worksiteId, setWorksiteId] = useState(editRequest?.worksiteId ?? (worksites[0]?.id ?? ""))
-  const [requestType, setRequestType] = useState(editRequest?.requestType ?? allowedInitialRequestType ?? requestTypeOpts[0]?.value ?? "epp")
-  const [urgency, setUrgency] = useState(editRequest?.urgency ?? "normal")
-  const [deliveryMode, setDeliveryMode] = useState<string>(editRequest?.deliveryMode ?? "via_oficina")
-  const [requiredDate, setRequiredDate] = useState(editRequest?.requiredDate ?? "")
-  const [notes, setNotes] = useState(editRequest?.notes ?? "")
+  const [worksiteId, setWorksiteIdState] = useState(editRequest?.worksiteId ?? initialWorksiteId ?? (worksites[0]?.id ?? ""))
+  const [requestType, setRequestTypeState] = useState(editRequest?.requestType ?? allowedInitialRequestType ?? requestTypeOpts[0]?.value ?? "epp")
+  const [urgency, setUrgencyState] = useState(editRequest?.urgency ?? "normal")
+  const [deliveryMode, setDeliveryModeState] = useState<string>(editRequest?.deliveryMode ?? "via_oficina")
+  const [requiredDate, setRequiredDateState] = useState(editRequest?.requiredDate ?? "")
+  const [notes, setNotesState] = useState(editRequest?.notes ?? "")
+  const setWorksiteId = useCallback((value: string) => { invalidateStockWarning(); setWorksiteIdState(value) }, [invalidateStockWarning])
+  const setRequestType = useCallback((value: string) => { invalidateStockWarning(); setRequestTypeState(value) }, [invalidateStockWarning])
+  const setUrgency = useCallback((value: string) => { invalidateStockWarning(); setUrgencyState(value) }, [invalidateStockWarning])
+  const setDeliveryMode = useCallback((value: string) => { invalidateStockWarning(); setDeliveryModeState(value) }, [invalidateStockWarning])
+  const setRequiredDate = useCallback((value: string) => { invalidateStockWarning(); setRequiredDateState(value) }, [invalidateStockWarning])
+  const setNotes = useCallback((value: string) => { invalidateStockWarning(); setNotesState(value) }, [invalidateStockWarning])
 
   const [items, setItems] = useState<ItemRow[]>(() => {
     if (editRequest && editRequest.items.length > 0) {
@@ -271,17 +339,36 @@ export function useRequestForm({
     prevRequestTypeRef.current = requestType
     if (prev === requestType || isEdit) return
     if (QUOTATION_TYPES.has(requestType) || QUOTATION_TYPES.has(prev)) {
-      setItems([blankItemForType(crypto.randomUUID(), requestType)])
+      setItems([blankItemForType(nanoid(), requestType)])
     }
   }, [requestType, isEdit])
 
-  const addItem = useCallback(() => setItems((prev) => [...prev, blankItemForType(crypto.randomUUID(), requestType)]), [requestType])
-  const removeItem = useCallback((key: string) => setItems((prev) => prev.length > 1 ? prev.filter((i) => i._key !== key) : prev), [])
-  const updateItem = useCallback((key: string, patch: Partial<ItemRow>) => setItems((prev) => prev.map((i) => i._key === key ? { ...i, ...patch } : i)), [])
+  /**
+   * `nanoid` y no `crypto.randomUUID`: esta llave se genera dentro del updater
+   * de `setItems`, que React ejecuta en fase de render. `randomUUID` sólo existe
+   * en contextos seguros (https o localhost), así que abriendo la plataforma por
+   * `http://<ip-del-servidor>` la llamada reventaba en pleno render, el error
+   * boundary desmontaba el formulario y agregar un ítem se veía como si se
+   * borraran los datos del anterior. `crypto.getRandomValues` —lo que usa
+   * `nanoid`— está disponible en cualquier contexto.
+   */
+  const addItem = useCallback(() => {
+    invalidateStockWarning()
+    setItems((prev) => [...prev, blankItemForType(nanoid(), requestType)])
+  }, [invalidateStockWarning, requestType])
+  const removeItem = useCallback((key: string) => {
+    invalidateStockWarning()
+    setItems((prev) => prev.length > 1 ? prev.filter((i) => i._key !== key) : prev)
+  }, [invalidateStockWarning])
+  const updateItem = useCallback((key: string, patch: Partial<ItemRow>) => {
+    invalidateStockWarning()
+    setItems((prev) => prev.map((i) => i._key === key ? { ...i, ...patch } : i))
+  }, [invalidateStockWarning])
 
   const selectProduct = useCallback((key: string, prodId: string) => {
     const prod = products.find((p) => p.id === prodId)
     if (!prod) return
+    invalidateStockWarning()
     setItems((prev) => prev.map((i) => {
       if (i._key !== key) return i
       const previousKind = i.productId ? products.find((p) => p.id === i.productId)?.equipmentKind ?? null : null
@@ -307,34 +394,38 @@ export function useRequestForm({
         equipmentLabel: keepsEquipment ? i.equipmentLabel : "",
       }
     }))
-  }, [products])
+  }, [invalidateStockWarning, products])
 
   const selectFreeProduct = useCallback((key: string, name: string) => {
     const trimmed = name.trim()
     if (!trimmed) return
+    invalidateStockWarning()
     setItems((prev) => prev.map((i) =>
       // Un ítem fuera de catálogo no tiene reglas de producto: pierde también el
       // colaborador que hubiera quedado de la selección anterior.
       i._key !== key ? i : { ...i, productId: null, productNameFree: trimmed, productName: trimmed, isEpp: false, unitOfMeasure: i.unitOfMeasure || "unidad", suggestedSupplierId: "", supplierHint: "", attributes: [], showAttrs: false, workerId: "", workerName: "", equipmentCode: "", equipmentLabel: "" }
     ))
-  }, [])
+  }, [invalidateStockWarning])
 
   const clearProduct = useCallback((key: string) => {
+    invalidateStockWarning()
     setItems((prev) => prev.map((i) =>
       i._key !== key ? i : { ...i, productId: null, productNameFree: "", productName: "", isEpp: false, suggestedSupplierId: "", supplierHint: "", attributes: [], showAttrs: false, workerId: "", workerName: "", equipmentCode: "", equipmentLabel: "" }
     ))
-  }, [])
+  }, [invalidateStockWarning])
 
   const updateItemWorker = useCallback((key: string, workerId: string) => {
     // Limpiar la selección es un caso legítimo (el combobox manda ""), y antes
     // el early-return por "no encontré el trabajador" lo hacía imposible.
     if (!workerId) {
+      invalidateStockWarning()
       setItems((prev) => prev.map((i) => i._key === key ? { ...i, workerId: "", workerName: "" } : i))
       return
     }
     if (!workers) return
     const worker = workers.find((w) => w.id === workerId)
     if (!worker) return
+    invalidateStockWarning()
     setItems((prev) => prev.map((i) => {
       if (i._key !== key) return i
       const selectedProduct = i.productId ? products.find((product) => product.id === i.productId) : null
@@ -365,9 +456,10 @@ export function useRequestForm({
         attributes: attrs,
       }
     }))
-  }, [products, workers])
+  }, [invalidateStockWarning, products, workers])
 
   const updateAttr = useCallback((itemKey: string, attrIdx: number, value: string) => {
+    invalidateStockWarning()
     setItems((prev) => prev.map((i) => {
       if (i._key !== itemKey) return i
       const attrs = i.attributes.map((a, idx) => idx === attrIdx ? { ...a, value } : a)
@@ -380,7 +472,7 @@ export function useRequestForm({
         : undefined
       return { ...i, attributes: attrs, ...(drivenQuantity ? { quantity: drivenQuantity } : {}) }
     }))
-  }, [])
+  }, [invalidateStockWarning])
 
   const itemsJson = useMemo(
     () => JSON.stringify(items.flatMap((item) => {
@@ -424,6 +516,34 @@ export function useRequestForm({
     items, setItems,
     draftState, draftAction, draftPending,
   })
+
+  // All fields below form part of the server-side payload hash. Each editing
+  // handler above invalidates the opaque confirmation before changing one of
+  // these values, even if a later edit restores an earlier visible value.
+  const directSubmissionSnapshot = useMemo(
+    () => JSON.stringify([itemsJson, worksiteId, requestType, urgency, deliveryMode, requiredDate, notes]),
+    [itemsJson, worksiteId, requestType, urgency, deliveryMode, requiredDate, notes],
+  )
+
+  useEffect(() => {
+    const warning = isEppStockWarning(submitState.data) ? submitState.data : null
+    if (!warning || submittedSnapshotRef.current !== directSubmissionSnapshot) return
+    setStockWarning(warning)
+  }, [submitState, directSubmissionSnapshot])
+
+  const buildDirectSubmitFormData = useCallback((confirmationToken?: string) => {
+    const formData = buildDraftFormData()
+    formData.set("submissionKey", submissionKey)
+    if (confirmationToken) formData.set("eppStockConfirmation", confirmationToken)
+    return formData
+  }, [buildDraftFormData, submissionKey])
+
+  const submitDirectRequest = useCallback((confirmationToken?: string) => {
+    submittedSnapshotRef.current = directSubmissionSnapshot
+    startSubmitTransition(() => submitAction(buildDirectSubmitFormData(confirmationToken)))
+  }, [buildDirectSubmitFormData, directSubmissionSnapshot, submitAction, startSubmitTransition])
+
+  const dismissStockWarning = invalidateStockWarning
 
   // ── Beforeunload guard (tab close / reload only) ──
   const beforeUnloadRef = useRef<((e: BeforeUnloadEvent) => void) | null>(null)
@@ -511,6 +631,7 @@ export function useRequestForm({
     isEdit, isDraft, isQuotation, readOnly, savedId, dirty, lastSavedAt, hasRealContent,
     requestTypeLabel, urgencyLabel, worksiteLabel, missingItems, statusLabel,
     itemsError, requiredDateError, submitMessage, submitOk,
+    stockWarning, dismissStockWarning, submitDirectRequest,
     canDeleteRequest, canCancelRequest, deleteConfirmOpen, setDeleteConfirmOpen,
     isSaving, isSubmitting, isDeleting, draftPending,
     addItem, removeItem, updateItem, selectProduct, selectFreeProduct, clearProduct,

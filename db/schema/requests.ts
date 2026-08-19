@@ -33,6 +33,14 @@ export const purchaseRequests = pgTable("purchase_requests", {
   closedAt:     text("closed_at"),
   notes:        text("notes"),
   deliveryMode: text("delivery_mode").notNull().default("via_oficina"), // via_oficina | directo_faena
+  /**
+   * Stable client attempt key for direct (EPP/otro) submissions. Nullable keeps
+   * historical requests and quotation drafts compatible; PostgreSQL's regular
+   * unique semantics allow multiple NULLs while making a real key unique per
+   * requester.
+   */
+  submissionKey:         text("submission_key"),
+  submissionPayloadHash: text("submission_payload_hash"),
   createdAt:    timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   updatedAt:    timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [
@@ -53,6 +61,7 @@ export const purchaseRequests = pgTable("purchase_requests", {
   index("purchase_requests_worksite_id_status_idx").on(table.worksiteId, table.status),
   index("purchase_requests_cost_center_idx").on(table.costCenterId),
   index("purchase_requests_requester_id_created_at_idx").on(table.requesterId, table.createdAt),
+  uniqueIndex("purchase_requests_requester_submission_key_unique").on(table.requesterId, table.submissionKey),
 ])
 
 /* ── Purchase Request Items ───────────────────────────────────────────────── */

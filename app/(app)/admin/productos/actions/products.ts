@@ -9,6 +9,7 @@ import { recordAudit } from "@/lib/audit"
 import { requirePermission } from "@/lib/auth/can"
 import { logger } from "@/lib/logger"
 import { buildEppFamilyIdentityKey } from "@/lib/services/epp-import"
+import { lockCatalogProductsForUpdateTx } from "@/lib/services/catalog-product-locks"
 import { productSchema, type ActionState } from "@/lib/validation/masters"
 
 import {
@@ -145,6 +146,11 @@ export async function updateProduct(_prev: ActionState, formData: FormData): Pro
   const sku = current.sku
 
   await db.transaction(async (tx) => {
+    // Match bulk EPP import's product → family order. Taking the existing
+    // product lock first prevents a cycle when both flows converge on a new
+    // EPP family identity.
+    const lockedProductIds = await lockCatalogProductsForUpdateTx(tx, [productId])
+    if (!lockedProductIds.has(productId)) throw new Error("Producto no encontrado")
     const family = await resolveManualEppFamily(tx, { categoryId: d.categoryId, name: d.name, isEpp: d.isEpp })
     await tx.update(products).set({
       sku, name: d.name,
@@ -285,9 +291,15 @@ export async function bulkToggleProductActiveAction(_prev: ActionState, formData
   if (ids.length > 100) return { ok: false, message: "Máximo 100 productos por operación" }
 
   const now = new Date().toISOString()
-  await db.update(products)
-    .set({ isActive: activate, updatedAt: now })
-    .where(inArray(products.id, ids))
+  await db.transaction(async (tx) => {
+    // A set-based UPDATE has no contractual row-lock order. Establish the
+    // catalog order first so it cannot deadlock with a multi-item EPP
+    // preflight holding shared product locks.
+    await lockCatalogProductsForUpdateTx(tx, ids)
+    await tx.update(products)
+      .set({ isActive: activate, updatedAt: now })
+      .where(inArray(products.id, ids))
+  })
 
   await recordAudit({
     userId: session.user.id, userEmail: session.user.email ?? undefined,

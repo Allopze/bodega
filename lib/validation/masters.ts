@@ -125,8 +125,8 @@ export const productAttributeSchema = z.object({
   drivesQuantity: z.coerce.boolean().default(false),
   sortOrder:  z.coerce.number().int().default(0),
 }).refine(
-  (data) => !data.drivesQuantity || data.type === "integer",
-  { message: "Solo un atributo entero puede gobernar la cantidad", path: ["drivesQuantity"] },
+  (data) => !data.drivesQuantity || (data.type === "integer" && data.isRequired),
+  { message: "El atributo que gobierna la cantidad debe ser entero y obligatorio", path: ["drivesQuantity"] },
 )
 
 // ── Equipo de servicio (instrumentos: monogás, alcotest, …) ──────────────────

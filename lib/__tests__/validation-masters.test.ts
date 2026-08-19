@@ -13,6 +13,7 @@ import {
   supplierSchema,
   productCategorySchema,
   productSchema,
+  productAttributeSchema,
   workerSchema,
 } from "@/lib/validation/masters"
 
@@ -374,6 +375,28 @@ describe("productSchema", () => {
       attributes: [{ name: "Talla", type: "select", options: "x".repeat(4001) }],
     })
     expect(result.success).toBe(false)
+  })
+})
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// productAttributeSchema
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe("productAttributeSchema", () => {
+  it("rejects an optional attribute that drives the requested quantity", () => {
+    const result = productAttributeSchema.safeParse({
+      name: "Número de dosis",
+      type: "integer",
+      isRequired: false,
+      drivesQuantity: true,
+    })
+
+    expect(result.success).toBe(false)
+    if (!result.success) {
+      expect(result.error.issues).toEqual(expect.arrayContaining([
+        expect.objectContaining({ path: ["drivesQuantity"] }),
+      ]))
+    }
   })
 })
 

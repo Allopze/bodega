@@ -1,4 +1,4 @@
-import { and, eq, inArray } from "drizzle-orm"
+import { and, asc, eq, inArray } from "drizzle-orm"
 import { nanoid } from "@/lib/id"
 import { nextCodeTx } from "@/lib/code-sequences"
 import { recordAudit, recordStatusChange } from "@/lib/audit"
@@ -18,6 +18,20 @@ import {
 } from "@/lib/products/service-items"
 import type { RequestFormData, RequestItemFormData } from "@/lib/validation/operations"
 
+export interface RequestSubmissionIdentity {
+  submissionKey: string
+  submissionPayloadHash: string
+}
+
+/** A submission key must never be reused with a different validated payload. */
+export class RequestSubmissionKeyConflictError extends Error {
+  override name = "RequestSubmissionKeyConflictError"
+
+  constructor() {
+    super("La clave de envío ya está asociada a otra solicitud. Actualiza el formulario e inténtalo nuevamente.")
+  }
+}
+
 /**
  * Crea una solicitud EPP/otro ya enviada a aprobación (2026-08-07: el único
  * camino para esos tipos — nacen enviadas, nunca en borrador). Los tipos con
@@ -34,12 +48,14 @@ export async function createRequest(
   data: RequestFormData,
   sessionUserId: string,
   sessionUserEmail: string | undefined,
-): Promise<{ requestId: string; code: string; itemIds: string[] }> {
+  submission?: RequestSubmissionIdentity,
+  resolvedCatalogQuantities?: ReadonlyMap<number, number>,
+): Promise<{ requestId: string; code: string; itemIds: string[]; replayed: boolean }> {
   const code = await nextCodeTx(tx, "SOL")
   const requestId = nanoid()
   const now = new Date().toISOString()
 
-  await tx.insert(purchaseRequests).values({
+  const values = {
     id:           requestId,
     code,
     worksiteId:   data.worksiteId,
@@ -51,7 +67,40 @@ export async function createRequest(
     submittedAt:  now,
     notes:        data.notes || null,
     deliveryMode: data.deliveryMode ?? "via_oficina",
-  })
+    submissionKey: submission?.submissionKey ?? null,
+    submissionPayloadHash: submission?.submissionPayloadHash ?? null,
+  }
+
+  if (submission) {
+    const [inserted] = await tx.insert(purchaseRequests).values(values)
+      .onConflictDoNothing({ target: [purchaseRequests.requesterId, purchaseRequests.submissionKey] })
+      .returning({ id: purchaseRequests.id, code: purchaseRequests.code })
+    if (!inserted) {
+      // `ON CONFLICT DO NOTHING` waits for a concurrent insert to commit, and a
+      // following read in this transaction sees it under PostgreSQL's default
+      // READ COMMITTED isolation. Only the matching payload is an idempotent
+      // replay; a different payload is a safe failure, never a second request.
+      const [existing] = await tx
+        .select({
+          id: purchaseRequests.id,
+          code: purchaseRequests.code,
+          submissionPayloadHash: purchaseRequests.submissionPayloadHash,
+        })
+        .from(purchaseRequests)
+        .where(and(
+          eq(purchaseRequests.requesterId, sessionUserId),
+          eq(purchaseRequests.submissionKey, submission.submissionKey),
+        ))
+        .for("update")
+        .limit(1)
+      if (!existing || existing.submissionPayloadHash !== submission.submissionPayloadHash) {
+        throw new RequestSubmissionKeyConflictError()
+      }
+      return { requestId: existing.id, code: existing.code, itemIds: [], replayed: true }
+    }
+  } else {
+    await tx.insert(purchaseRequests).values(values)
+  }
 
   await recordAudit({
     userId:     sessionUserId,
@@ -71,14 +120,21 @@ export async function createRequest(
     changedBy:  sessionUserId,
   }, tx)
 
-  const itemIds = await insertAllItems(tx, requestId, data.requiredDate, data.items, {
-    sessionUserId,
-    sessionUserEmail,
-    worksiteId:  data.worksiteId,
-    requestCode: code,
-  })
+  const itemIds = await insertAllItems(
+    tx,
+    requestId,
+    data.requiredDate,
+    data.items,
+    {
+      sessionUserId,
+      sessionUserEmail,
+      worksiteId:  data.worksiteId,
+      requestCode: code,
+    },
+    resolvedCatalogQuantities,
+  )
 
-  return { requestId, code, itemIds }
+  return { requestId, code, itemIds, replayed: false }
 }
 
 /**
@@ -88,32 +144,38 @@ export async function createRequest(
  * verdad es esta: el payload llega como JSON y `isRequired`/`type` se releen
  * del catálogo, nunca de lo que mandó el cliente.
  */
-async function assertCatalogItemRules(
+export async function resolveCatalogItemQuantitiesTx(
   tx: Tx,
   items: RequestItemFormData[],
 ): Promise<Map<number, number>> {
   const drivenQuantities = new Map<number, number>()
-  const productIds = [...new Set(items.flatMap((item) => (item.productId ? [item.productId] : [])))]
+  const productIds = [...new Set(items.flatMap((item) => (item.productId ? [item.productId] : [])))].sort()
   if (productIds.length === 0) return drivenQuantities
 
-  const [productRows, attributeRows] = await Promise.all([
-    tx.select({
-      id: products.id, name: products.name,
-      requiresWorker: products.requiresWorker, equipmentKind: products.equipmentKind,
-    })
-      .from(products)
-      .where(inArray(products.id, productIds)),
-    tx.select({
-      id:         productAttributes.id,
-      productId:  productAttributes.productId,
-      name:       productAttributes.name,
-      type:       productAttributes.type,
-      isRequired: productAttributes.isRequired,
-      drivesQuantity: productAttributes.drivesQuantity,
-    })
-      .from(productAttributes)
-      .where(inArray(productAttributes.productId, productIds)),
-  ])
+  // The direct-request preflight first locks the worksite, then reaches these
+  // rows in product order. Holding shared locks through creation guarantees a
+  // quantity-driving attribute cannot change between the stock snapshot and
+  // the persisted request item.
+  const productRows = await tx.select({
+    id: products.id, name: products.name,
+    requiresWorker: products.requiresWorker, equipmentKind: products.equipmentKind,
+  })
+    .from(products)
+    .where(inArray(products.id, productIds))
+    .orderBy(asc(products.id))
+    .for("share")
+  const attributeRows = await tx.select({
+    id:         productAttributes.id,
+    productId:  productAttributes.productId,
+    name:       productAttributes.name,
+    type:       productAttributes.type,
+    isRequired: productAttributes.isRequired,
+    drivesQuantity: productAttributes.drivesQuantity,
+  })
+    .from(productAttributes)
+    .where(inArray(productAttributes.productId, productIds))
+    .orderBy(asc(productAttributes.productId), asc(productAttributes.id))
+    .for("share")
 
   const rulesByProductId = new Map<string, CatalogProductRules>(
     productRows.map((product) => [product.id, {
@@ -135,11 +197,24 @@ async function assertCatalogItemRules(
     if (!rules) continue
     const issues = catalogItemIssues(rules, item)
     if (issues.length > 0) throw new Error(`Ítem ${index + 1}: ${issues.join("; ")}`)
+
+    const quantityDriver = rules.attributes.find((attribute) => attribute.drivesQuantity)
+    if (quantityDriver && (quantityDriver.type !== "integer" || !quantityDriver.isRequired)) {
+      // Defend against legacy/corrupt catalog rows too. A quantity driver must
+      // never silently fall back to a client-controlled item quantity.
+      throw new Error(`Ítem ${index + 1}: el atributo que gobierna la cantidad debe ser entero y obligatorio`)
+    }
+
     // Cuando el catálogo gobierna la cantidad (nº de dosis), se deriva del
     // atributo en vez de creerle al cliente: así no hay dos números que puedan
     // contradecirse ni forma de pedir 1 unidad de una vacuna de 3 dosis.
     const driven = quantityFromAttributes(rules, item)
-    if (driven !== null) drivenQuantities.set(index, driven)
+    if (quantityDriver) {
+      if (driven === null) {
+        throw new Error(`Ítem ${index + 1}: ${quantityDriver.name} debe ser un número entero mayor o igual a 1`)
+      }
+      drivenQuantities.set(index, driven)
+    }
   }
 
   return drivenQuantities
@@ -280,8 +355,13 @@ async function insertAllItems(
   requiredDate: string,
   items: RequestItemFormData[],
   opts: { sessionUserId: string; sessionUserEmail?: string; worksiteId: string; requestCode: string },
+  resolvedCatalogQuantities?: ReadonlyMap<number, number>,
 ): Promise<string[]> {
-  const drivenQuantities = await assertCatalogItemRules(tx, items)
+  // A direct EPP submission resolves these rules while it holds the selected
+  // worksite/catalog snapshot. Reusing that map makes the stock warning,
+  // signed confirmation and persisted line agree even if a new attribute is
+  // configured concurrently. Other callers retain the standalone validation.
+  const drivenQuantities = resolvedCatalogQuantities ?? await resolveCatalogItemQuantitiesTx(tx, items)
 
   // SEC-1: workerId no se valida contra la faena de la solicitud en ningún
   // otro punto de la creación — sin esto, un solicitante puede colocar el id

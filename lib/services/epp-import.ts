@@ -16,6 +16,7 @@ import {
 } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { toCode } from "@/lib/utils"
+import { lockCatalogProductsForUpdateTx } from "@/lib/services/catalog-product-locks"
 import {
   findProductMatches,
   buildCorrections,
@@ -146,7 +147,16 @@ export async function confirmEppImportBatch(batchId: string, userId: string) {
 
   let created = 0
   let updated = 0
+  const updateProductIds = batch.rows.flatMap((row) => (
+    row.decision === "update" && row.targetProductId ? [row.targetProductId] : []
+  ))
   await db.transaction(async (tx) => {
+    // Take every existing target in PostgreSQL product-ID order before the
+    // row-by-row import. Direct EPP preflight reads use that same order.
+    const lockedProductIds = await lockCatalogProductsForUpdateTx(tx, updateProductIds)
+    const missingTargetId = updateProductIds.find((productId) => !lockedProductIds.has(productId))
+    if (missingTargetId) throw new Error("Uno de los productos elegidos para actualizar ya no existe")
+
     for (const row of batch.rows) {
       if (row.decision === "skip") continue
       const normalized = JSON.parse(row.normalizedJson) as NormalizedEppRow

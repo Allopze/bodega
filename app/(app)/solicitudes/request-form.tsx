@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { ArrowLeft, Info, Plus, Warning } from "@phosphor-icons/react"
 import { SubmitButton } from "@/components/admin/submit-button"
 import { toast } from "@/lib/toast"
@@ -19,7 +19,7 @@ import {
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { ItemEditor } from "./item-editor"
 import { URGENCY_OPTS, UNIT_OF_MEASURE_OPTIONS } from "./request-form.constants"
-import { formatDate, formatDateTime } from "@/lib/utils"
+import { formatDate, formatDateTime, formatQty } from "@/lib/utils"
 import { QUOTATION_TYPES } from "@/lib/request-types"
 import type { RequestType } from "@/lib/request-types"
 import type { ItemRow, ProductOption, WorksiteOption, SupplierOption, WorkerOption, EquipmentOption, EditRequest, PrefillItem } from "./request-form.types"
@@ -52,6 +52,8 @@ interface RequestFormProps {
   prefillItems?: PrefillItem[]
   /** Explica de dónde salieron los ítems precargados. */
   prefillNotice?: string
+  /** Faena con la que se abre el creador, ya validada en el servidor. */
+  initialWorksiteId?: string
 }
 
 function RequestFormHeader({
@@ -247,6 +249,7 @@ export function RequestForm({
   initialRequestTypeNotice,
   prefillItems,
   prefillNotice,
+  initialWorksiteId,
 }: RequestFormProps) {
   const form = useRequestForm({
     worksites,
@@ -258,13 +261,30 @@ export function RequestForm({
     userPermissions,
     initialRequestType,
     prefillItems,
+    initialWorksiteId,
   })
   const [leaveConfirmOpen, setLeaveConfirmOpen] = useState(false)
+  const stockWarning = form.stockWarning
+
+  /**
+   * El HTML que manda el servidor ya se ve y se deja escribir antes de que
+   * React hidrate. En un equipo o una red lentos alcanzas a llenar el primer
+   * ítem en esa ventana, pero ese texto vive sólo en el DOM —el estado del
+   * formulario nunca lo vio—, así que el primer re-render lo repone en blanco:
+   * llenabas el ítem, pulsabas "Agregar ítem" y parecía que se borraba solo.
+   *
+   * `inert` cierra la ventana: hasta que el cliente monta, el formulario no
+   * acepta foco ni tecleo. No hay nada que perder porque tampoco se podía
+   * enviar (los ítems se serializan en el cliente).
+   */
+  const [hydrated, setHydrated] = useState(false)
+  useEffect(() => { setHydrated(true) }, [])
 
   return (
-    <div className="grid gap-6 pb-16 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start">
+    <div className="grid gap-6 pb-16 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start" aria-busy={!hydrated}>
       <div className="min-w-0 space-y-8">
         <form
+          inert={!hydrated}
           onSubmit={(e) => {
             e.preventDefault()
             if (form.isQuotation) {
@@ -279,8 +299,9 @@ export function RequestForm({
               toast.error(form.missingItems[0]!)
               return
             }
-            // EPP/otro: un solo acto. La solicitud nace enviada a aprobación.
-            form.startSubmitTransition(() => form.submitAction(form.buildDraftFormData()))
+            // EPP/otro: un solo acto. Antes de crear, el servidor revisa el
+            // stock vigente de la faena y puede pedir una decisión explícita.
+            form.submitDirectRequest()
           }}
           className="space-y-6"
         >
@@ -357,6 +378,72 @@ export function RequestForm({
             </div>
           )}
         </form>
+
+        <Dialog
+          open={stockWarning !== null}
+          onOpenChange={(open) => {
+            if (!open && !form.isSubmitting) form.dismissStockWarning()
+          }}
+        >
+          {stockWarning && (
+            <DialogContent className="max-w-lg">
+              <DialogHeader>
+                <DialogTitle>Hay EPP disponible en bodega</DialogTitle>
+                <DialogDescription>
+                  Antes de crear la solicitud, revisa el stock físico disponible en {stockWarning.worksiteName}.
+                  Puedes cancelar para utilizarlo o continuar de forma explícita con la solicitud de compra.
+                </DialogDescription>
+              </DialogHeader>
+              <ul className="max-h-72 space-y-2 overflow-y-auto" aria-label="EPP con stock disponible">
+                {stockWarning.items.map((item) => (
+                  <li key={item.productId} className="rounded-[var(--radius)] border border-[var(--color-warning-line)] bg-[var(--color-warning-tint)] px-3 py-2.5">
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div>
+                        <p className="text-sm font-medium text-[var(--color-text)]">{item.productName}</p>
+                        <p className="mt-0.5 text-xs text-[var(--color-warning-ink)]">Ubicación: {item.locationName || stockWarning.worksiteName}</p>
+                      </div>
+                      <span className="rounded-full border border-[var(--color-warning-line)] bg-[var(--color-surface)] px-2 py-0.5 text-[11px] font-medium text-[var(--color-warning-ink)]">
+                        {item.coverage === "total" ? "Cobertura total" : "Cobertura parcial"}
+                      </span>
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-[var(--color-text-muted)]">
+                      <span>Solicitado: {formatQty(item.requestedQuantity)}</span>
+                      <span>Disponible: {formatQty(item.availableQuantity)}</span>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+              {form.submitMessage && !form.submitOk && (
+                <p role="alert" className="flex items-center gap-1.5 text-xs text-[var(--color-danger)]">
+                  <Warning size={14} />{form.submitMessage}
+                </p>
+              )}
+              <DialogFooter className="flex-col items-stretch sm:flex-row sm:items-center">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="w-full sm:w-auto"
+                  disabled={form.isSubmitting}
+                  onClick={form.dismissStockWarning}
+                >
+                  Cancelar y volver al formulario
+                </Button>
+                <Button
+                  type="button"
+                  variant="primary"
+                  size="sm"
+                  className="w-full sm:w-auto"
+                  loading={form.isSubmitting}
+                  disabled={form.isSubmitting}
+                  onClick={() => form.submitDirectRequest(stockWarning.confirmationToken)}
+                >
+                  Continuar con la solicitud
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          )}
+        </Dialog>
 
         {form.isDraft && form.isQuotation && (
           <form onSubmit={(e) => {

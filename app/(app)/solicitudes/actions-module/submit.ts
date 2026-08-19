@@ -12,12 +12,36 @@ import { isRequestType, permissionForRequestType, QUOTATION_TYPES, type RequestT
 import { submitRepuestoRequest } from "@/lib/services/repuestos"
 import { submitServiceRequest } from "@/lib/services/servicios"
 import { createSubmittedRequest } from "@/lib/services/requests-draft"
+import { EppStockAvailabilityError } from "@/lib/services/epp-stock-availability"
+import { EppStockConfirmationError, EPP_STOCK_CONFIRMATION_MAX_LENGTH } from "@/lib/services/epp-stock-confirmation"
+import { RequestSubmissionKeyConflictError } from "@/lib/services/requests-draft-create"
 import { persistDraft } from "./draft"
 import { parseRequestForm } from "./parse-request-form"
 import { revalidateOperationalViews } from "@/lib/services/operational-cache"
 import { safeActionMessage } from "@/lib/action-error"
 
 const REVALIDATE = "/solicitudes"
+
+type DirectSubmission = {
+  submissionKey: string
+  confirmationToken?: string
+}
+
+/** Validate transport-only fields that are not part of RequestFormData. */
+function parseDirectSubmission(formData: FormData): { ok: true; submission: DirectSubmission } | { ok: false; error: ActionState } {
+  const rawKey = formData.get("submissionKey")
+  if (typeof rawKey !== "string" || !/^[A-Za-z0-9_-]{16,128}$/.test(rawKey)) {
+    return { ok: false, error: { ok: false, message: "No se pudo preparar el envío. Actualiza la página e inténtalo nuevamente." } }
+  }
+  const rawConfirmation = formData.get("eppStockConfirmation")
+  if (rawConfirmation !== null && (typeof rawConfirmation !== "string" || rawConfirmation.length > EPP_STOCK_CONFIRMATION_MAX_LENGTH)) {
+    return { ok: false, error: { ok: false, message: "La confirmación de stock no es válida. Solicita una nueva revisión." } }
+  }
+  return {
+    ok: true,
+    submission: { submissionKey: rawKey, confirmationToken: typeof rawConfirmation === "string" && rawConfirmation ? rawConfirmation : undefined },
+  }
+}
 
 /**
  * Notifica a quienes aprueban que hay una solicitud nueva esperando.
@@ -65,7 +89,9 @@ export async function submitRequest(_prev: ActionState, formData: FormData): Pro
     const data = parsed.data
 
     if (!QUOTATION_TYPES.has(data.requestType)) {
-      return await createAndSubmit(session, data)
+      const submission = parseDirectSubmission(formData)
+      if (!submission.ok) return submission.error
+      return await createAndSubmit(session, data, submission.submission)
     }
 
     if (requestId) formData.set("id", requestId)
@@ -136,28 +162,55 @@ export async function submitRequest(_prev: ActionState, formData: FormData): Pro
 async function createAndSubmit(
   session: Awaited<ReturnType<typeof requireAuth>>,
   data: RequestFormData,
+  submission: DirectSubmission,
 ): Promise<ActionState> {
-  const inactiveError = await assertProductsActive(data.items.map((item) => item.productId))
-  if (inactiveError) return inactiveError
+  // `parseRequestForm` already checks these at the input boundary. Repeat them
+  // immediately before the transactional preflight: actions are public POST
+  // endpoints and a user can never use a stale client state as authorization.
+  if (!can(session, permissionForRequestType(data.requestType, "create"))) {
+    return { ok: false, message: "No tienes permisos para crear este tipo de solicitud" }
+  }
+  if (!canAccessWorksite(session, data.worksiteId)) {
+    return { ok: false, message: "No tienes acceso a la faena seleccionada" }
+  }
 
-  let created
+  let outcome
   try {
-    created = await createSubmittedRequest(session.user.id, session.user.email ?? undefined, data)
+    outcome = await createSubmittedRequest(session.user.id, session.user.email ?? undefined, data, submission)
   } catch (e) {
     logger.error("[submitRequest:create]", e)
+    if (e instanceof EppStockAvailabilityError || e instanceof EppStockConfirmationError || e instanceof RequestSubmissionKeyConflictError) {
+      return { ok: false, message: e.message }
+    }
     return { ok: false, message: safeActionMessage(e, "Error al crear la solicitud") }
   }
 
-  notifyApprovers({
-    requestId: created.requestId,
-    code:      created.code,
-    itemCount: data.items.length,
-    actor:     session.user.name ?? session.user.email ?? "Un usuario",
-    requestType: data.requestType,
-  })
+  if (outcome.kind === "epp-stock-warning") {
+    // This is not an error/toast. The form opens an explicit decision dialog and
+    // resubmits only when the requester chooses to continue.
+    return {
+      ok: true,
+      data: {
+        kind: "epp-stock-warning",
+        confirmationToken: outcome.confirmationToken,
+        worksiteName: outcome.worksiteName,
+        items: outcome.items,
+      },
+    }
+  }
 
-  revalidateOperationalViews([REVALIDATE, `${REVALIDATE}/${created.requestId}`])
-  redirect(`${REVALIDATE}/${created.requestId}`)
+  if (!outcome.replayed) {
+    notifyApprovers({
+      requestId: outcome.requestId,
+      code:      outcome.code,
+      itemCount: data.items.length,
+      actor:     session.user.name ?? session.user.email ?? "Un usuario",
+      requestType: data.requestType,
+    })
+  }
+
+  revalidateOperationalViews([REVALIDATE, `${REVALIDATE}/${outcome.requestId}`])
+  redirect(`${REVALIDATE}/${outcome.requestId}`)
 }
 
 /** Un producto dado de baja no puede entrar a aprobación. */

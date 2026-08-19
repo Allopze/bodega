@@ -281,6 +281,21 @@ async function main() {
     createdAt: now,
     updatedAt: now,
   })
+  // Aislado de los flujos de recepción/entrega: este stock sólo existe para
+  // certificar que una solicitud EPP pide confirmación antes de crearse.
+  await db.insert(schema.products).values({
+    id: "prod-epp-stock-preflight-e2e",
+    sku: "E2E-EPP-PREFLIGHT-001",
+    name: "Casco Preflight E2E",
+    categoryId: "cat-epp-e2e",
+    unitOfMeasure: "unidad",
+    referencePrice: 2500,
+    isEpp: true,
+    requiresPrevencion: false,
+    isActive: true,
+    createdAt: now,
+    updatedAt: now,
+  })
   // Producto dedicado para los fixtures masivos de export/paginación. Mantenerlo
   // separado de "Guante E2E" (prod-e2e) evita que los 120 ítems bulk contaminen
   // la pantalla de creación de OC, donde compartirían la etiqueta "Incluir Guante
@@ -438,15 +453,26 @@ async function main() {
       updatedAt: now,
     },
   ])
-  await db.insert(schema.worksiteStock).values({
-    id: "stock-epp-e2e",
-    worksiteId: "ws-e2e",
-    productId: "prod-epp-e2e",
-    quantity: 10,
-    minStock: 0,
-    lastMovementAt: now,
-    updatedAt: now,
-  })
+  await db.insert(schema.worksiteStock).values([
+    {
+      id: "stock-epp-e2e",
+      worksiteId: "ws-e2e",
+      productId: "prod-epp-e2e",
+      quantity: 10,
+      minStock: 0,
+      lastMovementAt: now,
+      updatedAt: now,
+    },
+    {
+      id: "stock-epp-preflight-e2e",
+      worksiteId: "ws-e2e",
+      productId: "prod-epp-stock-preflight-e2e",
+      quantity: 7,
+      minStock: 0,
+      lastMovementAt: now,
+      updatedAt: now,
+    },
+  ])
 
   /*
    * Bodega de la oficina para las Guías de Despacho Internas (GDI).

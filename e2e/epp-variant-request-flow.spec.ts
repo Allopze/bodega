@@ -70,6 +70,9 @@ test("crear solicitud EPP con variantes: una talla por ítem", async ({ page }) 
 
   await page.getByRole("button", { name: /enviar a aprobación/i }).click()
   await expect(page).toHaveURL(/\/solicitudes\/(?!nueva$)[^/]+$/, { timeout: 20_000 })
+  // Las variantes no tienen stock en el fixture: el flujo actual sigue directo
+  // a la solicitud y nunca presenta la advertencia de disponibilidad.
+  await expect(page.getByRole("dialog", { name: "Hay EPP disponible en bodega" })).toHaveCount(0)
 
   // El detalle muestra las dos tallas pedidas.
   await expect(page.getByText(/Casco E2E M/).first()).toBeVisible({ timeout: 10_000 })

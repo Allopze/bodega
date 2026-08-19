@@ -11,6 +11,7 @@ import { cancelEppImportBatch, confirmEppImportBatch, reviewEppImportRow, stageE
 import { parseCatalogWorkbook } from "@/lib/services/catalog-import"
 import type { ActionState } from "@/lib/validation/masters"
 import { nanoid } from "@/lib/id"
+import { lockCatalogProductsForUpdateTx } from "@/lib/services/catalog-product-locks"
 import { formString, generateUniqueProductSku, REVALIDATE } from "./helpers"
 
 // ── EPP Import (Excel → review → confirm) ──────────────────────────────────────
@@ -141,9 +142,16 @@ export async function importProductsFromXlsx(_prev: ActionState, formData: FormD
   let created = 0
   let updated = 0
   const skipped = skippedRows.length
+  const updateProductIds = activeRows.flatMap((row) => (
+    row.decision === "update" && row.existingId ? [row.existingId] : []
+  ))
 
   try {
     await db.transaction(async (tx) => {
+      const lockedProductIds = await lockCatalogProductsForUpdateTx(tx, updateProductIds)
+      const missingTargetId = updateProductIds.find((productId) => !lockedProductIds.has(productId))
+      if (missingTargetId) throw new Error("Uno de los productos del archivo ya no existe")
+
       for (const row of activeRows) {
         const v = row.values
         const name = (v["Nombre"] ?? "").trim()
