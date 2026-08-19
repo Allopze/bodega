@@ -16,7 +16,9 @@ import {
   approveInspectionTemplateAction,
   createInspectionProgramAction,
   importInspectionTemplateAction,
+  runProgramNowAction,
   setInspectionTemplatePdtpActivitiesAction,
+  updateInspectionProgramAction,
 } from "../actions"
 import { Field } from "@/components/ui/field"
 import { useOperation } from "@/lib/hooks/use-operation"
@@ -41,16 +43,29 @@ interface TemplateItem {
   coverage: Coverage
   /** Actividades del PDTP (campo `n`) que acredita al completarse un run. */
   pdtpActivityNumbers: number[] | null
+  /** Definición de `lib/sst/definitions` de la que salió el snapshot. */
+  sourceDefinitionCode: string | null
+  /** El catálogo en código difiere del snapshot congelado (A-03). */
+  definitionDrifted: boolean
+  /** La definición de origen ya no existe en el catálogo en código. */
+  definitionMissing: boolean
 }
 
 interface ProgramItem {
   id: string
+  templateId: string
+  worksiteId: string
   templateName: string
   worksiteName: string
   frequency: string
+  intervalDays: number
   nextDueOn: string
+  assignedToUserId: string | null
   assigneeName: string | null
+  riskEntryId: string | null
+  subjectType: string | null
   isActive: boolean
+  version: number
 }
 
 interface ImportableDefinition {
@@ -72,19 +87,36 @@ function coverageLabel(coverage: Coverage) {
   return `${coverage.withDanoPotencial}/${coverage.totalItems} calibrados`
 }
 
-export function InspectionCatalog({ templates, programs, importable, approvedTemplates, worksites, assignees, currentUserId, canManage, canApprove }: {
+export function InspectionCatalog({ templates, programs, importable, approvedTemplates, worksites, assignees, riskEntriesByWorksite, currentUserId, canManage, canApprove }: {
   templates: TemplateItem[]
   programs: ProgramItem[]
   importable: ImportableDefinition[]
   approvedTemplates: { id: string; name: string; versionLabel: string }[]
   worksites: { id: string; name: string }[]
   assignees: { id: string; name: string }[]
+  /** Peligros de la MIPER por faena, para el picker de la programación (A-09). */
+  riskEntriesByWorksite: Record<string, { id: string; hazardCode: string; hazard: string }[]>
   currentUserId: string
   canManage: boolean
   canApprove: boolean
 }) {
   const [tab, setTab] = React.useState<"templates" | "programs">("templates")
-  const importedCodes = new Set(templates.map((item) => item.code))
+  // A-02: antes se filtraba del picker toda definición ya incorporada, lo que
+  // dejaba inalcanzable el versionado — y con él todo el mecanismo de
+  // `superseded` que `approveInspectionTemplate` ya implementa. Reimportar es
+  // el camino normal para publicar una versión nueva; lo único que el servicio
+  // rechaza es repetir la misma `versionLabel`.
+  const versionsByDefinition = React.useMemo(() => {
+    const map = new Map<string, { approved?: TemplateItem; latest?: TemplateItem }>()
+    for (const template of templates) {
+      if (!template.sourceDefinitionCode) continue
+      const entry = map.get(template.sourceDefinitionCode) ?? {}
+      if (template.status === "approved") entry.approved = template
+      if (!entry.latest) entry.latest = template
+      map.set(template.sourceDefinitionCode, entry)
+    }
+    return map
+  }, [templates])
 
   return (
     <div className="space-y-4">
@@ -100,10 +132,10 @@ export function InspectionCatalog({ templates, programs, importable, approvedTem
         {canManage && (
           <div className="flex flex-wrap gap-2">
             {tab === "templates" && importable.length > 0 && (
-              <ImportTemplateDialog importable={importable.filter((item) => !importedCodes.has(item.code))} />
+              <ImportTemplateDialog importable={importable} versionsByDefinition={versionsByDefinition} />
             )}
             {tab === "programs" && approvedTemplates.length > 0 && worksites.length > 0 && (
-              <ProgramDialog templates={approvedTemplates} worksites={worksites} assignees={assignees} />
+              <ProgramDialog templates={approvedTemplates} worksites={worksites} assignees={assignees} riskEntriesByWorksite={riskEntriesByWorksite} />
             )}
           </div>
         )}
@@ -114,7 +146,7 @@ export function InspectionCatalog({ templates, programs, importable, approvedTem
           icon={<ClipboardText size={20} />}
           title="Aún no hay plantillas incorporadas"
           description="Incorpora una definición del catálogo SST. Una plantilla sin daño potencial calibrado produce hallazgos siempre de criticidad media."
-          action={canManage && importable.length > 0 ? <ImportTemplateDialog importable={importable} /> : undefined}
+          action={canManage && importable.length > 0 ? <ImportTemplateDialog importable={importable} versionsByDefinition={versionsByDefinition} /> : undefined}
         />
       ) : (
         <div className="overflow-x-auto rounded-lg border border-[var(--color-border)]">
@@ -139,7 +171,23 @@ export function InspectionCatalog({ templates, programs, importable, approvedTem
                   </TableCell>
                   <TableCell className="text-sm">{INSPECTION_KIND_LABELS[item.kind] ?? item.kind}</TableCell>
                   <TableCell className="font-mono text-xs">{item.versionLabel}</TableCell>
-                  <TableCell><Badge variant={templateStatusVariant(item.status)}>{item.status === "approved" ? "Aprobada" : item.status === "superseded" ? "Reemplazada" : "Borrador"}</Badge></TableCell>
+                  <TableCell>
+                    <Badge variant={templateStatusVariant(item.status)}>{item.status === "approved" ? "Aprobada" : item.status === "superseded" ? "Reemplazada" : "Borrador"}</Badge>
+                    {/* A-03: el snapshot está congelado a propósito, así que la
+                        deriva no es un error — es la señal de que toca publicar
+                        una versión nueva. Sólo interesa mientras la plantilla
+                        esté vigente; una ya reemplazada deriva por definición. */}
+                    {item.status !== "superseded" && item.definitionDrifted && (
+                      <span className="mt-1 block text-xs text-[var(--color-warning-ink)]" title="El contenido en código difiere del snapshot aprobado. No implica que el checklist haya cambiado de fondo.">
+                        Catálogo actualizado
+                      </span>
+                    )}
+                    {item.definitionMissing && (
+                      <span className="mt-1 block text-xs text-[var(--color-warning-ink)]" title="La definición de origen ya no existe en lib/sst/definitions.">
+                        Definición retirada
+                      </span>
+                    )}
+                  </TableCell>
                   <TableCell className="text-sm">
                     {coverageLabel(item.coverage)}
                     {item.coverage.criticalityInert && <span className="ml-1 text-xs text-[var(--color-warning-ink)]">(sin calibrar)</span>}
@@ -180,7 +228,7 @@ export function InspectionCatalog({ templates, programs, importable, approvedTem
           icon={<ClipboardText size={20} />}
           title="Aún no hay programación"
           description="Una programación declara qué plantilla se ejecuta, en qué faena y con qué frecuencia."
-          action={canManage && approvedTemplates.length > 0 && worksites.length > 0 ? <ProgramDialog templates={approvedTemplates} worksites={worksites} assignees={assignees} /> : undefined}
+          action={canManage && approvedTemplates.length > 0 && worksites.length > 0 ? <ProgramDialog templates={approvedTemplates} worksites={worksites} assignees={assignees} riskEntriesByWorksite={riskEntriesByWorksite} /> : undefined}
         />
       ) : (
         <div className="overflow-x-auto rounded-lg border border-[var(--color-border)]">
@@ -193,6 +241,7 @@ export function InspectionCatalog({ templates, programs, importable, approvedTem
                 <TableHead>Próxima</TableHead>
                 <TableHead>Asignada a</TableHead>
                 <TableHead>Activa</TableHead>
+                {canManage && <TableHead className="text-right">Acción</TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -200,10 +249,30 @@ export function InspectionCatalog({ templates, programs, importable, approvedTem
                 <TableRow key={item.id}>
                   <TableCell className="text-sm">{item.templateName}</TableCell>
                   <TableCell className="text-sm">{item.worksiteName}</TableCell>
-                  <TableCell className="text-sm">{INSPECTION_FREQUENCY_LABELS[item.frequency] ?? item.frequency}</TableCell>
-                  <TableCell className="text-sm tabular-nums">{item.nextDueOn}</TableCell>
+                  <TableCell className="text-sm">
+                    {INSPECTION_FREQUENCY_LABELS[item.frequency] ?? item.frequency}
+                    <span className="block text-xs text-[var(--color-text-subtle)]">cada {item.intervalDays} día(s)</span>
+                  </TableCell>
+                  <TableCell className="text-sm tabular-nums">
+                    {item.nextDueOn}
+                    {item.isActive && item.nextDueOn < todayInChile() && (
+                      <span className="block text-xs text-[var(--color-warning-ink)]">Vencida</span>
+                    )}
+                  </TableCell>
                   <TableCell className="text-sm">{item.assigneeName ?? "Sin asignar"}</TableCell>
                   <TableCell className="text-sm">{item.isActive ? "Sí" : "No"}</TableCell>
+                  {canManage && (
+                    <TableCell className="text-right">
+                      <div className="flex justify-end gap-2">
+                        {/* A-11: la programación se creaba y quedaba congelada
+                            — ni editar, ni reasignar, ni desactivar. */}
+                        <EditProgramDialog program={item} assignees={assignees} />
+                        <ToggleProgramButton program={item} />
+                        {/* B-04: mismo camino que el cron diario. */}
+                        {item.isActive && <RunProgramNowButton program={item} />}
+                      </div>
+                    </TableCell>
+                  )}
                 </TableRow>
               ))}
             </TableBody>
@@ -216,12 +285,16 @@ export function InspectionCatalog({ templates, programs, importable, approvedTem
 
 /* ── Incorporar plantilla ─────────────────────────────────────────────────── */
 
-function ImportTemplateDialog({ importable }: { importable: ImportableDefinition[] }) {
+function ImportTemplateDialog({ importable, versionsByDefinition }: {
+  importable: ImportableDefinition[]
+  versionsByDefinition: Map<string, { approved?: TemplateItem; latest?: TemplateItem }>
+}) {
   const [open, setOpen] = React.useState(false)
   const [code, setCode] = React.useState(importable[0]?.code ?? "")
   const [kind, setKind] = React.useState("inspection")
   const operation = useOperation()
   const definition = importable.find((item) => item.code === code)
+  const existing = versionsByDefinition.get(code)
 
   function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -254,11 +327,23 @@ function ImportTemplateDialog({ importable }: { importable: ImportableDefinition
               {definition.coverage.criticalityInert && " · ningún hallazgo alcanzará criticidad alta hasta calibrar."}
             </p>
           )}
+          {existing?.approved && (
+            <p className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3 text-xs">
+              Ya hay una versión aprobada de esta definición: <span className="font-mono">{existing.approved.versionLabel}</span>.
+              Incorporar otra crea un borrador nuevo, y al aprobarlo reemplaza a la vigente.
+              Usa una etiqueta de versión distinta.
+            </p>
+          )}
           <div className="grid gap-3 md:grid-cols-2">
             <Field label="Tipo">
               <Select value={kind} onValueChange={setKind}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{Object.entries(INSPECTION_KIND_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select><input type="hidden" name="kind" value={kind} />
             </Field>
-            <Field label="Etiqueta de versión" hint={`Vacío = ${definition?.version ?? "versión de la definición"}.`}>
+            <Field
+              label="Etiqueta de versión"
+              hint={existing?.latest
+                ? `Ya existe ${existing.latest.versionLabel}; usa otra etiqueta.`
+                : `Vacío = ${definition?.version ?? "versión de la definición"}.`}
+            >
               <Input name="versionLabel" maxLength={80} />
             </Field>
           </div>
@@ -354,12 +439,118 @@ function ApproveDialog({ templateId, name, expectedVersion }: { templateId: stri
   )
 }
 
+/* ── Gestión de una programación existente ────────────────────────────────
+ * A-10/A-11: el diálogo de alta no ofrecía `intervalDays` (pese a que el Zod y
+ * el CHECK lo soportan) y, una vez creada, la programación no se podía editar,
+ * reasignar ni desactivar.
+ */
+
+function EditProgramDialog({ program, assignees }: {
+  program: ProgramItem
+  assignees: { id: string; name: string }[]
+}) {
+  const [open, setOpen] = React.useState(false)
+  const [frequency, setFrequency] = React.useState(program.frequency)
+  const [assignedToUserId, setAssignedToUserId] = React.useState(program.assignedToUserId ?? "_none")
+  const [nextDueOn, setNextDueOn] = React.useState(program.nextDueOn)
+  const operation = useOperation()
+
+  function submit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const form = new FormData(event.currentTarget)
+    const intervalDays = Number(form.get("intervalDays"))
+    const subjectType = String(form.get("subjectType") ?? "").trim()
+    operation.run(() => updateInspectionProgramAction({
+      programId: program.id,
+      expectedVersion: program.version,
+      frequency,
+      intervalDays: Number.isFinite(intervalDays) && intervalDays > 0 ? intervalDays : undefined,
+      nextDueOn,
+      assignedToUserId: assignedToUserId === "_none" ? null : assignedToUserId,
+      subjectType: subjectType || null,
+    }), () => setOpen(false))
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild><Button size="sm" variant="ghost">Editar</Button></DialogTrigger>
+      <DialogContent>
+        <form onSubmit={submit} className="space-y-4">
+          <DialogHeader>
+            <DialogTitle>Editar programación</DialogTitle>
+            <DialogDescription>{program.templateName} · {program.worksiteName}</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-3 md:grid-cols-2">
+            <Field label="Frecuencia">
+              <Select value={frequency} onValueChange={setFrequency}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{Object.entries(INSPECTION_FREQUENCY_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select>
+            </Field>
+            <Field label="Intervalo (días)" hint="Vacío = el propio de la frecuencia.">
+              <Input name="intervalDays" type="number" min={1} max={3650} defaultValue={program.intervalDays} />
+            </Field>
+          </div>
+          <div className="grid gap-3 md:grid-cols-2">
+            <Field label="Próxima ejecución">
+              <DatePicker value={nextDueOn} onChange={setNextDueOn} />
+            </Field>
+            <Field label="Asignada a" hint="Opcional.">
+              <Select value={assignedToUserId} onValueChange={setAssignedToUserId}><SelectTrigger><SelectValue placeholder="Sin asignar" /></SelectTrigger><SelectContent><SelectItem value="_none">Sin asignar</SelectItem>{assignees.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select>
+            </Field>
+          </div>
+          <Field label="Tipo de sujeto" hint="Opcional. Ej: extintor, camión, contenedor.">
+            <Input name="subjectType" maxLength={120} defaultValue={program.subjectType ?? ""} />
+          </Field>
+          {operation.message && <p role="status" className="text-sm">{operation.message}</p>}
+          <DialogFooter><Button type="submit" disabled={operation.pending}>Guardar</Button></DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+/** Desactivar es el borrado: los runs ya creados conservan su origen. */
+function ToggleProgramButton({ program }: { program: ProgramItem }) {
+  const operation = useOperation()
+  return (
+    <Button
+      type="button"
+      size="sm"
+      variant="ghost"
+      disabled={operation.pending}
+      onClick={() => operation.run(() => updateInspectionProgramAction({
+        programId: program.id,
+        expectedVersion: program.version,
+        isActive: !program.isActive,
+      }))}
+    >
+      {program.isActive ? "Desactivar" : "Activar"}
+    </Button>
+  )
+}
+
+/** Materializa la ejecución del período por el mismo camino que el cron. */
+function RunProgramNowButton({ program }: { program: ProgramItem }) {
+  const operation = useOperation()
+  return (
+    <Button
+      type="button"
+      size="sm"
+      variant="secondary"
+      disabled={operation.pending}
+      onClick={() => operation.run(() => runProgramNowAction({ programId: program.id }))}
+      title={operation.message || undefined}
+    >
+      Ejecutar ahora
+    </Button>
+  )
+}
+
 /* ── Alta de programación ─────────────────────────────────────────────────── */
 
-function ProgramDialog({ templates, worksites, assignees }: {
+function ProgramDialog({ templates, worksites, assignees, riskEntriesByWorksite }: {
   templates: { id: string; name: string; versionLabel: string }[]
   worksites: { id: string; name: string }[]
   assignees: { id: string; name: string }[]
+  riskEntriesByWorksite: Record<string, { id: string; hazardCode: string; hazard: string }[]>
 }) {
   const [open, setOpen] = React.useState(false)
   const [defaultStart, setDefaultStart] = React.useState("")
@@ -367,6 +558,7 @@ function ProgramDialog({ templates, worksites, assignees }: {
   const [worksiteId, setWorksiteId] = React.useState(worksites[0]?.id ?? "")
   const [frequency, setFrequency] = React.useState("monthly")
   const [assignedToUserId, setAssignedToUserId] = React.useState("_none")
+  const [riskEntryId, setRiskEntryId] = React.useState("_none")
   const operation = useOperation()
 
   function submit(event: React.FormEvent<HTMLFormElement>) {
@@ -374,15 +566,18 @@ function ProgramDialog({ templates, worksites, assignees }: {
     const form = new FormData(event.currentTarget)
     const assignee = String(form.get("assignedToUserId") ?? "").trim()
     const subjectType = String(form.get("subjectType") ?? "").trim()
-    const riskEntryId = String(form.get("riskEntryId") ?? "").trim()
+    const riskEntry = String(form.get("riskEntryId") ?? "").trim()
+    const intervalDays = Number(form.get("intervalDays"))
     operation.run(() => createInspectionProgramAction({
       templateId: form.get("templateId"),
       worksiteId: form.get("worksiteId"),
       frequency: form.get("frequency"),
+      // A-10: el Zod y el CHECK siempre lo soportaron; el formulario no lo ofrecía.
+      intervalDays: Number.isFinite(intervalDays) && intervalDays > 0 ? intervalDays : undefined,
       startsOn: form.get("startsOn"),
       assignedToUserId: assignee || null,
       subjectType: subjectType || null,
-      riskEntryId: riskEntryId || null,
+      riskEntryId: riskEntry || null,
     }), () => setOpen(false))
   }
 
@@ -400,7 +595,7 @@ function ProgramDialog({ templates, worksites, assignees }: {
           </Field>
           <div className="grid gap-3 md:grid-cols-2">
             <Field label="Faena">
-              <Select value={worksiteId} onValueChange={setWorksiteId}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{worksites.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select><input type="hidden" name="worksiteId" value={worksiteId} />
+              <Select value={worksiteId} onValueChange={(value) => { setWorksiteId(value); setRiskEntryId("_none") }}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{worksites.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select><input type="hidden" name="worksiteId" value={worksiteId} />
             </Field>
             <Field label="Frecuencia">
               <Select value={frequency} onValueChange={setFrequency}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{Object.entries(INSPECTION_FREQUENCY_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select><input type="hidden" name="frequency" value={frequency} />
@@ -410,13 +605,29 @@ function ProgramDialog({ templates, worksites, assignees }: {
             <Field label="Primera fecha" required>
               <DatePicker name="startsOn" defaultValue={defaultStart} />
             </Field>
+            <Field label="Intervalo (días)" hint="Vacío = el propio de la frecuencia.">
+              <Input name="intervalDays" type="number" min={1} max={3650} />
+            </Field>
             <Field label="Asignada a" hint="Opcional.">
               <Select value={assignedToUserId} onValueChange={setAssignedToUserId}><SelectTrigger><SelectValue placeholder="Sin asignar" /></SelectTrigger><SelectContent><SelectItem value="_none">Sin asignar</SelectItem>{assignees.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select><input type="hidden" name="assignedToUserId" value={assignedToUserId === "_none" ? "" : assignedToUserId} />
             </Field>
           </div>
           <div className="grid gap-3 md:grid-cols-2">
             <Field label="Tipo de sujeto" hint="Opcional. Ej: extintor, camión, contenedor."><Input name="subjectType" maxLength={120} /></Field>
-            <Field label="Peligro MIPER de origen" hint="Opcional."><Input name="riskEntryId" placeholder="ID del peligro en la MIPER" /></Field>
+            {/* A-09: antes era un `<Input>` donde el usuario debía escribir el
+                UUID del peligro a mano, sin validar existencia ni faena. */}
+            <Field label="Peligro MIPER de origen" hint="Opcional. Los de la faena seleccionada.">
+              <Select value={riskEntryId} onValueChange={setRiskEntryId}>
+                <SelectTrigger><SelectValue placeholder="Sin vincular" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="_none">Sin vincular</SelectItem>
+                  {(riskEntriesByWorksite[worksiteId] ?? []).map((entry) => (
+                    <SelectItem key={entry.id} value={entry.id}>{entry.hazardCode} · {entry.hazard}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <input type="hidden" name="riskEntryId" value={riskEntryId === "_none" ? "" : riskEntryId} />
+            </Field>
           </div>
           {operation.message && <p role="status" className="text-sm">{operation.message}</p>}
           <DialogFooter><Button type="submit" disabled={operation.pending}>Programar</Button></DialogFooter>

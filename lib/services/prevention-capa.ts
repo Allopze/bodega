@@ -6,6 +6,9 @@ import {
   preventionCapaEvidence,
   preventionCapaFollowups,
   preventionCapaTransitions,
+  // Sólo la tabla, no el servicio de inspecciones: `prevention-inspections.ts`
+  // importa `createCapaActionWithClient` de aquí y el ciclo rompería el build.
+  preventionInspectionFindings,
   users,
   worksites,
   worksiteUsers,
@@ -528,6 +531,40 @@ export async function transitionCapaActionWithClient(
       eq(preventionCapaActions.version, input.expectedVersion),
     )).returning()
     if (!updated) throw new Error("La acción fue actualizada concurrentemente. Recarga antes de continuar.")
+
+    // B-06 (auditoría 2026-08-18): el hallazgo de inspección que originó esta
+    // acción sigue su suerte. `prevention_inspection_findings` tenía
+    // `status='closed'`, `closedAt` y `closedByUserId` desde el principio y
+    // NADA los escribía nunca, así que `openFindings` sólo crecía y el
+    // indicador de cierre oportuno no podía calcularse.
+    //
+    // Va inline y no llamando a `prevention-inspections.ts`: ese módulo ya
+    // importa `createCapaActionWithClient` de aquí, y el ciclo rompería el
+    // build. El `WHERE capa_action_id` no toca nada si la acción no vino de una
+    // inspección, así que las de otros orígenes no se ven afectadas.
+    if (input.toStatus === "verified" || input.toStatus === "closed") {
+      await client.update(preventionInspectionFindings).set({
+        status: "closed",
+        closedByUserId: access.ctx.userId,
+        closedAt: now,
+        updatedAt: now,
+      }).where(and(
+        eq(preventionInspectionFindings.capaActionId, current.id),
+        ne(preventionInspectionFindings.status, "closed"),
+      ))
+    }
+    if (input.toStatus === "reopened") {
+      // Simétrico: si la acción vuelve a estar viva, el hallazgo no está resuelto.
+      await client.update(preventionInspectionFindings).set({
+        status: "capa_linked",
+        closedByUserId: null,
+        closedAt: null,
+        updatedAt: now,
+      }).where(and(
+        eq(preventionInspectionFindings.capaActionId, current.id),
+        eq(preventionInspectionFindings.status, "closed"),
+      ))
+    }
 
     await client.insert(preventionCapaTransitions).values({
       id: `capat-${nanoid()}`,

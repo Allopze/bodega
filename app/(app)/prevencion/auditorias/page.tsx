@@ -9,13 +9,18 @@ export const metadata: Metadata = { title: "Auditorías del SGSST" }
  * el art. 14, que exige evaluar el cumplimiento *del programa de trabajo
  * preventivo* — eso lo resuelve /prevencion/pdtp/cobertura.
  */
-export default async function AuditoriasPage() {
+export default async function AuditoriasPage({ searchParams }: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>
+}) {
+  const resolved = await searchParams
   return (
     <InspectionsScreen
       kinds={["audit"]}
       title="Auditorías del SGSST"
       description="Evaluación periódica del desempeño del Sistema de Gestión, exigida por el DS 44 art. 22 n°4. Los hallazgos derivan a acciones correctivas."
       breadcrumbLabel="Auditorías"
+      catalogHref="/prevencion/auditorias/catalogo"
+      searchParams={resolved}
     />
   )
 }

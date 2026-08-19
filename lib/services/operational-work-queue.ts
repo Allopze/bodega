@@ -24,6 +24,7 @@ import {
   preventionCommitteeProgramActivities,
   preventionCommitteePrograms,
   preventionCommittees,
+  preventionInspectionFindings,
   preventionInspectionRuns,
   preventionInspectionTemplates,
   products,
@@ -522,6 +523,20 @@ export type OperationalSourceBranch = {
 const CAPA_OPEN_STATUSES = ["pending", "in_progress", "pending_verification", "reopened"]
 
 /**
+ * Estados de inspección que le tocan a ESTE usuario (A-06).
+ *
+ * Único lugar donde se declara: la fuente de la cola y el contador del badge lo
+ * consumen igual. Cuando divergen, el rail dice 7 y la lista muestra 2 — que es
+ * exactamente la clase de desajuste que este archivo ya sufrió en otro módulo.
+ */
+export function inspectionQueueStatuses(session: Session): string[] {
+  const statuses: string[] = []
+  if (hasPermission(session, "prevention:inspections:execute")) statuses.push("planned", "in_progress")
+  if (hasPermission(session, "prevention:inspections:review")) statuses.push("completed")
+  return statuses
+}
+
+/**
  * Fuente de acciones correctivas para la cola. Las dos ramas —PDTP y CAPA—
  * leen la misma tabla `prevention_capa_actions` y se reparten el universo por
  * `origin`, así que ninguna acción aparece dos veces (D11, 2026-08-12). Sólo
@@ -910,7 +925,13 @@ function operationalSourceBranches(session: Session, scope: WorksiteScope): Oper
     ctaLabel: sql`'Abrir CAPA'::text`,
   }))
 
-  if (hasPermission(session, "prevention:inspections:view")) add("inspecciones", sql`
+  // A-06 (auditoría 2026-08-18): la fuente se montaba con sólo `:view` y
+  // ofrecía "Ejecutar"/"Revisar" indistintamente, así que un rol de lectura
+  // (`cphs`) veía tarjetas cuya acción le iba a ser negada al abrirlas. La
+  // bandeja es de acciones pendientes, no de lectura: cada estado entra sólo si
+  // el usuario puede actuar sobre él.
+  const inspectionStatuses = inspectionQueueStatuses(session)
+  if (inspectionStatuses.length > 0) add("inspecciones", sql`
     SELECT 'inspection'::text AS source_type, ${preventionInspectionRuns.id} AS source_id,
       CASE WHEN ${preventionInspectionRuns.status} = 'completed' THEN 'review' ELSE 'execute' END AS action_key,
       'inspecciones'::text AS module, ${preventionInspectionRuns.code} AS code,
@@ -918,7 +939,16 @@ function operationalSourceBranches(session: Session, scope: WorksiteScope): Oper
       ''::text AS subtitle, ${preventionInspectionRuns.worksiteId} AS worksite_id, ${worksites.name} AS worksite_name,
       ${preventionInspectionRuns.status} AS status,
       CASE ${preventionInspectionRuns.status} WHEN 'planned' THEN 'Planificada' WHEN 'completed' THEN 'Pendiente de revisión' ELSE 'En proceso' END AS status_label,
-      'normal'::text AS priority, false AS blocked, ${preventionInspectionRuns.createdAt}::text AS created_at,
+      CASE
+        WHEN EXISTS (
+          SELECT 1 FROM ${preventionInspectionFindings} f
+          WHERE f.run_id = ${preventionInspectionRuns.id}
+            AND f.status <> 'closed' AND f.criticality IN ('high', 'critical')
+        ) THEN 'high'
+        WHEN ${preventionInspectionRuns.scheduledFor} IS NOT NULL
+          AND ${preventionInspectionRuns.scheduledFor} < ${startOfChileDay()} THEN 'high'
+        ELSE 'normal'
+      END AS priority, false AS blocked, ${preventionInspectionRuns.createdAt}::text AS created_at,
       LEFT(${preventionInspectionRuns.scheduledFor}::text, 10) AS source_due_at, ${preventionInspectionRuns.assignedToUserId} AS native_assignee_user_id,
       (SELECT ${users.name} FROM ${users} WHERE ${users.id} = ${preventionInspectionRuns.assignedToUserId} LIMIT 1) AS native_assignee_name,
       CONCAT('/prevencion/inspecciones/', ${preventionInspectionRuns.id}) AS href,
@@ -926,7 +956,7 @@ function operationalSourceBranches(session: Session, scope: WorksiteScope): Oper
     FROM ${preventionInspectionRuns}
     INNER JOIN ${worksites} ON ${worksites.id} = ${preventionInspectionRuns.worksiteId}
     INNER JOIN ${preventionInspectionTemplates} ON ${preventionInspectionTemplates.id} = ${preventionInspectionRuns.templateId}
-    WHERE ${inScope(preventionInspectionRuns.worksiteId)} AND ${preventionInspectionRuns.status} IN ('planned', 'in_progress', 'completed')
+    WHERE ${inScope(preventionInspectionRuns.worksiteId)} AND ${preventionInspectionRuns.status} IN ${inspectionStatuses}
   `)
 
   if (hasPermission(session, "prevention:docs:view")) add("documentacion", sql`
@@ -1511,11 +1541,14 @@ export async function getOperationalWorkCount(session: Session) {
       )),
     ))
   }
-  if (hasPermission(session, "prevention:inspections:view")) {
+  // A-06: mismo predicado que la fuente de la cola. Con `:view` a secas el
+  // badge contaba tarjetas que la lista no muestra y cuya acción sería negada.
+  const inspectionCountStatuses = inspectionQueueStatuses(session)
+  if (inspectionCountStatuses.length > 0) {
     counts.push(countRows(
       db.select({ total: count() }).from(preventionInspectionRuns).where(and(
         inspectionScope,
-        inArray(preventionInspectionRuns.status, ["planned", "in_progress", "completed"]),
+        inArray(preventionInspectionRuns.status, inspectionCountStatuses),
       )),
     ))
   }

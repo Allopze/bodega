@@ -6,12 +6,12 @@ export default function Loading() {
   return (
     <PageContainer>
       <PageHeader
-        title="Inspecciones"
+        title="Auditorías del SGSST"
         breadcrumb={
           <Breadcrumbs items={[
             { label: "Inicio", href: "/dashboard" },
             { label: "Prevención" },
-            { label: "Inspecciones" },
+            { label: "Auditorías" },
           ]} />
         }
       />

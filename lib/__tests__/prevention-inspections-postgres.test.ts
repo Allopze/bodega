@@ -7,7 +7,7 @@ import { migrate } from "drizzle-orm/postgres-js/migrator"
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest"
 import * as schema from "@/db/schema"
 import type { WorksiteScope } from "@/lib/auth/scope"
-import type { InspectionItemSpec } from "@/lib/prevention/inspections"
+import { fieldKindIsScorable, type InspectionItemSpec } from "@/lib/prevention/inspections"
 import {
   assertSafeDestructiveDatabase,
   getDatabaseNameFromUrl,
@@ -37,12 +37,77 @@ function getDb() {
   return testDb
 }
 
+/**
+ * Versión vigente del run. Desde C-02 `saveInspectionAnswers` avanza `version`,
+ * así que el `expectedVersion` del siguiente envío no puede tomarse de un valor
+ * capturado antes de guardar.
+ */
+async function currentRunVersion(id: string) {
+  const [row] = await getDb().select({ version: schema.preventionInspectionRuns.version })
+    .from(schema.preventionInspectionRuns)
+    .where(eq(schema.preventionInspectionRuns.id, id))
+  return row!.version
+}
+
+/**
+ * Respuesta válida para un ítem según su tipo (B-08).
+ *
+ * `inspeccion_extintores` mezcla ítems de conformidad con `text`, `date` y
+ * `select`: desde B-08 esos NO admiten "Cumple" —su respuesta es su contenido—
+ * así que responder la plantilla entera con `conforming` es inválido.
+ */
+function answerFor(
+  item: InspectionItemSpec,
+  result: "conforming" | "partial" | "non_conforming" | "not_applicable" = "conforming",
+  comment: string | null = null,
+) {
+  if (!fieldKindIsScorable(item.kind)) {
+    return { sectionId: item.sectionId, itemId: item.itemId, result: "recorded" as const, value: "Registrado en terreno" }
+  }
+  return { sectionId: item.sectionId, itemId: item.itemId, result, comment }
+}
+
+/** Conjunto completo de respuestas válidas, con un override opcional por índice. */
+function answersForAll(
+  items: InspectionItemSpec[],
+  override?: (item: InspectionItemSpec, index: number) => ReturnType<typeof answerFor> | undefined,
+) {
+  return items.map((item, index) => override?.(item, index) ?? answerFor(item))
+}
+
+async function countAnswers(runId: string) {
+  const rows = await getDb().select({ id: schema.preventionInspectionAnswers.id })
+    .from(schema.preventionInspectionAnswers)
+    .where(eq(schema.preventionInspectionAnswers.runId, runId))
+  return rows.length
+}
+
 describeIf("Motor de inspecciones on real PostgreSQL", () => {
   let templateId = ""
   let templateVersion = 1
   let runId = ""
   let runVersion = 1
   let itemsCache: InspectionItemSpec[] = []
+
+  /** Primer ítem que sí expresa conformidad, para los escenarios cumple/no cumple. */
+  const scorableItem = () => itemsCache.find((item) => fieldKindIsScorable(item.kind))!
+
+  /**
+   * Acta de cierre exigida por la plantilla (función #2). Desde que el motor
+   * la aplica, completar sin ella queda bloqueado — que es el punto.
+   */
+  async function closingActFor(id: string) {
+    const { closingActFromDefinition } = await import("@/lib/prevention/inspections")
+    const [template] = await getDb().select().from(schema.preventionInspectionTemplates)
+      .where(eq(schema.preventionInspectionTemplates.id, id))
+    const spec = closingActFromDefinition(template!.definitionSnapshot as never)
+    if (!spec) return undefined
+    return {
+      result: spec.resultOptions[0]!.value,
+      restrictions: null,
+      signatures: spec.signatureRoles.map((role) => ({ role, name: `Firmante ${role}` })),
+    }
+  }
 
   beforeAll(async () => {
     assertSafeDestructiveDatabase({ databaseUrl: databaseUrl!, allowDestructiveReset: canReset, context: "PREVENTION_INSPECTIONS" })
@@ -138,7 +203,8 @@ describeIf("Motor de inspecciones on real PostgreSQL", () => {
   it("rejects an answer that does not belong to the template", async () => {
     const service = await import("@/lib/services/prevention-inspections")
     await expect(service.saveInspectionAnswers({
-      runId, answers: [{ sectionId: "seccion-inexistente", itemId: "item-fantasma", result: "conforming" }],
+      runId, expectedVersion: await currentRunVersion(runId),
+      answers: [{ sectionId: "seccion-inexistente", itemId: "item-fantasma", result: "conforming" }],
     }, AUTHOR)).rejects.toThrow(/no corresponde a ningún ítem/)
   })
 
@@ -154,7 +220,8 @@ describeIf("Motor de inspecciones on real PostgreSQL", () => {
     expect(itemsCache.some((item) => item.required)).toBe(false)
 
     await service.saveInspectionAnswers({
-      runId, answers: [{ sectionId: itemsCache[0]!.sectionId, itemId: itemsCache[0]!.itemId, result: "conforming" }],
+      runId, expectedVersion: await currentRunVersion(runId),
+      answers: [answerFor(scorableItem())],
     }, AUTHOR)
 
     const [current] = await getDb().select().from(schema.preventionInspectionRuns)
@@ -165,13 +232,18 @@ describeIf("Motor de inspecciones on real PostgreSQL", () => {
 
   it("requires a reason to mark an item as not applicable", async () => {
     const service = await import("@/lib/services/prevention-inspections")
-    const target = itemsCache[0]!
+    const target = scorableItem()
+    // B-03: el mensaje lo produce el servicio (`validateAnswerRow`) y nombra el
+    // ítem. Antes la única guarda era el CHECK de Postgres, que devolvía el
+    // texto crudo de la violación y tumbaba el lote entero.
     await expect(service.saveInspectionAnswers({
-      runId, answers: [{ sectionId: target.sectionId, itemId: target.itemId, result: "not_applicable", comment: "" }],
-    }, AUTHOR)).rejects.toThrow()
+      runId, expectedVersion: await currentRunVersion(runId),
+      answers: [{ sectionId: target.sectionId, itemId: target.itemId, result: "not_applicable", comment: "" }],
+    }, AUTHOR)).rejects.toThrow(/exige indicar el motivo/)
 
     await service.saveInspectionAnswers({
-      runId, answers: [{ sectionId: target.sectionId, itemId: target.itemId, result: "not_applicable", comment: "Extintor retirado de servicio." }],
+      runId, expectedVersion: await currentRunVersion(runId),
+      answers: [{ sectionId: target.sectionId, itemId: target.itemId, result: "not_applicable", comment: "Extintor retirado de servicio." }],
     }, AUTHOR)
     const [stored] = await getDb().select().from(schema.preventionInspectionAnswers)
       .where(eq(schema.preventionInspectionAnswers.runId, runId))
@@ -180,18 +252,18 @@ describeIf("Motor de inspecciones on real PostgreSQL", () => {
 
   it("completes the run, computes compliance and materializes findings by criticality", async () => {
     const service = await import("@/lib/services/prevention-inspections")
-    const answers = itemsCache.map((item, index) => ({
-      sectionId: item.sectionId,
-      itemId: item.itemId,
-      // Un incumplimiento deliberado en el primer ítem con daño potencial alto.
-      result: index === 0 ? "non_conforming" as const : "conforming" as const,
-      comment: index === 0 ? "Manómetro en zona roja" : null,
-    }))
-    await service.saveInspectionAnswers({ runId, answers }, AUTHOR)
+    // Un incumplimiento deliberado en el primer ítem PUNTUABLE: los `text`,
+    // `date` y `select` de esta plantilla no expresan conformidad (B-08).
+    const failing = scorableItem()
+    const answers = answersForAll(itemsCache, (item) =>
+      item.itemId === failing.itemId ? answerFor(item, "non_conforming", "Manómetro en zona roja") : undefined)
+    await service.saveInspectionAnswers({ runId, expectedVersion: await currentRunVersion(runId), answers }, AUTHOR)
 
     const [before] = await getDb().select().from(schema.preventionInspectionRuns)
       .where(eq(schema.preventionInspectionRuns.id, runId))
-    const result = await service.completeInspectionRun({ runId, expectedVersion: before!.version }, AUTHOR)
+    const result = await service.completeInspectionRun({
+      runId, expectedVersion: before!.version, closingAct: await closingActFor(templateId),
+    }, AUTHOR)
     runVersion = result.run.version
 
     expect(result.run.status).toBe("completed")
@@ -203,8 +275,12 @@ describeIf("Motor de inspecciones on real PostgreSQL", () => {
     expect(findings).toHaveLength(1)
     expect(findings[0]?.description).toContain("Manómetro en zona roja")
     expect(findings[0]?.status).toBe("open")
-    // Sin `danoPotencial` en el catálogo, la criticidad cae al default medio.
-    expect(findings[0]?.criticality).toBe("medium")
+    // La criticidad la fija el `danoPotencial` del ítem en la plantilla, no
+    // quien ejecuta. El comentario anterior daba por hecho que el catálogo no
+    // lo declaraba y por eso esperaba "medium": hoy sí lo declara (C-03), así
+    // que se comprueba la derivación en vez de un valor fijo.
+    const { criticalityFromDanoPotencial } = await import("@/lib/prevention/inspections")
+    expect(findings[0]?.criticality).toBe(criticalityFromDanoPotencial(failing.danoPotencial))
   })
 
   it("blocks the executor from reviewing their own inspection", async () => {
@@ -256,11 +332,19 @@ describeIf("Motor de inspecciones on real PostgreSQL", () => {
     expect(reviewed).toMatchObject({ status: "reviewed", reviewedByUserId: "in-reviewer" })
 
     await expect(service.saveInspectionAnswers({
-      runId, answers: [{ sectionId: itemsCache[0]!.sectionId, itemId: itemsCache[0]!.itemId, result: "conforming" }],
+      runId, expectedVersion: await currentRunVersion(runId),
+      answers: [answerFor(scorableItem())],
     }, AUTHOR)).rejects.toThrow(/cerrada o cancelada/)
   })
 
-  it("reschedules the program from the actual execution date", async () => {
+  /*
+   * Esta prueba se INVIRTIÓ (D-3, auditoría 2026-08-18). Antes verificaba que
+   * completar avanzaba `nextDueOn` desde la fecha real; ahora el avance es
+   * responsabilidad exclusiva del materializador. Tenerlo en los dos lados
+   * contaba dos veces el mismo ciclo, y hacerlo desde "hoy" en vez de desde el
+   * vencimiento arrastraba el calendario legal (A-12).
+   */
+  it("completing a run does NOT move the program schedule", async () => {
     const service = await import("@/lib/services/prevention-inspections")
     const program = await service.createInspectionProgram({
       templateId, worksiteId: "ws-in-a", frequency: "monthly", startsOn: "2026-08-01",
@@ -270,15 +354,50 @@ describeIf("Motor de inspecciones on real PostgreSQL", () => {
     const created = await service.createInspectionRun({
       templateId, worksiteId: "ws-in-a", programId: program.id,
     }, AUTHOR)
-    await service.saveInspectionAnswers({
+    // El guardado avanza `version` (C-02), así que el CAS del completar toma la
+    // versión devuelta y no la que tenía el run al crearse.
+    const saved = await service.saveInspectionAnswers({
       runId: created.run.id,
-      answers: itemsCache.map((item) => ({ sectionId: item.sectionId, itemId: item.itemId, result: "conforming" as const })),
+      expectedVersion: created.run.version,
+      answers: answersForAll(itemsCache),
     }, AUTHOR)
-    await service.completeInspectionRun({ runId: created.run.id, expectedVersion: created.run.version }, AUTHOR)
+    await service.completeInspectionRun({
+      runId: created.run.id, expectedVersion: saved.version, closingAct: await closingActFor(templateId),
+    }, AUTHOR)
 
     const [after] = await getDb().select().from(schema.preventionInspectionPrograms)
       .where(eq(schema.preventionInspectionPrograms.id, program.id))
-    expect(after!.nextDueOn > "2026-08-01").toBe(true)
+    expect(after!.nextDueOn).toBe("2026-08-01")
+  })
+
+  // B-04: la otra mitad. Hasta ahora `programId` no lo enviaba ningún
+  // formulario, así que toda programación quedaba vencida para siempre.
+  it("materializes the due run from its program, idempotently, and anchors the next date to the due one", async () => {
+    const service = await import("@/lib/services/prevention-inspections")
+    const { materializeProgramRuns } = await import("@/lib/services/prevention-inspection-scheduler")
+    const program = await service.createInspectionProgram({
+      templateId, worksiteId: "ws-in-a", frequency: "monthly", startsOn: "2026-01-15",
+    }, AUTHOR)
+
+    const first = await materializeProgramRuns()
+    expect(first.created).toBeGreaterThanOrEqual(1)
+
+    const runs = await getDb().select().from(schema.preventionInspectionRuns)
+      .where(eq(schema.preventionInspectionRuns.programId, program.id))
+    expect(runs).toHaveLength(1)
+    expect(runs[0]).toMatchObject({ status: "planned", scheduledFor: "2026-01-15" })
+
+    // Segundo disparo del mismo día: el índice único por slot lo absorbe.
+    await materializeProgramRuns()
+    const afterSecond = await getDb().select().from(schema.preventionInspectionRuns)
+      .where(eq(schema.preventionInspectionRuns.programId, program.id))
+    expect(afterSecond).toHaveLength(1)
+
+    // Anclado al vencimiento y rodando en intervalos completos hasta superar
+    // hoy: un programa abandonado no genera una ejecución por período perdido.
+    const [after] = await getDb().select().from(schema.preventionInspectionPrograms)
+      .where(eq(schema.preventionInspectionPrograms.id, program.id))
+    expect(after!.nextDueOn > "2026-01-15").toBe(true)
   })
 
   it("does not leak runs of another worksite", async () => {
@@ -300,10 +419,13 @@ describeIf("Motor de inspecciones on real PostgreSQL", () => {
     const created = await service.createInspectionRun({ templateId, worksiteId: "ws-in-a" }, AUTHOR)
     // El template de extintores es cumple/no-cumple puro (§80-92): ningún
     // ítem admite 'partial'.
-    const target = itemsCache.find((item) => !fieldKindAcceptsPartial(item.kind))!
+    // Puntuable pero sin escala B/R/M: un `select` o un `text` fallaría por no
+    // admitir vocabulario de conformidad, no por la escala, que es lo que se prueba.
+    const target = itemsCache.find((item) => fieldKindIsScorable(item.kind) && !fieldKindAcceptsPartial(item.kind))!
     expect(target).toBeDefined()
     await expect(service.saveInspectionAnswers({
-      runId: created.run.id, answers: [{ sectionId: target.sectionId, itemId: target.itemId, result: "partial", comment: "Desgaste menor." }],
+      runId: created.run.id, expectedVersion: created.run.version,
+      answers: [{ sectionId: target.sectionId, itemId: target.itemId, result: "partial", comment: "Desgaste menor." }],
     }, AUTHOR)).rejects.toThrow(/no admite la respuesta "Regular"/)
   })
 
@@ -323,28 +445,218 @@ describeIf("Motor de inspecciones on real PostgreSQL", () => {
 
     // 1 Bueno, 1 Regular, resto Bueno: exactamente el caso que antes de H-04
     // el motor no podía siquiera registrar.
-    const answers = brmItems.map((item, index) => ({
-      sectionId: item.sectionId,
-      itemId: item.itemId,
-      result: index === 1 ? "partial" as const : "conforming" as const,
-      comment: index === 1 ? "Desgaste menor, aún operativo." : null,
-    }))
-    await service.saveInspectionAnswers({ runId: created.run.id, answers }, AUTHOR)
+    const brmScorable = brmItems.filter((item) => fieldKindIsScorable(item.kind))
+    const partialTarget = brmScorable[1]!
+    const answers = answersForAll(brmItems, (item) =>
+      item.itemId === partialTarget.itemId ? answerFor(item, "partial", "Desgaste menor, aún operativo.") : undefined)
+    await service.saveInspectionAnswers({ runId: created.run.id, expectedVersion: created.run.version, answers }, AUTHOR)
 
     const [before] = await getDb().select().from(schema.preventionInspectionRuns)
       .where(eq(schema.preventionInspectionRuns.id, created.run.id))
-    const result = await service.completeInspectionRun({ runId: created.run.id, expectedVersion: before!.version }, AUTHOR)
+    const result = await service.completeInspectionRun({
+      runId: created.run.id, expectedVersion: before!.version, closingAct: await closingActFor(approved.id),
+    }, AUTHOR)
 
     expect(result.run.partialCount).toBe(1)
-    expect(result.run.conformingCount).toBe(brmItems.length - 1)
-    // (n-1 + 0.5) / n, redondeado — misma fórmula que lib/sst/compliance.ts.
-    const expected = Math.round(((brmItems.length - 1 + 0.5) / brmItems.length) * 100)
+    expect(result.run.conformingCount).toBe(brmScorable.length - 1)
+    // (n-1 + 0.5) / n sobre los PUNTUABLES — misma fórmula que lib/sst/compliance.ts.
+    // Los ítems que no puntúan salen del denominador (B-08).
+    const expected = Math.round(((brmScorable.length - 1 + 0.5) / brmScorable.length) * 100)
     expect(result.compliancePercent).toBe(expected)
 
     const [stored] = await getDb().select().from(schema.preventionInspectionRuns)
       .where(eq(schema.preventionInspectionRuns.id, created.run.id))
     expect(stored!.partialCount).toBe(1)
     expect(stored!.compliancePercent).toBe(expected)
+  })
+
+  // B-05 (auditoría 2026-08-18): `origin` ya se aceptaba en el schema y el
+  // CHECK, pero ningún formulario lo exponía — toda inspección nacía
+  // 'prevencion' y la certificación CPHS Plata/Oro de Mutual, que exige meses
+  // con inspección originada por el propio comité, era inalcanzable.
+  it("persists 'cphs' as the run's origin, unblocking CPHS Plata/Oro certification evidence", async () => {
+    const service = await import("@/lib/services/prevention-inspections")
+    const created = await service.createInspectionRun({
+      templateId, worksiteId: "ws-in-a", origin: "cphs", subjectLabel: "Ronda del comité paritario",
+    }, AUTHOR)
+    expect(created.run.origin).toBe("cphs")
+
+    // Misma columna que `gatherCertificationEvidence` (lib/services/prevention-cphs-certification.ts)
+    // lee para contar `monthsWithCommitteeInspection` de los niveles Plata/Oro.
+    const [stored] = await getDb().select({ origin: schema.preventionInspectionRuns.origin })
+      .from(schema.preventionInspectionRuns)
+      .where(eq(schema.preventionInspectionRuns.id, created.run.id))
+    expect(stored?.origin).toBe("cphs")
+  })
+
+  /* ── Fase 1: ciclo de vida de plantillas ────────────────────────────────── */
+
+  // A-02: reimportar es el camino normal para versionar. La UI escondía del
+  // picker toda definición ya incorporada, dejando inalcanzable el mecanismo de
+  // `superseded` que el servicio ya implementaba entero.
+  // Se usa `inspeccion_contenedores` y NO la plantilla compartida: aprobar la
+  // v2 deja la v1 en `superseded`, y `createInspectionRun` sólo acepta
+  // aprobadas — versionar la plantilla que usan los demás tests los rompería a
+  // todos.
+  it("reimports a definition as a new version and supersedes the previous approved one", async () => {
+    const service = await import("@/lib/services/prevention-inspections")
+    const v1 = await service.importInspectionTemplate({
+      definitionCode: "inspeccion_contenedores", versionLabel: "01",
+    }, AUTHOR)
+    const approvedV1 = await service.approveInspectionTemplate({
+      templateId: v1.id, expectedVersion: v1.version,
+      reason: "Primera versión del anexo, revisada y conforme.",
+    }, APPROVER)
+    expect(approvedV1.status).toBe("approved")
+
+    const v2 = await service.importInspectionTemplate({
+      definitionCode: "inspeccion_contenedores", versionLabel: "02",
+    }, AUTHOR)
+    expect(v2).toMatchObject({ status: "draft", code: v1.code })
+
+    const approvedV2 = await service.approveInspectionTemplate({
+      templateId: v2.id, expectedVersion: v2.version,
+      reason: "Segunda versión del anexo, revisada y conforme.",
+    }, APPROVER)
+    expect(approvedV2.status).toBe("approved")
+
+    const [superseded] = await getDb().select().from(schema.preventionInspectionTemplates)
+      .where(eq(schema.preventionInspectionTemplates.id, v1.id))
+    expect(superseded).toMatchObject({ status: "superseded", supersededByTemplateId: v2.id })
+    expect(superseded!.supersededAt).toBeTruthy()
+  })
+
+  // C-10: antes salía el texto crudo "duplicate key value violates unique
+  // constraint prevention_inspection_template_version_unique".
+  it("rejects a duplicate version label with a readable message", async () => {
+    const service = await import("@/lib/services/prevention-inspections")
+    await expect(service.importInspectionTemplate({
+      definitionCode: "inspeccion_contenedores", versionLabel: "02",
+    }, AUTHOR)).rejects.toThrow(/Ya existe la versión "02"/)
+  })
+
+  // A-03: el `contentHash` se calculaba al importar y no se leía nunca, así que
+  // nada avisaba cuándo el catálogo en código se adelantaba al snapshot.
+  it("flags a template whose snapshot drifted from the code catalogue", async () => {
+    const service = await import("@/lib/services/prevention-inspections")
+    const listed = await service.listInspectionTemplates(APPROVER)
+    const fresh = listed.find((item) => item.sourceDefinitionCode === "inspeccion_extintores")
+    expect(fresh).toBeDefined()
+    // Recién importada desde el propio catálogo: no puede haber deriva.
+    expect(fresh!.definitionDrifted).toBe(false)
+    expect(fresh!.definitionMissing).toBe(false)
+
+    await getDb().update(schema.preventionInspectionTemplates)
+      .set({ contentHash: "0".repeat(64) })
+      .where(eq(schema.preventionInspectionTemplates.id, fresh!.id))
+    const afterDrift = await service.listInspectionTemplates(APPROVER)
+    expect(afterDrift.find((item) => item.id === fresh!.id)!.definitionDrifted).toBe(true)
+  })
+
+  /* ── Fase 2: guardado de respuestas ─────────────────────────────────────── */
+
+  // B-02: el payload declara el conjunto completo. Antes el upsert nunca
+  // borraba, así que devolver un ítem a "Sin responder" dejaba viva la fila
+  // anterior y el cliente contaba una respuesta menos que el servidor.
+  it("deletes answers omitted from the payload instead of leaving them behind", async () => {
+    const service = await import("@/lib/services/prevention-inspections")
+    const created = await service.createInspectionRun({ templateId, worksiteId: "ws-in-a" }, AUTHOR)
+    const three = itemsCache.filter((item) => fieldKindIsScorable(item.kind)).slice(0, 3)
+    expect(three).toHaveLength(3)
+
+    const first = await service.saveInspectionAnswers({
+      runId: created.run.id, expectedVersion: created.run.version,
+      answers: three.map((item) => answerFor(item)),
+    }, AUTHOR)
+    expect(first.saved).toBe(3)
+    expect(await countAnswers(created.run.id)).toBe(3)
+
+    const second = await service.saveInspectionAnswers({
+      runId: created.run.id, expectedVersion: first.version,
+      answers: three.slice(0, 2).map((item) => answerFor(item)),
+    }, AUTHOR)
+    expect(second).toMatchObject({ saved: 2, removed: 1 })
+    expect(await countAnswers(created.run.id)).toBe(2)
+
+    // Un conjunto vacío borra todo: antes el `.min(1)` del Zod impedía siquiera
+    // desmarcar el último ítem.
+    const cleared = await service.saveInspectionAnswers({
+      runId: created.run.id, expectedVersion: second.version, answers: [],
+    }, AUTHOR)
+    expect(cleared).toMatchObject({ saved: 0, removed: 2 })
+    expect(await countAnswers(created.run.id)).toBe(0)
+  })
+
+  // B-03: una respuesta inválida no puede llevarse por delante las válidas del
+  // mismo lote. El CHECK de Postgres tumbaba el INSERT completo.
+  it("rejects an invalid row without persisting the valid ones in the same batch", async () => {
+    const service = await import("@/lib/services/prevention-inspections")
+    const created = await service.createInspectionRun({ templateId, worksiteId: "ws-in-a" }, AUTHOR)
+    const [good, bad] = itemsCache.filter((item) => fieldKindIsScorable(item.kind))
+
+    await expect(service.saveInspectionAnswers({
+      runId: created.run.id, expectedVersion: created.run.version,
+      answers: [
+        answerFor(good!),
+        { sectionId: bad!.sectionId, itemId: bad!.itemId, result: "not_applicable" as const, comment: "" },
+      ],
+    }, AUTHOR)).rejects.toThrow(/exige indicar el motivo/)
+
+    expect(await countAnswers(created.run.id)).toBe(0)
+    expect(await currentRunVersion(created.run.id)).toBe(created.run.version)
+  })
+
+  // B-01: el defecto de raíz era que el cliente evaluaba el gate sobre su
+  // borrador y el servidor puntuaba lo último persistido. Ahora completar
+  // acepta el conjunto y lo guarda en la misma transacción.
+  it("completes in one transaction from the answers supplied, without a prior save", async () => {
+    const service = await import("@/lib/services/prevention-inspections")
+    const created = await service.createInspectionRun({ templateId, worksiteId: "ws-in-a" }, AUTHOR)
+    expect(await countAnswers(created.run.id)).toBe(0)
+
+    const result = await service.completeInspectionRun({
+      runId: created.run.id,
+      expectedVersion: created.run.version,
+      answers: answersForAll(itemsCache),
+      locationLatitude: "-36.826100",
+      locationLongitude: "-73.049800",
+      closingAct: await closingActFor(templateId),
+    }, AUTHOR)
+
+    expect(result.run.status).toBe("completed")
+    expect(await countAnswers(created.run.id)).toBe(itemsCache.length)
+    // Función faltante #8: las coordenadas ya se aceptaban y nada las enviaba.
+    expect(result.run.locationLatitude).toBe("-36.826100")
+    expect(result.run.locationLongitude).toBe("-73.049800")
+  })
+
+  // C-02: dos inspectores con el mismo run abierto se pisaban en silencio.
+  it("rejects a second save that reuses a stale expectedVersion", async () => {
+    const service = await import("@/lib/services/prevention-inspections")
+    const created = await service.createInspectionRun({ templateId, worksiteId: "ws-in-a" }, AUTHOR)
+    const stale = created.run.version
+    const answers = [answerFor(scorableItem())]
+
+    await service.saveInspectionAnswers({ runId: created.run.id, expectedVersion: stale, answers }, AUTHOR)
+    await expect(service.saveInspectionAnswers({ runId: created.run.id, expectedVersion: stale, answers }, AUTHOR))
+      .rejects.toThrow(/cambió en otra sesión/)
+  })
+
+  // C-01: cambiar una respuesta es lo único que el inspector hace en terreno y
+  // no dejaba rastro en la bitácora que el propio esquema llama "inmutable".
+  it("writes an audit trail entry for every answer save", async () => {
+    const service = await import("@/lib/services/prevention-inspections")
+    const created = await service.createInspectionRun({ templateId, worksiteId: "ws-in-a" }, AUTHOR)
+    await service.saveInspectionAnswers({
+      runId: created.run.id, expectedVersion: created.run.version,
+      answers: [answerFor(scorableItem())],
+    }, AUTHOR)
+
+    const entries = await getDb().select().from(schema.preventionInspectionHistory)
+      .where(eq(schema.preventionInspectionHistory.entityId, created.run.id))
+    const saved = entries.filter((row) => row.changeType === "answers_saved")
+    expect(saved).toHaveLength(1)
+    expect(saved[0]).toMatchObject({ entityType: "run", actorUserId: "in-author", worksiteId: "ws-in-a" })
   })
 })
 

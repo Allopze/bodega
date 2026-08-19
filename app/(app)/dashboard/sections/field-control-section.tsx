@@ -2,6 +2,7 @@ import { ClipboardText, ShieldWarning, Siren, WarningOctagon } from "@phosphor-i
 import { KpiCard } from "@/components/ui/kpi-card"
 import { SummaryBar, type SummaryStat } from "@/components/ui/summary-bar"
 import { getFieldControlSummary } from "@/lib/services/dashboard-domains-data"
+import { getOperationalCalendarBounds } from "@/lib/services/operational-period-metrics"
 import { DASHBOARD_DOMAINS } from "../dashboard-domains"
 import { DomainSection } from "../dashboard-domain-shell"
 import { scopedWorksiteId } from "../dashboard-scope"
@@ -18,11 +19,20 @@ import type { DomainSectionsProps } from "./shared"
  *
  * Van en **una** sección y no en seis: comparten la pregunta "¿el control
  * preventivo se está ejecutando en terreno?", y seis secciones más habrían
- * devuelto la pantalla al muro que esta auditoría desarmó. Todas sus cifras son
- * estado actual, así que ninguna hereda el período del alcance.
+ * devuelto la pantalla al muro que esta auditoría desarmó.
+ *
+ * Casi todas sus cifras son estado actual y por eso no heredan el período. La
+ * excepción es el cumplimiento promedio de inspecciones: es un agregado de
+ * ejecuciones, no un estado, y promediarlo sobre toda la historia lo volvía
+ * cada vez más insensible (C-06, auditoría 2026-08-18). Ese —y sólo ese— se
+ * acota al período del alcance, con el mismo helper que usa Adquisiciones.
  */
 export async function FieldControlSection({ session, scope }: DomainSectionsProps) {
-  const field = await getFieldControlSummary(session, scopedWorksiteId(scope))
+  const bounds = getOperationalCalendarBounds(new Date(), scope.period)
+  const field = await getFieldControlSummary(session, scopedWorksiteId(scope), {
+    from: bounds.currentStart,
+    to: bounds.currentEnd,
+  })
 
   const permitTotal = field.permitsActive + field.permitsSuspended
   const drillTotal = field.drillsCompleted

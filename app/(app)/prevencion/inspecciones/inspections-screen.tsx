@@ -1,3 +1,4 @@
+import Link from "next/link"
 import { redirect } from "next/navigation"
 import { requirePermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
@@ -8,8 +9,11 @@ import {
   listInspectionAssignees,
   listInspectionPrograms,
   listInspectionRuns,
+  listInspectionSubjects,
   listInspectionTemplates,
   listInspectionWorksites,
+  summarizeInspectionRuns,
+  INSPECTION_PAGE_SIZE,
 } from "@/lib/services/prevention-inspections"
 import { InspectionRunList } from "./inspection-run-list"
 import { todayInChile } from "@/lib/utils"
@@ -32,11 +36,17 @@ export async function InspectionsScreen({
   title,
   description,
   breadcrumbLabel,
+  catalogHref,
+  searchParams,
 }: {
   kinds:           readonly string[]
   title:           string
   description:     string
   breadcrumbLabel: string
+  /** Catálogo y programación de este mismo `kind` (C-12: sin esto, el catálogo de auditorías no se alcanza desde ningún enlace). */
+  catalogHref:     string
+  /** Filtros y página. C-09: viajan al SQL, no se aplican sobre un dataset traído entero. */
+  searchParams?:   Record<string, string | string[] | undefined>
 }) {
   let session
   try { session = await requirePermission("prevention:inspections:view") }
@@ -48,15 +58,42 @@ export async function InspectionsScreen({
     permissions: session.user.permissions,
   }
   const canExecute = session.user.permissions.includes("prevention:inspections:execute")
-  const filter = { kinds }
 
-  const [runs, programs, templates, worksites, assignees] = await Promise.all([
-    listInspectionRuns(access, filter),
+  const single = (key: string) => {
+    const value = searchParams?.[key]
+    return Array.isArray(value) ? value[0] : value
+  }
+  const page = Math.max(1, Number(single("pagina") ?? 1) || 1)
+  const rawView = single("vista")
+  const view: "pending_review" | "open_findings" | "critical" | undefined =
+    rawView === "pending_review" || rawView === "open_findings" || rawView === "critical" ? rawView : undefined
+  const filter = {
+    kinds,
+    status: single("estado") || undefined,
+    worksiteId: single("faena") || undefined,
+    search: single("q") || undefined,
+    view,
+  }
+
+  const [runs, summary, programs, templates, worksites, assignees] = await Promise.all([
+    listInspectionRuns(access, filter, { offset: (page - 1) * INSPECTION_PAGE_SIZE }),
+    // KPIs sobre el universo completo, no sobre la página visible (C-09).
+    summarizeInspectionRuns(access, { kinds }),
     listInspectionPrograms(access, filter),
     canExecute ? listInspectionTemplates(access, filter) : Promise.resolve([]),
     canExecute ? listInspectionWorksites(access) : Promise.resolve([]),
     canExecute ? listInspectionAssignees(access) : Promise.resolve([]),
   ])
+
+  // Función #11: inventario por faena para el picker de sujeto. Son pocas
+  // faenas por usuario, así que se precarga en vez de pedirlo al cambiar.
+  const subjectsByWorksite: Record<string, { id: string; name: string; kind: string; location: string }[]> = {}
+  if (canExecute) {
+    const entries = await Promise.all(
+      worksites.map(async (worksite) => [worksite.id, await listInspectionSubjects(worksite.id, access)] as const),
+    )
+    for (const [worksiteId, rows] of entries) subjectsByWorksite[worksiteId] = rows
+  }
 
   return (
     <PageContainer>
@@ -69,11 +106,16 @@ export async function InspectionsScreen({
           { label: breadcrumbLabel },
         ]} />}
         actions={
-          session.user.permissions.includes("prevention:inspections:export") ? (
+          <>
             <Button asChild variant="secondary">
-              <a href="/api/prevencion/inspecciones/export" download>Exportar Excel</a>
+              <Link href={catalogHref}>Catálogo</Link>
             </Button>
-          ) : undefined
+            {session.user.permissions.includes("prevention:inspections:export") ? (
+              <Button asChild variant="secondary">
+                <a href="/api/prevencion/inspecciones/export" download>Exportar Excel</a>
+              </Button>
+            ) : undefined}
+          </>
         }
       />
       <InspectionRunList
@@ -83,6 +125,7 @@ export async function InspectionsScreen({
           status: row.run.status,
           templateName: row.templateName,
           templateKind: row.templateKind,
+          origin: row.run.origin,
           subjectLabel: row.run.subjectLabel,
           worksiteId: row.run.worksiteId,
           worksiteName: row.worksiteName,
@@ -92,6 +135,9 @@ export async function InspectionsScreen({
           openFindings: row.openFindings,
           criticalFindings: row.criticalFindings,
         }))}
+        summary={summary}
+        page={page}
+        pageSize={INSPECTION_PAGE_SIZE}
         overdueProgramCount={programs.filter((row) => row.program.isActive && row.program.nextDueOn < todayInChile()).length}
         canExecute={canExecute}
         templates={templates.flatMap((item) => item.status === "approved"
@@ -99,6 +145,7 @@ export async function InspectionsScreen({
           : [])}
         worksites={worksites}
         assignees={assignees}
+        subjectsByWorksite={subjectsByWorksite}
       />
     </PageContainer>
   )

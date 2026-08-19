@@ -8,6 +8,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Field, FieldGroup } from "@/components/ui/field"
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select"
 import { addPdtpActivityFormAction } from "./actions"
+import { nanoid } from "@/lib/id"
 
 type ResponsibleOption = { slug: string; displayName: string }
 type SheetOption = { code: string; label: string }
@@ -39,20 +40,20 @@ export function PdtpAddActivityForm({
   responsibleCatalog?: ResponsibleOption[]
   sheetOptions?: SheetOption[]
 }) {
-  const [responsibleSlugs, setResponsibleSlugs] = React.useState<{ id: string; value: string }[]>([{ id: crypto.randomUUID(), value: responsibleCatalog[0]?.slug ?? "" }])
+  const [responsibleSlugs, setResponsibleSlugs] = React.useState<{ id: string; value: string }[]>([{ id: nanoid(), value: responsibleCatalog[0]?.slug ?? "" }])
   // La actividad se agrega, por defecto, a la vista que el usuario ya está
   // mirando (`hoja`). Elegir otras vistas es una opción avanzada, no el flujo
   // principal: no debe leerse como "asignar a hojas de Excel".
   const defaultSheetCode = hoja || sheetOptions[0]?.code || ""
-  const [sheetCodes, setSheetCodes] = React.useState<{ id: string; value: string }[]>([{ id: crypto.randomUUID(), value: defaultSheetCode }])
+  const [sheetCodes, setSheetCodes] = React.useState<{ id: string; value: string }[]>([{ id: nanoid(), value: defaultSheetCode }])
 
-  const addResp = () => setResponsibleSlugs((s) => [...s, { id: crypto.randomUUID(), value: responsibleCatalog[0]?.slug ?? "" }])
+  const addResp = () => setResponsibleSlugs((s) => [...s, { id: nanoid(), value: responsibleCatalog[0]?.slug ?? "" }])
   const removeResp = (i: number) =>
     setResponsibleSlugs((s) => s.filter((_, idx) => idx !== i))
   const updateResp = (i: number, v: string) =>
     setResponsibleSlugs((s) => s.map((x, idx) => (idx === i ? { ...x, value: v } : x)))
 
-  const addSheet = () => setSheetCodes((s) => [...s, { id: crypto.randomUUID(), value: sheetOptions[0]?.code ?? "" }])
+  const addSheet = () => setSheetCodes((s) => [...s, { id: nanoid(), value: sheetOptions[0]?.code ?? "" }])
   const removeSheet = (i: number) =>
     setSheetCodes((s) => s.filter((_, idx) => idx !== i))
   const updateSheet = (i: number, v: string) =>

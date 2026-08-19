@@ -459,6 +459,13 @@ export const preventionModule = {
           iconName: "ClipboardText",
           group: "Seguimiento",
           permissions: ["prevention:inspections:view"],
+          children: [
+            {
+              label: "Catálogo y programación",
+              href: "/prevencion/auditorias/catalogo",
+              permissions: ["prevention:inspections:view"],
+            },
+          ],
         },
         {
           label: "Indicadores SST",

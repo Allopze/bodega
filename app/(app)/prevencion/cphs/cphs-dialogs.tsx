@@ -11,6 +11,7 @@ import { closeManagementReviewAction, constituteCommitteeAction, createManagemen
 import { Field } from "@/components/ui/field"
 import { useOperation } from "@/lib/hooks/use-operation"
 import { toLocalInputValue } from "@/lib/utils"
+import { nanoid } from "@/lib/id"
 
 /* ── Alta de comité ───────────────────────────────────────────────────────── */
 
@@ -130,7 +131,7 @@ export function CloseReviewDialog({ review, worksites, assignees }: {
 
   function addCommitment() {
     setCommitments((current) => [...current, {
-      id: crypto.randomUUID(), description: "", actionDescription: "", responsibleUserId: "",
+      id: nanoid(), description: "", actionDescription: "", responsibleUserId: "",
       worksiteId: worksites[0]?.id ?? "", priority: "medium", targetDate: "",
     }])
   }

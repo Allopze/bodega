@@ -28,8 +28,8 @@
  */
 import { promises as fs } from "node:fs"
 import { db } from "@/db"
-import { pdtpExecutions, preventionCapaEvidence } from "@/db/schema"
-import { resolvePdtpEvidenceDir } from "@/lib/storage/config"
+import { pdtpExecutions, preventionCapaEvidence, preventionInspectionAnswerEvidence } from "@/db/schema"
+import { resolveInspectionEvidenceDir, resolvePdtpEvidenceDir } from "@/lib/storage/config"
 import { logger } from "@/lib/logger"
 
 const DEFAULT_OLDER_THAN_MS = 60 * 60 * 1000 // 1 hora
@@ -62,17 +62,6 @@ export async function cleanupPdtpEvidenceOrphans(
   }
 
   const dir = resolvePdtpEvidenceDir()
-  let files: string[]
-  try {
-    files = await fs.readdir(dir)
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") {
-      logger.info("[pdtp/evidence-gc] storage dir not found, nothing to do")
-      return result
-    }
-    throw err
-  }
-  result.scanned = files.length
 
   // Carga todas las referencias conocidas de la DB, de los DOS productores del
   // directorio. Construimos un set de nombres referenciados para detectar orphans.
@@ -105,31 +94,94 @@ export async function cleanupPdtpEvidenceOrphans(
   }
   for (const row of capaRows) addReference(row.reference)
 
-  const cutoff = Date.now() - olderThanMs
+  await sweepOrphans({ dir, referenced, olderThanMs, dryRun, label: "pdtp/evidence-gc" }, result)
 
+  logger.info("[pdtp/evidence-gc] done", { ...result, dryRun })
+  return result
+}
+
+/**
+ * Barrido compartido de un directorio de evidencia.
+ *
+ * Extraído para que el directorio de inspecciones use exactamente la misma
+ * política —ventana de gracia y conteos— sin duplicarla: dos implementaciones
+ * del mismo barrido son dos lugares donde ajustar el umbral y olvidar uno.
+ */
+async function sweepOrphans(args: {
+  dir: string
+  referenced: Set<string>
+  olderThanMs: number
+  dryRun: boolean
+  label: string
+}, result: CleanupPdtpEvidenceOrphansResult): Promise<void> {
+  let files: string[]
+  try {
+    files = await fs.readdir(args.dir)
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+      logger.info(`[${args.label}] storage dir not found, nothing to do`)
+      return
+    }
+    throw err
+  }
+  result.scanned += files.length
+
+  const cutoff = Date.now() - args.olderThanMs
   for (const name of files) {
-    if (referenced.has(name)) {
+    if (args.referenced.has(name)) {
       result.kept++
       continue
     }
     try {
-      const stat = await fs.stat(`${dir}/${name}`)
+      const stat = await fs.stat(`${args.dir}/${name}`)
       if (stat.mtimeMs > cutoff) {
         // Muy reciente — probablemente upload sin submit todavía.
         result.kept++
         continue
       }
-      if (!dryRun) {
-        await fs.unlink(`${dir}/${name}`)
+      if (!args.dryRun) {
+        await fs.unlink(`${args.dir}/${name}`)
       }
       result.deleted++
       result.deletedNames.push(name)
     } catch (err) {
       result.failed++
-      logger.warn(`[pdtp/evidence-gc] failed to process ${name}`, err)
+      logger.warn(`[${args.label}] failed to process ${name}`, err)
     }
   }
+}
 
-  logger.info("[pdtp/evidence-gc] done", { ...result, dryRun })
+/**
+ * Recolector del directorio `storage/inspection-evidence/` (función #1).
+ *
+ * Espacio propio, productor único: `prevention_inspection_answer_evidence`.
+ * Existe porque subir el archivo y guardarlo son operaciones separadas — si el
+ * usuario sube una foto y abandona sin guardar, o si el DELETE del conjunto de
+ * respuestas (B-02) se lleva la fila por cascada, el archivo queda huérfano.
+ */
+export async function cleanupInspectionEvidenceOrphans(
+  options: CleanupPdtpEvidenceOrphansOptions = {},
+): Promise<CleanupPdtpEvidenceOrphansResult> {
+  const olderThanMs = options.olderThanMs ?? DEFAULT_OLDER_THAN_MS
+  const dryRun = options.dryRun ?? false
+  const result: CleanupPdtpEvidenceOrphansResult = {
+    scanned: 0, deleted: 0, kept: 0, failed: 0, deletedNames: [],
+  }
+
+  const referenced = new Set<string>()
+  const rows = await db.select({ path: preventionInspectionAnswerEvidence.path })
+    .from(preventionInspectionAnswerEvidence)
+  for (const row of rows) {
+    const name = row.path.split("/").pop()
+    if (name) referenced.add(name)
+  }
+
+  await sweepOrphans({
+    dir: resolveInspectionEvidenceDir(),
+    referenced, olderThanMs, dryRun,
+    label: "inspections/evidence-gc",
+  }, result)
+
+  logger.info("[inspections/evidence-gc] done", { ...result, dryRun })
   return result
 }

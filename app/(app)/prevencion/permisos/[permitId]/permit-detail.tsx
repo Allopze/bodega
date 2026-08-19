@@ -33,6 +33,7 @@ import {
 import { Field } from "@/components/ui/field"
 import { useOperation } from "@/lib/hooks/use-operation"
 import { linesToArray, toLocalInputValue } from "@/lib/utils"
+import { nanoid } from "@/lib/id"
 
 interface PermitInfo {
   id: string
@@ -567,8 +568,8 @@ function JsaDialog({ permitId, steps }: { permitId: string; steps: JsaStepItem[]
 
   function openWith(existing: JsaStepItem[]) {
     setDraft(existing.length > 0
-      ? existing.map((item) => ({ id: crypto.randomUUID(), stepDescription: item.stepDescription, hazards: item.hazards.join("\n"), controls: item.controls.join("\n"), residualRisk: item.residualRisk }))
-      : [{ id: crypto.randomUUID(), stepDescription: "", hazards: "", controls: "", residualRisk: "medium" }])
+      ? existing.map((item) => ({ id: nanoid(), stepDescription: item.stepDescription, hazards: item.hazards.join("\n"), controls: item.controls.join("\n"), residualRisk: item.residualRisk }))
+      : [{ id: nanoid(), stepDescription: "", hazards: "", controls: "", residualRisk: "medium" }])
   }
 
   function submit(event: React.FormEvent<HTMLFormElement>) {
@@ -631,7 +632,7 @@ function JsaDialog({ permitId, steps }: { permitId: string; steps: JsaStepItem[]
               </Field>
             </div>
           ))}
-          <Button type="button" variant="secondary" size="sm" onClick={() => setDraft((current) => [...current, { id: crypto.randomUUID(), stepDescription: "", hazards: "", controls: "", residualRisk: "medium" }])}>
+          <Button type="button" variant="secondary" size="sm" onClick={() => setDraft((current) => [...current, { id: nanoid(), stepDescription: "", hazards: "", controls: "", residualRisk: "medium" }])}>
             Agregar paso
           </Button>
           {operation.message && <p role="status" className="text-sm">{operation.message}</p>}

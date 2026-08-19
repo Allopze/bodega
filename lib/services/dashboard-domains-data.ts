@@ -5,7 +5,7 @@
  * (`getCapaDashboardCounts`, `getDashboardCounters`, `getAnalyticsDashboard`…).
  * Estas tres son `count`/`sum` sobre columnas que ya están en el esquema.
  */
-import { and, count, eq, gte, inArray, isNotNull, lt, lte, sql } from "drizzle-orm"
+import { and, count, eq, gte, inArray, isNotNull, lt, lte, ne, sql } from "drizzle-orm"
 import type { Session } from "next-auth"
 import { db } from "@/db"
 import {
@@ -168,6 +168,14 @@ export interface FieldControlSummary {
 export async function getFieldControlSummary(
   session: Session,
   worksiteId?: string,
+  /**
+   * C-06: el promedio de cumplimiento se calculaba sobre TODA la historia, así
+   * que se volvía cada vez más insensible y no reflejaba el período que el
+   * resto del tablero muestra. Se acota con el mismo helper que ya usa
+   * `getReceptionQuality` (`getOperationalCalendarBounds`); sin límites, se
+   * conserva el comportamiento histórico para los llamadores que aún no lo pasan.
+   */
+  bounds?: { from: string; to: string },
 ): Promise<FieldControlSummary> {
   const runScope = worksiteScopeSql(session, preventionInspectionRuns.worksiteId, worksiteId)
   const permitScope = worksiteScopeSql(session, preventionWorkPermits.worksiteId, worksiteId)
@@ -181,12 +189,22 @@ export async function getFieldControlSummary(
     db.select({
       compliance: sql<number | null>`AVG(${preventionInspectionRuns.compliancePercent})`,
       reviewed: sql<number>`COUNT(*) FILTER (WHERE ${preventionInspectionRuns.status} = 'reviewed')::int`,
-    }).from(preventionInspectionRuns).where(and(runScope, isNotNull(preventionInspectionRuns.compliancePercent))),
+    }).from(preventionInspectionRuns).where(and(
+      runScope,
+      isNotNull(preventionInspectionRuns.compliancePercent),
+      bounds ? gte(preventionInspectionRuns.executedAt, bounds.from) : undefined,
+      bounds ? lt(preventionInspectionRuns.executedAt, bounds.to) : undefined,
+    )),
 
     db.select({ value: count() })
       .from(preventionInspectionFindings)
       .innerJoin(preventionInspectionRuns, eq(preventionInspectionFindings.runId, preventionInspectionRuns.id))
-      .where(and(runScope, eq(preventionInspectionFindings.status, "open"), inArray(preventionInspectionFindings.criticality, ["high", "critical"]))),
+      // C-07: filtraba `status = 'open'`, así que derivar el hallazgo a una CAPA
+      // (`capa_linked`) lo borraba del tablero aunque la acción estuviera
+      // vencida y sin evidencia. `<> 'closed'` es el mismo criterio que ya usa
+      // `listInspectionRuns` para su columna `openFindings`; que difirieran era
+      // el bug.
+      .where(and(runScope, ne(preventionInspectionFindings.status, "closed"), inArray(preventionInspectionFindings.criticality, ["high", "critical"]))),
 
     db.select({
       active: sql<number>`COUNT(*) FILTER (WHERE ${preventionWorkPermits.status} = 'active')::int`,

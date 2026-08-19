@@ -9,6 +9,7 @@ import {
   fieldKindAcceptsPartial,
   resultBadgeVariant,
   summarizeCompliance,
+  validateAnswerRow,
   type InspectionAnswerInput,
   type InspectionItemSpec,
 } from "@/lib/prevention/inspections"
@@ -300,5 +301,60 @@ describe("detención inmediata separada del plazo administrativo", () => {
   it("el plazo crece a medida que baja la criticidad", () => {
     const days = ["critical", "high", "medium", "low"].map((c) => capaPriorityForCriticality(c).dueInDays)
     expect(days).toEqual([...days].sort((a, b) => a - b))
+  })
+})
+
+// B-03 (auditoría 2026-08-18): la misma regla la aplican el servicio antes de
+// escribir y el formulario antes de enviar. Antes la única guarda era el CHECK
+// de Postgres, que reventaba el lote entero con un mensaje crudo.
+describe("validación de una respuesta contra su ítem", () => {
+  it("acepta una respuesta conforme sin comentario", () => {
+    expect(validateAnswerRow(item(), answer())).toBeNull()
+  })
+
+  it("acepta 'no cumple' sin comentario: el motor no lo exige", () => {
+    expect(validateAnswerRow(item(), answer({ result: "non_conforming" }))).toBeNull()
+  })
+
+  it("rechaza 'no aplica' sin motivo y nombra el ítem", () => {
+    const problem = validateAnswerRow(item(), answer({ result: "not_applicable" }))
+    expect(problem).toMatch(/exige indicar el motivo/)
+    expect(problem).toContain("Extintor con carga vigente")
+  })
+
+  it("acepta 'no aplica' con motivo", () => {
+    expect(validateAnswerRow(item(), answer({ result: "not_applicable", comment: "Retirado de servicio." }))).toBeNull()
+  })
+
+  it("un motivo de menos de 3 caracteres no cuenta", () => {
+    expect(validateAnswerRow(item(), answer({ result: "not_applicable", comment: "ok" }))).toMatch(/motivo/)
+  })
+
+  it("espacios en blanco no cuentan como motivo", () => {
+    expect(validateAnswerRow(item(), answer({ result: "not_applicable", comment: "   " }))).toMatch(/motivo/)
+  })
+
+  it("rechaza 'Regular' en un ítem que no es de escala B/R/M", () => {
+    const problem = validateAnswerRow(item({ kind: "cumple_nocumple_na_obs" }), answer({ result: "partial", comment: "Desgaste." }))
+    expect(problem).toMatch(/no admite la respuesta "Regular"/)
+  })
+
+  it("acepta 'Regular' con justificación en un ítem B/R/M", () => {
+    expect(validateAnswerRow(
+      item({ kind: "bueno_regular_malo_obs" }),
+      answer({ result: "partial", comment: "Desgaste menor, aún operativo." }),
+    )).toBeNull()
+  })
+
+  it("rechaza 'Regular' sin justificación aunque el ítem sea B/R/M", () => {
+    expect(validateAnswerRow(
+      item({ kind: "bueno_regular_malo_obs" }),
+      answer({ result: "partial" }),
+    )).toMatch(/justificarse por escrito/)
+  })
+
+  it("la escala manda sobre la justificación: un ítem que no admite Regular se rechaza por eso, no por el comentario", () => {
+    expect(validateAnswerRow(item({ kind: "cumple_nocumple_na_obs" }), answer({ result: "partial" })))
+      .toMatch(/no admite la respuesta "Regular"/)
   })
 })

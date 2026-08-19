@@ -5,6 +5,7 @@ import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { getInspectionRunDetail, listInspectionAssignees } from "@/lib/services/prevention-inspections"
+import { closingActFromDefinition } from "@/lib/prevention/inspections"
 import type { ChecklistDefinition } from "@/lib/sst/types"
 import { InspectionRunDetail } from "./inspection-run-detail"
 
@@ -47,6 +48,7 @@ export default async function InspeccionPage({ params }: { params: Promise<{ run
           id: detail.run.id,
           code: detail.run.code,
           status: detail.run.status,
+          origin: detail.run.origin,
           subjectType: detail.run.subjectType,
           subjectLabel: detail.run.subjectLabel,
           scheduledFor: detail.run.scheduledFor,
@@ -59,8 +61,12 @@ export default async function InspeccionPage({ params }: { params: Promise<{ run
           notApplicableCount: detail.run.notApplicableCount,
           compliancePercent: detail.run.compliancePercent,
           executedByUserId: detail.run.executedByUserId,
+          closingResult: detail.run.closingResult,
+          closingRestrictions: detail.run.closingRestrictions,
+          closingSignatures: detail.run.closingSignatures,
           version: detail.run.version,
         }}
+        closingAct={closingActFromDefinition(definition)}
         templateKind={detail.templateKind}
         worksiteName={detail.worksiteName}
         assigneeName={detail.assigneeName}
@@ -78,13 +84,19 @@ export default async function InspeccionPage({ params }: { params: Promise<{ run
             required: item.required ?? false,
             countsForCompliance: section.countsForCompliance ?? true,
             danoPotencial: item.danoPotencial ?? null,
+            // B-08: sin las opciones, un ítem `select` no se puede responder.
+            options: item.options,
+            placeholder: item.placeholder,
           })),
         }))}
         answers={detail.answers.map((item) => ({
+          answerId: item.id,
           sectionId: item.sectionId,
           itemId: item.itemId,
           result: item.result,
           comment: item.comment,
+          value: item.value,
+          evidence: item.evidence.map((file) => ({ id: file.id, path: file.path, caption: file.caption })),
         }))}
         findings={detail.findings.map((item) => ({
           id: item.id,
@@ -97,6 +109,7 @@ export default async function InspeccionPage({ params }: { params: Promise<{ run
         assignees={assignees}
         canExecute={canExecute}
         canReview={auth.user.permissions.includes("prevention:inspections:review")}
+        canManage={auth.user.permissions.includes("prevention:inspections:manage")}
       />
     </PageContainer>
   )

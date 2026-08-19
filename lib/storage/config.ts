@@ -7,6 +7,7 @@ const SERVICE_QUOTATION_PREFIX = "storage/servicios/"
 const FLEET_DOCUMENT_PREFIX = "storage/flota/"
 const SST_DOCUMENT_PREFIX = "storage/sst-documents/"
 const PDTP_EVIDENCE_PREFIX = "storage/pdtp-evidence/"
+const INSPECTION_EVIDENCE_PREFIX = "storage/inspection-evidence/"
 const RISK_MAP_PREFIX = "storage/risk-map/"
 const FUEL_IMPORT_PREFIX = "storage/imports/"
 const FUEL_TAE_EVIDENCE_PREFIX = "storage/fuel-tae/"
@@ -231,6 +232,34 @@ export function resolvePdtpEvidenceFile(filePath: string): string | null {
     return null
   }
   return path.join(/*turbopackIgnore: true*/ resolvePdtpEvidenceDir(), storageName)
+}
+
+/* ── Evidencia de inspecciones ─────────────────────────────────────────────
+ *
+ * Espacio propio, no compartido con la evidencia PDTP: la retención y la
+ * auditabilidad de una inspección son las suyas, y mezclarlas obligaría a
+ * razonar sobre ambas cada vez que se toca una. Mismo criterio anti-traversal.
+ */
+export function resolveInspectionEvidenceDir(): string {
+  return path.join(/*turbopackIgnore: true*/ resolveStorageDir(), "inspection-evidence")
+}
+
+export function createInspectionEvidencePath(storageName: string): string {
+  if (!isSafeStorageName(storageName)) {
+    throw new Error("Invalid inspection evidence storage name")
+  }
+  return `${INSPECTION_EVIDENCE_PREFIX}${storageName}`
+}
+
+export function resolveInspectionEvidenceFile(filePath: string): string | null {
+  if (!filePath.startsWith(INSPECTION_EVIDENCE_PREFIX)) {
+    return null
+  }
+  const storageName = filePath.slice(INSPECTION_EVIDENCE_PREFIX.length)
+  if (!isSafeStorageName(storageName)) {
+    return null
+  }
+  return path.join(/*turbopackIgnore: true*/ resolveInspectionEvidenceDir(), storageName)
 }
 
 /* ── Mapa de riesgos (MIPER) ──────────────────────────────────────────────

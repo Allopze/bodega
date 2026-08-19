@@ -28,6 +28,7 @@ import {
 } from "../actions"
 import { Field } from "@/components/ui/field"
 import { useOperation } from "@/lib/hooks/use-operation"
+import { nanoid } from "@/lib/id"
 
 interface CourseItem {
   id: string
@@ -337,7 +338,7 @@ function CourseDialog() {
 
 function VersionDialog({ courses }: { courses: CourseItem[] }) {
   const [open, setOpen] = React.useState(false)
-  const [modules, setModules] = React.useState([{ id: crypto.randomUUID(), title: "", minutes: 60 }])
+  const [modules, setModules] = React.useState([{ id: nanoid(), title: "", minutes: 60 }])
   const [courseId, setCourseId] = React.useState(courses[0]?.id ?? "")
   const [modality, setModality] = React.useState("presencial")
   const [assessmentType, setAssessmentType] = React.useState("theoretical")
@@ -355,7 +356,7 @@ function VersionDialog({ courses }: { courses: CourseItem[] }) {
       modality: form.get("modality"),
       assessmentType: form.get("assessmentType"),
       passingScore: Number(form.get("passingScore")),
-    }), () => { setOpen(false); setModules([{ id: crypto.randomUUID(), title: "", minutes: 60 }]) })
+    }), () => { setOpen(false); setModules([{ id: nanoid(), title: "", minutes: 60 }]) })
   }
 
   return (
@@ -411,7 +412,7 @@ function VersionDialog({ courses }: { courses: CourseItem[] }) {
                 )}
               </div>
             ))}
-            <Button type="button" variant="secondary" size="sm" onClick={() => setModules((current) => [...current, { id: crypto.randomUUID(), title: "", minutes: 60 }])}>
+            <Button type="button" variant="secondary" size="sm" onClick={() => setModules((current) => [...current, { id: nanoid(), title: "", minutes: 60 }])}>
               Agregar módulo
             </Button>
           </div>

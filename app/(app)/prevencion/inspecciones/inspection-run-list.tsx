@@ -16,6 +16,7 @@ import { useUrlFilters } from "@/lib/hooks/use-url-filters"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import {
   INSPECTION_KIND_LABELS,
+  INSPECTION_ORIGIN_LABELS,
   INSPECTION_RUN_STATUS_LABELS,
   runStatusBadgeVariant,
 } from "@/lib/prevention/inspections"
@@ -36,6 +37,7 @@ interface RunItem {
   status: string
   templateName: string
   templateKind: string
+  origin: string
   subjectLabel: string | null
   worksiteId: string
   worksiteName: string
@@ -50,14 +52,19 @@ type QuickFilter = "all" | "pending_review" | "open_findings" | "critical"
 
 interface Props {
   runs: RunItem[]
+  /** KPIs del universo completo. C-09: derivarlos de la página los volvía mentira pasadas 500 filas. */
+  summary: { total: number; pendingReview: number; withOpenFindings: number; withCriticalFindings: number }
+  page: number
+  pageSize: number
   overdueProgramCount: number
   canExecute: boolean
   templates: TemplateOption[]
   worksites: { id: string; name: string }[]
   assignees: { id: string; name: string }[]
+  subjectsByWorksite: Record<string, { id: string; name: string; kind: string; location: string }[]>
 }
 
-export function InspectionRunList({ runs, overdueProgramCount, canExecute, templates, worksites, assignees }: Props) {
+export function InspectionRunList({ runs, summary, page, pageSize, overdueProgramCount, canExecute, templates, worksites, assignees, subjectsByWorksite }: Props) {
   const { searchQuery } = useSafeShellHeader()
   // Filtros client-side en la URL (shareables + sobreviven refresh) vía useUrlFilters.
   const { getFilter, setFilters, clearFilters: clearUrlFilters } = useUrlFilters()
@@ -65,30 +72,38 @@ export function InspectionRunList({ runs, overdueProgramCount, canExecute, templ
   const worksite = getFilter("faena") || "all"
   const quickFilter = (getFilter("vista") || "all") as QuickFilter
 
-  // Faenas presentes en las inspecciones listadas: el filtro sólo debe
-  // ofrecer valores que puedan devolver alguna fila, no todo el alcance.
+  // Con el filtrado en el servidor, derivar las faenas de las filas visibles
+  // dejaría el selector vacío en cuanto se filtrara por una: se usa el alcance
+  // del usuario, más la faena de las filas presentes para quien no puede
+  // ejecutar (a ese `worksites` le llega vacío).
   const runWorksites = React.useMemo(() => {
-    const map = new Map(runs.map((item) => [item.worksiteId, item.worksiteName]))
+    const map = new Map<string, string>(worksites.map((item) => [item.id, item.name]))
+    for (const item of runs) if (!map.has(item.worksiteId)) map.set(item.worksiteId, item.worksiteName)
     return [...map].map(([id, name]) => ({ id, name }))
-  }, [runs])
+  }, [worksites, runs])
 
-  const query = searchQuery.trim().toLocaleLowerCase("es-CL")
-  const filtered = runs.filter((item) => {
-    if (status !== "all" && item.status !== status) return false
-    if (worksite !== "all" && item.worksiteId !== worksite) return false
-    if (quickFilter === "pending_review" && item.status !== "completed") return false
-    if (quickFilter === "open_findings" && item.openFindings === 0) return false
-    if (quickFilter === "critical" && item.criticalFindings === 0) return false
-    if (!query) return true
-    return `${item.code} ${item.templateName} ${item.subjectLabel ?? ""} ${item.worksiteName}`.toLocaleLowerCase("es-CL").includes(query)
-  })
+  // C-09: el filtrado vive en el SQL. `runs` ya llega filtrada y paginada, y
+  // los KPIs vienen de `summary` — derivarlos de la página los volvía mentira
+  // en cuanto había más de una.
+  const filtered = runs
+  // El buscador de la cabecera viaja a la URL para que llegue al servidor; sin
+  // esto sólo buscaría dentro de la página visible.
+  React.useEffect(() => {
+    const query = searchQuery.trim()
+    const current = getFilter("q") ?? ""
+    if (query === current) return
+    const timer = setTimeout(() => setFilters({ q: query || null, pagina: null }), 350)
+    return () => clearTimeout(timer)
+  }, [searchQuery, getFilter, setFilters])
 
   const metrics = [
-    { id: "pending-review", key: "pending_review" as const, label: "Esperando revisión", value: runs.filter((item) => item.status === "completed").length, detail: "Ejecutadas sin cerrar" },
-    { id: "open-findings", key: "open_findings" as const, label: "Con hallazgos abiertos", value: runs.filter((item) => item.openFindings > 0).length, detail: "Requieren acción" },
-    { id: "critical", key: "critical" as const, label: "Con hallazgo grave", value: runs.filter((item) => item.criticalFindings > 0).length, detail: "Alto o crítico" },
+    { id: "pending-review", key: "pending_review" as const, label: "Esperando revisión", value: summary.pendingReview, detail: "Ejecutadas sin cerrar" },
+    { id: "open-findings", key: "open_findings" as const, label: "Con hallazgos abiertos", value: summary.withOpenFindings, detail: "Requieren acción" },
+    { id: "critical", key: "critical" as const, label: "Con hallazgo grave", value: summary.withCriticalFindings, detail: "Alto o crítico" },
     { id: "overdue", key: "all" as const, label: "Programaciones vencidas", value: overdueProgramCount, detail: "Inspección no ejecutada a tiempo" },
   ]
+
+  const totalPages = Math.max(1, Math.ceil(summary.total / pageSize))
 
   const STATUS_LABELS = INSPECTION_RUN_STATUS_LABELS as Record<string, string>
   const activeChips: ActiveFilterChip[] = []
@@ -111,7 +126,7 @@ export function InspectionRunList({ runs, overdueProgramCount, canExecute, templ
           <button
             key={metric.id}
             type="button"
-            onClick={() => setFilters({ vista: quickFilter === metric.key ? null : metric.key })}
+            onClick={() => setFilters({ vista: quickFilter === metric.key ? null : metric.key, pagina: null })}
             aria-pressed={quickFilter === metric.key}
             className="border-r border-[var(--color-border)] px-4 py-3 text-left hover:bg-[var(--color-surface-2)] aria-pressed:bg-[var(--color-primary-tint)]"
           >
@@ -128,17 +143,17 @@ export function InspectionRunList({ runs, overdueProgramCount, canExecute, templ
         onClearAll={clearUrlFilters}
         hasActiveFilters={status !== "all" || worksite !== "all" || quickFilter !== "all"}
         actions={canExecute && templates.length > 0 && worksites.length > 0 ? (
-          <NewRunDialog templates={templates} worksites={worksites} assignees={assignees} />
+          <NewRunDialog templates={templates} worksites={worksites} assignees={assignees} subjectsByWorksite={subjectsByWorksite} />
         ) : undefined}
       >
-        <Select value={status} onValueChange={(value) => setFilters({ estado: value === "all" ? null : value, vista: null })}>
+        <Select value={status} onValueChange={(value) => setFilters({ estado: value === "all" ? null : value, vista: null, pagina: null })}>
           <SelectTrigger className="w-56" aria-label="Estado de la inspección"><SelectValue placeholder="Estado" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Todos los estados</SelectItem>
             {Object.entries(INSPECTION_RUN_STATUS_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}
           </SelectContent>
         </Select>
-        <Select value={worksite} onValueChange={(value) => setFilters({ faena: value === "all" ? null : value })}>
+        <Select value={worksite} onValueChange={(value) => setFilters({ faena: value === "all" ? null : value, pagina: null })}>
           <SelectTrigger className="w-52" aria-label="Faena"><SelectValue placeholder="Faena" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Todas las faenas</SelectItem>
@@ -157,7 +172,7 @@ export function InspectionRunList({ runs, overdueProgramCount, canExecute, templ
           action={runs.length > 0
             ? <Button type="button" variant="secondary" onClick={clearFilters}>Ver todas</Button>
             : canExecute && templates.length > 0 && worksites.length > 0
-              ? <NewRunDialog templates={templates} worksites={worksites} assignees={assignees} />
+              ? <NewRunDialog templates={templates} worksites={worksites} assignees={assignees} subjectsByWorksite={subjectsByWorksite} />
               : undefined}
         />
       ) : (
@@ -167,6 +182,7 @@ export function InspectionRunList({ runs, overdueProgramCount, canExecute, templ
               <TableRow>
                 <TableHead>Código / plantilla</TableHead>
                 <TableHead>Tipo</TableHead>
+                <TableHead>Origen</TableHead>
                 <TableHead>Faena / sujeto</TableHead>
                 <TableHead>Estado</TableHead>
                 <TableHead>Ejecutada</TableHead>
@@ -184,6 +200,7 @@ export function InspectionRunList({ runs, overdueProgramCount, canExecute, templ
                     </Link>
                   </TableCell>
                   <TableCell className="text-sm">{INSPECTION_KIND_LABELS[item.templateKind] ?? item.templateKind}</TableCell>
+                  <TableCell className="text-sm">{INSPECTION_ORIGIN_LABELS[item.origin] ?? item.origin}</TableCell>
                   <TableCell className="text-sm">
                     {item.worksiteName}
                     {item.subjectLabel && <span className="block text-xs text-[var(--color-text-subtle)]">{item.subjectLabel}</span>}
@@ -206,21 +223,57 @@ export function InspectionRunList({ runs, overdueProgramCount, canExecute, templ
           </Table>
         </div>
       )}
+
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between gap-3 text-sm">
+          <span className="text-[var(--color-text-subtle)]">
+            Página {page} de {totalPages} · {summary.total} inspecciones
+          </span>
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              disabled={page <= 1}
+              onClick={() => setFilters({ pagina: page - 1 <= 1 ? null : String(page - 1) })}
+            >
+              Anterior
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              disabled={page >= totalPages}
+              onClick={() => setFilters({ pagina: String(page + 1) })}
+            >
+              Siguiente
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
 
 /* ── Alta de inspección ───────────────────────────────────────────────────── */
 
-function NewRunDialog({ templates, worksites, assignees }: {
+function NewRunDialog({ templates, worksites, assignees, subjectsByWorksite }: {
   templates: TemplateOption[]
   worksites: { id: string; name: string }[]
   assignees: { id: string; name: string }[]
+  /** Inventario de sujetos por faena (función #11). */
+  subjectsByWorksite: Record<string, { id: string; name: string; kind: string; location: string }[]>
 }) {
   const [open, setOpen] = React.useState(false)
   const [templateId, setTemplateId] = React.useState(templates[0]?.id ?? "")
   const [worksiteId, setWorksiteId] = React.useState(worksites[0]?.id ?? "")
   const [assignedToUserId, setAssignedToUserId] = React.useState("_none")
+  // Certificación Mutual (Plata/Oro): sin poder marcar 'cphs' aquí, ninguna
+  // inspección puede acreditar como originada por el comité paritario (B-05).
+  const [origin, setOrigin] = React.useState("prevencion")
+  // Función #11: `subjectLabel` era texto libre, así que no había historial por
+  // extintor ni forma de alimentar sus alertas de vencimiento.
+  const [subjectResourceId, setSubjectResourceId] = React.useState("_none")
   const operation = useOperation()
 
   function submit(event: React.FormEvent<HTMLFormElement>) {
@@ -233,8 +286,10 @@ function NewRunDialog({ templates, worksites, assignees }: {
     operation.run(() => createInspectionRunAction({
       templateId: form.get("templateId"),
       worksiteId: form.get("worksiteId"),
+      origin: form.get("origin"),
       subjectType: subjectType || null,
       subjectLabel: subjectLabel || null,
+      subjectResourceId: subjectResourceId === "_none" ? null : subjectResourceId,
       scheduledFor: scheduledFor || null,
       assignedToUserId: assignedToUserId || null,
     }), () => setOpen(false))
@@ -255,9 +310,25 @@ function NewRunDialog({ templates, worksites, assignees }: {
           <Field label="Faena">
             <Select value={worksiteId} onValueChange={setWorksiteId}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{worksites.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select><input type="hidden" name="worksiteId" value={worksiteId} />
           </Field>
+          <Field label="Origen" hint="Quién origina la inspección — la certificación Mutual distingue las del comité paritario.">
+            <Select value={origin} onValueChange={setOrigin}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{Object.entries(INSPECTION_ORIGIN_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select><input type="hidden" name="origin" value={origin} />
+          </Field>
+          {(subjectsByWorksite[worksiteId]?.length ?? 0) > 0 && (
+            <Field label="Sujeto del inventario" hint="Opcional. Al completar, actualiza su última inspección.">
+              <Select value={subjectResourceId} onValueChange={setSubjectResourceId}>
+                <SelectTrigger><SelectValue placeholder="Otro / texto libre" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="_none">Otro / texto libre</SelectItem>
+                  {(subjectsByWorksite[worksiteId] ?? []).map((subject) => (
+                    <SelectItem key={subject.id} value={subject.id}>{subject.name} · {subject.location}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+          )}
           <div className="grid gap-3 md:grid-cols-2">
             <Field label="Tipo de sujeto" hint="Opcional. Ej: extintor, camión, contenedor."><Input name="subjectType" maxLength={120} /></Field>
-            <Field label="Identificación del sujeto" hint="Opcional. Ej: TAG o patente."><Input name="subjectLabel" maxLength={300} /></Field>
+            <Field label="Identificación del sujeto" hint="Opcional si eliges un sujeto del inventario."><Input name="subjectLabel" maxLength={300} /></Field>
           </div>
           <div className="grid gap-3 md:grid-cols-2">
             <Field label="Programada para" hint="Opcional."><DatePicker name="scheduledFor" /></Field>

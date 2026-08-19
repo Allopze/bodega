@@ -1,32 +1,44 @@
 import { createHash } from "node:crypto"
-import { and, asc, desc, eq, inArray, sql } from "drizzle-orm"
+import { and, asc, desc, eq, inArray, isNotNull, sql } from "drizzle-orm"
 import { z } from "zod"
 import { alias, type AnyPgColumn } from "drizzle-orm/pg-core"
 import { db, type DB, type Tx } from "@/db"
 import {
+  preventionCapaActions,
+  preventionInspectionAnswerEvidence,
   preventionInspectionAnswers,
   preventionInspectionFindings,
   preventionInspectionHistory,
   preventionInspectionPrograms,
   preventionInspectionRuns,
   preventionInspectionTemplates,
+  preventionEmergencyResources,
+  preventionRiskEntries,
+  preventionRiskMatrices,
   users,
   worksites,
 } from "@/db/schema"
 import type { WorksiteScope } from "@/lib/auth/scope"
 import { nanoid } from "@/lib/id"
 import { recordOperationalActivity } from "@/lib/services/operational-activity"
-import { getUserIdsWithPermission } from "@/lib/services/notification-targeting"
+import { getUserIdsWithPermission, getUserIdsWithPermissionForWorksite } from "@/lib/services/notification-targeting"
+import { createNotifications } from "@/lib/services/notifications"
+import { logger } from "@/lib/logger"
 import {
   addDays,
+  assertInspectionRunTransition,
   assessEnrichmentCoverage,
   assessRunCompletion,
-  assessRunReview,
   capaPriorityForCriticality,
+  closingActFromDefinition,
   deriveFindings,
-  fieldKindAcceptsPartial,
+  nextDueAfter,
   summarizeCompliance,
+  summarizeTimelyClosure,
+  validateAnswerRow,
   FREQUENCY_INTERVAL_DAYS,
+  TRANSITION_REASON_MIN_LENGTH,
+  type InspectionRunStatus,
   type InspectionAnswerInput,
   type InspectionItemSpec,
 } from "@/lib/prevention/inspections"
@@ -110,6 +122,12 @@ const importTemplateSchema = z.object({
  */
 export function itemsFromDefinition(definition: ChecklistDefinition): InspectionItemSpec[] {
   const items: InspectionItemSpec[] = []
+  // Piso de seguridad: un `definitionSnapshot` sin `sections` (fixture de
+  // prueba insertado a mano, o un futuro snapshot legado incompleto) no debe
+  // reventar el listado entero de plantillas — sólo esa plantilla queda sin
+  // ítems calculables. `importInspectionTemplate` siempre guarda una
+  // definición real, así que esto es defensa, no el camino esperado.
+  if (!Array.isArray(definition.sections)) return items
   for (const section of definition.sections) {
     for (const item of section.items) {
       items.push({
@@ -122,6 +140,10 @@ export function itemsFromDefinition(definition: ChecklistDefinition): Inspection
         // H-04 (AUDITORIA_BUGS_2026-08-05.md): antes se descartaba acá, y el
         // motor perdía la escala B/R/M del ítem sin poder ofrecer 'partial'.
         kind: item.kind,
+        // B-08: sin estos, la UI no puede pintar un `select` ni orientar un
+        // campo de texto — y esos ítems quedaban sin forma de responderse.
+        options: item.options,
+        placeholder: item.placeholder,
       })
     }
   }
@@ -129,9 +151,43 @@ export function itemsFromDefinition(definition: ChecklistDefinition): Inspection
 }
 
 /**
+ * Hash del contenido del cuestionario. Fuente única: `importInspectionTemplate`
+ * lo calcula al congelar el snapshot y `listInspectionTemplates` lo recalcula
+ * para detectar deriva. Si las dos expresiones divergieran, toda plantilla
+ * aparecería derivada (A-03, auditoría 2026-08-18).
+ */
+export function contentHashOf(definition: ChecklistDefinition | Record<string, unknown>): string {
+  return createHash("sha256").update(JSON.stringify(definition)).digest("hex")
+}
+
+/**
+ * Violación de índice único en Postgres (23505) sobre la constraint indicada.
+ *
+ * Recorre la cadena de `cause`: drizzle envuelve el error del driver en un
+ * `DrizzleQueryError`, así que `code` y `constraint_name` no están en el objeto
+ * de primer nivel — mirar sólo ahí hacía que el mensaje legible nunca saltara.
+ */
+function isUniqueViolation(error: unknown, constraint: string): boolean {
+  let current: unknown = error
+  for (let depth = 0; current && depth < 5; depth++) {
+    const candidate = current as { code?: string; constraint_name?: string; constraint?: string; cause?: unknown }
+    if (candidate.code === "23505" && (candidate.constraint_name === constraint || candidate.constraint === constraint)) {
+      return true
+    }
+    current = candidate.cause
+  }
+  return false
+}
+
+/**
  * Incorpora una definición SST existente como plantilla del motor transversal.
  * Las evaluaciones de personas quedan fuera a propósito: la auditoría pide no
  * mezclar inspecciones de activos con evaluación de trabajadores.
+ *
+ * Reimportar un código ya incorporado es el camino normal para versionar: nace
+ * otro borrador y aprobarlo reemplaza (`superseded`) la versión aprobada
+ * anterior del mismo código. Lo único que no se admite es repetir la misma
+ * `versionLabel` (A-02/C-10).
  */
 export async function importInspectionTemplate(input: unknown, access: InspectionAccess) {
   requireAccess(access, "prevention:inspections:manage")
@@ -143,24 +199,44 @@ export async function importInspectionTemplate(input: unknown, access: Inspectio
   const definition = CHECKLIST_DEFINITIONS[data.definitionCode]
   if (!definition) throw new Error("La definición de checklist no existe en el catálogo.")
 
+  // C-05: el motor aplana las secciones e ignora `appliesWhen` (visibilidad por
+  // cargo) y `requiresPermission` (gate de acceso). Aceptar en silencio una
+  // definición que los declare exigiría responder secciones que no aplican y
+  // expondría las restringidas. Ninguna de las definiciones importables los usa
+  // hoy, así que esto es preventivo: sólo salta si alguien agrega una.
+  const gated = (definition.sections ?? []).find((section) => section.appliesWhen?.length || section.requiresPermission)
+  if (gated) {
+    throw new Error(`La sección "${gated.title}" declara visibilidad condicional, que el motor de inspecciones no aplica. No puede incorporarse.`)
+  }
+
   const versionLabel = data.versionLabel ?? definition.version
   const snapshot = definition as unknown as Record<string, unknown>
-  const contentHash = createHash("sha256").update(JSON.stringify(snapshot)).digest("hex")
+  const contentHash = contentHashOf(snapshot)
 
-  const [created] = await db.insert(preventionInspectionTemplates).values({
-    id: `instpl-${nanoid()}`,
-    code: definition.code,
-    versionLabel,
-    name: definition.title,
-    kind: data.kind,
-    sourceDefinitionCode: data.definitionCode,
-    definitionSnapshot: snapshot,
-    contentHash,
-    status: "draft",
-    legalFramework: definition.legalFramework?.join(" · ") ?? null,
-    pdtpActivityNumbers: data.pdtpActivityNumbers?.length ? data.pdtpActivityNumbers : null,
-    authorUserId: access.userId,
-  }).returning()
+  let created
+  try {
+    ;[created] = await db.insert(preventionInspectionTemplates).values({
+      id: `instpl-${nanoid()}`,
+      code: definition.code,
+      versionLabel,
+      name: definition.title,
+      kind: data.kind,
+      sourceDefinitionCode: data.definitionCode,
+      definitionSnapshot: snapshot,
+      contentHash,
+      status: "draft",
+      legalFramework: definition.legalFramework?.join(" · ") ?? null,
+      pdtpActivityNumbers: data.pdtpActivityNumbers?.length ? data.pdtpActivityNumbers : null,
+      authorUserId: access.userId,
+    }).returning()
+  } catch (error) {
+    // C-10: sin esto el usuario veía el texto crudo de Postgres
+    // ("duplicate key value violates unique constraint …").
+    if (isUniqueViolation(error, "prevention_inspection_template_version_unique")) {
+      throw new Error(`Ya existe la versión "${versionLabel}" de la plantilla ${definition.code}. Usa otra etiqueta de versión.`)
+    }
+    throw error
+  }
   if (!created) throw new Error("No se pudo incorporar la plantilla.")
   await history(db, { entityType: "template", entityId: created.id, changeType: "imported", reason: `Definición ${data.definitionCode} incorporada como plantilla ${versionLabel}`, afterState: created, actorUserId: access.userId })
   return created
@@ -280,6 +356,7 @@ export async function createInspectionProgram(input: unknown, access: Inspection
     .where(eq(preventionInspectionTemplates.id, data.templateId)).limit(1)
   if (!template) throw new Error(NOT_FOUND)
   if (template.status !== "approved") throw new Error("Sólo puede programarse una plantilla aprobada.")
+  if (data.riskEntryId) await assertRiskEntryInWorksite(db, data.riskEntryId, data.worksiteId)
 
   const [created] = await db.insert(preventionInspectionPrograms).values({
     id: `insprog-${nanoid()}`,
@@ -298,6 +375,137 @@ export async function createInspectionProgram(input: unknown, access: Inspection
   return created
 }
 
+/**
+ * Editar y activar/desactivar una programación (A-10, A-11).
+ *
+ * No hay borrado físico: `isActive=false` es el borrado. Las ejecuciones ya
+ * creadas apuntan al programa con `onDelete: set null`, y borrarlo les quitaría
+ * el origen — que es justamente lo que explica por qué existen.
+ */
+export async function updateInspectionProgram(input: unknown, access: InspectionAccess) {
+  const data = z.object({
+    programId: z.string().min(1),
+    expectedVersion: z.number().int().positive(),
+    frequency: z.enum(["daily", "weekly", "biweekly", "monthly", "quarterly", "biannual", "annual", "on_demand"]).optional(),
+    intervalDays: z.number().int().positive().max(3650).optional(),
+    nextDueOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    assignedToUserId: z.string().min(1).nullable().optional(),
+    riskEntryId: z.string().min(1).nullable().optional(),
+    subjectType: z.string().trim().max(120).nullable().optional(),
+    isActive: z.boolean().optional(),
+  }).parse(input)
+
+  return db.transaction(async (tx) => {
+    const [program] = await tx.select().from(preventionInspectionPrograms)
+      .where(eq(preventionInspectionPrograms.id, data.programId)).limit(1)
+    if (!program) throw new Error(NOT_FOUND)
+    requireAccess(access, "prevention:inspections:manage", program.worksiteId)
+    if (program.version !== data.expectedVersion) {
+      throw new Error("La programación cambió mientras la editabas. Recarga y reintenta.")
+    }
+    if (data.riskEntryId) await assertRiskEntryInWorksite(tx, data.riskEntryId, program.worksiteId)
+
+    const now = nowIso()
+    const [updated] = await tx.update(preventionInspectionPrograms).set({
+      frequency: data.frequency ?? program.frequency,
+      // Cambiar la frecuencia sin tocar el intervalo dejaría "Mensual" con el
+      // intervalo de la frecuencia anterior; el default sigue a la frecuencia
+      // salvo que el usuario declare uno propio.
+      intervalDays: data.intervalDays
+        ?? (data.frequency ? FREQUENCY_INTERVAL_DAYS[data.frequency] ?? program.intervalDays : program.intervalDays),
+      nextDueOn: data.nextDueOn ?? program.nextDueOn,
+      assignedToUserId: data.assignedToUserId === undefined ? program.assignedToUserId : data.assignedToUserId,
+      riskEntryId: data.riskEntryId === undefined ? program.riskEntryId : data.riskEntryId,
+      subjectType: data.subjectType === undefined ? program.subjectType : data.subjectType,
+      isActive: data.isActive ?? program.isActive,
+      version: program.version + 1,
+      updatedAt: now,
+    }).where(and(
+      eq(preventionInspectionPrograms.id, program.id),
+      eq(preventionInspectionPrograms.version, data.expectedVersion),
+    )).returning()
+    if (!updated) throw new Error("La programación cambió mientras la editabas. Recarga y reintenta.")
+
+    await history(tx, {
+      entityType: "program", entityId: program.id, worksiteId: program.worksiteId,
+      changeType: updated.isActive === program.isActive ? "updated" : (updated.isActive ? "reactivated" : "deactivated"),
+      reason: `Programación ${updated.frequency} cada ${updated.intervalDays} día(s), próxima ${updated.nextDueOn}`,
+      beforeState: program, afterState: updated, actorUserId: access.userId,
+    })
+    return updated
+  })
+}
+
+/**
+ * A-09: el diálogo pedía escribir el ID de la MIPER a mano en un campo de
+ * texto libre, sin validar existencia ni pertenencia a la faena. Un ID mal
+ * tipeado daba una violación de FK cruda.
+ */
+async function assertRiskEntryInWorksite(client: Client, riskEntryId: string, worksiteId: string) {
+  const [entry] = await client.select({ id: preventionRiskEntries.id })
+    .from(preventionRiskEntries)
+    .innerJoin(preventionRiskMatrices, eq(preventionRiskMatrices.id, preventionRiskEntries.matrixId))
+    .where(and(
+      eq(preventionRiskEntries.id, riskEntryId),
+      eq(preventionRiskMatrices.worksiteId, worksiteId),
+    )).limit(1)
+  if (!entry) throw new Error("El peligro MIPER no existe o pertenece a otra faena.")
+}
+
+/**
+ * Comprueba que el programa esté dentro del alcance de faena del usuario.
+ *
+ * `materializeProgramRuns` corre también desde el cron, que no tiene sesión, y
+ * por eso no recibe `InspectionAccess`: cuando lo dispara una persona, el
+ * alcance se valida aquí antes de invocarlo.
+ */
+export async function assertProgramInScope(programId: string, access: InspectionAccess) {
+  const [program] = await db.select({ worksiteId: preventionInspectionPrograms.worksiteId })
+    .from(preventionInspectionPrograms)
+    .where(eq(preventionInspectionPrograms.id, programId)).limit(1)
+  if (!program) throw new Error(NOT_FOUND)
+  requireAccess(access, "prevention:inspections:manage", program.worksiteId)
+}
+
+/**
+ * Sujetos inspeccionables de la faena (función #11).
+ *
+ * Reusa `preventionEmergencyResources`, que ya es el inventario por faena
+ * —nombre, tipo, ubicación, serie— con su CRUD y sus alertas de vencimiento.
+ * Se lista bajo el alcance de faena de inspecciones, sin exigir permisos del
+ * módulo de emergencias: mismo criterio que ya aplica la certificación CPHS
+ * para sus lecturas directas de tablas de otros módulos.
+ */
+export async function listInspectionSubjects(worksiteId: string, access: InspectionAccess) {
+  requireAccess(access, "prevention:inspections:view", worksiteId)
+  return db.select({
+    id: preventionEmergencyResources.id,
+    name: preventionEmergencyResources.name,
+    kind: preventionEmergencyResources.kind,
+    location: preventionEmergencyResources.location,
+    serialNumber: preventionEmergencyResources.serialNumber,
+  })
+    .from(preventionEmergencyResources)
+    .where(eq(preventionEmergencyResources.worksiteId, worksiteId))
+    .orderBy(asc(preventionEmergencyResources.name))
+    .limit(500)
+}
+
+/** Peligros de la MIPER de la faena, para el picker de la programación (A-09). */
+export async function listRiskEntriesForWorksite(worksiteId: string, access: InspectionAccess) {
+  requireAccess(access, "prevention:inspections:view", worksiteId)
+  return db.select({
+    id: preventionRiskEntries.id,
+    hazardCode: preventionRiskEntries.hazardCode,
+    hazard: preventionRiskEntries.hazard,
+  })
+    .from(preventionRiskEntries)
+    .innerJoin(preventionRiskMatrices, eq(preventionRiskMatrices.id, preventionRiskEntries.matrixId))
+    .where(eq(preventionRiskMatrices.worksiteId, worksiteId))
+    .orderBy(asc(preventionRiskEntries.hazardCode))
+    .limit(500)
+}
+
 /* ── Ejecución ────────────────────────────────────────────────────────────── */
 
 const runSchema = z.object({
@@ -306,6 +514,8 @@ const runSchema = z.object({
   programId: z.string().min(1).nullable().optional(),
   subjectType: z.string().trim().max(120).nullable().optional(),
   subjectLabel: z.string().trim().max(300).nullable().optional(),
+  /** Sujeto del inventario (función #11); `subjectLabel` sigue admitiendo texto libre. */
+  subjectResourceId: z.string().min(1).nullable().optional(),
   origin: z.enum(["prevencion", "cphs", "mandante"]).default("prevencion"),
   scheduledFor: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
   assignedToUserId: z.string().min(1).nullable().optional(),
@@ -320,6 +530,32 @@ export async function createInspectionRun(input: unknown, access: InspectionAcce
     .where(eq(preventionInspectionTemplates.id, data.templateId)).limit(1)
   if (!template) throw new Error(NOT_FOUND)
   if (template.status !== "approved") throw new Error("Sólo puede ejecutarse una plantilla aprobada.")
+
+  // A-13: sin esto, un `programId` cualquiera hacía que completar la ejecución
+  // avanzara el `nextDueOn` de un programa ajeno. Era inalcanzable mientras
+  // nada enviaba `programId`; el materializador de B-04 lo activa.
+  if (data.programId) {
+    const [program] = await db.select().from(preventionInspectionPrograms)
+      .where(eq(preventionInspectionPrograms.id, data.programId)).limit(1)
+    if (!program) throw new Error(NOT_FOUND)
+    if (program.templateId !== data.templateId || program.worksiteId !== data.worksiteId) {
+      throw new Error("La programación no corresponde a esta plantilla y faena.")
+    }
+  }
+
+  // El sujeto debe existir y pertenecer a la faena: sin esto, un id de otra
+  // faena entraría por la acción y filtraría el nombre del recurso ajeno.
+  let subject: { name: string } | undefined
+  if (data.subjectResourceId) {
+    const [found] = await db.select({ name: preventionEmergencyResources.name })
+      .from(preventionEmergencyResources)
+      .where(and(
+        eq(preventionEmergencyResources.id, data.subjectResourceId),
+        eq(preventionEmergencyResources.worksiteId, data.worksiteId),
+      )).limit(1)
+    if (!found) throw new Error("El sujeto no existe o pertenece a otra faena.")
+    subject = found
+  }
 
   // La sincronización offline reenvía: el identificador de envío hace la
   // creación idempotente en vez de duplicar la inspección.
@@ -336,7 +572,10 @@ export async function createInspectionRun(input: unknown, access: InspectionAcce
     programId: data.programId ?? null,
     worksiteId: data.worksiteId,
     subjectType: data.subjectType ?? null,
-    subjectLabel: data.subjectLabel ?? null,
+    // El nombre del recurso se congela como etiqueta: renombrarlo después no
+    // debe cambiar qué decía la inspección que se inspeccionó.
+    subjectLabel: subject?.name ?? data.subjectLabel ?? null,
+    subjectResourceId: data.subjectResourceId ?? null,
     origin: data.origin,
     scheduledFor: data.scheduledFor ?? null,
     status: "planned",
@@ -346,90 +585,172 @@ export async function createInspectionRun(input: unknown, access: InspectionAcce
   }).returning()
   if (!created) throw new Error("No se pudo crear la inspección.")
   await history(db, { entityType: "run", entityId: created.id, worksiteId: data.worksiteId, changeType: "created", reason: `Inspección ${template.name} planificada`, afterState: created, actorUserId: access.userId })
+
+  // A-08: sin esto, a quien se le asignaba una inspección sólo se enteraba si
+  // miraba la bandeja por su cuenta. Asignársela a uno mismo no notifica.
+  if (created.assignedToUserId && created.assignedToUserId !== access.userId) {
+    await notifySafely("asignación", () => createNotifications([created.assignedToUserId!], {
+      type: "system_alert",
+      title: "Inspección asignada",
+      body: `${template.name}${created.scheduledFor ? ` · programada para el ${created.scheduledFor}` : ""}.`,
+      entityType: "inspection_run",
+      entityId: created.id,
+      entityHref: `/prevencion/inspecciones/${created.id}`,
+      dedupeKey: `inspection:assigned:${created.id}:${created.assignedToUserId}`,
+    }))
+  }
   return { run: created, idempotentReplay: false }
 }
 
+/**
+ * Conjunto completo de respuestas del run, no un delta.
+ *
+ * `.min(1)` se quitó a propósito (B-02): un array vacío significa "ninguna
+ * respuesta", y debe poder borrar la última que quedaba.
+ */
+const answerRowSchema = z.object({
+  sectionId: z.string().min(1),
+  itemId: z.string().min(1),
+  result: z.enum(["conforming", "partial", "non_conforming", "not_applicable", "recorded"]),
+  value: z.string().trim().max(2000).nullable().optional(),
+  comment: z.string().trim().max(2000).nullable().optional(),
+  evidenceReference: z.string().trim().max(2000).nullable().optional(),
+})
+
 const answersSchema = z.object({
   runId: z.string().min(1),
-  answers: z.array(z.object({
-    sectionId: z.string().min(1),
-    itemId: z.string().min(1),
-    result: z.enum(["conforming", "partial", "non_conforming", "not_applicable"]),
-    value: z.string().trim().max(2000).nullable().optional(),
-    comment: z.string().trim().max(2000).nullable().optional(),
-    evidenceReference: z.string().trim().max(2000).nullable().optional(),
-  })).min(1),
+  expectedVersion: z.number().int().positive(),
+  answers: z.array(answerRowSchema),
   locationLatitude: z.string().trim().max(40).nullable().optional(),
   locationLongitude: z.string().trim().max(40).nullable().optional(),
 })
 
+type AnswerRowInput = z.infer<typeof answerRowSchema>
+
+/**
+ * Persiste el conjunto de respuestas dentro de una transacción existente y
+ * devuelve la nueva versión del run.
+ *
+ * Extraída para que **guardar** y **declarar ejecutada** compartan exactamente
+ * el mismo camino de escritura. Antes de B-01 el botón de completar no
+ * persistía nada: el gate del cliente se evaluaba sobre el borrador en memoria
+ * y el servidor calculaba cumplimiento y hallazgos sobre lo que hubiera en BD,
+ * que podía ser más viejo. Ahora hay una sola transacción y una sola verdad.
+ */
+async function saveAnswersWithClient(tx: Tx, args: {
+  runId: string
+  expectedVersion: number
+  answers: AnswerRowInput[]
+  locationLatitude?: string | null
+  locationLongitude?: string | null
+  access: InspectionAccess
+}) {
+  const [run] = await tx.select().from(preventionInspectionRuns)
+    .where(eq(preventionInspectionRuns.id, args.runId)).limit(1)
+  if (!run) throw new Error(NOT_FOUND)
+  requireAccess(args.access, "prevention:inspections:execute", run.worksiteId)
+  if (["reviewed", "cancelled"].includes(run.status)) {
+    throw new Error("No se pueden modificar respuestas de una inspección cerrada o cancelada.")
+  }
+  // C-02: antes no había control de concurrencia y dos inspectores con el
+  // mismo run abierto se pisaban en silencio. El cliente recibe de vuelta la
+  // versión nueva, que es lo que el comentario anterior temía perder.
+  if (run.version !== args.expectedVersion) {
+    throw new Error("La inspección cambió en otra sesión. Recarga y reintenta.")
+  }
+
+  const [template] = await tx.select().from(preventionInspectionTemplates)
+    .where(eq(preventionInspectionTemplates.id, run.templateId)).limit(1)
+  if (!template) throw new Error(NOT_FOUND)
+  const items = itemsFromDefinition(template.definitionSnapshot as unknown as ChecklistDefinition)
+  const itemBySpec = new Map(items.map((item) => [`${item.sectionId}::${item.itemId}`, item]))
+
+  // B-03: validar TODO antes de escribir nada. El CHECK de Postgres queda como
+  // red de seguridad del dato, no como mecanismo de UX.
+  for (const answer of args.answers) {
+    const item = itemBySpec.get(`${answer.sectionId}::${answer.itemId}`)
+    if (!item) throw new Error("Una respuesta no corresponde a ningún ítem de la plantilla.")
+    const problem = validateAnswerRow(item, answer)
+    if (problem) throw new Error(problem)
+  }
+
+  const now = nowIso()
+
+  // B-02: el payload declara el conjunto completo, así que lo que no viene se
+  // borra. Sin esto, devolver un ítem a "Sin responder" en el formulario no
+  // producía ningún cambio y la fila anterior sobrevivía: el cliente contaba
+  // 9 respuestas y el servidor 10.
+  const keepPairs = args.answers.map((answer) => sql`(${answer.sectionId}, ${answer.itemId})`)
+  const deleted = await tx.delete(preventionInspectionAnswers)
+    .where(and(
+      eq(preventionInspectionAnswers.runId, run.id),
+      // Comparación por tupla, no por clave concatenada: un `sectionId` que
+      // contuviera el separador produciría colisiones silenciosas.
+      keepPairs.length > 0
+        ? sql`(${preventionInspectionAnswers.sectionId}, ${preventionInspectionAnswers.itemId}) NOT IN (${sql.join(keepPairs, sql`, `)})`
+        : undefined,
+    ))
+    .returning({ id: preventionInspectionAnswers.id })
+
+  if (args.answers.length > 0) {
+    await tx.insert(preventionInspectionAnswers).values(args.answers.map((answer) => {
+      const item = itemBySpec.get(`${answer.sectionId}::${answer.itemId}`)!
+      return {
+        id: `insans-${nanoid()}`,
+        runId: run.id,
+        sectionId: answer.sectionId,
+        itemId: answer.itemId,
+        itemLabel: item.label,
+        result: answer.result,
+        value: answer.value ?? null,
+        comment: answer.comment ?? null,
+        evidenceReference: answer.evidenceReference ?? null,
+        danoPotencial: item.danoPotencial ?? null,
+      }
+    })).onConflictDoUpdate({
+      target: [preventionInspectionAnswers.runId, preventionInspectionAnswers.sectionId, preventionInspectionAnswers.itemId],
+      set: {
+        result: sql`excluded.result`,
+        value: sql`excluded.value`,
+        comment: sql`excluded.comment`,
+        evidenceReference: sql`excluded.evidence_reference`,
+        updatedAt: now,
+      },
+    })
+  }
+
+  const [updated] = await tx.update(preventionInspectionRuns).set({
+    status: run.status === "planned" ? "in_progress" : run.status,
+    locationLatitude: args.locationLatitude ?? run.locationLatitude,
+    locationLongitude: args.locationLongitude ?? run.locationLongitude,
+    version: run.version + 1,
+    updatedAt: now,
+  }).where(and(
+    eq(preventionInspectionRuns.id, run.id),
+    eq(preventionInspectionRuns.version, args.expectedVersion),
+  )).returning()
+  if (!updated) throw new Error("La inspección cambió en otra sesión. Recarga y reintenta.")
+
+  return { run: updated, saved: args.answers.length, removed: deleted.length }
+}
+
 export async function saveInspectionAnswers(input: unknown, access: InspectionAccess) {
   const data = answersSchema.parse(input)
   return db.transaction(async (tx) => {
-    const [run] = await tx.select().from(preventionInspectionRuns)
-      .where(eq(preventionInspectionRuns.id, data.runId)).limit(1)
-    if (!run) throw new Error(NOT_FOUND)
-    requireAccess(access, "prevention:inspections:execute", run.worksiteId)
-    if (["reviewed", "cancelled"].includes(run.status)) {
-      throw new Error("No se pueden modificar respuestas de una inspección cerrada o cancelada.")
-    }
-
-    const [template] = await tx.select().from(preventionInspectionTemplates)
-      .where(eq(preventionInspectionTemplates.id, run.templateId)).limit(1)
-    if (!template) throw new Error(NOT_FOUND)
-    const items = itemsFromDefinition(template.definitionSnapshot as unknown as ChecklistDefinition)
-    const itemBySpec = new Map(items.map((item) => [`${item.sectionId}::${item.itemId}`, item]))
-    for (const answer of data.answers) {
-      const item = itemBySpec.get(`${answer.sectionId}::${answer.itemId}`)
-      if (!item) {
-        throw new Error("Una respuesta no corresponde a ningún ítem de la plantilla.")
-      }
-      // 'partial' (Regular) sólo existe en la escala B/R/M — aceptarlo en un
-      // ítem cumple/no-cumple inventaría un estado que ese ítem no tiene.
-      if (answer.result === "partial" && !fieldKindAcceptsPartial(item.kind)) {
-        throw new Error(`"${item.label}" no admite la respuesta "Regular".`)
-      }
-    }
-
-    const now = nowIso()
-    if (data.answers.length > 0) {
-      await tx.insert(preventionInspectionAnswers).values(data.answers.map((answer) => {
-        const item = itemBySpec.get(`${answer.sectionId}::${answer.itemId}`)!
-        return {
-          id: `insans-${nanoid()}`,
-          runId: run.id,
-          sectionId: answer.sectionId,
-          itemId: answer.itemId,
-          itemLabel: item.label,
-          result: answer.result,
-          value: answer.value ?? null,
-          comment: answer.comment ?? null,
-          evidenceReference: answer.evidenceReference ?? null,
-          danoPotencial: item.danoPotencial ?? null,
-        }
-      })).onConflictDoUpdate({
-        target: [preventionInspectionAnswers.runId, preventionInspectionAnswers.sectionId, preventionInspectionAnswers.itemId],
-        set: {
-          result: sql`excluded.result`,
-          value: sql`excluded.value`,
-          comment: sql`excluded.comment`,
-          evidenceReference: sql`excluded.evidence_reference`,
-          updatedAt: now,
-        },
-      })
-    }
-
-    // NO mueve `version`: ver la nota equivalente en `recordTrainingAttendance`
-    // (auditoría 2026-08-17, HIG-08). `inspection-run-detail.tsx` toma
-    // `expectedVersion` de sus props y no refresca tras guardar respuestas, así
-    // que el bump rompería el flujo normal de guardar y luego completar.
-    await tx.update(preventionInspectionRuns).set({
-      status: run.status === "planned" ? "in_progress" : run.status,
-      locationLatitude: data.locationLatitude ?? run.locationLatitude,
-      locationLongitude: data.locationLongitude ?? run.locationLongitude,
-      updatedAt: now,
-    }).where(eq(preventionInspectionRuns.id, run.id))
-    return { saved: data.answers.length }
+    const result = await saveAnswersWithClient(tx, { ...data, access })
+    // C-01: guardar una respuesta es lo único que el inspector hace en terreno
+    // y no dejaba rastro en la bitácora "inmutable". Se registran conteos, no
+    // el array completo: 80 ítems guardados 10 veces son 800 filas JSON sin
+    // valor probatorio adicional.
+    await history(tx, {
+      entityType: "run", entityId: result.run.id, worksiteId: result.run.worksiteId,
+      changeType: "answers_saved",
+      reason: `${result.saved} respuesta(s) guardada(s), ${result.removed} eliminada(s)`,
+      beforeState: { version: data.expectedVersion },
+      afterState: { version: result.run.version, saved: result.saved, removed: result.removed },
+      actorUserId: access.userId,
+    })
+    return { saved: result.saved, removed: result.removed, version: result.run.version }
   })
 }
 
@@ -438,15 +759,71 @@ export async function saveInspectionAnswers(input: unknown, access: InspectionAc
  * materializa un hallazgo por cada incumplimiento con su criticidad derivada.
  */
 export async function completeInspectionRun(input: unknown, access: InspectionAccess) {
-  const data = z.object({ runId: z.string().min(1), expectedVersion: z.number().int().positive() }).parse(input)
+  const data = z.object({
+    runId: z.string().min(1),
+    expectedVersion: z.number().int().positive(),
+    /**
+     * Conjunto completo de respuestas al momento de declarar ejecutada.
+     *
+     * B-01: sin esto, el cliente evaluaba el gate de completitud sobre su
+     * borrador en memoria y el servidor calculaba cumplimiento y hallazgos
+     * sobre lo último persistido — que podía ser más viejo. Se persiste y se
+     * completa en la MISMA transacción. Omitirlo conserva el comportamiento
+     * anterior (evalúa lo ya guardado), que es lo que necesitan los llamadores
+     * sin formulario.
+     */
+    answers: z.array(answerRowSchema).optional(),
+    locationLatitude: z.string().trim().max(40).nullable().optional(),
+    locationLongitude: z.string().trim().max(40).nullable().optional(),
+    /** Acta de cierre (función #2). La plantilla declara qué exige. */
+    closingAct: z.object({
+      result: z.string().trim().min(1),
+      restrictions: z.string().trim().max(3000).nullable().optional(),
+      signatures: z.array(z.object({
+        role: z.string().trim().min(1).max(120),
+        name: z.string().trim().min(1).max(200),
+        userId: z.string().min(1).nullable().optional(),
+      })).max(20),
+    }).optional(),
+  }).parse(input)
 
   let accreditation: Parameters<typeof onInspectionCompleted>[0] | null = null
   const result = await db.transaction(async (tx) => {
+    // Función #9: el reintento de una cola offline vuelve a mandar el mismo
+    // cierre. Si el run ya quedó ejecutado por ESTE mismo usuario, la primera
+    // entrega sí llegó y la segunda es un eco — devolverlo como éxito
+    // idempotente es lo que permite a la cola borrar la entrada. Va ANTES del
+    // guardado: si no, el CAS de `saveAnswersWithClient` fallaría con la
+    // versión que el cliente traía desde antes de la primera entrega, y el
+    // reintento parecería un conflicto real y se repetiría para siempre.
+    const [existing] = await tx.select().from(preventionInspectionRuns)
+      .where(eq(preventionInspectionRuns.id, data.runId)).limit(1)
+    if (!existing) throw new Error(NOT_FOUND)
+    requireAccess(access, "prevention:inspections:execute", existing.worksiteId)
+    if ((existing.status === "completed" || existing.status === "reviewed") && existing.executedByUserId === access.userId) {
+      return { run: existing, findings: 0, compliancePercent: existing.compliancePercent, alreadyCompleted: true as const }
+    }
+
+    // El guardado ya valida alcance, estado editable y versión, y devuelve el
+    // run con la versión avanzada — de ahí que el `expectedVersion` posterior
+    // se tome de su resultado y no del input.
+    let expectedVersion = data.expectedVersion
+    if (data.answers) {
+      const saved = await saveAnswersWithClient(tx, {
+        runId: data.runId,
+        expectedVersion: data.expectedVersion,
+        answers: data.answers,
+        locationLatitude: data.locationLatitude,
+        locationLongitude: data.locationLongitude,
+        access,
+      })
+      expectedVersion = saved.run.version
+    }
+
     const [run] = await tx.select().from(preventionInspectionRuns)
       .where(eq(preventionInspectionRuns.id, data.runId)).limit(1)
     if (!run) throw new Error(NOT_FOUND)
-    requireAccess(access, "prevention:inspections:execute", run.worksiteId)
-    if (run.version !== data.expectedVersion) throw new Error("La inspección cambió mientras la editabas. Recarga y reintenta.")
+    if (run.version !== expectedVersion) throw new Error("La inspección cambió mientras la editabas. Recarga y reintenta.")
     if (run.status === "completed" || run.status === "reviewed") throw new Error("La inspección ya fue ejecutada.")
     if (run.status === "cancelled") throw new Error("Una inspección cancelada no puede ejecutarse.")
 
@@ -462,9 +839,12 @@ export async function completeInspectionRun(input: unknown, access: InspectionAc
       itemId: row.itemId,
       result: row.result as InspectionAnswerInput["result"],
       comment: row.comment,
+      // `assessRunCompletion` exige contenido en los ítems que no puntúan.
+      value: row.value,
     }))
 
-    const completion = assessRunCompletion(items, answers)
+    const closingSpec = closingActFromDefinition(template.definitionSnapshot as unknown as ChecklistDefinition)
+    const completion = assessRunCompletion(items, answers, { spec: closingSpec, act: data.closingAct })
     if (!completion.allowed) {
       throw new Error(`No se puede declarar ejecutada: ${completion.blockers.map((item) => item.detail).join(", ")}`)
     }
@@ -501,20 +881,48 @@ export async function completeInspectionRun(input: unknown, access: InspectionAc
       nonConformingCount: summary.nonConforming,
       notApplicableCount: summary.notApplicable,
       compliancePercent: summary.compliancePercent,
+      closingResult: data.closingAct?.result ?? null,
+      closingRestrictions: data.closingAct?.restrictions ?? null,
+      // `signedAt` lo estampa el servidor: la hora de firma no la declara el
+      // cliente. Firma registrada (rol + nombre + momento), sin trazo.
+      closingSignatures: data.closingAct
+        ? data.closingAct.signatures.map((item) => ({
+            role: item.role,
+            name: item.name,
+            userId: item.userId ?? null,
+            signedAt: now,
+          }))
+        : null,
       version: run.version + 1,
       updatedAt: now,
-    }).where(and(eq(preventionInspectionRuns.id, run.id), eq(preventionInspectionRuns.version, data.expectedVersion))).returning()
+    }).where(and(eq(preventionInspectionRuns.id, run.id), eq(preventionInspectionRuns.version, expectedVersion))).returning()
     if (!updated) throw new Error("La inspección cambió mientras la editabas. Recarga y reintenta.")
 
-    // La siguiente ejecución del programa se agenda desde la fecha real.
-    if (run.programId) {
-      const [program] = await tx.select().from(preventionInspectionPrograms)
-        .where(eq(preventionInspectionPrograms.id, run.programId)).limit(1)
-      if (program?.isActive) {
-        await tx.update(preventionInspectionPrograms)
-          .set({ nextDueOn: addDays(todayInChile(), program.intervalDays), updatedAt: now })
-          .where(eq(preventionInspectionPrograms.id, program.id))
+    // `nextDueOn` NO se toca aquí (D-3, auditoría 2026-08-18). Lo mueve sólo
+    // el materializador (`lib/services/prevention-inspection-scheduler.ts`) al
+    // crear la ejecución del período. Avanzarlo también al completar contaba
+    // dos veces el mismo ciclo, y hacerlo desde `hoy` en vez de desde el
+    // vencimiento arrastraba el calendario legal (A-12).
+
+    // Función #11: cerrar el círculo del inventario. `lastInspectedAt` y
+    // `nextInspectionAt` existían con sus índices y sus alertas de vencimiento,
+    // y nadie los escribía nunca desde una inspección real.
+    if (run.subjectResourceId) {
+      const today = todayInChile()
+      let nextInspectionAt: string | null = null
+      if (run.programId) {
+        const [program] = await tx.select({ intervalDays: preventionInspectionPrograms.intervalDays })
+          .from(preventionInspectionPrograms)
+          .where(eq(preventionInspectionPrograms.id, run.programId)).limit(1)
+        if (program) nextInspectionAt = nextDueAfter(today, program.intervalDays, today)
       }
+      await tx.update(preventionEmergencyResources).set({
+        lastInspectedAt: today,
+        // Sólo se pisa si esta inspección define una cadencia; una ejecución
+        // suelta no debe borrar la fecha que puso el módulo de emergencias.
+        ...(nextInspectionAt ? { nextInspectionAt } : {}),
+        updatedAt: now,
+      }).where(eq(preventionEmergencyResources.id, run.subjectResourceId))
     }
 
     await history(tx, { entityType: "run", entityId: run.id, worksiteId: run.worksiteId, changeType: "completed", reason: `Ejecutada con ${summary.nonConforming} incumplimiento(s) y ${derived.length} hallazgo(s)`, beforeState: run, afterState: updated, actorUserId: access.userId })
@@ -549,7 +957,43 @@ export async function completeInspectionRun(input: unknown, access: InspectionAc
 
   if (accreditation) await onInspectionCompleted(accreditation)
 
+  // Un reintento offline no vuelve a notificar. El `dedupeKey` ya lo evitaría,
+  // pero salir temprano ahorra la consulta de destinatarios.
+  if ("alreadyCompleted" in result) return result
+
+  // A-08: quien puede revisar necesita enterarse de que hay algo esperándolo.
+  // Post-commit y sin propagar el error, igual que la acreditación PDTP: una
+  // notificación caída no puede revertir una inspección ya ejecutada.
+  await notifySafely("pendiente de revisión", async () => {
+    const reviewers = (await getUserIdsWithPermissionForWorksite("prevention:inspections:review", result.run.worksiteId))
+      // Quien ejecutó no puede revisar (lo bloquea `assessRunReview`), así que
+      // avisarle sería mandarlo a una acción que le va a ser negada.
+      .filter((userId) => userId !== access.userId)
+    if (reviewers.length === 0) return
+    await createNotifications(reviewers, {
+      type: "system_alert",
+      title: "Inspección pendiente de revisión",
+      body: `${result.run.code} fue declarada ejecutada${result.findings > 0 ? ` con ${result.findings} hallazgo(s)` : ""}.`,
+      entityType: "inspection_run",
+      entityId: result.run.id,
+      entityHref: `/prevencion/inspecciones/${result.run.id}`,
+      dedupeKey: `inspection:review:${result.run.id}`,
+    })
+  })
+
   return result
+}
+
+/**
+ * Envía una notificación sin dejar que su fallo tumbe la operación de negocio
+ * que ya se confirmó. Mismo criterio que `onInspectionCompleted`.
+ */
+async function notifySafely(label: string, send: () => Promise<void>) {
+  try {
+    await send()
+  } catch (error) {
+    logger.error({ err: error }, `[inspections] no se pudo notificar (${label})`)
+  }
 }
 
 /** Deriva un hallazgo a CAPA común con prioridad y plazo según su criticidad. */
@@ -606,19 +1050,70 @@ export async function reviewInspectionRun(input: unknown, access: InspectionAcce
     reviewComment: z.string().trim().min(10).max(3000),
   }).parse(input)
 
+  return transitionInspectionRun({
+    runId: data.runId,
+    expectedVersion: data.expectedVersion,
+    toStatus: "reviewed",
+    reason: data.reviewComment,
+  }, access)
+}
+
+/* ── Motor de transiciones ────────────────────────────────────────────────
+ * Puerta única para revisar, cancelar y reabrir. Copia la estructura de
+ * `transitionCapaActionWithClient` (lib/services/prevention-capa.ts): guarda
+ * pura + doble CAS (chequeo previo y UPDATE condicionado por estado y versión)
+ * + historial + actividad operacional.
+ */
+
+const runTransitionSchema = z.object({
+  runId: z.string().min(1),
+  expectedVersion: z.number().int().positive(),
+  toStatus: z.enum(["in_progress", "reviewed", "cancelled"]),
+  reason: z.string().trim().max(3000).optional(),
+})
+
+/** Campos que cada destino escribe, más allá del estado y la versión. */
+function transitionChangeSet(toStatus: string, actorUserId: string, reason: string | undefined, now: string) {
+  if (toStatus === "reviewed") {
+    return { reviewedByUserId: actorUserId, reviewedAt: now, reviewComment: reason ?? null }
+  }
+  if (toStatus === "cancelled") {
+    // El CHECK `prevention_inspection_run_cancel_consistent` exige los tres juntos.
+    return { cancelledByUserId: actorUserId, cancelledAt: now, cancellationReason: reason ?? null }
+  }
+  // Reabrir: la ejecución deja de existir, así que se limpia todo lo que la
+  // declaraba. Conservar `compliancePercent` afirmaría un resultado que ya no
+  // corresponde a ninguna respuesta cerrada.
+  return {
+    executedByUserId: null, executedAt: null,
+    reviewedByUserId: null, reviewedAt: null, reviewComment: null,
+    compliancePercent: null,
+    conformingCount: 0, partialCount: 0, nonConformingCount: 0, notApplicableCount: 0,
+  }
+}
+
+export async function transitionInspectionRun(input: unknown, access: InspectionAccess) {
+  const data = runTransitionSchema.parse(input)
+
   return db.transaction(async (tx) => {
     const [run] = await tx.select().from(preventionInspectionRuns)
       .where(eq(preventionInspectionRuns.id, data.runId)).limit(1)
     if (!run) throw new Error(NOT_FOUND)
-    requireAccess(access, "prevention:inspections:review", run.worksiteId)
-    if (run.version !== data.expectedVersion) throw new Error("La inspección cambió mientras la revisabas. Recarga y reintenta.")
-    if (run.status !== "completed") throw new Error("Sólo una inspección ejecutada puede revisarse.")
+    // El alcance de faena se comprueba siempre; el permiso concreto lo decide
+    // la guarda según el destino.
+    if (!scopeAllows(access.scope, run.worksiteId)) throw new Error(NOT_FOUND)
+    if (run.version !== data.expectedVersion) throw new Error("La inspección cambió mientras la editabas. Recarga y reintenta.")
 
     const findings = await tx.select().from(preventionInspectionFindings)
       .where(eq(preventionInspectionFindings.runId, run.id))
-    const review = assessRunReview({
+
+    assertInspectionRunTransition({
+      fromStatus: run.status as InspectionRunStatus,
+      toStatus: data.toStatus,
+      permissions: access.permissions,
+      actorUserId: access.userId,
       executedByUserId: run.executedByUserId,
-      reviewerUserId: access.userId,
+      reason: data.reason,
       findings: findings.map((finding) => ({
         id: finding.id,
         description: finding.description,
@@ -626,23 +1121,41 @@ export async function reviewInspectionRun(input: unknown, access: InspectionAcce
         capaActionId: finding.capaActionId,
       })),
     })
-    if (!review.allowed) {
-      throw new Error(`No se puede cerrar la inspección: ${review.blockers.map((item) => item.detail).join(" ")}`)
-    }
 
     const now = nowIso()
+
+    if (data.toStatus === "in_progress") {
+      // Los hallazgos con CAPA sobreviven: la acción correctiva ya vive en otro
+      // módulo y borrarla en cascada destruiría evidencia. Es la misma
+      // sentencia que usa `completeInspectionRun` al rehacerlos.
+      await tx.delete(preventionInspectionFindings).where(and(
+        eq(preventionInspectionFindings.runId, run.id),
+        sql`${preventionInspectionFindings.capaActionId} IS NULL`,
+      ))
+    }
+
     const [updated] = await tx.update(preventionInspectionRuns).set({
-      status: "reviewed",
-      reviewedByUserId: access.userId,
-      reviewedAt: now,
-      reviewComment: data.reviewComment,
+      status: data.toStatus,
+      ...transitionChangeSet(data.toStatus, access.userId, data.reason, now),
       version: run.version + 1,
       updatedAt: now,
-    }).where(and(eq(preventionInspectionRuns.id, run.id), eq(preventionInspectionRuns.version, data.expectedVersion))).returning()
-    if (!updated) throw new Error("La inspección cambió mientras la revisabas. Recarga y reintenta.")
-    await history(tx, { entityType: "run", entityId: run.id, worksiteId: run.worksiteId, changeType: "reviewed", reason: data.reviewComment, beforeState: run, afterState: updated, actorUserId: access.userId })
+    }).where(and(
+      eq(preventionInspectionRuns.id, run.id),
+      eq(preventionInspectionRuns.status, run.status),
+      eq(preventionInspectionRuns.version, data.expectedVersion),
+    )).returning()
+    if (!updated) throw new Error("La inspección cambió mientras la editabas. Recarga y reintenta.")
+
+    await history(tx, {
+      entityType: "run", entityId: run.id, worksiteId: run.worksiteId,
+      changeType: data.toStatus === "in_progress" ? "reopened" : data.toStatus,
+      reason: data.reason ?? "",
+      beforeState: run, afterState: updated, actorUserId: access.userId,
+    })
     await recordOperationalActivity({
-      eventType: "inspection.reviewed",
+      // La reapertura anula un `compliancePercent` ya publicado: sin su propio
+      // evento, la serie temporal no puede explicar la discontinuidad.
+      eventType: data.toStatus === "in_progress" ? "inspection.reopened" : `inspection.${data.toStatus}`,
       module: "inspecciones",
       entityType: "inspection_run",
       entityId: updated.id,
@@ -651,6 +1164,170 @@ export async function reviewInspectionRun(input: unknown, access: InspectionAcce
       actorUserId: access.userId,
       payload: { status: updated.status },
     }, tx)
+    return updated
+  })
+}
+
+/* ── Evidencia fotográfica (función #1) ───────────────────────────────────
+ * `evidenceReference` existía en el esquema y en el export desde el principio,
+ * y ninguna pantalla adjuntaba nada: una inspección sin foto del hallazgo no
+ * sirve como evidencia. Se modela 1-a-N porque un incumplimiento suele
+ * necesitar más de un ángulo.
+ */
+
+/** Resuelve la respuesta y comprueba que su inspección siga siendo editable. */
+async function requireEditableAnswer(client: Client, answerId: string, access: InspectionAccess) {
+  const [row] = await client.select({ answer: preventionInspectionAnswers, run: preventionInspectionRuns })
+    .from(preventionInspectionAnswers)
+    .innerJoin(preventionInspectionRuns, eq(preventionInspectionRuns.id, preventionInspectionAnswers.runId))
+    .where(eq(preventionInspectionAnswers.id, answerId)).limit(1)
+  if (!row) throw new Error(NOT_FOUND)
+  requireAccess(access, "prevention:inspections:execute", row.run.worksiteId)
+  // Mismo criterio que `saveAnswersWithClient`: sin esto se podría adjuntar o
+  // borrar evidencia de una inspección ya revisada.
+  if (!["planned", "in_progress"].includes(row.run.status)) {
+    throw new Error("No se puede modificar la evidencia de una inspección ya ejecutada.")
+  }
+  return row
+}
+
+export async function addAnswerEvidence(input: {
+  answerId: string
+  path: string
+  caption?: string | null
+}, access: InspectionAccess) {
+  const data = z.object({
+    answerId: z.string().min(1),
+    // El path lo produce la ruta de subida, nunca el usuario: se valida el
+    // prefijo igual que hace PDTP para que nadie inyecte una ruta arbitraria.
+    path: z.string().regex(/^storage\/inspection-evidence\/[A-Za-z0-9._-]+$/, "Ruta de evidencia inválida."),
+    caption: z.string().trim().max(300).nullable().optional(),
+  }).parse(input)
+
+  const row = await requireEditableAnswer(db, data.answerId, access)
+  const [created] = await db.insert(preventionInspectionAnswerEvidence).values({
+    id: `insev-${nanoid()}`,
+    answerId: data.answerId,
+    path: data.path,
+    caption: data.caption ?? null,
+    uploadedByUserId: access.userId,
+  }).returning()
+  if (!created) throw new Error("No se pudo adjuntar la evidencia.")
+  await history(db, {
+    entityType: "answer", entityId: data.answerId, worksiteId: row.run.worksiteId,
+    changeType: "evidence_added", reason: `Evidencia adjuntada a "${row.answer.itemLabel}"`,
+    actorUserId: access.userId,
+  })
+  return created
+}
+
+export async function deleteAnswerEvidence(input: { evidenceId: string }, access: InspectionAccess) {
+  const data = z.object({ evidenceId: z.string().min(1) }).parse(input)
+  const [evidence] = await db.select().from(preventionInspectionAnswerEvidence)
+    .where(eq(preventionInspectionAnswerEvidence.id, data.evidenceId)).limit(1)
+  if (!evidence) throw new Error(NOT_FOUND)
+  const row = await requireEditableAnswer(db, evidence.answerId, access)
+
+  await db.delete(preventionInspectionAnswerEvidence)
+    .where(eq(preventionInspectionAnswerEvidence.id, data.evidenceId))
+  // El archivo físico no se borra aquí: lo recoge el GC de evidencias, que ya
+  // recorre el directorio comparándolo contra las referencias en BD.
+  await history(db, {
+    entityType: "answer", entityId: evidence.answerId, worksiteId: row.run.worksiteId,
+    changeType: "evidence_removed", reason: `Evidencia eliminada de "${row.answer.itemLabel}"`,
+    actorUserId: access.userId,
+  })
+  return { deleted: 1 }
+}
+
+/**
+ * Reasignar el ejecutante de una inspección aún no ejecutada (función #12).
+ *
+ * Función hermana del motor de transiciones, no un destino más: no cambia de
+ * estado. Meter cambios de campo arbitrarios en `transitionInspectionRun` lo
+ * convertiría en un `update` genérico y le haría perder su valor como guarda.
+ */
+export async function reassignInspectionRun(input: unknown, access: InspectionAccess) {
+  const data = z.object({
+    runId: z.string().min(1),
+    expectedVersion: z.number().int().positive(),
+    assignedToUserId: z.string().min(1).nullable(),
+    reason: z.string().trim().min(TRANSITION_REASON_MIN_LENGTH).max(3000),
+  }).parse(input)
+
+  return db.transaction(async (tx) => {
+    const [run] = await tx.select().from(preventionInspectionRuns)
+      .where(eq(preventionInspectionRuns.id, data.runId)).limit(1)
+    if (!run) throw new Error(NOT_FOUND)
+    requireAccess(access, "prevention:inspections:manage", run.worksiteId)
+    if (run.version !== data.expectedVersion) throw new Error("La inspección cambió mientras la editabas. Recarga y reintenta.")
+    if (!["planned", "in_progress"].includes(run.status)) {
+      throw new Error("Sólo puede reasignarse una inspección que aún no fue ejecutada.")
+    }
+
+    const now = nowIso()
+    const [updated] = await tx.update(preventionInspectionRuns).set({
+      assignedToUserId: data.assignedToUserId,
+      version: run.version + 1,
+      updatedAt: now,
+    }).where(and(
+      eq(preventionInspectionRuns.id, run.id),
+      eq(preventionInspectionRuns.version, data.expectedVersion),
+    )).returning()
+    if (!updated) throw new Error("La inspección cambió mientras la editabas. Recarga y reintenta.")
+
+    await history(tx, {
+      entityType: "run", entityId: run.id, worksiteId: run.worksiteId,
+      changeType: "reassigned", reason: data.reason,
+      beforeState: run, afterState: updated, actorUserId: access.userId,
+    })
+    return updated
+  })
+}
+
+/**
+ * Cierre manual de un hallazgo, para los que no derivaron en CAPA (típicamente
+ * bajos y medios, que `assessRunReview` no obliga a derivar).
+ *
+ * Los que sí tienen CAPA se cierran solos cuando su acción se verifica o
+ * cierra — ver la cascada en `transitionCapaActionWithClient`. Cerrar a mano
+ * uno con CAPA abierta sería declarar resuelto lo que la acción aún no resolvió.
+ */
+export async function closeInspectionFinding(input: unknown, access: InspectionAccess) {
+  const data = z.object({
+    findingId: z.string().min(1),
+    reason: z.string().trim().min(TRANSITION_REASON_MIN_LENGTH).max(3000),
+  }).parse(input)
+
+  return db.transaction(async (tx) => {
+    const [row] = await tx.select({ finding: preventionInspectionFindings, run: preventionInspectionRuns })
+      .from(preventionInspectionFindings)
+      .innerJoin(preventionInspectionRuns, eq(preventionInspectionFindings.runId, preventionInspectionRuns.id))
+      .where(eq(preventionInspectionFindings.id, data.findingId)).limit(1)
+    if (!row) throw new Error(NOT_FOUND)
+    requireAccess(access, "prevention:inspections:review", row.run.worksiteId)
+    if (row.finding.status === "closed") throw new Error("El hallazgo ya está cerrado.")
+    if (row.finding.capaActionId) {
+      throw new Error("El hallazgo tiene una acción CAPA: se cierra al verificar o cerrar esa acción.")
+    }
+
+    const now = nowIso()
+    const [updated] = await tx.update(preventionInspectionFindings).set({
+      status: "closed",
+      closedByUserId: access.userId,
+      closedAt: now,
+      updatedAt: now,
+    }).where(and(
+      eq(preventionInspectionFindings.id, data.findingId),
+      eq(preventionInspectionFindings.status, row.finding.status),
+    )).returning()
+    if (!updated) throw new Error("El hallazgo cambió mientras lo cerrabas. Recarga y reintenta.")
+
+    await history(tx, {
+      entityType: "finding", entityId: data.findingId, worksiteId: row.run.worksiteId,
+      changeType: "closed", reason: data.reason,
+      beforeState: row.finding, afterState: updated, actorUserId: access.userId,
+    })
     return updated
   })
 }
@@ -668,22 +1345,123 @@ function kindCondition({ kinds }: InspectionKindFilter = {}) {
   return kinds?.length ? inArray(preventionInspectionTemplates.kind, [...kinds]) : undefined
 }
 
-export async function listInspectionRuns(access: InspectionAccess, filter: InspectionKindFilter = {}) {
+/**
+ * C-09: el listado traía 500 filas y la pantalla calculaba filtros y KPIs sobre
+ * ellas. Pasadas las 500 ejecuciones los contadores mentían en silencio y el
+ * export truncaba sin avisar.
+ *
+ * Tres piezas separadas a propósito:
+ *   - `listInspectionRuns`: una página de datos.
+ *   - `summarizeInspectionRuns`: los KPIs sobre el universo completo.
+ *   - `listAllInspectionRunsForExport`: sin paginar, porque exportar la primera
+ *     página sería un fallo silencioso de integridad.
+ */
+export interface InspectionListFilters extends InspectionKindFilter {
+  status?: string
+  worksiteId?: string
+  /** Texto libre sobre código, plantilla, sujeto y faena. */
+  search?: string
+  /** Vista rápida de la pantalla: pendientes de revisión, con hallazgos, graves. */
+  view?: "pending_review" | "open_findings" | "critical"
+}
+
+const OPEN_FINDINGS_SQL = sql<number>`(SELECT COUNT(*)::int FROM prevention_inspection_findings f WHERE f.run_id = ${preventionInspectionRuns.id} AND f.status <> 'closed')`
+const CRITICAL_FINDINGS_SQL = sql<number>`(SELECT COUNT(*)::int FROM prevention_inspection_findings f WHERE f.run_id = ${preventionInspectionRuns.id} AND f.criticality IN ('high','critical') AND f.status <> 'closed')`
+
+function listFilterConditions(access: InspectionAccess, filter: InspectionListFilters) {
+  const conditions = [
+    scopeCondition(access.scope, preventionInspectionRuns.worksiteId),
+    kindCondition(filter),
+  ]
+  if (filter.status) conditions.push(eq(preventionInspectionRuns.status, filter.status))
+  if (filter.worksiteId) conditions.push(eq(preventionInspectionRuns.worksiteId, filter.worksiteId))
+  if (filter.view === "pending_review") conditions.push(eq(preventionInspectionRuns.status, "completed"))
+  if (filter.view === "open_findings") conditions.push(sql`${OPEN_FINDINGS_SQL} > 0`)
+  if (filter.view === "critical") conditions.push(sql`${CRITICAL_FINDINGS_SQL} > 0`)
+  if (filter.search?.trim()) {
+    // `unaccent` no está garantizado en la base; `ILIKE` cubre el caso real
+    // (buscar por código o por nombre de plantilla) sin depender de extensiones.
+    const pattern = `%${filter.search.trim().replace(/[%_]/g, (match) => `\\${match}`)}%`
+    conditions.push(sql`(
+      ${preventionInspectionRuns.code} ILIKE ${pattern}
+      OR ${preventionInspectionTemplates.name} ILIKE ${pattern}
+      OR COALESCE(${preventionInspectionRuns.subjectLabel}, '') ILIKE ${pattern}
+      OR ${worksites.name} ILIKE ${pattern}
+    )`)
+  }
+  return and(...conditions)
+}
+
+const RUN_LIST_SELECTION = {
+  run: preventionInspectionRuns,
+  templateName: preventionInspectionTemplates.name,
+  templateKind: preventionInspectionTemplates.kind,
+  worksiteName: worksites.name,
+  openFindings: OPEN_FINDINGS_SQL,
+  criticalFindings: CRITICAL_FINDINGS_SQL,
+}
+
+export const INSPECTION_PAGE_SIZE = 50
+
+export async function listInspectionRuns(
+  access: InspectionAccess,
+  filter: InspectionListFilters = {},
+  page: { limit?: number; offset?: number } = {},
+) {
   requireAccess(access, "prevention:inspections:view")
-  return db.select({
-    run: preventionInspectionRuns,
-    templateName: preventionInspectionTemplates.name,
-    templateKind: preventionInspectionTemplates.kind,
-    worksiteName: worksites.name,
-    openFindings: sql<number>`(SELECT COUNT(*)::int FROM prevention_inspection_findings f WHERE f.run_id = ${preventionInspectionRuns.id} AND f.status <> 'closed')`,
-    criticalFindings: sql<number>`(SELECT COUNT(*)::int FROM prevention_inspection_findings f WHERE f.run_id = ${preventionInspectionRuns.id} AND f.criticality IN ('high','critical'))`,
+  return db.select(RUN_LIST_SELECTION)
+    .from(preventionInspectionRuns)
+    .innerJoin(preventionInspectionTemplates, eq(preventionInspectionRuns.templateId, preventionInspectionTemplates.id))
+    .innerJoin(worksites, eq(preventionInspectionRuns.worksiteId, worksites.id))
+    .where(listFilterConditions(access, filter))
+    // Orden estable: `createdAt` sola empata entre ejecuciones creadas por el
+    // mismo barrido del cron y la paginación repetiría o saltaría filas.
+    .orderBy(desc(preventionInspectionRuns.createdAt), desc(preventionInspectionRuns.id))
+    .limit(page.limit ?? INSPECTION_PAGE_SIZE)
+    .offset(page.offset ?? 0)
+}
+
+/** KPIs sobre el universo completo, no sobre la página visible (C-09). */
+export async function summarizeInspectionRuns(access: InspectionAccess, filter: InspectionKindFilter = {}) {
+  requireAccess(access, "prevention:inspections:view")
+  const [row] = await db.select({
+    total: sql<number>`COUNT(*)::int`,
+    pendingReview: sql<number>`COUNT(*) FILTER (WHERE ${preventionInspectionRuns.status} = 'completed')::int`,
+    withOpenFindings: sql<number>`COUNT(*) FILTER (WHERE ${OPEN_FINDINGS_SQL} > 0)::int`,
+    withCriticalFindings: sql<number>`COUNT(*) FILTER (WHERE ${CRITICAL_FINDINGS_SQL} > 0)::int`,
   })
     .from(preventionInspectionRuns)
     .innerJoin(preventionInspectionTemplates, eq(preventionInspectionRuns.templateId, preventionInspectionTemplates.id))
     .innerJoin(worksites, eq(preventionInspectionRuns.worksiteId, worksites.id))
-    .where(and(scopeCondition(access.scope, preventionInspectionRuns.worksiteId), kindCondition(filter)))
-    .orderBy(desc(preventionInspectionRuns.createdAt))
-    .limit(500)
+    .where(listFilterConditions(access, filter))
+  return row ?? { total: 0, pendingReview: 0, withOpenFindings: 0, withCriticalFindings: 0 }
+}
+
+/**
+ * Universo completo para el export. NO comparte función con la vista paginada
+ * a propósito: si alguien las unifica más adelante, el Excel vuelve a truncarse
+ * en silencio, que es el defecto que C-09 corrige.
+ */
+export async function listAllInspectionRunsForExport(access: InspectionAccess, filter: InspectionKindFilter = {}) {
+  requireAccess(access, "prevention:inspections:view")
+  // Los alias se crean UNA vez: `alias()` devuelve un objeto nuevo en cada
+  // llamada, así que repetirlo en el select y en el join produciría dos tablas
+  // distintas con el mismo nombre.
+  const executor = alias(users, "inspection_export_executor")
+  const reviewer = alias(users, "inspection_export_reviewer")
+  return db.select({
+    ...RUN_LIST_SELECTION,
+    // A-07: el Excel volcaba los IDs crudos de usuario.
+    executorName: executor.name,
+    reviewerName: reviewer.name,
+  })
+    .from(preventionInspectionRuns)
+    .innerJoin(preventionInspectionTemplates, eq(preventionInspectionRuns.templateId, preventionInspectionTemplates.id))
+    .innerJoin(worksites, eq(preventionInspectionRuns.worksiteId, worksites.id))
+    .leftJoin(executor, eq(preventionInspectionRuns.executedByUserId, executor.id))
+    .leftJoin(reviewer, eq(preventionInspectionRuns.reviewedByUserId, reviewer.id))
+    .where(listFilterConditions(access, filter))
+    .orderBy(desc(preventionInspectionRuns.createdAt), desc(preventionInspectionRuns.id))
 }
 
 export async function getInspectionRunDetail(runId: string, access: InspectionAccess) {
@@ -714,7 +1492,23 @@ export async function getInspectionRunDetail(runId: string, access: InspectionAc
     db.select().from(preventionInspectionAnswers).where(eq(preventionInspectionAnswers.runId, runId)),
     db.select().from(preventionInspectionFindings).where(eq(preventionInspectionFindings.runId, runId)),
   ])
-  return { ...run, answers, findings }
+  // Evidencia por respuesta (función #1). Se consulta aparte y se agrupa en
+  // memoria: son pocas filas por inspección y evita un join que duplicaría
+  // cada respuesta por cada foto.
+  const evidence = answers.length === 0 ? [] : await db.select()
+    .from(preventionInspectionAnswerEvidence)
+    .where(inArray(preventionInspectionAnswerEvidence.answerId, answers.map((row) => row.id)))
+  const evidenceByAnswer = new Map<string, typeof evidence>()
+  for (const item of evidence) {
+    const list = evidenceByAnswer.get(item.answerId) ?? []
+    list.push(item)
+    evidenceByAnswer.set(item.answerId, list)
+  }
+  return {
+    ...run,
+    answers: answers.map((row) => ({ ...row, evidence: evidenceByAnswer.get(row.id) ?? [] })),
+    findings,
+  }
 }
 
 export async function listInspectionTemplates(access: InspectionAccess, filter: InspectionKindFilter = {}) {
@@ -724,10 +1518,23 @@ export async function listInspectionTemplates(access: InspectionAccess, filter: 
     .orderBy(asc(preventionInspectionTemplates.code), desc(preventionInspectionTemplates.createdAt))
   // Se expone la calibración real de cada plantilla: una sin daño potencial
   // declarado produce hallazgos siempre medios y no bloquea ningún cierre.
-  return templates.map((template) => ({
-    ...template,
-    coverage: assessEnrichmentCoverage(itemsFromDefinition(template.definitionSnapshot as unknown as ChecklistDefinition)),
-  }))
+  //
+  // A-03: además se compara el snapshot congelado contra la definición que hoy
+  // vive en `lib/sst/definitions`. El `contentHash` se calculaba al importar y
+  // nunca se leía, así que nada avisaba cuándo el catálogo en código se había
+  // adelantado a la plantilla aprobada — que es justo la señal que dice cuándo
+  // toca publicar una versión nueva.
+  return templates.map((template) => {
+    const source = template.sourceDefinitionCode ? CHECKLIST_DEFINITIONS[template.sourceDefinitionCode] : undefined
+    return {
+      ...template,
+      coverage: assessEnrichmentCoverage(itemsFromDefinition(template.definitionSnapshot as unknown as ChecklistDefinition)),
+      /** La definición de origen ya no existe en el catálogo en código. */
+      definitionMissing: Boolean(template.sourceDefinitionCode) && !source,
+      /** El contenido en código difiere del snapshot aprobado. No implica que el checklist cambie de fondo: reordenar propiedades también deriva. */
+      definitionDrifted: Boolean(source) && contentHashOf(source!) !== template.contentHash,
+    }
+  })
 }
 
 export async function listInspectionPrograms(access: InspectionAccess, filter: InspectionKindFilter = {}) {
@@ -772,6 +1579,57 @@ export async function listInspectionAssignees(access: InspectionAccess) {
     .from(users)
     .where(and(inArray(users.id, ids), eq(users.isActive, true)))
     .orderBy(asc(users.name))
+}
+
+/**
+ * Cierre oportuno de hallazgos (B-07) y serie mensual (función #10).
+ *
+ * `summarizeTimelyClosure` estaba escrita, documentada y probada, y no tenía un
+ * solo caller fuera de su test: el indicador que la certificación Mutual pide
+ * demostrar —seguimiento de las medidas, no cuántos hallazgos hubo— no existía
+ * en ninguna pantalla. Su insumo es `targetDate` de la CAPA y `closedAt` del
+ * hallazgo, que sólo empezó a escribirse con la cascada de cierre.
+ */
+export async function summarizeInspectionTimelyClosure(access: InspectionAccess, filter: InspectionKindFilter = {}) {
+  requireAccess(access, "prevention:inspections:view")
+  const rows = await db.select({
+    targetDate: preventionCapaActions.targetDate,
+    closedAt: preventionInspectionFindings.closedAt,
+  })
+    .from(preventionInspectionFindings)
+    .innerJoin(preventionInspectionRuns, eq(preventionInspectionRuns.id, preventionInspectionFindings.runId))
+    .innerJoin(preventionInspectionTemplates, eq(preventionInspectionTemplates.id, preventionInspectionRuns.templateId))
+    .leftJoin(preventionCapaActions, eq(preventionCapaActions.id, preventionInspectionFindings.capaActionId))
+    .where(and(scopeCondition(access.scope, preventionInspectionRuns.worksiteId), kindCondition(filter)))
+  return summarizeTimelyClosure(
+    rows.map((row) => ({
+      targetDate: row.targetDate ?? null,
+      // `closedAt` es timestamp y el indicador compara días civiles.
+      closedOn: row.closedAt ? row.closedAt.slice(0, 10) : null,
+    })),
+    todayInChile(),
+  )
+}
+
+/** Serie mensual de cumplimiento y hallazgos (función #10). */
+export async function summarizeInspectionTrends(access: InspectionAccess, filter: InspectionKindFilter = {}) {
+  requireAccess(access, "prevention:inspections:view")
+  return db.select({
+    month: sql<string>`to_char(${preventionInspectionRuns.executedAt}, 'YYYY-MM')`,
+    executed: sql<number>`COUNT(*)::int`,
+    avgCompliance: sql<number | null>`ROUND(AVG(${preventionInspectionRuns.compliancePercent}))::int`,
+    nonConforming: sql<number>`COALESCE(SUM(${preventionInspectionRuns.nonConformingCount}), 0)::int`,
+    openFindings: sql<number>`COALESCE(SUM(${OPEN_FINDINGS_SQL}), 0)::int`,
+  })
+    .from(preventionInspectionRuns)
+    .innerJoin(preventionInspectionTemplates, eq(preventionInspectionTemplates.id, preventionInspectionRuns.templateId))
+    .where(and(
+      scopeCondition(access.scope, preventionInspectionRuns.worksiteId),
+      kindCondition(filter),
+      isNotNull(preventionInspectionRuns.executedAt),
+    ))
+    .groupBy(sql`to_char(${preventionInspectionRuns.executedAt}, 'YYYY-MM')`)
+    .orderBy(sql`to_char(${preventionInspectionRuns.executedAt}, 'YYYY-MM')`)
 }
 
 /** Catálogo de definiciones SST disponibles para incorporar como plantilla. */

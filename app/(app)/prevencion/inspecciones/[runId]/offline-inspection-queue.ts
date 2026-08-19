@@ -1,59 +1,61 @@
+/**
+ * Cola offline de ejecuciones de inspección (función #9).
+ *
+ * La idempotencia del servidor ya existía: `clientSubmissionId`, su índice
+ * único parcial y el retorno `idempotentReplay`. Lo que faltaba era el cliente
+ * — nada la usaba nunca.
+ *
+ * Alcance deliberado: encola el CIERRE de una inspección ya creada y abierta en
+ * el dispositivo. No se soporta crear inspecciones offline, porque exigiría
+ * sincronizar el catálogo de plantillas y resolver conflictos de programa —
+ * mucho más superficie por un caso que en terreno se resuelve descargando la
+ * inspección antes de salir.
+ *
+ * Mismo contrato que `offline-incident-queue.ts`: purga por edad O reintentos
+ * (no AND), mutex de módulo contra doble flush, y `sender` que distingue el
+ * rechazo permanente del fallo de red. Un elemento venenoso que gasta los 8
+ * reintentos quedaría como zombi invisible durante 30 días.
+ */
 import { nanoid } from "@/lib/id"
 
-export interface QueuedPerson {
-  workerId?: string
-  workerName?: string
-  displayLabel?: string
-  employerName: string
-  relationshipType: string
-  identificationHint?: string
-  absenceAtLeastNormalShift?: boolean
-  absenceDays?: number
-  chargeDays?: number
-}
-
-export interface OfflineIncidentReport {
+export interface OfflineInspectionSubmission {
   clientSubmissionId: string
-  worksiteId: string
-  companyName: string
-  eventType: string
-  occurredAt: string
-  knownAt: string
-  location: string
-  initialNarrative: string
-  actualSeverity: string
-  potentialSeverity: string
-  immediateMeasures: string | null
-  operationsSuspended: boolean
-  evacuated: boolean
-  isFatalOrSerious: boolean
-  offlineSync: boolean
-  /**
-   * Momento del encolado en terreno. Viaja al servidor para poder distinguir
-   * "se reportó tarde" de "se sincronizó tarde": las bandas DIAT/DIEP se
-   * calculan sobre `knownAt`, así que un reporte encolado 24 días nace vencido
-   * y sin este dato no hay forma de saber que el trabajador sí reportó a tiempo.
-   */
+  runId: string
+  expectedVersion: number
+  answers: {
+    sectionId: string
+    itemId: string
+    result: string
+    value?: string | null
+    comment?: string | null
+  }[]
+  locationLatitude?: string | null
+  locationLongitude?: string | null
+  closingAct?: {
+    result: string
+    restrictions?: string | null
+    signatures: { role: string; name: string; userId?: string | null }[]
+  }
+  /** Momento del encolado en terreno, para distinguir "ejecutó tarde" de "sincronizó tarde". */
   queuedAt?: string
-  people: QueuedPerson[]
 }
 
 interface QueueEntry {
   id: string
-  payload: OfflineIncidentReport
+  payload: OfflineInspectionSubmission
   queuedAt: string
   attempts: number
   lastError?: string
 }
 
 const DB_NAME = "chome-prevention-offline"
-// v2 añadió el store de inspecciones (`offline-inspection-queue.ts`). Ambos
-// módulos DEBEN declarar la misma versión: abrir con una anterior a la que ya
-// tiene la base lanza `VersionError` y deja la cola inutilizable en terreno.
+// Comparte base con la cola de incidentes: subir la versión crea el store
+// nuevo sin tocar el existente (`onupgradeneeded` sólo añade el que falta).
 const DB_VERSION = 2
-const STORE = "incident-reports"
-const INSPECTION_STORE = "inspection-submissions"
-const MAX_QUEUED = 25
+const STORE = "inspection-submissions"
+const INCIDENT_STORE = "incident-reports"
+/** Tope bajo: cada entrada puede traer decenas de respuestas y su acta. */
+const MAX_QUEUED = 5
 const MAX_AGE_DAYS = 30
 const MAX_RETRIES = 8
 
@@ -64,10 +66,10 @@ function openQueueDatabase(): Promise<IDBDatabase> {
     const request = indexedDB.open(DB_NAME, DB_VERSION)
     request.onupgradeneeded = () => {
       const database = request.result
-      // Se declaran los dos stores porque cualquiera de los dos módulos puede
-      // ser el primero en abrir la base y disparar la migración.
+      // Ambos stores se declaran aquí: al subir de v1 a v2 el navegador ejecuta
+      // este handler y el de incidentes ya existe, así que sólo se crea el nuevo.
+      if (!database.objectStoreNames.contains(INCIDENT_STORE)) database.createObjectStore(INCIDENT_STORE, { keyPath: "id" })
       if (!database.objectStoreNames.contains(STORE)) database.createObjectStore(STORE, { keyPath: "id" })
-      if (!database.objectStoreNames.contains(INSPECTION_STORE)) database.createObjectStore(INSPECTION_STORE, { keyPath: "id" })
     }
     request.onsuccess = () => resolve(request.result)
     request.onerror = () => reject(request.error ?? new Error("No se pudo abrir la cola offline."))
@@ -81,40 +83,37 @@ function transactionPromise<T>(request: IDBRequest<T>) {
   })
 }
 
-export function createIncidentSubmissionId() {
+export function createInspectionSubmissionId() {
   return `offline-${nanoid()}`
 }
 
-export async function queueIncidentReport(payload: OfflineIncidentReport) {
+export async function queueInspectionSubmission(payload: OfflineInspectionSubmission) {
   const database = await openQueueDatabase()
   try {
     const store = database.transaction(STORE, "readwrite").objectStore(STORE)
     const all = await transactionPromise(store.getAll()) as QueueEntry[]
 
-    // Dos políticas SEPARADAS. Antes era una sola condición con `&&`
-    // (reintentos agotados Y 30 días), así que 25 reportes viejos que nunca se
-    // reintentaron —dispositivo apagado— no se purgaban nunca y bloqueaban todo
-    // reporte nuevo: el formulario quedaba inutilizable en terreno justo cuando
-    // se necesita.
-    const now = new Date()
-    const cutoff = new Date(now.getTime() - MAX_AGE_DAYS * 86_400_000)
+    // Dos políticas SEPARADAS, no una con `&&`: entradas viejas que nunca se
+    // reintentaron (dispositivo apagado) tienen que purgarse igual, o llenan la
+    // cola y bloquean la siguiente inspección justo cuando se necesita.
+    const cutoff = new Date(Date.now() - MAX_AGE_DAYS * 86_400_000)
     const isExpired = (entry: QueueEntry) => new Date(entry.queuedAt) < cutoff
     const isDead = (entry: QueueEntry) => entry.attempts >= MAX_RETRIES
     for (const entry of all) {
-      if (isExpired(entry) || isDead(entry)) {
-        await transactionPromise(store.delete(entry.id))
-      }
+      if (isExpired(entry) || isDead(entry)) await transactionPromise(store.delete(entry.id))
     }
 
-    const remaining = all.filter((e) => !isExpired(e) && !isDead(e))
-    if (remaining.length >= MAX_QUEUED) {
-      throw new Error(`La cola offline está llena (${MAX_QUEUED} reportes sin sincronizar). Conéctate y sincroniza antes de registrar otro.`)
+    const remaining = all.filter((entry) => !isExpired(entry) && !isDead(entry))
+    // Reencolar la misma inspección reemplaza su entrada, no suma otra.
+    if (remaining.length >= MAX_QUEUED && !remaining.some((entry) => entry.payload.runId === payload.runId)) {
+      throw new Error(`La cola offline está llena (${MAX_QUEUED} inspecciones sin sincronizar). Conéctate y sincroniza antes de cerrar otra.`)
     }
 
     const queuedAt = new Date().toISOString()
     const entry: QueueEntry = {
-      id: payload.clientSubmissionId,
-      payload: { ...payload, offlineSync: true, queuedAt },
+      // Por `runId`: una inspección tiene una sola ejecución pendiente de envío.
+      id: payload.runId,
+      payload: { ...payload, queuedAt },
       queuedAt,
       attempts: 0,
     }
@@ -125,7 +124,8 @@ export async function queueIncidentReport(payload: OfflineIncidentReport) {
   }
 }
 
-export async function listQueuedIncidentReports() {
+export async function listQueuedInspectionSubmissions() {
+  if (typeof indexedDB === "undefined") return []
   const database = await openQueueDatabase()
   try {
     return await transactionPromise(database.transaction(STORE).objectStore(STORE).getAll()) as QueueEntry[]
@@ -134,26 +134,18 @@ export async function listQueuedIncidentReports() {
   }
 }
 
-/**
- * Vacía la cola. `sender` distingue el rechazo PERMANENTE (validación, permiso,
- * clave ya usada: reintentarlo no lo arregla) del fallo transitorio de red. Sin
- * esa distinción, un elemento venenoso gastaba los 8 reintentos y quedaba como
- * zombi invisible inflando el contador "Sincronizar (n)" durante 30 días.
- */
-export async function flushIncidentReportQueue(
-  sender: (payload: OfflineIncidentReport) => Promise<{ ok: boolean; message?: string; retriable?: boolean }>,
+export async function flushInspectionSubmissionQueue(
+  sender: (payload: OfflineInspectionSubmission) => Promise<{ ok: boolean; message?: string; retriable?: boolean }>,
 ) {
   if (flushLock) await flushLock
   let resolveLock: () => void
   flushLock = new Promise<void>((resolve) => { resolveLock = resolve })
 
   try {
-    const entries = await listQueuedIncidentReports()
+    const entries = await listQueuedInspectionSubmissions()
     const result = { synchronized: 0, pending: 0, rejected: 0 }
     for (const entry of entries) {
       if (entry.attempts >= MAX_RETRIES) {
-        // Ya agotado: se cuenta aparte para que la UI pueda decir que ese
-        // reporte NUNCA se va a enviar, en vez de mostrarlo como pendiente.
         result.rejected++
         continue
       }
@@ -165,6 +157,8 @@ export async function flushIncidentReportQueue(
             await transactionPromise(database.transaction(STORE, "readwrite").objectStore(STORE).delete(entry.id))
             result.synchronized++
           } else {
+            // Validación, permiso o "ya fue ejecutada": reintentarlo no lo
+            // arregla. Se quema de golpe y se avisa, nunca en silencio.
             const permanent = response.retriable === false
             await transactionPromise(database.transaction(STORE, "readwrite").objectStore(STORE).put({
               ...entry,
@@ -199,16 +193,11 @@ export async function flushIncidentReportQueue(
 }
 
 /**
- * Descarta la cola local. Se llama al cerrar sesión: el relato de un incidente
- * (hasta 10.000 caracteres describiendo un accidente con personas), el nombre
- * del trabajador y su referencia de identificación viven en claro en IndexedDB
- * hasta 30 días, en dispositivos que en faena suelen compartirse. El servidor
- * cifra ese mismo dato en reposo; el navegador no puede, así que al menos no se
- * queda para el siguiente usuario.
- *
- * Devuelve cuántas entradas sin sincronizar se perdieron, para poder avisar.
+ * Descarta la cola local. Se llama al cerrar sesión: las respuestas de una
+ * inspección y el acta con nombres de quienes firman viven en claro en
+ * IndexedDB hasta 30 días, en dispositivos que en faena suelen compartirse.
  */
-export async function clearIncidentReportQueue(): Promise<number> {
+export async function clearInspectionSubmissionQueue(): Promise<number> {
   if (typeof indexedDB === "undefined") return 0
   const database = await openQueueDatabase()
   try {

@@ -22,6 +22,13 @@ export const INSPECTION_RESULT_LABELS: Record<string, string> = {
   partial: "Regular",
   non_conforming: "No cumple",
   not_applicable: "No aplica",
+  /**
+   * Ítems que no puntúan (`text`, `textarea`, `date`, `select`…): su respuesta
+   * es el `value`, no un juicio de conformidad. Antes no tenían dónde
+   * guardarse y el formulario les ofrecía "Cumple / No cumple" sobre un relato
+   * libre (B-08, auditoría 2026-08-18).
+   */
+  recorded: "Registrado",
 }
 
 export const FINDING_CRITICALITY_LABELS: Record<string, string> = {
@@ -78,6 +85,10 @@ export function resultBadgeVariant(result: string): "success" | "warning" | "dan
   if (result === "non_conforming") return "danger"
   if (result === "partial") return "warning"
   if (result === "not_applicable") return "outline"
+  // 'recorded' no es conformidad: pintarlo verde afirmaría algo que el ítem
+  // nunca evaluó. Es exactamente el accidente que el comentario de arriba
+  // advierte para todo estado nuevo que caiga al `return` final.
+  if (result === "recorded") return "outline"
   return "success"
 }
 
@@ -138,6 +149,34 @@ export function fieldKindAcceptsPartial(kind: FieldKind | null | undefined): boo
   return kind !== null && kind !== undefined && BRM_KINDS.includes(kind)
 }
 
+/**
+ * Tipos de campo que NO expresan un juicio de conformidad: su respuesta es un
+ * dato (`value`), no cumple/no cumple. `observacion_planeada` es 100% de estos
+ * —un relato libre— y `inspeccion_extintores` mezcla ambos (N° de serie, fecha
+ * de vencimiento de carga, tipo).
+ */
+const NON_SCORABLE_KINDS: readonly FieldKind[] = [
+  "text",
+  "textarea",
+  "date",
+  "select",
+  "multiselect",
+  "signature",
+  "readonly",
+]
+
+/**
+ * ¿Este ítem se puntúa en el porcentaje de cumplimiento?
+ *
+ * Discriminador único: ningún otro sitio debe reimplementar la lista. Un ítem
+ * sin `kind` declarado se trata como puntuable, que es el comportamiento
+ * histórico de todo el catálogo booleano.
+ */
+export function fieldKindIsScorable(kind: FieldKind | null | undefined): boolean {
+  if (kind === null || kind === undefined) return true
+  return !NON_SCORABLE_KINDS.includes(kind)
+}
+
 export interface InspectionItemSpec {
   sectionId: string
   itemId: string
@@ -148,16 +187,68 @@ export interface InspectionItemSpec {
   /**
    * Tipo de campo del catálogo SST (lib/sst/types.ts). Determina si el ítem
    * admite 'partial' — sin esto se perdía la escala B/R/M al aplanar la
-   * definición (H-04, AUDITORIA_BUGS_2026-08-05.md).
+   * definición (H-04, AUDITORIA_BUGS_2026-08-05.md) — y si puntúa
+   * (`fieldKindIsScorable`, B-08).
    */
   kind?: FieldKind
+  /** Opciones del `select`. Sin ellas la UI no puede pintar el campo. */
+  options?: { value: string; label: string }[]
+  placeholder?: string
 }
+
+export type InspectionResult = "conforming" | "partial" | "non_conforming" | "not_applicable" | "recorded"
 
 export interface InspectionAnswerInput {
   sectionId: string
   itemId: string
-  result: "conforming" | "partial" | "non_conforming" | "not_applicable"
+  result: InspectionResult
   comment?: string | null
+  /** Respuesta de los ítems que no puntúan: es el dato en sí, no un juicio. */
+  value?: string | null
+}
+
+/** Largo mínimo de la observación que justifica un 'no aplica' o un 'Regular'. */
+export const ANSWER_COMMENT_MIN_LENGTH = 3
+
+/**
+ * Valida una respuesta contra el ítem al que responde. Devuelve el mensaje de
+ * error, o `null` si es válida.
+ *
+ * Vive aquí, pura, porque la consumen **los dos lados**: el servicio antes de
+ * tocar la BD y el formulario antes de enviar. Antes de B-03 la única guarda
+ * era el CHECK `prevention_inspection_answer_requires_comment` de Postgres, que
+ * reventaba el INSERT en lote completo —perdiendo las respuestas válidas del
+ * mismo guardado— y devolvía el texto crudo de la violación al usuario.
+ */
+export function validateAnswerRow(
+  item: Pick<InspectionItemSpec, "label" | "kind">,
+  answer: Pick<InspectionAnswerInput, "result" | "comment" | "value">,
+): string | null {
+  // B-08: el vocabulario de conformidad y el de dato no se mezclan. Marcar
+  // "Cumple" sobre un relato libre, o "Registrado" sobre un ítem que sí se
+  // puntúa, corrompe el cálculo de cumplimiento en direcciones opuestas.
+  const scorable = fieldKindIsScorable(item.kind)
+  if (!scorable && answer.result !== "recorded") {
+    return `"${item.label}" no se evalúa como cumple/no cumple: se responde con su contenido.`
+  }
+  if (scorable && answer.result === "recorded") {
+    return `"${item.label}" exige una respuesta de conformidad, no un valor registrado.`
+  }
+  if (answer.result === "recorded" && (answer.value?.trim().length ?? 0) === 0) {
+    return `"${item.label}" requiere un valor.`
+  }
+  // 'partial' (Regular) sólo existe en la escala B/R/M — aceptarlo en un ítem
+  // cumple/no-cumple inventaría un estado que ese ítem no tiene.
+  if (answer.result === "partial" && !fieldKindAcceptsPartial(item.kind)) {
+    return `"${item.label}" no admite la respuesta "Regular".`
+  }
+  if (answer.result === "not_applicable" && (answer.comment?.trim().length ?? 0) < ANSWER_COMMENT_MIN_LENGTH) {
+    return `"${item.label}": un "No aplica" exige indicar el motivo (mínimo ${ANSWER_COMMENT_MIN_LENGTH} caracteres).`
+  }
+  if (answer.result === "partial" && (answer.comment?.trim().length ?? 0) < ANSWER_COMMENT_MIN_LENGTH) {
+    return `"${item.label}": un "Regular" exige justificarse por escrito (mínimo ${ANSWER_COMMENT_MIN_LENGTH} caracteres).`
+  }
+  return null
 }
 
 export interface ComplianceSummary {
@@ -194,10 +285,13 @@ export function summarizeCompliance(items: InspectionItemSpec[], answers: Inspec
     if (answer.result === "conforming") conforming += 1
     else if (answer.result === "partial") partial += 1
     else if (answer.result === "non_conforming") nonConforming += 1
-    else notApplicable += 1
+    // `else if` explícito, no `else`: el `else` capturaba como "no aplica"
+    // cualquier estado desconocido, así que 'recorded' habría inflado ese
+    // contador. Un dato registrado no es una exclusión.
+    else if (answer.result === "not_applicable") notApplicable += 1
 
     if (!item?.countsForCompliance) continue
-    if (answer.result === "not_applicable") continue
+    if (answer.result === "not_applicable" || answer.result === "recorded") continue
     scored += 1
     if (answer.result === "conforming") scoredPoints += 1
     else if (answer.result === "partial") scoredPoints += PARTIAL_STATUS_WEIGHT
@@ -238,8 +332,66 @@ export function deriveFindings(items: InspectionItemSpec[], answers: InspectionA
 }
 
 export interface CompletionBlocker {
-  kind: "missing_required" | "missing_na_reason" | "missing_partial_reason"
+  kind: "missing_required" | "missing_na_reason" | "missing_partial_reason" | "missing_closing_act"
   detail: string
+}
+
+/* ── Acta de cierre (función #2) ──────────────────────────────────────────
+ * Cada definición del catálogo declara `closingAct` con su resultado global y
+ * los roles que firman, y el motor la descartaba entera.
+ */
+
+export interface ClosingActSpec {
+  title: string
+  resultOptions: { value: string; label: string }[]
+  hasRestrictions: boolean
+  signatureRoles: string[]
+}
+
+export interface ClosingActInput {
+  result: string
+  restrictions?: string | null
+  /** Firma registrada: rol, nombre y momento. Sin trazo manuscrito. */
+  signatures: { role: string; name: string; userId?: string | null }[]
+}
+
+/** Extrae el acta del snapshot de la plantilla; `null` si no declara resultados. */
+export function closingActFromDefinition(definition: {
+  closingAct?: {
+    title?: string
+    resultOptions?: { value: string; label: string }[]
+    hasRestrictions?: boolean
+    signatureRoles?: string[]
+  }
+}): ClosingActSpec | null {
+  const act = definition.closingAct
+  if (!act?.resultOptions?.length) return null
+  return {
+    title: act.title ?? "Cierre",
+    resultOptions: act.resultOptions,
+    hasRestrictions: act.hasRestrictions ?? false,
+    signatureRoles: act.signatureRoles ?? [],
+  }
+}
+
+/**
+ * Valida el acta contra lo que declara la plantilla. Devuelve el mensaje de
+ * error o `null`.
+ *
+ * `resultOptions` es dinámico por plantilla, así que no puede ser un CHECK de
+ * base: la validación vive aquí y la consumen el servicio y el formulario.
+ */
+export function validateClosingAct(spec: ClosingActSpec, act: ClosingActInput | null | undefined): string | null {
+  if (!act) return `Falta completar el acta de cierre "${spec.title}".`
+  if (!spec.resultOptions.some((option) => option.value === act.result)) {
+    return `El resultado del acta no corresponde a las opciones de la plantilla.`
+  }
+  const signed = new Set(act.signatures.filter((item) => item.name.trim().length > 0).map((item) => item.role))
+  const missing = spec.signatureRoles.filter((role) => !signed.has(role))
+  if (missing.length > 0) {
+    return `Faltan firmas del acta: ${missing.join(", ")}.`
+  }
+  return null
 }
 
 /**
@@ -251,27 +403,49 @@ export interface CompletionBlocker {
  * obligatorios, se exigen todos los ítems que cuentan para cumplimiento. En
  * cuanto Prevención marque obligatorios reales, manda la marca por ítem.
  */
-export function assessRunCompletion(items: InspectionItemSpec[], answers: InspectionAnswerInput[]): { allowed: boolean; blockers: CompletionBlocker[] } {
+export function assessRunCompletion(
+  items: InspectionItemSpec[],
+  answers: InspectionAnswerInput[],
+  /** Acta declarada por la plantilla y lo que el ejecutante llenó (función #2). */
+  closing?: { spec: ClosingActSpec | null; act: ClosingActInput | null | undefined },
+): { allowed: boolean; blockers: CompletionBlocker[] } {
   const answered = new Map(answers.map((answer) => [`${answer.sectionId}::${answer.itemId}`, answer]))
   const blockers: CompletionBlocker[] = []
-  const declaresRequired = items.some((item) => item.required)
 
   for (const item of items) {
-    const mustAnswer = declaresRequired ? item.required : item.countsForCompliance
+    // Unión, no ternario. El criterio anterior era
+    // `declaresRequired ? item.required : item.countsForCompliance`, y como
+    // `observacion_planeada` es la ÚNICA definición del catálogo que declara
+    // `required: true`, el piso de seguridad se apagaba justo donde más falta
+    // hacía y quedaba activo donde no. Ahora cada ítem se juzga solo: es
+    // obligatorio si lo declara, o si puntúa para el cumplimiento (C-04).
+    const mustAnswer = item.required || (item.countsForCompliance && fieldKindIsScorable(item.kind))
     if (!mustAnswer) continue
     const answer = answered.get(`${item.sectionId}::${item.itemId}`)
     if (!answer) {
       blockers.push({ kind: "missing_required", detail: item.label })
       continue
     }
-    if (answer.result === "not_applicable" && (answer.comment?.trim().length ?? 0) < 3) {
+    // Un ítem que no puntúa se responde con su `value`; sin contenido, no está
+    // respondido por más que exista la fila.
+    if (!fieldKindIsScorable(item.kind) && (answer.value?.trim().length ?? 0) === 0) {
+      blockers.push({ kind: "missing_required", detail: item.label })
+      continue
+    }
+    if (answer.result === "not_applicable" && (answer.comment?.trim().length ?? 0) < ANSWER_COMMENT_MIN_LENGTH) {
       blockers.push({ kind: "missing_na_reason", detail: item.label })
     }
     // 'Regular' (escala B/R/M) exige justificarse por escrito, igual que en
     // el motor SST — ver requiresObservation en lib/sst/compliance.ts.
-    if (answer.result === "partial" && (answer.comment?.trim().length ?? 0) < 3) {
+    if (answer.result === "partial" && (answer.comment?.trim().length ?? 0) < ANSWER_COMMENT_MIN_LENGTH) {
       blockers.push({ kind: "missing_partial_reason", detail: item.label })
     }
+  }
+  // El acta sólo se exige si la plantilla la declara. `closing` es opcional
+  // para no romper a los llamadores que sólo evalúan las respuestas.
+  if (closing?.spec) {
+    const problem = validateClosingAct(closing.spec, closing.act)
+    if (problem) blockers.push({ kind: "missing_closing_act", detail: problem })
   }
   return { allowed: blockers.length === 0, blockers }
 }
@@ -303,6 +477,86 @@ export function assessRunReview(args: {
   return { allowed: blockers.length === 0, blockers }
 }
 
+/* ── Motor de transiciones del run ────────────────────────────────────────
+ * Una sola puerta para cancelar, reabrir y cerrar, al estilo de
+ * `assertCapaTransition` (lib/services/prevention-capa.ts). Tres funciones
+ * ad-hoc serían tres lugares donde olvidar una guarda.
+ */
+
+export type InspectionRunStatus = "planned" | "in_progress" | "completed" | "reviewed" | "cancelled"
+
+export const RUN_TRANSITIONS: Record<InspectionRunStatus, readonly InspectionRunStatus[]> = {
+  planned: ["in_progress", "cancelled"],
+  in_progress: ["completed", "cancelled"],
+  // Reabrir devuelve a `in_progress`: rectificar es volver a ejecutar, no un
+  // estado nuevo.
+  completed: ["reviewed", "in_progress", "cancelled"],
+  reviewed: ["in_progress"],
+  cancelled: [],
+}
+
+/**
+ * Permiso exigido según el estado destino.
+ *
+ * Reabrir pide `:review` y no `:execute` a propósito: deshacer una ejecución
+ * declarada es una decisión de supervisión, no de terreno.
+ */
+export const RUN_TRANSITION_PERMISSION: Record<InspectionRunStatus, string> = {
+  planned: "prevention:inspections:manage",
+  in_progress: "prevention:inspections:review",
+  completed: "prevention:inspections:execute",
+  reviewed: "prevention:inspections:review",
+  cancelled: "prevention:inspections:manage",
+}
+
+/** Motivo mínimo para las transiciones que destruyen o revierten trabajo. */
+export const TRANSITION_REASON_MIN_LENGTH = 10
+
+export function requireTransitionReason(reason: string | undefined, label: string, min = TRANSITION_REASON_MIN_LENGTH) {
+  if ((reason?.trim().length ?? 0) < min) {
+    throw new Error(`${label} requiere un motivo de al menos ${min} caracteres.`)
+  }
+}
+
+/**
+ * Guarda única de una transición de estado del run: legalidad, permiso, motivo
+ * e independencia del revisor.
+ *
+ * `assessRunReview` sigue existiendo como la vista que consume el formulario
+ * de revisión; esta función es la que el servicio no puede saltarse.
+ */
+export function assertInspectionRunTransition(args: {
+  fromStatus: InspectionRunStatus
+  toStatus: InspectionRunStatus
+  permissions: readonly string[]
+  actorUserId: string
+  executedByUserId?: string | null
+  reason?: string
+  findings?: { id: string; description: string; criticality: string; capaActionId: string | null }[]
+}) {
+  if (!RUN_TRANSITIONS[args.fromStatus].includes(args.toStatus)) {
+    throw new Error(`Transición inválida: ${INSPECTION_RUN_STATUS_LABELS[args.fromStatus] ?? args.fromStatus} → ${INSPECTION_RUN_STATUS_LABELS[args.toStatus] ?? args.toStatus}.`)
+  }
+  if (!args.permissions.includes(RUN_TRANSITION_PERMISSION[args.toStatus])) {
+    throw new Error("Inspección no encontrada o fuera de alcance.")
+  }
+  // Cancelar destruye una ejecución planificada; reabrir borra cumplimiento y
+  // hallazgos ya calculados. Ambas exigen dejar dicho por qué.
+  if (args.toStatus === "cancelled") requireTransitionReason(args.reason, "Cancelar la inspección")
+  if (args.toStatus === "in_progress") requireTransitionReason(args.reason, "Reabrir la inspección")
+
+  if (args.toStatus === "reviewed") {
+    const review = assessRunReview({
+      executedByUserId: args.executedByUserId ?? null,
+      reviewerUserId: args.actorUserId,
+      findings: args.findings ?? [],
+    })
+    if (!review.allowed) {
+      throw new Error(`No se puede cerrar la inspección: ${review.blockers.map((item) => item.detail).join(" ")}`)
+    }
+  }
+}
+
 export interface EnrichmentCoverage {
   totalItems: number
   withDanoPotencial: number
@@ -314,10 +568,12 @@ export interface EnrichmentCoverage {
 /**
  * Mide cuánto de la plantilla está realmente calibrado.
  *
- * El catálogo SST heredado no declara `danoPotencial` en ningún ítem, y ese
- * campo es el que gobierna la criticidad del hallazgo aquí y la prioridad y el
- * plazo de la acción correctiva en PDTP. Sin él todo cae al default medio,
- * incluidos incumplimientos de consecuencia fatal.
+ * `danoPotencial` es el campo que gobierna la criticidad del hallazgo aquí y
+ * la prioridad y el plazo de la acción correctiva en PDTP: sin él, todo cae al
+ * default medio, incluidos incumplimientos de consecuencia fatal. La mayoría
+ * del catálogo SST ya lo declara (auditoría 2026-08-18); la excepción es
+ * `observacion_planeada`, cuyo formulario es un relato libre sin ítems
+ * puntuables.
  *
  * Esta función no inventa severidades —eso lo decide Prevención— pero deja el
  * vacío a la vista en la bandeja y en la exportación, en vez de degradarse en
@@ -337,6 +593,32 @@ export function addDays(date: string, days: number): string {
   const value = new Date(`${date}T12:00:00.000Z`)
   value.setUTCDate(value.getUTCDate() + days)
   return value.toISOString().slice(0, 10)
+}
+
+/**
+ * Próximo vencimiento de una programación, anclado a la fecha comprometida.
+ *
+ * Antes se calculaba `addDays(hoy, intervalDays)` al completar la ejecución
+ * (A-12): una inspección mensual ejecutada con 20 días de atraso corría el
+ * calendario 20 días, y el corrimiento se acumulaba hasta convertir una
+ * obligación mensual en una de ~50 días sin que nada lo señalara.
+ *
+ * Avanza desde `dueOn` y, si eso sigue en el pasado, rueda en intervalos
+ * completos hasta superar hoy: un programa diario abandonado seis meses genera
+ * UNA ejecución, no 180.
+ */
+export function nextDueAfter(dueOn: string, intervalDays: number, today: string): string {
+  const step = Math.max(1, Math.trunc(intervalDays))
+  let next = addDays(dueOn, step)
+  if (next > today) return next
+  // Salto directo en vez de bucle: con un programa diario abandonado años,
+  // iterar día a día sería miles de vueltas.
+  const gapDays = Math.floor((Date.parse(`${today}T12:00:00.000Z`) - Date.parse(`${next}T12:00:00.000Z`)) / 86_400_000)
+  const periods = Math.floor(gapDays / step) + 1
+  next = addDays(next, periods * step)
+  // Red de seguridad ante bordes de redondeo: nunca devolver una fecha pasada.
+  while (next <= today) next = addDays(next, step)
+  return next
 }
 
 /* ── Origen de la inspección y oportunidad del cierre ──────────────────────

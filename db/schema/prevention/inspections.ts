@@ -3,6 +3,7 @@ import { boolean, check, index, integer, jsonb, pgTable, text, timestamp, unique
 import { users } from "../users"
 import { worksites } from "../worksites"
 import { preventionCapaActions } from "./capa"
+import { preventionEmergencyResources } from "./emergency"
 import { preventionRiskEntries } from "./risk-legal"
 
 /* ── Plantillas versionadas ───────────────────────────────────────────────
@@ -54,7 +55,10 @@ export const preventionInspectionPrograms = pgTable("prevention_inspection_progr
   assignedToUserId:  text("assigned_to_user_id").references(() => users.id, { onDelete: "set null" }),
   riskEntryId:       text("risk_entry_id").references(() => preventionRiskEntries.id, { onDelete: "set null" }),
   subjectType:       text("subject_type"),
+  /** Recurso concreto que programa inspeccionar (función #11). */
+  subjectResourceId: text("subject_resource_id").references(() => preventionEmergencyResources.id, { onDelete: "set null" }),
   isActive:          boolean("is_active").notNull().default(true),
+  version:           integer("version").notNull().default(1),
   createdByUserId:   text("created_by_user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
   createdAt:         timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   updatedAt:         timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
@@ -63,6 +67,7 @@ export const preventionInspectionPrograms = pgTable("prevention_inspection_progr
   index("prevention_inspection_program_worksite_idx").on(table.worksiteId, table.isActive),
   check("prevention_inspection_program_frequency_valid", sql`${table.frequency} IN ('daily', 'weekly', 'biweekly', 'monthly', 'quarterly', 'biannual', 'annual', 'on_demand')`),
   check("prevention_inspection_program_interval_positive", sql`${table.intervalDays} > 0`),
+  check("prevention_inspection_program_version_positive", sql`${table.version} >= 1`),
 ])
 
 /* ── Ejecución ────────────────────────────────────────────────────────────
@@ -76,7 +81,14 @@ export const preventionInspectionRuns = pgTable("prevention_inspection_runs", {
   programId:         text("program_id").references(() => preventionInspectionPrograms.id, { onDelete: "set null" }),
   worksiteId:        text("worksite_id").notNull().references(() => worksites.id, { onDelete: "restrict" }),
   subjectType:       text("subject_type"),
+  /* Denormalizado a propósito: el nombre del recurso al momento de inspeccionar
+   * es evidencia congelada, igual que `itemLabel` en las respuestas. */
   subjectLabel:      text("subject_label"),
+  /* Sujeto real del inventario (función #11). `preventionEmergencyResources` ya
+   * es el inventario por faena —nombre, tipo, ubicación, serie,
+   * `lastInspectedAt`, `nextInspectionAt`— con su propio CRUD y sus alertas de
+   * vencimiento, que nadie alimentaba. No hace falta tabla nueva. */
+  subjectResourceId: text("subject_resource_id").references(() => preventionEmergencyResources.id, { onDelete: "set null" }),
   /* Quién origina la inspección. La certificación Mutual distingue las del
    * comité paritario de las del Departamento de Prevención, y las del mandante
    * no son ni una ni otra. Por defecto Prevención, que es el caso histórico. */
@@ -100,6 +112,15 @@ export const preventionInspectionRuns = pgTable("prevention_inspection_runs", {
   compliancePercent: integer("compliance_percent"),
   locationLatitude:  text("location_latitude"),
   locationLongitude: text("location_longitude"),
+  /* Acta de cierre (`ClosingActDefinition` del catálogo SST). Las 12
+   * definiciones la declaran —resultado global, restricciones y roles que
+   * firman— y `itemsFromDefinition` la descartaba entera: sólo aplanaba
+   * secciones. No se guarda como respuestas sintéticas porque contaminaría los
+   * conteos y el export. */
+  closingResult:       text("closing_result"),
+  closingRestrictions: text("closing_restrictions"),
+  /** `[{ role, name, userId|null, signedAt }]`. Firma registrada, sin trazo. */
+  closingSignatures:   jsonb("closing_signatures").$type<{ role: string; name: string; userId: string | null; signedAt: string }[]>(),
   clientSubmissionId: text("client_submission_id"),
   version:           integer("version").notNull().default(1),
   createdByUserId:   text("created_by_user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
@@ -108,7 +129,13 @@ export const preventionInspectionRuns = pgTable("prevention_inspection_runs", {
 }, (table) => [
   uniqueIndex("prevention_inspection_run_submission_unique").on(table.clientSubmissionId)
     .where(sql`${table.clientSubmissionId} IS NOT NULL`),
+  // Idempotencia del materializador de programas: dos disparos del cron el
+  // mismo día no duplican la ejecución del período. Misma técnica que
+  // `pdtpExecutions.idempotencyKey`, pero sobre la clave natural del slot.
+  uniqueIndex("prevention_inspection_run_program_slot_unique").on(table.programId, table.scheduledFor)
+    .where(sql`${table.programId} IS NOT NULL AND ${table.scheduledFor} IS NOT NULL`),
   index("prevention_inspection_run_worksite_idx").on(table.worksiteId, table.status),
+  index("prevention_inspection_run_subject_idx").on(table.subjectResourceId),
   index("prevention_inspection_run_template_idx").on(table.templateId, table.executedAt),
   check("prevention_inspection_run_status_valid", sql`${table.status} IN ('planned', 'in_progress', 'completed', 'reviewed', 'cancelled')`),
   check("prevention_inspection_run_origin_valid", sql`${table.origin} IN ('prevencion', 'cphs', 'mandante')`),
@@ -139,7 +166,12 @@ export const preventionInspectionAnswers = pgTable("prevention_inspection_answer
   // el motor transversal solo tenía cumple/no cumple/no aplica, perdiendo el
   // estado intermedio que el catálogo de ítems B/R/M (lib/sst/definitions)
   // declara y que el motor SST (lib/sst/compliance.ts) ya puntúa en 0,5.
-  check("prevention_inspection_answer_result_valid", sql`${table.result} IN ('conforming', 'partial', 'non_conforming', 'not_applicable')`),
+  // 'recorded' = ítem que no expresa conformidad (text/textarea/date/select):
+  // su respuesta es `value`. Sin este estado, un relato libre sólo podía
+  // guardarse mintiendo ('conforming', que infla el cumplimiento) o no
+  // guardarse (B-08, auditoría 2026-08-18).
+  check("prevention_inspection_answer_result_valid", sql`${table.result} IN ('conforming', 'partial', 'non_conforming', 'not_applicable', 'recorded')`),
+  check("prevention_inspection_answer_recorded_has_value", sql`${table.result} <> 'recorded' OR length(${table.value}) >= 1`),
   // 'partial' exige observación igual que 'not_applicable': es la misma regla
   // que ya rige la escala B/R/M en el motor SST (requiresObservation en
   // lib/sst/compliance.ts — 'regular' siempre justifica por escrito, ahí
@@ -148,6 +180,27 @@ export const preventionInspectionAnswers = pgTable("prevention_inspection_answer
   // aparte, no parte de H-04.
   check("prevention_inspection_answer_requires_comment", sql`${table.result} NOT IN ('not_applicable', 'partial') OR length(${table.comment}) >= 3`),
   check("prevention_inspection_answer_dano_valid", sql`${table.danoPotencial} IS NULL OR ${table.danoPotencial} IN ('leve', 'moderado', 'grave', 'fatal')`),
+])
+
+/* ── Evidencia fotográfica por respuesta ──────────────────────────────────
+ * Relación 1-a-N y no un campo suelto: evidenciar un incumplimiento suele
+ * necesitar más de un ángulo. `evidenceReference` (texto libre) queda deprecado
+ * — nunca tuvo UI que lo escribiera.
+ *
+ * `onDelete: cascade` desde la respuesta: el DELETE del conjunto que hace
+ * `saveAnswersWithClient` limpia también estas filas sin código extra. El
+ * archivo físico lo recoge el GC de evidencias.
+ */
+export const preventionInspectionAnswerEvidence = pgTable("prevention_inspection_answer_evidence", {
+  id:               text("id").primaryKey(),
+  answerId:         text("answer_id").notNull().references(() => preventionInspectionAnswers.id, { onDelete: "cascade" }),
+  /** Ruta relativa bajo `storage/inspection-evidence/`, nunca el nombre original. */
+  path:             text("path").notNull(),
+  caption:          text("caption"),
+  uploadedByUserId: text("uploaded_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  createdAt:        timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+}, (table) => [
+  index("prevention_inspection_answer_evidence_answer_idx").on(table.answerId),
 ])
 
 /* ── Hallazgos ────────────────────────────────────────────────────────────
@@ -210,8 +263,13 @@ export const preventionInspectionRunsRelations = relations(preventionInspectionR
   findings: many(preventionInspectionFindings),
 }))
 
-export const preventionInspectionAnswersRelations = relations(preventionInspectionAnswers, ({ one }) => ({
+export const preventionInspectionAnswersRelations = relations(preventionInspectionAnswers, ({ one, many }) => ({
   run: one(preventionInspectionRuns, { fields: [preventionInspectionAnswers.runId], references: [preventionInspectionRuns.id] }),
+  evidence: many(preventionInspectionAnswerEvidence),
+}))
+
+export const preventionInspectionAnswerEvidenceRelations = relations(preventionInspectionAnswerEvidence, ({ one }) => ({
+  answer: one(preventionInspectionAnswers, { fields: [preventionInspectionAnswerEvidence.answerId], references: [preventionInspectionAnswers.id] }),
 }))
 
 export const preventionInspectionFindingsRelations = relations(preventionInspectionFindings, ({ one }) => ({
@@ -223,4 +281,5 @@ export type PreventionInspectionTemplate = typeof preventionInspectionTemplates.
 export type PreventionInspectionProgram = typeof preventionInspectionPrograms.$inferSelect
 export type PreventionInspectionRun = typeof preventionInspectionRuns.$inferSelect
 export type PreventionInspectionAnswer = typeof preventionInspectionAnswers.$inferSelect
+export type PreventionInspectionAnswerEvidence = typeof preventionInspectionAnswerEvidence.$inferSelect
 export type PreventionInspectionFinding = typeof preventionInspectionFindings.$inferSelect

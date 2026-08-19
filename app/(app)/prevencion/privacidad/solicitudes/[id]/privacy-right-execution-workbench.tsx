@@ -13,6 +13,7 @@ import { PPA_STATE_META } from "@/components/states/state-badge"
 import { toast } from "@/lib/toast"
 import { formatDate } from "@/lib/utils"
 import type { getPreventionPrivacyRequestWorkbench } from "@/lib/services/prevention-privacy-rights"
+import { nanoid } from "@/lib/id"
 import {
   HEALTH_FITNESS_LABELS,
   HEALTH_RECORD_STATUS_LABELS,
@@ -103,7 +104,7 @@ export function PrivacyRightExecutionWorkbench({ bundle }: { bundle: Bundle }) {
       const response = await fetch(`/api/prevencion/privacidad/solicitudes/${bundle.request.id}/execute`, {
         method: "POST",
         // El endpoint exige Idempotency-Key (8-64 chars) y responde 400 sin él.
-        headers: { "content-type": "application/json", "idempotency-key": crypto.randomUUID() },
+        headers: { "content-type": "application/json", "idempotency-key": nanoid() },
         body: JSON.stringify({
           domain: selected.domain,
           entityId: selected.id,

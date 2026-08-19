@@ -5,15 +5,18 @@ import {
   FINDING_CRITICALITY_LABELS,
   FINDING_STATUS_LABELS,
   INSPECTION_KIND_LABELS,
+  INSPECTION_ORIGIN_LABELS,
   INSPECTION_RESULT_LABELS,
   INSPECTION_RUN_STATUS_LABELS,
 } from "@/lib/prevention/inspections"
 import type { ReportCell, ReportData, ReportSheet } from "@/lib/reports/export"
 import { sanitizeCell as safeCell } from "@/lib/reports/export-module/excel-builder"
 import {
+  listAllInspectionRunsForExport,
   listInspectionPrograms,
-  listInspectionRuns,
   listInspectionTemplates,
+  summarizeInspectionTimelyClosure,
+  summarizeInspectionTrends,
   type InspectionAccess,
 } from "@/lib/services/prevention-inspections"
 import { todayInChile } from "@/lib/utils"
@@ -32,10 +35,15 @@ export async function buildInspectionExport(access: InspectionAccess): Promise<R
     throw new Error("Inspección no encontrada o fuera de alcance.")
   }
 
-  const [runs, templates, programs] = await Promise.all([
-    listInspectionRuns(access),
+  // C-09: el export NO usa la consulta paginada. Exportar la primera página
+  // sería un fallo silencioso de integridad, y hasta ahora truncaba a 500 filas
+  // sin avisar.
+  const [runs, templates, programs, timely, trends] = await Promise.all([
+    listAllInspectionRunsForExport(access),
     listInspectionTemplates(access),
     listInspectionPrograms(access),
+    summarizeInspectionTimelyClosure(access),
+    summarizeInspectionTrends(access),
   ])
   const ids = runs.map((row) => row.run.id)
   const code = new Map(runs.map((row) => [row.run.id, row.run.code]))
@@ -47,11 +55,13 @@ export async function buildInspectionExport(access: InspectionAccess): Promise<R
   const sheets: ReportSheet[] = [
     sheet(
       "Inspecciones",
-      ["Código", "Plantilla", "Tipo", "Faena", "Sujeto", "Estado", "Ejecutada", "Ejecutó", "Revisó", "Cumple", "Regular", "No cumple", "No aplica", "Cumplimiento %", "Comentario de revisión"],
+      ["Código", "Plantilla", "Tipo", "Origen", "Faena", "Sujeto", "Estado", "Ejecutada", "Ejecutó", "Revisó", "Cumple", "Regular", "No cumple", "No aplica", "Cumplimiento %", "Comentario de revisión"],
       runs.map((row) => [
         safeCell(row.run.code), safeCell(row.templateName), label(INSPECTION_KIND_LABELS, row.templateKind),
+        label(INSPECTION_ORIGIN_LABELS, row.run.origin),
         safeCell(row.worksiteName), safeCell(row.run.subjectLabel), label(INSPECTION_RUN_STATUS_LABELS, row.run.status),
-        row.run.executedAt, safeCell(row.run.executedByUserId), safeCell(row.run.reviewedByUserId),
+        // A-07: antes iban los IDs internos de usuario.
+        row.run.executedAt, safeCell(row.executorName), safeCell(row.reviewerName),
         row.run.conformingCount, row.run.partialCount, row.run.nonConformingCount, row.run.notApplicableCount,
         row.run.compliancePercent === null ? "No calculable" : row.run.compliancePercent,
         safeCell(row.run.reviewComment),
@@ -59,10 +69,14 @@ export async function buildInspectionExport(access: InspectionAccess): Promise<R
     ),
     sheet(
       "Respuestas",
-      ["Inspección", "Sección", "Ítem", "Resultado", "Comentario", "Evidencia", "Daño potencial"],
+      ["Inspección", "Sección", "Ítem", "Resultado", "Valor", "Comentario", "Evidencia", "Daño potencial"],
       answers.map((row) => [
         safeCell(code.get(row.runId)), safeCell(row.sectionId), safeCell(row.itemLabel),
-        label(INSPECTION_RESULT_LABELS, row.result), safeCell(row.comment), safeCell(row.evidenceReference),
+        label(INSPECTION_RESULT_LABELS, row.result),
+        // Los ítems que no puntúan responden con su contenido, no con un
+        // juicio de conformidad (B-08).
+        safeCell(row.value),
+        safeCell(row.comment), safeCell(row.evidenceReference),
         safeCell(row.danoPotencial),
       ]),
     ),
@@ -77,12 +91,33 @@ export async function buildInspectionExport(access: InspectionAccess): Promise<R
     ),
     sheet(
       "Plantillas",
-      ["Código", "Versión", "Nombre", "Tipo", "Estado", "Origen", "Hash", "Marco legal", "Aprobada", "Ítems", "Con daño potencial", "Criticidad calibrada"],
+      ["Código", "Versión", "Nombre", "Tipo", "Estado", "Origen", "Hash", "Deriva del catálogo", "Marco legal", "Aprobada", "Ítems", "Con daño potencial", "Criticidad calibrada"],
       templates.map((row) => [
         safeCell(row.code), safeCell(row.versionLabel), safeCell(row.name), label(INSPECTION_KIND_LABELS, row.kind),
-        row.status, safeCell(row.sourceDefinitionCode), safeCell(row.contentHash), safeCell(row.legalFramework), row.approvedAt,
+        row.status, safeCell(row.sourceDefinitionCode), safeCell(row.contentHash),
+        row.definitionMissing
+          ? "Definición retirada del catálogo"
+          : row.definitionDrifted ? "Sí: el código difiere del snapshot" : "No",
+        safeCell(row.legalFramework), row.approvedAt,
         row.coverage.totalItems, row.coverage.withDanoPotencial,
         row.coverage.criticalityInert ? "No: todo hallazgo cae a media" : "Sí",
+      ]),
+    ),
+    sheet(
+      "Cierre oportuno",
+      ["Con plazo comprometido", "Cerrados a tiempo", "Cerrados tarde", "Abiertos vencidos", "Abiertos en plazo", "% cierre oportuno"],
+      [[
+        timely.tracked, timely.closedOnTime, timely.closedLate, timely.overdue, timely.openOnTime,
+        timely.timelyPct === null ? "Sin datos juzgables" : timely.timelyPct,
+      ]],
+    ),
+    sheet(
+      "Tendencias",
+      ["Mes", "Ejecutadas", "Cumplimiento promedio %", "No cumple", "Hallazgos abiertos"],
+      trends.map((row) => [
+        safeCell(row.month), row.executed,
+        row.avgCompliance === null ? "No calculable" : row.avgCompliance,
+        row.nonConforming, row.openFindings,
       ]),
     ),
     sheet(

@@ -42,6 +42,7 @@ import {
   MarkMinutesSentButton,
 } from "./committee-maturity-dialogs"
 import { CommitteeCommissions } from "./committee-commissions"
+import { nanoid } from "@/lib/id"
 
 interface CommitteeInfo {
   id: string
@@ -555,7 +556,7 @@ function CloseMeetingDialog({ meeting, members, assignees }: {
               <span className="text-sm font-medium">Acuerdos</span>
               <Button
                 type="button" variant="secondary" size="sm"
-                onClick={() => setAgreements((current) => [...current, { id: crypto.randomUUID(), description: "", actionDescription: "", responsibleUserId: "", priority: "medium", targetDate: "" }])}
+                onClick={() => setAgreements((current) => [...current, { id: nanoid(), description: "", actionDescription: "", responsibleUserId: "", priority: "medium", targetDate: "" }])}
               >
                 Agregar acuerdo
               </Button>

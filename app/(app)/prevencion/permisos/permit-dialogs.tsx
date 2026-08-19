@@ -12,6 +12,7 @@ import { toLocalInputValue } from "@/lib/utils"
 import { createPermitTypeAction, createWorkPermitAction } from "./actions"
 import { Field } from "@/components/ui/field"
 import { useOperation } from "@/lib/hooks/use-operation"
+import { nanoid } from "@/lib/id"
 
 interface PermitTypeItem {
   id: string
@@ -307,7 +308,7 @@ export function NewPermitDialog({ types, worksites, workers, supervisors }: {
                 </Button>
               </div>
             ))}
-            <Button type="button" variant="secondary" size="sm" onClick={() => setControls((current) => [...current, { id: crypto.randomUUID(), description: "", isMandatory: true }])}>
+            <Button type="button" variant="secondary" size="sm" onClick={() => setControls((current) => [...current, { id: nanoid(), description: "", isMandatory: true }])}>
               Agregar control
             </Button>
           </div>
