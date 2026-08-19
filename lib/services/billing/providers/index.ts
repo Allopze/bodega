@@ -14,7 +14,7 @@ import type { BillingProvider } from "./types"
 import { FacturaEnLineaProvider } from "./factura-en-linea"
 import { ChipaxProvider } from "./chipax"
 import { ManualProvider } from "./manual"
-import { readChipaxConfig } from "../config"
+import { readChipaxConfig } from "../chipax-settings"
 
 export * from "./types"
 export { FacturaEnLineaProvider, FACTURA_EN_LINEA_CAPABILITIES } from "./factura-en-linea"
@@ -49,14 +49,15 @@ export function getAllBillingProviders(): BillingProvider[] {
  * True si el proveedor está habilitado por feature flag.
  *
  * FacturaEnLínea y la carga manual están siempre habilitados (el primero ya
- * opera en producción para Compras). Chipax está detrás de su flag y además
- * exige contrato verificado, que es un requisito distinto de "encendido".
+ * opera en producción para Compras). Chipax está detrás de su flag, que hoy
+ * puede venir del entorno o de `system_settings`.
  */
-export function isProviderEnabled(id: BillingProviderId): boolean {
+export async function isProviderEnabled(id: BillingProviderId): Promise<boolean> {
   if (id !== "chipax") return true
   // Ya no hay un segundo interruptor de "contrato verificado": el contrato se
-  // leyó y las operaciones están implementadas contra él. Queda el feature flag.
-  return readChipaxConfig().enabled
+  // leyó y las operaciones están implementadas contra él. Queda el feature flag,
+  // que ahora puede venir de `system_settings` y por eso obliga a esperar.
+  return (await readChipaxConfig()).enabled
 }
 
 /**

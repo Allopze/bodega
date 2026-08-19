@@ -53,7 +53,7 @@ emisor de DTE, no un banco. Ningún proveedor declara capacidad de escritura.
 | Separación por empresa | `accountRef` (CodEmp del portal) en cada documento y referencia. |
 | Estado de salud | `healthCheck()` sin secretos, visible en `/facturacion/sincronizacion`. |
 | Pruebas con respuestas simuladas | `sync-integration.test.ts` usa un proveedor falso. |
-| Feature flags | `BILLING_SALES_SYNC_ENABLED`, `BILLING_CHIPAX_ENABLED`, `BILLING_CHIPAX_SYNC_ENABLED`. |
+| Feature flags | `BILLING_SALES_SYNC_ENABLED`, `BILLING_CHIPAX_ENABLED`, `BILLING_CHIPAX_SYNC_ENABLED`. Los dos de Chipax se pueden sobrescribir desde la UI (ver [CHIPAX.md](CHIPAX.md)). |
 | Protección de archivos | XML de compras, enriquecimiento de ventas y caché limitados a 10 MiB; guardado condicional y limpieza de perdedores. |
 
 ## Cómo agregar un proveedor

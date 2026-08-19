@@ -20,6 +20,13 @@ import { canReachInvoice } from "@/lib/services/billing/queries"
 import { syncBillingInvoices, syncBankTransactions, currentPeriod } from "@/lib/services/billing/sync"
 import { getBillingProvider } from "@/lib/services/billing/providers"
 import { writeStoredHealth } from "@/lib/services/billing/health"
+import {
+  ChipaxSettingsError,
+  clearChipaxSettings,
+  readChipaxConfig,
+  saveChipaxSettings,
+} from "@/lib/services/billing/chipax-settings"
+import type { ActionState } from "@/lib/validation/masters"
 import type { BillingProviderId } from "@/db/schema"
 
 export interface ActionResult {
@@ -615,6 +622,98 @@ export async function saveContractAction(input: unknown): Promise<ActionResult> 
     const message = err instanceof Error ? err.message : "No se pudo guardar el contrato"
     logger.error("[billing/saveContract]", { message })
     return { ok: false, message }
+  }
+}
+
+/* ── Credenciales de Chipax ──────────────────────────────────────────────── */
+
+/**
+ * Los topes existen para que un envío deformado no llegue a la capa de cifrado:
+ * las credenciales reales son UUID, no textos de kilobytes.
+ */
+const chipaxSettingsSchema = z.object({
+  appId: z.string().trim().max(200, "El App ID es demasiado largo"),
+  secretKey: z.string().trim().max(500, "La Secret Key es demasiado larga"),
+  enabled: z.boolean(),
+  syncEnabled: z.boolean(),
+})
+
+/** Un campo de archivo o ausente no es un secreto: se trata como vacío. */
+function formString(value: FormDataEntryValue | null): string {
+  return typeof value === "string" ? value : ""
+}
+
+/**
+ * Guarda la configuración de Chipax desde la tarjeta del proveedor.
+ *
+ * Va con el mismo permiso que el resto de la pantalla, `billing:manage_sync`:
+ * quien puede disparar una sincronización es quien tiene que poder arreglarla
+ * cuando la fuente rechaza las credenciales. El secreto viaja del navegador al
+ * servidor y no vuelve: la pantalla sólo recibe banderas.
+ */
+export async function saveChipaxSettingsAction(
+  _prevState: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const { session, error } = await guardPermission("billing:manage_sync")
+  if (error) return error
+
+  const parsed = chipaxSettingsSchema.safeParse({
+    appId: formString(formData.get("appId")),
+    secretKey: formString(formData.get("secretKey")),
+    enabled: formData.get("enabled") === "on",
+    syncEnabled: formData.get("syncEnabled") === "on",
+  })
+  if (!parsed.success) {
+    return { ok: false, message: parsed.error.issues[0]?.message ?? "Parámetros inválidos" }
+  }
+
+  try {
+    await saveChipaxSettings(parsed.data, {
+      userId: session.user.id,
+      userEmail: session.user.email ?? undefined,
+    })
+
+    revalidatePath("/facturacion/sincronizacion")
+
+    // Activar la automatización sin credenciales usables no es un error de
+    // guardado, pero sí una corrida fallida cada mañana y una alerta diaria del
+    // health check. Se avisa acá en vez de dejar que lo descubra el cron.
+    const stored = await readChipaxConfig()
+    const warning = parsed.data.enabled && parsed.data.syncEnabled && !stored.hasCredentials
+      ? " Ojo: la automatización quedó activa pero faltan credenciales, así que el cron va a fallar."
+      : ""
+    return { ok: true, message: `Configuración de Chipax guardada.${warning}` }
+  } catch (err) {
+    if (err instanceof ChipaxSettingsError && err.code === "CHIPAX_KEYRING_REQUIRED") {
+      return {
+        ok: false,
+        message: "Este servidor no tiene el keyring de cifrado configurado, así que no puede guardar " +
+          "credenciales. Configura DTE_SETTINGS_KEYRING y DTE_SETTINGS_ACTIVE_KEY_ID, o deja las de Chipax en el .env.",
+      }
+    }
+    // Nunca se propaga el mensaje original: puede venir de la capa de cifrado.
+    logger.error("[billing/saveChipaxSettings]", {
+      message: err instanceof Error ? err.message : String(err),
+    })
+    return { ok: false, message: "No se pudo guardar la configuración de Chipax" }
+  }
+}
+
+/** Borra lo guardado y vuelve a la configuración del `.env` del servidor. */
+export async function clearChipaxSettingsAction(): Promise<ActionResult> {
+  const { session, error } = await guardPermission("billing:manage_sync")
+  if (error) return error
+
+  try {
+    await clearChipaxSettings({ userId: session.user.id, userEmail: session.user.email ?? undefined })
+    revalidatePath("/facturacion/sincronizacion")
+    return { ok: true, message: "Se restauró la configuración del servidor" }
+  } catch (err) {
+    logger.error("[billing/clearChipaxSettings]", {
+      message: err instanceof Error ? err.message : String(err),
+    })
+    return { ok: false, message: "No se pudo restaurar la configuración del servidor" }
   }
 }
 

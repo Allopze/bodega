@@ -48,7 +48,8 @@ import {
   type ProviderPage,
   type ProviderPeriodQuery,
 } from "./types"
-import { readChipaxConfig } from "../config"
+import { readChipaxConfig } from "../chipax-settings"
+import type { ChipaxConfig } from "../config"
 
 const PROVIDER_ID: BillingProviderId = "chipax"
 
@@ -112,19 +113,30 @@ export class ChipaxProvider implements BillingProvider {
   /** Token en memoria. Nunca sale de la instancia ni se persiste. */
   private token: { value: string; expiresAt: number } | null = null
   private lastRequestAt = 0
+  /**
+   * La configuración ahora vive en `system_settings`, así que leerla cuesta una
+   * consulta. Se memoriza por instancia: el registro crea un proveedor nuevo por
+   * corrida, de modo que una rotación de credenciales entra en la siguiente sin
+   * que una sincronización de 60 páginas dispare 60 consultas iguales.
+   */
+  private configPromise: Promise<ChipaxConfig> | null = null
+
+  private config(): Promise<ChipaxConfig> {
+    return (this.configPromise ??= readChipaxConfig())
+  }
 
   async isConfigured(): Promise<boolean> {
-    return readChipaxConfig().hasCredentials
+    return (await this.config()).hasCredentials
   }
 
   async healthCheck(): Promise<ProviderHealth> {
     const checkedAt = new Date().toISOString()
-    const config = readChipaxConfig()
+    const config = await this.config()
 
     if (!config.hasCredentials) {
       return {
         ok: false,
-        detail: "Faltan credenciales: define CHIPAX_APP_ID y CHIPAX_SECRET_KEY en el servidor.",
+        detail: "Faltan credenciales: cárgalas en «Credenciales» de esta misma tarjeta, o define CHIPAX_APP_ID y CHIPAX_SECRET_KEY en el servidor.",
         checkedAt,
       }
     }
@@ -154,7 +166,7 @@ export class ChipaxProvider implements BillingProvider {
    * contrato. `nextCursor` lleva el número de página siguiente.
    */
   async listIssuedInvoices(query: ProviderPeriodQuery): Promise<ProviderPage<ProviderInvoice>> {
-    const config = readChipaxConfig()
+    const config = await this.config()
     if (!config.companyTaxId) {
       throw new BillingProviderError(
         "Falta el RUT de la empresa (BILLING_COMPANY_TAX_ID o DTE_PORTAL_RUT_EMP): sin él no se puede " +
@@ -220,7 +232,7 @@ export class ChipaxProvider implements BillingProvider {
     // (H-16, AUDITORIA_BUGS_2026-08-05.md).
     await this.space()
 
-    const config = readChipaxConfig()
+    const config = await this.config()
     const response = await fetch(`${config.baseUrl}/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Accept: "application/json" },
@@ -232,7 +244,7 @@ export class ChipaxProvider implements BillingProvider {
     if (!response.ok) {
       throw new BillingProviderError(
         response.status === 401 || response.status === 403
-          ? "Chipax rechazó las credenciales. Revisa CHIPAX_APP_ID y CHIPAX_SECRET_KEY."
+          ? "Chipax rechazó las credenciales. Revísalas en «Credenciales» de la tarjeta de Chipax (o en CHIPAX_APP_ID y CHIPAX_SECRET_KEY del servidor)."
           : `Chipax rechazó la autenticación (HTTP ${response.status}).`,
         response.status === 401 || response.status === 403 ? "AUTH_FAILED" : "UNKNOWN",
         PROVIDER_ID,
@@ -252,7 +264,7 @@ export class ChipaxProvider implements BillingProvider {
 
   /** GET autenticado, espaciado y con un reintento único ante 401 y 429. */
   private async get<T>(path: string, retry401 = true, retry429 = true): Promise<T> {
-    const config = readChipaxConfig()
+    const config = await this.config()
 
     // Autenticar primero y espaciar después: `authenticate()` espacia su
     // propio login cuando toca renovar, así cada solicitud HTTP real queda

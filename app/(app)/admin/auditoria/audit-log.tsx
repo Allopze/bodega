@@ -35,6 +35,7 @@ const ENTITY_LABELS: Record<string, string> = {
   product:          "Producto",
   product_category: "Categoría",
   warehouse:        "Bodega",
+  billing_chipax_settings: "Configuración Chipax",
 }
 
 const COLUMNS = [

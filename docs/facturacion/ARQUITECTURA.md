@@ -14,10 +14,12 @@ app/(app)/facturacion/**            Pantallas (Server Components) + acciones de 
         ├── lib/services/billing/reconciliation.ts motor de sugerencias de pago
         ├── lib/services/billing/money.ts         aritmética exacta y monedas
         ├── lib/services/billing/labels.ts        vocabulario visible (texto + tono)
+        ├── lib/services/billing/config.ts        constantes y lectura del entorno
+        ├── lib/services/billing/chipax-settings.ts  config de Chipax: BD sobre entorno
         └── lib/services/billing/providers/       capa de proveedores externos
                 ├── types.ts                      contrato por capacidades
                 ├── factura-en-linea.ts           envuelve el scraping existente
-                ├── chipax.ts                     sin capacidades (contrato no legible)
+                ├── chipax.ts                     ventas y cartolas (solo lectura)
                 └── manual.ts                     carga a mano / XML importado
                         │
                         └── lib/services/dte-portal/**   integración existente, INTACTA

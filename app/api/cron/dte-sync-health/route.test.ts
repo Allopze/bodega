@@ -21,7 +21,9 @@ vi.mock("@/lib/services/dte-portal/config", () => ({
 }))
 vi.mock("@/lib/services/billing/config", () => ({
   readSalesSyncConfig: (...args: unknown[]) => mocks.readSalesSyncConfig(...args),
-  readChipaxConfig: (...args: unknown[]) => mocks.readChipaxConfig(...args),
+}))
+vi.mock("@/lib/services/billing/chipax-settings", () => ({
+  readChipaxConfig: async (...args: unknown[]) => mocks.readChipaxConfig(...args),
 }))
 vi.mock("@/db", () => ({
   db: {

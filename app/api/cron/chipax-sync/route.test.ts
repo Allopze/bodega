@@ -13,7 +13,7 @@ const mocks = vi.hoisted(() => ({
 }))
 
 vi.mock("@/lib/security/cron-auth", () => ({ verifyCronSecret: (...args: unknown[]) => mocks.verifyCronSecret(...args) }))
-vi.mock("@/lib/services/billing/config", () => ({ readChipaxConfig: () => mocks.readChipaxConfig() }))
+vi.mock("@/lib/services/billing/chipax-settings", () => ({ readChipaxConfig: async () => mocks.readChipaxConfig() }))
 vi.mock("@/lib/services/billing/sync", () => ({
   syncBillingInvoices: (...args: unknown[]) => mocks.syncBillingInvoices(...args),
   syncBankTransactions: (...args: unknown[]) => mocks.syncBankTransactions(...args),

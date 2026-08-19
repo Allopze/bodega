@@ -4,7 +4,8 @@ import { db } from "@/db"
 import { billingSyncRuns, dteSyncRuns } from "@/db/schema"
 import { logger } from "@/lib/logger"
 import { verifyCronSecret } from "@/lib/security/cron-auth"
-import { readChipaxConfig, readSalesSyncConfig } from "@/lib/services/billing/config"
+import { readSalesSyncConfig } from "@/lib/services/billing/config"
+import { readChipaxConfig } from "@/lib/services/billing/chipax-settings"
 import { readDtePortalConfig } from "@/lib/services/dte-portal/config"
 import { notifyDteSyncHealthChange } from "@/lib/services/dte-portal/health-alerts"
 import { evaluateDteSyncHealth } from "@/lib/services/dte-portal/health"
@@ -41,7 +42,7 @@ export async function GET(request: NextRequest) {
       dteConfigured = false
     }
     const sales = readSalesSyncConfig()
-    const chipax = readChipaxConfig()
+    const chipax = await readChipaxConfig()
     let cutoverPaused = false
     try {
       await assertDtePortalStartsAllowed()

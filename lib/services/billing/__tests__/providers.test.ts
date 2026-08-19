@@ -62,8 +62,8 @@ describe("FacturaEnLínea", () => {
     expect(provider.capabilities.canListBankTransactions).toBe(false)
   })
 
-  it("está siempre habilitado por flag (ya opera en producción para Compras)", () => {
-    expect(isProviderEnabled("factura_en_linea")).toBe(true)
+  it("está siempre habilitado por flag (ya opera en producción para Compras)", async () => {
+    await expect(isProviderEnabled("factura_en_linea")).resolves.toBe(true)
   })
 })
 
@@ -80,8 +80,8 @@ describe("Chipax", () => {
     expect(provider.capabilities.canCreateExpenses).toBe(false)
   })
 
-  it("queda deshabilitado mientras el feature flag esté apagado", () => {
-    expect(isProviderEnabled("chipax")).toBe(false)
+  it("queda deshabilitado mientras el feature flag esté apagado", async () => {
+    await expect(isProviderEnabled("chipax")).resolves.toBe(false)
   })
 
   it("sin credenciales el healthCheck lo dice y NO llama a la red", async () => {

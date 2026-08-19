@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { nanoid } from "@/lib/id"
 import { logger } from "@/lib/logger"
 import { verifyCronSecret } from "@/lib/security/cron-auth"
-import { readChipaxConfig } from "@/lib/services/billing/config"
+import { readChipaxConfig } from "@/lib/services/billing/chipax-settings"
 import { currentPeriod, previousBillingPeriod, syncBankTransactions, syncBillingInvoices } from "@/lib/services/billing/sync"
 import { cronContractFor } from "@/lib/services/dte-portal/cron-contract"
 
@@ -25,7 +25,7 @@ export async function GET(request: NextRequest) {
     return response(cronContractFor({ unauthorized: true }))
   }
 
-  const config = readChipaxConfig()
+  const config = await readChipaxConfig()
   if (!config.enabled || !config.syncEnabled) {
     return response(cronContractFor({ disabled: true }))
   }

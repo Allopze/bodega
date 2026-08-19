@@ -123,6 +123,29 @@ BILLING_COMPANY_TAX_ID=        # vacío → usa DTE_PORTAL_RUT_EMP
 Guardar `CHIPAX_APP_ID` y `CHIPAX_SECRET_KEY` en un gestor de secretos. Nunca en
 el repositorio, nunca con prefijo `NEXT_PUBLIC_`.
 
+### Administración desde la plataforma
+
+Los dos flags y las dos credenciales también se administran sin desplegar, desde
+**Facturación › Sincronización › tarjeta Chipax › «Credenciales»** (permiso
+`billing:manage_sync`). Se guardan en `system_settings` bajo
+`billing.chipax.app_id`, `billing.chipax.secret_key`, `billing.chipax.enabled` y
+`billing.chipax.sync_enabled`.
+
+| Regla | Detalle |
+|---|---|
+| Precedencia | Lo guardado gana; el entorno es el respaldo. Sin filas persistidas, el comportamiento es idéntico al de antes. |
+| Cifrado | Mismo sobre AES-256-GCM del portal DTE (`settings-crypto.ts`), con la key física como AAD. Sin keyring la operación **falla**: no se persiste texto plano. |
+| Vacío conserva | Un campo de secreto en blanco mantiene el valor guardado. Para volver al `.env` está «Restaurar la del servidor», que borra las cuatro filas. |
+| Auditoría | Queda un registro `billing_chipax_settings` con qué cambió, nunca con el valor. |
+
+`CHIPAX_API_BASE_URL`, `CHIPAX_OPENAPI_URL`, `CHIPAX_REQUEST_TIMEOUT_MS` y
+`BILLING_COMPANY_TAX_ID` **no** se administran desde la UI: son decisiones de
+despliegue, no de operación.
+
+Por eso `readChipaxConfig()` vive en `lib/services/billing/chipax-settings.ts` y
+es asíncrona (consulta la BD). `readChipaxEnvConfig()`, en `config.ts`, sigue
+leyendo sólo el entorno y es el respaldo cuando Postgres no responde.
+
 > Desapareció `CHIPAX_CONTRACT_VERIFIED`. Existía como freno mientras el contrato
 > no se podía leer; ahora se leyó y las operaciones están implementadas contra
 > él, así que un segundo interruptor solo sería ruido.

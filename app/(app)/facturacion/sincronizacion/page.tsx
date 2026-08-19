@@ -7,7 +7,8 @@ import { getAllBillingProviders, isProviderEnabled } from "@/lib/services/billin
 import type { BillingProviderCapabilities } from "@/lib/services/billing/providers/types"
 import { deriveProviderStatus, readStoredHealth } from "@/lib/services/billing/health"
 import { listRecentSyncRuns, getLastSuccessfulRuns, todayIso } from "@/lib/services/billing/queries"
-import { readChipaxConfig, readSalesSyncConfig } from "@/lib/services/billing/config"
+import { readSalesSyncConfig } from "@/lib/services/billing/config"
+import { readChipaxAdminStatus } from "@/lib/services/billing/chipax-settings"
 import {
   formatDateTime,
   providerLabel,
@@ -20,6 +21,7 @@ import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { Badge } from "@/components/ui/badge"
 import { SyncControls } from "./sync-controls"
 import { ProviderHealthButton } from "./provider-health-button"
+import { ChipaxSettingsDialog } from "./chipax-settings-dialog"
 
 export const dynamic = "force-dynamic"
 export const metadata: Metadata = { title: "Sincronización de facturación" }
@@ -60,29 +62,32 @@ export default async function BillingSyncPage() {
     provider.id === "chipax",   // se muestra aunque aún no declare capacidades
   )
 
-  const [stored, configured, runs, lastSuccess] = await Promise.all([
+  const [stored, configured, enabled, runs, lastSuccess, chipaxStatus] = await Promise.all([
     readStoredHealth(syncProviders.map((provider) => provider.id)),
     Promise.all(syncProviders.map((provider) => provider.isConfigured())),
+    // `isProviderEnabled` consulta `system_settings` desde que Chipax se puede
+    // administrar sin desplegar: ya no es una lectura de entorno gratuita.
+    Promise.all(syncProviders.map((provider) => isProviderEnabled(provider.id))),
     listRecentSyncRuns(30),
     getLastSuccessfulRuns(),
+    readChipaxAdminStatus(),
   ])
 
   const salesConfig = readSalesSyncConfig()
-  const chipaxConfig = readChipaxConfig()
   const lastSuccessMap = new Map(lastSuccess.map((row) => [`${row.provider}:${row.scope}`, row.finishedAt]))
 
   const cards = syncProviders.map((provider, index) => ({
     id: provider.id,
     label: provider.label,
     capabilities: provider.capabilities,
-    enabled: isProviderEnabled(provider.id),
+    enabled: enabled[index]!,
     configured: configured[index]!,
     status: deriveProviderStatus({
-      enabled: isProviderEnabled(provider.id),
+      enabled: enabled[index]!,
       configured: configured[index]!,
       stored: stored[provider.id] ?? null,
     }),
-    automationEnabled: provider.id === "chipax" ? chipaxConfig.syncEnabled : provider.id === "factura_en_linea" ? salesConfig.enabled : false,
+    automationEnabled: provider.id === "chipax" ? chipaxStatus.syncEnabled : provider.id === "factura_en_linea" ? salesConfig.enabled : false,
   }))
 
   return (
@@ -144,7 +149,10 @@ export default async function BillingSyncPage() {
                 </div>
               </dl>
 
-              <div className="mt-3 flex items-center justify-end">
+              <div className="mt-3 flex flex-wrap items-center justify-end gap-2">
+                {/* A3: el formulario no vive abierto en la tarjeta; se abre a
+                    pedido desde acá, junto a la acción hermana del proveedor. */}
+                {card.id === "chipax" && <ChipaxSettingsDialog status={chipaxStatus} />}
                 <ProviderHealthButton
                   provider={card.id}
                   label={card.label}

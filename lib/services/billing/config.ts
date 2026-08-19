@@ -71,7 +71,16 @@ const DEFAULT_CHIPAX_OPENAPI_URL = "https://api.chipax.com/v2/swagger-docs/"
  */
 const DEFAULT_CHIPAX_BASE_URL = "https://api.chipax.com/v2"
 
-export function readChipaxConfig(): ChipaxConfig {
+/**
+ * Configuración de Chipax **según el entorno**, sin tocar la base de datos.
+ *
+ * Es el respaldo, no la fuente de verdad: quien quiera la configuración vigente
+ * debe usar `readChipaxConfig()` de `./chipax-settings`, que superpone lo que se
+ * haya guardado desde la plataforma. Esta función sigue existiendo porque ese
+ * respaldo tiene que poder leerse sin BD (y porque `system_settings` no guarda
+ * la URL base ni el timeout: eso es del despliegue, no del operador).
+ */
+export function readChipaxEnvConfig(): ChipaxConfig {
   const appId = process.env.CHIPAX_APP_ID?.trim() ?? ""
   const secretKey = process.env.CHIPAX_SECRET_KEY?.trim() ?? ""
 

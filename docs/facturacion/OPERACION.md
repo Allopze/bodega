@@ -43,6 +43,10 @@
    El cron de Chipax cubre ventas del mes actual/anterior y cartolas del mes
    actual. Conserva cursores durables y es sólo lectura.
 
+   Ambos flags y las credenciales también se cargan sin desplegar desde la
+   tarjeta de Chipax en `/facturacion/sincronizacion` → *Credenciales*. Lo
+   guardado ahí gana sobre el `.env`. Ver [CHIPAX.md](CHIPAX.md).
+
 ## Uso diario
 
 | Quiero… | Voy a |

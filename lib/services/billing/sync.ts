@@ -95,7 +95,7 @@ export async function syncBillingInvoices(options: BillingSyncOptions): Promise<
   assertPeriodFormat(period)
   assertPeriodFloor(period)
 
-  if (!isProviderEnabled(options.provider)) {
+  if (!(await isProviderEnabled(options.provider))) {
     return skipped({
       runId: "", correlationId, provider: options.provider, scope: options.scope, period, dryRun,
       reason: "El proveedor está deshabilitado por configuración.", skipReason: "provider_disabled",
@@ -327,7 +327,7 @@ export async function syncBankTransactions(options: {
     scope: "bank_transactions" as BillingSyncScope, period, dryRun: false,
   }
 
-  if (!isProviderEnabled(options.provider)) {
+  if (!(await isProviderEnabled(options.provider))) {
     return skipped({ ...base, reason: "El proveedor está deshabilitado por configuración.", skipReason: "provider_disabled" })
   }
   const provider = getBillingProvider(options.provider)
