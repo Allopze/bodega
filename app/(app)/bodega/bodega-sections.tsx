@@ -4,10 +4,8 @@ import Link from "next/link"
 import { EmptyState } from "@/components/ui/empty-state"
 import { StockTable } from "./stock-table"
 import { KardexTable } from "./kardex-table"
-import { ArrowRight, Package, Warehouse, WarningCircle, X } from "@phosphor-icons/react/dist/ssr"
+import { ArrowRight, Package, Warehouse, WarningCircle } from "@phosphor-icons/react/dist/ssr"
 import type { WorksiteStockWithProduct, InventoryMovementWithRelations } from "./types"
-import { useSafeShellHeader } from "@/components/layout/header-context"
-import { filterStockItems, filterMovements } from "./filters"
 import { ServerPagination } from "@/components/ui/server-pagination"
 import type { PaginationState } from "@/lib/pagination"
 
@@ -16,28 +14,43 @@ interface WorksiteOption {
   name: string
 }
 
-export function StockSection({ worksites, stockByWorksite, pinnedWorksiteId, receivingHref, canExportStock, lowStockOnly = false }: {
+export type StockState = "" | "low" | "warn"
+
+export function StockSection({
+  worksites,
+  stockByWorksite,
+  receivingHref,
+  canExportStock,
+  stockState = "",
+  hasFilters = false,
+  truncated = false,
+  canSetMinStock = false,
+}: {
   worksites: WorksiteOption[]
   stockByWorksite: Record<string, WorksiteStockWithProduct[]>
-  /** Faena pedida por `?faena=`; se fija arriba. Sin ella manda la criticidad. */
-  pinnedWorksiteId?: string
   receivingHref?: string
   canExportStock?: boolean
-  /** Sólo ítems bajo su mínimo definido — destino del KPI "Stock crítico". */
-  lowStockOnly?: boolean
+  /** `low` = bajo o en el mínimo · `warn` = por agotarse (bajo 1,5× el mínimo). */
+  stockState?: StockState
+  hasFilters?: boolean
+  /** El servidor recortó las filas: hay que avisarlo, no dejar creer que es todo. */
+  truncated?: boolean
+  canSetMinStock?: boolean
 }) {
-  const { searchQuery } = useSafeShellHeader()
   const isLowStock = (item: WorksiteStockWithProduct) => item.minStock > 0 && item.quantity <= item.minStock
-  // En modo "sólo bajo mínimo" también entran las líneas agotadas (cantidad 0)
-  // con mínimo definido: son exactamente las que cuenta el KPI del encabezado y
-  // antes quedaban invisibles, así que el KPI mostraba N y la vista "nada bajo el
-  // mínimo".
-  const isVisibleItem = (item: WorksiteStockWithProduct) =>
-    lowStockOnly ? isLowStock(item) : item.quantity > 0
+  const isWarnStock = (item: WorksiteStockWithProduct) =>
+    item.minStock > 0 && item.quantity > item.minStock && item.quantity < item.minStock * 1.5
+
+  // En "bajo el mínimo" también entran las líneas agotadas (cantidad 0) con
+  // umbral definido: son exactamente las que cuenta el KPI del encabezado y sin
+  // ellas el KPI mostraba N y la vista "nada bajo el mínimo".
+  const isVisibleItem = (item: WorksiteStockWithProduct) => {
+    if (stockState === "low") return isLowStock(item)
+    if (stockState === "warn") return isWarnStock(item)
+    return item.quantity > 0
+  }
 
   const sortedWorksites = [...worksites].sort((a, b) => {
-    if (a.id === pinnedWorksiteId) return -1
-    if (b.id === pinnedWorksiteId) return 1
     const aItems = stockByWorksite[a.id] ?? []
     const bItems = stockByWorksite[b.id] ?? []
     // Criticidad antes que alfabético: la faena con algo bajo mínimo va arriba.
@@ -49,17 +62,19 @@ export function StockSection({ worksites, stockByWorksite, pinnedWorksiteId, rec
     if (aHasStock !== bHasStock) return aHasStock ? -1 : 1
     return a.name.localeCompare(b.name, "es")
   })
-  // Faenas that genuinely have stock — independent of the search query, so
-  // the "Sin stock" footer below never mislabels a faena that has stock but
-  // didn't match the current search. With `lowStockOnly` the faena counts only
-  // when it has at least one item under its defined minimum.
-  const worksitesWithAnyStock = sortedWorksites
-    .map((ws) => ({ ...ws, items: (stockByWorksite[ws.id] ?? []).filter((item) => item.quantity > 0 && (!lowStockOnly || isLowStock(item))) }))
+
+  const worksitesWithStock = sortedWorksites
+    .map((ws) => ({ ...ws, items: (stockByWorksite[ws.id] ?? []).filter(isVisibleItem) }))
     .filter((ws) => ws.items.length > 0)
-  const worksitesWithoutStock = sortedWorksites.filter((ws) => !worksitesWithAnyStock.some((stocked) => stocked.id === ws.id))
-  const worksitesWithStock = worksitesWithAnyStock
-    .map((ws) => ({ ...ws, items: filterStockItems(ws.items, searchQuery) }))
-    .filter((ws) => ws.items.length > 0)
+
+  // "Sin stock" es literal: la faena no tiene ninguna existencia. Se calcula
+  // contra `quantity > 0` y nunca contra el filtro activo — si no, en modo bajo
+  // mínimo una faena repleta pero sin nada bajo el umbral aparecería rotulada
+  // "Sin stock". Y con filtros activos el pie no aplica: la lista ya no es el
+  // universo de faenas sino un recorte.
+  const worksitesWithoutStock = stockState || hasFilters
+    ? []
+    : sortedWorksites.filter((ws) => !(stockByWorksite[ws.id] ?? []).some((item) => item.quantity > 0))
 
   if (worksites.length === 0) {
     return (
@@ -76,17 +91,11 @@ export function StockSection({ worksites, stockByWorksite, pinnedWorksiteId, rec
   if (worksitesWithStock.length === 0) {
     return (
       <section className="rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-surface)]">
-        {searchQuery.trim() ? (
+        {hasFilters ? (
           <EmptyState
             icon={<Package size={24} />}
             title="Sin coincidencias"
-            description={`Ningún producto en stock coincide con "${searchQuery.trim()}".`}
-          />
-        ) : lowStockOnly ? (
-          <EmptyState
-            icon={<Package size={24} />}
-            title="Nada bajo el mínimo"
-            description="No hay productos por debajo de su stock mínimo definido en las faenas visibles."
+            description="Ningún producto en stock coincide con los filtros aplicados."
             action={
               <Link href="/bodega" className="inline-flex h-8 items-center justify-center gap-2 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 text-[13px] font-semibold text-white transition-[background-color,transform] duration-[var(--duration-fast)] ease-[var(--ease-out)] hover:bg-[var(--color-primary-strong)]">
                 Ver todo el stock
@@ -115,17 +124,21 @@ export function StockSection({ worksites, stockByWorksite, pinnedWorksiteId, rec
 
   return (
     <div className="space-y-4">
-      {lowStockOnly && (
-        <Link
-          href="/bodega"
-          className="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-signal-line)] bg-[var(--color-signal-tint)] px-3 py-1 text-xs font-semibold text-[var(--color-signal-ink)] transition-colors hover:bg-[var(--color-signal-line)]"
-        >
-          Sólo bajo mínimo
-          <X size={12} weight="bold" aria-hidden />
-          <span className="sr-only">Quitar filtro de stock crítico</span>
-        </Link>
+      <StockTable
+        worksites={worksitesWithStock}
+        canExport={canExportStock}
+        canSetMinStock={canSetMinStock}
+      />
+
+      {truncated && (
+        <div className="rounded-[var(--radius)] border border-[var(--color-signal-line)] bg-[var(--color-signal-tint)] px-3 py-2">
+          <div className="flex items-center gap-2 text-[11px] text-[var(--color-signal-ink)]">
+            <WarningCircle size={13} />
+            <span className="font-medium">Vista recortada:</span>
+            <span>se muestran las primeras filas. Filtra por faena o producto para verlo completo.</span>
+          </div>
+        </div>
       )}
-      <StockTable worksites={worksitesWithStock} canExport={canExportStock} />
 
       {worksitesWithoutStock.length > 0 && (
         <div className="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2">
@@ -153,12 +166,7 @@ export function KardexSection({
   pagination: PaginationState
   searchParams: Record<string, string | string[] | undefined>
 }) {
-  const { searchQuery } = useSafeShellHeader()
-  // ponytail: kardex is server-paginated, so this only filters the movements
-  // already loaded on the current page — a match on an older page won't show
-  // up. Move to a server-side ilike (like lib/adquisiciones/list-query.ts's
-  // textSearchSql) if that gap becomes a real complaint.
-  const filteredMovements = filterMovements(movements, searchQuery)
+  const searchQuery = typeof searchParams.q === "string" ? searchParams.q : ""
 
   const kardexHref = (page: number) => {
     const params = new URLSearchParams()
@@ -174,8 +182,17 @@ export function KardexSection({
 
   return (
     <>
-      <KardexTable movements={filteredMovements} worksites={worksites} canExport={canExport} />
-      <ServerPagination pagination={pagination} hrefForPage={kardexHref} />
+      <KardexTable
+        movements={movements}
+        worksites={worksites}
+        canExport={canExport}
+        searchQuery={searchQuery}
+      />
+      {/* La paginación acompaña a una tabla con filas. Sin ellas, un paginador
+          suelto se lee como el pie de una tabla que no está. */}
+      {movements.length > 0 && (
+        <ServerPagination pagination={pagination} hrefForPage={kardexHref} />
+      )}
     </>
   )
 }

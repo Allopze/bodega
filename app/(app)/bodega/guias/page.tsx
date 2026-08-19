@@ -46,9 +46,11 @@ export default async function DispatchGuidesPage({
   const faena = readParam(sp.faena)
   const desde = readParam(sp.desde)
   const hasta = readParam(sp.hasta)
+  const q = readParam(sp.q).trim()
 
   const filters = {
     scopeSql: worksiteScopeSql(session, dispatchGuides.destinationWorksiteId),
+    q,
     status: estado,
     destinationWorksiteId: faena || undefined,
     from: desde || undefined,
@@ -81,7 +83,7 @@ export default async function DispatchGuidesPage({
         }
       />
 
-      <GuideFilters worksites={worksiteOptions} current={{ estado: estadoParam, faena, desde, hasta }} />
+      <GuideFilters worksites={worksiteOptions} current={{ estado: estadoParam, faena, desde, hasta, q }} />
 
       {total === 0 ? (
         <div className="rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)]">

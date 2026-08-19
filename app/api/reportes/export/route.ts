@@ -31,6 +31,8 @@ const TYPE_PERMISSIONS: Record<string, Permission[]> = {
   dte_conciliacion:    ["purchasing:view"],
   dte_facturas_sin_oc: ["purchasing:view"],
   facturacion_cobranza: ["billing:export"],
+  bodega_valorizacion: ["reports:view", "warehouse:view_stock"],
+  bodega_rotacion:     ["reports:view", "warehouse:view_stock"],
 }
 
 const MAX_EXPORT_ROWS = 10_000

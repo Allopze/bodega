@@ -34,6 +34,12 @@ export interface ExportDialogProps {
   }
   isoDateISOFormat?: boolean
   canExport?: boolean
+  /**
+   * Un export que es una foto de hoy (existencias, saldos) no tiene rango de
+   * fechas que aplicar. Ofrecerlo igual promete un filtro que el endpoint no
+   * puede honrar. Por defecto `true`: la mayoría de los exports son históricos.
+   */
+  showDateRange?: boolean
   trigger?: React.ReactNode
   /**
    * Modo controlado. Sirve para montar el diálogo **fuera** del contenedor que
@@ -57,6 +63,7 @@ const ExportDialogInner = React.memo(function ExportDialogInner({
   paramNames = {},
   isoDateISOFormat = false,
   canExport = true,
+  showDateRange = true,
   trigger,
   open,
   onOpenChange,
@@ -117,14 +124,16 @@ const ExportDialogInner = React.memo(function ExportDialogInner({
         </DialogHeader>
 
         <div className="grid gap-4 py-2">
-          <DateRangePicker
-            fromValue={from}
-            toValue={to}
-            onFromChange={setFrom}
-            onToChange={setTo}
-            fromId={`from-${tipo || "export"}`}
-            toId={`to-${tipo || "export"}`}
-          />
+          {showDateRange && (
+            <DateRangePicker
+              fromValue={from}
+              toValue={to}
+              onFromChange={setFrom}
+              onToChange={setTo}
+              fromId={`from-${tipo || "export"}`}
+              toId={`to-${tipo || "export"}`}
+            />
+          )}
 
           {worksites.length > 0 && (
             <div className="flex flex-col gap-1.5">

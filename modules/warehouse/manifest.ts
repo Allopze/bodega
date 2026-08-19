@@ -37,6 +37,22 @@ export const warehouseModule = {
           iconName:    "Warehouse",
           permissions: ["warehouse:view_stock"],
           badge:       "count" as const,
+          // Las guías de despacho internas eran un módulo completo (lista,
+          // detalle, despacho, PDF) sin ninguna puerta de entrada: sólo se
+          // llegaba desde Recepción o desde una OC. Mismo patrón con el que
+          // Trazabilidad cuelga "Buscar por código".
+          children: [
+            {
+              label:       "Guías de despacho",
+              href:        "/bodega/guias",
+              permissions: ["warehouse:view_guides"],
+            },
+            {
+              label:       "Documentos",
+              href:        "/bodega/documentos",
+              permissions: ["warehouse:view_stock"],
+            },
+          ],
         },
       ],
     },

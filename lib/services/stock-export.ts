@@ -7,6 +7,7 @@ import { db } from "@/db"
 import { worksites, worksiteStock, inventoryMovements, products, users } from "@/db/schema"
 import { isGlobalRole, visibleWorksiteIds } from "@/lib/auth/scope"
 import { buildXlsxBuffer, type ReportData } from "@/lib/reports/export"
+import { periodSql } from "@/lib/adquisiciones/list-query"
 import type { Session } from "next-auth"
 import { todayInChile } from "@/lib/utils"
 
@@ -105,6 +106,10 @@ export async function getStockExport(
 export interface KardexExportFilters {
   worksiteId?: string
   productId?:  string
+  /** `YYYY-MM-DD`, ambos inclusive. Ver `periodSql`: el límite superior se
+   *  traduce a `< hasta + 1 día` para que el día `hasta` entre completo. */
+  from?:       string
+  to?:         string
 }
 
 /**
@@ -131,6 +136,12 @@ export async function getKardexExport(
     ? eq(inventoryMovements.productId, filters.productId)
     : undefined
 
+  const periodFilter = periodSql(
+    inventoryMovements.performedAt,
+    filters.from ?? "",
+    filters.to ?? "",
+  )
+
   const rows = await db
     .select({
       id:              inventoryMovements.id,
@@ -152,7 +163,7 @@ export async function getKardexExport(
     .innerJoin(worksites, eq(inventoryMovements.worksiteId, worksites.id))
     .innerJoin(products, eq(inventoryMovements.productId, products.id))
     .innerJoin(users, eq(inventoryMovements.performedBy, users.id))
-    .where(and(wsScope, wsFilter, prodFilter))
+    .where(and(wsScope, wsFilter, prodFilter, periodFilter))
     .orderBy(sql`${inventoryMovements.performedAt} DESC`)
     .limit(maxRows + 1)
 

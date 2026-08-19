@@ -204,6 +204,19 @@ export const setMinStockSchema = z.object({
   minStock:  z.coerce.number().refine(Number.isFinite, "Valor inválido").min(0, "No puede ser negativo"),
 })
 
+/**
+ * Definición masiva de mínimos: una fila por producto de la faena. El formulario
+ * envía arreglos paralelos y la acción sólo conserva las filas efectivamente
+ * tecleadas — una celda en blanco significa "no tocar", no "poner 0".
+ */
+export const setMinStockBulkSchema = z.object({
+  worksiteId: z.string().min(1, "Selecciona una faena"),
+  items: z.array(z.object({
+    stockId:  z.string().min(1),
+    minStock: z.coerce.number().refine(Number.isFinite, "Valor inválido").min(0, "No puede ser negativo"),
+  })).min(1, "Escribe al menos un mínimo"),
+})
+
 // ── Physical stock delivery to worker ───────────────────────────────────────
 // The browser sends `items` as JSON because one delivery can contain several
 // products. Validate the complete nested shape again at the action boundary;
@@ -260,6 +273,17 @@ export const adjustStockSchema = z.object({
   notes:      z.string().trim().max(500).nullable().optional().or(z.literal("")),
 })
 
+// ── Stock discard (baja por desecho) ────────────────────────────────────────
+// Sin `direction`: una baja siempre resta. El motor ya validaba el tipo
+// `egreso_desecho`, pero ninguna pantalla lo emitía.
+export const discardStockSchema = z.object({
+  worksiteId: z.string().min(1, "Selecciona una faena"),
+  productId:  z.string().min(1, "Selecciona un producto"),
+  quantity:   positiveQuantitySchema,
+  reason:     z.string().trim().min(1, "Indica el motivo de la baja").max(300),
+  notes:      z.string().trim().max(500).nullable().optional().or(z.literal("")),
+})
+
 // ── Stock return ────────────────────────────────────────────────────────────
 export const returnStockSchema = z.object({
   deliveryItemId: z.string().min(1, "Selecciona una entrega para devolver"),
@@ -287,4 +311,6 @@ export type WorkerDeliveryFormData = z.infer<typeof workerDeliverySchema>
 export type WorkerStockDeliveryFormData = z.infer<typeof workerStockDeliverySchema>
 export type AdjustStockFormData = z.infer<typeof adjustStockSchema>
 export type SetMinStockFormData = z.infer<typeof setMinStockSchema>
+export type SetMinStockBulkFormData = z.infer<typeof setMinStockBulkSchema>
+export type DiscardStockFormData = z.infer<typeof discardStockSchema>
 export type ReturnStockFormData = z.infer<typeof returnStockSchema>

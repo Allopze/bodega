@@ -1,9 +1,10 @@
 "use client"
 
 import * as React from "react"
+import Link from "next/link"
 import { useActionState } from "react"
 import { toast } from "@/lib/toast"
-import { Check, PencilSimple } from "@phosphor-icons/react"
+import { CaretDown, CaretRight, Check, PencilSimple, X } from "@phosphor-icons/react"
 import type { WorksiteStockWithProduct } from "./types"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -22,16 +23,19 @@ export interface StockTableProps {
     items: WorksiteStockWithProduct[]
   }>
   canExport?: boolean
+  canSetMinStock?: boolean
 }
 
 type GroupBy = "faena" | "producto"
+type SortKey = "name" | "quantity" | "minStock" | "lastMovementAt"
+type SortDir = "asc" | "desc"
 
 /** Una banda de la tabla: el encabezado del grupo y sus filas ya rotuladas. */
 interface StockGroup {
   id: string
   heading: string
   meta: string
-  rows: Array<{ item: WorksiteStockWithProduct; title: string; subtitle: string }>
+  rows: Array<{ item: WorksiteStockWithProduct; title: string; subtitle: string; worksiteId: string }>
 }
 
 /**
@@ -47,6 +51,7 @@ function buildGroups(worksites: StockTableProps["worksites"], groupBy: GroupBy):
       meta: `${ws.items.length} ${ws.items.length === 1 ? "producto" : "productos"}`,
       rows: ws.items.map((item) => ({
         item,
+        worksiteId: ws.id,
         title: item.product?.name ?? item.productId,
         // La unidad viaja con el SKU y no con la cantidad: en la columna numérica
         // el sufijo empujaba los dígitos y "200" no alineaba con "2".
@@ -70,7 +75,7 @@ function buildGroups(worksites: StockTableProps["worksites"], groupBy: GroupBy):
       group.total += item.quantity
       // El nombre de la faena viene del grupo que la contiene, no de la relación
       // del ítem: es el mismo que rotula el modo "por faena".
-      group.rows.push({ item, title: ws.name, subtitle: "" })
+      group.rows.push({ item, title: ws.name, subtitle: "", worksiteId: ws.id })
       byProduct.set(item.productId, group)
     }
   }
@@ -88,7 +93,34 @@ function buildGroups(worksites: StockTableProps["worksites"], groupBy: GroupBy):
     }))
 }
 
+/** Ordena las filas dentro de cada grupo. El conjunto no está paginado, así que
+ *  ordenar en cliente ordena todo lo que hay, no sólo una página. */
+function sortRows(rows: StockGroup["rows"], key: SortKey, dir: SortDir): StockGroup["rows"] {
+  const factor = dir === "asc" ? 1 : -1
+  return [...rows].sort((a, b) => {
+    switch (key) {
+      case "quantity":
+        return (a.item.quantity - b.item.quantity) * factor
+      case "minStock":
+        return (a.item.minStock - b.item.minStock) * factor
+      case "lastMovementAt": {
+        // Sin movimiento va siempre al final, mire hacia donde mire el orden:
+        // un "—" no es ni el más viejo ni el más nuevo.
+        const aAt = a.item.lastMovementAt
+        const bAt = b.item.lastMovementAt
+        if (!aAt && !bAt) return 0
+        if (!aAt) return 1
+        if (!bAt) return -1
+        return aAt.localeCompare(bAt) * factor
+      }
+      default:
+        return a.title.localeCompare(b.title, "es-CL") * factor
+    }
+  })
+}
+
 const GROUP_BY_STORAGE_KEY = "bodega:stock-group-by"
+const COLLAPSED_STORAGE_KEY = "bodega:stock-collapsed"
 const GROUP_BY_LABEL: Record<GroupBy, string> = { faena: "Por faena", producto: "Por producto" }
 
 /**
@@ -119,21 +151,66 @@ function useGroupBy(): [GroupBy, (value: GroupBy) => void] {
   return [groupBy, setGroupBy]
 }
 
-function MinStockCell({ stockId, currentMin }: { stockId: string; currentMin: number }) {
+/** Grupos plegados, con la misma persistencia que la agrupación. */
+function useCollapsedGroups(): [Set<string>, (id: string) => void] {
+  const [collapsed, setCollapsed] = React.useState<Set<string>>(new Set())
+  const [restored, setRestored] = React.useState(false)
+
+  React.useEffect(() => {
+    try {
+      const saved = sessionStorage.getItem(COLLAPSED_STORAGE_KEY)
+      if (saved) setCollapsed(new Set(JSON.parse(saved) as string[]))
+    } catch { /* modo privado o valor corrupto */ }
+    setRestored(true)
+  }, [])
+
+  React.useEffect(() => {
+    if (!restored) return
+    try { sessionStorage.setItem(COLLAPSED_STORAGE_KEY, JSON.stringify([...collapsed])) } catch { /* modo privado */ }
+  }, [restored, collapsed])
+
+  const toggle = React.useCallback((id: string) => {
+    setCollapsed((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }, [])
+
+  return [collapsed, toggle]
+}
+
+function MinStockCell({ stockId, currentMin, disabled = false }: { stockId: string; currentMin: number; disabled?: boolean }) {
   const [editing, setEditing] = React.useState(false)
   const [value, setValue] = React.useState(String(currentMin))
   const formRef = React.useRef<HTMLFormElement>(null)
 
   const [state, action] = useActionState<ActionState, FormData>(setMinStockAction, INITIAL_STATE)
 
+  const cancel = React.useCallback(() => {
+    setEditing(false)
+    setValue(String(currentMin))
+  }, [currentMin])
+
   React.useEffect(() => {
     if (state.ok && state.message) {
       toast.success(state.message)
       setEditing(false)
+    } else if (state.ok === false && state.message && state !== INITIAL_STATE) {
+      // Sin esta rama, "Sin permisos" / "No tienes acceso a esta faena" /
+      // "Error al actualizar" no se veían: la celda se quedaba abierta como si
+      // el clic no hubiera ocurrido.
+      toast.error(state.message)
     }
   }, [state])
 
   if (!editing) {
+    if (disabled) {
+      return currentMin > 0
+        ? <span className="font-mono text-xs tabular-nums text-[var(--color-text-subtle)]">{formatQty(currentMin, "")}</span>
+        : <span className="text-[11px] text-[var(--color-text-faint)]">—</span>
+    }
     return (
       <button
         type="button"
@@ -153,7 +230,14 @@ function MinStockCell({ stockId, currentMin }: { stockId: string; currentMin: nu
   }
 
   return (
-    <form ref={formRef} action={action} className="flex items-center justify-end gap-1">
+    <form
+      ref={formRef}
+      action={action}
+      className="flex items-center justify-end gap-1"
+      // Escape sale sin guardar. Sin esto, un clic accidental en el lápiz dejaba
+      // la fila trabada en modo edición: la única salida era enviar o recargar.
+      onKeyDown={(e) => { if (e.key === "Escape") { e.preventDefault(); cancel() } }}
+    >
       <input type="hidden" name="stockId" value={stockId} />
       <Input
         name="minStock"
@@ -175,15 +259,70 @@ function MinStockCell({ stockId, currentMin }: { stockId: string; currentMin: nu
       >
         <Check size={14} />
       </Button>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon-mobile-sm"
+        aria-label="Cancelar edición del stock mínimo"
+        onClick={cancel}
+        className="text-[var(--color-text-subtle)]"
+      >
+        <X size={14} />
+      </Button>
     </form>
   )
 }
 
-export function StockTable({ worksites, canExport }: StockTableProps) {
+/** Encabezado ordenable. `aria-sort` acompaña al indicador visual para que el
+ *  orden no sea una señal sólo de color y forma. */
+function SortableHeader({
+  label, sortKey, active, dir, onSort, className,
+}: {
+  label: string
+  sortKey: SortKey
+  active: boolean
+  dir: SortDir
+  onSort: (key: SortKey) => void
+  className?: string
+}) {
+  return (
+    <th
+      scope="col"
+      aria-sort={active ? (dir === "asc" ? "ascending" : "descending") : "none"}
+      className={className}
+    >
+      <button
+        type="button"
+        onClick={() => onSort(sortKey)}
+        className="inline-flex items-center gap-1 transition-colors hover:text-[var(--color-text)]"
+      >
+        {label}
+        <span aria-hidden className={active ? "opacity-100" : "opacity-0"}>
+          {dir === "asc" ? "↑" : "↓"}
+        </span>
+      </button>
+    </th>
+  )
+}
+
+export function StockTable({ worksites, canExport, canSetMinStock = true }: StockTableProps) {
   const allItems = worksites.flatMap((ws) => ws.items)
   const lowStockCount = allItems.filter((item) => item.minStock > 0 && item.quantity <= item.minStock).length
+  const noThresholds = allItems.every((item) => item.minStock === 0)
   const [groupBy, setGroupBy] = useGroupBy()
-  const groups = React.useMemo(() => buildGroups(worksites, groupBy), [worksites, groupBy])
+  const [collapsed, toggleCollapsed] = useCollapsedGroups()
+  const [sort, setSort] = React.useState<{ key: SortKey; dir: SortDir }>({ key: "name", dir: "asc" })
+
+  const handleSort = React.useCallback((key: SortKey) => {
+    setSort((prev) => prev.key === key
+      ? { key, dir: prev.dir === "asc" ? "desc" : "asc" }
+      : { key, dir: key === "name" ? "asc" : "desc" })
+  }, [])
+
+  const groups = React.useMemo(
+    () => buildGroups(worksites, groupBy).map((group) => ({ ...group, rows: sortRows(group.rows, sort.key, sort.dir) })),
+    [worksites, groupBy, sort],
+  )
 
   return (
     <section className="rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-surface)]">
@@ -229,6 +368,17 @@ export function StockTable({ worksites, canExport }: StockTableProps) {
         </div>
       </div>
 
+      {/* Un aviso una vez, en vez de N celdas repitiendo "Sin mínimo": sin
+          umbrales, el KPI, el badge del menú y las alertas están apagados. */}
+      {noThresholds && allItems.length > 0 && canSetMinStock && (
+        <p className="border-b border-[var(--color-border)] bg-[var(--color-surface-2)] px-5 py-2.5 text-xs text-[var(--color-text-muted)]">
+          Ningún producto tiene stock mínimo definido, así que las alertas de quiebre están apagadas.{" "}
+          <span className="font-medium text-[var(--color-text)]">
+            Usa &quot;Registrar movimiento → Definir stock mínimo&quot; para fijarlos por faena de una vez.
+          </span>
+        </p>
+      )}
+
       {allItems.length === 0 ? (
         <EmptyState
           title="Sin stock registrado"
@@ -244,7 +394,7 @@ export function StockTable({ worksites, canExport }: StockTableProps) {
                   {group.heading}
                   <span className="ml-2 font-normal normal-case tracking-normal">{group.meta}</span>
                 </h3>
-                {group.rows.map(({ item: s, title, subtitle }) => {
+                {group.rows.map(({ item: s, title, subtitle, worksiteId }) => {
                   const unit = s.product?.unitOfMeasure ?? "u"
                   const lowStock = s.minStock > 0 && s.quantity <= s.minStock
 
@@ -258,16 +408,17 @@ export function StockTable({ worksites, canExport }: StockTableProps) {
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
-                          <p className="text-sm font-medium text-[var(--color-text)]">{title}</p>
+                          <Link
+                            href={`/bodega?vista=kardex&producto=${s.productId}&faena=${worksiteId}`}
+                            className="text-sm font-medium text-[var(--color-text)] underline-offset-2 hover:underline"
+                          >
+                            {title}
+                          </Link>
                           {subtitle && (
                             <p className="mt-0.5 font-mono text-xs text-[var(--color-text-subtle)]">{subtitle}</p>
                           )}
                         </div>
-                        {lowStock ? (
-                          <Badge variant="signal" dot className="shrink-0">Bajo mínimo</Badge>
-                        ) : s.minStock === 0 ? (
-                          <span className="shrink-0 text-[11px] text-[var(--color-text-faint)]">Sin mínimo</span>
-                        ) : null}
+                        {lowStock && <Badge variant="signal" dot className="shrink-0">Bajo mínimo</Badge>}
                       </div>
                       <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
                         <div>
@@ -278,7 +429,9 @@ export function StockTable({ worksites, canExport }: StockTableProps) {
                         </div>
                         <div className="text-right">
                           <dt className="text-[var(--color-text-subtle)]">Mínimo</dt>
-                          <dd className="mt-0.5 flex justify-end"><MinStockCell stockId={s.id} currentMin={s.minStock} /></dd>
+                          <dd className="mt-0.5 flex justify-end">
+                            <MinStockCell stockId={s.id} currentMin={s.minStock} disabled={!canSetMinStock} />
+                          </dd>
                         </div>
                         <div className="col-span-2">
                           <dt className="text-[var(--color-text-subtle)]">Último movimiento</dt>
@@ -306,81 +459,124 @@ export function StockTable({ worksites, canExport }: StockTableProps) {
               </caption>
               <colgroup>
                 <col />
-                <col className="w-36" />
+                <col className="w-32" />
                 <col className="w-36" />
                 <col className="w-32" />
                 <col className="w-44" />
               </colgroup>
               <thead>
                 <tr className="border-b border-[var(--color-border)] text-xs uppercase tracking-wide text-[var(--color-text-subtle)]">
-                  <th scope="col" className="px-5 py-2.5 text-left font-semibold">
-                    {groupBy === "faena" ? "Producto" : "Faena"}
-                  </th>
+                  <SortableHeader
+                    label={groupBy === "faena" ? "Producto" : "Faena"}
+                    sortKey="name" active={sort.key === "name"} dir={sort.dir} onSort={handleSort}
+                    className="px-5 py-2.5 text-left font-semibold"
+                  />
                   <th scope="col" className="px-5 py-2.5 text-left font-semibold">Estado</th>
-                  <th scope="col" className="px-5 py-2.5 text-right font-semibold">Stock actual</th>
-                  <th scope="col" className="px-5 py-2.5 text-right font-semibold">Mínimo</th>
-                  <th scope="col" className="px-5 py-2.5 text-right font-semibold">Último movimiento</th>
+                  <SortableHeader
+                    label="Stock actual"
+                    sortKey="quantity" active={sort.key === "quantity"} dir={sort.dir} onSort={handleSort}
+                    className="px-5 py-2.5 text-right font-semibold"
+                  />
+                  <SortableHeader
+                    label="Mínimo"
+                    sortKey="minStock" active={sort.key === "minStock"} dir={sort.dir} onSort={handleSort}
+                    className="px-5 py-2.5 text-right font-semibold"
+                  />
+                  <SortableHeader
+                    label="Último movimiento"
+                    sortKey="lastMovementAt" active={sort.key === "lastMovementAt"} dir={sort.dir} onSort={handleSort}
+                    className="px-5 py-2.5 text-right font-semibold"
+                  />
                 </tr>
               </thead>
-              {groups.map((group) => (
-                <tbody
-                  key={group.id}
-                  className="divide-y divide-[var(--color-border)] border-b-2 border-[var(--color-border-strong)] last:border-b-0"
-                >
-                  <tr>
-                    <th
-                      scope="rowgroup"
-                      colSpan={5}
-                      className="bg-[var(--color-surface-2)] px-5 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-[var(--color-text-subtle)]"
-                    >
-                      {group.heading}
-                      <span className="ml-2 font-normal normal-case tracking-normal">{group.meta}</span>
-                    </th>
-                  </tr>
-                  {group.rows.map(({ item: s, title, subtitle }) => {
-                    const lowStock = s.minStock > 0 && s.quantity <= s.minStock
+              {groups.map((group) => {
+                const isCollapsed = collapsed.has(group.id)
+                return (
+                  <tbody
+                    key={group.id}
+                    className="divide-y divide-[var(--color-border)] border-b-2 border-[var(--color-border-strong)] last:border-b-0"
+                  >
+                    <tr>
+                      <th
+                        scope="rowgroup"
+                        colSpan={5}
+                        className="bg-[var(--color-surface-2)] px-5 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-[var(--color-text-subtle)]"
+                      >
+                        {/* Un <button> y no <details>: `details` no es válido
+                            dentro de `tbody`, y el estado sobrevive al refresco
+                            porque vive en sessionStorage. */}
+                        <button
+                          type="button"
+                          onClick={() => toggleCollapsed(group.id)}
+                          aria-expanded={!isCollapsed}
+                          className="inline-flex items-center gap-1.5 transition-colors hover:text-[var(--color-text)]"
+                        >
+                          {isCollapsed ? <CaretRight size={12} weight="bold" aria-hidden /> : <CaretDown size={12} weight="bold" aria-hidden />}
+                          {group.heading}
+                          <span className="font-normal normal-case tracking-normal">{group.meta}</span>
+                        </button>
+                      </th>
+                    </tr>
+                    {group.rows.map(({ item: s, title, subtitle, worksiteId }) => {
+                      const lowStock = s.minStock > 0 && s.quantity <= s.minStock
 
-                    return (
-                      <tr key={s.id} className="hover:bg-[var(--color-surface-2)] transition-colors">
-                        <td className="px-5 py-3">
-                          <p className="font-medium text-[var(--color-text)]">{title}</p>
-                          {subtitle && (
-                            <p className="mt-0.5 font-mono text-[11px] text-[var(--color-text-subtle)]">{subtitle}</p>
-                          )}
-                        </td>
-                        {/* El punto de color solo decía "bajo mínimo" con color y
-                            forma; la etiqueta lo dice con palabras y de paso la
-                            columna deja ver qué líneas no tienen umbral. */}
-                        <td className="px-5 py-3">
-                          {lowStock ? (
-                            <Badge variant="signal" dot>Bajo mínimo</Badge>
-                          ) : s.minStock === 0 ? (
-                            <span className="text-[11px] text-[var(--color-text-faint)]">Sin mínimo</span>
-                          ) : null}
-                        </td>
-                        <td className="px-5 py-3 text-right">
-                          <span className="font-mono text-sm font-semibold tabular-nums text-[var(--color-text)]">
-                            {formatQty(s.quantity)}
-                          </span>
-                        </td>
-                        <td className="px-5 py-3 text-right">
-                          <MinStockCell stockId={s.id} currentMin={s.minStock} />
-                        </td>
-                        <td className="px-5 py-3 text-right text-xs text-[var(--color-text-subtle)]">
-                          {s.lastMovementAt ? (
-                            <>
-                              <span className="tabular-nums">{formatDate(s.lastMovementAt)}</span>
-                              <span className="mt-0.5 block text-[11px] text-[var(--color-text-faint)]">
-                                {formatDateRelative(s.lastMovementAt)}
-                              </span>
-                            </>
-                          ) : "—"}
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              ))}
+                      return (
+                        <tr key={s.id} hidden={isCollapsed} className="hover:bg-[var(--color-surface-2)] transition-colors">
+                          <td className="px-5 py-3">
+                            {/* La fila lleva a su propio kardex: antes hacer clic
+                                en un producto no hacía nada. */}
+                            <Link
+                              href={`/bodega?vista=kardex&producto=${s.productId}&faena=${worksiteId}`}
+                              className="font-medium text-[var(--color-text)] underline-offset-2 hover:underline"
+                            >
+                              {title}
+                            </Link>
+                            {subtitle && (
+                              <p className="mt-0.5 font-mono text-[11px] text-[var(--color-text-subtle)]">{subtitle}</p>
+                            )}
+                          </td>
+                          {/* Sólo se rotula lo que tiene algo que decir: una
+                              columna entera repitiendo "Sin mínimo" era ruido. */}
+                          <td className="px-5 py-3">
+                            {lowStock && (
+                              <div className="flex flex-col items-start gap-1">
+                                <Badge variant="signal" dot>Bajo mínimo</Badge>
+                                {/* Detectar el quiebre y no poder pedirlo era el
+                                    ciclo que quedaba abierto: el enlace abre el
+                                    creador con faena, producto y déficit. */}
+                                <Link
+                                  href={`/solicitudes/nueva?faena=${worksiteId}&producto=${s.productId}&cantidad=${Math.max(1, Math.ceil(s.minStock - s.quantity))}`}
+                                  className="text-[11px] font-medium text-[var(--color-signal-ink)] underline-offset-2 hover:underline"
+                                >
+                                  Reponer
+                                </Link>
+                              </div>
+                            )}
+                          </td>
+                          <td className="px-5 py-3 text-right">
+                            <span className="font-mono text-sm font-semibold tabular-nums text-[var(--color-text)]">
+                              {formatQty(s.quantity)}
+                            </span>
+                          </td>
+                          <td className="px-5 py-3 text-right">
+                            <MinStockCell stockId={s.id} currentMin={s.minStock} disabled={!canSetMinStock} />
+                          </td>
+                          <td className="px-5 py-3 text-right text-xs text-[var(--color-text-subtle)]">
+                            {s.lastMovementAt ? (
+                              <>
+                                <span className="tabular-nums">{formatDate(s.lastMovementAt)}</span>
+                                <span className="mt-0.5 block text-[11px] text-[var(--color-text-faint)]">
+                                  {formatDateRelative(s.lastMovementAt)}
+                                </span>
+                              </>
+                            ) : "—"}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                )
+              })}
             </table>
           </div>
         </>

@@ -358,6 +358,70 @@ describe("getKardexExport", () => {
     expect(ws?.actualRowCount).toBe(2) // header + 1 row
   })
 
+  // `desde`/`hasta` se comparan como fechas desnudas, asi que Postgres las
+  // resuelve en la zona de la sesion (Chile, fijada en compose y CI). El corte
+  // es por dia chileno y no por dia UTC: un movimiento de las 00:30 UTC del 12
+  // ocurrio a las 20:30 del 11 en faena, y para quien pide "hasta el 11" ese
+  // movimiento es del 11. El caso esta fijado abajo a proposito.
+  it("recorta por rango de fechas usando el dia chileno, con 'hasta' inclusive", async () => {
+    await inMemoryDb.insert(schema.inventoryMovements).values([
+      {
+        id: "mov-r1", worksiteId: WS_1, productId: PROD_1,
+        type: "ingreso_oc", quantity: 1, stockBefore: 0, stockAfter: 1,
+        performedBy: userId, performedAt: "2026-03-09T23:00:00Z", // 09-03 19:00 CL — fuera
+      },
+      {
+        id: "mov-r2", worksiteId: WS_1, productId: PROD_1,
+        type: "ingreso_oc", quantity: 2, stockBefore: 1, stockAfter: 3,
+        performedBy: userId, performedAt: "2026-03-10T08:00:00Z", // 10-03 04:00 CL — dentro
+      },
+      {
+        id: "mov-r3", worksiteId: WS_1, productId: PROD_1,
+        type: "ingreso_oc", quantity: 3, stockBefore: 3, stockAfter: 6,
+        performedBy: userId, performedAt: "2026-03-11T23:59:00Z", // 11-03 19:59 CL — dentro
+      },
+      {
+        id: "mov-r4", worksiteId: WS_1, productId: PROD_1,
+        type: "ingreso_oc", quantity: 4, stockBefore: 6, stockAfter: 10,
+        performedBy: userId, performedAt: "2026-03-12T00:30:00Z", // 11-03 20:30 CL — dentro
+      },
+      {
+        id: "mov-r5", worksiteId: WS_1, productId: PROD_1,
+        type: "ingreso_oc", quantity: 5, stockBefore: 10, stockAfter: 15,
+        performedBy: userId, performedAt: "2026-03-12T14:00:00Z", // 12-03 10:00 CL — fuera
+      },
+    ])
+
+    const res = await getKardexExport(globalSession(), { from: "2026-03-10", to: "2026-03-11" })
+
+    const workbook = new ExcelJS.Workbook()
+    await workbook.xlsx.load(Buffer.from(res.buffer) as never)
+    const ws = workbook.getWorksheet("Kardex")
+    expect(ws?.actualRowCount).toBe(4) // header + r2 + r3 + r4
+  })
+
+  it("sin rango exporta todo el historico", async () => {
+    await inMemoryDb.insert(schema.inventoryMovements).values([
+      {
+        id: "mov-s1", worksiteId: WS_1, productId: PROD_1,
+        type: "ingreso_oc", quantity: 1, stockBefore: 0, stockAfter: 1,
+        performedBy: userId, performedAt: "2020-01-01T10:00:00Z",
+      },
+      {
+        id: "mov-s2", worksiteId: WS_1, productId: PROD_1,
+        type: "ingreso_oc", quantity: 1, stockBefore: 1, stockAfter: 2,
+        performedBy: userId, performedAt: now,
+      },
+    ])
+
+    const res = await getKardexExport(globalSession(), {})
+
+    const workbook = new ExcelJS.Workbook()
+    await workbook.xlsx.load(Buffer.from(res.buffer) as never)
+    const ws = workbook.getWorksheet("Kardex")
+    expect(ws?.actualRowCount).toBe(3) // header + 2 rows
+  })
+
   it("returns empty Excel when no movements exist", async () => {
     const res = await getKardexExport(globalSession())
 

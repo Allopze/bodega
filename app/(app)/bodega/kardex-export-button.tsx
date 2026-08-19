@@ -20,7 +20,7 @@ export function KardexExportButton({ worksites, canExport }: KardexExportButtonP
     <ExportDialog
       endpoint="/api/bodega/kardex/export"
       title="Exportar kardex"
-      description="Descarga el historial de movimientos de inventario como archivo Excel. Puedes filtrar por faena."
+      description="Descarga el historial de movimientos de inventario como archivo Excel. Puedes filtrar por faena y por rango de fechas."
       label="Excel"
       worksites={worksites}
       canExport={canExport}

@@ -62,18 +62,71 @@ export async function applyMovement(input: ApplyMovementInput): Promise<number> 
   })
 }
 
-export async function registerStockAdjustment(input: ApplyMovementInput): Promise<{ id: string; code: string }> {
-  if (input.type !== "ajuste") throw new Error("El documento no corresponde a un ajuste de stock")
+/**
+ * Documentos manuales de stock que comparten cabecera (`stock_adjustments`):
+ * folio, motivo obligatorio y autor. Lo unico que cambia es el movimiento que
+ * emiten y el prefijo del folio.
+ */
+export type StockDocumentKind = "ajuste" | "desecho"
+
+const STOCK_DOCUMENT_SHAPE: Record<StockDocumentKind, { movementType: MovementType; prefix: string }> = {
+  ajuste:  { movementType: "ajuste",         prefix: "AJU" },
+  desecho: { movementType: "egreso_desecho", prefix: "DES" },
+}
+
+/**
+ * Registra un documento manual de stock y su movimiento, en una transaccion.
+ *
+ * `quantity` sigue la convencion de `applyMovementTx` para los ajustes (positivo
+ * entra, negativo sale). Para un desecho la rama del motor espera la magnitud en
+ * positivo y ella misma descuenta, asi que la cabecera guarda el signo negativo
+ * y el movimiento recibe el valor absoluto.
+ */
+export async function registerStockDocument(
+  input: ApplyMovementInput & { kind: StockDocumentKind },
+): Promise<{ id: string; code: string }> {
+  const shape = STOCK_DOCUMENT_SHAPE[input.kind]
+  if (!shape) throw new Error("Tipo de documento de stock desconocido")
+
+  const magnitude = Math.abs(input.quantity)
+  if (input.kind === "desecho" && magnitude <= 0) {
+    throw new Error("La cantidad de un movimiento de desecho debe ser mayor que cero")
+  }
+
   return db.transaction(async (tx) => {
     const id = nanoid()
-    const code = await nextCodeTx(tx, "AJU", new Date().getFullYear())
+    const code = await nextCodeTx(tx, shape.prefix, new Date().getFullYear())
     await tx.insert(stockAdjustments).values({
-      id, code, worksiteId: input.worksiteId, productId: input.productId, quantity: input.quantity,
+      id,
+      code,
+      kind: input.kind,
+      worksiteId: input.worksiteId,
+      productId: input.productId,
+      // La cabecera guarda siempre el efecto sobre el saldo: un desecho resta.
+      quantity: input.kind === "desecho" ? -magnitude : input.quantity,
       reason: input.reason?.trim() ?? "", notes: input.notes ?? null, createdBy: input.performedBy,
     })
-    await applyMovementTx(tx, { ...input, referenceType: "stock_adjustment", referenceId: id })
+    await applyMovementTx(tx, {
+      ...input,
+      type: shape.movementType,
+      quantity: input.kind === "desecho" ? magnitude : input.quantity,
+      referenceType: "stock_adjustment",
+      referenceId: id,
+    })
     return { id, code }
   })
+}
+
+export async function registerStockAdjustment(input: ApplyMovementInput): Promise<{ id: string; code: string }> {
+  if (input.type !== "ajuste") throw new Error("El documento no corresponde a un ajuste de stock")
+  return registerStockDocument({ ...input, kind: "ajuste" })
+}
+
+/** Baja por desecho. `quantity` es la magnitud a retirar, siempre positiva. */
+export async function registerStockDiscard(
+  input: Omit<ApplyMovementInput, "type"> & { reason: string },
+): Promise<{ id: string; code: string }> {
+  return registerStockDocument({ ...input, type: "egreso_desecho", kind: "desecho" })
 }
 
 export async function registerStockReturn(

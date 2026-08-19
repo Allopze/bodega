@@ -328,6 +328,7 @@ describe("bodega actions", () => {
       expect(mockClosePhysicalInventoryCount).toHaveBeenCalledWith(
         expect.objectContaining({ user: expect.objectContaining({ id: "user-1" }) }),
         {
+          countId: null,
           worksiteId: "ws-1",
           notes: "Conteo mensual",
           items: [

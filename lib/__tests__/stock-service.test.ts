@@ -30,7 +30,7 @@ vi.mock("@/lib/auth/auth", () => ({
 
 const migrationsFolder = path.resolve(process.cwd(), "db/migrations")
 
-import { applyMovement, registerStockReturn } from "@/lib/services/stock"
+import { applyMovement, registerStockAdjustment, registerStockDiscard, registerStockReturn } from "@/lib/services/stock"
 
 const now = new Date().toISOString()
 const userId = "u-stock"
@@ -314,6 +314,107 @@ describe("Stock service — applyMovement", () => {
   })
 
   // ── Validation ─────────────────────────────────────────────────────────
+
+  // ── Documentos manuales: ajuste y baja comparten cabecera ─────────────────
+
+  describe("registerStockDiscard", () => {
+    it("emite folio DES, cabecera kind='desecho' y descuenta el saldo", async () => {
+      const before = await inMemoryDb.query.worksiteStock.findFirst({
+        where: and(
+          eq(schema.worksiteStock.worksiteId, "ws-stock"),
+          eq(schema.worksiteStock.productId, "prod-stock"),
+        ),
+      })
+      const qtyBefore = before?.quantity ?? 0
+
+      const discard = await registerStockDiscard({
+        worksiteId: "ws-stock",
+        productId: "prod-stock",
+        quantity: 3,
+        performedBy: userId,
+        reason: "Dañado en faena",
+      })
+
+      expect(discard.code).toMatch(/^DES-\d{4}-\d{4}$/)
+
+      const [header] = await inMemoryDb
+        .select()
+        .from(schema.stockAdjustments)
+        .where(eq(schema.stockAdjustments.id, discard.id))
+      expect(header?.kind).toBe("desecho")
+      // La cabecera guarda el efecto sobre el saldo: una baja resta.
+      expect(header?.quantity).toBe(-3)
+
+      const after = await inMemoryDb.query.worksiteStock.findFirst({
+        where: and(
+          eq(schema.worksiteStock.worksiteId, "ws-stock"),
+          eq(schema.worksiteStock.productId, "prod-stock"),
+        ),
+      })
+      expect(after?.quantity).toBe(qtyBefore - 3)
+    })
+
+    it("deja el movimiento enlazado a su documento", async () => {
+      const discard = await registerStockDiscard({
+        worksiteId: "ws-stock",
+        productId: "prod-stock",
+        quantity: 1,
+        performedBy: userId,
+        reason: "Vencido",
+      })
+
+      const movements = await inMemoryDb
+        .select()
+        .from(schema.inventoryMovements)
+        .where(eq(schema.inventoryMovements.referenceId, discard.id))
+      expect(movements).toHaveLength(1)
+      expect(movements[0]?.type).toBe("egreso_desecho")
+      expect(movements[0]?.referenceType).toBe("stock_adjustment")
+    })
+
+    it("rechaza una cantidad no positiva", async () => {
+      await expect(registerStockDiscard({
+        worksiteId: "ws-stock",
+        productId: "prod-stock",
+        quantity: 0,
+        performedBy: userId,
+        reason: "Nada",
+      })).rejects.toThrow(/mayor que cero/)
+    })
+  })
+
+  describe("registerStockAdjustment", () => {
+    it("sigue produciendo folio AJU y cabecera kind='ajuste' tras generalizar el servicio", async () => {
+      const adjustment = await registerStockAdjustment({
+        worksiteId: "ws-stock",
+        productId: "prod-stock",
+        type: "ajuste",
+        quantity: 4,
+        performedBy: userId,
+        reason: "Conteo manual",
+      })
+
+      expect(adjustment.code).toMatch(/^AJU-\d{4}-\d{4}$/)
+
+      const [header] = await inMemoryDb
+        .select()
+        .from(schema.stockAdjustments)
+        .where(eq(schema.stockAdjustments.id, adjustment.id))
+      expect(header?.kind).toBe("ajuste")
+      expect(header?.quantity).toBe(4)
+    })
+
+    it("rechaza un tipo que no sea ajuste", async () => {
+      await expect(registerStockAdjustment({
+        worksiteId: "ws-stock",
+        productId: "prod-stock",
+        type: "egreso_desecho",
+        quantity: 1,
+        performedBy: userId,
+        reason: "x",
+      })).rejects.toThrow(/no corresponde a un ajuste/)
+    })
+  })
 
   describe("validation", () => {
     it("throws when worksite does not exist", async () => {

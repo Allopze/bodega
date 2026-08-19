@@ -3,7 +3,7 @@
 import * as React from "react"
 import { useActionState } from "react"
 import { toast } from "@/lib/toast"
-import { Warning, ArrowsCounterClockwise } from "@phosphor-icons/react"
+import { Warning, Trash } from "@phosphor-icons/react"
 import { SubmitButton } from "@/components/admin/submit-button"
 import { Field } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
@@ -12,12 +12,20 @@ import {
   Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
 } from "@/components/ui/select"
 import { INITIAL_STATE } from "@/components/admin/form-state"
-import { adjustStockAction } from "./actions"
+import { discardStockAction } from "./actions"
 import { formatQty } from "@/lib/utils"
 import type { ActionState } from "@/lib/validation/operations"
 import type { WorksiteProductOption } from "./movement-options"
 
-export function AdjustPanel({
+/**
+ * Baja por desecho.
+ *
+ * El motor ya sabía registrar `egreso_desecho` (rama propia, validación y
+ * locks), pero ninguna pantalla lo emitía: dar de baja EPP dañado obligaba a
+ * disfrazarlo de "ajuste" con motivo libre, y el kardex perdía la clasificación
+ * que ya sabe rotular.
+ */
+export function DiscardPanel({
   worksiteId,
   products,
 }: {
@@ -27,7 +35,7 @@ export function AdjustPanel({
   const [productId, setProductId] = React.useState<string>("")
   const formRef = React.useRef<HTMLFormElement>(null)
 
-  const [state, action, pending] = useActionState<ActionState, FormData>(adjustStockAction, INITIAL_STATE)
+  const [state, action, pending] = useActionState<ActionState, FormData>(discardStockAction, INITIAL_STATE)
 
   React.useEffect(() => {
     if (state.ok && state.message) {
@@ -40,16 +48,17 @@ export function AdjustPanel({
   }, [state])
 
   const selected = products.find((product) => product.productId === productId)
+  const withStock = products.filter((product) => product.quantity > 0)
 
   return (
     <section className="rounded-[var(--radius-xl)] border border-(--color-border) bg-(--color-surface)">
       <div className="border-b border-(--color-border) px-5 py-4">
         <h2 className="text-h2 flex items-center gap-2 text-(--color-text)">
-          <ArrowsCounterClockwise size={16} className="text-(--color-text-muted)" />
-          Ajuste de inventario
+          <Trash size={16} className="text-(--color-text-muted)" />
+          Baja por desecho
         </h2>
         <p className="mt-0.5 text-xs text-(--color-text-muted)">
-          Corrección manual de stock con motivo obligatorio
+          Retiro definitivo de EPP dañado, vencido o inservible. Emite folio propio.
         </p>
       </div>
 
@@ -57,26 +66,24 @@ export function AdjustPanel({
         <input type="hidden" name="worksiteId" value={worksiteId} />
         <input type="hidden" name="productId"  value={productId} />
 
-        <Field label="Producto" htmlFor="adjustProductId" required error={state.fieldErrors?.productId?.[0]}>
+        <Field label="Producto" htmlFor="discardProductId" required error={state.fieldErrors?.productId?.[0]}>
           <Select searchable value={productId} onValueChange={setProductId}>
-            <SelectTrigger id="adjustProductId" error={!!state.fieldErrors?.productId}>
+            <SelectTrigger id="discardProductId" error={!!state.fieldErrors?.productId}>
               <SelectValue placeholder="Selecciona producto" />
             </SelectTrigger>
             <SelectContent>
-              {products.map((product) => (
+              {withStock.map((product) => (
                 <SelectItem key={product.productId} value={product.productId}>
                   {product.productName}
                 </SelectItem>
               ))}
-              {products.length === 0 && (
-                <SelectItem value="__none__" disabled>Sin productos en esta faena</SelectItem>
+              {withStock.length === 0 && (
+                <SelectItem value="__none__" disabled>Sin existencias que dar de baja en esta faena</SelectItem>
               )}
             </SelectContent>
           </Select>
         </Field>
 
-        {/* El saldo actual del producto elegido. Sin esto se corregía a ciegas
-            un número que la pantalla no mostraba. */}
         {selected && (
           <p className="-mt-2 text-xs text-(--color-text-muted)">
             Stock actual:{" "}
@@ -86,25 +93,14 @@ export function AdjustPanel({
           </p>
         )}
 
-        <Field label="Dirección" htmlFor="adjustDirection" required error={state.fieldErrors?.direction?.[0]}>
-          <Select name="direction" defaultValue="egreso">
-            <SelectTrigger id="adjustDirection" error={!!state.fieldErrors?.direction}>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="egreso">Egreso (- disminuir)</SelectItem>
-              <SelectItem value="ingreso">Ingreso (+ aumentar)</SelectItem>
-            </SelectContent>
-          </Select>
-        </Field>
-
-        <Field label="Cantidad" htmlFor="adjustQuantity" required error={state.fieldErrors?.quantity?.[0]}>
+        <Field label="Cantidad a dar de baja" htmlFor="discardQuantity" required error={state.fieldErrors?.quantity?.[0]}>
           <Input
-            id="adjustQuantity"
+            id="discardQuantity"
             type="number"
             name="quantity"
             step="0.01"
             min="0.01"
+            max={selected ? String(selected.quantity) : undefined}
             placeholder="0"
             disabled={!productId}
             required
@@ -113,23 +109,23 @@ export function AdjustPanel({
           />
         </Field>
 
-        <Field label="Motivo" htmlFor="adjustReason" required error={state.fieldErrors?.reason?.[0]}>
+        <Field label="Motivo" htmlFor="discardReason" required error={state.fieldErrors?.reason?.[0]}>
           <Input
-            id="adjustReason"
+            id="discardReason"
             name="reason"
-            placeholder="Ej: conteo físico, merma, pérdida, error de registro..."
+            placeholder="Ej: dañado en faena, vencido, contaminado..."
             disabled={!productId}
             required
             error={!!state.fieldErrors?.reason}
           />
         </Field>
 
-        <Field label="Notas adicionales" htmlFor="adjustNotes" error={state.fieldErrors?.notes?.[0]}>
+        <Field label="Notas adicionales" htmlFor="discardNotes" error={state.fieldErrors?.notes?.[0]}>
           <Textarea
-            id="adjustNotes"
+            id="discardNotes"
             name="notes"
             rows={2}
-            placeholder="Información adicional sobre el ajuste..."
+            placeholder="Información adicional sobre la baja..."
             disabled={!productId}
             error={!!state.fieldErrors?.notes}
           />
@@ -143,7 +139,7 @@ export function AdjustPanel({
 
         <div className="flex justify-end pt-2">
           <SubmitButton
-            label="Registrar ajuste"
+            label="Registrar baja"
             loadingLabel="Guardando..."
             variant="primary"
             disabled={!worksiteId || !productId || pending}

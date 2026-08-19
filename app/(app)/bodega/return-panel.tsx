@@ -14,55 +14,31 @@ import {
 import { INITIAL_STATE } from "@/components/admin/form-state"
 import { returnStockAction } from "./actions"
 import type { ActionState } from "@/lib/validation/operations"
-
-export interface ReturnPanelStockOption {
-  deliveryItemId: string
-  worksiteId:    string
-  worksiteName:  string
-  deliveryCode:  string
-  productName:   string
-  productSku:    string | null
-  unitOfMeasure: string
-  remainingQuantity: number
-}
-
-interface WorksiteOption {
-  id: string
-  name: string
-}
+import type { WorksiteReturnOption } from "./movement-options"
 
 export function ReturnPanel({
-  products,
-  worksites,
+  worksiteId,
+  returns,
 }: {
-  products: ReturnPanelStockOption[]
-  worksites: WorksiteOption[]
+  worksiteId: string
+  returns: WorksiteReturnOption[]
 }) {
-  const [worksiteId, setWorksiteId] = React.useState<string>(worksites[0]?.id ?? "")
   const [deliveryItemId, setDeliveryItemId] = React.useState<string>("")
   const formRef = React.useRef<HTMLFormElement>(null)
 
   const [state, action, pending] = useActionState<ActionState, FormData>(returnStockAction, INITIAL_STATE)
 
-  const worksitesRef = React.useRef(worksites)
-  React.useEffect(() => {
-    worksitesRef.current = worksites
-  })
-
   React.useEffect(() => {
     if (state.ok && state.message) {
       toast.success(state.message)
       formRef.current?.reset()
-      setWorksiteId(worksitesRef.current[0]?.id ?? "")
       setDeliveryItemId("")
     } else if (state.ok === false && state.message && state !== INITIAL_STATE) {
       toast.error(state.message)
     }
   }, [state])
 
-  const availableDeliveries = worksiteId
-    ? products.filter((p) => p.worksiteId === worksiteId)
-    : []
+  const selected = returns.find((item) => item.deliveryItemId === deliveryItemId)
 
   return (
     <section className="rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-surface)]">
@@ -78,32 +54,20 @@ export function ReturnPanel({
 
       <form ref={formRef} action={action} className="flex flex-col gap-4 p-5">
         <input type="hidden" name="deliveryItemId" value={deliveryItemId} />
-
-        <Field label="Faena" htmlFor="returnWorksiteId" required error={state.fieldErrors?.worksiteId?.[0]}>
-          <Select value={worksiteId} onValueChange={(v) => { setWorksiteId(v); setDeliveryItemId("") }}>
-            <SelectTrigger id="returnWorksiteId" error={!!state.fieldErrors?.worksiteId}>
-              <SelectValue placeholder="Selecciona faena" />
-            </SelectTrigger>
-            <SelectContent>
-              {worksites.map((w) => (
-                <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </Field>
+        <input type="hidden" name="worksiteId" value={worksiteId} />
 
         <Field label="Entrega a devolver" htmlFor="returnDeliveryItemId" required error={state.fieldErrors?.deliveryItemId?.[0]}>
-          <Select searchable value={deliveryItemId} onValueChange={setDeliveryItemId} disabled={!worksiteId}>
+          <Select searchable value={deliveryItemId} onValueChange={setDeliveryItemId}>
             <SelectTrigger id="returnDeliveryItemId" error={!!state.fieldErrors?.deliveryItemId}>
-              <SelectValue placeholder={worksiteId ? "Selecciona entrega pendiente" : "Elige faena primero"} />
+              <SelectValue placeholder="Selecciona entrega pendiente" />
             </SelectTrigger>
             <SelectContent>
-              {availableDeliveries.map((p) => (
-                <SelectItem key={p.deliveryItemId} value={p.deliveryItemId}>
-                  {p.productName} · {p.deliveryCode} · saldo {p.remainingQuantity} {p.unitOfMeasure}
+              {returns.map((item) => (
+                <SelectItem key={item.deliveryItemId} value={item.deliveryItemId}>
+                  {item.productName} · {item.deliveryCode} · saldo {item.remainingQuantity} {item.unitOfMeasure}
                 </SelectItem>
               ))}
-              {availableDeliveries.length === 0 && worksiteId && (
+              {returns.length === 0 && (
                 <SelectItem value="__none__" disabled>Sin entregas pendientes en esta faena</SelectItem>
               )}
             </SelectContent>
@@ -114,6 +78,7 @@ export function ReturnPanel({
           label="Cantidad a devolver"
           htmlFor="returnQuantity"
           required
+          helper={selected ? `Máximo devolvible: ${selected.remainingQuantity} ${selected.unitOfMeasure}` : undefined}
           error={state.fieldErrors?.quantity?.[0]}
         >
           <Input
@@ -122,6 +87,7 @@ export function ReturnPanel({
             name="quantity"
             step="0.01"
             min="0.01"
+            max={selected ? String(selected.remainingQuantity) : undefined}
             placeholder="0"
             disabled={!deliveryItemId}
             required

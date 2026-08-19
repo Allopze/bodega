@@ -52,6 +52,7 @@ import {
   worksiteStock,
   worksites,
 } from "@/db/schema"
+import { textSearchSql } from "@/lib/adquisiciones/list-query"
 import { nanoid } from "@/lib/id"
 import { nextCodeTx } from "@/lib/code-sequences"
 import { recordAudit, recordStatusChange } from "@/lib/audit"
@@ -1282,6 +1283,14 @@ export async function cancelDispatchGuide(
 export interface DispatchGuideListFilters {
   /** Predicado de faena ya resuelto por el llamador (`worksiteScopeSql`). */
   scopeSql?: SQL | undefined
+  /**
+   * Búsqueda por folio. Server-side desde que `/bodega` tomó el buscador de la
+   * shell: `ROUTES_WITH_OWN_SEARCH` matchea por prefijo, así que registrar
+   * `/bodega` apagó también el input en memoria del que dependía esta lista.
+   * La faena de destino ya tiene su propio select al lado, así que el texto
+   * busca sólo el código.
+   */
+  q?: string
   status?: DispatchGuideStatus
   destinationWorksiteId?: string
   from?: string
@@ -1310,6 +1319,7 @@ export type DispatchGuideListRow = {
 function listWhere(filters: DispatchGuideListFilters) {
   return and(
     filters.scopeSql,
+    textSearchSql(filters.q ?? "", [dispatchGuides.code]),
     filters.status ? eq(dispatchGuides.status, filters.status) : undefined,
     filters.destinationWorksiteId ? eq(dispatchGuides.destinationWorksiteId, filters.destinationWorksiteId) : undefined,
     filters.from ? gte(dispatchGuides.issuedAt, `${filters.from}T00:00:00.000Z`) : undefined,

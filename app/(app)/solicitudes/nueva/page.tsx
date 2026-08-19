@@ -2,7 +2,7 @@ import type { Metadata } from "next"
 import { redirect } from "next/navigation"
 import { db } from "@/db"
 import { worksites, products, productAttributes, suppliers, productSuppliers, workers, serviceEquipment, purchaseRequests } from "@/db/schema"
-import { eq, asc, desc, inArray } from "drizzle-orm"
+import { and, eq, asc, desc, inArray } from "drizzle-orm"
 import { requireAuth } from "@/lib/auth/can"
 import { canAccessWorksite } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
@@ -24,7 +24,14 @@ export const metadata: Metadata = { title: "Nueva solicitud de compra" }
 export default async function NuevaSolicitudPage({
   searchParams,
 }: {
-  searchParams: Promise<{ tipo?: string | string[]; reposicion?: string | string[]; desde?: string | string[] }>
+  searchParams: Promise<{
+    tipo?: string | string[]
+    reposicion?: string | string[]
+    desde?: string | string[]
+    faena?: string | string[]
+    producto?: string | string[]
+    cantidad?: string | string[]
+  }>
 }) {
   let session
   try { session = await requireAuth() }
@@ -154,7 +161,17 @@ export default async function NuevaSolicitudPage({
     session,
     reposicion: firstParam(query.reposicion) === "1",
     desdeId: firstParam(query.desde),
+    productoIds: paramList(query.producto),
+    cantidades: paramList(query.cantidad),
   })
+
+  // Faena pedida por el enlace (p. ej. "Reponer" desde una fila de Bodega).
+  // Validada contra el alcance: un id ajeno en la URL no puede cambiar la faena
+  // del formulario.
+  const requestedWorksiteId = firstParam(query.faena)
+  const initialWorksiteId = requestedWorksiteId && worksiteOptions.some((w) => w.id === requestedWorksiteId)
+    ? requestedWorksiteId
+    : undefined
 
   if (worksiteOptions.length === 0) {
     return (
@@ -201,6 +218,7 @@ export default async function NuevaSolicitudPage({
       />
       <RequestForm
         worksites={worksiteOptions}
+        initialWorksiteId={initialWorksiteId}
         products={productOptions}
         suppliers={supplierOptions}
         workers={workerOptions}
@@ -225,13 +243,58 @@ function firstParam(value: string | string[] | undefined): string {
  * Ítems con los que se abre el creador. Dos orígenes, ninguno crea nada por su
  * cuenta: la solicitud sólo existe cuando la persona la envía a aprobación.
  */
+/** Un parámetro repetible de la URL, siempre como lista. */
+function paramList(value: string | string[] | undefined): string[] {
+  if (Array.isArray(value)) return value.filter(Boolean)
+  return value ? [value] : []
+}
+
 async function buildPrefill({
-  session, reposicion, desdeId,
+  session, reposicion, desdeId, productoIds, cantidades,
 }: {
   session: Awaited<ReturnType<typeof requireAuth>>
   reposicion: boolean
   desdeId: string
+  productoIds: string[]
+  cantidades: string[]
 }): Promise<{ prefillItems?: PrefillItem[]; prefillNotice?: string }> {
+  // Reposición desde Bodega: `?producto=&cantidad=` (repetibles) para pedir de
+  // una vez todo lo que está bajo el mínimo de una faena. Se pre-llena el
+  // creador y no se crea la solicitud: arrastra urgencia, fecha requerida y un
+  // flujo de aprobación, así que enviarla es una decisión de quien la firma.
+  if (productoIds.length > 0) {
+    const rows = await db
+      .select({
+        id: products.id,
+        name: products.name,
+        unitOfMeasure: products.unitOfMeasure,
+      })
+      .from(products)
+      .where(and(eq(products.isActive, true), inArray(products.id, productoIds)))
+    const byId = new Map(rows.map((row) => [row.id, row]))
+
+    const items: PrefillItem[] = []
+    for (const [index, productId] of productoIds.entries()) {
+      const product = byId.get(productId)
+      if (!product) continue
+      const parsed = Number(cantidades[index] ?? "")
+      items.push({
+        productId:       product.id,
+        productNameFree: "",
+        quantity:        Number.isFinite(parsed) && parsed > 0 ? parsed : 1,
+        unitOfMeasure:   product.unitOfMeasure,
+        urgency:         "normal",
+        notes:           "Reposición sugerida desde Bodega",
+      })
+    }
+
+    if (items.length === 0) return { prefillNotice: "Los productos del enlace ya no están disponibles en el catálogo." }
+    return {
+      prefillItems: items,
+      prefillNotice: `${items.length} ${items.length === 1 ? "producto pre-cargado" : "productos pre-cargados"} desde Bodega. Revisa las cantidades antes de enviar.`,
+    }
+  }
+
   if (desdeId) {
     const source = await db.query.purchaseRequests.findFirst({
       where: eq(purchaseRequests.id, desdeId),

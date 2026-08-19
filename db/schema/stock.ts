@@ -59,6 +59,12 @@ export const stockAdjustments = pgTable("stock_adjustments", {
   code:        text("code").notNull().unique(),
   worksiteId:  text("worksite_id").notNull().references(() => worksites.id),
   productId:   text("product_id").notNull().references(() => products.id),
+  // Un desecho es tambien un documento manual de stock: misma cabecera, mismo
+  // folio, motivo obligatorio y autor. Lo unico que cambia es el tipo de
+  // movimiento que emite (`egreso_desecho` en vez de `ajuste`) y el prefijo del
+  // folio (DES en vez de AJU). Una tabla gemela habria duplicado servicio,
+  // relations y pantalla para cero columnas propias.
+  kind:        text("kind").notNull().default("ajuste"),
   quantity:    real("quantity").notNull(),
   reason:      text("reason").notNull(),
   notes:       text("notes"),
@@ -66,7 +72,9 @@ export const stockAdjustments = pgTable("stock_adjustments", {
   createdAt:   timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [
   check("stock_adjustments_quantity_nonzero", sql`${table.quantity} <> 0`),
+  check("stock_adjustments_kind_valid", sql`${table.kind} IN ('ajuste', 'desecho')`),
   index("stock_adjustments_worksite_created_at_idx").on(table.worksiteId, table.createdAt),
+  index("stock_adjustments_worksite_kind_idx").on(table.worksiteId, table.kind, table.createdAt),
 ])
 
 export const stockReturns = pgTable("stock_returns", {

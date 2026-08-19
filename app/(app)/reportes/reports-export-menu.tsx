@@ -12,6 +12,8 @@ interface ReportExportDefinition {
   label: string
   statuses?: StatusOption[]
   tone?: "neutral" | "signal"
+  /** Los reportes que son una foto de hoy no ofrecen rango de fechas. */
+  showDateRange?: boolean
 }
 
 const REPORT_EXPORTS: ReportExportDefinition[] = [
@@ -39,6 +41,10 @@ const REPORT_EXPORTS: ReportExportDefinition[] = [
   { tipo: "dte_conciliacion", label: "Conciliación OC-Factura-DTE" },
   { tipo: "dte_facturas_sin_oc", label: "Facturas DTE sin OC", tone: "signal" },
   { tipo: "facturacion_cobranza", label: "Facturación y cobranza" },
+  // Bodega: valorización es una foto de hoy (sin rango), rotación sí acota el
+  // período de consumo.
+  { tipo: "bodega_valorizacion", label: "Valorización de inventario", showDateRange: false },
+  { tipo: "bodega_rotacion", label: "Rotación y stock muerto" },
   {
     tipo: "oc_por_estado",
     label: "OC por estado",
@@ -86,6 +92,7 @@ export function ReportsExportMenu({ worksites }: { worksites: WorksiteOption[] }
           worksites={worksites}
           statuses={report.statuses}
           tone={report.tone}
+          showDateRange={report.showDateRange ?? true}
           open={openTipo === report.tipo}
           onOpenChange={(open) => setOpenTipo(open ? report.tipo : null)}
         />

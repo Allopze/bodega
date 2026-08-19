@@ -2,6 +2,7 @@
 
 import { useRouter, useSearchParams } from "next/navigation"
 import { FilterToolbar, type ActiveFilterChip } from "@/components/ui/filter-toolbar"
+import { FilterSearchInput } from "@/components/ui/filter-search-input"
 import { OptionSelect } from "@/components/ui/option-select"
 import { DatePicker } from "@/components/ui/date-picker"
 import { DISPATCH_GUIDE_STATE_META } from "@/components/states/state-badge"
@@ -9,7 +10,7 @@ import { formatDate } from "@/lib/utils"
 
 interface GuideFiltersProps {
   worksites: Array<{ id: string; name: string }>
-  current: { estado?: string; faena?: string; desde?: string; hasta?: string }
+  current: { estado?: string; faena?: string; desde?: string; hasta?: string; q?: string }
 }
 
 const STATUS_OPTIONS = Object.entries(DISPATCH_GUIDE_STATE_META).map(([value, meta]) => ({
@@ -18,10 +19,11 @@ const STATUS_OPTIONS = Object.entries(DISPATCH_GUIDE_STATE_META).map(([value, me
 }))
 
 /**
- * Filtros estructurados de la lista (estado, faena, rango de fechas).
+ * Filtros de la lista (búsqueda por folio, estado, faena, rango de fechas).
  *
- * La búsqueda por número la aporta el buscador del `TopBar`, que el `DataTable`
- * consume solo: acá no va otro input de texto (regla de search-architecture).
+ * La búsqueda dejó de venir del `TopBar`: al registrar `/bodega` en
+ * `ROUTES_WITH_OWN_SEARCH` — que matchea por prefijo — esta subruta perdió el
+ * input de la shell del que dependía. Ahora es server-side, como el resto.
  */
 export function GuideFilters({ worksites, current }: GuideFiltersProps) {
   const router = useRouter()
@@ -37,6 +39,9 @@ export function GuideFilters({ worksites, current }: GuideFiltersProps) {
   }
 
   const activeChips: ActiveFilterChip[] = []
+  if (current.q) {
+    activeChips.push({ key: "q", label: "Búsqueda", value: current.q, displayValue: current.q })
+  }
   if (current.estado) {
     activeChips.push({
       key: "estado",
@@ -63,6 +68,12 @@ export function GuideFilters({ worksites, current }: GuideFiltersProps) {
       onClearAll={() => router.push("/bodega/guias")}
       hasActiveFilters={activeChips.length > 0}
     >
+      <FilterSearchInput
+        param="q"
+        placeholder="Buscar por folio..."
+        ariaLabel="Buscar guía por folio"
+        className="h-11 w-full pl-8 text-xs sm:h-8 sm:w-56"
+      />
       <OptionSelect
         aria-label="Filtrar por estado"
         className="h-8 w-44 text-xs"

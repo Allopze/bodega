@@ -13,10 +13,13 @@ export {
   applyMovement,
   applyMovementTx,
   registerStockAdjustment,
+  registerStockDiscard,
+  registerStockDocument,
   registerStockReturn,
 } from "./stock-movement"
 export type {
   MovementType,
+  StockDocumentKind,
   ApplyMovementInput,
   RegisterStockReturnInput,
 } from "./stock-movement"

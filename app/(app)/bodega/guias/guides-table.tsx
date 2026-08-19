@@ -36,7 +36,7 @@ export function DispatchGuidesTable({ guides }: { guides: DispatchGuideTableRow[
       rows={guides}
       searchKeys={["code", "destinationWorksiteName", "dispatcherName"]}
       pageSize={DEFAULT_PAGE_SIZE}
-      disableInternalSearch={false}
+      disableInternalSearch
       emptyTitle="Sin guías de despacho"
       emptyDescription="No hay guías que coincidan con los filtros aplicados."
       renderMobileCard={(guide) => (

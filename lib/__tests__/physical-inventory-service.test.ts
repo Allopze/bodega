@@ -229,4 +229,115 @@ describe("physical inventory service", () => {
     })
     expect(stock?.quantity).toBe(4)
   })
+
+  // ── Borradores ────────────────────────────────────────────────────────────
+
+  it("guardar un borrador no mueve stock: es sólo un papel a medio llenar", async () => {
+    const { savePhysicalInventoryDraft } = await import("@/lib/services/physical-inventory")
+
+    const draft = await savePhysicalInventoryDraft(
+      session,
+      { worksiteId: "ws-count", items: [{ productId: "prod-count-a", countedQuantity: 6 }] },
+      ["ws-count"],
+    )
+
+    expect(draft.code).toMatch(/^CON-\d{4}-\d{4}$/)
+    const count = await inMemoryDb.query.physicalInventoryCounts.findFirst({
+      where: eq(schema.physicalInventoryCounts.id, draft.id),
+    })
+    expect(count?.status).toBe("draft")
+    expect(count?.closedAt).toBeNull()
+
+    const movements = await inMemoryDb
+      .select()
+      .from(schema.inventoryMovements)
+      .where(eq(schema.inventoryMovements.referenceId, draft.id))
+    expect(movements).toHaveLength(0)
+  })
+
+  it("guardar de nuevo reutiliza el mismo borrador y su folio, no crea otro", async () => {
+    const { savePhysicalInventoryDraft } = await import("@/lib/services/physical-inventory")
+
+    const first = await savePhysicalInventoryDraft(
+      session,
+      { worksiteId: "ws-count", items: [{ productId: "prod-count-a", countedQuantity: 1 }] },
+      ["ws-count"],
+    )
+    const second = await savePhysicalInventoryDraft(
+      session,
+      { worksiteId: "ws-count", items: [{ productId: "prod-count-a", countedQuantity: 9 }] },
+      ["ws-count"],
+    )
+
+    expect(second.id).toBe(first.id)
+    expect(second.code).toBe(first.code)
+    const items = await inMemoryDb
+      .select()
+      .from(schema.physicalInventoryCountItems)
+      .where(eq(schema.physicalInventoryCountItems.countId, first.id))
+    expect(items).toHaveLength(1)
+    expect(items[0]?.countedQuantity).toBe(9)
+  })
+
+  it("cerrar desde el borrador conserva su folio y recién ahí ajusta", async () => {
+    const { savePhysicalInventoryDraft, closePhysicalInventoryCount, getOpenPhysicalInventoryCount } =
+      await import("@/lib/services/physical-inventory")
+
+    const draft = await savePhysicalInventoryDraft(
+      session,
+      { worksiteId: "ws-count", items: [{ productId: "prod-count-b", countedQuantity: 1 }] },
+      ["ws-count"],
+    )
+
+    const open = await getOpenPhysicalInventoryCount("ws-count")
+    expect(open?.id).toBe(draft.id)
+
+    const closed = await closePhysicalInventoryCount(
+      session,
+      { countId: draft.id, worksiteId: "ws-count", items: [{ productId: "prod-count-b", countedQuantity: 1 }] },
+      ["ws-count"],
+    )
+
+    expect(closed.id).toBe(draft.id)
+    expect(closed.code).toBe(draft.code)
+    expect(closed.adjustmentCount).toBe(1)
+    const count = await inMemoryDb.query.physicalInventoryCounts.findFirst({
+      where: eq(schema.physicalInventoryCounts.id, draft.id),
+    })
+    expect(count?.status).toBe("closed")
+    // Cerrado deja de estar abierto: el panel no debe retomarlo.
+    expect(await getOpenPhysicalInventoryCount("ws-count")).toBeNull()
+  })
+
+  it("no se puede cerrar dos veces el mismo borrador", async () => {
+    const { savePhysicalInventoryDraft, closePhysicalInventoryCount } =
+      await import("@/lib/services/physical-inventory")
+
+    const draft = await savePhysicalInventoryDraft(
+      session,
+      { worksiteId: "ws-count", items: [{ productId: "prod-count-a", countedQuantity: 2 }] },
+      ["ws-count"],
+    )
+    const input = { countId: draft.id, worksiteId: "ws-count", items: [{ productId: "prod-count-a", countedQuantity: 2 }] }
+
+    await closePhysicalInventoryCount(session, input, ["ws-count"])
+    await expect(closePhysicalInventoryCount(session, input, ["ws-count"])).rejects.toThrow(/ya fue cerrado/)
+  })
+
+  it("un borrador de otra faena no se puede cerrar cambiando la faena del envío", async () => {
+    const { savePhysicalInventoryDraft, closePhysicalInventoryCount } =
+      await import("@/lib/services/physical-inventory")
+
+    const draft = await savePhysicalInventoryDraft(
+      session,
+      { worksiteId: "ws-count", items: [{ productId: "prod-count-a", countedQuantity: 3 }] },
+      ["ws-count"],
+    )
+
+    await expect(closePhysicalInventoryCount(
+      session,
+      { countId: draft.id, worksiteId: "ws-other-count", items: [{ productId: "prod-count-a", countedQuantity: 3 }] },
+      ["ws-count", "ws-other-count"],
+    )).rejects.toThrow(/otra faena/)
+  })
 })

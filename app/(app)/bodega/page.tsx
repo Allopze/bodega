@@ -1,10 +1,10 @@
 import type { Metadata } from "next"
 import { redirect } from "next/navigation"
 import { db } from "@/db"
-import { deliveries, deliveryItems, inventoryMovements, products, stockReturns, worksites, worksiteStock } from "@/db/schema"
-import { and, eq, asc, inArray, sql, count } from "drizzle-orm"
+import { inventoryMovements, products, users, worksites, worksiteStock } from "@/db/schema"
+import { and, eq, asc, desc, sql, count } from "drizzle-orm"
 import { requirePermission, can } from "@/lib/auth/can"
-import { isGlobalRole, visibleWorksiteIds } from "@/lib/auth/scope"
+import { worksiteScopeSql } from "@/lib/auth/scope"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { resolvePagination } from "@/lib/pagination"
@@ -12,16 +12,49 @@ import Link from "next/link"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Button } from "@/components/ui/button"
 import { Warehouse } from "@phosphor-icons/react/dist/ssr"
+import { parseListParams, textSearchSql, eqFilter, periodSql } from "@/lib/adquisiciones/list-query"
 import { WarehouseHeaderMetrics } from "./bodega-header-metrics"
 import { StockSection, KardexSection } from "./bodega-sections"
 import { BodegaMovementSheet } from "./movement-sheet"
-import type { ReturnPanelStockOption } from "./return-panel"
-import type { AdjustPanelStockOption } from "./adjust-panel"
-import type { PhysicalInventoryStockOption } from "./physical-inventory-panel"
+import { BodegaViewTabs, type BodegaView } from "./bodega-view-tabs"
+import { BodegaFilters } from "./bodega-filters"
 import type { WorksiteStockWithProduct, InventoryMovementWithRelations } from "./types"
 import { KARDEX_PAGE_SIZE } from "@/lib/constants"
 
 export const metadata: Metadata = { title: "Bodega" }
+
+/**
+ * Techo de filas del stock. No se pagina a propósito: la tabla agrupa por faena
+ * y partir los grupos entre páginas rompe el total por producto del encabezado.
+ * ponytail: si este límite se toca en producción, el paso siguiente es paginar
+ * por faena (una faena entera por página), no por fila.
+ */
+const STOCK_ROW_LIMIT = 2_000
+
+/** Ventana del KPI de movimientos. Un total histórico sólo crece y no informa. */
+const MOVEMENT_WINDOW_DAYS = 30
+
+const VIEWS: BodegaView[] = ["stock", "kardex"]
+
+function firstStr(value: string | string[] | undefined): string {
+  return (Array.isArray(value) ? value[0] : value) ?? ""
+}
+
+function readView(raw: string | string[] | undefined): BodegaView {
+  const value = firstStr(raw)
+  return (VIEWS as string[]).includes(value) ? (value as BodegaView) : "stock"
+}
+
+function readStockState(raw: string | string[] | undefined): "" | "low" | "warn" {
+  const value = firstStr(raw)
+  return value === "low" || value === "warn" ? value : ""
+}
+
+function daysAgoIso(days: number): string {
+  const date = new Date()
+  date.setUTCDate(date.getUTCDate() - days)
+  return date.toISOString().slice(0, 10)
+}
 
 export default async function BodegaPage({
   searchParams,
@@ -31,117 +64,84 @@ export default async function BodegaPage({
   let session
   try { session = await requirePermission("warehouse:view_stock") }
   catch { redirect("/forbidden") }
+
   const sp = await searchParams
-  const requestedWorksiteId = typeof sp.faena === "string" ? sp.faena : ""
+  const view = readView(sp.vista)
+  const filters = parseListParams(sp)
+  const stockState = readStockState(sp.stock)
+  const tipo = firstStr(sp.tipo)
+  const producto = firstStr(sp.producto)
 
   const canRegisterMovements = can(session, "warehouse:register_movement")
   const canAdjustStock       = can(session, "warehouse:adjust_stock")
+  const canCreateGuide       = can(session, "warehouse:create_guide")
   const canViewReceiving     = can(session, "receiving:view")
   const canExportStock       = can(session, "warehouse:view_stock")
-  const visibleWsIds = visibleWorksiteIds(session)
-  const worksiteScope = isGlobalRole(session)
-    ? undefined
-    : visibleWsIds.length > 0
-      ? inArray(worksites.id, visibleWsIds)
-      : sql`false`
 
-  const movementScope = isGlobalRole(session)
-    ? undefined
-    : visibleWsIds.length > 0
-      ? inArray(inventoryMovements.worksiteId, visibleWsIds)
-      : sql`false`
+  const worksiteScope = worksiteScopeSql(session, worksites.id)
+  const stockScope    = worksiteScopeSql(session, worksiteStock.worksiteId)
+  const movementScope = worksiteScopeSql(session, inventoryMovements.worksiteId)
 
-  const deliveryScope = isGlobalRole(session)
-    ? undefined
-    : visibleWsIds.length > 0
-      ? inArray(deliveries.worksiteId, visibleWsIds)
-      : sql`false`
+  // Los filtros de texto y faena se aplican en el servidor: filtrarlos en
+  // memoria sólo alcanzaba a la página que el kardex ya había traído, así que
+  // una coincidencia en una página vieja no aparecía nunca.
+  const stockWhere = and(
+    eq(worksites.isActive, true),
+    stockScope,
+    eqFilter(worksiteStock.worksiteId, filters.faena),
+    textSearchSql(filters.q, [products.name, products.sku]),
+  )
 
-  // Kardex pagination
-  const [movementTotalRow] = await db
-    .select({ total: count() })
-    .from(inventoryMovements)
-    .where(movementScope)
+  const movementWhere = and(
+    movementScope,
+    eqFilter(inventoryMovements.worksiteId, filters.faena),
+    eqFilter(inventoryMovements.type, tipo),
+    eqFilter(inventoryMovements.productId, producto),
+    periodSql(inventoryMovements.performedAt, filters.desde, filters.hasta),
+    textSearchSql(filters.q, [
+      products.name,
+      worksites.name,
+      inventoryMovements.reason,
+      inventoryMovements.notes,
+    ]),
+  )
 
-  const kardexPagination = resolvePagination({
-    pageParam: sp.kardex_page,
-    totalItems: movementTotalRow?.total ?? 0,
-    pageSize: KARDEX_PAGE_SIZE,
-  })
-
-  const [allWorksites, stockRows, recentMovements, physicalInventoryRows, returnDeliveryRows] = await Promise.all([
+  const [allWorksites, stockSummaryRows, stockTotalRow, movementTotalRow, recentMovementRow] = await Promise.all([
     db
       .select({ id: worksites.id, name: worksites.name })
       .from(worksites)
       .where(and(eq(worksites.isActive, true), worksiteScope))
       .orderBy(asc(worksites.name)),
-    db.query.worksiteStock.findMany({
-      with: { product: true, worksite: true },
-      where: isGlobalRole(session)
-        ? undefined
-        : (s, { inArray }) => visibleWsIds.length > 0 ? inArray(s.worksiteId, visibleWsIds) : sql`false`,
-      orderBy: (s, { asc }) => [asc(s.worksiteId)],
-    }),
-    db.query.inventoryMovements.findMany({
-      with: { product: true, worksite: true },
-      where: isGlobalRole(session)
-        ? undefined
-        : (m, { inArray }) => visibleWsIds.length > 0 ? inArray(m.worksiteId, visibleWsIds) : sql`false`,
-      orderBy: (m, { desc }) => [desc(m.performedAt)],
-      limit: kardexPagination.limit,
-      offset: kardexPagination.offset,
-    }),
+    // Una sola pasada para todos los KPI del encabezado: antes salían de traer
+    // el stock completo a memoria, lo que obligaba a consultarlo incluso en la
+    // vista del kardex.
     db
       .select({
-        worksiteId: worksites.id,
-        worksiteName: worksites.name,
-        productId: products.id,
-        productName: products.name,
-        productSku: products.sku,
-        quantity: sql<number>`coalesce(${worksiteStock.quantity}, 0)`,
-        unitOfMeasure: products.unitOfMeasure,
+        worksitesWithStock:  sql<number>`count(distinct ${worksiteStock.worksiteId}) filter (where ${worksiteStock.quantity} > 0)`,
+        productsWithStock:   sql<number>`count(distinct ${worksiteStock.productId}) filter (where ${worksiteStock.quantity} > 0)`,
+        lowStock:            sql<number>`count(*) filter (where ${worksiteStock.minStock} > 0 and ${worksiteStock.quantity} <= ${worksiteStock.minStock})`,
+        warnStock:           sql<number>`count(*) filter (where ${worksiteStock.minStock} > 0 and ${worksiteStock.quantity} > ${worksiteStock.minStock} and ${worksiteStock.quantity} < ${worksiteStock.minStock} * 1.5)`,
+        minStockDefined:     sql<number>`count(*) filter (where ${worksiteStock.minStock} > 0)`,
       })
-      .from(worksites)
-      .innerJoin(products, eq(products.isActive, true))
-      .leftJoin(worksiteStock, and(
-        eq(worksiteStock.worksiteId, worksites.id),
-        eq(worksiteStock.productId, products.id),
-      ))
-      .where(and(eq(worksites.isActive, true), worksiteScope))
-      .orderBy(asc(worksites.name), asc(products.name)),
+      .from(worksiteStock)
+      .innerJoin(worksites, eq(worksiteStock.worksiteId, worksites.id))
+      .where(and(eq(worksites.isActive, true), stockScope)),
     db
-      .select({
-        deliveryItemId: deliveryItems.id,
-        worksiteId: worksites.id,
-        worksiteName: worksites.name,
-        deliveryCode: deliveries.code,
-        productName: products.name,
-        productSku: products.sku,
-        unitOfMeasure: products.unitOfMeasure,
-        remainingQuantity: sql<number>`(${deliveryItems.quantity} - coalesce(sum(${stockReturns.quantity}), 0))`,
-      })
-      .from(deliveryItems)
-      .innerJoin(deliveries, eq(deliveryItems.deliveryId, deliveries.id))
-      .innerJoin(worksites, eq(deliveries.worksiteId, worksites.id))
-      .innerJoin(products, eq(deliveryItems.productId, products.id))
-      .leftJoin(stockReturns, eq(stockReturns.deliveryItemId, deliveryItems.id))
-      .where(and(
-        eq(deliveries.destinationType, "faena"),
-        eq(worksites.isActive, true),
-        deliveryScope,
-      ))
-      .groupBy(
-        deliveryItems.id,
-        deliveryItems.quantity,
-        worksites.id,
-        worksites.name,
-        deliveries.code,
-        products.name,
-        products.sku,
-        products.unitOfMeasure,
-      )
-      .having(sql`${deliveryItems.quantity} > coalesce(sum(${stockReturns.quantity}), 0)`)
-      .orderBy(asc(worksites.name), asc(deliveries.code), asc(products.name)),
+      .select({ total: count() })
+      .from(worksiteStock)
+      .innerJoin(products, eq(worksiteStock.productId, products.id))
+      .innerJoin(worksites, eq(worksiteStock.worksiteId, worksites.id))
+      .where(and(stockWhere, sql`${worksiteStock.quantity} > 0`)),
+    db
+      .select({ total: count() })
+      .from(inventoryMovements)
+      .innerJoin(products, eq(inventoryMovements.productId, products.id))
+      .innerJoin(worksites, eq(inventoryMovements.worksiteId, worksites.id))
+      .where(movementWhere),
+    db
+      .select({ total: count() })
+      .from(inventoryMovements)
+      .where(and(movementScope, sql`${inventoryMovements.performedAt} >= ${daysAgoIso(MOVEMENT_WINDOW_DAYS)}`)),
   ])
 
   if (allWorksites.length === 0) {
@@ -162,43 +162,119 @@ export default async function BodegaPage({
     )
   }
 
+  const summary = stockSummaryRows[0]
+  const kardexTotal = Number(movementTotalRow[0]?.total ?? 0)
+  const stockTotal = Number(stockTotalRow[0]?.total ?? 0)
+
+  const kardexPagination = resolvePagination({
+    pageParam: sp.kardex_page,
+    totalItems: kardexTotal,
+    pageSize: KARDEX_PAGE_SIZE,
+  })
+
+  // Sólo las consultas de la vista activa: entrar a Stock ya no trae ni cuenta
+  // el kardex, y viceversa.
+  const stockRows = view === "stock"
+    ? await db
+        .select({
+          id:             worksiteStock.id,
+          worksiteId:     worksiteStock.worksiteId,
+          productId:      worksiteStock.productId,
+          quantity:       worksiteStock.quantity,
+          minStock:       worksiteStock.minStock,
+          lastMovementAt: worksiteStock.lastMovementAt,
+          updatedAt:      worksiteStock.updatedAt,
+          productName:    products.name,
+          productSku:     products.sku,
+          unitOfMeasure:  products.unitOfMeasure,
+          worksiteName:   worksites.name,
+        })
+        .from(worksiteStock)
+        .innerJoin(products, eq(worksiteStock.productId, products.id))
+        .innerJoin(worksites, eq(worksiteStock.worksiteId, worksites.id))
+        .where(stockWhere)
+        .orderBy(asc(worksites.name), asc(products.name))
+        .limit(STOCK_ROW_LIMIT)
+    : []
+
+  const movements = view === "kardex"
+    ? await db
+        .select({
+          id:             inventoryMovements.id,
+          worksiteId:     inventoryMovements.worksiteId,
+          productId:      inventoryMovements.productId,
+          type:           inventoryMovements.type,
+          quantity:       inventoryMovements.quantity,
+          stockBefore:    inventoryMovements.stockBefore,
+          stockAfter:     inventoryMovements.stockAfter,
+          performedAt:    inventoryMovements.performedAt,
+          reason:         inventoryMovements.reason,
+          notes:          inventoryMovements.notes,
+          referenceType:  inventoryMovements.referenceType,
+          referenceId:    inventoryMovements.referenceId,
+          productName:    products.name,
+          worksiteName:   worksites.name,
+          performedByName: users.name,
+        })
+        .from(inventoryMovements)
+        .innerJoin(products, eq(inventoryMovements.productId, products.id))
+        .innerJoin(worksites, eq(inventoryMovements.worksiteId, worksites.id))
+        .leftJoin(users, eq(inventoryMovements.performedBy, users.id))
+        .where(movementWhere)
+        .orderBy(desc(inventoryMovements.performedAt), desc(inventoryMovements.id))
+        .limit(kardexPagination.limit)
+        .offset(kardexPagination.offset)
+    : []
+
+  // Productos que efectivamente aparecen en el kardex del alcance: alimenta el
+  // selector del filtro sin ofrecer todo el catálogo.
+  const kardexProducts = view === "kardex"
+    ? await db
+        .selectDistinct({ id: products.id, name: products.name })
+        .from(inventoryMovements)
+        .innerJoin(products, eq(inventoryMovements.productId, products.id))
+        .where(movementScope)
+        .orderBy(asc(products.name))
+        .limit(500)
+    : []
+
   const worksiteOptions = allWorksites.map((w) => ({ id: w.id, name: w.name }))
-  const visibleStockRows = stockRows
-  const visibleMovements = recentMovements
-  const stockWithQuantity = visibleStockRows.filter((item) => item.quantity > 0)
-  const worksitesWithStock = new Set(stockWithQuantity.map((item) => item.worksiteId))
-  const productsWithStock = new Set(stockWithQuantity.map((item) => item.productId))
-  const lowStockRows = visibleStockRows.filter((item) => item.minStock > 0 && item.quantity <= item.minStock)
-  const minStockDefinedCount = visibleStockRows.filter((item) => item.minStock > 0).length
-
-  const returnProducts: ReturnPanelStockOption[] = returnDeliveryRows.map((item) => ({
-    ...item,
-    remainingQuantity: Number(item.remainingQuantity),
-  }))
-
-  // Sólo la faena pedida explícitamente por `?faena=` se fija arriba: el fallback
-  // anterior ("la primera con stock") dejaba una faena arbitraria en cabeza y el
-  // orden se leía como aleatorio. El resto lo ordena StockSection por criticidad.
-  const pinnedWorksiteId = requestedWorksiteId && worksiteOptions.some((w) => w.id === requestedWorksiteId)
-    ? requestedWorksiteId
-    : undefined
-  const adjustProducts: AdjustPanelStockOption[] = visibleStockRows.map((item) => ({
-    worksiteId: item.worksiteId,
-    worksiteName: item.worksite?.name ?? item.worksiteId,
-    productId: item.productId,
-    productName: item.product?.name ?? item.productId,
-    productSku: item.product?.sku ?? null,
-    unitOfMeasure: item.product?.unitOfMeasure ?? "unidad",
-  }))
-  const physicalInventoryProducts: PhysicalInventoryStockOption[] = physicalInventoryRows
-  const showReturnPanel  = canRegisterMovements && returnProducts.length > 0 && worksiteOptions.length > 0
-  const showAdjustPanel  = canAdjustStock && worksiteOptions.length > 0
-  const showPhysicalInventoryPanel = canAdjustStock && physicalInventoryProducts.length > 0 && worksiteOptions.length > 0
 
   const stockByWorksite: Record<string, WorksiteStockWithProduct[]> = {}
-  for (const s of visibleStockRows) {
-    ;(stockByWorksite[s.worksiteId] ??= []).push(s)
+  for (const row of stockRows) {
+    const item: WorksiteStockWithProduct = {
+      id: row.id,
+      worksiteId: row.worksiteId,
+      productId: row.productId,
+      quantity: row.quantity,
+      minStock: row.minStock,
+      lastMovementAt: row.lastMovementAt,
+      updatedAt: row.updatedAt,
+      product: { name: row.productName, sku: row.productSku, unitOfMeasure: row.unitOfMeasure },
+      worksite: { name: row.worksiteName },
+    }
+    ;(stockByWorksite[row.worksiteId] ??= []).push(item)
   }
+
+  const kardexMovements: InventoryMovementWithRelations[] = movements.map((row) => ({
+    id: row.id,
+    worksiteId: row.worksiteId,
+    productId: row.productId,
+    type: row.type,
+    quantity: row.quantity,
+    stockBefore: row.stockBefore,
+    stockAfter: row.stockAfter,
+    performedAt: row.performedAt,
+    reason: row.reason,
+    notes: row.notes,
+    referenceType: row.referenceType,
+    referenceId: row.referenceId,
+    performedByName: row.performedByName,
+    product: { name: row.productName },
+    worksite: { name: row.worksiteName },
+  }))
+
+  const hasFilters = Boolean(filters.q || filters.faena || stockState || tipo || producto || filters.desde || filters.hasta)
 
   return (
     <PageContainer>
@@ -207,43 +283,69 @@ export default async function BodegaPage({
         headerActions={(
           <WarehouseHeaderMetrics
             worksiteCount={worksiteOptions.length}
-            worksitesWithStock={worksitesWithStock.size}
-            productsWithStock={productsWithStock.size}
-            lowStockCount={lowStockRows.length}
-            minStockDefinedCount={minStockDefinedCount}
-            movementCount={kardexPagination.totalItems}
+            worksitesWithStock={Number(summary?.worksitesWithStock ?? 0)}
+            productsWithStock={Number(summary?.productsWithStock ?? 0)}
+            lowStockCount={Number(summary?.lowStock ?? 0)}
+            warnStockCount={Number(summary?.warnStock ?? 0)}
+            minStockDefinedCount={Number(summary?.minStockDefined ?? 0)}
+            movementCount={Number(recentMovementRow[0]?.total ?? 0)}
+            movementWindowDays={MOVEMENT_WINDOW_DAYS}
           />
         )}
         actions={
           <BodegaMovementSheet
             worksites={worksiteOptions}
-            canReturn={showReturnPanel}
-            returnProducts={returnProducts}
-            canCount={showPhysicalInventoryPanel}
-            countProducts={physicalInventoryProducts}
-            canAdjust={showAdjustPanel}
-            adjustProducts={adjustProducts}
+            canRegister={canRegisterMovements}
+            canAdjust={canAdjustStock}
+            canCreateGuide={canCreateGuide}
           />
         }
       />
-      <div className="flex flex-col gap-8">
+
+      <BodegaViewTabs
+        current={view}
+        tabs={[
+          { value: "stock", label: "Stock", count: stockTotal },
+          { value: "kardex", label: "Kardex", count: kardexTotal },
+          { value: "documentos", label: "Documentos", href: "/bodega/documentos" },
+        ]}
+      />
+
+      <BodegaFilters
+        view={view}
+        worksites={worksiteOptions}
+        products={kardexProducts}
+        current={{
+          q: filters.q,
+          faena: filters.faena,
+          stock: stockState,
+          tipo,
+          producto,
+          desde: filters.desde,
+          hasta: filters.hasta,
+        }}
+      />
+
+      {view === "stock" ? (
         <StockSection
           worksites={worksiteOptions}
           stockByWorksite={stockByWorksite}
-          pinnedWorksiteId={pinnedWorksiteId}
           receivingHref={canViewReceiving ? "/recepcion" : undefined}
           canExportStock={canExportStock}
-          lowStockOnly={sp.stock === "low"}
+          stockState={stockState}
+          hasFilters={hasFilters}
+          truncated={stockRows.length >= STOCK_ROW_LIMIT}
+          canSetMinStock={canRegisterMovements}
         />
-
+      ) : (
         <KardexSection
-          movements={visibleMovements as InventoryMovementWithRelations[]}
+          movements={kardexMovements}
           worksites={worksiteOptions}
           canExport={canExportStock}
           pagination={kardexPagination}
           searchParams={sp}
         />
-      </div>
+      )}
     </PageContainer>
   )
 }

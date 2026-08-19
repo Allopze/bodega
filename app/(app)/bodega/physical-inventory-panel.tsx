@@ -2,44 +2,39 @@
 
 import * as React from "react"
 import { useActionState } from "react"
-import { ClipboardText, Warning } from "@phosphor-icons/react"
+import { ClipboardText, Warning, MagnifyingGlass } from "@phosphor-icons/react"
 import { SubmitButton } from "@/components/admin/submit-button"
+import { Button } from "@/components/ui/button"
 import { INITIAL_STATE } from "@/components/admin/form-state"
 import { Field } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { toast } from "@/lib/toast"
+import { matchesQuery } from "@/lib/utils"
 import type { ActionState } from "@/lib/validation/operations"
-import { closePhysicalInventoryCountAction } from "./actions"
+import { closePhysicalInventoryCountAction, savePhysicalInventoryDraftAction } from "./actions"
+import type { WorksiteProductOption } from "./movement-options"
 
-export interface PhysicalInventoryStockOption {
-  worksiteId: string
-  worksiteName: string
-  productId: string
-  productName: string
-  productSku: string | null
-  quantity: number
-  unitOfMeasure: string
-}
-
-interface WorksiteOption {
+export interface OpenCountDraft {
   id: string
-  name: string
+  code: string
+  items: Array<{ productId: string; countedQuantity: number }>
 }
 
 export function PhysicalInventoryPanel({
+  worksiteId,
   products,
-  worksites,
+  draft = null,
 }: {
-  products: PhysicalInventoryStockOption[]
-  worksites: WorksiteOption[]
+  worksiteId: string
+  products: WorksiteProductOption[]
+  /** Borrador abierto de esta faena, si lo hay: el conteo se retoma donde quedó. */
+  draft?: OpenCountDraft | null
 }) {
-  const [worksiteId, setWorksiteId] = React.useState<string>(worksites[0]?.id ?? "")
   const formRef = React.useRef<HTMLFormElement>(null)
+  const [query, setQuery] = React.useState("")
   const [state, action, pending] = useActionState<ActionState, FormData>(closePhysicalInventoryCountAction, INITIAL_STATE)
+  const [draftState, draftAction, draftPending] = useActionState<ActionState, FormData>(savePhysicalInventoryDraftAction, INITIAL_STATE)
 
   React.useEffect(() => {
     if (state.ok && state.message) {
@@ -50,45 +45,67 @@ export function PhysicalInventoryPanel({
     }
   }, [state])
 
-  const visibleProducts = worksiteId
-    ? products.filter((product) => product.worksiteId === worksiteId)
-    : []
+  React.useEffect(() => {
+    if (draftState.ok && draftState.message) toast.success(draftState.message)
+    else if (draftState.ok === false && draftState.message && draftState !== INITIAL_STATE) toast.error(draftState.message)
+  }, [draftState])
+
+  const draftByProduct = React.useMemo(() => {
+    const map = new Map<string, number>()
+    for (const item of draft?.items ?? []) map.set(item.productId, item.countedQuantity)
+    return map
+  }, [draft])
+
+  // El filtro sólo esconde filas; los inputs siguen montados para que lo ya
+  // tecleado viaje en el envío aunque el producto no esté visible al enviar.
+  const isVisible = (product: WorksiteProductOption) =>
+    matchesQuery(query, [product.productName, product.productSku])
+
+  const visibleCount = products.filter(isVisible).length
 
   return (
     <section className="rounded-[var(--radius-xl)] border border-(--color-border) bg-(--color-surface)">
       <div className="border-b border-(--color-border) px-5 py-4">
         <h2 className="text-h2 flex items-center gap-2 text-(--color-text)">
           <ClipboardText size={16} className="text-(--color-text-muted)" />
-          Conteo fisico
+          Conteo físico
         </h2>
         <p className="mt-0.5 text-xs text-(--color-text-muted)">
-          Cierre formal con ajustes automaticos por diferencia
+          {draft
+            ? `Retomando el borrador ${draft.code}. Cierre con ajustes automáticos por diferencia.`
+            : "Cierre formal con ajustes automáticos por diferencia"}
         </p>
       </div>
 
       <form ref={formRef} action={action} className="flex flex-col gap-4 p-5">
         <input type="hidden" name="worksiteId" value={worksiteId} />
+        {draft && <input type="hidden" name="countId" value={draft.id} />}
 
-        <Field label="Faena" htmlFor="physicalWorksiteId" required>
-          <Select value={worksiteId} onValueChange={setWorksiteId}>
-            <SelectTrigger id="physicalWorksiteId">
-              <SelectValue placeholder="Selecciona faena" />
-            </SelectTrigger>
-            <SelectContent>
-              {worksites.map((worksite) => (
-                <SelectItem key={worksite.id} value={worksite.id}>{worksite.name}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </Field>
+        <div className="relative flex items-center">
+          <MagnifyingGlass size={14} aria-hidden className="pointer-events-none absolute left-2.5 text-(--color-text-subtle)" />
+          <Input
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Buscar producto o SKU..."
+            aria-label="Buscar producto en el conteo"
+            className="h-8 pl-8 text-xs"
+          />
+        </div>
 
         <div className="max-h-[360px] overflow-y-auto rounded-lg border border-(--color-border)">
-          {visibleProducts.length === 0 ? (
+          {products.length === 0 ? (
             <p className="px-3 py-4 text-sm text-(--color-text-muted)">No hay productos activos disponibles para contar en esta faena.</p>
+          ) : visibleCount === 0 ? (
+            <p className="px-3 py-4 text-sm text-(--color-text-muted)">Ningún producto coincide con la búsqueda.</p>
           ) : (
             <div className="divide-y divide-(--color-border)">
-              {visibleProducts.map((product) => (
-                <div key={product.productId} className="grid grid-cols-[minmax(0,1fr)_92px] gap-3 px-3 py-3">
+              {products.map((product) => (
+                <div
+                  key={product.productId}
+                  hidden={!isVisible(product)}
+                  className="grid grid-cols-[minmax(0,1fr)_92px] gap-3 px-3 py-3"
+                >
                   <input type="hidden" name="countProductId" value={product.productId} />
                   <input type="hidden" name="itemNotes" value="" />
                   <div className="min-w-0">
@@ -104,6 +121,7 @@ export function PhysicalInventoryPanel({
                     min="0"
                     step="0.01"
                     placeholder="—"
+                    defaultValue={draftByProduct.has(product.productId) ? String(draftByProduct.get(product.productId)) : ""}
                     className="h-8 text-right tabular-nums"
                   />
                 </div>
@@ -127,12 +145,22 @@ export function PhysicalInventoryPanel({
           </p>
         )}
 
-        <div className="flex justify-end pt-2">
+        <div className="flex flex-wrap justify-end gap-2 pt-2">
+          {/* Guardar sin cerrar: un conteo de faena grande no se termina de una
+              sentada, y hasta ahora la única salida era cerrarlo o perderlo. */}
+          <Button
+            type="submit"
+            formAction={draftAction}
+            variant="secondary"
+            disabled={!worksiteId || products.length === 0 || draftPending || pending}
+          >
+            {draftPending ? "Guardando..." : "Guardar borrador"}
+          </Button>
           <SubmitButton
             label="Cerrar conteo"
             loadingLabel="Cerrando..."
             variant="primary"
-            disabled={!worksiteId || visibleProducts.length === 0 || pending}
+            disabled={!worksiteId || products.length === 0 || pending || draftPending}
           />
         </div>
       </form>

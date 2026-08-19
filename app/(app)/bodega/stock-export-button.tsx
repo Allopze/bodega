@@ -24,6 +24,9 @@ export function StockExportButton({ worksites, canExport }: StockExportButtonPro
       label="Excel"
       worksites={worksites}
       canExport={canExport}
+      // El stock es la foto de hoy: no hay histórico que recortar y el endpoint
+      // no lee `from`/`to`. Ofrecer el rango prometía un filtro inexistente.
+      showDateRange={false}
     />
   )
 }
