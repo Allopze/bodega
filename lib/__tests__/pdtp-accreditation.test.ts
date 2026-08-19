@@ -591,7 +591,7 @@ describe("declarar qué actividades PDTP acredita una plantilla", () => {
     expect(template.pdtpActivityNumbers).toBeNull()
   })
 
-  it("se pueden corregir después, en borrador, deduplicados y ordenados", async () => {
+  it("se pueden corregir después de incorporarla, deduplicados y ordenados", async () => {
     const service = await import("@/lib/services/prevention-inspections")
     const template = await service.importInspectionTemplate({ definitionCode: "inspeccion_carros" }, ACCESS)
     const updated = await service.setInspectionTemplatePdtpActivities(
@@ -602,17 +602,17 @@ describe("declarar qué actividades PDTP acredita una plantilla", () => {
     expect(updated.version).toBe(template.version + 1)
   })
 
-  it("no se pueden cambiar una vez aprobada la plantilla", async () => {
+  it("no se pueden cambiar una vez reemplazada la plantilla", async () => {
     const service = await import("@/lib/services/prevention-inspections")
     const template = await service.importInspectionTemplate({ definitionCode: "inspeccion_contenedores" }, ACCESS)
-    // El check `..._approved_consistent` exige aprobador y fecha junto al estado.
+    // Reemplazarla es lo que hace incorporar otra versión del mismo código.
     await inMemoryDb.update(schema.preventionInspectionTemplates)
-      .set({ status: "approved", approvedByUserId: USER_ID, approvedAt: new Date().toISOString() })
+      .set({ status: "superseded", supersededAt: new Date().toISOString() })
       .where(eq(schema.preventionInspectionTemplates.id, template.id))
 
     await expect(service.setInspectionTemplatePdtpActivities(
       { templateId: template.id, expectedVersion: template.version, pdtpActivityNumbers: [29] },
       ACCESS,
-    )).rejects.toThrow(/borrador/i)
+    )).rejects.toThrow(/reemplazada/i)
   })
 })

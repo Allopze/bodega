@@ -84,7 +84,6 @@ async function countAnswers(runId: string) {
 
 describeIf("Motor de inspecciones on real PostgreSQL", () => {
   let templateId = ""
-  let templateVersion = 1
   let runId = ""
   let runVersion = 1
   let itemsCache: InspectionItemSpec[] = []
@@ -145,34 +144,54 @@ describeIf("Motor de inspecciones on real PostgreSQL", () => {
     expect(available.every((item) => item.items > 0)).toBe(true)
   })
 
-  it("imports an existing SST definition and freezes its content hash", async () => {
+  // El contenido viene del catálogo versionado en el repositorio, así que
+  // incorporar publica: en una instalación con un solo prevencionista, pedir un
+  // aprobador distinto dejaba la plantilla inservible para siempre.
+  it("imports an existing SST definition already published and freezes its content hash", async () => {
     const service = await import("@/lib/services/prevention-inspections")
     const template = await service.importInspectionTemplate({ definitionCode: "inspeccion_extintores" }, AUTHOR)
     templateId = template.id
-    templateVersion = template.version
-    expect(template).toMatchObject({ status: "draft", sourceDefinitionCode: "inspeccion_extintores" })
+    expect(template).toMatchObject({
+      status: "approved", approvedByUserId: "in-author", sourceDefinitionCode: "inspeccion_extintores",
+    })
+    expect(template.approvedAt).toBeTruthy()
     expect(template.contentHash).toHaveLength(64)
   })
 
-  it("blocks the importer from approving their own template", async () => {
+  // La puerta de aprobación sigue viva —y segregada— para los borradores que
+  // quedaron de antes: sin ella no habría forma de ponerlos en uso.
+  it("blocks the importer from approving their own legacy draft", async () => {
     const service = await import("@/lib/services/prevention-inspections")
+    const draftId = "instpl-legacy-draft"
+    await getDb().insert(schema.preventionInspectionTemplates).values({
+      id: draftId,
+      code: "legacy_draft",
+      versionLabel: "01",
+      name: "Borrador heredado",
+      kind: "inspection",
+      definitionSnapshot: { code: "legacy_draft", sections: [] },
+      contentHash: "a".repeat(64),
+      status: "draft",
+      authorUserId: AUTHOR.userId,
+    })
+
     await expect(service.approveInspectionTemplate({
-      templateId, expectedVersion: templateVersion, reason: "Intento de autoaprobación de la plantilla.",
+      templateId: draftId, expectedVersion: 1, reason: "Intento de autoaprobación de la plantilla.",
     }, { ...AUTHOR, permissions: [...AUTHOR.permissions, "prevention:inspections:approve"] }))
       .rejects.toThrow(/no puede aprobarla/)
 
     const approved = await service.approveInspectionTemplate({
-      templateId, expectedVersion: templateVersion, reason: "Contenido revisado y conforme al estándar de la faena.",
+      templateId: draftId, expectedVersion: 1, reason: "Contenido revisado y conforme al estándar de la faena.",
     }, APPROVER)
-    templateVersion = approved.version
     expect(approved).toMatchObject({ status: "approved", approvedByUserId: "in-approver" })
   })
 
-  it("refuses to run a template that is not approved", async () => {
+  it("refuses to run a template that is no longer the current version", async () => {
     const service = await import("@/lib/services/prevention-inspections")
-    const draft = await service.importInspectionTemplate({ definitionCode: "inspeccion_taller" }, AUTHOR)
+    const first = await service.importInspectionTemplate({ definitionCode: "inspeccion_taller" }, AUTHOR)
+    await service.importInspectionTemplate({ definitionCode: "inspeccion_taller", versionLabel: "01-rev" }, AUTHOR)
     await expect(service.createInspectionRun({
-      templateId: draft.id, worksiteId: "ws-in-a",
+      templateId: first.id, worksiteId: "ws-in-a",
     }, AUTHOR)).rejects.toThrow(/plantilla aprobada/)
   })
 
@@ -431,11 +450,7 @@ describeIf("Motor de inspecciones on real PostgreSQL", () => {
 
   it("persists 'partial' end-to-end on a B/R/M template and scores it at 0.5", async () => {
     const service = await import("@/lib/services/prevention-inspections")
-    const template = await service.importInspectionTemplate({ definitionCode: "inspeccion_carros" }, AUTHOR)
-    const approved = await service.approveInspectionTemplate({
-      templateId: template.id, expectedVersion: template.version,
-      reason: "Contenido revisado y conforme al estándar de la faena.",
-    }, APPROVER)
+    const approved = await service.importInspectionTemplate({ definitionCode: "inspeccion_carros" }, AUTHOR)
 
     const created = await service.createInspectionRun({
       templateId: approved.id, worksiteId: "ws-in-a", subjectLabel: "Carro CR-04",
@@ -494,31 +509,21 @@ describeIf("Motor de inspecciones on real PostgreSQL", () => {
   // A-02: reimportar es el camino normal para versionar. La UI escondía del
   // picker toda definición ya incorporada, dejando inalcanzable el mecanismo de
   // `superseded` que el servicio ya implementaba entero.
-  // Se usa `inspeccion_contenedores` y NO la plantilla compartida: aprobar la
-  // v2 deja la v1 en `superseded`, y `createInspectionRun` sólo acepta
-  // aprobadas — versionar la plantilla que usan los demás tests los rompería a
+  // Se usa `inspeccion_contenedores` y NO la plantilla compartida: incorporar
+  // la v2 deja la v1 en `superseded`, y `createInspectionRun` sólo acepta
+  // vigentes — versionar la plantilla que usan los demás tests los rompería a
   // todos.
   it("reimports a definition as a new version and supersedes the previous approved one", async () => {
     const service = await import("@/lib/services/prevention-inspections")
     const v1 = await service.importInspectionTemplate({
       definitionCode: "inspeccion_contenedores", versionLabel: "01",
     }, AUTHOR)
-    const approvedV1 = await service.approveInspectionTemplate({
-      templateId: v1.id, expectedVersion: v1.version,
-      reason: "Primera versión del anexo, revisada y conforme.",
-    }, APPROVER)
-    expect(approvedV1.status).toBe("approved")
+    expect(v1.status).toBe("approved")
 
     const v2 = await service.importInspectionTemplate({
       definitionCode: "inspeccion_contenedores", versionLabel: "02",
     }, AUTHOR)
-    expect(v2).toMatchObject({ status: "draft", code: v1.code })
-
-    const approvedV2 = await service.approveInspectionTemplate({
-      templateId: v2.id, expectedVersion: v2.version,
-      reason: "Segunda versión del anexo, revisada y conforme.",
-    }, APPROVER)
-    expect(approvedV2.status).toBe("approved")
+    expect(v2).toMatchObject({ status: "approved", code: v1.code })
 
     const [superseded] = await getDb().select().from(schema.preventionInspectionTemplates)
       .where(eq(schema.preventionInspectionTemplates.id, v1.id))

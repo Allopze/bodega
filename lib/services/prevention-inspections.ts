@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto"
-import { and, asc, desc, eq, inArray, isNotNull, sql } from "drizzle-orm"
+import { and, asc, desc, eq, inArray, isNotNull, ne, sql } from "drizzle-orm"
 import { z } from "zod"
 import { alias, type AnyPgColumn } from "drizzle-orm/pg-core"
 import { db, type DB, type Tx } from "@/db"
@@ -180,14 +180,39 @@ function isUniqueViolation(error: unknown, constraint: string): boolean {
 }
 
 /**
+ * Retira la versión vigente anterior del mismo código. La usan las dos puertas
+ * que publican: incorporar (el camino normal) y aprobar un borrador heredado.
+ */
+async function supersedePreviousApproved(tx: Tx, args: { code: string; keepTemplateId: string; now: string }) {
+  await tx.update(preventionInspectionTemplates).set({
+    status: "superseded",
+    supersededAt: args.now,
+    supersededByTemplateId: args.keepTemplateId,
+    version: sql`${preventionInspectionTemplates.version} + 1`,
+    updatedAt: args.now,
+  }).where(and(
+    eq(preventionInspectionTemplates.code, args.code),
+    eq(preventionInspectionTemplates.status, "approved"),
+    ne(preventionInspectionTemplates.id, args.keepTemplateId),
+  ))
+}
+
+/**
  * Incorpora una definición SST existente como plantilla del motor transversal.
  * Las evaluaciones de personas quedan fuera a propósito: la auditoría pide no
  * mezclar inspecciones de activos con evaluación de trabajadores.
  *
- * Reimportar un código ya incorporado es el camino normal para versionar: nace
- * otro borrador y aprobarlo reemplaza (`superseded`) la versión aprobada
- * anterior del mismo código. Lo único que no se admite es repetir la misma
- * `versionLabel` (A-02/C-10).
+ * Nace **vigente** (`approved`). El contenido no lo redacta nadie aquí: viene
+ * de `lib/sst/definitions/`, ya versionado y revisado en el repositorio — el
+ * mismo criterio con el que `ensurePdtp2026InspectionTemplates` instala las
+ * plantillas del programa 2026 aprobadas. Pedir un segundo par de ojos sobre
+ * una copia literal del catálogo dejaba la plantilla inservible en toda
+ * instalación con un solo prevencionista, porque quien la incorpora no puede
+ * aprobarla.
+ *
+ * Reimportar un código ya incorporado sigue siendo el camino para versionar, y
+ * ahora reemplaza (`superseded`) a la vigente en el acto. Lo único que no se
+ * admite es repetir la misma `versionLabel` (A-02/C-10).
  */
 export async function importInspectionTemplate(input: unknown, access: InspectionAccess) {
   requireAccess(access, "prevention:inspections:manage")
@@ -213,22 +238,35 @@ export async function importInspectionTemplate(input: unknown, access: Inspectio
   const snapshot = definition as unknown as Record<string, unknown>
   const contentHash = contentHashOf(snapshot)
 
-  let created
+  const now = nowIso()
+
   try {
-    ;[created] = await db.insert(preventionInspectionTemplates).values({
-      id: `instpl-${nanoid()}`,
-      code: definition.code,
-      versionLabel,
-      name: definition.title,
-      kind: data.kind,
-      sourceDefinitionCode: data.definitionCode,
-      definitionSnapshot: snapshot,
-      contentHash,
-      status: "draft",
-      legalFramework: definition.legalFramework?.join(" · ") ?? null,
-      pdtpActivityNumbers: data.pdtpActivityNumbers?.length ? data.pdtpActivityNumbers : null,
-      authorUserId: access.userId,
-    }).returning()
+    return await db.transaction(async (tx) => {
+      const [created] = await tx.insert(preventionInspectionTemplates).values({
+        id: `instpl-${nanoid()}`,
+        code: definition.code,
+        versionLabel,
+        name: definition.title,
+        kind: data.kind,
+        sourceDefinitionCode: data.definitionCode,
+        definitionSnapshot: snapshot,
+        contentHash,
+        status: "approved",
+        approvedByUserId: access.userId,
+        approvedAt: now,
+        legalFramework: definition.legalFramework?.join(" · ") ?? null,
+        pdtpActivityNumbers: data.pdtpActivityNumbers?.length ? data.pdtpActivityNumbers : null,
+        authorUserId: access.userId,
+      }).returning()
+      if (!created) throw new Error("No se pudo incorporar la plantilla.")
+
+      // Sin esto quedarían dos versiones aprobadas del mismo código y
+      // `findInspectionTemplateForPdtpActivity` elegiría cualquiera de las dos.
+      await supersedePreviousApproved(tx, { code: definition.code, keepTemplateId: created.id, now })
+
+      await history(tx, { entityType: "template", entityId: created.id, changeType: "imported", reason: `Definición ${data.definitionCode} incorporada y publicada como plantilla ${versionLabel}`, afterState: created, actorUserId: access.userId })
+      return created
+    })
   } catch (error) {
     // C-10: sin esto el usuario veía el texto crudo de Postgres
     // ("duplicate key value violates unique constraint …").
@@ -237,18 +275,17 @@ export async function importInspectionTemplate(input: unknown, access: Inspectio
     }
     throw error
   }
-  if (!created) throw new Error("No se pudo incorporar la plantilla.")
-  await history(db, { entityType: "template", entityId: created.id, changeType: "imported", reason: `Definición ${data.definitionCode} incorporada como plantilla ${versionLabel}`, afterState: created, actorUserId: access.userId })
-  return created
 }
 
 /**
- * Declara qué actividades del PDTP acredita la plantilla. Editable sólo en
- * borrador: aprobar congela el contenido, y de esto depende qué se acredita.
+ * Declara qué actividades del PDTP acredita la plantilla. Editable mientras la
+ * plantilla esté vigente; una reemplazada ya no acredita nada.
  *
  * No toca `contentHash` a propósito — el hash cubre el cuestionario
  * (`definitionSnapshot`), no el cableado al programa anual. Cambiar a qué
- * actividad acredita no altera la evidencia de lo que se preguntó.
+ * actividad acredita no altera la evidencia de lo que se preguntó, y por eso
+ * no hace falta el borrador: restringirlo ahí no dejaba ninguna ventana para
+ * declararlo, ahora que incorporar publica.
  */
 export async function setInspectionTemplatePdtpActivities(input: unknown, access: InspectionAccess) {
   const data = z.object({
@@ -263,7 +300,7 @@ export async function setInspectionTemplatePdtpActivities(input: unknown, access
       .where(eq(preventionInspectionTemplates.id, data.templateId)).limit(1)
     if (!template) throw new Error(NOT_FOUND)
     if (template.version !== data.expectedVersion) throw new Error("La plantilla cambió mientras la editabas. Recarga y reintenta.")
-    if (template.status !== "draft") throw new Error("Sólo una plantilla en borrador puede cambiar sus actividades PDTP.")
+    if (template.status === "superseded") throw new Error("Una plantilla reemplazada ya no puede cambiar sus actividades PDTP.")
 
     const now = nowIso()
     const numbers = data.pdtpActivityNumbers.length > 0 ? [...new Set(data.pdtpActivityNumbers)].sort((a, b) => a - b) : null
@@ -286,8 +323,9 @@ export async function setInspectionTemplatePdtpActivities(input: unknown, access
 }
 
 /**
- * Aprobar es segregado del autor y congela el contenido: desde aquí la
- * plantilla puede programarse y ejecutarse, y su snapshot ya no cambia.
+ * Publica un borrador heredado. Desde que incorporar deja la plantilla vigente
+ * ya no nacen borradores nuevos, pero los que quedaron de antes necesitan esta
+ * puerta para poder usarse. Sigue exigiendo un aprobador distinto del autor.
  */
 export async function approveInspectionTemplate(input: unknown, access: InspectionAccess) {
   const data = z.object({ templateId: z.string().min(1), expectedVersion: z.number().int().positive(), reason: z.string().trim().min(10).max(2000) }).parse(input)
@@ -305,22 +343,7 @@ export async function approveInspectionTemplate(input: unknown, access: Inspecti
 
     const now = nowIso()
     // Aprobar una versión reemplaza a la anterior vigente del mismo código.
-    const previous = await tx.select().from(preventionInspectionTemplates)
-      .where(and(
-        eq(preventionInspectionTemplates.code, template.code),
-        eq(preventionInspectionTemplates.status, "approved"),
-      ))
-    if (previous.length > 0) {
-      await tx.update(preventionInspectionTemplates)
-        .set({
-          status: "superseded",
-          supersededAt: now,
-          supersededByTemplateId: template.id,
-          version: sql`${preventionInspectionTemplates.version} + 1`,
-          updatedAt: now,
-        })
-        .where(inArray(preventionInspectionTemplates.id, previous.map((item) => item.id)))
-    }
+    await supersedePreviousApproved(tx, { code: template.code, keepTemplateId: template.id, now })
 
     const [updated] = await tx.update(preventionInspectionTemplates).set({
       status: "approved",

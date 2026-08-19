@@ -203,7 +203,7 @@ export function InspectionCatalog({ templates, programs, importable, approvedTem
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-2">
-                      {item.status === "draft" && canManage && (
+                      {item.status !== "superseded" && canManage && (
                         <PdtpActivitiesDialog
                           templateId={item.id}
                           name={item.name}
@@ -315,7 +315,7 @@ function ImportTemplateDialog({ importable, versionsByDefinition }: {
           <DialogHeader>
             <DialogTitle>Incorporar plantilla</DialogTitle>
             <DialogDescription>
-              Nace en borrador. Quien la incorpora no puede aprobarla, y sólo puede programarse y ejecutarse una vez aprobada.
+              Queda vigente al incorporarla: puede programarse y ejecutarse de inmediato. El contenido viene del catálogo SST versionado en el código, no se redacta aquí.
             </DialogDescription>
           </DialogHeader>
           <Field label="Definición del catálogo SST">
@@ -329,8 +329,8 @@ function ImportTemplateDialog({ importable, versionsByDefinition }: {
           )}
           {existing?.approved && (
             <p className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3 text-xs">
-              Ya hay una versión aprobada de esta definición: <span className="font-mono">{existing.approved.versionLabel}</span>.
-              Incorporar otra crea un borrador nuevo, y al aprobarlo reemplaza a la vigente.
+              Ya hay una versión vigente de esta definición: <span className="font-mono">{existing.approved.versionLabel}</span>.
+              Incorporar otra la reemplaza en el acto, y las programaciones que apunten a la anterior dejarán de generar inspecciones.
               Usa una etiqueta de versión distinta.
             </p>
           )}
