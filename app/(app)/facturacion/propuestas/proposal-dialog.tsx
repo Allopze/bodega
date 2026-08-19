@@ -16,6 +16,7 @@ import { formatMoney } from "@/lib/services/billing/money"
 import { formatPeriodOption, recentPeriods } from "@/components/ui/period-picker"
 import { computeProposalTotals } from "@/lib/services/billing/proposal-rules"
 import { saveProposalAction } from "./actions"
+import { nanoid } from "@/lib/id"
 
 interface Option { id: string; name: string; code?: string }
 interface ContractOption { id: string; clientId: string; code: string; name: string; worksiteId: string | null; costCenterId: string | null; currency: string; periodAmount: number | null; clientPoNumber: string | null }
@@ -348,9 +349,9 @@ export function ProposalDialog({
 
 function emptyItem(): ItemDraft {
   return {
-    // `crypto.randomUUID` está disponible en todos los navegadores objetivo y
-    // solo se usa como key de React, nunca se persiste.
-    key: crypto.randomUUID(),
+    // Sólo es key de React, nunca se persiste. `nanoid` y no `crypto.randomUUID`
+    // porque este último no existe fuera de un contexto seguro (http:// por IP).
+    key: nanoid(),
     description: "",
     quantity: "1",
     unit: "",

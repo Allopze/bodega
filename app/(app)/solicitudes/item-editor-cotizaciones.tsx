@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input"
 import {
   Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
 } from "@/components/ui/select"
+import { nanoid } from "@/lib/id"
 import type { ItemRow, PendingCotizacion, SupplierOption } from "./request-form.types"
 
 interface Props {
@@ -37,7 +38,7 @@ export function ItemEditorCotizaciones({ item, requestType, maxFileSizeMb, readO
         continue
       }
       newCots.push({
-        _id: crypto.randomUUID(),
+        _id: nanoid(),
         file,
         fileName: file.name,
         fileSize: file.size,
