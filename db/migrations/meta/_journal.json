@@ -1289,6 +1289,55 @@
       "when": 1787091672528,
       "tag": "0183_service_equipment_alta_desde_solicitud",
       "breakpoints": true
+    },
+    {
+      "idx": 184,
+      "version": "7",
+      "when": 1787099398761,
+      "tag": "0184_epp_stock_submission_preflight",
+      "breakpoints": true
+    },
+    {
+      "idx": 185,
+      "version": "7",
+      "when": 1787112589140,
+      "tag": "0185_inspection_recorded_answers",
+      "breakpoints": true
+    },
+    {
+      "idx": 186,
+      "version": "7",
+      "when": 1787114440267,
+      "tag": "0186_inspection_program_scheduling",
+      "breakpoints": true
+    },
+    {
+      "idx": 187,
+      "version": "7",
+      "when": 1787114767524,
+      "tag": "0187_inspection_answer_evidence",
+      "breakpoints": true
+    },
+    {
+      "idx": 188,
+      "version": "7",
+      "when": 1787115273035,
+      "tag": "0188_inspection_closing_act",
+      "breakpoints": true
+    },
+    {
+      "idx": 189,
+      "version": "7",
+      "when": 1787115741656,
+      "tag": "0189_stock_adjustment_kind",
+      "breakpoints": true
+    },
+    {
+      "idx": 190,
+      "version": "7",
+      "when": 1787115896699,
+      "tag": "0190_inspection_subject_resource",
+      "breakpoints": true
     }
   ]
 }

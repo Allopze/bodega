@@ -1,0 +1,3 @@
+ALTER TABLE "prevention_inspection_programs" ADD COLUMN "version" integer DEFAULT 1 NOT NULL;--> statement-breakpoint
+CREATE UNIQUE INDEX "prevention_inspection_run_program_slot_unique" ON "prevention_inspection_runs" USING btree ("program_id","scheduled_for") WHERE "prevention_inspection_runs"."program_id" IS NOT NULL AND "prevention_inspection_runs"."scheduled_for" IS NOT NULL;--> statement-breakpoint
+ALTER TABLE "prevention_inspection_programs" ADD CONSTRAINT "prevention_inspection_program_version_positive" CHECK ("prevention_inspection_programs"."version" >= 1);

@@ -1,0 +1,5 @@
+ALTER TABLE "prevention_inspection_programs" ADD COLUMN "subject_resource_id" text;--> statement-breakpoint
+ALTER TABLE "prevention_inspection_runs" ADD COLUMN "subject_resource_id" text;--> statement-breakpoint
+ALTER TABLE "prevention_inspection_programs" ADD CONSTRAINT "prevention_inspection_programs_subject_resource_id_prevention_emergency_resources_id_fk" FOREIGN KEY ("subject_resource_id") REFERENCES "public"."prevention_emergency_resources"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "prevention_inspection_runs" ADD CONSTRAINT "prevention_inspection_runs_subject_resource_id_prevention_emergency_resources_id_fk" FOREIGN KEY ("subject_resource_id") REFERENCES "public"."prevention_emergency_resources"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+CREATE INDEX "prevention_inspection_run_subject_idx" ON "prevention_inspection_runs" USING btree ("subject_resource_id");
