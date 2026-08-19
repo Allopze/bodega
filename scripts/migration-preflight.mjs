@@ -15,6 +15,7 @@ export const LEGACY_ACTION_TABLES = Object.freeze([
  * @property {{ dualBusinessLinks: number, duplicatePurchaseInvoices: number }} dte
  * @property {{ legacyObjectiveLinks: number, duplicateYears: number }} pdtp
  * @property {{ duplicateApplicabilities: number }} legal
+ * @property {{ duplicateProgramSlots: number }} inspections
  * @property {string[]} skippedRelations
  */
 
@@ -48,6 +49,14 @@ export function assertMigrationPreflightReport(report) {
   // decisión vigente y la otra un duplicado de una carrera—, no de la migración.
   if (report.legal.duplicateApplicabilities > 0) {
     blockers.push(`LEGAL duplicateApplicabilities=${report.legal.duplicateApplicabilities}`)
+  }
+  // B-04: el índice único parcial sobre (program_id, scheduled_for) que da
+  // idempotencia al materializador no puede crearse si ya hay dos ejecuciones
+  // del mismo slot. Hoy `program_id` está a NULL en todas las filas porque
+  // ningún formulario lo enviaba, así que en la práctica no bloquea nada —
+  // pero comprobarlo cuesta una consulta y evita una migración a medias.
+  if (report.inspections.duplicateProgramSlots > 0) {
+    blockers.push(`INSPECTIONS duplicateProgramSlots=${report.inspections.duplicateProgramSlots}`)
   }
   if (blockers.length > 0) {
     throw new Error(
@@ -84,6 +93,7 @@ export async function inspectMigrationPreconditions(sql) {
     dte: { dualBusinessLinks: 0, duplicatePurchaseInvoices: 0 },
     pdtp: { legacyObjectiveLinks: 0, duplicateYears: 0 },
     legal: { duplicateApplicabilities: 0 },
+    inspections: { duplicateProgramSlots: 0 },
     skippedRelations: [],
   }
 
@@ -126,6 +136,21 @@ export async function inspectMigrationPreconditions(sql) {
     `)
   } else {
     report.skippedRelations.push("prevention_pdtp_source_links")
+  }
+
+  if (await relationExists(sql, "prevention_inspection_runs")) {
+    report.inspections.duplicateProgramSlots = await countUnsafe(sql, `
+      select count(*)::int as total
+      from (
+        select program_id, scheduled_for
+        from prevention_inspection_runs
+        where program_id is not null and scheduled_for is not null
+        group by program_id, scheduled_for
+        having count(*) > 1
+      ) duplicates
+    `)
+  } else {
+    report.skippedRelations.push("prevention_inspection_runs")
   }
 
   if (await relationExists(sql, "pdtp_programs")) {

@@ -12,6 +12,7 @@ function cleanReport(): MigrationPreflightReport {
     dte: { dualBusinessLinks: 0, duplicatePurchaseInvoices: 0 },
     pdtp: { legacyObjectiveLinks: 0, duplicateYears: 0 },
     legal: { duplicateApplicabilities: 0 },
+    inspections: { duplicateProgramSlots: 0 },
     skippedRelations: [],
   }
 }
@@ -29,6 +30,15 @@ describe("migration preflight", () => {
     expect(() => assertMigrationPreflightReport(report)).toThrow(
       new RegExp(`${table}.*1`),
     )
+  })
+
+  // B-04: sin idempotencia por slot, dos disparos del cron el mismo día
+  // duplicarían la ejecución del período.
+  it("bloquea ejecuciones duplicadas del mismo slot de programación", () => {
+    const report = cleanReport()
+    report.inspections = { duplicateProgramSlots: 2 }
+
+    expect(() => assertMigrationPreflightReport(report)).toThrow(/INSPECTIONS.*2/)
   })
 
   it("bloquea vínculos DTE incompatibles y duplicados", () => {

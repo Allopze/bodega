@@ -9,11 +9,14 @@ import { getSession, signOut } from "next-auth/react"
  */
 async function clearOfflineQueues() {
   try {
-    const [{ clearIncidentReportQueue }, { clearPpaQueue }] = await Promise.all([
+    const [{ clearIncidentReportQueue }, { clearPpaQueue }, { clearInspectionSubmissionQueue }] = await Promise.all([
       import("@/app/(app)/prevencion/incidentes/reportar/offline-incident-queue"),
       import("@/lib/pwa/offline-queue"),
+      // Las respuestas de una inspección y los nombres de quienes firman el
+      // acta viven en claro en IndexedDB hasta 30 días, en equipos compartidos.
+      import("@/app/(app)/prevencion/inspecciones/[runId]/offline-inspection-queue"),
     ])
-    await Promise.allSettled([clearIncidentReportQueue(), clearPpaQueue()])
+    await Promise.allSettled([clearIncidentReportQueue(), clearPpaQueue(), clearInspectionSubmissionQueue()])
   } catch {
     /* no-op: cerrar sesión nunca se bloquea por la limpieza local */
   }
