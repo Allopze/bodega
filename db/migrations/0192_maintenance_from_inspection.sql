@@ -1,0 +1,3 @@
+ALTER TABLE "maintenance_records" ADD COLUMN "inspection_finding_id" text;--> statement-breakpoint
+ALTER TABLE "maintenance_records" ADD CONSTRAINT "maintenance_records_inspection_finding_id_prevention_inspection_findings_id_fk" FOREIGN KEY ("inspection_finding_id") REFERENCES "public"."prevention_inspection_findings"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+CREATE UNIQUE INDEX "maintenance_record_finding_unique" ON "maintenance_records" USING btree ("inspection_finding_id") WHERE "maintenance_records"."inspection_finding_id" IS NOT NULL;

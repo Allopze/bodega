@@ -4,7 +4,8 @@ import { requirePermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
-import { getInspectionRunDetail, listInspectionAssignees } from "@/lib/services/prevention-inspections"
+import { getInspectionRunDetail } from "@/lib/services/prevention-inspections"
+import { listWorksiteAssignableUsers } from "@/lib/services/prevention-capa"
 import { closingActFromDefinition } from "@/lib/prevention/inspections"
 import type { ChecklistDefinition } from "@/lib/sst/types"
 import { InspectionRunDetail } from "./inspection-run-detail"
@@ -28,7 +29,11 @@ export default async function InspeccionPage({ params }: { params: Promise<{ run
   if (!detail) notFound()
 
   const canExecute = auth.user.permissions.includes("prevention:inspections:execute")
-  const assignees = canExecute ? await listInspectionAssignees(access) : []
+  // Responsables de la CAPA derivada: gente de la faena, no gente que sepa
+  // ejecutar inspecciones. La guarda de esta pantalla ya la puso `canExecute`.
+  const assignees = canExecute
+    ? await listWorksiteAssignableUsers({ worksiteId: detail.run.worksiteId, scope: access.scope })
+    : []
   const definition = detail.definitionSnapshot as unknown as ChecklistDefinition
 
   return (
@@ -51,6 +56,7 @@ export default async function InspeccionPage({ params }: { params: Promise<{ run
           origin: detail.run.origin,
           subjectType: detail.run.subjectType,
           subjectLabel: detail.run.subjectLabel,
+          subjectVehicleId: detail.run.subjectVehicleId,
           scheduledFor: detail.run.scheduledFor,
           executedAt: detail.run.executedAt,
           reviewedAt: detail.run.reviewedAt,
@@ -97,6 +103,7 @@ export default async function InspeccionPage({ params }: { params: Promise<{ run
           comment: item.comment,
           value: item.value,
           evidence: item.evidence.map((file) => ({ id: file.id, path: file.path, caption: file.caption })),
+          needsConfirmation: item.needsConfirmation,
         }))}
         findings={detail.findings.map((item) => ({
           id: item.id,
@@ -107,6 +114,14 @@ export default async function InspeccionPage({ params }: { params: Promise<{ run
         }))}
         currentUserId={auth.user.id}
         assignees={assignees}
+        canStopVehicle={auth.user.permissions.includes("combustibles:manage_vehicles")}
+        canIngest={auth.user.permissions.includes("prevention:inspections:ingest")}
+        documents={detail.documents.map((item) => ({
+          id: item.id,
+          path: item.path,
+          caption: item.caption,
+          createdAt: item.createdAt,
+        }))}
         canExecute={canExecute}
         canReview={auth.user.permissions.includes("prevention:inspections:review")}
         canManage={auth.user.permissions.includes("prevention:inspections:manage")}

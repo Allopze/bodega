@@ -38,7 +38,13 @@ export async function FleetSection({ session, scope }: DomainSectionsProps) {
   const permissions = session.user.permissions
 
   const bounds = getOperationalCalendarBounds(new Date(), scope.period)
-  const dteCodEmp = (await readDtePortalConfig()).credentials.codEmp
+  // El tile de NC es de Compras: sin `purchasing:view` no se consulta ni se
+  // pinta, y su destino (/compras/dte) responde 403 a quien no lo tiene.
+  // La lectura de configuración va con catch como la consulta: un keyring mal
+  // pegado no puede tumbar el tablero operacional de flota.
+  const dteCodEmp = permissions.includes("purchasing:view")
+    ? await readDtePortalConfig().then((config) => config.credentials.codEmp || null).catch(() => null)
+    : null
   const [fuelControl, fuelTrend, maintenanceTrend, docs, fleet, usageAlerts, pendingFuelCreditNotes] = await Promise.all([
     getFuelControlOverview(session, {
       includeTae: true,
@@ -51,7 +57,7 @@ export async function FleetSection({ session, scope }: DomainSectionsProps) {
     getUsageMaintenanceAlerts(session, worksiteId).catch(() => []),
     // Notas de crédito de combustible sin aplicar (rutEmisor de fuelSuppliers,
     // por empresa/período tributario — no por faena, igual que la deuda arriba).
-    countPendingFuelCreditNotes(today.slice(0, 7), dteCodEmp).catch(() => null),
+    dteCodEmp ? countPendingFuelCreditNotes(today.slice(0, 7), dteCodEmp).catch(() => null) : Promise.resolve(null),
   ])
 
   const canSeeCosts = permissions.includes("combustibles:view_costs")

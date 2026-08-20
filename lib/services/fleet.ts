@@ -1,7 +1,7 @@
 import type { Session } from "next-auth"
 import { promises as fs } from "node:fs"
-import { and, desc, eq, isNotNull, sql } from "drizzle-orm"
-import { db } from "@/db"
+import { and, desc, eq, isNotNull, isNull, sql } from "drizzle-orm"
+import { db, type DB, type Tx } from "@/db"
 import {
   fleetVehicleDocuments,
   fuelLoads,
@@ -14,6 +14,77 @@ import { nanoid } from "@/lib/id"
 import { recordAudit } from "@/lib/audit"
 import { isGlobalRole, visibleWorksiteIds, worksiteScopeSql } from "@/lib/auth/scope"
 import { resolveFleetDocumentFile } from "@/lib/storage/config"
+
+/**
+ * Equipos de una faena, para poblar selectores.
+ *
+ * Recibe una faena **ya autorizada**: el alcance de rol lo resuelve el
+ * llamador, porque los dos consumidores hablan monedas distintas —las
+ * pantallas de flota traen `Session` y `worksiteScopeSql`, el motor de
+ * inspecciones trae `InspectionAccess` y ya llamó a `requireAccess` con esta
+ * misma faena antes de llegar aquí. Bridgear ambas cuesta más código que la
+ * consulta misma.
+ *
+ * Existía inlineada en ~8 sitios (`lib/services/maintenance.ts`,
+ * `app/(app)/combustibles/…`, la ejecución de PDTP); acá queda extraída para
+ * los nuevos. Migrar los demás se hace cuando se toquen, no ahora.
+ */
+export async function listWorksiteVehicles(args: { worksiteId: string; activeOnly?: boolean }) {
+  const conditions = [eq(fuelVehicles.worksiteId, args.worksiteId)]
+  if (args.activeOnly !== false) conditions.push(eq(fuelVehicles.isActive, true))
+  return db.select({
+    id: fuelVehicles.id,
+    plate: fuelVehicles.plate,
+    code: fuelVehicles.code,
+    type: fuelVehicles.type,
+    meterType: fuelVehicles.meterType,
+    operationalStatus: fuelVehicles.operationalStatus,
+  })
+    .from(fuelVehicles)
+    .where(and(...conditions))
+    .orderBy(fuelVehicles.plate)
+}
+
+/**
+ * Cambia el estado operacional de un equipo manteniendo coherente su historial
+ * de intervalos: cierra el abierto y abre el nuevo.
+ *
+ * Extraída porque estaba inlineada tres veces en
+ * `app/(app)/combustibles/actions-module/vehicles.ts` (alta, edición y baja), y
+ * el índice único parcial `fuel_vehicle_operational_intervals` garantiza **un
+ * solo intervalo abierto por vehículo**: olvidar el cierre en una cuarta copia
+ * revienta con violación de unicidad, no con un dato raro.
+ *
+ * No valida permisos: la puerta la pone cada llamador.
+ */
+export async function setVehicleOperationalStatus(
+  client: DB | Tx,
+  args: { vehicleId: string; status: string; reason: string; actorUserId: string },
+) {
+  const changedAt = new Date().toISOString()
+  await client.update(fuelVehicles)
+    .set({ operationalStatus: args.status, updatedAt: changedAt })
+    .where(eq(fuelVehicles.id, args.vehicleId))
+  await client.update(fuelVehicleOperationalIntervals)
+    .set({ endedAt: changedAt })
+    .where(and(
+      eq(fuelVehicleOperationalIntervals.vehicleId, args.vehicleId),
+      isNull(fuelVehicleOperationalIntervals.endedAt),
+    ))
+  await client.insert(fuelVehicleOperationalIntervals).values({
+    id: nanoid(),
+    vehicleId: args.vehicleId,
+    status: args.status,
+    startedAt: changedAt,
+    reason: args.reason,
+    changedBy: args.actorUserId,
+  })
+}
+
+/** Etiqueta estable de un equipo para congelar como evidencia: "KA-122 · ABCD-12". */
+export function vehicleLabel(vehicle: { plate: string; code: string | null }) {
+  return vehicle.code ? `${vehicle.code} · ${vehicle.plate}` : vehicle.plate
+}
 
 // `worksiteId` es la faena elegida en el tablero: se intersecta con el alcance
 // del rol (nunca lo reemplaza). Los llamadores sin selector de faena (/flota)

@@ -10,9 +10,11 @@ import {
   preventionInspectionFindings,
   preventionInspectionHistory,
   preventionInspectionPrograms,
+  preventionInspectionRunDocuments,
   preventionInspectionRuns,
   preventionInspectionTemplates,
   preventionEmergencyResources,
+  fuelVehicles,
   preventionRiskEntries,
   preventionRiskMatrices,
   users,
@@ -33,6 +35,7 @@ import {
   closingActFromDefinition,
   deriveFindings,
   nextDueAfter,
+  requiresHumanConfirmation,
   summarizeCompliance,
   summarizeTimelyClosure,
   validateAnswerRow,
@@ -42,8 +45,10 @@ import {
   type InspectionAnswerInput,
   type InspectionItemSpec,
 } from "@/lib/prevention/inspections"
+import { listWorksiteVehicles, setVehicleOperationalStatus, vehicleLabel } from "@/lib/services/fleet"
+import { createMaintenanceRecordWithClient } from "@/lib/services/maintenance"
 import { createCapaActionWithClient } from "@/lib/services/prevention-capa"
-import { CHECKLIST_DEFINITIONS, isPersonEvaluationDefinition } from "@/lib/sst/definitions"
+import { CHECKLIST_DEFINITIONS, isNonInspectionDefinition, isPersonEvaluationDefinition } from "@/lib/sst/definitions"
 import type { ChecklistDefinition } from "@/lib/sst/types"
 import { onInspectionCompleted } from "@/lib/services/pdtp-adapters/pdtp-accreditation-connectors"
 import { codeYear, todayInChile } from "@/lib/utils"
@@ -221,6 +226,11 @@ export async function importInspectionTemplate(input: unknown, access: Inspectio
   if (isPersonEvaluationDefinition(data.definitionCode)) {
     throw new Error("Las evaluaciones de personas no se incorporan al motor de inspecciones.")
   }
+  // Se comprueba acá y no sólo al listar: el código de la definición llega por
+  // la acción, así que filtrar únicamente el catálogo dejaría la puerta abierta.
+  if (isNonInspectionDefinition(data.definitionCode)) {
+    throw new Error("Este formulario no es un instrumento del motor de inspecciones.")
+  }
   const definition = CHECKLIST_DEFINITIONS[data.definitionCode]
   if (!definition) throw new Error("La definición de checklist no existe en el catálogo.")
 
@@ -369,6 +379,11 @@ const programSchema = z.object({
   assignedToUserId: z.string().min(1).nullable().optional(),
   riskEntryId: z.string().min(1).nullable().optional(),
   subjectType: z.string().trim().max(120).nullable().optional(),
+  /* El sujeto del programa existía como columna desde 0190 y ningún servicio
+   * lo escribía ni lo propagaba al run: programar "el extintor del pañol" era
+   * imposible. Se activa acá junto con el equipo de flota. */
+  subjectResourceId: z.string().min(1).nullable().optional(),
+  subjectVehicleId: z.string().min(1).nullable().optional(),
 })
 
 export async function createInspectionProgram(input: unknown, access: InspectionAccess) {
@@ -380,6 +395,11 @@ export async function createInspectionProgram(input: unknown, access: Inspection
   if (!template) throw new Error(NOT_FOUND)
   if (template.status !== "approved") throw new Error("Sólo puede programarse una plantilla aprobada.")
   if (data.riskEntryId) await assertRiskEntryInWorksite(db, data.riskEntryId, data.worksiteId)
+  await resolveSubject(db, {
+    worksiteId: data.worksiteId,
+    subjectResourceId: data.subjectResourceId,
+    subjectVehicleId: data.subjectVehicleId,
+  })
 
   const [created] = await db.insert(preventionInspectionPrograms).values({
     id: `insprog-${nanoid()}`,
@@ -391,6 +411,8 @@ export async function createInspectionProgram(input: unknown, access: Inspection
     assignedToUserId: data.assignedToUserId ?? null,
     riskEntryId: data.riskEntryId ?? null,
     subjectType: data.subjectType ?? null,
+    subjectResourceId: data.subjectResourceId ?? null,
+    subjectVehicleId: data.subjectVehicleId ?? null,
     createdByUserId: access.userId,
   }).returning()
   if (!created) throw new Error("No se pudo crear la programación.")
@@ -415,6 +437,8 @@ export async function updateInspectionProgram(input: unknown, access: Inspection
     assignedToUserId: z.string().min(1).nullable().optional(),
     riskEntryId: z.string().min(1).nullable().optional(),
     subjectType: z.string().trim().max(120).nullable().optional(),
+    subjectResourceId: z.string().min(1).nullable().optional(),
+    subjectVehicleId: z.string().min(1).nullable().optional(),
     isActive: z.boolean().optional(),
   }).parse(input)
 
@@ -427,6 +451,15 @@ export async function updateInspectionProgram(input: unknown, access: Inspection
       throw new Error("La programación cambió mientras la editabas. Recarga y reintenta.")
     }
     if (data.riskEntryId) await assertRiskEntryInWorksite(tx, data.riskEntryId, program.worksiteId)
+    // `undefined` = no se toca; para validar hay que mirar el valor resultante,
+    // no el enviado, o cambiar sólo uno de los dos dejaría pasar el par.
+    const nextResourceId = data.subjectResourceId === undefined ? program.subjectResourceId : data.subjectResourceId
+    const nextVehicleId = data.subjectVehicleId === undefined ? program.subjectVehicleId : data.subjectVehicleId
+    await resolveSubject(tx, {
+      worksiteId: program.worksiteId,
+      subjectResourceId: nextResourceId,
+      subjectVehicleId: nextVehicleId,
+    })
 
     const now = nowIso()
     const [updated] = await tx.update(preventionInspectionPrograms).set({
@@ -440,6 +473,8 @@ export async function updateInspectionProgram(input: unknown, access: Inspection
       assignedToUserId: data.assignedToUserId === undefined ? program.assignedToUserId : data.assignedToUserId,
       riskEntryId: data.riskEntryId === undefined ? program.riskEntryId : data.riskEntryId,
       subjectType: data.subjectType === undefined ? program.subjectType : data.subjectType,
+      subjectResourceId: nextResourceId,
+      subjectVehicleId: nextVehicleId,
       isActive: data.isActive ?? program.isActive,
       version: program.version + 1,
       updatedAt: now,
@@ -491,6 +526,45 @@ export async function assertProgramInScope(programId: string, access: Inspection
 }
 
 /**
+ * Resuelve el sujeto declarado y devuelve la etiqueta a congelar.
+ *
+ * Puerta única para programa y ejecución: el sujeto debe existir Y pertenecer
+ * a la faena. Sin esto, un id de otra faena entra por la acción y filtra el
+ * nombre del recurso o la patente ajena. El CHECK
+ * `prevention_inspection_run_single_subject` cubre la exclusión mutua en la
+ * base; acá se rechaza antes, con un mensaje que se entiende.
+ */
+async function resolveSubject(
+  client: Client,
+  args: { worksiteId: string; subjectResourceId?: string | null; subjectVehicleId?: string | null },
+): Promise<string | null> {
+  if (args.subjectResourceId && args.subjectVehicleId) {
+    throw new Error("Una inspección tiene un solo sujeto: recurso de emergencia o equipo, no ambos.")
+  }
+  if (args.subjectResourceId) {
+    const [found] = await client.select({ name: preventionEmergencyResources.name })
+      .from(preventionEmergencyResources)
+      .where(and(
+        eq(preventionEmergencyResources.id, args.subjectResourceId),
+        eq(preventionEmergencyResources.worksiteId, args.worksiteId),
+      )).limit(1)
+    if (!found) throw new Error("El sujeto no existe o pertenece a otra faena.")
+    return found.name
+  }
+  if (args.subjectVehicleId) {
+    const [found] = await client.select({ plate: fuelVehicles.plate, code: fuelVehicles.code })
+      .from(fuelVehicles)
+      .where(and(
+        eq(fuelVehicles.id, args.subjectVehicleId),
+        eq(fuelVehicles.worksiteId, args.worksiteId),
+      )).limit(1)
+    if (!found) throw new Error("El equipo no existe o pertenece a otra faena.")
+    return vehicleLabel(found)
+  }
+  return null
+}
+
+/**
  * Sujetos inspeccionables de la faena (función #11).
  *
  * Reusa `preventionEmergencyResources`, que ya es el inventario por faena
@@ -501,17 +575,40 @@ export async function assertProgramInScope(programId: string, access: Inspection
  */
 export async function listInspectionSubjects(worksiteId: string, access: InspectionAccess) {
   requireAccess(access, "prevention:inspections:view", worksiteId)
-  return db.select({
-    id: preventionEmergencyResources.id,
-    name: preventionEmergencyResources.name,
-    kind: preventionEmergencyResources.kind,
-    location: preventionEmergencyResources.location,
-    serialNumber: preventionEmergencyResources.serialNumber,
-  })
-    .from(preventionEmergencyResources)
-    .where(eq(preventionEmergencyResources.worksiteId, worksiteId))
-    .orderBy(asc(preventionEmergencyResources.name))
-    .limit(500)
+  const [resources, vehicles] = await Promise.all([
+    db.select({
+      id: preventionEmergencyResources.id,
+      name: preventionEmergencyResources.name,
+      kind: preventionEmergencyResources.kind,
+      location: preventionEmergencyResources.location,
+      serialNumber: preventionEmergencyResources.serialNumber,
+    })
+      .from(preventionEmergencyResources)
+      .where(eq(preventionEmergencyResources.worksiteId, worksiteId))
+      .orderBy(asc(preventionEmergencyResources.name))
+      .limit(500),
+    // El inventario de emergencias no modela camiones ni maquinaria; el padrón
+    // de equipos vive en flota y hasta ahora sólo llegaba como texto libre.
+    listWorksiteVehicles({ worksiteId }),
+  ])
+  return [
+    ...resources.map((item) => ({
+      source: "resource" as const,
+      id: item.id,
+      name: item.name,
+      kind: item.kind,
+      location: item.location,
+      serialNumber: item.serialNumber,
+    })),
+    ...vehicles.map((item) => ({
+      source: "vehicle" as const,
+      id: item.id,
+      name: vehicleLabel(item),
+      kind: item.type,
+      location: "",
+      serialNumber: item.plate,
+    })),
+  ]
 }
 
 /** Peligros de la MIPER de la faena, para el picker de la programación (A-09). */
@@ -539,6 +636,8 @@ const runSchema = z.object({
   subjectLabel: z.string().trim().max(300).nullable().optional(),
   /** Sujeto del inventario (función #11); `subjectLabel` sigue admitiendo texto libre. */
   subjectResourceId: z.string().min(1).nullable().optional(),
+  /** Equipo de flota inspeccionado. Excluyente con `subjectResourceId`. */
+  subjectVehicleId: z.string().min(1).nullable().optional(),
   origin: z.enum(["prevencion", "cphs", "mandante"]).default("prevencion"),
   scheduledFor: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
   assignedToUserId: z.string().min(1).nullable().optional(),
@@ -568,17 +667,11 @@ export async function createInspectionRun(input: unknown, access: InspectionAcce
 
   // El sujeto debe existir y pertenecer a la faena: sin esto, un id de otra
   // faena entraría por la acción y filtraría el nombre del recurso ajeno.
-  let subject: { name: string } | undefined
-  if (data.subjectResourceId) {
-    const [found] = await db.select({ name: preventionEmergencyResources.name })
-      .from(preventionEmergencyResources)
-      .where(and(
-        eq(preventionEmergencyResources.id, data.subjectResourceId),
-        eq(preventionEmergencyResources.worksiteId, data.worksiteId),
-      )).limit(1)
-    if (!found) throw new Error("El sujeto no existe o pertenece a otra faena.")
-    subject = found
-  }
+  const subjectName = await resolveSubject(db, {
+    worksiteId: data.worksiteId,
+    subjectResourceId: data.subjectResourceId,
+    subjectVehicleId: data.subjectVehicleId,
+  })
 
   // La sincronización offline reenvía: el identificador de envío hace la
   // creación idempotente en vez de duplicar la inspección.
@@ -597,8 +690,9 @@ export async function createInspectionRun(input: unknown, access: InspectionAcce
     subjectType: data.subjectType ?? null,
     // El nombre del recurso se congela como etiqueta: renombrarlo después no
     // debe cambiar qué decía la inspección que se inspeccionó.
-    subjectLabel: subject?.name ?? data.subjectLabel ?? null,
+    subjectLabel: subjectName ?? data.subjectLabel ?? null,
     subjectResourceId: data.subjectResourceId ?? null,
+    subjectVehicleId: data.subjectVehicleId ?? null,
     origin: data.origin,
     scheduledFor: data.scheduledFor ?? null,
     status: "planned",
@@ -638,6 +732,8 @@ const answerRowSchema = z.object({
   value: z.string().trim().max(2000).nullable().optional(),
   comment: z.string().trim().max(2000).nullable().optional(),
   evidenceReference: z.string().trim().max(2000).nullable().optional(),
+  /** La marca la ingesta al pre-llenar un ítem `fatal`; el cliente la apaga al responderlo. */
+  needsConfirmation: z.boolean().optional(),
 })
 
 const answersSchema = z.object({
@@ -729,6 +825,9 @@ async function saveAnswersWithClient(tx: Tx, args: {
         comment: answer.comment ?? null,
         evidenceReference: answer.evidenceReference ?? null,
         danoPotencial: item.danoPotencial ?? null,
+        // Sólo los ítems que matan quedan pendientes de ratificar; marcar el
+        // resto convertiría la puerta en un trámite de 28 clics que nadie lee.
+        needsConfirmation: (answer.needsConfirmation ?? false) && requiresHumanConfirmation(item),
       }
     })).onConflictDoUpdate({
       target: [preventionInspectionAnswers.runId, preventionInspectionAnswers.sectionId, preventionInspectionAnswers.itemId],
@@ -737,6 +836,7 @@ async function saveAnswersWithClient(tx: Tx, args: {
         value: sql`excluded.value`,
         comment: sql`excluded.comment`,
         evidenceReference: sql`excluded.evidence_reference`,
+        needsConfirmation: sql`excluded.needs_confirmation`,
         updatedAt: now,
       },
     })
@@ -864,6 +964,11 @@ export async function completeInspectionRun(input: unknown, access: InspectionAc
       comment: row.comment,
       // `assessRunCompletion` exige contenido en los ítems que no puntúan.
       value: row.value,
+      // Sin esto la puerta `unconfirmed_critical` nunca ve la marca: el
+      // servidor reconstruye las respuestas desde la BD y esta proyección la
+      // descartaba, así que el bloqueo sólo existía en el cliente — que es
+      // justo donde no vale.
+      needsConfirmation: row.needsConfirmation,
     }))
 
     const closingSpec = closingActFromDefinition(template.definitionSnapshot as unknown as ChecklistDefinition)
@@ -1019,6 +1124,35 @@ async function notifySafely(label: string, send: () => Promise<void>) {
   }
 }
 
+/**
+ * Ítem del que se lee la lectura del medidor al derivar una mantención.
+ *
+ * Acopla el motor genérico a un `itemId` de una plantilla concreta, y eso es
+ * deliberado: es el único checklist del catálogo que captura el horómetro, y
+ * una plantilla que no lo declare simplemente deriva la mantención sin lectura
+ * (`null`), no falla. La alternativa —declarar el rol del ítem en
+ * `ChecklistItem`— es un campo nuevo en las 13 definiciones para un solo caso.
+ * Si aparece un segundo checklist con medidor, ése es el momento de moverlo.
+ */
+const METER_ITEM_ID = "horometro_inicio"
+
+/**
+ * Lectura declarada en el run para el ítem de horómetro/odómetro, si la
+ * plantilla lo pide. Viaja a la mantención derivada, que es lo que después
+ * cruza `getUsageMaintenanceAlerts` contra los umbrales por uso.
+ */
+async function readMeterFromRun(client: Client, runId: string): Promise<number | null> {
+  const [answer] = await client.select({ value: preventionInspectionAnswers.value })
+    .from(preventionInspectionAnswers)
+    .where(and(
+      eq(preventionInspectionAnswers.runId, runId),
+      eq(preventionInspectionAnswers.itemId, METER_ITEM_ID),
+    )).limit(1)
+  if (!answer?.value) return null
+  const parsed = Number(answer.value.replace(",", "."))
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null
+}
+
 /** Deriva un hallazgo a CAPA común con prioridad y plazo según su criticidad. */
 export async function createFindingCapa(input: unknown, access: InspectionAccess) {
   const data = z.object({
@@ -1026,9 +1160,11 @@ export async function createFindingCapa(input: unknown, access: InspectionAccess
     actionDescription: z.string().trim().min(3).max(3000),
     responsibleUserId: z.string().min(1).nullable().optional(),
     immediateMeasure: z.string().trim().max(3000).nullable().optional(),
+    /** Abre además la mantención correctiva del equipo (sólo con sujeto de flota). */
+    createMaintenance: z.boolean().optional(),
   }).parse(input)
 
-  return db.transaction(async (tx) => {
+  const result = await db.transaction(async (tx) => {
     const [row] = await tx.select({ finding: preventionInspectionFindings, run: preventionInspectionRuns })
       .from(preventionInspectionFindings)
       .innerJoin(preventionInspectionRuns, eq(preventionInspectionFindings.runId, preventionInspectionRuns.id))
@@ -1061,7 +1197,102 @@ export async function createFindingCapa(input: unknown, access: InspectionAccess
     }).where(eq(preventionInspectionFindings.id, data.findingId)).returning()
     if (!updated) throw new Error("No se pudo enlazar la acción CAPA.")
     await history(tx, { entityType: "finding", entityId: data.findingId, worksiteId: row.run.worksiteId, changeType: "capa_linked", reason: data.actionDescription, actorUserId: access.userId })
-    return updated
+
+    // Mantención propuesta. Se engancha acá y no en `completeInspectionRun`
+    // porque completar borra y recrea los hallazgos abiertos sin CAPA: colgarlo
+    // de ahí dejaría órdenes huérfanas cada vez que alguien reabre y vuelve a
+    // cerrar. Derivar, en cambio, es un acto deliberado de una persona.
+    let maintenanceId: string | null = null
+    if (data.createMaintenance) {
+      if (!row.run.subjectVehicleId) {
+        throw new Error("Sólo puede programarse una mantención si la inspección tiene un equipo como sujeto.")
+      }
+      const meter = await readMeterFromRun(tx, row.run.id)
+      const [vehicle] = await tx.select({ meterType: fuelVehicles.meterType })
+        .from(fuelVehicles).where(eq(fuelVehicles.id, row.run.subjectVehicleId)).limit(1)
+      maintenanceId = await createMaintenanceRecordWithClient(tx, {
+        vehicleId: row.run.subjectVehicleId,
+        supplierId: "",
+        worksiteId: row.run.worksiteId,
+        costCenterId: "",
+        // El plazo de la CAPA manda: la reparación y su acción correctiva
+        // vencen el mismo día, o el taller y Prevención llevan dos calendarios.
+        maintenanceDate: capa.targetDate,
+        maintenanceType: "correctiva",
+        status: "scheduled",
+        odometerReading: vehicle?.meterType === "odometer" ? meter : null,
+        hourMeterReading: vehicle?.meterType === "hour_meter" ? meter : null,
+        netAmount: 0,
+        taxAmount: 0,
+        totalAmount: 0,
+        documentNumber: "",
+        documentName: "",
+        notes: `Deriva de ${row.run.code} · ${row.finding.description}`,
+        inspectionFindingId: data.findingId,
+      }, { worksiteId: row.run.worksiteId, actorUserId: access.userId })
+    }
+
+    return { finding: updated, capaId: capa.id, maintenanceId, run: row.run, criticality: row.finding.criticality }
+  })
+
+  // Propuesta de fuera de servicio: se avisa, no se escribe. Bloquear el equipo
+  // solo pararía la faena por un error de digitación, y quien decide sacarlo de
+  // circulación es quien administra la flota. La confirmación es un clic con
+  // `combustibles:manage_vehicles` — ver `stopVehicleForFinding`.
+  // Post-commit y sin propagar el error, igual que el resto de los avisos.
+  if (result.run.subjectVehicleId && ["high", "critical"].includes(result.criticality)) {
+    const vehicleId = result.run.subjectVehicleId
+    await notifySafely("equipo con falla grave", async () => {
+      const targets = await getUserIdsWithPermissionForWorksite("combustibles:manage_vehicles", result.run.worksiteId)
+      if (targets.length === 0) return
+      await createNotifications(targets, {
+        type: "system_alert",
+        title: result.criticality === "critical" ? "Equipo con falla crítica" : "Equipo con falla grave",
+        body: `${result.run.subjectLabel ?? "Equipo"} · ${result.run.code}: ${result.finding.description}. Revisa si corresponde sacarlo de servicio.`,
+        entityType: "fuel_vehicle",
+        entityId: vehicleId,
+        entityHref: `/flota/${vehicleId}`,
+        // Una vez por hallazgo: el aviso es la propuesta, no un recordatorio.
+        dedupeKey: `inspection:vehicle-stop:${result.finding.id}`,
+      })
+    })
+  }
+
+  return result
+}
+
+/**
+ * Confirma sacar de servicio el equipo de un hallazgo. Puerta aparte y con
+ * permiso de flota a propósito: quien ejecuta la inspección detecta la falla,
+ * pero detener un equipo es una decisión de quien administra la flota.
+ */
+export async function stopVehicleForFinding(input: unknown, access: InspectionAccess) {
+  const data = z.object({
+    findingId: z.string().min(1),
+    reason: z.string().trim().min(TRANSITION_REASON_MIN_LENGTH).max(3000),
+  }).parse(input)
+
+  return db.transaction(async (tx) => {
+    const [row] = await tx.select({ finding: preventionInspectionFindings, run: preventionInspectionRuns })
+      .from(preventionInspectionFindings)
+      .innerJoin(preventionInspectionRuns, eq(preventionInspectionFindings.runId, preventionInspectionRuns.id))
+      .where(eq(preventionInspectionFindings.id, data.findingId)).limit(1)
+    if (!row) throw new Error(NOT_FOUND)
+    // Alcance de faena del actor; el permiso de flota lo exige la server action.
+    if (!scopeAllows(access.scope, row.run.worksiteId)) throw new Error(NOT_FOUND)
+    if (!row.run.subjectVehicleId) throw new Error("La inspección no tiene un equipo como sujeto.")
+
+    await setVehicleOperationalStatus(tx, {
+      vehicleId: row.run.subjectVehicleId,
+      status: "fuera_servicio",
+      reason: `${row.run.code} · ${row.finding.description} — ${data.reason}`,
+      actorUserId: access.userId,
+    })
+    await history(tx, {
+      entityType: "finding", entityId: row.finding.id, worksiteId: row.run.worksiteId,
+      changeType: "vehicle_stopped", reason: data.reason, actorUserId: access.userId,
+    })
+    return { vehicleId: row.run.subjectVehicleId }
   })
 }
 
@@ -1212,6 +1443,71 @@ async function requireEditableAnswer(client: Client, answerId: string, access: I
     throw new Error("No se puede modificar la evidencia de una inspección ya ejecutada.")
   }
   return row
+}
+
+/* ── Documento origen: la foto de la planilla ─────────────────────────────── */
+
+/**
+ * Adjunta la foto de la planilla física al run.
+ *
+ * El alcance y la editabilidad se comprueban contra el run real, no contra un
+ * `worksiteId` que venga en el formulario — mismo criterio que
+ * `addAnswerEvidence`.
+ */
+export async function addRunDocument(input: {
+  runId: string
+  path: string
+  caption?: string | null
+  kind?: "source_form" | "attachment"
+  /**
+   * Lo que leyó el detector de marcas. **Modo sombra**: se guarda para poder
+   * medirlo contra lo que teclee la persona, y NO pre-llena respuestas. El
+   * pre-llenado se enciende cuando la medición lo respalde.
+   */
+  extraction?: {
+    layoutVersion: string
+    cells: { sectionId: string; itemId: string; result: string; confidence: number }[]
+  } | null
+}, access: InspectionAccess) {
+  const [run] = await db.select().from(preventionInspectionRuns)
+    .where(eq(preventionInspectionRuns.id, input.runId)).limit(1)
+  if (!run) throw new Error(NOT_FOUND)
+  requireAccess(access, "prevention:inspections:ingest", run.worksiteId)
+  if (["reviewed", "cancelled"].includes(run.status)) {
+    throw new Error("No se pueden adjuntar documentos a una inspección cerrada o cancelada.")
+  }
+  const [created] = await db.insert(preventionInspectionRunDocuments).values({
+    id: `insdoc-${nanoid()}`,
+    runId: input.runId,
+    path: input.path,
+    kind: input.kind ?? "source_form",
+    caption: input.caption ?? null,
+    extraction: input.extraction ?? null,
+    uploadedByUserId: access.userId,
+  }).returning()
+  if (!created) throw new Error("No se pudo adjuntar el documento.")
+  await history(db, {
+    entityType: "run", entityId: run.id, worksiteId: run.worksiteId,
+    changeType: "document_attached", reason: input.caption ?? "Planilla adjunta",
+    actorUserId: access.userId,
+  })
+  return created
+}
+
+export async function deleteRunDocument(input: { documentId: string }, access: InspectionAccess) {
+  const [row] = await db.select({ document: preventionInspectionRunDocuments, run: preventionInspectionRuns })
+    .from(preventionInspectionRunDocuments)
+    .innerJoin(preventionInspectionRuns, eq(preventionInspectionRuns.id, preventionInspectionRunDocuments.runId))
+    .where(eq(preventionInspectionRunDocuments.id, input.documentId)).limit(1)
+  if (!row) throw new Error(NOT_FOUND)
+  requireAccess(access, "prevention:inspections:ingest", row.run.worksiteId)
+  if (["reviewed", "cancelled"].includes(row.run.status)) {
+    throw new Error("No se pueden quitar documentos de una inspección cerrada o cancelada.")
+  }
+  await db.delete(preventionInspectionRunDocuments)
+    .where(eq(preventionInspectionRunDocuments.id, input.documentId))
+  // El archivo físico lo recoge el GC de evidencias, igual que las fotos de respuesta.
+  return { id: input.documentId }
 }
 
 export async function addAnswerEvidence(input: {
@@ -1511,9 +1807,12 @@ export async function getInspectionRunDetail(runId: string, access: InspectionAc
     .where(eq(preventionInspectionRuns.id, runId)).limit(1)
   if (!run || !scopeAllows(access.scope, run.run.worksiteId)) return null
 
-  const [answers, findings] = await Promise.all([
+  const [answers, findings, documents] = await Promise.all([
     db.select().from(preventionInspectionAnswers).where(eq(preventionInspectionAnswers.runId, runId)),
     db.select().from(preventionInspectionFindings).where(eq(preventionInspectionFindings.runId, runId)),
+    db.select().from(preventionInspectionRunDocuments)
+      .where(eq(preventionInspectionRunDocuments.runId, runId))
+      .orderBy(asc(preventionInspectionRunDocuments.createdAt)),
   ])
   // Evidencia por respuesta (función #1). Se consulta aparte y se agrupa en
   // memoria: son pocas filas por inspección y evita un join que duplicaría
@@ -1531,6 +1830,7 @@ export async function getInspectionRunDetail(runId: string, access: InspectionAc
     ...run,
     answers: answers.map((row) => ({ ...row, evidence: evidenceByAnswer.get(row.id) ?? [] })),
     findings,
+    documents,
   }
 }
 
@@ -1658,7 +1958,7 @@ export async function summarizeInspectionTrends(access: InspectionAccess, filter
 /** Catálogo de definiciones SST disponibles para incorporar como plantilla. */
 export function listImportableDefinitions() {
   return Object.entries(CHECKLIST_DEFINITIONS)
-    .flatMap(([code, definition]) => isPersonEvaluationDefinition(code)
+    .flatMap(([code, definition]) => isPersonEvaluationDefinition(code) || isNonInspectionDefinition(code)
       ? []
       : [{
           code,

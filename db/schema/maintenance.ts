@@ -1,7 +1,8 @@
 import { relations, sql } from "drizzle-orm"
-import { pgTable, text, numeric, timestamp, check, index } from "drizzle-orm/pg-core"
+import { pgTable, text, numeric, timestamp, check, index, uniqueIndex } from "drizzle-orm/pg-core"
 import { costCenters } from "./cost-centers"
 import { fuelVehicles } from "./fuel-vehicles"
+import { preventionInspectionFindings } from "./prevention/inspections"
 import { users } from "./users"
 import { suppliers, worksites } from "./worksites"
 
@@ -25,6 +26,10 @@ export const maintenanceRecords = pgTable("maintenance_records", {
   documentPath:     text("document_path"),
   documentMimeType: text("document_mime_type"),
   notes:            text("notes"),
+  /* Hallazgo de inspección que originó esta mantención, cuando nació de una.
+   * `set null` y no `cascade`: borrar el hallazgo no debe borrar el gasto ni el
+   * historial del equipo, sólo su procedencia. */
+  inspectionFindingId: text("inspection_finding_id").references(() => preventionInspectionFindings.id, { onDelete: "set null" }),
   createdBy:        text("created_by").notNull().references(() => users.id),
   createdAt:        timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   updatedAt:        timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
@@ -41,6 +46,10 @@ export const maintenanceRecords = pgTable("maintenance_records", {
   index("maintenance_records_worksite_idx").on(table.worksiteId),
   index("maintenance_records_cost_center_idx").on(table.costCenterId),
   index("maintenance_records_status_idx").on(table.status),
+  // Idempotencia: un hallazgo deriva a lo más una mantención. Sin esto, dos
+  // clics en "programar mantención" abren dos órdenes para la misma falla.
+  uniqueIndex("maintenance_record_finding_unique").on(table.inspectionFindingId)
+    .where(sql`${table.inspectionFindingId} IS NOT NULL`),
 ])
 
 export const maintenanceRecordsRelations = relations(maintenanceRecords, ({ one }) => ({

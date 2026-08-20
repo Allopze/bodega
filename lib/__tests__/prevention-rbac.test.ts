@@ -255,6 +255,11 @@ describe("prevention module RBAC", () => {
     ])
     expect(rolesFor("prevention:capa:verify")).toEqual(["administrador", "jefa_chome", "prevencionista"])
     expect(rolesFor("prevention:capa:close")).toEqual(["administrador", "jefa_chome"])
+    // El taller no tiene cuentas: las acciones correctivas de equipos las
+    // gestiona Prevención. El jefe de mantención ve la acción que originó su
+    // orden de trabajo, pero no la avanza.
+    expect(rolesFor("prevention:capa:view")).toContain("jefe_mantencion")
+    expect(rolesFor("prevention:capa:complete")).not.toContain("jefe_mantencion")
     expect(rolesFor("prevention:capa:override_segregation")).toEqual(["administrador"])
     // MIPER-08: verificar un control MIPER se segrega por identidad igual que
     // CAPA, así que su escape vive en el mismo lugar y con los mismos roles.
@@ -324,6 +329,15 @@ describe("prevention module RBAC", () => {
     expect(rolesFor("prevention:inspections:approve")).toEqual([
       "administrador", "jefa_chome", "prevencionista",
     ])
+    // Taller: el jefe de mantención sólo mira lo que su taller va a recibir.
+    // Nadie del taller ejecuta inspecciones — el reporte llega por foto.
+    expect(rolesFor("prevention:inspections:view")).toContain("jefe_mantencion")
+    expect(rolesFor("prevention:inspections:execute")).not.toContain("jefe_mantencion")
+    // Sube la planilla el jefe de faena, que en RBAC es `jefe_terreno`
+    // (ver lib/prevention/admin-contrato-label.ts). Permiso acotado: no lo
+    // tiene el taller ni quien sólo revisa.
+    expect(rolesFor("prevention:inspections:ingest")).toEqual(["jefe_terreno"])
+    expect(rolesFor("prevention:inspections:ingest")).not.toContain("jefe_mantencion")
   })
 
   it("keeps the committee as its own body and management review out of terreno", () => {

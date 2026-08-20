@@ -93,6 +93,11 @@ export async function materializeProgramRuns(options: { programId?: string } = {
           programId: program.id,
           worksiteId: program.worksiteId,
           subjectType: program.subjectType,
+          // El sujeto del programa no se propagaba: un programa "el extintor
+          // del pañol" o "el camión KA-122" producía runs sin sujeto, y la
+          // ejecución quedaba sin saber qué inspeccionar.
+          subjectResourceId: program.subjectResourceId,
+          subjectVehicleId: program.subjectVehicleId,
           scheduledFor,
           status: "planned",
           assignedToUserId: program.assignedToUserId,

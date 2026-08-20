@@ -734,7 +734,24 @@ export async function listCapaActionsPage(args: {
     db.select().from(preventionCapaActions).where(where).orderBy(desc(preventionCapaActions.createdAt)).limit(effectiveLimit).offset(effectiveOffset),
     db.select({ count: sql<number>`count(*)::int` }).from(preventionCapaActions).where(where),
   ])
-  return { rows, total: totalRow?.count ?? 0, limit: effectiveLimit, offset: effectiveOffset }
+  // El nombre del responsable actual. Sin esto la lista mostraba "Usuario
+  // asignado" y quien tenía la acción no podía reconocerse en la tabla. Misma
+  // técnica que el export (mapa por id sobre la página, no un join que
+  // cambiaría la forma de la fila).
+  const responsibleIds = [...new Set(rows.map((item) => item.responsibleUserId).filter((id): id is string => !!id))]
+  const userRows = responsibleIds.length > 0
+    ? await db.select({ id: users.id, name: users.name }).from(users).where(inArray(users.id, responsibleIds))
+    : []
+  const userName = new Map(userRows.map((item) => [item.id, item.name]))
+  return {
+    rows: rows.map((item) => ({
+      ...item,
+      responsibleName: item.responsibleUserId ? userName.get(item.responsibleUserId) ?? null : null,
+    })),
+    total: totalRow?.count ?? 0,
+    limit: effectiveLimit,
+    offset: effectiveOffset,
+  }
 }
 
 export async function getCapaActionBundle(args: {
@@ -782,12 +799,21 @@ export async function getCapaDashboardCounts(args: {
   }
 }
 
-export async function listAssignableCapaUsers(args: {
+/**
+ * Quién puede hacerse cargo de algo en una faena: usuarios activos asignados a
+ * ella. Sin chequeo de permiso — lo pone cada puerta, porque los dos
+ * llamadores exigen permisos distintos sobre la misma pregunta.
+ *
+ * Existe separada de `listAssignableCapaUsers` porque el motor de inspecciones
+ * poblaba el responsable de la CAPA con `listInspectionAssignees`, que devuelve
+ * quienes tienen `prevention:inspections:execute`. Un mecánico que sólo repara
+ * no aparecía en el selector, aunque el servicio lo aceptaba: "quien ejecuta la
+ * inspección" y "quien corrige el hallazgo" no son la misma población.
+ */
+export async function listWorksiteAssignableUsers(args: {
   worksiteId: string
   scope: WorksiteScope
-  permissions: readonly string[]
 }) {
-  requirePermission(args.permissions, "prevention:capa:view")
   if (!scopeAllows(args.scope, args.worksiteId)) return []
   return db.selectDistinct({ id: users.id, name: users.name })
     .from(users)
@@ -797,6 +823,15 @@ export async function listAssignableCapaUsers(args: {
     ))
     .where(eq(users.isActive, true))
     .orderBy(asc(users.name))
+}
+
+export async function listAssignableCapaUsers(args: {
+  worksiteId: string
+  scope: WorksiteScope
+  permissions: readonly string[]
+}) {
+  requirePermission(args.permissions, "prevention:capa:view")
+  return listWorksiteAssignableUsers(args)
 }
 
 export async function listCapaWorksites(args: {

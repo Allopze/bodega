@@ -6,6 +6,7 @@ import { drizzle } from "drizzle-orm/postgres-js"
 import { migrate } from "drizzle-orm/postgres-js/migrator"
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest"
 import * as schema from "@/db/schema"
+import type { Session } from "next-auth"
 import type { WorksiteScope } from "@/lib/auth/scope"
 import { fieldKindIsScorable, type InspectionItemSpec } from "@/lib/prevention/inspections"
 import {
@@ -31,6 +32,10 @@ const AUTHOR = { userId: "in-author", scope: scopeA, permissions: ["prevention:i
 const APPROVER = { userId: "in-approver", scope: scopeA, permissions: ALL }
 const REVIEWER = { userId: "in-reviewer", scope: scopeA, permissions: ["prevention:inspections:view", "prevention:inspections:review"] }
 const OUTSIDER = { userId: "in-outsider", scope: { mode: "some", ids: ["ws-in-b"] } as WorksiteScope, permissions: ALL }
+/** Mantenciones resuelve alcance con `Session`, no con `InspectionAccess`. */
+const MAINT_SESSION = {
+  user: { id: "in-author", isGlobal: false, worksiteIds: ["ws-in-a"], roles: [] },
+} as unknown as Session
 
 function getDb() {
   if (!testDb) throw new Error("Test database not initialised")
@@ -142,6 +147,17 @@ describeIf("Motor de inspecciones on real PostgreSQL", () => {
     expect(available.length).toBeGreaterThan(0)
     expect(available.map((item) => item.code)).not.toContain("trabajador_nuevo")
     expect(available.every((item) => item.items > 0)).toBe(true)
+  })
+
+  it("refuses the Observación Planeada: no puntúa ni puede derivar hallazgos", async () => {
+    const service = await import("@/lib/services/prevention-inspections")
+    // Fuera del catálogo de importables…
+    expect(service.listImportableDefinitions().map((item) => item.code)).not.toContain("observacion_planeada")
+    // …y también de la puerta, porque el código llega por la acción.
+    await expect(service.importInspectionTemplate({ definitionCode: "observacion_planeada" }, AUTHOR))
+      .rejects.toThrow(/no es un instrumento/i)
+    // Las otras dos observaciones se quedan.
+    expect(service.listImportableDefinitions().map((item) => item.code)).toContain("observacion_ampliroll")
   })
 
   // El contenido viene del catálogo versionado en el repositorio, así que
@@ -329,8 +345,10 @@ describeIf("Motor de inspecciones on real PostgreSQL", () => {
       actionDescription: "Recargar y certificar el extintor, y verificar el resto del sector.",
       immediateMeasure: "Extintor retirado de servicio y reemplazado por uno operativo.",
     }, AUTHOR)
-    expect(linked).toMatchObject({ status: "capa_linked" })
-    expect(linked.capaActionId).toBeTruthy()
+    expect(linked.finding).toMatchObject({ status: "capa_linked" })
+    expect(linked.finding.capaActionId).toBeTruthy()
+    // Sin `createMaintenance`, derivar no abre ninguna orden de taller.
+    expect(linked.maintenanceId).toBeNull()
 
     const capa = await getDb().select().from(schema.preventionCapaActions)
       .where(eq(schema.preventionCapaActions.sourceType, "inspection"))
@@ -663,6 +681,337 @@ describeIf("Motor de inspecciones on real PostgreSQL", () => {
     expect(saved).toHaveLength(1)
     expect(saved[0]).toMatchObject({ entityType: "run", actorUserId: "in-author", worksiteId: "ws-in-a" })
   })
+
+  /* ── Taller: equipo de flota como sujeto, hallazgo → CAPA → mantención ──── */
+  describe("Reporte de equipos y derivación al taller", () => {
+    let reporteTemplateId = ""
+    let reporteRunId = ""
+
+    /** Respuestas válidas del reporte para un camión simple, con una falla de frenos. */
+    function reporteAnswers(items: InspectionItemSpec[]) {
+      return items
+        .filter((item) => item.required || (item.countsForCompliance && fieldKindIsScorable(item.kind)))
+        .map((item) => {
+          if (!fieldKindIsScorable(item.kind)) {
+            return {
+              sectionId: item.sectionId,
+              itemId: item.itemId,
+              result: "recorded" as const,
+              value: item.kind === "number" ? "134122" : item.kind === "select" ? "tarde" : "Patio madera",
+            }
+          }
+          if (item.itemId === "freno_servicio") {
+            return { sectionId: item.sectionId, itemId: item.itemId, result: "non_conforming" as const, comment: "Pedal esponjoso" }
+          }
+          return { sectionId: item.sectionId, itemId: item.itemId, result: "conforming" as const, comment: null }
+        })
+    }
+
+    it("importa el Reporte de Equipos y acredita sólo la actividad PDTP n=25", async () => {
+      const service = await import("@/lib/services/prevention-inspections")
+      const template = await service.importInspectionTemplate(
+        { definitionCode: "reporte_equipos", pdtpActivityNumbers: [25] }, AUTHOR,
+      )
+      reporteTemplateId = template.id
+      expect(template.status).toBe("approved")
+      // n=26 y n=28 son actividades de revisión: acreditarlas al ejecutar
+      // afirmaría que el supervisor firmó cuando sólo se digitó el papel.
+      expect(template.pdtpActivityNumbers).toEqual([25])
+    })
+
+    it("lista los equipos de la faena como sujetos inspeccionables", async () => {
+      const service = await import("@/lib/services/prevention-inspections")
+      const subjects = await service.listInspectionSubjects("ws-in-a", AUTHOR)
+      const vehicle = subjects.find((item) => item.source === "vehicle")
+      expect(vehicle).toMatchObject({ id: "veh-a", name: "KA-122 · ABCD12" })
+      // El equipo de la otra faena no aparece.
+      expect(subjects.map((item) => item.id)).not.toContain("veh-b")
+    })
+
+    it("rechaza un equipo de otra faena como sujeto", async () => {
+      const service = await import("@/lib/services/prevention-inspections")
+      await expect(service.createInspectionRun({
+        templateId: reporteTemplateId, worksiteId: "ws-in-a", subjectVehicleId: "veh-b",
+      }, AUTHOR)).rejects.toThrow(/otra faena/i)
+    })
+
+    it("rechaza declarar dos sujetos a la vez", async () => {
+      const service = await import("@/lib/services/prevention-inspections")
+      await expect(service.createInspectionRun({
+        templateId: reporteTemplateId, worksiteId: "ws-in-a",
+        subjectVehicleId: "veh-a", subjectResourceId: "res-cualquiera",
+      }, AUTHOR)).rejects.toThrow(/un solo sujeto/i)
+    })
+
+    it("congela la etiqueta del equipo al crear la ejecución", async () => {
+      const service = await import("@/lib/services/prevention-inspections")
+      const { run } = await service.createInspectionRun({
+        templateId: reporteTemplateId, worksiteId: "ws-in-a", subjectVehicleId: "veh-a",
+      }, AUTHOR)
+      reporteRunId = run.id
+      expect(run.subjectLabel).toBe("KA-122 · ABCD12")
+      expect(run.subjectVehicleId).toBe("veh-a")
+    })
+
+    it("rechaza el horómetro con separador de miles del papel", async () => {
+      const service = await import("@/lib/services/prevention-inspections")
+      await expect(service.saveInspectionAnswers({
+        runId: reporteRunId, expectedVersion: await currentRunVersion(reporteRunId),
+        answers: [{ sectionId: "horometro", itemId: "horometro_inicio", result: "recorded", value: "134.122" }],
+      }, AUTHOR)).rejects.toThrow(/separador de miles/i)
+    })
+
+    it("deriva la falla de frenos a CAPA crítica y abre la mantención del equipo", async () => {
+      const service = await import("@/lib/services/prevention-inspections")
+      const [template] = await getDb().select().from(schema.preventionInspectionTemplates)
+        .where(eq(schema.preventionInspectionTemplates.id, reporteTemplateId))
+      const items = service.itemsFromDefinition(template!.definitionSnapshot as never)
+
+      await service.saveInspectionAnswers({
+        runId: reporteRunId, expectedVersion: await currentRunVersion(reporteRunId), answers: reporteAnswers(items),
+      }, AUTHOR)
+      await service.completeInspectionRun({
+        runId: reporteRunId, expectedVersion: await currentRunVersion(reporteRunId),
+        closingAct: await closingActFor(reporteTemplateId),
+      }, AUTHOR)
+
+      const [finding] = await getDb().select().from(schema.preventionInspectionFindings)
+        .where(eq(schema.preventionInspectionFindings.runId, reporteRunId))
+      // `danoPotencial: 'fatal'` en frenos ⇒ criticidad crítica.
+      expect(finding).toMatchObject({ criticality: "critical" })
+
+      const linked = await service.createFindingCapa({
+        findingId: finding!.id,
+        actionDescription: "Cambiar cilindro maestro y purgar el sistema de frenos.",
+        createMaintenance: true,
+      }, AUTHOR)
+      expect(linked.maintenanceId).toBeTruthy()
+
+      const [record] = await getDb().select().from(schema.maintenanceRecords)
+        .where(eq(schema.maintenanceRecords.inspectionFindingId, finding!.id))
+      expect(record).toMatchObject({
+        vehicleId: "veh-a", worksiteId: "ws-in-a", status: "scheduled", maintenanceType: "correctiva",
+        // El camión mide por horómetro, así que la lectura va a esa columna.
+        hourMeterReading: 134122, odometerReading: null,
+      })
+      // El plazo del taller y el de la acción correctiva son el mismo día.
+      const [capa] = await getDb().select().from(schema.preventionCapaActions)
+        .where(eq(schema.preventionCapaActions.id, linked.capaId))
+      expect(record!.maintenanceDate).toBe(capa!.targetDate)
+      expect(capa).toMatchObject({ priority: "critical", requiresImmediateStop: true })
+    })
+
+    it("cerrar la mantención acredita la evidencia de la CAPA", async () => {
+      const maintenance = await import("@/lib/services/maintenance")
+      const [finding] = await getDb().select().from(schema.preventionInspectionFindings)
+        .where(eq(schema.preventionInspectionFindings.runId, reporteRunId))
+      const [record] = await getDb().select().from(schema.maintenanceRecords)
+        .where(eq(schema.maintenanceRecords.inspectionFindingId, finding!.id))
+
+      const before = await getDb().select().from(schema.preventionCapaEvidence)
+        .where(eq(schema.preventionCapaEvidence.actionId, finding!.capaActionId!))
+      expect(before).toHaveLength(0)
+
+      await maintenance.updateMaintenanceRecord(MAINT_SESSION, record!.id, {
+        vehicleId: "veh-a", supplierId: "", worksiteId: "ws-in-a", costCenterId: "",
+        maintenanceDate: record!.maintenanceDate, maintenanceType: "correctiva", status: "completed",
+        odometerReading: null, hourMeterReading: 134122,
+        netAmount: 0, taxAmount: 0, totalAmount: 0,
+        documentNumber: "", documentName: "", notes: "Frenos reparados.",
+      })
+
+      const after = await getDb().select().from(schema.preventionCapaEvidence)
+        .where(eq(schema.preventionCapaEvidence.actionId, finding!.capaActionId!))
+      // `kind: 'note'` no cuenta para desbloquear la verificación; por eso es
+      // 'document' y no una nota.
+      expect(after).toHaveLength(1)
+      expect(after[0]).toMatchObject({ kind: "document", reference: `mantencion:${record!.id}` })
+    })
+
+    it("no abre una segunda mantención para el mismo hallazgo", async () => {
+      const service = await import("@/lib/services/prevention-inspections")
+      const [finding] = await getDb().select().from(schema.preventionInspectionFindings)
+        .where(eq(schema.preventionInspectionFindings.runId, reporteRunId))
+      // La segunda derivación se rechaza antes por la CAPA ya enlazada; el
+      // índice único parcial es la red por debajo.
+      await expect(service.createFindingCapa({
+        findingId: finding!.id, actionDescription: "Otra acción distinta.", createMaintenance: true,
+      }, AUTHOR)).rejects.toThrow(/ya tiene una acción CAPA/i)
+    })
+
+    it("saca el equipo de servicio sólo cuando alguien lo confirma", async () => {
+      const service = await import("@/lib/services/prevention-inspections")
+      const [before] = await getDb().select().from(schema.fuelVehicles)
+        .where(eq(schema.fuelVehicles.id, "veh-a"))
+      // Derivar la falla crítica NO detiene el equipo por su cuenta.
+      expect(before!.operationalStatus).toBe("operativo")
+
+      const [finding] = await getDb().select().from(schema.preventionInspectionFindings)
+        .where(eq(schema.preventionInspectionFindings.runId, reporteRunId))
+      await service.stopVehicleForFinding({
+        findingId: finding!.id, reason: "Frenos sin respuesta, se traslada a taller.",
+      }, AUTHOR)
+
+      const [after] = await getDb().select().from(schema.fuelVehicles)
+        .where(eq(schema.fuelVehicles.id, "veh-a"))
+      expect(after!.operationalStatus).toBe("fuera_servicio")
+      // Un solo intervalo abierto: el índice único parcial lo exige.
+      const intervals = await getDb().select().from(schema.fuelVehicleOperationalIntervals)
+        .where(eq(schema.fuelVehicleOperationalIntervals.vehicleId, "veh-a"))
+      expect(intervals.filter((item) => item.endedAt === null)).toHaveLength(1)
+    })
+
+    it("no deja detener un equipo fuera del alcance de faena", async () => {
+      const service = await import("@/lib/services/prevention-inspections")
+      const [finding] = await getDb().select().from(schema.preventionInspectionFindings)
+        .where(eq(schema.preventionInspectionFindings.runId, reporteRunId))
+      await expect(service.stopVehicleForFinding({
+        findingId: finding!.id, reason: "Intento desde otra faena.",
+      }, OUTSIDER)).rejects.toThrow()
+    })
+
+    it("reabrir la inspección conserva el hallazgo derivado y su mantención", async () => {
+      const service = await import("@/lib/services/prevention-inspections")
+      await service.transitionInspectionRun({
+        runId: reporteRunId, expectedVersion: await currentRunVersion(reporteRunId),
+        toStatus: "in_progress", reason: "Corregir la lectura del horómetro de término.",
+      }, REVIEWER)
+
+      const findings = await getDb().select().from(schema.preventionInspectionFindings)
+        .where(eq(schema.preventionInspectionFindings.runId, reporteRunId))
+      // El hallazgo ya tiene CAPA: `completeInspectionRun` sólo borra los
+      // abiertos sin acción, así que la orden de taller no queda huérfana.
+      expect(findings).toHaveLength(1)
+      const records = await getDb().select().from(schema.maintenanceRecords)
+        .where(eq(schema.maintenanceRecords.inspectionFindingId, findings[0]!.id))
+      expect(records).toHaveLength(1)
+    })
+  })
+
+  /* ── Ingesta: la planilla física y la ratificación de lo leído ─────────── */
+  describe("Ingesta de la planilla física", () => {
+    const INGESTOR = { userId: "in-author", scope: scopeA, permissions: [...ALL, "prevention:inspections:ingest"] }
+    let ingestaTemplateId = ""
+    let ingestaRunId = ""
+
+    it("prepara una ejecución del reporte para la ingesta", async () => {
+      const service = await import("@/lib/services/prevention-inspections")
+      const [template] = await getDb().select().from(schema.preventionInspectionTemplates)
+        .where(eq(schema.preventionInspectionTemplates.sourceDefinitionCode, "reporte_equipos"))
+      ingestaTemplateId = template!.id
+      const { run } = await service.createInspectionRun({
+        templateId: ingestaTemplateId, worksiteId: "ws-in-a", subjectVehicleId: "veh-a",
+      }, AUTHOR)
+      ingestaRunId = run.id
+      expect(run.status).toBe("planned")
+    })
+
+    it("rechaza adjuntar la planilla sin el permiso de ingesta", async () => {
+      const service = await import("@/lib/services/prevention-inspections")
+      // AUTHOR tiene execute, manage y view, pero no `:ingest`.
+      await expect(service.addRunDocument({
+        runId: ingestaRunId, path: "storage/inspection-evidence/x.jpg",
+      }, AUTHOR)).rejects.toThrow()
+    })
+
+    it("rechaza adjuntar la planilla de una faena ajena", async () => {
+      const service = await import("@/lib/services/prevention-inspections")
+      const outsider = { ...OUTSIDER, permissions: [...ALL, "prevention:inspections:ingest"] }
+      await expect(service.addRunDocument({
+        runId: ingestaRunId, path: "storage/inspection-evidence/x.jpg",
+      }, outsider)).rejects.toThrow()
+    })
+
+    it("adjunta la planilla y la devuelve en el detalle", async () => {
+      const service = await import("@/lib/services/prevention-inspections")
+      const created = await service.addRunDocument({
+        runId: ingestaRunId,
+        path: "storage/inspection-evidence/planilla-03101.jpg",
+        caption: "Reporte N° 03101",
+      }, INGESTOR)
+      expect(created).toMatchObject({ kind: "source_form", uploadedByUserId: "in-author" })
+      // Sin detector todavía: se sube sin lectura de máquina.
+      expect(created.extraction).toBeNull()
+
+      const detail = await service.getInspectionRunDetail(ingestaRunId, AUTHOR)
+      expect(detail?.documents).toHaveLength(1)
+      expect(detail?.documents[0]).toMatchObject({ caption: "Reporte N° 03101" })
+    })
+
+    it("guarda la marca de ratificación sólo en los ítems fatales", async () => {
+      const service = await import("@/lib/services/prevention-inspections")
+      await service.saveInspectionAnswers({
+        runId: ingestaRunId,
+        expectedVersion: await currentRunVersion(ingestaRunId),
+        answers: [
+          // Lo que "leyó" la máquina: un freno y una bocina, ambos marcados.
+          { sectionId: "estado_camion", itemId: "freno_servicio", result: "conforming", needsConfirmation: true },
+          { sectionId: "estado_camion", itemId: "bocina", result: "conforming", needsConfirmation: true },
+        ],
+      }, INGESTOR)
+
+      const rows = await getDb().select().from(schema.preventionInspectionAnswers)
+        .where(eq(schema.preventionInspectionAnswers.runId, ingestaRunId))
+      const byItem = new Map(rows.map((row) => [row.itemId, row]))
+      expect(byItem.get("freno_servicio")!.needsConfirmation).toBe(true)
+      // La bocina no es fatal: el servicio descarta la marca para que la puerta
+      // no se convierta en un trámite de 28 clics.
+      expect(byItem.get("bocina")!.needsConfirmation).toBe(false)
+    })
+
+    it("no deja declarar ejecutada la inspección con un fatal sin ratificar", async () => {
+      const service = await import("@/lib/services/prevention-inspections")
+      const [template] = await getDb().select().from(schema.preventionInspectionTemplates)
+        .where(eq(schema.preventionInspectionTemplates.id, ingestaTemplateId))
+      const items = service.itemsFromDefinition(template!.definitionSnapshot as never)
+      const answers = items
+        .filter((item) => item.required || (item.countsForCompliance && fieldKindIsScorable(item.kind)))
+        .map((item) => {
+          if (!fieldKindIsScorable(item.kind)) {
+            return {
+              sectionId: item.sectionId, itemId: item.itemId, result: "recorded" as const,
+              value: item.kind === "number" ? "134122" : item.kind === "select" ? "tarde" : "Patio madera",
+            }
+          }
+          return {
+            sectionId: item.sectionId, itemId: item.itemId, result: "conforming" as const,
+            // El freno queda pre-llenado por la máquina y sin ratificar.
+            needsConfirmation: item.itemId === "freno_servicio",
+          }
+        })
+
+      await service.saveInspectionAnswers({
+        runId: ingestaRunId, expectedVersion: await currentRunVersion(ingestaRunId), answers,
+      }, INGESTOR)
+      await expect(service.completeInspectionRun({
+        runId: ingestaRunId, expectedVersion: await currentRunVersion(ingestaRunId),
+        closingAct: await closingActFor(ingestaTemplateId),
+      }, AUTHOR)).rejects.toThrow(/de servicio \(pedal de freno\)/i)
+
+      // Ratificado —sin cambiar la respuesta— la subida cierra.
+      await service.saveInspectionAnswers({
+        runId: ingestaRunId,
+        expectedVersion: await currentRunVersion(ingestaRunId),
+        answers: answers.map((answer) => ({ ...answer, needsConfirmation: false })),
+      }, INGESTOR)
+      const done = await service.completeInspectionRun({
+        runId: ingestaRunId, expectedVersion: await currentRunVersion(ingestaRunId),
+        closingAct: await closingActFor(ingestaTemplateId),
+      }, AUTHOR)
+      expect(done.run.status).toBe("completed")
+    })
+
+    it("no admite adjuntar a una inspección ya cerrada", async () => {
+      const service = await import("@/lib/services/prevention-inspections")
+      await service.transitionInspectionRun({
+        runId: ingestaRunId, expectedVersion: await currentRunVersion(ingestaRunId),
+        toStatus: "reviewed", reason: "Revisado y conforme para la prueba de ingesta.",
+      }, REVIEWER)
+      await expect(service.addRunDocument({
+        runId: ingestaRunId, path: "storage/inspection-evidence/tarde.jpg",
+      }, INGESTOR)).rejects.toThrow(/cerrada o cancelada/i)
+    })
+  })
 })
 
 async function seedFixture(database: ReturnType<typeof drizzle<typeof schema>>) {
@@ -676,6 +1025,16 @@ async function seedFixture(database: ReturnType<typeof drizzle<typeof schema>>) 
     { id: "in-approver", name: "Aprobador", email: "in-approver@local.invalid", hashedPassword: "hash", createdAt: now, updatedAt: now },
     { id: "in-reviewer", name: "Revisor", email: "in-reviewer@local.invalid", hashedPassword: "hash", createdAt: now, updatedAt: now },
     { id: "in-outsider", name: "Ajeno", email: "in-outsider@local.invalid", hashedPassword: "hash", createdAt: now, updatedAt: now },
+  ])
+  // Padrón de flota: sujeto del Reporte de Equipos y destino de la mantención.
+  // Slug propio: las migraciones ya siembran la taxonomía real (`camion`, …) y
+  // `fuel_equipment_types_slug_unique` no admite repetirlo.
+  await database.insert(schema.fuelEquipmentTypes).values([
+    { id: "eqt-in-camion", slug: "camion_fixture_inspecciones", name: "Camión (fixture)", category: "truck", defaultMeterType: "hour_meter", createdAt: now, updatedAt: now },
+  ])
+  await database.insert(schema.fuelVehicles).values([
+    { id: "veh-a", plate: "ABCD12", code: "KA-122", type: "camion", equipmentTypeId: "eqt-in-camion", meterType: "hour_meter", worksiteId: "ws-in-a", createdAt: now, updatedAt: now },
+    { id: "veh-b", plate: "WXYZ99", code: "KA-999", type: "camion", equipmentTypeId: "eqt-in-camion", meterType: "hour_meter", worksiteId: "ws-in-b", createdAt: now, updatedAt: now },
   ])
 }
 

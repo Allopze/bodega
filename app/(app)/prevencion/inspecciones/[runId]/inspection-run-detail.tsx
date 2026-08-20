@@ -4,6 +4,7 @@ import * as React from "react"
 import Link from "next/link"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { DatePicker } from "@/components/ui/date-picker"
 import { Input } from "@/components/ui/input"
@@ -41,6 +42,7 @@ import {
   reopenInspectionRunAction,
   reviewInspectionRunAction,
   saveInspectionAnswersAction,
+  stopVehicleForFindingAction,
 } from "../actions"
 import { Field } from "@/components/ui/field"
 import { useOperation } from "@/lib/hooks/use-operation"
@@ -53,6 +55,8 @@ interface RunInfo {
   origin: string
   subjectType: string | null
   subjectLabel: string | null
+  /** Equipo de flota inspeccionado; habilita derivar a mantención. */
+  subjectVehicleId: string | null
   scheduledFor: string | null
   executedAt: string | null
   reviewedAt: string | null
@@ -97,6 +101,8 @@ interface AnswerInfo {
   value: string | null
   /** Fotos adjuntas a esta respuesta (función #1). */
   evidence: { id: string; path: string; caption: string | null }[]
+  /** La pre-llenó el reconocimiento y falta ratificarla (sólo ítems `fatal`). */
+  needsConfirmation: boolean
 }
 
 interface FindingInfo {
@@ -108,7 +114,15 @@ interface FindingInfo {
 }
 
 type ResultValue = "" | "conforming" | "partial" | "non_conforming" | "not_applicable" | "recorded"
-interface Draft { result: ResultValue; comment: string; value: string }
+interface Draft { result: ResultValue; comment: string; value: string; needsConfirmation: boolean }
+
+/** La planilla física subida y, cuando exista el detector, lo que leyó. */
+export interface RunDocumentInfo {
+  id: string
+  path: string
+  caption: string | null
+  createdAt: string
+}
 
 interface Props {
   run: RunInfo
@@ -125,6 +139,12 @@ interface Props {
   canExecute: boolean
   canReview: boolean
   canManage: boolean
+  /** `combustibles:manage_vehicles`: confirma sacar el equipo de servicio. */
+  canStopVehicle: boolean
+  /** Planillas físicas adjuntas al run. */
+  documents: RunDocumentInfo[]
+  /** `prevention:inspections:ingest`: sube la foto de la planilla. */
+  canIngest: boolean
   /** Acta que declara la plantilla; `null` si no exige uno. */
   closingAct: ClosingActSpec | null
 }
@@ -208,6 +228,20 @@ function NonScorableField({ item, value, onChange }: {
   }
   if (item.kind === "date") {
     return <DatePicker value={value} onChange={onChange} ariaLabel={label} />
+  }
+  if (item.kind === "number") {
+    return (
+      <Input
+        type="number"
+        inputMode="decimal"
+        min={0}
+        step="any"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder={item.placeholder ?? "Sin separador de miles"}
+        aria-label={label}
+      />
+    )
   }
   if (item.kind === "select" && item.options?.length) {
     return (
@@ -321,7 +355,8 @@ function AnswerEvidence({ answerId, evidence, editable }: {
 
 export function InspectionRunDetail({
   run, templateKind, worksiteName, assigneeName, executorName, reviewerName,
-  sections, answers, findings, currentUserId, assignees, canExecute, canReview, canManage, closingAct,
+  sections, answers, findings, currentUserId, assignees, canExecute, canReview, canManage, canStopVehicle,
+  documents, canIngest, closingAct,
 }: Props) {
   const editable = canExecute && ["planned", "in_progress"].includes(run.status)
   const items: InspectionItemSpec[] = React.useMemo(
@@ -336,6 +371,7 @@ export function InspectionRunDetail({
         result: answer.result as ResultValue,
         comment: answer.comment ?? "",
         value: answer.value ?? "",
+        needsConfirmation: answer.needsConfirmation ?? false,
       }
     }
     return initial
@@ -415,7 +451,24 @@ export function InspectionRunDetail({
   function update(sectionId: string, itemId: string, patch: Partial<Draft>) {
     setDrafts((current) => {
       const key = draftKey(sectionId, itemId)
-      return { ...current, [key]: { ...(current[key] ?? { result: "", comment: "", value: "" }), ...patch } }
+      const base = current[key] ?? { result: "" as ResultValue, comment: "", value: "", needsConfirmation: false }
+      // Responder el ítem lo ratifica: si la persona eligió el resultado, ya
+      // miró la celda. Editar sólo el comentario no basta.
+      const confirmedByAnswering = patch.result !== undefined
+      return {
+        ...current,
+        [key]: { ...base, ...patch, needsConfirmation: confirmedByAnswering ? false : base.needsConfirmation },
+      }
+    })
+  }
+
+  /** Ratifica lo que leyó la máquina sin cambiar la respuesta. */
+  function confirmRead(sectionId: string, itemId: string) {
+    setDrafts((current) => {
+      const key = draftKey(sectionId, itemId)
+      const base = current[key]
+      if (!base) return current
+      return { ...current, [key]: { ...base, needsConfirmation: false } }
     })
   }
 
@@ -430,6 +483,7 @@ export function InspectionRunDetail({
           result: draft.result as InspectionAnswerInput["result"],
           comment: draft.comment || null,
           value: draft.value || null,
+          needsConfirmation: draft.needsConfirmation,
         }
       }),
     [drafts],
@@ -655,7 +709,11 @@ export function InspectionRunDetail({
         </div>
       )}
 
-      <div className="space-y-4">
+      <div className={documents.length > 0
+        ? "grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,26rem)] lg:items-start"
+        : undefined}
+      >
+        <div className="space-y-4">
         {sections.map((section) => (
           <section key={section.id} className="space-y-2">
             <h2 className="text-sm font-semibold">{section.title}</h2>
@@ -672,7 +730,7 @@ export function InspectionRunDetail({
                 <TableBody>
                   {section.items.map((item) => {
                     const key = draftKey(section.id, item.id)
-                    const draft = drafts[key] ?? { result: "" as ResultValue, comment: "", value: "" }
+                    const draft = drafts[key] ?? { result: "" as ResultValue, comment: "", value: "", needsConfirmation: false }
                     // 'Regular' exige justificarse por escrito igual que 'No aplica'
                     // — mismo criterio que el motor SST (requiresObservation).
                     const needsComment = draft.result === "not_applicable" || draft.result === "partial"
@@ -685,6 +743,21 @@ export function InspectionRunDetail({
                         <TableCell className="text-sm">
                           {item.label}
                           {item.required && <Badge variant="outline" className="ml-2">Obligatorio</Badge>}
+                          {draft.needsConfirmation && (
+                            <span className="mt-1 flex flex-wrap items-center gap-2">
+                              <Badge variant="warning">Leído de la planilla</Badge>
+                              {editable && (
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="secondary"
+                                  onClick={() => confirmRead(section.id, item.id)}
+                                >
+                                  Confirmar contra la foto
+                                </Button>
+                              )}
+                            </span>
+                          )}
                         </TableCell>
                         {scorable ? (
                           <>
@@ -755,7 +828,11 @@ export function InspectionRunDetail({
             </div>
           </section>
         ))}
+        </div>
+        {documents.length > 0 && <SourceFormViewer documents={documents} />}
       </div>
+
+      {canIngest && editable && <SourceFormUpload runId={run.id} hasDocuments={documents.length > 0} />}
 
       {closingAct && (
         <section className="space-y-3">
@@ -847,7 +924,10 @@ export function InspectionRunDetail({
                       {(canExecute || canReview) && (
                         <TableCell className="text-right">
                           <div className="flex justify-end gap-2">
-                            {canExecute && finding.status === "open" && <CapaDialog finding={finding} assignees={assignees} />}
+                            {canExecute && finding.status === "open" && <CapaDialog finding={finding} assignees={assignees} hasVehicle={!!run.subjectVehicleId} />}
+                            {canStopVehicle && run.subjectVehicleId && ["high", "critical"].includes(finding.criticality) && (
+                              <StopVehicleDialog finding={finding} subjectLabel={run.subjectLabel} />
+                            )}
                             {/* B-06: cierre manual sólo para hallazgos sin CAPA.
                                 Los que la tienen se cierran al verificar o
                                 cerrar su acción, en la misma transacción. */}
@@ -950,9 +1030,16 @@ function CompleteDialog({ run, completion, rowProblems, payload, onSaved }: {
 
 /* ── Derivar hallazgo a CAPA ──────────────────────────────────────────────── */
 
-function CapaDialog({ finding, assignees }: { finding: FindingInfo; assignees: { id: string; name: string }[] }) {
+function CapaDialog({ finding, assignees, hasVehicle }: {
+  finding: FindingInfo
+  assignees: { id: string; name: string }[]
+  hasVehicle: boolean
+}) {
   const [open, setOpen] = React.useState(false)
   const [responsibleUserId, setResponsibleUserId] = React.useState("_none")
+  // Sólo tiene sentido con un equipo de flota como sujeto; el servicio lo
+  // rechaza igual, pero ofrecerlo sin equipo sería un botón que siempre falla.
+  const [createMaintenance, setCreateMaintenance] = React.useState(false)
   const operation = useOperation()
 
   function submit(event: React.FormEvent<HTMLFormElement>) {
@@ -965,6 +1052,7 @@ function CapaDialog({ finding, assignees }: { finding: FindingInfo; assignees: {
       actionDescription: form.get("actionDescription"),
       responsibleUserId: responsibleUserId || null,
       immediateMeasure: immediateMeasure || null,
+      createMaintenance: hasVehicle && createMaintenance,
     }), () => setOpen(false))
   }
 
@@ -986,11 +1074,179 @@ function CapaDialog({ finding, assignees }: { finding: FindingInfo; assignees: {
           <Field label="Responsable" hint="Opcional.">
             <Select value={responsibleUserId} onValueChange={setResponsibleUserId}><SelectTrigger><SelectValue placeholder="Sin asignar" /></SelectTrigger><SelectContent><SelectItem value="_none">Sin asignar</SelectItem>{assignees.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select><input type="hidden" name="responsibleUserId" value={responsibleUserId === "_none" ? "" : responsibleUserId} />
           </Field>
+          {hasVehicle && (
+            <div className="space-y-1">
+              <Checkbox
+                checked={createMaintenance}
+                onChange={(event) => setCreateMaintenance(event.target.checked)}
+                label="Programar mantención del equipo"
+              />
+              <p className="pl-6 text-xs text-[var(--color-text-subtle)]">
+                Abre una mantención correctiva para el plazo de esta acción. Al completarla, queda como evidencia de la CAPA.
+              </p>
+            </div>
+          )}
           {operation.message && <p role="status" className="text-sm">{operation.message}</p>}
           <DialogFooter><Button type="submit" disabled={operation.pending}>Derivar</Button></DialogFooter>
         </form>
       </DialogContent>
     </Dialog>
+  )
+}
+
+/**
+ * Confirma la propuesta de sacar el equipo de servicio.
+ *
+ * Es un diálogo aparte y no una casilla del anterior porque detener un equipo
+ * para la faena: lo decide quien administra la flota, no quien digita el
+ * reporte, y exige dejar dicho por qué.
+ */
+function StopVehicleDialog({ finding, subjectLabel }: { finding: FindingInfo; subjectLabel: string | null }) {
+  const [open, setOpen] = React.useState(false)
+  const operation = useOperation()
+
+  function submit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const form = new FormData(event.currentTarget)
+    operation.run(() => stopVehicleForFindingAction({
+      findingId: finding.id,
+      reason: form.get("reason"),
+    }), () => setOpen(false))
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild><Button size="sm" variant="secondary">Sacar de servicio</Button></DialogTrigger>
+      <DialogContent>
+        <form onSubmit={submit} className="space-y-4">
+          <DialogHeader>
+            <DialogTitle>Sacar el equipo de servicio</DialogTitle>
+            <DialogDescription>
+              {subjectLabel ? `${subjectLabel} — ` : ""}{finding.description}
+            </DialogDescription>
+          </DialogHeader>
+          <Field label="Motivo" hint="Mínimo 10 caracteres. Queda en el historial del equipo.">
+            <Textarea name="reason" required minLength={10} maxLength={3000} />
+          </Field>
+          {operation.message && <p role="status" className="text-sm">{operation.message}</p>}
+          <DialogFooter><Button type="submit" disabled={operation.pending}>Confirmar</Button></DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+/* ── La planilla física ───────────────────────────────────────────────────── */
+
+/**
+ * Visor de la planilla, a la derecha de las respuestas.
+ *
+ * La foto se queda a la vista mientras se recorren los ítems, y se amplía y
+ * reduce para poder ir al detalle de una celda sin perder la lista. Es la
+ * condición para que ratificar lo que leyó la máquina sea un acto real y no un
+ * clic a ciegas: sin la imagen al lado, confirmar es adivinar.
+ *
+ * `position: sticky` sólo desde `lg`: en móvil las dos columnas se apilan y
+ * fijar la imagen taparía media pantalla.
+ */
+function SourceFormViewer({ documents }: { documents: RunDocumentInfo[] }) {
+  const [index, setIndex] = React.useState(0)
+  const [zoom, setZoom] = React.useState(1)
+  const current = documents[Math.min(index, documents.length - 1)]
+  if (!current) return null
+  const src = `/api/prevencion/inspecciones/documento/${current.path.split("/").pop()}`
+
+  return (
+    <aside className="space-y-2 lg:sticky lg:top-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-sm font-semibold">Planilla original</h2>
+        <div className="flex items-center gap-1">
+          <Button type="button" size="sm" variant="ghost" aria-label="Reducir la planilla"
+            onClick={() => setZoom((z) => Math.max(0.5, Math.round((z - 0.25) * 100) / 100))}>−</Button>
+          <span className="min-w-12 text-center text-xs tabular-nums text-[var(--color-text-subtle)]">
+            {Math.round(zoom * 100)}%
+          </span>
+          <Button type="button" size="sm" variant="ghost" aria-label="Ampliar la planilla"
+            onClick={() => setZoom((z) => Math.min(4, Math.round((z + 0.25) * 100) / 100))}>+</Button>
+          <Button type="button" size="sm" variant="ghost" onClick={() => setZoom(1)}>Ajustar</Button>
+        </div>
+      </div>
+      <div className="max-h-[70vh] overflow-auto rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)]">
+        {/* eslint-disable-next-line @next/next/no-img-element -- la ruta es dinámica y autorizada por sesión; no pasa por el optimizador */}
+        <img
+          src={src}
+          alt={current.caption ?? "Planilla del reporte de equipos"}
+          className="origin-top-left"
+          style={{ width: `${zoom * 100}%`, maxWidth: "none" }}
+        />
+      </div>
+      {documents.length > 1 && (
+        <div className="flex flex-wrap gap-1">
+          {documents.map((item, position) => (
+            <Button
+              key={item.id}
+              type="button"
+              size="sm"
+              variant={position === index ? "secondary" : "ghost"}
+              onClick={() => { setIndex(position); setZoom(1) }}
+            >
+              Hoja {position + 1}
+            </Button>
+          ))}
+        </div>
+      )}
+      {current.caption && <p className="text-xs text-[var(--color-text-subtle)]">{current.caption}</p>}
+    </aside>
+  )
+}
+
+/** Sube la foto de la planilla. Requiere `prevention:inspections:ingest`. */
+function SourceFormUpload({ runId, hasDocuments }: { runId: string; hasDocuments: boolean }) {
+  const inputRef = React.useRef<HTMLInputElement>(null)
+  const [pending, setPending] = React.useState(false)
+  const [message, setMessage] = React.useState("")
+
+  async function upload(file: File) {
+    setPending(true)
+    setMessage("")
+    try {
+      const body = new FormData()
+      body.append("file", file)
+      body.append("runId", runId)
+      const response = await fetch("/api/prevencion/inspecciones/documento", { method: "POST", body })
+      const payload = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(payload?.error ?? "No se pudo subir la planilla.")
+      // La planilla la lee el servidor al renderizar el detalle.
+      window.location.reload()
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "No se pudo subir la planilla.")
+    } finally {
+      setPending(false)
+    }
+  }
+
+  return (
+    <section className="space-y-2 rounded-lg border border-dashed border-[var(--color-border)] p-4">
+      <h2 className="text-sm font-semibold">{hasDocuments ? "Agregar otra hoja" : "Subir la planilla física"}</h2>
+      <p className="text-xs text-[var(--color-text-subtle)]">
+        Foto o escaneo del reporte firmado. Queda como evidencia del turno y sirve de referencia para responder los ítems.
+      </p>
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/jpeg,image/png,application/pdf"
+        className="sr-only"
+        onChange={(event) => {
+          const file = event.target.files?.[0]
+          if (file) void upload(file)
+          event.target.value = ""
+        }}
+      />
+      <Button type="button" size="sm" variant="secondary" disabled={pending} onClick={() => inputRef.current?.click()}>
+        {pending ? "Subiendo…" : "Elegir archivo"}
+      </Button>
+      {message && <p role="status" className="text-sm">{message}</p>}
+    </section>
   )
 }
 

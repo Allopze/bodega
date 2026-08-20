@@ -57,6 +57,13 @@ export const preventionInspectionPrograms = pgTable("prevention_inspection_progr
   subjectType:       text("subject_type"),
   /** Recurso concreto que programa inspeccionar (función #11). */
   subjectResourceId: text("subject_resource_id").references(() => preventionEmergencyResources.id, { onDelete: "set null" }),
+  /* Equipo de flota al que aplica el programa (camión, acoplado, cargador).
+   * `subjectType` clasifica ('camion', 'aljibe', etc.) pero no tiene FK; el
+   * que sí lo hace es `fuelVehicles`. Se agrega como FK propia y no como par
+   * polimórfico (`subjectKind` + `subjectRef`) porque el motor PDTP ya intentó
+   * eso —`subjectId` referencia `fuelVehicles.id`/`workers.id` sin FK física—
+   * y por eso no puede garantizar que el sujeto exista. */
+  subjectVehicleId:  text("subject_vehicle_id").references(() => fuelVehicles.id, { onDelete: "set null" }),
   isActive:          boolean("is_active").notNull().default(true),
   version:           integer("version").notNull().default(1),
   createdByUserId:   text("created_by_user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
@@ -89,6 +96,11 @@ export const preventionInspectionRuns = pgTable("prevention_inspection_runs", {
    * `lastInspectedAt`, `nextInspectionAt`— con su propio CRUD y sus alertas de
    * vencimiento, que nadie alimentaba. No hace falta tabla nueva. */
   subjectResourceId: text("subject_resource_id").references(() => preventionEmergencyResources.id, { onDelete: "set null" }),
+  /* Equipo de flota inspeccionado. Excluyente con `subjectResourceId` — ver el
+   * CHECK `prevention_inspection_run_single_subject`. `subjectLabel` sigue
+   * congelando cómo se llamaba el equipo al inspeccionarlo: renombrar la
+   * patente después no debe reescribir la evidencia. */
+  subjectVehicleId:  text("subject_vehicle_id").references(() => fuelVehicles.id, { onDelete: "set null" }),
   /* Quién origina la inspección. La certificación Mutual distingue las del
    * comité paritario de las del Departamento de Prevención, y las del mandante
    * no son ni una ni otra. Por defecto Prevención, que es el caso histórico. */
@@ -136,6 +148,7 @@ export const preventionInspectionRuns = pgTable("prevention_inspection_runs", {
     .where(sql`${table.programId} IS NOT NULL AND ${table.scheduledFor} IS NOT NULL`),
   index("prevention_inspection_run_worksite_idx").on(table.worksiteId, table.status),
   index("prevention_inspection_run_subject_idx").on(table.subjectResourceId),
+  index("prevention_inspection_run_subject_vehicle_idx").on(table.subjectVehicleId),
   index("prevention_inspection_run_template_idx").on(table.templateId, table.executedAt),
   check("prevention_inspection_run_status_valid", sql`${table.status} IN ('planned', 'in_progress', 'completed', 'reviewed', 'cancelled')`),
   check("prevention_inspection_run_origin_valid", sql`${table.origin} IN ('prevencion', 'cphs', 'mandante')`),
@@ -144,6 +157,9 @@ export const preventionInspectionRuns = pgTable("prevention_inspection_runs", {
   check("prevention_inspection_run_cancel_consistent", sql`(${table.cancelledAt} IS NULL AND ${table.cancelledByUserId} IS NULL) OR (${table.cancelledAt} IS NOT NULL AND ${table.cancelledByUserId} IS NOT NULL AND length(${table.cancellationReason}) >= 5)`),
   check("prevention_inspection_run_review_consistent", sql`(${table.reviewedAt} IS NULL AND ${table.reviewedByUserId} IS NULL) OR (${table.reviewedAt} IS NOT NULL AND ${table.reviewedByUserId} IS NOT NULL)`),
   check("prevention_inspection_run_version_positive", sql`${table.version} >= 1`),
+  // Un run inspecciona a lo más un sujeto tipado. Sin esta invariante el
+  // servicio tendría que elegir a cuál creerle al construir `subjectLabel`.
+  check("prevention_inspection_run_single_subject", sql`num_nonnulls(${table.subjectResourceId}, ${table.subjectVehicleId}) <= 1`),
 ])
 
 /* ── Respuestas ───────────────────────────────────────────────────────────── */

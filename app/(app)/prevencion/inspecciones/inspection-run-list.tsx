@@ -61,7 +61,21 @@ interface Props {
   templates: TemplateOption[]
   worksites: { id: string; name: string }[]
   assignees: { id: string; name: string }[]
-  subjectsByWorksite: Record<string, { id: string; name: string; kind: string; location: string }[]>
+  subjectsByWorksite: Record<string, InspectionSubjectOption[]>
+}
+
+/**
+ * Sujeto inspeccionable: recurso del inventario de emergencias o equipo de
+ * flota. `source` discrimina a cuál de las dos FK del run va el id — el CHECK
+ * `prevention_inspection_run_single_subject` no admite ambas.
+ */
+export type InspectionSubjectOption = {
+  source: "resource" | "vehicle"
+  id: string
+  name: string
+  kind: string
+  location: string
+  serialNumber: string | null
 }
 
 export function InspectionRunList({ runs, summary, page, pageSize, overdueProgramCount, canExecute, templates, worksites, assignees, subjectsByWorksite }: Props) {
@@ -257,12 +271,17 @@ export function InspectionRunList({ runs, summary, page, pageSize, overdueProgra
 
 /* ── Alta de inspección ───────────────────────────────────────────────────── */
 
+/** Valor del selector: `source:id`, porque un id suelto no dice a qué tabla apunta. */
+function subjectRefOf(subject: InspectionSubjectOption) {
+  return `${subject.source}:${subject.id}`
+}
+
 function NewRunDialog({ templates, worksites, assignees, subjectsByWorksite }: {
   templates: TemplateOption[]
   worksites: { id: string; name: string }[]
   assignees: { id: string; name: string }[]
   /** Inventario de sujetos por faena (función #11). */
-  subjectsByWorksite: Record<string, { id: string; name: string; kind: string; location: string }[]>
+  subjectsByWorksite: Record<string, InspectionSubjectOption[]>
 }) {
   const [open, setOpen] = React.useState(false)
   const [templateId, setTemplateId] = React.useState(templates[0]?.id ?? "")
@@ -272,8 +291,9 @@ function NewRunDialog({ templates, worksites, assignees, subjectsByWorksite }: {
   // inspección puede acreditar como originada por el comité paritario (B-05).
   const [origin, setOrigin] = React.useState("prevencion")
   // Función #11: `subjectLabel` era texto libre, así que no había historial por
-  // extintor ni forma de alimentar sus alertas de vencimiento.
-  const [subjectResourceId, setSubjectResourceId] = React.useState("_none")
+  // extintor ni forma de alimentar sus alertas de vencimiento. Desde que el
+  // padrón de flota también es sujeto, el valor lleva su origen: `source:id`.
+  const [subjectRef, setSubjectRef] = React.useState("_none")
   const operation = useOperation()
 
   function submit(event: React.FormEvent<HTMLFormElement>) {
@@ -289,7 +309,8 @@ function NewRunDialog({ templates, worksites, assignees, subjectsByWorksite }: {
       origin: form.get("origin"),
       subjectType: subjectType || null,
       subjectLabel: subjectLabel || null,
-      subjectResourceId: subjectResourceId === "_none" ? null : subjectResourceId,
+      subjectResourceId: subjectRef.startsWith("resource:") ? subjectRef.slice("resource:".length) : null,
+      subjectVehicleId: subjectRef.startsWith("vehicle:") ? subjectRef.slice("vehicle:".length) : null,
       scheduledFor: scheduledFor || null,
       assignedToUserId: assignedToUserId || null,
     }), () => setOpen(false))
@@ -314,13 +335,16 @@ function NewRunDialog({ templates, worksites, assignees, subjectsByWorksite }: {
             <Select value={origin} onValueChange={setOrigin}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{Object.entries(INSPECTION_ORIGIN_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select><input type="hidden" name="origin" value={origin} />
           </Field>
           {(subjectsByWorksite[worksiteId]?.length ?? 0) > 0 && (
-            <Field label="Sujeto del inventario" hint="Opcional. Al completar, actualiza su última inspección.">
-              <Select value={subjectResourceId} onValueChange={setSubjectResourceId}>
+            <Field label="Sujeto inspeccionado" hint="Opcional. Un recurso del inventario actualiza su última inspección al completar; un equipo habilita derivar la falla a mantención.">
+              <Select value={subjectRef} onValueChange={setSubjectRef}>
                 <SelectTrigger><SelectValue placeholder="Otro / texto libre" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="_none">Otro / texto libre</SelectItem>
                   {(subjectsByWorksite[worksiteId] ?? []).map((subject) => (
-                    <SelectItem key={subject.id} value={subject.id}>{subject.name} · {subject.location}</SelectItem>
+                    <SelectItem key={subjectRefOf(subject)} value={subjectRefOf(subject)}>
+                      {subject.source === "vehicle" ? "Equipo" : "Recurso"} · {subject.name}
+                      {subject.location ? ` · ${subject.location}` : ""}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>

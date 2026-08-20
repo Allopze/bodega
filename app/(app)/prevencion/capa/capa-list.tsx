@@ -33,6 +33,8 @@ interface CapaListItem {
   actionDescription: string
   responsibleSnapshot: string | null
   responsibleUserId: string | null
+  /** Nombre del responsable actual, resuelto en el servidor. */
+  responsibleName: string | null
   priority: string
   targetDate: string
   status: string
@@ -86,7 +88,7 @@ export function CapaList({ actions, worksites, counts, pagination }: Props) {
   const filtered = actions.filter((item) => {
     if (!matchesCapaQuickFilter(item, quickFilter, today)) return false
     if (!query) return true
-    return [item.code, item.finding, item.actionDescription, item.responsibleSnapshot, worksiteName.get(item.worksiteId)]
+    return [item.code, item.finding, item.actionDescription, item.responsibleName, item.responsibleSnapshot, worksiteName.get(item.worksiteId)]
       .filter(Boolean).some((value) => String(value).toLocaleLowerCase("es-CL").includes(query))
   })
 
@@ -228,7 +230,7 @@ export function CapaList({ actions, worksites, counts, pagination }: Props) {
                         <p className="mt-1 line-clamp-1 text-xs text-[var(--color-text-subtle)]">{item.actionDescription}</p>
                       </TableCell>
                       <TableCell>{worksiteName.get(item.worksiteId) ?? item.worksiteId}</TableCell>
-                      <TableCell>{item.responsibleSnapshot || (item.responsibleUserId ? "Usuario asignado" : "Sin asignar")}</TableCell>
+                      <TableCell>{item.responsibleName || item.responsibleSnapshot || "Sin asignar"}</TableCell>
                       <TableCell>
                         <span className={overdue ? "font-semibold text-[var(--color-danger)]" : "tabular-nums"}>{item.targetDate}</span>
                         <p className="text-xs text-[var(--color-text-subtle)]">{PRIORITY_LABEL[item.priority] ?? item.priority}</p>

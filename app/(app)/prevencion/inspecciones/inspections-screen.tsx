@@ -15,7 +15,7 @@ import {
   summarizeInspectionRuns,
   INSPECTION_PAGE_SIZE,
 } from "@/lib/services/prevention-inspections"
-import { InspectionRunList } from "./inspection-run-list"
+import { InspectionRunList, type InspectionSubjectOption } from "./inspection-run-list"
 import { todayInChile } from "@/lib/utils"
 
 /**
@@ -87,7 +87,7 @@ export async function InspectionsScreen({
 
   // Función #11: inventario por faena para el picker de sujeto. Son pocas
   // faenas por usuario, así que se precarga en vez de pedirlo al cambiar.
-  const subjectsByWorksite: Record<string, { id: string; name: string; kind: string; location: string }[]> = {}
+  const subjectsByWorksite: Record<string, InspectionSubjectOption[]> = {}
   if (canExecute) {
     const entries = await Promise.all(
       worksites.map(async (worksite) => [worksite.id, await listInspectionSubjects(worksite.id, access)] as const),

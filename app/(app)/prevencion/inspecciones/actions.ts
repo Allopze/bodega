@@ -16,6 +16,7 @@ import {
   reviewInspectionRun,
   saveInspectionAnswers,
   setInspectionTemplatePdtpActivities,
+  stopVehicleForFinding,
   transitionInspectionRun,
   updateInspectionProgram,
   type InspectionAccess,
@@ -145,6 +146,21 @@ export async function createFindingCapaAction(input: unknown): Promise<ActionSta
   const guard = await guardPermission("prevention:inspections:execute")
   if (guard.error) return guard.error
   return run(accessFromSession(guard.session), (access) => createFindingCapa(input, access))
+}
+
+/**
+ * Confirma la propuesta de sacar el equipo de servicio.
+ *
+ * Guardada por `combustibles:manage_vehicles` y no por un permiso de
+ * inspecciones: quien digita el reporte detecta la falla, pero detener un
+ * equipo para la faena y esa decisión es de quien administra la flota.
+ */
+export async function stopVehicleForFindingAction(input: unknown): Promise<ActionState> {
+  const guard = await guardPermission("combustibles:manage_vehicles")
+  if (guard.error) return guard.error
+  const state = await run(accessFromSession(guard.session), (access) => stopVehicleForFinding(input, access))
+  if (state.ok) revalidateOperationalViews(["/flota", "/combustibles/vehiculos"])
+  return state
 }
 
 export async function reviewInspectionRunAction(input: unknown): Promise<ActionState> {

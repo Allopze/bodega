@@ -96,6 +96,7 @@ export const preventionModule = {
     "prevention:inspections:execute",
     "prevention:inspections:review",
     "prevention:inspections:export",
+    "prevention:inspections:ingest",
     "prevention:cphs:view",
     "prevention:cphs:manage",
     "prevention:cphs:certify",
@@ -206,6 +207,7 @@ export const preventionModule = {
     "prevention:inspections:manage": { id: "p-prev-insp-manage", description: "Incorporar plantillas y programar inspecciones por faena y frecuencia" },
     "prevention:inspections:approve": { id: "p-prev-insp-approve", description: "Aprobar plantillas de inspección de forma segregada de quien las incorpora" },
     "prevention:inspections:execute": { id: "p-prev-insp-execute", description: "Ejecutar inspecciones en terreno, responder ítems y derivar hallazgos a CAPA" },
+    "prevention:inspections:ingest": { id: "p-prev-insp-ingest", description: "Subir la foto de una planilla física para digitalizar el reporte del equipo" },
     "prevention:inspections:review": { id: "p-prev-insp-review", description: "Revisar y cerrar una inspección de forma independiente de quien la ejecutó" },
     "prevention:inspections:export": { id: "p-prev-insp-export", description: "Exportar inspecciones, respuestas, hallazgos y tendencias en Excel" },
     "prevention:cphs:view": { id: "p-prev-cphs-view", description: "Ver comités paritarios, integrantes, sesiones y acuerdos de la faena autorizada" },
@@ -714,6 +716,9 @@ export const preventionModule = {
     { roleSlug: "administrador",        permission: "prevention:capa:close" },
     { roleSlug: "administrador",        permission: "prevention:capa:override_segregation" },
     { roleSlug: "administrador",        permission: "prevention:capa:reconcile" },
+    // Lectura para el taller: ve la acción correctiva que originó la orden que
+    // va a ejecutar. No la avanza — eso es de Prevención.
+    { roleSlug: "jefe_mantencion",      permission: "prevention:capa:view" },
     // Incidentes: la proyección operacional se concede por rol y faena. El
     // permiso view_sensitive no tiene grants por defecto: requiere nominación.
     { roleSlug: "prevencionista_faena", permission: "prevention:incidents:report" },
@@ -832,6 +837,13 @@ export const preventionModule = {
     // que quien ejecutó cierre su propia inspección.
     { roleSlug: "jefe_terreno",         permission: "prevention:inspections:view" },
     { roleSlug: "jefe_terreno",         permission: "prevention:inspections:execute" },
+    // El "jefe de faena" del vocabulario de terreno es este rol —
+    // `lib/prevention/admin-contrato-label.ts` lo deja dicho: el equivalente
+    // RBAC de `jefe_faena` es `jefe_terreno`, y no `admin_contrato`, cuyo
+    // título alternativo "Supervisor de faena" es otro cargo. Es además el
+    // responsable que la planilla PDTP asigna a la actividad n=26 ("Revisión
+    // y firma del report de uso diario de equipos"): ya firma el papel.
+    { roleSlug: "jefe_terreno",         permission: "prevention:inspections:ingest" },
     { roleSlug: "admin_contrato",       permission: "prevention:inspections:view" },
     { roleSlug: "admin_contrato",       permission: "prevention:inspections:execute" },
     { roleSlug: "prevencionista_faena", permission: "prevention:inspections:view" },
@@ -845,6 +857,12 @@ export const preventionModule = {
     { roleSlug: "prevencionista",       permission: "prevention:inspections:review" },
     { roleSlug: "prevencionista",       permission: "prevention:inspections:export" },
     { roleSlug: "cphs",                 permission: "prevention:inspections:view" },
+    // Taller. Nadie del taller tiene cuenta: el reporte llega por foto y las
+    // acciones correctivas de equipos las gestiona Prevención, que ya tiene
+    // `capa:complete`. El jefe de mantención sólo mira lo que su taller va a
+    // recibir — cerrar la mantención, que es lo que acredita la evidencia de
+    // la CAPA, ya lo habilita `mantenciones:edit`.
+    { roleSlug: "jefe_mantencion",      permission: "prevention:inspections:view" },
     { roleSlug: "jefa_chome",           permission: "prevention:inspections:view" },
     { roleSlug: "jefa_chome",           permission: "prevention:inspections:approve" },
     { roleSlug: "jefa_chome",           permission: "prevention:inspections:review" },

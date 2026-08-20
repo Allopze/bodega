@@ -1,0 +1,6 @@
+ALTER TABLE "prevention_inspection_programs" ADD COLUMN "subject_vehicle_id" text;--> statement-breakpoint
+ALTER TABLE "prevention_inspection_runs" ADD COLUMN "subject_vehicle_id" text;--> statement-breakpoint
+ALTER TABLE "prevention_inspection_programs" ADD CONSTRAINT "prevention_inspection_programs_subject_vehicle_id_fuel_vehicles_id_fk" FOREIGN KEY ("subject_vehicle_id") REFERENCES "public"."fuel_vehicles"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "prevention_inspection_runs" ADD CONSTRAINT "prevention_inspection_runs_subject_vehicle_id_fuel_vehicles_id_fk" FOREIGN KEY ("subject_vehicle_id") REFERENCES "public"."fuel_vehicles"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+CREATE INDEX "prevention_inspection_run_subject_vehicle_idx" ON "prevention_inspection_runs" USING btree ("subject_vehicle_id");--> statement-breakpoint
+ALTER TABLE "prevention_inspection_runs" ADD CONSTRAINT "prevention_inspection_run_single_subject" CHECK (num_nonnulls("prevention_inspection_runs"."subject_resource_id", "prevention_inspection_runs"."subject_vehicle_id") <= 1);
