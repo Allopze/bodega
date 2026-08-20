@@ -159,9 +159,13 @@ describe("purchase DTE PDF retrieval", () => {
     const result = await getDteDocumentPdf("dte-1")
 
     expect(result.buffer).toEqual(PDF)
-    expect(mockFetchBandejaEntrada).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
-      anio: "2026", mes: "07", codEmp: "433",
-    }))
+    // ORQ-03: el raspado bajo demanda también entrega contexto, o sus warns de
+    // fila descartada quedan sueltos y mezclados con los del cron.
+    expect(mockFetchBandejaEntrada).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ anio: "2026", mes: "07", codEmp: "433" }),
+      { correlationId: "dte-pdf:433:2026-07", periodo: "2026-07" },
+    )
     const post = encodeURIComponent(Buffer.from("Cod_Emp=433&Nreguist=9000001").toString("base64"))
     expect(mockDownloadDtePdf).toHaveBeenCalledWith(expect.anything(), `dtepdfX.php?post=${post}`, {
       maxBytes: 10 * 1024 * 1024,

@@ -15,14 +15,16 @@
  *   paneldte.php). El ancla confiable NO es el checkbox `chkRegistro` (solo
  *   algunas filas lo tienen, a veces `disabled`) sino la presencia de
  *   `dtepdfX.php?post=`, verificada 1:1 contra `tbxTotalRegistros`.
- * - Layout físico de columnas (`<td>` de nivel superior, 0-indexado):
+ * - Layout físico de columnas (`<td>` de nivel superior, 0-indexado, ya SIN
+ *   los comentarios HTML que `splitTopLevelTdCells` descarta — el portal trae
+ *   un `<!--<td>...PENDIENTE...</td>-->` entre la fecha de recepción y el
+ *   punto de color que nunca se renderiza):
  *   0=#, 1=íconos Opciones (flag/email/xml — el PDF NO vive acá),
- *   2=checkbox, 3=fecha/hora recepción, 4=comentario HTML muerto (nunca
- *   renderizado, ignorar), 5=punto de color sin mapear, 6=spacer vacío,
- *   7=fecha doc, 8=tipo (texto, envuelto en el link dtepdfX.php?post= —
- *   ahí vive el PDF/Nreguist, no en la celda de Opciones), 9=folio,
- *   10=RUT emisor, 11=razón social, 12=ícono/spacer, 13=total,
- *   14=tipo ref, 15=folio ref, 16=fecha ref.
+ *   2=checkbox, 3=fecha/hora recepción, 4=punto de color sin mapear,
+ *   5=spacer vacío, 6=fecha doc, 7=tipo (texto, envuelto en el link
+ *   dtepdfX.php?post= — ahí vive el PDF/Nreguist, no en la celda de
+ *   Opciones), 8=folio, 9=RUT emisor, 10=razón social, 11=ícono/spacer,
+ *   12=total, 13=tipo ref, 14=folio ref, 15=fecha ref.
  * - El XML del proveedor es un enlace DIRECTO, sin el salto
  *   estadodoc.php→dn.php que sí necesita el flujo de ventas:
  *   `../empr/Chome/DTEProveedores/PRV_<RUT>_<TIPO>_<FOLIO>.xml`.
@@ -49,12 +51,25 @@ import { logger } from "@/lib/logger"
 const ROW_DATA_MARKER = "dtepdfX.php?post="
 
 /**
+ * Contexto sólo de diagnóstico: acompaña a los avisos de fila descartada para
+ * poder reconstruir qué se perdió y de qué corrida (sin él, un `partial` que
+ * dice "faltan 3" deja tres warns sueltos en stdout, mezclados con los de las
+ * otras corridas del día).
+ */
+export interface DteBandejaParseContext {
+  correlationId?: string
+  /** "YYYY-MM" del período consultado. */
+  periodo?: string
+}
+
+/**
  * Consulta la Bandeja de Entrada para un período. Sin paginación: una sola
  * respuesta trae todo (verificado hasta 681 documentos/mes).
  */
 export async function fetchBandejaEntrada(
   client: DtePortalClient,
   filter: DteBandejaFilter,
+  context: DteBandejaParseContext = {},
 ): Promise<DteBandejaResult> {
   const body: Record<string, string> = {
     cbxEstadoPlataforma: filter.estadoPlataforma ?? "",
@@ -72,7 +87,7 @@ export async function fetchBandejaEntrada(
     ACCION: "1",
   })
 
-  return parseBandejaResult(html)
+  return parseBandejaResult(html, { periodo: `${filter.anio}-${filter.mes}`, ...context })
 }
 
 /**
@@ -80,8 +95,8 @@ export async function fetchBandejaEntrada(
  * compara contra `tbxTotalRegistros`, avisando si no coinciden (señal de que
  * el portal empezó a paginar este endpoint, contrario a lo verificado).
  */
-export function parseBandejaResult(html: string): DteBandejaResult {
-  const rows = parseBandejaRows(html)
+export function parseBandejaResult(html: string, context: DteBandejaParseContext = {}): DteBandejaResult {
+  const rows = parseBandejaRows(html, context)
   const declaredTotal = extractBandejaTotal(html)
 
   if (declaredTotal === null && rows.length === 0) {
@@ -93,11 +108,26 @@ export function parseBandejaResult(html: string): DteBandejaResult {
   }
 
   const totalRegistros = declaredTotal ?? rows.length
-  if (totalRegistros !== rows.length) {
-    logger.warn("[dte-bandeja] total declarado no coincide", { code: "DTE_BANDEJA_TOTAL_MISMATCH", declared: totalRegistros, parsed: rows.length })
+  if (declaredTotal === null) {
+    // Sin el total declarado la verificación de completitud es una tautología
+    // (`totalRegistros` sería `rows.length`): quien consuma el resultado debe
+    // mirar `declaredTotal` y reportar la corrida como `partial`, no cerrarla
+    // en éxito comparando un número contra sí mismo.
+    logger.warn({ correlationId: context.correlationId }, "[dte-bandeja] el portal no declaró el total de registros", {
+      code: "DTE_BANDEJA_TOTAL_MISSING",
+      periodo: context.periodo ?? null,
+      parsed: rows.length,
+    })
+  } else if (declaredTotal !== rows.length) {
+    logger.warn({ correlationId: context.correlationId }, "[dte-bandeja] total declarado no coincide", {
+      code: "DTE_BANDEJA_TOTAL_MISMATCH",
+      periodo: context.periodo ?? null,
+      declared: declaredTotal,
+      parsed: rows.length,
+    })
   }
 
-  return { rows, totalRegistros }
+  return { rows, totalRegistros, declaredTotal }
 }
 
 /**
@@ -107,7 +137,7 @@ export function parseBandejaResult(html: string): DteBandejaResult {
  * `<tr>` bare — NO el checkbox `chkRegistro`, que solo aparece (a veces
  * disabled) en algunas filas.
  */
-export function parseBandejaRows(html: string): DteBandejaRow[] {
+export function parseBandejaRows(html: string, context: DteBandejaParseContext = {}): DteBandejaRow[] {
   const rowStartRe = /<tr>/gi
   const starts: number[] = []
   let m: RegExpExecArray | null
@@ -125,65 +155,73 @@ export function parseBandejaRows(html: string): DteBandejaRow[] {
     const rowEnd = findMatchingRowEnd(chunk)
     const rowHtml = rowEnd >= 0 ? chunk.slice(0, rowEnd) : chunk
 
-    const row = parseBandejaRow(rowHtml)
+    const row = parseBandejaRow(rowHtml, context)
     if (row) rows.push(row)
   }
 
   return rows
 }
 
-function parseBandejaRow(rowHtml: string): DteBandejaRow | null {
+function parseBandejaRow(rowHtml: string, context: DteBandejaParseContext = {}): DteBandejaRow | null {
   const cells = splitTopLevelTdCells(rowHtml)
   const cellTexts = cells.map((c) => c.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim())
 
-  const fecha = parseFechaPortal(cellTexts[7] ?? "")
-  if (!fecha) {
-    logger.warn("[dte-bandeja] fila descartada", { code: "DTE_BANDEJA_DATE_INVALID" })
+  // Folio y tipo se leen antes de validar para poder identificar la fila en el
+  // aviso aunque sea justamente lo que está mal (no son PII; el RUT sí lo
+  // redacta el logger).
+  const discard = (code: string) => {
+    logger.warn({ correlationId: context.correlationId }, "[dte-bandeja] fila descartada", {
+      code,
+      periodo: context.periodo ?? null,
+      tipo: cellTexts[7] ?? null,
+      folio: cellTexts[8] ?? null,
+    })
     return null
   }
 
-  const folio = parseFolio(cellTexts[9] ?? "")
-  if (!folio) {
-    logger.warn("[dte-bandeja] fila descartada", { code: "DTE_BANDEJA_FOLIO_INVALID" })
-    return null
-  }
+  // El total (índice 12) es la última columna obligatoria: con menos celdas el
+  // layout cambió y los índices fijos ya no describen nada.
+  if (cells.length < 13) return discard("DTE_BANDEJA_LAYOUT_INVALID")
 
-  const tipoDoc = resolveTipoDocFromText(cellTexts[8] ?? "")
-  if (!tipoDoc) {
-    logger.warn("[dte-bandeja] fila descartada", { code: "DTE_BANDEJA_DOCUMENT_TYPE_INVALID" })
-    return null
-  }
+  const fecha = parseFechaPortal(cellTexts[6] ?? "")
+  if (!fecha) return discard("DTE_BANDEJA_DATE_INVALID")
 
-  const rutEmisor = (cellTexts[10] ?? "").trim()
-  if (!rutEmisor) {
-    logger.warn("[dte-bandeja] fila descartada", { code: "DTE_BANDEJA_ISSUER_RUT_INVALID" })
-    return null
-  }
+  const folio = parseFolio(cellTexts[8] ?? "")
+  if (!folio) return discard("DTE_BANDEJA_FOLIO_INVALID")
 
-  const montoTotal = parseMonto(cellTexts[13] ?? "")
-  if (montoTotal === null) {
-    logger.warn("[dte-bandeja] fila descartada", { code: "DTE_BANDEJA_AMOUNT_INVALID" })
-    return null
-  }
+  const tipoDoc = resolveTipoDocFromText(cellTexts[7] ?? "")
+  if (!tipoDoc) return discard("DTE_BANDEJA_DOCUMENT_TYPE_INVALID")
+
+  const rutEmisor = (cellTexts[9] ?? "").trim()
+  if (!rutEmisor) return discard("DTE_BANDEJA_ISSUER_RUT_INVALID")
+
+  const montoTotal = parseMonto(cellTexts[12] ?? "")
+  if (montoTotal === null) return discard("DTE_BANDEJA_AMOUNT_INVALID")
 
   // El link dtepdfX.php?post= (con el id Nreguist) vive en la celda
-  // "Documento/Tipo" (índice 8, envolviendo el texto del tipo), NO en
+  // "Documento/Tipo" (índice 7, envolviendo el texto del tipo), NO en
   // "Opciones" (índice 1) — esa solo trae los íconos flag/email/xml.
-  const documentoCell = cells[8] ?? ""
+  const documentoCell = cells[7] ?? ""
   const opciones = cells[1] ?? ""
 
+  const fechaRecepcion = (cellTexts[3] ?? "").trim()
+
   return {
-    fechaRecepcion: (cellTexts[3] ?? "").trim(),
+    fechaRecepcion,
+    // La consulta filtra por fecha del DOCUMENTO, así que la de recepción es
+    // el único dato que permite medir el atraso con que el proveedor sube el
+    // DTE y justificar un re-barrido de períodos viejos.
+    fechaRecepcionDate: parseFechaPortal(fechaRecepcion.split(" ")[0] ?? ""),
     estadoPlataforma: extractEstadoPlataforma(rowHtml),
     fecha,
     tipoDoc,
     folio,
     rutEmisor,
-    razonSocial: (cellTexts[11] ?? "").trim(),
+    razonSocial: (cellTexts[10] ?? "").trim(),
     montoTotal,
-    tipoRef: (cellTexts[14] ?? "").trim() || null,
-    folioRef: (cellTexts[15] ?? "").trim() || null,
-    fechaRef: (cellTexts[16] ?? "").trim() || null,
+    tipoRef: (cellTexts[13] ?? "").trim() || null,
+    folioRef: (cellTexts[14] ?? "").trim() || null,
+    fechaRef: (cellTexts[15] ?? "").trim() || null,
     nreguist: extractNreguist(documentoCell),
     pdfUrl: extractBandejaPdfUrl(documentoCell),
     xmlUrl: extractBandejaXmlUrl(opciones),
@@ -218,9 +256,10 @@ export function extractBandejaXmlUrl(cellHtml: string): string | null {
 }
 
 /**
- * El "estado en plataforma" no es texto confiable (la celda de texto es un
- * comentario HTML nunca renderizado, ver cabecera del archivo). Se deriva
- * del ícono `penplata.gif` cuando está presente.
+ * El "estado en plataforma" no es texto confiable: la celda de texto es un
+ * comentario HTML nunca renderizado (por eso `splitTopLevelTdCells` lo
+ * descarta antes de contar celdas). Se deriva del ícono `penplata.gif`
+ * cuando está presente.
  */
 function extractEstadoPlataforma(rowHtml: string): string | null {
   const match = rowHtml.match(/<img[^>]*src=["']?[^"'\s>]*penplata\.gif["']?[^>]*title=["']([^"']+)["']/i)

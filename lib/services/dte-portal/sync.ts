@@ -26,12 +26,13 @@ import { db } from "@/db"
 import { dteDocuments, dteSyncRuns, users } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { logger } from "@/lib/logger"
+import { cleanRut } from "@/lib/rut"
 import { DtePortalClient } from "./client"
 import { fetchBandejaEntrada } from "./bandeja-entrada"
 import { matchToPurchaseOrderInvoices, matchToFuelLoads, summarizeDteReconciliation } from "./reconciliation"
 import type { DteBandejaRow } from "./types"
 import { classifyDteFailure } from "./failure"
-import { chilePeriod, previousChilePeriod } from "./chile-time"
+import { chileClock, chilePeriod, previousChilePeriod } from "./chile-time"
 import { claimDteSyncStart } from "./sync-start-gate"
 
 /** Corridas "running" más viejas que esto se consideran colgadas (proceso muerto a medio camino). */
@@ -181,24 +182,34 @@ export async function syncDteDocuments(
   try {
     // 2. Consultar la Bandeja de Entrada (sin paginación, ver bandeja-entrada.ts)
     const [anio, mes] = periodo.split("-") as [string, string]
-    const { rows: docs, totalRegistros } = await fetchBandejaEntrada(client, {
+    // El contexto va sólo a los warns de fila descartada: sin él, un `partial`
+    // que dice "faltan 3" deja tres avisos sueltos en stdout, mezclados con los
+    // de las otras corridas del día y sin forma de atribuirlos a esta.
+    const { rows: docs, declaredTotal } = await fetchBandejaEntrada(client, {
       mes,
       anio,
       codEmp,
       estadoPlataforma: "",
       rutProveedor: "",
-    })
+    }, { correlationId, periodo })
 
     rowsSeen = docs.length
 
     // El portal declara cuántos documentos tiene el período. Si parseamos menos,
     // se perdieron filas —fecha o folio irreconocibles descartan la fila con un
-    // console.warn— y la corrida NO puede reportarse como exitosa: es un libro
-    // de compras al que le faltan documentos. Antes esto sólo advertía por
-    // consola y la corrida quedaba en `success`.
-    if (totalRegistros > docs.length) {
+    // warn— y la corrida NO puede reportarse como exitosa: es un libro de
+    // compras al que le faltan documentos.
+    //
+    // Y si el portal NO declara el total, tampoco hay éxito que reportar:
+    // `totalRegistros` se rellena con `rows.length` y compararlos es una
+    // tautología. Se lee `declaredTotal` justamente para no cerrar en `success`
+    // una corrida cuya completitud nadie pudo verificar.
+    if (declaredTotal === null || declaredTotal === undefined) {
       finalStatus = "partial"
-      errorMsg = `El portal declara ${totalRegistros} documentos y se pudieron leer ${docs.length}: faltan ${totalRegistros - docs.length}.`
+      errorMsg = `El portal no declaró el total de registros: no se pudo verificar la completitud (se leyeron ${docs.length} documentos).`
+    } else if (declaredTotal > docs.length) {
+      finalStatus = "partial"
+      errorMsg = `El portal declara ${declaredTotal} documentos y se pudieron leer ${docs.length}: faltan ${declaredTotal - docs.length}.`
     }
 
     // 3. Upsert cada documento, cada uno en su propia transacción
@@ -242,20 +253,42 @@ export async function syncDteDocuments(
   let reconciliationStatus: DteSyncResult["reconciliationStatus"] = "not_run"
   let reconciliationError: string | undefined
   let reconciliation = { matched: 0, ambiguous: 0, unmatched: 0, discrepancies: 0 }
+  /**
+   * DTE que el modelo 1:1 no puede vincular porque el dato interno es
+   * legítimamente múltiple (una factura TAE mensual cubre N cargas). NO entra en
+   * `withIssues` —eso dejaría la conciliación en `partial` para siempre— pero sí
+   * se deja dicho en el motivo de la corrida: quien lea el historial tiene que
+   * poder distinguir "sin vínculo por la limitación del modelo" de un fallo.
+   */
+  let internalAmbiguity = 0
   try {
     if (finalStatus === "failed") throw new Error("ingesta fallida; conciliación no ejecutada")
     const ocMatches = await matchToPurchaseOrderInvoices(periodo, codEmp)
     const fuelMatches = await matchToFuelLoads(periodo, codEmp)
     const allMatches = [...ocMatches, ...fuelMatches]
-    reconciliation = await summarizeDteReconciliation(periodo, codEmp, allMatches)
-    const withIssues = reconciliation.unmatched + reconciliation.ambiguous + reconciliation.discrepancies
+    const summary = await summarizeDteReconciliation(periodo, codEmp, allMatches)
+    reconciliation = summary
+    internalAmbiguity = summary.internalAmbiguity ?? 0
+    // `unmatched` es inventario de trabajo pendiente, no un defecto: los gastos
+    // sin OC (servicios básicos, arriendos, compras menores) y todo DTE que
+    // llega antes de que Compras registre su factura viven ahí por definición.
+    // Contarlo como problema dejaba `reconciliationStatus` en "partial" de
+    // forma permanente, con el mismo estado y el mismo código de salud que una
+    // ingesta a la que le faltan documentos del libro: tres alertas diarias
+    // idénticas a la única que importa, y salud que nunca vuelve a "healthy".
+    const withIssues = reconciliation.ambiguous + reconciliation.discrepancies
     reconciliationStatus = withIssues > 0 ? "partial" : "success"
+    const internalAmbiguityNote = internalAmbiguity > 0
+      ? `${internalAmbiguity} sin vínculo por la limitación 1:1 del modelo de combustible (informativo)`
+      : null
     if (reconciliationStatus === "partial") {
-      reconciliationError = [
-        reconciliation.unmatched > 0 ? `${reconciliation.unmatched} DTE sin vínculo inequívoco` : null,
+      reconciliationError = `DTE_RECONCILIATION_PENDING: ${[
         reconciliation.ambiguous > 0 ? `${reconciliation.ambiguous} coincidencias ambiguas` : null,
         reconciliation.discrepancies > 0 ? `${reconciliation.discrepancies} vínculos con diferencia de monto` : null,
-      ].filter(Boolean).join("; ")
+        internalAmbiguityNote,
+      ].filter(Boolean).join("; ")}`
+    } else if (internalAmbiguityNote) {
+      reconciliationError = `DTE_RECONCILIATION_INFO: ${internalAmbiguityNote}`
     }
   } catch (_err) {
     reconciliationStatus = finalStatus === "failed" ? "not_run" : "failed"
@@ -266,10 +299,19 @@ export async function syncDteDocuments(
     logger.error({ correlationId }, "[dte-sync] conciliación falló", { code: "DTE_RECONCILIATION_FAILED", periodo })
   }
 
-  const finalError = [errorMsg, reconciliationError].filter(Boolean).join(" ") || null
+  // Una ingesta incompleta y una conciliación pendiente son incidentes
+  // distintos: sin código propio ambas llegaban al operador con el mismo texto
+  // (y la ruta publicaba media frase como si fuera el código).
+  if (errorMsg && !/^DTE_[A-Z_]+:/.test(errorMsg)) {
+    errorMsg = `DTE_INGEST_${finalStatus === "failed" ? "FAILED" : "PARTIAL"}: ${errorMsg}`
+  }
+  // Una conciliación exitosa sólo lleva nota informativa (DTE_RECONCILIATION_INFO):
+  // no es un error de la corrida y no debe teñir la columna `error`.
+  const reconciliationErrorForRun = reconciliationStatus === "success" ? null : reconciliationError
+  let finalError = [errorMsg, reconciliationErrorForRun].filter(Boolean).join(" ") || null
 
-  // 5. Cerrar la corrida
-  await db.update(dteSyncRuns).set({
+  // 5. Cerrar la corrida, sólo si la fila sigue siendo suya (fencing).
+  const closed = await db.update(dteSyncRuns).set({
     status: finalStatus,
     rowsSeen,
     rowsInserted,
@@ -279,7 +321,23 @@ export async function syncDteDocuments(
     reconciliationStatus,
     reconciliationError: reconciliationError ?? null,
     finishedAt: new Date().toISOString(),
-  }).where(eq(dteSyncRuns.id, runId))
+  }).where(and(
+    eq(dteSyncRuns.id, runId),
+    eq(dteSyncRuns.status, "running"),
+  )).returning({ id: dteSyncRuns.id })
+
+  // Sin la condición de estado, una corrida que `markStaleRunsAsFailed` ya
+  // había declarado colgada volvía sola a `success` al terminar: el veredicto
+  // del barrido —y con él el rastro de que otra corrida pudo entrar a raspar
+  // el mismo período en paralelo— desaparecía sin dejar huella.
+  if (closed.length === 0) {
+    finalStatus = "failed"
+    finalError = "DTE_SYNC_RUN_PREEMPTED: La corrida fue declarada colgada mientras seguía en curso; su resultado no se conservó."
+    logger.error({ correlationId }, "[dte-sync] corrida expropiada por el barrido de colgadas", {
+      code: "DTE_SYNC_RUN_PREEMPTED",
+      periodo,
+    })
+  }
 
   errorMsg = finalError ?? undefined
 
@@ -370,23 +428,34 @@ async function upsertDteDocument(
   syncRunId: string,
 ): Promise<"inserted" | "updated" | "unchanged"> {
   const rawHash = computeDocumentHash(row)
+  // La ingesta era el único punto que guardaba el RUT con la ortografía cruda
+  // del portal, siendo parte de la clave única: si la celda llegara con puntos
+  // (`96.542.490-3`) la misma factura se insertaría dos veces y la
+  // conciliación —que sí canoniza— descartaría ambas por ambiguas.
+  const rutEmisor = cleanRut(row.rutEmisor)
 
   // Verificar si ya existe
   const existing = await tx.query.dteDocuments.findFirst({
     where: and(
       eq(dteDocuments.tipoDte, row.tipoDoc),
       eq(dteDocuments.folio, row.folio),
-      eq(dteDocuments.rutEmisor, row.rutEmisor),
+      eq(dteDocuments.rutEmisor, rutEmisor),
       eq(dteDocuments.codEmp, codEmp),
     ),
-    columns: { id: true, rawHash: true, portalRecordId: true },
+    columns: { id: true, rawHash: true, portalRecordId: true, fechaRecepcion: true },
   })
+
+  // La fecha de recepción no entra en `rawHash` (cambiarlo re-escribiría toda la
+  // tabla en producción), así que los documentos ya sincronizados sólo la
+  // reciben por este relleno — mismo caso que Nreguist.
+  const fechaRecepcion = row.fechaRecepcionDate ?? null
 
   if (existing) {
     const needsPortalRecordBackfill = Boolean(
       row.nreguist && existing.portalRecordId !== row.nreguist,
     )
-    if (existing.rawHash === rawHash && !needsPortalRecordBackfill) return "unchanged"
+    const needsFechaRecepcionBackfill = Boolean(fechaRecepcion && !existing.fechaRecepcion)
+    if (existing.rawHash === rawHash && !needsPortalRecordBackfill && !needsFechaRecepcionBackfill) return "unchanged"
 
     // Actualizar el registro existente (estado en plataforma puede haber cambiado)
     // y completar Nreguist incluso si el contenido tributario no cambió. Sin
@@ -396,6 +465,7 @@ async function upsertDteDocument(
       razonSocialEmisor: row.razonSocial,
       fechaEmision: row.fecha,
       estadoPlataforma: row.estadoPlataforma,
+      fechaRecepcion: fechaRecepcion ?? existing.fechaRecepcion,
       rawHash,
       portalRecordId: row.nreguist ?? existing.portalRecordId,
       syncRunId,
@@ -407,14 +477,23 @@ async function upsertDteDocument(
 
   // Insertar nuevo documento. La Bandeja de Entrada no trae ni SII ni
   // intercambio (esos íconos son del panel de ventas, no del correo de
-  // compras) — quedan null hasta que exista una fuente real para ellos.
+  // compras). `estadoSii` queda SIEMPRE null porque no existe fuente que lo
+  // pueble por este camino: el estado real del documento es
+  // `estado_plataforma`, que sí llega poblado y es el que leen el export
+  // tributario y las pantallas. La columna se conserva por si algún día el
+  // panel de ventas alimenta el libro.
   await tx.insert(dteDocuments).values({
     id: nanoid(),
     tipoDte: row.tipoDoc,
     folio: row.folio,
-    rutEmisor: row.rutEmisor,
+    rutEmisor,
     razonSocialEmisor: row.razonSocial,
     fechaEmision: row.fecha,
+    // Fecha en que el proveedor subió el DTE al portal: la consulta filtra por
+    // fecha del DOCUMENTO, así que es el único dato que permite medir su atraso.
+    // ponytail: se guarda sólo el día (la hora del correo se descarta); si
+    // hiciera falta el intervalo exacto, hay que guardar `row.fechaRecepcion`.
+    fechaRecepcion,
     montoNeto: null, // La bandeja no trae neto separado; se llena al descargar el XML (bajo demanda)
     iva: null,       // idem
     montoTotal: row.montoTotal,
@@ -484,4 +563,37 @@ export function previousPeriodo(periodo: string): string {
 export function rollingSyncPeriods(today = new Date()): string[] {
   const current = chilePeriod(today)
   return [current, previousPeriodo(current)]
+}
+
+/** Meses fuera de la ventana móvil que el barrido de recuperación re-consulta. */
+const RECOVERY_SWEEP_MONTHS = 3
+
+/**
+ * Períodos del barrido mensual de recuperación.
+ *
+ * Un período que sale de la ventana móvil deja de mirarse para siempre: los
+ * documentos que el proveedor entrega con más de un mes de retraso quedan
+ * fuera del libro de compras sin que nada lo diga (verificado en producción el
+ * 2026-08-11: el portal declaraba 578 documentos de julio y la plataforma
+ * tenía 575). Una vez al mes se re-consultan con `force` los meses recién
+ * cerrados; lo que aparezca ahí es evidencia tributaria que faltaba.
+ *
+ * Devuelve `[]` fuera de la ventana del barrido para que las demás corridas
+ * del cron no lo repitan.
+ *
+ * ponytail: la cadencia se deriva del reloj (día 1, primer slot del día) en vez
+ * de guardar estado; si esa invocación no corre, el barrido se salta el mes.
+ */
+export function recoverySweepPeriods(at = new Date()): string[] {
+  const clock = chileClock(at)
+  if (!clock.date.endsWith("-01") || clock.minutesSinceMidnight >= 12 * 60) return []
+
+  const periods: string[] = []
+  // El primero que ya salió de la ventana móvil [mes en curso, mes anterior].
+  let periodo = previousPeriodo(previousPeriodo(clock.period))
+  for (let i = 0; i < RECOVERY_SWEEP_MONTHS && periodo >= DTE_HISTORY_FLOOR; i++) {
+    periods.push(periodo)
+    periodo = previousPeriodo(periodo)
+  }
+  return periods
 }

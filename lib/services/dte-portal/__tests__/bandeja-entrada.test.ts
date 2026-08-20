@@ -59,6 +59,38 @@ describe("parseBandejaRows", () => {
     const rows = parseBandejaRows(PANELCORREO_BANDEJA_VACIA_FIXTURE)
     expect(rows).toHaveLength(0)
   })
+
+  it("parses identically when the portal drops the dead HTML comment", () => {
+    // El mapa de columnas no puede depender de markup comentado que el
+    // navegador nunca renderiza: si el portal lo saca del template, las filas
+    // deben seguir leyéndose igual.
+    const sinComentarios = PANELCORREO_BANDEJA_FIXTURE.replace(/<!--[\s\S]*?-->/g, "")
+    expect(parseBandejaRows(sinComentarios)).toEqual(parseBandejaRows(PANELCORREO_BANDEJA_FIXTURE))
+  })
+
+  it("exposes the reception date already parsed (the query filters by document date)", () => {
+    const doc = parseBandejaRows(PANELCORREO_BANDEJA_FIXTURE)[0]!
+    expect(doc.fechaRecepcion).toBe("2026-06-01 09:09")
+    expect(doc.fechaRecepcionDate).toBe("2026-06-01")
+  })
+
+  it("logs the discarded row with period, correlationId and folio", () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {})
+    const conFechaRota = PANELCORREO_BANDEJA_FIXTURE.replace(
+      "<td align='center'>2026-06-01</td>",
+      "<td align='center'>2026-13-45</td>",
+    )
+
+    const rows = parseBandejaRows(conFechaRota, { correlationId: "batch-X", periodo: "2026-06" })
+
+    expect(rows).toHaveLength(2)
+    const output = String(warnSpy.mock.calls[0]?.[0])
+    expect(output).toContain("DTE_BANDEJA_DATE_INVALID")
+    expect(output).toContain('"correlationId":"batch-X"')
+    expect(output).toContain('"periodo":"2026-06"')
+    expect(output).toContain('"folio":"100001"')
+    warnSpy.mockRestore()
+  })
 })
 
 describe("extractBandejaTotal", () => {
@@ -124,5 +156,26 @@ describe("parseBandejaResult", () => {
     const result = parseBandejaResult(PANELCORREO_BANDEJA_VACIA_FIXTURE)
     expect(result.rows).toHaveLength(0)
     expect(result.totalRegistros).toBe(0)
+    expect(result.declaredTotal).toBe(0)
+  })
+
+  it("reports declaredTotal=null (and warns) when the portal stops declaring the total", () => {
+    // Sin el marcador, comparar totalRegistros contra las filas es compararlas
+    // consigo mismas: quien consuma el resultado debe poder saber que la
+    // completitud NO se verificó.
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {})
+    const sinTotal = PANELCORREO_BANDEJA_FIXTURE.replace(
+      '<input type="hidden" name="tbxTotalRegistros" id="tbxTotalRegistros" value="3">',
+      "",
+    )
+
+    const result = parseBandejaResult(sinTotal, { periodo: "2026-06" })
+
+    expect(result.rows).toHaveLength(3)
+    expect(result.declaredTotal).toBeNull()
+    const output = String(warnSpy.mock.calls[0]?.[0])
+    expect(output).toContain("DTE_BANDEJA_TOTAL_MISSING")
+    expect(output).toContain('"periodo":"2026-06"')
+    warnSpy.mockRestore()
   })
 })

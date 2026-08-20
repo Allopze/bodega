@@ -18,11 +18,12 @@ import { and, eq, isNull } from "drizzle-orm"
 import { db } from "@/db"
 import { dteDocuments } from "@/db/schema"
 import { requirePermission } from "@/lib/auth/can"
+import { cleanRut } from "@/lib/rut"
 import { nanoid } from "@/lib/id"
 import { mkdirp, readBuffer, writeBuffer } from "@/lib/storage/helpers"
 import { createDtePath, resolveDteDir, resolveDteFile } from "@/lib/storage/config"
 import { DtePortalClient, decodeXmlBuffer } from "@/lib/services/dte-portal/client"
-import { buildDtePortalClientConfig } from "@/lib/services/dte-portal/config"
+import { buildDtePortalClientConfig, readDtePortalConfig } from "@/lib/services/dte-portal/config"
 import { downloadDteXml, MAX_DTE_XML_BYTES } from "@/lib/services/dte-portal/download"
 import { parseDteXml, type DteItem } from "@/lib/services/purchasing-module/dte-parser"
 
@@ -57,7 +58,7 @@ export async function downloadDteDocumentXml(dteDocumentId: string): Promise<Dte
 
   const doc = await db.query.dteDocuments.findFirst({
     where: eq(dteDocuments.id, dteDocumentId),
-    columns: { id: true, tipoDte: true, folio: true, rutEmisor: true, xmlPath: true },
+    columns: { id: true, tipoDte: true, folio: true, rutEmisor: true, codEmp: true, montoTotal: true, xmlPath: true },
   })
   if (!doc) return { ok: false, error: "Documento DTE no encontrado" }
 
@@ -65,6 +66,21 @@ export async function downloadDteDocumentXml(dteDocumentId: string): Promise<Dte
     const cached = await readCachedXml(doc.xmlPath)
     if (cached) return { ok: true, detail: cached }
     // El archivo guardado no está disponible (borrado, movido) — re-descargar.
+  }
+
+  // La ruta del XML lleva la carpeta de empresa fija ('Chome') y no incluye
+  // el codEmp, que sí forma parte de dte_documents_unique_key: para un
+  // documento de OTRA empresa del portal bajaría de la carpeta equivocada. El
+  // nombre de carpeta no es derivable del codEmp (un número), así que hasta
+  // que exista un mapa codEmp→carpeta se rechaza la descarga cruzada.
+  const configuredCodEmp = (await readDtePortalConfig()).credentials.codEmp
+  if (!configuredCodEmp || doc.codEmp !== configuredCodEmp) {
+    return { ok: false, error: "El XML de este documento pertenece a otra empresa del portal DTE" }
+  }
+  // `rutEmisor` viene del portal y se interpola en la ruta: acotarlo evita
+  // que un valor inesperado salga del directorio de DTE del proveedor.
+  if (!/^\d{1,9}-[\dkK]$/.test(doc.rutEmisor)) {
+    return { ok: false, error: "El RUT del emisor de este DTE no es válido" }
   }
 
   const relativeUrl = `empr/Chome/DTEProveedores/PRV_${doc.rutEmisor}_${doc.tipoDte}_${doc.folio}.xml`
@@ -85,6 +101,22 @@ export async function downloadDteDocumentXml(dteDocumentId: string): Promise<Dte
 
   const parsed = parseDteXml(xml)
   if (!parsed) return { ok: false, error: "No se pudo interpretar el XML del proveedor" }
+
+  // La identidad se comprueba ANTES de persistir. La única verificación del
+  // sistema vivía aguas abajo, en la transacción de la factura: cuando ésa
+  // rechazaba, ya se habían commiteado monto_neto/iva/xml_path del documento
+  // equivocado — y `xml_path` deja ese archivo cacheado para siempre. Los
+  // mismos campos alimentan el Libro de Compras Electrónico.
+  const parsedFolio = /^\d+$/.test(parsed.invoiceNumber.trim()) ? Number(parsed.invoiceNumber.trim()) : null
+  const sameIdentity = (
+    parsed.tipoDte === doc.tipoDte
+    && parsedFolio === doc.folio
+    && cleanRut(parsed.supplierRut ?? "") === cleanRut(doc.rutEmisor)
+    && Math.abs(parsed.totalAmount - doc.montoTotal) <= 1
+  )
+  if (!sameIdentity) {
+    return { ok: false, error: "El XML del portal no corresponde a este documento" }
+  }
 
   const storageName = `${Date.now()}-${nanoid()}-${doc.tipoDte}-${doc.folio}.xml`
   const storageDir = resolveDteDir()

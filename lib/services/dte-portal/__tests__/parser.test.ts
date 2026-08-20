@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { parseDteTable, parseEstadoSii, parseEstadoIntercambio, extractPdfPostUrl, parseMonto, parseFechaPortal, resolveTipoDocFromText } from "../parser"
+import { parseDteTable, parseEstadoSii, parseEstadoIntercambio, extractPdfPostUrl, parseMonto, parseFechaPortal, resolveTipoDocFromText, splitTopLevelTdCells } from "../parser"
 import { PANELDTE_COMPRAS_PERIODO_FIXTURE, PANELDTE_VACIO_FIXTURE } from "./fixtures/paneldte-compras-periodo.html"
 
 describe("parseDteTable", () => {
@@ -117,6 +117,29 @@ describe("parseFechaPortal", () => {
   it("returns null for unrecognized format", () => {
     expect(parseFechaPortal("no es una fecha")).toBeNull()
   })
+
+  it("returns null for a date that does not exist in the calendar", () => {
+    expect(parseFechaPortal("2026-13-45")).toBeNull()
+    expect(parseFechaPortal("2026-02-30")).toBeNull()
+    expect(parseFechaPortal("2026-00-10")).toBeNull()
+    expect(parseFechaPortal("31-02-2026")).toBeNull()
+  })
+
+  it("accepts a real leap day", () => {
+    expect(parseFechaPortal("2024-02-29")).toBe("2024-02-29")
+  })
+})
+
+describe("splitTopLevelTdCells", () => {
+  it("ignores <td> that live inside an HTML comment", () => {
+    const html = "<tr><td>A</td><!--<td>MUERTA</td>--><td>B</td></tr>"
+    expect(splitTopLevelTdCells(html)).toEqual(["A", "B"])
+  })
+
+  it("still ignores <td> of nested tables", () => {
+    const html = "<tr><td>A</td><td><table><tr><td>anidada</td></tr></table></td></tr>"
+    expect(splitTopLevelTdCells(html)).toHaveLength(2)
+  })
 })
 
 describe("parseEstadoSii", () => {
@@ -197,5 +220,28 @@ describe("parseMonto", () => {
 
   it("returns null for non-numeric text", () => {
     expect(parseMonto("Sin información")).toBeNull()
+  })
+
+  // Formatos que el portal sí emite hoy: ninguno puede cambiar de resultado.
+  it("keeps parsing every format observed in the real portal", () => {
+    expect(parseMonto("49742")).toBe(49742)
+    expect(parseMonto("1.234.567")).toBe(1234567)
+    expect(parseMonto("1.234.567,89")).toBe(1234567.89)
+    expect(parseMonto("-50.000")).toBe(-50000)
+    expect(parseMonto("&nbsp;59.500")).toBe(59500)
+  })
+
+  it("decodes numeric HTML entities instead of absorbing their digits", () => {
+    // Antes "&#160;59500" se leía como 16.059.500 (los dígitos de la entidad
+    // sobrevivían al filtro de caracteres).
+    expect(parseMonto("&#160;59500")).toBe(59500)
+  })
+
+  it("returns null instead of inventing a number for a foreign thousands format", () => {
+    // "49,742" con coma de miles se leía como 49,742 pesos.
+    expect(parseMonto("49,742")).toBeNull()
+    expect(parseMonto("1,234,567")).toBeNull()
+    expect(parseMonto("(15.000)")).toBeNull()
+    expect(parseMonto("12.34.56")).toBeNull()
   })
 })

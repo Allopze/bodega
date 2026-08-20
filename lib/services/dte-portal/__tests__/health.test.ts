@@ -59,7 +59,7 @@ describe("DTE cron health evaluator", () => {
       salesRuns: [],
     })
 
-    expect(result.domains[0]).toMatchObject({ status: "degraded", code: "DTE_HEALTH_RUN_PARTIAL" })
+    expect(result.domains[0]).toMatchObject({ status: "degraded", code: "DTE_HEALTH_INGEST_PARTIAL" })
   })
 
   it("degrades a complete batch when its DTE reconciliation is partial", () => {
@@ -76,7 +76,10 @@ describe("DTE cron health evaluator", () => {
       salesRuns: [],
     })
 
-    expect(result.domains[0]).toMatchObject({ status: "degraded", code: "DTE_HEALTH_RUN_PARTIAL" })
+    // REC-06: una conciliación pendiente es el estado normal de trabajo; no
+    // puede llegar al operador con el mismo código que un libro de compras
+    // al que le faltan documentos.
+    expect(result.domains[0]).toMatchObject({ status: "degraded", code: "DTE_HEALTH_RECONCILIATION_PENDING" })
   })
 
   it("marks a complete batch critical when DTE reconciliation fails", () => {
@@ -111,6 +114,31 @@ describe("DTE cron health evaluator", () => {
     })
     expect(result.status).toBe("degraded")
     expect(result.domains[0]!.status).toBe("degraded")
+  })
+
+  // REC-06: una pérdida real de documentos del libro de compras no puede
+  // parecerse a "hay conciliaciones pendientes", que es el estado normal.
+  it("distingue por código una ingesta parcial de una conciliación pendiente", () => {
+    const base = {
+      now: atSlot,
+      dteEnabled: true,
+      dteConfigured: true,
+      salesEnabled: false,
+      salesConfigured: false,
+      salesRuns: [],
+    }
+    const ingesta = evaluateDteSyncHealth({
+      ...base,
+      dteRuns: [run(expectedPeriods[0]!, "partial")],
+    })
+    const conciliacion = evaluateDteSyncHealth({
+      ...base,
+      dteRuns: [run(expectedPeriods[0]!, "success", "batch-1", "2026-08-11T11:02:00.000Z", { reconciliationStatus: "partial" })],
+    })
+
+    expect(ingesta.domains[0]).toMatchObject({ status: "degraded", code: "DTE_HEALTH_INGEST_PARTIAL" })
+    expect(conciliacion.domains[0]).toMatchObject({ status: "degraded", code: "DTE_HEALTH_RECONCILIATION_PENDING" })
+    expect(ingesta.domains[0]!.code).not.toBe(conciliacion.domains[0]!.code)
   })
 
   it("gives an active cron batch a bounded grace before alerting it as missing", () => {

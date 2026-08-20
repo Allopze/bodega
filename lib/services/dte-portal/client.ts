@@ -23,6 +23,15 @@ import { DtePortalOriginError, assertDtePortalBaseUrl, resolveDtePortalResourceU
 
 const CREDENTIAL_KEYS = ["rut_usr", "rut_emp", "clave"] as const
 
+/**
+ * Tope de la respuesta de consulta (HTML/XML). La bandeja real más grande
+ * medida —681 documentos— ocupa cientos de KB; el margen es amplísimo. Sin
+ * él, `arrayBuffer()` acumulaba sin límite durante los 120 s del timeout y
+ * después duplicaba la memoria con la copia latin1, con el heap de Next.js
+ * como único freno. Mismo patrón que ya usaba `downloadBinary`.
+ */
+const MAX_DTE_HTML_BYTES = 32 * 1024 * 1024
+
 export interface DteBinaryDownloadOptions {
   /** Límite duro antes de acumular la respuesta completa en memoria. */
   maxBytes?: number
@@ -248,11 +257,14 @@ export class DtePortalClient {
           )
         }
 
-        const arrayBuffer = await response.arrayBuffer()
+        if (contentLengthExceedsLimit(response.headers.get("content-length"), MAX_DTE_HTML_BYTES)) {
+          throw new DtePortalError("La respuesta del portal DTE supera el límite permitido", "INVALID_RESPONSE")
+        }
+
         const contentType = response.headers.get("content-type") ?? ""
         const isXml = contentType.includes("application/xml") || contentType.includes("text/xml") || url.endsWith(".xml")
 
-        const buffer = Buffer.from(arrayBuffer)
+        const buffer = await readBinaryResponse(response, MAX_DTE_HTML_BYTES)
 
         if (isXml) {
           return decodeXmlBuffer(buffer)

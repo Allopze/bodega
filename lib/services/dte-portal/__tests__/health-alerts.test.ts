@@ -26,7 +26,10 @@ vi.mock("@/lib/services/notification-create", () => ({
 
 const { decideDteHealthAlert, notifyDteSyncHealthChange } = await import("../health-alerts")
 
-function evaluation(status: DteSyncHealthEvaluation["status"]): DteSyncHealthEvaluation {
+function evaluation(
+  status: DteSyncHealthEvaluation["status"],
+  domainCode = "DTE_HEALTH_TEST",
+): DteSyncHealthEvaluation {
   return {
     status,
     code: status === "critical" ? "DTE_HEALTH_CRITICAL" : status === "degraded" ? "DTE_HEALTH_DEGRADED" : "DTE_HEALTH_OK",
@@ -34,7 +37,7 @@ function evaluation(status: DteSyncHealthEvaluation["status"]): DteSyncHealthEva
     domains: [{
       name: "purchases",
       status: status === "healthy" ? "healthy" : status,
-      code: "DTE_HEALTH_TEST",
+      code: domainCode,
       slot: "2026-08-11T07:00",
       expectedPeriods: ["2026-08", "2026-07"],
     }],
@@ -84,6 +87,33 @@ describe("DTE health alert delivery", () => {
     expect(mocks.createNotifications).toHaveBeenCalledWith(expect.any(Array), expect.objectContaining({
       title: "Sincronización DTE recuperada",
       dedupeKey: expect.stringMatching(/^dte-sync-health:recovery:/),
+    }))
+  })
+
+  // REC-06: separar los códigos de salud no sirve de nada si el aviso los
+  // aplasta de vuelta. "Faltan documentos del libro" es un incidente;
+  // "conciliaciones pendientes" es el estado normal de trabajo y produce aviso
+  // casi a diario: con el mismo título, cuerpo y huella, el segundo enterraba al
+  // primero.
+  it("distingue ingesta parcial de conciliación pendiente en título, cuerpo y huella", () => {
+    const ingesta = decideDteHealthAlert(evaluation("degraded", "DTE_HEALTH_INGEST_PARTIAL"), null)!
+    const conciliacion = decideDteHealthAlert(evaluation("degraded", "DTE_HEALTH_RECONCILIATION_PENDING"), null)!
+
+    expect(ingesta.fingerprint).not.toBe(conciliacion.fingerprint)
+    expect(ingesta.title).not.toBe(conciliacion.title)
+    expect(ingesta.title).toMatch(/faltan documentos/i)
+    expect(ingesta.body).toMatch(/compras: faltan documentos del período/i)
+    expect(conciliacion.body).toMatch(/compras: quedan conciliaciones pendientes/i)
+  })
+
+  it("no deduplica una ingesta parcial contra un aviso previo de conciliación pendiente", async () => {
+    const conciliacion = decideDteHealthAlert(evaluation("degraded", "DTE_HEALTH_RECONCILIATION_PENDING"), null)!
+    mocks.stateRows.mockResolvedValue([{ value: JSON.stringify({ fingerprint: conciliacion.fingerprint, status: "degraded" }) }])
+
+    await notifyDteSyncHealthChange(evaluation("degraded", "DTE_HEALTH_INGEST_PARTIAL"))
+
+    expect(mocks.createNotifications).toHaveBeenCalledWith(expect.any(Array), expect.objectContaining({
+      title: "Sincronización DTE incompleta: faltan documentos",
     }))
   })
 })

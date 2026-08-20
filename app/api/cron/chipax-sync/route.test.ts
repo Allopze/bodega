@@ -75,13 +75,16 @@ describe("GET /api/cron/chipax-sync", () => {
     expect(mocks.syncBillingInvoices).not.toHaveBeenCalled()
   })
 
-  it("runs the three scopes with one correlation id and current/prior periods", async () => {
+  it("runs every scope with one correlation id and current/prior periods", async () => {
     const response = await GET(request())
     expect(response.status).toBe(200)
     expect(mocks.syncBillingInvoices).toHaveBeenNthCalledWith(1, expect.objectContaining({ period: "2026-08", correlationId: "chipax-batch" }))
     expect(mocks.syncBillingInvoices).toHaveBeenNthCalledWith(2, expect.objectContaining({ period: "2026-07", correlationId: "chipax-batch" }))
-    expect(mocks.syncBankTransactions).toHaveBeenCalledWith(expect.objectContaining({ period: "2026-08", correlationId: "chipax-batch" }))
-    expect((await response.json()).scopes).toHaveLength(3)
+    // Las cartolas cubren los mismos dos períodos: con sólo el mes en curso, los
+    // movimientos del último día del mes anterior no se pedían nunca más.
+    expect(mocks.syncBankTransactions).toHaveBeenNthCalledWith(1, expect.objectContaining({ period: "2026-08", correlationId: "chipax-batch" }))
+    expect(mocks.syncBankTransactions).toHaveBeenNthCalledWith(2, expect.objectContaining({ period: "2026-07", correlationId: "chipax-batch" }))
+    expect((await response.json()).scopes).toHaveLength(4)
   })
 
   it("returns conflict only for an active run and degraded for partial data", async () => {
@@ -89,13 +92,16 @@ describe("GET /api/cron/chipax-sync", () => {
     mocks.syncBillingInvoices
       .mockResolvedValueOnce(syncResult("sales_invoices", "2026-08", { status: "skipped", skipReason: "active_run", runId: "" }))
       .mockResolvedValueOnce(syncResult("sales_invoices", "2026-07", { status: "success" }))
-    mocks.syncBankTransactions.mockResolvedValue(syncResult("bank_transactions", "2026-08", { status: "partial" }))
+    // Sólo la corrida activa: cualquier `partial` en el lote manda sobre el
+    // conflicto (cronContractFor lo resuelve antes) y taparía lo que se prueba acá.
+    mocks.syncBankTransactions.mockResolvedValue(syncResult("bank_transactions", "2026-08", { status: "success" }))
     const response = await GET(request())
     expect(response.status).toBe(409)
     expect(await response.json()).toMatchObject({ outcome: "conflict", code: "DTE_CRON_ACTIVE_RUN" })
 
     mocks.syncBillingInvoices.mockReset()
     mocks.syncBillingInvoices.mockResolvedValue(syncResult("sales_invoices", "2026-08", { status: "partial" }))
+    mocks.syncBankTransactions.mockResolvedValue(syncResult("bank_transactions", "2026-08", { status: "partial" }))
     const degraded = await GET(request())
     expect(degraded.status).toBe(503)
     expect(await degraded.json()).toMatchObject({ outcome: "partial", code: "DTE_CRON_PARTIAL" })

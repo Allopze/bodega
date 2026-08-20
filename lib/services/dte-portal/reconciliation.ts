@@ -15,6 +15,7 @@ import { db } from "@/db"
 import { dteDocuments, purchaseOrderInvoices, fuelLoads } from "@/db/schema"
 import { cleanRut } from "@/lib/rut"
 import { logger } from "@/lib/logger"
+import { localDateToISO } from "@/lib/sst/date"
 import { normalizeFolio, folioRutKey } from "./folio-match"
 
 // ── Tipos de resultado ──────────────────────────────────────────────────────
@@ -29,36 +30,43 @@ export interface DteReconciliationMatch {
   discrepancyPercent: number
 }
 
-export interface DteHealthStats {
-  periodo: string
-  totalDocuments: number
-  estadoSii: {
-    aceptado: number
-    pendienteEnvio: number
-    enviado: number
-    rechazado: number
-    anulado: number
-    manual: number
-    sinEstado: number
-  }
-  reconciliation: {
-    matchedToOc: number
-    matchedToFuel: number
-    unmatched: number
-    discrepancies: number
-  }
-  creditNotes: {
-    total: number
-    applied: number
-    pending: number
-  }
-}
-
 export interface DteReconciliationSummary {
   matched: number
   ambiguous: number
+  /** Documentos sin vínculo que todavía pueden conciliarse. */
   unmatched: number
+  /**
+   * Documentos que el modelo 1:1 no puede vincular porque el dato interno es
+   * legítimamente múltiple: una factura TAE mensual cubre N cargas y todas
+   * comparten `receiptNumber` (ver lib/combustibles/import.ts). No es un
+   * pendiente de conciliación, así que no se cuenta como `unmatched` ni deja la
+   * corrida en `partial` para siempre.
+   */
+  internalAmbiguity: number
   discrepancies: number
+}
+
+/** Diferencia máxima (CLP) para vincular automáticamente sin intervención humana. */
+const AUTO_MATCH_AMOUNT_TOLERANCE_CLP = 1
+
+/**
+ * `estado_plataforma` es texto libre del portal (el `title` de `penplata.gif`),
+ * no un enum, así que la única señal disponible es la palabra. Un documento
+ * reclamado o bloqueado no da derecho a crédito fiscal: no puede conciliarse
+ * solo contra una compra interna, queda para revisión manual.
+ *
+ * Techo conocido: si el portal estrena otro texto para el mismo hecho, hay que
+ * sumarlo a esta lista — no hay forma de derivarlo del HTML.
+ */
+const BLOCKED_PLATFORM_STATUS = /reclamad|bloquead|rechazad|anulad/i
+
+function isBlockedPlatformStatus(estadoPlataforma: string | null | undefined): boolean {
+  return Boolean(estadoPlataforma && BLOCKED_PLATFORM_STATUS.test(estadoPlataforma))
+}
+
+/** Los montos deben calzar al peso para vincular sin que nadie lo mire. */
+function amountsMatchForAutoLink(dteTotal: number, entityTotal: number): boolean {
+  return Math.abs(dteTotal - entityTotal) <= AUTO_MATCH_AMOUNT_TOLERANCE_CLP
 }
 
 function uniqueNormalizedFolios(
@@ -102,7 +110,12 @@ export async function summarizeDteReconciliation(
       fuelLoadId: true,
     },
   })
-  const unmatched = eligibleDocs.filter((doc) => !doc.purchaseOrderInvoiceId && !doc.fuelLoadId).length
+  const unlinkedDocs = eligibleDocs.filter((doc) => !doc.purchaseOrderInvoiceId && !doc.fuelLoadId)
+  const groupedFuelKeys = await fuelKeysWithSeveralLoads(unlinkedDocs)
+  const internalAmbiguity = unlinkedDocs.filter(
+    (doc) => groupedFuelKeys.has(folioRutKey(doc.folio, cleanRut(doc.rutEmisor))),
+  ).length
+  const unmatched = unlinkedDocs.length - internalAmbiguity
   const ambiguous = new Map<string, number>()
   for (const doc of eligibleDocs) {
     if (doc.purchaseOrderInvoiceId || doc.fuelLoadId) continue
@@ -121,8 +134,72 @@ export async function summarizeDteReconciliation(
     // revisión, no sólo que existe una clave repetida.
     ambiguous: ambiguousDocuments,
     unmatched,
+    internalAmbiguity,
     discrepancies,
   }
+}
+
+/**
+ * Claves (folio|RUT) con más de un DTE sin vincular, mirando TODA la tabla de
+ * la empresa y no sólo el período que se sincroniza.
+ *
+ * Un 33 y un 34 del mismo emisor tienen rangos de folio CAF independientes, así
+ * que pueden repetir número y llegar en meses distintos: contando sólo dentro
+ * del período, cada corrida creía tener un candidato único y ganaba el que
+ * llegara primero — exactamente lo que la regla dice que no debe pasar.
+ */
+async function ambiguousDocumentKeys(
+  periodDocs: readonly { folio: number }[],
+  codEmp: string,
+): Promise<Set<string>> {
+  const folios = [...new Set(periodDocs.map((doc) => doc.folio))]
+  if (folios.length === 0) return new Set()
+
+  const siblings = await db.query.dteDocuments.findMany({
+    where: and(
+      eq(dteDocuments.codEmp, codEmp),
+      inArray(dteDocuments.folio, folios),
+      isNull(dteDocuments.purchaseOrderInvoiceId),
+      isNull(dteDocuments.fuelLoadId),
+      inArray(dteDocuments.tipoDte, ["33", "34"]),
+    ),
+    columns: { id: true, folio: true, rutEmisor: true },
+  })
+
+  const counts = new Map<string, number>()
+  for (const doc of siblings) {
+    const key = folioRutKey(doc.folio, cleanRut(doc.rutEmisor))
+    counts.set(key, (counts.get(key) ?? 0) + 1)
+  }
+  return keysWithMultipleCandidates(counts)
+}
+
+/**
+ * Claves (folio|RUT) que del lado interno corresponden a MÁS DE UNA carga de
+ * combustible. Es el caso normal de la importación TAE: una factura mensual con
+ * N líneas inserta N cargas con el mismo `receiptNumber`, y el vínculo 1:1 de
+ * `dte_documents.fuel_load_id` no puede representarlo.
+ */
+async function fuelKeysWithSeveralLoads(
+  unlinkedDocs: readonly { folio: number; rutEmisor: string }[],
+): Promise<Set<string>> {
+  const folios = uniqueNormalizedFolios(unlinkedDocs)
+  if (folios.length === 0) return new Set()
+
+  const loads = await db.query.fuelLoads.findMany({
+    where: sql`ltrim(regexp_replace(coalesce(${fuelLoads.receiptNumber}, ''), '[^0-9]', '', 'g'), '0') IN ${folios}`,
+    columns: { id: true, receiptNumber: true },
+    with: { supplier: { columns: { rut: true } } },
+  })
+
+  const counts = new Map<string, number>()
+  for (const load of loads) {
+    if (!load.receiptNumber || !load.supplier?.rut) continue
+    const key = folioRutKey(load.receiptNumber, cleanRut(load.supplier.rut))
+    if (key.startsWith("|")) continue
+    counts.set(key, (counts.get(key) ?? 0) + 1)
+  }
+  return keysWithMultipleCandidates(counts)
 }
 
 // ── Conciliación con facturas de OC ─────────────────────────────────────────
@@ -166,6 +243,8 @@ export async function matchToPurchaseOrderInvoices(
       folio: true,
       rutEmisor: true,
       montoTotal: true,
+      fechaEmision: true,
+      estadoPlataforma: true,
     },
   })
 
@@ -193,7 +272,7 @@ export async function matchToPurchaseOrderInvoices(
     },
     with: {
       purchaseOrder: {
-        columns: {},
+        columns: { status: true, deletedAt: true, createdAt: true },
         with: { supplier: { columns: { rut: true } } },
       },
     },
@@ -210,6 +289,11 @@ export async function matchToPurchaseOrderInvoices(
   for (const inv of invoices) {
     const rut = inv.purchaseOrder?.supplier?.rut
     if (!rut) continue
+    // Una OC anulada o eliminada conserva sus facturas (`deleteOrder` es soft
+    // delete), así que sin esto el conciliador consume el documento tributario
+    // de una compra viva contra una orden muerta — y desde ahí no se puede
+    // reasignar sin SQL.
+    if (inv.purchaseOrder.status === "cancelled" || inv.purchaseOrder.deletedAt) continue
     const key = folioRutKey(inv.invoiceNumber, cleanRut(rut))
     if (!key.startsWith("|") && invoiceByFolioAndRut.has(key)) {
       ambiguous.add(key)
@@ -225,12 +309,7 @@ export async function matchToPurchaseOrderInvoices(
   // El tipo forma parte de la identidad tributaria, pero NO de la decisión de
   // conciliación: un 33 y un 34 con el mismo folio/RUT son dos candidatos para
   // una sola factura interna y nunca se debe elegir uno por orden de llegada.
-  const docsByFolioAndRut = new Map<string, number>()
-  for (const doc of unmatchedDocs) {
-    const key = folioRutKey(doc.folio, cleanRut(doc.rutEmisor))
-    docsByFolioAndRut.set(key, (docsByFolioAndRut.get(key) ?? 0) + 1)
-  }
-  const ambiguousDocuments = keysWithMultipleCandidates(docsByFolioAndRut)
+  const ambiguousDocuments = await ambiguousDocumentKeys(unmatchedDocs, codEmp)
   for (const key of ambiguousDocuments) {
     logger.warn("[dte-reconciliation] documentos 33/34 ambiguos", {
       code: "DTE_RECONCILIATION_AMBIGUOUS_DOCUMENT_TYPE",
@@ -241,8 +320,21 @@ export async function matchToPurchaseOrderInvoices(
   for (const doc of unmatchedDocs) {
     const docKey = folioRutKey(doc.folio, cleanRut(doc.rutEmisor))
     if (ambiguousDocuments.has(docKey)) continue
+    if (isBlockedPlatformStatus(doc.estadoPlataforma)) {
+      logger.warn("[dte-reconciliation] documento reclamado/bloqueado sin vincular", {
+        code: "DTE_RECONCILIATION_DOCUMENT_BLOCKED",
+        dteDocumentId: doc.id,
+      })
+      continue
+    }
     const invoice = invoiceByFolioAndRut.get(docKey)
     if (!invoice) continue
+
+    // Mismo piso de fecha que exigen las dos rutas manuales
+    // (`validateDteForInvoiceTx` y `selectDteCandidates`): un DTE anterior a la
+    // orden no puede ser el documento de esta compra, por más que folio y RUT
+    // calcen.
+    if (doc.fechaEmision < localDateToISO(new Date(invoice.purchaseOrder.createdAt))) continue
 
     const dteTotal = doc.montoTotal ?? 0
     const entityTotal = invoice.amount ?? 0
@@ -250,6 +342,19 @@ export async function matchToPurchaseOrderInvoices(
     const discrepancyPercent = entityTotal !== 0
       ? (discrepancy / Math.abs(entityTotal)) * 100
       : (discrepancy > 0 ? 100 : 0)
+
+    // Fuera de tolerancia el documento queda como CANDIDATO, no como vínculo:
+    // `selectDteCandidates` lo sigue ofreciendo en la OC para que una persona
+    // decida. Escribirlo solo dejaba evidencia tributaria de otra compra
+    // colgada de esta factura, con la diferencia visible sólo tras filtrar.
+    if (!amountsMatchForAutoLink(dteTotal, entityTotal)) {
+      logger.warn("[dte-reconciliation] monto fuera de tolerancia, sin vincular", {
+        code: "DTE_RECONCILIATION_AMOUNT_MISMATCH",
+        dteDocumentId: doc.id,
+        invoiceId: invoice.id,
+      })
+      continue
+    }
 
     // Vincular el DTE con la factura de OC
     const linked = await linkDteToPurchaseOrderInvoice(doc.id, invoice.id)
@@ -295,7 +400,7 @@ export async function matchInvoiceToDteDocument(
     columns: { id: true, invoiceNumber: true, amount: true },
     with: {
       purchaseOrder: {
-        columns: {},
+        columns: { createdAt: true },
         with: { supplier: { columns: { rut: true } } },
       },
     },
@@ -320,11 +425,20 @@ export async function matchInvoiceToDteDocument(
       isNull(dteDocuments.fuelLoadId),
       inArray(dteDocuments.tipoDte, ["33", "34"]),
     ),
-    columns: { id: true, folio: true, rutEmisor: true, montoTotal: true },
+    columns: { id: true, folio: true, rutEmisor: true, montoTotal: true, fechaEmision: true, estadoPlataforma: true },
   })
 
   const cleaned = cleanRut(supplierRut)
-  const matching = candidates.filter((doc) => cleanRut(doc.rutEmisor) === cleaned)
+  // Mismos filtros que la ruta manual (`selectDteCandidates`): mismo proveedor,
+  // emitido desde que la orden existe y no reclamado/bloqueado en la
+  // plataforma. Sin el piso de fecha, tipear el folio de otra compra del mismo
+  // proveedor colgaba acá el DTE equivocado sin decírselo a nadie.
+  const createdOn = localDateToISO(new Date(invoice.purchaseOrder.createdAt))
+  const matching = candidates.filter((doc) => (
+    cleanRut(doc.rutEmisor) === cleaned
+    && doc.fechaEmision >= createdOn
+    && !isBlockedPlatformStatus(doc.estadoPlataforma)
+  ))
 
   // Más de un DTE sin vincular con el mismo folio y proveedor es un dato
   // inconsistente del portal; elegir uno colgaría el documento equivocado.
@@ -339,6 +453,17 @@ export async function matchInvoiceToDteDocument(
   const dteTotal = doc.montoTotal ?? 0
   const entityTotal = invoice.amount ?? 0
   const discrepancy = Math.abs(dteTotal - entityTotal)
+
+  // Igual que en el cruce de la sincronización: sin calce de monto no se
+  // escribe el vínculo, el documento queda ofrecido como candidato en la OC.
+  if (!amountsMatchForAutoLink(dteTotal, entityTotal)) {
+    logger.warn("[dte-reconciliation] monto fuera de tolerancia, sin vincular", {
+      code: "DTE_RECONCILIATION_AMOUNT_MISMATCH",
+      dteDocumentId: doc.id,
+      invoiceId: invoice.id,
+    })
+    return null
+  }
 
   const linked = await linkDteToPurchaseOrderInvoice(doc.id, invoice.id)
   if (!linked) return null
@@ -407,6 +532,58 @@ async function linkDteToPurchaseOrderInvoice(dteId: string, invoiceId: string): 
   }
 }
 
+/**
+ * Espejo de `linkDteToPurchaseOrderInvoice` para el lado combustible: sin él, el
+ * UPDATE sólo comprobaba que el DOCUMENTO estuviera libre, nunca que la CARGA
+ * lo estuviera, y dos DTE podían quedar imputados a la misma compra sin ninguna
+ * barrera (el índice único parcial sobre `fuel_load_id` es la última).
+ */
+async function linkDteToFuelLoad(dteId: string, loadId: string): Promise<boolean> {
+  try {
+    return await db.transaction(async (tx) => {
+      const [load] = await tx.select({ id: fuelLoads.id })
+        .from(fuelLoads)
+        .where(eq(fuelLoads.id, loadId))
+        .for("update")
+        .limit(1)
+      if (!load) return false
+
+      const [occupied] = await tx.select({ id: dteDocuments.id })
+        .from(dteDocuments)
+        .where(and(
+          eq(dteDocuments.fuelLoadId, loadId),
+          ne(dteDocuments.id, dteId),
+        ))
+        .limit(1)
+      if (occupied) {
+        logger.warn("[dte-reconciliation] carga de combustible ya vinculada", {
+          code: "DTE_RECONCILIATION_FUEL_LOAD_OCCUPIED",
+          loadId,
+        })
+        return false
+      }
+
+      const linked = await tx.update(dteDocuments).set({
+        fuelLoadId: loadId,
+      }).where(and(
+        eq(dteDocuments.id, dteId),
+        isNull(dteDocuments.purchaseOrderInvoiceId),
+        isNull(dteDocuments.fuelLoadId),
+      )).returning({ id: dteDocuments.id })
+      return linked.length === 1
+    })
+  } catch (error) {
+    if (isUniqueViolation(error)) {
+      logger.warn("[dte-reconciliation] carrera al vincular carga de combustible", {
+        code: "DTE_RECONCILIATION_FUEL_LOAD_RACE",
+        loadId,
+      })
+      return false
+    }
+    throw error
+  }
+}
+
 function isUniqueViolation(error: unknown): boolean {
   for (let current: unknown = error, depth = 0; current && depth < 5; depth++) {
     if (typeof current !== "object") return false
@@ -451,6 +628,7 @@ export async function matchToFuelLoads(
       folio: true,
       rutEmisor: true,
       montoTotal: true,
+      estadoPlataforma: true,
     },
   })
 
@@ -460,12 +638,7 @@ export async function matchToFuelLoads(
   // dos documentos tributarios candidatos para una sola carga. Vincular ambos
   // por orden de llegada dejaría una evidencia ambigua en combustible, aunque
   // el check de vínculo único sólo impida que un DTE apunte a dos dominios.
-  const docsByFolioAndRut = new Map<string, number>()
-  for (const doc of unmatchedDocs) {
-    const key = folioRutKey(doc.folio, cleanRut(doc.rutEmisor))
-    docsByFolioAndRut.set(key, (docsByFolioAndRut.get(key) ?? 0) + 1)
-  }
-  const ambiguousDocuments = keysWithMultipleCandidates(docsByFolioAndRut)
+  const ambiguousDocuments = await ambiguousDocumentKeys(unmatchedDocs, codEmp)
   for (const key of ambiguousDocuments) {
     logger.warn("[dte-reconciliation] documentos 33/34 ambiguos", {
       code: "DTE_RECONCILIATION_AMBIGUOUS_DOCUMENT_TYPE",
@@ -509,6 +682,13 @@ export async function matchToFuelLoads(
   for (const doc of unmatchedDocs) {
     const docKey = folioRutKey(doc.folio, cleanRut(doc.rutEmisor))
     if (ambiguousDocuments.has(docKey)) continue
+    if (isBlockedPlatformStatus(doc.estadoPlataforma)) {
+      logger.warn("[dte-reconciliation] documento reclamado/bloqueado sin vincular", {
+        code: "DTE_RECONCILIATION_DOCUMENT_BLOCKED",
+        dteDocumentId: doc.id,
+      })
+      continue
+    }
     const load = loadByReceiptAndRut.get(docKey)
     if (!load) continue
 
@@ -519,14 +699,8 @@ export async function matchToFuelLoads(
       ? (discrepancy / Math.abs(entityTotal)) * 100
       : (discrepancy > 0 ? 100 : 0)
 
-    const linked = await db.update(dteDocuments).set({
-      fuelLoadId: load.id,
-    }).where(and(
-      eq(dteDocuments.id, doc.id),
-      isNull(dteDocuments.purchaseOrderInvoiceId),
-      isNull(dteDocuments.fuelLoadId),
-    )).returning({ id: dteDocuments.id })
-    if (linked.length !== 1) continue
+    const linked = await linkDteToFuelLoad(doc.id, load.id)
+    if (!linked) continue
 
     matches.push({
       dteDocumentId: doc.id,
@@ -542,87 +716,7 @@ export async function matchToFuelLoads(
   return matches
 }
 
-// ── Estadísticas de salud tributaria ─────────────────────────────────────────
-
-/**
- * Calcula estadísticas de salud tributaria para un período.
- * Alimenta los indicadores del dashboard.
- */
-export async function computeHealthStats(
-  periodo: string,
-  codEmp: string,
-): Promise<DteHealthStats> {
-  const docs = await db.query.dteDocuments.findMany({
-    where: and(
-      eq(dteDocuments.periodo, periodo),
-      eq(dteDocuments.codEmp, codEmp),
-    ),
-    columns: {
-      id: true,
-      tipoDte: true,
-      estadoSii: true,
-      purchaseOrderInvoiceId: true,
-      fuelLoadId: true,
-      montoTotal: true,
-    },
-  })
-
-  const totalDocuments = docs.length
-
-  // Estados SII
-  const estadoSii = {
-    aceptado: 0,
-    pendienteEnvio: 0,
-    enviado: 0,
-    rechazado: 0,
-    anulado: 0,
-    manual: 0,
-    sinEstado: 0,
-  }
-  for (const doc of docs) {
-    switch (doc.estadoSii) {
-      case "aceptado": estadoSii.aceptado++; break
-      case "pendiente_envio": estadoSii.pendienteEnvio++; break
-      case "enviado": estadoSii.enviado++; break
-      case "rechazado": estadoSii.rechazado++; break
-      case "anulado": estadoSii.anulado++; break
-      case "manual": estadoSii.manual++; break
-      default: estadoSii.sinEstado++; break
-    }
-  }
-
-  // Reconciliación
-  const matchedToOc = docs.filter((d) => d.purchaseOrderInvoiceId).length
-  const matchedToFuel = docs.filter((d) => d.fuelLoadId).length
-  const unmatched = docs.filter((d) => !d.purchaseOrderInvoiceId && !d.fuelLoadId).length
-
-  // Discrepancias: documentos con vínculo cuyo monto difiere del de la
-  // entidad vinculada (factura de OC o carga de combustible).
-  const discrepancies = await countDiscrepancies(docs)
-
-  // Notas de crédito
-  const creditNotes = docs.filter((d) => d.tipoDte === "61")
-  const appliedCreditNotes = creditNotes.filter(
-    (d) => d.purchaseOrderInvoiceId || d.fuelLoadId,
-  )
-
-  return {
-    periodo,
-    totalDocuments,
-    estadoSii,
-    reconciliation: {
-      matchedToOc,
-      matchedToFuel,
-      unmatched,
-      discrepancies,
-    },
-    creditNotes: {
-      total: creditNotes.length,
-      applied: appliedCreditNotes.length,
-      pending: creditNotes.length - appliedCreditNotes.length,
-    },
-  }
-}
+// ── Discrepancias de monto ───────────────────────────────────────────────────
 
 /** Diferencia mínima (CLP) para considerar dos montos "distintos" — evita falsos positivos por redondeo. */
 const DISCREPANCY_TOLERANCE_CLP = 1
@@ -666,10 +760,9 @@ async function countDiscrepancies(
 
 /**
  * Notas de crédito (tipo 61) emitidas por un proveedor de combustible que aún
- * no se vincularon a ninguna carga. A diferencia de `creditNotes.pending` de
- * `computeHealthStats` (que mezcla NC de cualquier dominio sin vínculo), esto
- * exige que el RUT emisor pertenezca a `fuelSuppliers` — la única forma
- * honesta de mostrar "NC de combustible" en el Dashboard sin conflar dominios.
+ * no se vincularon a ninguna carga. Se exige que el RUT emisor pertenezca a
+ * `fuelSuppliers` — la única forma honesta de mostrar "NC de combustible" en el
+ * Dashboard sin conflar dominios (una NC sin vínculo puede ser de cualquiera).
  */
 export async function countPendingFuelCreditNotes(periodo: string, codEmp: string): Promise<number> {
   const notes = await db.query.dteDocuments.findMany({

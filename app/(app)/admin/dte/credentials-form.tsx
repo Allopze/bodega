@@ -160,6 +160,13 @@ export function DteCredentialsForm({ status }: DteCredentialsFormProps) {
         </section>
       )}
 
+      {!status.canStoreSecrets && (
+        <section role="alert" className="rounded-[var(--radius-xl)] border border-[var(--color-danger)] bg-[var(--color-danger-tint)] p-4 text-[var(--color-danger-ink)]">
+          <h2 className="font-semibold">No hay keyring activo</h2>
+          <p className="mt-1 text-sm">Sin una clave activa en <code>DTE_SETTINGS_KEYRING</code> no se puede guardar ninguna credencial: escribirla en claro no es una opción, así que el guardado se rechaza. Configure el keyring en el servicio <code>app</code> y vuelva a intentarlo.</p>
+        </section>
+      )}
+
       {status.cutoverComplete && status.encryptionStatus === "encrypted_only" && (
         <section className="rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-surface-2)] p-4">
           <h2 className="font-semibold text-[var(--color-text)]">Re-cifrado del keyring</h2>
@@ -214,7 +221,7 @@ export function DteCredentialsForm({ status }: DteCredentialsFormProps) {
           </FieldGroup>
 
           <div className="mt-6 flex justify-end">
-            <SubmitButton label="Guardar configuración" loadingLabel="Guardando…" variant="primary" />
+            <SubmitButton label="Guardar configuración" loadingLabel="Guardando…" variant="primary" disabled={!status.canStoreSecrets} />
           </div>
         </div>
       </form>

@@ -154,6 +154,18 @@ export class FacturaEnLineaProvider implements BillingProvider {
       await this.enrichFromXml(client, candidate.invoice)
     }
 
+    // El listado no trae moneda y un documento de exportación puede estar en
+    // moneda extranjera: si el XML no la confirmó, la etiqueta "CLP" es una
+    // suposición y queda registrada como tal.
+    for (const invoice of invoices) {
+      if (EXPORT_DOC_TYPES.has(invoice.docType.replace(/^0+/, "")) && invoice.currency === "CLP") {
+        logger.warn(
+          `[billing/fel] Documento de exportación ${invoice.docType}/${invoice.folio} sin moneda `
+          + `confirmada por el XML: se asume CLP`,
+        )
+      }
+    }
+
     return {
       items: invoices,
       nextCursor: selection.nextCursor,
@@ -170,21 +182,37 @@ export class FacturaEnLineaProvider implements BillingProvider {
    */
   async listReceivedInvoices(query: ProviderPeriodQuery): Promise<ProviderPage<ProviderInvoice>> {
     const client = await this.resolveClient()
-    const [anio, mes] = assertPeriod(query.period).split("-") as [string, string]
+    const periodo = assertPeriod(query.period)
+    const [anio, mes] = periodo.split("-") as [string, string]
     const accountRef = client.credentials.codEmp
 
-    const { rows, totalRegistros } = await fetchBandejaEntrada(client, {
+    // El contexto acompaña a los warns de fila descartada: sin él quedan sueltos
+    // en stdout, mezclados con los de las otras corridas del día.
+    const { rows, declaredTotal } = await fetchBandejaEntrada(client, {
       mes,
       anio,
       codEmp: accountRef,
       estadoPlataforma: "",
       rutProveedor: "",
-    })
+    }, { periodo, correlationId: query.correlationId })
+
+    // Se propaga `declaredTotal`, NO `totalRegistros`: éste se rellena con
+    // `rows.length` cuando el portal no declara el total, y entregarlo como
+    // total del proveedor hace que el sync compare un número contra sí mismo y
+    // cierre en éxito una corrida cuya completitud nadie verificó. `null`
+    // significa exactamente eso: no verificable.
+    if (declaredTotal === null) {
+      logger.warn(
+        `[billing/fel] La Bandeja de Entrada de ${periodo} no declaró el total de registros: `
+        + `no se pudo verificar la completitud (se leyeron ${rows.length} documentos)`,
+      )
+    }
 
     return {
       items: rows.map((row) => this.mapPurchaseRow(row, cleanRut(client.credentials.rutEmp), accountRef)),
       nextCursor: null,
-      reportedTotal: totalRegistros,
+      reportedTotal: declaredTotal,
+      completenessUnverified: declaredTotal === null,
     }
   }
 
@@ -222,13 +250,32 @@ export class FacturaEnLineaProvider implements BillingProvider {
   private async enrichFromXml(client: DtePortalClient, invoice: ProviderInvoice): Promise<void> {
     try {
       const { xml } = await downloadDteXml(client, invoice.xmlUrl!)
-      const parsed = parseSaleDteXml(xml)
+      // El XML es dato externo, y un sobre EnvioDTE puede traer varios
+      // <Documento>: se pide ESTE por identidad. Injertar otro DTE reescribiría
+      // el RUT del cliente, el vencimiento y los montos de una venta ajena
+      // sobre esta fila, así que si no está en el sobre no se injerta nada.
+      const parsed = parseSaleDteXml(xml, {
+        docType:     invoice.docType,
+        folio:       invoice.folio,
+        issuerTaxId: invoice.issuerTaxId,
+      })
       if (!parsed) {
-        logger.warn(`[billing/fel] XML no parseable para folio ${invoice.folio} tipo ${invoice.docType}`)
+        logger.warn(
+          `[billing/fel] El XML descargado no contiene el folio ${invoice.folio} tipo `
+          + `${invoice.docType} (o no es parseable): no se enriquece`,
+        )
         return
       }
       // El XML gana en los campos tributarios porque es el documento mismo; el
-      // listado HTML es una vista derivada.
+      // listado HTML es una vista derivada. Una moneda que no está en la tabla
+      // del SII se reporta y se conserva la del listado: no se inventa un ISO.
+      if (parsed.currency) {
+        invoice.currency = parsed.currency
+      } else if (parsed.currencyDeclared) {
+        logger.warn(
+          `[billing/fel] Moneda "${parsed.currencyDeclared}" no reconocida; se conserva la moneda del listado`,
+        )
+      }
       invoice.receiverTaxId = parsed.receiverTaxId
       invoice.receiverName = parsed.receiverName
       invoice.dueDate = parsed.dueDate
@@ -305,14 +352,14 @@ export class FacturaEnLineaProvider implements BillingProvider {
       receiverName:   row.razonSocial || null,
       issueDate:      row.fecha,
       dueDate:        null,          // solo está en el XML (FchVenc)
-      currency:       "CLP",         // el portal opera en pesos; el XML lo confirmaría
+      currency:       "CLP",         // el listado no la trae; `enrichFromXml` la corrige si el XML la declara
       netAmount:      row.montoNeto,
       taxAmount:      deriveTax(row.montoNeto, row.montoTotal),
       exemptAmount:   null,
       totalAmount:    row.montoTotal,
       documentStatus: mapSiiStatus(row.estadoSii),
       externalStatus: row.estado || null,
-      documentUrl:    row.pdfUrl,
+      documentUrl:    sanitizeDocumentUrl(row.pdfUrl),
       xmlUrl:         row.xmlUrl,
       accountRef,
       items:          [],
@@ -345,7 +392,7 @@ export class FacturaEnLineaProvider implements BillingProvider {
       // ventas); solo el estado de la plataforma de intercambio.
       documentStatus: "unknown",
       externalStatus: row.estadoPlataforma,
-      documentUrl:    row.pdfUrl,
+      documentUrl:    sanitizeDocumentUrl(row.pdfUrl),
       xmlUrl:         row.xmlUrl,
       accountRef,
       items:          [],
@@ -354,6 +401,28 @@ export class FacturaEnLineaProvider implements BillingProvider {
 }
 
 /* ── Helpers ─────────────────────────────────────────────────────────────── */
+
+/** Tipos DTE de exportación: pueden venir en moneda distinta del peso. */
+const EXPORT_DOC_TYPES = new Set(["110", "111", "112", "104", "106", "88"])
+
+/** Parámetros que el portal propaga en sus enlaces y que jamás deben persistirse. */
+const URL_CREDENTIAL_PARAMS = /([?&])(?:rut_usr|rut_emp|clave)=[^&#]*/gi
+
+/**
+ * La URL del documento se guarda en `billing_external_refs.document_url` (texto
+ * plano, replicado en cada respaldo) y el portal genera sus enlaces con la misma
+ * plantilla que sí embebe la clave de la cuenta en otros atributos de la fila.
+ * Se descartan los parámetros de credenciales antes de persistirla; el resto
+ * (`post`, `Ced`) se conserva verbatim porque identifica al documento.
+ */
+function sanitizeDocumentUrl(url: string | null): string | null {
+  if (!url) return null
+  const sanitized = url
+    .replace(URL_CREDENTIAL_PARAMS, "$1")
+    .replace(/([?&])&+/g, "$1")
+    .replace(/[?&]$/, "")
+  return sanitized.length > 0 ? sanitized : null
+}
 
 /** Stable order survives changed portal row order and is safe to persist as a cursor. */
 function saleXmlCandidateKey(invoice: ProviderInvoice): string {

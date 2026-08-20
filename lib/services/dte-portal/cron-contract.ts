@@ -21,14 +21,18 @@ export function cronContractFor(input: {
 }): CronContract {
   if (input.unauthorized) return contract("unauthorized", "DTE_CRON_UNAUTHORIZED", false, 401, 1, "critical")
   if (input.disabled) return contract("disabled", "DTE_CRON_DISABLED", true, 200, 0, "disabled")
-  if (input.conflict || input.statuses?.some((status) => status === "skipped")) {
-    return contract("conflict", "DTE_CRON_ACTIVE_RUN", false, 409, 2, "waiting")
-  }
+  // El fallo manda sobre el conflicto: un lote mixto (un período con corrida
+  // activa y otro con las credenciales rechazadas) se reportaba 409/"waiting",
+  // y el runner registraba conflicto benigno mientras el portal rechazaba la
+  // autenticación.
   if (input.statuses?.some((status) => status === "failed")) {
     return contract("failed", "DTE_CRON_FAILED", false, 503, 1, "critical")
   }
   if (input.statuses?.some((status) => status === "partial")) {
     return contract("partial", "DTE_CRON_PARTIAL", false, 503, 1, "degraded")
+  }
+  if (input.conflict || input.statuses?.some((status) => status === "skipped")) {
+    return contract("conflict", "DTE_CRON_ACTIVE_RUN", false, 409, 2, "waiting")
   }
   return contract("success", "DTE_CRON_SUCCESS", true, 200, 0, "healthy")
 }

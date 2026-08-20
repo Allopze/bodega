@@ -1,5 +1,5 @@
 import { DtePortalError } from "./types"
-import { DtePortalStartsPausedError } from "./operation-lease"
+import { DtePortalStartsPausedError, DtePortalTooManyOperationsError } from "./operation-lease"
 
 export interface SafeDteFailure {
   code: string
@@ -16,6 +16,15 @@ export function classifyDteFailure(error: unknown, secrets: readonly string[] = 
     return {
       code: "DTE_PORTAL_STARTS_PAUSED",
       summary: "La sincronización DTE está pausada temporalmente por un cambio seguro de credenciales.",
+    }
+  }
+  if (error instanceof DtePortalTooManyOperationsError) {
+    // El cupo de operaciones simultáneas contra el portal es nuestro, no del
+    // proveedor: sin rama propia caía en DTE_UNEXPECTED y parecía una falla del
+    // portal en vez de una espera que se resuelve reintentando.
+    return {
+      code: "DTE_PORTAL_TOO_MANY_OPERATIONS",
+      summary: "Hay demasiadas operaciones DTE simultáneas; vuelva a intentar en unos minutos.",
     }
   }
   if (error instanceof DtePortalError) {

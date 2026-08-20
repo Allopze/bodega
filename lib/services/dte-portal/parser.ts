@@ -205,14 +205,28 @@ export function extractRowId(cellHtml: string): string | null {
 
 /**
  * Limpia y parsea un valor monetario desde el texto de una celda.
+ *
+ * Parser estricto: el texto viene del HTML del portal (frontera no confiable),
+ * así que primero se decodifican las entidades —los montos llegan rodeados de
+ * `&nbsp;`/`&#160;`— y después se exige formato chileno válido. Cualquier otra
+ * cosa devuelve null y la fila se descarta, que es más honesto que inventar un
+ * número: la versión permisiva anterior leía "1,234,567" como 1.234 y
+ * "&#160;59500" como 16.059.500, sin ninguna señal.
  */
 export function parseMonto(text: string): number | null {
-  const cleaned = text
-    .replace(/[^0-9,\-]/g, "")  // Solo dígitos, coma y signo
-    .replace(/\./g, "")          // Separador de miles
-    .replace(",", ".")           // Decimal a punto
-  const n = parseFloat(cleaned)
-  return isNaN(n) ? null : n
+  const cleaned = decodeHtmlEntities(text)
+    .replace(/&#(\d+);/g, (_m, dec: string) => String.fromCharCode(Number(dec)))
+    .replace(/&#x([0-9a-f]+);/gi, (_m, hex: string) => String.fromCharCode(parseInt(hex, 16)))
+    .replace(/[\s\u00a0]/g, "")
+    .replace(/^\$/, "")
+
+  // Miles con punto y decimales con coma (máx. 2), o entero desnudo.
+  const chileno = /^-?\d{1,3}(\.\d{3})*(,\d{1,2})?$/
+  const desnudo = /^-?\d+(,\d{1,2})?$/
+  if (!chileno.test(cleaned) && !desnudo.test(cleaned)) return null
+
+  const n = Number(cleaned.replace(/\./g, "").replace(",", "."))
+  return Number.isFinite(n) ? n : null
 }
 
 /**
@@ -226,16 +240,31 @@ export function parseFechaPortal(text: string): string | null {
   const iso = cleaned.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/)
   if (iso) {
     const [, year, month, day] = iso
-    return `${year}-${month!.padStart(2, "0")}-${day!.padStart(2, "0")}`
+    return toIsoDate(year!, month!, day!)
   }
 
   const dmy = cleaned.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})$/)
   if (dmy) {
     const [, day, month, year] = dmy
-    return `${year}-${month!.padStart(2, "0")}-${day!.padStart(2, "0")}`
+    return toIsoDate(year!, month!, day!)
   }
 
   return null
+}
+
+/**
+ * Arma la fecha ISO validando que exista en el calendario. Sin esto el regex
+ * sólo comprobaba la forma y "2026-13-45" entraba tal cual a `fecha_emision`
+ * (text sin check constraint), quedando como "Invalid Date" en toda la UI y en
+ * el Libro de Compras.
+ */
+function toIsoDate(year: string, month: string, day: string): string | null {
+  const y = Number(year)
+  const m = Number(month)
+  const d = Number(day)
+  const date = new Date(Date.UTC(y, m - 1, d))
+  if (date.getUTCFullYear() !== y || date.getUTCMonth() !== m - 1 || date.getUTCDate() !== d) return null
+  return `${year}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`
 }
 
 /**
@@ -324,13 +353,18 @@ export function findMatchingRowEnd(rowChunk: string): number {
  * paneldte.php, reutilizado también por bandeja-entrada.ts (Panel Correo).
  */
 export function splitTopLevelTdCells(html: string): string[] {
+  // Los comentarios se quitan ANTES de contar: la Bandeja de Entrada trae un
+  // `<!--<td>...PENDIENTE...</td>-->` que el navegador nunca renderiza y que,
+  // contado como celda real, hacía que todo el mapa de columnas dependiera de
+  // markup muerto (si el portal lo borra, se corren todos los índices).
+  const source = html.replace(/<!--[\s\S]*?-->/g, "")
   const cells: string[] = []
   const tagRe = /<(\/?)(td|table)\b[^>]*>/gi
   let tableDepth = 0
   let cellStart = -1
   let m: RegExpExecArray | null
 
-  while ((m = tagRe.exec(html)) !== null) {
+  while ((m = tagRe.exec(source)) !== null) {
     const closing = m[1] === "/"
     const tag = m[2]!.toLowerCase()
 
@@ -343,7 +377,7 @@ export function splitTopLevelTdCells(html: string): string[] {
     if (!closing) {
       if (tableDepth === 0) cellStart = m.index + m[0].length
     } else if (tableDepth === 0 && cellStart >= 0) {
-      cells.push(html.slice(cellStart, m.index).trim())
+      cells.push(source.slice(cellStart, m.index).trim())
       cellStart = -1
     }
   }
@@ -437,6 +471,7 @@ function extractPeriodo(html: string): string | null {
 /** Decodifica entidades HTML comunes del portal (sin librería externa). */
 export function decodeHtmlEntities(text: string): string {
   return text
+    .replace(/&nbsp;/gi, " ")
     .replace(/&amp;/g, "&")
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")

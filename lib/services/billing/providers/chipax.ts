@@ -31,7 +31,8 @@
  * ## Límite de tasa
  *
  * La API responde `x-ratelimit-limit: 60` por minuto. El cliente espaciа las
- * solicitudes y respeta `Retry-After` ante un 429.
+ * solicitudes y respeta `Retry-After` ante un 429; si el 429 no trae la cabecera,
+ * espera un piso antes del único reintento en vez de volver a chocar enseguida.
  */
 
 import type { BillingProviderId } from "@/db/schema"
@@ -74,12 +75,23 @@ export const CHIPAX_CONTRACT_BLOCKER =
 const REQUEST_SPACING_MS = 1100
 /** Tamaño de página observado en `/dtes`; la API no permite cambiarlo. */
 const DTE_PAGE_SIZE = 50
-/** Límite defensivo para cartolas, cuyo tamaño no está fijado por el contrato. */
-const BANK_PAGE_SIZE = 500
+/**
+ * Techo defensivo de filas por página, para ambos endpoints. Acota la memoria de
+ * una respuesta desmesurada, pero NO verifica el tamaño de página: pegarlo al
+ * valor observado convertía una subida silenciosa de la página del proveedor en
+ * corridas fallidas permanentes.
+ */
+const MAX_ITEMS_PER_PAGE = 1_000
 /** El total declarado no puede abrir una corrida de páginas sin límite. */
 const MAX_DECLARED_PAGES = 10_000
 /** Nunca se obedece un Retry-After arbitrariamente largo. */
 const MAX_RETRY_AFTER_MS = 30_000
+/**
+ * Espera mínima ante un 429 **sin** cabecera `Retry-After`. Sin piso, el único
+ * reintento salía ~1,1 s después —dentro de la misma ventana de 60/min que
+ * gatilló el límite— y volvía a chocar, abortando la corrida completa.
+ */
+const MIN_RETRY_AFTER_MS = 15_000
 
 interface ChipaxDte {
   id: number
@@ -251,7 +263,7 @@ export class ChipaxProvider implements BillingProvider {
       )
     }
 
-    const body = (await response.json()) as { token?: string; tokenExpiration?: number }
+    const body = (await readJson(response, "/login")) as { token?: string; tokenExpiration?: number }
     if (!body.token) {
       throw new BillingProviderError("La respuesta de login no trae token.", "PARSE_FAILED", PROVIDER_ID)
     }
@@ -288,13 +300,15 @@ export class ChipaxProvider implements BillingProvider {
     }
 
     if (response.status === 429 && retry429) {
-      const retryAfter = parseRetryAfter(response.headers.get("retry-after"))
+      // Cuando el proveedor no dice cuánto esperar, se aplica el piso: reintentar
+      // de inmediato garantiza el segundo 429 y con él una corrida fallida.
+      const retryAfter = parseRetryAfter(response.headers.get("retry-after")) ?? MIN_RETRY_AFTER_MS
       if (retryAfter > 0) await new Promise((resolve) => setTimeout(resolve, retryAfter))
       return this.get<T>(path, retry401, false)
     }
 
     if (response.status === 429) {
-      const retryAfter = parseRetryAfter(response.headers.get("retry-after"))
+      const retryAfter = parseRetryAfter(response.headers.get("retry-after")) ?? 0
       throw new BillingProviderError(
         `Chipax aplicó límite de tasa después del reintento. Reintenta en ${Math.ceil(retryAfter / 1000) || 60} segundos.`,
         "RATE_LIMITED",
@@ -310,7 +324,7 @@ export class ChipaxProvider implements BillingProvider {
       )
     }
 
-    return (await response.json()) as T
+    return (await readJson(response, path)) as T
   }
 
   /** Espacia las solicitudes para no acercarse al límite de 60 por minuto. */
@@ -415,11 +429,17 @@ function parseDteResponse(body: unknown, page: number): {
 } {
   const envelope = Array.isArray(body) ? { items: body } : record(body)
   const items = envelope.items
-  if (!Array.isArray(items) || items.length > DTE_PAGE_SIZE) invalidResponse("/dtes: items inválidos o sobre el límite de 50")
+  if (!Array.isArray(items) || items.length > MAX_ITEMS_PER_PAGE) invalidResponse("/dtes: items inválidos o sobre el techo por página")
   const pagination = envelope.paginationAttributes === undefined ? {} : record(envelope.paginationAttributes)
-  const totalPages = positivePageCount(pagination.totalPages ?? 1, page)
+  const declaredPages = pagination.totalPages ?? null
+  // Sin paginación fiable no se puede concluir «esto era todo»: una página llena
+  // significa que hay más. Asumir una sola página perdía documentos en silencio y
+  // además apagaba la única guardia de pérdida del sync (que exige total declarado).
+  const totalPages = declaredPages === null
+    ? (items.length >= DTE_PAGE_SIZE ? page + 1 : page)
+    : positivePageCount(declaredPages, page)
   const reportedTotal = optionalNonNegativeNumber(pagination.count)
-  return { items: items.map(parseDte), totalPages, reportedTotal }
+  return { items: parseRows(items, parseDte, "/dtes"), totalPages, reportedTotal }
 }
 
 function parseCartolaResponse(body: unknown, page: number): {
@@ -431,10 +451,54 @@ function parseCartolaResponse(body: unknown, page: number): {
   // accept it as a one-page response while keeping the runtime checks below.
   const envelope = Array.isArray(body) ? { docs: body } : record(body)
   const items = envelope.docs
-  if (!Array.isArray(items) || items.length > BANK_PAGE_SIZE) invalidResponse("/flujo-caja/cartolas: docs inválidos o sobre el límite permitido")
-  const totalPages = positivePageCount(envelope.pages ?? 1, page)
+  if (!Array.isArray(items) || items.length > MAX_ITEMS_PER_PAGE) invalidResponse("/flujo-caja/cartolas: docs inválidos o sobre el techo por página")
+  const declaredPages = envelope.pages ?? null
   const reportedTotal = optionalNonNegativeNumber(envelope.total)
-  return { items: items.map(parseCartola), totalPages, reportedTotal }
+  // La cartola no fija tamaño de página, así que la única señal de que falta leer
+  // es el total declarado: mientras supere lo entregado hasta acá, se sigue
+  // paginando. Es una estimación (supone páginas parejas), pero nunca da por
+  // cerrado un mes incompleto; el tope de páginas del sync acota la corrida.
+  const totalPages = declaredPages === null
+    ? (reportedTotal !== null && items.length > 0 && reportedTotal > page * items.length ? page + 1 : page)
+    : positivePageCount(declaredPages, page)
+  return { items: parseRows(items, parseCartola, "/flujo-caja/cartolas"), totalPages, reportedTotal }
+}
+
+/**
+ * Parsea fila por fila tolerando el fallo individual.
+ *
+ * Un campo inesperado en un documento no puede tumbar la página completa —y con
+ * ella el mes entero, todas las mañanas— cuando las demás filas son válidas. La
+ * fila descartada queda en el log y el total declarado por el proveedor se
+ * conserva intacto, que es lo que el sync compara para marcar la corrida parcial.
+ * Si NINGUNA fila cumple el contrato, la respuesta se rechaza entera: eso ya no
+ * es un dato de borde sino otra forma de respuesta.
+ */
+function parseRows<T>(items: unknown[], parse: (value: unknown) => T, source: string): T[] {
+  const rows: T[] = []
+  for (const item of items) {
+    try {
+      rows.push(parse(item))
+    } catch (error) {
+      logger.warn("[billing/chipax] fila descartada por no cumplir el contrato", {
+        source,
+        detail: error instanceof BillingProviderError ? error.message : "UNKNOWN",
+      })
+    }
+  }
+  if (rows.length === 0 && items.length > 0) invalidResponse(`${source}: ninguna fila cumple el contrato`)
+  return rows
+}
+
+/** Un 200 con cuerpo que no es JSON (proxy, WAF, página de mantención) debe
+ * llegar al historial como respuesta inválida con su ruta, no como un
+ * SyntaxError crudo que el sync sustituye por «detalle técnico omitido». */
+async function readJson(response: Response, path: string): Promise<unknown> {
+  try {
+    return await response.json()
+  } catch {
+    invalidResponse(`cuerpo no es JSON en ${path.split("?")[0]}`)
+  }
 }
 
 function parseDte(value: unknown): ChipaxDte {
@@ -512,14 +576,15 @@ function positivePageCount(value: unknown, page: number): number {
   return value
 }
 
-function parseRetryAfter(value: string | null): number {
-  if (!value) return 0
+/** Milisegundos que pide la cabecera, o `null` si no la hay o no se entiende. */
+function parseRetryAfter(value: string | null): number | null {
+  if (!value) return null
   const seconds = Number(value)
   if (Number.isFinite(seconds) && seconds >= 0) {
     return Math.min(Math.trunc(seconds * 1000), MAX_RETRY_AFTER_MS)
   }
   const retryAt = Date.parse(value)
-  if (!Number.isFinite(retryAt)) return 0
+  if (!Number.isFinite(retryAt)) return null
   return Math.min(Math.max(retryAt - Date.now(), 0), MAX_RETRY_AFTER_MS)
 }
 

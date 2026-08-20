@@ -8,6 +8,7 @@ import {
   providerInvoiceFromXml,
   ChipaxProvider,
 } from "../providers"
+import { DTE_PAGE_SIZE } from "../providers/chipax"
 import type { BillingProvider } from "../providers/types"
 
 /** Capacidad → método que la implementa. Es el contrato que se verifica. */
@@ -301,6 +302,102 @@ describe("Chipax — contrato real", () => {
     expect(page.items).toHaveLength(0)
   })
 
+  it("sin paginación fiable, una página llena NO se toma por la última", async () => {
+    // Si Chipax alinea `/dtes` con su contrato (array plano) o deja de mandar
+    // `paginationAttributes`, asumir una sola página perdía en silencio todo lo
+    // que viniera después del documento 50, y la corrida quedaba en verde.
+    const lleno = Array.from({ length: DTE_PAGE_SIZE }, (_, index) => ({
+      id: index + 1, tipo: 33, folio: 1000 + index, rut: "76543210-K", razonSocial: "X",
+      fechaEmision: "2026-06-01", fechaVencimiento: null,
+      montoNeto: 100, montoExento: 0, iva: 19, montoTotal: 119,
+    }))
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(respuesta({ token: TOKEN, tokenExpiration: Math.floor(Date.now() / 1000) + 3600 }))
+      .mockResolvedValueOnce(respuesta(lleno))
+
+    const page = await nuevoProveedor().listIssuedInvoices({ period: "2026-06" })
+
+    expect(page.items).toHaveLength(DTE_PAGE_SIZE)
+    expect(page.nextCursor).toBe("2")
+  })
+
+  it("acepta una página mayor a la observada en vez de fallar la corrida entera", async () => {
+    // El tamaño de página es una observación del servidor, no algo que la
+    // plataforma pida: si Chipax lo sube, la ingesta no puede caerse a cero.
+    const items = Array.from({ length: DTE_PAGE_SIZE * 2 }, (_, index) => ({
+      id: index + 1, tipo: 33, folio: 2000 + index, rut: "76543210-K", razonSocial: "X",
+      fechaEmision: "2026-06-01", fechaVencimiento: null,
+      montoNeto: 100, montoExento: 0, iva: 19, montoTotal: 119,
+    }))
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(respuesta({ token: TOKEN, tokenExpiration: Math.floor(Date.now() / 1000) + 3600 }))
+      .mockResolvedValueOnce(respuesta({ items, paginationAttributes: { count: 100, totalPages: 1 } }))
+
+    const page = await nuevoProveedor().listIssuedInvoices({ period: "2026-06" })
+    expect(page.items).toHaveLength(DTE_PAGE_SIZE * 2)
+  })
+
+  it("cartolas: un total declarado mayor al entregado abre la página siguiente", async () => {
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(respuesta({ token: TOKEN, tokenExpiration: Math.floor(Date.now() / 1000) + 3600 }))
+      // Sin `pages`: el total declarado es la única señal de que falta leer.
+      .mockResolvedValueOnce(respuesta({
+        docs: [{ id: 9, fecha: "2026-07-04", abono: 100, cargo: 0, descripcion: null, comentario_transferencia: null, cuenta_corriente_id: 3 }],
+        total: 180,
+      }))
+
+    const page = await nuevoProveedor().listBankTransactions({ period: "2026-07" })
+    expect(page.nextCursor).toBe("2")
+  })
+
+  it("una fila que no cumple el contrato no se lleva la página completa", async () => {
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(respuesta({ token: TOKEN, tokenExpiration: Math.floor(Date.now() / 1000) + 3600 }))
+      .mockResolvedValueOnce(respuesta({
+        items: [
+          // Exenta sin IVA: el dato de borde que hacía fallar el mes entero.
+          { id: 1, tipo: 34, folio: 900, rut: "76543210-K", razonSocial: "X", fechaEmision: "2026-06-01", fechaVencimiento: null, montoNeto: 0, montoExento: 100, iva: null, montoTotal: 100 },
+          { id: 2, tipo: 33, folio: 901, rut: "76543210-K", razonSocial: "Y", fechaEmision: "2026-06-02", fechaVencimiento: null, montoNeto: 100, montoExento: 0, iva: 19, montoTotal: 119 },
+        ],
+        paginationAttributes: { count: 2, totalPages: 1 },
+      }))
+
+    const page = await nuevoProveedor().listIssuedInvoices({ period: "2026-06" })
+
+    expect(page.items).toHaveLength(1)
+    expect(page.items[0]!.folio).toBe(901)
+    // El total declarado se conserva: es lo que el sync compara para marcar la
+    // corrida como parcial en vez de darla por completa.
+    expect(page.reportedTotal).toBe(2)
+  })
+
+  it("un 200 con cuerpo que no es JSON se reporta como respuesta inválida, no como error genérico", async () => {
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(respuesta({ token: TOKEN, tokenExpiration: Math.floor(Date.now() / 1000) + 3600 }))
+      .mockResolvedValueOnce(new Response("<html>Mantención</html>", { status: 200, headers: { "Content-Type": "text/html" } }))
+
+    await expect(nuevoProveedor().listIssuedInvoices({ period: "2026-06" }))
+      .rejects.toMatchObject({ code: "INVALID_RESPONSE" })
+  })
+
+  it("un 429 sin Retry-After espera un piso antes del único reintento", async () => {
+    const esperas: number[] = []
+    vi.spyOn(globalThis, "setTimeout").mockImplementation(((callback: () => void, ms?: number) => {
+      esperas.push(ms ?? 0)
+      callback()
+      return 0
+    }) as unknown as typeof setTimeout)
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(respuesta({ token: TOKEN, tokenExpiration: Math.floor(Date.now() / 1000) + 3600 }))
+      // Sin cabecera: reintentar de inmediato caía en la misma ventana del límite.
+      .mockResolvedValueOnce(new Response("{}", { status: 429 }))
+      .mockResolvedValueOnce(respuesta({ docs: [], pages: 1, total: 0 }))
+
+    await nuevoProveedor().listBankTransactions({ period: "2026-07" })
+
+    expect(Math.max(...esperas)).toBeGreaterThanOrEqual(15_000)
+  })
+
   it("rechaza respuestas de contrato inválidas antes de mapearlas", async () => {
     vi.spyOn(globalThis, "fetch")
       .mockResolvedValueOnce(respuesta({ token: TOKEN, tokenExpiration: Math.floor(Date.now() / 1000) + 3600 }))
@@ -348,5 +445,19 @@ describe("Carga manual", () => {
 
   it("devuelve null ante un XML inválido en vez de un registro a medias", () => {
     expect(providerInvoiceFromXml("<xml/>", "sale")).toBeNull()
+  })
+
+  // VTA-07: un XML cargado a mano puede ser una factura de exportación; escribir
+  // "CLP" a pelo convertía 12.000 dólares en 12.000 pesos.
+  it("usa la moneda que declara el XML y sólo cae a CLP si no declara ninguna", () => {
+    const exportacion = `<?xml version="1.0"?><DTE><Documento><Encabezado>
+      <IdDoc><TipoDTE>110</TipoDTE><Folio>77</Folio><FchEmis>2026-07-02</FchEmis></IdDoc>
+      <Emisor><RUTEmisor>78023530-6</RUTEmisor><RznSoc>CHOME</RznSoc></Emisor>
+      <Receptor><RUTRecep>76543210-K</RUTRecep><RznSocRecep>CLIENTE</RznSocRecep></Receptor>
+      <Totales><MntNeto>12000</MntNeto><MntTotal>12000</MntTotal><TpoMoneda>DOLAR USA</TpoMoneda></Totales>
+    </Encabezado></Documento></DTE>`
+
+    expect(providerInvoiceFromXml(exportacion, "sale")?.currency).toBe("USD")
+    expect(providerInvoiceFromXml(exportacion.replace("<TpoMoneda>DOLAR USA</TpoMoneda>", ""), "sale")?.currency).toBe("CLP")
   })
 })

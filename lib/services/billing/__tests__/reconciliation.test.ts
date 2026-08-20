@@ -104,6 +104,37 @@ describe("proposeMatches — cuándo propone", () => {
   })
 })
 
+describe("proposeMatches — dirección del movimiento", () => {
+  // Un cargo (plata que salió) no paga una factura de venta. Antes se comparaban
+  // magnitudes: cualquier cargo de monto parecido daba por cobrada la factura, y
+  // la persona que confirma no ve en pantalla el signo del movimiento.
+  it("no propone un cargo bancario contra una factura de venta", () => {
+    const candidates = proposeMatches([invoice()], [transaction({ amount: -4998000 })], OPTIONS)
+    expect(candidates).toEqual([])
+  })
+
+  it("tampoco cuando la glosa menciona el folio", () => {
+    const candidates = proposeMatches(
+      [invoice()],
+      [transaction({ amount: -2000000, description: "PAGO PROVEEDOR FACT 1234" })],
+      OPTIONS,
+    )
+    expect(candidates).toEqual([])
+  })
+
+  it("en compras es al revés: el cargo sí paga y el abono no", () => {
+    const compra = { ...OPTIONS, direction: "purchase" as const }
+    expect(proposeMatches([invoice()], [transaction({ amount: -4998000 })], compra)).toHaveLength(1)
+    expect(proposeMatches([invoice()], [transaction()], compra)).toEqual([])
+  })
+
+  it("una nota de crédito de venta (saldo negativo) se cubre con un cargo", () => {
+    const nota = invoice({ totalAmount: -4998000 })
+    expect(proposeMatches([nota], [transaction({ amount: -4998000 })], OPTIONS)).toHaveLength(1)
+    expect(proposeMatches([nota], [transaction()], OPTIONS)).toEqual([])
+  })
+})
+
 describe("proposeMatches — confianza", () => {
   it("baja la confianza cuando el RUT no coincide", () => {
     const [candidate] = proposeMatches(
@@ -276,6 +307,13 @@ describe("classifyCollection", () => {
   it("marca las abandonadas por falta de gestión", () => {
     expect(classifyCollection({ ...base, daysOverdue: -60, daysSinceLastAction: 45 })).toBe("no_recent_activity")
     expect(classifyCollection({ ...base, daysOverdue: -60, daysSinceLastAction: 10 })).toBe("pending")
+  })
+
+  // Una sobrepagada está cubierta: dejarla en "vencidas" la mostraba como deuda
+  // del cliente cuando en realidad hay que devolverle plata, y su saldo negativo
+  // neteaba el subtotal del grupo.
+  it("una sobrepagada cae en pagadas, no en vencidas", () => {
+    expect(classifyCollection({ ...base, paymentStatus: "overpaid", daysOverdue: 5 })).toBe("paid")
   })
 
   it("una factura sin vencimiento no se declara vencida", () => {

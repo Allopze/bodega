@@ -5,23 +5,30 @@ const mocks = vi.hoisted(() => ({
   writes: [] as { key: string; value: string }[],
   deletes: 0,
   audits: [] as Record<string, unknown>[],
+  /** True si la auditoría viajó con la transacción y no con `db` a secas. */
+  auditsInTx: [] as boolean[],
 }))
 
 vi.mock("@/db", () => ({
   db: {
     select: () => ({ from: () => ({ where: async () => mocks.rows }) }),
     transaction: async (callback: (tx: unknown) => Promise<void>) => callback({
+      __tx: true,
       insert: () => ({
         values: (value: { key: string; value: string }) => ({
           onConflictDoUpdate: async () => { mocks.writes.push(value) },
         }),
       }),
+      delete: () => ({ where: async () => { mocks.deletes += 1 } }),
     }),
     delete: () => ({ where: async () => { mocks.deletes += 1 } }),
   },
 }))
 vi.mock("@/lib/audit", () => ({
-  recordAudit: async (params: Record<string, unknown>) => { mocks.audits.push(params) },
+  recordAudit: async (params: Record<string, unknown>, client?: { __tx?: boolean }) => {
+    mocks.audits.push(params)
+    mocks.auditsInTx.push(Boolean(client?.__tx))
+  },
 }))
 vi.mock("@/lib/logger", () => ({ logger: { warn: () => {}, error: () => {} } }))
 
@@ -30,6 +37,7 @@ const {
   ChipaxSettingsError,
   readChipaxAdminStatus,
   readChipaxConfig,
+  clearChipaxSettings,
   saveChipaxSettings,
 } = await import("../chipax-settings")
 const { encryptDteSetting } = await import("@/lib/services/dte-portal/settings-crypto")
@@ -54,6 +62,7 @@ beforeEach(() => {
   mocks.writes = []
   mocks.deletes = 0
   mocks.audits = []
+  mocks.auditsInTx = []
 })
 
 afterEach(() => {
@@ -108,6 +117,27 @@ describe("readChipaxConfig", () => {
 
     expect(config.secretKey).toBe("secreto-del-entorno")
     expect(config.secretKey).not.toBe("secreto-en-claro")
+  })
+
+  it("un sobre cifrado que no se puede abrir NO cae a la credencial del entorno", async () => {
+    stubEnvCredentials()
+    stubKeyring()
+    const guardada = encryptDteSetting("secreto-guardado", CHIPAX_SETTING_KEYS.secretKey)
+    // Réplica desplegada sin el keyring (o con otro): el sobre existe y es el
+    // vigente, así que usar el del `.env` significa operar con la credencial que
+    // la rotación vino a reemplazar, y de forma intermitente entre réplicas.
+    vi.unstubAllEnvs()
+    stubEnvCredentials()
+    mocks.rows = [{ key: CHIPAX_SETTING_KEYS.secretKey, value: guardada }]
+
+    const config = await readChipaxConfig()
+
+    expect(config.secretKey).toBe("")
+    expect(config.secretKey).not.toBe("secreto-del-entorno")
+    expect(config.hasCredentials).toBe(false)
+
+    const status = await readChipaxAdminStatus()
+    expect(status.fields.secretKey).toEqual({ configured: false, source: "missing" })
   })
 
   it("una caída de la base de datos cae al entorno, no deja a Chipax sin credenciales", async () => {
@@ -177,5 +207,25 @@ describe("saveChipaxSettings", () => {
 
     expect(mocks.writes).toHaveLength(0)
     expect(mocks.audits).toHaveLength(0)
+  })
+
+  // Si la auditoría queda fuera de la transacción, un fallo del commit deja el
+  // secreto cambiado sin registro de quién lo cambió.
+  it("audita dentro de la misma transacción que escribe el secreto", async () => {
+    stubKeyring()
+
+    await saveChipaxSettings({ secretKey: "secreto-nuevo", enabled: true, syncEnabled: true }, actor)
+
+    expect(mocks.auditsInTx).toEqual([true])
+  })
+})
+
+describe("clearChipaxSettings", () => {
+  it("borra y audita dentro de la misma transacción", async () => {
+    await clearChipaxSettings({ userId: "u-1", userEmail: "quien@empresa.cl" })
+
+    expect(mocks.deletes).toBe(1)
+    expect(mocks.audits[0]).toMatchObject({ action: "delete", entityType: "billing_chipax_settings" })
+    expect(mocks.auditsInTx).toEqual([true])
   })
 })

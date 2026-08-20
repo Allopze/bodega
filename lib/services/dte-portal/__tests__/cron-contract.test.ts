@@ -17,4 +17,21 @@ describe("DTE cron HTTP contract", () => {
     expect(contract.health).toBe(health)
     expect(contract.code).toMatch(/^DTE_CRON_/)
   })
+
+  // Un lote mixto (un período con corrida activa, otro con las credenciales
+  // rechazadas) se reportaba 409/"waiting" y el fallo real quedaba invisible.
+  it("reporta el fallo por sobre el conflicto en un lote mixto", () => {
+    const contract = cronContractFor({ conflict: true, statuses: ["skipped", "failed"] })
+
+    expect(contract.outcome).toBe("failed")
+    expect(contract.httpStatus).toBe(503)
+    expect(contract.health).toBe("critical")
+  })
+
+  it("reporta una ingesta parcial por sobre el conflicto", () => {
+    const contract = cronContractFor({ conflict: true, statuses: ["skipped", "partial"] })
+
+    expect(contract.outcome).toBe("partial")
+    expect(contract.httpStatus).toBe(503)
+  })
 })

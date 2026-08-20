@@ -3,6 +3,7 @@ import type { DteBandejaRow } from "../types"
 
 const BASE_ROW: DteBandejaRow = {
   fechaRecepcion: "2026-06-01 09:09",
+  fechaRecepcionDate: "2026-06-01",
   estadoPlataforma: "Pendiente de envio a la Plataforma",
   fecha: "2026-06-01",
   tipoDoc: "33",
@@ -23,6 +24,7 @@ const mockDocumentsFindFirst = vi.fn()
 const mockDocumentsFindMany = vi.fn()
 const mockInsertValues = vi.fn()
 const mockUpdateSet = vi.fn()
+const mockUpdateReturning = vi.fn()
 const mockTxInsertValues = vi.fn()
 const mockTxUpdateSet = vi.fn()
 const mockFetchBandejaEntrada = vi.fn()
@@ -38,7 +40,10 @@ vi.mock("@/db", () => ({
       users: { findFirst: vi.fn() },
     },
     insert: () => ({ values: (...args: unknown[]) => mockInsertValues(...args) }),
-    update: () => ({ set: (...args: unknown[]) => ({ where: (...whereArgs: unknown[]) => mockUpdateSet(...args, ...whereArgs) }) }),
+    update: () => ({ set: (...args: unknown[]) => ({ where: (...whereArgs: unknown[]) => {
+      const applied = Promise.resolve(mockUpdateSet(...args, ...whereArgs))
+      return Object.assign(applied, { returning: () => applied.then(() => mockUpdateReturning()) })
+    } }) }),
     transaction: async (cb: (tx: unknown) => unknown) => cb({
       query: { dteDocuments: {
         findFirst: (...args: unknown[]) => mockDocumentsFindFirst(...args),
@@ -64,7 +69,7 @@ vi.mock("../sync-start-gate", () => ({
   claimDteSyncStart: (...args: unknown[]) => mockClaimDteSyncStart(...args),
 }))
 
-const { syncDteDocuments, computeDocumentHash, previousPeriodo, rollingSyncPeriods, assertSyncablePeriodo } = await import("../sync")
+const { syncDteDocuments, computeDocumentHash, previousPeriodo, rollingSyncPeriods, recoverySweepPeriods, assertSyncablePeriodo } = await import("../sync")
 const { DtePortalClient } = await import("../client")
 
 function makeClient() {
@@ -154,14 +159,15 @@ describe("syncDteDocuments", () => {
     mockDocumentsFindMany.mockResolvedValue([])
     mockMatchToPurchaseOrderInvoices.mockResolvedValue([])
     mockMatchToFuelLoads.mockResolvedValue([])
-    mockSummarizeDteReconciliation.mockResolvedValue({ matched: 0, ambiguous: 0, unmatched: 0, discrepancies: 0 })
+    mockSummarizeDteReconciliation.mockResolvedValue({ matched: 0, ambiguous: 0, unmatched: 0, internalAmbiguity: 0, discrepancies: 0 })
     mockClaimDteSyncStart.mockResolvedValue({ allowed: true })
+    mockUpdateReturning.mockReturnValue([{ id: "run-1" }])
   })
 
   it("inserts new documents on first sync (no prior success, no existing rows)", async () => {
     mockSyncRunsFindFirst.mockResolvedValue(undefined) // sin corrida previa exitosa
     mockDocumentsFindFirst.mockResolvedValue(undefined) // ningún documento existe aún
-    mockFetchBandejaEntrada.mockResolvedValue({ rows: [BASE_ROW], totalRegistros: 1 })
+    mockFetchBandejaEntrada.mockResolvedValue({ rows: [BASE_ROW], totalRegistros: 1, declaredTotal: 1 })
 
     const result = await syncDteDocuments(makeClient(), { periodo: "2026-06", importerId: "user-1" })
 
@@ -173,13 +179,17 @@ describe("syncDteDocuments", () => {
     expect(mockTxInsertValues).toHaveBeenCalledWith(expect.objectContaining({
       portalRecordId: "9000001",
     }))
-    expect(mockFetchBandejaEntrada).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ mes: "06", anio: "2026", codEmp: "433" }))
+    expect(mockFetchBandejaEntrada).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ mes: "06", anio: "2026", codEmp: "433" }),
+      expect.objectContaining({ periodo: "2026-06" }),
+    )
   })
 
   it("persists the cron batch correlation id with the DTE run", async () => {
     mockSyncRunsFindFirst.mockResolvedValue(undefined)
     mockDocumentsFindFirst.mockResolvedValue(undefined)
-    mockFetchBandejaEntrada.mockResolvedValue({ rows: [], totalRegistros: 0 })
+    mockFetchBandejaEntrada.mockResolvedValue({ rows: [], totalRegistros: 0, declaredTotal: 0 })
 
     const result = await syncDteDocuments(makeClient(), {
       periodo: "2026-06",
@@ -195,12 +205,13 @@ describe("syncDteDocuments", () => {
 
   it("is idempotent: re-running with the same data marks documents unchanged, no writes", async () => {
     mockSyncRunsFindFirst.mockResolvedValue(undefined)
-    mockFetchBandejaEntrada.mockResolvedValue({ rows: [BASE_ROW], totalRegistros: 1 })
+    mockFetchBandejaEntrada.mockResolvedValue({ rows: [BASE_ROW], totalRegistros: 1, declaredTotal: 1 })
     // Simula que la corrida anterior ya insertó este documento con el mismo hash.
     mockDocumentsFindFirst.mockResolvedValue({
       id: "existing-1",
       rawHash: computeDocumentHash(BASE_ROW),
       portalRecordId: BASE_ROW.nreguist,
+      fechaRecepcion: BASE_ROW.fechaRecepcionDate,
     })
 
     const result = await syncDteDocuments(makeClient(), { periodo: "2026-06", force: true, importerId: "user-1" })
@@ -213,7 +224,7 @@ describe("syncDteDocuments", () => {
 
   it("backfills the portal record id even when the document hash did not change", async () => {
     mockSyncRunsFindFirst.mockResolvedValue(undefined)
-    mockFetchBandejaEntrada.mockResolvedValue({ rows: [BASE_ROW], totalRegistros: 1 })
+    mockFetchBandejaEntrada.mockResolvedValue({ rows: [BASE_ROW], totalRegistros: 1, declaredTotal: 1 })
     mockDocumentsFindFirst.mockResolvedValue({
       id: "existing-1",
       rawHash: computeDocumentHash(BASE_ROW),
@@ -231,7 +242,7 @@ describe("syncDteDocuments", () => {
 
   it("updates the existing document when its hash changed (e.g. estadoPlataforma)", async () => {
     mockSyncRunsFindFirst.mockResolvedValue(undefined)
-    mockFetchBandejaEntrada.mockResolvedValue({ rows: [BASE_ROW], totalRegistros: 1 })
+    mockFetchBandejaEntrada.mockResolvedValue({ rows: [BASE_ROW], totalRegistros: 1, declaredTotal: 1 })
     mockDocumentsFindFirst.mockResolvedValue({ id: "existing-1", rawHash: "hash-distinto-de-antes" })
 
     const result = await syncDteDocuments(makeClient(), { periodo: "2026-06", force: true, importerId: "user-1" })
@@ -248,7 +259,7 @@ describe("syncDteDocuments", () => {
       razonSocial: "Proveedor Renombrado SpA",
       fecha: "2026-06-02",
     }
-    mockFetchBandejaEntrada.mockResolvedValue({ rows: [changed], totalRegistros: 1 })
+    mockFetchBandejaEntrada.mockResolvedValue({ rows: [changed], totalRegistros: 1, declaredTotal: 1 })
     mockDocumentsFindFirst.mockResolvedValue({ id: "existing-1", rawHash: "hash-antiguo", portalRecordId: changed.nreguist })
 
     await syncDteDocuments(makeClient(), { periodo: "2026-06", force: true, importerId: "user-1" })
@@ -277,7 +288,7 @@ describe("syncDteDocuments", () => {
     // curso ni siquiera debe preguntar por una corrida previa.
     mockSyncRunsFindFirst.mockResolvedValue({ id: "prior-run-current-month" })
     mockDocumentsFindFirst.mockResolvedValue(undefined)
-    mockFetchBandejaEntrada.mockResolvedValue({ rows: [BASE_ROW], totalRegistros: 1 })
+    mockFetchBandejaEntrada.mockResolvedValue({ rows: [BASE_ROW], totalRegistros: 1, declaredTotal: 1 })
 
     const currentPeriodo = rollingSyncPeriods()[0]!
     const result = await syncDteDocuments(makeClient(), { periodo: currentPeriodo, importerId: "user-1" })
@@ -290,7 +301,7 @@ describe("syncDteDocuments", () => {
   it("still allows forcing a re-sync of a closed period explicitly", async () => {
     mockSyncRunsFindFirst.mockResolvedValue({ id: "prior-run" })
     mockDocumentsFindFirst.mockResolvedValue(undefined)
-    mockFetchBandejaEntrada.mockResolvedValue({ rows: [BASE_ROW], totalRegistros: 1 })
+    mockFetchBandejaEntrada.mockResolvedValue({ rows: [BASE_ROW], totalRegistros: 1, declaredTotal: 1 })
 
     const result = await syncDteDocuments(makeClient(), { periodo: "2026-06", force: true, importerId: "user-1" })
 
@@ -350,7 +361,7 @@ describe("syncDteDocuments", () => {
   it("marks the run partial when some documents fail to upsert", async () => {
     mockSyncRunsFindFirst.mockResolvedValue(undefined)
     const secondRow: DteBandejaRow = { ...BASE_ROW, folio: 99999, rutEmisor: "22222222-2" }
-    mockFetchBandejaEntrada.mockResolvedValue({ rows: [BASE_ROW, secondRow], totalRegistros: 2 })
+    mockFetchBandejaEntrada.mockResolvedValue({ rows: [BASE_ROW, secondRow], totalRegistros: 2, declaredTotal: 2 })
     mockDocumentsFindFirst
       .mockResolvedValueOnce(undefined)
       .mockRejectedValueOnce(new Error("fallo simulado"))
@@ -365,7 +376,7 @@ describe("syncDteDocuments", () => {
   it("reconciles against OC invoices and fuel loads after closing the run", async () => {
     mockSyncRunsFindFirst.mockResolvedValue(undefined)
     mockDocumentsFindFirst.mockResolvedValue(undefined)
-    mockFetchBandejaEntrada.mockResolvedValue({ rows: [BASE_ROW], totalRegistros: 1 })
+    mockFetchBandejaEntrada.mockResolvedValue({ rows: [BASE_ROW], totalRegistros: 1, declaredTotal: 1 })
 
     await syncDteDocuments(makeClient(), { periodo: "2026-06", importerId: "user-1" })
 
@@ -376,7 +387,7 @@ describe("syncDteDocuments", () => {
   it("does not let a reconciliation failure change the already-closed sync result", async () => {
     mockSyncRunsFindFirst.mockResolvedValue(undefined)
     mockDocumentsFindFirst.mockResolvedValue(undefined)
-    mockFetchBandejaEntrada.mockResolvedValue({ rows: [BASE_ROW], totalRegistros: 1 })
+    mockFetchBandejaEntrada.mockResolvedValue({ rows: [BASE_ROW], totalRegistros: 1, declaredTotal: 1 })
     mockMatchToPurchaseOrderInvoices.mockRejectedValue(new Error("fallo de conciliación simulado"))
 
     const result = await syncDteDocuments(makeClient(), { periodo: "2026-06", importerId: "user-1" })
@@ -389,7 +400,7 @@ describe("syncDteDocuments", () => {
   it("keeps successful ingestion separate from a partial reconciliation", async () => {
     mockSyncRunsFindFirst.mockResolvedValue(undefined)
     mockDocumentsFindFirst.mockResolvedValue(undefined)
-    mockFetchBandejaEntrada.mockResolvedValue({ rows: [BASE_ROW], totalRegistros: 1 })
+    mockFetchBandejaEntrada.mockResolvedValue({ rows: [BASE_ROW], totalRegistros: 1, declaredTotal: 1 })
     mockSummarizeDteReconciliation.mockResolvedValue({ matched: 1, ambiguous: 1, unmatched: 1, discrepancies: 0 })
 
     const result = await syncDteDocuments(makeClient(), { periodo: "2026-06", importerId: "user-1" })
@@ -401,5 +412,192 @@ describe("syncDteDocuments", () => {
       expect.objectContaining({ status: "success", reconciliationStatus: "partial" }),
       expect.anything(),
     )
+  })
+
+  // Los DTE sin vínculo son inventario de trabajo (gastos sin OC, documentos
+  // que llegan antes que la factura de Compras): contarlos como problema dejaba
+  // la conciliación en "partial" para siempre y la salud DTE nunca volvía a
+  // "healthy".
+  it("no marca la conciliación parcial cuando lo único pendiente son DTE sin vínculo", async () => {
+    mockSyncRunsFindFirst.mockResolvedValue(undefined)
+    mockDocumentsFindFirst.mockResolvedValue(undefined)
+    mockFetchBandejaEntrada.mockResolvedValue({ rows: [BASE_ROW], totalRegistros: 1, declaredTotal: 1 })
+    mockSummarizeDteReconciliation.mockResolvedValue({ matched: 10, ambiguous: 0, unmatched: 41, discrepancies: 0 })
+
+    const result = await syncDteDocuments(makeClient(), { periodo: "2026-06", importerId: "user-1" })
+
+    expect(result.reconciliationStatus).toBe("success")
+    expect(result.reconciliationError).toBeUndefined()
+    expect(result.reconciliation.unmatched).toBe(41)
+  })
+
+  it("distingue por código una ingesta incompleta de una conciliación pendiente", async () => {
+    mockSyncRunsFindFirst.mockResolvedValue(undefined)
+    mockDocumentsFindFirst.mockResolvedValue(undefined)
+    mockFetchBandejaEntrada.mockResolvedValue({ rows: [BASE_ROW], totalRegistros: 3, declaredTotal: 3 })
+    mockSummarizeDteReconciliation.mockResolvedValue({ matched: 0, ambiguous: 1, unmatched: 0, discrepancies: 0 })
+
+    const result = await syncDteDocuments(makeClient(), { periodo: "2026-06", importerId: "user-1" })
+
+    expect(result.status).toBe("partial")
+    expect(result.error).toContain("DTE_INGEST_PARTIAL:")
+    expect(result.error).toContain("DTE_RECONCILIATION_PENDING:")
+  })
+
+  it("no resucita a success una corrida que el barrido de colgadas ya declaró muerta", async () => {
+    mockSyncRunsFindFirst.mockResolvedValue(undefined)
+    mockDocumentsFindFirst.mockResolvedValue(undefined)
+    mockFetchBandejaEntrada.mockResolvedValue({ rows: [BASE_ROW], totalRegistros: 1, declaredTotal: 1 })
+    mockUpdateReturning.mockReturnValue([]) // la fila ya no está en `running`
+
+    const result = await syncDteDocuments(makeClient(), { periodo: "2026-06", importerId: "user-1" })
+
+    expect(result.status).toBe("failed")
+    expect(result.error).toContain("DTE_SYNC_RUN_PREEMPTED")
+  })
+
+  it("persiste el RUT emisor canónico aunque el portal lo entregue con puntos", async () => {
+    mockSyncRunsFindFirst.mockResolvedValue(undefined)
+    mockDocumentsFindFirst.mockResolvedValue(undefined)
+    mockFetchBandejaEntrada.mockResolvedValue({
+      rows: [{ ...BASE_ROW, rutEmisor: "96.542.490-3" }],
+      totalRegistros: 1,
+      declaredTotal: 1,
+    })
+
+    await syncDteDocuments(makeClient(), { periodo: "2026-06", importerId: "user-1" })
+
+    expect(mockTxInsertValues).toHaveBeenCalledWith(expect.objectContaining({ rutEmisor: "96542490-3" }))
+  })
+
+  // ORQ-01: sin total declarado, `totalRegistros` se rellena con `rows.length` y
+  // compararlos es una tautología. La corrida no puede cerrarse en `success`
+  // diciendo que el libro está completo cuando nadie pudo verificarlo.
+  it("cierra la corrida como parcial cuando el portal no declara el total de registros", async () => {
+    mockSyncRunsFindFirst.mockResolvedValue(undefined)
+    mockDocumentsFindFirst.mockResolvedValue(undefined)
+    mockFetchBandejaEntrada.mockResolvedValue({ rows: [BASE_ROW], totalRegistros: 1, declaredTotal: null })
+
+    const result = await syncDteDocuments(makeClient(), { periodo: "2026-06", importerId: "user-1" })
+
+    expect(result.status).toBe("partial")
+    expect(result.error).toContain("DTE_INGEST_PARTIAL:")
+    expect(result.error).toMatch(/no declaró el total/i)
+    expect(result.rowsInserted).toBe(1) // los documentos leídos sí se persisten
+  })
+
+  it("usa el total declarado —no el rellenado— para el descuadre de completitud", async () => {
+    mockSyncRunsFindFirst.mockResolvedValue(undefined)
+    mockDocumentsFindFirst.mockResolvedValue(undefined)
+    mockFetchBandejaEntrada.mockResolvedValue({ rows: [BASE_ROW], totalRegistros: 1, declaredTotal: 4 })
+
+    const result = await syncDteDocuments(makeClient(), { periodo: "2026-06", importerId: "user-1" })
+
+    expect(result.status).toBe("partial")
+    expect(result.error).toContain("faltan 3")
+  })
+
+  // ORQ-03: sin el correlationId, un `partial` que dice "faltan 3" deja tres
+  // warns sueltos en stdout sin forma de atribuirlos a esta corrida.
+  it("propaga el correlationId y el período al parser de la bandeja", async () => {
+    mockSyncRunsFindFirst.mockResolvedValue(undefined)
+    mockDocumentsFindFirst.mockResolvedValue(undefined)
+    mockFetchBandejaEntrada.mockResolvedValue({ rows: [BASE_ROW], totalRegistros: 1, declaredTotal: 1 })
+
+    await syncDteDocuments(makeClient(), { periodo: "2026-06", correlationId: "batch-77", importerId: "user-1" })
+
+    expect(mockFetchBandejaEntrada).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ mes: "06" }),
+      { correlationId: "batch-77", periodo: "2026-06" },
+    )
+  })
+
+  // ING-03: la fecha de recepción es lo único que permite medir el atraso del
+  // proveedor (la consulta al portal filtra por fecha del documento).
+  it("persiste la fecha de recepción del portal", async () => {
+    mockSyncRunsFindFirst.mockResolvedValue(undefined)
+    mockDocumentsFindFirst.mockResolvedValue(undefined)
+    mockFetchBandejaEntrada.mockResolvedValue({ rows: [BASE_ROW], totalRegistros: 1, declaredTotal: 1 })
+
+    await syncDteDocuments(makeClient(), { periodo: "2026-06", importerId: "user-1" })
+
+    expect(mockTxInsertValues).toHaveBeenCalledWith(expect.objectContaining({ fechaRecepcion: "2026-06-01" }))
+  })
+
+  it("rellena la fecha de recepción en un documento ya sincronizado sin ella", async () => {
+    mockSyncRunsFindFirst.mockResolvedValue(undefined)
+    mockFetchBandejaEntrada.mockResolvedValue({ rows: [BASE_ROW], totalRegistros: 1, declaredTotal: 1 })
+    // Mismo hash: sin el relleno, los documentos históricos nunca la reciben.
+    mockDocumentsFindFirst.mockResolvedValue({
+      id: "existing-1",
+      rawHash: computeDocumentHash(BASE_ROW),
+      portalRecordId: BASE_ROW.nreguist,
+      fechaRecepcion: null,
+    })
+
+    const result = await syncDteDocuments(makeClient(), { periodo: "2026-06", force: true, importerId: "user-1" })
+
+    expect(result.rowsUpdated).toBe(1)
+    expect(mockTxUpdateSet).toHaveBeenCalledWith(
+      expect.objectContaining({ fechaRecepcion: "2026-06-01" }),
+      expect.anything(),
+    )
+  })
+
+  // CMP-06: los DTE que el modelo 1:1 no puede vincular (una factura TAE mensual
+  // cubre N cargas) NO son un fallo —no entran en `withIssues`— pero sí tienen
+  // que quedar dichos en el historial.
+  it("informa los DTE sin vínculo por la limitación 1:1 sin ensuciar el estado", async () => {
+    mockSyncRunsFindFirst.mockResolvedValue(undefined)
+    mockDocumentsFindFirst.mockResolvedValue(undefined)
+    mockFetchBandejaEntrada.mockResolvedValue({ rows: [BASE_ROW], totalRegistros: 1, declaredTotal: 1 })
+    mockSummarizeDteReconciliation.mockResolvedValue({
+      matched: 5, ambiguous: 0, unmatched: 2, internalAmbiguity: 7, discrepancies: 0,
+    })
+
+    const result = await syncDteDocuments(makeClient(), { periodo: "2026-06", importerId: "user-1" })
+
+    expect(result.status).toBe("success")
+    expect(result.reconciliationStatus).toBe("success")
+    expect(result.reconciliationError).toContain("DTE_RECONCILIATION_INFO:")
+    expect(result.reconciliationError).toContain("7")
+    // La nota es informativa: no puede teñir la columna `error` de la corrida.
+    expect(mockUpdateSet).toHaveBeenLastCalledWith(
+      expect.objectContaining({ status: "success", reconciliationStatus: "success", error: null }),
+      expect.anything(),
+    )
+  })
+
+  it("suma la nota informativa al motivo cuando la conciliación sí quedó pendiente", async () => {
+    mockSyncRunsFindFirst.mockResolvedValue(undefined)
+    mockDocumentsFindFirst.mockResolvedValue(undefined)
+    mockFetchBandejaEntrada.mockResolvedValue({ rows: [BASE_ROW], totalRegistros: 1, declaredTotal: 1 })
+    mockSummarizeDteReconciliation.mockResolvedValue({
+      matched: 1, ambiguous: 2, unmatched: 0, internalAmbiguity: 3, discrepancies: 0,
+    })
+
+    const result = await syncDteDocuments(makeClient(), { periodo: "2026-06", importerId: "user-1" })
+
+    expect(result.reconciliationStatus).toBe("partial")
+    expect(result.reconciliationError).toContain("DTE_RECONCILIATION_PENDING:")
+    expect(result.reconciliationError).toMatch(/2 coincidencias ambiguas/)
+    expect(result.reconciliationError).toMatch(/3 sin vínculo/)
+  })
+})
+
+describe("recoverySweepPeriods", () => {
+  it("re-consulta los meses recién salidos de la ventana móvil el día 1 por la mañana", () => {
+    expect(recoverySweepPeriods(new Date("2026-09-01T12:00:00Z")))
+      .toEqual(["2026-07", "2026-06", "2026-05"])
+  })
+
+  it("no repite el barrido el resto del mes ni en los slots posteriores del día 1", () => {
+    expect(recoverySweepPeriods(new Date("2026-09-15T12:00:00Z"))).toEqual([])
+    expect(recoverySweepPeriods(new Date("2026-09-01T23:00:00Z"))).toEqual([])
+  })
+
+  it("nunca baja del piso histórico", () => {
+    expect(recoverySweepPeriods(new Date("2024-03-01T12:00:00Z"))).toEqual(["2024-01"])
   })
 })

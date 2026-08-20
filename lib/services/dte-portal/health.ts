@@ -187,15 +187,22 @@ function evaluateDomain(input: {
       return domain(input.name, "critical", "DTE_HEALTH_RUN_FAILED", input.slot.id, input.expectedPeriods)
     }
     if (complete && latestRuns.some((run) => run.reconciliationStatus === "partial")) {
-      return domain(input.name, "degraded", "DTE_HEALTH_RUN_PARTIAL", input.slot.id, input.expectedPeriods)
+      return domain(input.name, "degraded", "DTE_HEALTH_RECONCILIATION_PENDING", input.slot.id, input.expectedPeriods)
     }
     if (complete) return domain(input.name, "healthy", "DTE_HEALTH_SUCCESS", input.slot.id, input.expectedPeriods)
 
     if (latestRuns.some((run) => run.reconciliationStatus === "failed" || run.status === "failed")) {
       return domain(input.name, "critical", "DTE_HEALTH_RUN_FAILED", input.slot.id, input.expectedPeriods)
     }
-    if (latestRuns.some((run) => run.reconciliationStatus === "partial" || run.status === "partial")) {
-      return domain(input.name, "degraded", "DTE_HEALTH_RUN_PARTIAL", input.slot.id, input.expectedPeriods)
+    // La ingesta parcial se declara ANTES que la conciliación pendiente: al
+    // libro de compras le faltan documentos, que es un incidente real, mientras
+    // que conciliaciones pendientes son el estado normal de trabajo. Con un solo
+    // código ambos llegaban al operador como la misma frase.
+    if (latestRuns.some((run) => run.status === "partial")) {
+      return domain(input.name, "degraded", "DTE_HEALTH_INGEST_PARTIAL", input.slot.id, input.expectedPeriods)
+    }
+    if (latestRuns.some((run) => run.reconciliationStatus === "partial")) {
+      return domain(input.name, "degraded", "DTE_HEALTH_RECONCILIATION_PENDING", input.slot.id, input.expectedPeriods)
     }
     const graceMs = DTE_RUNNING_GRACE_MINUTES * 60_000
     const latestStartedAt = latestBatchTime(latestBatch)
@@ -209,8 +216,11 @@ function evaluateDomain(input: {
   if (statuses.includes("failed") || relevant.some((run) => run.reconciliationStatus === "failed")) {
     return domain(input.name, "critical", "DTE_HEALTH_RUN_FAILED", input.slot.id, input.expectedPeriods)
   }
-  if (statuses.includes("partial") || relevant.some((run) => run.reconciliationStatus === "partial")) {
-    return domain(input.name, "degraded", "DTE_HEALTH_RUN_PARTIAL", input.slot.id, input.expectedPeriods)
+  if (statuses.includes("partial")) {
+    return domain(input.name, "degraded", "DTE_HEALTH_INGEST_PARTIAL", input.slot.id, input.expectedPeriods)
+  }
+  if (relevant.some((run) => run.reconciliationStatus === "partial")) {
+    return domain(input.name, "degraded", "DTE_HEALTH_RECONCILIATION_PENDING", input.slot.id, input.expectedPeriods)
   }
   const graceMs = DTE_RUNNING_GRACE_MINUTES * 60_000
   const hasRecentRunningRun = relevant.some((run) =>

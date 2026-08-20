@@ -90,7 +90,7 @@ test("exportes: la columna de estado usa lenguaje de negocio, no el enum", async
     await workbook.xlsx.load(Buffer.from(await response.body()) as never)
     const worksheet = workbook.worksheets[0]!
     const encabezados = (worksheet.getRow(1).values as unknown[]).slice(1)
-    const columna = encabezados.findIndex((cell) => cell === "Estado" || cell === "Estado SII") + 1
+    const columna = encabezados.findIndex((cell) => cell === "Estado" || cell === "Estado plataforma") + 1
     expect(columna, `${tipo} no tiene columna Estado`).toBeGreaterThan(0)
 
     const valores = (worksheet.getColumn(columna).values as unknown[])

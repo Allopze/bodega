@@ -7,8 +7,6 @@ import { getAnalyticsDashboard } from "@/lib/services/analytics-module/dashboard
 import { getDashboardData } from "@/lib/services/dashboard"
 import { getFuelMonthlyTrend } from "@/lib/services/dashboard-fleet-maintenance"
 import { getOverdueFuelDebt } from "@/lib/services/dashboard-domains-data"
-import { computeHealthStats } from "@/lib/services/dte-portal/reconciliation"
-import { readDtePortalConfig } from "@/lib/services/dte-portal/config"
 import { getOperationalCalendarBounds } from "@/lib/services/operational-period-metrics"
 import { DASHBOARD_DOMAINS } from "../dashboard-domains"
 import { DomainSection, type DomainKpiGroup } from "../dashboard-domain-shell"
@@ -63,9 +61,7 @@ export async function FinanceSection({ session, scope }: DomainSectionsProps) {
   const canSeeFuelCosts = has("combustibles:view_costs")
   const canSeePurchasing = has("purchasing:view")
 
-  const dteCodEmp = canSeePurchasing ? (await readDtePortalConfig()).credentials.codEmp : null
-
-  const [billing, analytics, fuelTrend, debt, dteHealth, dashboardData] = await Promise.all([
+  const [billing, analytics, fuelTrend, debt, dashboardData] = await Promise.all([
     has("billing:view")
       ? getBillingSummary(session, { period: billingPeriod, ...billingWindow, ...(worksiteId ? { worksiteId } : {}) }).catch(() => null)
       : Promise.resolve(null),
@@ -78,7 +74,6 @@ export async function FinanceSection({ session, scope }: DomainSectionsProps) {
       : Promise.resolve(null),
     canSeeFuelCosts ? getFuelMonthlyTrend(session, 6, worksiteId) : Promise.resolve([]),
     canSeeFuelCosts ? getOverdueFuelDebt(bounds.currentEnd.slice(0, 10)) : Promise.resolve({ amount: 0, statements: 0 }),
-    dteCodEmp ? computeHealthStats(billingPeriod, dteCodEmp).catch(() => null) : Promise.resolve(null),
     canSeePurchasing ? getDashboardData(session, worksiteId).catch(() => null) : Promise.resolve(null),
   ])
 
@@ -110,14 +105,13 @@ export async function FinanceSection({ session, scope }: DomainSectionsProps) {
     currency && all.some((entry) => entry.currency !== currency) ? ` · sólo ${currency}` : ""
 
   /*
-   * Dos cifras de esta sección no pueden respetar el filtro de faena y hay que
-   * decirlo: los DTE son por empresa y período tributario, y la cuenta
-   * corriente de combustible es por proveedor.
+   * Una cifra de esta sección no puede respetar el filtro de faena y hay que
+   * decirlo: la cuenta corriente de combustible es por proveedor.
+   *
+   * La nota gemela de DTE ya no existe: calificaba cifras que esta sección
+   * nunca mostró (auditoría 2026-08-19, REC-08/API-05).
    */
   const notes = [
-    dteHealth && worksiteId
-      ? "Las cifras de DTE son por empresa y período tributario, no por faena: no siguen el filtro de arriba."
-      : null,
     debt.statements > 0 && worksiteId
       ? "La deuda de cuenta corriente es por proveedor: no se puede repartir por faena."
       : null,

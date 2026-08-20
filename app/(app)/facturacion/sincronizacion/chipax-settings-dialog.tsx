@@ -163,7 +163,7 @@ export function ChipaxSettingsDialog({ status }: { status: ChipaxAdminStatus }) 
                 <div>
                   <p className="text-sm font-medium text-[var(--color-text)]">Automatización diaria</p>
                   <p className="text-xs text-[var(--color-text-muted)]">
-                    Corrida de las 09:00: ventas del mes actual y anterior, más cartolas del mes.
+                    Corrida de las 09:00: ventas y cartolas del mes actual y del anterior.
                     {!enabled && " No corre mientras el proveedor esté apagado."}
                   </p>
                 </div>

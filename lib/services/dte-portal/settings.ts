@@ -9,8 +9,9 @@
 
 import { db } from "@/db"
 import { dtePortalOperationLeases, systemSettings } from "@/db/schema"
-import { eq, gte, like, sql } from "drizzle-orm"
+import { eq, gte, inArray, like, or, sql } from "drizzle-orm"
 import { recordAudit } from "@/lib/audit"
+import { CHIPAX_SETTING_KEYS } from "@/lib/services/billing/chipax-settings"
 import {
   decryptDteSetting,
   encryptDteSetting,
@@ -53,6 +54,17 @@ const SENSITIVE_FIELDS: readonly DteSensitiveSettingField[] = [
   "codEmp",
   "importerEmail",
 ]
+/**
+ * Secretos que NO son del portal DTE pero se cifran con el MISMO keyring
+ * (`billing.chipax.*`). El re-cifrado tiene que re-envolverlos: si se quedan
+ * con el `kid` retirado, el sobre no vuelve a abrirse nunca y Chipax cae en
+ * silencio a la credencial del `.env`.
+ */
+const SHARED_KEYRING_SECRET_KEYS: readonly string[] = [
+  CHIPAX_SETTING_KEYS.appId,
+  CHIPAX_SETTING_KEYS.secretKey,
+]
+
 const REQUIRED_CREDENTIAL_FIELDS: readonly DteSensitiveSettingField[] = [
   "rutUsr",
   "rutEmp",
@@ -104,6 +116,11 @@ export interface DtePortalAdminStatus {
   encryptionStatus: DteSettingsEncryptionStatus
   /** Historical name: also true for already-enveloped compat settings that need the durable cutover. */
   canMigrateLegacy: boolean
+  /**
+   * False cuando no hay keyring activo: sin él no se puede guardar ninguna
+   * credencial, porque guardarla en claro no es una opción.
+   */
+  canStoreSecrets: boolean
   fields: Record<DteSensitiveSettingField, { configured: boolean; source: DteSettingsFieldSource }>
 }
 
@@ -272,6 +289,7 @@ export async function readDtePortalAdminStatus(): Promise<DtePortalAdminStatus> 
     // cut over too; requiring a remaining plaintext field would strand them.
     canMigrateLegacy: !cutoverComplete && Boolean(keyring?.activeKeyId) &&
       REQUIRED_CREDENTIAL_FIELDS.every((field) => Boolean(raw[field])),
+    canStoreSecrets: Boolean(keyring?.activeKeyId),
     cutoverComplete,
     fields,
   }
@@ -287,6 +305,7 @@ function dteAdminConfigurationError(hasStoredSettings = false): DtePortalAdminSt
     encryptionMode: "configuration_error",
     encryptionStatus: "configuration_error",
     canMigrateLegacy: false,
+    canStoreSecrets: false,
     fields: Object.fromEntries(SENSITIVE_FIELDS.map((field) => [
       field,
       { configured: false, source: "missing" as const },
@@ -335,9 +354,12 @@ export async function saveDtePortalSettings(
     ) => {
       if (value !== undefined && value !== "") {
         const key = DTE_SETTING_KEYS[field]
-        const encrypted = keyring.activeKeyId
-          ? encryptDteSetting(value, key, keyring)
-          : value
+        // `compat` existe para poder LEER filas legacy, no para escribir
+        // secretos nuevos en claro: sin keyring activo se falla cerrado.
+        if (!keyring.activeKeyId) {
+          throw new DteSettingsConversionError("DTE_SETTINGS_KEYRING_REQUIRED")
+        }
+        const encrypted = encryptDteSetting(value, key, keyring)
         writes.push({ key, value: encrypted })
         after[field] = encrypted
         return
@@ -392,19 +414,21 @@ export async function saveDtePortalSettings(
     for (const key of new Set(deletes)) {
       await tx.delete(systemSettings).where(eq(systemSettings.key, key))
     }
+    // La auditoría de un cambio de credencial se confirma con el cambio: fuera
+    // de la transacción, un fallo del INSERT deja el secreto nuevo sin rastro.
+    await recordAudit({
+      userId: actor.userId,
+      userEmail: actor.userEmail,
+      action: "update",
+      entityType: "dte_portal_settings",
+      entityId: "batch",
+      oldState: summarizeSettings(before),
+      newState: summarizeSettings(after),
+    }, tx)
     return { before, after }
   })
 
   if (!result) return
-  await recordAudit({
-    userId: actor.userId,
-    userEmail: actor.userEmail,
-    action: "update",
-    entityType: "dte_portal_settings",
-    entityId: "batch",
-    oldState: summarizeSettings(result.before),
-    newState: summarizeSettings(result.after),
-  })
 }
 
 /**
@@ -443,19 +467,19 @@ export async function clearStoredDteSettings(actor: DteSettingsActor): Promise<v
     } else {
       await tx.delete(systemSettings).where(like(systemSettings.key, DTE_KEY_PREFIX))
     }
+    await recordAudit({
+      userId: actor.userId,
+      userEmail: actor.userEmail,
+      action: "delete",
+      entityType: "dte_portal_settings",
+      entityId: "batch",
+      oldState: summarizeSettings(before),
+      newState: encryptedOnly ? { encryptedOnly: true } : {},
+    }, tx)
     return { before, encryptedOnly }
   })
 
   if (!result) return
-  await recordAudit({
-    userId: actor.userId,
-    userEmail: actor.userEmail,
-    action: "delete",
-    entityType: "dte_portal_settings",
-    entityId: "batch",
-    oldState: summarizeSettings(result.before),
-    newState: result.encryptedOnly ? { encryptedOnly: true } : {},
-  })
 }
 
 /**
@@ -551,18 +575,18 @@ export async function convertLegacyDteSettings(actor: DteSettingsActor): Promise
       if (field) after[field] = setting.value
     }
     delete after.baseUrl
+    await recordAudit({
+      userId: actor.userId,
+      userEmail: actor.userEmail,
+      action: "update",
+      entityType: "dte_portal_settings_encryption",
+      entityId: "conversion",
+      oldState: summarizeSettings(before),
+      newState: { ...summarizeSettings(after), encryptedOnly: true, convertedFields: legacy.length },
+    }, tx)
     return { converted: legacy.length, before, after, keyId: keyring.activeKeyId }
   })
 
-  await recordAudit({
-    userId: actor.userId,
-    userEmail: actor.userEmail,
-    action: "update",
-    entityType: "dte_portal_settings_encryption",
-    entityId: "conversion",
-    oldState: summarizeSettings(result.before),
-    newState: { ...summarizeSettings(result.after), encryptedOnly: true, convertedFields: result.converted },
-  })
   return { converted: result.converted, keyId: result.keyId }
 }
 
@@ -584,7 +608,10 @@ export async function rotateDteSettingsKeyring(actor: DteSettingsActor): Promise
     const rows = await tx
       .select({ key: systemSettings.key, value: systemSettings.value })
       .from(systemSettings)
-      .where(like(systemSettings.key, DTE_KEY_PREFIX))
+      .where(or(
+        like(systemSettings.key, DTE_KEY_PREFIX),
+        inArray(systemSettings.key, [...SHARED_KEYRING_SECRET_KEYS]),
+      ))
       .for("update")
     const before = rawDteSettingsFromRows(rows)
     const keyring = readDteSettingsKeyring()
@@ -616,6 +643,24 @@ export async function rotateDteSettingsKeyring(actor: DteSettingsActor): Promise
       after[field] = envelope
       rewrapped += 1
     }
+    // Los secretos de Chipax comparten este keyring: si no se re-envuelven acá,
+    // retirar la clave anterior (paso final del runbook) los deja ilegibles.
+    for (const key of SHARED_KEYRING_SECRET_KEYS) {
+      const value = rows.find((row) => row.key === key)?.value
+      // Un valor sin sobre sólo puede venir de una escritura a mano y ya se
+      // ignora al leerlo; re-cifrarlo lo convertiría en credencial vigente.
+      if (value === undefined || !isEncryptedDteSetting(value)) continue
+      const plaintext = decryptDteSetting(value, key, keyring)
+      const envelope = encryptDteSetting(plaintext, key, keyring)
+      if (decryptDteSetting(envelope, key, keyring) !== plaintext) {
+        throw new Error("DTE_SETTINGS_ROTATION_VERIFY_FAILED")
+      }
+      await tx.insert(systemSettings).values({ key, value: envelope, updatedAt: now }).onConflictDoUpdate({
+        target: systemSettings.key,
+        set: { value: envelope, updatedAt: now },
+      })
+      rewrapped += 1
+    }
     await tx.insert(systemSettings).values({ key: DTE_SETTING_KEYS.syncEnabled, value: "false", updatedAt: now }).onConflictDoUpdate({
       target: systemSettings.key,
       set: { value: "false", updatedAt: now },
@@ -624,18 +669,18 @@ export async function rotateDteSettingsKeyring(actor: DteSettingsActor): Promise
       target: systemSettings.key,
       set: { value: DTE_SYNC_START_BARRIER_PAUSED, updatedAt: now },
     })
+    await recordAudit({
+      userId: actor.userId,
+      userEmail: actor.userEmail,
+      action: "update",
+      entityType: "dte_portal_settings_encryption",
+      entityId: "rotation",
+      oldState: summarizeSettings(before),
+      newState: { ...summarizeSettings(after), rewrappedFields: rewrapped },
+    }, tx)
     return { rewrapped, before, after, keyId: keyring.activeKeyId }
   })
 
-  await recordAudit({
-    userId: actor.userId,
-    userEmail: actor.userEmail,
-    action: "update",
-    entityType: "dte_portal_settings_encryption",
-    entityId: "rotation",
-    oldState: summarizeSettings(result.before),
-    newState: { ...summarizeSettings(result.after), rewrappedFields: result.rewrapped },
-  })
   return { rewrapped: result.rewrapped, keyId: result.keyId }
 }
 

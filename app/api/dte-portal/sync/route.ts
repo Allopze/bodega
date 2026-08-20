@@ -3,7 +3,7 @@ import { requirePermission } from "@/lib/auth/can"
 import { DtePortalClient } from "@/lib/services/dte-portal/client"
 import { buildDtePortalClientConfig, isDteSyncEnabled } from "@/lib/services/dte-portal/config"
 import { classifyDteFailure } from "@/lib/services/dte-portal/failure"
-import { syncDteDocuments } from "@/lib/services/dte-portal/sync"
+import { assertSyncablePeriodo, syncDteDocuments } from "@/lib/services/dte-portal/sync"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -32,12 +32,19 @@ export async function POST(request: NextRequest) {
     // Body vacío está OK, usamos defaults
   }
 
-  // Validar formato de período si se proporcionó
-  if (body.periodo && !/^\d{4}-\d{2}$/.test(body.periodo)) {
-    return NextResponse.json(
-      { error: "Formato de período inválido. Use YYYY-MM." },
-      { status: 400 },
-    )
+  // Validar el período con el MISMO predicado del servicio. La regex local era
+  // más débil (aceptaba "2026-13" y "2026-00") y esos casos terminaban en el
+  // catch genérico: un 500 "DTE_UNEXPECTED" por un error de entrada del
+  // llamante, sin decirle cuál.
+  if (body.periodo) {
+    try {
+      assertSyncablePeriodo(body.periodo)
+    } catch (error) {
+      return NextResponse.json(
+        { error: error instanceof Error ? error.message : "Formato de período inválido. Use YYYY-MM." },
+        { status: 400 },
+      )
+    }
   }
 
   try {

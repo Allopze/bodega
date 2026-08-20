@@ -27,7 +27,8 @@ import {
   type BillingProviderId,
 } from "@/db/schema"
 import { nanoid } from "@/lib/id"
-import { addAmounts, compareAmounts, isZero, sumAmounts, absAmount } from "./money"
+import { addAmounts, compareAmounts, subtractAmounts, sumAmounts, absAmount } from "./money"
+import { applyCreditSign } from "./dte-xml"
 import type { ProviderInvoice } from "./providers/types"
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0]
@@ -207,9 +208,21 @@ export async function lookupPaymentTerms(
  */
 export async function upsertProviderInvoice(
   tx: Tx,
-  invoice: ProviderInvoice,
+  providerInvoice: ProviderInvoice,
   provider: BillingProviderId,
 ): Promise<UpsertInvoiceResult> {
+  // El signo de una nota de crédito se normaliza acá, en el único camino de
+  // escritura de facturas, y no en cada adaptador: unos entregan la NC en
+  // magnitud (Chipax, listados del portal) y otros ya en negativo (XML del
+  // SII). `applyCreditSign` es idempotente, así que no importa cuál llegue.
+  const invoice: ProviderInvoice = {
+    ...providerInvoice,
+    netAmount:    applyCreditSign(providerInvoice.docType, providerInvoice.netAmount),
+    taxAmount:    applyCreditSign(providerInvoice.docType, providerInvoice.taxAmount),
+    exemptAmount: applyCreditSign(providerInvoice.docType, providerInvoice.exemptAmount),
+    totalAmount:  applyCreditSign(providerInvoice.docType, providerInvoice.totalAmount),
+  }
+
   if (invoice.externalId.trim() === "") {
     throw new BillingExternalReferenceInvalid(provider)
   }
@@ -348,6 +361,13 @@ export async function upsertProviderInvoice(
 
   await tx.update(billingInvoices).set(updates).where(eq(billingInvoices.id, existing.id))
 
+  // `paymentStatus`/`paidAmount` son caché derivada del total: si el proveedor
+  // corrigió el monto, la factura quedaba "pagada" con saldo real pendiente
+  // (o sobrepagada sin marcarlo). Recalcular es idempotente.
+  if (changedFields.includes("totalAmount")) {
+    await recomputeInvoicePaymentStatus(tx, existing.id)
+  }
+
   // Los ítems solo se reemplazan si esta fuente los trajo: una fuente que solo
   // entrega totales no debe borrar los ítems que otra sí entregó.
   if (invoice.items.length > 0) {
@@ -425,33 +445,72 @@ async function upsertExternalRef(
       lastSeenAt: now,
     }
 
-  // `ON CONFLICT DO UPDATE` sin esta comprobación podía mover una referencia
-  // externa desde una factura interna a otra cuando el proveedor reutilizaba o
-  // devolvía un id incorrecto. El vínculo es identidad, no un dato editable.
-  const inserted = await tx.insert(billingExternalRefs).values(values)
-    .onConflictDoNothing({ target: [billingExternalRefs.provider, billingExternalRefs.externalId] })
-    .returning({ id: billingExternalRefs.id })
-  if (inserted.length > 0) return
-
-  const [existing] = await tx.select({ id: billingExternalRefs.id, invoiceId: billingExternalRefs.invoiceId })
+  // La fila tiene DOS identidades únicas: (provider, externalId) y
+  // (invoiceId, provider). `ON CONFLICT` solo puede nombrar una, así que un
+  // choque con la otra escapaba como 23505 crudo y mataba el documento en la
+  // corrida. Pasa de verdad: el externalId NO es inmutable (la bandeja del
+  // portal lo recalcula según lo que logre decodificar de cada fila, y el
+  // CodEmp puede cambiar), mientras que el par (factura, proveedor) sí lo es.
+  // Por eso se resuelven las dos antes de insertar.
+  const [byExternalId] = await tx
+    .select({ id: billingExternalRefs.id, invoiceId: billingExternalRefs.invoiceId })
     .from(billingExternalRefs)
     .where(and(
       eq(billingExternalRefs.provider, provider),
       eq(billingExternalRefs.externalId, invoice.externalId),
     ))
     .limit(1)
-  if (!existing) throw new Error("No se pudo resolver la referencia externa después del conflicto de unicidad.")
-  if (existing.invoiceId !== invoiceId) {
-    throw new BillingExternalReferenceConflict(provider, invoice.externalId, existing.invoiceId, invoiceId)
+
+  // Mover una referencia externa de una factura interna a otra sigue prohibido:
+  // el vínculo es identidad, no un dato editable.
+  if (byExternalId && byExternalId.invoiceId !== invoiceId) {
+    throw new BillingExternalReferenceConflict(provider, invoice.externalId, byExternalId.invoiceId, invoiceId)
+  }
+
+  const [byInvoice] = byExternalId
+    ? [byExternalId]
+    : await tx
+        .select({ id: billingExternalRefs.id, invoiceId: billingExternalRefs.invoiceId })
+        .from(billingExternalRefs)
+        .where(and(
+          eq(billingExternalRefs.invoiceId, invoiceId),
+          eq(billingExternalRefs.provider, provider),
+        ))
+        .limit(1)
+
+  let existingId = byInvoice?.id ?? null
+
+  if (existingId === null) {
+    const inserted = await tx.insert(billingExternalRefs).values(values)
+      .onConflictDoNothing({ target: [billingExternalRefs.provider, billingExternalRefs.externalId] })
+      .returning({ id: billingExternalRefs.id })
+    if (inserted.length > 0) return
+
+    // Carrera: otra transacción insertó esta misma referencia entre la lectura
+    // y el insert. Se resuelve releyendo, con la misma regla de identidad.
+    const [raced] = await tx.select({ id: billingExternalRefs.id, invoiceId: billingExternalRefs.invoiceId })
+      .from(billingExternalRefs)
+      .where(and(
+        eq(billingExternalRefs.provider, provider),
+        eq(billingExternalRefs.externalId, invoice.externalId),
+      ))
+      .limit(1)
+    if (!raced) throw new Error("No se pudo resolver la referencia externa después del conflicto de unicidad.")
+    if (raced.invoiceId !== invoiceId) {
+      throw new BillingExternalReferenceConflict(provider, invoice.externalId, raced.invoiceId, invoiceId)
+    }
+    existingId = raced.id
   }
 
   await tx.update(billingExternalRefs).set({
+    // El proveedor puede recalcular el id externo de un documento ya importado.
+    externalId:     invoice.externalId,
     externalStatus: invoice.externalStatus,
     documentUrl:    invoice.documentUrl,
     payloadHash,
     snapshot,
     lastSeenAt: now,
-  }).where(eq(billingExternalRefs.id, existing.id))
+  }).where(eq(billingExternalRefs.id, existingId))
 }
 
 /* ── Historial ───────────────────────────────────────────────────────────── */
@@ -487,8 +546,10 @@ export interface PaymentStatusSnapshot {
 /**
  * Calcula el estado de pago a partir de los pagos **confirmados**.
  *
- * Trabaja en valor absoluto porque una nota de crédito tiene total negativo: lo
- * que interesa es cuánto del documento quedó cubierto, no su signo.
+ * Compara magnitudes porque una nota de crédito tiene total negativo: lo que
+ * interesa es cuánto del documento quedó cubierto. Pero el pago tiene que ir en
+ * la MISMA dirección que el documento — un pago negativo no cubre una factura
+ * positiva.
  */
 export function derivePaymentStatus(
   totalAmount: number,
@@ -496,10 +557,16 @@ export function derivePaymentStatus(
 ): PaymentStatusSnapshot {
   const paidAmount = sumAmounts(confirmedPayments)
   const total = absAmount(totalAmount)
-  const paid = absAmount(paidAmount)
+  // La cobertura se mide EN LA DIRECCIÓN del documento, no por magnitud: una NC
+  // (total negativo) se cubre con pagos negativos. Tomar el valor absoluto de
+  // la suma hacía que un ajuste negativo sobre una factura positiva se leyera
+  // como cobertura completa y la sacara de la cobranza.
+  const paid = compareAmounts(totalAmount, 0) < 0 ? subtractAmounts(0, paidAmount) : paidAmount
   const outstandingAmount = addAmounts(total, -paid)
 
-  if (isZero(paid)) {
+  // Sin cobertura, o cobertura de signo contrario: no está pagada, y lo
+  // pendiente crece en vez de bajar.
+  if (compareAmounts(paid, 0) <= 0) {
     return { paidAmount, paymentStatus: "unpaid", outstandingAmount }
   }
   const comparison = compareAmounts(paid, total)

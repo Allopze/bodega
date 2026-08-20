@@ -179,14 +179,21 @@ export function deriveProviderStatus(input: {
     }
   }
 
+  // El TTL vale para los dos signos. Un «Con problema» de hace meses congelado se
+  // presenta como diagnóstico vigente y vuelve indistinguible una caída real de
+  // ayer de un fósil: es la forma más rápida de enseñar a ignorar el rojo. Como
+  // nadie refresca el valor salvo el botón «Probar conexión», un estado sin
+  // comprobación reciente se rotula vencido, no vigente.
   const checkedAtMs = Date.parse(input.stored.checkedAt)
   const nowMs = (input.now ?? new Date()).getTime()
-  if (input.stored.ok && (!Number.isFinite(checkedAtMs) || nowMs - checkedAtMs > BILLING_HEALTH_TTL_MS)) {
+  if (!Number.isFinite(checkedAtMs) || nowMs - checkedAtMs > BILLING_HEALTH_TTL_MS) {
     return {
       kind: "stale",
       label: "Comprobación vencida",
       tone: "warning",
-      detail: "La última comprobación exitosa tiene más de 24 horas; vuelve a comprobar el proveedor.",
+      detail: input.stored.ok
+        ? "La última comprobación exitosa tiene más de 24 horas; vuelve a comprobar el proveedor."
+        : `La última comprobación tiene más de 24 horas y había fallado: ${input.stored.detail}`,
       checkedAt: input.stored.checkedAt,
     }
   }

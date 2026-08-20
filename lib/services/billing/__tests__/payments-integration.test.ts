@@ -23,7 +23,8 @@ await migratePGlite(pg, path.resolve(process.cwd(), "db/migrations"))
 
 const serviceDb = inMemoryDb as unknown as typeof import("@/db").db
 
-const { recomputeInvoicePaymentStatus } = await import("../invoices")
+const { recomputeInvoicePaymentStatus, upsertProviderInvoice, BillingExternalReferenceConflict } =
+  await import("../invoices")
 const { generatePaymentSuggestions, recomputeTransactionAllocation, assertAllocationFits } =
   await import("../reconciliation")
 const { getCollectionsView } = await import("../collections")
@@ -294,6 +295,125 @@ describe("un movimiento repartido entre varias facturas", () => {
   })
 })
 
+/* ── Escritura desde un proveedor ────────────────────────────────────────── */
+
+type ProviderInvoiceInput = Parameters<typeof upsertProviderInvoice>[1]
+
+function providerInvoice(overrides: Partial<ProviderInvoiceInput> = {}): ProviderInvoiceInput {
+  return {
+    externalId: "chipax:5001",
+    direction: "sale",
+    docType: "33",
+    folio: 4321,
+    issuerTaxId: "78023530-6",
+    issuerName: "CHOME",
+    receiverTaxId: "76543210-K",
+    receiverName: "MINERA EJEMPLO SPA",
+    issueDate: "2026-07-20",
+    dueDate: "2026-08-19",
+    currency: "CLP",
+    netAmount: 1000000,
+    taxAmount: 190000,
+    exemptAmount: null,
+    totalAmount: 1190000,
+    documentStatus: "accepted",
+    externalStatus: "Aceptado",
+    documentUrl: null,
+    xmlUrl: null,
+    accountRef: null,
+    items: [],
+    ...overrides,
+  }
+}
+
+async function upsert(invoice: ProviderInvoiceInput, provider: "chipax" | "factura_en_linea" = "chipax") {
+  return inMemoryDb.transaction(async (tx) =>
+    // @ts-expect-error PGlite es compatible en runtime
+    upsertProviderInvoice(tx, invoice, provider),
+  )
+}
+
+async function readInvoice(id: string) {
+  const [row] = await inMemoryDb.select().from(schema.billingInvoices)
+    .where(eq(schema.billingInvoices.id, id))
+  return row!
+}
+
+describe("signo de las notas de crédito", () => {
+  // La convención («total negativo en una NC») vivía sólo en el lector de XML,
+  // así que una NC de venta que llegaba por Chipax o por el libro del portal se
+  // guardaba positiva y SUMABA a la cuenta por cobrar en vez de restar.
+  it("una NC que el proveedor entrega en magnitud se guarda negativa", async () => {
+    const result = await upsert(providerInvoice({ docType: "61", externalId: "chipax:5002" }))
+    const invoice = await readInvoice(result.invoiceId)
+
+    expect(invoice.totalAmount).toBe(-1190000)
+    expect(invoice.netAmount).toBe(-1000000)
+    expect(invoice.taxAmount).toBe(-190000)
+  })
+
+  it("es idempotente: la fuente que ya la entrega negativa no la vuelve positiva", async () => {
+    const first = await upsert(providerInvoice({ docType: "61", externalId: "chipax:5002" }))
+    // El XML del SII y el libro de ventas del portal la entregan ya negativa.
+    const second = await upsert(
+      providerInvoice({
+        docType: "61", externalId: "fel:sale:433:61:4321:78023530-6",
+        netAmount: -1000000, taxAmount: -190000, totalAmount: -1190000,
+      }),
+      "factura_en_linea",
+    )
+
+    expect(second.invoiceId).toBe(first.invoiceId)
+    expect(second.changedFields).toEqual([])
+    expect((await readInvoice(first.invoiceId)).totalAmount).toBe(-1190000)
+  })
+})
+
+describe("corrección de monto desde el proveedor", () => {
+  // `paymentStatus` es caché derivada del total: si el proveedor corrige el
+  // monto y nadie recalcula, la factura queda "pagada" con saldo real vivo.
+  it("recalcula el estado de pago cuando cambia el total", async () => {
+    const { invoiceId } = await upsert(providerInvoice({ totalAmount: 1000000, netAmount: 840336, taxAmount: 159664 }))
+    await inMemoryDb.insert(schema.billingInvoicePayments).values({
+      id: "pay-prov", invoiceId, paymentDate: "2026-08-01",
+      amount: 1000000, currency: "CLP", verificationStatus: "confirmed",
+      confirmedBy: CONFIRMER, confirmedAt: new Date().toISOString(),
+    })
+    expect((await recomputeInvoicePaymentStatus(serviceDb, invoiceId)).paymentStatus).toBe("paid")
+
+    await upsert(providerInvoice({ totalAmount: 1500000, netAmount: 1260504, taxAmount: 239496 }))
+
+    const invoice = await readInvoice(invoiceId)
+    expect(invoice.totalAmount).toBe(1500000)
+    expect(invoice.paymentStatus).toBe("partial")
+    expect(invoice.paidAmount).toBe(1000000)
+  })
+})
+
+describe("referencia externa reasignable", () => {
+  // El externalId no es inmutable: la bandeja del portal lo recalcula según lo
+  // que logre decodificar de cada fila. Chocaba contra el índice único
+  // (invoice_id, provider) —el que `ON CONFLICT` no nombra— y el 23505 crudo
+  // dejaba el documento fallado en cada corrida.
+  it("acepta que el proveedor cambie el id externo de un documento ya importado", async () => {
+    const first = await upsert(providerInvoice({ externalId: "fel:bandeja:433:99887" }), "factura_en_linea")
+    const second = await upsert(providerInvoice({ externalId: "fel:sale:500:33:4321:78023530-6" }), "factura_en_linea")
+
+    expect(second.invoiceId).toBe(first.invoiceId)
+
+    const refs = await inMemoryDb.select().from(schema.billingExternalRefs)
+      .where(eq(schema.billingExternalRefs.invoiceId, first.invoiceId))
+    expect(refs).toHaveLength(1)
+    expect(refs[0]!.externalId).toBe("fel:sale:500:33:4321:78023530-6")
+  })
+
+  it("sigue rechazando que un id externo se mueva a otra factura interna", async () => {
+    await upsert(providerInvoice({ externalId: "chipax:5001" }))
+    await expect(upsert(providerInvoice({ externalId: "chipax:5001", folio: 9999 })))
+      .rejects.toBeInstanceOf(BillingExternalReferenceConflict)
+  })
+})
+
 describe("vista de cobranza", () => {
   function globalSession() {
     return {
@@ -319,6 +439,19 @@ describe("vista de cobranza", () => {
     const withSuggestions = view.rows.filter((row) => row.suggestedPayments > 0)
     expect(withSuggestions.length).toBeGreaterThan(0)
     expect(withSuggestions.every((row) => row.paidAmount === 0)).toBe(true)
+  })
+
+  // Una sobrepagada tiene saldo NEGATIVO: contarla neteaba lo que sí hay por
+  // cobrar y la mostraba como deuda vencida del cliente cuando lo que
+  // corresponde es devolverle plata.
+  it("excluye las sobrepagadas del saldo por cobrar", async () => {
+    await inMemoryDb.update(schema.billingInvoices)
+      .set({ paidAmount: 1010000, paymentStatus: "overpaid" })
+      .where(eq(schema.billingInvoices.id, "inv-1"))
+
+    const view = await getCollectionsView(globalSession())
+    expect(view.totalOutstanding).toEqual([{ currency: "CLP", amount: 500000 }])
+    expect(view.rows.find((row) => row.invoiceId === "inv-1")!.bucket).toBe("paid")
   })
 
   it("excluye las anuladas del saldo por cobrar", async () => {

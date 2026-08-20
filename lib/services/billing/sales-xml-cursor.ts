@@ -65,13 +65,15 @@ export function chooseSalesXmlCandidates<T extends { key: string }>(
 ): { items: T[]; nextCursor: string | null; deferred: boolean } {
   const ordered = [...candidates].sort((left, right) => left.key.localeCompare(right.key))
   if (ordered.length === 0) return { items: [], nextCursor: null, deferred: false }
-  let start = 0
-  if (cursor) {
-    const after = ordered.findIndex((candidate) => candidate.key > cursor)
-    start = after === -1 ? 0 : after
-  }
-  const items = ordered.slice(start, start + limit)
-  const deferred = start + items.length < ordered.length
+  // La clave empieza por la fecha de emisión, así que un documento registrado
+  // con retraso aparece POR DEBAJO del cursor ya fijado. Descartarlo lo dejaba
+  // fuera para siempre mientras el cursor no avanzara (un XML que nunca resuelve
+  // basta para congelarlo). Se atiende primero lo que falta después del cursor y
+  // el cupo que sobre se llena con los rezagados de antes.
+  const ahead = cursor ? ordered.filter((candidate) => candidate.key > cursor) : ordered
+  const behind = cursor ? ordered.filter((candidate) => candidate.key <= cursor) : []
+  const items = [...ahead, ...behind].slice(0, limit)
+  const deferred = items.length < ordered.length
   return {
     items,
     nextCursor: deferred ? items.at(-1)?.key ?? null : null,

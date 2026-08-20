@@ -164,7 +164,10 @@ export async function detectDuplicateCandidates(
   // cuadrática sobre todo el universo de facturas.
   const byCounterparty = new Map<string, InvoiceRow[]>()
   for (const invoice of invoices) {
-    const key = `${invoice.issuerTaxId}|${invoice.receiverTaxId}|${invoice.currency}`
+    // La clave se normaliza igual que la comparación de `classifyPair`: con el
+    // RUT crudo, un "76.543.210-K" y un "76543210-K" caían en grupos distintos
+    // y nunca llegaban a compararse — justo el caso que esa defensa atiende.
+    const key = `${cleanRut(invoice.issuerTaxId)}|${cleanRut(invoice.receiverTaxId)}|${invoice.currency}`
     const group = byCounterparty.get(key) ?? []
     group.push(invoice)
     byCounterparty.set(key, group)

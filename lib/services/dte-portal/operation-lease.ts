@@ -1,4 +1,4 @@
-import { eq, lt, sql } from "drizzle-orm"
+import { eq, gte, lt, sql } from "drizzle-orm"
 import { db } from "@/db"
 import { dtePortalOperationLeases, systemSettings } from "@/db/schema"
 import { nanoid } from "@/lib/id"
@@ -10,6 +10,30 @@ import {
   isDtePortalStartBarrierIntentionalPause,
   isDtePortalStartBarrierPaused,
 } from "./settings"
+
+/**
+ * Tope global de requests simultáneas contra el portal. El throttle del cliente
+ * (`delayMs`) sólo separa requests de UNA instancia, y cada llamador construye
+ * la suya: N sincronizaciones de períodos distintos, o varias descargas, salen
+ * al portal a la vez sin ningún freno compartido. La cuenta es de un tercero y
+ * un bloqueo deja a la empresa sin libro de compras.
+ *
+ * ponytail: dos en paralelo alcanza para el uso real (un sync + una descarga);
+ * si algún día hace falta más caudal, subir el tope, no quitarlo.
+ */
+const MAX_CONCURRENT_PORTAL_OPERATIONS = 2
+/** Cuánto espera un request por su turno antes de rendirse. */
+const LEASE_WAIT_TOTAL_MS = 15_000
+const LEASE_WAIT_STEP_MS = 200
+
+export class DtePortalTooManyOperationsError extends Error {
+  readonly code = "DTE_PORTAL_TOO_MANY_OPERATIONS"
+
+  constructor() {
+    super("DTE_PORTAL_TOO_MANY_OPERATIONS")
+    this.name = "DtePortalTooManyOperationsError"
+  }
+}
 
 export class DtePortalStartsPausedError extends Error {
   readonly code = "DTE_PORTAL_STARTS_PAUSED"
@@ -70,11 +94,22 @@ export async function withDtePortalOperationLease<T>(
 }
 
 async function acquireDtePortalOperationLease(operation: string, leaseMs: number): Promise<string> {
+  const deadline = Date.now() + LEASE_WAIT_TOTAL_MS
+  for (;;) {
+    const id = await tryAcquireDtePortalOperationLease(operation, leaseMs)
+    if (id) return id
+    if (Date.now() >= deadline) throw new DtePortalTooManyOperationsError()
+    await new Promise((resolve) => setTimeout(resolve, LEASE_WAIT_STEP_MS))
+  }
+}
+
+/** `null` cuando ya hay `MAX_CONCURRENT_PORTAL_OPERATIONS` leases vivos. */
+async function tryAcquireDtePortalOperationLease(operation: string, leaseMs: number): Promise<string | null> {
   const id = nanoid()
   const now = new Date()
   const expiresAt = new Date(now.getTime() + Math.max(leaseMs, 1_000)).toISOString()
 
-  await db.transaction(async (tx) => {
+  return db.transaction(async (tx) => {
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${DTE_SETTINGS_ADVISORY_LOCK}))`)
     const [barrier] = await tx
       .select({ value: systemSettings.value })
@@ -86,13 +121,22 @@ async function acquireDtePortalOperationLease(operation: string, leaseMs: number
 
     await tx.delete(dtePortalOperationLeases)
       .where(lt(dtePortalOperationLeases.leaseExpiresAt, now.toISOString()))
+
+    // El conteo va dentro del mismo advisory lock que ya serializa las
+    // adquisiciones, así que es exacto: nadie inserta entre el count y el
+    // insert.
+    const [live] = await tx
+      .select({ count: sql<number>`count(*)::int` })
+      .from(dtePortalOperationLeases)
+      .where(gte(dtePortalOperationLeases.leaseExpiresAt, now.toISOString()))
+    if ((live?.count ?? 0) >= MAX_CONCURRENT_PORTAL_OPERATIONS) return null
+
     await tx.insert(dtePortalOperationLeases).values({
       id,
       operation,
       startedAt: now.toISOString(),
       leaseExpiresAt: expiresAt,
     })
+    return id
   })
-
-  return id
 }

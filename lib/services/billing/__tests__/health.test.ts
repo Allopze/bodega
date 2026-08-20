@@ -68,16 +68,35 @@ describe("deriveProviderStatus", () => {
     expect(status.label).toBe("Comprobación vencida")
   })
 
+  it("un «Con problema» de hace meses se muestra vencido, no vigente", () => {
+    // Nadie refresca el valor salvo el botón «Probar conexión», y la tarjeta roja
+    // es justo lo que la gente deja de pulsar: sin TTL, un fallo de junio se
+    // presenta igual que una caída real de ayer y enseña a ignorar el rojo.
+    const status = deriveProviderStatus({
+      enabled: true,
+      configured: true,
+      stored: { ok: false, detail: "Chipax no respondió.", checkedAt: "2026-06-01T09:00:00.000Z" },
+      now: new Date("2026-08-19T09:00:00.000Z"),
+    })
+
+    expect(status.kind).toBe("stale")
+    expect(status.label).toBe("Comprobación vencida")
+    // El diagnóstico anterior no se pierde: se rotula como viejo.
+    expect(status.detail).toContain("Chipax no respondió.")
+  })
+
   it("los seis estados son distinguibles por texto, no solo por color", () => {
+    const now = new Date("2026-08-05T06:00:00Z")
+    const reciente = "2026-08-05T00:00:00Z"
     const labels = [
       deriveProviderStatus({ enabled: false, configured: true, stored: null }),
       deriveProviderStatus({ enabled: true, configured: false, stored: null }),
       deriveProviderStatus({ enabled: true, configured: true, stored: null }),
-      deriveProviderStatus({ enabled: true, configured: true, stored: { ok: true, detail: "x", checkedAt: "2026-08-05T00:00:00Z" } }),
-      deriveProviderStatus({ enabled: true, configured: true, stored: { ok: true, detail: "stale", checkedAt: "2026-08-05T00:00:00Z" }, now: new Date("2026-08-13T00:00:00Z") }),
-      deriveProviderStatus({ enabled: true, configured: true, stored: { ok: false, detail: "y", checkedAt: "2026-08-05T00:00:00Z" } }),
+      deriveProviderStatus({ enabled: true, configured: true, stored: { ok: true, detail: "x", checkedAt: reciente }, now }),
+      deriveProviderStatus({ enabled: true, configured: true, stored: { ok: true, detail: "stale", checkedAt: reciente }, now: new Date("2026-08-13T00:00:00Z") }),
+      deriveProviderStatus({ enabled: true, configured: true, stored: { ok: false, detail: "y", checkedAt: reciente }, now }),
     ].map((status) => status.label)
 
-    expect(new Set(labels).size).toBe(5)
+    expect(new Set(labels).size).toBe(6)
   })
 })

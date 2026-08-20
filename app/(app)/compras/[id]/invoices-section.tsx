@@ -82,6 +82,7 @@ export function InvoicesSection({
   ocItems,
   totalAmount,
   canManage,
+  canAttach = canManage,
   defaultInvoiceNumber,
   dteCandidates = [],
 }: {
@@ -89,7 +90,15 @@ export function InvoicesSection({
   invoices: InvoiceRow[]
   ocItems: OcItem[]
   totalAmount: number
+  /** Puede intervenir las facturas ya adjuntadas (eliminarlas). */
   canManage: boolean
+  /**
+   * Puede adjuntar facturas nuevas. Son dos permisos distintos porque una OC
+   * anulada conserva la sección sólo para soltar el DTE que quedó colgado: el
+   * servicio rechaza el alta en `cancelled` y ofrecer el formulario sería una
+   * carga que falla siempre. Por defecto sigue a `canManage`.
+   */
+  canAttach?: boolean
   /** N° de guía/factura traído desde una recepción (`?nro=`) para no retipearlo. */
   defaultInvoiceNumber?: string
   /** DTE del proveedor sin vincular, ofrecidos para registro directo. */
@@ -188,7 +197,7 @@ export function InvoicesSection({
         // A4: sin facturas, la sección *es* el formulario de adjuntar — el texto
         // plano no ofrecía ninguna acción donde justamente falta hacerla. A quien
         // no puede adjuntar sí le queda el texto, que es lo único que aplica.
-        !canManage && <p className="text-xs text-text-subtle py-2">Sin facturas adjuntadas.</p>
+        !canAttach && <p className="text-xs text-text-subtle py-2">Sin facturas adjuntadas.</p>
       ) : (
         <ul className="divide-y divide-(--color-border) mb-3">
           {invoices.map((inv) => (
@@ -204,7 +213,7 @@ export function InvoicesSection({
       )}
 
       {/* Add invoice form */}
-      {canManage && (
+      {canAttach && (
         invoices.length === 0
           ? (
             <AddInvoiceForm

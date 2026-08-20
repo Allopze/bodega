@@ -72,9 +72,9 @@ GET /api/cron/chipax-sync
 Authorization: Bearer $CRON_SECRET
 ```
 
-Cuando `BILLING_CHIPAX_SYNC_ENABLED=true` ejecuta ventas del mes actual y
-anterior más cartolas del mes actual a las 09:00 Chile, bajo una sola
-correlación. `BILLING_CHIPAX_ENABLED=true` por sí solo no activa el scheduler.
+Cuando `BILLING_CHIPAX_SYNC_ENABLED=true` ejecuta ventas y cartolas del mes
+actual y del anterior a las 09:00 Chile, bajo una sola correlación.
+`BILLING_CHIPAX_ENABLED=true` por sí solo no activa el scheduler.
 
 ### Manual
 `/facturacion/sincronizacion` → elegir proveedor y período → **Simular** o
@@ -122,6 +122,11 @@ En cartolas, `partial` también significa que el proveedor rectificó fecha o
 monto de un movimiento ya imputado: se conserva la cartola original y el
 mensaje operativo diferencia **sin RUT**, **conflicto de monto/fecha** y
 **error técnico**. No se sobrescribe una imputación sin decisión humana.
+
+También queda `partial` cuando el proveedor entregó menos movimientos de los que
+declara en el total de la respuesta y la paginación se agotó sola: la cartola no
+tiene folio, así que ese total es la única señal de pérdida y la corrida no puede
+cerrarse como completa.
 
 Las respuestas Chipax se validan antes de persistir. Ante `429` se respeta
 `Retry-After` una sola vez, acotado a 30 segundos; un segundo `429` queda como

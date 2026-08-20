@@ -24,6 +24,13 @@ const DTE_BREADCRUMBS = (
 
 const DTE_ACTIONS = <DteSyncActions />
 
+/**
+ * Release que clasifica y redacta el error antes de persistirlo
+ * (`classifyDteFailure`, 2026-08-11). Las corridas anteriores pueden llevar
+ * payload crudo del portal, así que su motivo no se muestra en pantalla.
+ */
+const REDACTED_ERROR_SINCE = "2026-08-11"
+
 export default async function DtePage() {
   try { await requirePermission("admin:dte_sync") }
   catch { redirect("/forbidden") }
@@ -32,11 +39,13 @@ export default async function DtePage() {
     db.query.dteSyncRuns.findMany({
       orderBy: [desc(dteSyncRuns.startedAt)],
       limit: 30,
-      // Historical rows may predate redacted summaries. Never select the raw
-      // error column for this RSC/client-facing screen: status and counters
-      // are sufficient for an operator and old portal payloads stay in DB.
+      // Las filas anteriores a la release que redacta pueden traer payload
+      // crudo del portal: se seleccionan igual, pero sólo se envían al cliente
+      // las posteriores (ver REDACTED_ERROR_SINCE). Sin el motivo, la alerta
+      // manda a una pantalla donde no se puede diagnosticar nada.
       columns: {
         id: true,
+        error: true,
         periodo: true,
         trigger: true,
         status: true,
@@ -51,6 +60,11 @@ export default async function DtePage() {
     }),
     readDtePortalAdminStatus(),
   ])
+
+  const runRows = runs.map((run) => ({
+    ...run,
+    error: run.startedAt >= REDACTED_ERROR_SINCE ? run.error : null,
+  }))
 
   return (
     <PageContainer>
@@ -68,6 +82,17 @@ export default async function DtePage() {
         </section>
       )}
 
+      {!status.canStoreSecrets && status.encryptionMode !== "configuration_error" && (
+        <section role="alert" className="mb-5 rounded-[var(--radius-xl)] border border-[var(--color-danger)] bg-[var(--color-danger-tint)] p-4 text-[var(--color-danger-ink)]">
+          <h2 className="font-semibold">No hay keyring de cifrado configurado</h2>
+          <p className="mt-1 text-sm">
+            Sin <code>DTE_SETTINGS_KEYRING</code> en el servidor no se puede guardar ninguna credencial:
+            el guardado se rechaza en vez de persistir la contraseña del portal en texto plano.
+            Provisione el keyring en el host antes de configurar estos campos.
+          </p>
+        </section>
+      )}
+
       <DteCredentialsForm status={status} />
 
       <div className="mt-8">
@@ -75,7 +100,7 @@ export default async function DtePage() {
           <h2 className="text-h2 text-[var(--color-text)]">Historial de sincronización</h2>
           <DteForceSyncControl />
         </div>
-        <DteSyncList runs={runs} />
+        <DteSyncList runs={runRows} />
       </div>
     </PageContainer>
   )

@@ -8,6 +8,8 @@ export interface DteSyncRunRow {
   periodo: string
   trigger: "manual" | "cron"
   status: "running" | "success" | "partial" | "failed"
+  /** Motivo ya redactado de una corrida parcial o fallida. */
+  error: string | null
   reconciliationStatus: "not_run" | "success" | "partial" | "failed"
   reconciliationError: string | null
   rowsSeen: number
@@ -57,8 +59,9 @@ export function DteSyncList({ runs }: { runs: DteSyncRunRow[] }) {
                 <tr key={run.id} className="transition-colors duration-[var(--duration-fast)] hover:bg-[var(--color-primary-tint)]">
                   <td className="whitespace-nowrap px-4 py-2.5 font-medium text-[var(--color-text)]">{run.periodo}</td>
                   <td className="whitespace-nowrap px-4 py-2.5 text-[var(--color-text-muted)]">{formatDateTime(run.startedAt)}</td>
-                  <td className="whitespace-nowrap px-4 py-2.5">
+                  <td className="px-4 py-2.5">
                     <Badge variant={statusInfo.tone}>{statusInfo.label}</Badge>
+                    {run.error && <p className="mt-1 max-w-[40ch] text-xs text-[var(--color-text-muted)]">{run.error}</p>}
                   </td>
                   <td className="whitespace-nowrap px-4 py-2.5">
                     <Badge variant={reconciliationInfo(run.reconciliationStatus).tone}>{reconciliationInfo(run.reconciliationStatus).label}</Badge>

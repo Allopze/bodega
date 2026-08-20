@@ -159,6 +159,15 @@ export interface DteBandejaRow {
   /** Fecha/hora de recepción del correo, tal como llega ("YYYY-MM-DD HH:mm") */
   fechaRecepcion: string
   /**
+   * Misma fecha de recepción ya parseada a "YYYY-MM-DD" (null si el portal
+   * mandó algo que no es fecha). La consulta filtra por fecha del DOCUMENTO,
+   * así que este es el único dato que permite medir con cuánto atraso el
+   * proveedor sube el DTE y decidir un re-barrido de períodos viejos.
+   * Opcional sólo porque hay fixtures que construyen filas a mano;
+   * `parseBandejaRow` siempre la puebla.
+   */
+  fechaRecepcionDate?: string | null
+  /**
    * Texto libre derivado del ícono `penplata.gif` (su `title`) cuando está
    * presente; `null` si no. La celda de texto correspondiente es en realidad
    * un comentario HTML nunca renderizado — no se debe leer como texto plano.
@@ -184,7 +193,18 @@ export interface DteBandejaRow {
 
 export interface DteBandejaResult {
   rows: DteBandejaRow[]
+  /**
+   * Total declarado por el portal, o el conteo de filas cuando no lo declara.
+   * Para verificar completitud NO sirve por sí solo: usar `declaredTotal`.
+   */
   totalRegistros: number
+  /**
+   * Total tal como lo declaró el portal (`tbxTotalRegistros`), o null si el
+   * marcador no estaba. En null la completitud no se puede verificar —
+   * comparar `totalRegistros` contra las filas sería compararlas consigo
+   * mismas— y la corrida debe reportarse `partial`, no `success`.
+   */
+  declaredTotal: number | null
 }
 
 // ── Documento extraído del HTML ──────────────────────────────────────────────

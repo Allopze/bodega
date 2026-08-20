@@ -33,7 +33,7 @@ import { readSalesSyncConfig } from "./config"
 import { chilePeriod, previousChilePeriod } from "../dte-portal/chile-time"
 import { classifyDteFailure } from "../dte-portal/failure"
 import { DtePortalError } from "../dte-portal/types"
-import { upsertProviderInvoice } from "./invoices"
+import { BillingExternalReferenceConflict, BillingExternalReferenceInvalid, upsertProviderInvoice } from "./invoices"
 import { assertCapability, BillingProviderError, getBillingProvider, isProviderEnabled } from "./providers"
 import type { BillingProvider } from "./providers/types"
 
@@ -167,10 +167,21 @@ export async function syncBillingInvoices(options: BillingSyncOptions): Promise<
     let pages = 0
 
     do {
-      const page = await fetchPage(provider, options.scope, { period, cursor })
+      const page = await fetchPage(provider, options.scope, { period, cursor, correlationId })
       pages++
       metrics.recordsFetched += page.items.length
       const errorsBeforePage = metrics.errorsCount
+
+      // El proveedor no supo decir cuántos documentos tiene el período. Sin ese
+      // número no hay nada contra qué contrastar lo entregado, así que la
+      // corrida no puede afirmar completitud: mismo criterio que el sync de
+      // compras (`dte-portal/sync.ts`), que cierra `partial` en este caso.
+      if (page.completenessUnverified && pages === 1) {
+        errors.push(
+          `El proveedor no declaró el total del período: no se pudo verificar la completitud (se leyeron ${page.items.length} documentos).`,
+        )
+        status = "partial"
+      }
 
       if (page.reportedTotal !== null && pages === 1 && page.reportedTotal !== page.items.length && page.nextCursor === null) {
         // El proveedor declaró un total distinto al que entregó en una sola
@@ -291,7 +302,7 @@ export async function syncBillingInvoices(options: BillingSyncOptions): Promise<
 async function fetchPage(
   provider: BillingProvider,
   scope: BillingSyncScope,
-  query: { period: string; cursor: string | null },
+  query: { period: string; cursor: string | null; correlationId?: string },
 ) {
   if (scope === "sales_invoices") {
     assertCapability(provider, "canListIssuedInvoices", "listIssuedInvoices")
@@ -369,11 +380,14 @@ export async function syncBankTransactions(options: {
   let status: BillingSyncResult["status"] = "success"
   let cursor: string | null = initialCursor
   let pages = 0
+  /** Total declarado por el proveedor en la primera página, si lo entrega. */
+  let reportedTotal: number | null = null
 
   try {
     do {
       const page = await provider.listBankTransactions!({ period, cursor })
       pages++
+      if (pages === 1) reportedTotal = page.reportedTotal
       metrics.recordsFetched += page.items.length
       const errorsBeforePage = metrics.errorsCount
 
@@ -450,6 +464,22 @@ export async function syncBankTransactions(options: {
         break
       }
     } while (cursor)
+
+    // Detector de pérdida: la cartola no tiene folio ni identidad tributaria, así
+    // que el total declarado es la única señal de que el proveedor entregó menos
+    // movimientos de los que dice tener. Sólo cuenta cuando esta corrida leyó el
+    // período completo: si arrancó desde un cursor, lo ya importado por corridas
+    // anteriores no está en `recordsFetched` y comparar mentiría. Y si se cortó
+    // por tope o reintento (`cursor` vivo) la corrida ya quedó `partial`.
+    if (
+      initialCursor === null && cursor === null
+      && reportedTotal !== null && metrics.recordsFetched < reportedTotal
+    ) {
+      errors.push(
+        `El proveedor declaró ${reportedTotal} movimientos y entregó ${metrics.recordsFetched}.`,
+      )
+      status = "partial"
+    }
 
     if (metrics.errorsCount > 0) {
       status = metrics.errorsCount === metrics.recordsFetched ? "failed" : "partial"
@@ -651,5 +681,25 @@ function redact(error: unknown): string {
   // ProviderError messages are constructed by our adapters as operational
   // summaries (HTTP status/capability), never raw response bodies.
   if (error instanceof BillingProviderError) return error.message.slice(0, 500)
+  // Los errores del propio motor de facturación los construye este módulo: no
+  // contienen respuesta externa ni credenciales. Redactarlos no protegía nada y
+  // sí borraba el único diagnóstico que queda en `error_summary`, dejando al
+  // operador revisando el portal por un conflicto de referencia interna.
+  if (error instanceof BillingExternalReferenceConflict || error instanceof BillingExternalReferenceInvalid) {
+    return error.message.slice(0, 500)
+  }
+  // Del resto se conserva el código y la restricción del driver: identifican el
+  // índice violado sin exponer los datos de la fila.
+  const constraint = driverConstraint(error)
+  if (constraint) return `La base de datos rechazó el documento (${constraint}).`
   return "El proveedor no completó la sincronización [detalle técnico omitido]."
+}
+
+/** `code` + `constraint` de un error de postgres, si el error los trae. */
+function driverConstraint(error: unknown): string | null {
+  const candidate = error as { code?: unknown; constraint?: unknown } | null
+  if (typeof candidate?.code !== "string" || candidate.code.length === 0) return null
+  return typeof candidate.constraint === "string" && candidate.constraint.length > 0
+    ? `${candidate.code} ${candidate.constraint}`
+    : candidate.code
 }

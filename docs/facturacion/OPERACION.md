@@ -40,8 +40,9 @@
    BILLING_CHIPAX_ENABLED=true
    BILLING_CHIPAX_SYNC_ENABLED=true   # 09:00 America/Santiago
    ```
-   El cron de Chipax cubre ventas del mes actual/anterior y cartolas del mes
-   actual. Conserva cursores durables y es sólo lectura.
+   El cron de Chipax cubre ventas y cartolas del mes actual y del anterior:
+   pedir cartolas sólo del mes en curso perdía los movimientos del último día
+   del mes anterior. Conserva cursores durables y es sólo lectura.
 
    Ambos flags y las credenciales también se cargan sin desplegar desde la
    tarjeta de Chipax en `/facturacion/sincronizacion` → *Credenciales*. Lo

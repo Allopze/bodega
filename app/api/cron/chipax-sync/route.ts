@@ -18,7 +18,7 @@ type ScopeResult = {
   errorSummary?: string | null
 }
 
-/** Chipax es sólo lectura: ventas actual/anterior y cartolas del mes actual. */
+/** Chipax es sólo lectura: ventas y cartolas del mes actual y del anterior. */
 export async function GET(request: NextRequest) {
   const secret = process.env.CRON_SECRET
   if (!secret || !verifyCronSecret(request.headers.get("authorization"), secret)) {
@@ -52,19 +52,24 @@ export async function GET(request: NextRequest) {
       logger.error({ correlationId, period }, "[cron/chipax-sync] ventas fallaron", { code: "CHIPAX_SALES_SYNC_FAILED" })
       results.push({ scope: "sales_invoices", period, status: "failed", runId: "", code: "CHIPAX_SALES_SYNC_FAILED" })
     }
-  }
 
-  try {
-    const result = await syncBankTransactions({
-      provider: "chipax",
-      period: current,
-      trigger: "cron",
-      correlationId,
-    })
-    results.push({ scope: "bank_transactions", period: current, status: result.status, runId: result.runId, code: result.skipReason, errorSummary: result.errorSummary })
-  } catch {
-    logger.error({ correlationId, period: current }, "[cron/chipax-sync] cartolas fallaron", { code: "CHIPAX_BANK_SYNC_FAILED" })
-    results.push({ scope: "bank_transactions", period: current, status: "failed", runId: "", code: "CHIPAX_BANK_SYNC_FAILED" })
+    // Las cartolas cubren los mismos dos períodos que las ventas: pedir sólo el
+    // mes en curso dejaba fuera para siempre los movimientos del último día del
+    // mes anterior (y los que el banco publica con días de retraso), porque
+    // ninguna corrida posterior vuelve a ese rango de fechas. Reingestar el mes
+    // anterior es idempotente: el upsert va por (provider, external_id).
+    try {
+      const result = await syncBankTransactions({
+        provider: "chipax",
+        period,
+        trigger: "cron",
+        correlationId,
+      })
+      results.push({ scope: "bank_transactions", period, status: result.status, runId: result.runId, code: result.skipReason, errorSummary: result.errorSummary })
+    } catch {
+      logger.error({ correlationId, period }, "[cron/chipax-sync] cartolas fallaron", { code: "CHIPAX_BANK_SYNC_FAILED" })
+      results.push({ scope: "bank_transactions", period, status: "failed", runId: "", code: "CHIPAX_BANK_SYNC_FAILED" })
+    }
   }
 
   const activeConflict = results.some((result) => result.status === "skipped" && result.code === "active_run")

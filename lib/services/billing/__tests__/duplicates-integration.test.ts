@@ -100,6 +100,30 @@ describe("detección", () => {
     expect(await listOpenDuplicates(GLOBAL_SESSION)).toHaveLength(1)
   })
 
+  // La comparación (`classifyPair`) normaliza el RUT justamente para atrapar
+  // fuentes históricas sin normalizar, pero la clave de agrupación usaba el RUT
+  // crudo: el par caía en dos grupos de uno y nunca llegaba a compararse.
+  it("agrupa el mismo RUT escrito con y sin puntos", async () => {
+    await inMemoryDb.insert(schema.billingInvoices).values([
+      {
+        id: "inv-historica", direction: "sale", docType: "33", folio: 1001,
+        issuerTaxId: "78023530-6", issuerName: "CHOME",
+        receiverTaxId: "76.543.210-K", receiverName: "MINERA EJEMPLO SPA",
+        issueDate: "2026-07-15", currency: "CLP", totalAmount: 1000000,
+        documentStatus: "accepted", paymentStatus: "unpaid", source: "manual",
+      },
+      {
+        id: "inv-sincronizada", direction: "sale", docType: "33", folio: 1055,
+        issuerTaxId: "78023530-6", issuerName: "CHOME",
+        receiverTaxId: "76543210-K", receiverName: "MINERA EJEMPLO SPA",
+        issueDate: "2026-07-15", currency: "CLP", totalAmount: 1000000,
+        documentStatus: "accepted", paymentStatus: "unpaid", source: "factura_en_linea",
+      },
+    ])
+
+    expect((await detectDuplicateCandidates({ direction: "sale" })).created).toBe(1)
+  })
+
   it("no marca facturas de clientes distintos", async () => {
     await inMemoryDb.insert(schema.billingInvoices).values([
       {

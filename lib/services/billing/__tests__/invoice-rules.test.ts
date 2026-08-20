@@ -181,6 +181,25 @@ describe("derivePaymentStatus", () => {
     expect(derivePaymentStatus(-1190000, [-500000]).paymentStatus).toBe("partial")
   })
 
+  // Un ajuste negativo (devolución) sobre una factura POSITIVA no la cubre: se
+  // comparaba |suma de pagos| contra |total| y la magnitud coincidía, así que la
+  // factura quedaba "pagada" y desaparecía de la cobranza con el cobro vivo.
+  it("un pago negativo no marca pagada una factura positiva", () => {
+    expect(derivePaymentStatus(1190000, [-1190000])).toEqual({
+      paidAmount: -1190000, paymentStatus: "unpaid", outstandingAmount: 2380000,
+    })
+  })
+
+  it("tampoco cuando la suma de pagos queda negativa", () => {
+    const result = derivePaymentStatus(1000000, [600000, -1600000])
+    expect(result.paymentStatus).toBe("unpaid")
+    expect(result.outstandingAmount).toBe(2000000)
+  })
+
+  it("una nota de crédito no se cubre con un pago positivo", () => {
+    expect(derivePaymentStatus(-1190000, [1190000]).paymentStatus).toBe("unpaid")
+  })
+
   it("una diferencia menor a un centavo no impide marcar pagada", () => {
     expect(derivePaymentStatus(1190000, [1189999.999]).paymentStatus).toBe("paid")
   })

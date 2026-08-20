@@ -131,6 +131,12 @@ export interface ProviderPeriodQuery {
   period: string
   /** Punto de reanudación entregado por una consulta anterior. */
   cursor?: string | null
+  /**
+   * Correlativo de la corrida, sólo para diagnóstico: deja los avisos del
+   * proveedor atribuibles a una invocación concreta en vez de sueltos en
+   * stdout, mezclados con los de las otras corridas del día.
+   */
+  correlationId?: string
 }
 
 /** Una página de resultados. `nextCursor` null = no hay más. */
@@ -145,6 +151,13 @@ export interface ProviderPage<T> {
   deferred?: boolean
   /** A selected XML was not durable/resolved; do not advance its cursor. */
   retryRequired?: boolean
+  /**
+   * El proveedor no pudo declarar el total del período, así que la completitud
+   * no es verificable: comparar lo entregado contra sí mismo es una tautología.
+   * Una corrida así no puede cerrar en `success` — no hay éxito que reportar
+   * sobre algo que nadie verificó.
+   */
+  completenessUnverified?: boolean
 }
 
 export interface ProviderHealth {

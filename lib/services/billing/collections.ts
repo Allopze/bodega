@@ -105,7 +105,10 @@ export function classifyCollection(input: {
   daysOverdue: number | null
   daysSinceLastAction: number | null
 }): CollectionBucket {
-  if (input.paymentStatus === "paid") return "paid"
+  // Sobrepagada también está cubierta: dejarla en "vencidas" mostraba como
+  // deuda del cliente algo que en realidad hay que devolverle, y arrastraba su
+  // saldo negativo al subtotal del grupo.
+  if (input.paymentStatus === "paid" || input.paymentStatus === "overpaid") return "paid"
   // La disputa manda: insistir con el cobro sin resolverla es contraproducente.
   if (input.collectionStatus === "disputed") return "disputed"
   if (input.collectionStatus === "committed") return "committed"
@@ -245,7 +248,9 @@ export async function getCollectionsView(session: Session | null): Promise<Colle
       paymentStatus: row.paymentStatus,
       collectionStatus: row.collectionStatus,
       daysOverdue: overdue,
-      agingBucket: overdue === null || row.paymentStatus === "paid" ? null : agingBucketFor(overdue),
+      agingBucket: overdue === null || row.paymentStatus === "paid" || row.paymentStatus === "overpaid"
+        ? null
+        : agingBucketFor(overdue),
       bucket: classifyCollection({
         paymentStatus: row.paymentStatus,
         collectionStatus: row.collectionStatus,
@@ -276,7 +281,9 @@ export async function getCollectionsView(session: Session | null): Promise<Colle
     buckets,
     totalOutstanding: sumByCurrency(
       rows
-        .filter((row) => row.paymentStatus !== "paid")
+        // Una sobrepagada tiene saldo NEGATIVO: incluirla neteaba lo que sí hay
+        // por cobrar. Lo que corresponde devolver no es un cobro pendiente.
+        .filter((row) => row.paymentStatus !== "paid" && row.paymentStatus !== "overpaid")
         .map((row) => ({ currency: row.currency, amount: row.outstandingAmount })),
     ),
   }

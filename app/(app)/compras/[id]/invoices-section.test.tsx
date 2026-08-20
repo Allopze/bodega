@@ -143,4 +143,30 @@ describe("InvoicesSection", () => {
     expect(onSubmit).not.toHaveBeenCalled()
     expect(mockAddInvoiceAction).not.toHaveBeenCalled()
   })
+
+  // OC anulada: la sección existe sólo para soltar el DTE que quedó colgado.
+  // Eliminar sí; adjuntar no, porque el servicio rechaza el alta en `cancelled`.
+  it("offers deletion but not attachment when the order can no longer receive invoices", () => {
+    render(
+      <InvoicesSection
+        purchaseOrderId="oc-anulada"
+        invoices={[{
+          id: "inv-1",
+          invoiceNumber: "456999",
+          amount: 119000,
+          issueDate: "2026-07-09",
+          fileName: "DTE-33-456999.pdf",
+          mimeType: "application/pdf",
+          uploadedAt: "2026-07-09T12:00:00.000Z",
+        }]}
+        totalAmount={119000}
+        canManage
+        canAttach={false}
+        ocItems={[]}
+      />,
+    )
+
+    expect(screen.getByRole("button", { name: /eliminar factura 456999/i })).toBeInTheDocument()
+    expect(screen.queryByText(/adjuntar factura/i)).not.toBeInTheDocument()
+  })
 })

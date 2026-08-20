@@ -104,6 +104,13 @@ export const dteDocuments = pgTable("dte_documents", {
   razonSocialEmisor:      text("razon_social_emisor").notNull(),
   /** Fecha de emisión en formato YYYY-MM-DD */
   fechaEmision:           text("fecha_emision").notNull(),
+  /**
+   * Fecha en que el proveedor subió el DTE al portal (YYYY-MM-DD) — nullable:
+   * los documentos sincronizados antes de esta columna no la tienen, y la
+   * bandeja puede traer la celda ilegible. Es lo que permite medir el atraso
+   * del proveedor: la consulta al portal filtra por fecha del DOCUMENTO.
+   */
+  fechaRecepcion:         text("fecha_recepcion"),
 
   /** Monto neto ($ CLP). Puede ser negativo en NC. */
   montoNeto:              numeric("monto_neto", { precision: 14, scale: 2, mode: "number" }),

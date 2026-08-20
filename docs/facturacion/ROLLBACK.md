@@ -2,17 +2,23 @@
 
 ## Qué tan reversible es
 
-**Completamente.** La implementación es aditiva pura:
+**Casi.** El módulo en sí (`0136_billing_module`) fue aditivo puro: 15 tablas
+nuevas, cero datos existentes tocados. Pero las migraciones **posteriores** ya no
+lo son, y planificar la reversión sin ellas deja la base inconsistente.
 
-- 15 tablas nuevas;
-- **cero** columnas agregadas, modificadas o eliminadas en tablas existentes;
-- **cero** datos existentes tocados;
-- el módulo de Compras y su sincronización DTE quedaron **intactos**.
+Lo que cambió después de `0136` sobre tablas que ya existían:
 
-`dte_documents`, `dte_sync_runs` y todo `lib/services/dte-portal/*` funcionan
-exactamente igual que antes. Las únicas modificaciones a archivos existentes son
-adiciones: un área de navegación, tres iconos, dos exportaciones de esquema, una
-línea en el registry y variables nuevas en `.env.example`.
+| Migración | Qué hizo |
+|---|---|
+| `0140_white_darwin` | Reemplazó el CHECK `billing_invoice_payments_status_valid` para admitir `'reverted'` (el estado que escribe `reconciliation.ts` al revertir un pago). Además cerró corridas `running` colgadas en `dte_sync_runs` y creó el índice único `dte_sync_runs_single_active_unique`. |
+| `0153_omniscient_war_machine` | `dte_sync_runs ADD COLUMN correlation_id` + índice. |
+| `0154_tiny_tomorrow_man` | Tabla nueva `dte_portal_operation_leases` (aditiva). |
+| `0156_cute_tana_nile` | `dte_documents ADD COLUMN portal_record_id` + índice + CHECK `dte_documents_single_business_link`. |
+| `0159_motionless_bishop` | `dte_sync_runs ADD COLUMN reconciliation_status` (NOT NULL default `'not_run'`) y `reconciliation_error`, CHECK `dte_sync_runs_reconciliation_status_valid`, índices `dte_documents_purchase_invoice_single_unique` y `dte_sync_runs_reconciliation_status_idx`. |
+
+O sea: `dte_documents` y `dte_sync_runs` **no** funcionan igual que antes, y
+`0140` toca las dos mitades a la vez (facturación y DTE). Esa mezcla es la que
+obliga a tratar `0140` con cuidado en el Nivel 4.
 
 ## Nivel 1 — Apagar el módulo (segundos, sin perder nada)
 
@@ -62,13 +68,38 @@ DROP TABLE IF EXISTS billing_invoices;
 DROP TABLE IF EXISTS contracts;
 DROP TABLE IF EXISTS client_contacts;
 DROP TABLE IF EXISTS clients;
-DELETE FROM drizzle.__drizzle_migrations WHERE tag = '0136_billing_module';
+
+-- `0140` también se retira: es la que agregó `'reverted'` al CHECK de
+-- `billing_invoice_payments`. Retirar sólo `0136` deja `0140` marcada como
+-- aplicada, así que al reconstruir vuelve el CHECK viejo de tres valores y
+-- «Revertir» un pago falla con violación de constraint — justo la operación
+-- que hace falta después de un rollback.
+--
+-- `0140` se reaplica entera, y su `CREATE UNIQUE INDEX` fallaría con "already
+-- exists" si el índice sigue ahí: hay que soltarlo antes. Se recrea solo.
+DROP INDEX IF EXISTS dte_sync_runs_single_active_unique;
+
+DELETE FROM drizzle.__drizzle_migrations
+ WHERE tag IN ('0136_billing_module', '0140_white_darwin');
 COMMIT;
 ```
 
-El orden respeta las claves foráneas. Después hay que quitar la entrada
-`0136_billing_module` de `db/migrations/meta/_journal.json` y borrar el `.sql`,
-o `db:verify-migrations` reclamará.
+El orden respeta las claves foráneas. Después, `npm run db:migrate` reconstruye
+`0136` y `0140` (la parte DTE de `0140` es idempotente: vuelve a cerrar corridas
+colgadas, si las hubiera, y recrea el índice).
+
+`0153`, `0154`, `0156` y `0159` **no** se tocan: sólo afectan `dte_documents`,
+`dte_sync_runs` y `dte_portal_operation_leases`, que son de Compras y siguen en
+uso.
+
+### Si la reversión es definitiva (se retira el módulo del repositorio)
+
+Además de lo anterior hay que sacar `0136_billing_module` de
+`db/migrations/meta/_journal.json` y borrar su `.sql`, o `db:verify-migrations`
+reclamará. **`0140` no se puede borrar**: creó `dte_sync_runs_single_active_unique`,
+que Compras sí usa. Hay que editarla para dejar sólo sus sentencias de
+`dte_sync_runs` y quitar las dos que hablan de `billing_invoice_payments`; si no,
+la reconstrucción desde cero falla al no existir esa tabla.
 
 ## Qué NO revierte nada de esto
 

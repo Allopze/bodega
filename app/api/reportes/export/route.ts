@@ -6,9 +6,11 @@
 
 import { type NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth/auth"
-import { canAny } from "@/lib/auth/can"
+import { can, canAny } from "@/lib/auth/can"
 import type { Permission } from "@/modules/permissions"
 import { buildXlsxBuffer, getReportData, type ExportFilters } from "@/lib/reports/export"
+import { recordAudit } from "@/lib/audit"
+import { DteCodEmpMissingError } from "@/lib/services/dte-portal/require-cod-emp"
 import { logger } from "@/lib/logger"
 import { encodeContentDisposition } from "@/lib/utils"
 
@@ -30,9 +32,22 @@ const TYPE_PERMISSIONS: Record<string, Permission[]> = {
   dte_libro_compras:   ["purchasing:view"],
   dte_conciliacion:    ["purchasing:view"],
   dte_facturas_sin_oc: ["purchasing:view"],
-  facturacion_cobranza: ["billing:export"],
+  facturacion_cobranza: ["billing:view", "billing:export"],
   bodega_valorizacion: ["reports:view", "warehouse:view_stock"],
   bodega_rotacion:     ["reports:view", "warehouse:view_stock"],
+}
+
+/**
+ * Tipos que exigen TODOS los permisos listados, no uno cualquiera. La cartera
+ * de cobranza se descarga por dos puertas (`/api/facturacion/facturas/export`
+ * y ésta) y la otra ya exige `billing:view` + `billing:export`: la puerta más
+ * laxa era la que decidía.
+ */
+const TYPE_REQUIRES_ALL_PERMISSIONS = new Set(["facturacion_cobranza"])
+
+/** Tipos cuyo export el manifiesto promete auditado ("queda auditado"). */
+const TYPE_AUDIT_ENTITY: Record<string, string> = {
+  facturacion_cobranza: "billing_cobranza",
 }
 
 const MAX_EXPORT_ROWS = 10_000
@@ -48,7 +63,10 @@ export async function GET(req: NextRequest) {
   if (!requiredPermissions) {
     return NextResponse.json({ error: "Tipo de reporte inválido" }, { status: 400 })
   }
-  if (!canAny(session, ...requiredPermissions)) {
+  const authorized = TYPE_REQUIRES_ALL_PERMISSIONS.has(tipo)
+    ? requiredPermissions.every((permission) => can(session, permission))
+    : canAny(session, ...requiredPermissions)
+  if (!authorized) {
     return NextResponse.json({ error: "Sin permisos" }, { status: 403 })
   }
 
@@ -72,6 +90,18 @@ export async function GET(req: NextRequest) {
   try {
     const report = await getReportData(tipo, session, filters, MAX_EXPORT_ROWS)
 
+    const auditEntityType = TYPE_AUDIT_ENTITY[tipo]
+    if (auditEntityType) {
+      await recordAudit({
+        userId: session.user.id,
+        userEmail: session.user.email ?? undefined,
+        action: "export",
+        entityType: auditEntityType,
+        entityId: "export",
+        newState: { filters: JSON.parse(JSON.stringify(filters)), rows: report.rows.length },
+      })
+    }
+
     const xlsx = await buildXlsxBuffer(report)
     const headers: Record<string, string> = {
       "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -85,6 +115,11 @@ export async function GET(req: NextRequest) {
       headers,
     })
   } catch (err) {
+    // Un libro de compras vacío nunca debe salir con 200: sin `codEmp` no hay
+    // consulta posible y el reporte se declara no disponible, con la causa.
+    if (err instanceof DteCodEmpMissingError) {
+      return NextResponse.json({ error: err.message }, { status: 503 })
+    }
     logger.error("[reportes/export]", err)
     return NextResponse.json({ error: "Error al generar el reporte" }, { status: 500 })
   }

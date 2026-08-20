@@ -32,11 +32,13 @@ vi.mock("@/lib/services/dte-portal/download", () => ({
   downloadDteXml: (...args: unknown[]) => mockDownloadDteXml(...args),
   MAX_DTE_XML_BYTES: 10 * 1024 * 1024,
 }))
+const PORTAL_CONFIG = {
+  baseUrl: "https://clientes.dtefacturaenlinea.cl/facturaenlinea",
+  credentials: { rutUsr: "1", rutEmp: "2", clave: "3", codEmp: "433" },
+}
 vi.mock("@/lib/services/dte-portal/config", () => ({
-  buildDtePortalClientConfig: async () => ({
-    baseUrl: "https://clientes.dtefacturaenlinea.cl/facturaenlinea",
-    credentials: { rutUsr: "1", rutEmp: "2", clave: "3", codEmp: "433" },
-  }),
+  buildDtePortalClientConfig: async () => PORTAL_CONFIG,
+  readDtePortalConfig: async () => PORTAL_CONFIG,
 }))
 vi.mock("@/lib/storage/helpers", () => ({
   mkdirp: (...args: unknown[]) => mockMkdirp(...args),
@@ -57,6 +59,8 @@ const BASE_DOC = {
   tipoDte: "33",
   folio: 45678,
   rutEmisor: "76987654-3",
+  codEmp: "433",
+  montoTotal: 119000,
   xmlPath: null as string | null,
 }
 
@@ -148,6 +152,28 @@ describe("downloadDteDocumentXml", () => {
 
     expect(result.ok).toBe(true)
     expect(mockUnlink).toHaveBeenCalledTimes(1)
+  })
+
+  it("does not persist amounts nor the file when the XML is not this document", async () => {
+    // Mismo folio, OTRO emisor: la comprobación de identidad vivía aguas abajo
+    // y esta escritura ya se había commiteado cuando la factura la rechazaba.
+    mockFindFirst.mockResolvedValue({ ...BASE_DOC, rutEmisor: "77111222-3" })
+    mockDownloadDteXml.mockResolvedValue({ xml: SII_DTE, buffer: Buffer.from(SII_DTE, "latin1") })
+
+    const result = await downloadDteDocumentXml("dte-1")
+
+    expect(result).toEqual({ ok: false, error: "El XML del portal no corresponde a este documento" })
+    expect(mockWriteBuffer).not.toHaveBeenCalled()
+    expect(mockUpdateSet).not.toHaveBeenCalled()
+  })
+
+  it("refuses to download a document belonging to another portal company", async () => {
+    mockFindFirst.mockResolvedValue({ ...BASE_DOC, codEmp: "999" })
+
+    const result = await downloadDteDocumentXml("dte-1")
+
+    expect(result).toEqual({ ok: false, error: "El XML de este documento pertenece a otra empresa del portal DTE" })
+    expect(mockDownloadDteXml).not.toHaveBeenCalled()
   })
 
   it("returns an explicit error when the portal download fails", async () => {

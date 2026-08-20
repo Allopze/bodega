@@ -1,11 +1,12 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
+import { z } from "zod"
 import { requirePermission } from "@/lib/auth/can"
 import { DtePortalClient } from "@/lib/services/dte-portal/client"
 import { buildDtePortalClientConfig, isDteSyncEnabled } from "@/lib/services/dte-portal/config"
 import { classifyDteFailure } from "@/lib/services/dte-portal/failure"
-import { syncDteDocuments } from "@/lib/services/dte-portal/sync"
+import { assertSyncablePeriodo, syncDteDocuments } from "@/lib/services/dte-portal/sync"
 
 export interface DteSyncActionResult {
   ok: boolean
@@ -32,12 +33,27 @@ export async function triggerDteSyncAction(): Promise<DteSyncActionResult> {
  * de arriba ya lo re-consulta siempre.
  */
 export async function forceDteSyncPeriodAction(input: { periodo: string }): Promise<DteSyncActionResult> {
-  return runDteSync({ periodo: input.periodo, force: true })
+  const parsed = z.object({ periodo: z.string() }).safeParse(input)
+  if (!parsed.success) {
+    return { ok: false, message: "Indique el período a forzar en formato YYYY-MM." }
+  }
+  return runDteSync({ periodo: parsed.data.periodo, force: true })
 }
 
 async function runDteSync(options: { periodo?: string; force?: boolean }): Promise<DteSyncActionResult> {
   try {
     const session = await requirePermission("admin:dte_sync")
+
+    // El período llega de un desplegable, pero un `2026-13` o un mes futuro
+    // terminaban en el catch genérico: el operador leía "falló de forma
+    // inesperada" en vez del motivo, que es accionable y no revela nada.
+    if (options.periodo) {
+      try {
+        assertSyncablePeriodo(options.periodo)
+      } catch (error) {
+        return { ok: false, message: error instanceof Error ? error.message : "Período inválido." }
+      }
+    }
 
     if (!(await isDteSyncEnabled())) {
       return { ok: false, message: "La sincronización DTE no está habilitada. Configure las credenciales del portal en esta misma página o DTE_SYNC_ENABLED=true." }

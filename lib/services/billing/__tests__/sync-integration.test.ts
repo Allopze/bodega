@@ -556,6 +556,24 @@ describe("aislamiento por dirección", () => {
     expect(await countInvoices()).toBe(1)
   })
 
+  it("el resumen dice cuál fue el conflicto interno en vez de acusar al proveedor", async () => {
+    issuedPages = [{ items: [sale()], nextCursor: null, reportedTotal: 1 }]
+    await syncBillingInvoices({ provider: "factura_en_linea", scope: "sales_invoices", period: "2026-07" })
+
+    // Mismo externalId para otra identidad tributaria: el conflicto lo levanta
+    // el propio motor, no el portal.
+    issuedPages = [{
+      items: [sale({ issuerTaxId: "76543210-K", receiverTaxId: "77111222-3" })],
+      nextCursor: null,
+      reportedTotal: 1,
+    }]
+    const result = await syncBillingInvoices({ provider: "factura_en_linea", scope: "sales_invoices", period: "2026-07" })
+
+    expect(result.errorsCount).toBe(1)
+    expect(result.errorSummary).toMatch(/ya pertenece a otra factura interna/i)
+    expect(result.errorSummary).not.toMatch(/detalle técnico omitido/i)
+  })
+
   it("no crea una factura sin referencia externa estable", async () => {
     await expect(serviceDb.transaction((tx) => upsertProviderInvoice(tx, sale({ externalId: "   " }), "factura_en_linea")))
       .rejects.toBeInstanceOf(BillingExternalReferenceInvalid)
@@ -615,6 +633,35 @@ describe("sincronización de movimientos bancarios", () => {
     ]
     const result = await syncBankTransactions({ provider: "chipax", period: "2026-07" })
     expect(result.recordsCreated).toBe(2)
+  })
+
+  // CHX-04: sin detector de pérdida, un mes al que Chipax le entrega menos
+  // movimientos de los que declara cerraba `success` y nadie se enteraba.
+  it("marca la corrida parcial cuando entrega menos movimientos de los que declara", async () => {
+    bankPages = [{ items: [movimiento()], nextCursor: null, reportedTotal: 3 }]
+    const result = await syncBankTransactions({ provider: "chipax", period: "2026-07" })
+
+    expect(result.status).toBe("partial")
+    expect(result.errorSummary).toMatch(/declaró 3 movimientos y entregó 1/)
+  })
+
+  // Una corrida reanudada no puede comparar contra el total del período: lo ya
+  // importado por corridas anteriores no está en `recordsFetched`.
+  it("no acusa pérdida cuando la corrida arranca desde un cursor", async () => {
+    bankPages = [{ items: [movimiento()], nextCursor: null, reportedTotal: 40 }]
+    const result = await syncBankTransactions({ provider: "chipax", period: "2026-07", cursor: "5" })
+
+    expect(result.status).toBe("success")
+  })
+
+  it("un total declarado que cuadra con lo entregado cierra completa", async () => {
+    bankPages = [
+      { items: [movimiento()], nextCursor: "2", reportedTotal: 2 },
+      { items: [movimiento({ externalId: "chipax:cartola:9" })], nextCursor: null, reportedTotal: 2 },
+    ]
+    const result = await syncBankTransactions({ provider: "chipax", period: "2026-07" })
+
+    expect(result.status).toBe("success")
   })
 
   it("se salta el proveedor que no entrega movimientos bancarios", async () => {

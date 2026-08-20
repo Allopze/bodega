@@ -607,6 +607,16 @@ export async function getBillingSummary(
     )`)
   }
 
+  // Un vínculo es N-a-N a propósito (una factura puede cubrir varias faenas o
+  // períodos), así que el JOIN multiplica la fila de la factura: sumar el total
+  // completo por vínculo lo contaba N veces. Se imputa la porción declarada del
+  // vínculo (`amount`) y, cuando no la trae, el total repartido en partes
+  // iguales entre los vínculos no rechazados de esa factura.
+  const linkedAmount = sql`coalesce(sum(coalesce(${billingInvoiceLinks.amount}, ${billingInvoices.totalAmount} / (
+    SELECT count(*) FROM ${billingInvoiceLinks} link
+    WHERE link.invoice_id = ${billingInvoices.id} AND link.status <> 'rejected'
+  ))), 0)`
+
   const periodStart = options.from ?? `${period}-01`
   // `monthsAgo(period, -1)` es el día 1 del mes siguiente: el fin exclusivo del
   // mes de `period`.
@@ -648,7 +658,7 @@ export async function getBillingSummary(
     db.select({
       clientName: clients.name,
       currency: billingInvoices.currency,
-      amount: sql<number>`coalesce(sum(${billingInvoices.totalAmount}), 0)::float8`,
+      amount: sql<number>`${linkedAmount}::float8`,
     })
       .from(billingInvoices)
       .innerJoin(billingInvoiceLinks, and(
@@ -658,14 +668,14 @@ export async function getBillingSummary(
       .innerJoin(clients, eq(clients.id, billingInvoiceLinks.clientId))
       .where(and(...saleScope, gte(billingInvoices.issueDate, periodStart), lt(billingInvoices.issueDate, periodEnd)))
       .groupBy(clients.name, billingInvoices.currency)
-      .orderBy(desc(sql`coalesce(sum(${billingInvoices.totalAmount}), 0)`))
+      .orderBy(desc(linkedAmount))
       .limit(10),
 
     // Facturación por faena.
     db.select({
       worksiteName: worksites.name,
       currency: billingInvoices.currency,
-      amount: sql<number>`coalesce(sum(${billingInvoices.totalAmount}), 0)::float8`,
+      amount: sql<number>`${linkedAmount}::float8`,
     })
       .from(billingInvoices)
       .innerJoin(billingInvoiceLinks, and(
@@ -675,7 +685,7 @@ export async function getBillingSummary(
       .innerJoin(worksites, eq(worksites.id, billingInvoiceLinks.worksiteId))
       .where(and(...saleScope, gte(billingInvoices.issueDate, periodStart), lt(billingInvoices.issueDate, periodEnd)))
       .groupBy(worksites.name, billingInvoices.currency)
-      .orderBy(desc(sql`coalesce(sum(${billingInvoices.totalAmount}), 0)`))
+      .orderBy(desc(linkedAmount))
       .limit(15),
 
     // Evolución de los últimos 12 meses.

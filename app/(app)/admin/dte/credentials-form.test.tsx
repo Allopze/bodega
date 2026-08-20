@@ -20,6 +20,7 @@ const status = {
   encryptionMode: "compat" as const,
   encryptionStatus: "encrypted" as const,
   canMigrateLegacy: false,
+  canStoreSecrets: true,
   fields: {
     rutUsr: { configured: true, source: "system_settings" as const },
     rutEmp: { configured: true, source: "system_settings" as const },
@@ -51,5 +52,22 @@ describe("DteCredentialsForm", () => {
 
     expect(screen.getByRole("heading", { name: "Re-cifrado del keyring" })).toBeInTheDocument()
     expect(screen.getByText(/no cambia el RUT, la contraseña, CodEmp ni el email técnico del portal/i)).toBeInTheDocument()
+  })
+
+  // Sin keyring activo el servicio rechaza el guardado (falla cerrado en vez de
+  // persistir la contraseña en claro). La pantalla tiene que decirlo ANTES, no
+  // dejar que la persona escriba la credencial y reciba un error opaco.
+  it("warns and blocks saving when there is no active keyring", () => {
+    render(<DteCredentialsForm status={{ ...status, canStoreSecrets: false }} />)
+
+    expect(screen.getByRole("heading", { name: "No hay keyring activo" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Guardar configuración" })).toBeDisabled()
+  })
+
+  it("keeps saving available when the keyring is active", () => {
+    render(<DteCredentialsForm status={status} />)
+
+    expect(screen.queryByRole("heading", { name: "No hay keyring activo" })).not.toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Guardar configuración" })).toBeEnabled()
   })
 })

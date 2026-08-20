@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import {
   readStoredDteSettings,
   readStoredDteSettingsStrict,
@@ -179,6 +179,17 @@ describe("readDtePortalAdminStatus", () => {
     }
   })
 
+  it("tells the screen that secrets cannot be stored without an active keyring", async () => {
+    const originalEnv = process.env
+    process.env = { ...originalEnv, DTE_SETTINGS_MODE: "compat", DTE_SETTINGS_ACTIVE_KEY_ID: "", DTE_SETTINGS_KEYRING: "" }
+    mocks.selectWhere.mockResolvedValue([])
+    try {
+      await expect(readDtePortalAdminStatus()).resolves.toMatchObject({ canStoreSecrets: false })
+    } finally {
+      process.env = originalEnv
+    }
+  })
+
   it("fails closed in the Admin DTO when persistent settings cannot be read", async () => {
     const originalEnv = process.env
     process.env = {
@@ -203,11 +214,46 @@ describe("readDtePortalAdminStatus", () => {
 })
 
 describe("saveDtePortalSettings", () => {
+  const envBeforeSuite = process.env
+
   beforeEach(() => {
     vi.clearAllMocks()
     installTransactionMock()
     mocks.selectWhere.mockResolvedValue([])
     mocks.txSelectWhere.mockResolvedValue([])
+    // Guardar un secreto exige keyring activo (compat sólo sirve para leer
+    // filas legacy), así que la suite lo provisiona como en producción.
+    process.env = {
+      ...envBeforeSuite,
+      DTE_SETTINGS_MODE: "compat",
+      DTE_SETTINGS_ACTIVE_KEY_ID: "suite-key",
+      DTE_SETTINGS_KEYRING: JSON.stringify({ "suite-key": Buffer.alloc(32, 5).toString("base64url") }),
+    }
+  })
+
+  afterEach(() => {
+    process.env = envBeforeSuite
+  })
+
+  it("refuses to persist a secret in plaintext when no keyring is configured", async () => {
+    process.env = {
+      ...envBeforeSuite,
+      DTE_SETTINGS_MODE: "compat",
+      DTE_SETTINGS_ACTIVE_KEY_ID: "",
+      DTE_SETTINGS_KEYRING: "",
+    }
+
+    await expect(saveDtePortalSettings({ clave: "Portal.2026" }, { userId: "usr-admin" }))
+      .rejects.toMatchObject({ code: "DTE_SETTINGS_KEYRING_REQUIRED" })
+    expect(mocks.insertValues).not.toHaveBeenCalled()
+    expect(recordAudit).not.toHaveBeenCalled()
+  })
+
+  it("records the audit entry inside the same transaction as the credential change", async () => {
+    await saveDtePortalSettings({ clave: "new-pass" }, { userId: "usr-admin" })
+
+    const [, client] = vi.mocked(recordAudit).mock.calls[0] ?? []
+    expect(client).toBeDefined()
   })
 
   it("writes only the provided fields and records an audit entry", async () => {
@@ -223,7 +269,7 @@ describe("saveDtePortalSettings", () => {
       action: "update",
       entityType: "dte_portal_settings",
       entityId: "batch",
-    }))
+    }), expect.anything())
   })
 
   it("preserves an empty sensitive field until an explicit clear is requested", async () => {
@@ -323,7 +369,7 @@ describe("clearStoredDteSettings", () => {
     expect(recordAudit).toHaveBeenCalledWith(expect.objectContaining({
       action: "delete",
       entityType: "dte_portal_settings",
-    }))
+    }), expect.anything())
   })
 
   it("is a no-op when nothing is stored", async () => {
@@ -355,7 +401,7 @@ describe("clearStoredDteSettings", () => {
         key: "dte.sync_start_barrier",
         value: "paused",
       }))
-      expect(recordAudit).toHaveBeenCalledWith(expect.objectContaining({ newState: { encryptedOnly: true } }))
+      expect(recordAudit).toHaveBeenCalledWith(expect.objectContaining({ newState: { encryptedOnly: true } }), expect.anything())
     } finally {
       process.env = originalEnv
     }
@@ -447,6 +493,42 @@ describe("controlled encryption conversion and keyring re-cipher", () => {
       expect(reencryptedPassword).toBeDefined()
       expect(decryptDteSetting(reencryptedPassword!.value, "dte.clave", nextKeyring)).toBe("legacy-password")
       expect(JSON.stringify(vi.mocked(recordAudit).mock.calls[0]?.[0])).not.toContain("legacy-password")
+    } finally {
+      process.env = originalEnv
+    }
+  })
+
+  it("re-wraps the Chipax secrets stored under the same keyring", async () => {
+    const oldKey = Buffer.alloc(32, 4).toString("base64url")
+    const nextKey = Buffer.alloc(32, 6).toString("base64url")
+    const oldKeyring = parseDteSettingsKeyring({
+      DTE_SETTINGS_MODE: "encrypted_only",
+      DTE_SETTINGS_ACTIVE_KEY_ID: "old",
+      DTE_SETTINGS_KEYRING: JSON.stringify({ old: oldKey }),
+    })
+    process.env = {
+      ...originalEnv,
+      DTE_SETTINGS_MODE: "encrypted_only",
+      DTE_SETTINGS_ACTIVE_KEY_ID: "next",
+      DTE_SETTINGS_KEYRING: JSON.stringify({ old: oldKey, next: nextKey }),
+    }
+    mocks.txSelectWhere.mockResolvedValue([
+      { key: "dte.clave", value: encryptDteSetting("portal-pass", "dte.clave", oldKeyring) },
+      { key: "dte.encryption_mode", value: "encrypted_only" },
+      { key: "billing.chipax.secret_key", value: encryptDteSetting("chipax-secret", "billing.chipax.secret_key", oldKeyring) },
+    ])
+    try {
+      await expect(rotateDteSettingsKeyring({ userId: "admin" })).resolves.toEqual({ rewrapped: 2, keyId: "next" })
+      const writes = mocks.insertValues.mock.calls.map(([value]) => value as { key: string; value: string })
+      const chipax = writes.find((value) => value.key === "billing.chipax.secret_key")
+      expect(chipax?.value).toMatch(/^enc:v1:next:/)
+      const nextKeyring = parseDteSettingsKeyring({
+        DTE_SETTINGS_MODE: "encrypted_only",
+        DTE_SETTINGS_ACTIVE_KEY_ID: "next",
+        DTE_SETTINGS_KEYRING: JSON.stringify({ next: nextKey }),
+      })
+      expect(decryptDteSetting(chipax!.value, "billing.chipax.secret_key", nextKeyring)).toBe("chipax-secret")
+      expect(JSON.stringify(vi.mocked(recordAudit).mock.calls[0]?.[0])).not.toContain("chipax-secret")
     } finally {
       process.env = originalEnv
     }

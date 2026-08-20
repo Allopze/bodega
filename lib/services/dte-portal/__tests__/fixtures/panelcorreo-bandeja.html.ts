@@ -10,19 +10,20 @@
  *   de paneldte.php que usa `<tr onmouseover=...>`).
  * - El ancla confiable de fila es `dtepdfX.php?post=`, no el checkbox
  *   `chkRegistro` (solo aparece, a veces `disabled`, en algunas filas).
- * - La celda de "Estado plataforma" (índice 4) es un COMENTARIO HTML nunca
- *   renderizado (`<!--<td>...PENDIENTE...</td>-->`) — no es texto real.
+ * - La celda de "Estado plataforma" es un COMENTARIO HTML nunca renderizado
+ *   (`<!--<td>...PENDIENTE...</td>-->`) — no es texto real, y el parser lo
+ *   descarta antes de numerar las celdas (por eso no ocupa un índice).
  * - El estado real se transmite por un ícono `penplata.gif` (title da el
  *   texto) cuando el documento no se ha enviado a la plataforma; ausente en
  *   los demás casos.
  * - El XML del proveedor es un enlace directo, sin salto intermedio:
  *   `../empr/Chome/DTEProveedores/PRV_<RUT>_<TIPO>_<FOLIO>.xml`.
- * - Layout físico de columnas (`<td>` de nivel superior, 0-indexado):
+ * - Layout físico de columnas (`<td>` de nivel superior, 0-indexado, sin
+ *   contar los comentarios HTML):
  *   0=#, 1=íconos Opciones, 2=checkbox, 3=fecha/hora recepción,
- *   4=comentario muerto (ignorar), 5=punto de color (sin mapear),
- *   6=spacer vacío, 7=fecha doc, 8=tipo (texto), 9=folio, 10=RUT emisor,
- *   11=razón social, 12=ícono/spacer, 13=total, 14=tipo ref, 15=folio ref,
- *   16=fecha ref.
+ *   4=punto de color (sin mapear), 5=spacer vacío, 6=fecha doc,
+ *   7=tipo (texto), 8=folio, 9=RUT emisor, 10=razón social,
+ *   11=ícono/spacer, 12=total, 13=tipo ref, 14=folio ref, 15=fecha ref.
  *
  * @see EXPLORACION_PORTAL_DTE_FACTURAENLINEA_2026-08-04.md § 7
  */

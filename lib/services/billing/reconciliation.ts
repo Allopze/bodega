@@ -85,8 +85,9 @@ export interface TransactionForMatching {
 export function proposeMatches(
   invoices: readonly InvoiceForMatching[],
   transactions: readonly TransactionForMatching[],
-  options: { amountTolerance: number; dateWindowDays: number },
+  options: { amountTolerance: number; dateWindowDays: number; direction?: "sale" | "purchase" },
 ): ReconciliationCandidate[] {
+  const direction = options.direction ?? "sale"
   const candidates: ReconciliationCandidate[] = []
 
   for (const transaction of transactions) {
@@ -100,6 +101,16 @@ export function proposeMatches(
 
       const outstanding = addAmounts(invoice.totalAmount, -invoice.paidAmount)
       if (compareAmounts(absAmount(outstanding), 0) === 0) continue
+
+      // El movimiento tiene que ir en la dirección del cobro: una venta se paga
+      // con un abono (entra plata) y una compra con un cargo (sale). Sin este
+      // filtro se comparaban magnitudes y un cargo de monto parecido daba por
+      // cobrada una factura de venta. Vale igual para las notas de crédito
+      // (saldo negativo, movimiento de signo invertido).
+      const expectedSign = direction === "sale"
+        ? compareAmounts(outstanding, 0)
+        : -compareAmounts(outstanding, 0)
+      if (compareAmounts(available, 0) !== expectedSign) continue
 
       const evidence: string[] = []
       const warnings: string[] = []
@@ -279,6 +290,7 @@ export async function generatePaymentSuggestions(
   const candidates = proposeMatches(invoices, transactionRows, {
     amountTolerance: config.amountToleranceClp,
     dateWindowDays: config.dateWindowDays,
+    direction,
   })
 
   let created = 0

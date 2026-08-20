@@ -21,6 +21,11 @@
  * El XML es un dato NO confiable (viene de fuera): todo campo se valida y se
  * normaliza, y el documento entero se descarta si no cuadra la identidad
  * mínima. Nunca se guarda el XML crudo en un log.
+ *
+ * Un sobre `EnvioDTE` puede traer VARIOS `<Documento>`. Por eso el parser
+ * selecciona por identidad (tipo, folio, RUT emisor) en vez de asumir que el
+ * pedido es el primero: injertar otro DTE reescribiría el RUT del cliente, el
+ * vencimiento y los montos de una venta ajena sobre la fila equivocada.
  */
 
 import { XMLParser } from "fast-xml-parser"
@@ -49,10 +54,53 @@ export interface DteXmlDocument {
   taxAmount:     number | null
   exemptAmount:  number | null
   totalAmount:   number
+  /** Moneda declarada por el documento, en ISO 4217. `null` si no la declara o no se reconoce. */
+  currency:      string | null
+  /** Nombre de moneda tal como lo trae el XML (tabla del SII), para reportar los desconocidos. */
+  currencyDeclared: string | null
   items:         DteXmlItem[]
 }
 
+/** Identidad del documento buscado dentro de un sobre con varios `<Documento>`. */
+export interface DteXmlSelector {
+  docType:      string
+  folio:        number
+  /** Opcional: si se entrega, el emisor tiene que coincidir. */
+  issuerTaxId?: string | null
+}
+
+/**
+ * Nombres de la tabla de monedas del SII → ISO 4217.
+ * Sólo lo que el portal emite de verdad; un nombre fuera de la tabla NO se
+ * traduce (ver `currencyDeclared`): inventar un código ISO sería peor que no
+ * saber la moneda.
+ */
+const SII_CURRENCY_ISO: Record<string, string> = {
+  "PESO CL":              "CLP",
+  "PESO CHILENO":         "CLP",
+  "DOLAR USA":            "USD",
+  "DOLAR ESTADOUNIDENSE": "USD",
+  EURO:                   "EUR",
+}
+
 const parser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: "@_" })
+
+/**
+ * Convención de signo del módulo, en un solo lugar.
+ *
+ * Una Nota de Crédito (TipoDTE 61) tiene que quedar NEGATIVA para restar de la
+ * cuenta por cobrar (`derivePaymentStatus`, `db/schema/billing.ts:74`). Las
+ * fuentes no coinciden: el XML del SII declara magnitudes sin signo, el libro
+ * de ventas de FacturaEnLínea ya entrega la NC en negativo y Chipax la entrega
+ * positiva. Por eso es **idempotente** (`-Math.abs`, nunca `* -1`): aplicarla
+ * dos veces, o sobre un valor que ya venía negativo, da lo mismo.
+ */
+export function applyCreditSign(docType: string, amount: number): number
+export function applyCreditSign(docType: string, amount: number | null): number | null
+export function applyCreditSign(docType: string, amount: number | null): number | null {
+  if (amount === null) return null
+  return docType === "61" ? -Math.abs(amount) : amount
+}
 
 /** "YYYY-MM-DD" estricto. El portal y el SII usan ISO en los XML. */
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
@@ -60,8 +108,12 @@ const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
 /**
  * Parsea un XML DTE. Devuelve `null` si falta la identidad mínima
  * (tipo, folio, fecha, emisor, receptor, total) — nunca inventa valores.
+ *
+ * Con `select` busca ESE documento dentro del sobre (que puede traer varios) y
+ * devuelve `null` si no está: quien pidió un folio no puede recibir otro. Sin
+ * `select` se lee el primer `<Documento>`, como siempre.
  */
-export function parseSaleDteXml(xml: string): DteXmlDocument | null {
+export function parseSaleDteXml(xml: string, select?: DteXmlSelector): DteXmlDocument | null {
   let parsed: unknown
   try {
     parsed = parser.parse(xml)
@@ -70,9 +122,27 @@ export function parseSaleDteXml(xml: string): DteXmlDocument | null {
   }
   if (!parsed) return null
 
-  const documento = findDescendant(parsed, "Documento")
-  if (!documento) return null
+  const documentos = collectDescendants(parsed, "Documento")
+  if (documentos.length === 0) return null
+  if (!select) return parseDocumento(documentos[0])
 
+  // El tipo se compara normalizado porque el portal lo entrega indistintamente
+  // como "33" o "033"; el RUT, por `cleanRut`, igual que el resto del maestro.
+  const wantedDocType   = select.docType.padStart(3, "0")
+  const wantedIssuerRut = select.issuerTaxId ? cleanRut(select.issuerTaxId) : null
+  for (const node of documentos) {
+    const candidate = parseDocumento(node)
+    if (!candidate) continue
+    if (candidate.docType.padStart(3, "0") !== wantedDocType) continue
+    if (candidate.folio !== select.folio) continue
+    if (wantedIssuerRut !== null && candidate.issuerTaxId !== wantedIssuerRut) continue
+    return candidate
+  }
+  return null
+}
+
+/** Un `<Documento>` ya ubicado dentro del sobre → modelo normalizado. */
+function parseDocumento(documento: unknown): DteXmlDocument | null {
   const encabezado = asRecord(child(documento, "Encabezado"))
   if (!encabezado) return null
 
@@ -80,6 +150,7 @@ export function parseSaleDteXml(xml: string): DteXmlDocument | null {
   const emisor   = asRecord(child(encabezado, "Emisor")) ?? {}
   const receptor = asRecord(child(encabezado, "Receptor")) ?? {}
   const totales  = asRecord(child(encabezado, "Totales")) ?? {}
+  const otraMoneda = asRecord(child(encabezado, "OtraMoneda")) ?? {}
 
   const docType = text(child(idDoc, "TipoDTE"))
   const folio   = int(child(idDoc, "Folio"))
@@ -91,14 +162,19 @@ export function parseSaleDteXml(xml: string): DteXmlDocument | null {
   const receiverTaxId = rut(text(child(receptor, "RUTRecep")))
   const receiverName  = text(child(receptor, "RznSocRecep"))
 
+  // La moneda del documento vive en `Totales` (documentos de exportación);
+  // algunos emisores sólo la declaran en `OtraMoneda`, así que ésa es el
+  // respaldo. Se conserva además el nombre crudo para poder reportar una
+  // moneda que no está en la tabla en vez de etiquetarla en silencio.
+  const currencyDeclared = text(child(totales, "TpoMoneda"))
+    ?? text(child(otraMoneda, "TpoMoneda"))
+  const currency = currencyDeclared
+    ? SII_CURRENCY_ISO[currencyDeclared.toUpperCase()] ?? null
+    : null
+
   // El XML del SII declara los montos como magnitud sin signo; el signo de una
   // Nota de Crédito (TipoDTE 61) es convención contable externa al documento.
-  // La convención interna (invoices.ts, derivePaymentStatus) exige que una NC
-  // tenga total NEGATIVO para reducir la cuenta por cobrar — sin esto, una NC
-  // cargada desde XML se contabilizaba como factura que aumenta la deuda.
-  const asCredit = docType === "61"
-    ? (v: number | null) => (v === null ? null : -Math.abs(v))
-    : (v: number | null) => v
+  const asCredit = (v: number | null) => applyCreditSign(docType ?? "", v)
   const netAmount    = asCredit(num(child(totales, "MntNeto")))
   const taxAmount    = asCredit(num(child(totales, "IVA")))
   const exemptAmount = asCredit(num(child(totales, "MntExe")))
@@ -127,9 +203,11 @@ export function parseSaleDteXml(xml: string): DteXmlDocument | null {
         description,
         quantity:    num(child(item, "QtyItem")),
         unit:        text(child(item, "UnmdItem")),
-        unitPrice:   num(child(item, "PrcItem")),
-        discount:    num(child(item, "DescuentoMonto")),
-        amount:      num(child(item, "MontoItem")),
+        // El detalle sigue el mismo signo que el encabezado: una NC con total
+        // negativo y líneas positivas es un documento que no cuadra consigo mismo.
+        unitPrice:   asCredit(num(child(item, "PrcItem"))),
+        discount:    asCredit(num(child(item, "DescuentoMonto"))),
+        amount:      asCredit(num(child(item, "MontoItem"))),
       })
     }
   }
@@ -149,6 +227,8 @@ export function parseSaleDteXml(xml: string): DteXmlDocument | null {
     taxAmount,
     exemptAmount,
     totalAmount,
+    currency,
+    currencyDeclared,
     items: items.sort((a, b) => a.lineNumber - b.lineNumber),
   }
 }
@@ -178,13 +258,22 @@ function child(node: unknown, key: string): unknown {
   return undefined
 }
 
-/** Busca en profundidad la primera aparición de una clave. */
-function findDescendant(root: unknown, key: string): unknown {
+/**
+ * Busca en profundidad TODAS las apariciones de una clave, en orden de aparición.
+ * Un sobre `EnvioDTE` reparte los `<Documento>` en un `<DTE>` por documento, así
+ * que quedarse con el primero perdía los demás.
+ */
+function collectDescendants(root: unknown, key: string): unknown[] {
+  const found: unknown[] = []
   const queue: unknown[] = [root]
   while (queue.length > 0) {
     const node = queue.shift()
     const direct = child(node, key)
-    if (direct !== undefined) return direct
+    if (direct !== undefined) {
+      // Un `<Documento>` no contiene otro: no se sigue bajando por esta rama.
+      found.push(...asArray(direct))
+      continue
+    }
     const record = asRecord(node)
     if (record) {
       for (const value of Object.values(record)) {
@@ -194,7 +283,7 @@ function findDescendant(root: unknown, key: string): unknown {
       queue.push(...node)
     }
   }
-  return undefined
+  return found
 }
 
 function text(value: unknown): string | null {

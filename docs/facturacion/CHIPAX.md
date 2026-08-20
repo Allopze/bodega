@@ -93,11 +93,18 @@ Una capacidad se activa **después** de verificar su operación, nunca antes.
 ## Automatización y períodos
 
 El endpoint protegido `/api/cron/chipax-sync` ejecuta una corrida con un único
-`correlationId` para estos tres alcances, en este orden:
+`correlationId` para estos cuatro alcances, en este orden:
 
 1. ventas del mes actual;
-2. ventas del mes anterior;
-3. cartolas del mes actual.
+2. cartolas del mes actual;
+3. ventas del mes anterior;
+4. cartolas del mes anterior.
+
+Las cartolas cubren los mismos dos períodos que las ventas: pedir sólo el mes en
+curso dejaba fuera para siempre los movimientos del último día del mes anterior
+—y los que el banco publica con días de retraso—, porque ninguna corrida
+posterior vuelve a ese rango de fechas. Reingestar el mes anterior es
+idempotente: la identidad es `(provider, external_id)`.
 
 El scheduler interno lo llama una vez al día a las **09:00
 `America/Santiago`**. Una corrida completa elimina el cursor durable; una

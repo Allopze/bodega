@@ -1,5 +1,33 @@
 import { describe, it, expect } from "vitest"
-import { parseSaleDteXml } from "../dte-xml"
+import { applyCreditSign, parseSaleDteXml } from "../dte-xml"
+
+/** Sobre `EnvioDTE` con un `<DTE>` por documento, como lo arma el portal. */
+function sobre(...documentos: string[]): string {
+  return `<?xml version="1.0" encoding="ISO-8859-1"?>
+<EnvioDTE xmlns="http://www.sii.cl/SiiDte" version="1.0"><SetDTE ID="SetDoc">${
+    documentos.map((doc) => `<DTE version="1.0">${doc}</DTE>`).join("")
+  }</SetDTE></EnvioDTE>`
+}
+
+/** `<Documento>` mínimo con identidad completa. Datos ficticios. */
+function documento(options: {
+  docType?:     string
+  folio?:       number
+  issuerTaxId?: string
+  extraTotales?: string
+  otraMoneda?:  string
+} = {}): string {
+  return `<Documento ID="F${options.folio ?? 1234}T${options.docType ?? "33"}">
+  <Encabezado>
+    <IdDoc><TipoDTE>${options.docType ?? "33"}</TipoDTE><Folio>${options.folio ?? 1234}</Folio>
+      <FchEmis>2026-07-15</FchEmis></IdDoc>
+    <Emisor><RUTEmisor>${options.issuerTaxId ?? "78023530-6"}</RUTEmisor><RznSoc>CHOME</RznSoc></Emisor>
+    <Receptor><RUTRecep>76543210-K</RUTRecep><RznSocRecep>MINERA EJEMPLO SPA</RznSocRecep></Receptor>
+    <Totales><MntNeto>1000</MntNeto><IVA>190</IVA><MntTotal>1190</MntTotal>${options.extraTotales ?? ""}</Totales>
+    ${options.otraMoneda ?? ""}
+  </Encabezado>
+</Documento>`
+}
 
 /**
  * XML de factura electrónica de venta con la estructura real del SII
@@ -228,7 +256,63 @@ describe("parseSaleDteXml", () => {
     expect(doc!.items).toHaveLength(1)
     expect(doc!.items[0]!.quantity).toBe(2)
     expect(doc!.items[0]!.unit).toBeNull()
-    expect(doc!.items[0]!.discount).toBe(127805)
+    // El detalle sigue el signo del encabezado: una NC con líneas positivas
+    // bajo un total negativo es un documento que no cuadra consigo mismo.
+    expect(doc!.items[0]!.discount).toBe(-127805)
+    expect(doc!.items[0]!.amount).toBeLessThan(0)
+  })
+
+  it("elige el documento pedido dentro de un sobre con varios <Documento>", () => {
+    // El sobre trae dos documentos y el pedido es el SEGUNDO: sin selección por
+    // identidad se injertaba el receptor y los montos del primero.
+    const xml = sobre(documento({ folio: 1111 }), documento({ folio: 2222 }))
+    const doc = parseSaleDteXml(xml, { docType: "33", folio: 2222, issuerTaxId: "78023530-6" })
+    expect(doc).not.toBeNull()
+    expect(doc!.folio).toBe(2222)
+  })
+
+  it("no devuelve nada si el sobre no contiene el documento pedido", () => {
+    const xml = sobre(documento({ folio: 1111 }), documento({ folio: 2222 }))
+    expect(parseSaleDteXml(xml, { docType: "33", folio: 9999 })).toBeNull()
+    // Mismo folio, otro emisor: sigue siendo un documento ajeno.
+    expect(parseSaleDteXml(xml, { docType: "33", folio: 2222, issuerTaxId: "76111222-3" })).toBeNull()
+    // Mismo folio, otro tipo.
+    expect(parseSaleDteXml(xml, { docType: "61", folio: 2222 })).toBeNull()
+  })
+
+  it("compara el tipo normalizado (033 == 33) y el RUT con puntos", () => {
+    const xml = sobre(documento({ folio: 2222 }))
+    expect(parseSaleDteXml(xml, { docType: "033", folio: 2222, issuerTaxId: "78.023.530-6" })!.folio).toBe(2222)
+  })
+
+  it("sin identidad pedida sigue leyendo el primer documento del sobre", () => {
+    const xml = sobre(documento({ folio: 1111 }), documento({ folio: 2222 }))
+    expect(parseSaleDteXml(xml)!.folio).toBe(1111)
+  })
+
+  it("expone la moneda declarada traducida a ISO 4217", () => {
+    const xml = sobre(documento({ extraTotales: "<TpoMoneda>DOLAR USA</TpoMoneda>" }))
+    const doc = parseSaleDteXml(xml)!
+    expect(doc.currency).toBe("USD")
+    expect(doc.currencyDeclared).toBe("DOLAR USA")
+  })
+
+  it("cae a OtraMoneda cuando Totales no declara la moneda", () => {
+    const xml = sobre(documento({ otraMoneda: "<OtraMoneda><TpoMoneda>EURO</TpoMoneda></OtraMoneda>" }))
+    expect(parseSaleDteXml(xml)!.currency).toBe("EUR")
+  })
+
+  it("no inventa un código ISO para una moneda desconocida", () => {
+    const xml = sobre(documento({ extraTotales: "<TpoMoneda>MONEDA MARCIANA</TpoMoneda>" }))
+    const doc = parseSaleDteXml(xml)!
+    expect(doc.currency).toBeNull()
+    // El nombre crudo se conserva para poder reportarlo.
+    expect(doc.currencyDeclared).toBe("MONEDA MARCIANA")
+  })
+
+  it("deja la moneda nula cuando el documento no la declara", () => {
+    expect(parseSaleDteXml(SALE_INVOICE_XML)!.currency).toBeNull()
+    expect(parseSaleDteXml(SALE_INVOICE_XML)!.currencyDeclared).toBeNull()
   })
 
   it("lee decimales XSD del XML (punto decimal, sin separador de miles)", () => {
@@ -237,5 +321,22 @@ describe("parseSaleDteXml", () => {
       .replace("<QtyItem>1</QtyItem>\n          <UnmdItem>SERV</UnmdItem>", "<QtyItem>6.00</QtyItem>\n          <UnmdItem>SERV</UnmdItem>")
     const doc = parseSaleDteXml(xml)!
     expect(doc.items[0]!.quantity).toBe(6)
+  })
+})
+
+describe("applyCreditSign", () => {
+  // Es el único lugar donde vive la convención de signo, y lo aplican fuentes
+  // que entregan la NC de las dos formas: el XML del SII en magnitud, el libro
+  // de ventas del portal ya en negativo. Por eso tiene que ser idempotente.
+  it("deja negativa una nota de crédito venga como venga", () => {
+    expect(applyCreditSign("61", 59500)).toBe(-59500)
+    expect(applyCreditSign("61", -59500)).toBe(-59500)
+    expect(applyCreditSign("61", applyCreditSign("61", 59500))).toBe(-59500)
+  })
+
+  it("no toca los demás documentos ni los nulos", () => {
+    expect(applyCreditSign("33", 59500)).toBe(59500)
+    expect(applyCreditSign("34", 0)).toBe(0)
+    expect(applyCreditSign("61", null)).toBeNull()
   })
 })

@@ -3,7 +3,7 @@ import { db } from "@/db"
 import { systemSettings } from "@/db/schema"
 import { createNotifications } from "@/lib/services/notification-create"
 import { getUserIdsWithPermission } from "@/lib/services/notification-targeting"
-import type { DteSyncHealthEvaluation } from "./health"
+import type { DteHealthDomain, DteSyncHealthEvaluation } from "./health"
 
 const ALERT_STATE_KEY = "dte.sync_health_alert_state.v1"
 
@@ -19,6 +19,35 @@ export interface DteHealthAlertDecision {
   body: string
 }
 
+/** Nombre del dominio como lo lee una persona; nadie recibe "chipax_bank". */
+const DOMAIN_LABEL: Record<DteHealthDomain["name"], string> = {
+  purchases:    "compras",
+  sales:        "ventas",
+  chipax_sales: "ventas (Chipax)",
+  chipax_bank:  "cartolas (Chipax)",
+}
+
+/**
+ * Motivo legible por código de dominio.
+ *
+ * Es lo que separa «al libro de compras le faltan documentos» —un incidente— de
+ * «hay conciliaciones pendientes», que es el estado normal de trabajo. Con un
+ * único texto genérico ambos llegaban con el mismo título, el mismo cuerpo y la
+ * misma huella de deduplicación, así que el aviso diario permanente del segundo
+ * enterraba al primero.
+ */
+const CODE_REASON: Record<string, string> = {
+  DTE_HEALTH_INGEST_PARTIAL:         "faltan documentos del período (ingesta parcial)",
+  DTE_HEALTH_RECONCILIATION_PENDING: "quedan conciliaciones pendientes",
+  DTE_HEALTH_RUN_FAILED:             "la corrida falló",
+  DTE_HEALTH_BATCH_MISSING:          "no corrió el horario programado",
+  DTE_HEALTH_CONFIGURATION:          "falta configuración o credenciales",
+}
+
+function domainReason(domain: DteHealthDomain): string {
+  return `${DOMAIN_LABEL[domain.name]}: ${CODE_REASON[domain.code] ?? domain.code}`
+}
+
 /** Pure dedupe/recovery policy, kept separate from DB/email delivery for tests. */
 export function decideDteHealthAlert(
   evaluation: DteSyncHealthEvaluation,
@@ -27,17 +56,27 @@ export function decideDteHealthAlert(
   const activeDomains = evaluation.domains.filter((domain) =>
     domain.status !== "not_due" && domain.status !== "waiting" && domain.status !== "disabled",
   )
-  const fingerprint = `${evaluation.status}:${activeDomains.map((domain) => `${domain.name}:${domain.status}:${domain.slot ?? "-"}`).sort().join("|")}`
+  // El `code` del dominio entra en la huella: dos incidentes distintos con el
+  // mismo `status` (ingesta parcial y conciliación pendiente son ambos
+  // "degraded") tienen que deduplicarse por separado, o el primero que avise
+  // silencia al otro hasta que alguien cambie de estado.
+  const fingerprint = `${evaluation.status}:${activeDomains.map((domain) => `${domain.name}:${domain.status}:${domain.code}:${domain.slot ?? "-"}`).sort().join("|")}`
 
   if (evaluation.status === "critical" || evaluation.status === "degraded") {
     if (previous?.fingerprint === fingerprint) return null
+    const problems = activeDomains.filter((domain) => domain.status === "critical" || domain.status === "degraded")
+    const reasons = problems.length > 0
+      ? problems.map(domainReason).join("; ")
+      : evaluation.code
     return {
       kind: "alert",
       fingerprint,
       title: evaluation.status === "critical"
         ? "Sincronización DTE requiere atención"
-        : "Sincronización DTE con trabajo pendiente",
-      body: `La verificación automática informó ${evaluation.code}. Revise las corridas de DTE y ventas.`,
+        : problems.some((domain) => domain.code === "DTE_HEALTH_INGEST_PARTIAL")
+          ? "Sincronización DTE incompleta: faltan documentos"
+          : "Sincronización DTE con trabajo pendiente",
+      body: `La verificación automática informó ${reasons}. Revise las corridas de DTE y ventas.`,
     }
   }
 

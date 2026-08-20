@@ -1,12 +1,12 @@
 import type { Metadata } from "next"
 import { redirect } from "next/navigation"
-import { and, desc, eq, inArray } from "drizzle-orm"
+import { and, desc, eq, inArray, isNull, isNotNull, or } from "drizzle-orm"
 import { Receipt } from "@phosphor-icons/react/dist/ssr"
 import { db } from "@/db"
 import { dteDocuments, purchaseOrderInvoices, fuelLoads } from "@/db/schema"
 import { requirePermission } from "@/lib/auth/can"
-import { readDtePortalConfig } from "@/lib/services/dte-portal/config"
-import { dteTipoLabel, estadoSiiLabel } from "@/lib/services/dte-portal/labels"
+import { requireDteCodEmp, DteCodEmpMissingError, DTE_COD_EMP_MISSING_MESSAGE } from "@/lib/services/dte-portal/require-cod-emp"
+import { dteTipoLabel, estadoPlataformaLabel } from "@/lib/services/dte-portal/labels"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { EmptyState } from "@/components/ui/empty-state"
@@ -18,13 +18,15 @@ export const dynamic = "force-dynamic"
 export const metadata: Metadata = { title: "Documentos DTE" }
 
 const DISCREPANCY_TOLERANCE_CLP = 1
+/** Tope de filas en pantalla. Se pide una de más para saber si hubo recorte. */
+const ROW_LIMIT = 300
 
 /**
  * Lista mínima de documentos DTE recibidos (Bandeja de Entrada), aterrizaje
  * de los tiles del Dashboard. Por defecto muestra el mes actual (hora de
- * Chile) — mismo período que `computeHealthStats` usa para esas cifras — y
- * `?periodo=YYYY-MM` navega meses anteriores. Sin paginación a propósito:
- * se puede enriquecer cuando alguien la necesite de verdad.
+ * Chile) y `?periodo=YYYY-MM` navega meses anteriores. Sin paginación a propósito,
+ * pero el recorte se declara en pantalla: un mes real trae ~681 documentos y
+ * antes se cortaba en 300 en silencio.
  */
 export default async function DteListPage({
   searchParams,
@@ -35,7 +37,33 @@ export default async function DteListPage({
   catch { redirect(`/forbidden?desde=${encodeURIComponent("/compras")}`) }
 
   const { vinculo, tipo, periodo: periodoParam } = await searchParams
-  const codEmp = (await readDtePortalConfig()).credentials.codEmp
+  // Sin `codEmp` configurado la consulta no calza con ninguna fila histórica:
+  // hay que decir "no configurado", no "sin documentos".
+  let codEmp: string
+  try { codEmp = await requireDteCodEmp() }
+  catch (error) {
+    if (!(error instanceof DteCodEmpMissingError)) throw error
+    return (
+      <PageContainer>
+        <PageHeader
+          title="Documentos DTE"
+          description="Documentos tributarios recibidos de proveedores. Solo lectura del portal DTE FacturaEnLínea."
+          breadcrumb={
+            <Breadcrumbs items={[
+              { label: "Inicio", href: "/dashboard" },
+              { label: "Compras", href: "/compras" },
+              { label: "Documentos DTE" },
+            ]} />
+          }
+        />
+        <EmptyState
+          icon={<Receipt size={28} />}
+          title="Sincronización DTE sin configurar"
+          description={DTE_COD_EMP_MISSING_MESSAGE}
+        />
+      </PageContainer>
+    )
+  }
   // Mes actual en hora de Chile: con `toISOString()` (UTC) el cambio de mes
   // llegaba horas antes y dejaba la bandeja "vacía" la noche del día 31
   // (auditoría UI/UX 2026-08-05, A4). El período es navegable por la URL.
@@ -46,16 +74,28 @@ export default async function DteListPage({
 
   const conditions = [eq(dteDocuments.codEmp, codEmp), eq(dteDocuments.periodo, periodo)]
   if (tipo) conditions.push(eq(dteDocuments.tipoDte, tipo))
+  // El filtro de negocio va en el WHERE, no después del recorte: filtrando en
+  // memoria sobre los 300 más recientes, los DTE sin vínculo de la primera
+  // quincena quedaban declarados inexistentes.
+  if (vinculo === "sin_oc") {
+    conditions.push(isNull(dteDocuments.purchaseOrderInvoiceId), isNull(dteDocuments.fuelLoadId))
+  } else if (vinculo === "discrepancia") {
+    // La discrepancia sólo existe contra una entidad vinculada; el monto de
+    // esa entidad se compara en memoria, pero el universo ya viene acotado.
+    conditions.push(or(isNotNull(dteDocuments.purchaseOrderInvoiceId), isNotNull(dteDocuments.fuelLoadId))!)
+  }
 
-  const docs = await db.query.dteDocuments.findMany({
+  const found = await db.query.dteDocuments.findMany({
     where: and(...conditions),
     orderBy: [desc(dteDocuments.fechaEmision)],
-    limit: 300,
+    limit: ROW_LIMIT + 1,
     columns: {
       id: true, tipoDte: true, folio: true, rutEmisor: true, razonSocialEmisor: true,
-      fechaEmision: true, montoTotal: true, estadoSii: true, purchaseOrderInvoiceId: true, fuelLoadId: true,
+      fechaEmision: true, montoTotal: true, estadoPlataforma: true, purchaseOrderInvoiceId: true, fuelLoadId: true,
     },
   })
+  const truncated = found.length > ROW_LIMIT
+  const docs = truncated ? found.slice(0, ROW_LIMIT) : found
 
   const ocIds = docs.flatMap((d) => (d.purchaseOrderInvoiceId ? [d.purchaseOrderInvoiceId] : []))
   const fuelIds = docs.flatMap((d) => (d.fuelLoadId ? [d.fuelLoadId] : []))
@@ -81,11 +121,9 @@ export default async function DteListPage({
     return { ...d, vinculoTipo, discrepancy }
   })
 
-  const filtered = rows.filter((r) => {
-    if (vinculo === "sin_oc") return r.vinculoTipo === "ninguno"
-    if (vinculo === "discrepancia") return r.discrepancy !== null && r.discrepancy > DISCREPANCY_TOLERANCE_CLP
-    return true
-  })
+  const filtered = vinculo === "discrepancia"
+    ? rows.filter((r) => r.discrepancy !== null && r.discrepancy > DISCREPANCY_TOLERANCE_CLP)
+    : rows
 
   return (
     <PageContainer>
@@ -101,6 +139,13 @@ export default async function DteListPage({
         }
         actions={<PeriodPicker period={periodo} />}
       />
+
+      {truncated && (
+        <p className="text-sm text-[var(--color-text-muted)]">
+          Se muestran los {ROW_LIMIT} documentos más recientes de {periodo}; hay más.
+          Usa el Libro de Compras Electrónico en Reportes para ver el período completo.
+        </p>
+      )}
 
       {filtered.length === 0 ? (
         <EmptyState
@@ -118,7 +163,7 @@ export default async function DteListPage({
                   <th scope="col" className="px-4 py-2.5 th-type">Proveedor</th>
                   <th scope="col" className="hidden px-4 py-2.5 th-type md:table-cell">Emisión</th>
                   <th scope="col" className="px-4 py-2.5 th-type">Total</th>
-                  <th scope="col" className="px-4 py-2.5 th-type">Estado SII</th>
+                  <th scope="col" className="px-4 py-2.5 th-type">Estado plataforma</th>
                   <th scope="col" className="hidden px-4 py-2.5 th-type lg:table-cell">Vínculo</th>
                   <th scope="col" className="hidden px-4 py-2.5 th-type lg:table-cell">Discrepancia</th>
                 </tr>
@@ -135,12 +180,9 @@ export default async function DteListPage({
                     <td className="hidden whitespace-nowrap px-4 py-2.5 text-[var(--color-text-muted)] md:table-cell">{r.fechaEmision}</td>
                     <td className="whitespace-nowrap px-4 py-2.5 font-mono tabular-nums text-[var(--color-text)]">{formatCLP(r.montoTotal)}</td>
                     <td className="whitespace-nowrap px-4 py-2.5">
-                      {r.estadoSii === "aceptado" && <Badge variant="success" size="sm">{estadoSiiLabel(r.estadoSii)}</Badge>}
-                      {r.estadoSii === "rechazado" && <Badge variant="danger" size="sm">{estadoSiiLabel(r.estadoSii)}</Badge>}
-                      {r.estadoSii === "anulado" && <Badge variant="neutral" size="sm">{estadoSiiLabel(r.estadoSii)}</Badge>}
-                      {(r.estadoSii === "pendiente_envio" || r.estadoSii === "enviado") && <Badge variant="warning" size="sm">{estadoSiiLabel(r.estadoSii)}</Badge>}
-                      {r.estadoSii === "manual" && <Badge variant="outline" size="sm">{estadoSiiLabel(r.estadoSii)}</Badge>}
-                      {!r.estadoSii && <span className="text-xs text-[var(--color-text-faint)]">—</span>}
+                      {r.estadoPlataforma
+                        ? <Badge variant={estadoPlataformaTone(r.estadoPlataforma)} size="sm">{estadoPlataformaLabel(r.estadoPlataforma)}</Badge>
+                        : <span className="text-xs text-[var(--color-text-faint)]">—</span>}
                     </td>
                     <td className="hidden whitespace-nowrap px-4 py-2.5 lg:table-cell">
                       {r.vinculoTipo === "oc" && <Badge variant="success" size="sm">Vinculado a OC</Badge>}
@@ -161,4 +203,14 @@ export default async function DteListPage({
       )}
     </PageContainer>
   )
+}
+
+/**
+ * `estado_plataforma` es texto libre del portal (title del ícono penplata),
+ * no un enum: el tono se decide por lo que dice, con neutro por defecto.
+ */
+function estadoPlataformaTone(estado: string): "warning" | "danger" | "outline" {
+  if (/rechaz|bloque/i.test(estado)) return "danger"
+  if (/pendiente/i.test(estado)) return "warning"
+  return "outline"
 }

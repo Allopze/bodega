@@ -21,6 +21,7 @@ import {
   type ProviderInvoice,
 } from "./types"
 import { parseSaleDteXml } from "../dte-xml"
+import { logger } from "@/lib/logger"
 
 const PROVIDER_ID: BillingProviderId = "manual"
 
@@ -63,6 +64,15 @@ export function providerInvoiceFromXml(
   const parsed = parseSaleDteXml(xml)
   if (!parsed) return null
 
+  if (!parsed.currency && parsed.currencyDeclared) {
+    // Moneda fuera de la tabla del SII: se avisa en vez de etiquetarla CLP en
+    // silencio, igual que hace el adaptador del portal.
+    logger.warn(
+      `[billing/manual] Moneda "${parsed.currencyDeclared}" no reconocida en el XML `
+      + `${parsed.docType}/${parsed.folio}: se asume CLP`,
+    )
+  }
+
   return {
     externalId: `manual:${direction}:${parsed.docType}:${parsed.folio}:${parsed.issuerTaxId}`,
     direction,
@@ -74,7 +84,10 @@ export function providerInvoiceFromXml(
     receiverName:   parsed.receiverName,
     issueDate:      parsed.issueDate,
     dueDate:        parsed.dueDate,
-    currency:       "CLP",
+    // Un XML cargado a mano puede ser una factura de exportación: la moneda es
+    // la que declara el documento, no un "CLP" fijo. Sólo se cae a CLP cuando
+    // el XML no declara ninguna (el caso normal de un DTE nacional).
+    currency:       parsed.currency ?? "CLP",
     netAmount:      parsed.netAmount,
     taxAmount:      parsed.taxAmount,
     exemptAmount:   parsed.exemptAmount,

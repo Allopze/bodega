@@ -128,13 +128,19 @@ async function resolvePdfUrl(
   const match = /^(\d{4})-(0[1-9]|1[0-2])$/.exec(doc.periodo)
   if (!match) throw new DteDocumentPdfError("El período del documento DTE no es válido", "INVALID_DOCUMENT")
 
-  const inbox = await fetchBandejaEntrada(client, {
-    anio: match[1]!,
-    mes: match[2]!,
-    codEmp: doc.codEmp,
-    estadoPlataforma: "",
-    rutProveedor: "",
-  })
+  // Este raspado es la consulta más cara del portal (~80 s, 681 filas para un
+  // mes) y la dispara un clic de usuario. Sin freno, veinte clics en la
+  // pestaña Facturación de una OC = veinte raspados concurrentes del mes
+  // entero con las credenciales de la empresa. Dos frenos en memoria:
+  //   1. una sola corrida por (empresa, período) a la vez — las demás esperan;
+  //   2. los documentos que no calzan no se vuelven a buscar por un rato (sin
+  //      esto, los que nunca calzan repiten el raspado en cada petición).
+  // ponytail: memoria del proceso, no de la BD; el freno duradero exige una
+  // marca persistida (columna nueva) y por tanto una migración.
+  if (isLookupRecentlyFailed(doc.id)) {
+    throw new DteDocumentPdfError("No se encontró un PDF verificable para este DTE", "UNAVAILABLE")
+  }
+  const inbox = await fetchInboxOnce(client, doc.codEmp, match[1]!, match[2]!)
   const matches = inbox.rows.filter((row) => (
     row.tipoDoc === doc.tipoDte
     && row.folio === doc.folio
@@ -143,6 +149,7 @@ async function resolvePdfUrl(
     && Boolean(row.pdfUrl)
   ))
   if (matches.length !== 1 || !matches[0]!.pdfUrl) {
+    rememberLookupFailure(doc.id)
     throw new DteDocumentPdfError("No se encontró un PDF verificable para este DTE", "UNAVAILABLE")
   }
 
@@ -160,6 +167,42 @@ async function resolvePdfUrl(
     throw new DteDocumentPdfError("No se encontró un PDF verificable para este DTE", "UNAVAILABLE")
   }
   return normalizeLegacyPurchasePdfUrl(pdfUrl)
+}
+
+/** Raspados de bandeja en vuelo, por (empresa, período). */
+const inflightInbox = new Map<string, Promise<Awaited<ReturnType<typeof fetchBandejaEntrada>>>>()
+
+function fetchInboxOnce(client: DtePortalClient, codEmp: string, anio: string, mes: string) {
+  const key = `${codEmp}:${anio}-${mes}`
+  const existing = inflightInbox.get(key)
+  if (existing) return existing
+  // El contexto acompaña a los warns de fila descartada: sin él, los de este
+  // raspado quedan mezclados con los del cron y sin forma de atribuirlos. Acá no
+  // hay corrida, así que la clave del raspado (empresa+período) hace de
+  // correlativo y además delata que el origen es el PDF bajo demanda.
+  const pending = fetchBandejaEntrada(
+    client,
+    { anio, mes, codEmp, estadoPlataforma: "", rutProveedor: "" },
+    { correlationId: `dte-pdf:${key}`, periodo: `${anio}-${mes}` },
+  ).finally(() => { inflightInbox.delete(key) })
+  inflightInbox.set(key, pending)
+  return pending
+}
+
+/** Documentos legados cuya búsqueda ya falló, con el instante del intento. */
+const failedLookups = new Map<string, number>()
+const FAILED_LOOKUP_TTL_MS = 60 * 60 * 1000
+
+function isLookupRecentlyFailed(dteDocumentId: string): boolean {
+  const at = failedLookups.get(dteDocumentId)
+  if (at === undefined) return false
+  if (Date.now() - at < FAILED_LOOKUP_TTL_MS) return true
+  failedLookups.delete(dteDocumentId)
+  return false
+}
+
+function rememberLookupFailure(dteDocumentId: string): void {
+  failedLookups.set(dteDocumentId, Date.now())
 }
 
 function normalizeLegacyPurchasePdfUrl(pdfUrl: string): string {

@@ -211,8 +211,10 @@ export default async function OcDetailPage({
   // piso un día para las órdenes creadas después de las 20:00.
   const candidateFloor = localDateToISO(new Date(order.createdAt))
   // Sin `purchasing:view` la pestaña de facturación no se dibuja, así que esta
-  // consulta —la más cara de la página— no tiene a quién servir.
-  const unlinkedDtes = canViewPurchasing && order.supplier?.rut
+  // consulta —la más cara de la página— no tiene a quién servir. Una OC anulada
+  // tampoco: el servicio rechaza adjuntar factura en `cancelled`, así que
+  // ofrecer candidatos sería un alta que falla siempre.
+  const unlinkedDtes = canViewPurchasing && order.status !== "cancelled" && order.supplier?.rut
     ? await db.query.dteDocuments.findMany({
         where: and(
           isNull(dteDocuments.purchaseOrderInvoiceId),
@@ -379,9 +381,22 @@ export default async function OcDetailPage({
   // Facturas, DTE y avance facturado son materia de Compras: quien entra por
   // recepción ve la orden y sus montos, no lo tributario.
   const showInvoicing = !["draft", "cancelled"].includes(order.status) && canViewPurchasing
+  // Una OC anulada que quedó con facturas conserva la pestaña de facturación.
+  // `deletePurchaseOrderInvoice` acepta `cancelled` a propósito —es la única
+  // ruta del repo para soltar un DTE colgado de una compra muerta— y esconder
+  // la sección dejaba esa ruta sin ninguna entrada por UI. Sólo se suelta lo
+  // que ya tiene: adjuntar sigue cerrado en el servicio
+  // (`INVOICE_ALLOWED_STATUSES`) y acá no se ofrecen candidatos DTE.
+  const showCancelledInvoicing = order.status === "cancelled" && orderInvoices.length > 0 && canViewPurchasing
+  const showInvoicingTab = showInvoicing || showCancelledInvoicing
 
   // Pestaña inicial desde ?tab= (validada contra las disponibles) para deep-link
-  const availableTabs = ["items", ...(showInvoicing ? ["facturacion", "avance"] : []), "historial"]
+  const availableTabs = [
+    "items",
+    ...(showInvoicingTab ? ["facturacion"] : []),
+    ...(showInvoicing ? ["avance"] : []),
+    "historial",
+  ]
   const initialTab = tab && availableTabs.includes(tab) ? tab : "items"
 
   // `?nro=` llega desde el detalle de una recepción: el número de guía/factura ya
@@ -500,8 +515,15 @@ export default async function OcDetailPage({
                 )}
               </div>
             }
-            facturacion={showInvoicing ? (
+            facturacion={showInvoicingTab ? (
               <div className="flex flex-col gap-6">
+                {showCancelledInvoicing && (
+                  <p className="rounded-(--radius-lg) border border-(--color-warning-line) bg-(--color-warning-tint) px-3 py-2 text-xs text-(--color-warning-ink)">
+                    Orden anulada: no admite facturas nuevas. Eliminar una factura de acá la
+                    desvincula del DTE del portal y lo deja disponible para vincularlo donde
+                    corresponda.
+                  </p>
+                )}
                 <InvoicesSection
                   purchaseOrderId={order.id}
                   invoices={invoicesWithItems as unknown as React.ComponentProps<typeof InvoicesSection>["invoices"]}
@@ -516,6 +538,11 @@ export default async function OcDetailPage({
                   }))}
                   totalAmount={order.totalAmount}
                   canManage={canInvoice}
+                  // Una OC anulada sólo puede SOLTAR las facturas que tiene —esa
+                  // es la ruta de desvinculación que libera al DTE atrapado—, no
+                  // recibir nuevas. El servicio ya las rechaza; esto evita
+                  // ofrecer en pantalla algo que va a fallar.
+                  canAttach={canInvoice && order.status !== "cancelled"}
                   defaultInvoiceNumber={defaultInvoiceNumber}
                   dteCandidates={candidateDtes.map(({ doc, amountMatches }) => ({
                     id: doc.id,

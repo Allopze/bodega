@@ -9,6 +9,7 @@
 import path from "node:path"
 import { PGlite } from "@electric-sql/pglite"
 import { drizzle } from "drizzle-orm/pglite"
+import { eq } from "drizzle-orm"
 import { afterAll, beforeEach, describe, expect, it } from "vitest"
 import type { Session } from "next-auth"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
@@ -435,6 +436,38 @@ describe("resumen", () => {
   it("sin facturas pagadas no inventa un promedio de días de pago", async () => {
     const summary = await getBillingSummary(session({ isGlobal: true }), { period: PERIOD })
     expect(summary.averageDaysToPay).toBeNull()
+  })
+
+  // El vínculo es N-a-N a propósito (una factura puede cubrir varios períodos o
+  // faenas): el JOIN multiplicaba la fila y el total se contaba una vez por
+  // vínculo, así que el reporte gerencial informaba el doble del facturado real.
+  it("una factura con dos vínculos no se cuenta dos veces", async () => {
+    const now = new Date().toISOString()
+    await inMemoryDb.insert(schema.billingInvoiceLinks).values({
+      id: "lnk-norte-2", invoiceId: "inv-norte", clientId: "cli-a", worksiteId: "w-norte",
+      servicePeriod: PERIOD, status: "confirmed", matchedBy: "user", confirmedBy: "u1", confirmedAt: now,
+    })
+
+    const summary = await getBillingSummary(session({ isGlobal: true }), { period: PERIOD })
+    expect(summary.byWorksite.find((row) => row.worksiteName === "Faena Norte")?.amount).toBe(1000000)
+    expect(summary.topClients.find((row) => row.clientName === "Cliente A")?.amount).toBe(1000000)
+    expect(summary.byWorksite.reduce((sum, row) => sum + row.amount, 0)).toBe(3000000)
+  })
+
+  it("respeta la porción declarada del vínculo cuando la factura se reparte", async () => {
+    const now = new Date().toISOString()
+    await inMemoryDb.update(schema.billingInvoiceLinks)
+      .set({ amount: 400000 })
+      .where(eq(schema.billingInvoiceLinks.id, "lnk-norte"))
+    await inMemoryDb.insert(schema.billingInvoiceLinks).values({
+      id: "lnk-norte-sur", invoiceId: "inv-norte", clientId: "cli-a", worksiteId: "w-sur",
+      amount: 600000, status: "confirmed", matchedBy: "user", confirmedBy: "u1", confirmedAt: now,
+    })
+
+    const summary = await getBillingSummary(session({ isGlobal: true }), { period: PERIOD })
+    expect(summary.byWorksite.find((row) => row.worksiteName === "Faena Norte")?.amount).toBe(400000)
+    // Faena Sur suma su propia factura (2.000.000) más la porción imputada.
+    expect(summary.byWorksite.find((row) => row.worksiteName === "Faena Sur")?.amount).toBe(2600000)
   })
 
   it("atribuye facturación por cliente y por faena solo cuando hay vínculo", async () => {

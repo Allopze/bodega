@@ -6,6 +6,9 @@ const mocks = vi.hoisted(() => ({
   readDtePortalConfig: vi.fn(),
   syncDteDocuments: vi.fn(),
   rollingSyncPeriods: vi.fn(),
+  recoverySweepPeriods: vi.fn(),
+  createNotifications: vi.fn(),
+  getUserIdsWithPermission: vi.fn(),
   nanoid: vi.fn(),
   loggerError: vi.fn(),
   classifyDteFailure: vi.fn(),
@@ -20,6 +23,13 @@ vi.mock("@/lib/services/dte-portal/config", () => ({
 vi.mock("@/lib/services/dte-portal/sync", () => ({
   syncDteDocuments: (...args: unknown[]) => mocks.syncDteDocuments(...args),
   rollingSyncPeriods: (...args: unknown[]) => mocks.rollingSyncPeriods(...args),
+  recoverySweepPeriods: (...args: unknown[]) => mocks.recoverySweepPeriods(...args),
+}))
+vi.mock("@/lib/services/notification-create", () => ({
+  createNotifications: (...args: unknown[]) => mocks.createNotifications(...args),
+}))
+vi.mock("@/lib/services/notification-targeting", () => ({
+  getUserIdsWithPermission: (...args: unknown[]) => mocks.getUserIdsWithPermission(...args),
 }))
 vi.mock("@/lib/services/dte-portal/client", () => ({
   DtePortalClient: class DtePortalClient {},
@@ -50,6 +60,8 @@ function request() {
 function result(overrides: Partial<{
   status: "success" | "partial" | "failed" | "skipped"
   runId: string
+  periodo: string
+  rowsInserted: number
   error: string
   skipReason: "disabled" | "invalid_barrier" | "active_run"
 }> = {}) {
@@ -75,6 +87,9 @@ describe("GET /api/cron/dte-portal-sync", () => {
     mocks.verifyCronSecret.mockReturnValue(true)
     mocks.readDtePortalConfig.mockResolvedValue(configured)
     mocks.rollingSyncPeriods.mockReturnValue(["2026-08", "2026-07"])
+    mocks.recoverySweepPeriods.mockReturnValue([])
+    mocks.getUserIdsWithPermission.mockResolvedValue(["admin-1"])
+    mocks.createNotifications.mockResolvedValue(undefined)
     mocks.nanoid.mockReturnValue("batch-1")
     mocks.syncDteDocuments.mockResolvedValue(result())
     mocks.classifyDteFailure.mockReturnValue({ code: "DTE_SETTINGS_INVALID", summary: "Configuración segura inválida." })
@@ -170,6 +185,39 @@ describe("GET /api/cron/dte-portal-sync", () => {
 
     expect(response.status).toBe(503)
     expect(await response.json()).toMatchObject({ outcome: "partial", code: "DTE_CRON_PARTIAL", health: "degraded" })
+  })
+
+  // Un período fuera de la ventana móvil no lo mira nadie más: los documentos
+  // que el proveedor entrega tarde quedaban fuera del libro de compras sin
+  // que nada lo dijera.
+  it("avisa cuando el barrido mensual recupera documentos de un período cerrado", async () => {
+    mocks.recoverySweepPeriods.mockReturnValue(["2026-06"])
+    mocks.syncDteDocuments
+      .mockResolvedValueOnce(result())
+      .mockResolvedValueOnce(result())
+      .mockResolvedValueOnce(result({ periodo: "2026-06", rowsInserted: 3 }))
+
+    const response = await GET(request())
+    const body = await response.json()
+
+    expect(mocks.syncDteDocuments).toHaveBeenNthCalledWith(3, expect.anything(), expect.objectContaining({
+      periodo: "2026-06", force: true, trigger: "cron",
+    }))
+    expect(body.sweep).toEqual([{ period: "2026-06", status: "success", rowsInserted: 3 }])
+    expect(mocks.createNotifications).toHaveBeenCalledWith(["admin-1"], expect.objectContaining({
+      dedupeKey: "dte-sync-recovery:2026-06:3",
+    }))
+    // La recuperación no puede degradar el contrato del cron.
+    expect(response.status).toBe(200)
+  })
+
+  it("no avisa cuando el barrido no encontró documentos faltantes", async () => {
+    mocks.recoverySweepPeriods.mockReturnValue(["2026-06"])
+
+    const body = await (await GET(request())).json()
+
+    expect(body.sweep).toEqual([{ period: "2026-06", status: "success", rowsInserted: 0 }])
+    expect(mocks.createNotifications).not.toHaveBeenCalled()
   })
 
   it("redacts a configuration exception from its wire response", async () => {

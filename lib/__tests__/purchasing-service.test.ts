@@ -1209,5 +1209,88 @@ describe("Purchasing service — edge cases", () => {
         deletePurchaseOrderInvoice("nonexistent", userId)
       ).rejects.toThrow("no encontrada")
     })
+
+    // Una OC en `sent` admite factura Y admite anulación. Si además se bloquea
+    // borrar la factura de una OC anulada, el DTE queda atrapado: es la única
+    // ruta de desvinculación del repo y el índice único impide reusarlo.
+    it("permite quitar la factura de una OC anulada y devuelve el DTE al pozo", async () => {
+      const orderId = "oc-dte-cancelada-1"
+      const dteId = "dte-oc-cancelada-1"
+      const issueDate = now.slice(0, 10)
+      await inMemoryDb.insert(schema.purchaseOrders).values({
+        id: orderId,
+        code: "OC-DTE-CANCEL-1",
+        worksiteId: "ws-purch",
+        supplierId: "sup-purch",
+        createdBy: userId,
+        status: "sent",
+        netAmount: 100000,
+        taxAmount: 19000,
+        totalAmount: 119000,
+        createdAt: now,
+        updatedAt: now,
+      })
+      await inMemoryDb.insert(schema.purchaseOrderItems).values({
+        id: "oc-dte-cancelada-item-1",
+        purchaseOrderId: orderId,
+        productId: "prod-purch",
+        productNameFree: null,
+        quantity: 10,
+        unitOfMeasure: "unidad",
+        unitPrice: 10000,
+        subtotal: 100000,
+        status: "issued",
+      })
+      await inMemoryDb.insert(schema.dteDocuments).values({
+        id: dteId,
+        tipoDte: "33",
+        folio: 456999,
+        rutEmisor: "76.000.001-1",
+        razonSocialEmisor: "Proveedor Purch",
+        fechaEmision: issueDate,
+        montoTotal: 119000,
+        codEmp: "433",
+        periodo: issueDate.slice(0, 7),
+        portalRecordId: "9000099",
+        rawHash: "dte-oc-cancelada-1-hash",
+      })
+
+      const invoiceId = await createPurchaseOrderInvoiceFromDte({
+        purchaseOrderId: orderId,
+        dteDocumentId: dteId,
+        invoiceNumber: "456999",
+        amount: 119000,
+        amountAuthority: "document_header",
+        issueDate,
+        fileName: "DTE-33-456999.pdf",
+        filePath: "storage/purchase-orders/dte-33-456999.pdf",
+        uploadedBy: userId,
+        dteIdentity: {
+          tipoDte: "33",
+          invoiceNumber: "456999",
+          issueDate,
+          supplierRut: "76.000.001-1",
+          totalAmount: 119000,
+        },
+        items: [{
+          productName: "Producto Purch",
+          productCode: "P-001",
+          unitOfMeasure: "UN",
+          quantity: 10,
+          unitPrice: 10000,
+          subtotal: 100000,
+        }],
+      })
+
+      await cancelOrder(orderId, userId, "El proveedor no era ése")
+
+      await expect(deletePurchaseOrderInvoice(invoiceId, userId)).resolves.toMatchObject({
+        filePath: "storage/purchase-orders/dte-33-456999.pdf",
+      })
+      const dte = await inMemoryDb.query.dteDocuments.findFirst({
+        where: eq(schema.dteDocuments.id, dteId),
+      })
+      expect(dte?.purchaseOrderInvoiceId).toBeNull()
+    })
   })
 })

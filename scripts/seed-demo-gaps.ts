@@ -7,7 +7,10 @@
  * Requiere que `npm run db:seed` y `npx tsx scripts/seed-demo.ts` ya hayan
  * corrido (usa faenas, trabajadores y usuarios demo-user-* existentes).
  *
- *   DATABASE_URL=… npx tsx scripts/seed-demo-gaps.ts
+ *   DATABASE_URL=… npx tsx scripts/seed-demo-gaps.ts --yes
+ *
+ * Sólo corre contra una base desechable (nombre con dev/test/demo/e2e/capture/
+ * local), nunca con NODE_ENV=production y siempre con --yes explícito.
  *
  * Determinista e idempotente igual que seed-demo.ts: trunca sus propias
  * tablas al empezar.
@@ -25,6 +28,38 @@ loadEnvConfig(process.cwd())
 if (!process.env.DATABASE_URL) {
   console.error("DATABASE_URL es obligatorio")
   process.exit(1)
+}
+
+/*
+ * Este script hace `TRUNCATE ... CASCADE` de `clients` y `billing_invoices`:
+ * la cascada arrastra ítems, pagos, vínculos, cobranzas y eventos de toda la
+ * cuenta por cobrar. Contra la base productiva es pérdida irrecuperable en un
+ * segundo, y el único insumo era el DATABASE_URL del entorno. Tres guardias:
+ * entorno, nombre de base desechable y confirmación explícita.
+ */
+function abort(motivo: string): never {
+  console.error(`Abortado: ${motivo}`)
+  console.error("  Este script TRUNCA facturación, clientes y varios dominios de prevención.")
+  process.exit(1)
+}
+
+if (process.env.NODE_ENV === "production") {
+  abort("NODE_ENV=production")
+}
+
+// La base de desarrollo se llama igual que la productiva (`bodega`), así que el
+// marcador de "desechable" no puede ser sólo el nombre: lo que las separa es
+// que la de desarrollo se alcanza por socket/localhost y la productiva por un
+// host remoto (o `db` dentro de la red de Docker).
+const dsn = new URL(process.env.DATABASE_URL)
+const dbName = decodeURIComponent(dsn.pathname.replace(/^\//, ""))
+const isLocal = dsn.hostname === "" || dsn.hostname === "localhost" || dsn.hostname === "127.0.0.1"
+const isDisposableName = /(dev|test|demo|e2e|capture|local)/i.test(dbName)
+if (!isLocal && !isDisposableName) {
+  abort(`"${dbName}" en ${dsn.hostname} no parece una base desechable (se espera socket/localhost o dev/test/demo/e2e/capture/local en el nombre)`)
+}
+if (!process.argv.includes("--yes")) {
+  abort(`falta --yes. Para confirmar: npx tsx scripts/seed-demo-gaps.ts --yes  (base: ${dbName || "?"} en ${dsn.hostname || "socket local"})`)
 }
 
 const client = postgres(process.env.DATABASE_URL, { max: 1 })

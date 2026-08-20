@@ -25,6 +25,13 @@ const INVOICE_ALLOWED_STATUSES = new Set([
   "partially_received", "received", "closed",
 ])
 
+// Quitar la factura se permite además sobre una OC anulada. Una OC en `sent`
+// admite factura Y admite anulación, así que la secuencia normal —se adjunta la
+// factura, se anula la OC— dejaba el DTE colgado de una compra muerta: ésta es
+// la única ruta de desvinculación del repo, y bloquearla acá era un callejón
+// sin salida que sólo se abría con SQL manual.
+const INVOICE_DELETABLE_STATUSES = new Set([...INVOICE_ALLOWED_STATUSES, "cancelled"])
+
 export interface CreateInvoiceItemInput {
   purchaseOrderItemId?: string | null
   productName:          string
@@ -421,7 +428,7 @@ export async function deletePurchaseOrderInvoice(
     // borrado sobre una OC anulada. `closed` sigue permitido a propósito — una OC
     // se auto-cierra al recibirse completa, así que bloquearlo dejaría una
     // factura equivocada pegada para siempre y sin forma de corregirla.
-    if (!INVOICE_ALLOWED_STATUSES.has(order.status)) {
+    if (!INVOICE_DELETABLE_STATUSES.has(order.status)) {
       throw new Error(`No se puede eliminar la factura de una OC en estado '${order.status}'`)
     }
 

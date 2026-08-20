@@ -121,6 +121,17 @@ describe("DtePortalClient", () => {
     })
   })
 
+  describe("query response size", () => {
+    it("rejects an HTML response whose Content-Length exceeds the hard cap", async () => {
+      const client = createTestClient()
+      vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("<html/>", {
+        headers: { "content-type": "text/html", "content-length": String(64 * 1024 * 1024) },
+      }))
+
+      await expect(client.get("paneldte.php")).rejects.toMatchObject({ code: "INVALID_RESPONSE" })
+    })
+  })
+
   describe("POST request", () => {
     it("sends form-urlencoded body with credentials in URL", async () => {
       const client = createTestClient()

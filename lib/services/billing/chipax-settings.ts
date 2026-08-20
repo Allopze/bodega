@@ -107,14 +107,23 @@ async function readRawChipaxSettings(): Promise<Partial<Record<ChipaxSettingFiel
   return raw
 }
 
+/** Sobre cifrado presente que no se pudo abrir (keyring ausente o rotado). */
+const UNREADABLE = Symbol("chipax-secret-unreadable")
+
 /**
  * Abre un secreto persistido.
  *
  * Un valor que no sea un sobre cifrado se ignora en vez de usarse: sólo puede
  * venir de una escritura a mano en la tabla, y aceptarlo convertiría un descuido
  * en credenciales en claro operando en silencio.
+ *
+ * Un sobre que existe pero no se puede descifrar es distinto de «no hay nada
+ * guardado» y se devuelve como tal: caer al `.env` en ese caso significa operar
+ * con la credencial ANTIGUA —la que la rotación vino a reemplazar— sin que nadie
+ * lo note, y con resultados intermitentes si sólo algunas réplicas tienen el
+ * keyring.
  */
-function openSecret(value: string | undefined, settingKey: string): string | null {
+function openSecret(value: string | undefined, settingKey: string): string | null | typeof UNREADABLE {
   if (value === undefined || value === "") return null
   if (!isEncryptedDteSetting(value)) {
     logger.warn("[billing/chipax] valor persistido sin cifrar, ignorado", { settingKey })
@@ -127,8 +136,14 @@ function openSecret(value: string | undefined, settingKey: string): string | nul
       settingKey,
       code: error instanceof Error ? error.message : "UNKNOWN",
     })
-    return null
+    return UNREADABLE
   }
+}
+
+/** Resuelve el valor vigente: guardado > entorno, salvo sobre ilegible. */
+function resolveSecret(stored: string | null | typeof UNREADABLE, fromEnv: string): string {
+  if (stored === UNREADABLE) return ""
+  return stored ?? fromEnv
 }
 
 function parseFlag(value: string | undefined, fallback: boolean): boolean {
@@ -156,8 +171,8 @@ export async function readChipaxConfig(): Promise<ChipaxConfig> {
     return env
   }
 
-  const appId = openSecret(raw.appId, CHIPAX_SETTING_KEYS.appId) ?? env.appId
-  const secretKey = openSecret(raw.secretKey, CHIPAX_SETTING_KEYS.secretKey) ?? env.secretKey
+  const appId = resolveSecret(openSecret(raw.appId, CHIPAX_SETTING_KEYS.appId), env.appId)
+  const secretKey = resolveSecret(openSecret(raw.secretKey, CHIPAX_SETTING_KEYS.secretKey), env.secretKey)
 
   return {
     ...env,
@@ -191,6 +206,11 @@ export async function readChipaxAdminStatus(): Promise<ChipaxAdminStatus> {
 
   const fields = Object.fromEntries(SECRET_FIELDS.map((field) => {
     const stored = openSecret(raw[field], CHIPAX_SETTING_KEYS[field])
+    if (stored === UNREADABLE) {
+      // Hay credencial guardada, pero este servidor no puede abrirla: decir
+      // «heredada del servidor» sería mentir sobre cuál está operando.
+      return [field, { configured: false, source: "missing" as const }]
+    }
     if (stored) return [field, { configured: true, source: "system_settings" as const }]
     const fromEnv = env[field]
     return [field, {
@@ -261,36 +281,41 @@ export async function saveChipaxSettings(
           set: { value: write.value, updatedAt },
         })
     }
-  })
-
-  await recordAudit({
-    userId: actor.userId,
-    userEmail: actor.userEmail,
-    action: "update",
-    entityType: "billing_chipax_settings",
-    entityId: "chipax",
-    // Sólo qué cambió, nunca a qué. El valor de un secreto no entra al log de
-    // auditoría ni siquiera truncado.
-    newState: {
-      enabled: input.enabled,
-      syncEnabled: input.syncEnabled,
-      appIdUpdated: secrets.some(([field]) => field === "appId"),
-      secretKeyUpdated: secrets.some(([field]) => field === "secretKey"),
-    },
+    // La auditoría de un cambio de credencial se confirma con el cambio: fuera
+    // de la transacción, un fallo del commit deja el secreto nuevo sin rastro
+    // de quién lo tocó.
+    await recordAudit({
+      userId: actor.userId,
+      userEmail: actor.userEmail,
+      action: "update",
+      entityType: "billing_chipax_settings",
+      entityId: "chipax",
+      // Sólo qué cambió, nunca a qué. El valor de un secreto no entra al log de
+      // auditoría ni siquiera truncado.
+      newState: {
+        enabled: input.enabled,
+        syncEnabled: input.syncEnabled,
+        appIdUpdated: secrets.some(([field]) => field === "appId"),
+        secretKeyUpdated: secrets.some(([field]) => field === "secretKey"),
+      },
+    }, tx)
   })
 }
 
 /** Borra lo persistido y devuelve el mando al `.env` del servidor. */
 export async function clearChipaxSettings(actor: ChipaxSettingsActor): Promise<void> {
-  await db
-    .delete(systemSettings)
-    .where(inArray(systemSettings.key, Object.values(CHIPAX_SETTING_KEYS)))
+  await db.transaction(async (tx) => {
+    await tx
+      .delete(systemSettings)
+      .where(inArray(systemSettings.key, Object.values(CHIPAX_SETTING_KEYS)))
 
-  await recordAudit({
-    userId: actor.userId,
-    userEmail: actor.userEmail,
-    action: "delete",
-    entityType: "billing_chipax_settings",
-    entityId: "chipax",
+    // Mismo criterio que al guardar: el rastro del borrado viaja con el borrado.
+    await recordAudit({
+      userId: actor.userId,
+      userEmail: actor.userEmail,
+      action: "delete",
+      entityType: "billing_chipax_settings",
+      entityId: "chipax",
+    }, tx)
   })
 }
