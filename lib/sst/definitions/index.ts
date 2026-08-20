@@ -10,6 +10,7 @@ import { INSPECCION_EPP } from './inspeccion-epp'
 import { OBSERVACION_AMPLIROLL } from './observacion-ampliroll'
 import { OBSERVACION_MAQUINARIA } from './observacion-maquinaria'
 import { AUDITORIA_SGSST } from './auditoria-sgsst'
+import { REPORTE_EQUIPOS } from './reporte-equipos'
 import type { ChecklistDefinition } from '../types'
 
 /**
@@ -26,6 +27,30 @@ export function isPersonEvaluationDefinition(code: string): code is typeof PERSO
   return (PERSON_EVALUATION_DEFINITION_CODES as readonly string[]).includes(code)
 }
 
+/**
+ * Definiciones que se conservan en el catálogo pero **no son instrumentos del
+ * motor de inspecciones**.
+ *
+ * Distinto de `PERSON_EVALUATION_DEFINITION_CODES`, que marca lo que pertenece
+ * al módulo de Evaluaciones: esto marca lo que no encaja en un motor que
+ * calcula cumplimiento y deriva hallazgos.
+ *
+ * `observacion_planeada` (Anexo 7) es el caso: un relato libre firmado por
+ * observador y trabajador, sin un solo ítem puntuable. En Inspecciones su
+ * `compliancePercent` es siempre null y `deriveFindings` no puede levantar
+ * ningún hallazgo, porque no hay respuesta que pueda ser 'no cumple'. Ocupaba
+ * sitio en el catálogo sin aportar ninguna de las dos cosas que el módulo
+ * hace. La definición se conserva: el Anexo 7 sigue siendo el formulario de la
+ * actividad PDTP n=39, que pasa a acreditarse a mano.
+ */
+export const NON_INSPECTION_DEFINITION_CODES = [
+  'observacion_planeada',
+] as const
+
+export function isNonInspectionDefinition(code: string): boolean {
+  return (NON_INSPECTION_DEFINITION_CODES as readonly string[]).includes(code)
+}
+
 export const CHECKLIST_DEFINITIONS: Record<string, ChecklistDefinition> = {
   'trabajador_nuevo': TRABAJADOR_NUEVO,
   'trabajador_antiguo': TRABAJADOR_ANTIGUO,
@@ -35,6 +60,9 @@ export const CHECKLIST_DEFINITIONS: Record<string, ChecklistDefinition> = {
   'inspeccion_contenedores': INSPECCION_CONTENEDORES,
   'inspeccion_carros': INSPECCION_CARROS,
   'inspeccion_equipos_moviles': INSPECCION_EQUIPOS_MOVILES,
+  // Reporte diario por equipo y turno (PDTP n=25/28). Distinto de
+  // `inspeccion_equipos_moviles` (n=33), que es mensual y la hace Prevención.
+  'reporte_equipos': REPORTE_EQUIPOS,
   'inspeccion_epp': INSPECCION_EPP,
   'observacion_ampliroll': OBSERVACION_AMPLIROLL,
   'observacion_maquinaria': OBSERVACION_MAQUINARIA,
@@ -53,5 +81,5 @@ export {
   INSPECCION_EXTINTORES, INSPECCION_CONTENEDORES, INSPECCION_CARROS,
   INSPECCION_EQUIPOS_MOVILES, INSPECCION_EPP,
   OBSERVACION_AMPLIROLL, OBSERVACION_MAQUINARIA,
-  AUDITORIA_SGSST,
+  AUDITORIA_SGSST, REPORTE_EQUIPOS,
 }

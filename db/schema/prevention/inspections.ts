@@ -1,5 +1,6 @@
 import { relations, sql } from "drizzle-orm"
 import { boolean, check, index, integer, jsonb, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core"
+import { fuelVehicles } from "../fuel-vehicles"
 import { users } from "../users"
 import { worksites } from "../worksites"
 import { preventionCapaActions } from "./capa"
@@ -57,8 +58,8 @@ export const preventionInspectionPrograms = pgTable("prevention_inspection_progr
   subjectType:       text("subject_type"),
   /** Recurso concreto que programa inspeccionar (función #11). */
   subjectResourceId: text("subject_resource_id").references(() => preventionEmergencyResources.id, { onDelete: "set null" }),
-  /* Equipo de flota al que aplica el programa (camión, acoplado, cargador).
-   * `subjectType` clasifica ('camion', 'aljibe', etc.) pero no tiene FK; el
+  /* Equipo de flota programado. Alternativa excluyente a `subjectResourceId`:
+   * el inventario de emergencias no modela camiones ni maquinaria, y el padrón
    * que sí lo hace es `fuelVehicles`. Se agrega como FK propia y no como par
    * polimórfico (`subjectKind` + `subjectRef`) porque el motor PDTP ya intentó
    * eso —`subjectId` referencia `fuelVehicles.id`/`workers.id` sin FK física—
@@ -174,6 +175,13 @@ export const preventionInspectionAnswers = pgTable("prevention_inspection_answer
   comment:          text("comment"),
   evidenceReference: text("evidence_reference"),
   danoPotencial:    text("dano_potencial"),
+  /* La respuesta la pre-llenó el reconocimiento de la planilla y todavía no la
+   * ratificó una persona. Sólo se marca en los ítems de daño potencial `fatal`
+   * —frenos, dirección, acople—: son los que, leídos al revés, dejan el equipo
+   * operando con una falla que mata. `assessRunCompletion` no deja cerrar la
+   * subida mientras quede uno sin confirmar. Responder el ítem a mano lo
+   * confirma por el acto de responderlo. */
+  needsConfirmation: boolean("needs_confirmation").notNull().default(false),
   createdAt:        timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   updatedAt:        timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [
@@ -217,6 +225,32 @@ export const preventionInspectionAnswerEvidence = pgTable("prevention_inspection
   createdAt:        timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [
   index("prevention_inspection_answer_evidence_answer_idx").on(table.answerId),
+])
+
+/* ── Documento origen: la foto de la planilla ─────────────────────────────
+ * Tabla propia y no `preventionInspectionAnswerEvidence`: aquella cuelga de una
+ * respuesta, y la foto del formulario es evidencia del run entero. `extraction`
+ * guarda lo que leyó la máquina —celdas, confianza, versión del layout— para
+ * poder auditar después qué dijo el reconocimiento frente a qué confirmó la
+ * persona. Nace vacío mientras el detector no exista.
+ */
+export const preventionInspectionRunDocuments = pgTable("prevention_inspection_run_documents", {
+  id:               text("id").primaryKey(),
+  runId:            text("run_id").notNull().references(() => preventionInspectionRuns.id, { onDelete: "cascade" }),
+  /** Ruta relativa bajo `storage/inspection-evidence/`, nunca el nombre original. */
+  path:             text("path").notNull(),
+  kind:             text("kind").notNull().default("source_form"),
+  caption:          text("caption"),
+  /** Lectura de la máquina. `null` = se subió sin reconocimiento. */
+  extraction:       jsonb("extraction").$type<{
+    layoutVersion: string
+    cells: { sectionId: string; itemId: string; result: string; confidence: number }[]
+  } | null>(),
+  uploadedByUserId: text("uploaded_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  createdAt:        timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+}, (table) => [
+  index("prevention_inspection_run_document_run_idx").on(table.runId, table.createdAt),
+  check("prevention_inspection_run_document_kind_valid", sql`${table.kind} IN ('source_form', 'attachment')`),
 ])
 
 /* ── Hallazgos ────────────────────────────────────────────────────────────
@@ -277,6 +311,11 @@ export const preventionInspectionRunsRelations = relations(preventionInspectionR
   worksite: one(worksites, { fields: [preventionInspectionRuns.worksiteId], references: [worksites.id] }),
   answers: many(preventionInspectionAnswers),
   findings: many(preventionInspectionFindings),
+  documents: many(preventionInspectionRunDocuments),
+}))
+
+export const preventionInspectionRunDocumentsRelations = relations(preventionInspectionRunDocuments, ({ one }) => ({
+  run: one(preventionInspectionRuns, { fields: [preventionInspectionRunDocuments.runId], references: [preventionInspectionRuns.id] }),
 }))
 
 export const preventionInspectionAnswersRelations = relations(preventionInspectionAnswers, ({ one, many }) => ({
@@ -299,3 +338,4 @@ export type PreventionInspectionRun = typeof preventionInspectionRuns.$inferSele
 export type PreventionInspectionAnswer = typeof preventionInspectionAnswers.$inferSelect
 export type PreventionInspectionAnswerEvidence = typeof preventionInspectionAnswerEvidence.$inferSelect
 export type PreventionInspectionFinding = typeof preventionInspectionFindings.$inferSelect
+export type PreventionInspectionRunDocument = typeof preventionInspectionRunDocuments.$inferSelect

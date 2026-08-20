@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { getDefinition, CHECKLIST_DEFINITIONS, TRABAJADOR_NUEVO, TRABAJADOR_ANTIGUO, isPersonEvaluationDefinition } from '../definitions'
+import { getDefinition, CHECKLIST_DEFINITIONS, TRABAJADOR_NUEVO, TRABAJADOR_ANTIGUO, isPersonEvaluationDefinition, isNonInspectionDefinition } from '../definitions'
 
 // ── CHECKLIST_DEFINITIONS ───────────────────────────────────────────────────
 
@@ -20,6 +20,19 @@ describe('CHECKLIST_DEFINITIONS', () => {
     expect(isPersonEvaluationDefinition('trabajador_nuevo')).toBe(true)
     expect(isPersonEvaluationDefinition('trabajador_antiguo')).toBe(true)
     expect(isPersonEvaluationDefinition('inspeccion_taller')).toBe(false)
+  })
+
+  it('deja la Observación Planeada fuera del motor de inspecciones sin sacarla del catálogo', () => {
+    // El Anexo 7 es un relato libre sin ítems puntuables: en Inspecciones su
+    // cumplimiento es siempre null y no puede derivar un solo hallazgo. Se
+    // conserva la definición —sigue siendo el formulario de la actividad PDTP
+    // n=39— pero deja de ofrecerse como plantilla.
+    expect(isNonInspectionDefinition('observacion_planeada')).toBe(true)
+    expect(CHECKLIST_DEFINITIONS['observacion_planeada']).toBeDefined()
+    // Las otras dos observaciones sí puntúan y se quedan.
+    expect(isNonInspectionDefinition('observacion_ampliroll')).toBe(false)
+    expect(isNonInspectionDefinition('observacion_maquinaria')).toBe(false)
+    expect(isNonInspectionDefinition('inspeccion_taller')).toBe(false)
     expect(Object.keys(CHECKLIST_DEFINITIONS).length).toBeGreaterThanOrEqual(2)
   })
 })

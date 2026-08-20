@@ -157,6 +157,7 @@ export function fieldKindAcceptsPartial(kind: FieldKind | null | undefined): boo
  */
 const NON_SCORABLE_KINDS: readonly FieldKind[] = [
   "text",
+  "number",
   "textarea",
   "date",
   "select",
@@ -205,6 +206,11 @@ export interface InspectionAnswerInput {
   comment?: string | null
   /** Respuesta de los ítems que no puntúan: es el dato en sí, no un juicio. */
   value?: string | null
+  /**
+   * La pre-llenó el reconocimiento de la planilla y falta que una persona la
+   * ratifique. Sólo la marca la ingesta, y sólo en ítems `fatal`.
+   */
+  needsConfirmation?: boolean
 }
 
 /** Largo mínimo de la observación que justifica un 'no aplica' o un 'Regular'. */
@@ -236,6 +242,20 @@ export function validateAnswerRow(
   }
   if (answer.result === "recorded" && (answer.value?.trim().length ?? 0) === 0) {
     return `"${item.label}" requiere un valor.`
+  }
+  if (item.kind === "number" && answer.result === "recorded") {
+    const raw = answer.value?.trim() ?? ""
+    // "134.122" en el papel son ciento treinta y cuatro mil, no 134,122.
+    // `Number()` lo acepta en silencio y el horómetro entra mil veces menor,
+    // que después viaja a `maintenance_records.hourMeterReading`. Se rechaza
+    // el patrón de separador de miles en vez de adivinar cuál quiso decir.
+    if (/^\d{1,3}(\.\d{3})+$/.test(raw)) {
+      return `"${item.label}": escribe el número sin separador de miles (${raw.replace(/\./g, "")}).`
+    }
+    const parsed = Number(raw.replace(",", "."))
+    if (!Number.isFinite(parsed) || parsed < 0) {
+      return `"${item.label}" requiere un número válido de 0 o más.`
+    }
   }
   // 'partial' (Regular) sólo existe en la escala B/R/M — aceptarlo en un ítem
   // cumple/no-cumple inventaría un estado que ese ítem no tiene.
@@ -332,8 +352,21 @@ export function deriveFindings(items: InspectionItemSpec[], answers: InspectionA
 }
 
 export interface CompletionBlocker {
-  kind: "missing_required" | "missing_na_reason" | "missing_partial_reason" | "missing_closing_act"
+  kind: "missing_required" | "missing_na_reason" | "missing_partial_reason" | "missing_closing_act" | "unconfirmed_critical"
   detail: string
+}
+
+/**
+ * Ítems cuya respuesta pre-llenada por el reconocimiento exige ratificación
+ * humana antes de cerrar la subida.
+ *
+ * Son los de daño potencial `fatal` —frenos, dirección, sistema de acople—.
+ * El reconocimiento sí los pre-llena (decisión del 2026-08-19), pero leídos al
+ * revés dejan el equipo operando con la falla que mata, así que no pueden
+ * quedar aprobados por omisión: el resto del formulario sí.
+ */
+export function requiresHumanConfirmation(item: Pick<InspectionItemSpec, "danoPotencial">): boolean {
+  return item.danoPotencial === "fatal"
 }
 
 /* ── Acta de cierre (función #2) ──────────────────────────────────────────
@@ -441,6 +474,16 @@ export function assessRunCompletion(
       blockers.push({ kind: "missing_partial_reason", detail: item.label })
     }
   }
+  // Ratificación de lo que leyó la máquina en los ítems que matan. Va después
+  // del recorrido de obligatorios para que el mensaje liste sólo lo que queda
+  // realmente pendiente de confirmar, no lo que además falta responder.
+  for (const answer of answers) {
+    if (!answer.needsConfirmation) continue
+    const item = items.find((entry) => entry.sectionId === answer.sectionId && entry.itemId === answer.itemId)
+    if (!item || !requiresHumanConfirmation(item)) continue
+    blockers.push({ kind: "unconfirmed_critical", detail: item.label })
+  }
+
   // El acta sólo se exige si la plantilla la declara. `closing` es opcional
   // para no romper a los llamadores que sólo evalúan las respuestas.
   if (closing?.spec) {

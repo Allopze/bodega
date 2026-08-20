@@ -48,11 +48,22 @@ type InspectionTemplateSpec = {
 
 export const PDTP_2026_INSPECTION_SPECS: readonly InspectionTemplateSpec[] = [
   { n: 24, definitionCode: "inspeccion_extintores",     name: "Inspección de Estado de Extintores",              kind: "inspection" },
+  // n=25 "Realizar report de uso diario de equipos". Las hermanas del grupo NO
+  // se cablean: la n=26 ("Revisión y firma del report") y la n=28 ("Revisar y
+  // cierra las inspecciones de estado de equipos") son actividades de revisión,
+  // y `onInspectionCompleted` dispara al **completar**, no al revisar. Darlas
+  // por acreditadas cuando alguien digita el papel falsificaría la evidencia de
+  // que el supervisor y el jefe de mantención las revisaron. Quedan manuales
+  // hasta que el conector sepa disparar también en `reviewed`.
+  { n: 25, definitionCode: "reporte_equipos",           name: "Reporte de Uso Diario de Equipos",                kind: "inspection" },
   { n: 27, definitionCode: "inspeccion_taller",         name: "Inspección Taller de Mantención y Bodega RESPEL", kind: "inspection" },
   { n: 29, definitionCode: "inspeccion_contenedores",   name: "Inspección de Contenedores",                      kind: "inspection" },
   { n: 33, definitionCode: "inspeccion_equipos_moviles", name: "Inspección de Equipos Móviles",                  kind: "inspection" },
   { n: 34, definitionCode: "inspeccion_carros",         name: "Inspección de Carros",                            kind: "inspection" },
-  { n: 39, definitionCode: "observacion_planeada",      name: "Observación Planeada",                            kind: "observation" },
+  // n=39 (Observación Planeada, Anexo 7) sale del motor de inspecciones: es un
+  // relato libre sin ítems puntuables, así que no calcula cumplimiento ni puede
+  // derivar hallazgos. La definición se conserva en el catálogo; la actividad
+  // pasa a acreditarse a mano — ver NON_INSPECTION_DEFINITION_CODES.
   { n: 40, definitionCode: "observacion_ampliroll",     name: "Observación de Seguridad: Camión Ampliroll",      kind: "observation" },
   { n: 41, definitionCode: "observacion_maquinaria",    name: "Observación de Seguridad: Maquinaria Pesada",     kind: "observation" },
   { n: 64, definitionCode: "inspeccion_epp",            name: "Inspección de Uso y Estado de EPP (JT)",          kind: "inspection", versionSuffix: "jt" },

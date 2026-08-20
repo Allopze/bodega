@@ -21,6 +21,13 @@ export type FieldKind =
   | 'text'
   /** Texto libre multilínea (relato/descripción). `text` es de una sola línea. */
   | 'textarea'
+  /**
+   * Lectura numérica (horómetro, odómetro, litros). Distinto de `text` porque
+   * su valor se calcula: alimenta `maintenance_records.hourMeterReading` al
+   * derivar una mantención desde un hallazgo. Guardado como `recorded`, igual
+   * que el resto de los campos de dato.
+   */
+  | 'number'
   | 'date'
   | 'select'
   | 'multiselect'

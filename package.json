@@ -39,6 +39,7 @@
     "db:normalize-epp-families": "tsx --env-file=.env.local scripts/normalize-epp-families.ts",
     "db:normalize-fuel-suppliers": "tsx --env-file=.env.local scripts/normalize-fuel-suppliers.ts",
     "db:sync-rbac": "tsx --env-file=.env.local scripts/sync-rbac.ts",
+    "forms:overlay-grid": "tsx scripts/overlay-form-grid.ts",
     "db:studio": "drizzle-kit studio",
     "e2e:setup": "tsx e2e/setup-db.ts",
     "screenshots": "tsx scripts/capture-all-routes.ts",
