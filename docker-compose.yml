@@ -103,6 +103,10 @@ services:
       - BACKUP_DIR=${BACKUP_DIR:-/data/backups}
       - GDRIVE_BACKUPS_DEST=${GDRIVE_BACKUPS_DEST:-}
       - RETENTION_DAYS=${RETENTION_DAYS:-30}
+      # Passthrough, nunca un valor literal. `app` también respalda: el botón
+      # de Administración › Respaldos invoca al mismo orquestador. Sin esto el
+      # respaldo manual subiría EN CLARO mientras el programado va cifrado.
+      - BACKUP_ENCRYPTION_PASSPHRASE=${BACKUP_ENCRYPTION_PASSPHRASE:-}
       - BACKUP_SCRIPTS_PATH=${BACKUP_SCRIPTS_PATH:-}
       - RCLONE_CONFIG=${RCLONE_CONFIG:-}
       - NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA=${NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA:-}
@@ -143,6 +147,12 @@ services:
       - BACKUP_DIR=${BACKUP_DIR:-/data/backups}
       - GDRIVE_BACKUPS_DEST=${GDRIVE_BACKUPS_DEST:-}
       - RETENTION_DAYS=${RETENTION_DAYS:-30}
+      # Passthrough, nunca un valor literal: es la llave con la que
+      # backup-orchestrator.sh cifra el snapshot antes de subirlo a Drive. Sin
+      # ella acá el respaldo sube EN CLARO aunque el host la tenga configurada
+      # —con el keyring DTE dentro del mismo tar— y nadie se entera. Está
+      # deliberadamente fuera de ENV_WHITELIST: no viaja dentro de lo que cifra.
+      - BACKUP_ENCRYPTION_PASSPHRASE=${BACKUP_ENCRYPTION_PASSPHRASE:-}
       - APP_URL=http://app:3000
       - CRON_SECRET=${CRON_SECRET:-}
       - APP_VERSION=${APP_VERSION:-}

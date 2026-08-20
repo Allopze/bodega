@@ -13,10 +13,14 @@ set -euo pipefail
 #   - Servidor Ubuntu/Debian 22.04+ limpio
 #   - Acceso root o sudo
 #   - Service Account JSON disponible (ver SETUP_GOOGLE_DRIVE_BACKUP.md)
+#   - Si los respaldos se suben cifrados: BACKUP_ENCRYPTION_PASSPHRASE en el
+#     entorno. NO viaja dentro del snapshot (ese es el punto); vive en el
+#     gestor de secretos corporativo. Ver docs/deploy/RESPALDOS_Y_RESTAURACION.md
 #
 # Usage:
 #   sudo ./scripts/catastrophic-restore.sh --service-account-json /path/to/sa.json
 #   sudo ./scripts/catastrophic-restore.sh --date 2026-07-19 --service-account-json /path/to/sa.json
+#   sudo BACKUP_ENCRYPTION_PASSPHRASE='...' ./scripts/catastrophic-restore.sh --service-account-json /path/to/sa.json
 #
 # Flags:
 #   --service-account-json PATH   (REQUERIDO) Ruta al JSON del Service Account
@@ -26,6 +30,9 @@ set -euo pipefail
 # ──────────────────────────────────────────────────────────────────────────────
 
 # ── Parse flags ──────────────────────────────────────────────────────────────
+
+# Se guarda para poder sugerir el reintento exacto si falta la passphrase.
+ORIGINAL_ARGS="$*"
 
 SA_JSON=""
 RESTORE_DATE=""
@@ -62,6 +69,9 @@ RESTORE_DATE="${RESTORE_DATE:-latest}"
 
 log()   { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"; }
 error() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] ERROR: $*"; }
+# warn() se usaba en el paso 6 sin estar definida: con `set -e` el "command not
+# found" abortaba la restauración justo cuando sólo había que advertir.
+warn()  { echo "[$(date '+%Y-%m-%d %H:%M:%S')] WARN: $*"; }
 run() {
   if $DRY_RUN; then
     log "[DRY-RUN] $*"
@@ -172,6 +182,81 @@ MANIFEST="${RESTORE_TARGET}/manifest.json"
 if [ ! -f "$MANIFEST" ]; then
   error "No se encontró manifest.json. Backup corrupto."
   exit 1
+fi
+
+# ── 5b. Descifrar el snapshot si viene cifrado ────────────────────────────────
+# backup-orchestrator.sh sube `postgres.dump.gpg`, `storage.tar.gz.gpg` y
+# `env-config.tar.gz.gpg` (gpg simétrico, AES256) cuando el host de respaldo
+# tiene BACKUP_ENCRYPTION_PASSPHRASE; el manifiesto viaja siempre en claro.
+# Sus sha256 son los del archivo ANTES de cifrar, así que el orden obligatorio
+# es descifrar primero y verificar después: al revés todo falla en falso.
+
+SNAPSHOT_FILES=(postgres.dump storage.tar.gz env-config.tar.gz)
+MANIFEST_ENCRYPTED=$(jq -r '.upload.encrypted // false' "$MANIFEST" 2>/dev/null || echo false)
+
+if [ -f "${RESTORE_TARGET}/postgres.dump.gpg" ] || [ "$MANIFEST_ENCRYPTED" = "true" ]; then
+  log "Snapshot CIFRADO (gpg simétrico AES256)."
+
+  if [ -z "${BACKUP_ENCRYPTION_PASSPHRASE:-}" ]; then
+    error "El snapshot de '${RESTORE_DATE}' está cifrado y BACKUP_ENCRYPTION_PASSPHRASE no está definida."
+    error ""
+    error "  Sin esa passphrase este respaldo es IRRECUPERABLE. No está dentro del"
+    error "  snapshot a propósito: cifrar el dump y guardar la llave al lado no protege nada."
+    error ""
+    error "  Dónde está guardada:"
+    error "    1. Gestor de secretos corporativo → entrada 'Chome — BACKUP_ENCRYPTION_PASSPHRASE'"
+    error "    2. Copia sellada fuera de línea (caja fuerte de gerencia)"
+    error "    3. Procedimiento completo: docs/deploy/RESPALDOS_Y_RESTAURACION.md"
+    error ""
+    error "  Reintenta con:"
+    error "    sudo BACKUP_ENCRYPTION_PASSPHRASE='<passphrase>' $0 ${ORIGINAL_ARGS}"
+    exit 1
+  fi
+
+  if ! command -v gpg &>/dev/null; then
+    error "gpg no está instalado y el snapshot está cifrado. Instala: apt-get install -y gnupg"
+    exit 1
+  fi
+
+  log "Descifrando snapshot antes de verificar checksums..."
+  GPG_ERR="${RESTORE_TARGET}/.gpg-error"
+
+  for plain in "${SNAPSHOT_FILES[@]}"; do
+    enc="${RESTORE_TARGET}/${plain}.gpg"
+
+    if [ ! -f "$enc" ]; then
+      if [ -f "${RESTORE_TARGET}/${plain}" ]; then
+        log "  ${plain}: ya viene en claro, no hay nada que descifrar"
+        continue
+      fi
+      error "  ${plain}: no está ni cifrado (${plain}.gpg) ni en claro. Snapshot incompleto."
+      exit 1
+    fi
+
+    if $DRY_RUN; then
+      log "[DRY-RUN] gpg --decrypt ${enc} → ${RESTORE_TARGET}/${plain}"
+      continue
+    fi
+
+    if ! printf '%s' "${BACKUP_ENCRYPTION_PASSPHRASE}" | gpg --batch --quiet --yes \
+        --decrypt --passphrase-fd 0 --pinentry-mode loopback \
+        --output "${RESTORE_TARGET}/${plain}" "$enc" 2>"$GPG_ERR"; then
+      error "  ${plain}: gpg no pudo descifrar el archivo."
+      error "  Causa más probable: la passphrase no corresponde a ESTE snapshot"
+      error "  (se rotó después del ${RESTORE_DATE}). Prueba la passphrase anterior:"
+      error "  el gestor de secretos guarda el histórico de rotaciones."
+      sed 's/^/    gpg: /' "$GPG_ERR" >&2 2>/dev/null || true
+      rm -f "$GPG_ERR" "${RESTORE_TARGET}/${plain}"
+      exit 1
+    fi
+
+    # El env-config lleva secretos en claro: no queda legible para otros usuarios.
+    chmod 600 "${RESTORE_TARGET}/${plain}"
+    log "  ${plain}: descifrado"
+  done
+
+  rm -f "$GPG_ERR"
+  log "Snapshot descifrado. Los sha256 del manifiesto son los del archivo en claro."
 fi
 
 log "Manifiesto encontrado. Verificando checksums..."
@@ -391,6 +476,11 @@ log "Próximos pasos:"
 log "  1. Revisa los secrets en ${APP_PATH}/.env"
 log "     Faltan: AUTH_SECRET, PREVENTION_DATA_ENCRYPTION_KEY, CRON_SECRET"
 log "     → Sácalos del password manager corporativo"
+log ""
+log "  1b. Vuelve a inyectar BACKUP_ENCRYPTION_PASSPHRASE en el entorno del host"
+log "      (docker-compose / systemd / cron). NO está en el .env restaurado a"
+log "      propósito, así que sin este paso los respaldos futuros suben SIN CIFRAR."
+log "      Verifica después con: sudo scripts/backup-verify.sh"
 log ""
 log "  2. Verifica que el Service Account JSON esté en su lugar:"
 log "     ls -la /srv/bodega/secrets/gdrive-service-account.json"

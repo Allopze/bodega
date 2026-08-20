@@ -46,17 +46,21 @@ log()  { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"; }
 error() { log "ERROR: $*"; }
 warn()  { log "WARN: $*"; }
 
-# Variable global para directorio temporal de config (lo limpia cleanup)
+# Variables globales para directorios temporales (los limpia cleanup)
 _CONFIG_TMP=""
+_UPLOAD_TMP=""
 # Variable global para trackear el paso que falló
 _FAILED_STEP=""
 
 cleanup() {
   local exit_code=$?
 
-  # Limpiar directorio temporal si existe
+  # Limpiar directorios temporales si existen
   if [ -n "$_CONFIG_TMP" ] && [ -d "$_CONFIG_TMP" ]; then
     rm -rf "$_CONFIG_TMP" 2>/dev/null || true
+  fi
+  if [ -n "$_UPLOAD_TMP" ] && [ -d "$_UPLOAD_TMP" ]; then
+    rm -rf "$_UPLOAD_TMP" 2>/dev/null || true
   fi
 
   if [ $exit_code -ne 0 ]; then
@@ -183,27 +187,56 @@ _CONFIG_TMP=$(mktemp -d)
 # Por eso primero se intenta el archivo y, si no existe, se genera desde las
 # variables de entorno del proceso usando una whitelist de vars conocidas.
 
-# Variables de entorno conocidas que se incluyen en el .env generado
+# Variables de entorno conocidas que se incluyen en el .env generado.
+#
+# DEBE cubrir TODAS las que docker-compose.yml inyecta al servicio `app`:
+# scripts/backup-env-whitelist.test.ts falla si el compose gana una variable
+# que esta lista no guarda. Faltaba DTE_SETTINGS_KEYRING, o sea que el respaldo
+# guardaba los sobres `enc:v1:` del dump y tiraba la llave que los abre: un
+# restore dejaba las credenciales del portal y de Chipax ilegibles para siempre.
+#
+# NUNCA agregar acá BACKUP_ENCRYPTION_PASSPHRASE: es la clave con la que se
+# cifra este mismo snapshot y viajaría dentro de lo que protege.
 ENV_WHITELIST=(
-  NODE_ENV HOSTNAME
+  NODE_ENV HOSTNAME TZ
   DATABASE_URL POSTGRES_DB POSTGRES_USER POSTGRES_PASSWORD PGHOST
-  AUTH_SECRET AUTH_SECRET_PREVIOUS AUTH_URL NEXTAUTH_URL
+  AUTH_SECRET AUTH_SECRET_PREVIOUS AUTH_URL NEXTAUTH_URL NEXTAUTH_SECRET
   APP_URL PDF_RENDER_ORIGIN
   RESEND_API_KEY
   STORAGE_PATH BACKUP_DIR BACKUP_SCRIPTS_PATH
-  GDRIVE_BACKUPS_DEST RETENTION_DAYS
+  GDRIVE_BACKUPS_DEST RETENTION_DAYS RCLONE_CONFIG
   CRON_SECRET
-  COPEC_USERNAME COPEC_PASSWORD COPEC_SYNC_START_DATE
+  COPEC_USERNAME COPEC_PASSWORD COPEC_SYNC_START_DATE COPEC_SYNC_IMPORTER_EMAIL
   TAX_RATE PDF_MAX_CONCURRENT PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH
   TAE_OCR_MAX_CONCURRENT
   SENTRY_DSN NEXT_PUBLIC_SENTRY_DSN
+  NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA
   E2E_DATABASE_URL
+  # Portal DTE: la llave del keyring y las credenciales legacy. Sin la llave el
+  # dump restaurado es indescifrable (`encryption_mode=encrypted_only` sobrevive
+  # al dump y prohíbe el fallback al .env).
+  DTE_SETTINGS_KEYRING DTE_SETTINGS_ACTIVE_KEY_ID DTE_SETTINGS_MODE
+  DTE_PORTAL_BASE_URL DTE_PORTAL_RUT_USR DTE_PORTAL_RUT_EMP
+  DTE_PORTAL_CLAVE DTE_PORTAL_CODEMP
+  DTE_SYNC_ENABLED DTE_SYNC_IMPORTER_EMAIL DTE_SYNC_DELAY_MS
+  # Facturación y Chipax: flags y credenciales de la API financiera.
+  BILLING_SALES_SYNC_ENABLED BILLING_HISTORY_FLOOR
+  BILLING_MATCH_AMOUNT_TOLERANCE_CLP BILLING_MATCH_DATE_WINDOW_DAYS
+  BILLING_COMPANY_TAX_ID BILLING_CHIPAX_ENABLED BILLING_CHIPAX_SYNC_ENABLED
+  CHIPAX_OPENAPI_URL CHIPAX_API_BASE_URL CHIPAX_APP_ID CHIPAX_SECRET_KEY
+  CHIPAX_REQUEST_TIMEOUT_MS
 )
 
 if [ -f "/srv/bodega/.env" ]; then
-  cp /srv/bodega/.env "${_CONFIG_TMP}/.env"
+  # Copia FILTRADA, no `cp`: si la passphrase de cifrado vive en el archivo
+  # físico, un `cp` la metía dentro del tar que ella misma cifra — la llave
+  # viajando junto al candado. La whitelist de arriba ya la excluye en la otra
+  # rama; acá hay que quitarla a mano.
+  grep -Ev '^[[:space:]]*(export[[:space:]]+)?BACKUP_ENCRYPTION_PASSPHRASE=' \
+    /srv/bodega/.env > "${_CONFIG_TMP}/.env" || true
+  chmod 600 "${_CONFIG_TMP}/.env"
   ENV_SOURCE="physical_file"
-  log "  .env: respaldado desde archivo físico (/srv/bodega/.env)"
+  log "  .env: respaldado desde archivo físico (/srv/bodega/.env, sin la passphrase de cifrado)"
 else
   # En Docker las vars vienen del environment, no hay archivo.
   # Generamos .env desde las variables de entorno del proceso.
@@ -223,28 +256,15 @@ else
   log "  .env: generado con whitelist de ${#ENV_WHITELIST[@]} variables"
 fi
 
-# Respaldar configuración de rclone (necesaria para restore desde Drive)
-if [ -f "$RCLONE_CONFIG_PATH" ]; then
-  cp "$RCLONE_CONFIG_PATH" "${_CONFIG_TMP}/rclone.conf"
-  HAS_RCLONE_CONF="true"
-  log "  rclone.conf: respaldado (${RCLONE_CONFIG_PATH})"
-else
-  HAS_RCLONE_CONF="false"
-  warn "  rclone.conf no encontrado en ${RCLONE_CONFIG_PATH}"
-fi
-
-# Respaldar Service Account JSON de Google Drive
+# rclone.conf y el Service Account de Drive NO entran al tar: son las
+# credenciales del propio destino y viajaban al mismo directorio que protegen,
+# así que un solo snapshot filtrado daba acceso a los 30 retenidos. El restore
+# ya exige `--service-account-json` como parámetro obligatorio y no los necesita
+# desde adentro; su copia vive en el gestor de secretos, fuera del respaldo.
+HAS_RCLONE_CONF="false"
 HAS_SA="false"
-for sa_path in "${SA_SEARCH_PATHS[@]}"; do
-  if [ -f "$sa_path" ]; then
-    cp "$sa_path" "${_CONFIG_TMP}/gdrive-service-account.json"
-    HAS_SA="true"
-    log "  Service Account: respaldado (${sa_path})"
-    break
-  fi
-done
-if [ "$HAS_SA" = "false" ]; then
-  warn "  Service Account JSON no encontrado (buscado en: ${SA_SEARCH_PATHS[*]})"
+if [ -f "$RCLONE_CONFIG_PATH" ] || [ -f "${SA_SEARCH_PATHS[0]}" ]; then
+  log "  rclone.conf / Service Account: NO incluidos a propósito (credenciales del destino)"
 fi
 
 # Metadata del sistema
@@ -275,6 +295,9 @@ log "  Config: ${CONFIG_SIZE} bytes | SHA256: ${CONFIG_SHA256}"
 # ── 4. Ensamblar manifiesto final ────────────────────────────────────────────
 
 log "[4/4] Generando manifiesto de backup..."
+
+# Se resuelve en el paso de subida; acá sólo se declara para el manifiesto.
+SNAPSHOT_ENCRYPTED="$([ -n "${BACKUP_ENCRYPTION_PASSPHRASE:-}" ] && echo true || echo false)"
 
 cat > "$MANIFEST" <<MANIFEST_EOF
 {
@@ -316,6 +339,10 @@ cat > "$MANIFEST" <<MANIFEST_EOF
     }
   },
   "total_size_bytes": $((PG_SIZE + STORAGE_SIZE + CONFIG_SIZE)),
+  "upload": {
+    "encrypted": ${SNAPSHOT_ENCRYPTED:-false},
+    "note": "Si encrypted=true los archivos remotos llevan sufijo .gpg y los sha256 son los del archivo en claro."
+  },
   "integrity": {
     "manifest_sha256": "",
     "verified_at": null
@@ -338,11 +365,54 @@ _FAILED_STEP="upload_drive"
 
 UPLOAD_PATH="${GDRIVE_DEST}/${DATE_STR}"
 
+# ── Cifrado del snapshot antes de salir del host ─────────────────────────────
+# El dump lleva los sobres `enc:v1:` y el .env generado lleva la llave que los
+# abre: subirlos en claro anula el cifrado de `settings-crypto.ts`. Con
+# BACKUP_ENCRYPTION_PASSPHRASE definida (fuera del snapshot: no está en la
+# whitelist) se sube `*.gpg` en vez de los archivos planos. El manifiesto viaja
+# en claro a propósito: sólo tiene checksums y es lo que el restore lee primero.
+UPLOAD_SRC="${SNAPSHOT_DIR}"
+SNAPSHOT_ENCRYPTED="false"
+
+if [ -n "${BACKUP_ENCRYPTION_PASSPHRASE:-}" ]; then
+  _FAILED_STEP="encrypt_snapshot"
+  if ! command -v gpg &>/dev/null; then
+    error "BACKUP_ENCRYPTION_PASSPHRASE está definida pero gpg no está instalado."
+    error "  Instale gnupg o quite la variable; no se sube un snapshot en claro por omisión."
+    exit 1
+  fi
+  _UPLOAD_TMP=$(mktemp -d)
+  for plain in postgres.dump storage.tar.gz env-config.tar.gz; do
+    printf '%s' "${BACKUP_ENCRYPTION_PASSPHRASE}" | gpg --batch --quiet --yes \
+      --symmetric --cipher-algo AES256 \
+      --passphrase-fd 0 --pinentry-mode loopback \
+      --output "${_UPLOAD_TMP}/${plain}.gpg" "${SNAPSHOT_DIR}/${plain}"
+
+    # Ensayo de descifrado ANTES de subir: un .gpg que esta misma passphrase no
+    # abre es un respaldo perdido que nadie nota hasta el día del desastre.
+    if ! printf '%s' "${BACKUP_ENCRYPTION_PASSPHRASE}" | gpg --batch --quiet --yes \
+        --decrypt --passphrase-fd 0 --pinentry-mode loopback \
+        --output /dev/null "${_UPLOAD_TMP}/${plain}.gpg"; then
+      error "El cifrado de ${plain} no se pudo verificar: gpg no puede volver a abrirlo."
+      error "  NO se sube un snapshot ilegible. Revisa la instalación de gpg y reintenta."
+      exit 1
+    fi
+  done
+  cp "$MANIFEST" "${_UPLOAD_TMP}/manifest.json"
+  UPLOAD_SRC="${_UPLOAD_TMP}"
+  SNAPSHOT_ENCRYPTED="true"
+  log "  Snapshot cifrado (AES256, gpg simétrico). Descifrar: gpg --decrypt archivo.gpg"
+  log "  Los SHA256 del manifiesto son los del archivo EN CLARO: verificar después de descifrar."
+else
+  warn "  BACKUP_ENCRYPTION_PASSPHRASE no definida: el snapshot sube SIN CIFRAR."
+  warn "  Incluye la llave DTE_SETTINGS_KEYRING junto al dump que esa llave abre."
+fi
+
 # Verificar que rclone está configurado
 if command -v rclone &>/dev/null && rclone listremotes 2>/dev/null | grep -q 'gdrive-backups:'; then
   log "  Destino: ${UPLOAD_PATH}"
 
-  rclone copy "${SNAPSHOT_DIR}/" "${UPLOAD_PATH}/" \
+  rclone copy "${UPLOAD_SRC}/" "${UPLOAD_PATH}/" \
     --verbose \
     --checksum \
     --progress 2>&1 | while IFS= read -r line; do log "  rclone: ${line}"; done

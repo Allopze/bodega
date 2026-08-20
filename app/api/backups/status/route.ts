@@ -178,13 +178,24 @@ export async function GET() {
   }
 
   // 4. Quick check: try running backup-verify with --json (non-blocking, best-effort)
+  //
+  // backup-verify.sh sale con 1 (WARNING) o 2 (CRITICAL) justo cuando hay algo
+  // que reportar, y execFile rechaza con cualquier código != 0. El JSON viene
+  // igual en err.stdout: si se descarta el error sin mirarlo, la pantalla de
+  // respaldos nunca muestra un problema — el único caso que importa.
+  let verifyStdout = ""
   try {
-    const { stdout } = await execFileAsync(
+    verifyStdout = (await execFileAsync(
       `${SCRIPTS_DIR}/backup-verify.sh`,
       ["--json"],
       { timeout: 15000 },
-    )
-    const parsed = JSON.parse(stdout)
+    )).stdout
+  } catch (err) {
+    verifyStdout = (err as { stdout?: string }).stdout ?? ""
+  }
+
+  try {
+    const parsed = JSON.parse(verifyStdout)
     if (parsed && typeof parsed === "object" && typeof parsed.exit_code === "number") {
       if (parsed.exit_code === 2) {
         result.status = "error"

@@ -3,7 +3,9 @@ set -euo pipefail
 
 # ── Backup Verify — Monitoreo y verificación de backups ───────────────────────
 # Verifica que los backups recientes existan, tengan checksums válidos y
-# estén accesibles en Google Drive.
+# estén accesibles en Google Drive. Si el snapshot remoto viene cifrado, además
+# ensaya el descifrado con BACKUP_ENCRYPTION_PASSPHRASE (ver paso 2b): un
+# respaldo que la passphrase no abre se detecta acá, no el día del desastre.
 #
 # Usage:
 #   ./scripts/backup-verify.sh              # Verifica el backup más reciente
@@ -35,7 +37,10 @@ done
 
 # ── Funciones ─────────────────────────────────────────────────────────────────
 
-log()   { echo "$*"; }
+# Con --json el informe legible va a stderr: los "OK: ..." salían por stdout
+# mezclados con el JSON y `JSON.parse` de app/api/backups/status/route.ts fallaba
+# siempre, así que el estado de los respaldos nunca llegaba a la UI.
+log()   { if $JSON_OUTPUT; then echo "$*" >&2; else echo "$*"; fi; }
 error() { echo "$*" >&2; }
 
 # ── Estado inicial ────────────────────────────────────────────────────────────
@@ -75,7 +80,10 @@ if ! $DRIVE_ONLY; then
   fi
 
   # Verificar snapshots recientes
-  SNAPSHOTS=$(find "${BACKUP_DIR}/snapshots" -maxdepth 1 -type d -mtime -2 2>/dev/null | wc -l)
+  # `|| true`: con `pipefail`, un find que falla (directorio inexistente) hacía
+  # fallar la asignación y `set -e` mataba el script sin imprimir ni el informe
+  # ni el JSON — el monitoreo veía exit 1 y ningún motivo.
+  SNAPSHOTS=$(find "${BACKUP_DIR}/snapshots" -maxdepth 1 -type d -mtime -2 2>/dev/null | wc -l || true)
   if [ "$SNAPSHOTS" -eq 0 ]; then
     ISSUES+=("No hay snapshots de backup en las últimas 48h")
     [ "$EXIT_CODE" -lt 2 ] && EXIT_CODE=2
@@ -122,10 +130,46 @@ else
   [ "$EXIT_CODE" -lt 1 ] && EXIT_CODE=1
 fi
 
+# ── 2b. Ensayo de descifrado del snapshot remoto ─────────────────────────────
+# Un respaldo cifrado que la passphrase no abre es peor que no tener respaldo:
+# el monitoreo queda verde durante meses y el error se descubre el día del
+# desastre. Se baja el artefacto más chico del snapshot (env-config, unos KB) y
+# se descifra hacia /dev/null: prueba real de que ESTA passphrase abre ESTE
+# snapshot, sin dejar los secretos en disco.
+
+if command -v rclone &>/dev/null && rclone listremotes 2>/dev/null | grep -q 'gdrive-backups:'; then
+  NEWEST_REMOTE=$(rclone lsd "${GDRIVE_DEST}/" 2>/dev/null | awk '{print $NF}' \
+    | grep -E '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' | sort | tail -1 || true)
+
+  if [ -n "$NEWEST_REMOTE" ] && rclone ls "${GDRIVE_DEST}/${NEWEST_REMOTE}/env-config.tar.gz.gpg" &>/dev/null; then
+    if [ -z "${BACKUP_ENCRYPTION_PASSPHRASE:-}" ]; then
+      ISSUES+=("Snapshot ${NEWEST_REMOTE} está cifrado pero BACKUP_ENCRYPTION_PASSPHRASE no está en este host: no se puede comprobar que sea recuperable")
+      [ "$EXIT_CODE" -lt 1 ] && EXIT_CODE=1
+    elif ! command -v gpg &>/dev/null; then
+      ISSUES+=("Snapshot ${NEWEST_REMOTE} está cifrado y gpg no está instalado: no se puede comprobar que sea recuperable")
+      [ "$EXIT_CODE" -lt 1 ] && EXIT_CODE=1
+    else
+      PROBE_DIR=$(mktemp -d)
+      trap 'rm -rf "$PROBE_DIR"' EXIT
+      if rclone copy "${GDRIVE_DEST}/${NEWEST_REMOTE}/env-config.tar.gz.gpg" "${PROBE_DIR}/" --quiet 2>/dev/null \
+        && printf '%s' "${BACKUP_ENCRYPTION_PASSPHRASE}" | gpg --batch --quiet --decrypt \
+             --passphrase-fd 0 --pinentry-mode loopback \
+             "${PROBE_DIR}/env-config.tar.gz.gpg" >/dev/null 2>&1; then
+        log "OK: Ensayo de descifrado del snapshot ${NEWEST_REMOTE} (la passphrase lo abre)"
+      else
+        ISSUES+=("La passphrase de este host NO abre el snapshot cifrado ${NEWEST_REMOTE}: ese respaldo es irrecuperable")
+        [ "$EXIT_CODE" -lt 2 ] && EXIT_CODE=2
+      fi
+      rm -rf "$PROBE_DIR"
+      trap - EXIT
+    fi
+  fi
+fi
+
 # ── 3. Verificar espacio en disco ────────────────────────────────────────────
 
 if ! $DRIVE_ONLY; then
-  DISK_USAGE=$(df -h "$BACKUP_DIR" 2>/dev/null | awk 'NR==2 {print $5}' | sed 's/%//')
+  DISK_USAGE=$(df -h "$BACKUP_DIR" 2>/dev/null | awk 'NR==2 {print $5}' | sed 's/%//' || true)
   if [ -n "$DISK_USAGE" ] && [ "$DISK_USAGE" -gt 90 ]; then
     ISSUES+=("Disco al ${DISK_USAGE}% de capacidad (${BACKUP_DIR})")
     [ "$EXIT_CODE" -lt 1 ] && EXIT_CODE=1

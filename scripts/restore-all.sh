@@ -12,6 +12,11 @@ set -euo pipefail
 #   RESTORE_DATE=2026-07-19 ./scripts/restore-all.sh      # restore fecha específica
 #   RESTORE_TARGET=/srv/bodega/restore ./scripts/restore-all.sh   # directorio destino
 #
+# Si el snapshot se subió cifrado hace falta BACKUP_ENCRYPTION_PASSPHRASE en el
+# entorno. NO viaja dentro del snapshot (ese es el punto); vive en el gestor de
+# secretos corporativo. Ver docs/deploy/RESPALDOS_Y_RESTAURACION.md
+#   BACKUP_ENCRYPTION_PASSPHRASE='...' ./scripts/restore-all.sh
+#
 # Flags:
 #   --dry-run             Solo muestra qué se restauraría
 #   --skip-pg             No restaurar PostgreSQL
@@ -27,6 +32,9 @@ RESTORE_TARGET="${RESTORE_TARGET:-/srv/bodega/restore}"
 GDRIVE_DEST="${GDRIVE_DEST:-gdrive-backups:bodega-backups}"
 STORAGE_PATH="${STORAGE_PATH:-/srv/bodega/storage}"
 ENV_TARGET="${ENV_TARGET:-/srv/bodega/.env}"
+
+# Se guarda para poder sugerir el reintento exacto si falta la passphrase.
+ORIGINAL_ARGS="$*"
 
 DRY_RUN=false
 SKIP_PG=false
@@ -111,6 +119,77 @@ STORAGE_SHA256=$(jq -r '.components.storage.sha256' "$MANIFEST")
 CONFIG_SHA256=$(jq -r '.components.config.sha256' "$MANIFEST")
 
 log "  Backup del: ${BACKUP_DATE} (app: ${BACKUP_APP_VER})"
+
+# ── Descifrar el snapshot si viene cifrado ────────────────────────────────────
+# backup-orchestrator.sh sube `postgres.dump.gpg`, `storage.tar.gz.gpg` y
+# `env-config.tar.gz.gpg` (gpg simétrico, AES256) cuando el host de respaldo
+# tiene BACKUP_ENCRYPTION_PASSPHRASE; el manifiesto viaja siempre en claro.
+# Sus sha256 son los del archivo ANTES de cifrar, así que el orden obligatorio
+# es descifrar primero y verificar después: al revés los tres fallan en falso
+# (o peor, se reportan como "ARCHIVO FALTANTE" porque el plano no existe).
+
+SNAPSHOT_FILES=(postgres.dump storage.tar.gz env-config.tar.gz)
+MANIFEST_ENCRYPTED=$(jq -r '.upload.encrypted // false' "$MANIFEST" 2>/dev/null || echo false)
+
+if [ -f "${RESTORE_TARGET}/postgres.dump.gpg" ] || [ "$MANIFEST_ENCRYPTED" = "true" ]; then
+  log "Snapshot CIFRADO (gpg simétrico AES256)."
+
+  if [ -z "${BACKUP_ENCRYPTION_PASSPHRASE:-}" ]; then
+    error "El snapshot de '${RESTORE_DATE}' está cifrado y BACKUP_ENCRYPTION_PASSPHRASE no está definida."
+    error ""
+    error "  Sin esa passphrase este respaldo es IRRECUPERABLE. No está dentro del"
+    error "  snapshot a propósito: cifrar el dump y guardar la llave al lado no protege nada."
+    error ""
+    error "  Dónde está guardada:"
+    error "    1. Gestor de secretos corporativo → entrada 'Chome — BACKUP_ENCRYPTION_PASSPHRASE'"
+    error "    2. Copia sellada fuera de línea (caja fuerte de gerencia)"
+    error "    3. Procedimiento completo: docs/deploy/RESPALDOS_Y_RESTAURACION.md"
+    error ""
+    error "  Reintenta con:"
+    error "    BACKUP_ENCRYPTION_PASSPHRASE='<passphrase>' $0 ${ORIGINAL_ARGS}"
+    exit 1
+  fi
+
+  if ! command -v gpg &>/dev/null; then
+    error "gpg no está instalado y el snapshot está cifrado. Instala: apt-get install -y gnupg"
+    exit 1
+  fi
+
+  log "Descifrando snapshot antes de verificar checksums..."
+  GPG_ERR="${RESTORE_TARGET}/.gpg-error"
+
+  for plain in "${SNAPSHOT_FILES[@]}"; do
+    enc="${RESTORE_TARGET}/${plain}.gpg"
+
+    if [ ! -f "$enc" ]; then
+      if [ -f "${RESTORE_TARGET}/${plain}" ]; then
+        log "  ${plain}: ya viene en claro, no hay nada que descifrar"
+        continue
+      fi
+      error "  ${plain}: no está ni cifrado (${plain}.gpg) ni en claro. Snapshot incompleto."
+      exit 1
+    fi
+
+    if ! printf '%s' "${BACKUP_ENCRYPTION_PASSPHRASE}" | gpg --batch --quiet --yes \
+        --decrypt --passphrase-fd 0 --pinentry-mode loopback \
+        --output "${RESTORE_TARGET}/${plain}" "$enc" 2>"$GPG_ERR"; then
+      error "  ${plain}: gpg no pudo descifrar el archivo."
+      error "  Causa más probable: la passphrase no corresponde a ESTE snapshot"
+      error "  (se rotó después del ${RESTORE_DATE}). Prueba la passphrase anterior:"
+      error "  el gestor de secretos guarda el histórico de rotaciones."
+      sed 's/^/    gpg: /' "$GPG_ERR" >&2 2>/dev/null || true
+      rm -f "$GPG_ERR" "${RESTORE_TARGET}/${plain}"
+      exit 1
+    fi
+
+    # El env-config lleva secretos en claro: no queda legible para otros usuarios.
+    chmod 600 "${RESTORE_TARGET}/${plain}"
+    log "  ${plain}: descifrado"
+  done
+
+  rm -f "$GPG_ERR"
+  log "Snapshot descifrado. Los sha256 del manifiesto son los del archivo en claro."
+fi
 
 # Verificar checksums
 VERIFY_FAILED=false

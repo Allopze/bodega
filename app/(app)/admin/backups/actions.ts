@@ -105,6 +105,10 @@ export async function triggerManualBackupAction(): Promise<BackupActionResult> {
       GDRIVE_BACKUPS_DEST: process.env.GDRIVE_BACKUPS_DEST ?? "",
       STORAGE_PATH: process.env.STORAGE_PATH ?? "",
       RETENTION_DAYS: String(backupCfg.retentionDays),
+      // Sin esto el respaldo manual sube en claro mientras el programado va
+      // cifrado: la peor variante, porque la configuración dice «cifrado» y
+      // media de las copias no lo está.
+      BACKUP_ENCRYPTION_PASSPHRASE: process.env.BACKUP_ENCRYPTION_PASSPHRASE ?? "",
       HOME: process.env.HOME ?? "/root",
       PATH: process.env.PATH ?? "/usr/local/bin:/usr/bin:/bin",
     } as Record<string, string>
