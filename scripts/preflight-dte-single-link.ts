@@ -15,6 +15,11 @@ export type DtePurchaseInvoiceDuplicateConflict = {
   dteDocumentIds: string[]
 }
 
+export type DteFuelLoadDuplicateConflict = {
+  fuelLoadId: string
+  dteDocumentIds: string[]
+}
+
 /**
  * Detects historical DTE rows that would violate
  * dte_documents_single_business_link. This is deliberately read-only: choosing
@@ -35,10 +40,15 @@ export async function findDteSingleBusinessLinkConflicts(): Promise<DteSingleBus
 export async function assertNoDteSingleBusinessLinkConflicts(): Promise<DteSingleBusinessLinkConflict[]> {
   const conflicts = await findDteSingleBusinessLinkConflicts()
   const duplicates = await findDtePurchaseInvoiceDuplicateConflicts()
-  if (conflicts.length > 0 || duplicates.length > 0) {
+  const fuelDuplicates = await findDteFuelLoadDuplicateConflicts()
+  if (conflicts.length > 0 || duplicates.length > 0 || fuelDuplicates.length > 0) {
     throw new Error(
       "No se puede aplicar la migración de vínculo único DTE: hay conflictos históricos. " +
-      JSON.stringify({ singleBusinessLink: conflicts, duplicatePurchaseInvoices: duplicates }) + ". " +
+      JSON.stringify({
+        singleBusinessLink: conflicts,
+        duplicatePurchaseInvoices: duplicates,
+        duplicateFuelLoads: fuelDuplicates,
+      }) + ". " +
       "Ejecute la reparación explícita con mapping auditado y repita el preflight.",
     )
   }
@@ -67,6 +77,29 @@ export async function findDtePurchaseInvoiceDuplicateConflicts(): Promise<DtePur
   return result
 }
 
+/**
+ * Detecta todas las cargas de combustible con más de un DTE vinculado.
+ * Prerrequisito de `dte_documents_fuel_load_single_unique` (migración 0194): si
+ * producción trae duplicados, la migración falla al aplicarse.
+ */
+export async function findDteFuelLoadDuplicateConflicts(): Promise<DteFuelLoadDuplicateConflict[]> {
+  const groups = await db.select({
+    fuelLoadId: dteDocuments.fuelLoadId,
+  }).from(dteDocuments).where(isNotNull(dteDocuments.fuelLoadId))
+    .groupBy(dteDocuments.fuelLoadId)
+    .having(sql`count(*) > 1`)
+
+  const result: DteFuelLoadDuplicateConflict[] = []
+  for (const group of groups) {
+    if (!group.fuelLoadId) continue
+    const rows = await db.select({ id: dteDocuments.id }).from(dteDocuments).where(
+      eq(dteDocuments.fuelLoadId, group.fuelLoadId),
+    )
+    result.push({ fuelLoadId: group.fuelLoadId, dteDocumentIds: rows.map((row) => row.id) })
+  }
+  return result
+}
+
 function getErrorCode(error: unknown): string {
   const cause = error instanceof Error ? error.cause : undefined
   if (typeof error === "object" && error !== null && "code" in error) return String(error.code)
@@ -77,10 +110,21 @@ function getErrorCode(error: unknown): string {
 async function main() {
   const conflicts = await findDteSingleBusinessLinkConflicts()
   const duplicates = await findDtePurchaseInvoiceDuplicateConflicts()
-  if (conflicts.length > 0 || duplicates.length > 0) {
-    throw new Error(JSON.stringify({ ok: false, dteSingleBusinessLinkConflicts: conflicts, duplicatePurchaseInvoices: duplicates }))
+  const fuelDuplicates = await findDteFuelLoadDuplicateConflicts()
+  if (conflicts.length > 0 || duplicates.length > 0 || fuelDuplicates.length > 0) {
+    throw new Error(JSON.stringify({
+      ok: false,
+      dteSingleBusinessLinkConflicts: conflicts,
+      duplicatePurchaseInvoices: duplicates,
+      duplicateFuelLoads: fuelDuplicates,
+    }))
   }
-  console.log(JSON.stringify({ ok: true, dteSingleBusinessLinkConflicts: 0, duplicatePurchaseInvoices: 0 }, null, 2))
+  console.log(JSON.stringify({
+    ok: true,
+    dteSingleBusinessLinkConflicts: 0,
+    duplicatePurchaseInvoices: 0,
+    duplicateFuelLoads: 0,
+  }, null, 2))
 }
 
 const invokedPath = process.argv[1]

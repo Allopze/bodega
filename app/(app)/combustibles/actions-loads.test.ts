@@ -16,6 +16,7 @@ const mockRecordAudit = vi.fn()
 const mockRedirect = vi.fn()
 const mockReevaluateFuelLoadAnomalies = vi.fn()
 const mockNotifyAfterCommit = vi.fn((thunk: () => unknown) => thunk())
+const mockFindDte = vi.fn(async (..._args: unknown[]): Promise<unknown> => undefined)
 
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }))
 vi.mock("next/navigation", () => ({ redirect: (...args: unknown[]) => mockRedirect(...args) }))
@@ -37,6 +38,9 @@ vi.mock("@/db", () => ({
       fuelVehicles: {
         findFirst: (...args: unknown[]) => mockFindVehicle(...(args as [])),
       },
+      // El vínculo DTE↔carga vive en dte_documents: borrar o cambiar la
+      // identidad de una carga con documento encima tiene que consultarlo.
+      dteDocuments: { findFirst: (...args: unknown[]) => mockFindDte(...args) },
       systemSettings: { findFirst: vi.fn(async () => null) },
     },
   },
@@ -97,6 +101,21 @@ describe("deleteFuelLoadAction", () => {
 
     expect(result.ok).toBe(true)
     expect(mockDeleteWhere).toHaveBeenCalled()
+  })
+
+  // La FK dte_documents → fuel_loads es ON DELETE NO ACTION: sin la guarda el
+  // DELETE llegaba a Postgres y el toast mostraba el 23503 con el nombre de la
+  // constraint.
+  it("no borra una carga que es la contraparte de un DTE vinculado", async () => {
+    mockFindLoad.mockResolvedValue({ id: "load-1", worksiteId: "ws-mine", statementId: null, status: "registered" })
+    mockCanAccessWorksite.mockReturnValue(true)
+    mockFindDte.mockResolvedValueOnce({ id: "dte-1", tipoDte: "33", folio: 88123 } as never)
+
+    const result = await deleteFuelLoadAction("load-1")
+
+    expect(result.ok).toBe(false)
+    expect(result.message).toMatch(/DTE tipo 33 folio 88123/)
+    expect(mockDeleteWhere).not.toHaveBeenCalled()
   })
 
   it("falla si la carga fue asignada a una cuenta corriente entre la lectura y el DELETE", async () => {
@@ -216,6 +235,54 @@ describe("updateFuelLoadAction — statement guard (H5)", () => {
     expect(result.message).toMatch(/cuenta corriente/i)
     expect(mockRecordAudit).not.toHaveBeenCalled()
     expect(mockNotifyAfterCommit).not.toHaveBeenCalled()
+  })
+})
+
+describe("updateFuelLoadAction — guarda del vínculo DTE", () => {
+  const linkedLoad = {
+    id: "load-1", worksiteId: "ws-1", statementId: null, status: "registered",
+    loadDate: "2026-01-15", month: "2026-01", serviceType: "TCT",
+    vehicleId: "v-1", fuelSupplierId: "s-1", product: "PETROLEO DIESEL",
+    receiptNumber: "88123", odometerReading: null, hourMeterReading: null,
+    liters: 100, iecFixed: 0, iecVariable: 0, baseAmount: 1000, iecTotal: 0, ivaAmount: 190, totalAmount: 1190,
+    notes: null,
+  }
+  const form = (overrides: Record<string, string> = {}) => {
+    const fd = new FormData()
+    for (const [key, value] of Object.entries({
+      id: "load-1", loadDate: "2026-01-15", serviceType: "TCT", vehicleId: "v-1", fuelSupplierId: "s-1",
+      worksiteId: "ws-1", product: "PETROLEO DIESEL", receiptNumber: "88123", notes: "",
+      liters: "100", baseAmount: "1000", iecFixed: "0", iecVariable: "0", iecTotal: "0", ivaAmount: "190", totalAmount: "1190",
+      ...overrides,
+    })) fd.set(key, value)
+    return fd
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockRequirePermission.mockResolvedValue(globalSession)
+    mockCanAccessWorksite.mockReturnValue(true)
+    mockFindLoad.mockResolvedValue(linkedLoad)
+  })
+
+  // Vincular un DTE no cambia el status de la carga: sin esta guarda, corregir
+  // factura/proveedor/monto dejaba el documento tributario describiendo datos
+  // que ya no existen.
+  it("rechaza cambiar la factura cuando la carga tiene un DTE vinculado", async () => {
+    mockFindDte.mockResolvedValueOnce({ id: "dte-1", tipoDte: "33", folio: 88123 } as never)
+
+    const result = await updateFuelLoadAction({ ok: false, message: "" }, form({ receiptNumber: "88124" }))
+
+    expect(result.ok).toBe(false)
+    expect(result.message).toMatch(/DTE tipo 33 folio 88123/)
+    expect(mockUpdateWhere).not.toHaveBeenCalled()
+  })
+
+  it("deja editar campos que no definen la identidad del vínculo", async () => {
+    const result = await updateFuelLoadAction({ ok: false, message: "" }, form({ notes: "corrijo la observación" }))
+
+    expect(result.ok).toBe(true)
+    expect(mockFindDte).not.toHaveBeenCalled()
   })
 })
 

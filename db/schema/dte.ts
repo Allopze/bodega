@@ -166,6 +166,12 @@ export const dteDocuments = pgTable("dte_documents", {
   uniqueIndex("dte_documents_purchase_invoice_single_unique")
     .on(table.purchaseOrderInvoiceId)
     .where(sql`${table.purchaseOrderInvoiceId} IS NOT NULL`),
+  // Simétrico del anterior: una carga de combustible tampoco puede quedar con
+  // dos documentos tributarios encima (un 33 y un 34 del mismo emisor comparten
+  // rangos de folio, y basta que caigan en períodos distintos).
+  uniqueIndex("dte_documents_fuel_load_single_unique")
+    .on(table.fuelLoadId)
+    .where(sql`${table.fuelLoadId} IS NOT NULL`),
   index("dte_documents_periodo_idx").on(table.periodo),
   index("dte_documents_estado_sii_idx").on(table.estadoSii),
   index("dte_documents_rut_emisor_idx").on(table.rutEmisor),

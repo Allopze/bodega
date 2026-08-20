@@ -4,12 +4,13 @@ import { revalidatePath } from "next/cache"
 import type { Session } from "next-auth"
 import { db } from "@/db"
 import { fuelEquipmentTypes, fuelProducts, fuelVehicleOperationalIntervals, fuelVehicleProducts, fuelVehicles } from "@/db/schema"
-import { and, eq, inArray, isNull } from "drizzle-orm"
+import { and, eq, inArray } from "drizzle-orm"
 import { recordAudit } from "@/lib/audit"
 import { requirePermission } from "@/lib/auth/can"
 import { canAccessWorksite, worksiteScopeSql } from "@/lib/auth/scope"
 import { validateFileBuffer, MimeType } from "@/lib/file-validation"
 import { nanoid } from "@/lib/id"
+import { setVehicleOperationalStatus } from "@/lib/services/fleet"
 import { parseFleetXlsx } from "@/lib/combustibles/fleet-xlsx-import"
 import { normalizePlate } from "@/lib/combustibles/xlsx-utils"
 import {
@@ -179,17 +180,11 @@ export async function updateFuelVehicleAction(
     await db.transaction(async (tx) => {
       await tx.update(fuelVehicles).set(nextState).where(eq(fuelVehicles.id, id))
       if (statusChanged) {
-        const changedAt = new Date().toISOString()
-        await tx.update(fuelVehicleOperationalIntervals)
-          .set({ endedAt: changedAt })
-          .where(and(eq(fuelVehicleOperationalIntervals.vehicleId, id), isNull(fuelVehicleOperationalIntervals.endedAt)))
-        await tx.insert(fuelVehicleOperationalIntervals).values({
-          id: nanoid(),
+        await setVehicleOperationalStatus(tx, {
           vehicleId: id,
           status: data.operationalStatus!,
-          startedAt: changedAt,
-          reason: operationalStatusReason,
-          changedBy: session.user.id,
+          reason: operationalStatusReason!,
+          actorUserId: session.user.id,
         })
       }
       await tx.delete(fuelVehicleProducts).where(eq(fuelVehicleProducts.vehicleId, id))

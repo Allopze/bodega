@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache"
 import { redirect } from "next/navigation"
 import { db } from "@/db"
-import { fuelLoads, fuelVehicles } from "@/db/schema"
+import { dteDocuments, fuelLoads, fuelVehicles } from "@/db/schema"
 import { and, eq, isNull } from "drizzle-orm"
 import { requirePermission } from "@/lib/auth/can"
 import { canAccessWorksite } from "@/lib/auth/scope"
@@ -17,6 +17,7 @@ import { getFuelIecRates } from "@/lib/services/system-settings"
 import { recordAudit } from "@/lib/audit"
 import { logger } from "@/lib/logger"
 import { isNetworkError } from "@/lib/network-error"
+import { safeActionMessage } from "@/lib/action-error"
 import type { ActionState } from "@/lib/validation/masters"
 import { optionalNumber } from "./export"
 import { fuelProductIdForLegacy } from "@/lib/combustibles/fuel-products"
@@ -42,12 +43,30 @@ function pickAuditedLoadFields(source: Record<string, unknown>): Record<string, 
   return picked
 }
 
+/**
+ * DTE del portal vinculado a esta carga, si lo hay. El vínculo lo escribe la
+ * conciliación (`matchToFuelLoads`) sobre `dte_documents` y NO deja rastro en
+ * `fuel_loads`: sin consultarlo, ni el borrado ni la edición saben que están
+ * tocando la contraparte de un documento tributario.
+ */
+async function linkedDteDocument(loadId: string) {
+  return db.query.dteDocuments.findFirst({
+    where: eq(dteDocuments.fuelLoadId, loadId),
+    columns: { id: true, tipoDte: true, folio: true },
+  })
+}
+
+function dteReference(doc: { tipoDte: string; folio: number }): string {
+  return `el DTE tipo ${doc.tipoDte} folio ${doc.folio}`
+}
+
 export async function dbErrMsg(e: unknown, fallback: string): Promise<string> {
   if (!(e instanceof Error)) return fallback
   if (isNetworkError(e)) return CONN_MSG
-  const cause = (e as { cause?: unknown }).cause
-  if (cause instanceof Error && cause.message) return cause.message
-  return e.message
+  // Devolvía `cause.message`, o sea el texto del motor: una violación de FK
+  // publicaba el nombre de la constraint en el toast. `safeActionMessage`
+  // conserva los errores de negocio y esconde los del driver.
+  return safeActionMessage(e, fallback)
 }
 
 export async function createFuelLoadAction(
@@ -275,6 +294,25 @@ export async function updateFuelLoadAction(
     return { ok: false, message: `Total (${parsed.data.totalAmount}) no cuadra con base + IEC + IVA (${expectedTotal})` }
   }
 
+  // Los tres campos que definen la identidad del vínculo tributario. Cambiarlos
+  // con un DTE encima dejaba el documento apuntando a una carga que ya no lo
+  // describe (otro proveedor, otra factura, otro monto), sin ningún aviso.
+  const text = (value: unknown) => (value ?? "").toString().trim()
+  const identityChanged = (
+    text(parsed.data.receiptNumber) !== text(existing.receiptNumber)
+    || text(parsed.data.fuelSupplierId) !== text(existing.fuelSupplierId)
+    || Number(parsed.data.totalAmount) !== Number(existing.totalAmount)
+  )
+  if (identityChanged) {
+    const dte = await linkedDteDocument(id)
+    if (dte) {
+      return {
+        ok: false,
+        message: `Esta carga tiene ${dteReference(dte)} vinculado: no se puede cambiar factura, proveedor ni monto sin desvincularlo antes.`,
+      }
+    }
+  }
+
   try {
     // El gate de :172 lee una fila que puede quedar obsoleta: createMonthlyStatementAction
     // toma FOR UPDATE sobre las cargas sin resumen y las asigna. Repetir la precondición
@@ -325,6 +363,16 @@ export async function deleteFuelLoadAction(id: string): Promise<ActionState> {
   }
   if (existing.status === "reconciled") {
     return { ok: false, message: "No se puede eliminar una carga conciliada" }
+  }
+  // La FK de dte_documents es ON DELETE NO ACTION: sin esta guarda el DELETE
+  // llegaba a Postgres y el usuario recibía el 23503 con el nombre de la
+  // constraint dentro del toast.
+  const dte = await linkedDteDocument(id)
+  if (dte) {
+    return {
+      ok: false,
+      message: `No se puede eliminar: esta carga es la contraparte de ${dteReference(dte)}. Desvincula el documento antes de borrarla.`,
+    }
   }
 
   try {
