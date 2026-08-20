@@ -14,6 +14,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { INSPECTION_FREQUENCY_LABELS, INSPECTION_KIND_LABELS } from "@/lib/prevention/inspections"
 import {
   approveInspectionTemplateAction,
+  retireInspectionTemplateAction,
   createInspectionProgramAction,
   importInspectionTemplateAction,
   runProgramNowAction,
@@ -84,10 +85,10 @@ function templateStatusVariant(status: string): "default" | "success" | "outline
 }
 
 function coverageLabel(coverage: Coverage) {
-  return `${coverage.withDanoPotencial}/${coverage.totalItems} calibrados`
+  return `${coverage.withDanoPotencial}/${coverage.totalItems} con gravedad`
 }
 
-export function InspectionCatalog({ templates, programs, importable, approvedTemplates, worksites, assignees, riskEntriesByWorksite, currentUserId, canManage, canApprove }: {
+export function InspectionCatalog({ templates, programs, importable, approvedTemplates, worksites, assignees, riskEntriesByWorksite, canManage, canApprove }: {
   templates: TemplateItem[]
   programs: ProgramItem[]
   importable: ImportableDefinition[]
@@ -96,7 +97,8 @@ export function InspectionCatalog({ templates, programs, importable, approvedTem
   assignees: { id: string; name: string }[]
   /** Peligros de la MIPER por faena, para el picker de la programación (A-09). */
   riskEntriesByWorksite: Record<string, { id: string; hazardCode: string; hazard: string }[]>
-  currentUserId: string
+  /** Ya no se usa acá: la aprobación dejó de estar segregada en plantillas. */
+  currentUserId?: string
   canManage: boolean
   canApprove: boolean
 }) {
@@ -144,8 +146,8 @@ export function InspectionCatalog({ templates, programs, importable, approvedTem
       {tab === "templates" && (templates.length === 0 ? (
         <EmptyState
           icon={<ClipboardText size={20} />}
-          title="Aún no hay plantillas incorporadas"
-          description="Incorpora una definición del catálogo SST. Una plantilla sin daño potencial calibrado produce hallazgos siempre de criticidad media."
+          title="No hay instrumentos instalados"
+          description="El catálogo se instala solo al desplegar. Si esta pantalla está vacía, falta correr el sembrado de plantillas."
           action={canManage && importable.length > 0 ? <ImportTemplateDialog importable={importable} versionsByDefinition={versionsByDefinition} /> : undefined}
         />
       ) : (
@@ -157,7 +159,7 @@ export function InspectionCatalog({ templates, programs, importable, approvedTem
                 <TableHead>Tipo</TableHead>
                 <TableHead>Versión</TableHead>
                 <TableHead>Estado</TableHead>
-                <TableHead>Calibración</TableHead>
+                <TableHead>Gravedad declarada</TableHead>
                 <TableHead>Acredita PDTP</TableHead>
                 <TableHead className="text-right">Acción</TableHead>
               </TableRow>
@@ -190,7 +192,7 @@ export function InspectionCatalog({ templates, programs, importable, approvedTem
                   </TableCell>
                   <TableCell className="text-sm">
                     {coverageLabel(item.coverage)}
-                    {item.coverage.criticalityInert && <span className="ml-1 text-xs text-[var(--color-warning-ink)]">(sin calibrar)</span>}
+                    {item.coverage.criticalityInert && <span className="ml-1 text-xs text-[var(--color-warning-ink)]">sin gravedad: toda falla saldrá de criticidad media</span>}
                   </TableCell>
                   {/* Sin actividades declaradas, completar un run no acredita
                       nada en el programa anual: el conector es un no-op. */}
@@ -211,8 +213,11 @@ export function InspectionCatalog({ templates, programs, importable, approvedTem
                           current={item.pdtpActivityNumbers ?? []}
                         />
                       )}
-                      {item.status === "draft" && canApprove && item.authorUserId !== currentUserId && (
+                      {item.status === "draft" && canApprove && (
                         <ApproveDialog templateId={item.id} name={item.name} expectedVersion={item.version} />
+                      )}
+                      {item.status !== "superseded" && canApprove && (
+                        <RetireDialog templateId={item.id} name={item.name} />
                       )}
                     </div>
                   </TableCell>
@@ -309,11 +314,11 @@ function ImportTemplateDialog({ importable, versionsByDefinition }: {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild><Button size="sm">Incorporar plantilla</Button></DialogTrigger>
+      <DialogTrigger asChild><Button size="sm" variant="secondary">Publicar nueva versión</Button></DialogTrigger>
       <DialogContent>
         <form onSubmit={submit} className="space-y-4">
           <DialogHeader>
-            <DialogTitle>Incorporar plantilla</DialogTitle>
+            <DialogTitle>Publicar nueva versión</DialogTitle>
             <DialogDescription>
               Queda vigente al incorporarla: puede programarse y ejecutarse de inmediato. El contenido viene del catálogo SST versionado en el código, no se redacta aquí.
             </DialogDescription>
@@ -324,7 +329,7 @@ function ImportTemplateDialog({ importable, versionsByDefinition }: {
           {definition && (
             <p className="text-xs text-[var(--color-text-subtle)]">
               {definition.sections} secciones · {definition.items} ítems · {coverageLabel(definition.coverage)}
-              {definition.coverage.criticalityInert && " · ningún hallazgo alcanzará criticidad alta hasta calibrar."}
+              {definition.coverage.criticalityInert && " · sin gravedad por ítem, ningún hallazgo alcanzará criticidad alta."}
             </p>
           )}
           {existing?.approved && (
@@ -433,6 +438,48 @@ function ApproveDialog({ templateId, name, expectedVersion }: { templateId: stri
           <Field label="Motivo" hint="Mínimo 10 caracteres."><Textarea name="reason" required minLength={10} maxLength={2000} /></Field>
           {operation.message && <p role="status" className="text-sm">{operation.message}</p>}
           <DialogFooter><Button type="submit" disabled={operation.pending}>Aprobar</Button></DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+/* ── Retirar plantilla ─────────────────────────────────────────────────────── */
+
+/**
+ * Saca un instrumento de circulación.
+ *
+ * Borra la fila si nunca se usó; si tiene ejecuciones o programaciones, la
+ * marca reemplazada. Esa asimetría la resuelve el servidor, no esta pantalla:
+ * la plantilla guarda el cuestionario congelado con el que se firmaron sus
+ * inspecciones, y borrarla las dejaría sin las preguntas que respondieron.
+ */
+function RetireDialog({ templateId, name }: { templateId: string; name: string }) {
+  const [open, setOpen] = React.useState(false)
+  const operation = useOperation()
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild><Button size="sm" variant="ghost">Retirar</Button></DialogTrigger>
+      <DialogContent>
+        <form
+          onSubmit={(event) => {
+            event.preventDefault()
+            const form = new FormData(event.currentTarget)
+            operation.run(() => retireInspectionTemplateAction({ templateId, reason: form.get("reason") }), () => setOpen(false))
+          }}
+          className="space-y-4"
+        >
+          <DialogHeader>
+            <DialogTitle>Retirar {name}</DialogTitle>
+            <DialogDescription>
+              Deja de poder programarse y ejecutarse. Si nunca se usó, se elimina; si tiene
+              inspecciones hechas, se conserva como reemplazada — sus respuestas son evidencia.
+            </DialogDescription>
+          </DialogHeader>
+          <Field label="Motivo" hint="Mínimo 10 caracteres."><Textarea name="reason" required minLength={10} maxLength={2000} /></Field>
+          {operation.message && <p role="status" className="text-sm">{operation.message}</p>}
+          <DialogFooter><Button type="submit" disabled={operation.pending}>Retirar</Button></DialogFooter>
         </form>
       </DialogContent>
     </Dialog>

@@ -29,13 +29,18 @@ import { CHECKLIST_DEFINITIONS } from "@/lib/sst/definitions"
 import type { ChecklistDefinition } from "@/lib/sst/types"
 
 type InspectionTemplateSpec = {
-  /** `n` de la actividad PDTP que esta plantilla acredita. */
-  n: number
+  /**
+   * `n` de la actividad PDTP que esta plantilla acredita. `null` para los
+   * instrumentos que no acreditan ninguna —la auditoría del SGSST vive fuera
+   * del programa anual— pero que igual deben quedar instalados: la promesa es
+   * que el catálogo llegue completo, sin que nadie incorpore nada a mano.
+   */
+  n: number | null
   /** Clave en `CHECKLIST_DEFINITIONS`. */
   definitionCode: string
   /** Nombre visible. Distingue las dos plantillas que comparten definición. */
   name: string
-  kind: "inspection" | "observation"
+  kind: "inspection" | "observation" | "audit"
   /**
    * Sufijo del `versionLabel`. Sólo lo necesitan las plantillas que comparten
    * `code` con otra: (code, versionLabel) es único, y las actividades 64 y 65
@@ -68,6 +73,10 @@ export const PDTP_2026_INSPECTION_SPECS: readonly InspectionTemplateSpec[] = [
   { n: 41, definitionCode: "observacion_maquinaria",    name: "Observación de Seguridad: Maquinaria Pesada",     kind: "observation" },
   { n: 64, definitionCode: "inspeccion_epp",            name: "Inspección de Uso y Estado de EPP (JT)",          kind: "inspection", versionSuffix: "jt" },
   { n: 65, definitionCode: "inspeccion_epp",            name: "Inspección de Uso y Estado de EPP (PRF)",         kind: "inspection", versionSuffix: "prf" },
+  // Sin actividad PDTP: la auditoría interna del SGSST la exige el DS 44
+  // art. 22 n°4, no el programa anual. Se instala igual para que nadie tenga
+  // que incorporarla desde el catálogo.
+  { n: null, definitionCode: "auditoria_sgsst",         name: "Auditoría interna del Sistema de Gestión de SST",  kind: "audit" },
 ]
 
 function resolveDefinition(code: string): ChecklistDefinition {
@@ -98,11 +107,11 @@ export async function findInspectionTemplateForPdtpActivity(n: number) {
 }
 
 export type EnsureInspectionTemplatesResult = {
-  created: Array<{ n: number; templateId: string; code: string; versionLabel: string }>
+  created: Array<{ n: number | null; templateId: string; code: string; versionLabel: string }>
   /** Ya existía una plantilla con ese (code, versionLabel). */
-  skipped: Array<{ n: number; templateId: string; reason: "already_installed" }>
+  skipped: Array<{ n: number | null; templateId: string; reason: "already_installed" }>
   /** Existía pero declaraba otras actividades PDTP; se corrigió. */
-  relinked: Array<{ n: number; templateId: string; from: number[] | null; to: number[] }>
+  relinked: Array<{ n: number | null; templateId: string; from: number[] | null; to: number[] }>
 }
 
 /**
@@ -130,16 +139,17 @@ export async function ensurePdtp2026InspectionTemplates(input: {
 
     if (existing) {
       const current = Array.isArray(existing.pdtpActivityNumbers) ? existing.pdtpActivityNumbers as number[] : null
-      if (current?.length === 1 && current[0] === spec.n) {
+      const wired = spec.n === null ? current === null : current?.length === 1 && current[0] === spec.n
+      if (wired) {
         result.skipped.push({ n: spec.n, templateId: existing.id, reason: "already_installed" })
         continue
       }
       if (!input.dryRun) {
         await db.update(preventionInspectionTemplates)
-          .set({ pdtpActivityNumbers: [spec.n], version: existing.version + 1, updatedAt: now })
+          .set({ pdtpActivityNumbers: spec.n === null ? null : [spec.n], version: existing.version + 1, updatedAt: now })
           .where(eq(preventionInspectionTemplates.id, existing.id))
       }
-      result.relinked.push({ n: spec.n, templateId: existing.id, from: current, to: [spec.n] })
+      result.relinked.push({ n: spec.n, templateId: existing.id, from: current, to: spec.n === null ? [] : [spec.n] })
       continue
     }
 
@@ -157,12 +167,12 @@ export async function ensurePdtp2026InspectionTemplates(input: {
         sourceDefinitionCode: spec.definitionCode,
         definitionSnapshot: snapshot,
         contentHash,
-        status: "approved",
+        // Borrador, no vigente: el catálogo llega completo pero el instrumento
+        // lo habilita una persona, y queda constancia de quién y cuándo.
+        status: "draft",
         legalFramework: definition.legalFramework?.join(" · ") ?? null,
-        pdtpActivityNumbers: [spec.n],
+        pdtpActivityNumbers: spec.n === null ? null : [spec.n],
         authorUserId: input.actorUserId,
-        approvedByUserId: input.actorUserId,
-        approvedAt: now,
         createdAt: now,
         updatedAt: now,
       })

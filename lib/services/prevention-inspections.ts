@@ -248,8 +248,6 @@ export async function importInspectionTemplate(input: unknown, access: Inspectio
   const snapshot = definition as unknown as Record<string, unknown>
   const contentHash = contentHashOf(snapshot)
 
-  const now = nowIso()
-
   try {
     return await db.transaction(async (tx) => {
       const [created] = await tx.insert(preventionInspectionTemplates).values({
@@ -261,20 +259,20 @@ export async function importInspectionTemplate(input: unknown, access: Inspectio
         sourceDefinitionCode: data.definitionCode,
         definitionSnapshot: snapshot,
         contentHash,
-        status: "approved",
-        approvedByUserId: access.userId,
-        approvedAt: now,
+        // Nace en borrador: incorporar y habilitar son dos actos distintos, y
+        // el segundo deja constancia de quién puso el instrumento en uso.
+        status: "draft",
         legalFramework: definition.legalFramework?.join(" · ") ?? null,
         pdtpActivityNumbers: data.pdtpActivityNumbers?.length ? data.pdtpActivityNumbers : null,
         authorUserId: access.userId,
       }).returning()
       if (!created) throw new Error("No se pudo incorporar la plantilla.")
 
-      // Sin esto quedarían dos versiones aprobadas del mismo código y
-      // `findInspectionTemplateForPdtpActivity` elegiría cualquiera de las dos.
-      await supersedePreviousApproved(tx, { code: definition.code, keepTemplateId: created.id, now })
-
-      await history(tx, { entityType: "template", entityId: created.id, changeType: "imported", reason: `Definición ${data.definitionCode} incorporada y publicada como plantilla ${versionLabel}`, afterState: created, actorUserId: access.userId })
+      // El reemplazo de la versión vigente lo hace ahora `approveInspectionTemplate`,
+      // no esto: desde que incorporar deja un borrador, jubilar acá a la que
+      // está en uso la sacaría de circulación por un borrador que quizás nadie
+      // apruebe, y la faena se quedaría sin instrumento.
+      await history(tx, { entityType: "template", entityId: created.id, changeType: "imported", reason: `Definición ${data.definitionCode} incorporada como borrador ${versionLabel}`, afterState: created, actorUserId: access.userId })
       return created
     })
   } catch (error) {
@@ -347,9 +345,13 @@ export async function approveInspectionTemplate(input: unknown, access: Inspecti
     if (!template) throw new Error(NOT_FOUND)
     if (template.version !== data.expectedVersion) throw new Error("La plantilla cambió mientras la revisabas. Recarga y reintenta.")
     if (template.status !== "draft") throw new Error("Sólo una plantilla en borrador puede aprobarse.")
-    if (template.authorUserId === access.userId) {
-      throw new Error("Quien incorporó la plantilla no puede aprobarla.")
-    }
+    // Sin segregación en plantillas, a diferencia de las ejecuciones. El
+    // contenido no lo redacta nadie acá: viene del catálogo versionado en el
+    // repositorio, ya revisado, y quien "incorpora" sólo elige cuál instalar.
+    // Exigir un segundo par de ojos sobre una copia literal no revisaba nada y
+    // dejaba el instrumento inservible cuando el Jefe de Prevención era quien
+    // lo instalaba. La segregación que sí importa —que el revisor de una
+    // inspección no sea quien la ejecutó— sigue intacta en `assessRunReview`.
 
     const now = nowIso()
     // Aprobar una versión reemplaza a la anterior vigente del mismo código.
@@ -365,6 +367,67 @@ export async function approveInspectionTemplate(input: unknown, access: Inspecti
     if (!updated) throw new Error("La plantilla cambió mientras la revisabas. Recarga y reintenta.")
     await history(tx, { entityType: "template", entityId: template.id, changeType: "approved", reason: data.reason, beforeState: template, afterState: updated, actorUserId: access.userId })
     return updated
+  })
+}
+
+/**
+ * Retira una plantilla del uso.
+ *
+ * Borra la fila si nunca se usó; si tiene ejecuciones o programaciones, la
+ * marca `superseded`. Esa asimetría no es una comodidad: las ejecuciones son
+ * evidencia legal y su plantilla guarda el cuestionario congelado con el que se
+ * firmaron. Borrarla dejaría inspecciones sin las preguntas que respondieron
+ * —la FK es `ON DELETE restrict` y lo impediría igual, pero con un error de
+ * Postgres en vez de una explicación.
+ *
+ * Hasta ahora no existía ninguna forma de retirar una plantilla desde la
+ * plataforma: había que hacerlo por SQL.
+ */
+export async function retireInspectionTemplate(input: unknown, access: InspectionAccess) {
+  const data = z.object({
+    templateId: z.string().min(1),
+    reason: z.string().trim().min(TRANSITION_REASON_MIN_LENGTH).max(3000),
+  }).parse(input)
+  requireAccess(access, "prevention:inspections:approve")
+
+  return db.transaction(async (tx) => {
+    const [template] = await tx.select().from(preventionInspectionTemplates)
+      .where(eq(preventionInspectionTemplates.id, data.templateId)).limit(1)
+    if (!template) throw new Error(NOT_FOUND)
+    if (template.status === "superseded") throw new Error("La plantilla ya está retirada.")
+
+    const [runRow] = await tx.select({ total: sql<number>`count(*)::int` })
+      .from(preventionInspectionRuns)
+      .where(eq(preventionInspectionRuns.templateId, template.id))
+    const [programRow] = await tx.select({ total: sql<number>`count(*)::int` })
+      .from(preventionInspectionPrograms)
+      .where(eq(preventionInspectionPrograms.templateId, template.id))
+    const runs = runRow?.total ?? 0
+    const programs = programRow?.total ?? 0
+
+    const now = nowIso()
+    if (runs === 0 && programs === 0) {
+      await history(tx, {
+        entityType: "template", entityId: template.id, changeType: "deleted",
+        reason: data.reason, beforeState: template, actorUserId: access.userId,
+      })
+      await tx.delete(preventionInspectionTemplates)
+        .where(eq(preventionInspectionTemplates.id, template.id))
+      return { outcome: "deleted" as const, runs, programs }
+    }
+
+    const [updated] = await tx.update(preventionInspectionTemplates).set({
+      status: "superseded",
+      supersededAt: now,
+      version: template.version + 1,
+      updatedAt: now,
+    }).where(eq(preventionInspectionTemplates.id, template.id)).returning()
+    if (!updated) throw new Error("No se pudo retirar la plantilla.")
+    await history(tx, {
+      entityType: "template", entityId: template.id, changeType: "superseded",
+      reason: data.reason, beforeState: template, afterState: updated, actorUserId: access.userId,
+    })
+    return { outcome: "superseded" as const, runs, programs }
   })
 }
 

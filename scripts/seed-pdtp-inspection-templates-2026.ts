@@ -12,8 +12,12 @@
  *   SEED_ACTOR_USER_ID=<id> npm run db:seed-pdtp-inspection-templates
  *
  * Sin `SEED_ACTOR_USER_ID` resuelve el primer usuario con rol `administrador`:
- * las plantillas se instalan aprobadas y `author_user_id` / `approved_by_user_id`
- * son FK obligatorias.
+ * `author_user_id` es FK obligatoria.
+ *
+ * Las plantillas se instalan **en borrador**: el catálogo llega completo para
+ * que nadie tenga que incorporar nada a mano, pero poner un instrumento en uso
+ * es un acto de una persona —el Jefe del Departamento de Prevención o el
+ * administrador— y queda registrado quién lo habilitó y cuándo.
  */
 
 import { eq } from "drizzle-orm"
@@ -45,7 +49,7 @@ async function main() {
   const result = await ensurePdtp2026InspectionTemplates({ actorUserId, dryRun: DRY_RUN })
 
   for (const item of result.created) {
-    console.log(`  ✓ n=${item.n}: plantilla ${item.templateId} (${item.code} v${item.versionLabel}) instalada y aprobada.`)
+    console.log(`  ✓ n=${item.n}: plantilla ${item.templateId} (${item.code} v${item.versionLabel}) instalada como borrador; habilítala desde el catálogo.`)
   }
   for (const item of result.relinked) {
     console.log(`  ↻ n=${item.n}: plantilla ${item.templateId} recableada ${JSON.stringify(item.from)} → ${JSON.stringify(item.to)}.`)

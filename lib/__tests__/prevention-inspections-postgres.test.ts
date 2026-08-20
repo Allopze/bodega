@@ -80,6 +80,22 @@ function answersForAll(
   return items.map((item, index) => override?.(item, index) ?? answerFor(item))
 }
 
+/**
+ * Instala un instrumento listo para usar: incorporar deja borrador y habilitar
+ * es un acto aparte, así que los casos que sólo necesitan una plantilla
+ * ejecutable hacen los dos pasos por acá en vez de repetirlos.
+ */
+async function installTemplate(
+  input: { definitionCode: string; kind?: "inspection" | "observation" | "audit"; versionLabel?: string; pdtpActivityNumbers?: number[] },
+) {
+  const service = await import("@/lib/services/prevention-inspections")
+  const draft = await service.importInspectionTemplate(input, AUTHOR)
+  return service.approveInspectionTemplate({
+    templateId: draft.id, expectedVersion: draft.version,
+    reason: "Instrumento habilitado para la faena en la prueba.",
+  }, APPROVER)
+}
+
 async function countAnswers(runId: string) {
   const rows = await getDb().select({ id: schema.preventionInspectionAnswers.id })
     .from(schema.preventionInspectionAnswers)
@@ -160,23 +176,44 @@ describeIf("Motor de inspecciones on real PostgreSQL", () => {
     expect(service.listImportableDefinitions().map((item) => item.code)).toContain("observacion_ampliroll")
   })
 
-  // El contenido viene del catálogo versionado en el repositorio, así que
-  // incorporar publica: en una instalación con un solo prevencionista, pedir un
-  // aprobador distinto dejaba la plantilla inservible para siempre.
-  it("imports an existing SST definition already published and freezes its content hash", async () => {
+  // Incorporar y habilitar son dos actos distintos: el instrumento nace en
+  // borrador y alguien deja constancia de que lo pone en uso.
+  it("imports an existing SST definition as a draft and freezes its content hash", async () => {
     const service = await import("@/lib/services/prevention-inspections")
     const template = await service.importInspectionTemplate({ definitionCode: "inspeccion_extintores" }, AUTHOR)
     templateId = template.id
     expect(template).toMatchObject({
-      status: "approved", approvedByUserId: "in-author", sourceDefinitionCode: "inspeccion_extintores",
+      status: "draft", sourceDefinitionCode: "inspeccion_extintores",
     })
-    expect(template.approvedAt).toBeTruthy()
+    expect(template.approvedAt).toBeNull()
     expect(template.contentHash).toHaveLength(64)
+
+    // No puede programarse mientras siga en borrador.
+    await expect(service.createInspectionProgram({
+      templateId, worksiteId: "ws-in-a", frequency: "monthly", startsOn: "2026-09-01",
+    }, AUTHOR)).rejects.toThrow(/aprobada/i)
   })
 
-  // La puerta de aprobación sigue viva —y segregada— para los borradores que
-  // quedaron de antes: sin ella no habría forma de ponerlos en uso.
-  it("blocks the importer from approving their own legacy draft", async () => {
+  // Sin segregación en plantillas: el contenido viene del catálogo versionado
+  // en el repositorio, no lo redacta nadie acá, así que exigir un segundo par
+  // de ojos no revisaba nada y dejaba el instrumento inservible cuando el Jefe
+  // de Prevención era quien lo instalaba.
+  it("lets whoever imported the template approve it", async () => {
+    const service = await import("@/lib/services/prevention-inspections")
+    const [before] = await getDb().select().from(schema.preventionInspectionTemplates)
+      .where(eq(schema.preventionInspectionTemplates.id, templateId))
+    const approved = await service.approveInspectionTemplate({
+      templateId, expectedVersion: before!.version,
+      reason: "Instrumento revisado y habilitado para la faena.",
+    }, { ...AUTHOR, permissions: [...AUTHOR.permissions, "prevention:inspections:approve"] })
+    expect(approved).toMatchObject({ status: "approved", approvedByUserId: "in-author" })
+    expect(approved.approvedAt).toBeTruthy()
+
+    // La segregación que sí importa sigue intacta: quien ejecuta una
+    // inspección no puede revisarla. Eso lo cubre `assessRunReview`.
+  })
+
+  it("still requires the approve permission, and only for drafts", async () => {
     const service = await import("@/lib/services/prevention-inspections")
     const draftId = "instpl-legacy-draft"
     await getDb().insert(schema.preventionInspectionTemplates).values({
@@ -191,21 +228,41 @@ describeIf("Motor de inspecciones on real PostgreSQL", () => {
       authorUserId: AUTHOR.userId,
     })
 
+    // AUTHOR no tiene `:approve`.
     await expect(service.approveInspectionTemplate({
-      templateId: draftId, expectedVersion: 1, reason: "Intento de autoaprobación de la plantilla.",
-    }, { ...AUTHOR, permissions: [...AUTHOR.permissions, "prevention:inspections:approve"] }))
-      .rejects.toThrow(/no puede aprobarla/)
+      templateId: draftId, expectedVersion: 1, reason: "Intento sin permiso de aprobación.",
+    }, AUTHOR)).rejects.toThrow()
 
     const approved = await service.approveInspectionTemplate({
       templateId: draftId, expectedVersion: 1, reason: "Contenido revisado y conforme al estándar de la faena.",
     }, APPROVER)
     expect(approved).toMatchObject({ status: "approved", approvedByUserId: "in-approver" })
+
+    // Y una ya aprobada no se re-aprueba.
+    await expect(service.approveInspectionTemplate({
+      templateId: draftId, expectedVersion: approved.version, reason: "Segunda aprobación de la misma plantilla.",
+    }, APPROVER)).rejects.toThrow(/borrador/i)
+  })
+
+  it("retira una plantilla sin uso borrándola, y conserva la que tiene ejecuciones", async () => {
+    const service = await import("@/lib/services/prevention-inspections")
+    const spare = await service.importInspectionTemplate(
+      { definitionCode: "inspeccion_contenedores" }, AUTHOR,
+    )
+    // Nunca se usó: se elimina de verdad.
+    const gone = await service.retireInspectionTemplate({
+      templateId: spare.id, reason: "Instrumento que esta faena no ocupa.",
+    }, APPROVER)
+    expect(gone).toMatchObject({ outcome: "deleted", runs: 0, programs: 0 })
+    const rows = await getDb().select().from(schema.preventionInspectionTemplates)
+      .where(eq(schema.preventionInspectionTemplates.id, spare.id))
+    expect(rows).toHaveLength(0)
   })
 
   it("refuses to run a template that is no longer the current version", async () => {
     const service = await import("@/lib/services/prevention-inspections")
-    const first = await service.importInspectionTemplate({ definitionCode: "inspeccion_taller" }, AUTHOR)
-    await service.importInspectionTemplate({ definitionCode: "inspeccion_taller", versionLabel: "01-rev" }, AUTHOR)
+    const first = await installTemplate({ definitionCode: "inspeccion_taller" })
+    await installTemplate({ definitionCode: "inspeccion_taller", versionLabel: "01-rev" })
     await expect(service.createInspectionRun({
       templateId: first.id, worksiteId: "ws-in-a",
     }, AUTHOR)).rejects.toThrow(/plantilla aprobada/)
@@ -468,7 +525,7 @@ describeIf("Motor de inspecciones on real PostgreSQL", () => {
 
   it("persists 'partial' end-to-end on a B/R/M template and scores it at 0.5", async () => {
     const service = await import("@/lib/services/prevention-inspections")
-    const approved = await service.importInspectionTemplate({ definitionCode: "inspeccion_carros" }, AUTHOR)
+    const approved = await installTemplate({ definitionCode: "inspeccion_carros" })
 
     const created = await service.createInspectionRun({
       templateId: approved.id, worksiteId: "ws-in-a", subjectLabel: "Carro CR-04",
@@ -531,16 +588,27 @@ describeIf("Motor de inspecciones on real PostgreSQL", () => {
   // la v2 deja la v1 en `superseded`, y `createInspectionRun` sólo acepta
   // vigentes — versionar la plantilla que usan los demás tests los rompería a
   // todos.
-  it("reimports a definition as a new version and supersedes the previous approved one", async () => {
+  it("reimports a definition as a new version and supersedes the previous only when approved", async () => {
     const service = await import("@/lib/services/prevention-inspections")
-    const v1 = await service.importInspectionTemplate({
-      definitionCode: "inspeccion_contenedores", versionLabel: "01",
-    }, AUTHOR)
+    const v1 = await installTemplate({ definitionCode: "inspeccion_contenedores", versionLabel: "01" })
     expect(v1.status).toBe("approved")
 
-    const v2 = await service.importInspectionTemplate({
+    // Incorporar la v2 la deja en borrador y NO jubila a la v1: sacar de
+    // circulación al instrumento en uso por un borrador que quizás nadie
+    // apruebe dejaría a la faena sin nada que ejecutar.
+    const draft = await service.importInspectionTemplate({
       definitionCode: "inspeccion_contenedores", versionLabel: "02",
     }, AUTHOR)
+    expect(draft.status).toBe("draft")
+    const [stillLive] = await getDb().select().from(schema.preventionInspectionTemplates)
+      .where(eq(schema.preventionInspectionTemplates.id, v1.id))
+    expect(stillLive!.status).toBe("approved")
+
+    // El relevo ocurre al habilitarla.
+    const v2 = await service.approveInspectionTemplate({
+      templateId: draft.id, expectedVersion: draft.version,
+      reason: "Versión 02 revisada y puesta en uso.",
+    }, APPROVER)
     expect(v2).toMatchObject({ status: "approved", code: v1.code })
 
     const [superseded] = await getDb().select().from(schema.preventionInspectionTemplates)
@@ -709,9 +777,7 @@ describeIf("Motor de inspecciones on real PostgreSQL", () => {
 
     it("importa el Reporte de Equipos y acredita sólo la actividad PDTP n=25", async () => {
       const service = await import("@/lib/services/prevention-inspections")
-      const template = await service.importInspectionTemplate(
-        { definitionCode: "reporte_equipos", pdtpActivityNumbers: [25] }, AUTHOR,
-      )
+      const template = await installTemplate({ definitionCode: "reporte_equipos", pdtpActivityNumbers: [25] })
       reporteTemplateId = template.id
       expect(template.status).toBe("approved")
       // n=26 y n=28 son actividades de revisión: acreditarlas al ejecutar

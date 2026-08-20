@@ -13,6 +13,7 @@ import {
   createInspectionProgram,
   createInspectionRun,
   importInspectionTemplate,
+  retireInspectionTemplate,
   reviewInspectionRun,
   saveInspectionAnswers,
   setInspectionTemplatePdtpActivities,
@@ -86,6 +87,16 @@ export async function approveInspectionTemplateAction(input: unknown): Promise<A
   const guard = await guardPermission("prevention:inspections:approve")
   if (guard.error) return guard.error
   return run(accessFromSession(guard.session), (access) => approveInspectionTemplate(input, access))
+}
+
+/**
+ * Retira una plantilla. Mismo permiso que aprobarla: quien habilita un
+ * instrumento es quien puede sacarlo de circulación.
+ */
+export async function retireInspectionTemplateAction(input: unknown): Promise<ActionState> {
+  const guard = await guardPermission("prevention:inspections:approve")
+  if (guard.error) return guard.error
+  return run(accessFromSession(guard.session), (access) => retireInspectionTemplate(input, access))
 }
 
 export async function createInspectionProgramAction(input: unknown): Promise<ActionState> {

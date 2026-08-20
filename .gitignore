@@ -90,3 +90,5 @@ next-env.d.ts
 # rehacerlo exige reescribirlo. Los respaldos van por /admin/backups, no por git.
 backup-*.sql
 *.dump
+
+/anexos

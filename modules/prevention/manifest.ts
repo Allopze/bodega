@@ -852,6 +852,9 @@ export const preventionModule = {
     { roleSlug: "prevencionista_faena", permission: "prevention:inspections:review" },
     { roleSlug: "prevencionista",       permission: "prevention:inspections:view" },
     { roleSlug: "prevencionista",       permission: "prevention:inspections:manage" },
+    // Habilitar un instrumento es del Jefe del Departamento de Prevención y del
+    // administrador, nadie más. Se le quitó a `jefa_chome` (Jefatura), que es
+    // otro cargo.
     { roleSlug: "prevencionista",       permission: "prevention:inspections:approve" },
     { roleSlug: "prevencionista",       permission: "prevention:inspections:execute" },
     { roleSlug: "prevencionista",       permission: "prevention:inspections:review" },
@@ -864,7 +867,6 @@ export const preventionModule = {
     // la CAPA, ya lo habilita `mantenciones:edit`.
     { roleSlug: "jefe_mantencion",      permission: "prevention:inspections:view" },
     { roleSlug: "jefa_chome",           permission: "prevention:inspections:view" },
-    { roleSlug: "jefa_chome",           permission: "prevention:inspections:approve" },
     { roleSlug: "jefa_chome",           permission: "prevention:inspections:review" },
     { roleSlug: "jefa_chome",           permission: "prevention:inspections:export" },
     { roleSlug: "administrador",        permission: "prevention:inspections:view" },

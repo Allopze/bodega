@@ -326,8 +326,10 @@ describe("prevention module RBAC", () => {
     expect(rolesFor("prevention:inspections:execute")).toContain("jefe_terreno")
     expect(rolesFor("prevention:inspections:review")).not.toContain("jefe_terreno")
     expect(rolesFor("prevention:inspections:review")).not.toContain("admin_contrato")
+    // Habilitar un instrumento queda en el Jefe del Departamento de Prevención
+    // (`prevencionista`) y el administrador. `jefa_chome` es Jefatura: otro cargo.
     expect(rolesFor("prevention:inspections:approve")).toEqual([
-      "administrador", "jefa_chome", "prevencionista",
+      "administrador", "prevencionista",
     ])
     // Taller: el jefe de mantención sólo mira lo que su taller va a recibir.
     // Nadie del taller ejecuta inspecciones — el reporte llega por foto.
