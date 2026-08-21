@@ -10,7 +10,8 @@
 import { db } from "@/db"
 import { fuelMonthlyStatements, fuelLoads } from "@/db/schema"
 import { eq, and, sql, lte } from "drizzle-orm"
-import { notifyManyUser, getUserIdsWithPermission } from "@/lib/services/notifications"
+import { notifyManyUser } from "@/lib/services/notifications"
+import { getGlobalUserIdsWithAllPermissions } from "@/lib/services/notification-targeting"
 import { logger } from "@/lib/logger"
 import { chileDateParts, todayInChile, addDaysToPlainDate } from "@/lib/utils"
 
@@ -55,11 +56,12 @@ export async function checkFuelStatementNotifications(): Promise<void> {
       with: { supplier: true },
     })
 
-    // combustibles:view_costs, no combustibles:view: la cuenta corriente
-    // (deuda, pagos, montos por proveedor) exige view_costs igual que
-    // /facturas y /reportes; notificar montos a un rol sin ese permiso
-    // filtraba la misma información que la pantalla ya protege.
-    const adminUserIds = await getUserIdsWithPermission("combustibles:view_costs")
+    // La notificación lleva monto y deep link a una cuenta corriente global:
+    // su audiencia replica exactamente el guard de la pantalla destino.
+    const adminUserIds = await getGlobalUserIdsWithAllPermissions(
+      "combustibles:view",
+      "combustibles:view_costs",
+    )
 
     // Notify about due soon
     for (const stmt of dueSoon) {

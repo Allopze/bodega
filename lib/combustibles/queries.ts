@@ -2,6 +2,7 @@ import type { Session } from "next-auth"
 import { and, eq, gte, lte, type SQL } from "drizzle-orm"
 import { fuelLoads, fuelVehicles } from "@/db/schema"
 import { worksiteScopeSql } from "@/lib/auth/scope"
+import { accountableFuelLoadsWhere } from "@/lib/combustibles/load-status"
 
 export interface FuelLoadFilters {
   month?: string
@@ -21,8 +22,15 @@ export interface FuelLoadFilters {
  * por faena de la sesión. Punto único de verdad para que ninguna lectura olvide
  * el scoping (page.tsx y server actions lo comparten).
  */
-export function buildFuelLoadsWhere(session: Session, filters: FuelLoadFilters = {}): SQL | undefined {
+export function buildFuelLoadsWhere(
+  session: Session,
+  filters: FuelLoadFilters = {},
+  options: { accountableOnly?: boolean } = {},
+): SQL | undefined {
   const conditions: (SQL | undefined)[] = [
+    // Los listados administran las cuatro etapas; los agregados sólo cuentan
+    // las contabilizables (ver lib/combustibles/load-status.ts).
+    options.accountableOnly ? accountableFuelLoadsWhere() : undefined,
     filters.month ? eq(fuelLoads.month, filters.month) : undefined,
     filters.startDate ? gte(fuelLoads.loadDate, filters.startDate) : undefined,
     filters.endDate ? lte(fuelLoads.loadDate, filters.endDate) : undefined,

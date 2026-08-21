@@ -57,19 +57,22 @@ export default async function MantencionesPage({
   ])
   const canCreate = can(session, "mantenciones:create")
   const canEdit = can(session, "mantenciones:edit")
+  const canViewCosts = can(session, "combustibles:view_costs")
   const hasActiveFilters = Boolean(vehicleId || worksiteId || status)
 
-  // Listas de opciones compartidas por el formulario de alta y la edición por fila.
-  const vehicleOptions = data.vehicles.map((vehicle) => ({ id: vehicle.id, plate: vehicle.plate, type: vehicle.type }))
+  // Listas de opciones compartidas por el formulario de alta y la edición por
+  // fila. La faena viaja con cada opción: el centro de costo se valida en el
+  // servidor contra la faena del EQUIPO, no contra el alcance del actor, así que
+  // el formulario necesita el mismo eje para no ofrecer lo que será rechazado.
+  const vehicleOptions = data.vehicles.map((vehicle) => ({ id: vehicle.id, plate: vehicle.plate, type: vehicle.type, worksiteId: vehicle.worksiteId }))
   const supplierOptions = data.suppliers.map((supplier) => ({ id: supplier.id, name: supplier.name }))
-  const worksiteOptions = data.worksites.map((worksite) => ({ id: worksite.id, name: worksite.name }))
-  const costCenterOptions = data.costCenters.map((center) => ({ id: center.id, code: center.code, name: center.name }))
+  const costCenterOptions = data.costCenters.map((center) => ({ id: center.id, code: center.code, name: center.name, worksiteId: center.worksiteId }))
 
   return (
     <PageContainer>
       <PageHeader
         title="Mantenciones"
-        description="Registro operativo de servicios, costos, kilometraje, horómetro y documentos de flota."
+        description={canViewCosts ? "Registro operativo de servicios, costos, kilometraje, horómetro y documentos de flota." : "Registro operativo de servicios, kilometraje, horómetro y documentos de flota."}
         breadcrumb={
           <Breadcrumbs items={[
             { label: "Control operacional", href: "/" },
@@ -78,15 +81,15 @@ export default async function MantencionesPage({
         }
         actions={
           <div className="flex items-center gap-2">
-            <Button asChild size="sm" variant="secondary">
+            {can(session, "flota:view") && <Button asChild size="sm" variant="secondary">
               <Link href="/flota">Ver flota</Link>
-            </Button>
+            </Button>}
             {canCreate && (
               <MaintenanceCreateButton
                 vehicles={vehicleOptions}
                 suppliers={supplierOptions}
-                worksites={worksiteOptions}
                 costCenters={costCenterOptions}
+                canViewCosts={canViewCosts}
               />
             )}
           </div>
@@ -177,11 +180,11 @@ export default async function MantencionesPage({
             records={data.records}
             canEdit={canEdit}
             canCreate={canCreate}
+            canViewCosts={canViewCosts}
             hasActiveFilters={hasActiveFilters}
             statusLabels={statusLabels}
             vehicleOptions={vehicleOptions}
             supplierOptions={supplierOptions}
-            worksiteOptions={worksiteOptions}
             costCenterOptions={costCenterOptions}
           />
         </CardContent>

@@ -34,7 +34,7 @@ export async function getCopecSyncStatusAction(): Promise<
   | { ok: true; data: CopecSyncStatus }
   | { ok: false; message: string }
 > {
-  const guard = await guardPermission("combustibles:import")
+  const guard = await guardPermission("combustibles:import", "/combustibles/importar")
   if (guard.error) return guard.error
   try {
     const row = await db.query.systemSettings.findFirst({ where: eq(systemSettings.key, STATE_KEY) })
@@ -60,7 +60,7 @@ export async function getCopecSyncPlanAction(): Promise<
   | { ok: true; from: string; to: string; periods: Array<{ from: string; to: string }> }
   | { ok: false; message: string }
 > {
-  const guard = await guardPermission("combustibles:import")
+  const guard = await guardPermission("combustibles:import", "/combustibles/importar")
   if (guard.error) return guard.error
   try {
     const result = await getCopecSyncPlan()
@@ -74,7 +74,7 @@ export async function updateCopecSyncStartAction(input: { startDate: string; exp
   | { ok: true; data: CopecSyncStartOptions }
   | { ok: false; message: string }
 > {
-  const guard = await guardPermission("combustibles:import")
+  const guard = await guardPermission("combustibles:import", "/combustibles/importar")
   if (guard.error) return guard.error
   try {
     const parsed = copecStartDateSchema.safeParse(input)
@@ -89,7 +89,7 @@ export async function runCopecSyncPeriodAction(period: { from: string; to: strin
   | { ok: true; imported: number; received: number; pending: number; unavailable: string[]; reports: number; unmappedCards: string[] }
   | { ok: false; message: string }
 > {
-  const guard = await guardPermission("combustibles:import")
+  const guard = await guardPermission("combustibles:import", "/combustibles/importar")
   if (guard.error) return guard.error
   const session = guard.session
   try {

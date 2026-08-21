@@ -180,6 +180,29 @@ describe("seguridad de la PWA pública TAE (PostgreSQL integration)", () => {
     })).rejects.toThrow("Confirma o corrige manualmente")
   })
 
+  // CO-016: revalidar una carga volvía a insertar el movimiento de sello
+  // retirado (la instalación sí deduplicaba, el retiro no). El historial del
+  // sello mostraba dos retiros del mismo sello en el mismo acto.
+  it("revalidar una carga no duplica los movimientos de sello", async () => {
+    const result = await createTaeSubmission({
+      accessToken: validToken,
+      input: baseInput({ removedSealNumber: "SR-1", installedSealNumber: "SI-1" }),
+      evidence: fourEvidences,
+    })
+
+    const review = (expectedStatus: "submitted" | "observed" | "validated", status: "observed" | "validated") =>
+      reviewTaeSubmission({ id: result.id, expectedStatus, status, reviewNote: "Revisión de prueba.", userId })
+
+    await review("submitted", "validated")
+    await review("validated", "observed")
+    await review("observed", "validated")
+
+    const movements = await inMemoryDb.select().from(schema.fuelSealMovements)
+      .where(eq(schema.fuelSealMovements.submissionId, result.id))
+    expect(movements).toHaveLength(2)
+    expect(movements.map((movement) => movement.movementType).sort()).toEqual(["installed", "removed"])
+  })
+
   it("prioriza la lectura manual y conserva la sugerencia OCR para trazabilidad", async () => {
     const result = await createTaeSubmission({
       accessToken: validToken,

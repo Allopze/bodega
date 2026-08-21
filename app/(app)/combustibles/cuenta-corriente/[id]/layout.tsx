@@ -1,6 +1,9 @@
 import type { ReactNode } from "react"
 import { requireRecord } from "@/lib/routing/require-record"
 import { fuelMonthlyStatements } from "@/db/schema"
+import { redirect } from "next/navigation"
+import { requirePermission } from "@/lib/auth/can"
+import { assertFuelCostAccess } from "@/lib/operational-control/capabilities"
 
 /**
  * Existe sólo para fijar el 404 real.
@@ -18,6 +21,13 @@ export default async function Layout({
   children: ReactNode
   params: Promise<{ id: string }>
 }) {
+  let session
+  try {
+    session = await requirePermission("combustibles:view")
+    assertFuelCostAccess(session, { global: true })
+  }
+  catch { redirect("/forbidden") }
+
   const { id } = await params
   await requireRecord(fuelMonthlyStatements, fuelMonthlyStatements.id, id)
   return children

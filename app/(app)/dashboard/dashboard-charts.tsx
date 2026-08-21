@@ -492,7 +492,7 @@ export function WorksiteActivityChart({
 export interface FuelMonthlyChartPoint {
   month: string
   liters: number
-  amount: number
+  amount: number | null
   loads: number
 }
 
@@ -507,15 +507,15 @@ export interface FuelMonthlyChartPoint {
  * Las cargas siguen disponibles en el tooltip, que es donde una cifra de apoyo
  * no compite por escala con nada.
  */
-export function FuelConsumptionChart({ data }: { data: FuelMonthlyChartPoint[] }) {
-  if (!data.length || !data.some((d) => d.liters > 0 || d.amount > 0)) return null
+export function FuelConsumptionChart({ data, showCosts = true }: { data: FuelMonthlyChartPoint[]; showCosts?: boolean }) {
+  if (!data.length || !data.some((d) => d.liters > 0 || (showCosts && (d.amount ?? 0) > 0))) return null
 
   return (
     <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-xs flex flex-col justify-between">
       <div className="mb-3 flex items-center justify-between">
         <div>
           <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--color-text-muted)]">Consumo de Combustibles</h3>
-          <p className="text-xs text-[var(--color-text-muted)]">Litros cargados y costo por mes</p>
+          <p className="text-xs text-[var(--color-text-muted)]">{showCosts ? "Litros cargados y costo por mes" : "Litros cargados por mes"}</p>
         </div>
       </div>
 
@@ -524,11 +524,11 @@ export function FuelConsumptionChart({ data }: { data: FuelMonthlyChartPoint[] }
           <CartesianGrid strokeDasharray="3 3" vertical={false} />
           <XAxis dataKey="month" tickLine={false} axisLine={false} tickMargin={8} />
           <YAxis yAxisId="liters" tickLine={false} axisLine={false} tickMargin={8} />
-          <YAxis yAxisId="amount" orientation="right" tickLine={false} axisLine={false} tickMargin={4} tickFormatter={compactCLPTick} width={52} />
+          {showCosts && <YAxis yAxisId="amount" orientation="right" tickLine={false} axisLine={false} tickMargin={4} tickFormatter={compactCLPTick} width={52} />}
           <ChartTooltip content={<ChartTooltipContent indicator="dot" />} />
           <ChartLegend content={<ChartLegendContent />} />
           <Bar yAxisId="liters" dataKey="liters" fill={CHART_COLORS.signal} radius={[4, 4, 0, 0]} />
-          <Line yAxisId="amount" type="monotone" dataKey="amount" stroke={CHART_COLORS.brand} strokeWidth={2} dot={{ r: 3 }} />
+          {showCosts && <Line yAxisId="amount" type="monotone" dataKey="amount" stroke={CHART_COLORS.brand} strokeWidth={2} dot={{ r: 3 }} />}
         </ComposedChart>
       </ChartContainer>
     </div>
@@ -541,7 +541,7 @@ export interface MaintenanceMonthlyChartPoint {
   month: string
   completed: number
   scheduled: number
-  amount: number
+  amount: number | null
 }
 
 /**
@@ -549,15 +549,15 @@ export interface MaintenanceMonthlyChartPoint {
  * ya lo calculaba `getMaintenanceMonthlyTrend` y se descartaba; sin él la
  * tarjeta contaba mantenciones sin decir lo que costaron.
  */
-export function MaintenanceTrendChart({ data }: { data: MaintenanceMonthlyChartPoint[] }) {
-  if (!data.length || !data.some((d) => d.completed > 0 || d.scheduled > 0 || d.amount > 0)) return null
+export function MaintenanceTrendChart({ data, showCosts = true }: { data: MaintenanceMonthlyChartPoint[]; showCosts?: boolean }) {
+  if (!data.length || !data.some((d) => d.completed > 0 || d.scheduled > 0 || (showCosts && (d.amount ?? 0) > 0))) return null
 
   return (
     <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-xs flex flex-col justify-between">
       <div className="mb-3 flex items-center justify-between">
         <div>
           <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--color-text-muted)]">Mantención de Flota</h3>
-          <p className="text-xs text-[var(--color-text-muted)]">Completadas vs. programadas y costo por mes</p>
+          <p className="text-xs text-[var(--color-text-muted)]">{showCosts ? "Completadas vs. programadas y costo por mes" : "Completadas vs. programadas por mes"}</p>
         </div>
       </div>
 
@@ -567,12 +567,12 @@ export function MaintenanceTrendChart({ data }: { data: MaintenanceMonthlyChartP
           <CartesianGrid strokeDasharray="3 3" vertical={false} />
           <XAxis dataKey="month" tickLine={false} axisLine={false} tickMargin={8} />
           <YAxis yAxisId="count" tickLine={false} axisLine={false} tickMargin={8} allowDecimals={false} />
-          <YAxis yAxisId="amount" orientation="right" tickLine={false} axisLine={false} tickMargin={4} tickFormatter={compactCLPTick} width={52} />
+          {showCosts && <YAxis yAxisId="amount" orientation="right" tickLine={false} axisLine={false} tickMargin={4} tickFormatter={compactCLPTick} width={52} />}
           <ChartTooltip content={<ChartTooltipContent indicator="dot" />} />
           <ChartLegend content={<ChartLegendContent />} />
           <Bar yAxisId="count" dataKey="completed" fill={CHART_COLORS.brand} radius={[4, 4, 0, 0]} />
           <Bar yAxisId="count" dataKey="scheduled" fill={CHART_COLORS.blue} radius={[4, 4, 0, 0]} />
-          <Line yAxisId="amount" type="monotone" dataKey="amount" stroke={CHART_COLORS.violet} strokeWidth={2} dot={{ r: 3 }} />
+          {showCosts && <Line yAxisId="amount" type="monotone" dataKey="amount" stroke={CHART_COLORS.violet} strokeWidth={2} dot={{ r: 3 }} />}
         </ComposedChart>
       </ChartContainer>
     </div>

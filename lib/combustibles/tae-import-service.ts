@@ -381,7 +381,13 @@ export async function importTaeLegacyWorkbook(input: { buffer: Buffer; fileName:
  */
 export async function reprocessTaeImportRejectedRows(input: { batchId: string; userId: string; allowedWorksiteIds?: ReadonlySet<string> }) {
   return db.transaction(async (tx) => {
-    const batch = await tx.query.fuelTaeImportBatches.findFirst({ where: eq(fuelTaeImportBatches.id, input.batchId) })
+    // Reversa y reproceso serializan sobre la misma fila padre. Bloquear sólo
+    // las cargas existentes no evita phantoms: un reproceso podría insertar
+    // una nueva carga después de que la reversa enumeró las suyas.
+    const [batch] = await tx.select().from(fuelTaeImportBatches)
+      .where(eq(fuelTaeImportBatches.id, input.batchId))
+      .for("update")
+      .limit(1)
     if (!batch) throw new Error("Lote no encontrado")
     if (batch.status !== "imported") throw new Error("No se puede reprocesar un lote revertido")
 
@@ -483,7 +489,11 @@ export async function reprocessTaeImportRejectedRows(input: { batchId: string; u
     if (removedRejectionIds.length) await tx.delete(fuelTaeImportRejections).where(inArray(fuelTaeImportRejections.id, removedRejectionIds))
     const observedRows = submissions.filter((item) => item.status === "observed").length
     const totalLiters = submissions.reduce((sum, item) => sum + item.liters, 0)
-    await tx.update(fuelTaeImportBatches).set({ validRows: batch.validRows + submissions.length, observedRows: batch.observedRows + observedRows, invalidRows: Math.max(0, batch.invalidRows - submissions.length), totalLiters: Number(batch.totalLiters) + totalLiters, updatedAt: now }).where(eq(fuelTaeImportBatches.id, batch.id))
+    const [updatedBatch] = await tx.update(fuelTaeImportBatches)
+      .set({ validRows: batch.validRows + submissions.length, observedRows: batch.observedRows + observedRows, invalidRows: Math.max(0, batch.invalidRows - submissions.length), totalLiters: Number(batch.totalLiters) + totalLiters, updatedAt: now })
+      .where(and(eq(fuelTaeImportBatches.id, batch.id), eq(fuelTaeImportBatches.status, "imported")))
+      .returning({ id: fuelTaeImportBatches.id })
+    if (!updatedBatch) throw new Error("El lote cambió de estado durante el reproceso")
     await recordStatusChanges(submissions.map((item) => ({ entityType: "fuel_tae_submission", entityId: item.id, fromStatus: null, toStatus: item.status, changedBy: input.userId, reason: item.reviewNote ?? undefined })), tx)
     await recordAudit({ userId: input.userId, action: "update", entityType: "fuel_tae_import_batch", entityId: batch.id, oldState: { invalidRows: batch.invalidRows }, newState: { reprocessedRows: submissions.length, remainingInvalidRows: Math.max(0, batch.invalidRows - submissions.length) }, reason: "Reproceso de filas rechazadas después de corregir catálogos" }, tx)
     return { reprocessedRows: submissions.length, remainingRows: rejectionRows.length - removedRejectionIds.length, observedRows, totalLiters }

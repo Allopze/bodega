@@ -109,6 +109,11 @@ const MONEY_FIRST: readonly DashboardDomainKey[] = ["finanzas", "adquisiciones",
 const PREVENTION_FIRST: readonly DashboardDomainKey[] = ["prevencion", "terreno", "gobernanza", "bodega", "adquisiciones", "flota", "finanzas"]
 
 function domainIsVisibleForPermissions(domain: DashboardDomain, permissions: ReadonlySet<string>) {
+  if (domain.key === "finanzas") {
+    return permissions.has("billing:view")
+      || permissions.has("purchasing:view")
+      || (permissions.has("combustibles:view") && permissions.has("combustibles:view_costs"))
+  }
   return domain.permissions.some((permission) => permissions.has(permission))
 }
 

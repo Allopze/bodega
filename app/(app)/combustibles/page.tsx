@@ -136,11 +136,25 @@ export default async function CombustiblesPage({
   const chartPeriodLabel = `${formatDate(effectiveFilters.fromDate)} a ${formatDate(effectiveFilters.toDate)}`
 
   const detailWhere = buildConsumptionWhere(session, effectiveFilters)
-  const [detailRows, detailCountResult] = await Promise.all([
+  const [detailRowsRaw, detailCountResult] = await Promise.all([
     needsRecords
       ? settle(
       db.query.fuelConsumptionRecords.findMany({
         where: detailWhere,
+        columns: {
+          id: true,
+          batchId: true,
+          patente: true,
+          numeroTarjetas: true,
+          numeroTransacciones: true,
+          cantidadUnidad: true,
+          monto: canViewCosts,
+          precioPromedioUnidad: canViewCosts,
+          rendimientoPromedio: true,
+          periodoDesde: true,
+          periodoHasta: true,
+          fuente: true,
+        },
         with: { vehicle: { columns: { id: true, plate: true, type: true } } },
         orderBy: [desc(fuelConsumptionRecords.periodoDesde), desc(fuelConsumptionRecords.createdAt)],
         limit: PAGE_SIZE,
@@ -156,6 +170,12 @@ export default async function CombustiblesPage({
       "detailCount",
     ),
   ])
+  const redactAmount = (value: unknown) => canViewCosts && typeof value === "number" ? value : null
+  const detailRows = detailRowsRaw.map((row) => ({
+    ...row,
+    monto: redactAmount((row as { monto?: unknown }).monto),
+    precioPromedioUnidad: redactAmount((row as { precioPromedioUnidad?: unknown }).precioPromedioUnidad),
+  }))
   const totalDetail = detailCountResult[0]?.count ?? 0
   const totalDetailPages = Math.ceil(totalDetail / PAGE_SIZE)
 
@@ -216,9 +236,9 @@ export default async function CombustiblesPage({
                 <Link href="/combustibles/tae"><QrCode className="h-4 w-4 mr-1.5" />Control TAE</Link>
               </Button>
             )}
-            <Button asChild variant="secondary" size="sm">
+            {canViewCosts && <Button asChild variant="secondary" size="sm">
               <Link href="/combustibles/facturas"><FileXls className="h-4 w-4 mr-1.5" />Facturas</Link>
-            </Button>
+            </Button>}
             {canImport && (
               <Button asChild size="sm">
                 <Link href="/combustibles/importar"><Upload className="h-4 w-4 mr-1.5" />Importar consumos</Link>
@@ -280,30 +300,30 @@ export default async function CombustiblesPage({
 
       {vista === "resumen" && (
         <>
-      {dashboard && <ConsumptionKpis kpis={dashboard.kpis} hrefs={{ registros: vistaHref("registros"), sinAsociacion: sinAsociacionHref }} />}
+      {dashboard && <ConsumptionKpis kpis={dashboard.kpis} canViewCosts={canViewCosts} hrefs={{ registros: vistaHref("registros"), sinAsociacion: sinAsociacionHref }} />}
 
       {dashboard && (
         <section aria-labelledby="consumo-evolucion-title" className="mb-8">
           <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
             <div>
               <p className="text-eyebrow">Lectura del período</p>
-              <h2 id="consumo-evolucion-title" className="text-lg font-semibold tracking-tight text-[var(--color-text)]">Tendencia y precio</h2>
+              <h2 id="consumo-evolucion-title" className="text-lg font-semibold tracking-tight text-[var(--color-text)]">{canViewCosts ? "Tendencia y precio" : "Tendencia de consumo"}</h2>
             </div>
             <p className="text-sm text-[var(--color-text-muted)]">{chartPeriodLabel}</p>
           </div>
-          <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1.8fr)_minmax(18rem,0.9fr)]">
+          <div className={canViewCosts ? "grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1.8fr)_minmax(18rem,0.9fr)]" : "grid grid-cols-1 gap-5"}>
             <Card>
               <CardHeader>
-                <CardTitle className="text-base">Consumo y gasto por período</CardTitle>
-                <CardDescription>La lectura conjunta muestra si el gasto acompaña al volumen cargado.</CardDescription>
+                <CardTitle className="text-base">{canViewCosts ? "Consumo y gasto por período" : "Consumo por período"}</CardTitle>
+                <CardDescription>{canViewCosts ? "La lectura conjunta muestra si el gasto acompaña al volumen cargado." : "Evolución del volumen cargado dentro del período filtrado."}</CardDescription>
               </CardHeader>
             <CardContent>
               <ChartErrorBoundary chartName="Evolución mensual">
-                <EvolutionChart data={dashboard.seriesPorPeriodo} />
+                <EvolutionChart data={dashboard.seriesPorPeriodo} showCosts={canViewCosts} />
               </ChartErrorBoundary>
             </CardContent>
           </Card>
-          <Card>
+          {canViewCosts && <Card>
             <CardHeader>
               <CardTitle className="text-base">Precio promedio</CardTitle>
               <CardDescription>CLP por litro, aislado de la variación por cantidad.</CardDescription>
@@ -311,7 +331,7 @@ export default async function CombustiblesPage({
             <CardContent>
               <PriceEvolutionChart data={dashboard.seriesPorPeriodo} />
             </CardContent>
-          </Card>
+          </Card>}
           </div>
         </section>
       )}
@@ -328,7 +348,7 @@ export default async function CombustiblesPage({
 
       {vista === "analisis" && (
         <>
-      {dashboard && hasAnalysisContent && <ConsumptionAnalysisMetrics kpis={dashboard.kpis} />}
+      {dashboard && hasAnalysisContent && <ConsumptionAnalysisMetrics kpis={dashboard.kpis} canViewCosts={canViewCosts} />}
       {byEquipmentType.length > 0 && (
         <section aria-labelledby="consumo-por-tipo-title" className="mb-8">
           <div className="mb-3">
@@ -344,8 +364,9 @@ export default async function CombustiblesPage({
             <CardContent>
               <ChartErrorBoundary chartName="Consumo por tipo de equipo">
                 <CategoryBarChart
-                  data={byEquipmentType.map((r) => ({ group: r.equipmentTypeName, totalLiters: r.totalLiters, totalAmount: r.totalAmount, count: r.uniqueVehicles }))}
+                  data={byEquipmentType.map((r) => ({ group: r.equipmentTypeName, totalLiters: r.totalLiters, totalAmount: r.totalAmount ?? 0, count: r.uniqueVehicles }))}
                   title="Tipo de equipo"
+                  metric="liters"
                 />
               </ChartErrorBoundary>
             </CardContent>
@@ -458,7 +479,7 @@ export default async function CombustiblesPage({
               <PatenteRankingChart data={dashboard.topPatentesPorConsumo} metric="cantidad" />
             </CardContent>
           </Card>
-          <Card>
+          {canViewCosts && <Card>
             <CardHeader>
               <CardTitle className="text-base">Mayor gasto</CardTitle>
               <CardDescription>Prioriza el costo antes de revisar cargas individuales.</CardDescription>
@@ -466,7 +487,7 @@ export default async function CombustiblesPage({
             <CardContent>
               <PatenteRankingChart data={dashboard.topPatentesPorGasto} metric="monto" />
             </CardContent>
-          </Card>
+          </Card>}
           <Card>
             <CardHeader>
               <CardTitle className="text-base">Más transacciones</CardTitle>
@@ -501,7 +522,7 @@ export default async function CombustiblesPage({
             </div>
             <p className="font-mono text-sm text-[var(--color-text-muted)]">
               {formatQty(Math.round(operationsSummary.totalLitros), "L")}
-              {canViewCosts && <> · {formatCLP(operationsSummary.totalMonto)}</>}
+              {canViewCosts && operationsSummary.totalMonto != null && <> · {formatCLP(operationsSummary.totalMonto)}</>}
             </p>
           </div>
           <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
@@ -541,28 +562,26 @@ export default async function CombustiblesPage({
               </CardContent>
             </Card>
           </div>
-          {canViewCosts && (
           <div className="mt-5 grid grid-cols-1 gap-5 lg:grid-cols-2">
             <Card>
               <CardHeader>
-                <CardTitle className="text-base">Gasto por faena</CardTitle>
-                <CardDescription>¿Qué faena concentra el gasto de combustible del log operacional?</CardDescription>
+                <CardTitle className="text-base">{canViewCosts ? "Gasto por faena" : "Consumo por faena"}</CardTitle>
+                <CardDescription>{canViewCosts ? "¿Qué faena concentra el gasto de combustible del log operacional?" : "¿Qué faena concentra el volumen de combustible del log operacional?"}</CardDescription>
               </CardHeader>
               <CardContent>
-                <CategoryBarChart data={operationsSummary.porFaena.map((f) => ({ group: f.faena, totalLiters: f.litros, totalAmount: f.monto, count: f.equipos }))} title="Faenas" />
+                <CategoryBarChart data={operationsSummary.porFaena.map((f) => ({ group: f.faena, totalLiters: f.litros, totalAmount: f.monto ?? 0, count: f.equipos }))} title="Faenas" metric={canViewCosts ? "amount" : "liters"} />
               </CardContent>
             </Card>
             <Card>
               <CardHeader>
-                <CardTitle className="text-base">Gasto por proveedor</CardTitle>
-                <CardDescription>¿Con qué proveedor se concentra el volumen y el gasto?</CardDescription>
+                <CardTitle className="text-base">{canViewCosts ? "Gasto por proveedor" : "Consumo por proveedor"}</CardTitle>
+                <CardDescription>{canViewCosts ? "¿Con qué proveedor se concentra el volumen y el gasto?" : "¿Con qué proveedor se concentra el volumen cargado?"}</CardDescription>
               </CardHeader>
               <CardContent>
-                <OperationsProveedorChart data={operationsSummary.porProveedor.map((p) => ({ group: p.proveedor, totalLiters: p.litros, totalAmount: p.monto, count: p.transacciones }))} />
+                <OperationsProveedorChart data={operationsSummary.porProveedor.map((p) => ({ group: p.proveedor, totalLiters: p.litros, totalAmount: p.monto ?? 0, count: p.transacciones }))} metric={canViewCosts ? "amount" : "liters"} />
               </CardContent>
             </Card>
           </div>
-          )}
         </section>
       )}
 
@@ -581,6 +600,7 @@ export default async function CombustiblesPage({
           page={page}
           totalPages={totalDetailPages}
           total={totalDetail}
+          canViewCosts={canViewCosts}
         />
       )}
     </PageContainer>

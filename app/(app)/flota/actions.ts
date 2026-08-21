@@ -11,22 +11,32 @@ import { uploadFleetDocument, deleteFleetDocument } from "@/lib/services/fleet"
 import { createFleetDocumentPath, resolveFleetDir } from "@/lib/storage/config"
 import { validateFileBuffer, MimeType } from "@/lib/file-validation"
 import type { ActionState } from "@/lib/validation/operations"
+import { fleetDocumentMetadataSchema } from "@/lib/validation/fleet-documents"
 
 export async function uploadFleetDocumentAction(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
   let session
-  try { session = await requirePermission("flota:view") }
+  try { session = await requirePermission("flota:manage_documents") }
   catch { return { ok: false, message: "Sin permisos para subir documentos" } }
 
-  const vehicleId = formData.get("vehicleId") as string
-  const documentType = formData.get("documentType") as string
-  const expiresAt = formData.get("expiresAt") as string || null
+  // Tipo y vencimiento entraban crudos: cualquier string se guardaba como tipo
+  // documental y una fecha inexistente quedaba en la columna que alimenta las
+  // alertas de vencimiento.
+  // `formData.get` devuelve `null` cuando el campo no viaja; se normaliza a ""
+  // para que el mensaje sea el del esquema y no el genérico de Zod en inglés.
+  const parsed = fleetDocumentMetadataSchema.safeParse({
+    vehicleId: (formData.get("vehicleId") as string) ?? "",
+    documentType: (formData.get("documentType") as string) ?? "",
+    expiresAt: (formData.get("expiresAt") as string) || null,
+  })
+  if (!parsed.success) {
+    return { ok: false, message: parsed.error.issues[0]?.message ?? "Revisa los datos del documento" }
+  }
+  const { vehicleId, documentType, expiresAt } = parsed.data
   const file = formData.get("file") as File | null
 
-  if (!vehicleId) return { ok: false, message: "Vehículo requerido" }
-  if (!documentType) return { ok: false, message: "Tipo de documento requerido" }
   if (!file || file.size === 0) return { ok: false, message: "Archivo requerido" }
 
   const MAX_MB = 20
@@ -80,7 +90,7 @@ export async function deleteFleetDocumentAction(
   formData: FormData,
 ): Promise<ActionState> {
   let session
-  try { session = await requirePermission("flota:view") }
+  try { session = await requirePermission("flota:manage_documents") }
   catch { return { ok: false, message: "Sin permisos para eliminar documentos" } }
 
   const documentId = formData.get("documentId") as string

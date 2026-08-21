@@ -18,7 +18,7 @@ interface ChartDataPoint { group: string | null; totalLiters: number; totalAmoun
  * (un `worksiteId`) — cablearlo produciría un filtro que se ve aplicado pero
  * no filtra nada.
  */
-export function OperationsProveedorChart({ data }: { data: ChartDataPoint[] }) {
+export function OperationsProveedorChart({ data, metric = "amount" }: { data: ChartDataPoint[]; metric?: "amount" | "liters" }) {
   const router = useRouter()
   const searchParams = useSearchParams()
 
@@ -26,5 +26,5 @@ export function OperationsProveedorChart({ data }: { data: ChartDataPoint[] }) {
     router.push(buildConsumptionHref(searchParams.toString(), { proveedor: group }))
   }
 
-  return <CategoryBarChart data={data} title="Proveedores" onSelect={handleSelect} />
+  return <CategoryBarChart data={data} title="Proveedores" onSelect={handleSelect} metric={metric} />
 }

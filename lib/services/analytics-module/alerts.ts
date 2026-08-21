@@ -4,7 +4,7 @@ export function buildAlerts(input: {
   stockRisks: StockRiskRow[]; vehicleCosts: VehicleCostRow[]
   topSuppliers: RankingRow[]; eppDeliveries: EppDeliveryRow[]
   totalSpend: number; thresholds: { vehicleMonthlyAnomalyAmount: number; supplierConcentrationPct: number; eppRecurringDeliveryCount: number }
-  detectedAt: string; noData: boolean
+  detectedAt: string; noData: boolean; includeMaintenanceCosts?: boolean
 }): AnalyticsAlert[] {
   const alerts: AnalyticsAlert[] = []
 
@@ -13,7 +13,17 @@ export function buildAlerts(input: {
   }
 
   for (const row of input.vehicleCosts.filter((v) => v.totalOperationalCost >= input.thresholds.vehicleMonthlyAnomalyAmount).slice(0, 3)) {
-    alerts.push({ type: "gasto_vehiculo_anomalo", severity: "high", module: "Vehículos", entityLabel: row.plate, reason: `Costo operacional ${row.totalOperationalCost} supera el umbral configurado ${input.thresholds.vehicleMonthlyAnomalyAmount}.`, action: "Revisar combustible, mantenciones e imputaciones asociadas al vehículo.", detectedAt: input.detectedAt })
+    alerts.push({
+      type: "gasto_vehiculo_anomalo",
+      severity: "high",
+      module: "Vehículos",
+      entityLabel: row.plate,
+      reason: `${input.includeMaintenanceCosts ? "Costo operacional" : "Gasto de combustible"} ${row.totalOperationalCost} supera el umbral configurado ${input.thresholds.vehicleMonthlyAnomalyAmount}.`,
+      action: input.includeMaintenanceCosts
+        ? "Revisar combustible, mantenciones e imputaciones asociadas al vehículo."
+        : "Revisar cargas y consumo de combustible asociados al vehículo.",
+      detectedAt: input.detectedAt,
+    })
   }
 
   for (const row of input.topSuppliers.filter((s) => input.totalSpend > 0 && (s.totalAmount / input.totalSpend) * 100 >= input.thresholds.supplierConcentrationPct).slice(0, 3)) {

@@ -458,7 +458,7 @@ export async function revertBatchOperationsAction(_prev: ActionState, formData: 
 
 export async function linkOperationVehicleAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   let session
-  try { session = await requirePermission("combustibles:manage_vehicles") }
+  try { session = await requirePermission("combustibles:manage_vehicles", "/combustibles/importar") }
   catch { return { ok: false, message: "Sin permisos" } }
   // Los lotes de operaciones son multi-faena: se restringe a roles globales,
   // igual que el resto del flujo (import/preview/confirm/revert/detalle). Sin
@@ -495,7 +495,7 @@ export async function linkOperationVehicleAction(_prev: ActionState, formData: F
 
 export async function linkOperationWorksiteAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   let session
-  try { session = await requirePermission("combustibles:manage_vehicles") }
+  try { session = await requirePermission("combustibles:manage_vehicles", "/combustibles/importar") }
   catch { return { ok: false, message: "Sin permisos" } }
   // Lote multi-faena: restringido a roles globales (ver linkOperationVehicleAction).
   if (!isGlobalRole(session)) return { ok: false, message: "Requiere acceso global a todas las faenas" }

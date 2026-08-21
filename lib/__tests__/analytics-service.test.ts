@@ -3,6 +3,7 @@ import type { Session } from "next-auth"
 
 let selectCallCount = 0
 const selectResults: Array<{ data: unknown[] }> = []
+const selectProjections: unknown[] = []
 
 function createChain(data: unknown[] = []) {
   const chain: Record<string, unknown> = {}
@@ -20,7 +21,8 @@ function createChain(data: unknown[] = []) {
 
 vi.mock("@/db", () => ({
   db: {
-    select: () => {
+    select: (projection: unknown) => {
+      selectProjections.push(projection)
       const idx = selectCallCount++
       return createChain(selectResults[idx]?.data ?? [])
     },
@@ -32,8 +34,9 @@ vi.mock("@/lib/auth/scope", () => ({
   visibleWorksiteIds: vi.fn(),
 }))
 
-import { getAnalyticsDashboard, normalizeAnalyticsFilters } from "@/lib/services/analytics"
+import { getAnalyticsDashboard, getPurchasingFinancialSummary, normalizeAnalyticsFilters } from "@/lib/services/analytics"
 import { isGlobalRole, visibleWorksiteIds } from "@/lib/auth/scope"
+import { buildDataGaps } from "@/lib/services/analytics-module/helpers"
 
 const mockIsGlobalRole = vi.mocked(isGlobalRole)
 const mockVisibleWorksiteIds = vi.mocked(visibleWorksiteIds)
@@ -44,7 +47,7 @@ function makeSession(overrides?: Partial<Session["user"]>): Session {
       id: "user-1",
       name: "Test User",
       email: "test@example.com",
-      permissions: ["analytics:view"],
+      permissions: ["analytics:view", "combustibles:view", "combustibles:view_costs", "mantenciones:view"],
       roles: ["administrador"],
       worksiteIds: ["ws-1"],
       ...overrides,
@@ -57,6 +60,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   selectCallCount = 0
   selectResults.length = 0
+  selectProjections.length = 0
   mockIsGlobalRole.mockReturnValue(true)
   mockVisibleWorksiteIds.mockReturnValue([])
 })
@@ -90,7 +94,40 @@ describe("normalizeAnalyticsFilters", () => {
   })
 })
 
+describe("buildDataGaps capability semantics", () => {
+  const vehicle = {
+    id: "veh-1",
+    plate: "AA-BB-11",
+    type: "camioneta",
+    totalFuelAmount: 100_000,
+    totalServiceAmount: 0,
+    totalOperationalCost: 100_000,
+    totalLiters: 80,
+    loadCount: 2,
+    maintenanceCount: 0,
+    lastOdometerReading: 10_000,
+    lastHourMeterReading: null,
+  }
+
+  it("no convierte mantenciones no autorizadas en una brecha falsa", () => {
+    expect(buildDataGaps([vehicle])).not.toContain("No hay imputaciones de repuestos, servicios o mantenciones para los vehículos del período.")
+    expect(buildDataGaps([vehicle], { includeMaintenanceCosts: true })).toContain("No hay imputaciones de repuestos, servicios o mantenciones para los vehículos del período.")
+  })
+})
+
 describe("getAnalyticsDashboard", () => {
+  it("does not query fuel or maintenance cost aggregates for an analytics-only custom role", async () => {
+    const data = await getAnalyticsDashboard(makeSession({ permissions: ["analytics:view"] }), {
+      fromDate: "2026-06-01",
+      toDate: "2026-06-30",
+    })
+
+    expect(selectCallCount).toBe(12)
+    expect(data.kpis).toMatchObject({ fuelLiters: 0, fuelLoadCount: 0 })
+    expect(data.spendByModule.some((row) => row.module === "Combustible")).toBe(false)
+    expect(data.vehicleCosts).toEqual([])
+  })
+
   it("combines purchasing and fuel into executive KPIs and cross-module rankings", async () => {
     selectResults.push(
       { data: [{ totalAmount: 1_200_000, orderCount: 4, averageOrderAmount: 300_000 }] },
@@ -238,5 +275,31 @@ describe("getAnalyticsDashboard", () => {
       type: "sin_datos",
       severity: "low",
     }))
+  })
+})
+
+describe("getPurchasingFinancialSummary", () => {
+  it("consulta sólo los cuatro agregados financieros de compras", async () => {
+    selectResults.push(
+      { data: [{ totalAmount: 1_200_000, orderCount: 4, averageOrderAmount: 300_000 }] },
+      { data: [{ totalAmount: 900_000 }] },
+      { data: [{ module: "EPP", totalAmount: 700_000 }] },
+      { data: [{ id: "sup-1", name: "Proveedor A", module: "Compras", totalAmount: 1_200_000, count: 4 }] },
+    )
+
+    const data = await getPurchasingFinancialSummary(makeSession({ permissions: ["purchasing:view"] }), {
+      fromDate: "2026-06-01",
+      toDate: "2026-06-30",
+    })
+
+    expect(selectCallCount).toBe(4)
+    expect(data.kpis).toMatchObject({ totalSpend: 1_200_000, purchaseOrderCount: 4, averageOrderAmount: 300_000 })
+    expect(data.spendByModule).toEqual([{ module: "EPP", totalAmount: 700_000 }])
+    expect(data.topSuppliers).toEqual([expect.objectContaining({ id: "sup-1", totalAmount: 1_200_000 })])
+  })
+
+  it("rechaza antes de consultar sin purchasing:view", async () => {
+    await expect(getPurchasingFinancialSummary(makeSession({ permissions: ["analytics:view"] }))).rejects.toThrow("No autorizado")
+    expect(selectCallCount).toBe(0)
   })
 })

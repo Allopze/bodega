@@ -82,7 +82,7 @@ test.describe("Module toggles", () => {
     // Click the toggle switch for the module (the first switch in the card)
     await moduleSection.getByLabel("Desactivar módulo Flota").click({ force: true })
     // La confirmación nombra lo que se va a ocultar; sin ella no hay cambio.
-    await expect(page.getByRole("dialog")).toContainText("navegación de todos los usuarios")
+    await expect(page.getByRole("dialog")).toContainText("rutas, acciones y automatizaciones")
     const disableResponse = page.waitForResponse((response) => response.status() === 200 && response.url().includes("/admin/modulos"))
     await confirmDisable(page, "Desactivar módulo")
     await disableResponse
@@ -99,6 +99,10 @@ test.describe("Module toggles", () => {
     // check that it's NOT in the sidebar navigation
     const sidebarFlota = page.locator('nav[aria-label="Navegación"], nav[aria-label="Áreas"]').getByRole("link", { name: "Flota" })
     await expect(sidebarFlota).toHaveCount(0)
+
+    await page.goto("/flota")
+    await expect(page).toHaveURL(/\/modulo-inactivo\?desde=%2Fflota/)
+    await expect(page.getByRole("heading", { name: "Módulo inactivo" })).toBeVisible()
 
     // But the admin page should still be accessible since it's a different module
     await page.goto("/admin/modulos")
@@ -157,6 +161,8 @@ test.describe("Module toggles", () => {
       const submoduleResponse = page.waitForResponse((response) => response.status() === 200 && response.url().includes("/admin/modulos"))
       await confirmDisable(page, "Ocultar pantalla")
       await submoduleResponse
+      await page.goto("/flota")
+      await expect(page).toHaveURL(/\/modulo-inactivo\?desde=%2Fflota/)
     }
   })
 
@@ -168,9 +174,7 @@ test.describe("Module toggles", () => {
     const dialog = page.getByRole("dialog")
     await expect(dialog).toBeVisible()
     // El diálogo nombra las pantallas afectadas, no pregunta "¿estás seguro?".
-    await expect(dialog).toContainText("navegación de todos los usuarios")
-    // Y no promete un control de acceso que el interruptor no ejerce.
-    await expect(dialog).toContainText("No es un control de acceso")
+    await expect(dialog).toContainText("rutas, acciones y automatizaciones")
 
     await dialog.getByRole("button", { name: "Cancelar" }).click()
     await page.reload()

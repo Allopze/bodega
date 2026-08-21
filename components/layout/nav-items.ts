@@ -9,6 +9,7 @@
 import type { Session } from "next-auth"
 import { registry } from "@/modules/registry"
 import { AREAS, NAV_GROUP_ORDER } from "./areas"
+import { MODULE_TOGGLE_RECOVERY_PATH } from "@/lib/module-toggle-path"
 
 export interface NavChild {
   label:        string
@@ -136,18 +137,30 @@ export function canSeeNav(entry: { permissions?: string[]; roles?: string[] }, s
  *
  * @param enabledModuleIds Si se provee, oculta ítems de módulos deshabilitados.
  */
-export function getVisibleAreas(session: Session, enabledModuleIds?: Set<string>): AreaNode[] {
+export function getVisibleAreas(
+  session: Session,
+  enabledModuleIds?: Set<string>,
+  disabledSubmoduleHrefs?: Set<string>,
+): AreaNode[] {
   const areas: AreaNode[] = []
   for (const area of AREA_TREE) {
     const items: NavItem[] = []
     for (const item of area.items) {
       if (!canSeeNav(item, session)) continue
       const moduleId = HREF_TO_MODULE.get(item.href)
-      if (enabledModuleIds && moduleId && !enabledModuleIds.has(moduleId)) continue
+      // La puerta de recuperación nunca se oculta: si Administración se apaga
+      // por error, es el único camino para volver a encenderlo y el menú es
+      // donde el administrador lo busca.
+      const isRecoveryDoor = item.href === MODULE_TOGGLE_RECOVERY_PATH
+      if (!isRecoveryDoor) {
+        if (enabledModuleIds && moduleId && !enabledModuleIds.has(moduleId)) continue
+        if (disabledSubmoduleHrefs?.has(item.href)) continue
+      }
 
       items.push({
         ...item,
-        children: item.children?.filter((child) => canSeeNav(child, session)),
+        children: item.children?.filter((child) =>
+          canSeeNav(child, session) && !disabledSubmoduleHrefs?.has(child.href)),
       })
     }
 
@@ -209,11 +222,15 @@ export interface NavTarget {
 }
 
 /** Lista plana de destinos navegables para la paleta ⌘K (filtrada por permiso y toggles). */
-export function flattenNavTargets(session: Session, enabledModuleIds?: Set<string>): NavTarget[] {
+export function flattenNavTargets(
+  session: Session,
+  enabledModuleIds?: Set<string>,
+  disabledSubmoduleHrefs?: Set<string>,
+): NavTarget[] {
   const targets: NavTarget[] = [
     { label: DASHBOARD_ITEM.label, href: DASHBOARD_ITEM.href, areaLabel: "Principal", iconName: DASHBOARD_ITEM.iconName },
   ]
-  for (const area of getVisibleAreas(session, enabledModuleIds)) {
+  for (const area of getVisibleAreas(session, enabledModuleIds, disabledSubmoduleHrefs)) {
     for (const item of area.items) {
       targets.push({ label: item.label, href: item.href, areaLabel: area.label, iconName: item.iconName })
       for (const child of item.children ?? []) {

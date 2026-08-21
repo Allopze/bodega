@@ -12,10 +12,11 @@ import { fuelOperationRecords, fuelVehicles, fuelEquipmentTypes, worksites } fro
 import { worksiteScopeSql } from "@/lib/auth/scope"
 import type { PatenteRankingRow, RendimientoRow } from "./consumption-dashboard"
 import { flagOutliers as flagOutliersGeneric } from "./performance-statistics"
+import { can } from "@/lib/auth/can"
 
 export interface OperationsSummary {
   totalLitros: number
-  totalMonto: number
+  totalMonto: number | null
   totalEquipos: number
   totalRegistros: number
   topEquiposPorGasto: PatenteRankingRow[]
@@ -23,8 +24,8 @@ export interface OperationsSummary {
    *  patente no la informa o mezcla las dos). Los atípicos se calculan DENTRO de cada
    *  unidad: km/L y L/h no son la misma población ni tienen la misma polaridad. */
   rendimientoPorEquipo: Array<RendimientoRow & { unidad: string | null }>
-  porFaena: Array<{ faena: string; litros: number; monto: number; equipos: number }>
-  porProveedor: Array<{ proveedor: string; litros: number; monto: number; transacciones: number }>
+  porFaena: Array<{ faena: string; litros: number; monto: number | null; equipos: number }>
+  porProveedor: Array<{ proveedor: string; litros: number; monto: number | null; transacciones: number }>
 }
 
 export interface OperationsFilters {
@@ -73,12 +74,13 @@ export function flagRendimientoPorUnidad<T extends { rendimiento: number; unidad
 /** Devuelve null si no hay ningún registro visible para la sesión — evita
  *  mostrar una sección vacía en faenas que no usan este log operacional. */
 export async function getOperationsSummary(session: Session, filters: OperationsFilters = {}): Promise<OperationsSummary | null> {
+  const canViewCosts = can(session, "combustibles:view") && can(session, "combustibles:view_costs")
   const where = buildOperationsWhere(session, filters)
 
   const [[totals], byEquipoRaw, porFaenaRaw, porProveedorRaw] = await Promise.all([
     db.select({
       totalLitros: sql<number>`coalesce(sum(${fuelOperationRecords.liters}), 0)`,
-      totalMonto: sql<number>`coalesce(sum(${fuelOperationRecords.monto}), 0)`,
+      totalMonto: canViewCosts ? sql<number>`coalesce(sum(${fuelOperationRecords.monto}), 0)` : sql<null>`null`,
       totalEquipos: sql<number>`count(distinct ${fuelOperationRecords.plate})`,
       totalRegistros: sql<number>`count(*)`,
     }).from(fuelOperationRecords).where(where),
@@ -87,7 +89,7 @@ export async function getOperationsSummary(session: Session, filters: Operations
       plate: fuelOperationRecords.plate,
       code: sql<string | null>`max(${fuelOperationRecords.code})`,
       cantidad: sql<number>`coalesce(sum(${fuelOperationRecords.liters}), 0)`,
-      monto: sql<number>`coalesce(sum(${fuelOperationRecords.monto}), 0)`,
+      monto: canViewCosts ? sql<number>`coalesce(sum(${fuelOperationRecords.monto}), 0)` : sql<null>`null`,
       transacciones: sql<number>`count(*)`,
       // `coalesce(rendimiento, 0)` contaba las cargas sin rendimiento informado
       // como rendimiento 0 real: un equipo con la mitad de sus cargas sin
@@ -110,7 +112,7 @@ export async function getOperationsSummary(session: Session, filters: Operations
     db.select({
       faena: sql<string>`coalesce(${fuelOperationRecords.faenaNombre}, 'Sin faena')`,
       litros: sql<number>`coalesce(sum(${fuelOperationRecords.liters}), 0)`,
-      monto: sql<number>`coalesce(sum(${fuelOperationRecords.monto}), 0)`,
+      monto: canViewCosts ? sql<number>`coalesce(sum(${fuelOperationRecords.monto}), 0)` : sql<null>`null`,
       equipos: sql<number>`count(distinct ${fuelOperationRecords.plate})`,
     }).from(fuelOperationRecords).where(where)
       .groupBy(sql`coalesce(${fuelOperationRecords.faenaNombre}, 'Sin faena')`),
@@ -118,7 +120,7 @@ export async function getOperationsSummary(session: Session, filters: Operations
     db.select({
       proveedor: sql<string>`coalesce(${fuelOperationRecords.proveedorNombre}, 'Sin proveedor')`,
       litros: sql<number>`coalesce(sum(${fuelOperationRecords.liters}), 0)`,
-      monto: sql<number>`coalesce(sum(${fuelOperationRecords.monto}), 0)`,
+      monto: canViewCosts ? sql<number>`coalesce(sum(${fuelOperationRecords.monto}), 0)` : sql<null>`null`,
       transacciones: sql<number>`count(*)`,
     }).from(fuelOperationRecords).where(where)
       .groupBy(sql`coalesce(${fuelOperationRecords.proveedorNombre}, 'Sin proveedor')`),
@@ -131,7 +133,7 @@ export async function getOperationsSummary(session: Session, filters: Operations
     patente: r.code ? `${r.code} (${r.plate})` : r.plate,
     filterPatente: r.plate,
     cantidad: Number(r.cantidad),
-    monto: Number(r.monto),
+    monto: canViewCosts ? Number(r.monto ?? 0) : null,
     transacciones: Number(r.transacciones),
     vehicleId: r.vehicleId,
   }))
@@ -145,15 +147,15 @@ export async function getOperationsSummary(session: Session, filters: Operations
 
   return {
     totalLitros: Number(totals?.totalLitros ?? 0),
-    totalMonto: Number(totals?.totalMonto ?? 0),
+    totalMonto: canViewCosts ? Number(totals?.totalMonto ?? 0) : null,
     totalEquipos: Number(totals?.totalEquipos ?? 0),
     totalRegistros,
-    topEquiposPorGasto: [...byEquipo].sort((a, b) => b.monto - a.monto).slice(0, 10),
+    topEquiposPorGasto: canViewCosts ? [...byEquipo].sort((a, b) => (b.monto ?? 0) - (a.monto ?? 0)).slice(0, 10) : [],
     rendimientoPorEquipo: flagRendimientoPorUnidad(rendimientosRaw).sort((a, b) => b.cantidad - a.cantidad).slice(0, 15),
-    porFaena: porFaenaRaw.map((r) => ({ faena: r.faena, litros: Number(r.litros), monto: Number(r.monto), equipos: Number(r.equipos) }))
-      .sort((a, b) => b.monto - a.monto),
-    porProveedor: porProveedorRaw.map((r) => ({ proveedor: r.proveedor, litros: Number(r.litros), monto: Number(r.monto), transacciones: Number(r.transacciones) }))
-      .sort((a, b) => b.monto - a.monto),
+    porFaena: porFaenaRaw.map((r) => ({ faena: r.faena, litros: Number(r.litros), monto: canViewCosts ? Number(r.monto ?? 0) : null, equipos: Number(r.equipos) }))
+      .sort((a, b) => canViewCosts ? (b.monto ?? 0) - (a.monto ?? 0) : b.litros - a.litros),
+    porProveedor: porProveedorRaw.map((r) => ({ proveedor: r.proveedor, litros: Number(r.litros), monto: canViewCosts ? Number(r.monto ?? 0) : null, transacciones: Number(r.transacciones) }))
+      .sort((a, b) => canViewCosts ? (b.monto ?? 0) - (a.monto ?? 0) : b.litros - a.litros),
   }
 }
 

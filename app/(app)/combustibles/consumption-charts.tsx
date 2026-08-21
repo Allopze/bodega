@@ -91,16 +91,16 @@ function chartAxisProps() {
 }
 
 /* ── Evolución: cantidad consumida + monto por período ─────────────────────── */
-export function EvolutionChart({ data }: { data: PeriodoRow[] }) {
+export function EvolutionChart({ data, showCosts = true }: { data: PeriodoRow[]; showCosts?: boolean }) {
   if (data.length === 0) return <EmptyChart label="Aún no hay períodos importados para esta selección." />
 
   return (
-    <div className="h-72" aria-label="Evolución de consumo y gasto por período">
+    <div className="h-72" aria-label={showCosts ? "Evolución de consumo y gasto por período" : "Evolución de consumo por período"}>
       <ResponsiveContainer width="100%" height="100%" debounce={80}>
         <AreaChart
           data={data}
           margin={{ top: 12, right: 10, left: -8, bottom: 0 }}
-          title="Evolución de gasto y litros consumidos por período"
+          title={showCosts ? "Evolución de gasto y litros consumidos por período" : "Evolución de litros consumidos por período"}
         >
           <defs>
             <linearGradient id="consumption-amount-fill" x1="0" y1="0" x2="0" y2="1">
@@ -110,14 +110,14 @@ export function EvolutionChart({ data }: { data: PeriodoRow[] }) {
           </defs>
           <CartesianGrid vertical={false} stroke={GRID_COLOR} strokeDasharray="2 5" />
           <XAxis dataKey="periodo" tickFormatter={formatPeriod} minTickGap={28} {...chartAxisProps()} />
-          <YAxis yAxisId="monto" tickFormatter={formatCLP} width={60} {...chartAxisProps()} />
+          {showCosts && <YAxis yAxisId="monto" tickFormatter={formatCLP} width={60} {...chartAxisProps()} />}
           <YAxis yAxisId="cantidad" orientation="right" tickFormatter={(value) => `${formatQty(Number(value))} L`} width={58} {...chartAxisProps()} />
           <Tooltip
             cursor={{ stroke: "var(--color-border-strong)", strokeDasharray: "3 3" }}
             content={<TooltipPanel formatValue={(value, name) => name === "Consumo" ? `${formatQty(value)} L` : formatCLP(value)} />}
           />
           <Legend iconType="plainline" iconSize={10} wrapperStyle={{ fontSize: 12, paddingTop: 8 }} />
-          <Area
+          {showCosts && <Area
             yAxisId="monto"
             type="linear"
             dataKey="monto"
@@ -129,7 +129,7 @@ export function EvolutionChart({ data }: { data: PeriodoRow[] }) {
             activeDot={{ r: 4, strokeWidth: 2, fill: "var(--color-surface)" }}
             animationDuration={460}
             animationEasing="ease-out"
-          />
+          />}
           <Area
             yAxisId="cantidad"
             type="linear"
@@ -208,7 +208,7 @@ export function PatenteRankingChart({
   const chartData = data.slice(0, 8).map((row) => ({
     name: truncate(row.patente, 16),
     filterPatente: row.filterPatente ?? row.patente,
-    value: row[metric],
+    value: row[metric] ?? 0,
     sinAsociar: row.vehicleId == null,
   }))
 

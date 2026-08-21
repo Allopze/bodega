@@ -8,7 +8,8 @@
  * The toggle operates *on top of* the permissions system:
  * - Permissions control *who* can access a module.
  * - Toggles control *whether* a module is active in the system at all.
- *   When disabled, even admins won't see it in the nav (until re-enabled).
+ *   When disabled, navigation, routes, actions and automation are blocked for
+ *   every user until an administrator re-enables it through the recovery door.
  */
 
 import { db } from "@/db"
@@ -17,11 +18,14 @@ import { eq, like } from "drizzle-orm"
 import { registry } from "@/modules/registry"
 import { recordAudit } from "@/lib/audit"
 import { logger } from "@/lib/logger"
+import { MODULE_TOGGLE_RECOVERY_PATH } from "@/lib/module-toggle-path"
 
 // ── Key helpers ──────────────────────────────────────────────────────────────
 
 const MODULE_PREFIX = "module.enabled"
 const SUBMODULE_PREFIX = "submodule.enabled"
+/** Puerta de recuperación: debe seguir accesible aun si Administración quedó apagado. */
+export { MODULE_TOGGLE_RECOVERY_PATH } from "@/lib/module-toggle-path"
 
 function moduleKey(id: string): string {
   return `${MODULE_PREFIX}:${id}`
@@ -29,6 +33,273 @@ function moduleKey(id: string): string {
 
 function submoduleKey(moduleId: string, submoduleHref: string): string {
   return `${SUBMODULE_PREFIX}:${moduleId}:${submoduleHref}`
+}
+
+const PERMISSION_TO_MODULE = new Map<string, string>(
+  (registry as readonly { id: string; permissions: readonly string[] }[])
+    .flatMap((module) => module.permissions.map((permission) => [permission, module.id] as const)),
+)
+
+const NAV_ROUTE_TARGETS = (registry as readonly {
+  id: string
+  nav?: Array<{ items: Array<{ href: string; permissions?: readonly string[] }> }>
+}[]).flatMap((module) => (module.nav ?? []).flatMap((section) =>
+  section.items.map((item) => ({
+    moduleId: module.id,
+    submoduleHref: item.href,
+    prefix: item.href,
+    permissions: item.permissions ?? [],
+  })),
+))
+
+interface RouteOwnerRule {
+  moduleId: string
+  /** href canónico que administra el toggle de submódulo. */
+  submoduleHref?: string
+  prefix?: string
+  pattern?: RegExp
+}
+
+/**
+ * Rutas operativas que no aparecen literalmente en navegación. Mantener este
+ * inventario junto a las regresiones de cobertura: el menú no es un mapa de
+ * autorización y los endpoints/jobs tampoco deberían depender de él.
+ */
+const ROUTE_OWNER_ALIASES: RouteOwnerRule[] = [
+  // Administración no declara navegación en su manifest; toda su superficie
+  // comparte un único toggle, salvo la puerta de recuperación exacta.
+  { moduleId: "admin", submoduleHref: "/admin", prefix: "/admin" },
+
+  // Evaluaciones SST: alta, detalle y ficha de trabajador son aliases del item.
+  { moduleId: "sst", submoduleHref: "/prevencion/evaluaciones", prefix: "/prevencion/nueva" },
+  { moduleId: "sst", submoduleHref: "/prevencion/evaluaciones", prefix: "/sst" },
+  { moduleId: "sst", submoduleHref: "/prevencion/evaluaciones", prefix: "/prevencion/trabajador" },
+  { moduleId: "sst", submoduleHref: "/prevencion/evaluaciones", pattern: /^\/prevencion\/[^/]+$/ },
+
+  // Superficies públicas (PWA sin sesión) y APIs autenticadas/públicas.
+  { moduleId: "ppa", submoduleHref: "/prevencion/ppa", prefix: "/ppa" },
+  { moduleId: "combustibles", submoduleHref: "/combustibles/tae", prefix: "/tae" },
+  { moduleId: "combustibles", submoduleHref: "/combustibles/tae", prefix: "/api/tae" },
+  { moduleId: "combustibles", submoduleHref: "/combustibles/importar", prefix: "/api/combustibles/import" },
+  { moduleId: "flota", submoduleHref: "/flota", prefix: "/api/flota" },
+  { moduleId: "warehouse", submoduleHref: "/bodega", prefix: "/api/bodega" },
+  { moduleId: "deliveries", submoduleHref: "/entregas", prefix: "/api/entregas" },
+  // Sirve exclusivamente evidencia de entregas (ver S-08 en el handler).
+  { moduleId: "deliveries", submoduleHref: "/entregas", prefix: "/api/attachments" },
+  // Las facturas tienen toggle propio. Debe ir antes del owner general de
+  // Facturación para que apagar sólo Facturas también cierre su API directa.
+  { moduleId: "billing", submoduleHref: "/facturacion/facturas", prefix: "/api/facturacion/facturas" },
+  { moduleId: "billing", submoduleHref: "/facturacion", prefix: "/api/facturacion" },
+  { moduleId: "purchasing", submoduleHref: "/compras", prefix: "/api/purchase-orders" },
+  { moduleId: "reports", submoduleHref: "/reportes", prefix: "/api/reportes" },
+  { moduleId: "traceability", submoduleHref: "/trazabilidad", prefix: "/api/trazabilidad" },
+  { moduleId: "feedback", submoduleHref: "/soporte", prefix: "/api/soporte" },
+  { moduleId: "repuestos", prefix: "/api/repuestos" },
+  { moduleId: "servicios", prefix: "/api/servicios" },
+  { moduleId: "admin", submoduleHref: "/admin", prefix: "/api/admin" },
+  { moduleId: "admin", submoduleHref: "/admin", prefix: "/api/backups" },
+  { moduleId: "admin", submoduleHref: "/admin", prefix: "/api/dte-portal" },
+
+  // Endpoints de Prevención: primero los owners específicos y al final el fallback.
+  { moduleId: "ppa", submoduleHref: "/prevencion/ppa", prefix: "/api/prevencion/ppa" },
+  { moduleId: "prevention", submoduleHref: "/prevencion/pdtp", prefix: "/api/prevencion/pdtp" },
+  { moduleId: "prevention", submoduleHref: "/prevencion/capacitacion", prefix: "/api/prevencion/capacitacion" },
+  { moduleId: "prevention", submoduleHref: "/prevencion/capa", prefix: "/api/prevencion/capa" },
+  { moduleId: "prevention", submoduleHref: "/prevencion/documentacion", prefix: "/api/prevencion/documentacion" },
+  { moduleId: "prevention", submoduleHref: "/prevencion/documentacion", prefix: "/api/prevencion/archivos-sensibles" },
+  { moduleId: "prevention", submoduleHref: "/prevencion/epp-preventivo", prefix: "/api/prevencion/epp" },
+  { moduleId: "prevention", submoduleHref: "/prevencion/incidentes", prefix: "/api/prevencion/incidentes" },
+  // Casos reservados es la superficie de Privacidad —igual que su override de
+  // permiso—, no de Incidentes: apuntarlo a Incidentes hacía que el toggle de
+  // ruta y el de permiso se contradijeran.
+  { moduleId: "prevention", submoduleHref: "/prevencion/privacidad", prefix: "/api/prevencion/casos-reservados" },
+  { moduleId: "prevention", submoduleHref: "/prevencion/indicadores-material-ambiental", prefix: "/api/prevencion/indicadores-material-ambiental" },
+  { moduleId: "prevention", submoduleHref: "/prevencion/indicadores", prefix: "/api/prevencion/indicadores" },
+  // Auditorías e inspecciones comparten estos endpoints. El owner exacto se
+  // determina en el handler después de autenticar y cargar el kind real; el
+  // proxy sólo aplica aquí el toggle del módulo Prevención.
+  { moduleId: "prevention", prefix: "/api/prevencion/inspecciones" },
+  { moduleId: "prevention", submoduleHref: "/prevencion/miper/mapa", prefix: "/api/prevencion/miper/mapa" },
+  { moduleId: "prevention", submoduleHref: "/prevencion/miper", prefix: "/api/prevencion/miper" },
+  { moduleId: "prevention", submoduleHref: "/prevencion/permisos", prefix: "/api/prevencion/permisos" },
+  { moduleId: "prevention", submoduleHref: "/prevencion/privacidad", prefix: "/api/prevencion/privacidad" },
+  { moduleId: "prevention", submoduleHref: "/prevencion/requisitos-legales", prefix: "/api/prevencion/requisitos-legales" },
+  { moduleId: "prevention", submoduleHref: "/prevencion/higiene", prefix: "/api/prevencion/salud" },
+
+  // Automatizaciones: el secreto se valida en el handler antes de consultar el toggle.
+  { moduleId: "admin", submoduleHref: "/admin", prefix: "/api/cron/backup-health" },
+  { moduleId: "billing", submoduleHref: "/facturacion/sincronizacion", prefix: "/api/cron/billing-sales-sync" },
+  { moduleId: "billing", submoduleHref: "/facturacion/sincronizacion", prefix: "/api/cron/chipax-sync" },
+  { moduleId: "admin", submoduleHref: "/admin", prefix: "/api/cron/dte-portal-sync" },
+  { moduleId: "admin", submoduleHref: "/admin", prefix: "/api/cron/dte-sync-health" },
+  { moduleId: "combustibles", submoduleHref: "/combustibles", prefix: "/api/cron/fuel-anomaly-detection" },
+  { moduleId: "combustibles", submoduleHref: "/combustibles/importar", prefix: "/api/cron/fuel-copec-sync" },
+  { moduleId: "combustibles", submoduleHref: "/combustibles", prefix: "/api/cron/fuel-statement-notifications" },
+  { moduleId: "analytics", submoduleHref: "/analitica", prefix: "/api/cron/operational-metric-snapshots" },
+  { moduleId: "analytics", submoduleHref: "/analitica", prefix: "/api/cron/operational-snapshot-health" },
+  { moduleId: "prevention", submoduleHref: "/prevencion/pdtp", prefix: "/api/cron/pdtp-evidence-gc" },
+  { moduleId: "prevention", submoduleHref: "/prevencion/pdtp", prefix: "/api/cron/pdtp-weekly-reminders" },
+  { moduleId: "prevention", submoduleHref: "/prevencion/capa", prefix: "/api/cron/prevention-capa-reminders" },
+  { moduleId: "prevention", submoduleHref: "/prevencion/cphs", prefix: "/api/cron/prevention-cphs-alerts" },
+  { moduleId: "prevention", submoduleHref: "/prevencion/documentacion", prefix: "/api/cron/prevention-document-ack-reminders" },
+  { moduleId: "prevention", submoduleHref: "/prevencion/incidentes", prefix: "/api/cron/prevention-incident-reminders" },
+  { moduleId: "prevention", submoduleHref: "/prevencion/inspecciones", prefix: "/api/cron/prevention-inspection-programs" },
+  { moduleId: "prevention", submoduleHref: "/prevencion/capacitacion", prefix: "/api/cron/prevention-training-reminders" },
+  { moduleId: "sst", submoduleHref: "/prevencion/evaluaciones", prefix: "/api/cron/sst-weekly-alerts" },
+]
+
+const ROUTE_TARGETS: RouteOwnerRule[] = [
+  ...ROUTE_OWNER_ALIASES,
+  ...NAV_ROUTE_TARGETS,
+].sort((left, right) => (right.prefix?.length ?? 0) - (left.prefix?.length ?? 0))
+
+const PERMISSION_TARGET_OVERRIDES: Array<{ test: (permission: string) => boolean; href: string }> = [
+  { test: (permission) => permission.startsWith("combustibles:tae_"), href: "/combustibles/tae" },
+  { test: (permission) => permission === "combustibles:import" || permission === "combustibles:revert", href: "/combustibles/importar" },
+  { test: (permission) => permission.startsWith("sst:"), href: "/prevencion/evaluaciones" },
+  { test: (permission) => permission.startsWith("ppa:"), href: "/prevencion/ppa" },
+  { test: (permission) => permission.startsWith("prevention:pdtp:"), href: "/prevencion/pdtp" },
+  { test: (permission) => permission.startsWith("prevention:risk:"), href: "/prevencion/miper" },
+  { test: (permission) => permission.startsWith("prevention:legal:"), href: "/prevencion/requisitos-legales" },
+  { test: (permission) => permission.startsWith("prevention:training:"), href: "/prevencion/capacitacion" },
+  { test: (permission) => permission.startsWith("prevention:capa:"), href: "/prevencion/capa" },
+  { test: (permission) => permission.startsWith("prevention:incidents:"), href: "/prevencion/incidentes" },
+  { test: (permission) => permission.startsWith("prevention:permits:"), href: "/prevencion/permisos" },
+  { test: (permission) => permission.startsWith("prevention:cphs:"), href: "/prevencion/cphs" },
+  { test: (permission) => permission.startsWith("prevention:hygiene:") || permission.startsWith("prevention:health:"), href: "/prevencion/higiene" },
+  { test: (permission) => permission.startsWith("prevention:emergency:"), href: "/prevencion/emergencias" },
+  { test: (permission) => permission.startsWith("prevention:change:"), href: "/prevencion/gestion-cambio" },
+  { test: (permission) => permission.startsWith("prevention:epp:"), href: "/prevencion/epp-preventivo" },
+  { test: (permission) => permission.startsWith("prevention:campaign:"), href: "/prevencion/campanas" },
+  { test: (permission) => permission.startsWith("prevention:engagement:"), href: "/prevencion/coordinacion" },
+  { test: (permission) => permission.startsWith("prevention:docs:"), href: "/prevencion/documentacion" },
+  { test: (permission) => permission.startsWith("prevention:indicadores:"), href: "/prevencion/indicadores" },
+  { test: (permission) => permission.startsWith("prevention:privacy:") || permission.startsWith("prevention:reserved_case:"), href: "/prevencion/privacidad" },
+]
+
+export class ModuleDisabledError extends Error {
+  constructor(public readonly moduleId: string, public readonly submoduleHref?: string) {
+    super(submoduleHref
+      ? `Submódulo inactivo: ${moduleId}:${submoduleHref}`
+      : `Módulo inactivo: ${moduleId}`)
+    this.name = "ModuleDisabledError"
+  }
+}
+
+export class ModuleToggleUnavailableError extends Error {
+  constructor() {
+    super("No se pudo verificar el estado de los módulos")
+    this.name = "ModuleToggleUnavailableError"
+  }
+}
+
+export interface NavigationToggleState {
+  enabledModuleIds: Set<string>
+  disabledSubmoduleHrefs: Set<string>
+}
+
+function routeMatches(pathname: string, href: string) {
+  return pathname === href || pathname.startsWith(`${href}/`)
+}
+
+export function resolveModuleRoute(pathname: string) {
+  const target = ROUTE_TARGETS.find((candidate) =>
+    candidate.pattern?.test(pathname) || (candidate.prefix ? routeMatches(pathname, candidate.prefix) : false))
+  if (!target) return null
+  return { moduleId: target.moduleId, submoduleHref: target.submoduleHref }
+}
+
+function canonicalPermissionRoute(permission: string): string | undefined {
+  const override = PERMISSION_TARGET_OVERRIDES.find((candidate) => candidate.test(permission))
+  if (override) return override.href
+
+  const directTargets = NAV_ROUTE_TARGETS.filter((target) => target.permissions.includes(permission))
+  const distinctHrefs = [...new Set(directTargets.map((target) => target.submoduleHref))]
+  if (distinctHrefs.length === 1) return distinctHrefs[0]
+
+  const moduleId = PERMISSION_TO_MODULE.get(permission)
+  if (!moduleId) return undefined
+  const moduleTargets = NAV_ROUTE_TARGETS.filter((target) => target.moduleId === moduleId)
+  return moduleTargets.length === 1 ? moduleTargets[0]?.submoduleHref : undefined
+}
+
+async function readNavigationToggleState(): Promise<NavigationToggleState> {
+  try {
+    const [moduleRows, submoduleRows] = await Promise.all([
+      db.query.systemSettings.findMany({ where: like(systemSettings.key, `${MODULE_PREFIX}:%`) }),
+      db.query.systemSettings.findMany({ where: like(systemSettings.key, `${SUBMODULE_PREFIX}:%`) }),
+    ])
+    const enabledModuleIds = new Set(getModuleEntries().map((module) => module.id))
+    for (const row of moduleRows) {
+      if (row.value === "false") enabledModuleIds.delete(row.key.replace(`${MODULE_PREFIX}:`, ""))
+    }
+    const disabledSubmoduleHrefs = new Set<string>()
+    for (const row of submoduleRows) {
+      if (row.value !== "false") continue
+      const target = NAV_ROUTE_TARGETS.find(({ moduleId, submoduleHref }) =>
+        submoduleKey(moduleId, submoduleHref) === row.key)
+      if (target) disabledSubmoduleHrefs.add(target.submoduleHref)
+    }
+    return { enabledModuleIds, disabledSubmoduleHrefs }
+  } catch (err) {
+    logger.error("[module-toggles] Error reading navigation toggle state:", err)
+    throw new ModuleToggleUnavailableError()
+  }
+}
+
+export async function getNavigationToggleState(): Promise<NavigationToggleState> {
+  return readNavigationToggleState()
+}
+
+/** Boundary helper for HTTP/public flows: a read failure must never reactivate work. */
+export async function isRouteOperational(pathname: string): Promise<boolean> {
+  try {
+    return routeIsEnabled(pathname, await getNavigationToggleState())
+  } catch {
+    return false
+  }
+}
+
+export function routeIsEnabled(pathname: string, state: NavigationToggleState): boolean {
+  if (routeMatches(pathname, MODULE_TOGGLE_RECOVERY_PATH)) return true
+  const target = resolveModuleRoute(pathname)
+  if (!target) return true
+  return state.enabledModuleIds.has(target.moduleId)
+    && (!target.submoduleHref || !state.disabledSubmoduleHrefs.has(target.submoduleHref))
+}
+
+export async function assertRouteModuleEnabled(pathname: string): Promise<void> {
+  if (routeMatches(pathname, MODULE_TOGGLE_RECOVERY_PATH)) return
+  const target = resolveModuleRoute(pathname)
+  if (!target) return
+  const state = await getNavigationToggleState()
+  if (!state.enabledModuleIds.has(target.moduleId)) throw new ModuleDisabledError(target.moduleId)
+  if (target.submoduleHref && state.disabledSubmoduleHrefs.has(target.submoduleHref)) {
+    throw new ModuleDisabledError(target.moduleId, target.submoduleHref)
+  }
+}
+
+/** Segunda barrera para acciones/endpoints: el permiso identifica su módulo. */
+export async function assertPermissionModuleEnabled(
+  permission: string,
+  pathname?: string,
+  operationPathname?: string,
+): Promise<void> {
+  // Esta puerta de recuperación debe seguir disponible para volver a encender
+  // un módulo desactivado accidentalmente, incluso si Administración está off.
+  if (permission === "admin:module_management") return
+  const moduleId = PERMISSION_TO_MODULE.get(permission)
+  if (!moduleId) return
+  const state = await getNavigationToggleState()
+  if (!state.enabledModuleIds.has(moduleId)) throw new ModuleDisabledError(moduleId)
+  const candidates = [operationPathname, canonicalPermissionRoute(permission), pathname]
+  for (const candidate of candidates) {
+    if (!candidate) continue
+    const target = resolveModuleRoute(candidate)
+    if (target?.moduleId === moduleId && target.submoduleHref && state.disabledSubmoduleHrefs.has(target.submoduleHref)) {
+      throw new ModuleDisabledError(moduleId, target.submoduleHref)
+    }
+  }
 }
 
 // ── Nombre propio de cada módulo (evita importar de components/ en lib/) ─────
@@ -65,6 +336,8 @@ const MODULE_LABELS: Record<string, string> = {
   flota:           "Flota",
   mantenciones:    "Mantenciones",
   prevention:      "Prevención",
+  operations:      "Pendientes operacionales",
+  billing:         "Facturación y cobranza",
 }
 
 function getModuleLabel(moduleId: string): string {
@@ -111,29 +384,13 @@ export async function getModuleToggle(id: string): Promise<boolean> {
     return row?.value !== "false"
   } catch (err) {
     logger.error(`[module-toggles] Error reading toggle for ${id}:`, err)
-    return true
+    throw new ModuleToggleUnavailableError()
   }
 }
 
 /** Get the set of module IDs that are currently enabled (batched). */
 export async function getEnabledModuleIds(): Promise<Set<string>> {
-  try {
-    const rows = await db.query.systemSettings.findMany({
-      where: like(systemSettings.key, `${MODULE_PREFIX}:%`),
-    })
-
-    const modIds = getModuleEntries().map((m) => m.id)
-    const enabled = new Set<string>(modIds)
-    for (const row of rows) {
-      if (row.value === "false") {
-        enabled.delete(row.key.replace(`${MODULE_PREFIX}:`, ""))
-      }
-    }
-    return enabled
-  } catch (err) {
-    logger.error("[module-toggles] Error reading enabled module IDs:", err)
-    return new Set(getModuleEntries().map((m) => m.id))
-  }
+  return (await getNavigationToggleState()).enabledModuleIds
 }
 
 /**
@@ -209,6 +466,9 @@ export async function setModuleToggle(
   enabled: boolean,
   actor: { userId: string; userEmail?: string },
 ): Promise<ToggleResult> {
+  if (!getModuleEntries().some((module) => module.id === moduleId)) {
+    return { ok: false, message: "Módulo no registrado" }
+  }
   const now = new Date().toISOString()
 
   try {
@@ -245,6 +505,9 @@ export async function setSubmoduleToggle(
   enabled: boolean,
   actor: { userId: string; userEmail?: string },
 ): Promise<ToggleResult> {
+  if (!NAV_ROUTE_TARGETS.some((target) => target.moduleId === moduleId && target.submoduleHref === submoduleHref)) {
+    return { ok: false, message: "Submódulo no registrado" }
+  }
   const now = new Date().toISOString()
 
   try {

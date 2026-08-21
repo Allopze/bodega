@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache"
 import { redirect } from "next/navigation"
 import { db } from "@/db"
 import { dteDocuments, fuelLoads, fuelVehicles } from "@/db/schema"
-import { and, eq, isNull } from "drizzle-orm"
+import { and, eq, inArray, isNull } from "drizzle-orm"
 import { requirePermission } from "@/lib/auth/can"
 import { canAccessWorksite } from "@/lib/auth/scope"
 import { nanoid } from "@/lib/id"
@@ -15,6 +15,11 @@ import {
 import { calculateFuelAmounts } from "@/lib/combustibles/calculations"
 import { getFuelIecRates } from "@/lib/services/system-settings"
 import { recordAudit } from "@/lib/audit"
+import {
+  DELETABLE_FUEL_LOAD_STATUSES,
+  EDITABLE_FUEL_LOAD_STATUSES,
+  fuelLoadStatusBlockMessage,
+} from "@/lib/combustibles/load-status"
 import { logger } from "@/lib/logger"
 import { isNetworkError } from "@/lib/network-error"
 import { safeActionMessage } from "@/lib/action-error"
@@ -74,7 +79,7 @@ export async function createFuelLoadAction(
   formData: FormData,
 ): Promise<ActionState> {
   let session
-  try { session = await requirePermission("combustibles:create") }
+  try { session = await requirePermission("combustibles:create", "/combustibles") }
   catch { return { ok: false, message: "Sin permisos para crear cargas" } }
 
   const liters = Number(formData.get("liters") ?? 0)
@@ -192,7 +197,7 @@ export async function updateFuelLoadAction(
   formData: FormData,
 ): Promise<ActionState> {
   let session
-  try { session = await requirePermission("combustibles:create") }
+  try { session = await requirePermission("combustibles:create", "/combustibles") }
   catch { return { ok: false, message: "Sin permisos" } }
 
   const id = String(formData.get("id") ?? "")
@@ -200,7 +205,11 @@ export async function updateFuelLoadAction(
 
   const existing = await db.query.fuelLoads.findFirst({ where: eq(fuelLoads.id, id) })
   if (!existing) return { ok: false, message: "Carga no encontrada" }
-  if (existing.status === "reconciled") return { ok: false, message: "No se puede editar una carga conciliada" }
+  // Antes sólo `reconciled` bloqueaba: una carga anulada se podía editar y
+  // volvía al circuito sin transición alguna.
+  if (!(EDITABLE_FUEL_LOAD_STATUSES as readonly string[]).includes(existing.status)) {
+    return { ok: false, message: fuelLoadStatusBlockMessage(existing.status, "editar") }
+  }
 
   if (existing.statementId) {
     return { ok: false, message: "No se puede editar una carga asignada a una cuenta corriente" }
@@ -320,10 +329,16 @@ export async function updateFuelLoadAction(
     // total congelado del resumen.
     const [updated] = await db.update(fuelLoads)
       .set({ ...parsed.data, productId: fuelProductIdForLegacy(parsed.data.product), updatedAt: new Date().toISOString() })
-      .where(and(eq(fuelLoads.id, id), isNull(fuelLoads.statementId)))
+      .where(and(
+        eq(fuelLoads.id, id),
+        isNull(fuelLoads.statementId),
+        // …y el estado esperado: entre la lectura y este UPDATE otra sesión
+        // pudo conciliar o anular la carga.
+        inArray(fuelLoads.status, [...EDITABLE_FUEL_LOAD_STATUSES]),
+      ))
       .returning({ id: fuelLoads.id })
     if (!updated) {
-      return { ok: false, message: "No se puede editar una carga asignada a una cuenta corriente" }
+      return { ok: false, message: "La carga cambió en otra sesión: se concilió, se anuló o quedó asignada a una cuenta corriente. Recarga antes de continuar." }
     }
 
     await recordAudit({
@@ -350,7 +365,7 @@ export async function updateFuelLoadAction(
 
 export async function deleteFuelLoadAction(id: string): Promise<ActionState> {
   let session
-  try { session = await requirePermission("combustibles:delete") }
+  try { session = await requirePermission("combustibles:delete", "/combustibles") }
   catch { return { ok: false, message: "Sin permisos para eliminar" } }
 
   const existing = await db.query.fuelLoads.findFirst({ where: eq(fuelLoads.id, id) })
@@ -361,8 +376,8 @@ export async function deleteFuelLoadAction(id: string): Promise<ActionState> {
   if (!canAccessWorksite(session, existing.worksiteId)) {
     return { ok: false, message: "Sin acceso a la faena de esta carga" }
   }
-  if (existing.status === "reconciled") {
-    return { ok: false, message: "No se puede eliminar una carga conciliada" }
+  if (!(DELETABLE_FUEL_LOAD_STATUSES as readonly string[]).includes(existing.status)) {
+    return { ok: false, message: fuelLoadStatusBlockMessage(existing.status, "eliminar") }
   }
   // La FK de dte_documents es ON DELETE NO ACTION: sin esta guarda el DELETE
   // llegaba a Postgres y el usuario recibía el 23503 con el nombre de la
@@ -379,10 +394,14 @@ export async function deleteFuelLoadAction(id: string): Promise<ActionState> {
     // Misma carrera que en la edición: sin FK que frene el DELETE, una carga
     // recién asignada a un resumen desaparecería del detalle sin salir del total.
     const [deleted] = await db.delete(fuelLoads)
-      .where(and(eq(fuelLoads.id, id), isNull(fuelLoads.statementId)))
+      .where(and(
+        eq(fuelLoads.id, id),
+        isNull(fuelLoads.statementId),
+        inArray(fuelLoads.status, [...DELETABLE_FUEL_LOAD_STATUSES]),
+      ))
       .returning({ id: fuelLoads.id })
     if (!deleted) {
-      return { ok: false, message: "No se puede eliminar una carga asignada a una cuenta corriente" }
+      return { ok: false, message: "La carga cambió en otra sesión: se concilió o quedó asignada a una cuenta corriente. Recarga antes de continuar." }
     }
 
     await recordAudit({
@@ -403,7 +422,7 @@ export async function deleteFuelLoadAction(id: string): Promise<ActionState> {
 
 export async function registerFuelLoadAction(id: string): Promise<ActionState> {
   let session
-  try { session = await requirePermission("combustibles:create") }
+  try { session = await requirePermission("combustibles:create", "/combustibles") }
   catch { return { ok: false, message: "Sin permisos" } }
 
   const existing = await db.query.fuelLoads.findFirst({ where: eq(fuelLoads.id, id) })
@@ -414,7 +433,13 @@ export async function registerFuelLoadAction(id: string): Promise<ActionState> {
   }
 
   try {
-    await db.update(fuelLoads).set({ status: "registered", updatedAt: new Date().toISOString() }).where(eq(fuelLoads.id, id))
+    // El estado esperado viaja en el WHERE: dos clics simultáneos, o un registro
+    // que corrió mientras se leía, no pueden reescribir el estado dos veces.
+    const [registered] = await db.update(fuelLoads)
+      .set({ status: "registered", updatedAt: new Date().toISOString() })
+      .where(and(eq(fuelLoads.id, id), eq(fuelLoads.status, "draft")))
+      .returning({ id: fuelLoads.id })
+    if (!registered) return { ok: false, message: "La carga ya no está en borrador. Recarga antes de continuar." }
     revalidatePath(REVALIDATE)
     return { ok: true, message: "Carga registrada" }
   } catch (e) {

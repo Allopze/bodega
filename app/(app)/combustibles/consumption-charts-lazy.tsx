@@ -4,7 +4,7 @@ import dynamic from "next/dynamic"
 import type { ComponentType } from "react"
 import type { PeriodoRow, PatenteRankingRow, RendimientoRow } from "@/lib/combustibles/consumption-dashboard"
 
-type EvolutionChartType = ComponentType<{ data: PeriodoRow[] }>
+type EvolutionChartType = ComponentType<{ data: PeriodoRow[]; showCosts?: boolean }>
 type PriceEvolutionChartType = ComponentType<{ data: PeriodoRow[] }>
 type PatenteRankingChartType = ComponentType<{
   data: PatenteRankingRow[]

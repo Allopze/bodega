@@ -6,7 +6,7 @@ import { PageContainer } from "@/components/ui/page-container"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { requirePermission } from "@/lib/auth/can"
+import { can, requirePermission } from "@/lib/auth/can"
 import { getFleetVehicleDetail } from "@/lib/services/fleet"
 import { formatFuelVehicleStatus } from "@/lib/combustibles/validation"
 import { MAINTENANCE_STATUS_LABELS } from "@/lib/validation/maintenance"
@@ -43,12 +43,12 @@ export default async function FlotaVehiclePage({
         }
         actions={
           <div className="flex justify-end gap-2">
-            <Button asChild size="sm" variant="secondary">
+            {can(session, "combustibles:view") && <Button asChild size="sm" variant="secondary">
               <Link href={`/combustibles?vehicle=${vehicle.id}`}>Combustible</Link>
-            </Button>
-            <Button asChild size="sm" variant="secondary">
+            </Button>}
+            {can(session, "mantenciones:view") && <Button asChild size="sm" variant="secondary">
               <Link href={`/mantenciones?vehicle=${vehicle.id}`}>Mantenciones</Link>
-            </Button>
+            </Button>}
           </div>
         }
       />
@@ -186,6 +186,7 @@ export default async function FlotaVehiclePage({
         <CardContent>
           <FleetDocumentsPanel
             vehicleId={vehicle.id}
+            canManageDocuments={can(session, "flota:manage_documents")}
             documents={detail.documents.map((document) => ({
               id: document.id,
               documentType: document.documentType,

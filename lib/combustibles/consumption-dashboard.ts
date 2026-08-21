@@ -12,6 +12,7 @@ import { calcVariacion } from "./consumption-calculations"
 import { flagOutliers as flagOutliersGeneric } from "./performance-statistics"
 import { previousPeriod, dateOnly, daysAgo } from "@/lib/services/analytics-module/helpers"
 import { fuelVehicles, fuelEquipmentTypes, worksites } from "@/db/schema"
+import { can } from "@/lib/auth/can"
 
 export interface ConsumptionAlert {
   type: string
@@ -23,13 +24,13 @@ export interface ConsumptionAlert {
   linkQuery: string
 }
 
-export interface PeriodoRow { periodo: string; cantidad: number; monto: number; precioPromedio: number | null }
+export interface PeriodoRow { periodo: string; cantidad: number; monto: number | null; precioPromedio: number | null }
 export interface PatenteRankingRow {
   patente: string
   /** Patente real para filtrar, cuando el rótulo visible incluye el código del equipo. */
   filterPatente?: string
   cantidad: number
-  monto: number
+  monto: number | null
   transacciones: number
   vehicleId: string | null
 }
@@ -46,7 +47,7 @@ export interface ConsumptionDashboardData {
   filters: Required<Pick<ConsumptionFilters, "fromDate" | "toDate">> & Omit<ConsumptionFilters, "fromDate" | "toDate">
   kpis: {
     totalCantidad: number
-    totalMonto: number
+    totalMonto: number | null
     precioPromedioUnidad: number | null
     totalTransacciones: number
     totalTarjetas: number
@@ -114,7 +115,11 @@ export function normalizeConsumptionFilters(input: ConsumptionFilters, now: Date
 }
 
 export async function getConsumptionDashboard(session: Session, rawFilters: ConsumptionFilters = {}): Promise<ConsumptionDashboardData> {
-  const filters = normalizeConsumptionFilters(rawFilters)
+  const canViewCosts = can(session, "combustibles:view") && can(session, "combustibles:view_costs")
+  const normalizedFilters = normalizeConsumptionFilters(rawFilters)
+  const filters = canViewCosts
+    ? normalizedFilters
+    : { ...normalizedFilters, montoMin: undefined, montoMax: undefined }
   const where = buildConsumptionWhere(session, filters)
   const previous = previousPeriod(filters.fromDate, filters.toDate)
   const previousWhere = buildConsumptionWhere(session, { ...filters, fromDate: previous.fromDate, toDate: previous.toDate })
@@ -124,7 +129,7 @@ export async function getConsumptionDashboard(session: Session, rawFilters: Cons
   ] = await Promise.all([
     db.select({
       totalCantidad: sql<number>`coalesce(sum(${fuelConsumptionRecords.cantidadUnidad}), 0)`,
-      totalMonto: sql<number>`coalesce(sum(${fuelConsumptionRecords.monto}), 0)`,
+      totalMonto: canViewCosts ? sql<number>`coalesce(sum(${fuelConsumptionRecords.monto}), 0)` : sql<null>`null`,
       totalTransacciones: sql<number>`coalesce(sum(${fuelConsumptionRecords.numeroTransacciones}), 0)`,
       totalTarjetas: sql<number>`coalesce(sum(${fuelConsumptionRecords.numeroTarjetas}), 0)`,
       patentesUnicas: sql<number>`count(distinct ${fuelConsumptionRecords.patente})`,
@@ -141,13 +146,13 @@ export async function getConsumptionDashboard(session: Session, rawFilters: Cons
 
     db.select({
       totalCantidad: sql<number>`coalesce(sum(${fuelConsumptionRecords.cantidadUnidad}), 0)`,
-      totalMonto: sql<number>`coalesce(sum(${fuelConsumptionRecords.monto}), 0)`,
+      totalMonto: canViewCosts ? sql<number>`coalesce(sum(${fuelConsumptionRecords.monto}), 0)` : sql<null>`null`,
     }).from(fuelConsumptionRecords).where(previousWhere),
 
     db.select({
       periodo: fuelConsumptionRecords.periodoDesde,
       cantidad: sql<number>`coalesce(sum(${fuelConsumptionRecords.cantidadUnidad}), 0)`,
-      monto: sql<number>`coalesce(sum(${fuelConsumptionRecords.monto}), 0)`,
+      monto: canViewCosts ? sql<number>`coalesce(sum(${fuelConsumptionRecords.monto}), 0)` : sql<null>`null`,
     }).from(fuelConsumptionRecords).where(where)
       .groupBy(fuelConsumptionRecords.periodoDesde)
       .orderBy(fuelConsumptionRecords.periodoDesde),
@@ -155,7 +160,7 @@ export async function getConsumptionDashboard(session: Session, rawFilters: Cons
     db.select({
       patente: fuelConsumptionRecords.patente,
       cantidad: sql<number>`coalesce(sum(${fuelConsumptionRecords.cantidadUnidad}), 0)`,
-      monto: sql<number>`coalesce(sum(${fuelConsumptionRecords.monto}), 0)`,
+      monto: canViewCosts ? sql<number>`coalesce(sum(${fuelConsumptionRecords.monto}), 0)` : sql<null>`null`,
       transacciones: sql<number>`coalesce(sum(${fuelConsumptionRecords.numeroTransacciones}), 0)`,
       rendimiento: sql<number>`case when coalesce(sum(${fuelConsumptionRecords.cantidadUnidad}) filter (where ${fuelConsumptionRecords.rendimientoPromedio} is not null), 0) > 0
         then sum(${fuelConsumptionRecords.rendimientoPromedio} * ${fuelConsumptionRecords.cantidadUnidad}) filter (where ${fuelConsumptionRecords.rendimientoPromedio} is not null)
@@ -171,7 +176,7 @@ export async function getConsumptionDashboard(session: Session, rawFilters: Cons
   ])
 
   const totalCantidad = Number(totals?.totalCantidad ?? 0)
-  const totalMonto = Number(totals?.totalMonto ?? 0)
+  const totalMonto = canViewCosts ? Number(totals?.totalMonto ?? 0) : null
   const totalTransacciones = Number(totals?.totalTransacciones ?? 0)
   const totalTarjetas = Number(totals?.totalTarjetas ?? 0)
   const patentesUnicas = Number(totals?.patentesUnicas ?? 0)
@@ -179,24 +184,26 @@ export async function getConsumptionDashboard(session: Session, rawFilters: Cons
   const rendimientoPromedioPonderado = Number(totals?.rendimientoPonderado ?? 0)
 
   const previousCantidad = Number(previousTotals?.totalCantidad ?? 0)
-  const previousMonto = Number(previousTotals?.totalMonto ?? 0)
+  const previousMonto = canViewCosts ? Number(previousTotals?.totalMonto ?? 0) : null
 
   const seriesPorPeriodo: PeriodoRow[] = seriesPorPeriodoRaw.map((r) => {
     const cantidad = Number(r.cantidad)
-    const monto = Number(r.monto)
-    return { periodo: r.periodo, cantidad, monto, precioPromedio: cantidad > 0 ? monto / cantidad : null }
+    const monto = canViewCosts ? Number(r.monto ?? 0) : null
+    return { periodo: r.periodo, cantidad, monto, precioPromedio: monto != null && cantidad > 0 ? monto / cantidad : null }
   })
 
   const byPatente: PatenteRankingRow[] = byPatenteRaw.map((r) => ({
     patente: r.patente,
     cantidad: Number(r.cantidad),
-    monto: Number(r.monto),
+    monto: canViewCosts ? Number(r.monto ?? 0) : null,
     transacciones: Number(r.transacciones),
     vehicleId: r.vehicleId,
   }))
 
   const topPatentesPorConsumo = [...byPatente].sort((a, b) => b.cantidad - a.cantidad).slice(0, TOP_PATENTES_LIMIT)
-  const topPatentesPorGasto = [...byPatente].sort((a, b) => b.monto - a.monto).slice(0, TOP_PATENTES_LIMIT)
+  const topPatentesPorGasto = canViewCosts
+    ? [...byPatente].sort((a, b) => (b.monto ?? 0) - (a.monto ?? 0)).slice(0, TOP_PATENTES_LIMIT)
+    : []
   const transaccionesPorPatente = [...byPatente].sort((a, b) => b.transacciones - a.transacciones).slice(0, TOP_PATENTES_LIMIT)
 
   const rendimientosRaw = byPatenteRaw.map((r) => ({ patente: r.patente, rendimiento: Number(r.rendimiento), cantidad: Number(r.cantidad) }))
@@ -204,7 +211,7 @@ export async function getConsumptionDashboard(session: Session, rawFilters: Cons
 
   const alerts = buildConsumptionAlerts({
     byPatente, rendimientoPorPatente, patentesSinAsociacion,
-    variacionMontoPct: calcVariacion(totalMonto, previousMonto),
+    variacionMontoPct: totalMonto != null && previousMonto != null ? calcVariacion(totalMonto, previousMonto) : null,
     variacionCantidadPct: calcVariacion(totalCantidad, previousCantidad),
   })
 
@@ -212,10 +219,10 @@ export async function getConsumptionDashboard(session: Session, rawFilters: Cons
     filters,
     kpis: {
       totalCantidad, totalMonto,
-      precioPromedioUnidad: totalCantidad > 0 ? totalMonto / totalCantidad : null,
+      precioPromedioUnidad: totalMonto != null && totalCantidad > 0 ? totalMonto / totalCantidad : null,
       totalTransacciones, totalTarjetas, patentesUnicas, rendimientoPromedioPonderado, patentesSinAsociacion,
       variacionCantidadPct: calcVariacion(totalCantidad, previousCantidad),
-      variacionMontoPct: calcVariacion(totalMonto, previousMonto),
+      variacionMontoPct: totalMonto != null && previousMonto != null ? calcVariacion(totalMonto, previousMonto) : null,
     },
     seriesPorPeriodo, topPatentesPorConsumo, topPatentesPorGasto, transaccionesPorPatente,
     rendimientoPorPatente: rendimientoPorPatente.sort((a, b) => b.cantidad - a.cantidad).slice(0, TOP_RENDIMIENTO_LIMIT),
@@ -226,13 +233,14 @@ export async function getConsumptionDashboard(session: Session, rawFilters: Cons
 export interface EquipmentTypeConsumptionRow {
   equipmentTypeName: string
   totalLiters: number
-  totalAmount: number
+  totalAmount: number | null
   transactionCount: number
   uniqueVehicles: number
 }
 
 /** Litros totales agrupados por tipo de equipo, para el gráfico de la sección 5. */
 export async function getConsumptionByEquipmentType(session: Session, filters: ConsumptionFilters): Promise<EquipmentTypeConsumptionRow[]> {
+  const canViewCosts = can(session, "combustibles:view") && can(session, "combustibles:view_costs")
   const norm = normalizeConsumptionFilters(filters)
   const where = buildConsumptionWhere(session, norm)
   if (!where) return []
@@ -240,7 +248,7 @@ export async function getConsumptionByEquipmentType(session: Session, filters: C
   const rows = await db.select({
     equipmentTypeName: fuelEquipmentTypes.name,
     totalLiters: sql<number>`coalesce(sum(${fuelConsumptionRecords.cantidadUnidad}), 0)`,
-    totalAmount: sql<number>`coalesce(sum(${fuelConsumptionRecords.monto}), 0)`,
+    totalAmount: canViewCosts ? sql<number>`coalesce(sum(${fuelConsumptionRecords.monto}), 0)` : sql<null>`null`,
     transactionCount: sql<number>`coalesce(sum(${fuelConsumptionRecords.numeroTransacciones}), 0)`,
     uniqueVehicles: sql<number>`count(distinct ${fuelVehicles.id})`,
   })
@@ -254,7 +262,7 @@ export async function getConsumptionByEquipmentType(session: Session, filters: C
   return rows.map((r) => ({
     equipmentTypeName: r.equipmentTypeName,
     totalLiters: Number(r.totalLiters),
-    totalAmount: Number(r.totalAmount),
+    totalAmount: canViewCosts ? Number(r.totalAmount ?? 0) : null,
     transactionCount: Number(r.transactionCount),
     uniqueVehicles: Number(r.uniqueVehicles),
   })).filter((r) => r.totalLiters > 0)
@@ -266,12 +274,13 @@ export interface VehicleEvolutionPoint {
   vehicleCode: string | null
   vehicleId: string | null
   liters: number
-  amount: number
+  amount: number | null
 }
 
 /** Serie temporal por vehículo para gráfico de evolución individual
  *  (sección 5). Cada punto es un período/vehículo con litros y monto agregados. */
 export async function getEvolutionByVehicle(session: Session, filters: ConsumptionFilters): Promise<VehicleEvolutionPoint[]> {
+  const canViewCosts = can(session, "combustibles:view") && can(session, "combustibles:view_costs")
   const norm = normalizeConsumptionFilters(filters)
   const where = buildConsumptionWhere(session, norm)
   if (!where) return []
@@ -282,7 +291,7 @@ export async function getEvolutionByVehicle(session: Session, filters: Consumpti
     vehicleCode: fuelVehicles.code,
     vehicleId: fuelVehicles.id,
     liters: sql<number>`coalesce(sum(${fuelConsumptionRecords.cantidadUnidad}), 0)`,
-    amount: sql<number>`coalesce(sum(${fuelConsumptionRecords.monto}), 0)`,
+    amount: canViewCosts ? sql<number>`coalesce(sum(${fuelConsumptionRecords.monto}), 0)` : sql<null>`null`,
   })
     .from(fuelConsumptionRecords)
     .leftJoin(fuelVehicles, eq(fuelConsumptionRecords.vehicleId, fuelVehicles.id))
@@ -297,7 +306,7 @@ export async function getEvolutionByVehicle(session: Session, filters: Consumpti
     vehicleCode: r.vehicleCode,
     vehicleId: r.vehicleId,
     liters: Number(r.liters),
-    amount: Number(r.amount),
+    amount: canViewCosts ? Number(r.amount ?? 0) : null,
   }))
 }
 
@@ -307,7 +316,7 @@ export interface HeatmapCell {
   /** Litros totales en el período para esta faena+equipo. */
   liters: number
   /** Monto total. */
-  amount: number
+  amount: number | null
   /** Ranking relativo (0–1) entre los litros visibles para intensidad de color. */
   intensity: number
 }
@@ -315,6 +324,7 @@ export interface HeatmapCell {
 /** Matriz faena × equipo para el mapa de calor (sección 5).
  *  Agrupa por faena y equipo (código+patente), devuelve top-50 combinaciones. */
 export async function getWorksiteEquipmentMatrix(session: Session, filters: ConsumptionFilters): Promise<HeatmapCell[]> {
+  const canViewCosts = can(session, "combustibles:view") && can(session, "combustibles:view_costs")
   const norm = normalizeConsumptionFilters(filters)
   const where = buildConsumptionWhere(session, norm)
   if (!where) return []
@@ -324,7 +334,7 @@ export async function getWorksiteEquipmentMatrix(session: Session, filters: Cons
     equipmentCode: fuelVehicles.code,
     plate: fuelConsumptionRecords.patente,
     liters: sql<number>`coalesce(sum(${fuelConsumptionRecords.cantidadUnidad}), 0)`,
-    amount: sql<number>`coalesce(sum(${fuelConsumptionRecords.monto}), 0)`,
+    amount: canViewCosts ? sql<number>`coalesce(sum(${fuelConsumptionRecords.monto}), 0)` : sql<null>`null`,
   })
     .from(fuelConsumptionRecords)
     .innerJoin(fuelVehicles, eq(fuelConsumptionRecords.vehicleId, fuelVehicles.id))
@@ -338,7 +348,7 @@ export async function getWorksiteEquipmentMatrix(session: Session, filters: Cons
     worksiteName: r.worksiteName ?? "Sin faena",
     equipmentLabel: r.equipmentCode ? `${r.equipmentCode} (${r.plate})` : r.plate,
     liters: Number(r.liters),
-    amount: Number(r.amount),
+    amount: canViewCosts ? Number(r.amount ?? 0) : null,
     intensity: 0,
   })).filter((c) => c.liters > 0)
 
@@ -370,10 +380,11 @@ function buildConsumptionAlerts(input: {
 
   // Monto alto + rendimiento bajo (no cero, ese caso ya se marca aparte).
   const rendByPatente = new Map(rendimientoPorPatente.map((r) => [r.patente, r]))
-  const montoMedio = byPatente.length > 0 ? byPatente.reduce((s, r) => s + r.monto, 0) / byPatente.length : 0
+  const montos = byPatente.flatMap((row) => row.monto == null ? [] : [row.monto])
+  const montoMedio = montos.length > 0 ? montos.reduce((sum, monto) => sum + monto, 0) / montos.length : 0
   for (const row of byPatente) {
     const rend = rendByPatente.get(row.patente)
-    if (row.monto > montoMedio * MONTO_MEDIO_ALERT_MULTIPLIER && rend && rend.rendimiento > 0 && rend.atipico) {
+    if (row.monto != null && row.monto > montoMedio * MONTO_MEDIO_ALERT_MULTIPLIER && rend && rend.rendimiento > 0 && rend.atipico) {
       alerts.push({
         type: "gasto_rendimiento_bajo", severity: "high", entityLabel: row.patente,
         reason: `Gasto de ${Math.round(row.monto).toLocaleString("es-CL")} CLP con rendimiento atípicamente bajo (${rend.rendimiento.toFixed(1)}).`,

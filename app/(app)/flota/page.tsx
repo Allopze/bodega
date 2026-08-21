@@ -6,7 +6,7 @@ import { PageContainer } from "@/components/ui/page-container"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { SummaryBar, type SummaryStat } from "@/components/ui/summary-bar"
 import { Button } from "@/components/ui/button"
-import { requirePermission } from "@/lib/auth/can"
+import { can, requirePermission } from "@/lib/auth/can"
 import { getFleetOverview } from "@/lib/services/fleet"
 import { getFleetAdminSettings } from "@/lib/services/system-settings"
 import { addDaysToPlainDate, formatCLP, todayInChile } from "@/lib/utils"
@@ -26,6 +26,9 @@ export default async function FlotaPage({
   let session
   try { session = await requirePermission("flota:view") }
   catch { redirect("/forbidden") }
+  const canViewCosts = can(session, "combustibles:view_costs")
+  const canViewFuel = can(session, "combustibles:view")
+  const canViewMaintenance = can(session, "mantenciones:view")
 
   const [vehicles, fleetSettings] = await Promise.all([
     getFleetOverview(session),
@@ -72,9 +75,11 @@ export default async function FlotaPage({
   // Sobre el conjunto filtrado, no sobre el total: con un filtro activo la fila
   // de cifras contradecía a la tabla que tiene debajo.
   const active = filteredVehicles.filter((vehicle) => vehicle.isActive).length
-  const totalCost = filteredVehicles.reduce((sum, vehicle) => sum + vehicle.totalOperationalCost, 0)
-  const totalLiters = filteredVehicles.reduce((sum, vehicle) => sum + vehicle.totalLiters, 0)
-  const maintenanceCount = filteredVehicles.reduce((sum, vehicle) => sum + vehicle.maintenanceCount, 0)
+  const totalCost = canViewCosts && canViewFuel && canViewMaintenance
+    ? filteredVehicles.reduce((sum, vehicle) => sum + (vehicle.totalOperationalCost ?? 0), 0)
+    : null
+  const totalLiters = canViewFuel ? filteredVehicles.reduce((sum, vehicle) => sum + (vehicle.totalLiters ?? 0), 0) : null
+  const maintenanceCount = canViewMaintenance ? filteredVehicles.reduce((sum, vehicle) => sum + (vehicle.maintenanceCount ?? 0), 0) : null
 
   const expiredVehicles = filteredVehicles.filter((vehicle) => vehicle.nextExpiryDate && vehicle.nextExpiryDate < today)
   const expiringSoon = filteredVehicles.filter((vehicle) =>
@@ -87,27 +92,27 @@ export default async function FlotaPage({
   // como el histórico completo del vehículo.
   const summaryStats: SummaryStat[] = [
     { key: "active", label: "Vehículos activos", value: active },
-    { key: "cost", label: "Costo operacional (12 meses)", value: formatCLP(totalCost) },
-    { key: "liters", label: "Litros registrados (12 meses)", value: formatNumber(totalLiters) },
-    { key: "maintenance", label: "Mantenciones (12 meses)", value: maintenanceCount },
+    ...(totalCost != null ? [{ key: "cost", label: "Costo operacional (12 meses)", value: formatCLP(totalCost) }] : []),
+    ...(totalLiters != null ? [{ key: "liters", label: "Litros registrados (12 meses)", value: formatNumber(totalLiters) }] : []),
+    ...(maintenanceCount != null ? [{ key: "maintenance", label: "Mantenciones (12 meses)", value: maintenanceCount }] : []),
   ]
 
   return (
     <PageContainer>
       <PageHeader
         title="Flota"
-        description="Catálogo operativo de vehículos con costo de combustible, mantenciones e imputaciones."
+        description={canViewCosts && (canViewFuel || canViewMaintenance) ? "Catálogo operativo de vehículos con costos autorizados, mantenciones, lecturas y vencimientos." : "Catálogo operativo de vehículos, mantenciones, lecturas y vencimientos."}
         breadcrumb={
           <Breadcrumbs items={[
             { label: "Control operacional", href: "/" },
             { label: "Flota" },
           ]} />
         }
-        headerActions={
+        headerActions={can(session, "combustibles:manage_vehicles") ? (
           <Button asChild size="sm" variant="secondary">
             <Link href="/admin/flota-catalogos/vehiculos">Gestionar vehículos</Link>
           </Button>
-        }
+        ) : undefined}
       />
 
       <SummaryBar stats={summaryStats} />
@@ -148,7 +153,7 @@ export default async function FlotaPage({
           <CardTitle className="text-base">Vehículos</CardTitle>
         </CardHeader>
         <CardContent className="overflow-x-auto">
-          <FleetTable vehicles={filteredVehicles} hasAnyVehicle={vehicles.length > 0} />
+          <FleetTable vehicles={filteredVehicles} hasAnyVehicle={vehicles.length > 0} canViewCosts={canViewCosts} canViewFuel={canViewFuel} canViewMaintenance={canViewMaintenance} />
         </CardContent>
       </Card>
     </PageContainer>

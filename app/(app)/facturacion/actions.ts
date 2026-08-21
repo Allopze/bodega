@@ -26,6 +26,7 @@ import {
   readChipaxConfig,
   saveChipaxSettings,
 } from "@/lib/services/billing/chipax-settings"
+import { assertCostCenterAllowed } from "@/lib/services/cost-centers"
 import type { ActionState } from "@/lib/validation/masters"
 import type { BillingProviderId } from "@/db/schema"
 
@@ -576,6 +577,9 @@ export async function saveContractAction(input: unknown): Promise<ActionResult> 
   }
 
   try {
+    // Mismo contrato que Mantenciones: un centro de costo de otra faena imputa
+    // el contrato a una estructura ajena.
+    if (data.costCenterId) await assertCostCenterAllowed(db, data.costCenterId, data.worksiteId ?? null)
     const now = new Date().toISOString()
     const values = {
       code: data.code.trim().toUpperCase(),

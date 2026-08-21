@@ -16,6 +16,9 @@ vi.mock("@/db/schema", () => ({ fuelTaeEvidence: {} }))
 vi.mock("@/lib/storage/config", () => ({ resolveFuelTaeEvidenceFile: mockResolveFile }))
 vi.mock("@/lib/storage/helpers", () => ({ readBuffer: mockReadBuffer }))
 vi.mock("@/lib/combustibles/evidence-management", () => ({ logEvidenceAccess: mockLogEvidenceAccess }))
+vi.mock("@/lib/services/module-toggles", () => ({
+  isRouteOperational: vi.fn(async () => true),
+}))
 
 const session = { user: { id: "user-1" } }
 

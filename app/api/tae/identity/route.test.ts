@@ -7,6 +7,7 @@ const mockValidateRut = vi.hoisted(() => vi.fn())
 const mockFindTaeWorkerByRut = vi.hoisted(() => vi.fn())
 const mockGetTaeLinkWorksiteId = vi.hoisted(() => vi.fn())
 const mockHeaders = vi.hoisted(() => vi.fn())
+const mockIsRouteOperational = vi.hoisted(() => vi.fn())
 
 vi.mock("@/lib/services/rate-limit", () => ({
   checkRateLimit: mockCheckRateLimit,
@@ -19,6 +20,9 @@ vi.mock("@/lib/services/fuel-tae", () => ({
   getTaeLinkWorksiteId: mockGetTaeLinkWorksiteId,
 }))
 vi.mock("next/headers", () => ({ headers: mockHeaders }))
+vi.mock("@/lib/services/module-toggles", () => ({
+  isRouteOperational: mockIsRouteOperational,
+}))
 
 function makeRequest(body: unknown): Request {
   return { json: () => Promise.resolve(body) } as unknown as Request
@@ -36,6 +40,18 @@ describe("POST /api/tae/identity", () => {
     mockCheckRateLimit.mockResolvedValue({ allowed: true, waitTimeRemainingMs: 0 })
     mockValidateRut.mockReturnValue(true)
     mockGetTaeLinkWorksiteId.mockResolvedValue("ws-1")
+    mockIsRouteOperational.mockResolvedValue(true)
+  })
+
+  it("detiene el endpoint público antes de consultar identidad si TAE está inactivo", async () => {
+    mockIsRouteOperational.mockResolvedValue(false)
+    const { POST } = await import("./route")
+
+    const response = await POST(makeRequest({ accessToken: "token", rut: "11111111-1" }))
+
+    expect(response.status).toBe(503)
+    expect(mockCheckRateLimit).not.toHaveBeenCalled()
+    expect(mockGetTaeLinkWorksiteId).not.toHaveBeenCalled()
   })
 
   it("bloquea con 429 cuando el rate limit ya está activo, sin consultar nada más", async () => {

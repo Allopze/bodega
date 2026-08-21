@@ -25,6 +25,7 @@ import {
 import { materializeProgramRuns } from "@/lib/services/prevention-inspection-scheduler"
 import type { ActionState } from "@/lib/validation/prevention"
 import { revalidateOperationalViews } from "@/lib/services/operational-cache"
+import { assertInspectionOperationEnabled } from "@/lib/services/prevention-inspections"
 
 const BASE = "/prevencion/inspecciones"
 // /prevencion/auditorias comparte el mismo motor (InspectionsScreen con
@@ -37,8 +38,12 @@ function accessFromSession(session: Awaited<ReturnType<typeof guardPermission>>[
   return { userId: session.user.id, scope: resolveWorksiteScope(session), permissions: session.user.permissions }
 }
 
-// La autorización se resuelve en cada acción, no dentro de este helper.
+// La autorización se resuelve en cada acción, no dentro de este helper; el
+// toggle del submódulo sí, porque depende del `kind` persistido del instrumento
+// y no del permiso ni de la ruta que despachó la acción: Inspecciones y
+// Auditorías comparten motor, permisos y acciones.
 async function run(
+  input: unknown,
   access: InspectionAccess,
   operation: (access: InspectionAccess) => Promise<unknown>,
   /**
@@ -50,6 +55,7 @@ async function run(
   extract?: (result: unknown) => ActionState["data"],
 ): Promise<ActionState> {
   try {
+    await assertInspectionOperationEnabled(input)
     const result = await operation(access)
     revalidateOperationalViews([BASE, `${BASE}/catalogo`, AUDITORIAS_BASE, `${AUDITORIAS_BASE}/catalogo`])
     // Sin esto una respuesta, un cierre o una revisión recién guardada sigue
@@ -74,19 +80,19 @@ function versionOf(result: unknown): ActionState["data"] {
 export async function importInspectionTemplateAction(input: unknown): Promise<ActionState> {
   const guard = await guardPermission("prevention:inspections:manage")
   if (guard.error) return guard.error
-  return run(accessFromSession(guard.session), (access) => importInspectionTemplate(input, access))
+  return run(input, accessFromSession(guard.session), (access) => importInspectionTemplate(input, access))
 }
 
 export async function setInspectionTemplatePdtpActivitiesAction(input: unknown): Promise<ActionState> {
   const guard = await guardPermission("prevention:inspections:manage")
   if (guard.error) return guard.error
-  return run(accessFromSession(guard.session), (access) => setInspectionTemplatePdtpActivities(input, access))
+  return run(input, accessFromSession(guard.session), (access) => setInspectionTemplatePdtpActivities(input, access))
 }
 
 export async function approveInspectionTemplateAction(input: unknown): Promise<ActionState> {
   const guard = await guardPermission("prevention:inspections:approve")
   if (guard.error) return guard.error
-  return run(accessFromSession(guard.session), (access) => approveInspectionTemplate(input, access))
+  return run(input, accessFromSession(guard.session), (access) => approveInspectionTemplate(input, access))
 }
 
 /**
@@ -96,19 +102,19 @@ export async function approveInspectionTemplateAction(input: unknown): Promise<A
 export async function retireInspectionTemplateAction(input: unknown): Promise<ActionState> {
   const guard = await guardPermission("prevention:inspections:approve")
   if (guard.error) return guard.error
-  return run(accessFromSession(guard.session), (access) => retireInspectionTemplate(input, access))
+  return run(input, accessFromSession(guard.session), (access) => retireInspectionTemplate(input, access))
 }
 
 export async function createInspectionProgramAction(input: unknown): Promise<ActionState> {
   const guard = await guardPermission("prevention:inspections:manage")
   if (guard.error) return guard.error
-  return run(accessFromSession(guard.session), (access) => createInspectionProgram(input, access))
+  return run(input, accessFromSession(guard.session), (access) => createInspectionProgram(input, access))
 }
 
 export async function updateInspectionProgramAction(input: unknown): Promise<ActionState> {
   const guard = await guardPermission("prevention:inspections:manage")
   if (guard.error) return guard.error
-  return run(accessFromSession(guard.session), (access) => updateInspectionProgram(input, access))
+  return run(input, accessFromSession(guard.session), (access) => updateInspectionProgram(input, access))
 }
 
 /**
@@ -120,7 +126,7 @@ export async function runProgramNowAction(input: unknown): Promise<ActionState> 
   const guard = await guardPermission("prevention:inspections:manage")
   if (guard.error) return guard.error
   const { programId } = z.object({ programId: z.string().min(1) }).parse(input)
-  return run(accessFromSession(guard.session), async (access) => {
+  return run(input, accessFromSession(guard.session), async (access) => {
     // El materializador no recibe `InspectionAccess` (el cron no tiene sesión),
     // así que el alcance de faena se comprueba aquí antes de invocarlo.
     await assertProgramInScope(programId, access)
@@ -138,25 +144,25 @@ export async function runProgramNowAction(input: unknown): Promise<ActionState> 
 export async function createInspectionRunAction(input: unknown): Promise<ActionState> {
   const guard = await guardPermission("prevention:inspections:execute")
   if (guard.error) return guard.error
-  return run(accessFromSession(guard.session), (access) => createInspectionRun(input, access))
+  return run(input, accessFromSession(guard.session), (access) => createInspectionRun(input, access))
 }
 
 export async function saveInspectionAnswersAction(input: unknown): Promise<ActionState> {
   const guard = await guardPermission("prevention:inspections:execute")
   if (guard.error) return guard.error
-  return run(accessFromSession(guard.session), (access) => saveInspectionAnswers(input, access), versionOf)
+  return run(input, accessFromSession(guard.session), (access) => saveInspectionAnswers(input, access), versionOf)
 }
 
 export async function completeInspectionRunAction(input: unknown): Promise<ActionState> {
   const guard = await guardPermission("prevention:inspections:execute")
   if (guard.error) return guard.error
-  return run(accessFromSession(guard.session), (access) => completeInspectionRun(input, access), versionOf)
+  return run(input, accessFromSession(guard.session), (access) => completeInspectionRun(input, access), versionOf)
 }
 
 export async function createFindingCapaAction(input: unknown): Promise<ActionState> {
   const guard = await guardPermission("prevention:inspections:execute")
   if (guard.error) return guard.error
-  return run(accessFromSession(guard.session), (access) => createFindingCapa(input, access))
+  return run(input, accessFromSession(guard.session), (access) => createFindingCapa(input, access))
 }
 
 /**
@@ -169,7 +175,7 @@ export async function createFindingCapaAction(input: unknown): Promise<ActionSta
 export async function stopVehicleForFindingAction(input: unknown): Promise<ActionState> {
   const guard = await guardPermission("combustibles:manage_vehicles")
   if (guard.error) return guard.error
-  const state = await run(accessFromSession(guard.session), (access) => stopVehicleForFinding(input, access))
+  const state = await run(input, accessFromSession(guard.session), (access) => stopVehicleForFinding(input, access))
   if (state.ok) revalidateOperationalViews(["/flota", "/combustibles/vehiculos"])
   return state
 }
@@ -177,7 +183,7 @@ export async function stopVehicleForFindingAction(input: unknown): Promise<Actio
 export async function reviewInspectionRunAction(input: unknown): Promise<ActionState> {
   const guard = await guardPermission("prevention:inspections:review")
   if (guard.error) return guard.error
-  return run(accessFromSession(guard.session), (access) => reviewInspectionRun(input, access))
+  return run(input, accessFromSession(guard.session), (access) => reviewInspectionRun(input, access))
 }
 
 /**
@@ -190,6 +196,7 @@ export async function cancelInspectionRunAction(input: unknown): Promise<ActionS
   const guard = await guardPermission("prevention:inspections:manage")
   if (guard.error) return guard.error
   return run(
+    input,
     accessFromSession(guard.session),
     (access) => transitionInspectionRun({ ...(input as object), toStatus: "cancelled" }, access),
     versionOf,
@@ -204,6 +211,7 @@ export async function reopenInspectionRunAction(input: unknown): Promise<ActionS
   const guard = await guardPermission("prevention:inspections:review")
   if (guard.error) return guard.error
   return run(
+    input,
     accessFromSession(guard.session),
     (access) => transitionInspectionRun({ ...(input as object), toStatus: "in_progress" }, access),
     versionOf,
@@ -214,5 +222,5 @@ export async function reopenInspectionRunAction(input: unknown): Promise<ActionS
 export async function closeInspectionFindingAction(input: unknown): Promise<ActionState> {
   const guard = await guardPermission("prevention:inspections:review")
   if (guard.error) return guard.error
-  return run(accessFromSession(guard.session), (access) => closeInspectionFinding(input, access))
+  return run(input, accessFromSession(guard.session), (access) => closeInspectionFinding(input, access))
 }

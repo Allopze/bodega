@@ -9,7 +9,7 @@ vi.mock("@/lib/auth/can", () => ({
 vi.mock("@/lib/services/maintenance", () => ({
   createMaintenanceRecord: (...args: unknown[]) => mockCreateMaintenanceRecord(...args),
   updateMaintenanceRecord: vi.fn(),
-  cancelMaintenanceRecord: vi.fn(),
+  transitionMaintenanceRecord: vi.fn(),
 }))
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }))
 vi.mock("@/lib/logger", () => ({ logger: { error: vi.fn() } }))
@@ -17,10 +17,9 @@ vi.mock("@/lib/logger", () => ({ logger: { error: vi.fn() } }))
 function validFormData() {
   const fd = new FormData()
   fd.set("vehicleId", "veh-1")
-  fd.set("worksiteId", "ws-1")
   fd.set("maintenanceDate", "2026-06-01")
   fd.set("maintenanceType", "preventiva")
-  fd.set("status", "completed")
+  fd.set("status", "scheduled")
   fd.set("netAmount", "100")
   fd.set("taxAmount", "19")
   fd.set("totalAmount", "119")
@@ -52,7 +51,7 @@ describe("mantenciones Server Actions", () => {
     expect(result.ok).toBe(true)
     expect(mockCreateMaintenanceRecord).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
       vehicleId: "veh-1",
-      status: "completed",
+      status: "scheduled",
       totalAmount: 119,
     }))
   })

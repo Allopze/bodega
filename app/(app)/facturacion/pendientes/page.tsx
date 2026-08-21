@@ -5,6 +5,7 @@ import { asc, eq } from "drizzle-orm"
 import { ClipboardText } from "@phosphor-icons/react/dist/ssr"
 import { db } from "@/db"
 import { costCenters, worksites } from "@/db/schema"
+import { costCenterOptionsWhere } from "@/lib/services/cost-centers"
 import { auth } from "@/lib/auth/auth"
 import { can } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
@@ -49,8 +50,12 @@ export default async function PendingBillingPage() {
           .from(worksites).where(eq(worksites.isActive, true)).orderBy(asc(worksites.name))
       : Promise.resolve([]),
     canCreate
+      // Los centros de costo tienen faena: el catálogo completo publicaba la
+      // estructura de costos de faenas fuera del alcance.
       ? db.select({ id: costCenters.id, name: costCenters.name, code: costCenters.code })
-          .from(costCenters).where(eq(costCenters.isActive, true)).orderBy(asc(costCenters.code))
+          .from(costCenters)
+          .where(costCenterOptionsWhere(scope.mode === "some" ? scope.ids : scope.mode === "none" ? [] : null))
+          .orderBy(asc(costCenters.code))
       : Promise.resolve([]),
   ])
 

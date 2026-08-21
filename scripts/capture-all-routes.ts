@@ -735,6 +735,7 @@ const routeTargets: RouteTarget[] = [
   },
   { slug: "admin-backups", path: "/admin/backups", auth: true },
   { slug: "forbidden", path: "/forbidden", auth: true },
+  { slug: "modulo-inactivo", path: "/modulo-inactivo", auth: true },
   { slug: "soporte", path: "/soporte", auth: true },
   { slug: "soporte-nuevo", path: "/soporte/nuevo", auth: true },
   { slug: "soporte-detalle", path: "/soporte/sop-audit-1", auth: true },

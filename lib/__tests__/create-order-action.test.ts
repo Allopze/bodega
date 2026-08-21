@@ -17,6 +17,17 @@ import type { Session } from "next-auth"
 // re-lanza los errores de control de flujo de Next (por digest, no por texto),
 // dejando pasar los demás para que el catch de la action los convierta en
 // ActionState. La action ya no compara `e.message` con "NEXT_REDIRECT".
+// El guard de módulo consulta `system_settings` en cada verificación de permiso
+// (CO-007). Estas pruebas mockean sólo las tablas de su caso, así que se
+// declara aquí que ningún módulo está apagado; el guard tiene sus propias
+// regresiones en lib/__tests__/module-toggles.test.ts.
+vi.mock("@/lib/services/module-toggles", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/services/module-toggles")>()),
+  assertPermissionModuleEnabled: vi.fn(async () => {}),
+  assertRouteModuleEnabled: vi.fn(async () => {}),
+  getNavigationToggleState: vi.fn(async () => ({ enabledModuleIds: new Set<string>(), disabledSubmoduleHrefs: new Set<string>() })),
+}))
+
 vi.mock("next/navigation", () => ({
   redirect: vi.fn(() => {
     const error = new Error("NEXT_REDIRECT") as Error & { digest?: string }

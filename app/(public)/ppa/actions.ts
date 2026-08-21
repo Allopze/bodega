@@ -7,6 +7,7 @@ import { z } from "zod"
 import { logger } from "@/lib/logger"
 import { headers } from "next/headers"
 import { checkRateLimit, consumeFixedWindowLimit, recordFailure, recordSuccessForTelemetry } from "@/lib/services/rate-limit"
+import { isRouteOperational } from "@/lib/services/module-toggles"
 import { cleanRut, validateRut } from "@/lib/rut"
 
 /**
@@ -33,6 +34,12 @@ const SUBMIT_IP_QUOTA = { maxAttempts: 30, lockMs: 5 * 60 * 1000 }
 export async function submitPpaAction(
   input: z.infer<typeof ppaSubmitSchema>,
 ): Promise<ActionState & { data?: { token: string; resultado: string } }> {
+  // Antes de la cuota y de cualquier escritura: una PWA cacheada puede seguir
+  // enviando después de que el módulo se apagó (o incluso sin red hasta que
+  // recupera conexión), y el layout no protege a la acción.
+  if (!await isRouteOperational("/prevencion/ppa")) {
+    return { ok: false, message: "PPA Digital está inactivo temporalmente." }
+  }
   const h = await headers()
   const clientIp = h.get("x-forwarded-for")?.split(",")[0]?.trim() || "127.0.0.1"
 

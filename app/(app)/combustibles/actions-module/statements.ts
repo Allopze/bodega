@@ -5,6 +5,7 @@ import { db } from "@/db"
 import { fuelLoads, fuelMonthlyStatements, fuelPayments } from "@/db/schema"
 import { eq, and, sql, inArray } from "drizzle-orm"
 import { requirePermission } from "@/lib/auth/can"
+import { assertFuelCostAccess } from "@/lib/operational-control/capabilities"
 import { nanoid } from "@/lib/id"
 import {
   createMonthlyStatementSchema,
@@ -14,14 +15,21 @@ import { calculateStatementTotals } from "@/lib/combustibles/calculations"
 import { recordAudit } from "@/lib/audit"
 import type { ActionState } from "@/lib/validation/masters"
 import { dbErrMsg } from "./loads"
+import { accountableFuelLoadsWhere } from "@/lib/combustibles/load-status"
+
+async function requireGlobalStatementSession() {
+  const session = await requirePermission("combustibles:manage_statements", "/combustibles")
+  assertFuelCostAccess(session, { global: true })
+  return session
+}
 
 export async function createMonthlyStatementAction(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
   let session
-  try { session = await requirePermission("combustibles:create") }
-  catch { return { ok: false, message: "Sin permisos" } }
+  try { session = await requireGlobalStatementSession() }
+  catch { return { ok: false, message: "Sin permisos para administrar la cuenta corriente" } }
 
   const parsed = createMonthlyStatementSchema.safeParse({
     month: formData.get("month"),
@@ -48,6 +56,9 @@ export async function createMonthlyStatementAction(
         .select()
         .from(fuelLoads)
         .where(and(
+          // Un estado de cuenta cobra consumo real: sin esto arrastraba
+          // borradores a medio capturar y cargas anuladas.
+          accountableFuelLoadsWhere(),
           eq(fuelLoads.month, parsed.data.month),
           eq(fuelLoads.fuelSupplierId, parsed.data.fuelSupplierId),
           sql`${fuelLoads.statementId} IS NULL`,
@@ -93,8 +104,8 @@ export async function addPaymentAction(
   formData: FormData,
 ): Promise<ActionState> {
   let session
-  try { session = await requirePermission("combustibles:create") }
-  catch { return { ok: false, message: "Sin permisos" } }
+  try { session = await requireGlobalStatementSession() }
+  catch { return { ok: false, message: "Sin permisos para administrar la cuenta corriente" } }
 
   const parsed = addPaymentSchema.safeParse({
     statementId: formData.get("statementId"),

@@ -20,12 +20,16 @@ interface MobileNavProps {
   onNavigate?:       () => void
   /** Módulos habilitados por feature toggle (opcional). */
   enabledModuleIds?: Set<string>
+  disabledSubmoduleHrefs?: Set<string>
 }
 
 /** Navegación móvil: columna única en acordeón (área activa expandida). */
-const MobileNavInner = React.memo(function MobileNavInner({ session, worksiteName, badgeCounts, onNavigate, enabledModuleIds }: MobileNavProps) {
+const MobileNavInner = React.memo(function MobileNavInner({ session, worksiteName, badgeCounts, onNavigate, enabledModuleIds, disabledSubmoduleHrefs }: MobileNavProps) {
   const pathname = usePathname()
-  const areas = React.useMemo(() => getVisibleAreas(session, enabledModuleIds), [session, enabledModuleIds])
+  const areas = React.useMemo(
+    () => getVisibleAreas(session, enabledModuleIds, disabledSubmoduleHrefs),
+    [session, enabledModuleIds, disabledSubmoduleHrefs],
+  )
   const routeArea = findActiveArea(areas, pathname)
   const dashActive = isHrefActive(DASHBOARD_ITEM.href, pathname)
   const DashIcon = NAV_ICONS[DASHBOARD_ITEM.iconName]

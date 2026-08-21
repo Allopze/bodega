@@ -1,10 +1,11 @@
 import type { Metadata } from "next"
 import { notFound, redirect } from "next/navigation"
-import { eq, inArray } from "drizzle-orm"
+import { eq, inArray, sql } from "drizzle-orm"
 import { db } from "@/db"
 import { fuelTaeImportBatches, fuelTaeSubmissions, fuelTaeVehicleMappings, fuelTaeWorkerMappings, fuelVehicles, workers } from "@/db/schema"
 import { can, requirePermission } from "@/lib/auth/can"
 import { worksiteScopeSql } from "@/lib/auth/scope"
+import { taeLedgerIsGlobal } from "@/lib/combustibles/tae-import-ledger"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { Badge } from "@/components/ui/badge"
@@ -26,6 +27,7 @@ export default async function TaeImportBatchDetailPage({ params }: { params: Pro
   // `combustibles:tae_import` (hoy sólo lo tienen roles globales, pero nada
   // en el código lo impide) vería las cargas, faenas, equipos y patentes de
   // TODAS las faenas del lote, no sólo las suyas.
+  const isGlobal = taeLedgerIsGlobal(session)
   const scope = worksiteScopeSql(session, fuelTaeSubmissions.worksiteId)
   const batch = await db.query.fuelTaeImportBatches.findFirst({
     where: eq(fuelTaeImportBatches.id, id),
@@ -40,7 +42,12 @@ export default async function TaeImportBatchDetailPage({ params }: { params: Pro
           product: { columns: { name: true } },
         },
       },
-      rejections: { orderBy: (rejections, { asc }) => [asc(rejections.rowIndex)] },
+      // Las filas rechazadas no tienen faena resuelta —ése es justamente su
+      // motivo de rechazo— y conservan `raw_row` con equipos y nombres del
+      // archivo completo. Sólo un rol global puede leerlas.
+      rejections: isGlobal
+        ? { orderBy: (rejections, { asc }) => [asc(rejections.rowIndex)] }
+        : { where: sql`false`, limit: 0 },
     },
   })
   if (!batch) notFound()
@@ -50,9 +57,23 @@ export default async function TaeImportBatchDetailPage({ params }: { params: Pro
   // lote real con todas sus filas rechazadas también llega en 0 para un rol
   // global, y ese caso sí debe renderizar (para ver los rechazos).
   if (scope !== undefined && batch.submissions.length === 0) notFound()
+  // Los contadores persistidos describen el archivo completo. Un rol acotado
+  // ve los suyos recalculados; lo no atribuible se omite en vez de mostrarse
+  // como cero.
+  const scopedSummary = isGlobal ? null : {
+    validRows: batch.submissions.filter((submission) => submission.status !== "observed").length,
+    observedRows: batch.submissions.filter((submission) => submission.status === "observed").length,
+    totalLiters: batch.submissions.reduce((total, submission) => total + Number(submission.liters), 0),
+  }
   const canRevert = batch.status === "imported" && can(session, "combustibles:revert")
   const canManageMappings = can(session, "combustibles:tae_import")
-  const reprocessableRejections = batch.rejections.filter((rejection) => rejection.stage === "worksite" && rejection.rawRow && typeof rejection.rawRow === "object").length
+  // Un rol acotado no lee las filas rechazadas, pero sí puede reprocesarlas:
+  // la acción sólo recupera las que resuelven dentro de su alcance y responde
+  // "no hubo filas listas" cuando no hay ninguna. Ofrecer el botón sin contarlas
+  // conserva el flujo sin publicar el tamaño del lote ajeno.
+  const canReprocess = batch.status === "imported" && (isGlobal
+    ? batch.rejections.some((rejection) => rejection.stage === "worksite" && rejection.rawRow && typeof rejection.rawRow === "object")
+    : true)
 
   const worksiteIds = [...new Set(batch.submissions.map((s) => s.worksiteId))]
   const [vehicleMappings, workerMappings, worksiteVehicles, worksiteWorkers] = worksiteIds.length
@@ -94,20 +115,20 @@ export default async function TaeImportBatchDetailPage({ params }: { params: Pro
         title="Detalle de lote TAE"
         description={batch.fileName}
         breadcrumb={<Breadcrumbs items={[{ label: "Combustibles", href: "/combustibles" }, { label: "Control TAE", href: "/combustibles/tae" }, { label: "Importar histórico", href: "/combustibles/tae/importar" }, { label: "Historial", href: "/combustibles/tae/importar/historial" }, { label: batch.fileName }]} />}
-        actions={<div className="flex flex-wrap gap-2"><ReprocessTaeBatchButton batchId={batch.id} rejectionCount={batch.status === "imported" ? reprocessableRejections : 0} /><RevertTaeBatchButton batchId={batch.id} canRevert={canRevert} /></div>}
+        actions={<div className="flex flex-wrap gap-2"><ReprocessTaeBatchButton batchId={batch.id} canReprocess={canReprocess} /><RevertTaeBatchButton batchId={batch.id} canRevert={canRevert} /></div>}
       />
 
       <Card className="mb-5">
-        <CardHeader className="flex flex-row items-center justify-between"><CardTitle>Resumen del lote</CardTitle><Badge variant={batch.status === "reverted" ? "danger" : "success"}>{batch.status === "reverted" ? "Revertido" : "Importado"}</Badge></CardHeader>
+        <CardHeader className="flex flex-row items-center justify-between"><CardTitle>{isGlobal ? "Resumen del lote" : "Resumen de tus faenas en el lote"}</CardTitle><Badge variant={batch.status === "reverted" ? "danger" : "success"}>{batch.status === "reverted" ? "Revertido" : "Importado"}</Badge></CardHeader>
         <CardContent className="grid grid-cols-2 gap-4 md:grid-cols-4">
-          <Field label="Filas totales" value={formatQty(batch.totalRows)} />
-          <Field label="Importadas" value={formatQty(batch.validRows)} />
-          <Field label="Observadas" value={formatQty(batch.observedRows)} />
-          <Field label="Rechazadas" value={formatQty(batch.invalidRows)} />
-          <Field label="Volumen" value={formatQty(Number(batch.totalLiters), "L")} />
+          {isGlobal && <Field label="Filas totales" value={formatQty(batch.totalRows)} />}
+          <Field label="Importadas" value={formatQty(scopedSummary?.validRows ?? batch.validRows)} />
+          <Field label="Observadas" value={formatQty(scopedSummary?.observedRows ?? batch.observedRows)} />
+          {isGlobal && <Field label="Rechazadas" value={formatQty(batch.invalidRows)} />}
+          <Field label="Volumen" value={formatQty(scopedSummary?.totalLiters ?? Number(batch.totalLiters), "L")} />
           <Field label="Importado por" value={batch.importer?.name ?? batch.importer?.email ?? "—"} />
           <Field label="Fecha" value={formatDateTime(batch.createdAt)} />
-          <Field label="Hash de archivo" value={batch.fileHash.slice(0, 16)} mono />
+          {isGlobal && <Field label="Hash de archivo" value={batch.fileHash.slice(0, 16)} mono />}
         </CardContent>
       </Card>
 

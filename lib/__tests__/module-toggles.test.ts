@@ -6,6 +6,7 @@
  */
 
 import path from "node:path"
+import { readdirSync } from "node:fs"
 import { PGlite } from "@electric-sql/pglite"
 import { drizzle } from "drizzle-orm/pglite"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
@@ -34,11 +35,40 @@ import {
   setModuleToggle,
   getEnabledModuleIds,
   getAllModuleToggles,
+  getNavigationToggleState,
+  routeIsEnabled,
+  resolveModuleRoute,
+  assertPermissionModuleEnabled,
   setSubmoduleToggle,
 } from "@/lib/services/module-toggles"
 
 const NOW = new Date().toISOString()
 const ACTOR = { userId: "test-user", userEmail: "test@chome.cl" }
+
+const ROUTE_FILE = /^(?:route|page)\.(?:tsx?|jsx?|mjs)$/
+
+function routeFiles(root: string): string[] {
+  return readdirSync(root, { withFileTypes: true }).flatMap((entry) => {
+    const absolute = path.join(root, entry.name)
+    if (entry.isDirectory()) return routeFiles(absolute)
+    return ROUTE_FILE.test(entry.name) ? [absolute] : []
+  })
+}
+
+/**
+ * Pathname público de un archivo de ruta. Los grupos `(app)`, `(print)` y
+ * `(public)` no aparecen en la URL, así que se eliminan del segmento: sin esto
+ * el inventario no veía `app/(print)/...` ni `app/(public)/...`, que fue por
+ * donde entraron la PWA de PPA y la orden de compra imprimible.
+ */
+function routeSample(file: string, root: string) {
+  const relative = path.relative(root, file).replaceAll(path.sep, "/")
+  return `/${relative.replace(ROUTE_FILE_SUFFIX, "").replace(/\[[^\]]+\]/g, "sample")}`
+    .split("/").filter((segment) => segment && !segment.startsWith("("))
+    .join("/").replace(/^/, "/") || "/"
+}
+
+const ROUTE_FILE_SUFFIX = /(?:^|\/)(?:route|page)\.(?:tsx?|jsx?|mjs)$/
 
 describe("module-toggles service", () => {
   beforeAll(async () => {
@@ -223,6 +253,14 @@ describe("module-toggles service", () => {
   // ── setSubmoduleToggle ─────────────────────────────────────────────────
 
   describe("setSubmoduleToggle", () => {
+    it("rechaza rutas que no pertenecen al manifiesto", async () => {
+      const result = await setSubmoduleToggle("flota", "/combustibles", false, ACTOR)
+      expect(result).toEqual({ ok: false, message: "Submódulo no registrado" })
+      expect(await db.query.systemSettings.findFirst({
+        where: eq(systemSettings.key, "submodule.enabled:flota:/combustibles"),
+      })).toBeUndefined()
+    })
+
     it("disables a submodule and persists the state", async () => {
       const result = await setSubmoduleToggle("flota", "/flota", false, ACTOR)
       expect(result.ok).toBe(true)
@@ -256,6 +294,113 @@ describe("module-toggles service", () => {
   // ── Integration: toggle lifecycle ─────────────────────────────────────
 
   describe("toggle lifecycle", () => {
+    it("niega rutas y permisos del módulo, y sólo la ruta del submódulo apagado", async () => {
+      await setSubmoduleToggle("combustibles", "/combustibles/tae", false, ACTOR)
+      let state = await getNavigationToggleState()
+      expect(resolveModuleRoute("/combustibles/tae/importar/historial")).toEqual({
+        moduleId: "combustibles",
+        submoduleHref: "/combustibles/tae",
+      })
+      expect(routeIsEnabled("/combustibles/tae/importar", state)).toBe(false)
+      expect(routeIsEnabled("/combustibles/bitacora", state)).toBe(true)
+
+      await setModuleToggle("combustibles", false, ACTOR)
+      state = await getNavigationToggleState()
+      expect(routeIsEnabled("/combustibles/bitacora", state)).toBe(false)
+      await expect(assertPermissionModuleEnabled("combustibles:view")).rejects.toThrow(/módulo inactivo/i)
+      await expect(assertPermissionModuleEnabled("admin:module_management")).resolves.toBeUndefined()
+    })
+
+    it("resuelve aliases, endpoints y jobs con un owner canónico", () => {
+      expect(resolveModuleRoute("/admin/auditoria")).toEqual({ moduleId: "admin", submoduleHref: "/admin" })
+      expect(resolveModuleRoute("/prevencion/nueva")).toEqual({ moduleId: "sst", submoduleHref: "/prevencion/evaluaciones" })
+      expect(resolveModuleRoute("/prevencion/trabajador/worker-1")).toEqual({ moduleId: "sst", submoduleHref: "/prevencion/evaluaciones" })
+      expect(resolveModuleRoute("/prevencion/evaluation-1")).toEqual({ moduleId: "sst", submoduleHref: "/prevencion/evaluaciones" })
+      expect(resolveModuleRoute("/api/bodega/stock/export")).toEqual({ moduleId: "warehouse", submoduleHref: "/bodega" })
+      expect(resolveModuleRoute("/api/prevencion/epp/export")).toEqual({ moduleId: "prevention", submoduleHref: "/prevencion/epp-preventivo" })
+      expect(resolveModuleRoute("/api/prevencion/miper/mapa/plano-1")).toEqual({ moduleId: "prevention", submoduleHref: "/prevencion/miper/mapa" })
+      expect(resolveModuleRoute("/api/cron/billing-sales-sync")).toEqual({ moduleId: "billing", submoduleHref: "/facturacion/sincronizacion" })
+      expect(resolveModuleRoute("/api/facturacion/facturas/export")).toEqual({ moduleId: "billing", submoduleHref: "/facturacion/facturas" })
+      expect(resolveModuleRoute("/api/prevencion/inspecciones/export")).toEqual({ moduleId: "prevention", submoduleHref: undefined })
+      expect(resolveModuleRoute("/api/prevencion/superficie-futura")).toBeNull()
+    })
+
+    it("cubre las superficies fuera de (app): PWA pública e impresiones", () => {
+      // La PWA anónima de PPA escribía registros firmados con el módulo apagado.
+      expect(resolveModuleRoute("/ppa")).toEqual({ moduleId: "ppa", submoduleHref: "/prevencion/ppa" })
+      expect(resolveModuleRoute("/ppa/result/token-1")).toEqual({ moduleId: "ppa", submoduleHref: "/prevencion/ppa" })
+      // …y las impresiones son otro grupo de rutas con su propio layout.
+      expect(resolveModuleRoute("/sst/eval-1/print")).toEqual({ moduleId: "sst", submoduleHref: "/prevencion/evaluaciones" })
+      expect(resolveModuleRoute("/compras/oc-1/print/pdf")).toEqual({ moduleId: "purchasing", submoduleHref: "/compras" })
+      // Casos reservados es Privacidad, igual que su override de permiso.
+      expect(resolveModuleRoute("/api/prevencion/casos-reservados/c-1"))
+        .toEqual({ moduleId: "prevention", submoduleHref: "/prevencion/privacidad" })
+      expect(resolveModuleRoute("/api/attachments/a-1")).toEqual({ moduleId: "deliveries", submoduleHref: "/entregas" })
+    })
+
+    it("bloquea el submódulo aunque la ruta canónica del permiso apunte a otro", async () => {
+      // El permiso resuelve a /combustibles; la operación se despachó desde el
+      // submódulo Bitácora. Apagar cualquiera de los dos debe cerrar la acción.
+      await setSubmoduleToggle("combustibles", "/combustibles/bitacora", false, ACTOR)
+      await expect(assertPermissionModuleEnabled(
+        "combustibles:review_anomalies",
+        "/combustibles/bitacora",
+      )).rejects.toThrow(/submódulo inactivo/i)
+    })
+
+    it("mantiene inventariadas todas las páginas autenticadas y Route Handlers operativos", () => {
+      // `(print)` y `(public)` tienen su propio layout y no atraviesan el de
+      // `(app)`: quedaron fuera del inventario original y por ahí entraron dos
+      // huecos reales (la PWA pública de PPA y la OC imprimible).
+      const appRoot = path.resolve(process.cwd(), "app")
+      const pageAllowlist = new Set([
+        "/dashboard", "/forbidden", "/modulo-inactivo", "/perfil", "/prevencion", "/sample",
+        "/login", "/registro", "/recuperar", "/recuperar/sample", "/restablecer", "/pendientes", "/", "/offline",
+      ])
+      const missingPages = routeFiles(appRoot)
+        .filter((file) => /page\.(?:tsx?|jsx?)$/.test(file) && !file.includes(`${path.sep}api${path.sep}`))
+        .map((file) => routeSample(file, appRoot))
+        .filter((route) => !pageAllowlist.has(route) && !resolveModuleRoute(route))
+      expect(missingPages).toEqual([])
+
+      const apiRoot = path.resolve(process.cwd(), "app/api")
+      const apiAllowPrefixes = ["/auth", "/health", "/attachments", "/notifications"]
+      const missingApis = routeFiles(apiRoot)
+        .filter((file) => file.endsWith("route.ts"))
+        .map((file) => routeSample(file, apiRoot))
+        .filter((route) => !apiAllowPrefixes.some((prefix) => routeMatchesTest(route, prefix)) && !resolveModuleRoute(`/api${route}`))
+      expect(missingApis).toEqual([])
+    })
+
+    it("no permite despachar una Server Action TAE desde un submódulo hermano", async () => {
+      await setSubmoduleToggle("combustibles", "/combustibles/tae", false, ACTOR)
+      await expect(assertPermissionModuleEnabled(
+        "combustibles:tae_manage_config",
+        "/combustibles/bitacora",
+      )).rejects.toThrow(/submódulo inactivo/i)
+    })
+
+    it("respeta el destino explícito de una Server Action con permiso ambiguo", async () => {
+      await setSubmoduleToggle("combustibles", "/combustibles", false, ACTOR)
+      await expect(assertPermissionModuleEnabled(
+        "combustibles:review_anomalies",
+        "/combustibles/bitacora",
+        "/combustibles",
+      )).rejects.toThrow(/submódulo inactivo/i)
+    })
+
+    it("falla cerrado si no puede leer system_settings", async () => {
+      vi.spyOn(db.query.systemSettings, "findMany").mockRejectedValueOnce(new Error("database unavailable"))
+      await expect(getNavigationToggleState()).rejects.toThrow("No se pudo verificar el estado de los módulos")
+    })
+
+    it("keeps the module toggle recovery route reachable when Admin is off", () => {
+      expect(routeIsEnabled("/admin/modulos", {
+        enabledModuleIds: new Set(["combustibles"]),
+        disabledSubmoduleHrefs: new Set(["/admin"]),
+      })).toBe(true)
+    })
+
     it("full lifecycle: enable → disable → re-enable", async () => {
       // Start: enabled by default
       expect(await getModuleToggle("flota")).toBe(true)
@@ -291,3 +436,7 @@ describe("module-toggles service", () => {
     })
   })
 })
+
+function routeMatchesTest(pathname: string, prefix: string) {
+  return pathname === prefix || pathname.startsWith(`${prefix}/`)
+}

@@ -23,18 +23,19 @@ interface VehicleOption {
   id: string
   plate: string
   type: string
+  worksiteId: string
 }
 
 export function MaintenanceCreateButton({
   vehicles,
   suppliers,
-  worksites,
   costCenters,
+  canViewCosts,
 }: {
   vehicles: VehicleOption[]
   suppliers: Option[]
-  worksites: Option[]
-  costCenters: Array<Option & { code: string }>
+  costCenters: Array<Option & { code: string; worksiteId: string | null }>
+  canViewCosts: boolean
 }) {
   const [open, setOpen] = useState(false)
 
@@ -57,8 +58,8 @@ export function MaintenanceCreateButton({
         <MaintenanceForm
           vehicles={vehicles}
           suppliers={suppliers}
-          worksites={worksites}
           costCenters={costCenters}
+          canViewCosts={canViewCosts}
         />
           </SheetBody>
         </SheetContent>

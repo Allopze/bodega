@@ -65,7 +65,7 @@ export function WorksiteEquipmentHeatmap({ cells }: { cells: HeatmapCell[] }) {
                     key={`${ws}::${eq}`}
                     className="flex flex-col items-center justify-center border border-(--color-border) p-2 text-center text-[10px] leading-tight"
                     style={{ backgroundColor: heatColor(cell.intensity), color: cell.intensity >= 0.35 ? "white" : "var(--color-text)" }}
-                    title={`${cell.worksiteName} · ${cell.equipmentLabel}: ${cell.liters.toLocaleString("es-CL")} L / ${cell.amount.toLocaleString("es-CL")} CLP`}
+                    title={`${cell.worksiteName} · ${cell.equipmentLabel}: ${cell.liters.toLocaleString("es-CL")} L${cell.amount == null ? "" : ` / ${cell.amount.toLocaleString("es-CL")} CLP`}`}
                   >
                     <span className="font-mono font-semibold">{cell.liters >= 1000 ? `${(cell.liters / 1000).toFixed(0)}k` : Math.round(cell.liters)}</span>
                     <span className="opacity-75">L</span>

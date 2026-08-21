@@ -90,7 +90,7 @@ export async function createFuelVehicleAction(
   formData: FormData,
 ): Promise<ActionState> {
   let session
-  try { session = await requirePermission("combustibles:manage_vehicles") }
+  try { session = await requirePermission("combustibles:manage_vehicles", "/combustibles") }
   catch { return { ok: false, message: "Sin permisos" } }
 
   const parsed = createFuelVehicleSchema.safeParse(vehicleFormData(formData))
@@ -143,7 +143,7 @@ export async function updateFuelVehicleAction(
   formData: FormData,
 ): Promise<ActionState> {
   let session
-  try { session = await requirePermission("combustibles:manage_vehicles") }
+  try { session = await requirePermission("combustibles:manage_vehicles", "/combustibles") }
   catch { return { ok: false, message: "Sin permisos" } }
 
   const id = String(formData.get("id") ?? "")
@@ -208,7 +208,7 @@ export async function updateFuelVehicleAction(
 
 export async function toggleFuelVehicleActiveAction(id: string, activate: boolean): Promise<ActionState> {
   let session
-  try { session = await requirePermission("combustibles:manage_vehicles") }
+  try { session = await requirePermission("combustibles:manage_vehicles", "/combustibles") }
   catch { return { ok: false, message: "Sin permisos" } }
 
   const existing = await db.query.fuelVehicles.findFirst({ where: eq(fuelVehicles.id, id) })
@@ -228,7 +228,7 @@ export async function toggleFuelVehicleActiveAction(id: string, activate: boolea
 
 export async function bulkToggleFuelVehicleActiveAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   let session
-  try { session = await requirePermission("combustibles:manage_vehicles") }
+  try { session = await requirePermission("combustibles:manage_vehicles", "/combustibles") }
   catch { return { ok: false, message: "Sin permisos" } }
 
   const idsRaw = formData.get("ids") as string
@@ -263,7 +263,7 @@ export async function bulkToggleFuelVehicleActiveAction(_prev: ActionState, form
 
 export async function importFuelVehiclesFromXlsx(_prev: ActionState, formData: FormData): Promise<ActionState> {
   let session
-  try { session = await requirePermission("combustibles:manage_vehicles") }
+  try { session = await requirePermission("combustibles:manage_vehicles", "/combustibles") }
   catch { return { ok: false, message: "Sin permisos" } }
 
   const file = formData.get("file")

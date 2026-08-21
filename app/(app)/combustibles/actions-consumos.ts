@@ -98,7 +98,7 @@ export async function previewConsumptionImportAction(
   formData: FormData,
 ): Promise<{ ok: true; data: ConsumptionPreviewData } | { ok: false; message: string }> {
   let session
-  try { session = await requirePermission("combustibles:import") }
+  try { session = await requirePermission("combustibles:import", "/combustibles/importar") }
   catch { return { ok: false, message: "Sin permisos" } }
 
   const form = await readImportForm(formData)
@@ -163,7 +163,7 @@ export async function confirmConsumptionImportAction(
   formData: FormData,
 ): Promise<{ ok: true; data: ConsumptionImportResult } | { ok: false; message: string }> {
   let session
-  try { session = await requirePermission("combustibles:import") }
+  try { session = await requirePermission("combustibles:import", "/combustibles/importar") }
   catch { return { ok: false, message: "Sin permisos" } }
 
   const form = await readImportForm(formData)
@@ -305,7 +305,7 @@ export async function confirmConsumptionImportAction(
 
 export async function revertBatchAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   let session
-  try { session = await requirePermission("combustibles:revert") }
+  try { session = await requirePermission("combustibles:revert", "/combustibles/importar") }
   catch { return { ok: false, message: "Sin permisos" } }
 
   const batchId = String(formData.get("batchId") ?? "")
@@ -339,7 +339,7 @@ export async function revertBatchAction(_prev: ActionState, formData: FormData):
 
 export async function linkConsumptionPlateAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   let session
-  try { session = await requirePermission("combustibles:manage_vehicles") }
+  try { session = await requirePermission("combustibles:manage_vehicles", "/combustibles/importar") }
   catch { return { ok: false, message: "Sin permisos" } }
 
   const batchId = String(formData.get("batchId") ?? "")

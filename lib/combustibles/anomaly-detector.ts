@@ -15,7 +15,7 @@ import {
 } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { todayInChile } from "@/lib/utils"
-import { createAnomalyCase } from "./anomaly-cases"
+import { createAnomalyCase, type AnomalySeverity } from "./anomaly-cases"
 import { detectCorruptEvidence, getReusedEvidence } from "./evidence-management"
 import { DEFAULT_OUTLIER_THRESHOLD_STDDEVS, MIN_CONCLUSIVE_SAMPLE, flagOutliers } from "./performance-statistics"
 
@@ -162,7 +162,19 @@ export async function runAllBatchRules(): Promise<Array<{ ruleCode: string; crea
   return results
 }
 
-type DetectorFn = (rule: { id: string; code: string; config: string | null }) => Promise<{ created: number; skipped: number; scanned: number }>
+type DetectorFn = (rule: { id: string; code: string; config: string | null; severity?: string | null }) => Promise<{ created: number; skipped: number; scanned: number }>
+
+/**
+ * La severidad configurada en la regla gobierna el caso.
+ *
+ * El formulario de reglas ofrece elegirla, pero cada detector escribía un
+ * literal: cambiarla en pantalla no movía ni un caso. El literal queda como
+ * valor por omisión para una regla sin severidad válida.
+ */
+export function severityOf(rule: { severity?: string | null }, fallback: AnomalySeverity): AnomalySeverity {
+  const value = rule.severity
+  return value === "low" || value === "medium" || value === "high" || value === "critical" ? value : fallback
+}
 
 /**
  * Observaciones de rendimiento con id de fila propio, para las reglas de
@@ -208,7 +220,7 @@ const detectPerformanceOutlierHistory: DetectorFn = async (rule) => {
       scanned++
       try {
         await createAnomalyCase({
-          ruleId: rule.id, ruleCode: "rendimiento_fuera_historico", severity: "high",
+          ruleId: rule.id, ruleCode: "rendimiento_fuera_historico", severity: severityOf(rule, "high"),
           worksiteId: row.worksiteId ?? undefined, vehicleId: row.vehicleId,
           referenceEntityType: "fuel_operation_record", referenceEntityId: row.id,
           description: `Rendimiento de ${row.plate} (${row.rendimiento}) se aparta más de ${perVehicleThreshold} desviaciones estándar de su propio historial.`,
@@ -257,7 +269,7 @@ const detectPerformanceOutlierGroup: DetectorFn = async (rule) => {
       scanned++
       try {
         await createAnomalyCase({
-          ruleId: rule.id, ruleCode: "rendimiento_fuera_grupo", severity: "medium",
+          ruleId: rule.id, ruleCode: "rendimiento_fuera_grupo", severity: severityOf(rule, "medium"),
           worksiteId: row.worksiteId ?? undefined, vehicleId: row.vehicleId,
           referenceEntityType: "fuel_operation_record", referenceEntityId: row.id,
           description: `Rendimiento de ${row.plate} (${row.rendimiento}) se aparta más de ${perGroupThreshold} desviaciones estándar de su grupo comparable ("${row.comparisonGroup}").`,
@@ -301,7 +313,7 @@ const detectLitersExceedCapacity: DetectorFn = async (rule) => {
       scanned++
       try {
         await createAnomalyCase({
-          ruleId: rule.id, ruleCode: "litros_supera_capacidad", severity: "critical",
+          ruleId: rule.id, ruleCode: "litros_supera_capacidad", severity: severityOf(rule, "critical"),
           worksiteId: v.worksiteId, vehicleId: v.vehicleId,
           referenceEntityType: "fuel_tae_submission", referenceEntityId: row.id,
           description: `${Number(row.liters).toLocaleString("es-CL")} L supera la capacidad declarada de ${Number(v.tankCapacityLiters).toLocaleString("es-CL")} L (+${Math.round(margin * 100)}% margen) para el equipo ${v.plate}.`,
@@ -355,7 +367,7 @@ const detectSharpConsumptionChange: DetectorFn = async (rule) => {
         scanned++
         try {
           await createAnomalyCase({
-            ruleId: rule.id, ruleCode: "variacion_brusca_consumo", severity: "medium",
+            ruleId: rule.id, ruleCode: "variacion_brusca_consumo", severity: severityOf(rule, "medium"),
             worksiteId: curr.worksiteId ?? undefined, vehicleId: curr.vehicleId ?? undefined,
             // Singular, como los otros 5 detectores: en plural, `fuelLogEntityType()`
             // (fuel-log.ts) nunca lo emite y el enlace "Abrir caso relacionado" no matcheaba.
@@ -417,7 +429,7 @@ const detectConsumptionWhileInactive: DetectorFn = async (rule) => {
       // referencian un registro histórico inmutable), ésta vigila una condición vigente
       // — debe poder resurgir en una corrida futura aunque el caso de hoy se haya descartado.
       await createAnomalyCase({
-        ruleId: rule.id, ruleCode: "consumo_durante_inactividad", severity: "high",
+        ruleId: rule.id, ruleCode: "consumo_durante_inactividad", severity: severityOf(rule, "high"),
         worksiteId: v.worksiteId ?? undefined, vehicleId: v.vehicleId,
         referenceEntityType: "fuel_vehicle", referenceEntityId: `${v.vehicleId}:${today}`,
         description: `El equipo ${v.plate} está en estado "${v.operationalStatus}" desde ${interval.startedAt.slice(0, 10)} y tiene cargas registradas después de esa fecha.`,
@@ -450,7 +462,7 @@ const detectUnusualSupplier: DetectorFn = async (rule) => {
     scanned++
     try {
       await createAnomalyCase({
-        ruleId: rule.id, ruleCode: "proveedor_no_habitual", severity: "low",
+        ruleId: rule.id, ruleCode: "proveedor_no_habitual", severity: severityOf(rule, "low"),
         worksiteId: row.worksiteId, vehicleId: row.vehicleId,
         referenceEntityType: "fuel_load", referenceEntityId: row.loadId,
         description: `Carga de ${row.plate} facturada con un proveedor distinto del habitual declarado para el equipo.`,
@@ -475,7 +487,7 @@ const detectDuplicateEvidenceRule: DetectorFn = async (rule) => {
     const first = submissions[0]
     try {
       await createAnomalyCase({
-        ruleId: rule.id, ruleCode: "evidencia_duplicada", severity: "low",
+        ruleId: rule.id, ruleCode: "evidencia_duplicada", severity: severityOf(rule, "low"),
         worksiteId: first?.worksiteId ?? undefined, vehicleId: first?.vehicleId ?? undefined,
         referenceEntityType: "fuel_tae_evidence_hash", referenceEntityId: hash,
         description: `La misma fotografía (SHA-256 ${hash.slice(0, 12)}…) aparece en ${submissionIds.length} cargas distintas: ${submissionIds.join(", ")}.`,
@@ -498,7 +510,7 @@ const detectCorruptEvidenceRule: DetectorFn = async (rule) => {
       .from(fuelTaeSubmissions).where(eq(fuelTaeSubmissions.id, item.submissionId)).limit(1)
     try {
       await createAnomalyCase({
-        ruleId: rule.id, ruleCode: "evidencia_ilegible", severity: "medium",
+        ruleId: rule.id, ruleCode: "evidencia_ilegible", severity: severityOf(rule, "medium"),
         worksiteId: submission?.worksiteId ?? undefined, vehicleId: submission?.vehicleId ?? undefined,
         referenceEntityType: "fuel_tae_evidence", referenceEntityId: item.evidenceId,
         description: `Evidencia "${item.fileName ?? item.evidenceId}" ilegible: ${item.reason}.`,

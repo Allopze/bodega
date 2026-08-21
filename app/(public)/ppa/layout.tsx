@@ -1,5 +1,6 @@
 import type { Metadata } from "next"
 import { PwaRegister } from "@/components/pwa/pwa-register"
+import { isRouteOperational } from "@/lib/services/module-toggles"
 
 export const metadata: Metadata = {
   title: "PPA Digital: Para, Piensa y Actúa",
@@ -20,6 +21,18 @@ export const metadata: Metadata = {
 // forma intermitente los tests E2E de offline/cache. /ppa-sw.js además era
 // una versión más simple sin los fixes P0-P3 (FIFO eviction, cache versionado)
 // que ya tiene sw.js.
-export default function PpaLayout({ children }: { children: React.ReactNode }) {
+export default async function PpaLayout({ children }: { children: React.ReactNode }) {
+  // La PWA es anónima: si no se gatea aquí, apagar el módulo sólo oculta la
+  // navegación interna y el QR sigue generando registros legales firmados.
+  if (!await isRouteOperational("/prevencion/ppa")) {
+    return (
+      <main className="mx-auto flex min-h-screen max-w-lg items-center px-5 py-12">
+        <section className="w-full rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+          <h1 className="text-xl font-semibold text-slate-950">PPA Digital no disponible</h1>
+          <p className="mt-2 text-sm text-slate-600">La evaluación preventiva fue desactivada temporalmente. Contacta al administrador antes de iniciar el trabajo.</p>
+        </section>
+      </main>
+    )
+  }
   return <><PwaRegister />{children}</>
 }

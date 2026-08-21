@@ -3,6 +3,7 @@ import { requirePermission } from "@/lib/auth/can"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { getFuelReportsData } from "@/lib/combustibles/reports"
+import { assertFuelCostAccess } from "@/lib/operational-control/capabilities"
 import { ReportsView } from "./reports-view"
 
 export default async function ReportesPage({
@@ -11,7 +12,10 @@ export default async function ReportesPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>
 }) {
   let session
-  try { session = await requirePermission("combustibles:view_costs") }
+  try {
+    session = await requirePermission("combustibles:view")
+    assertFuelCostAccess(session)
+  }
   catch { redirect("/forbidden") }
 
   const sp = await searchParams

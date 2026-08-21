@@ -13,6 +13,7 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { checkFuelStatementNotifications } from '@/lib/combustibles/notifications'
 import { logger } from '@/lib/logger'
 import { verifyCronSecret } from '@/lib/security/cron-auth'
+import { isRouteOperational } from '@/lib/services/module-toggles'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -28,6 +29,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
   if (!verifyCronSecret(authHeader, secret)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+  if (!await isRouteOperational('/combustibles/cuenta-corriente')) {
+    return NextResponse.json({ error: 'Módulo de combustibles inactivo' }, { status: 503 })
   }
 
   try {

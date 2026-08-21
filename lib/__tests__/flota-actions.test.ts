@@ -11,16 +11,15 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest"
 
+const mockRequirePermission = vi.hoisted(() => vi.fn())
+const mockUploadFleetDocument = vi.hoisted(() => vi.fn(async () => "doc-123"))
+const mockDeleteFleetDocument = vi.hoisted(() => vi.fn(async () => undefined))
+
 // Mock de dependencias
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), revalidateTag: vi.fn() }))
 
 vi.mock("@/lib/auth/can", () => ({
-  requirePermission: vi.fn(async () => ({
-    user: { id: "test-user-id", name: "Test User", email: "test@example.com" },
-    roles: ["admin"],
-    permissions: ["flota:view"],
-    worksiteIds: ["ws-1"],
-  })),
+  requirePermission: mockRequirePermission,
 }))
 
 vi.mock("@/lib/storage/config", () => ({
@@ -42,8 +41,8 @@ vi.mock("@/lib/file-validation", () => ({
 }))
 
 vi.mock("@/lib/services/fleet", () => ({
-  uploadFleetDocument: vi.fn(async () => "doc-123"),
-  deleteFleetDocument: vi.fn(async () => undefined),
+  uploadFleetDocument: mockUploadFleetDocument,
+  deleteFleetDocument: mockDeleteFleetDocument,
 }))
 
 import { uploadFleetDocumentAction, deleteFleetDocumentAction } from "@/app/(app)/flota/actions"
@@ -54,12 +53,15 @@ const prevState: ActionState = { ok: false, message: "" }
 describe("Flota Server Actions", () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockRequirePermission.mockResolvedValue({
+      user: { id: "test-user-id", name: "Test User", email: "test@example.com", permissions: ["flota:view", "flota:manage_documents"], worksiteIds: ["ws-1"] },
+    })
   })
 
   describe("uploadFleetDocumentAction", () => {
     it("debería rechazar sin vehicleId", async () => {
       const formData = new FormData()
-      formData.append("documentType", "seguro")
+      formData.append("documentType", "Seguro")
 
       const result = await uploadFleetDocumentAction(prevState, formData)
 
@@ -80,7 +82,7 @@ describe("Flota Server Actions", () => {
     it("debería rechazar archivo vacío", async () => {
       const formData = new FormData()
       formData.append("vehicleId", "veh-1")
-      formData.append("documentType", "seguro")
+      formData.append("documentType", "Seguro")
       formData.append("file", new File([], "empty.pdf"))
 
       const result = await uploadFleetDocumentAction(prevState, formData)
@@ -92,7 +94,7 @@ describe("Flota Server Actions", () => {
     it("debería rechazar archivo sobre 20MB", async () => {
       const formData = new FormData()
       formData.append("vehicleId", "veh-1")
-      formData.append("documentType", "seguro")
+      formData.append("documentType", "Seguro")
 
       // Crear archivo de 21MB
       const largeBuffer = new Uint8Array(21 * 1024 * 1024)
@@ -108,7 +110,7 @@ describe("Flota Server Actions", () => {
     it("debería aceptar archivo válido bajo 20MB", async () => {
       const formData = new FormData()
       formData.append("vehicleId", "veh-1")
-      formData.append("documentType", "seguro")
+      formData.append("documentType", "Seguro")
 
       // Crear archivo PDF pequeño válido
       const pdfBuffer = new Uint8Array([0x25, 0x50, 0x44, 0x46]) // "%PDF"
@@ -120,6 +122,20 @@ describe("Flota Server Actions", () => {
       expect(result.ok).toBe(true)
       expect(result.message).toContain("Documento subido")
       expect(result.data).toHaveProperty("id", "doc-123")
+      expect(mockRequirePermission).toHaveBeenCalledWith("flota:manage_documents")
+    })
+
+    it("rechaza antes de leer o escribir el archivo sin permiso documental", async () => {
+      mockRequirePermission.mockRejectedValue(new Error("forbidden"))
+      const formData = new FormData()
+      formData.append("vehicleId", "veh-1")
+      formData.append("documentType", "Seguro")
+      formData.append("file", new File([new Uint8Array([0x25, 0x50, 0x44, 0x46])], "small.pdf", { type: "application/pdf" }))
+
+      const result = await uploadFleetDocumentAction(prevState, formData)
+
+      expect(result).toMatchObject({ ok: false })
+      expect(mockUploadFleetDocument).not.toHaveBeenCalled()
     })
   })
 
@@ -142,6 +158,7 @@ describe("Flota Server Actions", () => {
 
       expect(result.ok).toBe(true)
       expect(result.message).toContain("Documento eliminado")
+      expect(mockRequirePermission).toHaveBeenCalledWith("flota:manage_documents")
     })
 
     it("debería funcionar sin vehicleId (opcional)", async () => {
@@ -152,6 +169,17 @@ describe("Flota Server Actions", () => {
 
       expect(result.ok).toBe(true)
       expect(result.message).toContain("Documento eliminado")
+    })
+
+    it("rechaza eliminación sin permiso documental", async () => {
+      mockRequirePermission.mockRejectedValue(new Error("forbidden"))
+      const formData = new FormData()
+      formData.append("documentId", "doc-123")
+
+      const result = await deleteFleetDocumentAction(prevState, formData)
+
+      expect(result).toMatchObject({ ok: false })
+      expect(mockDeleteFleetDocument).not.toHaveBeenCalled()
     })
   })
 })

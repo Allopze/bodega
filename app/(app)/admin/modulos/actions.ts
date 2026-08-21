@@ -20,6 +20,7 @@ export async function toggleModuleAction(
   })
 
   revalidatePath(REVALIDATE)
+  if (toggleResult.ok) revalidatePath("/", "layout")
 
   return {
     ok:      toggleResult.ok,
@@ -41,6 +42,7 @@ export async function toggleSubmoduleAction(
   })
 
   revalidatePath(REVALIDATE)
+  if (toggleResult.ok) revalidatePath("/", "layout")
 
   return {
     ok:      toggleResult.ok,

@@ -3,11 +3,12 @@ import { KpiCard } from "@/components/ui/kpi-card"
 import { MoneyStat } from "@/app/(app)/facturacion/money-stat"
 import { formatCLP } from "@/lib/utils"
 import { getBillingSummary } from "@/lib/services/billing/queries"
-import { getAnalyticsDashboard } from "@/lib/services/analytics-module/dashboard"
+import { getPurchasingFinancialSummary } from "@/lib/services/analytics-module/dashboard"
 import { getDashboardData } from "@/lib/services/dashboard"
 import { getFuelMonthlyTrend } from "@/lib/services/dashboard-fleet-maintenance"
 import { getOverdueFuelDebt } from "@/lib/services/dashboard-domains-data"
 import { getOperationalCalendarBounds } from "@/lib/services/operational-period-metrics"
+import { isGlobalRole } from "@/lib/auth/scope"
 import { DASHBOARD_DOMAINS } from "../dashboard-domains"
 import { DomainSection, type DomainKpiGroup } from "../dashboard-domain-shell"
 import { periodScopeLabel, scopedWorksiteId } from "../dashboard-scope"
@@ -58,7 +59,8 @@ export async function FinanceSection({ session, scope }: DomainSectionsProps) {
     scope.period === "mes"
       ? `/facturacion/facturas?periodo=${billingPeriod}${extra}`
       : `/facturacion/facturas${extra ? `?${extra.replace(/^&/, "")}` : ""}`
-  const canSeeFuelCosts = has("combustibles:view_costs")
+  const canSeeFuelCosts = has("combustibles:view") && has("combustibles:view_costs")
+  const canSeeFuelDebt = canSeeFuelCosts && isGlobalRole(session)
   const canSeePurchasing = has("purchasing:view")
 
   const [billing, analytics, fuelTrend, debt, dashboardData] = await Promise.all([
@@ -66,19 +68,19 @@ export async function FinanceSection({ session, scope }: DomainSectionsProps) {
       ? getBillingSummary(session, { period: billingPeriod, ...billingWindow, ...(worksiteId ? { worksiteId } : {}) }).catch(() => null)
       : Promise.resolve(null),
     canSeePurchasing
-      ? getAnalyticsDashboard(session, {
+      ? getPurchasingFinancialSummary(session, {
           fromDate: bounds.currentStart.slice(0, 10),
           toDate: bounds.currentEnd.slice(0, 10),
           ...(worksiteId ? { worksiteId } : {}),
         })
       : Promise.resolve(null),
     canSeeFuelCosts ? getFuelMonthlyTrend(session, 6, worksiteId) : Promise.resolve([]),
-    canSeeFuelCosts ? getOverdueFuelDebt(bounds.currentEnd.slice(0, 10)) : Promise.resolve({ amount: 0, statements: 0 }),
+    canSeeFuelDebt ? getOverdueFuelDebt(bounds.currentEnd.slice(0, 10)) : Promise.resolve({ amount: 0, statements: 0 }),
     canSeePurchasing ? getDashboardData(session, worksiteId).catch(() => null) : Promise.resolve(null),
   ])
 
   const periodo = periodScopeLabel(scope.period).toLocaleLowerCase("es-CL")
-  const fuelCost = fuelTrend.reduce((sum, point) => sum + point.amount, 0)
+  const fuelCost = fuelTrend.reduce((sum, point) => sum + (point.amount ?? 0), 0)
 
   /*
    * Los gráficos de ranking dibujan **una sola moneda**.
@@ -112,7 +114,7 @@ export async function FinanceSection({ session, scope }: DomainSectionsProps) {
    * nunca mostró (auditoría 2026-08-19, REC-08/API-05).
    */
   const notes = [
-    debt.statements > 0 && worksiteId
+    canSeeFuelDebt && debt.statements > 0 && worksiteId
       ? "La deuda de cuenta corriente es por proveedor: no se puede repartir por faena."
       : null,
   ].filter(Boolean)
@@ -160,13 +162,13 @@ export async function FinanceSection({ session, scope }: DomainSectionsProps) {
           )}
           {analytics && (
             <KpiCard icon={<Timer size={16} />} label="Ticket medio por OC" value={formatCLP(analytics.kpis.averageOrderAmount)}
-              detail={`Monto promedio · ${periodo}`} href="/analitica" />
+              detail={`Monto promedio · ${periodo}`} href={has("analytics:view") ? "/analitica" : "/compras"} />
           )}
           {canSeeFuelCosts && (
             <KpiCard icon={<Gauge size={16} />} label="Costo de combustible" value={formatCLP(fuelCost)}
               detail="Cargas facturadas · últimos 6 meses" href="/combustibles" />
           )}
-          {canSeeFuelCosts && (
+          {canSeeFuelDebt && (
             <KpiCard icon={<Warning size={16} />} label="Deuda vencida" value={formatCLP(debt.amount)}
               detail={debt.statements > 0 ? `${debt.statements} cuenta(s) · hoy` : "Sin cuentas vencidas, hoy"}
               tone={debt.amount > 0 ? "signal" : "neutral"} href="/combustibles/cuenta-corriente" />
@@ -185,7 +187,8 @@ export async function FinanceSection({ session, scope }: DomainSectionsProps) {
       label: null,
       content: (
         <KpiCard icon={<CurrencyDollar size={16} />} label="Facturación" value="Sin datos"
-          detail="Sincroniza un período para ver los indicadores" href="/facturacion/sincronizacion" />
+          detail={has("billing:manage_sync") ? "Sincroniza un período para ver los indicadores" : "No hay indicadores disponibles para el período"}
+          href={has("billing:manage_sync") ? "/facturacion/sincronizacion" : has("billing:view") ? "/facturacion" : undefined} />
       ),
     })
   }
@@ -195,9 +198,9 @@ export async function FinanceSection({ session, scope }: DomainSectionsProps) {
       domain={DASHBOARD_DOMAINS.finanzas}
       note={notes.length > 0 ? notes.join(" ") : undefined}
       links={[
-        { label: "Facturación", href: "/facturacion" },
-        { label: "Compras", href: "/compras" },
-        { label: "Analítica", href: "/analitica" },
+        ...(has("billing:view") ? [{ label: "Facturación", href: "/facturacion" }] : []),
+        ...(canSeePurchasing ? [{ label: "Compras", href: "/compras" }] : []),
+        ...(has("analytics:view") ? [{ label: "Analítica", href: "/analitica" }] : []),
       ]}
       kpiGroups={kpiGroups}
       charts={

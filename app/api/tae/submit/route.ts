@@ -7,6 +7,7 @@ import { validateFileBuffer, MimeType } from "@/lib/file-validation"
 import { createTaeSubmission, type TaeEvidenceKind, type TaeEvidenceUpload } from "@/lib/services/fuel-tae"
 import { taeEvidenceKinds, taePublicSubmissionSchema } from "@/lib/validation/fuel-tae"
 import { extractMeterReading } from "@/lib/services/tae-ocr"
+import { isRouteOperational } from "@/lib/services/module-toggles"
 
 export const runtime = "nodejs"
 
@@ -27,6 +28,9 @@ async function validateImageDimensions(buffer: Buffer) {
 }
 
 export async function POST(request: Request) {
+  if (!await isRouteOperational("/combustibles/tae")) {
+    return NextResponse.json({ ok: false, message: "Control TAE temporalmente inactivo" }, { status: 503 })
+  }
   const requestHeaders = await headers()
   const ipAddress = requestHeaders.get("x-forwarded-for")?.split(",")[0]?.trim() || "127.0.0.1"
   const volumeLimit = await consumeFixedWindowLimit(`tae:submit-volume:ip:${ipAddress}`, { maxAttempts: 120, lockMs: 15 * 60 * 1000 })

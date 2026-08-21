@@ -9,15 +9,17 @@ import {
   fuelVehicles,
   worksites,
 } from "@/db/schema"
+import { accountableFuelLoadsWhere } from "@/lib/combustibles/load-status"
 import { worksiteScopeSql } from "@/lib/auth/scope"
 import { previousPeriod } from "@/lib/services/analytics-module/helpers"
 import { buildConsumptionWhere, type ConsumptionFilters } from "./consumption-queries"
 import { mergeFuelControlWorksites, percentVariation, type FuelControlWorksiteRow } from "./fuel-control-overview.helpers"
+import { can } from "@/lib/auth/can"
 
 export interface FuelControlOverview {
   billed: {
     liters: number
-    amount: number
+    amount: number | null
     records: number
     variationLitersPct: number | null
   }
@@ -40,10 +42,11 @@ interface FuelControlOverviewOptions {
 }
 
 export async function getFuelControlOverview(session: Session, options: FuelControlOverviewOptions): Promise<FuelControlOverview> {
+  const canViewCosts = can(session, "combustibles:view") && can(session, "combustibles:view_costs")
   const { filters } = options
   const previous = previousPeriod(filters.fromDate, filters.toDate)
   const billingWhere = and(
-    ne(fuelLoads.status, "cancelled"),
+    accountableFuelLoadsWhere(),
     gte(fuelLoads.loadDate, filters.fromDate),
     lte(fuelLoads.loadDate, filters.toDate),
     filters.worksiteId ? eq(fuelLoads.worksiteId, filters.worksiteId) : undefined,
@@ -52,7 +55,7 @@ export async function getFuelControlOverview(session: Session, options: FuelCont
     worksiteScopeSql(session, fuelLoads.worksiteId),
   )
   const previousBillingWhere = and(
-    ne(fuelLoads.status, "cancelled"),
+    accountableFuelLoadsWhere(),
     gte(fuelLoads.loadDate, previous.fromDate),
     lte(fuelLoads.loadDate, previous.toDate),
     filters.worksiteId ? eq(fuelLoads.worksiteId, filters.worksiteId) : undefined,
@@ -65,7 +68,7 @@ export async function getFuelControlOverview(session: Session, options: FuelCont
   const [[billing], [previousBilling], billedByWorksite, tctByWorksite, taeResult] = await Promise.all([
     db.select({
       liters: sql<number>`coalesce(sum(${fuelLoads.liters}), 0)`,
-      amount: sql<number>`coalesce(sum(${fuelLoads.totalAmount}), 0)`,
+      amount: canViewCosts ? sql<number>`coalesce(sum(${fuelLoads.totalAmount}), 0)` : sql<null>`null`,
       records: sql<number>`count(*)`,
     }).from(fuelLoads).innerJoin(fuelVehicles, eq(fuelVehicles.id, fuelLoads.vehicleId)).where(billingWhere),
     db.select({ liters: sql<number>`coalesce(sum(${fuelLoads.liters}), 0)` })
@@ -96,7 +99,7 @@ export async function getFuelControlOverview(session: Session, options: FuelCont
   return {
     billed: {
       liters: billedLiters,
-      amount: Number(billing?.amount ?? 0),
+      amount: canViewCosts ? Number(billing?.amount ?? 0) : null,
       records: Number(billing?.records ?? 0),
       variationLitersPct: percentVariation(billedLiters, Number(previousBilling?.liters ?? 0)),
     },

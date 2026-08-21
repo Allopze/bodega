@@ -1,3 +1,11 @@
+# TODO activo actual
+
+- [Control operacional — seguimiento 2026-08-20](./TODO_CONTROL_OPERACIONAL_2026-08-20.md)
+
+Los TODO históricos se conservan sin modificaciones debajo.
+
+---
+
 # TODO — retiro del espejo `pdtp_action_plan` (D11)
 
 ## Alcance activo

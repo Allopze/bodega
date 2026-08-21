@@ -16,7 +16,7 @@ interface ConsumptionRecordRow {
   numeroTarjetas: number
   numeroTransacciones: number
   cantidadUnidad: number
-  monto: number
+  monto: number | null
   precioPromedioUnidad: number | null
   rendimientoPromedio: number
   periodoDesde: string
@@ -30,9 +30,10 @@ interface ConsumptionDetailTableProps {
   page: number
   totalPages: number
   total: number
+  canViewCosts: boolean
 }
 
-export function ConsumptionDetailTable({ rows, page, totalPages, total }: ConsumptionDetailTableProps) {
+export function ConsumptionDetailTable({ rows, page, totalPages, total, canViewCosts }: ConsumptionDetailTableProps) {
   const searchParams = useSearchParams()
   const pageHref = (nextPage: number) => buildConsumptionHref(
     searchParams.toString(),
@@ -77,8 +78,8 @@ export function ConsumptionDetailTable({ rows, page, totalPages, total }: Consum
               <TableHead className="text-right">Tarjetas</TableHead>
               <TableHead className="text-right">Transacc.</TableHead>
               <TableHead className="text-right">Cantidad</TableHead>
-              <TableHead className="text-right">Monto</TableHead>
-              <TableHead className="text-right">Precio prom.</TableHead>
+              {canViewCosts && <TableHead className="text-right">Monto</TableHead>}
+              {canViewCosts && <TableHead className="text-right">Precio prom.</TableHead>}
               <TableHead className="text-right">Rendimiento</TableHead>
               <TableHead>Período</TableHead>
               <TableHead>Fuente</TableHead>
@@ -88,7 +89,7 @@ export function ConsumptionDetailTable({ rows, page, totalPages, total }: Consum
           <TableBody>
             {rows.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={11} className="text-center py-8 text-[var(--color-text-muted)]">
+                <TableCell colSpan={canViewCosts ? 11 : 9} className="text-center py-8 text-[var(--color-text-muted)]">
                   No hay registros de consumo importados para estos filtros
                 </TableCell>
               </TableRow>
@@ -104,10 +105,10 @@ export function ConsumptionDetailTable({ rows, page, totalPages, total }: Consum
                   <TableCell className="text-right font-mono">{formatQty(row.numeroTarjetas)}</TableCell>
                   <TableCell className="text-right font-mono">{formatQty(row.numeroTransacciones)}</TableCell>
                   <TableCell className="text-right font-mono">{formatQty(row.cantidadUnidad, "L")}</TableCell>
-                  <TableCell className="text-right font-mono">{formatCLP(row.monto)}</TableCell>
-                  <TableCell className="text-right font-mono">
+                  {canViewCosts && <TableCell className="text-right font-mono">{formatCLP(row.monto ?? 0)}</TableCell>}
+                  {canViewCosts && <TableCell className="text-right font-mono">
                     {row.precioPromedioUnidad != null ? `${formatCLP(row.precioPromedioUnidad)}/L` : "—"}
-                  </TableCell>
+                  </TableCell>}
                   <TableCell className="text-right font-mono">{row.rendimientoPromedio > 0 ? row.rendimientoPromedio.toFixed(2) : "—"}</TableCell>
                   <TableCell className="font-mono text-xs">{row.periodoDesde} a {row.periodoHasta}</TableCell>
                   <TableCell className="max-w-32 truncate">{row.fuente ?? "—"}</TableCell>

@@ -18,6 +18,9 @@ vi.mock("@/db", () => ({
 
 vi.mock("@/lib/id", () => ({ nanoid: () => "id-new" }))
 vi.mock("@/lib/logger", () => ({ logger: { error: vi.fn(), warn: vi.fn() } }))
+vi.mock("@/lib/services/module-toggles", () => ({
+  isRouteOperational: vi.fn(async () => true),
+}))
 
 const session = { user: { id: "user-1", isGlobal: true, worksiteIds: [] as string[], permissions: ["combustibles:import"] } }
 

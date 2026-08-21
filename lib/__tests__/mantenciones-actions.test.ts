@@ -7,7 +7,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest"
 const mockRequirePermission = vi.hoisted(() => vi.fn())
 const mockCreateMaintenance = vi.hoisted(() => vi.fn(() => "maint-1"))
 const mockUpdateMaintenance = vi.hoisted(() => vi.fn())
-const mockCancelMaintenance = vi.hoisted(() => vi.fn())
+const mockTransitionMaintenance = vi.hoisted(() => vi.fn())
 
 vi.mock("@/lib/auth/can", () => ({
   requirePermission: mockRequirePermission,
@@ -16,7 +16,7 @@ vi.mock("@/lib/auth/can", () => ({
 vi.mock("@/lib/services/maintenance", () => ({
   createMaintenanceRecord: mockCreateMaintenance,
   updateMaintenanceRecord: mockUpdateMaintenance,
-  cancelMaintenanceRecord: mockCancelMaintenance,
+  transitionMaintenanceRecord: mockTransitionMaintenance,
 }))
 
 vi.mock("@/lib/logger", () => ({
@@ -29,6 +29,7 @@ import {
   createMaintenanceRecordAction,
   updateMaintenanceRecordAction,
   cancelMaintenanceRecordAction,
+  transitionMaintenanceRecordAction,
 } from "@/app/(app)/mantenciones/actions"
 import type { ActionState } from "@/lib/validation/masters"
 
@@ -51,7 +52,7 @@ function makeFormData(overrides: Record<string, string | number> = {}): FormData
   fd.set("vehicleId", "v-1")
   fd.set("maintenanceDate", "2025-06-15")
   fd.set("maintenanceType", "correctiva")
-  fd.set("status", "completed")
+  fd.set("status", "scheduled")
   fd.set("netAmount", "100000")
   fd.set("taxAmount", "19000")
   fd.set("totalAmount", "119000")
@@ -140,27 +141,45 @@ describe("cancelMaintenanceRecordAction", () => {
 
   it("returns error if permission denied", async () => {
     mockRequirePermission.mockRejectedValueOnce(new Error("no"))
-    const res = await cancelMaintenanceRecordAction("m-1")
+    const res = await cancelMaintenanceRecordAction("m-1", "scheduled", "Orden duplicada")
     expect(res.ok).toBe(false)
     expect(res.message).toContain("Sin permisos")
   })
 
   it("returns error if id is empty", async () => {
-    const res = await cancelMaintenanceRecordAction("")
+    const res = await cancelMaintenanceRecordAction("", "scheduled", "Orden duplicada")
     expect(res.ok).toBe(false)
     expect(res.message).toContain("ID requerido")
   })
 
   it("cancels maintenance successfully", async () => {
-    const res = await cancelMaintenanceRecordAction("m-1")
+    mockTransitionMaintenance.mockResolvedValueOnce({ status: "cancelled" })
+    const res = await cancelMaintenanceRecordAction("m-1", "scheduled", "Orden duplicada")
     expect(res.ok).toBe(true)
-    expect(res.message).toContain("Mantención cancelada")
+    expect(res.message).toContain("Estado de mantención actualizado")
+    expect(mockTransitionMaintenance).toHaveBeenCalledWith(expect.anything(), {
+      id: "m-1",
+      expectedStatus: "scheduled",
+      transition: "cancel",
+      reason: "Orden duplicada",
+    })
   })
 
   it("returns error on service failure", async () => {
-    mockCancelMaintenance.mockRejectedValueOnce(new Error("Already cancelled"))
-    const res = await cancelMaintenanceRecordAction("m-1")
+    mockTransitionMaintenance.mockRejectedValueOnce(new Error("Already cancelled"))
+    const res = await cancelMaintenanceRecordAction("m-1", "scheduled", "Orden duplicada")
     expect(res.ok).toBe(false)
     expect(res.message).toContain("Already cancelled")
+  })
+
+  it("rechaza una transición sin motivo antes de llamar al servicio", async () => {
+    const res = await transitionMaintenanceRecordAction({
+      id: "m-1",
+      expectedStatus: "in_progress",
+      transition: "complete",
+      reason: "ok",
+    })
+    expect(res.ok).toBe(false)
+    expect(mockTransitionMaintenance).not.toHaveBeenCalled()
   })
 })

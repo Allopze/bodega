@@ -23,12 +23,17 @@ vi.mock("@/db", () => ({
 await migratePGlite(pg, path.resolve(process.cwd(), "db/migrations"))
 
 const { reviewTaeSubmission, isOutsideOperatingSchedule } = await import("@/lib/services/fuel-tae")
-const { seedAnomalyRulesIfEmpty, getAnomalyCases, updateAnomalyCaseStatus } = await import("@/lib/combustibles/anomaly-cases")
+const { seedAnomalyRulesIfEmpty, getAnomalyCases, updateAnomalyCaseStatus, assignAnomalyCase, addAnomalyComment } = await import("@/lib/combustibles/anomaly-cases")
+const { severityOf } = await import("@/lib/combustibles/anomaly-detector")
+const { KNOWN_RULE_CODES } = await import("@/lib/combustibles/validation")
 
 /** Rol global: estas pruebas verifican la detección, no el alcance por faena. */
 const TEST_SESSION = { user: { id: "test-user", isGlobal: true, worksiteIds: [] } } as unknown as import("next-auth").Session
+const scopedSession = (userId: string, worksiteIds: string[]) => ({
+  user: { id: userId, email: "reviewer@example.com", isGlobal: false, worksiteIds, roles: [], permissions: [], primaryWorksiteId: worksiteIds[0] ?? null, avatarColor: null, isActive: true },
+}) as unknown as import("next-auth").Session
 const { runAllBatchRules } = await import("@/lib/combustibles/anomaly-detector")
-const { fuelAnomalyRules, fuelAnomalyCases, fuelTaeSubmissions, fuelTaeEvidence } = schema
+const { fuelAnomalyRules, fuelAnomalyCases, fuelAnomalyComments, fuelTaeSubmissions, fuelTaeEvidence } = schema
 
 /**
  * Prueba de integración PostgreSQL del motor de detección de anomalías
@@ -135,12 +140,77 @@ describe("anomaly detection engine (PostgreSQL integration)", () => {
     const { cases } = await getAnomalyCases({ referenceEntityType: "fuel_tae_submission", referenceEntityId: submission.id }, TEST_SESSION)
     const created = cases.find((c) => c.ruleCode === "identidad_incompleta")!
 
-    await expect(updateAnomalyCaseStatus(created.id, "dismissed", userId)).rejects.toThrow(/motivo/i)
-    await expect(updateAnomalyCaseStatus(created.id, "dismissed", userId, "   ")).rejects.toThrow(/motivo/i)
+    const session = scopedSession(userId, [worksiteHome])
+    await expect(updateAnomalyCaseStatus(session, created.id, "open", "dismissed")).rejects.toThrow(/motivo/i)
+    await expect(updateAnomalyCaseStatus(session, created.id, "open", "dismissed", "   ")).rejects.toThrow(/motivo/i)
 
-    const resolved = await updateAnomalyCaseStatus(created.id, "dismissed", userId, "Confirmado con el conductor en terreno")
+    const resolved = await updateAnomalyCaseStatus(session, created.id, "open", "dismissed", "Confirmado con el conductor en terreno")
     expect(resolved.status).toBe("dismissed")
     expect(resolved.resolution).toBe("Confirmado con el conductor en terreno")
+  })
+
+  it("impide cambiar, asignar o comentar un caso de otra faena", async () => {
+    const rule = await inMemoryDb.query.fuelAnomalyRules.findFirst()
+    const foreignCaseId = nanoid()
+    await inMemoryDb.insert(fuelAnomalyCases).values({
+      id: foreignCaseId,
+      ruleId: rule!.id,
+      ruleCode: "scope_test",
+      severity: "high",
+      worksiteId: worksiteOther,
+      description: "Caso fuera de alcance",
+      status: "open",
+    })
+    const session = scopedSession(userId, [worksiteHome])
+
+    await expect(updateAnomalyCaseStatus(session, foreignCaseId, "open", "in_review")).rejects.toThrow(/no encontrado/i)
+    await expect(assignAnomalyCase(session, foreignCaseId, null, userId)).rejects.toThrow(/no encontrado/i)
+    await expect(addAnomalyComment(session, foreignCaseId, "No debería persistir")).rejects.toThrow(/no encontrado/i)
+
+    const persisted = await inMemoryDb.query.fuelAnomalyCases.findFirst({ where: eq(fuelAnomalyCases.id, foreignCaseId) })
+    expect(persisted?.status).toBe("open")
+    expect(persisted?.assigneeId).toBeNull()
+    const comments = await inMemoryDb.query.fuelAnomalyComments.findMany({ where: eq(fuelAnomalyComments.caseId, foreignCaseId) })
+    expect(comments).toHaveLength(0)
+  })
+
+  it("rechaza transiciones inválidas y actualizaciones sobre un estado obsoleto", async () => {
+    const rule = await inMemoryDb.query.fuelAnomalyRules.findFirst()
+    const caseId = nanoid()
+    await inMemoryDb.insert(fuelAnomalyCases).values({
+      id: caseId,
+      ruleId: rule!.id,
+      ruleCode: "transition_test",
+      severity: "medium",
+      worksiteId: worksiteHome,
+      description: "Caso para transición",
+      status: "open",
+    })
+    const session = scopedSession(userId, [worksiteHome])
+
+    await expect(updateAnomalyCaseStatus(session, caseId, "open", "reopened")).rejects.toThrow(/no se puede cambiar/i)
+    await updateAnomalyCaseStatus(session, caseId, "open", "in_review")
+    await expect(updateAnomalyCaseStatus(session, caseId, "open", "dismissed", "obsoleto")).rejects.toThrow(/cambió de estado/i)
+  })
+
+  it("impide sobrescribir una asignación que cambió desde que se cargó la pantalla", async () => {
+    const rule = await inMemoryDb.query.fuelAnomalyRules.findFirst()
+    const caseId = nanoid()
+    await inMemoryDb.insert(fuelAnomalyCases).values({
+      id: caseId,
+      ruleId: rule!.id,
+      ruleCode: "assignment_race_test",
+      severity: "medium",
+      worksiteId: worksiteHome,
+      description: "Caso para concurrencia de asignación",
+      status: "open",
+      assigneeId: userId,
+    })
+    const session = scopedSession(userId, [worksiteHome])
+
+    await expect(assignAnomalyCase(session, caseId, null, null)).rejects.toThrow(/asignación cambió/i)
+    const persisted = await inMemoryDb.query.fuelAnomalyCases.findFirst({ where: eq(fuelAnomalyCases.id, caseId) })
+    expect(persisted?.assigneeId).toBe(userId)
   })
 
   it("evidencia_faltante cuenta evidencias reales, no un valor fijo", async () => {
@@ -708,5 +778,26 @@ describe("evidencia_ilegible (batch — corrupt/unreadable evidence)", () => {
     const { cases } = await getAnomalyCases({ ruleCode: "evidencia_ilegible" }, TEST_SESSION)
     // Puede tener 1 o 2 casos dependiendo de si la corrida anterior dejó casos
     expect(cases.length).toBeGreaterThan(0)
+  })
+})
+
+// CO-018 / CO-019: la severidad configurable no gobernaba ningún caso (cada
+// detector escribía un literal) y `carga_duplicada` se sembraba activa sin
+// catálogo ni detector: la pantalla mostraba una regla viva que nunca abría un
+// caso. Esta prueba fija la paridad seed ↔ catálogo ↔ motor y el gobierno real
+// de la severidad.
+describe("paridad de reglas y severidad efectiva", () => {
+  it("toda regla sembrada existe en el catálogo compartido", async () => {
+    await seedAnomalyRulesIfEmpty()
+    const seeded = await inMemoryDb.select({ code: schema.fuelAnomalyRules.code }).from(schema.fuelAnomalyRules)
+    const unknown = seeded.map((rule) => rule.code).filter((code) => !(KNOWN_RULE_CODES as readonly string[]).includes(code))
+    expect(unknown).toEqual([])
+  })
+
+  it("la severidad de la regla manda sobre el literal del detector", () => {
+    expect(severityOf({ severity: "critical" }, "low")).toBe("critical")
+    // Fallback sólo para una regla sin severidad válida.
+    expect(severityOf({ severity: null }, "medium")).toBe("medium")
+    expect(severityOf({ severity: "inventada" }, "high")).toBe("high")
   })
 })

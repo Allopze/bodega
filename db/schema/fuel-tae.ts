@@ -252,6 +252,11 @@ export const fuelSealMovements = pgTable("fuel_seal_movements", {
   createdAt:       timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [
   check("fuel_seal_movements_type_valid", sql`${table.movementType} IN ('removed', 'installed')`),
+  // Un envío registra a lo más un movimiento por tipo y sello. Revalidar una
+  // carga (validada → observada → validada) volvía a insertar el retiro: el
+  // historial del sello mostraba dos retiros del mismo sello en el mismo acto.
+  uniqueIndex("fuel_seal_movements_submission_type_seal_unique")
+    .on(table.submissionId, table.movementType, table.sealNumber),
   index("fuel_seal_movements_submission_idx").on(table.submissionId),
   index("fuel_seal_movements_seal_number_idx").on(table.sealNumber),
   index("fuel_seal_movements_type_idx").on(table.movementType),

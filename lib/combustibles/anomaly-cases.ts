@@ -9,13 +9,26 @@
 
 import type { Session } from "next-auth"
 import { and, desc, eq, inArray, sql, type SQL } from "drizzle-orm"
-import { db } from "@/db"
+import { db, type DB, type Tx } from "@/db"
 import { fuelAnomalyCases, fuelAnomalyComments, fuelAnomalyRules, fuelVehicles, worksites, users } from "@/db/schema"
+import { recordAudit, recordStatusChange } from "@/lib/audit"
 import { nanoid } from "@/lib/id"
 import { worksiteScopeSql } from "@/lib/auth/scope"
 
 export type AnomalyCaseStatus = "open" | "in_review" | "resolved" | "dismissed" | "reopened"
 export type AnomalySeverity = "low" | "medium" | "high" | "critical"
+
+const ANOMALY_CASE_TRANSITIONS: Record<AnomalyCaseStatus, readonly AnomalyCaseStatus[]> = {
+  open: ["in_review", "dismissed"],
+  in_review: ["resolved", "dismissed"],
+  resolved: ["reopened"],
+  dismissed: ["reopened"],
+  reopened: ["in_review", "dismissed"],
+}
+
+export function canTransitionAnomalyCase(from: AnomalyCaseStatus, to: AnomalyCaseStatus) {
+  return ANOMALY_CASE_TRANSITIONS[from].includes(to)
+}
 
 export interface AnomalyCaseRow {
   id: string
@@ -168,53 +181,140 @@ export async function getAnomalyCases(filters: AnomalyCasesFilters, session: Ses
  *  Resolver o descartar es una corrección sensible (cierra la investigación de una
  *  posible pérdida de combustible): exige motivo, a diferencia de iniciar revisión o reabrir. */
 export async function updateAnomalyCaseStatus(
+  session: Session,
   caseId: string,
+  expectedStatus: AnomalyCaseStatus,
   status: AnomalyCaseStatus,
-  userId: string,
   resolution?: string,
 ): Promise<AnomalyCaseRow> {
-  const now = new Date().toISOString()
-  const isResolved = status === "resolved" || status === "dismissed"
-  if (isResolved && !(resolution ?? "").trim()) {
-    throw new Error("Debes indicar el motivo para resolver o descartar un caso")
-  }
-  // Antes CUALQUIER estado no resolutivo (incluido "in_review", que no es una
-  // decisión deliberada de reabrir) borraba resolution/resolvedById/resolvedAt
-  // incondicionalmente — mover un caso YA resuelto a "in_review" destruía el
-  // motivo y el responsable de la resolución sin dejar rastro (no hay
-  // recordAudit en esta función ni en su único llamador). Ahora sólo se
-  // escriben esos campos cuando SE resuelve (con el motivo nuevo) o cuando SE
-  // reabre explícitamente (`reopened` — la única transición cuyo nombre dice
-  // "empezar de nuevo"); cualquier otra transición conserva lo que ya había.
-  const resolutionFields = isResolved
-    ? { resolution: resolution ?? null, resolvedById: userId, resolvedAt: now }
-    : status === "reopened"
-      ? { resolution: null, resolvedById: null, resolvedAt: null }
-      : {}
-  const [updated] = await db.update(fuelAnomalyCases).set({
-    status,
-    updatedAt: now,
-    ...resolutionFields,
-  }).where(eq(fuelAnomalyCases.id, caseId)).returning()
-  if (!updated) throw new Error("Caso de anomalía no encontrado")
+  const updated = await db.transaction(async (tx) => {
+    const scope = worksiteScopeSql(session, fuelAnomalyCases.worksiteId)
+    const [current] = await tx.select().from(fuelAnomalyCases)
+      .where(and(eq(fuelAnomalyCases.id, caseId), scope))
+      .for("update")
+      .limit(1)
+    if (!current) throw new Error("Caso de anomalía no encontrado")
+    if (current.status !== expectedStatus) {
+      throw new Error("El caso cambió de estado; actualiza la página antes de continuar")
+    }
+    if (current.status === status) return current
+    if (!canTransitionAnomalyCase(current.status as AnomalyCaseStatus, status)) {
+      throw new Error(`No se puede cambiar el caso de ${current.status} a ${status}`)
+    }
+
+    const isResolved = status === "resolved" || status === "dismissed"
+    if (isResolved && !(resolution ?? "").trim()) {
+      throw new Error("Debes indicar el motivo para resolver o descartar un caso")
+    }
+    const now = new Date().toISOString()
+    const resolutionFields = isResolved
+      ? { resolution: resolution!.trim(), resolvedById: session.user.id, resolvedAt: now }
+      : status === "reopened"
+        ? { resolution: null, resolvedById: null, resolvedAt: null }
+        : {}
+    const [next] = await tx.update(fuelAnomalyCases).set({ status, updatedAt: now, ...resolutionFields })
+      .where(and(eq(fuelAnomalyCases.id, caseId), eq(fuelAnomalyCases.status, expectedStatus)))
+      .returning()
+    if (!next) throw new Error("El caso cambió de estado; actualiza la página antes de continuar")
+
+    await recordStatusChange({
+      entityType: "fuel_anomaly_case",
+      entityId: caseId,
+      fromStatus: current.status,
+      toStatus: status,
+      changedBy: session.user.id,
+      reason: resolution?.trim() || undefined,
+    }, tx)
+    await recordAudit({
+      userId: session.user.id,
+      userEmail: session.user.email ?? undefined,
+      action: "status_change",
+      entityType: "fuel_anomaly_case",
+      entityId: caseId,
+      oldState: { status: current.status, resolution: current.resolution },
+      newState: { status, resolution: next.resolution },
+      reason: resolution?.trim() || undefined,
+    }, tx)
+    return next
+  })
   return await enrichAnomalyCase(updated)
 }
 
 /** Asignar responsable. */
-export async function assignAnomalyCase(caseId: string, assigneeId: string | null): Promise<AnomalyCaseRow> {
-  const [updated] = await db.update(fuelAnomalyCases).set({ assigneeId, updatedAt: new Date().toISOString() })
-    .where(eq(fuelAnomalyCases.id, caseId)).returning()
-  if (!updated) throw new Error("Caso de anomalía no encontrado")
+export async function assignAnomalyCase(
+  session: Session,
+  caseId: string,
+  expectedAssigneeId: string | null,
+  assigneeId: string | null,
+): Promise<AnomalyCaseRow> {
+  const updated = await db.transaction(async (tx) => {
+    const scope = worksiteScopeSql(session, fuelAnomalyCases.worksiteId)
+    const [current] = await tx.select().from(fuelAnomalyCases)
+      .where(and(eq(fuelAnomalyCases.id, caseId), scope))
+      .for("update")
+      .limit(1)
+    if (!current) throw new Error("Caso de anomalía no encontrado")
+    if (current.assigneeId !== expectedAssigneeId) {
+      throw new Error("La asignación cambió; actualiza la página antes de continuar")
+    }
+    if (current.assigneeId === assigneeId) return current
+    const [next] = await tx.update(fuelAnomalyCases)
+      .set({ assigneeId, updatedAt: new Date().toISOString() })
+      .where(and(
+        eq(fuelAnomalyCases.id, caseId),
+        expectedAssigneeId === null
+          ? sql`${fuelAnomalyCases.assigneeId} IS NULL`
+          : eq(fuelAnomalyCases.assigneeId, expectedAssigneeId),
+      ))
+      .returning()
+    if (!next) throw new Error("La asignación cambió; actualiza la página antes de continuar")
+    await recordAudit({
+      userId: session.user.id,
+      userEmail: session.user.email ?? undefined,
+      action: "update",
+      entityType: "fuel_anomaly_case",
+      entityId: caseId,
+      oldState: { assigneeId: current.assigneeId },
+      newState: { assigneeId },
+      reason: "Asignación de responsable",
+    }, tx)
+    return next
+  })
   return await enrichAnomalyCase(updated)
 }
 
-/** Añadir comentario a un caso. */
-export async function addAnomalyComment(caseId: string, userId: string, body: string): Promise<AnomalyCommentRow> {
-  const [comment] = await db.insert(fuelAnomalyComments).values({
-    id: nanoid(), caseId, userId, body,
+/** Inserción interna para flujos que ya bloquearon y autorizaron el caso. */
+export async function addAnomalyCommentWithClient(client: DB | Tx, caseId: string, userId: string, body: string): Promise<AnomalyCommentRow> {
+  const normalizedBody = body.trim()
+  if (!normalizedBody) throw new Error("El comentario no puede estar vacío")
+  if (normalizedBody.length > 2_000) throw new Error("El comentario no puede superar 2000 caracteres")
+  const [comment] = await client.insert(fuelAnomalyComments).values({
+    id: nanoid(), caseId, userId, body: normalizedBody,
   }).returning()
-  const [user] = await db.select({ name: users.name }).from(users).where(eq(users.id, userId))
-  return { id: comment!.id, userId, userName: user?.name ?? null, body, createdAt: comment!.createdAt }
+  const [user] = await client.select({ name: users.name }).from(users).where(eq(users.id, userId))
+  return { id: comment!.id, userId, userName: user?.name ?? null, body: comment!.body, createdAt: comment!.createdAt }
+}
+
+/** Añadir comentario a un caso visible para la sesión. */
+export async function addAnomalyComment(session: Session, caseId: string, body: string): Promise<AnomalyCommentRow> {
+  return db.transaction(async (tx) => {
+    const scope = worksiteScopeSql(session, fuelAnomalyCases.worksiteId)
+    const [current] = await tx.select({ id: fuelAnomalyCases.id }).from(fuelAnomalyCases)
+      .where(and(eq(fuelAnomalyCases.id, caseId), scope))
+      .for("update")
+      .limit(1)
+    if (!current) throw new Error("Caso de anomalía no encontrado")
+    const comment = await addAnomalyCommentWithClient(tx, caseId, session.user.id, body)
+    await recordAudit({
+      userId: session.user.id,
+      userEmail: session.user.email ?? undefined,
+      action: "create",
+      entityType: "fuel_anomaly_comment",
+      entityId: comment.id,
+      newState: { caseId, body: comment.body },
+    }, tx)
+    return comment
+  })
 }
 
 /** Agregar casos por estado, severidad y código de regla para el gráfico de distribución (sección 5). */
@@ -288,7 +388,6 @@ export async function seedAnomalyRulesIfEmpty() {
     { code: "rendimiento_fuera_historico", name: "Rendimiento fuera del historial del equipo", severity: "high" as const, config: { thresholdStdDevs: 2 } },
     { code: "rendimiento_fuera_grupo", name: "Rendimiento fuera del grupo comparable", severity: "medium" as const, config: { thresholdStdDevs: 2 } },
     { code: "litros_supera_capacidad", name: "Litros superiores a capacidad del estanque", severity: "critical" as const, config: { margin: 0.05 } },
-    { code: "carga_duplicada", name: "Carga duplicada", severity: "high" as const, config: { windowHours: 2 } },
     { code: "sello_repetido", name: "Sello repetido", severity: "high" as const, config: {} },
     { code: "sello_no_correlativo", name: "Sello no correlativo", severity: "medium" as const, config: {} },
     { code: "evidencia_faltante", name: "Evidencia faltante en carga TAE", severity: "medium" as const, config: { requiredKinds: ["odometer", "liter_meter", "removed_seal", "installed_seal"] } },

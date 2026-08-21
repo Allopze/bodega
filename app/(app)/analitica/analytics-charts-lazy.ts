@@ -9,7 +9,7 @@ type ModuleSpendChartType = ComponentType<{ data: SpendByModuleRow[] }>
 type RankingBarChartType = ComponentType<{
   data: Array<WorksiteSpendRow | VehicleCostRow>
   labelKey: "name" | "plate"
-  valueKey: "totalAmount" | "totalOperationalCost"
+  valueKey: "totalAmount" | "totalOperationalCost" | "totalFuelAmount"
   emptyLabel: string
 }>
 

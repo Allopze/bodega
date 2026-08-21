@@ -3,26 +3,30 @@
 import { revalidatePath } from "next/cache"
 import { isNetworkError } from "@/lib/network-error"
 import { guardPermission } from "@/lib/auth/can"
-import { updateAnomalyCaseStatus, assignAnomalyCase, addAnomalyComment } from "@/lib/combustibles/anomaly-cases"
+import { updateAnomalyCaseStatus, assignAnomalyCase, addAnomalyComment, type AnomalyCaseStatus } from "@/lib/combustibles/anomaly-cases"
 import { logger } from "@/lib/logger"
 
 /** in_review/reopened son parte de la revisión; resolved/dismissed cierran el caso y requieren el permiso de resolución. */
 const RESOLVING_STATUSES = new Set(["resolved", "dismissed"])
+const VALID_CURRENT_STATUSES = new Set(["open", "in_review", "resolved", "dismissed", "reopened"])
 // "open" queda fuera a propósito: es el estado inicial que pone el detector,
 // no un destino de esta acción de revisión.
 const VALID_TARGET_STATUSES = new Set(["in_review", "resolved", "dismissed", "reopened"])
 
-export async function updateAnomalyStatusAction(input: { caseId: string; status: string; resolution?: string }) {
+export async function updateAnomalyStatusAction(input: { caseId: string; expectedStatus: AnomalyCaseStatus; status: string; resolution?: string }) {
   // `input.status as ...` más abajo era sólo un cast de TypeScript, sin
   // chequeo real: un valor fuera del enum llegaba tal cual a la base.
   if (!VALID_TARGET_STATUSES.has(input.status)) {
     return { ok: false, message: "Estado inválido" }
   }
+  if (!VALID_CURRENT_STATUSES.has(input.expectedStatus)) {
+    return { ok: false, message: "Estado actual inválido" }
+  }
   const permission = RESOLVING_STATUSES.has(input.status) ? "combustibles:resolve_anomalies" : "combustibles:review_anomalies"
-  const guard = await guardPermission(permission)
+  const guard = await guardPermission(permission, "/combustibles")
   if (guard.error) return guard.error
   try {
-    await updateAnomalyCaseStatus(input.caseId, input.status as "in_review" | "resolved" | "dismissed" | "reopened", guard.session.user.id, input.resolution)
+    await updateAnomalyCaseStatus(guard.session, input.caseId, input.expectedStatus, input.status as "in_review" | "resolved" | "dismissed" | "reopened", input.resolution)
     revalidatePath("/combustibles/anomalias")
     return { ok: true, message: "Estado actualizado" }
   } catch (error) {
@@ -32,11 +36,11 @@ export async function updateAnomalyStatusAction(input: { caseId: string; status:
   }
 }
 
-export async function assignAnomalyAction(input: { caseId: string; assigneeId: string | null }) {
-  const guard = await guardPermission("combustibles:review_anomalies")
+export async function assignAnomalyAction(input: { caseId: string; expectedAssigneeId: string | null; assigneeId: string | null }) {
+  const guard = await guardPermission("combustibles:review_anomalies", "/combustibles")
   if (guard.error) return guard.error
   try {
-    await assignAnomalyCase(input.caseId, input.assigneeId)
+    await assignAnomalyCase(guard.session, input.caseId, input.expectedAssigneeId, input.assigneeId)
     revalidatePath("/combustibles/anomalias")
     return { ok: true, message: "Asignado correctamente" }
   } catch (error) {
@@ -47,11 +51,10 @@ export async function assignAnomalyAction(input: { caseId: string; assigneeId: s
 }
 
 export async function commentAnomalyAction(input: { caseId: string; body: string }) {
-  const guard = await guardPermission("combustibles:review_anomalies")
+  const guard = await guardPermission("combustibles:review_anomalies", "/combustibles")
   if (guard.error) return guard.error
-  if (!input.body.trim()) return { ok: false, message: "El comentario no puede estar vacío" }
   try {
-    await addAnomalyComment(input.caseId, guard.session.user.id, input.body.trim())
+    await addAnomalyComment(guard.session, input.caseId, input.body)
     revalidatePath("/combustibles/anomalias")
     return { ok: true, message: "Comentario añadido" }
   } catch (error) {

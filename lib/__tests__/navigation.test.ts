@@ -203,6 +203,26 @@ describe("sidebar navigation", () => {
     expect(prevention).toBeUndefined()
   })
 
+  it("hides only the disabled submodule from sidebar and command palette", () => {
+    const session = {
+      ...adminSession,
+      user: {
+        ...adminSession.user,
+        permissions: ["combustibles:view", "combustibles:import", "combustibles:tae_view"],
+      },
+    } satisfies Session
+    const enabled = new Set(["combustibles"])
+    const disabled = new Set(["/combustibles/tae"])
+    const hrefs = getVisibleAreas(session, enabled, disabled)
+      .flatMap((area) => area.items.map((item) => item.href))
+    const targets = flattenNavTargets(session, enabled, disabled).map((target) => target.href)
+
+    expect(hrefs).toContain("/combustibles")
+    expect(hrefs).toContain("/combustibles/importar")
+    expect(hrefs).not.toContain("/combustibles/tae")
+    expect(targets).not.toContain("/combustibles/tae")
+  })
+
   it("keeps Evaluaciones SST active for its list, creation and worker detail routes only", () => {
     expect(isHrefActive("/prevencion/evaluaciones", "/prevencion/evaluaciones")).toBe(true)
     expect(isHrefActive("/prevencion/evaluaciones", "/prevencion/nueva")).toBe(true)

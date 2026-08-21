@@ -1,5 +1,5 @@
 import type { Session } from "next-auth"
-import { and, desc, eq, inArray, isNotNull, sql } from "drizzle-orm"
+import { and, desc, eq, inArray, isNotNull, isNull, or, sql } from "drizzle-orm"
 import { db, type DB, type Tx } from "@/db"
 import {
   costCenters,
@@ -7,14 +7,17 @@ import {
   fuelVehicles,
   maintenanceRecords,
   preventionCapaEvidence,
+  preventionCapaTransitions,
   preventionInspectionFindings,
   suppliers,
   worksites,
 } from "@/db/schema"
 import { canAccessWorksite, visibleWorksiteIds, isGlobalRole, worksiteScopeSql } from "@/lib/auth/scope"
+import { assertCostCenterAllowed, costCenterOptionsWhere } from "@/lib/services/cost-centers"
 import { recordAudit } from "@/lib/audit"
 import { nanoid } from "@/lib/id"
 import { addDaysToPlainDate, todayInChile } from "@/lib/utils"
+import { can } from "@/lib/auth/can"
 
 /** Tope del historial de /mantenciones. Exportado para que la página pueda avisar cuando lo alcanza. */
 export const MAINTENANCE_HISTORY_LIMIT = 100
@@ -28,11 +31,10 @@ export interface MaintenanceFilters {
 export interface CreateMaintenanceInput {
   vehicleId: string
   supplierId?: string | null
-  worksiteId?: string | null
   costCenterId?: string | null
   maintenanceDate: string
   maintenanceType: string
-  status: "scheduled" | "in_progress" | "completed" | "cancelled"
+  status: "scheduled" | "in_progress"
   odometerReading?: number | null
   hourMeterReading?: number | null
   netAmount: number
@@ -43,7 +45,11 @@ export interface CreateMaintenanceInput {
   notes?: string | null
 }
 
+export type UpdateMaintenanceInput = Omit<CreateMaintenanceInput, "status">
+export type MaintenanceTransition = "start" | "complete" | "reopen" | "cancel"
+
 export async function getMaintenancePageData(session: Session, filters: MaintenanceFilters = {}) {
+  const canViewCosts = can(session, "mantenciones:view") && can(session, "combustibles:view_costs")
   const scopedWorksites = isGlobalRole(session) ? null : visibleWorksiteIds(session)
   const worksiteScope = scopedWorksites === null
     ? undefined
@@ -63,9 +69,32 @@ export async function getMaintenancePageData(session: Session, filters: Maintena
     filters.status ? eq(maintenanceRecords.status, filters.status) : undefined,
   )
 
-  const [records, vehicles, supplierRows, worksiteRows, costCenterRows] = await Promise.all([
+  const [recordRows, vehicles, supplierRows, worksiteRows, costCenterRows] = await Promise.all([
     db.query.maintenanceRecords.findMany({
       where,
+      columns: {
+        id: true,
+        vehicleId: true,
+        supplierId: true,
+        worksiteId: true,
+        costCenterId: true,
+        maintenanceDate: true,
+        maintenanceType: true,
+        status: true,
+        odometerReading: true,
+        hourMeterReading: true,
+        netAmount: canViewCosts,
+        taxAmount: canViewCosts,
+        totalAmount: canViewCosts,
+        documentNumber: true,
+        documentName: true,
+        documentPath: true,
+        documentMimeType: true,
+        notes: true,
+        inspectionFindingId: true,
+        createdAt: true,
+        updatedAt: true,
+      },
       with: { vehicle: true, supplier: true, worksite: true, costCenter: true },
       orderBy: [desc(maintenanceRecords.maintenanceDate), desc(maintenanceRecords.createdAt)],
       limit: MAINTENANCE_HISTORY_LIMIT,
@@ -77,8 +106,23 @@ export async function getMaintenancePageData(session: Session, filters: Maintena
     }),
     db.query.suppliers.findMany({ orderBy: [suppliers.name] }),
     db.query.worksites.findMany({ orderBy: [worksites.name] }),
-    db.query.costCenters.findMany({ orderBy: [costCenters.code] }),
+    // Los centros de costo tienen faena. Ofrecer el catálogo completo dejaba
+    // imputar el gasto de una faena al centro de otra, y mostraba la estructura
+    // de costos de faenas ajenas a un rol acotado. Los de `worksite_id NULL`
+    // son transversales y sí están disponibles para todos.
+    db.query.costCenters.findMany({
+      where: costCenterOptionsWhere(scopedWorksites),
+      orderBy: [costCenters.code],
+    }),
   ])
+  const redactAmount = (value: unknown) =>
+    canViewCosts && typeof value === "number" ? value : null
+  const records = recordRows.map((record) => ({
+    ...record,
+    netAmount: redactAmount((record as { netAmount?: unknown }).netAmount),
+    taxAmount: redactAmount((record as { taxAmount?: unknown }).taxAmount),
+    totalAmount: redactAmount((record as { totalAmount?: unknown }).totalAmount),
+  }))
 
   return {
     records,
@@ -109,7 +153,15 @@ export async function getUpcomingMaintenance(session: Session) {
       sql`${maintenanceRecords.maintenanceDate} >= ${today}`,
       sql`${maintenanceRecords.maintenanceDate} <= ${thirtyDays}`,
     ),
-    with: { vehicle: true },
+    columns: {
+      id: true,
+      vehicleId: true,
+      worksiteId: true,
+      maintenanceDate: true,
+      maintenanceType: true,
+      status: true,
+    },
+    with: { vehicle: { columns: { id: true, plate: true } } },
     orderBy: [maintenanceRecords.maintenanceDate],
     limit: 50,
   })
@@ -120,7 +172,15 @@ export async function getUpcomingMaintenance(session: Session) {
       eq(maintenanceRecords.status, "scheduled"),
       sql`${maintenanceRecords.maintenanceDate} < ${today}`,
     ),
-    with: { vehicle: true },
+    columns: {
+      id: true,
+      vehicleId: true,
+      worksiteId: true,
+      maintenanceDate: true,
+      maintenanceType: true,
+      status: true,
+    },
+    with: { vehicle: { columns: { id: true, plate: true } } },
     orderBy: [maintenanceRecords.maintenanceDate],
     limit: 50,
   })
@@ -230,6 +290,39 @@ export async function getUsageMaintenanceAlerts(session: Session, worksiteId?: s
 }
 
 /**
+ * Faena efectiva de una mantención: **siempre** la del vehículo.
+ *
+ * Antes el llamador podía imputar la mantención a cualquier faena, así que el
+ * gasto de un equipo de una faena podía quedar contado en otra: /flota agrega
+ * por la faena del registro y el listado también, de modo que el mismo servicio
+ * aparecía o desaparecía según la superficie. La faena propietaria del activo
+ * gobierna el alcance; el destino contable se expresa con el centro de costo.
+ */
+async function resolveMaintenanceVehicle(client: DB | Tx, vehicleId: string) {
+  const [vehicle] = await client
+    .select({ id: fuelVehicles.id, worksiteId: fuelVehicles.worksiteId, isActive: fuelVehicles.isActive })
+    .from(fuelVehicles)
+    .where(eq(fuelVehicles.id, vehicleId))
+    .limit(1)
+  if (!vehicle) throw new Error("Vehículo no encontrado")
+  return vehicle
+}
+
+/**
+ * Faena con la que se decide el alcance de un registro existente. Mientras
+ * queden filas históricas sin faena, se resuelve por el vehículo en vez de
+ * dejar pasar la comprobación.
+ */
+async function effectiveWorksiteId(
+  client: DB | Tx,
+  record: { vehicleId?: string; worksiteId: string | null },
+): Promise<string> {
+  if (record.worksiteId) return record.worksiteId
+  if (!record.vehicleId) throw new Error("Mantención sin faena ni vehículo resoluble")
+  return (await resolveMaintenanceVehicle(client, record.vehicleId)).worksiteId
+}
+
+/**
  * Escribe la mantención dentro de una transacción existente, **sin** validar
  * alcance: eso lo hace cada puerta antes de llamar.
  *
@@ -241,15 +334,20 @@ export async function getUsageMaintenanceAlerts(session: Session, worksiteId?: s
 export async function createMaintenanceRecordWithClient(
   client: DB | Tx,
   input: CreateMaintenanceInput & { inspectionFindingId?: string | null },
-  args: { worksiteId: string; actorUserId: string },
+  args: { actorUserId: string; vehicle?: { worksiteId: string } },
 ) {
+  // El llamador que ya resolvió el equipo para validar alcance pasa esa misma
+  // lectura: así la faena autorizada y la escrita no pueden diferir.
+  const worksiteId = args.vehicle?.worksiteId
+    ?? (await resolveMaintenanceVehicle(client, input.vehicleId)).worksiteId
+  if (input.costCenterId) await assertCostCenterAllowed(client, input.costCenterId, worksiteId)
   const now = new Date().toISOString()
   const id = nanoid()
   await client.insert(maintenanceRecords).values({
     id,
     vehicleId: input.vehicleId,
     supplierId: input.supplierId || null,
-    worksiteId: args.worksiteId,
+    worksiteId,
     costCenterId: input.costCenterId || null,
     maintenanceDate: input.maintenanceDate,
     maintenanceType: input.maintenanceType,
@@ -271,75 +369,91 @@ export async function createMaintenanceRecordWithClient(
     action: "create",
     entityType: "maintenance_record",
     entityId: id,
-    newState: { ...input, worksiteId: args.worksiteId },
+    newState: { ...input, worksiteId },
   }, client)
   return id
 }
 
 export async function createMaintenanceRecord(session: Session, input: CreateMaintenanceInput) {
-  const vehicle = await db.query.fuelVehicles.findFirst({ where: eq(fuelVehicles.id, input.vehicleId) })
-  if (!vehicle) throw new Error("Vehículo no encontrado")
+  if (!can(session, "mantenciones:create")) throw new Error("Sin permisos para registrar mantenciones")
+  const authorizedInput = can(session, "mantenciones:create") && can(session, "combustibles:view_costs")
+    ? input
+    : { ...input, netAmount: 0, taxAmount: 0, totalAmount: 0 }
 
-  const worksiteId = input.worksiteId || vehicle.worksiteId
-  if (!isGlobalRole(session) && worksiteId && !visibleWorksiteIds(session).includes(worksiteId)) {
-    throw new Error("No puedes registrar mantenciones para esta faena")
-  }
-  // …y la faena del vehículo: imputar a una faena propia no habilita escribir
-  // sobre un equipo de otra.
-  if (!canAccessWorksite(session, vehicle.worksiteId)) {
-    throw new Error("No puedes registrar mantenciones para este vehículo")
-  }
-
-  return createMaintenanceRecordWithClient(db, input, { worksiteId, actorUserId: session.user.id })
+  // Alta, validación y auditoría en una transacción: el equipo se lee una vez
+  // y la fila no puede quedar escrita sin su traza.
+  return db.transaction(async (tx) => {
+    const vehicle = await resolveMaintenanceVehicle(tx, input.vehicleId)
+    // La faena del vehículo es la del registro, así que basta con validarla una vez.
+    if (!canAccessWorksite(session, vehicle.worksiteId)) {
+      throw new Error("No puedes registrar mantenciones para este vehículo")
+    }
+    return createMaintenanceRecordWithClient(tx, authorizedInput, { actorUserId: session.user.id, vehicle })
+  })
 }
 
-export async function updateMaintenanceRecord(session: Session, id: string, input: CreateMaintenanceInput) {
-  const existing = await db.query.maintenanceRecords.findFirst({ where: eq(maintenanceRecords.id, id) })
-  if (!existing) throw new Error("Mantención no encontrada")
-
-  // Debe poder ver la faena actual del registro…
-  if (!isGlobalRole(session) && existing.worksiteId && !visibleWorksiteIds(session).includes(existing.worksiteId)) {
-    throw new Error("No puedes editar mantenciones de esta faena")
-  }
-
-  const vehicle = await db.query.fuelVehicles.findFirst({ where: eq(fuelVehicles.id, input.vehicleId) })
-  if (!vehicle) throw new Error("Vehículo no encontrado")
-
-  // …y la faena destino tras la edición.
-  const worksiteId = input.worksiteId || vehicle.worksiteId
-  if (!isGlobalRole(session) && worksiteId && !visibleWorksiteIds(session).includes(worksiteId)) {
-    throw new Error("No puedes asignar mantenciones a esta faena")
-  }
-  // …y la faena del vehículo destino: si no, se puede re-apuntar una mantención
-  // propia a un equipo de otra faena.
-  if (!canAccessWorksite(session, vehicle.worksiteId)) {
-    throw new Error("No puedes asignar mantenciones a este vehículo")
-  }
-
-  const newState = {
-    vehicleId: input.vehicleId,
-    supplierId: input.supplierId || null,
-    worksiteId,
-    costCenterId: input.costCenterId || null,
-    maintenanceDate: input.maintenanceDate,
-    maintenanceType: input.maintenanceType,
-    status: input.status,
-    odometerReading: input.odometerReading ?? null,
-    hourMeterReading: input.hourMeterReading ?? null,
-    netAmount: input.netAmount,
-    taxAmount: input.taxAmount,
-    totalAmount: input.totalAmount,
-    documentNumber: input.documentNumber || null,
-    documentName: input.documentName || null,
-    notes: input.notes || null,
-    updatedAt: new Date().toISOString(),
-  }
+export async function updateMaintenanceRecord(session: Session, id: string, input: UpdateMaintenanceInput) {
+  if (!can(session, "mantenciones:edit")) throw new Error("Sin permisos para editar mantenciones")
+  const canViewCosts = can(session, "mantenciones:edit") && can(session, "combustibles:view_costs")
 
   await db.transaction(async (tx) => {
-    await tx.update(maintenanceRecords).set(newState).where(eq(maintenanceRecords.id, id))
-    if (existing.status !== "completed" && newState.status === "completed") {
-      await recordMaintenanceAsCapaEvidence(tx, { record: existing, actorUserId: session.user.id })
+    const vehicle = await resolveMaintenanceVehicle(tx, input.vehicleId)
+    // La faena del vehículo destino manda: si no se valida, se puede re-apuntar
+    // una mantención propia a un equipo de otra faena.
+    if (!canAccessWorksite(session, vehicle.worksiteId)) {
+      throw new Error("No puedes asignar mantenciones a este vehículo")
     }
+    const worksiteId = vehicle.worksiteId
+    const [existing] = await tx.select({
+      id: maintenanceRecords.id,
+      vehicleId: maintenanceRecords.vehicleId,
+      worksiteId: maintenanceRecords.worksiteId,
+      costCenterId: maintenanceRecords.costCenterId,
+      status: maintenanceRecords.status,
+      inspectionFindingId: maintenanceRecords.inspectionFindingId,
+      maintenanceType: maintenanceRecords.maintenanceType,
+      maintenanceDate: maintenanceRecords.maintenanceDate,
+      ...(canViewCosts ? {
+        netAmount: maintenanceRecords.netAmount,
+        taxAmount: maintenanceRecords.taxAmount,
+        totalAmount: maintenanceRecords.totalAmount,
+      } : {}),
+    }).from(maintenanceRecords).where(eq(maintenanceRecords.id, id)).for("update").limit(1)
+    if (!existing) throw new Error("Mantención no encontrada")
+    if (!["scheduled", "in_progress"].includes(existing.status)) {
+      throw new Error("Reabre la mantención antes de editar sus datos")
+    }
+    // `canAccessWorksite` y no una comprobación condicional: una mantención
+    // histórica sin faena resuelta no puede quedar editable por cualquiera.
+    if (!canAccessWorksite(session, await effectiveWorksiteId(tx, existing))) {
+      throw new Error("No puedes editar mantenciones de esta faena")
+    }
+    // Sólo se revalida una imputación NUEVA. Un registro heredado cuyo centro
+    // quedó inactivo o pasó a otra faena seguiría siendo editable en todo lo
+    // demás; bloquearlo dejaría filas visibles e inmutables sin remedio en la UI.
+    if (input.costCenterId && input.costCenterId !== existing.costCenterId) {
+      await assertCostCenterAllowed(tx, input.costCenterId, worksiteId)
+    }
+
+    const operationalState = {
+      vehicleId: input.vehicleId,
+      supplierId: input.supplierId || null,
+      worksiteId,
+      costCenterId: input.costCenterId || null,
+      maintenanceDate: input.maintenanceDate,
+      maintenanceType: input.maintenanceType,
+      odometerReading: input.odometerReading ?? null,
+      hourMeterReading: input.hourMeterReading ?? null,
+      documentNumber: input.documentNumber || null,
+      documentName: input.documentName || null,
+      notes: input.notes || null,
+      updatedAt: new Date().toISOString(),
+    }
+    const newState = canViewCosts
+      ? { ...operationalState, netAmount: input.netAmount, taxAmount: input.taxAmount, totalAmount: input.totalAmount }
+      : operationalState
+
+    await tx.update(maintenanceRecords).set(newState).where(eq(maintenanceRecords.id, id))
     await recordAudit({
       userId: session.user.id,
       action: "update",
@@ -365,44 +479,154 @@ export async function updateMaintenanceRecord(session: Session, id: string, inpu
  * generada por el sistema, no declarada por una persona; acoplarla a un permiso
  * de Prevención rompería el flujo por el lado equivocado.
  */
-async function recordMaintenanceAsCapaEvidence(
-  client: DB | Tx,
-  args: { record: typeof maintenanceRecords.$inferSelect; actorUserId: string },
+async function activateMaintenanceCapaEvidence(
+  client: Tx,
+  args: {
+    record: Pick<
+      typeof maintenanceRecords.$inferSelect,
+      "id" | "inspectionFindingId" | "maintenanceType" | "maintenanceDate"
+    >
+    actorUserId: string
+  },
 ) {
   if (!args.record.inspectionFindingId) return
   const [finding] = await client.select({ capaActionId: preventionInspectionFindings.capaActionId })
     .from(preventionInspectionFindings)
     .where(eq(preventionInspectionFindings.id, args.record.inspectionFindingId)).limit(1)
   if (!finding?.capaActionId) return
-  await client.insert(preventionCapaEvidence).values({
+  const now = new Date().toISOString()
+  const [evidence] = await client.insert(preventionCapaEvidence).values({
     id: nanoid(),
     actionId: finding.capaActionId,
     kind: "document",
     reference: `mantencion:${args.record.id}`,
-    description: `Mantención ${args.record.maintenanceType} completada el ${args.record.maintenanceDate}.`,
+    description: `Evidencia automática de la mantención ${args.record.maintenanceType} programada para el ${args.record.maintenanceDate}.`,
     uploadedByUserId: args.actorUserId,
-    createdAt: new Date().toISOString(),
+    status: "active",
+    createdAt: now,
+  }).onConflictDoUpdate({
+    target: [preventionCapaEvidence.actionId, preventionCapaEvidence.reference],
+    set: {
+      kind: "document",
+      description: `Evidencia automática de la mantención ${args.record.maintenanceType} programada para el ${args.record.maintenanceDate}.`,
+      checksumSha256: null,
+      uploadedByUserId: args.actorUserId,
+      status: "active",
+      supersededAt: null,
+      supersededByUserId: null,
+      supersessionReason: null,
+      createdAt: now,
+    },
+  }).returning({ id: preventionCapaEvidence.id })
+  if (!evidence) throw new Error("No se pudo acreditar la mantención en CAPA")
+  await client.insert(preventionCapaTransitions).values({
+    id: `capat-${nanoid()}`,
+    actionId: finding.capaActionId,
+    changeType: "evidence",
+    reason: "Evidencia de mantención activada",
+    changeSet: { evidenceId: evidence.id, lifecycle: "activated", maintenanceId: args.record.id },
+    actorUserId: args.actorUserId,
+    createdAt: now,
   })
 }
 
-export async function cancelMaintenanceRecord(session: Session, id: string) {
-  const existing = await db.query.maintenanceRecords.findFirst({ where: eq(maintenanceRecords.id, id) })
-  if (!existing) throw new Error("Mantención no encontrada")
-  if (!isGlobalRole(session) && existing.worksiteId && !visibleWorksiteIds(session).includes(existing.worksiteId)) {
-    throw new Error("No puedes cancelar mantenciones de esta faena")
-  }
-  if (existing.status === "cancelled") throw new Error("La mantención ya está cancelada")
-
-  const newState = { status: "cancelled", updatedAt: new Date().toISOString() }
-  await db.update(maintenanceRecords)
-    .set(newState)
-    .where(eq(maintenanceRecords.id, id))
-  await recordAudit({
-    userId: session.user.id,
-    action: "cancel",
-    entityType: "maintenance_record",
-    entityId: id,
-    oldState: existing,
-    newState,
+async function supersedeMaintenanceCapaEvidence(
+  client: Tx,
+  args: {
+    record: Pick<typeof maintenanceRecords.$inferSelect, "id" | "inspectionFindingId">
+    actorUserId: string
+    reason: string
+  },
+) {
+  if (!args.record.inspectionFindingId) return
+  const [finding] = await client.select({ capaActionId: preventionInspectionFindings.capaActionId })
+    .from(preventionInspectionFindings)
+    .where(eq(preventionInspectionFindings.id, args.record.inspectionFindingId)).limit(1)
+  if (!finding?.capaActionId) return
+  const now = new Date().toISOString()
+  const [evidence] = await client.update(preventionCapaEvidence).set({
+    status: "superseded",
+    supersededAt: now,
+    supersededByUserId: args.actorUserId,
+    supersessionReason: args.reason,
+  }).where(and(
+    eq(preventionCapaEvidence.actionId, finding.capaActionId),
+    eq(preventionCapaEvidence.reference, `mantencion:${args.record.id}`),
+    eq(preventionCapaEvidence.status, "active"),
+  )).returning({ id: preventionCapaEvidence.id })
+  if (!evidence) return
+  await client.insert(preventionCapaTransitions).values({
+    id: `capat-${nanoid()}`,
+    actionId: finding.capaActionId,
+    changeType: "evidence",
+    reason: args.reason,
+    changeSet: { evidenceId: evidence.id, lifecycle: "superseded", maintenanceId: args.record.id },
+    actorUserId: args.actorUserId,
+    createdAt: now,
   })
+}
+
+const TRANSITION_RULES: Record<MaintenanceTransition, { from: readonly string[]; to: string }> = {
+  start: { from: ["scheduled"], to: "in_progress" },
+  complete: { from: ["scheduled", "in_progress"], to: "completed" },
+  reopen: { from: ["completed"], to: "in_progress" },
+  cancel: { from: ["scheduled", "in_progress", "completed"], to: "cancelled" },
+}
+
+export async function transitionMaintenanceRecord(
+  session: Session,
+  input: { id: string; expectedStatus: string; transition: MaintenanceTransition; reason: string },
+) {
+  if (!can(session, "mantenciones:edit")) throw new Error("Sin permisos para cambiar el estado de mantenciones")
+  const rule = TRANSITION_RULES[input.transition]
+  if (!rule) throw new Error("Transición de mantención inválida")
+  const reason = input.reason.trim()
+  if (reason.length < 5) throw new Error("Indica un motivo de al menos 5 caracteres")
+
+  return db.transaction(async (tx) => {
+    const [existing] = await tx.select({
+      id: maintenanceRecords.id,
+      vehicleId: maintenanceRecords.vehicleId,
+      worksiteId: maintenanceRecords.worksiteId,
+      status: maintenanceRecords.status,
+      inspectionFindingId: maintenanceRecords.inspectionFindingId,
+      maintenanceType: maintenanceRecords.maintenanceType,
+      maintenanceDate: maintenanceRecords.maintenanceDate,
+    }).from(maintenanceRecords).where(eq(maintenanceRecords.id, input.id)).for("update").limit(1)
+    if (!existing) throw new Error("Mantención no encontrada")
+    // Las mantenciones heredadas sin faena quedaban fuera del listado acotado y
+    // aun así se podían cancelar por ID: la condición previa se saltaba el
+    // control cuando `worksiteId` era NULL. La faena se resuelve por el equipo.
+    if (!canAccessWorksite(session, await effectiveWorksiteId(tx, existing))) {
+      throw new Error("No puedes cambiar mantenciones de esta faena")
+    }
+    if (existing.status !== input.expectedStatus) {
+      throw new Error("La mantención cambió en otra sesión. Recarga antes de continuar")
+    }
+    if (!rule.from.includes(existing.status)) {
+      throw new Error(`No se puede ${input.transition} una mantención en estado ${existing.status}`)
+    }
+
+    const now = new Date().toISOString()
+    const newState = { status: rule.to, updatedAt: now }
+    await tx.update(maintenanceRecords).set(newState).where(eq(maintenanceRecords.id, existing.id))
+    if (input.transition === "complete") {
+      await activateMaintenanceCapaEvidence(tx, { record: existing, actorUserId: session.user.id })
+    } else if (input.transition === "reopen" || (input.transition === "cancel" && existing.status === "completed")) {
+      await supersedeMaintenanceCapaEvidence(tx, { record: existing, actorUserId: session.user.id, reason })
+    }
+    await recordAudit({
+      userId: session.user.id,
+      action: input.transition === "cancel" ? "cancel" : "status_change",
+      entityType: "maintenance_record",
+      entityId: existing.id,
+      oldState: existing,
+      newState: { ...newState, transition: input.transition, reason },
+    }, tx)
+    return { status: rule.to }
+  })
+}
+
+export async function cancelMaintenanceRecord(session: Session, id: string, expectedStatus: string, reason: string) {
+  return transitionMaintenanceRecord(session, { id, expectedStatus, reason, transition: "cancel" })
 }

@@ -19,7 +19,7 @@ vi.mock("@/db", () => ({
 
 await migratePGlite(pg, path.resolve(process.cwd(), "db/migrations"))
 
-import { getUserIdsWithPermission, getUserIdsWithPermissionForWorksite } from "@/lib/services/notifications"
+import { getGlobalUserIdsWithAllPermissions, getUserIdsWithPermission, getUserIdsWithPermissionForWorksite } from "@/lib/services/notifications"
 
 describe("getUserIdsWithPermission", () => {
   beforeEach(async () => {
@@ -267,5 +267,38 @@ describe("getUserIdsWithPermission", () => {
     expect(ids).toEqual(expect.arrayContaining(["u-global", "u-ws1"]))
     expect(ids).not.toContain("u-ws2")
     expect(ids).not.toContain("u-inactive")
+  })
+
+  it("financial notifications require a global user with both base and cost permissions", async () => {
+    const now = new Date().toISOString()
+    await inMemoryDb.insert(schema.permissions).values([
+      { id: "perm-fuel-view", name: "combustibles:view", module: "combustibles" },
+      { id: "perm-costs", name: "combustibles:view_costs", module: "combustibles" },
+    ])
+    await inMemoryDb.insert(schema.roles).values([
+      { id: "role-global-cost-only", name: "global_cost_only", label: "Sólo costos global", isGlobal: true },
+      { id: "role-global-fuel-finance", name: "global_fuel_finance", label: "Combustible financiero", isGlobal: true },
+      { id: "role-scoped-fuel-finance", name: "scoped_fuel_finance", label: "Combustible financiero faena", isGlobal: false },
+    ])
+    await inMemoryDb.insert(schema.rolePermissions).values([
+      { roleId: "role-global-cost-only", permissionId: "perm-costs" },
+      { roleId: "role-global-fuel-finance", permissionId: "perm-fuel-view" },
+      { roleId: "role-global-fuel-finance", permissionId: "perm-costs" },
+      { roleId: "role-scoped-fuel-finance", permissionId: "perm-fuel-view" },
+      { roleId: "role-scoped-fuel-finance", permissionId: "perm-costs" },
+    ])
+    await inMemoryDb.insert(schema.users).values([
+      { id: "u-global-cost-only", name: "Sólo costos", email: "global-cost-only@example.test", hashedPassword: "x", isActive: true, createdAt: now, updatedAt: now },
+      { id: "u-global-both", name: "Global ambos", email: "global-both@example.test", hashedPassword: "x", isActive: true, createdAt: now, updatedAt: now },
+      { id: "u-scoped-both", name: "Scoped ambos", email: "scoped-both@example.test", hashedPassword: "x", isActive: true, createdAt: now, updatedAt: now },
+    ])
+    await inMemoryDb.insert(schema.userRoles).values([
+      { userId: "u-global-cost-only", roleId: "role-global-cost-only" },
+      { userId: "u-global-both", roleId: "role-global-fuel-finance" },
+      { userId: "u-scoped-both", roleId: "role-scoped-fuel-finance" },
+    ])
+
+    await expect(getGlobalUserIdsWithAllPermissions("combustibles:view", "combustibles:view_costs"))
+      .resolves.toEqual(["u-global-both"])
   })
 })

@@ -1,5 +1,5 @@
 import { relations, sql } from "drizzle-orm"
-import { pgTable, text, numeric, timestamp, check, index, uniqueIndex } from "drizzle-orm/pg-core"
+import { pgTable, text, numeric, timestamp, check, foreignKey, index, uniqueIndex } from "drizzle-orm/pg-core"
 import { costCenters } from "./cost-centers"
 import { fuelVehicles } from "./fuel-vehicles"
 import { preventionInspectionFindings } from "./prevention/inspections"
@@ -11,7 +11,11 @@ export const maintenanceRecords = pgTable("maintenance_records", {
   id:               text("id").primaryKey(),
   vehicleId:        text("vehicle_id").notNull().references(() => fuelVehicles.id),
   supplierId:       text("supplier_id").references(() => suppliers.id),
-  worksiteId:       text("worksite_id").references(() => worksites.id),
+  /* Faena propietaria del equipo, copiada del vehículo al escribir. No es una
+   * dimensión editable: el destino contable se expresa con `cost_center_id`.
+   * Sin `NOT NULL` las filas heredadas quedaban fuera de todo listado acotado
+   * por faena y aun así eran mutables por ID. */
+  worksiteId:       text("worksite_id").notNull().references(() => worksites.id),
   costCenterId:     text("cost_center_id").references(() => costCenters.id),
   maintenanceDate:  text("maintenance_date").notNull(),
   maintenanceType:  text("maintenance_type").notNull(),
@@ -42,6 +46,15 @@ export const maintenanceRecords = pgTable("maintenance_records", {
     AND ${table.taxAmount} >= 0
     AND ${table.totalAmount} >= 0
   `),
+  // La faena del registro es la del equipo, y lo sigue siendo cuando el equipo
+  // se traslada: `ON UPDATE CASCADE` reencuadra el historial completo en la
+  // misma operación, así que ningún importador, seed o script puede dejar el
+  // gasto contado en una faena y el activo en otra.
+  foreignKey({
+    columns: [table.vehicleId, table.worksiteId],
+    foreignColumns: [fuelVehicles.id, fuelVehicles.worksiteId],
+    name: "maintenance_records_vehicle_worksite_fk",
+  }).onUpdate("cascade"),
   index("maintenance_records_vehicle_date_idx").on(table.vehicleId, table.maintenanceDate),
   index("maintenance_records_worksite_idx").on(table.worksiteId),
   index("maintenance_records_cost_center_idx").on(table.costCenterId),

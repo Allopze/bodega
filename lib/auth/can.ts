@@ -2,6 +2,13 @@ import type { Session } from "next-auth"
 import type { Permission } from "@/modules/permissions"
 import { auth } from "./auth"
 import { logger } from "@/lib/logger"
+import { headers } from "next/headers"
+import {
+  assertPermissionModuleEnabled,
+  assertRouteModuleEnabled,
+  ModuleDisabledError,
+  ModuleToggleUnavailableError,
+} from "@/lib/services/module-toggles"
 export {
   canAccessWorksite,
   GLOBAL_ROLES,
@@ -31,10 +38,18 @@ export function canAny(session: Session | null, ...perms: Permission[]): boolean
  * For Server Components (redirects), use `ensurePermission()`.
  * For Server Actions, catch the error and return `{ ok: false }`.
  */
-export async function requirePermission(permission: Permission): Promise<Session> {
+export async function requirePermission(permission: Permission, operationPathname?: string): Promise<Session> {
   const session = await auth()
   if (!session) throw new Error("Unauthorized: not authenticated")
   if (!can(session, permission)) throw new Error(`Forbidden: missing permission ${permission}`)
+  // Proxy fija esta cabecera upstream; no se toma del navegador. Puede faltar
+  // (invocación interna sin contexto HTTP, o una ruta que el matcher no cubre),
+  // y por eso el guard NO se condiciona a ella: el permiso ya identifica su
+  // módulo, y el pathname sólo afina el submódulo cuando está disponible.
+  let pathname: string | null = null
+  try { pathname = (await headers()).get("x-chome-pathname") }
+  catch { pathname = null }
+  await assertPermissionModuleEnabled(permission, pathname ?? undefined, operationPathname)
   return session
 }
 
@@ -45,6 +60,13 @@ export async function requirePermission(permission: Permission): Promise<Session
 export async function requireAuth(): Promise<Session> {
   const session = await auth()
   if (!session) throw new Error("Unauthorized: not authenticated")
+  // Las superficies que se autorizan con `requireAuth()` + `can()` a mano
+  // (impresiones, descargas) no pasan por `requirePermission`, así que sin esto
+  // eran el único camino autenticado sin control de módulo.
+  let pathname: string | null = null
+  try { pathname = (await headers()).get("x-chome-pathname") }
+  catch { pathname = null }
+  if (pathname) await assertRouteModuleEnabled(pathname)
   return session
 }
 
@@ -53,16 +75,22 @@ export async function requireAuth(): Promise<Session> {
  * Usage: const { session, error } = await guardPermission("requests:create")
  *         if (error) return error
  */
-export async function guardPermission(permission: Permission): Promise<
+export async function guardPermission(permission: Permission, operationPathname?: string): Promise<
   | { session: Session; error: null }
   | { session: null; error: { ok: false; message: string } }
 > {
   try {
-    const session = await requirePermission(permission)
+    const session = await requirePermission(permission, operationPathname)
     return { session, error: null }
   } catch (err) {
     // No exponer la taxonomía interna de permisos al cliente; loguear el detalle.
     logger.warn("[guardPermission]", permission, err)
+    if (err instanceof ModuleDisabledError) {
+      return { session: null, error: { ok: false, message: "El módulo está inactivo temporalmente" } }
+    }
+    if (err instanceof ModuleToggleUnavailableError) {
+      return { session: null, error: { ok: false, message: "No se pudo verificar el estado del módulo. Reintenta." } }
+    }
     return { session: null, error: { ok: false, message: "No tienes permisos para realizar esta acción" } }
   }
 }

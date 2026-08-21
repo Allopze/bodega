@@ -23,7 +23,7 @@ function toInstant(value: string | undefined) {
 
 export async function createFuelCycleMovementAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   let session
-  try { session = await requirePermission("combustibles:create") } catch { return { ok: false, message: "No tienes permisos para registrar movimientos" } }
+  try { session = await requirePermission("combustibles:create", "/combustibles") } catch { return { ok: false, message: "No tienes permisos para registrar movimientos" } }
   const raw = {
     eventType: empty(formData.get("eventType")), worksiteId: empty(formData.get("worksiteId")), productId: empty(formData.get("productId")),
     quantity: empty(formData.get("quantity")), occurredAt: toInstant(empty(formData.get("occurredAt"))), supplierId: empty(formData.get("supplierId")),

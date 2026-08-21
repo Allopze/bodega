@@ -34,7 +34,7 @@ const REVIEWER = { userId: "in-reviewer", scope: scopeA, permissions: ["preventi
 const OUTSIDER = { userId: "in-outsider", scope: { mode: "some", ids: ["ws-in-b"] } as WorksiteScope, permissions: ALL }
 /** Mantenciones resuelve alcance con `Session`, no con `InspectionAccess`. */
 const MAINT_SESSION = {
-  user: { id: "in-author", isGlobal: false, worksiteIds: ["ws-in-a"], roles: [] },
+  user: { id: "in-author", isGlobal: false, worksiteIds: ["ws-in-a"], roles: [], permissions: ["mantenciones:edit"] },
 } as unknown as Session
 
 function getDb() {
@@ -867,7 +867,7 @@ describeIf("Motor de inspecciones on real PostgreSQL", () => {
       expect(capa).toMatchObject({ priority: "critical", requiresImmediateStop: true })
     })
 
-    it("cerrar la mantención acredita la evidencia de la CAPA", async () => {
+    it("completar, reabrir, recompletar concurrentemente y cancelar mantiene una sola evidencia CAPA coherente", async () => {
       const maintenance = await import("@/lib/services/maintenance")
       const [finding] = await getDb().select().from(schema.preventionInspectionFindings)
         .where(eq(schema.preventionInspectionFindings.runId, reporteRunId))
@@ -878,20 +878,78 @@ describeIf("Motor de inspecciones on real PostgreSQL", () => {
         .where(eq(schema.preventionCapaEvidence.actionId, finding!.capaActionId!))
       expect(before).toHaveLength(0)
 
-      await maintenance.updateMaintenanceRecord(MAINT_SESSION, record!.id, {
-        vehicleId: "veh-a", supplierId: "", worksiteId: "ws-in-a", costCenterId: "",
-        maintenanceDate: record!.maintenanceDate, maintenanceType: "correctiva", status: "completed",
-        odometerReading: null, hourMeterReading: 134122,
-        netAmount: 0, taxAmount: 0, totalAmount: 0,
-        documentNumber: "", documentName: "", notes: "Frenos reparados.",
+      // Simula una colisión histórica previa a la reserva del namespace. El
+      // cierre debe canonicalizarla como documento, no dejar una nota activa
+      // que CAPA no cuenta como evidencia verificable.
+      await getDb().insert(schema.preventionCapaEvidence).values({
+        id: "legacy-maintenance-reference-collision",
+        actionId: finding!.capaActionId!,
+        kind: "note",
+        reference: `mantencion:${record!.id}`,
+        description: "Referencia histórica mal tipada",
+        uploadedByUserId: "in-author",
+        createdAt: new Date().toISOString(),
       })
 
-      const after = await getDb().select().from(schema.preventionCapaEvidence)
+      await maintenance.transitionMaintenanceRecord(MAINT_SESSION, {
+        id: record!.id,
+        expectedStatus: "scheduled",
+        transition: "complete",
+        reason: "Frenos reparados y verificados",
+      })
+
+      const completed = await getDb().select().from(schema.preventionCapaEvidence)
         .where(eq(schema.preventionCapaEvidence.actionId, finding!.capaActionId!))
-      // `kind: 'note'` no cuenta para desbloquear la verificación; por eso es
-      // 'document' y no una nota.
-      expect(after).toHaveLength(1)
-      expect(after[0]).toMatchObject({ kind: "document", reference: `mantencion:${record!.id}` })
+      expect(completed).toHaveLength(1)
+      expect(completed[0]).toMatchObject({
+        id: "legacy-maintenance-reference-collision",
+        kind: "document",
+        reference: `mantencion:${record!.id}`,
+        status: "active",
+        checksumSha256: null,
+      })
+
+      await maintenance.transitionMaintenanceRecord(MAINT_SESSION, {
+        id: record!.id,
+        expectedStatus: "completed",
+        transition: "reopen",
+        reason: "Persistió vibración en prueba de ruta",
+      })
+      const [superseded] = await getDb().select().from(schema.preventionCapaEvidence)
+        .where(eq(schema.preventionCapaEvidence.id, completed[0]!.id))
+      expect(superseded).toMatchObject({
+        status: "superseded",
+        supersessionReason: "Persistió vibración en prueba de ruta",
+        description: `Evidencia automática de la mantención correctiva programada para el ${record!.maintenanceDate}.`,
+      })
+      expect(superseded!.description).not.toMatch(/estado vigente/i)
+
+      const attempts = await Promise.allSettled([
+        maintenance.transitionMaintenanceRecord(MAINT_SESSION, {
+          id: record!.id, expectedStatus: "in_progress", transition: "complete", reason: "Segunda reparación verificada",
+        }),
+        maintenance.transitionMaintenanceRecord(MAINT_SESSION, {
+          id: record!.id, expectedStatus: "in_progress", transition: "complete", reason: "Cierre concurrente duplicado",
+        }),
+      ])
+      expect(attempts.filter((attempt) => attempt.status === "fulfilled")).toHaveLength(1)
+      expect(attempts.filter((attempt) => attempt.status === "rejected")).toHaveLength(1)
+
+      const recompleted = await getDb().select().from(schema.preventionCapaEvidence)
+        .where(eq(schema.preventionCapaEvidence.actionId, finding!.capaActionId!))
+      expect(recompleted).toHaveLength(1)
+      expect(recompleted[0]).toMatchObject({ id: completed[0]!.id, status: "active" })
+
+      await maintenance.transitionMaintenanceRecord(MAINT_SESSION, {
+        id: record!.id,
+        expectedStatus: "completed",
+        transition: "cancel",
+        reason: "Orden invalidada por diagnóstico incorrecto",
+      })
+      const [cancelled] = await getDb().select().from(schema.preventionCapaEvidence)
+        .where(eq(schema.preventionCapaEvidence.id, completed[0]!.id))
+      expect(cancelled).toMatchObject({ status: "superseded", supersessionReason: "Orden invalidada por diagnóstico incorrecto" })
+      expect(cancelled!.description).not.toMatch(/estado vigente/i)
     })
 
     it("no abre una segunda mantención para el mismo hallazgo", async () => {

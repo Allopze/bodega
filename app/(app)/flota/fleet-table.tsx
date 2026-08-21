@@ -14,10 +14,10 @@ type VehicleRow = Awaited<ReturnType<typeof getFleetOverview>>[number]
 const NUMBER_FORMATTER = new Intl.NumberFormat("es-CL", { maximumFractionDigits: 1 })
 const formatNumber = (value: number) => NUMBER_FORMATTER.format(value)
 
-export function FleetTable({ vehicles, hasAnyVehicle }: { vehicles: VehicleRow[]; hasAnyVehicle: boolean }) {
-  const showCostPerDistance = vehicles.some((v) => v.costPerKm != null || v.costPerHour != null)
-  const showMeterReading = vehicles.some((v) => v.lastOdometerReading != null || v.lastHourMeterReading != null)
-  const showLastMaintenance = vehicles.some((v) => v.lastMaintenanceDate != null)
+export function FleetTable({ vehicles, hasAnyVehicle, canViewCosts, canViewFuel, canViewMaintenance }: { vehicles: VehicleRow[]; hasAnyVehicle: boolean; canViewCosts: boolean; canViewFuel: boolean; canViewMaintenance: boolean }) {
+  const showCostPerDistance = canViewCosts && canViewFuel && canViewMaintenance && vehicles.some((v) => v.costPerKm != null || v.costPerHour != null)
+  const showMeterReading = canViewFuel && vehicles.some((v) => v.lastOdometerReading != null || v.lastHourMeterReading != null)
+  const showLastMaintenance = canViewMaintenance && vehicles.some((v) => v.lastMaintenanceDate != null)
 
   const columns = React.useMemo(() => [
     { key: "plate", label: "Vehículo", sortable: true },
@@ -25,13 +25,13 @@ export function FleetTable({ vehicles, hasAnyVehicle }: { vehicles: VehicleRow[]
     { key: "operationalStatus", label: "Estado", sortable: true },
     { key: "responsibleName", label: "Responsable", sortable: true },
     { key: "nextExpiryDate", label: "Próximo vencimiento", sortable: true },
-    { key: "totalFuelAmount", label: "Combustible", sortable: true, numeric: true },
-    { key: "totalMaintenanceAmount", label: "Mantenciones", sortable: true, numeric: true },
-    { key: "totalOperationalCost", label: "Total", sortable: true, numeric: true },
+    ...(canViewCosts && canViewFuel ? [{ key: "totalFuelAmount", label: "Combustible", sortable: true, numeric: true }] : []),
+    ...(canViewCosts && canViewMaintenance ? [{ key: "totalMaintenanceAmount", label: "Mantenciones", sortable: true, numeric: true }] : []),
+    ...(canViewCosts && canViewFuel && canViewMaintenance ? [{ key: "totalOperationalCost", label: "Total", sortable: true, numeric: true }] : []),
     ...(showCostPerDistance ? [{ key: "_costPerDistance", label: "$/km·h", sortable: false, numeric: true }] : []),
     ...(showMeterReading ? [{ key: "_meterReading", label: "Km/Hr", sortable: false, numeric: true }] : []),
     ...(showLastMaintenance ? [{ key: "lastMaintenanceDate", label: "Última mantención", sortable: true }] : []),
-  ], [showCostPerDistance, showMeterReading, showLastMaintenance])
+  ], [canViewCosts, canViewFuel, canViewMaintenance, showCostPerDistance, showMeterReading, showLastMaintenance])
 
   return (
     <DataTable
@@ -60,9 +60,9 @@ export function FleetTable({ vehicles, hasAnyVehicle }: { vehicles: VehicleRow[]
             </TableCell>
             <TableCell>{vehicle.responsibleName ?? "—"}</TableCell>
             <TableCell>{vehicle.nextExpiryDate ? formatDate(vehicle.nextExpiryDate) : "—"}</TableCell>
-            <TableCell className="text-right font-mono">{formatCLP(vehicle.totalFuelAmount)}</TableCell>
-            <TableCell className="text-right font-mono">{formatCLP(vehicle.totalMaintenanceAmount)}</TableCell>
-            <TableCell className="text-right font-mono font-semibold">{formatCLP(vehicle.totalOperationalCost)}</TableCell>
+            {canViewCosts && canViewFuel && <TableCell className="text-right font-mono">{formatCLP(vehicle.totalFuelAmount ?? 0)}</TableCell>}
+            {canViewCosts && canViewMaintenance && <TableCell className="text-right font-mono">{formatCLP(vehicle.totalMaintenanceAmount ?? 0)}</TableCell>}
+            {canViewCosts && canViewFuel && canViewMaintenance && <TableCell className="text-right font-mono font-semibold">{formatCLP(vehicle.totalOperationalCost ?? 0)}</TableCell>}
             {showCostPerDistance && <TableCell className="text-right font-mono text-xs text-[var(--color-text-muted)]">
               {vehicle.costPerKm != null
                 ? `${formatCLP(vehicle.costPerKm)}/km`

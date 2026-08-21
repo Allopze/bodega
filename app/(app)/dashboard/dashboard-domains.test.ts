@@ -103,6 +103,12 @@ describe("dominio Finanzas", () => {
     expect(orderDashboardDomains(["billing:view"]).map((d) => d.key)).toEqual(["finanzas"])
   })
 
+  it("el costo de combustible sólo abre Finanzas junto con el permiso base", () => {
+    expect(orderDashboardDomains(["combustibles:view_costs"]).map((d) => d.key)).not.toContain("finanzas")
+    expect(orderDashboardDomains(["combustibles:view"]).map((d) => d.key)).not.toContain("finanzas")
+    expect(orderDashboardDomains(["combustibles:view", "combustibles:view_costs"]).map((d) => d.key)).toContain("finanzas")
+  })
+
   it("sin ningún permiso de dinero, Finanzas no existe", () => {
     const keys = orderDashboardDomains(["prevention:pdtp:view", "warehouse:view_stock"]).map((d) => d.key)
     expect(keys).not.toContain("finanzas")

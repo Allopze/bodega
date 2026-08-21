@@ -14,6 +14,10 @@ import { nanoid } from "@/lib/id"
 import { recordAudit } from "@/lib/audit"
 import { isGlobalRole, visibleWorksiteIds, worksiteScopeSql } from "@/lib/auth/scope"
 import { resolveFleetDocumentFile } from "@/lib/storage/config"
+import { can } from "@/lib/auth/can"
+import { accountableFuelLoadsWhere } from "@/lib/combustibles/load-status"
+import { fleetDocumentMetadataSchema } from "@/lib/validation/fleet-documents"
+import { isCivilDate } from "@/lib/validation/dates"
 
 /**
  * Equipos de una faena, para poblar selectores.
@@ -90,6 +94,9 @@ export function vehicleLabel(vehicle: { plate: string; code: string | null }) {
 // del rol (nunca lo reemplaza). Los llamadores sin selector de faena (/flota)
 // lo omiten y conservan el alcance del rol tal cual.
 export async function getFleetOverview(session: Session, worksiteId?: string) {
+  const canViewFuel = can(session, "combustibles:view")
+  const canViewMaintenance = can(session, "mantenciones:view")
+  const canViewCosts = can(session, "flota:view") && can(session, "combustibles:view_costs")
   const vehicleScope = worksiteScopeSql(session, fuelVehicles.worksiteId, worksiteId)
 
   const sinceDate = new Date()
@@ -102,10 +109,10 @@ export async function getFleetOverview(session: Session, worksiteId?: string) {
       with: { worksite: true, responsibleUser: true, equipmentType: true, usualFuelSupplier: true },
       orderBy: [fuelVehicles.plate],
     }),
-    db
+    canViewFuel ? db
       .select({
         vehicleId: fuelLoads.vehicleId,
-        totalFuelAmount: sql<number>`COALESCE(SUM(${fuelLoads.totalAmount}), 0)`,
+        totalFuelAmount: canViewCosts ? sql<number>`COALESCE(SUM(${fuelLoads.totalAmount}), 0)` : sql<null>`null`,
         totalLiters: sql<number>`COALESCE(SUM(${fuelLoads.liters}), 0)`,
         loadCount: sql<number>`COUNT(*)`,
         lastOdometerReading: sql<number>`MAX(${fuelLoads.odometerReading}) FILTER (WHERE ${fuelLoads.odometerReading} IS NOT NULL)`,
@@ -115,14 +122,15 @@ export async function getFleetOverview(session: Session, worksiteId?: string) {
       })
       .from(fuelLoads)
       .where(and(
+        accountableFuelLoadsWhere(),
         sql`${fuelLoads.loadDate} >= ${since.slice(0, 10)}`,
         worksiteScopeSql(session, fuelLoads.worksiteId, worksiteId),
       ))
-      .groupBy(fuelLoads.vehicleId),
-    db
+      .groupBy(fuelLoads.vehicleId) : Promise.resolve([]),
+    canViewMaintenance ? db
       .select({
         vehicleId: maintenanceRecords.vehicleId,
-        totalMaintenanceAmount: sql<number>`COALESCE(SUM(${maintenanceRecords.totalAmount}), 0)`,
+        totalMaintenanceAmount: canViewCosts ? sql<number>`COALESCE(SUM(${maintenanceRecords.totalAmount}), 0)` : sql<null>`null`,
         maintenanceCount: sql<number>`COUNT(*)`,
         lastMaintenanceDate: sql<string>`MAX(${maintenanceRecords.maintenanceDate})`,
       })
@@ -132,7 +140,7 @@ export async function getFleetOverview(session: Session, worksiteId?: string) {
         sql`${maintenanceRecords.status} <> 'cancelled'`,
         worksiteScopeSql(session, maintenanceRecords.worksiteId, worksiteId),
       ))
-      .groupBy(maintenanceRecords.vehicleId),
+      .groupBy(maintenanceRecords.vehicleId) : Promise.resolve([]),
     // El detalle del vehículo incluye los documentos subidos en su "próximo
     // vencimiento" (ver `getFleetVehicleDetail`); el listado los ignoraba, así
     // que un seguro cargado como documento no aparecía ni en la columna ni en
@@ -154,9 +162,11 @@ export async function getFleetOverview(session: Session, worksiteId?: string) {
   return vehicles.map((vehicle) => {
     const fuel = fuelByVehicle.get(vehicle.id)
     const maintenance = maintenanceByVehicle.get(vehicle.id)
-    const totalFuelAmount = Number(fuel?.totalFuelAmount ?? 0)
-    const totalMaintenanceAmount = Number(maintenance?.totalMaintenanceAmount ?? 0)
-    const totalOperationalCost = totalFuelAmount + totalMaintenanceAmount
+    const totalFuelAmount = canViewFuel && canViewCosts ? Number(fuel?.totalFuelAmount ?? 0) : null
+    const totalMaintenanceAmount = canViewMaintenance && canViewCosts ? Number(maintenance?.totalMaintenanceAmount ?? 0) : null
+    const totalOperationalCost = totalFuelAmount != null && totalMaintenanceAmount != null
+      ? totalFuelAmount + totalMaintenanceAmount
+      : null
     const firstOdometer = fuel?.firstOdometerReading == null ? null : Number(fuel.firstOdometerReading)
     const lastOdometer = fuel?.lastOdometerReading == null ? null : Number(fuel.lastOdometerReading)
     const firstHourMeter = fuel?.firstHourMeterReading == null ? null : Number(fuel.firstHourMeterReading)
@@ -194,21 +204,23 @@ export async function getFleetOverview(session: Session, worksiteId?: string) {
       totalFuelAmount,
       totalMaintenanceAmount,
       totalOperationalCost,
-      totalLiters: Number(fuel?.totalLiters ?? 0),
-      loadCount: Number(fuel?.loadCount ?? 0),
-      maintenanceCount: Number(maintenance?.maintenanceCount ?? 0),
-      lastMaintenanceDate: maintenance?.lastMaintenanceDate ?? null,
-      lastOdometerReading: lastOdometer,
-      lastHourMeterReading: lastHourMeter,
+      totalLiters: canViewFuel ? Number(fuel?.totalLiters ?? 0) : null,
+      loadCount: canViewFuel ? Number(fuel?.loadCount ?? 0) : null,
+      maintenanceCount: canViewMaintenance ? Number(maintenance?.maintenanceCount ?? 0) : null,
+      lastMaintenanceDate: canViewMaintenance ? maintenance?.lastMaintenanceDate ?? null : null,
+      lastOdometerReading: canViewFuel ? lastOdometer : null,
+      lastHourMeterReading: canViewFuel ? lastHourMeter : null,
       kmDriven,
       hoursRun,
-      costPerKm: kmDriven ? totalOperationalCost / kmDriven : null,
-      costPerHour: hoursRun ? totalOperationalCost / hoursRun : null,
+      costPerKm: kmDriven && totalOperationalCost != null ? totalOperationalCost / kmDriven : null,
+      costPerHour: hoursRun && totalOperationalCost != null ? totalOperationalCost / hoursRun : null,
     }
   })
 }
 
 export async function getFleetVehicleDetail(session: Session, id: string) {
+  const canViewFuel = can(session, "combustibles:view")
+  const canViewMaintenance = can(session, "mantenciones:view")
   const scopedWorksites = isGlobalRole(session) ? null : visibleWorksiteIds(session)
   const vehicle = await db.query.fuelVehicles.findFirst({
     where: eq(fuelVehicles.id, id),
@@ -228,25 +240,39 @@ export async function getFleetVehicleDetail(session: Session, id: string) {
     // devolvía el tramo más viejo del historial y la última mantención del
     // vehículo quedaba fuera de la tarjeta. `maintenance_date` es sólo fecha,
     // así que se desempata por `createdAt` igual que el listado de mantenciones.
-    db.query.maintenanceRecords.findMany({
+    canViewMaintenance ? db.query.maintenanceRecords.findMany({
       where: eq(maintenanceRecords.vehicleId, id),
+      columns: {
+        id: true,
+        maintenanceDate: true,
+        maintenanceType: true,
+        status: true,
+        createdAt: true,
+      },
       orderBy: [desc(maintenanceRecords.maintenanceDate), desc(maintenanceRecords.createdAt)],
       limit: 10,
-    }),
+    }) : Promise.resolve([]),
     // Log operacional de combustible: fecha real por carga (a diferencia de
     // fuelLoads, que solo trae odómetro/horómetro cuando se digitó a mano).
-    db.query.fuelOperationRecords.findMany({
+    canViewFuel ? db.query.fuelOperationRecords.findMany({
       where: eq(fuelOperationRecords.vehicleId, id),
+      columns: {
+        id: true,
+        fecha: true,
+        horometro: true,
+        medidoPor: true,
+        operador: true,
+      },
       orderBy: [desc(fuelOperationRecords.fecha)],
       limit: 20,
-    }),
-    db
+    }) : Promise.resolve([]),
+    canViewFuel ? db
       .select({ operador: fuelOperationRecords.operador, count: sql<number>`COUNT(*)` })
       .from(fuelOperationRecords)
       .where(and(eq(fuelOperationRecords.vehicleId, id), isNotNull(fuelOperationRecords.operador)))
       .groupBy(fuelOperationRecords.operador)
       .orderBy(desc(sql`COUNT(*)`))
-      .limit(5),
+      .limit(5) : Promise.resolve([]),
     db.query.fuelVehicleOperationalIntervals.findMany({
       where: eq(fuelVehicleOperationalIntervals.vehicleId, id),
       with: { changedByUser: { columns: { name: true, email: true } } },
@@ -260,8 +286,8 @@ export async function getFleetVehicleDetail(session: Session, id: string) {
   // arriba) en vez de derivarlo de `recentOperations`: ese array ya viene
   // acotado a las 20 lecturas más recientes del vehículo, así que para
   // mantenciones antiguas no cubriría la ventana de comparación completa.
-  const maintenanceConsumptionImpact = await Promise.all(
-    recentMaintenance.filter((m) => m.status !== "cancelled").map(async (m) => {
+  const maintenanceConsumptionImpact = canViewFuel && canViewMaintenance ? await Promise.all(
+    recentMaintenance.filter((m) => m.status !== "cancelled" && isCivilDate(m.maintenanceDate)).map(async (m) => {
       const [row] = await db.select({
         avgBefore: sql<number | null>`avg(${fuelOperationRecords.rendimiento}) filter (where ${fuelOperationRecords.fecha} >= (${m.maintenanceDate}::date - interval '30 days')::text and ${fuelOperationRecords.fecha} < ${m.maintenanceDate})`,
         avgAfter: sql<number | null>`avg(${fuelOperationRecords.rendimiento}) filter (where ${fuelOperationRecords.fecha} > ${m.maintenanceDate} and ${fuelOperationRecords.fecha} <= (${m.maintenanceDate}::date + interval '30 days')::text)`,
@@ -272,7 +298,7 @@ export async function getFleetVehicleDetail(session: Session, id: string) {
         avgAfter: row?.avgAfter != null ? Number(row.avgAfter) : null,
       }
     }),
-  )
+  ) : []
 
   return {
     vehicle,
@@ -318,9 +344,15 @@ export async function uploadFleetDocument(
   session: Session,
   worksiteIds: string[] | "all",
 ): Promise<string> {
-  if (!input.vehicleId) throw new Error("Vehículo requerido")
-  if (!input.documentType) throw new Error("Tipo de documento requerido")
+  if (!can(session, "flota:manage_documents")) throw new Error("Sin permisos para administrar documentos de flota")
   if (!input.fileName || !input.filePath) throw new Error("Archivo requerido")
+  // El servicio es el punto compartido: repite la taxonomía y la fecha civil en
+  // vez de confiar en que su llamador validó.
+  const metadata = fleetDocumentMetadataSchema.parse({
+    vehicleId: input.vehicleId,
+    documentType: input.documentType,
+    expiresAt: input.expiresAt ?? null,
+  })
 
   const vehicle = await db.query.fuelVehicles.findFirst({
     where: eq(fuelVehicles.id, input.vehicleId),
@@ -335,12 +367,12 @@ export async function uploadFleetDocument(
   await db.insert(fleetVehicleDocuments).values({
     id: docId,
     vehicleId: input.vehicleId,
-    documentType: input.documentType,
+    documentType: metadata.documentType,
     fileName: input.fileName,
     filePath: input.filePath,
     fileSize: input.fileSize,
     mimeType: input.mimeType,
-    expiresAt: input.expiresAt ?? null,
+    expiresAt: metadata.expiresAt ?? null,
     uploadedBy: session.user.id,
   })
 
@@ -361,6 +393,7 @@ export async function deleteFleetDocument(
   session: Session,
   worksiteIds: string[] | "all",
 ): Promise<void> {
+  if (!can(session, "flota:manage_documents")) throw new Error("Sin permisos para administrar documentos de flota")
   const document = await db.query.fleetVehicleDocuments.findFirst({
     where: eq(fleetVehicleDocuments.id, documentId),
   })

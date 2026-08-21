@@ -19,7 +19,7 @@ import { TaeFilters } from "./tae-filters"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { getTaeGroupedTotals } from "@/lib/combustibles/tae-dashboard"
 import { TaeGroupChart } from "./tae-group-chart"
-import { formatDateTime } from "@/lib/utils"
+import { addDaysToPlainDate, formatDateTime, todayInChile } from "@/lib/utils"
 import { TAE_STATUS_LABELS as STATUS } from "@/lib/combustibles/labels"
 
 export const metadata: Metadata = { title: "Control TAE" }
@@ -64,11 +64,13 @@ export default async function TaeControlPage({ searchParams }: { searchParams: P
     ) : undefined,
   ].filter((condition) => condition !== undefined)
   const where = conditions.length > 0 ? and(...conditions) : undefined
-  const now = new Date()
+  // Día civil chileno, no UTC: entre las 20:00 y la medianoche de Chile el día
+  // UTC ya avanzó, así que "hoy" excluía las cargas de esa misma tarde.
+  const today = todayInChile()
   const chartRange = {
     worksiteId: filters.worksiteId || undefined,
-    from: filters.from || new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
-    to: filters.to || now.toISOString().slice(0, 10),
+    from: filters.from || addDaysToPlainDate(today, -90),
+    to: filters.to || today,
   }
   const bitacoraGroupBaseHref = `/combustibles/bitacora?${new URLSearchParams({ desde: chartRange.from, hasta: chartRange.to, fuente: "tae_pwa" }).toString()}`
 

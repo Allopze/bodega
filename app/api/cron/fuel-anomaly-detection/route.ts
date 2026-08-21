@@ -15,6 +15,7 @@ import { runAllBatchRules } from "@/lib/combustibles/anomaly-detector"
 import { seedAnomalyRulesIfEmpty } from "@/lib/combustibles/anomaly-cases"
 import { logger } from "@/lib/logger"
 import { verifyCronSecret } from "@/lib/security/cron-auth"
+import { isRouteOperational } from "@/lib/services/module-toggles"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -27,6 +28,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   }
   if (!verifyCronSecret(req.headers.get("authorization"), secret)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  }
+  if (!await isRouteOperational("/combustibles/anomalias")) {
+    return NextResponse.json({ error: "Módulo de combustibles inactivo" }, { status: 503 })
   }
 
   try {

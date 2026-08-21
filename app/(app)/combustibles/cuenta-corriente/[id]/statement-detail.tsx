@@ -49,7 +49,7 @@ interface StatementData {
 const LITERS_FORMAT = new Intl.NumberFormat("es-CL", { maximumFractionDigits: 0 })
 const formatLiters = (n: number) => LITERS_FORMAT.format(n)
 
-export function StatementDetail({ statement }: { statement: StatementData }) {
+export function StatementDetail({ statement, canManage }: { statement: StatementData; canManage: boolean }) {
   const pending = statement.totalAmount - statement.paidAmount
   const isPayable = statement.status !== "paid" && statement.status !== "cancelled"
 
@@ -98,7 +98,7 @@ export function StatementDetail({ statement }: { statement: StatementData }) {
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle>Pagos registrados</CardTitle>
-          {isPayable && <AddPaymentDialog statementId={statement.id} pendingAmount={pending} />}
+          {canManage && isPayable && <AddPaymentDialog statementId={statement.id} pendingAmount={pending} />}
         </CardHeader>
         <CardContent>
           {statement.payments.length === 0 ? (

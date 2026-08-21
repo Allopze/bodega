@@ -87,7 +87,7 @@ export async function resolveEntityWorksite(
  */
 export async function toggleReviewMarkAction(source: FuelLogSource, entityId: string) {
   let session
-  try { session = await requirePermission("combustibles:view") }
+  try { session = await requirePermission("combustibles:view", "/combustibles/bitacora") }
   catch { return { ok: false as const, message: "Sin permisos" } }
 
   const entityType = fuelLogEntityType(source)
@@ -206,7 +206,7 @@ function exportFileName(prefix: string) {
 
 export async function exportFuelLogAction(filters: FuelLogFilters) {
   let session
-  try { session = await requirePermission("combustibles:export") }
+  try { session = await requirePermission("combustibles:export", "/combustibles/bitacora") }
   catch { return { ok: false as const, message: "Sin permisos para exportar" } }
 
   const { rows, truncated } = await getFuelLogExportRows(session, filters)
@@ -230,7 +230,7 @@ export async function exportFuelLogAction(filters: FuelLogFilters) {
 
 export async function exportFuelLogSelectionAction(selection: Array<{ source: FuelLogSource; id: string }>) {
   let session
-  try { session = await requirePermission("combustibles:export") }
+  try { session = await requirePermission("combustibles:export", "/combustibles/bitacora") }
   catch { return { ok: false as const, message: "Sin permisos para exportar" } }
   if (!selection.length) return { ok: false as const, message: "No hay filas seleccionadas" }
 

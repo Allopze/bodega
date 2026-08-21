@@ -1,6 +1,7 @@
 import type { Session } from "next-auth"
 import { getAnalyticsDashboard, normalizeAnalyticsFilters } from "@/lib/services/analytics"
 import type { ReportCell, ReportData, ReportSheet, ExportFilters } from "./types"
+import { can } from "@/lib/auth/can"
 
 export async function analiticaResumen(session: Session | null, filters: ExportFilters): Promise<ReportData> {
   if (!session) {
@@ -19,6 +20,9 @@ export async function analiticaResumen(session: Session | null, filters: ExportF
     supplierId: filters.supplierId,
     vehicleId: filters.vehicleId,
   }))
+  const canViewFuel = can(session, "combustibles:view")
+  const canViewFuelCosts = canViewFuel && can(session, "combustibles:view_costs")
+  const canViewMaintenanceCosts = canViewFuelCosts && can(session, "mantenciones:view")
 
   const rows: ReportCell[][] = [
     ["KPI", "Gasto total", `${data.filters.fromDate} a ${data.filters.toDate}`, data.kpis.totalSpend],
@@ -26,11 +30,13 @@ export async function analiticaResumen(session: Session | null, filters: ExportF
     ["KPI", "Órdenes de compra", "Cantidad del período", data.kpis.purchaseOrderCount],
     ["KPI", "Aprobaciones pendientes", "Ítems solicitados pendientes", data.kpis.pendingApprovals],
     ["KPI", "Stock crítico", "Productos bajo mínimo", data.kpis.criticalStockCount],
-    ["KPI", "Combustible", `${data.kpis.fuelLoadCount} cargas`, data.kpis.fuelLiters],
+    ...(canViewFuel ? [["KPI", "Combustible", `${data.kpis.fuelLoadCount} cargas`, data.kpis.fuelLiters] as ReportCell[]] : []),
     ...data.spendByMonth.map((row) => [
       "Tendencia mensual",
       row.month,
-      `Compras: ${row.purchasingAmount} · Combustible: ${row.fuelAmount}`,
+      canViewFuelCosts
+        ? `Compras: ${row.purchasingAmount} · Combustible: ${row.fuelAmount}`
+        : `Compras: ${row.purchasingAmount}`,
       row.totalAmount,
     ]),
     ...data.spendByModule.map((row) => [
@@ -51,12 +57,12 @@ export async function analiticaResumen(session: Session | null, filters: ExportF
       "",
       row.totalAmount,
     ]),
-    ...data.vehicleCosts.map((row) => [
+    ...(canViewFuelCosts ? data.vehicleCosts.map((row) => [
       "Vehículos",
       row.plate,
       `${row.type} · ${row.totalLiters} L · ${row.loadCount} cargas`,
-      row.totalOperationalCost,
-    ]),
+      canViewMaintenanceCosts ? row.totalOperationalCost : row.totalFuelAmount,
+    ]) : []),
     ...data.stockRisks.map((row) => [
       "Stock crítico",
       row.productName,
@@ -93,14 +99,16 @@ export async function analiticaResumen(session: Session | null, filters: ExportF
         ["Órdenes de compra", "Cantidad del período", data.kpis.purchaseOrderCount],
         ["Aprobaciones pendientes", "Ítems solicitados pendientes", data.kpis.pendingApprovals],
         ["Stock crítico", "Productos bajo mínimo", data.kpis.criticalStockCount],
-        ["Litros combustible", `${data.kpis.fuelLoadCount} cargas`, data.kpis.fuelLiters],
+        ...(canViewFuel ? [["Litros combustible", `${data.kpis.fuelLoadCount} cargas`, data.kpis.fuelLiters] as ReportCell[]] : []),
         ["Promedio OC", "Monto promedio de OC", data.kpis.averageOrderAmount],
       ],
     },
     {
       worksheetName: "Gasto mensual",
-      headers: ["Mes", "Compras", "Combustible", "Total"],
-      rows: data.spendByMonth.map((row) => [row.month, row.purchasingAmount, row.fuelAmount, row.totalAmount]),
+      headers: canViewFuelCosts ? ["Mes", "Compras", "Combustible", "Total"] : ["Mes", "Compras", "Total"],
+      rows: data.spendByMonth.map((row) => canViewFuelCosts
+        ? [row.month, row.purchasingAmount, row.fuelAmount, row.totalAmount]
+        : [row.month, row.purchasingAmount, row.totalAmount]),
     },
     {
       worksheetName: "Proveedores",
@@ -112,21 +120,15 @@ export async function analiticaResumen(session: Session | null, filters: ExportF
       headers: ["Faena", "Monto"],
       rows: data.topWorksites.map((row) => [row.name, row.totalAmount]),
     },
-    {
+    ...(canViewFuelCosts ? [{
       worksheetName: "Vehículos",
-      headers: ["Patente", "Tipo", "Combustible", "Servicios/Mantenciones", "Total", "Litros", "Cargas", "Km", "Horómetro"],
-      rows: data.vehicleCosts.map((row) => [
-        row.plate,
-        row.type,
-        row.totalFuelAmount,
-        row.totalServiceAmount,
-        row.totalOperationalCost,
-        row.totalLiters,
-        row.loadCount,
-        row.lastOdometerReading,
-        row.lastHourMeterReading,
-      ]),
-    },
+      headers: canViewMaintenanceCosts
+        ? ["Patente", "Tipo", "Combustible", "Servicios/Mantenciones", "Total", "Litros", "Cargas", "Km", "Horómetro"]
+        : ["Patente", "Tipo", "Combustible", "Litros", "Cargas", "Km", "Horómetro"],
+      rows: data.vehicleCosts.map((row) => canViewMaintenanceCosts
+        ? [row.plate, row.type, row.totalFuelAmount, row.totalServiceAmount, row.totalOperationalCost, row.totalLiters, row.loadCount, row.lastOdometerReading, row.lastHourMeterReading]
+        : [row.plate, row.type, row.totalFuelAmount, row.totalLiters, row.loadCount, row.lastOdometerReading, row.lastHourMeterReading]),
+    } satisfies ReportSheet] : []),
     {
       worksheetName: "Stock",
       headers: ["Producto", "SKU", "Faena", "Stock", "Mínimo"],

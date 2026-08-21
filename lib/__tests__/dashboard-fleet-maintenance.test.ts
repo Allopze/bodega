@@ -2,20 +2,27 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 import type { Session } from "next-auth"
 
 const selectChains: Array<Record<string, ReturnType<typeof vi.fn>>> = []
+const selectProjections: Array<Record<string, unknown>> = []
 
 function createChain() {
   const chain: Record<string, unknown> = {}
   chain.from = vi.fn(() => chain)
   chain.where = vi.fn(() => chain)
+  chain.groupBy = vi.fn(() => chain)
+  chain.orderBy = vi.fn(() => chain)
+  chain.limit = vi.fn(() => chain)
   chain.then = (resolve: (value: unknown[]) => void, reject?: (error: unknown) => void) =>
     Promise.resolve([{ value: 0 }]).then(resolve, reject)
   selectChains.push(chain as Record<string, ReturnType<typeof vi.fn>>)
   return chain
 }
 
-vi.mock("@/db", () => ({ db: { select: () => createChain() } }))
+vi.mock("@/db", () => ({ db: { select: (projection: Record<string, unknown>) => {
+  selectProjections.push(projection)
+  return createChain()
+} } }))
 
-import { getMaintenanceDashboardSummary } from "@/lib/services/dashboard-fleet-maintenance"
+import { getFuelMonthlyTrend, getMaintenanceDashboardSummary, getMaintenanceMonthlyTrend } from "@/lib/services/dashboard-fleet-maintenance"
 
 /** Trozos literales y parámetros de un predicado de Drizzle. */
 function sqlChunks(node: unknown, out: string[] = []): string[] {
@@ -42,7 +49,24 @@ function sqlChunks(node: unknown, out: string[] = []): string[] {
 
 afterEach(() => {
   selectChains.length = 0
+  selectProjections.length = 0
   vi.useRealTimers()
+})
+
+describe("cost capability in operational trends", () => {
+  it("does not project fuel or maintenance amounts without view_costs", async () => {
+    const session = { user: { id: "operator", permissions: ["combustibles:view", "mantenciones:view"], isGlobal: true, worksiteIds: [] } } as unknown as Session
+
+    const [fuel, maintenance] = await Promise.all([
+      getFuelMonthlyTrend(session, 1),
+      getMaintenanceMonthlyTrend(session, 1),
+    ])
+
+    expect(fuel[0]?.amount).toBeNull()
+    expect(maintenance[0]?.amount).toBeNull()
+    expect(sqlChunks(selectProjections[0]!.amount).join(" ").toLowerCase()).not.toContain("total_amount")
+    expect(sqlChunks(selectProjections[1]!.amount).join(" ").toLowerCase()).not.toContain("total_amount")
+  })
 })
 
 describe("getMaintenanceDashboardSummary", () => {

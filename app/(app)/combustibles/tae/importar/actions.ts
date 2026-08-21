@@ -36,7 +36,7 @@ function parseManualMappings(value: FormDataEntryValue | null): TaeImportMapping
 }
 
 export async function generateTaeImportReportAction(formData: FormData) {
-  const guard = await guardPermission("combustibles:tae_import")
+  const guard = await guardPermission("combustibles:tae_import", "/combustibles/tae")
   if (guard.error) return guard.error
 
   const file = formData.get("file")
@@ -71,7 +71,7 @@ export async function generateTaeImportReportAction(formData: FormData) {
 }
 
 export async function importTaeHistoryAction(formData: FormData) {
-  const guard = await guardPermission("combustibles:tae_import")
+  const guard = await guardPermission("combustibles:tae_import", "/combustibles/tae")
   if (guard.error) return guard.error
   if (formData.get("confirmation") !== "IMPORTAR") return { ok: false, message: "Debes confirmar que revisaste el reporte de mapeo" }
   const file = formData.get("file")
@@ -107,7 +107,7 @@ export async function importTaeHistoryAction(formData: FormData) {
 }
 
 export async function revertTaeImportBatchAction(batchId: string) {
-  const guard = await guardPermission("combustibles:tae_import")
+  const guard = await guardPermission("combustibles:tae_import", "/combustibles/tae")
   if (guard.error) return guard.error
   if (!can(guard.session, "combustibles:revert")) {
     return { ok: false as const, message: "No tienes permiso para revertir lotes" }
@@ -116,6 +116,7 @@ export async function revertTaeImportBatchAction(batchId: string) {
 
   try {
     const result = await db.transaction(async (tx) => {
+      const scope = resolveWorksiteScope(guard.session)
       const [batch] = await tx
         .update(fuelTaeImportBatches)
         .set({ status: "reverted", updatedAt: new Date().toISOString() })
@@ -123,6 +124,7 @@ export async function revertTaeImportBatchAction(batchId: string) {
         .returning()
 
       if (!batch) {
+        if (scope.mode !== "all") throw new Error("Lote no encontrado o fuera de alcance")
         const existing = await tx.query.fuelTaeImportBatches.findFirst({
           where: eq(fuelTaeImportBatches.id, batchId),
           columns: { status: true },
@@ -140,12 +142,21 @@ export async function revertTaeImportBatchAction(batchId: string) {
       // (que es la que inserta el movimiento de sello) fallaba con violación
       // de FK. Una vez aplicada la migración, este borrado queda redundante
       // pero inofensivo — el CASCADE ya lo habría hecho.
-      const submissionIds = await tx
-        .select({ id: fuelTaeSubmissions.id })
+      const submissions = await tx
+        .select({ id: fuelTaeSubmissions.id, worksiteId: fuelTaeSubmissions.worksiteId })
         .from(fuelTaeSubmissions)
         .where(eq(fuelTaeSubmissions.importBatchId, batchId))
-      if (submissionIds.length > 0) {
-        await tx.delete(fuelSealMovements).where(inArray(fuelSealMovements.submissionId, submissionIds.map((s) => s.id)))
+        .for("update")
+
+      if (scope.mode !== "all") {
+        const allowed = new Set(scope.mode === "some" ? scope.ids : [])
+        if (submissions.length === 0 || submissions.some((submission) => !allowed.has(submission.worksiteId))) {
+          throw new Error("Lote no encontrado o fuera de alcance")
+        }
+      }
+
+      if (submissions.length > 0) {
+        await tx.delete(fuelSealMovements).where(inArray(fuelSealMovements.submissionId, submissions.map((s) => s.id)))
       }
 
       const removed = await tx
@@ -189,7 +200,7 @@ export async function revertTaeImportBatchAction(batchId: string) {
 }
 
 export async function reprocessTaeImportBatchAction(batchId: string) {
-  const guard = await guardPermission("combustibles:tae_import")
+  const guard = await guardPermission("combustibles:tae_import", "/combustibles/tae")
   if (guard.error) return guard.error
   if (!batchId) return { ok: false as const, message: "Lote requerido" }
 
@@ -219,7 +230,7 @@ export async function reprocessTaeImportBatchAction(batchId: string) {
  * marcarlo como observado por el mismo motivo.
  */
 export async function saveTaeVehicleMappingAction(input: { worksiteId: string; legacyCode: string; vehicleId: string | null }) {
-  const guard = await guardPermission("combustibles:tae_import")
+  const guard = await guardPermission("combustibles:tae_import", "/combustibles/tae")
   if (guard.error) return guard.error
   if (!canAccessWorksite(guard.session, input.worksiteId)) return { ok: false, message: "No tienes acceso a esta faena" }
   const legacyCode = input.legacyCode.trim()
@@ -237,7 +248,7 @@ export async function saveTaeVehicleMappingAction(input: { worksiteId: string; l
 }
 
 export async function saveTaeWorkerMappingAction(input: { worksiteId: string; role: "driver" | "supervisor"; legacyName: string; workerId: string | null }) {
-  const guard = await guardPermission("combustibles:tae_import")
+  const guard = await guardPermission("combustibles:tae_import", "/combustibles/tae")
   if (guard.error) return guard.error
   if (!canAccessWorksite(guard.session, input.worksiteId)) return { ok: false, message: "No tienes acceso a esta faena" }
   const legacyName = input.legacyName.trim()

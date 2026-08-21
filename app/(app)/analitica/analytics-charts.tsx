@@ -86,18 +86,14 @@ export function RankingBarChart({
 }: {
   data: Array<WorksiteSpendRow | VehicleCostRow>
   labelKey: "name" | "plate"
-  valueKey: "totalAmount" | "totalOperationalCost"
+  valueKey: "totalAmount" | "totalOperationalCost" | "totalFuelAmount"
   emptyLabel: string
 }) {
   if (data.length === 0) return <EmptyChart label={emptyLabel} />
 
   const chartData = data.slice(0, 8).map((row) => ({
     name: labelKey === "plate" && "plate" in row ? row.plate : "name" in row ? row.name : "",
-    value: valueKey === "totalOperationalCost" && "totalOperationalCost" in row
-      ? row.totalOperationalCost
-      : "totalAmount" in row
-        ? row.totalAmount
-        : 0,
+    value: valueKey in row ? Number((row as unknown as Record<string, unknown>)[valueKey] ?? 0) : 0,
   }))
 
   return (

@@ -49,7 +49,7 @@ function input(formData: FormData) {
 
 export async function createAnomalyRuleAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   let session
-  try { session = await requirePermission("combustibles:manage_anomaly_rules") }
+  try { session = await requirePermission("combustibles:manage_anomaly_rules", "/combustibles") }
   catch { return { ok: false, message: "Sin permisos" } }
 
   const parsed = anomalyRuleSchema.safeParse(input(formData))
@@ -79,7 +79,7 @@ export async function createAnomalyRuleAction(_prev: ActionState, formData: Form
 
 export async function updateAnomalyRuleAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   let session
-  try { session = await requirePermission("combustibles:manage_anomaly_rules") }
+  try { session = await requirePermission("combustibles:manage_anomaly_rules", "/combustibles") }
   catch { return { ok: false, message: "Sin permisos" } }
 
   const id = String(formData.get("id") ?? "")
@@ -118,7 +118,7 @@ export async function updateAnomalyRuleAction(_prev: ActionState, formData: Form
 
 export async function setAnomalyRuleStatusAction(id: string, isActive: boolean): Promise<ActionState> {
   let session
-  try { session = await requirePermission("combustibles:manage_anomaly_rules") }
+  try { session = await requirePermission("combustibles:manage_anomaly_rules", "/combustibles") }
   catch { return { ok: false, message: "Sin permisos" } }
   const existing = await db.query.fuelAnomalyRules.findFirst({ where: eq(fuelAnomalyRules.id, id) })
   if (!existing) return { ok: false, message: "Regla no encontrada" }

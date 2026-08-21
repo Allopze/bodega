@@ -13,6 +13,7 @@ import { toast } from "@/lib/toast"
 import { formatDate } from "@/lib/utils"
 import { uploadFleetDocumentAction, deleteFleetDocumentAction } from "../actions"
 import type { ActionState } from "@/lib/validation/operations"
+import { FLEET_DOCUMENT_TYPES } from "@/lib/validation/fleet-documents"
 
 interface FleetDocument {
   id: string
@@ -23,23 +24,18 @@ interface FleetDocument {
   createdAt: string
 }
 
-const DOC_TYPES = [
-  "SOAP",
-  "Revisión técnica",
-  "Permiso de circulación",
-  "Seguro",
-  "Padrón",
-  "Certificado de emisiones",
-  "Manual del vehículo",
-  "Otro",
-]
+// La taxonomía es compartida con el servidor: el desplegable y la validación
+// no pueden divergir (lib/validation/fleet-documents.ts).
+const DOC_TYPES = FLEET_DOCUMENT_TYPES
 
 export function FleetDocumentsPanel({
   vehicleId,
   documents,
+  canManageDocuments,
 }: {
   vehicleId: string
   documents: FleetDocument[]
+  canManageDocuments: boolean
 }) {
   const [uploadState, uploadAction, uploadPending] = useActionState<ActionState, FormData>(uploadFleetDocumentAction, { ok: false, message: "" })
   const [deleteState, deleteAction, deletePending] = useActionState<ActionState, FormData>(deleteFleetDocumentAction, { ok: false, message: "" })
@@ -88,7 +84,7 @@ export function FleetDocumentsPanel({
                     <FileText size={14} aria-hidden />
                   </a>
                 </Button>
-                <Button
+                {canManageDocuments && <Button
                   type="button"
                   variant="ghost"
                   size="sm"
@@ -97,14 +93,14 @@ export function FleetDocumentsPanel({
                   onClick={() => setPendingDelete(document)}
                 >
                   <Trash size={14} aria-hidden />
-                </Button>
+                </Button>}
               </div>
             </div>
           ))}
         </div>
       )}
 
-      <ConfirmDialog
+      {canManageDocuments && <ConfirmDialog
         open={pendingDelete !== null}
         onOpenChange={(next) => { if (!next) setPendingDelete(null) }}
         title="Eliminar documento"
@@ -120,13 +116,13 @@ export function FleetDocumentsPanel({
           startTransition(() => deleteAction(data))
           setPendingDelete(null)
         }}
-      />
+      />}
 
       {documents.length === 0 && (
         <p className="mb-4 text-xs text-[var(--color-text-subtle)]">Sin documentos registrados.</p>
       )}
 
-      <form action={uploadAction} className="flex flex-col gap-3">
+      {canManageDocuments && <form action={uploadAction} className="flex flex-col gap-3">
         <input type="hidden" name="vehicleId" value={vehicleId} />
 
         <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
@@ -165,7 +161,7 @@ export function FleetDocumentsPanel({
             {uploadPending ? "Subiendo..." : "Subir documento"}
           </Button>
         </div>
-      </form>
+      </form>}
     </>
   )
 }

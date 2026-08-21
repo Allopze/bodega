@@ -51,7 +51,7 @@ export function ModuleToggleList({ moduleToggles }: ModuleToggleListProps) {
         </span>
         <div className="h-3 w-px bg-[var(--color-border)]" aria-hidden />
         <span className="text-xs text-[var(--color-text-faint)]">
-          Los cambios surten efecto inmediato en la navegación
+          Los cambios surten efecto inmediato en navegación y operación
         </span>
       </div>
 
@@ -65,7 +65,7 @@ export function ModuleToggleList({ moduleToggles }: ModuleToggleListProps) {
 }
 
 /**
- * Apagar un módulo lo retira de la navegación de **todos** los usuarios, y el
+ * Apagar un módulo lo retira de la navegación y bloquea su operación para **todos** los usuarios, y el
  * interruptor lo hacía en un gesto, sin decir qué se llevaba por delante. La
  * confirmación no pide "¿estás seguro?": nombra las pantallas que van a
  * desaparecer, que es la única información con la que se puede decidir.
@@ -76,13 +76,12 @@ export function ModuleToggleList({ moduleToggles }: ModuleToggleListProps) {
  * que esta pantalla vino a dejar de hacer.
  */
 function disableImpact(labels: string[]): string {
-  const scope = " No es un control de acceso: quien tenga el enlace y el permiso seguirá pudiendo abrir esas pantallas."
   if (labels.length === 0) {
-    return `Dejará de aparecer en la navegación de todos los usuarios, incluidos los administradores.${scope}`
+    return "Dejará de aparecer y sus rutas, acciones y automatizaciones quedarán inactivas para todos los usuarios, incluidos los administradores."
   }
   const shown = labels.slice(0, 4).join(", ")
   const rest = labels.length > 4 ? ` y ${labels.length - 4} más` : ""
-  return `Se ocultarán ${countOf(labels.length, "pantalla")} de la navegación de todos los usuarios, incluidos los administradores: ${shown}${rest}.${scope}`
+  return `Se ocultarán y bloquearán ${countOf(labels.length, "pantalla")} para todos los usuarios, incluidos los administradores: ${shown}${rest}. Sus rutas, acciones y automatizaciones quedarán inactivas.`
 }
 
 function ModuleCard({ mod }: { mod: ModuleToggle }) {
@@ -237,7 +236,7 @@ function SubmoduleRow({
             sustituye por lo que la pantalla necesita responder: si está visible
             o no. La ruta sigue siendo la clave de la operación, no un rótulo. */}
         <p className="mt-0.5 text-[10px] text-[var(--color-text-faint)]">
-          {sub.enabled ? "Visible en la navegación" : "Oculto para todos los usuarios"}
+          {sub.enabled ? "Visible y operativo" : "Oculto e inactivo para todos"}
         </p>
       </div>
 
@@ -252,7 +251,7 @@ function SubmoduleRow({
         open={confirmOpen}
         onOpenChange={setConfirmOpen}
         title={`Ocultar ${sub.label}`}
-        description="La pantalla dejará de aparecer en la navegación de todos los usuarios, incluidos los administradores. No es un control de acceso: quien tenga el enlace y el permiso seguirá pudiendo abrirla."
+        description="La pantalla dejará de aparecer y sus rutas, acciones y endpoints quedarán inactivos para todos los usuarios, incluidos los administradores."
         confirmLabel="Ocultar pantalla"
         variant="warning"
         loading={isPending}

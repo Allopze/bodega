@@ -18,6 +18,7 @@ interface AppShellProps {
   badgeCounts?:      Record<string, number>
   /** Módulos habilitados por feature toggle. */
   enabledModuleIds?: string[]
+  disabledSubmoduleHrefs?: string[]
   children:          React.ReactNode
 }
 
@@ -38,11 +39,15 @@ function subscribePanelCollapsed(onStoreChange: () => void) {
   }
 }
 
-const AppShellInner = React.memo(function AppShellInner({ session, worksiteName, badgeCounts, enabledModuleIds, children }: AppShellProps) {
+const AppShellInner = React.memo(function AppShellInner({ session, worksiteName, badgeCounts, enabledModuleIds, disabledSubmoduleHrefs, children }: AppShellProps) {
   // Convertir a Set para lookup eficiente en getVisibleAreas
   const enabledSet = React.useMemo(
     () => (enabledModuleIds ? new Set(enabledModuleIds) : undefined),
     [enabledModuleIds],
+  )
+  const disabledSubmoduleSet = React.useMemo(
+    () => (disabledSubmoduleHrefs ? new Set(disabledSubmoduleHrefs) : undefined),
+    [disabledSubmoduleHrefs],
   )
   const [mobileOpen, setMobileOpen] = React.useState(false)
   const [isClosing,  setIsClosing]  = React.useState(false)
@@ -81,6 +86,7 @@ const AppShellInner = React.memo(function AppShellInner({ session, worksiteName,
           collapsed={panelCollapsed}
           onCollapsedChange={handlePanelCollapsedChange}
           enabledModuleIds={enabledSet}
+          disabledSubmoduleHrefs={disabledSubmoduleSet}
         />
 
         <ShellHeaderProvider>
@@ -111,6 +117,7 @@ const AppShellInner = React.memo(function AppShellInner({ session, worksiteName,
                     badgeCounts={badgeCounts}
                     onNavigate={closeDrawer}
                     enabledModuleIds={enabledSet}
+                    disabledSubmoduleHrefs={disabledSubmoduleSet}
                   />
                 </div>
               </>
@@ -147,7 +154,11 @@ const AppShellInner = React.memo(function AppShellInner({ session, worksiteName,
 
       {/* Paleta de comandos global (⌘K / Ctrl+K) — lazy load */}
       <React.Suspense fallback={null}>
-        <CommandPalette session={session} enabledModuleIds={enabledModuleIds} />
+        <CommandPalette
+          session={session}
+          enabledModuleIds={enabledModuleIds}
+          disabledSubmoduleHrefs={disabledSubmoduleHrefs}
+        />
       </React.Suspense>
     </div>
   )

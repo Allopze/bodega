@@ -22,6 +22,7 @@ export const combustiblesModule = {
     "combustibles:view_audit",
     "combustibles:export_sensitive",
     "combustibles:view_costs",
+    "combustibles:manage_statements",
   ] as const,
 
   permissionMeta: {
@@ -44,6 +45,7 @@ export const combustiblesModule = {
     "combustibles:view_audit":           { id: "p-fuel-audit-view", description: "Consultar historial de auditoría de combustible (valores anteriores/nuevos, actor, motivo)" },
     "combustibles:export_sensitive":     { id: "p-fuel-export-sensitive", description: "Exportar combustible con montos (IEC, IVA, total) — datos sensibles de costo" },
     "combustibles:view_costs":           { id: "p-fuel-view-costs", description: "Ver montos de combustible (facturas y reportes) — costo, no sólo consumo" },
+    "combustibles:manage_statements":    { id: "p-fuel-manage-statements", description: "Crear estados de cuenta y registrar pagos de combustible" },
   },
   nav: [
     {
@@ -102,6 +104,7 @@ export const combustiblesModule = {
     { roleSlug: "administrador",  permission: "combustibles:view_audit" },
     { roleSlug: "administrador",  permission: "combustibles:export_sensitive" },
     { roleSlug: "administrador",  permission: "combustibles:view_costs" },
+    { roleSlug: "administrador",  permission: "combustibles:manage_statements" },
     { roleSlug: "jefa_chome",     permission: "combustibles:view" },
     { roleSlug: "jefa_chome",     permission: "combustibles:create" },
     { roleSlug: "jefa_chome",     permission: "combustibles:import" },
@@ -117,6 +120,7 @@ export const combustiblesModule = {
     { roleSlug: "jefa_chome",     permission: "combustibles:view_audit" },
     { roleSlug: "jefa_chome",     permission: "combustibles:export_sensitive" },
     { roleSlug: "jefa_chome",     permission: "combustibles:view_costs" },
+    { roleSlug: "jefa_chome",     permission: "combustibles:manage_statements" },
     { roleSlug: "jefe_mantencion", permission: "combustibles:view" },
     { roleSlug: "jefe_mantencion", permission: "combustibles:create" },
     { roleSlug: "jefe_mantencion", permission: "combustibles:export" },

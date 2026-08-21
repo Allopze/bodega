@@ -10,7 +10,7 @@ import {
   ShoppingCart,
   Warning,
 } from "@phosphor-icons/react/dist/ssr"
-import { requirePermission } from "@/lib/auth/can"
+import { can, requirePermission } from "@/lib/auth/can"
 import { getAnalyticsDashboard, normalizeAnalyticsFilters } from "@/lib/services/analytics"
 import { formatCLP, formatDate, formatQty } from "@/lib/utils"
 import { PageContainer } from "@/components/ui/page-container"
@@ -32,6 +32,13 @@ export default async function AnaliticaPage({
   let session
   try { session = await requirePermission("analytics:view") }
   catch { redirect("/forbidden") }
+  const canViewFuel = can(session, "combustibles:view")
+  const canViewFuelCosts = canViewFuel && can(session, "combustibles:view_costs")
+  const canViewMaintenanceCosts = canViewFuelCosts && can(session, "mantenciones:view")
+  const canViewPurchasing = can(session, "purchasing:view")
+  const canViewWarehouse = can(session, "warehouse:view_stock")
+  const canViewDeliveries = can(session, "deliveries:view")
+  const canViewReports = can(session, "reports:view")
 
   const sp = await searchParams
   const filters = normalizeAnalyticsFilters({
@@ -62,7 +69,7 @@ export default async function AnaliticaPage({
         breadcrumb={
           <Breadcrumbs items={[
             { label: "Inicio", href: "/dashboard" },
-            { label: "Reportes", href: "/reportes" },
+            ...(canViewReports ? [{ label: "Reportes", href: "/reportes" }] : []),
             { label: "Analítica" },
           ]} />
         }
@@ -94,25 +101,35 @@ export default async function AnaliticaPage({
             value={formatCLP(data.kpis.totalSpend)}
             detail={`Período ${data.filters.fromDate} a ${data.filters.toDate}`}
             trend={data.kpis.spendVariationPct}
-            href="/compras"
-            glossary="Suma de los montos totales de todas las órdenes de compra emitidas más las cargas de combustible del período seleccionado. La variación porcentual compara contra el período anterior de igual duración."
+            href={canViewPurchasing ? "/compras" : undefined}
+            glossary={canViewFuelCosts
+              ? "Suma de órdenes de compra emitidas y cargas de combustible del período seleccionado. La variación compara el período anterior de igual duración."
+              : "Suma de las órdenes de compra emitidas del período seleccionado. El costo de combustible requiere permisos adicionales."}
           />
           <KpiCard
             icon={<Package size={18} />}
             label="Órdenes de compra"
             value={formatQty(data.kpis.purchaseOrderCount)}
             detail={`Promedio ${formatCLP(data.kpis.averageOrderAmount)}`}
-            href="/compras"
+            href={canViewPurchasing ? "/compras" : undefined}
             glossary="Cantidad de órdenes de compra emitidas en el período. El promedio se calcula dividiendo el gasto total de compras entre el número de OC."
           />
-          <KpiCard
+          {canViewFuelCosts && <KpiCard
             icon={<GasPump size={18} />}
             label="Combustible"
             value={formatCLP(data.vehicleCosts.reduce((sum, row) => sum + row.totalFuelAmount, 0))}
             detail={`${formatQty(data.kpis.fuelLiters, "L")} · ${data.kpis.fuelLoadCount} cargas`}
             href="/combustibles"
             glossary="Gasto total en combustible durante el período. Incluye todas las cargas registradas de todos los vehículos visibles para tu alcance."
-          />
+          />}
+          {canViewFuel && !canViewFuelCosts && <KpiCard
+            icon={<GasPump size={18} />}
+            label="Combustible"
+            value={formatQty(data.kpis.fuelLiters, "L")}
+            detail={`${data.kpis.fuelLoadCount} cargas · monto restringido`}
+            href="/combustibles"
+            glossary="Volumen de combustible registrado durante el período. Los montos requieren el permiso de costos."
+          />}
           <KpiCard
             icon={<ShieldWarning size={18} />}
             label="Alertas"
@@ -152,14 +169,14 @@ export default async function AnaliticaPage({
               <RankingBarChart data={data.topWorksites} labelKey="name" valueKey="totalAmount" emptyLabel="Sin gasto por faena para el filtro actual." />
             </CardContent>
           </Card>
-          <Card>
+          {canViewFuelCosts && <Card>
             <CardHeader>
-              <CardTitle>Vehículos con mayor costo</CardTitle>
+              <CardTitle>{canViewMaintenanceCosts ? "Vehículos con mayor costo operacional" : "Vehículos con mayor gasto de combustible"}</CardTitle>
             </CardHeader>
             <CardContent>
-              <RankingBarChart data={data.vehicleCosts} labelKey="plate" valueKey="totalOperationalCost" emptyLabel="Sin cargas de combustible por vehículo en el período." />
+              <RankingBarChart data={data.vehicleCosts} labelKey="plate" valueKey={canViewMaintenanceCosts ? "totalOperationalCost" : "totalFuelAmount"} emptyLabel="Sin cargas de combustible por vehículo en el período." />
             </CardContent>
-          </Card>
+          </Card>}
         </section>
 
         <section className="grid gap-5 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
@@ -214,14 +231,16 @@ export default async function AnaliticaPage({
           <RankingTable
             title="Top proveedores"
             headers={["Proveedor", "Módulo", "Eventos", "Monto"]}
-            rows={data.topSuppliers.map((row) => [
-              <Link key={row.id} href={row.module === "Combustible" ? `/combustibles?proveedor=${row.id}` : `/compras?proveedor=${row.id}`} className="font-medium text-[var(--color-primary)] hover:underline">
-                {row.name}
-              </Link>,
+            rows={data.topSuppliers.map((row) => {
+              const href = row.module === "Combustible"
+                ? canViewFuel ? `/combustibles?proveedor=${row.id}` : null
+                : canViewPurchasing ? `/compras?proveedor=${row.id}` : null
+              return [
+              href ? <Link key={row.id} href={href} className="font-medium text-[var(--color-primary)] hover:underline">{row.name}</Link> : row.name,
               row.module ?? "Compras",
               formatQty(row.count),
               formatCLP(row.totalAmount),
-            ])}
+            ]})}
             empty="Sin proveedores con gasto para el período."
           />
           <RankingTable
@@ -229,9 +248,9 @@ export default async function AnaliticaPage({
             headers={["Producto", "Faena", "Stock", "Mínimo"]}
             rows={data.stockRisks.map((row) => [
               row.productName,
-              <Link key={`${row.productId}-${row.worksiteName}`} href={`/bodega?producto=${row.productId}`} className="text-[var(--color-primary)] hover:underline">
-                {row.worksiteName}
-              </Link>,
+              canViewWarehouse
+                ? <Link key={`${row.productId}-${row.worksiteName}`} href={`/bodega?producto=${row.productId}`} className="text-[var(--color-primary)] hover:underline">{row.worksiteName}</Link>
+                : row.worksiteName,
               formatQty(row.currentQty),
               formatQty(row.minStock),
             ])}
@@ -257,9 +276,9 @@ export default async function AnaliticaPage({
             rows={data.eppDeliveries.map((row) => [
               row.productName,
               row.workerName,
-              <Link key={`${row.productId}-${row.workerName}`} href="/entregas" className="text-[var(--color-primary)] hover:underline">
-                {row.worksiteName}
-              </Link>,
+              canViewDeliveries
+                ? <Link key={`${row.productId}-${row.workerName}`} href="/entregas" className="text-[var(--color-primary)] hover:underline">{row.worksiteName}</Link>
+                : row.worksiteName,
               formatQty(row.totalQty),
             ])}
             empty="Sin entregas de EPP para el período."
@@ -270,9 +289,9 @@ export default async function AnaliticaPage({
           title="Órdenes recientes consideradas"
           headers={["OC", "Faena", "Proveedor", "Fecha", "Monto"]}
           rows={data.recentOrders.map((row) => [
-            <Link key={row.id} href={`/compras/${row.id}`} className="font-medium text-[var(--color-primary)] hover:underline">
-              {row.code}
-            </Link>,
+            canViewPurchasing
+              ? <Link key={row.id} href={`/compras/${row.id}`} className="font-medium text-[var(--color-primary)] hover:underline">{row.code}</Link>
+              : row.code,
             row.worksiteName,
             row.supplierName,
             formatDate(row.createdAt),

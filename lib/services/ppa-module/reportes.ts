@@ -432,7 +432,10 @@ export async function buildPpaExport(
   const [evidence, actorRows] = await Promise.all([
     capaIds.length > 0
       ? db.select({ actionId: preventionCapaEvidence.actionId, kind: preventionCapaEvidence.kind })
-        .from(preventionCapaEvidence).where(inArray(preventionCapaEvidence.actionId, capaIds))
+        .from(preventionCapaEvidence).where(and(
+          inArray(preventionCapaEvidence.actionId, capaIds),
+          eq(preventionCapaEvidence.status, "active"),
+        ))
       : Promise.resolve([]),
     db.select({ id: users.id, name: users.name }).from(users),
   ])

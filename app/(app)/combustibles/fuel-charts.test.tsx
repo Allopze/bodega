@@ -43,8 +43,11 @@ describe("fuel charts", () => {
       />,
     )
 
-    expect(screen.getByTestId("bar-monto")).toBeInTheDocument()
+    // Una sola barra ("value"), con el gasto como métrica y los litros en el
+    // tooltip: la serie de litros dejó de tener barra propia.
+    expect(screen.getByTestId("bar-value")).toBeInTheDocument()
     expect(screen.queryByTestId("bar-litros")).not.toBeInTheDocument()
+    expect(screen.queryByTestId("bar-monto")).not.toBeInTheDocument()
   })
 
   it("groups small product slices into Otros", () => {

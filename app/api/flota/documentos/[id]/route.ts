@@ -9,6 +9,7 @@ import { auth } from "@/lib/auth/auth"
 import { can, canAccessWorksite } from "@/lib/auth/can"
 import { resolveFleetDocumentFile } from "@/lib/storage/config"
 import { encodeContentDisposition } from "@/lib/utils"
+import { isRouteOperational } from "@/lib/services/module-toggles"
 
 export async function GET(
   _request: Request,
@@ -20,6 +21,9 @@ export async function GET(
   }
   if (!can(session, "flota:view")) {
     return NextResponse.json({ error: "Sin permisos" }, { status: 403 })
+  }
+  if (!await isRouteOperational("/flota")) {
+    return NextResponse.json({ error: "Módulo inactivo" }, { status: 503 })
   }
 
   const { id } = await params

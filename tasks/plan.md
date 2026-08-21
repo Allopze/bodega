@@ -1,3 +1,11 @@
+# Plan activo actual
+
+- [Control operacional — plan integral 2026-08-20](./PLAN_CONTROL_OPERACIONAL_2026-08-20.md)
+
+Los planes históricos se conservan sin modificaciones debajo.
+
+---
+
 # Plan de implementación: retiro del espejo `pdtp_action_plan` (D11)
 
 > Plan activo solicitado el 2026-08-13. Ejecuta la decisión **D11** de

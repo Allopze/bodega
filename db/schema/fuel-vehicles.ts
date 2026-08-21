@@ -36,6 +36,10 @@ export const fuelVehicles = pgTable("fuel_vehicles", {
   updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [
   index("fuel_vehicles_worksite_idx").on(table.worksiteId),
+  // Destino de la FK compuesta de `maintenance_records`: deja que Postgres
+  // propague solo el traslado de faena de un equipo a su historial, en vez de
+  // confiar en que cada escritor futuro se acuerde de hacerlo.
+  uniqueIndex("fuel_vehicles_id_worksite_key").on(table.id, table.worksiteId),
   index("fuel_vehicles_responsible_idx").on(table.responsibleUserId),
   index("fuel_vehicles_status_idx").on(table.operationalStatus),
   index("fuel_vehicles_type_idx").on(table.type),

@@ -4,7 +4,7 @@ import { CaretRight } from "@phosphor-icons/react/dist/ssr"
 import { can, requireAuth } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { getPreventionAttention } from "@/lib/services/prevention-attention"
-import { getEnabledModuleIds } from "@/lib/services/module-toggles"
+import { getNavigationToggleState, routeIsEnabled } from "@/lib/services/module-toggles"
 import { getVisibleAreas } from "@/components/layout/nav-items"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
@@ -21,8 +21,8 @@ export async function PreventionHome() {
   try { session = await requireAuth() }
   catch { redirect("/forbidden") }
 
-  const enabledModuleIds = await getEnabledModuleIds()
-  const items = getVisibleAreas(session, enabledModuleIds)
+  const toggleState = await getNavigationToggleState()
+  const items = getVisibleAreas(session, toggleState.enabledModuleIds, toggleState.disabledSubmoduleHrefs)
     .find((area) => area.id === "prevencion")
     ?.items
     .filter((item) => item.href !== "/prevencion") ?? []
@@ -30,19 +30,19 @@ export async function PreventionHome() {
   if (items.length === 0) redirect("/forbidden")
   const scope = resolveWorksiteScope(session)
   const worksiteIds = scope.mode === "all" ? "all" : scope.mode === "some" ? scope.ids : []
-  const attention = await getPreventionAttention({
+  const attention = (await getPreventionAttention({
     worksiteIds,
-    includeActions: can(session, "prevention:pdtp:view"),
-    includeEvaluations: can(session, "sst:view"),
-    includePpa: can(session, "ppa:view"),
-    includeCphs: can(session, "prevention:cphs:view"),
+    includeActions: can(session, "prevention:pdtp:view") && routeIsEnabled("/prevencion/pdtp", toggleState),
+    includeEvaluations: can(session, "sst:view") && routeIsEnabled("/prevencion/evaluaciones", toggleState),
+    includePpa: can(session, "ppa:view") && routeIsEnabled("/prevencion/ppa", toggleState),
+    includeCphs: can(session, "prevention:cphs:view") && routeIsEnabled("/prevencion/cphs", toggleState),
     // Fechas que ya existían en la base y que ninguna pantalla leía. Cada fuente
     // con SU permiso: era un solo interruptor y ver higiene abría también los
     // equipos de emergencia, y al revés (EMERGENCIAS-08).
-    includeProtocols: can(session, "prevention:hygiene:view"),
-    includeEmergencyResources: can(session, "prevention:emergency:view"),
-    includeChangeReviews: can(session, "prevention:change:view"),
-  })
+    includeProtocols: can(session, "prevention:hygiene:view") && routeIsEnabled("/prevencion/higiene", toggleState),
+    includeEmergencyResources: can(session, "prevention:emergency:view") && routeIsEnabled("/prevencion/emergencias", toggleState),
+    includeChangeReviews: can(session, "prevention:change:view") && routeIsEnabled("/prevencion/gestion-cambio", toggleState),
+  })).filter((item) => routeIsEnabled(item.href, toggleState))
 
   return (
     <PageContainer width="form">

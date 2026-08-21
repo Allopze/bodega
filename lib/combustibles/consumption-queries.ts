@@ -1,6 +1,7 @@
 import type { Session } from "next-auth"
 import { and, eq, gte, isNull, isNotNull, lte, gte as gteNum, lte as lteNum, type SQL } from "drizzle-orm"
 import { fuelConsumptionRecords } from "@/db/schema"
+import { can } from "@/lib/auth/can"
 import { worksiteScopeSql } from "@/lib/auth/scope"
 
 export interface ConsumptionFilters {
@@ -25,6 +26,7 @@ export interface ConsumptionFilters {
  * y server actions lo comparten.
  */
 export function buildConsumptionWhere(session: Session, filters: ConsumptionFilters = {}): SQL | undefined {
+  const canFilterByAmount = can(session, "combustibles:view") && can(session, "combustibles:view_costs")
   const conditions: (SQL | undefined)[] = [
     filters.fromDate ? gte(fuelConsumptionRecords.periodoHasta, filters.fromDate) : undefined,
     filters.toDate ? lte(fuelConsumptionRecords.periodoDesde, filters.toDate) : undefined,
@@ -34,8 +36,8 @@ export function buildConsumptionWhere(session: Session, filters: ConsumptionFilt
     filters.vehicleId ? eq(fuelConsumptionRecords.vehicleId, filters.vehicleId) : undefined,
     filters.associated === "yes" ? isNotNull(fuelConsumptionRecords.vehicleId) : undefined,
     filters.associated === "no" ? isNull(fuelConsumptionRecords.vehicleId) : undefined,
-    filters.montoMin != null ? gteNum(fuelConsumptionRecords.monto, filters.montoMin) : undefined,
-    filters.montoMax != null ? lteNum(fuelConsumptionRecords.monto, filters.montoMax) : undefined,
+    canFilterByAmount && filters.montoMin != null ? gteNum(fuelConsumptionRecords.monto, filters.montoMin) : undefined,
+    canFilterByAmount && filters.montoMax != null ? lteNum(fuelConsumptionRecords.monto, filters.montoMax) : undefined,
     filters.cantidadMin != null ? gteNum(fuelConsumptionRecords.cantidadUnidad, filters.cantidadMin) : undefined,
     filters.cantidadMax != null ? lteNum(fuelConsumptionRecords.cantidadUnidad, filters.cantidadMax) : undefined,
     worksiteScopeSql(session, fuelConsumptionRecords.worksiteId),

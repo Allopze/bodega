@@ -12,6 +12,9 @@ const mockGetAnalyticsDashboard = vi.hoisted(() => vi.fn())
 vi.mock("@/lib/auth/can", () => ({
   isGlobalRole: (s: unknown) => mockIsGlobalRole(s),
   visibleWorksiteIds: (s: unknown) => mockVisibleWorksiteIds(s),
+  // La matriz de capacidades (CO-004) consulta permisos al construir el reporte.
+  can: () => true,
+  canAny: () => true,
 }))
 
 vi.mock("@/lib/services/analytics", () => ({

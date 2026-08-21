@@ -8,7 +8,8 @@ const mockRecordStatusChange = vi.fn(async (..._args: unknown[]) => undefined)
 const mockFindBatch = vi.fn()
 const mockUpdateReturning = vi.fn()
 const mockDeleteReturning = vi.fn()
-const mockSelectSubmissionIds = vi.fn()
+const mockSelectSubmissions = vi.fn()
+const mockForUpdate = vi.fn(() => mockSelectSubmissions())
 
 const tx = {
   update: vi.fn(() => ({
@@ -26,7 +27,7 @@ const tx = {
   })),
   select: vi.fn(() => ({
     from: vi.fn(() => ({
-      where: mockSelectSubmissionIds,
+      where: vi.fn(() => ({ for: mockForUpdate })),
     })),
   })),
   insert: vi.fn(),
@@ -48,7 +49,7 @@ vi.mock("@/lib/combustibles/tae-import-service", () => ({ importTaeLegacyWorkboo
 
 import { revertTaeImportBatchAction } from "./actions"
 
-const session = { user: { id: "user-1", email: "admin@example.com", permissions: ["combustibles:tae_import", "combustibles:revert"] } }
+const session = { user: { id: "user-1", email: "admin@example.com", permissions: ["combustibles:tae_import", "combustibles:revert"], roles: [], worksiteIds: [], isGlobal: true } }
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -56,7 +57,10 @@ beforeEach(() => {
   mockCan.mockReturnValue(true)
   mockUpdateReturning.mockResolvedValue([{ id: "batch-1", status: "reverted" }])
   mockDeleteReturning.mockResolvedValue([{ id: "submission-1" }, { id: "submission-2" }])
-  mockSelectSubmissionIds.mockResolvedValue([{ id: "submission-1" }, { id: "submission-2" }])
+  mockSelectSubmissions.mockResolvedValue([
+    { id: "submission-1", worksiteId: "worksite-1" },
+    { id: "submission-2", worksiteId: "worksite-2" },
+  ])
 })
 
 describe("revertTaeImportBatchAction", () => {
@@ -90,11 +94,12 @@ describe("revertTaeImportBatchAction", () => {
     // el orden inverso revienta con violación de FK apenas una carga del lote
     // llegó a validarse (ver el comentario en actions.ts).
     expect(tx.select).toHaveBeenCalled()
+    expect(mockForUpdate).toHaveBeenCalledWith("update")
     expect(tx.delete).toHaveBeenCalledTimes(2)
   })
 
   it("skips the seal-movements cleanup when the batch has no submissions", async () => {
-    mockSelectSubmissionIds.mockResolvedValue([])
+    mockSelectSubmissions.mockResolvedValue([])
     mockDeleteReturning.mockResolvedValue([])
 
     await revertTaeImportBatchAction("batch-1")
@@ -113,5 +118,71 @@ describe("revertTaeImportBatchAction", () => {
     expect(result.message).toMatch(/ya fue revertido/i)
     expect(mockDeleteReturning).not.toHaveBeenCalled()
     expect(mockRecordAudit).not.toHaveBeenCalled()
+  })
+
+  it("permite a un rol scoped revertir sólo cuando cubre todas las faenas del lote", async () => {
+    mockGuardPermission.mockResolvedValue({
+      session: { ...session, user: { ...session.user, isGlobal: false, worksiteIds: ["worksite-1", "worksite-2"] } },
+      error: null,
+    })
+
+    const result = await revertTaeImportBatchAction("batch-1")
+
+    expect(result.ok).toBe(true)
+    expect(mockRecordAudit).toHaveBeenCalled()
+  })
+
+  it("rechaza antes de borrar derivados un lote que contiene una faena fuera del alcance", async () => {
+    mockGuardPermission.mockResolvedValue({
+      session: { ...session, user: { ...session.user, isGlobal: false, worksiteIds: ["worksite-1"] } },
+      error: null,
+    })
+
+    const result = await revertTaeImportBatchAction("batch-1")
+
+    expect(result).toMatchObject({ ok: false })
+    expect(result.message).toMatch(/fuera de alcance/i)
+    expect(tx.delete).not.toHaveBeenCalled()
+    expect(mockRecordAudit).not.toHaveBeenCalled()
+    expect(mockRecordStatusChange).not.toHaveBeenCalled()
+  })
+
+  it("un rol scoped no puede apropiarse de un lote sin cargas que demuestren su alcance", async () => {
+    mockGuardPermission.mockResolvedValue({
+      session: { ...session, user: { ...session.user, isGlobal: false, worksiteIds: ["worksite-1"] } },
+      error: null,
+    })
+    mockSelectSubmissions.mockResolvedValue([])
+
+    const result = await revertTaeImportBatchAction("batch-1")
+
+    expect(result).toMatchObject({ ok: false })
+    expect(tx.delete).not.toHaveBeenCalled()
+  })
+
+  it("un rol sin faenas no puede revertir ningún lote", async () => {
+    mockGuardPermission.mockResolvedValue({
+      session: { ...session, user: { ...session.user, isGlobal: false, worksiteIds: [] } },
+      error: null,
+    })
+
+    const result = await revertTaeImportBatchAction("batch-1")
+
+    expect(result).toMatchObject({ ok: false })
+    expect(tx.delete).not.toHaveBeenCalled()
+  })
+
+  it("no revela a un rol scoped si un lote ajeno existe o ya fue revertido", async () => {
+    mockGuardPermission.mockResolvedValue({
+      session: { ...session, user: { ...session.user, isGlobal: false, worksiteIds: ["worksite-1"] } },
+      error: null,
+    })
+    mockUpdateReturning.mockResolvedValue([])
+    mockFindBatch.mockResolvedValue({ status: "reverted" })
+
+    const result = await revertTaeImportBatchAction("foreign-batch")
+
+    expect(result).toMatchObject({ ok: false, message: "Lote no encontrado o fuera de alcance" })
+    expect(mockFindBatch).not.toHaveBeenCalled()
   })
 })

@@ -81,15 +81,26 @@ export default async function CapaDetailPage({ params }: { params: Promise<{ id:
           </section>
 
           <section className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] p-4">
-            <h2 className="text-sm font-semibold">Evidencia ({bundle.evidence.length})</h2>
+            <h2 className="text-sm font-semibold">
+              Evidencia ({bundle.evidence.filter((item) => item.status === "active").length} vigente)
+            </h2>
             {bundle.evidence.length === 0 ? (
               <p className="mt-2 text-sm text-[var(--color-text-subtle)]">Sin evidencia registrada. La acción no podrá enviarse a verificación si la exige.</p>
             ) : (
               <ul className="mt-3 space-y-2">
                 {bundle.evidence.map((item) => (
                   <li key={item.id} className="border-l-2 border-[var(--color-border-strong)] pl-3 text-sm">
-                    <p className="font-medium">{capaEvidenceKindLabel(item.kind)} · {item.reference}</p>
+                    <p className="flex flex-wrap items-center gap-2 font-medium">
+                      <span>{capaEvidenceKindLabel(item.kind)} · {item.reference}</span>
+                      {item.status === "superseded" && <Badge variant="default">Supersedida</Badge>}
+                    </p>
                     <p className="text-xs text-[var(--color-text-subtle)]">{item.description || "Sin descripción"} · {formatDateTime(item.createdAt)}</p>
+                    {item.supersessionReason && (
+                      <p className="text-xs text-[var(--color-warning-ink)]">
+                        Ya no acredita el cierre: {item.supersessionReason}
+                        {item.supersededAt ? ` · ${formatDateTime(item.supersededAt)}` : ""}
+                      </p>
+                    )}
                   </li>
                 ))}
               </ul>

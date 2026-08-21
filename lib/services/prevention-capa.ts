@@ -96,7 +96,10 @@ export const capaEvidenceSchema = z.object({
   actionId: z.string().min(1),
   expectedVersion: z.number().int().positive(),
   kind: z.enum(["document", "photo", "url", "note"]),
-  reference: z.string().trim().min(3).max(4000),
+  reference: z.string().trim().min(3).max(4000).refine(
+    (reference) => !reference.toLowerCase().startsWith("mantencion:"),
+    "La referencia mantencion: está reservada para evidencia generada por el sistema.",
+  ),
   description: z.string().trim().max(1000).nullable().optional(),
   checksumSha256: z.string().regex(/^[a-f0-9]{64}$/).nullable().optional(),
 })
@@ -463,7 +466,10 @@ export async function transitionCapaActionWithClient(
       throw new Error("La acción cambió en otra sesión. Recarga antes de continuar.")
     }
     const evidence = await client.select({ kind: preventionCapaEvidence.kind }).from(preventionCapaEvidence)
-      .where(eq(preventionCapaEvidence.actionId, current.id))
+      .where(and(
+        eq(preventionCapaEvidence.actionId, current.id),
+        eq(preventionCapaEvidence.status, "active"),
+      ))
     const qualifyingEvidenceCount = evidence.filter((item) => item.kind !== "note").length
     assertCapaTransition({
       fromStatus: current.status as CapaStatus,
@@ -870,7 +876,10 @@ export async function reconcileCapaAction(args: {
     }
     if (input.status === "reconciled" && current.evidenceRequired && ["pending_verification", "verified", "closed"].includes(current.status)) {
       const evidence = await tx.select({ kind: preventionCapaEvidence.kind }).from(preventionCapaEvidence)
-        .where(eq(preventionCapaEvidence.actionId, current.id))
+        .where(and(
+          eq(preventionCapaEvidence.actionId, current.id),
+          eq(preventionCapaEvidence.status, "active"),
+        ))
       if (!evidence.some((item) => item.kind !== "note")) {
         throw new Error("La acción histórica no puede conciliarse sin evidencia verificable.")
       }
@@ -957,7 +966,7 @@ export async function buildCapaExport(args: {
   const userName = new Map(userRows.map((item) => [item.id, item.name]))
   const evidenceCount = new Map<string, number>()
   for (const item of evidence) {
-    if (item.kind !== "note") evidenceCount.set(item.actionId, (evidenceCount.get(item.actionId) ?? 0) + 1)
+    if (item.status === "active" && item.kind !== "note") evidenceCount.set(item.actionId, (evidenceCount.get(item.actionId) ?? 0) + 1)
   }
   return {
     filenameBase: `capa_${todayInChile()}`,
@@ -1014,9 +1023,10 @@ export async function buildCapaExport(args: {
       },
       {
         worksheetName: "Evidencias",
-        headers: ["Acción", "Tipo", "Referencia", "Descripción", "SHA-256", "Cargada por", "Fecha"],
+        headers: ["Acción", "Tipo", "Referencia", "Descripción", "Estado", "Motivo supersesión", "SHA-256", "Cargada por", "Fecha"],
         rows: evidence.map((item) => [
-          item.actionId, item.kind, excelSafe(item.reference), excelSafe(item.description), item.checksumSha256 ?? "",
+          item.actionId, item.kind, excelSafe(item.reference), excelSafe(item.description), item.status,
+          excelSafe(item.supersessionReason), item.checksumSha256 ?? "",
           userName.get(item.uploadedByUserId) ?? item.uploadedByUserId, item.createdAt,
         ]),
       },

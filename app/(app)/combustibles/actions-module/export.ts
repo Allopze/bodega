@@ -34,7 +34,7 @@ export async function exportFuelLoadsXlsxAction(filters?: {
   let session
   // Incluye montos (IEC, IVA, total): requiere el permiso de exportación
   // sensible además del genérico, no sólo "combustibles:export".
-  try { session = await requirePermission("combustibles:export_sensitive") }
+  try { session = await requirePermission("combustibles:export_sensitive", "/combustibles") }
   catch { return { ok: false as const, message: "Sin permisos para exportar datos con montos" } }
 
   const where = buildFuelLoadsWhere(session, filters ?? {})

@@ -138,11 +138,22 @@ export const preventionCapaEvidence = pgTable("prevention_capa_evidence", {
   description: text("description"),
   checksumSha256: text("checksum_sha256"),
   uploadedByUserId: text("uploaded_by_user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
+  status:      text("status").notNull().default("active"),
+  supersededAt: timestamp("superseded_at", { withTimezone: true, mode: "string" }),
+  supersededByUserId: text("superseded_by_user_id").references(() => users.id, { onDelete: "restrict" }),
+  supersessionReason: text("supersession_reason"),
   createdAt:   timestamp("created_at", { withTimezone: true, mode: "string" }).notNull(),
 }, (table) => [
+  uniqueIndex("prevention_capa_evidence_action_reference_unique").on(table.actionId, table.reference),
   index("prevention_capa_evidence_action_idx").on(table.actionId, table.createdAt),
   check("prevention_capa_evidence_kind_valid", sql`${table.kind} IN ('document', 'photo', 'url', 'note')`),
   check("prevention_capa_evidence_checksum_valid", sql`${table.checksumSha256} IS NULL OR length(${table.checksumSha256}) = 64`),
+  check("prevention_capa_evidence_status_valid", sql`${table.status} IN ('active', 'superseded')`),
+  check("prevention_capa_evidence_supersession_consistent", sql`
+    (${table.status} = 'active' AND ${table.supersededAt} IS NULL AND ${table.supersededByUserId} IS NULL AND ${table.supersessionReason} IS NULL)
+    OR
+    (${table.status} = 'superseded' AND ${table.supersededAt} IS NOT NULL AND ${table.supersededByUserId} IS NOT NULL AND length(${table.supersessionReason}) >= 5)
+  `),
 ])
 
 export const preventionCapaActionsRelations = relations(preventionCapaActions, ({ one, many }) => ({
@@ -166,7 +177,8 @@ export const preventionCapaFollowupsRelations = relations(preventionCapaFollowup
 
 export const preventionCapaEvidenceRelations = relations(preventionCapaEvidence, ({ one }) => ({
   action: one(preventionCapaActions, { fields: [preventionCapaEvidence.actionId], references: [preventionCapaActions.id] }),
-  uploader: one(users, { fields: [preventionCapaEvidence.uploadedByUserId], references: [users.id] }),
+  uploader: one(users, { fields: [preventionCapaEvidence.uploadedByUserId], references: [users.id], relationName: "capa_evidence_uploaded_by" }),
+  supersededBy: one(users, { fields: [preventionCapaEvidence.supersededByUserId], references: [users.id], relationName: "capa_evidence_superseded_by" }),
 }))
 
 export type PreventionCapaAction = typeof preventionCapaActions.$inferSelect

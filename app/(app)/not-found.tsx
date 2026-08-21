@@ -1,6 +1,6 @@
 import { auth } from "@/lib/auth/auth"
 import { flattenNavTargets } from "@/components/layout/nav-items"
-import { getEnabledModuleIds } from "@/lib/services/module-toggles"
+import { getNavigationToggleState } from "@/lib/services/module-toggles"
 import { PageContainer } from "@/components/ui/page-container"
 import { NotFoundPanel } from "@/components/not-found-panel"
 
@@ -14,8 +14,9 @@ import { NotFoundPanel } from "@/components/not-found-panel"
  */
 export default async function NotFound() {
   const session = await auth()
-  const targets = session
-    ? flattenNavTargets(session, await getEnabledModuleIds())
+  const toggleState = session ? await getNavigationToggleState() : null
+  const targets = session && toggleState
+    ? flattenNavTargets(session, toggleState.enabledModuleIds, toggleState.disabledSubmoduleHrefs)
     : []
 
   return (

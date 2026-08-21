@@ -8,10 +8,10 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { toast } from "@/lib/toast"
 import { reprocessTaeImportBatchAction, revertTaeImportBatchAction } from "./actions"
 
-export function ReprocessTaeBatchButton({ batchId, rejectionCount }: { batchId: string; rejectionCount: number }) {
+export function ReprocessTaeBatchButton({ batchId, canReprocess }: { batchId: string; canReprocess: boolean }) {
   const router = useRouter()
   const [loading, setLoading] = useState(false)
-  if (rejectionCount === 0) return null
+  if (!canReprocess) return null
 
   async function handleReprocess() {
     setLoading(true)

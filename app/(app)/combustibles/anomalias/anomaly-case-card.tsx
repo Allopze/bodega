@@ -37,7 +37,7 @@ export function AnomalyCaseCard({ anomalyCase, canReview, canResolve }: { anomal
 
   async function doStatus(status: AnomalyCaseStatus) {
     setPending(true)
-    const result = await updateAnomalyStatusAction({ caseId: anomalyCase.id, status, resolution })
+    const result = await updateAnomalyStatusAction({ caseId: anomalyCase.id, expectedStatus: anomalyCase.status, status, resolution })
     if (result.ok) { toast.success(result.message ?? "Actualizado"); setResolution(""); router.refresh() }
     else toast.error(result.message)
     setPending(false)
@@ -91,7 +91,7 @@ export function AnomalyCaseCard({ anomalyCase, canReview, canResolve }: { anomal
       )}
 
       {/* Actions */}
-      {anomalyCase.status !== "resolved" && anomalyCase.status !== "dismissed" && (() => {
+      {(() => {
         const available = (NEXT_STATUS[anomalyCase.status] ?? []).filter((next) => (next.requiresResolve ? canResolve : canReview))
         if (available.length === 0) return null
         const needsResolution = available.some((next) => next.requiresResolve)

@@ -3,6 +3,7 @@ import { desc, eq, sql } from "drizzle-orm"
 import { db } from "@/db"
 import { fuelLoads, fuelSuppliers, fuelVehicles, worksites } from "@/db/schema"
 import { buildFuelLoadsWhere } from "@/lib/combustibles/queries"
+import { can } from "@/lib/auth/can"
 
 export interface FuelReportFilters {
   startDate?: string
@@ -17,7 +18,11 @@ export interface FuelReportRow {
 }
 
 export async function getFuelReportsData(session: Session, filters: FuelReportFilters = {}) {
-  const where = buildFuelLoadsWhere(session, filters)
+  if (!can(session, "combustibles:view") || !can(session, "combustibles:view_costs")) {
+    throw new Error("No autorizado")
+  }
+  // Un reporte de gasto no puede incluir borradores ni cargas anuladas.
+  const where = buildFuelLoadsWhere(session, filters, { accountableOnly: true })
 
   const [byMonth, byWeek, byWorksite, byVehicle, bySupplier, byProduct] = await Promise.all([
     db.select({

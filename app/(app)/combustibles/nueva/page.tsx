@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation"
-import { eq } from "drizzle-orm"
+import { and, eq } from "drizzle-orm"
 import { db } from "@/db"
 import { fuelVehicles, fuelSuppliers, worksites } from "@/db/schema"
 import { requirePermission } from "@/lib/auth/can"
@@ -16,9 +16,13 @@ export default async function NuevaCargaPage() {
 
   // Antes ofrecía vehículos/proveedores DESACTIVADOS y faenas fuera del
   // alcance del usuario — registrar una carga contra cualquiera de esos tres
-  // igual se guardaba (el servidor no lo rechaza).
+  // igual se guardaba (el servidor no lo rechaza). Los equipos también estaban
+  // sin acotar: el desplegable publicaba la flota completa de todas las faenas.
   const [vehicles, suppliers, worksitesList, rates] = await Promise.all([
-    db.query.fuelVehicles.findMany({ where: eq(fuelVehicles.isActive, true), orderBy: [fuelVehicles.plate] }),
+    db.query.fuelVehicles.findMany({
+      where: and(eq(fuelVehicles.isActive, true), worksiteScopeSql(session, fuelVehicles.worksiteId)),
+      orderBy: [fuelVehicles.plate],
+    }),
     db.query.fuelSuppliers.findMany({ where: eq(fuelSuppliers.isActive, true), orderBy: [fuelSuppliers.name] }),
     db.query.worksites.findMany({ where: worksiteScopeSql(session, worksites.id), orderBy: [worksites.name] }),
     getFuelIecRates(),

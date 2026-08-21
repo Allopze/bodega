@@ -1,7 +1,8 @@
-import { and, desc, eq } from "drizzle-orm"
+import { and, desc, eq, inArray } from "drizzle-orm"
 import { db } from "@/db"
 import { fuelAnomalyCases, fuelAnomalyRules, fuelLoads, fuelVehicles } from "@/db/schema"
-import { addAnomalyComment, createAnomalyCase, type AnomalySeverity } from "./anomaly-cases"
+import { recordAudit, recordStatusChange } from "@/lib/audit"
+import { addAnomalyCommentWithClient, createAnomalyCase, type AnomalySeverity } from "./anomaly-cases"
 
 const RULE_CODE = "proveedor_no_habitual"
 const ACTIVE_CASE_STATUSES = new Set(["open", "in_review", "reopened"])
@@ -46,50 +47,63 @@ export async function reevaluateFuelLoadAnomalies(loadId: string, actorUserId: s
 
   if (!violates) {
     if (!currentCase) return { created: 0, reopened: 0, resolved: 0 }
-    const now = new Date().toISOString()
-    await db.update(fuelAnomalyCases).set({
-      status: "resolved",
-      resolution: "Cierre automático: la carga fue corregida y el proveedor ya coincide con el habitual.",
-      resolvedById: actorUserId,
-      resolvedAt: now,
-      updatedAt: now,
-    }).where(eq(fuelAnomalyCases.id, currentCase.id))
-    await addAnomalyComment(currentCase.id, actorUserId, "Caso resuelto automáticamente tras editar la carga y corregir el proveedor.")
-    return { created: 0, reopened: 0, resolved: 1 }
+    const changed = await db.transaction(async (tx) => {
+      const [locked] = await tx.select().from(fuelAnomalyCases).where(and(
+        eq(fuelAnomalyCases.id, currentCase.id),
+        inArray(fuelAnomalyCases.status, [...ACTIVE_CASE_STATUSES]),
+      )).for("update").limit(1)
+      if (!locked) return false
+      const now = new Date().toISOString()
+      const resolution = "Cierre automático: la carga fue corregida y el proveedor ya coincide con el habitual."
+      await tx.update(fuelAnomalyCases).set({ status: "resolved", resolution, resolvedById: actorUserId, resolvedAt: now, updatedAt: now })
+        .where(and(eq(fuelAnomalyCases.id, currentCase.id), eq(fuelAnomalyCases.status, locked.status)))
+      await addAnomalyCommentWithClient(tx, currentCase.id, actorUserId, "Caso resuelto automáticamente tras editar la carga y corregir el proveedor.")
+      await recordStatusChange({ entityType: "fuel_anomaly_case", entityId: currentCase.id, fromStatus: locked.status, toStatus: "resolved", changedBy: actorUserId, reason: resolution }, tx)
+      await recordAudit({ userId: actorUserId, action: "status_change", entityType: "fuel_anomaly_case", entityId: currentCase.id, oldState: { status: locked.status }, newState: { status: "resolved", resolution }, reason: resolution }, tx)
+      return true
+    })
+    return { created: 0, reopened: 0, resolved: changed ? 1 : 0 }
   }
 
   const description = `Carga de ${row.plate} facturada con un proveedor distinto del habitual declarado para el equipo.`
   if (currentCase) {
-    await db.update(fuelAnomalyCases).set({
-      severity: rule.severity as AnomalySeverity,
-      worksiteId: row.worksiteId,
-      vehicleId: row.vehicleId,
-      description,
-      observedValue: row.supplierId,
-      expectedValue: row.usualSupplierId,
-      updatedAt: new Date().toISOString(),
-    }).where(eq(fuelAnomalyCases.id, currentCase.id))
+    await db.transaction(async (tx) => {
+      const [locked] = await tx.select().from(fuelAnomalyCases).where(and(
+        eq(fuelAnomalyCases.id, currentCase.id),
+        inArray(fuelAnomalyCases.status, [...ACTIVE_CASE_STATUSES]),
+      )).for("update").limit(1)
+      if (!locked) return
+      const newState = {
+        severity: rule.severity as AnomalySeverity,
+        worksiteId: row.worksiteId,
+        vehicleId: row.vehicleId,
+        description,
+        observedValue: row.supplierId,
+        expectedValue: row.usualSupplierId,
+        updatedAt: new Date().toISOString(),
+      }
+      await tx.update(fuelAnomalyCases).set(newState).where(and(eq(fuelAnomalyCases.id, currentCase.id), eq(fuelAnomalyCases.status, locked.status)))
+      await recordAudit({ userId: actorUserId, action: "update", entityType: "fuel_anomaly_case", entityId: currentCase.id, oldState: { severity: locked.severity, worksiteId: locked.worksiteId, vehicleId: locked.vehicleId, description: locked.description, observedValue: locked.observedValue, expectedValue: locked.expectedValue }, newState }, tx)
+    })
     return { created: 0, reopened: 0, resolved: 0 }
   }
 
   if (latestClosedCase) {
-    const now = new Date().toISOString()
-    await db.update(fuelAnomalyCases).set({
-      status: "reopened",
-      severity: rule.severity as AnomalySeverity,
-      worksiteId: row.worksiteId,
-      vehicleId: row.vehicleId,
-      description,
-      observedValue: row.supplierId,
-      expectedValue: row.usualSupplierId,
-      resolution: null,
-      resolvedById: null,
-      resolvedAt: null,
-      detectedAt: now,
-      updatedAt: now,
-    }).where(eq(fuelAnomalyCases.id, latestClosedCase.id))
-    await addAnomalyComment(latestClosedCase.id, actorUserId, "Caso reabierto automáticamente tras editar la carga: el proveedor vuelve a diferir del habitual.")
-    return { created: 0, reopened: 1, resolved: 0 }
+    const changed = await db.transaction(async (tx) => {
+      const [locked] = await tx.select().from(fuelAnomalyCases).where(and(
+        eq(fuelAnomalyCases.id, latestClosedCase.id),
+        inArray(fuelAnomalyCases.status, ["resolved", "dismissed"]),
+      )).for("update").limit(1)
+      if (!locked) return false
+      const now = new Date().toISOString()
+      const newState = { status: "reopened" as const, severity: rule.severity as AnomalySeverity, worksiteId: row.worksiteId, vehicleId: row.vehicleId, description, observedValue: row.supplierId, expectedValue: row.usualSupplierId, resolution: null, resolvedById: null, resolvedAt: null, detectedAt: now, updatedAt: now }
+      await tx.update(fuelAnomalyCases).set(newState).where(and(eq(fuelAnomalyCases.id, latestClosedCase.id), eq(fuelAnomalyCases.status, locked.status)))
+      await addAnomalyCommentWithClient(tx, latestClosedCase.id, actorUserId, "Caso reabierto automáticamente tras editar la carga: el proveedor vuelve a diferir del habitual.")
+      await recordStatusChange({ entityType: "fuel_anomaly_case", entityId: latestClosedCase.id, fromStatus: locked.status, toStatus: "reopened", changedBy: actorUserId, reason: "La carga editada vuelve a diferir del proveedor habitual" }, tx)
+      await recordAudit({ userId: actorUserId, action: "status_change", entityType: "fuel_anomaly_case", entityId: latestClosedCase.id, oldState: { status: locked.status, resolution: locked.resolution }, newState, reason: "Reevaluación automática de la carga" }, tx)
+      return true
+    })
+    return { created: 0, reopened: changed ? 1 : 0, resolved: 0 }
   }
 
   await createAnomalyCase({

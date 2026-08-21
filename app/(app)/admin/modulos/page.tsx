@@ -26,7 +26,7 @@ export default async function ModulosPage() {
     <PageContainer>
       <PageHeader
         title="Módulos del sistema"
-        description="Activa o desactiva módulos y submódulos completos. El interruptor controla qué aparece en la navegación de todos los usuarios, incluidos los administradores; no mide si el módulo funciona ni sustituye a los permisos."
+        description="Activa o desactiva módulos y submódulos completos. El interruptor controla navegación, rutas, acciones y automatizaciones para todos los usuarios; los permisos siguen definiendo quién accede cuando está activo."
         breadcrumb={[
           { label: "Inicio", href: "/dashboard" },
           { label: "Administración", href: "/admin" },

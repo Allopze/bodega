@@ -54,7 +54,7 @@ export function PlatformHealthCard({ health }: { health: PlatformHealth }) {
         {signals(health).map((line) => <li key={line}>{line}</li>)}
       </ul>
       <p className="mt-2 text-xs opacity-90">
-        Medido al abrir esta pantalla. Los interruptores de abajo no miden salud: sólo deciden qué se muestra en la navegación.
+        Medido al abrir esta pantalla. Los interruptores no miden salud: habilitan o detienen el acceso operativo del módulo.
       </p>
     </section>
   )

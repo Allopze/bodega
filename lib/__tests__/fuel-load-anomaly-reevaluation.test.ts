@@ -80,7 +80,14 @@ describe("reevaluateFuelLoadAnomalies", () => {
     await expect(reevaluateFuelLoadAnomalies(LOAD_ID, ACTOR_ID)).resolves.toEqual({ created: 0, reopened: 1, resolved: 0 })
     const [reopened] = await inMemoryDb.select().from(schema.fuelAnomalyCases).where(eq(schema.fuelAnomalyCases.id, created!.id))
     const comments = await inMemoryDb.select().from(schema.fuelAnomalyComments).where(eq(schema.fuelAnomalyComments.caseId, created!.id))
+    const history = await inMemoryDb.select().from(schema.statusHistory).where(eq(schema.statusHistory.entityId, created!.id))
+    const audit = await inMemoryDb.select().from(schema.auditLog).where(eq(schema.auditLog.entityId, created!.id))
     expect(reopened).toMatchObject({ status: "reopened", resolvedById: null, observedValue: OTHER_SUPPLIER_ID })
     expect(comments).toHaveLength(2)
+    expect(history.map((entry) => [entry.fromStatus, entry.toStatus])).toEqual([
+      ["open", "resolved"],
+      ["resolved", "reopened"],
+    ])
+    expect(audit.filter((entry) => entry.action === "status_change")).toHaveLength(2)
   })
 })

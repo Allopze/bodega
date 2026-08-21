@@ -65,7 +65,7 @@ export function FuelControlOverviewPanel({ data, canViewCosts, tct, period }: Fu
           icon={<FileText size={18} aria-hidden />}
           label="Facturado / registrado"
           value={formatQty(Math.round(data.billed.liters), "L")}
-          detail={canViewCosts ? `${formatQty(data.billed.records)} registros · ${formatCLP(data.billed.amount)}` : `${formatQty(data.billed.records)} registros`}
+          detail={canViewCosts ? `${formatQty(data.billed.records)} registros · ${formatCLP(data.billed.amount ?? 0)}` : `${formatQty(data.billed.records)} registros`}
           trend={data.billed.variationLitersPct}
           href={canViewCosts ? "/combustibles/facturas" : undefined}
         />

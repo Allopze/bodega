@@ -6,6 +6,7 @@ import { desc, eq, inArray, sql } from "drizzle-orm"
 import { settle } from "@/lib/async-settle"
 import { can, isGlobalRole, requirePermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
+import { assertFuelCostAccess } from "@/lib/operational-control/capabilities"
 import { buildFuelLoadsWhere, buildFuelVehiclesWhere } from "@/lib/combustibles/queries"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
@@ -36,7 +37,10 @@ export default async function CombustiblesFacturasPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>
 }) {
   let session
-  try { session = await requirePermission("combustibles:view_costs") }
+  try {
+    session = await requirePermission("combustibles:view")
+    assertFuelCostAccess(session)
+  }
   catch { redirect("/forbidden") }
 
   const sp = await searchParams

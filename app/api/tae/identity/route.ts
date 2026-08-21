@@ -3,10 +3,14 @@ import { headers } from "next/headers"
 import { checkRateLimit, recordFailure, recordSuccessForTelemetry } from "@/lib/services/rate-limit"
 import { validateRut } from "@/lib/rut"
 import { findTaeWorkerByRut, getTaeLinkWorksiteId } from "@/lib/services/fuel-tae"
+import { isRouteOperational } from "@/lib/services/module-toggles"
 
 export const runtime = "nodejs"
 
 export async function POST(request: Request) {
+  if (!await isRouteOperational("/combustibles/tae")) {
+    return NextResponse.json({ ok: false, message: "Control TAE temporalmente inactivo" }, { status: 503 })
+  }
   const requestHeaders = await headers()
   const ipAddress = requestHeaders.get("x-forwarded-for")?.split(",")[0]?.trim() || "127.0.0.1"
   const rateLimitKey = `tae:identity:${ipAddress}`

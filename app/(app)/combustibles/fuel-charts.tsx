@@ -113,13 +113,13 @@ export function MonthlyEvolutionChart({ data }: { data: ChartDataPoint[] }) {
 }
 
 /* ── By Category (Horizontal Bar Chart) ──────────────────────────────────── */
-export function CategoryBarChart({ data, title, onSelect }: { data: ChartDataPoint[]; title: string; onSelect?: (group: string) => void }) {
+export function CategoryBarChart({ data, title, onSelect, metric = "amount" }: { data: ChartDataPoint[]; title: string; onSelect?: (group: string) => void; metric?: "amount" | "liters" }) {
   if (data.length === 0) return <EmptyChart label={`Sin datos de ${title.toLowerCase()}`} />
 
   const chartData = data.slice(0, 8).map(d => ({
     name: (d.group ?? "Sin asignar").length > 20 ? (d.group ?? "Sin asignar").substring(0, 20) + "…" : (d.group ?? "Sin asignar"),
     fullName: d.group ?? "Sin asignar",
-    monto: d.totalAmount,
+    value: metric === "amount" ? d.totalAmount : d.totalLiters,
     litros: d.totalLiters,
   }))
 
@@ -128,20 +128,21 @@ export function CategoryBarChart({ data, title, onSelect }: { data: ChartDataPoi
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={chartData} layout="vertical" margin={{ top: 5, right: 10, left: 0, bottom: 5 }} title={onSelect ? `${title}. Selecciona una barra para filtrar el panel por esta selección.` : title}>
           <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-          {/* Una sola métrica: gasto (CLP). Los litros viven en el tooltip, no como barra rival. */}
-          <XAxis type="number" className="text-xs" tickFormatter={formatCLP} tick={{ fill: "var(--color-text-muted)" }} />
+          <XAxis type="number" className="text-xs" tickFormatter={metric === "amount" ? formatCLP : (value) => `${formatLiters(Number(value))} L`} tick={{ fill: "var(--color-text-muted)" }} />
           <YAxis type="category" dataKey="name" width={120} className="text-xs" tick={{ fill: "var(--color-text-muted)", fontSize: 11 }} />
           <Tooltip
             contentStyle={chartTooltipStyle()}
             formatter={(value, _name, item) => {
               const litros = (item?.payload as { litros?: number } | undefined)?.litros ?? 0
-              return [`${formatCLP(Number(value))} · ${formatLiters(litros)} L`, "Gasto"]
+              return metric === "amount"
+                ? [`${formatCLP(Number(value))} · ${formatLiters(litros)} L`, "Gasto"]
+                : [`${formatLiters(Number(value))} L`, "Consumo"]
             }}
           />
           <Bar
-            dataKey="monto"
+            dataKey="value"
             radius={[0, 3, 3, 0]}
-            name="Gasto"
+            name={metric === "amount" ? "Gasto" : "Consumo"}
             fill="var(--color-primary)"
             style={onSelect ? { cursor: "pointer" } : undefined}
             onClick={onSelect ? (entry) => onSelect((entry as unknown as { payload: { fullName: string } }).payload.fullName) : undefined}

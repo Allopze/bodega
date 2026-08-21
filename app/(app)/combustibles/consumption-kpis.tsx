@@ -3,8 +3,9 @@ import { KpiCard } from "@/app/(app)/analitica/analytics-kpi-card"
 import { formatCLP, formatQty } from "@/lib/utils"
 import type { ConsumptionDashboardData } from "@/lib/combustibles/consumption-dashboard"
 
-export function ConsumptionKpis({ kpis, hrefs }: {
+export function ConsumptionKpis({ kpis, hrefs, canViewCosts }: {
   kpis: ConsumptionDashboardData["kpis"]
+  canViewCosts: boolean
   /** Enlaces a la vista de Registros (con los filtros vigentes) que respalda cada cifra. */
   hrefs?: { registros?: string; sinAsociacion?: string }
 }) {
@@ -23,16 +24,22 @@ export function ConsumptionKpis({ kpis, hrefs }: {
         tone={kpis.variacionCantidadPct != null && kpis.variacionCantidadPct >= 30 ? "signal" : "neutral"}
         href={hrefs?.registros}
       />
-      <KpiCard
+      {canViewCosts ? <KpiCard
         icon={<CurrencyCircleDollar size={18} />}
         label="Monto total"
-        value={formatCLP(kpis.totalMonto)}
+        value={formatCLP(kpis.totalMonto ?? 0)}
         detail="Gasto del período filtrado"
         trend={kpis.variacionMontoPct}
         trendPolarity="up-bad"
         tone={kpis.variacionMontoPct != null && kpis.variacionMontoPct >= 30 ? "signal" : "neutral"}
         href={hrefs?.registros}
-      />
+      /> : <KpiCard
+        icon={<CurrencyCircleDollar size={18} />}
+        label="Patentes únicas"
+        value={formatQty(kpis.patentesUnicas)}
+        detail="Equipos con consumo en el período"
+        href={hrefs?.registros}
+      />}
       <KpiCard
         icon={<ArrowsClockwise size={18} />}
         label="Transacciones"
@@ -53,7 +60,7 @@ export function ConsumptionKpis({ kpis, hrefs }: {
 }
 
 /** Métricas secundarias: acompañan el análisis sin competir con las 4 decisiones del resumen. */
-export function ConsumptionAnalysisMetrics({ kpis }: { kpis: ConsumptionDashboardData["kpis"] }) {
+export function ConsumptionAnalysisMetrics({ kpis, canViewCosts }: { kpis: ConsumptionDashboardData["kpis"]; canViewCosts: boolean }) {
   // `toFixed` rinde el punto decimal inglés en una interfaz que en todas las
   // demás cifras usa coma (es-CL).
   const rendimiento = kpis.rendimientoPromedioPonderado > 0
@@ -63,10 +70,10 @@ export function ConsumptionAnalysisMetrics({ kpis }: { kpis: ConsumptionDashboar
 
   return (
     <dl className="mb-7 flex flex-wrap gap-x-6 gap-y-2 border-y border-[var(--color-border)] py-3 text-sm">
-      <div className="flex items-baseline gap-2">
+      {canViewCosts && <div className="flex items-baseline gap-2">
         <dt className="text-[var(--color-text-muted)]">Precio promedio</dt>
         <dd className="font-mono font-semibold tabular-nums">{precio}</dd>
-      </div>
+      </div>}
       <div className="flex items-baseline gap-2">
         <dt className="text-[var(--color-text-muted)]">Patentes únicas</dt>
         <dd className="font-mono font-semibold tabular-nums">{formatQty(kpis.patentesUnicas)}</dd>

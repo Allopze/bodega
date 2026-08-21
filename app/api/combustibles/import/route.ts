@@ -9,6 +9,7 @@ import { nanoid } from "@/lib/id"
 import { logger } from "@/lib/logger"
 import { fuelProductIdForLegacy } from "@/lib/combustibles/fuel-products"
 import { fuelEquipmentTypeIdForLegacy, fuelMetricDefaultsForLegacy } from "@/lib/combustibles/validation"
+import { isRouteOperational } from "@/lib/services/module-toggles"
 
 const CREATE_FAENA = "__create__"
 const SKIP_FAENA = "__skip__"
@@ -68,6 +69,9 @@ export async function POST(req: NextRequest) {
   let session
   try { session = await requirePermission("combustibles:import") }
   catch { return NextResponse.json({ ok: false, message: "Sin permisos" }, { status: 403 }) }
+  if (!await isRouteOperational("/combustibles/importar")) {
+    return NextResponse.json({ ok: false, message: "Importación de combustibles inactiva" }, { status: 503 })
+  }
 
   let body: z.infer<typeof importBodySchema>
   try {

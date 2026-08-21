@@ -8,12 +8,16 @@ import { fuelTaeEvidence } from "@/db/schema"
 import { resolveFuelTaeEvidenceFile } from "@/lib/storage/config"
 import { readBuffer } from "@/lib/storage/helpers"
 import { logEvidenceAccess } from "@/lib/combustibles/evidence-management"
+import { isRouteOperational } from "@/lib/services/module-toggles"
 
 export const runtime = "nodejs"
 
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth()
   if (!can(session, "combustibles:tae_view")) return new NextResponse("Forbidden", { status: 403 })
+  if (!await isRouteOperational("/combustibles/tae")) {
+    return new NextResponse("Service unavailable", { status: 503 })
+  }
   const { id } = await params
   const evidence = await db.query.fuelTaeEvidence.findFirst({
     where: eq(fuelTaeEvidence.id, id),

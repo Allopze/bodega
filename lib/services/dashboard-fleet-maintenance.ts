@@ -12,6 +12,8 @@ import { db } from "@/db"
 import { fuelLoads, fuelVehicles, maintenanceRecords } from "@/db/schema"
 import { worksiteScopeSql } from "@/lib/auth/scope"
 import { chileDateParts } from "@/lib/utils"
+import { can } from "@/lib/auth/can"
+import { accountableFuelLoadsWhere } from "@/lib/combustibles/load-status"
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -24,7 +26,7 @@ export interface FleetDashboardSummary {
 export interface FuelMonthlyPoint {
   month: string
   liters: number
-  amount: number
+  amount: number | null
   loads: number
 }
 
@@ -32,14 +34,14 @@ export interface MaintenanceMonthlyPoint {
   month: string
   completed: number
   scheduled: number
-  amount: number
+  amount: number | null
 }
 
 export interface MaintenanceDashboardSummary {
   scheduledCount: number
   overdueCount: number
   completedThisMonth: number
-  totalSpendThisMonth: number
+  totalSpendThisMonth: number | null
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -103,6 +105,7 @@ export async function getFleetDashboardSummary(session: Session): Promise<FleetD
 // ── Fuel Monthly Trend ────────────────────────────────────────────────────────
 
 export async function getFuelMonthlyTrend(session: Session, months = 6, worksiteId?: string): Promise<FuelMonthlyPoint[]> {
+  const canViewCosts = can(session, "combustibles:view") && can(session, "combustibles:view_costs")
   const bounds = getMonthBounds(months)
   const scope = fuelScope(session, worksiteId)
   const globalStart = bounds[0]!.start
@@ -112,7 +115,7 @@ export async function getFuelMonthlyTrend(session: Session, months = 6, worksite
     .select({
       month: fuelLoads.month,
       liters: sql<number>`COALESCE(SUM(${fuelLoads.liters}), 0)`,
-      amount: sql<number>`COALESCE(SUM(${fuelLoads.totalAmount}), 0)`,
+      amount: canViewCosts ? sql<number>`COALESCE(SUM(${fuelLoads.totalAmount}), 0)` : sql<null>`null`,
       loads: count(),
     })
     .from(fuelLoads)
@@ -120,7 +123,7 @@ export async function getFuelMonthlyTrend(session: Session, months = 6, worksite
       scope,
       gte(fuelLoads.loadDate, globalStart),
       lt(fuelLoads.loadDate, globalEnd),
-      sql`${fuelLoads.status} <> 'cancelled'`,
+      accountableFuelLoadsWhere(),
     ))
     .groupBy(fuelLoads.month)
 
@@ -131,7 +134,7 @@ export async function getFuelMonthlyTrend(session: Session, months = 6, worksite
     return {
       month: b.label,
       liters: Number(row?.liters ?? 0),
-      amount: Number(row?.amount ?? 0),
+      amount: canViewCosts ? Number(row?.amount ?? 0) : null,
       loads: Number(row?.loads ?? 0),
     }
   })
@@ -140,6 +143,7 @@ export async function getFuelMonthlyTrend(session: Session, months = 6, worksite
 // ── Maintenance Monthly Trend ─────────────────────────────────────────────────
 
 export async function getMaintenanceMonthlyTrend(session: Session, months = 6, worksiteId?: string): Promise<MaintenanceMonthlyPoint[]> {
+  const canViewCosts = can(session, "mantenciones:view") && can(session, "combustibles:view_costs")
   const bounds = getMonthBounds(months)
   const scope = maintenanceScope(session, worksiteId)
   const globalStart = bounds[0]!.start
@@ -152,7 +156,7 @@ export async function getMaintenanceMonthlyTrend(session: Session, months = 6, w
       month: monthExpr,
       completed: sql<number>`COUNT(*) FILTER (WHERE ${maintenanceRecords.status} = 'completed')`,
       scheduled: sql<number>`COUNT(*) FILTER (WHERE ${maintenanceRecords.status} = 'scheduled')`,
-      amount: sql<number>`COALESCE(SUM(${maintenanceRecords.totalAmount}) FILTER (WHERE ${maintenanceRecords.status} <> 'cancelled'), 0)`,
+      amount: canViewCosts ? sql<number>`COALESCE(SUM(${maintenanceRecords.totalAmount}) FILTER (WHERE ${maintenanceRecords.status} <> 'cancelled'), 0)` : sql<null>`null`,
     })
     .from(maintenanceRecords)
     .where(and(
@@ -170,7 +174,7 @@ export async function getMaintenanceMonthlyTrend(session: Session, months = 6, w
       month: b.label,
       completed: Number(row?.completed ?? 0),
       scheduled: Number(row?.scheduled ?? 0),
-      amount: Number(row?.amount ?? 0),
+      amount: canViewCosts ? Number(row?.amount ?? 0) : null,
     }
   })
 }
@@ -178,6 +182,7 @@ export async function getMaintenanceMonthlyTrend(session: Session, months = 6, w
 // ── Maintenance Summary (current state) ───────────────────────────────────────
 
 export async function getMaintenanceDashboardSummary(session: Session): Promise<MaintenanceDashboardSummary> {
+  const canViewCosts = can(session, "mantenciones:view") && can(session, "combustibles:view_costs")
   const scope = maintenanceScope(session)
   // Día y mes en calendario chileno: `maintenance_date` guarda la fecha civil y
   // `toISOString()` rinde UTC, así que durante las últimas horas del día local
@@ -192,13 +197,15 @@ export async function getMaintenanceDashboardSummary(session: Session): Promise<
     db.select({ value: count() }).from(maintenanceRecords).where(and(scope, eq(maintenanceRecords.status, "scheduled"), gte(maintenanceRecords.maintenanceDate, today))),
     db.select({ value: count() }).from(maintenanceRecords).where(and(scope, eq(maintenanceRecords.status, "scheduled"), lt(maintenanceRecords.maintenanceDate, today))),
     db.select({ value: count() }).from(maintenanceRecords).where(and(scope, eq(maintenanceRecords.status, "completed"), gte(maintenanceRecords.maintenanceDate, monthStart), lt(maintenanceRecords.maintenanceDate, monthEnd))),
-    db.select({ value: sql<number>`COALESCE(SUM(${maintenanceRecords.totalAmount}), 0)` }).from(maintenanceRecords).where(and(scope, eq(maintenanceRecords.status, "completed"), gte(maintenanceRecords.maintenanceDate, monthStart), lt(maintenanceRecords.maintenanceDate, monthEnd))),
+    canViewCosts
+      ? db.select({ value: sql<number>`COALESCE(SUM(${maintenanceRecords.totalAmount}), 0)` }).from(maintenanceRecords).where(and(scope, eq(maintenanceRecords.status, "completed"), gte(maintenanceRecords.maintenanceDate, monthStart), lt(maintenanceRecords.maintenanceDate, monthEnd)))
+      : Promise.resolve([{ value: null }]),
   ])
 
   return {
     scheduledCount: scheduledRow[0]?.value ?? 0,
     overdueCount: overdueRow[0]?.value ?? 0,
     completedThisMonth: completedRow[0]?.value ?? 0,
-    totalSpendThisMonth: Number(spendRow[0]?.value ?? 0),
+    totalSpendThisMonth: canViewCosts ? Number(spendRow[0]?.value ?? 0) : null,
   }
 }

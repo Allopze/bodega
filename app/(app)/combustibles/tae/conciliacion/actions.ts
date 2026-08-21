@@ -11,7 +11,7 @@ const MAX_EXPORT_ROWS = 10_000
 
 export async function exportTaeCopecReconciliationAction(filters: TaeCopecFilters) {
   let session
-  try { session = await requirePermission("combustibles:tae_export") }
+  try { session = await requirePermission("combustibles:tae_export", "/combustibles/tae") }
   catch { return { ok: false as const, message: "Sin permisos para exportar" } }
   const result = await getTaeCopecReconciliation(session, filters)
   const rows = result.rows.slice(0, MAX_EXPORT_ROWS)

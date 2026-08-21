@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest"
 const mockTransaction = vi.hoisted(() => vi.fn())
 vi.mock("@/db", () => ({ db: { transaction: mockTransaction } }))
 
-import { assertCapaTransition, createCapaAction } from "@/lib/services/prevention-capa"
+import { assertCapaTransition, capaEvidenceSchema, createCapaAction } from "@/lib/services/prevention-capa"
 
 const base = {
   priority: "medium",
@@ -20,6 +20,15 @@ const base = {
 } as const
 
 describe("CAPA state machine", () => {
+  it("reserva mantencion: para evidencia generada por el sistema", () => {
+    expect(capaEvidenceSchema.safeParse({
+      actionId: "capa-1",
+      expectedVersion: 1,
+      kind: "note",
+      reference: "mantencion:maint-1",
+    }).success).toBe(false)
+  })
+
   it("blocks direct closure and completion without required evidence", () => {
     expect(() => assertCapaTransition({
       ...base,

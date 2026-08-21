@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest"
+import { beforeEach, describe, expect, it, vi } from "vitest"
 import type { Session } from "next-auth"
 import { uploadFleetDocument, deleteFleetDocument, type UploadFleetDocumentInput } from "@/lib/services/fleet"
 
@@ -29,8 +29,12 @@ vi.mock("@/db", () => ({
 
 describe("Fleet Document Management (uploadFleetDocument / deleteFleetDocument)", () => {
   const dummySession = {
-    user: { id: "user-1", email: "admin@chome.cl" },
+    user: { id: "user-1", email: "admin@chome.cl", permissions: ["flota:manage_documents"] },
   } as unknown as Session
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
 
   it("validates required input parameters when uploading fleet document", async () => {
     const invalidInput: UploadFleetDocumentInput = {
@@ -43,6 +47,21 @@ describe("Fleet Document Management (uploadFleetDocument / deleteFleetDocument)"
     }
 
     await expect(uploadFleetDocument(invalidInput, dummySession, "all")).rejects.toThrow("Vehículo requerido")
+  })
+
+  it("rejects upload before querying a vehicle without document management permission", async () => {
+    const viewOnlySession = { user: { id: "viewer", permissions: ["flota:view"] } } as unknown as Session
+    const input: UploadFleetDocumentInput = {
+      vehicleId: "veh-1",
+      documentType: "SOAP",
+      fileName: "soap.pdf",
+      filePath: "/storage/soap.pdf",
+      fileSize: 1024,
+      mimeType: "application/pdf",
+    }
+
+    await expect(uploadFleetDocument(input, viewOnlySession, "all")).rejects.toThrow("Sin permisos")
+    expect(mockFindFirstVehicle).not.toHaveBeenCalled()
   })
 
   it("validates vehicle existence when uploading fleet document", async () => {
@@ -79,5 +98,12 @@ describe("Fleet Document Management (uploadFleetDocument / deleteFleetDocument)"
     mockFindFirstDoc.mockResolvedValueOnce(null)
 
     await expect(deleteFleetDocument("doc-999", dummySession, "all")).rejects.toThrow("Documento no encontrado")
+  })
+
+  it("rejects delete before querying a document without document management permission", async () => {
+    const viewOnlySession = { user: { id: "viewer", permissions: ["flota:view"] } } as unknown as Session
+
+    await expect(deleteFleetDocument("doc-1", viewOnlySession, "all")).rejects.toThrow("Sin permisos")
+    expect(mockFindFirstDoc).not.toHaveBeenCalled()
   })
 })

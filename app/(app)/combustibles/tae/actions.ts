@@ -19,7 +19,7 @@ import { formatDateTime, todayInChile} from "@/lib/utils"
 const MAX_TAE_EXPORT_ROWS = 10_000
 
 export async function createTaePublicLinkAction(input: { worksiteId: string; loadingPointId: string; label: string }) {
-  const guard = await guardPermission("combustibles:tae_manage_config")
+  const guard = await guardPermission("combustibles:tae_manage_config", "/combustibles/tae")
   if (guard.error) return guard.error
   if (!canAccessWorksite(guard.session, input.worksiteId)) return { ok: false, message: "No tienes acceso a esta faena" }
   try {
@@ -39,7 +39,7 @@ export async function createTaePublicLinkAction(input: { worksiteId: string; loa
 }
 
 export async function revokeTaePublicLinkAction(id: string) {
-  const guard = await guardPermission("combustibles:tae_manage_config")
+  const guard = await guardPermission("combustibles:tae_manage_config", "/combustibles/tae")
   if (guard.error) return guard.error
   const link = await db.query.fuelTaePublicLinks.findFirst({ where: eq(fuelTaePublicLinks.id, id) })
   if (!link || !canAccessWorksite(guard.session, link.worksiteId)) return { ok: false, message: "Enlace no encontrado" }
@@ -49,7 +49,7 @@ export async function revokeTaePublicLinkAction(id: string) {
 }
 
 export async function createTaeLoadingPointAction(input: { worksiteId: string; name: string; type: string; storageLocationId?: string | null }) {
-  const guard = await guardPermission("combustibles:tae_manage_config")
+  const guard = await guardPermission("combustibles:tae_manage_config", "/combustibles/tae")
   if (guard.error) return guard.error
   if (!canAccessWorksite(guard.session, input.worksiteId)) return { ok: false, message: "No tienes acceso a esta faena" }
   const name = input.name.trim()
@@ -57,10 +57,25 @@ export async function createTaeLoadingPointAction(input: { worksiteId: string; n
   const allowed = ["fixed_dispenser", "truck_dispenser", "pickup_tank", "tae", "other"]
   if (!allowed.includes(input.type)) return { ok: false, message: "Tipo de punto inválido" }
   try {
-    await db.insert(fuelTaeLoadingPoints).values({ id: nanoid(), worksiteId: input.worksiteId, name, type: input.type, storageLocationId: input.storageLocationId || null })
+    await db.transaction(async (tx) => {
+      // Mismo contrato que al reasignar la vasija: sin esto, el alta enlazaba un
+      // punto con la estanque de otra faena y el saldo se descontaba allá.
+      if (input.storageLocationId) {
+        const [location] = await tx
+          .select({ worksiteId: fuelStorageLocations.worksiteId, isActive: fuelStorageLocations.isActive })
+          .from(fuelStorageLocations).where(eq(fuelStorageLocations.id, input.storageLocationId)).limit(1)
+        if (!location || location.worksiteId !== input.worksiteId || !location.isActive) {
+          throw new Error("La vasija no pertenece a la misma faena o está inactiva")
+        }
+      }
+      await tx.insert(fuelTaeLoadingPoints).values({ id: nanoid(), worksiteId: input.worksiteId, name, type: input.type, storageLocationId: input.storageLocationId || null })
+    })
     revalidatePath("/combustibles/tae")
     return { ok: true, message: "Punto de carga creado" }
-  } catch {
+  } catch (error) {
+    // El motivo real importa: antes cualquier fallo se reportaba como nombre
+    // duplicado, incluida la vasija de otra faena.
+    if (error instanceof Error && error.message.startsWith("La vasija")) return { ok: false, message: error.message }
     return { ok: false, message: "No se pudo crear el punto. Revisa que no exista otro con ese nombre." }
   }
 }
@@ -69,13 +84,15 @@ export async function createTaeLoadingPointAction(input: { worksiteId: string; n
  *  Sin este enlace, lo que la PWA entrega no se descuenta del saldo de ninguna
  *  vasija concreta: `getFuelStorageBalances` sólo cuenta puntos enlazados. */
 export async function setTaeLoadingPointStorageAction(id: string, storageLocationId: string | null) {
-  const guard = await guardPermission("combustibles:tae_manage_config")
+  const guard = await guardPermission("combustibles:tae_manage_config", "/combustibles/tae")
   if (guard.error) return guard.error
   const point = await db.query.fuelTaeLoadingPoints.findFirst({ where: eq(fuelTaeLoadingPoints.id, id) })
   if (!point || !canAccessWorksite(guard.session, point.worksiteId)) return { ok: false, message: "Punto de carga no encontrado" }
   if (storageLocationId) {
     const location = await db.query.fuelStorageLocations.findFirst({ where: eq(fuelStorageLocations.id, storageLocationId) })
-    if (!location || location.worksiteId !== point.worksiteId) return { ok: false, message: "La vasija no pertenece a la misma faena" }
+    if (!location || location.worksiteId !== point.worksiteId || !location.isActive) {
+      return { ok: false, message: "La vasija no pertenece a la misma faena o está inactiva" }
+    }
   }
   await db.update(fuelTaeLoadingPoints).set({ storageLocationId, updatedAt: new Date().toISOString() }).where(eq(fuelTaeLoadingPoints.id, id))
   await recordAudit({ userId: guard.session.user.id, userEmail: guard.session.user.email ?? undefined, action: "update", entityType: "fuel_tae_loading_point", entityId: id, oldState: { storageLocationId: point.storageLocationId }, newState: { storageLocationId } })
@@ -85,7 +102,7 @@ export async function setTaeLoadingPointStorageAction(id: string, storageLocatio
 }
 
 export async function reviewTaeSubmissionAction(input: { id: string; expectedStatus: "submitted" | "observed" | "validated" | "voided"; status: "observed" | "validated" | "voided"; reviewNote: string }) {
-  const guard = await guardPermission("combustibles:tae_review")
+  const guard = await guardPermission("combustibles:tae_review", "/combustibles/tae")
   if (guard.error) return guard.error
   const parsed = taeReviewSchema.safeParse(input)
   if (!parsed.success) return { ok: false, message: parsed.error.issues[0]?.message ?? "Datos inválidos" }
@@ -109,7 +126,7 @@ export async function updateTaeMeterReadingAction(input: {
   meterType: "odometer" | "hour_meter"
   reason: string
 }) {
-  const guard = await guardPermission("combustibles:tae_review")
+  const guard = await guardPermission("combustibles:tae_review", "/combustibles/tae")
   if (guard.error) return guard.error
   const parsed = taeMeterCorrectionSchema.safeParse(input)
   if (!parsed.success) return { ok: false, message: parsed.error.issues[0]?.message ?? "Datos inválidos" }
@@ -161,7 +178,7 @@ export type TaeExportFilters = { q?: string; from?: string; to?: string; worksit
 
 export async function exportTaeSubmissionsXlsxAction(filters: TaeExportFilters = {}) {
   let session
-  try { session = await requirePermission("combustibles:tae_export") }
+  try { session = await requirePermission("combustibles:tae_export", "/combustibles/tae") }
   catch { return { ok: false as const, message: "Sin permisos" } }
 
   const status = ["submitted", "observed", "validated", "voided"].includes(filters.status ?? "") ? filters.status : undefined

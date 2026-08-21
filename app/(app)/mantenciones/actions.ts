@@ -2,8 +2,8 @@
 
 import { revalidatePath } from "next/cache"
 import { requirePermission } from "@/lib/auth/can"
-import { createMaintenanceRecord, updateMaintenanceRecord, cancelMaintenanceRecord } from "@/lib/services/maintenance"
-import { createMaintenanceRecordSchema, updateMaintenanceRecordSchema } from "@/lib/validation/maintenance"
+import { createMaintenanceRecord, transitionMaintenanceRecord, updateMaintenanceRecord } from "@/lib/services/maintenance"
+import { createMaintenanceRecordSchema, transitionMaintenanceRecordSchema, updateMaintenanceRecordSchema } from "@/lib/validation/maintenance"
 import type { ActionState } from "@/lib/validation/masters"
 import { logger } from "@/lib/logger"
 
@@ -18,11 +18,10 @@ export async function createMaintenanceRecordAction(
   const parsed = createMaintenanceRecordSchema.safeParse({
     vehicleId: formData.get("vehicleId"),
     supplierId: formData.get("supplierId") || undefined,
-    worksiteId: formData.get("worksiteId") || undefined,
     costCenterId: formData.get("costCenterId") || undefined,
     maintenanceDate: formData.get("maintenanceDate"),
     maintenanceType: formData.get("maintenanceType"),
-    status: formData.get("status") || "completed",
+    status: formData.get("status") || "scheduled",
     odometerReading: formData.get("odometerReading") || null,
     hourMeterReading: formData.get("hourMeterReading") || null,
     netAmount: formData.get("netAmount") || 0,
@@ -61,11 +60,9 @@ export async function updateMaintenanceRecordAction(
     id: formData.get("id"),
     vehicleId: formData.get("vehicleId"),
     supplierId: formData.get("supplierId") || undefined,
-    worksiteId: formData.get("worksiteId") || undefined,
     costCenterId: formData.get("costCenterId") || undefined,
     maintenanceDate: formData.get("maintenanceDate"),
     maintenanceType: formData.get("maintenanceType"),
-    status: formData.get("status") || "completed",
     odometerReading: formData.get("odometerReading") || null,
     hourMeterReading: formData.get("hourMeterReading") || null,
     netAmount: formData.get("netAmount") || 0,
@@ -93,21 +90,27 @@ export async function updateMaintenanceRecordAction(
   }
 }
 
-export async function cancelMaintenanceRecordAction(id: string): Promise<ActionState> {
+export async function transitionMaintenanceRecordAction(rawInput: unknown): Promise<ActionState> {
   let session
   try { session = await requirePermission("mantenciones:edit") }
-  catch { return { ok: false, message: "Sin permisos para cancelar mantenciones" } }
+  catch { return { ok: false, message: "Sin permisos para cambiar el estado de mantenciones" } }
 
-  if (!id) return { ok: false, message: "ID requerido" }
+  const parsed = transitionMaintenanceRecordSchema.safeParse(rawInput)
+  if (!parsed.success) return { ok: false, message: parsed.error.issues[0]?.message ?? "Transición inválida" }
 
   try {
-    await cancelMaintenanceRecord(session, id)
+    const result = await transitionMaintenanceRecord(session, parsed.data)
     revalidatePath("/mantenciones")
     revalidatePath("/flota")
     revalidatePath("/analitica")
-    return { ok: true, message: "Mantención cancelada" }
+    revalidatePath("/prevencion/capa")
+    return { ok: true, message: "Estado de mantención actualizado", data: result }
   } catch (error) {
-    logger.error("cancelMaintenanceRecordAction", { error })
-    return { ok: false, message: error instanceof Error ? error.message : "Error al cancelar mantención" }
+    logger.error("transitionMaintenanceRecordAction", { error })
+    return { ok: false, message: error instanceof Error ? error.message : "Error al cambiar el estado de la mantención" }
   }
+}
+
+export async function cancelMaintenanceRecordAction(id: string, expectedStatus: string, reason: string): Promise<ActionState> {
+  return transitionMaintenanceRecordAction({ id, expectedStatus, reason, transition: "cancel" })
 }

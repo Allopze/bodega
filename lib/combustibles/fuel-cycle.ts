@@ -3,10 +3,11 @@ import { and, eq, gte, inArray, lte, ne, sql } from "drizzle-orm"
 import type { AnyPgColumn } from "drizzle-orm/pg-core"
 import { z } from "zod"
 import { db } from "@/db"
-import { fuelCycleMovements, fuelLoads, fuelStorageLocations, fuelTaeLoadingPoints, fuelTaeSubmissions } from "@/db/schema"
+import { fuelCycleMovements, fuelLoads, fuelStorageLocations, fuelTaeLoadingPoints, fuelTaeSubmissions, fuelVehicleProducts, fuelVehicles } from "@/db/schema"
 import { recordAudit } from "@/lib/audit"
 import { nanoid } from "@/lib/id"
 import { worksiteScopeSql } from "@/lib/auth/scope"
+import { accountableFuelLoadsWhere } from "@/lib/combustibles/load-status"
 
 /** ponytail: Umbral máximo de diferencia porcentual considerado "normal" en el
  *  semáforo del ciclo. Pendiente de hacer configurable por faena (sección 12). */
@@ -46,6 +47,23 @@ export async function createFuelCycleMovement(input: unknown, actor: { userId: s
       const location = await tx.query.fuelStorageLocations.findFirst({ where: eq(fuelStorageLocations.id, locationId) })
       if (!location || location.worksiteId !== parsed.worksiteId || location.productId !== parsed.productId || !location.isActive) throw new Error("El estanque no corresponde a la faena, producto o estado seleccionado")
     }
+    // El equipo se validaba sólo en el formulario: una entrega podía descontar
+    // litros de una faena y anotárselos a un equipo de otra, o cargar diésel a
+    // un equipo declarado incompatible con ese producto.
+    if (parsed.vehicleId) {
+      const [vehicle] = await tx
+        .select({ worksiteId: fuelVehicles.worksiteId, isActive: fuelVehicles.isActive })
+        .from(fuelVehicles).where(eq(fuelVehicles.id, parsed.vehicleId)).limit(1)
+      if (!vehicle || vehicle.worksiteId !== parsed.worksiteId || !vehicle.isActive) {
+        throw new Error("El equipo no corresponde a la faena o está inactivo")
+      }
+      const [compatible] = await tx
+        .select({ productId: fuelVehicleProducts.productId })
+        .from(fuelVehicleProducts)
+        .where(and(eq(fuelVehicleProducts.vehicleId, parsed.vehicleId), eq(fuelVehicleProducts.productId, parsed.productId)))
+        .limit(1)
+      if (!compatible) throw new Error("El equipo no admite el producto seleccionado")
+    }
     await tx.insert(fuelCycleMovements).values({ id, ...parsed, createdBy: actor.userId })
     await recordAudit({ userId: actor.userId, userEmail: actor.userEmail, action: "create", entityType: "fuel_cycle_movement", entityId: id, newState: parsed }, tx)
   })
@@ -82,7 +100,7 @@ const chileDayRange = (column: AnyPgColumn, from: string, to: string) => and(
 
 export async function getFuelCycleComparison(session: Session, filters: { worksiteId?: string; productId?: string; from: string; to: string }) {
   const movementWhere = and(chileDayRange(fuelCycleMovements.occurredAt, filters.from, filters.to), filters.worksiteId ? eq(fuelCycleMovements.worksiteId, filters.worksiteId) : undefined, filters.productId ? eq(fuelCycleMovements.productId, filters.productId) : undefined, worksiteScopeSql(session, fuelCycleMovements.worksiteId))
-  const registeredWhere = and(gte(fuelLoads.loadDate, filters.from.slice(0, 10)), lte(fuelLoads.loadDate, filters.to.slice(0, 10)), filters.worksiteId ? eq(fuelLoads.worksiteId, filters.worksiteId) : undefined, filters.productId ? eq(fuelLoads.productId, filters.productId) : undefined, worksiteScopeSql(session, fuelLoads.worksiteId))
+  const registeredWhere = and(accountableFuelLoadsWhere(), gte(fuelLoads.loadDate, filters.from.slice(0, 10)), lte(fuelLoads.loadDate, filters.to.slice(0, 10)), filters.worksiteId ? eq(fuelLoads.worksiteId, filters.worksiteId) : undefined, filters.productId ? eq(fuelLoads.productId, filters.productId) : undefined, worksiteScopeSql(session, fuelLoads.worksiteId))
   // La PWA es la fuente real de lo entregado desde la estanque: registra litros,
   // medidor, sellos y evidencia por equipo. No se duplica como movimiento del
   // ledger — se lee de origen, y así una carga anulada deja de contar sola.

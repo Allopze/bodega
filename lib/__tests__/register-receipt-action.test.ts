@@ -15,6 +15,17 @@ const mockDbState = vi.hoisted(() => ({
   order: { id: "oc-1", worksiteId: "ws-1" } as { id: string; worksiteId: string } | undefined,
 }))
 
+// El guard de módulo consulta `system_settings` en cada verificación de permiso
+// (CO-007). Estas pruebas mockean sólo las tablas de su caso, así que se
+// declara aquí que ningún módulo está apagado; el guard tiene sus propias
+// regresiones en lib/__tests__/module-toggles.test.ts.
+vi.mock("@/lib/services/module-toggles", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/services/module-toggles")>()),
+  assertPermissionModuleEnabled: vi.fn(async () => {}),
+  assertRouteModuleEnabled: vi.fn(async () => {}),
+  getNavigationToggleState: vi.fn(async () => ({ enabledModuleIds: new Set<string>(), disabledSubmoduleHrefs: new Set<string>() })),
+}))
+
 vi.mock("@/lib/auth/auth", () => ({ auth: mockAuthFn }))
 vi.mock("@/lib/services/receiving", () => ({ registerReceipt: mockRegisterReceipt }))
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), revalidateTag: vi.fn() }))

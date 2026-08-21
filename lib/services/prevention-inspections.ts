@@ -52,6 +52,7 @@ import { CHECKLIST_DEFINITIONS, isNonInspectionDefinition, isPersonEvaluationDef
 import type { ChecklistDefinition } from "@/lib/sst/types"
 import { onInspectionCompleted } from "@/lib/services/pdtp-adapters/pdtp-accreditation-connectors"
 import { codeYear, todayInChile } from "@/lib/utils"
+import { assertRouteModuleEnabled } from "@/lib/services/module-toggles"
 
 type Client = DB | Tx
 
@@ -75,6 +76,86 @@ function requireAccess(access: InspectionAccess, permission: string, worksiteId?
   if (!access.permissions.includes(permission) || (worksiteId && !scopeAllows(access.scope, worksiteId))) {
     throw new Error(NOT_FOUND)
   }
+}
+
+export function inspectionOperationPath(kind: string): "/prevencion/inspecciones" | "/prevencion/auditorias" {
+  return kind === "audit" ? "/prevencion/auditorias" : "/prevencion/inspecciones"
+}
+
+/**
+ * Aplica el toggle del submódulo según el tipo persistido del instrumento.
+ * Auditorías e Inspecciones comparten motor, permisos y acciones: inferir el
+ * owner desde la URL que despachó la acción permitiría operar una auditoría
+ * desde la ruta hermana cuando su toggle está apagado.
+ */
+export async function assertInspectionKindEnabled(kind: string): Promise<void> {
+  await assertRouteModuleEnabled(inspectionOperationPath(kind))
+}
+
+/**
+ * Resuelve el kind desde la referencia inmutable de cada operación compartida.
+ * Se ejecuta después de autenticar/autorización básica y antes de mutar.
+ */
+export async function assertInspectionOperationEnabled(input: unknown): Promise<void> {
+  // Sin referencia resoluble —el alta de una plantilla nueva no tiene aún id—
+  // se aplica el submódulo por defecto del motor. Fallar aquí convertiría el
+  // guard en un rechazo de operaciones legítimas; dejar pasar lo volvería inútil.
+  if (!input || typeof input !== "object") {
+    await assertInspectionKindEnabled("inspection")
+    return
+  }
+  const value = input as Record<string, unknown>
+  const inlineKind = typeof value.kind === "string" ? value.kind : null
+  if (inlineKind === "inspection" || inlineKind === "observation" || inlineKind === "audit") {
+    await assertInspectionKindEnabled(inlineKind)
+    return
+  }
+
+  const id = (key: string) => typeof value[key] === "string" && value[key] ? String(value[key]) : null
+  let row: { kind: string } | undefined
+
+  if (id("templateId")) {
+    ;[row] = await db.select({ kind: preventionInspectionTemplates.kind })
+      .from(preventionInspectionTemplates)
+      .where(eq(preventionInspectionTemplates.id, id("templateId")!)).limit(1)
+  } else if (id("programId")) {
+    ;[row] = await db.select({ kind: preventionInspectionTemplates.kind })
+      .from(preventionInspectionPrograms)
+      .innerJoin(preventionInspectionTemplates, eq(preventionInspectionTemplates.id, preventionInspectionPrograms.templateId))
+      .where(eq(preventionInspectionPrograms.id, id("programId")!)).limit(1)
+  } else if (id("runId")) {
+    ;[row] = await db.select({ kind: preventionInspectionTemplates.kind })
+      .from(preventionInspectionRuns)
+      .innerJoin(preventionInspectionTemplates, eq(preventionInspectionTemplates.id, preventionInspectionRuns.templateId))
+      .where(eq(preventionInspectionRuns.id, id("runId")!)).limit(1)
+  } else if (id("findingId")) {
+    ;[row] = await db.select({ kind: preventionInspectionTemplates.kind })
+      .from(preventionInspectionFindings)
+      .innerJoin(preventionInspectionRuns, eq(preventionInspectionRuns.id, preventionInspectionFindings.runId))
+      .innerJoin(preventionInspectionTemplates, eq(preventionInspectionTemplates.id, preventionInspectionRuns.templateId))
+      .where(eq(preventionInspectionFindings.id, id("findingId")!)).limit(1)
+  } else if (id("answerId")) {
+    ;[row] = await db.select({ kind: preventionInspectionTemplates.kind })
+      .from(preventionInspectionAnswers)
+      .innerJoin(preventionInspectionRuns, eq(preventionInspectionRuns.id, preventionInspectionAnswers.runId))
+      .innerJoin(preventionInspectionTemplates, eq(preventionInspectionTemplates.id, preventionInspectionRuns.templateId))
+      .where(eq(preventionInspectionAnswers.id, id("answerId")!)).limit(1)
+  } else if (id("documentId")) {
+    ;[row] = await db.select({ kind: preventionInspectionTemplates.kind })
+      .from(preventionInspectionRunDocuments)
+      .innerJoin(preventionInspectionRuns, eq(preventionInspectionRuns.id, preventionInspectionRunDocuments.runId))
+      .innerJoin(preventionInspectionTemplates, eq(preventionInspectionTemplates.id, preventionInspectionRuns.templateId))
+      .where(eq(preventionInspectionRunDocuments.id, id("documentId")!)).limit(1)
+  } else if (id("evidenceId")) {
+    ;[row] = await db.select({ kind: preventionInspectionTemplates.kind })
+      .from(preventionInspectionAnswerEvidence)
+      .innerJoin(preventionInspectionAnswers, eq(preventionInspectionAnswers.id, preventionInspectionAnswerEvidence.answerId))
+      .innerJoin(preventionInspectionRuns, eq(preventionInspectionRuns.id, preventionInspectionAnswers.runId))
+      .innerJoin(preventionInspectionTemplates, eq(preventionInspectionTemplates.id, preventionInspectionRuns.templateId))
+      .where(eq(preventionInspectionAnswerEvidence.id, id("evidenceId")!)).limit(1)
+  }
+
+  await assertInspectionKindEnabled(row?.kind ?? "inspection")
 }
 
 function scopeCondition(scope: WorksiteScope, column: AnyPgColumn) {
@@ -1271,20 +1352,26 @@ export async function createFindingCapa(input: unknown, access: InspectionAccess
         throw new Error("Sólo puede programarse una mantención si la inspección tiene un equipo como sujeto.")
       }
       const meter = await readMeterFromRun(tx, row.run.id)
-      const [vehicle] = await tx.select({ meterType: fuelVehicles.meterType })
+      const [vehicle] = await tx.select({ meterType: fuelVehicles.meterType, worksiteId: fuelVehicles.worksiteId })
         .from(fuelVehicles).where(eq(fuelVehicles.id, row.run.subjectVehicleId)).limit(1)
+      // El permiso se validó contra la faena de la inspección, pero la mantención
+      // se escribe en la faena del equipo. Si el equipo ya fue trasladado, derivar
+      // crearía una orden en una faena que este actor no autorizó.
+      if (!vehicle) throw new Error("El equipo de la inspección ya no existe.")
+      if (vehicle.worksiteId !== row.run.worksiteId) {
+        throw new Error("El equipo pertenece a otra faena; actualiza la inspección antes de derivar la mantención.")
+      }
       maintenanceId = await createMaintenanceRecordWithClient(tx, {
         vehicleId: row.run.subjectVehicleId,
         supplierId: "",
-        worksiteId: row.run.worksiteId,
         costCenterId: "",
         // El plazo de la CAPA manda: la reparación y su acción correctiva
         // vencen el mismo día, o el taller y Prevención llevan dos calendarios.
         maintenanceDate: capa.targetDate,
         maintenanceType: "correctiva",
         status: "scheduled",
-        odometerReading: vehicle?.meterType === "odometer" ? meter : null,
-        hourMeterReading: vehicle?.meterType === "hour_meter" ? meter : null,
+        odometerReading: vehicle.meterType === "odometer" ? meter : null,
+        hourMeterReading: vehicle.meterType === "hour_meter" ? meter : null,
         netAmount: 0,
         taxAmount: 0,
         totalAmount: 0,
@@ -1292,7 +1379,7 @@ export async function createFindingCapa(input: unknown, access: InspectionAccess
         documentName: "",
         notes: `Deriva de ${row.run.code} · ${row.finding.description}`,
         inspectionFindingId: data.findingId,
-      }, { worksiteId: row.run.worksiteId, actorUserId: access.userId })
+      }, { actorUserId: access.userId, vehicle })
     }
 
     return { finding: updated, capaId: capa.id, maintenanceId, run: row.run, criticality: row.finding.criticality }

@@ -8,6 +8,7 @@ import { db } from "@/db"
 import { worksites, purchaseRequests, purchaseOrders } from "@/db/schema"
 import { eq, inArray, count, and, sql } from "drizzle-orm"
 import { Suspense } from "react"
+import { headers } from "next/headers"
 import { AppShell } from "@/components/layout/app-shell"
 import { SessionProvider } from "@/components/providers/session-provider"
 import { QueryProvider } from "@/components/providers/query-provider"
@@ -15,7 +16,8 @@ import { NavigationProgress } from "@/components/layout/navigation-progress"
 import { Toaster } from "sonner"
 import { isGlobalRole, visibleWorksiteIds } from "@/lib/auth/scope"
 import { can } from "@/lib/auth/can"
-import { getEnabledModuleIds } from "@/lib/services/module-toggles"
+import { getNavigationToggleState, routeIsEnabled, type NavigationToggleState } from "@/lib/services/module-toggles"
+import { registry } from "@/modules/registry"
 import { getCriticalStockAlertCount } from "@/lib/services/stock-alerts"
 import { getOperationalWorkCount } from "@/lib/services/operational-work-queue"
 import type { Session } from "next-auth"
@@ -95,6 +97,22 @@ const getCachedOperationalWorkCount = unstable_cache(
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const session = await auth()
   if (!session) redirect("/login")
+  const pathname = (await headers()).get("x-chome-pathname")
+  // El proxy es el punto de aplicación (corre en cada request, incluidas las
+  // navegaciones RSC que NO vuelven a ejecutar este layout). Aquí el estado se
+  // usa sobre todo para pintar la navegación, así que un fallo de lectura
+  // degrada el menú en vez de dejar la plataforma entera en 500.
+  let toggleState: NavigationToggleState
+  try {
+    toggleState = await getNavigationToggleState()
+  } catch {
+    toggleState = { enabledModuleIds: new Set(registry.map((module) => module.id)), disabledSubmoduleHrefs: new Set() }
+  }
+  // `redirect()` fuera del try: lanza una excepción de control que un catch
+  // genérico se tragaría.
+  if (pathname && !routeIsEnabled(pathname, toggleState)) {
+    redirect(`/modulo-inactivo?desde=${encodeURIComponent(pathname)}`)
+  }
 
   const isGlobal = isGlobalRole(session)
   const wsIds = visibleWorksiteIds(session)
@@ -106,7 +124,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const canViewStock = can(session, "warehouse:view_stock")
   const canViewOperations = can(session, "operations:view_work")
 
-  const [ws, rawBadgeCounts, operationalWorkCount, enabledModuleIds] = await Promise.all([
+  const [ws, rawBadgeCounts, operationalWorkCount] = await Promise.all([
     session.user.primaryWorksiteId
       ? db.query.worksites.findFirst({ where: eq(worksites.id, session.user.primaryWorksiteId) })
       : Promise.resolve(undefined),
@@ -114,7 +132,6 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     canViewOperations
       ? getCachedOperationalWorkCount(session.user.id, session.user.roles, session.user.permissions, wsIds, isGlobal)
       : Promise.resolve(0),
-    getEnabledModuleIds(),
   ])
   // No serializar conteos de módulos que esta sesión no puede abrir. Los
   // controles visuales respetan el permiso y el propio dato también.
@@ -133,7 +150,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <Suspense fallback={null}>
         <NavigationProgress />
       </Suspense>
-      <AppShell session={session} worksiteName={ws?.name} badgeCounts={badgeCounts} enabledModuleIds={Array.from(enabledModuleIds)}>
+      <AppShell
+        session={session}
+        worksiteName={ws?.name}
+        badgeCounts={badgeCounts}
+        enabledModuleIds={Array.from(toggleState.enabledModuleIds)}
+        disabledSubmoduleHrefs={Array.from(toggleState.disabledSubmoduleHrefs)}
+      >
         {children}
       </AppShell>
       <Toaster

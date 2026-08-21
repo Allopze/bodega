@@ -60,6 +60,29 @@ export async function getUserIdsWithPermission(permissionName: string): Promise<
   return [...userIds]
 }
 
+/** Destinatarios activos que además poseen al menos un rol de alcance global. */
+export async function getGlobalUserIdsWithPermission(permissionName: string): Promise<string[]> {
+  return getGlobalUserIdsWithAllPermissions(permissionName)
+}
+
+/**
+ * Destinatarios activos, globales y con la intersección completa de permisos.
+ * Evita que notificaciones sensibles traten permisos compuestos como OR.
+ */
+export async function getGlobalUserIdsWithAllPermissions(...permissionNames: string[]): Promise<string[]> {
+  const names = [...new Set(permissionNames.filter(Boolean))]
+  if (names.length === 0) return []
+  const candidatesByPermission = await Promise.all(names.map(getUserIdsWithPermission))
+  const [first = [], ...rest] = candidatesByPermission
+  const candidateIds = first.filter((userId) => rest.every((ids) => ids.includes(userId)))
+  if (candidateIds.length === 0) return []
+  const rows = await db.select({ userId: userRoles.userId })
+    .from(userRoles)
+    .innerJoin(roles, eq(roles.id, userRoles.roleId))
+    .where(and(inArray(userRoles.userId, candidateIds), eq(roles.isGlobal, true)))
+  return [...new Set(rows.map((row) => row.userId))]
+}
+
 /**
  * Returns user IDs who have the given permission AND are scoped to a specific worksite.
  */

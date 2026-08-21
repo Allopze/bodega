@@ -1,15 +1,15 @@
 import type { Metadata } from "next"
 import Link from "next/link"
 import { redirect } from "next/navigation"
-import { eq, inArray, isNotNull } from "drizzle-orm"
+import { and, eq, inArray, isNotNull } from "drizzle-orm"
 import { db } from "@/db"
 import { fuelAnomalyCases, fuelAnomalyRules, fuelEquipmentTypes, fuelProducts, fuelSuppliers, users, worksites } from "@/db/schema"
 import { fuelTaeLoadingPoints } from "@/db/schema/fuel-tae"
 import { settle } from "@/lib/async-settle"
 import { can, requirePermission } from "@/lib/auth/can"
-import { resolveWorksiteScope } from "@/lib/auth/scope"
+import { resolveWorksiteScope, worksiteScopeSql } from "@/lib/auth/scope"
 import { getFuelLogRows, getFuelLogTotal, FUEL_LOG_SOURCE_LABEL, fuelLogDetailHref, fuelLogAuditEntity, type FuelLogSource } from "@/lib/combustibles/fuel-log"
-import { ANOMALY_RULE_SEVERITY_LABELS, ANOMALY_RULE_SEVERITIES } from "@/lib/combustibles/validation"
+import { ANOMALY_RULE_SEVERITY_LABELS, ANOMALY_RULE_SEVERITIES, FUEL_VEHICLE_STATUS_LABELS, FUEL_VEHICLE_STATUSES } from "@/lib/combustibles/validation"
 import { PageContainer } from "@/components/ui/page-container"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
@@ -71,7 +71,11 @@ export default async function FuelLogPage({ searchParams }: { searchParams: Prom
     supervisorName: sp.supervisor?.trim() || undefined,
     loadingPointId: sp.punto_carga?.trim() || undefined,
     performanceUnit: sp.unidad_rendimiento === "km_per_liter" || sp.unidad_rendimiento === "liters_per_hour" ? sp.unidad_rendimiento : undefined,
-    operationalStatus: sp.estado_operativo?.trim() || undefined,
+    // …y un valor fuera del enum se descarta en vez de filtrar por un estado
+    // que no existe (que se lee como "no hay cargas", no como "filtro inválido").
+    operationalStatus: (FUEL_VEHICLE_STATUSES as readonly string[]).includes(sp.estado_operativo?.trim() ?? "")
+      ? sp.estado_operativo!.trim()
+      : undefined,
     sealRemoved: sp.sello_retirado?.trim() || undefined,
     sealInstalled: sp.sello_instalado?.trim() || undefined,
     evidenceKind: sp.evidencia_tipo === "odometer" || sp.evidencia_tipo === "liter_meter" || sp.evidencia_tipo === "removed_seal" || sp.evidencia_tipo === "installed_seal" ? sp.evidencia_tipo : undefined,
@@ -111,7 +115,13 @@ export default async function FuelLogPage({ searchParams }: { searchParams: Prom
       "bitacora-equipmentTypes",
     ),
     settle(
-      db.query.fuelTaeLoadingPoints.findMany({ columns: { id: true, name: true, worksiteId: true }, orderBy: [fuelTaeLoadingPoints.name] }),
+      // Los puntos de carga pertenecen a una faena: el desplegable de filtros
+      // publicaba el mapa de instalaciones de todas ellas.
+      db.query.fuelTaeLoadingPoints.findMany({
+        where: worksiteScopeSql(session, fuelTaeLoadingPoints.worksiteId),
+        columns: { id: true, name: true, worksiteId: true },
+        orderBy: [fuelTaeLoadingPoints.name],
+      }),
       [] as Array<{ id: string; name: string; worksiteId: string }>,
       "bitacora-loadingPoints",
     ),
@@ -121,9 +131,14 @@ export default async function FuelLogPage({ searchParams }: { searchParams: Prom
       "bitacora-anomalyRules",
     ),
     settle(
+      // …y los responsables se derivan de casos con faena: sin acotar, el filtro
+      // enumeraba a quién investiga anomalías en faenas ajenas.
       db.selectDistinct({ id: users.id, name: users.name }).from(fuelAnomalyCases)
         .innerJoin(users, eq(fuelAnomalyCases.assigneeId, users.id))
-        .where(isNotNull(fuelAnomalyCases.assigneeId)).orderBy(users.name),
+        .where(and(
+          isNotNull(fuelAnomalyCases.assigneeId),
+          worksiteScopeSql(session, fuelAnomalyCases.worksiteId),
+        )).orderBy(users.name),
       [] as Array<{ id: string; name: string }>,
       "bitacora-anomalyAssignees",
     ),
@@ -214,7 +229,12 @@ export default async function FuelLogPage({ searchParams }: { searchParams: Prom
               <FilterSelect name="producto" defaultValue={sp.producto} options={productsList.map((item) => ({ value: item.id, label: item.name }))} placeholder="Todos los productos" />
               <FilterSelect name="punto_carga" defaultValue={sp.punto_carga} options={loadingPointsList.map((item) => ({ value: item.id, label: item.name }))} placeholder="Todos los puntos de carga" />
               <FilterSelect name="unidad_rendimiento" defaultValue={sp.unidad_rendimiento} options={[{ value: "km_per_liter", label: "km/L" }, { value: "liters_per_hour", label: "L/h" }]} placeholder="Cualquier unidad" />
-              <FilterSelect name="estado_operativo" defaultValue={sp.estado_operativo} options={[{ value: "operativo", label: "Operativo" }, { value: "inactivo_mantencion", label: "Inactivo (mantención)" }, { value: "inactivo_fuera_servicio", label: "Inactivo (fuera de servicio)" }, { value: "inactivo_revision", label: "Inactivo (revisión)" }]} placeholder="Cualquier estado" />
+              {/* Los valores son los del enum canónico (`fuel_vehicles.operational_status`).
+                  Antes ofrecía `inactivo_mantencion`, `inactivo_fuera_servicio` e
+                  `inactivo_revision`: ninguno existe en la columna, así que los
+                  tres filtros devolvían cero filas siempre y "revisión" ni
+                  siquiera es un estado del modelo. */}
+              <FilterSelect name="estado_operativo" defaultValue={sp.estado_operativo} options={FUEL_VEHICLE_STATUSES.map((status) => ({ value: status, label: FUEL_VEHICLE_STATUS_LABELS[status] }))} placeholder="Cualquier estado" />
               <Input name="sello_retirado" defaultValue={sp.sello_retirado} aria-label="Número de sello retirado" placeholder="Número de sello retirado" />
               <Input name="sello_instalado" defaultValue={sp.sello_instalado} aria-label="Número de sello instalado" placeholder="Número de sello instalado" />
               <FilterSelect name="evidencia_tipo" defaultValue={sp.evidencia_tipo} options={[{ value: "odometer", label: "Odómetro / horómetro" }, { value: "liter_meter", label: "Medidor de litros" }, { value: "removed_seal", label: "Sello retirado" }, { value: "installed_seal", label: "Sello instalado" }]} placeholder="Cualquier tipo de evidencia" />

@@ -108,7 +108,7 @@ function parseUpdateInput(formData: FormData, id: string) {
 
 export async function createFuelSupplierAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   let session
-  try { session = await requirePermission("combustibles:manage_suppliers") }
+  try { session = await requirePermission("combustibles:manage_suppliers", "/combustibles") }
   catch { return { ok: false, message: "Sin permisos" } }
 
   const parsed = parseCreateInput(formData)
@@ -150,7 +150,7 @@ export async function createFuelSupplierAction(_prev: ActionState, formData: For
 
 export async function updateFuelSupplierAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   let session
-  try { session = await requirePermission("combustibles:manage_suppliers") }
+  try { session = await requirePermission("combustibles:manage_suppliers", "/combustibles") }
   catch { return { ok: false, message: "Sin permisos" } }
 
   const id = String(formData.get("id") ?? "")
@@ -206,7 +206,7 @@ export async function updateFuelSupplierAction(_prev: ActionState, formData: For
 
 export async function toggleFuelSupplierActive(_prev: ActionState, formData: FormData): Promise<ActionState> {
   let session
-  try { session = await requirePermission("combustibles:manage_suppliers") }
+  try { session = await requirePermission("combustibles:manage_suppliers", "/combustibles") }
   catch { return { ok: false, message: "Sin permisos" } }
 
   const id = String(formData.get("id") ?? "")

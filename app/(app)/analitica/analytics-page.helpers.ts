@@ -3,6 +3,7 @@ import { db } from "@/db"
 import { fuelVehicles, suppliers, worksites } from "@/db/schema"
 import { isGlobalRole, visibleWorksiteIds } from "@/lib/auth/scope"
 import type { requirePermission } from "@/lib/auth/can"
+import { can } from "@/lib/auth/can"
 
 export async function getFilterOptions(session: Awaited<ReturnType<typeof requirePermission>>) {
   const isGlobal = isGlobalRole(session)
@@ -22,10 +23,12 @@ export async function getFilterOptions(session: Awaited<ReturnType<typeof requir
       .from(suppliers)
       .where(eq(suppliers.isActive, true))
       .orderBy(asc(suppliers.name)),
-    db.select({ id: fuelVehicles.id, name: fuelVehicles.plate, plate: fuelVehicles.plate })
-      .from(fuelVehicles)
-      .where(eq(fuelVehicles.isActive, true))
-      .orderBy(asc(fuelVehicles.plate)),
+    can(session, "combustibles:view")
+      ? db.select({ id: fuelVehicles.id, name: fuelVehicles.plate, plate: fuelVehicles.plate })
+          .from(fuelVehicles)
+          .where(eq(fuelVehicles.isActive, true))
+          .orderBy(asc(fuelVehicles.plate))
+      : Promise.resolve([]),
   ])
 
   return {

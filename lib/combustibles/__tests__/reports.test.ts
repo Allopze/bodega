@@ -38,7 +38,7 @@ const session = {
   user: {
     id: "user-1",
     roles: ["faena"],
-    permissions: ["combustibles:view"],
+    permissions: ["combustibles:view", "combustibles:view_costs"],
     worksiteIds: ["ws-1"],
   },
 } as Session
@@ -53,13 +53,27 @@ describe("getFuelReportsData", () => {
   it("uses the shared fuel-load where helper so report charts keep worksite scoping", async () => {
     await getFuelReportsData(session, { startDate: "2026-06-01", endDate: "2026-06-30" })
 
-    expect(mockBuildFuelLoadsWhere).toHaveBeenCalledWith(session, {
-      startDate: "2026-06-01",
-      endDate: "2026-06-30",
-    })
+    // …y pidiéndole sólo estados contabilizables: un reporte de gasto no
+    // incluye borradores ni cargas anuladas (CO-014).
+    expect(mockBuildFuelLoadsWhere).toHaveBeenCalledWith(
+      session,
+      { startDate: "2026-06-01", endDate: "2026-06-30" },
+      { accountableOnly: true },
+    )
     expect(chains.length).toBe(6)
     for (const chain of chains) {
       expect(chain.where).toHaveBeenCalledWith(whereSentinel)
     }
+  })
+
+  it("rechaza antes de consultar si falta la capacidad base o la de costos", async () => {
+    const withoutCosts = {
+      ...session,
+      user: { ...session.user, permissions: ["combustibles:view"] },
+    } as Session
+
+    await expect(getFuelReportsData(withoutCosts)).rejects.toThrow("No autorizado")
+    expect(chains).toHaveLength(0)
+    expect(mockBuildFuelLoadsWhere).not.toHaveBeenCalled()
   })
 })
