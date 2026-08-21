@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto"
 import path from "node:path"
 import postgres from "postgres"
 import { drizzle } from "drizzle-orm/postgres-js"
@@ -7,6 +8,7 @@ import { loadEnvConfig } from "@next/env"
 import { eq, sql } from "drizzle-orm"
 import * as schema from "../db/schema"
 import { SYSTEM_PERMISSIONS } from "../lib/auth/system-rbac"
+import { INSPECCION_EXTINTORES } from "../lib/sst/definitions/inspeccion-extintores"
 import {
   assertSafeDestructiveDatabase,
   getDatabaseNameFromUrl,
@@ -1541,6 +1543,175 @@ async function main() {
     status: "planned",
     createdByUserId: "user-admin-e2e",
   })
+
+  /* ── Motor de inspecciones: instrumento vigente y sus ejecuciones ───────
+   * `scripts/seed-pdtp-inspection-templates-2026.ts` instala el catálogo en
+   * borrador y no corre en E2E, así que sin esto ninguna pantalla del módulo
+   * tiene con qué operar: el picker de "Nueva inspección" ni siquiera aparece
+   * (`InspectionRunList` lo condiciona a que exista una plantilla aprobada).
+   *
+   * Se elige el Anexo 2 (extintores) por ser la definición más pequeña del
+   * catálogo con las dos naturalezas de ítem en la misma plantilla: cinco
+   * puntuables `cumple_nocumple_na_obs` y cinco que sólo registran contenido
+   * (select, texto, fecha). Eso deja probar en un mismo formulario el
+   * cumplimiento, los hallazgos por daño potencial y el estado `recorded`.
+   *
+   * `contentHash` replica `contentHashOf` (lib/services/prevention-inspections.ts).
+   * Si divergen, el catálogo marca la plantilla como derivada ("Catálogo
+   * actualizado") aunque el contenido sea idéntico.
+   */
+  const extintoresSnapshot = INSPECCION_EXTINTORES as unknown as Record<string, unknown>
+  await db.insert(schema.preventionInspectionTemplates).values({
+    id: "insptpl-insp-e2e",
+    code: INSPECCION_EXTINTORES.code,
+    versionLabel: "E2E",
+    name: INSPECCION_EXTINTORES.title,
+    kind: "inspection",
+    sourceDefinitionCode: INSPECCION_EXTINTORES.code,
+    definitionSnapshot: extintoresSnapshot,
+    contentHash: createHash("sha256").update(JSON.stringify(extintoresSnapshot)).digest("hex"),
+    status: "approved",
+    legalFramework: INSPECCION_EXTINTORES.legalFramework?.join(" · ") ?? null,
+    authorUserId: "user-admin-e2e",
+    approvedByUserId: "user-admin-e2e",
+    approvedAt: now,
+  })
+
+  /* Equipo propio del módulo: "Sacar de servicio" cambia el estado operacional
+   * del sujeto, y hacerlo sobre `fuel-veh-e2e` dejaría a combustibles.spec.ts
+   * sin equipo elegible en su combobox de cargas. */
+  await db.insert(schema.fuelVehicles).values({
+    id: "fuel-veh-insp-e2e",
+    plate: "E2E-INSP-1",
+    type: "camioneta",
+    equipmentTypeId: "fet-camioneta",
+    meterType: "odometer",
+    performanceUnit: "km_per_liter",
+    brand: "Mercedes",
+    model: "Actros",
+    year: 2023,
+    worksiteId: "ws-e2e",
+    responsibleUserId: "user-admin-e2e",
+    operationalStatus: "operativo",
+    isActive: true,
+    createdAt: now,
+    updatedAt: now,
+  })
+
+  /* Sujeto del inventario de emergencias: la otra rama de `listInspectionSubjects`. */
+  await db.insert(schema.preventionEmergencyResources).values({
+    id: "emres-insp-e2e",
+    worksiteId: "ws-e2e",
+    name: "Extintor PQS Pañol E2E",
+    kind: "extintor",
+    location: "Pañol",
+    serialNumber: "EXT-E2E-001",
+    status: "operational",
+    createdAt: now,
+    updatedAt: now,
+  })
+
+  /* Las cinco respuestas puntuables de una ejecución: todas conformes salvo la
+   * que el escenario necesita fallando. La sección `estado_extintor` es la
+   * única que cuenta para el cumplimiento, así que 4 de 5 dan siempre 80%. */
+  const estadoSection = INSPECCION_EXTINTORES.sections.find((section) => section.id === "estado_extintor")!
+  const answersFor = (runId: string, failingItemId: string) => estadoSection.items.map((item) => ({
+    id: `inspans-${runId}-${item.id}`,
+    runId,
+    sectionId: estadoSection.id,
+    itemId: item.id,
+    itemLabel: item.label,
+    result: item.id === failingItemId ? "non_conforming" : "conforming",
+    danoPotencial: item.danoPotencial ?? null,
+    createdAt: now,
+    updatedAt: now,
+  }))
+  const labelOf = (itemId: string) => estadoSection.items.find((item) => item.id === itemId)!.label
+
+  /* Un escenario por ejecución, y no una compartida por todas: revisar,
+   * reabrir, cancelar y derivar a CAPA son transiciones terminales, y
+   * encadenarlas en la misma fila obligaría a que las pruebas corran en un
+   * orden fijo — el acoplamiento que `prevencion-cphs-maturity.spec.ts` ya
+   * evitó dándole a cada escenario su propio recurso. */
+  const completedRun = (args: {
+    id: string
+    code: string
+    executedByUserId: string
+    subjectLabel: string
+    subjectVehicleId?: string
+  }) => ({
+    id: args.id,
+    code: args.code,
+    templateId: "insptpl-insp-e2e",
+    worksiteId: "ws-e2e",
+    subjectType: "extintor",
+    subjectLabel: args.subjectLabel,
+    subjectVehicleId: args.subjectVehicleId ?? null,
+    origin: "prevencion",
+    status: "completed",
+    executedByUserId: args.executedByUserId,
+    executedAt: now,
+    conformingCount: 4,
+    nonConformingCount: 1,
+    compliancePercent: 80,
+    closingResult: "con_observaciones",
+    closingSignatures: [
+      { role: "prevencionista", name: "Admin E2E", userId: "user-admin-e2e", signedAt: now },
+      { role: "supervisor", name: "Comprador E2E", userId: "user-ops-e2e", signedAt: now },
+    ],
+    createdByUserId: "user-admin-e2e",
+    createdAt: now,
+    updatedAt: now,
+  })
+
+  await db.insert(schema.preventionInspectionRuns).values([
+    // Planificada: cancelar con motivo (A-04).
+    {
+      id: "insp-e2e-cancelar",
+      code: "INSP-E2E-0001",
+      templateId: "insptpl-insp-e2e",
+      worksiteId: "ws-e2e",
+      subjectType: "extintor",
+      subjectLabel: "Extintor Bodega E2E",
+      status: "planned",
+      createdByUserId: "user-admin-e2e",
+      createdAt: now,
+      updatedAt: now,
+    },
+    // Ejecutada por el propio admin: el revisor no puede ser el ejecutante.
+    completedRun({ id: "insp-e2e-autorrevision", code: "INSP-E2E-0002", executedByUserId: "user-admin-e2e", subjectLabel: "Extintor Oficina E2E" }),
+    // Ejecutadas por el otro usuario: el admin sí puede revisarlas.
+    completedRun({ id: "insp-e2e-bloqueada", code: "INSP-E2E-0003", executedByUserId: "user-ops-e2e", subjectLabel: "Extintor Taller E2E" }),
+    completedRun({ id: "insp-e2e-capa", code: "INSP-E2E-0004", executedByUserId: "user-ops-e2e", subjectLabel: "Extintor Comedor E2E" }),
+    completedRun({ id: "insp-e2e-revisar", code: "INSP-E2E-0005", executedByUserId: "user-ops-e2e", subjectLabel: "Extintor Portería E2E" }),
+    completedRun({ id: "insp-e2e-reabrir", code: "INSP-E2E-0006", executedByUserId: "user-ops-e2e", subjectLabel: "Extintor Sala Eléctrica E2E" }),
+    completedRun({ id: "insp-e2e-hallazgo", code: "INSP-E2E-0007", executedByUserId: "user-ops-e2e", subjectLabel: "Extintor Casino E2E" }),
+    // Con equipo de flota como sujeto: derivar a mantención y sacar de servicio.
+    completedRun({ id: "insp-e2e-equipo", code: "INSP-E2E-0008", executedByUserId: "user-ops-e2e", subjectLabel: "E2E-INSP-1", subjectVehicleId: "fuel-veh-insp-e2e" }),
+  ])
+
+  await db.insert(schema.preventionInspectionAnswers).values([
+    ...answersFor("insp-e2e-autorrevision", "sello"),
+    ...answersFor("insp-e2e-bloqueada", "manometro"),
+    ...answersFor("insp-e2e-capa", "manometro"),
+    ...answersFor("insp-e2e-revisar", "sello"),
+    ...answersFor("insp-e2e-reabrir", "sello"),
+    ...answersFor("insp-e2e-hallazgo", "sello"),
+    ...answersFor("insp-e2e-equipo", "manometro"),
+  ])
+
+  /* La criticidad la deriva `criticalityFromDanoPotencial` del daño potencial
+   * de la plantilla: `manometro` es 'grave' → Alta (bloquea el cierre sin
+   * CAPA), `sello` es 'moderado' → Media (no lo bloquea). */
+  await db.insert(schema.preventionInspectionFindings).values([
+    { id: "inspfind-e2e-autorrevision", runId: "insp-e2e-autorrevision", answerId: "inspans-insp-e2e-autorrevision-sello", description: labelOf("sello"), criticality: "medium", status: "open", createdAt: now, updatedAt: now },
+    { id: "inspfind-e2e-bloqueada", runId: "insp-e2e-bloqueada", answerId: "inspans-insp-e2e-bloqueada-manometro", description: labelOf("manometro"), criticality: "high", status: "open", createdAt: now, updatedAt: now },
+    { id: "inspfind-e2e-capa", runId: "insp-e2e-capa", answerId: "inspans-insp-e2e-capa-manometro", description: labelOf("manometro"), criticality: "high", status: "open", createdAt: now, updatedAt: now },
+    { id: "inspfind-e2e-revisar", runId: "insp-e2e-revisar", answerId: "inspans-insp-e2e-revisar-sello", description: labelOf("sello"), criticality: "medium", status: "open", createdAt: now, updatedAt: now },
+    { id: "inspfind-e2e-reabrir", runId: "insp-e2e-reabrir", answerId: "inspans-insp-e2e-reabrir-sello", description: labelOf("sello"), criticality: "medium", status: "open", createdAt: now, updatedAt: now },
+    { id: "inspfind-e2e-hallazgo", runId: "insp-e2e-hallazgo", answerId: "inspans-insp-e2e-hallazgo-sello", description: labelOf("sello"), criticality: "medium", status: "open", createdAt: now, updatedAt: now },
+    { id: "inspfind-e2e-equipo", runId: "insp-e2e-equipo", answerId: "inspans-insp-e2e-equipo-manometro", description: labelOf("manometro"), criticality: "high", status: "open", createdAt: now, updatedAt: now },
+  ])
   await db.insert(schema.pdtpSheets).values({
     id: "pdtp-sheet-e2e",
     code: "s1",

@@ -18,10 +18,8 @@ import { formatCLP, formatDate } from "@/lib/utils"
 import type { ActionState } from "@/lib/validation/operations"
 import { areEquivalentUnits, matchInvoiceItemsToPurchaseOrderItems } from "@/lib/services/purchasing-module/invoice-item-matching"
 import { useOperation } from "@/lib/hooks/use-operation"
-import {
-  reconcileInvoiceEvidence,
-  type InvoiceEvidenceStatus,
-} from "@/lib/services/purchasing-module/invoice-reconciliation"
+import type { InvoiceEvidenceStatus, InvoiceReconciliationEvidence } from "@/lib/services/purchasing-module/invoice-reconciliation"
+import { InvoiceReconciliationCard } from "./invoice-reconciliation-card"
 import { addInvoiceAction, deleteInvoiceAction } from "../invoice-actions"
 import { attachDteAsInvoice } from "../actions/dte-use-invoice"
 import { dteTipoLabel } from "@/lib/services/dte-portal/labels"
@@ -80,8 +78,9 @@ export function InvoicesSection({
   purchaseOrderId,
   invoices,
   ocItems,
-  totalAmount,
+  reconciliation,
   canManage,
+  canUpdateCatalog,
   canAttach = canManage,
   defaultInvoiceNumber,
   dteCandidates = [],
@@ -89,9 +88,10 @@ export function InvoicesSection({
   purchaseOrderId: string
   invoices: InvoiceRow[]
   ocItems: OcItem[]
-  totalAmount: number
+  reconciliation: InvoiceReconciliationEvidence
   /** Puede intervenir las facturas ya adjuntadas (eliminarlas). */
   canManage: boolean
+  canUpdateCatalog: boolean
   /**
    * Puede adjuntar facturas nuevas. Son dos permisos distintos porque una OC
    * anulada conserva la sección sólo para soltar el DTE que quedó colgado: el
@@ -104,20 +104,7 @@ export function InvoicesSection({
   /** DTE del proveedor sin vincular, ofrecidos para registro directo. */
   dteCandidates?: DteCandidate[]
 }) {
-  const reconciliation = reconcileInvoiceEvidence({
-    totalOC: totalAmount,
-    orderItems: ocItems.map((item) => ({ id: item.id, productName: item.productName, quantity: item.quantity })),
-    invoices,
-  })
-  const itemReconciliation = new Map(reconciliation.items.map((item) => [item.ocItemId, item]))
   const invoiceReconciliation = new Map(reconciliation.invoices.map((invoice) => [invoice.invoiceId, invoice]))
-  const moneyMismatch = reconciliation.money.status === "mismatch"
-  const lineStatusLabel = {
-    not_evaluable: "Líneas no evaluables: faltan líneas en las facturas",
-    unlinked: "Líneas sin vínculo a la OC",
-    partial: "Cobertura parcial de líneas",
-    covered: "Líneas conciliadas",
-  }[reconciliation.lines.status]
 
   return (
     <section className="rounded-(--radius-2xl) bg-(--color-surface) shadow-(--shadow-card) p-4">
@@ -133,64 +120,13 @@ export function InvoicesSection({
         </h2>
       </div>
 
-      {/* Reconciliation summary */}
-      {invoices.length > 0 && (
-        <div className={`mb-3 rounded-(--radius-lg) px-3 py-2 text-xs ${
-          moneyMismatch
-            ? "border border-[var(--color-danger-line)] bg-[var(--color-danger-tint)] text-[var(--color-danger-ink)]"
-            : "bg-surface-2 text-(--color-text-muted)"
-        }`}>
-          <div className="flex items-center justify-between gap-2">
-            <span>Total facturado (CLP)</span>
-            <span className="font-mono font-semibold tabular-nums">{formatCLP(reconciliation.totalInvoiced)}</span>
-          </div>
-          <div className="flex items-center justify-between gap-2 mt-1 pt-1 border-t border-current/10">
-            <span>Total OC</span>
-            <span className="font-mono tabular-nums">{formatCLP(totalAmount)}</span>
-          </div>
-          {moneyMismatch && (
-            <p className="mt-1.5 flex items-center gap-1 font-medium">
-              <Warning size={12} weight="bold" />
-              El total difiere de la OC (tolerancia: $1)
-            </p>
-          )}
-          {!moneyMismatch && (
-            <p className="mt-1.5 font-medium text-[var(--color-success-ink)]">
-              Monetariamente conciliada (tolerancia: $1)
-            </p>
-          )}
-        </div>
-      )}
-
-      {/* Per-item reconciliation */}
-      {invoices.length > 0 && ocItems.length > 0 && (
-        <div className="mb-3 rounded-(--radius-lg) bg-surface-2 px-3 py-2 text-xs">
-          <div className="mb-1.5 flex flex-wrap items-center justify-between gap-1">
-            <p className="font-medium text-(--color-text-muted)">Conciliación por línea</p>
-            <span className="text-[11px] text-(--color-text-subtle)">{lineStatusLabel}</span>
-          </div>
-          <ul className="space-y-1">
-            {ocItems.map((ocItem) => {
-              const item = itemReconciliation.get(ocItem.id)
-              const isEvaluable = item?.status !== "not_evaluable"
-              const isMatched = item?.status === "covered"
-              return (
-                <li key={ocItem.id} className="flex items-center justify-between gap-2">
-                  <span title={ocItem.productName} className="truncate min-w-0 text-text-subtle">{ocItem.productName}</span>
-                  <span className={`font-mono tabular-nums shrink-0 ${isMatched ? "text-[var(--color-success)]" : isEvaluable ? "text-[var(--color-warning-ink)]" : "text-(--color-text-subtle)"}`}>
-                    {isEvaluable ? `${item?.invoicedQty ?? 0}/${ocItem.quantity}` : "No evaluable"}
-                  </span>
-                </li>
-              )
-            })}
-          </ul>
-          <p className="mt-2 text-[11px] text-(--color-text-subtle)">
-            {reconciliation.lines.invoicesWithoutLines > 0 && `${reconciliation.lines.invoicesWithoutLines} factura(s) sin líneas. `}
-            {reconciliation.lines.unlinkedLineCount > 0 && `${reconciliation.lines.unlinkedLineCount} línea(s) sin vínculo. `}
-            El total monetario no sustituye la evidencia por línea.
-          </p>
-        </div>
-      )}
+      <InvoiceReconciliationCard
+        purchaseOrderId={purchaseOrderId}
+        reconciliation={reconciliation}
+        invoices={invoices}
+        canAccept={canManage}
+        canUpdateCatalog={canUpdateCatalog}
+      />
 
       {/* Invoice list */}
       {invoices.length === 0 ? (

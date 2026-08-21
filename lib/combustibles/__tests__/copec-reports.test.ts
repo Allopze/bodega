@@ -116,4 +116,38 @@ describe("downloadCopecReports", () => {
       expect.objectContaining({ product: "bluemax", unavailable: false, report: expect.objectContaining({ fileName: "tct-bluemax-detalle.xlsx" }) }),
     ])
   })
+
+  it("marks the product as unavailable when the portal disables its radio instead of failing the sweep", async () => {
+    const yearCell = { count: vi.fn().mockResolvedValue(1), getAttribute: vi.fn().mockResolvedValue(""), click: vi.fn() }
+    const monthView = { waitFor: vi.fn(), locator: vi.fn(() => yearCell), getByText: vi.fn(() => ({ click: vi.fn() })) }
+    const bluemax = {
+      check: vi.fn().mockRejectedValue(new Error("locator.check: Timeout 10000ms exceeded.\nCall log:\n  - element is not enabled")),
+      isDisabled: vi.fn().mockResolvedValue(true),
+    }
+    const search = { click: vi.fn() }
+
+    const page = {
+      setDefaultTimeout: vi.fn(),
+      goto: vi.fn(),
+      waitForURL: vi.fn(),
+      waitForLoadState: vi.fn().mockResolvedValue(undefined),
+      locator: vi.fn((selector: string) => {
+        if (selector === '[id$="PeriodoIni_MonthYearTableViewID"]') return monthView
+        if (selector === "#Cph1_RbTipoProductoPatPatentes_1") return bluemax
+        if (selector === "#Cph1_LinkBtnBuscarPatentes") return search
+        if (selector === ".rmRootGroup > .rmItem") return { filter: () => ({ first: () => ({ hover: vi.fn() }) }) }
+        if (selector === 'a[title="Informes de Consumos"]') return { filter: () => ({ first: () => ({ click: vi.fn() }) }) }
+        if (selector === 'input[id$="RcbxTipoProducto_Input"]') return { inputValue: vi.fn().mockResolvedValue("TCT") }
+        if (selector === 'input[id$="RcbxTipoInforme_Input"]') return { inputValue: vi.fn().mockResolvedValue("Por Patente / Asignación") }
+        return { fill: vi.fn(), click: vi.fn() }
+      }),
+    }
+    mockWithBrowserContext.mockImplementation(async (_options, callback) => callback({ newPage: async () => page }))
+
+    const result = await downloadCopecReports([{ product: "bluemax", from: "2020-01-01", to: "2020-01-31" }])
+
+    expect(result).toEqual([{ product: "bluemax", unavailable: true }])
+    // Un radio deshabilitado corta el mes ahí: nunca se llega a buscar ni exportar.
+    expect(search.click).not.toHaveBeenCalled()
+  })
 })

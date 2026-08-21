@@ -4,9 +4,9 @@ import { users } from "./users"
 import { worksites } from "./worksites"
 
 /**
- * Responsabilidad complementaria para una etapa concreta de una entidad
- * operacional. No reemplaza los responsables nativos de Prevención ni el
- * estado de solicitudes, ítems u órdenes de compra.
+ * Fecha de compromiso para una etapa concreta de una entidad operacional. No
+ * reemplaza la fecha nativa de solicitudes, ítems u órdenes de compra: la cola
+ * toma la que venza antes. Quién la fijó queda en la bitácora de auditoría.
  */
 export const workItemAssignments = pgTable("work_item_assignments", {
   id:               text("id").primaryKey(),
@@ -14,15 +14,12 @@ export const workItemAssignments = pgTable("work_item_assignments", {
   sourceId:         text("source_id").notNull(),
   actionKey:        text("action_key").notNull(),
   worksiteId:       text("worksite_id").notNull().references(() => worksites.id, { onDelete: "cascade" }),
-  assigneeUserId:   text("assignee_user_id").references(() => users.id, { onDelete: "set null" }),
-  assignedByUserId: text("assigned_by_user_id").references(() => users.id, { onDelete: "set null" }),
   /** Compromiso adicional; la fecha de origen sigue siendo canónica. */
   committedDueAt:   text("committed_due_at"),
   createdAt:        timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   updatedAt:        timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [
   uniqueIndex("work_item_assignments_source_stage_unique").on(table.sourceType, table.sourceId, table.actionKey),
-  index("work_item_assignments_worksite_assignee_idx").on(table.worksiteId, table.assigneeUserId),
   index("work_item_assignments_due_idx").on(table.committedDueAt),
   check("work_item_assignments_source_fields_nonempty", sql`length(${table.sourceType}) > 0 AND length(${table.sourceId}) > 0 AND length(${table.actionKey}) > 0`),
 ])
@@ -67,8 +64,6 @@ export const operationalMetricSnapshots = pgTable("operational_metric_snapshots"
 
 export const workItemAssignmentsRelations = relations(workItemAssignments, ({ one }) => ({
   worksite: one(worksites, { fields: [workItemAssignments.worksiteId], references: [worksites.id] }),
-  assignee: one(users, { fields: [workItemAssignments.assigneeUserId], references: [users.id], relationName: "work_item_assignee" }),
-  assignedBy: one(users, { fields: [workItemAssignments.assignedByUserId], references: [users.id], relationName: "work_item_assigned_by" }),
 }))
 
 export const operationalActivityEventsRelations = relations(operationalActivityEvents, ({ one }) => ({

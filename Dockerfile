@@ -45,6 +45,19 @@ RUN ./node_modules/.bin/esbuild scripts/sync-rbac.ts \
     --packages=external \
     --outfile=/tmp/sync-rbac.mjs
 
+# Mismo motivo que sync-rbac: los one-shots de conciliación OC-factura viven en
+# TypeScript con alias `@/`, y la imagen de producción no lleva ni `tsx` ni el
+# source. Se bundlean acá y se corren con `node` desde `docker-compose.yml`.
+RUN ./node_modules/.bin/esbuild \
+    scripts/preflight-purchase-invoice-reconciliation.ts \
+    scripts/backfill-purchase-invoice-reconciliation.ts \
+    --bundle \
+    --platform=node \
+    --format=esm \
+    --packages=external \
+    --outdir=/tmp/invoice-reconciliation \
+    --out-extension:.js=.mjs
+
 
 # ── Production stage: standalone build, minimal runtime ──
 FROM node:22.13-alpine AS prod
@@ -112,6 +125,8 @@ COPY --from=build /app/node_modules/drizzle-orm ./node_modules/drizzle-orm
 COPY --from=build /app/node_modules/postgres ./node_modules/postgres
 
 COPY --from=build /tmp/sync-rbac.mjs ./scripts/sync-rbac.mjs
+COPY --from=build /tmp/invoice-reconciliation/preflight-purchase-invoice-reconciliation.mjs ./scripts/preflight-purchase-invoice-reconciliation.mjs
+COPY --from=build /tmp/invoice-reconciliation/backfill-purchase-invoice-reconciliation.mjs ./scripts/backfill-purchase-invoice-reconciliation.mjs
 # Cron service uses this bounded internal HTTP runner instead of an inline
 # wget command. It is copied explicitly because Next standalone does not trace
 # scripts invoked only by Compose.

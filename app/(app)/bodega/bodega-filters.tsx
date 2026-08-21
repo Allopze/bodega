@@ -7,14 +7,18 @@ import { OptionSelect } from "@/components/ui/option-select"
 import { DatePicker } from "@/components/ui/date-picker"
 import { formatDate } from "@/lib/utils"
 import { MOVEMENT_TYPE_LABELS } from "./movement-labels"
+import { ALL_WORKSITES } from "./faena-scope"
 import type { BodegaView } from "./bodega-view-tabs"
 
 export interface BodegaFiltersProps {
   view: BodegaView
   worksites: Array<{ id: string; name: string }>
   products?: Array<{ id: string; name: string }>
+  /** Bodega propia del usuario: la faena en que arranca la pantalla. */
+  ownWorksiteId?: string
   current: {
     q?: string
+    /** Faena efectiva ya resuelta: `""` significa todas las visibles. */
     faena?: string
     stock?: string
     tipo?: string
@@ -42,7 +46,7 @@ const VIEW_PARAMS = ["stock", "tipo", "producto", "desde", "hasta", "page", "kar
  * Antes el filtrado era en memoria sobre lo ya cargado: en el kardex, que está
  * paginado en el servidor, buscar sólo miraba la página en pantalla.
  */
-export function BodegaFilters({ view, worksites, products = [], current }: BodegaFiltersProps) {
+export function BodegaFilters({ view, worksites, products = [], ownWorksiteId = "", current }: BodegaFiltersProps) {
   const router = useRouter()
   const searchParams = useSearchParams()
 
@@ -68,9 +72,16 @@ export function BodegaFilters({ view, worksites, products = [], current }: Bodeg
   if (current.q) {
     chips.push({ key: "q", label: "Búsqueda", value: current.q, displayValue: current.q })
   }
-  if (current.faena) {
-    const worksite = worksites.find((item) => item.id === current.faena)
+  // El chip de faena anuncia haberse salido de la bodega propia, y quitarlo
+  // vuelve a ella. Estando en la bodega propia no hay nada que anunciar: el
+  // selector ya dice cuál se está mirando.
+  const faena = current.faena ?? ""
+  if (faena !== ownWorksiteId) {
+    const worksite = worksites.find((item) => item.id === faena)
     if (worksite) chips.push({ key: "faena", label: "Faena", value: worksite.id, displayValue: worksite.name })
+    else if (!faena && ownWorksiteId) {
+      chips.push({ key: "faena", label: "Faena", value: ALL_WORKSITES, displayValue: "Todas las faenas" })
+    }
   }
   if (view === "stock" && current.stock) {
     const option = STOCK_STATE_OPTIONS.find((item) => item.value === current.stock)
@@ -121,8 +132,10 @@ export function BodegaFilters({ view, worksites, products = [], current }: Bodeg
         className="h-11 w-full text-xs sm:h-8 sm:w-52"
         emptyLabel="Todas las faenas"
         options={worksites.map((worksite) => ({ value: worksite.id, label: worksite.name }))}
-        value={current.faena ?? ""}
-        onValueChange={(value) => setFilter("faena", value)}
+        value={faena}
+        // "Todas" viaja explícito en la URL: sin el centinela, borrar el
+        // parámetro devolvería a la bodega propia y no habría cómo ver el resto.
+        onValueChange={(value) => setFilter("faena", value || (ownWorksiteId ? ALL_WORKSITES : ""))}
       />
 
       {view === "stock" && (

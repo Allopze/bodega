@@ -14,6 +14,8 @@
     "check:secrets": "tsx scripts/check-env-files.ts",
     "check:security-audit": "tsx scripts/check-security-audit.ts",
     "verify:epp-lots": "tsx scripts/verify-epp-lot-reconciliation.ts",
+    "db:preflight-invoice-reconciliation": "tsx --env-file-if-exists=.env.local scripts/preflight-purchase-invoice-reconciliation.ts",
+    "db:backfill-invoice-reconciliation": "tsx --env-file-if-exists=.env.local scripts/backfill-purchase-invoice-reconciliation.ts",
     "check:drizzle-aliases": "bash scripts/check-drizzle-aliases.sh",
     "check:bundle-budget": "tsx scripts/check-bundle-budget.ts",
     "check:mistyped-requests": "tsx scripts/check-mistyped-requests.ts",

@@ -25,14 +25,12 @@ const { listOperationalActivity } = await import("@/lib/services/operational-act
 const { getOperationalDetailWorkItem, getOperationalWorkCount, getOperationalWorkQueue } = await import("@/lib/services/operational-work-queue")
 const { createCapaAction } = await import("@/lib/services/prevention-capa")
 
-describe("operational work assignments", () => {
+describe("operational work commitments", () => {
   const now = "2026-07-25T12:00:00.000Z"
   const worksiteId = nanoid()
   const assignerId = nanoid()
   const eligibleId = nanoid()
   const ineligibleId = nanoid()
-  const approverRoleId = nanoid()
-  const approvalPermissionId = nanoid()
   const requestId = nanoid()
   const requestItemId = nanoid()
   const assignerSession = {
@@ -62,10 +60,6 @@ describe("operational work assignments", () => {
       { id: eligibleId, name: "Aprobadora habilitada", email: "aprobadora@example.com", hashedPassword: "hash", createdAt: now, updatedAt: now },
       { id: ineligibleId, name: "Usuario sin etapa", email: "sin-etapa@example.com", hashedPassword: "hash", createdAt: now, updatedAt: now },
     ])
-    await inMemoryDb.insert(schema.roles).values({ id: approverRoleId, name: `aprobador-${nanoid()}`, label: "Aprobador", isGlobal: false })
-    await inMemoryDb.insert(schema.permissions).values({ id: approvalPermissionId, name: "approvals:approve", module: "aprobaciones" })
-    await inMemoryDb.insert(schema.rolePermissions).values({ roleId: approverRoleId, permissionId: approvalPermissionId })
-    await inMemoryDb.insert(schema.userRoles).values({ userId: eligibleId, roleId: approverRoleId })
     await inMemoryDb.insert(schema.worksiteUsers).values({ userId: eligibleId, worksiteId, isPrimary: true })
     await inMemoryDb.insert(schema.purchaseRequests).values({
       id: requestId, code: `SOL-${nanoid().slice(0, 8)}`, worksiteId, requesterId: assignerId,
@@ -80,20 +74,11 @@ describe("operational work assignments", () => {
     await pg.close()
   })
 
-  it("assigns only an eligible person and records an auditable operational event", async () => {
-    await expect(upsertOperationalAssignment({
-      sourceType: "purchase_request_item",
-      sourceId: requestItemId,
-      actionKey: "approve",
-      assigneeUserId: ineligibleId,
-      committedDueAt: null,
-    }, assignerSession)).rejects.toThrow("no está activa, no tiene acceso a la faena o no puede ejecutar esta etapa")
-
+  it("records a commitment date with an auditable operational event", async () => {
     await upsertOperationalAssignment({
       sourceType: "purchase_request_item",
       sourceId: requestItemId,
       actionKey: "approve",
-      assigneeUserId: eligibleId,
       committedDueAt: "2026-07-30",
     }, assignerSession)
 
@@ -102,21 +87,20 @@ describe("operational work assignments", () => {
     const [audit] = await inMemoryDb.select().from(schema.auditLog)
       .where(eq(schema.auditLog.entityType, "work_item_assignment"))
     const [event] = await inMemoryDb.select().from(schema.operationalActivityEvents)
-      .where(eq(schema.operationalActivityEvents.eventType, "work.assigned"))
+      .where(eq(schema.operationalActivityEvents.eventType, "work.committed"))
 
     expect(assignment).toMatchObject({
       sourceType: "purchase_request_item",
       sourceId: requestItemId,
       actionKey: "approve",
       worksiteId,
-      assigneeUserId: eligibleId,
       committedDueAt: "2026-07-30",
     })
     expect(audit).toMatchObject({ entityId: `purchase_request_item:${requestItemId}:approve`, action: "create" })
     expect(event).toMatchObject({ module: "operaciones", worksiteId, actorUserId: assignerId })
   })
 
-  it("rejects a reassignment after the source stage has been resolved", async () => {
+  it("rejects a commitment after the source stage has been resolved", async () => {
     await inMemoryDb.update(schema.purchaseRequestItems)
       .set({ status: "approved", updatedAt: now })
       .where(eq(schema.purchaseRequestItems.id, requestItemId))
@@ -125,16 +109,15 @@ describe("operational work assignments", () => {
       sourceType: "purchase_request_item",
       sourceId: requestItemId,
       actionKey: "approve",
-      assigneeUserId: eligibleId,
       committedDueAt: null,
     }, assignerSession)).rejects.toThrow("La etapa ya no está pendiente")
   })
 
-  it("no deja asignar «comprar» sobre un ítem que ya tiene una OC activa", async () => {
+  it("no deja comprometer «comprar» sobre un ítem que ya tiene una OC activa", async () => {
     // El estado del ítem no basta para decidir si "comprar" sigue pendiente:
     // un ítem aprobado deja de ser trabajo de Compras en cuanto una OC activa
-    // lo cubre. La cola ya lo descuenta con ese predicado; la validación de la
-    // asignación usaba sólo el estado y dejaba asignar una tarea inexistente.
+    // lo cubre. La cola ya lo descuenta con ese predicado; la validación del
+    // compromiso usaba sólo el estado y dejaba comprometer una tarea inexistente.
     const supplierId = nanoid()
     const orderId = nanoid()
     await inMemoryDb.insert(schema.suppliers).values({
@@ -144,19 +127,15 @@ describe("operational work assignments", () => {
       .set({ status: "approved", updatedAt: now })
       .where(eq(schema.purchaseRequestItems.id, requestItemId))
 
-    const asignarCompra = () => upsertOperationalAssignment({
+    const comprometerCompra = () => upsertOperationalAssignment({
       sourceType: "purchase_request_item",
       sourceId: requestItemId,
       actionKey: "create_order",
-      assigneeUserId: eligibleId,
       committedDueAt: null,
     }, assignerSession)
 
-    // Sin OC la etapa SÍ está vigente: la asignación falla más adelante, por el
-    // permiso del destinatario (el fixture sólo le da `approvals:approve`), no
-    // por la etapa. Se afirma el error concreto para que la mitad negativa de
-    // abajo pruebe la cobertura y no otra cosa.
-    await expect(asignarCompra()).rejects.toThrow(/no está activa, no tiene acceso/)
+    // Sin OC la etapa SÍ está vigente y el compromiso se guarda.
+    await expect(comprometerCompra()).resolves.toBeUndefined()
 
     await inMemoryDb.insert(schema.purchaseOrders).values({
       id: orderId, code: `OC-COB-${nanoid()}`, worksiteId, supplierId,
@@ -167,9 +146,8 @@ describe("operational work assignments", () => {
       quantity: 1, unitOfMeasure: "unidad", status: "issued",
     })
 
-    // Con la OC activa cubriéndolo, la validación corta antes: la etapa ya no
-    // existe, sin importar quién sea el destinatario.
-    await expect(asignarCompra()).rejects.toThrow("La etapa ya no está pendiente")
+    // Con la OC activa cubriéndolo, la validación corta: la etapa ya no existe.
+    await expect(comprometerCompra()).rejects.toThrow("La etapa ya no está pendiente")
 
     await inMemoryDb.delete(schema.purchaseOrderItems).where(eq(schema.purchaseOrderItems.purchaseOrderId, orderId))
     await inMemoryDb.delete(schema.purchaseOrders).where(eq(schema.purchaseOrders.id, orderId))
@@ -255,7 +233,7 @@ describe("operational work assignments", () => {
     })
   })
 
-  it("counts only the visible source stages and reads a detail assignment without materializing the queue", async () => {
+  it("counts only the visible source stages and reads a detail commitment without materializing the queue", async () => {
     const isolatedWorksiteId = nanoid()
     const isolatedRequestId = nanoid()
     const isolatedItemId = nanoid()
@@ -308,7 +286,6 @@ describe("operational work assignments", () => {
       sourceType: "purchase_request_item",
       sourceId: isolatedItemId,
       actionKey: "approve",
-      assigneeUserId: eligibleId,
       committedDueAt: "2026-07-30",
     }, assignerSession)
 
@@ -321,22 +298,15 @@ describe("operational work assignments", () => {
         isGlobal: false,
       },
     } as Session
-    await expect(getOperationalWorkQueue(eligibleViewer, { quick: "mine" })).resolves.toMatchObject({
-      total: 1,
-      items: [{ sourceId: isolatedItemId, actionKey: "approve", assignee: { userId: eligibleId, source: "assignment" } }],
-    })
-    await expect(getOperationalWorkQueue(scopedViewer, { quick: "unassigned" })).resolves.toMatchObject({
-      total: 1,
-      items: [{ sourceId: isolatedRequestId, actionKey: "follow_up" }],
-    })
+    // "Mis tareas" y "Sin responsable" leen sólo el responsable propio de la
+    // entidad origen: las etapas de abastecimiento no tienen uno, así que
+    // ninguna es "mía" y todas quedan sin responsable.
+    await expect(getOperationalWorkQueue(eligibleViewer, { quick: "mine" })).resolves.toMatchObject({ total: 0 })
+    await expect(getOperationalWorkQueue(scopedViewer, { quick: "unassigned" })).resolves.toMatchObject({ total: 2 })
     await expect(getOperationalWorkQueue(scopedViewer, { quick: "overdue" })).resolves.toMatchObject({ total: 2 })
     await expect(getOperationalWorkQueue(scopedViewer, { module: "aprobaciones" })).resolves.toMatchObject({
       total: 1,
-      items: [{ sourceId: isolatedItemId }],
-    })
-    await expect(getOperationalWorkQueue(scopedViewer, { responsible: eligibleId })).resolves.toMatchObject({
-      total: 1,
-      items: [{ sourceId: isolatedItemId, assignee: { userId: eligibleId } }],
+      items: [{ sourceId: isolatedItemId, committedDueAt: "2026-07-30", assignee: null }],
     })
     await expect(getOperationalWorkQueue(scopedViewer, { q: "sin coincidencia" })).resolves.toMatchObject({ total: 0 })
     await expect(getOperationalWorkQueue(scopedViewer, { q: isolatedRequestCode })).resolves.toMatchObject({ total: 2 })
@@ -494,6 +464,9 @@ describe("operational work assignments", () => {
       fileName: "factura.pdf", filePath: "storage/purchase-orders/factura.pdf",
       uploadedBy: assignerId, uploadedAt: now,
     })
+    await inMemoryDb.update(schema.purchaseOrders)
+      .set({ invoiceReconciliationStatus: "matched", updatedAt: now })
+      .where(eq(schema.purchaseOrders.id, orderId))
 
     await expect(getOperationalWorkQueue(buyer, { limit: 50 })).resolves.toMatchObject({ total: 0 })
     await expect(getOperationalWorkCount(buyer)).resolves.toBe(0)
@@ -501,5 +474,28 @@ describe("operational work assignments", () => {
       sourceType: "purchase_order",
       sourceId: orderId,
     })).resolves.toBeNull()
+
+    await inMemoryDb.update(schema.purchaseOrders)
+      .set({ status: "closed", invoiceReconciliationStatus: "needs_review", updatedAt: now })
+      .where(eq(schema.purchaseOrders.id, orderId))
+    await expect(getOperationalWorkQueue(buyer, { limit: 50 })).resolves.toMatchObject({
+      total: 1,
+      items: [{
+        sourceId: orderId,
+        statusLabel: "Conciliación pendiente",
+        ctaLabel: "Revisar conciliación",
+      }],
+    })
+
+    await inMemoryDb.update(schema.purchaseOrders)
+      .set({ invoiceReconciliationStatus: "accepted_exception", updatedAt: now })
+      .where(eq(schema.purchaseOrders.id, orderId))
+    await expect(getOperationalWorkQueue(buyer, { limit: 50 })).resolves.toMatchObject({ total: 0 })
+
+    await inMemoryDb.update(schema.purchaseOrders)
+      .set({ invoiceReconciliationStatus: "no_invoices", updatedAt: now })
+      .where(eq(schema.purchaseOrders.id, orderId))
+    await inMemoryDb.delete(schema.purchaseOrderInvoices).where(eq(schema.purchaseOrderInvoices.purchaseOrderId, orderId))
+    await expect(getOperationalWorkQueue(buyer, { limit: 50 })).resolves.toMatchObject({ total: 0 })
   })
 })

@@ -3,8 +3,7 @@ import { and, count, desc, eq, inArray } from "drizzle-orm"
 import { db } from "@/db"
 import { purchaseOrders, purchaseOrderItems, purchaseOrderInvoices, worksites, suppliers } from "@/db/schema"
 import { textSearchSql } from "@/lib/adquisiciones/list-query"
-import { INVOICE_DUE_ORDER_STATUSES } from "@/lib/work-queue-labels"
-import { orderHasNoInvoice } from "@/lib/services/operational-work-queue"
+import { orderNeedsInvoiceWork } from "@/lib/services/operational-work-queue"
 import { formatDate } from "@/lib/utils"
 import { ocStatusLabel } from "./labels"
 import { buildWorksiteFilter, buildDateFilter } from "./utils"
@@ -19,9 +18,9 @@ export async function comprasList(session: Session | null, filters: ExportFilter
     filters.supplierId ? eq(purchaseOrders.supplierId, filters.supplierId) : undefined,
     textSearchSql(filters.q ?? "", [purchaseOrders.code]),
     // Mismo criterio que el listado y la cola operacional: exportar mientras el
-    // filtro "Sin factura" está activo bajaba las OC completas.
+    // filtro de facturación está activo baja solo el trabajo no resuelto.
     filters.invoicePending
-      ? and(inArray(purchaseOrders.status, INVOICE_DUE_ORDER_STATUSES), orderHasNoInvoice)
+      ? orderNeedsInvoiceWork
       : undefined,
   )
 
@@ -32,6 +31,7 @@ export async function comprasList(session: Session | null, filters: ExportFilter
       worksiteId:  purchaseOrders.worksiteId,
       supplierId:  purchaseOrders.supplierId,
       status:      purchaseOrders.status,
+      invoiceReconciliationStatus: purchaseOrders.invoiceReconciliationStatus,
       totalAmount: purchaseOrders.totalAmount,
       createdAt:   purchaseOrders.createdAt,
     })
@@ -60,7 +60,7 @@ export async function comprasList(session: Session | null, filters: ExportFilter
   return {
     filenameBase: "ordenes-de-compra",
     worksheetName: "Órdenes de compra",
-    headers: ["Código OC", "Faena", "Proveedor", "Ítems", "Total", "Estado", "Facturas", "Fecha"],
+    headers: ["Código OC", "Faena", "Proveedor", "Ítems", "Total", "Estado", "Facturas", "Conciliación", "Fecha"],
     rows: limited.map((o) => [
       o.code,
       wsMap[o.worksiteId] ?? o.worksiteId,
@@ -69,6 +69,7 @@ export async function comprasList(session: Session | null, filters: ExportFilter
       o.totalAmount,
       ocStatusLabel(o.status),
       invMap[o.id] ?? 0,
+      o.invoiceReconciliationStatus === "needs_review" ? "Revisión requerida" : o.invoiceReconciliationStatus === "accepted_exception" ? "Diferencias aceptadas" : o.invoiceReconciliationStatus === "matched" ? "Conciliada" : "Sin facturas",
       formatDate(o.createdAt),
     ]),
     rowLimitApplied,

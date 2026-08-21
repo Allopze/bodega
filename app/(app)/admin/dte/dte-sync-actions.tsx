@@ -1,12 +1,76 @@
 "use client"
 
-import { useActionState, useRef, useState, useTransition, type FormEvent } from "react"
+import { useActionState, useEffect, useRef, useState, useTransition, type FormEvent } from "react"
 import { Play } from "@phosphor-icons/react/dist/ssr"
 import { triggerDteSyncAction, forceDteSyncPeriodAction } from "./actions"
 import { Button } from "@/components/ui/button"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { recentPeriods, formatPeriodOption } from "@/components/ui/period-picker"
 import { OptionSelect } from "@/components/ui/option-select"
+
+const PHASE_LABEL: Record<string, string> = {
+  portal: "Consultando el portal…",
+  documentos: "Guardando documentos",
+  conciliacion: "Conciliando con órdenes de compra y combustible…",
+}
+
+interface SyncProgress {
+  active: boolean
+  periodo: string
+  startedAt: string
+  phase: keyof typeof PHASE_LABEL
+  processed: number
+  total: number
+}
+
+function elapsedLabel(startedAt: string): string {
+  const seconds = Math.max(0, Math.round((Date.now() - new Date(startedAt).getTime()) / 1000))
+  return seconds < 60 ? `${seconds} s` : `${Math.floor(seconds / 60)} min ${seconds % 60} s`
+}
+
+/**
+ * Avance de la corrida en curso. La corrida puede tardar un par de minutos y su
+ * server action no devuelve nada hasta el final, así que el estado se sondea por
+ * GET (ver app/api/dte-portal/sync/progress) mientras el botón esté ocupado.
+ */
+function DteSyncProgressLabel({ active }: { active: boolean }) {
+  const [progress, setProgress] = useState<SyncProgress | null>(null)
+
+  useEffect(() => {
+    if (!active) {
+      setProgress(null)
+      return
+    }
+    let cancelled = false
+    const poll = async () => {
+      try {
+        const response = await fetch("/api/dte-portal/sync/progress", { cache: "no-store" })
+        if (!response.ok) return
+        const data = (await response.json()) as SyncProgress
+        if (!cancelled) setProgress(data.active ? data : null)
+      } catch { /* el avance es accesorio: la corrida sigue igual */ }
+    }
+    void poll()
+    const timer = setInterval(poll, 2_000)
+    return () => { cancelled = true; clearInterval(timer) }
+  }, [active])
+
+  if (!active) return null
+
+  const detail = progress
+    ? [
+        PHASE_LABEL[progress.phase] ?? "Sincronizando…",
+        progress.phase === "documentos" && progress.total > 0 ? `${progress.processed} de ${progress.total}` : null,
+        elapsedLabel(progress.startedAt),
+      ].filter(Boolean).join(" · ")
+    : "Iniciando…"
+
+  return (
+    <span role="status" aria-live="polite" className="text-xs text-[var(--color-text-muted)]">
+      {detail}
+    </span>
+  )
+}
 
 export function DteSyncActions() {
   const [state, formAction, pending] = useActionState(triggerDteSyncAction, { ok: true, message: "" })
@@ -31,6 +95,7 @@ export function DteSyncActions() {
 
   return (
     <div className="flex items-center gap-2">
+      <DteSyncProgressLabel active={pending} />
       {state.message && (
         <span role="status" className={`text-xs ${state.ok ? "text-[var(--color-success)]" : "text-[var(--color-danger)]"}`}>
           {state.message}
@@ -81,6 +146,7 @@ export function DteForceSyncControl() {
 
   return (
     <div className="flex flex-wrap items-center gap-2">
+      <DteSyncProgressLabel active={isForcing} />
       {forceResult && (
         <span role="status" className={`text-xs ${forceResult.ok ? "text-[var(--color-success)]" : "text-[var(--color-danger)]"}`}>
           {forceResult.message}

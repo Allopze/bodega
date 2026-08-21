@@ -28,7 +28,7 @@ import { and, asc, count, desc, eq, gt, inArray, isNotNull, sql } from "drizzle-
 import { DeliveriesTable, type DeliveryRow } from "./deliveries-table"
 import { type DeliverableEppOption, type DeliveryStockProductOption } from "./delivery-form"
 import { DeliveryFormSheet } from "./delivery-form-sheet"
-import { WorkAssignmentControl } from "../pendientes/work-assignment-control"
+import { WorkCommitmentControl } from "../pendientes/work-commitment-control"
 import { getOperationalAssignmentRecords } from "@/lib/services/operational-assignments"
 import { buildOperationalWorkItem, operationalAssignmentKey } from "@/lib/services/operational-work-queue"
 import { getTraceableDeliveryBalance } from "@/lib/services/delivery-eligibility"
@@ -446,7 +446,7 @@ export default async function Page({
                 <h2 id="delivery-assignment-title" className="text-base font-semibold text-[var(--color-text)]">Responsable de esta entrega</h2>
                 <p className="mt-0.5 text-sm text-[var(--color-text-muted)]">{deliveryAssignmentItem.title}. La fecha del ítem sigue siendo la prioridad operativa.</p>
               </div>
-              <WorkAssignmentControl item={deliveryAssignmentItem} showAssignee />
+              <WorkCommitmentControl item={deliveryAssignmentItem} />
             </div>
           </section>
         )}

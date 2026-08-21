@@ -78,15 +78,24 @@ export const orderHasNoInvoice = sql`NOT EXISTS (
   WHERE ${purchaseOrderInvoices.purchaseOrderId} = ${purchaseOrders.id}
 )`
 
+/** Trabajo tributario: falta documento tras recepción o existe conciliación no resuelta. */
+export const orderNeedsInvoiceWork = or(
+  and(
+    inArray(purchaseOrders.status, INVOICE_DUE_ORDER_STATUSES),
+    eq(purchaseOrders.invoiceReconciliationStatus, "no_invoices"),
+  ),
+  eq(purchaseOrders.invoiceReconciliationStatus, "needs_review"),
+)
+
 export type { OperationalModule } from "@/lib/work-queue.types"
 
 export type OperationalQuickFilter = "all" | "critical" | "overdue" | "today" | "blocked" | "unassigned" | "mine"
 export type OperationalSort = "priority" | "due" | "oldest" | "newest"
 
+/** Responsable propio de la entidad origen (CAPA, inspección, documento SST). */
 export interface OperationalAssignee {
   userId: string
   name: string
-  source: "assignment" | "native"
 }
 
 export interface OperationalWorkItem {
@@ -113,14 +122,12 @@ export interface OperationalWorkItem {
   assignee: OperationalAssignee | null
   href: string
   ctaLabel: string
-  /** La asignación complementaria está disponible sólo para etapas compatibles. */
+  /** La fecha de compromiso está disponible sólo para etapas compatibles. */
   assignable: boolean
 }
 
-/** Estado mínimo de una asignación complementaria para una etapa estable. */
+/** Compromiso de fecha registrado para una etapa estable. */
 export interface OperationalWorkItemAssignment {
-  assigneeUserId: string | null
-  assigneeName: string | null
   committedDueAt: string | null
 }
 
@@ -135,7 +142,6 @@ export interface OperationalQueueFilters {
   worksiteId?: string | "all"
   status?: string | "all"
   priority?: WorkPriority | "all"
-  responsible?: string | "all"
   quick?: OperationalQuickFilter
   sort?: OperationalSort
   cursor?: string
@@ -163,7 +169,6 @@ export interface OperationalQueueResult {
     modules: OperationalModule[]
     worksites: Array<{ id: string; name: string }>
     statuses: Array<{ value: string; label: string }>
-    responsible: Array<{ id: string; name: string }>
   }
   nextCursor: string | null
   sourceErrors: Array<{ module: OperationalModule | "operaciones"; message: string }>
@@ -180,7 +185,7 @@ function emptySummary(): OperationalQueueResult["summary"] {
 }
 
 function emptyFilterOptions(): OperationalQueueResult["filterOptions"] {
-  return { modules: [], worksites: [], statuses: [], responsible: [] }
+  return { modules: [], worksites: [], statuses: [] }
 }
 
 function hasPermission(session: Session, permission: string) {
@@ -233,9 +238,8 @@ export function buildOperationalWorkItem(
     id: itemId(base.sourceType, base.sourceId, base.actionKey),
     committedDueAt: assignment?.committedDueAt ?? null,
     ...dates,
-    assignee: assignment?.assigneeUserId && assignment.assigneeName
-      ? { userId: assignment.assigneeUserId, name: assignment.assigneeName, source: "assignment" }
-      : null,
+    // Las vistas de origen no proyectan el responsable nativo; la cola sí.
+    assignee: null,
   }
 }
 
@@ -316,6 +320,7 @@ export async function getOperationalDetailWorkItem(
       worksiteName: worksites.name,
       supplierName: suppliers.name,
       status: purchaseOrders.status,
+      invoiceReconciliationStatus: purchaseOrders.invoiceReconciliationStatus,
       deliveryMode: purchaseOrders.deliveryMode,
       estimatedDelivery: purchaseOrders.estimatedDelivery,
       createdAt: purchaseOrders.createdAt,
@@ -334,16 +339,11 @@ export async function getOperationalDetailWorkItem(
   if (!order) return null
 
   // La factura es el último escalón: mientras quede algo por recibir, recibir
-  // manda. Sólo se consulta cuando el estado y el permiso la hacen posible.
-  const invoicePending =
-    INVOICE_DUE_ORDER_STATUSES.includes(order.status) && hasPermission(session, "purchasing:send_order")
-      ? await db
-          .select({ id: purchaseOrderInvoices.id })
-          .from(purchaseOrderInvoices)
-          .where(eq(purchaseOrderInvoices.purchaseOrderId, order.id))
-          .limit(1)
-          .then((rows) => rows.length === 0)
-      : false
+  // manda. La proyección evita reimplementar el conciliador en esta lectura.
+  const invoicePending = hasPermission(session, "purchasing:send_order") && (
+    order.invoiceReconciliationStatus === "needs_review"
+    || (INVOICE_DUE_ORDER_STATUSES.includes(order.status) && order.invoiceReconciliationStatus === "no_invoices")
+  )
 
   const stage = order.status === "draft" && hasPermission(session, "purchasing:send_order")
     ? { actionKey: "issue" as const, module: "compras" as const, statusLabel: "OC en borrador", title: `Emitir y enviar ${order.code}`, ctaLabel: "Emitir y enviar", createdAt: order.createdAt }
@@ -356,7 +356,9 @@ export async function getOperationalDetailWorkItem(
         : ((order.deliveryMode === "directo_faena" ? DIRECT_FAENA_RECEIVABLE_STATUSES.has(order.status) : FAENA_RECEIVABLE_STATUSES.has(order.status)) && hasPermission(session, "receiving:register_faena"))
           ? { actionKey: "receive_worksite" as const, module: "recepciones" as const, statusLabel: "Pendiente de faena", title: `Recibir ${order.code} en faena`, ctaLabel: "Registrar recepción", createdAt: order.sentAt ?? order.createdAt, href: `/recepcion/nueva?oc=${order.id}` }
           : invoicePending
-            ? { actionKey: "invoice" as const, module: "compras" as const, statusLabel: "Sin factura", title: `Adjuntar factura de ${order.code}`, ctaLabel: "Adjuntar factura", createdAt: order.sentAt ?? order.createdAt, href: `/compras/${order.id}?tab=facturacion` }
+            ? order.invoiceReconciliationStatus === "needs_review"
+              ? { actionKey: "invoice" as const, module: "compras" as const, statusLabel: "Conciliación pendiente", title: `Revisar conciliación de ${order.code}`, ctaLabel: "Revisar conciliación", createdAt: order.sentAt ?? order.createdAt, href: `/compras/${order.id}?tab=facturacion` }
+              : { actionKey: "invoice" as const, module: "compras" as const, statusLabel: "Sin factura", title: `Adjuntar factura de ${order.code}`, ctaLabel: "Adjuntar factura", createdAt: order.sentAt ?? order.createdAt, href: `/compras/${order.id}?tab=facturacion` }
             : null
 
   if (!stage) return null
@@ -391,13 +393,8 @@ export async function getOperationalDetailWorkItem(
 
 async function getAssignmentForSource(reference: OperationalDetailSource & { actionKey: string; worksiteId: string }): Promise<OperationalWorkItemAssignment | null> {
   const [row] = await db
-    .select({
-      assigneeUserId: workItemAssignments.assigneeUserId,
-      assigneeName: users.name,
-      committedDueAt: workItemAssignments.committedDueAt,
-    })
+    .select({ committedDueAt: workItemAssignments.committedDueAt })
     .from(workItemAssignments)
-    .leftJoin(users, eq(workItemAssignments.assigneeUserId, users.id))
     .where(and(
       eq(workItemAssignments.sourceType, reference.sourceType),
       eq(workItemAssignments.sourceId, reference.sourceId),
@@ -757,11 +754,15 @@ function operationalSourceBranches(session: Session, scope: WorksiteScope): Oper
     )
   `)
   // Llegó mercadería y la OC sigue sin factura. Sin esta fuente nadie perseguía
-  // el adjuntar: había que entrar a la OC y saber que existía la pestaña.
+  // el adjuntar. Una OC cerrada sólo reaparece si tiene diferencias pendientes.
   if (hasPermission(session, "purchasing:send_order")) add("compras", sql`
     SELECT ${orderFields('invoice', 'compras', sql`CONCAT('Adjuntar factura de ', ${purchaseOrders.code})`, 'Sin factura', sql`CONCAT('/compras/', ${purchaseOrders.id}, '?tab=facturacion')`, 'Adjuntar factura', sql`COALESCE(${purchaseOrders.sentAt}, ${purchaseOrders.createdAt}::text)`)}
     ${orderBase} AND ${inArray(purchaseOrders.status, INVOICE_DUE_ORDER_STATUSES)}
-      AND ${orderHasNoInvoice}
+      AND ${purchaseOrders.invoiceReconciliationStatus} = 'no_invoices'
+  `)
+  if (hasPermission(session, "purchasing:send_order")) add("compras", sql`
+    SELECT ${orderFields('invoice', 'compras', sql`CONCAT('Revisar conciliación de ', ${purchaseOrders.code})`, 'Conciliación pendiente', sql`CONCAT('/compras/', ${purchaseOrders.id}, '?tab=facturacion')`, 'Revisar conciliación', sql`COALESCE(${purchaseOrders.sentAt}, ${purchaseOrders.createdAt}::text)`)}
+    ${orderBase} AND ${purchaseOrders.invoiceReconciliationStatus} = 'needs_review'
   `)
 
   if (hasPermission(session, "prevention:pdtp:view")) {
@@ -1157,6 +1158,9 @@ function queueCursorSql(cursor: QueueCursor | null, sort: OperationalSort): SQL 
  */
 function quickFilterSql(quick: OperationalQuickFilter, session: Session): SQL | null {
   switch (quick) {
+    // El responsable sale de la entidad origen (CAPA, inspección, documento
+    // SST). Las etapas de abastecimiento no tienen uno, así que caen todas en
+    // "sin responsable" y ninguna en "mis tareas".
     case "mine":       return sql`assignee_user_id = ${session.user.id}`
     case "unassigned": return sql`assignee_user_id IS NULL`
     case "critical":   return sql`priority = 'critical'`
@@ -1174,7 +1178,6 @@ function queueScopeFilterSql(filters: OperationalQueueFilters): SQL {
   if (filters.worksiteId && filters.worksiteId !== "all") clauses.push(sql`worksite_id = ${filters.worksiteId}`)
   if (filters.status && filters.status !== "all") clauses.push(sql`status = ${filters.status}`)
   if (filters.priority && filters.priority !== "all") clauses.push(sql`priority = ${filters.priority}`)
-  if (filters.responsible && filters.responsible !== "all") clauses.push(sql`assignee_user_id = ${filters.responsible}`)
   const term = filters.q?.trim()
   if (term) clauses.push(sql`CONCAT_WS(' ', code, title, subtitle, worksite_name, status_label, module, assignee_name) ILIKE ${`%${term}%`}`)
   return sql.join(clauses, sql` AND `)
@@ -1208,7 +1211,6 @@ type OperationalQueueSqlRow = {
   modules: unknown
   worksites: unknown
   statuses: unknown
-  responsible: unknown
   items: unknown
 }
 
@@ -1253,9 +1255,8 @@ async function getOperationalWorkQueuePage(
           WHEN ${workItemAssignments.committedDueAt} IS NOT NULL THEN 'commitment'
           ELSE NULL
         END AS due_source,
-        COALESCE(${workItemAssignments.assigneeUserId}, source.native_assignee_user_id) AS assignee_user_id,
-        COALESCE(assigned_user.name, source.native_assignee_name) AS assignee_name,
-        CASE WHEN ${workItemAssignments.assigneeUserId} IS NOT NULL THEN 'assignment' WHEN source.native_assignee_user_id IS NOT NULL THEN 'native' ELSE NULL END AS assignee_source,
+        source.native_assignee_user_id AS assignee_user_id,
+        source.native_assignee_name AS assignee_name,
         CASE source.priority WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'normal' THEN 2 ELSE 3 END AS priority_rank,
         COALESCE(
           CASE
@@ -1272,7 +1273,6 @@ async function getOperationalWorkQueuePage(
         AND ${workItemAssignments.sourceId} = source.source_id
         AND ${workItemAssignments.actionKey} = source.action_key
         AND ${workItemAssignments.worksiteId} = source.worksite_id
-      LEFT JOIN ${users} AS assigned_user ON assigned_user.id = ${workItemAssignments.assigneeUserId}
     ), scoped AS (
       SELECT * FROM enriched WHERE ${scopeFilter}
     ), filtered AS (
@@ -1293,13 +1293,12 @@ async function getOperationalWorkQueuePage(
       COALESCE((SELECT jsonb_agg(module ORDER BY module) FROM (SELECT DISTINCT module FROM enriched) module_options), '[]'::jsonb) AS modules,
       COALESCE((SELECT jsonb_agg(jsonb_build_object('id', worksite_id, 'name', worksite_name) ORDER BY worksite_name) FROM (SELECT DISTINCT worksite_id, worksite_name FROM enriched) worksite_options), '[]'::jsonb) AS worksites,
       COALESCE((SELECT jsonb_agg(jsonb_build_object('value', status, 'label', status_label) ORDER BY status_label) FROM (SELECT DISTINCT status, status_label FROM enriched) status_options), '[]'::jsonb) AS statuses,
-      COALESCE((SELECT jsonb_agg(jsonb_build_object('id', assignee_user_id, 'name', assignee_name) ORDER BY assignee_name) FROM (SELECT DISTINCT assignee_user_id, assignee_name FROM enriched WHERE assignee_user_id IS NOT NULL AND assignee_name IS NOT NULL) responsible_options), '[]'::jsonb) AS responsible,
       COALESCE((SELECT jsonb_agg(jsonb_build_object(
         'id', id, 'sourceType', source_type, 'sourceId', source_id, 'actionKey', action_key, 'module', module,
         'code', code, 'title', title, 'subtitle', subtitle, 'worksiteId', worksite_id, 'worksiteName', worksite_name,
         'status', status, 'statusLabel', status_label, 'priority', priority, 'blocked', blocked, 'createdAt', created_at,
         'sourceDueAt', source_due_at, 'committedDueAt', committed_due_at, 'effectiveDueAt', effective_due_at, 'dueSource', due_source,
-        'assignee', CASE WHEN assignee_user_id IS NULL OR assignee_name IS NULL THEN NULL ELSE jsonb_build_object('userId', assignee_user_id, 'name', assignee_name, 'source', assignee_source) END,
+        'assignee', CASE WHEN assignee_user_id IS NULL OR assignee_name IS NULL THEN NULL ELSE jsonb_build_object('userId', assignee_user_id, 'name', assignee_name) END,
         'href', href, 'ctaLabel', cta_label, 'assignable', assignable
       ) ORDER BY ${order}) FROM paginated), '[]'::jsonb) AS items
   `)
@@ -1327,7 +1326,6 @@ async function getOperationalWorkQueuePage(
       modules: parseJsonColumn<OperationalModule[]>(row.modules, []),
       worksites: parseJsonColumn<OperationalQueueResult["filterOptions"]["worksites"]>(row.worksites, []),
       statuses: parseJsonColumn<OperationalQueueResult["filterOptions"]["statuses"]>(row.statuses, []),
-      responsible: parseJsonColumn<OperationalQueueResult["filterOptions"]["responsible"]>(row.responsible, []),
     },
     nextCursor: candidates.length > filters.limit && items.length > 0 ? encodeCursor(items.at(-1)!, filters.sort) : null,
   }
@@ -1486,8 +1484,7 @@ export async function getOperationalWorkCount(session: Session) {
     counts.push(countRows(
       db.select({ total: count() }).from(purchaseOrders).where(and(
         orderScope,
-        inArray(purchaseOrders.status, INVOICE_DUE_ORDER_STATUSES),
-        orderHasNoInvoice,
+        orderNeedsInvoiceWork,
       )),
     ))
   }
@@ -1611,7 +1608,6 @@ export function parseOperationalQueueFilters(input: Record<string, string | stri
     worksiteId: take("faena") ?? "all",
     status: take("estado") ?? "all",
     priority: priority && allowedPriorities.includes(priority as WorkPriority) ? priority as WorkPriority : "all",
-    responsible: take("responsable") ?? "all",
     quick: quick && allowedQuick.includes(quick as OperationalQuickFilter) ? quick as OperationalQuickFilter : "all",
     sort: sort && allowedSort.includes(sort as OperationalSort) ? sort as OperationalSort : "priority",
     cursor: take("cursor"),

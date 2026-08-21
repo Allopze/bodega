@@ -1,5 +1,5 @@
 import { relations, sql } from "drizzle-orm"
-import { pgTable, text, integer, real, numeric, timestamp, check, index, uniqueIndex } from "drizzle-orm/pg-core"
+import { pgTable, text, integer, real, numeric, timestamp, check, index, uniqueIndex, jsonb } from "drizzle-orm/pg-core"
 import { users } from "./users"
 import { worksites, suppliers } from "./worksites"
 import { products } from "./products"
@@ -39,6 +39,9 @@ export const purchaseOrders = pgTable("purchase_orders", {
   notes:             text("notes"),
   supplierNotes:     text("supplier_notes"),
   deliveryMode:      text("delivery_mode").notNull().default("via_oficina"), // via_oficina | directo_faena — snapshot from request
+  invoiceReconciliationStatus: text("invoice_reconciliation_status").notNull().default("no_invoices"),
+  invoiceReconciliationFingerprint: text("invoice_reconciliation_fingerprint"),
+  invoiceReconciliationUpdatedAt: timestamp("invoice_reconciliation_updated_at", { withTimezone: true, mode: "string" }),
   createdAt:         timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   updatedAt:         timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [
@@ -58,9 +61,13 @@ export const purchaseOrders = pgTable("purchase_orders", {
   check("purchase_orders_delivery_mode_valid", sql`
     ${table.deliveryMode} IN ('via_oficina', 'directo_faena')
   `),
+  check("purchase_orders_invoice_reconciliation_status_valid", sql`
+    ${table.invoiceReconciliationStatus} IN ('no_invoices', 'matched', 'needs_review', 'accepted_exception')
+  `),
   index("purchase_orders_worksite_status_idx").on(table.worksiteId, table.status, table.createdAt),
   index("purchase_orders_cost_center_idx").on(table.costCenterId),
   index("purchase_orders_status_sent_idx").on(table.status, table.sentAt),
+  index("purchase_orders_invoice_reconciliation_idx").on(table.invoiceReconciliationStatus, table.status),
 ])
 
 /* ── Purchase Order Items ─────────────────────────────────────────────────── */
@@ -190,6 +197,21 @@ export const purchaseOrderInvoiceItems = pgTable("purchase_order_invoice_items",
   index("po_invoice_items_oc_item_idx").on(table.purchaseOrderItemId),
 ])
 
+/* ── Purchase Order Invoice Reconciliation Reviews ───────────────────────── */
+export const purchaseOrderInvoiceReconciliationReviews = pgTable("purchase_order_invoice_reconciliation_reviews", {
+  id:              text("id").primaryKey(),
+  purchaseOrderId: text("purchase_order_id").notNull().references(() => purchaseOrders.id, { onDelete: "cascade" }),
+  fingerprint:     text("fingerprint").notNull(),
+  reason:          text("reason").notNull(),
+  evidence:        jsonb("evidence").$type<Record<string, unknown>>().notNull(),
+  reviewedBy:      text("reviewed_by").notNull().references(() => users.id),
+  createdAt:       timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+}, (table) => [
+  check("po_invoice_reconciliation_reviews_reason_length", sql`char_length(${table.reason}) BETWEEN 10 AND 1000`),
+  uniqueIndex("po_invoice_reconciliation_reviews_order_fingerprint_unique").on(table.purchaseOrderId, table.fingerprint),
+  index("po_invoice_reconciliation_reviews_order_created_idx").on(table.purchaseOrderId, table.createdAt),
+])
+
 /* ── Relations ───────────────────────────────────────────────────────────── */
 export const purchaseOrdersRelations = relations(purchaseOrders, ({ one, many }) => ({
   worksite:   one(worksites, { fields: [purchaseOrders.worksiteId], references: [worksites.id] }),
@@ -200,6 +222,7 @@ export const purchaseOrdersRelations = relations(purchaseOrders, ({ one, many })
   items:      many(purchaseOrderItems),
   quotations: many(quotations),
   invoices:   many(purchaseOrderInvoices),
+  invoiceReconciliationReviews: many(purchaseOrderInvoiceReconciliationReviews),
 }))
 
 export const purchaseOrderItemsRelations = relations(purchaseOrderItems, ({ one }) => ({
@@ -218,4 +241,9 @@ export const purchaseOrderInvoicesRelations = relations(purchaseOrderInvoices, (
 export const purchaseOrderInvoiceItemsRelations = relations(purchaseOrderInvoiceItems, ({ one }) => ({
   invoice:           one(purchaseOrderInvoices, { fields: [purchaseOrderInvoiceItems.invoiceId], references: [purchaseOrderInvoices.id] }),
   purchaseOrderItem: one(purchaseOrderItems, { fields: [purchaseOrderInvoiceItems.purchaseOrderItemId], references: [purchaseOrderItems.id] }),
+}))
+
+export const purchaseOrderInvoiceReconciliationReviewsRelations = relations(purchaseOrderInvoiceReconciliationReviews, ({ one }) => ({
+  purchaseOrder: one(purchaseOrders, { fields: [purchaseOrderInvoiceReconciliationReviews.purchaseOrderId], references: [purchaseOrders.id] }),
+  reviewedByUser: one(users, { fields: [purchaseOrderInvoiceReconciliationReviews.reviewedBy], references: [users.id] }),
 }))

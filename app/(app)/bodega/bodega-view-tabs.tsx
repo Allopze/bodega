@@ -3,6 +3,7 @@
 import Link from "next/link"
 import { usePathname, useSearchParams } from "next/navigation"
 import { cn } from "@/lib/utils"
+import { ALL_WORKSITES } from "./faena-scope"
 
 export type BodegaView = "stock" | "kardex" | "documentos"
 
@@ -38,7 +39,9 @@ export function BodegaViewTabs({ tabs, current }: { tabs: BodegaViewTab[]; curre
       const shared = new URLSearchParams()
       for (const key of SHARED_PARAMS) {
         const existing = searchParams.get(key)
-        if (existing) shared.set(key, existing)
+        // `faena=todas` es vocabulario de esta pantalla: en Documentos sería un
+        // id de faena inexistente y dejaría la lista vacía.
+        if (existing && !(key === "faena" && existing === ALL_WORKSITES)) shared.set(key, existing)
       }
       const sharedQs = shared.toString()
       return sharedQs ? `${tab.href}?${sharedQs}` : tab.href

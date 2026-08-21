@@ -1,9 +1,12 @@
+import type { InvoiceReconciliationStatus } from "@/lib/services/purchasing-module/invoice-reconciliation"
+
 export type OcRow = {
   id:              string
   code:            string
   worksiteName:    string
   supplierName:    string
   status:          string
+  invoiceReconciliationStatus: InvoiceReconciliationStatus
   itemCount:       number
   totalAmount:     number
   /** Líneas de servicio cuyo costo aún no se conoce; no entran en totalAmount. */

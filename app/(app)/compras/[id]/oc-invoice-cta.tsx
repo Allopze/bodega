@@ -58,13 +58,13 @@ export function OcInvoiceCta({
           className="mt-3 w-full"
         >
           <Link href={`/compras/${orderId}?tab=facturacion`}>
-            {missing ? "Adjuntar factura" : "Revisar facturación"}
+            {missing ? "Adjuntar factura" : "Revisar conciliación"}
             <ArrowRight size={14} aria-hidden />
           </Link>
         </Button>
       ) : (
         <p className="mt-1.5 text-xs text-(--color-text-muted)">
-          Siguiente paso: {missing ? "adjuntar la factura" : "revisar la facturación"}. Lo registra quien compra.
+          Siguiente paso: {missing ? "adjuntar la factura" : "revisar la conciliación"}. Lo registra quien compra.
         </p>
       )}
     </div>

@@ -119,6 +119,9 @@ export async function recordOrderItemCost(
       },
     }, tx)
 
+    const { persistPurchaseOrderInvoiceReconciliationTx } = await import("./invoice-reconciliation-service")
+    await persistPurchaseOrderInvoiceReconciliationTx(tx, order.id)
+
     return {
       orderId:          order.id,
       orderCode:        order.code,

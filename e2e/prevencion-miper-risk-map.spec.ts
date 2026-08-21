@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test"
-import { login } from "./helpers"
+import { login, MINIMAL_PNG } from "./helpers"
 
 /**
  * E2E: mapa de riesgos espacial de MIPER (§13/Oro) — cargar un plano de
@@ -8,11 +8,10 @@ import { login } from "./helpers"
  * sobre una imagen responsiva, así que el clic se posiciona por porcentaje
  * del `boundingBox` real, igual que calcula el cliente.
  *
- * PNG mínimo válido (1×1, cabecera real): sin bytes de imagen de verdad el
+ * El plano usa `MINIMAL_PNG` (e2e/helpers.ts): sin bytes de imagen de verdad el
  * navegador no le da dimensiones al <img> y el clic porcentual no tiene
  * dónde caer.
  */
-const MINIMAL_PNG_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
 
 test.describe("Prevención — MIPER: mapa de riesgos espacial", () => {
   test.beforeEach(async ({ page }) => {
@@ -40,7 +39,7 @@ test.describe("Prevención — MIPER: mapa de riesgos espacial", () => {
     await page.locator("#riskmap-file").setInputFiles({
       name: "plano-e2e.png",
       mimeType: "image/png",
-      buffer: Buffer.from(MINIMAL_PNG_BASE64, "base64"),
+      buffer: MINIMAL_PNG,
     })
     await uploadDialog.locator("form").evaluate((el) => (el as HTMLFormElement).requestSubmit())
     await expect(page.locator('[role="dialog"]')).not.toBeVisible({ timeout: 30_000 })

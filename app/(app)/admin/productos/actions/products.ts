@@ -9,6 +9,7 @@ import { recordAudit } from "@/lib/audit"
 import { requirePermission } from "@/lib/auth/can"
 import { logger } from "@/lib/logger"
 import { buildEppFamilyIdentityKey } from "@/lib/services/epp-import"
+import { setProductSupplierPriceTx } from "@/lib/services/product-supplier-prices"
 import { lockCatalogProductsForUpdateTx } from "@/lib/services/catalog-product-locks"
 import { productSchema, type ActionState } from "@/lib/validation/masters"
 
@@ -91,15 +92,16 @@ export async function createProduct(_prev: ActionState, formData: FormData): Pro
     }
 
     if (d.suppliers.length > 0) {
-      await tx.insert(productSuppliers).values(
-        d.suppliers.map((s) => ({
-          id: nanoid(), productId: id,
-          supplierId: s.supplierId,
-          unitPrice: s.unitPrice ?? null,
-          isPreferred: s.isPreferred,
-          notes: s.notes ?? null,
-        }))
-      )
+      for (const supplier of d.suppliers) {
+        await setProductSupplierPriceTx(tx, {
+          productId: id, supplierId: supplier.supplierId,
+          unitPrice: supplier.unitPrice ?? null,
+          source: "product_form", sourceId: id, userId: session.user.id,
+          ensureRelation: true,
+          isPreferred: supplier.isPreferred,
+          notes: supplier.notes ?? null,
+        })
+      }
     }
   })
 
@@ -184,18 +186,30 @@ export async function updateProduct(_prev: ActionState, formData: FormData): Pro
       )
     }
 
-    // Replace product suppliers
-    await tx.delete(productSuppliers).where(eq(productSuppliers.productId, productId))
-    if (d.suppliers.length > 0) {
-      await tx.insert(productSuppliers).values(
-        d.suppliers.map((s) => ({
-          id: nanoid(), productId: d.id!,
-          supplierId: s.supplierId,
-          unitPrice: s.unitPrice ?? null,
-          isPreferred: s.isPreferred,
-          notes: s.notes ?? null,
-        }))
-      )
+    const existingSuppliers = await tx.select().from(productSuppliers)
+      .where(eq(productSuppliers.productId, productId))
+    for (const supplier of d.suppliers) {
+      await setProductSupplierPriceTx(tx, {
+        productId, supplierId: supplier.supplierId,
+        unitPrice: supplier.unitPrice ?? null,
+        source: "product_form", sourceId: productId, userId: session.user.id,
+        ensureRelation: true,
+        isPreferred: supplier.isPreferred,
+        notes: supplier.notes ?? null,
+      })
+    }
+    const desiredSupplierIds = new Set(d.suppliers.map((supplier) => supplier.supplierId))
+    for (const supplier of existingSuppliers) {
+      if (desiredSupplierIds.has(supplier.supplierId)) continue
+      await setProductSupplierPriceTx(tx, {
+        productId,
+        supplierId: supplier.supplierId,
+        unitPrice: null,
+        source: "product_form",
+        sourceId: productId,
+        userId: session.user.id,
+        deleteRelationWhenNull: true,
+      })
     }
   })
 
@@ -384,11 +398,14 @@ export async function createProductVariantBatch(input: ProductVariantBatchInput)
       // 4. Assign supplier to each product
       if (d.supplier?.supplierId) {
         for (const productId of createdProductIds) {
-          await tx.insert(productSuppliers).values({
-            id: nanoid(),
+          await setProductSupplierPriceTx(tx, {
             productId,
             supplierId: d.supplier.supplierId,
             unitPrice: d.supplier.unitPrice ?? null,
+            source: "variant_creator",
+            sourceId: productId,
+            userId: session.user.id,
+            ensureRelation: true,
             isPreferred: true,
             notes: d.supplier.notes ?? null,
           })

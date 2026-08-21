@@ -347,3 +347,15 @@ export async function openLatestDraft(page: Page, prefix: "REP" | "SER") {
     await expect(page).toHaveURL(/\/solicitudes\/(?!nueva$)[^/]+$/, { timeout: 5_000 })
   }).toPass({ timeout: 60_000 })
 }
+
+/**
+ * PNG mínimo válido (1×1, cabecera real).
+ *
+ * `validateFileBuffer` valida por magic bytes, no por extensión, así que un
+ * archivo de mentira se rechaza en el servidor; y en el cliente, sin bytes de
+ * imagen de verdad el navegador no le da dimensiones al `<img>`.
+ */
+export const MINIMAL_PNG = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+  "base64",
+)

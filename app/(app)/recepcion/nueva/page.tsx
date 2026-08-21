@@ -10,7 +10,7 @@ import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { ReceiptForm } from "../receipt-form"
 import type { ReceiptOcItem } from "../receipt-form"
-import { WorkAssignmentControl } from "../../pendientes/work-assignment-control"
+import { WorkCommitmentControl } from "../../pendientes/work-commitment-control"
 import { getOperationalAssignmentRecords } from "@/lib/services/operational-assignments"
 import { officeWorksiteLabel } from "@/lib/services/dispatch-guides"
 import { buildOperationalWorkItem, operationalAssignmentKey } from "@/lib/services/operational-work-queue"
@@ -173,7 +173,7 @@ export default async function NuevaRecepcionPage({
                     <p className="text-sm font-medium text-[var(--color-text)]">{item.statusLabel}</p>
                     <p className="text-xs text-[var(--color-text-muted)]">{item.sourceDueAt ? `Fecha estimada de entrega: ${item.sourceDueAt.slice(0, 10)}` : "Sin fecha de entrega comprometida"}</p>
                   </div>
-                  <WorkAssignmentControl item={item} showAssignee />
+                  <WorkCommitmentControl item={item} />
                 </div>
               ))}
             </div>

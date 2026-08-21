@@ -22,8 +22,8 @@ import type { OcRow } from "./oc-list.types"
 import { ocDeleteConfirmDescription, ocDisplayDate } from "./oc-list.types"
 
 /** La factura ya corresponde: llegó mercadería y la OC sigue abierta. */
-function invoiceDue(status: string) {
-  return INVOICE_DUE_ORDER_STATUSES.includes(status)
+function invoiceDue(row: OcRow) {
+  return row.invoiceReconciliationStatus === "needs_review" || (row.invoiceReconciliationStatus === "no_invoices" && INVOICE_DUE_ORDER_STATUSES.includes(row.status))
 }
 
 
@@ -146,11 +146,15 @@ export function OcTableRow({ row, canDelete = false, canSend = false }: { row: O
           invertidas respecto a los encabezados, así que el badge de estado caía
           bajo "Facturas" y el conteo bajo "Estado". */}
       <TableCellNum>
-        {row.invoiceCount > 0 ? (
+        {row.invoiceReconciliationStatus === "needs_review" ? (
+          <span className="inline-flex items-center rounded-full bg-warning-tint px-2 py-0.5 text-xs font-medium text-warning-ink">
+            Revisar conciliación
+          </span>
+        ) : row.invoiceCount > 0 ? (
           <span className="inline-flex items-center justify-center rounded-full bg-[var(--color-surface-2)] text-[var(--color-text-muted)] text-xs font-medium px-2 py-0.5 tabular-nums">
             {row.invoiceCount}
           </span>
-        ) : invoiceDue(row.status) ? (
+        ) : invoiceDue(row) ? (
           // Con mercadería recibida el "—" neutro escondía el atraso: se leía
           // igual que en una OC recién emitida, donde aún no corresponde.
           <span className="inline-flex items-center rounded-full bg-signal-tint px-2 py-0.5 text-xs font-medium text-signal-ink">
@@ -234,11 +238,15 @@ export function OcMobileCard({
         <dt className="text-[var(--color-text-subtle)]">Fecha</dt>
         <dd className="text-right font-mono tabular-nums text-[var(--color-text)]">{formatDate(ocDisplayDate(row))}</dd>
       </dl>
-      {row.invoiceCount > 0 ? (
+      {row.invoiceReconciliationStatus === "needs_review" ? (
+        <p className="mt-2 text-xs font-medium text-warning-ink">
+          Revisar conciliación
+        </p>
+      ) : row.invoiceCount > 0 ? (
         <p className="mt-2 text-xs text-[var(--color-text-muted)]">
           {pluralize(row.invoiceCount, "factura")} {pluralize(row.invoiceCount, "asociada", "asociadas")}
         </p>
-      ) : invoiceDue(row.status) && (
+      ) : invoiceDue(row) && (
         <p className="mt-2 text-xs font-medium text-signal-ink">Sin factura</p>
       )}
       {(row.status === "draft" && canSend) || (canDelete && (DELETABLE_ORDER_STATUSES as readonly string[]).includes(row.status)) ? (

@@ -34,6 +34,11 @@ import type { DteBandejaRow } from "./types"
 import { classifyDteFailure } from "./failure"
 import { chileClock, chilePeriod, previousChilePeriod } from "./chile-time"
 import { claimDteSyncStart } from "./sync-start-gate"
+import { clearDteSyncProgress, publishDteSyncProgress } from "./sync-progress"
+
+/** Cada cuántos documentos se refresca el avance visible: ni una escritura por fila
+ *  ni un salto de minutos en pantalla. */
+const PROGRESS_EVERY = 25
 
 /** Corridas "running" más viejas que esto se consideran colgadas (proceso muerto a medio camino). */
 const STALE_RUN_THRESHOLD_MS = 60 * 60 * 1000
@@ -179,6 +184,10 @@ export async function syncDteDocuments(
   let finalStatus: "success" | "partial" | "failed" = "success"
   let errorMsg: string | undefined
 
+  // La consulta al portal es la etapa larga y la que no tiene contador: sin
+  // publicar la etapa, el botón manual pasa minutos diciendo sólo "Sincronizando".
+  await publishDteSyncProgress({ runId, periodo, phase: "portal", processed: 0, total: 0 })
+
   try {
     // 2. Consultar la Bandeja de Entrada (sin paginación, ver bandeja-entrada.ts)
     const [anio, mes] = periodo.split("-") as [string, string]
@@ -194,6 +203,7 @@ export async function syncDteDocuments(
     }, { correlationId, periodo })
 
     rowsSeen = docs.length
+    await publishDteSyncProgress({ runId, periodo, phase: "documentos", processed: 0, total: docs.length })
 
     // El portal declara cuántos documentos tiene el período. Si parseamos menos,
     // se perdieron filas —fecha o folio irreconocibles descartan la fila con un
@@ -214,7 +224,7 @@ export async function syncDteDocuments(
 
     // 3. Upsert cada documento, cada uno en su propia transacción
     let failures = 0
-    for (const row of docs) {
+    for (const [index, row] of docs.entries()) {
       try {
         const result = await db.transaction((tx) => upsertDteDocument(tx, row, periodo, codEmp, runId))
         if (result === "inserted") rowsInserted++
@@ -223,6 +233,11 @@ export async function syncDteDocuments(
         failures++
         const failure = classifyDteFailure(err, Object.values(client.credentials))
         logger.error({ correlationId }, "[dte-sync] documento no persistido", { code: failure.code, periodo })
+      }
+      // El avance cuenta documentos PROCESADOS, no insertados: en un re-sync casi
+      // todos quedan "unchanged" y un contador de altas se ve congelado.
+      if ((index + 1) % PROGRESS_EVERY === 0) {
+        await publishDteSyncProgress({ runId, periodo, phase: "documentos", processed: index + 1, total: docs.length })
       }
     }
 
@@ -250,6 +265,10 @@ export async function syncDteDocuments(
   // cierre y su error sólo iba a `console.error`, así que una conciliación roña
   // de forma sistemática dejaba la corrida en `success` sin un solo vínculo y
   // sin rastro de por qué.
+  if (finalStatus !== "failed") {
+    await publishDteSyncProgress({ runId, periodo, phase: "conciliacion", processed: rowsSeen, total: rowsSeen })
+  }
+
   let reconciliationStatus: DteSyncResult["reconciliationStatus"] = "not_run"
   let reconciliationError: string | undefined
   let reconciliation = { matched: 0, ambiguous: 0, unmatched: 0, discrepancies: 0 }
@@ -340,6 +359,8 @@ export async function syncDteDocuments(
   }
 
   errorMsg = finalError ?? undefined
+
+  await clearDteSyncProgress(runId)
 
   return {
     runId,

@@ -109,6 +109,10 @@ export async function runCopecSyncPeriodAction(period: { from: string; to: strin
     const result = await syncCopecReportPeriod(parsedPeriod.data, session.user.id)
     return { ok: true, imported: result.imported, received: result.received, pending: result.pending, unavailable: result.unavailable, reports: result.reports.length, unmappedCards: result.unmappedCards }
   } catch (error) {
-    return { ok: false, message: error instanceof Error ? error.message : "No fue posible sincronizar Copec" }
+    // Los errores de Playwright arrastran el "Call log:" completo -kilobytes de
+    // reintentos- y el toast del operador, que persiste hasta cerrarlo a mano,
+    // los mostraba enteros. El motivo siempre va en la primera linea.
+    const message = error instanceof Error ? (error.message.split(/\r?\nCall log:/)[0] ?? "").trim() : ""
+    return { ok: false, message: message || "No fue posible sincronizar Copec" }
   }
 }

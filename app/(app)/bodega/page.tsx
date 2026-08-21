@@ -18,6 +18,7 @@ import { StockSection, KardexSection } from "./bodega-sections"
 import { BodegaMovementSheet } from "./movement-sheet"
 import { BodegaViewTabs, type BodegaView } from "./bodega-view-tabs"
 import { BodegaFilters } from "./bodega-filters"
+import { resolveFaena, ALL_WORKSITES } from "./faena-scope"
 import type { WorksiteStockWithProduct, InventoryMovementWithRelations } from "./types"
 import { KARDEX_PAGE_SIZE } from "@/lib/constants"
 
@@ -82,19 +83,32 @@ export default async function BodegaPage({
   const stockScope    = worksiteScopeSql(session, worksiteStock.worksiteId)
   const movementScope = worksiteScopeSql(session, inventoryMovements.worksiteId)
 
+  // Las faenas visibles se resuelven antes que los filtros porque la faena por
+  // defecto es la bodega propia del usuario: aplicarla a ciegas dejaría la
+  // pantalla vacía y sin salida cuando esa faena está cerrada o fuera de alcance.
+  const allWorksites = await db
+    .select({ id: worksites.id, name: worksites.name })
+    .from(worksites)
+    .where(and(eq(worksites.isActive, true), worksiteScope))
+    .orderBy(asc(worksites.name))
+
+  const primaryWorksiteId = session.user.primaryWorksiteId ?? ""
+  const ownWorksiteId = allWorksites.some((w) => w.id === primaryWorksiteId) ? primaryWorksiteId : ""
+  const faena = resolveFaena(filters.faena, ownWorksiteId)
+
   // Los filtros de texto y faena se aplican en el servidor: filtrarlos en
   // memoria sólo alcanzaba a la página que el kardex ya había traído, así que
   // una coincidencia en una página vieja no aparecía nunca.
   const stockWhere = and(
     eq(worksites.isActive, true),
     stockScope,
-    eqFilter(worksiteStock.worksiteId, filters.faena),
+    eqFilter(worksiteStock.worksiteId, faena),
     textSearchSql(filters.q, [products.name, products.sku]),
   )
 
   const movementWhere = and(
     movementScope,
-    eqFilter(inventoryMovements.worksiteId, filters.faena),
+    eqFilter(inventoryMovements.worksiteId, faena),
     eqFilter(inventoryMovements.type, tipo),
     eqFilter(inventoryMovements.productId, producto),
     periodSql(inventoryMovements.performedAt, filters.desde, filters.hasta),
@@ -106,12 +120,7 @@ export default async function BodegaPage({
     ]),
   )
 
-  const [allWorksites, stockSummaryRows, stockTotalRow, movementTotalRow, recentMovementRow] = await Promise.all([
-    db
-      .select({ id: worksites.id, name: worksites.name })
-      .from(worksites)
-      .where(and(eq(worksites.isActive, true), worksiteScope))
-      .orderBy(asc(worksites.name)),
+  const [stockSummaryRows, stockTotalRow, movementTotalRow, recentMovementRow] = await Promise.all([
     // Una sola pasada para todos los KPI del encabezado: antes salían de traer
     // el stock completo a memoria, lo que obligaba a consultarlo incluso en la
     // vista del kardex.
@@ -125,7 +134,7 @@ export default async function BodegaPage({
       })
       .from(worksiteStock)
       .innerJoin(worksites, eq(worksiteStock.worksiteId, worksites.id))
-      .where(and(eq(worksites.isActive, true), stockScope)),
+      .where(and(eq(worksites.isActive, true), stockScope, eqFilter(worksiteStock.worksiteId, faena))),
     db
       .select({ total: count() })
       .from(worksiteStock)
@@ -141,7 +150,11 @@ export default async function BodegaPage({
     db
       .select({ total: count() })
       .from(inventoryMovements)
-      .where(and(movementScope, sql`${inventoryMovements.performedAt} >= ${daysAgoIso(MOVEMENT_WINDOW_DAYS)}`)),
+      .where(and(
+        movementScope,
+        eqFilter(inventoryMovements.worksiteId, faena),
+        sql`${inventoryMovements.performedAt} >= ${daysAgoIso(MOVEMENT_WINDOW_DAYS)}`,
+      )),
   ])
 
   if (allWorksites.length === 0) {
@@ -233,12 +246,17 @@ export default async function BodegaPage({
         .selectDistinct({ id: products.id, name: products.name })
         .from(inventoryMovements)
         .innerJoin(products, eq(inventoryMovements.productId, products.id))
-        .where(movementScope)
+        .where(and(movementScope, eqFilter(inventoryMovements.worksiteId, faena)))
         .orderBy(asc(products.name))
         .limit(500)
     : []
 
   const worksiteOptions = allWorksites.map((w) => ({ id: w.id, name: w.name }))
+
+  // Con una faena a la vista la pantalla es sólo esa bodega: el resto no se
+  // agrupa ni se cuenta, para que encabezado y tabla hablen del mismo universo.
+  // El selector y los exports siguen recibiendo todas las faenas del alcance.
+  const visibleWorksites = faena ? worksiteOptions.filter((w) => w.id === faena) : worksiteOptions
 
   const stockByWorksite: Record<string, WorksiteStockWithProduct[]> = {}
   for (const row of stockRows) {
@@ -274,7 +292,11 @@ export default async function BodegaPage({
     worksite: { name: row.worksiteName },
   }))
 
-  const hasFilters = Boolean(filters.q || filters.faena || stockState || tipo || producto || filters.desde || filters.hasta)
+  // La bodega propia es el punto de partida, no un filtro: contarla como tal
+  // haría que el vacío dijera "sin coincidencias" cuando lo que ocurre es que
+  // esa bodega no tiene stock.
+  const faenaFiltered = Boolean(faena) && faena !== ownWorksiteId
+  const hasFilters = Boolean(filters.q || faenaFiltered || stockState || tipo || producto || filters.desde || filters.hasta)
 
   return (
     <PageContainer>
@@ -282,7 +304,8 @@ export default async function BodegaPage({
         breadcrumb={<Breadcrumbs items={[{ label: "Inicio", href: "/dashboard" }, { label: "Bodega" }]} />}
         headerActions={(
           <WarehouseHeaderMetrics
-            worksiteCount={worksiteOptions.length}
+            scopeParam={faena === ownWorksiteId ? "" : `faena=${faena || ALL_WORKSITES}`}
+            worksiteCount={visibleWorksites.length}
             worksitesWithStock={Number(summary?.worksitesWithStock ?? 0)}
             productsWithStock={Number(summary?.productsWithStock ?? 0)}
             lowStockCount={Number(summary?.lowStock ?? 0)}
@@ -315,9 +338,10 @@ export default async function BodegaPage({
         view={view}
         worksites={worksiteOptions}
         products={kardexProducts}
+        ownWorksiteId={ownWorksiteId}
         current={{
           q: filters.q,
-          faena: filters.faena,
+          faena,
           stock: stockState,
           tipo,
           producto,
@@ -328,7 +352,7 @@ export default async function BodegaPage({
 
       {view === "stock" ? (
         <StockSection
-          worksites={worksiteOptions}
+          worksites={visibleWorksites}
           stockByWorksite={stockByWorksite}
           receivingHref={canViewReceiving ? "/recepcion" : undefined}
           canExportStock={canExportStock}

@@ -22,7 +22,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { chileDateParts, cn } from "@/lib/utils"
 import type { WorkPriority, WorkTask, WorkTaskType } from "@/lib/work-queue"
 import type { OperationalWorkItem } from "@/lib/services/operational-work-queue"
-import { WorkAssignmentControl } from "../../pendientes/work-assignment-control"
+import { WorkCommitmentControl } from "../../pendientes/work-commitment-control"
 import type { DashboardScope } from "../dashboard-scope"
 
 export type DashboardTask = WorkTask & {
@@ -54,7 +54,7 @@ const SORT_OPTIONS: SortOption[] = ["priority", "oldest", "newest"]
  * viajar en la URL.
  *
  * `sessionStorage` y no la URL para el orden porque cualquier `router.refresh()`
- * —el de `WorkAssignmentControl`, por ejemplo— desmonta el árbol (hay
+ * —el de `WorkCommitmentControl`, por ejemplo— desmonta el árbol (hay
  * `loading.tsx`) y borraría un estado que viviera sólo en React.
  */
 const FILTERS_STORAGE_KEY = "dashboard:queue-filters"
@@ -291,7 +291,7 @@ function WorkQueueRow({ task, refreshedAt, canAssign }: { task: DashboardTask; r
   return (
     // Mobile: apilada (badge+edad / título / meta / acciones). Desktop: grid de
     // 4 columnas. La celda de acción envuelve (`flex-wrap`) en vez de
-    // `whitespace-nowrap`: "Asignar" + CTA medían ~230px en una columna de 9rem
+    // `whitespace-nowrap`: "Comprometer fecha" + CTA medían ~230px en una columna de 9rem
     // y desbordaban ENCIMA de "56 días" (I-06).
     <li className="flex flex-col gap-2 px-4 py-3 text-sm transition-colors hover:bg-[var(--color-surface-2)] sm:grid sm:grid-cols-[5.5rem_minmax(12rem,1fr)_5rem_9rem] sm:items-center sm:gap-3">
       <PriorityBadge priority={task.priority} size="sm" className="self-start sm:justify-self-start" />
@@ -309,7 +309,7 @@ function WorkQueueRow({ task, refreshedAt, canAssign }: { task: DashboardTask; r
       </div>
       <time dateTime={task.createdAt} className="font-mono text-xs tabular-nums text-[var(--color-text-subtle)]">{relativeAge(task.createdAt, refreshedAt)}</time>
       <span className="flex flex-wrap items-center gap-1 sm:justify-end sm:justify-self-end">
-        {canAssign && task.operationalItem?.assignable ? <WorkAssignmentControl item={task.operationalItem} /> : null}
+        {canAssign && task.operationalItem?.assignable ? <WorkCommitmentControl item={task.operationalItem} /> : null}
         <Button asChild size="sm" variant="link"><Link href={task.href}>{task.ctaLabel}</Link></Button>
       </span>
     </li>

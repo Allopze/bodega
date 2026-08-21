@@ -17,8 +17,7 @@ import { HeaderSignals, type HeaderSignal } from "@/components/ui/header-signals
 import { ServerPagination } from "@/components/ui/server-pagination"
 import { buildPaginationHref, resolvePagination } from "@/lib/pagination"
 import { parseListParams, periodSql, statusSql, eqFilter, worksiteEqSql } from "@/lib/adquisiciones/list-query"
-import { INVOICE_DUE_ORDER_STATUSES } from "@/lib/work-queue"
-import { orderHasNoInvoice } from "@/lib/services/operational-work-queue"
+import { orderNeedsInvoiceWork } from "@/lib/services/operational-work-queue"
 import type { StageTab } from "@/components/adquisiciones/stage-tabs"
 import { comprasInboxSql } from "./list-scope"
 import { ComprasActions } from "./compras-actions"
@@ -105,10 +104,7 @@ export default async function ComprasPage({
   // filtrar la página ya traída dejaría el clásico "sin resultados" con la OC
   // buscada viviendo en otra página.
   const invoicePendingOnly = listParams.factura === "pendiente"
-  const invoicePendingCondition = and(
-    inArray(purchaseOrders.status, INVOICE_DUE_ORDER_STATUSES),
-    orderHasNoInvoice,
-  )
+  const invoicePendingCondition = orderNeedsInvoiceWork
 
   // Los contadores de las tabs se cuentan sin el filtro de estado: cada tab
   // anuncia lo que entregaría al pulsarla, no lo que ya está en pantalla.
@@ -209,6 +205,7 @@ export default async function ComprasPage({
       worksiteId:  purchaseOrders.worksiteId,
       supplierId:  purchaseOrders.supplierId,
       status:      purchaseOrders.status,
+      invoiceReconciliationStatus: purchaseOrders.invoiceReconciliationStatus,
       totalAmount: purchaseOrders.totalAmount,
       issuedAt:    purchaseOrders.issuedAt,
       sentAt:      purchaseOrders.sentAt,
@@ -238,8 +235,8 @@ export default async function ComprasPage({
   // vive junto a su OC en vez de pedir una acción que no pueden ejecutar.
   if (can(session, "purchasing:send_order")) {
     headerSignals.push({
-      key: "sin-factura",
-      label: "Sin factura",
+      key: "facturacion-pendiente",
+      label: "Facturación pendiente",
       value: invoicePendingCount,
       tone: "signal",
       href: "/compras?factura=pendiente",
@@ -301,6 +298,7 @@ export default async function ComprasPage({
     worksiteName: wsMap[o.worksiteId]  ?? o.worksiteId,
     supplierName: supMap[o.supplierId] ?? o.supplierId,
     status:       o.status,
+    invoiceReconciliationStatus: o.invoiceReconciliationStatus as OcRow["invoiceReconciliationStatus"],
     itemCount:    cntMap[o.id] ?? 0,
     totalAmount:  o.totalAmount,
     pendingCostLines: pendingCostMap[o.id] ?? 0,

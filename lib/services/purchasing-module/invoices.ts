@@ -11,11 +11,11 @@ import { logger } from "@/lib/logger"
 import { cleanRut } from "@/lib/rut"
 import { localDateToISO } from "@/lib/sst/date"
 import {
-  reconcileInvoiceEvidence,
   type ReconciledOrderItem,
   type InvoiceReconciliationEvidence,
 } from "./invoice-reconciliation"
 import { matchInvoiceItemsToPurchaseOrderItems } from "./invoice-item-matching"
+import { getPurchaseOrderInvoiceReconciliation, persistPurchaseOrderInvoiceReconciliationTx, reconciliationWarnings } from "./invoice-reconciliation-service"
 
 /* ── Purchase Order Invoices ─────────────────────────────────────────────────── */
 
@@ -271,6 +271,8 @@ async function insertPurchaseOrderInvoice(
       },
     }, tx)
 
+    await persistPurchaseOrderInvoiceReconciliationTx(tx, order.id)
+
     return invoiceId
   })
 }
@@ -455,6 +457,8 @@ export async function deletePurchaseOrderInvoice(
       },
     }, tx)
 
+    await persistPurchaseOrderInvoiceReconciliationTx(tx, order.id)
+
     return { filePath: invoice.filePath }
   })
 }
@@ -475,69 +479,15 @@ export interface InvoiceReconciliationResult extends InvoiceReconciliationEviden
 export async function reconcileOrderInvoices(
   orderId: string,
 ): Promise<InvoiceReconciliationResult> {
-  const [order, ocItems, invoices] = await Promise.all([
-    db.query.purchaseOrders.findFirst({
-      where: eq(purchaseOrders.id, orderId),
-      columns: { totalAmount: true },
-    }),
-    db.query.purchaseOrderItems.findMany({
-      where: eq(purchaseOrderItems.purchaseOrderId, orderId),
-      columns: {
-        id: true,
-        productId: true,
-        productNameFree: true,
-        quantity: true,
-      },
-    }),
-    db.query.purchaseOrderInvoices.findMany({
-      where: eq(purchaseOrderInvoices.purchaseOrderId, orderId),
-      with: { items: true },
-    }),
-  ])
-
-  const evidence = reconcileInvoiceEvidence({
-    totalOC: order?.totalAmount ?? 0,
-    orderItems: ocItems.map((item) => ({
-      id: item.id,
-      productName: item.productNameFree ?? item.productId ?? "Ítem",
-      quantity: item.quantity,
-    })),
-    invoices,
-  })
+  const evidence = await getPurchaseOrderInvoiceReconciliation(orderId)
 
   const uncoveredItems = evidence.items
     .filter((item) => item.status === "not_covered")
     .map(({ ocItemId, productName, ocQuantity }) => ({ ocItemId, productName, ocQuantity }))
 
-  const warnings: string[] = []
-  if (!evidence.hasInvoices) {
-    warnings.push("No hay facturas adjuntadas a esta orden.")
-  } else if (evidence.lines.status === "not_evaluable") {
-    warnings.push("Las facturas adjuntadas no tienen líneas asociadas; la conciliación por ítem no es evaluable.")
-  } else if (evidence.lines.unlinkedLineCount > 0) {
-    warnings.push(`${evidence.lines.unlinkedLineCount} línea(s) de factura no están vinculadas a un ítem de la OC.`)
-  }
-
-  const mismatchedItems = evidence.items.filter((item) => item.status === "partial" || item.status === "over_invoiced")
-  for (const item of mismatchedItems) {
-    if (item.difference > 0) {
-      warnings.push(`"${item.productName}": cant. OC (${item.ocQuantity}) > cant. facturada (${item.invoicedQty}).`)
-    } else {
-      warnings.push(`"${item.productName}": cant. facturada (${item.invoicedQty}) > cant. OC (${item.ocQuantity}).`)
-    }
-  }
-
-  if (uncoveredItems.length > 0) {
-    warnings.push(`${uncoveredItems.length} ítem(s) de OC sin factura asociada.`)
-  }
-
-  if (evidence.money.status === "mismatch") {
-    warnings.push(`Total facturado (${evidence.totalInvoiced.toLocaleString("es-CL")}) difiere del total OC (${evidence.totalOC.toLocaleString("es-CL")}).`)
-  }
-
   return {
     ...evidence,
     uncoveredItems,
-    warnings,
+    warnings: reconciliationWarnings(evidence),
   }
 }

@@ -98,7 +98,7 @@ export function StockSection({
             description="Ningún producto en stock coincide con los filtros aplicados."
             action={
               <Link href="/bodega" className="inline-flex h-8 items-center justify-center gap-2 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 text-[13px] font-semibold text-white transition-[background-color,transform] duration-[var(--duration-fast)] ease-[var(--ease-out)] hover:bg-[var(--color-primary-strong)]">
-                Ver todo el stock
+                Limpiar filtros
               </Link>
             }
           />

@@ -7,6 +7,9 @@ export { issueAndSendOrderAction } from "./order-status"
 // ── Registro posterior del costo (servicios con costo pendiente) ─────────────
 export { recordItemCostAction } from "./item-cost"
 
+// ── Conciliación administrativa OC ↔ facturas ───────────────────────────────
+export { acceptInvoiceReconciliationAction } from "./invoice-reconciliation"
+
 // ── Order termination ────────────────────────────────────────────────────────
 export { closeOrderAction, cancelOrderAction, deleteOrderAction } from "./order-cancel"
 

@@ -12,7 +12,7 @@ import type { ApprovalItem } from "./types"
 import { ApproveForm } from "./approve-form"
 import { ReasonForm } from "./reason-form"
 import { useItemActions } from "./use-approval-actions"
-import { WorkAssignmentControl } from "../pendientes/work-assignment-control"
+import { WorkCommitmentControl } from "../pendientes/work-commitment-control"
 
 type ItemAction = "idle" | "approving" | "rejecting"
 
@@ -172,7 +172,7 @@ export function ItemRow({
         )}
         {canAssignWork && item.operationalItem && (
           <div className="shrink-0">
-            <WorkAssignmentControl item={item.operationalItem} showAssignee />
+            <WorkCommitmentControl item={item.operationalItem} />
           </div>
         )}
       </div>

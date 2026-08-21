@@ -56,7 +56,7 @@ describe("OcInvoiceCta", () => {
       />,
     )
 
-    expect(screen.getByRole("link", { name: /revisar facturación/i })).toBeInTheDocument()
+    expect(screen.getByRole("link", { name: /revisar conciliación/i })).toBeInTheDocument()
   })
 
   it("names the pending differences when an invoice exists but does not reconcile", () => {
@@ -68,7 +68,7 @@ describe("OcInvoiceCta", () => {
       />,
     )
 
-    expect(screen.getByRole("link", { name: /revisar facturación/i })).toBeInTheDocument()
+    expect(screen.getByRole("link", { name: /revisar conciliación/i })).toBeInTheDocument()
     expect(screen.getByText(/cant\. facturada \(20\)/i)).toBeInTheDocument()
     expect(screen.getByText(/total facturado difiere/i)).toBeInTheDocument()
   })

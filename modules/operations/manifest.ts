@@ -8,7 +8,7 @@ export const operationsModule = {
   ] as const,
   permissionMeta: {
     "operations:view_work": { id: "p-ops-view-work", description: "Ver la cola operacional priorizada dentro de sus permisos y faenas" },
-    "operations:assign_work": { id: "p-ops-assign-work", description: "Asignar y reasignar pendientes operacionales en faenas autorizadas" },
+    "operations:assign_work": { id: "p-ops-assign-work", description: "Fijar la fecha de compromiso de pendientes operacionales en faenas autorizadas" },
   },
   nav: [
     {

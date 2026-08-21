@@ -71,17 +71,13 @@ describe("buildOperationalWorkItem", () => {
     const result = buildOperationalWorkItem({
       ...baseItem("approval", "high", "2026-07-01T10:00:00.000Z"),
       sourceDueAt: "2026-07-10",
-    }, {
-      assigneeUserId: "user-1",
-      assigneeName: "Responsable de prueba",
-      committedDueAt: "2026-07-12",
-    })
+    }, { committedDueAt: "2026-07-12" })
 
     expect(result).toMatchObject({
       id: "purchase_request:approval:follow_up",
       effectiveDueAt: "2026-07-10",
       dueSource: "origin",
-      assignee: { userId: "user-1", name: "Responsable de prueba", source: "assignment" },
+      assignee: null,
     })
   })
 })

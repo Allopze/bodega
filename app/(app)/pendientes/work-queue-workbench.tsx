@@ -13,11 +13,11 @@ import { PriorityBadge } from "@/components/ui/priority-badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { cn, formatDate, formatDateTime } from "@/lib/utils"
 import type { OperationalQueueResult, OperationalWorkItem } from "@/lib/services/operational-work-queue"
-import { WorkAssignmentControl } from "./work-assignment-control"
+import { WorkCommitmentControl } from "./work-commitment-control"
 
 const QUICK_FILTERS = [
   ["all", "Todas"], ["critical", "Críticas"], ["overdue", "Vencidas"], ["today", "Hoy"],
-  ["blocked", "Bloqueadas"], ["unassigned", "Sin asignar"], ["mine", "Mis tareas"],
+  ["blocked", "Bloqueadas"], ["unassigned", "Sin responsable"], ["mine", "Mis tareas"],
 ] as const
 
 const PRIMARY_QUICK_FILTERS = QUICK_FILTERS.filter(([value]) => ["all", "critical", "overdue", "mine"].includes(value))
@@ -310,7 +310,7 @@ function QueueCard({ item, today }: { item: OperationalWorkItem; today: string }
         </span>
       </div>
       <div className="mt-3 flex items-center justify-between gap-2">
-        <WorkAssignmentControl item={item} showAssignee />
+        <WorkCommitmentControl item={item} />
         <Button asChild size="sm" variant="secondary">
           <Link href={item.href}>{item.ctaLabel}<ArrowRight size={14} /></Link>
         </Button>
@@ -352,7 +352,7 @@ function QueueRow({ item, today }: { item: OperationalWorkItem; today: string })
       </td>
       <td className="px-3 py-2.5">
         <div className="flex items-center justify-end gap-1">
-          <WorkAssignmentControl item={item} showAssignee />
+          <WorkCommitmentControl item={item} />
           <Button asChild size="sm" variant="ghost"><Link href={item.href}>{item.ctaLabel}<ArrowRight size={14} /></Link></Button>
         </div>
       </td>

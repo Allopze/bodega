@@ -7,6 +7,7 @@ import { dteDocuments, purchaseOrderInvoices, purchaseOrders, statusHistory, use
 import { and, desc, eq, gte, inArray, isNull } from "drizzle-orm"
 import { localDateToISO } from "@/lib/sst/date"
 import { selectDteCandidates } from "@/lib/services/purchasing-module/dte-candidates"
+import { getPurchaseOrderInvoiceReconciliation, reconciliationWarnings } from "@/lib/services/purchasing-module/invoice-reconciliation-service"
 import { requireAuth, can, canAny } from "@/lib/auth/can"
 import { canAccessWorksite }  from "@/lib/auth/can"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
@@ -247,6 +248,10 @@ export default async function OcDetailPage({
     items: invoiceItemRows.filter((item) => item.invoiceId === inv.id),
   }))
 
+  const invoiceReconciliation = canViewPurchasing
+    ? await getPurchaseOrderInvoiceReconciliation(order.id)
+    : null
+
   // Cantidad facturada por ítem de OC (reutilizado por close-warnings y tabla de avance)
   const invoicedByItem = new Map<string, number>()
   for (const item of invoiceItemRows) {
@@ -281,6 +286,7 @@ export default async function OcDetailPage({
   )
   const canDeleteOrder = can(session, "purchasing:delete_order")
   const canInvoice     = canSend   // purchasing:send_order gate for invoice management
+  const canUpdateCatalog = can(session, "admin:products")
   const canRegisterFaenaReception  = session.user.permissions.includes("receiving:register_faena")
   const canRegisterOfficeReception = session.user.permissions.includes("receiving:register_office")
   const pendingOfficeQuantity = order.items.reduce(
@@ -316,31 +322,9 @@ export default async function OcDetailPage({
     ? { id: activeGuideDocument.id, code: activeGuideDocument.code, status: activeGuideDocument.status! }
     : undefined
 
-  // Calculate invoice reconciliation warnings for the close form
-  const hasLineItems = invoiceItemRows.length > 0
-  const closeWarnings: string[] = []
-  if (!["draft", "cancelled"].includes(order.status)) {
-    if (orderInvoices.length === 0) {
-      closeWarnings.push("No hay facturas adjuntadas a esta orden.")
-    } else if (!hasLineItems) {
-      closeWarnings.push("Las facturas no tienen ítems detallados.")
-    } else {
-      // Check per-item reconciliation
-      for (const ocItem of order.items) {
-        const invoicedQty = invoicedByItem.get(ocItem.id) ?? 0
-        if (invoicedQty === 0) {
-          const name = ocItem.productNameFree ?? (ocItem.productId ? productMap[ocItem.productId]?.name : null) ?? "Ítem"
-          closeWarnings.push(`"${name}" sin factura asociada.`)
-        } else if (Math.abs(ocItem.quantity - invoicedQty) > 0.01) {
-          const name = ocItem.productNameFree ?? (ocItem.productId ? productMap[ocItem.productId]?.name : null) ?? "Ítem"
-          closeWarnings.push(`"${name}": cant. OC (${ocItem.quantity}) ≠ cant. facturada (${invoicedQty}).`)
-        }
-      }
-      if (Math.abs(orderInvoices.reduce((s, i) => s + (i.amount ?? 0), 0) - order.totalAmount) > 1) {
-        closeWarnings.push("Total facturado difiere del total OC.")
-      }
-    }
-  }
+  const closeWarnings = !["draft", "cancelled"].includes(order.status) && invoiceReconciliation
+    ? reconciliationWarnings(invoiceReconciliation)
+    : []
 
   // Stepper de ciclo (reutiliza el panel de solicitudes)
   const progress = buildOcProgress(
@@ -415,6 +399,7 @@ export default async function OcDetailPage({
   // Misma regla que la cola operacional y el listado: la factura se exige desde
   // que llegó mercadería, no desde que la OC salió al proveedor.
   const invoiceDue = INVOICE_DUE_ORDER_STATUSES.includes(order.status)
+    || invoiceReconciliation?.status === "needs_review"
 
   return (
     <PageContainer width="workbench">
@@ -536,8 +521,9 @@ export default async function OcDetailPage({
                     unitPrice: i.unitPrice,
                     subtotal: i.subtotal,
                   }))}
-                  totalAmount={order.totalAmount}
+                  reconciliation={invoiceReconciliation!}
                   canManage={canInvoice}
+                  canUpdateCatalog={canUpdateCatalog}
                   // Una OC anulada sólo puede SOLTAR las facturas que tiene —esa
                   // es la ruta de desvinculación que libera al DTE atrapado—, no
                   // recibir nuevas. El servicio ya las rechaza; esto evita

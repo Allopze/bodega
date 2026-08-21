@@ -10,13 +10,13 @@ import {
   productAttributes,
   productCategories,
   productExternalReferences,
-  productSuppliers,
   products,
   suppliers,
 } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { toCode } from "@/lib/utils"
 import { lockCatalogProductsForUpdateTx } from "@/lib/services/catalog-product-locks"
+import { setProductSupplierPriceTx } from "@/lib/services/product-supplier-prices"
 import {
   findProductMatches,
   buildCorrections,
@@ -175,11 +175,11 @@ export async function confirmEppImportBatch(batchId: string, userId: string) {
         const sku = await generateUniqueEppSku(tx)
         await tx.insert(products).values({ id, sku, name: normalized.name, categoryId: category.id, familyId: family.id, description: normalized.description, unitOfMeasure: normalized.unitOfMeasure, isEpp: true, requiresPrevencion: true, referencePrice: normalized.price, isActive: true })
         await tx.update(eppImportRows).set({ targetProductId: id }).where(eq(eppImportRows.id, row.id))
-        await persistProductDetails(tx, id, normalized, supplier?.id ?? null)
+        await persistProductDetails(tx, id, normalized, supplier?.id ?? null, `${batchId}:${row.id}`, userId)
         if (normalized.sourceCode) await tx.insert(productExternalReferences).values({ id: nanoid(), productId: id, supplierId: supplier?.id ?? null, source: "xlsx", externalCode: normalized.sourceCode }).onConflictDoNothing()
         continue
       }
-      await persistProductDetails(tx, productId, normalized, supplier?.id ?? null)
+      await persistProductDetails(tx, productId, normalized, supplier?.id ?? null, `${batchId}:${row.id}`, userId)
       if (normalized.sourceCode) await tx.insert(productExternalReferences).values({ id: nanoid(), productId, supplierId: supplier?.id ?? null, source: "xlsx", externalCode: normalized.sourceCode }).onConflictDoNothing()
     }
     await tx.update(eppImportBatches).set({ status: "confirmed", approvedBy: userId, approvedAt: new Date().toISOString(), updatedAt: new Date().toISOString() }).where(eq(eppImportBatches.id, batchId))
@@ -231,4 +231,26 @@ async function resolveCategory(tx: Tx, categoryName: string) { const slug = toCo
 async function resolveFamily(tx: Tx, categoryId: string, normalized: NormalizedEppRow) { const existing = await tx.query.eppProductFamilies.findFirst({ where: eq(eppProductFamilies.identityKey, normalized.familyIdentityKey) }); if (existing) return existing; const id = nanoid(); await tx.insert(eppProductFamilies).values({ id, categoryId, canonicalName: normalized.canonicalName, identityKey: normalized.familyIdentityKey, eppType: normalized.eppType, brand: normalized.brand, model: normalized.model }); return { id } }
 async function resolveSupplier(tx: Tx, supplierName: string) { const existing = await tx.query.suppliers.findFirst({ where: eq(suppliers.name, supplierName) }); if (existing) return existing; const id = `sup-${toCode(supplierName).toLowerCase()}`; await tx.insert(suppliers).values({ id, name: supplierName, isActive: true, notes: "Aprobado durante importación de EPP." }).onConflictDoNothing(); return { id } }
 async function generateUniqueEppSku(tx: Tx) { for (let attempt = 0; attempt < 5; attempt++) { const sku = `EPP-${nanoid(6).toUpperCase().replace(/[^A-Z0-9]/g, "X")}`; const existing = await tx.query.products.findFirst({ where: eq(products.sku, sku) }); if (!existing) return sku } throw new Error("No se pudo generar un SKU único") }
-async function persistProductDetails(tx: Tx, productId: string, normalized: NormalizedEppRow, supplierId: string | null) { if (normalized.attributes.length) await tx.insert(productAttributes).values(normalized.attributes.map((attribute, index) => ({ id: nanoid(), productId, categoryId: null, name: attribute.name, type: "select", isRequired: true, options: JSON.stringify(attribute.values ?? [attribute.value]), sortOrder: index }))); if (supplierId) await tx.insert(productSuppliers).values({ id: nanoid(), productId, supplierId, unitPrice: normalized.price, isPreferred: true }).onConflictDoUpdate({ target: [productSuppliers.productId, productSuppliers.supplierId], set: { unitPrice: normalized.price, isPreferred: true, lastUpdated: new Date().toISOString() } }) }
+async function persistProductDetails(
+  tx: Tx,
+  productId: string,
+  normalized: NormalizedEppRow,
+  supplierId: string | null,
+  sourceId: string,
+  userId: string,
+) {
+  if (normalized.attributes.length) await tx.insert(productAttributes).values(normalized.attributes.map((attribute, index) => ({
+    id: nanoid(), productId, categoryId: null, name: attribute.name, type: "select",
+    isRequired: true, options: JSON.stringify(attribute.values ?? [attribute.value]), sortOrder: index,
+  })))
+  if (supplierId) await setProductSupplierPriceTx(tx, {
+    productId,
+    supplierId,
+    unitPrice: normalized.price,
+    source: "epp_import",
+    sourceId,
+    userId,
+    ensureRelation: true,
+    isPreferred: true,
+  })
+}

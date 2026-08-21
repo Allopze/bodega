@@ -1,6 +1,7 @@
 import { and, inArray, isNull } from "drizzle-orm"
 import { purchaseOrders } from "@/db/schema"
-import { COMPLETED_RECEIPT_ORDER_STATUSES, INVOICE_DUE_ORDER_STATUSES } from "@/lib/work-queue-labels"
+import { COMPLETED_RECEIPT_ORDER_STATUSES } from "@/lib/work-queue-labels"
+import { orderNeedsInvoiceWork } from "@/lib/services/operational-work-queue"
 
 /**
  * Qué OC pertenecen a la bandeja de Compras.
@@ -30,9 +31,9 @@ export function comprasInboxSql({ invoicePendingOnly }: { invoicePendingOnly: bo
   return and(
     isNull(purchaseOrders.deletedAt),
     invoicePendingOnly
-      ? inArray(
-          purchaseOrders.status,
-          COMPLETED_RECEIPT_ORDER_STATUSES.filter((status) => INVOICE_DUE_ORDER_STATUSES.includes(status)),
+      ? and(
+          inArray(purchaseOrders.status, COMPLETED_RECEIPT_ORDER_STATUSES),
+          orderNeedsInvoiceWork,
         )
       : inArray(purchaseOrders.status, ["draft", "cancelled"]),
   )

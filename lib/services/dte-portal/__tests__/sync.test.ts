@@ -32,6 +32,8 @@ const mockMatchToPurchaseOrderInvoices = vi.fn()
 const mockMatchToFuelLoads = vi.fn()
 const mockSummarizeDteReconciliation = vi.fn()
 const mockClaimDteSyncStart = vi.fn()
+const mockPublishProgress = vi.fn()
+const mockClearProgress = vi.fn()
 
 vi.mock("@/db", () => ({
   db: {
@@ -67,6 +69,10 @@ vi.mock("../reconciliation", () => ({
 }))
 vi.mock("../sync-start-gate", () => ({
   claimDteSyncStart: (...args: unknown[]) => mockClaimDteSyncStart(...args),
+}))
+vi.mock("../sync-progress", () => ({
+  publishDteSyncProgress: (...args: unknown[]) => mockPublishProgress(...args),
+  clearDteSyncProgress: (...args: unknown[]) => mockClearProgress(...args),
 }))
 
 const { syncDteDocuments, computeDocumentHash, previousPeriodo, rollingSyncPeriods, recoverySweepPeriods, assertSyncablePeriodo } = await import("../sync")
@@ -162,6 +168,21 @@ describe("syncDteDocuments", () => {
     mockSummarizeDteReconciliation.mockResolvedValue({ matched: 0, ambiguous: 0, unmatched: 0, internalAmbiguity: 0, discrepancies: 0 })
     mockClaimDteSyncStart.mockResolvedValue({ allowed: true })
     mockUpdateReturning.mockReturnValue([{ id: "run-1" }])
+  })
+
+  // Lo único que el operador puede mirar mientras la corrida dura: la fila
+  // `running` no mueve sus contadores hasta cerrar.
+  it("publica la etapa del avance y lo borra al terminar", async () => {
+    mockSyncRunsFindFirst.mockResolvedValue(undefined)
+    mockDocumentsFindFirst.mockResolvedValue(undefined)
+    mockFetchBandejaEntrada.mockResolvedValue({ rows: [BASE_ROW], totalRegistros: 1, declaredTotal: 1 })
+
+    await syncDteDocuments(makeClient(), { periodo: "2026-06", importerId: "user-1" })
+
+    expect(mockPublishProgress.mock.calls.map(([p]) => (p as { phase: string }).phase))
+      .toEqual(["portal", "documentos", "conciliacion"])
+    expect(mockPublishProgress).toHaveBeenLastCalledWith(expect.objectContaining({ periodo: "2026-06", total: 1 }))
+    expect(mockClearProgress).toHaveBeenCalledOnce()
   })
 
   it("inserts new documents on first sync (no prior success, no existing rows)", async () => {

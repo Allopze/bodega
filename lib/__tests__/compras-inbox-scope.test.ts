@@ -29,10 +29,10 @@ const db = drizzle(pg, { schema })
 
 const now = "2026-08-10T12:00:00.000Z"
 
-async function order(id: string, code: string, status: string, deletedAt: string | null = null) {
+async function order(id: string, code: string, status: string, deletedAt: string | null = null, invoiceReconciliationStatus = "no_invoices") {
   await db.insert(schema.purchaseOrders).values({
     id, code, worksiteId: "ws-inbox", supplierId: "sup-inbox", createdBy: "user-inbox",
-    status, netAmount: 100, taxAmount: 19, totalAmount: 119,
+    status, invoiceReconciliationStatus, netAmount: 100, taxAmount: 19, totalAmount: 119,
     createdAt: now, updatedAt: now, deletedAt,
   })
 }
@@ -71,6 +71,7 @@ describe("scope de la bandeja de Compras", () => {
     await order("oc-eliminada", "OC-INBOX-0007-DELETED-tXQzMnLA", "cancelled", now)
     await order("oc-recibida", "OC-INBOX-0008", "received")
     await order("oc-cerrada",  "OC-INBOX-0009", "closed")
+    await order("oc-cerrada-revision", "OC-INBOX-0010", "closed", null, "needs_review")
   })
 
   afterAll(async () => {
@@ -95,7 +96,7 @@ describe("scope de la bandeja de Compras", () => {
     expect(await inboxCodes({ invoicePendingOnly: false })).toContain("OC-INBOX-0006")
   })
 
-  it("bajo el filtro de factura pendiente admite la OC ya recibida, no la recepción activa ni la cerrada", async () => {
-    expect(await inboxCodes({ invoicePendingOnly: true })).toEqual(["OC-INBOX-0008"])
+  it("bajo el filtro admite la recibida sin factura y la cerrada con conciliación pendiente", async () => {
+    expect(await inboxCodes({ invoicePendingOnly: true })).toEqual(["OC-INBOX-0008", "OC-INBOX-0010"])
   })
 })

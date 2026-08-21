@@ -50,7 +50,14 @@ export function useUrlFilters(options: UseUrlFiltersOptions = {}) {
   const clearFilters = React.useCallback(
     (keysToKeep: string[] = []) => {
       const params = new URLSearchParams()
-      for (const key of keysToKeep) {
+      // `onClick={clearFilters}` es el uso natural en un botón, y ahí el primer
+      // argumento es el evento del DOM, no una lista de claves: el `for...of`
+      // lanzaba "keysToKeep is not iterable" y el botón "Limpiar filtros" no
+      // limpiaba nada. Pasaba en las seis pantallas que lo entregan directo
+      // (inspecciones, incidentes, permisos, capacitación, competencias y EPP
+      // preventivo); lo destapó e2e/prevencion-inspecciones.spec.ts.
+      const keys = Array.isArray(keysToKeep) ? keysToKeep : []
+      for (const key of keys) {
         const val = searchParams.get(key)
         if (val) params.set(key, val)
       }

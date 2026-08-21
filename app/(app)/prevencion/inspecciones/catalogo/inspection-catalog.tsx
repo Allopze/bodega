@@ -324,7 +324,7 @@ function ImportTemplateDialog({ importable, versionsByDefinition }: {
             </DialogDescription>
           </DialogHeader>
           <Field label="Definición del catálogo SST">
-            <Select value={code} onValueChange={setCode}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{importable.map((item) => <SelectItem key={item.code} value={item.code}>{item.title}</SelectItem>)}</SelectContent></Select>
+            <Select value={code} onValueChange={setCode}><SelectTrigger aria-label="Definición del catálogo SST"><SelectValue /></SelectTrigger><SelectContent>{importable.map((item) => <SelectItem key={item.code} value={item.code}>{item.title}</SelectItem>)}</SelectContent></Select>
           </Field>
           {definition && (
             <p className="text-xs text-[var(--color-text-subtle)]">
@@ -341,7 +341,7 @@ function ImportTemplateDialog({ importable, versionsByDefinition }: {
           )}
           <div className="grid gap-3 md:grid-cols-2">
             <Field label="Tipo">
-              <Select value={kind} onValueChange={setKind}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{Object.entries(INSPECTION_KIND_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select><input type="hidden" name="kind" value={kind} />
+              <Select value={kind} onValueChange={setKind}><SelectTrigger aria-label="Tipo de instrumento"><SelectValue /></SelectTrigger><SelectContent>{Object.entries(INSPECTION_KIND_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select><input type="hidden" name="kind" value={kind} />
             </Field>
             <Field
               label="Etiqueta de versión"
@@ -529,7 +529,7 @@ function EditProgramDialog({ program, assignees }: {
           </DialogHeader>
           <div className="grid gap-3 md:grid-cols-2">
             <Field label="Frecuencia">
-              <Select value={frequency} onValueChange={setFrequency}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{Object.entries(INSPECTION_FREQUENCY_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select>
+              <Select value={frequency} onValueChange={setFrequency}><SelectTrigger aria-label="Frecuencia"><SelectValue /></SelectTrigger><SelectContent>{Object.entries(INSPECTION_FREQUENCY_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select>
             </Field>
             <Field label="Intervalo (días)" hint="Vacío = el propio de la frecuencia.">
               <Input name="intervalDays" type="number" min={1} max={3650} defaultValue={program.intervalDays} />
@@ -540,7 +540,7 @@ function EditProgramDialog({ program, assignees }: {
               <DatePicker value={nextDueOn} onChange={setNextDueOn} />
             </Field>
             <Field label="Asignada a" hint="Opcional.">
-              <Select value={assignedToUserId} onValueChange={setAssignedToUserId}><SelectTrigger><SelectValue placeholder="Sin asignar" /></SelectTrigger><SelectContent><SelectItem value="_none">Sin asignar</SelectItem>{assignees.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select>
+              <Select value={assignedToUserId} onValueChange={setAssignedToUserId}><SelectTrigger aria-label="Asignada a"><SelectValue placeholder="Sin asignar" /></SelectTrigger><SelectContent><SelectItem value="_none">Sin asignar</SelectItem>{assignees.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select>
             </Field>
           </div>
           <Field label="Tipo de sujeto" hint="Opcional. Ej: extintor, camión, contenedor.">
@@ -638,14 +638,14 @@ function ProgramDialog({ templates, worksites, assignees, riskEntriesByWorksite 
             <DialogDescription>Sólo puede programarse una plantilla aprobada.</DialogDescription>
           </DialogHeader>
           <Field label="Plantilla">
-            <Select value={templateId} onValueChange={setTemplateId}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{templates.map((item) => <SelectItem key={item.id} value={item.id}>{item.name} · {item.versionLabel}</SelectItem>)}</SelectContent></Select><input type="hidden" name="templateId" value={templateId} />
+            <Select value={templateId} onValueChange={setTemplateId}><SelectTrigger aria-label="Plantilla"><SelectValue /></SelectTrigger><SelectContent>{templates.map((item) => <SelectItem key={item.id} value={item.id}>{item.name} · {item.versionLabel}</SelectItem>)}</SelectContent></Select><input type="hidden" name="templateId" value={templateId} />
           </Field>
           <div className="grid gap-3 md:grid-cols-2">
             <Field label="Faena">
-              <Select value={worksiteId} onValueChange={(value) => { setWorksiteId(value); setRiskEntryId("_none") }}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{worksites.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select><input type="hidden" name="worksiteId" value={worksiteId} />
+              <Select value={worksiteId} onValueChange={(value) => { setWorksiteId(value); setRiskEntryId("_none") }}><SelectTrigger aria-label="Faena del programa"><SelectValue /></SelectTrigger><SelectContent>{worksites.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select><input type="hidden" name="worksiteId" value={worksiteId} />
             </Field>
             <Field label="Frecuencia">
-              <Select value={frequency} onValueChange={setFrequency}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{Object.entries(INSPECTION_FREQUENCY_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select><input type="hidden" name="frequency" value={frequency} />
+              <Select value={frequency} onValueChange={setFrequency}><SelectTrigger aria-label="Frecuencia"><SelectValue /></SelectTrigger><SelectContent>{Object.entries(INSPECTION_FREQUENCY_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select><input type="hidden" name="frequency" value={frequency} />
             </Field>
           </div>
           <div className="grid gap-3 md:grid-cols-2">
@@ -656,7 +656,7 @@ function ProgramDialog({ templates, worksites, assignees, riskEntriesByWorksite 
               <Input name="intervalDays" type="number" min={1} max={3650} />
             </Field>
             <Field label="Asignada a" hint="Opcional.">
-              <Select value={assignedToUserId} onValueChange={setAssignedToUserId}><SelectTrigger><SelectValue placeholder="Sin asignar" /></SelectTrigger><SelectContent><SelectItem value="_none">Sin asignar</SelectItem>{assignees.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select><input type="hidden" name="assignedToUserId" value={assignedToUserId === "_none" ? "" : assignedToUserId} />
+              <Select value={assignedToUserId} onValueChange={setAssignedToUserId}><SelectTrigger aria-label="Asignada a"><SelectValue placeholder="Sin asignar" /></SelectTrigger><SelectContent><SelectItem value="_none">Sin asignar</SelectItem>{assignees.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select><input type="hidden" name="assignedToUserId" value={assignedToUserId === "_none" ? "" : assignedToUserId} />
             </Field>
           </div>
           <div className="grid gap-3 md:grid-cols-2">
@@ -665,7 +665,7 @@ function ProgramDialog({ templates, worksites, assignees, riskEntriesByWorksite 
                 UUID del peligro a mano, sin validar existencia ni faena. */}
             <Field label="Peligro MIPER de origen" hint="Opcional. Los de la faena seleccionada.">
               <Select value={riskEntryId} onValueChange={setRiskEntryId}>
-                <SelectTrigger><SelectValue placeholder="Sin vincular" /></SelectTrigger>
+                <SelectTrigger aria-label="Peligro MIPER de origen"><SelectValue placeholder="Sin vincular" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="_none">Sin vincular</SelectItem>
                   {(riskEntriesByWorksite[worksiteId] ?? []).map((entry) => (

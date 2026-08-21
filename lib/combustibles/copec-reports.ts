@@ -107,7 +107,19 @@ async function selectMonth(page: Page, from: string) {
 
 async function downloadReportFromPage(page: Page, request: CopecReportRequest, channel: CopecChannel): Promise<CopecDownloadedReport> {
   await selectMonth(page, request.from)
-  await page.locator(PRODUCT_RADIO[request.product]).check()
+
+  // El portal deshabilita el radio del producto que la cuenta no tuvo en el mes
+  // consultado. `.check()` se quedaba esperando "enabled" hasta agotar el timeout
+  // y su TimeoutError -con el call log entero- cortaba el barrido histórico
+  // completo: es el mismo caso recuperable que un mes sin archivo. El timeout
+  // corto absorbe además el rato en que el postback de Telerik lo deshabilita.
+  const radio = page.locator(PRODUCT_RADIO[request.product])
+  try {
+    await radio.check({ timeout: 10_000 })
+  } catch (error) {
+    if (!(await radio.isDisabled().catch(() => false))) throw error
+    throw new CopecReportUnavailableError(request.from, request.to, request.product)
+  }
 
   await page.locator("#Cph1_LinkBtnBuscarPatentes").click()
   const exportButton = page.locator("#Cph1_LinkBtnExportarXlsPatentes")

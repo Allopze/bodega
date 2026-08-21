@@ -21,6 +21,8 @@ export const pgliteTestFiles = [
   "lib/__tests__/bootstrap.test.ts",
   "lib/__tests__/cancel-request-service.test.ts",
   "lib/__tests__/create-submitted-request-service.test.ts",
+  "lib/__tests__/invoice-reconciliation-service.test.ts",
+  "lib/__tests__/preflight-invoice-reconciliation.test.ts",
   "lib/__tests__/epp-stock-availability.test.ts",
   "lib/__tests__/operational-work-queue-quotation-source.test.ts",
   "lib/__tests__/operational-work-queue-capa-duplicada.test.ts",

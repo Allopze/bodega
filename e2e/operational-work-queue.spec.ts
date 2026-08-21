@@ -1,5 +1,5 @@
 import { test, expect, type Page } from "@playwright/test"
-import { clearRateLimits, login } from "./helpers"
+import { clearRateLimits, login, pickCurrentMonthDate } from "./helpers"
 
 async function loginScopedUser(page: Page) {
   await clearRateLimits()
@@ -42,31 +42,21 @@ test.describe("Centro de control operacional", () => {
     await expect(page.locator("body")).not.toContainText("E2E-RESTR")
   })
 
-  test("admin assigns and reassigns a stable purchase stage", async ({ page }) => {
+  test("admin commits a due date on a stable purchase stage", async ({ page }) => {
     await login(page)
     await page.goto("/pendientes?module=compras")
 
     const row = page.locator("tr", { hasText: "SOL-BULK-E2E-001" }).first()
     await expect(row).toBeVisible()
-    await row.getByRole("button", { name: /Asignar responsable/ }).click()
-    const dialog = page.getByRole("dialog", { name: "Asignar pendiente" })
+    await row.getByRole("button", { name: /Fijar fecha de compromiso/ }).click()
+    const dialog = page.getByRole("dialog", { name: "Fecha de compromiso" })
     await expect(dialog).toBeVisible()
-    await dialog.getByRole("combobox").first().click()
-    await page.getByRole("option", { name: "Admin E2E" }).click()
-    await dialog.getByRole("button", { name: "Guardar asignación" }).click()
+    await pickCurrentMonthDate(page, /Seleccionar fecha|Sin fecha adicional/)
+    await dialog.getByRole("button", { name: "Guardar compromiso" }).click()
     await expect(dialog).toBeHidden()
 
     await page.reload()
-    const reassignedRow = page.locator("tr", { hasText: "SOL-BULK-E2E-001" }).first()
-    await expect(reassignedRow.getByText("Admin E2E")).toBeVisible()
-    await reassignedRow.getByRole("button", { name: /Reasignar responsable/ }).click()
-    const reassignmentDialog = page.getByRole("dialog", { name: "Asignar pendiente" })
-    await reassignmentDialog.getByRole("combobox").first().click()
-    await page.getByRole("option", { name: "Comprador E2E" }).click()
-    await reassignmentDialog.getByRole("button", { name: "Guardar asignación" }).click()
-    await expect(reassignmentDialog).toBeHidden()
-
-    await page.reload()
-    await expect(page.locator("tr", { hasText: "SOL-BULK-E2E-001" }).first().getByText("Comprador E2E")).toBeVisible()
+    const committedRow = page.locator("tr", { hasText: "SOL-BULK-E2E-001" }).first()
+    await expect(committedRow.getByRole("button", { name: /Cambiar fecha de compromiso/ })).toBeVisible()
   })
 })

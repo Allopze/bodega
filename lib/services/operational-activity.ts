@@ -123,6 +123,8 @@ function eventLabel(eventType: string, module: string) {
   const action = eventType.replace(/^audit\./, "")
   const labels: Record<string, string> = {
     create: "Registro creado", update: "Registro actualizado", status_change: "Estado actualizado", cancel: "Registro cancelado", delete: "Registro eliminado",
+    "work.committed": "Fecha de compromiso fijada", "work.uncommitted": "Fecha de compromiso retirada",
+    // Históricos: la asignación de responsable se retiró, sus eventos siguen en la bitácora.
     "work.assigned": "Pendiente asignado", "work.reassigned": "Pendiente reasignado", "work.unassigned": "Pendiente sin responsable",
     "purchase_order.issued": "Orden de compra emitida",
     "purchase_order.created": "Orden de compra creada",

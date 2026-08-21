@@ -119,6 +119,14 @@ export function InspectionRunList({ runs, summary, page, pageSize, overdueProgra
 
   const totalPages = Math.max(1, Math.ceil(summary.total / pageSize))
 
+  // C-09 movió el filtrado al SQL, así que `runs` ya llega filtrada y quedarse
+  // en cero dejó de distinguir "no hay inspecciones" de "no hay con estos
+  // filtros": el estado vacío afirmaba siempre lo primero y escondía la salida
+  // ("Ver todas"), de modo que buscar algo inexistente era un callejón. El
+  // buscador cuenta como filtro aunque viva en la cabecera del shell.
+  const search = getFilter("q").trim()
+  const isFiltered = status !== "all" || worksite !== "all" || quickFilter !== "all" || search !== ""
+
   const STATUS_LABELS = INSPECTION_RUN_STATUS_LABELS as Record<string, string>
   const activeChips: ActiveFilterChip[] = []
   if (status !== "all") activeChips.push({ key: "estado", label: "Estado", value: status, displayValue: STATUS_LABELS[status] ?? status })
@@ -155,7 +163,7 @@ export function InspectionRunList({ runs, summary, page, pageSize, overdueProgra
         activeChips={activeChips}
         onRemoveChip={handleRemoveChip}
         onClearAll={clearUrlFilters}
-        hasActiveFilters={status !== "all" || worksite !== "all" || quickFilter !== "all"}
+        hasActiveFilters={isFiltered}
         actions={canExecute && templates.length > 0 && worksites.length > 0 ? (
           <NewRunDialog templates={templates} worksites={worksites} assignees={assignees} subjectsByWorksite={subjectsByWorksite} />
         ) : undefined}
@@ -179,11 +187,11 @@ export function InspectionRunList({ runs, summary, page, pageSize, overdueProgra
       {filtered.length === 0 ? (
         <EmptyState
           icon={<MagnifyingGlass size={20} />}
-          title={runs.length === 0 ? "Aún no hay inspecciones ejecutadas" : "No hay inspecciones con estos filtros"}
-          description={runs.length === 0
-            ? "Incorpora una plantilla del catálogo, apruébala y prográmala por faena. Cada incumplimiento genera un hallazgo, y los graves exigen una acción CAPA antes de cerrar."
-            : "Ajusta los filtros o el texto del buscador superior."}
-          action={runs.length > 0
+          title={isFiltered ? "No hay inspecciones con estos filtros" : "Aún no hay inspecciones ejecutadas"}
+          description={isFiltered
+            ? "Ajusta los filtros o el texto del buscador superior."
+            : "Incorpora una plantilla del catálogo, apruébala y prográmala por faena. Cada incumplimiento genera un hallazgo, y los graves exigen una acción CAPA antes de cerrar."}
+          action={isFiltered
             ? <Button type="button" variant="secondary" onClick={clearFilters}>Ver todas</Button>
             : canExecute && templates.length > 0 && worksites.length > 0
               ? <NewRunDialog templates={templates} worksites={worksites} assignees={assignees} subjectsByWorksite={subjectsByWorksite} />
@@ -326,18 +334,18 @@ function NewRunDialog({ templates, worksites, assignees, subjectsByWorksite }: {
             <DialogDescription>Sólo puede ejecutarse una plantilla aprobada. Las respuestas se registran después, desde el detalle.</DialogDescription>
           </DialogHeader>
           <Field label="Plantilla">
-            <Select value={templateId} onValueChange={setTemplateId}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{templates.map((item) => <SelectItem key={item.id} value={item.id}>{item.name} · {item.versionLabel}</SelectItem>)}</SelectContent></Select><input type="hidden" name="templateId" value={templateId} />
+            <Select value={templateId} onValueChange={setTemplateId}><SelectTrigger aria-label="Plantilla"><SelectValue /></SelectTrigger><SelectContent>{templates.map((item) => <SelectItem key={item.id} value={item.id}>{item.name} · {item.versionLabel}</SelectItem>)}</SelectContent></Select><input type="hidden" name="templateId" value={templateId} />
           </Field>
           <Field label="Faena">
-            <Select value={worksiteId} onValueChange={setWorksiteId}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{worksites.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select><input type="hidden" name="worksiteId" value={worksiteId} />
+            <Select value={worksiteId} onValueChange={setWorksiteId}><SelectTrigger aria-label="Faena de la inspección"><SelectValue /></SelectTrigger><SelectContent>{worksites.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select><input type="hidden" name="worksiteId" value={worksiteId} />
           </Field>
           <Field label="Origen" hint="Quién origina la inspección — la certificación Mutual distingue las del comité paritario.">
-            <Select value={origin} onValueChange={setOrigin}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{Object.entries(INSPECTION_ORIGIN_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select><input type="hidden" name="origin" value={origin} />
+            <Select value={origin} onValueChange={setOrigin}><SelectTrigger aria-label="Origen"><SelectValue /></SelectTrigger><SelectContent>{Object.entries(INSPECTION_ORIGIN_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select><input type="hidden" name="origin" value={origin} />
           </Field>
           {(subjectsByWorksite[worksiteId]?.length ?? 0) > 0 && (
             <Field label="Sujeto inspeccionado" hint="Opcional. Un recurso del inventario actualiza su última inspección al completar; un equipo habilita derivar la falla a mantención.">
               <Select value={subjectRef} onValueChange={setSubjectRef}>
-                <SelectTrigger><SelectValue placeholder="Otro / texto libre" /></SelectTrigger>
+                <SelectTrigger aria-label="Sujeto inspeccionado"><SelectValue placeholder="Otro / texto libre" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="_none">Otro / texto libre</SelectItem>
                   {(subjectsByWorksite[worksiteId] ?? []).map((subject) => (
@@ -357,7 +365,7 @@ function NewRunDialog({ templates, worksites, assignees, subjectsByWorksite }: {
           <div className="grid gap-3 md:grid-cols-2">
             <Field label="Programada para" hint="Opcional."><DatePicker name="scheduledFor" /></Field>
             <Field label="Asignada a" hint="Vacío = quien la crea.">
-              <Select value={assignedToUserId} onValueChange={setAssignedToUserId}><SelectTrigger><SelectValue placeholder="Quien la crea" /></SelectTrigger><SelectContent><SelectItem value="_none">Quien la crea</SelectItem>{assignees.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select><input type="hidden" name="assignedToUserId" value={assignedToUserId === "_none" ? "" : assignedToUserId} />
+              <Select value={assignedToUserId} onValueChange={setAssignedToUserId}><SelectTrigger aria-label="Asignada a"><SelectValue placeholder="Quien la crea" /></SelectTrigger><SelectContent><SelectItem value="_none">Quien la crea</SelectItem>{assignees.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select><input type="hidden" name="assignedToUserId" value={assignedToUserId === "_none" ? "" : assignedToUserId} />
             </Field>
           </div>
           {operation.message && <p role="status" className="text-sm">{operation.message}</p>}

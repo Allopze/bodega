@@ -2,7 +2,6 @@
 
 import { guardPermission } from "@/lib/auth/can"
 import {
-  getOperationalAssignmentCandidates,
   upsertOperationalAssignment,
   type OperationalAssignmentInput,
 } from "@/lib/services/operational-assignments"
@@ -17,27 +16,15 @@ function sourcePaths(input: Pick<OperationalAssignmentInput, "sourceType" | "sou
   return ["/aprobaciones", "/compras", "/entregas"]
 }
 
-export async function listOperationalAssignmentCandidatesAction(input: Pick<OperationalAssignmentInput, "sourceType" | "sourceId" | "actionKey">) {
-  const guarded = await guardPermission("operations:assign_work")
-  if (guarded.error) return { ok: false as const, message: guarded.error.message, candidates: [] as Array<{ id: string; name: string }> }
-  try {
-    const candidates = await getOperationalAssignmentCandidates(input, guarded.session)
-    return { ok: true as const, candidates }
-  } catch (error) {
-    logger.warn("[listOperationalAssignmentCandidatesAction]", error)
-    return { ok: false as const, message: "No fue posible cargar personas elegibles para esta etapa.", candidates: [] as Array<{ id: string; name: string }> }
-  }
-}
-
-export async function saveOperationalAssignmentAction(input: OperationalAssignmentInput) {
+export async function saveOperationalCommitmentAction(input: OperationalAssignmentInput) {
   const guarded = await guardPermission("operations:assign_work")
   if (guarded.error) return guarded.error
   try {
     await upsertOperationalAssignment(input, guarded.session)
     revalidateOperationalViews(sourcePaths(input))
-    return { ok: true as const, message: input.assigneeUserId ? "Responsable actualizado." : "Pendiente sin responsable complementario." }
+    return { ok: true as const, message: input.committedDueAt ? "Fecha de compromiso actualizada." : "Pendiente sin fecha de compromiso." }
   } catch (error) {
-    logger.warn("[saveOperationalAssignmentAction]", error)
-    return { ok: false as const, message: safeActionMessage(error, "No fue posible actualizar la asignación.") }
+    logger.warn("[saveOperationalCommitmentAction]", error)
+    return { ok: false as const, message: safeActionMessage(error, "No fue posible actualizar la fecha de compromiso.") }
   }
 }

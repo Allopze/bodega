@@ -48,10 +48,10 @@ const session = {
   },
 } as Session
 
-async function order(id: string, code: string, status: string) {
+async function order(id: string, code: string, status: string, invoiceReconciliationStatus = "no_invoices") {
   await inMemoryDb.insert(schema.purchaseOrders).values({
     id, code, worksiteId: "ws-export", supplierId: "sup-export", createdBy: "user-export",
-    status, netAmount: 100, taxAmount: 19, totalAmount: 119, createdAt: now, updatedAt: now,
+    status, invoiceReconciliationStatus, netAmount: 100, taxAmount: 19, totalAmount: 119, createdAt: now, updatedAt: now,
   })
 }
 
@@ -70,14 +70,24 @@ describe("export de compras con el filtro de facturas pendientes", () => {
     })
 
     await order("oc-sin-factura", "OC-EXPORT-0001", "received")       // debe salir
-    await order("oc-con-factura", "OC-EXPORT-0002", "received")       // facturada
+    await order("oc-con-factura", "OC-EXPORT-0002", "received", "matched")
     await order("oc-recien-enviada", "OC-EXPORT-0003", "sent")        // aún no corresponde
     await order("oc-cerrada", "OC-EXPORT-0004", "closed")             // ya no admite trabajo
+    await order("oc-cerrada-revision", "OC-EXPORT-0005", "closed", "needs_review")
+    await order("oc-cerrada-aceptada", "OC-EXPORT-0006", "closed", "accepted_exception")
 
-    await inMemoryDb.insert(schema.purchaseOrderInvoices).values({
-      id: "inv-export", purchaseOrderId: "oc-con-factura", invoiceNumber: "000123", amount: 119,
-      fileName: "f.pdf", filePath: "storage/purchase-orders/f.pdf", uploadedBy: "user-export", uploadedAt: now,
-    })
+    await inMemoryDb.insert(schema.purchaseOrderInvoices).values([
+      {
+        id: "inv-export", purchaseOrderId: "oc-con-factura", invoiceNumber: "000123", amount: 119,
+        fileName: "f.pdf", filePath: "storage/purchase-orders/f.pdf", uploadedBy: "user-export", uploadedAt: now,
+      }, {
+        id: "inv-review", purchaseOrderId: "oc-cerrada-revision", invoiceNumber: "000124", amount: 120,
+        fileName: "review.pdf", filePath: "storage/purchase-orders/review.pdf", uploadedBy: "user-export", uploadedAt: now,
+      }, {
+        id: "inv-accepted", purchaseOrderId: "oc-cerrada-aceptada", invoiceNumber: "000125", amount: 120,
+        fileName: "accepted.pdf", filePath: "storage/purchase-orders/accepted.pdf", uploadedBy: "user-export", uploadedAt: now,
+      },
+    ])
   })
 
   afterAll(async () => {
@@ -87,13 +97,17 @@ describe("export de compras con el filtro de facturas pendientes", () => {
   it("sin el filtro exporta todas las órdenes visibles", async () => {
     const report = await comprasList(session, {}, 100)
     expect(report.rows.map((row) => row[0])).toEqual(expect.arrayContaining([
-      "OC-EXPORT-0001", "OC-EXPORT-0002", "OC-EXPORT-0003", "OC-EXPORT-0004",
+      "OC-EXPORT-0001", "OC-EXPORT-0002", "OC-EXPORT-0003", "OC-EXPORT-0004", "OC-EXPORT-0005", "OC-EXPORT-0006",
     ]))
   })
 
-  it("con el filtro deja sólo la OC que ya debería tener factura y no la tiene", async () => {
+  it("incluye la OC cerrada con diferencias y excluye la aceptada y la cerrada sin factura", async () => {
     const report = await comprasList(session, { invoicePending: true }, 100)
-    expect(report.rows.map((row) => row[0])).toEqual(["OC-EXPORT-0001"])
+    expect(report.rows.map((row) => row[0])).toEqual(expect.arrayContaining(["OC-EXPORT-0001", "OC-EXPORT-0005"]))
+    expect(report.rows.map((row) => row[0])).not.toEqual(expect.arrayContaining(["OC-EXPORT-0004", "OC-EXPORT-0006"]))
+    const reviewRow = report.rows.find((row) => row[0] === "OC-EXPORT-0005")
+    expect(report.headers).toContain("Conciliación")
+    expect(reviewRow?.[7]).toBe("Revisión requerida")
   })
 
   // Una OC cerrada sale de la cola operacional, así que cerrarla sin respaldo

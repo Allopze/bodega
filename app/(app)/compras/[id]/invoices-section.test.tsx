@@ -15,6 +15,11 @@ vi.mock("../actions/dte-use-invoice", () => ({
 vi.mock("@/lib/toast", () => ({ toast: { error: vi.fn(), success: vi.fn() } }))
 
 import { InvoicesSection } from "./invoices-section"
+import { reconcileInvoiceEvidence } from "@/lib/services/purchasing-module/invoice-reconciliation"
+
+function emptyReconciliation(totalOC = 0) {
+  return reconcileInvoiceEvidence({ totalOC, orderItems: [], invoices: [] })
+}
 
 describe("InvoicesSection", () => {
   beforeEach(() => {
@@ -26,8 +31,9 @@ describe("InvoicesSection", () => {
       <InvoicesSection
         purchaseOrderId="oc-servicio"
         invoices={[]}
-        totalAmount={0}
+        reconciliation={emptyReconciliation()}
         canManage
+        canUpdateCatalog={false}
         ocItems={[{
           id: "oc-linea-servicio",
           productName: "Calibración pendiente",
@@ -52,8 +58,9 @@ describe("InvoicesSection", () => {
       <InvoicesSection
         purchaseOrderId="oc-1"
         invoices={[]}
-        totalAmount={119000}
+        reconciliation={emptyReconciliation(119000)}
         canManage
+        canUpdateCatalog={false}
         ocItems={[]}
         dteCandidates={[{
           id: "dte-1",
@@ -78,8 +85,9 @@ describe("InvoicesSection", () => {
       <InvoicesSection
         purchaseOrderId="oc-1"
         invoices={[]}
-        totalAmount={119000}
+        reconciliation={emptyReconciliation(119000)}
         canManage
+        canUpdateCatalog={false}
         ocItems={[]}
         dteCandidates={[{
           id: "dte-1",
@@ -107,8 +115,9 @@ describe("InvoicesSection", () => {
       <InvoicesSection
         purchaseOrderId="oc-1"
         invoices={[]}
-        totalAmount={119000}
+        reconciliation={emptyReconciliation(119000)}
         canManage
+        canUpdateCatalog={false}
         ocItems={[]}
         dteCandidates={[{
           id: "dte-1",
@@ -159,8 +168,9 @@ describe("InvoicesSection", () => {
           mimeType: "application/pdf",
           uploadedAt: "2026-07-09T12:00:00.000Z",
         }]}
-        totalAmount={119000}
+        reconciliation={emptyReconciliation(119000)}
         canManage
+        canUpdateCatalog={false}
         canAttach={false}
         ocItems={[]}
       />,

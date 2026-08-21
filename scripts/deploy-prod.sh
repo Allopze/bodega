@@ -7,8 +7,9 @@ set -euo pipefail
 #
 # Prod and this checkout share the same Docker daemon, so there is no GHCR
 # push/pull in this flow: build the image here on `main`, then swap it in at
-# PROD_DIR. Steps: tag current image as rollback -> pg_dump -> build -> migrate
-# -> recreate app then cron containers -> authenticated smoke check.
+# PROD_DIR. Steps: tag current image as rollback -> pg_dump -> build ->
+# preflight conciliación -> migrate -> backfill conciliación (si hace falta) ->
+# recreate app then cron containers -> authenticated smoke check.
 # ─────────────────────────────────────────────────────────────────────────────
 
 PROD_DIR="${PROD_DIR:-/server/plataforma}"
@@ -106,8 +107,32 @@ echo "    saved: $dump_file ($(du -h "$dump_file" | cut -f1))"
 echo "==> Building image from $(pwd) (main)"
 docker build --target prod -t "$IMAGE" .
 
+# Read-only y sin depender de las columnas de proyección, así que corre antes
+# de migrar: deja en el log del deploy cuánta deriva OC-factura traía la base.
+echo "==> Diagnóstico de conciliación OC-factura (previo a migrar)"
+(cd "$PROD_DIR" && docker compose run --rm preflight-invoice-reconciliation)
+
 echo "==> Applying migrations"
 (cd "$PROD_DIR" && docker compose run --rm migrate)
+
+# La migración 0196 marca toda OC con factura como 'needs_review' con
+# fingerprint NULL. El backfill calcula el estado real, y ese fingerprint NULL
+# es justamente el marcador de "todavía no se recalculó": en los deploys
+# siguientes el conteo da 0 y nos ahorramos el FOR UPDATE sobre todas las OC.
+echo "==> Proyección de conciliación OC-factura"
+pending_reconciliation="$( (cd "$PROD_DIR" && docker compose exec -T db psql -U "${POSTGRES_USER:-bodega}" -d "${POSTGRES_DB:-bodega}" -tAc "SELECT COUNT(*) FROM purchase_orders po WHERE po.invoice_reconciliation_fingerprint IS NULL AND EXISTS (SELECT 1 FROM purchase_order_invoices poi WHERE poi.purchase_order_id = po.id)" 2>/dev/null | tr -d '[:space:]') || true)"
+case "$pending_reconciliation" in
+  ''|*[!0-9]*)
+    echo "    no se pudo contar OC pendientes; se ejecuta el backfill igual (es idempotente)"
+    pending_reconciliation=1
+    ;;
+esac
+if [ "$pending_reconciliation" -gt 0 ]; then
+  echo "    $pending_reconciliation OC sin recalcular; ejecutando backfill"
+  (cd "$PROD_DIR" && docker compose run --rm backfill-invoice-reconciliation)
+else
+  echo "    proyección al día; backfill omitido"
+fi
 
 echo "==> Syncing RBAC permissions from module manifests"
 (cd "$PROD_DIR" && docker compose run --rm sync-rbac)

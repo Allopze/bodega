@@ -11,8 +11,12 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import type { Session } from "next-auth"
 
+const mockSetProductSupplierPriceTx = vi.hoisted(() => vi.fn().mockResolvedValue({ changed: true, stale: false }))
 const mockAuthFn = vi.hoisted(() => vi.fn())
 const mockRecordAudit = vi.hoisted(() => vi.fn())
+const mockSelectForUpdate = vi.fn().mockResolvedValue([])
+const mockSelectWhere = vi.fn(() => ({ for: mockSelectForUpdate }))
+const mockSelectFrom = vi.fn(() => ({ where: mockSelectWhere }))
 const mockCancelEppImportBatch = vi.hoisted(() => vi.fn().mockResolvedValue(undefined))
 const mockInsertValues = vi.fn().mockResolvedValue(undefined)
 const mockUpdateSetWhere = vi.fn().mockResolvedValue(undefined)
@@ -23,12 +27,14 @@ const mockDb = {
     productCategories: { findFirst: vi.fn() },
     products: { findFirst: vi.fn() },
     eppProductFamilies: { findFirst: vi.fn() },
+  select: vi.fn(() => ({ from: mockSelectFrom })),
   },
   insert: vi.fn(() => ({ values: mockInsertValues })),
   update: vi.fn(() => ({ set: mockUpdateSet })),
   delete: vi.fn(() => ({ where: vi.fn().mockResolvedValue(undefined) })),
   transaction: vi.fn(async (callback: (tx: typeof mockDb) => Promise<void>) => callback(mockDb)),
 }
+vi.mock("@/lib/services/product-supplier-prices", () => ({ setProductSupplierPriceTx: mockSetProductSupplierPriceTx }))
 
 vi.mock("@/lib/auth/auth", () => ({ auth: mockAuthFn }))
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), revalidateTag: vi.fn() }))
@@ -385,10 +391,12 @@ describe("admin/productos actions", () => {
 
       expect(r.ok).toBe(true)
       expect(r.message).toContain("1 producto")
-      // Should have inserted productSuppliers for each variant
-      expect(mockInsertValues).toHaveBeenCalledWith(expect.objectContaining({
+      expect(mockSetProductSupplierPriceTx).toHaveBeenCalledWith(mockDb, expect.objectContaining({
+        productId: expect.any(String),
         supplierId: "sup-1",
         unitPrice: 5000,
+        source: "variant_creator",
+        userId: "user-1",
         isPreferred: true,
         notes: "Entrega 15 días",
       }))

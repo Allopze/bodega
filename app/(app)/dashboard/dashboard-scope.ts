@@ -15,7 +15,7 @@ import {
  * cola, y la distinción importa: esto reencuadra consultas de **servidor**, y un
  * Server Component sólo reconsulta si el alcance viaja en la URL. De paso
  * resuelve la pérdida de estado en `router.refresh()` en vez de sufrirla —
- * con el valor en la URL, el refresh de `WorkAssignmentControl` no lo borra.
+ * con el valor en la URL, el refresh de `WorkCommitmentControl` no lo borra.
  * El orden de la cola sigue en `sessionStorage` porque es preferencia de UI, no
  * alcance de datos.
  *

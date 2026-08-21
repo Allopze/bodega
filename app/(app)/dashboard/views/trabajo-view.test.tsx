@@ -7,7 +7,7 @@ import type { WorkTask } from "@/lib/work-queue"
 import { TrabajoView } from "./trabajo-view"
 import type { DashboardScope } from "../dashboard-scope"
 
-// `WorkAssignmentControl` usa el router de Next; en jsdom no hay uno.
+// `WorkCommitmentControl` usa el router de Next; en jsdom no hay uno.
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ replace: vi.fn(), push: vi.fn(), refresh: vi.fn() }),
 }))
